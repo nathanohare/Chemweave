@@ -131,6 +131,21 @@ try {
   if (!over.keys) fail('the Keyframes group did not show on a canvas slide');
   if (over.over > 0) fail(`on a canvas slide the Presentation Home ribbon runs ${over.over} px past the window's edge`);
 
+  step('Presentation\'s status bar has the view buttons and zoom slider, on one line, and the slider zooms');
+  const bar = await page.evaluate(async () => {
+    const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+    const shown = ['#slide-views', '#slide-zoom', '#slide-fit'].every((s) => document.querySelector(s)?.offsetParent);
+    const range = document.querySelector('#slide-zoom-range');
+    range.value = '50';
+    range.dispatchEvent(new Event('input'));
+    await frame();
+    const pct = document.querySelector('#zoom-pick').selectedOptions[0]?.textContent;
+    return { shown, pct, h: document.querySelector('footer#status').offsetHeight };
+  });
+  if (!bar.shown) fail('the view buttons or zoom slider are missing from Presentation\'s status bar');
+  if (bar.pct !== '100%') fail(`the zoom slider's middle should be 100%, not ${bar.pct}`);
+  if (bar.h > 30) fail(`Presentation's status bar is ${bar.h} px tall: its buttons wrapped onto a second line`);
+
   await page.evaluate(() => window.__app.ws.activate(window.__app.ws.tabs.find((t) => t.mode === 'drawing')));
   await page.waitForTimeout(200);
 

@@ -3,6 +3,7 @@
 // mode), and the panels on the right.
 
 // the menus made from the command list, before anything looks for their items
+import { pctToSlider, sliderToPct } from './ui/zoom-slider';
 import { infoTipsOnOpen } from './ui/info-tip';
 import './commands/menus';
 import { newDocDesign, setNewDocDesign } from './document/themes';
@@ -14612,6 +14613,20 @@ function showZoom(): void {
   own.hidden = !!listed;
   own.textContent = `${pct}%`;
   zoomPick.value = listed ? listed.value : 'now';
+  // (not while it is being dragged: it would fight the hand)
+  if (document.activeElement !== zoomRange) zoomRange.value = String(Math.round(pctToSlider(pct)));
+}
+// Presentation's status bar: the zoom slider (100% in the middle), and the view and zoom buttons beside it
+const zoomRange = $<HTMLInputElement>('#slide-zoom-range');
+zoomRange.addEventListener('input', () => editor.zoomTo((sliderToPct(Number(zoomRange.value)) / 100) * (96 / 72)));
+zoomRange.addEventListener('change', () => $('#overlay').focus({ preventScroll: true }));
+for (const id of ['#slide-views', '#slide-zoom', '#slide-fit']) {
+  $(id).addEventListener('click', (e) => {
+    const cmd = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-cmd]')?.dataset.cmd;
+    if (!cmd) return;
+    command(cmd);
+    if (cmd !== 'reading-view' && cmd !== 'present-current') $('#overlay').focus({ preventScroll: true });
+  });
 }
 zoomPick.addEventListener('change', () => {
   const v = zoomPick.value;
