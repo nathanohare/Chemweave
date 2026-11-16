@@ -7376,7 +7376,7 @@ export class Editor {
   private hintState(): HintState {
     const d = this.drag;
     const t = this.tool;
-    const drag: HintState['drag'] = !d || d.button !== 0 ? 'none'
+    const drag: HintState['drag'] = d?.mode === 'pan' ? 'pan' : !d || d.button !== 0 ? 'none'
       : d.mode === 'draw' || (d.mode === 'none' && !d.moved) ? 'draw'
       : d.mode === 'move' || d.mode === 'rotate' || d.mode === 'handle' || d.mode === 'marquee' ? d.mode : 'other';
     const over = (d ? d.hit : this.hover)?.kind;
@@ -7386,7 +7386,7 @@ export class Editor {
       shape: t.kind === 'shape' ? t.shape.kind : undefined,
       curved: t.kind === 'arrow' && this.curvedTool(),
       aromatic: t.kind === 'ring' && t.aromatic,
-      drag: d && !d.moved && drag !== 'draw' ? 'none' : drag,
+      drag: d && !d.moved && drag !== 'draw' && drag !== 'pan' ? 'none' : drag,
       over: over === 'atom' || over === 'bond' || over === 'arrow' || over === 'shape' || over === 'caption' ? over : null,
       handle: h && (h.kind === 'arrow' || h.kind === 'shape') ? { kind: h.kind, which: h.which, line: h.kind === 'shape' && this.doc.shapes.get(h.id)?.kind === 'line' } : undefined,
       fixedAngles: this.options.fixedAngles,

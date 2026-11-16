@@ -89,8 +89,8 @@ export interface HintState {
   curved?: boolean;
   /** The ring tool draws an aromatic ring. */
   aromatic?: boolean;
-  /** The drag in hand ('none' when the button is up). */
-  drag: 'none' | 'draw' | 'move' | 'rotate' | 'handle' | 'marquee' | 'other';
+  /** The drag in hand ('none' when the button is up; 'pan' for a middle- or right-button pan). */
+  drag: 'none' | 'draw' | 'move' | 'rotate' | 'handle' | 'marquee' | 'pan' | 'other';
   /** What the pointer is over (or the drag began on). */
   over?: 'atom' | 'bond' | 'arrow' | 'shape' | 'caption' | null;
   /** The handle being dragged: an arrow's or a shape's, and which. */
@@ -124,6 +124,9 @@ export function modifierHints(s: HintState, m: Mods): ModHint[] {
       return out;
     case 'marquee':
       add('Shift', 'add to the selection');
+      return out;
+    case 'pan':
+      // moving the view: no key changes it, so the tool's own hints would only mislead
       return out;
     case 'handle':
       if (s.handle?.kind === 'arrow') {
