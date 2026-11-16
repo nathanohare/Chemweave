@@ -19,7 +19,7 @@ export const NICKNAMES: Record<string, string> = {
   Ph: 'c1ccccc1', C6H5: 'c1ccccc1', C6F5: 'c1c(F)c(F)c(F)c(F)c1F', C6H11: 'C1CCCCC1', Bn: 'Cc1ccccc1', Bz: 'C(=O)c1ccccc1', Ac: 'C(C)=O', Piv: 'C(=O)C(C)(C)C', Pv: 'C(=O)C(C)(C)C',
   Boc: 'C(=O)OC(C)(C)C', Cbz: 'C(=O)OCc1ccccc1', Fmoc: 'C(=O)OCC1c2ccccc2-c2ccccc21', Troc: 'C(=O)OCC(Cl)(Cl)Cl',
   Alloc: 'C(=O)OCC=C', Allyl: 'CC=C', Ts: 'S(=O)(=O)c1ccc(C)cc1', Tos: 'S(=O)(=O)c1ccc(C)cc1', Ms: 'S(=O)(=O)C',
-  Tf: 'S(=O)(=O)C(F)(F)F', Ns: 'S(=O)(=O)c1ccc(cc1)[N+](=O)[O-]', TMS: '[Si](C)(C)C', TES: '[Si](CC)(CC)CC',
+  Tf: 'S(=O)(=O)C(F)(F)F', MTPA: 'C(=O)C(OC)(C(F)(F)F)c1ccccc1', Ns: 'S(=O)(=O)c1ccc(cc1)[N+](=O)[O-]', TMS: '[Si](C)(C)C', TES: '[Si](CC)(CC)CC',
   TBS: '[Si](C)(C)C(C)(C)C', TBDMS: '[Si](C)(C)C(C)(C)C', TIPS: '[Si](C(C)C)(C(C)C)C(C)C',
   TBDPS: '[Si](c1ccccc1)(c1ccccc1)C(C)(C)C', PMB: 'Cc1ccc(OC)cc1', MPM: 'Cc1ccc(OC)cc1', MOM: 'COC', MEM: 'COCCOC',
   SEM: 'COCC[Si](C)(C)C', THP: 'C1CCCCO1', Tr: 'C(c1ccccc1)(c1ccccc1)c1ccccc1', Trt: 'C(c1ccccc1)(c1ccccc1)c1ccccc1',
@@ -1001,8 +1001,8 @@ class LabelBuilder {
       run = [];
       let n = Math.max(1, t.count);
       const prev = items[k - 1];
-      if (t.kind === 'generic' && /^R\d$/.test(t.text) && prev && 'tok' in prev && prev.tok.kind === 'el') {
-        // NR2, SiR3: R groups counted, not the R2 of a numbered set (which stands alone)
+      if (t.kind === 'generic' && /^R\d$/.test(t.text) && !t.rNum && prev && 'tok' in prev && prev.tok.kind === 'el') {
+        // NR2, SiR3: R groups counted, not the R2 of a numbered set (OR², CO₂R², SO₂R³; see rNumberDigits)
         n = Number(t.text[1]);
       }
       if (t.kind === 'nick' || t.kind === 'generic') {

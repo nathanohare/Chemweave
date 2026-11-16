@@ -117,25 +117,25 @@ function star(z: number, n: number, extra: Partial<Atom> = {}): { d: Doc; c: Ato
 describe('warnings', () => {
   it('flags too many bonds, allowing for charge', () => {
     const c5 = star(6, 5);
-    expect(atomWarnings(c5.d, c5.c)[0]).toBe('Too many bonds: this carbon has 5, but uncharged C has a valence of 4.');
+    expect(atomWarnings(c5.d, c5.c)[0]).toBe('C has 5 bonds (max 4)');
     expect(atomWarnings(star(6, 4).d, star(6, 4).c)).toEqual([]);
     const n4 = star(7, 4);
-    expect(atomWarnings(n4.d, n4.c)[0]).toMatch(/nitrogen has 4/);
+    expect(atomWarnings(n4.d, n4.c)[0]).toBe('N has 4 bonds (max 3; N⁺ allows 4)');
     const n4plus = star(7, 4, { charge: 1 });
     expect(atomWarnings(n4plus.d, n4plus.c)).toEqual([]);
   });
   it('words valence with the charge, and says which charge would allow the bonds', () => {
     const o3 = star(8, 3);
-    expect(atomWarnings(o3.d, o3.c)[0]).toBe('Too many bonds: this oxygen has 3, but uncharged O has a valence of 2. O⁺ can have 3: add a + charge if that is meant.');
+    expect(atomWarnings(o3.d, o3.c)[0]).toBe('O has 3 bonds (max 2; O⁺ allows 3)');
     const o3plus = star(8, 3, { charge: 1 });
     expect(atomWarnings(o3plus.d, o3plus.c)).toEqual([]);
     const b4 = star(5, 4);
-    expect(atomWarnings(b4.d, b4.c)[0]).toMatch(/uncharged B has a valence of 3\. B⁻ can have 4: add a − charge/);
+    expect(atomWarnings(b4.d, b4.c)[0]).toBe('B has 4 bonds (max 3; B⁻ allows 4)');
     const om2 = star(8, 2, { charge: -1 });
-    expect(atomWarnings(om2.d, om2.c)[0]).toBe('Too many bonds: this O⁻ has 2, but O⁻ has a valence of 1. Uncharged O can have 2: remove the charge if that is meant.');
+    expect(atomWarnings(om2.d, om2.c)[0]).toBe('O⁻ has 2 bonds (max 1; O allows 2)');
     // no charge hint where hypervalence, not charge, is the question
     const s7 = star(16, 7);
-    expect(atomWarnings(s7.d, s7.c)[0]).toBe('Too many bonds: this sulfur has 7, but uncharged S has a valence of 6.');
+    expect(atomWarnings(s7.d, s7.c)[0]).toBe('S has 7 bonds (max 6)');
   });
   it('flags labels that cannot be read, or whose atoms have too many or too few bonds', () => {
     expect(atomWarnings(methylWith('Aryl'), methylWith('Aryl').atoms.get(2)!)[0]).toMatch(/can't be read/);
@@ -147,14 +147,14 @@ describe('warnings', () => {
     expect(atomWarnings(br, br.atoms.get(2)!)[0]).toMatch(/brackets/);
     // NH2 with two bonds: N would have 4
     const nh2 = star(6, 2, { label: 'NH2' });
-    expect(atomWarnings(nh2.d, nh2.c)[0]).toMatch(/the N in “NH2” has 4, counting its 2 H/);
+    expect(atomWarnings(nh2.d, nh2.c)[0]).toBe('N in “NH2” has 4 bonds (max 3; N⁺ allows 4)');
     // Ph with two bonds
     const ph = star(6, 2, { label: 'Ph' });
-    expect(atomWarnings(ph.d, ph.c)[0]).toMatch(/Too many bonds: the C in “Ph”/);
+    expect(atomWarnings(ph.d, ph.c)[0]).toMatch(/^C in “Ph” has \d+ bonds \(max 4\)$/);
     // a "P" label fixes the hydrogens at none, so one bond is too few (ChemDraw flags this too)
     const p = methylWith('P');
-    expect(atomWarnings(p, p.atoms.get(2)!)[0]).toMatch(/Too few bonds: “P” shows no H/);
-    expect(atomWarnings(alone('C'), alone('C').atoms.get(1)!)[0]).toMatch(/Too few bonds/);
+    expect(atomWarnings(p, p.atoms.get(2)!)[0]).toBe('P in “P” has 1 bond (min 3)');
+    expect(atomWarnings(alone('C'), alone('C').atoms.get(1)!)[0]).toMatch(/\(min 4\)$/);
     // a carbene label with its radical is fine
     const bh = build((d) => { d.addAtom(0, 0, 6, { label: 'BH', radical: 'singlet' }); });
     expect(atomWarnings(bh, bh.atoms.get(1)!)).toEqual([]);
@@ -235,6 +235,55 @@ describe('warnings', () => {
     const ch = new StructureChecks(d);
     ch.update();
     expect(ch.list()).toEqual([]);
+  });
+});
+
+describe('no false valence warnings on common labels', () => {
+  // Nate (2026-11-16): HO, OH and MeO on a pyranose all got red boxes ("the O in OH has 3").
+  /** A ring carbon (with two ring neighbours) carrying this label by a bond drawn this way. */
+  function onRing(label: string, display: 'solid' | 'hash' | 'bold' | 'wedge' | 'hashWedge'): { d: Doc; x: Atom } {
+    const d = new Doc();
+    let x!: Atom;
+    d.bulk(() => {
+      const c = d.addAtom(0, 0);
+      d.addBond(c.id, d.addAtom(-L, 0).id);
+      d.addBond(c.id, d.addAtom(L / 2, L).id);
+      x = d.addAtom(L / 2, -L, 6, { label });
+      d.addBond(c.id, x.id, 1, display);
+    });
+    return { d, x };
+  }
+  it('reads OH, HO, MeO, OMe and Me either way round, on any bond', () => {
+    for (const label of ['OH', 'HO', 'MeO', 'OMe', 'Me', 'OBn', 'BnO', 'OAc', 'AcO', 'OTBS', 'TBSO']) {
+      for (const display of ['solid', 'hash', 'bold', 'wedge', 'hashWedge'] as const) {
+        const { d, x } = onRing(label, display);
+        expect([label, display, atomWarnings(d, x)]).toEqual([label, display, []]);
+      }
+    }
+  });
+  it('still flags a label with a second bond to the structure', () => {
+    for (const [label, text] of [['OH', 'O in “OH” has 3 bonds (max 2; O⁺ allows 3)'], ['HO', 'O in “HO” has 3 bonds (max 2; O⁺ allows 3)'], ['MeO', 'O in “MeO” has 3 bonds (max 2; O⁺ allows 3)'], ['OMe', 'O in “OMe” has 3 bonds (max 2; O⁺ allows 3)']]) {
+      const s = star(6, 2, { label });
+      expect(atomWarnings(s.d, s.c)).toEqual([text]);
+    }
+  });
+  it('reads a numbered R group as one group, not a count (OR⁵, CO₂R², SO₂R³)', () => {
+    for (const ok of ['OR5', 'OR2', 'CO2R2', 'SO2R3', 'NHSO2R3', 'OR1', 'NR2', 'SiR3', 'PR3']) {
+      const d = methylWith(ok);
+      expect([ok, atomWarnings(d, d.atoms.get(2)!)]).toEqual([ok, []]);
+    }
+    // NR3 on a carbon is an ammonium N: the count is still read as three R groups
+    const nr3 = methylWith('NR3');
+    expect(atomWarnings(nr3, nr3.atoms.get(2)!)).toEqual(['N in “NR3” has 4 bonds (max 3; N⁺ allows 4)']);
+  });
+  it('knows the Mosher acyl group (OMTPA)', () => {
+    const d = methylWith('OMTPA');
+    expect(atomWarnings(d, d.atoms.get(2)!)).toEqual([]);
+    expect(formulaOf(d)).toBe('C11H11F3O3');
+  });
+  it('keeps the tooltip short', () => {
+    const c5 = star(6, 5);
+    expect(atomWarnings(c5.d, c5.c)[0].length).toBeLessThan(40);
   });
 });
 

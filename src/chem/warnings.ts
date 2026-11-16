@@ -16,8 +16,6 @@ export const TOO_CLOSE_ATOM = 0.2;
 /** An atom closer than this to a bond it isn't part of looks as if it sits on the bond. */
 export const TOO_CLOSE_BOND = 0.1;
 
-const NAMES: Record<number, string> = { 1: 'hydrogen', 5: 'boron', 6: 'carbon', 7: 'nitrogen', 8: 'oxygen', 9: 'fluorine', 14: 'silicon', 15: 'phosphorus', 16: 'sulfur', 17: 'chlorine', 35: 'bromine', 53: 'iodine' };
-
 function chargeText(charge: number): string {
   if (!charge) return '';
   return (Math.abs(charge) > 1 ? String(Math.abs(charge)) : '') + (charge > 0 ? '+' : '−');
@@ -30,40 +28,42 @@ function supCharge(charge: number): string {
   return [...chargeText(charge)].map((c) => SUPER[c] ?? c).join('');
 }
 
-/** "uncharged O", "O⁺", "N²⁻": an element with its charge, for valence messages. */
+/** "O", "O⁺", "N²⁻": an element with its charge, for valence messages. */
 function species(z: number, charge: number): string {
-  const sym = SYMBOLS[z] ?? '?';
-  return charge ? sym + supCharge(charge) : 'uncharged ' + sym;
+  return (SYMBOLS[z] ?? '?') + supCharge(charge);
 }
+
+/** "3 bonds", "1 bond". */
+const bondsText = (n: number) => `${n} bond${n === 1 ? '' : 's'}`;
 
 /** B, C, N and O: where one unit of charge changes the valence in the familiar octet way. */
 const OCTET = new Set([5, 6, 7, 8]);
 
 /**
- * The valence an atom has with its charge, and, for B, C, N and O, when one unit of charge more
- * or less (but no more than ±1) would allow `bonds`, that charge: "uncharged O has a valence of
- * 2. O⁺ can have 3: add a + charge if that is meant." The valences are maxValence's.
+ * For B, C, N and O, the charge one unit away (no more than ±1) that would allow `bonds`:
+ * "; O⁺ allows 3", "; O allows 2". Empty when there is none.
  */
-export function valenceAdvice(z: number, charge: number, bonds: number): string {
-  let s = `${species(z, charge)} has a valence of ${maxValence(z, charge)}.`;
-  if (!OCTET.has(z)) return s;
+function chargeHint(z: number, charge: number, bonds: number): string {
+  if (!OCTET.has(z)) return '';
   for (const c of [charge + 1, charge - 1]) {
     const m = maxValence(z, c);
     if (Math.abs(c) > 1 || m === undefined || m < bonds) continue;
-    const sym = SYMBOLS[z] ?? '?';
-    s += c === 0
-      ? ` Uncharged ${sym} can have ${m}: remove the charge if that is meant.`
-      : ` ${species(z, c)} can have ${m}: add a ${c > charge ? '+' : '−'} charge if that is meant.`;
-    break;
+    return `; ${species(z, c)} allows ${m}`;
   }
-  return s;
+  return '';
 }
 
-/** "this carbon", "this N+": how a warning names an atom. */
-function atomName(z: number, charge: number): string {
-  if (!charge && NAMES[z]) return `this ${NAMES[z]}`;
-  return `this ${SYMBOLS[z] ?? '?'}${supCharge(charge)}`;
+/**
+ * A too-many-bonds warning, kept short for its tooltip: "O has 3 bonds (max 2; O⁺ allows 3)",
+ * "O in “OH” has 3 bonds (max 2)" (a label's count includes its written H).
+ */
+export function tooManyText(who: string, z: number, charge: number, bonds: number, max: number, radicals = 0): string {
+  const rad = radicals ? ` + ${radicals === 1 ? 'radical' : '2 radical e⁻'}` : '';
+  return `${who} has ${bondsText(bonds)}${rad} (max ${max}${chargeHint(z, charge, bonds + radicals)})`;
 }
+
+/** True for a too-many-bonds warning made by tooManyText. */
+export const isTooMany = (text: string): boolean => /\(max \d+[;)]/.test(text);
 
 /** Problems with one atom on its own: too many bonds, an unreadable label, an impossible isotope. */
 export function atomWarnings(doc: Doc, a: Atom): string[] {
@@ -106,9 +106,8 @@ export function atomWarnings(doc: Doc, a: Atom): string[] {
       const over = metal ? [] : labelOverValent(a.label, ext, a.charge).filter((o) => o.atom !== 0 || o.used - o.max > toMetal);
       if (over.length) {
         const o = over[0];
-        const sym = SYMBOLS[o.z] ?? '?';
         const charge = maxValence(o.z, a.charge) === o.max ? a.charge : 0;
-        out.push(`Too many bonds: the ${sym} in “${a.label}” has ${o.used}${o.h ? `, counting its ${o.h} H` : ''}, but ${valenceAdvice(o.z, charge, o.used)}`);
+        out.push(tooManyText(`${SYMBOLS[o.z] ?? '?'} in “${a.label}”`, o.z, charge, o.used, o.max));
       } else if (!a.asTyped) {
         // (typed on its own, N or NH2 is that atom or radical as written)
         const few = tooFewBonds(a, orders);
@@ -121,8 +120,7 @@ export function atomWarnings(doc: Doc, a: Atom): string[] {
     // a carbonyl ligand's O (M–C≡O)
     const carbonyl = metalCarbonyl(doc, a) ? 1 : 0;
     if (max !== undefined && bonds + rad > max + toMetal + carbonyl) {
-      const who = atomName(a.z, a.charge);
-      out.push(`Too many bonds: ${who} has ${bonds}${rad ? ` and ${rad === 1 ? 'an unpaired electron' : 'two unpaired electrons'}` : ''}, but ${valenceAdvice(a.z, a.charge, bonds + rad)}`);
+      out.push(tooManyText(species(a.z, a.charge), a.z, a.charge, bonds, max, rad));
     }
   }
   if (a.isotope && !isotopeOk(a.z, a.isotope)) out.push(`There is no isotope ${a.isotope}${SYMBOLS[a.z] ?? ''}.`);
@@ -147,7 +145,7 @@ function tooFewBonds(a: Atom, orders: number[]): string | null {
   // aromatic bonds counted at most (as for pyridine N), so only a real shortfall is reported
   const used = valenceOfBonds(orders, 6) + h + radicalElectrons(a);
   if (min === undefined || used >= min) return null;
-  return `Too few bonds: “${label}” shows ${h ? `${h} H` : 'no H'}, so it has ${used} bond${used === 1 ? '' : 's'}, but ${species(z, charge + signed)} has a valence of ${min}.`;
+  return `${SYMBOLS[z] ?? '?'} in “${label}” has ${bondsText(used)} (min ${min})`;
 }
 
 /**
