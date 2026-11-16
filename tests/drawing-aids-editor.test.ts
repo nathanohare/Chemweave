@@ -7,6 +7,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { Doc } from '../src/model';
 import { Renderer } from '../src/render/renderer';
 import { Editor } from '../src/editor/editor';
+import { modifierHints } from '../src/editor/cursor-aids';
 
 window.requestAnimationFrame = () => 0;
 
@@ -84,4 +85,21 @@ describe('Alt held part-way through a drag', () => {
     const r = [...doc.arrows.values()][0];
     expect(deg(r.tail, r.head)).toBeCloseTo(15, 0);
   });
+});
+
+describe('panning with the middle or right button', () => {
+  for (const button of [1, 2]) {
+    it(`shows no tool hints beside the pointer (button ${button})`, () => {
+      const { ed } = setup('select');
+      const overlay = document.querySelectorAll('canvas')[1];
+      overlay.dispatchEvent(new PointerEvent('pointermove', { clientX: 100, clientY: 100, bubbles: true }));
+      overlay.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 100, button, buttons: button === 1 ? 4 : 2, bubbles: true }));
+      for (let i = 1; i <= 3; i++) overlay.dispatchEvent(new PointerEvent('pointermove', { clientX: 100 + 20 * i, clientY: 100, buttons: button === 1 ? 4 : 2, bubbles: true }));
+      const s = (ed as unknown as { hintState(): import('../src/editor/cursor-aids').HintState }).hintState();
+      expect(s.drag).toBe('pan');
+      expect(modifierHints(s, { shift: false, alt: false, ctrl: false })).toEqual([]);
+      expect(ed.statusState().dragKeys).toEqual([]);
+      overlay.dispatchEvent(new PointerEvent('pointerup', { clientX: 160, clientY: 100, button, bubbles: true }));
+    });
+  }
 });

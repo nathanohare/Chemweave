@@ -39,6 +39,11 @@ describe('modifier hints', () => {
     expect(modifierHints({ ...base, tool: 'arrow', curved: true }, none).map((h) => h.key)).toEqual(['Alt', 'Ctrl']);
     expect(modifierHints({ ...base, tool: 'arrow', drag: 'none', over: 'arrow' }, none)[0]).toMatchObject({ key: 'Shift', text: 'drag to branch from this arrow' });
   });
+  it('panning with the middle or right button: no hints, whatever the tool', () => {
+    expect(modifierHints({ ...base, tool: 'select', drag: 'pan' }, none)).toEqual([]);
+    expect(modifierHints({ ...base, tool: 'select', drag: 'pan' }, { shift: true, alt: true, ctrl: true })).toEqual([]);
+    expect(modifierHints({ ...base, drag: 'pan' }, none)).toEqual([]);
+  });
   it('moving, turning and resizing', () => {
     expect(modifierHints({ ...base, drag: 'move', snapping: true }, { ...none, shift: true }).map((h) => [h.key, h.on])).toEqual([['Shift', true], ['Alt', false]]);
     expect(modifierHints({ ...base, drag: 'rotate' }, none)[0].text).toBe('15° steps');
