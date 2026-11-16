@@ -63,7 +63,7 @@ export function effectsMenu(): MenuItem[] {
       { cmd: 'shape-fx:shadow:none', label: 'No Shadow' }, null,
       { cmd: 'shape-fx:shadow:offset', label: 'Offset: Bottom Right' },
       { cmd: 'shape-fx:shadow:below', label: 'Offset: Bottom' },
-      { cmd: 'shape-fx:shadow:soft', label: 'Soft, All Round' },
+      { cmd: 'shape-fx:shadow:soft', label: 'Soft, All Around' },
       { cmd: 'shape-fx:shadow:perspective', label: 'Long, Faint' },
     ] },
     { label: 'Reflection', items: [

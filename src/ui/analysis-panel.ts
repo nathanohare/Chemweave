@@ -138,7 +138,7 @@ const fmtPka = (x: number) => x.toFixed(1).replace('-', '−');
 function pkaSitesHtml(sites: PkaSite[]): string {
   if (sites.length <= 2) return '';
   const rows = sites.map((s) => `<tr><td>${s.kind === 'acid' ? 'Acid' : 'Base'}</td><td>${esc(s.group)}</td><td>${fmtPka(s.pka)}</td></tr>`);
-  return `<details class="pka-sites"><summary title="${esc(PKA_TIP + ' Each value is for that group alone; later protons of a polyprotic compound are not worked out.')}">All pKa sites</summary><table>${rows.join('')}</table></details>`;
+  return `<details class="pka-sites"><summary title="${esc(PKA_TIP + ' Each value is for that group alone; later protons of a polyprotic compound are not calculated.')}">All pKa sites</summary><table>${rows.join('')}</table></details>`;
 }
 
 /** Joback's critical constants and thermochemistry, and the volatility worked out from them. */
@@ -187,7 +187,7 @@ export function ionSelectHtml(chosen: string, ions: readonly string[]): string {
  */
 export function nameHtml(state: NameState): string {
   if (state.kind === 'idle') return '';
-  if (state.kind === 'busy') return `<span class="an-iupac muted" title="${state.loading ? 'Loading the offline namer (first time this session)' : 'Working out the systematic name'}"> – naming…</span>`;
+  if (state.kind === 'busy') return `<span class="an-iupac muted" title="${state.loading ? 'Loading the offline naming engine (first time this session)' : 'Generating the systematic name'}"> – naming…</span>`;
   if (state.kind === 'none') return `<span class="an-iupac muted" title="${esc(state.message)}"> – no name</span>`;
   const html = nameRuns(state.name).map((r) => (r.italic ? `<i>${esc(r.text)}</i>` : esc(r.text))).join('');
   return `<span class="an-iupac"> – <span class="iupac" title="Systematic name (OpenClatura), checked by reading it back with OPSIN">${html}</span></span>`;
@@ -356,8 +356,8 @@ export function analysisHtml(r: FragmentResult, i: number, adductText: string, e
   const bench = extras.bench ?? benchValues(r);
   const p = r.props;
   const on = new Map(prefs.rows.map((x) => [x.key as string, x.on]));
-  const hrmsBtn = ion ? `<button type="button" class="an-icon-btn an-act" data-insert="hrms:${i}" title="HRMS text: put an HRMS line under the structure (ACS style); type the found value into it" aria-label="HRMS text">${HRMS_ICON}</button>` : '';
-  const eaBtn = ea ? `<button type="button" class="an-icon-btn an-act" data-insert="ea:${i}" title="Anal. text: put an elemental analysis line under the structure (ACS style)" aria-label="Anal. text">${EA_ICON}</button>` : '';
+  const hrmsBtn = ion ? `<button type="button" class="an-icon-btn an-act" data-insert="hrms:${i}" title="Add an HRMS line under the structure (ACS style); type the found value into it" aria-label="HRMS text">${HRMS_ICON}</button>` : '';
+  const eaBtn = ea ? `<button type="button" class="an-icon-btn an-act" data-insert="ea:${i}" title="Add an elemental analysis (Anal.) line under the structure (ACS style)" aria-label="Anal. text">${EA_ICON}</button>` : '';
   let hrmsPlaced = false, eaPlaced = false;
 
   /** A line of the table for this key, or '' when it has nothing to show. */
@@ -458,10 +458,10 @@ export function analysisHtml(r: FragmentResult, i: number, adductText: string, e
     : nameOn ? extras.name ?? '' : '';
   return `<div class="frag${edit ? ' an-customize' : ''}">
     <div class="formula"><b>${formulaHtml(r.formula)}</b>${name}</div>
-    ${core ? `<p class="muted small">${extras.rGroups!.map(esc).join(', ')} could be anything, so there are no masses. Chemistry ▸ R-Group Table works out each compound.</p>` : ''}
+    ${core ? `<p class="muted small">${extras.rGroups!.map(esc).join(', ')} could be anything, so there are no masses. Chemistry ▸ R-Group Table calculates each compound.</p>` : ''}
     ${html}
     ${extras.unknown?.length ? `<p class="warn">Not recognized (skipped): ${extras.unknown.map(esc).join(', ')}</p>` : ''}
-    ${edit ? `<div class="an-buttons an-edit-add"><button type="button" data-analysis-calc="new" title="A row that works out an amount of what is selected: its mass, volume or mmol">Add Lab Calculation…</button></div>` : ''}
+    ${edit ? `<div class="an-buttons an-edit-add"><button type="button" data-analysis-calc="new" title="A row that calculates an amount for the selection: mass, volume or mmol">Add Lab Calculation…</button></div>` : ''}
   </div>`;
 }
 

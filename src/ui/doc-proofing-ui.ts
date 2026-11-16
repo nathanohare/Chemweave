@@ -141,7 +141,7 @@ export class DocProofingUI {
   spelling(near?: HTMLElement | null): void {
     const f = this.host.file();
     if (!f) return;
-    if (!this.host.speller()) this.host.flash('The word lists are still loading (or the spelling check is off in Edit > Typing and Spelling): checking grammar and chemistry formatting only.', 4000);
+    if (!this.host.speller()) this.host.flash('Word lists are still loading (or spelling is off in Edit ▸ Typing and Spelling), so only grammar and chemistry formatting are checked.', 4000);
     if (!this.pane) {
       this.pane = new FloatBox('Editor', () => {});
       this.pane.el.classList.add('proof-pane');
@@ -221,7 +221,7 @@ export class DocProofingUI {
     const word = text.slice(p.start, p.end);
     row.append(
       button('Ignore Once', 'Leave it this time', () => { this.skipped.add(`${p.kind}:${p.start}:${word}`); this.pos = p.start + 1; this.next(); }),
-      button('Ignore All', p.kind === 'spelling' ? 'Accept this word everywhere until the program is closed' : 'Leave every one like this', () => {
+      button('Ignore All', p.kind === 'spelling' ? 'Accept this word everywhere until Chemweave is closed' : 'Leave every one like this', () => {
         if (p.kind === 'spelling') this.host.ignoreWord(word);
         else for (const q of this.problems()) if (q.kind === p.kind && q.message === p.message && text.slice(q.start, q.end) === word) this.skipped.add(`${q.kind}:${q.start}:${word}`);
         this.pos = p.start;
@@ -230,7 +230,7 @@ export class DocProofingUI {
     );
     if (p.kind === 'spelling') row.append(button('Add to Dictionary', 'Accept this word from now on', () => { this.host.addWord(word); this.pos = p.start; this.next(); }));
     row.append(
-      button('Change', 'Change it to the choice picked', () => this.change(p, p.choices[pick]), !p.choices.length),
+      button('Change', 'Change it to the choice selected', () => this.change(p, p.choices[pick]), !p.choices.length),
       button('Change All', 'Change it everywhere it is in the document', () => this.changeAll(p, p.choices[pick]), !p.choices.length || p.kind === 'chemistry'),
     );
     pane.body.append(row);
@@ -279,7 +279,7 @@ export class DocProofingUI {
       while (b < text.length && /[\p{L}'’-]/u.test(text[b])) b++;
     }
     const word = text.slice(a, b).trim();
-    if (!word || word.includes('\n')) { this.host.flash('Put the caret in a word (or select one) to look it up.'); return; }
+    if (!word || word.includes('\n')) { this.host.flash('Put the cursor in a word (or select one) to look it up.'); return; }
     if (!this.thesaurus) {
       this.thesaurus = new FloatBox('Thesaurus', () => {});
       this.thesaurus.el.classList.add('thesaurus');

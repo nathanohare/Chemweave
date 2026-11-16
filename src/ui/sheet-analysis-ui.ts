@@ -669,7 +669,7 @@ export class SheetAnalysis {
     const ref = dataTableRef(sel);
     if (typeof ref === 'string') { this.host.flash(ref, 7000); return; }
     const w = this.window('Data Table');
-    w.note(`The table: ${rangeName(sel)}. The values to try go along its top row (for a row input cell) or down its left column (for a column input cell); the formulas go in the other, or in the top-left corner for two input cells.`);
+    w.note(`The table: ${rangeName(sel)}. Put the input values in the top row (row input cell) or left column (column input cell), and the formula in the other, or in the top-left corner for two input cells.`);
     const row = w.ref('Row input cell:', '');
     const col = w.ref('Column input cell:', '');
     w.actions('OK', () => {

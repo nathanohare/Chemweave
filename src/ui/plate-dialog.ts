@@ -70,7 +70,7 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
           lad.setAttribute('aria-label', `Lane ${i + 1} is a size marker`);
           tr.insertCell().append(lad);
         }
-        const del = el('button', { type: 'button', textContent: '×', title: 'Take out this lane' });
+        const del = el('button', { type: 'button', textContent: '×', title: 'Remove this lane' });
         del.addEventListener('click', () => { read(); if (lanes.length > 1) lanes.splice(i, 1); draw(); redraw(); });
         tr.insertCell().append(del);
       });

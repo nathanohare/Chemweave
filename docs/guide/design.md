@@ -67,7 +67,7 @@ The **Chemistry** group adds a **Catalytic Cycle** or an **Energy Diagram** (the
 
 ### Structures
 
-All the drawing tools and hotkeys work on a design page, so you can draw structures, reaction arrows and schemes straight onto it, or paste them from a canvas tab or ChemDraw (Windows app).
+All the drawing tools and keyboard shortcuts work on a design page, so you can draw structures, reaction arrows and schemes straight onto it, or paste them from a canvas tab or ChemDraw (Windows app).
 
 ### Pictures with a white background
 
@@ -147,7 +147,7 @@ The **Layers** panel on the right lists the shapes, pictures and tables on the p
 
 ## References
 
-A design keeps a reference list, as a presentation does. **References** on the Design tab checks which ones the page shows at its foot, written and formatted for you (journal, year, volume and page by default). Add references, or copy them from another open file, in **Insert ▸ Reference Manager…**. **Insert ▸ Formatted Reference…** puts a reference anywhere on the page as text.
+A design keeps a reference list, as a presentation does. **References** on the Design tab checks which ones the page shows at the bottom, written and formatted for you (journal, year, volume and page by default). Add references, or copy them from another open file, in **Insert ▸ Reference Manager…**. **Insert ▸ Formatted Reference…** puts a reference anywhere on the page as text.
 
 ## Saving and exporting
 

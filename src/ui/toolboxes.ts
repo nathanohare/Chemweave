@@ -484,9 +484,9 @@ export class Toolboxes {
       const locked = boxLocked(st, def.id);
       f.classList.toggle('locked', locked);
       const fold = f.querySelector<HTMLElement>('.tb-fold');
-      if (fold) { fold.textContent = folded ? '▸' : '▾'; fold.title = folded ? `Open ${def.title} out` : `Fold ${def.title} up to its title`; }
+      if (fold) { fold.textContent = folded ? '▸' : '▾'; fold.title = folded ? `Open ${def.title} out` : `Collapse ${def.title} to its title`; }
       const tab = f.querySelector<HTMLElement>('.tb-tab-fold');
-      if (tab) { tab.title = `Fold ${def.title} up to its title`; tab.setAttribute('aria-label', tab.title); }
+      if (tab) { tab.title = `Collapse ${def.title} to its title`; tab.setAttribute('aria-label', tab.title); }
       for (const lock of f.querySelectorAll<HTMLElement>(':scope > :is(.tb-head, .tb-tab) > .tb-lock')) { lock.innerHTML = lockIcon(locked, 14); lock.title = locked ? `Lock this toolbox's place (locked). Click to unlock it, then drag it by its title. The drawing itself is never locked.` : `Lock this toolbox's place (unlocked: drag it by its title). Click to lock it where it is.`; lock.setAttribute('aria-pressed', String(locked)); }
       f.dataset.dock = place.dock;
       if (def.id === 'details') f.style.setProperty('--strip-h', `${stripHeight(st, innerHeight)}px`);
@@ -600,7 +600,7 @@ export class Toolboxes {
     close.type = 'button';
     close.className = 'tb-close';
     close.textContent = '×';
-    close.title = `Hide ${def.title} (View > Toolboxes shows it again)`;
+    close.title = `Hide ${def.title} (View ▸ Toolboxes shows it again)`;
     close.setAttribute('aria-label', close.title);
     close.addEventListener('click', () => this.toggle(def.id, false));
     // fold the box up to its title, and lock or unlock it, from the title bar

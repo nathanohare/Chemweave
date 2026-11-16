@@ -124,7 +124,7 @@ export class DocNav {
     if (!heads.length) {
       const p = document.createElement('p');
       p.className = 'nav-empty';
-      p.textContent = 'No headings yet. Give paragraphs a Heading style (Home > Heading 1, 2 or 3) and they show here, to go to and to drag into another order.';
+      p.textContent = 'No headings yet. Give paragraphs a Heading style (Home ▸ Heading 1, 2 or 3) and they show here, to go to and to drag into another order.';
       this.list.append(p);
       return;
     }

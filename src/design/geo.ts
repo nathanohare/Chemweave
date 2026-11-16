@@ -232,7 +232,7 @@ export const GEOS: GeoDef[] = [
   { id: 'fcProcess', name: 'Process', group: 'Flowchart', prst: 'flowChartProcess', size: [108, 64], keywords: 'step', draw: (w, h) => ({ body: poly([[0, 0], [w, 0], [w, h], [0, h]]) }) },
   { id: 'fcAltProcess', name: 'Alternate process', group: 'Flowchart', prst: 'flowChartAlternateProcess', size: [108, 64], draw: (w, h) => ({ body: roundRect(0, 0, w, h, ss(w, h) / 6) }) },
   { id: 'fcDecision', name: 'Decision', group: 'Flowchart', prst: 'flowChartDecision', size: [108, 72], keywords: 'if question', draw: (w, h) => ({ body: poly([[w / 2, 0], [w, h / 2], [w / 2, h], [0, h / 2]]) }), text: [0.25, 0.25, 0.75, 0.75] },
-  { id: 'fcTerminator', name: 'Start or end', group: 'Flowchart', prst: 'flowChartTerminator', size: [108, 44], keywords: 'terminator begin finish', draw: (w, h) => ({ body: roundRect(0, 0, w, h, h / 2) }), text: [0.15, 0.1, 0.85, 0.9] },
+  { id: 'fcTerminator', name: 'Terminator', group: 'Flowchart', prst: 'flowChartTerminator', size: [108, 44], keywords: 'terminator begin finish', draw: (w, h) => ({ body: roundRect(0, 0, w, h, h / 2) }), text: [0.15, 0.1, 0.85, 0.9] },
   { id: 'fcData', name: 'Data (input or output)', group: 'Flowchart', prst: 'flowChartInputOutput', size: [108, 64], keywords: 'input output', draw: (w, h) => ({ body: poly([[w / 5, 0], [w, 0], [4 * w / 5, h], [0, h]]) }), text: [0.2, 0.08, 0.8, 0.92] },
   { id: 'fcPredefined', name: 'Predefined process', group: 'Flowchart', prst: 'flowChartPredefinedProcess', size: [108, 64], keywords: 'subroutine procedure', draw: (w, h) => ({ body: poly([[0, 0], [w, 0], [w, h], [0, h]]), lines: [['M', w / 8, 0], ['L', w / 8, h], ['M', 7 * w / 8, 0], ['L', 7 * w / 8, h]] }), text: [0.14, 0.05, 0.86, 0.95] },
   { id: 'fcDocument', name: 'Document', group: 'Flowchart', prst: 'flowChartDocument', size: [108, 72], keywords: 'report paper', draw: (w, h) => ({ body: scaled([['M', 0, 0], ['L', 1, 0], ['L', 1, 0.802], ['C', 0.5, 0.802, 0.5, 1.1075, 0, 0.9339], ['Z']], w, h) }), text: [0.05, 0.05, 0.95, 0.78] },
@@ -422,7 +422,7 @@ export const GEOS: GeoDef[] = [
     text: [0.17, 0.27, 0.7, 0.73],
   },
   {
-    id: 'labStirPlate', name: 'Stirrer hot plate', group: 'Lab equipment', size: [90, 40], keywords: 'heat stir hotplate',
+    id: 'labStirPlate', name: 'Hotplate stirrer', group: 'Lab equipment', size: [90, 40], keywords: 'heat stir hotplate',
     draw: (w, h) => ({
       body: scaled([['M', 0.0, 0.3], ['L', 1, 0.3], ['L', 1, 1], ['L', 0, 1], ['Z']], w, h),
       lines: [...scaled([['M', 0.05, 0.3], ['L', 0.05, 0.12], ['L', 0.95, 0.12], ['L', 0.95, 0.3]], w, h), ...ellipse(0.25 * w, 0.65 * h, 0.07 * w, 0.14 * h), ...ellipse(0.75 * w, 0.65 * h, 0.07 * w, 0.14 * h)],

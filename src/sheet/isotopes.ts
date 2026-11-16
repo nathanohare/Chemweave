@@ -65,7 +65,7 @@ export function ionPeaks(src: IsotopeSource, adductText: string): { peaks: (Isot
     charge = src.mol.charge;
   } else {
     const f = formulaWithCharge(src.formula);
-    if (!f) return ERR.value(`"${src.formula}" is not a formula this program can read`);
+    if (!f) return ERR.value(`"${src.formula}" is not a formula Chemweave can read`);
     counts = f.counts;
     charge = f.charge;
   }
@@ -80,7 +80,7 @@ export function ionPeaks(src: IsotopeSource, adductText: string): { peaks: (Isot
     }
   }
   const ion = ionCounts(counts, adduct);
-  if (!ion) return ERR.value(`${adduct.label} takes away more atoms than the molecule has`);
+  if (!ion) return ERR.value(`${adduct.label} removes more atoms than the molecule has`);
   const key = [...ion].sort().map(([e, n]) => `${e}${n}`).join('') + `|${adduct.z}`;
   let list = kept.get(key);
   if (list === undefined) {

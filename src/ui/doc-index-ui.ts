@@ -72,12 +72,12 @@ export class DocIndexUI {
     if (got.pw !== got.pw2) { this.host.flash('The passwords don\'t match. The document is not protected.', 6000); return; }
     const edit = got.edit as ProtectKind;
     if (edit === 'forms' && !Object.values(f.t.objects).some((o) => o.kind === 'form')) {
-      this.host.flash('There are no form fields to fill in yet: add them with Review > Text Field, Check Box or Drop-Down first. The document is not protected.', 8000);
+      this.host.flash('There are no form fields to fill in yet: add them with Review ▸ Text Field, Check Box or Drop-Down first. The document is not protected.', 8000);
       return;
     }
     const prot = protection(edit, got.pw);
     f.ed.update({ ...f.t, protect: prot, ...(edit === 'trackedChanges' ? { track: true } : {}) } as DocText, 'Restrict editing');
-    this.host.flash(`Protected: ${edit === 'readOnly' ? 'no changes can be made' : `only ${PROTECT_NAMES[edit].toLowerCase()} can be made`}${prot.hash ? '' : ' (no password)'}. Review > Restrict Editing stops it.`, 7000);
+    this.host.flash(`Protected: ${edit === 'readOnly' ? 'no changes can be made' : `only ${PROTECT_NAMES[edit].toLowerCase()} can be made`}${prot.hash ? '' : ' (no password)'}. Review ▸ Restrict Editing stops it.`, 7000);
   }
 
   // ---------------------------------------------------------------- form fields
@@ -98,10 +98,10 @@ export class DocIndexUI {
     const got = await ask(title, [
       ...(o.type === 'text' ? [{ name: 'value', label: 'Default text', value: o.value ?? '' }] : []),
       ...(o.type === 'check' ? [{ name: 'checked', label: 'Checked', type: 'checkbox' as const, value: String(!!o.checked) }] : []),
-      ...(o.type === 'drop' ? [{ name: 'items', label: 'Items in the list (one a line)', type: 'textarea' as const, value: (o.items ?? []).join('\n') }] : []),
+      ...(o.type === 'drop' ? [{ name: 'items', label: 'Items in the list (one per line)', type: 'textarea' as const, value: (o.items ?? []).join('\n') }] : []),
       { name: 'name', label: 'Name (bookmark)', value: o.name ?? '', placeholder: 'Text1, Check1…', help: 'Letters and digits; Word refers to the field by it' },
       { name: 'help', label: 'Help text', value: o.help ?? '', help: 'Shown while the field is filled in' },
-    ], { ok, note: 'Form fields are filled in by whoever has the document, also when it is protected for filling in forms (Review > Restrict Editing): click one to fill it in, or press Tab to go to the next.' });
+    ], { ok, note: 'Form fields are filled in by whoever has the document, also when it is protected for filling in forms (Review ▸ Restrict Editing): click one to fill it in, or press Tab to go to the next.' });
     if (!got) return null;
     const out: FormObject = { kind: 'form', type: o.type };
     const name = got.name.replace(/[^\w]/g, '').slice(0, 20);
@@ -202,16 +202,16 @@ export class DocIndexUI {
       { name: 'see', label: 'Cross-reference', value: 'See ', help: 'Shown in place of the page number, for Cross-reference' },
       { name: 'bold', label: 'Page number in bold', type: 'checkbox', value: 'false' },
       { name: 'italic', label: 'Page number in italic', type: 'checkbox', value: 'false' },
-      { name: 'all', label: 'Mark All: every paragraph where the main entry\'s text comes up', type: 'checkbox', value: 'false' },
-      ...(here.length ? [{ name: 'remove', label: 'Take this paragraph\'s entries off instead', type: 'checkbox' as const, value: 'false', help: `Marked here: ${here.map((x) => x.sub ? `${x.main}: ${x.sub}` : x.main).join('; ')}` }] : []),
-    ], { ok: 'Mark', note: 'The entry stays with its paragraph. References > Insert Index lists entries A to Z with page numbers and updates automatically.' });
+      { name: 'all', label: 'Mark All: every paragraph where the main entry\'s text appears', type: 'checkbox', value: 'false' },
+      ...(here.length ? [{ name: 'remove', label: 'Remove this paragraph\'s entries instead', type: 'checkbox' as const, value: 'false', help: `Marked here: ${here.map((x) => x.sub ? `${x.main}: ${x.sub}` : x.main).join('; ')}` }] : []),
+    ], { ok: 'Mark', note: 'The entry stays with its paragraph. References ▸ Insert Index lists entries A to Z with page numbers and updates automatically.' });
     this.host.focus();
     if (!got || this.host.file() !== f) return;
     if (got.remove === 'true') {
       let t = f.t;
       for (const x of here) t = unmark(t, para, { xe: x });
       f.ed.update(t, 'Remove index entries');
-      this.host.flash(`${here.length} index entr${here.length === 1 ? 'y' : 'ies'} taken off this paragraph.`);
+      this.host.flash(`${here.length} index entr${here.length === 1 ? 'y' : 'ies'} removed from this paragraph.`);
       return;
     }
     const main = got.main.trim();
@@ -223,7 +223,7 @@ export class DocIndexUI {
     if (!out.count) { this.host.flash(got.all === 'true' ? `No paragraph with "${main}" that isn't marked already.` : 'This paragraph has that entry already.'); return; }
     f.ed.update(out.t, 'Mark index entry');
     const indexed = Object.values(f.t.objects).some((o) => o.kind === 'index');
-    this.host.flash(`Marked ${out.count === 1 ? 'here' : `in ${out.count} paragraphs`}.${indexed ? '' : ' Insert the index with References > Insert Index.'}`, 6000);
+    this.host.flash(`Marked ${out.count === 1 ? 'here' : `in ${out.count} paragraphs`}.${indexed ? '' : ' Insert the index with References ▸ Insert Index.'}`, 6000);
   }
 
   /** The heading and the object's paragraph after the caret's, as Insert Table of Contents puts them; gives the object's paragraph. */
@@ -255,7 +255,7 @@ export class DocIndexUI {
       { name: 'cols', label: 'Columns', value: String(now.cols ?? 2), options: ['1', '2', '3', '4'].map((v) => ({ value: v, label: v })) },
       { name: 'right', label: 'Right align page numbers (after dots)', type: 'checkbox', value: String(!!now.right) },
       { name: 'letters', label: 'A letter over each letter\'s entries', type: 'checkbox', value: String(!!now.letters) },
-    ], { ok, note: 'Lists entries marked with References > Mark Entry, A to Z, and updates automatically. In Word, right-click ▸ Update Field after editing there.' });
+    ], { ok, note: 'Lists entries marked with References ▸ Mark Entry, A to Z, and updates automatically. In Word, right-click ▸ Update Field after editing there.' });
     if (!got) return null;
     const cols = Math.max(1, Math.min(4, Number(got.cols) || 1));
     return { kind: 'index', ...(cols > 1 ? { cols } : {}), ...(got.right === 'true' ? { right: true } : {}), ...(got.letters === 'true' ? { letters: true } : {}) };
@@ -275,7 +275,7 @@ export class DocIndexUI {
     if (!o || this.host.file() !== f) return;
     const para = this.insertBlock(f, o, 'Index', 'Insert index', (o.cols ?? 1) > 1);
     if ((o.cols ?? 1) > 1) this.setColumns(f, para, o.cols!);
-    if (!indexItems(f.t, () => '').length) this.host.flash('The index lists the entries marked with References > Mark Entry (Alt+Shift+X). Mark some and they appear here with their page numbers.', 9000);
+    if (!indexItems(f.t, () => '').length) this.host.flash('The index lists the entries marked with References ▸ Mark Entry (Alt+Shift+X). Mark some and they appear here with their page numbers.', 9000);
   }
 
   /**
@@ -343,8 +343,8 @@ export class DocIndexUI {
       { name: 'long', label: 'Long citation (as listed)', value: same?.long ?? text, placeholder: 'Brown v. Board of Education, 347 U.S. 483 (1954)' },
       { name: 'short', label: 'Short citation', value: same?.short ?? text, suggestions: known.map((a) => a.short), help: 'Later mentions are marked by it' },
       { name: 'cat', label: 'Category', value: String(same?.cat ?? 1), options: TOA_CATEGORIES.map((c, i) => ({ value: String(i + 1), label: c })) },
-      { name: 'all', label: 'Mark All: every paragraph where the short citation comes up', type: 'checkbox', value: 'false' },
-    ], { ok: 'Mark', note: 'References > Insert Table of Authorities lists the citations marked, by category, each with the pages it is cited on.' });
+      { name: 'all', label: 'Mark All: every paragraph where the short citation appears', type: 'checkbox', value: 'false' },
+    ], { ok: 'Mark', note: 'References ▸ Insert Table of Authorities lists the citations marked, by category, each with the pages it is cited on.' });
     this.host.focus();
     if (!got || this.host.file() !== f) return;
     const short = got.short.trim() || got.long.trim();
@@ -358,14 +358,14 @@ export class DocIndexUI {
     if (!out.count && t === f.t) { this.host.flash('This paragraph has that citation marked already.'); return; }
     f.ed.update(out.t, 'Mark citation');
     const listed = Object.values(f.t.objects).some((o) => o.kind === 'toa');
-    this.host.flash(`${out.count > 1 ? `Marked in ${out.count} paragraphs` : 'Marked'} under ${categoryName(cat)}.${listed ? '' : ' Insert the table with References > Insert Table of Authorities.'}`, 6000);
+    this.host.flash(`${out.count > 1 ? `Marked in ${out.count} paragraphs` : 'Marked'} under ${categoryName(cat)}.${listed ? '' : ' Insert the table with References ▸ Insert Table of Authorities.'}`, 6000);
   }
 
   private async askToa(now: Extract<DocObject, { kind: 'toa' }>, ok: string): Promise<Extract<DocObject, { kind: 'toa' }> | null> {
     const got = await ask('Table of Authorities', [
       { name: 'cat', label: 'Category', value: String(now.cat), options: [{ value: '0', label: 'All' }, ...TOA_CATEGORIES.map((c, i) => ({ value: String(i + 1), label: c }))] },
       { name: 'passim', label: 'Use passim (for citations on five pages or more)', type: 'checkbox', value: String(!!now.passim) },
-    ], { ok, note: 'Lists citations marked with References > Mark Citation by category, and updates automatically. In Word, right-click ▸ Update Field after editing there.' });
+    ], { ok, note: 'Lists citations marked with References ▸ Mark Citation by category, and updates automatically. In Word, right-click ▸ Update Field after editing there.' });
     if (!got) return null;
     return { kind: 'toa', cat: Math.max(0, Number(got.cat) || 0), ...(got.passim === 'true' ? { passim: true } : {}) };
   }
@@ -379,7 +379,7 @@ export class DocIndexUI {
     this.host.focus();
     if (!o || this.host.file() !== f) return;
     this.insertBlock(f, o, 'Table of Authorities', 'Insert table of authorities');
-    if (!toaItems(f.t, o.cat, () => '').some((i) => i.level)) this.host.flash('The table lists the citations marked with References > Mark Citation (Alt+Shift+I). Mark some and they appear here with their pages.', 9000);
+    if (!toaItems(f.t, o.cat, () => '').some((i) => i.level)) this.host.flash('The table lists the citations marked with References ▸ Mark Citation (Alt+Shift+I). Mark some and they appear here with their pages.', 9000);
   }
 
   /** Double-click on a table of authorities: its category and passim. */

@@ -117,7 +117,7 @@ export class SheetOutline {
 
   detail(show: boolean): void {
     const got = this.groupHere(show);
-    if (!got) { this.host.flash(show ? 'No folded group here: pick its summary row (the one with +).' : 'No open group here.'); return; }
+    if (!got) { this.host.flash(show ? 'No collapsed group here: select its summary row (the one with +).' : 'No open group here.'); return; }
     this.host.edit(show ? 'Show Detail' : 'Hide Detail', (s) => setCollapsed(s, got.axis, got.g, !show));
   }
 

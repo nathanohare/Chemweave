@@ -30,7 +30,7 @@ export const SMART_LAYOUTS: { id: SmartLayout; name: string; tip: string }[] = [
   { id: 'rows', name: 'Rows', tip: 'Steps in rows, each row starting again on the left' },
   { id: 'snake', name: 'Snake', tip: 'Steps in rows, every other row running back' },
   { id: 'down', name: 'Down', tip: 'Every step down the page' },
-  { id: 'cycle', name: 'Cycle', tip: 'Round a catalytic cycle, the last step back to the first species' },
+  { id: 'cycle', name: 'Cycle', tip: 'Around a catalytic cycle, the last step back to the first species' },
 ];
 
 /** How a Smart Scheme is laid out, kept on its frame. */

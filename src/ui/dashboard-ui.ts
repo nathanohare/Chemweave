@@ -135,8 +135,8 @@ export class DashboardUi {
       case 'chart': {
         if (hasLevels(chartKind)) return this.addLevelChart(res, base, chartKind);
         const got = await ask('Add Chart: what it shows', [
-          { name: 'kind', label: 'Kind', value: chartKind, options: KINDS.map((k) => ({ value: k, label: CHART_NAMES[k] })) },
-          { name: 'x', label: 'Across the bottom (x or labels)', value: res.names[0], options: [{ value: '', label: '(1, 2, 3…)' }, ...cols] },
+          { name: 'kind', label: 'Type', value: chartKind, options: KINDS.map((k) => ({ value: k, label: CHART_NAMES[k] })) },
+          { name: 'x', label: 'Horizontal axis (x or labels)', value: res.names[0], options: [{ value: '', label: '(1, 2, 3…)' }, ...cols] },
           { name: 'group', label: 'Rows with the same label', value: 'auto', options: [
             { value: 'auto', label: 'Average them if labels repeat' }, { value: '', label: 'One bar or point per row' },
             ...(['average', 'sum', 'count', 'median', 'min', 'max'] as Aggregate[]).map((a) => ({ value: a, label: `${AGGREGATE_NAMES[a]} of each label` })),
@@ -160,7 +160,7 @@ export class DashboardUi {
           { name: 'agg', label: 'Show the', value: numeric.length ? 'average' : 'count', options: AGGS.map((a) => ({ value: a, label: AGGREGATE_NAMES[a] })) },
           { name: 'col', label: 'of', value: numeric[0] ?? res.names[0], options: cols },
           { name: 'fmt', label: 'Number format', value: '', placeholder: 'automatic (or 0.0, 0%…)' },
-          { name: 'suffix', label: 'After the number', value: '', placeholder: ' %' },
+          { name: 'suffix', label: 'Suffix', value: '', placeholder: ' %' },
           { name: 'target', label: 'Target (optional)', value: '', type: 'number' },
           { name: 'high', label: 'Higher is better', value: 'true', type: 'checkbox' },
         ], { ok: 'Add', note: 'The number follows the slicers. Its settings can also take any formula instead.' });
@@ -370,7 +370,7 @@ export class DashboardUi {
       case 'slicer': {
         out.push(sourceRow(t.source, (s) => this.update(t.id, { source: s, selected: undefined } as Partial<SlicerTile>)));
         out.push(row('Filter by', select(names, t.column, (v) => this.update(t.id, { column: v, selected: undefined } as Partial<SlicerTile>))));
-        out.push(note(t.selected?.length ? `Showing only: ${t.selected.join(', ')}` : 'Showing everything. Click buttons on the tile to filter (click again to take one off).'));
+        out.push(note(t.selected?.length ? `Showing only: ${t.selected.join(', ')}` : 'Showing everything. Click buttons on the tile to filter (click again to remove one).'));
         if (t.selected?.length) out.push(rowOf(button('Clear this slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear slicer'))));
         break;
       }

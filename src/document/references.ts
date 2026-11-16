@@ -515,7 +515,7 @@ export function brokenCitations(t: Citing): number[] {
 export function citationWarning(t: Citing): string | null {
   const n = brokenCitations(t).length;
   if (!n) return null;
-  return `${n === 1 ? 'One citation points' : `${n} citations point`} to a reference that was deleted: ${n === 1 ? 'it is' : 'they are'} left out of the numbering, and a citation with nothing left shows [?]. Undo the deletion, or cite again with References > Insert Citation.`;
+  return `${n === 1 ? 'One citation points' : `${n} citations point`} to a deleted reference: ${n === 1 ? 'it is' : 'they are'} skipped in the numbering, and a citation with no references left shows [?]. Undo the deletion or cite again with References ▸ Insert Citation.`;
 }
 
 // ---------------------------------------------------------------- the bibliography

@@ -103,7 +103,7 @@ export function modeOf(xs: number[]): Value {
     if (c > top) { top = c; best = x; }
   }
   // the first value in the list with the top count
-  if (best === null) return ERR.na('No value comes up more than once');
+  if (best === null) return ERR.na('No value occurs more than once');
   return xs.find((x) => count.get(x) === top)!;
 }
 

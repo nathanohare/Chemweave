@@ -3025,7 +3025,7 @@ export class Editor {
     const pen = this.pen;
     if (!pen) {
       this.pen = { at: [p], dirs: [dir] };
-      this.onHint('Click each next point (drag out from it to curve through it). Click the first point to close the shape; double-click or press Enter to end it open. Backspace takes back a point; Esc stops.');
+      this.onHint('Click each next point (drag out from it to curve through it). Click the first point to close the shape; double-click or press Enter to end it open. Backspace removes the last point; Esc stops.');
       this.requestOverlay();
       return;
     }

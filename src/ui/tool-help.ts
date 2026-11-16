@@ -17,7 +17,7 @@ export interface ToolHelp {
 }
 
 const BOND_STEPS = ['Click an atom or empty space', 'Drag to aim'];
-const BOND_KEYS: [string, string][] = [['Hotkeys', 'Change the atom or bond pointed at']];
+const BOND_KEYS: [string, string][] = [['Shortcuts', 'Change the atom or bond pointed at']];
 const BOND_DRAG: [string, string][] = [['Alt', 'Toggle angle snapping']];
 
 /** Help for tools named one by one; the rest go by their kind (below). */
@@ -26,7 +26,7 @@ const BY_NAME: Record<string, ToolHelp> = {
     what: 'Click or drag a box to select. Double-click selects a whole structure; Shift or Ctrl+click adds to the selection. Ctrl+drag copies; hold Shift while dragging to move straight. Delete removes.',
     steps: ['Click or drag a box to select'],
     keys: [['Double-click', 'Select molecule'], ['Shift+click', 'Add to selection'], ['Ctrl+drag', 'Copy']],
-    dragKeys: [['Shift', 'Move straight'], ['Alt', 'Toggle snapping']],
+    dragKeys: [['Shift', 'Constrain direction'], ['Alt', 'Toggle snapping']],
   },
   lasso: {
     what: 'Drag a loop around what to select, to pick pieces out of a crowded scheme. Then drag what is selected to move it.',
@@ -54,7 +54,7 @@ const BY_NAME: Record<string, ToolHelp> = {
     keys: [],
   },
   'bond-variable': {
-    what: 'Drag from a group (or empty space) into a ring: the group is on one of the ring\'s atoms. Then click ring atoms to add them or take them out.',
+    what: 'Drag from a group (or empty space) into a ring: the group is on one of the ring\'s atoms. Then click ring atoms to add them or remove them.',
     steps: ['Drag from the group into the ring', 'Click ring atoms to add or remove'],
     keys: [],
   },
@@ -137,11 +137,11 @@ export function toolHelp(name: string, t: Tool | undefined): ToolHelp {
         what: 'Draw a freeform shape point by point. Click for a corner; drag out from a point to curve through it.',
         steps: ['Click each point', 'Click the first point to close', 'Double-click to end open'],
         keys: [],
-        dragKeys: [['Enter', 'End open'], ['Backspace', 'Take back a point'], ['Esc', 'Stop']],
+        dragKeys: [['Enter', 'End open'], ['Backspace', 'Remove last point'], ['Esc', 'Stop']],
       };
     case 'bond':
     default:
-      return { what: 'Click empty space or an atom to draw; drag to aim (hold Alt or Space: any angle). Point at an atom or bond and press a hotkey (Edit > Keyboard Shortcuts lists them).', steps: BOND_STEPS, keys: BOND_KEYS, dragKeys: BOND_DRAG };
+      return { what: 'Click empty space or an atom to draw; drag to aim (hold Alt or Space: any angle). Point at an atom or bond and press a shortcut key (Edit ▸ Keyboard Shortcuts lists them).', steps: BOND_STEPS, keys: BOND_KEYS, dragKeys: BOND_DRAG };
   }
 }
 
@@ -279,8 +279,8 @@ export function statusHint(o: {
     const keys: [string, string][] = [['Space', 'Select molecule'], ['Tab', 'Next molecule']];
     const move = arrowFamily(key, dirs('hotspot', ['left', 'right', 'up', 'down']), st.highlight);
     if (move) keys.push([move, 'Move highlight']);
-    return plain(st.highlight === 'atom' ? 'Atom highlighted' : 'Bond highlighted', ['Press a hotkey to change it'], keys,
-      `The ${st.highlight} is highlighted: press a hotkey (Edit > Keyboard Shortcuts lists them) to change it. Space selects its molecule and Tab the next one; the arrow keys move the highlight.`);
+    return plain(st.highlight === 'atom' ? 'Atom highlighted' : 'Bond highlighted', ['Press a shortcut key to change it'], keys,
+      `The ${st.highlight} is highlighted: press a shortcut key (Edit ▸ Keyboard Shortcuts lists them) to change it. Space selects its molecule and Tab the next one; the arrow keys move the highlight.`);
   }
   const any = st.atoms + st.bonds + st.others > 0;
   // a selection, with the Select or Lasso tool (or any tool once whole structures are selected:

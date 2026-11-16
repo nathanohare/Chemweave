@@ -360,7 +360,7 @@ const FUNCTIONS: Record<string, FnDef> = {
       const k = toNumber(scalar(args[0]));
       if (isError(k)) return k;
       const name = ({ 1: 'AVERAGE', 2: 'COUNT', 3: 'COUNTA', 4: 'MAX', 5: 'MIN', 6: 'PRODUCT', 7: 'STDEV', 8: 'STDEVP', 9: 'SUM', 10: 'VAR', 11: 'VARP' } as Record<number, string>)[Math.trunc(k) % 100];
-      if (!name) return ERR.value('SUBTOTAL works out 1 to 11 (101 to 111)');
+      if (!name) return ERR.value('SUBTOTAL calculates 1 to 11 (101 to 111)');
       // other subtotals in the block, and rows filtered out (any hidden row, for 101 to 111), are left out
       const hidden = Math.trunc(k) > 100;
       const skip = host.subtotalSkip;
@@ -687,11 +687,11 @@ function fieldValue(argNodes: Node[], host: EvalHost): Arg {
   const name = scalar(evalNode(argNodes[1], host));
   if (isError(name)) return name;
   const r = refOf(argNodes[0], host);
-  if (isError(r)) return ERR.field('FIELDVALUE needs a cell holding a compound (Data > Data Types > Compound)');
+  if (isError(r)) return ERR.field('FIELDVALUE needs a cell holding a compound (Data ▸ Data Types ▸ Compound)');
   if (r.sheet !== undefined && !host.hasSheet(r.sheet)) return ERR.ref(`There is no sheet called "${r.sheet}"`);
   const one = (row: number, col: number): Value => {
     const v = host.field?.(r.sheet, row, col, String(name ?? ''));
-    if (v === undefined) return ERR.field('The cell isn\'t a compound (Data > Data Types > Compound)');
+    if (v === undefined) return ERR.field('The cell isn\'t a compound (Data ▸ Data Types ▸ Compound)');
     if (v === null) return ERR.field(`The compound has no field "${String(name ?? '')}"`);
     return v;
   };

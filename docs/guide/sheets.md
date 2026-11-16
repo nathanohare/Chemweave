@@ -8,7 +8,7 @@ This page covers Spreadsheet mode: cells and formulas, structures in cells, the 
 
 Click **+** at the end of the tab strip and pick **Spreadsheet (Tables, Charts, and Dashboards)**, or choose **File ▸ New ▸ Spreadsheet**. While a spreadsheet is showing, Ctrl+N starts another one.
 
-**File ▸ New ▸ Spreadsheet** opens a blank workbook with a window of templates over it; click outside the window to keep the blank workbook, or pick one: **Reactions** (reaction table with the best entry found for you, substrate scope table, 24- and 96-well screening plates shaded by yield, kinetics time course with a chart, k and half-life), **Reagents and stock** (reagent sheet with the percent yield worked out, chemical inventory, stock solution calculator, gas cylinder and solvent still log), **Analysis** (HPLC/GC calibration curve, ee and er from HPLC peak areas, NMR yield with an internal standard, organolithium titration) and **Lab management** (order tracker, instrument booking, group duties rota). Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
+**File ▸ New ▸ Spreadsheet** opens a blank workbook with a window of templates over it; click outside the window to keep the blank workbook, or pick one: **Reactions** (reaction table with the best entry found for you, substrate scope table, 24- and 96-well screening plates shaded by yield, kinetics time course with a chart, k and half-life), **Reagents and stock** (reagent sheet with the percent yield calculated, chemical inventory, stock solution calculator, gas cylinder and solvent still log), **Analysis** (HPLC/GC calibration curve, ee and er from HPLC peak areas, NMR yield with an internal standard, organolithium titration) and **Lab management** (order tracker, instrument booking, group duties rota). Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
 
 Spreadsheets open from .xlsx, .xlsm, .xls and .ods files as well as text and SD files; see [File types](files-and-sharing.md#file-types).
 
@@ -32,7 +32,7 @@ When the pointer turns into a pointing hand over a cell, that cell holds a struc
 
 ## Structures in cells
 
-- **Draw one:** select a cell and click **Home** tab ▸ **Structure** (or **Insert ▸ Structure in Cell**). The drawing tools open in a 6 × 4 in drawing area over the sheet (**Bigger** makes it 9 × 6 in, then the whole window, then back); draw, press **Done** (or Ctrl+Enter), and the structure sits in the cell. **Cancel**, or Esc with nothing picked, leaves the cell as it was.
+- **Draw one:** select a cell and click **Home** tab ▸ **Structure** (or **Insert ▸ Structure in Cell**). The drawing tools open in a 6 × 4 in drawing area over the sheet (**Enlarge** makes it 9 × 6 in, then the whole window, then back); draw, press **Done** (or Ctrl+Enter), and the structure sits in the cell. **Cancel**, or Esc with nothing selected, leaves the cell as it was.
 - **From names or SMILES:** type a column of names or SMILES, select them and click **From Name** (Ctrl+Shift+N). Each one is drawn in a new column beside it.
 - **Paste:** copy a structure from a canvas tab, or from ChemDraw (Windows app), and paste it into a cell.
 
@@ -42,7 +42,7 @@ Click in your table and choose **Home** tab ▸ **Properties** (or **Insert ▸ 
 
 Formula, MW, Exact mass, HRMS m/z, cLogP, TPSA, H-bond donors, H-bond acceptors, Rotatable bonds, SMILES, InChIKey and **Duplicate of**.
 
-Each column fills itself in for every row and updates when you change a structure. **Duplicate of** names the first other row with the same compound (same InChIKey), so a compound entered twice shows straight away.
+Each column fills itself in for every row and updates when you change a structure. **Duplicate of** names the first other row with the same compound (same InChIKey), so a compound entered twice shows immediately.
 
 Any calculated value can be typed over, for example with a measured mass. The cell is marked as typed over, and **Reset to Calculated** puts the calculated value back.
 
@@ -66,7 +66,7 @@ Common functions include `SUM`, `AVERAGE`, `MIN`, `MAX`, `MEDIAN`, `STDEV`, `COU
 
 ### Arrays that spill
 
-A formula that gives several results fills the cells below and to the right of it, as in Excel 365: `=SORT(A2:B20, 2, -1)`, `=FILTER(A2:C40, C2:C40>80)`, `=UNIQUE(B2:B40)`, `=SEQUENCE(10)`, and `VSTACK`, `HSTACK`, `TAKE`, `DROP`, `CHOOSEROWS`, `CHOOSECOLS`, `TOCOL`, `TOROW`, `SORTBY` and `TRANSPOSE`. `LINEST`, `LOGEST` and `TEXTSPLIT` spill their whole result too. A blue outline shows the spilled cells when one is picked; the formula is typed in its first cell only. When something is in the way the formula shows `#SPILL!` until the cells are cleared. `A2#` refers to everything spilled from A2, and `@` takes one value where a block would spill.
+A formula that gives several results fills the cells below and to the right of it, as in Excel 365: `=SORT(A2:B20, 2, -1)`, `=FILTER(A2:C40, C2:C40>80)`, `=UNIQUE(B2:B40)`, `=SEQUENCE(10)`, and `VSTACK`, `HSTACK`, `TAKE`, `DROP`, `CHOOSEROWS`, `CHOOSECOLS`, `TOCOL`, `TOROW`, `SORTBY` and `TRANSPOSE`. `LINEST`, `LOGEST` and `TEXTSPLIT` spill their whole result too. A blue outline shows the spilled cells when one is selected; the formula is typed in its first cell only. When something is in the way the formula shows `#SPILL!` until the cells are cleared. `A2#` refers to everything spilled from A2, and `@` takes one value where a block would spill.
 
 `LET` names parts of a formula (`=LET(n, B2/MW(A2), n*1000)`), and `LAMBDA` makes a function of your own. Give a LAMBDA a name in the Name Manager (for example `Mmol` for `=LAMBDA(mg, mw, mg/mw)`) and use it like any function: `=Mmol(C2, D2)`. `MAP`, `REDUCE`, `SCAN`, `BYROW`, `BYCOL` and `MAKEARRAY` take a LAMBDA too.
 
@@ -74,7 +74,7 @@ Not every Excel function is available; one that isn't shows an error in its cell
 
 ### Insert Function and the Formulas tab
 
-**Formulas** tab ▸ **Insert Function** (or the **fx** button by the formula bar, or Shift+F3) finds a function by name or by what it does ("working days", "molar mass"). Pick one to get a box for each of its arguments, with a line of help for the one you are in, what each argument works out to, and the formula's result before you press OK. On a cell that already holds one function, fx opens its arguments to change them. The Function Library buttons list the functions by category.
+**Formulas** tab ▸ **Insert Function** (or the **fx** button by the formula bar, or Shift+F3) finds a function by name or by what it does ("working days", "molar mass"). Pick one to get a box for each of its arguments, with a line of help for the one you are in, what each argument evaluates to, and the formula's result before you press OK. On a cell that already holds one function, fx opens its arguments to change them. The Function Library buttons list the functions by category.
 
 ### Names
 
@@ -132,7 +132,7 @@ Select a block of numbers, such as yields across five runs, and choose **Insert*
 
 ## Outlines and subtotals
 
-**Data** tab ▸ **Outline**: **Group** (Shift+Alt+Right) puts the selected rows or columns in a group that folds away, up to seven levels deep, and **Ungroup** (Shift+Alt+Left) takes them out. **Auto Outline** groups rows that a SUM just below adds up. The buttons beside the row numbers fold and open each group (− and +), and **1 2 3** show the outline to a level. **Subtotal…** adds a total row under each change in a column (each catalyst, each solvent) worked out with SUBTOTAL, plus a Grand Total, all grouped. SUBTOTAL leaves out other subtotals and, with function numbers 101 to 111, hidden rows. **Settings…** puts the summary rows above their details instead of below.
+**Data** tab ▸ **Outline**: **Group** (Shift+Alt+Right) puts the selected rows or columns in a group that folds away, up to seven levels deep, and **Ungroup** (Shift+Alt+Left) removes them. **Auto Outline** groups rows that a SUM just below adds up. The buttons beside the row numbers fold and open each group (− and +), and **1 2 3** show the outline to a level. **Subtotal…** adds a total row under each change in a column (each catalyst, each solvent) calculated with SUBTOTAL, plus a Grand Total, all grouped. SUBTOTAL leaves out other subtotals and, with function numbers 101 to 111, hidden rows. **Settings…** puts the summary rows above their details instead of below.
 
 ## Views
 
@@ -184,9 +184,9 @@ A cell with a list shows a drop-down button beside it while selected; click it o
 - **From Web…**: a web page's tables (the **Navigator** previews each one), or a CSV or JSON file at a web address. Only the address is sent. In a browser only sites that allow it can be read; the desktop app reads any page.
 - **From Workbook…**: a table or sheet of another Excel (.xlsx, .xlsm, .xls) or OpenDocument (.ods) workbook.
 
-The **Query Editor** then shows a preview of the data. Click a column's header to pick it (Ctrl or Shift for more), then a button adds a step: **Use First Row as Headers**, **Remove Columns**, **Keep Only**, **Rename…**, **Data Type** (text, decimal or whole number, percentage, date, true/false), **Filter…**, **Split Column…** (at each, the left-most or the right-most delimiter), **Replace Values…**, **Trim**, **Sort**, **Remove Duplicates**, **Remove Blank Rows**, **Remove Top Rows…**, **Unpivot Columns** and **Unpivot Other Columns** (columns such as Run 1, Run 2, Run 3 become rows of Attribute and Value). New files start with their headers found and each column's type worked out.
+The **Query Editor** then shows a preview of the data. Click a column's header to pick it (Ctrl or Shift for more), then a button adds a step: **Use First Row as Headers**, **Remove Columns**, **Keep Only**, **Rename…**, **Data Type** (text, decimal or whole number, percentage, date, true/false), **Filter…**, **Split Column…** (at each, the left-most or the right-most delimiter), **Replace Values…**, **Trim**, **Sort**, **Remove Duplicates**, **Remove Blank Rows**, **Remove Top Rows…**, **Unpivot Columns** and **Unpivot Other Columns** (columns such as Run 1, Run 2, Run 3 become rows of Attribute and Value). New files start with their headers found and each column's type calculated.
 
-**Applied Steps** lists the steps in order: click one to see the data after it (new steps go in after it), or **×** to take it away. A value that can't take a column's type shows as **Error** and loads as a blank cell. **Change Source…** points the query at another file (one that moved, or the next batch of results) with the same steps.
+**Applied Steps** lists the steps in order: click one to see the data after it (new steps go in after it), or **×** to remove it. A value that can't take a column's type shows as **Error** and loads as a blank cell. **Change Source…** points the query at another file (one that moved, or the next batch of results) with the same steps.
 
 **Close & Load** puts the results on a new sheet as a table named after the query; **Close & Load To…** puts them at a cell you choose, or nowhere (**Only Create Connection**). **Refresh All** (or **Refresh** on the right-click menu of the table) reads the source again and runs the same steps, growing or shrinking the table; it asks before covering other cells. **Queries & Connections** lists the workbook's queries, with **Edit**, **Refresh**, **Go to** and **Delete**. Queries are saved in the .xlsx file: Excel shows the tables, and the queries come back when the file is opened here again. (In a browser, a query's file is asked for again after the file is reopened.)
 
@@ -215,7 +215,7 @@ A **PivotChart** (Insert tab, or the PivotTable tab) charts the report and chang
 ### What-If Analysis
 
 - **Goal Seek…**: the value of one cell that makes a formula give a target (the catalyst loading for 95% predicted conversion). The sheet shows the answer while the status window is open; **Cancel** puts the cell back.
-- **Data Table…**: select a table with the values to try down its left column (or along its top row) and formulas along the top (or down the left), or a grid of values with one formula in its top-left corner, then give the input cell(s). The results are worked out again whenever the sheet changes, and are saved as Excel's own TABLE() data table.
+- **Data Table…**: select a table with the values to try down its left column (or along its top row) and formulas along the top (or down the left), or a grid of values with one formula in its top-left corner, then give the input cell(s). The results are recalculated whenever the sheet changes, and are saved as Excel's own TABLE() data table.
 
 ### Solver
 
@@ -233,7 +233,7 @@ Select a block of cells and choose **Insert** tab ▸ **Scatter**, **Line**, **C
 - **Titles…**, **Legend**, **Colors**, **Axes…** (limits, log scale, grid lines, number format) and **Data Labels**. Titles take subscripts and superscripts: `k_{obs}` and `s^{-1}`.
 - **Error Bars**.
 - **Fit Line**: straight line, polynomial (x² or x³), exponential, logarithmic or power. The equation and R² appear in an empty corner of the chart, and you can drag the label. In the panel, **Put in cells…** writes the slope, intercept, R² and standard error to the sheet as live formulas.
-- **Chemistry fits** (under **Fit Line**, after the line): **First-order decay** (y = y₀·e^(−kt), with k and t½; leave the intercept free or set y₀), **Second-order** (1/y = 1/y₀ + kt), **Arrhenius** (k against T: Eₐ in kJ/mol and A), **Eyring** (k against T: ΔH‡, ΔS‡ and ΔG‡ at 298 K) and **Hammett** (log(k/k₀) against σ: ρ, optionally through the origin). Each is fitted on its straight-line form (ln y against t, 1/y against t, ln k or ln(k/T) against 1/T) and drawn on your axes, with the results under the equation. For Arrhenius and Eyring, choose whether T is in kelvin or °C. Excel has no such trendlines, so a first-order fit is saved as Excel's exponential trendline and a Hammett fit as a straight line; the others keep this program's picture of the chart.
+- **Chemistry fits** (under **Fit Line**, after the line): **First-order decay** (y = y₀·e^(−kt), with k and t½; leave the intercept free or set y₀), **Second-order** (1/y = 1/y₀ + kt), **Arrhenius** (k against T: Eₐ in kJ/mol and A), **Eyring** (k against T: ΔH‡, ΔS‡ and ΔG‡ at 298 K) and **Hammett** (log(k/k₀) against σ: ρ, optionally through the origin). Each is fitted on its straight-line form (ln y against t, 1/y against t, ln k or ln(k/T) against 1/T) and drawn on your axes, with the results under the equation. For Arrhenius and Eyring, choose whether T is in kelvin or °C. Excel has no such trendlines, so a first-order fit is saved as Excel's exponential trendline and a Hammett fit as a straight line; the others keep Chemweave's picture of the chart.
 - **Copy as Picture** to paste the chart into Word, PowerPoint or a document or slide here; **Save as Picture…** for a PNG or SVG; **Delete Chart**.
 
 ### Stick spectra
@@ -291,22 +291,22 @@ A dashboard is a page of tiles that summarize a table: useful for a catalyst scr
 
 Each new tile asks which table or block of cells to read. For a gallery, the structures need to be in a table made with **Format as Table**.
 
-- **Move and resize:** drag a tile, or drag its bottom-right corner. Tiles snap to a grid. With a tile picked, the arrow keys move it, Shift+arrows resize it and Delete removes it.
+- **Move and resize:** drag a tile, or drag its bottom-right corner. Tiles snap to a grid. With a tile selected, the arrow keys move it, Shift+arrows resize it and Delete removes it.
 - **Settings:** click a tile for its settings in the right-hand panel; click an empty spot, or **Dashboard Settings**, for the dashboard's columns, row height, gap and background.
-- **Slicers:** click more buttons to pick several, and click a picked one again to drop it. Several slicers apply together. The ✕ on a slicer, or **Clear Filters**, shows everything again.
-- **Clicking a chart:** click a bar, a pie slice, a Sankey node or band, or a treemap box, and every other tile fed by the same table shows only the rows it stands for, just as a slicer would. A band stands for the rows that run between its two nodes. The chart you clicked keeps what you picked and fades the rest. To show everything again, click the same part again or click the chart where it has no bars; **Clear Chart Filter** on the right-click menu and **Clear Filters** work too. The panel lists what each chart is filtering by.
+- **Slicers:** click more buttons to pick several, and click a selected one again to drop it. Several slicers apply together. The ✕ on a slicer, or **Clear Filters**, shows everything again.
+- **Clicking a chart:** click a bar, a pie slice, a Sankey node or band, or a treemap box, and every other tile fed by the same table shows only the rows it stands for, just as a slicer would. A band stands for the rows that run between its two nodes. The chart you clicked keeps what you selected and fades the rest. To show everything again, click the same part again or click the chart where it has no bars; **Clear Chart Filter** on the right-click menu and **Clear Filters** work too. The panel lists what each chart is filtering by.
 - **Treemaps and decomposition trees:** click a treemap box that has categories inside it to drill into it, and click a step of the trail above it to go back up. Click a decomposition tree node to expand it, and click it again to close it. Either way, the other tiles are filtered by the category you opened, as in PowerBI.
 
 ## Links
 
-- **Insert ▸ Link…** (Ctrl+K, also on the **Insert** tab) links the selected cells to a web page or DOI, a file, an e-mail address, or a cell in this workbook (pick the sheet and type the cell). The cell's text turns blue and underlined and keeps its value.
+- **Insert ▸ Link…** (Ctrl+K, also on the **Insert** tab) links the selected cells to a web page or DOI, a file, an email address, or a cell in this workbook (pick the sheet and type the cell). The cell's text turns blue and underlined and keeps its value.
 - **Ctrl+click** a linked cell to follow it; pointing at it shows where it goes. Right-click for **Edit Link…**, **Open Link**, **Copy Link** and **Remove Link**.
 - Excel's `=HYPERLINK("https://…", "shown text")` works too.
 - Excel files keep cell links as Excel's own, both ways.
 
 ## Pictures, shapes and text boxes
 
-**Insert** tab ▸ **Pictures** puts a picture from a file (PNG, JPEG, GIF, SVG and others) over the cells: a TLC plate, a photo of a reaction, a spectrum. **Shapes** adds lines, arrows, rectangles, ovals, stars and block arrows, and **Text Box** a box of notes. Drag one to move it and its handles to size it (a picture keeps its shape from a corner; hold Shift for a shape to do the same). Arrow keys nudge it, Delete removes it. Type while a shape is picked, or double-click it, to put text in it. Right-click for **Format Shape** (fill, line, text look, size, rotation, and whether it moves and sizes with the cells), **Alt Text**, **Bring to Front**, **Send to Back** and **Duplicate**. They are saved in .xlsx files as Excel's own pictures and shapes, and pictures and shapes drawn in Excel open here.
+**Insert** tab ▸ **Pictures** puts a picture from a file (PNG, JPEG, GIF, SVG and others) over the cells: a TLC plate, a photo of a reaction, a spectrum. **Shapes** adds lines, arrows, rectangles, ovals, stars and block arrows, and **Text Box** a box of notes. Drag one to move it and its handles to size it (a picture keeps its shape from a corner; hold Shift for a shape to do the same). Arrow keys nudge it, Delete removes it. Type while a shape is selected, or double-click it, to put text in it. Right-click for **Format Shape** (fill, line, text look, size, rotation, and whether it moves and sizes with the cells), **Alt Text**, **Bring to Front**, **Send to Back** and **Duplicate**. They are saved in .xlsx files as Excel's own pictures and shapes, and pictures and shapes drawn in Excel open here.
 
 ## Printing
 

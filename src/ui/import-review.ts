@@ -72,7 +72,7 @@ export function openReview(o: ReviewOptions): void {
   const list = el('div', { className: 'import-list' });
   const place = el('button', { type: 'button', className: 'primary', textContent: 'Place' });
   const cancel = el('button', { type: 'button', textContent: 'Cancel' });
-  const sends = o.alt?.sends ? 'Sends the pictures to the AI model you linked (Edit > Settings > AI Model)' : 'Reads them on this computer';
+  const sends = o.alt?.sends ? 'Sends the pictures to the AI model you linked (Edit ▸ Settings ▸ AI Model)' : 'Reads them on this computer';
   const aiAll = o.alt ? el('button', { type: 'button', textContent: `Read Doubtful Ones with ${o.alt.name}`, title: sends }) : null;
   const all = el('button', { type: 'button', textContent: 'Select All' });
   const none = el('button', { type: 'button', textContent: 'Deselect All' });

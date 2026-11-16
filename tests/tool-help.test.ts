@@ -114,7 +114,7 @@ describe('status bar hints', () => {
   });
 
   it('keeps drag-only keys off a drawing tool\'s bar until the drag', () => {
-    expect(keysOf(hint('bond-single', {}))).toEqual(['Hotkeys']);
+    expect(keysOf(hint('bond-single', {}))).toEqual(['Shortcuts']);
     expect(keysOf(hint('bond-single', { drag: 'draw', dragKeys: [['Alt', 'Any angle']] }))).toEqual(['Alt']);
     expect(keysOf(hint('arrow', {}))).not.toContain('Alt');
   });

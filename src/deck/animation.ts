@@ -679,7 +679,7 @@ export function readTransition(sld: Element, warn: (s: string) => void): Transit
       dir = DIR_P[kid.getAttribute('dir') ?? 'l'] ?? 'left';
     } else {
       kind = 'fade';
-      warn('Slide transitions other than Fade, Push, Wipe, Cover and Morph came in as Fade.');
+      warn('Slide transitions other than Fade, Push, Wipe, Cover and Morph were imported as Fade.');
     }
   }
   return { kind, ...(dir ? { dir } : {}), dur: +dur.toFixed(3), ...(adv ? { advanceAfter: Number(adv) / 1000 } : {}) };
@@ -909,7 +909,7 @@ export function readTiming(sld: Element, targetOfSpid: (spid: number) => AnimTar
             continue;
           }
           const effect: Effect = preset === 1 ? 'appear' : preset === 2 ? 'fly' : preset === 22 ? 'wipe' : preset === 10 ? 'fade' : 'fade';
-          if (![1, 2, 10, 22].includes(preset)) warn('Animations other than Appear, Fade, Wipe and Fly came in as Fade.');
+          if (![1, 2, 10, 22].includes(preset)) warn('Animations other than Appear, Fade, Wipe and Fly were imported as Fade.');
           // how long: the first behaviour that takes time
           const durs = Array.from(tn.getElementsByTagNameNS(P, 'cTn')).slice(1).map((c) => Number(c.getAttribute('dur'))).filter((d) => Number.isFinite(d) && d > 1);
           const sub = Number(tn.getAttribute('presetSubtype'));
@@ -954,7 +954,7 @@ function readEmphasis(tn: Element, preset: number, warn: (s: string) => void): P
     const k = Number.isFinite(x) && x ? (Number.isFinite(y) && y ? (x + y) / 2 : x) : NaN;
     return { effect: 'grow', scale: Number.isFinite(k) ? +(k / 100000).toFixed(3) : EMPH_DEFAULTS.scale };
   }
-  if (preset !== 26) warn('Emphasis effects other than Pulse, Grow/Shrink, Spin, Transparency and color changes came in as Pulse.');
+  if (preset !== 26) warn('Emphasis effects other than Pulse, Grow/Shrink, Spin, Transparency and color changes were imported as Pulse.');
   return { effect: 'pulse' };
 }
 

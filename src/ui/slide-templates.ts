@@ -31,7 +31,7 @@ export function pickSlideTemplate(m: Master, size: SlideSize, defaultId: string 
     h.textContent = 'Slide Templates';
     const note = document.createElement('p');
     note.className = 'muted';
-    note.textContent = 'A template sets fonts, colors, background and shapes for every slide. Your content, logo, footer and slide numbers stay; use Slide Master to change the look afterward.';
+    note.textContent = 'A template sets fonts, colors, background and shapes for every slide. Your content, logo, footer and slide numbers stay; use Slide Master to change the style afterward.';
     foldIntoInfo(note, h);
     const tools = document.createElement('div');
     tools.className = 'st-tools';
@@ -65,8 +65,8 @@ export function pickSlideTemplate(m: Master, size: SlideSize, defaultId: string 
       while (mine.some((x) => x.name === n)) n = `${base} ${k++}`;
       return n;
     };
-    tool('New Theme…', 'A theme of your own, starting from the Plain template', () => void edit(fresh(SLIDE_TEMPLATES[0], uniqueName('My Theme')), true));
-    tool('New Theme from This Deck…', 'A theme of your own with this deck\'s fonts, colors and shapes', () => void edit(themeFromMaster(m, uniqueName(m.template ? `${m.template} (mine)` : 'My Theme'), newThemeId(mine)), true));
+    tool('New Theme…', 'A custom theme, starting from the Plain template', () => void edit(fresh(SLIDE_TEMPLATES[0], uniqueName('My Theme')), true));
+    tool('New Theme from This Deck…', 'A custom theme with this deck\'s fonts, colors and shapes', () => void edit(themeFromMaster(m, uniqueName(m.template ? `${m.template} (mine)` : 'My Theme'), newThemeId(mine)), true));
 
     function card(t: SlideTemplate): HTMLElement {
       const wrap = document.createElement('div');
@@ -99,12 +99,12 @@ export function pickSlideTemplate(m: Master, size: SlideSize, defaultId: string 
       };
       if (t.group === 'Mine') {
         act('Edit', `Change ${t.name}`, () => void edit({ ...t }, false));
-        act('Delete', `Delete ${t.name} (decks that use it keep their look)`, () => {
+        act('Delete', `Delete ${t.name} (decks that use it keep their formatting)`, () => {
           mine = mine.filter((x) => x.id !== t.id);
           changed = true;
           render();
         });
-      } else act('Copy', `A theme of your own made from ${t.name}, to change`, () => void edit(fresh(t, uniqueName(`${t.name} (mine)`)), true));
+      } else act('Copy', `A custom theme made from ${t.name}, to change`, () => void edit(fresh(t, uniqueName(`${t.name} (mine)`)), true));
       wrap.append(b, acts);
       return wrap;
     }

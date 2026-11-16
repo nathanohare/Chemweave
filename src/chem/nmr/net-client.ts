@@ -22,7 +22,7 @@ function start(): Worker | null {
       waiting.delete(m.id);
       if ('error' in m) w.reject(new Error(m.error)); else w.resolve({ net: m.net, blend: m.blend });
     };
-    worker.onerror = () => { for (const w of waiting.values()) w.reject(new Error('The shift networks stopped.')); waiting.clear(); worker?.terminate(); worker = null; };
+    worker.onerror = () => { for (const w of waiting.values()) w.reject(new Error('NMR prediction stopped unexpectedly. Try again.')); waiting.clear(); worker?.terminate(); worker = null; };
   } catch {
     worker = null;
   }

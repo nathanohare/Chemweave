@@ -68,7 +68,7 @@ const HAMMETT_BOXES: { value: HammettColumn; html: string; on: boolean }[] = [
 const PIC_W = 190, PIC_H = 120;
 
 /** The "i" by Reference position: how groups are counted from it (UI rule: help behind an "i", the line under it only says what was found). */
-export const HAMMETT_REF_INFO = 'Every group on the ring the reference position sits on is placed o, m or p from it; two or more add up (Σσ). SMILES are read as the values are worked out.';
+export const HAMMETT_REF_INFO = 'Each group on the same ring as the reference position is assigned o, m or p relative to it; two or more are summed (Σσ).';
 
 /** Ask which properties to add. Null when cancelled. */
 export function askProperties(opts: PropertyDialogOptions): Promise<PropertyAnswer | null> {
@@ -78,7 +78,7 @@ export function askProperties(opts: PropertyDialogOptions): Promise<PropertyAnsw
     d.setAttribute('aria-label', 'Insert property columns');
     const form = document.createElement('form');
     form.method = 'dialog';
-    form.innerHTML = `<h2 data-info="Each property gets a column that works itself out from the structure in the same row, and updates when the structure changes. Type over any value to replace it; Reset to Calculated puts it back.">Insert property columns</h2>
+    form.innerHTML = `<h2 data-info="Each property gets a column that is calculated from the structure in the same row, and updates when the structure changes. Type over any value to replace it; Reset to Calculated restores it.">Insert property columns</h2>
       <label class="ask-row"><span>Structures in</span><select name="col"></select></label>
       <div class="prop-list" role="group" aria-label="Properties"></div>
       <section class="hm-section" aria-label="Hammett constants" hidden>

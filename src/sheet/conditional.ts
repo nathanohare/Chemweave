@@ -354,7 +354,7 @@ export function describeRule(rule: CfRule): string {
     case 'top': return `${rule.bottom ? 'Bottom' : 'Top'} ${rule.n}${rule.percent ? '%' : ''}`;
     case 'average': return `${rule.below ? 'Below' : 'Above'} average`;
     case 'duplicates': return rule.unique ? 'Unique values' : 'Duplicate values';
-    case 'blank': return rule.not ? 'Cells with something in them' : 'Empty cells';
+    case 'blank': return rule.not ? 'Non-blank cells' : 'Empty cells';
     case 'formula': return `Formula: ${rule.formula}`;
   }
 }

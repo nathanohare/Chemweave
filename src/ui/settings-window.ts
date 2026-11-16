@@ -291,7 +291,7 @@ export class SettingsWindow {
     if (!found.length) {
       const none = document.createElement('p');
       none.className = 'muted';
-      none.textContent = 'No setting has those words.';
+      none.textContent = 'No settings match.';
       this.list.append(none);
     }
     return found;

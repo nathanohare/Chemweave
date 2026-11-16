@@ -25,7 +25,7 @@ const LOOKS: { key: keyof ReplaceLook; label: string; title: string }[] = [
   { key: 'underline', label: '<u>U</u>', title: 'Underline' },
   { key: 'sub', label: 'x₂', title: 'Subscript' },
   { key: 'sup', label: 'x²', title: 'Superscript' },
-  { key: 'plain', label: 'Plain', title: 'Take off bold, italic, underline, subscript, superscript and formula first' },
+  { key: 'plain', label: 'Plain', title: 'Remove bold, italic, underline, subscript, superscript and formula first' },
 ];
 /** These each set where characters sit, so choosing one turns the others off. */
 const POSITION: (keyof ReplaceLook)[] = ['formula', 'sub', 'sup'];
@@ -226,7 +226,7 @@ export class DocFind {
     f.ed.update(next, 'Replace all', at, at);
     this.refresh();
     const what = n === 1 ? 'one place' : `${n} places`;
-    this.host.flash(keep ? `Changed the look of ${what}. Ctrl+Z puts it back.` : with_ ? `Replaced ${what}. Ctrl+Z puts them back.` : `Deleted ${what}. Ctrl+Z puts them back.`);
+    this.host.flash(keep ? `Changed the style of ${what}. Ctrl+Z restores it.` : with_ ? `Replaced ${what}. Ctrl+Z restores them.` : `Deleted ${what}. Ctrl+Z restores them.`);
   }
 
   private key(e: KeyboardEvent): void {

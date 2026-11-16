@@ -130,7 +130,7 @@ function buildKeypad(h: TouchUiHost): HTMLElement {
   close.type = 'button';
   close.className = 'pad-close';
   close.textContent = '×';
-  close.title = 'Hide the keypad (View > Atom Keypad shows it again)';
+  close.title = 'Hide the keypad (View ▸ Atom Keypad shows it again)';
   close.addEventListener('click', () => { pad.dataset.closed = '1'; pad.hidden = true; });
   pad.append(close);
   return pad;

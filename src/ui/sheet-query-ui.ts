@@ -88,7 +88,7 @@ async function readFile(file: string, types: FileType[]): Promise<Uint8Array> {
   const name = file.replace(/^.*[\\/]/, '');
   const have = picked.get(name);
   if (have) return have;
-  const ok = await ask('Find the file', [], { ok: 'Choose…', note: `The query reads ${name}. The browser can't reopen it automatically: choose it to read it.` });
+  const ok = await ask('Find the file', [], { ok: 'Choose…', note: `This query reads ${name}. A browser can't reopen files automatically: choose the file again.` });
   if (!ok) throw new Error(`${name} wasn't chosen.`);
   const got = await openBytesDialog('Data files', types);
   if (!got) throw new Error(`${name} wasn't chosen.`);
@@ -422,19 +422,19 @@ export class SheetQueries {
     };
     const t = () => current().table;
     tool('Use First Row as Headers', 'Promote Headers: the first row names the columns', () => addStep({ op: 'promoteHeaders' }));
-    tool('Remove Columns', 'Take away the columns picked', () => { const c = need(); if (c) { addStep({ op: 'removeColumns', cols: c.slice() }); sel = []; render(); } });
-    tool('Keep Only', 'Remove Other Columns: keep only the columns picked, in the order picked', () => { const c = need(); if (c) addStep({ op: 'keepColumns', cols: c.slice() }); });
+    tool('Remove Columns', 'Remove the columns selected', () => { const c = need(); if (c) { addStep({ op: 'removeColumns', cols: c.slice() }); sel = []; render(); } });
+    tool('Keep Only', 'Remove Other Columns: keep only the columns selected, in the order selected', () => { const c = need(); if (c) addStep({ op: 'keepColumns', cols: c.slice() }); });
     tool('Rename…', 'Rename the column picked', async () => {
       const c = need(); if (!c) return;
       const a = await ask('Rename Column', [{ name: 'to', label: 'New name', value: c[0] }]);
       if (a?.to.trim() && a.to.trim() !== c[0]) { addStep({ op: 'rename', from: c[0], to: a.to.trim() }); sel = [a.to.trim()]; render(); }
     });
-    tool('Data Type ▾', 'Change Type: what the columns picked hold (text, numbers, dates…)', () => {
+    tool('Data Type ▾', 'Change Type: what the columns selected hold (text, numbers, dates…)', () => {
       const c = need(); if (!c) return;
       const b = tools.querySelector<HTMLElement>('[data-qe=type]')!.getBoundingClientRect();
       popupMenu(b.left, b.bottom + 2, (Object.keys(TYPE_NAMES) as ColType[]).map((k) => [TYPE_NAMES[k], () => addStep({ op: 'changeType', types: Object.fromEntries(c.map((x) => [x, k])) })] as [string, () => void]));
     }).dataset.qe = 'type';
-    tool('Filter…', 'Filter Rows: keep the rows whose value in the column picked passes a test', async () => {
+    tool('Filter…', 'Filter Rows: keep the rows whose value in the column selected passes a test', async () => {
       const c = need(); if (!c) return;
       const a = await ask(`Filter Rows: ${c[0]}`, [
         { name: 'test', label: 'Keep rows where the value', value: 'equals', options: (Object.keys(FILTER_NAMES) as FilterTest[]).map((k) => ({ value: k, label: FILTER_NAMES[k] })) },
@@ -442,7 +442,7 @@ export class SheetQueries {
       ]);
       if (a) addStep({ op: 'filter', col: c[0], test: a.test as FilterTest, value: a.value });
     });
-    tool('Split Column…', 'Split Column by Delimiter: the column picked into several at a character', async () => {
+    tool('Split Column…', 'Split Column by Delimiter: the column selected into several at a character', async () => {
       const c = need(); if (!c) return;
       const a = await ask(`Split Column: ${c[0]}`, [
         { name: 'by', label: 'Delimiter', value: ',', help: 'Type \\t for a tab.' },
@@ -453,25 +453,25 @@ export class SheetQueries {
       const mode = a.mode as 'each' | 'left' | 'right';
       addStep({ op: 'split', col: c[0], by, mode, ...(mode === 'each' ? { n: splitCount(t(), c[0], by) } : {}) });
     });
-    tool('Replace Values…', 'Replace text (or a whole value) in the column picked', async () => {
+    tool('Replace Values…', 'Replace text (or a whole value) in the column selected', async () => {
       const c = need(); if (!c) return;
       const a = await ask(`Replace Values: ${c[0]}`, [{ name: 'find', label: 'Value To Find', value: '' }, { name: 'with', label: 'Replace With', value: '' }]);
       if (a) addStep({ op: 'replace', col: c[0], find: a.find, with: a.with });
     });
-    tool('Trim', 'Take spaces off the ends of text in the columns picked (and runs of spaces in it)', () => { const c = need(); if (c) addStep({ op: 'trim', cols: c.slice() }); });
-    tool('Sort ↑', 'Sort the rows by the column picked, smallest first', () => { const c = need(); if (c) addStep({ op: 'sort', col: c[0] }); });
-    tool('Sort ↓', 'Sort the rows by the column picked, largest first', () => { const c = need(); if (c) addStep({ op: 'sort', col: c[0], desc: true }); });
-    tool('Remove Duplicates', 'Rows that repeat an earlier row in the columns picked (or in every column, when none are picked)', () => addStep({ op: 'removeDuplicates', cols: sel.slice() }));
+    tool('Trim', 'Take spaces off the ends of text in the columns selected (and runs of spaces in it)', () => { const c = need(); if (c) addStep({ op: 'trim', cols: c.slice() }); });
+    tool('Sort ↑', 'Sort the rows by the column selected, smallest first', () => { const c = need(); if (c) addStep({ op: 'sort', col: c[0] }); });
+    tool('Sort ↓', 'Sort the rows by the column selected, largest first', () => { const c = need(); if (c) addStep({ op: 'sort', col: c[0], desc: true }); });
+    tool('Remove Duplicates', 'Rows that repeat an earlier row in the columns selected (or in every column, when none are selected)', () => addStep({ op: 'removeDuplicates', cols: sel.slice() }));
     tool('Remove Blank Rows', 'Rows with nothing in them', () => addStep({ op: 'removeBlankRows' }));
-    tool('Remove Top Rows…', 'Take away a number of rows at the top', async () => {
+    tool('Remove Top Rows…', 'Remove a number of rows at the top', async () => {
       const a = await ask('Remove Top Rows', [{ name: 'n', label: 'Number of rows', value: '1', type: 'number' }]);
       const n = Math.floor(Number(a?.n));
       if (n > 0) addStep({ op: 'removeTopRows', n });
     });
-    tool('Unpivot Columns', 'The columns picked become rows: one for each value, with the column\'s name beside it (Attribute, Value)', () => {
+    tool('Unpivot Columns', 'The columns selected become rows: one for each value, with the column\'s name beside it (Attribute, Value)', () => {
       const c = need(); if (c) { addStep({ op: 'unpivot', cols: c.slice(), attr: 'Attribute', value: 'Value' }); sel = []; render(); }
     });
-    tool('Unpivot Other Columns', 'Every column but those picked becomes rows (Attribute, Value)', () => {
+    tool('Unpivot Other Columns', 'Every column but those selected becomes rows (Attribute, Value)', () => {
       const c = need(); if (c) { addStep({ op: 'unpivot', cols: c.slice(), other: true, attr: 'Attribute', value: 'Value' }); sel = []; render(); }
     });
 
@@ -569,7 +569,7 @@ export class SheetQueries {
           render();
         }));
         const n = cur.table.rows.length;
-        status.textContent = `${cur.table.cols.length} column${cur.table.cols.length === 1 ? '' : 's'}, ${n} row${n === 1 ? '' : 's'}${n > 200 ? ' (the first 200 shown)' : ''}.${at < q.steps.length - 1 ? ' Showing the data after the step picked: new steps go in after it.' : ''}`;
+        status.textContent = `${cur.table.cols.length} column${cur.table.cols.length === 1 ? '' : 's'}, ${n} row${n === 1 ? '' : 's'}${n > 200 ? ' (the first 200 shown)' : ''}.${at < q.steps.length - 1 ? ' Showing the data after the step selected: new steps go in after it.' : ''}`;
       }
     };
 
@@ -786,7 +786,7 @@ export class SheetQueries {
     w.onClose = () => { if (this.paneWin === w) this.paneWin = null; };
     const list = el('div', 'qp-list');
     const qs = this.wb.queries;
-    if (!qs.length) list.append(el('p', 'muted', 'No queries yet. Data > Get Data reads a CSV, JSON, web page or workbook and makes one.'));
+    if (!qs.length) list.append(el('p', 'muted', 'No queries yet. Data ▸ Get Data reads a CSV, JSON, web page or workbook and makes one.'));
     for (const q of qs) {
       const item = el('div', 'qp-item');
       const place = queryTable(this.wb, q);

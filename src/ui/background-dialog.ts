@@ -61,7 +61,7 @@ export function formatBackground(o: BackgroundDialogOptions): Promise<Background
     const form = document.createElement('form');
     d.append(form);
     const h = document.createElement('h2');
-    h.textContent = 'Format background';
+    h.textContent = 'Format Background';
     const note = document.createElement('p');
     note.className = 'muted';
     note.textContent = o.design ? 'The background of the page.' : o.count > 1 ? `Applies to the ${o.count} slides selected in the slide list, or all slides with Apply to All.` : 'For this slide, or every slide with Apply to All.';
@@ -214,7 +214,7 @@ export function formatBackground(o: BackgroundDialogOptions): Promise<Background
       });
       const add = document.createElement('button');
       add.type = 'button';
-      add.textContent = 'Add stop';
+      add.textContent = 'Add Stop';
       add.title = 'A new color stop between the two farthest apart';
       add.addEventListener('click', () => {
         const st = sortedStops(gradient.stops);
@@ -236,7 +236,7 @@ export function formatBackground(o: BackgroundDialogOptions): Promise<Background
     thumb.alt = 'Picture';
     const chooseBtn = document.createElement('button');
     chooseBtn.type = 'button';
-    chooseBtn.textContent = 'Choose picture…';
+    chooseBtn.textContent = 'Choose Picture…';
     const choose = async () => {
       const got = await o.pickPicture();
       if (got) {

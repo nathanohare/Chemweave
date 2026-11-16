@@ -96,7 +96,7 @@ export const isToc = (t: Pick<DocText, 'objects'>, r: { obj?: number }): boolean
 
 /** What a table of figures shows when there are no captions of its kind yet (on screen and in the PDF only). */
 export function emptyTof(name: string): string {
-  return `Table of figures: no ${name ? `${name} ` : ''}captions yet. Add them with References > Insert Caption and they appear here with their page numbers.`;
+  return `Table of figures: no ${name ? `${name} ` : ''}captions yet. Add them with References ▸ Insert Caption and they appear here with their page numbers.`;
 }
 
 /** The labels a table of figures can list, as References > Insert Table of Figures offers them ('' is every caption). */

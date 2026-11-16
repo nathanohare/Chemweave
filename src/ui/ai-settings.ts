@@ -25,19 +25,19 @@ export async function aiSettingsDialog(now: AiPrefs, save: (p: AiPrefs) => void)
         help: Object.values(PROVIDERS).map((p) => p.keyHelp).join(' ') },
       { name: 'model', label: 'Model', value: cur.model, placeholder: 'The service\'s suggested model', suggestions: models,
         help: 'Leave empty for: ' + (['anthropic', 'openai', 'gemini'] as const).map((k) => `${PROVIDERS[k].name.split(' ')[0]} ${PROVIDERS[k].model}`).join(', ') + '. A model must read pictures to read structures.' },
-      { name: 'base', label: 'Address (Other only)', value: cur.base, placeholder: 'http://localhost:11434/v1',
+      { name: 'base', label: 'Server URL (Other only)', value: cur.base, placeholder: 'http://localhost:11434/v1',
         help: 'For Other: the service\'s OpenAI-style address, such as https://openrouter.ai/api/v1 or Ollama\'s http://localhost:11434/v1.' },
       ...(isTauri() ? [] : [{ name: 'remember', label: 'Remember the key in this browser', type: 'checkbox' as const, value: String(aiKeyRemembered(cur)) }]),
       { name: 'localOnly', label: 'Local only: never send anything off this computer', type: 'checkbox', value: String(cur.localOnly),
         help: 'Only a model on this computer (Ollama or LM Studio, under Other, at a localhost address) is asked; requests to any other address are blocked. For unpublished structures.' },
       { name: 'look', label: 'Assistant shows as', value: cur.assistantLook ?? 'bar', options: [
         { value: 'bar', label: 'A prompt bar at the bottom of the page' },
-        { value: 'pane', label: 'A pane down the right' },
+        { value: 'pane', label: 'A pane on the right' },
         { value: 'window', label: 'A floating window' },
-      ], help: 'Edit > Assistant (Ctrl+/), there once a model is linked. It can be changed from the Assistant too.' },
+      ], help: 'Edit ▸ Assistant (Ctrl+/), there once a model is linked. It can be changed from the Assistant too.' },
       { name: 'sendDocument', label: 'Assistant: send the whole document when no text is selected', type: 'checkbox', value: String(cur.sendDocument === true),
-        help: 'In Document mode. Off: only selected text is sent, and the whole document can still be ticked under the box for one question. A long document is a large (and costly) request.' },
-      { name: 'forget', label: 'Forget the saved key for this service', type: 'checkbox', value: 'false' },
+        help: 'In Document mode. Off: only selected text is sent; you can still check the whole-document box for a single question. Long documents make large (and costly) requests.' },
+      { name: 'forget', label: 'Remove the saved key for this service', type: 'checkbox', value: 'false' },
     ], { ok: 'Save and Test', note: NOTE });
     if (!r) return;
     const provider = (r.provider as AiProvider) || 'none';

@@ -60,7 +60,7 @@ export const CML: FileType = { description: 'Chemical Markup Language', extensio
 export const CDJSON: FileType = { description: 'ChemDoodle JSON', extension: 'json', mime: 'application/json' };
 /** Other programs' chemistry files a drawing can be saved as: structures, arrows and text only. */
 export const CHEM_EXCHANGE: FileType[] = [MOL, SDF, RXN, MRV, KET, CML, CDJSON];
-export const KEYMAP_FILE: FileType = { description: 'Chemweave hotkeys', extension: 'json', mime: 'application/json' };
+export const KEYMAP_FILE: FileType = { description: 'Chemweave keyboard shortcuts', extension: 'json', mime: 'application/json' };
 export const SETTINGS_FILE: FileType = { description: 'Chemweave settings', extension: 'json', mime: 'application/json' };
 
 // The parts of the File System Access API used here (Chrome and Edge only).

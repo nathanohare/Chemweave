@@ -189,7 +189,7 @@ export class FigureOffer {
     this.proposals = proposeFigures(f);
     this.paint();
     const n = this.proposals.length;
-    this.show(`${n === 1 ? 'One figure' : `${n} figures`}, as shown. Drag a figure's edges or corners to change its area; click its label to leave it out or put it back.`, [
+    this.show(`${n === 1 ? 'One figure' : `${n} figures`}, as shown. Drag a figure's edges or corners to change its area; click its label to leave it out or restore it.`, [
       ['Make Figures', () => void this.accept(), true],
       ['Cancel', () => this.close(), false],
     ]);

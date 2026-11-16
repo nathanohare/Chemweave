@@ -79,8 +79,8 @@ export function askCrystal(editing: PlateData | null, L: number, opts: CrystalOp
             <label class="crystal-row"><span data-info="Auto: clear of the other labels, the atoms and the bonds. Open side: in the widest gap between each atom's bonds. Drag a label to move it.">Position</span> <select name="labelPlace"><option value="auto">Auto</option><option value="open">Open side</option><option value="right">Right</option><option value="left">Left</option><option value="above">Above</option><option value="below">Below</option><option value="center">On atom</option></select></label>
             <label class="crystal-row"><span>Distance</span> <input name="labelGap" type="number" min="0" max="20" step="0.5" /> pt</label>
             <label class="crystal-row"><span>Format</span> <select name="labelStyle"><option value="plain">C1</option><option value="paren">C(1)</option></select></label>
-            <label class="ask-check"><input type="checkbox" name="leaders" /> <span data-info="A thin line from an atom to its label where the label sits away from it">Leader lines</span></label>
-            <p><button type="button" data-act="labels" data-info="Labels you dragged go back to their automatic places">Reset Label Positions</button></p>
+            <label class="ask-check"><input type="checkbox" name="leaders" /> <span data-info="A leader line from an atom to its label when the label is moved away">Leader lines</span></label>
+            <p><button type="button" data-act="labels" data-info="Reset dragged labels to their automatic positions">Reset Label Positions</button></p>
           </fieldset>
           <fieldset><legend>View</legend>
             <p class="crystal-views"><button type="button" data-view="best" title="Its longest extent across the page, looking along its thinnest direction">Auto</button><button type="button" data-view="0" title="Look along the a axis"><i>a</i></button><button type="button" data-view="1" title="Look along the b axis"><i>b</i></button><button type="button" data-view="2" title="Look along the c axis"><i>c</i></button></p>

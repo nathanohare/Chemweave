@@ -44,7 +44,7 @@ function blankCards(pick: (p: TemplatePick) => () => void): TemplateCard[] {
     const s = DESIGN_SIZES.find((x) => x.id === id)!;
     return { id: `blank-${id}`, name: s.name, detail: sizeLabel(s.size), preview: (host) => host.append(blank(s.size)), pick: pick({ blank: s.size }) };
   });
-  out.push({ id: 'blank-custom', name: 'Custom size…', detail: 'Any size, in the unit you like', preview: (host) => host.append(blank(null)), pick: pick('blank') });
+  out.push({ id: 'blank-custom', name: 'Custom size…', detail: 'Any size, in any unit', preview: (host) => host.append(blank(null)), pick: pick('blank') });
   return out;
 }
 

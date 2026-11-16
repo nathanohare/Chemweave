@@ -65,7 +65,7 @@ export class SymbolWindow {
     this.grid = el('div', 'sym-grid');
     this.grid.setAttribute('role', 'group');
     this.grid.setAttribute('aria-label', 'Symbols');
-    this.info = el('p', 'sym-info muted', 'Click a symbol to type it where the caret is.');
+    this.info = el('p', 'sym-info muted', 'Click a symbol to type it where the cursor is.');
     const buttons = el('p', 'ask-buttons');
     const close = el('button', undefined, 'Close');
     close.type = 'button';

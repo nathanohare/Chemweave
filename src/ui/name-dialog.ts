@@ -17,10 +17,10 @@ export class NameDialog {
     d.className = 'ask name-dialog';
     const form = document.createElement('form');
     const h = document.createElement('h2');
-    h.textContent = 'Name to Structure';
+    h.textContent = 'Structure from Name or SMILES';
     const note = document.createElement('p');
     note.className = 'muted';
-    note.textContent = 'Enter a name, SMILES or CAS RN, e.g. (2S)-2-aminopropanoic acid, caffeine or 50-78-2. Names are converted locally; CAS RNs, trade names and abbreviations are looked up on PubChem (turn off in Edit > Settings).';
+    note.textContent = 'Enter a name, SMILES or CAS RN, e.g. (2S)-2-aminopropanoic acid, caffeine or 50-78-2. Names are converted locally; CAS RNs, trade names and abbreviations are looked up on PubChem (turn off in Edit ▸ Settings).';
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'name-input';

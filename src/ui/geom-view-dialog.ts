@@ -12,7 +12,7 @@ import type { QmBond } from '../chem/qm-bonds';
 export type GeomViewChoice = { view: GeomView; all: boolean } | 'remove';
 
 const LOOKS: { id: GeomLook | '2d'; name: string; tip: string }[] = [
-  { id: 'ball', name: 'Balls and sticks', tip: 'Atoms as shaded balls joined by sticks' },
+  { id: 'ball', name: 'Ball and stick', tip: 'Atoms as shaded balls joined by sticks' },
   { id: 'stick', name: 'Sticks', tip: 'Sticks only, in the atoms\' colors' },
   { id: 'fill', name: 'Space-filling', tip: 'Each atom as its van der Waals sphere' },
   { id: 'wire', name: 'Lines', tip: 'Thin lines in the atoms\' colors' },
@@ -60,7 +60,7 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
       </div>
       <p class="muted small gv-note"></p>
       <label class="gv-check"><input type="checkbox" name="all" /> Use this look and these hydrogens for every species</label>
-      <p class="ask-buttons"><button type="button" data-act="remove" class="gv-remove" title="Take the file's geometry away from this species (draw your own in the Structure column)">Remove Geometry</button><span class="gv-gap"></span><button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary">Apply</button></p>`;
+      <p class="ask-buttons"><button type="button" data-act="remove" class="gv-remove" title="Remove the file's geometry from this species (draw your own in the Structure column)">Remove Geometry</button><span class="gv-gap"></span><button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary">Apply</button></p>`;
     const $ = <T extends Element>(q: string) => form.querySelector<T>(q)!;
     $('.gv-name').textContent = name;
     const canvas = $<HTMLCanvasElement>('.gv-canvas');
@@ -101,7 +101,7 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
       $('.gv-fade').textContent = `${fade.value}%`;
       const flat = styleOf() === '2d';
       $('.gv-note').textContent = flat
-        ? 'Drawn as a 2-D structure by its level (shown here in lines). Hiding atoms works on it; fading and turning are for the 3-D looks.'
+        ? 'Drawn as a 2-D structure by its level (shown here in lines). Hiding atoms works on it; fading and turning are for the 3-D styles.'
         : 'Drag to rotate it (Shift+drag rotates in the page plane; arrow keys also rotate). The box shows the space available at its level.';
       ghosts = new Set(v.hidden);
       const pv: GeomView = { ...v, style: flat ? 'wire' : styleOf() as GeomLook, rot: rotation(), hidden: [], faded: [...new Set([...(v.faded ?? []), ...ghosts])] };

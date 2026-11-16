@@ -157,7 +157,7 @@ export class DashboardView {
     if (!d.tiles.length) {
       const hint = document.createElement('div');
       hint.className = 'dash-empty';
-      hint.textContent = 'An empty dashboard. Add tiles from the Dashboard tab: charts, headline numbers, tables, slicers (filter buttons) and galleries of structures, all fed by the tables in this workbook.';
+      hint.textContent = 'Empty dashboard. Add charts, KPIs, tables, slicers and structure galleries from the Dashboard tab.';
       els.push(hint);
     }
     this.page.replaceChildren(...els);

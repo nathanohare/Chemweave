@@ -90,7 +90,7 @@ export class FindInFilesWindow {
     this.folder.spellcheck = false;
     this.folder.setAttribute('aria-label', 'Folder');
     this.sub = el('input', { type: 'checkbox', checked: true });
-    this.query = el('input', { type: 'text', placeholder: 'a name or SMILES, or select a structure and click Use Selected' });
+    this.query = el('input', { type: 'text', placeholder: 'Name or SMILES, or select a structure and click Use Selected' });
     this.query.spellcheck = false;
     this.query.setAttribute('aria-label', 'Structure');
     this.query.addEventListener('input', () => { this.drawn = null; });
@@ -110,7 +110,7 @@ export class FindInFilesWindow {
     });
     this.go = button('Search', 'Search the folder (Enter)', () => void (this.running ? (this.stop = true) : this.search()), true);
     d.append(
-      el('div', { className: 'refs-head' }, withInfo(el('h2', { textContent: 'Find Structure in Files' }), `Searches the ChemDraw drawings (CDXML, CDX), Word documents, PowerPoint presentations, Excel workbooks and other programs' chemistry files (MOL, SDF, RXN, MRV, KET, CML) in a folder for a structure. Files read once aren't read again until they change, so searching the same folder again is quick.`)),
+      el('div', { className: 'refs-head' }, withInfo(el('h2', { textContent: 'Find Structure in Files' }), `Searches a folder for a structure in ChemDraw drawings (CDXML, CDX), Word, PowerPoint and Excel files, and other chemistry files (MOL, SDF, RXN, MRV, KET, CML). Unchanged files aren't read again, so repeat searches are fast.`)),
       el('div', { className: 'ask-row refs-style' }, el('label', { textContent: 'Folder' }), this.folder,
         button('Choose…', 'Pick the folder to search', () => void this.choose())),
       el('label', { className: 'ref-own' }, this.sub, el('span', { textContent: 'And the folders inside it' })),
@@ -121,7 +121,7 @@ export class FindInFilesWindow {
       el('div', { className: 'refs-table-wrap' }, table),
       el('div', { className: 'refs-buttons' },
         el('span', {}, this.go),
-        el('span', {}, button('Open', 'Open the file picked at the structure found (or double-click it)', () => void this.openPicked()), button('Close', '', () => d.close()))),
+        el('span', {}, button('Open', 'Open the file selected at the structure found (or double-click it)', () => void this.openPicked()), button('Close', '', () => d.close()))),
     );
     d.addEventListener('close', () => { this.stop = true; });
     document.body.append(d);

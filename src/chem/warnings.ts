@@ -70,7 +70,7 @@ export const isTooMany = (text: string): boolean => /\(max \d+[;)]/.test(text);
 export function atomWarnings(doc: Doc, a: Atom): string[] {
   const out: string[] = [];
   // a stereo label from ChemDraw's file that the rules don't agree with (the file's stays)
-  const say = (what: string, d: { file: string; rules: string }) => out.push(`${what} says ${d.file}, but the structure works out to ${d.rules}. A group label may be read differently.`);
+  const say = (what: string, d: { file: string; rules: string }) => out.push(`${what} says ${d.file}, but the structure is ${d.rules}. A group label may be read differently.`);
   const atomLabel = stereoDisagrees('a', a, doc.stereo);
   if (atomLabel) say('The stereo label', atomLabel);
   for (const bid of doc.adj.get(a.id) ?? []) {

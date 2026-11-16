@@ -57,7 +57,7 @@ export class PeriodicTable {
     }
     const note = document.createElement('p');
     note.className = 'muted small';
-    note.textContent = 'Pick an element, then click atoms to change them, or empty space to add one. Atoms already selected change straight away.';
+    note.textContent = 'Pick an element, then click atoms to change them, or empty space to add one. Atoms already selected change immediately.';
 
     find.addEventListener('keydown', (e) => {
       e.stopPropagation();

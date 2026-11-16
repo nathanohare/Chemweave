@@ -70,7 +70,7 @@ export class SheetViews {
       show.disabled = del.disabled = !wb.customViews.length;
     };
     w.body.append(list);
-    w.note('A view keeps which sheet shows, the view (Normal, Page Layout or Page Break Preview), and, if you ask, hidden rows and columns, the filter and print settings.');
+    w.note('A view saves the visible sheet and view mode (Normal, Page Layout, Page Break Preview), and optionally hidden rows and columns, filters and print settings.');
     const show = w.button('Show', () => {
       const v = wb.customViews[list.selectedIndex];
       if (!v) return;
@@ -118,7 +118,7 @@ export class SheetViews {
         active: (s) => (s === active ? [this.view.sel.active.r, this.view.sel.active.c] : undefined),
       }, was?.guid);
       this.host.edit('Add view', () => wb.setCustomViews(was ? wb.customViews.map((x) => (x === was ? v : x)) : [...wb.customViews, v]));
-      this.host.flash(`Saved the view "${n}". View > Custom Views shows it again.`);
+      this.host.flash(`Saved the view "${n}". View ▸ Custom Views shows it again.`);
       return undefined;
     });
     w.show();

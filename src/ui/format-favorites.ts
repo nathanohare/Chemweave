@@ -114,7 +114,7 @@ export function ribbonFavorites(host: HTMLElement, o: RibbonFavoritesOptions): {
   };
   mk('▲', 'Earlier favorites', () => strip.scrollBy({ top: -strip.clientHeight, behavior: 'smooth' }));
   mk('▼', 'More favorites', () => strip.scrollBy({ top: strip.clientHeight, behavior: 'smooth' }));
-  const add = mk('+', 'Save Format as Favorite: keep the look of what is selected under a name', () => o.save());
+  const add = mk('+', 'Save Format as Favorite: keep the formatting of what is selected under a name', () => o.save());
   add.className = 'rbs-all';
   host.replaceChildren(strip, side);
   // the gallery's group is the first to fold in a narrow window, and until a favorite is saved it is
@@ -134,7 +134,7 @@ export function ribbonFavorites(host: HTMLElement, o: RibbonFavoritesOptions): {
       b.className = 'rbs-card rbf-card';
       b.setAttribute('role', 'listitem');
       const what = favoriteSummary(f.look);
-      b.title = `${f.name}${what ? `: ${what}` : ''}. Click to give the selection this look; right-click to rename, update or delete it`;
+      b.title = `${f.name}${what ? `: ${what}` : ''}. Click to give the selection this style; right-click to rename, update or delete it`;
       b.innerHTML = `<span class="sc-pic">${favoriteThumb(f.look)}</span>`;
       const name = document.createElement('span');
       name.className = 'sc-name';

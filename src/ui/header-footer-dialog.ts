@@ -116,7 +116,7 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
     const nfootRow = el('div', 'hf-block');
     nfootRow.append(nfoot.l, nfootText);
     const nnote = el('p', 'muted small hf-note');
-    nnote.textContent = 'For printed notes pages and handouts (File > Print), and PowerPoint\'s notes and handout masters.';
+    nnote.textContent = 'For printed notes pages and handouts (File ▸ Print), and PowerPoint\'s notes and handout masters.';
     pages.notes.append(nd.box, hdrRow, page.l, nfootRow, nnote);
 
     const buttons = el('p', 'ask-buttons');

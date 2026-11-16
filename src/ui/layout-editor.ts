@@ -111,7 +111,7 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
     const look = document.createElement('input');
     look.type = 'checkbox';
     lookLabel.append(look, ' Title slide colors and background');
-    lookLabel.title = 'Slides with this layout use the title slide\'s own colors (Slide Master > Title slides), and leave the slide number off unless title slides show it';
+    lookLabel.title = 'Slides with this layout use the title slide colors (Slide Master ▸ Title slides) and hide the slide number unless title slides show it';
     top.append(nameLabel, lookLabel);
     name.addEventListener('input', () => { layouts[sel].name = name.value; paintList(); });
     look.addEventListener('change', () => { layouts[sel].titleLook = look.checked; paintStage(); paintList(); });
@@ -128,9 +128,9 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
       box = l.boxes.length - 1;
       render();
     });
-    const delPh = btn('Delete Placeholder', 'Take the placeholder picked off this layout (Delete)', () => removeBox());
+    const delPh = btn('Delete Placeholder', 'Remove the selected placeholder from this layout (Delete)', () => removeBox());
     const align = document.createElement('select');
-    align.title = 'How the placeholder\'s text lines up';
+    align.title = 'Alignment of the placeholder\'s text';
     for (const [v, l] of [['left', 'Left'], ['center', 'Center'], ['right', 'Right']]) align.add(new Option(l, v));
     align.addEventListener('change', () => {
       const b = layouts[sel].boxes[box];

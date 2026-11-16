@@ -349,7 +349,7 @@ export const PATTERN_LIST: { id: PatternId; name: string }[] = [
   { id: 'smConfetti', name: 'Small confetti' }, { id: 'lgConfetti', name: 'Large confetti' },
   { id: 'horzBrick', name: 'Horizontal brick' }, { id: 'diagBrick', name: 'Diagonal brick' },
   { id: 'plaid', name: 'Plaid' }, { id: 'sphere', name: 'Sphere' }, { id: 'weave', name: 'Weave' }, { id: 'divot', name: 'Divot' },
-  { id: 'shingle', name: 'Shingle' }, { id: 'wave', name: 'Wave' }, { id: 'trellis', name: 'Trellis' }, { id: 'zigZag', name: 'Zig zag' },
+  { id: 'shingle', name: 'Shingle' }, { id: 'wave', name: 'Wave' }, { id: 'trellis', name: 'Trellis' }, { id: 'zigZag', name: 'Zigzag' },
 ];
 
 export const isPatternId = (s: string): s is PatternId => s in PATTERN_BITS;

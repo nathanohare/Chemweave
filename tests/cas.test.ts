@@ -124,7 +124,7 @@ describe('CAS RN to structure', () => {
     const off = await structureForCas('50-78-2', deps(down));
     expect('error' in off && off.error).toContain('Could not reach PubChem');
     const no = await structureForCas('50-78-2', deps(fake([]).fetchFn, { online: false }));
-    expect('error' in no && no.error).toContain('turned off in Edit > Settings');
+    expect('error' in no && no.error).toContain('turned off in Edit ▸ Settings');
   });
 });
 

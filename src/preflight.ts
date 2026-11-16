@@ -344,7 +344,7 @@ export function preflight(items: Item[], box: Rect, journal: JournalRules, sizeI
     issues.push({
       rule: 'width', level: 'warning', fix: 'fit', want: (size.w - 1) / w,
       title: `${cmText(w)} wide: too wide for ${size.name.replace(/ \(.*/, '').toLowerCase()} (${cmText(size.w)})`,
-      detail: `The journal would print it at ${Math.round(scale * 100)} %, which makes its text and lines smaller by as much (they are checked below at that size). Make it fit, or draw it for a wider size.`,
+      detail: `The journal would print it at ${Math.round(scale * 100)}%, shrinking its text and lines by the same amount (checked below at that size). Make it narrower or draw it for a wider column.`,
     });
   } else if (size.minW && pw < size.minW - 0.5) {
     issues.push({
@@ -407,7 +407,7 @@ export function preflight(items: Item[], box: Rect, journal: JournalRules, sizeI
       if (over.length) {
         issues.push({
           rule: 'text-max', level: 'warning', where: boxesOf(over),
-          title: `${over.length} piece${over.length > 1 ? 's' : ''} of text bigger than ${r1(journal.textMax)} pt once printed (largest ${r2(Math.max(...over.map((t) => printed(t.size))))} pt)`,
+          title: `${over.length} piece${over.length > 1 ? 's' : ''} of text larger than ${r1(journal.textMax)} pt once printed (largest ${r2(Math.max(...over.map((t) => printed(t.size))))} pt)`,
           detail: journal.textNote,
         });
       }

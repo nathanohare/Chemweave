@@ -197,7 +197,7 @@ export class DocArrangeUI {
     tool('Hide All', 'Hide every floating figure from the pages (they stay in the document)', () => this.update(withFloats(t, [...all].map((id) => [id, { hidden: true }])), 'Hide all'));
     tool('▲', 'Bring Forward', () => { const id = this.host.picked(); if (id !== null && all.has(id)) this.restack(id, 'forward'); });
     tool('▼', 'Send Backward', () => { const id = this.host.picked(); if (id !== null && all.has(id)) this.restack(id, 'backward'); });
-    tool('Group', 'Group the figures picked here (Ctrl+click picks more): they move together', () => this.group());
+    tool('Group', 'Group the figures selected here (Ctrl+click picks more): they move together', () => this.group());
     body.append(tools);
     const list = document.createElement('div');
     list.className = 'sel-list';

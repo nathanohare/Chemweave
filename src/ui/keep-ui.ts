@@ -286,7 +286,7 @@ const MINUTE_CHOICES = [0, 1, 2, 5, 10, 15, 30];
 /** File > Versions and Recovery > AutoSave and Recovery Options. */
 export async function optionsDialog(p: KeepPrefs, where: string, desktop: boolean): Promise<KeepPrefs | null> {
   const pending = ask('AutoSave and Recovery Options', [
-    { name: 'autoSave', label: 'AutoSave: files already saved save themselves as you work (File ▸ AutoSave switches it for one file)', type: 'checkbox', value: String(p.autoSave) },
+    { name: 'autoSave', label: 'AutoSave: automatically save files that have already been saved (File ▸ AutoSave turns it on or off per file)', type: 'checkbox', value: String(p.autoSave) },
     { name: 'autoSaveSeconds', label: 'AutoSave after the last change', type: 'number', value: String(p.autoSaveSeconds), unit: 'seconds' },
     { name: 'recoveryMinutes', label: 'Copy unsaved work for recovery', value: String(MINUTE_CHOICES.includes(p.recoveryMinutes) ? p.recoveryMinutes : 2),
       options: MINUTE_CHOICES.map((m) => ({ value: String(m), label: m === 0 ? 'Never' : m === 1 ? 'Every minute' : `Every ${m} minutes` })) },

@@ -15,10 +15,10 @@
     <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">New</button>
     <div class="menu sub" role="menu" hidden>
-        <button role="menuitem" data-cmd="new-slides">Presentation (Slideshow)</button>
+        <button role="menuitem" data-cmd="new-slides">Presentation (Slide Show)</button>
         <button role="menuitem" data-cmd="new-sheet">Spreadsheet (Tables, Charts, and Dashboards)</button>
-        <button role="menuitem" data-cmd="new-document">Document (Text document)</button>
-        <button role="menuitem" data-cmd="new-design">Design (Posters, Graphical abstracts, Figures)…</button>
+        <button role="menuitem" data-cmd="new-document">Document (Text Document)</button>
+        <button role="menuitem" data-cmd="new-design">Design (Posters, Graphical Abstracts, Figures)…</button>
     </div>
     </div>
         <button role="menuitem" data-cmd="open">Open…</button>
@@ -31,7 +31,7 @@
         <button role="menuitem" class="desktop-only" data-cmd="find-structure-files" title="Search a folder of ChemDraw, Word, PowerPoint and Excel files for a structure (the same one, or any containing it), then open the file there" hidden>Find Structure in Files…</button>
         <button role="menuitem" data-cmd="save">Save</button>
         <button role="menuitem" data-cmd="save-as">Save As…</button>
-        <button role="menuitemcheckbox" aria-checked="false" data-cmd="autosave" title="Save this file by itself a few seconds after each change (a file never saved is saved first). The default for all files is in AutoSave and Recovery Options"><span>AutoSave</span></button>
+        <button role="menuitemcheckbox" aria-checked="false" data-cmd="autosave" title="Save this file automatically a few seconds after each change (unsaved files are saved first). Set the default in AutoSave and Recovery Options"><span>AutoSave</span></button>
     <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Versions and Recovery</button>
     <div class="menu sub" role="menu" hidden>
@@ -49,7 +49,7 @@
     </div>
     </div>
     <hr />
-        <button role="menuitem" data-cmd="drawing-style" title="How structures are drawn: a journal's style (ACS, RSC, Nature…) or your own, with every number changeable">Drawing Style…</button>
+        <button role="menuitem" data-cmd="drawing-style" title="How structures are drawn: a journal's style (ACS, RSC, Nature…) or a custom one, with every number changeable">Drawing Style…</button>
         <button role="menuitem" data-modes="drawing" data-cmd="page-setup" title="Paper size and orientation, page growth, fixed edges, and the default for new drawings">Page Setup…</button>
     <hr />
     <div class="submenu" data-modes="drawing slides design">
@@ -137,7 +137,7 @@
     </div>
     </div>
         <button role="menuitem" data-cmd="print-titles" title="Rows printed at the top of every page (a header row) and columns at the left (compound numbers)">Print Titles…</button>
-        <button role="menuitem" data-cmd="header-footer" title="Text at the top and bottom of every page, with the page number, date, file and sheet name">Header and Footer…</button>
+        <button role="menuitem" data-cmd="header-footer" title="Text at the top and bottom of every page, with the page number, date, file and sheet name">Header &amp; Footer…</button>
     <hr />
         <button role="menuitemcheckbox" aria-checked="false" data-cmd="print-gridlines" title="Print the lines between cells (View Gridlines on the Page Layout tab shows them on the screen)"><span>Print Gridlines</span></button>
         <button role="menuitemcheckbox" aria-checked="false" data-cmd="print-headings" title="Print the row numbers and column letters (View Headings on the Page Layout tab shows them on the screen)"><span>Print Headings</span></button>
@@ -162,7 +162,7 @@
     <div class="menu sub" role="menu" hidden>
     <button role="menuitem" data-cmd="paste-smiles">Paste SMILES</button>
     <button data-modes="sheet" role="menuitem" data-cmd="paste-special">Paste Special…</button>
-    <button data-modes="document" role="menuitem" data-cmd="paste-object" title="Cells copied in Excel, or another program's object, kept whole as Word's Paste Special keeps them: double-click to change them in their program (Windows app)">Paste as Object</button>
+    <button data-modes="document" role="menuitem" data-cmd="paste-object" title="Paste Excel cells or another program's object as an embedded object, like Word's Paste Special; double-click to edit it in its program (Windows)">Paste as Object</button>
     <hr />
     <button hidden role="menuitem" data-cmd="clipboard-formats">Show Clipboard Formats</button>
     </div>
@@ -173,15 +173,15 @@
     <button role="menuitem" data-cmd="copy-smiles">Copy as SMILES</button>
     <button role="menuitem" data-cmd="copy-mol">Copy as Molfile Text</button>
     <button role="menuitem" data-cmd="copy-cdxml">Copy as CDXML Text</button>
-    <button role="menuitem" data-cmd="copy-svg" title="The selection (or the whole drawing) as an SVG picture, which Word, PowerPoint, Inkscape and Illustrator paste sharp at any size (ChemDraw reads no SVG: use Copy for ChemDraw)">Copy as SVG</button>
+    <button role="menuitem" data-cmd="copy-svg" title="Copy the selection (or the whole drawing) as SVG, which stays sharp at any size in Word, PowerPoint, Inkscape and Illustrator. ChemDraw can't read SVG: use Copy for ChemDraw">Copy as SVG</button>
     <hr />
-    <button role="menuitem" data-cmd="copy-reaction-smiles" title="The selected reaction step (or the only one) as reaction SMILES: starting materials &gt; reagents &gt; products, which ELN and reaction databases read">Copy Reaction as SMILES</button>
+    <button role="menuitem" data-cmd="copy-reaction-smiles" title="Copy the selected reaction step as reaction SMILES (reactants&gt;reagents&gt;products), readable by ELNs and reaction databases">Copy Reaction as SMILES</button>
     <button role="menuitem" data-cmd="copy-rxn" title="The selected reaction step (or the only one) as an MDL RXN file, with reagents as agents">Copy Reaction as RXN</button>
     </div>
     </div>
-    <button role="menuitem" data-cmd="format-painter" title="Format Painter: copy the look of what is selected to the next thing you click or drag over. Double-click to keep painting until Esc">Format Painter</button>
-    <button role="menuitem" data-cmd="save-format-favorite" title="Keep the look of what is selected (fill, pattern, shadow, transparency, line, effects, text) under a name, to give to other things with one click in any mode">Save Format as Favorite…</button>
-    <button role="menuitem" data-cmd="format-favorites" title="Your Format Favorites: click one to give the selection its look">Format Favorites…</button>
+    <button role="menuitem" data-cmd="format-painter" title="Format Painter: copy the style of what is selected to the next thing you click or drag over. Double-click to keep painting until Esc">Format Painter</button>
+    <button role="menuitem" data-cmd="save-format-favorite" title="Save the selection's formatting (fill, line, effects, text) under a name to apply with one click in any mode">Save Format as Favorite…</button>
+    <button role="menuitem" data-cmd="format-favorites" title="Your Format Favorites: click one to apply its formatting to the selection">Format Favorites…</button>
     <hr />
     <button role="menuitem" data-cmd="select-all">Select All</button>
     <button data-modes="sheet document" role="menuitem" data-cmd="find">Find…</button>
@@ -215,7 +215,7 @@
     </div>
     </div>
     <div class="submenu" data-modes="sheet">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Sort and Filter</button>
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Sort &amp; Filter</button>
     <div class="menu sub" role="menu" hidden>
     <button role="menuitem" data-cmd="sort-up">Sort Smallest to Largest</button>
     <button role="menuitem" data-cmd="sort-down">Sort Largest to Smallest</button>
@@ -260,15 +260,15 @@
     </div>
     <hr />
     <button role="menuitem" data-cmd="command-search" title="Find any command by typing part of its name">Search Commands…</button>
-    <button role="menuitem" data-cmd="assistant" title="Ask your own AI model about what is on the page, or for a structure, a check of the scheme or help writing (opt-in: nothing is sent until you turn it on)">Assistant…</button>
+    <button role="menuitem" data-cmd="assistant" title="Ask your own AI model about the page, for a structure, a scheme check or writing help (opt-in: nothing is sent until you turn it on)">Assistant…</button>
     <button role="menuitem" data-cmd="hotkeys">Keyboard Shortcuts…</button>
     <button role="menuitem" data-cmd="typing-spelling" title="Chemistry formatting as you type, replacements, spelling check and your dictionary">Typing and Spelling…</button>
-    <button role="menuitem" data-cmd="edit-palettes" title="Your own rows of colors, in every color menu and every mode">Color Palettes…</button>
-    <button role="menuitem" data-cmd="preferences" title="Every setting in one window: drawing, drawing style, hotkeys, text and spelling, colors, schemes, AutoSave, online lookups">Settings…</button>
+    <button role="menuitem" data-cmd="edit-palettes" title="Custom rows of colors, in every color menu and every mode">Color Palettes…</button>
+    <button role="menuitem" data-cmd="preferences" title="Every setting in one window: drawing, drawing style, keyboard shortcuts, text and spelling, colors, schemes, AutoSave, online lookups">Settings…</button>
     <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Settings File</button>
     <div class="menu sub" role="menu" hidden>
-    <button role="menuitem" data-cmd="export-settings" title="Save every setting (hotkeys, toolboxes, preferences, your templates, styles and palettes) in one file, to keep or to set up another computer">Export Settings…</button>
+    <button role="menuitem" data-cmd="export-settings" title="Save every setting (keyboard shortcuts, toolboxes, preferences, your templates, styles and palettes) in one file, to keep or to set up another computer">Export Settings…</button>
     <button role="menuitem" data-cmd="import-settings" title="Use the settings saved in a file with Export Settings">Import Settings…</button>
     </div>
     </div>
@@ -301,7 +301,7 @@
     </div>
     </div>
     <hr />
-    <button role="menuitemcheckbox" aria-checked="false" data-cmd="show-stereo" title="Preview every R/S and E/Z label in red (on screen only; use Chemistry &gt; Show Stereo Labels to add them to the drawing)"><span>Show R/S Preview</span></button>
+    <button role="menuitemcheckbox" aria-checked="false" data-cmd="show-stereo" title="Preview every R/S and E/Z label in red (on screen only; use Chemistry ▸ Show Stereo Labels to add them to the drawing)"><span>Show R/S Preview</span></button>
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="group-tips" title="Rest the mouse on an abbreviation such as OTBS, Boc or CO2Me to see the group written out, with its name and formula"><span>Chemical Abbreviation Tooltips</span></button>
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="tool-tips" title="Hold the mouse on a tool for a moment to see what it does and what Alt, Shift and Ctrl change. Off: a one-line tip"><span>Detailed Tooltips</span></button>
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="scroll-bars" title="Scroll bars along the bottom and right of the drawing, showing where you are"><span>Scroll Bars</span></button>
@@ -406,10 +406,10 @@
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-arrange"><span>Toolbox: Object</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-templates" title="Ring systems and heterocycles laid out to click, without opening a palette"><span>Toolbox: Templates</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-colours" title="One click colors or highlights what is selected, from the standard colors and your palettes"><span>Toolbox: Colors</span></button>
-    <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-highlight" title="Highlight the selection, turn its soft edges, outline, shadow and glow on or off, and give it a ready-made or saved look"><span>Toolbox: Highlight</span></button>
+    <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-highlight" title="Highlight the selection, turn its soft edges, outline, shadow and glow on or off, and give it a ready-made or saved style"><span>Toolbox: Highlight</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-text"><span>Toolbox: Text Formatting</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-guides"><span>Toolbox: Guides</span></button>
-    <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-custom" title="Your own toolbox: any tools and commands you choose"><span>Toolbox: My Toolbox</span></button>
+    <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-custom" title="Custom toolbox: any tools and commands you choose"><span>Toolbox: My Toolbox</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-schemes"><span>Toolbox: Smart Schemes</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-diagrams"><span>Toolbox: Diagrams</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="toolbox-tables"><span>Toolbox: Tables and Charts</span></button>
@@ -429,8 +429,8 @@
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Ribbon</button>
     <div class="menu sub" role="menu" hidden>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="collapse-ribbon" title="Show the ribbon's tabs only, for more room; click a tab to use its buttons (Ctrl+F1, or double-click a tab)"><span>Collapse the Ribbon</span><kbd>Ctrl+F1</kbd></button>
-    <button role="menuitemcheckbox" aria-checked="false" data-cmd="ribbon-auto-fold" title="Collapse the ribbon to its tabs while the window is short (under 760 pixels tall), so the page keeps its room on a laptop; click a tab to use its buttons. It opens again when the window is taller"><span>Auto-Collapse on Short Windows</span></button>
-    <button role="menuitem" data-cmd="customize-ribbon" title="Put the ribbon's tabs and groups in your order, rename or hide them, and make groups of your own commands (Presentations, Documents, Spreadsheets and Designs)">Customize the Ribbon…</button>
+    <button role="menuitemcheckbox" aria-checked="false" data-cmd="ribbon-auto-fold" title="Collapse the ribbon to its tabs when the window is under 760 px tall; it expands again when the window is taller"><span>Auto-Collapse on Short Windows</span></button>
+    <button role="menuitem" data-cmd="customize-ribbon" title="Reorder, rename or hide ribbon tabs and groups, and create custom groups of commands">Customize the Ribbon…</button>
     </div>
     </div>
     <div class="submenu">
@@ -439,19 +439,19 @@
     <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false" title="The window's own colors (menus, ribbons, panels). The page itself has Reading Mode">Theme</button>
     <div class="menu sub" role="menu" hidden>
-    <button role="menuitemradio" aria-checked="false" data-cmd="theme-system" title="Light or dark as the computer is set"><span>As the Computer Is Set</span></button>
+    <button role="menuitemradio" aria-checked="false" data-cmd="theme-system" title="Light or dark as the computer is set"><span>Use System Setting</span></button>
     <button role="menuitemradio" aria-checked="false" data-cmd="theme-light"><span>Light</span></button>
     <button role="menuitemradio" aria-checked="false" data-cmd="theme-dark"><span>Dark</span></button>
     <button role="menuitemradio" aria-checked="true" data-cmd="theme-darkgray" title="A dark title bar with the ribbon and panels in a lighter gray, so the icons read easily (Office's Dark Gray)"><span>Dark Gray</span></button>
     </div>
     </div>
     <div class="submenu">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false" title="How roomy the toolboxes and ribbons are: bigger icons and more space between buttons. Interface Size zooms everything instead">Density</button>
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false" title="How roomy the toolboxes and ribbons are: larger icons and more space between buttons. Interface Size zooms everything instead">Density</button>
     <div class="menu sub" role="menu" hidden>
     <button role="menuitemradio" aria-checked="false" data-cmd="density-snug" title="No gap between toolbox buttons"><span>Compact</span></button>
     <button role="menuitemradio" aria-checked="true" data-cmd="density-cozy" title="1 px between toolbox buttons (as the app comes)"><span>Cozy</span></button>
     <button role="menuitemradio" aria-checked="false" data-cmd="density-normal" title="2 px between toolbox buttons"><span>Normal</span></button>
-    <button role="menuitemradio" aria-checked="false" data-cmd="density-standard" title="Bigger icons and a little more room between buttons"><span>Standard</span></button>
+    <button role="menuitemradio" aria-checked="false" data-cmd="density-standard" title="Larger icons and a little more room between buttons"><span>Standard</span></button>
     <button role="menuitemradio" aria-checked="false" data-cmd="density-large" title="The biggest icons and the most room between buttons (a touch screen or a projector)"><span>Large</span></button>
     </div>
     </div>
@@ -467,13 +467,13 @@
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false" title="The colors of the ribbon's and menus' icons">Icon Colors</button>
     <div class="menu sub" role="menu" hidden>
     <button role="menuitemradio" aria-checked="true" data-cmd="icons-mode" title="Gray icons with one part in the mode's color (orange in Presentation, blue in Document, green in Spreadsheet, purple in Design)"><span>Mode Color</span></button>
-    <button role="menuitemradio" aria-checked="false" data-cmd="icons-kind" title="A color for each kind of command, as Office does: pictures teal, charts green, media red, shapes purple, the same in every mode"><span>Color by Kind</span></button>
+    <button role="menuitemradio" aria-checked="false" data-cmd="icons-kind" title="A color for each command type, as Office does: pictures teal, charts green, media red, shapes purple, the same in every mode"><span>Color by Type</span></button>
     <hr />
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="shape-ink-accent" title="Draw the Shapes menu's shapes in the mode's color instead of black (white in the dark theme)"><span>Shapes in the Mode Color</span></button>
     </div>
     </div>
     <div class="submenu desktop-only" hidden>
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false" title="Desktop app: make the whole window (menus, ribbons, toolboxes, panels) bigger or smaller. The drawing's own zoom is separate">Interface Size <span class="muted" data-ui-scale-now>100%</span></button>
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false" title="Desktop app: make the whole window (menus, ribbons, toolboxes, panels) larger or smaller. The drawing's own zoom is separate">Interface Size <span class="muted" data-ui-scale-now>100%</span></button>
     <div class="menu sub" role="menu" hidden>
     <button role="menuitem" data-cmd="ui-scale-in">Larger</button>
     <button role="menuitem" data-cmd="ui-scale-out">Smaller</button>
@@ -488,14 +488,14 @@
     </div>
     </div>
     <div class="submenu">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false" title="For tablets and touch screens (an iPad with Apple Pencil, a Surface): bigger buttons, the atom keypad, a long press for the right-click menu and two fingers to pan and zoom">Touch Mode</button>
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false" title="For tablets and touch screens: larger buttons, the atom keypad, long-press for the shortcut menu, two-finger pan and zoom">Touch Mode</button>
     <div class="menu sub" role="menu" hidden>
     <button role="menuitemradio" aria-checked="true" data-cmd="touch-mode-auto" title="On for touch screens, and once a pen or finger is used"><span>Automatic</span></button>
     <button role="menuitemradio" aria-checked="false" data-cmd="touch-mode-on"><span>On</span></button>
     <button role="menuitemradio" aria-checked="false" data-cmd="touch-mode-off"><span>Off</span></button>
     <hr />
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="atom-keypad" title="Keys along the bottom of the drawing for the atom or bond last drawn or selected: element labels, charges, a new bond, bond orders and rings"><span>Atom Keypad</span></button>
-    <button role="menuitemcheckbox" aria-checked="false" data-cmd="pen-sketch" title="The pen sketches whatever tool is picked: lines become bonds, loops rings, letters atom labels, and a scribble erases (a mouse or finger still uses the tool)"><span>Pen Always Sketches</span></button>
+    <button role="menuitemcheckbox" aria-checked="false" data-cmd="pen-sketch" title="The pen always sketches, whatever tool is selected; a mouse or finger still uses the tool"><span>Pen Always Sketches</span></button>
     </div>
     </div>
     <div class="submenu">
@@ -506,11 +506,11 @@
     <button role="menuitemradio" aria-checked="false" data-cmd="text-bar-hidden" title="No bar; the keys still work (Ctrl+B bold, Ctrl+I italic, Ctrl+= subscript…)"><span>Hidden</span></button>
     </div>
     </div>
-    <button role="menuitemcheckbox" aria-checked="true" data-cmd="title-bar-in-menu" class="desktop-only" hidden title="Desktop app: show the minimize, maximize and close buttons in the menu bar instead of a separate title bar. Drag an empty part of the menu bar to move the window"><span>Title Bar in Menu Row</span></button>
-    <button role="menuitemcheckbox" aria-checked="true" data-cmd="tabs-in-menu" title="The open files' tabs in the menu bar, beside the menus, to give the work a row more room (a row of their own when off). When many files are open the tabs show only their icons; rest the mouse on one for its name"><span>File Tabs in Menu Row</span></button>
+    <button role="menuitemcheckbox" aria-checked="true" data-cmd="title-bar-in-menu" class="desktop-only" hidden title="Desktop app: merge the title bar into the menu bar. Drag an empty part of the menu bar to move the window"><span>Title Bar in Menu Bar</span></button>
+    <button role="menuitemcheckbox" aria-checked="true" data-cmd="tabs-in-menu" title="Show file tabs in the menu bar to save a row of space. With many files open, tabs show only icons; hover for the name"><span>File Tabs in Menu Bar</span></button>
     <hr />
     <button role="menuitem" data-cmd="dark-colours" title="Choose Reading Mode's colors (Graphite, Slate, Warm dark) or make your own">Reading Mode Colors…</button>
-    <button role="menuitem" data-cmd="mode-colours" title="Teal for canvases, orange for slides: choose how much of the window is colored, and the colors">Mode Colors…</button>
+    <button role="menuitem" data-cmd="mode-colours" title="Choose each mode's accent color and how much of the window it colors">Mode Colors…</button>
     </div>
     </div>
     <hr />
@@ -555,7 +555,7 @@
     <button role="menuitem" data-cmd="rotate-ccw">Rotate 90° Counterclockwise</button>
     <button role="menuitem" data-cmd="rotate-180">Rotate 180°</button>
     <button role="menuitem" data-cmd="rotate-dialog">Rotate…</button>
-    <button role="menuitem" data-cmd="turn-3d" title="Turn the selected structures in 3-D by angles you type (about X, Y and Z): their real 3-D shape, or the drawing as a flat sheet. The Perspective tools do it by dragging">3-D Rotation…</button>
+    <button role="menuitem" data-cmd="turn-3d" title="Rotate the selected structures in 3-D by exact angles about X, Y and Z (as 3-D shapes or as a flat sheet). The Perspective tools rotate by dragging">3-D Rotation…</button>
     <button role="menuitem" data-cmd="flatten-3d" title="Make structures turned in 3-D ordinary flat drawings again: they keep how they look, and the next 3-D turn builds their shape afresh">Flatten</button>
     <button role="menuitemcheckbox" data-cmd="depth-shading" aria-checked="false" title="Shade structures drawn in 3-D by depth: black in front, fading to gray behind (on or off)"><span>Depth Shading</span></button>
     <button role="menuitem" data-cmd="depth-shading-settings" title="Choose the colors in front and behind, how the fade goes, and whether lines thin with depth">Depth Shading Settings…</button>
@@ -597,7 +597,7 @@
     <button role="menuitemradio" aria-checked="false" data-cmd="size-wide"><span>Widescreen (16:9)</span></button>
     <button role="menuitemradio" aria-checked="false" data-cmd="size-standard"><span>Standard (4:3)</span></button>
     <hr />
-    <button role="menuitem" data-cmd="size-custom" title="Any size: A4, Letter, 16:10, a banner, a poster, or your own width and height, with what is on the slides scaled to fit or kept as it is">Custom Slide Size…</button>
+    <button role="menuitem" data-cmd="size-custom" title="Any size: A4, Letter, 16:10, a banner, a poster, or a custom width and height, with what is on the slides scaled to fit or kept as it is">Custom Slide Size…</button>
     </div>
     </div>
     <button data-modes="slides" role="menuitem" data-cmd="slide-templates">Slide Templates…</button>
@@ -646,11 +646,11 @@
     <button role="menuitem" data-cmd="clean-up">Clean Up Structure</button>
     <button role="menuitem" data-cmd="clean-up-reaction">Clean Up Reaction</button>
     <button role="menuitem" data-cmd="clean-up-reaction-orient" title="Turn every structure so the part it shares with the starting material lies the same way around (configuration kept), then tidy the scheme">Clean Up and Orient Reaction</button>
-    <button role="menuitem" data-cmd="orient-like" title="Turn each selected structure so the part it shares with the first one (top left) lies the same way around; structures turned over have their wedges swapped, so configuration is kept">Orient Like First</button>
+    <button role="menuitem" data-cmd="orient-like" title="Rotate each selected structure so its shared substructure matches the first (top-left) one; flipped structures get swapped wedges, keeping configuration">Match Orientation of First</button>
     <button role="menuitem" data-cmd="check-structure" title="Go to the next structure warning (valence, charge, stereo)">Check Structure</button>
     <button role="menuitem" data-cmd="join">Join</button>
-    <button role="menuitem" data-cmd="expand-label" title="Expand the selected labels into atoms and bonds: abbreviations (OMe, Boc, CO2Et), ligands (BINAP keeps its PPh2) and ligands on metals (PPh3, dppe, Cp*, COD)">Expand Label</button>
-    <button role="menuitem" data-cmd="expand-label-full" title="Draw the selected labels out completely: as Expand Label, then the labels that brings in (PPh2, P(t-Bu)2, CHPh2) drawn out too, down to every atom">Expand Label Fully</button>
+    <button role="menuitem" data-cmd="expand-label" title="Expand the selected labels into atoms and bonds: abbreviations (OMe, Boc, CO2Et) and ligands (BINAP, PPh3, dppe, Cp*)">Expand Label</button>
+    <button role="menuitem" data-cmd="expand-label-full" title="Expand the selected labels down to every atom, including labels that expansion introduces (PPh2, P(t-Bu)2)">Expand Label Fully</button>
     <button role="menuitem" data-cmd="contract-label">Contract Label…</button>
     <hr />
     <div class="submenu">
@@ -660,8 +660,8 @@
     <button role="menuitem" data-cmd="remove-highlight">Remove Highlight</button>
     <button role="menuitem" data-cmd="select-highlight" title="Select the whole highlight the selection is part of (in Slides, to animate the highlight on its own, as a shape)">Select Highlight</button>
     <button role="menuitem" data-cmd="highlight-look" title="Give the selection a ready-made or saved highlight style">Highlight Style…</button>
-    <button role="menuitem" data-cmd="smooth-highlight" title="Round highlights: one even band along the bonds, with no disc bulging out at each atom (or put the discs back). Straight highlights are always one band.">Smooth Highlight</button>
-    <button role="menuitem" data-cmd="centre-highlight" title="Run the highlight midway between the lines of double bonds, and around a ring midway between the ring and its inner double-bond lines (or back on the bonds)">Center Highlight on Double Bonds</button>
+    <button role="menuitem" data-cmd="smooth-highlight" title="Draw round highlights as one even band along the bonds, without a disc at each atom (click again to restore the discs)">Smooth Highlight</button>
+    <button role="menuitem" data-cmd="centre-highlight" title="Center the highlight between double-bond lines, and in rings between the ring and its inner lines (click again to return it to the bonds)">Center Highlight on Double Bonds</button>
     <button role="menuitem" data-cmd="soft-highlight" title="Fade the selected highlights at their edges, or along their middles (choose how much, and which way, under Soft edges in the Style panel)">Soft Highlight Edges</button>
     <button role="menuitem" data-cmd="outline-highlight" title="No fill, only a line around the selected highlights (or filled again)">Outline-Only Highlight</button>
     <button role="menuitem" data-cmd="shadow-highlight" title="A drop shadow under the selected highlights (color, direction, distance and blur under Shadow in the Style panel)">Highlight Shadow</button>
@@ -678,9 +678,9 @@
     <div class="menu sub" role="menu" hidden>
     <button role="menuitem" data-cmd="add-id-label" title="Add the next compound number below the structure, attached to it; type to change it">Add ID Label</button>
     <button role="menuitem" data-cmd="add-caption" title="Add a caption below the structure, attached to it (position and style it in the Style panel)">Add Caption</button>
-    <button role="menuitem" data-cmd="attach-descriptors" title="The formula, exact mass and molecular weight under the structure, tied to it: they follow it and update when it changes (choose what is shown in the Style panel)">Attach Descriptors (Formula, Mass)</button>
+    <button role="menuitem" data-cmd="attach-descriptors" title="Show formula, exact mass and molecular weight under the structure; they move and update with it (choose which in the Style panel)">Attach Descriptors (Formula, Mass)</button>
     <button role="menuitem" data-cmd="add-frame">Add Frame</button>
-    <button role="menuitem" data-cmd="number-compounds" title="ID labels under every selected structure (or all of them) in scheme order: choose how they count and where they start; the same structure gets the same ID">Number Compounds…</button>
+    <button role="menuitem" data-cmd="number-compounds" title="Number the selected structures (or all) in scheme order; choose the format and starting number. Identical structures get the same number">Number Compounds…</button>
     <button role="menuitem" data-cmd="explicit-h">Show/Hide Explicit Hydrogens</button>
     </div>
     </div>
@@ -704,7 +704,7 @@
     <div class="menu sub" role="menu" hidden>
     <button role="menuitem" data-cmd="hapto-bond" title="Bond the selected metal to the middle of the other selected atoms (a Cp ring, an arene, an allyl, a C=C) with one hapto bond">Add Hapto Bond (η)</button>
     <button role="menuitem" data-cmd="split-hapto" title="Draw the selected hapto bonds as a bond to each atom of the ring">Split Hapto Bond</button>
-    <button role="menuitem" data-cmd="ligand-library" title="Find ligands by abbreviation, name, PubChem CID or bonding type among several hundred (phosphines, NHCs, bipyridines, salens, pincers, π-ligands) and use one as a template. Abbreviations also work as typed labels">Ligand Library…</button>
+    <button role="menuitem" data-cmd="ligand-library" title="Search several hundred ligands by abbreviation, name, PubChem CID or bonding type, and use one as a template">Ligand Library…</button>
     </div>
     </div>
     <div class="submenu">
@@ -719,12 +719,12 @@
     <div class="submenu" data-modes="drawing slides design document sheet">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Look Up</button>
     <div class="menu sub" role="menu" hidden>
-    <button role="menuitem" data-modes="drawing slides design document sheet" data-cmd="knowledge-base" title="Reference tables to look things up at the bench: NMR solvent peaks (type a shift such as 7.26 to find what it is), abbreviations explained, and tables you import from your own copies. Search by name, CAS number or SMILES">Knowledge Base…</button>
-    <button role="menuitem" data-cmd="structure-to-name" title="Put the selected structure's systematic (IUPAC) name under it, worked out offline. A name is given only if reading it back gives exactly the structure drawn. The namer loads the first time (about 14 MB).">Structure to Name</button>
-    <button role="menuitem" data-cmd="find-cas" title="Show the selected structure's CAS Registry Number (CAS RN) in the Analysis panel: from your Compound Library, numbers found before, or PubChem, the free NIH database (sends the structure as SMILES)">Find CAS RN</button>
-    <button role="menuitem" data-cmd="model-3d" title="Build a 3-D model of the selected structure (MMFF94 conformers) to rotate, browse conformers, and match the drawing to">3-D Model…</button>
+    <button role="menuitem" data-modes="drawing slides design document sheet" data-cmd="knowledge-base" title="Bench reference tables: NMR solvent peaks (type a shift like 7.26), abbreviations, and tables you import. Search by name, CAS number or SMILES">Knowledge Base…</button>
+    <button role="menuitem" data-cmd="structure-to-name" title="Add the selected structure's IUPAC name below it, generated offline. Shown only if the name converts back to the same structure. The namer (about 14 MB) downloads on first use">Structure to Name</button>
+    <button role="menuitem" data-cmd="find-cas" title="Show the selected structure's CAS RN in the Analysis panel, from your Compound Library, earlier lookups or PubChem (sends the SMILES)">Find CAS RN</button>
+    <button role="menuitem" data-cmd="model-3d" title="Build a 3-D model of the selected structure (MMFF94 conformers): rotate it, browse conformers, and match the drawing to a view">3-D Model…</button>
     <button role="menuitem" data-cmd="newman-projection" title="Draw the selected single bond as a Newman or sawhorse projection of its most stable conformers, colored by group size and linked to the structure">Newman Projection…</button>
-    <button role="menuitem" data-cmd="torsion-chart" title="Rotate the selected single bond through 360° (MMFF94s+ or xTB scan) and chart the torsional energy, with Newman projections and barriers at each minimum and maximum">Torsional Energy Chart…</button>
+    <button role="menuitem" data-cmd="torsion-chart" title="Scan rotation about the selected single bond (MMFF94s or xTB) and chart the torsional energy, with Newman projections at each minimum and maximum">Torsional Energy Chart…</button>
     <button role="menuitem" data-cmd="pubchem-lookup" title="Look up the selected structure on PubChem (sends the SMILES) and show its name, CAS RN, hazards and measured properties in the Analysis panel">Look Up on PubChem</button>
     <button role="menuitem" data-cmd="periodic-table">Periodic Table…</button>
     </div>
@@ -742,19 +742,19 @@
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Reactions and Schemes</button>
     <div class="menu sub" role="menu" hidden>
     <button role="menuitem" data-cmd="arrange-scheme">Arrange Scheme…</button>
-    <button role="menuitem" data-cmd="stoichiometry-table" title="A sheet of the amounts for the selected reaction step (or the only one): each starting material, reagent and product with its formula and weight; type the equivalents, the millimoles of the first starting material and any densities, and the masses and volumes follow">Stoichiometry Table…</button>
-    <button role="menuitem" data-cmd="check-balance" title="Count every element and the charge on each side of the selected reaction step (or the only one) and say what is missing, such as water or HCl">Check Balance…</button>
-    <button role="menuitem" data-cmd="map-atoms" title="Number each atom of the starting materials and give its atom in the products the same number (atom-atom mapping), paired the way Animate Reaction pairs them; can also color the pairs and mark bonds made and broken">Map Atoms…</button>
-    <button role="menuitem" data-cmd="map-format" title="Your own format for every atom-map number box: fill color or pattern, outline, number color, shadow">Map Number Format…</button>
+    <button role="menuitem" data-cmd="stoichiometry-table" title="Create a stoichiometry table for the selected reaction step: enter equivalents, the first starting material's mmol and any densities; masses and volumes are calculated">Stoichiometry Table…</button>
+    <button role="menuitem" data-cmd="check-balance" title="Check that elements and charge balance in the selected reaction step and show what's missing (e.g. H2O or HCl)">Check Balance…</button>
+    <button role="menuitem" data-cmd="map-atoms" title="Number reactant atoms and give the matching product atoms the same numbers (atom mapping); optionally color pairs and mark bonds formed and broken">Map Atoms…</button>
+    <button role="menuitem" data-cmd="map-format" title="Format the atom-map number boxes: fill, outline, number color and shadow">Map Number Format…</button>
     <button role="menuitem" data-cmd="clear-atom-map" title="Take the atom map off the selected structures (or the whole drawing), with the numbers and colors Map Atoms put on">Clear Atom Map</button>
-    <button role="menuitem" data-cmd="lab-calculator" title="Mass, mmol and volume of a compound (neat or as a solution, with purity and equivalents), the mass to weigh for a solution, and dilutions; the selected structure's molecular weight is filled in">Lab Calculator…</button>
+    <button role="menuitem" data-cmd="lab-calculator" title="Calculate mass, mmol and volume (neat or solution, with purity and equivalents), solution masses and dilutions; uses the selected structure's MW">Lab Calculator…</button>
     <button role="menuitem" data-cmd="scheme-settings" title="Spacing between structures, the text above and below arrows, the + boxes on new arrows and fitting arrows to their text">Scheme Settings…</button>
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="show-roles"><span>Show Reaction Roles</span></button>
-    <button role="menuitem" data-cmd="smart-scheme" title="A Smart Scheme: the selected structures joined by arrows (or three species to type over), kept as one object you can lay out as a line, rows, a snake, down the page or a cycle, with a species list beside it">Smart Scheme</button>
+    <button role="menuitem" data-cmd="smart-scheme" title="Join the selected structures with arrows into one Smart Scheme object with a species list; switch its layout between line, rows, snake, column and cycle">Smart Scheme</button>
     <button role="menuitem" data-cmd="convert-smart-scheme" title="Convert the selected scheme to a Smart Scheme: one object with a species list, switchable layout, and species you can add, remove and reorder">Convert to Smart Scheme</button>
-    <button role="menuitem" data-cmd="catalytic-cycle" title="Draw a catalytic cycle: a ready-made one from the list (Suzuki, Heck, Sonogashira's two loops…) or a blank one, or the selected structures put around a loop, with step names and what comes in and goes out">Catalytic Cycle…</button>
-    <button role="menuitem" data-cmd="energy-diagram" title="Draw a reaction energy diagram from a table of energies: levels joined by dashed lines or a smooth curve, one or more pathways, the largest barrier marked. Double-click it to change the numbers">Energy Diagram…</button>
-    <button role="menuitem" data-cmd="ts-brackets" title="Put square brackets around the selected transition state with ‡ at the upper right. Draw its forming and breaking bonds as partial bonds (P over a bond)">Transition State Brackets ‡</button>
+    <button role="menuitem" data-cmd="catalytic-cycle" title="Draw a catalytic cycle from a template (Suzuki, Heck, Sonogashira…), a blank one, or the selected structures, with step names and what enters and leaves">Catalytic Cycle…</button>
+    <button role="menuitem" data-cmd="energy-diagram" title="Draw a reaction energy diagram from a table of energies, with one or more pathways and the highest barrier marked. Double-click to edit">Energy Diagram…</button>
+    <button role="menuitem" data-cmd="ts-brackets" title="Add square brackets with ‡ around the selected transition state. Draw forming and breaking bonds as partial bonds (P over a bond)">Transition State Brackets ‡</button>
     </div>
     </div>
     <div class="submenu">
@@ -764,16 +764,16 @@
     <button role="menuitem" data-cmd="orbital" title="Add an s, p, d or sp/sp²/sp³ orbital, or a single lobe, to each selected atom (or the view center), with direction, size and phase style">Orbital…</button>
     <button role="menuitem" data-cmd="edit-orbital" title="Change the selected orbitals' type, phases, angle or size (or double-click one)">Edit Orbital…</button>
     <hr />
-    <button role="menuitem" data-cmd="mo-diagram" title="Draw an MO diagram from a table of levels (atomic orbitals at the sides, MOs in the middle, electrons by Hund's rule). Starts from H₂, N₂, O₂, CO or ethylene. Double-click to edit">MO Diagram…</button>
+    <button role="menuitem" data-cmd="mo-diagram" title="Draw an MO diagram from a table of levels, filled by Hund's rule. Starts from H₂, N₂, O₂, CO or ethylene. Double-click to edit">MO Diagram…</button>
     </div>
     </div>
     <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Mechanism Arrows</button>
     <div class="menu sub" role="menu" hidden>
     <button role="menuitem" data-cmd="draw-from-arrows" title="Draw the intermediate produced by the curved arrows (bonds, charges, radicals and lone pairs updated). Arrows are checked first; nothing is drawn if they're invalid">Draw Next Intermediate</button>
-    <button role="menuitem" data-cmd="check-arrows" title="Check that the curved arrows make sense: each starts at a lone pair, negative charge, radical or bond, ends where electrons can go, and leaves no five-bond carbon or one-electron bond. Again for the next problem">Check Arrows</button>
+    <button role="menuitem" data-cmd="check-arrows" title="Check that curved arrows start at electrons, end where electrons can go, and leave no five-bond carbon or one-electron bond. Click again for the next problem">Check Arrows</button>
     <hr id="arrow-products-rule" />
-    <button role="menuitem" data-cmd="clean-up-arrow" title="Redraw the selected curved arrows from their lone pair, bond or atom to what they point at, clear of the structure (as an S where one curve can't get around it)">Clean Up Arrow</button>
+    <button role="menuitem" data-cmd="clean-up-arrow" title="Redraw the selected curved arrows from source to target, clear of the structure (as an S-curve if needed)">Clean Up Arrow</button>
     <button role="menuitem" data-cmd="arrow-s-shape" title="Redraw the selected curved arrows as S shapes (two bends), from and to the same places">Make S-Shaped Arrow</button>
     <button role="menuitem" data-cmd="arrow-single-curve" title="Redraw the selected S-shaped arrows as a single curve">Make Single-Curve Arrow</button>
     <button role="menuitem" data-cmd="arrow-shape-u" title="Redraw the selected curved arrows as a U-turn: out to one side and back in, from and to the same places">Make U-Turn Arrow</button>
@@ -782,8 +782,8 @@
     <button role="menuitem" data-cmd="arrow-reverse">Reverse Direction</button>
     <button role="menuitem" data-cmd="arrow-smooth-path" title="Turn every sharp corner on the selected curved arrows into a smooth bend">Smooth Path</button>
     <button role="menuitem" data-cmd="arrow-simplify-path" title="Redraw the selected curved arrows with as few bends as keep their shape">Simplify Path</button>
-    <button role="menuitem" data-cmd="arrow-add-bend" title="Add a join to the selected curved arrow (half way along its longest curve) that you can drag to reshape it. Or double-click the arrow's line where the bend should go.">Add Bend</button>
-    <button role="menuitem" data-cmd="arrow-remove-bend" title="Take out the join last clicked on the selected arrow; the curves either side become one. Or double-click the join, or press Delete.">Remove Bend</button>
+    <button role="menuitem" data-cmd="arrow-add-bend" title="Add a draggable bend point to the selected curved arrow. Or double-click the arrow where you want the bend.">Add Bend</button>
+    <button role="menuitem" data-cmd="arrow-remove-bend" title="Remove the join last clicked on the selected arrow; the curves either side become one. Or double-click the join, or press Delete.">Remove Bend</button>
     <button role="menuitem" data-cmd="arrow-smooth-join" title="Align the two handles at the last-clicked point so the curve is smooth there (lengths unchanged)">Smooth Join</button>
     <button role="menuitem" data-cmd="arrow-symmetric-join" title="Align the two handles at the last-clicked point and make them equal length">Symmetric Join</button>
     <button role="menuitem" data-cmd="homolysis-arrows" title="Two fishhook arrows from the middle of each selected bond, one to each atom (the bond breaking evenly)">Homolysis Arrows</button>
@@ -794,7 +794,7 @@
     <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Animate</button>
     <div class="menu sub" role="menu" hidden>
-    <button role="menuitem" data-cmd="animate-reaction" title="Animate the scheme (or the selected structures): each structure turns into the next. Save as a GIF or PNG frames. Based on cdxmorph by Ryan Shenvi.">Animate Reaction…</button>
+    <button role="menuitem" data-cmd="animate-reaction" title="Animate the scheme (or selected structures) morphing from one to the next. Save as GIF or PNG frames. Based on cdxmorph by Ryan Shenvi.">Animate Reaction…</button>
     <button role="menuitem" data-cmd="animate-step" title="Animate the step of the selected reaction arrow">Animate This Step…</button>
     </div>
     </div>
@@ -809,16 +809,16 @@
     </div>
     </div>
     <div class="menu-wrap">
-      <button id="btn-help" aria-haspopup="menu" aria-expanded="false" aria-controls="help-menu" title="Hotkeys, the user guide, and sending feedback" aria-keyshortcuts="Alt+H"><span class="mn">H</span>elp</button>
+      <button id="btn-help" aria-haspopup="menu" aria-expanded="false" aria-controls="help-menu" title="Keyboard shortcuts, the user guide, and sending feedback" aria-keyshortcuts="Alt+H"><span class="mn">H</span>elp</button>
       <div id="help-menu" class="menu" role="menu" hidden>
         <button role="menuitem" data-cmd="help" title="The most used keyboard shortcuts and tips, with a button to change any key">Keyboard Shortcuts and Tips</button>
-        <button role="menuitem" data-cmd="user-guide" title="How to use the program (built in: works without a connection)">User Guide</button>
+        <button role="menuitem" data-cmd="user-guide" title="How to use Chemweave (built in: works without a connection)">User Guide</button>
         <button role="menuitem" data-cmd="help-here" title="The part of the User Guide about the tool or mode in use">Help on This Tool or Mode</button>
         <hr />
         <button role="menuitem" data-cmd="send-feedback" title="A comment, an idea for a new feature, or a question: sent as a GitHub issue, or copied to send another way">Send Feedback…</button>
         <button role="menuitem" data-cmd="report-problem" title="Something not working as it should">Report a Problem…</button>
-        <button role="menuitem" data-cmd="copy-diagnostics" title="Copy the program's version, computer and the errors it wrote down lately, to paste into a bug report or message">Copy Diagnostics</button>
-        <button role="menuitem" class="desktop-only" data-cmd="open-log-folder" title="Show the folder with the program's error log (kept on this computer only)" hidden>Open Log Folder</button>
+        <button role="menuitem" data-cmd="copy-diagnostics" title="Copy Chemweave's version, computer and the errors it wrote down recently, to paste into a bug report or message">Copy Diagnostics</button>
+        <button role="menuitem" class="desktop-only" data-cmd="open-log-folder" title="Show the folder with Chemweave's error log (kept on this computer only)" hidden>Open Log Folder</button>
 <hr />
 <button role="menuitem" data-cmd="support-project" title="Chemweave is free: sponsor its development on GitHub (opens in your browser)">Support Chemweave</button>
 <button role="menuitem" data-cmd="about">About Chemweave</button>
@@ -828,14 +828,14 @@
     <div id="quick-bar" class="quick-bar" role="toolbar" aria-label="Quick Access Toolbar"></div>
     <span class="sep"></span>
     <div class="menu-wrap dev-only" hidden>
-      <button id="btn-developer" aria-haspopup="menu" aria-expanded="false" aria-controls="developer-menu" title="Developer Tools: the stress test and turning them off (View &gt; Developer Tools)">Developer</button>
+      <button id="btn-developer" aria-haspopup="menu" aria-expanded="false" aria-controls="developer-menu" title="Developer Tools: the stress test and turning them off (View ▸ Developer Tools)">Developer</button>
       <div id="developer-menu" class="menu" role="menu" hidden>
         <button role="menuitem" data-cmd="stress-100" title="Draw 100 drug-sized molecules to test speed">Stress Test: 100 Molecules</button>
         <button role="menuitem" data-cmd="stress-500" title="Draw 500 drug-sized molecules to test speed">Stress Test: 500 Molecules</button>
         <button role="menuitem" data-cmd="stress-2000" title="Draw 2,000 drug-sized molecules to test speed">Stress Test: 2,000 Molecules</button>
         <button role="menuitem" data-cmd="stress-5000" title="Draw 5,000 drug-sized molecules to test speed">Stress Test: 5,000 Molecules</button>
         <hr />
-        <button role="menuitem" data-cmd="dev-tools" title="Turn off Developer Tools (speed readout, stress test, Error Console). Turn them back on in View &gt; Developer Tools">Turn Off Developer Tools</button>
+        <button role="menuitem" data-cmd="dev-tools" title="Turn off Developer Tools (speed readout, stress test, Error Console). Turn them back on in View ▸ Developer Tools">Turn Off Developer Tools</button>
       </div>
     </div>
     <div id="tabs" role="tablist" aria-label="Open files"></div>
@@ -945,14 +945,14 @@
           <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
-            <button data-sh="conditional-formatting" title="Color scales, data bars, icons and highlight rules that change a cell's look by its value">Conditional Formatting ▾</button>
-            <button data-sh="format-as-table" title="Format the table with a header row and banded rows, in one of Excel's table looks">Format as Table ▾</button>
-            <button data-sh="cell-styles" title="Cell Styles: Good, Bad and Neutral; Title, Headings and Total; Input, Output, Calculation, Note; Accent colors from the theme; number styles. Saved as Excel's own styles">Cell Styles ▾</button>
+            <button data-sh="conditional-formatting" title="Color scales, data bars, icons and highlight rules that change a cell's formatting by its value">Conditional Formatting ▾</button>
+            <button data-sh="format-as-table" title="Format the table with a header row and banded rows, in one of Excel's table styles">Format as Table ▾</button>
+            <button data-sh="cell-styles" title="Apply a built-in cell style (Good, Bad, Neutral, Title, Headings, Total, Input, Output, Note, theme accents, number styles). Saved as Excel styles">Cell Styles ▾</button>
           </div>
         </div>
         <div class="rb-label">Styles</div>
       </div>
-      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Looks you keep under a name (fill, outline, font, color): click one to give it to the selected cells or shape, in any mode">Format Favorites</div></div>
+      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Formatting saved under a name (fill, outline, font, color): click one to apply it to the selected cells or shape, in any mode">Format Favorites</div></div>
   <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
@@ -966,10 +966,10 @@
         <div class="rb-row">
           <button class="rb-big" data-sh="draw-structure" title="Draw a structure in the cell (or double-click a structure to change it)"><span class="rb-icon">⬡</span>Structure</button>
           <button class="rb-big" data-sh="structure-from-name" title="Draw structures from names or SMILES: in the cell, or for each selected name"><span class="rb-icon">Aa</span>From Name</button>
-          <button class="rb-big" data-sh="property-column" title="Columns that work out formula, MW, exact mass, HRMS m/z, cLogP and more from each structure"><span class="rb-icon">MW</span>Properties</button>
-          <button class="rb-big" data-sh="isotope-pattern" title="The isotope pattern of an ion ([M+H]+, [M+Na]+…) as a table and a mass spectrum chart, with columns for the peaks you found and their error in ppm"><span class="rb-icon"><svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2.5 17.5h15"/><path d="M5 17.5V4M8 17.5v-3M11 17.5V5M14 17.5v-3" stroke-width="2.2"/></svg></span>Isotopes</button>
+          <button class="rb-big" data-sh="property-column" title="Columns that calculate formula, MW, exact mass, HRMS m/z, cLogP and more from each structure"><span class="rb-icon">MW</span>Properties</button>
+          <button class="rb-big" data-sh="isotope-pattern" title="Isotope pattern of an ion ([M+H]+, [M+Na]+…) as a table and spectrum, with columns for your found peaks and ppm error"><span class="rb-icon"><svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2.5 17.5h15"/><path d="M5 17.5V4M8 17.5v-3M11 17.5V5M14 17.5v-3" stroke-width="2.2"/></svg></span>Isotopes</button>
           <div class="rb-col">
-            <button data-sh="reagent-table" title="A new sheet that works out the amounts for a reaction: MW, mmol, mass and volume from each reagent's structure and equivalents">Reagent Table</button>
+            <button data-sh="reagent-table" title="A new sheet that calculates the amounts for a reaction: MW, mmol, mass and volume from each reagent's structure and equivalents">Reagent Table</button>
             <button data-sh="reset-calculated" title="Restore calculated values that were typed over">Reset to Calculated</button>
           </div>
         </div>
@@ -990,7 +990,7 @@
             <button data-sh="autosum" title="Add up the numbers above">Σ AutoSum</button>
           </div>
           <div class="rb-col">
-            <button data-sh="data-validation" title="Data Validation: what may be typed in the selected cells (numbers within limits, dates, a drop-down list), a message shown when one is selected, and the alert for anything else">Validation…</button>
+            <button data-sh="data-validation" title="Restrict what can be entered in the selected cells (number range, dates, a drop-down list), with an input message and error alert">Validation…</button>
             <button data-sh="circle-invalid" aria-pressed="false" title="Circle Invalid Data: red rings around the cells that break their rules (again to clear them)">Circle Invalid</button>
           </div>
         </div>
@@ -1009,8 +1009,8 @@
     <div class="rb-panel" data-sh-panel="data" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="get-data" title="Get Data: read a CSV or text file, a JSON file, a web page's tables or another workbook into a table, through the Query Editor's steps (remove columns, split, filter, change type, unpivot…), which Refresh runs again"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><ellipse cx="7.5" cy="4.5" rx="5" ry="2"/><path d="M2.5 4.5v8c0 1.1 2.2 2 5 2"/><path d="M12.5 4.5v4"/><rect x="10.5" y="10.5" width="7" height="6.5" rx="0.8"/><path d="M10.5 13h7M13 10.5v6.5"/></svg></span>Get Data ▾</button>
-          <button class="rb-big" data-sh="refresh-all" title="Refresh All: every query reads its source again and runs its steps, then every PivotTable reads its records again (formulas and data tables recalculate by themselves)"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15.5 7.5A6 6 0 1 0 16 12"/><path d="M16 3.5v4h-4"/></svg></span>Refresh All</button>
+          <button class="rb-big" data-sh="get-data" title="Import CSV, text, JSON, web tables or another workbook through the Query Editor (remove columns, split, filter, change type, unpivot…). Refresh reruns it"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><ellipse cx="7.5" cy="4.5" rx="5" ry="2"/><path d="M2.5 4.5v8c0 1.1 2.2 2 5 2"/><path d="M12.5 4.5v4"/><rect x="10.5" y="10.5" width="7" height="6.5" rx="0.8"/><path d="M10.5 13h7M13 10.5v6.5"/></svg></span>Get Data ▾</button>
+          <button class="rb-big" data-sh="refresh-all" title="Rerun every query against its source, then refresh every PivotTable"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15.5 7.5A6 6 0 1 0 16 12"/><path d="M16 3.5v4h-4"/></svg></span>Refresh All</button>
           <div class="rb-col">
             <button data-sh="queries-pane" title="Queries &amp; Connections: the workbook's queries, each with Edit, Refresh, Go to and Delete">Queries &amp; Connections</button>
           </div>
@@ -1019,7 +1019,7 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="compound" title="Compound: the names (or drawn structures) in the cells picked are looked up on PubChem and become compounds, each with a card of its properties (formula, MW, CAS, SMILES, logP, melting and boiling points, density, hazards…) shown in the side panel. FIELDVALUE(A2,&quot;Molecular weight&quot;) reads a field. Only the name or SMILES is sent"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M10 2.5l6.5 3.75v7.5L10 17.5l-6.5-3.75v-7.5z"/><path d="M10 5.5l4 2.3v4.4l-4 2.3-4-2.3V7.8z" stroke-opacity="0.55"/></svg></span>Compound</button>
+          <button class="rb-big" data-sh="compound" title="Convert names or structures in the selected cells into compounds by PubChem lookup, each with a property card (formula, MW, CAS, SMILES, logP, mp, bp, density, hazards). Use FIELDVALUE(A2,&quot;Molecular weight&quot;) to read a field. Only the name or SMILES is sent"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M10 2.5l6.5 3.75v7.5L10 17.5l-6.5-3.75v-7.5z"/><path d="M10 5.5l4 2.3v4.4l-4 2.3-4-2.3V7.8z" stroke-opacity="0.55"/></svg></span>Compound</button>
           <div class="rb-col">
             <button data-sh="data-types" title="Data Types: Compound with or without measured properties (faster), Insert Data, Refresh Compound Data and Convert to Text">Data Types ▾</button>
             <button data-sh="insert-data" title="Insert Data: a column of one of the compound's fields (MW, CAS, density…) beside the compounds, as FIELDVALUE formulas">Insert Data ▾</button>
@@ -1033,7 +1033,7 @@
             <button data-sh="sort-up" title="Sort the table by this column, smallest first (structures by molecular weight)">Sort ↑</button>
             <button data-sh="sort-down" title="Sort the table by this column, largest first">Sort ↓</button>
           </div>
-          <button class="rb-big" data-sh="custom-sort" title="Sort by several columns in turn, each smallest first, largest first or in your own order (Low, Medium, High); case sensitive; or left to right"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 3v13M2.5 13.5L5 16l2.5-2.5"/><path d="M10 4h7M10 8h5M10 12h3"/></svg></span>Sort…</button>
+          <button class="rb-big" data-sh="custom-sort" title="Sort by multiple columns, ascending, descending or by a custom list; optionally case-sensitive or left to right"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 3v13M2.5 13.5L5 16l2.5-2.5"/><path d="M10 4h7M10 8h5M10 12h3"/></svg></span>Sort…</button>
           <div class="rb-col">
             <button data-sh="filter" aria-pressed="false" title="Filter buttons on the table's headers">Filter</button>
             <button data-sh="clear-filter" title="Clear: show every row of the table again">Clear</button>
@@ -1061,26 +1061,26 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="what-if" title="What-If Analysis: Goal Seek (find the input that gives a result, such as the loading for 95% conversion) and Data Table (a formula worked out for a row or column of inputs, or a grid of two)"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="1"/><path d="M2.5 7.5h15M7.5 3v14"/><path d="M10.5 11.2a1.8 1.8 0 1 1 2.4 1.7c-.5.2-.6.6-.6 1.1M12.3 15.6v.1" stroke-linecap="round"/></svg></span>What-If Analysis ▾</button>
+          <button class="rb-big" data-sh="what-if" title="Goal Seek (find the input that gives a target result) and Data Table (evaluate a formula over a row, column or grid of inputs)"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="1"/><path d="M2.5 7.5h15M7.5 3v14"/><path d="M10.5 11.2a1.8 1.8 0 1 1 2.4 1.7c-.5.2-.6.6-.6 1.1M12.3 15.6v.1" stroke-linecap="round"/></svg></span>What-If Analysis ▾</button>
         </div>
         <div class="rb-label">Forecast</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="data-analysis" title="Data Analysis: the Analysis ToolPak's tools (descriptive statistics, histograms, regression, ANOVA, t-tests, F-test, z-test, correlation, covariance, moving averages, smoothing, sampling, random numbers, rank and percentile, Fourier analysis), with results written as Excel writes them"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 2v15h15" stroke-opacity="0.6"/><path d="M4.5 16.5v-3h2.5v3M7 16.5v-7h2.5v7M9.5 16.5V6H12v10.5" fill="currentColor" fill-opacity="0.35"/><path d="M4 12l5-5 4 2 4.5-5"/></svg></span>Data Analysis</button>
-          <button class="rb-big" data-sh="solver" title="Solver: make a cell as large or small as it can be, or equal a value, by changing other cells, within limits you set (whole numbers, binary, all different). Simplex LP for linear models, GRG Nonlinear and Evolutionary for the rest. Saved in .xlsx as Excel's Solver model"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3"/></svg></span>Solver</button>
+          <button class="rb-big" data-sh="data-analysis" title="Analysis ToolPak: descriptive statistics, histogram, regression, ANOVA, t-, F- and z-tests, correlation, covariance, moving average, smoothing, sampling, random numbers, rank and percentile, Fourier analysis"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 2v15h15" stroke-opacity="0.6"/><path d="M4.5 16.5v-3h2.5v3M7 16.5v-7h2.5v7M9.5 16.5V6H12v10.5" fill="currentColor" fill-opacity="0.35"/><path d="M4 12l5-5 4 2 4.5-5"/></svg></span>Data Analysis</button>
+          <button class="rb-big" data-sh="solver" title="Maximize, minimize or set a cell to a value by changing other cells, within constraints (integer, binary, all different). Simplex LP, GRG Nonlinear or Evolutionary. Saved as an Excel Solver model"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3"/></svg></span>Solver</button>
         </div>
         <div class="rb-label">Analyze</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
-            <button data-sh="group-menu" title="Group (Shift+Alt+Right): put the selected rows or columns in a group that folds away; or Auto Outline from the totals formulas">Group ▾</button>
+            <button data-sh="group-menu" title="Group (Shift+Alt+Right): put the selected rows or columns in a group that collapses; or Auto Outline from the totals formulas">Group ▾</button>
             <button data-sh="ungroup-menu" title="Ungroup (Shift+Alt+Left): take the selected rows or columns a level out; or Clear Outline">Ungroup ▾</button>
-            <button data-sh="subtotal" title="Subtotal: a total row under each change in a column (each catalyst, each solvent), worked out with SUBTOTAL, with a grand total, grouped so the details fold away">Subtotal…</button>
+            <button data-sh="subtotal" title="Insert SUBTOTAL rows at each change in a column, with a grand total and outline grouping">Subtotal…</button>
           </div>
           <div class="rb-col">
-            <button data-sh="show-detail" title="Show Detail: open the folded group at the selection">Show Detail</button>
+            <button data-sh="show-detail" title="Show Detail: expand the collapsed group at the selection">Show Detail</button>
             <button data-sh="hide-detail" title="Collapse the group at the selection">Hide Detail</button>
             <button data-sh="outline-settings" title="Outline settings: summary rows below or above their details, summary columns right or left">Settings…</button>
           </div>
@@ -1095,7 +1095,7 @@
           <button class="rb-big" data-sh="view-break-preview" aria-pressed="false" title="Page Break Preview: what prints, page by page, with the breaks as blue lines you can drag; what doesn't print is gray"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="1" stroke-opacity="0.5"/><path d="M10 3v14M2.5 10h15" stroke-dasharray="2 1.5"/></svg></span>Page Break Preview</button>
           <button class="rb-big" data-sh="view-page-layout" aria-pressed="false" title="Page Layout: the cells on sheets of paper, with margins, headers and footers, as they will print (double-click a header to change it)"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="9" height="12" rx="0.5"/><rect x="8" y="5.5" width="9" height="12" rx="0.5" fill="var(--rb-bg, #fff)"/></svg></span>Page Layout</button>
           <div class="rb-col">
-            <button data-sh="custom-views" title="Custom Views: save how you are looking at the workbook (sheet, hidden rows and columns, filter, print settings) under a name, and go back to it">Custom Views…</button>
+            <button data-sh="custom-views" title="Save the current view (sheet, hidden rows and columns, filters, print settings) by name and return to it later">Custom Views…</button>
           </div>
         </div>
         <div class="rb-label">Workbook Views</div>
@@ -1118,7 +1118,7 @@
             <button data-sh="freeze-header" aria-pressed="false" title="Keep the table's header row in view while scrolling">Freeze Header</button>
             <button data-sh="show-all-notes" aria-pressed="false" title="Show every note on the sheet beside its cell">Show All Notes</button>
           </div>
-          <button class="rb-big" data-sh="sheet-new-window" title="New Window: the workbook in another tab too (Book1.xlsx:2), with its own sheet, selection and place. Typing in either shows in both; Save in either saves the one file"><span class="rb-icon">⧉</span>New Window</button>
+          <button class="rb-big" data-sh="sheet-new-window" title="Open another window on this workbook (Book1.xlsx:2) with its own sheet and selection; edits show in both"><span class="rb-icon">⧉</span>New Window</button>
         </div>
         <div class="rb-label">Window</div>
       </div>
@@ -1126,14 +1126,14 @@
     <div class="rb-panel" data-sh-panel="insert" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="insert-pivot" title="PivotTable: sum, count or average a table of records by the items of its columns (yield by catalyst and solvent), with subtotals and grand totals. Saved as Excel's own PivotTable"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="1"/><path d="M2.5 7h15M7 3v14"/><path d="M10 10.5h5M12.5 13.5h2.5" stroke-opacity="0.6"/></svg></span>PivotTable</button>
+          <button class="rb-big" data-sh="insert-pivot" title="Summarize records by sum, count or average across column values (e.g. yield by catalyst and solvent), with subtotals. Saved as an Excel PivotTable"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="1"/><path d="M2.5 7h15M7 3v14"/><path d="M10 10.5h5M12.5 13.5h2.5" stroke-opacity="0.6"/></svg></span>PivotTable</button>
           <button class="rb-big" data-sh="insert-table" title="Format the table around the selection as a table (header row, banded rows, filter buttons)"><span class="rb-icon">▦</span>Table</button>
         </div>
         <div class="rb-label">Tables</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="insert-picture-sheet" title="A picture from a file (PNG, JPEG, GIF, SVG…) floating over the cells: a TLC plate, a photo of a reaction, a spectrum. Saved in .xlsx as Excel's own picture"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="1"/><path d="M2.5 13.5l4-4 3 3 2.5-2.5 5.5 5.5"/><circle cx="13" cy="7.5" r="1.3"/></svg></span>Pictures</button>
+          <button class="rb-big" data-sh="insert-picture-sheet" title="Insert a picture (PNG, JPEG, GIF, SVG…) over the cells. Saved as an Excel picture"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="1"/><path d="M2.5 13.5l4-4 3 3 2.5-2.5 5.5 5.5"/><circle cx="13" cy="7.5" r="1.3"/></svg></span>Pictures</button>
           <button class="rb-big" data-sh="insert-shapes" title="Lines, arrows, rectangles, ovals and block arrows over the cells, with text in them if you like"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="9" width="8" height="8"/><circle cx="13" cy="7" r="4.5"/></svg></span>Shapes ▾</button>
           <button class="rb-big" data-sh="insert-text-box" title="A box of text floating over the cells, for notes beside a table"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13"/><path d="M6.5 7h7M10 7v6.5"/></svg></span>Text Box</button>
         </div>
@@ -1141,7 +1141,7 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="insert-symbol" title="Symbol: Greek letters, arrows, math and chemistry signs, accented letters, typed into the cell (°C, Å, ±). Find one by name or code; the ones you used lately come first"><span class="rb-icon">Ω</span>Symbol</button>
+          <button class="rb-big" data-sh="insert-symbol" title="Insert Greek letters, arrows, math and chemistry signs or accented letters (°C, Å, ±). Search by name or code; recently used first"><span class="rb-icon">Ω</span>Symbol</button>
         </div>
         <div class="rb-label">Symbols</div>
       </div>
@@ -1153,13 +1153,13 @@
           <button class="rb-style rb-chart-tile" data-sh="chart-bar" title="Bar: sideways bars (long labels read easily)"><svg viewBox="0 0 54 32" width="54" height="32" aria-hidden="true"><path class="cx" d="M4 3v26h46"/><path class="c1" d="M4 6h30v5H4zM4 20h38v5H4z"/><path class="c2" d="M4 13h20v5H4z"/></svg>Bar</button>
           <button class="rb-style rb-chart-tile" data-sh="chart-pie" title="Pie: shares of a whole (the first column of numbers)"><svg viewBox="0 0 54 32" width="54" height="32" aria-hidden="true"><path class="cx" d="M4 3v26h46"/><g transform="translate(27 16)"><path class="c1" d="M0 0V-13A13 13 0 0 1 11.3 6.4z"/><path class="c2" d="M0 0L11.3 6.4A13 13 0 0 1-12.4 3.9z"/><path class="c3" d="M0 0L-12.4 3.9A13 13 0 0 1 0-13z"/></g></svg>Pie</button>
           <button class="rb-style rb-chart-tile" data-sh="chart-histogram" title="Histogram: how the numbers of one column spread out, as counts in bins of equal width"><svg viewBox="0 0 54 32" width="54" height="32" aria-hidden="true"><path class="cx" d="M4 3v26h46"/><path class="c1" d="M8 29v-6h6v6zM14 29V14h6v15zM20 29V6h6v23zM26 29V11h6v18zM32 29V19h6v10zM38 29v-5h6v5z"/></svg>Histogram</button>
-          <button class="rb-style rb-styles-more rb-chart-more" data-sh="chart-gallery" title="All Charts: every kind of chart drawn from the cells selected, side by side, to pick one by looking"><span>▾</span>All Charts</button>
+          <button class="rb-style rb-styles-more rb-chart-more" data-sh="chart-gallery" title="All Charts: every chart type drawn from the cells selected, side by side, to pick one by looking"><span>▾</span>All Charts</button>
         </div>
         <div class="rb-label">Charts</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="spark-line" title="Line sparklines: a little line chart in a cell for each row (or column) of numbers, such as conversion over time. Saved as Excel's own sparklines"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10" rx="1" stroke-opacity="0.5"/><path d="M4.5 12.5l3-4 3 2 2.5-4 2.5 3"/></svg></span>Line</button>
+          <button class="rb-big" data-sh="spark-line" title="Insert a tiny line chart in a cell for each row or column of numbers. Saved as Excel sparklines"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10" rx="1" stroke-opacity="0.5"/><path d="M4.5 12.5l3-4 3 2 2.5-4 2.5 3"/></svg></span>Line</button>
           <button class="rb-big" data-sh="spark-column" title="Column sparklines: little bars in a cell for each row (or column) of numbers"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10" rx="1" stroke-opacity="0.5"/><path d="M5.5 13v-3M8.5 13V8M11.5 13v-4M14.5 13V7"/></svg></span>Column</button>
           <button class="rb-big" data-sh="spark-winloss" title="Win/Loss sparklines: up for positive, down for negative (a reaction that worked or didn't, a yield above or below target)"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10" rx="1" stroke-opacity="0.5"/><path d="M5.5 10V7.5M8.5 10v2.5M11.5 10V7.5M14.5 10V7.5" stroke-width="2"/></svg></span>Win/Loss</button>
         </div>
@@ -1167,13 +1167,13 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="insert-pivot-chart" title="PivotChart: a chart of a PivotTable that follows it when its fields change or it is refreshed (makes the PivotTable too when the active cell isn't in one)"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 2v15h15" stroke-opacity="0.6"/><path d="M6 16v-6M10 16V6M14 16v-4" stroke-width="2.6"/><path d="M13 3.5h4v4" stroke-width="1.3"/></svg></span>PivotChart</button>
+          <button class="rb-big" data-sh="insert-pivot-chart" title="Insert a chart linked to a PivotTable (creates the PivotTable if the active cell isn't in one)"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 2v15h15" stroke-opacity="0.6"/><path d="M6 16v-6M10 16V6M14 16v-4" stroke-width="2.6"/><path d="M13 3.5h4v4" stroke-width="1.3"/></svg></span>PivotChart</button>
         </div>
         <div class="rb-label">PivotCharts</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="insert-link" title="Link (Ctrl+K): the selected cell links to a web page, a DOI, a file, an e-mail address or a cell in this workbook. Saved as Excel's own links. Ctrl+click the cell to follow it"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8.5 11.5l3-3"/><path d="M10.5 5.5l1.2-1.2a3 3 0 0 1 4.2 4.2l-1.6 1.6a3 3 0 0 1-3.6.5"/><path d="M9.5 14.5l-1.2 1.2a3 3 0 0 1-4.2-4.2l1.6-1.6a3 3 0 0 1 3.6-.5"/></svg></span>Link</button>
+          <button class="rb-big" data-sh="insert-link" title="Link the selected cell to a web page, DOI, file, email address or cell (Ctrl+K). Ctrl+click to follow"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8.5 11.5l3-3"/><path d="M10.5 5.5l1.2-1.2a3 3 0 0 1 4.2 4.2l-1.6 1.6a3 3 0 0 1-3.6.5"/><path d="M9.5 14.5l-1.2 1.2a3 3 0 0 1-4.2-4.2l1.6-1.6a3 3 0 0 1 3.6-.5"/></svg></span>Link</button>
         </div>
         <div class="rb-label">Links</div>
       </div>
@@ -1187,7 +1187,7 @@
     <div class="rb-panel" data-sh-panel="page" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="themes" title="Themes: the workbook's colors and fonts together. Cells with no font of their own take the theme's body font; the color menus, Accent and Heading cell styles take its colors. Saved as the workbook's Office theme"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="1.5"/><path d="M2.5 7h15"/><rect x="5" y="9.5" width="3" height="5" fill="currentColor" stroke="none" opacity="0.6"/><rect x="8.5" y="9.5" width="3" height="5" fill="currentColor" stroke="none" opacity="0.4"/><rect x="12" y="9.5" width="3" height="5" fill="currentColor" stroke="none" opacity="0.2"/></svg></span>Themes</button>
+          <button class="rb-big" data-sh="themes" title="Apply theme colors and fonts to the whole workbook. Saved as an Office theme"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="1.5"/><path d="M2.5 7h15"/><rect x="5" y="9.5" width="3" height="5" fill="currentColor" stroke="none" opacity="0.6"/><rect x="8.5" y="9.5" width="3" height="5" fill="currentColor" stroke="none" opacity="0.4"/><rect x="12" y="9.5" width="3" height="5" fill="currentColor" stroke="none" opacity="0.2"/></svg></span>Themes</button>
           <div class="rb-col">
             <button data-sh="theme-colours" title="Theme Colors: only the colors of another theme">Colors ▾</button>
             <button data-sh="theme-fonts" title="Theme Fonts: only the headings and body fonts of another theme">Fonts ▾</button>
@@ -1197,10 +1197,10 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="page-margins" title="Margins: Normal, Wide, Narrow, or your own"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="2.5" width="12" height="15"/><path d="M4 5.5h12M4 14.5h12M7 2.5v15M13 2.5v15" stroke-dasharray="1.5 1.5"/></svg></span>Margins ▾</button>
+          <button class="rb-big" data-sh="page-margins" title="Margins: Normal, Wide, Narrow or Custom"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="2.5" width="12" height="15"/><path d="M4 5.5h12M4 14.5h12M7 2.5v15M13 2.5v15" stroke-dasharray="1.5 1.5"/></svg></span>Margins ▾</button>
           <button class="rb-big" data-sh="page-orientation" title="Orientation: portrait or landscape pages"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="15" height="10"/><path d="M6 3h7l-1.5-1.5M13 3l-1.5 1.5"/></svg></span>Orientation ▾</button>
           <button class="rb-big" data-sh="page-size" title="Size: the paper (Letter, A4, Legal…)"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5z"/><path d="M12 2.5V6h3.5"/></svg></span>Size ▾</button>
-          <button class="rb-big" data-sh="print-area" title="Print Area: print only the selected cells (Set), more blocks on pages of their own (Add), or everything in use again (Clear). Saved in .xlsx"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="14" height="14"/><rect x="6" y="6" width="8" height="6" stroke-dasharray="2 1.5"/></svg></span>Print Area ▾</button>
+          <button class="rb-big" data-sh="print-area" title="Print Area: Set prints only the selected cells, Add prints another block on its own page, Clear prints everything again. Saved in .xlsx"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="14" height="14"/><rect x="6" y="6" width="8" height="6" stroke-dasharray="2 1.5"/></svg></span>Print Area ▾</button>
           <button class="rb-big" data-sh="print-titles" title="Print Titles: rows printed at the top of every page (a header row) and columns at the left (compound numbers)"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="14" height="14"/><path d="M3 7h14" stroke-width="3"/></svg></span>Print Titles…</button>
         </div>
         <div class="rb-label">Page Setup</div>
@@ -1220,7 +1220,7 @@
     <div class="rb-panel" data-sh-panel="formulas" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="insert-function" title="Find a function by what it works out, then fill in its arguments with help for each (Shift+F3)"><span class="rb-icon"><i>fx</i></span>Insert Function</button>
+          <button class="rb-big" data-sh="insert-function" title="Find a function by what it calculates, then fill in its arguments with help for each (Shift+F3)"><span class="rb-icon"><i>fx</i></span>Insert Function</button>
           <div class="rb-col">
             <button data-sh="autosum" title="Add up the numbers above or to the left (Alt+=)">AutoSum</button>
             <button data-sh="fn-cat" data-cat="Chemistry" title="Chemistry functions: molar mass, formulas, HRMS, isotopes…">Chemistry ▾</button>
@@ -1314,7 +1314,7 @@
         <div class="rb-row">
           <div class="rb-col">
             <label class="rb-field">Table name <input id="sh-table-name" class="rb-text" spellcheck="false" aria-label="Table name" /></label>
-            <button data-sh="table-convert" title="Make the table plain cells again, keeping its look as ordinary formatting">Convert to Range</button>
+            <button data-sh="table-convert" title="Convert the table to plain cells, keeping its formatting">Convert to Range</button>
           </div>
         </div>
         <div class="rb-label">Properties</div>
@@ -1336,10 +1336,10 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="table-style" title="Pick another look for the table"><span class="rb-icon">▤</span>Table Style ▾</button>
+          <button class="rb-big" data-sh="table-style" title="Choose another style for the table"><span class="rb-icon">▤</span>Table Style ▾</button>
           <div class="rb-col">
-            <label class="rb-field">Header <input type="color" id="sh-table-header" title="Your own header color" aria-label="Header color" /></label>
-            <label class="rb-field">Bands <input type="color" id="sh-table-band" title="Your own band color" aria-label="Band color" /></label>
+            <label class="rb-field">Header <input type="color" id="sh-table-header" title="Custom header color" aria-label="Header color" /></label>
+            <label class="rb-field">Bands <input type="color" id="sh-table-band" title="Custom band color" aria-label="Band color" /></label>
             <button data-sh="table-colours-reset" title="Use the table style's own colors again">Style's Colors</button>
           </div>
         </div>
@@ -1441,7 +1441,7 @@
     <div class="rb-panel" data-sh-panel="chart" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-sh="chart-type" title="Change to another kind of chart"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 2v15h15" stroke-opacity="0.6"/><path d="M6 16V9M10 16V5M14 16v-5" stroke-width="2.6"/></svg></span>Change Type ▾</button>
+          <button class="rb-big" data-sh="chart-type" title="Change to another chart type"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 2v15h15" stroke-opacity="0.6"/><path d="M6 16V9M10 16V5M14 16v-5" stroke-width="2.6"/></svg></span>Change Type ▾</button>
           <div class="rb-col">
             <button data-sh="chart-add-series" title="Add another column of numbers to the chart">Add Series…</button>
             <button data-sh="chart-edit" title="Every setting of the chart, in the panel on the right (or double-click the chart)">All Settings</button>
@@ -1458,7 +1458,7 @@
             <button data-sh="chart-palette" title="Colors for the series">Colors ▾</button>
           </div>
           <div class="rb-col">
-            <button data-sh="chart-errors" title="Error bars: a fixed amount, a percentage, the standard deviation, or your own numbers from cells">Error Bars ▾</button>
+            <button data-sh="chart-errors" title="Error bars: a fixed amount, a percentage, the standard deviation, or custom values from cells">Error Bars ▾</button>
             <button data-sh="chart-axes" title="Axis limits, log scale, grid lines and number format">Axes…</button>
             <button data-sh="chart-labels" title="Show each point's value beside it">Data Labels</button>
           </div>
@@ -1497,12 +1497,12 @@
           <div class="rb-col">
             <button data-doc="cut" title="Cut">Cut</button>
             <button data-doc="copy" title="Copy (a structure selected on its own copies as a drawing, for ChemDraw)">Copy</button>
-            <button data-doc="format-painter" aria-pressed="false" title="Format Painter: copy the look of the selected text (and its paragraph, when you pick a whole paragraph or just put the caret in it) to the text you click or drag over next. Double-click to keep painting until Esc"><svg class="fp-icon" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="12" height="5" rx="1"/><path d="M15 5h2v4.5h-7V12"/><rect x="8.5" y="12" width="3" height="6" rx="0.8"/></svg> Format Painter</button>
+            <button data-doc="format-painter" aria-pressed="false" title="Copy the selected text's formatting (and paragraph formatting, if the whole paragraph or just the cursor is selected) to the next text you click or drag over. Double-click to apply repeatedly until Esc"><svg class="fp-icon" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="12" height="5" rx="1"/><path d="M15 5h2v4.5h-7V12"/><rect x="8.5" y="12" width="3" height="6" rx="0.8"/></svg> Format Painter</button>
           </div>
         </div>
         <div class="rb-label">Clipboard</div>
       </div>
-      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Looks you keep under a name (fill, line, shadow, effects, text): click one to give it to the selection">Format Favorites</div></div>
+      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Formatting saved under a name (fill, line, shadow, effects, text): click one to apply it to the selection">Format Favorites</div></div>
       <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
@@ -1524,7 +1524,7 @@
               <button class="rb-sq" data-doc="doc-small-caps" aria-pressed="false" title="Small Caps (Ctrl+Shift+K): lower-case letters as smaller capitals">A<small>BC</small></button>
               <label class="rb-sq rb-colour" title="Text color"><span>A</span><input id="doc-colour" type="color" aria-label="Text color" /></label>
               <span class="rb-split">
-                <button class="rb-sq rb-hl" data-doc="doc-highlight" aria-pressed="false" title="Highlight the selected text in the color under the letters (click again to take it off)"><span class="hl-ab">ab</span><span id="doc-hl-bar" class="hl-bar"></span></button>
+                <button class="rb-sq rb-hl" data-doc="doc-highlight" aria-pressed="false" title="Highlight the selected text in the color under the letters (click again to remove it)"><span class="hl-ab">ab</span><span id="doc-hl-bar" class="hl-bar"></span></button>
                 <button class="rb-sq rb-drop" data-doc="doc-highlight-menu" title="Highlight colors">▾</button>
               </span>
               <button class="rb-sq" data-doc="clear-formatting" title="Clear All Formatting: the selected text and its paragraphs go back to plain Normal text (links, comments and formulas stay)">A<span class="rb-eraser">⌫</span></button>
@@ -1561,9 +1561,9 @@
               <button class="rb-sq" data-doc="doc-align-center" aria-pressed="false" title="Center">Center</button>
               <button class="rb-sq" data-doc="doc-align-right" aria-pressed="false" title="Align right">Right</button>
               <button class="rb-sq" data-doc="doc-justify" aria-pressed="false" title="Justify (both edges straight)">Justify</button>
-              <button class="rb-sq" data-doc="para-tabs" title="Set tab stops for the selected paragraphs (left, center, right or decimal, with leaders), or click the ruler (View &gt; Ruler)">Tabs…</button>
-              <button class="rb-sq" data-doc="para-sort" title="Sort: put the selected paragraphs (or the rows of the table the caret is in) in order, by text, number or date">A↓Z</button>
-              <label class="rb-sq rb-colour" title="Shading: a background color behind the selected paragraphs (Borders and Shading takes it off)"><span>▧</span><input id="doc-shading" type="color" value="#d9e2f3" aria-label="Paragraph shading" /></label>
+              <button class="rb-sq" data-doc="para-tabs" title="Set tab stops for the selected paragraphs (left, center, right or decimal, with leaders), or click the ruler (View ▸ Ruler)">Tabs…</button>
+              <button class="rb-sq" data-doc="para-sort" title="Sort: put the selected paragraphs (or the rows of the table the cursor is in) in order, by text, number or date">A↓Z</button>
+              <label class="rb-sq rb-colour" title="Shading: a background color behind the selected paragraphs (Borders and Shading removes it)"><span>▧</span><input id="doc-shading" type="color" value="#d9e2f3" aria-label="Paragraph shading" /></label>
               <button class="rb-sq rb-drop" data-doc="para-borders" aria-haspopup="true" title="Borders: lines above, below or around the selected paragraphs; Borders and Shading for the line and the shading">▦ ▾</button>
             </div>
           </div>
@@ -1579,10 +1579,10 @@
           <button class="rb-style" data-doc="style-h2" aria-pressed="false" title="Heading 2"><span class="s-h2">AaBbCc</span>Heading 2</button>
           <button class="rb-style" data-doc="style-h3" aria-pressed="false" title="Heading 3"><span class="s-h3">AaBbCc</span>Heading 3</button>
           <button class="rb-style" data-doc="style-caption" aria-pressed="false" title="Caption"><span class="s-cap">AaBbCcDd</span>Caption</button>
-          <button class="rb-style rb-styles-more" data-doc="styles-pane" title="Styles pane (Ctrl+Alt+Shift+S): every paragraph and character style, Heading 4 to 9 and your own; apply, change, make new ones"><span>⋯</span>More Styles</button>
+          <button class="rb-style rb-styles-more" data-doc="styles-pane" title="Styles pane (Ctrl+Alt+Shift+S): every paragraph and character style, Heading 4 to 9 and custom styles; apply, change, make new ones"><span>⋯</span>More Styles</button>
         </div>
         <div class="rb-label">Styles</div>
-        <button class="rb-launch" data-doc="box-style" title="Change how the style the caret is in looks (font, size, spacing…); every paragraph in it follows">⬊</button>
+        <button class="rb-launch" data-doc="box-style" title="Change how the style the cursor is in looks (font, size, spacing…); every paragraph in it follows">⬊</button>
       </div>
       <div class="rb-group">
         <div class="rb-row">
@@ -1601,16 +1601,16 @@
     <div class="rb-panel" data-doc-panel="insert" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="cover-page" aria-haspopup="true" title="Cover Page: a first page with the document's title, subtitle, author, institution and date, in one of several looks"><span class="rb-icon">▤</span>Cover Page ▾</button>
-          <button class="rb-big" data-doc="blank-page" title="Blank Page: an empty page at the caret"><span class="rb-icon">▯</span>Blank Page</button>
+          <button class="rb-big" data-doc="cover-page" aria-haspopup="true" title="Cover Page: a first page with the document's title, subtitle, author, institution and date, in one of several styles"><span class="rb-icon">▤</span>Cover Page ▾</button>
+          <button class="rb-big" data-doc="blank-page" title="Blank Page: an empty page at the cursor"><span class="rb-icon">▯</span>Blank Page</button>
           <button class="rb-big" data-doc="page-break" title="Start a new page here"><span class="rb-icon">⤓</span>Page Break</button>
         </div>
         <div class="rb-label">Pages</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="insert-structure" title="Draw a structure or scheme with the drawing tools; it goes in the text at the caret"><span class="rb-icon">⬡</span>Structure</button>
-          <button class="rb-big" data-doc="insert-figure" title="Figure: drag on the page to mark out an area for structures, with the text wrapping around it (even while it is empty). Drawing in it never moves the text around it; it is not printed, and shows light gray when the pointer is over it. Right-click a structure for Make Figure"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" stroke-dasharray="2.6 2"/><path d="M7.5 8.2l2.5-1.4 2.5 1.4v2.8l-2.5 1.4-2.5-1.4z"/></svg></span>Figure</button>
+          <button class="rb-big" data-doc="insert-structure" title="Draw a structure or scheme with the drawing tools; it goes in the text at the cursor"><span class="rb-icon">⬡</span>Structure</button>
+          <button class="rb-big" data-doc="insert-figure" title="Drag on the page to reserve an area for structures, with text wrapping around it. Drawing inside never moves the text; the area doesn't print. Right-click a structure ▸ Make Figure"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" stroke-dasharray="2.6 2"/><path d="M7.5 8.2l2.5-1.4 2.5 1.4v2.8l-2.5 1.4-2.5-1.4z"/></svg></span>Figure</button>
           <button class="rb-big" data-doc="structure-from-name-doc" title="A structure from its name or SMILES"><span class="rb-icon">Aa</span>From Name</button>
           <button class="rb-big" data-doc="edit-figure" title="Edit the selected structure or scheme with the drawing tools (or double-click it)"><span class="rb-icon">✎</span>Edit Drawing</button>
         </div>
@@ -1621,27 +1621,27 @@
           <button class="rb-big" data-doc="insert-table" title="An ACS-style table"><span class="rb-icon">▦</span>Table</button>
           <button class="rb-big" data-doc="text-to-table" title="Convert Text to Table: the paragraphs selected become a table, each one a row, cut into cells at tabs, commas or another character"><span class="rb-icon">⇶</span>Text to Table</button>
           <button class="rb-big" data-doc="insert-picture" title="A picture from a file (or paste or drop one)"><span class="rb-icon">▣</span>Picture</button>
-          <button class="rb-big" data-doc="picture-format" title="Picture Format for the picture picked: brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to a shape or proportions. Saved as Word's own picture settings"><span class="rb-icon">◐</span>Picture Format</button>
-          <button class="rb-big" data-doc="insert-chart" title="A chart with its own data, as in Word: type or paste the numbers, pick the kind of chart. Double-click it to change it"><span class="rb-icon">▥</span>Chart</button>
-          <button class="rb-big" data-doc="insert-object" title="Object: another program's file kept whole in the document, as in Word (an Excel workbook, a PDF, anything). It shows its cells, first page or an icon; double-click it to open it in its program, and what you save there comes back here. Paste as Object (Edit menu) does the same with cells copied in Excel"><span class="rb-icon">⧈</span>Object</button>
+          <button class="rb-big" data-doc="picture-format" title="Adjust the selected picture: brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to shape or aspect ratio. Saved as Word picture settings"><span class="rb-icon">◐</span>Picture Format</button>
+          <button class="rb-big" data-doc="insert-chart" title="A chart with its own data, as in Word: type or paste the numbers, pick the chart type. Double-click it to change it"><span class="rb-icon">▥</span>Chart</button>
+          <button class="rb-big" data-doc="insert-object" title="Embed another program's file (Excel workbook, PDF…) shown as its content or an icon. Double-click to edit it in its program; saved changes update here"><span class="rb-icon">⧈</span>Object</button>
           <button class="rb-big" data-doc="insert-text-box" title="A box of text on the page, with the page's text wrapping around it. Drag its edge to move it"><span class="rb-icon">▭</span>Text Box</button>
-          <button class="rb-big" data-doc="insert-shapes" aria-haspopup="true" title="Basic shapes, block arrows, flowchart shapes, callouts and lab glassware: the one you pick goes in the text at the caret. Double-click it to change it with the drawing tools"><span class="rb-icon">◇</span>Shapes ▾</button>
-          <button class="rb-big" data-doc="insert-icons" aria-haspopup="true" title="About 7,000 icons, lab and science ones first (glassware, molecules, hazard signs): the one you pick goes in the text at the caret. Find one by name"><span class="rb-icon">⚗</span>Icons ▾</button>
-          <button class="rb-big" data-doc="insert-diagram" title="Lists, processes, cycles, hierarchies, Venn diagrams, matrices and pyramids drawn from lines of text, like PowerPoint's SmartArt: it goes in the text at the caret. Double-click it to change its text or look"><span class="rb-icon">⧉</span>Diagram</button>
+          <button class="rb-big" data-doc="insert-shapes" aria-haspopup="true" title="Insert a shape at the cursor: basic shapes, block arrows, flowchart, callouts or lab glassware. Double-click to edit"><span class="rb-icon">◇</span>Shapes ▾</button>
+          <button class="rb-big" data-doc="insert-icons" aria-haspopup="true" title="Insert one of about 7,000 icons at the cursor, lab and science first (glassware, molecules, hazard signs). Search by name"><span class="rb-icon">⚗</span>Icons ▾</button>
+          <button class="rb-big" data-doc="insert-diagram" title="Insert a diagram from lines of text at the cursor (lists, processes, cycles, hierarchies, Venn, matrix, pyramid), like SmartArt. Double-click to edit"><span class="rb-icon">⧉</span>Diagram</button>
         </div>
         <div class="rb-label">Tables, Pictures and Shapes</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="insert-equation" title="An equation typed as LaTeX (x^2, \frac{a}{b}, \alpha) and shown as math, or one of the usual ones (Arrhenius, Eyring…). Double-click it to change it. Saved as a Word equation (Alt+=)"><span class="rb-icon">π</span>Equation</button>
-          <button class="rb-big" data-doc="insert-symbol" title="Symbol: Greek letters, arrows, math and chemistry signs, accented letters. Find one by name (degree, angstrom, equilibrium) or code (U+00B0); the ones you used lately come first"><span class="rb-icon">Ω</span>Symbol</button>
+          <button class="rb-big" data-doc="insert-equation" title="Insert an equation typed in LaTeX (x^2, \frac{a}{b}, \alpha) or a common one (Arrhenius, Eyring…). Saved as a Word equation (Alt+=)"><span class="rb-icon">π</span>Equation</button>
+          <button class="rb-big" data-doc="insert-symbol" title="Insert Greek letters, arrows, math and chemistry signs or accented letters. Search by name (degree, angstrom) or code (U+00B0); recently used first"><span class="rb-icon">Ω</span>Symbol</button>
         </div>
         <div class="rb-label">Symbols</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="insert-link" title="Link (Ctrl+K): the selected text links to a web page, a DOI (through doi.org), a file, an e-mail address or a heading or bookmark in this document. Saved as Word's own links. Ctrl+click a link to follow it; right-click it to change or remove it"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8.5 11.5l3-3"/><path d="M10.5 5.5l1.2-1.2a3 3 0 0 1 4.2 4.2l-1.6 1.6a3 3 0 0 1-3.6.5"/><path d="M9.5 14.5l-1.2 1.2a3 3 0 0 1-4.2-4.2l1.6-1.6a3 3 0 0 1 3.6-.5"/></svg></span>Link</button>
-          <button class="rb-big" data-doc="insert-bookmark" title="Bookmark (Ctrl+Shift+F5): name the paragraph the caret is in, so links can go to it"><span class="rb-icon">🔖</span>Bookmark</button>
+          <button class="rb-big" data-doc="insert-link" title="Link the selected text to a web page, DOI, file, email address, heading or bookmark (Ctrl+K). Ctrl+click to follow; right-click to edit or remove"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8.5 11.5l3-3"/><path d="M10.5 5.5l1.2-1.2a3 3 0 0 1 4.2 4.2l-1.6 1.6a3 3 0 0 1-3.6.5"/><path d="M9.5 14.5l-1.2 1.2a3 3 0 0 1-4.2-4.2l1.6-1.6a3 3 0 0 1 3.6-.5"/></svg></span>Link</button>
+          <button class="rb-big" data-doc="insert-bookmark" title="Bookmark (Ctrl+Shift+F5): name the paragraph the cursor is in, so links can go to it"><span class="rb-icon">🔖</span>Bookmark</button>
         </div>
         <div class="rb-label">Links</div>
       </div>
@@ -1662,7 +1662,7 @@
     <div class="rb-panel" data-doc-panel="design" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <div class="rb-fly rb-selgal" data-name="Themes" data-ic="themes" data-pic="theme" data-gal="grid" title="Themes: fonts for the headings and the text, and colors for the headings, all at once. Every paragraph in a style changes (not what you formatted by hand)"><select id="doc-theme" data-doc-prefix="design-theme"></select></div>
+          <div class="rb-fly rb-selgal" data-name="Themes" data-ic="themes" data-pic="theme" data-gal="grid" title="Apply theme fonts and heading colors to the whole document (manual formatting is kept)"><select id="doc-theme" data-doc-prefix="design-theme"></select></div>
           <div class="rb-fly rb-selgal" data-name="Style Set" data-ic="style-set" data-pic="styleset" data-gal="grid" title="Style Set: how the title, headings and text are laid out (sizes, bold, alignment, spacing), keeping the theme's fonts and colors"><select id="doc-styleset" data-doc-prefix="design-styleset"></select></div>
           <div class="rb-fly rb-selgal" data-name="Colors" data-ic="theme-colors" data-pic="colors" title="Colors: the headings' and title's color"><select id="doc-theme-colors" data-doc-prefix="design-colors"></select></div>
           <div class="rb-fly rb-selgal" data-name="Fonts" data-ic="theme-fonts" data-pic="fonts" title="Fonts: one for the headings and title, one for the text"><select id="doc-theme-fonts" data-doc-prefix="design-fonts"></select></div>
@@ -1727,7 +1727,7 @@
               <option value="more">More Columns…</option>
             </select></div>
           <div class="rb-col">
-            <div class="rb-fly rb-selgal" data-size="small" data-name="Breaks" data-ic="page-breaks" data-pic="breaks" title="Page and column breaks, and section breaks: a new section can have its own paper, margins, columns, header and footer, page numbering and line numbers"><select id="doc-breaks" data-doc-prefix="breaks">
+            <div class="rb-fly rb-selgal" data-size="small" data-name="Breaks" data-ic="page-breaks" data-pic="breaks" title="Insert a page, column or section break. Sections can have their own paper size, margins, columns, headers, footers and numbering"><select id="doc-breaks" data-doc-prefix="breaks">
               <option value="" hidden>Insert…</option>
               <option value="page">Page (Ctrl+Enter)</option>
               <option value="column">Column (Ctrl+Shift+Enter)</option>
@@ -1791,12 +1791,12 @@
             <button data-doc="numbers-s" class="rb-labelled" aria-pressed="false" title="Number pages S1, S2… as Supporting Information is"><span class="rb-lead"></span>S1, S2…</button>
           </div>
         </div>
-        <div class="rb-label">Header and Footer</div>
+        <div class="rb-label">Header &amp; Footer</div>
         <button class="rb-launch" data-doc="box-hf" title="Header, footer and page number settings">⬊</button>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="arrange-position" data-ic="position" aria-haspopup="true" title="Position: put the structure, picture or text box picked at the top, middle or bottom of the page, left, center or right, with the text wrapping around it"><span class="rb-icon"></span>Position ▾</button>
+          <button class="rb-big" data-doc="arrange-position" data-ic="position" aria-haspopup="true" title="Position the selected structure, picture or text box on the page, with text wrapping around it"><span class="rb-icon"></span>Position ▾</button>
           <div class="rb-fly rb-selgal" data-name="Wrap Text" data-ic="wrap-text" data-pic="wrap" title="How text wraps around the selected structure, picture or text box"><select id="doc-wrap" data-doc-prefix="wrap">
               <option value="inline">In Line with Text</option>
               <option value="square">Square</option>
@@ -1820,13 +1820,13 @@
     <div class="rb-panel" data-doc-panel="references" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="insert-toc" title="The headings (Heading 1, 2 and 3 styles) with their page numbers after a line of dots. It updates by itself; double-click it to choose the levels shown"><span class="rb-icon">≡</span>Table of Contents</button>
+          <button class="rb-big" data-doc="insert-toc" title="Insert a table of contents from Heading 1–3 with page numbers. Updates automatically; double-click to choose levels"><span class="rb-icon">≡</span>Table of Contents</button>
         </div>
         <div class="rb-label">Contents</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="insert-footnote" title="Insert Footnote (Ctrl+Alt+F): a number in the text and its note at the foot of the page, typed into there. Escape goes back to the text; deleting the number deletes the note"><span class="rb-icon">AB<sup>1</sup></span>Insert Footnote</button>
+          <button class="rb-big" data-doc="insert-footnote" title="Insert a footnote (Ctrl+Alt+F). Esc returns to the text; deleting the number deletes the note"><span class="rb-icon">AB<sup>1</sup></span>Insert Footnote</button>
           <div class="rb-col">
             <button class="rb-labelled" data-doc="insert-endnote" title="Insert Endnote (Ctrl+Alt+D): a number in the text and its note after the end of the text"><span class="rb-lead"></span>Insert Endnote</button>
             <button class="rb-labelled" data-doc="note-options" title="How footnotes and endnotes are numbered (1, 2, 3; i, ii, iii; a, b, c; *, †, ‡), and turning footnotes into endnotes or back"><span class="rb-lead"></span>Note Options…</button>
@@ -1838,7 +1838,7 @@
         <div class="rb-row">
           <button class="rb-big" data-doc="insert-caption" title="A numbered caption: Figure 1, Scheme 2, Table S1…"><span class="rb-icon">¶</span>Insert Caption</button>
           <div class="rb-col">
-            <button class="rb-labelled" data-doc="insert-tof" title="Insert Table of Figures: the Figure, Scheme, Table or Chart captions (or all of them) with their page numbers. It updates by itself; double-click it to choose the captions listed"><span class="rb-lead"></span>Table of Figures</button>
+            <button class="rb-labelled" data-doc="insert-tof" title="Insert a list of Figure, Scheme, Table or Chart captions with page numbers. Updates automatically; double-click to choose captions"><span class="rb-lead"></span>Table of Figures</button>
             <button class="rb-labelled" data-doc="cross-reference" title="&quot;Figure 2&quot; in the text: it follows the caption's number when captions are added or moved"><span class="rb-lead"></span>Cross-reference</button>
           </div>
         </div>
@@ -1848,16 +1848,16 @@
         <div class="rb-row">
           <button class="rb-big" data-doc="mark-entry" title="Mark Entry (Alt+Shift+X): the selected word or phrase as an index entry (or a subentry), here or wherever it comes up (Mark All)"><span class="rb-icon">✓≡</span>Mark Entry</button>
           <div class="rb-col">
-            <button class="rb-labelled" data-doc="insert-index" title="Insert Index: the entries marked, A to Z, with their page numbers, in columns. It updates by itself; double-click it to change its columns and look"><span class="rb-lead"></span>Insert Index</button>
+            <button class="rb-labelled" data-doc="insert-index" title="Insert an alphabetical index of marked entries with page numbers. Updates automatically; double-click to edit"><span class="rb-lead"></span>Insert Index</button>
           </div>
         </div>
         <div class="rb-label">Index</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="mark-citation" title="Mark Citation (Alt+Shift+I): the selected case, statute, rule or other authority for the table of authorities, with its long and short forms and its category"><span class="rb-icon">§✓</span>Mark Citation</button>
+          <button class="rb-big" data-doc="mark-citation" title="Mark the selected citation (case, statute, rule…) for the table of authorities (Alt+Shift+I)"><span class="rb-icon">§✓</span>Mark Citation</button>
           <div class="rb-col">
-            <button class="rb-labelled" data-doc="insert-toa" title="Insert Table of Authorities: the citations marked, by category, each with the pages it is cited on (or passim). It updates by itself; double-click it to change it"><span class="rb-lead"></span>Table of Authorities</button>
+            <button class="rb-labelled" data-doc="insert-toa" title="Insert a table of marked citations by category, with page numbers. Updates automatically; double-click to edit"><span class="rb-lead"></span>Table of Authorities</button>
           </div>
         </div>
         <div class="rb-label">Table of Authorities</div>
@@ -1870,22 +1870,22 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="insert-citation" title="Cite one or more references: superscript numbers, in order of first citation, that change by themselves when text moves (double-click a citation to change it)"><span class="rb-icon">¹²</span>Insert Citation</button>
+          <button class="rb-big" data-doc="insert-citation" title="Cite one or more references as superscript numbers that renumber automatically. Double-click a citation to edit it"><span class="rb-icon">¹²</span>Insert Citation</button>
           <div class="rb-col">
             <button class="rb-labelled" data-doc="insert-bibliography" title="A References heading and the list of references cited, numbered, in the citation style"><span class="rb-lead"></span>Bibliography</button>
-            <button class="rb-labelled" data-doc="manage-references" title="The references of this document and every other open file, grouped by file: add by DOI, by hand or from BibTeX or RIS; edit, delete; copy between files; the citation style (ACS, Angewandte, RSC)"><span class="rb-lead"></span>Manage References…</button>
+            <button class="rb-labelled" data-doc="manage-references" title="Manage the references in this and other open files: add by DOI, manually or from BibTeX/RIS; edit, delete, copy between files; set the citation style"><span class="rb-lead"></span>Manage References…</button>
           </div>
         </div>
         <div class="rb-label">Citations and Bibliography</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="zotero-cite" title="Zotero: Add/Edit Citation. Zotero's own citation window (the Zotero app must be running on this computer): the items chosen become this document's references, and Zotero formats the citation in the document's Zotero style. With a Zotero citation picked, change it"><span class="rb-icon">Z¹</span>Add/Edit Citation</button>
-          <button class="rb-big" data-doc="zotero-bib" title="Zotero: Add/Edit Bibliography. The bibliography of the Zotero citations, formatted by Zotero, at the caret; with one there already, add or leave out items"><span class="rb-icon">Z☰</span>Add/Edit Bibliography</button>
+          <button class="rb-big" data-doc="zotero-cite" title="Zotero: Add/Edit Citation. Opens Zotero's citation picker (Zotero must be running). With a Zotero citation selected, edits it"><span class="rb-icon">Z¹</span>Add/Edit Citation</button>
+          <button class="rb-big" data-doc="zotero-bib" title="Zotero: Add/Edit Bibliography. Inserts or edits the Zotero bibliography at the cursor"><span class="rb-icon">Z☰</span>Add/Edit Bibliography</button>
           <div class="rb-col">
-            <button data-doc="zotero-refresh" title="Zotero: Refresh. Update every Zotero citation and the bibliography from the Zotero library (a title corrected in Zotero shows here), and format those changed here again">⟳ Refresh</button>
-            <button data-doc="zotero-prefs" title="Zotero: Document Preferences. The citation style Zotero uses for this document (American Chemical Society, Angewandte Chemie, any style in Zotero), and its language">⚙ Document Preferences</button>
-            <button data-doc="zotero-unlink" title="Zotero: Unlink Citations. Turn the Zotero citations and bibliography into plain text (Zotero can't update them afterwards; this can be undone here)">⛓ Unlink Citations</button>
+            <button data-doc="zotero-refresh" title="Zotero: Refresh. Update all Zotero citations and the bibliography from your Zotero library">⟳ Refresh</button>
+            <button data-doc="zotero-prefs" title="Zotero: Document Preferences. Choose this document's Zotero citation style and language">⚙ Document Preferences</button>
+            <button data-doc="zotero-unlink" title="Zotero: Unlink Citations. Convert Zotero citations and bibliography to plain text (Zotero can't update them afterward)">⛓ Unlink Citations</button>
           </div>
         </div>
         <div class="rb-label">Zotero</div>
@@ -1896,7 +1896,7 @@
         <div class="rb-row">
           <button class="rb-big" data-doc="spelling-grammar" title="Spelling &amp; Grammar (F7): go through the misspelled words, grammar slips and chemistry formatting slips one by one"><span class="rb-icon">ABC✓</span>Spelling &amp; Grammar</button>
           <div class="rb-col">
-            <button data-doc="thesaurus" title="Thesaurus (Shift+F7): words with the same meaning as the word at the caret, to put in its place (looked up online)">Thesaurus</button>
+            <button data-doc="thesaurus" title="Thesaurus (Shift+F7): words with the same meaning as the word at the cursor, to put in its place (looked up online)">Thesaurus</button>
             <button data-doc="word-count" title="Word Count (Ctrl+Shift+G): pages, words, characters, paragraphs and lines, of the document or the selection">Word Count</button>
           </div>
         </div>
@@ -1911,26 +1911,26 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="track-changes" aria-pressed="false" title="Track Changes (Ctrl+Shift+E): while on, what you type is marked as inserted and what you delete stays, struck through, until it is accepted or rejected. Each change shows who made it and when"><span class="rb-icon">✎</span>Track Changes</button>
+          <button class="rb-big" data-doc="track-changes" aria-pressed="false" title="Track Changes (Ctrl+Shift+E): mark insertions and deletions, with author and time, until accepted or rejected"><span class="rb-icon">✎</span>Track Changes</button>
           <button class="rb-big" data-doc="review-name" title="The name put on your changes"><span class="rb-icon">👤</span>Your Name…</button>
           <div class="rb-col">
-            <label class="rb-field" title="Display for Review: All Markup marks every change in its reviewer's color; Simple Markup shows the text as it will read, with a red bar by each changed line; No Markup shows it as it will read; Original shows it as it was before the changes">Display <select id="doc-markup" data-doc-prefix="markup">
+            <label class="rb-field" title="Choose how changes display: All Markup (every change in color), Simple Markup (final text with a bar by changed lines), No Markup (final text), Original (before changes)">Display <select id="doc-markup" data-doc-prefix="markup">
               <option value="all">All Markup</option>
               <option value="simple">Simple Markup</option>
               <option value="none">No Markup</option>
               <option value="original">Original</option>
             </select></label>
-            <button data-doc="show-markup" aria-haspopup="true" title="Show Markup: which changes are marked (insertions and deletions, formatting), whose (each reviewer, or all), and whether formatting changes are tracked">Show Markup ▾</button>
+            <button data-doc="show-markup" aria-haspopup="true" title="Choose which changes are marked (insertions, deletions, formatting) and for which reviewers">Show Markup ▾</button>
           </div>
         </div>
         <div class="rb-label">Tracking</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="accept-change" title="Keep the change at the caret (or every change in the selection) and go to the next"><span class="rb-icon">✓</span>Accept</button>
-          <button class="rb-big" data-doc="reject-change" title="Undo the change at the caret (or every change in the selection) and go to the next"><span class="rb-icon">✗</span>Reject</button>
+          <button class="rb-big" data-doc="accept-change" title="Keep the change at the cursor (or every change in the selection) and go to the next"><span class="rb-icon">✓</span>Accept</button>
+          <button class="rb-big" data-doc="reject-change" title="Undo the change at the cursor (or every change in the selection) and go to the next"><span class="rb-icon">✗</span>Reject</button>
           <div class="rb-col">
-            <button data-doc="prev-change" title="Go to the change before the caret">◀ Previous</button>
+            <button data-doc="prev-change" title="Go to the change before the cursor">◀ Previous</button>
             <button data-doc="next-change" title="Go to the next change">Next ▶</button>
           </div>
           <div class="rb-col">
@@ -1949,14 +1949,14 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="new-comment" title="New Comment (Ctrl+Alt+M): a note on the selected text, or on the word at the caret, shown beside the page with your name and the time"><span class="rb-icon">💬</span>New Comment</button>
+          <button class="rb-big" data-doc="new-comment" title="New Comment (Ctrl+Alt+M): a note on the selected text, or on the word at the cursor, shown beside the page with your name and the time"><span class="rb-icon">💬</span>New Comment</button>
           <div class="rb-col">
             <button data-doc="prev-comment" title="Go to the comment before this one">◀ Previous</button>
             <button data-doc="next-comment" title="Go to the next comment">Next ▶</button>
           </div>
           <div class="rb-col">
-            <button data-doc="resolve-comment" title="Mark the comment at the caret as dealt with (or open again)">Resolve</button>
-            <button data-doc="delete-comment" title="Delete the comment at the caret and its replies">Delete</button>
+            <button data-doc="resolve-comment" title="Mark the comment at the cursor as dealt with (or open again)">Resolve</button>
+            <button data-doc="delete-comment" title="Delete the comment at the cursor and its replies">Delete</button>
             <button data-doc="delete-all-comments" title="Delete every comment in the document">Delete All</button>
           </div>
           <button class="rb-big" data-doc="show-comments" aria-pressed="true" title="Show the comments beside the page, or hide them"><span class="rb-icon">☰</span>Show Comments</button>
@@ -1965,7 +1965,7 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="restrict-editing" aria-pressed="false" title="Restrict Editing: let the document be read but changed only by adding comments, only with changes tracked, only by filling in its form fields, or not at all, with a password if wanted (kept as Word keeps it). Click again to stop the protection"><span class="rb-icon">🔒</span>Restrict Editing</button>
+          <button class="rb-big" data-doc="restrict-editing" aria-pressed="false" title="Restrict Editing: allow only comments, tracked changes, form filling, or no changes, with an optional password. Click again to stop protection"><span class="rb-icon">🔒</span>Restrict Editing</button>
           <div class="rb-col">
             <button data-doc="insert-form-text" title="A text form field: a shaded box to type an entry into, also when the document is protected for filling in forms (Word's legacy form field)">▭ Text Field</button>
             <button data-doc="insert-form-check" title="A check box form field, checked or not with a click">☐ Check Box</button>
@@ -2018,7 +2018,7 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="doc-new-window" title="New Window: the document in another tab too (Report.docx:2), with its own view and place. Typing in either shows in both; Save in either saves the one file"><span class="rb-icon">⧉</span>New Window</button>
+          <button class="rb-big" data-doc="doc-new-window" title="Open another window on this document (Report.docx:2) with its own view; edits show in both"><span class="rb-icon">⧉</span>New Window</button>
           <button class="rb-big" data-doc="view-split" aria-pressed="false" title="Split (Ctrl+Alt+S): two panes on the document, one above the other, each scrolled and zoomed on its own (drag the bar between them)"><span class="rb-icon">⬓</span>Split</button>
         </div>
         <div class="rb-label">Window</div>
@@ -2044,9 +2044,9 @@
               <button class="rb-sq" data-doc="outline-body" title="Demote to Body Text">»</button>
             </div>
             <div class="rb-pair">
-              <button class="rb-sq" data-doc="outline-up" title="Move Up (Alt+Shift+↑): the paragraph, or the heading with everything folded under it, before the one above">▲</button>
+              <button class="rb-sq" data-doc="outline-up" title="Move Up (Alt+Shift+↑): the paragraph, or the heading with everything collapsed under it, before the one above">▲</button>
               <button class="rb-sq" data-doc="outline-down" title="Move Down (Alt+Shift+↓)">▼</button>
-              <button class="rb-sq" data-doc="outline-expand" title="Expand (Alt+Shift++): show what is folded under the heading, a level at a time">+</button>
+              <button class="rb-sq" data-doc="outline-expand" title="Expand (Alt+Shift++): show what is collapsed under the heading, a level at a time">+</button>
               <button class="rb-sq" data-doc="outline-collapse" title="Collapse the content under the heading one level (Alt+Shift+−)">−</button>
             </div>
           </div>
@@ -2072,7 +2072,7 @@
     <div class="rb-panel" data-doc-panel="table" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="table-styles" aria-haspopup="true" title="Table Styles: lines, shading and bold headings as one look, as Word's (Plain, Grid and List tables in the Office colors). Kept as Word's own styles in .docx"><span class="rb-icon">▦</span>Styles ▾</button>
+          <button class="rb-big" data-doc="table-styles" aria-haspopup="true" title="Apply a table style (borders, shading, header row). Saved as Word table styles"><span class="rb-icon">▦</span>Styles ▾</button>
           <div class="rb-col">
             <label class="rb-check" title="The heading rows look different (and repeat on each page)"><input type="checkbox" data-tbl-look="header" /> Header Row</label>
             <label class="rb-check" title="The last row looks different, as a total"><input type="checkbox" data-tbl-look="total" /> Total Row</label>
@@ -2089,7 +2089,7 @@
       <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
-            <label class="rb-field" title="The kind of line the Borders menu and the Border Painter draw">Line <select id="doc-pen-style"></select></label>
+            <label class="rb-field" title="The line style the Borders menu and the Border Painter draw">Line <select id="doc-pen-style"></select></label>
             <label class="rb-field" title="How thick the line is, in points">Weight <select id="doc-pen-width"></select></label>
             <label class="rb-field" title="The line's color">Pen <input id="doc-pen-colour" type="color" value="#000000" /><span id="doc-pen-swatch" class="pen-swatch"></span></label>
           </div>
@@ -2193,7 +2193,7 @@
     <div class="rb-tabs" role="tablist">
       <button role="tab" data-sl-tab="home" aria-selected="true">Home</button>
       <button role="tab" data-sl-tab="insert" aria-selected="false">Insert</button>
-      <button role="tab" data-sl-tab="transitions" aria-selected="false" title="The slides' look (themes, slide size, background) and the transitions between them">Design &amp; Transitions</button>
+      <button role="tab" data-sl-tab="transitions" aria-selected="false" title="The slides' design (themes, slide size, background) and the transitions between them">Design &amp; Transitions</button>
       <button role="tab" data-sl-tab="animations" aria-selected="false">Animations</button>
       <button role="tab" data-sl-tab="show" aria-selected="false">Slide Show</button>
       <button role="tab" data-sl-tab="review" aria-selected="false">Review</button>
@@ -2208,7 +2208,7 @@
           <div class="rb-col">
             <button data-cmd="cut" title="Cut (Ctrl+X)">Cut</button>
             <button data-cmd="copy" title="Copy (Ctrl+C): structures go as a drawing for ChemDraw, Word and PowerPoint">Copy</button>
-            <button data-cmd="format-painter" aria-pressed="false" title="Format Painter: copy the look of what is selected to the next thing you click or drag over. Double-click to keep painting until Esc"><svg class="fp-icon" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="12" height="5" rx="1"/><path d="M15 5h2v4.5h-7V12"/><rect x="8.5" y="12" width="3" height="6" rx="0.8"/></svg> Format Painter</button>
+            <button data-cmd="format-painter" aria-pressed="false" title="Format Painter: copy the style of what is selected to the next thing you click or drag over. Double-click to keep painting until Esc"><svg class="fp-icon" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="12" height="5" rx="1"/><path d="M15 5h2v4.5h-7V12"/><rect x="8.5" y="12" width="3" height="6" rx="0.8"/></svg> Format Painter</button>
           </div>
         </div>
         <div class="rb-label">Clipboard</div>
@@ -2249,7 +2249,7 @@
           </div>
           <div class="rb-col">
             <button data-cmd="keyframe-spotlight" title="In the show, keep the selection bright and dim the rest of the keyframe (with nothing selected, removes the spotlight)">Spotlight</button>
-            <button data-cmd="keyframe-detour" title="The keyframe picked is a detour off the route (a side reaction, a failed attempt): after it the show glides back to where it left the route. Again to put it back on the route">Detour</button>
+            <button data-cmd="keyframe-detour" title="Make the selected keyframe a detour (a side reaction or failed attempt): the show then returns to the main route. Click again to undo">Detour</button>
             <button data-cmd="canvas-show-options" title="In the show: dim what is outside the keyframe, a mini-map of the whole canvas, compound numbers that fly back to where the compound was made">Show Options…</button>
           </div>
         </div>
@@ -2308,7 +2308,7 @@
                 <option value="1">1 column</option><option value="2">2 columns</option><option value="3">3 columns</option><option value="more">More Columns…</option><option value="" hidden>Other</option>
               </select></div>
               <div class="rb-fly rb-selgal" data-size="icon" data-name="AutoFit" data-ic="autofit" data-pic="fit" title="AutoFit"><select data-tx="fit" title="AutoFit: what happens when the text is longer than its box" aria-label="AutoFit">
-                <option value="grow">Resize shape to fit text</option><option value="shrink">Shrink text on overflow</option><option value="fixed">Do not Autofit</option>
+                <option value="grow">Resize shape to fit text</option><option value="shrink">Shrink text on overflow</option><option value="fixed">Do Not AutoFit</option>
               </select></div>
             </div>
           </div>
@@ -2318,10 +2318,10 @@
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-cmd="slide-shapes" aria-haspopup="true" title="Basic shapes, block arrows, flowchart shapes, callouts and lab glassware: pick one, then click or drag on the slide"><span class="rb-icon">◇</span>Shapes ▾</button>
-          <button class="rb-big" data-cmd="shape-styles" aria-haspopup="dialog" title="Shape Styles: a ready-made fill, outline and effects for the selected shapes, in the deck's colors, from an outline to a raised, shadowed fill"><span class="rb-icon">◩</span>Shape Styles ▾</button>
+          <button class="rb-big" data-cmd="shape-styles" aria-haspopup="dialog" title="Apply a preset fill, outline and effect to the selected shapes, in theme colors"><span class="rb-icon">◩</span>Shape Styles ▾</button>
           <div class="rb-col">
             <button data-cmd="shape-effects" aria-haspopup="menu" class="rb-labelled" title="Shape Effects: a shadow, reflection, glow, soft edges or a bevel for the selected shapes. Saved as PowerPoint's own"><span class="rb-lead"></span>Effects ▾</button>
-            <button data-cmd="shape-picture-fill" class="rb-labelled" title="Shape Fill > Picture: fill the selected shapes with a picture from a file, stretched to each"><span class="rb-lead"></span>Picture Fill…</button>
+            <button data-cmd="shape-picture-fill" class="rb-labelled" title="Shape Fill ▸ Picture: fill the selected shapes with a picture from a file, stretched to each"><span class="rb-lead"></span>Picture Fill…</button>
           </div>
         </div>
         <div class="rb-label">Drawing</div>
@@ -2353,7 +2353,7 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button id="rb-lock-structures" class="rb-big rb-keep-words" data-cmd="lock-structures" aria-pressed="false" title="Lock structures so they ignore clicks, making nearby text and pictures easier to edit. Alt+click a locked structure to edit it; click again to unlock"><span class="rb-icon">⬡</span>Lock<br />Structures</button>
+          <button id="rb-lock-structures" class="rb-big rb-keep-words" data-cmd="lock-structures" aria-pressed="false" title="Lock structures so clicks pass through to nearby text and pictures. Alt+click a locked structure to edit it; click again to unlock"><span class="rb-icon">⬡</span>Lock<br />Structures</button>
         </div>
         <div class="rb-label">Structures</div>
       </div>
@@ -2369,8 +2369,8 @@
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-cmd="insert-table" title="Put a table on the slide (or paste cells from Excel or a sheet)"><span class="rb-icon">▦</span>Table</button>
-          <button class="rb-big" data-cmd="insert-chart" title="A chart with its own data, as in PowerPoint: type or paste the numbers, pick the kind of chart. Double-click it to change it"><span class="rb-icon">▥</span>Chart</button>
-          <button class="rb-big" data-cmd="insert-diagram" title="Lists, processes, cycles, hierarchies, Venn diagrams, matrices and pyramids drawn from lines of text, like PowerPoint's SmartArt. Double-click one to type into it"><span class="rb-icon">⧉</span>Diagram</button>
+          <button class="rb-big" data-cmd="insert-chart" title="A chart with its own data, as in PowerPoint: type or paste the numbers, pick the chart type. Double-click it to change it"><span class="rb-icon">▥</span>Chart</button>
+          <button class="rb-big" data-cmd="insert-diagram" title="Insert a diagram from lines of text (lists, processes, cycles, hierarchies, Venn, matrix, pyramid), like SmartArt. Double-click to edit"><span class="rb-icon">⧉</span>Diagram</button>
         </div>
         <div class="rb-label">Tables and Charts</div>
       </div>
@@ -2379,7 +2379,7 @@
           <div class="rb-fly">
             <button class="rb-big rb-fly-btn" data-ic="media-menu" title="Media: a picture, a video or a sound from a file"><span class="rb-icon"></span>Media ▾</button>
             <div class="rb-fly-menu" role="menu" hidden>
-              <button data-cmd="insert-picture" title="Put a picture on the slide (or paste or drop one)"><span class="rb-icon">▣</span>Picture</button><button data-cmd="insert-video" title="A video from a file (MP4 plays everywhere, PowerPoint too; MOV and WebM here). It starts when clicked in the show; double-click it to trim it, fade it or set how it plays"><span class="rb-icon">▶</span>Video</button><button data-cmd="insert-audio" title="A sound from a file (MP3, M4A, WAV, AAC or OGG), shown as a loudspeaker. Double-click it to trim it, fade it, hide it in the show or play it across slides"><span class="rb-icon">♪</span>Audio</button>
+              <button data-cmd="insert-picture" title="Put a picture on the slide (or paste or drop one)"><span class="rb-icon">▣</span>Picture</button><button data-cmd="insert-video" title="Insert a video (MP4 works everywhere including PowerPoint; MOV and WebM here). Plays on click in the show; double-click to trim, fade or set playback"><span class="rb-icon">▶</span>Video</button><button data-cmd="insert-audio" title="Insert audio (MP3, M4A, WAV, AAC, OGG). Double-click to trim, fade, hide during the show or play across slides"><span class="rb-icon">♪</span>Audio</button>
             </div>
           </div>
           <button class="rb-big" data-cmd="slide-shapes" aria-haspopup="true" title="Basic shapes, block arrows, flowchart shapes, callouts and lab glassware: pick one, then click or drag on the slide"><span class="rb-icon">◇</span>Shapes ▾</button>
@@ -2393,13 +2393,13 @@
           <div class="rb-fly">
             <button class="rb-big rb-fly-btn" data-ic="header-footer" title="Header &amp; Footer, the date and the slide number"><span class="rb-icon"></span>Header &amp; Footer ▾</button>
             <div class="rb-fly-menu" role="menu" hidden>
-              <button data-cmd="header-footer" title="Header &amp; Footer: the date (today's, kept up to date, or fixed), slide number and footer on the slides picked or every slide; and the header and footer of notes pages and handouts. Saved as PowerPoint's own"><span class="rb-icon">▭</span>Header &amp; Footer</button><button data-cmd="insert-date-time" title="Date &amp; Time: the date on the slides, today's in the form you pick or fixed text (in Header &amp; Footer)"><span class="rb-icon"></span>Date &amp; Time</button><button data-cmd="insert-slide-number" title="Slide Number: the slides' numbers at the bottom right (in Header &amp; Footer)"><span class="rb-icon"></span>Slide Number</button>
+              <button data-cmd="header-footer" title="Add the date, slide number and footer to selected or all slides, and headers and footers to notes and handouts"><span class="rb-icon">▭</span>Header &amp; Footer</button><button data-cmd="insert-date-time" title="Date &amp; Time: the date on the slides, today's in the form you pick or fixed text (in Header &amp; Footer)"><span class="rb-icon"></span>Date &amp; Time</button><button data-cmd="insert-slide-number" title="Slide Number: the slides' numbers at the bottom right (in Header &amp; Footer)"><span class="rb-icon"></span>Slide Number</button>
             </div>
           </div>
           <div class="rb-fly">
             <button class="rb-big rb-fly-btn" data-ic="symbols-menu" title="An equation or a symbol"><span class="rb-icon"></span>Symbols ▾</button>
             <div class="rb-fly-menu" role="menu" hidden>
-              <button data-cmd="insert-equation" title="An equation typed as LaTeX (x^2, \frac{a}{b}, \alpha) and shown as math, or one of the usual ones (Arrhenius, Eyring…). Double-click it to change it. Saved as a PowerPoint equation (Alt+=)"><span class="rb-icon">π</span>Equation</button><button data-cmd="insert-symbol" title="Insert Greek letters, arrows, math and chemistry signs or accented letters into the current text (or a new text box). Search by name or code; the ones you used lately come first"><span class="rb-icon">Ω</span>Symbol</button>
+              <button data-cmd="insert-equation" title="Insert an equation typed in LaTeX (x^2, \frac{a}{b}, \alpha) or a common one (Arrhenius, Eyring…). Saved as a PowerPoint equation (Alt+=)"><span class="rb-icon">π</span>Equation</button><button data-cmd="insert-symbol" title="Insert a symbol (Greek letters, arrows, math and chemistry signs, accented letters) into the current text or a new text box. Search by name or code; recent symbols come first"><span class="rb-icon">Ω</span>Symbol</button>
             </div>
           </div>
         </div>
@@ -2410,7 +2410,7 @@
           <div class="rb-fly">
             <button class="rb-big rb-fly-btn" data-ic="references-menu" title="References on selected slides, a References slide, and the Reference Manager"><span class="rb-icon"></span>References ▾</button>
             <div class="rb-fly-menu" role="menu" hidden>
-              <button data-cmd="slide-references" title="References on Slide: select which of the presentation's references the slides picked show at their foot. The lines are written, placed and formatted for you (short form, numbered or not), like the slide number and footer"><span class="rb-icon">¹⁾</span>References on Slide</button><button data-cmd="references-slide" title="References Slide: a slide at the end listing the references shown on the slides, in full, kept up to date"><span class="rb-icon"></span>References Slide</button><button data-cmd="references" title="Reference Manager: the references of every open file, grouped by file. Add by DOI, by hand or from BibTeX or RIS, and copy references between files"><span class="rb-icon"></span>Reference Manager</button>
+              <button data-cmd="slide-references" title="Choose which references appear at the bottom of the selected slides; they're formatted and placed automatically, like the footer"><span class="rb-icon">¹⁾</span>References on Slide</button><button data-cmd="references-slide" title="References Slide: a slide at the end listing the references shown on the slides, in full, kept up to date"><span class="rb-icon"></span>References Slide</button><button data-cmd="references" title="Manage references in every open file: add by DOI, manually or from BibTeX/RIS, and copy between files"><span class="rb-icon"></span>Reference Manager</button>
             </div>
           </div>
           <button class="rb-big" data-cmd="zotero-menu" aria-haspopup="true" title="Zotero (desktop app, Zotero running): Add/Edit Citation picks this slide's references; Add/Edit Bibliography builds the References slide; Refresh updates from your library"><span class="rb-icon">Z</span>Zotero ▾</button>
@@ -2419,15 +2419,15 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-cmd="insert-link" title="Link (Ctrl+K): the selected text, or the selected text boxes, link to a web page, a DOI, a file, an e-mail address or another slide. Saved as PowerPoint's own links; in the slide show a click follows one. Ctrl+click a link while editing"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8.5 11.5l3-3"/><path d="M10.5 5.5l1.2-1.2a3 3 0 0 1 4.2 4.2l-1.6 1.6a3 3 0 0 1-3.6.5"/><path d="M9.5 14.5l-1.2 1.2a3 3 0 0 1-4.2-4.2l1.6-1.6a3 3 0 0 1 3.6-.5"/></svg></span>Link</button>
+          <button class="rb-big" data-cmd="insert-link" title="Link the selected text or text boxes to a web page, DOI, file, email address or slide (Ctrl+K). Click to follow in the show; Ctrl+click while editing"><span class="rb-icon"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8.5 11.5l3-3"/><path d="M10.5 5.5l1.2-1.2a3 3 0 0 1 4.2 4.2l-1.6 1.6a3 3 0 0 1-3.6.5"/><path d="M9.5 14.5l-1.2 1.2a3 3 0 0 1-4.2-4.2l1.6-1.6a3 3 0 0 1 3.6-.5"/></svg></span>Link</button>
           <div class="rb-fly">
             <button class="rb-big rb-fly-btn" data-ic="zoom-menu" title="Slide Zoom and Summary Zoom: in the show a click zooms into a slide or a part of the talk"><span class="rb-icon"></span>Zoom ▾</button>
             <div class="rb-fly-menu" role="menu" hidden>
-              <button data-cmd="insert-slide-zoom" title="Slide Zoom: pictures of slides you pick, on this slide. In the show a click zooms into that slide (and, with Return to Zoom, back here after). Saved as PowerPoint's own zoom"><span class="rb-icon"></span>Slide Zoom</button><button data-cmd="insert-summary-zoom" title="Summary Zoom: a new slide of zooms, one for each part of your talk; in the show a click plays that part and comes back. Pick the first slide of each part"><span class="rb-icon"></span>Summary Zoom</button>
+              <button data-cmd="insert-slide-zoom" title="Insert thumbnails of chosen slides; clicking one in the show zooms to that slide (and returns with Return to Zoom)"><span class="rb-icon"></span>Slide Zoom</button><button data-cmd="insert-summary-zoom" title="Create a slide of zooms, one per section; clicking one in the show plays that section and returns. Pick each section's first slide"><span class="rb-icon"></span>Summary Zoom</button>
             </div>
           </div>
-          <button class="rb-big" data-cmd="action-settings" title="Action: what a click on the selected shape or action button does in the show (next slide, a slide, the last one viewed, end the show, a web page). Action buttons are under Shapes"><span class="rb-icon"></span>Action</button>
-          <button class="rb-big" data-cmd="insert-action-button" title="Action Button: pick a ready-made button (back, next, home, return, information, document…) and what a click on it does in the show, or put the back, home and next set on the slide"><span class="rb-icon">▶</span>Action Button…</button>
+          <button class="rb-big" data-cmd="action-settings" title="Set what clicking the selected shape does in the show (next slide, a slide, last viewed, end show, web page). Action buttons are under Shapes"><span class="rb-icon"></span>Action</button>
+          <button class="rb-big" data-cmd="insert-action-button" title="Insert a preset action button (back, next, home, return, information…) and set its action, or add a back/home/next set"><span class="rb-icon">▶</span>Action Button…</button>
         </div>
         <div class="rb-label">Links</div>
       </div>
@@ -2473,7 +2473,7 @@
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-cmd="crop" title="Cut the edges off the selected picture"><span class="rb-icon">⌗</span>Crop</button>
-          <button class="rb-big" data-cmd="picture-format" title="Picture Format for the selected picture: brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to a shape or proportions. Saved as PowerPoint's own picture settings"><span class="rb-icon">◐</span>Picture Format</button>
+          <button class="rb-big" data-cmd="picture-format" title="Adjust the selected picture: brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to shape or aspect ratio. Saved as PowerPoint picture settings"><span class="rb-icon">◐</span>Picture Format</button>
           <button class="rb-big" data-cmd="alt-text" title="Alt Text: words that describe the selected picture or shape for people who can't see it"><span class="rb-icon">🏷</span>Alt Text</button>
         </div>
         <div class="rb-label">Picture</div>
@@ -2518,12 +2518,12 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-cmd="set-up-show" title="Set Up Show: full screen with a speaker, in a window for one person, or at a kiosk going around by itself; which slides; loop; narration, animations and timings. Saved with the PowerPoint file"><span class="rb-icon">⚙</span>Set Up Slide Show</button>
-          <button class="rb-big keyframes-only" hidden data-cmd="canvas-show-options" title="Canvas Show Options: dim what is outside the keyframe, a mini-map of the whole canvas, compound numbers that fly back to where the compound was made"><span class="rb-icon">◰</span>Canvas Show</button>
+          <button class="rb-big" data-cmd="set-up-show" title="Choose presenter, window or kiosk mode, which slides, looping, narration, animations and timings"><span class="rb-icon">⚙</span>Set Up Slide Show</button>
+          <button class="rb-big keyframes-only" hidden data-cmd="canvas-show-options" title="Dim content outside the keyframe, show a minimap, and fly compound numbers back to where they were made"><span class="rb-icon">◰</span>Canvas Show</button>
           <div class="rb-col">
             <button class="rb-labelled" data-cmd="hide-slide" aria-pressed="false" title="Skip the selected slides in the show (they stay in the file). Click again to show them"><span class="rb-lead">⊘</span>Hide Slide</button>
             <button class="rb-labelled" data-cmd="rehearse-timings" title="Run the show with a timer for each slide and the whole talk; keep the timings at the end to advance automatically"><span class="rb-lead">⏱</span>Rehearse Timings</button>
-            <button class="rb-labelled" data-cmd="record-show" title="Record: play the show recording your narration from the microphone, slide by slide, and timing each slide; at the end keep them (narration goes on each slide as a sound that plays as it comes in, PowerPoint too)"><span class="rb-lead">●</span>Record</button>
+            <button class="rb-labelled" data-cmd="record-show" title="Record narration and slide timings while presenting; narration is saved on each slide as audio (works in PowerPoint)"><span class="rb-lead">●</span>Record</button>
           </div>
           <div class="rb-col">
             <button class="rb-labelled" data-cmd="clear-show-menu" aria-haspopup="true" title="Clear: take the rehearsed times or the recorded narration off this slide or every slide; or rehearse or record again from this slide"><span class="rb-lead">⌫</span>Clear ▾</button>
@@ -2539,7 +2539,7 @@
         <div class="rb-row">
           <button class="rb-big" data-cmd="view-normal" aria-pressed="true" title="The slide list beside the slide you are working on"><span class="rb-icon">▭</span>Normal</button>
           <button class="rb-big" data-cmd="view-sorter" aria-pressed="false" title="Every slide in rows of larger pictures, by section: drag to reorder, double-click one to open it"><span class="rb-icon">▦</span>Slide Sorter</button>
-          <button class="rb-big" data-cmd="view-outline" aria-pressed="false" title="Outline View: every slide's title and bullet points as one outline beside the slide, to type in. Tab and Shift+Tab move a line in and out; a line moved all the way out becomes a new slide"><span class="rb-icon">☰</span>Outline View</button>
+          <button class="rb-big" data-cmd="view-outline" aria-pressed="false" title="Show slide titles and bullets as an editable outline. Tab and Shift+Tab change levels; outdenting fully creates a new slide"><span class="rb-icon">☰</span>Outline View</button>
           <button class="rb-big" data-cmd="view-notes-page" aria-pressed="false" title="Notes Page: each slide on a page with its speaker notes under it, as they print, to read and type in"><span class="rb-icon">▤</span>Notes Page</button>
           <button class="rb-big" data-cmd="reading-view" title="Reading View: the slide show in this window, from this slide, with Back and Next below (Esc to come back)"><span class="rb-icon">▢</span>Reading View</button>
         </div>
@@ -2568,10 +2568,10 @@
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-cmd="slide-master" title="Fonts, colors, background, logo, slide numbers, footer and structure size for every slide"><span class="rb-icon">▤</span>Slide Master</button>
-          <button class="rb-big" data-cmd="edit-layouts" title="The deck's layouts: move and size their placeholders, add layouts of your own, rename them"><span class="rb-icon">▥</span>Edit Layouts</button>
-          <button class="rb-big" data-cmd="slide-templates" title="Ready-made looks and your own themes: make, change or delete themes"><span class="rb-icon">◧</span>Themes</button>
+          <button class="rb-big" data-cmd="edit-layouts" title="The deck's layouts: move and size their placeholders, add custom layouts, rename them"><span class="rb-icon">▥</span>Edit Layouts</button>
+          <button class="rb-big" data-cmd="slide-templates" title="Ready-made styles and custom themes: make, change or delete themes"><span class="rb-icon">◧</span>Themes</button>
           <div class="rb-col">
-            <button data-cmd="notes-master" title="Notes Master: how notes pages look and print: the page's way up, the slide picture's size, the notes' font and size, the header, footer, date and page number">Notes Master…</button>
+            <button data-cmd="notes-master" title="Set the layout of notes pages: orientation, slide image size, notes font, header, footer, date and page number">Notes Master…</button>
             <button data-cmd="handout-master" title="Set how handouts print: slides per page, orientation, slide borders, header, footer, date and page number">Handout Master…</button>
           </div>
         </div>
@@ -2580,7 +2580,7 @@
       <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
-            <button data-cmd="collapse-sections" title="Fold every section in the slide list">Collapse All</button>
+            <button data-cmd="collapse-sections" title="Collapse every section in the slide list">Collapse All</button>
             <button data-cmd="expand-sections" title="Open every section in the slide list">Expand All</button>
           </div>
         </div>
@@ -2590,10 +2590,10 @@
     <div class="rb-panel" data-sl-panel="review" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-cmd="preflight" title="Check Figure for Journal: is the slide's figure the width the journal prints at, is its text big enough and its lines thick enough once printed, are its fonts and pictures what the journal asks for"><span class="rb-icon">✓</span>Check for Journal</button>
+          <button class="rb-big" data-cmd="preflight" title="Check the slide's figure against a journal's print width, minimum text size and line width, fonts and picture resolution"><span class="rb-icon">✓</span>Check for Journal</button>
           <div class="rb-col">
             <button class="rb-labelled" data-cmd="check-structure" title="Check Structure: go to the next structure warning (valence, charge, stereo) on the slide"><span class="rb-lead"></span>Check Structures</button>
-            <button class="rb-labelled" data-cmd="check-arrows" title="Check that the curved arrows make sense: each starts at a lone pair, negative charge, radical or bond, ends where electrons can go, and leaves no five-bond carbon or one-electron bond. Again for the next problem"><span class="rb-lead"></span>Check Arrows</button>
+            <button class="rb-labelled" data-cmd="check-arrows" title="Check that curved arrows start at electrons, end where electrons can go, and leave no five-bond carbon or one-electron bond. Click again for the next problem"><span class="rb-lead"></span>Check Arrows</button>
             <button class="rb-labelled" data-cmd="check-balance" title="Check Balance: count every element and the charge on each side of the selected reaction step and say what is missing, such as water or HCl"><span class="rb-lead"></span>Check Balance…</button>
           </div>
         </div>
@@ -2608,7 +2608,7 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-cmd="compare-slides" title="Compare Presentations: pick another version of this deck (a reviewer's copy, say). Each slide that differs is listed, with what changed, to accept into this deck or reject"><span class="rb-icon">⇆</span>Compare…</button>
+          <button class="rb-big" data-cmd="compare-slides" title="Compare with another version of this presentation; each changed slide is listed to accept or reject"><span class="rb-icon">⇆</span>Compare…</button>
         </div>
         <div class="rb-label">Compare</div>
       </div>
@@ -2639,9 +2639,9 @@
               <option value="pick">Custom Slide Size…</option>
             </select></label>
             <div class="rb-pair">
-              <button data-cmd="slide-templates" title="Ready-made looks for the whole deck: fonts, colors, background and shapes">Templates…</button>
+              <button data-cmd="slide-templates" title="Ready-made styles for the whole deck: fonts, colors, background and shapes">Templates…</button>
               <button data-cmd="slide-master" title="Fonts, colors, background, logo, slide numbers, footer and structure size for every slide">Slide Master…</button>
-              <button data-cmd="drawing-style" title="How structures are drawn on every slide: a journal's style or your own">Drawing Style…</button>
+              <button data-cmd="drawing-style" title="How structures are drawn on every slide: a journal's style or a custom one">Drawing Style…</button>
             </div>
             <div class="rb-pair">
               <button data-cmd="edit-layouts" title="The deck's layouts: move and size their placeholders, add layouts of your own, rename them">Edit Layouts…</button>
@@ -2687,7 +2687,7 @@
             <label class="rb-field check" title="Advance automatically after this time, once the slide's animations finish"><input id="tr-after-on" type="checkbox" /> After <input id="tr-after" type="number" min="0" max="3600" step="0.5" style="width: 56px" /> s</label>
           </div>
           <div class="rb-col">
-            <button data-tr="apply-all" title="Give every slide this slide's transition, speed and timing">Apply To All</button>
+            <button data-tr="apply-all" title="Give every slide this slide's transition, speed and timing">Apply to All</button>
           </div>
         </div>
         <div class="rb-label">Timing</div>
@@ -2762,8 +2762,8 @@
             <label class="rb-field" title="Seconds to wait before it starts">Delay <input id="an-delay" type="number" min="0" max="600" step="0.25" style="width: 64px" /> s</label>
           </div>
           <div class="rb-col">
-            <button data-an="earlier" title="Reorder: play the selected animation earlier">▲ Earlier</button>
-            <button data-an="later" title="Reorder: play the selected animation later">▼ Later</button>
+            <button data-an="earlier" title="Reorder: play the selected animation earlier">▲ Move Earlier</button>
+            <button data-an="later" title="Reorder: play the selected animation later">▼ Move Later</button>
           </div>
         </div>
         <div class="rb-label">Timing</div>
@@ -2786,7 +2786,7 @@
           <div class="rb-col">
             <button data-cmd="cut" title="Cut (Ctrl+X)">Cut</button>
             <button data-cmd="copy" title="Copy (Ctrl+C): structures go as a drawing for ChemDraw, Word and PowerPoint">Copy</button>
-            <button data-cmd="format-painter" aria-pressed="false" title="Format Painter: copy the look of what is selected to the next thing you click or drag over. Double-click to keep painting until Esc"><svg class="fp-icon" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="12" height="5" rx="1"/><path d="M15 5h2v4.5h-7V12"/><rect x="8.5" y="12" width="3" height="6" rx="0.8"/></svg> Format Painter</button>
+            <button data-cmd="format-painter" aria-pressed="false" title="Format Painter: copy the style of what is selected to the next thing you click or drag over. Double-click to keep painting until Esc"><svg class="fp-icon" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="12" height="5" rx="1"/><path d="M15 5h2v4.5h-7V12"/><rect x="8.5" y="12" width="3" height="6" rx="0.8"/></svg> Format Painter</button>
           </div>
         </div>
         <div class="rb-label">Clipboard</div>
@@ -2842,9 +2842,9 @@
           <button class="rb-big" data-cmd="text-box" title="Click on the page to type, or drag to make a text box that wraps"><span class="rb-icon">T</span>Text Box</button>
           <button class="rb-big" data-cmd="insert-picture" title="Put a picture on the page (or paste or drop one)"><span class="rb-icon">▣</span>Picture</button>
           <button class="rb-big" data-cmd="insert-table" title="Put a table on the page (or paste cells from Excel or a sheet)"><span class="rb-icon">▦</span>Table</button>
-          <button class="rb-big" data-cmd="insert-chart" title="A chart with its own data: type or paste the numbers, pick the kind of chart. Double-click it to change it"><span class="rb-icon">▥</span>Chart</button>
+          <button class="rb-big" data-cmd="insert-chart" title="A chart with its own data: type or paste the numbers, pick the chart type. Double-click it to change it"><span class="rb-icon">▥</span>Chart</button>
           <button class="rb-big" data-cmd="insert-diagram" title="Lists, processes, cycles, hierarchies, Venn diagrams, matrices and pyramids drawn from lines of text, like PowerPoint's SmartArt"><span class="rb-icon">⧉</span>Diagram</button>
-          <button class="rb-big" data-cmd="insert-symbol" title="Insert Greek letters, arrows, math and chemistry signs or accented letters into the current text (or a new text box). Search by name or code"><span class="rb-icon">Ω</span>Symbol</button>
+          <button class="rb-big" data-cmd="insert-symbol" title="Insert a symbol (Greek letters, arrows, math and chemistry signs, accented letters) into the current text or a new text box. Search by name or code"><span class="rb-icon">Ω</span>Symbol</button>
           <button class="rb-big" data-cmd="slide-references" title="Choose which references appear at the bottom of the page, formatted automatically. Use Reference Manager to add or copy them"><span class="rb-icon">¹⁾</span>References</button>
         </div>
         <div class="rb-label">Insert</div>
@@ -2859,7 +2859,7 @@
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-cmd="smart-scheme" title="A Smart Scheme: the selected structures joined by arrows (or three species to type over), kept as one object whose layout you can switch"><span class="rb-icon">⇢</span>Smart Scheme</button>
-          <button class="rb-big" data-cmd="catalytic-cycle" title="Draw a catalytic cycle: a ready-made one (Suzuki, Heck, Sonogashira's two loops…) or a blank one, or the selected structures put around a loop"><span class="rb-icon">⟳</span>Catalytic Cycle</button>
+          <button class="rb-big" data-cmd="catalytic-cycle" title="Draw a catalytic cycle from a template (Suzuki, Heck, Sonogashira…), a blank one, or the selected structures"><span class="rb-icon">⟳</span>Catalytic Cycle</button>
           <button class="rb-big" data-cmd="energy-diagram" title="Draw a reaction energy diagram from a table of energies (double-click one to change its numbers)"><span class="rb-icon">⩘</span>Energy Diagram</button>
         </div>
         <div class="rb-label">Chemistry</div>
@@ -2882,7 +2882,7 @@
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-cmd="crop" title="Cut the edges off the selected picture"><span class="rb-icon">⌗</span>Crop</button>
-          <button class="rb-big" data-cmd="picture-format" title="Picture Format for the selected picture: brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to a shape or proportions. Saved as PowerPoint's own picture settings"><span class="rb-icon">◐</span>Picture Format</button>
+          <button class="rb-big" data-cmd="picture-format" title="Adjust the selected picture: brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to shape or aspect ratio. Saved as PowerPoint picture settings"><span class="rb-icon">◐</span>Picture Format</button>
           <button class="rb-big" data-cmd="alt-text" title="Alt Text: words that describe the selected picture or shape for people who can't see it"><span class="rb-icon">🏷</span>Alt Text</button>
         </div>
         <div class="rb-label">Picture</div>
@@ -2891,7 +2891,7 @@
     <div class="rb-panel" data-dz-panel="page" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-cmd="design-size" title="Change the page size: journal TOC graphics, graphical abstracts, posters, slides, paper or your own size"><span class="rb-icon">▭</span>Page Size</button>
+          <button class="rb-big" data-cmd="design-size" title="Change the page size: journal TOC graphics, graphical abstracts, posters, slides, paper or a custom size"><span class="rb-icon">▭</span>Page Size</button>
           <div class="rb-col">
             <span id="dz-size" class="muted small"></span>
             <span class="rb-pair"><label class="rb-field" title="The page's color (saved with the design)">Background <input id="dz-bg" type="color" value="#ffffff" /></label> <button type="button" data-cmd="format-background" title="A gradient, picture or pattern behind the page, see-through as you like">Format…</button></span>
@@ -2943,7 +2943,7 @@
     <div id="design-lib" class="design-only" hidden></div>
     <div id="sheet-pane" class="sheet-only" hidden>
       <div id="formula-bar">
-        <input id="sh-name" spellcheck="false" aria-label="Cell name (type a cell such as B5 and press Enter to go there)" title="The selected cell, or its name. Type a cell such as B5, a block such as A1:C9, a sheet or a defined name and press Enter to go there; type a new name to give it to the selected cells" />
+        <input id="sh-name" spellcheck="false" aria-label="Cell name (type a cell such as B5 and press Enter to go there)" title="Name Box: shows the selected cell or name. Type a cell (B5), range (A1:C9), sheet or name and press Enter to go there, or type a new name to define it" />
         <button id="sh-fx" type="button" title="Insert Function: find a function and fill in its arguments (Shift+F3)">fx</button>
         <textarea id="sh-formula" rows="1" spellcheck="false" aria-label="Cell contents"></textarea>
       </div>
@@ -2966,7 +2966,7 @@
     <div id="structure-bar" role="toolbar" aria-label="Structure" hidden>
       <span id="structure-title"></span>
       <span class="muted">Draw with the tools on the left.</span>
-      <button id="structure-bigger" type="button" title="Make the drawing area bigger (again: bigger still, then back to 6 × 4 in)">Bigger</button>
+      <button id="structure-bigger" type="button" title="Make the drawing area larger (again: larger still, then back to 6 × 4 in)">Enlarge</button>
       <button id="structure-done" type="button" class="primary" title="Put the structure in place (Ctrl+Enter)">Done</button>
       <button id="structure-cancel" type="button" title="Leave it as it was">Cancel</button>
     </div>
@@ -2989,7 +2989,7 @@
       </section>
       <section id="start-view" class="welcome-card start-view" aria-label="Start" hidden>
         <div class="sv-new">
-          <button type="button" class="sv-mode-slides" data-start="new-slides" data-mode="slides"><span class="sv-icon"></span><span>New Presentation</span><small>Slideshow</small></button>
+          <button type="button" class="sv-mode-slides" data-start="new-slides" data-mode="slides"><span class="sv-icon"></span><span>New Presentation</span><small>Slide Show</small></button>
           <button type="button" class="sv-mode-sheet" data-start="new-sheet" data-mode="sheet"><span class="sv-icon"></span><span>New Spreadsheet</span><small>Tables, Charts, and Dashboards</small></button>
           <button type="button" class="sv-mode-document" data-start="new-document" data-mode="document"><span class="sv-icon"></span><span>New Document</span><small>Text document</small></button>
           <button type="button" class="sv-mode-design" data-start="new-design" data-mode="design"><span class="sv-icon"></span><span>New Design</span><small>Posters, Graphical abstracts, Figures</small></button>
@@ -3004,7 +3004,7 @@
       <div id="split-bar">
         <span class="split-label">Canvas</span>
         <select id="split-pick" aria-label="Canvas shown beside" title="The canvas shown here: any canvas open in a tab, or a new one"></select>
-        <button id="split-insert" type="button" title="Put the selected structures (or the whole drawing, when nothing is selected) into the document at the caret">Insert into Document</button>
+        <button id="split-insert" type="button" title="Put the selected structures (or the whole drawing, when nothing is selected) into the document at the cursor">Insert into Document</button>
         <span class="grow"></span>
         <button id="split-close" type="button" title="Close split view (the drawing stays open in its tab)" aria-label="Close split view">×</button>
       </div>
@@ -3031,7 +3031,7 @@
     <section id="layers-section" hidden></section>
     <section id="warnings-section">
       <h2>Warnings <span id="warnings-count" class="count"></span>
-        <label class="check small" title="Red boxes around problems on the drawing (never printed, saved or copied)"><input id="show-warnings" type="checkbox" checked /> Show on drawing</label></h2>
+        <label class="check small" title="Red boxes around problems on the drawing (never printed, saved or copied)"><input id="show-warnings" type="checkbox" checked /> Show on Drawing</label></h2>
       <div id="warnings-body"><p class="muted">No problems found.</p></div>
     </section>
     <section id="doc-section">
@@ -3064,16 +3064,16 @@
   </aside>
 
   <footer id="status"><span id="hint"></span><div id="doc-statusbar" class="doc-only" hidden><span id="doc-status"></span><button type="button" class="doc-viewbtn" data-doc="view-read" aria-pressed="false" title="Read Mode">📖</button><button type="button" class="doc-viewbtn" data-doc="view-print" aria-pressed="true" title="Print Layout">▯</button><button type="button" class="doc-viewbtn" data-doc="view-web" aria-pressed="false" title="Web Layout">🌐</button><button type="button" data-doc="zoom-out" title="Zoom out">−</button><span id="doc-zoom">100%</span><button type="button" data-doc="zoom-in" title="Zoom in">+</button><button type="button" data-doc="zoom-fit" title="Fit the page width in the window">Page Width</button></div><button type="button" id="status-notes" class="slides-only" data-cmd="view-notes" aria-pressed="true" title="Show or hide the speaker notes under the slide" hidden>✎ Notes</button><span id="slide-views" class="slides-only" role="group" aria-label="Views" hidden><button type="button" data-cmd="view-normal" aria-pressed="true" title="Normal" aria-label="Normal"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1"/><path d="M5.5 2.5v11"/><rect x="2.6" y="4" width="1.8" height="1.6" fill="currentColor" stroke="none"/><rect x="2.6" y="7" width="1.8" height="1.6" fill="currentColor" stroke="none" opacity=".5"/></svg></button><button type="button" data-cmd="view-sorter" aria-pressed="false" title="Slide Sorter" aria-label="Slide Sorter"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="5.5" height="4.5" rx=".6"/><rect x="9" y="2.5" width="5.5" height="4.5" rx=".6"/><rect x="1.5" y="9" width="5.5" height="4.5" rx=".6"/><rect x="9" y="9" width="5.5" height="4.5" rx=".6"/></svg></button><button type="button" data-cmd="reading-view" title="Reading View" aria-label="Reading View"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true"><path d="M8 4.2C6.3 3.2 3.9 3 1.8 3.5v9.3c2.1-.5 4.5-.3 6.2.9 1.7-1.2 4.1-1.4 6.2-.9V3.5C12.1 3 9.7 3.2 8 4.2z"/><path d="M8 4.2v9.5"/></svg></button><button type="button" data-cmd="present-current" title="Slide Show: from this slide (Shift+F5)" aria-label="Slide Show"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1"/><path d="M8 11.5v2.3M5.3 13.8h5.4"/><path d="M6.6 5v4l3.4-2z" fill="currentColor" stroke="none"/></svg></button></span><span id="slide-zoom" class="slides-only" hidden><button type="button" data-cmd="zoom-out" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button><input type="range" id="slide-zoom-range" min="0" max="100" step="1" value="50" title="Zoom" aria-label="Zoom" /><button type="button" data-cmd="zoom-in" title="Zoom In (Ctrl+=)" aria-label="Zoom In">+</button></span><label class="zoom-pick canvas-only" title="Zoom (Ctrl+= and Ctrl+− also zoom; F6 fits the window)"><span class="sr-only">Zoom</span><select id="zoom-pick">
-    <option value="fit">Fit</option><option value="actual">Actual size</option><option disabled>──</option>
+    <option value="fit">Fit</option><option value="actual">Actual Size</option><option disabled>──</option>
     <option value="25">25%</option><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option><option value="150">150%</option><option value="200">200%</option><option value="300">300%</option><option value="400">400%</option><option value="800">800%</option>
-    <option value="now" hidden></option></select></label><span id="go-buttons" class="go-buttons canvas-only"><button type="button" id="go-fit" title="Fit the whole drawing in the window (F6)">Fit</button><button type="button" id="go-sel" title="Go to Selection: bring what is selected into view (Shift+F6). Select something first." disabled>Go to Selection</button></span><button type="button" id="slide-fit" class="slides-only" data-cmd="zoom-fit" title="Fit Slide to Current Window (F6)" aria-label="Fit Slide to Current Window" hidden><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="9" height="7" rx=".6"/><path d="M1.5 4V1.5H4M12 1.5h2.5V4M14.5 12v2.5H12M4 14.5H1.5V12"/></svg></button><button type="button" id="status-side" data-cmd="fold-side" aria-pressed="true" title="Side panel: show or close it (Ctrl+Alt+B)" aria-label="Side panel"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor"/><path d="M10 2.5v11" stroke="currentColor"/><rect class="sp-fill" x="10.5" y="3" width="3.5" height="10" fill="currentColor" opacity=".35"/></svg></button></footer>
+    <option value="now" hidden></option></select></label><span id="go-buttons" class="go-buttons canvas-only"><button type="button" id="go-fit" title="Fit the whole drawing in the window (F6)">Fit</button><button type="button" id="go-sel" title="Go to Selection: scroll the selection into view (Shift+F6)" disabled>Go to Selection</button></span><button type="button" id="slide-fit" class="slides-only" data-cmd="zoom-fit" title="Fit Slide to Current Window (F6)" aria-label="Fit Slide to Current Window" hidden><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="9" height="7" rx=".6"/><path d="M1.5 4V1.5H4M12 1.5h2.5V4M14.5 12v2.5H12M4 14.5H1.5V12"/></svg></button><button type="button" id="status-side" data-cmd="fold-side" aria-pressed="true" title="Side panel: show or close it (Ctrl+Alt+B)" aria-label="Side Panel"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor"/><path d="M10 2.5v11" stroke="currentColor"/><rect class="sp-fill" x="10.5" y="3" width="3.5" height="10" fill="currentColor" opacity=".35"/></svg></button></footer>
   <div id="flash" role="status" aria-live="polite"></div>
   <div id="sr-say" class="sr-only" aria-live="polite"></div>
 
   <dialog id="help">
     <h2>Keyboard Shortcuts and Tips</h2>
     <p class="muted"><span id="app-version"></span>. Free software under the GNU General Public License, version 3 or later.</p>
-    <p class="muted">Hotkeys work like ChemDraw: point at an atom or bond (it highlights blue) and press a key. A key that grows something moves the highlight to the new atom, so you can keep typing (<kbd>8</kbd> then <kbd>1</kbd> makes an E double bond). <kbd>1</kbd> and <kbd>0</kbd> keep the highlight under the mouse, so pressing 1 three times adds three bonds; after a click or another key they move it, so 1 1 1 draws a chain. Every key can be changed.</p>
+    <p class="muted">Keyboard shortcuts work like ChemDraw: point at an atom or bond (it highlights blue) and press a key. A key that grows something moves the highlight to the new atom, so you can keep typing (<kbd>8</kbd> then <kbd>1</kbd> makes an E double bond). <kbd>1</kbd> and <kbd>0</kbd> keep the highlight under the mouse, so pressing 1 three times adds three bonds; after a click or another key they move it, so 1 1 1 draws a chain. Every key can be changed.</p>
     <p><button id="help-hotkeys" type="button">Show and change all keyboard shortcuts…</button></p>
     <div class="cols">
       <div>
@@ -3130,7 +3130,7 @@
           <li>References &gt; Manage References keeps the document's references: add one by DOI (filled in from Crossref), by hand, or from a BibTeX or RIS file, and choose the style (ACS, Angewandte, RSC). Insert Citation puts superscript numbers in the text, given in order of first citation (double-click one to change it); Bibliography lists the references cited. Any value can be changed by hand, and a reference's bibliography text can be typed over</li>
           <li>Layout: paper, margins and page numbers (S1, S2… for Supporting Information); the panel has the header and footer</li>
         </ul>
-        <h3>Not in this prototype yet</h3>
+        <h3>Not available yet</h3>
         <ul>
           <li>Rings bonded to a metal through all their atoms (ferrocene)</li>
         </ul>

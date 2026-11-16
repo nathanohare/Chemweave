@@ -23,7 +23,7 @@ export const STARTER_DECKS: StarterDeck[] = [
       { layout: 'title', text: ['[Lecture Title]', '[Course] · Lecture [N] · [Date]'] },
       slide('Learning Goals', 'By the end of this lecture you can:\n[Goal 1]\n[Goal 2]\n[Goal 3]'),
       slide('Last Time', '[Key idea from the last lecture]\n[A question to start with]'),
-      slide('[Topic 1]', '[Key idea]\n[Scheme or mechanism: Insert > Structure]', '[What to say, and where students usually get stuck]'),
+      slide('[Topic 1]', '[Key idea] [Scheme or mechanism: Insert ▸ Structure]', '[What to say, and where students usually get stuck]'),
       slide('Worked Example', '[Problem]\n[Step 1]\n[Step 2]'),
       slide('[Topic 2]', '[Key idea]\n[Scheme or mechanism]'),
       slide('Worked Example', '[Problem]\n[Step 1]\n[Step 2]'),

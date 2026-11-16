@@ -26,7 +26,7 @@ Open files with **File ▸ Open…** (Ctrl+O), or drop them onto the window. Pic
 
 ### Structures in Office files
 
-- **Word (.docx):** structures show as pictures in Word. Open the file here again and they are editable drawings, even after Word has saved it. ChemDraw drawings embedded in a Word file made elsewhere keep the look they had in Word; double-click one to make it an editable structure. Edited, it is saved back as a ChemDraw object, so it still opens in ChemDraw from Word.
+- **Word (.docx):** structures show as pictures in Word. Open the file here again and they are editable drawings, even after Word has saved it. ChemDraw drawings embedded in a Word file made elsewhere keep the formatting they had in Word; double-click one to make it an editable structure. Edited, it is saved back as a ChemDraw object, so it still opens in ChemDraw from Word.
 - **PowerPoint (.pptx):** the same: pictures in PowerPoint, editable drawings when opened here again. A ChemDraw object embedded in a PowerPoint slide comes in as editable structures, where and at the size PowerPoint showed it, and is saved back as a ChemDraw object, so double-clicking it in PowerPoint still opens it in ChemDraw. Anything drawn onto its structures (a bond added to one) goes back in the object with them.
 - **Excel (.xlsx):** structures are pictures with their SMILES in the cell, and become editable drawings again when opened here.
 
@@ -57,7 +57,7 @@ A figure wider than the column is shrunk by the journal, which makes its text an
 - pictures in the figure with too few dots at the printed size;
 - the resolution and file format to export at (for example ACS: 1200 dpi for black and white line art; RSC: TIFF at 600 dpi; Nature: PDF or EPS, not TIFF or PNG).
 
-**Select** picks out what a finding is about. **Make It Fit** scales the drawing to the width, **Enlarge Text** and **Thicken Lines** make just what is too small big enough, **Use Arial** changes other fonts, and **Use Journal Drawing Style** redraws the structures in the journal's own style. Each is one undo. **Export for Journal…** opens Export Picture at the resolution the journal asks for (or Export PDF for Nature). The numbers come from each publisher's author guidelines, linked at the foot of the box; journals change them, so check the journal's own page before sending.
+**Select** picks out what a finding is about. **Make It Fit** scales the drawing to the width, **Enlarge Text** and **Thicken Lines** make just what is too small big enough, **Use Arial** changes other fonts, and **Use Journal Drawing Style** redraws the structures in the journal's own style. Each is one undo. **Export for Journal…** opens Export Picture at the resolution the journal asks for (or Export PDF for Nature). The numbers come from each publisher's author guidelines, linked at the bottom of the box; journals change them, so check the journal's own page before sending.
 
 ### Other formats
 
@@ -74,10 +74,10 @@ A figure wider than the column is shrunk by the journal, which makes its text an
 
 ### Opening files from Explorer or Finder (desktop app)
 
-Double-click a file, or right-click it and choose **Open with ▸ Chemweave**, and it opens in a new tab. A file opened while the program is already running goes to the open window rather than starting a second copy.
+Double-click a file, or right-click it and choose **Open with ▸ Chemweave**, and it opens in a new tab. A file opened while Chemweave is already running goes to the open window rather than starting a second copy.
 
-- **Windows**: the first time it starts, Chemweave adds itself to the **Open with** list of .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket and .cml files, for you only. **Edit ▸ Settings ▸ Apps and System** chooses which kinds of file it is offered for, including .docx, .pptx and .xlsx. It never makes itself the program that opens a file on a double-click: Windows keeps that choice for you. **Choose Defaults in Windows Settings…** on that page opens Windows' Default apps page, where you can pick Chemweave for each kind of file. A portable copy leaves the computer's file types alone until you check them yourself. Uninstalling takes it off the lists again.
-- **macOS**: right-click a file and choose **Open With ▸ Chemweave**. To open a kind of file here every time, select one in Finder, choose **File ▸ Get Info**, pick Chemweave under **Open with** and click **Change All**.
+- **Windows**: the first time it starts, Chemweave adds itself to the **Open with** list of .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket and .cml files, for you only. **Edit ▸ Settings ▸ Apps and System** chooses which file types it is offered for, including .docx, .pptx and .xlsx. It never makes itself the program that opens a file on a double-click: Windows keeps that choice for you. **Choose Defaults in Windows Settings…** on that page opens Windows' Default apps page, where you can pick Chemweave for each file type. A portable copy leaves the computer's file types alone until you check them yourself. Uninstalling removes it the lists again.
+- **macOS**: right-click a file and choose **Open With ▸ Chemweave**. To open a file type here every time, select one in Finder, choose **File ▸ Get Info**, pick Chemweave under **Open with** and click **Change All**.
 - **Linux**: Chemweave is in your file manager's **Open With** list for these files; your desktop's Default Applications settings choose the default.
 
 ## Copy and paste
@@ -118,7 +118,7 @@ Split View puts a canvas beside a document, spreadsheet, presentation or design,
 
 1. In a document, spreadsheet, presentation or design tab, choose **View ▸ Split View: Canvas Beside**. A canvas opens on the right: the first canvas tab, or a new one.
 2. Click a side to work on it. Beside a document or spreadsheet, both sides stay live; Ctrl+Z and Ctrl+S act on the side you clicked last. Beside slides or a design, the side you aren't working on shows as a picture until you click it.
-3. The bar above the canvas picks another open canvas or a new one. **Insert into Document** (or **Cell**, **Slide** or **Design**) puts the selected structures, or the whole drawing, in at the caret, the selected cell, the slide or the design.
+3. The bar above the canvas picks another open canvas or a new one. **Insert into Document** (or **Cell**, **Slide** or **Design**) puts the selected structures, or the whole drawing, in at the cursor, the selected cell, the slide or the design.
 4. Drag the divider to change the widths. The × closes the split; the canvas stays open in its own tab.
 
 ## Workspaces
@@ -176,11 +176,11 @@ Recovery copies and versions are kept in a folder named `Kept` in the app's loca
 
 **File ▸ Open Recent** lists the last ten files and workspaces you opened or saved, newest first. Click one to open it. If it has been moved or deleted, a message says so and it comes off the list. **Clear Recent Files** empties the list.
 
-The web version keeps a recent list too in Chrome and Edge, which let a page open a file again by itself: the browser asks once for leave to open it. Other browsers (Firefox, Safari) don't allow this, so there the menu stays hidden.
+The web version keeps a recent list too in Chrome and Edge, which let a page open a file again automatically: the browser asks once for leave to open it. Other browsers (Firefox, Safari) don't allow this, so there the menu stays hidden.
 
 ## Printing
 
-**File ▸ Print…** (Ctrl+P) asks a question or two, then opens your system's Print window, where you pick the printer and copies, or save a PDF. In the Windows app the printer, copies and pages are picked in Chemweave's own Print window instead, so pages print at their own size and the right way around (pick **Microsoft Print to PDF** to save a PDF).
+**File ▸ Print…** (Ctrl+P) asks a question or two, then opens your system's Print window, where you pick the printer and copies, or save a PDF. In the Windows app the printer, copies and pages are selected in Chemweave's own Print window instead, so pages print at their own size and the right way around (pick **Microsoft Print to PDF** to save a PDF).
 
 | Tab | Choices |
 |---|---|

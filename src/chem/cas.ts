@@ -185,7 +185,7 @@ export async function structureForCas(cas: string, deps: CasDeps): Promise<CasSt
   if (mine) return { smiles: mine.smiles, note: `CAS RN ${cas} is ${libTitle(mine)} in your Compound Library.` };
   const kept = deps.memory.byCas(cas);
   if (kept) return { smiles: kept.smiles, note: `Found CAS RN ${cas}${kept.name ? `: ${kept.name}` : ''} (looked up on ${kept.source} on ${day(kept.found)}). Check it is the compound you meant.` };
-  if (!deps.online) return { error: `CAS RN ${cas} isn't in your Compound Library. CAS RNs are looked up on PubChem, which is turned off in Edit > Settings > Online.` };
+  if (!deps.online) return { error: `CAS RN ${cas} isn't in your Compound Library. CAS RNs are looked up on PubChem, which is turned off in Edit ▸ Settings ▸ Online.` };
   let problem = '';
   try {
     const pc = await pubchemByCas(cas, deps.fetchFn);
@@ -232,7 +232,7 @@ export async function casForStructure(smiles: string, deps: CasDeps, fresh = fal
   const kept = fresh ? null : deps.memory.byKey(smiles);
   if (kept?.cas.length) return { kind: 'found', cas: kept.cas, name: kept.name, cid: kept.cid, from: kept.source };
   if (kept) return { kind: 'none', message: `PubChem lists no CAS RN for this structure${kept.name ? ` (${kept.name})` : ''}.`, cid: kept.cid };
-  if (!deps.online) return { kind: 'error', message: 'CAS RNs are looked up on PubChem, which is turned off in Edit > Settings > Online.' };
+  if (!deps.online) return { kind: 'error', message: 'CAS RNs are looked up on PubChem, which is turned off in Edit ▸ Settings ▸ Online.' };
   let got: Awaited<ReturnType<typeof pubchemCasOf>>;
   try {
     got = await pubchemCasOf(smiles, deps.fetchFn);

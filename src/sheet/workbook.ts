@@ -240,7 +240,7 @@ function fillBlock(a: Arg, rows: number, cols: number): Arg {
     const row: Value[] = [];
     for (let j = 0; j < cols; j++) {
       const si = h === 1 ? 0 : i, sj = w === 1 ? 0 : j;
-      row.push(si < h && sj < w ? src[si][sj] : ERR.na('The array formula\'s answer is smaller than its block'));
+      row.push(si < h && sj < w ? src[si][sj] : ERR.na('The array formula\'s result is smaller than its range'));
     }
     block.push(row);
   }
@@ -2183,7 +2183,7 @@ export class Workbook {
       host.home = { row, col };
       return tree instanceof CellError ? tree : evaluate(shiftTree(tree, row - home.row, col - home.col), host);
     } catch (e) {
-      return ERR.value(`This formula could not be worked out (${(e as Error).message})`);
+      return ERR.value(`This formula could not be calculated (${(e as Error).message})`);
     }
   }
 
@@ -2196,7 +2196,7 @@ export class Workbook {
       host.home = { row, col };
       return evaluateArg(tree, host);
     } catch (e) {
-      return ERR.value(`This formula could not be worked out (${(e as Error).message})`);
+      return ERR.value(`This formula could not be calculated (${(e as Error).message})`);
     }
   }
 
@@ -2230,7 +2230,7 @@ export class Workbook {
       }
     } catch (e) {
       // one formula that fails outright shows an error in its cell rather than stopping every other
-      v = ERR.value(`This formula could not be worked out (${(e as Error).message})`);
+      v = ERR.value(`This formula could not be calculated (${(e as Error).message})`);
     }
     if (spillState(s, n.key) !== had) this.spillsMoved = true;
     s.values.set(n.key, v === null ? 0 : v);

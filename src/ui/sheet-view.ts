@@ -3689,7 +3689,7 @@ export class SheetView {
       const problem = f ? this.wb!.formulaProblem(f) : null;
       return `${(v as CellError).code}: ${problem ?? (v as CellError).detail}`;
     }
-    if (s.isOverride(r, c)) return 'A value typed over the calculated one (right-click > Reset to Calculated puts it back)';
+    if (s.isOverride(r, c)) return 'A value typed over the calculated one (right-click ▸ Reset to Calculated restores it)';
     if (s.cell(r, c)?.structure) return 'Double-click to change the structure';
     return '';
   }

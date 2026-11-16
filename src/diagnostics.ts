@@ -284,7 +284,7 @@ export function errorReport(d: Diagnostics, about: { entry?: LogEntry; closed?: 
     const c = about.closed;
     const lines = [`Stopped without closing; last heard from at ${stamp(c.beat)} (started ${stamp(c.started)}${c.version ? `, ${c.version}` : ''}).`];
     for (const p of c.panics) lines.push('', tail(p, 1500));
-    return { title: 'The program closed unexpectedly', extra: lines.join('\n') };
+    return { title: 'Chemweave closed unexpectedly', extra: lines.join('\n') };
   }
   const e = about.entry;
   const msg = e?.message.split('\n')[0] ?? 'Error';
