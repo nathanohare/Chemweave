@@ -502,6 +502,25 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 #status-notes { font: var(--fs-sm) var(--ui-font); color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: var(--r-control); padding: 0 6px; line-height: 18px; }
 #status-notes:hover { color: var(--text); border-color: var(--line); }
 #status-notes[aria-pressed="true"] { color: var(--text); background: var(--accent-soft); }
+/* Presentation: the views (Normal, Slide Sorter, Reading View, Slide Show), then the zoom slider,
+   the percent (the zoom box, as words) and Fit, at the right of the status bar as in PowerPoint */
+#slide-views[hidden], #slide-zoom[hidden], #slide-fit[hidden] { display: none; }
+#slide-views { display: inline-flex; align-items: center; gap: 1px; margin: 0 6px; }
+#slide-views button, #slide-fit { display: inline-grid; place-items: center; width: 24px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); }
+#slide-views button:hover, #slide-fit:hover { color: var(--text); border-color: var(--line); }
+#slide-views button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+#slide-zoom { display: inline-flex; align-items: center; gap: 1px; padding-left: 8px; border-left: 1px solid var(--line); }
+#slide-zoom button { width: 18px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font: 14px/1 var(--ui-font); }
+#slide-zoom button:hover { color: var(--text); border-color: var(--line); }
+#slide-zoom-range { -webkit-appearance: none; appearance: none; width: 96px; height: 16px; margin: 0 2px; padding: 0; background: transparent; cursor: pointer; }
+#slide-zoom-range::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: var(--muted); }
+#slide-zoom-range::-webkit-slider-thumb { -webkit-appearance: none; width: 5px; height: 12px; margin-top: -5px; border: 0; border-radius: 1px; background: var(--text); }
+#slide-zoom-range::-moz-range-track { height: 2px; border-radius: 1px; background: var(--muted); }
+#slide-zoom-range::-moz-range-thumb { width: 5px; height: 12px; border: 0; border-radius: 1px; background: var(--text); }
+#slide-zoom-range:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+body.slides-mode .zoom-pick select { -webkit-appearance: none; appearance: none; width: 46px; padding: 1px 3px; border-color: transparent; background: transparent; text-align: right; text-align-last: right; cursor: pointer; }
+body.slides-mode .zoom-pick select:hover { border-color: var(--line); }
+body.slides-mode #go-buttons { display: none; }
 .go-buttons button { font: var(--fs-sm) var(--ui-font); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 0 6px; line-height: 18px; }
 .go-buttons button:disabled { color: var(--muted); opacity: 0.6; cursor: default; }
 #overlay { cursor: crosshair; touch-action: none; }
