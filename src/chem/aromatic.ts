@@ -3,7 +3,7 @@
 // single and double bonds back (a Kekulé structure).
 
 import type { Doc } from '../model';
-import { implicitHydrogens, SYMBOLS } from './elements';
+import { implicitHydrogens, maxValence, SYMBOLS } from './elements';
 import type { Vec } from '../geom';
 
 const key = (ring: number[]) => [...ring].sort((a, b) => a - b).join(',');
@@ -240,13 +240,23 @@ export function kekulize(doc: Doc, bonds: Iterable<number>): number {
  * double bond; N, O, S and charged atoms (tropylium's C⁺, cyclopentadienide's C⁻) may go
  * without. Null when no such pattern exists. The drawing is not changed.
  */
-export function kekuleDoubles(doc: Doc, todo: Set<number>): Set<number> | null {
+export function kekuleDoubles(doc: Doc, todo: Set<number>, strict = false): Set<number> | null {
   const atoms = [...new Set([...todo].flatMap((id) => { const b = doc.bonds.get(id)!; return [b.a1, b.a2]; }))];
   // an atom already double-bonded outside the rings (a quinone's C=O) needs none inside
   const optional = (id: number) => {
     const a = doc.atoms.get(id)!;
-    if (a.z !== 6 || a.charge !== 0) return true;
+    if (a.z !== 6 || a.charge !== 0 || (strict && a.label)) return true;
     return [...(doc.adj.get(id) ?? [])].some((bid) => !todo.has(bid) && doc.bonds.get(bid)!.order === 2);
+  };
+  // (strict: only an atom with room for one more bond takes a double bond, so the neutral O of
+  // a ring ether isn't made an oxonium)
+  const room = (id: number) => {
+    const a = doc.atoms.get(id)!;
+    const max = maxValence(a.z, a.charge);
+    if (!strict || a.label || max === undefined) return true;
+    let used = 0;
+    for (const bid of doc.adj.get(id) ?? []) { const b = doc.bonds.get(bid)!; used += todo.has(bid) ? 1 : b.order === 1.5 ? 1 : b.order; }
+    return used + 1 <= max;
   };
   const paired = new Map<number, number>();
   const chosen = new Set<number>();
@@ -258,7 +268,7 @@ export function kekuleDoubles(doc: Doc, todo: Set<number>): Set<number> | null {
       if (!todo.has(bid)) continue;
       const b = doc.bonds.get(bid)!;
       const o = b.a1 === a ? b.a2 : b.a1;
-      if (paired.has(o)) continue;
+      if (paired.has(o) || !room(a) || !room(o)) continue;
       paired.set(a, o); paired.set(o, a); chosen.add(bid);
       if (solve(i + 1)) return true;
       paired.delete(a); paired.delete(o); chosen.delete(bid);
@@ -266,4 +276,59 @@ export function kekuleDoubles(doc: Doc, todo: Set<number>): Set<number> | null {
     return optional(a) && solve(i + 1);
   };
   return solve(0) ? chosen : null;
+}
+
+/** Is this 1½ bond in a ring of 1½ bonds (can a1 be reached from a2 along other 1½ bonds)? */
+export function aromaticBondInRing(doc: Doc, bondId: number): boolean {
+  const b = doc.bonds.get(bondId);
+  if (!b || b.order !== 1.5) return false;
+  const seen = new Set<number>([b.a2]);
+  const stack = [b.a2];
+  while (stack.length) {
+    const id = stack.pop()!;
+    for (const bid of doc.adj.get(id) ?? []) {
+      if (bid === bondId) continue;
+      const o = doc.bonds.get(bid)!;
+      if (o.order !== 1.5) continue;
+      const n = o.a1 === id ? o.a2 : o.a1;
+      if (n === b.a1) return true;
+      if (!seen.has(n)) { seen.add(n); stack.push(n); }
+    }
+  }
+  return false;
+}
+
+/**
+ * The 1½ bonds among these that can only be single. ChemDraw draws a 1½ bond with no ring circle
+ * as a plain line, and some files have them where no aromatic ring can be (Nate's 2026-11-16
+ * pyranose: the ring and its OH, OMe and anomeric bonds, all Order="1.5"). A 1½ bond is read as
+ * single when it is in no ring of 1½ bonds, or when its ring system has no Kekulé structure
+ * (its carbons can't each get a double bond). The drawing is not changed, so it saves as it came.
+ */
+export function aromaticAsSingle(doc: Doc, bonds: Iterable<number>): Set<number> {
+  const out = new Set<number>();
+  const ring = new Set<number>();
+  for (const id of bonds) {
+    if (doc.bonds.get(id)?.order !== 1.5 || out.has(id) || ring.has(id)) continue;
+    if (!aromaticBondInRing(doc, id)) { out.add(id); continue; }
+    // the ring system this bond is in: 1½ bonds joined to it that are in rings themselves
+    const part = new Set<number>();
+    const stack = [id];
+    while (stack.length) {
+      const bid = stack.pop()!;
+      if (part.has(bid)) continue;
+      part.add(bid);
+      const b = doc.bonds.get(bid)!;
+      for (const a of [b.a1, b.a2]) {
+        for (const n of doc.adj.get(a) ?? []) {
+          if (part.has(n) || out.has(n) || doc.bonds.get(n)!.order !== 1.5) continue;
+          if (aromaticBondInRing(doc, n)) stack.push(n);
+          else out.add(n);
+        }
+      }
+    }
+    if (kekuleDoubles(doc, part, true)) for (const bid of part) ring.add(bid);
+    else for (const bid of part) out.add(bid);
+  }
+  return out;
 }

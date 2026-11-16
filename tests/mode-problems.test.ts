@@ -40,7 +40,7 @@ describe('Problems box outside the Canvas', () => {
     expect(got.structures).toBe(2);
     expect(problemCount(got)).toBe(1);
     expect(got.problems[0].where).toBe('Slide 2');
-    expect(got.problems[0].text).toMatch(/carbon has 5/);
+    expect(got.problems[0].text).toBe('C has 5 bonds (max 4)');
   });
 
   it('checks a drawing again after it changes', () => {
