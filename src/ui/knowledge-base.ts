@@ -13,7 +13,8 @@ import { BUILT_IN_TABLES, LATER_ROWS, LATER_TABLES } from '../kb/data';
 import type { SafetyRecord } from '../kb/safety';
 import { safetyRow, sortSafety } from '../kb/safety-tables';
 import { explainPieces, glossaryEntry } from '../kb/glossary';
-import { CANONICAL_ROWS, PRESENT, filterValues, findRows, groupRows, isCas, looksLikeSmiles, parseUserTable, sortRows, tableTsv, type KbColumn, type KbTable, type RowMatch } from '../kb/tables';
+import { CANONICAL_ROWS, COL_MAX, COL_MIN, LINKS_COL, PRESENT, filterValues, findRows, groupRows, inlineGroups, isCas, layoutId, looksLikeSmiles, moveColumn, orderColumns, parseUserTable, sortRows, tableTsv, type KbColumn, type KbLayout, type KbTable, type RowMatch } from '../kb/tables';
+import { showContextMenu } from './context-menu';
 import { ask } from './ask';
 import { infoIcon, setInfo } from './info-tip';
 import { templateIcon } from './template-icons';
@@ -25,8 +26,13 @@ import { ICONS } from '../icons';
 
 /** A structure picture in a table cell, in pixels. */
 const PIC = 48;
+/** A series' parent compound on its group heading, in pixels. */
+const GROUP_PIC = 40;
 /** The structure shown beside a solvent's name, in pixels. */
 const STRUCTURE_PIC = 120;
+
+/** The Look up column (each row's links), placed and sized like the table's own columns. */
+const LOOK_UP: KbColumn = { key: LINKS_COL, label: 'Look up' };
 
 /** Rows built when a table is shown, and how many more each time it is scrolled near its end. */
 const FIRST_ROWS = 60;
@@ -122,6 +128,8 @@ export interface KnowledgeBaseHost {
   selected?(): Promise<{ smiles: string } | string>;
   /** Drawing the structure to search for with the program's drawing tools (the Draw window). */
   drawing?: KbDrawing;
+  /** Where each table's column layout (widths, order) is kept: the settings file. Without it, only while the program runs. */
+  layout?: { get(id: string): KbLayout | undefined; set(id: string, layout: KbLayout | null): void };
 }
 
 /** The program's drawing tools, working in the Draw window's box. */
@@ -176,7 +184,7 @@ export class KnowledgeBaseWindow {
   /** The NMR solvent last picked in a Solvent filter: impurity tables open showing that solvent. */
   private nmrSolvent = readNmrSolvent();
   private sort: { key: string; down: boolean } | null = null;
-  /** The groups folded away, by table (a table with `group`): kept while the program runs. */
+  /** The groups folded away, by table (a table with `group`): kept while the program runs. A table whose groups start folded keeps the ones opened instead. */
   private folded = new Map<string, Set<string>>();
   /** The table showing last (a different one starts scrolled to its top). */
   private shownId = '';
@@ -209,6 +217,10 @@ export class KnowledgeBaseWindow {
   private drawLight = 0;
   /** The structure card showing beside a name (one at a time; see structureOnHover). */
   private structurePop: HTMLElement | null = null;
+  /** Column layouts, when the host doesn't keep them. */
+  private layouts = new Map<string, KbLayout>();
+  /** A header was just dragged to move its column: the click that ends the drag doesn't sort. */
+  private moved = false;
 
   constructor(private host: KnowledgeBaseHost) {}
 
@@ -582,20 +594,177 @@ export class KnowledgeBaseWindow {
     return v ? { ...this.picked, [col.key]: v } : this.picked;
   }
 
-  private header(c: KbColumn): HTMLTableCellElement {
-    const th = el('th', {}, explained(c.label, true));
+  /** A table's layout of its columns (widths, order) as the user left it. */
+  private layout(id: string): KbLayout {
+    return (this.host.layout ? this.host.layout.get(id) : this.layouts.get(id)) ?? {};
+  }
+
+  private saveLayout(id: string, l: KbLayout | null): void {
+    const keep = l && (l.order?.length || Object.keys(l.widths ?? {}).length) ? l : null;
+    if (this.host.layout) this.host.layout.set(id, keep);
+    else if (keep) this.layouts.set(id, keep);
+    else this.layouts.delete(id);
+  }
+
+  /** A column's width (null: as wide as its contents need), kept for the table. */
+  private setWidth(id: string, key: string, w: number | null): void {
+    const l = this.layout(id);
+    const widths = { ...l.widths };
+    if (w === null) delete widths[key]; else widths[key] = w;
+    this.saveLayout(id, { ...l, widths: Object.keys(widths).length ? widths : undefined });
+  }
+
+  /** The columns shown, in the order the user put them (Look up, a table's links, is one of them). */
+  private shownColumns(t: KbTable, columns: KbColumn[], id: string): KbColumn[] {
+    const cols = columns.filter((c) => !c.hidden);
+    if (t.links) cols.push(LOOK_UP);
+    const by = new Map(cols.map((c) => [c.key, c]));
+    return orderColumns(cols.map((c) => c.key), this.layout(id).order).map((k) => by.get(k)!);
+  }
+
+  /** A header cell or a cell set to a width the user dragged (none: its contents decide). */
+  private sizeCell(cell: HTMLElement, w: number | undefined): void {
+    cell.classList.toggle('kb-sized', !!w);
+    cell.style.width = cell.style.minWidth = cell.style.maxWidth = w ? `${w}px` : '';
+  }
+
+  /**
+   * A column's heading: a click sorts by it; dragging its right edge makes it wider or narrower
+   * (a double-click there fits it to its contents); dragging the heading moves the column; a
+   * right-click offers the same and Reset.
+   */
+  private header(c: KbColumn, id: string, keys: string[]): HTMLTableCellElement {
+    const th = el('th', {}, c === LOOK_UP ? c.label : explained(c.label, true));
+    th.dataset.col = c.key;
     if (c.numeric || c.shift) th.classList.add('num');
     if (c.narrow) th.classList.add('narrow');
     // what the scale means: hover for the tip, a click pins it (and doesn't sort)
     if (c.info) th.append(' ', infoIcon(c.info));
-    if (c.picture) { th.classList.add('kb-pic'); return th; }
-    th.title = `Sort by ${c.label}`;
-    if (this.sort?.key === c.key) th.append(this.sort.down ? ' ▾' : ' ▴');
-    th.addEventListener('click', () => {
-      this.sort = this.sort?.key === c.key ? { key: c.key, down: !this.sort.down } : { key: c.key, down: false };
+    const sortable = !c.picture && c !== LOOK_UP;
+    const sort = (down?: boolean) => {
+      this.sort = down !== undefined ? { key: c.key, down } : this.sort?.key === c.key ? { key: c.key, down: !this.sort.down } : { key: c.key, down: false };
       this.showTable();
+    };
+    if (c.picture) th.classList.add('kb-pic');
+    else if (!sortable) th.classList.add('kb-nosort');
+    if (sortable) {
+      th.title = `Sort by ${c.label}. Drag to move the column; right-click for more`;
+      if (this.sort?.key === c.key) th.append(this.sort.down ? ' ▾' : ' ▴');
+      th.addEventListener('click', () => { if (!this.moved) sort(); });
+    }
+    th.tabIndex = 0;
+    th.addEventListener('keydown', (e) => {
+      if (sortable && (e.key === 'Enter' || e.key === ' ') && e.target === th) { e.preventDefault(); sort(); }
+    });
+    this.sizeCell(th, this.layout(id).widths?.[c.key]);
+    if (!c.picture) th.append(this.grip(th, c.key, id));
+    this.dragToMove(th, c, id, keys);
+    th.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const at = keys.indexOf(c.key);
+      const l = this.layout(id);
+      const r = th.getBoundingClientRect();
+      // from the keyboard (the menu key), under the heading
+      const [x, y] = e.clientX || e.clientY ? [e.clientX, e.clientY] : [r.left + 8, r.bottom];
+      const order = (to: number) => () => { this.saveLayout(id, { ...l, order: moveColumn(keys, c.key, to) }); this.showTable(); };
+      showContextMenu(x, y, [
+        ...(sortable ? [{ label: 'Sort Ascending', run: () => sort(false) }, { label: 'Sort Descending', run: () => sort(true) }, null] : []),
+        { label: 'Move Column Left', disabled: at <= 0, run: order(at - 1) },
+        { label: 'Move Column Right', disabled: at >= keys.length - 1, run: order(at + 2) },
+        null,
+        { label: 'Fit Column to Contents', disabled: !!c.picture, run: () => { this.setWidth(id, c.key, null); this.showTable(); } },
+        { label: 'Fit All Columns', run: () => { this.saveLayout(id, { ...l, widths: undefined }); this.showTable(); } },
+        null,
+        { label: 'Reset Column Widths and Order', disabled: !l.order && !l.widths, run: () => { this.saveLayout(id, null); this.showTable(); } },
+      ], { run: () => {}, escaped: () => th.focus() });
     });
     return th;
+  }
+
+  /** The handle on a heading's right edge: drag to resize the column, double-click to fit it to its contents. */
+  private grip(th: HTMLTableCellElement, key: string, id: string): HTMLElement {
+    const g = el('span', { className: 'kb-col-grip', title: 'Drag to resize the column; double-click to fit its contents' });
+    g.setAttribute('aria-hidden', 'true');
+    g.addEventListener('click', (e) => e.stopPropagation());
+    g.addEventListener('dblclick', (e) => { e.stopPropagation(); this.setWidth(id, key, null); this.showTable(); });
+    g.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const table = th.closest('table');
+      if (!table) return;
+      g.setPointerCapture?.(e.pointerId);
+      const x0 = e.clientX, w0 = Math.round(th.getBoundingClientRect().width);
+      let w = w0;
+      table.classList.add('kb-resizing');
+      const cells = () => [...table.querySelectorAll<HTMLElement>(`[data-col="${CSS.escape(key)}"]`)];
+      const move = (ev: PointerEvent) => {
+        w = Math.round(Math.max(COL_MIN, Math.min(COL_MAX, w0 + ev.clientX - x0)));
+        for (const cell of cells()) this.sizeCell(cell, w);
+      };
+      const up = () => {
+        g.removeEventListener('pointermove', move);
+        g.removeEventListener('pointerup', up);
+        g.removeEventListener('pointercancel', up);
+        table.classList.remove('kb-resizing');
+        if (w !== w0) this.setWidth(id, key, w);
+      };
+      g.addEventListener('pointermove', move);
+      g.addEventListener('pointerup', up);
+      g.addEventListener('pointercancel', up);
+    });
+    return g;
+  }
+
+  /** Dragging a heading sideways moves its column: a teal bar shows where it will land. */
+  private dragToMove(th: HTMLTableCellElement, c: KbColumn, id: string, keys: string[]): void {
+    const key = c.key;
+    th.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || (e.target as Element).closest('.kb-col-grip, .info-icon')) return;
+      const row = th.parentElement as HTMLTableRowElement;
+      const host = th.closest('dialog') ?? document.body;
+      const x0 = e.clientX, y0 = e.clientY;
+      let ghost: HTMLElement | null = null, bar: HTMLElement | null = null, to = -1;
+      const move = (ev: PointerEvent) => {
+        if (!ghost) {
+          if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+          ghost = el('div', { className: 'kb-col-ghost', textContent: prettyChem(c.label) });
+          bar = el('div', { className: 'kb-col-drop' });
+          host.append(ghost, bar);
+          th.classList.add('kb-col-moving');
+        }
+        ghost.style.left = `${ev.clientX + 10}px`;
+        ghost.style.top = `${ev.clientY + 6}px`;
+        // the edge between two headings nearest the pointer
+        const rects = [...row.cells].map((cell) => cell.getBoundingClientRect());
+        const edges = [...rects.map((r) => r.left), rects[rects.length - 1].right];
+        to = edges.reduce((b, x, i) => (Math.abs(x - ev.clientX) < Math.abs(edges[b] - ev.clientX) ? i : b), 0);
+        const head = row.getBoundingClientRect(), box = this.wrap.getBoundingClientRect(), table = row.closest('table')!.getBoundingClientRect();
+        const left = Math.max(box.left, Math.min(box.right - 2, edges[to] - 1));
+        bar!.style.left = `${left}px`;
+        bar!.style.top = `${Math.max(head.top, box.top)}px`;
+        bar!.style.height = `${Math.max(0, Math.min(table.bottom, box.bottom) - Math.max(head.top, box.top))}px`;
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        if (!ghost) return;
+        ghost.remove();
+        bar?.remove();
+        th.classList.remove('kb-col-moving');
+        // the click this release makes doesn't sort
+        this.moved = true;
+        setTimeout(() => { this.moved = false; });
+        const from = keys.indexOf(key);
+        if (to < 0 || to === from || to === from + 1) return;
+        this.saveLayout(id, { ...this.layout(id), order: moveColumn(keys, key, to) });
+        this.showTable();
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    });
   }
 
   private showTable(): void {
@@ -632,7 +801,8 @@ export class KnowledgeBaseWindow {
     }));
     // a table in groups: fold or open every group at once
     if (t.group) {
-      const all = (fold: boolean) => { this.folded.set(t.id, new Set(fold ? groupRows(t, this.matches(t)).map((g) => g.name) : [])); this.showTable(); };
+      // (a table whose groups start folded keeps the groups opened: none when all are folded)
+      const all = (fold: boolean) => { this.folded.set(t.id, new Set(fold === !t.groupInline ? t.rows.map((r) => String(r[t.group!] ?? '')) : [])); this.showTable(); };
       this.filters.append(el('span', { className: 'kb-fold-all' },
         button('Collapse All', 'Fold every group to its heading', () => all(true)),
         button('Expand All', 'Open every group', () => all(false))));
@@ -643,15 +813,18 @@ export class KnowledgeBaseWindow {
     // a structure search (not on a table read whole) keeps the same compound above the ones containing it, each sorted
     const structure = !!this.queryCanon && !t.noSearch;
     if (sortCol) rows = structure ? [...sortRows(rows.filter((m) => m.same), sortCol, this.sort!.down), ...sortRows(rows.filter((m) => !m.same), sortCol, this.sort!.down)] : sortRows(rows, sortCol, this.sort!.down);
-    const span = t.columns.filter((c) => !c.hidden).length + (t.links ? 1 : 0);
+    const id = layoutId(t);
+    const cols = this.shownColumns(t, t.columns, id);
+    const span = cols.length;
     const sameCount = rows.filter((m) => m.same).length;
     // a table in groups (not while a structure search splits it its own way): a heading over each
     // group, sorted within it; a search shows its matches even in folded groups
-    const folded = this.folded.get(t.id) ?? new Set<string>();
+    const marked = this.folded.get(t.id) ?? new Set<string>();
+    const isFolded = (g: string) => (t.groupInline ? !marked.has(g) : marked.has(g));
     const searching = !!this.search.value.trim();
-    const items: (RowMatch | { group: string; rows: RowMatch[] })[] = t.group && !structure
-      ? groupRows(t, rows).flatMap((g) => [{ group: g.name, rows: g.rows }, ...(folded.has(g.name) && !searching ? [] : g.rows)])
-      : rows;
+    const items: (RowMatch | { group: string; rows: RowMatch[] })[] = !t.group || structure ? rows
+      : t.groupInline ? inlineGroups(t, rows, (g) => isFolded(g) && !searching)
+      : groupRows(t, rows).flatMap((g) => [{ group: g.name, rows: g.rows }, ...(isFolded(g.name) && !searching ? [] : g.rows)]);
     // the first rows straight away and the rest as the table is scrolled down: building every
     // row of a big table (Reagent Safety, Solubility) on each key typed took most of a second
     const body = el('tbody');
@@ -660,16 +833,16 @@ export class KnowledgeBaseWindow {
       const end = Math.min(items.length, next + n);
       for (; next < end; next++) {
         const it = items[next];
-        if ('group' in it && !('row' in it)) { body.append(this.foldRow(t, span, it.group, it.rows, folded.has(it.group) && !searching)); continue; }
+        if ('group' in it && !('row' in it)) { body.append(this.foldRow(t, span, it.group, it.rows, isFolded(it.group) && !searching)); continue; }
         const m = it as RowMatch;
         // a structure search: a heading over the same compound and over the ones containing it
         if (structure && (next === 0 || m.same !== rows[next - 1].same)) body.append(this.groupRow(span, m.same ? `This compound (${sameCount})` : `Containing it (${rows.length - sameCount})`));
-        body.append(this.rowEl(t, m));
+        body.append(this.rowEl(t, m, cols, id));
       }
       if (structure && next === rows.length && this.lookingInside) body.append(this.groupRow(span, 'Looking for compounds containing it…'));
     };
     this.moreRows(FIRST_ROWS);
-    const table = el('table', { className: 'refs-table kb-table' + (t.picture ? ' kb-pictures' : '') + (t.fit ? ' kb-fit' : '') }, el('thead', {}, el('tr', {}, ...t.columns.filter((c) => !c.hidden).map((c) => this.header(c)), ...(t.links ? [el('th', { textContent: 'Look up' })] : []))), body);
+    const table = el('table', { className: 'refs-table kb-table' + (t.picture ? ' kb-pictures' : '') + (t.fit ? ' kb-fit' : '') }, el('thead', {}, el('tr', {}, ...cols.map((c) => this.header(c, id, cols.map((x) => x.key))))), body);
     if (!rows.length) {
       const q = this.search.value.trim();
       const empty = el('p', { className: 'muted kb-empty', textContent: this.lookingInside ? `Looking for compounds containing ${q}…` : this.queryCanon ? `Nothing in ${t.title} is or contains ${q}.` : q ? `Nothing in ${t.title} matches “${q}”.` : 'This table is empty.' });
@@ -706,7 +879,12 @@ export class KnowledgeBaseWindow {
    * click folds its rows away or opens them again. `extra` adds to the heading (after the count).
    */
   private foldRow(t: KbTable, span: number, name: string, rows: RowMatch[], closed: boolean, extra: Node[] = []): HTMLTableRowElement {
-    const th = el('th', { colSpan: span }, el('span', { className: 'kb-chev', textContent: closed ? '▸' : '▾' }), name || 'Other', el('span', { className: 'kb-fold-count', textContent: String(rows.length) }), ...extra);
+    // a series: its parent compound's drawing before the name, its range after the count
+    const head = t.groupHeading?.(name, rows);
+    const pic = head?.picture ? svgNode(templateIcon(head.picture, GROUP_PIC, 9)) : null;
+    if (pic) pic.classList.add('kb-fold-pic');
+    const note = head?.note ? [el('span', { className: 'kb-fold-note', textContent: head.note })] : [];
+    const th = el('th', { colSpan: span }, el('span', { className: 'kb-chev', textContent: closed ? '▸' : '▾' }), ...(pic ? [pic] : []), name || 'Other', el('span', { className: 'kb-fold-count', textContent: String(rows.length) }), ...note, ...extra);
     th.scope = 'rowgroup';
     th.tabIndex = 0;
     th.setAttribute('role', 'button');
@@ -723,40 +901,53 @@ export class KnowledgeBaseWindow {
     return el('tr', { className: 'kb-group kb-fold' }, th);
   }
 
-  /** One row of the table. */
-  private rowEl(t: KbTable, m: RowMatch): HTMLTableRowElement {
+  /** One row of the table: its cells in the columns' order (`cols`), at the widths kept under `id`. */
+  private rowEl(t: KbTable, m: RowMatch, cols: KbColumn[], id: string): HTMLTableRowElement {
     const tr = el('tr');
-    for (const c of t.columns) {
-      if (c.hidden) continue;
-      const v = m.row[c.key];
-      const td = el('td');
-      if (c.numeric || c.shift) td.className = 'num';
-      if (c.narrow) td.classList.add('narrow');
-      if (c.prose) td.classList.add('prose');
-      if (c.key === 'cas') td.classList.add('cas');
-      if (c.picture) {
-        const tpl = t.picture?.(m.row);
-        td.className = 'kb-pic';
-        { const icon = tpl ? svgNode(templateIcon(tpl, t.pictureSize ?? PIC, 14)) : null; if (icon) td.append(icon); }
-        if (t.pictureSize) td.style.width = td.style.minWidth = `${t.pictureSize}px`;
-        tr.append(td);
-        continue;
-      }
-      if (v !== null && v !== undefined && v !== '') td.append(typeof v === 'number' ? String(v) : c.key === 'atom' ? v : cellExplained(v, !!c.narrow, c.key === 'nucleus')); // atom labels (H2, C3) are not formulas
-      if (c.key === 'name' && t.structure) this.structureOnHover(td, () => t.structure!(m.row));
+    // a row of a series (under its heading): marked down its left edge
+    if (t.groupInline && t.group && m.row[t.group]) tr.className = 'kb-in-group';
+    const widths = this.layout(id).widths ?? {};
+    // the table's first column (the name) wraps a long name rather than running into the next one
+    const lead = t.columns.find((c) => !c.hidden && !c.picture)?.key;
+    for (const c of cols) {
+      const td = this.cellEl(t, m, c);
+      td.dataset.col = c.key;
+      if (c.key === lead) td.classList.add('kb-lead');
+      if (!c.picture) this.sizeCell(td, widths[c.key]);
       tr.append(td);
     }
-    if (t.links) {
+    return tr;
+  }
+
+  /** One cell of a row. */
+  private cellEl(t: KbTable, m: RowMatch, c: KbColumn): HTMLTableCellElement {
+    if (c === LOOK_UP) {
       const td = el('td', { className: 'kb-links' });
-      t.links(m.row).forEach((l, i) => {
+      t.links?.(m.row).forEach((l, i) => {
         if (i) td.append(' · ');
         const a = el('a', { href: l.url ?? '#', textContent: l.label });
         a.addEventListener('click', (e) => { e.preventDefault(); if (l.url) this.host.openUrl(l.url); });
         td.append(a);
       });
-      tr.append(td);
+      return td;
     }
-    return tr;
+    const v = m.row[c.key];
+    const td = el('td');
+    if (c.numeric || c.shift) td.className = 'num';
+    if (c.narrow) td.classList.add('narrow');
+    if (c.prose) td.classList.add('prose');
+    if (c.key === 'cas') td.classList.add('cas');
+    if (c.picture) {
+      const tpl = t.picture?.(m.row);
+      td.className = 'kb-pic';
+      const icon = tpl ? svgNode(templateIcon(tpl, t.pictureSize ?? PIC, 14)) : null;
+      if (icon) td.append(icon);
+      if (t.pictureSize) td.style.width = td.style.minWidth = `${t.pictureSize}px`;
+      return td;
+    }
+    if (v !== null && v !== undefined && v !== '') td.append(typeof v === 'number' ? String(v) : c.key === 'atom' ? v : cellExplained(v, !!c.narrow, c.key === 'nucleus')); // atom labels (H2, C3) are not formulas
+    if (c.key === 'name' && t.structure) this.structureOnHover(td, () => t.structure!(m.row));
+    return td;
   }
 
   /** The structure in a little card beside a name while the pointer rests on it (Solvents, pKa). */
@@ -848,9 +1039,11 @@ export class KnowledgeBaseWindow {
       const mine = rows.filter((m) => m.row.part === p.key);
       if (!mine.length) return [];
       const shown: KbTable = { ...t, columns: p.columns, parts: undefined };
+      const id = layoutId(t, p.key);
+      const cols = this.shownColumns(shown, p.columns, id);
       const table = el('table', { className: 'refs-table kb-table kb-part' },
-        el('thead', {}, el('tr', {}, ...p.columns.filter((c) => !c.hidden).map((c) => this.header(c)))),
-        el('tbody', {}, ...mine.map((m) => this.rowEl(shown, m))));
+        el('thead', {}, el('tr', {}, ...cols.map((c) => this.header(c, id, cols.map((x) => x.key))))),
+        el('tbody', {}, ...mine.map((m) => this.rowEl(shown, m, cols, id))));
       return [el('h4', { className: 'kb-part-title', textContent: p.title }), table];
     });
   }

@@ -310,7 +310,7 @@ import { parseIndex, indexText } from './library/file-index';
 import { libraryHolder } from './ui/library-refs';
 import type { CompoundLibraryWindow, CompoundLibraryHost, StructureIn } from './ui/compound-library';
 import type { KnowledgeBaseHost, KnowledgeBaseWindow } from './ui/knowledge-base';
-import { joinAttachment, looksLikeSmiles } from './kb/tables';
+import { joinAttachment, looksLikeSmiles, type KbLayout } from './kb/tables';
 import type { FindInFilesWindow, FindInFilesHost, ListedFile } from './ui/find-in-files';
 import { later, madeLater } from './lazy';
 
@@ -6134,6 +6134,15 @@ const knowledgeBaseHost = {
   },
   copyText: (text) => copyText(text, 'Copied the table: paste it into a sheet, a Word table or Excel.'),
   openUrl: (url) => openWebPage(url),
+  layout: {
+    get: (id: string) => kbColumns[id],
+    set: (id: string, l: KbLayout | null) => {
+      const next = { ...kbColumns };
+      if (l && (l.order?.length || Object.keys(l.widths ?? {}).length)) next[id] = l; else delete next[id];
+      kbColumns = next;
+      storeSettings();
+    },
+  },
   cidForCas: (cas: string) => pubchemCidForCas(cas),
   lookUpSafety: (q: string) => {
     const t = q.trim();
@@ -10106,6 +10115,8 @@ function showHelicity(on: boolean): void {
 let recentFiles: string[] = [];
 /** Characters typed from Insert > Symbol lately, newest first (saved in the settings). */
 let recentSymbols: string[] = [];
+/** Each Knowledge Base table's columns as dragged (Settings `kbColumns`). */
+let kbColumns: Settings['kbColumns'] = {};
 function rememberFile(path: string): void {
   recentFiles = addRecent(recentFiles, path);
   renderRecent();
@@ -10881,6 +10892,7 @@ function currentSettings(): Settings {
     lastVersion,
     recentFiles,
     recentSymbols,
+    kbColumns,
     scheme: { ...schemePrefs },
     analysis: structuredClone(analysisPrefs()),
     newman: structuredClone(newmanPrefs),
@@ -11106,6 +11118,7 @@ function applySettings(s: Settings): void {
   lastVersion = s.lastVersion;
   recentFiles = s.recentFiles;
   recentSymbols = s.recentSymbols;
+  kbColumns = s.kbColumns;
   keepPrefs = s.keep;
   tickAutoSave();
   ownLooks = s.highlightLooks;
@@ -14049,7 +14062,7 @@ const SETTINGS_PAGES: SettingsPage[] = [
 // Apply on a Settings page uses its settings and keeps them. Pages about the open file (Drawing
 // Style) apply to that file; their Set as Default is for new files too.
 /** Settings that change by themselves (recent files, pane sizes): never part of a page's changes. */
-const RUNNING_SETTINGS = ['recentFiles', 'recentSymbols', 'lastVersion', 'welcomed', 'skipVersion', 'splitWidth', 'slidePaneWidth', 'notesHeight', 'fileTypesOffered', 'wordObjectsOffered'];
+const RUNNING_SETTINGS = ['recentFiles', 'recentSymbols', 'kbColumns', 'lastVersion', 'welcomed', 'skipVersion', 'splitWidth', 'slidePaneWidth', 'notesHeight', 'fileTypesOffered', 'wordObjectsOffered'];
 const settingsHost: SettingsHost = {
   snapshot: () => {
     const s = JSON.parse(JSON.stringify(currentSettings())) as Record<string, unknown>;

@@ -21,7 +21,9 @@ const KB = path.join(ROOT, 'src/kb/');
 
 /**
  * [SMARTS (its first atom is the one), 'a' loses a hydrogen | 'b' takes one on, rough pKa in
- * water, rough pKa in DMSO]. The first rule that fits an atom (in each of 'a' and 'b') counts.
+ * water, rough pKa in DMSO, 'weak': a base only in strong acid (a carbonyl or ether oxygen) or an
+ * anion's oxygen, never chosen when the molecule has a hydrogen of that element to lose]. The first
+ * rule that fits an atom (in each of 'a' and 'b') counts.
  */
 const RULES = [
   // O–H acids
@@ -48,7 +50,7 @@ const RULES = [
   ['[OX2H][CX4]', 'a', 16, 29],
   ['[OH2]', 'a', 15.7, 31.4],
   ['[OX2H]', 'a', 12, 20],
-  ['[OX1H0-]', 'b', 10, 18],
+  ['[OX1H0-;!$([O-][#7+;!$([#7+]=O)])]', 'b', 10, 18, 'weak'],
   // S, Se, Te and the halogen acids
   ['[SX2H]c', 'a', 6.6, 10.3],
   ['[SX2H]C=O', 'a', 3.5, 8],
@@ -97,14 +99,14 @@ const RULES = [
   ['[NX3;H0,H1,H2;+0;!$(N[C,S,N,P]=[O,S,N]);!$(N[N+](=O)[O-])]O', 'b', 6, 5],
   ['[NX2;+0]=[#6]', 'b', 7, 6],
   ['[NX3;H0,H1,H2;+0;!$(N[C,S,P]=[O,S]);!$(N[a])]', 'b', 1, 0],
-  ['[OX1;+0]=[#6][NX3]', 'b', -0.5, -1],
-  ['[OX1;+0]=[#6]', 'b', -6, -6],
-  ['[OX1-][n+,N+]', 'b', 0.8, 0.5],
-  ['[OX1;+0]=[S,P]', 'b', -2, -2],
-  ['[OX2;+0]', 'b', -3, -3],
+  ['[OX1;+0]=[#6][NX3]', 'b', -0.5, -1, 'weak'],
+  ['[OX1;+0]=[#6]', 'b', -6, -6, 'weak'],
+  ['[OX1-][#7+;!$([#7+]=O)]', 'b', 0.8, 0.5],
+  ['[OX1;+0]=[S,P]', 'b', -2, -2, 'weak'],
+  ['[OX2;+0]', 'b', -3, -3, 'weak'],
   ['[PX3;+0]', 'b', 8, 8],
-  ['[SX2;+0]', 'b', -7, -7],
-  ['[SX1;+0]=[#6]', 'b', -1, -1],
+  ['[SX2;+0]', 'b', -7, -7, 'weak'],
+  ['[SX1;+0]=[#6]', 'b', -1, -1, 'weak'],
   // C–H acids, most acidic kinds first
   ['[CX4;!H0]([$(C=O),$(S(=O)=O),$(C#N),$([N+](=O)[O-])])[$(C=O),$(S(=O)=O),$(C#N),$([N+](=O)[O-])]', 'a', 9, 13],
   ['[CX4;!H0][N+](=O)[O-]', 'a', 10.2, 17.2],
@@ -141,10 +143,10 @@ const RULES = [
 ];
 const ELEMENT = { 1: 'H', 5: 'B', 6: 'C', 7: 'N', 8: 'O', 9: 'F', 14: 'Si', 15: 'P', 16: 'S', 17: 'Cl', 32: 'Ge', 33: 'As', 34: 'Se', 35: 'Br', 52: 'Te', 53: 'I' };
 
-const queries = RULES.map(([s, mode, w, d]) => {
+const queries = RULES.map(([s, mode, w, d, weak]) => {
   const q = RD.get_qmol(s);
   if (!q) throw new Error(`bad SMARTS ${s}`);
-  return { q, mode, w, d };
+  return { q, mode, w, d, weak: weak === 'weak' };
 });
 
 /** The atom whose hydrogen comes off, and whether it takes one on first (a base): [atom, 1|0], or null. */
@@ -160,7 +162,8 @@ function acidicAtom(smiles, site, solvent, pka) {
     const target = Math.min(...values);
     const dmso = solvent === 'DMSO';
     const best = new Map(); // `${atom}${mode}` -> rough pKa (first rule wins)
-    for (const { q, mode, w, d } of queries) {
+    const weakAt = new Set();
+    for (const { q, mode, w, d, weak } of queries) {
       const got = JSON.parse(mol.get_substruct_matches(q) || '[]');
       for (const m of Array.isArray(got) ? got : [got]) {
         const i = m.atoms?.[0];
@@ -169,7 +172,14 @@ function acidicAtom(smiles, site, solvent, pka) {
         if (!want.has(ELEMENT[a.z])) continue;
         if (mode === 'a' && !a.h) continue;
         best.set(`${i}${mode}`, dmso ? d : w);
+        if (weak) weakAt.add(`${i}${mode}`);
       }
+    }
+    // sulfuric, perchloric or trifluoroacetic acid's very low value is its O–H's, not a protonated oxygen's;
+    // dihydrogen phosphate's 7.2 is its O–H's, not its O−'s
+    for (const k of weakAt) {
+      const z = atoms[Number(k.slice(0, -1))].z;
+      if ([...best.keys()].some((o) => o.endsWith('a') && atoms[Number(o.slice(0, -1))].z === z)) best.delete(k);
     }
     // an element with no rule that fits (a lone halide, a metal oxide) and hydrogens to give
     if (!best.size) atoms.forEach((a, i) => { if (want.has(ELEMENT[a.z]) && a.h) best.set(`${i}a`, 20); });
