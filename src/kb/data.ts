@@ -33,6 +33,7 @@ export const BUILT_IN_TABLES: KbTable[] = [REAGENT_SAFETY, SOLVENTS_TABLE, MISCI
 /** Big tables loaded when the window first opens, kept out of the program's start-up. */
 export const LATER_TABLES: (() => Promise<KbTable>)[] = [
   async () => (await import('./pka')).PKA_VALUES_TABLE,
+  async () => (await import('./pka-key')).KEY_PKA_TABLE,
 ];
 
 /** More rows for built-in tables, loaded the same way: the big Reagent Safety table. */

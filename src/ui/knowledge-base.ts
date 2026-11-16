@@ -13,7 +13,7 @@ import { BUILT_IN_TABLES, LATER_ROWS, LATER_TABLES } from '../kb/data';
 import type { SafetyRecord } from '../kb/safety';
 import { safetyRow, sortSafety } from '../kb/safety-tables';
 import { explainPieces, glossaryEntry } from '../kb/glossary';
-import { CANONICAL_ROWS, PRESENT, filterValues, findRows, isCas, looksLikeSmiles, parseUserTable, sortRows, tableTsv, type KbColumn, type KbTable, type RowMatch } from '../kb/tables';
+import { CANONICAL_ROWS, PRESENT, filterValues, findRows, groupRows, isCas, looksLikeSmiles, parseUserTable, sortRows, tableTsv, type KbColumn, type KbTable, type RowMatch } from '../kb/tables';
 import { ask } from './ask';
 import { infoIcon, setInfo } from './info-tip';
 import { templateIcon } from './template-icons';
@@ -176,6 +176,8 @@ export class KnowledgeBaseWindow {
   /** The NMR solvent last picked in a Solvent filter: impurity tables open showing that solvent. */
   private nmrSolvent = readNmrSolvent();
   private sort: { key: string; down: boolean } | null = null;
+  /** The groups folded away, by table (a table with `group`): kept while the program runs. */
+  private folded = new Map<string, Set<string>>();
   /** The table showing last (a different one starts scrolled to its top). */
   private shownId = '';
   /** Canonical SMILES of each row's structure (worked out once, when a SMILES is first searched). */
@@ -628,6 +630,13 @@ export class KnowledgeBaseWindow {
       if (solvent) s.title = 'The solvent your NMR was taken in: impurity shifts change with it. Remembered for the other impurity tables';
       return el('label', {}, el('span', { textContent: solvent ? 'NMR taken in' : c.label }), ...(c.hidden && c.info ? [infoIcon(c.info)] : []), s);
     }));
+    // a table in groups: fold or open every group at once
+    if (t.group) {
+      const all = (fold: boolean) => { this.folded.set(t.id, new Set(fold ? groupRows(t, this.matches(t)).map((g) => g.name) : [])); this.showTable(); };
+      this.filters.append(el('span', { className: 'kb-fold-all' },
+        button('Collapse All', 'Fold every group to its heading', () => all(true)),
+        button('Expand All', 'Open every group', () => all(false))));
+    }
     this.filters.hidden = !this.filters.childElementCount;
     let rows = this.matches(t);
     const sortCol = this.sort && t.columns.find((c) => c.key === this.sort!.key);
@@ -636,16 +645,26 @@ export class KnowledgeBaseWindow {
     if (sortCol) rows = structure ? [...sortRows(rows.filter((m) => m.same), sortCol, this.sort!.down), ...sortRows(rows.filter((m) => !m.same), sortCol, this.sort!.down)] : sortRows(rows, sortCol, this.sort!.down);
     const span = t.columns.filter((c) => !c.hidden).length + (t.links ? 1 : 0);
     const sameCount = rows.filter((m) => m.same).length;
+    // a table in groups (not while a structure search splits it its own way): a heading over each
+    // group, sorted within it; a search shows its matches even in folded groups
+    const folded = this.folded.get(t.id) ?? new Set<string>();
+    const searching = !!this.search.value.trim();
+    const items: (RowMatch | { group: string; rows: RowMatch[] })[] = t.group && !structure
+      ? groupRows(t, rows).flatMap((g) => [{ group: g.name, rows: g.rows }, ...(folded.has(g.name) && !searching ? [] : g.rows)])
+      : rows;
     // the first rows straight away and the rest as the table is scrolled down: building every
     // row of a big table (Reagent Safety, Solubility) on each key typed took most of a second
     const body = el('tbody');
     let next = 0;
     this.moreRows = (n = MORE_ROWS) => {
-      const end = Math.min(rows.length, next + n);
+      const end = Math.min(items.length, next + n);
       for (; next < end; next++) {
+        const it = items[next];
+        if ('group' in it && !('row' in it)) { body.append(this.foldRow(t, span, it.group, it.rows, folded.has(it.group) && !searching)); continue; }
+        const m = it as RowMatch;
         // a structure search: a heading over the same compound and over the ones containing it
-        if (structure && (next === 0 || rows[next].same !== rows[next - 1].same)) body.append(this.groupRow(span, rows[next].same ? `This compound (${sameCount})` : `Containing it (${rows.length - sameCount})`));
-        body.append(this.rowEl(t, rows[next]));
+        if (structure && (next === 0 || m.same !== rows[next - 1].same)) body.append(this.groupRow(span, m.same ? `This compound (${sameCount})` : `Containing it (${rows.length - sameCount})`));
+        body.append(this.rowEl(t, m));
       }
       if (structure && next === rows.length && this.lookingInside) body.append(this.groupRow(span, 'Looking for compounds containing it…'));
     };
@@ -680,6 +699,28 @@ export class KnowledgeBaseWindow {
     const th = el('th', { colSpan: span, textContent: text });
     th.scope = 'rowgroup';
     return el('tr', { className: 'kb-group' }, th);
+  }
+
+  /**
+   * The heading of one group of a table in groups: its name and how many rows it holds, and a
+   * click folds its rows away or opens them again. `extra` adds to the heading (after the count).
+   */
+  private foldRow(t: KbTable, span: number, name: string, rows: RowMatch[], closed: boolean, extra: Node[] = []): HTMLTableRowElement {
+    const th = el('th', { colSpan: span }, el('span', { className: 'kb-chev', textContent: closed ? '▸' : '▾' }), name || 'Other', el('span', { className: 'kb-fold-count', textContent: String(rows.length) }), ...extra);
+    th.scope = 'rowgroup';
+    th.tabIndex = 0;
+    th.setAttribute('role', 'button');
+    th.setAttribute('aria-expanded', String(!closed));
+    th.title = closed ? `Show the ${name} rows` : `Fold the ${name} rows away`;
+    const toggle = () => {
+      const set = new Set(this.folded.get(t.id) ?? []);
+      if (set.has(name)) set.delete(name); else set.add(name);
+      this.folded.set(t.id, set);
+      this.showTable();
+    };
+    th.addEventListener('click', toggle);
+    th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    return el('tr', { className: 'kb-group kb-fold' }, th);
   }
 
   /** One row of the table. */

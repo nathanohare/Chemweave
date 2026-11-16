@@ -75,6 +75,22 @@ export interface KbTable {
    * part named in its `part` cell. The table's own `columns` are all of them, for searching.
    */
   parts?: { key: string; title: string; columns: KbColumn[] }[];
+  /**
+   * Rows shown under a heading for each value of this column (a functional group), in the order
+   * the groups first appear in `rows`; each heading folds its rows away, and sorting by a column
+   * sorts within each group.
+   */
+  group?: string;
+}
+
+/** The rows in groups by the table's `group` column, groups in the order they first appear (rows keep their order). */
+export function groupRows(t: KbTable, rows: RowMatch[]): { name: string; rows: RowMatch[] }[] {
+  if (!t.group) return [{ name: '', rows }];
+  const order = new Map<string, number>();
+  for (const r of t.rows) { const g = String(r[t.group] ?? ''); if (!order.has(g)) order.set(g, order.size); }
+  const by = new Map<string, RowMatch[]>();
+  for (const m of rows) { const g = String(m.row[t.group] ?? ''); (by.get(g) ?? by.set(g, []).get(g)!).push(m); }
+  return [...by.entries()].sort((a, b) => (order.get(a[0]) ?? 1e9) - (order.get(b[0]) ?? 1e9)).map(([name, rs]) => ({ name, rows: rs }));
 }
 
 /** The filter value meaning "has something in this column". */
