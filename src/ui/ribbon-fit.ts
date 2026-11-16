@@ -243,8 +243,21 @@ export function fitRibbons(): void {
     for (const row of rows()) if (row.offsetParent) fitRow(row);
     for (const r of showing) evenHeights(r);
     pinned.forEach((release) => release());
+    // (what fitting itself changed is no reason to fit again)
+    shown?.takeRecords();
   });
 }
+
+/** Watches for buttons and groups coming and going inside the ribbons. */
+let shown: MutationObserver | null = null;
+
+/** A change that makes a row wider or narrower without changing the window: a group or button shown or hidden. */
+const reshaped = (recs: MutationRecord[]) => recs.some((m) => {
+  const t = m.target as HTMLElement;
+  // (a tab's panel shown or hidden is a change of tab, fitted on its own; setting `hidden` to what it
+  // already was, as the canvas slide's Keyframes group is on every slide, changes nothing)
+  return t.closest?.('.rb-group') !== null && m.oldValue !== t.getAttribute('hidden');
+});
 
 /** Keep a ribbon at the height it has now, its buttons free to be taller or shorter inside it, until the function returned is called. */
 function holdHeight(ribbon: HTMLElement): () => void {
@@ -270,6 +283,10 @@ export function watchRibbons(collapseChanged: (on: boolean) => void = () => {}):
   });
   for (const r of document.querySelectorAll('.ribbon')) ro.observe(r);
   for (const row of rows()) ro.observe(row);
+  // a group that shows only some of the time (Keyframes, on a canvas slide) widens the row without
+  // changing the window's width: fit again, or the groups at the right end run off the edge
+  shown = new MutationObserver((recs) => { if (reshaped(recs)) fitRibbons(); });
+  for (const r of document.querySelectorAll('.ribbon')) shown.observe(r, { subtree: true, attributes: true, attributeFilter: ['hidden'], attributeOldValue: true });
   document.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
     if (t.closest?.('.rb-tabs')) fitRibbons();

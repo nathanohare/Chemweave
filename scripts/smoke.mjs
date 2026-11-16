@@ -109,6 +109,28 @@ try {
   console.log(`  ${heights.length} tabs in ${new Set(heights.map((x) => x.mode)).size} modes, ${sheetH} px`);
   if (new Set(heights.map((x) => x.mode)).size < 5) fail('not every mode\'s ribbon was checked');
   for (const x of heights) if (x.h !== sheetH) fail(`the ${x.mode} ribbon's ${x.tab} tab is ${x.h} px tall, not the Spreadsheet's ${sheetH} px`);
+  step('going to a canvas slide, the Keyframes group fits in the Home ribbon: nothing runs off its right end');
+  const over = await page.evaluate(async () => {
+    const ws = window.__app.ws;
+    const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+    ws.activate(ws.tabs.find((t) => t.mode === 'slides'));
+    await frame();
+    document.querySelector('#ribbon [data-sl-tab="home"]')?.click();
+    window.__app.command('new-canvas-slide');
+    window.__app.command('new-slide');
+    await frame();
+    // (a plain slide, then back to the canvas slide: the Keyframes group shows with the window's width unchanged)
+    const deck = ws.active.deck;
+    deck.go(deck.slides.findIndex((s) => s.canvas));
+    await frame();
+    await frame();
+    const row = [...document.querySelectorAll('#ribbon .rb-panel')].find((p) => p.offsetParent && !p.hidden);
+    const keys = [...document.querySelectorAll('#ribbon .rb-group.keyframes-only')].some((g) => g.offsetParent);
+    return { keys, over: row ? row.scrollWidth - row.clientWidth : -1 };
+  });
+  if (!over.keys) fail('the Keyframes group did not show on a canvas slide');
+  if (over.over > 0) fail(`on a canvas slide the Presentation Home ribbon runs ${over.over} px past the window's edge`);
+
   await page.evaluate(() => window.__app.ws.activate(window.__app.ws.tabs.find((t) => t.mode === 'drawing')));
   await page.waitForTimeout(200);
 
