@@ -205,6 +205,8 @@ export class KnowledgeBaseWindow {
   /** Each drawing started (a newer one makes the older one's end not count). */
   private drawToken = 0;
   private drawLight = 0;
+  /** The structure card showing beside a name (one at a time; see structureOnHover). */
+  private structurePop: HTMLElement | null = null;
 
   constructor(private host: KnowledgeBaseHost) {}
 
@@ -215,7 +217,18 @@ export class KnowledgeBaseWindow {
     if (this.d) { if (query) { this.search.value = query; this.searchChanged(); } this.search.focus(); return; }
     const d = (this.d = el('dialog', { className: 'refs-dialog kb-window' }));
     d.setAttribute('aria-label', 'Knowledge Base');
-    d.addEventListener('keydown', (e) => { e.stopPropagation(); });
+    d.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape' && this.structurePop) { e.preventDefault(); this.hideStructurePop(); }
+    });
+    // a structure card never outlives the pointer resting on its name: a click, a dropdown or a key
+    // moving the focus, scrolling, or leaving the window puts it away
+    const hidePop = () => this.hideStructurePop();
+    d.addEventListener('pointerdown', hidePop, true);
+    d.addEventListener('focusin', hidePop);
+    d.addEventListener('scroll', hidePop, { capture: true, passive: true });
+    d.addEventListener('wheel', hidePop, { passive: true });
+    window.addEventListener('blur', hidePop);
     this.search = el('input', { type: 'search', placeholder: 'Name, CAS, SMILES or a shift (2.17)', title: 'Search every table by name, CAS number, any word, or a chemical shift (2.17 finds peaks within 0.05 ppm in 1H, 0.5 in 13C). A SMILES finds that compound, then every compound containing it', value: query });
     this.search.setAttribute('aria-label', 'Search the Knowledge Base');
     // a single letter matches most of every table (~110 ms): wait a moment for the next key first
@@ -256,7 +269,7 @@ export class KnowledgeBaseWindow {
           button('Copy Table', 'Copy the rows showing, to paste into a sheet, a document table, Word or Excel', () => void this.copy()),
           button('Close', '', () => d.close()))),
     );
-    d.addEventListener('close', () => { this.closeDraw(true); d.remove(); this.d = null; });
+    d.addEventListener('close', () => { this.hideStructurePop(); window.removeEventListener('blur', hidePop); this.closeDraw(true); d.remove(); this.d = null; });
     document.body.append(d);
     this.showList();
     this.showTable();
@@ -585,6 +598,8 @@ export class KnowledgeBaseWindow {
 
   private showTable(): void {
     if (!this.d) return;
+    // the rows are about to be redrawn: a card left over one would never get its pointerleave
+    this.hideStructurePop();
     const t = this.current;
     // another table starts at its top
     if (this.shownId !== t.id) { this.shownId = t.id; this.wrap.scrollTop = 0; this.wrap.scrollLeft = 0; }
@@ -703,17 +718,17 @@ export class KnowledgeBaseWindow {
     return tr;
   }
 
-  /** The structure in a little card beside a name while the pointer rests on it (Solvents). */
+  /** The structure in a little card beside a name while the pointer rests on it (Solvents, pKa). */
   private structureOnHover(td: HTMLElement, tpl: () => Template | null): void {
     td.classList.add('kb-structure-name');
-    let pop: HTMLElement | null = null;
-    const hide = () => { pop?.remove(); pop = null; };
-    td.addEventListener('pointerenter', () => {
+    td.addEventListener('pointerenter', (e) => {
+      this.hideStructurePop();
+      // a finger on the screen or a held mouse button is a tap or a drag, not a rest
+      if (e.buttons) return;
       const t = tpl();
       const icon = t ? svgNode(templateIcon(t, STRUCTURE_PIC, 30)) : null;
       if (!icon) return;
-      hide();
-      pop = el('div', { className: 'info-pop kb-structure-pop' });
+      const pop = (this.structurePop = el('div', { className: 'info-pop kb-structure-pop' }));
       pop.setAttribute('role', 'tooltip');
       pop.append(icon);
       (td.closest('dialog') ?? document.body).append(pop);
@@ -724,7 +739,13 @@ export class KnowledgeBaseWindow {
       pop.style.left = `${Math.max(8, Math.min((words.width ? words.right : r.right) + 10, window.innerWidth - size - 8))}px`;
       pop.style.top = `${Math.max(8, Math.min(r.top + r.height / 2 - size / 2, window.innerHeight - size - 8))}px`;
     });
-    td.addEventListener('pointerleave', hide);
+    td.addEventListener('pointerleave', () => this.hideStructurePop());
+  }
+
+  /** Put the structure card away (also when its row is redrawn, which would leave it orphaned). */
+  private hideStructurePop(): void {
+    this.structurePop?.remove();
+    this.structurePop = null;
   }
 
   /**
