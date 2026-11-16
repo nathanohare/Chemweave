@@ -81,6 +81,14 @@ export interface KbTable {
    * sorts within each group.
    */
   group?: string;
+  /**
+   * Group headings sit among the rows, each where its group's first row falls in the order shown
+   * (the most acidic, in pKa order), instead of in a fixed order; rows with no group (an empty
+   * cell) stand alone; and the groups start folded (pKa Values' series).
+   */
+  groupInline?: boolean;
+  /** A group heading's drawing (the series' parent compound) and a note after its count (its pKa range). */
+  groupHeading?: (name: string, rows: RowMatch[]) => { picture?: Template | null; note?: string };
 }
 
 /** The rows in groups by the table's `group` column, groups in the order they first appear (rows keep their order). */
@@ -91,6 +99,28 @@ export function groupRows(t: KbTable, rows: RowMatch[]): { name: string; rows: R
   const by = new Map<string, RowMatch[]>();
   for (const m of rows) { const g = String(m.row[t.group] ?? ''); (by.get(g) ?? by.set(g, []).get(g)!).push(m); }
   return [...by.entries()].sort((a, b) => (order.get(a[0]) ?? 1e9) - (order.get(b[0]) ?? 1e9)).map(([name, rs]) => ({ name, rows: rs }));
+}
+
+/**
+ * The rows with their group headings among them ({@link KbTable.groupInline}): a heading where its
+ * group's first row falls in `rows`' order, followed by the group's rows unless it is `closed`;
+ * a row with no group stands alone where it falls.
+ */
+export function inlineGroups(t: KbTable, rows: RowMatch[], closed: (name: string) => boolean): (RowMatch | { group: string; rows: RowMatch[] })[] {
+  if (!t.group) return rows;
+  const by = new Map<string, RowMatch[]>();
+  for (const m of rows) { const g = String(m.row[t.group] ?? ''); if (g) (by.get(g) ?? by.set(g, []).get(g)!).push(m); }
+  const out: (RowMatch | { group: string; rows: RowMatch[] })[] = [];
+  for (const m of rows) {
+    const g = String(m.row[t.group] ?? '');
+    if (!g) { out.push(m); continue; }
+    const mine = by.get(g);
+    if (!mine) continue; // its heading is out already
+    by.delete(g);
+    out.push({ group: g, rows: mine });
+    if (!closed(g)) out.push(...mine);
+  }
+  return out;
 }
 
 /** The filter value meaning "has something in this column". */
@@ -308,4 +338,71 @@ export function joinAttachment(smiles: string, on: string): string | null {
   // `on`'s ring closures numbered out of the way of the group's own (%91 for 1)
   const ring = on.replace(/\[[^\]]*\]|%\d\d|\d/g, (t) => (/^\d$/.test(t) ? `%9${t}` : t));
   return smiles.replace(star, ring);
+}
+
+/**
+ * How the user laid out a table's columns (dragged wider or narrower, moved): kept per table in the
+ * settings file. `order` names the columns by key ({@link LINKS_COL} for Look up); `widths` are in
+ * pixels. A column left out of either keeps its default.
+ */
+export interface KbLayout {
+  order?: string[];
+  widths?: Record<string, number>;
+}
+
+/** The Look up column's key in a layout (it has no column of its own). */
+export const LINKS_COL = '@links';
+
+/** Narrowest and widest a column can be dragged, in pixels. */
+export const COL_MIN = 36, COL_MAX = 900;
+
+/** The key a table's layout is kept under: a table in parts keeps one for each part. */
+export function layoutId(t: KbTable, part?: string): string {
+  return part ? `${t.id}:${part}` : t.id;
+}
+
+/**
+ * The columns' keys in the order the user put them: the saved order first (keys no longer in the
+ * table dropped), and a column the saved order doesn't know (added since) after the column it
+ * follows by default.
+ */
+export function orderColumns(keys: string[], order?: string[]): string[] {
+  if (!order?.length) return [...keys];
+  const known = new Set(keys);
+  const out = order.filter((k, i) => known.has(k) && order.indexOf(k) === i);
+  keys.forEach((k, i) => {
+    if (out.includes(k)) return;
+    const before = keys.slice(0, i).reverse().find((p) => out.includes(p));
+    out.splice(before === undefined ? 0 : out.indexOf(before) + 1, 0, k);
+  });
+  return out;
+}
+
+/** `keys` with `key` moved to index `to` (counted in the list before the move; clamped to the ends). */
+export function moveColumn(keys: string[], key: string, to: number): string[] {
+  const from = keys.indexOf(key);
+  if (from < 0) return [...keys];
+  const out = keys.filter((k) => k !== key);
+  const at = Math.max(0, Math.min(out.length, to > from ? to - 1 : to));
+  out.splice(at, 0, key);
+  return out;
+}
+
+/** The saved layouts read back from the settings file, keeping only what makes sense. */
+export function parseKbLayouts(raw: unknown): Record<string, KbLayout> {
+  const out: Record<string, KbLayout> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!v || typeof v !== 'object') continue;
+    const l = v as Record<string, unknown>;
+    const got: KbLayout = {};
+    if (Array.isArray(l.order)) { const o = l.order.filter((k): k is string => typeof k === 'string'); if (o.length) got.order = o; }
+    if (l.widths && typeof l.widths === 'object' && !Array.isArray(l.widths)) {
+      const w: Record<string, number> = {};
+      for (const [k, n] of Object.entries(l.widths as Record<string, unknown>)) if (typeof n === 'number' && Number.isFinite(n)) w[k] = Math.round(Math.max(COL_MIN, Math.min(COL_MAX, n)));
+      if (Object.keys(w).length) got.widths = w;
+    }
+    if (got.order || got.widths) out[id] = got;
+  }
+  return out;
 }

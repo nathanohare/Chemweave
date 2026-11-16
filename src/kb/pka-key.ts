@@ -10,6 +10,7 @@
 import type { Template, TemplateAtom, TemplateBond } from '../chem/templates';
 import type { Cell, KbSource, KbTable } from './tables';
 import { REICH_SOURCE, WILLIAMS_SOURCE } from './pka';
+import { ACIDIC_H_COLOR } from './acidic-h';
 import DATA from './pka-key.json';
 import PICS from './pka-key-pics.json';
 
@@ -33,7 +34,8 @@ function shortCite(cite: string): string {
 /** The drawing of a row, with the hydrogen that comes off drawn as its own atom. */
 export function keyPkaPicture(row: Record<string, Cell>): Template | null {
   const p = P[String(row.name)];
-  return p ? { id: `pka-key-${row.name}`, name: String(row.name), group: 'own', atoms: p.atoms, bonds: p.bonds, attach: 0 } : null;
+  // the acidic hydrogen and its bond in red, as in pKa Values
+  return p ? { id: `pka-key-${row.name}`, name: String(row.name), group: 'own', atoms: p.atoms, bonds: p.bonds, attach: 0, highlight: { atoms: [p.h[0]], bonds: [p.h[1]], color: ACIDIC_H_COLOR } } : null;
 }
 
 /** Which atom and bond of a row's drawing are the acidic hydrogen and its bond. */

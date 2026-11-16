@@ -8,10 +8,13 @@
 // project's knowledge-base/pka kit). Loaded when the window first opens.
 
 import type { Template, TemplateAtom, TemplateBond } from '../chem/templates';
-import type { Cell, KbSource, KbTable } from './tables';
+import { cellNumbers, type Cell, type KbSource, type KbTable, type RowMatch } from './tables';
 import DMSO from './pka-dmso.json';
 import WATER from './pka-water.json';
 import PICS from './pka-pics.json';
+import ACIDIC from './pka-acidic.json';
+import SERIES from './pka-series.json';
+import { withAcidicH } from './acidic-h';
 
 /** [name, canonical SMILES, pKa as printed, approximate (1), acidic hydrogen, class, papers (indexes into `papers` and `dois`), PubChem CID (0: none)] */
 type DmsoRow = [string, string, string, 0 | 1, string, string, number[], number];
@@ -59,10 +62,47 @@ export const PKA_VALUES: PkaValue[] = [
   })),
 ];
 
-/** A compound's drawing (scripts: the pKa build), by its canonical SMILES. */
+/**
+ * The atom of a row's drawing whose hydrogen the value belongs to, and whether it takes that hydrogen
+ * on first (a base: the value is its conjugate acid's), worked out by scripts/kb/build-pka-acidic.mjs.
+ */
+export function acidicSite(row: Record<string, Cell>): [number, 0 | 1] | null {
+  const key = `${row.smiles}|${row.site}|${row.solvent === 'DMSO' ? 'DMSO' : 'W'}|${String(row.pka).replace(/^~/, '')}`;
+  return (ACIDIC as unknown as Record<string, [number, 0 | 1]>)[key] ?? null;
+}
+
+/** The series: each one's name and its parent compound's drawing; and each row's series, by row. */
+const S = SERIES as unknown as { series: [string, { atoms: TemplateAtom[]; bonds: TemplateBond[] }][]; rows: Record<string, number> };
+
+/**
+ * The series a row belongs to, in its solvent ("Benzoic acids in water"), worked out by
+ * scripts/kb/build-pka-series.mjs: substituted compounds under their parent, by the hydrogen the
+ * value belongs to. Null for a compound in no series (or one too small to fold).
+ */
+export function pkaSeries(row: Record<string, Cell>): string | null {
+  const key = `${row.smiles}|${row.site}|${row.solvent === 'DMSO' ? 'DMSO' : 'W'}|${String(row.pka).replace(/^~/, '')}|${row.solvent}`;
+  const i = S.rows[key];
+  return i === undefined ? null : `${S.series[i][0]} in ${row.solvent === 'Water' ? 'water' : row.solvent}`;
+}
+
+/** A series heading's drawing (its parent compound) and the range of its values. */
+function seriesHeading(name: string, rows: RowMatch[]): { picture: Template | null; note: string } {
+  const title = name.replace(/ in [^]*$/, '');
+  const p = S.series.find(([n]) => n === title)?.[1];
+  const picture: Template | null = p ? { id: `pka-series-${title}`, name: title, group: 'own', atoms: p.atoms, bonds: p.bonds, attach: 0 } : null;
+  const lows = rows.map((m) => Math.min(...cellNumbers(m.row.pka))).filter((n) => Number.isFinite(n));
+  const fmt = (n: number) => String(n).replace('-', '−');
+  const note = !lows.length ? '' : Math.min(...lows) === Math.max(...lows) ? `pKa ${fmt(lows[0])}` : `pKa ${fmt(Math.min(...lows))} to ${fmt(Math.max(...lows))}`;
+  return { picture, note };
+}
+
+/** A compound's drawing (scripts: the pKa build), by its canonical SMILES, with the acidic hydrogen drawn in red. */
 export function pkaPicture(row: Record<string, Cell>): Template | null {
   const p = (PICS as unknown as Record<string, { atoms: TemplateAtom[]; bonds: TemplateBond[] }>)[String(row.smiles)];
-  return p ? { id: `pka-${row.smiles}`, name: String(row.name), group: 'own', atoms: p.atoms, bonds: p.bonds, attach: 0 } : null;
+  if (!p) return null;
+  const t: Template = { id: `pka-${row.smiles}`, name: String(row.name), group: 'own', atoms: p.atoms, bonds: p.bonds, attach: 0 };
+  const site = acidicSite(row);
+  return site ? withAcidicH(t, site[0], site[1] === 1) : t;
 }
 
 const PKA_INFO = 'How strong an acid the compound is: −log Ka for losing the hydrogen named under Acidic H, in the solvent named (DMSO at 25 °C; water and water mixtures at about 25 °C unless a note gives another temperature). Lower is more acidic. Compare values in the same solvent: DMSO values run higher than water\'s for neutral acids, which DMSO solvates less well (acetic acid: 12.6 in DMSO, 4.76 in water), and lie close to water\'s for protonated amines. Several values in a row are the compound\'s successive pKa values, lowest first, unless a note says they are two measurements of one step. A ~ marks an approximate value (estimated or extrapolated).';
@@ -82,7 +122,7 @@ function shortCite(cite: string): string {
 function rowOf(v: PkaValue): Record<string, Cell> {
   return {
     name: v.name, smiles: v.smiles, pka: v.pka, solvent: v.solvent, site: v.site, cls: v.cls, notes: v.notes || null,
-    refs: v.papers.join('; '), cid: v.cid,
+    refs: v.papers.join('; '), cid: v.cid, series: null,
   };
 }
 
@@ -93,14 +133,15 @@ const COUNT_DMSO = D.rows.length, COUNT_WATER = W.rows.length;
 export const PKA_VALUES_TABLE: KbTable = {
   id: 'pka',
   title: 'pKa Values',
-  about: `${(COUNT_DMSO + COUNT_WATER).toLocaleString('en-US')} pKa values: ${COUNT_DMSO} in DMSO, most measured by F. G. Bordwell's group (carbon acids, amides, amines, azoles, alcohols, phenols, thiols…), and ${COUNT_WATER.toLocaleString('en-US')} in water and water mixtures from the literature (carboxylic acids, phenols, amines, anilines, heterocycles, amino acids and peptides, nucleosides, phosphates, thiols, inorganic acids…), the most acidic first. Search by name, or type a SMILES to find the compound and everything containing it. Filter by solvent, by the hydrogen that comes off or by the kind of compound. Each row names the paper the value comes from (values the compilations list without one are left out).`,
+  about: `${(COUNT_DMSO + COUNT_WATER).toLocaleString('en-US')} pKa values: ${COUNT_DMSO} in DMSO, most measured by F. G. Bordwell's group (carbon acids, amides, amines, azoles, alcohols, phenols, thiols…), and ${COUNT_WATER.toLocaleString('en-US')} in water and water mixtures from the literature (carboxylic acids, phenols, amines, anilines, heterocycles, amino acids and peptides, nucleosides, phosphates, thiols, inorganic acids…), the most acidic first. Search by name, or type a SMILES to find the compound and everything containing it. Filter by solvent or by the hydrogen that comes off. Substituted compounds are folded under their parent (Benzoic acids in water, Pyridines in water…), each heading at its most acidic member; click a heading to open it, and a search opens every series with a match. Each row names the paper the value comes from (values the compilations list without one are left out).`,
   columns: [
     { key: 'pic', label: 'Structure', picture: true },
     { key: 'name', label: 'Compound' },
     { key: 'pka', label: 'pKa', numeric: true, info: PKA_INFO },
     { key: 'solvent', label: 'Solvent', filter: true, narrow: true },
     { key: 'site', label: 'Acidic H', filter: true, narrow: true, info: SITE_INFO },
-    { key: 'cls', label: 'Class', filter: true, hidden: true },
+    { key: 'cls', label: 'Class', hidden: true },
+    { key: 'series', label: 'Series', hidden: true },
     { key: 'notes', label: 'Notes', prose: true, info: NOTES_INFO },
     { key: 'refs', label: 'Original source', prose: true, info: 'The paper or book each value comes from, as the compilation cites it. The links at the end of a row open the papers that have a DOI.' },
     { key: 'smiles', label: 'SMILES', hidden: true },
@@ -110,7 +151,10 @@ export const PKA_VALUES_TABLE: KbTable = {
   fit: true,
   structure: pkaPicture,
   canonicalSmiles: true,
-  rows: PKA_VALUES.map(rowOf).sort((a, b) => firstNumber(a.pka) - firstNumber(b.pka)),
+  rows: PKA_VALUES.map(rowOf).map((r): Record<string, Cell> => ({ ...r, series: pkaSeries(r) })).sort((a, b) => firstNumber(a.pka) - firstNumber(b.pka)),
+  group: 'series',
+  groupInline: true,
+  groupHeading: seriesHeading,
   sources: [REICH_SOURCE, WILLIAMS_SOURCE, { label: 'Original papers for each value: the Original source column' }, { label: 'Names, SMILES, drawings, acidic hydrogens, classes and order by Chemweave' }],
   links: (row) => {
     const out: KbSource[] = row.cid ? [{ label: 'PubChem', url: `https://pubchem.ncbi.nlm.nih.gov/compound/${row.cid}` }] : [];

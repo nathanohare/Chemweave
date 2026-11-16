@@ -3,6 +3,7 @@
 // %APPDATA%\io.github.nathanohare.chemillustrator); in a browser, the browser's storage for
 // this page. Drawings never go here.
 
+import { parseKbLayouts, type KbLayout } from './kb/tables';
 import { type OrientPrefs, DEFAULT_ORIENT, parseOrient } from './orientation-prefs';
 import { type PageLook, DEFAULT_PAGE_LOOK, parsePageLook, readPageTag } from './page-grid';
 import type { PageSetup } from './model';
@@ -284,6 +285,8 @@ export interface Settings {
   keep: KeepPrefs;
   /** The person's own AI model, if they linked one (Edit > Settings > AI Model). Its key is kept apart, never here. */
   ai: AiPrefs;
+  /** Each Knowledge Base table's columns as the user dragged them (widths, order), by table. */
+  kbColumns: Record<string, KbLayout>;
 }
 
 /** Limits for dragging the slide list's edge and the speaker notes' top edge, in pixels. */
@@ -312,6 +315,7 @@ export const DEFAULT_SETTINGS: Settings = {
   newman: DEFAULT_NEWMAN_PREFS,
   keep: DEFAULT_KEEP,
   ai: DEFAULT_AI,
+  kbColumns: {},
   straightenLinear: true,
   cursorAids: { ...DEFAULT_CURSOR_AIDS },
   haptoDelocalized: true,
@@ -321,7 +325,7 @@ const STORAGE_KEY = 'chem-illustrator.settings';
 
 /** Read settings saved as text, keeping only what makes sense. */
 export function parseSettings(text: string | null | undefined): Settings {
-  const s: Settings = { ...DEFAULT_SETTINGS, hotkeys: {}, replacements: DEFAULT_SETTINGS.replacements.map(([a, b]) => [a, b]), dictionary: [], modeColours: { ...DEFAULT_MODE_COLOURS }, nicknames: {}, templates: [], palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null, myStyles: [], modeStyles: {}, darkPalettes: [], guides: { ...DEFAULT_SETTINGS.guides }, orient: { ...DEFAULT_ORIENT }, pageLook: { ...DEFAULT_PAGE_LOOK }, docPins: [], recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], scheme: { ...DEFAULT_SCHEME_PREFS }, analysis: parseAnalysisPrefs(null), newman: parseNewmanPrefs(null), keep: { ...DEFAULT_KEEP }, ai: { ...DEFAULT_AI }, officeStructures: { ...DEFAULT_SETTINGS.officeStructures } };
+  const s: Settings = { ...DEFAULT_SETTINGS, hotkeys: {}, replacements: DEFAULT_SETTINGS.replacements.map(([a, b]) => [a, b]), dictionary: [], modeColours: { ...DEFAULT_MODE_COLOURS }, nicknames: {}, templates: [], palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null, myStyles: [], modeStyles: {}, darkPalettes: [], guides: { ...DEFAULT_SETTINGS.guides }, orient: { ...DEFAULT_ORIENT }, pageLook: { ...DEFAULT_PAGE_LOOK }, docPins: [], recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], scheme: { ...DEFAULT_SCHEME_PREFS }, analysis: parseAnalysisPrefs(null), newman: parseNewmanPrefs(null), keep: { ...DEFAULT_KEEP }, ai: { ...DEFAULT_AI }, kbColumns: {}, officeStructures: { ...DEFAULT_SETTINGS.officeStructures } };
   if (!text) return s;
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return s; }
@@ -433,6 +437,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   s.newman = parseNewmanPrefs(r.newman);
   s.keep = parseKeepPrefs(r.keep);
   s.ai = parseAiPrefs(r.ai);
+  s.kbColumns = parseKbLayouts(r.kbColumns);
   if (Array.isArray(r.dictionary)) s.dictionary = r.dictionary.filter((w): w is string => typeof w === 'string' && w.trim() !== '').map((w) => w.trim());
   if (typeof r.straightenLinear === 'boolean') s.straightenLinear = r.straightenLinear;
   if (r.cursorAids) s.cursorAids = parseCursorAids(r.cursorAids);
