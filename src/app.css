@@ -2146,6 +2146,11 @@ dialog.kb-window { position: fixed; inset: 56px 0 auto 0; margin: 0 auto; z-inde
 .kb-empty { padding: 12px; margin: 0; }
 /* a structure search: "This compound" over the same one, "Containing it" over the rest */
 .kb-table tr.kb-group th { position: static; cursor: default; text-align: left; font-weight: 600; font-size: var(--fs-xs); color: var(--muted); background: var(--panel); padding: 4px 6px 2px; border-top: 1px solid var(--line); }
+.kb-table tr.kb-fold th { cursor: pointer; color: var(--text); background: var(--accent-soft); font-size: var(--fs-sm); padding: 3px 6px; user-select: none; }
+.kb-table tr.kb-fold th:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.kb-chev { display: inline-block; width: 12px; color: var(--muted); }
+.kb-fold-count { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.kb-fold-all { display: inline-flex; gap: 4px; align-items: center; }
 /* Chemistry > Metals > Ligand Library: families on the left, the ligands' drawings, the one picked on the right */
 dialog.ligand-library { width: min(96vw, 1080px); max-width: min(96vw, 1080px); }
 .lig-body { height: min(60vh, 560px); }
