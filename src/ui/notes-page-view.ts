@@ -132,7 +132,7 @@ export async function editNotesMaster(m: Master): Promise<Master | null> {
     { name: 'font', label: 'Notes font', value: s.font ?? '', placeholder: `The slides' body font (${m.bodyFont})` },
     { name: 'size', label: 'Notes size', value: String(s.size ?? 12), type: 'number', unit: 'pt' },
     ...hfFields(hf),
-  ], { ok: 'Apply', note: 'Notes pages show this way in View > Notes Page and when printed (File > Print > Notes Pages). The header and footer are shared with handouts. Saved as PowerPoint\'s own notes master.' });
+  ], { ok: 'Apply', note: 'Notes pages show this way in View ▸ Notes Page and when printed (File ▸ Print ▸ Notes Pages). The header and footer are shared with handouts. Saved as PowerPoint\'s own notes master.' });
   if (!v) return null;
   const slide = Math.max(20, Math.min(75, Number(v.slide) || 42)) / 100;
   const size = Math.max(6, Math.min(48, Number(v.size) || 12));
@@ -149,7 +149,7 @@ export async function editHandoutMaster(m: Master): Promise<Master | null> {
     { name: 'way', label: 'Page', value: s.landscape ? 'landscape' : 'portrait', options: [{ value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' }] },
     { name: 'frame', label: 'Frame the slides', value: String(s.frame !== false), type: 'checkbox' },
     ...hfFields(hf),
-  ], { ok: 'Apply', note: 'File > Print > Handouts as the Handout Master sets them prints this way. The header and footer are shared with notes pages. Saved as PowerPoint\'s own handout master.' });
+  ], { ok: 'Apply', note: 'File ▸ Print ▸ Handouts as the Handout Master sets them prints this way. The header and footer are shared with notes pages. Saved as PowerPoint\'s own handout master.' });
   if (!v) return null;
   const handout: HandoutSetup = { perPage: Number(v.per) as HandoutSetup['perPage'], ...(v.way === 'landscape' ? { landscape: true } : {}), frame: v.frame === 'true' };
   return { ...m, handout, notesHF: hfOf(v, hf) };

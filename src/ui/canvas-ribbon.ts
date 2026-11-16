@@ -214,7 +214,7 @@ export class CanvasRibbon {
     col.append(
       btn('cut', 'Cut', 'Cut (Ctrl+X)'),
       btn('copy', 'Copy', 'Copy (Ctrl+C): structures go as a drawing for ChemDraw, Word and PowerPoint'),
-      btn('format-painter', '<span class="rb-lead" data-ic-lead="format-painter"></span>Format Painter', 'Format Painter: copy the look of the selection (or of the text where the caret is) to what you click next. Double-click to keep painting until Esc'),
+      btn('format-painter', '<span class="rb-lead" data-ic-lead="format-painter"></span>Format Painter', 'Format Painter: copy the style of the selection (or of the text where the cursor is) to what you click next. Double-click to keep painting until Esc'),
     );
     col.lastElementChild!.setAttribute('aria-pressed', 'false');
     row.append(paste, col);

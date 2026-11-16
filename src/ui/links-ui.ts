@@ -56,7 +56,7 @@ export async function followLink(link: string): Promise<void> {
     // another program's address (ms-msdt:, search-ms: and the like) is not a file: links like
     // these have been used to start programs from a document
     if (/^[a-z][a-z0-9+.-]+:/i.test(link) && !/^file:/i.test(link)) {
-      host.flash(`This link (${link.slice(0, 80)}) isn't a web page, an e-mail address or a file, so it isn't followed.`);
+      host.flash(`This link (${link.slice(0, 80)}) isn't a web page, an email address or a file, so it isn't followed.`);
       return;
     }
     const path = wholePath(filePath(link));
@@ -106,7 +106,7 @@ const KINDS: { id: LinkKind; label: string }[] = [
   { id: 'web', label: 'Web page or DOI' },
   { id: 'place', label: 'Place in this file' },
   { id: 'file', label: 'File' },
-  { id: 'mail', label: 'E-mail address' },
+  { id: 'mail', label: 'Email address' },
 ];
 
 /** Pick a file for a file link (the desktop app's Open window). */
@@ -211,7 +211,7 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
     pick.addEventListener('click', () => void browse().then((p) => { if (p) { pathIn.value = p; if (!textIn.value) textIn.value = p.split(/[\\/]/).pop() ?? p; } }));
     const fileHelp = document.createElement('p');
     fileHelp.className = 'ask-help muted';
-    fileHelp.textContent = 'Canvases, documents, presentations and spreadsheets open here; other files open in the program your computer uses for them. A path without a drive or folder at the start is next to this file.';
+    fileHelp.textContent = 'Canvases, documents, presentations and spreadsheets open here; other files open in their default program. A relative path is relative to this file.';
     file.append(row('File', pathIn, pick), fileHelp);
     panes.set('file', file);
 
@@ -226,7 +226,7 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
       mailIn.value = decodeURIComponent(m?.[1] ?? '');
       try { subj.value = decodeURIComponent(m?.[2] ?? ''); } catch { subj.value = m?.[2] ?? ''; }
     }
-    mail.append(row('E-mail address', mailIn), row('Subject', subj));
+    mail.append(row('Email address', mailIn), row('Subject', subj));
     panes.set('mail', mail);
 
     for (const p of panes.values()) { p.hidden = true; form.append(p); }
@@ -287,7 +287,7 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
       e.preventDefault();
       const link = target();
       if (!link) {
-        note.textContent = kind === 'place' ? 'Pick a place for the link to go to.' : kind === 'file' ? 'Type or browse to the file the link opens.' : kind === 'mail' ? 'Type the e-mail address.' : 'Type the address or DOI the link goes to.';
+        note.textContent = kind === 'place' ? 'Pick a place for the link to go to.' : kind === 'file' ? 'Type or browse to the file the link opens.' : kind === 'mail' ? 'Type the email address.' : 'Type the address or DOI the link goes to.';
         note.hidden = false;
         return;
       }

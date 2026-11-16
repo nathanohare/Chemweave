@@ -23,7 +23,7 @@ function start(): Worker | null {
       waiting.delete(m.id);
       if ('spec' in m) w.resolve(m.spec); else w.reject(new Error(m.error));
     };
-    worker.onerror = () => { for (const w of waiting.values()) w.reject(new Error('The spectrum simulation stopped.')); waiting.clear(); worker?.terminate(); worker = null; };
+    worker.onerror = () => { for (const w of waiting.values()) w.reject(new Error('The spectrum simulation stopped unexpectedly. Try again.')); waiting.clear(); worker?.terminate(); worker = null; };
   } catch {
     worker = null;
   }

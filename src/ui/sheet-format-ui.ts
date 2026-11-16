@@ -230,7 +230,7 @@ export class SheetFormatting {
       { value: 'top', label: 'Top or bottom values' },
       { value: 'average', label: 'Above or below average' },
       { value: 'duplicates', label: 'Duplicate or unique values' },
-      { value: 'blank', label: 'Empty or filled cells' },
+      { value: 'blank', label: 'Blank or non-blank cells' },
       { value: 'formula', label: 'Use a formula' },
     ];
     let kind = start?.kind;
@@ -241,7 +241,7 @@ export class SheetFormatting {
     }
     const r = start;
     const rangeField: Field = { name: 'range', label: 'Applies to', value: rangesText(existing?.ranges ?? [this.target()]) };
-    const stopField: Field = { name: 'stop', label: 'Stop here: rules below don\'t apply where this one does', type: 'checkbox', value: String(!!existing?.stop) };
+    const stopField: Field = { name: 'stop', label: 'Stop If True', type: 'checkbox', value: String(!!existing?.stop) };
     const pointOpts = [{ value: 'min', label: 'Lowest value' }, { value: 'max', label: 'Highest value' }, { value: 'num', label: 'Number' }, { value: 'percent', label: 'Percent' }, { value: 'percentile', label: 'Percentile' }, { value: 'auto', label: 'Automatic' }];
     const pt = (t: string, v: string): CfValue => (t === 'min' || t === 'max' || t === 'auto' ? { type: t } : { type: t as CfValue['type'], value: Number(v) || 0 });
     const lookFields = (l?: CfLook): Field[] => [
@@ -345,7 +345,7 @@ export class SheetFormatting {
       }
       case 'blank': {
         const b = r?.kind === 'blank' ? r : null;
-        fields = [{ name: 'which', label: 'Cells', value: b?.not ? 'filled' : 'blank', options: [{ value: 'blank', label: 'Empty' }, { value: 'filled', label: 'With something in them' }] }, ...lookFields(b?.look)];
+        fields = [{ name: 'which', label: 'Cells', value: b?.not ? 'filled' : 'blank', options: [{ value: 'blank', label: 'Empty' }, { value: 'filled', label: 'Not blank' }] }, ...lookFields(b?.look)];
         build = (g) => ({ kind: 'blank', ...(g.which === 'filled' ? { not: true } : {}), look: lookOf(g) });
         break;
       }
@@ -391,7 +391,7 @@ export class SheetFormatting {
     list.className = 'cf-list';
     const note = document.createElement('p');
     note.className = 'muted';
-    note.textContent = 'Rules higher in the list win where two set the same thing.';
+    note.textContent = 'Rules higher in the list take precedence.';
     const buttons = document.createElement('p');
     buttons.className = 'ask-buttons';
     const btn = (label: string, fn: () => void) => {

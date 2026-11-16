@@ -1372,7 +1372,7 @@ export class DocumentMode {
     const got = await ask('Go To', [
       { name: 'what', label: 'Go to what', value: this.goToKind, options: GO_TO_KINDS.map(([v, label]) => ({ value: v, label })) },
       { name: 'n', label: 'Enter a number or name', value: '', placeholder: '3, +1 (the next), −2, or a bookmark\'s name', suggestions: marks },
-    ], { ok: 'Go To', note: 'A number goes to that one; + and − go on or back from where the caret is (just + is the next one). Bookmarks go by name.' });
+    ], { ok: 'Go To', note: 'A number goes to that one; + and − go on or back from where the cursor is (just + is the next one). Bookmarks go by name.' });
     this.focus();
     if (!got || this.file !== f) return;
     const kind = got.what as GoToKind;
@@ -1484,8 +1484,8 @@ export class DocumentMode {
       for (const w of sugg) item(w, () => ed.fix([{ start: a, end: b, text: w }], 'spell'));
       if (!sugg.length) item('No Suggestions', null);
       line();
-      item('Add to Dictionary', () => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, text] }), 'Accept this word from now on (Edit > Typing and Spelling lists your words)');
-      item('Ignore', () => { ignored.add(text.toLowerCase()); this.speller?.ignore(text); this.checkCache.clear(); this.checked = null; this.redraw(); }, 'Accept this word until the program is closed');
+      item('Add to Dictionary', () => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, text] }), 'Accept this word from now on (Edit ▸ Typing and Spelling lists your words)');
+      item('Ignore', () => { ignored.add(text.toLowerCase()); this.speller?.ignore(text); this.checkCache.clear(); this.checked = null; this.redraw(); }, 'Accept this word until Chemweave is closed');
     }
     // a link here
     const linkHere = rt.sliceRuns(ed.t.runs, offset, offset + 1)[0]?.link ?? (offset > 0 ? rt.sliceRuns(ed.t.runs, offset - 1, offset)[0]?.link : undefined);
@@ -1598,8 +1598,8 @@ export class DocumentMode {
         command('Fit Columns to Contents', 'table-fit', 'Each column as wide as its widest cell (structures at their own size)'),
         null,
         ...([['grid', 'Grid Lines'], ['acs', 'ACS Rules'], ['none', 'No Lines']] as const).map(([v, label]) => command(label, `table-lines-${v}`, undefined, !tg.t.style && tg.t.lines === v)),
-        { label: 'Table Styles…', run: (r) => this.tables.styleGallery(r.right - 2, r.top - 5), title: 'Lines, shading and bold headings as one look (Word\'s table styles)' },
-        { label: 'Borders…', run: (r) => this.tables.bordersMenu(r.right - 2, r.top - 5), title: 'Lines on the edges of the cells chosen' },
+        { label: 'Table Styles…', run: (r) => this.tables.styleGallery(r.right - 2, r.top - 5), title: 'Lines, shading and bold headings as one style (Word\'s table styles)' },
+        { label: 'Borders…', run: (r) => this.tables.bordersMenu(r.right - 2, r.top - 5), title: 'Borders on the selected cells' },
         command('Cell Margins…', 'table-margins', 'Room between the cells\' edges and their text'),
         null,
         command('Split Table', 'table-split-table', 'A new table from this row down'),
@@ -2495,7 +2495,7 @@ export class DocumentMode {
     const here = marks.find((b) => b.para === para);
     const got = await ask('Bookmark', [
       { name: 'name', label: 'Bookmark name', value: here?.name ?? '', placeholder: 'Results', suggestions: marks.map((b) => b.name),
-        help: 'Names the paragraph the caret is in, so a link (Insert > Link > Place in this document) can go to it. Type a name already used to go to it or delete it.' },
+        help: 'Names the paragraph the cursor is in, so a link (Insert ▸ Link ▸ Place in this document) can go to it. Type a name already used to go to it or delete it.' },
       { name: 'what', label: 'Then', value: 'add', options: [{ value: 'add', label: 'Add the bookmark here' }, { value: 'go', label: 'Go to the bookmark' }, { value: 'delete', label: 'Delete the bookmark' }] },
     ], { ok: 'OK' });
     this.focus();
@@ -3210,7 +3210,7 @@ export class DocumentMode {
     if (got === 'delete') {
       const at = objectOffsets(f.t.runs).get(id);
       if (at !== undefined && !f.box) { f.ed.select(at, at + 1); f.ed.replaceSelection([], undefined, 'Delete chart'); }
-      else this.host.flash('Click the chart and press Delete to take it out.');
+      else this.host.flash('Click the chart and press Delete to remove it.');
       this.focus();
       return;
     }
@@ -3484,7 +3484,7 @@ export class DocumentMode {
     const o = f.t.objects[id];
     if (o?.kind !== 'drawing' || !o.frame) return;
     const b = emptyContents(o.contents) ? null : figures.record(o.contents, f.t.drawingStyle).pic?.box;
-    if (!b) { this.host.flash('The figure is empty: double-click it to draw in it, or press Delete to take it out.'); return; }
+    if (!b) { this.host.flash('The figure is empty: double-click it to draw in it, or press Delete to remove it.'); return; }
     const { frame: fr, ...rest } = o;
     const r = (x: number) => Math.round(x * 100) / 100;
     const next: DocObject = remove ? rest : { ...o, frame: { x: r(b.x1), y: r(b.y1), w: r(b.x2 - b.x1), h: r(b.y2 - b.y1) } };
@@ -3640,8 +3640,8 @@ export class DocumentMode {
       case 'note-options': void this.noteOptions(); break;
       case 'insert-equation': void this.insertEquation(); break;
       case 'insert-link': void this.editLink(); break;
-      case 'remove-link': if (!ed.linkHere()) { this.host.flash('Put the caret in a link first.'); break; } ed.removeLink(); break;
-      case 'open-link': { const l = ed.linkHere(); if (!l) { this.host.flash('Put the caret in a link first.'); break; } void followLink(l.link); break; }
+      case 'remove-link': if (!ed.linkHere()) { this.host.flash('Put the cursor in a link first.'); break; } ed.removeLink(); break;
+      case 'open-link': { const l = ed.linkHere(); if (!l) { this.host.flash('Put the cursor in a link first.'); break; } void followLink(l.link); break; }
       case 'insert-bookmark': void this.bookmarkDialog(); break;
       case 'insert-date': void this.inserts.dateTime(); return true;
       case 'doc-go-to': void this.goToDialog(); return true;
@@ -3836,7 +3836,7 @@ export class DocumentMode {
       { name: 'which', label: 'On', value: '', options: [{ value: '', label: hf.oddEven ? 'Odd pages' : 'Every page' }, ...(hf.firstPage ? [{ value: 'first', label: 'The first page' }] : []), ...(hf.oddEven ? [{ value: 'even', label: 'Even pages' }] : [])] },
       { name: 'zone', label: 'At the', value: '0', options: [{ value: '0', label: 'Left' }, { value: '1', label: 'Center' }, { value: '2', label: 'Right' }] },
       { name: 'height', label: 'Height', value: '0.5', unit: 'in' },
-    ], { ok: 'Choose Picture…', note: 'For this section. Saved as a picture in Word\'s header or footer. Plain Text (in the Header and Footer settings) takes it out again.' });
+    ], { ok: 'Choose Picture…', note: 'For this section. Saved as a picture in Word\'s header or footer. Plain Text (in the Header and Footer settings) removes it again.' });
     this.focus();
     if (!got || this.file !== f) return;
     const pic = await this.host.pickPicture();
@@ -3884,7 +3884,7 @@ export class DocumentMode {
       { name: 'caps', label: 'Hyphenate words in CAPS', value: String(h.caps !== false), type: 'checkbox' },
       { name: 'zone', label: 'Hyphenation zone', value: showLength(h.zone ?? DEFAULT_ZONE, 'in'), unit: 'in', placeholder: '0.25 in' },
       { name: 'limit', label: 'Limit consecutive hyphens to', value: h.limit ? String(h.limit) : 'No limit', suggestions: ['No limit', '1', '2', '3', '4'] },
-    ], { ok: 'OK', note: 'A word is broken only where English allows (US English patterns) and only when leaving it whole would leave more room at the end of the line than the zone. Words with digits, formulas and words under 5 letters are never broken. Saved as Word\'s hyphenation settings.' });
+    ], { ok: 'OK', note: 'Words are hyphenated only at valid US English break points, and only when the gap at line end would exceed the hyphenation zone. Words with digits, formulas and words under 5 letters are never hyphenated. Saved as Word hyphenation settings.' });
     this.focus();
     if (!got || this.file !== f) return;
     const zone = parseLength(got.zone, 'in');
@@ -3920,7 +3920,7 @@ export class DocumentMode {
       { name: 'restart', label: 'Numbering', value: L?.restart ?? 'page', options: [
         { value: 'page', label: 'Restart each page' }, { value: 'section', label: 'Restart each section' }, { value: 'continuous', label: 'Continuous' },
       ] },
-    ], { ok: 'Apply', note: sectionsOf(f.t).length > 1 ? `For section ${sec.index + 1} (the one the caret is in). Turn them off for a paragraph with Line Numbers > Suppress for Current Paragraph.` : 'Numbers down the left margin, as journals ask for in manuscripts under review. Turn them off for a paragraph with Line Numbers > Suppress for Current Paragraph.' });
+    ], { ok: 'Apply', note: sectionsOf(f.t).length > 1 ? `For section ${sec.index + 1} (the one the cursor is in). Turn them off for a paragraph with Line Numbers ▸ Suppress for Current Paragraph.` : 'Numbers down the left margin, as journals ask for in manuscripts under review. Turn them off for a paragraph with Line Numbers ▸ Suppress for Current Paragraph.' });
     this.focus();
     if (!got || this.file !== f) return;
     if (got.on !== 'true') { this.setSection({ lines: undefined }, 'Line numbers'); return; }
@@ -3941,7 +3941,7 @@ export class DocumentMode {
       { name: 'format', label: 'Number format', value: sec.format, options: FORMATS.map((v) => ({ value: v, label: [1, 2, 3].map((n) => pageNumText(n, v)).join(', ') })) },
       ...(first ? [] : [{ name: 'cont', label: 'Continue from previous section', type: 'checkbox' as const, value: String(sec.restart === undefined) }]),
       { name: 'start', label: first ? 'Start at' : 'Or start at', type: 'number', value: String(sec.restart ?? 1) },
-    ], { ok: 'Apply', note: first ? (sectionsOf(f.t).length > 1 ? 'For the first section. Front matter is often numbered i, ii, iii, with a section break (Layout > Breaks) before the text, numbered 1, 2, 3 from its first page.' : 'Front matter is often numbered i, ii, iii: put a section break (Layout > Breaks > Next Page) before the text and number that section 1, 2, 3 from its first page.') : `For section ${sec.index + 1} (the one the caret is in).` });
+    ], { ok: 'Apply', note: first ? (sectionsOf(f.t).length > 1 ? 'For the first section. Front matter is often numbered i, ii, iii, with a section break (Layout ▸ Breaks) before the text, numbered 1, 2, 3 from its first page.' : 'Front matter is often numbered i, ii, iii: put a section break (Layout ▸ Breaks ▸ Next Page) before the text and number that section 1, 2, 3 from its first page.') : `For section ${sec.index + 1} (the one the cursor is in).` });
     this.focus();
     if (!got || this.file !== f) return;
     const n = Math.round(Number(got.start));
@@ -4008,7 +4008,7 @@ export class DocumentMode {
     const f = this.file!;
     const spot = this.cellSpot();
     const got = await ask('Structure from Name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS RN', value: '' }], {
-      ok: 'Insert', note: 'A systematic or common name (ethyl acetate, 4-bromoanisole), a SMILES string or a CAS RN (50-78-2). The structure goes in the text at the caret.',
+      ok: 'Insert', note: 'A systematic or common name (ethyl acetate, 4-bromoanisole), a SMILES string or a CAS RN (50-78-2). The structure goes in the text at the cursor.',
     });
     this.focus();
     if (!got?.text.trim() || this.file !== f) return;
@@ -4202,7 +4202,7 @@ export class DocumentMode {
       { name: 'rows', label: 'Rows', value: '4', type: 'number' },
       { name: 'cols', label: 'Columns', value: '3', type: 'number' },
       { name: 'kind', label: 'Style', value: this.lastTableKind, options: TABLE_KINDS.map(([value, label]) => ({ value, label })) },
-    ], { ok: 'Insert', note: 'A table in the text is typed into where it is, like a table in Word: click a cell to type, Tab goes to the next cell, and the Table tab adds rows and columns. Structures and pictures can go in its cells. The drawing kind is edited in the drawing tools.' });
+    ], { ok: 'Insert', note: 'Edit this table in place, as in Word: click a cell to type, Tab moves to the next cell, and the Table tab adds rows and columns. Cells can hold structures and pictures.' });
     this.focus();
     if (!got || this.file !== f) return;
     const rows = Math.max(1, Math.min(500, Math.round(Number(got.rows) || 4)));
@@ -4292,7 +4292,7 @@ export class DocumentMode {
     const f = this.file!;
     const got = await ask('Insert Caption', [
       { name: 'name', label: 'Label', value: 'Figure', options: CAPTION_NAMES.map((n) => ({ value: n, label: n })) },
-      { name: 'prefix', label: 'Before the number', value: '', options: [{ value: '', label: 'Nothing (Figure 1)' }, { value: 'S', label: 'S (Figure S1, for Supporting Information)' }] },
+      { name: 'prefix', label: 'Prefix', value: '', options: [{ value: '', label: 'Nothing (Figure 1)' }, { value: 'S', label: 'S (Figure S1, for Supporting Information)' }] },
       { name: 'place', label: 'Position', value: this.captionPlace, options: [{ value: 'usual', label: 'As journals set them (Scheme and Table above, others below)' }, { value: 'above', label: 'Above the selected item' }, { value: 'below', label: 'Below the selected item' }] },
     ], { ok: 'Insert', note: 'Captions number themselves in order, and references to them follow when they move.' });
     this.focus();
@@ -4415,7 +4415,7 @@ export class DocumentMode {
     if (!f) return;
     const post = this.host.zoteroPost;
     if (!post) {
-      this.host.flash('Citing with Zotero works in the desktop app (a browser can\'t reach Zotero on this computer). Here, use Insert Citation, or add references from Zotero in the Reference Manager.', 8000);
+      this.host.flash('Zotero citing needs the desktop app. In the browser, use Insert Citation, or add Zotero references in the Reference Manager.', 8000);
       return;
     }
     if (this.zoteroRunning) { this.host.flash('Zotero is still working on this document (finish in Zotero\'s window first).'); return; }
@@ -4496,7 +4496,7 @@ export class DocumentMode {
     ed.update(setParaStyle(setParaStyle(f.t, h, h, f.t.styles.Heading1 ? 'Heading1' : 'Normal'), h + 1, h + 1, 'Normal'), null);
     const at = objectOffsets(f.t.runs).get(id);
     if (at !== undefined) ed.setCaret(at + 1);
-    if (!(f.t.references ?? []).length) this.host.flash('The bibliography lists the references cited. Add references with References > Manage References, and cite them with Insert Citation.', 8000);
+    if (!(f.t.references ?? []).length) this.host.flash('The bibliography lists the references cited. Add references with References ▸ Manage References, and cite them with Insert Citation.', 8000);
   }
 
   /**
@@ -4529,12 +4529,12 @@ export class DocumentMode {
     ed.update(t, null);
     const at = objectOffsets(f.t.runs).get(id);
     if (at !== undefined) ed.setCaret(at + 1);
-    if (!tocEntries(f.t, levels).length) this.host.flash('The contents list paragraphs in the Heading 1, 2 and 3 styles (Home > Styles). Give your headings those styles and they appear here with their page numbers.', 9000);
+    if (!tocEntries(f.t, levels).length) this.host.flash('The table of contents lists Heading 1, 2 and 3 paragraphs (Home ▸ Styles). Apply those styles to your headings to list them here with page numbers.', 9000);
   }
 
   private async askTocLevels(now: number, ok: string): Promise<number | null> {
     const got = await ask('Table of Contents', [
-      { name: 'levels', label: 'Show headings down to', value: String(now), options: [{ value: '1', label: 'Heading 1' }, { value: '2', label: 'Heading 2' }, { value: '3', label: 'Heading 3' }] },
+      { name: 'levels', label: 'Show levels', value: String(now), options: [{ value: '1', label: 'Heading 1' }, { value: '2', label: 'Heading 2' }, { value: '3', label: 'Heading 3' }] },
     ], { ok, note: 'The table of contents updates automatically as headings change or move. In Word, right-click ▸ Update Field after editing there.' });
     return got ? Math.max(1, Math.min(3, Number(got.levels) || 3)) : null;
   }
@@ -4580,7 +4580,7 @@ export class DocumentMode {
     ed.update(t, null);
     const at = objectOffsets(f.t.runs).get(id);
     if (at !== undefined) ed.setCaret(at + 1);
-    if (!tofEntries(f.t, name).length) this.host.flash(`The table of figures lists the ${name ? `${name} ` : ''}captions made with References > Insert Caption. Add captions and they appear here with their page numbers.`, 9000);
+    if (!tofEntries(f.t, name).length) this.host.flash(`The table of figures lists the ${name ? `${name} ` : ''}captions made with References ▸ Insert Caption. Add captions and they appear here with their page numbers.`, 9000);
   }
 
   private async askTofName(now: string, ok: string): Promise<string | null> {
@@ -4658,7 +4658,7 @@ export class DocumentMode {
         { value: 'toFoot', label: `All endnotes to footnotes (${ends})` },
         { value: 'swap', label: 'Swap footnotes and endnotes' },
       ] },
-    ], { ok: 'Apply', note: 'Footnotes sit at the foot of their page, endnotes after the text. Insert them with References > Insert Footnote (Ctrl+Alt+F) or Insert Endnote (Ctrl+Alt+D); delete one by deleting its number in the text.' });
+    ], { ok: 'Apply', note: 'Footnotes sit at the bottom of their page, endnotes after the text. Insert them with References ▸ Insert Footnote (Ctrl+Alt+F) or Insert Endnote (Ctrl+Alt+D); delete one by deleting its number in the text.' });
     this.focus();
     if (!got || this.file !== f) return;
     const foot = got.foot as NoteFormat, end = got.end as NoteFormat;
@@ -4763,8 +4763,8 @@ export class DocumentMode {
     ], {
       ok: combine ? 'Combine' : 'Compare',
       note: combine
-        ? 'Puts two reviewers\' copies of one document together in a new document: each reviewer\'s tracked changes, with their names, ready to accept or reject (Review > Accept and Reject).'
-        : 'Opens a new document: the revised document with what changed since the original marked as tracked changes (deleted text struck through, new text underlined). Both are compared with their own tracked changes accepted. Formatting-only changes are not marked.',
+        ? 'Puts two reviewers\' copies of one document together in a new document: each reviewer\'s tracked changes, with their names, ready to accept or reject (Review ▸ Accept and Reject).'
+        : 'Opens a new document showing changes from the original as tracked changes (deletions struck through, insertions underlined). Existing tracked changes are accepted first; formatting-only changes aren\'t marked.',
     });
     if (!got) return;
     const list = [here, ...others];
@@ -4778,7 +4778,7 @@ export class DocumentMode {
     const { doc, changes } = combine ? combineDocuments(a.t, b.t, opts) : compareDocuments(a.t, b.t, opts);
     const stem = (n: string) => n.replace(/\.docx$/i, '');
     this.host.showDocument?.(doc, combine ? `Combined ${stem(a.name)}` : `Compared ${stem(b.name)}`);
-    this.host.flash(changes ? `${changes} change${changes === 1 ? '' : 's'} found. Go through them with Review > Next, Accept and Reject.` : 'The documents read the same: no changes found.', 7000);
+    this.host.flash(changes ? `${changes} change${changes === 1 ? '' : 's'} found. Go through them with Review ▸ Next, Accept and Reject.` : 'The documents read the same: no changes found.', 7000);
   }
 
   /** The name put on your changes (kept in your settings). */
@@ -4888,10 +4888,10 @@ export class DocumentMode {
   private async designDefault(): Promise<void> {
     const d = this.file?.t.design;
     const what = d ? [d.theme && `the ${d.theme} theme`, !d.theme && d.fonts && `${d.fonts} fonts`, !d.theme && d.colors && `${d.colors} colors`, d.styleSet && `the ${d.styleSet} style set`, d.spacing && `${d.spacing} spacing`].filter(Boolean).join(', ') : '';
-    const got = await ask('Set as Default', [], { ok: what ? 'Set as Default' : 'Use the Standard Look', note: what ? `New documents will start with ${what}. (Documents already made keep their own look.)` : 'This document uses the standard look, so new documents will too.' });
+    const got = await ask('Set as Default', [], { ok: what ? 'Set as Default' : 'Use the Standard Look', note: what ? `New documents will start with ${what}. (Documents already made keep their own formatting.)` : 'This document uses the standard formatting, so new documents will too.' });
     if (!got) return;
     this.host.setNewDesign?.(d && Object.keys(d).length ? d : null);
-    this.host.flash(what ? 'New documents will start with this design.' : 'New documents will start with the standard look.');
+    this.host.flash(what ? 'New documents will start with this design.' : 'New documents will start with the standard formatting.');
   }
 
   /** Change the whole document's look (watermark, page colour, page borders): one undo step. */
@@ -4949,7 +4949,7 @@ export class DocumentMode {
     const shown = cur.map((t) => `${showLength(t.pos, 'in')} in ${t.kind === 'center' ? 'centre' : t.kind}${t.leader ? ` ${t.leader === 'underscore' ? 'line' : t.leader}` : ''}`).join('\n');
     const got = await ask('Tabs', [
       { name: 'tabs', label: 'Tab stops, one per line', value: shown, type: 'textarea', placeholder: '1 in left\n3.25 in decimal\n6.5 in right dot' },
-    ], { ok: 'OK', note: 'Each line: where (from the left margin, in inches unless you give cm, mm or pt), then left, center, right or decimal, then dot, hyphen or line for a leader. Past the last one, tabs stop every half inch. The ruler (View > Ruler) sets them by clicking too.' });
+    ], { ok: 'OK', note: 'One tab stop per line: position (inches unless you add cm, mm or pt), alignment (left, center, right, decimal), then leader (dot, hyphen, line). After the last stop, tabs fall every 0.5 in. You can also click the ruler.' });
     this.focus();
     if (!got || this.file !== f) return;
     const tabs: TabStop[] = [];
@@ -5021,8 +5021,8 @@ export class DocumentMode {
     const ed = this.ed;
     const got = await ask('New Style', [
       { name: 'name', label: 'Name', value: '' , placeholder: 'Experimental heading' },
-      { name: 'kind', label: 'Style type', value: ed.collapsed ? 'para' : 'char', options: [{ value: 'para', label: 'Paragraph (the whole paragraph’s look and spacing)' }, { value: 'char', label: 'Character (formatting of the selected words)' }] },
-    ], { ok: 'Create Style', note: 'The new style takes the look of the text the caret is in, and is given to it. Change it later with Modify; every paragraph or word in it follows.' });
+      { name: 'kind', label: 'Style type', value: ed.collapsed ? 'para' : 'char', options: [{ value: 'para', label: 'Paragraph (the whole paragraph’s formatting and spacing)' }, { value: 'char', label: 'Character (formatting of the selected words)' }] },
+    ], { ok: 'Create Style', note: 'The new style takes the formatting of the text the cursor is in, and is given to it. Change it later with Modify; every paragraph or word in it follows.' });
     this.focus();
     if (!got || this.file !== f || !got.name.trim()) return;
     const look = ed.currentStyle();
@@ -5058,7 +5058,7 @@ export class DocumentMode {
       { name: 'italic', label: 'Italic', value: yesNo(s.italic), options: tri },
       { name: 'underline', label: 'Underline', value: String(!!s.underline), type: 'checkbox' },
       { name: 'smallCaps', label: 'Small caps', value: String(!!s.smallCaps), type: 'checkbox' },
-      { name: 'colorOn', label: 'Own color', value: String(!!s.color), type: 'checkbox' },
+      { name: 'colorOn', label: 'Custom color', value: String(!!s.color), type: 'checkbox' },
       { name: 'color', label: 'Color', value: s.color ?? '#000000', type: 'color' },
     ], { ok: 'OK', note: 'Every word in this style changes with it (except what was formatted by hand).' });
     this.focus();

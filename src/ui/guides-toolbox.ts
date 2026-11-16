@@ -24,14 +24,14 @@ const SNAP_LABEL: Record<GuideSnap, [string, string]> = {
 const svg = (body: string) => `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">${body}</svg>`;
 const ADD: { kind: GuideKind | 'grid'; icon: string; title: string }[] = [
   { kind: 'cross', icon: svg('<path d="M8 1v14M1 8h14"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/>'), title: 'Add a crosshair in the middle of the window' },
-  { kind: 'h', icon: svg('<path d="M1 8h14M4 6.5v3M8 6v4M12 6.5v3"/>'), title: 'Add a guide across' },
-  { kind: 'v', icon: svg('<path d="M8 1v14M6.5 4h3M6 8h4M6.5 12h3"/>'), title: 'Add a guide up and down' },
+  { kind: 'h', icon: svg('<path d="M1 8h14M4 6.5v3M8 6v4M12 6.5v3"/>'), title: 'Add Horizontal Guide' },
+  { kind: 'v', icon: svg('<path d="M8 1v14M6.5 4h3M6 8h4M6.5 12h3"/>'), title: 'Add Vertical Guide' },
   { kind: 'grid', icon: svg('<path d="M1 5h14M1 11h14M5 1v14M11 1v14"/>'), title: 'Grid guides: lines every major tick across the whole drawing' },
 ];
 
 
 /** How to use the guides: the tip on the toolbox's "i". */
-export const GUIDES_INFO = 'Drag a guide with the Select tool to move it; drop it off the drawing to take it away. Hold Alt while dragging anything to move it freely.';
+export const GUIDES_INFO = 'Drag a guide with the Select tool to move it; drop it off the drawing to remove it. Hold Alt while dragging anything to move it freely.';
 
 export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: GuidesToolboxHooks): { refresh(): void } {
   const d = body.ownerDocument;
@@ -146,7 +146,7 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
   look.className = 'gt-row gt-look';
   const lookLabel = d.createElement('span');
   lookLabel.className = 'gt-label';
-  lookLabel.textContent = 'Look';
+  lookLabel.textContent = 'Style';
   look.append(lookLabel);
   const swatches: [string | undefined, HTMLButtonElement][] = [];
   for (const c of GUIDE_COLOURS) {

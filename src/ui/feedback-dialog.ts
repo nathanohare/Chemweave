@@ -171,7 +171,7 @@ export class FeedbackDialog {
     pick.hidden = true;
     const pickButton = document.createElement('button');
     pickButton.type = 'button';
-    pickButton.textContent = 'Add a File…';
+    pickButton.textContent = 'Attach File…';
     const picNote = document.createElement('span');
     picNote.className = 'feedback-picture-note';
     picRow.append(picBox, picLab, thumb, pickButton, pick, picNote);
@@ -181,7 +181,7 @@ export class FeedbackDialog {
       const f = pick.files?.[0];
       pick.value = '';
       if (!f) return;
-      if (f.size > PICTURE_LIMIT) { say('That picture is too large (3 MB at most).', true); return; }
+      if (f.size > PICTURE_LIMIT) { say('The picture is too large (3 MB maximum).', true); return; }
       const reader = new FileReader();
       reader.onload = () => {
         const p = pictureFromDataUrl(String(reader.result), f.name);
@@ -215,7 +215,7 @@ export class FeedbackDialog {
     extraBox.checked = this.withExtra;
     const extraLab = document.createElement('label');
     extraLab.className = 'feedback-about';
-    extraLab.append(extraBox, ' Include the error details the program wrote down');
+    extraLab.append(extraBox, ' Include the error details Chemweave wrote down');
     const extraShow = document.createElement('details');
     const extraSum = document.createElement('summary');
     extraSum.textContent = 'Show them';
@@ -266,7 +266,7 @@ export class FeedbackDialog {
         k === 'problem' ? 'What went wrong? What did you expect to happen?' : 'Your comment or question';
       stepsRow.hidden = k !== 'problem';
       extraWrap.hidden = !this.extra || k !== 'problem';
-      aboutText.textContent = ` Include the program's version and computer (${Object.values(about).filter(Boolean).join(', ')})`;
+      aboutText.textContent = ` Include Chemweave's version and computer (${Object.values(about).filter(Boolean).join(', ')})`;
       for (const b of visButtons) b.setAttribute('aria-checked', String(b.dataset.vis === this.visibility));
       for (const b of visButtons) b.tabIndex = b.dataset.vis === this.visibility ? 0 : -1;
       setInfo(visTip, VIS_TIP[this.visibility]);
@@ -347,7 +347,7 @@ export class FeedbackDialog {
       const f = read();
       if (empty(f)) { say('Write a title or a few words first.', true); details.focus(); return; }
       if (!relay) { openOnGitHub(f); return; }
-      if (email.value.trim() && !email.checkValidity()) { say('That email address doesn’t look right.', true); email.focus(); return; }
+      if (email.value.trim() && !email.checkValidity()) { say('Enter a valid email address.', true); email.focus(); return; }
       sending = true;
       send.disabled = true;
       send.textContent = 'Sending…';

@@ -176,7 +176,7 @@ export class Viewer3d {
     this.again = document.createElement('button');
     this.again.type = 'button';
     this.again.className = 'link';
-    this.again.textContent = 'Run again…';
+    this.again.textContent = 'Run Again…';
     this.again.addEventListener('click', () => void this.runTier(this.tier));
     // the conformers, lowest energy first
     this.list = document.createElement('div');
@@ -211,7 +211,7 @@ export class Viewer3d {
     const best = document.createElement('button');
     best.type = 'button';
     best.textContent = 'Best View';
-    best.title = 'Turn the model to the view that draws most cleanly (no atoms on top of each other, fewest crossing bonds)';
+    best.title = 'Rotate the model to the clearest view (no overlapping atoms, fewest crossing bonds)';
     best.addEventListener('click', () => {
       if (!this.model) return;
       this.rot = cleanestView(this.base(), this.skeleton(), this.drawn);
@@ -722,7 +722,7 @@ export class Viewer3d {
     const got = await ask('Full Search', [
       { name: 'starts', label: 'Starting conformers', value: String(DEFAULT_SEARCH.starts), type: 'number', help: 'More finds more conformers but takes longer (each is relaxed with MMFF94s+).' },
       { name: 'window', label: 'Energy window', value: String(DEFAULT_SEARCH.window), type: 'number', unit: 'kcal/mol', help: 'Conformers more than this above the lowest are discarded.' },
-      { name: 'rmsd', label: 'Same shape within', value: String(DEFAULT_SEARCH.rmsd), type: 'number', unit: 'Å RMSD', help: 'Heavy atoms, after fitting one onto the other.' },
+      { name: 'rmsd', label: 'Duplicate threshold (RMSD)', value: String(DEFAULT_SEARCH.rmsd), type: 'number', unit: 'Å RMSD', help: 'Heavy atoms, after fitting one onto the other.' },
     ], { ok: 'Search' });
     if (!got) return;
     const num = (v: string, d: number, lo: number, hi: number) => { const x = parseFloat(v); return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d; };
@@ -774,7 +774,7 @@ export class Viewer3d {
     } catch (e) {
       if (run !== this.run) return;
       const msg = String((e as Error)?.message ?? e);
-      if (this.stopped) { this.flash('xTB stopped.'); return; }
+      if (this.stopped) { this.flash('xTB stopped unexpectedly.'); return; }
       this.flash(/could not be started|No such file|not found|cannot find/i.test(msg) ? `xtb could not be started from "${opts.exe}". Install it, or give the full path to the program.` : msg);
     } finally {
       if (run === this.run) this.setBusy(false);
@@ -790,7 +790,7 @@ export class Viewer3d {
     const { charge, multiplicity } = chargeAndMultiplicity(m);
     const got = await ask('Gaussian/ORCA Input', [
       { name: 'program', label: 'Program', value: program, options: [{ value: 'orca', label: 'ORCA (.inp)' }, { value: 'gaussian', label: 'Gaussian (.gjf)' }] },
-      { name: 'method', label: 'Method', value: q.method ?? QM_METHODS[program][0], type: 'text', suggestions: [...QM_METHODS.orca, ...QM_METHODS.gaussian], help: 'As the program writes it: "B3LYP D3BJ def2-SVP" for ORCA, "B3LYP/def2SVP EmpiricalDispersion=GD3BJ" for Gaussian.' },
+      { name: 'method', label: 'Method', value: q.method ?? QM_METHODS[program][0], type: 'text', suggestions: [...QM_METHODS.orca, ...QM_METHODS.gaussian], help: 'As Chemweave writes it: "B3LYP D3BJ def2-SVP" for ORCA, "B3LYP/def2SVP EmpiricalDispersion=GD3BJ" for Gaussian.' },
       { name: 'job', label: 'Job', value: q.job ?? 'opt freq', options: [{ value: 'opt freq', label: 'Optimize, then frequencies' }, { value: 'opt', label: 'Optimize' }, { value: 'sp', label: 'Single point' }, { value: 'freq', label: 'Frequencies' }] },
       { name: 'solvent', label: 'Solvent (SMD)', value: q.solvent ?? '', type: 'text', placeholder: 'none (gas phase)', suggestions: ['water', 'methanol', 'acetonitrile', 'dichloromethane', 'chloroform', 'thf', 'toluene', 'dmso', 'dmf'] },
       { name: 'charge', label: 'Charge', value: String(charge), type: 'number' },
@@ -846,7 +846,7 @@ export function molfile3d(m: Model3d, conf: number, name = ''): string {
   const xyz = m.conformers[conf].xyz;
   const f = (v: number) => v.toFixed(4).padStart(10);
   const i3 = (v: number) => String(v).padStart(3);
-  const lines = [name.slice(0, 80), '  ChemIllustrator3D', '', `${i3(m.atoms.length)}${i3(m.bonds.length)}  0  0  0  0  0  0  0  0999 V2000`];
+  const lines = [name.slice(0, 80), '  Chemweave3D', '', `${i3(m.atoms.length)}${i3(m.bonds.length)}  0  0  0  0  0  0  0  0999 V2000`];
   m.atoms.forEach((a, i) => {
     const sym = (SYMBOLS[a.z] ?? 'C').padEnd(3);
     // OpenChemLib's y runs down: turn it back to a right-handed frame

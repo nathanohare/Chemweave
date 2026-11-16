@@ -139,11 +139,11 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     const align = el('select'), alignBelow = el('select');
     alignBelow.append(new Option('Same as above', ''));
     for (const [v, t] of [['center', 'Centered'], ['left', 'Left'], ['right', 'Right']]) { align.append(new Option(t, v)); alignBelow.append(new Option(t, v)); }
-    row('Lines of text above line up', align);
+    row('Text alignment above', align);
     const textGap = schemeNum('textGap');
     textGap.dataset.span = 'textGap';
     row('Gap between arrow and text above', textGap, el('span', { className: 'muted', textContent: 'pt' }));
-    row('Lines of text below line up', alignBelow);
+    row('Text alignment below', alignBelow);
     const textGapBelow = schemeNum('textGapBelow');
     textGapBelow.title = 'Leave blank for the same gap as above. From 0 to 30 pt';
     textGapBelow.dataset.span = 'textGapBelow';
@@ -180,7 +180,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     grid.append(el('h3', { textContent: 'Your own styles' }));
     const name = el('input', { type: 'text', placeholder: 'e.g. My group meeting style' });
     const save = el('button', { type: 'button', textContent: 'Save', title: 'Save as My Style: keep these settings under this name, in every mode' });
-    const del = el('button', { type: 'button', textContent: 'Delete', title: 'Remove this one of your own styles' });
+    const del = el('button', { type: 'button', textContent: 'Delete', title: 'Delete this custom style' });
     row('Name', name, save, del);
     const said = el('p', { className: 'muted', textContent: '' });
     grid.append(said);
@@ -192,7 +192,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     if (o.hasStructures) {
       grid.append(
         el('label', { className: 'style-radio' }, redraw, ' Redraw the structures already there in the new style'),
-        el('label', { className: 'style-radio' }, keepLook, ' Keep their look; only new structures use it'),
+        el('label', { className: 'style-radio' }, keepLook, ' Keep their formatting; only new structures use it'),
       );
     }
     const forNew = el('input', { type: 'checkbox', checked: o.isDefault });
@@ -288,7 +288,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       const v = pick.value;
       const p = v.startsWith('preset:') ? presetNamed(v.slice(7)) : undefined;
       // where a journal's numbers come from shows on the list's tip, not as a line of its own
-      pick.title = p ? `From: ${p.source}.${p.note ? ' ' + p.note : ''}` : v.startsWith('own:') ? 'One of your own styles.' : 'The style this file was saved with.';
+      pick.title = p ? `From: ${p.source}.${p.note ? ' ' + p.note : ''}` : v.startsWith('own:') ? 'One of your custom styles.' : 'The style this file was saved with.';
       del.disabled = !v.startsWith('own:');
     };
 

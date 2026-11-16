@@ -320,7 +320,7 @@ export class HotkeysDialog {
     let msg = `${shown} now does “${actionName(action)}”.`;
     if (before) {
       msg += ` It used to do “${actionName(before)}”`;
-      msg += keymap.keysFor(ctx, before).length ? '.' : ', which has no key now (Reset puts it back).';
+      msg += keymap.keysFor(ctx, before).length ? '.' : ', which has no key now (Reset restores it).';
     }
     // a plain key for a menu command only works when it isn't used where the mouse points
     if (ctx === 'command') {
@@ -339,13 +339,13 @@ export class HotkeysDialog {
       clearTimeout(this.resetTimer);
       this.resetTimer = window.setTimeout(() => {
         this.resetAllBtn.classList.remove('confirm');
-        this.resetAllBtn.textContent = "Change hotkeys to ChemDraw™ defaults";
+        this.resetAllBtn.textContent = "Reset All to ChemDraw Defaults";
       }, 4000);
       return;
     }
     clearTimeout(this.resetTimer);
     this.resetAllBtn.classList.remove('confirm');
-    this.resetAllBtn.textContent = "Change hotkeys to ChemDraw™ defaults";
+    this.resetAllBtn.textContent = "Reset All to ChemDraw Defaults";
     keymap.resetAll();
     this.say('Every key is back to ChemDraw’s. (Export first next time if you want to keep a copy of yours.)');
   }

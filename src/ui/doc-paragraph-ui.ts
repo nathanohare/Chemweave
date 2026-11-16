@@ -125,7 +125,7 @@ export class DocParagraphUI {
       { name: 'k2', label: 'Then by', value: 'none', options: [{ value: 'none', label: '(none)' }, ...fieldOptions.filter((o) => o.value !== '')] },
       { name: 't2', label: 'Type', value: 'text', options: types },
       { name: 'o2', label: 'Order', value: 'asc', options: orders },
-      ...(tb ? [] : [{ name: 'sep', label: 'Fields cut at', value: 'tab', options: [{ value: 'tab', label: 'Tabs' }, { value: 'comma', label: 'Commas' }] }]),
+      ...(tb ? [] : [{ name: 'sep', label: 'Separate fields at', value: 'tab', options: [{ value: 'tab', label: 'Tabs' }, { value: 'comma', label: 'Commas' }] }]),
       { name: 'header', label: tb ? 'The first row is a heading (keep it at the top)' : 'The first paragraph is a heading (keep it at the top)', value: String(!!tb?.t.head), type: 'checkbox' },
       { name: 'case', label: 'Case sensitive (capitals first)', value: 'false', type: 'checkbox' },
     ], { ok: 'Sort', note: tb ? 'The table\'s rows go in order by the column chosen; rows that tie keep their order.' : 'The selected paragraphs go in order, each keeping its formatting; paragraphs that tie keep their order.' });

@@ -197,7 +197,7 @@ function paintArrow(b: HTMLElement): void {
     const simple = look.simple();
     b.textContent = simple ? '▾' : '▴';
     b.title = simple ? 'Classic ribbon: two rows of buttons' : 'Simplified ribbon: one row of buttons, for more room';
-    b.title += '. Double-click a tab (or Ctrl+F1) to fold the ribbon to its tabs';
+    b.title += '. Double-click a tab (or Ctrl+F1) to collapse the ribbon to its tabs';
   } else {
     b.textContent = collapsed ? '▾' : '▴';
     b.title = collapsed ? 'Pin the ribbon open (Ctrl+F1)' : 'Collapse the ribbon to its tabs, for more room (Ctrl+F1). Click a tab to use its buttons';

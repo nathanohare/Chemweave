@@ -54,15 +54,15 @@ interface ProviderInfo {
 export const PROVIDERS: Record<Exclude<AiProvider, 'none'>, ProviderInfo> = {
   anthropic: {
     name: 'Claude (Anthropic)', model: 'claude-sonnet-5-5', models: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5'],
-    base: 'https://api.anthropic.com', keyHelp: 'Make a key at console.anthropic.com > API Keys.',
+    base: 'https://api.anthropic.com', keyHelp: 'Make a key at console.anthropic.com ▸ API Keys.',
   },
   openai: {
     name: 'ChatGPT (OpenAI)', model: 'gpt-5', models: ['gpt-5', 'gpt-5-mini'],
-    base: 'https://api.openai.com/v1', keyHelp: 'Make a key at platform.openai.com > API keys.',
+    base: 'https://api.openai.com/v1', keyHelp: 'Make a key at platform.openai.com ▸ API keys.',
   },
   gemini: {
     name: 'Gemini (Google)', model: 'gemini-2.5-pro', models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
-    base: 'https://generativelanguage.googleapis.com/v1beta', keyHelp: 'Make a key at aistudio.google.com > Get API key.',
+    base: 'https://generativelanguage.googleapis.com/v1beta', keyHelp: 'Make a key at aistudio.google.com ▸ Get API key.',
   },
   compatible: {
     name: 'Other (OpenAI-compatible)', model: '', models: [],
@@ -112,7 +112,7 @@ export function localOnlyBlock(p: AiPrefs): string | null {
   if (!p.localOnly || p.provider === 'none') return null;
   const base = aiBase(p);
   return isLocalAddress(base) ? null
-    : `Local only is on, so nothing is sent to ${safeHost(base) || 'that service'}. Link a model on this computer (Ollama or LM Studio, under Other) in Edit > Settings > AI Model, or turn Local only off there.`;
+    : `Local only is on, so nothing is sent to ${safeHost(base) || 'that service'}. Link a model on this computer (Ollama or LM Studio, under Other) in Edit ▸ Settings ▸ AI Model, or turn Local only off there.`;
 }
 
 function safeHost(url: string): string {
@@ -291,7 +291,7 @@ const ANSWER_MS = 180_000;
 
 async function send(p: AiPrefs, req: AiRequest): Promise<unknown> {
   const base = aiBase(p);
-  if (!base) throw new Error('Link an AI model first (Edit > Settings > AI Model).');
+  if (!base) throw new Error('Link an AI model first (Edit ▸ Settings ▸ AI Model).');
   const blocked = localOnlyBlock(p);
   if (blocked) throw new Error(blocked);
   let status = 0;
@@ -330,7 +330,7 @@ async function send(p: AiPrefs, req: AiRequest): Promise<unknown> {
   try { json = JSON.parse(text); } catch { /* not JSON: say what came back */ }
   if (status < 200 || status >= 300) {
     const said = errorText(json);
-    const why = status === 401 || status === 403 ? 'The key was refused. Check it in Edit > Settings > AI Model.'
+    const why = status === 401 || status === 403 ? 'The key was refused. Check it in Edit ▸ Settings ▸ AI Model.'
       : status === 429 ? 'The AI service says too many requests, or the account has run out of credit. Try again later.'
       : `The AI service answered with an error (${status}).`;
     throw new Error(said ? `${why} It said: ${said}` : why);

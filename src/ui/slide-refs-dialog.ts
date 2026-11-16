@@ -93,7 +93,7 @@ export function editSlideRefs(input: SlideRefsInput): Promise<SlideRefsResult | 
     };
     const colourBox = el('span', 'slide-refs-colour');
     const colourLabel = el('label');
-    colourLabel.append(ownColour, ' Own color ');
+    colourLabel.append(ownColour, ' Custom color ');
     colourBox.append(colourLabel, colour);
 
     const look = (): RefLook => ({
@@ -115,7 +115,7 @@ export function editSlideRefs(input: SlideRefsInput): Promise<SlideRefsResult | 
         if (labels[k]) p.prepend(`${labels[k]} `);
         return p;
       });
-      preview.replaceChildren(...(lines.length ? lines : [el('p', 'muted', 'Check references to show them at the foot of the slide.')]));
+      preview.replaceChildren(...(lines.length ? lines : [el('p', 'muted', 'Check references to show them at the bottom of the slide.')]));
       preview.style.color = l.color ?? input.footerColor;
       preview.style.textAlign = l.place === 'bottom-centre' ? 'center' : l.place.endsWith('right') ? 'right' : 'left';
     };
@@ -154,13 +154,13 @@ export function editSlideRefs(input: SlideRefsInput): Promise<SlideRefsResult | 
     form.addEventListener('input', showPreview);
     form.addEventListener('change', showPreview);
 
-    const note = el('p', 'muted small', `Check marks are for the ${input.picked > 1 ? `${input.picked} slides picked` : 'slide being edited'}. Apply gives ${input.picked > 1 ? 'them' : 'it'} this look of its own; Apply to All uses the look on every slide. The References slide (Insert > Presentation > References Slide) lists them all.`);
+    const note = el('p', 'muted small', `Checked items are for the ${input.picked > 1 ? `${input.picked} slides picked` : 'slide being edited'}. Apply sets this style on ${input.picked > 1 ? 'them' : 'it'}; Apply to All uses it on every slide. The References slide (Insert ▸ References Slide) lists all of them.`);
     const buttons = el('p', 'ask-buttons');
     const cancel = el('button', '', 'Cancel');
     cancel.type = 'button';
     const apply = el('button', '', 'Apply');
     apply.type = 'button';
-    apply.title = input.picked > 1 ? `Apply to the ${input.picked} selected slides only` : 'The look for this slide only';
+    apply.title = input.picked > 1 ? `Apply to the ${input.picked} selected slides only` : 'The style for this slide only';
     const all = el('button', 'primary', 'Apply to All');
     all.type = 'submit';
     all.title = 'Apply to all slides (check marks are for the selected slides)';

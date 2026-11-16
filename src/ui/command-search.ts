@@ -59,6 +59,16 @@ const FORMER_NAMES: [RegExp, string][] = [
   [/Show\/Hide Explicit Hydrogens/, 'h atoms hide draw'],
   [/Add Hapto Bond/, 'bond metal to ring'],
   [/Import .*Picture|^Import \d/, 'read'],
+  [/^Match Orientation of First/, 'orient like first'],
+  [/^Expand Label/, 'expand to structure full'],
+  [/^Use System Setting$/, 'as the computer is set'],
+  [/Color by Type/, 'kind'],
+  [/in Menu Bar$/, 'menu row'],
+  [/Header & Footer/, 'header and footer'],
+  [/Sort & Filter/, 'sort and filter'],
+  [/^Attach File/, 'add a file'],
+  [/Type$|Types\b/, 'kind'],
+  [/Style|Formatting/, 'look'],
 ];
 
 /** Old names of a command now known by `label`, as search words (empty when it kept its name). */
@@ -210,7 +220,7 @@ export class CommandSearch {
     if (!this.shown.length) {
       const li = document.createElement('li');
       li.className = 'muted cs-none';
-      li.textContent = 'Nothing matches. Try another word, or Edit > Hotkeys for the full list of keys.';
+      li.textContent = 'No matches. Try another word, or see Edit ▸ Keyboard Shortcuts for the full list.';
       this.list.append(li);
     }
     this.mark();

@@ -136,9 +136,9 @@ export function toaItems(t: Pick<DocText, 'runs' | 'paras'>, cat: number, pageOf
 }
 
 /** What an index shows when nothing is marked yet (on screen and in the PDF only). */
-export const EMPTY_INDEX = 'Index: no entries marked yet. Select a word and choose References > Mark Entry (Alt+Shift+X), and it appears here with its page numbers.';
+export const EMPTY_INDEX = 'Index: no entries marked yet. Select a word and choose References ▸ Mark Entry (Alt+Shift+X), and it appears here with its page numbers.';
 export function emptyToa(cat: number): string {
-  return `Table of authorities: no ${cat ? `${categoryName(cat).toLowerCase()} ` : ''}citations marked yet. Select one and choose References > Mark Citation (Alt+Shift+I), and it appears here with its pages.`;
+  return `Table of authorities: no ${cat ? `${categoryName(cat).toLowerCase()} ` : ''}citations marked yet. Select one and choose References ▸ Mark Citation (Alt+Shift+I), and it appears here with its pages.`;
 }
 
 /** How far each level is indented, and how far an entry's lines after its first hang in (as Word's Index 1 and 2). */

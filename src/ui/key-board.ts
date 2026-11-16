@@ -249,7 +249,7 @@ export function keyBoard(o: KeyBoardOptions): HTMLElement {
 
   keymap.onChange(() => { if (root.isConnected) draw(); });
   draw();
-  info.textContent = 'Rest on a key to see what it does; click it to change it.';
+  info.textContent = 'Hover over a key to see what it does; click it to change it.';
   return root;
 }
 

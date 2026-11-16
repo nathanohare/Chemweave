@@ -446,8 +446,8 @@ export class CaptionEditor {
       for (const w of sugg) item(w, () => this.ed.fix([{ start: a, end: b, text: w }], 'spell'));
       if (!sugg.length) item('No suggestions', null);
       menu.appendChild(d.createElement('hr'));
-      item('Add to Dictionary', () => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, text] }), 'Accept this word from now on (Edit > Typing and Spelling lists your words)');
-      item('Ignore', () => { ignored.add(text.toLowerCase()); this.speller?.ignore(text); this.checked = null; this.h.redraw(); }, 'Accept this word until the program is closed');
+      item('Add to Dictionary', () => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, text] }), 'Accept this word from now on (Edit ▸ Typing and Spelling lists your words)');
+      item('Ignore', () => { ignored.add(text.toLowerCase()); this.speller?.ignore(text); this.checked = null; this.h.redraw(); }, 'Accept this word until Chemweave is closed');
     }
     if (link) {
       if (word || issue) menu.appendChild(d.createElement('hr'));

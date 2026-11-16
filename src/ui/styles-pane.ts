@@ -47,12 +47,12 @@ export class StylesPane {
       buttons.append(b);
       return b;
     };
-    button('New Style…', 'A new style with the look of the text the caret is in (a paragraph style, or a character style for words)', () => this.host.newStyle());
-    this.mod = button('Modify…', 'Change how the style picked looks: every paragraph or word in it follows (except what was formatted by hand)', () => {
+    button('New Style…', 'A new style with the formatting of the text the cursor is in (a paragraph style, or a character style for words)', () => this.host.newStyle());
+    this.mod = button('Modify…', 'Change how the style selected looks: every paragraph or word in it follows (except what was formatted by hand)', () => {
       const p = this.picked ?? this.current();
       if (p) this.host.modify(p.kind, p.id);
     });
-    this.del = button('Delete', 'Delete a style you made: its paragraphs go back to Normal, its words to their paragraph’s look', () => {
+    this.del = button('Delete', 'Delete a style you made: its paragraphs go back to Normal, its words to their paragraph’s formatting', () => {
       if (this.picked) this.host.remove(this.picked.kind, this.picked.id);
     });
     button('Clear Character Style', 'Take the selected words out of their character style (Word’s Default Paragraph Font)', () => this.host.applyChar(null));

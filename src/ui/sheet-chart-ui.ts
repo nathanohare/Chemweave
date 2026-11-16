@@ -104,7 +104,7 @@ export class SheetCharts {
     this.host.edit(`Insert ${CHART_NAMES[kind].toLowerCase()} chart`, (sh) => sh.setCharts([...sh.charts, chart]));
     v.pickChart(chart.id);
     v.focus();
-    if (kind === 'scatter') this.host.flash('Chart tab > Fit Line adds a straight line (or curve) with its equation and R². Drag the chart to move it; the corners resize it.', 7000);
+    if (kind === 'scatter') this.host.flash('Chart tab ▸ Fit Line adds a straight line (or curve) with its equation and R². Drag the chart to move it; the corners resize it.', 7000);
     else if (HINTS[kind]) this.host.flash(HINTS[kind]!, 7000);
   }
 
@@ -327,7 +327,7 @@ export class SheetCharts {
     const xr = s.x ? readRef(this.view.wb!, s.x, this.sheet) : null;
     if (!yr) return;
     const at = { r: yr.range.r2 + 2, c: xr && xr.sheet === yr.sheet ? xr.range.c1 : yr.range.c1 };
-    const got = await ask('Fitted Line in Cells', [{ name: 'at', label: 'Put it from cell', value: `${colName(at.c)}${at.r + 1}` }], {
+    const got = await ask('Fitted Line in Cells', [{ name: 'at', label: 'Top-left cell', value: `${colName(at.c)}${at.r + 1}` }], {
       ok: 'Insert into Cells',
       note: 'Writes Slope, Intercept and R² with formulas (SLOPE, INTERCEPT, RSQ) that follow the data, plus their standard errors (LINEST) as Excel does.',
     });
@@ -529,7 +529,7 @@ export class SheetCharts {
         out.push(row('Extend', numberBox(f.backward, (v) => setFit({ backward: v }), '0', 'back'), numberBox(f.forward, (v) => setFit({ forward: v }), '0', 'forward')));
         out.push(row('Color', colour(f.color ?? data[i]?.color ?? '#4472c4', (v) => setFit({ color: v })), f.color ? button('Auto', () => setFit({ color: undefined })) : null));
         out.push(row('Legend', check(f.legend !== false, (v) => setFit({ legend: v ? undefined : false }), 'List it')));
-        if (f.labelAt) out.push(row('Equation', button('Put back beside the line', () => setFit({ labelAt: undefined }))));
+        if (f.labelAt) out.push(row('Equation', button('Reset position (beside the line)', () => setFit({ labelAt: undefined }))));
         const fit = fits[i];
         if (fit) {
           const box = document.createElement('div');
@@ -551,7 +551,7 @@ export class SheetCharts {
           box.append(btns);
           out.push(box);
         } else out.push(note(isChemFit(f.kind)
-          ? 'Too few usable points to fit (rate fits need y > 0; Arrhenius and Eyring need k > 0 and temperatures above absolute zero).'
+          ? 'Not enough valid points to fit (rate fits need y > 0; Arrhenius and Eyring need k > 0 and T above absolute zero).'
           : 'Too few usable points to fit (log and power fits need x > 0; exponential and power fits need y > 0).', 'cp-error'));
       }
       if (c.series.length > 1) out.push(remove());

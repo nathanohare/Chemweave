@@ -79,7 +79,7 @@ export class SheetSparklines {
     const block = R.r1 === R.r2 && R.c1 === R.c2 ? null : (s.clip(R) ?? R);
     const w = new ToolWindow(`Create ${KIND_NAMES[kind]} Sparklines`);
     w.home = s.name;
-    w.note('Choose the data that you want, then where to put the sparklines: one cell for each row (or column) of the data.');
+    w.note('Choose the data range, then the location range: one cell per row (or column) of data.');
     const data = w.ref('Data Range', block ? absText(block, null) : '');
     // a column of cells just right of the data is the usual place
     const place = w.ref('Location Range', block ? absText({ r1: block.r1, c1: block.c2 + 1, r2: block.r2, c2: block.c2 + 1 }, null) : '');

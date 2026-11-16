@@ -273,7 +273,7 @@ export class AssistantBar {
     for (const t of [
       `Questions go to ${aiName(p)}${local ? ', on this computer: nothing leaves it.' : ', over the internet. It is billed to your account there, and its own terms say what it keeps.'}`,
       'Each question sends only what\'s listed under “Will send” (such as the selected structure\'s SMILES or the selected text). Click an item to exclude it. Other files, tabs, file names and your key are never sent.',
-      'The Assistant only proposes. Nothing on the page changes until you click Accept, and Undo takes it back.',
+      'The Assistant only proposes. Nothing on the page changes until you click Accept, and Undo reverses it.',
       `Every question sent is kept in a Request Log ${requestLogPlace()}, which you can read or clear.`,
       ...(local ? [] : ['For unpublished structures, check Local only and use a model on this computer.']),
     ]) ul.append(h('li', '', t));
@@ -381,7 +381,7 @@ export class AssistantBar {
       const said = await this.host.apply(a).catch((e) => `Could not: ${String(e)}`);
       status.textContent = said;
       if (!/^(Replaced|Drew|Added)/.test(said)) return;
-      const undo = button('Undo', () => { this.host.undo(); status.textContent = 'Undone.'; undo.remove(); }, '', 'Take it back (Ctrl+Z)');
+      const undo = button('Undo', () => { this.host.undo(); status.textContent = 'Undone.'; undo.remove(); }, '', 'Undo (Ctrl+Z)');
       row.append(undo);
     })(), 'primary');
     const reject = button('Reject', () => { accept.disabled = reject.disabled = true; status.textContent = 'Rejected.'; });

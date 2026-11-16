@@ -23,7 +23,7 @@ export function editMaster(m: Master, hooks: MasterDialogHooks): Promise<Master 
     const form = document.createElement('form');
     d.append(form);
     const h = document.createElement('h2');
-    h.textContent = 'Slide master';
+    h.textContent = 'Slide Master';
     const note = document.createElement('p');
     note.className = 'muted';
     note.textContent = 'These settings apply to every slide. Text you have formatted yourself keeps its own formatting.';
@@ -100,7 +100,7 @@ export function editMaster(m: Master, hooks: MasterDialogHooks): Promise<Master 
     section('Title slides');
     const ts = m.titleSlide;
     const ownTitle = check(!!ts);
-    row('Own background and text colors', ownTitle);
+    row('Custom background and text colors', ownTitle);
     const tsBg = color(ts?.background ?? '#1d3557'), tsTitle = color(ts?.titleColor ?? '#ffffff'), tsText = color(ts?.textColor ?? '#d9e2ec');
     const tsRows = [row('Background', tsBg), row('Title color', tsTitle), row('Text color', tsText)];
     const showTs = () => { for (const r of tsRows) r.hidden = !ownTitle.checked; };
@@ -174,7 +174,7 @@ export function editMaster(m: Master, hooks: MasterDialogHooks): Promise<Master 
     const ok = document.createElement('button');
     ok.type = 'submit';
     ok.className = 'primary';
-    ok.textContent = 'Apply to all slides';
+    ok.textContent = 'Apply to All Slides';
     buttons.append(cancel, ok);
     form.append(buttons);
 

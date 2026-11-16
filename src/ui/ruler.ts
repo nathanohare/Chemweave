@@ -77,7 +77,7 @@ export class Ruler {
 
   private showKind(): void {
     this.kindBtn.textContent = KIND_MARK[this.tabKind];
-    this.kindBtn.title = `${KIND_NAME[this.tabKind]}: click the ruler to put one there (click this for the next kind of tab)`;
+    this.kindBtn.title = `${KIND_NAME[this.tabKind]}: click the ruler to put one there (click this for the next tab type)`;
   }
 
   /** The caret moved, or the view scrolled or zoomed. */
@@ -142,7 +142,7 @@ export class Ruler {
       case 'hang': return 'Hanging Indent';
       case 'left': return 'Left Indent (moves the first line with it)';
       case 'right': return 'Right Indent';
-      case 'tab': return `${KIND_NAME[this.marks().tabs[g.i].kind]}: drag to move it, or down off the ruler to take it away`;
+      case 'tab': return `${KIND_NAME[this.marks().tabs[g.i].kind]}: drag to move it, or down off the ruler to remove it`;
     }
   }
 

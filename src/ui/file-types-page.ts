@@ -62,7 +62,7 @@ export async function fileTypesPage(host: FileTypesHost): Promise<void> {
   figBox.checked = figWas;
   const figName = document.createElement('span');
   figName.textContent = 'Offer to make structures figures when opening a document';
-  addInfo(figName, 'A bar over the pages offers Make Figures when a document\'s structures aren\'t figures yet (a Word file from ChemDraw, for one). Don\'t Ask for This File on the bar turns it off for one document. Make All Structures Figures… stays on a structure\'s right-click menu either way.');
+  addInfo(figName, 'When a document\'s structures aren\'t figures yet (such as a Word file from ChemDraw), a bar above the pages offers Make Figures. Don\'t Ask for This File on the bar turns it off for that document. Make All Structures Figures… stays on the right-click menu.');
   figRow.append(figBox, figName);
   const saveFigures = () => { if (figBox.checked !== figWas) host.figures.set(figBox.checked); };
   const note = (text: string) => {
@@ -79,10 +79,10 @@ export async function fileTypesPage(host: FileTypesHost): Promise<void> {
   if (host.platform !== 'windows') {
     subhead('File Types');
     note(host.platform === 'web'
-      ? 'The web version opens files from File ▸ Open, or dropped on the window. The desktop app can be opened from your files directly.'
+      ? 'In the web version, open files with File ▸ Open or drag them onto the window. The desktop app can open files directly.'
       : host.platform === 'mac'
-        ? 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files: right-click a file in Finder and choose Open With. To always open a kind of file here, choose File ▸ Get Info in Finder, pick Chemweave under Open with, and click Change All.'
-        : 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files in your file manager\'s Open With menu. Your desktop\'s settings (Default Applications) choose which program opens each kind of file.');
+        ? 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files: right-click a file in Finder and choose Open With. To always open a file type here, choose File ▸ Get Info in Finder, pick Chemweave under Open with, and click Change All.'
+        : 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files in your file manager\'s Open With menu. Your desktop\'s settings (Default Applications) choose which program opens each file type.');
     subhead('Documents from Other Programs');
     form.append(figRow);
     const cancel = document.createElement('button');
@@ -114,7 +114,7 @@ export async function fileTypesPage(host: FileTypesHost): Promise<void> {
     }
     const defaults = document.createElement('p');
     defaults.className = 'ask-help muted';
-    defaults.textContent = 'To open a kind of file here when you double-click it, make Chemweave its default in Windows Settings. Windows asks you to choose there itself; no program is allowed to make itself the default.';
+    defaults.textContent = 'To open a file type here on double-click, make Chemweave its default in Windows Settings. Windows requires you to choose it there yourself.';
     const open = document.createElement('button');
     open.type = 'button';
     open.textContent = 'Choose Defaults in Windows Settings…';
@@ -155,7 +155,7 @@ export async function fileTypesPage(host: FileTypesHost): Promise<void> {
         // (said only when the list changed)
         if (types.length !== now.size || types.some((t) => !now.has(t))) {
           await host.set(types);
-          host.flash(types.length ? `Chemweave is now under "Open with" for ${types.map((t) => `.${t}`).join(', ')}.` : 'Chemweave is off every "Open with" list.');
+          host.flash(types.length ? `Chemweave is now under "Open with" for ${types.map((t) => `.${t}`).join(', ')}.` : 'Chemweave was removed from every "Open with" list.');
         }
       } catch (err) {
         host.flash(String(err));

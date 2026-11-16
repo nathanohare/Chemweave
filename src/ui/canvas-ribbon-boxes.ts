@@ -137,7 +137,7 @@ export class AnalysisBox extends DropBox {
   private popOut: HTMLButtonElement;
 
   constructor(section: HTMLElement) {
-    super(section, 'cr-analysis', 'Analysis: formula, masses, m/z, elemental analysis, name. Click for all of it');
+    super(section, 'cr-analysis', 'Analysis: formula, masses, m/z, elemental analysis, name. Click for the full analysis');
     this.button.innerHTML = `<span class="cr-an-f muted">No structure</span><span class="cr-an-row cr-an-r0"></span><span class="cr-an-row cr-an-r1"></span><span class="cr-an-row cr-an-r2"></span><span class="cr-an-row cr-an-s"></span><span class="cr-chev">${CHEVRON}</span>`;
     this.popOut = document.createElement('button');
     this.popOut.type = 'button';
@@ -154,7 +154,7 @@ export class AnalysisBox extends DropBox {
     more.type = 'button';
     more.className = 'cr-an-more';
     more.innerHTML = CHEVRON;
-    more.title = 'Show all of the analysis: elemental analysis, properties, isotope pattern, name and look-ups';
+    more.title = 'Show the full analysis: elemental analysis, properties, isotope pattern, name and lookups';
     more.setAttribute('aria-label', 'Show all of the analysis');
     more.addEventListener('click', (e) => { e.stopPropagation(); if (this.pop.hidden) this.open(); else this.close(); });
     const pop = document.createElement('button');

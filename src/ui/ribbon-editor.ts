@@ -88,7 +88,7 @@ export class RibbonEditor {
         <div class="tbe-side">
           <div class="tbe-pick">
             <select aria-label="Ribbon to change"></select>
-            <button type="button" data-act="new" title="A group of your own on this tab, to drag commands into">New Group</button>
+            <button type="button" data-act="new" title="A custom group on this tab, to drag commands into">New Group</button>
           </div>
           <div class="rbe-tabs tbe-grid" role="list" aria-label="Tabs: drag to put them in order; drop a group on one to move it there"></div>
           <div class="tbe-name rbe-tab-row">
@@ -106,8 +106,8 @@ export class RibbonEditor {
         </div>
       </div>
       <div class="hk-foot tbe-foot">
-        <button type="button" data-act="undo" title="Take back the last change (Ctrl+Z)">Undo</button>
-        <button type="button" data-act="reset" title="This ribbon as it comes: its tabs and groups back in place, your own groups gone">Reset This Ribbon</button>
+        <button type="button" data-act="undo" title="Undo the last change (Ctrl+Z)">Undo</button>
+        <button type="button" data-act="reset" title="This ribbon as it comes: its tabs and groups back in place, your custom groups gone">Reset This Ribbon</button>
         <span class="tbe-gap"></span>
         <button type="button" class="primary" data-act="done">Done</button>
       </div>`;
@@ -288,7 +288,7 @@ export class RibbonEditor {
     back.addEventListener('click', () => { this.group = null; this.draw(); });
     const own = this.group.startsWith('own:');
     const t = document.createElement('span');
-    t.textContent = own ? 'Your group: drag commands in from the left, about, or out to take them away' : 'Rename this group here. Its buttons are laid out by the app; for your own choice, make a New Group.';
+    t.textContent = own ? 'Your group: drag commands in from the left, about, or out to remove them' : 'Rename this group here. Its buttons are laid out by the app; for your own choice, make a New Group.';
     crumb.append(back, t);
     gname.value = this.groupName(this.group);
     gdel.hidden = !own;
@@ -366,7 +366,7 @@ export class RibbonEditor {
     const isGroup = !this.group;
     t.title = isGroup
       ? `${it.label}. Click to open it; drag to move it, onto a tab to move it there; drag out, ✕ or Delete to hide it.`
-      : `${it.label}. Drag to move it; drag out, ✕ or Delete to take it out.`;
+      : `${it.label}. Drag to move it; drag out, ✕ or Delete to remove it.`;
     const x = document.createElement('button');
     x.type = 'button';
     x.className = 'tbe-x';
@@ -421,7 +421,7 @@ export class RibbonEditor {
       stand: () => this.tile(key, -1, undefined, true),
       canStart: () => {
         if (this.group && !this.group.startsWith('own:')) { this.say('A group of the ribbon’s keeps its own buttons: make a New Group for your own choice.'); return false; }
-        if (!this.group && !isGroupKey) { this.say('Commands go in a group of your own: click New Group (or open one of yours), then drag them in.'); return false; }
+        if (!this.group && !isGroupKey) { this.say('Commands go in a custom group: click New Group (or open one of yours), then drag them in.'); return false; }
         if (this.group && isGroupKey) { this.say('Go back to the tab (‹ at the top) to put a group there.'); return false; }
         return true;
       },
@@ -505,7 +505,7 @@ export class RibbonEditor {
     r.tabIndex = 0;
     r.setAttribute('role', 'option');
     const isGroup = it.key.startsWith('g:') || it.key.startsWith('own:');
-    r.title = isGroup ? `Drag ${it.label} onto the tab to show it again, or click +` : `Drag ${it.label} into a group of your own, or click + to put it at the end of the one open`;
+    r.title = isGroup ? `Drag ${it.label} onto the tab to show it again, or click +` : `Drag ${it.label} into a custom group, or click + to put it at the end of the one open`;
     const ic = document.createElement('span');
     ic.className = 'tbe-row-ic';
     if (it.icon) ic.innerHTML = it.icon; else { ic.classList.add('word'); ic.textContent = initials(it.label); }
@@ -518,7 +518,7 @@ export class RibbonEditor {
     add.textContent = there ? '✓' : '+';
     add.tabIndex = -1;
     add.disabled = there || (isGroup ? !!this.group : !this.group?.startsWith('own:'));
-    add.title = add.disabled ? (isGroup ? 'Go back to the tab to show it there' : 'Open a group of your own first (New Group makes one)') : 'Put it at the end';
+    add.title = add.disabled ? (isGroup ? 'Go back to the tab to show it there' : 'Open a custom group first (New Group makes one)') : 'Put it at the end';
     add.setAttribute('aria-label', `${add.title}: ${it.label}`);
     add.addEventListener('pointerdown', (e) => e.stopPropagation());
     const addIt = () => { this.put(inserted(this.keys(), it.key, this.keys().length)); this.say(`Put ${it.label} in.`); };

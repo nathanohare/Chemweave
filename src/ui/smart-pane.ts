@@ -267,7 +267,7 @@ export class SmartPane {
     info.setAttribute('role', 'img');
     info.innerHTML = '<svg viewBox="0 0 14 14" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="7" cy="7" r="5.9"/><path d="M7 6.2v3.9" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="4.1" r=".85" fill="currentColor" stroke="none"/></svg>';
     const help = data.layout === 'cycle'
-      ? 'Each row is a species of the cycle, as it looks on the page; the T row under it is the text on the arrow to the next species: the step\'s name, what joins the cycle there and what leaves it. Type in the rows, drag a row by its dots to reorder, or drag a species on the page and its arrows follow. The + buttons on the page add a species there.'
+      ? 'Each row is a species in the cycle; the T row below it is the arrow text to the next species (step name, what enters and leaves). Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species.'
       : 'Each row is a species in the scheme; the T row below it is the text above and below the arrow to the next species. Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species.';
     info.title = help;
     info.setAttribute('aria-label', help);
@@ -297,7 +297,7 @@ export class SmartPane {
     const pin = btn(this.host ? PINNED_ICON : PIN_ICON, this.host ? 'Undock: float the list beside the scheme again' : 'Dock the list as a toolbox at the right (or drag its title to any edge)', 'sp-pin', () => this.hooks.dock(this.host ? null : { dock: 'right' }));
     pin.setAttribute('aria-pressed', String(!!this.host));
     head.append(pin);
-    if (!this.host) head.append(btn('‹', 'Fold the species list away', 'sp-fold', () => { folded = true; this.render(id); this.place(); }));
+    if (!this.host) head.append(btn('‹', 'Collapse the species list', 'sp-fold', () => { folded = true; this.render(id); this.place(); }));
     this.el.append(head);
     this.el.append(this.formatBar(btn, gear));
     if (data.free) {
@@ -322,7 +322,7 @@ export class SmartPane {
       };
       // what joins and leaves on small curved arrows into and out of the loop (else written outside it)
       opts.append(check('Counterclockwise', !!data.anticlockwise, (v) => this.hooks.arrange(id, { anticlockwise: v })), check('Arrows in and out', !!data.reagentArrows, (v) => this.hooks.arrange(id, { reagentArrows: v })));
-      (opts.lastElementChild as HTMLElement).title = 'Draw what joins and leaves the cycle (each step\'s joins and leaves, text or a structure) on small curved arrows into and out of the loop; off, it is written outside the loop';
+      (opts.lastElementChild as HTMLElement).title = 'Draw what enters and leaves each step on small curved arrows into and out of the loop. Off: written outside the loop';
       if (read.chain && read.closed) {
         const two = btn('+ Second loop…', 'Add a second loop: two cycles turning together where two steps meet, sharing a species, or side by side', 'sp-loop2', () => this.hooks.secondLoop(id));
         opts.append(two);

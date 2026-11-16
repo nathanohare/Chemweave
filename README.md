@@ -4,7 +4,7 @@
 
 **Free chemical drawing for the lab, with presentations, spreadsheets and documents built in.**
 
-Chemweave draws structures and reaction schemes with the hotkeys ChemDraw users already know, and it opens and saves your `.cdxml` files. Around the chemistry canvas it builds in the other programs a synthetic chemist spends the day in: presentations, spreadsheets, documents and a design page for posters and figures. Your structures stay editable in all of them, and the formula, masses, stereochemistry and warnings update as you draw.
+Chemweave draws structures and reaction schemes with the keyboard shortcuts ChemDraw users already know, and it opens and saves your `.cdxml` files. Around the chemistry canvas it builds in the other programs a synthetic chemist spends the day in: presentations, spreadsheets, documents and a design page for posters and figures. Your structures stay editable in all of them, and the formula, masses, stereochemistry and warnings update as you draw.
 
 It is free and open source (GPL v3), and runs on Windows, macOS and Linux, with a test version for iPad.
 
@@ -12,7 +12,7 @@ It is free and open source (GPL v3), and runs on Windows, macOS and Linux, with 
 
 ### [▶ Try it in your browser](https://nathanohare.github.io/Chemweave/) · [Download the desktop app](https://github.com/nathanohare/Chemweave/releases/latest)
 
-Nothing to install: the browser version opens straight away. The desktop app adds what a browser can't do: editing drawings inside Word and PowerPoint, AutoSave to your own folders, and automatic updates.
+Nothing to install: the browser version opens immediately. The desktop app adds what a browser can't do: editing drawings inside Word and PowerPoint, AutoSave to your own folders, and automatic updates.
 
 **[User guide](docs/README.md)** · **[Send feedback](docs/guide/feedback.md)**
 
@@ -40,12 +40,12 @@ Draw an arrow between two structures and a **+** box appears above and below it.
 
 | Compound numbers stay with their compounds | Frames fit what they surround |
 |---|---|
-| ![Moving, growing and flipping structures: each compound number stays underneath its structure](docs/images/id-labels.gif) | ![A frame round a structure grows as bonds are added with hotkeys, and moves with it when it is dragged](docs/images/frames.gif) |
+| ![Moving, growing and flipping structures: each compound number stays underneath its structure](docs/images/id-labels.gif) | ![A frame around a structure grows as bonds are added with keyboard shortcuts, and moves with it when it is dragged](docs/images/frames.gif) |
 | **Number Compounds** ties each ID label to its structure. Move it, rotate it, flip it or add to it, and the number keeps its place underneath. | **Add Frame** draws a box that follows its contents: it grows as the structure grows and moves when it moves. |
 
 ## Colour that means something
 
-Fill rings with a colour, a gradient, hatching or dots (patterns can be see-through over a colour), add a drop shadow, and pick out parts of a structure with round or straight highlights, soft-edged, with a shadow, or centred between a double bond's lines. Fills and highlights move with their atoms and come along when you copy a structure.
+Fill rings with a colour, a gradient, hatching or dots (patterns can be see-through over a color), add a drop shadow, and pick out parts of a structure with round or straight highlights, soft-edged, with a shadow, or centered between a double bond's lines. Fills and highlights move with their atoms and come along when you copy a structure.
 
 ![Estrone with each ring filled differently (gradient, hatching, dots, solid), and a kinase inhibitor with its parts highlighted in round, diamond and square shapes](docs/images/ring-fills.png)
 
@@ -67,7 +67,7 @@ Select anything and the side panel shows its formula, exact mass, m/z for the io
 
 ## Energy diagrams
 
-**Chemistry ▸ Energy Diagram** draws a reaction coordinate diagram from a table of levels: compare pathways in different colours, mark the barrier, and draw structures right on the levels.
+**Chemistry ▸ Energy Diagram** draws a reaction coordinate diagram from a table of levels: compare pathways in different colors, mark the barrier, and draw structures right on the levels.
 
 ![An energy diagram comparing a thermal and a BF₃-catalysed Diels–Alder pathway, with ΔG‡ marked and the diene, dienophile and product drawn on their levels (illustrative values)](docs/images/energy-diagram.png)
 
@@ -93,9 +93,9 @@ Right-drag or middle-drag to pan, Ctrl+wheel to zoom in on the spot under the po
 
 ## Make it yours
 
-Every hotkey can be changed (**Edit ▸ Hotkeys**), and the hotkeys can be exported and shared. Toolboxes unlock to dock on any edge or float anywhere, and **Customize Toolboxes** rearranges any of them (or new ones of your own) by dragging icons about, as on a phone's home screen. The Reading Mode colours, each mode's accent colour, the scheme spacing, your own templates, nicknames and drawing styles are all settings, kept in one file you can export and import on another computer.
+Every keyboard shortcut can be changed (**Edit ▸ Keyboard Shortcuts…**), and the keyboard shortcuts can be exported and shared. Toolboxes unlock to dock on any edge or float anywhere, and **Customize Toolboxes** rearranges any of them (or new ones of your own) by dragging icons about, as on a phone's home screen. The Reading Mode colors, each mode's accent color, the scheme spacing, custom templates, nicknames and drawing styles are all settings, kept in one file you can export and import on another computer.
 
-![Toolboxes moved to new places, Reading Mode in Slate colours, and the Hotkeys window open](docs/images/customize.png)
+![Toolboxes moved to new places, Reading Mode in Slate colors, and the Keyboard Shortcuts window open](docs/images/customize.png)
 
 ## Presentations, spreadsheets, documents and designs
 
@@ -104,7 +104,7 @@ Chemweave has five modes: **Canvas** (Chemistry), **Presentation** (Slideshow), 
 | Presentation | Spreadsheet |
 |---|---|
 | ![Presentation mode with the reaction scheme on a templated slide, the mouse pointing at a bond of the product](docs/images/slides-dark-ui.png) | ![Spreadsheet mode with structures in cells, formula and MW columns, and a chart](docs/images/sheet-dark-ui.png) |
-| Layouts, about fifty design templates, transitions, animations and presenter view. The structures on a slide are real structures: point at one and edit it with the same tools and hotkeys. Saves as `.pptx` that opens in PowerPoint. | Excel's keys and formulas, structures in cells, columns that work out formula, MW, HRMS m/z and more, charts and dashboards. Saves as `.xlsx`. |
+| Layouts, about fifty design templates, transitions, animations and presenter view. The structures on a slide are real structures: point at one and edit it with the same tools and keyboard shortcuts. Saves as `.pptx` that opens in PowerPoint. | Excel's keys and formulas, structures in cells, columns that calculate formula, MW, HRMS m/z and more, charts and dashboards. Saves as `.xlsx`. |
 
 | Document | Design |
 |---|---|
@@ -143,19 +143,19 @@ Download the installer for your computer from the **[latest release](https://git
 - **Linux**: the `.AppImage` (any distribution), `.deb` (Ubuntu, Debian) or `.rpm` (Fedora).
 - **iPad**: the iPad app is in testing through Apple's TestFlight. Install the free **[TestFlight](https://apps.apple.com/app/testflight/id899247664)** app from the App Store, then open **[this invitation](https://testflight.apple.com/join/hMdcFJBH)** on the iPad and tap **Accept**, then **Install**. TestFlight offers each new test version as it comes out. Draw with an Apple Pencil or your finger; see [Pen and touch](docs/guide/keyboard-and-mouse.md#pen-and-touch-tablets).
 
-Once installed, the program keeps itself up to date: it offers each new version when it starts. [Getting started](docs/guide/getting-started.md) has the details.
+Once installed, Chemweave keeps itself up to date: it offers each new version when it starts. [Getting started](docs/guide/getting-started.md) has the details.
 
 ## Learn it
 
-The **[user guide](docs/README.md)** covers each mode, every hotkey, and the files it reads and writes. Inside the program, **Help ▸ Hotkeys and Tips** lists the most used keys, and the **Search** box at the top (Alt+Q) finds any command by name.
+The **[user guide](docs/README.md)** covers each mode, every shortcut key, and the files it reads and writes. Inside Chemweave, **Help ▸ Keyboard Shortcuts and Tips** lists the most used keys, and the **Search** box at the top (Alt+Q) finds any command by name.
 
 ## Feedback
 
-Ideas, problems and questions are welcome. In the program, use **Help ▸ Send Feedback**: it sends your report straight to the team, no account needed, and you choose whether it stays private or appears on the public [issues](https://github.com/nathanohare/Chemweave/issues) page. See [Feedback, problems and ideas](docs/guide/feedback.md).
+Ideas, problems and questions are welcome. In Chemweave, use **Help ▸ Send Feedback**: it sends your report straight to the team, no account needed, and you choose whether it stays private or appears on the public [issues](https://github.com/nathanohare/Chemweave/issues) page. See [Feedback, problems and ideas](docs/guide/feedback.md).
 
 ## Support Chemweave
 
-Chemweave is free and always will be. If it saves you time, you can help keep it going by **[sponsoring its development on GitHub](https://github.com/sponsors/nathanohare)**, monthly or once. In the program, it's **Help ▸ Support Chemweave**.
+Chemweave is free and always will be. If it saves you time, you can help keep it going by **[sponsoring its development on GitHub](https://github.com/sponsors/nathanohare)**, monthly or once. In Chemweave, it's **Help ▸ Support Chemweave**.
 
 ## Try it
 
@@ -169,7 +169,7 @@ Chemweave is written in TypeScript and runs as a [Tauri](https://tauri.app) desk
 
 Chemweave is free software: you can use, share and change it under the terms of the [GNU General Public License](LICENSE), version 3 or (at your option) any later version. It comes with no warranty. An [additional permission](APP-STORE-EXCEPTION.md) allows it to be distributed through Apple's App Store and TestFlight.
 
-Everything it uses is free and open source, and keeps its own licence: RDKit (BSD-3-Clause), OPSIN (MIT), cdxmorph (MIT), Tauri (MIT or Apache-2.0), the bundled fonts (SIL Open Font License) and others listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Everything it uses is free and open source, and keeps its own license: RDKit (BSD-3-Clause), OPSIN (MIT), cdxmorph (MIT), Tauri (MIT or Apache-2.0), the bundled fonts (SIL Open Font License) and others listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 Reaction animation (Chemistry ▸ Animate ▸ Animate Reaction) is based on [cdxmorph](https://github.com/rshenvi/cdxmorph) by Ryan Shenvi (Shenvi Lab), used with permission.
 

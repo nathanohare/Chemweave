@@ -103,7 +103,7 @@ export interface PlacedHf {
 export interface LineNumber { page: number; x: number; y: number; text: string; size: number; family: string }
 
 /** What the bibliography shows when nothing is cited yet (on screen and in the PDF only). */
-export const EMPTY_BIBLIOGRAPHY = 'Bibliography: no references are cited yet. Cite one with References > Insert Citation.';
+export const EMPTY_BIBLIOGRAPHY = 'Bibliography: no references are cited yet. Cite one with References ▸ Insert Citation.';
 
 /**
  * How far a bibliography's entries hang their numbers out: the widest number ("(12)") and a

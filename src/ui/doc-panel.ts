@@ -356,7 +356,7 @@ export class DocPanel {
       if (!f) return;
       const [a, b] = f.ed.selectedParas();
       this.change('Style', (t) => setParaStyle(t, a, b, id));
-    }), 'Normal, the headings and Caption (Home > Styles); change how a style looks below');
+    }), 'Normal, the headings and Caption (Home ▸ Styles); change how a style looks below');
     this.row(s, 'Alignment', this.select('p-align', ALIGNS, (v) => paras({ align: v === 'left' ? undefined : (v as Justify) }, 'align')));
     this.row(s, 'Indent (in)', this.input('p-indent', (v) => { const n = parseLength(v, 'in'); if (n !== null) paras({ indent: Math.max(0, n) || undefined }, 'indent'); }), 'From the left margin');
     this.row(s, 'First line (in)', this.input('p-first', (v) => { const n = parseLength(v, 'in'); if (n !== null) paras({ firstLine: n || undefined }, 'indent'); }), 'The first line\'s indent from the rest; less than 0 hangs it out to the left');
@@ -378,8 +378,8 @@ export class DocPanel {
     lines.id = 'dp-lines';
     for (const v of ['1', '1.15', '1.5', '2', '2.5', '3']) lines.append(new Option(v));
     s.append(lines);
-    this.check(s, 'p-break', 'Start on a new page', (v) => paras({ pageBreak: v || undefined }, 'break'), 'A page break before this paragraph (Ctrl+Enter makes one at the caret)');
-    this.check(s, 'p-colbreak', 'Start a new column', (v) => paras({ colBreak: v || undefined }, 'break'), 'In a page of columns: this paragraph starts the next column (Ctrl+Shift+Enter makes one at the caret)');
+    this.check(s, 'p-break', 'Start on a new page', (v) => paras({ pageBreak: v || undefined }, 'break'), 'A page break before this paragraph (Ctrl+Enter makes one at the cursor)');
+    this.check(s, 'p-colbreak', 'Start a new column', (v) => paras({ colBreak: v || undefined }, 'break'), 'In a page of columns: this paragraph starts the next column (Ctrl+Shift+Enter makes one at the cursor)');
     this.check(s, 'p-keep', 'Keep with next', (v) => paras({ keepNext: v || undefined }, 'keep'), 'On the same page as the paragraph after it (headings do this)');
   }
 
@@ -412,7 +412,7 @@ export class DocPanel {
     this.row(s, 'First line (in)', this.input('s-first', (v) => { const n = parseLength(v, 'in'); if (n !== null) set({ firstLine: n }); }));
     this.check(s, 's-keep', 'Keep with next', (v) => set({ keepNext: v }));
     this.buttons(s, [
-      ['Match This Paragraph', 'Make the style look like the paragraph the caret is in (and change the others in this style to match)', () => this.matchParagraph()],
+      ['Match This Paragraph', 'Make the style look like the paragraph the cursor is in (and change the others in this style to match)', () => this.matchParagraph()],
       ['Reset Style', 'Put the style back as it first was', () => {
         const f = this.host.file();
         if (!f) return;
@@ -504,7 +504,7 @@ export class DocPanel {
     len('header', 'Header from top (in)', 'How far the header sits from the top of the page');
     len('footer', 'Footer from bottom (in)', 'How far the footer and page numbers sit from the bottom of the page');
     this.row(s, 'Columns', this.select('pg-cols', [['1', 'One'], ['2', 'Two'], ['3', 'Three'], ['4', 'Four']], (v) => page({ cols: Number(v) > 1 ? Number(v) : undefined })),
-      'Text runs down one column, then the next (Layout > Column Break starts the next one early)');
+      'Text runs down one column, then the next (Layout ▸ Column Break starts the next one early)');
     this.row(s, 'Column spacing (in)', this.input('pg-colGap', (v) => { const n = parseLength(v, 'in'); if (n !== null && n >= 0) page({ colGap: Math.abs(n - COL_GAP) < 0.01 ? undefined : n }); }),
       'Space between columns (Word\'s is 0.5 in)');
   }
@@ -664,7 +664,7 @@ export class DocPanel {
     const sec = sectionAt(secs, paraAt(ed === f.ed ? ed.text : f.ed.text, f.ed.focus));
     for (const n of this.secNotes) {
       n.hidden = secs.length < 2;
-      n.textContent = `Section ${sec.index + 1} of ${secs.length} (the one the caret is in).`;
+      n.textContent = `Section ${sec.index + 1} of ${secs.length} (the one the cursor is in).`;
     }
     const showRow = (key: string, on: boolean) => { const row = this.fields.get(key)?.closest('label'); if (row) (row as HTMLElement).style.display = on ? '' : 'none'; };
     showRow('pg-apply', secs.length > 1);
@@ -701,7 +701,7 @@ export class DocPanel {
     if (note) {
       const names: Record<string, string> = { header: 'header', footer: 'footer', firstHeader: 'first page header', firstFooter: 'first page footer', evenHeader: 'even page header', evenFooter: 'even page footer' };
       note.hidden = !rich.length;
-      note.textContent = rich.length ? `The ${rich.map((k) => names[k] ?? k).join(', ')} ${rich.length > 1 ? 'have' : 'has'} pictures, tables or formatting (from Word, or a picture added here): shown and saved as they are, in place of the text above. Plain Text goes back to the text.` : '';
+      note.textContent = rich.length ? `The ${rich.map((k) => names[k] ?? k).join(', ')} ${rich.length > 1 ? 'have' : 'has'} pictures, tables or formatting (from Word, or a picture added here), shown and saved as is instead of the text above. Plain Text reverts to text.` : '';
     }
   }
 }

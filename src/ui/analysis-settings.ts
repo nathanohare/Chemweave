@@ -66,13 +66,13 @@ export function analysisSettingsPage(host: AnalysisSettingsHost): Promise<void> 
     form.innerHTML = `<h2>Analysis</h2>
       <div class="as-cols">
         <div class="as-col">
-          <h3 data-info="Drag rows by their grips to reorder them; untick to hide. The panel's gear does the same in place. Density, boiling and melting points, vapor pressure, flash point and refractive index are PubChem's measured values once a structure has been looked up, and estimates (marked est.) before that.">Panel rows</h3>
+          <h3 data-info="Drag rows by their grips to reorder them; uncheck to hide. Properties are initially estimated (est.), then looked up on PubChem if available.">Panel rows</h3>
           <div class="as-list" data-list="rows">${w.rows.map((r) => rowItem(r.key, r.on)).join('')}</div>
           <div class="as-btns"><button type="button" data-a="add-calc">Add Lab Calculation…</button><button type="button" data-a="reset-rows">Reset</button></div>
           <div class="as-row"><span>Temperatures in</span>${select('temp', w.units.temp, ['°C', '°F', 'K'])}</div>
           <div class="as-row"><span>Vapor pressure in</span>${select('pressure', w.units.pressure, ['kPa', 'mmHg', 'Pa', 'bar'])}</div>
-          <label class="as-row as-check"><input type="checkbox" data-k="autoName"${w.autoName ? ' checked' : ''}> Name structures by themselves <span class="info-slot" data-info="The offline namer starts a few seconds after the first structure is analysed (about 14 MB, once a session). Off: no name is worked out."></span></label>
-          <label class="as-row as-check"><input type="checkbox" data-k="autoPubchem"${w.autoPubchem ? ' checked' : ''}> Look up measured values on PubChem by themselves <span class="info-slot" data-info="Sends each structure analysed (as SMILES) to PubChem, the free NIH database, for its measured density, boiling and melting points, vapor pressure, flash point and refractive index. Off: only when you click Look up on PubChem."></span></label>
+          <label class="as-row as-check"><input type="checkbox" data-k="autoName"${w.autoName ? ' checked' : ''}> Name structures by themselves <span class="info-slot" data-info="The offline naming engine loads a few seconds after the first structure is analyzed (about 14 MB, once per session). Off: no name is generated."></span></label>
+          <label class="as-row as-check"><input type="checkbox" data-k="autoPubchem"${w.autoPubchem ? ' checked' : ''}> Look up measured values on PubChem by themselves <span class="info-slot" data-info="Sends each analyzed structure (as SMILES) to PubChem, the free NIH database, for its measured density, boiling and melting points, vapor pressure, flash point and refractive index. Off: only when you click Look up on PubChem."></span></label>
         </div>
         <div class="as-col">
           <h3 data-info="What the Analysis box on the Canvas ribbon shows under the formula: three lines in the full-size ribbon, one value in the Simplified ribbon. Any panel row can go here, lab calculations too.">Ribbon box</h3>
@@ -109,7 +109,7 @@ export function analysisSettingsPage(host: AnalysisSettingsHost): Promise<void> 
 
   function descItem(x: AnalysisPrefs['descriptors'][number]): string {
     const plain = x.key === 'formula' || x.key === 'name' || x.key === 'hrms';
-    return `<div class="as-item" data-key="${esc(x.key)}"><span class="as-grip" data-grip title="Drag to move">${GRIP}</span><input type="checkbox" data-don="${esc(x.key)}"${x.on ? ' checked' : ''} aria-label="Show ${esc(nameOf(w, x.key))}"><span class="as-name">${esc(nameOf(w, x.key))}${x.key.startsWith('calc:') ? '<span class="as-tag calc">calculation</span>' : ''}</span><span class="as-f">${plain ? '' : `<input type="text" data-label="${esc(x.key)}" value="${esc(x.label)}" placeholder="${x.key.startsWith('calc:') ? esc(nameOf(w, x.key)) + ':' : ''}" title="Words before the value" aria-label="Words before the value">`}${x.dp === null || x.key.startsWith('calc:') ? '' : dpBox('d:' + x.key, x.dp)}</span></div>`;
+    return `<div class="as-item" data-key="${esc(x.key)}"><span class="as-grip" data-grip title="Drag to move">${GRIP}</span><input type="checkbox" data-don="${esc(x.key)}"${x.on ? ' checked' : ''} aria-label="Show ${esc(nameOf(w, x.key))}"><span class="as-name">${esc(nameOf(w, x.key))}${x.key.startsWith('calc:') ? '<span class="as-tag calc">calculation</span>' : ''}</span><span class="as-f">${plain ? '' : `<input type="text" data-label="${esc(x.key)}" value="${esc(x.label)}" placeholder="${x.key.startsWith('calc:') ? esc(nameOf(w, x.key)) + ':' : ''}" title="Prefix" aria-label="Words before the value">`}${x.dp === null || x.key.startsWith('calc:') ? '' : dpBox('d:' + x.key, x.dp)}</span></div>`;
   }
 
   /** Read the boxes into the working copy. */

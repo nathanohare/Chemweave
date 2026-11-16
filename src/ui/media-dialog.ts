@@ -119,7 +119,7 @@ export function editMedia(m: Media): Promise<Media | null> {
     d.append(h, player,
       row('Trim start (s)', trimStart, 'Seconds cut off the start'), row('Trim end (s)', trimEnd, 'Seconds cut off the end', pair), plays,
       row('Fade in (s)', fadeIn, 'Seconds the sound takes to come up at the start'), row('Fade out (s)', fadeOut, 'Seconds the sound takes to die away at the end'),
-      row('Volume', vol), row('Start', start, 'When it starts in the slide show: by itself, or when you click it (a click on it pauses it too)'),
+      row('Volume', vol), row('Start', start, 'When it starts in the slide show: automatically, or when you click it (a click on it pauses it too)'),
       loop.r, rewind.r, ...(m.audio ? [hide.r, across.r] : [full.r]), buttons);
     d.addEventListener('close', () => { player.pause(); player.removeAttribute('src'); player.load(); file.done(); d.remove(); resolve(result); });
     document.body.append(d);

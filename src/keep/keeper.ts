@@ -380,7 +380,7 @@ export class Keeper {
         closeNotice(`lock-${t.id}`);
         // a notice that stays until it is read (a flash could pass unseen while working in Word)
         if (p.warnOpenElsewhere) {
-          notice(`lock-${t.id}`, `${t.name} is no longer open anywhere else`, 'Nobody else has it open now, so saving here won’t overwrite their changes. If it was changed there, a “changed on disk” notice offers to reload it.', [
+          notice(`lock-${t.id}`, `${t.name} is no longer open anywhere else`, 'No one else has it open now, so saving won\'t overwrite their changes. If it was changed, you\'ll see a “changed on disk” notice offering to reload.', [
             { label: 'OK', run: () => {}, main: true },
           ]);
         }
@@ -402,7 +402,7 @@ export class Keeper {
       const before = this.conflicts.get(t.id);
       this.conflicts.set(t.id, there);
       if (there && before === false) {
-        notice(`onedrive-${t.id}`, 'OneDrive kept a second copy', `${baseName(copy)} appeared beside ${t.name}: OneDrive makes it when the file was changed in two places at once, to keep both sets of changes. Open it to compare and copy across what you need.`, [
+        notice(`onedrive-${t.id}`, 'OneDrive kept a second copy', `OneDrive created ${baseName(copy)} beside ${t.name} because the file was changed in two places at once. Open it to compare and copy over what you need.`, [
           { label: 'Open It', run: () => void readPath(copy).then((b) => this.ws.openBytes(b, baseName(copy), { kind: 'path', path: copy })), main: true },
           { label: 'OK', run: () => {} },
         ]);

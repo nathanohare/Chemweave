@@ -229,7 +229,7 @@ export class DocTablesUI {
       { name: 'sep', label: 'Separate text at', value: typeof guess === 'string' ? guess : 'other', options: SEPARATOR_NAMES.map(([value, label]) => ({ value, label })) },
       { name: 'other', label: 'Other character', value: '-', help: 'Used when "Other" is chosen.' },
       { name: 'cols', label: 'Number of columns', value: String(guess === 'para' ? 1 : counts(guess === 'tab' ? '\t' : guess === 'comma' ? ',' : ';')), type: 'number', help: 'With Paragraphs, how many paragraphs go in each row.' },
-      { name: 'style', label: 'Look', value: 'grid', options: [{ value: 'grid', label: 'Grid lines (Table Grid)' }, { value: 'acs', label: 'ACS rules' }, { value: 'none', label: 'No lines' }, { value: 'GridTable4-Accent1', label: 'Grid Table 4 - Accent 1' }] },
+      { name: 'style', label: 'Style', value: 'grid', options: [{ value: 'grid', label: 'Grid lines (Table Grid)' }, { value: 'acs', label: 'ACS rules' }, { value: 'none', label: 'No lines' }, { value: 'GridTable4-Accent1', label: 'Grid Table 4 - Accent 1' }] },
     ], { ok: 'Convert', note: `${b - a + 1} paragraph${b > a ? 's' : ''}: each becomes a row, cut into cells at the separator.` });
     this.host.focus();
     if (!got || this.host.file() !== f) return;

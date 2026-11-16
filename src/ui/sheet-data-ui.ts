@@ -431,7 +431,7 @@ export class SheetData {
     const by = radios('sd-by', 'Series in', [['rows', 'Rows'], ['cols', 'Columns']], tall ? 'cols' : 'rows');
     const type = radios<SeriesOptions['type']>('sd-type', 'Type', [['linear', 'Linear'], ['growth', 'Growth'], ['date', 'Date'], ['auto', 'AutoFill']], 'linear');
     const unit = radios<NonNullable<SeriesOptions['unit']>>('sd-unit', 'Date unit', [['day', 'Day'], ['weekday', 'Weekday'], ['month', 'Month'], ['year', 'Year']], 'day');
-    const trend = check('Trend (a best fit through the values already there; the step is worked out)');
+    const trend = check('Trend (a best fit through the values already there; the step is calculated)');
     const step = el('input');
     step.value = '1';
     const stop = el('input');
@@ -511,7 +511,7 @@ export class SheetData {
     const w = windowOf('Text to Columns', 'sd-ttc', 'Finish');
     // a first guess at the separator, as Excel's wizard makes
     const guess = texts.some((t) => t.includes('\t')) ? '\t' : texts.some((t) => t.includes(';')) ? ';' : texts.some((t) => t.includes(',')) ? ',' : ' ';
-    const mode = radios<SplitOptions['mode']>('sd-mode', 'Original data type', [['delimited', 'Delimited: characters such as commas or tabs separate each field'], ['fixed', 'Fixed width: fields are lined up in columns']], 'delimited');
+    const mode = radios<SplitOptions['mode']>('sd-mode', 'Original data type', [['delimited', 'Delimited: characters such as commas or tabs separate each field'], ['fixed', 'Fixed width: fields are aligned in columns']], 'delimited');
     const delim = el('fieldset', 'sd-delims');
     delim.append(el('legend', undefined, 'Delimiters'));
     const ds = { tab: check('Tab', guess === '\t'), semi: check('Semicolon', guess === ';'), comma: check('Comma', guess === ','), space: check('Space', guess === ' ') };
@@ -682,7 +682,7 @@ export class SheetData {
       for (const { rr, t } of fills) sh.setInput(rr, c, readTyped(t!).formula ? `'${t}` : t!);
     }, () => ({ r1: fills[0].rr, c1: c, r2: fills[fills.length - 1].rr, c2: c }));
     const named = got.describe.replace(/column (\d+)/g, (_, n) => `column ${colName(sources[Number(n) - 1])}`);
-    this.host.flash(`Flash Fill: ${fills.length} cell${fills.length === 1 ? '' : 's'} filled (${named}). Undo takes them back.`, 8000);
+    this.host.flash(`Flash Fill: ${fills.length} cell${fills.length === 1 ? '' : 's'} filled (${named}). Undo reverses them.`, 8000);
   }
 
   // ---------------------------------------------------------------- sort with several levels
@@ -805,7 +805,7 @@ export class SheetData {
     const toRow = row('Copy to', to);
     const unique = check('Unique records only');
     w.form.append(action.box, row('List range', list), row('Criteria range', crit), toRow, unique.row);
-    addInfo(w.form.querySelector('h2'), 'Criteria: a row of headers from the list, with tests under them (>50, <>THF, Pd* for "begins with", = for blank). Tests on one row must all pass; each row is another way to pass. A formula under a header that isn\'t in the list (=B2>AVERAGE($B$2:$B$40)) tests each row from the first.');
+    addInfo(w.form.querySelector('h2'), 'Criteria: column headers from the list with tests below (>50, <>THF, Pd* for “begins with”, = for blank). Tests in one row must all pass (AND); separate rows are alternatives (OR). A formula under a new header (=B2>AVERAGE($B$2:$B$40)) tests each row.');
     const sync = () => { toRow.hidden = action.value() !== 'copy'; };
     for (const r of action.inputs.values()) r.addEventListener('change', sync);
     sync();
@@ -821,7 +821,7 @@ export class SheetData {
       let got = { shown: 0, total: 0 };
       this.host.edit('Advanced Filter', (sh) => { got = applyAdvancedFilter(sh, { list: L, criteria: C, unique: unique.box.checked, copyTo: dest }); },
         dest ? () => ({ r1: dest.row, c1: dest.col, r2: dest.row + got.shown, c2: dest.col + L.c2 - L.c1 }) : undefined);
-      this.host.flash(copy ? `Copied ${got.shown} of ${got.total} rows.` : `${got.shown} of ${got.total} rows show. Data > Clear shows them all again.`, 6000);
+      this.host.flash(copy ? `Copied ${got.shown} of ${got.total} rows.` : `${got.shown} of ${got.total} rows show. Data ▸ Clear shows them all again.`, 6000);
       return undefined;
     });
     open(w, crit);
@@ -888,6 +888,6 @@ export class SheetData {
     if (!r && !c) { r = Math.max(1, Math.floor(v.visibleRows() / 2)); c = Math.max(1, Math.floor(v.visibleCols() / 2)); }
     if (s.frozen.rows || s.frozen.cols) this.host.edit('Unfreeze Panes', (sh) => sh.setFrozen(0, 0));
     v.splitAt(r, c);
-    this.host.flash('Split: each pane scrolls on its own (the mouse wheel over the upper or left pane scrolls it). Drag a bar to move the split; double-click it, or Split again, to take it away.', 8000);
+    this.host.flash('Split: each pane scrolls separately. Drag the bar to move the split; double-click it or click Split again to remove it.', 8000);
   }
 }

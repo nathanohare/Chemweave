@@ -179,7 +179,7 @@ export class CompoundLibraryWindow {
       if (e.detail === 2) { this.pick(tr.dataset.id, false, false); void this.edit(); }
       else if (e.detail < 2) this.pick(tr.dataset.id, e.ctrlKey || e.metaKey, e.shiftKey);
     });
-    this.insertBtn = button('Insert', 'Put the compound picked into the file showing, as it was drawn (Enter)', () => this.insert(), true);
+    this.insertBtn = button('Insert', 'Put the compound selected into the file showing, as it was drawn (Enter)', () => this.insert(), true);
     d.append(
       el('div', { className: 'refs-head' }, withInfo(el('h2', { textContent: 'Compound Library' }), 'Your compounds, shared across all files: number, structure, names, notes, and the files each appears in. Insert adds one to the current drawing, slide, document or cell.'), this.search),
       el('div', { className: 'refs-filter' }, el('span', { textContent: 'Show' }), this.tagSel,
@@ -191,16 +191,16 @@ export class CompoundLibraryWindow {
       el('div', { className: 'refs-table-wrap' }, table),
       el('div', { className: 'refs-buttons' },
         el('span', { className: 'refs-add' },
-          button('Add Selected', 'Keep the structures selected in the drawing (or the cell or figure picked), with the numbers under them', () => void this.addSelected()),
+          button('Add Selected', 'Keep the structures selected in the drawing (or the cell or figure selected), with the numbers under them', () => void this.addSelected()),
           button('Add by Name or SMILES…', 'A systematic or common name, or a SMILES string', () => void this.addByText()),
           button('Add Numbered from File', 'Keep every structure with a compound number in the file showing', () => void this.addNumbered()),
           button('Import SD File…', 'Compounds from an SD file (each record\'s title or ID becomes its number)', () => void this.importSdf()),
-          button('Export SD File…', 'The compounds picked (or all of them) as an SD file, with their numbers, names and notes', () => void this.exportSdf())),
+          button('Export SD File…', 'The compounds selected (or all of them) as an SD file, with their numbers, names and notes', () => void this.exportSdf())),
         el('span', { className: 'refs-edit' },
           this.count,
-          button('Edit…', 'The number, names, CAS number, tags and notes of the compound picked, and the files it appears in (or double-click it)', () => void this.edit()),
-          ...(this.host.findInFiles ? [button('Find in Files…', 'Search a folder for files with the compound picked in', () => { const c = this.current(); if (c) this.host.findInFiles!(c); else this.host.flash('Click a compound first.'); })] : []),
-          button('Delete…', 'Delete the compounds picked from your library (the files they are in are not changed)', () => void this.remove()),
+          button('Edit…', 'The number, names, CAS number, tags and notes of the compound selected, and the files it appears in (or double-click it)', () => void this.edit()),
+          ...(this.host.findInFiles ? [button('Find in Files…', 'Search a folder for files with the compound selected in', () => { const c = this.current(); if (c) this.host.findInFiles!(c); else this.host.flash('Click a compound first.'); })] : []),
+          button('Delete…', 'Delete the compounds selected from your library (the files they are in are not changed)', () => void this.remove()),
           this.insertBtn,
           button('Location…', 'Where your library is kept: on this computer, or in a folder such as OneDrive to use it on other computers or share it', () => void this.host.location()),
           button('Close', '', () => d.close()))),
@@ -446,7 +446,7 @@ export class CompoundLibraryWindow {
         for (const sp of spectra) {
           const li = el('li', {},
             el('span', { textContent: `${sp.kind === 'measured' ? 'Measured' : `Predicted${sp.quality ? ` (${sp.quality})` : ''}`}, ${new Date(sp.saved).toLocaleDateString()}: ${sp.text.length > 90 ? `${sp.text.slice(0, 90)}…` : sp.text}`, title: sp.text }),
-            button('Copy', 'Copy the report', () => void navigator.clipboard.writeText(sp.text).then(() => this.host.flash('Copied the report.'), () => this.host.flash('Copying was refused by the system.'))),
+            button('Copy', 'Copy the report', () => void navigator.clipboard.writeText(sp.text).then(() => this.host.flash('Copied the report.'), () => this.host.flash('Couldn\'t copy: the system blocked clipboard access.'))),
             button('Remove', 'Remove it from the library (when you click OK)', () => { spectra = spectra.filter((x) => x !== sp); li.remove(); }));
           list.append(li);
         }

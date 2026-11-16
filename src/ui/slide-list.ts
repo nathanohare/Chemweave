@@ -254,7 +254,7 @@ export class SlideList {
       const n = document.createElement('span');
       n.className = 'sl-time';
       n.textContent = `${t !== undefined ? clockText(t) : ''}${narrated ? (t !== undefined ? ' 🎙' : '🎙') : ''}`;
-      n.title = [t !== undefined ? `Goes on by itself after ${clockText(t)} (Rehearse Timings, or Transitions > After)` : '', narrated ? 'Has recorded narration (Slide Show > Record)' : ''].filter(Boolean).join('. ');
+      n.title = [t !== undefined ? `Advances automatically after ${clockText(t)} (Rehearse Timings, or Transitions ▸ After)` : '', narrated ? 'Has recorded narration (Slide Show ▸ Record)' : ''].filter(Boolean).join('. ');
       item.append(n);
     }
     item.addEventListener('click', (e) => this.onClick(e, i));

@@ -121,7 +121,7 @@ describe('the Knowledge Base window, searched by structure', { timeout: 30000 },
     const box = document.querySelector<HTMLInputElement>('.kb-window input[type=search]')!;
     box.value = '[Xe](F)(F)(F)F';
     box.dispatchEvent(new Event('input'));
-    await until(() => !!document.querySelector('.kb-window .kb-empty')?.textContent?.includes('is or contains'));
+    await until(() => !!document.querySelector('.kb-window .kb-empty')?.textContent?.includes('matches or contains'));
   });
 
   it('searches for the structure selected in the drawing', async () => {

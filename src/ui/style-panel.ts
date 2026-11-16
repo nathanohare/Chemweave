@@ -239,8 +239,8 @@ export class StylePanel {
       row.className = 'style-buttons';
       const b = document.createElement('button');
       b.type = 'button';
-      b.textContent = 'Add frame';
-      b.title = 'Draw a box around the selection that grows and moves with it (Chemistry > Labels and Numbers > Add Frame)';
+      b.textContent = 'Add Frame';
+      b.title = 'Draw a box around the selection that grows and moves with it (Chemistry ▸ Labels and Numbers ▸ Add Frame)';
       b.addEventListener('click', () => this.frames?.add());
       row.append(b);
       this.body.append(row);
@@ -272,7 +272,7 @@ export class StylePanel {
     if (r.headType === 'solid' && (r.headStyle !== 'none' || r.tailStyle !== 'none')) {
       this.number('Head center (pt)', round(r.headLength * (r.headCenter ?? 0.75), 2), 0.25, 0, 100,
         (v) => set('Arrowhead center', (a) => ({ headCenter: a.headLength > 0 ? Math.max(0, Math.min(1, v / a.headLength)) : undefined })),
-        'How far back from its point the head’s notch is. The head’s full length makes a plain triangle; less sweeps its back in.');
+        'Depth of the arrowhead\'s notch, measured from the tip. The full head length gives a plain triangle; less gives a swept-back head.');
     }
     if (!r.equilibrium && !r.shaftSpacing) {
       this.check('Square bends (elbow)', !!r.elbow, (v) => set('Elbow connector', () => ({ elbow: v || undefined, sweep: 0, bez: undefined })));
@@ -353,7 +353,7 @@ export class StylePanel {
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ta.blur(); }
         });
         ta.addEventListener('input', () => { ta.rows = Math.min(4, Math.max(1, ta.value.split('\n').length)); });
-        this.row(label, ta, `Text ${side} the arrow. Enter sets it; Shift+Enter starts a new line. Formulas get their subscripts (H2O, Pd(PPh3)4); select the text on the drawing for other formatting.`);
+        this.row(label, ta, `Text ${side} the arrow. Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting.`);
       }
     }
     const names: [Role, string, string][] = [
@@ -391,7 +391,7 @@ export class StylePanel {
     };
     button('Clean Up Reaction', 'Space this step evenly: starting materials and products in line with the arrow, conditions centered on it (Ctrl+Shift+R)', () => hooks.cleanUp());
     button('Arrange…', 'Lay the scheme out as a line, rows, a snake, down the page, a catalytic cycle or a branching tree', () => hooks.arrange());
-    if (r.step) button('Reset to Automatic', 'Forget the kept roles and work them out from where things sit', () => hooks.reset(r.id));
+    if (r.step) button('Reset to Automatic', 'Forget the kept roles and calculate them from where things sit', () => hooks.reset(r.id));
     this.body.appendChild(buttons);
   }
 
@@ -667,7 +667,7 @@ export class StylePanel {
     if (d.colours !== 'colourful' && d.colours !== 'mono' && d.colours !== 'grey') this.color('Accent color', d.accent, (v) => set({ accent: v ?? '#4472c4' }), 'Blue', '#4472c4');
     this.check('Rounded corners', d.rounded, (v) => set({ rounded: v }));
     this.check('Shadow', d.shadow, (v) => set({ shadow: v }));
-    this.check('AutoFit Text', d.size === undefined, (v) => set({ size: v ? undefined : 14 }), 'The text as big as fits, the same size in every shape; off, a size of your own');
+    this.check('AutoFit Text', d.size === undefined, (v) => set({ size: v ? undefined : 14 }), 'The text as big as fits, the same size in every shape; off, a custom size');
     if (d.size !== undefined) this.number('Text size', d.size, 1, 4, 96, (v) => set({ size: v }));
     this.help('Double-click a shape to type in it, or change all the text in the window. Drag a corner to resize it: it is drawn again to fill the box.');
     const row = document.createElement('div');
@@ -692,7 +692,7 @@ export class StylePanel {
   private frameControls(sh: Shape): void {
     const f = sh.frame;
     // what a frame does, as the heading's tooltip rather than a paragraph in the panel
-    const about = 'A frame fits around what lies inside it, with a gap, and follows it from then on. Moving or resizing the frame by hand stops it fitting; check Fit to Contents to fit it again.';
+    const about = 'The frame fits around its contents with a margin and keeps fitting as they change. Moving or resizing it by hand stops this; check Fit to Contents to restore it.';
     this.heading('Frame');
     (this.body.lastElementChild as HTMLElement).title = about;
     if (f) {
@@ -745,7 +745,7 @@ export class StylePanel {
     if (pics.every((x) => x.math)) { this.equationControls(pics); return; }
     this.heading(charts ? (pics.length > 1 ? `${pics.length} charts` : 'Chart') : pics.length > 1 ? `${pics.length} pictures` : 'Picture');
     // vector pictures (SVG, Windows metafiles) have no pixels to count
-    if (charts) this.help('A chart with its own data. Double-click it to change the data, the kind of chart and its look; resizing it lays it out again.');
+    if (charts) this.help('A chart with its own data. Double-click it to change the data, the chart type and its formatting; resizing it lays it out again.');
     else if (pics.every((x) => x.zoom)) {
       this.help('A Slide Zoom: in the slide show a click zooms into its slide. Its picture follows the slide.');
       this.check('Return to Zoom', !!p.zoom?.back, (v) => set('Return to Zoom', (x) => ({ zoom: { ...x.zoom, back: v || undefined } })), 'After its slide (or its part of a Summary Zoom), the show comes back to this slide');
@@ -779,7 +779,7 @@ export class StylePanel {
       if (pics.length === 1) {
         const buttons = document.createElement('div');
         buttons.className = 'style-buttons';
-        const btn = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Edit chart…', title: 'Its data, the kind of chart, titles, axes, colors and fitted lines' });
+        const btn = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Edit chart…', title: 'Its data, the chart type, titles, axes, colors and fitted lines' });
         btn.addEventListener('click', () => this.onEditChart(p.id));
         buttons.append(btn);
         this.body.appendChild(buttons);
@@ -1106,7 +1106,7 @@ export class StylePanel {
     if (centre?.variable) {
       // a group on one of several ring atoms
       this.heading('Variable attachment');
-      this.help(`The group is on one of ${centre.multi!.length} ring atoms. With the Variable Attachment tool (on the Hapto bond button), click a ring atom to add it or take it out.`);
+      this.help(`The group is on one of ${centre.multi!.length} ring atoms. With the Variable Attachment tool (on the Hapto bond button), click a ring atom to add it or remove it.`);
       this.select('Style', BOND_STYLES.filter(([v]) => !['wedge', 'hashWedge', 'hollowWedge', 'wavyWedge', 'hydrogen', 'ionic', 'dative'].includes(v)), b.display, (v) => set('Bond style', { display: v }));
       this.color('Color', b.color, (v) => set('Bond color', { color: v }));
       return;
@@ -1165,19 +1165,19 @@ export class StylePanel {
     const pct = (x: number) => Math.round(x * 100);
     const looks = this.highlightLooks.list();
     if (looks.length) {
-      this.select<string>('Look', [['', 'Choose a look…'], ...looks.map((l, i): Opt<string> => [String(i), l.name])], '', (v) => { if (v !== '') this.highlightLooks.apply(looks[Number(v)]); });
+      this.select<string>('Style', [['', 'Choose a style…'], ...looks.map((l, i): Opt<string> => [String(i), l.name])], '', (v) => { if (v !== '') this.highlightLooks.apply(looks[Number(v)]); });
     }
     this.select<HighlightShape>('Highlight shape', HL_SHAPES, st.shape, (v) => set('Highlight shape', { shape: v }));
     // straight highlights are always one even band; round ones can have a disc on each atom
     if (st.shape === 'round') this.check('Smooth outline', st.smooth, (v) => set(v ? 'Smooth highlight' : 'Highlight with discs', { smooth: v }),
-      'One even band along the bonds, with no disc bulging out at each atom (Chemistry > Highlight and Fill > Smooth Highlight).');
+      'One even band along the bonds, with no disc bulging out at each atom (Chemistry ▸ Highlight and Fill ▸ Smooth Highlight).');
     else this.select<HighlightEnds>('Highlight ends', HL_ENDS, st.ends, (v) => set('Highlight ends', { ends: v }));
     this.number('Highlight size (%)', pct(st.size), 10, 20, 400, (v) => set('Highlight size', { size: v / 100 }),
       '100% is the usual size; larger for a bolder highlight.');
 
     this.group('Placement', [st.centre && 'centred', !st.fit && 'labels not held'].filter(Boolean).join(', ') || 'on the bonds', () => {
       this.check('Center on double bonds', st.centre, (v) => set(v ? 'Center highlight on double bonds' : 'Highlight on the bonds', { centre: v }),
-        'Run the highlight midway between a double bond\'s two lines, and around a ring midway between the ring and its inner double-bond lines (Chemistry > Highlight and Fill > Center Highlight on Double Bonds).');
+        'Center the highlight between a double bond\'s two lines, and in rings between the ring and its inner double-bond lines (Chemistry ▸ Highlight and Fill ▸ Center Highlight on Double Bonds).');
       this.check('Grow around atom labels', st.fit, (v) => set(v ? 'Highlight around labels' : 'Highlight not around labels', { fit: v }),
         'Make the highlight under a labeled atom (Me, OTBS, CO2Et) big enough to hold its whole label.');
     });
@@ -1209,11 +1209,11 @@ export class StylePanel {
         this.color('Line color', st.lineColour || undefined, (v) => set('Highlight outline color', { lineColour: v ?? '' }), 'A darker shade', '#808080');
         this.number('Line width (pt)', st.lineWidth, 0.25, 0.25, 10, (v) => set('Highlight outline width', { lineWidth: v }));
       }
-      if (st.fill !== 'none') this.help('For an outline on its own, set Fill to None (Chemistry > Highlight and Fill > Outline-Only Highlight).');
+      if (st.fill !== 'none') this.help('For an outline on its own, set Fill to None (Chemistry ▸ Highlight and Fill ▸ Outline-Only Highlight).');
     });
 
     this.group('Soft edges', st.soft ? `${pct(st.softAmount)}%, ${HL_SOFT_SIDES.find(([v]) => v === st.softSide)![1].split(' (')[0].toLowerCase()}` : 'off', () => {
-      this.check('Soft edges', st.soft, (v) => set(v ? 'Soft highlight' : 'Sharp highlight', { soft: v }), 'Fade the highlight out instead of a sharp edge (Chemistry > Highlight and Fill > Soft Highlight Edges).');
+      this.check('Soft edges', st.soft, (v) => set(v ? 'Soft highlight' : 'Sharp highlight', { soft: v }), 'Fade the highlight out instead of a sharp edge (Chemistry ▸ Highlight and Fill ▸ Soft Highlight Edges).');
       if (st.soft) {
         this.number('Soft Edge Amount (%)', pct(st.softAmount), 5, 5, 100, (v) => set('Soft edge amount', { softAmount: v / 100 }),
           'How much of the band fades, measured from its edge in to its middle: 25% fades only the outer quarter');
@@ -1222,7 +1222,7 @@ export class StylePanel {
     });
 
     this.group('Shadow', st.shadow ? `${pct(st.shadowOpacity)}%${st.shadowBlur > 0 ? ', blurred' : ''}` : 'off', () => {
-      this.check('Shadow', st.shadow, (v) => set(v ? 'Highlight shadow' : 'No highlight shadow', { shadow: v }), 'A drop shadow under the highlight (Chemistry > Highlight and Fill > Highlight Shadow).');
+      this.check('Shadow', st.shadow, (v) => set(v ? 'Highlight shadow' : 'No highlight shadow', { shadow: v }), 'A drop shadow under the highlight (Chemistry ▸ Highlight and Fill ▸ Highlight Shadow).');
       if (st.shadow) this.shadowRows(
         { colour: st.shadowColour, opacity: st.shadowOpacity, angle: st.shadowAngle, distance: pct(st.shadowDistance), blur: pct(st.shadowBlur) }, '% of a bond',
         (p) => set('Highlight shadow', {
@@ -1232,7 +1232,7 @@ export class StylePanel {
     });
 
     this.group('Glow', st.glow ? `${pct(st.glowSize)}%` : 'off', () => {
-      this.check('Glow', st.glow, (v) => set(v ? 'Highlight glow' : 'No highlight glow', { glow: v }), 'A soft halo of color around the outside (Chemistry > Highlight and Fill > Highlight Glow).');
+      this.check('Glow', st.glow, (v) => set(v ? 'Highlight glow' : 'No highlight glow', { glow: v }), 'A soft halo of color around the outside (Chemistry ▸ Highlight and Fill ▸ Highlight Glow).');
       if (st.glow) {
         this.color('Glow color', st.glowColour || undefined, (v) => set('Glow color', { glowColour: v ?? '' }), 'The highlight\'s', '#ffe680');
         this.number('Glow size (% of a bond)', pct(st.glowSize), 1, 1, 200, (v) => set('Glow size', { glowSize: v / 100 }));
@@ -1244,8 +1244,8 @@ export class StylePanel {
     row.className = 'style-buttons';
     const save = document.createElement('button');
     save.type = 'button';
-    save.textContent = 'Save look…';
-    save.title = 'Keep this highlight\'s look (and color) under a name, to use again in any drawing (Chemistry > Highlight and Fill > Save Highlight Style)';
+    save.textContent = 'Save Style…';
+    save.title = 'Keep this highlight\'s style (and color) under a name, to use again in any drawing (Chemistry ▸ Highlight and Fill ▸ Save Highlight Style)';
     save.addEventListener('click', () => this.highlightLooks.save());
     row.append(save);
     this.body.append(row);
@@ -1307,8 +1307,8 @@ export class StylePanel {
       row.className = 'style-buttons';
       const b = document.createElement('button');
       b.type = 'button';
-      b.textContent = 'Fill rings';
-      b.title = 'Color in, shade or hatch the rings in the selection (Chemistry > Highlight and Fill > Fill Rings)';
+      b.textContent = 'Fill Rings';
+      b.title = 'Color in, shade or hatch the rings in the selection (Chemistry ▸ Highlight and Fill ▸ Fill Rings)';
       b.addEventListener('click', () => this.ringFill?.());
       row.append(b);
       this.body.append(row);
@@ -1338,7 +1338,7 @@ export class StylePanel {
     row.className = 'style-row';
     const name = document.createElement('span');
     name.textContent = 'Label font';
-    addInfo(name, 'The font and size of the picked atoms\' labels (Home ▸ Font sets them too). Leave the font empty for the drawing\'s (Drawing Style). A structure from ChemDraw keeps its labels\' own font.');
+    addInfo(name, 'The font and size of the selected atoms\' labels (Home ▸ Font sets them too). Leave the font empty for the drawing\'s (Drawing Style). A structure from ChemDraw keeps its labels\' own font.');
     row.append(name, font);
     this.body.appendChild(row);
     const size = document.createElement('input');
@@ -1374,7 +1374,7 @@ export class StylePanel {
     const found = [...centres.map((a) => info?.atom(a.id)), ...dbls.map((b) => info?.bond(b.id))].filter(Boolean);
     if (found.length) this.note(`Calculated: ${found.join(', ')}`);
     if (centres.some((a) => info?.undecided?.('a', a.id)) || dbls.some((b) => info?.undecided?.('b', b.id))) {
-      this.note('An R, Ar or unreadable group decides the order here, so the CIP rules can’t give a label. Type one below if you want it.');
+      this.note('An R, Ar or unrecognized group determines priority here, so CIP rules can\'t assign a label. Type one below if needed.');
     }
     const shown = [...centres, ...dbls].every((x) => x.showStereo || x.stereoLabel);
     this.check('Show label on drawing', shown, (v) => this.edit(v ? 'Show stereo label' : 'Hide stereo label', () => setStereoShown(this.doc, centres.map((a) => a.id), dbls.map((b) => b.id), v)));
@@ -1383,7 +1383,7 @@ export class StylePanel {
       const l = a ? a.stereoLabel : b.stereoLabel;
       const auto = a ? info?.atom(a.id) : info?.bond(b.id);
       this.text('Label text', l?.manual ? l.text : '', auto ? `(${auto}), worked out` : 'worked out', (v) => this.edit('Stereo label text', () => setStereoText(this.doc, a ? 'a' : 'b', a ? a.id : b.id, v, arialWidth)),
-        'Type your own label (for example (R*) or rel-(S)); leave empty to show the worked-out one.');
+        'Type a custom label (for example (R*) or rel-(S)); leave empty to show the calculated one.');
     }
   }
 

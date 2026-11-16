@@ -58,7 +58,7 @@ export class DocInsertUI {
     const now = fieldEnv.now();
     const got = await ask('Date and Time', [
       { name: 'format', label: 'Available formats', value: DATE_FORMATS[0], options: DATE_FORMATS.map((p) => ({ value: p, label: formatDate(now, p) })) },
-      { name: 'own', label: 'Or your own format', value: '', placeholder: "d MMMM yyyy, 'at' HH:mm", help: 'Word\'s letters: d dd ddd dddd (day), M MM MMM MMMM (month), yy yyyy, h H (hour), mm (minutes), ss, am/pm; words in \'quotes\'.' },
+      { name: 'own', label: 'Or a custom format', value: '', placeholder: "d MMMM yyyy, 'at' HH:mm", help: 'Word\'s letters: d dd ddd dddd (day), M MM MMM MMMM (month), yy yyyy, h H (hour), mm (minutes), ss, am/pm; words in \'quotes\'.' },
       { name: 'update', label: 'Update automatically (a field, saved as Word\'s DATE field)', value: 'false', type: 'checkbox' },
     ], { ok: 'Insert' });
     this.host.focus();
@@ -89,7 +89,7 @@ export class DocInsertUI {
     const code = got.code as FieldCode;
     if (code === 'ref' || code === 'pageref' || code === 'abovebelow') {
       const target = got.target.trim();
-      if (!target) { this.host.flash('Name the bookmark the field refers to (Insert > Document > Bookmark adds one).'); return; }
+      if (!target) { this.host.flash('Name the bookmark the field refers to (Insert ▸ Document ▸ Bookmark adds one).'); return; }
       this.insertField({ kind: 'field', code, target });
       return;
     }
@@ -105,7 +105,7 @@ export class DocInsertUI {
     const props: [FieldCode, string][] = [['title', 'Title'], ['subject', 'Subject'], ['author', 'Author'], ['company', 'Company'], ['keywords', 'Keywords']];
     const got = await ask('Document Property', [
       { name: 'code', label: 'Property', value: 'title', options: props.map(([v, label]) => ({ value: v, label: `${label}${f.t.props?.[v as keyof DocProps] ? `: ${f.t.props[v as keyof DocProps]}` : ' (not set yet)'}` })) },
-    ], { ok: 'Insert', note: 'Shows the property as it is now and whenever it changes (Quick Parts > Document Properties… sets them).' });
+    ], { ok: 'Insert', note: 'Shows the property as it is now and whenever it changes (Quick Parts ▸ Document Properties… sets them).' });
     this.host.focus();
     if (!got || this.f !== f) return;
     this.insertField({ kind: 'field', code: got.code as FieldCode });
@@ -165,7 +165,7 @@ export class DocInsertUI {
     const ed = this.host.ed();
     const text = ed.text.slice(ed.start, ed.end).replace(/\s+/g, ' ').trim();
     const got = await ask('Create New Building Block', [{ name: 'name', label: 'Name', value: text.slice(0, 30) }], {
-      ok: 'Save', note: 'Saves the selected text to your settings so it\'s available under Insert > Quick Parts in every document (structures and fields aren\'t included).',
+      ok: 'Save', note: 'Saves the selected text to your settings so it\'s available under Insert ▸ Quick Parts in every document (structures and fields aren\'t included).',
     });
     this.host.focus();
     if (!got || this.f !== f) return;
@@ -174,7 +174,7 @@ export class DocInsertUI {
     if (!part || !part.runs.some((r) => r.text.trim())) { this.host.flash('Select some text first (structures and fields can\'t be saved as a Quick Part).'); return; }
     const list = this.host.quickParts().filter((p) => p.name.toLowerCase() !== part.name.toLowerCase());
     this.host.setQuickParts([...list, part].sort((a, b) => a.name.localeCompare(b.name)));
-    this.host.flash(`Saved "${part.name}" to Insert > Quick Parts.`);
+    this.host.flash(`Saved "${part.name}" to Insert ▸ Quick Parts.`);
   }
 
   private async deletePart(): Promise<void> {
@@ -212,7 +212,7 @@ export class DocInsertUI {
       { name: 'author', label: 'Author', value: p.author ?? this.host.author() },
       { name: 'company', label: 'Institution or group', value: p.company ?? '' },
       { name: 'accent', label: 'Color', value: ACCENTS[0][0], options: ACCENTS.map(([v, label]) => ({ value: v, label })) },
-    ], { ok: 'Insert', note: 'These are the document\'s properties: the cover shows them as fields, so changing them (Quick Parts > Document Properties…) changes the cover. The date is today\'s, kept up to date. The first page gets no page number.' });
+    ], { ok: 'Insert', note: 'These are the document\'s properties: the cover shows them as fields, so changing them (Quick Parts ▸ Document Properties…) changes the cover. The date is today\'s, kept up to date. The first page gets no page number.' });
     this.host.focus();
     if (!got || this.file() !== f) return;
     const props: DocProps = { ...p };
@@ -222,7 +222,7 @@ export class DocInsertUI {
     const base = rt.cleanStyle({ font: N?.font, size: N?.size });
     const t = insertCover({ ...f.t, props }, design, got.accent, base, (code, format) => ({ id: next++, o: format ? { kind: 'field', code, format } : { kind: 'field', code } }));
     f.ed.update(t, 'Cover Page', 0, 0);
-    this.host.flash(`Cover page added. Its text comes from the document's properties (Insert > Quick Parts > Document Properties…).`, 6000);
+    this.host.flash(`Cover page added. Its text comes from the document's properties (Insert ▸ Quick Parts ▸ Document Properties…).`, 6000);
   }
 
   private file(): DocFile | null {
@@ -273,11 +273,11 @@ export class DocInsertUI {
     }
     for (const h of tocEntries(f.t, 9)) targets.push({ value: `h:${h.para}`, label: `Heading: ${short(h.text)}` });
     for (const b of bookmarksOf(f.t).filter((x) => !x.name.startsWith('_'))) targets.push({ value: `b:${b.name}`, label: `Bookmark: ${b.name}` });
-    if (!targets.length) { this.host.flash('There is nothing to refer to yet: add a caption (References > Insert Caption), a heading or a bookmark (Insert > Document > Bookmark).', 7000); return; }
+    if (!targets.length) { this.host.flash('There is nothing to refer to yet: add a caption (References ▸ Insert Caption), a heading or a bookmark (Insert ▸ Document ▸ Bookmark).', 7000); return; }
     const got = await ask('Cross-reference', [
       { name: 'target', label: 'Refer to', value: targets[0].value, options: targets },
       { name: 'what', label: 'Insert reference to', value: 'text', options: [
-        { value: 'text', label: 'Its text (a caption\'s label and number, a heading\'s words, a bookmark\'s text)' },
+        { value: 'text', label: 'Its text (caption label and number, heading text, or bookmark text)' },
         { value: 'page', label: 'Page number' },
         { value: 'above', label: 'Above or below' },
       ] },

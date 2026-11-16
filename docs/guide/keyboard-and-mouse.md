@@ -1,10 +1,10 @@
 # Keyboard and mouse
 
-This page lists the hotkeys in Canvas mode, explains how to change them, and describes what the mouse does with Shift, Ctrl and Alt held and what each mouse pointer means.
+This page lists the keyboard shortcuts in Canvas mode, explains how to change them, and describes what the mouse does with Shift, Ctrl and Alt held and what each mouse pointer means.
 
 The keys are ChemDraw's wherever ChemDraw has one, so your fingers should already know most of them. On a Mac, Cmd works wherever this page says Ctrl, and Option wherever it says Alt; the menus show the Mac symbols (⌘, ⌥).
 
-## How hotkeys work in a drawing
+## How keyboard shortcuts work in a drawing
 
 What a key does depends on what the mouse is pointing at:
 
@@ -15,7 +15,7 @@ What a key does depends on what the mouse is pointing at:
 
 Letters are case-sensitive: `f` and Shift+F do different things.
 
-A key that grows something moves the highlight to the new atom, so you can keep typing: `8` then `1` makes an E double bond, `1 1 1` draws a chain. `1` and `0` pressed with the mouse still on an atom keep the highlight there, so pressing `1` three times adds three bonds to the same atom. (The Hotkeys window has a box to turn this off, so `1` always follows.)
+A key that grows something moves the highlight to the new atom, so you can keep typing: `8` then `1` makes an E double bond, `1 1 1` draws a chain. `1` and `0` pressed with the mouse still on an atom keep the highlight there, so pressing `1` three times adds three bonds to the same atom. (The Keyboard Shortcuts window has a box to turn this off, so `1` always follows.)
 
 A highlight set by a key holds while the mouse stays still. Once the mouse moves, the highlight follows it again: whatever atom or bond is under the pointer, or nothing in empty space. **Undo** puts the highlight back where the key found it, so you can keep typing.
 
@@ -171,7 +171,7 @@ Start a sequence from a highlight a key set (as above), not from the mouse resti
 | Ctrl+Shift+V | Paste as plain text |
 | Esc | Finish typing |
 
-Presentations, spreadsheets and documents have their own keys (PowerPoint's, Excel's and Word's), which take priority while that kind of tab is showing. For example, F5 starts a slide show in a presentation, and Ctrl+D fills down in a spreadsheet. See their pages.
+Presentations, spreadsheets and documents have their own keys (PowerPoint's, Excel's and Word's), which take priority while that tab type is showing. For example, F5 starts a slide show in a presentation, and Ctrl+D fills down in a spreadsheet. See their pages.
 
 ## Navigating with the keyboard
 
@@ -182,20 +182,20 @@ Presentations, spreadsheets and documents have their own keys (PowerPoint's, Exc
 - On the file tabs, the left and right arrow keys switch tabs and Delete closes one.
 - Screen readers hear which drawing tool is on, and what is selected ("Selected C6H5Br, 7 atoms").
 
-## Changing hotkeys
+## Changing keyboard shortcuts
 
-Every key can be changed. Open **Edit ▸ Keyboard Shortcuts…**, or **Help ▸ Hotkeys and Tips** and then **Show and change all keyboard shortcuts…**.
+Every key can be changed. Open **Edit ▸ Keyboard Shortcuts…**, or **Help ▸ Keyboard Shortcuts and Tips** and then **Show and change all keyboard shortcuts…**.
 
 The window lists every action, grouped as above (pointing at an atom, at a bond, at empty space, anywhere, in presentations, in spreadsheets, in documents, and typing text), with the keys that do each one.
 
 - Type in the box at the top to find an action or a key.
 - Click **+** next to an action and press the key you want. Press Esc to cancel.
-- Click **×** on a key to take it away from that action.
+- Click **×** on a key to remove it from that action.
 - If the key already did something else, the window tells you which action lost it. Nothing is blocked.
-- **Reset** next to an action puts ChemDraw's keys back for it; **Change hotkeys to ChemDraw™ defaults** does it for everything.
+- **Reset** next to an action puts ChemDraw's keys back for it; **Change keyboard shortcuts to ChemDraw™ defaults** does it for everything.
 - **Export…** saves your keys to a file, and **Import…** loads them, for example on another computer.
 
-Changes work straight away and are saved in the settings file; the window shows where it is. New default keys added in later versions still reach you, because only your changes are stored.
+Changes work immediately and are saved in the settings file; the window shows where it is. New default keys added in later versions still reach you, because only your changes are stored.
 
 ## The mouse
 
@@ -238,7 +238,7 @@ Boxes, ovals, frames and pictures have square handles on their corners and sides
 
 ## Pen and touch (tablets)
 
-On a tablet or touch screen (an iPad with Apple Pencil, a Surface pen), **View ▸ Window and Colors ▸ Touch Mode** makes the buttons, menus and toolboxes big enough for a fingertip. It is **Automatic** to start with: it comes on by itself on a touch screen, or the first time a pen or finger touches the window.
+On a tablet or touch screen (an iPad with Apple Pencil, a Surface pen), **View ▸ Window and Colors ▸ Touch Mode** makes the buttons, menus and toolboxes big enough for a fingertip. It is **Automatic** to start with: it comes on automatically on a touch screen, or the first time a pen or finger touches the window.
 
 - **The pen** works like the mouse with every tool, except that with a curved arrow tool it draws the arrow freehand.
 - **Two fingers** pan and pinch-zoom the drawing. Once you have used the pen, **one finger** pans too, so a resting palm never draws.
@@ -254,9 +254,9 @@ Pick the **Sketch** tool (the pen and squiggle in the toolbox, or ✎ on the key
 - a **scribble** (back and forth) erases the atoms and bonds under it;
 - **letters** label the atom they are written on (C, N, O, S, P, F, Cl, Br, I, H, B), or make a new atom in empty space; **+** and **−** charge the nearest atom. Write a letter centered on the atom, up to about a bond high; in empty space keep it smaller than a bond, or it is read as a bond or ring.
 
-To sketch with the pen whatever tool is picked (a finger or mouse still uses the tool), turn on **View ▸ Window and Colors ▸ Touch Mode ▸ Pen Always Sketches**.
+To sketch with the pen whatever tool is selected (a finger or mouse still uses the tool), turn on **View ▸ Window and Colors ▸ Touch Mode ▸ Pen Always Sketches**.
 
-In a text box, Apple Pencil's **Scribble** works in Touch Mode: write over the text box (or just to its right or below it) and your handwriting is typed where the pencil first touched. A tap with the pencil puts the caret there.
+In a text box, Apple Pencil's **Scribble** works in Touch Mode: write over the text box (or just to its right or below it) and your handwriting is typed where the pencil first touched. A tap with the pencil puts the cursor there.
 
 If writing with the pen feels slow, **View ▸ Developer Tools** shows a **Pen stroke** line after each stroke: how often the pen reported, how often the screen caught up, and how long the app took for each.
 

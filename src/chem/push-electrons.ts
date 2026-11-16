@@ -157,7 +157,7 @@ export function readPushes(doc: Doc, m: Measure, arrows: Arrow[]): PushReading {
       if (from.kind !== 'atom' && key(src[0], src[1]) === key(pq[0], pq[1])) { say('error', 'This arrow starts and ends on the same bond.', { arrows: [r.id], atoms: pq }); continue; }
       if (!src.some((id) => pq.includes(id))) {
         say('error', to.kind === 'gap'
-          ? 'This arrow makes a new bond between two atoms its electrons don\'t come from. The electrons for a new bond come from one of its two atoms (a lone pair) or a bond to one of them.'
+          ? 'This arrow forms a bond between two atoms its electrons don\'t come from. A new bond\'s electrons must come from a lone pair on one of its atoms or from a bond to one of them.'
           : 'This arrow moves electrons into a bond they aren\'t next to. Point it at the atom they go to, or start it on that bond\'s atom or an adjacent bond.', { arrows: [r.id], atoms: pq });
         continue;
       }

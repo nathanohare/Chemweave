@@ -68,12 +68,12 @@ export function setUpShow(setup: ShowSetup | undefined, shows: CustomShow[], sli
     const num = (v: number) => { const i = el('input'); i.type = 'number'; i.min = '1'; i.max = String(slides); i.value = String(v); i.className = 'md-num'; return i; };
     const from = num(s.from ?? 1), to = num(s.to ?? slides);
     range.l.append(' ', from, ' to ', to);
-    const cust = radio('ss-which', 'Custom show', s.custom !== undefined && shows.some((c) => c.id === s.custom), 'A custom show made in Custom Slide Show > Custom Shows');
+    const cust = radio('ss-which', 'Custom show', s.custom !== undefined && shows.some((c) => c.id === s.custom), 'A custom show made in Custom Slide Show ▸ Custom Shows');
     const pick = el('select');
     for (const c of shows) pick.add(new Option(c.name, String(c.id)));
     if (s.custom !== undefined) pick.value = String(s.custom);
     cust.l.append(' ', pick);
-    if (!shows.length) { cust.i.disabled = true; pick.disabled = true; cust.l.title = 'Make a custom show first (Custom Slide Show > Custom Shows)'; }
+    if (!shows.length) { cust.i.disabled = true; pick.disabled = true; cust.l.title = 'Make a custom show first (Custom Slide Show ▸ Custom Shows)'; }
     for (const x of [from, to]) x.addEventListener('focus', () => { range.i.checked = true; });
     pick.addEventListener('change', () => { cust.i.checked = true; });
     which.append(all.l, range.l, cust.l);
@@ -81,10 +81,10 @@ export function setUpShow(setup: ShowSetup | undefined, shows: CustomShow[], sli
     const adv = el('fieldset');
     adv.append(el('legend', undefined, 'Advance slides'));
     const manual = radio('ss-adv', 'Manually', !!s.manual, 'Only clicks and keys go on');
-    const timed = radio('ss-adv', 'Using timings, if present', !s.manual, 'Each slide goes on by itself after its time (Rehearse Timings, or Transitions > After)');
+    const timed = radio('ss-adv', 'Using timings, if present', !s.manual, 'Each slide advances automatically after its time (Rehearse Timings, or Transitions ▸ After)');
     adv.append(manual.l, timed.l);
     grid.append(type, opt, which, adv);
-    const kioskNote = el('p', 'muted small', 'At a kiosk the show goes around by itself, by the slides\' times; clicks only follow links and action buttons, and Esc ends it.');
+    const kioskNote = el('p', 'muted small', 'At a kiosk the show loops automatically, by the slides\' times; clicks only follow links and action buttons, and Esc ends it.');
     const sync = () => {
       const kiosk = types.get('kiosk')!.checked;
       loop.i.disabled = kiosk;
@@ -139,9 +139,9 @@ export function editCustomShows(shows: CustomShow[], slides: SlideName[]): Promi
     const side = el('div', 'cs-side');
     const b = (text: string, title: string) => { const x = el('button', undefined, text); x.type = 'button'; x.title = title; side.append(x); return x; };
     const add = b('New…', 'Make a custom show: name it and pick its slides');
-    const edit = b('Edit…', 'Change the custom show picked');
-    const remove = b('Remove', 'Delete the custom show picked (the slides stay in the deck)');
-    const copy = b('Copy', 'A copy of the custom show picked, to change');
+    const edit = b('Edit…', 'Change the custom show selected');
+    const remove = b('Remove', 'Delete the custom show selected (the slides stay in the deck)');
+    const copy = b('Copy', 'A copy of the custom show selected, to change');
     body.append(box, side);
     const fill = (pickId?: number) => {
       box.replaceChildren(...list.map((c) => new Option(`${c.name} (${c.slides.length} slide${c.slides.length === 1 ? '' : 's'})`, String(c.id))));

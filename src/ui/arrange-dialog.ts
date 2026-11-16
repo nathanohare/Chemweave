@@ -28,7 +28,7 @@ const LAYOUTS: Layout[] = [
     svg: pic(dot(10, 14) + arr(18, 14, 34, 14) + dot(44, 14) + arr(52, 14, 68, 14) + dot(78, 14) + arr(78, 21, 78, 39) + dot(78, 48) + arr(70, 48, 54, 48) + dot(44, 48)) },
   { kind: 'down', name: 'Down the page', hint: 'Each step below the one before, with the conditions beside the arrow.',
     svg: pic(dot(48, 8) + arr(48, 15, 48, 26) + dot(48, 32) + arr(48, 39, 48, 50) + dot(48, 56)) },
-  { kind: 'cycle', name: 'Catalytic cycle', hint: 'Round a circle; the last step leads back to the first. A caption selected on its own goes in the middle.',
+  { kind: 'cycle', name: 'Catalytic cycle', hint: 'Around a circle; the last step leads back to the first. A caption selected on its own goes in the middle.',
     svg: pic(dot(48, 8) + arc(57, 12, 72, 40, 26) + dot(74, 48) + arc(66, 54, 30, 54, 26) + dot(22, 48) + arc(24, 40, 39, 12, 26) + '<text x="48" y="38" text-anchor="middle">cat.</text>') },
   { kind: 'tree', name: 'Branching', hint: 'Steps that split or come together, laid out in columns from left to right.',
     svg: pic(dot(12, 32) + arr(20, 28, 38, 16) + arr(20, 36, 38, 48) + dot(46, 14) + dot(46, 50) + arr(54, 14, 72, 14) + dot(82, 14)) },

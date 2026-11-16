@@ -100,7 +100,7 @@ export class PreflightPane {
     this.howSel.value = this.choice.how;
     row('Journal', this.journalSel, 'Whose author guidelines to check against');
     row('Size', this.sizeSel, 'The width it will be printed at');
-    row('Printed', this.howSel, 'As drawn: the figure prints at the size it is drawn, unless it is too big, when the journal shrinks it (text and lines too). Made to fill the width: for a figure drawn bigger or smaller than it prints');
+    row('Printed', this.howSel, 'As drawn: prints at its drawn size unless too large, in which case the journal scales it down. Fill width: scales a figure drawn larger or smaller than its print size.');
     this.fillSizes();
     this.journalSel.addEventListener('change', () => { this.choice.journal = this.journalSel.value; this.fillSizes(); this.changed(); });
     this.sizeSel.addEventListener('change', () => { this.choice.size = this.sizeSel.value; this.changed(); });
@@ -194,7 +194,7 @@ export class PreflightPane {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = 'Use Journal Drawing Style';
-      b.title = `Redraw every structure in the "${style}" drawing style (bond length, line widths, label font and size), the settings ${j.name.replace(/ \(.*/, '')} publishes for structures drawn at their printed size. One undo takes it back.`;
+      b.title = `Redraw all structures in the "${style}" drawing style (bond length, line widths, label font and size), the settings ${j.name.replace(/ \(.*/, '')} publishes for structures drawn at print size. Undo reverts it.`;
       b.addEventListener('click', () => { this.host.useStyle(style); this.refresh(); });
       btns.append(b);
     }
@@ -202,7 +202,7 @@ export class PreflightPane {
     ex.type = 'button';
     ex.className = 'primary';
     ex.textContent = 'Export for Journal…';
-    ex.title = r.journal.vectorPreferred ? 'Save it as a PDF (shapes, not dots), as the journal asks' : `Save it as a picture at ${r.dpi} dpi, as the journal asks for this kind of figure`;
+    ex.title = r.journal.vectorPreferred ? 'Save it as a PDF (shapes, not dots), as the journal asks' : `Save it as a picture at ${r.dpi} dpi, as the journal asks for this figure type`;
     ex.addEventListener('click', () => this.host.exportFor(r));
     btns.append(ex);
     const src = document.createElement('p');

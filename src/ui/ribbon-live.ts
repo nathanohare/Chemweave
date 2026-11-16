@@ -97,7 +97,7 @@ export class RibbonLive {
     };
     bar.append(say,
       btn('Commands ▾', 'Every command, to drag into a group on the ribbon', () => this.togglePalette()),
-      btn('Customize…', 'Every setting: rename tabs and groups, make groups of your own with any command', () => { const i = this.editing!.id; this.stop(); this.hooks.customize(i); }),
+      btn('Customize…', 'Every setting: rename tabs and groups, make custom groups with any command', () => { const i = this.editing!.id; this.stop(); this.hooks.customize(i); }),
       btn('Export…', 'Save this ribbon\'s layout to a file, to load on another computer or share with the group', () => void this.exportLayout()),
       btn('Import…', 'Load a layout saved with Export', () => void this.importLayout()),
       btn('Reset to Default', 'This ribbon as it comes: every group back on its own tab, in order, and shown', () => this.save({})),
@@ -430,7 +430,7 @@ export class RibbonLive {
     // a layout saved from another ribbon goes to that ribbon
     const id = typeof o.ribbon === 'string' ? o.ribbon : info.id;
     const p = parseRibbons({ [id]: o.layout })[id];
-    if (!p) { this.hooks.flash('Nothing in that file fits this program\'s ribbons.'); return; }
+    if (!p) { this.hooks.flash('Nothing in that file fits Chemweave\'s ribbons.'); return; }
     if (id === info.id) this.save(p);
     else { this.hooks.set({ ...this.hooks.get(), [id]: p }); this.hooks.flash(`That layout is for another ribbon; it is in use there now.`); }
   }

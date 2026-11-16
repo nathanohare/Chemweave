@@ -144,7 +144,7 @@ export class SheetCompounds {
   insertMenu(x: number, y: number): void {
     const s = this.view.sheet;
     const card = s?.cell(this.view.sel.active.r, this.view.sel.active.c)?.compound;
-    if (!card) { this.host.flash('Click a compound cell first (Data > Data Types > Compound).'); return; }
+    if (!card) { this.host.flash('Click a compound cell first (Data ▸ Data Types ▸ Compound).'); return; }
     popupMenu(x, y, cardFields(card).filter(([n]) => n !== 'Name').map(([n]) => [n, () => this.insertData(n)] as [string, () => void]));
   }
 

@@ -707,7 +707,7 @@ export class SheetMode {
       case 'chart-sankey': case 'chart-treemap': case 'chart-decomp':
         if (v.sheet.dashboard) {
           if (DASH_CHART_KINDS.includes(name.slice(6) as ChartKind)) void this.dashUi.addTile('chart', name.slice(6) as ChartKind);
-          else this.host.flash('A dashboard tile can be a scatter, line, column, bar, area, pie, Sankey, treemap or decomposition tree chart. Make this kind of chart on a sheet.', 5000);
+          else this.host.flash('Dashboard tiles support scatter, line, column, bar, area, pie, Sankey, treemap and decomposition tree charts. Insert this chart type on a sheet instead.', 5000);
         } else this.charts.insert(name.slice(6) as ChartKind);
         break;
       case 'chart-gallery': this.chartGallery.toggle(this.ribbon.querySelector<HTMLElement>('[data-sh="chart-gallery"]')); break;
@@ -1371,7 +1371,7 @@ export class SheetMode {
       this.book!.recalc();
       const rows = s.filterRows()!;
       for (let r = rows.r1; r <= rows.r2; r++) s.passes(r, col, cond);
-      if (this.chem.busy) this.host.flash('Working out which rows match…', 2000);
+      if (this.chem.busy) this.host.flash('Finding which rows match…', 2000);
       await this.chem.settled();
       this.book!.recalc();
     }
@@ -1626,7 +1626,7 @@ export class SheetMode {
     v.commitEdit();
     const m = s.mergeAt(v.sel.active.r, v.sel.active.c);
     const r = m?.r1 ?? v.sel.active.r, c = m?.c1 ?? v.sel.active.c;
-    if (s.colDefs.has(c) && r >= s.colDefs.get(c)!.firstRow) { this.host.flash('This column works out a property: put structures in the column of structures.'); return; }
+    if (s.colDefs.has(c) && r >= s.colDefs.get(c)!.firstRow) { this.host.flash('This column calculates a property: put structures in the column of structures.'); return; }
     const res = await this.host.toStructure(text, wb.drawingStyle);
     if ('error' in res) { this.host.flash(res.error, 9000); return; }
     if (this.book !== wb) return;
@@ -1679,10 +1679,10 @@ export class SheetMode {
     const got = await ask('Isotope pattern', [
       { name: 'source', label: 'Compound', value: here, placeholder: 'B2, or a formula such as C10H12N2O' },
       { name: 'ion', label: 'Ion', value: '[M+H]+', suggestions: COMMON_ADDUCTS },
-      { name: 'min', label: 'List peaks down to', value: '0.5', type: 'number', unit: '% of the tallest' },
+      { name: 'min', label: 'Minimum peak abundance', value: '0.5', type: 'number', unit: '% of the tallest' },
       { name: 'found', label: 'Columns for the peaks found, with the error in ppm', value: 'true', type: 'checkbox' },
       { name: 'chart', label: 'Chart', value: 'mirror', options: ISOTOPE_CHARTS },
-    ], { ok: 'Insert', note: 'The compound is a cell with a structure, SMILES or formula, or a formula typed here. The table works itself out (ISOMZ and ISOABUND), so it follows the structure, and the ion can be changed in its cell. Type the peaks you measured into the Found columns.' });
+    ], { ok: 'Insert', note: 'The compound is a cell with a structure, SMILES or formula, or a formula typed here. The table calculates itself (ISOMZ, ISOABUND) and updates with the structure. Enter your measured peaks in the Found columns.' });
     if (!got) return;
     const text = got.source.trim();
     if (!text) { this.host.flash('Give the compound: a cell such as B2, or a formula such as C10H12N2O.', 6000); return; }
@@ -1769,7 +1769,7 @@ export class SheetMode {
     if (!choice) {
       const cols = this.structureColumns(s, region);
       if (!cols.length) {
-        this.host.flash('Click in a table with a column of structures (or SMILES) first. To start one, draw a structure in a cell (Chemistry > Structure).', 8000);
+        this.host.flash('Click in a table with a column of structures (or SMILES) first. To start one, draw a structure in a cell (Chemistry ▸ Structure).', 8000);
         return;
       }
       const got = await askProperties({ columns: cols, col: cols.some((x) => x.col === c) ? c : cols[0].col, hammett: this.hammettSetup(s, region) });
@@ -1869,7 +1869,7 @@ export class SheetMode {
       });
     });
     const names = [...props.map((p) => PROPERTIES[p.name].label), ...hm.map((w) => HAMMETT_HEADS[w])];
-    this.host.flash(`Added ${names.join(', ')}. Type over any value to replace it; Reset to Calculated puts it back.`, 6000);
+    this.host.flash(`Added ${names.join(', ')}. Type over any value to replace it; Reset to Calculated restores it.`, 6000);
   }
 
   /**
@@ -1891,7 +1891,7 @@ export class SheetMode {
       return sh;
     }, v.place());
     v.goSheet(wb.sheets.indexOf(s));
-    this.host.flash('Reagent table: type the limiting reagent\'s mmol in E2, then each reagent\'s structure (draw it, or type SMILES) and equiv. MW, mmol, mass and volume work themselves out; type over any of them to replace it.', 10000);
+    this.host.flash('Reagent table: enter the limiting reagent\'s mmol in E2, then each reagent\'s structure (draw or type SMILES) and equivalents. MW, mmol, mass and volume are calculated; type over any to override.', 10000);
   }
 
   /** Is the active cell shown as chemistry (by its look, or because its text has a formula)? */
@@ -2067,7 +2067,7 @@ export class SheetMode {
     if (isBlankDrawing(contents)) { this.host.flash('There is nothing to put in the cell.'); return; }
     const m = s.mergeAt(v.sel.active.r, v.sel.active.c);
     const r = m?.r1 ?? v.sel.active.r, c = m?.c1 ?? v.sel.active.c;
-    if (s.colDefs.has(c) && r >= s.colDefs.get(c)!.firstRow) { this.host.flash('This column works out a property: put structures in the column of structures.'); return; }
+    if (s.colDefs.has(c) && r >= s.colDefs.get(c)!.firstRow) { this.host.flash('This column calculates a property: put structures in the column of structures.'); return; }
     this.edit('Insert structure', (sh) => sh.setStructure(r, c, contents));
     this.host.flash(`Put the structure in ${cellName(r, c)}. Double-click it to change it.`);
     this.view.focus();
@@ -2136,7 +2136,7 @@ export class SheetMode {
       if (isBlankDrawing(got.drawing)) { this.host.flash('There is nothing to paste.'); return; }
       const m = s.mergeAt(r, c);
       const rr = m?.r1 ?? r, cc = m?.c1 ?? c;
-      if (s.colDefs.has(cc) && rr >= s.colDefs.get(cc)!.firstRow) { this.host.flash('This column works out a property: paste structures into the column of structures.'); return; }
+      if (s.colDefs.has(cc) && rr >= s.colDefs.get(cc)!.firstRow) { this.host.flash('This column calculates a property: paste structures into the column of structures.'); return; }
       this.edit('Paste structure', (sh) => sh.setStructure(rr, cc, got.drawing!));
       this.host.flash(`Pasted the structure into ${cellName(rr, cc)}. Double-click it to change it.`);
       return;
@@ -2253,7 +2253,7 @@ export class SheetMode {
       items.push(act('Insert Columns to the Left', () => this.insertCells('col'), 'insert-cells'), act('Delete Columns', () => this.deleteCells('col'), 'delete-cells'),
         act('Hide Columns', () => this.hide('col', true), 'hide-cols'), act('Show Hidden Columns', () => this.hide('col', false), 'unhide-cols'),
         act('Column Width…', () => void this.askSize('col')), act('Fit Width to Contents', () => { for (let c = R.c1; c <= Math.min(R.c2, s.lastCol + 1); c++) v.autoFit('col', c); }));
-      if (s.colDefs.has(R.c1)) items.push(act('Change the Column\'s Formula…', () => void this.editColumnFormula(R.c1)), act('Stop Calculating This Column (Keep the Values)', () => this.freezeColumn(R.c1)));
+      if (s.colDefs.has(R.c1)) items.push(act('Change the Column\'s Formula…', () => void this.editColumnFormula(R.c1)), act('Convert Column to Values', () => this.freezeColumn(R.c1)));
     } else {
       // in a PivotTable, its own commands first, as Excel's menu has them
       const pivot = this.pivots.contextItems(x, y);
@@ -2613,16 +2613,16 @@ export class SheetMode {
     if (cell?.structure) {
       parts.push(para('A drawn structure.'), rowOfButtons(
         button('Change…', () => this.drawStructure(r, c), 'Open the drawing tools on it (or double-click the cell)'),
-        button('Add property columns…', () => void this.propertyColumns(), 'Columns of formula, MW, HRMS m/z… worked out for every structure in this column'),
+        button('Add property columns…', () => void this.propertyColumns(), 'Columns of formula, MW, HRMS m/z… calculated for every structure in this column'),
       ));
       parts.push(this.structureTable(cell.structure, c));
     } else if (def) {
       const own = s.isOverride(r, c);
       const shifted = s.effectiveInput(r, c);
       if (own) {
-        parts.push(para(`Typed over the calculated value. The column works out ${defFormula(s, r, c)}.`, 'cp-note'), rowOfButtons(button('Reset to calculated', () => this.resetCalculated())));
+        parts.push(para(`Typed over the calculated value. The column calculates ${defFormula(s, r, c)}.`, 'cp-note'), rowOfButtons(button('Reset to calculated', () => this.resetCalculated())));
       } else {
-        parts.push(para(`Worked out by the column: ${shifted}`), para('Type in the cell to put your own value instead.', 'muted'));
+        parts.push(para(`Calculated by the column: ${shifted}`), para('Type in the cell to put a custom value instead.', 'muted'));
       }
       parts.push(rowOfButtons(button('Change the column\'s formula…', () => void this.editColumnFormula(c))));
     } else if (cell?.input?.startsWith('=')) {
@@ -2630,7 +2630,7 @@ export class SheetMode {
     } else if (cell?.input) {
       parts.push(para(typeof v === 'number' ? 'A number.' : typeof v === 'boolean' ? 'TRUE or FALSE.' : 'Text.'));
     } else {
-      parts.push(para('Empty. Type, paste, or draw a structure here (Chemistry > Structure).', 'muted'));
+      parts.push(para('Empty. Type, paste, or draw a structure here (Chemistry ▸ Structure).', 'muted'));
     }
     if (isError(v)) {
       const f = s.formulas.get(k);

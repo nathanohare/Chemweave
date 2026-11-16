@@ -275,7 +275,7 @@ export class ShowInk {
       ['laser', '◉', 'Laser pointer: a red dot that follows the mouse (Ctrl+L)'],
       ['pen', '✎', 'Pen: draw on the slide (Ctrl+P)'],
       ['highlighter', '▮', 'Highlighter: mark the slide (Ctrl+I)'],
-      ['eraser', '⌫', 'Eraser: click or drag over ink to take it off (Ctrl+E)'],
+      ['eraser', '⌫', 'Eraser: click or drag over ink to remove it (Ctrl+E)'],
       ['erase-all', '✕', 'Erase All Ink on Slide (E)'],
     ];
     for (const [id, icon, tip] of tools) {

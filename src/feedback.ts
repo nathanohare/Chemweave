@@ -72,7 +72,7 @@ export function issueUrl(issue: Issue, maxLength = 7000): { url: string; cut: bo
   const base = `${REPO_URL}/issues/new?title=${encodeURIComponent(issue.title)}&body=`;
   const full = base + encodeURIComponent(issue.body);
   if (full.length <= maxLength) return { url: full, cut: false };
-  const note = '\n\n_(The text was too long to send this way and was cut here: paste the full text from the program over this.)_';
+  const note = '\n\n_(The text was too long to send this way and was cut here: paste the full text from Chemweave over this.)_';
   const room = maxLength - base.length - encodeURIComponent(note).length;
   // cut by characters until the encoded text fits (encoding can make one character up to 12 long)
   let body = issue.body;

@@ -538,7 +538,7 @@ export class Workspace {
     if (ext === WORKSPACE.extension) {
       // a workspace lists files by where they are, so it needs its own place on disk
       if (ref.kind === 'path') await this.openWorkspace(new TextDecoder().decode(bytes), ref.path);
-      else await showError(`${name} is a workspace: open it with File > Workspace > Open Workspace in the desktop app.`);
+      else await showError(`${name} is a workspace: open it with File ▸ Workspace ▸ Open Workspace in the desktop app.`);
       return ref.kind === 'path';
     }
     const zip = bytes[0] === 0x50 && bytes[1] === 0x4b;
@@ -589,7 +589,7 @@ export class Workspace {
   /** Another program's chemistry file (molfile, RXN, MRV, KET, CML, ChemDoodle JSON) as a drawing in the style new drawings start with. */
   private openForeign(fmt: ChemFormat, text: string, name: string, ref: FileRef): boolean {
     const scene = readScene(fmt, text);
-    if (!scene) throw new Error(`it isn't a ${FORMAT_NAMES[fmt]} this program can read`);
+    if (!scene) throw new Error(`it isn't a ${FORMAT_NAMES[fmt]} Chemweave can read`);
     const style = this.hooks.newStyle?.('drawing') ?? new Doc().style;
     const { doc, stats } = sceneToDoc(scene, style, this.hooks.newPage?.() ?? null);
     const spare = this.spare();

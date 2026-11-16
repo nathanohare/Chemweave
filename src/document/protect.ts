@@ -39,10 +39,10 @@ export const PROTECT_NAMES: Record<ProtectKind, string> = {
 
 /** What is said when a change is turned away. */
 export const PROTECT_REFUSED: Record<ProtectKind, string> = {
-  readOnly: 'This document is protected: it can be read but not changed. Review > Restrict Editing stops the protection.',
-  comments: 'This document is protected: only comments can be added (Review > New Comment). Review > Restrict Editing stops the protection.',
-  trackedChanges: 'This document is protected: changes are tracked and can\'t be accepted or rejected, and formatting can\'t be changed. Review > Restrict Editing stops the protection.',
-  forms: 'This document is protected: only its form fields can be filled in (click one, or press Tab to go to the next). Review > Restrict Editing stops the protection.',
+  readOnly: 'This document is protected: it can be read but not changed. Review ▸ Restrict Editing stops the protection.',
+  comments: 'This document is protected: only comments can be added (Review ▸ New Comment). Review ▸ Restrict Editing stops the protection.',
+  trackedChanges: 'This document is protected: tracked changes can\'t be accepted or rejected and formatting can\'t be changed. To remove protection, use Review ▸ Restrict Editing.',
+  forms: 'This document is protected: only its form fields can be filled in (click one, or press Tab to go to the next). Review ▸ Restrict Editing stops the protection.',
 };
 
 /** Word's numbers for hash algorithms (w:cryptAlgorithmSid). */

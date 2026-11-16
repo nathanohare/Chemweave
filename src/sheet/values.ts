@@ -14,7 +14,7 @@ export const ERR = {
   div0: (detail = 'Divided by zero') => new CellError('#DIV/0!', detail),
   value: (detail = 'A value of the wrong kind') => new CellError('#VALUE!', detail),
   ref: (detail = 'A cell that no longer exists') => new CellError('#REF!', detail),
-  name: (detail = 'A name this program does not know') => new CellError('#NAME?', detail),
+  name: (detail = 'A name Chemweave does not know') => new CellError('#NAME?', detail),
   num: (detail = 'A number out of range') => new CellError('#NUM!', detail),
   na: (detail = 'Not available') => new CellError('#N/A', detail),
   circ: () => new CellError('#CIRC!', 'This formula uses its own result (a circular reference)'),

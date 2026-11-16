@@ -42,7 +42,7 @@ describe('a stereo label from the file', () => {
   it('shows as a chemistry warning', () => {
     const { doc } = readCdxml(file);
     doc.stereo = rules('R');
-    expect(atomWarnings(doc, doc.atoms.get(10)!).join(' ')).toContain('says (S), but the structure works out to (R)');
+    expect(atomWarnings(doc, doc.atoms.get(10)!).join(' ')).toContain('says (S), but the structure is (R)');
     doc.stereo = rules('S');
     expect(atomWarnings(doc, doc.atoms.get(10)!).join(' ')).not.toContain('works out');
   });

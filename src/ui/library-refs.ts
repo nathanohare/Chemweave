@@ -103,8 +103,8 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
   tagSel.addEventListener('change', () => { show.tag = tagSel.value; ctx.refresh(); });
   const problem = el('p', { className: 'refs-warning', role: 'status' });
   const picked = (): LibReference[] => ctx.picked().map((r) => lib.now.references.find((x) => x.id === r.id)).filter((x): x is LibReference => !!x);
-  const pdfOpen = button('Open PDF', 'Open the PDF of the reference picked', () => void openPdf());
-  const pdfAttach = button('Attach PDF…', 'Keep a PDF with the reference picked (in your library\'s folder)', () => void attachPdf());
+  const pdfOpen = button('Open PDF', 'Open the PDF of the reference selected', () => void openPdf());
+  const pdfAttach = button('Attach PDF…', 'Keep a PDF with the reference selected (in your library\'s folder)', () => void attachPdf());
 
   const update = () => {
     const data = lib.now;
@@ -169,7 +169,7 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
     const got = await ask('Collections', [
       { name: 'pick', label: 'Collection', value: show.collection && show.collection !== '-' ? show.collection : cols[0]?.id ?? '', options: [{ value: '', label: '(a new one)' }, ...cols.map((c) => ({ value: c.id, label: c.path }))] },
       { name: 'name', label: 'Name', value: '', placeholder: 'the new name (blank: unchanged)' },
-      { name: 'parent', label: 'Inside', value: '', options: [{ value: '', label: '(no collection: at the top)' }, ...cols.map((c) => ({ value: c.id, label: c.path }))] },
+      { name: 'parent', label: 'Parent collection', value: '', options: [{ value: '', label: '(no collection: at the top)' }, ...cols.map((c) => ({ value: c.id, label: c.path }))] },
       { name: 'delete', label: 'Delete this collection (its references stay in the library)', type: 'checkbox', value: 'false' },
     ], { ok: 'Apply', note: 'Make a collection, rename one, move it inside another, or delete it.' });
     if (!got) return;
@@ -233,7 +233,7 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
     const got = await ask('Sync with Zotero', [
       { name: 'library', label: 'Library', value: had?.library.replace(/^users\//, '') ?? '', placeholder: 'your user ID, or groups/12345', help: 'Your user ID is on zotero.org/settings/keys ("Your userID for use in API calls").' },
       { name: 'key', label: 'API key', value: had?.key ?? '', type: 'password', help: 'Make one at zotero.org/settings/keys, with "Allow library access" (read-only is enough). It is kept on this computer only.' },
-      ...(had ? [{ name: 'again', label: 'Bring everything in again (not only what changed)', type: 'checkbox' as const, value: 'false' }, { name: 'forget', label: 'Forget this Zotero link', type: 'checkbox' as const, value: 'false' }] : []),
+      ...(had ? [{ name: 'again', label: 'Full sync (not only changes)', type: 'checkbox' as const, value: 'false' }, { name: 'forget', label: 'Disconnect Zotero', type: 'checkbox' as const, value: 'false' }] : []),
     ], { ok: 'Sync', note: 'Brings your Zotero references, their tags and collections into your library. Zotero itself is not changed. Each sync brings in only what is new or changed since the last.' });
     if (!got) return;
     if (got.forget === 'true') { await host.zotero.write(null); ctx.flash('This computer no longer reads your Zotero library. The references brought in stay.'); return; }
@@ -257,7 +257,7 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
     el('div', { className: 'refs-filter' }, el('span', { textContent: 'Show' }), colSel, tagSel,
       button('Collections…', 'Make, rename, nest or delete collections', () => void manageCollections())),
     el('div', { className: 'refs-library-tools' },
-      button('Tags and Collections…', 'Give the references picked tags, and put them in collections', () => void tagAndFile()),
+      button('Tags and Collections…', 'Give the references selected tags, and put them in collections', () => void tagAndFile()),
       pdfAttach, pdfOpen,
       button('Sync with Zotero…', 'Bring your Zotero library\'s references, tags and collections in (Zotero\'s web API)', () => void zotero()),
       button('Library Location…', 'Where your library is kept: on this computer, or in a folder such as OneDrive to use it on other computers or share it', () => void host.location())),

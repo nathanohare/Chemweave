@@ -78,7 +78,7 @@ export function paletteRows(value: string | undefined, pick: (c: string) => void
   const edit = document.createElement('button');
   edit.type = 'button';
   edit.className = 'colour-auto palette-edit';
-  edit.textContent = palettes.length ? 'Edit palettes…' : 'Make your own palette…';
+  edit.textContent = palettes.length ? 'Edit palettes…' : 'New Custom Palette…';
   edit.addEventListener('click', () => { close(); editPalettes(); });
   box.append(edit);
   return box;
@@ -181,8 +181,8 @@ function fillDialog(d: HTMLDialogElement): void {
   const change = (next: Palette[]) => { setPalettes(next); redraw(); };
   d.replaceChildren();
   const h = document.createElement('h2');
-  h.textContent = 'Your palettes';
-  addInfo(h, 'Rows of colors shown in every color menu, in every mode. Click a color to change it; × takes it out.');
+  h.textContent = 'My palettes';
+  addInfo(h, 'Rows of colors shown in every color menu, in every mode. Click a color to change it; × removes it.');
   d.append(h);
 
   const list = document.createElement('div');

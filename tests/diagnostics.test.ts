@@ -115,7 +115,7 @@ describe('the report', () => {
   });
   it('describes an unexpected close', () => {
     const r = errorReport(new Diagnostics({ store: memoryStore() }), { closed: { started: 0, beat: 1000, version: 'Version 2', panics: ['panicked at a.rs'] } });
-    expect(r.title).toBe('The program closed unexpectedly');
+    expect(r.title).toBe('Chemweave closed unexpectedly');
     expect(r.extra).toContain('Version 2');
     expect(r.extra).toContain('panicked at a.rs');
   });

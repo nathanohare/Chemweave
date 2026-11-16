@@ -71,12 +71,12 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
     const form = document.createElement('form');
     d.append(form);
     const h = document.createElement('h2');
-    h.textContent = 'Picture format';
+    h.textContent = 'Picture Format';
     const note = document.createElement('p');
     note.className = 'muted';
     note.textContent = (o.count ?? 1) > 1
       ? `Applies to the ${o.count} selected pictures (cropping applies to the first). The originals are unchanged, so all of this can be removed later.`
-      : 'The picture itself stays as it is, so any of this can be taken off again. Saved as PowerPoint\'s and Word\'s own picture settings.';
+      : 'The picture itself stays as it is, so any of this can be removed again. Saved as PowerPoint\'s and Word\'s own picture settings.';
     const preview = document.createElement('canvas');
     preview.className = 'bg-preview pic-preview';
     const hint = document.createElement('p');
@@ -222,7 +222,7 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
     // ------------------------------------------------ buttons
     const buttons = document.createElement('p');
     buttons.className = 'ask-buttons bg-buttons';
-    const reset = button('Reset Picture', 'Take off every setting here (the crop too)', () => {
+    const reset = button('Reset Picture', 'Remove every setting here (the crop too)', () => {
       fx = {};
       crop = { l: 0, t: 0, r: 0, b: 0 };
       aspect = small ? small.width / small.height : undefined;

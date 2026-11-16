@@ -237,7 +237,7 @@ describe('citation numbers', () => {
     const t = citing([['a'], ['gone'], ['gone', 'b']], refs);
     expect([...citationTexts(t).values()]).toEqual(['1', '[?]', '2']);
     expect(brokenCitations(t)).toEqual([2, 3]);
-    expect(citationWarning(t)).toMatch(/^2 citations point to a reference that was deleted/);
+    expect(citationWarning(t)).toMatch(/^2 citations point to a deleted reference/);
     expect(citationWarning(citing([['a']], refs))).toBeNull();
   });
 

@@ -218,8 +218,8 @@ export class SheetPage {
       { name: 'right', label: 'Right margin', value: String(m.right), type: 'number', unit: 'in' },
       { name: 'header', label: 'Header (from the top)', value: String(m.header), type: 'number', unit: 'in' },
       { name: 'footer', label: 'Footer (from the bottom)', value: String(m.footer), type: 'number', unit: 'in' },
-      { name: 'centerH', label: 'Center on page across', value: String(!!ps.centerH), type: 'checkbox' },
-      { name: 'centerV', label: 'Center on page up and down', value: String(!!ps.centerV), type: 'checkbox' },
+      { name: 'centerH', label: 'Center on page horizontally', value: String(!!ps.centerH), type: 'checkbox' },
+      { name: 'centerV', label: 'Center on page vertically', value: String(!!ps.centerV), type: 'checkbox' },
       { name: 'area', label: 'Print area', value: (ps.printArea ?? []).map(rangeName).join(','), placeholder: 'Everything in use', help: 'Blocks such as A1:F40; several, split by commas, print on pages of their own.' },
       { name: 'rows', label: 'Rows to repeat at top', value: rowsText(ps.titleRows), placeholder: '$1:$1' },
       { name: 'cols', label: 'Columns to repeat at left', value: colsText(ps.titleCols), placeholder: '$A:$A' },
@@ -229,7 +229,7 @@ export class SheetPage {
     ];
     // Custom Margins… opens with the margins first
     if (focus === 'margins') fields.sort((a, b) => Number(!/margin|header|footer|center/.test(a.name + a.label.toLowerCase())) - Number(!/margin|header|footer|center/.test(b.name + b.label.toLowerCase())));
-    const got = await ask('Page Setup', fields, { ok: 'OK', note: 'Saved with the sheet in .xlsx files, as Excel\'s own page setup. Headers and footers are in File > Print > Header and Footer.' });
+    const got = await ask('Page Setup', fields, { ok: 'OK', note: 'Saved with the sheet in .xlsx files, as Excel\'s own page setup. Headers and footers are in File ▸ Print ▸ Header and Footer.' });
     if (!got) return;
     const num = (k: string, d: number, lo: number, hi: number) => { const x = Number(got[k]); return Number.isFinite(x) && got[k].trim() !== '' ? Math.min(hi, Math.max(lo, x)) : d; };
     const area = got.area.trim() ? readRanges(got.area) : [];

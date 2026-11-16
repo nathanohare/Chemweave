@@ -91,7 +91,7 @@ export class ToolboxEditor {
         <div class="tbe-side">
           <div class="tbe-pick">
             <select aria-label="Toolbox to change"></select>
-            <button type="button" data-act="new" title="A new toolbox of your own, empty, to drag tools and commands into">New</button>
+            <button type="button" data-act="new" title="A new custom toolbox, empty, to drag tools and commands into">New</button>
             <button type="button" data-act="up" title="Move this toolbox up the list (the View menu, and its place in a dock)" aria-label="Move up the list">↑</button>
             <button type="button" data-act="down" title="Move this toolbox down the list" aria-label="Move down the list">↓</button>
             <button type="button" data-act="delete" title="Delete this toolbox (Undo brings it back)">Delete</button>
@@ -122,7 +122,7 @@ export class ToolboxEditor {
         </div>
       </div>
       <div class="hk-foot tbe-foot">
-        <button type="button" data-act="undo" title="Take back the last change (Ctrl+Z)">Undo</button>
+        <button type="button" data-act="undo" title="Undo the last change (Ctrl+Z)">Undo</button>
         <button type="button" data-act="reset">Reset This Toolbox</button>
         <button type="button" data-act="restore" title="Bring back the toolboxes that come with the app that were deleted, with their own names">Restore Deleted Toolboxes</button>
         <label class="check" title="Off: the icons keep still. They always keep still when Windows (or your system) is set to show fewer animations."><input type="checkbox" data-act="jiggle" /> Jiggle icons</label>
@@ -155,7 +155,7 @@ export class ToolboxEditor {
     this.els.del.addEventListener('click', () => this.deleteBox());
     this.els.undo.addEventListener('click', () => this.takeBack());
     this.els.reset.addEventListener('click', () => this.reset());
-    this.els.restore.addEventListener('click', () => { this.change(withBoxesRestored); this.say('The toolboxes that come with the app are back in View > Toolboxes, with their own names.'); });
+    this.els.restore.addEventListener('click', () => { this.change(withBoxesRestored); this.say('The toolboxes that come with the app are back in View ▸ Toolboxes, with their own names.'); });
     this.els.jiggle.addEventListener('change', () => this.change((s) => ({ ...s, jiggle: this.els.jiggle.checked ? undefined : false })));
     this.els.cols.addEventListener('change', () => void this.resize(Number(this.els.cols.value), this.grid().rows));
     this.els.rows.addEventListener('change', () => void this.resize(this.grid().cols, Number(this.els.rows.value)));
@@ -345,7 +345,7 @@ export class ToolboxEditor {
     back.title = 'Back to the toolbox';
     back.addEventListener('click', () => { this.folder = null; this.draw(); });
     const t = document.createElement('span');
-    t.textContent = `${this.hooks.palette(this.folder)?.title ?? ''} fly-out, as it opens: drag its tools from cell to cell, in from the left, or out to take them away`;
+    t.textContent = `${this.hooks.palette(this.folder)?.title ?? ''} fly-out, as it opens: drag its tools from cell to cell, in from the left, or out to remove them`;
     crumb.append(back, t);
   }
 
@@ -486,7 +486,7 @@ export class ToolboxEditor {
 
   private openFolder(palette: string): void {
     if (this.folder) return;
-    if (!this.hooks.palette(palette)) { this.say('This fly-out’s tools come from your own templates (save one with Chemistry > Abbreviations and Templates > Save as Template).'); return; }
+    if (!this.hooks.palette(palette)) { this.say('This fly-out’s tools come from custom templates (save one with Chemistry ▸ Abbreviations and Templates ▸ Save as Template).'); return; }
     this.folder = palette;
     this.draw();
     this.focusCell(0);
@@ -567,7 +567,7 @@ export class ToolboxEditor {
   private putAt(key: string, at: number): void {
     if (!this.fits(key)) return;
     const n = placed(this.grid(), this.cellOf(key), at);
-    if (!n) { this.say('No empty cell for what is there to move to: make the grid bigger first.'); this.draw(); return; }
+    if (!n) { this.say('No empty cell for what is there to move to: make the grid larger first.'); this.draw(); return; }
     this.setGrid(n);
     this.say(`Put ${this.hooks.describe(key).label} in.`);
   }
@@ -641,7 +641,7 @@ export class ToolboxEditor {
   /** A tool dropped on a fly-out goes inside it (in its first empty cell), leaving the toolbox when it came from there. */
   private dropInto(key: string, from: number | null, palette: string): void {
     const pal = this.hooks.palette(palette);
-    if (!pal) { this.say('That fly-out holds your own templates only.'); return; }
+    if (!pal) { this.say('That fly-out holds custom templates only.'); return; }
     const fg = this.hooks.flyGrid(palette);
     const tool = key.slice(5);
     if (fg.cells.includes(tool)) { this.say(`${this.hooks.describe(key).label} is in that fly-out already.`); return; }

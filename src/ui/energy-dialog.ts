@@ -254,7 +254,7 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
         dash.value = p.dash ?? '';
         th.append(name, col, dash);
         if (paths.length > 1) {
-          const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Take out this pathway' });
+          const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Remove this pathway' });
           del.addEventListener('click', () => {
             read(); paths.splice(j, 1); for (const r of rows) r.splice(j, 1);
             brackets = brackets.filter((b) => b.path !== j).map((b) => (b.path > j ? { ...b, path: b.path - 1 } : b));
@@ -308,7 +308,7 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
           tr.insertCell().append(g);
           if (structure) tr.insertCell().append(structureCell(i, j));
         });
-        const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Take out this species' });
+        const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Remove this species' });
         del.addEventListener('click', () => {
           read();
           if (rows.length <= 2) return;
@@ -344,7 +344,7 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
         const a = g(b.from), z = g(b.to);
         out.textContent = a === null || z === null || b.from === b.to ? 'pick two species with energies'
           : bracketText({ quantity: $<HTMLSelectElement>('select[name=quantity]').value }, { label: name(b.from, b.path), g: a }, { label: name(b.to, b.path), g: z }, (v) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(Number($<HTMLInputElement>('input[name=digits]').value) || 0)).replace('^‡', '‡');
-        const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Take out this bracket' });
+        const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Remove this bracket' });
         del.setAttribute('aria-label', `Take out bracket ${n + 1}`);
         del.addEventListener('click', () => { brackets.splice(n, 1); drawBrackets(); redraw(); });
         li.append(' ', out, ' ', del);

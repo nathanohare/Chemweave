@@ -64,7 +64,7 @@ export interface Adduct {
 export function parseAdduct(text: string): Adduct {
   const s = text.replace(/\s+/g, '').replace(/[−–]/g, '-').replace(/[·•]$/, '');
   const m = /^\[?(\d*)M((?:[+-]\d*[A-Za-z][A-Za-z0-9]*)*)\]?(\d*)([+-]?)\.?$/.exec(s);
-  if (!m) throw new Error(`"${text}" is not an adduct this program can read. Write it like [M+H]+, [M+Na]+ or [M-H]-.`);
+  if (!m) throw new Error(`"${text}" is not an adduct Chemweave can read. Write it like [M+H]+, [M+Na]+ or [M-H]-.`);
   const n = m[1] ? Number(m[1]) : 1;
   const parts: Adduct['parts'] = [];
   let ionCharge = 0;
@@ -72,7 +72,7 @@ export function parseAdduct(text: string): Adduct {
     const sign = p[1] === '+' ? 1 : -1;
     const count = p[2] ? Number(p[2]) : 1;
     const mass = formulaMass(p[3]);
-    if (mass === null) throw new Error(`"${p[3]}" in ${text} is not a formula this program can weigh.`);
+    if (mass === null) throw new Error(`"${p[3]}" in ${text} is not a formula Chemweave can weigh.`);
     parts.push({ sign, count, formula: p[3], mass });
     ionCharge += sign * count * (ION_CHARGE[p[3]] ?? 0);
   }

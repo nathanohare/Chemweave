@@ -93,7 +93,7 @@ export function editTheme(t: SlideTemplate, master: Master, size: SlideSize, tit
 
     section('Title slide');
     const ownTitle = check(!!t.titleSlide);
-    row('Own (dark) colors', ownTitle);
+    row('Custom (dark) colors', ownTitle);
     const tsBg = colour(t.titleSlide?.background ?? '#1d3557'), tsTitle = colour(t.titleSlide?.titleColor ?? '#ffffff'), tsText = colour(t.titleSlide?.textColor ?? '#d9e2ec');
     const tsRows = [row('Background', tsBg), row('Title color', tsTitle), row('Text color', tsText)];
 

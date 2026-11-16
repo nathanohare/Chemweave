@@ -182,7 +182,7 @@ export function showLabCalculator(start: CalcStart = {}): Promise<void> {
     const v2 = box('Final volume (V₂)', VOL);
     const dGroup = el('div', 'calc-group');
     dGroup.append(c1.row, v1.row, c2.row, v2.row);
-    const dNote = el('p', 'muted small', 'Leave one box empty and it is worked out (c₁V₁ = c₂V₂).');
+    const dNote = el('p', 'muted small', 'Leave one box empty and it is calculated (c₁V₁ = c₂V₂).');
     dNote.setAttribute('role', 'status');
     dl.append(dGroup, dNote);
     const dBoxes = { c1, v1, c2, v2 };

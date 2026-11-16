@@ -92,10 +92,10 @@ export function editReference(start: Reference, title: string, style: CiteStyle 
     for (const [k, v] of Object.entries(REF_TYPES)) type.add(new Option(v, k, false, k === start.type));
     inputs.set('type', type);
     row('Type', type);
-    const authors = el('textarea', { rows: 4, value: start.authors.join('\n'), placeholder: 'One per line, last name first:\nFulmer, Gregory R.\nMiller, Alexander J. M.' });
+    const authors = el('textarea', { rows: 4, value: start.authors.join('\n'), placeholder: 'One per line, Last, First: Fulmer, Gregory R.' });
     authors.setAttribute('autofocus', '');
     inputs.set('authors', authors);
-    row('Authors', authors, undefined, 'One author per line, as "Last, First" (initials are worked out). A name without a comma, such as a group, is printed as typed.');
+    row('Authors', authors, undefined, 'One author per line, as "Last, First" (initials are derived). A name without a comma, such as a group, is printed as typed.');
     const text = (key: keyof Reference, label: string, placeholder = '', tip?: string, extra?: HTMLElement) => {
       const i = el('input', { type: 'text', value: String(start[key] ?? ''), placeholder });
       i.spellcheck = false;
@@ -122,7 +122,7 @@ export function editReference(start: Reference, title: string, style: CiteStyle 
     const preview = el('p', { className: 'ref-preview' });
     const own = el('input', { type: 'checkbox', checked: start.typed !== undefined });
     const typed = el('textarea', { rows: 3, value: start.typed ?? '' });
-    const reset = button('Reset to Automatic', 'Go back to the text worked out from the boxes above', () => { own.checked = false; sync(); });
+    const reset = button('Reset to Automatic', 'Go back to the text generated from the boxes above', () => { own.checked = false; sync(); });
     const ownRow = el('label', { className: 'ref-own' }, own, el('span', { textContent: 'Type my own text for this reference (it replaces the automatic text, in every style)' }));
     form.append(preview, ownRow, typed, el('div', { className: 'ref-reset' }, reset));
     const value = (): Reference => {
@@ -233,7 +233,7 @@ type Control = { key: keyof CiteFormat; label: string; title?: string } & (
 const STYLE_GROUPS: [string, Control[]][] = [
   ['In the text', [
     { key: 'cite', label: 'Citation numbers', kind: 'select', options: [['super', 'Superscript ¹⁻³'], ['super-square', 'Superscript in brackets ^[1–3]'], ['square', '[1–3] on the line'], ['round', '(1–3) on the line']] },
-    { key: 'ranges', label: 'Runs as ranges (1–3, not 1,2,3)', kind: 'check' },
+    { key: 'ranges', label: 'Collapse consecutive numbers into ranges (1–3, not 1,2,3)', kind: 'check' },
   ]],
   ['The list', [
     { key: 'label', label: 'Number before each entry', kind: 'select', options: [['(n)', '(1)'], ['[n]', '[1]'], ['n.', '1.'], ['n', '1']] },
@@ -264,7 +264,7 @@ const STYLE_GROUPS: [string, Control[]][] = [
     { key: 'doiForm', label: 'DOI written as', kind: 'select', options: [['DOI: ', 'DOI: 10.…'], ['DOI ', 'DOI 10.…'], ['doi:', 'doi:10.…'], ['https://doi.org/', 'https://doi.org/10.…']] },
   ]],
   ['Theses', [
-    { key: 'thesisWord', label: 'Called', kind: 'select', options: [['Ph.D. Thesis', 'Ph.D. Thesis'], ['PhD thesis', 'PhD thesis']] },
+    { key: 'thesisWord', label: 'Name', kind: 'select', options: [['Ph.D. Thesis', 'Ph.D. Thesis'], ['PhD thesis', 'PhD thesis']] },
     { key: 'thesisYearBrackets', label: 'Year in brackets', kind: 'check' },
   ]],
 ];
@@ -509,7 +509,7 @@ export class ReferencesDialog {
     this.styleSel.addEventListener('change', () => this.setStyle(this.styleSel.value, {}));
     this.styleNote = el('span', { className: 'muted' });
     this.managerSel = el('select', { id: 'refs-manager' });
-    this.managerSel.add(new Option('Chemweave only (numbers Word shows as they are)', ''));
+    this.managerSel.add(new Option('Chemweave only (Word shows the numbers as plain text)', ''));
     for (const [k, name] of Object.entries(MANAGERS)) this.managerSel.add(new Option(name, k));
     this.managerSel.addEventListener('change', () => {
       const h = this.holder();
@@ -567,12 +567,12 @@ export class ReferencesDialog {
       this.copyInto(tr.dataset.group, this.pickedRefs());
     });
     d.append(
-      el('div', { className: 'refs-head' }, withInfo(el('h2', { textContent: 'References' }), 'Your library (collections, tags, PDFs) plus the references in each open file, each in its own group. Documents cite them (References > Insert Citation); presentations show them on slides (Insert > References on Slide). Copy between library and files with Copy To, drag and drop, or Ctrl+C/Ctrl+V.'), this.search),
+      el('div', { className: 'refs-head' }, withInfo(el('h2', { textContent: 'References' }), 'Your library (collections, tags, PDFs) plus the references in each open file, each in its own group. Documents cite them (References ▸ Insert Citation); presentations show them on slides (Insert ▸ References on Slide). Copy between library and files with Copy To, drag and drop, or Ctrl+C/Ctrl+V.'), this.search),
       this.hint,
       el('div', { className: 'ask-row refs-style' }, el('label', { htmlFor: 'refs-style', textContent: 'Citation style' }), this.styleSel,
         button('Style Options…', 'Change any detail of the style: authors, "and", et al., title, year, volume, issue, article numbers, DOI…', () => void this.styleOptions())),
       el('p', { className: 'refs-style-note' }, el('span', { textContent: 'For ' }), this.groupLabel, el('span', { textContent: '. ' }), this.styleNote),
-      (this.managerRow = el('div', { className: 'ask-row refs-style', title: 'How citations are saved in the Word file: as this program\'s own fields, or as Zotero\'s, Mendeley\'s or EndNote\'s, so that program can go on managing them in Word. Files from those programs open with their citations live and choose this for you.' },
+      (this.managerRow = el('div', { className: 'ask-row refs-style', title: 'How citations are stored in the Word file: as Chem Illustrator fields, or as Zotero, Mendeley or EndNote fields so that program can keep managing them. Set automatically for files from those programs.' },
         el('label', { htmlFor: 'refs-manager', textContent: 'Save citations for' }), this.managerSel)),
       this.extra,
       this.warning,
@@ -586,7 +586,7 @@ export class ReferencesDialog {
           button('Paste BibTeX / RIS…', 'Paste the text of BibTeX or RIS references', () => void this.pasteText())),
         el('span', { className: 'refs-edit' },
           this.copyTo,
-          button('Edit…', 'Change the reference picked (or double-click it)', () => void this.edit()),
+          button('Edit…', 'Change the reference selected (or double-click it)', () => void this.edit()),
           button('Delete…', 'Delete the references picked', () => void this.remove()),
           button('Close', '', () => d.close(), true))),
     );
@@ -618,7 +618,7 @@ export class ReferencesDialog {
     const cur = this.host.current();
     this.hint.textContent = !holders.length
       ? 'No open file keeps references yet. Open or make a document or a presentation to add references to it.'
-      : !cur ? `${this.host.currentKind?.() ?? 'This file'} keeps no reference list of its own: Insert > Reference… puts any of these on it as formatted text.` : '';
+      : !cur ? `${this.host.currentKind?.() ?? 'This file'} keeps no reference list of its own: Insert ▸ Reference… puts any of these on it as formatted text.` : '';
     this.hint.hidden = !this.hint.textContent;
     const q = this.search.value.trim().toLowerCase();
     const rows: HTMLTableRowElement[] = [];
@@ -631,7 +631,7 @@ export class ReferencesDialog {
         el('th', { colSpan: 4, textContent: `${fold ? '▸' : '▾'} ${g.name}  ·  ${g.kind}${g.key === cur ? ' (showing)' : ''}  ·  ${all.length} reference${all.length === 1 ? '' : 's'}${hidden ? ` (${all.length - hidden} shown)` : ''}` }));
       const note = g.note?.();
       head.dataset.group = g.key;
-      head.title = (note ? note + '\n' : '') + (fold ? 'Click to show these references' : 'Click to fold these references away (and to add to this group)');
+      head.title = (note ? note + '\n' : '') + (fold ? 'Click to show these references' : 'Click to collapse these references (and to add to this group)');
       rows.push(head);
       if (fold) continue;
       const uses = g.uses();

@@ -40,7 +40,7 @@ export function newmanSettings(now: NewmanPrefs, preview: (look: NewmanLook, kin
         </div>
         <div class="ns-at"><canvas class="ns-preview" role="img" aria-label="Preview"></canvas></div>
       </div>
-      <h3>Look</h3>
+      <h3>Style</h3>
       <label class="ask-row"><span>Draw as</span><select name="kind"><option value="newman">Newman</option><option value="sawhorse">Sawhorse</option></select></label>
       <label class="ask-row"><span>Circle size</span><input name="radius" type="number" step="0.02" min="0.2" max="2" /><span class="muted">× bond length</span></label>
       <label class="ask-row"><span>Bonds reach</span><input name="reach" type="number" step="0.02" min="0.1" max="3" /><span class="muted">× the circle's radius past it</span></label>

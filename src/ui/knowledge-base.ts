@@ -159,8 +159,8 @@ const DRAW_TOOLS: [string, string][] = [
   ['ring-benzene', 'Benzene ring'], ['ring-6', 'Cyclohexane ring'], ['ring-5', 'Cyclopentane ring'], ['chain', 'Chain'], ['eraser', 'Eraser'],
 ];
 const DRAW_ATOMS: [string, number][] = [['C', 6], ['H', 1], ['N', 7], ['O', 8], ['S', 16], ['P', 15], ['F', 9], ['Cl', 17], ['Br', 35], ['I', 53]];
-const DRAW_INFO = 'Draw the structure, or the part of one, to look for: with these buttons, the toolbox and the usual keys (point at an atom and type N, O, Cl…). Search finds that compound, then every compound containing it, in every table. The drawing is kept: Draw… opens it again to change it. Use Selected starts from the structure selected in the drawing.';
-const GROUP_INFO = 'Draw the group to look for out from the attachment point (the wavy line), as the Structure column draws them: point at the carbon and type O, N, Cl…, or draw bonds on from it. Search finds that group, then every group containing it. With no attachment point, a drawing is searched as the whole substituted benzene. The drawing is kept: Draw… opens it again to change it.';
+const DRAW_INFO = 'Draw the structure or substructure to find, using these buttons, the toolbox and the usual keys (point at an atom and type N, O, Cl…). Search finds that compound, then every compound containing it, in every table. Draw… reopens the drawing; Use Selected starts from the structure selected in the drawing.';
+const GROUP_INFO = 'Draw the group outward from the attachment point (the wavy line): point at the carbon and type O, N, Cl…, or draw bonds from it. Search finds that group, then every group containing it. Without an attachment point, the drawing is searched as a whole substituted benzene. Draw… reopens the drawing.';
 
 export { looksLikeSmiles };
 
@@ -265,7 +265,7 @@ export class KnowledgeBaseWindow {
     this.wrap.addEventListener('scroll', () => { const w = this.wrap; if (w.scrollTop + w.clientHeight > w.scrollHeight - 600) this.moreRows?.(); }, { passive: true });
     this.sources = el('p', { className: 'muted kb-sources' });
     this.count = el('span', { className: 'muted' });
-    this.removeBtn = button('Remove Table…', 'Remove the imported table showing (only from this computer)', () => void this.removeImported());
+    this.removeBtn = button('Remove Table…', 'Remove the imported table shown (from this computer only)', () => void this.removeImported());
     this.findBtn = this.host.drawing ? button('Draw…', 'Draw the structure to search for: that compound, then every compound containing it', () => this.openDraw())
       : this.host.selected ? button('Use Selected', 'Search for the structure selected in the drawing: that compound, then every compound containing it', () => void this.useSelected()) : null;
     d.append(
@@ -276,7 +276,7 @@ export class KnowledgeBaseWindow {
         el('div', { className: 'kb-main' }, this.wrap, this.sources)),
       el('div', { className: 'refs-buttons' },
         el('span', { className: 'refs-add' },
-          button('Import Table…', 'Add a table of your own from a CSV or tab-separated file (or paste one from a spreadsheet). It is kept on this computer only', () => void this.importTable()),
+          button('Import Table…', 'Add a custom table from a CSV or tab-separated file (or paste one from a spreadsheet). It is kept on this computer only', () => void this.importTable()),
           this.removeBtn),
         el('span', { className: 'refs-edit' },
           this.count,
@@ -450,7 +450,7 @@ export class KnowledgeBaseWindow {
     this.picked = {};
     this.search.value = r.name;
     this.searchChanged();
-    h.flash(`${r.name}: rated from PubChem's open records. It stays in the table until the program closes.`, 6000);
+    h.flash(`${r.name}: rated from PubChem's open records. It stays in the table until Chemweave closes.`, 6000);
   }
 
   /**
@@ -804,7 +804,7 @@ export class KnowledgeBaseWindow {
       // (a table whose groups start folded keeps the groups opened: none when all are folded)
       const all = (fold: boolean) => { this.folded.set(t.id, new Set(fold === !t.groupInline ? t.rows.map((r) => String(r[t.group!] ?? '')) : [])); this.showTable(); };
       this.filters.append(el('span', { className: 'kb-fold-all' },
-        button('Collapse All', 'Fold every group to its heading', () => all(true)),
+        button('Collapse All', 'Collapse All Groups', () => all(true)),
         button('Expand All', 'Open every group', () => all(false))));
     }
     this.filters.hidden = !this.filters.childElementCount;
@@ -845,7 +845,7 @@ export class KnowledgeBaseWindow {
     const table = el('table', { className: 'refs-table kb-table' + (t.picture ? ' kb-pictures' : '') + (t.fit ? ' kb-fit' : '') }, el('thead', {}, el('tr', {}, ...cols.map((c) => this.header(c, id, cols.map((x) => x.key))))), body);
     if (!rows.length) {
       const q = this.search.value.trim();
-      const empty = el('p', { className: 'muted kb-empty', textContent: this.lookingInside ? `Looking for compounds containing ${q}…` : this.queryCanon ? `Nothing in ${t.title} is or contains ${q}.` : q ? `Nothing in ${t.title} matches “${q}”.` : 'This table is empty.' });
+      const empty = el('p', { className: 'muted kb-empty', textContent: this.lookingInside ? `Looking for compounds containing ${q}…` : this.queryCanon ? `Nothing in ${t.title} matches or contains ${q}.` : q ? `Nothing in ${t.title} matches “${q}”.` : 'This table is empty.' });
       // a compound the table doesn't have can be rated live from PubChem
       const live = q && t.id === 'reagent-safety' && this.host.lookUpSafety && !Object.values(this.picked).some(Boolean)
         ? [button(`Rate “${q.length > 40 ? q.slice(0, 39) + '…' : q}” from PubChem`, 'Look the compound up on PubChem and rate it with the same rules, from the same open sources (needs the internet)', () => void this.rateLive(q))]
@@ -889,7 +889,7 @@ export class KnowledgeBaseWindow {
     th.tabIndex = 0;
     th.setAttribute('role', 'button');
     th.setAttribute('aria-expanded', String(!closed));
-    th.title = closed ? `Show the ${name} rows` : `Fold the ${name} rows away`;
+    th.title = closed ? `Expand the ${name} rows` : `Collapse the ${name} rows`;
     const toggle = () => {
       const set = new Set(this.folded.get(t.id) ?? []);
       if (set.has(name)) set.delete(name); else set.add(name);
@@ -1057,8 +1057,8 @@ export class KnowledgeBaseWindow {
   private async importTable(): Promise<void> {
     const how = await ask('Import Table', [
       { name: 'title', label: 'Name', value: '', placeholder: 'NMR impurities (my copy)' },
-      { name: 'paste', label: 'Or paste the table', value: '', type: 'textarea', placeholder: 'Columns separated by tabs or commas; the first line names them', help: 'Leave this empty to pick a CSV or tab-separated file. Columns named 1H or 13C (ppm) are searched as chemical shifts.' },
-    ], { ok: 'Import', note: 'A table of your own, kept on this computer only and never shared with the program. The first line names the columns.' });
+      { name: 'paste', label: 'Or paste the table', value: '', type: 'textarea', placeholder: 'Tab- or comma-separated; first line is the header', help: 'Leave this empty to pick a CSV or tab-separated file. Columns named 1H or 13C (ppm) are searched as chemical shifts.' },
+    ], { ok: 'Import', note: 'A custom table, kept on this computer only and never shared with Chemweave. The first line names the columns.' });
     if (!how) return;
     let text = how.paste.trim(), name = how.title.trim();
     if (!text) {

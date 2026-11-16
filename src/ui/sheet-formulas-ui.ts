@@ -126,7 +126,7 @@ export class SheetFormulas {
     form.append(el('h2', undefined, 'Insert Function'));
     const search = el('input');
     search.type = 'search';
-    search.placeholder = 'What should it work out? (e.g. "days between dates", "molar mass", SUMIF)';
+    search.placeholder = 'Describe what to calculate (e.g. “days between dates”, “molar mass”, SUMIF)';
     const cat = el('select');
     cat.add(new Option('All', ''));
     for (const c of CATEGORIES) cat.add(new Option(c, c, false, c === category));

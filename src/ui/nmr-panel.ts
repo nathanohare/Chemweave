@@ -148,8 +148,8 @@ function chip(h: ShiftHit | null, wide: number): string {
   const loose = h.spread > wide || h.n === 0;
   const pmv = h.spread.toFixed(wide > 1 ? 1 : 2);
   const tip = `Expected error ±${pmv} ppm. ` + (h.n
-    ? `${h.n} measured atom${h.n === 1 ? '' : 's'} share${h.n === 1 ? 's' : ''} this atom's surroundings ${h.radius} bond${h.radius === 1 ? '' : 's'} out.`
-    : 'No measured atom shares its surroundings.');
+    ? `${h.n} measured atom${h.n === 1 ? '' : 's'} share${h.n === 1 ? 's' : ''} this atom's environment out to ${h.radius} bond${h.radius === 1 ? '' : 's'}.`
+    : 'No measured atom has a matching environment.');
   return `<span class="nmr-src${loose ? ' loose' : ''}" title="${esc(tip)}">${loose ? '~' : h.n > 99 ? '99+' : h.n}</span>`;
 }
 
@@ -418,11 +418,11 @@ export class NmrPanel {
       d.className = 'nmr';
       d.dataset.item = String(i);
       d.open = nmrAutoPredict() && this.open;
-      d.innerHTML = `<summary>NMR (predicted) <span class="info-icon" tabindex="0" role="img" title="Predicted by networks trained on measured shifts, blended with shifts of atoms with the same surroundings (NMRShiftDB2 and CC BY journal data). ± is the expected error. The chip is how many measured atoms share the atom's surroundings; ~ means a less certain prediction; M means this structure's own measured shift. Marker numbers on the drawing match the Atoms column." aria-label="About predicted NMR">i</span>
+      d.innerHTML = `<summary>NMR (predicted) <span class="info-icon" tabindex="0" role="img" title="Predicted by neural networks trained on measured shifts, blended with shifts of atoms in the same environment (NMRShiftDB2 and CC BY journal data). ± is the expected error. The chip counts measured atoms with a matching environment; ~ marks a less certain prediction; M marks this structure's own measured shift. Marker numbers on the drawing match the Atoms column." aria-label="About predicted NMR">i</span>
         <span class="nmr-nuc" role="group" aria-label="Nucleus"${this.report ? ' hidden' : ''}>${(['1H', '13C', '19F', '31P'] as const).map((n) => `<button type="button" data-nuc="${n}" aria-pressed="${n === this.nuc}"${n === '19F' || n === '31P' ? ' hidden' : ''}><sup>${n.slice(0, -1)}</sup>${n.slice(-1)}</button>`).join('')}</span>
         <select class="nmr-solvent" title="Solvent">${NMR_SOLVENTS.map((s) => `<option value="${s}"${s === this.solvent ? ' selected' : ''}>${s}</option>`).join('')}</select></summary>
         <div class="nmr-body"><p class="muted small">Loading…</p></div>
-        <div class="an-buttons"><button type="button" class="nmr-check" aria-pressed="false" title="Compare a measured peak list (pasted as an SI writes it) with the prediction">Check Data</button><button type="button" class="nmr-copy" title="Copy the predicted 1H and 13C lines as an SI writes them">Copy as SI Text</button><button type="button" class="nmr-view" aria-pressed="${this.report}" title="Show the predicted 1H and 13C lines as a journal prints them">Peak Report</button><button type="button" class="nmr-marks" aria-pressed="${this.marks}" title="Show the predictions on the drawing">Show on Drawing</button>${this.host.saveSpectra ? '<button type="button" class="nmr-save" title="Keep the predicted peak report, and a pasted measured one, with this compound in the Compound Library">Save to Library</button>' : ''}<select class="nmr-mode" title="What Show on Drawing shows: shifts by each atom, atom numbers matching the list, or confidence dots (green: small expected error; amber: larger; red: large, or no similar measured atoms)">${(['shifts', 'numbers', 'confidence'] as const).map((m) => `<option value="${m}"${m === this.mode ? ' selected' : ''}>${{ shifts: 'Shifts', numbers: 'Atom Numbers', confidence: 'Confidence' }[m]}</option>`).join('')}</select></div>`;
+        <div class="an-buttons"><button type="button" class="nmr-check" aria-pressed="false" title="Compare a measured peak list (pasted in SI format) with the prediction">Check Data</button><button type="button" class="nmr-copy" title="Copy the predicted 1H and 13C data in SI format">Copy as SI Text</button><button type="button" class="nmr-view" aria-pressed="${this.report}" title="Show the predicted 1H and 13C data in journal format">Peak Report</button><button type="button" class="nmr-marks" aria-pressed="${this.marks}" title="Show the predictions on the drawing">Show on Drawing</button>${this.host.saveSpectra ? '<button type="button" class="nmr-save" title="Keep the predicted peak report, and a pasted measured one, with this compound in the Compound Library">Save to Library</button>' : ''}<select class="nmr-mode" title="What Show on Drawing shows: shifts by each atom, atom numbers matching the list, or confidence dots (green: small expected error; amber: larger; red: large, or no similar measured atoms)">${(['shifts', 'numbers', 'confidence'] as const).map((m) => `<option value="${m}"${m === this.mode ? ' selected' : ''}>${{ shifts: 'Shifts', numbers: 'Atom Numbers', confidence: 'Confidence' }[m]}</option>`).join('')}</select></div>`;
       const buttons = [...frag.querySelectorAll(':scope > .an-buttons')].pop();
       frag.insertBefore(d, buttons ?? null);
       d.addEventListener('toggle', () => { this.open = d.open; if (d.open) void this.fill(i, d, seq); else if (this.marks) this.host.redraw(); });
@@ -599,8 +599,8 @@ export class NmrPanel {
     btn?.setAttribute('aria-pressed', String(!!st && (st.editing || st.results.size > 0)));
     if (!st) return '';
     if (st.editing) {
-      return `<div class="ck-box"><textarea spellcheck="false" aria-label="Measured peak list" placeholder="Paste a peak list as an SI writes it: 1H NMR (400 MHz, CDCl3) δ 7.30 (d, J = 8.7 Hz, 2H), …">${esc(st.text)}</textarea>`
-        + `<div class="ck-row"><span class="ck-read">${esc(this.readNote(st))}</span><span class="sp">${this.host.savedReports ? '<button type="button" class="ck-lib" title="Fill in the measured peak report saved with this compound in the Compound Library">From Library</button>' : ''}<button type="button" class="ck-run primary">Check</button><button type="button" class="ck-cancel">Cancel</button></span></div></div>`;
+      return `<div class="ck-box"><textarea spellcheck="false" aria-label="Measured peak list" placeholder="Paste a peak list in SI format: 1H NMR (400 MHz, CDCl3) δ 7.30 (d, J = 8.7 Hz, 2H), …">${esc(st.text)}</textarea>`
+        + `<div class="ck-row"><span class="ck-read">${esc(this.readNote(st))}</span><span class="sp">${this.host.savedReports ? '<button type="button" class="ck-lib" title="Load the measured peak report saved with this compound in the Compound Library">From Library</button>' : ''}<button type="button" class="ck-run primary">Check</button><button type="button" class="ck-cancel">Cancel</button></span></div></div>`;
     }
     const nucs: CheckNucleus[] = this.report ? ['1H', '13C'] : isCheckNuc(this.nuc) ? [this.nuc] : [];
     const sev = { ok: 'ck-ok', warn: 'ck-warn', bad: 'ck-bad', info: 'ck-info' } as const;
@@ -610,12 +610,12 @@ export class NmrPanel {
       if (!r) continue;
       for (const f of [...(r.note ? [{ severity: 'info' as const, text: r.note }] : []), ...r.res.findings]) {
         const row = 'row' in f && f.row !== undefined && r.basis === this.shown.get(i)?.rows ? ` data-row="${r.rowIdx[f.row]}"` : '';
-        const tools = first ? '<span class="ck-tools"><button type="button" class="ck-edit" title="Change the peak list">Edit</button><button type="button" class="ck-clear" aria-label="Clear the check" title="Clear the check">×</button></span>' : '';
+        const tools = first ? '<span class="ck-tools"><button type="button" class="ck-edit" title="Change the peak list">Edit</button><button type="button" class="ck-clear" aria-label="Clear the comparison" title="Clear the check">×</button></span>' : '';
         html += `<li${row}><span class="ck-dot ${sev[f.severity]}"></span><span>${nucs.length > 1 && f === r.res.findings[0] ? `<sup>${n.slice(0, -1)}</sup>${n.slice(-1)}: ` : ''}${esc(f.text)}</span>${tools}</li>`;
         first = false;
       }
     }
-    if (!html) return `<ul class="ck-list"><li><span class="ck-dot ck-info"></span><span>No ${this.nuc} list was in the pasted text.</span><span class="ck-tools"><button type="button" class="ck-edit">Edit</button><button type="button" class="ck-clear" aria-label="Clear the check" title="Clear the check">×</button></span></li></ul>`;
+    if (!html) return `<ul class="ck-list"><li><span class="ck-dot ck-info"></span><span>No ${this.nuc} list was in the pasted text.</span><span class="ck-tools"><button type="button" class="ck-edit">Edit</button><button type="button" class="ck-clear" aria-label="Clear the comparison" title="Clear the check">×</button></span></li></ul>`;
     return `<ul class="ck-list">${html}</ul>`;
   }
 
@@ -675,7 +675,7 @@ export class NmrPanel {
       const solvent = list.solvent ?? this.solvent;
       const known = await knownPeaks(solvent, list.nuc, await this.host.importedTables?.().catch(() => null) ?? null);
       const res = checkData(list, rows, known);
-      const note = list.solvent && list.solvent.toLowerCase() !== this.solvent.toLowerCase() ? `The list is in ${list.solvent}; the prediction is for ${this.solvent}. Pick ${list.solvent} above to compare like with like.` : undefined;
+      const note = list.solvent && list.solvent.toLowerCase() !== this.solvent.toLowerCase() ? `The list is in ${list.solvent}; the prediction is for ${this.solvent}. Select ${list.solvent} above so they match.` : undefined;
       st.results.set(list.nuc, { list, res, pred: rows, rowIdx, basis: s.rows, note });
     }
     st.editing = false;
@@ -855,7 +855,7 @@ export class NmrPanel {
       data: (sf, q) => this.dataFor(this.winItem, sf, q, this.specNuc(this.winItem)),
       hover: (row) => this.hoverRow(this.winItem, row, 'window'),
       copyPicture: (png) => (this.host.copyPicture ? this.host.copyPicture(png) : navigator.clipboard.write([new ClipboardItem({ 'image/png': new Blob([png as Uint8Array<ArrayBuffer>], { type: 'image/png' }) })])),
-      putOnCanvas: (png) => { if (this.host.placePicture) this.host.placePicture(png); else this.host.flash('Pictures cannot be put on this page.'); },
+      putOnCanvas: (png) => { if (this.host.placePicture) this.host.placePicture(png); else this.host.flash('Pictures can\'t be placed on this page.'); },
       flash: (t) => this.host.flash(t),
       closed: () => {},
     });

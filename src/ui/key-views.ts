@@ -86,7 +86,7 @@ export function askKeyViews(o: KeyViewsOptions): Promise<KeyViewsResult | null> 
         thumb.addEventListener('click', go);
         thumb.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
         const n = Object.assign(document.createElement('span'), { className: 'kv-n', textContent: String(i + 1) });
-        const del = Object.assign(document.createElement('button'), { type: 'button', className: 'kv-del', textContent: '×', title: 'Take out this view' });
+        const del = Object.assign(document.createElement('button'), { type: 'button', className: 'kv-del', textContent: '×', title: 'Remove this view' });
         del.setAttribute('aria-label', `Take out key view ${i + 1}`);
         del.addEventListener('click', () => { views.splice(i, 1); picked = null; drawStrip(); });
         const left = Object.assign(document.createElement('button'), { type: 'button', className: 'kv-move', textContent: '◀', title: 'Play this view earlier', disabled: i === 0 });
