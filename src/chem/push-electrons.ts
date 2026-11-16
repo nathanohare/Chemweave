@@ -18,7 +18,7 @@ import { groupNumber } from './electrons';
 import { headEnd, isAtomSymbol, pairOwner, pushEndAt, symbolPin, symbolSpot, tailEnd, type PushEnd } from './mechanism';
 import { sproutDir } from './chemgeom';
 import { plainMeasure } from './reaction';
-import { atomWarnings } from './warnings';
+import { atomWarnings, isTooMany } from './warnings';
 
 /** Something wrong (or worth a second look) with the arrows: what, and the arrows, atoms and bonds it is about. */
 export interface PushIssue {
@@ -412,7 +412,7 @@ export function productDrawing(doc: Doc, reading: PushReading): Drawing | null {
   for (const id of touched) {
     const a = out.atoms.get(id);
     if (!a || !a.label || doc.atoms.get(id)!.label !== a.label) continue;
-    const w = atomWarnings(out, a).find((t) => t.startsWith('Too many bonds'));
+    const w = atomWarnings(out, a).find(isTooMany);
     if (w && !reading.issues.some((i) => i.atoms.includes(id))) reading.issues.push({ level: 'error', text: w, arrows: reading.steps.filter((s) => endAtoms(doc, s.from).includes(id) || endAtoms(doc, s.to).includes(id)).map((s) => s.arrow), atoms: [id], bonds: [] });
   }
   return out;

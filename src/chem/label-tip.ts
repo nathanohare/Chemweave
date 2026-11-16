@@ -17,7 +17,7 @@ export const GROUP_NAMES: Record<string, string> = {
   Boc: 'tert-butoxycarbonyl', Cbz: 'benzyloxycarbonyl', Fmoc: '9-fluorenylmethoxycarbonyl',
   Troc: '2,2,2-trichloroethoxycarbonyl', Alloc: 'allyloxycarbonyl', Allyl: 'allyl (prop-2-en-1-yl)',
   Ts: 'tosyl (4-methylbenzenesulfonyl)', Tos: 'tosyl (4-methylbenzenesulfonyl)', Ms: 'mesyl (methanesulfonyl)',
-  Tf: 'triflyl (trifluoromethanesulfonyl)', Ns: 'nosyl (4-nitrobenzenesulfonyl)', TMS: 'trimethylsilyl', TES: 'triethylsilyl',
+  Tf: 'triflyl (trifluoromethanesulfonyl)', MTPA: 'Mosher acyl (α-methoxy-α-(trifluoromethyl)phenylacetyl)', Ns: 'nosyl (4-nitrobenzenesulfonyl)', TMS: 'trimethylsilyl', TES: 'triethylsilyl',
   TBS: 'tert-butyldimethylsilyl', TBDMS: 'tert-butyldimethylsilyl', TIPS: 'triisopropylsilyl', TBDPS: 'tert-butyldiphenylsilyl',
   PMB: '4-methoxybenzyl', MPM: '4-methoxybenzyl', MOM: 'methoxymethyl', MEM: '(2-methoxyethoxy)methyl',
   SEM: '[2-(trimethylsilyl)ethoxy]methyl', THP: 'tetrahydropyran-2-yl', Tr: 'trityl (triphenylmethyl)', Trt: 'trityl (triphenylmethyl)',
