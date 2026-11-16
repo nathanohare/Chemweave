@@ -143,31 +143,39 @@ export function templateIcon(t: Template, size = 44, maxBond = 12): string {
     return null;
   };
   const wedge = Math.max(1.6, 0.12 * k);
-  for (const [a, b, o, disp] of t.bonds) {
+  // a highlighted bond's lines go in a group of their own color
+  const hl = t.highlight;
+  const hlBonds = new Set(hl?.bonds ?? []);
+  t.bonds.forEach((bd, bi) => {
+    const start = parts.length;
+    drawBond(bd);
+    if (hl && hlBonds.has(bi)) parts.splice(start, parts.length - start, `<g stroke="${esc(hl.color)}" fill="${esc(hl.color)}">${parts.slice(start).join('').replace(/ fill="currentColor"/g, '')}</g>`);
+  });
+  function drawBond([a, b, o, disp]: Template['bonds'][number]): void {
     const [p, q] = ends(a, b);
     const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1;
     const nx = -dy / d, ny = dx / d;
     if (disp === 'wedge' || disp === 'hashWedge') {
       if (disp === 'wedge') parts.push(`<polygon points="${f(p.x)},${f(p.y)} ${f(q.x + nx * wedge)},${f(q.y + ny * wedge)} ${f(q.x - nx * wedge)},${f(q.y - ny * wedge)}" fill="currentColor" stroke="none"/>`);
       else for (let s = 1; s <= 4; s++) { const u = s / 4, c = { x: p.x + dx * u, y: p.y + dy * u }; line({ x: c.x + nx * wedge * u, y: c.y + ny * wedge * u }, { x: c.x - nx * wedge * u, y: c.y - ny * wedge * u }, 0.8); }
-      continue;
+      return;
     }
-    if (disp === 'bold') { line(p, q, Math.max(2.4, 0.14 * k)); continue; }
-    if (disp === 'dash' || disp === 'hash') { line(p, q, 1, true); continue; }
+    if (disp === 'bold') { line(p, q, Math.max(2.4, 0.14 * k)); return; }
+    if (disp === 'dash' || disp === 'hash') { line(p, q, 1, true); return; }
     if (o === 4) {
       // a metal–metal quadruple bond: four lines
       for (const u of [-1.5, -0.5, 0.5, 1.5]) line({ x: p.x + nx * off * u, y: p.y + ny * off * u }, { x: q.x + nx * off * u, y: q.y + ny * off * u });
-      continue;
+      return;
     }
-    if (onArc.has(key(a, b))) { line(p, q); continue; }
+    if (onArc.has(key(a, b))) { line(p, q); return; }
     if (o === 2 && !nbrs[a].some((i) => i !== b) !== !nbrs[b].some((i) => i !== a)) {
       // C=O and the like: two lines either side of the bond line, as in a drawing
       line({ x: p.x + (nx * off) / 2, y: p.y + (ny * off) / 2 }, { x: q.x + (nx * off) / 2, y: q.y + (ny * off) / 2 });
       line({ x: p.x - (nx * off) / 2, y: p.y - (ny * off) / 2 }, { x: q.x - (nx * off) / 2, y: q.y - (ny * off) / 2 });
-      continue;
+      return;
     }
     line(p, q);
-    if (o < 2) continue;
+    if (o < 2) return;
     // the second line goes inside its ring, else on the side where the neighbours are
     const others = [...nbrs[a], ...nbrs[b]].filter((i) => i !== a && i !== b);
     const ring = ringThrough(a, b);
@@ -224,8 +232,9 @@ export function templateIcon(t: Template, size = 44, maxBond = 12): string {
   layouts.forEach((lay, i) => {
     if (!lay) return;
     const p = P(i);
+    const lit = hl?.atoms.includes(i);
     for (const r of lay.runs) {
-      parts.push(`<text x="${f(p.x + r.dx * k)}" y="${f(p.y + r.dy * k)}" font-size="${f(r.size * k)}"${r.italic ? ' font-style="italic"' : ''} fill="currentColor" stroke="none">${esc(r.text)}</text>`);
+      parts.push(`<text x="${f(p.x + r.dx * k)}" y="${f(p.y + r.dy * k)}" font-size="${f(r.size * k)}"${r.italic ? ' font-style="italic"' : ''} fill="${lit ? esc(hl!.color) : 'currentColor'}" stroke="none">${esc(r.text)}</text>`);
     }
   });
   if (showCode) parts.push(`<text x="${size / 2}" y="${size - 2}" font-size="10" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">${esc(codeOf(t))}</text>`);

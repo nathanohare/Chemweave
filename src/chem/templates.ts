@@ -60,6 +60,8 @@ export interface Template {
    * wavy line crosses the bond to each one where the group joins the rest of a molecule.
    */
   stubs?: number[];
+  /** Atoms (their labels) and bonds drawn in a color of their own: the Knowledge Base's acidic hydrogen. */
+  highlight?: { atoms: number[]; bonds: number[]; color: string };
 }
 
 export type TemplateHapto = [number, number[], BondDisplay?];

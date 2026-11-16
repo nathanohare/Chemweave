@@ -12,6 +12,8 @@ import type { Cell, KbSource, KbTable } from './tables';
 import DMSO from './pka-dmso.json';
 import WATER from './pka-water.json';
 import PICS from './pka-pics.json';
+import ACIDIC from './pka-acidic.json';
+import { withAcidicH } from './acidic-h';
 
 /** [name, canonical SMILES, pKa as printed, approximate (1), acidic hydrogen, class, papers (indexes into `papers` and `dois`), PubChem CID (0: none)] */
 type DmsoRow = [string, string, string, 0 | 1, string, string, number[], number];
@@ -59,10 +61,22 @@ export const PKA_VALUES: PkaValue[] = [
   })),
 ];
 
-/** A compound's drawing (scripts: the pKa build), by its canonical SMILES. */
+/**
+ * The atom of a row's drawing whose hydrogen the value belongs to, and whether it takes that hydrogen
+ * on first (a base: the value is its conjugate acid's), worked out by scripts/kb/build-pka-acidic.mjs.
+ */
+export function acidicSite(row: Record<string, Cell>): [number, 0 | 1] | null {
+  const key = `${row.smiles}|${row.site}|${row.solvent === 'DMSO' ? 'DMSO' : 'W'}|${String(row.pka).replace(/^~/, '')}`;
+  return (ACIDIC as unknown as Record<string, [number, 0 | 1]>)[key] ?? null;
+}
+
+/** A compound's drawing (scripts: the pKa build), by its canonical SMILES, with the acidic hydrogen drawn in red. */
 export function pkaPicture(row: Record<string, Cell>): Template | null {
   const p = (PICS as unknown as Record<string, { atoms: TemplateAtom[]; bonds: TemplateBond[] }>)[String(row.smiles)];
-  return p ? { id: `pka-${row.smiles}`, name: String(row.name), group: 'own', atoms: p.atoms, bonds: p.bonds, attach: 0 } : null;
+  if (!p) return null;
+  const t: Template = { id: `pka-${row.smiles}`, name: String(row.name), group: 'own', atoms: p.atoms, bonds: p.bonds, attach: 0 };
+  const site = acidicSite(row);
+  return site ? withAcidicH(t, site[0], site[1] === 1) : t;
 }
 
 const PKA_INFO = 'How strong an acid the compound is: −log Ka for losing the hydrogen named under Acidic H, in the solvent named (DMSO at 25 °C; water and water mixtures at about 25 °C unless a note gives another temperature). Lower is more acidic. Compare values in the same solvent: DMSO values run higher than water\'s for neutral acids, which DMSO solvates less well (acetic acid: 12.6 in DMSO, 4.76 in water), and lie close to water\'s for protonated amines. Several values in a row are the compound\'s successive pKa values, lowest first, unless a note says they are two measurements of one step. A ~ marks an approximate value (estimated or extrapolated).';
