@@ -281,6 +281,52 @@ describe('no false valence warnings on common labels', () => {
     expect(atomWarnings(d, d.atoms.get(2)!)).toEqual([]);
     expect(formulaOf(d)).toBe('C11H11F3O3');
   });
+  // Nate's 2026-11-16 file: a pyranose whose ring and OH/OMe bonds were all Order="1.5" in the
+  // CDXML (ChemDraw draws them as plain lines). The O labels were counted with an aromatic bond
+  // (2) to the ring, and the structure had no formula.
+  function oneAndHalfPyranose(): { d: Doc; labels: Atom[] } {
+    const d = new Doc();
+    const labels: Atom[] = [];
+    d.bulk(() => {
+      // ring: C1 (anomeric), C2, C3, C4, C5, O5
+      const pts = [0, 1, 2, 3, 4, 5].map((i) => ({ x: L * Math.cos((i * Math.PI) / 3), y: L * Math.sin((i * Math.PI) / 3) }));
+      const ring = pts.map((p, i) => d.addAtom(p.x, p.y, i === 5 ? 8 : 6).id);
+      for (let i = 0; i < 6; i++) d.addBond(ring[i], ring[(i + 1) % 6], 1.5);
+      const out = (i: number, label: string | null, z: number, display: 'wedge' | 'hashWedge') => {
+        const a = d.addAtom(2 * pts[i].x, 2 * pts[i].y, z, label ? { label } : {});
+        if (label) labels.push(a);
+        d.addBond(ring[i], a.id, 1.5, display);
+      };
+      out(0, 'OMe', 8, 'wedge');
+      out(1, 'MeO', 8, 'hashWedge');
+      out(2, 'HO', 8, 'hashWedge');
+      out(3, 'OH', 8, 'hashWedge');
+      out(4, null, 6, 'hashWedge');
+    });
+    return { d, labels };
+  }
+  it('reads 1½ bonds that cannot be aromatic as single (no warnings, and a formula)', () => {
+    const { d, labels } = oneAndHalfPyranose();
+    expect(labels.length).toBe(4);
+    for (const a of d.atoms.values()) expect([a.label, atomWarnings(d, a)]).toEqual([a.label, []]);
+    expect(formulaOf(d)).toBe('C8H16O5');
+    // the wedges still give each stereocentre
+    const m = RDKit.get_mol(toMolfile(d, d.atoms.keys()).molblock);
+    try { expect((m.get_smiles().match(/@/g) ?? []).length).toBeGreaterThanOrEqual(5); } finally { m.delete(); }
+  });
+  it('keeps real aromatic 1½ bonds aromatic', () => {
+    const ring = (d: Doc, cx: number, zs: number[]) => {
+      const ids = zs.map((z, i) => d.addAtom(cx + L * Math.cos((i * Math.PI) / 3), L * Math.sin((i * Math.PI) / 3), z).id);
+      for (let i = 0; i < ids.length; i++) d.addBond(ids[i], ids[(i + 1) % ids.length], 1.5);
+      return ids;
+    };
+    // biphenyl drawn all in 1½ bonds: the bond between the rings is single, the rings aromatic
+    const bi = build((d) => { const a = ring(d, 0, [6, 6, 6, 6, 6, 6]); const b = ring(d, 3 * L, [6, 6, 6, 6, 6, 6]); d.addBond(a[0], b[3], 1.5); });
+    expect(formulaOf(bi)).toBe('C12H10');
+    for (const a of bi.atoms.values()) expect(atomWarnings(bi, a)).toEqual([]);
+    // pyridine
+    expect(formulaOf(build((d) => { ring(d, 0, [7, 6, 6, 6, 6, 6]); }))).toBe('C5H5N');
+  });
   it('keeps the tooltip short', () => {
     const c5 = star(6, 5);
     expect(atomWarnings(c5.d, c5.c)[0].length).toBeLessThan(40);

@@ -8,7 +8,7 @@ import { metalCarbonyl } from './hapto';
 import { SYMBOLS, elementNumber, hasImplicitH, implicitHydrogens, isMetal, valenceOfBonds } from './elements';
 import { CARBONYL_LIGAND, isCarbonylLabel, kekulize, labelDonates, labelGraph, MiniGraph } from './labels';
 import { stereoAnchor, stereoSense } from './stereo';
-import { kekuleDoubles } from './aromatic';
+import { aromaticAsSingle, kekuleDoubles } from './aromatic';
 import { flatStandIn } from './ring-views';
 import { readSpecies } from './species';
 
@@ -195,6 +195,11 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       }
     }
   }
+  // 1½ bonds where no aromatic ring can be (in no ring, or a ring with no Kekulé structure, such
+  // as a pyranose from an old file) are single bonds, as ChemDraw draws them
+  const bonds15: number[] = [];
+  for (const id of ids) for (const bid of doc.adj.get(id) ?? []) { const b = doc.bonds.get(bid)!; if (b.order === 1.5 && inSet.has(b.a1) && inSet.has(b.a2) && !kekule.has(bid)) bonds15.push(bid); }
+  if (bonds15.length) for (const bid of aromaticAsSingle(doc, bonds15)) kekule.set(bid, 1);
   // A charged atom in a ring of 1½ bonds (tropylium's C⁺, cyclopentadienide's C⁻) takes its
   // hydrogen from the double bonds it hasn't got, which aromatic bonds alone don't tell the
   // engine (it gives C⁺ with two aromatic bonds no H, and can't kekulize the ring): the ring is
@@ -334,7 +339,9 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       const order = kekule.get(b.id) ?? (b.order === 1.5 ? 4 : b.order === 2 ? 2 : b.order === 3 ? 3 : 1);
       // a stereo bond is written from the atom it describes
       const flat = stand?.bonds.get(b.id);
-      const sb = flat ? { ...b, ...flat } : b;
+      const drawn = flat ? { ...b, ...flat } : b;
+      // (a wedge on a 1½ bond read as single describes its atom as on any single bond)
+      const sb = order === 1 && drawn.order === 1.5 ? { ...drawn, order: 1 } : drawn;
       const sense = stereoSense(sb);
       const from = sense ? stereoAnchor(doc, sb)! : sb.a1;
       const stereo = sense === 'up' ? 1 : sense === 'down' ? 6 : sense === 'either' ? 4 : 0;

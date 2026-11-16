@@ -7,6 +7,7 @@
 
 import { isMetalAtom, outsideValence, PARTIAL, radicalElectrons, type Atom, type AtomWatch, type Bond, type Doc } from '../model';
 import { metalCarbonyl } from './hapto';
+import { aromaticBondInRing } from './aromatic';
 import { stereoDisagrees } from './stereo';
 import { SYMBOLS, elementNumber, maxValence, minValence, valenceOfBonds } from './elements';
 import { bracketsUnbalanced, labelDonates, labelGraph, labelOverValent, tokenize } from './labels';
@@ -85,7 +86,8 @@ export function atomWarnings(doc: Doc, a: Atom): string[] {
     const b = doc.bonds.get(bid)!;
     if (b.order === PARTIAL) partial = true;
     if (outsideValence(b)) continue;
-    orders.push(b.order);
+    // a 1½ bond in no ring can't be aromatic: it is drawn, and counts, as single
+    orders.push(b.order === 1.5 && !aromaticBondInRing(doc, bid) ? 1 : b.order);
     if (isMetalAtom(doc.atoms.get(b.a1 === a.id ? b.a2 : b.a1))) toMetal++;
   }
   // an atom in a transition state is part way between its valences
