@@ -61,6 +61,7 @@ export class PeriodicTable {
 
     find.addEventListener('keydown', (e) => {
       e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); d.close(); return; }
       if (e.key !== 'Enter') return;
       const t = find.value.trim();
       const z = SYMBOLS.findIndex((s, i) => i > 0 && s.toLowerCase() === t.toLowerCase());

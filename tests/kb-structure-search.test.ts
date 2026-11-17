@@ -178,7 +178,7 @@ describe('the Knowledge Base window, searched by structure', { timeout: 30000 },
       const kb = new KnowledgeBaseWindow(host({ drawing: t }));
       await openOn(kb, 'Physical Constants');
       const head = document.querySelector('.kb-window .kb-head')!;
-      expect([...head.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Draw…']);
+      expect([...head.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Draw…', '×']);
       press('Draw…');
       expect(win()).not.toBeNull();
       expect(t.calls).toEqual(['start 0']);

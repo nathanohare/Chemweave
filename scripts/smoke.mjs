@@ -235,6 +235,8 @@ try {
     if (!m) return `the ${what} menu did not open`;
     const r = m.getBoundingClientRect();
     if (m.scrollHeight > m.clientHeight + 1 || r.bottom > innerHeight + 0.5) return `the ${what} menu is too tall for a 1389 × 700 window (${Math.round(m.scrollHeight)} px of items in ${Math.round(Math.min(m.clientHeight, innerHeight - r.top))} px)`;
+    // the Chemistry menu, the longest, keeps 40 px to spare: one more row must not push it off the window (UI audit U22)
+    if (/ Chemistry$/.test(what) && r.bottom > innerHeight - 40) return `the ${what} menu has under 40 px to spare in a 1389 × 700 window (it ends at ${Math.round(r.bottom)} px): move rows into its groups`;
     return null;
   }, what);
   const close = async () => { await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await page.waitForTimeout(100); };

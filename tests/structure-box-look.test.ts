@@ -24,7 +24,7 @@ describe("a structure's box", () => {
 
 describe('the Insert Structure button in Dark Gray', () => {
   it('takes light text on the dark dock', () => {
-    const sel = ":root[data-gray]:not([data-shadows='off']) #dock-left > #structure-start {";
+    const sel = ":root[data-gray]:not([data-shadows='off']) #dock-left > :is(#structure-start, .structure-more, .structure-fold) {";
     const at = css.indexOf(sel);
     expect(at).toBeGreaterThanOrEqual(0);
     expect(css.slice(at, css.indexOf('}', at))).toMatch(/--text:\s*#eceef2/);

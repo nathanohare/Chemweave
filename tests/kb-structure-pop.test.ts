@@ -60,7 +60,7 @@ describe('the structure card beside a name', { timeout: 30000 }, () => {
       () => select.dispatchEvent(new Event('pointerdown', { bubbles: true })),
       () => select.dispatchEvent(new FocusEvent('focusin', { bubbles: true })),
       () => wrap.dispatchEvent(new Event('scroll')),
-      () => d.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+      () => d.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })),
       () => window.dispatchEvent(new Event('blur')),
     ]) {
       rest();

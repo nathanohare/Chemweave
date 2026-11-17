@@ -6,6 +6,7 @@
 
 import { paletteRows } from './palette-ui';
 import { SheetView, popupMenu, selectionName } from './sheet-view';
+import { ACTUAL_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { showContextMenu, type MenuItem } from './context-menu';
 import { Workbook, Sheet, Structure, CellStyle, CellBlock, Cell, Condition, CompareOp, makeStructure, growToMerges } from '../sheet/workbook';
 import { Range, MAX_ROWS, MAX_COLS, colName, colIndex, cellName, parseRange, parseCellRef, keyOf, rowOf, colOf, inRange } from '../sheet/refs';
@@ -620,6 +621,30 @@ export class SheetMode {
       }
     }
     if (!this.run(name)) this.host.command?.(name);
+  }
+
+  private statusZoom: StatusZoom | null = null;
+
+  /** The status bar's view buttons, zoom slider and percent (built on first use). */
+  private showStatusBar(): void {
+    if (!this.statusZoom) {
+      const bar = document.querySelector<HTMLElement>('#sheet-statusbar');
+      if (!bar) return;
+      this.statusZoom = statusZoom({
+        get: () => this.view.zoom * 100,
+        set: (pct) => this.view.setZoom(pct / 100),
+        fit: { label: '100%', icon: ACTUAL_ICON, run: () => this.view.setZoom(1) },
+        refocus: () => this.view.focus(),
+        min: 25, max: 400,
+      });
+      bar.append(this.statusZoom.el);
+      for (const b of bar.querySelectorAll<HTMLButtonElement>('[data-sh]')) {
+        b.addEventListener('mousedown', (e) => e.preventDefault());
+        b.addEventListener('click', () => { this.run(b.dataset.sh!); this.view.focus(); });
+      }
+      this.view.onZoom = () => this.statusZoom?.show();
+    }
+    this.statusZoom.show();
   }
 
   /** Sheet commands (from the ribbon, the menus and keys). False when the name isn't one. */
@@ -2238,9 +2263,9 @@ export class SheetMode {
     // a row that opens a menu of its own (a gallery) beside it
     const opens = (label: string, open: (x: number, y: number) => void): MenuItem => ({ label, run: (r) => open(r.right - 2, r.top - 5), opens: true });
     const items: MenuItem[] = [
-      act('Cut', () => void this.copy(true), 'cut'),
-      act('Copy', () => void this.copy(), 'copy'),
-      act('Paste', () => void this.paste(null), 'paste'),
+      // Cut, Copy, Paste and Delete in a row, as every mode's menu starts (UI audit U13)
+      { row: [{ cmd: 'cut', label: 'Cut' }, { cmd: 'copy', label: 'Copy' }, { cmd: 'paste', label: 'Paste' }, { cmd: 'clear-contents', label: 'Delete' }] },
+      null,
       act('Paste Values', () => void this.paste(null, 'values')),
       act('Paste Special…', () => this.run('paste-special'), 'paste-special'),
       null,
@@ -2420,8 +2445,9 @@ export class SheetMode {
     const { r, c } = this.view.sel.active;
     const st = s.styleAt(r, c) ?? {};
     // (some buttons are on two tabs, as in Excel: Filter on Home and on Data)
+    this.showStatusBar();
     const press = (name: string, on: boolean) => {
-      for (const b of this.ribbon.querySelectorAll(`[data-sh="${name}"]`)) {
+      for (const b of document.querySelectorAll(`#sheet-ribbon [data-sh="${name}"], #sheet-statusbar [data-sh="${name}"]`)) {
         if (b instanceof HTMLInputElement) b.checked = on;
         else b.setAttribute('aria-pressed', String(on));
       }

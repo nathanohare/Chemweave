@@ -287,7 +287,7 @@ html:not(.touch-ui) .toolbox.upright:not(.collapsed) > .tb-head > .tb-grip { let
 .tb-body.tb-grid { display: grid; grid-template-columns: repeat(var(--cols, 6), auto); }
 .tb-grid .tb-heading { grid-column: 1 / -1; font-size: var(--fs-xs); color: var(--muted, #666); padding: 4px 2px 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tb-grid .tb-heading:first-child { padding-top: 0; }
-.tb-body.tb-scroll { max-height: min(60vh, 520px); overflow-y: auto; overscroll-behavior: contain; }
+.tb-body.tb-scroll { max-height: 60vh; overflow-y: auto; overscroll-behavior: contain; }
 .toolbox.vertical .tb-body.tb-grid { display: grid; grid-template-columns: repeat(2, auto); max-width: none; }
 .tb-cmd { padding: 3px 7px; font-size: var(--fs-sm); white-space: nowrap; text-align: left; }
 .tb-cmd.tb-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; flex: 0 0 auto; }
@@ -504,22 +504,28 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 #status-notes[aria-pressed="true"] { color: var(--text); background: var(--accent-soft); }
 /* Presentation: the views (Normal, Slide Sorter, Reading View, Slide Show), then the zoom slider,
    the percent (the zoom box, as words) and Fit, at the right of the status bar as in PowerPoint */
-#slide-views[hidden], #slide-zoom[hidden], #slide-fit[hidden] { display: none; }
-#slide-views { display: inline-flex; align-items: center; gap: 1px; margin: 0 6px; }
-#slide-views button, #slide-fit { display: inline-grid; place-items: center; width: 24px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); }
-#slide-views button:hover, #slide-fit:hover { color: var(--text); border-color: var(--line); }
-#slide-views button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
-#slide-zoom { display: inline-flex; align-items: center; gap: 1px; padding-left: 8px; border-left: 1px solid var(--line); }
-#slide-zoom button { width: 18px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font: 14px/1 var(--ui-font); }
-#slide-zoom button:hover { color: var(--text); border-color: var(--line); }
-#slide-zoom-range { -webkit-appearance: none; appearance: none; width: 96px; height: 16px; margin: 0 2px; padding: 0; background: transparent; cursor: pointer; }
-#slide-zoom-range::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: var(--muted); }
-#slide-zoom-range::-webkit-slider-thumb { -webkit-appearance: none; width: 5px; height: 12px; margin-top: -5px; border: 0; border-radius: 1px; background: var(--text); }
-#slide-zoom-range::-moz-range-track { height: 2px; border-radius: 1px; background: var(--muted); }
-#slide-zoom-range::-moz-range-thumb { width: 5px; height: 12px; border: 0; border-radius: 1px; background: var(--text); }
-#slide-zoom-range:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
-body.slides-mode .zoom-pick select { -webkit-appearance: none; appearance: none; width: 46px; padding: 1px 3px; border-color: transparent; background: transparent; text-align: right; text-align-last: right; cursor: pointer; }
-body.slides-mode .zoom-pick select:hover { border-color: var(--line); }
+#slide-views[hidden] { display: none; }
+#slide-views, .sb-views { display: inline-flex; align-items: center; gap: 1px; margin: 0 6px; }
+#slide-views button, .sb-views button, .sb-fit { display: inline-grid; place-items: center; width: 24px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); }
+#slide-views button:hover, .sb-views button:hover, .sb-fit:hover { color: var(--text); border-color: var(--line); }
+#slide-views button[aria-pressed="true"], .sb-views button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+/* the zoom slider, the percent and Fit: the same in every mode (UI audit U1) */
+.sb-zoom-set { display: inline-flex; align-items: center; gap: 2px; }
+.sb-zoom { display: inline-flex; align-items: center; gap: 1px; padding-left: 8px; border-left: 1px solid var(--line); }
+.sb-zoom button { width: 18px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font: 14px/1 var(--ui-font); }
+.sb-zoom button:hover { color: var(--text); border-color: var(--line); }
+.sb-zoom input[type='range'] { -webkit-appearance: none; appearance: none; width: 96px; height: 16px; margin: 0 2px; padding: 0; background: transparent; cursor: pointer; }
+.sb-zoom input[type='range']::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: var(--muted); }
+.sb-zoom input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 5px; height: 12px; margin-top: -5px; border: 0; border-radius: 1px; background: var(--text); }
+.sb-zoom input[type='range']::-moz-range-track { height: 2px; border-radius: 1px; background: var(--muted); }
+.sb-zoom input[type='range']::-moz-range-thumb { width: 5px; height: 12px; border: 0; border-radius: 1px; background: var(--text); }
+.sb-zoom input[type='range']:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.sb-zoom-pct { width: 46px; height: 20px; padding: 0 3px; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--text); font: var(--fs-sm) var(--ui-font); font-variant-numeric: tabular-nums; text-align: right; }
+.sb-zoom-pct:hover { border-color: var(--line); }
+#status .zoom-pick select { -webkit-appearance: none; appearance: none; width: 46px; padding: 1px 3px; border-color: transparent; background: transparent; text-align: right; text-align-last: right; cursor: pointer; }
+#status .zoom-pick select:hover { border-color: var(--line); }
+#sheet-statusbar { flex: none; display: flex; align-items: center; gap: 4px; }
+#sheet-statusbar[hidden] { display: none; }
 body.slides-mode #go-buttons { display: none; }
 .go-buttons button { font: var(--fs-sm) var(--ui-font); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 0 6px; line-height: 18px; }
 .go-buttons button:disabled { color: var(--muted); opacity: 0.6; cursor: default; }
@@ -1168,7 +1174,7 @@ dialog.typing-dialog p { margin: 2px 0 6px; }
   grid-area: list;
   display: flex;
   flex-direction: column;
-  width: var(--slide-pane-w, 212px);
+  width: var(--slide-pane-w, 160px);
   min-height: 0;
   background: var(--bg);
   border-right: 1px solid var(--line);
@@ -1207,7 +1213,7 @@ dialog.typing-dialog p { margin: 2px 0 6px; }
 .dl-head p { margin: 4px 0 0; line-height: 1.3; }
 .dl-body { flex: 1 1 auto; overflow-y: auto; padding: 4px 8px 10px; min-height: 0; }
 .dl-body h3 { margin: 10px 0 4px; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted, #666); }
-.dl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 4px; }
+.dl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(29px, 1fr)); gap: 2px; }
 .dl-shape { display: flex; align-items: center; justify-content: center; padding: 2px; aspect-ratio: 1; border: 1px solid transparent; border-radius: var(--r-control); background: var(--tile); cursor: grab; }
 .dl-shape:hover { border-color: var(--accent); }
 .dl-shape.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
@@ -1248,7 +1254,7 @@ dialog.typing-dialog p { margin: 2px 0 6px; }
 
 /* the page-size window */
 dialog.design-size { width: min(94vw, 500px); }
-.ds-list { max-height: min(56vh, 420px); overflow-y: auto; padding-right: 4px; }
+.ds-list { max-height: 56vh; overflow-y: auto; padding-right: 4px; }
 .ds-list h3 { margin: 10px 0 2px; }
 .ds-item { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; align-items: baseline; padding: 3px 0; cursor: pointer; }
 .ds-item .muted { grid-column: 2; font-size: var(--fs-sm); }
@@ -1261,13 +1267,13 @@ dialog.design-size { width: min(94vw, 500px); }
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 8px 10px 4px;
+  padding: 10px 8px 10px 6px;
   overflow-y: auto;
   min-height: 0;
   outline: none;
 }
 .sl-item { position: relative; display: flex; align-items: flex-start; gap: 4px; flex: none; }
-.sl-num { width: 22px; flex: none; text-align: right; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 2px; }
+.sl-num { width: auto; min-width: 12px; flex: none; text-align: right; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 2px; }
 .sl-thumb { display: block; flex: none; background: #fff; border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: var(--page-shadow); }
 .sl-item.picked .sl-thumb { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .sl-item.current .sl-thumb { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
@@ -1291,7 +1297,7 @@ dialog.design-size { width: min(94vw, 500px); }
 .sl-key:focus-visible canvas { box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px var(--accent-soft); }
 .sl-drop { position: absolute; left: 26px; right: 8px; height: 3px; margin-top: -2px; border-radius: var(--r-control); background: var(--accent); pointer-events: none; }
 .sl-drop[hidden] { display: none; }
-.sl-add { flex: none; margin: 6px 8px 8px 30px; border-style: dashed; color: var(--muted); }
+.sl-add { flex: none; align-self: center; margin: 6px 8px 8px; border-style: dashed; color: var(--muted); }
 .sl-drop.vertical { right: auto; width: 3px; margin: 0 0 0 -2px; }
 /* section headings (Add Section) */
 .sl-sec { display: flex; align-items: center; gap: 4px; flex: none; padding: 2px 4px 2px 2px; font-size: var(--fs-sm); color: var(--text); cursor: default; border-radius: var(--r-control); user-select: none; }
@@ -1317,7 +1323,7 @@ dialog.design-size { width: min(94vw, 500px); }
 #notes {
   display: block;
   width: 100%;
-  height: var(--notes-h, 84px);
+  height: var(--notes-h, 32px);
   max-height: 60vh;
   padding: 6px 12px;
   border: 0;
@@ -1676,17 +1682,12 @@ dialog.prop-dialog:has(.hm-section:not([hidden])) .prop-list { max-height: 24vh;
 body.doc-reading header, body.doc-reading #tabs, body.doc-reading #doc-ribbon, body.doc-reading aside,
 body.doc-reading #status, body.doc-reading #doc-statusbar, body.doc-reading .dock { display: none !important; }
 body.doc-reading #doc-pane.nav-open > :not(#doc-nav) { margin-left: 0; }
-#doc-statusbar .doc-viewbtn { padding: 0 5px; }
-#doc-statusbar .doc-viewbtn[aria-pressed='true'] { color: var(--text); border-color: var(--line); background: var(--bg); }
 .doc-canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
 .doc-scroll { position: absolute; inset: 0; overflow: auto; outline: none; cursor: text; }
 .doc-space { pointer-events: none; }
 /* the document's page count, views and zoom: on the right of the window's one status bar */
 #doc-statusbar { flex: none; display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--muted); }
 #doc-statusbar[hidden] { display: none; }
-#doc-statusbar button { padding: 0 8px; font-size: var(--fs-sm); border-color: transparent; background: transparent; color: var(--muted); }
-#doc-statusbar button:hover { color: var(--text); border-color: var(--line); }
-#doc-zoom { min-width: 3.4em; text-align: center; font-variant-numeric: tabular-nums; }
 
 .doc-ribbon, .ribbon.tabbed { flex-direction: column; padding: 0; overflow: visible; }
 .rb-tabs { display: flex; gap: 2px; padding: 3px 8px 0; background: var(--bar); }
@@ -2064,25 +2065,32 @@ dialog.refs-dialog > p { margin: 4px 0; max-width: 80ch; }
 .refs-table tr.refs-group.current th { color: var(--accent); }
 
 /* Chemistry > Look Up > Knowledge Base: tables listed on the left, the one picked on the right */
-dialog.kb-window { position: fixed; inset: 56px 0 auto 0; margin: 0 auto; z-index: 45; width: min(96vw, 1100px); max-width: min(96vw, 1100px); max-height: calc(100vh - 72px); box-shadow: 0 8px 28px rgb(0 0 0 / 0.2); }
-.kb-body { display: flex; gap: 8px; min-height: 0; }
-.kb-list { display: flex; flex-direction: column; gap: 1px; width: 160px; flex: none; overflow: auto; max-height: 60vh; }
+dialog.kb-window { position: fixed; inset: 56px 0 auto 0; margin: 0 auto; z-index: 45; width: min(96vw, 1500px); max-width: min(96vw, 1500px); height: calc(100vh - 72px); max-height: calc(100vh - 72px); box-shadow: 0 8px 28px rgb(0 0 0 / 0.2); }
+.kb-body { display: flex; gap: 8px; min-height: 0; flex: 1 1 auto; }
+.kb-list { display: flex; flex-direction: column; gap: 1px; width: 160px; flex: none; overflow: auto; }
 .kb-tab { display: flex; justify-content: space-between; gap: 6px; text-align: left; padding: 4px 6px; border: 0; border-radius: var(--r-control); background: none; color: var(--text); font-size: var(--fs-sm); cursor: pointer; }
 .kb-tab:hover { background: var(--accent-soft); }
 .kb-tab.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .kb-tab.none { color: var(--muted); }
 .kb-tab.personal > span:first-child::after { content: ' (yours)'; color: var(--muted); font-weight: 400; }
 .kb-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.kb-sources { margin: 0; font-size: var(--fs-xs); }
+.kb-sources-at { position: relative; }
+.kb-sources { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 4; width: max-content; max-width: min(70vw, 560px); margin: 0; font-size: var(--fs-sm); line-height: 1.5; white-space: normal; }
+.kb-sources[hidden] { display: none; }
+.kb-foot { align-items: center; gap: 6px 12px; }
+.kb-compact-box { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); white-space: nowrap; }
+.kb-window .kb-table.kb-compact td, .kb-window .kb-table.kb-compact td.kb-lead, .kb-window .kb-table.kb-compact td.prose, .kb-window .kb-table.kb-compact td.kb-links { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; padding-top: 2px; padding-bottom: 2px; }
+.kb-table.kb-compact td.prose { max-width: 60ch; }
 .kb-head { gap: 6px 8px; flex-wrap: nowrap; align-items: center; }
 .kb-head h2 { width: 160px; flex: none; }
 .kb-head > button { flex: none; white-space: nowrap; }
-.kb-top { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.kb-top { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 4px 12px; }
+.kb-top .kb-filters { flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
 .kb-top .kb-title { margin: 0; font-size: var(--fs-md, 14px); white-space: nowrap; }
 .kb-top .kb-filters { margin: 0; }
 .kb-filters label { display: inline-flex; align-items: center; gap: 4px; }
 .kb-filters:empty { display: none; }
-.kb-table-wrap { max-height: 56vh; }
+.kb-table-wrap { flex: 1 1 0; min-height: 120px; max-height: none; }
 .kb-table { width: max-content; min-width: 100%; }
 .kb-table td { max-width: 34ch; min-width: 6ch; }
 .kb-table td:nth-child(3) { width: auto; }
@@ -2114,7 +2122,7 @@ dialog.kb-window { position: fixed; inset: 56px 0 auto 0; margin: 0 auto; z-inde
 .kb-part-title { margin: 8px 0 2px; padding: 0 6px; font-size: var(--fs-sm); font-weight: 600; }
 .kb-part-title:first-child { margin-top: 4px; }
 .kb-table.kb-part { margin-bottom: 4px; }
-.kb-table-wrap.kb-mx-host { max-height: calc(100vh - 230px); }
+.kb-table-wrap.kb-mx-host { max-height: none; }
 .kb-mx-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 2px; }
 .kb-matrix { width: auto; border-collapse: collapse; font-size: var(--fs-xs); line-height: 1; }
 .kb-matrix th { font-weight: 400; color: var(--text); }
@@ -2288,7 +2296,7 @@ dialog.cite-style-dialog h3 { margin: 10px 0 4px; font-size: var(--fs-md); }
 /* the template window over a new file: categories on the left, cards on the right, the mode's color on its edge */
 .template-window { --m: var(--accent); position: fixed; z-index: 28; display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 6px 10px 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-top: 3px solid var(--m); border-radius: var(--r-panel); box-shadow: 0 10px 34px rgb(0 0 0 / 0.22); font: var(--fs-md)/1.4 var(--ui-font); }
 .template-window:focus { outline: none; }
-.template-window.tw-modal { width: min(96vw, 1000px); height: min(86vh, 640px); max-width: none; max-height: none; }
+.template-window.tw-modal { width: min(96vw, 1000px); height: min(86vh, 900px); max-width: none; max-height: none; }
 .tw-drawing { --m: var(--tab-drawing); } .tw-slides { --m: var(--tab-slides); } .tw-sheet { --m: var(--tab-sheet); } .tw-document { --m: var(--tab-document); } .tw-design { --m: var(--tab-design); }
 .tw-head { display: flex; align-items: center; gap: 6px; }
 .tw-head h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
@@ -2317,7 +2325,7 @@ dialog.cite-style-dialog h3 { margin: 10px 0 4px; font-size: var(--fs-md); }
 
 /* File > New Design: the template gallery */
 dialog.template-gallery { width: min(94vw, 760px); }
-.tg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(188px, 1fr)); gap: 10px; max-height: min(64vh, 560px); overflow-y: auto; padding: 2px; }
+.tg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(188px, 1fr)); gap: 10px; max-height: 64vh; overflow-y: auto; padding: 2px; }
 /* New Design: categories on the left, the category's templates on the right */
 .tg-card { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-tab); background: var(--panel); color: inherit; cursor: pointer; font: inherit; }
 .tg-card:hover, .tg-card:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
@@ -2326,7 +2334,7 @@ dialog.template-gallery { width: min(94vw, 760px); }
 .tg-size { font-size: var(--fs-xs); }
 /* Design > Templates in Slides: the groups scroll together, two slides per card */
 dialog.slide-templates { width: min(94vw, 840px); }
-.st-body { max-height: min(64vh, 600px); overflow-y: auto; padding-right: 4px; }
+.st-body { max-height: 64vh; overflow-y: auto; padding-right: 4px; }
 .st-body h3 { margin: 10px 0 6px; font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .st-body .tg-grid { max-height: none; overflow: visible; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
 .st-body .tg-thumb { background: transparent; }
@@ -2395,7 +2403,7 @@ dialog.toolbox-dialog { width: min(96vw, 900px); }
 .tbe-crumb { display: flex; gap: 8px; align-items: center; font-size: var(--fs-sm); color: var(--muted); }
 .tbe-crumb[hidden] { display: none; }
 .tbe-crumb button { white-space: nowrap; flex: 0 0 auto; }
-.tbe-grid { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px; min-height: 180px; max-height: min(48vh, 440px); overflow-y: auto; padding: 10px 6px; border-radius: var(--r-panel); background: color-mix(in srgb, var(--accent-soft) 55%, transparent); border: 1px solid var(--line); }
+.tbe-grid { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px; min-height: 180px; max-height: 48vh; overflow-y: auto; padding: 10px 6px; border-radius: var(--r-panel); background: color-mix(in srgb, var(--accent-soft) 55%, transparent); border: 1px solid var(--line); }
 .tbe-grid[hidden] { display: none; }
 .tbe-tile { position: relative; width: 64px; padding: 4px 0 2px; border-radius: var(--r-panel); cursor: grab; user-select: none; touch-action: none; outline: none; }
 .tbe-tile[hidden] { display: none; }
@@ -2435,7 +2443,7 @@ dialog.toolbox-dialog { width: min(96vw, 900px); }
 .tbe-size input[type='number'] { width: 4.2em; }
 .tbe-size select { max-width: 14em; }
 .tbe-fit { margin-left: auto; }
-.tbe-board { display: grid; gap: 4px; align-content: start; justify-content: start; align-items: center; min-height: 120px; max-height: min(48vh, 440px); overflow: auto; padding: 10px 8px; border-radius: var(--r-panel);
+.tbe-board { display: grid; gap: 4px; align-content: start; justify-content: start; align-items: center; min-height: 120px; max-height: 48vh; overflow: auto; padding: 10px 8px; border-radius: var(--r-panel);
   background: color-mix(in srgb, var(--accent-soft) 55%, transparent); border: 1px solid var(--line); overscroll-behavior: contain; }
 .tbe-cell { position: relative; display: grid; place-items: center; min-width: 38px; height: 38px; border-radius: var(--r-tab); outline: none; user-select: none; touch-action: none; }
 .tbe-cell:not(.empty) { cursor: grab; }
@@ -2675,7 +2683,7 @@ dialog.cf-manage { width: min(92vw, 640px); }
 .search-box kbd { font: 10px var(--mono-font); }
 dialog.command-search { width: min(94vw, 560px); padding: 10px; margin-top: 10vh; }
 dialog.command-search input { width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-lg); padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-tab); }
-dialog.command-search ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: min(60vh, 440px); overflow-y: auto; }
+dialog.command-search ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: 60vh; overflow-y: auto; }
 dialog.command-search li { display: flex; align-items: baseline; gap: 10px; padding: 5px 8px; border-radius: var(--r-control); cursor: default; }
 dialog.command-search li[aria-selected='true'] { background: var(--accent-soft); }
 dialog.command-search li { align-items: center; }
@@ -2751,7 +2759,7 @@ dialog.equation-dialog textarea { width: 100%; box-sizing: border-box; font: var
 .eq-preview canvas { display: block; }
 
 /* Insert > Shapes in Slides and Documents: the shape library as a drop-down */
-.shape-pop { position: fixed; z-index: 60; width: 340px; max-height: min(70vh, 520px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-tab); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); }
+.shape-pop { position: fixed; z-index: 60; width: 340px; max-height: 70vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-tab); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); }
 .shape-pop[hidden] { display: none; }
 .shape-pop > .design-lib { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 .shape-pop .dl-shape { cursor: pointer; }
@@ -2841,7 +2849,7 @@ dialog.animate-dialog .animate-credit { margin: 0 0 8px; font-size: 0.85em; }
 .keep-notices .keep-notice { position: static; width: auto; }
 dialog.keep-recover, dialog.keep-versions { width: min(92vw, 520px); }
 dialog.keep-choose { width: min(92vw, 460px); }
-.keep-list { max-height: min(50vh, 360px); overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-control); padding: 4px; margin: 8px 0; }
+.keep-list { max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-control); padding: 4px; margin: 8px 0; }
 .keep-list-head { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); padding: 6px 6px 2px; }
 .keep-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 6px; border-radius: var(--r-control); cursor: default; }
 .keep-row:hover { background: var(--accent-soft); }
@@ -2939,7 +2947,7 @@ dialog.diagram-dialog { width: min(96vw, 1060px); max-height: 94vh; }
 
 /* The Settings window: a list of pages on the left; each page is a settings window shown inside it */
 /* one width for every page (it used to widen for pages with a preview, so the page list jumped) */
-dialog.settings-window { width: min(1180px, calc(100vw - 32px)); height: min(680px, calc(100vh - 48px)); padding: 0; display: none; flex-direction: column; overflow: hidden; }
+dialog.settings-window { width: min(1180px, calc(100vw - 32px)); height: min(920px, calc(100vh - 48px)); padding: 0; display: none; flex-direction: column; overflow: hidden; }
 dialog.settings-window[open] { display: flex; }
 dialog.settings-window.with-preview { width: min(1180px, calc(100vw - 32px)); max-width: none; }
 dialog.settings-window { max-width: none; }
@@ -2954,6 +2962,9 @@ dialog.settings-window { max-width: none; }
 .sw-list button:hover { background: var(--hover, rgb(0 0 0 / 0.06)); }
 .sw-list button.on { background: var(--accent-soft); font-weight: 600; }
 .sw-list p { padding: 3px 8px; margin: 0; }
+.sw-list .sw-group { margin: 8px 0 1px; padding: 0 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: none; }
+.sw-list .sw-group:first-child { margin-top: 2px; }
+.sw-list .sw-group ~ button { padding-left: 14px; }
 .sw-pane { flex: 1; overflow: auto; padding: 2px 14px 12px; min-width: 0; }
 /* a page's preview, beside its settings */
 .sw-aside { flex: 0 0 260px; overflow: auto; padding: 12px 14px; border-left: 1px solid var(--line); background: var(--panel, var(--bg)); }
@@ -3388,7 +3399,7 @@ dialog.show-setup { width: min(94vw, 600px); }
 .sc-list { flex: 1; min-height: 0; overflow: auto; }
 
 /* File > New from Template */
-.file-templates .ft-body { max-height: min(68vh, 620px); overflow-y: auto; }
+.file-templates .ft-body { max-height: 68vh; overflow-y: auto; }
 .file-templates .ft-body .tg-grid { max-height: none; overflow: visible; }
 .file-templates h3 { margin: 8px 0 6px; font-size: var(--fs-md); }
 .ft-page { width: 120px; height: 150px; align-self: center; background: #fff; color: #222; border: 1px solid var(--line); padding: 8px; overflow: hidden; font-family: 'Times New Roman', serif; font-size: 6px; line-height: 1.35; box-sizing: border-box; }
@@ -3577,20 +3588,26 @@ body:not(.mode-window) .rb-tabs button.rb-context[aria-selected='true'] { backgr
 /* Document and Spreadsheet: until a structure is drawn or edited, one Insert Structure button stands in for
    the drawing tools (main.ts structureStart); the whole toolbox comes back while a structure is drawn, and
    in split view */
-#structure-start { display: none; }
+#structure-start, .structure-more, .structure-fold { display: none; }
 /* (the button alone doesn't keep the left dock open when every toolbox has moved off it) */
-#dock-left:not(:has(> :not(#structure-start))) { display: none; }
+#dock-left:not(:has(> :not(#structure-start, .structure-more, .structure-fold))) { display: none; }
 body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) #dock-left:has(> #structure-start) { display: flex; }
 body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .toolbox[data-id='main'] { display: none; }
-body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) #structure-start {
+body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#structure-start, .structure-more) {
   display: flex; flex-direction: column; align-items: center; gap: 3px; flex: none; width: 52px; padding: 6px 2px 5px;
   border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--text);
   font-size: var(--fs-xs); line-height: 1.15; text-align: center; cursor: pointer;
 }
-#structure-start svg { width: 26px; height: 26px; color: var(--accent); }
-#structure-start:hover { border-color: var(--line); background: var(--accent-soft); }
+:is(#structure-start, .structure-more) svg { width: 26px; height: 26px; color: var(--accent); }
+.structure-more svg { width: 22px; height: 22px; }
+:is(#structure-start, .structure-more):hover { border-color: var(--line); background: var(--accent-soft); }
+/* the arrow that folds the rail to a sliver, and opens it again */
+body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structure-fold { display: block; flex: none; align-self: center; width: 20px; height: 20px; margin-top: 4px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
+.structure-fold:hover { border-color: var(--line); color: var(--text); }
+body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#structure-start, .structure-more) { display: none; }
+body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structure-fold { margin-top: 2px; width: 14px; }
 /* Dark Gray: the button sits on the dark dock itself (toolboxes sit on light cards), so it takes the menu bar's colors */
-:root[data-gray]:not([data-shadows='off']) #dock-left > #structure-start { --text: #eceef2; --line: #474b53; --accent-soft: #41464f; }
+:root[data-gray]:not([data-shadows='off']) #dock-left > :is(#structure-start, .structure-more, .structure-fold) { --text: #eceef2; --line: #474b53; --accent-soft: #41464f; --accent: var(--mode-accent-dark, #4ea9bc); --muted: #aeb4c0; }
 
 /* the quick bar beside the menus (Quick Access Toolbar, src/ui/quick-bar.ts): plain icon buttons, a frame only on hover */
 .quick-bar { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
@@ -3781,7 +3798,7 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .crystal-canvas { display: block; width: 100%; height: min(64vh, 500px); border: 1px solid var(--line); border-radius: var(--r-tab); background: #fff; cursor: grab; touch-action: none; }
 .crystal-canvas:focus-visible { outline: 2px solid var(--accent, #1a7f8e); outline-offset: 1px; }
 .crystal-status { margin: 4px 0 0; min-height: 1.2em; }
-.crystal-side { width: 230px; flex: none; display: flex; flex-direction: column; gap: 6px; overflow: hidden auto; max-height: min(68vh, 540px); }
+.crystal-side { width: 230px; flex: none; display: flex; flex-direction: column; gap: 6px; overflow: hidden auto; max-height: 68vh; }
 .crystal-side fieldset { border: 1px solid var(--line); border-radius: var(--r-tab); margin: 0; padding: 4px 8px 6px; }
 .crystal-side legend { font-size: 11px; font-weight: 600; padding: 0 4px; }
 .crystal-side label.ask-check { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
@@ -3796,7 +3813,7 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .crystal-shown[hidden] { display: none; }
 .crystal-views button { padding-inline: 8px; }
 .crystal-views button:has(i) { min-width: 28px; }
-.crystal-atoms { width: 156px; flex: none; display: flex; flex-direction: column; gap: 3px; max-height: min(68vh, 540px); min-height: 0; }
+.crystal-atoms { width: 156px; flex: none; display: flex; flex-direction: column; gap: 3px; max-height: 68vh; min-height: 0; }
 .crystal-atoms-head { display: flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 600; }
 .crystal-atoms-head .link { border: none; background: none; color: var(--accent); padding: 0 3px; min-height: 0; font-size: 11px; font-weight: 600; text-decoration: none; cursor: pointer; }
 .crystal-atoms-head .link:hover { text-decoration: underline; }
@@ -3810,7 +3827,7 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .crystal-atom span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crystal-atom select { width: 64px; font-size: 11px; padding: 0 2px; height: 19px; }
 .crystal-parts { max-height: 120px; overflow: auto; }
-.crystal-page .crystal-table-wrap { flex: 1; max-height: min(56vh, 420px); overflow: auto; border: 1px solid var(--line); border-radius: var(--r-tab); }
+.crystal-page .crystal-table-wrap { flex: 1; max-height: 56vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-tab); }
 .crystal-table { border-collapse: collapse; width: 100%; font-size: 12px; }
 .crystal-table td { padding: 3px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .crystal-table td:first-child { color: var(--muted, #555); white-space: nowrap; }
@@ -3896,7 +3913,7 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .shape-pick canvas { width: 20px; height: 20px; }
 
 /* Ribbon galleries in Word's style (select-gallery.ts): each choice with a small picture of it */
-.rb-gal-menu { min-width: 200px; max-height: min(70vh, 560px); overflow-y: auto; }
+.rb-gal-menu { min-width: 200px; max-height: 70vh; overflow-y: auto; }
 .rb-gal-menu .gal-items { display: flex; flex-direction: column; gap: 1px; }
 .rb-gal-menu .gal-grid { display: grid; grid-template-columns: repeat(3, auto); gap: 4px; padding: 2px; }
 .ribbon .rb-gal-menu button.gal-it { display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 4px; border: 1px solid transparent; border-radius: var(--r-ctl, 3px); text-align: left; line-height: 1.25; }
@@ -3952,7 +3969,7 @@ body:not(.slides-mode, .design-mode, .sheet-mode, .doc-mode) #side-content > :is
 .popup-menu button:has(> .pm-ic) { display: flex; align-items: center; justify-content: flex-start; text-align: left; }
 
 /* Insert > All Charts (chart-gallery.ts): every kind of chart drawn from the selection */
-.chart-gallery .fb-body { width: 372px; max-height: min(78vh, 720px); overflow-y: auto; padding: 4px 8px 8px; }
+.chart-gallery .fb-body { width: 372px; max-height: 78vh; overflow-y: auto; padding: 4px 8px 8px; }
 .cg-note { margin: 2px 0 6px; font-size: var(--fs-xs); }
 .cg-list h3 { margin: 8px 0 4px; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .cg-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
@@ -4007,6 +4024,7 @@ body:not(.slides-mode, .design-mode, .sheet-mode, .doc-mode) #side-content > :is
 /* a narrow window's second step (src/ui/ribbon-fit.ts): a group of large buttons becomes small buttons with their words, three to a column */
 .rb-group.rb-small > .rb-row { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, auto); align-content: center; column-gap: 2px; row-gap: 1px; }
 .rb-group.rb-small > .rb-row > .rb-fly { display: flex; }
+.rb-group.rb-small > .rb-row > .rb-col { display: contents; }
 .ribbon .rb-group.rb-small button.rb-big { flex-direction: row; align-items: center; justify-content: flex-start; gap: 4px; min-width: 0; padding: 1px 5px; line-height: 17px; }
 .ribbon .rb-group.rb-small button.rb-big br { display: none; }
 .rb-group.rb-small button.rb-big .rb-icon { font-size: 14px; line-height: 1; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
@@ -4105,7 +4123,7 @@ dialog.hotkeys:not([data-view="board"]) .hk-board { display: none; }
 .kb-kind::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; background: var(--kb); vertical-align: -1px; }
 
 /* the Smart Scheme pane: beside the selected scheme, like SmartArt's text pane */
-.smart-pane { position: fixed; z-index: 40; width: 300px; max-height: min(70vh, 560px); overflow: auto; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14); font: var(--fs-sm) var(--ui-font); display: grid; gap: 6px; padding: 6px 8px 8px; }
+.smart-pane { position: fixed; z-index: 40; width: 300px; max-height: 70vh; overflow: auto; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14); font: var(--fs-sm) var(--ui-font); display: grid; gap: 6px; padding: 6px 8px 8px; }
 .smart-pane[hidden] { display: none; }
 .smart-pane.folded { width: auto; padding: 2px; }
 .smart-pane button { font: inherit; }
@@ -4591,3 +4609,52 @@ dialog.analysis-settings .ask-form { display: block; }
 .as-paper .muted { color: #666; }
 .as-cap { white-space: normal; }
 .as-calc-preview { grid-column: 1 / -1; padding: 4px 8px; border: 1px dashed var(--line); border-radius: var(--r-control); font-size: var(--fs-sm); }
+
+/* ---- UI audit 2026-11-16 (U3): a window's own buttons stay in view. A window too tall for the
+   screen scrolls its body under the button row, which is pinned to the bottom edge; and a window
+   may use nearly the whole height of the screen, so big displays show more of it at once. */
+dialog { max-height: calc(100vh - 32px); }
+dialog:not(.embedded) .ask-buttons { position: sticky; bottom: -12px; z-index: 3; margin: 10px -14px -12px; padding: 8px 14px 12px; background: var(--panel); }
+dialog:not(.embedded) .ask-form > .ask-buttons { margin-bottom: -12px; }
+/* Dark Gray: windows take the panels' light gray, as the ribbon and side panel do (their boxes stay white) */
+:root[data-gray] dialog, :root[data-gray] .tool-window, :root[data-gray] .template-window { --panel: #dfe1e5; --line: #bfc3ca; --accent-soft: #c9ced7; }
+:root[data-gray] dialog :is(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range']), select, textarea) { background: #fff; color: #1d2128; }
+/* U11: every New window opens in the middle (New Design sat in the top-left corner), and the few
+   cards of a document or spreadsheet category are drawn larger so the window isn't mostly empty */
+dialog.template-window.tw-modal { inset: 0; margin: auto; }
+:is(.tw-document, .tw-sheet) .tw-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+:is(.tw-document, .tw-sheet) .tw-thumb { height: 150px; }
+:is(.tw-document, .tw-sheet) .tw-thumb :is(.ft-page, .ft-sheet) { zoom: 1.5; }
+.ft-sheet span { text-overflow: ellipsis; }
+/* U12: one close button on every window, at the top right of its title row */
+.win-x { flex: none; margin-left: auto; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.win-x:hover, .win-x:focus-visible { border-color: var(--line); color: var(--text); }
+.refs-head > .win-x { order: 99; }
+/* U6: links and text fields in windows use the program's own look (the mode accent, the shared
+   field border and an accent focus ring) instead of the browser's. :where() keeps these weaker
+   than any field's own rule. */
+:where(dialog, .welcome-card, .tool-window, #side, .settings-window) :where(a) { color: var(--accent); text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 2px; }
+:where(dialog, .welcome-card, .tool-window, #side, .settings-window) :where(a:hover) { text-decoration-color: currentColor; }
+:where(dialog, .welcome-card, .tool-window) :where(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range'], [type='file'], [type='button'], [type='submit']), textarea) { border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); padding: 3px 6px; }
+:where(dialog, .welcome-card, .tool-window) :where(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range'], [type='file']), textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+/* U7: on a Settings page each field is as wide as what it holds, and its unit follows it */
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) { display: grid; grid-template-columns: 21em max-content max-content 1fr; margin: 0; }
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > .ask-name { max-width: none; }
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']) { justify-self: start; width: 22em; max-width: 100%; }
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select { justify-self: start; }
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > input[type='number'] { width: 6em; }
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select { width: auto; min-width: 9em; max-width: 26em; }
+.sw-pane dialog.keep-options .ask-row:not(.ask-check) { grid-template-columns: 21em max-content 1fr; }
+/* U24: Settings ▸ Drawing Style: the scrolling list runs down to the footer */
+.sw-pane > dialog.style-dialog.embedded { height: 100%; box-sizing: border-box; }
+.sw-pane > dialog.style-dialog.embedded > form { height: 100%; display: flex; flex-direction: column; }
+.sw-pane > dialog.style-dialog.embedded .md-grid { flex: 1 1 0; min-height: 0; max-height: none; border-bottom: 0; }
+.sw-pane:has(> dialog.style-dialog.embedded) { padding-bottom: 0; }
+
+/* U20: the Canvas ribbon's gear sits after the problems box, as on the other ribbons */
+.canvas-ribbon .rb-tabs .cr-tab-end + .rb-gear { margin-left: 4px; }
+
+/* U10: a Canvas tab with room shows each small button's name beside its picture */
+.canvas-ribbon .rb-group.cr-roomy button.cr-minor:not(:has(.cr-word)) { width: auto; justify-content: flex-start; gap: 4px; padding: 0 6px 0 3px; font-size: var(--fs-sm); color: var(--text); white-space: nowrap; }
+.canvas-ribbon .rb-group.cr-roomy button.cr-minor:not(:has(.cr-word)) svg { flex: none; color: var(--accent); }
+.canvas-ribbon .rb-group.cr-roomy button.cr-minor:not(:has(.cr-word))::after { content: attr(aria-label); }
