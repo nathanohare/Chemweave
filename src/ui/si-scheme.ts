@@ -14,6 +14,7 @@ import { fieldKeys, valuesOf, compoundName } from '../si/project';
 import { parseMarkup, MENTION, STRUCT } from '../si/markup';
 import { partText } from '../si/fields';
 import { newId } from '../si/ids';
+import { siDrawingStyle } from '../si/drawing-style';
 import { drawScheme, SCHEME_DEFAULTS, type DrawBox, type DrawStep, type SchemeLayout } from '../si/scheme-draw';
 import * as E from '../si/scheme-edit';
 import { SiRichBox } from './si-rich';
@@ -280,7 +281,7 @@ export class SiSchemePage {
         topStructures: await structures(st.top), bottomStructures: await structures(st.bottom),
       });
     }
-    const got = drawScheme(starting, steps, lay, TEXT_W);
+    const got = drawScheme(starting, steps, lay, TEXT_W, siDrawingStyle(this.p.settings));
     const svg = got ? this.host.drawingSvg(got.contents) : null;
     into.replaceChildren();
     if (!svg || !got) { into.append(el('p', 'muted si-note', 'Nothing to print yet: draw the structures below.')); return; }
@@ -477,37 +478,11 @@ export class SiSchemePage {
   private async layoutWindow(): Promise<void> {
     const p = this.p, k = this.k;
     const now = this.layout;
-    const alignOpts = [{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }, { value: 'right', label: 'Right' }];
     const fields: Field[] = [
-      { name: 'h1', label: 'Text', value: '', type: 'heading' },
-      { name: 'cond_size_pt', label: 'Conditions text size', value: String(now.cond_size_pt), type: 'number', unit: 'pt', min: 5, max: 20, help: 'The conditions above and under the arrows; the IDs are 1 pt larger (bold).' },
-      { name: 'top_align', label: 'Conditions above the arrow', value: now.top_align, options: alignOpts },
-      { name: 'bottom_align', label: 'Conditions under the arrow', value: now.bottom_align, options: alignOpts },
-      { name: 'cond_structure_pct', label: 'Structures in the conditions', value: String(now.cond_structure_pct), type: 'number', unit: '% of the scheme’s structures', min: 10, max: 300, help: 'Structures put in the conditions (Insert Structure) are drawn this much of the size of the scheme’s own structures, over the text above the arrow or under the text below it. Chemweave starts at 70 %.' },
-      { name: 'h2', label: 'Arrows and spacing', value: '', type: 'heading' },
-      { name: 'arrow_before_mm', label: 'Arrow before the text', value: String(now.arrow_before_mm), type: 'number', unit: 'mm', min: 0, max: 50 },
-      { name: 'arrow_after_mm', label: 'Arrow after the text (head)', value: String(now.arrow_after_mm), type: 'number', unit: 'mm', min: 0, max: 50 },
-      { name: 'arrow_min_mm', label: 'Shortest arrow', value: String(now.arrow_min_mm), type: 'number', unit: 'mm', min: 2, max: 150 },
-      { name: 'gap_mm', label: 'Gap between structures, + and arrows', value: String(now.gap_mm), type: 'number', unit: 'mm', min: 0, max: 20 },
-      { name: 'h3', label: 'IDs and yields', value: '', type: 'heading' },
-      { name: 'align_ids', label: 'Line up the IDs of a row', value: String(now.align_ids), type: 'checkbox', help: 'Every ID of a row on one line, under its lowest structure; otherwise each ID sits right under its structure.' },
-      { name: 'yields', label: 'Yields', value: now.yields, options: [{ value: 'product', label: 'Under each product' }, { value: 'conditions', label: 'Under the step’s conditions' }, { value: 'none', label: 'Not printed' }] },
-      { name: 'h4', label: 'Page', value: '', type: 'heading' },
-      { name: 'scale_pct', label: 'Size', value: String(now.scale_pct), type: 'number', unit: '%', min: 20, max: 300 },
-      { name: 'fit', label: 'Too wide for the page', value: now.fit, options: [{ value: 'wrap', label: 'Start a new row at an arrow' }, { value: 'shrink', label: 'Shrink it to one line' }] },
-      { name: 'show_label', label: 'Print “Scheme S1. Name” under it', value: String(now.show_label), type: 'checkbox', help: 'Numbered with the SI’s schemes and listed; off by default, as a data section’s scheme stands alone.' },
+      ...schemeLayoutFields(now),
       { name: 'scope', label: 'Use for', value: 'scheme', options: [{ value: 'scheme', label: 'This scheme' }, { value: 'project', label: 'Every scheme of the project (its defaults)' }] },
     ];
-    const read = (v: Record<string, string>): Partial<SchemeLayout> => {
-      const out: Record<string, unknown> = {};
-      for (const key of Object.keys(SCHEME_DEFAULTS) as (keyof SchemeLayout)[]) {
-        const x = v[key];
-        if (x === undefined) continue;
-        const def = SCHEME_DEFAULTS[key];
-        out[key] = typeof def === 'boolean' ? x === 'true' : typeof def === 'number' ? Number(x) : x;
-      }
-      return out as Partial<SchemeLayout>;
-    };
+    const read = readSchemeLayout;
     const got = await ask('Scheme Layout', fields, { ok: 'Apply', preview: { title: 'As it prints', below: true, draw: (v) => { const box = el('div', 'si-scheme-preview'); void this.drawPreview({ ...now, ...read(v) }, box); return box; } } });
     if (!got) return;
     const values = { ...now, ...read(got) };
@@ -522,4 +497,41 @@ export class SiSchemePage {
 
   /** Every conditions box saves what was typed. */
   commit(): void { for (const b of this.boxes) b.commit(); }
+}
+
+const ALIGN_OPTS = [{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }, { value: 'right', label: 'Right' }];
+
+/** Scheme ▸ Layout's settings (and Project Settings ▸ Schemes'), filled from `now`. */
+export function schemeLayoutFields(now: SchemeLayout): Field[] {
+  return [
+    { name: 'h1', label: 'Text', value: '', type: 'heading' },
+    { name: 'cond_size_pt', label: 'Conditions text size', value: String(now.cond_size_pt), type: 'number', unit: 'pt', min: 5, max: 20, help: 'The conditions above and under the arrows; the IDs are 1 pt larger (bold).' },
+    { name: 'top_align', label: 'Conditions above the arrow', value: now.top_align, options: ALIGN_OPTS },
+    { name: 'bottom_align', label: 'Conditions under the arrow', value: now.bottom_align, options: ALIGN_OPTS },
+    { name: 'cond_structure_pct', label: 'Structures in the conditions', value: String(now.cond_structure_pct), type: 'number', unit: '% of the scheme’s structures', min: 10, max: 300, help: 'Structures put in the conditions (Insert Structure) are drawn this much of the size of the scheme’s own structures, over the text above the arrow or under the text below it. Chemweave starts at 70 %.' },
+    { name: 'h2', label: 'Arrows and spacing', value: '', type: 'heading', help: 'The arrows’ line width and heads, and the structures’ bonds and labels, follow the project’s drawing style (Project Settings ▸ Structures).' },
+    { name: 'arrow_before_mm', label: 'Arrow before the text', value: String(now.arrow_before_mm), type: 'number', unit: 'mm', min: 0, max: 50 },
+    { name: 'arrow_after_mm', label: 'Arrow after the text (head)', value: String(now.arrow_after_mm), type: 'number', unit: 'mm', min: 0, max: 50 },
+    { name: 'arrow_min_mm', label: 'Shortest arrow', value: String(now.arrow_min_mm), type: 'number', unit: 'mm', min: 2, max: 150 },
+    { name: 'gap_mm', label: 'Gap between structures, + and arrows', value: String(now.gap_mm), type: 'number', unit: 'mm', min: 0, max: 20 },
+    { name: 'h3', label: 'IDs and yields', value: '', type: 'heading' },
+    { name: 'align_ids', label: 'Line up the IDs of a row', value: String(now.align_ids), type: 'checkbox', help: 'Every ID of a row on one line, under its lowest structure; otherwise each ID sits right under its structure.' },
+    { name: 'yields', label: 'Yields', value: now.yields, options: [{ value: 'product', label: 'Under each product' }, { value: 'conditions', label: 'Under the step’s conditions' }, { value: 'none', label: 'Not printed' }] },
+    { name: 'h4', label: 'Page', value: '', type: 'heading' },
+    { name: 'scale_pct', label: 'Size', value: String(now.scale_pct), type: 'number', unit: '%', min: 20, max: 300 },
+    { name: 'fit', label: 'Too wide for the page', value: now.fit, options: [{ value: 'wrap', label: 'Start a new row at an arrow' }, { value: 'shrink', label: 'Shrink it to one line' }] },
+    { name: 'show_label', label: 'Print “Scheme S1. Name” under it', value: String(now.show_label), type: 'checkbox', help: 'Numbered with the SI’s schemes and listed; off by default, as a data section’s scheme stands alone.' },
+  ];
+}
+
+/** The layout values typed into those settings. */
+export function readSchemeLayout(v: Record<string, string>): Partial<SchemeLayout> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(SCHEME_DEFAULTS) as (keyof SchemeLayout)[]) {
+    const x = v[key];
+    if (x === undefined) continue;
+    const def = SCHEME_DEFAULTS[key];
+    out[key] = typeof def === 'boolean' ? x === 'true' : typeof def === 'number' ? Number(x) : x;
+  }
+  return out as Partial<SchemeLayout>;
 }

@@ -256,6 +256,7 @@ import { SheetChem } from './sheet/sheet-chem';
 import { structureDoc, structureMolfile } from './sheet/structure-doc';
 import type { SiMode, SiCard } from './ui/si-mode';
 import type { SiProject as SiProjectT } from './si/project';
+import { siDrawingStyle } from './si/drawing-style';
 import type { SiView } from './si/manuscript';
 import type { SiAccess } from './ui/doc-si';
 import { readScene, sceneToDoc } from './io/chem-formats';
@@ -8227,8 +8228,12 @@ function modeLoaded(mode: 'sheet' | 'document'): void {
 let siMode: SiMode | null = null;
 let siModeLoading: Promise<SiMode> | null = null;
 
-/** SI structures are drawn in the house style (ACS 1996), as SI Assistant draws them. */
-const SI_STYLE = ACS_1996;
+/**
+ * SI structures are drawn in the project's drawing style (Project Settings ▸ Structures): ACS 1996
+ * with SI Assistant's own Structures settings unless another is chosen.
+ */
+const siStyleOf = (p: SiProjectT | null | undefined): DocStyle => (p ? siDrawingStyle(p.settings) : ACS_1996);
+const siStyleNow = (): DocStyle => siStyleOf(ws.active.si);
 
 function loadSiMode(): Promise<SiMode> {
   siModeLoading ??= import('./ui/si-mode').then(({ SiMode: Mode }) => {
@@ -8238,12 +8243,12 @@ function loadSiMode(): Promise<SiMode> {
       changed: () => { renderTabs(); updateTitle(); siChanged(ws.active.si?.folder.where ?? null); },
       contentsOf: (mol) => {
         const scene = readScene('mol', mol);
-        return scene ? sceneToDoc(scene, SI_STYLE).doc.contents() : null;
+        return scene ? sceneToDoc(scene, siStyleNow()).doc.contents() : null;
       },
-      molfileOf: (c) => structureMolfile(c, SI_STYLE),
+      molfileOf: (c) => structureMolfile(c, siStyleNow()),
       pictureOf: (mol) => {
         const scene = readScene('mol', mol);
-        return scene ? drawingSvg(sceneToDoc(scene, SI_STYLE).doc, null) : null;
+        return scene ? drawingSvg(sceneToDoc(scene, siStyleNow()).doc, null) : null;
       },
       analyze: async (mol) => {
         const got = await chem.analyze([{ molblock: mol, map: [] }]);
@@ -8251,10 +8256,19 @@ function loadSiMode(): Promise<SiMode> {
         return f && !f.error ? { formula: f.formula, mw: f.mw, exact: f.exact } : null;
       },
       smiles: (mol) => chem.molToSmiles(mol),
-      editStructure: (contents, title, done) => editCellStructure(contents, title, done, SI_STYLE),
+      editStructure: (contents, title, done) => editCellStructure(contents, title, done, siStyleNow()),
+      chooseDrawingStyle: async (current, note) => {
+        const got = await editDrawingStyle({
+          current, own: ownStyles, kindPlural: 'SI projects', where: 'this SI project', isDefault: false, hasStructures: false, noForNew: true, note,
+          preview: (st, focus) => stylePreview(st, undefined, undefined, focus),
+        });
+        if (!got) return null;
+        if (got.own !== ownStyles) { ownStyles = got.own; storeSettings(); }
+        return got.style;
+      },
       // a table cell's picture: the drawing as SVG, and as CDXML beside it to draw it again
       drawingFiles: (d) => {
-        const drawing = d instanceof Doc ? d : structureDoc(d, SI_STYLE);
+        const drawing = d instanceof Doc ? d : structureDoc(d, siStyleNow());
         const svg = drawingSvg(drawing, null);
         return svg ? { svg, cdxml: writeCdxml(drawing, { name: 'picture.cdxml', textMeasure: measureText }) } : null;
       },
@@ -8276,9 +8290,9 @@ function loadSiMode(): Promise<SiMode> {
       },
       pickFiles: (label, exts) => openManyBytesDialog(label, exts).catch(async (e) => { await showError(String(e)); return []; }),
       siFacts: (mols) => chem.siFacts(mols),
-      sizeOf: (c) => figures.size(c, SI_STYLE),
+      sizeOf: (c) => figures.size(c, siStyleNow()),
       openCompiled: async (doc, name, pdf) => {
-        ws.showDocument({ ...doc, drawingStyle: { ...SI_STYLE } }, name.replace(/[\\/:*?"<>|]/g, '-'));
+        ws.showDocument({ ...doc, drawingStyle: { ...siStyleNow() } }, name.replace(/[\\/:*?"<>|]/g, '-'));
         renderTabs();
         if (!pdf) return;
         await new Promise((r) => requestAnimationFrame(() => r(null)));
@@ -8515,11 +8529,11 @@ async function compileForLink(link: SiLink): Promise<SiView | null> {
   if (!p) { flash(`The linked SI project isn’t at ${link.path} any more. References ▸ Linked SI links it again.`, 7000); return null; }
   const [{ compileSi }, { siPages, siDataOf }, { DocLayouter }, { docMeasure }] = await Promise.all([import('./si/compile-doc'), import('./si/manuscript'), import('./document/doc-layout'), import('./document/doc-file')]);
   const got = await compileSi(p, {
-    contentsOf: (mol) => { const scene = readScene('mol', mol); return scene ? sceneToDoc(scene, SI_STYLE).doc.contents() : null; },
-    sizeOf: (c) => figures.size(c, SI_STYLE),
+    contentsOf: (mol) => { const scene = readScene('mol', mol); return scene ? sceneToDoc(scene, siStyleOf(p)).doc.contents() : null; },
+    sizeOf: (c) => figures.size(c, siStyleOf(p)),
     facts: (mols) => chem.siFacts(mols),
   });
-  const doc = { ...got.doc, drawingStyle: { ...SI_STYLE } };
+  const doc = { ...got.doc, drawingStyle: { ...siStyleOf(p) } };
   const lay = new DocLayouter({ measure: docMeasure, drawingSize: (c, s) => figures.size(c, s) }).layout(doc);
   const paraPage = lay.paraTops.map((pt) => lay.pages[pt.page]?.number ?? '');
   return { title: p.title, targets: got.targets, pages: siPages(doc, got.targets, paraPage), data: siDataOf(p) };
@@ -8579,7 +8593,7 @@ async function siPicture(link: SiLink, key: string): Promise<string | null> {
   if (!p || !c || !p.hasStructure(c)) return null;
   const mol = await p.readStructure(c);
   const scene = mol ? readScene('mol', mol) : null;
-  return scene ? drawingSvg(sceneToDoc(scene, SI_STYLE).doc, null) : null;
+  return scene ? drawingSvg(sceneToDoc(scene, siStyleOf(p)).doc, null) : null;
 }
 
 /** The window is closing: Chem SI Assistant can open the projects for editing again. */

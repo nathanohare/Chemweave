@@ -2978,6 +2978,7 @@ dialog.settings-window { max-width: none; }
 .sw-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); }
 .sw-foot .sw-note { margin-right: auto; font-size: var(--fs-sm, 0.85em); }
 .sw-foot.sw-actions .sw-default, .sw-foot.sw-actions .sw-apply { display: none; }
+.sw-no-default .sw-default { display: none; }
 .sw-pane .sw-hidden { display: none !important; }
 /* labels on one line where the window has room; the pane scrolls as a whole (no inner scroll box with empty room under it) */
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > .ask-name { max-width: 26em; }
@@ -4984,3 +4985,10 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-xray-value { padding: 1px 4px; font-size: var(--fs-sm); }
 .si-xray-value.si-typed { font-weight: 700; }
 .si-xray .si-num { width: 5em; }
+/* Project Settings ▸ Headings and Labels: how they will read; ▸ Page: a page with its header and footer */
+.si-heading-example { margin: 0; font-size: 13px; }
+.si-page-example { width: 340px; height: 150px; border: 1px solid var(--line, #ccc); background: #fff; color: #222; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 14px; box-sizing: border-box; font-size: 9px; }
+.si-page-example > .si-page-header, .si-page-example > .si-page-footer { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; min-height: 12px; }
+.si-page-example span:nth-child(2) { text-align: center; }
+.si-page-example span:nth-child(3) { text-align: right; }
+.si-page-body { flex: 1; margin: 8px 0; background: repeating-linear-gradient(#fff 0 6px, #e6e6e6 6px 8px); }

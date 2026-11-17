@@ -9,6 +9,7 @@
 
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
+import type { DocStyle } from '../style';
 import type { DocText } from '../document/document';
 import { compileSi, objectLabels } from '../si/compile-doc';
 import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
@@ -76,6 +77,8 @@ export interface SiModeHost {
   copyRich(text: string, html: string): Promise<void>;
   /** A structure's systematic name, given only when the name reads back as the same structure. */
   nameStructure(molfile: string): Promise<{ ok: true; name: string } | { ok: false; message: string }>;
+  /** The Drawing Style window, for an SI project's style (Project Settings ▸ Structures); null when cancelled. */
+  chooseDrawingStyle(current: DocStyle, note: string): Promise<DocStyle | null>;
 }
 
 /** An SI compound as the Canvas shows it (its card in the Analysis panel). */
@@ -2357,25 +2360,27 @@ export class SiMode {
         this.host.changed();
         this.host.flash('Read the project folder again.');
         return;
-      case 'project-settings': {
-        const got = await ask('Project Settings', [
-          { name: 'style', label: 'Journal style', value: String(p.settings.journal_style ?? 'ACS'), options: ['ACS', 'Wiley', 'RSC'].map((x) => ({ value: x, label: x })) },
-          { name: 'ppm', label: 'HRMS tolerance', value: String(p.settings.hrms_tolerance_ppm ?? 5), unit: 'ppm', type: 'number', min: 0.1, max: 100 },
-          { name: 'numbers', label: 'Heading numbers', value: ['outline', 'decimal', 'none'].includes(String(p.settings.heading_numbers)) ? String(p.settings.heading_numbers) : 'style', options: [{ value: 'style', label: 'As the journal style does' }, { value: 'outline', label: 'Outline (1, A, a, i)' }, { value: 'decimal', label: 'Numbers (1, 1.1, 1.1.1)' }, { value: 'none', label: 'None' }], help: 'How the compiled SI numbers its headings. Wiley and RSC number section headings 1, 1.1, 1.1.1; ACS doesn’t. An outline or numbers also number the headings typed in a section’s text and General Information.' },
-        ], { ok: 'Save', note: 'The title, authors, cover page, contents and General Information are on the project’s page (its name at the top of the list).' });
-        if (!got || p.readOnly) return;
-        await this.act(async () => {
-          p.settings.journal_style = got.style;
-          const ppm = Number(got.ppm);
-          if (Number.isFinite(ppm) && ppm > 0) p.settings.hrms_tolerance_ppm = ppm;
-          // stored only when not the default, as SI Assistant stores them
-          if (got.numbers === 'style') delete p.settings.heading_numbers; else p.settings.heading_numbers = got.numbers;
-          await p.saveSettings();
-        });
-        if (this.tab) { this.tab.name = p.title; this.host.changed(); }
+      case 'project-settings':
+        this.projectSettings();
         return;
-      }
     }
+  }
+
+  /** Home ▸ Project Settings: the project's settings window (at a page: output, headings, page, labels, structures, schemes). */
+  projectSettings(page?: string): void {
+    const p = this.project;
+    if (!p) return;
+    import('./si-settings').then(({ siSettingsWindow }) => siSettingsWindow(p, {
+      save: (change) => this.act(async () => {
+        if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+        await change();
+        await p.saveSettings();
+        // (structures and schemes are drawn again in the style chosen)
+        this.forgetStructure();
+        this.host.changed();
+      }),
+      chooseDrawingStyle: (current, note) => this.host.chooseDrawingStyle(current, note),
+    }, page), (e: unknown) => this.host.flash(`Could not open the settings: ${String(e)}`));
   }
 
   /** Pick one of the library's fields (or make one), leaving out those the page has. */

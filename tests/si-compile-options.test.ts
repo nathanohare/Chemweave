@@ -70,6 +70,30 @@ describe('heading numbers', () => {
     put(f, 'project.json', { ...json(f, 'project.json'), journal_style: 'RSC', heading_numbers: 'none' });
     expect(headings(await compile(f)).some((h) => /^\d+\.\s/.test(h))).toBe(false);
   });
+
+  it('numbers in a format of Chemweave’s (Project Settings ▸ Headings)', async () => {
+    const f = folder();
+    put(f, 'project.json', { ...json(f, 'project.json'), heading_numbers: 'outline', heading_format: { levels: ['I', 'A', '1'], chain: false, end: ')', text: false } });
+    const got = headings(await compile(f));
+    expect(got).toContain('I) Reaction Optimization');
+    expect(got).toContain('General Information');
+  });
+});
+
+describe('page header and footer', () => {
+  it('prints Project Settings ▸ Page: numbers as fields, in their style, none on the cover', async () => {
+    const f = folder();
+    put(f, 'project.json', { ...json(f, 'project.json'), page: { header: { left: '{title}', center: '', right: '' }, number_prefix: 'SI-', number_style: 'i' } });
+    const doc = await compile(f);
+    expect(doc.numFormat).toBe('lowerRoman');
+    expect(doc.hf.prefix).toBe('SI-');
+    expect(doc.hf.firstPage).toBe(true);
+    const foot = doc.hf.bodies!.footer!.runs;
+    expect(foot.map((r) => r.text).join('')).toBe('\tSI-￼\t');
+    const field = foot.find((r) => r.obj !== undefined)!;
+    expect(doc.objects[field.obj!]).toEqual({ kind: 'field', code: 'page' });
+    expect(plainText(doc.hf.bodies!.header!.runs).length).toBeGreaterThan(2);
+  });
 });
 
 describe('cover spacing', () => {

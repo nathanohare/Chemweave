@@ -18,7 +18,7 @@ import { Doc, type Contents, type Justify, type TextRun } from '../model';
 import type { Rect } from '../geom';
 import { atomsBox } from '../editor/arrange';
 import { plainMeasure } from '../chem/reaction';
-import { ACS_1996 } from '../style';
+import { ACS_1996, type DocStyle } from '../style';
 import type { Json } from './project';
 
 const MM = 72 / 25.4;
@@ -103,10 +103,10 @@ type Part =
 interface Placed { atoms: number[]; captions: number[]; box: Rect }
 
 /** The drawing of a scheme `maxW` points wide at most (the text width), or null when it has no structures. */
-export function drawScheme(starting: DrawBox[], steps: DrawStep[], lay: SchemeLayout, maxW: number): DrawnScheme | null {
+export function drawScheme(starting: DrawBox[], steps: DrawStep[], lay: SchemeLayout, maxW: number, style: DocStyle = ACS_1996): DrawnScheme | null {
   if (!starting.length && !steps.some((s) => s.products.length)) return null;
   const doc = new Doc();
-  doc.style = { ...ACS_1996 };
+  doc.style = { ...style };
   const m = plainMeasure(doc);
   const textPt = lay.cond_size_pt, idPt = textPt + 1;
   const gap = lay.gap_mm * MM;

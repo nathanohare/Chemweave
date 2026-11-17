@@ -33,6 +33,9 @@ import { POINTS } from '../editor/arrange';
 import { Doc } from '../model';
 import { drawScheme, schemeLayout, type DrawBox, type DrawStep, type SchemeLayout } from './scheme-draw';
 import { inlineIds, inlineMol } from './scheme-edit';
+import { headerFooter } from './page-setup';
+import { siDrawingStyle } from './drawing-style';
+import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -92,18 +95,7 @@ export const siMark = (key: string): string => `si_${key.replace(/[^A-Za-z0-9]/g
 
 // ---------------------------------------------------------------- labels (core/labels.py)
 
-function roman(n: number): string {
-  const table: [number, string][] = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
-  let out = '';
-  for (const [v, s] of table) while (n >= v) { out += s; n -= v; }
-  return out;
-}
-function alpha(n: number): string {
-  let out = '';
-  while (n > 0) { const rest = (n - 1) % 26; n = Math.floor((n - 1) / 26); out = String.fromCharCode(97 + rest) + out; }
-  return out;
-}
-const formatNumber = (n: number, style: string): string => (style === 'I' ? roman(n) : style === 'i' ? roman(n).toLowerCase() : style === 'a' ? alpha(n) : String(n));
+const formatNumber = (n: number, style: string): string => countText(n, (['I', 'i', 'a', 'A'].includes(style) ? style : '1') as CountStyle);
 
 function labelRules(settings: Json): Record<LabelKind, { word: string; prefix: string; style: string }> {
   const journal = str(settings.journal_style) || 'ACS';
@@ -228,8 +220,21 @@ class Compiler {
     if ((o === 'landscape') === this.landscape) return;
     this.landscape = o === 'landscape';
     const p = this.b.doc.page;
-    // (its own header and footer, as the document's but numbered on its first page too: only the cover goes without)
-    this.pendingSection = { kind: 'nextPage', page: this.landscape ? { ...p, w: p.h, h: p.w } : { ...p }, hf: { ...this.b.doc.hf, prefix: 'S', onFirst: true } };
+    const page = this.landscape ? { ...p, w: p.h, h: p.w } : { ...p };
+    // (its own header and footer, as the document's but on its first page too: only the cover goes without)
+    const { hf, format } = this.pageLines(page.w - page.left - page.right, true);
+    this.pendingSection = { kind: 'nextPage', page, hf, format };
+  }
+
+  /**
+   * The header and footer of Project settings ▸ Page for a text this wide, and how its numbers
+   * are written. With no cover printed, the first page is numbered like any other.
+   */
+  private pageLines(width: number, onCover?: boolean): ReturnType<typeof headerFooter> {
+    const s = this.p.settings;
+    const authors = list(s.authors).map(dict).map((a) => str(a.name).trim()).filter(Boolean).join(', ');
+    const cover = onCover ?? (!this.included('cover') || undefined);
+    return headerFooter(s, { title: str(s.title), authors }, (code) => this.b.reserve({ kind: 'field', code }), width, cover);
   }
 
   private included(key: string): boolean { return !this.excluded.has(key) && !this.excluded.has('front'); }
@@ -609,33 +614,26 @@ class Compiler {
   }
 
   // ---------------------------------------------------------- heading numbers (Lauren's, rewritten)
-  // Project settings ▸ Heading numbers: as the journal style does (Wiley and RSC number section
-  // headings 1, 1.1, 1.1.1; ACS none), an outline (1, A, a, i), numbers (1, 1.1, 1.1.1) or none.
-  // With an outline or numbers chosen, headings typed in a section's or General Information's
-  // text and the General Information heading are numbered too. General procedure headings,
+  // Project Settings ▸ Headings (si/heading-format.ts): as the journal style does (Wiley 1., 1.1.;
+  // RSC 1, 1.1; ACS none), SI Assistant's outline (1, A, a, i) or numbers (1, 1.1, 1.1.1), or any
+  // format of Chemweave's. Chosen formats can number headings typed in a section's or General
+  // Information's text and the General Information heading too. General procedure headings,
   // compound titles and headings in a compound's text never are. The numbers are written into
   // the headings, so the contents show them.
 
   private counters: number[] = [];
-  private headingNumbers(): { kind: 'none' | 'decimal' | 'outline'; text: boolean } {
-    const chosen = str(this.p.settings.heading_numbers);
-    if (chosen === 'outline' || chosen === 'decimal') return { kind: chosen, text: true };
-    if (chosen === 'none') return { kind: 'none', text: false };
-    return { kind: ['Wiley', 'RSC'].includes(str(this.p.settings.journal_style)) ? 'decimal' : 'none', text: false };
-  }
+  private headingFmtNow: ReturnType<typeof headingFormat> | undefined;
+  private get headingFmt(): ReturnType<typeof headingFormat> { return this.headingFmtNow === undefined ? (this.headingFmtNow = headingFormat(this.p.settings)) : this.headingFmtNow; }
 
   /** The number for the next heading at `level` ("1.2. "), or '' when headings aren't numbered. `text`: a heading typed in a text (or General Information's). */
   private numbered(level: number, text = false): string {
-    const hn = this.headingNumbers();
-    if (hn.kind === 'none' || (text && !hn.text)) return '';
+    const f = this.headingFmt;
+    if (!f || (text && !f.text)) return '';
     const lv = Math.max(1, Math.min(9, level));
     while (this.counters.length < lv) this.counters.push(0);
     this.counters.length = lv;
     this.counters[lv - 1]++;
-    if (hn.kind === 'decimal') return this.counters.join('.') + '. ';
-    const n = this.counters[lv - 1];
-    const own = [String(n), alpha(n).toUpperCase(), alpha(n), roman(n).toLowerCase()][Math.min(3, lv - 1)];
-    return own + '. ';
+    return headingNumber(f, this.counters);
   }
 
   private async section(s: SiSection, level: number): Promise<void> {
@@ -822,7 +820,7 @@ class Compiler {
       const align = (v: unknown) => (v === 'left' || v === 'center' || v === 'right' ? v : undefined);
       steps.push({ top: conditions(st.top), bottom: conditions(st.bottom), topAlign: align(st.top_align), bottomAlign: align(st.bottom_align), products, topStructures: await structures(st.top), bottomStructures: await structures(st.bottom) });
     }
-    const got = drawScheme(starting, steps, lay, TEXT_W);
+    const got = drawScheme(starting, steps, lay, TEXT_W, siDrawingStyle(this.p.settings));
     if (!got) {
       this.notes.push(`${where}: it has no structures to draw; left out. Its compounds are printed with their own structures.`);
       drawn.clear();
@@ -1062,9 +1060,12 @@ class Compiler {
     this.orient('portrait');
     this.references();
     const title = str(this.p.settings.title);
+    const p = this.b.doc.page;
+    const { hf, format } = this.pageLines(p.w - p.left - p.right);
     return this.b.finish({
       styles: this.styles,
-      hf: { ...this.b.doc.hf, prefix: 'S', onFirst: false },
+      hf,
+      ...(format !== 'decimal' ? { numFormat: format } : {}),
       references: this.p.references.map(toReference),
       props: { title: title || this.p.title },
       noFigureOffer: true,
