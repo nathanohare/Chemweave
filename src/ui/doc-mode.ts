@@ -2843,8 +2843,8 @@ export class DocumentMode {
         ed.select(at, at + 1);
         // a floating figure is moved by dragging it
         const fl = floatOf(obj);
-        // (a group moves together)
-        if (fl) { this.dragging = { kind: 'move', id, from: p, float: fl, moved: false, others: groupOf(f.t, id).filter((x) => x !== id).map((x) => [x, floatOf(f.t.objects[x])!]) }; s.setPointerCapture(e.pointerId); }
+        // (a group moves together; Alt-drag moves one of it on its own, as a Canvas label is)
+        if (fl) { this.dragging = { kind: 'move', id, from: p, float: fl, moved: false, others: e.altKey ? [] : groupOf(f.t, id).filter((x) => x !== id).map((x) => [x, floatOf(f.t.objects[x])!]) }; s.setPointerCapture(e.pointerId); }
         // one in line with the text is dragged to another place in the text, as in Word
         else if (obj?.kind !== 'table' && !f.box) { this.dragging = { kind: 'inline', id, from: p, to: null }; s.setPointerCapture(e.pointerId); }
         return;

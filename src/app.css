@@ -4992,3 +4992,31 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-page-example span:nth-child(2) { text-align: center; }
 .si-page-example span:nth-child(3) { text-align: right; }
 .si-page-body { flex: 1; margin: 8px 0; background: repeating-linear-gradient(#fff 0 6px, #e6e6e6 6px 8px); }
+/* A compound's spectra page: its spectra listed, the one picked drawn as it prints, its settings */
+.si-spectra-body { display: flex; gap: 12px; align-items: flex-start; }
+.si-spectra-list { display: flex; flex-direction: column; gap: 2px; width: 190px; flex: none; }
+.si-spectra-item { display: grid; grid-template-columns: 1fr auto; text-align: left; padding: 4px 6px; border: 1px solid transparent; background: none; border-radius: 3px; cursor: pointer; font: inherit; color: inherit; }
+.si-spectra-item:hover { background: var(--hover, rgba(0,0,0,.05)); }
+.si-spectra-item.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.si-spectra-type { font-weight: 600; font-size: 12px; }
+.si-spectra-file { grid-column: 1; font-size: 11px; color: var(--muted, #666); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-spectra-own { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--accent); font-weight: 700; }
+.si-spectra-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.si-spectra-stage { background: #d9dce1; padding: 10px; display: flex; justify-content: center; border-radius: 3px; }
+.si-spectra-paper { position: relative; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); overflow: hidden; }
+.si-spectra-head { position: absolute; left: 0; right: 0; top: 4px; text-align: center; font-weight: 700; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.si-spectra-view { position: absolute; overflow: hidden; }
+.si-spectra-view img { position: absolute; max-width: none; user-select: none; }
+.si-spectra-box { position: absolute; cursor: move; touch-action: none; box-sizing: border-box; }
+.si-spectra-box:hover { box-shadow: 0 0 0 1px var(--accent); }
+.si-spectra-struct { position: absolute; pointer-events: none; }
+.si-spectra-struct svg { display: block; }
+.si-spectra-label { position: absolute; text-align: center; color: #000; line-height: 1.2; white-space: nowrap; }
+.si-spectra-handle { position: absolute; width: 8px; height: 8px; background: #fff; border: 1px solid var(--accent); opacity: 0; }
+.si-spectra-box:hover .si-spectra-handle { opacity: 1; }
+.si-spectra-handle.nw { left: -4px; top: -4px; cursor: nwse-resize; } .si-spectra-handle.se { right: -4px; bottom: -4px; cursor: nwse-resize; }
+.si-spectra-handle.ne { right: -4px; top: -4px; cursor: nesw-resize; } .si-spectra-handle.sw { left: -4px; bottom: -4px; cursor: nesw-resize; }
+.si-part.si-own .si-plabel:first-of-type, .si-part.si-own > span:not(.si-plabel) { font-weight: 700; }
+.si-spectra-reset { border: none; background: none; color: var(--muted, #666); cursor: pointer; padding: 0 2px; font-size: 13px; line-height: 1; }
+.si-spectra-reset:hover { color: var(--accent); }
+.si-spectra-text input { width: 260px; }

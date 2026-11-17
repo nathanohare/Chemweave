@@ -24,7 +24,7 @@ import { mentionKind } from './checks';
 import type { MolFacts } from './chem';
 import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './format';
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
-import { attachmentDir, captionText, CORNER_INSET, effective, GUTTERS, headerParts, HEADER_PT, listingLines, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
+import { attachmentDir, captionText, effective, idSizeOf, structureBoxAt, structureBoxSize, GUTTERS, headerParts, HEADER_PT, listingLines, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
 import type { Float, PageSetup, SectionBreak } from '../document/document';
 import { xrayAutoCaption, xrayBlock, xrayCompound, xrayDrawing, xrayTableCaption, xrayTableRows } from './xray';
 import { crystalTable } from '../chem/crystal';
@@ -212,6 +212,8 @@ class Compiler {
   }
 
   private pendingSection: SectionBreak | null = null;
+  /** Groups of floating figures made so far (each spectrum's structure box is one). */
+  private groups = 0;
   private landscape = false;
   private spectraDone = false;
 
@@ -965,31 +967,27 @@ class Compiler {
     const own = contents ? this.host.sizeOf(contents) : null;
     const size = contents ? structureSize(own, eff.struct_scale) : { w: 0, h: 0 };
     const id = displayId(this.report, c.id);
-    const idSize = eff.id_size > 0 ? eff.id_size : 11;
+    const idSize = idSizeOf(eff);
     const caption = eff.caption ? captionText(c, item) : '';
     const capRuns = caption ? (this.helpers ? formatNmr([R(caption)], this.leave) : [R(caption)]) : [];
-    const textW = Math.max(id.length * idSize * 0.6, caption.length * eff.caption_size * 0.5);
-    const w = Math.max(size.w, textW) + 2 * SI_BOX_PAD + 2 * 7.2;
-    const h = size.h + idSize * 1.2 + (caption ? eff.caption_size * 1.2 : 0) + 2 * SI_BOX_PAD + 2 * 3.6;
-    let bx: number, by: number;
-    if (eff.x !== undefined && eff.y !== undefined) { bx = spec.x + eff.x * spec.w - w / 2; by = spec.y + eff.y * spec.h - h / 2; }
-    else {
-      bx = eff.corner.endsWith('right') ? spec.x + spec.w - CORNER_INSET - w : spec.x + CORNER_INSET;
-      by = eff.corner.startsWith('bottom') ? spec.y + spec.h - CORNER_INSET - h : spec.y + CORNER_INSET;
-    }
-    // the box (its background and frame), the structure on it, and the ID and caption under the structure
+    const { w, h } = structureBoxSize(size, id, idSize, caption, eff.caption_size);
+    const { x: bx, y: by } = structureBoxAt(eff, spec, { w, h });
+    // the box (its background and frame), the structure on it, and the ID and caption under the
+    // structure: grouped, so they move together (Alt-drag moves one on its own)
+    const group = ++this.groups;
+    const at = (x: number, y: number, name: string): Float => ({ ...this.at(x, y, z(), name), group });
     const out: DocObject[] = [{
       kind: 'textbox', runs: [], w: round2(w), h: round2(h), fill: eff.struct_bg,
       ...(eff.struct_frame ? { look: { frame: eff.struct_frame_width, frameColor: eff.struct_frame_color } } : {}),
-      float: this.at(bx, by, z(), `Structure box ${id}`),
+      float: at(bx, by, `Structure box ${id}`),
     }];
     const runs: TextRun[] = [...textRuns([R(id)], { bold: eff.id_bold || undefined, size: idSize })];
     const paras: ParaStyle[] = [{ align: 'center', spaceBefore: 0, spaceAfter: 0 }];
     if (caption) { runs.push({ text: '\n' }, ...textRuns(capRuns, { size: eff.caption_size })); paras.push({ align: 'center', spaceAfter: 0 }); }
-    out.push({ kind: 'textbox', runs, paras, w: round2(w), float: this.at(bx, by + SI_BOX_PAD + size.h, z(), `Compound ID ${id}`) });
+    out.push({ kind: 'textbox', runs, paras, w: round2(w), float: at(bx + (eff.label_dx ?? 0), by + SI_BOX_PAD + size.h + (eff.label_dy ?? 0), `Compound ID ${id}`) });
     if (contents) {
       const scale = own && own.w > 0 ? size.w / own.w : 1;
-      out.push({ kind: 'drawing', contents, ...(Math.abs(scale - 1) > 1e-3 ? { scale: Math.round(scale * 1000) / 1000 } : {}), float: this.at(bx + (w - size.w) / 2, by + SI_BOX_PAD, z(), `Structure ${id}`) });
+      out.push({ kind: 'drawing', contents, ...(Math.abs(scale - 1) > 1e-3 ? { scale: Math.round(scale * 1000) / 1000 } : {}), float: at(bx + (w - size.w) / 2, by + SI_BOX_PAD, `Structure ${id}`) });
     } else if (mol) this.notes.push(`${id}: its structure could not be drawn on its spectra; left out.`);
     return out;
   }

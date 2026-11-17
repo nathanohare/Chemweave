@@ -45,6 +45,12 @@ export interface SpectrumLayout {
   /** A dragged box's centre, as fractions of the spectrum shown (a page's own settings only). */
   x?: number;
   y?: number;
+  /**
+   * The ID and caption moved on their own (Alt-drag), in points from their place under the
+   * structure: a page's own settings, Chemweave's only (SI Assistant keeps them in place).
+   */
+  label_dx?: number;
+  label_dy?: number;
 }
 
 export const DEFAULTS: SpectrumLayout = {
@@ -58,12 +64,17 @@ export const DEFAULTS: SpectrumLayout = {
 const SECTION_ONLY = new Set(['nmr_links', 'link_style', 'link_back', 'hrms_reports']);
 const COLOUR = /^#[0-9a-fA-F]{6}$/;
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+/** A page's own place for its box (dragged) and for the ID and caption (Alt-dragged). */
+export const POSITION_KEYS = ['x', 'y', 'label_dx', 'label_dy'] as const;
+/** The structure size a box can be resized to (as SI Assistant's). */
+export const SCALE_RANGE = [0.25, 4] as const;
 
 /** A value checked for its setting, or undefined when it can't be used (it is then ignored, so a file edited by hand never stops a compile). */
 function cleanValue(key: string, value: unknown): unknown {
   const def = (DEFAULTS as unknown as Record<string, unknown>)[key];
   const num = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
   if (key === 'x' || key === 'y') return Number.isFinite(num) ? clamp(num, 0, 1) : undefined;
+  if (key === 'label_dx' || key === 'label_dy') return Number.isFinite(num) && typeof value === 'number' ? clamp(num, -500, 500) : undefined;
   if (key === 'per_page') return PER_PAGE.includes(Math.trunc(num) as 1) && Number.isInteger(num) ? num : undefined;
   if (key === 'orientation') return value === 'portrait' || value === 'landscape' ? value : undefined;
   if (key === 'corner') return CORNERS.includes(value as Corner) ? value : undefined;
@@ -84,7 +95,7 @@ export function clean(values: unknown, positions = false, spectrum = false): Par
   const v = values as Json;
   const out: Record<string, unknown> = {};
   const keys = Object.keys(DEFAULTS).filter((k) => !((spectrum || positions) && SECTION_ONLY.has(k)));
-  if (positions) keys.push('x', 'y');
+  if (positions) keys.push(...POSITION_KEYS);
   for (const k of keys) {
     if (!(k in v)) continue;
     const got = cleanValue(k, v[k]);
@@ -251,6 +262,27 @@ export function structureSize(own: { w: number; h: number } | null, scale: numbe
   const fit = Math.min(1, STRUCTURE_BOX.w / own.w, STRUCTURE_BOX.h / own.h) * scale;
   return { w: own.w * fit, h: own.h * fit };
 }
+
+/** The structure box's size: the structure, and the ID (and caption) under it, with room round them. */
+export function structureBoxSize(structure: { w: number; h: number }, id: string, idSize: number, caption: string, captionSize: number): { w: number; h: number } {
+  const textW = Math.max(id.length * idSize * 0.6, caption.length * captionSize * 0.5);
+  return {
+    w: Math.max(structure.w, textW) + 2 * BOX_PAD + 2 * 7.2,
+    h: structure.h + idSize * 1.2 + (caption ? captionSize * 1.2 : 0) + 2 * BOX_PAD + 2 * 3.6,
+  };
+}
+
+/** Where the box's top left goes on a spectrum shown at `spec`: where it was dragged (its centre), or in its corner. */
+export function structureBoxAt(eff: SpectrumLayout, spec: { x: number; y: number; w: number; h: number }, box: { w: number; h: number }): { x: number; y: number } {
+  if (eff.x !== undefined && eff.y !== undefined) return { x: spec.x + eff.x * spec.w - box.w / 2, y: spec.y + eff.y * spec.h - box.h / 2 };
+  return {
+    x: eff.corner.endsWith('right') ? spec.x + spec.w - CORNER_INSET - box.w : spec.x + CORNER_INSET,
+    y: eff.corner.startsWith('bottom') ? spec.y + spec.h - CORNER_INSET - box.h : spec.y + CORNER_INSET,
+  };
+}
+
+/** The ID's size in points (0 in the settings: the text's, 11 pt). */
+export const idSizeOf = (eff: SpectrumLayout): number => (eff.id_size > 0 ? eff.id_size : 11);
 
 // ---------------------------------------------------------------- auto-crop
 

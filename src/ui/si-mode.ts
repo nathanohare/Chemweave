@@ -27,6 +27,7 @@ import { SiPictures, PICTURE_MIME } from './si-picture';
 import { SiXrayPage } from './si-xray';
 import { SiFrontPage } from './si-front';
 import { SiSchemePage } from './si-scheme';
+import { SiSpectraPage } from './si-spectra';
 import { nextMisspelled } from './si-spell';
 import { typingPrefs } from '../text/typing';
 import { editReference } from './references-dialog';
@@ -97,7 +98,7 @@ export interface SiCard {
   hrms: string;
 }
 
-type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'references' } | { kind: 'warnings' };
+type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'spectra'; id: string; section: string } | { kind: 'references' } | { kind: 'warnings' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -134,6 +135,7 @@ const RIBBON = `
     <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
     <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
     <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
+    <button role="tab" data-si-tab="spectrum" aria-selected="false" class="rb-context" hidden title="Shown on a compound's spectra page">Spectrum</button>
   </div>
   <div class="rb-panel" data-si-panel="insert" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -267,6 +269,26 @@ const RIBBON = `
         <button data-si="ref-delete" data-ic="delete" title="Take the reference picked off the list; its citations stay in the text with a warning">Delete Reference</button>
       </div>
     </div><div class="rb-label">Reference</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="spectrum" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-spectrum="up" data-ic="move-up" title="Print the picked spectrum file before the one before it">Move Up</button>
+        <button data-si-spectrum="down" data-ic="move-down" title="Print the picked spectrum file after the one after it">Move Down</button>
+        <button data-si-spectrum="auto" title="Print this compound's spectra in the usual order again (¹H, ¹³C, ¹⁹F, other nuclei, 2D NMR, HPLC/SFC, IR, other)">Automatic Order</button>
+      </div>
+    </div><div class="rb-label">Order</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-spectrum="scope-page" aria-pressed="true" title="The settings below change only this page of the PDF">This Page</button>
+        <button data-si-spectrum="scope-file" aria-pressed="false" title="The settings below change every page of the PDF (a page's own settings still win)">Every Page of the File</button>
+      </div>
+      <div class="rb-col">
+        <button data-si-spectrum="reset" data-ic="undo" title="Every setting of this spectrum follows the Spectra section's again (a dragged box stays where it is)">Use Section Settings</button>
+        <button data-si-spectrum="reset-place" title="The structure box back in its corner, and the ID and caption back under the structure">Reset Box Position</button>
+        <button data-si-spectrum="section" title="The Spectra section's page: how every spectrum is printed unless it says otherwise">Spectra Section…</button>
+      </div>
+    </div><div class="rb-label">Settings</div></div>
   </div>
   <div class="rb-panel" data-si-panel="scheme" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -436,6 +458,8 @@ export class SiMode {
       if (fmt) { this.format(fmt.dataset.siFmt!); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
       if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
+      const sp = t.closest<HTMLElement>('[data-si-spectrum]');
+      if (sp) { void this.spectraPage?.command(sp.dataset.siSpectrum!); return; }
       const sc = t.closest<HTMLElement>('[data-si-scheme]');
       if (sc) { void this.schemePage?.command(sc.dataset.siScheme!, sc.dataset.arg ?? ''); return; }
       const xr = t.closest<HTMLElement>('[data-si-xray]');
@@ -478,6 +502,7 @@ export class SiMode {
   private activeTable: SiTableEditor | null = null;
   /** The scheme page shown (the Scheme tab acts on it). */
   private schemePage: SiSchemePage | null = null;
+  private spectraPage: SiSpectraPage | null = null;
   /** The X-ray structure page shown (the Crystal Structure tab acts on it). */
   private xrayPage: SiXrayPage | null = null;
   /** The figure last picked (the Picture Format tab acts on it). */
@@ -518,6 +543,43 @@ export class SiMode {
       b.disabled = !!off[b.dataset.siScheme!];
       if (b.dataset.siScheme === 'align') b.setAttribute('aria-pressed', String(b.dataset.arg === st.align && !!x.picked && x.picked.kind === 'step'));
     }
+  }
+
+  /** A compound's spectra page shown (or none): the Spectrum tab shows (or goes), its commands greyed out when they don't apply. */
+  private spectraShown(x: SiSpectraPage | null): void {
+    const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="spectrum"]')!;
+    this.spectraPage = x;
+    tab.hidden = !x;
+    if (!x) { if (tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home'); return; }
+    const st = x.state;
+    const ro = !!this.project?.readOnly;
+    const off: Record<string, boolean> = { up: !st.up || ro, down: !st.down || ro, auto: !st.manual || ro, 'scope-page': !st.several, 'scope-file': !st.several, reset: !st.own || ro, 'reset-place': !st.moved || ro };
+    for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-si-spectrum]')) {
+      const c = b.dataset.siSpectrum!;
+      b.disabled = !!off[c];
+      if (c === 'scope-page' || c === 'scope-file') b.setAttribute('aria-pressed', String((c === 'scope-file') === (st.scope === 'file')));
+    }
+  }
+
+  private spectraCompoundPage(out: HTMLElement, c: SiCompound, sectionId: string): void {
+    const p = this.project!;
+    let section: SiSection | null = null;
+    try { section = p.section(sectionId); } catch { /* gone: the defaults */ }
+    const page = new SiSpectraPage({
+      project: p, compound: c, section,
+      flash: (m, ms) => this.host.flash(m, ms),
+      idOf: (x) => this.idOf(x),
+      contentsOf: (m) => this.host.contentsOf(m),
+      sizeOf: (x) => this.host.sizeOf(x),
+      pictureOf: (m) => this.host.pictureOf(m),
+      pdfPages: (b) => import('../render/pdf-page').then((m) => m.pdfPages(b)),
+      contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+      act: (f) => this.act(f, false),
+      chosen: (x) => { if (x === this.spectraPage) this.spectraShown(x); },
+      openSection: () => this.go({ kind: 'section', id: sectionId }),
+    });
+    out.append(page.el);
+    this.spectraShown(page);
   }
 
   private schemeCard(out: HTMLElement, k: SiScheme): void {
@@ -921,6 +983,7 @@ export class SiMode {
       if (pick.kind === 'section') return p.section(pick.id);
       if (pick.kind === 'compound') return p.section(p.compound(pick.id).sectionId);
       if (pick.kind === 'scheme') return p.section(p.scheme(pick.id).sectionId);
+      if (pick.kind === 'spectra') return p.section(pick.section);
     } catch { /* gone */ }
     return null;
   }
@@ -987,6 +1050,18 @@ export class SiMode {
             } else compoundRow(it, depth + 1);
           }
         }
+        if (s.type === 'spectra') {
+          // each compound with spectra: its spectra page
+          for (const c of p.compounds) {
+            if (!spectrumItems(c).some(([, i]) => i.file)) continue;
+            row(depth + 1, svg('spectrum', 13), '', { kind: 'spectra', id: c.id, section: s.id }, (r) => {
+              const t = r.querySelector('.si-row-text')!;
+              t.innerHTML = '';
+              t.append(el('b', 'si-cid', this.idOf(c)), document.createTextNode(' ' + (compoundName(c) || 'unnamed compound')));
+              r.title = 'This compound’s spectra as they print: drag the structure box, and set this spectrum’s own look';
+            });
+          }
+        }
         walk(s.children, depth + 1);
       }
     };
@@ -1010,6 +1085,7 @@ export class SiMode {
     this.figureChosen(null);
     this.xrayShown(null);
     this.schemeShown(null);
+    this.spectraShown(null);
     this.front = null;
     this.ribbon.querySelector<HTMLElement>('[data-si-tab="refs"]')!.hidden = this.pick.kind !== 'references';
     const p = this.project!;
@@ -1028,6 +1104,9 @@ export class SiMode {
       try { this.sectionPage(out, p.section(pick.id)); } catch { this.pick = { kind: 'project' }; }
     } else if (pick.kind === 'scheme') {
       try { this.schemeCard(out, p.scheme(pick.id)); } catch { this.pick = { kind: 'project' }; }
+    } else if (pick.kind === 'spectra') {
+      const c = p.compounds.find((x) => x.id === pick.id);
+      if (c) this.spectraCompoundPage(out, c, pick.section); else this.pick = { kind: 'project' };
     } else if (pick.kind === 'references') this.referencesPage(out);
     else if (pick.kind === 'warnings') this.warningsPage(out);
     if (this.pick.kind === 'project') this.projectPage(out);
@@ -1446,7 +1525,7 @@ export class SiMode {
     }, false);
     const card = el('div', 'si-card');
     const h = el('h3', 'si-sub', 'How spectra are printed');
-    addInfo(h, 'Every compound’s spectra (its Spectra field, and Additional files set to “Spectra section”) are printed here, compound by compound, each with its header line and the compound’s structure and ID on it. A spectrum’s own settings, set in Chem SI Assistant on its spectra page, win over these.');
+    addInfo(h, 'Every compound’s spectra (its Spectra field, and Additional files set to “Spectra section”) are printed here, compound by compound, each with its header line and the compound’s structure and ID on it. A spectrum’s own settings, set on its compound’s spectra page (under this section in the list), win over these.');
     card.append(h);
     const row = (title: string): HTMLElement => { const r = el('div', 'si-parts si-spectra-row'); r.append(el('span', 'si-spectra-group', title)); card.append(r); return r; };
     const choice = (r: HTMLElement, label: string, key: keyof SpectrumLayout, options: [string, string][], tip: string): void => {
@@ -1503,7 +1582,7 @@ export class SiMode {
     tick(pages, 'Frame', 'spectrum_frame', 'A frame round each spectrum.');
     const box = row('Structure and ID');
     tick(box, 'Show', 'struct_box', 'The compound’s structure and ID on a box over each spectrum (Org. Lett. asks for spectra labeled with both).');
-    choice(box, 'Position', 'corner', [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']], 'The corner of the spectrum the box goes in (a box dragged in Chem SI Assistant stays where it was put).');
+    choice(box, 'Position', 'corner', [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']], 'The corner of the spectrum the box goes in (a box dragged on its spectra page stays where it was put).');
     num(box, 'Structure size', 'struct_scale', 25, 400, 100, '100 % is the structure’s own size, no larger than 1.5 × 1.1 in.', '%');
     num(box, 'ID size', 'id_size', 0, 24, 1, 'The ID’s size in points; 0 is the text size.', 'pt');
     tick(box, 'Bold ID', 'id_bold', 'The ID in bold.');

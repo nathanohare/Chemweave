@@ -126,6 +126,11 @@ describe('the spectra pages of the compiled SI', () => {
     expect(drawings).toHaveLength(3);
     expect(drawings[0].scale).toBe(0.5);
     expect(drawings[0].float!.x).toBeGreaterThan(boxes[0].float.x);
+    // each box's parts are one group (they move together), a group of their own per spectrum
+    expect(boxes[0].float.group).toBeDefined();
+    expect(ids[0].float.group).toBe(boxes[0].float.group);
+    expect(drawings[0].float!.group).toBe(boxes[0].float.group);
+    expect(boxes[1].float.group).not.toBe(boxes[0].float.group);
     // the pages turn landscape for the spectra and back for the references
     const breaks = doc.paras.map((ps, i) => [i, ps?.section] as const).filter(([, s]) => s);
     expect(breaks.map(([, s]) => s!.page!.w)).toEqual([792, 612]);
@@ -165,5 +170,35 @@ describe('the spectra pages of the compiled SI', () => {
     expect(text).toContain('HRMS reports');
     expect(text).toContain('2a — HRMS report: 2a_hrms.txt');
     expect(text).toContain('145.0625        100');
+  });
+
+  it('keeps a page’s own place for the box and for its ID (Alt-dragged), and prints them there', async () => {
+    expect(clean({ x: 0.5, y: 2, label_dx: 12, label_dy: 'no' }, true)).toEqual({ x: 0.5, y: 1, label_dx: 12 });
+    expect(clean({ label_dx: 12 })).toEqual({});
+    const f = folder('si-example');
+    f.files.set(`${C2A}/spectra/2a_1H.pdf`, new Uint8Array([37, 80, 68, 70]));
+    f.files.set(`${C2A}/spectra/2a_13C.pdf`, new Uint8Array([37, 80, 68, 70]));
+    const cj = `${C2A}/compound.json`;
+    const comp = JSON.parse(new TextDecoder().decode(f.files.get(cj))) as Json;
+    const items = ((comp.values as Json).spectra as Json[]);
+    items[0].pages = { 1: { x: 0.5, y: 0.5, label_dx: 20, label_dy: -5 } };
+    f.files.set(cj, new TextEncoder().encode(JSON.stringify(comp)));
+    const p = await SiProject.open(f);
+    const page = { src: 'data:image/png;base64,AAAA', w: 792, h: 612 };
+    const { doc } = await compileSi(p, {
+      contentsOf: (mol) => { const s = readScene('mol', mol); return s ? sceneToDoc(s, ACS_1996).doc.contents() : null; },
+      sizeOf: () => ({ w: 108, h: 79.2 }),
+      facts: async (mols) => mols.map((m) => (m ? molFacts(RDKit, m) : null)),
+      pdfPages: async () => [page],
+    });
+    const objs = Object.values(doc.objects);
+    const named = (n: string) => objs.filter((o) => 'float' in o && (o as { float?: { name?: string } }).float?.name?.startsWith(n)) as Extract<DocObject, { kind: 'textbox' }>[];
+    const [pic] = objs.filter((o): o is Extract<DocObject, { kind: 'picture' }> => o.kind === 'picture' && !!o.float);
+    const [box] = named('Structure box'), [id] = named('Compound ID');
+    // the box centred on the spectrum, the ID 20 pt right and 5 pt up of its place under the structure
+    expect(box.float.x + box.w / 2).toBeCloseTo(pic.float!.x + pic.w / 2, 1);
+    expect(id.float.x - box.float.x).toBeCloseTo(20, 5);
+    const [other] = named('Compound ID').slice(1);
+    expect(other.float.x - named('Structure box')[1].float.x).toBeCloseTo(0, 5);
   });
 });
