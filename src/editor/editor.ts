@@ -109,7 +109,7 @@ export type Tool =
   | { kind: 'select'; lasso?: boolean }
   | { kind: 'eraser' }
   /** `hapto`: bonds a metal to the middle of a ring or π-bond (η⁵, η²), or splits one into a line to each atom. */
-  | { kind: 'bond'; order: number; display: BondDisplay; hapto?: boolean; variable?: boolean }
+  | { kind: 'bond'; order: number; display: BondDisplay; hapto?: boolean; variable?: boolean; line2?: Bond['line2'] }
   | { kind: 'chain' }
   | { kind: 'ring'; size: number; aromatic: boolean }
   | { kind: 'text' }
@@ -164,6 +164,8 @@ export const TOOLS: Record<string, Tool> = {
   newman: { kind: 'newman' },
   'bond-single': { kind: 'bond', order: 1, display: 'solid' },
   'bond-double': { kind: 'bond', order: 2, display: 'solid' },
+  'bond-double-dash': { kind: 'bond', order: 2, display: 'solid', line2: 'dash' },
+  'bond-double-bold': { kind: 'bond', order: 2, display: 'solid', line2: 'bold' },
   'bond-triple': { kind: 'bond', order: 3, display: 'solid' },
   'bond-quadruple': { kind: 'bond', order: 4, display: 'solid' },
   'bond-dative': { kind: 'bond', order: 1, display: 'dative' },
@@ -2030,6 +2032,7 @@ export class Editor {
         doc.edit('Bond', () => {
           if (h && h.kind === 'atom') {
             const n = sprout(doc, h.id, t.order, t.display);
+            this.secondLine(t, h.id, n.id);
             this.lastSprout = { atom: h.id, at: performance.now(), p };
             this.lastEdited = n.id;
           } else if (h && h.kind === 'bond') {
@@ -2038,6 +2041,7 @@ export class Editor {
             const L = doc.style.bondLength;
             const a = doc.addAtom(p.x, p.y);
             const b = bondTo(doc, a, add(p, fromAngle(-30 * DEG, L)), t.order, t.display);
+            this.secondLine(t, a.id, b.id);
             this.lastEdited = b.id;
           }
         });
@@ -2062,6 +2066,13 @@ export class Editor {
     }
   }
 
+  /** A bond just drawn with a double bond tool that has its own second line (dashed or bold) gets that line. */
+  private secondLine(t: Extract<Tool, { kind: 'bond' }>, a: number, b: number): void {
+    if (!t.line2) return;
+    const bond = this.doc.bondBetween(a, b);
+    if (bond && bond.order === 2) this.doc.updateBond(bond.id, { line2: t.line2 });
+  }
+
   private clickBond(id: number, t: Extract<Tool, { kind: 'bond' }>, p: Vec): void {
     const doc = this.doc;
     const b = doc.bonds.get(id)!;
@@ -2071,7 +2082,8 @@ export class Editor {
       if (b.display !== 'solid') doc.updateBond(id, { display: 'solid', order: 1 });
       else doc.updateBond(id, { order: b.order === 1 ? 2 : b.order === 2 ? 3 : 1, dpos: 'auto' });
     } else if (t.order === 2) {
-      if (b.order !== 2) doc.updateBond(id, { order: 2, display: 'solid', dpos: 'auto' });
+      // (a double bond tool with its own second line, dashed or bold, gives the bond that line)
+      if (b.order !== 2 || b.line2 !== t.line2) doc.updateBond(id, { order: 2, display: 'solid', line2: t.line2, ...(b.order !== 2 ? { dpos: 'auto' as const } : {}) });
       else {
         const next: Record<string, Bond['dpos']> = { auto: 'center', center: 'right', right: 'left', left: 'auto' };
         doc.updateBond(id, { dpos: next[b.dpos] });
@@ -2679,6 +2691,7 @@ export class Editor {
         const end = this.snapEnd(a, p, L, a.id, d.alt, t.order);
         const to = end.atom ?? bondTo(doc, a, end.pt, t.order, t.display);
         if (end.atom && !doc.bondBetween(a.id, end.atom.id)) doc.addBond(a.id, end.atom.id, t.order, t.display);
+        this.secondLine(t, a.id, to.id);
         this.lastEdited = to.id;
       });
       this.setKeyHot({ kind: 'atom', id: this.lastEdited! });

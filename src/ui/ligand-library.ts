@@ -5,6 +5,7 @@
 // anywhere) in the drawing. The window stays open beside the drawing while you work.
 
 import { withInfo } from './info-tip';
+import { addCloseX } from './window-x';
 import { LIGAND_FAMILIES, bondingType, denticity, familyOf, searchLigands, type Ligand } from '../chem/ligands';
 import { templateById } from '../chem/templates';
 import { templateIcon } from './template-icons';
@@ -97,9 +98,10 @@ export class LigandLibraryWindow {
       el('div', { className: 'kb-body lig-body' }, this.families, this.grid, this.details),
       el('div', { className: 'refs-buttons' },
         el('span', { className: 'lig-hint' }),
-        el('span', { className: 'refs-edit' }, this.count, this.useBtn, button('Close', '', () => d.close()))),
+        el('span', { className: 'refs-edit' }, this.count, this.useBtn)),
     );
     d.addEventListener('close', () => { d.remove(); this.d = null; this.cards.clear(); });
+    addCloseX(d, d.querySelector<HTMLElement>('.refs-head')!);
     document.body.append(d);
     this.showFamilies();
     this.fill();

@@ -3541,10 +3541,14 @@ export class SheetView {
     if (sp.cols) this.scroller.scrollLeft = Math.max(0, this.scroller.scrollLeft - this.cols.pos(sp.cols));
   }
 
+  /** Told when the zoom changes (the status bar's slider and percent). */
+  onZoom?: () => void;
+
   setZoom(z: number): void {
     this.zoom = Math.max(0.25, Math.min(4, Math.round(z * 100) / 100));
     this.metricsKey = '';
     this.render();
+    this.onZoom?.();
     this.host.flash(`Zoom ${Math.round(this.zoom * 100)}%`, 900);
   }
 

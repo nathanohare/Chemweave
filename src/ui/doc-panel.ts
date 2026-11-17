@@ -101,7 +101,9 @@ export class DocPanel {
     this.styleTitle = this.sections.style.querySelector('h3 > span')!;
     this.emptyNote = document.createElement('p');
     this.emptyNote.className = 'muted small dp-note';
-    this.emptyNote.textContent = 'The Paragraph, Style, Page Setup and Header settings open from the small ⬊ buttons on the ribbon. Pin one with its pin button to keep it here.';
+    // (UI rule 2: the how-to sits behind an "i", not on lines of its own)
+    this.emptyNote.textContent = 'Nothing pinned here.';
+    addInfo(this.emptyNote, 'The Paragraph, Style, Page Setup and Header settings open from the small ⬊ buttons on the ribbon. Pin one with its pin button to keep it here.');
     body.append(this.emptyNote);
     this.buildFigure();
     this.buildPara();

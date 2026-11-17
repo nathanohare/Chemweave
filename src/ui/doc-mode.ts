@@ -6,6 +6,7 @@
 
 import { applyFormat } from '../text/format';
 import { showContextMenu, type MenuItem } from './context-menu';
+import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { Doc, type Contents, type ParaStyle, type Shape, type TabStop, type TextRun } from '../model';
 
 type TabStopKind = TabStop['kind'];
@@ -1514,9 +1515,8 @@ export class DocumentMode {
       item(`Reject ${what}`, pick(false));
       line();
     }
-    cmd('Cut', 'cut');
-    cmd('Copy', 'copy');
-    cmd('Paste', 'paste');
+    // Cut, Copy, Paste and Delete in a row, as every mode's menu starts (UI audit U13)
+    items.push({ row: [{ cmd: 'cut', label: 'Cut' }, { cmd: 'copy', label: 'Copy' }, { cmd: 'paste', label: 'Paste' }, { cmd: 'delete', label: 'Delete' }] }, null);
     if (this.host.clipboardObject) cmd('Paste as Object', 'paste-object', 'Cells copied in Excel (or another program\'s object) kept whole: double-click to change them in their program');
     cmd('Format Painter', 'format-painter', 'Copy the look of the text here (or of the selection) to the text you click or drag over next');
     line();
@@ -1612,6 +1612,13 @@ export class DocumentMode {
     if (!tg && this.file && !this.file.box) {
       const [pa, pb] = this.file.ed.selectedParas();
       if (pb > pa) { cmd('Convert Text to Table…', 'text-to-table', 'The paragraphs chosen as a table, cut into cells at tabs or commas'); line(); }
+    }
+    // what you would want on text: its font, a link, a structure (UI audit U13)
+    if (picked === null) {
+      cmd('Font…', 'font-box', 'Font, size, style, color and effects');
+      if (!linkHere) cmd('Link…', 'insert-link', 'A link on the text chosen: a web address, a place in this document or an e-mail address');
+      cmd('Insert Structure', 'insert-structure', 'Draw a structure or a scheme here');
+      line();
     }
     cmd('Paragraph…', 'box-para', 'Indents, spacing and line spacing');
     cmd('Style…', 'box-style', 'Change how this paragraph\'s style looks');
@@ -3695,6 +3702,7 @@ export class DocumentMode {
       case 'find': case 'replace': this.find(cmd === 'replace'); return true;
       case 'paste': void this.paste(null); break;
       case 'copy': case 'cut': this.focus(); document.execCommand(cmd); break;
+      case 'delete': this.focus(); this.ed.deleteForward(); break;
       case 'font-box': {
         this.fontBox ??= new FontBox({
           look: () => (this.file ? this.ed.currentStyle() : null),
@@ -4978,7 +4986,7 @@ export class DocumentMode {
   showRuler(): void {
     const on = docRulerPrefs.shown && !!this.file && this.file.view.kind !== 'read';
     this.ruler.shown = on;
-    for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-doc="view-ruler"]')) b.setAttribute('aria-pressed', String(docRulerPrefs.shown));
+    for (const b of this.ribbon.querySelectorAll<HTMLElement>('[data-doc="view-ruler"]')) { if (b instanceof HTMLInputElement) b.checked = docRulerPrefs.shown; else b.setAttribute('aria-pressed', String(docRulerPrefs.shown)); }
   }
 
   /** Where the paragraph the caret is in sits on screen, for the ruler (none while typing in a text box or cell). */
@@ -5116,6 +5124,11 @@ export class DocumentMode {
       document.querySelector('.popup-menu')?.remove();
       this.ribbonMenu(b.dataset.doc!, b);
     });
+    // the View tab's Show boxes (Ruler, Navigation Pane) are checkboxes, as in Word
+    r.addEventListener('change', (e) => {
+      const box = e.target as HTMLInputElement;
+      if (box.type === 'checkbox' && box.dataset.doc) { this.run(box.dataset.doc); this.focus(); }
+    });
     r.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-doc]');
       if (!b) return;
@@ -5225,10 +5238,23 @@ export class DocumentMode {
     });
   }
 
+  private statusZoom: StatusZoom | null = null;
+
   private showZoom(): void {
-    const zoom = document.querySelector<HTMLElement>('#doc-zoom');
-    const z = `${Math.round((this.view.zoom / ACTUAL) * 100)}%`;
-    if (zoom && zoom.textContent !== z) zoom.textContent = z;
+    // the status bar's slider, percent and Page Width (built on first use)
+    if (!this.statusZoom) {
+      const bar = document.querySelector<HTMLElement>('#doc-statusbar');
+      if (!bar) return;
+      this.statusZoom = statusZoom({
+        get: () => (this.view.zoom / ACTUAL) * 100,
+        set: (pct) => this.view.setZoom((pct / 100) * ACTUAL),
+        fit: { label: 'Page Width', icon: FIT_WIDTH_ICON, run: () => this.view.fitWidth() },
+        refocus: () => this.focus(),
+        min: 10, max: 400,
+      });
+      bar.append(this.statusZoom.el);
+    }
+    this.statusZoom.show();
   }
 
   private updateRibbon(): void {
@@ -5240,7 +5266,7 @@ export class DocumentMode {
     const para = ed.currentPara();
     const st = f.box ? styleOf(f.t, {}) : styleOf(f.t, para);
     const press = (cmd: string, on: boolean) => {
-      for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>(`[data-doc="${cmd}"]`)) b.setAttribute('aria-pressed', String(on));
+      for (const b of this.ribbon.querySelectorAll<HTMLElement>(`[data-doc="${cmd}"]`)) { if (b instanceof HTMLInputElement) b.checked = on; else b.setAttribute('aria-pressed', String(on)); }
     };
     press('doc-bold', !!s.bold);
     press('doc-italic', !!s.italic);

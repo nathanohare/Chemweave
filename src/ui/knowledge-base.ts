@@ -7,6 +7,7 @@
 // sheet or document. Every abbreviation shows what it means when the mouse rests on it.
 //
 // Tables you import (a CSV or tab-separated file, or text pasted from a spreadsheet) are kept on
+import { addCloseX } from './window-x';
 // this computer only, for data you have a copy of but the program can't carry.
 
 import { BUILT_IN_TABLES, LATER_ROWS, LATER_TABLES } from '../kb/data';
@@ -100,6 +101,14 @@ export function matchSolvent(values: string[], wanted: string): string | null {
 }
 
 const NMR_SOLVENT_KEY = 'chem-illustrator.kb.nmrSolvent';
+/** Compact rows (one line each, structures behind the name): kept on this computer. */
+const COMPACT_KEY = 'chem-illustrator.kb.compact';
+function readCompact(): boolean {
+  try { return localStorage.getItem(COMPACT_KEY) === '1'; } catch { return false; }
+}
+function writeCompact(on: boolean): void {
+  try { if (on) localStorage.setItem(COMPACT_KEY, '1'); else localStorage.removeItem(COMPACT_KEY); } catch { /* not kept */ }
+}
 function readNmrSolvent(): string {
   try { return localStorage.getItem(NMR_SOLVENT_KEY) ?? ''; } catch { return ''; }
 }
@@ -177,7 +186,11 @@ export class KnowledgeBaseWindow {
   private title!: HTMLHeadingElement;
   private titleText!: HTMLSpanElement;
   private wrap!: HTMLDivElement;
-  private sources!: HTMLParagraphElement;
+  /** The table's sources (links), in a card opened from the Sources button. */
+  private sources!: HTMLElement;
+  private sourcesBtn!: HTMLButtonElement;
+  /** One line per row, structures behind the name (the Compact Rows box). */
+  private compact = readCompact();
   private count!: HTMLSpanElement;
   private removeBtn!: HTMLButtonElement;
   private picked: Record<string, string> = {};
@@ -234,6 +247,7 @@ export class KnowledgeBaseWindow {
     d.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Escape' && this.structurePop) { e.preventDefault(); this.hideStructurePop(); }
+      else if (e.key === 'Escape' && !this.sources.hidden) { e.preventDefault(); this.sources.hidden = true; this.sourcesBtn.setAttribute('aria-expanded', 'false'); }
     });
     // a structure card never outlives the pointer resting on its name: a click, a dropdown or a key
     // moving the focus, scrolling, or leaving the window puts it away
@@ -263,7 +277,15 @@ export class KnowledgeBaseWindow {
     this.title.append(this.titleText, this.about);
     this.wrap = el('div', { className: 'refs-table-wrap kb-table-wrap' });
     this.wrap.addEventListener('scroll', () => { const w = this.wrap; if (w.scrollTop + w.clientHeight > w.scrollHeight - 600) this.moreRows?.(); }, { passive: true });
-    this.sources = el('p', { className: 'muted kb-sources' });
+    // the sources sit behind a button by the row count (UI rule 2): a card, since they are links
+    this.sources = el('div', { className: 'info-pop kb-sources', hidden: true });
+    this.sourcesBtn = button('Sources', 'Where this table\'s values come from', () => { this.sources.hidden = !this.sources.hidden; this.sourcesBtn.setAttribute('aria-expanded', String(!this.sources.hidden)); });
+    this.sourcesBtn.classList.add('kb-sources-btn');
+    this.sourcesBtn.setAttribute('aria-expanded', 'false');
+    d.addEventListener('pointerdown', (e) => { if (!this.sources.hidden && !(e.target as Element).closest('.kb-sources, .kb-sources-btn')) { this.sources.hidden = true; this.sourcesBtn.setAttribute('aria-expanded', 'false'); } });
+    const compact = el('input', { type: 'checkbox', checked: this.compact });
+    compact.addEventListener('change', () => { this.compact = compact.checked; writeCompact(this.compact); this.showTable(); });
+    const compactBox = el('label', { className: 'kb-compact-box', title: 'One line per row: longer text shows when the pointer rests on it, and a structure when it rests on the name' }, compact, 'Compact Rows');
     this.count = el('span', { className: 'muted' });
     this.removeBtn = button('Remove Table…', 'Remove the imported table shown (from this computer only)', () => void this.removeImported());
     this.findBtn = this.host.drawing ? button('Draw…', 'Draw the structure to search for: that compound, then every compound containing it', () => this.openDraw())
@@ -273,16 +295,18 @@ export class KnowledgeBaseWindow {
         ...(this.findBtn ? [this.findBtn] : [])),
       el('div', { className: 'kb-body' },
         this.list,
-        el('div', { className: 'kb-main' }, this.wrap, this.sources)),
+        el('div', { className: 'kb-main' }, this.wrap)),
       el('div', { className: 'refs-buttons' },
         el('span', { className: 'refs-add' },
           button('Import Table…', 'Add a custom table from a CSV or tab-separated file (or paste one from a spreadsheet). It is kept on this computer only', () => void this.importTable()),
           this.removeBtn),
-        el('span', { className: 'refs-edit' },
+        el('span', { className: 'refs-edit kb-foot' },
+          compactBox,
+          el('span', { className: 'kb-sources-at' }, this.sourcesBtn, this.sources),
           this.count,
-          button('Copy Table', 'Copy the rows showing, to paste into a sheet, a document table, Word or Excel', () => void this.copy()),
-          button('Close', '', () => d.close()))),
+          button('Copy Table', 'Copy the rows showing, to paste into a sheet, a document table, Word or Excel', () => void this.copy()))),
     );
+    addCloseX(d, d.querySelector<HTMLElement>('.refs-head')!);
     d.addEventListener('close', () => { this.hideStructurePop(); window.removeEventListener('blur', hidePop); this.closeDraw(true); d.remove(); this.d = null; });
     document.body.append(d);
     this.showList();
@@ -814,7 +838,8 @@ export class KnowledgeBaseWindow {
     const structure = !!this.queryCanon && !t.noSearch;
     if (sortCol) rows = structure ? [...sortRows(rows.filter((m) => m.same), sortCol, this.sort!.down), ...sortRows(rows.filter((m) => !m.same), sortCol, this.sort!.down)] : sortRows(rows, sortCol, this.sort!.down);
     const id = layoutId(t);
-    const cols = this.shownColumns(t, t.columns, id);
+    // compact rows: no picture column (the structure shows beside the name instead)
+    const cols = this.shownColumns(t, t.columns, id).filter((c) => !(this.compact && c.picture));
     const span = cols.length;
     const sameCount = rows.filter((m) => m.same).length;
     // a table in groups (not while a structure search splits it its own way): a heading over each
@@ -842,7 +867,7 @@ export class KnowledgeBaseWindow {
       if (structure && next === rows.length && this.lookingInside) body.append(this.groupRow(span, 'Looking for compounds containing it…'));
     };
     this.moreRows(FIRST_ROWS);
-    const table = el('table', { className: 'refs-table kb-table' + (t.picture ? ' kb-pictures' : '') + (t.fit ? ' kb-fit' : '') }, el('thead', {}, el('tr', {}, ...cols.map((c) => this.header(c, id, cols.map((x) => x.key))))), body);
+    const table = el('table', { className: 'refs-table kb-table' + (t.picture && !this.compact ? ' kb-pictures' : '') + (t.fit ? ' kb-fit' : '') + (this.compact ? ' kb-compact' : '') }, el('thead', {}, el('tr', {}, ...cols.map((c) => this.header(c, id, cols.map((x) => x.key))))), body);
     if (!rows.length) {
       const q = this.search.value.trim();
       const empty = el('p', { className: 'muted kb-empty', textContent: this.lookingInside ? `Looking for compounds containing ${q}…` : this.queryCanon ? `Nothing in ${t.title} matches or contains ${q}.` : q ? `Nothing in ${t.title} matches “${q}”.` : 'This table is empty.' });
@@ -856,9 +881,13 @@ export class KnowledgeBaseWindow {
     else this.wrap.replaceChildren(table);
     this.count.textContent = rows.length === t.rows.length ? `${t.rows.length} rows` : `${rows.length} of ${t.rows.length} rows`;
     // sources, each a link when it has one
-    this.sources.replaceChildren(t.sources.length > 1 ? 'Sources: ' : 'Source: ');
+    this.sourcesBtn.textContent = t.sources.length > 1 ? 'Sources' : 'Source';
+    this.sourcesBtn.hidden = !t.sources.length;
+    this.sources.hidden = true;
+    this.sourcesBtn.setAttribute('aria-expanded', 'false');
+    this.sources.replaceChildren();
     t.sources.forEach((s, i) => {
-      if (i) this.sources.append('; ');
+      if (i) this.sources.append(el('br'));
       if (s.url) {
         const a = el('a', { href: s.url, textContent: s.label });
         a.addEventListener('click', (e) => { e.preventDefault(); this.host.openUrl(s.url!); });
@@ -914,6 +943,12 @@ export class KnowledgeBaseWindow {
       td.dataset.col = c.key;
       if (c.key === lead) td.classList.add('kb-lead');
       if (!c.picture) this.sizeCell(td, widths[c.key]);
+      if (this.compact) {
+        // the whole text when the pointer rests on a cut-off cell; the structure beside the name
+        const text = td.textContent ?? '';
+        if (text.length > 20 && !td.title) td.title = text;
+        if (c.key === lead && t.picture && !t.structure) this.structureOnHover(td, () => t.picture!(m.row) ?? null);
+      }
       tr.append(td);
     }
     return tr;
