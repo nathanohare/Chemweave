@@ -157,6 +157,8 @@ export class CanvasRibbon {
       if (!items.length && !g.gallery && !g.special) continue;
       const group = document.createElement('div');
       group.className = 'rb-group';
+      // (the least used group on Home: the last to open back up in a narrow window)
+      if (g.name === 'Look Up') group.classList.add('rb-open-last');
       const row = document.createElement('div');
       row.className = 'rb-row cr-rows';
       if (g.special === 'clipboard') this.clipboard(row);
@@ -238,6 +240,7 @@ export class CanvasRibbon {
     } else {
       b.className = 'rb-iconbtn cr-minor';
       // a command with no picture yet shows a short form of its name
+      // (where its tab has room, its name shows beside the picture: from aria-label, in app.css; ribbon-fit.ts)
       b.innerHTML = pic ?? `<span class="cr-word">${esc(name)}</span>`;
     }
     return b;

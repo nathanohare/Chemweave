@@ -106,6 +106,10 @@ export class Scrollbars {
     const seen = this.seen();
     const range = this.frozen ?? scrollRange(this.content(), seen);
     this.range = range;
+    // nothing to scroll to that way (the whole slide or drawing is in view): no bar (UI audit U21)
+    const eps = 0.5 / this.r.view.scale;
+    this.h.hidden = range.x1 >= seen.x1 - eps && range.x2 <= seen.x2 + eps;
+    this.v.hidden = range.y1 >= seen.y1 - eps && range.y2 <= seen.y2 + eps;
     const ht = thumbFor([range.x1, range.x2], [seen.x1, seen.x2], this.h.clientWidth);
     const vt = thumbFor([range.y1, range.y2], [seen.y1, seen.y2], this.v.clientHeight);
     this.hThumb.style.transform = `translateX(${ht.start}px)`;

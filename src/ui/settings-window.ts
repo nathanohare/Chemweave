@@ -13,6 +13,8 @@ import { hostNextDialog, setPreviewSlot } from './dialog-host';
 export interface SettingsPage {
   id: string;
   title: string;
+  /** The heading it sits under in the list of pages (pages of a group are listed together). */
+  group?: string;
   /** Words to find it by (the names of its settings). */
   words: string;
   /** Open the page's settings window (it opens inside this one). */
@@ -279,14 +281,22 @@ export class SettingsWindow {
 
   private fillList(): SettingsPage[] {
     const found = findPages(this.pages, this.search.value);
-    this.list.replaceChildren(...found.map((p) => {
+    // the whole list sits under its group headings; a search shows its matches alone, best first
+    const grouped = !this.search.value.trim();
+    let group = '';
+    this.list.replaceChildren(...found.flatMap((p) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.dataset.page = p.id;
       b.textContent = p.title;
       b.classList.toggle('on', p.id === this.page);
       b.addEventListener('click', () => void this.go(p.id));
-      return b;
+      if (!grouped || !p.group || p.group === group) return [b];
+      group = p.group;
+      const h = document.createElement('h3');
+      h.className = 'sw-group';
+      h.textContent = group;
+      return [h, b];
     }));
     if (!found.length) {
       const none = document.createElement('p');

@@ -6,6 +6,7 @@
 // substructure; insert it into the drawing, slide, document or cell showing, as it was drawn.
 
 import { withInfo } from './info-tip';
+import { addCloseX } from './window-x';
 import {
   compoundBySmiles, compoundText, compoundTitle, newId, parseTags, tagsOf,
   type LibCompound, type LibraryData, type LibSpectrum,
@@ -201,12 +202,12 @@ export class CompoundLibraryWindow {
           button('Edit…', 'The number, names, CAS number, tags and notes of the compound selected, and the files it appears in (or double-click it)', () => void this.edit()),
           ...(this.host.findInFiles ? [button('Find in Files…', 'Search a folder for files with the compound selected in', () => { const c = this.current(); if (c) this.host.findInFiles!(c); else this.host.flash('Click a compound first.'); })] : []),
           button('Delete…', 'Delete the compounds selected from your library (the files they are in are not changed)', () => void this.remove()),
-          this.insertBtn,
           button('Location…', 'Where your library is kept: on this computer, or in a folder such as OneDrive to use it on other computers or share it', () => void this.host.location()),
-          button('Close', '', () => d.close()))),
+          this.insertBtn)),
     );
     d.addEventListener('close', () => { d.remove(); this.d = null; this.off?.(); this.off = null; });
     this.off = this.lib.onChange(() => this.fill());
+    addCloseX(d, d.querySelector<HTMLElement>('.refs-head')!);
     document.body.append(d);
     this.fill();
     d.showModal();

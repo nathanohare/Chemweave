@@ -71,8 +71,8 @@ describe('toolboxes', () => {
 });
 
 describe('the side panel toolbox', () => {
-  it('is always shown, docked at the right to start with', () => {
-    expect(defaultToolboxes().places.details).toMatchObject({ shown: true, dock: 'right' });
+  it('is always shown, floating at the top right to start with', () => {
+    expect(defaultToolboxes().places.details).toMatchObject({ shown: true, dock: 'float', corner: true });
     // older settings could put it away
     expect(parseToolboxes({ places: { details: { shown: false, dock: 'float', x: 50, y: 60 } } }).places.details).toMatchObject({ shown: true, dock: 'float', x: 50, y: 60 });
   });

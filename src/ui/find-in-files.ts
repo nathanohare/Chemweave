@@ -6,6 +6,7 @@
 // aren't read again (the index, see file-index.ts).
 
 import { emptyIndex, searchFiles, type FileIndex, type Hit, type SearchDeps, type SearchMode } from '../library/file-index';
+import { addCloseX } from './window-x';
 import { SEARCHED_EXTENSIONS, spotText } from '../library/structures';
 import { withInfo } from './info-tip';
 
@@ -121,9 +122,10 @@ export class FindInFilesWindow {
       el('div', { className: 'refs-table-wrap' }, table),
       el('div', { className: 'refs-buttons' },
         el('span', {}, this.go),
-        el('span', {}, button('Open', 'Open the file selected at the structure found (or double-click it)', () => void this.openPicked()), button('Close', '', () => d.close()))),
+        el('span', {}, button('Open', 'Open the file selected at the structure found (or double-click it)', () => void this.openPicked()))),
     );
     d.addEventListener('close', () => { this.stop = true; });
+    addCloseX(d, d.querySelector<HTMLElement>('.refs-head')!);
     document.body.append(d);
     this.fill();
   }

@@ -112,12 +112,15 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
   }
 
   let isOpen = true;
+  let workSeen: ResizeObserver | null = null;
   const finish = (picked: boolean) => {
     if (!isOpen) return;
     isOpen = false;
     document.removeEventListener('pointerdown', outside, true);
+    document.removeEventListener('keydown', escAnywhere, true);
     removeEventListener('resize', place);
     io?.disconnect();
+    workSeen?.disconnect();
     if (root instanceof HTMLDialogElement && root.open) root.close();
     root.remove();
     if (current === win) current = null;
@@ -131,6 +134,15 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     finish(false);
   });
   if (root instanceof HTMLDialogElement) root.addEventListener('cancel', (e) => { e.preventDefault(); finish(false); });
+  // Esc closes the window wherever the keyboard is (the new file's page or grid may have taken it)
+  const escAnywhere = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || !isOpen || root.contains(e.target as Node | null)) return;
+    if ((e.target as Element | null)?.closest?.('dialog, .info-pop, .menu')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    finish(false);
+  };
+  document.addEventListener('keydown', escAnywhere, true);
 
   /** A press outside the window closes it (not one on a tip the window opened). */
   function outside(e: Event): void {
@@ -185,6 +197,17 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
       if (!isOpen) return;
       try { await c.pick(); } finally { finish(true); }
     });
+    // the arrow keys move from card to card; Left from a row's first card goes back to the categories
+    b.addEventListener('keydown', (e) => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+      const cards = [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')];
+      const i = cards.indexOf(b);
+      const perRow = Math.max(1, cards.filter((c) => c.offsetTop === cards[0].offsetTop).length);
+      e.preventDefault();
+      if (e.key === 'ArrowLeft' && i % perRow === 0) { tabs.get(showing)?.focus(); return; }
+      const j = i + (e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -perRow : perRow);
+      cards[Math.min(cards.length - 1, Math.max(0, j))]?.focus();
+    });
     if (io) io.observe(pic); else pic.draw();
     return b;
   };
@@ -227,6 +250,8 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     b.addEventListener('click', () => void show(c.id));
     b.addEventListener('keydown', (e) => {
       const i = cats.indexOf(c);
+      // Right (or Enter) goes into the cards, where the arrows move and Enter picks
+      if (e.key === 'ArrowRight' || e.key === 'Enter') { const card = grid.querySelector<HTMLButtonElement>('.tw-card'); if (card) { e.preventDefault(); card.focus(); } return; }
       const j = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? cats.length - 1 : -1;
       if (j < 0 || j >= cats.length || j === i) return;
       e.preventDefault();
@@ -243,6 +268,10 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
   else {
     place();
     addEventListener('resize', place);
+    // the new file's ribbon and panes settle after the window opens (New Design sat over the ribbon): follow the work area
+    const work = document.getElementById('work');
+    if (work && typeof ResizeObserver === 'function') { workSeen = new ResizeObserver(() => { if (isOpen) place(); }); workSeen.observe(work); }
+    setTimeout(() => { if (isOpen) place(); }, 300);
     // (added after the click that opened the window has finished)
     setTimeout(() => { if (isOpen) document.addEventListener('pointerdown', outside, true); }, 0);
   }
@@ -250,5 +279,9 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
   if (!first && o.remember) try { first = localStorage.getItem(o.remember) ?? ''; } catch { /* the first */ }
   if (!tabs.has(first)) first = cats[0]?.id ?? '';
   if (first) void show(first, true);
+  // the new file's own view takes the keyboard as it opens: take it back, so the arrow keys and Esc work at once
+  const refocus = () => { if (isOpen && !root.contains(document.activeElement)) (tabs.get(showing) ?? root).focus(); };
+  setTimeout(refocus, 0);
+  setTimeout(refocus, 250);
   return win;
 }

@@ -78,8 +78,19 @@ const canShrink = (g: HTMLElement) => {
   const row = g.querySelector<HTMLElement>(':scope > .rb-row');
   if (!row) return false;
   const kids = [...row.children].filter((c) => !(c as HTMLElement).hidden);
-  return kids.length >= 2 && kids.every((c) => c.matches('button.rb-big:not(.rb-keep-big), .rb-fly:has(> button.rb-big)'));
+  const big = (c: Element) => c.matches('button.rb-big:not(.rb-keep-big), .rb-fly:has(> button.rb-big)');
+  if (kids.length >= 2 && kids.every(big)) return true;
+  // large buttons beside a column of plain small ones (Insert Caption beside Table of Figures and
+  // Cross-reference): the large ones join the column as small buttons with their words, rather
+  // than staying large and losing them (UI audit U16)
+  const plainCol = (c: Element) => c.matches('.rb-col') && [...c.children].every((x) => x.matches('button:not(.rb-big)'));
+  // (a split button keeps its arrow under it and is too tall for a row of three)
+  if (kids.some((c) => c.matches('.rb-split'))) return false;
+  return kids.length >= 2 && kids.some(big) && kids.some(plainCol) && kids.every((c) => big(c) || plainCol(c));
 };
+
+/** The Canvas ribbon's tabs that show names when they all fit. */
+const ROOMY = '.canvas-ribbon.cr-classic > .rb-panel:not([data-cr-panel="home"])';
 
 /**
  * Fit one row of groups to its width, as Office does: fewer gallery choices; then the Format
@@ -92,6 +103,16 @@ export function fitRow(row: HTMLElement): void {
   const groups = groupsOf(row);
   row.classList.remove('rb-squeeze');
   for (const g of groups) g.classList.remove('rb-small', 'rb-compact', 'rb-folded', 'rb-popped', 'rb-bare');
+  // the Canvas's tabs other than Home (Classic look): each button's name beside its picture where
+  // the tab has room, pictures only where it has not (UI audit U10)
+  // (group by group from the left, so a full tab still names what it can)
+  for (const g of groups) g.classList.remove('cr-roomy');
+  if (row.matches(ROOMY)) {
+    for (const g of groups) {
+      g.classList.add('cr-roomy');
+      if (overflows(row)) g.classList.remove('cr-roomy');
+    }
+  }
   const fold = (g: HTMLElement) => { foldButton(g); g.classList.add('rb-folded'); };
   // a group with nothing in it yet (Format Favorites before the first is saved) is only its button
   for (const g of groups) if (g.classList.contains('rb-fold-always')) fold(g);
@@ -114,8 +135,12 @@ export function fitRow(row: HTMLElement): void {
   // folding a wide group (Styles) can make room for a narrow one folded before it: open those back up
   // (the groups that fold first open last; one with nothing in it stays folded)
   const reopen = groups.slice(1).reverse();
-  for (const g of [...reopen.filter((x) => !x.classList.contains('rb-fold-first')), ...reopen.filter((x) => x.classList.contains('rb-fold-first'))]) {
+  const lastOf = (x: HTMLElement) => (x.classList.contains('rb-fold-first') ? 2 : x.classList.contains('rb-open-last') ? 1 : 0);
+  for (const g of [0, 1, 2].flatMap((k) => reopen.filter((x) => lastOf(x) === k))) {
     if (!g.classList.contains('rb-folded') || g.classList.contains('rb-fold-always')) continue;
+    // a group that opens last (the Canvas's Look Up) stays folded while any other is: a narrow
+    // window never trades Font and Paragraph for it (UI audit U18)
+    if (g.classList.contains('rb-open-last') && groups.some((x) => x !== g && x.classList.contains('rb-folded') && !x.classList.contains('rb-fold-always') && !x.classList.contains('rb-fold-first'))) continue;
     g.classList.remove('rb-folded');
     if (overflows(row)) g.classList.add('rb-folded');
   }

@@ -11,6 +11,7 @@
 // References > Insert Citation's list to choose references from.
 
 import { withInfo } from './info-tip';
+import { addCloseX } from './window-x';
 import type { DocText } from '../document/document';
 import { CITE_PRESETS, changedOptions, citeFormat, preferredStyle, setPreferredStyle, type CiteFormat } from '../document/cite-styles';
 import {
@@ -587,10 +588,10 @@ export class ReferencesDialog {
         el('span', { className: 'refs-edit' },
           this.copyTo,
           button('Edit…', 'Change the reference selected (or double-click it)', () => void this.edit()),
-          button('Delete…', 'Delete the references picked', () => void this.remove()),
-          button('Close', '', () => d.close(), true))),
+          button('Delete…', 'Delete the references picked', () => void this.remove()))),
     );
     d.addEventListener('close', () => { d.remove(); this.d = null; this.panels.clear(); this.closed?.(); this.closed = null; });
+    addCloseX(d, d.querySelector<HTMLElement>('.refs-head')!);
     document.body.append(d);
     this.fill();
     d.showModal();
@@ -622,6 +623,7 @@ export class ReferencesDialog {
     this.hint.hidden = !this.hint.textContent;
     const q = this.search.value.trim().toLowerCase();
     const rows: HTMLTableRowElement[] = [];
+    let saidHow = false;
     for (const g of holders) {
       const all = g.refs();
       const refs = all.filter((r) => (!q || `${describe(r)} ${r.authors.join(' ')} ${r.doi}`.toLowerCase().includes(q)) && (g.shows?.(r) ?? true));
@@ -649,7 +651,8 @@ export class ReferencesDialog {
         if (!n) tr.classList.add('uncited');
         rows.push(tr);
       }
-      if (!all.length) rows.push(el('tr', {}, el('td', { colSpan: 4, className: 'muted', textContent: 'No references yet. Add one by DOI, by hand, or from a BibTeX or RIS file, or copy some from another file.' })));
+      // (how to add one is said once, under the first empty file)
+      if (!all.length) { rows.push(el('tr', {}, el('td', { colSpan: 4, className: 'muted', textContent: saidHow ? 'No references yet.' : 'No references yet. Add one by DOI, by hand, or from a BibTeX or RIS file, or copy some from another file.' }))); saidHow = true; }
     }
     this.body.replaceChildren(...rows);
     this.body.querySelector('tr.picked')?.scrollIntoView({ block: 'nearest' });

@@ -34,10 +34,8 @@ export function askDiagram(editing: DiagramData | null, o: DiagramDialogOptions)
       <div class="dg-body">
         <div class="dg-layouts" role="listbox" aria-label="Layout"></div>
         <div class="dg-text">
-          <label for="dg-text"><b>Text</b></label>
+          <label for="dg-text" data-info="One item per line. Tab indents a line, Shift+Tab outdents. Formulas are subscripted automatically (CO2); use _ and ^ for others (TS^‡)."><b>Text</b></label>
           <textarea id="dg-text" name="text" rows="12" spellcheck="true"></textarea>
-          <p class="muted small">One item per line. <kbd>Tab</kbd> indents a line, <kbd>Shift+Tab</kbd> outdents.
-            Formulas are subscripted automatically (CO2); use <code>_</code> and <code>^</code> for others (TS^‡).</p>
           <p class="muted small dg-blurb"></p>
         </div>
         <div class="dg-preview" aria-label="How it will look"></div>

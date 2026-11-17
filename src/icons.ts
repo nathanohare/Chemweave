@@ -77,6 +77,8 @@ export const ICONS: Record<string, string> = {
   eraser: svg('<path d="M14.5 4.5l5 5-9 9H6l-2.5-2.5z"/><path d="M10 9l5 5"/><path d="M11 18.5h9"/>'),
   'bond-single': svg('<line x1="5" y1="18" x2="19" y2="6"/>'),
   'bond-double': svg('<line x1="4" y1="16" x2="17" y2="5"/><line x1="7" y1="19" x2="20" y2="8"/>'),
+  'bond-double-dash': svg('<line class="a" x1="4" y1="16" x2="17" y2="5"/><line class="a" x1="7" y1="19" x2="20" y2="8" stroke-dasharray="2.4 2"/>'),
+  'bond-double-bold': svg('<line class="a" x1="4" y1="15.5" x2="17" y2="4.5"/><line class="a" x1="7.5" y1="19" x2="20" y2="8.5" stroke-width="3.4" stroke-linecap="butt"/>'),
   'bond-triple': svg('<line x1="3.5" y1="15" x2="15.5" y2="4.5"/><line x1="5.5" y1="17.5" x2="18" y2="7"/><line x1="8.5" y1="19.5" x2="20.5" y2="9"/>'),
   'bond-wedge': svg('<path d="M5 18L18.4 4.6 20 6.4z" fill="currentColor"/>'),
   // the hashed wedge widens from a point like the wedge beside it; the hashed bond stays narrow
@@ -109,7 +111,7 @@ export const ICONS: Record<string, string> = {
   // two rings at right angles (a biaryl seen in 3-D), and the way they turn
   'perspective-3d': svg('<polygon points="7,10.5 10.5,12.5 10.5,16.5 7,18.5 3.5,16.5 3.5,12.5"/><line x1="10.5" y1="14.5" x2="14" y2="14.5"/><polygon points="14,14.5 16,10.5 19.5,11.5 21,15.5 19,19.5 15.5,18.5"/><path d="M5 7C8 3 16 3 19 7"/><path d="M19.4 3.1l-.4 3.9-3.8-.7" stroke-width="1.4"/>'),
   element: svg('<rect x="3" y="4" width="5" height="5"/><rect x="3" y="9" width="5" height="5"/><rect x="8" y="9" width="5" height="5"/><rect x="16" y="4" width="5" height="5"/><rect x="16" y="9" width="5" height="5"/><rect x="8" y="16" width="8" height="4"/>'),
-  'bond-quadruple': svg('<line x1="3" y1="14" x2="14" y2="4"/><line x1="5" y1="16.3" x2="16.3" y2="6"/><line x1="7.5" y1="18.5" x2="18.8" y2="8"/><line x1="10" y1="20.5" x2="21" y2="10.5"/>'),
+  'bond-quadruple': svg('<line class="a" x1="3" y1="14" x2="14" y2="4"/><line class="a" x1="5" y1="16.3" x2="16.3" y2="6"/><line class="a" x1="7.5" y1="18.5" x2="18.8" y2="8"/><line class="a" x1="10" y1="20.5" x2="21" y2="10.5"/>'),
   'bond-dative': svg('<line x1="4" y1="19" x2="17" y2="7"/><path d="M20 4l-7.2 2.3 4.8 5z" fill="currentColor"/>'),
   // a ring bonded through its middle to a metal, M
   'bond-hapto': svg('<polygon points="12,2.8 17.4,6.3 15.3,11.5 8.7,11.5 6.6,6.3"/><line x1="12" y1="7.8" x2="12" y2="15"/><text x="12" y="22.2" font-size="8" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui, sans-serif">M</text>'),

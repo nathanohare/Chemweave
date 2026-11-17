@@ -15,9 +15,9 @@ import './app.css';
 import type { MethylStyle } from './chem/hydrogens';
 import { STANDARD_COLOURS, usedColours } from './colours';
 import { ICONS } from './icons';
-import { Toolboxes, lockIcon, sideFolded, commandButton, defaultToolboxes, menuCommands, boxIds, boxGrid, boxTitle, flyGrid, isEditable, withoutGoneItems, isOwnBox, overflowOf, CONTEXT_BOXES, type ContextBox, type Pickable, type ToolboxDef, type ToolboxState } from './ui/toolboxes';
+import { Toolboxes, isOwnFlyout, lockIcon, sideFolded, commandButton, defaultToolboxes, menuCommands, boxIds, boxGrid, boxTitle, flyGrid, isEditable, withoutGoneItems, isOwnBox, overflowOf, CONTEXT_BOXES, type ContextBox, type Pickable, type ToolboxDef, type ToolboxState } from './ui/toolboxes';
 import { gridItems, inBlock, oneColumn, shownGrid, wrapped, type Grid, type Shown } from './ui/toolbox-grid';
-import { ToolboxEditor } from './ui/toolbox-editor';
+import { ToolboxEditor, initials } from './ui/toolbox-editor';
 import { RibbonEditor } from './ui/ribbon-editor';
 import { readRibbons, applyRibbon, type RibbonInfo, type RibbonsPrefs } from './ui/ribbon-custom';
 import { editPalettes, getPalettes, onPalettes, setPalettes, useDrawingColours, usePaletteMenus } from './ui/palette-ui';
@@ -575,19 +575,36 @@ const PERSPECTIVE_TOOLS: PaletteDef = {
   columns: 2,
 };
 
-/** The wedges that are drawn from scratch: solid, hollow and wavy (the hashed wedge has its own button). */
+/** The stereo bonds: the wedges, and the hashed, bold and wavy bonds. */
 const WEDGES: PaletteDef = {
   palette: 'wedges',
-  title: 'Wedges',
+  title: 'Wedges and Stereo Bonds',
   items: [
     { name: 'bond-wedge', title: 'Wedge. Click again to reverse' },
-    { name: 'bond-hollowWedge', title: 'Hollow wedge. Click again to reverse' },
+    { name: 'bond-hashWedge', title: 'Hashed wedge. Click again to reverse' },
     { name: 'bond-wavyWedge', title: 'Wavy wedge: the wave widens away from the stereocenter. Click again to reverse' },
+    { name: 'bond-hash', title: 'Hashed bond' },
+    { name: 'bond-bold', title: 'Bold bond' },
+    { name: 'bond-wavy', title: 'Wavy bond' },
   ],
   columns: 3,
 };
 
-/** Dashed lines between atoms: a dashed bond, a hydrogen bond and an ionic bond. */
+/** Double bonds and the higher orders. */
+const MULTIPLE_BONDS: PaletteDef = {
+  palette: 'multiple',
+  title: 'Double and Multiple Bonds',
+  items: [
+    { name: 'bond-double', title: 'Double bond. Click again to move the second line' },
+    { name: 'bond-double-dash', title: 'Double bond with a dashed second line (a partial double bond, as in a resonance form). Click again to move the dashed line' },
+    { name: 'bond-double-bold', title: 'Double bond with a bold second line. Click again to move the bold line' },
+    { name: 'bond-triple', title: 'Triple bond' },
+    { name: 'bond-quadruple', title: 'Quadruple bond (metal–metal)' },
+  ],
+  columns: 3,
+};
+
+/** Dashed lines between atoms and the other bonds that aren't plain covalent ones. */
 const DASHES: PaletteDef = {
   palette: 'dashes',
   title: 'Dashed and Non-Covalent Bonds',
@@ -595,6 +612,11 @@ const DASHES: PaletteDef = {
     { name: 'bond-dash', title: 'Dashed bond' },
     { name: 'bond-hydrogen', title: 'Hydrogen bond (dotted): drag from the H to the acceptor. Hydrogen counts don\'t change' },
     { name: 'bond-ionic', title: 'Ionic bond (dashed): drag from the positive end. Hydrogen counts don\'t change' },
+    { name: 'bond-partial', title: 'Partial bond: one forming or breaking in a transition state, drawn dashed. It leaves both atoms\' hydrogens as they were (shortcut: P over a bond)' },
+    { name: 'bond-wavy', title: 'Wavy bond' },
+    { name: 'bond-dative', title: 'Dative bond: draw from the donor atom to the acceptor. Click again to reverse' },
+    { name: 'bond-hapto', title: 'Hapto (η) bond: drag from a metal to a ring or π-bond (η⁵-Cp, η⁶-arene, η²-alkene), or click a ring or bond to add a new metal. Click a hapto bond to draw it to each atom' },
+    { name: 'bond-variable', title: 'Variable attachment: drag from a group into a ring to put it on one of the ring\'s atoms, then click ring atoms to add or remove them' },
   ],
   columns: 3,
 };
@@ -628,16 +650,9 @@ const TOOL_GROUPS: ToolbarItem[][] = [
   ],
   [
     { name: 'bond-single', title: 'Single bond. Click a bond: single, double, triple' },
-    { name: 'bond-double', title: 'Double bond. Click again to move the second line' },
-    { name: 'bond-triple', title: 'Triple bond' },
+    MULTIPLE_BONDS,
     WEDGES,
-    { name: 'bond-hashWedge', title: 'Hashed wedge. Click again to reverse' },
-    { name: 'bond-hash', title: 'Hashed bond' },
-    { name: 'bond-bold', title: 'Bold bond' },
     DASHES,
-    { name: 'bond-partial', title: 'Partial bond: one forming or breaking in a transition state, drawn dashed. It leaves both atoms\' hydrogens as they were (shortcut: P over a bond)' },
-    { name: 'bond-wavy', title: 'Wavy bond' },
-    { name: 'bond-dative', title: 'Dative bond: draw from the donor atom to the acceptor. Click again to reverse' },
     HAPTO_TOOLS,
     { name: 'chain', title: 'Chain: drag to draw a zig-zag chain, or click to type how many atoms (Alt+click: the same number again)' },
   ],
@@ -684,7 +699,7 @@ const TOOL_GROUPS: ToolbarItem[][] = [
 
 /** Tools kept off the bar, still reached by their keys, Search and the menus (Chemistry > Periodic Table). */
 const OFF_BAR: ToolbarItem[] = [
-  { name: 'bond-quadruple', title: 'Quadruple bond (metal–metal)' },
+  { name: 'bond-hollowWedge', title: 'Hollow wedge. Click again to reverse' },
   { name: 'element', title: 'Periodic table: pick an element, then click atoms to change them' },
 ];
 
@@ -711,25 +726,57 @@ for (const group of [...TOOL_GROUPS, OFF_BAR]) {
 registerToolNames(toolNames);
 
 /** Each fly-out palette by name, and the palette each tool in one comes in (for its picture). */
-const PALETTES = new Map<string, PaletteDef>();
+/** The fly-outs made in Customize Toolboxes, as they are now (set once the toolboxes are read). */
+let ownFlyoutsNow: () => { id: string; title: string }[] = () => [];
+/** The app's fly-out palettes, and with them the fly-outs of your own (empty until Customize Toolboxes fills them). */
+class Palettes extends Map<string, PaletteDef> {
+  private own(name: string): PaletteDef | undefined {
+    const f = isOwnFlyout(name) ? ownFlyoutsNow().find((x) => x.id === name) : undefined;
+    return f && { palette: f.id, title: f.title, items: [], columns: 3 };
+  }
+  override get(name: string): PaletteDef | undefined { return super.get(name) ?? this.own(name); }
+  override has(name: string): boolean { return super.has(name) || !!this.own(name); }
+  override keys(): MapIterator<string> { return [...super.keys(), ...ownFlyoutsNow().map((f) => f.id)][Symbol.iterator]() as MapIterator<string>; }
+  override values(): MapIterator<PaletteDef> { return [...super.values(), ...ownFlyoutsNow().map((f) => this.own(f.id)!)][Symbol.iterator]() as MapIterator<PaletteDef>; }
+}
+const PALETTES = new Palettes();
 const TOOL_PALETTE = new Map<string, PaletteDef>();
 for (const group of TOOL_GROUPS) for (const item of group) {
   if (!('palette' in item)) continue;
   PALETTES.set(item.palette, item);
   for (const t of item.items) TOOL_PALETTE.set(t.name, item);
 }
-/** What the Drawing Tools toolbox comes with: the tool bar's groups, a divider between each. */
-const MAIN_ITEMS: string[] = TOOL_GROUPS.flatMap((g, i) => [...(i ? ['sep'] : []), ...g.map((it) => ('palette' in it ? `pal:${it.palette}` : `tool:${it.name}`))]);
+/**
+ * What the Drawing Tools toolbox comes with: two columns of twelve, the everyday tools with their
+ * variants on fly-outs, so the whole box shows in a short window (UI audit U2). Everything else is in
+ * Customize Toolboxes, the other toolboxes, the menus and the keys.
+ */
+const MAIN_ITEMS: string[] = [
+  'pal:select', 'tool:eraser',
+  'tool:bond-single', 'tool:text',
+  'pal:multiple', 'pal:arrows',
+  'pal:dashes', 'pal:symbols',
+  'pal:wedges', 'pal:tpl-own',
+  'tool:ring-benzene', 'tool:ring-cp',
+  'tool:ring-3', 'tool:ring-4',
+  'tool:ring-5', 'tool:ring-6',
+  'tool:ring-7', 'tool:ring-8',
+  'tool:chain', 'tool:fragment',
+  'pal:shapes', 'pal:brackets',
+  'pal:tpl-conformers', 'pal:tpl-projections',
+];
 
 const periodicTable = new PeriodicTable((z) => editor.pickElement(z), () => editor.element);
 const toolbar = new Toolbar($<HTMLDivElement>('#tools'), TOOL_GROUPS, (name) => {
   if (name === OWN_ADD) { void saveTemplate(); return; }
   if (name === LIGAND_LIBRARY_OPEN) { openLigandLibrary(); return; }
+  // (a command in a fly-out made in Customize Toolboxes)
+  if (name.startsWith('cmd:')) { command(name.slice(4)); return; }
   pickTool(name);
 }, (name) => {
   const keys = keysOf('space', `tool ${name}`);
   return keys.length ? ` (${keys.join(', ')})` : '';
-}, (name, size) => TOOL_PALETTE.get(name)?.icon?.(name, size));
+}, (name, size) => (name.startsWith('cmd:') ? commandIcon(name.slice(4)) ?? `<span class="tool-word">${initials(describeItem(name).label)}</span>` : TOOL_PALETTE.get(name)?.icon?.(name, size)));
 
 // The Canvas ribbon: the chemistry commands without a toolbox of their own (Smart Schemes, energy
 // diagrams, mechanism checks, look-ups), with Analysis and the warnings in two small boxes
@@ -10191,9 +10238,9 @@ applySplitWidth();
 
 // ---------------------------------------------------------------- Slides: the slide list's width and the speaker notes (drag their edges)
 
-const slidePanes = { width: 212, notes: true, notesH: 84 };
+const slidePanes = { width: 160, notes: true, notesH: 32 };
 /** The slide list's pictures fill its width, less the slide numbers and the scroll bar. */
-const thumbFor = (w: number) => Math.max(60, w - 44);
+const thumbFor = (w: number) => Math.max(60, w - 36);
 
 function applySlidePanes(): void {
   workEl.style.setProperty('--slide-pane-w', `${slidePanes.width}px`);
@@ -10234,7 +10281,7 @@ dragEdge(listHandle, (ev) => {
   workEl.style.setProperty('--slide-pane-w', `${slidePanes.width}px`);
   slideList.setThumbW(thumbFor(slidePanes.width));
 }, () => slideList.setThumbW(thumbFor(slidePanes.width), true));
-listHandle.addEventListener('dblclick', () => { slidePanes.width = 212; applySlidePanes(); storeSettings(); });
+listHandle.addEventListener('dblclick', () => { slidePanes.width = 160; applySlidePanes(); storeSettings(); });
 const notesHandle = $<HTMLElement>('#notes-handle');
 dragEdge(notesHandle, (ev) => {
   const bottom = $('#notes-pane').getBoundingClientRect().bottom;
@@ -10242,7 +10289,7 @@ dragEdge(notesHandle, (ev) => {
   slidePanes.notesH = Math.round(Math.min(most, Math.max(NOTES_MIN, bottom - ev.clientY)));
   workEl.style.setProperty('--notes-h', `${slidePanes.notesH}px`);
 }, () => undefined);
-notesHandle.addEventListener('dblclick', () => { slidePanes.notesH = 84; applySlidePanes(); storeSettings(); });
+notesHandle.addEventListener('dblclick', () => { slidePanes.notesH = 32; applySlidePanes(); storeSettings(); });
 
 // ---------------------------------------------------------------- settings and the Hotkeys window
 
@@ -13041,8 +13088,9 @@ function menuFocus(): 'atom' | 'bond' | 'structure' {
   for (const id of s.bonds) { const b = doc.bonds.get(id); if (b) { ends.add(b.a1); ends.add(b.a2); } }
   if ([...s.atoms].some((a) => !ends.has(a))) return 'structure';
   for (const a of ends) if ((doc.adj.get(a) ?? []).some((b) => !s.bonds.has(b))) return 'bond';
-  // a whole structure picked: a bond right-clicked in it still leads with the bond types
-  return contextBond !== null ? 'bond' : 'structure';
+  // a whole structure picked: the menu is about the structure, wherever in it the click landed
+  // (the bond types lead only when bonds alone are picked; UI audit U13)
+  return 'structure';
 }
 
 /** The atoms the right-click atom commands change: the one clicked, or every one picked when it was one of several. */
@@ -13450,6 +13498,7 @@ stylePanel.highlightLooks = { list: allLooks, apply: (l) => applyHighlightLook(l
 // ---------------------------------------------------------------- toolboxes (View > Toolboxes)
 
 let toolboxState: ToolboxState = defaultToolboxes();
+ownFlyoutsNow = () => toolboxState.ownFlyouts ?? [];
 /** The drawing tools' bar, which the Drawing Tools toolbox holds wherever it is. */
 const toolsNav = $<HTMLElement>('#tools');
 
@@ -13487,7 +13536,39 @@ structureStart.addEventListener('pointerenter', () => {
 });
 structureStart.title = 'Insert Structure';
 structureStart.setAttribute('aria-label', 'Insert Structure');
-$('#dock-left').prepend(structureStart);
+// the other chemistry actions used most in these modes sit under it, and an arrow folds the rail
+// away (UI audit U23)
+const structureRail: HTMLButtonElement[] = [];
+for (const [cmd, label, title] of [
+  ['name-to-structure', 'From<br>Name', 'Structure from Name: type a name, get its structure'],
+  ['compound-library', 'Compound<br>Library', 'Compound Library: your saved compounds, to insert'],
+  ['knowledge-base', 'Knowledge<br>Base', 'Knowledge Base: solvents, pKa values, reagent safety and more'],
+] as const) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'structure-more';
+  b.innerHTML = `${commandIcon(cmd) ?? ''}<span>${label}</span>`;
+  b.title = title;
+  b.setAttribute('aria-label', label.replace('<br>', ' '));
+  b.addEventListener('click', () => command(cmd));
+  structureRail.push(b);
+}
+const railFold = document.createElement('button');
+railFold.type = 'button';
+railFold.className = 'structure-fold';
+const RAIL_KEY = 'chem-illustrator.structureRail.folded';
+const foldRail = (on: boolean) => {
+  document.body.classList.toggle('structure-rail-folded', on);
+  railFold.textContent = on ? '›' : '‹';
+  railFold.title = on ? 'Show the chemistry buttons' : 'Hide the chemistry buttons';
+  railFold.setAttribute('aria-label', railFold.title);
+  railFold.setAttribute('aria-expanded', String(!on));
+  try { if (on) localStorage.setItem(RAIL_KEY, '1'); else localStorage.removeItem(RAIL_KEY); } catch { /* not kept */ }
+  dispatchEvent(new Event('resize'));
+};
+railFold.addEventListener('click', () => foldRail(!document.body.classList.contains('structure-rail-folded')));
+$('#dock-left').prepend(structureStart, ...structureRail, railFold);
+{ let folded = false; try { folded = localStorage.getItem(RAIL_KEY) === '1'; } catch { /* not kept */ } foldRail(folded); }
 
 /**
  * A tool picked from a toolbox. In Document and Sheet modes, with no drawing open, a drawing
@@ -13517,9 +13598,11 @@ function withoutRetired(saved: ToolboxState): ToolboxState {
     items: saved.items?.main ? { ...saved.items, main: saved.items.main.map((k) => was(k)!) } : saved.items,
     grids: saved.grids?.main ? { ...saved.grids, main: { ...saved.grids.main, cells: saved.grids.main.cells.map(was) } } : saved.grids,
   };
-  const isTool = (n: string) => ALL_TOOLS.has(n) || ownTemplates().some((t) => `tpl-${t.id}` === n);
-  const item = (k: string) => (k.startsWith('tool:') ? isTool(k.slice(5)) : k.startsWith('pal:') ? PALETTES.has(k.slice(4)) : true);
-  return withoutGoneItems(st, item, (pal, n) => PALETTES.has(pal) && (pal === 'tpl-own' || isTool(n)));
+  // (a fly-out of your own may hold commands, as "cmd:name")
+  const isTool = (n: string) => n.startsWith('cmd:') || ALL_TOOLS.has(n) || ownTemplates().some((t) => `tpl-${t.id}` === n);
+  const ownFly = (n: string) => !!saved.ownFlyouts?.some((f) => f.id === n);
+  const item = (k: string) => (k.startsWith('tool:') ? isTool(k.slice(5)) : k.startsWith('pal:') ? PALETTES.has(k.slice(4)) || ownFly(k.slice(4)) : true);
+  return withoutGoneItems(st, item, (pal, n) => (PALETTES.has(pal) || ownFly(pal)) && (pal === 'tpl-own' || isTool(n)));
 }
 
 function toolButton(name: string): HTMLButtonElement | null {
@@ -13609,7 +13692,7 @@ function paletteNow(name: string): PaletteDef | null {
   // (My templates holds what you save, so its tools aren't chosen)
   if ((!toolboxState.flyouts?.[name] && !toolboxState.flyGrids?.[name]) || name === 'tpl-own') return base.items.length ? base : null;
   const g = paletteGrid(name);
-  const tool = (n: string) => base.items.find((i) => i.name === n) ?? (ALL_TOOLS.has(n) ? { name: n, title: ALL_TOOLS.get(n)!.title } : null);
+  const tool = (n: string) => base.items.find((i) => i.name === n) ?? (ALL_TOOLS.has(n) ? { name: n, title: ALL_TOOLS.get(n)!.title } : n.startsWith('cmd:') ? { name: n, title: describeItem(n).label } : null);
   const cells = g.cells.map((n) => (n && tool(n) ? n : null));
   const items = cells.filter((n): n is string => !!n).map((n) => tool(n)!);
   return items.length ? { ...base, items, cells, columns: g.cols } : null;
@@ -14063,7 +14146,7 @@ function describeItem(key: string): Pickable {
   if (key === 'sep') return { key, label: 'Divider', icon: undefined };
   if (key === 'w:looks') return { key, label: 'Highlight Styles', icon: LOOKS_ICON };
   if (key.startsWith('tool:')) { const t = ALL_TOOLS.get(name); return { key, label: t ? t.title.split(/[.:] /)[0] : name, icon: t?.icon }; }
-  if (key.startsWith('pal:')) { const p = PALETTES.get(name); return { key, label: p?.title ?? name, icon: p?.items[0] && (ALL_TOOLS.get(p.items[0].name)?.icon) }; }
+  if (key.startsWith('pal:')) { const p = PALETTES.get(name); const first = p?.items[0]?.name ?? toolboxState.flyouts?.[name]?.[0]; return { key, label: p?.title ?? name, icon: first && (first.startsWith('cmd:') ? commandIcon(first.slice(4)) : ALL_TOOLS.get(first)?.icon) }; }
   return { key, label: topMenuEntry(name)?.label ?? SHORT_LABEL[name] ?? name, icon: commandIcon(name) };
 }
 const LOOKS_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2" fill="currentColor" fill-opacity="0.35"/><circle cx="6" cy="12" r="2.2"/><circle cx="6" cy="17" r="2.2" fill="currentColor" fill-opacity="0.6"/><line x1="11" y1="7" x2="20" y2="7"/><line x1="11" y1="12" x2="20" y2="12"/><line x1="11" y1="17" x2="18" y2="17"/></svg>';
@@ -14136,6 +14219,17 @@ const ribbonLive = new RibbonLive({
   menus: ribbonMenus,
 });
 ribbonLive.install();
+// the Canvas ribbon has the gear in the same corner (UI audit U20): its settings are a Settings page
+{
+  const gear = document.createElement('button');
+  gear.type = 'button';
+  gear.className = 'rb-gear';
+  gear.title = 'Ribbon settings: Classic or Simplified, button cells, tooltips';
+  gear.setAttribute('aria-label', 'Ribbon settings');
+  gear.innerHTML = document.querySelector('#doc-ribbon > .rb-tabs > .rb-gear')?.innerHTML ?? '⚙';
+  gear.addEventListener('click', () => settingsWindow.open('toolboxes'));
+  canvasRibbon.tabEnd.after(gear);
+}
 // right-click a ribbon's tabs (or a group's name) to customize it
 for (const [mode, id] of [['slides', '#ribbon'], ['document', '#doc-ribbon'], ['sheet', '#sheet-ribbon'], ['design', '#design-ribbon']] as const) {
   $(id).addEventListener('contextmenu', (e) => {
@@ -14297,27 +14391,28 @@ const guide = {
 watchRibbons((on) => { ribbonChosen = on; storeSettings(); });
 // the Canvas ribbon's arrow switches it between Classic and Simplified (Settings ▸ Toolboxes and Ribbon has both too)
 addLookToggle(canvasRibbon.el, { simple: () => ribbonLook === 'simple', toggle: () => { setRibbonLook(ribbonLook === 'simple' ? 'classic' : 'simple'); storeSettings(); } });
+// (in the order of the list: the pages of a group together, under its heading)
 const SETTINGS_PAGES: SettingsPage[] = [
-  { id: 'general', title: 'General', words: 'backup back up copy move settings file new computer install reinstall export import groups selecting click outline linked text above below ask whole page tracked changes reviewer name start view recent files chemdraw objects ole word powerpoint docx pptx save structures pictures svg png compatibility', open: generalPreferences },
-  { id: 'analysis', title: 'Analysis', words: 'analysis panel rows reorder hide show bench properties density boiling melting point vapor pressure flash refractive index lab calculation calculations mmol mass volume solution molarity ribbon box attached descriptors decimal places units celsius fahrenheit kelvin pubchem name hrms elemental', open: () => analysisSettingsPage(analysisHost) },
-  ...nmrHere ? [{ id: 'nmr', title: 'NMR Prediction', words: 'nmr prediction predict spectrum spectra proton carbon 1h 13c ppm range width solvent cdcl3 spectrometer frequency mhz quality fast balanced accurate automatic selection', open: nmrSettings }] : [],
-  { id: 'preferences', title: 'Preferences', words: 'personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
-  { id: 'drawing', title: 'Drawing', words: 'bond ends round rounded square caps mitre corners methyl me ch3 axial chirality ra sa helicity charges circled ammonium nh4 r groups numbers superscript regular text eta hapto delocalized mechanism arrows reroute wrap around block path gap tail head origin target intermediate check arrows', open: drawingPreferences },
-  { id: 'style', perFile: true, title: 'Drawing Style', words: 'bond length line width font journal acs rsc wiley elsevier thieme hash spacing margin arrow text reagents conditions above below size smaller reaction arrows gap fit alignment line up structures plus scheme', open: drawingStyleDialog },
-  { id: 'hotkeys', title: 'Keyboard Shortcuts', words: 'keys keyboard shortcuts import export reset', open: () => hotkeysDialog.open() },
-  { id: 'typing', title: 'Typing and Spelling', words: 'typing spelling dictionary autocorrect replacements chemistry formulas subscripts', open: () => typingDialog.open() },
-  { id: 'palettes', title: 'Color Palettes', words: 'colors colors palette rows', open: () => editPalettes() },
-  { id: 'mode-colours', title: 'Mode Colors', words: 'tab colors accent window drawing slides sheet document design appearance', open: () => modeDialog.open() },
-  { id: 'navigation', title: 'Navigation', words: 'document map navigator minimap map overview edge arrows off screen lost find dot grid dots tint outside fit go to selection orientation zoom', open: navigationSettings },
-  { id: 'page-grid', title: 'Page Grid', words: 'pages page grid boundaries dashed dotted lines paper fixed edges hatched wall empty gray print chemdraw paste wrap', open: pageGridSettings },
-  { id: 'toolboxes', title: 'Toolboxes and Ribbon', words: 'toolbox ribbon classic simplified one row two rows buttons cells grid lines raised bevel borders tooltips hints keys modifiers shortcuts', open: toolboxPreferences },
-  { id: 'dark', title: 'Reading Mode', words: 'reading mode dark page dark mode night paper ink graphite slate appearance colors', open: darkColours },
-    { id: 'newman', title: 'Newman Projections', words: 'newman sawhorse projection conformation torsion dihedral gauche anti eclipsed color largest middle smallest group strain a-value energy chart rotation barrier kcal kj', open: () => newmanSettingsPage() },
-  { id: 'schemes', title: 'Schemes', words: 'scheme arrow gap plus text reagents conditions boxes', open: schemeSettings },
-  { id: 'autosave', title: 'AutoSave and Recovery', words: 'autosave recovery versions backup copies shared folders onedrive', open: () => keeper.optionsCommand() },
-  { id: 'ai', title: 'AI Model', words: 'ai artificial intelligence claude anthropic chatgpt gpt openai gemini google ollama openrouter api key llm model link connect', open: () => aiSettings() },
-  { id: 'online', title: 'Online', words: 'pubchem internet names lookup updates check version privacy stable latest channel beta', open: onlinePreferences },
-  { id: 'files', actions: true, title: APPS_PAGE_TITLE, words: 'file types open with default app apps system computer device other programs explorer finder associations cdxml cdx mol sdf docx pptx xlsx double-click word powerpoint excel objects ole make figures offer documents', open: () => fileTypesPage(fileTypesHost) },
+  { id: 'general', group: 'General', title: 'General', words: 'backup back up copy move settings file new computer install reinstall export import groups selecting click outline linked text above below ask whole page tracked changes reviewer name start view recent files chemdraw objects ole word powerpoint docx pptx save structures pictures svg png compatibility', open: generalPreferences },
+  { id: 'preferences', group: 'General', title: 'Preferences', words: 'personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
+  { id: 'hotkeys', group: 'General', title: 'Keyboard Shortcuts', words: 'keys keyboard shortcuts import export reset', open: () => hotkeysDialog.open() },
+  { id: 'typing', group: 'General', title: 'Typing and Spelling', words: 'typing spelling dictionary autocorrect replacements chemistry formulas subscripts', open: () => typingDialog.open() },
+  { id: 'autosave', group: 'General', title: 'AutoSave and Recovery', words: 'autosave recovery versions backup copies shared folders onedrive', open: () => keeper.optionsCommand() },
+  { id: 'drawing', group: 'Drawing', title: 'Drawing', words: 'bond ends round rounded square caps mitre corners methyl me ch3 axial chirality ra sa helicity charges circled ammonium nh4 r groups numbers superscript regular text eta hapto delocalized mechanism arrows reroute wrap around block path gap tail head origin target intermediate check arrows', open: drawingPreferences },
+  { id: 'style', group: 'Drawing', perFile: true, title: 'Drawing Style', words: 'bond length line width font journal acs rsc wiley elsevier thieme hash spacing margin arrow text reagents conditions above below size smaller reaction arrows gap fit alignment line up structures plus scheme', open: drawingStyleDialog },
+  { id: 'schemes', group: 'Drawing', title: 'Schemes', words: 'scheme arrow gap plus text reagents conditions boxes', open: schemeSettings },
+  { id: 'newman', group: 'Drawing', title: 'Newman Projections', words: 'newman sawhorse projection conformation torsion dihedral gauche anti eclipsed color largest middle smallest group strain a-value energy chart rotation barrier kcal kj', open: () => newmanSettingsPage() },
+  { id: 'analysis', group: 'Drawing', title: 'Analysis', words: 'analysis panel rows reorder hide show bench properties density boiling melting point vapor pressure flash refractive index lab calculation calculations mmol mass volume solution molarity ribbon box attached descriptors decimal places units celsius fahrenheit kelvin pubchem name hrms elemental', open: () => analysisSettingsPage(analysisHost) },
+  ...nmrHere ? [{ id: 'nmr', group: 'Drawing', title: 'NMR Prediction', words: 'nmr prediction predict spectrum spectra proton carbon 1h 13c ppm range width solvent cdcl3 spectrometer frequency mhz quality fast balanced accurate automatic selection', open: nmrSettings }] : [],
+  { id: 'toolboxes', group: 'Appearance', title: 'Toolboxes and Ribbon', words: 'toolbox ribbon classic simplified one row two rows buttons cells grid lines raised bevel borders tooltips hints keys modifiers shortcuts', open: toolboxPreferences },
+  { id: 'navigation', group: 'Appearance', title: 'Navigation', words: 'document map navigator minimap map overview edge arrows off screen lost find dot grid dots tint outside fit go to selection orientation zoom', open: navigationSettings },
+  { id: 'page-grid', group: 'Appearance', title: 'Page Grid', words: 'pages page grid boundaries dashed dotted lines paper fixed edges hatched wall empty gray print chemdraw paste wrap', open: pageGridSettings },
+  { id: 'palettes', group: 'Appearance', title: 'Color Palettes', words: 'colors colors palette rows', open: () => editPalettes() },
+  { id: 'mode-colours', group: 'Appearance', title: 'Mode Colors', words: 'tab colors accent window drawing slides sheet document design appearance', open: () => modeDialog.open() },
+  { id: 'dark', group: 'Appearance', title: 'Reading Mode', words: 'reading mode dark page dark mode night paper ink graphite slate appearance colors', open: darkColours },
+  { id: 'online', group: 'Files and Online', title: 'Online', words: 'pubchem internet names lookup updates check version privacy stable latest channel beta', open: onlinePreferences },
+  { id: 'ai', group: 'Files and Online', title: 'AI Model', words: 'ai artificial intelligence claude anthropic chatgpt gpt openai gemini google ollama openrouter api key llm model link connect', open: () => aiSettings() },
+  { id: 'files', group: 'Files and Online', actions: true, title: APPS_PAGE_TITLE, words: 'file types open with default app apps system computer device other programs explorer finder associations cdxml cdx mol sdf docx pptx xlsx double-click word powerpoint excel objects ole make figures offer documents', open: () => fileTypesPage(fileTypesHost) },
 ];
 // Apply on a Settings page uses its settings and keeps them. Pages about the open file (Drawing
 // Style) apply to that file; their Set as Default is for new files too.
@@ -14605,11 +14700,11 @@ async function navigationSettings(): Promise<void> {
   const o = orientPrefs;
   const strength = [{ value: 'faint', label: 'Faint' }, { value: 'light', label: 'Light' }, { value: 'strong', label: 'Stronger' }];
   const r = await ask('Navigation', [
-    { name: 'navigator', label: 'Navigator: a minimap of the drawing in a corner (click or drag to move; double-click to fit)', type: 'checkbox', value: String(o.navigator) },
+    { name: 'navigator', label: 'Navigator', type: 'checkbox', value: String(o.navigator), help: 'A minimap of the drawing in a corner. Click or drag in it to move; double-click to fit.' },
     { name: 'navCorner', label: 'Document Map corner', value: o.navCorner, options: [{ value: 'br', label: 'Bottom right' }, { value: 'bl', label: 'Bottom left' }, { value: 'tr', label: 'Top right' }, { value: 'tl', label: 'Top left' }] },
     { name: 'navSize', label: 'Document Map size', value: o.navSize, options: [{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'large', label: 'Large' }] },
     { name: 'navHideAll', label: 'Hide the Document Map while the whole drawing is on screen', type: 'checkbox', value: String(o.navHideAll) },
-    { name: 'edgeArrows', label: 'Edge arrows: point to content scrolled out of view (click to go there)', type: 'checkbox', value: String(o.edgeArrows) },
+    { name: 'edgeArrows', label: 'Edge arrows', type: 'checkbox', value: String(o.edgeArrows), help: 'Arrows at the window edges that point to content scrolled out of view. Click one to go there.' },
     { name: 'arrowsTo', label: 'Edge arrows point to', value: o.arrowsTo, options: [{ value: 'structures', label: 'Structures' }, { value: 'everything', label: 'Structures, text, arrows and shapes' }] },
     { name: 'dotGrid', label: 'Dot grid behind the drawing', type: 'checkbox', value: String(o.dotGrid),
       help: 'On screen only: files, printing, copying and exports have no grid. The dots spread out as you zoom out.' },
@@ -14618,7 +14713,7 @@ async function navigationSettings(): Promise<void> {
     { name: 'tint', label: 'Tint the empty space beyond everything drawn', type: 'checkbox', value: String(o.tint),
       help: 'On screen only. Shows at a glance which way the drawing is when nothing of it is in the window. Not shown with the page grid, whose white pages already show where the drawing is.' },
     { name: 'tintStrength', label: 'Tint', value: o.tintStrength, options: strength },
-    { name: 'goButtons', label: 'Fit and Go to Selection buttons in the status bar', type: 'checkbox', value: String(o.goButtons),
+    { name: 'goButtons', label: 'Go to Selection button in the status bar', type: 'checkbox', value: String(o.goButtons),
       help: 'F6 fits the drawing and Shift+F6 goes to the selection, with or without the buttons (Edit ▸ Keyboard Shortcuts changes the keys).' },
   ], { ok: 'Save', preview: { title: 'Dots and tint', draw: (v) => navigationPreview({
     dotGrid: v.dotGrid === 'true', gridSpacing: v.gridSpacing as OrientPrefs['gridSpacing'], gridStrength: v.gridStrength as OrientPrefs['gridStrength'],
@@ -14633,7 +14728,6 @@ async function navigationSettings(): Promise<void> {
   });
 }
 
-$('#go-fit').addEventListener('click', () => { command('zoom-fit'); $('#overlay').focus({ preventScroll: true }); });
 $('#go-sel').addEventListener('click', () => { command('zoom-selection'); $('#overlay').focus({ preventScroll: true }); });
 $('#status-notes').addEventListener('click', () => command('view-notes'));
 

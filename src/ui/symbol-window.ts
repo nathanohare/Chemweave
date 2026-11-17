@@ -3,6 +3,7 @@
 // beside the work and leaves the typing where it was: a click on a character types it there and
 // the window stays open for the next one, as Word's does.
 
+import { addInfo } from './info-tip';
 import { SYMBOL_GROUPS, codeOf, groupSymbols, searchSymbols, symbolInfo, type SymbolInfo } from '../text/symbols';
 
 export interface SymbolTarget {
@@ -65,7 +66,9 @@ export class SymbolWindow {
     this.grid = el('div', 'sym-grid');
     this.grid.setAttribute('role', 'group');
     this.grid.setAttribute('aria-label', 'Symbols');
-    this.info = el('p', 'sym-info muted', 'Click a symbol to type it where the cursor is.');
+    // (what the symbol under the pointer is shows here; how to use the window is behind the title's "i")
+    this.info = el('p', 'sym-info muted');
+    addInfo(h, 'Click a symbol to type it where the cursor is.');
     const buttons = el('p', 'ask-buttons');
     const close = el('button', undefined, 'Close');
     close.type = 'button';
