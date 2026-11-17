@@ -302,7 +302,8 @@ class CdxmlWriter {
   private writeGuides(): boolean {
     const st = this.doc.style;
     // the drawing style's text over arrows and arrow sizes (ChemDraw's style has no place for them)
-    const own = { size: st.arrowTextSize, font: st.arrowTextFont, width: st.arrowWidth, head: st.arrowHeadLength, headWidth: st.arrowHeadWidth, scheme: st.scheme };
+    // (and how ID labels and linked text look)
+    const own = { size: st.arrowTextSize, font: st.arrowTextFont, width: st.arrowWidth, head: st.arrowHeadLength, headWidth: st.arrowHeadWidth, scheme: st.scheme, id: st.idLook, tied: st.tiedLook };
     const arrow = Object.values(own).some((v) => v !== undefined && v !== '') ? JSON.stringify(own) : null;
     const a = this.pageTag(GUIDES_TAG, guidesText(this.doc.guides));
     const b = this.pageTag(ARROW_TEXT_TAG, arrow);

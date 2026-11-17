@@ -21,7 +21,7 @@ import { ToolboxEditor, initials } from './ui/toolbox-editor';
 import { RibbonEditor } from './ui/ribbon-editor';
 import { readRibbons, applyRibbon, type RibbonInfo, type RibbonsPrefs } from './ui/ribbon-custom';
 import { editPalettes, getPalettes, onPalettes, setPalettes, useDrawingColours, usePaletteMenus } from './ui/palette-ui';
-import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, outsideValence, Contents, CHIRAL_FLAGS, PICTURE_STYLES, type PictureLook, type Attachment, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, type PageSetup, type PageWalls } from './model';
+import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, outsideValence, Contents, CHIRAL_FLAGS, PICTURE_STYLES, type PictureLook, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, type PageSetup, type PageWalls } from './model';
 import { Renderer, measureText, forgetTextWidths, WARN_LOOKS, type WarnLook } from './render/renderer';
 import { Editor, TOOLS, ringsWereFilled, setMarkTint, type HighlightToggle, type Selection } from './editor/editor';
 import { LENGTH_UNITS, setAidTint } from './editor/cursor-aids';
@@ -50,7 +50,8 @@ import { newCalc } from './chem/bench';
 import { dragRow } from './ui/row-drag';
 import { askLabCalc, analysisSettingsPage, analysisSettingsAt, placeCalc, type AnalysisSettingsHost } from './ui/analysis-settings';
 import { analysisHtml, benchValues, ribbonRow, formulaHtml, electronsHtml, analysisRuns, withRepeats, polymerHtml, descriptorRuns, newDescriptors, nameHtml, type RepeatUnit, type NameState } from './ui/analysis-panel';
-import { attachedAtoms, attachWhereItIs, defaultGap, nearestStructure, placeAttached, structureSig } from './editor/attached';
+import { attachedAtoms, attachWhereItIs, nearestStructure, placeAttached, structureSig } from './editor/attached';
+import { fullLook, lookCaption, lookPatch, looksLikeId } from './editor/tied-look';
 import { repeatGroups, lipDirection } from './chem/polymer';
 import { rGroupsOf, substituted, rowNumbers, parseRows, rGroupCells, type RowMass } from './chem/rgroup';
 import type { Rect, Vec } from './geom';
@@ -2560,7 +2561,7 @@ async function structureToName(): Promise<void> {
   const m = editor.measure();
   doc.edit(found.length > 1 ? 'Name captions' : 'Name caption', () => {
     for (const t of found) {
-      const c = doc.addCaption({ x: 0, y: 0, runs: nameRuns(t.name), justify: 'center', attach: { atoms: [...t.frag], side: 'below', gap: defaultGap(doc), shift: 0, role: 'caption' } });
+      const c = doc.addCaption(lookCaption(doc, 'caption', t.frag, nameRuns(t.name), {}, true));
       placeAttached(doc, c, m);
     }
   });
@@ -3026,7 +3027,7 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
 }
 
 /** How Number Compounds counted last time (offered again). */
-const numbering = { style: 'numbers' as IdStyle, prefix: '', suffix: '', bold: true, same: true, align: true };
+const numbering = { style: 'numbers' as IdStyle, prefix: '', suffix: '', same: true, align: true };
 
 /**
  * Each structure's key for "the same structure, the same ID": its canonical SMILES (with
@@ -3194,7 +3195,8 @@ async function numberCompounds(): Promise<void> {
     { name: 'start', label: 'Start at', value: numbering.style === 'letters' ? String(next) : startText, type: 'text', placeholder: '1, c or iii' },
     { name: 'prefix', label: 'Before each', value: numbering.prefix, type: 'text', placeholder: 'e.g. S for S1, S2' },
     { name: 'suffix', label: 'After each', value: numbering.suffix, type: 'text', placeholder: 'e.g. ′' },
-    { name: 'bold', label: 'Bold', value: String(numbering.bold), type: 'checkbox' },
+    // (the drawing style's ID label bold: changing it here changes it there)
+    { name: 'bold', label: 'Bold', value: String(fullLook(doc.style, 'label').bold), type: 'checkbox' },
     { name: 'same', label: 'Same structure, same ID', value: String(numbering.same), type: 'checkbox' },
     { name: 'align', label: 'Align numbers in each row', value: String(numbering.align), type: 'checkbox' },
     { name: 'old', label: 'Existing IDs', value: 'renumber', options: [{ value: 'renumber', label: 'Renumber' }, { value: 'keep', label: 'Keep' }] },
@@ -3204,13 +3206,13 @@ async function numberCompounds(): Promise<void> {
   const style = got.style as IdStyle;
   const start = parseIdStart(got.start, style);
   if (start === null) { flash(`“${got.start}” isn't a place to start counting ${style === 'roman' || style === 'ROMAN' ? 'in roman numerals' : style === 'lower' || style === 'upper' ? 'in letters' : 'from'}.`); return; }
-  Object.assign(numbering, { style, prefix: got.prefix, suffix: got.suffix, bold: got.bold === 'true', same: got.same === 'true', align: got.align === 'true' });
+  Object.assign(numbering, { style, prefix: got.prefix, suffix: got.suffix, same: got.same === 'true', align: got.align === 'true' });
   let keyOf: ((atoms: number[]) => string | undefined) | undefined;
   if (numbering.same) {
     const keys = await structureKeys();
     keyOf = (atoms) => keys.get(atoms[0]);
   }
-  const n = editor.numberCompounds({ start: Math.max(0, start), style, prefix: got.prefix, suffix: got.suffix, bold: numbering.bold, align: numbering.align, keep: got.old === 'keep', reagents: got.reagents === 'number', keyOf });
+  const n = editor.numberCompounds({ start: Math.max(0, start), style, prefix: got.prefix, suffix: got.suffix, bold: got.bold === 'true', align: numbering.align, keep: got.old === 'keep', reagents: got.reagents === 'number', keyOf });
   if (!n) flash('No structures to number.');
 }
 
@@ -3249,8 +3251,7 @@ async function addTiedText(role: 'label' | 'caption'): Promise<void> {
       const k = keys.get([...f][0]);
       const text = role === 'caption' ? '' : (k && known.get(k)) || freshId();
       if (k && role === 'label' && !known.has(k)) known.set(k, text);
-      const c = doc.addCaption({ x: 0, y: 0, runs: [{ text, bold: role === 'label' && numbering.bold ? true : undefined }], justify: 'center',
-        attach: { atoms: [...f], side: 'below', gap: defaultGap(doc), shift: 0, role } });
+      const c = doc.addCaption(lookCaption(doc, role, f, [{ text }]));
       placeAttached(doc, c, m);
       made.push(c.id);
     }
@@ -6016,7 +6017,7 @@ function compoundDrawing(c: LibCompound, style: DocStyle, withLabel: boolean): D
   fitPasted(d, style);
   if (withLabel && c.label && d.atoms.size) {
     d.bulk(() => {
-      const cap = d.addCaption({ x: 0, y: 0, runs: [{ text: c.label, bold: numbering.bold ? true : undefined }], justify: 'center', attach: { atoms: [...d.atoms.keys()], side: 'below', gap: defaultGap(d), shift: 0, role: 'label' } });
+      const cap = d.addCaption(lookCaption(d, 'label', d.atoms.keys(), [{ text: c.label }]));
       placeAttached(d, cap, plainMeasure(d));
     });
   }
@@ -10133,8 +10134,8 @@ function chooseMethylStyle(style: MethylStyle): void {
 
 /** Ask before a command with nothing selected changes every structure on the page (Edit > Settings). */
 let askWholeDrawing = true;
-/** Where linked text goes (Edit > Settings). */
-let linkSide: Settings['linkSide'] = 'keep';
+/** What linking text to a structure does to it (Settings ▸ Preferences). */
+let linkLook: Settings['linkLook'] = 'style';
 
 /**
  * Show Terminal Methyls: on the selection, or with nothing selected on every structure, after
@@ -10591,7 +10592,7 @@ async function generalPreferences(): Promise<void> {
   const r = await ask('General', [
     { name: 'groupClick', label: 'Clicking something in a group selects', value: editor.options.groupClick, options: [{ value: 'group', label: 'The whole group' }, { value: 'item', label: 'Only that object' }] },
     { name: 'groupOutline', label: 'Outline the rest of a group when part of it is selected', type: 'checkbox', value: String(editor.options.groupOutline) },
-    { name: 'linkSide', label: 'Text linked to a structure goes', value: linkSide, options: [{ value: 'keep', label: 'Where it is' }, { value: 'below', label: 'Below' }, { value: 'above', label: 'Above' }, { value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }] },
+    { name: 'linkLook', label: 'Text linked to a structure', value: linkLook, options: [{ value: 'style', label: 'Takes the ID label or caption style' }, { value: 'keep', label: 'Stays where it is, as it looks' }] },
     { name: 'ask', label: 'Confirm before changing all structures when nothing is selected', type: 'checkbox', value: String(askWholeDrawing) },
     { name: 'matchStructure', label: 'New bonds match the structure they\'re added to', type: 'checkbox', value: String(matchStructure.on),
       help: 'Bonds, rings and chains added to a structure take its own bond length, line widths and colors, so a structure drawn with other settings stays consistent. Off: they always take the document\'s drawing settings.' },
@@ -10611,7 +10612,7 @@ async function generalPreferences(): Promise<void> {
   if (!r) return;
   editor.options.groupClick = r.groupClick === 'item' ? 'item' : 'group';
   editor.options.groupOutline = r.groupOutline === 'true';
-  linkSide = (['below', 'above', 'left', 'right'].includes(r.linkSide) ? r.linkSide : 'keep') as Settings['linkSide'];
+  linkLook = r.linkLook === 'keep' ? 'keep' : 'style';
   askWholeDrawing = r.ask === 'true';
   docRead.convertChemDraw = r.convertChemDraw === 'true';
   officeStructures = { docx: r.docxStructures === 'chemdraw' ? 'chemdraw' : 'pictures', pptx: r.pptxStructures === 'chemdraw' ? 'chemdraw' : 'pictures' };
@@ -10901,7 +10902,7 @@ function currentSettings(): Settings {
     mapLook: mapLookPrefs.look,
     mapBox: { ...mapLookPrefs.custom },
     depthShade: { ...depthShadePrefs },
-    linkSide,
+    linkLook,
     slideTemplate,
     slideThemes,
     askWholeDrawing,
@@ -11144,7 +11145,7 @@ function applySettings(s: Settings): void {
   mapLookPrefs.custom = { ...s.mapBox };
   Object.assign(depthShadePrefs, s.depthShade);
   for (const el of document.querySelectorAll('[data-cmd="depth-shading"][role="menuitemcheckbox"]')) el.setAttribute('aria-checked', String(depthShadePrefs.on));
-  linkSide = s.linkSide;
+  linkLook = s.linkLook;
   slideTemplate = s.slideTemplate;
   slideThemes = s.slideThemes;
   askWholeDrawing = s.askWholeDrawing;
@@ -11653,7 +11654,7 @@ $('#analysis-body').addEventListener('click', (e) => {
     if (st?.kind !== 'found' || !frag) return;
     const m = editor.measure();
     doc.edit('CAS caption', () => {
-      const c = doc.addCaption({ x: 0, y: 0, runs: casRuns(st.cas[0]), justify: 'center', attach: { atoms: [...frag], side: 'below', gap: defaultGap(doc), shift: 0, role: 'caption' } });
+      const c = doc.addCaption(lookCaption(doc, 'caption', frag, casRuns(st.cas[0]), {}, true));
       placeAttached(doc, c, m);
     });
     editor.changed();
@@ -11668,7 +11669,7 @@ $('#analysis-body').addEventListener('click', (e) => {
     // (the structure stays selected, so the panel stays open for the other buttons)
     const m = editor.measure();
     doc.edit(kind === 'pcname' ? 'Name caption' : kind === 'pccas' ? 'CAS caption' : 'Hazards caption', () => {
-      const c = doc.addCaption({ x: 0, y: 0, runs, justify: 'center', attach: { atoms: [...frag], side: 'below', gap: defaultGap(doc), shift: 0, role: 'caption' } });
+      const c = doc.addCaption(lookCaption(doc, 'caption', frag, runs, {}, true));
       placeAttached(doc, c, m);
     });
     editor.changed();
@@ -11745,8 +11746,7 @@ async function attachDescriptors(frags = chosenStructures()): Promise<void> {
       if (!r) return;
       const adduct = adductSel.value;
       const runs = descriptorRuns(r, show, adduct, analysisPrefs(), benchOf(r), names[i]);
-      const attach: Attachment = { atoms: [...f], side: 'below', gap: defaultGap(doc), shift: 0, role: 'descriptors', show, adduct, sig: structureSig(doc, f) };
-      const c = doc.addCaption({ x: 0, y: 0, runs, justify: 'center', attach });
+      const c = doc.addCaption(lookCaption(doc, 'descriptors', f, runs, { show, adduct, sig: structureSig(doc, f) }, true));
       placeAttached(doc, c, editor.measure());
       made.push(c.id);
     });
@@ -12414,7 +12414,9 @@ stylePanel.bracketPartner = { state: () => editor.bracketPartnerState(), toggle:
 
 /**
  * Tie captions (text boxes) to a structure: `to` (a selected structure's atoms), or else the one
- * nearest each. They stay where they are, or go to the side chosen in Edit > Settings.
+ * nearest each. They take the drawing style's ID label or caption look and place, as if made
+ * there (text that reads as an ID becomes an ID label), or with "Stays where it is" in Settings ▸
+ * Preferences, they keep where they are and how they look.
  */
 function tieCaptions(ids: number[], to: Set<number> | null = null): void {
   const m = editor.measure();
@@ -12425,10 +12427,14 @@ function tieCaptions(ids: number[], to: Set<number> | null = null): void {
       if (!c) continue;
       const f = to ?? nearestStructure(doc, m.captionBox(c), m);
       if (!f?.size) continue;
-      const side = linkSide === 'keep' ? undefined : linkSide;
-      const a = side ? { atoms: [...f], side, gap: defaultGap(doc), shift: 0, role: 'caption' as const } : attachWhereItIs(doc, c, f, m, 'caption');
-      if (!a) continue;
-      doc.updateCaption(id, { attach: a, ...(side ? { justify: side === 'right' ? 'left' as const : side === 'left' ? 'right' as const : 'center' as const } : {}) });
+      if (linkLook === 'style') {
+        doc.updateCaption(id, lookPatch(doc, c, f));
+        placeAttached(doc, doc.captions.get(id)!, m);
+      } else {
+        const a = attachWhereItIs(doc, c, f, m, looksLikeId(plainText(c.runs)) ? 'label' : 'caption');
+        if (!a) continue;
+        doc.updateCaption(id, { attach: a });
+      }
       n++;
     }
   });

@@ -82,7 +82,8 @@ import { putTorsion, refitTorsion, torsionFrameOf, type TorsionData } from '../d
 import {
   diagramContents, diagramFrameOf, heldLines, putDiagram, refitDiagramStructures, refitDiagrams, ungroupDiagram, type DiagramData,
 } from '../design/diagrams';
-import { attachWhereItIs, defaultGap, placeAttached, refitAttached } from './attached';
+import { attachWhereItIs, placeAttached, refitAttached } from './attached';
+import { fullLook, lookCaption, USUAL } from './tied-look';
 import { frameAround, frameBox, frameMembers, refitFrames, defaultPad, thingsInside } from './frames';
 import { atomsBox, Align, Measure, POINTS, Snapshot, type TurnText, units, joinGroups, clearOffset, alignOffsets, distributeOffsets, moveUnit, selectionBox, snapshot, transform, withFrameContents, rotation, mirrorX, mirrorY } from './arrange';
 import { elementNumber, hasImplicitH, implicitHydrogens, SYMBOLS } from '../chem/elements';
@@ -5311,9 +5312,15 @@ export class Editor {
     const m = this.fullMeasure();
     const plan = planNumbers(doc, m, this.sel.atoms, opts);
     if (!plan.labels.length) return 0;
-    const bold = opts.bold ?? true;
+    const bold = opts.bold ?? fullLook(doc.style, 'label').bold;
     const made: number[] = [];
     doc.edit('Number Compounds', () => {
+      // the Bold box is the drawing style's ID label bold
+      if (bold !== fullLook(doc.style, 'label').bold) {
+        const idLook = { ...doc.style.idLook };
+        if (bold === USUAL.label.bold) delete idLook.bold; else idLook.bold = bold;
+        doc.setStyle({ ...doc.style, idLook: Object.keys(idLook).length ? idLook : undefined });
+      }
       for (const l of plan.labels) {
         if (l.caption !== undefined) {
           const c = doc.captions.get(l.caption)!;
@@ -5324,8 +5331,7 @@ export class Editor {
           continue;
         }
         // centred under the structure and tied to it
-        const c = doc.addCaption({ x: l.at.x, y: l.at.y, runs: [{ text: l.text, bold: bold || undefined }], justify: 'center',
-          attach: { atoms: [...l.item.atoms], side: 'below', gap: defaultGap(doc), shift: 0, role: 'label' } });
+        const c = doc.addCaption({ ...lookCaption(doc, 'label', l.item.atoms, [{ text: l.text }]), x: l.at.x, y: l.at.y });
         placeAttached(doc, c, m);
         this.sel.captions.add(c.id);
         made.push(c.id);

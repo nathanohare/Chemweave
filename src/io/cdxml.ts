@@ -34,6 +34,7 @@ import { TABLE_TAG, TABLE_PART_TAG, applyTableTag, gridOf, linesFromBorders, par
 import { layoutTable, NOTE_SCALE } from '../table';
 import { arialWidth } from '../text-metrics';
 import { cleanScheme } from '../drawing-styles';
+import { cleanTiedLook } from '../editor/tied-look';
 import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
@@ -160,6 +161,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
       if (pt(v.headWidth)) doc.style.arrowHeadWidth = pt(v.headWidth);
       const scheme = cleanScheme(v.scheme);
       if (scheme) doc.style.scheme = scheme;
+      const id = cleanTiedLook((v as { id?: unknown }).id), tied = cleanTiedLook((v as { tied?: unknown }).tied);
+      if (id) doc.style.idLook = id;
+      if (tied) doc.style.tiedLook = tied;
     } catch { /* not ours to read */ }
   }
   const mapLook = pg && kids(pg).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MAP_LOOK_TAG)?.getAttribute('Value');

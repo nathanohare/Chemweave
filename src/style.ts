@@ -41,6 +41,29 @@ export interface DocStyle {
    */
   mapLook?: MapLook;
   mapBox?: MapBoxStyle;
+  /**
+   * How new ID labels look and sit beside their structures (absent fields: the usual, which is
+   * bold, in the captions' font and size, centered a third of a bond length below), and how other
+   * text linked to a structure does (captions, names, descriptors; absent: plain). Linking text
+   * to a structure gives it this look too (editor/tied-look.ts).
+   */
+  idLook?: TiedLook;
+  tiedLook?: TiedLook;
+}
+
+/** Where linked text sits and how it looks; every field is optional (absent: the usual). */
+export interface TiedLook {
+  font?: string;
+  size?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  color?: string;
+  /** Above or below: lined up with the structure's left edge, middle or right edge. */
+  align?: 'left' | 'center' | 'right';
+  side?: 'below' | 'above' | 'left' | 'right';
+  /** Space from the structure, in points (absent: a third of a bond length, so it scales). */
+  gap?: number;
 }
 
 export interface StyleScheme {
