@@ -128,4 +128,20 @@ describe('changing an SI table', () => {
     expect(got.doc.objects[cell.runs[0].obj!].kind).toBe('picture');
     expect(got.notes.some((n) => /structure\.svg/.test(n))).toBe(false);
   });
+
+  it('prints a figure added here (its picture, width and caption) in the compiled SI', async () => {
+    const f = folder();
+    const p = await SiProject.open(f);
+    const s = p.sections.find((x) => x.type === 'text' && x.folder.includes('reaction-optimizatio'))!;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="60pt" height="40pt" viewBox="0 0 60 40"><path d="M0 0L60 40"/></svg>';
+    const rel = await p.addSectionPicture(s, 'structure.svg', new TextEncoder().encode(svg));
+    s.data.figures = { ...((s.data.figures as Json) ?? {}), 'f-0000abcd': { file: rel, width: 5 } };
+    await p.saveSection(s);
+    await p.writeSectionText(s, `${(await p.readSectionText(s)).trimEnd()}\n!figure{f-0000abcd} Structure of the product`);
+    const again = await SiProject.open(f);
+    const got = await compileSi(again, { contentsOf: () => null, sizeOf: () => null, facts: async (m) => m.map(() => null) });
+    expect(Object.values(got.doc.objects).some((o) => o.kind === 'picture')).toBe(true);
+    expect(got.notes.some((n) => /figure/i.test(n))).toBe(false);
+    expect(got.targets.find((x) => x.key === 'f-0000abcd')?.caption).toContain('Structure of the product');
+  });
 });

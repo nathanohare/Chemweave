@@ -20,6 +20,8 @@ import { CITE, MENTION, parseMarkup } from '../si/markup';
 import { newId } from '../si/ids';
 import { SiRichBox } from './si-rich';
 import { SiTableEditor } from './si-table';
+import { SiFigureEditor } from './si-figure';
+import { SiPictures } from './si-picture';
 import { newTable } from '../si/tables';
 import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
@@ -60,6 +62,8 @@ export interface SiModeHost {
   sizeOf(c: Contents): { w: number; h: number } | null;
   /** The compiled SI, opened as a document named `name` (and, with `pdf`, saved as a PDF too). */
   openCompiled(doc: DocText, name: string, pdf: boolean): Promise<void>;
+  /** Insert ▸ Symbol's window (it types into the SI text box last typed in). */
+  openSymbols(): void;
 }
 
 /** An SI compound as the Canvas shows it (its card in the Analysis panel). */
@@ -109,6 +113,87 @@ const svg = (k: string, s = 14): string => `<svg class="si-ic" viewBox="0 0 24 2
 const RIBBON = `
   <div class="rb-tabs" role="tablist">
     <button role="tab" data-si-tab="home" aria-selected="true">Home</button>
+    <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
+    <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
+    <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is picked">Picture Format</button>
+  </div>
+  <div class="rb-panel" data-si-panel="insert" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="new-table" data-ic="table" title="Add a table at the end of the Custom section's text (3 × 3, the first row its header); type its caption in the text"><span class="rb-icon">▦</span>Table</button>
+    </div><div class="rb-label">Tables</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="new-figure" data-ic="picture" title="A figure from a picture file (PNG, JPG, SVG or PDF), at the end of the Custom section's text; type its caption in the text"><span class="rb-icon">▣</span>Picture</button>
+      <button class="rb-big" data-si="new-figure-draw" data-ic="structure" title="A figure drawn with the drawing tools (a structure or scheme you can draw again), at the end of the Custom section's text"><span class="rb-icon">⌬</span>Draw Structure</button>
+      <div class="rb-col">
+        <button data-si="new-figure-paste" title="A figure from the copied picture or drawing (ChemDraw or Chemweave drawings stay vector pictures you can draw again)">Paste Picture</button>
+        <button data-si="new-figure-compound" title="A figure of a compound's structure, its caption mentioning the compound">Compound…</button>
+      </div>
+    </div><div class="rb-label">Figures</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="symbol" data-ic="symbol" title="Type a symbol (°, Å, ±, Greek letters, arrows…) where you are typing"><span class="rb-icon">Ω</span>Symbol</button>
+    </div><div class="rb-label">Symbols</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="table" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-tbl="row-above" title="A new row above the selected cells">Insert Above</button>
+        <button data-si-tbl="row-below" title="A new row below the selected cells">Insert Below</button>
+      </div>
+      <div class="rb-col">
+        <button data-si-tbl="col-left" title="A new column to the left of the selected cells">Insert Left</button>
+        <button data-si-tbl="col-right" title="A new column to the right of the selected cells">Insert Right</button>
+      </div>
+      <div class="rb-col">
+        <button data-si-tbl="del-rows" data-ic="delete" title="Delete the selected rows">Delete Rows</button>
+        <button data-si-tbl="del-cols" title="Delete the selected columns">Delete Columns</button>
+      </div>
+    </div><div class="rb-label">Rows and Columns</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-tbl="merge" title="Merge Cells: join the selected cells (Shift+click picks a block) into one; their texts are joined and the first picture kept">Merge Cells</button>
+        <button data-si-tbl="split" title="Split a merged cell back into single cells">Split Cells</button>
+      </div>
+      <div class="rb-col">
+        <label class="rb-field" title="How many rows at the top are the header (a rule under them; repeated on a new page)">Header Rows <input type="number" class="rb-num" data-si-field="head" min="0" max="9" /></label>
+      </div>
+    </div><div class="rb-label">Merge</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-tbl="align-left" data-ic="align-left" title="Align the selected cells' text left (a whole column: the column)">Left</button>
+        <button data-si-tbl="align-center" data-ic="align-hcenter" title="Center the selected cells' text (a whole column: the column)">Center</button>
+        <button data-si-tbl="align-right" data-ic="align-right" title="Align the selected cells' text right (a whole column: the column)">Right</button>
+      </div>
+    </div><div class="rb-label">Alignment</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-tbl="picture" data-ic="picture" title="Put a picture file (PNG, JPG, SVG or PDF) in the selected cell, above its text"><span class="rb-icon">▣</span>Picture</button>
+      <button class="rb-big" data-si-tbl="draw-structure" data-ic="structure" title="Draw a structure or scheme for the selected cell with the drawing tools (a picture made here is drawn again)"><span class="rb-icon">⌬</span>Draw Structure</button>
+      <div class="rb-col">
+        <button data-si-tbl="paste-picture" title="Paste the copied picture or drawing (ChemDraw or Chemweave, kept as a vector picture you can draw again) into the selected cell">Paste Picture</button>
+        <button data-si-tbl="compound" title="Put a compound's structure in the selected cell, with its ID under it">Compound…</button>
+        <button data-si-tbl="remove-picture" title="Take the picture out of the selected cell (its file stays in images/)">Remove Picture</button>
+      </div>
+      <div class="rb-col">
+        <label class="rb-field" title="The picture's printed width (empty: its own size, never wider than the text)">Width <input type="number" class="rb-num" data-si-field="width" min="0" step="0.1" placeholder="own" /> cm</label>
+      </div>
+    </div><div class="rb-label">Cell Picture</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="figure" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-fig="picture" data-ic="picture" title="Change Picture: a picture file (PNG, JPG, SVG or PDF) in place of the figure's"><span class="rb-icon">▣</span>Change Picture</button>
+      <button class="rb-big" data-si-fig="draw-structure" data-ic="structure" title="Draw the figure with the drawing tools (a picture made here is drawn again; double-click the figure does the same)"><span class="rb-icon">⌬</span>Draw Structure</button>
+      <div class="rb-col">
+        <button data-si-fig="paste-picture" title="The copied picture or drawing in place of the figure's">Paste Picture</button>
+        <button data-si-fig="compound" title="A compound's structure in place of the figure's">Compound…</button>
+      </div>
+    </div><div class="rb-label">Picture</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <label class="rb-field" title="The figure's printed width (empty: its own size, never wider than the text)">Width <input type="number" class="rb-num" data-si-field="fig-width" min="0" step="0.1" placeholder="own" /> cm</label>
+      </div>
+    </div><div class="rb-label">Size</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-fig="remove-figure" data-ic="delete" title="Take the figure and its caption out of the text (its picture stays in images/)"><span class="rb-icon">✕</span>Delete Figure</button>
+    </div><div class="rb-label">Figure</div></div>
   </div>
   <div class="rb-panel" data-si-panel="home">
     <div class="rb-group"><div class="rb-row">
@@ -120,6 +205,20 @@ const RIBBON = `
         <button data-si="move-down" title="Move the compound or section picked down (Alt+↓)">▼ Move Down</button>
       </div>
     </div><div class="rb-label">Project</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <div class="rb-pair">
+          <button class="rb-sq" data-si-fmt="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button class="rb-sq" data-si-fmt="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button class="rb-sq" data-si-fmt="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+        </div>
+        <div class="rb-pair">
+          <button class="rb-sq" data-si-fmt="subscript" title="Subscript (Ctrl+=)">x<sub>2</sub></button>
+          <button class="rb-sq" data-si-fmt="superscript" title="Superscript (Ctrl+Shift+=)">x<sup>2</sup></button>
+          <button class="rb-sq" data-si="symbol" title="Symbol: type °, Å, ±, Greek letters, arrows… where you are typing">Ω</button>
+        </div>
+      </div>
+    </div><div class="rb-label">Font</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="id-table" data-ic="compound-number" title="The ID table of the Data section picked: compound IDs follow the compounds' order"><span class="rb-icon">#</span>ID Table</button>
       <div class="rb-col">
@@ -167,6 +266,7 @@ export class SiMode {
   private objLabels = new Map<string, string>();
   private labelsRead = false;
   private tables: SiTableEditor[] = [];
+  private figures: SiFigureEditor[] = [];
   private shownKey = '';
   private analyzed = new Map<string, { formula: string; mw: number; exact: number } | null>();
   /** Compounds' structures as last read (compound id → molfile), and what the checks read from each molfile. */
@@ -198,14 +298,119 @@ export class SiMode {
     this.ribbon.innerHTML = RIBBON;
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
+    // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"]')) e.preventDefault(); });
     this.ribbon.addEventListener('click', (e) => {
-      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-si]');
+      const t = e.target as HTMLElement;
+      const tab = t.closest<HTMLElement>('[data-si-tab]');
+      if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
+      const fmt = t.closest<HTMLElement>('[data-si-fmt]');
+      if (fmt) { this.format(fmt.dataset.siFmt!); return; }
+      const tbl = t.closest<HTMLElement>('[data-si-tbl]');
+      if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
+      const fig = t.closest<HTMLElement>('[data-si-fig]');
+      if (fig) { void this.activeFigure?.command(fig.dataset.siFig!); return; }
+      const b = t.closest<HTMLElement>('[data-si]');
       if (b) void this.run(b.dataset.si!);
+    });
+    this.ribbon.addEventListener('change', (e) => {
+      const f = (e.target as HTMLElement).closest<HTMLInputElement>('[data-si-field]');
+      if (f?.dataset.siField === 'fig-width') { void this.activeFigure?.setWidth(Number(f.value)); return; }
+      const t = this.activeTable;
+      if (!f || !t) return;
+      if (f.dataset.siField === 'head') void t.setHeaderRows(Number(f.value));
+      else void t.setPictureWidth(Number(f.value));
+    });
+    // the Table Layout tab shows while a table's cell is being typed in; the last box typed in takes symbols and formatting
+    this.pane.addEventListener('focusin', (e) => {
+      const target = e.target as HTMLElement;
+      const box = target.closest<HTMLElement>('.si-rich');
+      if (box) this.typing = box;
+      const card = target.closest<HTMLElement>('.si-table-card');
+      const t = card ? this.tables.find((x) => x.el === card) ?? null : null;
+      if (t) this.tableChosen(t);
+      else if (!target.closest('.si-table-card')) this.tableChosen(null);
+      const fcard = target.closest<HTMLElement>('.si-figure-card');
+      this.figureChosen(fcard ? this.figures.find((x) => x.el === fcard) ?? null : null);
+    });
+    document.addEventListener('selectionchange', () => {
+      const sel = getSelection();
+      if (sel?.rangeCount && this.typing?.contains(sel.anchorNode)) this.typingAt = sel.getRangeAt(0).cloneRange();
     });
     this.pane.addEventListener('keydown', (e) => this.key(e));
   }
 
   get project(): SiProject | null { return this.tab?.si ?? null; }
+
+  /** The table whose cell was last picked (the Table Layout tab acts on it). */
+  private activeTable: SiTableEditor | null = null;
+  /** The figure last picked (the Picture Format tab acts on it). */
+  private activeFigure: SiFigureEditor | null = null;
+  /** The SI text box last typed in, and where in it. */
+  private typing: HTMLElement | null = null;
+  private typingAt: Range | null = null;
+
+  private showRibbonTab(name: string): void {
+    for (const b of this.ribbon.querySelectorAll<HTMLElement>('[data-si-tab]')) b.setAttribute('aria-selected', String(b.dataset.siTab === name));
+    for (const p of this.ribbon.querySelectorAll<HTMLElement>('[data-si-panel]')) p.hidden = p.dataset.siPanel !== name;
+  }
+
+  /** A table's cell picked (or none): the Table Layout tab shows (or goes), with that table's state. */
+  private tableChosen(t: SiTableEditor | null): void {
+    const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="table"]')!;
+    if (t === this.activeTable && !tab.hidden === !!t) { if (t) this.tableState(t); return; }
+    this.activeTable = t;
+    tab.hidden = !t;
+    if (!t && tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home');
+    if (t) this.tableState(t);
+  }
+
+  /** A figure picked (or none): the Picture Format tab shows (or goes), with that figure's width. */
+  private figureChosen(f: SiFigureEditor | null): void {
+    const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="figure"]')!;
+    this.activeFigure = f;
+    tab.hidden = !f;
+    if (!f && tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home');
+    if (!f) return;
+    const w = this.ribbon.querySelector<HTMLInputElement>('[data-si-field="fig-width"]')!;
+    const st = f.state;
+    w.value = st.width ? String(st.width) : '';
+  }
+
+  private tableState(t: SiTableEditor): void {
+    if (t !== this.activeTable) return;
+    const st = t.state;
+    const head = this.ribbon.querySelector<HTMLInputElement>('[data-si-field="head"]')!;
+    head.value = String(st.headRows);
+    head.max = String(st.rows);
+    const w = this.ribbon.querySelector<HTMLInputElement>('[data-si-field="width"]')!;
+    w.value = st.width ? String(st.width) : '';
+    w.disabled = st.width === null;
+    for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-si-tbl="remove-picture"]')) b.disabled = st.width === null;
+  }
+
+  /** Bold, italic, underline, subscript or superscript on the text being typed (the ribbon's Font buttons). */
+  private format(cmd: string): void {
+    if (!this.restoreTyping()) { this.host.flash('Click in a text box first (a procedure, a report, a section’s text or a table’s cell).'); return; }
+    document.execCommand(cmd);
+  }
+
+  /** Put the typing back where it was in the last SI text box (false when there is none). */
+  private restoreTyping(): boolean {
+    const box = this.typing;
+    if (!box?.isConnected) return false;
+    if (document.activeElement !== box) box.focus();
+    const r = this.typingAt;
+    if (r && box.contains(r.startContainer)) { const sel = getSelection()!; sel.removeAllRanges(); sel.addRange(r); }
+    return true;
+  }
+
+  /** Type text (a symbol) where the person was typing; false when no SI text box was being typed in. */
+  insertText(text: string): boolean {
+    if (!this.restoreTyping()) { this.host.flash('Click in a text box first, then pick the symbol.'); return false; }
+    document.execCommand('insertText', false, text);
+    return true;
+  }
 
   private get pick(): Pick {
     const st = this.tab?.sheetState as { pick?: Pick } | null;
@@ -474,6 +679,7 @@ export class SiMode {
       this.objLabels = got;
       for (const b of this.boxes) b.relabel();
       for (const t of this.tables) { t.relabel(); t.setTitle(got.get(t.id) ?? ''); }
+      for (const f of this.figures) f.setTitle(got.get(f.id) ?? '');
     } catch { /* (the kinds' names show instead) */ } finally { this.labelsRead = false; }
   }
 
@@ -611,6 +817,9 @@ export class SiMode {
     this.commitAll();
     this.boxes = [];
     this.tables = [];
+    this.figures = [];
+    this.tableChosen(null);
+    this.figureChosen(null);
     const p = this.project!;
     const pick = this.pick;
     const out = el('div', 'si-sheet');
@@ -715,25 +924,35 @@ export class SiMode {
     const t = el('div', 'si-card');
     const th = el('div', 'si-head-row');
     const h = el('h3', 'si-sub', 'Text');
-    addInfo(h, 'The section’s text. Lines starting with # are headings. Mention a compound with @ (it prints as its ID). A table shows as its caption here, and is edited under the text.');
-    const add = el('button', 'si-btn', 'New Table');
-    add.type = 'button';
-    add.title = 'Add a table at the end of the text (3 × 3, the first row its header); type its caption in the text';
-    add.addEventListener('click', () => void this.newTable(s));
-    th.append(h, add);
+    addInfo(h, 'The section’s text. Lines starting with # are headings. Mention a compound, table or figure with @ (it prints as its ID or label). A table shows as its caption here, and is edited under the text (Insert ▸ Table adds one).');
+    th.append(h);
     t.append(th);
     out.append(t);
     void p.readSectionText(s).then(async (text) => {
       const box = new SiRichBox(text, { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeSectionText(s, v), false) }, true, 'Type the section’s text');
       this.boxes.push(box);
       t.append(box.el);
-      const ids = parseMarkup(text).flatMap((x) => (x.table ? [x.table] : []));
-      const editors = ids.map((id, i) => new SiTableEditor(this.tableHost(s), id, this.objLabels.get(id) ?? `Table ${i + 1} of the section`));
-      this.tables.push(...editors);
-      for (const e of editors) { out.append(e.el); await e.load(); }
+      // the tables and figures under the text, in its order
+      let nt = 0, nf = 0;
+      const editors = parseMarkup(text).flatMap((x): (SiTableEditor | SiFigureEditor)[] => {
+        if (x.table) return [new SiTableEditor(this.tableHost(s), x.table, this.objLabels.get(x.table) ?? `Table ${++nt} of the section`)];
+        if (x.figure) return [new SiFigureEditor(this.figureHost(s), x.figure, this.objLabels.get(x.figure) ?? `Figure ${++nf} of the section`)];
+        return [];
+      });
+      for (const e of editors) {
+        out.append(e.el);
+        if (e instanceof SiTableEditor) { this.tables.push(e); await e.load(); } else this.figures.push(e);
+      }
+      const made = editors.find((x) => x.id === this.focusTable);
+      if (made) {
+        this.focusTable = '';
+        made.focus();
+        if (made instanceof SiTableEditor) { this.tableChosen(made); this.showRibbonTab('table'); } else { this.figureChosen(made); this.showRibbonTab('figure'); }
+      }
       box.el.addEventListener('dblclick', (e) => {
         const id = (e.target as HTMLElement).closest<HTMLElement>('[data-table]')?.dataset.table;
-        editors.find((x) => x.id === id)?.focus();
+        const fig = (e.target as HTMLElement).closest<HTMLElement>('[data-figure]')?.dataset.figure;
+        editors.find((x) => x.id === (id ?? fig))?.focus();
       });
     });
   }
@@ -752,12 +971,64 @@ export class SiMode {
       contentsOfCdxml: (x) => this.host.contentsOfCdxml(x),
       readClipboard: (e) => this.host.readClipboard(e),
       contentsOf: (m) => this.host.contentsOf(m),
+      selectionChanged: (t) => this.tableState(t),
       pickCompound: async () => {
         const list = p.compounds.filter((c) => p.hasStructure(c));
         const [c] = await pickFromList('Compound', list, (x) => this.idOf(x), (x) => compoundName(x), 'No compound has a structure yet.');
         return c ? { id: c.id, mol: await p.readStructure(c) } : null;
       },
     };
+  }
+
+  private figureHost(s: SiSection): ConstructorParameters<typeof SiFigureEditor>[0] {
+    return {
+      ...this.tableHost(s),
+      chosen: (f) => { this.tableChosen(null); this.figureChosen(f); },
+      remove: (f) => this.removeFigure(s, f.id),
+    };
+  }
+
+  /**
+   * A new figure at the end of a Custom section's text, its picture from a file, the drawing
+   * tools, the clipboard or a compound (nothing is made when none is given).
+   */
+  private async newFigure(s: SiSection, how: 'picture' | 'draw' | 'paste' | 'compound'): Promise<void> {
+    const p = this.project!;
+    this.commitAll();
+    const pics = new SiPictures(this.tableHost(s));
+    let rel: string | null = null, caption = 'Caption of the figure';
+    try {
+      if (how === 'picture') rel = await pics.fromFile('Picture for the figure');
+      else if (how === 'paste') rel = await pics.fromClipboard();
+      else if (how === 'draw') rel = await pics.draw('', 'Figure');
+      else {
+        const got = await pics.fromCompound();
+        if (got) { rel = got.rel; caption = `Structure of **@{${got.id}}**`; }
+      }
+    } catch (e) { this.host.flash(`The picture could not be added: ${e instanceof Error ? e.message : String(e)}`); return; }
+    if (!rel) return;
+    const id = newId('f');
+    await this.act(async () => {
+      const figs = (s.data.figures && typeof s.data.figures === 'object' && !Array.isArray(s.data.figures) ? s.data.figures : (s.data.figures = {})) as Json;
+      figs[id] = { file: rel };
+      await p.saveSection(s);
+      const text = (await p.readSectionText(s)).replace(/\s+$/, '');
+      await p.writeSectionText(s, `${text ? text + '\n' : ''}!figure{${id}} ${caption}`);
+    });
+    this.focusTable = id;
+  }
+
+  /** A figure taken out of a Custom section's text, with its caption; its picture stays in images/. */
+  private async removeFigure(s: SiSection, id: string): Promise<void> {
+    const p = this.project!;
+    this.commitAll();
+    await this.act(async () => {
+      const text = await p.readSectionText(s);
+      await p.writeSectionText(s, text.split('\n').filter((l) => !l.startsWith(`!figure{${id}}`)).join('\n'));
+      const figs = s.data.figures;
+      if (figs && typeof figs === 'object' && !Array.isArray(figs)) { delete (figs as Json)[id]; await p.saveSection(s); }
+    });
+    this.host.flash('Figure deleted. Its picture is still in the section’s images folder.');
   }
 
   /** A new table at the end of a Custom section's text. */
@@ -771,8 +1042,10 @@ export class SiMode {
       const text = (await p.readSectionText(s)).replace(/\s+$/, '');
       await p.writeSectionText(s, `${text ? text + '\n' : ''}!table{${id}} Caption of the table`);
     });
-    this.tables.find((x) => x.id === id)?.focus();
+    this.focusTable = id;
   }
+  /** A table or figure just made: its editor is picked once it shows. */
+  private focusTable = '';
 
   /**
    * An X-ray structure section's page: the structure as it prints (SI Assistant's stored view),
@@ -1498,6 +1771,26 @@ export class SiMode {
       return null;
     };
     switch (cmd) {
+      case 'new-table': {
+        let sec = s;
+        while (sec && sec.type !== 'text' && sec.parentId) sec = p.section(sec.parentId);
+        if (sec?.type !== 'text') { this.host.flash('Pick a Custom section (one with text) for the table.'); return; }
+        await this.newTable(sec);
+        return;
+      }
+      case 'new-figure':
+      case 'new-figure-draw':
+      case 'new-figure-paste':
+      case 'new-figure-compound': {
+        let sec = s;
+        while (sec && sec.type !== 'text' && sec.parentId) sec = p.section(sec.parentId);
+        if (sec?.type !== 'text') { this.host.flash('Pick a Custom section (one with text) for the figure.'); return; }
+        await this.newFigure(sec, cmd === 'new-figure' ? 'picture' : (cmd.slice(11) as 'draw' | 'paste' | 'compound'));
+        return;
+      }
+      case 'symbol':
+        this.host.openSymbols();
+        return;
       case 'new-compound': {
         const d = needData();
         if (!d) return;

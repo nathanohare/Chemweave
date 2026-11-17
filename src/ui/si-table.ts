@@ -6,30 +6,17 @@
 // (Draw Structure…) or from a compound of the project. Cells copied from Excel or Word paste in
 // as cells. Every change is saved to the table's file at once.
 
-import type { Contents, Doc } from '../model';
-import type { Pasted } from '../io/clipboard';
-import type { Json, SiProject, SiSection } from '../si/project';
+import type { Json } from '../si/project';
 import { blockAround, cellAt, colCount, deleteColumn, deleteRow, footnotesOf, insertColumn, insertRow, merge, ownerOf, pasteCells, pastedCells, rowsOf, setPicture, spans, split, squareUp, type Align, type Span } from '../si/tables';
 import { SiRichBox } from './si-rich';
+import { SiPictures, type SiPictureHost } from './si-picture';
 import { addInfo } from './info-tip';
 
-export interface SiTableHost {
-  project: SiProject;
-  section: SiSection;
-  flash(msg: string): void;
+export interface SiTableHost extends SiPictureHost {
   label(ref: string): string;
   mentionable(): { id: string; label: string; text: string }[];
-  pickFiles(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array }[]>;
-  editStructure(contents: Contents | null, title: string, done: (c: Contents | null) => void): void;
-  /** A drawing as an SVG picture and as CDXML (to draw it again), or null when it is empty. */
-  drawingFiles(d: Contents | Doc): { svg: string; cdxml: string } | null;
-  /** A CDXML drawing (a cell picture's original) as a drawing. */
-  contentsOfCdxml(text: string): Contents | null;
-  /** What is on the clipboard: from a paste event, or read (the Paste button). */
-  readClipboard(e?: ClipboardEvent): Promise<Pasted>;
-  /** One of the project's compounds with a structure, picked; null when cancelled. */
-  pickCompound(): Promise<{ id: string; mol: string } | null>;
-  contentsOf(mol: string): Contents | null;
+  /** The cell picked, or the table changed: the ribbon's Table Layout tab shows this table's state. */
+  selectionChanged(t: SiTableEditor): void;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
@@ -38,9 +25,6 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''):
   if (text) e.textContent = text;
   return e;
 };
-const MIME: Record<string, string> = { svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp' };
-const extOf = (name: string): string => name.slice(name.lastIndexOf('.') + 1).toLowerCase();
-const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 /** One table's editor: its toolbar, grid, label and footnotes. */
 export class SiTableEditor {
@@ -51,20 +35,20 @@ export class SiTableEditor {
   private boxes: SiRichBox[] = [];
   private urls: string[] = [];
   private grid = el('table', 'si-tgrid');
-  private width = el('input', 'si-num');
-  private headRows = el('input', 'si-num');
   private notes: HTMLElement = el('div');
   private noteBox: SiRichBox | null = null;
   private labelBox = el('input', 'si-label-input');
   private title = el('span');
+  private pics: SiPictures;
 
   constructor(private host: SiTableHost, readonly id: string, title: string) {
+    this.pics = new SiPictures(host);
     this.el = el('div', 'si-card si-table-card');
     this.el.dataset.table = id;
     const h = el('h3', 'si-sub');
     h.append(this.title);
     this.title.textContent = title;
-    addInfo(h, 'The table as it prints, with its caption on the line under it in the text. Click a cell to type in it; Shift+click another to pick a block (to merge it, or align it). Ctrl+V in a cell pastes cells from Excel or Word, or a picture or ChemDraw drawing into the cell.');
+    addInfo(h, 'The table as it prints, with its caption on the line under it in the text. Click a cell to type in it; Shift+click another to pick a block. The Table Layout tab on the ribbon adds rows and columns, merges cells and puts pictures in them. Ctrl+V in a cell pastes cells from Excel or Word, or a picture or ChemDraw drawing into the cell.');
     this.el.append(h);
   }
 
@@ -74,7 +58,7 @@ export class SiTableEditor {
     if (!t) { this.el.append(el('p', 'muted si-note', `This table’s file (tables/${this.id}.json) is missing or could not be read.`)); return; }
     this.t = t;
     squareUp(t);
-    this.el.append(this.toolbar(), this.pictureBar(), this.grid, this.bottom());
+    this.el.append(this.grid, this.bottom());
     this.grid.addEventListener('paste', (e) => this.pasteEvent(e), true);
     this.paint();
   }
@@ -101,84 +85,49 @@ export class SiTableEditor {
 
   // ------------------------------------------------------------------ the parts
 
-  private button(label: string, title: string, run: () => void | Promise<void>): HTMLButtonElement {
-    const b = el('button', 'si-btn', label);
-    b.type = 'button';
-    b.title = title;
-    // (the cell keeps its place: the button doesn't take the focus)
-    b.addEventListener('mousedown', (e) => e.preventDefault());
-    b.addEventListener('click', () => void run());
-    return b;
+  /** The ribbon's Table Layout commands, for the selected cells. */
+  async command(cmd: string): Promise<void> {
+    if (!this.t) return;
+    const r = this.sel;
+    switch (cmd) {
+      case 'row-above': return this.change(() => insertRow(this.t!, r.r));
+      case 'row-below': return this.change(() => insertRow(this.t!, r.r + r.rows));
+      case 'col-left': return this.change(() => insertColumn(this.t!, r.c));
+      case 'col-right': return this.change(() => insertColumn(this.t!, r.c + r.cols));
+      case 'del-rows': return this.change(() => { for (let i = r.rows - 1; i >= 0; i--) deleteRow(this.t!, r.r + i); });
+      case 'del-cols': return this.change(() => { for (let i = r.cols - 1; i >= 0; i--) deleteColumn(this.t!, r.c + i); });
+      case 'merge':
+        if (r.rows * r.cols < 2) { this.host.flash('Shift+click a second cell to pick the cells to merge.'); return; }
+        return this.change(() => merge(this.t!, r));
+      case 'split': return this.change(() => split(this.t!, r.r, r.c));
+      case 'align-left': case 'align-center': case 'align-right': return this.align(cmd.slice(6) as Align);
+      case 'picture': return this.pictureFile();
+      case 'paste-picture': return this.pasteButton();
+      case 'draw-structure': return this.drawStructure();
+      case 'compound': return this.fromCompound();
+      case 'remove-picture': return this.change(() => setPicture(this.t!, r.r, r.c, ''));
+    }
   }
 
-  private group(...kids: HTMLElement[]): HTMLElement {
-    const g = el('span', 'si-tgroup');
-    g.append(...kids);
-    return g;
+  /** What the ribbon shows for the selected cells: the header rows, and the picture's width (null: no picture). */
+  get state(): { headRows: number; rows: number; width: number | null } {
+    const cell = this.selected();
+    return {
+      headRows: this.t ? Math.max(0, Math.round(Number(this.t.header_rows ?? 1)) || 0) : 0,
+      rows: this.t ? rowsOf(this.t).length : 0,
+      width: cell?.image ? Math.max(0, Number(cell.image_width) || 0) : null,
+    };
   }
 
-  private toolbar(): HTMLElement {
-    const bar = el('div', 'si-tbar');
-    const r = () => this.sel;
-    bar.append(
-      this.group(
-        this.button('Insert Above', 'Insert a row above the selected cells', () => this.change(() => insertRow(this.t!, r().r))),
-        this.button('Insert Below', 'Insert a row below the selected cells', () => this.change(() => insertRow(this.t!, r().r + r().rows))),
-        this.button('Insert Left', 'Insert a column to the left of the selected cells', () => this.change(() => insertColumn(this.t!, r().c))),
-        this.button('Insert Right', 'Insert a column to the right of the selected cells', () => this.change(() => insertColumn(this.t!, r().c + r().cols))),
-      ),
-      this.group(
-        this.button('Delete Rows', 'Delete the selected rows', () => this.change(() => { for (let i = r().rows - 1; i >= 0; i--) deleteRow(this.t!, r().r + i); })),
-        this.button('Delete Columns', 'Delete the selected columns', () => this.change(() => { for (let i = r().cols - 1; i >= 0; i--) deleteColumn(this.t!, r().c + i); })),
-      ),
-      this.group(
-        this.button('Merge Cells', 'Merge the selected cells into one (their texts joined; the first picture kept)', () => {
-          if (this.sel.rows * this.sel.cols < 2) { this.host.flash('Shift+click a second cell to pick the cells to merge.'); return; }
-          return this.change(() => merge(this.t!, this.sel));
-        }),
-        this.button('Split Cells', 'Split the selected merged cell back into single cells', () => this.change(() => split(this.t!, r().r, r().c))),
-      ),
-      this.group(
-        this.button('Left', 'Align the selected cells’ text left (a whole column: the column)', () => this.align('left')),
-        this.button('Center', 'Center the selected cells’ text (a whole column: the column)', () => this.align('center')),
-        this.button('Right', 'Align the selected cells’ text right (a whole column: the column)', () => this.align('right')),
-      ),
-    );
-    const head = el('label', 'si-part');
-    this.headRows.type = 'number';
-    this.headRows.min = '0';
-    this.headRows.max = '9';
-    this.headRows.addEventListener('change', () => void this.change(() => { this.t!.header_rows = Math.max(0, Math.min(rowsOf(this.t!).length, Math.round(Number(this.headRows.value) || 0))); }));
-    head.append('Header rows', this.headRows);
-    head.title = 'How many rows at the top are the header (a rule under them, repeated on a new page)';
-    bar.append(head);
-    return bar;
+  setHeaderRows(n: number): Promise<void> {
+    return this.change(() => { this.t!.header_rows = Math.max(0, Math.min(rowsOf(this.t!).length, Math.round(n) || 0)); });
   }
 
-  private pictureBar(): HTMLElement {
-    const bar = el('div', 'si-tbar');
-    const lead = el('span', 'si-tlead', 'Cell picture');
-    bar.append(lead, this.group(
-      this.button('Picture…', 'Put a picture file (PNG, JPG, SVG or PDF) in the selected cell, above its text', () => this.pictureFile()),
-      this.button('Paste', 'Paste the copied picture or drawing (ChemDraw or Chemweave, kept as a vector picture you can draw again) into the selected cell', () => this.pasteButton()),
-      this.button('Draw Structure…', 'Draw a structure or scheme for the selected cell with the drawing tools (its picture, drawn again when it has one made here)', () => this.drawStructure()),
-      this.button('Compound…', 'Put a compound’s structure in the selected cell, with its ID under it', () => this.fromCompound()),
-      this.button('Remove Picture', 'Take the picture out of the selected cell (its file stays in images/)', () => this.change(() => setPicture(this.t!, this.sel.r, this.sel.c, ''))),
-    ));
-    const w = el('label', 'si-part');
-    this.width.type = 'number';
-    this.width.min = '0';
-    this.width.step = '0.1';
-    this.width.placeholder = 'own';
-    this.width.addEventListener('change', () => {
-      const cell = this.selected();
-      if (!cell?.image) { this.host.flash('The selected cell has no picture.'); return; }
-      void this.change(() => setPicture(this.t!, this.sel.r, this.sel.c, String(cell.image), Math.max(0, Number(this.width.value) || 0)));
-    });
-    w.append('Width', this.width, 'cm');
-    w.title = 'The picture’s printed width (empty: its own size, never wider than the text)';
-    bar.append(w);
-    return bar;
+  /** The selected cell's picture width in cm (0: its own size). */
+  setPictureWidth(cm: number): Promise<void> {
+    const cell = this.selected();
+    if (!cell?.image) { this.host.flash('The selected cell has no picture.'); return Promise.resolve(); }
+    return this.change(() => setPicture(this.t!, this.sel.r, this.sel.c, String(cell.image), Math.max(0, cm || 0)));
   }
 
   private bottom(): HTMLElement {
@@ -210,7 +159,6 @@ export class SiTableEditor {
     this.urls = [];
     this.boxes = [];
     const head = Math.max(0, Math.round(Number(t.header_rows ?? 1)) || 0);
-    this.headRows.value = String(head);
     const rows = rowsOf(t);
     const cols = (t.columns as unknown[]) ?? [];
     const all = spans(t);
@@ -249,23 +197,7 @@ export class SiTableEditor {
   private shift = false;
 
   private picture(cell: Json): HTMLElement {
-    const box = el('div', 'si-tpic');
-    const name = String(cell.image);
-    const ext = extOf(name);
-    if (!MIME[ext]) { box.textContent = `[${name.slice(name.lastIndexOf('/') + 1)}]`; return box; }
-    void this.host.project.readSectionFile(this.host.section, name).then((bytes) => {
-      if (!bytes) { box.textContent = `[missing: ${name.slice(name.lastIndexOf('/') + 1)}]`; box.classList.add('si-missing'); return; }
-      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: MIME[ext] }));
-      this.urls.push(url);
-      const img = el('img');
-      img.src = url;
-      img.alt = 'Cell picture';
-      const w = Number(cell.image_width);
-      // (about the printed size, at a third of it: the grid is a preview)
-      if (w > 0) img.style.width = `${Math.round((w / 2.54) * 96 * 0.5)}px`;
-      box.append(img);
-    });
-    return box;
+    return this.pics.preview(String(cell.image), this.urls, undefined, Number(cell.image_width) || 0);
   }
 
   private pick(r: number, c: number, extend: boolean): void {
@@ -283,9 +215,7 @@ export class SiTableEditor {
       const r = Number(td.dataset.r), c = Number(td.dataset.c);
       td.classList.toggle('si-tsel', s.rows * s.cols > 1 && r >= s.r && r < s.r + s.rows && c >= s.c && c < s.c + s.cols);
     }
-    const cell = this.selected();
-    this.width.value = cell?.image && Number(cell.image_width) > 0 ? String(cell.image_width) : '';
-    this.width.disabled = !cell?.image;
+    this.host.selectionChanged(this);
   }
 
   private selected(): Json | null { return this.t ? cellAt(this.t, this.sel.r, this.sel.c) : null; }
@@ -325,47 +255,22 @@ export class SiTableEditor {
 
   // ------------------------------------------------------------------ pictures
 
-  /** Put a picture's files in images/ and in the selected cell. */
-  private async place(name: string, bytes: Uint8Array, others: Record<string, Uint8Array> = {}): Promise<void> {
-    const at = { ...this.sel };
-    const rel = await this.host.project.addSectionPicture(this.host.section, name, bytes, others);
-    const cell = cellAt(this.t!, at.r, at.c);
+  /** A picture (its path in images/) into the cell selected when it was asked for. */
+  private async put(at: Span, rel: string | null): Promise<void> {
+    if (!rel || !this.t) return;
+    const cell = cellAt(this.t, at.r, at.c);
     const w = cell && Number(cell.image_width) > 0 ? Number(cell.image_width) : 0;
     this.sel = at;
     await this.change(() => setPicture(this.t!, at.r, at.c, rel, w));
   }
 
-  private async pictureFile(): Promise<void> {
-    const [f] = await this.host.pickFiles('Picture for the cell', ['png', 'jpg', 'jpeg', 'svg', 'pdf']);
-    if (f) await this.place(f.name, f.bytes);
-  }
+  private async pictureFile(): Promise<void> { const at = { ...this.sel }; await this.put(at, await this.pics.fromFile('Picture for the cell')); }
 
-  private async drawing(d: Contents | Doc, name: string): Promise<boolean> {
-    const files = this.host.drawingFiles(d);
-    if (!files) { this.host.flash('Nothing was drawn, so the cell is as it was.'); return false; }
-    await this.place(name, enc(files.svg), { cdxml: enc(files.cdxml) });
-    return true;
-  }
-
-  /** What was pasted, into the table: cells from Excel or Word, or a picture or drawing in the selected cell. */
-  private async pasted(p: Pasted): Promise<boolean> {
-    if (p.kind === 'drawing') return this.drawing(p.doc, 'pasted picture.svg');
-    if (p.kind === 'table') { const at = { ...this.sel }; await this.change(() => pasteCells(this.t!, at.r, at.c, pastedCells(p.rows))); return true; }
-    if (p.kind === 'picture') {
-      if (p.mime === 'image/png' || p.mime === 'image/jpeg') { await this.place(`pasted picture.${p.mime === 'image/png' ? 'png' : 'jpg'}`, p.bytes); return true; }
-      if (p.mime === 'image/svg+xml') { await this.place('pasted picture.svg', p.bytes); return true; }
-      if (p.mime === 'image/x-emf') {
-        // a metafile (ChemDraw, MestReNova): drawn as SVG, the metafile kept beside it as SI Assistant keeps originals
-        const { emfToSvg } = await import('../render/emf-read');
-        const svg = emfToSvg(p.bytes)?.svg;
-        if (svg) { await this.place('pasted picture.svg', enc(svg), { emf: p.bytes }); return true; }
-      }
-      const png = await toPng(p.bytes, p.mime);
-      if (png) { await this.place('pasted picture.png', png); return true; }
-      this.host.flash('This picture could not be read.');
-      return true;
-    }
-    return false;
+  private async pasteButton(): Promise<void> {
+    const at = { ...this.sel };
+    const p = await this.host.readClipboard().catch(() => null);
+    if (p?.kind === 'table') { await this.change(() => pasteCells(this.t!, at.r, at.c, pastedCells(p.rows))); return; }
+    await this.put(at, p ? await this.pics.fromPasted(p) : await this.pics.fromClipboard());
   }
 
   private pasteEvent(e: ClipboardEvent): void {
@@ -379,58 +284,28 @@ export class SiTableEditor {
     if (!files && !cells && !drawing) return;
     e.preventDefault();
     e.stopPropagation();
-    void this.host.readClipboard(e).then((p) => this.pasted(p)).then((done) => {
-      if (!done && text) document.execCommand('insertText', false, text.replace(/\s*\n\s*/g, ' '));
-    });
-  }
-
-  private async pasteButton(): Promise<void> {
-    let p: Pasted;
-    try { p = await this.host.readClipboard(); } catch (e) { this.host.flash(`The clipboard could not be read: ${e instanceof Error ? e.message : String(e)}`); return; }
-    if (!(await this.pasted(p))) this.host.flash('The clipboard has no picture, drawing or cells. Copy a structure in ChemDraw or Chemweave, a picture, or cells in Excel or Word first.');
-  }
-
-  private drawStructure(): void {
-    const cell = this.selected();
     const at = { ...this.sel };
-    const image = typeof cell?.image === 'string' ? cell.image : '';
-    const again = image ? image.replace(/\.[^./]+$/, '.cdxml') : '';
-    void (again && again !== image ? this.host.project.readSectionFile(this.host.section, again) : Promise.resolve(null)).then((bytes) => {
-      const contents = bytes ? this.host.contentsOfCdxml(new TextDecoder().decode(bytes)) : null;
-      if (image && !contents) this.host.flash('This picture wasn’t drawn here, so you start a new drawing; it replaces the picture when you finish.');
-      this.host.editStructure(contents, 'Table cell picture', (got) => {
-        if (!got || !got.atoms.length && !got.arrows.length && !got.captions.length && !got.shapes.length) return;
-        this.sel = at;
-        void this.drawing(got, 'structure.svg');
-      });
+    void this.host.readClipboard(e).then(async (p) => {
+      if (p.kind === 'table') { await this.change(() => pasteCells(this.t!, at.r, at.c, pastedCells(p.rows))); return; }
+      const rel = await this.pics.fromPasted(p);
+      if (rel) await this.put(at, rel);
+      else if (text) document.execCommand('insertText', false, text.replace(/\s*\n\s*/g, ' '));
     });
+  }
+
+  private async drawStructure(): Promise<void> {
+    const at = { ...this.sel };
+    const cell = this.selected();
+    await this.put(at, await this.pics.draw(typeof cell?.image === 'string' ? cell.image : '', 'Table cell picture'));
   }
 
   private async fromCompound(): Promise<void> {
     const at = { ...this.sel };
-    const got = await this.host.pickCompound();
+    const got = await this.pics.fromCompound();
     if (!got) return;
-    const contents = this.host.contentsOf(got.mol);
-    if (!contents) { this.host.flash('That compound’s structure could not be read.'); return; }
-    this.sel = at;
-    if (!(await this.drawing(contents, 'structure.svg'))) return;
+    await this.put(at, got.rel);
     // its ID in bold under the structure, when the cell has no text yet
     const cell = cellAt(this.t!, at.r, at.c);
     if (cell && !String(cell.text ?? '').trim()) await this.change(() => { cell.text = `**@{${got.id}}**`; });
-  }
-}
-
-/** A picture the browser can show (a bitmap) as PNG bytes. */
-async function toPng(bytes: Uint8Array, mime: string): Promise<Uint8Array | null> {
-  try {
-    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
-    const c = document.createElement('canvas');
-    c.width = bmp.width;
-    c.height = bmp.height;
-    c.getContext('2d')!.drawImage(bmp, 0, 0);
-    const blob = await new Promise<Blob | null>((ok) => c.toBlob(ok, 'image/png'));
-    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
-  } catch {
-    return null;
   }
 }

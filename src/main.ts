@@ -8259,6 +8259,7 @@ function loadSiMode(): Promise<SiMode> {
         return svg ? { svg, cdxml: writeCdxml(drawing, { name: 'picture.cdxml', textMeasure: measureText }) } : null;
       },
       contentsOfCdxml: (text) => { try { return readCdxml(text).doc.contents(); } catch { return null; } },
+      openSymbols: () => symbolWindow.open(),
       readClipboard: (e) => (e ? readPasteEvent(e) : nativeClipboard ? readNativeClipboard() : readWebClipboard()),
       library: async () => {
         const lib = await useLibrary();
@@ -13601,6 +13602,7 @@ function insertSymbol(ch: string): boolean {
     flash('Pick a cell to type the symbol into.');
     return false;
   }
+  if (ws.active.mode === 'si') return siMode?.insertText(ch) ?? false;
   if (docActive()) {
     if (docMode.insertText(ch)) return true;
     flash('Symbols can\'t be typed in Read Mode: go back to Print Layout (View).');
