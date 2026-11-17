@@ -719,7 +719,7 @@ export class SiMode {
       const typed = typeof s.data.caption === 'string' ? s.data.caption.trim() : '';
       const ref = xrayCompound(s.data, (id) => p.compounds.some((c) => c.id === id));
       const ccdc = xrayTableRows(s.data, block!).find(([k]) => k === 'ccdc')?.[2] ?? '';
-      const text = (typed || xrayAutoCaption(s.data, got.spec.view, ref, ccdc)).replace(/@\{(c-[^}]*)\}/g, (_m, id: string) => {
+      const text = (typed || xrayAutoCaption(got.spec.view, ref, ccdc)).replace(/@\{(c-[^}]*)\}/g, (_m, id: string) => {
         const c = p.compounds.find((x) => x.id === id);
         return c ? this.idOf(c) : '??';
       });

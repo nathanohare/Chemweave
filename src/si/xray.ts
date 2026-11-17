@@ -90,7 +90,7 @@ export function xrayCompound(data: Json, exists: (id: string) => boolean): strin
 }
 
 /** "Molecular structure of @{c-…} (thermal ellipsoids at 50% probability; …). CCDC 2345678." in stored text, from how it is drawn. */
-export function xrayAutoCaption(data: Json, view: XView, ref: string, ccdc: string): string {
+export function xrayAutoCaption(view: XView, ref: string, ccdc: string): string {
   const notes = [view.style === 'ortep' ? `thermal ellipsoids at ${view.probability}% probability` : 'ball-and-stick model'];
   if (!view.hydrogens) notes.push('hydrogen atoms omitted for clarity');
   if (view.hiddenMolecules.length) notes.push('solvent molecules omitted for clarity');

@@ -740,7 +740,7 @@ class Compiler {
     const ref = xrayCompound(s.data, (id) => this.compoundExists(id));
     const rows = xrayTableRows(s.data, block);
     const ccdc = rows.find(([k]) => k === 'ccdc')?.[2] ?? '';
-    const caption = str(s.data.caption).trim() || xrayAutoCaption(s.data, got.spec.view, ref, ccdc);
+    const caption = str(s.data.caption).trim() || xrayAutoCaption(got.spec.view, ref, ccdc);
     this.caption(this.labels.at(s.id, 0) || 'Figure', parseMarkup(caption).flatMap((p) => p.runs), where, { align: 'center', spaceAfter: 10 }, { key: s.id, kind: 'figure' });
     if (s.data.table === false) return;
     if (!rows.length) { this.notes.push(`${where}: its crystal data table has no values; left out.`); return; }

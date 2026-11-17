@@ -138,8 +138,8 @@ describe('an X-ray structure’s parts', () => {
 
   it('writes the automatic caption from how it is drawn', () => {
     const v = { ...defaultView(), hydrogens: false, hiddenMolecules: [2] };
-    expect(xrayAutoCaption({}, v, '@{c-1}', '123')).toBe('Molecular structure of @{c-1} (thermal ellipsoids at 50% probability; hydrogen atoms omitted for clarity; solvent molecules omitted for clarity). CCDC 123.');
-    expect(xrayAutoCaption({}, { ...defaultView(), style: 'ball' }, '', '')).toBe('Molecular structure (ball-and-stick model).');
+    expect(xrayAutoCaption(v, '@{c-1}', '123')).toBe('Molecular structure of @{c-1} (thermal ellipsoids at 50% probability; hydrogen atoms omitted for clarity; solvent molecules omitted for clarity). CCDC 123.');
+    expect(xrayAutoCaption({ ...defaultView(), style: 'ball' }, '', '')).toBe('Molecular structure (ball-and-stick model).');
   });
 
   it('lists the table’s rows: typed over, left out, empty ones dropped', () => {
