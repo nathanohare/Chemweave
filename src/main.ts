@@ -3635,7 +3635,7 @@ const animateDialog = {
 /** Is a curved (mechanism) arrow among the selection? */
 const pickedCurved = (): boolean => [...editor.sel.arrows].some((id) => { const r = doc.arrows.get(id); return !!r && isCurved(r); });
 /** Whether the selection is in a Smart Scheme laid out as a cycle (Clean Up Cycle applies). */
-const smartIsCycle = (): boolean => { const id = editor.selectedSmart(); const d = id === null ? undefined : doc.shapes.get(id)?.smart; return !!d && d.layout === 'cycle' && !d.free; };
+const smartIsCycle = (): boolean => { const id = editor.selectedSmart(); return id !== null && editor.smartIsCycle(id); };
 const pickedReactionArrow = (): number | undefined => [...editor.sel.arrows].find((id) => { const r = doc.arrows.get(id); return !!r && isReactionArrow(r); });
 
 const mapChoice: Record<string, string> = { numbers: 'true', colours: 'false', bonds: 'false' };
@@ -14807,21 +14807,17 @@ const smartPane = new SmartPane({
   stepToStructure: (id, k, part) => editor.smartStepToHolder(id, k, part),
   stepToText: (id, k, part) => editor.smartStepToText(id, k, part),
   selectHolder: (shape) => editor.selectShape(shape),
-  add: (id, after) => editor.smartInsert(id, after),
+  add: (id, after, link) => editor.smartInsert(id, after, link),
   remove: (id, k) => editor.smartRemove(id, k),
   move: (id, from, to) => editor.smartMove(id, from, to),
   arrange: (id, patch) => editor.smartArrange(id, patch),
   format: (id, fmt) => editor.smartFormat(id, fmt),
-  async secondLoop(id) {
-    const st = editor.smartCycleStart(id);
-    if (!st) {
-      if (editor.smartReagentStructures(id)) flash('A second loop can\'t be added while a step has a structure joining or leaving it. Change those reagents to text in the species list, add the loop, then change them back.', 8000);
-      return;
-    }
-    const got = await askCycle(0, { spec: { loops: [st.loop] }, look: st.look, drawn: st.drawn });
-    if (got?.rows) editor.smartRebuildCycle(id, got.spec, got.look, got.rows);
-  },
-  cleanUpCycle: (id) => { if (!editor.smartCleanUpCycle(id)) flash('Clean Up Cycle needs three or more species in one loop.', 4000); },
+  addLoop: (id, join, count) => { if (!editor.smartAddLoop(id, join, count)) flash('The loop could not be joined there.', 4000); },
+  removeLoop: (id, loop) => editor.smartRemoveLoop(id, loop),
+  addBranch: (id, k, dir) => editor.smartAddBranch(id, k, dir),
+  loopMiddle: (id, loop, parts) => editor.smartLoopMiddle(id, loop, parts),
+  stepNames: (id, how) => editor.smartStepNames(id, how),
+  cleanUpCycle: (id) => { if (!editor.smartCleanUpCycle(id)) flash('Clean Up Cycle needs a loop of three or more species.', 4000); },
   ungroup: (id) => editor.ungroupSmart(id),
   dock: (where) => {
     if (where === null) { smartDockBody = null; toolboxes.toggle('smart', false); smartPane.float(); return; }

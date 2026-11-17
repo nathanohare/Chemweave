@@ -11,8 +11,6 @@ import type { Rect, Vec } from '../geom';
 import { chemRuns } from '../text/chemtext';
 import { selectionBox, type Measure } from '../editor/arrange';
 import { applyArrange, planArrange, type Scope } from './scheme-arrange';
-import { spacing } from './scheme-layout';
-import { arrowMid } from '../objects';
 
 /** One step, from a species to the next: its name, short and in full, and what comes in and goes out. */
 export interface CycleStep { short: string; name: string; inn: string; out: string }
@@ -34,9 +32,24 @@ export interface CycleLoop {
  */
 export interface CycleJoin { kind: 'mesh' | 'share' | 'beside'; a: number; b: number }
 
+/**
+ * How loop `loop` goes with an earlier loop `to`. mesh, share and beside as CycleJoin (a counts
+ * in loop `to`, b in loop `loop`); fused: `span` species in a row (two or more), and the steps
+ * between them, are in both loops, starting at species `a` of `to` and species `b` of `loop`
+ * (the stretch is drawn once, straight, between the loops; its names and steps are loop `to`'s).
+ */
+export interface CycleLink { kind: 'mesh' | 'share' | 'beside' | 'fused'; loop: number; to: number; a: number; b: number; span?: number }
+
+/** A species off the cycle, joined to species `station` of loop `loop`: coming in, going out, or in equilibrium with it. */
+export interface CycleBranch { loop: number; station: number; species: string; dir: 'in' | 'out' | 'both'; note?: string }
+
 export interface CycleSpec {
   loops: CycleLoop[];
+  /** Two loops: how the second goes with the first. */
   join?: CycleJoin;
+  /** Any number of loops: one for each loop after the first (used instead of `join`). */
+  joins?: CycleLink[];
+  branches?: CycleBranch[];
 }
 
 export interface CycleLook {
@@ -184,27 +197,20 @@ export const CYCLE_PRESETS: CyclePreset[] = [
   },
 ];
 
-/** Common step names, offered while typing one. */
-export const STEP_NAMES = [
-  'oxidative addition', 'reductive elimination', 'transmetalation', 'migratory insertion', 'β-hydride elimination',
-  'ligand exchange', 'ligand dissociation', 'alkene coordination', 'deprotonation', 'protonation', 'single-electron transfer',
-  'C–H activation (CMD)', '[2+2] cycloaddition', 'retro-[2+2]', 'σ-bond metathesis', 'hydroxypalladation', 'excitation',
-];
-
-const SHORT: Record<string, string> = {
-  'oxidative addition': 'OA', 'reductive elimination': 'RE', transmetalation: 'TM', 'migratory insertion': 'MI',
-  'β-hydride elimination': 'β-H', 'single-electron transfer': 'SET', 'ligand exchange': 'LE',
-};
-/** The usual short form of a step's name (OA for oxidative addition), or the name itself. */
-export function shortName(name: string): string {
-  return SHORT[name.trim().toLowerCase()] ?? name;
-}
+export { STEP_NAMES, shortName } from './step-names';
+import { shortName } from './step-names';
 
 export interface BuiltCycle {
   captions: number[];
   arrows: number[];
   /** The box round all of it. */
   box: Rect | null;
+}
+
+/** A spec's joins, one for each loop after the first (the two-loop form `join` read as the second loop joined to the first). */
+export function joinsOf(spec: CycleSpec): CycleLink[] {
+  if (spec.joins) return spec.joins;
+  return spec.join && spec.loops.length > 1 ? [{ ...spec.join, loop: 1, to: 0 }] : [];
 }
 
 /**
@@ -224,100 +230,104 @@ export function buildCycle(doc: Doc, m: Measure, spec: CycleSpec, look: CycleLoo
       headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0,
       headLength: doc.style.lineWidth * 10, headWidth: doc.style.lineWidth * 2.5,
     });
-    const scopes: Scope[] = [];
+    const scope: Scope = { atoms: new Set(), captions: new Set(), shapes: new Set(), arrows: new Set() };
+    const joins = joinsOf(spec).filter((j) => j.loop > 0 && j.loop < spec.loops.length && j.to >= 0 && j.to < j.loop);
+    const joinOf = (li: number) => joins.find((j) => j.loop === li);
     const refs: string[][] = [];
-    // the shared species of a figure of eight is the first loop's
-    const shared = spec.join?.kind === 'share' ? spec.join : null;
+    /** For each loop, the arrow of each step. */
+    const stepArrows: number[][] = [];
+    /** Steps beside a species two loops share: the far side of them is the other loop. */
+    const crowded = (li: number, k: number, n: number): boolean => joins.some((j) => {
+      const at0 = j.loop === li ? j.b : j.to === li ? j.a : -1;
+      if (at0 < 0) return false;
+      if (j.kind === 'mesh') return k === at0;
+      if (j.kind === 'share') return k === at0 || (k + 1) % n === at0;
+      // the steps into and out of a stretch two loops share
+      return j.kind === 'fused' && (k === (at0 - 1 + n) % n || k === (at0 + Math.max(2, j.span ?? 2) - 1) % n);
+    });
     spec.loops.forEach((loop, li) => {
       const y = li * 12 * L;
-      const scope: Scope = { atoms: new Set(), captions: new Set(), shapes: new Set(), arrows: new Set() };
+      const j = joinOf(li);
+      const n = loop.stations.length;
+      // the species a loop takes from the one it is joined to: one shared, or a stretch of them
+      const span = j?.kind === 'fused' ? Math.max(2, Math.min(j.span ?? 2, n, spec.loops[j.to].stations.length)) : j?.kind === 'share' ? 1 : 0;
+      const theirs = (k: number): string | null => {
+        if (!j || !span) return null;
+        const d = (k - j.b + n) % n;
+        const from = refs[j.to];
+        return d < span ? from[(j.a + d) % from.length] : null;
+      };
       // the species in a row to start with (the layout puts them round the loop)
       const ref: string[] = loop.stations.map((text, k) => {
-        if (li === 1 && shared && k === shared.b) return refs[0][shared.a];
+        const shared = theirs(k);
+        if (shared) return shared;
         const given = li === 0 ? stations[k] : undefined;
         if (given?.atoms.length) { for (const a of given.atoms) scope.atoms.add(a); return 'a' + Math.min(...given.atoms); }
         if (given?.caption !== undefined) { scope.captions.add(given.caption); return 'c' + given.caption; }
         const c = caption(text.trim() || '…', k * 6 * L, y);
+        scope.captions.add(c.id);
         return 'c' + c.id;
       });
-      if (li === 1 && shared) { const r = refs[0][shared.a]; if (r[0] === 'c') scope.captions.add(Number(r.slice(1))); else for (const a of doc.fragmentOf(Number(r.slice(1)))) scope.atoms.add(a); }
-      for (const r of ref) if (r[0] === 'c') scope.captions.add(Number(r.slice(1)));
-      const n = ref.length;
+      const arrows: number[] = [];
       loop.steps.slice(0, n).forEach((s, k) => {
+        // a step in a stretch two loops share is the first loop's
+        if (j?.kind === 'fused' && theirs(k) && theirs((k + 1) % n) && (k - j.b + n) % n < span - 1) {
+          const from = stepArrows[j.to];
+          arrows.push(from[(j.a + ((k - j.b + n) % n)) % from.length]);
+          return;
+        }
         const x = k * 6 * L + 3 * L;
         const roles: StepRoles = { reactants: [ref[k]], products: [ref[(k + 1) % n]], above: [], below: [] };
         const word = look.names === 'short' ? s.short || shortName(s.name) : look.names === 'full' ? s.name : '';
         // a dash stands for a step with no short name
         if (word && word !== '—') { const c = caption(word, x, y + L); roles.inside = ['c' + c.id]; scope.captions.add(c.id); }
         // beside a species two loops share, outside the loop is the other loop: what comes in
-        // and goes out there is written inside with the step's name, as + and −
-        const own = shared && (k === (li ? shared.b : shared.a) || (k + 1) % n === (li ? shared.b : shared.a));
-        if (own) {
-          for (const t of [s.inn && '+ ' + s.inn, s.out && '− ' + s.out]) {
-            if (!t) continue;
-            const c = caption(t, x, y + 3 * L);
-            (roles.inside ??= []).push('c' + c.id);
-            scope.captions.add(c.id);
-          }
-        } else {
-          if (s.inn) { const c = caption(s.inn, x, y - L); roles.above.push('c' + c.id); scope.captions.add(c.id); }
-          if (s.out) { const c = caption(s.out, x, y + 2 * L); roles.below.push('c' + c.id); scope.captions.add(c.id); }
-        }
+        // and goes out there is written inside under the step's name (by the layout), as + and −
+        const mark = crowded(li, k, n);
+        if (s.inn) { const c = caption((mark ? '+ ' : '') + s.inn, x, y - L); roles.above.push('c' + c.id); scope.captions.add(c.id); }
+        if (s.out) { const c = caption((mark ? '− ' : '') + s.out, x, y + 2 * L); roles.below.push('c' + c.id); scope.captions.add(c.id); }
         const r = doc.addArrow({ ...arrowLook(), tail: { x: x - 1.5 * L, y }, head: { x: x + 1.5 * L, y }, step: roles });
         made.arrows.push(r.id);
         scope.arrows.add(r.id);
+        arrows.push(r.id);
       });
-      if (loop.middle) scope.captions.add(caption(loop.middle, 0, y - 3 * L).id);
-      scopes.push(scope);
+      if (loop.middle) scope.captions.add(caption(loop.middle, (n - 1) * 3 * L, y - 3 * L).id);
       refs.push(ref);
+      stepArrows.push(arrows);
+    });
+    // species off the cycle: a precatalyst coming in, a product or resting state going out
+    (spec.branches ?? []).forEach((b, bi) => {
+      const on = refs[b.loop]?.[b.station];
+      if (!on) return;
+      const x = bi * 8 * L, y = -14 * L;
+      const c = caption(b.species.trim() || '…', x, y);
+      scope.captions.add(c.id);
+      const roles: StepRoles = b.dir === 'in' ? { reactants: ['c' + c.id], products: [on], above: [], below: [] } : { reactants: [on], products: ['c' + c.id], above: [], below: [] };
+      if (b.note) { const t = caption(b.note, x + 3 * L, y - L); roles.above.push('c' + t.id); scope.captions.add(t.id); }
+      const r = doc.addArrow({ ...arrowLook(), ...(b.dir === 'both' ? { equilibrium: true } : {}), tail: { x: x + 1.5 * L, y }, head: { x: x + 4.5 * L, y }, step: roles });
+      made.arrows.push(r.id);
+      scope.arrows.add(r.id);
     });
 
-    // lay out each loop: the first clockwise (or as asked), a second the other way when meshed or shared
+    // lay it out: the first loop clockwise (or as asked), each joined loop the other way from the one it joins
     const sign = look.anticlockwise ? -1 : 1;
-    const turn = (loopSign: number, k: number, n: number) => loopSign * (2 * Math.PI * k) / n;
     const n0 = refs[0].length;
-    const j = spec.join, second = spec.loops.length > 1 && j;
-    let start0 = -Math.PI / 2;
-    // meshed: loop 1's step a faces right; shared: loop 1's species a sits at the right
-    if (second && j.kind === 'mesh') start0 = -turn(sign, j.a + 0.5, n0);
-    if (second && j.kind === 'share') start0 = -turn(sign, j.a, n0);
-    const arrange = (li: number, start: number, anticlockwise: boolean) => {
-      const plan = planArrange(doc, m, scopes[li], { kind: 'cycle', anticlockwise, reagentArrows: look.reagentArrows, start: refs[li][0], startAngle: start });
-      if (!plan) return;
+    const turn = (k: number) => sign * (2 * Math.PI * k) / n0;
+    // the first loop turned so that what joins it first is on its right
+    const j1 = joins.find((j) => j.to === 0 && j.kind !== 'beside');
+    const startAngle = !j1 ? -Math.PI / 2 : j1.kind === 'mesh' ? -turn(j1.a + 0.5) : j1.kind === 'share' ? -turn(j1.a) : -turn(j1.a + ((j1.span ?? 2) - 1) / 2);
+    const meshes = joins.flatMap((j): [number, number][] => (j.kind === 'mesh' && stepArrows[j.to]?.[j.a] !== undefined && stepArrows[j.loop]?.[j.b] !== undefined ? [[stepArrows[j.to][j.a], stepArrows[j.loop][j.b]]] : []));
+    const plan = planArrange(doc, m, scope, { kind: 'cycle', anticlockwise: !!look.anticlockwise, reagentArrows: look.reagentArrows, start: refs[0][0], startAngle, meshes });
+    if (plan) {
       const added = applyArrange(doc, m, plan, 'Catalytic Cycle');
       made.arrows.push(...added);
-      for (const id of added) scopes[li].arrows.add(id);
-    };
-    arrange(0, start0, !!look.anticlockwise);
-    if (second) {
-      const n1 = refs[1].length;
-      const other = j.kind === 'beside' ? sign : -sign;
-      const start1 = j.kind === 'mesh' ? Math.PI - turn(other, j.b + 0.5, n1) : j.kind === 'share' ? Math.PI - turn(other, j.b, n1) : -Math.PI / 2;
-      const where = (ref: string) => centreOf(doc, m, ref);
-      const sharedAt = j.kind === 'share' ? where(refs[0][j.a]) : null;
-      const c0 = loopCentre(doc, m, refs[0]), r0 = loopRadius(doc, m, refs[0], c0);
-      arrange(1, start1, other < 0);
-      let d: Vec;
-      if (sharedAt) {
-        // the shared species goes back where the first loop put it
-        const now = where(refs[1][j.b]);
-        d = { x: sharedAt.x - now.x, y: sharedAt.y - now.y };
-      } else if (j.kind === 'mesh') {
-        const c1 = loopCentre(doc, m, refs[1]), r1 = loopRadius(doc, m, refs[1], c1);
-        d = { x: c0.x + r0 + r1 + 1.6 * L - c1.x, y: c0.y - c1.y };
-      } else {
-        const b0 = selectionBox(doc, scopeSel(scopes[0]), m), b1 = selectionBox(doc, scopeSel(scopes[1]), m);
-        d = b0 && b1 ? { x: b0.x2 + 3 * L - b1.x1, y: (b0.y1 + b0.y2) / 2 - (b1.y1 + b1.y2) / 2 } : { x: 0, y: 0 };
-      }
-      moveScope(doc, scopes[1], d);
-      if (sharedAt) spreadShared(doc, m, scopes, refs[0][j.a]);
+      for (const id of added) scope.arrows.add(id);
     }
     // the whole thing, with its middle where it was asked for
-    const all = scopeSel(mergeScopes(scopes));
-    const b = selectionBox(doc, all, m);
+    const b = selectionBox(doc, scopeSel(scope), m);
     if (b) {
       const d = { x: at.x - (b.x1 + b.x2) / 2, y: at.y - (b.y1 + b.y2) / 2 };
-      moveScope(doc, mergeScopes(scopes), d);
+      moveScope(doc, scope, d);
       made.box = { x1: b.x1 + d.x, y1: b.y1 + d.y, x2: b.x2 + d.x, y2: b.y2 + d.y };
     }
   });
@@ -331,12 +341,6 @@ const scopeSel = (s: Scope) => {
   return { atoms: s.atoms, bonds, captions: s.captions, arrows: s.arrows, shapes: s.shapes };
 };
 
-function mergeScopes(ss: Scope[]): Scope {
-  const out: Scope = { atoms: new Set(), captions: new Set(), shapes: new Set(), arrows: new Set() };
-  for (const s of ss) for (const k of ['atoms', 'captions', 'shapes', 'arrows'] as const) for (const x of s[k]) out[k].add(x);
-  return out;
-}
-
 function moveScope(doc: Doc, s: Scope, d: Vec): void {
   if (Math.hypot(d.x, d.y) < 1e-9) return;
   doc.moveAtoms(s.atoms, d.x, d.y);
@@ -345,72 +349,4 @@ function moveScope(doc: Doc, s: Scope, d: Vec): void {
     const r = doc.arrows.get(id);
     if (r) doc.updateArrow(id, { tail: { x: r.tail.x + d.x, y: r.tail.y + d.y }, head: { x: r.head.x + d.x, y: r.head.y + d.y } });
   }
-}
-
-/** The middle of a species' box (a structure by any atom, 'a12', or a caption, 'c5'). */
-function centreOf(doc: Doc, m: Measure, ref: string): Vec {
-  const id = Number(ref.slice(1));
-  const sel = ref[0] === 'a'
-    ? { atoms: doc.fragmentOf(id), bonds: new Set<number>(), captions: new Set<number>(), arrows: new Set<number>(), shapes: new Set<number>() }
-    : { atoms: new Set<number>(), bonds: new Set<number>(), captions: new Set([id]), arrows: new Set<number>(), shapes: new Set<number>() };
-  const b = selectionBox(doc, sel, m);
-  return b ? { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 } : { x: 0, y: 0 };
-}
-
-/** A loop's middle: the species sit evenly round it, so it is their average. */
-function loopCentre(doc: Doc, m: Measure, refs: string[]): Vec {
-  const ps = refs.map((r) => centreOf(doc, m, r));
-  return { x: ps.reduce((s, p) => s + p.x, 0) / ps.length, y: ps.reduce((s, p) => s + p.y, 0) / ps.length };
-}
-
-function loopRadius(doc: Doc, m: Measure, refs: string[], c: Vec): number {
-  const p = centreOf(doc, m, refs[0]);
-  return Math.hypot(p.x - c.x, p.y - c.y);
-}
-
-/**
- * Two loops that share a species touch there, and the steps on either side of it crowd each
- * other: move the second loop off to the right and the shared species halfway, then bring the
- * four steps that start or end at it back to its box (their names and reagents go with them).
- */
-function spreadShared(doc: Doc, m: Measure, scopes: Scope[], ref: string): void {
-  const L = doc.style.bondLength, G = 2 * L;
-  const id = Number(ref.slice(1));
-  const rest: Scope = { ...scopes[1], captions: new Set([...scopes[1].captions].filter((c) => ref !== 'c' + c)), atoms: new Set([...scopes[1].atoms].filter((a) => !(ref[0] === 'a' && doc.fragmentOf(id).has(a)))) };
-  moveScope(doc, rest, { x: G, y: 0 });
-  const self: Scope = ref[0] === 'c'
-    ? { atoms: new Set(), captions: new Set([id]), shapes: new Set(), arrows: new Set() }
-    : { atoms: new Set(doc.fragmentOf(id)), captions: new Set(), shapes: new Set(), arrows: new Set() };
-  moveScope(doc, self, { x: G / 2, y: 0 });
-  const b = selectionBox(doc, scopeSel(self), m);
-  if (!b) return;
-  const g = spacing(L).gap;
-  const box = { x1: b.x1 - g, y1: b.y1 - g, x2: b.x2 + g, y2: b.y2 + g };
-  const c = { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
-  for (const r of [...doc.arrows.values()]) {
-    const into = r.step?.products.includes(ref), from = r.step?.reactants.includes(ref);
-    if (!into && !from) continue;
-    const far = into ? r.tail : r.head;
-    const near = edgeToward(c, far, box);
-    const was = arrowMid(r);
-    const next = into ? { ...r, head: near } : { ...r, tail: near };
-    doc.updateArrow(r.id, { tail: next.tail, head: next.head });
-    const now = arrowMid(next);
-    const d = { x: now.x - was.x, y: now.y - was.y };
-    // what goes with the step: its reagent arrows, and its names and reagents
-    const st = r.step!;
-    const caps = new Set([...st.above, ...st.below, ...(st.inside ?? [])].filter((x) => x[0] === 'c').map((x) => Number(x.slice(1))));
-    const arrows = new Set([...doc.arrows.values()].filter((x) => x.reagentFor === r.id).map((x) => x.id));
-    moveScope(doc, { atoms: new Set(), captions: caps, shapes: new Set(), arrows }, d);
-  }
-}
-
-/** Where the line from `p` (inside box r) towards `q` leaves r. */
-function edgeToward(p: Vec, q: Vec, r: Rect): Vec {
-  const d = { x: q.x - p.x, y: q.y - p.y };
-  let t = 1;
-  if (d.x > 0) t = Math.min(t, (r.x2 - p.x) / d.x); else if (d.x < 0) t = Math.min(t, (r.x1 - p.x) / d.x);
-  if (d.y > 0) t = Math.min(t, (r.y2 - p.y) / d.y); else if (d.y < 0) t = Math.min(t, (r.y1 - p.y) / d.y);
-  t = Math.max(0, t);
-  return { x: p.x + d.x * t, y: p.y + d.y * t };
 }

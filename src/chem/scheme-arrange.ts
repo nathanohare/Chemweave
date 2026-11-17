@@ -10,7 +10,8 @@ import { add, mul, sub, fromAngle, dist } from '../geom';
 import type { Measure } from '../editor/arrange';
 import { arrowFrame, inFrame, interpretArrow, isReactionArrow, isStep, itemFinder, schemeItems, type Item } from './reaction';
 import { labelsOf, spacing, fittedLength } from './scheme-layout';
-import { sweepThrough } from '../objects';
+import { arrowMid, sweepThrough } from '../objects';
+import { crowdedLinks, layoutNet, readNet, type Net, type NetLink } from './cycle-net';
 
 export type ArrangeKind = 'line' | 'rows' | 'snake' | 'down' | 'cycle' | 'tree';
 
@@ -28,6 +29,11 @@ export interface ArrangeOptions {
   startAngle?: number;
   /** Branching: the arrows from one structure to several fan out from one point (a forked arrow). */
   forked?: boolean;
+  /**
+   * Cycle of several loops, just built: the pairs of step arrows (by id) that face each other where
+   * two loops turn together. Left out, loops that turn together are told from where their arrows are.
+   */
+  meshes?: [number, number][];
 }
 
 /** What is selected: ids of atoms, captions, shapes and arrows (all empty: the whole drawing). */
@@ -190,10 +196,13 @@ function chainOf(n: number, links: Link[], extra: number[], nodes: Node[]): { pa
 export function planArrange(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOptions): ArrangePlan | null {
   const sh = readScheme(doc, m, scope);
   if (sh.nodes.length < 2 && !(opts.kind === 'cycle' && sh.nodes.length >= 1)) return null;
-  if (opts.kind !== 'tree' && !sh.path) return null;
+  // a cycle of several loops (or with branches off it) is laid out as its loops
+  const found = opts.kind === 'cycle' && !sh.path ? schemeNet(sh, opts.meshes) : null;
+  if (opts.kind !== 'tree' && !sh.path && !found) return null;
   const bond = doc.style.bondLength;
   const L = new Layout(sh, bond);
-  switch (opts.kind) {
+  if (found) L.net(found.net, found.links, !!opts.anticlockwise, !!opts.reagentArrows, opts.startAngle);
+  else switch (opts.kind) {
     case 'line': L.rows(Infinity, false); break;
     case 'rows': L.rows(Math.max(1, opts.perRow ?? 3), false); break;
     case 'snake': L.rows(Math.max(1, opts.perRow ?? 3), true); break;
@@ -205,6 +214,20 @@ export function planArrange(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOpt
   const mine = new Set(sh.links.map((l) => l.arrow?.id).filter((x) => x !== undefined));
   for (const r of doc.arrows.values()) if (r.reagentFor !== undefined && mine.has(r.reagentFor)) L.plan.removed.push(r.id);
   return L.plan;
+}
+
+/**
+ * A scheme whose steps make more than one loop, or a loop with branches: its loops and how they
+ * are joined (null when the steps make one line or loop, or nothing of the kind). `meshes` as in
+ * the options.
+ */
+export function schemeNet(sh: SchemeShape, meshes?: [number, number][]): { net: Net; links: NetLink[] } | null {
+  if (sh.path || sh.links.some((l) => !l.arrow)) return null;
+  const links = sh.links.map((l) => ({ from: l.from, to: l.to }));
+  const at = (id: number) => sh.links.findIndex((l) => l.arrow!.id === id);
+  const pairs = meshes?.map(([a, b]) => [at(a), at(b)] as [number, number]).filter(([a, b]) => a >= 0 && b >= 0);
+  const net = readNet(sh.nodes.length, links, { centres: sh.nodes.map((n) => centre(n.box)), mids: sh.links.map((l) => arrowMid(l.arrow!)) }, pairs);
+  return net ? { net, links } : null;
 }
 
 class Layout {
@@ -466,55 +489,136 @@ class Layout {
     }
     path.forEach((i, k) => this.placeNode(i, add(cen, fromAngle(angle(k), R))));
     if (N < 2) return;
-    for (let k = 0; k < N; k++) {
-      const l = link(k);
-      const { s, e } = ends(k);
-      const tail = add(cen, fromAngle(s, R)), head = add(cen, fromAngle(e, R));
-      const mid = add(cen, fromAngle((s + e) / 2, R));
-      const sweep = sweepThrough(tail, head, mid);
-      const r: NewArrow = { tail, head, sweep, step: this.stepOf(l) };
-      if (l.arrow) this.plan.arrows.set(l.arrow.id, r); else this.plan.added.push(r);
-      // conditions sit outside the circle by the middle of their arc (those below the arrow inside it,
-      // or with reagent arrows: coming in before the middle and going out after it)
-      // (returns how far out from the circle, or in, the last one reaches)
-      const out = (its: Item[], a: number, inward: boolean, from = spacing(bond).conditions * 2) => {
-        const rad = fromAngle(a, 1);
-        let dist0 = inward ? -from : from;
-        for (const it of its) {
-          const ext = radial(it, a);
-          const c = add(cen, mul(rad, R + dist0 + (inward ? -ext : ext)));
-          this.shift(it, sub(c, centre(it.box)));
-          dist0 += (inward ? -1 : 1) * (2 * ext + spacing(bond).stack);
-        }
-        return Math.abs(dist0);
-      };
-      const amid = (s + e) / 2;
-      // the step's name inside the circle, nearest the arc
-      const inner = l.inside.length ? out(l.inside, amid, true) : spacing(bond).conditions * 2;
-      if (reagentArrows) {
-        const dirA = Math.sign(e - s) || 1, span = Math.abs(e - s);
-        const d = 1.5 * bond, delta = Math.min(span * 0.3, (1.6 * bond) / R);
-        const pt = (a: number, r: number) => add(cen, fromAngle(a, r));
-        const owner = l.arrow ? { arrow: l.arrow.id } : { added: this.plan.added.length - 1 };
-        if (l.above.length) {
-          const touch = s + (e - s) * 0.38, far = touch - dirA * delta;
-          const tail = pt(far, R + d), head = pt(touch, R + 0.12 * bond);
-          this.plan.added.push({ tail, head, sweep: sweepThrough(tail, head, pt(touch - dirA * delta * 0.3, R + d * 0.7)), small: true, reagentOf: owner });
-          out(l.above, far, false, d + 0.3 * bond);
-        }
-        if (l.below.length) {
-          const touch = s + (e - s) * 0.62, far = touch + dirA * delta;
-          const tail = pt(touch, R + 0.12 * bond), head = pt(far, R + d);
-          this.plan.added.push({ tail, head, sweep: sweepThrough(tail, head, pt(touch + dirA * delta * 0.3, R + d * 0.7)), small: true, reagentOf: owner });
-          out(l.below, far, false, d + 0.3 * bond);
-        }
-      } else {
-        out(l.above, amid, false);
-        out(l.below, amid, true, inner);
-      }
-    }
+    for (let k = 0; k < N; k++) { const { s, e } = ends(k); this.arcStep(link(k), cen, R, s, e, reagentArrows); }
     // a caption on its own (the catalyst's name) goes in the middle
     if (this.sh.loose.length === 1) { const it = this.sh.loose[0]; this.shift(it, sub(cen, centre(it.box))); }
+  }
+
+  // ---------------------------------------------------------------- several loops
+
+  /**
+   * A cycle of several loops, and branches off them: each loop round its own circle, joined to the
+   * one before as the net says. The first loop's middle stays where it is.
+   */
+  net(net: Net, links: NetLink[], anticlockwise: boolean, reagentArrows: boolean, startAngle?: number): void {
+    const nodes = this.sh.nodes, L = this.sh.links, bond = this.bond, sp = spacing(bond);
+    const big = (it: Item) => Math.max(width(it.box), height(it.box)), mean = (it: Item) => (width(it.box) + height(it.box)) / 2;
+    const need = L.map((l) => Math.max(2.8 * bond, ...[...l.above, ...l.below, ...l.inside].map((it) => 0.9 * big(it))));
+    // (a step with another loop on its far side has everything written inside it)
+    const crowd = crowdedLinks(net.loops, net.joins);
+    const block = (l: Link, k: number): { w: number; h: number } | null => {
+      if (!crowd.has(k) || !(l.above.length + l.below.length)) return null;
+      const its = [...l.inside, ...l.above, ...l.below];
+      return { w: Math.max(...its.map((it) => width(it.box))), h: its.reduce((h, it) => h + height(it.box), 0) + sp.stack * (its.length - 1) };
+    };
+    const inward = L.map((l, k) => {
+      const b = block(l, k);
+      if (b) return sp.conditions * 2 + 0.8 * Math.hypot(b.w, b.h);
+      const d = [...l.inside, ...(reagentArrows && !crowd.has(k) ? [] : l.below)].reduce((x, it) => x + mean(it) + sp.stack, 0);
+      return d > 0 ? d + sp.conditions * 2 : 0;
+    });
+    const inwide = L.map((l, k) => block(l, k)?.w ?? 0);
+    const straight = L.map((l) => this.arrowLength(l, { x: 1, y: 0 }));
+    // where the loops are now: the first one stays there, and text on its own goes in the middle of the loop it is nearest
+    const mid = (ids: number[]): Vec => mul(ids.reduce((s, i) => add(s, centre(nodes[i].box)), { x: 0, y: 0 }), 1 / ids.length);
+    const was = net.loops.map((lp) => mid(lp.nodes));
+    const middles = new Map<number, Item>();
+    for (const it of this.sh.loose) {
+      let best = 0;
+      was.forEach((c, i) => { if (dist(c, centre(it.box)) < dist(was[best], centre(it.box))) best = i; });
+      if (!middles.has(best)) middles.set(best, it);
+    }
+    const middle = net.loops.map((_, i) => { const it = middles.get(i); return it ? Math.hypot(width(it.box), height(it.box)) / 2 : 0; });
+    let start = startAngle;
+    if (start === undefined) {
+      // the first loop keeps the turn it has (to the nearest 15°), so laying out again doesn't spin it
+      const p = sub(centre(nodes[net.loops[0].nodes[0]].box), was[0]);
+      start = Math.hypot(p.x, p.y) > bond ? Math.round(Math.atan2(p.y, p.x) / (Math.PI / 12)) * (Math.PI / 12) : -Math.PI / 2;
+    }
+    const place = layoutNet(net, links, { boxes: nodes.map((n) => ({ w: width(n.box), h: height(n.box) })), need, inward, inwide, middle, straight }, { bond, gap: this.g, anticlockwise, startAngle: start });
+    const o = was[0];
+    nodes.forEach((_, i) => this.placeNode(i, add(o, place.at[i])));
+    L.forEach((l, k) => {
+      const st = place.steps[k];
+      if (!st) return;
+      if (st.kind === 'line') { this.straight(l, add(o, st.tail), add(o, st.head)); return; }
+      const ring = place.rings[st.loop];
+      this.arcStep(l, add(o, ring.c), ring.R, st.s, st.e, reagentArrows, { tail: add(o, st.tail), head: add(o, st.head) }, st.crowded);
+    });
+    for (const [i, it] of middles) if (place.rings[i]) this.shift(it, sub(add(o, place.rings[i].c), centre(it.box)));
+  }
+
+  /**
+   * One step of a loop: its arrow along the circle round `cen` from angle s to angle e, the step's
+   * name inside the circle and what comes in and goes out outside it (on small curved arrows, or
+   * written by the middle of the arc). `own`: the arrow's ends when they aren't on the circle (a
+   * species two loops share sits between them). `crowded`: another loop is on the far side, so
+   * everything is written inside.
+   */
+  private arcStep(l: Link, cen: Vec, R: number, s: number, e: number, reagentArrows: boolean, own?: { tail: Vec; head: Vec }, crowded = false): void {
+    const bond = this.bond;
+    const radial = (it: Item, a: number) => { const d = fromAngle(a, 1); return Math.abs(d.x) * width(it.box) / 2 + Math.abs(d.y) * height(it.box) / 2; };
+    const tail = own?.tail ?? add(cen, fromAngle(s, R)), head = own?.head ?? add(cen, fromAngle(e, R));
+    const mid = add(cen, fromAngle((s + e) / 2, R));
+    const sweep = sweepThrough(tail, head, mid);
+    const r: NewArrow = { tail, head, sweep, step: this.stepOf(l) };
+    if (l.arrow) this.plan.arrows.set(l.arrow.id, r); else this.plan.added.push(r);
+    // conditions sit outside the circle by the middle of their arc (those below the arrow inside it,
+    // or with reagent arrows: coming in before the middle and going out after it)
+    // (returns how far out from the circle, or in, the last one reaches)
+    const out = (its: Item[], a: number, inward: boolean, from = spacing(bond).conditions * 2) => {
+      const rad = fromAngle(a, 1);
+      let dist0 = inward ? -from : from;
+      for (const it of its) {
+        const ext = radial(it, a);
+        const c = add(cen, mul(rad, R + dist0 + (inward ? -ext : ext)));
+        this.shift(it, sub(c, centre(it.box)));
+        dist0 += (inward ? -1 : 1) * (2 * ext + spacing(bond).stack);
+      }
+      return Math.abs(dist0);
+    };
+    const amid = (s + e) / 2;
+    if (crowded && l.above.length + l.below.length > 0) {
+      // no room outside: what comes in and goes out is written inside under the step's name, the
+      // lines one below the other as one block just in from the arc
+      const its = [...l.inside, ...l.above, ...l.below], gapY = spacing(bond).stack;
+      const bw = Math.max(...its.map((it) => width(it.box))), bh = its.reduce((h, it) => h + height(it.box), 0) + gapY * (its.length - 1);
+      const rad = fromAngle(amid, 1);
+      let c = add(cen, mul(rad, R - spacing(bond).conditions * 2 - (Math.abs(rad.x) * bw + Math.abs(rad.y) * bh) / 2));
+      // (further in while it would touch the species at either end of the step)
+      const ends = [this.at.get(l.from), this.at.get(l.to)].filter((r): r is Rect => !!r), pad = this.g / 2;
+      const hits = (p: Vec) => ends.some((r) => p.x - bw / 2 < r.x2 + pad && p.x + bw / 2 > r.x1 - pad && p.y - bh / 2 < r.y2 + pad && p.y + bh / 2 > r.y1 - pad);
+      for (let tries = 0; tries < 16 && hits(c); tries++) c = sub(c, mul(rad, 0.25 * bond));
+      let y = c.y - bh / 2;
+      for (const it of its) {
+        this.shift(it, sub({ x: c.x, y: y + height(it.box) / 2 }, centre(it.box)));
+        y += height(it.box) + gapY;
+      }
+      return;
+    }
+    // the step's name inside the circle, nearest the arc
+    const inner = l.inside.length ? out(l.inside, amid, true) : spacing(bond).conditions * 2;
+    if (reagentArrows && !crowded) {
+      const dirA = Math.sign(e - s) || 1, span = Math.abs(e - s);
+      const d = 1.5 * bond, delta = Math.min(span * 0.3, (1.6 * bond) / R);
+      const pt = (a: number, r: number) => add(cen, fromAngle(a, r));
+      const owner = l.arrow ? { arrow: l.arrow.id } : { added: this.plan.added.length - 1 };
+      if (l.above.length) {
+        const touch = s + (e - s) * 0.38, far = touch - dirA * delta;
+        const tail = pt(far, R + d), head = pt(touch, R + 0.12 * bond);
+        this.plan.added.push({ tail, head, sweep: sweepThrough(tail, head, pt(touch - dirA * delta * 0.3, R + d * 0.7)), small: true, reagentOf: owner });
+        out(l.above, far, false, d + 0.3 * bond);
+      }
+      if (l.below.length) {
+        const touch = s + (e - s) * 0.62, far = touch + dirA * delta;
+        const tail = pt(touch, R + 0.12 * bond), head = pt(far, R + d);
+        this.plan.added.push({ tail, head, sweep: sweepThrough(tail, head, pt(touch + dirA * delta * 0.3, R + d * 0.7)), small: true, reagentOf: owner });
+        out(l.below, far, false, d + 0.3 * bond);
+      }
+    } else {
+      out(l.above, amid, false);
+      out(l.below, amid, true, inner);
+    }
   }
 
   // ---------------------------------------------------------------- branching tree

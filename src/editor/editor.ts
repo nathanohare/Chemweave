@@ -70,10 +70,9 @@ import { arrowClash, bendSide, isSBez, cleanUpArrow, endCentre, endPointToward, 
 import { followPins, hasPins, makePin, mirrorBend } from '../chem/pins';
 import { applyArrange, planArrange, readingOrder, type ArrangeOptions } from '../chem/scheme-arrange';
 import { buildCycle, type CycleLook, type CycleSpec } from '../chem/cycles';
-import { rebuildSmartCycle, smartCycleStart, structureReagents, type SmartCycleStart } from '../chem/smart-cycle';
 import { refitTableFigures, tableContents } from './table-figs';
 import { energyFrameOf, plotFromBox, putEnergy, refitEnergy, type EnergyData } from '../design/energy';
-import { arrangeSmart, cleanUpCycle, formatSmart, stepToHolder, stepHolderToText, fillHolder, fillHoldersDrawn, holderFrameOf, holderToSlotText, insertSlot, makeSmart, moveSlot, refitSmart, removeSlot, setSlotRuns, setSlotText, setStepRuns, setStepText, smartFrameOf, smartMarks, slotToHolder, ungroupSmart, type SmartData, type StepPart, type TextPart } from '../chem/smart-scheme';
+import { addBranch, addLoop, arrangeSmart, readSmart, smartIsFree, smartLayoutOf, cleanUpCycle, formatSmart, removeLoop, setLoopMiddle, setStepNames, type LoopJoin, stepToHolder, stepHolderToText, fillHolder, fillHoldersDrawn, holderFrameOf, holderToSlotText, insertSlot, makeSmart, moveSlot, refitSmart, removeSlot, setSlotRuns, setSlotText, setStepRuns, setStepText, smartFrameOf, smartMarks, slotToHolder, ungroupSmart, type SmartData, type StepPart, type TextPart } from '../chem/smart-scheme';
 import type { SmartFormat } from '../chem/smart-format';
 import { plateFrameOf, plateFromBox, putPlate, refitPlates, rfAtY, setMarkAt, tlcSpotAt, type PlateData } from '../design/plates';
 import { drawMo } from '../design/mo';
@@ -1131,7 +1130,7 @@ export class Editor {
     // a click on a selected Smart Scheme's + adds a species there
     if (e.button === 0 && !e.shiftKey && !e.altKey) {
       const add = this.smartAddAt(this.docPoint(e));
-      if (add) { e.preventDefault(); this.closeCaption(); this.smartInsert(add.frame, add.after); return; }
+      if (add) { e.preventDefault(); this.closeCaption(); this.smartInsert(add.frame, add.after, add.link); return; }
     }
     // a click on a "+" box above or below a reaction arrow starts the text there
     // (Alt+click goes to what is under the box instead)
@@ -3853,13 +3852,13 @@ export class Editor {
   }
 
   /** A selected Smart Scheme's + button under a point, if any. */
-  private smartAddAt(p: Vec): { frame: number; after: number } | null {
+  private smartAddAt(p: Vec): { frame: number; after: number; link?: number } | null {
     const id = this.selectedSmart();
     if (id === null) return null;
     const marks = this.smartMarksOf(id);
     const r = 8 / this.r.view.scale;
     const hit = marks?.adds.find((a) => dist(a.at, p) <= r);
-    return hit ? { frame: id, after: hit.after } : null;
+    return hit ? { frame: id, after: hit.after, ...(hit.link !== undefined ? { link: hit.link } : {}) } : null;
   }
 
   /** Run a change to a Smart Scheme as one undoable step, keeping the scheme selected. */
@@ -3873,9 +3872,9 @@ export class Editor {
   }
 
   /** Add a species after slot `after` of Smart Scheme `id` (−1: before the first), and start typing it. */
-  smartInsert(id: number, after: number): boolean {
+  smartInsert(id: number, after: number, link?: number): boolean {
     let cap: number | null = null;
-    const ok = this.smartEdit(id, 'Add Species', (m) => (cap = insertSlot(this.doc, m, id, after)) !== null);
+    const ok = this.smartEdit(id, 'Add Species', (m) => (cap = insertSlot(this.doc, m, id, after, undefined, link)) !== null);
     if (ok && cap !== null) this.onSmartAdded(id, cap);
     return ok;
   }
@@ -3931,25 +3930,26 @@ export class Editor {
   smartSlotRuns(id: number, k: number, parts: TextPart[]): boolean { return this.smartEdit(id, 'Type Species', (m) => setSlotRuns(this.doc, m, id, k, parts)); }
   smartStepRuns(id: number, k: number, part: StepPart, parts: TextPart[]): boolean { return this.smartEdit(id, 'Type Conditions', (m) => setStepRuns(this.doc, m, id, k, part, parts)); }
   /** Lay a Smart Scheme out again, with a new layout or other settings. */
-  /** A Smart Scheme's single loop as the Catalytic Cycle window's table, to add a second loop to (null for other schemes). */
-  smartCycleStart(id: number): SmartCycleStart | null { return smartCycleStart(this.doc, this.fullMeasure(), id); }
-  /** Whether a step of Smart Scheme `id` has a structure (or a box for one) joining or leaving it (no second loop then). */
-  smartReagentStructures(id: number): boolean { return structureReagents(this.doc, this.fullMeasure(), id); }
-  /**
-   * Draw Smart Scheme `id`'s cycle again with the loops from the Catalytic Cycle window (`rows`:
-   * the species each row of loop 1 keeps). It is a Smart Scheme again afterwards, selected.
-   */
-  smartRebuildCycle(id: number, spec: CycleSpec, look: CycleLook, rows: (number | null)[]): boolean {
-    let smart: number | null = null;
-    this.doc.edit('Add a Second Loop', () => {
-      const m = this.fullMeasure();
-      const made = rebuildSmartCycle(this.doc, m, id, spec, look, rows);
-      if (made) smart = this.cycleSmart(made, made.atoms, look, made.kept, made.shapes);
-    });
-    if (smart !== null) this.selectOnly({ kind: 'shape', id: smart });
-    this.changed();
-    return smart !== null;
+  /** Add a loop of `count` new species to Smart Scheme `id`'s cycle, joined as `join` says. */
+  smartAddLoop(id: number, join: LoopJoin, count: number): boolean { return this.smartEdit(id, 'Add Loop', (m) => addLoop(this.doc, m, id, join, count) !== null); }
+  /** Take loop `loop` (not the first) out of Smart Scheme `id`'s cycle. */
+  smartRemoveLoop(id: number, loop: number): boolean { return this.smartEdit(id, 'Remove Loop', (m) => removeLoop(this.doc, m, id, loop)); }
+  /** Add a species off the cycle at species `k`, and start typing it. */
+  smartAddBranch(id: number, k: number, dir: 'in' | 'out' | 'both'): boolean {
+    let cap: number | null = null;
+    const ok = this.smartEdit(id, 'Add Off-Cycle Species', (m) => (cap = addBranch(this.doc, m, id, k, dir)) !== null);
+    if (ok && cap !== null) this.onSmartAdded(id, cap);
+    return ok;
   }
+  smartLoopMiddle(id: number, loop: number, parts: TextPart[]): boolean { return this.smartEdit(id, 'Type Loop Middle', (m) => setLoopMiddle(this.doc, m, id, loop, parts)); }
+  /** Whether Smart Scheme `id` is laid out round a cycle (of one loop or several). */
+  smartIsCycle(id: number): boolean {
+    const d = this.doc.shapes.get(id)?.smart;
+    if (!d) return false;
+    const read = readSmart(this.doc, this.fullMeasure(), id);
+    return smartLayoutOf(d, read) === 'cycle' && !smartIsFree(d, read);
+  }
+  smartStepNames(id: number, how: 'short' | 'full'): boolean { return this.smartEdit(id, 'Step Names', (m) => setStepNames(this.doc, m, id, how)); }
   /** Clean Up Cycle: the selected (or given) Smart Scheme's cycle onto one ellipse that fits it, its arrows along the ellipse. */
   smartCleanUpCycle(id = this.selectedSmart()): boolean { return id !== null && this.smartEdit(id, 'Clean Up Cycle', (m) => cleanUpCycle(this.doc, m, id)); }
   smartFormat(id: number, fmt: SmartFormat | undefined): boolean { return this.smartEdit(id, 'Format Smart Scheme', (m) => formatSmart(this.doc, m, id, fmt)); }
