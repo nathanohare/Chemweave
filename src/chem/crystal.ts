@@ -360,8 +360,8 @@ export function spaceGroupMarked(text: string): string {
   return parts.map((p) => p.replace(/-(\d)/g, '$1̅').replace(/(?<![\d_])(\d)(\d)(?!\d)/g, '$1_{$2}').replace(/([A-Za-z])/g, '*$1*')).join('').replace(/\*\*/g, '');
 }
 
-/** [key, label, value] rows of the crystal data and structure refinement table (see the module's text). */
-export function crystalTable(block: CifBlock): [string, string, string][] {
+/** [key, label, value] rows of the crystal data and structure refinement table (see the module's text); `keepEmpty`: rows the CIF has no value for too, with ''. */
+export function crystalTable(block: CifBlock, keepEmpty = false): [string, string, string][] {
   const g = (...t: string[]) => block.get(...t);
   const val = (tag: string) => { const v = g(tag); return v !== null ? cifMarked(v) : null; };
   const join = (parts: (string | null)[], sep = ', ') => { const f = parts.filter((p): p is string => !!p); return f.length ? f.join(sep) : null; };
@@ -414,6 +414,7 @@ export function crystalTable(block: CifBlock): [string, string, string][] {
   const peak = g('_refine_diff_density_max'), hole = g('_refine_diff_density_min');
   rows.push(['peak', 'Largest diff. peak/hole/e Å^{−3}', peak && hole ? `${peak}/${hole.replace('-', '−')}` : null]);
   rows.push(['flack', 'Flack parameter', val('_refine_ls_abs_structure_flack')]);
+  if (keepEmpty) return rows.map(([k, l, v]) => [k, l, v ?? '']);
   return rows.filter((r): r is [string, string, string] => !!r[2]);
 }
 

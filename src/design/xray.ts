@@ -591,11 +591,22 @@ export function shapesBounds(items: XShape[]): [number, number, number, number] 
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
-/** The zoom at which the drawing (labels aside) fits `w` × `h` points. */
+/** The zoom at which the drawing, its labels too, fits `w` × `h` points. */
 export function fittingZoom(c: CrystalSpec, v: XView, w: number, h: number): number {
   const b = shapesBounds(crystalShapes(c, { ...v, zoom: 1, labels: false }));
-  const pad = v.labels ? 2.5 * v.labelSize : 0;
-  return Math.min(8, Math.max(0.05, Math.min((w - pad) / Math.max(1, b[2] - b[0]), (h - pad) / Math.max(1, b[3] - b[1]))));
+  const bw = Math.max(1, b[2] - b[0]), bh = Math.max(1, b[3] - b[1]);
+  const clamp = (z: number) => Math.min(8, Math.max(0.05, z));
+  let pw = v.labels ? 2.5 * v.labelSize : 0, ph = pw;
+  let z = clamp(Math.min((w - pw) / bw, (h - ph) / bh));
+  if (!v.labels) return z;
+  // labels keep their size whatever the zoom: what they add round the structure, measured at this zoom, then fitted again
+  for (let i = 0; i < 2; i++) {
+    const l = shapesBounds(crystalShapes(c, { ...v, zoom: z }));
+    pw = Math.max(0, l[2] - l[0] - bw * z);
+    ph = Math.max(0, l[3] - l[1] - bh * z);
+    z = clamp(Math.min((w - pw) / bw, (h - ph) / bh));
+  }
+  return z;
 }
 
 /** Paint the shapes on a canvas (already scaled to points, origin where the drawing's centre goes). */

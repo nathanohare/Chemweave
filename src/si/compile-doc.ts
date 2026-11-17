@@ -26,6 +26,11 @@ import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './f
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
 import { attachmentDir, captionText, CORNER_INSET, effective, GUTTERS, headerParts, HEADER_PT, listingLines, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
 import type { Float, PageSetup, SectionBreak } from '../document/document';
+import { xrayAutoCaption, xrayBlock, xrayCompound, xrayDrawing, xrayTableCaption, xrayTableRows } from './xray';
+import { crystalTable } from '../chem/crystal';
+import { newPlate, putPlate } from '../design/plates';
+import { POINTS } from '../editor/arrange';
+import { Doc } from '../model';
 import { drawScheme, schemeLayout, type DrawBox, type DrawStep, type SchemeLayout } from './scheme-draw';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
@@ -645,10 +650,7 @@ class Compiler {
       this.sectionHeading(level, s.name);
       await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.rank >= 2 ? level + 1 : 0, true, true);
     } else if (s.type === 'file') await this.fileSection(s, level);
-    else if (s.type === 'xray') {
-      this.sectionHeading(level, s.name);
-      this.notes.push(`X-ray structure “${s.name}”: X-ray structures are not compiled into the document yet; left out for now.`);
-    } else if (s.type === 'data') await this.dataSection(s, level);
+    else if (s.type === 'xray') await this.xray(s, level, true); else if (s.type === 'data') await this.dataSection(s, level);
     for (const child of s.children) await this.section(child, level + 1);
   }
 
@@ -677,9 +679,6 @@ class Compiler {
         const drawn = await this.scheme(item, s);
         for (const c of item.children) await this.compound(c, level + 1, drawn.has(c.id));
       } else await this.compound(item, level + 1);
-      for (const x of item.kind === 'compound' ? this.p.anchored.get(item.id) ?? [] : []) {
-        if (!this.excluded.has(x.id)) this.notes.push(`X-ray structure “${x.name}”: X-ray structures are not compiled into the document yet; left out for now.`);
-      }
     }
   }
 
@@ -711,6 +710,50 @@ class Compiler {
       if (ok) this.caption(this.labels.at(c.id, i) || 'Figure', [R(f.caption)], where, { align: 'center' }, { key: `${c.id}#${i}`, kind: 'figure' });
     }
     if (id === 'ID?') this.notes.push(`“${name || 'A compound'}” has no ID (printed as “ID?”).`);
+    // its X-ray structures, right after it and without a heading
+    for (const x of this.p.anchored.get(c.id) ?? []) if (!this.excluded.has(x.id)) await this.xray(x, level, false);
+  }
+
+  /**
+   * An X-ray structure (SPEC §13v): its drawing as a live crystal structure (double-click it in
+   * the document to turn it or change its look), the figure caption (typed, or made from how it
+   * is drawn), then the crystal data table when the section prints it. Among the sections it has
+   * its name as heading; under a compound, none.
+   */
+  private async xray(s: SiSection, level: number, heading: boolean): Promise<void> {
+    if (heading) this.sectionHeading(level, s.name);
+    const where = `X-ray structure “${s.name}”`;
+    const file = str(s.data.file);
+    if (!file) { this.notes.push(`${where}: no CIF file has been chosen yet; left out.`); return; }
+    const cif = await this.p.folder.readText(joinPath(s.folder, file));
+    if (cif === null) { this.notes.push(`${where}: ${file} is no longer in the project; left out.`); return; }
+    const { block, error } = xrayBlock(cif, str(s.data.block));
+    if (!block) { this.notes.push(`${where}: ${error}; left out.`); return; }
+    const got = xrayDrawing(block, dict(s.data.view), TEXT_W);
+    if ('error' in got) { this.notes.push(`${where}: ${got.error}; left out.`); return; }
+    const doc = new Doc();
+    doc.edit('Crystal Structure', () => {
+      putPlate(doc, POINTS, { ...newPlate('crystal', doc.style.bondLength), w: got.w, h: got.h, crystal: { ...got.spec, table: crystalTable(block).map(([, l, v]) => [l, v]) } }, { x: 0, y: 0 });
+    });
+    this.b.object({ kind: 'drawing', contents: doc.contents(), alt: `Crystal structure ${s.name}` });
+    this.b.endPara(this.full({ align: 'center', keepNext: true, spaceBefore: 6, spaceAfter: 2 }));
+    const ref = xrayCompound(s.data, (id) => this.compoundExists(id));
+    const rows = xrayTableRows(s.data, block);
+    const ccdc = rows.find(([k]) => k === 'ccdc')?.[2] ?? '';
+    const caption = str(s.data.caption).trim() || xrayAutoCaption(s.data, got.spec.view, ref, ccdc);
+    this.caption(this.labels.at(s.id, 0) || 'Figure', parseMarkup(caption).flatMap((p) => p.runs), where, { align: 'center', spaceAfter: 10 }, { key: s.id, kind: 'figure' });
+    if (s.data.table === false) return;
+    if (!rows.length) { this.notes.push(`${where}: its crystal data table has no values; left out.`); return; }
+    const look: RunStyle = { ...this.b.styleLook({}), size: 10 };
+    const cells: TableCell[][] = rows.map(([, label, value]) => [
+      { runs: this.cellRuns(label, where, look), align: 'left' },
+      { runs: this.cellRuns(value, where, look), align: 'left' },
+    ]);
+    this.caption(this.labels.at(s.id, 1) || 'Table', parseMarkup(xrayTableCaption(s.data, ref)).flatMap((p) => p.runs), where, { align: 'center', keepNext: true, spaceAfter: 4 }, { key: s.id + '#table', kind: 'table' });
+    this.b.table({
+      kind: 'table',
+      table: { cols: [TEXT_W * 0.45, TEXT_W * 0.55].map((w) => Math.round(w * 100) / 100), rows: cells, head: 0, lines: 'acs', size: 10, width: 'auto', autofit: true, align: ['left', 'left'] },
+    }, this.full({ align: 'center', spaceAfter: 12 }));
   }
 
   /**
