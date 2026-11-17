@@ -26,6 +26,7 @@ import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './f
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
 import { attachmentDir, captionText, CORNER_INSET, effective, GUTTERS, headerParts, HEADER_PT, listingLines, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
 import type { Float, PageSetup, SectionBreak } from '../document/document';
+import { drawScheme, schemeLayout, type DrawBox, type DrawStep, type SchemeLayout } from './scheme-draw';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -54,8 +55,8 @@ export interface CompiledSi {
 
 /**
  * Something in the compiled SI a manuscript can mention: a compound (its ID) or a table, figure or
- * scheme (its label). `mark` is the bookmark on its title or caption paragraph ('' when it isn't
- * printed, as schemes aren't yet), which gives the page it is on.
+ * scheme (its label). `mark` is the bookmark on its title or caption paragraph, which gives the
+ * page it is on.
  */
 export interface SiTarget { key: string; kind: 'compound' | 'table' | 'figure' | 'scheme'; label: string; caption: string; mark: string }
 
@@ -280,8 +281,11 @@ class Compiler {
   }
 
   private schemeShowsLabel(k: SiScheme): boolean {
-    const layout = dict(dict(k.data.editor).layout);
-    return layout.show_label !== false;
+    return this.schemeLayoutOf(k).show_label;
+  }
+
+  private schemeLayoutOf(k: SiScheme): SchemeLayout {
+    return schemeLayout(dict(this.p.settings.schemes), dict(dict(k.data.editor).layout));
   }
 
   private async readJson(rel: string): Promise<unknown> {
@@ -436,7 +440,7 @@ class Compiler {
   }
 
   /** A label and its caption; with `target`, bookmarked and listed for manuscripts to point at. */
-  private caption(label: string, runs: Run[], where: string, ps: ParaStyle, target?: { key: string; kind: 'table' | 'figure' }): void {
+  private caption(label: string, runs: Run[], where: string, ps: ParaStyle, target?: { key: string; kind: 'table' | 'figure' | 'scheme' }): void {
     const body = this.chemistry(runs);
     const mark = target?.key ? siMark(target.key) : '';
     if (target?.key && label) this.targets.push({ key: target.key, kind: target.kind, label, caption: plainOf(body), mark });
@@ -670,10 +674,8 @@ class Compiler {
     }
     for (const item of s.items) {
       if (item.kind === 'scheme') {
-        this.notes.push(`${s.name} ▸ scheme “${str(item.data.name) || 'Scheme'}”: schemes are not drawn in the document yet; its compounds are printed with their own structures.`);
-        const label = this.labels.byId.get(item.id);
-        if (label) this.targets.push({ key: item.id, kind: 'scheme', label, caption: str(item.data.name), mark: '' });
-        for (const c of item.children) await this.compound(c, level + 1);
+        const drawn = await this.scheme(item, s);
+        for (const c of item.children) await this.compound(c, level + 1, drawn.has(c.id));
       } else await this.compound(item, level + 1);
       for (const x of item.kind === 'compound' ? this.p.anchored.get(item.id) ?? [] : []) {
         if (!this.excluded.has(x.id)) this.notes.push(`X-ray structure “${x.name}”: X-ray structures are not compiled into the document yet; left out for now.`);
@@ -681,7 +683,7 @@ class Compiler {
     }
   }
 
-  private async compound(c: SiCompound, level: number): Promise<void> {
+  private async compound(c: SiCompound, level: number, inScheme = false): Promise<void> {
     const id = displayId(this.report, c.id);
     const name = compoundName(c);
     const where = name ? `${id} (${name})` : id;
@@ -689,7 +691,7 @@ class Compiler {
     const block = compoundBlock(this.p, c, id, { facts, helpers: this.helpers, leave: this.leave });
     this.para(block.title, { style: this.compoundStyle(level, this.rank >= 4), marks: [compoundBookmark(c.id)] }, where);
     this.targets.push({ key: c.id, kind: 'compound', label: id, caption: name, mark: compoundBookmark(c.id) });
-    await this.structure(c, where);
+    if (!inScheme) await this.structure(c, where);
     if (!block.customText) {
       const problems: string[] = [];
       gpSentence(this.p, c, problems);
@@ -709,6 +711,78 @@ class Compiler {
       if (ok) this.caption(this.labels.at(c.id, i) || 'Figure', [R(f.caption)], where, { align: 'center' }, { key: `${c.id}#${i}`, kind: 'figure' });
     }
     if (id === 'ID?') this.notes.push(`“${name || 'A compound'}” has no ID (printed as “ID?”).`);
+  }
+
+  /**
+   * A scheme page's scheme, drawn (SPEC §13n.4) as one editable drawing with its caption when its
+   * Layout shows one; the compounds its boxes show, whose structures it prints, are returned.
+   */
+  private async scheme(k: SiScheme, s: SiSection): Promise<Set<string>> {
+    const drawn = new Set<string>();
+    const name = str(k.data.name) || 'Scheme';
+    const where = `${s.name} ▸ scheme “${name}”`;
+    const editor = dict(k.data.editor);
+    if (k.data.mode !== 'editor' || !Object.keys(editor).length) {
+      this.notes.push(`${where}: made from a pasted picture, which isn’t drawn here; open it in Chem SI Assistant’s scheme editor. Its compounds are printed with their own structures.`);
+      return drawn;
+    }
+    const lay = this.schemeLayoutOf(k);
+    let inline = false;
+    const conditions = (t: unknown): TextRun[] => {
+      const text = str(t);
+      if (text.includes('@struct{')) inline = true;
+      return this.cellRuns(text, where, {});
+    };
+    const box = async (b: Json): Promise<DrawBox | null> => {
+      const cid = str(b.compound);
+      const linked = cid ? k.children.find((c) => c.id === cid) : undefined;
+      if (cid && !linked) this.notes.push(`${where}: a box shows a compound that is no longer on the scheme page; its own copy of the structure is drawn.`);
+      let mol = '';
+      if (linked && this.p.hasStructure(linked)) mol = await this.p.readStructure(linked);
+      else if (str(b.structure)) mol = (await this.p.folder.readText(joinPath(k.folder, str(b.structure)))) ?? '';
+      const contents = mol ? this.host.contentsOf(mol) : null;
+      if (!contents) {
+        if (str(b.picture) || (linked && str(dict(valuesOf(linked).structure).image_override))) this.notes.push(`${where}: a structure that is only a picture (no structure file) isn’t drawn in the scheme yet; left out.`);
+        else if (mol) this.notes.push(`${where}: a structure could not be drawn; left out.`);
+        else this.notes.push(`${where}: an empty box was left out.`);
+        return null;
+      }
+      if (linked) drawn.add(linked.id);
+      let label = this.cellRuns(str(b.label), where, { bold: true });
+      if (!label.length && linked) label = [{ text: displayId(this.report, linked.id), bold: true }];
+      let yieldText = '';
+      if ('yield' in b) yieldText = str(b.yield).trim();
+      else if (linked && fieldKeys(linked).includes('yield')) {
+        const pct = partText(dict(valuesOf(linked).yield).percent).trim();
+        if (pct) yieldText = `${pct}%`;
+      }
+      return { contents, label, yieldText, dx: Number(b.label_dx) || 0, dy: Number(b.label_dy) || 0 };
+    };
+    const starting: DrawBox[] = [];
+    for (const b of list(editor.starting)) { const x = await box(dict(b)); if (x) starting.push(x); }
+    const steps: DrawStep[] = [];
+    for (const raw of list(editor.steps)) {
+      const st = dict(raw);
+      const products: DrawBox[] = [];
+      for (const b of list(st.products)) { const x = await box(dict(b)); if (x) products.push(x); }
+      if (!list(st.products).length) this.notes.push(`${where}: a step has no products.`);
+      const align = (v: unknown) => (v === 'left' || v === 'center' || v === 'right' ? v : undefined);
+      steps.push({ top: conditions(st.top), bottom: conditions(st.bottom), topAlign: align(st.top_align), bottomAlign: align(st.bottom_align), products });
+    }
+    if (inline) this.notes.push(`${where}: structures pasted into the conditions aren’t drawn in the scheme yet; left out.`);
+    const got = drawScheme(starting, steps, lay, TEXT_W);
+    if (!got) {
+      this.notes.push(`${where}: it has no structures to draw; left out. Its compounds are printed with their own structures.`);
+      drawn.clear();
+      return drawn;
+    }
+    if (got.textPt < 6) this.notes.push(`${where}: its conditions print at only ${got.textPt.toFixed(1)} pt; make the scheme narrower or its text larger (Layout in Chem SI Assistant).`);
+    const scale = Math.round(got.scale * 1000) / 1000;
+    this.b.object({ kind: 'drawing', contents: got.contents, ...(scale !== 1 ? { scale } : {}), alt: name });
+    const label = lay.show_label ? this.labels.byId.get(k.id) ?? '' : '';
+    this.b.endPara(this.full({ align: 'center', keepNext: !!label, spaceBefore: 6, spaceAfter: label ? 2 : 10 }));
+    if (label) this.caption(label, [R(name)], where, { align: 'center', spaceAfter: 10 }, { key: k.id, kind: 'scheme' });
+    return drawn;
   }
 
   private async structure(c: SiCompound, where: string): Promise<void> {

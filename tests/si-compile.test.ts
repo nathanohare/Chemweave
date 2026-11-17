@@ -71,7 +71,8 @@ describe('compiling an SI project into a document', () => {
     expect(ps[a + 2].text).toBe('Prepared according to General Procedure A from acetophenone (1a, 60.1 mg, 0.50 mmol). The crude product was purified by flash column chromatography (SiO2, n-hexane/EtOAc 4:1).');
     expect(ps[a + 3].text).toMatch(/^Colorless oil \(57\.4 mg, 94%\)\. Rf = 0\.23 .* calcd for C8H10NaO 145\.0624; found 145\.0625\. Spectral data matched those reported in the literature\.￼$/);
     const drawings = Object.values(doc.objects).filter((o) => o.kind === 'drawing');
-    expect(drawings.length).toBe(7);
+    // the compounds' structures, and the two schemes (whose compound 3 isn't drawn again)
+    expect(drawings.length).toBe(8);
     // citations and the references they point to
     const cited = Object.values(doc.objects).flatMap((o) => (o.kind === 'cite' ? o.refs : []));
     expect(cited).toContain('r-30ec8485');
@@ -82,7 +83,7 @@ describe('compiling an SI project into a document', () => {
     expect(doc.hf.onFirst).toBe(false);
     // what isn't compiled yet is said
     expect(notes.some((n) => /2a_1H\.pdf is no longer in the project/.test(n))).toBe(true);
-    expect(notes.some((n) => /schemes are not drawn/.test(n))).toBe(true);
+    expect(notes.some((n) => /scheme/i.test(n))).toBe(false);
   });
 
   it('formats chemistry and keeps run formatting', async () => {
