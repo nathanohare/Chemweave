@@ -4755,8 +4755,12 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-gp-part .si-rich { flex: 1; }
 .si-nmr { display: grid; grid-template-columns: 70px minmax(0, 1fr) 20px; gap: 6px; align-items: start; }
 .si-nmr select { font-size: var(--fs-sm); padding: 1px 2px; }
-.si-refs { margin: 6px 0 0; padding-left: 22px; font-size: var(--fs-sm); }
-.si-refs li { margin: 2px 0; }
+.si-refs { display: flex; flex-direction: column; margin: 6px 0 0; font-size: var(--fs-sm); }
+.si-ref-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 4px; padding: 3px 4px; border-radius: var(--r-control); cursor: default; outline: none; }
+.si-ref-row:hover { background: var(--hover, var(--accent-soft)); }
+.si-ref-row[aria-selected="true"] { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.si-ref-n { color: var(--muted); text-align: right; }
+.si-ref-uses { grid-column: 2; font-size: var(--fs-xs); }
 .si-formula sub { font-size: 75%; }
 
 /* a box for SI text (src/ui/si-rich.ts) */

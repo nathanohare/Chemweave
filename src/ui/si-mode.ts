@@ -24,6 +24,8 @@ import { SiTableEditor } from './si-table';
 import { SiFigureEditor } from './si-figure';
 import { SiPictures } from './si-picture';
 import { SiXrayPage } from './si-xray';
+import { editReference } from './references-dialog';
+import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Reference } from '../document/references';
 import { newTable } from '../si/tables';
 import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
@@ -123,6 +125,7 @@ const RIBBON = `
     <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
     <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is picked">Picture Format</button>
     <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
+    <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
   </div>
   <div class="rb-panel" data-si-panel="insert" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -231,6 +234,22 @@ const RIBBON = `
         <button data-si-xray="copy-table" title="Copy the crystal data table as it prints, to paste into Word, Excel or a document">Copy Table</button>
       </div>
     </div><div class="rb-label">Copy and Save</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="refs" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="ref-doi" data-ic="insert-citation" title="Add by DOI: filled in from Crossref (needs the internet); one already on the list is not added twice"><span class="rb-icon">＋</span>Add by DOI</button>
+      <div class="rb-col">
+        <button data-si="ref-new" title="Add a reference typed in by hand">Add Reference…</button>
+        <button data-si="ref-import" title="Add the references of a BibTeX (.bib) or RIS (.ris) file, or a text file of them">Import File…</button>
+        <button data-si="cite-library" title="Add references from My Library">From My Library…</button>
+      </div>
+    </div><div class="rb-label">Add</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="ref-edit" title="Edit the reference picked (double-click it does the same): every value can be changed">Edit Reference…</button>
+        <button data-si="ref-delete" data-ic="delete" title="Take the reference picked off the list; its citations stay in the text with a warning">Delete Reference</button>
+      </div>
+    </div><div class="rb-label">Reference</div></div>
   </div>
   <div class="rb-panel" data-si-panel="home">
     <div class="rb-group"><div class="rb-row">
@@ -874,6 +893,7 @@ export class SiMode {
     this.tableChosen(null);
     this.figureChosen(null);
     this.xrayShown(null);
+    this.ribbon.querySelector<HTMLElement>('[data-si-tab="refs"]')!.hidden = this.pick.kind !== 'references';
     const p = this.project!;
     const pick = this.pick;
     const out = el('div', 'si-sheet');
@@ -917,22 +937,100 @@ export class SiMode {
     out.append(card);
   }
 
+  /** The reference picked on the References page (the References tab's Edit and Delete act on it). */
+  private refPicked = '';
+
   private referencesPage(out: HTMLElement): void {
     const p = this.project!;
     const card = el('div', 'si-card');
     const h = el('h2', 'si-title', 'References');
-    addInfo(h, 'The project’s references (references.json), numbered in the order they are listed. Home ▸ Cite from My Library adds references from your library.');
+    addInfo(h, 'The project’s references (references.json). Only the references cited are printed, numbered in order of first citation in the journal style’s format. The References tab adds them by DOI, by hand, from a BibTeX or RIS file or from My Library; double-click one to edit it.');
     card.append(h);
-    const ol = el('ol', 'si-refs');
-    for (const r of p.references) {
-      const li = el('li');
+    const list = el('div', 'si-refs');
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('aria-label', 'References');
+    const rows: HTMLElement[] = [];
+    p.references.forEach((r, i) => {
+      const id = String(r.id);
+      const row = el('div', 'si-ref-row');
+      row.setAttribute('role', 'option');
+      row.tabIndex = 0;
+      row.dataset.ref = id;
       const authors = Array.isArray(r.authors) ? (r.authors as string[]).join('; ') : '';
-      li.textContent = [authors, r.title, [r.journal, r.year, r.volume, r.pages].filter(Boolean).join(', '), r.doi ? `DOI: ${r.doi}` : ''].filter(Boolean).join('. ');
-      ol.append(li);
-    }
-    if (!p.references.length) card.append(el('p', 'muted', 'No references yet.'));
-    card.append(ol);
+      const text = el('div', 'si-ref-text', [authors, r.title, [r.journal, r.year, r.volume, r.pages].filter(Boolean).join(', '), r.doi ? `DOI: ${r.doi}` : ''].map((x) => String(x ?? '').trim().replace(/\.$/, '')).filter(Boolean).join('. '));
+      const uses = el('div', 'si-ref-uses muted', '');
+      row.append(el('span', 'si-ref-n', String(i + 1)), text, uses);
+      const pick = (): void => { this.refPicked = id; for (const x of rows) x.setAttribute('aria-selected', String(x === row)); };
+      row.addEventListener('mousedown', pick);
+      row.addEventListener('focus', pick);
+      row.addEventListener('dblclick', () => void this.run('ref-edit'));
+      row.setAttribute('aria-selected', String(id === this.refPicked));
+      rows.push(row);
+      list.append(row);
+    });
+    if (!p.references.length) card.append(el('p', 'muted si-note', 'No references yet: References ▸ Add by DOI, or From My Library.'));
+    card.append(list);
     out.append(card);
+    void p.referenceUses().then((uses) => {
+      for (const row of rows) {
+        const u = uses.get(row.dataset.ref!);
+        const where = [...(u?.compounds ?? []).map((cid) => { const c = p.compounds.find((x) => x.id === cid); return c ? this.idOf(c) : '??'; }), ...(u?.texts ?? [])];
+        row.querySelector<HTMLElement>('.si-ref-uses')!.textContent = where.length ? `Cited in ${where.join(', ')}` : 'Not cited: not printed';
+      }
+    });
+  }
+
+  /** A reference of references.json as the reference windows have it, and back. */
+  private static refOf(r: Json): Reference { return cleanRef(r as Partial<Record<keyof Reference, unknown>>); }
+  private static refJson(r: Reference): Json {
+    // (text typed over the automatic one is kept in a key of its own; SI Assistant reads past it)
+    return { id: r.id, type: r.type, authors: [...r.authors], title: r.title, journal: r.journal, year: r.year, volume: r.volume, issue: r.issue, pages: r.pages, doi: r.doi, url: r.url, publisher: r.publisher, note: r.note, ...(r.typed ? { typed: r.typed } : {}) };
+  }
+
+  /** The References tab's commands. */
+  private async references(cmd: string): Promise<void> {
+    const p = this.project!;
+    const taken = new Set(p.references.map((r) => String(r.id)));
+    const add = async (refs: Reference[]): Promise<void> => {
+      let added = 0;
+      await this.act(async () => {
+        for (const r of refs) { const n = p.references.length; this.refPicked = await p.addReference({ ...SiMode.refJson(r), id: undefined }); if (p.references.length > n) added++; }
+      });
+      const same = refs.length - added;
+      this.host.flash(`${added ? `Added ${added} reference${added === 1 ? '' : 's'}` : 'Nothing new was added'}${same ? `; ${same} ${same === 1 ? 'was' : 'were'} on the list already (same DOI)` : ''}.`);
+    };
+    if (cmd === 'ref-doi') {
+      const got = await ask('Add by DOI', [{ name: 'doi', label: 'DOI', value: '', placeholder: '10.1021/acs.orglett.0c01234, or several on lines of their own', type: 'textarea' }], { ok: 'Add', note: 'Each is filled in from Crossref (needs the internet). Check them on the list after.' });
+      const dois = (got?.doi ?? '').split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+      if (!dois.length) return;
+      this.host.flash(`Looking up ${dois.length === 1 ? 'the DOI' : `${dois.length} DOIs`} on Crossref…`, 15000);
+      const found: Reference[] = [];
+      const failed: string[] = [];
+      for (const d of dois) { try { found.push(await fetchDoi(d)); } catch (e) { failed.push(`${d} (${e instanceof Error ? e.message : String(e)})`); } }
+      if (found.length) await add(found);
+      if (failed.length) this.host.flash(`Could not look up ${failed.join('; ')}. Add ${failed.length === 1 ? 'it' : 'them'} by hand with Add Reference.`, 8000);
+    } else if (cmd === 'ref-new') {
+      const r = await editReference(blankRef('article', newRefId(taken)), 'Add Reference', 'acs', (doi) => fetchDoi(doi));
+      if (r) await add([r]);
+    } else if (cmd === 'ref-import') {
+      const [f] = await this.host.pickFiles('References (BibTeX, RIS or text)', ['bib', 'ris', 'txt']);
+      if (!f) return;
+      const refs = parseReferenceText(new TextDecoder().decode(f.bytes));
+      if (!refs.length) { this.host.flash(`No references were found in ${f.name}.`); return; }
+      await add(refs);
+    } else {
+      const r = p.reference(this.refPicked);
+      if (!r) { this.host.flash('Click a reference on the list first.'); return; }
+      if (cmd === 'ref-edit') {
+        const got = await editReference(SiMode.refOf(r), 'Edit Reference', 'acs', (doi) => fetchDoi(doi));
+        if (got) await this.act(() => p.updateReference({ ...SiMode.refJson(got), id: r.id }));
+      } else if (cmd === 'ref-delete') {
+        const uses = (await p.referenceUses()).get(String(r.id));
+        const n = (uses?.compounds.length ?? 0) + (uses?.texts.length ?? 0);
+        const go = await askChoice('Delete Reference', n ? `It is cited in ${n} place${n === 1 ? '' : 's'}. The citations stay in the text and are flagged (Warnings) until you cite another or add it back.` : 'It is not cited anywhere.', [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+        if (go === 'go') { await this.act(() => p.deleteReference(String(r.id))); this.refPicked = ''; }
+      }
+    }
   }
 
   private sectionPage(out: HTMLElement, s: SiSection): void {
@@ -1953,7 +2051,8 @@ export class SiMode {
         await this.toLibrary(list);
         return;
       }
-      case 'cite-library': await this.citeFromLibrary(c); return;
+      case 'cite-library': await this.citeFromLibrary(this.pick.kind === 'references' ? null : c); return;
+      case 'ref-doi': case 'ref-new': case 'ref-import': case 'ref-edit': case 'ref-delete': await this.references(cmd); return;
       case 'structure-to-name': await this.structureToName(c ? [c] : data ? compoundsOf(data).filter((x) => !compoundName(x)) : []); return;
       case 'add-field': {
         // the compound picked gets the field; a Data section picked gets it on its list of fields

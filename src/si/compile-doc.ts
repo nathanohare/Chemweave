@@ -1107,6 +1107,7 @@ function toReference(r: Json): Reference {
     authors: list(r.authors).map(String).filter(Boolean),
     title: str(r.title), journal: str(r.journal), year: str(r.year), volume: str(r.volume), issue: str(r.issue),
     pages: str(r.pages), doi: str(r.doi), url: str(r.url), publisher: str(r.publisher), note: str(r.note),
+    ...(str(r.typed).trim() ? { typed: str(r.typed) } : {}),
   };
 }
 

@@ -70,3 +70,21 @@ describe('deleting a figure or table', () => {
     expect(trashEntries(f).find((e) => e.kind === 'table')).toMatchObject({ object_id: 't-1ece4eb2', item: 't-1ece4eb2.json' });
   });
 });
+
+describe('the project’s references', () => {
+  it('edits and deletes a reference, and lists where each is cited', async () => {
+    const f = folder();
+    const p = await SiProject.open(f);
+    const uses = await p.referenceUses();
+    const fulmer = p.references.find((r) => String(r.title).startsWith('NMR Chemical Shifts'))!;
+    expect(uses.get(String(fulmer.id))?.texts).toEqual(['General Information']);
+    const cited = p.references[0];
+    expect(uses.get(String(cited.id))?.compounds.length).toBeGreaterThan(0);
+    await p.updateReference({ ...cited, title: 'A new title', typed: 'My own text.' });
+    await p.deleteReference(String(fulmer.id));
+    const again = await SiProject.open(f);
+    expect(again.references.length).toBe(6);
+    expect(again.reference(String(cited.id))).toMatchObject({ title: 'A new title', typed: 'My own text.' });
+    expect(again.reference(String(fulmer.id))).toBeUndefined();
+  });
+});

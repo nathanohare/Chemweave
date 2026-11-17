@@ -1092,6 +1092,44 @@ export class SiProject {
     return id;
   }
 
+  /** Change a reference (its id stays, so its citations still point to it). */
+  async updateReference(ref: Json): Promise<void> {
+    this.checkWritable();
+    const before = [...this.references];
+    const i = this.references.findIndex((r) => r.id === ref.id);
+    if (i >= 0) this.references[i] = { ...ref }; else this.references.push({ ...ref });
+    try { await this.saveReferences(); } catch (e) { this.references.splice(0, this.references.length, ...before); throw e; }
+  }
+
+  /** Take a reference off the list; citations of it stay in the text and are flagged, as SI Assistant does. */
+  async deleteReference(id: string): Promise<void> {
+    this.checkWritable();
+    const before = [...this.references];
+    this.references.splice(0, this.references.length, ...before.filter((r) => r.id !== id));
+    try { await this.saveReferences(); } catch (e) { this.references.splice(0, this.references.length, ...before); throw e; }
+  }
+
+  /** Where each reference is cited: compounds (by id), and texts ("General Information", sections' and procedures' names). */
+  async referenceUses(): Promise<Map<string, { compounds: string[]; texts: string[] }>> {
+    const out = new Map<string, { compounds: string[]; texts: string[] }>();
+    const at = (id: string) => { let u = out.get(id); if (!u) out.set(id, (u = { compounds: [], texts: [] })); return u; };
+    const ids = (text: string): string[] => [...text.matchAll(/@cite\{([^}]*)\}/g)].flatMap((m) => m[1].split(',').map((x) => x.trim()).filter(Boolean));
+    for (const c of this.compounds) {
+      const v = valuesOf(c);
+      const found = new Set(ids(JSON.stringify(v)));
+      const refs = isObj(v.references) && Array.isArray(v.references.refs) ? v.references.refs.map(String) : [];
+      for (const r of refs) found.add(r);
+      for (const r of found) at(r).compounds.push(c.id);
+    }
+    const texts: [string, string][] = [['General Information', (await this.folder.readText('front/general_information.txt')) ?? '']];
+    for (const s of this.sections) {
+      if (s.type === 'text') texts.push([s.name, await this.readSectionText(s)]);
+      for (const gp of s.type === 'data' ? this.generalProcedures(s) : []) texts.push([str(gp.name) || 'a general procedure', await this.readGpText(s, str(gp.id))]);
+    }
+    for (const [name, text] of texts) for (const r of new Set(ids(text))) at(r).texts.push(name);
+    return out;
+  }
+
   // ---------------------------------------------------------------- lock
 
   /** Who has the project open now, as its .lock says (null: nobody). */
