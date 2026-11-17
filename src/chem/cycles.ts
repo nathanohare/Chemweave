@@ -1,4 +1,4 @@
-// Catalytic cycles from scratch (Insert ▸ Catalytic Cycle): the species round a loop, an arrow
+// Catalytic cycles from scratch (the Smart Scheme gallery's Cycle layout and ready-made cycles): the species round a loop, an arrow
 // for each step with its name inside the loop, and what comes in and goes out on small curved
 // arrows outside it. Two loops can turn together where they meet at a step (a Pd and a Cu cycle,
 // a photocatalyst and a nickel cycle), share a species (two pathways from one resting state),
@@ -197,6 +197,16 @@ export const CYCLE_PRESETS: CyclePreset[] = [
   },
 ];
 
+/** A blank cycle of `n` species to fill in (four when fewer than two are asked for). */
+export function blankCycle(n = 0): CycleSpec {
+  const count = n >= 2 ? Math.min(n, 12) : 4;
+  return { loops: [{
+    stations: Array.from({ length: count }, (_, k) => (k === 0 ? 'Catalyst' : `Intermediate ${k}`)),
+    steps: Array.from({ length: count }, (_, k) => st('', `Step ${k + 1}`)),
+    middle: '',
+  }] };
+}
+
 export { STEP_NAMES, shortName } from './step-names';
 import { shortName } from './step-names';
 
@@ -304,7 +314,7 @@ export function buildCycle(doc: Doc, m: Measure, spec: CycleSpec, look: CycleLoo
       scope.captions.add(c.id);
       const roles: StepRoles = b.dir === 'in' ? { reactants: ['c' + c.id], products: [on], above: [], below: [] } : { reactants: [on], products: ['c' + c.id], above: [], below: [] };
       if (b.note) { const t = caption(b.note, x + 3 * L, y - L); roles.above.push('c' + t.id); scope.captions.add(t.id); }
-      const r = doc.addArrow({ ...arrowLook(), ...(b.dir === 'both' ? { equilibrium: true } : {}), tail: { x: x + 1.5 * L, y }, head: { x: x + 4.5 * L, y }, step: roles });
+      const r = doc.addArrow({ ...arrowLook(), ...(b.dir === 'both' ? { headStyle: 'halfLeft' as const, tailStyle: 'halfLeft' as const, equilibrium: true } : {}), tail: { x: x + 1.5 * L, y }, head: { x: x + 4.5 * L, y }, step: roles });
       made.arrows.push(r.id);
       scope.arrows.add(r.id);
     });

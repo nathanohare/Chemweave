@@ -65,7 +65,7 @@ export interface SmartPaneHooks {
   ungroup(id: number): void;
 }
 
-const ICONS: Record<SmartLayout, string> = {
+export const SMART_LAYOUT_ICONS: Record<SmartLayout, string> = {
   line: '<rect x="2" y="9" width="5" height="5"/><rect x="11" y="9" width="5" height="5"/><rect x="20" y="9" width="5" height="5"/><path d="M7.5 11.5h3M16.5 11.5h3" fill="none"/>',
   rows: '<rect x="3" y="4" width="5" height="5"/><rect x="12" y="4" width="5" height="5"/><rect x="3" y="14" width="5" height="5"/><rect x="12" y="14" width="5" height="5"/><path d="M8.5 6.5h3M8.5 16.5h3" fill="none"/>',
   snake: '<rect x="3" y="4" width="5" height="5"/><rect x="14" y="4" width="5" height="5"/><rect x="14" y="14" width="5" height="5"/><rect x="3" y="14" width="5" height="5"/><path d="M8.5 6.5h5M16.5 9.5v4M13.5 16.5h-5" fill="none"/>',
@@ -280,7 +280,7 @@ export class SmartPane {
     info.setAttribute('role', 'img');
     info.innerHTML = '<svg viewBox="0 0 14 14" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="7" cy="7" r="5.9"/><path d="M7 6.2v3.9" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="4.1" r=".85" fill="currentColor" stroke="none"/></svg>';
     const help = data.layout === 'cycle'
-      ? 'Each row is a species in the cycle; the T row below it is the arrow text to the next species (step name, what enters and leaves). Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species.'
+      ? 'Each row is a species in the cycle; the T row below it is the arrow text to the next species (step name, what enters and leaves). Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species. + Add at the bottom adds another loop (sharing a species or a stretch of them, turning with a step, or beside the cycle) or a species off the cycle; each loop then has its own heading here.'
       : 'Each row is a species in the scheme; the T row below it is the text above and below the arrow to the next species. Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species.';
     info.title = help;
     info.setAttribute('aria-label', help);
@@ -291,7 +291,7 @@ export class SmartPane {
     lay.setAttribute('aria-label', 'Layout');
     for (const l of SMART_LAYOUTS) {
       const on = data.layout === l.id && !data.free;
-      const b = btn(`<svg viewBox="0 0 27 24" width="20" height="18" aria-hidden="true"><g fill="currentColor" stroke="currentColor" stroke-width="1.2">${ICONS[l.id]}</g></svg>`, `${l.name}: ${l.tip}`, 'sp-layout', () => this.hooks.arrange(id, { layout: l.id }));
+      const b = btn(`<svg viewBox="0 0 27 24" width="20" height="18" aria-hidden="true"><g fill="currentColor" stroke="currentColor" stroke-width="1.2">${SMART_LAYOUT_ICONS[l.id]}</g></svg>`, `${l.name}: ${l.tip}`, 'sp-layout', () => this.hooks.arrange(id, { layout: l.id }));
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', String(on));
       if (net && l.id !== 'cycle') { b.disabled = true; b.title = `${l.name}: not for a cycle of several loops or with species off it`; }
@@ -568,23 +568,55 @@ export class SmartPane {
     }
   }
 
-  /** The cycle's + Add menu: a species, a loop, an off-cycle species. */
-  private addMenu(id: number, anchor: HTMLElement, read: SmartRead): void {
+  /** What Add Loop and Add Off-Cycle Species offer for this cycle, starting at `at` (else where the caret is). */
+  private loopAsk(read: SmartRead, at?: { slot?: number; step?: number }) {
     const doc = this.hooks.doc();
     const species = read.slots.map((sl, k) => ({ k, name: slotName(doc, sl) }));
     // what the caret is in (a species' row or a step's) is where the new thing goes
-    const at = /^s(\d+)$/.exec(this.activeKey), step = /^p(\d+)/.exec(this.activeKey);
-    const slot = at ? Number(at[1]) : step ? read.links[Number(step[1])]?.from ?? 0 : 0;
+    const row = /^s(\d+)$/.exec(this.activeKey), stepRow = /^p(\d+)/.exec(this.activeKey);
+    const step = at ? at.step : stepRow ? Number(stepRow[1]) : undefined;
+    const slot = at?.slot ?? (step !== undefined ? read.links[step]?.from : row ? Number(row[1]) : undefined) ?? 0;
     const steps = read.links.map((l, k) => ({ k, from: l.from, to: l.to, name: stepParts(doc, l, 'inside').map((p) => p.text).join('') }));
     const loops = read.net ? read.net.loops.map((lp) => lp.slots) : [read.slots.map((_, i) => i)];
     // only steps round one loop (not ones two loops share, or a branch's) can have a loop turn with them
     const round = steps.filter((x) => loops.filter((lp) => lp.includes(x.from) && lp.includes(x.to)).length === 1 && !(read.net?.tails.some((t) => t.links.includes(x.k))));
+    return { species, steps: round, loops, slot, step };
+  }
+
+  private openLoop(id: number, anchor: HTMLElement, read: SmartRead, at?: { slot?: number; step?: number }): void {
+    void askLoop(anchor, this.loopAsk(read, at)).then((got) => { if (got) this.hooks.addLoop(id, got.join, got.count); });
+  }
+
+  private openBranch(id: number, anchor: HTMLElement, read: SmartRead, at?: { slot?: number; step?: number }): void {
+    const { species, slot } = this.loopAsk(read, at);
+    void askBranch(anchor, { species, slot }).then((got) => { if (got) this.hooks.addBranch(id, got.slot, got.dir); });
+  }
+
+  /**
+   * Add Loop… or Add Off-Cycle Species… from a menu (a right-click on the cycle): the same
+   * popout as the list's + Add opens, starting at the species or step that was clicked.
+   * False when no cycle is showing.
+   */
+  ask(what: 'loop' | 'branch', at?: { slot?: number; step?: number }): boolean {
+    const id = this.shown;
+    if (id === null) return false;
+    const read = readSmart(this.hooks.doc(), this.hooks.measure(), id);
+    const data = this.hooks.doc().shapes.get(id)?.smart;
+    if (!read || !data || smartLayoutOf(data, read) !== 'cycle' || smartIsFree(data, read) || !(read.net || (read.chain && read.closed))) return false;
+    const anchor = this.el.querySelector<HTMLElement>('.sp-add-menu') ?? this.el;
+    if (what === 'loop') this.openLoop(id, anchor, read, at); else this.openBranch(id, anchor, read, at);
+    return true;
+  }
+
+  /** The cycle's + Add menu: a species, a loop, an off-cycle species. */
+  private addMenu(id: number, anchor: HTMLElement, read: SmartRead): void {
+    const { slot } = this.loopAsk(read);
     const r = anchor.getBoundingClientRect();
     popupMenu(r.left, r.bottom + 2, [
       // a species after the one the caret is in (a + on the page puts one on any step)
       ['Species', () => { const l = read.links.findIndex((x) => x.from === slot); this.hooks.add(id, slot, l >= 0 ? l : undefined); }],
-      ['Loop…', () => void askLoop(anchor, { species, steps: round, loops, slot, step: step ? Number(step[1]) : undefined }).then((got) => { if (got) this.hooks.addLoop(id, got.join, got.count); })],
-      ['Off-Cycle Species…', () => void askBranch(anchor, { species, slot }).then((got) => { if (got) this.hooks.addBranch(id, got.slot, got.dir); })],
+      ['Loop…', () => this.openLoop(id, anchor, read)],
+      ['Off-Cycle Species…', () => this.openBranch(id, anchor, read)],
     ]);
   }
 

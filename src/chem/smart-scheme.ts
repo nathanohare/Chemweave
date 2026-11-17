@@ -215,7 +215,7 @@ export function slotName(doc: Doc, slot: Slot): string {
 
 /**
  * Caption runs as the text typed in the species list: subscripts and superscripts written with
- * _ and ^ (as the Catalytic Cycle window takes them), formula digits left plain where they drop
+ * _ and ^ (as the ready-made cycles are written), formula digits left plain where they drop
  * by themselves.
  */
 export function runsMarkup(runs: TextRun[]): string {
@@ -303,10 +303,11 @@ export function ungroupSmart(doc: Doc, frameId: number): Selection | null {
  * leaves there is written inside the loop under the step's name, marked "+" and "−". Put the
  * marks on, and take them off steps that have room outside again (where small arrows show it).
  */
-function markCrowded(doc: Doc, read: SmartRead, meshes?: [number, number][]): void {
+function markCrowded(doc: Doc, read: SmartRead, meshes?: [number, number][], unmark = false): void {
   const net = read.net;
-  if (!net) return;
-  const crowd = crowdedLinks(net.loops.map((lp) => ({ nodes: lp.slots, links: lp.links })), net.joins);
+  // (one loop on its own has room everywhere: its text is left as typed, unless a loop was just taken away)
+  if (!net && !unmark) return;
+  const crowd = net ? crowdedLinks(net.loops.map((lp) => ({ nodes: lp.slots, links: lp.links })), net.joins) : new Set<number>();
   for (const pair of meshes ?? []) read.links.forEach((l, k) => { if (pair.includes(l.arrow.id)) crowd.add(k); });
   const mark = (its: Item[], sign: '+ ' | '− ', on: boolean) => {
     for (const it of its) {
@@ -334,7 +335,7 @@ function markCrowded(doc: Doc, read: SmartRead, meshes?: [number, number][]): vo
 }
 
 /** Lay a Smart Scheme out again as its data says (or with `patch` to its data first). Call inside an edit. */
-export function arrangeSmart(doc: Doc, m: Measure, frameId: number, patch?: Partial<SmartData>, meshes?: [number, number][]): boolean {
+export function arrangeSmart(doc: Doc, m: Measure, frameId: number, patch?: Partial<SmartData>, meshes?: [number, number][], unmark = false): boolean {
   const s = doc.shapes.get(frameId);
   if (!s?.smart || !s.frame) return false;
   const read = readSmart(doc, m, frameId);
@@ -361,7 +362,7 @@ export function arrangeSmart(doc: Doc, m: Measure, frameId: number, patch?: Part
   const steps = read.links.map((l) => l.arrow.id);
   // (several loops keep their first loop where it is by themselves)
   const was = !read.net && s.smart.layout === 'cycle' && data.layout === 'cycle' ? circleMiddle(doc, steps) : null;
-  if (data.layout === 'cycle') markCrowded(doc, read, meshes);
+  if (data.layout === 'cycle') markCrowded(doc, read, meshes, unmark);
   // its own look first, so it is laid out at the sizes it will have
   restyleSmart(doc, frameId, data.fmt, smartParts(read));
   const scope = scopeOf(doc, doc.shapes.get(frameId)!.frame!);
@@ -502,10 +503,13 @@ export function insertSlot(doc: Doc, m: Measure, frameId: number, after: number,
   return cap.id;
 }
 
-/** The look of a scheme's new arrows: its first arrow's. */
+/** An equilibrium arrow, as the arrow tool draws one (and as it is kept in files). */
+const EQUILIBRIUM: Partial<Arrow> = { headStyle: 'halfLeft', tailStyle: 'halfLeft', equilibrium: true };
+
+/** The look of a scheme's new arrows: its first arrow's (an equilibrium arrow's half heads aside). */
 function arrowLike(doc: Doc, like: Arrow | undefined): Partial<Arrow> {
   return like
-    ? { headStyle: like.headStyle, tailStyle: like.tailStyle, headType: like.headType, line: like.line, headLength: like.headLength, headWidth: like.headWidth, ...(like.color ? { color: like.color } : {}), ...(like.lineWidth ? { lineWidth: like.lineWidth } : {}) }
+    ? { headStyle: like.equilibrium ? 'full' : like.headStyle, tailStyle: like.equilibrium ? 'none' : like.tailStyle, headType: like.headType, line: like.line, headLength: like.headLength, headWidth: like.headWidth, ...(like.color ? { color: like.color } : {}), ...(like.lineWidth ? { lineWidth: like.lineWidth } : {}) }
     : { headLength: doc.style.lineWidth * 10, headWidth: doc.style.lineWidth * 2.5 };
 }
 
@@ -1003,7 +1007,7 @@ export function removeLoop(doc: Doc, m: Measure, frameId: number, loop: number):
   for (const l of read.links) if (gone.has(l.from) || gone.has(l.to)) { dead.add(l.arrow.id); dropStep(doc, l); }
   for (const k of gone) for (const it of [...read.slots[k].items, ...read.slots[k].labels]) removeItem(doc, it);
   for (const li of loopsGone) { const id = middles[li]; if (id !== undefined && doc.captions.has(id)) doc.removeCaption(id); }
-  arrangeSmart(doc, m, frameId, undefined, pairs.filter(([a, b]) => !dead.has(a) && !dead.has(b)));
+  arrangeSmart(doc, m, frameId, undefined, pairs.filter(([a, b]) => !dead.has(a) && !dead.has(b)), true);
   return true;
 }
 
@@ -1022,7 +1026,7 @@ export function addBranch(doc: Doc, m: Measure, frameId: number, k: number, dir:
   const L = doc.style.bondLength;
   const fresh = newSpecies(doc, m, { x: box.x2 + 8 * L, y: box.y1 - 12 * L }, text);
   const like = read.links[0]?.arrow;
-  const arrow = dir === 'in' ? newStep(doc, like, fresh, on) : newStep(doc, like, on, fresh, dir === 'both' ? { equilibrium: true } : {});
+  const arrow = dir === 'in' ? newStep(doc, like, fresh, on) : newStep(doc, like, on, fresh, dir === 'both' ? EQUILIBRIUM : {});
   intoFrame(doc, frameId, [fresh], [arrow]);
   arrangeSmart(doc, m, frameId, undefined, meshPairs(read) ?? []);
   return fresh.caption!;

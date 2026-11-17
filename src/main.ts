@@ -62,6 +62,7 @@ import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeS
 import { bestFit, fitMove, fitMatters } from './chem/orient';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { blankCycle, type CycleLook } from './chem/cycles';
 import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
   nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, OWN_FORMAT, CDX_FORMAT, setWordObjects, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
@@ -325,7 +326,6 @@ const pickSlideTemplate = later(() => import('./ui/slide-templates'), 'pickSlide
 const editLayouts = later(() => import('./ui/layout-editor'), 'editLayouts');
 const pickSlideSize = later(() => import('./ui/slide-size-dialog'), 'pickSlideSize');
 const pickTemplate = later(() => import('./ui/template-gallery'), 'pickTemplate');
-const askCycle = later(() => import('./ui/cycle-dialog'), 'askCycle');
 const askEnergy = later(() => import('./ui/energy-dialog'), 'askEnergy');
 import type { EnergyStructureHooks } from './ui/energy-dialog';
 
@@ -1307,11 +1307,31 @@ async function pasteText(text: string, html?: string): Promise<void> {
   editor.changed();
 }
 
-/** Insert ▸ Catalytic Cycle…: a ready-made cycle to edit, or the selected structures put round one. */
-async function insertCycle(): Promise<void> {
+/** How a cycle from the gallery starts out (its species list changes each of these afterwards). */
+const NEW_CYCLE_LOOK: CycleLook = { names: 'short', reagentArrows: true };
+
+/**
+ * Smart Scheme: the gallery of layouts and ready-made catalytic cycles, under the button that
+ * opened it. A layout makes a scheme of the selected structures (or a blank one); a ready-made
+ * cycle is placed as a Smart Scheme to change.
+ */
+async function smartGallery(): Promise<void> {
   finishTyping();
-  const got = await askCycle(editor.selectedStructures().length);
-  if (got) editor.insertCycle(got.spec, got.look, pasteCentre(), deckNow()?.size);
+  const anchor = [...document.querySelectorAll<HTMLElement>('.ribbon button[data-cmd="smart-scheme"], .toolbox button[data-cmd="smart-scheme"]')].find((b) => b.getBoundingClientRect().width > 0) ?? null;
+  const work = $('#work').getBoundingClientRect();
+  const { showSmartGallery } = await import('./ui/smart-gallery');
+  const pick = await showSmartGallery({
+    anchor, work,
+    preview: (p) => drawingSvg(editor.cyclePreview(p.spec, NEW_CYCLE_LOOK), null),
+    selected: editor.selectedStructures().length,
+    canConvert: editor.selectedSmart() === null && editor.hasSelection(),
+    styleKey: JSON.stringify(doc.style),
+  });
+  if (!pick) return;
+  if ('convert' in pick) { command('convert-smart-scheme'); return; }
+  if ('cycle' in pick) { editor.insertCycle(pick.cycle.spec, NEW_CYCLE_LOOK, pasteCentre(), deckNow()?.size); return; }
+  if (pick.layout === 'cycle') { editor.insertCycle(blankCycle(editor.selectedStructures().length), NEW_CYCLE_LOOK, pasteCentre(), deckNow()?.size); return; }
+  editor.insertSmartScheme(pasteCentre(), deckNow()?.size, pick.layout);
 }
 
 /** The Energy Diagram window's preview: the diagram as it will be drawn, fitted to the canvas. */
@@ -9282,7 +9302,6 @@ const COMMANDS: Record<string, () => unknown> = {
   'stoichiometry-table': () => void stoichiometryTable(),
   'check-balance': () => void checkStepBalance(),
   'lab-calculator': () => labCalculator(),
-  'catalytic-cycle': () => void insertCycle(),
   'ts-brackets': () => { if (!editor.tsBrackets()) flash('Select the transition state first (draw it with partial bonds: P over a bond).'); },
   'energy-diagram': () => void energyDiagram(null),
   'tlc-plate': () => void plateFigure('tlc', null),
@@ -9349,9 +9368,11 @@ const COMMANDS: Record<string, () => unknown> = {
   'unlink-text': () => unlinkText() || flash('Select linked text, or a structure with text linked to it.'),
   group: () => editor.group() || flash('Select two or more things to group: structures, text, arrows or shapes.'),
   ungroup: () => editor.ungroupSmart() || editor.ungroup() || flash('Select a group to take apart.'),
-  'smart-scheme': () => { finishTyping(); editor.insertSmartScheme(pasteCentre(), deckNow()?.size); },
+  'smart-scheme': () => void smartGallery(),
   'convert-smart-scheme': () => editor.convertToSmart() || flash(editor.selectedSmart() !== null ? 'That is a Smart Scheme already.' : 'Select a reaction scheme (structures and the arrows between them) to make into a Smart Scheme.'),
   'ungroup-smart-scheme': () => editor.ungroupSmart() || flash('Select a Smart Scheme first.'),
+  'smart-add-loop': () => smartPane.ask('loop', editor.smartPicked()) || flash('Select a catalytic cycle first (a Smart Scheme in the Cycle layout).'),
+  'smart-add-branch': () => smartPane.ask('branch', editor.smartPicked()) || flash('Select a catalytic cycle first (a Smart Scheme in the Cycle layout).'),
   'clean-up-cycle': () => editor.smartCleanUpCycle() || flash('Select a catalytic cycle drawn as a Smart Scheme, with three or more species in one loop.', 5000),
   'bring-front': () => restack('front'),
   'send-back': () => restack('back'),
@@ -12694,7 +12715,7 @@ function drawingMenu(): MenuItem[] {
       ...(ws.active.mode === 'slides' || design ? [{ cmd: 'format-background', label: 'Format Background…' }, { cmd: 'slide-references', label: 'References on Slide…' }, null] : []),
       ...(ws.active.mode === 'slides' && deckNow()?.current?.canvas ? [{ label: 'Keyframes', items: keyframeMenu() }, null] : []),
       { label: 'Insert', items: [{ cmd: 'name-to-structure' }, { cmd: 'sequence-to-structure' }, { cmd: 'periodic-table' }, { cmd: 'insert-picture' }, { cmd: 'import-picture', label: 'Structure from Picture…' }, { cmd: 'text-box' }, { cmd: 'insert-reference', label: 'Reference…' }, { cmd: 'insert-symbol' }, ...(design ? [{ cmd: 'design-shapes', label: 'Shape…' }, { cmd: 'design-icons', label: 'Icon…' }, { cmd: 'connector-tool' }] : []), ...(ws.active.mode === 'slides' ? [{ cmd: 'slide-shapes', label: 'Shape…' }, { cmd: 'slide-icons', label: 'Icon…' }] : [])] },
-      { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'arrange-scheme' }, { cmd: 'number-compounds' }, { cmd: 'catalytic-cycle' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }] },
+      { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'arrange-scheme' }, { cmd: 'number-compounds' }, { cmd: 'smart-scheme' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }] },
       { cmd: 'drawing-style' },
       ...(ws.active.mode === 'drawing' && pageEdgesMenu() ? [pageEdgesMenu()!] : []),
       view,
@@ -12770,7 +12791,9 @@ function drawingMenu(): MenuItem[] {
     ] }, ...(editor.options.arrowProducts ? [{ cmd: 'draw-from-arrows' }, { cmd: 'check-arrows' }] : [])] : []),
     ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : []),
     // (a scheme is about whole structures and arrows, not an atom or a bond picked on its own)
-    ...(s.arrows.size || (atoms && focus === 'structure') ? [...(editor.selectedSmart() !== null ? [{ cmd: 'ungroup-smart-scheme' }, null] : []), { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'clean-up-arrow' }, ...(smartIsCycle() ? [{ cmd: 'clean-up-cycle' }] : []), { cmd: 'arrange-scheme' }, ...(editor.selectedSmart() === null ? [{ cmd: 'convert-smart-scheme' }] : []), { cmd: 'smart-scheme' }, { cmd: 'number-compounds' }, ...(s.arrows.size ? [{ cmd: 'stoichiometry-table' }, { cmd: 'check-balance' }, { cmd: 'map-atoms' }, { cmd: 'copy-reaction-smiles' }] : []), { cmd: 'catalytic-cycle' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }, ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : [])] }] : []),
+    // (a catalytic cycle: another loop, or a species off it, at what was clicked)
+    ...(smartIsCycle() ? [{ cmd: 'smart-add-loop' }, { cmd: 'smart-add-branch' }, null] : []),
+    ...(s.arrows.size || (atoms && focus === 'structure') ? [...(editor.selectedSmart() !== null ? [{ cmd: 'ungroup-smart-scheme' }, null] : []), { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'clean-up-arrow' }, ...(smartIsCycle() ? [{ cmd: 'clean-up-cycle' }] : []), { cmd: 'arrange-scheme' }, ...(editor.selectedSmart() === null ? [{ cmd: 'convert-smart-scheme' }] : []), { cmd: 'smart-scheme' }, { cmd: 'number-compounds' }, ...(s.arrows.size ? [{ cmd: 'stoichiometry-table' }, { cmd: 'check-balance' }, { cmd: 'map-atoms' }, { cmd: 'copy-reaction-smiles' }] : []), { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }, ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : [])] }] : []),
     ...(atoms && focus !== 'bond' ? [{ label: 'Label the Structure', items: [
       { cmd: 'add-id-label' }, { cmd: 'add-caption' }, { cmd: 'attach-descriptors' }, null, { cmd: 'number-compounds' },
       ...(!shapes.length ? [null, { cmd: 'alt-text', label: 'Alt Text…' }] : []),
@@ -13406,7 +13429,7 @@ const BOX_ITEMS: Record<string, readonly string[]> = {
   arrange: cmds(['align-left', 'align-hcenter', 'align-right', 'align-top', 'align-vcenter', 'align-bottom', null, 'distribute-h', 'distribute-v', 'arrange-row', 'arrange-column', 'arrange-grid', null, 'flip-h', 'flip-v', 'rotate-cw', 'rotate-ccw', null, 'shape-front', 'shape-back']),
   highlight: [...cmds(['highlight', 'remove-highlight', null, 'smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight', null, 'save-highlight-look']), 'w:looks'],
   custom: defaultToolboxes().custom,
-  schemes: cmds(['smart-scheme', 'catalytic-cycle', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
+  schemes: cmds(['smart-scheme', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
   diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
   tables: cmds(['insert-table', 'rgroup-table', 'stoichiometry-table', null, 'insert-chart', 'edit-chart', null, 'tlc-plate', 'gel', 'edit-plate']),
   biopolymers: ['cmd:sequence-to-structure', 'sep', 'pal:tpl-amino', 'pal:tpl-sugars', 'pal:tpl-nucleic'],

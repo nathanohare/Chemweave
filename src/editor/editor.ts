@@ -3942,6 +3942,17 @@ export class Editor {
     return ok;
   }
   smartLoopMiddle(id: number, loop: number, parts: TextPart[]): boolean { return this.smartEdit(id, 'Type Loop Middle', (m) => setLoopMiddle(this.doc, m, id, loop, parts)); }
+  /** The species or step of the selected Smart Scheme that is picked on the page (where Add Loop and Add Off-Cycle Species start). */
+  smartPicked(): { slot?: number; step?: number } | undefined {
+    const id = this.selectedSmart();
+    const read = id === null ? null : readSmart(this.doc, this.fullMeasure(), id);
+    if (!read) return undefined;
+    const has = (it: { caption?: number; shape?: number; atoms: number[] }) => (it.caption !== undefined && this.sel.captions.has(it.caption)) || (it.shape !== undefined && this.sel.shapes.has(it.shape)) || it.atoms.some((a) => this.sel.atoms.has(a));
+    const slot = read.slots.findIndex((sl) => sl.items.some(has));
+    if (slot >= 0) return { slot };
+    const step = read.links.findIndex((l) => this.sel.arrows.has(l.arrow.id) || [...l.inside, ...l.above, ...l.below].some(has));
+    return step >= 0 ? { step } : undefined;
+  }
   /** Whether Smart Scheme `id` is laid out round a cycle (of one loop or several). */
   smartIsCycle(id: number): boolean {
     const d = this.doc.shapes.get(id)?.smart;
@@ -3968,10 +3979,11 @@ export class Editor {
   }
 
   /**
-   * Insert ▸ Smart Scheme: the selected structures joined by arrows in reading order, or (with
-   * none selected) three species to type over, as a Smart Scheme in a line. It is selected.
+   * The Smart Scheme gallery's Line, Rows, Snake and Down: the selected structures joined by arrows
+   * in reading order, or (with none selected) species to type over, as a Smart Scheme in that
+   * layout. It is selected.
    */
-  insertSmartScheme(at: Vec, page?: { w: number; h: number }): boolean {
+  insertSmartScheme(at: Vec, page?: { w: number; h: number }, layout: Exclude<SmartData['layout'], 'cycle'> = 'line'): boolean {
     const doc = this.doc, m = this.fullMeasure();
     const picked = this.selectedStructures();
     let id: number | null = null;
@@ -3979,7 +3991,9 @@ export class Editor {
       let sel = withFrameContents(doc, this.sel);
       if (picked.length < 2) {
         const L = doc.style.bondLength, lw = doc.style.lineWidth;
-        const names = ['Starting material', 'Intermediate', 'Product'];
+        // (four in rows of two, so rows and snake show what they do)
+        const wraps = layout === 'rows' || layout === 'snake';
+        const names = wraps ? ['Starting material', 'Intermediate 1', 'Intermediate 2', 'Product'] : ['Starting material', 'Intermediate', 'Product'];
         const caps = names.map((t, i) => doc.addCaption({ x: at.x + (i - 1) * 9 * L, y: at.y, runs: [{ text: t }], justify: 'center' }));
         sel = emptySel();
         for (const c of caps) sel.captions.add(c.id);
@@ -3992,8 +4006,9 @@ export class Editor {
           sel.arrows.add(r.id);
         }
       }
-      id = makeSmart(doc, m, sel, { layout: 'line' });
-      if (id !== null) arrangeSmart(doc, m, id, { layout: 'line' });
+      const data: Partial<SmartData> = { layout, ...(picked.length < 2 && (layout === 'rows' || layout === 'snake') ? { perRow: 2 } : {}) };
+      id = makeSmart(doc, m, sel, data);
+      if (id !== null) arrangeSmart(doc, m, id, data);
       if (id !== null && picked.length < 2) { this.sel = emptySel(); this.sel.shapes.add(id); this.moveClear(page); }
     });
     if (id === null) return false;
@@ -5198,9 +5213,19 @@ export class Editor {
     return readingOrder(its, this.doc.style.bondLength).map((it) => ({ atoms: it.atoms }));
   }
 
+  /** A ready-made cycle drawn on a page of its own, in this drawing's style (the Smart Scheme gallery's pictures). */
+  cyclePreview(spec: CycleSpec, look: CycleLook): Doc {
+    const tmp = new Doc();
+    tmp.style = { ...this.doc.style };
+    tmp.textStyles = this.doc.textStyles;
+    tmp.edit('Preview', () => { buildCycle(tmp, this.fullMeasure(), spec, look, { x: 0, y: 0 }, []); });
+    return tmp;
+  }
+
   /**
-   * Insert ▸ Catalytic Cycle: draw the cycle with its middle at `at`, the selected structures
-   * (if any) standing for the first loop's species. The new cycle is selected.
+   * The Smart Scheme gallery's Cycle layout and ready-made cycles: draw the cycle with its middle
+   * at `at`, the selected structures (if any) standing for the first loop's species. The new
+   * cycle is selected.
    */
   insertCycle(spec: CycleSpec, look: CycleLook, at: Vec, page?: { w: number; h: number }): void {
     const stations = this.selectedStructures();
