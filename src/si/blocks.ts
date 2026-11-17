@@ -14,6 +14,7 @@ import { eeWithUnit, fieldDef, partText, type FieldDef } from './fields';
 import { fieldKeys, fieldsOf, valuesOf, compoundName, type Json, type SiCompound, type SiProject } from './project';
 import { hrmsCalc, hrmsSpecies, hrmsTolerance, monoisotopic, outOfTolerance, parseNumber } from './checks';
 import { ChemError, type MolFacts } from './chem';
+import { nameRuns } from './chem-names';
 import { R, but, chargeRuns, formatChemistry, formatNmr, formulaRuns, plain, type Leave } from './format';
 import { DEFAULT_GP_SENTENCE, autoValues, fillSentence, purificationSentence, usesPurification } from './procedures';
 
@@ -262,7 +263,8 @@ function partsSentence(c: SiCompound, def: FieldDef, o: BlockOptions): Run[] {
 /** The title: "Name (2a)." in bold, or "Compound 2a." */
 export function compoundTitle(c: SiCompound, displayId: string): Run[] {
   const name = compoundName(c);
-  return name ? [R(`${name} (${displayId}).`, { bold: true })] : [R(`Compound ${displayId}.`, { bold: true })];
+  // the name with its conventional italics (N-, tert-, (E)-…, or as typed with *…*)
+  return name ? [...nameRuns(name, { bold: true }), R(` (${displayId}).`, { bold: true })] : [R(`Compound ${displayId}.`, { bold: true })];
 }
 
 /** The text the program writes for this compound: the procedure, then the data. */

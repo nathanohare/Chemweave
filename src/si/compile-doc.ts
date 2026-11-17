@@ -10,7 +10,7 @@
 // point at the compound's block.
 
 import { DocBuilder, headingId } from '../io/doc-build';
-import { paraFromStyle, styleOf, type DocObject, type DocText, type NamedStyle } from '../document/document';
+import { OBJECT_CHAR, paraFromStyle, styleOf, type DocObject, type DocText, type NamedStyle } from '../document/document';
 import { citeSuper, formatOf } from '../document/references';
 import type { Reference, RefType } from '../document/references';
 import type { Contents, Justify, ParaStyle, TableCell, TextRun } from '../model';
@@ -411,7 +411,7 @@ class Compiler {
   }
 
   /** A stored text: headings `offset` levels down (in the contents up to `listedLevels`), with its figures and tables. */
-  private async richText(text: string, where: string, owner: Owner | null, offset: number, listedLevels: number, keepAlign = true): Promise<void> {
+  private async richText(text: string, where: string, owner: Owner | null, offset: number, listedLevels: number, keepAlign = true, numberHeadings = false): Promise<void> {
     let index = 0;
     for (const p of parseMarkup(text)) {
       if (p.table || p.figure || p.image) {
@@ -426,7 +426,8 @@ class Compiler {
       const runs = this.chemistry(p.runs);
       if (p.heading) {
         const level = p.heading + offset;
-        this.para(runs, { style: this.headingStyle(level, level <= listedLevels) }, where);
+        const num = numberHeadings ? this.numbered(level, true) : '';
+        this.para(num ? [R(num), ...runs] : runs, { style: this.headingStyle(level, level <= listedLevels) }, where);
       } else {
         const align = keepAlign ? this.alignOf(p, false) : undefined;
         this.para(runs, align ? { align } : {}, where);
@@ -493,12 +494,28 @@ class Compiler {
     if (!rows.length || !nCols) { this.notes.push(`${where}: a table could not be found or is empty (tables/${id}.json); left out.`); return; }
     const look: RunStyle = { ...this.b.styleLook({}), size: 10 };
     const cols = list(data.columns).map(String);
-    const cells: TableCell[][] = rows.map((row) => Array.from({ length: nCols }, (_, k) => {
+    // a cell's picture (Lauren's pictures in table cells, rewritten): above its text, at its own
+    // size or the width typed for it (image_width, cm), never wider than the text
+    const pictures = new Map<string, number>();
+    for (const [r, row] of rows.entries()) for (const [k, c] of row.entries()) {
+      const cd = c && typeof c === 'object' ? dict(c) : {};
+      const image = str(cd.image);
+      if (!image || !owner) continue;
+      const bytes = await this.p.folder.readBytes(joinPath(owner.folder, image));
+      const name = image.slice(image.lastIndexOf('/') + 1);
+      if (!bytes) { this.notes.push(`${where}: the picture ${name} in a table cell is no longer in the project; left out.`); continue; }
+      const widthCm = Number(cd.image_width) || 0;
+      const pic = /\.pdf$/i.test(name) ? (await this.pdfPictures(bytes, name, where, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? (widthCm / 2.54) * PT : undefined))[0] : pictureObject(name, bytes, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined);
+      if (!pic) { if (!/\.pdf$/i.test(name)) this.notes.push(`${where}: the picture ${name} in a table cell could not be read; left out.`); continue; }
+      pictures.set(`${r}:${k}`, this.b.reserve(pic));
+    }
+    const cells: TableCell[][] = rows.map((row, r) => Array.from({ length: nCols }, (_, k) => {
       const c = row[k];
       if (c === null || c === undefined) return { runs: [] };
       const cd = typeof c === 'string' ? { text: c } : dict(c);
-      if (str(cd.image)) this.notes.push(`${where}: a picture in a table cell is not placed yet (left out).`);
-      const cell: TableCell = { runs: this.cellRuns(str(cd.text), where, look) };
+      const text = this.cellRuns(str(cd.text), where, look);
+      const picId = pictures.get(`${r}:${k}`);
+      const cell: TableCell = { runs: picId !== undefined ? [{ ...look, obj: picId, text: OBJECT_CHAR }, ...(text.length ? [{ ...look, text: '\n' }, ...text] : [])] : text };
       const span = Math.round(Number(cd.colspan) || 1), rowSpan = Math.round(Number(cd.rowspan) || 1);
       if (span > 1) cell.span = span;
       if (rowSpan > 1) cell.rowSpan = rowSpan;
@@ -533,8 +550,11 @@ class Compiler {
     const s = this.p.settings;
     const cover = dict(s.cover);
     const heading = str(cover.heading).trim() || COVER_HEADINGS[str(s.journal_style)] || 'Supporting Information';
-    this.para([R(heading)], { align: 'center', spaceAfter: 14 }, 'Cover page', { size: 16, bold: true });
-    this.para(this.chemistry([R(str(s.title))]), { align: 'center', spaceAfter: 14 }, 'Cover page', { size: 14, bold: true });
+    // Cover page ▸ Spacing: Normal (1), More (2) or Much more (3) times the gaps between the parts
+    const k = coverSpacing(s);
+    const gap = (pt: number): number => Math.round(pt * k * 10) / 10;
+    this.para([R(heading)], { align: 'center', spaceAfter: gap(14) }, 'Cover page', { size: 16, bold: true });
+    this.para(this.chemistry([R(str(s.title))]), { align: 'center', spaceAfter: gap(14) }, 'Cover page', { size: 14, bold: true });
     const authors = list(s.authors).map(dict);
     const names: Run[][] = authors.map((a) => {
       const marks = list(a.affiliations).map(String).join(',') + (a.corresponding ? '*' : '');
@@ -545,11 +565,11 @@ class Compiler {
       if (i) line.push(R(i === names.length - 1 ? (names.length > 2 ? ', and ' : ' and ') : ', '));
       line.push(...n);
     });
-    if (line.length) this.para(line, { align: 'center', spaceAfter: 8 }, 'Cover page');
+    if (line.length) this.para(line, { align: 'center', spaceAfter: gap(8) }, 'Cover page');
     const affs = list(s.affiliations).map(dict);
-    affs.forEach((a, i) => this.para([R(str(a.marker), { valign: 'super' }), R(str(a.text))], { align: 'center', spaceAfter: i === affs.length - 1 ? 6 : 0 }, 'Cover page', { size: 10 }));
+    affs.forEach((a, i) => this.para([R(str(a.marker), { valign: 'super' }), R(str(a.text))], { align: 'center', spaceAfter: i === affs.length - 1 ? gap(6) : 0 }, 'Cover page', { size: 10 }));
     const emails = authors.filter((a) => a.corresponding && str(a.email)).map((a) => str(a.email));
-    if (emails.length) this.para([R('*Email: ' + emails.join('; '))], { align: 'center', spaceAfter: 18 }, 'Cover page', { size: 10 });
+    if (emails.length) this.para([R('*Email: ' + emails.join('; '))], { align: 'center', spaceAfter: gap(18) }, 'Cover page', { size: 10 });
     const extra = this.texts.get('cover') ?? '';
     if (extra.trim()) await this.richText(extra, 'Cover page', null, 1, 0);
   }
@@ -569,13 +589,43 @@ class Compiler {
     if (!text.trim()) return false;
     const info = dict(this.p.settings.general_information);
     const title = info.heading === undefined ? 'General Information' : str(info.heading).trim();
-    if (title) this.para([R(title)], { style: headingId(1) }, 'General Information');
-    await this.richText(text, title || 'General Information', await this.owner('general'), 1, this.rank >= 2 ? 2 : 0);
+    if (title) this.para([R(this.numbered(1, true) + title)], { style: headingId(1) }, 'General Information');
+    await this.richText(text, title || 'General Information', await this.owner('general'), 1, this.rank >= 2 ? 2 : 0, true, true);
     return true;
   }
 
-  private sectionHeading(level: number, name: string): void {
-    this.para([R(name)], { style: this.headingStyle(level, level === 1 || this.rank >= 2) }, name);
+  private sectionHeading(level: number, name: string, ps: ParaStyle = {}): void {
+    this.para([R(this.numbered(level) + name)], { style: this.headingStyle(level, level === 1 || this.rank >= 2), ...ps }, name);
+  }
+
+  // ---------------------------------------------------------- heading numbers (Lauren's, rewritten)
+  // Project settings ▸ Heading numbers: as the journal style does (Wiley and RSC number section
+  // headings 1, 1.1, 1.1.1; ACS none), an outline (1, A, a, i), numbers (1, 1.1, 1.1.1) or none.
+  // With an outline or numbers chosen, headings typed in a section's or General Information's
+  // text and the General Information heading are numbered too. General procedure headings,
+  // compound titles and headings in a compound's text never are. The numbers are written into
+  // the headings, so the contents show them.
+
+  private counters: number[] = [];
+  private headingNumbers(): { kind: 'none' | 'decimal' | 'outline'; text: boolean } {
+    const chosen = str(this.p.settings.heading_numbers);
+    if (chosen === 'outline' || chosen === 'decimal') return { kind: chosen, text: true };
+    if (chosen === 'none') return { kind: 'none', text: false };
+    return { kind: ['Wiley', 'RSC'].includes(str(this.p.settings.journal_style)) ? 'decimal' : 'none', text: false };
+  }
+
+  /** The number for the next heading at `level` ("1.2. "), or '' when headings aren't numbered. `text`: a heading typed in a text (or General Information's). */
+  private numbered(level: number, text = false): string {
+    const hn = this.headingNumbers();
+    if (hn.kind === 'none' || (text && !hn.text)) return '';
+    const lv = Math.max(1, Math.min(9, level));
+    while (this.counters.length < lv) this.counters.push(0);
+    this.counters.length = lv;
+    this.counters[lv - 1]++;
+    if (hn.kind === 'decimal') return this.counters.join('.') + '. ';
+    const n = this.counters[lv - 1];
+    const own = [String(n), alpha(n).toUpperCase(), alpha(n), roman(n).toLowerCase()][Math.min(3, lv - 1)];
+    return own + '. ';
   }
 
   private async section(s: SiSection, level: number): Promise<void> {
@@ -589,7 +639,7 @@ class Compiler {
     }
     if (s.type === 'text') {
       this.sectionHeading(level, s.name);
-      await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.rank >= 2 ? level + 1 : 0);
+      await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.rank >= 2 ? level + 1 : 0, true, true);
     } else if (s.type === 'file') await this.fileSection(s, level);
     else if (s.type === 'xray') {
       this.sectionHeading(level, s.name);
@@ -736,7 +786,7 @@ class Compiler {
       const page = this.landscape ? { ...this.b.doc.page, w: this.b.doc.page.h, h: this.b.doc.page.w } : this.b.doc.page;
       let top = 0;
       if (!headed) {
-        this.para([R(name)], { style: this.headingStyle(level, level === 1 || this.rank >= 2), pageBreak: true }, name);
+        this.sectionHeading(level, name, { pageBreak: true });
         headed = true;
         top = HEADING_ROOM;
       } else this.b.pendingBreak = true;
@@ -823,8 +873,8 @@ class Compiler {
   /** The HRMS reports sub-section (§13n.3): each compound's report files, compound by compound. */
   private async hrmsReports(compounds: SiCompound[], level: number, sectionName: string, withSection: boolean, sectionLevel: number): Promise<void> {
     this.orient('portrait');
-    if (withSection) this.para([R(sectionName)], { style: this.headingStyle(sectionLevel, sectionLevel === 1 || this.rank >= 2), pageBreak: true }, sectionName);
-    this.para([R('HRMS reports')], { style: this.headingStyle(level, this.rank >= 2), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
+    if (withSection) this.sectionHeading(sectionLevel, sectionName, { pageBreak: true });
+    this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.rank >= 2), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
     const room = { w: TEXT_W, h: 7.4 * PT };
     for (const c of compounds) {
       const id = displayId(this.report, c.id);
@@ -897,6 +947,13 @@ class Compiler {
 }
 
 const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join('').trim();
+
+/** The cover page's spacing: Normal 1, More 2, Much more 3, or a number typed into project.json (0.5–6). */
+export const COVER_SPACINGS: Record<string, number> = { Normal: 1, More: 2, 'Much more': 3 };
+export function coverSpacing(settings: Json): number {
+  const v = Number(dict(settings.cover).spacing);
+  return Number.isFinite(v) && v > 0 ? Math.min(6, Math.max(0.5, v)) : 1;
+}
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 

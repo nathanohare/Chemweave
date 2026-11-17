@@ -10,7 +10,7 @@
 import type { Tab } from '../workspace';
 import type { Contents } from '../model';
 import type { DocText } from '../document/document';
-import { compileSi } from '../si/compile-doc';
+import { compileSi, COVER_SPACINGS, coverSpacing } from '../si/compile-doc';
 import { DEFAULTS as SPECTRA_DEFAULTS, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, TYPE_LABELS, type Json, type SiCompound, type SiSection } from '../si/project';
@@ -1485,13 +1485,20 @@ export class SiMode {
           { name: 'title', label: 'Title', value: p.title },
           { name: 'style', label: 'Journal style', value: String(p.settings.journal_style ?? 'ACS'), options: ['ACS', 'Wiley', 'RSC'].map((x) => ({ value: x, label: x })) },
           { name: 'ppm', label: 'HRMS tolerance', value: String(p.settings.hrms_tolerance_ppm ?? 5), unit: 'ppm', type: 'number', min: 0.1, max: 100 },
-        ], { ok: 'Save', note: 'Authors, the cover page and the rest are set in Chem SI Assistant for now.' });
+          { name: 'numbers', label: 'Heading numbers', value: ['outline', 'decimal', 'none'].includes(String(p.settings.heading_numbers)) ? String(p.settings.heading_numbers) : 'style', options: [{ value: 'style', label: 'As the journal style does' }, { value: 'outline', label: 'Outline (1, A, a, i)' }, { value: 'decimal', label: 'Numbers (1, 1.1, 1.1.1)' }, { value: 'none', label: 'None' }], help: 'How the compiled SI numbers its headings. Wiley and RSC number section headings 1, 1.1, 1.1.1; ACS doesn’t. An outline or numbers also number the headings typed in a section’s text and General Information.' },
+          { name: 'spacing', label: 'Cover spacing', value: spacingChoice(p.settings), options: [...Object.entries(COVER_SPACINGS).map(([label, v]) => ({ value: String(v), label })), ...(Object.values(COVER_SPACINGS).includes(coverSpacing(p.settings)) ? [] : [{ value: String(coverSpacing(p.settings)), label: `${coverSpacing(p.settings)}× (typed in project.json)` }])], help: 'The space between the cover page’s heading, title, authors, affiliations and emails.' },
+        ], { ok: 'Save', note: 'Authors, the cover page’s text and the rest are set in Chem SI Assistant for now.' });
         if (!got || p.readOnly) return;
         await this.act(async () => {
           p.settings.title = got.title.trim() || p.title;
           p.settings.journal_style = got.style;
           const ppm = Number(got.ppm);
           if (Number.isFinite(ppm) && ppm > 0) p.settings.hrms_tolerance_ppm = ppm;
+          // stored only when not the default, as SI Assistant stores them
+          if (got.numbers === 'style') delete p.settings.heading_numbers; else p.settings.heading_numbers = got.numbers;
+          const sp = Number(got.spacing);
+          const cover = p.settings.cover && typeof p.settings.cover === 'object' && !Array.isArray(p.settings.cover) ? p.settings.cover as Record<string, unknown> : null;
+          if (sp === 1 || !Number.isFinite(sp)) { if (cover) delete cover.spacing; } else p.settings.cover = { ...(cover ?? {}), spacing: sp };
           await p.saveSettings();
         });
         if (this.tab) { this.tab.name = p.title; this.host.changed(); }
@@ -1685,3 +1692,5 @@ function pickFromList<T>(title: string, items: T[], main: (x: T) => string, sub:
   });
 }
 
+/** The Cover spacing choice for a project's settings (as stored, 1 for Normal). */
+function spacingChoice(settings: Record<string, unknown>): string { return String(coverSpacing(settings)); }
