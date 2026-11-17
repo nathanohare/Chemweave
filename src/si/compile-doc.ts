@@ -39,7 +39,16 @@ export interface CompiledSi {
   doc: DocText;
   /** Things to know about the result (left out, missing, printed as "??"), in plain words. */
   notes: string[];
+  /** What a manuscript can point at: each compound, table, figure and scheme, in the order printed. */
+  targets: SiTarget[];
 }
+
+/**
+ * Something in the compiled SI a manuscript can mention: a compound (its ID) or a table, figure or
+ * scheme (its label). `mark` is the bookmark on its title or caption paragraph ('' when it isn't
+ * printed, as schemes aren't yet), which gives the page it is on.
+ */
+export interface SiTarget { key: string; kind: 'compound' | 'table' | 'figure' | 'scheme'; label: string; caption: string; mark: string }
 
 const PT = 72;
 const TEXT_W = 6.5 * PT;
@@ -60,7 +69,10 @@ const str = (v: unknown): string => partText(v);
 const joinPath = (...parts: string[]): string => parts.filter(Boolean).join('/');
 
 /** A bookmark name for a compound's block (letters, digits and _ as Word wants, starting with a letter). */
-export const compoundBookmark = (compoundId: string): string => `si_${compoundId.replace(/[^A-Za-z0-9]/g, '_')}`.slice(0, 40);
+export const compoundBookmark = (compoundId: string): string => siMark(compoundId);
+
+/** The bookmark on a compound's title or a caption in the compiled SI (si_ and its key, as Word wants names). */
+export const siMark = (key: string): string => `si_${key.replace(/[^A-Za-z0-9]/g, '_')}`.slice(0, 40);
 
 // ---------------------------------------------------------------- labels (core/labels.py)
 
@@ -156,6 +168,7 @@ interface Owner { key: string; name: string; folder: string; figures: Json }
 class Compiler {
   readonly b = new DocBuilder();
   readonly notes: string[] = [];
+  readonly targets: SiTarget[] = [];
   private readonly styles: Record<string, NamedStyle>;
   private readonly report: IdReport;
   private readonly labels: Labels;
@@ -374,9 +387,10 @@ class Compiler {
     for (const p of parseMarkup(text)) {
       if (p.table || p.figure || p.image) {
         const label = owner ? this.labels.at(owner.key, index) : '';
+        const key = p.table || p.figure || (owner ? `${owner.key}#${index}` : '');
         index++;
         if (p.table) await this.table(owner, p.table, label, p.runs, where, keepAlign ? this.alignOf(p, true) : undefined);
-        else await this.figure(owner, p, label, where, keepAlign ? this.alignOf(p, true) : undefined);
+        else await this.figure(owner, p, label, where, keepAlign ? this.alignOf(p, true) : undefined, key);
         continue;
       }
       if (!p.runs.length) continue;
@@ -391,12 +405,15 @@ class Compiler {
     }
   }
 
-  private caption(label: string, runs: Run[], where: string, ps: ParaStyle): void {
+  /** A label and its caption; with `target`, bookmarked and listed for manuscripts to point at. */
+  private caption(label: string, runs: Run[], where: string, ps: ParaStyle, target?: { key: string; kind: 'table' | 'figure' }): void {
     const body = this.chemistry(runs);
-    this.para([R(`${label || 'Figure'}.`, { bold: true }), ...(body.length ? [R(' '), ...body] : [])], { style: 'Caption', ...ps }, where);
+    const mark = target?.key ? siMark(target.key) : '';
+    if (target?.key && label) this.targets.push({ key: target.key, kind: target.kind, label, caption: plainOf(body), mark });
+    this.para([R(`${label || 'Figure'}.`, { bold: true }), ...(body.length ? [R(' '), ...body] : [])], { style: 'Caption', ...ps, ...(mark ? { marks: [mark] } : {}) }, where);
   }
 
-  private async figure(owner: Owner | null, p: Paragraph, label: string, where: string, align?: Justify): Promise<void> {
+  private async figure(owner: Owner | null, p: Paragraph, label: string, where: string, align?: Justify, key = ''): Promise<void> {
     let file = '', widthCm = 0;
     if (p.figure && owner) {
       const entry = dict(owner.figures[p.figure]);
@@ -406,7 +423,7 @@ class Compiler {
     } else if (p.image && owner) file = p.image;
     if (!file || !owner) return;
     await this.pictureBlock(joinPath(owner.folder, file), { w: TEXT_W, h: FIGURE_MAX_H }, where, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined, align);
-    this.caption(label || 'Figure', p.runs, where, { align: align ?? 'center' });
+    this.caption(label || 'Figure', p.runs, where, { align: align ?? 'center' }, { key, kind: 'figure' });
   }
 
   /** A picture in a paragraph of its own; false when it couldn't be used (said in the notes). */
@@ -446,7 +463,7 @@ class Compiler {
     }));
     const head = Math.max(0, Math.min(rows.length, Math.round(Number(data.header_rows ?? 1)) || 0));
     // the label and caption above, kept with the table
-    this.caption(label || 'Table', caption, where, { align: align ?? 'center', keepNext: true, spaceAfter: 4 });
+    this.caption(label || 'Table', caption, where, { align: align ?? 'center', keepNext: true, spaceAfter: 4 }, { key: id, kind: 'table' });
     const table: Extract<DocObject, { kind: 'table' }> = {
       kind: 'table',
       table: {
@@ -556,6 +573,8 @@ class Compiler {
     for (const item of s.items) {
       if (item.kind === 'scheme') {
         this.notes.push(`${s.name} ▸ scheme “${str(item.data.name) || 'Scheme'}”: schemes are not drawn in the document yet; its compounds are printed with their own structures.`);
+        const label = this.labels.byId.get(item.id);
+        if (label) this.targets.push({ key: item.id, kind: 'scheme', label, caption: str(item.data.name), mark: '' });
         for (const c of item.children) await this.compound(c, level + 1);
       } else await this.compound(item, level + 1);
       for (const x of item.kind === 'compound' ? this.p.anchored.get(item.id) ?? [] : []) {
@@ -571,6 +590,7 @@ class Compiler {
     const facts = this.facts.get(c.id) ?? null;
     const block = compoundBlock(this.p, c, id, { facts, helpers: this.helpers, leave: this.leave });
     this.para(block.title, { style: this.compoundStyle(level, this.rank >= 4), marks: [compoundBookmark(c.id)] }, where);
+    this.targets.push({ key: c.id, kind: 'compound', label: id, caption: name, mark: compoundBookmark(c.id) });
     await this.structure(c, where);
     if (!block.customText) {
       const problems: string[] = [];
@@ -588,7 +608,7 @@ class Compiler {
       const f = figures[i];
       const def = fieldsOfCompound(c).find((d) => d.key === f.field);
       const ok = await this.pictureBlock(joinPath(c.folder, def?.subdir ?? 'files', f.file), { w: TEXT_W, h: 4 * PT }, where);
-      if (ok) this.caption(this.labels.at(c.id, i) || 'Figure', [R(f.caption)], where, { align: 'center' });
+      if (ok) this.caption(this.labels.at(c.id, i) || 'Figure', [R(f.caption)], where, { align: 'center' }, { key: `${c.id}#${i}`, kind: 'figure' });
     }
     if (id === 'ID?') this.notes.push(`“${name || 'A compound'}” has no ID (printed as “ID?”).`);
   }
@@ -637,6 +657,8 @@ class Compiler {
   }
 }
 
+const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join('').trim();
+
 const fieldsOfCompound = (c: SiCompound) => (Array.isArray(c.data.fields) ? (c.data.fields as Json[]) : []).map((e) => fieldDef(e)).filter((d): d is NonNullable<typeof d> => d !== null);
 
 /** An SI reference (references.json) as the document's. */
@@ -660,6 +682,6 @@ async function dictionaryWords(p: SiProject): Promise<Set<string>> {
 export async function compileSi(p: SiProject, host: CompileHost): Promise<CompiledSi> {
   const c = new Compiler(p, host, await dictionaryWords(p));
   const doc = await c.build();
-  return { doc, notes: [...new Set(c.notes)] };
+  return { doc, notes: [...new Set(c.notes)], targets: c.targets };
 }
 

@@ -38,6 +38,7 @@ import { FontBox } from './font-box';
 import { WORD_HIGHLIGHTS } from '../io/docx-base';
 import { DocFind } from './doc-find';
 import { askLink, followLink, linkTip } from './links-ui';
+import { DocSiPanel, DocSiUI, type SiAccess } from './doc-si';
 import { bookmarkName, linkAtPoint } from '../links';
 import { addBookmark, bookmarkPara, bookmarksOf, docPlaces, placeLink, placeName, removeBookmark } from '../document/bookmarks';
 import { DocComments } from './doc-comments';
@@ -75,7 +76,7 @@ import { DocNav } from './doc-nav';
 import { DocInsertUI } from './doc-insert-ui';
 import { DocParagraphUI } from './doc-paragraph-ui';
 import { DocArrangeUI } from './doc-arrange-ui';
-import type { DocDesign } from '../document/document';
+import type { DocDesign, SiLink } from '../document/document';
 import { setParaSpacing, setStyleSet, setTheme, setThemeColors, setThemeFonts, PARA_SPACINGS, STYLE_SETS, THEMES, THEME_COLORS, THEME_FONTS } from '../document/themes';
 import { groupOf, turnOf, withFloats } from '../document/arrange';
 import { PLACE_MARGIN, type InPlace } from './in-place';
@@ -101,6 +102,12 @@ import {
 
 export interface DocModeHost {
   flash(msg: string, ms?: number): void;
+  /** SI projects, for manuscripts linked to their SI (the desktop app). */
+  si?(): SiAccess | null;
+  /** An SI compound's structure as an SVG picture (for the Linked SI panel). */
+  siPicture?(link: SiLink, key: string): Promise<string | null>;
+  /** Show the side panel if it is closed (the Linked SI panel is in it). */
+  revealSide?(): void;
   /** A key the document doesn't use itself (menu commands). True when it did something. */
   key(e: KeyboardEvent): boolean;
   /** One of the app's commands (a ribbon button the document doesn't run itself). */
@@ -291,6 +298,9 @@ export class DocumentMode {
   readonly nav: DocNav;
   /** Insert > Cover Page, Blank Page, Quick Parts, Date and Time, and cross-references. */
   readonly inserts: DocInsertUI;
+  /** References ▸ Compounds and SI: the manuscript's link to its SI project. */
+  readonly siUi: DocSiUI;
+  private readonly siPanel: DocSiPanel;
   /** Home > Borders, Shading and Sort. */
   readonly paragraphs: DocParagraphUI;
   readonly proofing: DocProofingUI;
@@ -412,6 +422,24 @@ export class DocumentMode {
       showFound: () => this.redraw(),
       resized: () => { for (const v of this.views) v.resize(); this.redraw(); },
       focus: () => this.focus(),
+    });
+    this.siUi = new DocSiUI({
+      file: () => this.file,
+      ed: () => this.ed,
+      insertObject: (o, kind, look) => this.insertObject(o, kind, look),
+      flash: (msg, ms) => this.host.flash(msg, ms),
+      focus: () => this.focus(),
+      si: () => this.host.si?.() ?? null,
+      reveal: () => this.host.revealSide?.(),
+    });
+    this.siPanel = new DocSiPanel($('#msi-section'), $('#msi-body'), this.siUi, {
+      file: () => this.file,
+      ed: () => this.ed,
+      insertObject: (o, kind, look) => this.insertObject(o, kind, look),
+      flash: (msg, ms) => this.host.flash(msg, ms),
+      focus: () => this.focus(),
+      si: () => this.host.si?.() ?? null,
+      picture: (link, key) => this.host.siPicture?.(link, key) ?? Promise.resolve(null),
     });
     this.inserts = new DocInsertUI({
       file: () => this.file,
@@ -1021,6 +1049,14 @@ export class DocumentMode {
   // ---------------------------------------------------------------- showing a tab
 
   /** A document tab came to the front (or null: another kind of tab). */
+  /** An SI project changed (or was opened or closed): the linked document's labels, pages and panel follow it. */
+  siChanged(path: string | null): void {
+    const f = this.file;
+    if (!f?.t.siLink || (path !== null && f.t.siLink.path !== path)) return;
+    this.siPanel.forget();
+    void this.siUi.update().then(() => this.siPanel.refresh());
+  }
+
   show(tab: Tab | null): void {
     if (this.tab && this.tab !== tab) { this.leave(); this.figureOffer.leave(); }
     this.tab?.document?.endBox();
@@ -1028,6 +1064,8 @@ export class DocumentMode {
     const f = tab?.document ?? null;
     for (const v of this.views) v.file = f;
     if (!f) {
+      const msi = document.getElementById('msi-section');
+      if (msi) msi.hidden = true;
       if (this.blink) { clearInterval(this.blink); this.blink = null; }
       this.panel.closeBoxes();
       this.fontBox?.close();
@@ -1037,6 +1075,7 @@ export class DocumentMode {
       return;
     }
     f.listener = (kind) => this.changed(kind);
+    this.siPanel.refresh();
     f.onRefused = () => this.indexes.refused(f);
     // chemistry as it's typed: CH2Cl2 becomes a formula, -> an arrow… (Edit > Typing and Spelling)
     f.ed.onTyped = (typed) => afterTyping(f.ed, typed);
@@ -1118,6 +1157,8 @@ export class DocumentMode {
   private changed(kind: 'text' | 'selection'): void {
     const f = this.file;
     if (!f) return;
+    // the Linked SI panel follows the text (soon after typing stops)
+    if (kind === 'text' && (f.t.siLink || document.getElementById('msi-section')?.hidden === false)) this.siPanel.refresh(700);
     // text with similar formatting stays selected until the caret moves or the text changes another way
     if (this.similar && (this.similar.t !== f.t || f.ed.start !== this.similar.at[0] || f.ed.end !== this.similar.at[1])) this.similar = null;
     // the text box being typed into was taken away (Undo, Cut)
@@ -2659,6 +2700,9 @@ export class DocumentMode {
     if (((isMac ? e.metaKey : e.ctrlKey) || this.reading) && !e.shiftKey && !e.altKey) {
       const link = this.linkAtPoint(p);
       if (link) { void followLink(link); return; }
+      // a compound number or label of the linked SI: open it in the SI
+      const si = f.box ? null : DocSiUI.fieldAt(f.layout().text, f.t, p.x, p.y);
+      if (si !== null) { this.siUi.follow(si); return; }
     }
     const now0 = performance.now();
     const c0 = this.clicks;
@@ -2840,9 +2884,10 @@ export class DocumentMode {
       const across = box && picked !== null ? this.cornerAt(picked, box, p) : null;
       // a structure: a hand, since a double-click opens it for drawing (and a click picks it)
       const link = id === null || o?.kind === 'table' || o?.kind === 'textbox' ? this.linkAtPoint(p) : null;
-      const tip = link ? linkTip(link, !this.reading) : '';
+      const siField = !link && id === null && !f.box ? DocSiUI.fieldAt(f.layout().text, f.t, p.x, p.y) : null;
+      const tip = link ? linkTip(link, !this.reading) : siField !== null ? this.siUi.tip(siField) : '';
       if (this.view.scroller.title !== tip) this.view.scroller.title = tip;
-      if (link && (this.reading || (isMac ? e.metaKey : e.ctrlKey))) { this.view.scroller.style.cursor = 'pointer'; return; }
+      if ((link || siField !== null) && (this.reading || (isMac ? e.metaKey : e.ctrlKey))) { this.view.scroller.style.cursor = 'pointer'; return; }
       if (this.tables.painting && this.cellAt(p)) { this.view.scroller.style.cursor = 'crosshair'; return; }
       if (this.painter && !this.reading) { this.view.scroller.style.cursor = BRUSH; return; }
       this.view.scroller.style.cursor = across && across.left !== across.top ? 'nesw-resize' : corner || across ? 'nwse-resize' : id === null || o?.kind === 'table' ? 'text'
@@ -3625,6 +3670,12 @@ export class DocumentMode {
       case 'insert-caption': void this.insertCaption(); break;
       case 'cross-reference': void this.crossReference(); break;
       case 'compound-number': void this.compoundNumber(); break;
+      case 'si-link': void this.siUi.linkMenu(); break;
+      case 'si-compound': void this.siUi.insertCompound(); break;
+      case 'si-reference': void this.siUi.insertReference(); break;
+      case 'si-check': void this.siUi.showCheck(); break;
+      case 'si-update': void this.siUi.update(true, true); break;
+      case 'si-renumber': void this.siUi.renumberSi(); break;
       case 'insert-citation': void this.insertCitation(); break;
       case 'zotero-cite': void this.zotero('addEditCitation'); break;
       case 'zotero-bib': void this.zotero('addEditBibliography'); break;

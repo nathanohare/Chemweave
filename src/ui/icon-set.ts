@@ -36,6 +36,9 @@ const page = (x = 5, y = 2.75, w = 14, h = 18.5, fold = 4.5) =>
   `<path class="p" d="M${x + 1.5} ${y}h${w - fold - 1.5}l${fold} ${fold}v${h - fold - 1.5}a1.5 1.5 0 0 1-1.5 1.5h-${w - 3}a1.5 1.5 0 0 1-1.5-1.5v-${h - 3}a1.5 1.5 0 0 1 1.5-1.5z"/><path d="M${x + w - fold} ${y}v${fold - 1}a1 1 0 0 0 1 1h${fold - 1}"/>`;
 /** A slide: a wide rounded box with paper inside. */
 const slide = (x = 2.75, y = 4.75, w = 18.5, h = 12.5) => `<rect class="p" x="${x}" y="${y}" width="${w}" height="${h}" rx="2"/>`;
+/** A small letter S, for the SI, centred at (cx, cy). */
+const sGlyph = (cx: number, cy: number, k = 1) =>
+  `<path class="a" d="M${cx + 2 * k} ${cy - 2.5 * k}c${-0.75 * k} ${-0.75 * k} ${-4 * k} ${-1 * k} ${-4 * k} ${0.9 * k}s${4 * k} ${1.1 * k} ${4 * k} ${3 * k}${-3.25 * k} ${1.75 * k} ${-4 * k} ${0.75 * k}"/>`;
 /** A small round badge with a plus, at (cx, cy), in the icon's colour. */
 const plus = (cx = 17.5, cy = 17.5, r = 4.25) => `<circle class="s" cx="${cx}" cy="${cy}" r="${r}"/><path class="k" d="M${cx} ${cy - 2}v4M${cx - 2} ${cy}h4"/>`;
 
@@ -175,6 +178,11 @@ export const ICON_SET: Record<string, IconDef> = {
   'note-options': { hue: 'gray', d: '<circle class="p" cx="12" cy="12" r="3.25"/><path class="a" d="M12 2.75v2.5M12 18.75v2.5M2.75 12h2.5M18.75 12h2.5M5.45 5.45l1.75 1.75M16.8 16.8l1.75 1.75M5.45 18.55l1.75-1.75M16.8 7.2l1.75-1.75"/><circle cx="12" cy="12" r="6.75"/>' },
   'insert-tof': { hue: 'blue', d: '<rect class="f a" x="2.75" y="3.25" width="5.5" height="4.5" rx="1"/><rect class="f a" x="2.75" y="9.75" width="5.5" height="4.5" rx="1"/><rect class="f a" x="2.75" y="16.25" width="5.5" height="4.5" rx="1"/><path d="M10.75 5.5h10.5M10.75 12h10.5M10.75 18.5h10.5"/>' },
   'cross-reference': { hue: 'blue', d: page(9.25, 2.75, 12, 15, 3.5) + '<path class="a" d="M2.75 21.25c0-6 2.5-9.5 8-9.5M8.25 9l2.5 2.75-2.5 2.75"/>' },
+  // the manuscript's SI commands (References > Compounds and SI): each carries a small "S" for the SI
+  'si-link': { hue: 'red', d: page(2.75, 2.75, 12, 15, 3.5) + sGlyph(8.25, 11.25) + '<path class="a" d="M13.5 19.75l1.25 1.25a2.5 2.5 0 0 0 3.5 0l2.5-2.5a2.5 2.5 0 0 0 0-3.5L19.5 13.75M17.25 16.75l-2-2"/>' },
+  'si-compound': { hue: 'red', d: hex(9.25, 13.25, 6.5, 'f a') + '<rect class="p" x="14.75" y="2.75" width="6.5" height="7.5" rx="1.25"/>' + sGlyph(18, 6.5, 0.7) },
+  'si-reference': { hue: 'red', d: page(9.25, 2.75, 12, 15, 3.5) + sGlyph(15, 11) + '<path class="a" d="M2.75 21.25c0-6 2.5-9.5 6-9.5M6.75 9.25l2.25 2.5-2.25 2.5"/>' },
+  'si-check': { hue: 'red', d: page(2.75, 2.75, 12, 15, 3.5) + sGlyph(8.25, 11.25) + '<path class="a" d="M12.75 18l2.75 2.75 5.75-6.5"/>' },
   'mark-entry': { hue: 'blue', d: '<path d="M2.75 5.25h11M2.75 10.25h7M2.75 15.25h5"/><path class="a" d="M10.75 16.75l3.25 3.25 7.25-7.75"/>' },
   'insert-index': { hue: 'blue', d: '<path class="a" d="M3 11.25L5.5 4.25 8 11.25M3.75 9.25h3.5M3.5 13.75h4.5l-4.5 6.5h4.5"/><path d="M11.75 5h9.5M11.75 9.25h9.5M11.75 13.5h9.5M11.75 17.75h6.5"/>' },
   'mark-citation': { hue: 'blue', d: '<path class="a" d="M11.25 4.25c-1.25-1.5-6-1.25-4.5 1.5s5.75 3 5.25 6c-.5 2.5-5.25 2.75-5.25 2.75M6.5 8.75c-1.75 2.5 3.5 3 3.5 3"/><path d="M12.75 18.25l2.75 2.75 5.75-6.25"/>' },

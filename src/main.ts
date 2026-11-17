@@ -111,7 +111,7 @@ import { recordingToWav, NARRATION_NAME } from './deck/narration';
 import { clockText } from './deck/show-link';
 import type { PresenterView } from './ui/presenter-view';
 import { editDrawingStyle } from './ui/style-dialog';
-import { usedObjects, type DocText } from './document/document';
+import { usedObjects, type DocText, type SiLink } from './document/document';
 import { DARK_PALETTES, darkPaletteNamed, showDarkPage, type DarkPalette } from './dark-page';
 import { STYLE_PRESETS, applyStyle, presetNamed, restyleContents, sameLook, styleNamed, type StyleMode } from './drawing-styles';
 import { askCleanUpOption } from './ui/cleanup-picker';
@@ -256,6 +256,8 @@ import { SheetChem } from './sheet/sheet-chem';
 import { structureDoc, structureMolfile } from './sheet/structure-doc';
 import type { SiMode, SiCard } from './ui/si-mode';
 import type { SiProject as SiProjectT } from './si/project';
+import type { SiView } from './si/manuscript';
+import type { SiAccess } from './ui/doc-si';
 import { readScene, sceneToDoc } from './io/chem-formats';
 import { cellName, colOf, rowOf } from './sheet/refs';
 import { checkDrawings, type PlacedDrawing } from './ui/mode-problems';
@@ -8137,6 +8139,9 @@ function loadDocMode(): Promise<DocumentMode> {
   docModeLoading ??= import('./ui/doc-mode').then(({ DocumentMode }) => {
     docMode = new DocumentMode({
       flash,
+      si: () => siAccess,
+      siPicture: (link, key) => siPicture(link, key),
+      revealSide: () => { if (sideIsFolded()) command('fold-side'); },
       key: (e) => docKey(e),
       command: (name) => command(name),
       changed: () => ws.noteChange(),
@@ -8230,7 +8235,7 @@ function loadSiMode(): Promise<SiMode> {
     siMode = new Mode({
       flash,
       hint: (t) => { if (ws.active.mode === 'si' && !cellEdit) setHint(t); },
-      changed: () => { renderTabs(); updateTitle(); },
+      changed: () => { renderTabs(); updateTitle(); siChanged(ws.active.si?.folder.where ?? null); },
       contentsOf: (mol) => {
         const scene = readScene('mol', mol);
         return scene ? sceneToDoc(scene, SI_STYLE).doc.contents() : null;
@@ -8388,11 +8393,11 @@ function siCardEl(c: SiCard): HTMLElement {
   return box;
 }
 
-async function openSiProject(create: boolean): Promise<void> {
+async function openSiProject(create: boolean, at?: string): Promise<void> {
   if (!isTauri()) { flash('SI projects are folders on this computer: open them in the desktop app for now.', 6000); return; }
   finishTab();
   const [{ SiProject, SiProjectError, PROJECT_FILE }, { DiskFolder }, { safeFilename }] = await Promise.all([import('./si/project'), import('./si/folder'), import('./si/ids')]);
-  let path = await pickFolder();
+  let path = at ?? await pickFolder();
   if (!path) return;
   const call = <T,>(cmd: string, args?: Record<string, unknown>, opts?: { headers: Record<string, string> }): Promise<T> => invoke<T>(cmd, args as never, opts as never);
   let project: SiProjectT;
@@ -8431,6 +8436,8 @@ async function openSiProject(create: boolean): Promise<void> {
   }
   await loadSiMode();
   ws.openSi(project);
+  siLinked.delete(project.folder.where);
+  siChanged(project.folder.where);
   if (project.warnings.length) flash(`Opened with ${project.warnings.length} problem${project.warnings.length === 1 ? '' : 's'}: see the project's page.`, 6000);
 }
 
@@ -8444,6 +8451,113 @@ if (import.meta.env.DEV) {
     await loadSiMode();
     ws.openSi(project);
   };
+}
+
+// ---------------------------------------------------------------- manuscripts linked to their SI (phase 4)
+// A document linked to an SI project (References ▸ Linked SI) reads the SI compiled: its
+// compounds, labels and pages. The project is the one open in a tab, else it is read (read-only,
+// no lock) from its folder. The SI compiled is kept until the project changes.
+
+/** Bumped whenever an SI project changes, so what was compiled is made again. */
+let siVersion = 0;
+const siCompiled = new Map<string, { version: number; view: Promise<SiView | null> }>();
+/** SI projects linked documents read that aren't open in a tab (read-only), by folder. */
+const siLinked = new Map<string, SiProjectT>();
+let siChangeTimer = 0;
+
+/** An SI project changed: linked documents follow it (soon, so typing in the SI isn't slowed). */
+function siChanged(path: string | null): void {
+  siVersion++;
+  clearTimeout(siChangeTimer);
+  siChangeTimer = window.setTimeout(() => { if (docModeLoading && docMode) docMode.siChanged(path); }, 1200);
+}
+
+async function siProjectAt(path: string): Promise<SiProjectT | null> {
+  const tab = ws.tabs.find((t) => t.si?.folder.where === path);
+  if (tab?.si) return tab.si;
+  const known = siLinked.get(path);
+  if (known) return known;
+  if (!isTauri()) return null;
+  const [{ SiProject, PROJECT_FILE }, { DiskFolder }] = await Promise.all([import('./si/project'), import('./si/folder')]);
+  const call = <T,>(cmd: string, args?: Record<string, unknown>, opts?: { headers: Record<string, string> }): Promise<T> => invoke<T>(cmd, args as never, opts as never);
+  const folder = new DiskFolder(path, call);
+  if (!(await folder.exists(PROJECT_FILE).catch(() => false))) return null;
+  const p = await SiProject.open(folder);
+  p.readOnly = true;
+  siLinked.set(path, p);
+  return p;
+}
+
+async function compileForLink(link: SiLink): Promise<SiView | null> {
+  const p = await siProjectAt(link.path).catch(() => null);
+  if (!p) { flash(`The linked SI project isn’t at ${link.path} any more. References ▸ Linked SI links it again.`, 7000); return null; }
+  const [{ compileSi }, { siPages, siDataOf }, { DocLayouter }, { docMeasure }] = await Promise.all([import('./si/compile-doc'), import('./si/manuscript'), import('./document/doc-layout'), import('./document/doc-file')]);
+  const got = await compileSi(p, {
+    contentsOf: (mol) => { const scene = readScene('mol', mol); return scene ? sceneToDoc(scene, SI_STYLE).doc.contents() : null; },
+    sizeOf: (c) => figures.size(c, SI_STYLE),
+    facts: (mols) => chem.siFacts(mols),
+  });
+  const doc = { ...got.doc, drawingStyle: { ...SI_STYLE } };
+  const lay = new DocLayouter({ measure: docMeasure, drawingSize: (c, s) => figures.size(c, s) }).layout(doc);
+  const paraPage = lay.paraTops.map((pt) => lay.pages[pt.page]?.number ?? '');
+  return { title: p.title, targets: got.targets, pages: siPages(doc, got.targets, paraPage), data: siDataOf(p) };
+}
+
+/** What documents get of SI projects (the desktop app, and the in-memory projects of a dev browser). */
+const siAccess: SiAccess = {
+  open: () => ws.tabs.filter((t) => t.si).map((t) => ({ path: t.si!.folder.where, title: t.si!.title })),
+  pick: async () => {
+    if (!isTauri()) { flash('SI projects are folders on this computer: link them in the desktop app.', 6000); return null; }
+    const path = await pickFolder();
+    if (!path) return null;
+    const p = await siProjectAt(path).catch(() => null);
+    if (!p) { await showError('This folder is not an SI project (it has no project.json). Pick the project’s own folder: the one Chem SI Assistant made.'); return null; }
+    return { path, title: p.title };
+  },
+  view: (link) => {
+    const had = siCompiled.get(link.path);
+    if (had && had.version === siVersion) return had.view;
+    const view = compileForLink(link).catch((e: unknown) => { flash(`The linked SI could not be compiled: ${e instanceof Error ? e.message : String(e)}`, 7000); return null; });
+    siCompiled.set(link.path, { version: siVersion, view });
+    return view;
+  },
+  openCompound: (link, key) => {
+    const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
+    if (tab) { openSiCompound(tab, key); return; }
+    void openSiProject(false, link.path).then(() => {
+      const t = ws.tabs.find((x) => x.si?.folder.where === link.path);
+      if (t) openSiCompound(t, key);
+    });
+  },
+  openProject: (link) => {
+    const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
+    if (tab) ws.activate(tab); else void openSiProject(false, link.path);
+  },
+  renumber: async (link, ids) => {
+    const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
+    if (!tab?.si) { flash('Open the SI project to renumber it (Linked SI ▸ Open).', 6000); siAccess.openProject(link); return null; }
+    const p = tab.si;
+    if (p.readOnly) { flash('The SI project is open read-only, so it can’t be renumbered.', 6000); return null; }
+    let n = 0;
+    try {
+      for (const x of ids) { await p.setIdOverride(p.compound(x.key), x.to); n++; }
+    } catch (e) {
+      await showError(`The SI could not be renumbered: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    siMode?.refresh();
+    siVersion++;
+    return n;
+  },
+};
+
+/** An SI compound's structure as an SVG picture, for the Linked SI panel. */
+async function siPicture(link: SiLink, key: string): Promise<string | null> {
+  const p = await siProjectAt(link.path).catch(() => null);
+  const c = p?.compounds.find((x) => x.id === key);
+  if (!p || !c || !p.hasStructure(c)) return null;
+  const mol = await p.readStructure(c);
+  const scene = mol ? readScene('mol', mol) : null;
+  return scene ? drawingSvg(sceneToDoc(scene, SI_STYLE).doc, null) : null;
 }
 
 /** The window is closing: Chem SI Assistant can open the projects for editing again. */

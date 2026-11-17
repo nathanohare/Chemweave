@@ -31,7 +31,7 @@ import { SINGLE, type Measure } from '../text/layout';
 import { arialWidth } from '../text-metrics';
 import { documentMeasure } from '../text/font-measure';
 import {
-  OBJECT_CHAR, defaultCharStyles, defaultHeaderFooter, defaultPage, defaultStyles,
+  OBJECT_CHAR, compoundSeqs, defaultCharStyles, defaultHeaderFooter, defaultPage, defaultStyles,
   COL_GAP, FLOAT_GAP, columnsOf, contentsPrint, lookExtent, usedObjects,
   type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
 } from '../document/document';
@@ -40,7 +40,7 @@ import { shownSize } from '../document/doc-layout';
 import { coveringCell, layoutTable } from '../table';
 import { chemdrawCdx, isChemDraw, readEmbedded } from './ole-object';
 import { cmtIds, cmtString, type CommentNote, type CommentThread } from '../document/comments';
-import { BIB_MARK, CHART_NAME, CITE_FIELD, WORD_HIGHLIGHTS, DOCX_REL, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, fromWordDate, w14Look, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, TABLE_MARK, TABLE_NAME, W_NS, type DocxModel } from './docx-base';
+import { BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, WORD_HIGHLIGHTS, DOCX_REL, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, fromWordDate, w14Look, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, TABLE_MARK, TABLE_NAME, W_NS, type DocxModel } from './docx-base';
 import { wordTablePrint } from './native-print';
 import { citationNumbers, cleanRef, type Piece as BibPiece, type Reference } from '../document/references';
 import { bibFieldApp, placeRef, readCiteField, readMendeleyTag, styleFromCsl, zoteroStyleOf, MANAGERS, type CiteLive, type CiteManager, type ManagerCite } from '../document/live-cites';
@@ -1807,7 +1807,7 @@ class DocxReader {
   /** A field kept as Word had it: what it showed is its result. */
   private keptEnded(f: Field): void {
     const o = f.kept !== undefined ? this.objects[f.kept] : undefined;
-    if (o?.kind === 'field' && o.code === 'word') o.text = f.text;
+    if ((o?.kind === 'field' && o.code === 'word') || o?.kind === 'si') o.text = f.text;
   }
 
   /**
@@ -1949,6 +1949,13 @@ class DocxReader {
       f.toc = true;
       // kept as Word had it: the field's paragraphs become the bibliography's entries
       if (this.keepBib && !this.capture) { f.bib = id; this.capture = { id, paras: [[]] }; } else f.swallow = true;
+      return;
+    }
+    // something of the linked SI, saved here: its last text is its result
+    const si = new RegExp(`^${SI_FIELD}\\s+(id|label|page)\\s+(\\S+)`).exec(ins);
+    if (si && !ctx.cell) {
+      const id = this.emitObject(ctx, { kind: 'si', what: si[1] as 'id' | 'label' | 'page', key: si[2], text: '' }, f.shown ?? f.props);
+      if (id !== null) { f.kept = id; f.swallow = true; }
       return;
     }
     // a citation saved here: live again, citing the references in our part
@@ -3141,6 +3148,14 @@ class DocxReader {
       for (const [id, c] of Object.entries(cm.comments)) if (on.has(Number(id))) comments[Number(id)] = c;
       if (!Object.keys(comments).length) comments = undefined;
     } else for (let i = 0; i < runs.length; i++) if (runs[i].cmt) { const { cmt: _, ...rest } = runs[i]; runs[i] = rest; }
+    // compound numbers linked to SI compounds (by the order of the numbers, as written)
+    if (Array.isArray(m?.siNumbers)) {
+      compoundSeqs({ runs, objects }).forEach((id, i) => {
+        const si = m.siNumbers![i];
+        const o = objects[id];
+        if (o?.kind === 'seq' && si && typeof si === 'object') objects[id] = { ...o, si: Object.fromEntries(Object.entries(si).filter(([, v]) => typeof v === 'string')) };
+      });
+    }
     return {
       runs: rt.normalizeRuns(runs),
       ...(comments ? { comments } : {}),
@@ -3163,6 +3178,7 @@ class DocxReader {
       ...(this.liveRefs.length || Array.isArray(m?.references) ? { references: this.liveRefs } : {}),
       ...(parseDesign(m?.design) ? { design: parseDesign(m?.design)! } : {}),
       ...(m?.noFigureOffer === true ? { noFigureOffer: true } : {}),
+      ...(m?.siLink && typeof m.siLink.path === 'string' && m.siLink.path ? { siLink: { path: m.siLink.path, title: typeof m.siLink.title === 'string' ? m.siLink.title : '' } } : {}),
       ...(typeof m?.citeStyle === 'string' && m.citeStyle in CITE_PRESETS ? { citeStyle: m.citeStyle } : zoteroStyle ? { citeStyle: zoteroStyle } : {}),
       ...(manager ? { citeManager: manager } : {}),
       ...(zoteroPrefs ? { zoteroPrefs } : {}),

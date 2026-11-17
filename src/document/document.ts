@@ -402,7 +402,7 @@ export type DocObject =
    */
   | { kind: 'table'; table: TableData }
   /** A caption's number (Figure 1, Scheme 2): it counts the captions of its name. */
-  | { kind: 'seq'; name: string }
+  | { kind: 'seq'; name: string; /** A compound number's compounds in the linked SI: by the letter typed after the number ('' for none), the compound's id in the SI project. */ si?: Record<string, string> }
   /** A reference to a caption ("see Figure 2"), which follows its number. */
   | { kind: 'ref'; target: number }
   /** A citation of references in the document's list (by their ids): numbers in order of first citation. */
@@ -443,7 +443,20 @@ export type DocObject =
    * list, filled in by whoever has the document, also when it is protected for filling in forms
    * (Review > Restrict Editing). `name` is its name in Word (Text1, Check1, Dropdown1).
    */
-  | { kind: 'form'; type: FormType; name?: string; value?: string; checked?: boolean; items?: string[]; help?: string };
+  | { kind: 'form'; type: FormType; name?: string; value?: string; checked?: boolean; items?: string[]; help?: string }
+  /**
+   * Something of the linked SI project (`DocText.siLink`, see si/manuscript.ts): a compound's ID
+   * (`id`, by the compound's id in the project), a table's, figure's or scheme's label (`label`,
+   * "Table S1") or the SI page a compound or label is on (`page`, "S6"). `text` is what it showed
+   * when last brought up to date from the SI, so it shows the same with the SI closed.
+   */
+  | { kind: 'si'; what: SiFieldWhat; key: string; text: string };
+
+/** What an SI field shows: a compound's ID, a label, or the SI page something is on. */
+export type SiFieldWhat = 'id' | 'label' | 'page';
+
+/** The SI project a manuscript is linked to: its folder, and its title when linked (to name it while it is closed). */
+export interface SiLink { path: string; title: string }
 
 /** A form field's kind: a text box, a check box or a drop-down list. */
 export type FormType = 'text' | 'check' | 'drop';
@@ -505,6 +518,8 @@ export interface DocText extends RichText {
   controls?: Record<string, ContentControl>;
   /** Other programs' data in the file that nothing here uses (custom XML, custom properties, add-in settings), saved back as it was. */
   kept?: KeptParts;
+  /** The SI project this manuscript is linked to (References ▸ Linked SI): its compounds' IDs and labels show here. */
+  siLink?: SiLink;
 }
 
 /** What Design has set: names of the choices made (kept with the document, so the galleries show them). */
@@ -1012,6 +1027,11 @@ export function objectOffsets(runs: TextRun[]): Map<number, number> {
 /** What compound numbers count: each new compound gets the next number, in order of first mention. */
 export const COMPOUND = 'Compound';
 
+/** The compound numbers (Compound seq fields) in the order of the text, tables included. */
+export function compoundSeqs(t: Pick<DocText, 'runs' | 'objects'>): number[] {
+  return objectsInText(flatRuns(t)).filter((id) => { const o = t.objects[id]; return o?.kind === 'seq' && o.name === COMPOUND; });
+}
+
 /**
  * What each field shows: a caption's number counts the captions of its name before it (the
  * third Figure caption shows 3); a reference shows its caption's label and number, as Word's
@@ -1035,6 +1055,7 @@ export function fieldTexts(t: Pick<DocText, 'runs' | 'objects'> & Partial<Pick<D
       continue;
     }
     if (o?.kind === 'form') { shown.set(id, formShown(o)); continue; }
+    if (o?.kind === 'si') { shown.set(id, o.text || '??'); continue; }
     if (o?.kind !== 'seq') continue;
     const n = (counts.get(o.name) ?? 0) + 1;
     counts.set(o.name, n);
