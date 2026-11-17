@@ -4921,3 +4921,10 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-xray-pic { margin: 4px 0; }
 .si-xray-pic img { display: block; max-width: 100%; height: auto; }
 .si-xray-caption { margin: 2px 0 6px; font-size: 12px; }
+.si-xray { display: flex; flex-direction: column; gap: 8px; }
+.si-xray-pic { cursor: zoom-in; }
+.si-xray-rows { display: grid; grid-template-columns: 18px minmax(160px, max-content) minmax(0, 1fr); gap: 1px 6px; align-items: center; font-size: var(--fs-sm); margin-top: 4px; }
+.si-xray-row { display: contents; }
+.si-xray-value { padding: 1px 4px; font-size: var(--fs-sm); }
+.si-xray-value.si-typed { font-weight: 700; }
+.si-xray .si-num { width: 5em; }

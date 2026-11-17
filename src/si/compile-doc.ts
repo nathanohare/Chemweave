@@ -745,6 +745,9 @@ class Compiler {
     if (s.data.table === false) return;
     if (!rows.length) { this.notes.push(`${where}: its crystal data table has no values; left out.`); return; }
     const look: RunStyle = { ...this.b.styleLook({}), size: 10 };
+    // its width: as its contents need (the default), or a share of the text's width
+    const tableW = Math.max(0, Math.min(100, Number(s.data.table_width) || 0));
+    const share = tableW ? Math.max(0.2, tableW / 100) : 1;
     const cells: TableCell[][] = rows.map(([, label, value]) => [
       { runs: this.cellRuns(label, where, look), align: 'left' },
       { runs: this.cellRuns(value, where, look), align: 'left' },
@@ -752,7 +755,7 @@ class Compiler {
     this.caption(this.labels.at(s.id, 1) || 'Table', parseMarkup(xrayTableCaption(s.data, ref)).flatMap((p) => p.runs), where, { align: 'center', keepNext: true, spaceAfter: 4 }, { key: s.id + '#table', kind: 'table' });
     this.b.table({
       kind: 'table',
-      table: { cols: [TEXT_W * 0.45, TEXT_W * 0.55].map((w) => Math.round(w * 100) / 100), rows: cells, head: 0, lines: 'acs', size: 10, width: 'auto', autofit: true, align: ['left', 'left'] },
+      table: { cols: [TEXT_W * 0.45, TEXT_W * 0.55].map((w) => Math.round(w * share * 100) / 100), rows: cells, head: 0, lines: 'acs', size: 10, width: tableW ? { pct: Math.round(share * 100) } : 'auto', autofit: !tableW, align: ['left', 'left'] },
     }, this.full({ align: 'center', spaceAfter: 12 }));
   }
 

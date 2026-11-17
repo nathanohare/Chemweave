@@ -8260,6 +8260,7 @@ function loadSiMode(): Promise<SiMode> {
       },
       contentsOfCdxml: (text) => { try { return readCdxml(text).doc.contents(); } catch { return null; } },
       openSymbols: () => symbolWindow.open(),
+      copyRich: (text, html) => crystalOptions().copy(text, html),
       nameStructure: async (mol) => {
         if (!chem.ready) return { ok: false, message: 'The chemistry engine is still loading. Try again in a moment.' };
         const smiles = await chem.molToSmiles(mol);

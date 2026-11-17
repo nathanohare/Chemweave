@@ -149,3 +149,48 @@ describe('an X-ray structure’s parts', () => {
     expect(rows.every(([, , v]) => v.trim())).toBe(true);
   });
 });
+
+describe('X-ray structures edited in Chemweave', () => {
+  it('stores a view from the crystal window as SI Assistant does, keeping what only Chemweave draws', async () => {
+    const { storedView } = await import('../src/si/xray');
+    const { block } = xrayBlock(CIF, '');
+    const first = xrayDrawing(block!, {}, 460);
+    if ('error' in first) throw new Error(first.error);
+    const v = { ...first.spec.view, style: 'stick' as const, probability: 30 as const, hydrogens: false, labelStyle: 'paren' as const, labelAtoms: { O1: false } };
+    const stored = storedView(v, 20);
+    // SI Assistant's keys: a style it lacks is ORTEP there
+    expect(stored).toMatchObject({ style: 'ortep', cw_style: 'stick', probability: 30, hydrogens: 'hide', zoom: 20, label_style: 'paren', label_atoms: { O1: false } });
+    const again = xrayDrawing(block!, stored, 460);
+    if ('error' in again) throw new Error(again.error);
+    expect(again.spec.view.style).toBe('stick');
+    expect(again.spec.view.hydrogens).toBe(false);
+    expect(again.spec.view.labelStyle).toBe('paren');
+    expect(again.spec.view.labelAtoms).toEqual({ O1: false });
+    expect(again.spec.view.rotation).toEqual(stored.rotation);
+  });
+
+  it('replaces the CIF, the old one going to the Trash, and starts again from the best view', async () => {
+    const f = withXray({ view: { zoom: 12 }, table_values: { ccdc: '99' } });
+    const p = await SiProject.open(f);
+    const s = p.sections.find((x) => x.type === 'xray')!;
+    const name = await p.attachSectionFile(s, 'acid.cif', enc(CIF));
+    expect(name).toBe('acid.cif');
+    expect(s.data).toMatchObject({ file: 'acid.cif', block: '', view: {}, table_values: {} });
+    const entry = [...f.files.keys()].find((k) => /^trash\/[^/]+\/entry\.json$/.test(k))!;
+    expect(json(f, entry)).toMatchObject({ kind: 'file', item: 'acid.cif', section_id: s.id });
+    expect(f.files.has(`${s.folder}/acid.cif`)).toBe(true);
+  });
+
+  it('prints the crystal data table at the width chosen (as its contents need by default)', async () => {
+    const table = (c: CompiledSi) => Object.values(c.doc.objects).flatMap((o) => (o.kind === 'table' ? [o.table] : [])).find((tb) => tb.rows.some((r) => plainText(r[0].runs) === 'Empirical formula'))!;
+    const fit = table(await compile(withXray()));
+    expect(fit.width).toBe('auto');
+    expect(fit.autofit).toBe(true);
+    const full = table(await compile(withXray({ table_width: 100 })));
+    expect(full.width).toEqual({ pct: 100 });
+    expect(full.autofit).toBe(false);
+    const part = table(await compile(withXray({ table_width: 60 })));
+    expect(part.width).toEqual({ pct: 60 });
+    expect(part.cols.reduce((a, b) => a + b, 0)).toBeCloseTo(fit.cols.reduce((a, b) => a + b, 0) * 0.6, 0);
+  });
+});

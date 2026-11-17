@@ -711,6 +711,34 @@ export class SiProject {
   }
 
   /**
+   * A file for a section of its own (an X-ray structure's CIF): copied into the section's folder,
+   * the one it replaces going to the Trash first. An X-ray structure starts again from the best
+   * view of the new file's first structure, without values typed for the old one.
+   */
+  async attachSectionFile(s: SiSection, name: string, bytes: Uint8Array): Promise<string> {
+    this.checkWritable();
+    const old = str(s.data.file);
+    const passing = join(s.folder, `.incoming-${newId('t').slice(2)}`);
+    await this.folder.writeBytes(passing, bytes);
+    try {
+      if (old) await this.moveToTrash([join(s.folder, old)], 'file', nameOf(old), { section_id: s.id, section_name: s.name });
+    } catch (e) {
+      await this.folder.remove(passing).catch(() => {});
+      throw e;
+    }
+    const clean = safeFilename(name) || 'structure.cif';
+    const dot = clean.lastIndexOf('.');
+    const stem = dot > 0 ? clean.slice(0, dot) : clean, ext = dot > 0 ? clean.slice(dot) : '';
+    let pick = clean;
+    for (let n = 2; await this.folder.exists(join(s.folder, pick)); n++) pick = `${stem} (${n})${ext}`;
+    await this.folder.move(passing, join(s.folder, pick));
+    s.data.file = pick;
+    if (s.type === 'xray') Object.assign(s.data, { block: '', view: {}, table_values: {} });
+    await this.saveSection(s);
+    return pick;
+  }
+
+  /**
    * Move files into one new Trash entry (trash/<when>-<id>/), the first the item and the rest its
    * companions, all or nothing: the entry is described first (marked pending), and anything
    * already moved is put back when one can't be.

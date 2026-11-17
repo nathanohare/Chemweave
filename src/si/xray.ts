@@ -6,7 +6,7 @@
 
 import { readCif, type CifBlock } from '../chem/cif';
 import { CrystalError, crystalTable, grow, structureFromCif, type M3 } from '../chem/crystal';
-import { bestRotation, crystalShapes, defaultView, shapesBounds, specAtoms, type CrystalSpec, type XView } from '../design/xray';
+import { bestRotation, crystalShapes, defaultView, shapesBounds, specAtoms, type CrystalSpec, type LabelPlace, type XView } from '../design/xray';
 import type { Json } from './project';
 
 /** A new drawing's width when the section has no view stored yet: about 12 cm (SI Assistant's). */
@@ -28,7 +28,9 @@ function viewOf(stored: Json, atoms: CrystalSpec['atoms']): { view: XView; zoom:
   const r = stored.rotation;
   const rot = Array.isArray(r) && r.length === 3 && r.every((row) => Array.isArray(row) && row.length === 3 && row.every((x) => typeof x === 'number' && Number.isFinite(x))) ? (r as M3) : null;
   v.rotation = rot ?? bestRotation(atoms.filter((a) => a.el !== 'H' && a.el !== 'D').map((a) => a.xyz));
-  if (stored.style === 'ball') v.style = 'ball';
+  // (SI Assistant draws ORTEP or ball-and-stick; Chemweave's other styles are kept beside it)
+  const style = str(stored.cw_style) || str(stored.style);
+  if (['ball', 'stick', 'fill', 'wire'].includes(style)) v.style = style as XView['style'];
   if ([30, 50, 70, 90].includes(Number(stored.probability))) v.probability = Number(stored.probability) as XView['probability'];
   if (stored.hydrogens === 'hide') v.hydrogens = false;
   if (typeof stored.colour === 'boolean') v.colour = stored.colour;
@@ -41,8 +43,58 @@ function viewOf(stored: Json, atoms: CrystalSpec['atoms']): { view: XView; zoom:
   }
   if (Array.isArray(stored.hidden_molecules)) v.hiddenMolecules = stored.hidden_molecules.filter((x): x is number => typeof x === 'number');
   if (Array.isArray(stored.hidden_parts)) v.hiddenParts = stored.hidden_parts.map(String);
+  // what Chemweave's viewer adds (SI Assistant reads past these keys)
+  const places = ['auto', 'open', 'right', 'left', 'above', 'below', 'center'];
+  if (places.includes(str(stored.label_place))) v.labelPlace = stored.label_place as LabelPlace;
+  const gap = Number(stored.label_gap);
+  if (stored.label_gap !== undefined && Number.isFinite(gap) && gap >= 0 && gap <= 20) v.labelGap = gap;
+  if (typeof stored.leaders === 'boolean') v.leaders = stored.leaders;
+  if (stored.label_style === 'paren' || stored.label_style === 'plain') v.labelStyle = stored.label_style;
+  const sides = Object.entries(dict(stored.label_sides)).filter(([, x]) => places.includes(str(x)));
+  if (sides.length) v.labelSides = Object.fromEntries(sides) as Record<string, LabelPlace>;
+  const which = Object.entries(dict(stored.label_atoms)).filter(([, x]) => typeof x === 'boolean');
+  if (which.length) v.labelAtoms = Object.fromEntries(which) as Record<string, boolean>;
+  const nums = (x: unknown): number[] => (Array.isArray(x) ? x.filter((n): n is number => typeof n === 'number' && Number.isInteger(n)) : []);
+  if (nums(stored.hidden_atoms).length) v.hiddenAtoms = nums(stored.hidden_atoms);
+  if (nums(stored.faded_atoms).length) v.fadedAtoms = nums(stored.faded_atoms);
+  const fade = Number(stored.fade);
+  if (stored.fade !== undefined && Number.isFinite(fade) && fade >= 0 && fade <= 1) v.fade = fade;
   const zoom = Number(stored.zoom);
   return { view: v, zoom: rot && Number.isFinite(zoom) && zoom > 0 ? zoom : null };
+}
+
+/**
+ * A view from Chemweave's crystal viewer as SI Assistant stores it (its ViewSettings JSON), with
+ * what only Chemweave draws in keys of their own: SI Assistant reads past them, and draws a style
+ * it lacks (sticks, space-filling, wire) as ORTEP.
+ */
+export function storedView(v: XView, zoom: number): Json {
+  const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
+  const out: Json = {
+    rotation: v.rotation.map((row) => row.map(r6)),
+    zoom: Math.round(zoom * 1e4) / 1e4,
+    style: v.style === 'ball' ? 'ball' : 'ortep',
+    probability: v.probability,
+    hydrogens: v.hydrogens ? 'spheres' : 'hide',
+    colour: v.colour,
+    principal: v.principal,
+    labels: v.labels,
+    label_size: v.labelSize,
+    label_offsets: Object.fromEntries(Object.entries(v.labelOffsets).map(([k, o]) => [k, [Math.round(o[0] * 10) / 10, Math.round(o[1] * 10) / 10]])),
+    hidden_molecules: [...v.hiddenMolecules],
+    hidden_parts: [...v.hiddenParts],
+  };
+  if (v.style !== 'ortep' && v.style !== 'ball') out.cw_style = v.style;
+  if (v.labelPlace) out.label_place = v.labelPlace;
+  if (v.labelGap !== undefined) out.label_gap = v.labelGap;
+  if (v.leaders !== undefined) out.leaders = v.leaders;
+  if (v.labelStyle) out.label_style = v.labelStyle;
+  if (v.labelSides && Object.keys(v.labelSides).length) out.label_sides = { ...v.labelSides };
+  if (v.labelAtoms && Object.keys(v.labelAtoms).length) out.label_atoms = { ...v.labelAtoms };
+  if (v.hiddenAtoms?.length) out.hidden_atoms = [...v.hiddenAtoms];
+  if (v.fadedAtoms?.length) out.faded_atoms = [...v.fadedAtoms];
+  if (v.fade !== undefined) out.fade = v.fade;
+  return out;
 }
 
 /** The structure to draw and its size in points (as SI Assistant's view has it, at most `maxW` wide). */

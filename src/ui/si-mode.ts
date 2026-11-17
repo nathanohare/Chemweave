@@ -23,6 +23,7 @@ import { SiRichBox } from './si-rich';
 import { SiTableEditor } from './si-table';
 import { SiFigureEditor } from './si-figure';
 import { SiPictures } from './si-picture';
+import { SiXrayPage } from './si-xray';
 import { newTable } from '../si/tables';
 import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
@@ -65,6 +66,8 @@ export interface SiModeHost {
   openCompiled(doc: DocText, name: string, pdf: boolean): Promise<void>;
   /** Insert ▸ Symbol's window (it types into the SI text box last typed in). */
   openSymbols(): void;
+  /** Put text on the clipboard as plain text and HTML. */
+  copyRich(text: string, html: string): Promise<void>;
   /** A structure's systematic name, given only when the name reads back as the same structure. */
   nameStructure(molfile: string): Promise<{ ok: true; name: string } | { ok: false; message: string }>;
 }
@@ -119,6 +122,7 @@ const RIBBON = `
     <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
     <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
     <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is picked">Picture Format</button>
+    <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
   </div>
   <div class="rb-panel" data-si-panel="insert" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -211,6 +215,22 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-fig="remove-figure" data-ic="delete" title="Take the figure and its caption out of the text (its picture stays in images/)"><span class="rb-icon">✕</span>Delete Figure</button>
     </div><div class="rb-label">Figure</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="xray" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-xray="choose-cif" data-ic="insert-object" title="Choose CIF: the structure's CIF file (a copy is kept in the project folder; the one it replaces goes to the Trash)"><span class="rb-icon">▤</span>Choose CIF</button>
+      <button class="rb-big" data-si-xray="edit" data-ic="structure" title="Edit Structure: turn it, change its style (ORTEP, ball-and-stick…), its labels and what is shown, in the crystal structure window (double-click the structure does the same)"><span class="rb-icon">⌬</span>Edit Structure</button>
+    </div><div class="rb-label">Structure</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-xray="copy-svg" title="Copy As SVG: the structure as a vector picture, to paste into another program">Copy As SVG</button>
+        <button data-si-xray="copy-picture" title="Copy As Picture: a metafile and bitmap on Windows (Word and PowerPoint keep it sharp), a PNG elsewhere">Copy As Picture</button>
+        <button data-si-xray="save-picture" title="Save the structure as an SVG or PNG picture">Save as Picture…</button>
+      </div>
+      <div class="rb-col">
+        <button data-si-xray="copy-table" title="Copy the crystal data table as it prints, to paste into Word, Excel or a document">Copy Table</button>
+      </div>
+    </div><div class="rb-label">Copy and Save</div></div>
   </div>
   <div class="rb-panel" data-si-panel="home">
     <div class="rb-group"><div class="rb-row">
@@ -327,6 +347,8 @@ export class SiMode {
       if (fmt) { this.format(fmt.dataset.siFmt!); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
       if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
+      const xr = t.closest<HTMLElement>('[data-si-xray]');
+      if (xr) { void this.xrayPage?.command(xr.dataset.siXray!); return; }
       const fig = t.closest<HTMLElement>('[data-si-fig]');
       if (fig) { void this.activeFigure?.command(fig.dataset.siFig!); return; }
       const b = t.closest<HTMLElement>('[data-si]');
@@ -363,6 +385,8 @@ export class SiMode {
 
   /** The table whose cell was last picked (the Table Layout tab acts on it). */
   private activeTable: SiTableEditor | null = null;
+  /** The X-ray structure page shown (the Crystal Structure tab acts on it). */
+  private xrayPage: SiXrayPage | null = null;
   /** The figure last picked (the Picture Format tab acts on it). */
   private activeFigure: SiFigureEditor | null = null;
   /** The SI text box last typed in, and where in it. */
@@ -382,6 +406,14 @@ export class SiMode {
     tab.hidden = !t;
     if (!t && tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home');
     if (t) this.tableState(t);
+  }
+
+  /** An X-ray structure's page shown (or none): the Crystal Structure tab shows (or goes). */
+  private xrayShown(x: SiXrayPage | null): void {
+    const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="xray"]')!;
+    this.xrayPage = x;
+    tab.hidden = !x;
+    if (!x && tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home');
   }
 
   /** A figure picked (or none): the Picture Format tab shows (or goes), with that figure's width. */
@@ -450,7 +482,7 @@ export class SiMode {
   }
 
   /** Save what is being typed. */
-  commitAll(): void { for (const b of this.boxes) b.commit(); for (const t of this.tables) t.commit(); }
+  commitAll(): void { for (const b of [...this.boxes, ...(this.xrayPage?.boxes ?? [])]) b.commit(); for (const t of this.tables) t.commit(); }
 
   /** Everything again: the tree, the page, the status bar. */
   refresh(): void {
@@ -833,12 +865,15 @@ export class SiMode {
   // ---------------------------------------------------------------- pages
 
   private renderPage(): void {
+    // (a contextual tab open before stays open when the page drawn again has it)
+    const keep = this.ribbon.querySelector<HTMLElement>('[data-si-tab][aria-selected="true"]')?.dataset.siTab ?? '';
     this.commitAll();
     this.boxes = [];
     this.tables = [];
     this.figures = [];
     this.tableChosen(null);
     this.figureChosen(null);
+    this.xrayShown(null);
     const p = this.project!;
     const pick = this.pick;
     const out = el('div', 'si-sheet');
@@ -857,6 +892,7 @@ export class SiMode {
     else if (pick.kind === 'warnings') this.warningsPage(out);
     if (this.pick.kind === 'project') this.projectPage(out);
     this.page.replaceChildren(out);
+    if (keep && this.ribbon.querySelector<HTMLElement>(`[data-si-tab="${keep}"]`)?.hidden === false) this.showRibbonTab(keep);
     void this.readLabels();
   }
 
@@ -1145,44 +1181,21 @@ export class SiMode {
    */
   private xrayCard(out: HTMLElement, s: SiSection): void {
     const p = this.project!;
-    const card = el('div', 'si-card');
-    const h = el('h3', 'si-sub', 'X-ray structure');
-    addInfo(h, 'Printed with its figure caption and, when ticked, its crystal data table. Choose the CIF, turn the structure and change its look or captions in Chem SI Assistant for now.');
-    card.append(h);
-    out.append(card);
-    const file = typeof s.data.file === 'string' ? s.data.file : '';
-    if (!file) { card.append(el('p', 'muted si-note', 'No CIF file has been chosen yet.')); return; }
-    const pic = el('div', 'si-xray-pic');
-    const cap = el('p', 'si-xray-caption muted');
-    card.append(pic, cap);
-    const tickRow = el('label', 'si-part');
-    const box = el('input');
-    box.type = 'checkbox';
-    box.checked = s.data.table !== false;
-    box.addEventListener('change', () => void this.act(async () => { s.data.table = box.checked; await p.saveSection(s); }, false));
-    tickRow.append(box, el('span', '', 'Print the crystal data table'));
-    card.append(tickRow);
-    void (async () => {
-      const [{ xrayBlock, xrayDrawing, xrayAutoCaption, xrayCompound, xrayTableRows }, { crystalSvg }] = await Promise.all([import('../si/xray'), import('../design/xray')]);
-      const cif = await p.folder.readText(`${s.folder}/${file}`);
-      if (cif === null) { pic.replaceWith(el('p', 'muted si-note', `${file} is no longer in the project.`)); return; }
-      const { block, error } = xrayBlock(cif, typeof s.data.block === 'string' ? s.data.block : '');
-      const got = block ? xrayDrawing(block, (s.data.view ?? {}) as Json, 460) : { error };
-      if ('error' in got) { pic.replaceWith(el('p', 'muted si-note', `It can’t be drawn: ${got.error}.`)); return; }
-      const img = el('img');
-      img.alt = `Crystal structure ${s.name}`;
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(crystalSvg(got.spec, got.w, got.h));
-      img.style.width = `${got.w * (96 / 72)}px`;
-      pic.append(img);
-      const typed = typeof s.data.caption === 'string' ? s.data.caption.trim() : '';
-      const ref = xrayCompound(s.data, (id) => p.compounds.some((c) => c.id === id));
-      const ccdc = xrayTableRows(s.data, block!).find(([k]) => k === 'ccdc')?.[2] ?? '';
-      const text = (typed || xrayAutoCaption(got.spec.view, ref, ccdc)).replace(/@\{(c-[^}]*)\}/g, (_m, id: string) => {
-        const c = p.compounds.find((x) => x.id === id);
-        return c ? this.idOf(c) : '??';
-      });
-      cap.textContent = `Caption${typed ? '' : ' (automatic)'}: ${text}`;
-    })();
+    const page = new SiXrayPage({
+      project: p,
+      section: s,
+      flash: (m, ms) => this.host.flash(m, ms),
+      pickFiles: (l, x) => this.host.pickFiles(l, x),
+      label: this.label,
+      mentionable: this.mentionable,
+      compounds: () => p.compounds.map((c) => ({ id: c.id, label: `${this.idOf(c)} ${compoundName(c)}`.trim() })),
+      idOf: (id) => { const c = p.compounds.find((x) => x.id === id); return c ? this.idOf(c) : '??'; },
+      redraw: () => { this.shownKey = ''; this.refresh(); },
+      copyRich: (t, h) => this.host.copyRich(t, h),
+    });
+    this.xrayPage = page;
+    out.append(page.el);
+    this.xrayShown(page);
   }
 
   /**
