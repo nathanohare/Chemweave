@@ -1928,6 +1928,19 @@ body.mode-window .cr-warnings .cr-ok { color: #7ddc9a; }
 .df-look button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .df-hint { margin: 0; padding-left: 22px; font-size: var(--fs-xs); }
 
+/* Arrange > 3-D Rotation: angles on sliders, the drawing turning live behind an undimmed backdrop */
+dialog.turn3d-dialog { width: min(94vw, 360px); margin: 64px 16px auto auto; }
+dialog.turn3d-dialog.left { margin: 64px auto auto 16px; }
+dialog.turn3d-dialog::backdrop { background: transparent; }
+.turn3d-form { display: grid; grid-template-columns: max-content minmax(8em, 1fr) 4.5em auto; align-items: center; gap: 4px 8px; }
+.turn3d-form > h2, .turn3d-form > .turn3d-status, .turn3d-form > .ask-buttons { grid-column: 1 / -1; }
+.turn3d-form > .turn3d-shape { grid-column: 2 / -1; }
+.turn3d-form input[type='range'] { width: 100%; margin: 0; accent-color: var(--accent); }
+.turn3d-form .turn3d-box { width: 100%; }
+.turn3d-form > .turn3d-status { margin: 0; }
+.turn3d-buttons { display: flex; gap: 6px; justify-content: flex-end; margin: 6px 0 0; }
+.turn3d-buttons .turn3d-reset { margin-right: auto; }
+
 /* Scheme > Arrange: the gallery of layouts */
 dialog.arrange-dialog { width: min(94vw, 500px); margin: 64px 16px auto auto; }
 dialog.arrange-dialog::backdrop { background: transparent; }
