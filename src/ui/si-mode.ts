@@ -11,7 +11,7 @@ import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocText } from '../document/document';
 import { compileSi, objectLabels } from '../si/compile-doc';
-import { DEFAULTS as SPECTRA_DEFAULTS, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
+import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, TYPE_LABELS, type Json, type SiCompound, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
@@ -22,7 +22,7 @@ import { capitalizeName } from '../si/chem-names';
 import { SiRichBox } from './si-rich';
 import { SiTableEditor } from './si-table';
 import { SiFigureEditor } from './si-figure';
-import { SiPictures } from './si-picture';
+import { SiPictures, PICTURE_MIME } from './si-picture';
 import { SiXrayPage } from './si-xray';
 import { SiFrontPage } from './si-front';
 import { editReference } from './references-dialog';
@@ -319,6 +319,9 @@ const RIBBON = `
     </div><div class="rb-label">Manage</div></div>
   </div>`;
 
+/** Short names for a spectrum's or file's values in its row (their full names are in the tooltip). */
+const ATT_SHORT: Record<string, string> = { title: 'Header', struct_caption: 'Caption', label: 'Label' };
+
 export class SiMode {
   private pane: HTMLDivElement;
   private ribbon: HTMLDivElement;
@@ -334,6 +337,8 @@ export class SiMode {
   private figures: SiFigureEditor[] = [];
   private shownKey = '';
   private analyzed = new Map<string, { formula: string; mw: number; exact: number } | null>();
+  /** Small pictures of attached files, by project and path. */
+  private thumbs = new WeakMap<SiProject, Map<string, Promise<string | null>>>();
   /** Compounds' structures as last read (compound id → molfile), and what the checks read from each molfile. */
   private mols = new Map<string, string>();
   private facts = new Map<string, MolFacts | null>();
@@ -1585,14 +1590,11 @@ export class SiMode {
       else this.textBox(body, c, def.key, def.kind === 'notes' ? 'Private notes (never printed)' : '');
     } else if (def.kind === 'nmr') this.nmrEditor(body, c);
     else if (def.kind === 'citations') this.citationsEditor(body, c);
-    else if (def.kind === 'attachments' || def.kind === 'private') {
+    else if (def.kind === 'attachments') this.attachmentsEditor(body, c, def);
+    else if (def.kind === 'private') {
       const list = Array.isArray(values[def.key]) ? (values[def.key] as Json[]) : [];
       const chips = el('div', 'si-chips');
-      for (const it of list) {
-        const name = partText(it.file) || partText(it.name) || 'file';
-        const type = partText(it.type);
-        chips.append(el('span', 'si-chip', type ? `${name} · ${type}` : name));
-      }
+      for (const it of list) chips.append(el('span', 'si-chip', partText(it.file) || partText(it.name) || 'file'));
       if (!list.length) chips.append(el('span', 'muted', 'None yet.'));
       body.append(chips);
     }
@@ -1601,6 +1603,115 @@ export class SiMode {
     warn.hidden = true;
     body.append(warn);
     return row;
+  }
+
+  // ---------------------------------------------------------------- spectra and files
+
+  /**
+   * A compound's Spectra or Additional files: each file with a small picture of it (a PDF's first
+   * page, a picture itself), its name and its values (a spectrum's type, header and caption; a
+   * file's caption, placement and label), with ▲ to move it up and ✕ to take it off (to the Trash).
+   * Files are added with Insert ▸ Spectra or Files.
+   */
+  private attachmentsEditor(body: HTMLElement, c: SiCompound, def: FieldDef): void {
+    const p = this.project!;
+    const list = (): Json[] => (Array.isArray(valuesOf(c)[def.key]) ? (valuesOf(c)[def.key] as Json[]) : []).filter((x) => x && typeof x === 'object' && !Array.isArray(x));
+    const items = list();
+    const wrap = el('div', 'si-att-list');
+    if (!items.length) wrap.append(el('span', 'muted', def.key === 'spectra' ? 'None yet: Insert ▸ Spectra adds them.' : 'None yet: Insert ▸ Files adds them.'));
+    items.forEach((it, i) => {
+      const file = partText(it.file);
+      const row = el('div', 'si-att');
+      const thumb = el('div', 'si-att-thumb');
+      void this.thumbnail(p.attachmentPath(c, def, file)).then((src) => {
+        if (src) { const img = el('img'); img.src = src; img.alt = file; thumb.append(img); }
+        else thumb.textContent = file.slice(file.lastIndexOf('.') + 1).toUpperCase() || 'FILE';
+      });
+      const info = el('div', 'si-att-info');
+      const name = el('div', 'si-att-name', file || 'file');
+      name.title = file;
+      info.append(name);
+      const parts = el('div', 'si-parts');
+      for (const part of def.itemParts ?? []) {
+        const cell = el('label', 'si-part');
+        const short = ATT_SHORT[part.key] ?? part.label?.replace(/ \(empty = automatic\)$/, '') ?? part.key;
+        cell.append(el('span', 'si-plabel', short));
+        const now = partText(it[part.key]);
+        let input: HTMLInputElement | HTMLSelectElement;
+        if (part.kind === 'choice') {
+          const sel = el('select');
+          sel.add(new Option(part.default ? '' : '(not set)', ''));
+          for (const ch of part.choices ?? []) sel.add(new Option(part.choiceLabels?.[ch] ?? ch, ch));
+          if (part.default) sel.options[0].remove();
+          if (now && !(part.choices ?? []).includes(now)) sel.add(new Option(now, now));
+          sel.value = now || String(part.default ?? '');
+          input = sel;
+        } else {
+          const inp = el('input');
+          inp.value = now;
+          const auto = part.key === 'struct_caption' ? captionText(c, { ...it, struct_caption: '' }) : part.key === 'title' && def.key === 'spectra' ? headerParts(c, { ...it, title: '' }, this.idOf(c), 1).join('') : '';
+          inp.placeholder = auto ? `auto: ${auto}` : part.label?.includes('automatic') ? 'automatic' : part.placeholder ?? '';
+          input = inp;
+          cell.classList.add('si-att-wide');
+        }
+        if (part.label?.includes('automatic')) cell.title = `${part.label}`;
+        input.setAttribute('aria-label', `${file} ${short}`);
+        input.addEventListener('change', () => void this.act(async () => {
+          const all = list();
+          const target = all.find((x) => x.file === file);
+          if (!target) return;
+          const v = input.value.trim();
+          if (v) target[part.key] = v; else delete target[part.key];
+          await p.setValue(c, def.key, all);
+        }, false));
+        cell.append(input);
+        parts.append(cell);
+      }
+      info.append(parts);
+      const tools = el('div', 'si-att-tools');
+      const up = el('button', 'si-mini', '▲');
+      up.type = 'button';
+      up.title = 'Move up (the order they print in)';
+      up.disabled = i === 0;
+      up.addEventListener('click', () => void this.act(async () => {
+        const all = list();
+        const k = all.findIndex((x) => x.file === file);
+        if (k > 0) { [all[k - 1], all[k]] = [all[k], all[k - 1]]; await p.setValue(c, def.key, all); }
+      }));
+      const del = el('button', 'si-mini', '✕');
+      del.type = 'button';
+      del.title = 'Remove this file (it goes to the Trash)';
+      del.addEventListener('click', async () => {
+        const go = await askChoice(`Remove ${file}`, 'The file goes to the project’s Trash with its values, so it can be put back.', [{ value: 'go', label: 'Remove', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+        if (go === 'go') await this.act(() => p.removeAttachment(c, def, file));
+      });
+      tools.append(up, del);
+      row.append(thumb, info, tools);
+      wrap.append(row);
+    });
+    body.append(wrap);
+  }
+
+  /** A small picture of an attached file (a PDF's first page, a picture), kept while the project is open; null for other files. */
+  private thumbnail(path: string): Promise<string | null> {
+    const p = this.project!;
+    let mine = this.thumbs.get(p);
+    if (!mine) this.thumbs.set(p, (mine = new Map()));
+    let got = mine.get(path);
+    if (!got) {
+      got = (async () => {
+        const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+        const mime = PICTURE_MIME[ext];
+        if (ext !== 'pdf' && !mime) return null;
+        const bytes = await p.folder.readBytes(path).catch(() => null);
+        if (!bytes) return null;
+        if (mime) return URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
+        const { pdfFirstPage } = await import('../render/pdf-page');
+        return (await pdfFirstPage(bytes))?.src ?? null;
+      })();
+      mine.set(path, got);
+    }
+    return got;
   }
 
   // ---------------------------------------------------------------- HRMS

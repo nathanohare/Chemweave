@@ -970,6 +970,27 @@ export class SiProject {
     return pick;
   }
 
+  /** The path of a compound's attached file (a spectrum, an additional file). */
+  attachmentPath(c: SiCompound, def: FieldDef, file: string): string { return join(c.folder, def.subdir || 'files', file); }
+
+  /**
+   * Take a file off a compound's Spectra or Additional files: the file (and a pasted one's
+   * original beside it) goes to the Trash with the values it had, as SI Assistant restores it.
+   */
+  async removeAttachment(c: SiCompound, def: FieldDef, file: string): Promise<void> {
+    this.checkWritable();
+    const items = valuesOf(c)[def.key];
+    if (!Array.isArray(items)) return;
+    const item = (items as Json[]).find((i) => isObj(i) && i.file === file);
+    if (!item) return;
+    const path = this.attachmentPath(c, def, file);
+    const stem = path.replace(/\.[^./]+$/, '');
+    const originals = stem !== path ? [`${stem}.cdxml`, `${stem}.emf`].filter((x) => x !== path) : [];
+    await this.moveToTrash([path, ...originals], 'compound_file', file, { compound_id: c.id, field_key: def.key, item: nameOf(path), item_values: structuredClone(item), compound_name: compoundName(c) });
+    (items as Json[]).splice((items as Json[]).indexOf(item), 1);
+    await this.saveCompound(c);
+  }
+
   /** Whether a field counts as filled in. */
   fieldFilled(c: SiCompound, def: FieldDef): boolean {
     if (def.key === 'procedure' && this.compoundGp(c)) return true; // "Prepared according to General Procedure A…"

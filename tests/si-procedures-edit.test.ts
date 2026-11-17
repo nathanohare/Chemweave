@@ -101,3 +101,26 @@ describe('front matter', () => {
     expect(((await SiProject.open(f)).settings.authors as Json[]).map((a) => a.name)).toEqual(['Alex Example', 'Blair Sample', 'Casey Writer']);
   });
 });
+
+describe('spectra and files on a compound', () => {
+  it('takes a spectrum off to the Trash with its values and its pasted original', async () => {
+    const f = folder();
+    const p = await SiProject.open(f);
+    const c = p.compounds[0];
+    const def = (await import('../src/si/fields')).fieldDef({ key: 'spectra' })!;
+    const name = await p.addAttachment(c, 'spectra', '1H.png', new Uint8Array([1, 2, 3]));
+    const path = p.attachmentPath(c, def, name);
+    f.files.set(path.replace(/\.png$/, '.cdxml'), new TextEncoder().encode('<CDXML/>'));
+    await p.setValue(c, 'spectra', [{ file: name, type: '1H', title: 'My header' }]);
+    await p.removeAttachment(c, def, name);
+    expect(f.files.has(path)).toBe(false);
+    expect(f.files.has(path.replace(/\.png$/, '.cdxml'))).toBe(false);
+    const again = await SiProject.open(f);
+    const c2 = again.compounds.find((x) => x.id === c.id)!;
+    expect((c2.data.values as Json).spectra ?? []).toEqual([]);
+    const e = trashEntries(f).find((x) => x.kind === 'compound_file')!;
+    expect(e).toMatchObject({ compound_id: c.id, field_key: 'spectra', item: name, item_values: { file: name, type: '1H', title: 'My header' } });
+    const kept = [...f.files.keys()].filter((k) => k.startsWith('trash/') && !k.endsWith('entry.json'));
+    expect(kept.map((k) => k.slice(k.lastIndexOf('/') + 1)).sort()).toEqual(['1H.cdxml', '1H.png']);
+  });
+});
