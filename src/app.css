@@ -4879,3 +4879,8 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .msi-btn.primary { background: var(--tab-si, #b4234f); border-color: var(--tab-si, #b4234f); color: #fff; }
 .msi-foot { padding: 6px 0 2px; font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 4px; }
 .msi-empty { padding: 6px 2px; font-size: var(--fs-sm); }
+
+/* the SI tab's Spectra section page: one row per group of settings */
+.si-spectra-row { align-items: center; padding: 4px 0; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.si-spectra-group { min-width: 116px; font-size: var(--fs-sm); font-weight: 600; }
+.si-spectra-row input[type=color] { width: 32px; height: 20px; padding: 0 1px; }

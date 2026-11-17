@@ -8446,7 +8446,11 @@ if (import.meta.env.DEV) {
   (window as unknown as { openMemorySi?: (files: Record<string, string>) => Promise<void> }).openMemorySi = async (files) => {
     const [{ SiProject }, { MemoryFolder }] = await Promise.all([import('./si/project'), import('./si/folder')]);
     const folder = new MemoryFolder('Example SI (in memory)');
-    for (const [k, v] of Object.entries(files)) await folder.writeText(k, v);
+    // (a file given as "base64:…" is binary: a spectrum's PDF or a picture)
+    for (const [k, v] of Object.entries(files)) {
+      if (v.startsWith('base64:')) folder.files.set(k, Uint8Array.from(atob(v.slice(7)), (ch) => ch.charCodeAt(0)));
+      else await folder.writeText(k, v);
+    }
     const project = await SiProject.open(folder);
     await loadSiMode();
     ws.openSi(project);

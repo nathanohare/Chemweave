@@ -17,13 +17,15 @@ import type { Contents, Justify, ParaStyle, TableCell, TextRun } from '../model'
 import type { RunStyle } from '../richtext';
 import { dataUrl, imageSize, pictureMime } from '../render/images';
 import { CITE, MENTION, parseMarkup, citationsOf, type Paragraph, type Run } from './markup';
-import { fieldKeys, valuesOf, compoundName, type Json, type SiCompound, type SiProject, type SiScheme, type SiSection } from './project';
+import { fieldKeys, valuesOf, compoundName, compoundsOf, type Json, type SiCompound, type SiProject, type SiScheme, type SiSection } from './project';
 import { displayId, type IdReport } from './compound-ids';
 import { fieldDef, partText } from './fields';
 import { mentionKind } from './checks';
 import type { MolFacts } from './chem';
-import { R, formatChemistry, scriptCharacters, type Leave } from './format';
+import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './format';
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
+import { attachmentDir, captionText, CORNER_INSET, effective, GUTTERS, headerParts, HEADER_PT, listingLines, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
+import type { Float, PageSetup, SectionBreak } from '../document/document';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -33,7 +35,14 @@ export interface CompileHost {
   sizeOf(c: Contents): { w: number; h: number } | null;
   /** Formula and pieces of each structure (for the HRMS and elemental analysis sentences). */
   facts(mols: string[]): Promise<(MolFacts | null)[]>;
+  /** Each page of a PDF as a picture, with its size in points (null when it can't be read). Without it, PDFs are left out. */
+  pdfPages?(bytes: Uint8Array): Promise<PagePicture[] | null>;
+  /** Where the content of a picture is, for auto-crop (null: nothing to cut, or it can't be measured). */
+  contentBox?(src: string): Promise<Crop | null>;
 }
+
+/** A page of a PDF drawn as a picture: its data URL, its size in points and in pixels. */
+export interface PagePicture { src: string; w: number; h: number; px?: { w: number; h: number } }
 
 export interface CompiledSi {
   doc: DocText;
@@ -194,6 +203,26 @@ class Compiler {
     this.leave = { words };
     this.helpers = p.settings.format_text !== false;
     this.knownRefs = new Set(p.references.map((r) => str(r.id)));
+    // a section break waiting for the next paragraph (spectra pages turned landscape, and back)
+    const end = this.b.endPara.bind(this.b);
+    this.b.endPara = (ps: ParaStyle) => {
+      const sec = this.pendingSection;
+      this.pendingSection = null;
+      end(sec ? { ...ps, section: sec } : ps);
+    };
+  }
+
+  private pendingSection: SectionBreak | null = null;
+  private landscape = false;
+  private spectraDone = false;
+
+  /** Turn the pages that follow (a section break before the next paragraph), when they aren't already. */
+  private orient(o: 'portrait' | 'landscape'): void {
+    if ((o === 'landscape') === this.landscape) return;
+    this.landscape = o === 'landscape';
+    const p = this.b.doc.page;
+    // (its own header and footer, as the document's but numbered on its first page too: only the cover goes without)
+    this.pendingSection = { kind: 'nextPage', page: this.landscape ? { ...p, w: p.h, h: p.w } : { ...p }, hf: { ...this.b.doc.hf, prefix: 'S', onFirst: true } };
   }
 
   private included(key: string): boolean { return !this.excluded.has(key) && !this.excluded.has('front'); }
@@ -431,14 +460,30 @@ class Compiler {
     const bytes = await this.p.folder.readBytes(rel);
     const name = rel.slice(rel.lastIndexOf('/') + 1);
     if (!bytes) { this.notes.push(`${where}: ${name} is no longer in the project; left out.`); return false; }
-    const pic = pictureObject(name, bytes, room, widthPt);
-    if (!pic) {
-      this.notes.push(/\.pdf$/i.test(name) ? `${where}: ${name} is a PDF; PDF pictures are not placed in the document yet (left out).` : `${where}: ${name} could not be read as a picture; left out.`);
+    const pics = /\.pdf$/i.test(name) ? await this.pdfPictures(bytes, name, where, room, widthPt) : [pictureObject(name, bytes, room, widthPt)];
+    if (!pics.length || !pics[0]) {
+      if (!/\.pdf$/i.test(name)) this.notes.push(`${where}: ${name} could not be read as a picture${/\.tiff?$/i.test(name) ? ' (TIFF pictures are not placed in the document yet)' : ''}; left out.`);
       return false;
     }
-    this.b.object(pic);
-    this.b.endPara(this.full({ align: align ?? 'center', keepNext: true, spaceAfter: 4 }));
+    for (const pic of pics) {
+      if (!pic) continue;
+      this.b.object(pic);
+      this.b.endPara(this.full({ align: align ?? 'center', keepNext: true, spaceAfter: 4 }));
+    }
     return true;
+  }
+
+  /** A PDF's pages as pictures fitted to `room` (none when it can't be read, said in the notes). */
+  private async pdfPictures(bytes: Uint8Array, name: string, where: string, room: { w: number; h: number }, widthPt?: number): Promise<Extract<DocObject, { kind: 'picture' }>[]> {
+    const pages = this.host.pdfPages ? await this.host.pdfPages(bytes).catch(() => null) : null;
+    if (!this.host.pdfPages) { this.notes.push(`${where}: ${name} is a PDF; PDFs are placed only in the desktop app and the web app (left out).`); return []; }
+    if (!pages?.length) { this.notes.push(`${where}: ${unreadablePdf(name)}`); return []; }
+    return pages.map((pg) => {
+      let w = pg.w, h = pg.h;
+      if (widthPt) { h *= widthPt / w; w = widthPt; }
+      const k = Math.min(1, room.w / w, room.h / h);
+      return { kind: 'picture' as const, src: pg.src, w: round2(w * k), h: round2(h * k), ...(pg.px ? { px: pg.px } : {}) };
+    });
   }
 
   private async table(owner: Owner | null, id: string, label: string, caption: Run[], where: string, align?: Justify): Promise<void> {
@@ -536,7 +581,10 @@ class Compiler {
   private async section(s: SiSection, level: number): Promise<void> {
     if (this.excluded.has(s.id)) return;
     if (s.type === 'spectra') {
-      if (!this.excluded.has('spectra')) this.notes.push(`“${s.name}”: the spectra pages are not compiled into the document yet; left out for now.`);
+      if (this.excluded.has('spectra')) return;
+      if (this.spectraDone) { this.notes.push(`“${s.name}”: a project has only one Spectra section; this one was left out.`); return; }
+      this.spectraDone = true;
+      await this.spectraSection(s, level);
       return;
     }
     if (s.type === 'text') {
@@ -628,6 +676,194 @@ class Compiler {
     else if (mol) this.notes.push(`${where}: its structure could not be drawn; left out.`);
   }
 
+  // -------------------------------------------------------------- spectra (SPEC §13k.12)
+
+  /** The compounds of the Data sections in `sections` (and below) that are printed, in tree order. */
+  private includedCompounds(sections: readonly SiSection[]): SiCompound[] {
+    const out: SiCompound[] = [];
+    for (const s of sections) {
+      if (this.excluded.has(s.id)) continue;
+      if (s.type === 'data') out.push(...compoundsOf(s));
+      out.push(...this.includedCompounds(s.children));
+    }
+    return out;
+  }
+
+  /**
+   * The Spectra section: each compound's spectra, page by page, set out as the section's defaults
+   * and each spectrum's own settings say (1, 2 or 4 to a page, portrait or landscape), each with
+   * its header line and the compound's structure + ID on a box over it; then the HRMS reports.
+   * Everything on a spectra page floats at its place, so it can be moved and stays editable.
+   */
+  private async spectraSection(s: SiSection | null, level: number): Promise<void> {
+    const defaults = sectionDefaults(s, this.p.settings);
+    const compounds = this.includedCompounds(this.p.top);
+    const name = s?.name ?? 'Spectra';
+    type Entry = { c: SiCompound; item: Json; page: PagePicture; pageNo: number; eff: SpectrumLayout };
+    const entries: Entry[] = [];
+    for (const c of compounds) {
+      for (const [key, item] of spectrumItems(c)) {
+        const file = partText(item.file);
+        if (!file) continue;
+        const where = `${displayId(this.report, c.id)} ▸ ${key === 'spectra' ? 'Spectra' : 'Additional files'}`;
+        const bytes = await this.p.folder.readBytes(joinPath(c.folder, attachmentDir(c, key), file));
+        if (!bytes) { this.notes.push(`${where}: ${file} is no longer in the project; left out.`); continue; }
+        let pages: PagePicture[] = [];
+        if (/\.pdf$/i.test(file)) {
+          if (!this.host.pdfPages) { this.notes.push(`${where}: ${file} is a PDF; PDFs are placed only in the desktop app and the web app (left out).`); continue; }
+          pages = (await this.host.pdfPages(bytes).catch(() => null)) ?? [];
+          if (!pages.length) { this.notes.push(`${where}: ${unreadablePdf(file)}`); continue; }
+        } else {
+          const pic = pictureObject(file, bytes, { w: 1e6, h: 1e6 });
+          if (!pic) { this.notes.push(`${where}: ${file} could not be read as a picture${/\.tiff?$/i.test(file) ? ' (TIFF pictures are not placed in the document yet)' : ''}; left out.`); continue; }
+          pages = [{ src: pic.src, w: pic.w, h: pic.h, ...(pic.px ? { px: pic.px } : {}) }];
+        }
+        pages.forEach((page, i) => entries.push({ c, item, page, pageNo: i + 1, eff: effective(defaults, item, String(i + 1)) }));
+      }
+    }
+    // pages: a spectrum that needs another layout (number to a page, orientation) starts a new page
+    const pages: { orientation: SpectrumLayout['orientation']; per: number; slots: Entry[] }[] = [];
+    for (const e of entries) {
+      const last = pages[pages.length - 1];
+      if (!last || last.orientation !== e.eff.orientation || last.per !== e.eff.per_page || last.slots.length >= last.per) pages.push({ orientation: e.eff.orientation, per: e.eff.per_page, slots: [] });
+      pages[pages.length - 1].slots.push(e);
+    }
+    const hrms = this.excluded.has('hrms_reports') ? [] : compounds.filter((c) => printsReports(c, defaults));
+    if (!pages.length && !hrms.length) return;
+    let headed = false;
+    for (const pg of pages) {
+      this.orient(pg.orientation);
+      const page = this.landscape ? { ...this.b.doc.page, w: this.b.doc.page.h, h: this.b.doc.page.w } : this.b.doc.page;
+      let top = 0;
+      if (!headed) {
+        this.para([R(name)], { style: this.headingStyle(level, level === 1 || this.rank >= 2), pageBreak: true }, name);
+        headed = true;
+        top = HEADING_ROOM;
+      } else this.b.pendingBreak = true;
+      await this.spectraPage(pg.slots, pg.per, page, top);
+    }
+    if (hrms.length) await this.hrmsReports(hrms, level + 1, name, !headed, level);
+  }
+
+  /** One page of spectra: an empty paragraph that anchors them, and each slot floating at its place. */
+  private async spectraPage(slots: { c: SiCompound; item: Json; page: PagePicture; pageNo: number; eff: SpectrumLayout }[], per: number, page: PageSetup, top: number): Promise<void> {
+    const bw = page.w - page.left - page.right, bh = page.h - page.top - page.bottom - top - 2;
+    const slot = slotSize(bw, bh, per, this.landscape);
+    const [cols] = per === 4 ? [2] : per === 2 && this.landscape ? [2] : [1];
+    const floats: DocObject[] = [];
+    let z = 1;
+    for (let i = 0; i < slots.length; i++) {
+      const { c, item, page: pic, pageNo, eff } = slots[i];
+      const col = i % cols, row = Math.floor(i / cols);
+      const sx = col * (slot.w + GUTTERS[0]), sy = row * (slot.h + GUTTERS[1]);
+      const id = displayId(this.report, c.id);
+      let headH = 0;
+      if (eff.header_line) {
+        const runs = this.helpers ? formatNmr(headerParts(c, item, id, pageNo).map((t) => R(t)), this.leave) : headerParts(c, item, id, pageNo).map((t) => R(t));
+        headH = HEADER_PT * 1.25 + 2 * 3.6 + 3;
+        floats.push({ kind: 'textbox', runs: textRuns(runs, { bold: true, size: HEADER_PT }), paras: [{ align: 'center' }], w: slot.w, float: this.at(sx, sy, z++, `Header ${id}`) });
+      }
+      const crop = eff.auto_crop && this.host.contentBox ? await this.host.contentBox(pic.src).catch(() => null) : null;
+      const shown = shownSize({ w: slot.w, h: Math.max(10, slot.h - headH) }, pic.h / pic.w, crop);
+      const px = sx + (slot.w - shown.w) / 2, py = sy + headH;
+      floats.push({
+        kind: 'picture', src: pic.src, w: round2(shown.w), h: round2(shown.h), ...(pic.px ? { px: pic.px } : {}),
+        ...(crop ? { crop: { l: crop[0], t: crop[1], r: 1 - crop[2], b: 1 - crop[3] } } : {}),
+        ...(eff.spectrum_frame ? { look: { frame: eff.spectrum_frame_width, frameColor: eff.spectrum_frame_color } } : {}),
+        alt: headerParts(c, item, id, pageNo).join(''), float: this.at(px, py, z++, `Spectrum ${id}`),
+      });
+      if (eff.struct_box) floats.push(...(await this.structureBox(c, item, eff, { x: px, y: py, w: shown.w, h: shown.h }, () => z++)));
+    }
+    // the anchor: an empty paragraph as tall as the page's body, so the next page starts after it
+    for (const f of floats) this.b.object(f);
+    this.b.endPara(this.full({ spaceAfter: 0, spaceBefore: 0, linePt: Math.max(12, Math.floor(bh - 6)), lineRule: 'exact' }));
+  }
+
+  /** A float at (x, y) from the margin and the anchor paragraph, in front of the text. */
+  private at(x: number, y: number, z: number, name: string): Float {
+    return { wrap: 'front', x: round2(x), y: round2(y), xFrom: 'margin', yFrom: 'para', gap: 0, z, name };
+  }
+
+  /** The compound's structure, ID and caption on a box over a spectrum (in its corner, or where it was dragged). */
+  private async structureBox(c: SiCompound, item: Json, eff: SpectrumLayout, spec: { x: number; y: number; w: number; h: number }, z: () => number): Promise<DocObject[]> {
+    const mol = this.p.hasStructure(c) ? await this.p.readStructure(c) : '';
+    const contents = mol ? this.host.contentsOf(mol) : null;
+    const own = contents ? this.host.sizeOf(contents) : null;
+    const size = contents ? structureSize(own, eff.struct_scale) : { w: 0, h: 0 };
+    const id = displayId(this.report, c.id);
+    const idSize = eff.id_size > 0 ? eff.id_size : 11;
+    const caption = eff.caption ? captionText(c, item) : '';
+    const capRuns = caption ? (this.helpers ? formatNmr([R(caption)], this.leave) : [R(caption)]) : [];
+    const textW = Math.max(id.length * idSize * 0.6, caption.length * eff.caption_size * 0.5);
+    const w = Math.max(size.w, textW) + 2 * SI_BOX_PAD + 2 * 7.2;
+    const h = size.h + idSize * 1.2 + (caption ? eff.caption_size * 1.2 : 0) + 2 * SI_BOX_PAD + 2 * 3.6;
+    let bx: number, by: number;
+    if (eff.x !== undefined && eff.y !== undefined) { bx = spec.x + eff.x * spec.w - w / 2; by = spec.y + eff.y * spec.h - h / 2; }
+    else {
+      bx = eff.corner.endsWith('right') ? spec.x + spec.w - CORNER_INSET - w : spec.x + CORNER_INSET;
+      by = eff.corner.startsWith('bottom') ? spec.y + spec.h - CORNER_INSET - h : spec.y + CORNER_INSET;
+    }
+    // the box (its background and frame), the structure on it, and the ID and caption under the structure
+    const out: DocObject[] = [{
+      kind: 'textbox', runs: [], w: round2(w), h: round2(h), fill: eff.struct_bg,
+      ...(eff.struct_frame ? { look: { frame: eff.struct_frame_width, frameColor: eff.struct_frame_color } } : {}),
+      float: this.at(bx, by, z(), `Structure box ${id}`),
+    }];
+    const runs: TextRun[] = [...textRuns([R(id)], { bold: eff.id_bold || undefined, size: idSize })];
+    const paras: ParaStyle[] = [{ align: 'center', spaceBefore: 0, spaceAfter: 0 }];
+    if (caption) { runs.push({ text: '\n' }, ...textRuns(capRuns, { size: eff.caption_size })); paras.push({ align: 'center', spaceAfter: 0 }); }
+    out.push({ kind: 'textbox', runs, paras, w: round2(w), float: this.at(bx, by + SI_BOX_PAD + size.h, z(), `Compound ID ${id}`) });
+    if (contents) {
+      const scale = own && own.w > 0 ? size.w / own.w : 1;
+      out.push({ kind: 'drawing', contents, ...(Math.abs(scale - 1) > 1e-3 ? { scale: Math.round(scale * 1000) / 1000 } : {}), float: this.at(bx + (w - size.w) / 2, by + SI_BOX_PAD, z(), `Structure ${id}`) });
+    } else if (mol) this.notes.push(`${id}: its structure could not be drawn on its spectra; left out.`);
+    return out;
+  }
+
+  /** The HRMS reports sub-section (§13n.3): each compound's report files, compound by compound. */
+  private async hrmsReports(compounds: SiCompound[], level: number, sectionName: string, withSection: boolean, sectionLevel: number): Promise<void> {
+    this.orient('portrait');
+    if (withSection) this.para([R(sectionName)], { style: this.headingStyle(sectionLevel, sectionLevel === 1 || this.rank >= 2), pageBreak: true }, sectionName);
+    this.para([R('HRMS reports')], { style: this.headingStyle(level, this.rank >= 2), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
+    const room = { w: TEXT_W, h: 7.4 * PT };
+    for (const c of compounds) {
+      const id = displayId(this.report, c.id);
+      for (const r of reportItems(c)) {
+        const file = String(r.file);
+        const where = `${id} ▸ HRMS`;
+        const kind = printKind(file);
+        if (kind === 'none') { this.notes.push(`${where}: the HRMS report ${file} can't be printed (raw data or a kind of file that can't be shown); left out.`); continue; }
+        const bytes = await this.p.folder.readBytes(joinPath(c.folder, 'hrms', file));
+        if (!bytes) { this.notes.push(`${where}: the HRMS report ${file} is missing; left out.`); continue; }
+        const title = (more = ''): void => this.para([R(id, { bold: true }), R(` — HRMS report: ${file}${more}`)], { keepNext: true, spaceBefore: 14, spaceAfter: 6 }, where);
+        if (kind === 'peaks') { title(); this.para([R('The peaks of this data file are not listed in the document yet; the file is kept in the project folder.', { italic: true })], {}, where, { size: 9 }); this.notes.push(`${where}: ${file} is a data file; its table of peaks is not made in the document yet.`); continue; }
+        if (kind === 'pdf') {
+          const pics = await this.pdfPictures(bytes, file, where, room);
+          pics.forEach((pic, i) => {
+            if (i > 0 || pics.length > 1) this.b.pendingBreak = true;
+            title(pics.length > 1 ? ` (page ${i + 1} of ${pics.length})` : '');
+            this.b.object(pic);
+            this.b.endPara(this.full({ align: 'center' }));
+          });
+          continue;
+        }
+        if (kind === 'picture') {
+          const pic = pictureObject(file, bytes, room);
+          if (!pic) { this.notes.push(`${where}: ${file} could not be read as a picture; left out.`); continue; }
+          title();
+          this.b.object(pic);
+          this.b.endPara(this.full({ align: 'center' }));
+          continue;
+        }
+        const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+        const [lines, left] = listingLines(text);
+        title();
+        lines.forEach((l) => { this.b.text(l || ' ', { font: 'Courier New', size: 7 }); this.b.endPara(this.full({ spaceAfter: 0, keepNext: false })); });
+        if (left) this.para([R(`… ${left} more line${left === 1 ? '' : 's'} not printed (the whole file is kept in the project folder).`, { italic: true })], {}, where, { size: 8 });
+      }
+    }
+  }
+
   private references(): void {
     if (!this.cited) return;
     this.para([R('References')], { style: headingId(1), pageBreak: true }, 'References');
@@ -645,6 +881,9 @@ class Compiler {
     const startPage = (): void => { if (!started && (this.included('cover') || this.included('toc'))) this.b.pendingBreak = true; started = true; };
     if (this.included('general') && (this.texts.get('general') ?? '').trim()) { startPage(); await this.general(); }
     for (const s of this.p.top) { if (!this.excluded.has(s.id)) startPage(); await this.section(s, 1); }
+    // a project without a Spectra section (opened read-only, older) prints its spectra at the end
+    if (!this.spectraDone && !this.excluded.has('spectra') && !this.p.sections.some((s) => s.type === 'spectra')) { this.spectraDone = true; await this.spectraSection(null, 1); }
+    this.orient('portrait');
     this.references();
     const title = str(this.p.settings.title);
     return this.b.finish({
@@ -658,6 +897,28 @@ class Compiler {
 }
 
 const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join('').trim();
+
+const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+/** The room the Spectra section's heading takes at the top of its first page (points). */
+const HEADING_ROOM = 34;
+
+/** What is said when a PDF can't be opened (SI Assistant's words). */
+const unreadablePdf = (name: string): string => `${name} could not be opened as a PDF (it may be damaged, password-protected or not really a PDF). Export it again and replace it on the compound page; left out.`;
+
+/** Runs as a text box's text, in `look`. */
+function textRuns(runs: Run[], look: RunStyle): TextRun[] {
+  return runs.map((r) => {
+    const l: TextRun = { text: r.text, ...look };
+    if (r.bold) l.bold = true;
+    if (r.italic) l.italic = true;
+    if (r.underline) l.underline = true;
+    if (r.valign === 'sub') l.sub = true;
+    if (r.valign === 'super') l.sup = true;
+    for (const k of Object.keys(l) as (keyof TextRun)[]) if (l[k] === undefined) delete l[k];
+    return l;
+  });
+}
 
 const fieldsOfCompound = (c: SiCompound) => (Array.isArray(c.data.fields) ? (c.data.fields as Json[]) : []).map((e) => fieldDef(e)).filter((d): d is NonNullable<typeof d> => d !== null);
 

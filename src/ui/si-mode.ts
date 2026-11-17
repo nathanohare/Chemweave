@@ -11,6 +11,7 @@ import type { Tab } from '../workspace';
 import type { Contents } from '../model';
 import type { DocText } from '../document/document';
 import { compileSi } from '../si/compile-doc';
+import { DEFAULTS as SPECTRA_DEFAULTS, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, TYPE_LABELS, type Json, type SiCompound, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
@@ -672,9 +673,115 @@ export class SiMode {
         this.boxes.push(box);
         t.append(box.el);
       });
-    } else {
+    } else if (s.type === 'spectra') this.spectraCard(out, s);
+    else {
       out.append(el('p', 'muted si-note', `${TYPE_LABELS[s.type] ?? s.type} sections are edited in Chem SI Assistant for now; they are kept as they are here.`));
     }
+  }
+
+  /**
+   * The Spectra section's page: how spectra are set out when compiled (SI Assistant's defaults,
+   * SPEC §13k.12), saved in its section.json as SI Assistant saves them. A spectrum's own settings
+   * (changed in SI Assistant on its compound's spectra page) win over these.
+   */
+  private spectraCard(out: HTMLElement, s: SiSection): void {
+    const p = this.project!;
+    const now = sectionDefaults(s);
+    const save = (key: keyof SpectrumLayout, value: unknown): void => void this.act(async () => {
+      const next: Record<string, unknown> = {};
+      const cur = { ...sectionDefaults(s), [key]: value } as Record<string, unknown>;
+      for (const k of Object.keys(SPECTRA_DEFAULTS)) next[k] = cur[k];
+      s.data.defaults = next;
+      await p.saveSection(s);
+    }, false);
+    const card = el('div', 'si-card');
+    const h = el('h3', 'si-sub', 'How spectra are printed');
+    addInfo(h, 'Every compound’s spectra (its Spectra field, and Additional files set to “Spectra section”) are printed here, compound by compound, each with its header line and the compound’s structure and ID on it. A spectrum’s own settings, set in Chem SI Assistant on its spectra page, win over these.');
+    card.append(h);
+    const row = (title: string): HTMLElement => { const r = el('div', 'si-parts si-spectra-row'); r.append(el('span', 'si-spectra-group', title)); card.append(r); return r; };
+    const choice = (r: HTMLElement, label: string, key: keyof SpectrumLayout, options: [string, string][], tip: string): void => {
+      const cell = el('label', 'si-part');
+      cell.title = tip;
+      cell.append(el('span', 'si-plabel', label));
+      const sel = el('select');
+      for (const [v, t] of options) { const o = el('option', '', t); o.value = v; sel.append(o); }
+      sel.value = String(now[key]);
+      sel.addEventListener('change', () => save(key, key === 'per_page' ? Number(sel.value) : sel.value));
+      cell.append(sel);
+      r.append(cell);
+    };
+    const tick = (r: HTMLElement, label: string, key: keyof SpectrumLayout, tip: string): void => {
+      const cell = el('label', 'si-part');
+      cell.title = tip;
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = !!now[key];
+      box.addEventListener('change', () => save(key, box.checked));
+      cell.append(box, el('span', '', label));
+      r.append(cell);
+    };
+    const num = (r: HTMLElement, label: string, key: keyof SpectrumLayout, min: number, max: number, k: number, tip: string, suffix = ''): void => {
+      const cell = el('label', 'si-part');
+      cell.title = tip;
+      cell.append(el('span', 'si-plabel', label));
+      const box = el('input', 'si-num');
+      box.type = 'number';
+      box.min = String(min);
+      box.max = String(max);
+      box.value = String(Math.round(Number(now[key]) * k * 100) / 100);
+      box.addEventListener('change', () => { const v = Number(box.value); if (Number.isFinite(v)) save(key, v / k); });
+      cell.append(box);
+      if (suffix) cell.append(el('span', 'si-plabel', suffix));
+      r.append(cell);
+    };
+    const color = (r: HTMLElement, label: string, key: keyof SpectrumLayout, tip: string): void => {
+      const cell = el('label', 'si-part');
+      cell.title = tip;
+      cell.append(el('span', 'si-plabel', label));
+      const box = el('input');
+      box.type = 'color';
+      box.value = String(now[key]);
+      box.addEventListener('change', () => save(key, box.value));
+      cell.append(box);
+      r.append(cell);
+    };
+    const pages = row('Pages');
+    choice(pages, 'Spectra per page', 'per_page', [['1', '1'], ['2', '2'], ['4', '4']], 'Two are stacked on a portrait page and side by side on a landscape one; four make a 2 × 2 grid.');
+    choice(pages, 'Orientation', 'orientation', [['portrait', 'Portrait'], ['landscape', 'Landscape']], 'Spectra pages can be turned landscape; the rest of the SI stays portrait.');
+    tick(pages, 'Header line', 'header_line', 'The line above each spectrum, e.g. “2a — ¹H NMR (400 MHz, CDCl₃)”, from its peak report (or the header typed for it).');
+    tick(pages, 'Auto-crop', 'auto_crop', 'Cut the white margins round each spectrum and scale it to fill its place (the axes are kept; only blank white is cut).');
+    tick(pages, 'Frame', 'spectrum_frame', 'A frame round each spectrum.');
+    const box = row('Structure and ID');
+    tick(box, 'Show', 'struct_box', 'The compound’s structure and ID on a box over each spectrum (Org. Lett. asks for spectra labeled with both).');
+    choice(box, 'Position', 'corner', [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']], 'The corner of the spectrum the box goes in (a box dragged in Chem SI Assistant stays where it was put).');
+    num(box, 'Structure size', 'struct_scale', 25, 400, 100, '100 % is the structure’s own size, no larger than 1.5 × 1.1 in.', '%');
+    num(box, 'ID size', 'id_size', 0, 24, 1, 'The ID’s size in points; 0 is the text size.', 'pt');
+    tick(box, 'Bold ID', 'id_bold', 'The ID in bold.');
+    tick(box, 'Caption', 'caption', 'A caption under the structure, e.g. “¹H NMR (CDCl₃, 500 MHz)”, from the peak report (or the caption typed for the spectrum).');
+    color(box, 'Background', 'struct_bg', 'The box’s background, so the structure reads over the spectrum.');
+    tick(box, 'Frame', 'struct_frame', 'A frame round the box.');
+    const hrms = row('HRMS');
+    tick(hrms, 'Print HRMS reports', 'hrms_reports', 'Each compound’s HRMS report files (PDFs, pictures and text files), after the spectra in a sub-section “HRMS reports”. A compound can say otherwise in its HRMS field.');
+    // spectra with settings of their own
+    const own = p.compounds.reduce((n, c) => n + spectrumItems(c).filter(([, i]) => i.layout || i.pages).length, 0);
+    if (own) {
+      const reset = el('button', 'si-btn', `Apply Defaults to All Spectra (${own})…`);
+      reset.type = 'button';
+      reset.title = 'Remove every spectrum’s own settings and dragged places, so all of them follow the settings above';
+      reset.addEventListener('click', () => void (async () => {
+        const go = await askChoice('Apply Defaults to All Spectra', `${own} spectrum file${own === 1 ? ' has' : 's have'} settings of ${own === 1 ? 'its' : 'their'} own (and perhaps a structure box dragged to a place of ${own === 1 ? 'its' : 'their'} own). They will all follow the settings above.`, [{ value: 'go', label: 'Apply Defaults', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+        if (go !== 'go') return;
+        await this.act(async () => {
+          for (const c of p.compounds) {
+            let touched = false;
+            for (const [, i] of spectrumItems(c)) if (i.layout || i.pages) { delete i.layout; delete i.pages; touched = true; }
+            if (touched) await p.saveCompound(c);
+          }
+        });
+      })());
+      card.append(reset);
+    }
+    out.append(card);
   }
 
   private idTableCard(out: HTMLElement, s: SiSection): void {
@@ -1218,7 +1325,11 @@ export class SiMode {
     this.host.flash('Compiling the SI…', 1500);
     let got;
     try {
-      got = await compileSi(p, { contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (m) => this.host.siFacts(m) });
+      got = await compileSi(p, {
+        contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (m) => this.host.siFacts(m),
+        pdfPages: (b) => import('../render/pdf-page').then((m) => m.pdfPages(b)),
+        contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+      });
     } catch (e) {
       this.host.flash(`Could not compile the SI: ${e instanceof Error ? e.message : String(e)}`, 6000);
       return;

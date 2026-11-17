@@ -81,7 +81,7 @@ describe('compiling an SI project into a document', () => {
     expect(doc.hf.prefix).toBe('S');
     expect(doc.hf.onFirst).toBe(false);
     // what isn't compiled yet is said
-    expect(notes.some((n) => /spectra pages/.test(n))).toBe(true);
+    expect(notes.some((n) => /2a_1H\.pdf is no longer in the project/.test(n))).toBe(true);
     expect(notes.some((n) => /schemes are not drawn/.test(n))).toBe(true);
   });
 
