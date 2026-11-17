@@ -78,6 +78,11 @@ export const COMMAND_ICONS: Record<string, string> = {
   'arrange-row': svg('<rect x="2" y="9" width="5" height="6"/><rect x="9.5" y="9" width="5" height="6"/><rect x="17" y="9" width="5" height="6"/>'),
   'arrange-column': svg('<rect x="9" y="2" width="6" height="5"/><rect x="9" y="9.5" width="6" height="5"/><rect x="9" y="17" width="6" height="5"/>'),
   'arrange-grid': svg('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>'),
+  'distribute-h-focal': svg('<line x1="3" y1="4" x2="3" y2="20"/><line x1="21" y1="4" x2="21" y2="20"/><circle cx="7" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="17" cy="12" r="2"/>'),
+  'distribute-v-focal': svg('<line x1="4" y1="3" x2="20" y2="3"/><line x1="4" y1="21" x2="20" y2="21"/><circle cx="12" cy="7" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="17" r="2"/>'),
+  'set-focal-point': svg(hex(12, 12, 9) + '<circle cx="12" cy="12" r="3.5"/><path d="M12 6.5v2M12 15.5v2M6.5 12h2M15.5 12h2"/>'),
+  'reset-focal-point': svg(hex(12, 12, 9) + '<circle cx="12" cy="12" r="3.5" stroke-dasharray="1.6 1.4"/><path d="M4 20L20 4"/>'),
+  'show-focal-points': svg(hex(7.5, 8.5, 5.5) + hex(16.5, 15.5, 5.5) + '<circle cx="7.5" cy="8.5" r="1.8"/><circle cx="16.5" cy="15.5" r="1.8"/>'),
   'distribute-v': svg('<line x1="4" y1="3" x2="20" y2="3"/><line x1="4" y1="21" x2="20" y2="21"/><rect x="8" y="6" width="8" height="3"/><rect x="8" y="10.5" width="8" height="3"/><rect x="8" y="15" width="8" height="3"/>'),
   // ---- object: flip and turn
   'flip-h': svg('<line x1="12" y1="3" x2="12" y2="21" stroke-dasharray="2 2"/><path d="M10 6v12L4 18z"' + filled() + '/><path d="M14 6v12l6 0z"/>'),
