@@ -73,7 +73,7 @@ const FIGURE_MAX_H = 7 * PT;
 const ATTACHMENT_MAX_H = 8 * PT;
 
 const TOC_DEPTHS = ['sections', 'subsections', 'procedures', 'compounds'];
-const COVER_HEADINGS: Record<string, string> = { ACS: 'Supporting Information', Wiley: 'Supporting Information', RSC: 'Electronic Supplementary Information' };
+export const COVER_HEADINGS: Record<string, string> = { ACS: 'Supporting Information', Wiley: 'Supporting Information', RSC: 'Electronic Supplementary Information' };
 const LABEL_KINDS = ['figure', 'table', 'scheme'] as const;
 type LabelKind = (typeof LABEL_KINDS)[number];
 const REF_TYPES = new Set<RefType>(['article', 'book', 'chapter', 'thesis', 'web', 'misc']);

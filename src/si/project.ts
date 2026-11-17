@@ -463,6 +463,15 @@ export class SiProject {
     return out;
   }
 
+  /** A front-matter text (front/cover_text.txt, front/general_information.txt); '' when there is none. */
+  async readFrontText(which: 'cover' | 'general'): Promise<string> {
+    return (await this.folder.readText(`front/${which === 'cover' ? 'cover_text' : 'general_information'}.txt`)) ?? '';
+  }
+  async writeFrontText(which: 'cover' | 'general', text: string): Promise<void> {
+    this.checkWritable();
+    await this.folder.writeText(`front/${which === 'cover' ? 'cover_text' : 'general_information'}.txt`, text);
+  }
+
   async saveSettings(): Promise<void> {
     this.checkWritable();
     const tree = this.mergeTree(this.treeJson(this.top), this.savedTree);

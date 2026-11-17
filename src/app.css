@@ -4926,6 +4926,22 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-xray-pic img { display: block; max-width: 100%; height: auto; }
 .si-xray-caption { margin: 2px 0 6px; font-size: 12px; }
 .si-xray { display: flex; flex-direction: column; gap: 8px; }
+/* the project's front matter: cover page, contents, General Information */
+.si-front { display: flex; flex-direction: column; gap: 8px; }
+.si-front-grid { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 3px 8px; align-items: center; font-size: var(--fs-sm); margin-bottom: 4px; }
+.si-front-grid input, .si-front-grid select { padding: 1px 4px; font-size: var(--fs-sm); max-width: 520px; }
+.si-front-lab { color: var(--muted); }
+.si-front-title { font-weight: 600; }
+.si-front-head { display: flex; align-items: center; gap: 4px; margin: 6px 0 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
+.si-front-list { display: flex; flex-direction: column; gap: 2px; }
+.si-front-author, .si-front-aff { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+.si-front-author input, .si-front-aff input { padding: 1px 4px; font-size: var(--fs-sm); }
+.si-front-name { width: 200px; }
+.si-front-marks { width: 60px; }
+.si-front-email { width: 220px; }
+.si-front-mark { width: 36px; text-align: center; }
+.si-front-afftext { flex: 1; min-width: 0; }
+.si-fill { flex: 1; }
 .si-xray-pic { cursor: zoom-in; }
 .si-xray-rows { display: grid; grid-template-columns: 18px minmax(160px, max-content) minmax(0, 1fr); gap: 1px 6px; align-items: center; font-size: var(--fs-sm); margin-top: 4px; }
 .si-xray-row { display: contents; }

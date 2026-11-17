@@ -88,3 +88,16 @@ describe('the project’s references', () => {
     expect(again.reference(String(fulmer.id))).toBeUndefined();
   });
 });
+
+describe('front matter', () => {
+  it('reads and writes the cover text and General Information where SI Assistant keeps them', async () => {
+    const f = folder();
+    const p = await SiProject.open(f);
+    expect(await p.readFrontText('general')).toContain('General methods');
+    await p.writeFrontText('cover', 'A note for the cover.');
+    expect(new TextDecoder().decode(f.files.get('front/cover_text.txt'))).toBe('A note for the cover.');
+    p.settings.authors = [...(p.settings.authors as Json[]), { name: 'Casey Writer', affiliations: ['a'], corresponding: false, email: '' }];
+    await p.saveSettings();
+    expect(((await SiProject.open(f)).settings.authors as Json[]).map((a) => a.name)).toEqual(['Alex Example', 'Blair Sample', 'Casey Writer']);
+  });
+});

@@ -10,7 +10,7 @@
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocText } from '../document/document';
-import { compileSi, objectLabels, COVER_SPACINGS, coverSpacing } from '../si/compile-doc';
+import { compileSi, objectLabels } from '../si/compile-doc';
 import { DEFAULTS as SPECTRA_DEFAULTS, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, TYPE_LABELS, type Json, type SiCompound, type SiSection } from '../si/project';
@@ -24,6 +24,7 @@ import { SiTableEditor } from './si-table';
 import { SiFigureEditor } from './si-figure';
 import { SiPictures } from './si-picture';
 import { SiXrayPage } from './si-xray';
+import { SiFrontPage } from './si-front';
 import { editReference } from './references-dialog';
 import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Reference } from '../document/references';
 import { newTable } from '../si/tables';
@@ -150,6 +151,12 @@ const RIBBON = `
         <button data-si="new-gp" title="A new general procedure in the Data section picked (or the picked compound's): its text prints once at the start of the section, and its compounds get its sentence">General Procedure</button>
       </div>
     </div><div class="rb-label">Compound Data</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="add-author" title="Add an author to the cover page (on the project's page)">Author</button>
+        <button data-si="add-affiliation" title="Add an affiliation to the cover page, with the next free letter">Affiliation</button>
+      </div>
+    </div><div class="rb-label">Cover Page</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="symbol" data-ic="symbol" title="Type a symbol (°, Å, ±, Greek letters, arrows…) where you are typing"><span class="rb-icon">Ω</span>Symbol</button>
     </div><div class="rb-label">Symbols</div></div>
@@ -501,7 +508,7 @@ export class SiMode {
   }
 
   /** Save what is being typed. */
-  commitAll(): void { for (const b of [...this.boxes, ...(this.xrayPage?.boxes ?? [])]) b.commit(); for (const t of this.tables) t.commit(); }
+  commitAll(): void { for (const b of [...this.boxes, ...(this.xrayPage?.boxes ?? []), ...(this.front?.boxes ?? [])]) b.commit(); for (const t of this.tables) t.commit(); }
 
   /** Everything again: the tree, the page, the status bar. */
   refresh(): void {
@@ -893,6 +900,7 @@ export class SiMode {
     this.tableChosen(null);
     this.figureChosen(null);
     this.xrayShown(null);
+    this.front = null;
     this.ribbon.querySelector<HTMLElement>('[data-si-tab="refs"]')!.hidden = this.pick.kind !== 'references';
     const p = this.project!;
     const pick = this.pick;
@@ -935,7 +943,20 @@ export class SiMode {
     card.append(t);
     if (!p.sections.length) card.append(el('p', 'muted', 'No sections yet: New Section makes one (a Data section holds compounds).'));
     out.append(card);
+    const front = new SiFrontPage({
+      project: p,
+      flash: (m, ms) => this.host.flash(m, ms),
+      label: this.label,
+      mentionable: this.mentionable,
+      titleChanged: () => { if (this.tab) { this.tab.name = p.title; this.host.changed(); } this.renderTree(); },
+      redraw: () => { this.shownKey = ''; this.refresh(); },
+    });
+    this.front = front;
+    out.append(front.el);
   }
+
+  /** The front matter page shown (Insert ▸ Author and Affiliation add to it). */
+  private front: SiFrontPage | null = null;
 
   /** The reference picked on the References page (the References tab's Edit and Delete act on it). */
   private refPicked = '';
@@ -1952,6 +1973,11 @@ export class SiMode {
         await this.act(async () => { await p.addGeneralProcedure(d.id); this.pick = { kind: 'section', id: d.id }; });
         return;
       }
+      case 'add-author':
+      case 'add-affiliation':
+        if (this.pick.kind !== 'project' || !this.front) { this.pick = { kind: 'project' }; this.shownKey = ''; this.refresh(); }
+        this.front?.add(cmd === 'add-author' ? 'author' : 'affiliation');
+        return;
       case 'symbol':
         this.host.openSymbols();
         return;
@@ -2107,23 +2133,17 @@ export class SiMode {
         return;
       case 'project-settings': {
         const got = await ask('Project Settings', [
-          { name: 'title', label: 'Title', value: p.title },
           { name: 'style', label: 'Journal style', value: String(p.settings.journal_style ?? 'ACS'), options: ['ACS', 'Wiley', 'RSC'].map((x) => ({ value: x, label: x })) },
           { name: 'ppm', label: 'HRMS tolerance', value: String(p.settings.hrms_tolerance_ppm ?? 5), unit: 'ppm', type: 'number', min: 0.1, max: 100 },
           { name: 'numbers', label: 'Heading numbers', value: ['outline', 'decimal', 'none'].includes(String(p.settings.heading_numbers)) ? String(p.settings.heading_numbers) : 'style', options: [{ value: 'style', label: 'As the journal style does' }, { value: 'outline', label: 'Outline (1, A, a, i)' }, { value: 'decimal', label: 'Numbers (1, 1.1, 1.1.1)' }, { value: 'none', label: 'None' }], help: 'How the compiled SI numbers its headings. Wiley and RSC number section headings 1, 1.1, 1.1.1; ACS doesn’t. An outline or numbers also number the headings typed in a section’s text and General Information.' },
-          { name: 'spacing', label: 'Cover spacing', value: spacingChoice(p.settings), options: [...Object.entries(COVER_SPACINGS).map(([label, v]) => ({ value: String(v), label })), ...(Object.values(COVER_SPACINGS).includes(coverSpacing(p.settings)) ? [] : [{ value: String(coverSpacing(p.settings)), label: `${coverSpacing(p.settings)}× (typed in project.json)` }])], help: 'The space between the cover page’s heading, title, authors, affiliations and emails.' },
-        ], { ok: 'Save', note: 'Authors, the cover page’s text and the rest are set in Chem SI Assistant for now.' });
+        ], { ok: 'Save', note: 'The title, authors, cover page, contents and General Information are on the project’s page (its name at the top of the list).' });
         if (!got || p.readOnly) return;
         await this.act(async () => {
-          p.settings.title = got.title.trim() || p.title;
           p.settings.journal_style = got.style;
           const ppm = Number(got.ppm);
           if (Number.isFinite(ppm) && ppm > 0) p.settings.hrms_tolerance_ppm = ppm;
           // stored only when not the default, as SI Assistant stores them
           if (got.numbers === 'style') delete p.settings.heading_numbers; else p.settings.heading_numbers = got.numbers;
-          const sp = Number(got.spacing);
-          const cover = p.settings.cover && typeof p.settings.cover === 'object' && !Array.isArray(p.settings.cover) ? p.settings.cover as Record<string, unknown> : null;
-          if (sp === 1 || !Number.isFinite(sp)) { if (cover) delete cover.spacing; } else p.settings.cover = { ...(cover ?? {}), spacing: sp };
           await p.saveSettings();
         });
         if (this.tab) { this.tab.name = p.title; this.host.changed(); }
@@ -2320,5 +2340,3 @@ function pickFromList<T>(title: string, items: T[], main: (x: T) => string, sub:
   });
 }
 
-/** The Cover spacing choice for a project's settings (as stored, 1 for Normal). */
-function spacingChoice(settings: Record<string, unknown>): string { return String(coverSpacing(settings)); }
