@@ -515,6 +515,8 @@ pub fn run() {
             open_dialog::open_shared_dialog,
             folders::list_folder,
             folders::make_folder,
+            folders::si_move,
+            folders::si_remove_lock,
             file_types::launch_files,
             file_types::file_types_get,
             file_types::file_types_set,

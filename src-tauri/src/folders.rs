@@ -81,6 +81,39 @@ pub fn make_folder(path: String) -> Result<(), String> {
     std::fs::create_dir_all(&path).map_err(|e| format!("Could not make the folder {path}: {e}"))
 }
 
+/// SI projects (Chem SI Assistant's folders): move a file or folder, such as a deleted compound
+/// into the project's trash folder. Never writes over anything: `to` must not be there yet.
+#[tauri::command]
+pub fn si_move(from: String, to: String) -> Result<(), String> {
+    let (f, t) = (PathBuf::from(&from), PathBuf::from(&to));
+    if !f.exists() {
+        return Err(format!("{from} is not there (it may have been moved or deleted)."));
+    }
+    if t.exists() {
+        return Err(format!("{to} is already there."));
+    }
+    if let Some(parent) = t.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Could not make the folder {}: {e}", parent.display()))?;
+    }
+    std::fs::rename(&f, &t).map_err(|e| format!("Could not move {from}: {e}"))
+}
+
+/// SI projects: take away the project's ".lock" (who has it open) when it is closed. Only a
+/// file called .lock beside a project.json is ever deleted here.
+#[tauri::command]
+pub fn si_remove_lock(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    let is_lock = p.file_name().and_then(|n| n.to_str()) == Some(".lock") && p.parent().is_some_and(|d| d.join("project.json").is_file());
+    if !is_lock {
+        return Err(format!("not an SI project's lock: {path}"));
+    }
+    match std::fs::remove_file(&p) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Could not delete {path}: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
