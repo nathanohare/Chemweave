@@ -130,6 +130,14 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Figures</div></div>
     <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="add-spectra" data-ic="chart-line" title="Add spectra (PDFs or pictures) to the compound picked"><span class="rb-icon">⩘</span>Spectra</button>
+      <div class="rb-col">
+        <button data-si="add-nmr-report" title="Another NMR peak report on the compound picked (another nucleus, or another solvent)">NMR Report</button>
+        <button data-si="add-files" data-ic="insert-object" title="Add other files (PDFs or pictures) to the compound picked">Files…</button>
+        <button data-si="add-field" title="Add a field (melting point, Rf, IR, optical rotation…, or one of your own) to the compound picked, or to the section picked's list of fields">Field…</button>
+      </div>
+    </div><div class="rb-label">Compound Data</div></div>
+    <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="symbol" data-ic="symbol" title="Type a symbol (°, Å, ±, Greek letters, arrows…) where you are typing"><span class="rb-icon">Ω</span>Symbol</button>
     </div><div class="rb-label">Symbols</div></div>
   </div>
@@ -244,14 +252,13 @@ const RIBBON = `
     </div><div class="rb-label">Compile</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si="add-field" title="Add a field to the compound page (melting point, Rf, IR, optical rotation…), or one of your own">Add Field…</button>
         <button data-si="apply-fields" title="Give every compound of the section the section's fields, in the section's order">Apply Section Fields</button>
         <button data-si="reload" data-ic="refresh-all" title="Read the project folder again (after changes made in Chem SI Assistant or by a sync)">Reload Project</button>
       </div>
       <div class="rb-col">
         <button data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance">Project Settings…</button>
       </div>
-    </div><div class="rb-label">Project</div></div>
+    </div><div class="rb-label">Manage</div></div>
   </div>`;
 
 export class SiMode {
@@ -866,12 +873,8 @@ export class SiMode {
     const p = this.project!;
     const card = el('div', 'si-card');
     const h = el('h2', 'si-title', 'References');
-    addInfo(h, 'The project’s references (references.json), numbered in the order they are listed. Cite from My Library adds references from your library.');
+    addInfo(h, 'The project’s references (references.json), numbered in the order they are listed. Home ▸ Cite from My Library adds references from your library.');
     card.append(h);
-    const add = el('button', 'si-btn', 'Add from My Library…');
-    add.type = 'button';
-    add.addEventListener('click', () => void this.citeFromLibrary(null));
-    card.append(add);
     const ol = el('ol', 'si-refs');
     for (const r of p.references) {
       const li = el('li');
@@ -1205,15 +1208,6 @@ export class SiMode {
     const h = el('h3', 'si-sub', 'ID table');
     addInfo(h, 'Row 1 is the first compound’s ID, row 2 the second’s, and so on: moving compounds renumbers them. A Manual ID on a compound replaces its ID but still uses up its row.');
     card.append(h);
-    const tools = el('div', 'si-tools');
-    const fill = el('button', 'si-btn', 'Fill from Pattern…');
-    fill.type = 'button';
-    fill.addEventListener('click', () => void this.run('fill-pattern'));
-    const pages = el('button', 'si-btn', 'Add Pages for IDs');
-    pages.type = 'button';
-    pages.addEventListener('click', () => void this.run('pages-for-ids'));
-    tools.append(fill, pages);
-    card.append(tools);
     const table = idTableOf(s);
     const cs = compoundsOf(s);
     const grid = el('div', 'si-idgrid');
@@ -1244,7 +1238,7 @@ export class SiMode {
     const p = this.project!;
     const card = el('div', 'si-card');
     const h = el('h3', 'si-sub', 'Fields of new compounds');
-    addInfo(h, 'The fields a new compound page of this section gets, in this order. Required fields count towards a page being complete. Apply Section Fields gives them to the compounds already there.');
+    addInfo(h, 'The fields a new compound page of this section gets, in this order. Required fields count towards a page being complete. Insert ▸ Field… adds one; Home ▸ Apply Section Fields gives them to the compounds already there.');
     card.append(h);
     const entries = defaultFieldsOf(s);
     const list = el('div', 'si-fieldlist');
@@ -1274,18 +1268,6 @@ export class SiMode {
       list.append(r);
     });
     card.append(list);
-    const add = el('button', 'si-btn', 'Add Field…');
-    add.type = 'button';
-    add.addEventListener('click', async () => {
-      const got = await this.chooseField(entries.map((e) => e.key));
-      if (got) await this.act(() => p.setDefaultFields(s.id, [...entries, { ...got, required: false }]));
-    });
-    const apply = el('button', 'si-btn', 'Apply Section Fields');
-    apply.type = 'button';
-    apply.addEventListener('click', () => void this.run('apply-fields'));
-    const tools = el('div', 'si-tools');
-    tools.append(add, apply);
-    card.append(tools);
     out.append(card);
   }
 
@@ -1319,18 +1301,10 @@ export class SiMode {
     shown.title = 'Show the warnings dismissed for this compound (with Restore), or hide them again';
     shown.addEventListener('click', () => { this.showDismissed = !this.showDismissed; this.paintWarnings(); });
     chips.append(done, idChip, shown);
-    const buttons = el('div', 'si-tools');
-    const edit = el('button', 'si-btn', p.hasStructure(c) ? 'Edit Structure' : 'Draw Structure');
-    edit.type = 'button';
-    edit.addEventListener('click', () => this.editStructure(c));
-    const lib = el('button', 'si-btn', 'Add to Compound Library');
-    lib.type = 'button';
-    lib.addEventListener('click', () => void this.toLibrary([c]));
-    buttons.append(edit, lib);
     const headWarn = el('div', 'si-fwarn si-head-warn');
     headWarn.dataset.key = '';
     headWarn.hidden = true;
-    info.append(line, facts, buttons);
+    info.append(line, facts);
     head.append(pic, info, chips, headWarn);
     out.append(head);
     if (p.hasStructure(c)) void this.fillStructure(c, pic, facts);
@@ -1400,12 +1374,6 @@ export class SiMode {
         chips.append(el('span', 'si-chip', type ? `${name} · ${type}` : name));
       }
       if (!list.length) chips.append(el('span', 'muted', 'None yet.'));
-      if (def.kind === 'attachments') {
-        const add = el('button', 'si-btn', def.key === 'spectra' ? 'Add Spectra…' : 'Add Files…');
-        add.type = 'button';
-        add.addEventListener('click', () => void this.addFiles(c, def));
-        chips.append(add);
-      }
       body.append(chips);
     }
     const warn = el('div', 'si-fwarn');
@@ -1672,11 +1640,6 @@ export class SiMode {
       line.append(sel, box.el, rm);
       body.append(line);
     }
-    const add = el('button', 'si-btn', 'Add Report');
-    add.type = 'button';
-    add.title = 'Another NMR peak report (another nucleus, or another solvent)';
-    add.addEventListener('click', () => { reports.push({ id: newId('r'), nucleus: '19F', label: '', text: '' }); void this.act(save); });
-    body.append(add);
   }
 
   private citationsEditor(body: HTMLElement, c: SiCompound): void {
@@ -1699,10 +1662,6 @@ export class SiMode {
       chip.append(x);
       chips.append(chip);
     }
-    const add = el('button', 'si-btn', 'Cite from My Library…');
-    add.type = 'button';
-    add.addEventListener('click', () => void this.citeFromLibrary(c));
-    chips.append(add);
     body.append(chips);
   }
 
@@ -1889,9 +1848,33 @@ export class SiMode {
       }
       case 'cite-library': await this.citeFromLibrary(c); return;
       case 'add-field': {
-        if (!c) { this.host.flash('Pick a compound first (to change a whole section’s fields, pick the section).'); return; }
+        // the compound picked gets the field; a Data section picked gets it on its list of fields
+        if (!c && data && this.pick.kind === 'section') {
+          const entries = defaultFieldsOf(data);
+          const got = await this.chooseField(entries.map((e) => e.key));
+          if (got) await this.act(() => p.setDefaultFields(data.id, [...entries, { ...got, required: false }]));
+          return;
+        }
+        if (!c) { this.host.flash('Pick a compound, or a Data section to change its list of fields.'); return; }
         const got = await this.chooseField(fieldKeys(c));
         if (got) await this.act(() => p.addField(c, got));
+        return;
+      }
+      case 'add-spectra':
+      case 'add-files': {
+        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        const key = cmd === 'add-spectra' ? 'spectra' : 'files';
+        if (!fieldKeys(c).includes(key)) await p.addField(c, { key });
+        await this.addFiles(c, ALL_FIELDS.get(key)!);
+        return;
+      }
+      case 'add-nmr-report': {
+        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        const reports = (Array.isArray(valuesOf(c).nmr) ? valuesOf(c).nmr : []) as Json[];
+        const used = new Set(reports.map((r) => partText(r.nucleus)));
+        const nucleus = (['1H', '13C', '19F', '31P'] as const).find((n) => !used.has(n)) ?? '1H';
+        if (!fieldKeys(c).includes('nmr')) await p.addField(c, { key: 'nmr' });
+        await this.act(() => p.setValue(c, 'nmr', [...reports, { id: newId('r'), nucleus, label: '', text: '' }]));
         return;
       }
       case 'apply-fields': {
