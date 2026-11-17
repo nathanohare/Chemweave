@@ -1032,6 +1032,30 @@ let quickBar: QuickBar | null = null;
 const STRESS_SIZES = [100, 500, 2000, 5000];
 $('#help-hotkeys').addEventListener('click', () => { $<HTMLDialogElement>('#help').close(); hotkeysDialog.open(); });
 $('#help-close').addEventListener('click', () => $<HTMLDialogElement>('#help').close());
+/**
+ * Pointing at Align Center or Middle, Distribute or Arrange in a Row or Column (on the ribbon, a
+ * menu or the right-click menu) shows each selected structure's focal point and where it would go.
+ */
+const LAYOUT_PREVIEWS = new Set(['align-hcenter', 'align-vcenter', 'distribute-h', 'distribute-v', 'distribute-h-focal', 'distribute-v-focal', 'arrange-row', 'arrange-column', 'set-focal-point', 'reset-focal-point']);
+let layoutPreviewOn: string | null = null;
+document.addEventListener('pointerover', (e) => {
+  const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-cmd], [data-hover-cmd]');
+  const cmd = el ? el.dataset.hoverCmd ?? el.dataset.cmd ?? null : null;
+  const want = cmd && LAYOUT_PREVIEWS.has(cmd) && ws.active.mode === 'drawing' ? cmd : null;
+  if (want === layoutPreviewOn) return;
+  layoutPreviewOn = want;
+  editor.previewLayout(want);
+}, true);
+// (a click runs the command: the preview goes)
+document.addEventListener('pointerdown', () => { if (layoutPreviewOn) { layoutPreviewOn = null; editor.previewLayout(null); } }, true);
+
+/** Arrange ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
+function showFocalPoints(on: boolean): void {
+  editor.showFocal = on;
+  for (const b of document.querySelectorAll('[data-cmd="show-focal-points"]')) b.setAttribute(b.getAttribute('role')?.startsWith('menuitem') ? 'aria-checked' : 'aria-pressed', String(on));
+  editor.requestOverlay();
+}
+
 /** View > Show R/S Preview: every R/S and E/Z label in red, on screen only. */
 function previewStereo(on: boolean): void {
   renderer.previewStereo = on;
@@ -9041,6 +9065,11 @@ const COMMANDS: Record<string, () => unknown> = {
   'align-bottom': () => align('bottom'),
   'distribute-h': () => editor.distribute('h') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
   'distribute-v': () => editor.distribute('v') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  'distribute-h-focal': () => editor.distribute('h', 'focal') || flash('Select three or more structures, captions, arrows or shapes to space their focal points evenly.'),
+  'distribute-v-focal': () => editor.distribute('v', 'focal') || flash('Select three or more structures, captions, arrows or shapes to space their focal points evenly.'),
+  'set-focal-point': () => editor.setFocalPoint() || flash('Select one atom, one bond or one ring to make it the focal point (right-click inside a ring to pick the ring).', 6000),
+  'reset-focal-point': () => editor.resetFocalPoint() || flash('None of the selected structures has a focal point of its own.'),
+  'show-focal-points': () => showFocalPoints(!editor.showFocal),
   'arrange-row': () => editor.arrangeGrid({ kind: 'row', gap: gridGap() }) || flash('Select two or more structures or objects to put in a row (or they already are, evenly spaced).'),
   'arrange-column': () => editor.arrangeGrid({ kind: 'column', gap: gridGap() }) || flash('Select two or more structures or objects to put in a column (or they already are, evenly spaced).'),
   'arrange-grid': () => void arrangeInGrid(),
@@ -12703,9 +12732,14 @@ function drawingMenu(): MenuItem[] {
   const arrange: MenuItem[] = [
     { cmd: 'align-left' }, { cmd: 'align-hcenter' }, { cmd: 'align-right' }, null,
     { cmd: 'align-top' }, { cmd: 'align-vcenter' }, { cmd: 'align-bottom' }, null,
-    { cmd: 'distribute-h' }, { cmd: 'distribute-v' }, null,
+    { cmd: 'distribute-h' }, { cmd: 'distribute-v' }, { cmd: 'distribute-h-focal' }, { cmd: 'distribute-v-focal' }, null,
     { cmd: 'arrange-row' }, { cmd: 'arrange-column' }, { cmd: 'arrange-grid' },
   ];
+  // an atom, a bond or a ring picked: it can be the structure's focal point
+  const spot = editor.focalSpot();
+  const focal: MenuItem[] = atoms || s.bonds.size
+    ? [...(spot ? [{ cmd: 'set-focal-point', label: `Set ${spot.length === 1 ? 'Atom' : spot.length === 2 ? 'Bond' : 'Ring'} as Focal Point` }] : []), ...(editor.hasOwnFocal() ? [{ cmd: 'reset-focal-point' }] : [])]
+    : [];
   const turn: MenuItem[] = [
     { cmd: 'flip-h' }, { cmd: 'flip-v' }, { cmd: 'flip-h-keep' }, { cmd: 'flip-v-keep' }, null,
     { cmd: 'rotate-cw' }, { cmd: 'rotate-ccw' }, { cmd: 'rotate-180' }, { cmd: 'rotate-dialog' }, null, { cmd: 'scale' },
@@ -12725,6 +12759,7 @@ function drawingMenu(): MenuItem[] {
     ...(focus === 'atom' ? atomMenu() : repeatLabelMenu()),
     ...bonds,
     ...fuseRingMenu(),
+    ...(focal.length ? [...focal, null] : []),
     ...(focus === 'bond' && s.bonds.size <= 2 && !s.arrows.size ? [{ cmd: 'homolysis-arrows' }] : []),
     ...arrows,
     ...(editor.selectedEnergy() !== null ? [{ cmd: 'edit-energy' }, null] : []),

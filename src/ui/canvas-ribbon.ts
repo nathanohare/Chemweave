@@ -63,7 +63,8 @@ export const CANVAS_TABS: RibbonTab[] = [
   {
     id: 'arrange', title: 'Arrange', groups: [
       { name: 'Align', items: [c('align-left', 'Align Left'), c('align-hcenter', 'Align Center'), c('align-right', 'Align Right'), c('align-top', 'Align Top'), c('align-vcenter', 'Align Middle'), c('align-bottom', 'Align Bottom')] },
-      { name: 'Distribute', items: [c('distribute-h', 'Distribute Horizontally'), c('distribute-v', 'Distribute Vertically'), c('arrange-row', 'Arrange in a Row'), c('arrange-column', 'Arrange in a Column'), c('arrange-grid', 'Arrange in a Grid…')] },
+      { name: 'Distribute', items: [c('distribute-h', 'Distribute Horizontally'), c('distribute-v', 'Distribute Vertically'), c('distribute-h-focal', 'Distribute Focal Points Horizontally'), c('distribute-v-focal', 'Distribute Focal Points Vertically'), c('arrange-row', 'Arrange in a Row'), c('arrange-column', 'Arrange in a Column'), c('arrange-grid', 'Arrange in a Grid…')] },
+      { name: 'Focal Point', items: [c('set-focal-point', 'Set as Focal Point', true), c('reset-focal-point', 'Reset Focal Point'), c('show-focal-points', 'Show Focal Points')] },
       { name: 'Rotate', items: [c('flip-h', 'Flip Horizontal'), c('flip-v', 'Flip Vertical'), c('rotate-cw', 'Rotate Right 90°'), c('rotate-ccw', 'Rotate Left 90°'), c('rotate-dialog', 'Rotate…')] },
       { name: 'Order', items: [c('shape-front', 'Bring to Front'), c('shape-forward', 'Bring Forward'), c('shape-back', 'Send to Back'), c('shape-backward', 'Send Backward')] },
     ],
@@ -71,7 +72,7 @@ export const CANVAS_TABS: RibbonTab[] = [
   {
     id: 'view', title: 'View', groups: [
       { name: 'Zoom', items: [c('zoom-fit', 'Fit', true), c('focus-view', 'Focus View')] },
-      { name: 'Show', items: [c('navigator', 'Document Map'), c('dark-page', 'Reading Mode'), c('show-stereo', 'Stereo Labels')] },
+      { name: 'Show', items: [c('navigator', 'Document Map'), c('dark-page', 'Reading Mode'), c('show-stereo', 'Stereo Labels'), c('show-focal-points', 'Focal Points')] },
     ],
   },
 ];
