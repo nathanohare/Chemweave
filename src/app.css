@@ -4932,6 +4932,31 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-spectra-group { min-width: 116px; font-size: var(--fs-sm); font-weight: 600; }
 .si-spectra-row input[type=color] { width: 32px; height: 20px; padding: 0 1px; }
 /* SI Projects: an X-ray structure section's page */
+.si-scheme-head { display: flex; align-items: center; gap: 10px; }
+.si-scheme-head .si-sub { margin: 0; }
+.si-scheme-name { flex: 1 1 auto; max-width: 420px; font-weight: 600; }
+.si-scheme-preview { margin-top: 6px; overflow-x: auto; }
+.si-scheme-paper { background: #fff; color: #000; border: 1px solid var(--line); padding: 10px 0; display: flex; justify-content: center; box-sizing: content-box; }
+.si-scheme-paper svg { display: block; }
+.si-scheme-strip { display: flex; align-items: center; gap: 6px; overflow-x: auto; padding: 4px 2px 8px; }
+.si-scheme-box { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); cursor: default; outline: none; }
+.si-scheme-box.on, .si-scheme-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.si-scheme-pic { min-width: 96px; min-height: 64px; display: flex; align-items: center; justify-content: center; background: #fff; color: #000; }
+.si-scheme-pic svg { display: block; }
+.si-scheme-pic .muted { font-size: var(--fs-xs); padding: 0 6px; text-align: center; }
+.si-scheme-id { display: flex; gap: 3px; }
+.si-scheme-label { width: 64px; font-weight: 600; text-align: center; }
+.si-scheme-yield { width: 64px; text-align: center; }
+.si-scheme-cpd { min-width: 64px; padding: 0 6px; border: 1px solid var(--accent); border-radius: var(--r-control); background: var(--accent-soft); color: var(--accent); font-weight: 600; cursor: pointer; }
+.si-scheme-plus { flex: 0 0 auto; font-size: 18px; color: var(--muted); }
+.si-scheme-step { flex: 0 0 auto; width: 190px; display: flex; flex-direction: column; gap: 2px; padding: 2px; border: 1px solid transparent; border-radius: var(--r-control); }
+.si-scheme-step.on { border-color: var(--line); }
+.si-scheme-cond { min-height: 22px; font-size: 12px; }
+.si-scheme-arrow { height: 10px; color: var(--text); }
+.si-scheme-arrow svg { display: block; width: 100%; height: 10px; }
+.si-scheme-empty { flex: 0 0 auto; padding: 18px 8px; border: 1px dashed var(--line); border-radius: var(--r-control); background: transparent; color: var(--muted); cursor: pointer; }
+.si-inline-struct { display: inline-block; vertical-align: middle; margin: 0 2px; background: #fff; border-radius: 2px; }
+.si-inline-struct svg { display: block; }
 .si-xray-pic { margin: 4px 0; }
 .si-xray-pic img { display: block; max-width: 100%; height: auto; }
 .si-xray-caption { margin: 2px 0 6px; font-size: 12px; }

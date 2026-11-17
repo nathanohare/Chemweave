@@ -5,13 +5,15 @@
 // Ctrl+B, Ctrl+I and Ctrl+U as in Word; Ctrl+= subscript, Ctrl+Shift+= superscript; typing
 // "@" offers the project's compounds to mention.
 
-import { MENTION, parseMarkup, writeMarkup, type Paragraph, type Run, type VAlign } from '../si/markup';
+import { MENTION, STRUCT, parseMarkup, writeMarkup, type Paragraph, type Run, type VAlign } from '../si/markup';
 
 export interface SiRichHost {
   /** How a link shows: a mention as its compound's ID ("2b"), citations as numbers. */
   label(ref: string): string;
   /** The compounds that can be mentioned (for "@"): id and how it shows ("2b 1-Phenylethanol"). */
   mentionable?(): { id: string; label: string; text: string }[];
+  /** A structure in the text (@struct{s-…}, in a scheme's conditions) as an SVG picture; null shows its label. */
+  picture?(ref: string): string | null;
   /** Typing stopped (or the box was left) with this text. */
   changed(text: string): void;
 }
@@ -31,10 +33,11 @@ function render(box: HTMLElement, ps: Paragraph[], host: SiRichHost, multiline: 
       let n: Node;
       if (r.ref) {
         const s = document.createElement('span');
-        s.className = r.ref.startsWith(MENTION) ? 'si-mention' : 'si-cite';
+        s.className = r.ref.startsWith(MENTION) ? 'si-mention' : r.ref.startsWith(STRUCT) ? 'si-inline-struct' : 'si-cite';
         s.contentEditable = 'false';
         s.dataset.ref = r.ref;
-        s.textContent = host.label(r.ref);
+        const pic = r.ref.startsWith(STRUCT) ? host.picture?.(r.ref) : null;
+        if (pic) s.innerHTML = pic; else s.textContent = host.label(r.ref);
         n = s;
       } else n = document.createTextNode(r.text);
       const wrap = (tag: string): void => { const e = document.createElement(tag); e.append(n); n = e; };
@@ -142,7 +145,29 @@ export class SiRichBox {
 
   /** Mentions show their compounds' IDs as they are now. */
   relabel(): void {
-    for (const s of this.el.querySelectorAll<HTMLElement>('[data-ref]')) s.textContent = this.host.label(s.dataset.ref!);
+    for (const s of this.el.querySelectorAll<HTMLElement>('[data-ref]')) if (!s.dataset.ref!.startsWith(STRUCT)) s.textContent = this.host.label(s.dataset.ref!);
+  }
+
+  /** Put a link (a structure, a mention) where the caret is in the box, else at its end, and save. */
+  insertRef(ref: string): void {
+    const tmp = document.createElement('div');
+    render(tmp, [{ runs: [{ text: '', ref }] }], this.host, false);
+    const node = tmp.firstElementChild?.firstChild;
+    if (!node) return;
+    const sel = getSelection();
+    const r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (r && this.el.contains(r.startContainer)) {
+      r.deleteContents();
+      r.insertNode(node);
+      r.setStartAfter(node);
+      r.collapse(true);
+    } else {
+      const last = this.el.lastElementChild instanceof HTMLDivElement ? this.el.lastElementChild : this.el;
+      if (last.lastChild instanceof HTMLBRElement) last.lastChild.remove();
+      last.append(node);
+    }
+    this.empty();
+    this.commit();
   }
 
   private empty(): void { this.el.classList.toggle('si-empty', !this.el.textContent?.trim() && !this.el.querySelector('[data-ref]')); }

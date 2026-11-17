@@ -41,7 +41,7 @@ export interface SchemeLayout {
 }
 
 export const SCHEME_DEFAULTS: SchemeLayout = {
-  cond_size_pt: 9, cond_structure_pct: 60, top_align: 'center', bottom_align: 'center',
+  cond_size_pt: 9, cond_structure_pct: 70, top_align: 'center', bottom_align: 'center',
   arrow_before_mm: 2, arrow_after_mm: 3, arrow_min_mm: 12, fit: 'wrap', scale_pct: 100,
   yields: 'product', gap_mm: 2, align_ids: true, show_label: false,
 };
@@ -78,7 +78,11 @@ export function schemeLayout(project: Json | null | undefined, own: Json | null 
 
 /** A structure in the scheme: its drawing, its ID label (runs) and its yield ('' for none). */
 export interface DrawBox { contents: Contents; label: TextRun[]; yieldText: string; dx?: number; dy?: number }
-export interface DrawStep { top: TextRun[]; bottom: TextRun[]; topAlign?: 'left' | 'center' | 'right'; bottomAlign?: 'left' | 'center' | 'right'; products: DrawBox[] }
+export interface DrawStep {
+  top: TextRun[]; bottom: TextRun[]; topAlign?: 'left' | 'center' | 'right'; bottomAlign?: 'left' | 'center' | 'right'; products: DrawBox[];
+  /** Structures in the conditions above the arrow (drawn over its text) and under it (under its text), at the Layout's size for them. */
+  topStructures?: Contents[]; bottomStructures?: Contents[];
+}
 
 export interface DrawnScheme {
   contents: Contents;
@@ -93,7 +97,10 @@ export interface DrawnScheme {
 type Part =
   | { kind: 'box'; atoms: number[]; captions: number[]; box: Rect; label: number | null; yieldCap: number | null; dx: number; dy: number }
   | { kind: 'plus'; cap: number; box: Rect }
-  | { kind: 'arrow'; w: number; top: number | null; bottom: number | null; topAlign: Justify; bottomAlign: Justify; arrow: number };
+  | { kind: 'arrow'; w: number; top: number | null; bottom: number | null; topAlign: Justify; bottomAlign: Justify; arrow: number; above: Placed[]; below: Placed[] };
+
+/** A structure added to the drawing: its atoms and captions, and its box (left edge at 0, centred on y = 0). */
+interface Placed { atoms: number[]; captions: number[]; box: Rect }
 
 /** The drawing of a scheme `maxW` points wide at most (the text width), or null when it has no structures. */
 export function drawScheme(starting: DrawBox[], steps: DrawStep[], lay: SchemeLayout, maxW: number): DrawnScheme | null {
@@ -114,39 +121,46 @@ export function drawScheme(starting: DrawBox[], steps: DrawStep[], lay: SchemeLa
     doc.updateCaption(id, { x: c.x + dx, y: c.y + dy });
   };
 
+  const between = 0.4 * textPt;
+  const rowWidth = (ps: Placed[]): number => ps.reduce((w, x, i) => w + x.box.x2 + (i ? between : 0), 0);
   const segments: Part[][] = [];
   doc.edit('Scheme', () => {
-    const boxPart = (b: DrawBox): Part => {
+    // a structure, `f` times its size (its labels and lines too), with its left edge at 0, centred on y = 0
+    const structure = (contents: Contents, f = 1): Placed => {
       const ids = new Map<number, number>();
       const atoms: number[] = [];
-      for (const a of [...b.contents.atoms.filter((x) => !x.multi), ...b.contents.atoms.filter((x) => x.multi)]) {
+      for (const a of [...contents.atoms.filter((x) => !x.multi), ...contents.atoms.filter((x) => x.multi)]) {
         const { id, ...rest } = structuredClone(a);
         if (rest.multi) {
           rest.multi = rest.multi.map((k) => ids.get(k)).filter((k): k is number => k !== undefined);
           if (rest.multi.length < 2) continue;
         }
-        const n = doc.addAtom(a.x, a.y, a.z, rest);
+        if (f !== 1) { rest.s = (rest.s ?? 1) * f; rest.x = a.x * f; rest.y = a.y * f; }
+        const n = doc.addAtom(rest.x, rest.y, a.z, rest);
         ids.set(id, n.id);
         atoms.push(n.id);
       }
-      for (const bd of b.contents.bonds) {
+      for (const bd of contents.bonds) {
         const a1 = ids.get(bd.a1), a2 = ids.get(bd.a2);
         if (a1 === undefined || a2 === undefined) continue;
         const { id: _id, ...rest } = structuredClone(bd);
+        if (f !== 1) rest.s = (rest.s ?? 1) * f;
         doc.addBond(a1, a2, bd.order, bd.display, { ...rest, a1, a2 });
       }
-      const captions = b.contents.captions.map((t) => { const { id: _id, attach: _at, ...rest } = structuredClone(t); return doc.addCaption(rest).id; });
+      const captions = contents.captions.map((t) => { const { id: _id, attach: _at, ...rest } = structuredClone(t); return doc.addCaption(f !== 1 ? { ...rest, x: rest.x * f, y: rest.y * f } : rest).id; });
       let box = atoms.length ? atomsBox(doc, atoms, m) : null;
       for (const c of captions) {
         const r = capBox(c);
         box = box ? { x1: Math.min(box.x1, r.x1), y1: Math.min(box.y1, r.y1), x2: Math.max(box.x2, r.x2), y2: Math.max(box.y2, r.y2) } : r;
       }
       box ??= { x1: 0, y1: 0, x2: 0, y2: 0 };
-      // its own place: the left edge at 0, centred on the line y = 0
       const dx = -box.x1, dy = -(box.y1 + box.y2) / 2;
       doc.moveAtoms(atoms, dx, dy);
       for (const c of captions) moveCap(c, dx, dy);
-      box = { x1: 0, y1: box.y1 + dy, x2: box.x2 - box.x1, y2: box.y2 + dy };
+      return { atoms, captions, box: { x1: 0, y1: box.y1 + dy, x2: box.x2 - box.x1, y2: box.y2 + dy } };
+    };
+    const boxPart = (b: DrawBox): Part => {
+      const { atoms, captions, box } = structure(b.contents);
       const label = text(sized(b.label, idPt, true));
       const yieldCap = lay.yields === 'product' && b.yieldText ? text([{ text: b.yieldText, size: textPt }]) : null;
       return { kind: 'box', atoms, captions, box, label, yieldCap, dx: b.dx ?? 0, dy: b.dy ?? 0 };
@@ -165,13 +179,16 @@ export function drawScheme(starting: DrawBox[], steps: DrawStep[], lay: SchemeLa
       const topAlign = st.topAlign ?? lay.top_align, bottomAlign = st.bottomAlign ?? lay.bottom_align;
       const top = text(sized(st.top, textPt), topAlign);
       const bottom = text(sized(bottomRuns, textPt), bottomAlign);
-      const textW = Math.max(top !== null ? capBox(top).x2 - capBox(top).x1 : 0, bottom !== null ? capBox(bottom).x2 - capBox(bottom).x1 : 0);
+      const f = lay.cond_structure_pct / 100;
+      const above = (st.topStructures ?? []).filter((c) => c.atoms.length).map((c) => structure(c, f));
+      const below = (st.bottomStructures ?? []).filter((c) => c.atoms.length).map((c) => structure(c, f));
+      const textW = Math.max(top !== null ? capBox(top).x2 - capBox(top).x1 : 0, bottom !== null ? capBox(bottom).x2 - capBox(bottom).x1 : 0, rowWidth(above), rowWidth(below));
       const w = Math.max(lay.arrow_min_mm * MM, textW + (lay.arrow_before_mm + lay.arrow_after_mm) * MM);
       const arrow = doc.addArrow({
         tail: { x: 0, y: 0 }, head: { x: w, y: 0 }, headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid',
         noGo: false, equilibrium: false, sweep: 0, headLength: lw * 10, headWidth: lw * 2.5,
       }).id;
-      segments.push([{ kind: 'arrow', w, top, bottom, topAlign, bottomAlign, arrow }, ...side(st.products)]);
+      segments.push([{ kind: 'arrow', w, top, bottom, topAlign, bottomAlign, arrow, above, below }, ...side(st.products)]);
     }
   });
 
@@ -231,16 +248,34 @@ export function drawScheme(starting: DrawBox[], steps: DrawStep[], lay: SchemeLa
           const from = px + lay.arrow_before_mm * MM, to = px + p.w - lay.arrow_after_mm * MM;
           const across = (b: Rect, align: Justify): number => (align === 'left' ? from - b.x1 : align === 'right' ? to - b.x2 : (from + to) / 2 - (b.x1 + b.x2) / 2);
           const em = 0.3 * textPt;
+          let over = -em, under = em;
           if (p.top !== null) {
             const b = capBox(p.top), dx = across(b, p.topAlign), ty = -em - b.y2;
             top = Math.min(top, b.y1 + ty);
+            over = b.y1 + ty;
             moves.push((dy) => moveCap(p.top, dx, ty + dy));
           }
           if (p.bottom !== null) {
             const b = capBox(p.bottom), dx = across(b, p.bottomAlign), by = em - b.y1;
             bottom = Math.max(bottom, b.y2 + by);
+            under = b.y2 + by;
             moves.push((dy) => moveCap(p.bottom, dx, by + dy));
           }
+          // structures in the conditions: in a row over the text above the arrow, or under the text below it
+          const row = (ps: Placed[], align: Justify, edge: number, up: boolean): void => {
+            if (!ps.length) return;
+            const tall = Math.max(...ps.map((x) => x.box.y2 - x.box.y1));
+            const mid = up ? edge - 0.2 * textPt - tall / 2 : edge + 0.2 * textPt + tall / 2;
+            let x0 = across({ x1: 0, y1: 0, x2: rowWidth(ps), y2: 0 }, align);
+            for (const s of ps) {
+              const sx = x0, sy = mid;
+              moves.push((dy) => { doc.moveAtoms(s.atoms, sx, sy + dy); for (const c of s.captions) moveCap(c, sx, sy + dy); });
+              x0 += s.box.x2 + between;
+            }
+            if (up) top = Math.min(top, mid - tall / 2); else bottom = Math.max(bottom, mid + tall / 2);
+          };
+          row(p.above, p.topAlign, over, true);
+          row(p.below, p.bottomAlign, under, false);
           const id = p.arrow;
           moves.push((dy) => doc.updateArrow(id, { tail: { x: px, y: dy }, head: { x: px + p.w, y: dy } }));
         }

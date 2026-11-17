@@ -32,6 +32,7 @@ import { newPlate, putPlate } from '../design/plates';
 import { POINTS } from '../editor/arrange';
 import { Doc } from '../model';
 import { drawScheme, schemeLayout, type DrawBox, type DrawStep, type SchemeLayout } from './scheme-draw';
+import { inlineIds, inlineMol } from './scheme-edit';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -769,15 +770,21 @@ class Compiler {
     const where = `${s.name} ▸ scheme “${name}”`;
     const editor = dict(k.data.editor);
     if (k.data.mode !== 'editor' || !Object.keys(editor).length) {
-      this.notes.push(`${where}: made from a pasted picture, which isn’t drawn here; open it in Chem SI Assistant’s scheme editor. Its compounds are printed with their own structures.`);
+      this.notes.push(`${where}: made from a pasted picture, which isn’t drawn here; open its scheme page, which sets it out as a scheme to edit (its compounds as the first step’s products). Its compounds are printed with their own structures.`);
       return drawn;
     }
     const lay = this.schemeLayoutOf(k);
-    let inline = false;
-    const conditions = (t: unknown): TextRun[] => {
-      const text = str(t);
-      if (text.includes('@struct{')) inline = true;
-      return this.cellRuns(text, where, {});
+    const conditions = (t: unknown): TextRun[] => this.cellRuns(str(t), where, {});
+    // structures in the conditions (@struct{s-…}): drawn from their structure files
+    const structures = async (t: unknown): Promise<Contents[]> => {
+      const out: Contents[] = [];
+      for (const sid of inlineIds(str(t))) {
+        const mol = await inlineMol(this.p, k, sid);
+        const c = mol ? this.host.contentsOf(mol) : null;
+        if (c) out.push(c);
+        else this.notes.push(`${where}: a structure in the conditions ${mol ? 'could not be drawn' : 'is only a picture (no structure file), which isn’t drawn in the scheme yet'}; left out.`);
+      }
+      return out;
     };
     const box = async (b: Json): Promise<DrawBox | null> => {
       const cid = str(b.compound);
@@ -813,16 +820,15 @@ class Compiler {
       for (const b of list(st.products)) { const x = await box(dict(b)); if (x) products.push(x); }
       if (!list(st.products).length) this.notes.push(`${where}: a step has no products.`);
       const align = (v: unknown) => (v === 'left' || v === 'center' || v === 'right' ? v : undefined);
-      steps.push({ top: conditions(st.top), bottom: conditions(st.bottom), topAlign: align(st.top_align), bottomAlign: align(st.bottom_align), products });
+      steps.push({ top: conditions(st.top), bottom: conditions(st.bottom), topAlign: align(st.top_align), bottomAlign: align(st.bottom_align), products, topStructures: await structures(st.top), bottomStructures: await structures(st.bottom) });
     }
-    if (inline) this.notes.push(`${where}: structures pasted into the conditions aren’t drawn in the scheme yet; left out.`);
     const got = drawScheme(starting, steps, lay, TEXT_W);
     if (!got) {
       this.notes.push(`${where}: it has no structures to draw; left out. Its compounds are printed with their own structures.`);
       drawn.clear();
       return drawn;
     }
-    if (got.textPt < 6) this.notes.push(`${where}: its conditions print at only ${got.textPt.toFixed(1)} pt; make the scheme narrower or its text larger (Layout in Chem SI Assistant).`);
+    if (got.textPt < 6) this.notes.push(`${where}: its conditions print at only ${got.textPt.toFixed(1)} pt; make the scheme narrower or its text larger (Scheme ▸ Layout on its page).`);
     const scale = Math.round(got.scale * 1000) / 1000;
     this.b.object({ kind: 'drawing', contents: got.contents, ...(scale !== 1 ? { scale } : {}), alt: name });
     const label = lay.show_label ? this.labels.byId.get(k.id) ?? '' : '';

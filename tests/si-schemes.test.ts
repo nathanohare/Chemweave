@@ -116,7 +116,7 @@ describe('scheme pages in the compiled SI', () => {
     expect(texts(s2.contents)).not.toContain('89–96%');
   });
 
-  it('says what it leaves out: empty boxes and structures in the conditions', async () => {
+  it('says what it leaves out: empty boxes and pictures in the conditions', async () => {
     const f = folder();
     const rel = `${SCHEME}/scheme.json`;
     const k = json(f, rel);
@@ -126,7 +126,25 @@ describe('scheme pages in the compiled SI', () => {
     put(f, rel, k);
     const got = await compile(f);
     expect(got.notes.some((n) => /an empty box was left out/.test(n))).toBe(true);
-    expect(got.notes.some((n) => /structures pasted into the conditions/.test(n))).toBe(true);
+    // (a structure in the conditions with no structure file: a picture pasted in SI Assistant)
+    expect(got.notes.some((n) => /a structure in the conditions is only a picture/.test(n))).toBe(true);
+  });
+
+  it('draws the structures in the conditions from their files', async () => {
+    const f = folder();
+    const rel = `${SCHEME}/scheme.json`;
+    const k = json(f, rel);
+    const ed = k.editor as Json;
+    (ed.steps as Json[])[0].top = '@struct{s-1234abcd} NaBH_{4}';
+    ed.inline = { 's-1234abcd': { structure: 'editor/s-1234abcd.mol' } };
+    put(f, rel, k);
+    f.files.set(`${SCHEME}/editor/s-1234abcd.mol`, f.files.get(`${SCHEME}/editor/b-730228e5.mol`)!);
+    const before = schemes(await compile(folder()))[0].contents.atoms.length;
+    const got = await compile(f);
+    expect(got.notes.some((n) => /in the conditions/.test(n))).toBe(false);
+    const drawn = schemes(got)[0].contents;
+    expect(drawn.atoms.length).toBeGreaterThan(before);
+    expect(drawn.atoms.some((a) => Math.abs((a.s ?? 1) - 0.7) < 1e-9)).toBe(true);
   });
 });
 

@@ -13,7 +13,7 @@ import type { DocText } from '../document/document';
 import { compileSi, objectLabels } from '../si/compile-doc';
 import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
-import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, TYPE_LABELS, type Json, type SiCompound, type SiSection } from '../si/project';
+import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
 import { ALL_FIELDS, NUCLEI, fieldDef, learnedChoices, nucleusLabel, partText, CORE_FIELDS, LIBRARY_FIELDS, type FieldDef, type Part, type FieldEntry } from '../si/fields';
 import { CITE, MENTION, parseMarkup } from '../si/markup';
@@ -25,6 +25,7 @@ import { SiFigureEditor } from './si-figure';
 import { SiPictures, PICTURE_MIME } from './si-picture';
 import { SiXrayPage } from './si-xray';
 import { SiFrontPage } from './si-front';
+import { SiSchemePage } from './si-scheme';
 import { editReference } from './references-dialog';
 import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Reference } from '../document/references';
 import { newTable } from '../si/tables';
@@ -91,7 +92,7 @@ export interface SiCard {
   hrms: string;
 }
 
-type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'references' } | { kind: 'warnings' };
+type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'references' } | { kind: 'warnings' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -127,6 +128,7 @@ const RIBBON = `
     <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is picked">Picture Format</button>
     <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
     <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
+    <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
   </div>
   <div class="rb-panel" data-si-panel="insert" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -140,6 +142,9 @@ const RIBBON = `
         <button data-si="new-figure-compound" title="A figure of a compound's structure, its caption mentioning the compound">Compound…</button>
       </div>
     </div><div class="rb-label">Figures</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="new-scheme" data-ic="smart-scheme" title="A new scheme page in the Data section picked (after the compound picked): starting materials, steps with their conditions, and products that can be compounds with IDs and data pages"><span class="rb-icon">⇶</span>Scheme Page</button>
+    </div><div class="rb-label">Schemes</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="add-spectra" data-ic="chart-line" title="Add spectra (PDFs or pictures) to the compound picked"><span class="rb-icon">⩘</span>Spectra</button>
       <div class="rb-col">
@@ -258,6 +263,53 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Reference</div></div>
   </div>
+  <div class="rb-panel" data-si-panel="scheme" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-scheme="draw" data-ic="structure" title="Draw the picked box's structure with the drawing tools (double-click a box does the same)"><span class="rb-icon">⌬</span>Draw Structure</button>
+      <div class="rb-col">
+        <button data-si-scheme="paste" data-ic="paste" title="The copied structure (from ChemDraw or Chemweave) in the picked box">Paste Structure</button>
+      </div>
+    </div><div class="rb-label">Structure</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-scheme="add-start" title="A new starting material (after the one picked)">Add Starting Material</button>
+        <button data-si-scheme="add-product" title="A new product of the picked step (after the one picked)">Add Product</button>
+        <button data-si-scheme="add-step" title="A new step (an arrow with its conditions and a product) after the one picked">Add Step</button>
+      </div>
+      <div class="rb-col">
+        <button data-si-scheme="move-left" title="Move the picked box left">Move Left</button>
+        <button data-si-scheme="move-right" title="Move the picked box right">Move Right</button>
+        <button data-si-scheme="step-left" title="Move the picked step (its arrow, conditions and products) before the step before it">Move Step Left</button>
+      </div>
+      <div class="rb-col">
+        <button data-si-scheme="remove" data-ic="delete" title="Take the picked box out of the scheme (its structure goes to the Trash)">Remove</button>
+        <button data-si-scheme="remove-step" title="Take the picked step out of the scheme: its arrow, conditions and products">Remove Step</button>
+        <button data-si-scheme="step-right" title="Move the picked step after the step after it">Move Step Right</button>
+      </div>
+    </div><div class="rb-label">Boxes and Steps</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-scheme="mark-compound" data-ic="si-compound" title="Mark as Compound: the picked box gets a compound page (an ID from the ID table, and data) showing its structure"><span class="rb-icon">◈</span>Mark as Compound</button>
+      <div class="rb-col">
+        <button data-si-scheme="show-compound" data-ic="link" title="The picked box shows one of this scheme page's compounds">Show Compound…</button>
+        <button data-si-scheme="open-compound" title="Open the compound page the picked box shows">Open Compound</button>
+        <button data-si-scheme="unlink" title="The picked box stops showing its compound (the compound page stays; the box keeps a copy of the structure)">Unlink</button>
+      </div>
+    </div><div class="rb-label">Compound</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-scheme="insert-structure" data-ic="structure" title="Draw a structure to put in the conditions you are typing in (or the picked step's conditions above the arrow); it prints at the Layout's size for structures in the conditions"><span class="rb-icon">⌬</span>Insert Structure</button>
+      <div class="rb-col rb-tight">
+        <div class="rb-row">
+          <button class="rb-icon-btn" data-si-scheme="align" data-arg="left" data-ic="align-left" title="Align the conditions picked left" aria-label="Align Left">⇤</button>
+          <button class="rb-icon-btn" data-si-scheme="align" data-arg="center" data-ic="align-hcenter" title="Center the conditions picked" aria-label="Center">↔</button>
+          <button class="rb-icon-btn" data-si-scheme="align" data-arg="right" data-ic="align-right" title="Align the conditions picked right" aria-label="Align Right">⇥</button>
+        </div>
+        <button data-si-scheme="align" data-arg="" title="The conditions picked follow the scheme's Layout">As in Layout</button>
+      </div>
+    </div><div class="rb-label">Conditions</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-scheme="layout" data-ic="layout" title="The scheme's layout: text size, arrows, structures in the conditions (70 % to start), IDs and yields, size and fit; for this scheme or every scheme of the project"><span class="rb-icon">▤</span>Layout…</button>
+    </div><div class="rb-label">Layout</div></div>
+  </div>
   <div class="rb-panel" data-si-panel="home">
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="new-compound" data-ic="compound" title="A new compound page in the Data section picked, after the compound picked (Ctrl+Shift+N)"><span class="rb-icon">⬡</span>New Compound</button>
@@ -369,7 +421,7 @@ export class SiMode {
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si-scheme="align"], [data-si-scheme="insert-structure"]')) e.preventDefault(); });
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
@@ -378,6 +430,8 @@ export class SiMode {
       if (fmt) { this.format(fmt.dataset.siFmt!); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
       if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
+      const sc = t.closest<HTMLElement>('[data-si-scheme]');
+      if (sc) { void this.schemePage?.command(sc.dataset.siScheme!, sc.dataset.arg ?? ''); return; }
       const xr = t.closest<HTMLElement>('[data-si-xray]');
       if (xr) { void this.xrayPage?.command(xr.dataset.siXray!); return; }
       const fig = t.closest<HTMLElement>('[data-si-fig]');
@@ -416,6 +470,8 @@ export class SiMode {
 
   /** The table whose cell was last picked (the Table Layout tab acts on it). */
   private activeTable: SiTableEditor | null = null;
+  /** The scheme page shown (the Scheme tab acts on it). */
+  private schemePage: SiSchemePage | null = null;
   /** The X-ray structure page shown (the Crystal Structure tab acts on it). */
   private xrayPage: SiXrayPage | null = null;
   /** The figure last picked (the Picture Format tab acts on it). */
@@ -440,6 +496,47 @@ export class SiMode {
   }
 
   /** An X-ray structure's page shown (or none): the Crystal Structure tab shows (or goes). */
+  /** A scheme page shown (or none): the Scheme tab shows (or goes), its commands greyed out when they don't apply to what is picked. */
+  private schemeShown(x: SiSchemePage | null): void {
+    const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="scheme"]')!;
+    this.schemePage = x;
+    tab.hidden = !x;
+    if (!x) { if (tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home'); return; }
+    const st = x.state;
+    const off: Record<string, boolean> = {
+      draw: !st.box, paste: !st.box, 'move-left': !st.canLeft, 'move-right': !st.canRight, remove: !st.box,
+      'remove-step': !st.step, 'step-left': !st.stepLeft, 'step-right': !st.stepRight, 'mark-compound': !st.box || st.linked,
+      'show-compound': !st.box || st.linked, 'open-compound': !st.linked, unlink: !st.linked,
+    };
+    for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-si-scheme]')) {
+      b.disabled = !!off[b.dataset.siScheme!];
+      if (b.dataset.siScheme === 'align') b.setAttribute('aria-pressed', String(b.dataset.arg === st.align && !!x.picked && x.picked.kind === 'step'));
+    }
+  }
+
+  private schemeCard(out: HTMLElement, k: SiScheme): void {
+    const p = this.project!;
+    const page = new SiSchemePage({
+      project: p,
+      scheme: k,
+      flash: (m, ms) => this.host.flash(m, ms),
+      label: this.label,
+      mentionable: this.mentionable,
+      contentsOf: (m) => this.host.contentsOf(m),
+      molfileOf: (c) => this.host.molfileOf(c),
+      pictureOf: (m) => this.host.pictureOf(m),
+      drawingSvg: (c) => this.host.drawingFiles(c)?.svg ?? null,
+      editStructure: (c, t, done) => this.host.editStructure(c, t, done),
+      readClipboard: () => this.host.readClipboard(),
+      idOf: (c) => this.idOf(c),
+      chosen: (x) => { if (x === this.schemePage) this.schemeShown(x); },
+      redraw: () => { for (const c of k.children) this.forgetStructure(c); this.shownKey = ''; this.refresh(); },
+      openCompound: (id) => this.go({ kind: 'compound', id }),
+    });
+    out.append(page.el);
+    this.schemeShown(page);
+  }
+
   private xrayShown(x: SiXrayPage | null): void {
     const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="xray"]')!;
     this.xrayPage = x;
@@ -513,7 +610,7 @@ export class SiMode {
   }
 
   /** Save what is being typed. */
-  commitAll(): void { for (const b of [...this.boxes, ...(this.xrayPage?.boxes ?? []), ...(this.front?.boxes ?? [])]) b.commit(); for (const t of this.tables) t.commit(); }
+  commitAll(): void { for (const b of [...this.boxes, ...(this.xrayPage?.boxes ?? []), ...(this.front?.boxes ?? []), ...(this.schemePage?.boxes ?? [])]) b.commit(); for (const t of this.tables) t.commit(); }
 
   /** Everything again: the tree, the page, the status bar. */
   refresh(): void {
@@ -817,6 +914,7 @@ export class SiMode {
     try {
       if (pick.kind === 'section') return p.section(pick.id);
       if (pick.kind === 'compound') return p.section(p.compound(pick.id).sectionId);
+      if (pick.kind === 'scheme') return p.section(p.scheme(pick.id).sectionId);
     } catch { /* gone */ }
     return null;
   }
@@ -878,7 +976,7 @@ export class SiMode {
         if (s.type === 'data') {
           for (const it of s.items) {
             if (it.kind === 'scheme') {
-              row(depth + 1, svg('scheme'), String(it.data.name || 'Scheme'), { kind: 'section', id: s.id }, (r) => { r.title = 'A scheme page (made in Chem SI Assistant’s scheme editor)'; r.classList.add('si-scheme'); r.classList.remove('on'); r.setAttribute('aria-selected', 'false'); r.tabIndex = -1; });
+              row(depth + 1, svg('scheme'), String(it.data.name || 'Scheme'), { kind: 'scheme', id: it.id }, (r) => { r.title = 'A scheme page: its reaction scheme, and its compounds under it'; r.classList.add('si-scheme'); });
               for (const c of it.children) compoundRow(c, depth + 2);
             } else compoundRow(it, depth + 1);
           }
@@ -905,6 +1003,7 @@ export class SiMode {
     this.tableChosen(null);
     this.figureChosen(null);
     this.xrayShown(null);
+    this.schemeShown(null);
     this.front = null;
     this.ribbon.querySelector<HTMLElement>('[data-si-tab="refs"]')!.hidden = this.pick.kind !== 'references';
     const p = this.project!;
@@ -921,6 +1020,8 @@ export class SiMode {
       else this.pick = { kind: 'project' };
     } else if (pick.kind === 'section') {
       try { this.sectionPage(out, p.section(pick.id)); } catch { this.pick = { kind: 'project' }; }
+    } else if (pick.kind === 'scheme') {
+      try { this.schemeCard(out, p.scheme(pick.id)); } catch { this.pick = { kind: 'project' }; }
     } else if (pick.kind === 'references') this.referencesPage(out);
     else if (pick.kind === 'warnings') this.warningsPage(out);
     if (this.pick.kind === 'project') this.projectPage(out);
@@ -2016,7 +2117,7 @@ export class SiMode {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); void this.run('new-compound'); return; }
     if (inText) return;
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      const rows = [...this.tree.querySelectorAll<HTMLElement>('.si-row:not(.si-scheme)')];
+      const rows = [...this.tree.querySelectorAll<HTMLElement>('.si-row')];
       const at = rows.findIndex((r) => r.classList.contains('on'));
       const next = rows[Math.max(0, Math.min(rows.length - 1, at + (e.key === 'ArrowUp' ? -1 : 1)))];
       if (next) { e.preventDefault(); next.click(); this.tree.querySelector<HTMLElement>('.si-row.on')?.focus(); }
@@ -2092,6 +2193,13 @@ export class SiMode {
       case 'symbol':
         this.host.openSymbols();
         return;
+      case 'new-scheme': {
+        const d = needData();
+        if (!d) return;
+        const at = c && c.sectionId === d.id && !c.schemeId ? d.items.indexOf(c) + 1 : undefined;
+        await this.act(async () => { const made = await p.addScheme(d.id, at); this.pick = { kind: 'scheme', id: made.id }; });
+        return;
+      }
       case 'new-compound': {
         const d = needData();
         if (!d) return;

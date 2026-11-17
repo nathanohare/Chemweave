@@ -494,6 +494,57 @@ export class SiProject {
     await this.writeJson(join(c.folder, COMPOUND_FILE), c.data);
   }
 
+  async saveScheme(k: SiScheme): Promise<void> {
+    this.checkWritable();
+    Object.assign(k.data, { id: k.id, children: this.mergeIds(k.children.map((c) => c.id), k.data.children) });
+    await this.writeJson(join(k.folder, SCHEME_FILE), k.data);
+  }
+
+  /** Every scheme page of the project. */
+  get schemes(): SiScheme[] { return this.dataSections.flatMap((s) => s.items.filter((i): i is SiScheme => i.kind === 'scheme')); }
+  scheme(id: string): SiScheme {
+    const k = this.schemes.find((x) => x.id === id);
+    if (!k) throw new SiProjectError(`No scheme page ${id}.`);
+    return k;
+  }
+
+  /** A new scheme page in a Data section (one empty starting material and one step, as SI Assistant starts one), at `index` (the end when not given). */
+  async addScheme(sectionId: string, index?: number, name = ''): Promise<SiScheme> {
+    this.checkWritable();
+    const s = this.dataSection(sectionId);
+    const id = newId('k');
+    const n = s.items.filter((i) => i.kind === 'scheme').length + 1;
+    const title = name.trim() || `Scheme ${n}`;
+    const folder = join(s.folder, COMPOUNDS_DIR, `${id}_${slugify(title, ITEM_SLUG)}`);
+    const data: Json = { id, name: title, children: [], mode: 'editor', editor: { starting: [{ id: newId('b') }], steps: [{ id: newId('st'), top: '', bottom: '', products: [{ id: newId('b') }] }], inline: {} } };
+    const k: SiScheme = { kind: 'scheme', id, folder, data, sectionId: s.id, children: [] };
+    await this.saveScheme(k);
+    s.items.splice(index === undefined ? s.items.length : Math.max(0, Math.min(index, s.items.length)), 0, k);
+    await this.saveSection(s);
+    return k;
+  }
+
+  /** A new compound page of a scheme page (a box marked as a compound), at `index` among its compounds. */
+  async addSchemeCompound(k: SiScheme, index: number, name = ''): Promise<SiCompound> {
+    this.checkWritable();
+    const s = this.dataSection(k.sectionId);
+    const id = newId('c');
+    const folder = join(s.folder, COMPOUNDS_DIR, `${id}_${slugify(name || 'compound', ITEM_SLUG)}`);
+    const c: SiCompound = { kind: 'compound', id, folder, data: { id, id_override: '', fields: [], values: {}, flags: {} }, sectionId: s.id, schemeId: k.id };
+    for (const e of defaultFieldsOf(s)) this.addFieldEntry(c, e);
+    if (name) valuesOf(c).name = { text: name };
+    await this.saveCompound(c);
+    k.children.splice(Math.max(0, Math.min(index, k.children.length)), 0, c);
+    await this.saveScheme(k);
+    return c;
+  }
+
+  /** Files sent to the Trash as one entry, as SI Assistant's Trash shows and restores them. */
+  trashFiles(paths: string[], kind: string, name: string, extra: Json): Promise<void> {
+    this.checkWritable();
+    return this.moveToTrash(paths, kind, name, extra);
+  }
+
   async saveReferences(): Promise<void> {
     this.checkWritable();
     if (this.refsUnread) throw new SiProjectError(`${REFERENCES_FILE} could not be read when the project opened, so it is not saved over. Repair it, then reopen the project.`);
