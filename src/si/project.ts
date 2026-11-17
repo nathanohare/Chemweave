@@ -736,6 +736,18 @@ export class SiProject {
     await this.saveCompound(c);
   }
 
+  /** Copy a file into the compound's folder (spectra/ or files/), under a name no file there has; gives the name used. */
+  async addAttachment(c: SiCompound, subdir: string, name: string, bytes: Uint8Array): Promise<string> {
+    this.checkWritable();
+    const clean = safeFilename(name);
+    const dot = clean.lastIndexOf('.');
+    const stem = dot > 0 ? clean.slice(0, dot) : clean, ext = dot > 0 ? clean.slice(dot) : '';
+    let pick = clean;
+    for (let n = 2; await this.folder.exists(join(c.folder, subdir, pick)); n++) pick = `${stem} (${n})${ext}`;
+    await this.folder.writeBytes(join(c.folder, subdir, pick), bytes);
+    return pick;
+  }
+
   /** Whether a field counts as filled in. */
   fieldFilled(c: SiCompound, def: FieldDef): boolean {
     if (def.key === 'procedure' && this.compoundGp(c)) return true; // "Prepared according to General Procedure A…"

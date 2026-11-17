@@ -12,6 +12,7 @@ import { Workbook } from './sheet/workbook';
 import { DocFile } from './document/doc-file';
 import { newDocument, usedObjects, type DocText } from './document/document';
 import type { DocStyle } from './style';
+import type { SiProject } from './si/project';
 import type { View } from './render/renderer';
 import { readCdxml } from './io/cdxml';
 import { writeCdxml, WriteOptions } from './io/cdxml-write';
@@ -31,7 +32,7 @@ import type { FileStamp } from './keep/recovery';
 import { WORKSPACE, workspaceText, parseWorkspace, folderOf, joinPath, relativeTo, resolveIn, freeName, safeFileName, type WorkspaceEntry } from './io/workspace-file';
 
 /** Design is a deck of one page (a TOC graphic, poster or diagram) with design tools. */
-export type Mode = 'drawing' | 'slides' | 'sheet' | 'document' | 'design';
+export type Mode = 'drawing' | 'slides' | 'sheet' | 'document' | 'design' | 'si';
 
 export interface Tab {
   id: number;
@@ -44,6 +45,8 @@ export interface Tab {
   deck: Deck | null;
   book: Workbook | null;
   document: DocFile | null;
+  /** SI projects: the project (a folder Chem SI Assistant reads too). Every change is saved to it as it is made. */
+  si: SiProject | null;
   /** Zoom and scroll, kept while another tab shows. */
   view: View | null;
   /** Opened from a V3000 molfile, SD or RXN file, so saved back as V3000. */
@@ -138,7 +141,7 @@ export interface WorkspaceHooks {
 const NO_AUTOSAVE = new Set(['csv', 'tsv', 'txt', 'sdf', 'sd', 'mol', 'rxn', 'mrv', 'ket', 'cml', 'json']);
 
 /** What each kind of tab saves as (the first is the default). */
-const SAVE_TYPES: Record<Mode, FileType[]> = { drawing: [CDXML, CDX, ...CHEM_EXCHANGE], slides: [PPTX], design: [PPTX], sheet: [XLSX, XLSM, CSV, SDF], document: [DOCX, RTF, ODT] };
+const SAVE_TYPES: Record<Mode, FileType[]> = { drawing: [CDXML, CDX, ...CHEM_EXCHANGE], slides: [PPTX], design: [PPTX], sheet: [XLSX, XLSM, CSV, SDF], document: [DOCX, RTF, ODT], si: [] };
 
 /** What each chemistry format is called in messages. */
 const FORMAT_NAMES: Record<ChemFormat, string> = { mol: 'molfile', sdf: 'SD file', rxn: 'RXN file', mrv: 'Marvin document', ket: 'Ketcher file', cml: 'CML file', cdjson: 'ChemDoodle JSON file' };
@@ -176,7 +179,7 @@ export function hasStructures(t: DocText): boolean {
 }
 
 /** What a new, unsaved file of each kind is called ("Canvas 1"). */
-export const MODE_NAMES: Record<Mode, string> = { drawing: 'Canvas', slides: 'Presentation', sheet: 'Spreadsheet', document: 'Document', design: 'Design' };
+export const MODE_NAMES: Record<Mode, string> = { drawing: 'Canvas', slides: 'Presentation', sheet: 'Spreadsheet', document: 'Document', design: 'Design', si: 'SI Project' };
 
 /** Is this the name a new tab was given (not a file's own)? */
 export const isNewName = (name: string): boolean => /^(Canvas|Presentation|Spreadsheet|Document|Design|Drawing|Slides|Sheet) \d+\.[a-z]+$/.test(name) || /^Untitled/.test(name);
@@ -210,7 +213,7 @@ export class Workspace {
   }
 
   private makeTab(mode: Mode, name: string, ref: FileRef = { kind: 'none' }): Tab {
-    return { id: this.nextId++, mode, name, ref, stash: new Doc(), deck: null, book: null, document: null, view: null, sheetState: null, dirty: false, seen: 0, savedEdits: 0, partner: null, windowOf: null,
+    return { id: this.nextId++, mode, name, ref, stash: new Doc(), deck: null, book: null, document: null, si: null, view: null, sheetState: null, dirty: false, seen: 0, savedEdits: 0, partner: null, windowOf: null,
       stamp: null, autoSave: null, changes: 0, savedAt: 0, savedHow: null };
   }
 
@@ -285,7 +288,9 @@ export class Workspace {
   noteChange(tab?: Tab): void {
     const t = tab ?? this.active;
     let dirty = t.dirty;
-    if (t.deck) dirty = t.deck.edits !== t.savedEdits;
+    // an SI project saves each change to its folder as it is made
+    if (t.mode === 'si') dirty = false;
+    else if (t.deck) dirty = t.deck.edits !== t.savedEdits;
     else if (t.mode === 'sheet') dirty = t.book!.edits !== this.mainOf(t).savedEdits;
     else if (t.mode === 'document') dirty = t.document!.edits !== this.mainOf(t).savedEdits;
     else if (this.host.version !== t.seen) {
@@ -336,7 +341,8 @@ export class Workspace {
 
   /** The tabs that own their files (not the extra windows of a document): saved, AutoSaved, kept for recovery. */
   get fileTabs(): Tab[] {
-    return this.tabs.filter((t) => !t.windowOf);
+    // (an SI project is a folder saved as it changes: no copies, AutoSave or workspace entry)
+    return this.tabs.filter((t) => !t.windowOf && t.mode !== 'si');
   }
 
   /** The tab that owns the file a tab shows. */
@@ -498,6 +504,19 @@ export class Workspace {
   }
 
   /** A document made here (Review > Compare's result) in a new tab, unsaved, named `name` (a .docx name not already open). */
+  /** A tab for an SI project (a Chem SI Assistant folder), opened already. One open already shows instead. */
+  openSi(project: SiProject): Tab {
+    const there = this.tabs.find((t) => t.si && t.si.folder.where === project.folder.where);
+    if (there) { this.activate(there); return there; }
+    const t = this.makeTab('si', project.title);
+    t.si = project;
+    const spare = this.active.mode === 'drawing' ? this.spare() : null;
+    this.tabs.splice(this.tabs.indexOf(this.active) + 1, 0, t);
+    this.activate(t, true);
+    if (spare) this.drop(spare);
+    return t;
+  }
+
   showDocument(doc: DocText, name: string): Tab {
     const base = name.replace(/\.docx$/i, '');
     let file = `${base}.docx`;
@@ -776,6 +795,8 @@ export class Workspace {
   }
 
   async save(tab: Tab = this.active, how: SaveHow = 'saved'): Promise<boolean> {
+    // an SI project is saved as it changes
+    if (tab.mode === 'si') { if (how === 'saved') this.hooks.flash('An SI project saves every change to its folder as you make it.'); return true; }
     // another window of a document saves the document's file
     tab = this.mainOf(tab);
     // a file of a kind this tab can't write (a drawing opened from an old file) goes through Save As
@@ -849,6 +870,7 @@ export class Workspace {
   }
 
   async saveAs(tab: Tab = this.active): Promise<boolean> {
+    if (tab.mode === 'si') { this.hooks.flash('An SI project is a folder: to copy it, copy the folder (Chem SI Assistant’s File ▸ Save Snapshot keeps a zipped copy).', 7000); return false; }
     tab = this.mainOf(tab);
     const types = SAVE_TYPES[tab.mode];
     const ext = extensionOf(tab.name);

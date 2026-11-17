@@ -46,7 +46,7 @@ describe('mode colours', () => {
   });
   it('reads saved choices, ignoring anything that is not a colour', () => {
     expect(parseModeColours(undefined)).toEqual(DEFAULT_MODE_COLOURS);
-    expect(parseModeColours({ style: 'window', drawing: '#00AA00', slides: 'orange' })).toEqual({ style: 'window', drawing: '#00aa00', slides: '#c8572a', sheet: '#1e8a50', document: '#2647a8', design: '#7b3fbf' });
+    expect(parseModeColours({ style: 'window', drawing: '#00AA00', slides: 'orange' })).toEqual({ style: 'window', drawing: '#00aa00', slides: '#c8572a', sheet: '#1e8a50', document: '#2647a8', design: '#7b3fbf', si: '#b4234f' });
     expect(parseModeColours({ sheet: '#AA0000' }).sheet).toBe('#aa0000');
     expect(parseModeColours({ document: '#0000AA' }).document).toBe('#0000aa');
     expect(parseModeColours({ style: 'rainbow' }).style).toBe('accent');
@@ -62,7 +62,7 @@ describe('mode colours', () => {
   });
   it('keeps them in the settings file', () => {
     expect(parseSettings(null).modeColours).toEqual(DEFAULT_MODE_COLOURS);
-    const s = { ...DEFAULT_SETTINGS, modeColours: { style: 'window' as const, drawing: '#123456', slides: '#abcdef', sheet: '#0a7a3a', document: '#203080', design: '#552288' } };
+    const s = { ...DEFAULT_SETTINGS, modeColours: { style: 'window' as const, drawing: '#123456', slides: '#abcdef', sheet: '#0a7a3a', document: '#203080', design: '#552288', si: '#8a1c3c' } };
     expect(parseSettings(settingsText(s)).modeColours).toEqual(s.modeColours);
   });
 });

@@ -33,6 +33,7 @@
   --tab-sheet: var(--mode-sheet, #1e8a50);
   --tab-document: var(--mode-document, #2647a8);
   --tab-design: var(--mode-design, #7b3fbf);
+  --tab-si: var(--mode-si, #b4234f);
   --surround: #d5d8de;
   /* the paper behind clip-art previews: always light, so black outlines show in dark mode too */
   --tile: transparent;
@@ -753,7 +754,7 @@ footer {
 }
 #hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .zoom-pick select { font: var(--fs-sm) var(--ui-font); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 1px 4px; }
-body.sheet-mode .canvas-only, body.doc-mode:not(.split-view) .canvas-only { display: none; }
+body.sheet-mode .canvas-only, body.doc-mode:not(.split-view) .canvas-only, body.si-mode .canvas-only { display: none; }
 
 #flash {
   position: fixed;
@@ -1117,6 +1118,7 @@ dialog.typing-dialog p { margin: 2px 0 6px; }
 .tab-sheet .tab-icon { background: var(--tab-sheet); }
 .tab-document .tab-icon { background: var(--tab-document); }
 .tab-design .tab-icon { background: var(--tab-design); }
+.tab-si .tab-icon { background: var(--tab-si); }
 .tab-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.dirty .tab-name::before { content: '• '; color: var(--accent); }
 .tab-close { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--r-control); background: transparent; color: var(--muted); font-size: var(--fs-lg); line-height: 1; }
@@ -1429,7 +1431,7 @@ body.boxed-drawing #structure-bar .muted { overflow: hidden; text-overflow: elli
 body.boxed-drawing #structure-bigger { display: inline-block; }
 /* the pop-out drawing area has no scroll bars (the wheel and Space+drag move round it) */
 body.floating-drawing #canvas-host .scrollbar { display: none; }
-body.floating-drawing #sheet-ribbon, body.floating-drawing #doc-ribbon { opacity: 0.55; pointer-events: none; }
+body.floating-drawing #sheet-ribbon, body.floating-drawing #doc-ribbon, body.floating-drawing #si-ribbon { opacity: 0.55; pointer-events: none; }
 /* a document's structure drawn in place: a clear drawing layer exactly over the pages (placed from
    script), the page under it showing the structure as it is drawn; the bar floats over the page */
 body.doc-mode.drawing-in-place #canvas-host {
@@ -1789,7 +1791,7 @@ body.ribbon-collapsed .ribbon.rb-peek > .rb-tabs [role='tab'][aria-selected='tru
 .ribbon button.rb-launch:hover { background: var(--hover, rgb(0 0 0 / 0.08)); color: var(--text); }
 /* ------------------------------------------------------------------ the Canvas ribbon */
 /* (only on a Canvas: the other modes have ribbons of their own) */
-body.slides-mode #canvas-ribbon, body.design-mode #canvas-ribbon, body.sheet-mode #canvas-ribbon, body.doc-mode #canvas-ribbon { display: none; }
+body.slides-mode #canvas-ribbon, body.design-mode #canvas-ribbon, body.sheet-mode #canvas-ribbon, body.doc-mode #canvas-ribbon, body.si-mode #canvas-ribbon { display: none; }
 /* three rows of buttons under the tabs, as the other ribbons have, with the group names under them;
    the major commands picture over name, all three rows tall */
 .canvas-ribbon > .rb-panel { align-items: stretch; }
@@ -4591,3 +4593,131 @@ dialog.analysis-settings .ask-form { display: block; }
 .as-paper .muted { color: #666; }
 .as-cap { white-space: normal; }
 .as-calc-preview { grid-column: 1 / -1; padding: 4px 8px; border: 1px dashed var(--line); border-radius: var(--r-control); font-size: var(--fs-sm); }
+
+/* ------------------------------------------------------------------ SI projects (src/ui/si-mode.ts) */
+
+/* the project's sections and compounds on the left, the page picked beside them; the drawing area,
+   the drawing tools and the side panel come back only while a structure is drawn */
+body.si-mode #canvas-host { display: none; }
+body.si-mode:not(.floating-drawing) :is(#dock-left, #dock-right) { display: none; }
+body.si-mode.floating-drawing #canvas-host { display: block; }
+body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
+#si-pane { grid-area: host; display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); min-width: 0; min-height: 0; background: var(--surround); }
+#si-pane[hidden] { display: none; }
+.si-ic { flex: none; vertical-align: -2px; }
+
+.si-tree { overflow: auto; padding: 4px 0; background: var(--panel); border-right: 1px solid var(--line); font-size: var(--fs-sm); }
+.si-row { display: flex; align-items: center; gap: 5px; min-height: 22px; padding: 1px 6px; color: var(--text); cursor: default; white-space: nowrap; }
+.si-row:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.si-row.on { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.si-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.si-row > .si-ic { color: var(--muted); }
+.si-row-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.si-root { font-weight: 600; border-bottom: 1px solid var(--line); margin-bottom: 2px; padding-top: 3px; padding-bottom: 4px; }
+.si-root > .si-ic { color: var(--accent); }
+.si-scheme { font-style: italic; color: var(--muted); }
+.si-cid { color: var(--accent); font-weight: 700; }
+.si-st { display: inline-flex; flex: none; color: var(--muted); }
+.si-st.ok { color: var(--ok); }
+.si-st.warn { color: var(--warn); }
+.si-st.flag { color: var(--slow); }
+
+.si-page { overflow: auto; padding: 10px 12px 24px; }
+.si-sheet { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.si-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 10px; }
+.si-title { margin: 0 0 6px; font-size: var(--fs-lg, 15px); font-weight: 600; }
+.si-sub { margin: 0 0 6px; font-size: var(--fs-sm); font-weight: 600; text-transform: none; }
+.si-note { margin: 0; font-size: var(--fs-sm); }
+.si-warnings { background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); border-radius: var(--r-control); padding: 4px 10px; color: var(--text); font-size: var(--fs-sm); }
+.si-warnings p { margin: 2px 0; }
+.si-facts { border-collapse: collapse; font-size: var(--fs-sm); }
+.si-facts th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 14px 2px 0; }
+.si-facts td { padding: 2px 0; word-break: break-all; }
+.si-head-row { display: flex; align-items: center; gap: 8px; }
+.si-name-input { flex: 1; min-width: 0; font-size: var(--fs-lg, 15px); font-weight: 600; padding: 2px 4px; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--text); }
+.si-name-input:hover, .si-name-input:focus { border-color: var(--line); }
+.si-tools { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.si-btn { padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); font-size: var(--fs-sm); line-height: 18px; cursor: pointer; }
+.si-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.si-mini { width: 20px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--muted); font-size: 10px; line-height: 1; cursor: pointer; }
+.si-mini:hover:not(:disabled) { border-color: var(--line); color: var(--text); }
+.si-mini:disabled { opacity: 0.35; cursor: default; }
+.si-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.si-chip { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); font-size: var(--fs-xs); line-height: 18px; white-space: nowrap; }
+.si-chip.ok { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); color: var(--ok); }
+.si-chip.warn { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); color: var(--warn); white-space: normal; }
+.si-chip-btn { cursor: pointer; }
+.si-chip-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.si-x { border: 0; padding: 0 0 0 2px; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
+.si-x:hover { color: var(--slow); }
+
+/* the ID table: row, ID, the compound that has it */
+.si-idgrid { display: grid; grid-template-columns: 28px 90px minmax(0, 1fr) auto; gap: 1px 6px; align-items: center; font-size: var(--fs-sm); }
+.si-idrow { display: contents; }
+.si-rown { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.si-idrow input { width: 100%; box-sizing: border-box; padding: 1px 4px; font-weight: 600; }
+.si-idwho { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.si-fieldlist { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+.si-fieldrow { display: flex; align-items: center; gap: 2px; font-size: var(--fs-sm); }
+.si-fieldname { flex: 1; display: flex; align-items: center; gap: 6px; }
+
+/* a compound's page: the header, then one row per field */
+.si-cpd-head { display: grid; grid-template-columns: 150px minmax(0, 1fr); grid-template-areas: 'pic info' 'pic chips'; gap: 4px 12px; align-items: start; }
+.si-struct { grid-area: pic; width: 150px; height: 110px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-control); background: #fff; color: #1d2330; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; }
+.si-struct:hover { border-color: var(--accent); }
+.si-struct svg { max-width: 100%; max-height: 100%; }
+.si-cpd-info { grid-area: info; min-width: 0; }
+.si-cpd-head > .si-chips { grid-area: chips; }
+.si-cpd-title { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-lg, 15px); }
+.si-cpd-title .si-cid { font-size: 18px; }
+.si-cpd-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.si-cpd-facts { font-size: var(--fs-sm); margin: 2px 0; }
+.si-fields { padding: 2px 10px; }
+.si-field { display: grid; grid-template-columns: 150px minmax(0, 1fr) 22px; gap: 8px; align-items: start; padding: 5px 0; border-top: 1px solid var(--line); }
+.si-field:first-child { border-top: 0; }
+.si-flabel { padding-top: 3px; font-size: var(--fs-sm); font-weight: 500; color: var(--text); }
+.si-req { color: var(--accent); margin-left: 2px; }
+.si-fbody { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.si-fbody > .si-btn { align-self: flex-start; }
+.si-flag { width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--muted); opacity: 0.5; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.si-field:hover .si-flag, .si-flag:focus-visible { opacity: 1; }
+.si-flag.on { opacity: 1; color: var(--slow); }
+.si-flag:hover { border-color: var(--line); }
+.si-parts { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.si-part { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); }
+.si-part input, .si-part select { padding: 1px 4px; font-size: var(--fs-sm); max-width: 220px; }
+.si-part input.si-num { width: 6em; }
+.si-plabel { color: var(--muted); }
+.si-suffix { color: var(--muted); }
+.si-gp-part { flex: 1 1 220px; }
+.si-gp-part .si-rich { flex: 1; }
+.si-nmr { display: grid; grid-template-columns: 70px minmax(0, 1fr) 20px; gap: 6px; align-items: start; }
+.si-nmr select { font-size: var(--fs-sm); padding: 1px 2px; }
+.si-refs { margin: 6px 0 0; padding-left: 22px; font-size: var(--fs-sm); }
+.si-refs li { margin: 2px 0; }
+.si-formula sub { font-size: 75%; }
+
+/* a box for SI text (src/ui/si-rich.ts) */
+.si-rich { position: relative; min-height: 20px; padding: 2px 5px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; outline: none; }
+.si-rich.si-multi { min-height: 44px; }
+.si-rich:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.si-rich.si-empty::before { content: attr(data-placeholder); position: absolute; left: 6px; right: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); pointer-events: none; }
+.si-rich > div { min-height: 1.45em; }
+.si-rich .si-h1, .si-rich .si-h2, .si-rich .si-h3 { font-weight: 700; }
+.si-rich .si-h1 { font-size: 1.2em; }
+.si-rich .si-object { color: var(--muted); font-style: italic; }
+.si-mention, .si-cite { padding: 0 3px; border-radius: 3px; background: var(--accent-soft); color: var(--accent); font-weight: 700; white-space: nowrap; user-select: all; }
+.si-cite { font-weight: 500; }
+.si-mention-menu { position: fixed; z-index: 50; min-width: 200px; max-width: 360px; padding: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
+.si-mention-menu button { display: flex; gap: 6px; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: var(--text); text-align: left; font-size: var(--fs-sm); cursor: pointer; }
+.si-mention-menu button b { color: var(--accent); }
+.si-mention-menu button.hot, .si-mention-menu button:hover { background: var(--accent-soft); }
+
+/* picking from the Compound Library or My Library */
+dialog.si-pick { width: min(92vw, 480px); }
+.si-pick input[type='search'] { width: 100%; box-sizing: border-box; margin: 4px 0; }
+.si-pick-list { max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-control); }
+.si-pick-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 6px; padding: 3px 6px; font-size: var(--fs-sm); border-top: 1px solid var(--line); }
+.si-pick-row:first-child { border-top: 0; }
+.si-pick-row > small { grid-column: 2; }
+.si-pick-list > p { margin: 8px; }
