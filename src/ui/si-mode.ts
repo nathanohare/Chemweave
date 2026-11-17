@@ -674,9 +674,57 @@ export class SiMode {
         t.append(box.el);
       });
     } else if (s.type === 'spectra') this.spectraCard(out, s);
+    else if (s.type === 'xray') this.xrayCard(out, s);
     else {
       out.append(el('p', 'muted si-note', `${TYPE_LABELS[s.type] ?? s.type} sections are edited in Chem SI Assistant for now; they are kept as they are here.`));
     }
+  }
+
+  /**
+   * An X-ray structure section's page: the structure as it prints (SI Assistant's stored view),
+   * the caption it gets and whether its crystal data table prints. The CIF, view and captions are
+   * chosen in Chem SI Assistant for now.
+   */
+  private xrayCard(out: HTMLElement, s: SiSection): void {
+    const p = this.project!;
+    const card = el('div', 'si-card');
+    const h = el('h3', 'si-sub', 'X-ray structure');
+    addInfo(h, 'Printed with its figure caption and, when ticked, its crystal data table. Choose the CIF, turn the structure and change its look or captions in Chem SI Assistant for now.');
+    card.append(h);
+    out.append(card);
+    const file = typeof s.data.file === 'string' ? s.data.file : '';
+    if (!file) { card.append(el('p', 'muted si-note', 'No CIF file has been chosen yet.')); return; }
+    const pic = el('div', 'si-xray-pic');
+    const cap = el('p', 'si-xray-caption muted');
+    card.append(pic, cap);
+    const tickRow = el('label', 'si-part');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = s.data.table !== false;
+    box.addEventListener('change', () => void this.act(async () => { s.data.table = box.checked; await p.saveSection(s); }, false));
+    tickRow.append(box, el('span', '', 'Print the crystal data table'));
+    card.append(tickRow);
+    void (async () => {
+      const [{ xrayBlock, xrayDrawing, xrayAutoCaption, xrayCompound, xrayTableRows }, { crystalSvg }] = await Promise.all([import('../si/xray'), import('../design/xray')]);
+      const cif = await p.folder.readText(`${s.folder}/${file}`);
+      if (cif === null) { pic.replaceWith(el('p', 'muted si-note', `${file} is no longer in the project.`)); return; }
+      const { block, error } = xrayBlock(cif, typeof s.data.block === 'string' ? s.data.block : '');
+      const got = block ? xrayDrawing(block, (s.data.view ?? {}) as Json, 460) : { error };
+      if ('error' in got) { pic.replaceWith(el('p', 'muted si-note', `It can’t be drawn: ${got.error}.`)); return; }
+      const img = el('img');
+      img.alt = `Crystal structure ${s.name}`;
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(crystalSvg(got.spec, got.w, got.h));
+      img.style.width = `${got.w * (96 / 72)}px`;
+      pic.append(img);
+      const typed = typeof s.data.caption === 'string' ? s.data.caption.trim() : '';
+      const ref = xrayCompound(s.data, (id) => p.compounds.some((c) => c.id === id));
+      const ccdc = xrayTableRows(s.data, block!).find(([k]) => k === 'ccdc')?.[2] ?? '';
+      const text = (typed || xrayAutoCaption(s.data, got.spec.view, ref, ccdc)).replace(/@\{(c-[^}]*)\}/g, (_m, id: string) => {
+        const c = p.compounds.find((x) => x.id === id);
+        return c ? this.idOf(c) : '??';
+      });
+      cap.textContent = `Caption${typed ? '' : ' (automatic)'}: ${text}`;
+    })();
   }
 
   /**

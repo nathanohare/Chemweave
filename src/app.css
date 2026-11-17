@@ -4884,3 +4884,7 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-spectra-row { align-items: center; padding: 4px 0; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
 .si-spectra-group { min-width: 116px; font-size: var(--fs-sm); font-weight: 600; }
 .si-spectra-row input[type=color] { width: 32px; height: 20px; padding: 0 1px; }
+/* SI Projects: an X-ray structure section's page */
+.si-xray-pic { margin: 4px 0; }
+.si-xray-pic img { display: block; max-width: 100%; height: auto; }
+.si-xray-caption { margin: 2px 0 6px; font-size: 12px; }
