@@ -65,7 +65,7 @@ jobs:
           cp src-tauri/ios/PrivacyInfo.xcprivacy src-tauri/gen/apple/*_iOS/
           # the app icons for iPad: the desktop picture filling the square (iPadOS rounds the
           # corners), with no transparency, which App Store Connect refuses
-          npx tauri icon src-tauri/icons/ios-icon.png --ios-color '#2f6fdf'
+          npx tauri icon src-tauri/icons/ios-icon.png --ios-color '#09323e'
           for f in src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/*.png; do
             if sips -g hasAlpha "$f" | grep -q 'hasAlpha: yes'; then
               sips -s format jpeg "$f" --out "$RUNNER_TEMP/flat.jpg" >/dev/null
