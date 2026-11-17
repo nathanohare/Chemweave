@@ -8260,6 +8260,14 @@ function loadSiMode(): Promise<SiMode> {
       },
       contentsOfCdxml: (text) => { try { return readCdxml(text).doc.contents(); } catch { return null; } },
       openSymbols: () => symbolWindow.open(),
+      nameStructure: async (mol) => {
+        if (!chem.ready) return { ok: false, message: 'The chemistry engine is still loading. Try again in a moment.' };
+        const smiles = await chem.molToSmiles(mol);
+        if (!smiles) return { ok: false, message: 'That structure can\'t be read (check valences).' };
+        if (!namer.ready) flash('Loading the namer (first time only)…', 15000);
+        const st = await nameOf(smiles, mol);
+        return st.kind === 'found' ? { ok: true, name: st.name } : { ok: false, message: st.kind === 'none' ? st.message : 'No name found.' };
+      },
       readClipboard: (e) => (e ? readPasteEvent(e) : nativeClipboard ? readNativeClipboard() : readWebClipboard()),
       library: async () => {
         const lib = await useLibrary();

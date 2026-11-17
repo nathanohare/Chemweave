@@ -8,7 +8,7 @@ import { fieldKeys, valuesOf, type Json, type SiCompound } from './project';
 import { gpKey, placeholders } from './checks';
 import { R } from './format';
 
-export const DEFAULT_GP_SENTENCE = 'Prepared according to {GP} from {starting material} ({scale}).';
+export { DEFAULT_GP_SENTENCE } from './project';
 export const PURIFICATION_START = 'The crude product was purified by ';
 const PLACEHOLDER = /\{([^{}]+)\}/g;
 /** The field's value is printed even if something is typed in the box. */

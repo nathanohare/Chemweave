@@ -18,6 +18,7 @@ import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-id
 import { ALL_FIELDS, NUCLEI, fieldDef, learnedChoices, nucleusLabel, partText, CORE_FIELDS, LIBRARY_FIELDS, type FieldDef, type Part, type FieldEntry } from '../si/fields';
 import { CITE, MENTION, parseMarkup } from '../si/markup';
 import { newId } from '../si/ids';
+import { capitalizeName } from '../si/chem-names';
 import { SiRichBox } from './si-rich';
 import { SiTableEditor } from './si-table';
 import { SiFigureEditor } from './si-figure';
@@ -64,6 +65,8 @@ export interface SiModeHost {
   openCompiled(doc: DocText, name: string, pdf: boolean): Promise<void>;
   /** Insert ▸ Symbol's window (it types into the SI text box last typed in). */
   openSymbols(): void;
+  /** A structure's systematic name, given only when the name reads back as the same structure. */
+  nameStructure(molfile: string): Promise<{ ok: true; name: string } | { ok: false; message: string }>;
 }
 
 /** An SI compound as the Canvas shows it (its card in the Analysis panel). */
@@ -136,6 +139,9 @@ const RIBBON = `
         <button data-si="add-files" data-ic="insert-object" title="Add other files (PDFs or pictures) to the compound picked">Files…</button>
         <button data-si="add-field" title="Add a field (melting point, Rf, IR, optical rotation…, or one of your own) to the compound picked, or to the section picked's list of fields">Field…</button>
       </div>
+      <div class="rb-col">
+        <button data-si="new-gp" title="A new general procedure in the Data section picked (or the picked compound's): its text prints once at the start of the section, and its compounds get its sentence">General Procedure</button>
+      </div>
     </div><div class="rb-label">Compound Data</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="symbol" data-ic="symbol" title="Type a symbol (°, Å, ±, Greek letters, arrows…) where you are typing"><span class="rb-icon">Ω</span>Symbol</button>
@@ -154,6 +160,9 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si-tbl="del-rows" data-ic="delete" title="Delete the selected rows">Delete Rows</button>
         <button data-si-tbl="del-cols" title="Delete the selected columns">Delete Columns</button>
+      </div>
+      <div class="rb-col">
+        <button data-si-tbl="del-table" title="Delete the table and its caption (it goes to the project's Trash)">Delete Table</button>
       </div>
     </div><div class="rb-label">Rows and Columns</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -241,6 +250,9 @@ const RIBBON = `
         <button data-si="from-library" title="A new compound page with a compound from your Compound Library (its structure and name)">From Compound Library…</button>
         <button data-si="to-library" title="Keep the structures of this section's compounds in your Compound Library, with their SI IDs and this project as where they appear">Add to Compound Library</button>
         <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
+      </div>
+      <div class="rb-col">
+        <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the compound picked (or of every compound of the Data section picked that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
       </div>
     </div><div class="rb-label">Library</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -901,20 +913,74 @@ export class SiMode {
     if (s.type === 'data') {
       this.idTableCard(out, s);
       this.fieldsCard(out, s);
-      const gps = p.generalProcedures(s);
-      if (gps.length) {
-        const g = el('div', 'si-card');
-        const gh = el('h3', 'si-sub', 'General procedures');
-        addInfo(gh, 'Made and edited in Chem SI Assistant for now. A compound uses one in its Experimental procedure field.');
-        g.append(gh);
-        for (const gp of gps) g.append(el('p', '', `${partText(gp.name)}${gp.title ? ': ' + partText(gp.title) : ''}`));
-        out.append(g);
-      }
+      this.gpCard(out, s);
     } else if (s.type === 'text') this.textCard(out, s); else if (s.type === 'spectra') this.spectraCard(out, s);
     else if (s.type === 'xray') this.xrayCard(out, s);
     else {
       out.append(el('p', 'muted si-note', `${TYPE_LABELS[s.type] ?? s.type} sections are edited in Chem SI Assistant for now; they are kept as they are here.`));
     }
+  }
+
+  /**
+   * A Data section's general procedures: each one's name, title, text (printed once at the start
+   * of the section under "Name: Title") and the sentence its compounds get, its {placeholders}
+   * filled on each compound's Experimental procedure field. Insert ▸ General Procedure adds one.
+   */
+  private gpCard(out: HTMLElement, s: SiSection): void {
+    const p = this.project!;
+    const gps = p.generalProcedures(s);
+    const card = el('div', 'si-card');
+    const h = el('h3', 'si-sub', 'General procedures');
+    addInfo(h, 'Printed once at the start of the section, each under its heading “Name: Title” (in the contents). A compound picks one in its Experimental procedure field and gets its compound sentence there: {GP}, {scale}, {yield}, {product} and {purification} fill themselves in; any other {placeholder} (such as {starting material}) gets a box to type in on the compound. Insert ▸ General Procedure adds one; a deleted one goes to the Trash.');
+    card.append(h);
+    if (!gps.length) card.append(el('p', 'muted si-note', 'None yet: Insert ▸ General Procedure adds one.'));
+    gps.forEach((gp, i) => {
+      const id = String(gp.id);
+      const box = el('div', 'si-gp');
+      const top = el('div', 'si-gp-top');
+      const name = el('input', 'si-gp-name');
+      name.value = partText(gp.name);
+      name.setAttribute('aria-label', 'Name');
+      name.placeholder = 'General Procedure A';
+      name.addEventListener('change', () => void this.act(() => p.updateGeneralProcedure(id, { name: name.value.trim() }), false));
+      const title = el('input', 'si-gp-title');
+      title.value = partText(gp.title);
+      title.setAttribute('aria-label', 'Title');
+      title.placeholder = 'Title (optional), e.g. Reduction of aryl methyl ketones';
+      title.addEventListener('change', () => void this.act(() => p.updateGeneralProcedure(id, { title: title.value.trim() }), false));
+      const users = p.gpUsers(id);
+      const used = el('span', 'muted si-gp-users', users.length ? `Used by ${users.map((c) => this.idOf(c)).join(', ')}` : 'Not used yet');
+      const up = el('button', 'si-mini', '▲');
+      up.type = 'button';
+      up.title = 'Move up (the order they print in)';
+      up.disabled = i === 0;
+      up.addEventListener('click', () => void this.act(() => p.moveGeneralProcedure(id, -1)));
+      const down = el('button', 'si-mini', '▼');
+      down.type = 'button';
+      down.title = 'Move down';
+      down.disabled = i === gps.length - 1;
+      down.addEventListener('click', () => void this.act(() => p.moveGeneralProcedure(id, 1)));
+      const rm = el('button', 'si-mini', '✕');
+      rm.type = 'button';
+      rm.title = 'Delete the general procedure (to the Trash; compounds using it keep the choice, with a warning)';
+      rm.addEventListener('click', () => void (async () => {
+        const msg = users.length ? `${users.length} compound${users.length === 1 ? ' uses' : 's use'} it (${users.map((c) => this.idOf(c)).join(', ')}); they keep the choice and get a warning until you pick another.` : 'It goes to the project’s Trash, where Chem SI Assistant can restore it.';
+        const go = await askChoice(`Delete ${partText(gp.name) || 'General Procedure'}`, msg, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+        if (go === 'go') await this.act(() => p.deleteGeneralProcedure(id));
+      })());
+      top.append(name, title, used, up, down, rm);
+      const textLab = el('div', 'si-gp-label', 'Procedure');
+      const textBox = new SiRichBox('', { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeGpText(id, v), false) }, true, 'The procedure as it prints under its heading: To a solution of {starting material} in…');
+      this.boxes.push(textBox);
+      void p.readGpText(s, id).then((t) => textBox.set(t));
+      const sentLab = el('div', 'si-gp-label', 'Compound sentence');
+      addInfo(sentLab, 'What each compound made by this procedure prints at the start of its procedure. {GP} is this procedure’s name; {scale}, {yield}, {product} and {purification} come from the compound’s fields; other {placeholders} are typed on the compound.');
+      const sentence = new SiRichBox(partText(gp.sentence), { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.updateGeneralProcedure(id, { sentence: v }), false) }, false, 'Prepared according to {GP} from {starting material} ({scale}).');
+      this.boxes.push(sentence);
+      box.append(top, textLab, textBox.el, sentLab, sentence.el);
+      card.append(box);
+    });
+    out.append(card);
   }
 
   /**
@@ -975,6 +1041,7 @@ export class SiMode {
       readClipboard: (e) => this.host.readClipboard(e),
       contentsOf: (m) => this.host.contentsOf(m),
       selectionChanged: (t) => this.tableState(t),
+      remove: (t) => this.removeObject(s, 'table', t.id),
       pickCompound: async () => {
         const list = p.compounds.filter((c) => p.hasStructure(c));
         const [c] = await pickFromList('Compound', list, (x) => this.idOf(x), (x) => compoundName(x), 'No compound has a structure yet.');
@@ -987,7 +1054,7 @@ export class SiMode {
     return {
       ...this.tableHost(s),
       chosen: (f) => { this.tableChosen(null); this.figureChosen(f); },
-      remove: (f) => this.removeFigure(s, f.id),
+      remove: (f) => this.removeObject(s, 'figure', f.id),
     };
   }
 
@@ -1021,17 +1088,38 @@ export class SiMode {
     this.focusTable = id;
   }
 
-  /** A figure taken out of a Custom section's text, with its caption; its picture stays in images/. */
-  private async removeFigure(s: SiSection, id: string): Promise<void> {
+  /** A figure or table taken out of a Custom section's text with its caption; its file goes to the Trash. */
+  private async removeObject(s: SiSection, kind: 'figure' | 'table', id: string): Promise<void> {
     const p = this.project!;
     this.commitAll();
-    await this.act(async () => {
-      const text = await p.readSectionText(s);
-      await p.writeSectionText(s, text.split('\n').filter((l) => !l.startsWith(`!figure{${id}}`)).join('\n'));
-      const figs = s.data.figures;
-      if (figs && typeof figs === 'object' && !Array.isArray(figs)) { delete (figs as Json)[id]; await p.saveSection(s); }
-    });
-    this.host.flash('Figure deleted. Its picture is still in the section’s images folder.');
+    const what = this.objLabels.get(id) ?? (kind === 'figure' ? 'the figure' : 'the table');
+    const go = await askChoice(`Delete ${kind === 'figure' ? 'Figure' : 'Table'}`, `Delete ${what} and its caption? ${kind === 'figure' ? 'Its picture goes' : 'It goes'} to the project’s Trash, where Chem SI Assistant can restore it.`, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+    if (go !== 'go') return;
+    await this.act(() => p.deleteTextObject(s, kind, id));
+  }
+
+  /**
+   * Structure to Name: each compound's checked IUPAC name in its Name field. One compound's name
+   * replaces what is there (after asking); for a section only empty names are filled.
+   */
+  private async structureToName(list: SiCompound[]): Promise<void> {
+    const p = this.project!;
+    const todo = list.filter((c) => p.hasStructure(c));
+    if (!todo.length) { this.host.flash(list.length ? 'Draw the compound’s structure first.' : 'Pick a compound, or a Data section with unnamed compounds.'); return; }
+    if (todo.length === 1 && compoundName(todo[0])) {
+      const go = await askChoice('Structure to Name', `Replace the name “${compoundName(todo[0])}” with the structure’s IUPAC name?`, [{ value: 'go', label: 'Replace Name', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+      if (go !== 'go') return;
+    }
+    let named = 0, why = '';
+    for (const c of todo) {
+      const got = await this.host.nameStructure(await p.readStructure(c)).catch((e: unknown) => ({ ok: false as const, message: e instanceof Error ? e.message : String(e) }));
+      if (!got.ok) { why = got.message; continue; }
+      const v = valuesOf(c).name;
+      await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: capitalizeName(got.name) }));
+      named++;
+    }
+    if (todo.length === 1) this.host.flash(named ? 'Named from its structure; you can change the name.' : why || 'No name found.', named ? 3000 : 6000);
+    else this.host.flash(`Named ${named} of ${todo.length} compounds${named < todo.length ? '; the others have no name the namer could confirm' : ''}.`, 6000);
   }
 
   /** A new table at the end of a Custom section's text. */
@@ -1747,6 +1835,12 @@ export class SiMode {
         await this.newFigure(sec, cmd === 'new-figure' ? 'picture' : (cmd.slice(11) as 'draw' | 'paste' | 'compound'));
         return;
       }
+      case 'new-gp': {
+        const d = needData();
+        if (!d) return;
+        await this.act(async () => { await p.addGeneralProcedure(d.id); this.pick = { kind: 'section', id: d.id }; });
+        return;
+      }
       case 'symbol':
         this.host.openSymbols();
         return;
@@ -1847,6 +1941,7 @@ export class SiMode {
         return;
       }
       case 'cite-library': await this.citeFromLibrary(c); return;
+      case 'structure-to-name': await this.structureToName(c ? [c] : data ? compoundsOf(data).filter((x) => !compoundName(x)) : []); return;
       case 'add-field': {
         // the compound picked gets the field; a Data section picked gets it on its list of fields
         if (!c && data && this.pick.kind === 'section') {

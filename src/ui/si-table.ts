@@ -17,6 +17,8 @@ export interface SiTableHost extends SiPictureHost {
   mentionable(): { id: string; label: string; text: string }[];
   /** The cell picked, or the table changed: the ribbon's Table Layout tab shows this table's state. */
   selectionChanged(t: SiTableEditor): void;
+  /** Delete the table and its caption (its file goes to the Trash). */
+  remove(t: SiTableEditor): Promise<void>;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
@@ -87,6 +89,7 @@ export class SiTableEditor {
 
   /** The ribbon's Table Layout commands, for the selected cells. */
   async command(cmd: string): Promise<void> {
+    if (cmd === 'del-table') { await this.host.remove(this); return; }
     if (!this.t) return;
     const r = this.sel;
     switch (cmd) {

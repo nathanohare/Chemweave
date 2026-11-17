@@ -83,3 +83,21 @@ export function nameRuns(name: string, look: { bold?: boolean } = {}): Run[] {
   push(text.slice(at), false);
   return out;
 }
+
+/**
+ * A systematic name with its first word capitalized, as a compound's title is written:
+ * "1-(4-chlorophenyl)ethan-1-ol" → "1-(4-Chlorophenyl)ethan-1-ol", "tert-butyl…" →
+ * "tert-Butyl…", "(R)-1-phenyl…" → "(R)-1-Phenyl…". Locants, stereodescriptors and italic
+ * prefixes stay as they are.
+ */
+export function capitalizeName(name: string): string {
+  const skip = italicSpans(name);
+  for (let i = 0; i < name.length - 1; i++) {
+    if (!/[a-z]/.test(name[i]) || !/[a-z]/.test(name[i + 1])) continue;
+    if (skip.some(([a, b]) => i >= a && i < b)) continue;
+    // (the start of a word, not the middle of one)
+    if (i > 0 && /[A-Za-z]/.test(name[i - 1])) continue;
+    return name.slice(0, i) + name[i].toUpperCase() + name.slice(i + 1);
+  }
+  return name;
+}

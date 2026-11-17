@@ -19,6 +19,7 @@
 import { copyFloats, dumpPyJson, markFloat, parsePyJson } from './pyjson';
 import type { SiFolder } from './folder';
 import { newId, safeFilename, slugify } from './ids';
+import { parseMarkup } from './markup';
 import { DEFAULT_NMR_NUCLEI, DEFAULT_SECTION_FIELDS, emptyValue, fieldDef, isFilled, partText, type FieldDef, type FieldEntry } from './fields';
 import { checkIds, type IdReport } from './compound-ids';
 
@@ -35,6 +36,8 @@ export const SCHEME_FILE = 'scheme.json';
 export const STRUCTURE_FILE = 'structure.mol';
 export const NOTES_FILE = 'notes.txt';
 export const TEXT_CONTENT_FILE = 'content.txt';
+/** A new general procedure's compound sentence (SI Assistant's). */
+export const DEFAULT_GP_SENTENCE = 'Prepared according to {GP} from {starting material} ({scale}).';
 export const GP_DIR = 'procedures';
 export const LOCK_FILE = '.lock';
 export const MAX_SECTION_DEPTH = 3;
@@ -614,6 +617,122 @@ export class SiProject {
   }
   async readGpText(s: SiSection, gpId: string): Promise<string> {
     return (await this.folder.readText(join(s.folder, GP_DIR, `${safeFilename(gpId)}.txt`))) ?? '';
+  }
+
+  /** Add a general procedure to a Data section, named after the first free letter ("General Procedure C"). */
+  async addGeneralProcedure(sectionId: string): Promise<Json> {
+    this.checkWritable();
+    const s = this.dataSection(sectionId);
+    const used = new Set(this.dataSections.flatMap((x) => this.generalProcedures(x).map((g) => str(g.name))));
+    const marks = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', ...Array.from({ length: 998 }, (_, i) => String(i + 1))];
+    const name = `General Procedure ${marks.find((m) => !used.has(`General Procedure ${m}`))}`;
+    const gp: Json = { id: newId('gp'), name, title: '', sentence: DEFAULT_GP_SENTENCE };
+    if (!Array.isArray(s.data.general_procedures)) s.data.general_procedures = [];
+    (s.data.general_procedures as Json[]).push(gp);
+    await this.saveSection(s);
+    return gp;
+  }
+
+  /** Change a general procedure's name, title or compound sentence. */
+  async updateGeneralProcedure(gpId: string, changes: { name?: string; title?: string; sentence?: string }): Promise<void> {
+    this.checkWritable();
+    const found = this.generalProcedure(gpId);
+    if (!found) return;
+    for (const k of ['name', 'title', 'sentence'] as const) if (changes[k] !== undefined) found.gp[k] = changes[k];
+    await this.saveSection(found.section);
+  }
+
+  /** Move a general procedure up (-1) or down (+1) in its section's list (the order they print in). */
+  async moveGeneralProcedure(gpId: string, step: number): Promise<void> {
+    this.checkWritable();
+    const found = this.generalProcedure(gpId);
+    if (!found) return;
+    const list = found.section.data.general_procedures as Json[];
+    const i = list.indexOf(found.gp), j = Math.max(0, Math.min(list.length - 1, i + step));
+    list.splice(j, 0, ...list.splice(i, 1));
+    await this.saveSection(found.section);
+  }
+
+  async writeGpText(gpId: string, text: string): Promise<void> {
+    this.checkWritable();
+    const found = this.generalProcedure(gpId);
+    if (!found) return;
+    await this.folder.writeText(join(found.section.folder, GP_DIR, `${safeFilename(gpId)}.txt`), text);
+  }
+
+  /** The compounds made by a general procedure (they keep the choice when it is deleted, with a warning). */
+  gpUsers(gpId: string): SiCompound[] {
+    return this.compounds.filter((c) => { const v = valuesOf(c).procedure; return isObj(v) && v.gp === gpId; });
+  }
+
+  /** Move a general procedure (its text) to the Trash, where SI Assistant can restore it. */
+  async deleteGeneralProcedure(gpId: string): Promise<void> {
+    this.checkWritable();
+    const found = this.generalProcedure(gpId);
+    if (!found) return;
+    const { section: s, gp } = found;
+    const path = join(s.folder, GP_DIR, `${safeFilename(gpId)}.txt`);
+    if (!(await this.folder.exists(path))) await this.folder.writeText(path, '');
+    const list = s.data.general_procedures as Json[];
+    await this.moveToTrash([path], 'gp', str(gp.name) || 'General procedure', { section_id: s.id, section_name: s.name, gp: structuredClone(gp), index: list.indexOf(gp) });
+    list.splice(list.indexOf(gp), 1);
+    await this.saveSection(s);
+  }
+
+  /**
+   * Take a figure or table out of a Custom section: its paragraph leaves the text, and its picture
+   * (with the drawing or metafile it was made from) or its table's file goes to the Trash, as SI
+   * Assistant's Trash shows and restores them.
+   */
+  async deleteTextObject(s: SiSection, kind: 'figure' | 'table', id: string): Promise<void> {
+    this.checkWritable();
+    const text = await this.readSectionText(s);
+    const lines = text.split('\n');
+    const mark = `!${kind}{${id}}`;
+    const at = lines.findIndex((l) => l.replace(/^!align\{[^}]*\}\s*/, '').startsWith(mark));
+    const line = at >= 0 ? lines[at] : '';
+    const align = /^!align\{([^}]*)\}/.exec(line)?.[1] ?? '';
+    const caption = line.replace(/^!align\{[^}]*\}\s*/, '').slice(mark.length).trim();
+    const figs = isObj(s.data.figures) ? s.data.figures : {};
+    const fig = kind === 'figure' && isObj(figs[id]) ? (figs[id] as Json) : {};
+    const file = kind === 'figure' ? str(fig.file) : `tables/${safeFilename(id)}.json`;
+    if (file && (await this.folder.exists(join(s.folder, file)))) {
+      const main = join(s.folder, file);
+      const stem = main.replace(/\.[^./]+$/, '');
+      const companions = kind === 'figure' && stem !== main ? [`${stem}.cdxml`, `${stem}.emf`].filter((x) => x !== main) : [];
+      const plain = parseMarkup(caption).map((p) => p.runs.map((r) => r.text).join('')).join(' ').trim();
+      await this.moveToTrash([main, ...companions], kind, `${kind === 'figure' ? 'Figure' : 'Table'}: ${plain.slice(0, 40) || nameOf(file)} (${s.name})`, {
+        owner: s.id, owner_name: s.name, object_id: id, caption, label: str(fig.label),
+        ...(align ? { align } : {}), ...(fig.width ? { width: fig.width } : {}),
+      });
+    }
+    if (at >= 0) { lines.splice(at, 1); await this.writeSectionText(s, lines.join('\n')); }
+    if (kind === 'figure' && id in figs) { delete figs[id]; await this.saveSection(s); }
+  }
+
+  /**
+   * Move files into one new Trash entry (trash/<when>-<id>/), the first the item and the rest its
+   * companions, all or nothing: the entry is described first (marked pending), and anything
+   * already moved is put back when one can't be.
+   */
+  private async moveToTrash(paths: string[], kind: string, name: string, extra: Json): Promise<void> {
+    const present: string[] = [];
+    for (const x of paths) if (await this.folder.exists(x)) present.push(x);
+    if (!present.length) return;
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-`;
+    const entry = join(TRASH_DIR, stamp + newId('t').slice(2));
+    const info: Json = { kind, name, item: nameOf(present[0]), deleted_at: localIso(now), deleted_by: this.lock?.user ?? '', ...extra };
+    if (present.length > 1) info.companions = present.slice(1).map(nameOf);
+    await this.writeJson(join(entry, 'entry.json'), { ...info, pending: true });
+    const done: [string, string][] = [];
+    try {
+      for (const x of present) { const to = join(entry, nameOf(x)); await this.folder.move(x, to); done.push([x, to]); }
+    } catch (e) {
+      for (const [from, to] of done.reverse()) await this.folder.move(to, from).catch(() => {});
+      throw new SiProjectError(`“${name}” could not be moved to the Trash, so nothing was deleted. A file in it is probably open in another program or being synced: close it and try again. (${e instanceof Error ? e.message : String(e)})`);
+    }
+    await this.writeJson(join(entry, 'entry.json'), info);
   }
 
   private dataSection(id: string): SiSection {

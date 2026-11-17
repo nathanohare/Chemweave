@@ -4787,6 +4787,14 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-figure-card:focus-within, .si-figure-card:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .si-fig-pic { padding: 6px; border: 1px dashed var(--line); background: #fff; cursor: default; }
 .si-fig-pic .si-note { margin: 0; }
+/* a Data section's general procedures: name, title, who uses it; its text and compound sentence */
+.si-gp { display: flex; flex-direction: column; gap: 3px; padding: 6px 0; border-top: 1px solid var(--line); }
+.si-gp:first-of-type { border-top: 0; }
+.si-gp-top { display: flex; align-items: center; gap: 6px; }
+.si-gp-name { width: 170px; font-weight: 600; }
+.si-gp-title { flex: 1; min-width: 120px; }
+.si-gp-users { font-size: var(--fs-sm); white-space: nowrap; }
+.si-gp-label { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--muted); }
 .si-tbottom { display: flex; flex-direction: column; gap: 4px; }
 .si-tnotes .si-rich { min-height: 22px; }
 .si-mention, .si-cite { padding: 0 3px; border-radius: 3px; background: var(--accent-soft); color: var(--accent); font-weight: 700; white-space: nowrap; user-select: all; }
