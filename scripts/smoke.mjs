@@ -149,7 +149,7 @@ try {
   await page.evaluate(() => window.__app.ws.activate(window.__app.ws.tabs.find((t) => t.mode === 'drawing')));
   await page.waitForTimeout(200);
 
-  step('the Drawing Tools toolbox is two columns wide in every mode, scrolling when the window is too short');
+  step('the Drawing Tools toolbox is two columns wide in every mode, and all of it shows at 1280 × 720');
   const columns = await page.evaluate(async () => {
     const ws = window.__app.ws, out = [];
     const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
@@ -170,7 +170,8 @@ try {
     if (x.cols !== 2) fail(`the Drawing Tools toolbox in a ${x.mode} tab is ${x.cols} columns wide, not two`);
     else if (x.bottom > x.h || x.page > x.h) fail(`the Drawing Tools toolbox in a ${x.mode} tab runs past the window's foot (${Math.round(x.bottom)} px of ${x.h})`);
   }
-  if (!columns.some((x) => x.scrolls)) fail('at 1280 × 720 the Drawing Tools toolbox should scroll inside itself');
+  // (two columns of twelve as it comes: no third column, and nothing to scroll to; UI audit U2)
+  if (columns.some((x) => x.scrolls)) fail('at 1280 × 720 the whole Drawing Tools toolbox should show without scrolling');
   await page.waitForTimeout(200);
 
   step('the Drawing Tools toolbox keeps its docked width when it floats');

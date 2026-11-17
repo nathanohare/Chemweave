@@ -17,6 +17,8 @@ export interface BoxPlace {
   collapsed?: boolean;
   /** Locked where it is (its own padlock); unset follows the big Locked button. */
   locked?: boolean;
+  /** Floating at the top right of the drawing, whatever the window's size, until it is moved (the side panel starts so). */
+  corner?: boolean;
 }
 
 export interface ToolboxState {
@@ -51,6 +53,10 @@ export interface ToolboxState {
   overflow?: Record<string, Overflow>;
   /** The side panel's height, in pixels, docked along the top or bottom (a strip across the window; its edge drags). */
   stripHeight?: number;
+  /** Fly-outs of your own, made in Customize Toolboxes (their tools are in `flyouts` and `flyGrids`). */
+  ownFlyouts?: OwnBox[];
+  /** Set once the side panel has been floated at the top right for settings saved when it started docked. */
+  sideFloats?: boolean;
 }
 
 export type Overflow = 'scroll' | 'wrap';
@@ -75,6 +81,9 @@ export interface OwnBox { id: string; title: string }
 export const ITEM = /^(?:(?:tool|cmd|pal|w):[^\s"'<>`]{1,80}|sep)$/;
 /** The name of a toolbox of your own. */
 const OWN_ID = /^own-[a-z0-9]{1,16}$/;
+/** A fly-out of your own: its palette name. */
+const OWN_FLY = /^fly-[a-z0-9]{1,16}$/;
+export const isOwnFlyout = (name: string): boolean => OWN_FLY.test(name);
 /** The toolboxes whose buttons can be chosen (the rest are laid out by the app: templates, colours, the side panel). */
 export const EDITABLE: readonly string[] = ['main', 'structure', 'arrange', 'highlight', 'custom'];
 /** Toolboxes that can't be deleted (they can still be hidden, except the side panel). */
@@ -136,11 +145,11 @@ export type ContextBox = (typeof CONTEXT_BOXES)[number];
 export function defaultToolboxes(): ToolboxState {
   const places: Record<string, BoxPlace> = {};
   TOOLBOX_IDS.forEach((id, i) => { places[id] = { shown: id === 'main', dock: id === 'main' ? 'left' : 'float', x: 110 + i * 24, y: 90 + i * 64 }; });
-  // the side panel (Style, Warnings, Analysis) is always shown, docked at the right to start with
-  places.details = { shown: true, dock: 'right', x: 900, y: 90 };
+  // the side panel (Style, Warnings, Analysis) is always shown, floating at the top right of the drawing to start with
+  places.details = { shown: true, dock: 'float', x: 900, y: 90, corner: true };
   // the Smart Scheme species list floats beside its scheme until docked (then it is a toolbox, at the right to start with)
   places.smart = { shown: false, dock: 'right', x: 900, y: 140 };
-  return { locked: true, places, custom: ['cmd:clean-up', 'cmd:add-frame', 'cmd:fill-rings', 'cmd:highlight', 'cmd:chain-ends'], sideCollapsed: false };
+  return { locked: true, places, custom: ['cmd:clean-up', 'cmd:add-frame', 'cmd:fill-rings', 'cmd:highlight', 'cmd:chain-ends'], sideCollapsed: false, sideFloats: true };
 }
 
 /**
@@ -179,9 +188,13 @@ export function parseToolboxes(raw: unknown): ToolboxState {
         x: num(p.x, s.places[id].x), y: num(p.y, s.places[id].y),
         ...(p.collapsed === true ? { collapsed: true } : {}),
         ...(typeof p.locked === 'boolean' ? { locked: p.locked } : {}),
+        ...(p.corner === true && p.dock === 'float' ? { corner: true } : {}),
       };
     }
   }
+  // settings saved while the side panel started docked at the right: it floats there now (once;
+  // docked again afterwards, it stays docked)
+  if (r.sideFloats !== true && s.places.details.dock === 'right') s.places.details = { ...s.places.details, dock: 'float', corner: true };
   // the side panel can't be hidden (older settings could put it away)
   s.places.details = { ...s.places.details, shown: true };
   const list = (v: unknown, max = 200): string[] | null => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && ITEM.test(x)))].slice(0, max) : null);
@@ -223,6 +236,11 @@ export function parseToolboxes(raw: unknown): ToolboxState {
       if (l && /^[\w-]{1,40}$/.test(id)) by[id] = l;
     }
     if (Object.keys(by).length) s.flyouts = by;
+  }
+  if (Array.isArray(r.ownFlyouts)) {
+    const own = (r.ownFlyouts as unknown[]).filter((x): x is OwnBox => !!x && typeof x === 'object' && isOwnFlyout(String((x as OwnBox).id)) && typeof (x as OwnBox).title === 'string')
+      .map((x) => ({ id: x.id, title: x.title.slice(0, 60) })).filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i).slice(0, 100);
+    if (own.length) s.ownFlyouts = own;
   }
   if (r.jiggle === false) s.jiggle = false;
   if (typeof r.stripHeight === 'number' && isFinite(r.stripHeight)) s.stripHeight = Math.min(4000, Math.max(STRIP_MIN, Math.round(r.stripHeight)));
@@ -313,6 +331,40 @@ export function withFlyout(st: ToolboxState, palette: string, tools: string[] | 
   return { ...st, flyouts, flyGrids };
 }
 
+/**
+ * A new fly-out of your own holding `cells` (tool names, or "cmd:name" for a command), named
+ * "Fly-out N" unless a title is given.
+ */
+export function withNewFlyout(st: ToolboxState, cells: readonly string[] = [], title?: string, id = `fly-${Date.now().toString(36)}`): { state: ToolboxState; id: string } {
+  const own = st.ownFlyouts ?? [];
+  const names = new Set(own.map((f) => f.title));
+  let n = own.length + 1;
+  while (names.has(`Fly-out ${n}`)) n++;
+  const state: ToolboxState = { ...st, ownFlyouts: [...own, { id, title: (title ?? `Fly-out ${n}`).slice(0, 60) }] };
+  if (cells.length) state.flyouts = { ...st.flyouts, [id]: [...cells] };
+  return { state, id };
+}
+
+/** A fly-out of your own renamed. */
+export function withFlyoutTitle(st: ToolboxState, id: string, title: string): ToolboxState {
+  const t = title.trim().slice(0, 60);
+  if (!t || !st.ownFlyouts?.some((f) => f.id === id)) return st;
+  return { ...st, ownFlyouts: st.ownFlyouts.map((f) => (f.id === id ? { ...f, title: t } : f)) };
+}
+
+/** A fly-out of your own deleted: gone from every toolbox, with its layout. */
+export function withoutFlyout(st: ToolboxState, id: string): ToolboxState {
+  if (!st.ownFlyouts?.some((f) => f.id === id)) return st;
+  const key = `pal:${id}`;
+  const out: ToolboxState = { ...st, ownFlyouts: st.ownFlyouts.filter((f) => f.id !== id), custom: st.custom.filter((k) => k !== key) };
+  if (!out.ownFlyouts!.length) delete out.ownFlyouts;
+  if (st.items) out.items = Object.fromEntries(Object.entries(st.items).map(([b, l]) => [b, l.filter((k) => k !== key)]));
+  if (st.grids) out.grids = Object.fromEntries(Object.entries(st.grids).map(([b, g]) => [b, { ...g, cells: g.cells.map((k) => (k === key ? null : k)) }]));
+  if (st.flyouts) { const f = { ...st.flyouts }; delete f[id]; out.flyouts = f; }
+  if (st.flyGrids) { const f = { ...st.flyGrids }; delete f[id]; out.flyGrids = f; }
+  return out;
+}
+
 /** Every toolbox there is now (the app's, less deleted ones, then your own), in the order they are listed. */
 export function boxIds(st: ToolboxState): string[] {
   const ids = [...TOOLBOX_IDS.filter((id) => !st.removed?.includes(id)), ...(st.own ?? []).map((b) => b.id)];
@@ -393,8 +445,12 @@ export function inserted(list: readonly string[], key: string, at: number): stri
   return n;
 }
 
-/** Where a toolbox dropped at (x, y) goes: a dock when near an edge of the drawing, else floating there. */
-export function dropTarget(x: number, y: number, work: { left: number; top: number; right: number; bottom: number }, edge = 44): Dock {
+/**
+ * Where a toolbox dropped at (x, y) goes: a dock when near an edge of the drawing, else floating there.
+ * With `free` (Ctrl held) it always floats, so it can sit right at an edge.
+ */
+export function dropTarget(x: number, y: number, work: { left: number; top: number; right: number; bottom: number }, edge = 44, free = false): Dock {
+  if (free) return 'float';
   if (x < work.left + edge) return 'left';
   if (x > work.right - edge) return 'right';
   if (y < work.top + edge) return 'top';
@@ -501,6 +557,7 @@ export class Toolboxes {
         document.body.append(f);
         f.style.left = `${place.x}px`;
         f.style.top = `${place.y}px`;
+        if (place.corner) this.toCorner(f);
       } else {
         f.style.left = f.style.top = '';
         this.docks[place.dock].append(f);
@@ -514,6 +571,13 @@ export class Toolboxes {
     }
     this.keepOnScreen();
     this.hooks.rendered?.();
+  }
+
+  /** Put a floating toolbox at the top right of the drawing (where the side panel starts). */
+  private toCorner(f: HTMLElement): void {
+    const w = this.hooks.work().getBoundingClientRect();
+    f.style.left = `${Math.max(w.left, Math.round(w.right - f.offsetWidth - 6))}px`;
+    f.style.top = `${Math.round(w.top + 6)}px`;
   }
 
   /** Show or hide a toolbox (View > Toolboxes). */
@@ -589,7 +653,7 @@ export class Toolboxes {
     f.setAttribute('aria-label', def.title);
     const head = document.createElement('div');
     head.className = 'tb-head';
-    head.title = 'Drag to move: to an edge of the drawing to dock it, anywhere else to float. Right-click for more.';
+    head.title = 'Drag to move: to an edge of the drawing to dock it, anywhere else to float. Hold Ctrl to float it at an edge. Right-click for more.';
     const grip = document.createElement('span');
     grip.className = 'tb-grip';
     grip.textContent = '⋮⋮';
@@ -720,7 +784,7 @@ export class Toolboxes {
         else if (what === 'customize') this.hooks.customize(def.id);
         else if (DOCKS.includes(what as Dock)) {
           const r = this.frames.get(def.id)?.getBoundingClientRect();
-          this.place(def.id, what === 'float' && r ? { dock: 'float', x: Math.round(r.left + 24), y: Math.round(r.top + 24) } : { dock: what as Dock });
+          this.place(def.id, what === 'float' && r ? { dock: 'float', x: Math.round(r.left + 24), y: Math.round(r.top + 24), corner: undefined } : { dock: what as Dock, corner: undefined });
         }
       },
     });
@@ -753,7 +817,8 @@ export class Toolboxes {
       f.style.left = `${m.clientX - dx}px`;
       f.style.top = `${m.clientY - dy}px`;
       const w = work.getBoundingClientRect();
-      target = dropTarget(m.clientX, m.clientY, w);
+      // (Ctrl held: it floats wherever it is let go, even at an edge)
+      target = dropTarget(m.clientX, m.clientY, w, undefined, m.ctrlKey || m.metaKey);
       for (const [d, el] of Object.entries(this.docks)) el.classList.toggle('drop', d === target);
     };
     const up = () => {
@@ -764,7 +829,7 @@ export class Toolboxes {
       f.classList.remove('dragging');
       if (!moved) return;
       const fr = f.getBoundingClientRect();
-      this.place(id, target === 'float' ? { dock: 'float', x: Math.round(fr.left), y: Math.round(fr.top) } : { dock: target });
+      this.place(id, target === 'float' ? { dock: 'float', x: Math.round(fr.left), y: Math.round(fr.top), corner: undefined } : { dock: target, corner: undefined });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -773,8 +838,10 @@ export class Toolboxes {
 
   /** Floating toolboxes stay inside the window when it gets smaller. */
   private keepOnScreen(): void {
-    for (const f of this.frames.values()) {
+    const st = this.hooks.get();
+    for (const [id, f] of this.frames) {
       if (!f.classList.contains('floating') || !f.isConnected) continue;
+      if (st.places[id]?.corner) { this.toCorner(f); continue; }
       const r = f.getBoundingClientRect();
       const x = Math.max(0, Math.min(r.left, innerWidth - Math.min(r.width, innerWidth))), y = Math.max(0, Math.min(r.top, innerHeight - 40));
       if (x !== r.left) f.style.left = `${x}px`;

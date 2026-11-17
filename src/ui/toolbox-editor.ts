@@ -10,9 +10,9 @@
 
 import {
   boxGrid, boxIds, boxTitle, isEditable, isOwnBox, KEEP, MAIN_COLS, overflowOf, withBoxesRestored, withBoxMoved, withFlyGrid,
-  withGrid, withItemsReset, withNewBox, withoutBox, withOverflow, withTitle, type Overflow, type Pickable, type ToolboxState,
+  withGrid, withItemsReset, withNewBox, withoutBox, withOverflow, withTitle, type Overflow, type Pickable, type ToolboxState, isOwnFlyout, withFlyoutTitle, withNewFlyout, withoutFlyout,
 } from './toolboxes';
-import { added, cutOff, emptied, GRID_PRESETS, gridItems, MAX_COLS, MAX_ROWS, placed, resized, withLine, type Grid } from './toolbox-grid';
+import { added, cutOff, emptied, emptyGrid, GRID_PRESETS, gridItems, MAX_COLS, MAX_ROWS, placed, resized, withLine, type Grid } from './toolbox-grid';
 import { inside } from './tile-drag';
 import { choose } from './keep-ui';
 
@@ -28,7 +28,7 @@ export interface ToolboxEditorHooks {
   title(id: string): string;
   /** What is in one of the app's toolboxes as it comes. */
   given(id: string): readonly string[];
-  /** A fly-out palette's name; null when its tools can't be changed. */
+  /** A fly-out palette's name; null when its tools can't be changed. A fly-out of your own is here too. */
   palette(name: string): { title: string } | null;
   /** A fly-out's tools on their grid now (tool names). */
   flyGrid(name: string): Grid;
@@ -99,6 +99,7 @@ export class ToolboxEditor {
           <div class="tbe-name">
             <label>Name <input type="text" maxlength="60" /></label>
             <label class="check"><input type="checkbox" data-act="shown" /> Shown</label>
+            <button type="button" data-act="newfly" title="A new fly-out of your own in this toolbox: one button that opens a set of tools and commands. To turn a button into a fly-out, point at it and click the corner mark (or press F on it)">New Fly-out</button>
           </div>
           <div class="tbe-crumb" hidden></div>
           <div class="tbe-size">
@@ -150,6 +151,7 @@ export class ToolboxEditor {
     this.els.name.addEventListener('change', () => this.change((s) => withTitle(s, this.box, this.els.name.value)));
     this.els.shown.addEventListener('change', () => this.change((s) => ({ ...s, places: { ...s.places, [this.box]: { ...s.places[this.box], shown: this.els.shown.checked } } })));
     q('[data-act=new]').addEventListener('click', () => this.newBox());
+    q('[data-act=newfly]').addEventListener('click', () => this.newFlyout(null));
     this.els.up.addEventListener('click', () => this.change((s) => withBoxMoved(s, this.box, -1)));
     this.els.down.addEventListener('click', () => this.change((s) => withBoxMoved(s, this.box, 1)));
     this.els.del.addEventListener('click', () => this.deleteBox());
@@ -251,12 +253,12 @@ export class ToolboxEditor {
 
   /** A cell's button as a key ("tool:…" in a fly-out). */
   private keyOf(cell: string): string {
-    return this.folder ? `tool:${cell}` : cell;
+    return this.folder ? (cell.startsWith('cmd:') ? cell : `tool:${cell}`) : cell;
   }
 
   /** What goes in a cell for a key (a fly-out's cells hold tool names). */
   private cellOf(key: string): string {
-    return this.folder ? key.slice(5) : key;
+    return this.folder ? (key.startsWith('tool:') ? key.slice(5) : key) : key;
   }
 
   /** The keys in the grid now. */
@@ -327,6 +329,7 @@ export class ToolboxEditor {
     jiggle.checked = st.jiggle !== false;
     const editable = isEditable(this.box);
     reset.hidden = !editable;
+    this.d!.querySelector<HTMLElement>('[data-act=newfly]')!.hidden = !!this.folder;
     reset.textContent = this.folder ? 'Reset This Fly-out' : isOwnBox(this.box) ? 'Empty This Toolbox' : 'Reset This Toolbox';
     this.d!.classList.toggle('still', st.jiggle === false);
     this.drawCrumb();
@@ -347,6 +350,23 @@ export class ToolboxEditor {
     const t = document.createElement('span');
     t.textContent = `${this.hooks.palette(this.folder)?.title ?? ''} fly-out, as it opens: drag its tools from cell to cell, in from the left, or out to remove them`;
     crumb.append(back, t);
+    // a fly-out of your own: its name, and Delete
+    if (isOwnFlyout(this.folder)) {
+      const folder = this.folder;
+      const name = document.createElement('input');
+      name.type = 'text';
+      name.maxLength = 60;
+      name.value = this.hooks.palette(folder)?.title ?? '';
+      name.setAttribute('aria-label', 'Fly-out name');
+      name.title = 'The fly-out’s name (in its tooltip)';
+      name.addEventListener('change', () => this.change((s) => withFlyoutTitle(s, folder, name.value)));
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = 'Delete Fly-out';
+      del.title = 'Delete this fly-out from every toolbox (Undo brings it back)';
+      del.addEventListener('click', () => { this.folder = null; this.change((s) => withoutFlyout(s, folder)); this.say('Deleted the fly-out.'); });
+      crumb.replaceChildren(back, name, del);
+    }
   }
 
   // ------------------------------------------------------------ the toolbox, cell by cell
@@ -409,7 +429,8 @@ export class ToolboxEditor {
     } else {
       const key = this.keyOf(k);
       const it = this.hooks.describe(key);
-      cell.title = `${it.label}. Drag to another cell to swap, or out to remove${key.startsWith('pal:') ? '; click to lay out its tools' : ''}. Ctrl+arrow keys move it; Delete removes it.`;
+      const single = !this.folder && (key.startsWith('tool:') || key.startsWith('cmd:'));
+      cell.title = `${it.label}. Drag to another cell to swap, or out to remove${key.startsWith('pal:') ? '; click to lay out its tools' : ''}. Ctrl+arrow keys move it; Delete removes it${single ? '; F turns it into a fly-out' : ''}.`;
       cell.setAttribute('aria-label', `${it.label}, row ${r}, column ${c}`);
       const t = document.createElement('div');
       t.className = 'tbe-tile' + (key.startsWith('pal:') ? ' folder' : '');
@@ -429,6 +450,17 @@ export class ToolboxEditor {
       x.addEventListener('pointerdown', (e) => e.stopPropagation());
       x.addEventListener('click', () => this.remove(i));
       t.append(wig, x);
+      if (single) {
+        const mk = document.createElement('button');
+        mk.type = 'button';
+        mk.className = 'tbe-mk';
+        mk.title = `Turn ${it.label} into a fly-out, to add more tools or commands behind this button`;
+        mk.setAttribute('aria-label', mk.title);
+        mk.tabIndex = -1;
+        mk.addEventListener('pointerdown', (e) => e.stopPropagation());
+        mk.addEventListener('click', () => this.newFlyout(i));
+        t.append(mk);
+      }
       cell.append(t);
       cell.addEventListener('pointerdown', (e) => this.press(e, key, i, cell));
     }
@@ -441,7 +473,9 @@ export class ToolboxEditor {
     const box = document.createElement('div');
     box.className = 'tbe-fly';
     const first = gridItems(this.hooks.flyGrid(palette))[0];
-    box.innerHTML = (first && this.hooks.describe(`tool:${first}`).icon) ?? '';
+    const it = first ? this.hooks.describe(first.startsWith('cmd:') ? first : `tool:${first}`) : null;
+    if (it?.icon) box.innerHTML = it.icon;
+    else if (it) { box.classList.add('word'); box.textContent = initials(it.label); }
     const mark = document.createElement('span');
     mark.className = 'tbe-fly-mark';
     box.append(mark);
@@ -478,10 +512,40 @@ export class ToolboxEditor {
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
       this.remove(i);
+    } else if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey && !this.folder && /^(tool|cmd):/.test(g.cells[i] ?? '')) {
+      e.preventDefault();
+      this.newFlyout(i);
     } else if ((e.key === 'Enter' || e.key === ' ') && g.cells[i]?.startsWith('pal:') && !this.folder) {
       e.preventDefault();
       this.openFolder(g.cells[i]!.slice(4));
     }
+  }
+
+  /**
+   * A fly-out of your own in this toolbox: empty in the first free cell (`at` null), or made from
+   * the button in cell `at`, which becomes its first tool. It opens, to drag more in.
+   */
+  private newFlyout(at: number | null): void {
+    if (this.folder) { this.folder = null; }
+    if (!isEditable(this.box)) { this.say('Pick or make a toolbox you can put buttons in (New makes one).'); return; }
+    const g = this.grid();
+    const from = at === null ? null : g.cells[at];
+    if (at !== null && !/^(tool|cmd):/.test(from ?? '')) return;
+    // (three columns across to start with, as the app's own fly-outs)
+    const first = from ? (from.startsWith('tool:') ? from.slice(5) : from) : null;
+    const made = withNewFlyout(this.hooks.get());
+    made.state = withFlyGrid(made.state, made.id, { ...emptyGrid(3, 1), cells: [first, null, null] });
+    const key = `pal:${made.id}`;
+    const cells = [...g.cells];
+    let grid: Grid;
+    if (at !== null) { cells[at] = key; grid = { ...g, cells }; }
+    else grid = added(g, key);
+    const box = this.box;
+    this.change(() => withGrid(made.state, box, grid));
+    this.folder = made.id;
+    this.draw();
+    this.focusCell(0);
+    this.say(from ? `${this.hooks.describe(from).label} is now a fly-out: drag more tools or commands in from the left.` : 'A new fly-out: drag tools or commands in from the left. It shows in the toolbox once it holds something.');
   }
 
   private openFolder(palette: string): void {
@@ -500,7 +564,7 @@ export class ToolboxEditor {
     const inBox = new Set(isEditable(this.box) ? this.keys() : []);
     list.replaceChildren();
     for (const g of this.cat) {
-      const items = g.items.filter((it) => (!q || it.label.toLowerCase().includes(q) || g.name.toLowerCase().includes(q)) && (!this.folder || it.key.startsWith('tool:')));
+      const items = g.items.filter((it) => (!q || it.label.toLowerCase().includes(q) || g.name.toLowerCase().includes(q)) && (!this.folder || it.key.startsWith('tool:') || it.key.startsWith('cmd:')));
       if (!items.length) continue;
       const shut = !q && this.shut.has(g.name);
       const head = document.createElement('button');
@@ -549,7 +613,7 @@ export class ToolboxEditor {
   /** Whether a key can go in the grid showing (say why not). */
   private fits(key: string): boolean {
     if (!isEditable(this.box)) { this.say('Pick or make a toolbox you can put buttons in (New makes one).'); return false; }
-    if (this.folder && !key.startsWith('tool:')) { this.say('A fly-out holds drawing tools only.'); return false; }
+    if (this.folder && !/^(tool|cmd):/.test(key)) { this.say('A fly-out holds drawing tools and commands.'); return false; }
     return true;
   }
 
@@ -610,7 +674,7 @@ export class ToolboxEditor {
       over = hit && board.contains(hit) ? hit : null;
       // over a fly-out's middle, a tool goes inside it
       const k = over ? this.grid().cells[Number(over.dataset.i)] : null;
-      into = !!over && !this.folder && key.startsWith('tool:') && !!k?.startsWith('pal:') && inside(over, m.clientX, m.clientY, 0.22);
+      into = !!over && !this.folder && /^(tool|cmd):/.test(key) && !!k?.startsWith('pal:') && inside(over, m.clientX, m.clientY, 0.22);
       light(true);
       ghost.classList.toggle('removing', out && from !== null);
     };
@@ -643,7 +707,7 @@ export class ToolboxEditor {
     const pal = this.hooks.palette(palette);
     if (!pal) { this.say('That fly-out holds custom templates only.'); return; }
     const fg = this.hooks.flyGrid(palette);
-    const tool = key.slice(5);
+    const tool = key.startsWith('tool:') ? key.slice(5) : key;
     if (fg.cells.includes(tool)) { this.say(`${this.hooks.describe(key).label} is in that fly-out already.`); return; }
     this.change((s) => {
       let n = withFlyGrid(s, palette, added(fg, tool));
