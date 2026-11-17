@@ -3011,6 +3011,8 @@ dialog.settings-window { max-width: none; }
 .rb-fold-name { display: block; }
 .ribbon .rb-style.rb-gal-out { display: none; }
 .rb-group.rb-folded > :not(.rb-fold-btn) { display: none; }
+/* (a folded group that had first stepped down to small buttons: its row's grid would show it again) */
+.rb-group.rb-folded:not(.rb-popped) > .rb-row { display: none; }
 .rb-group.rb-folded.rb-popped > .rb-row { display: flex; position: fixed; z-index: 60; left: var(--pop-x); top: var(--pop-y); max-width: calc(100vw - 8px); padding: 6px 8px;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-tab); box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); }
 .rb-group.rb-folded > .rb-launch { display: none; }
