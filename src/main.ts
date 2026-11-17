@@ -8252,6 +8252,14 @@ function loadSiMode(): Promise<SiMode> {
       },
       smiles: (mol) => chem.molToSmiles(mol),
       editStructure: (contents, title, done) => editCellStructure(contents, title, done, SI_STYLE),
+      // a table cell's picture: the drawing as SVG, and as CDXML beside it to draw it again
+      drawingFiles: (d) => {
+        const drawing = d instanceof Doc ? d : structureDoc(d, SI_STYLE);
+        const svg = drawingSvg(drawing, null);
+        return svg ? { svg, cdxml: writeCdxml(drawing, { name: 'picture.cdxml', textMeasure: measureText }) } : null;
+      },
+      contentsOfCdxml: (text) => { try { return readCdxml(text).doc.contents(); } catch { return null; } },
+      readClipboard: (e) => (e ? readPasteEvent(e) : nativeClipboard ? readNativeClipboard() : readWebClipboard()),
       library: async () => {
         const lib = await useLibrary();
         return { now: lib.now, change: (f) => lib.change(f) };

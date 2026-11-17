@@ -186,7 +186,7 @@ class Compiler {
   readonly targets: SiTarget[] = [];
   private readonly styles: Record<string, NamedStyle>;
   private readonly report: IdReport;
-  private readonly labels: Labels;
+  readonly labels: Labels;
   private readonly rank: number;
   private readonly excluded: Set<string>;
   private readonly leave: Leave;
@@ -1111,6 +1111,17 @@ function toReference(r: Json): Reference {
 async function dictionaryWords(p: SiProject): Promise<Set<string>> {
   const t = (await p.folder.readText('dictionary.txt')) ?? '';
   return new Set(t.split(/\r?\n/).map((w) => w.trim().toLowerCase()).filter((w) => w && !w.startsWith('#')));
+}
+
+/**
+ * The labels the compiled SI gives its tables, figures and schemes ("Table S1"), by their ids, as
+ * a mention of one shows them in the SI tab. Only the files are read (no structures are worked
+ * out), so it is quick.
+ */
+export async function objectLabels(p: SiProject): Promise<Map<string, string>> {
+  const c = new Compiler(p, { contentsOf: () => null, sizeOf: () => null, facts: async (m) => m.map(() => null) }, new Set());
+  await c.prepare();
+  return c.labels.byId;
 }
 
 /** Compile an SI project into a document. */

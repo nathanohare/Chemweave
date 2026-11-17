@@ -4620,6 +4620,8 @@ dialog.analysis-settings .ask-form { display: block; }
    the drawing tools and the side panel come back only while a structure is drawn */
 body.si-mode #canvas-host { display: none; }
 body.si-mode:not(.floating-drawing) :is(#dock-left, #dock-right) { display: none; }
+/* (a toolbox floated out of the docks stays with the drawing modes, as the docks do) */
+body.si-mode:not(.floating-drawing) .toolbox.floating { display: none; }
 body.si-mode.floating-drawing #canvas-host { display: block; }
 body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 #si-pane { grid-area: host; display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); min-width: 0; min-height: 0; background: var(--surround); }
@@ -4766,6 +4768,26 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-rich .si-h1, .si-rich .si-h2, .si-rich .si-h3 { font-weight: 700; }
 .si-rich .si-h1 { font-size: 1.2em; }
 .si-rich .si-object { color: var(--muted); font-style: italic; }
+.si-rich .si-object[data-table] { cursor: pointer; }
+/* an SI table's editor (Custom sections): toolbars, the grid as it prints (rules under the header and the table), label, footnotes */
+.si-table-card { display: flex; flex-direction: column; gap: 4px; }
+.si-tbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.si-tgroup { display: inline-flex; gap: 2px; }
+.si-tlead { font-size: var(--fs-sm); color: var(--muted); }
+.si-tbar input.si-num, .si-tbar input.si-num[type="number"] { width: 52px; min-width: 0; }
+.si-label-input { width: 160px; }
+.si-tgrid { border-collapse: collapse; margin: 4px 0; border-top: 1.5px solid var(--text); border-bottom: 1.5px solid var(--text); font-size: var(--fs-sm); }
+.si-tgrid td { border: 1px dashed var(--line); padding: 2px 6px; vertical-align: top; min-width: 48px; }
+.si-tgrid tr.si-thead-last td { border-bottom: 1px solid var(--text); }
+.si-tgrid tr.si-thead td { font-weight: 600; }
+.si-tgrid td:focus-within { outline: 1.5px solid var(--accent); outline-offset: -1px; }
+.si-tgrid td.si-tsel { background: var(--accent-soft); }
+.si-tgrid .si-rich { min-height: 18px; border: 0; padding: 0; background: transparent; }
+.si-tpic { text-align: center; }
+.si-tpic img { max-width: 220px; max-height: 140px; }
+.si-tpic.si-missing { color: var(--warn, #b54); font-size: var(--fs-sm); }
+.si-tbottom { display: flex; flex-direction: column; gap: 4px; }
+.si-tnotes .si-rich { min-height: 22px; }
 .si-mention, .si-cite { padding: 0 3px; border-radius: 3px; background: var(--accent-soft); color: var(--accent); font-weight: 700; white-space: nowrap; user-select: all; }
 .si-cite { font-weight: 500; }
 .si-mention-menu { position: fixed; z-index: 50; min-width: 200px; max-width: 360px; padding: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }

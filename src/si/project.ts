@@ -547,6 +547,43 @@ export class SiProject {
     await this.folder.writeText(join(s.folder, TEXT_CONTENT_FILE), text);
   }
 
+  /** A table of a Custom section's text (tables/t-….json), null when it is missing or can't be read. */
+  async readTable(s: SiSection, id: string): Promise<Json | null> {
+    const got = await this.readJson(join(s.folder, 'tables', `${id}.json`));
+    return got.ok && got.data && typeof got.data === 'object' && !Array.isArray(got.data) ? (got.data as Json) : null;
+  }
+  async writeTable(s: SiSection, table: Json): Promise<void> {
+    this.checkWritable();
+    await this.writeJson(join(s.folder, 'tables', `${String(table.id)}.json`), table);
+  }
+
+  /** A file of a section's (a picture in images/), or null. */
+  readSectionFile(s: SiSection, rel: string): Promise<Uint8Array | null> {
+    return this.folder.readBytes(join(s.folder, rel));
+  }
+
+  /**
+   * Put a picture in a section's images/ folder under a name no picture there has, whatever its
+   * extension (as SI Assistant names them), with its originals beside it under the same name
+   * (`others`: extension → bytes, e.g. a drawing's CDXML); gives its path from the section's folder.
+   */
+  async addSectionPicture(s: SiSection, name: string, bytes: Uint8Array, others: Record<string, Uint8Array> = {}): Promise<string> {
+    this.checkWritable();
+    const clean = safeFilename(name);
+    const dot = clean.lastIndexOf('.');
+    const stem = dot > 0 ? clean.slice(0, dot) : clean, ext = dot > 0 ? clean.slice(dot) : '';
+    const taken = new Set((await this.folder.list(join(s.folder, 'images'), ['png', 'jpg', 'jpeg', 'svg', 'pdf', 'emf', 'tif', 'tiff', 'gif', 'bmp', 'cdxml', 'cdx'])).map((f) => {
+      const n = f.slice(f.lastIndexOf('/') + 1);
+      const d = n.lastIndexOf('.');
+      return (d > 0 ? n.slice(0, d) : n).toLowerCase();
+    }));
+    let pick = stem;
+    for (let n = 2; taken.has(pick.toLowerCase()); n++) pick = `${stem} (${n})`;
+    await this.folder.writeBytes(join(s.folder, 'images', pick + ext), bytes);
+    for (const [e, b] of Object.entries(others)) await this.folder.writeBytes(join(s.folder, 'images', `${pick}.${e}`), b);
+    return `images/${pick}${ext}`;
+  }
+
   async setIdTable(sectionId: string, ids: string[]): Promise<void> {
     const s = this.dataSection(sectionId);
     s.data.id_table = ids.map((i) => String(i).trim());

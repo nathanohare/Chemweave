@@ -8,17 +8,20 @@
 // the Compound Library; references come from My Library.
 
 import type { Tab } from '../workspace';
-import type { Contents } from '../model';
+import type { Contents, Doc } from '../model';
 import type { DocText } from '../document/document';
-import { compileSi, COVER_SPACINGS, coverSpacing } from '../si/compile-doc';
+import { compileSi, objectLabels, COVER_SPACINGS, coverSpacing } from '../si/compile-doc';
 import { DEFAULTS as SPECTRA_DEFAULTS, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, TYPE_LABELS, type Json, type SiCompound, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
 import { ALL_FIELDS, NUCLEI, fieldDef, learnedChoices, nucleusLabel, partText, CORE_FIELDS, LIBRARY_FIELDS, type FieldDef, type Part, type FieldEntry } from '../si/fields';
-import { CITE, MENTION } from '../si/markup';
+import { CITE, MENTION, parseMarkup } from '../si/markup';
 import { newId } from '../si/ids';
 import { SiRichBox } from './si-rich';
+import { SiTableEditor } from './si-table';
+import { newTable } from '../si/tables';
+import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
 import { allWarnings, compoundHrms, hrmsSpecies, isDismissed, monoisotopic, outOfTolerance, ID_KEY, type SiWarning } from '../si/checks';
 import { adductDisplay, sameFormula, speciesLabel, ChemError, type MolFacts } from '../si/chem';
@@ -41,6 +44,12 @@ export interface SiModeHost {
   smiles(molfile: string): Promise<string | null>;
   /** Draw a structure with the drawing tools; `done` gets it (null: cancelled). */
   editStructure(contents: Contents | null, title: string, done: (c: Contents | null) => void): void;
+  /** A drawing as an SVG picture and as CDXML (to draw it again); null when empty. */
+  drawingFiles(d: Contents | Doc): { svg: string; cdxml: string } | null;
+  /** A CDXML drawing as a drawing (null when it can't be read). */
+  contentsOfCdxml(text: string): Contents | null;
+  /** What is on the clipboard: from a paste event, or read (a Paste button). */
+  readClipboard(e?: ClipboardEvent): Promise<Pasted>;
   /** The library (loaded): what it holds now, and a change to it. */
   library(): Promise<{ now: LibraryData; change(f: (lib: LibraryData) => LibraryData): void }>;
   /** Files chosen to add (spectra, other files). */
@@ -154,6 +163,10 @@ export class SiMode {
   private tab: Tab | null = null;
   private report: IdReport | null = null;
   private boxes: SiRichBox[] = [];
+  /** Tables', figures' and schemes' labels ("Table S1"), as the compiled SI numbers them. */
+  private objLabels = new Map<string, string>();
+  private labelsRead = false;
+  private tables: SiTableEditor[] = [];
   private shownKey = '';
   private analyzed = new Map<string, { formula: string; mw: number; exact: number } | null>();
   /** Compounds' structures as last read (compound id → molfile), and what the checks read from each molfile. */
@@ -213,7 +226,7 @@ export class SiMode {
   }
 
   /** Save what is being typed. */
-  commitAll(): void { for (const b of this.boxes) b.commit(); }
+  commitAll(): void { for (const b of this.boxes) b.commit(); for (const t of this.tables) t.commit(); }
 
   /** Everything again: the tree, the page, the status bar. */
   refresh(): void {
@@ -444,9 +457,24 @@ export class SiMode {
 
   private relabel(): void {
     for (const b of this.boxes) b.relabel();
+    for (const t of this.tables) t.relabel();
     // the header's ID and the completion counts
     const pick = this.pick;
     if (pick.kind === 'compound') this.renderPage();
+  }
+
+  /** Number the tables, figures and schemes again (after the page is drawn), and show mentions of them with their labels. */
+  private async readLabels(): Promise<void> {
+    const p = this.project;
+    if (!p || this.labelsRead) return;
+    this.labelsRead = true;
+    try {
+      const got = await objectLabels(p);
+      if (this.project !== p) return;
+      this.objLabels = got;
+      for (const b of this.boxes) b.relabel();
+      for (const t of this.tables) { t.relabel(); t.setTitle(got.get(t.id) ?? ''); }
+    } catch { /* (the kinds' names show instead) */ } finally { this.labelsRead = false; }
   }
 
   private idOf(c: SiCompound): string { return this.report ? displayId(this.report, c.id) : 'ID?'; }
@@ -458,7 +486,11 @@ export class SiMode {
     if (ref.startsWith(MENTION)) {
       const id = ref.slice(MENTION.length);
       const c = p.compounds.find((x) => x.id === id);
-      return c ? this.idOf(c) : id.startsWith('c-') ? '(deleted compound)' : id;
+      if (c) return this.idOf(c);
+      // a table's, figure's or scheme's label, as the compiled SI numbers them
+      const kind = OBJECT_WORDS[id.slice(0, 2)];
+      if (kind) return this.objLabels.get(id) ?? kind;
+      return id.startsWith('c-') ? '(deleted compound)' : id;
     }
     if (ref.startsWith(CITE)) {
       const ids = ref.slice(CITE.length).split(',');
@@ -469,7 +501,9 @@ export class SiMode {
 
   private mentionable = (): { id: string; label: string; text: string }[] => {
     const p = this.project;
-    return p ? p.compounds.map((c) => ({ id: c.id, label: this.idOf(c), text: compoundName(c) })) : [];
+    if (!p) return [];
+    const objects = [...this.objLabels].filter(([id]) => OBJECT_WORDS[id.slice(0, 2)]).map(([id, label]) => ({ id, label, text: OBJECT_WORDS[id.slice(0, 2)].toLowerCase() }));
+    return [...p.compounds.map((c) => ({ id: c.id, label: this.idOf(c), text: compoundName(c) })), ...objects];
   };
 
   private status(): void {
@@ -576,6 +610,7 @@ export class SiMode {
   private renderPage(): void {
     this.commitAll();
     this.boxes = [];
+    this.tables = [];
     const p = this.project!;
     const pick = this.pick;
     const out = el('div', 'si-sheet');
@@ -594,6 +629,7 @@ export class SiMode {
     else if (pick.kind === 'warnings') this.warningsPage(out);
     if (this.pick.kind === 'project') this.projectPage(out);
     this.page.replaceChildren(out);
+    void this.readLabels();
   }
 
   private projectPage(out: HTMLElement): void {
@@ -662,22 +698,80 @@ export class SiMode {
         for (const gp of gps) g.append(el('p', '', `${partText(gp.name)}${gp.title ? ': ' + partText(gp.title) : ''}`));
         out.append(g);
       }
-    } else if (s.type === 'text') {
-      const t = el('div', 'si-card');
-      const th = el('h3', 'si-sub', 'Text');
-      addInfo(th, 'The section’s text. Lines starting with # are headings. Mention a compound with @ (it prints as its ID).');
-      t.append(th);
-      out.append(t);
-      void p.readSectionText(s).then((text) => {
-        const box = new SiRichBox(text, { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeSectionText(s, v)) }, true, 'Type the section’s text');
-        this.boxes.push(box);
-        t.append(box.el);
-      });
-    } else if (s.type === 'spectra') this.spectraCard(out, s);
+    } else if (s.type === 'text') this.textCard(out, s); else if (s.type === 'spectra') this.spectraCard(out, s);
     else if (s.type === 'xray') this.xrayCard(out, s);
     else {
       out.append(el('p', 'muted si-note', `${TYPE_LABELS[s.type] ?? s.type} sections are edited in Chem SI Assistant for now; they are kept as they are here.`));
     }
+  }
+
+  /**
+   * A Custom section's text, and an editor for each of its tables (in the text's order). New
+   * Table adds one at the end of the text, its caption on the line under it; double-clicking a
+   * table in the text goes to its editor.
+   */
+  private textCard(out: HTMLElement, s: SiSection): void {
+    const p = this.project!;
+    const t = el('div', 'si-card');
+    const th = el('div', 'si-head-row');
+    const h = el('h3', 'si-sub', 'Text');
+    addInfo(h, 'The section’s text. Lines starting with # are headings. Mention a compound with @ (it prints as its ID). A table shows as its caption here, and is edited under the text.');
+    const add = el('button', 'si-btn', 'New Table');
+    add.type = 'button';
+    add.title = 'Add a table at the end of the text (3 × 3, the first row its header); type its caption in the text';
+    add.addEventListener('click', () => void this.newTable(s));
+    th.append(h, add);
+    t.append(th);
+    out.append(t);
+    void p.readSectionText(s).then(async (text) => {
+      const box = new SiRichBox(text, { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeSectionText(s, v), false) }, true, 'Type the section’s text');
+      this.boxes.push(box);
+      t.append(box.el);
+      const ids = parseMarkup(text).flatMap((x) => (x.table ? [x.table] : []));
+      const editors = ids.map((id, i) => new SiTableEditor(this.tableHost(s), id, this.objLabels.get(id) ?? `Table ${i + 1} of the section`));
+      this.tables.push(...editors);
+      for (const e of editors) { out.append(e.el); await e.load(); }
+      box.el.addEventListener('dblclick', (e) => {
+        const id = (e.target as HTMLElement).closest<HTMLElement>('[data-table]')?.dataset.table;
+        editors.find((x) => x.id === id)?.focus();
+      });
+    });
+  }
+
+  private tableHost(s: SiSection): ConstructorParameters<typeof SiTableEditor>[0] {
+    const p = this.project!;
+    return {
+      project: p,
+      section: s,
+      flash: (m) => this.host.flash(m),
+      label: this.label,
+      mentionable: this.mentionable,
+      pickFiles: (l, x) => this.host.pickFiles(l, x),
+      editStructure: (c, title, done) => this.host.editStructure(c, title, done),
+      drawingFiles: (d) => this.host.drawingFiles(d),
+      contentsOfCdxml: (x) => this.host.contentsOfCdxml(x),
+      readClipboard: (e) => this.host.readClipboard(e),
+      contentsOf: (m) => this.host.contentsOf(m),
+      pickCompound: async () => {
+        const list = p.compounds.filter((c) => p.hasStructure(c));
+        const [c] = await pickFromList('Compound', list, (x) => this.idOf(x), (x) => compoundName(x), 'No compound has a structure yet.');
+        return c ? { id: c.id, mol: await p.readStructure(c) } : null;
+      },
+    };
+  }
+
+  /** A new table at the end of a Custom section's text. */
+  private async newTable(s: SiSection): Promise<void> {
+    const p = this.project!;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    this.commitAll();
+    const id = newId('t');
+    await this.act(async () => {
+      await p.writeTable(s, newTable(id));
+      const text = (await p.readSectionText(s)).replace(/\s+$/, '');
+      await p.writeSectionText(s, `${text ? text + '\n' : ''}!table{${id}} Caption of the table`);
+    });
+    this.tables.find((x) => x.id === id)?.focus();
   }
 
   /**
@@ -1697,6 +1791,9 @@ function guessSpectrum(name: string): string {
 }
 
 /** Check items in a list (searchable); resolves with those checked (none when cancelled). */
+/** A mention's kind from its id's start, for tables, figures and schemes. */
+const OBJECT_WORDS: Record<string, string> = { 't-': 'Table', 'f-': 'Figure', 'k-': 'Scheme' };
+
 function pickFromList<T>(title: string, items: T[], main: (x: T) => string, sub: (x: T) => string, empty: string): Promise<T[]> {
   return new Promise((resolve) => {
     const d = el('dialog', 'ask si-pick');
