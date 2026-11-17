@@ -17,6 +17,8 @@ import { CITE, MENTION } from '../si/markup';
 import { newId } from '../si/ids';
 import { SiRichBox } from './si-rich';
 import { ask, askChoice } from './ask';
+import { allWarnings, compoundHrms, hrmsSpecies, isDismissed, monoisotopic, outOfTolerance, ID_KEY, type SiWarning } from '../si/checks';
+import { adductDisplay, sameFormula, speciesLabel, ChemError, type MolFacts } from '../si/chem';
 import { addInfo } from './info-tip';
 
 export interface SiModeHost {
@@ -40,9 +42,11 @@ export interface SiModeHost {
   library(): Promise<{ now: LibraryData; change(f: (lib: LibraryData) => LibraryData): void }>;
   /** Files chosen to add (spectra, other files). */
   pickFiles(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array }[]>;
+  /** What the checks need from structures (molfiles): formula, pieces, distinct carbons, H counts. */
+  siFacts(mols: string[]): Promise<(MolFacts | null)[]>;
 }
 
-type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'references' };
+type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'references' } | { kind: 'warnings' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -101,6 +105,9 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Library</div></div>
     <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="warnings" data-ic="check-structure" title="Every automatic warning in the project (HRMS, NMR, yields, spectra, IDs), by compound: dismiss or restore them"><span class="rb-icon">⚠</span>Warnings</button>
+    </div><div class="rb-label">Checks</div></div>
+    <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="add-field" title="Add a field to the compound page (melting point, Rf, IR, optical rotation…), or one of your own">Add Field…</button>
         <button data-si="apply-fields" title="Give every compound of the section the section's fields, in the section's order">Apply Section Fields</button>
@@ -122,6 +129,14 @@ export class SiMode {
   private boxes: SiRichBox[] = [];
   private shownKey = '';
   private analyzed = new Map<string, { formula: string; mw: number; exact: number } | null>();
+  /** Compounds' structures as last read (compound id → molfile), and what the checks read from each molfile. */
+  private mols = new Map<string, string>();
+  private facts = new Map<string, MolFacts | null>();
+  private loadingFacts = false;
+  /** Every warning of each compound (dismissed too), as last worked out. */
+  private warnings = new Map<string, SiWarning[]>();
+  /** Dismissed warnings are listed too (with Restore). */
+  private showDismissed = false;
 
   constructor(private host: SiModeHost) {
     const work = document.querySelector('#work')!;
@@ -178,10 +193,130 @@ export class SiMode {
     const p = this.project;
     if (!p) return;
     this.report = p.idReport();
+    this.check();
     this.renderTree();
     const key = JSON.stringify(this.pick);
     if (key !== this.shownKey) { this.shownKey = key; this.renderPage(); } else this.relabel();
+    this.paintWarnings();
     this.status();
+  }
+
+  // ---------------------------------------------------------------- checks
+
+  /** Work out every compound's warnings again (those whose structure is still being read keep the ones they had). */
+  private check(): void {
+    const p = this.project!;
+    let waiting = false;
+    const seen = new Set<string>();
+    for (const c of p.compounds) {
+      seen.add(c.id);
+      let facts: MolFacts | null = null;
+      if (p.hasStructure(c)) {
+        const mol = this.mols.get(c.id);
+        if (mol === undefined || !this.facts.has(mol)) { waiting = true; continue; }
+        facts = this.facts.get(mol) ?? null;
+      }
+      try { this.warnings.set(c.id, allWarnings(p, c, this.report!, facts)); } catch (e) { console.warn('SI checks failed for', c.id, e); this.warnings.set(c.id, []); }
+    }
+    for (const id of [...this.warnings.keys()]) if (!seen.has(id)) this.warnings.delete(id);
+    if (waiting) void this.loadFacts();
+  }
+
+  /** Read the structures not read yet, and what the checks need from them (off the main thread), then check again. */
+  private async loadFacts(): Promise<void> {
+    if (this.loadingFacts) return;
+    const p = this.project;
+    if (!p) return;
+    this.loadingFacts = true;
+    try {
+      for (const c of p.compounds) if (p.hasStructure(c) && !this.mols.has(c.id)) this.mols.set(c.id, await p.readStructure(c));
+      const todo = [...new Set([...this.mols.values()].filter((m) => !this.facts.has(m)))];
+      if (todo.length) {
+        const got = await this.host.siFacts(todo).catch(() => todo.map(() => null));
+        todo.forEach((m, i) => this.facts.set(m, got[i] ?? null));
+      }
+    } finally {
+      this.loadingFacts = false;
+    }
+    if (this.project === p) this.refresh();
+  }
+
+  /** A compound's structure changed (or the folder was read again): read it again. */
+  private forgetStructure(c?: SiCompound): void {
+    if (c) this.mols.delete(c.id); else this.mols.clear();
+  }
+
+  private activeWarnings(c: SiCompound): SiWarning[] { return (this.warnings.get(c.id) ?? []).filter((w) => !isDismissed(c, w)); }
+  private dismissedWarnings(c: SiCompound): SiWarning[] { return (this.warnings.get(c.id) ?? []).filter((w) => isDismissed(c, w)); }
+  private factsOf(c: SiCompound): MolFacts | null {
+    const mol = this.mols.get(c.id);
+    return mol === undefined ? null : this.facts.get(mol) ?? null;
+  }
+
+  /** One warning: its text, and Dismiss… (or, dismissed, why and Restore). */
+  private warningLine(c: SiCompound, w: SiWarning, field = ''): HTMLElement {
+    const p = this.project!;
+    const dismissed = isDismissed(c, w);
+    const line = el('div', `si-warn${dismissed ? ' dismissed' : ''}`);
+    line.innerHTML = svg('warn', 13);
+    const said = field && !w.message.toLowerCase().startsWith(field.toLowerCase());
+    const text = el('span', 'si-warn-text', (said ? field + ': ' : '') + w.message);
+    line.append(text);
+    if (dismissed) {
+      const d = ((c.data.dismissed ?? {}) as Record<string, Json>)[w.key] ?? {};
+      const why = partText(d.reason).trim();
+      text.title = `Dismissed${partText(d.by) ? ' by ' + partText(d.by) : ''}${partText(d.at) ? ' on ' + partText(d.at).slice(0, 10) : ''}${why ? ': ' + why : ''}`;
+      if (why) line.append(el('span', 'si-warn-why', `(${why})`));
+    }
+    if (!p.readOnly) {
+      const b = el('button', 'si-link', dismissed ? 'Restore' : 'Dismiss…');
+      b.type = 'button';
+      b.title = dismissed ? 'Show this warning again' : 'Hide this warning for this compound (it comes back if the data it is about changes)';
+      b.addEventListener('click', async () => {
+        if (dismissed) { await this.act(() => p.restoreWarning(c, w.key)); return; }
+        const got = await ask('Dismiss Warning', [{ name: 'reason', label: 'Why is this OK? (optional, saved with the project)', value: '', placeholder: 'e.g. rotamers: two signals for one carbon' }], { ok: 'Dismiss', lines: [[w.message, '']] });
+        if (got) await this.act(() => p.dismissWarning(c, w, got.reason));
+      });
+      line.append(b);
+    }
+    return line;
+  }
+
+  /** The warnings on the compound page shown, in place (typing in a field changes them without drawing the page again). */
+  private paintWarnings(): void {
+    const c = this.currentCompound();
+    if (!c || this.pick.kind !== 'compound') return;
+    const list = this.showDismissed ? this.warnings.get(c.id) ?? [] : this.activeWarnings(c);
+    const boxes = new Map([...this.page.querySelectorAll<HTMLElement>('.si-fwarn[data-key]')].map((b) => [b.dataset.key!, b]));
+    const byField = new Map<string, SiWarning[]>();
+    for (const w of list) {
+      const at = boxes.has(w.field) ? w.field : '';
+      byField.set(at, [...(byField.get(at) ?? []), w]);
+    }
+    for (const [key, box] of boxes) {
+      const here = byField.get(key) ?? [];
+      box.replaceChildren(...here.map((w) => this.warningLine(c, w, key === '' ? this.fieldName(c, w.field) : '')));
+      box.hidden = !here.length;
+    }
+    const n = this.dismissedWarnings(c).length;
+    const chip = this.page.querySelector<HTMLButtonElement>('.si-dismissed-chip');
+    if (chip) {
+      chip.hidden = !n;
+      chip.textContent = `${n} dismissed`;
+      chip.setAttribute('aria-pressed', String(this.showDismissed));
+      chip.classList.toggle('on', this.showDismissed);
+    }
+    const calc = this.page.querySelector<HTMLElement>('.si-calc');
+    if (calc) this.paintHrms(c, calc);
+  }
+
+  /** How a field is named in a warning list ("ID" for the compound's ID). */
+  private fieldName(c: SiCompound, key: string): string {
+    if (key === ID_KEY) return 'ID';
+    if (key === 'structure') return 'Structure';
+    const e = fieldsOf(c).find((x) => x.key === key);
+    const def = e ? fieldDef(e) : null;
+    return (def?.label ?? key).replace(/ \(private, never printed\)$/, '');
   }
 
   private relabel(): void {
@@ -218,7 +353,7 @@ export class SiMode {
     const p = this.project;
     if (!p) return;
     const flags = p.compounds.reduce((n, c) => n + Object.keys(flagsOf(c)).length, 0);
-    const warns = this.report ? [...this.report.compoundWarnings.values()].reduce((n, w) => n + w.length, 0) : 0;
+    const warns = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0);
     const s = this.currentSection();
     let lead = p.title;
     if (s?.type === 'data') {
@@ -281,8 +416,9 @@ export class SiMode {
     const compoundRow = (c: SiCompound, depth: number): void => {
       const k = p.completion(c);
       const flagged = Object.keys(flagsOf(c)).length > 0;
-      const warned = (this.report?.compoundWarnings.get(c.id)?.length ?? 0) > 0;
-      const icon = flagged ? `<span class="si-st flag" title="Flagged for checking">${svg('flag')}</span>` : warned ? `<span class="si-st warn" title="${(this.report!.compoundWarnings.get(c.id) ?? []).join(' ').replace(/"/g, '&quot;')}">${svg('warn')}</span>`
+      const active = this.activeWarnings(c);
+      const tip = active.map((w) => w.message).join('\n').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      const icon = flagged ? `<span class="si-st flag" title="Flagged for checking">${svg('flag')}</span>` : active.length ? `<span class="si-st warn" title="${tip}">${svg('warn')}</span>`
         : k.filled === k.total ? `<span class="si-st ok" title="Every required field is filled in">${svg('check')}</span>` : `<span class="si-st" title="Missing: ${k.missing.join(', ')}">${svg('open')}</span>`;
       row(depth, icon, '', { kind: 'compound', id: c.id }, (r) => {
         const t = r.querySelector('.si-row-text')!;
@@ -307,6 +443,8 @@ export class SiMode {
     };
     walk(p.top, 1);
     row(1, svg('refs', 15), `References (${p.references.length})`, { kind: 'references' });
+    const total = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0);
+    row(1, svg('warn', 15), `Warnings (${total})`, { kind: 'warnings' }, (r) => { r.classList.toggle('si-has-warn', total > 0); r.title = 'Every automatic warning in the project, by compound'; });
     this.tree.replaceChildren(...rows);
   }
 
@@ -330,6 +468,7 @@ export class SiMode {
     } else if (pick.kind === 'section') {
       try { this.sectionPage(out, p.section(pick.id)); } catch { this.pick = { kind: 'project' }; }
     } else if (pick.kind === 'references') this.referencesPage(out);
+    else if (pick.kind === 'warnings') this.warningsPage(out);
     if (this.pick.kind === 'project') this.projectPage(out);
     this.page.replaceChildren(out);
   }
@@ -530,8 +669,12 @@ export class SiMode {
     idChip.type = 'button';
     idChip.title = 'Change the compound’s ID (a Manual ID, or the one in its section’s ID table)';
     idChip.addEventListener('click', () => void this.run('manual-id'));
-    chips.append(done, idChip);
-    for (const w of this.report?.compoundWarnings.get(c.id) ?? []) chips.append(el('span', 'si-chip warn', w));
+    const shown = el('button', 'si-chip si-chip-btn si-dismissed-chip');
+    shown.type = 'button';
+    shown.hidden = true;
+    shown.title = 'Show the warnings dismissed for this compound (with Restore), or hide them again';
+    shown.addEventListener('click', () => { this.showDismissed = !this.showDismissed; this.paintWarnings(); });
+    chips.append(done, idChip, shown);
     const buttons = el('div', 'si-tools');
     const edit = el('button', 'si-btn', p.hasStructure(c) ? 'Edit Structure' : 'Draw Structure');
     edit.type = 'button';
@@ -540,8 +683,11 @@ export class SiMode {
     lib.type = 'button';
     lib.addEventListener('click', () => void this.toLibrary([c]));
     buttons.append(edit, lib);
+    const headWarn = el('div', 'si-fwarn si-head-warn');
+    headWarn.dataset.key = '';
+    headWarn.hidden = true;
     info.append(line, facts, buttons);
-    head.append(pic, info, chips);
+    head.append(pic, info, chips, headWarn);
     out.append(head);
     if (p.hasStructure(c)) void this.fillStructure(c, pic, facts);
     else pic.innerHTML = '<span class="muted">Draw<br>structure</span>';
@@ -595,6 +741,7 @@ export class SiMode {
     row.append(lab, body, flag);
     const values = valuesOf(c);
     if (def.kind === 'parts') this.partsEditor(body, c, def);
+    if (def.key === 'hrms') this.hrmsExtra(body, c);
     else if (def.kind === 'richtext' || def.kind === 'notes') {
       if (def.key === 'procedure') this.procedureEditor(body, c);
       else this.textBox(body, c, def.key, def.kind === 'notes' ? 'Private notes (never printed)' : '');
@@ -617,7 +764,130 @@ export class SiMode {
       }
       body.append(chips);
     }
+    const warn = el('div', 'si-fwarn');
+    warn.dataset.key = def.key;
+    warn.hidden = true;
+    body.append(warn);
     return row;
+  }
+
+  // ---------------------------------------------------------------- HRMS
+
+  /** Under the HRMS boxes: M (a salt's piece, or a typed formula) and the calculated m/z with the error. */
+  private hrmsExtra(body: HTMLElement, c: SiCompound): void {
+    const p = this.project!;
+    const value = (): Json => { const v = valuesOf(c).hrms; return v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {}; };
+    const line = el('div', 'si-parts si-hrms-m');
+    const mIs = el('label', 'si-part si-species');
+    mIs.append(el('span', 'si-plabel', 'M is'));
+    const sel = el('select');
+    sel.setAttribute('aria-label', 'M is');
+    sel.addEventListener('change', () => void this.act(() => p.setPart(c, 'hrms', 'species', sel.value), false));
+    mIs.append(sel);
+    const fcell = el('label', 'si-part');
+    fcell.append(el('span', 'si-plabel', 'M formula'));
+    const formula = el('input');
+    formula.value = partText(value().formula);
+    formula.setAttribute('aria-label', 'M formula');
+    formula.title = 'Type M’s formula to use instead of the structure’s (the adduct is still applied). Leave empty to use the structure.';
+    formula.addEventListener('change', () => void this.act(() => p.setPart(c, 'hrms', 'formula', formula.value.trim()), false));
+    fcell.append(formula);
+    line.append(mIs, fcell);
+    const calc = el('div', 'si-calc muted');
+    body.append(line, calc);
+  }
+
+  /** The species choice and the calculated line, from the compound as it is now. */
+  private paintHrms(c: SiCompound, calc: HTMLElement): void {
+    const p = this.project!;
+    const value = ((): Json => { const v = valuesOf(c).hrms; return v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {}; })();
+    const facts = this.factsOf(c);
+    const waiting = p.hasStructure(c) && !this.mols.has(c.id);
+    // M is: only for a structure in pieces (a salt)
+    const sel = calc.parentElement?.querySelector<HTMLSelectElement>('.si-species select');
+    const auto = (() => { try { return hrmsSpecies(facts, { species: value.species ?? '' }); } catch { return null; } })();
+    if (sel) {
+      const cell = sel.closest<HTMLElement>('.si-species')!;
+      cell.hidden = !auto?.choices;
+      if (auto?.choices && auto.automatic) {
+        const opts = [new Option(`Automatic (${auto.automatic[1]})`, ''), ...auto.choices.map(([k, label]) => new Option(label, k))];
+        opts[0].title = 'The largest piece that is not a common counter-ion (halide, BF4⁻, PF6⁻, OTf⁻, NTf2⁻, TFA⁻, BArF⁻, Na⁺, K⁺, NBu4⁺…); the largest piece if all are.';
+        sel.replaceChildren(...opts);
+        sel.value = auto.key;
+      }
+      const input = calc.parentElement?.querySelector<HTMLInputElement>('.si-hrms-m input');
+      if (input) {
+        input.placeholder = auto ? `auto: ${speciesLabel(auto.info)}` : 'e.g. C12H13NO';
+        input.classList.toggle('si-manual', !!partText(value.formula).trim());
+      }
+    }
+    calc.classList.remove('bad');
+    calc.title = '';
+    if (waiting) { calc.textContent = 'Working out the expected m/z…'; return; }
+    let sp;
+    try { sp = hrmsSpecies(facts, value); } catch (e) { calc.textContent = e instanceof ChemError ? e.message : String(e); calc.classList.add('bad'); return; }
+    if (!sp) {
+      calc.textContent = facts?.generic.length ? `The structure has a generic atom (${facts.generic.join(', ')}): type M’s formula to calculate the expected m/z.` : 'Add a structure (or type M’s formula) to calculate the expected m/z.';
+      return;
+    }
+    const [r, problem] = compoundHrms(p, c, facts);
+    if (!r) { calc.textContent = problem || ''; calc.classList.toggle('bad', !!problem); return; }
+    const mono = monoisotopic(r);
+    const adduct = partText(value.adduct) || '[M+H]+';
+    calc.replaceChildren();
+    calc.append('Calcd for ', formulaNode(mono.formula));
+    if (sp.manual) {
+      const differs = auto && !sameFormula(auto.info.counts, sp.info.counts) ? ` (structure gives ${auto.info.formula})` : '';
+      calc.append(el('span', 'si-manual-mark', ' ✎'));
+      calc.title = `M formula typed by hand${differs}.`;
+    }
+    calc.append(` ${adductDisplay(adduct)}: `, el('b', '', mono.mz.toFixed(4)));
+    if (r.found !== null && r.ppm !== null) {
+      const peak = r.matched && r.matched !== mono ? ` (compared with the ${r.matched.mz.toFixed(4)} peak, ${r.matched.formula})` : '';
+      const ppm = `${r.ppm >= 0 ? '+' : ''}${r.ppm.toFixed(1)} ppm`;
+      const bad = outOfTolerance(r);
+      calc.append(`; found ${r.found.toFixed(4)}${peak} · Δ `, el('span', bad ? 'si-bad' : 'si-good', bad ? `${ppm} (outside ±${r.tolerance} ppm)` : `${ppm} ✓`));
+    }
+    const shownPeaks = r.peaks.filter((x) => x.abundance >= 5).slice(0, 6);
+    addInfo(calc, `Isotope pattern (m/z): ${shownPeaks.map((x) => `${x.mz.toFixed(4)} (${x.abundance.toFixed(1)}%)`).join(', ')}`);
+  }
+
+  // ---------------------------------------------------------------- the Warnings page
+
+  private warningsPage(out: HTMLElement): void {
+    const p = this.project!;
+    const card = el('div', 'si-card si-warn-list');
+    const head = el('div', 'si-card-head');
+    const h = el('h2', 'si-title', 'Warnings');
+    addInfo(h, 'The automatic checks of every compound (HRMS, NMR, yields, spectra, IDs, general procedures), as Chem SI Assistant makes them. Warnings never block anything: dismiss those that don’t apply, with a reason. A dismissed warning comes back if the data it is about changes, and dismissals are shared with SI Assistant.');
+    const show = el('label', 'si-check');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = this.showDismissed;
+    box.addEventListener('change', () => { this.showDismissed = box.checked; this.shownKey = ''; this.refresh(); });
+    show.append(box, document.createTextNode(' Show dismissed'));
+    head.append(h, show);
+    card.append(head);
+    let any = false;
+    for (const s of p.dataSections) {
+      const rows: HTMLElement[] = [];
+      for (const c of compoundsOf(s)) {
+        const list = this.showDismissed ? this.warnings.get(c.id) ?? [] : this.activeWarnings(c);
+        if (!list.length) continue;
+        const who = el('button', 'si-warn-cpd');
+        who.type = 'button';
+        who.title = 'Open this compound';
+        who.append(el('b', 'si-cid', this.idOf(c)), document.createTextNode(' ' + (compoundName(c) || 'unnamed compound')));
+        who.addEventListener('click', () => this.go({ kind: 'compound', id: c.id }));
+        rows.push(who, ...list.map((w) => this.warningLine(c, w, this.fieldName(c, w.field))));
+      }
+      if (!rows.length) continue;
+      any = true;
+      card.append(el('h3', 'si-sub', s.name), ...rows);
+    }
+    if (this.loadingFacts || p.compounds.some((c) => !this.warnings.has(c.id))) card.append(el('p', 'muted si-note', 'Still reading some structures…'));
+    else if (!any) card.append(el('p', 'muted si-note', this.showDismissed ? 'No warnings.' : 'No warnings to look at.'));
+    out.append(card);
   }
 
   private partsEditor(body: HTMLElement, c: SiCompound, def: FieldDef): void {
@@ -822,7 +1092,7 @@ export class SiMode {
   async run(cmd: string): Promise<void> {
     const p = this.project;
     if (!p) return;
-    if (p.readOnly && !['reload', 'project-settings'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
+    if (p.readOnly && !['reload', 'project-settings', 'warnings'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
     this.commitAll();
     const s = this.currentSection();
     const c = this.currentCompound();
@@ -946,7 +1216,11 @@ export class SiMode {
         this.host.flash(n ? `Updated the fields of ${n} compound page${n === 1 ? '' : 's'}.` : 'Every compound page has the section’s fields already.');
         return;
       }
+      case 'warnings':
+        this.go({ kind: 'warnings' });
+        return;
       case 'reload':
+        this.forgetStructure();
         await this.act(() => p.reload());
         this.host.changed();
         this.host.flash('Read the project folder again.');
@@ -998,7 +1272,7 @@ export class SiMode {
         if (!got.atoms.length) { this.host.flash('Nothing was drawn, so the structure is as it was.'); return; }
         const m = this.host.molfileOf(got);
         if (!m.molblock) { this.host.flash(m.problem ?? 'The drawing could not be read as a structure.'); return; }
-        void this.act(() => p.setStructure(c, m.molblock!));
+        void this.act(async () => { await p.setStructure(c, m.molblock!); this.forgetStructure(c); });
       });
     });
   }

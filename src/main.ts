@@ -8205,6 +8205,7 @@ function loadSiMode(): Promise<SiMode> {
         return { now: lib.now, change: (f) => lib.change(f) };
       },
       pickFiles: (label, exts) => openManyBytesDialog(label, exts).catch(async (e) => { await showError(String(e)); return []; }),
+      siFacts: (mols) => chem.siFacts(mols),
     });
     applyIconSet(document.querySelector('#si-ribbon') ?? document);
     if (ws.active.mode === 'si') siMode.show(ws.active);

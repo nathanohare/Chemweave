@@ -7,6 +7,7 @@ import type { MolProps } from '../sheet/properties';
 import type { MassFragment } from './props';
 import type { NamerGraph } from './namer-graph';
 import type { HammettResult } from './hammett-match';
+import type { MolFacts } from '../si/chem';
 
 export class ChemClient {
   ready = false;
@@ -151,5 +152,11 @@ export class ChemClient {
   async canonical(smiles: string): Promise<string | null> {
     const r = await this.request<Extract<ChemResponse, { type: 'canonical' }>>((id) => ({ type: 'canonical', id, smiles }));
     return r.smiles;
+  }
+
+  /** Formula, pieces, symmetry-distinct carbons and H counts of SI compounds' structures (molfiles), for the SI checks. */
+  async siFacts(mols: string[]): Promise<(MolFacts | null)[]> {
+    const r = await this.request<Extract<ChemResponse, { type: 'siFacts' }>>((id) => ({ type: 'siFacts', id, mols }));
+    return r.results;
   }
 }

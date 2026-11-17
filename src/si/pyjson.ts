@@ -22,7 +22,7 @@ export function copyFloats(from: object, to: object): void {
   if (set) for (const k of set) markFloat(to, k);
 }
 
-const isFloat = (holder: object, key: string | number): boolean => floats.get(holder)?.has(String(key)) ?? false;
+export const isFloat = (holder: object, key: string | number): boolean => floats.get(holder)?.has(String(key)) ?? false;
 
 /** Read JSON text (a byte-order mark at the start is skipped, as Python's utf-8-sig does). */
 export function parsePyJson(text: string): unknown {

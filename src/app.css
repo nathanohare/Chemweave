@@ -4668,6 +4668,7 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-struct svg { max-width: 100%; max-height: 100%; }
 .si-cpd-info { grid-area: info; min-width: 0; }
 .si-cpd-head > .si-chips { grid-area: chips; }
+.si-cpd-head > .si-head-warn { grid-column: 1 / -1; }
 .si-cpd-title { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-lg, 15px); }
 .si-cpd-title .si-cid { font-size: 18px; }
 .si-cpd-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -4688,6 +4689,32 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-part input, .si-part select { padding: 1px 4px; font-size: var(--fs-sm); max-width: 220px; }
 .si-part input.si-num { width: 6em; }
 .si-plabel { color: var(--muted); }
+/* SI checks: warnings under their field, the Warnings page, the HRMS line */
+.si-fwarn[hidden], .si-chip[hidden], .si-part[hidden] { display: none; }
+.si-fwarn { display: flex; flex-direction: column; gap: 2px; }
+.si-warn { display: flex; align-items: flex-start; gap: 5px; color: var(--warn); font-size: var(--fs-sm); line-height: 17px; }
+.si-warn > .si-ic { flex: none; margin-top: 2px; }
+.si-warn-text { min-width: 0; color: var(--text); }
+.si-warn.dismissed { color: var(--muted); }
+.si-warn.dismissed .si-warn-text { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 50%, transparent); }
+.si-warn-why { color: var(--muted); font-style: italic; }
+.si-link { flex: none; margin-left: auto; padding: 0 4px; border: 0; background: none; color: var(--accent); font-size: var(--fs-xs); line-height: 17px; cursor: pointer; white-space: nowrap; }
+.si-link:hover { text-decoration: underline; }
+.si-dismissed-chip.on { border-color: var(--accent); background: var(--accent-soft); }
+.si-calc { font-size: var(--fs-sm); line-height: 18px; }
+.si-calc b { color: var(--text); font-variant-numeric: tabular-nums; }
+.si-calc.bad, .si-bad { color: var(--warn); }
+.si-good { color: var(--ok); }
+.si-part input.si-manual { border-color: var(--accent); }
+.si-manual-mark { color: var(--accent); }
+.si-card-head { display: flex; align-items: center; gap: 10px; }
+.si-card-head > .si-title { margin-bottom: 0; }
+.si-check { margin-left: auto; font-size: var(--fs-sm); display: inline-flex; align-items: center; gap: 4px; }
+.si-sub { margin: 8px 0 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); text-transform: none; }
+.si-warn-list .si-warn { padding-left: 16px; }
+.si-warn-cpd { display: block; margin: 4px 0 1px; padding: 0; border: 0; background: none; color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.si-warn-cpd:hover { color: var(--accent); }
+.si-row.si-has-warn > .si-ic { color: var(--warn); }
 .si-suffix { color: var(--muted); }
 .si-gp-part { flex: 1 1 220px; }
 .si-gp-part .si-rich { flex: 1; }

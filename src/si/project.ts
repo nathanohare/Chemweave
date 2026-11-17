@@ -701,6 +701,35 @@ export class SiProject {
     await this.saveCompound(c);
   }
 
+  /** Hide an automatic warning for this compound (SI Assistant's SPEC §8): it comes back when the data it was about changes (its fingerprint no longer matches). */
+  async dismissWarning(c: SiCompound, warning: { key: string; fingerprint: string; message: string }, reason = ''): Promise<void> {
+    this.checkWritable();
+    const before = structuredClone(c.data.dismissed);
+    if (!isObj(c.data.dismissed)) c.data.dismissed = {};
+    (c.data.dismissed as Json)[warning.key] = { fingerprint: warning.fingerprint, message: warning.message, reason: reason.trim(), by: this.lock?.user || '', at: localIso(new Date()) };
+    await this.saveDismissed(c, before);
+  }
+
+  /** Show a dismissed warning again. */
+  async restoreWarning(c: SiCompound, key: string): Promise<void> {
+    this.checkWritable();
+    const before = structuredClone(c.data.dismissed);
+    const d = c.data.dismissed;
+    if (!isObj(d) || !(key in d)) return;
+    delete d[key];
+    await this.saveDismissed(c, before);
+  }
+
+  /** Save a dismissal or restore; if it can't be saved, the compound in memory goes back as it was, to match its file. */
+  private async saveDismissed(c: SiCompound, before: unknown): Promise<void> {
+    try {
+      await this.saveCompound(c);
+    } catch (e) {
+      if (before === undefined) delete c.data.dismissed; else c.data.dismissed = before as Json;
+      throw e;
+    }
+  }
+
   /** The file a compound's text field (procedure, notes…) is kept in. */
   textPath(c: SiCompound, key: string): string {
     return join(c.folder, key === 'notes' ? NOTES_FILE : `${safeFilename(key)}.txt`);
