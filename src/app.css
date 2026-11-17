@@ -4715,6 +4715,19 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-warn-cpd { display: block; margin: 4px 0 1px; padding: 0; border: 0; background: none; color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
 .si-warn-cpd:hover { color: var(--accent); }
 .si-row.si-has-warn > .si-ic { color: var(--warn); }
+/* the Canvas's SI Compound card, in the side panel */
+#si-section > h2 { color: var(--tab-si, #b4234f); }
+.si-an + .si-an { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.si-an-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.si-an-table th { width: 70px; padding: 2px 8px 2px 0; text-align: left; font-weight: 400; color: var(--muted); vertical-align: top; }
+#side-content .si-an-table td { padding: 2px 0; font-family: inherit; }
+#side-content .si-an-table td.si-an-one { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-an .an-buttons { margin-top: 4px; }
+.si-an-id { color: var(--tab-si, #b4234f); }
+.si-an-status { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.si-an-chip { padding: 0 6px; border: 1px solid var(--line); border-radius: 9px; font-size: var(--fs-xs); line-height: 16px; white-space: nowrap; }
+.si-an-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.si-an-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
 .si-suffix { color: var(--muted); }
 .si-gp-part { flex: 1 1 220px; }
 .si-gp-part .si-rich { flex: 1; }

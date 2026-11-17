@@ -254,7 +254,7 @@ import { preferredStyle, setPreferredStyle } from './document/cite-styles';
 import { layoutTable } from './table';
 import { SheetChem } from './sheet/sheet-chem';
 import { structureDoc, structureMolfile } from './sheet/structure-doc';
-import type { SiMode } from './ui/si-mode';
+import type { SiMode, SiCard } from './ui/si-mode';
 import type { SiProject as SiProjectT } from './si/project';
 import { readScene, sceneToDoc } from './io/chem-formats';
 import { cellName, colOf, rowOf } from './sheet/refs';
@@ -8218,6 +8218,121 @@ function loadSiMode(): Promise<SiMode> {
 }
 
 /** File ▸ Open SI Project… (or File ▸ New ▸ SI Project…, `create`). */
+// ---------------------------------------------------------------- SI projects from the Canvas (layout C)
+
+/** Right-click > Add to SI Project: each open SI project's Data sections (a section whose ID table has the structure's number puts it on that page), then another project. */
+function siMenu(): MenuItem | null {
+  const tabs = ws.tabs.filter((t) => t.si);
+  if (!tabs.length && !isTauri()) return null;
+  const parts = partsOf(doc, new Set(chosenStructures().flatMap((f) => [...f])));
+  const number = parts.length === 1 ? parts[0].label?.trim() : undefined;
+  const items: MenuItem[] = [];
+  for (const t of siMode ? tabs : []) {
+    const sections = siMode!.dataSectionsOf(t);
+    if (!sections.length) continue;
+    if (items.length) items.push(null);
+    const name = t.si!.title;
+    items.push({ label: name.length > 44 ? name.slice(0, 42).trimEnd() + '…' : name, run: () => {}, disabled: true, title: name });
+    for (const sec of sections) {
+      const hit = number ? sec.ids.get(number) : undefined;
+      items.push({ label: sec.name, key: hit ? `as ${number}` : 'new compound', title: hit ? `Put this structure on ${number}’s page (its structure is replaced)` : 'A new compound page at the end of this section, with this structure', run: () => void addStructureToSi(t, sec.id, hit, number) });
+    }
+  }
+  if (items.length) items.push(null);
+  items.push({ cmd: 'open-si-project', label: 'Other SI Project…' }, { cmd: 'new-si-project', label: 'New SI Project…' });
+  return { label: 'Add to SI Project', items };
+}
+
+/** The structure picked, on an SI project's compound page: a new one, or the page of compound `replace`. */
+async function addStructureToSi(tab: Tab, sectionId: string, replace?: string, number?: string): Promise<void> {
+  finishTyping();
+  const got = await selectedForLibrary();
+  if (typeof got === 'string') { flash(got, 6000); return; }
+  const mode = await loadSiMode();
+  const title = tab.si?.title ?? 'the SI project';
+  const open = (id: string) => ({ label: 'Open', run: () => openSiCompound(tab, id) });
+  if (replace) {
+    if (got.length !== 1) { flash('Select one structure to put on an existing compound page.', 6000); return; }
+    const sure = await askChoice('Replace Structure', `Put this structure on ${number}’s page in “${title}”? The structure there now is replaced.`, [{ value: 'yes', label: 'Replace', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+    if (sure !== 'yes') return;
+    if (await mode.replaceFromCanvas(tab, replace, got[0].molfile)) flash(`Put on ${number} in “${title}”.`, 6000, open(replace));
+  } else {
+    const made: { id: string; label: string }[] = [];
+    for (const g of got) { const r = await mode.addFromCanvas(tab, sectionId, g.molfile); if (r) made.push(r); }
+    const short = title.length > 40 ? title.slice(0, 38).trimEnd() + '…' : title;
+    const ids = made.map((m) => m.label).filter((x) => x !== 'ID?');
+    if (made.length) flash(ids.length === made.length ? `Added to “${short}” as ${ids.join(', ')}.` : `Added to “${short}”: ${made.length === 1 ? 'the new compound needs' : 'the new compounds need'} a row in the section’s ID table for an ID.`, 7000, open(made[0].id));
+  }
+  scheduleAnalysis(true);
+}
+
+function openSiCompound(tab: Tab, compoundId: string): void {
+  if (!ws.tabs.includes(tab)) return;
+  siMode?.pickCompound(tab, compoundId);
+  ws.activate(tab);
+}
+
+/** The side panel's SI Compound card: for each structure picked that is a compound of an open SI project (the same structure), its ID, how complete it is, and its warnings. */
+async function showSiCards(smiles: string[], seq: number): Promise<void> {
+  const sec = $('#si-section');
+  const tabs = ws.tabs.filter((t) => t.si);
+  const drawing = ws.active.mode === 'drawing';
+  if (!drawing || !tabs.length || !siMode || !smiles.some(Boolean)) { sec.hidden = true; return; }
+  const found = await siMode.compoundsFor(tabs, smiles).catch(() => null);
+  if (seq !== analysisSeq) return;
+  const cards = [...new Set(smiles)].flatMap((smi) => (smi && found?.get(smi)) || []);
+  sec.hidden = !cards.length;
+  $('#si-body').replaceChildren(...cards.map(siCardEl));
+}
+
+function siCardEl(c: SiCard): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'si-an';
+  {
+    const t = document.createElement('table');
+    const row = (th: string, td: Node | string, tip = '', one = false) => {
+      const tr = document.createElement('tr');
+      const a = document.createElement('th'); a.textContent = th;
+      const b = document.createElement('td'); b.append(td);
+      if (tip) b.title = tip;
+      if (one) b.className = 'si-an-one';
+      tr.append(a, b);
+      t.append(tr);
+    };
+    row('Project', c.project, `${c.project}${c.section ? ` ▸ ${c.section}` : ''}`, true);
+    const who = document.createElement('span');
+    const id = document.createElement('b'); id.className = 'si-an-id'; id.textContent = c.id;
+    who.append(id, ' ' + (c.name || 'unnamed compound'));
+    row('Compound', who, `${c.id} ${c.name}`, true);
+    const status = document.createElement('span');
+    status.className = 'si-an-status';
+    const req = document.createElement('span');
+    req.className = `si-an-chip${c.filled === c.total ? ' ok' : ''}`;
+    req.textContent = `${c.filled} / ${c.total} required`;
+    if (c.missing.length) req.title = 'Missing: ' + c.missing.join(', ');
+    const w = document.createElement('span');
+    w.className = `si-an-chip${c.warnings.length ? ' warn' : ' ok'}`;
+    w.textContent = c.warnings.length ? `${c.warnings.length} warning${c.warnings.length === 1 ? '' : 's'}` : 'no warnings';
+    if (c.warnings.length) w.title = c.warnings.join('\n');
+    status.append(req, w);
+    row('Status', status);
+    if (c.yieldText) row('Yield', c.yieldText);
+    if (c.hrms) row('HRMS', c.hrms);
+    t.className = 'si-an-table';
+    box.append(t);
+    const btns = document.createElement('div');
+    btns.className = 'an-buttons';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = 'Open Compound Page';
+    b.title = 'Show this compound’s page in its SI project';
+    b.addEventListener('click', () => openSiCompound(c.tab, c.compoundId));
+    btns.append(b);
+    box.append(btns);
+  }
+  return box;
+}
+
 async function openSiProject(create: boolean): Promise<void> {
   if (!isTauri()) { flash('SI projects are folders on this computer: open them in the desktop app for now.', 6000); return; }
   finishTab();
@@ -11944,6 +12059,7 @@ async function runAnalysis(force: boolean): Promise<void> {
   if (!frags.length) {
     panel.innerHTML = '<p class="muted" title="Or select text read as chemistry, such as BF4⁻ or DMAP, or draw a structure.">Select a structure to see its formula and masses.</p>';
     analysisBox.set(null);
+    $('#si-section').hidden = true;
     return;
   }
   const seq = ++analysisSeq;
@@ -12008,6 +12124,7 @@ async function runAnalysis(force: boolean): Promise<void> {
     const slot = frag.querySelector('.an-nmr-slot'), nmr = frag.querySelector(':scope > details.nmr');
     if (slot && nmr) slot.replaceWith(nmr);
   }
+  void showSiCards(results.map((r, i) => (r.error || polymers[i] ? '' : r.smiles)), seq);
   updatePanels();
 }
 
@@ -12804,9 +12921,11 @@ function drawingMenu(): MenuItem[] {
   const arrows = arrowMenu();
   // (the bond and arrow commands end with their own Properties…)
   const props: MenuItem[] = bonds.length || arrows.length ? [] : [{ cmd: 'show-style', ...(focus === 'atom' && !s.captions.size ? { label: 'Atom Properties…' } : {}) }];
+  const si = atoms && focus === 'structure' && ws.active.mode === 'drawing' ? siMenu() : null;
   return [
     { row: [{ cmd: 'cut' }, { cmd: 'copy' }, { cmd: 'paste' }, { cmd: 'delete', label: 'Delete' }] },
     null,
+    ...(si ? [si, null] : []),
     ...(focus === 'atom' ? atomMenu() : repeatLabelMenu()),
     ...bonds,
     ...fuseRingMenu(),

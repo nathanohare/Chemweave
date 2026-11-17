@@ -46,6 +46,22 @@ export interface SiModeHost {
   siFacts(mols: string[]): Promise<(MolFacts | null)[]>;
 }
 
+/** An SI compound as the Canvas shows it (its card in the Analysis panel). */
+export interface SiCard {
+  tab: Tab;
+  compoundId: string;
+  project: string;
+  section: string;
+  id: string;
+  name: string;
+  filled: number;
+  total: number;
+  missing: string[];
+  warnings: string[];
+  yieldText: string;
+  hrms: string;
+}
+
 type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'references' } | { kind: 'warnings' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
@@ -229,16 +245,112 @@ export class SiMode {
     if (!p) return;
     this.loadingFacts = true;
     try {
-      for (const c of p.compounds) if (p.hasStructure(c) && !this.mols.has(c.id)) this.mols.set(c.id, await p.readStructure(c));
-      const todo = [...new Set([...this.mols.values()].filter((m) => !this.facts.has(m)))];
-      if (todo.length) {
-        const got = await this.host.siFacts(todo).catch(() => todo.map(() => null));
-        todo.forEach((m, i) => this.facts.set(m, got[i] ?? null));
-      }
+      await this.readFacts(p);
     } finally {
       this.loadingFacts = false;
     }
     if (this.project === p) this.refresh();
+  }
+
+  /** Read a project's structures not read yet, and what the checks need from them. */
+  private async readFacts(p: SiProject): Promise<void> {
+    for (const c of p.compounds) if (p.hasStructure(c) && !this.mols.has(c.id)) this.mols.set(c.id, await p.readStructure(c));
+    const todo = [...new Set([...this.mols.values()].filter((m) => !this.facts.has(m)))];
+    if (!todo.length) return;
+    const got = await this.host.siFacts(todo).catch(() => todo.map(() => null));
+    todo.forEach((m, i) => this.facts.set(m, got[i] ?? null));
+  }
+
+  // ---------------------------------------------------------------- for the Canvas (layout C)
+
+  /** The compounds of these SI projects whose structure is each SMILES (RDKit's), as the Canvas's SI card and right-click menu want them. */
+  async compoundsFor(tabs: Tab[], smiles: string[]): Promise<Map<string, SiCard[]>> {
+    const out = new Map<string, SiCard[]>();
+    const want = new Set(smiles.filter(Boolean));
+    for (const t of tabs) {
+      const p = t.si;
+      if (!p) continue;
+      await this.readFacts(p);
+      let report: IdReport | null = null;
+      for (const c of p.compounds) {
+        const f = this.factsOf(c);
+        const smi = f?.info?.smiles;
+        if (!smi || !want.has(smi)) continue;
+        report ??= p.idReport();
+        out.set(smi, [...(out.get(smi) ?? []), this.card(t, c, report, f)]);
+      }
+    }
+    return out;
+  }
+
+  /** What the Canvas's SI card says about a compound. */
+  private card(tab: Tab, c: SiCompound, report: IdReport, facts: MolFacts | null): SiCard {
+    const p = tab.si!;
+    const k = p.completion(c);
+    let warnings: SiWarning[] = [];
+    try { warnings = allWarnings(p, c, report, facts).filter((w) => !isDismissed(c, w)); } catch { /* (shown as none) */ }
+    const v = valuesOf(c);
+    const part = (key: string, sub: string): string => { const x = v[key]; return x && typeof x === 'object' && !Array.isArray(x) ? partText((x as Json)[sub]).trim() : ''; };
+    const pct = part('yield', 'percent'), mass = part('yield', 'mass'), unit = part('yield', 'mass_unit');
+    const yieldText = [pct ? `${pct}%` : '', mass ? `(${mass} ${unit || 'mg'})` : ''].filter(Boolean).join(' ');
+    const state = part('physical_state', 'text');
+    let hrms = '';
+    const [r] = (() => { try { return compoundHrms(p, c, facts); } catch { return [null, '']; } })();
+    if (r) {
+      const mono = monoisotopic(r);
+      hrms = `${adductDisplay(partText((v.hrms as Json | undefined)?.adduct) || '[M+H]+')} ${mono.mz.toFixed(4)}${r.ppm !== null ? ` (${r.ppm >= 0 ? '+' : '−'}${Math.abs(r.ppm).toFixed(1)} ppm)` : ''}`;
+    }
+    return {
+      tab, compoundId: c.id, project: p.title, section: (() => { try { return p.section(c.sectionId).name; } catch { return ''; } })(),
+      id: displayId(report, c.id), name: compoundName(c), filled: k.filled, total: k.total, missing: k.missing,
+      warnings: warnings.map((w) => w.message), yieldText: [yieldText, state].filter(Boolean).join(' · '), hrms,
+    };
+  }
+
+  /** The Data sections of an SI tab's project, with the compound each ID would land on (for "as 2b"). */
+  dataSectionsOf(tab: Tab): { id: string; name: string; ids: Map<string, string> }[] {
+    const p = tab.si;
+    if (!p) return [];
+    const report = p.idReport();
+    return p.dataSections.map((s) => ({ id: s.id, name: s.name, ids: new Map(compoundsOf(s).map((c) => [displayId(report, c.id), c.id])) }));
+  }
+
+  /** A structure drawn on a Canvas, as a new compound page at the end of a Data section (null: it couldn't be saved). */
+  async addFromCanvas(tab: Tab, sectionId: string, molfile: string): Promise<{ id: string; label: string } | null> {
+    const p = tab.si;
+    if (!p) return null;
+    try {
+      const c = await p.addCompound(sectionId);
+      await p.setStructure(c, molfile);
+      this.forgetStructure(c);
+      if (this.tab === tab) { this.shownKey = ''; this.refresh(); }
+      return { id: c.id, label: displayId(p.idReport(), c.id) };
+    } catch (e) {
+      this.host.flash(e instanceof SiProjectError ? e.message : `Could not add the compound: ${e instanceof Error ? e.message : String(e)}`, 8000);
+      return null;
+    }
+  }
+
+  /** Put a Canvas structure on an existing compound page (its structure before is replaced). */
+  async replaceFromCanvas(tab: Tab, compoundId: string, molfile: string): Promise<boolean> {
+    const p = tab.si;
+    const c = p?.compounds.find((x) => x.id === compoundId);
+    if (!p || !c) return false;
+    try {
+      await p.setStructure(c, molfile);
+      this.forgetStructure(c);
+      if (this.tab === tab) { this.shownKey = ''; this.refresh(); }
+      return true;
+    } catch (e) {
+      this.host.flash(e instanceof SiProjectError ? e.message : `Could not change the structure: ${e instanceof Error ? e.message : String(e)}`, 8000);
+      return false;
+    }
+  }
+
+  /** Open a compound's page when its tab next shows. */
+  pickCompound(tab: Tab, compoundId: string): void {
+    tab.sheetState = { pick: { kind: 'compound', id: compoundId } };
+    if (this.tab === tab) this.refresh();
   }
 
   /** A compound's structure changed (or the folder was read again): read it again. */
@@ -259,7 +371,7 @@ export class SiMode {
     const dismissed = isDismissed(c, w);
     const line = el('div', `si-warn${dismissed ? ' dismissed' : ''}`);
     line.innerHTML = svg('warn', 13);
-    const said = field && !w.message.toLowerCase().startsWith(field.toLowerCase());
+    const said = field && w.field !== ID_KEY && !w.message.toLowerCase().startsWith(field.toLowerCase());
     const text = el('span', 'si-warn-text', (said ? field + ': ' : '') + w.message);
     line.append(text);
     if (dismissed) {
