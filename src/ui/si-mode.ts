@@ -9,6 +9,8 @@
 
 import type { Tab } from '../workspace';
 import type { Contents } from '../model';
+import type { DocText } from '../document/document';
+import { compileSi } from '../si/compile-doc';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, TYPE_LABELS, type Json, type SiCompound, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
@@ -44,6 +46,10 @@ export interface SiModeHost {
   pickFiles(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array }[]>;
   /** What the checks need from structures (molfiles): formula, pieces, distinct carbons, H counts. */
   siFacts(mols: string[]): Promise<(MolFacts | null)[]>;
+  /** A drawing's own size in points, in the SI drawing style. */
+  sizeOf(c: Contents): { w: number; h: number } | null;
+  /** The compiled SI, opened as a document named `name` (and, with `pdf`, saved as a PDF too). */
+  openCompiled(doc: DocText, name: string, pdf: boolean): Promise<void>;
 }
 
 /** An SI compound as the Canvas shows it (its card in the Analysis panel). */
@@ -123,6 +129,10 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="warnings" data-ic="check-structure" title="Every automatic warning in the project (HRMS, NMR, yields, spectra, IDs), by compound: dismiss or restore them"><span class="rb-icon">⚠</span>Warnings</button>
     </div><div class="rb-label">Checks</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data, laid out as Chem SI Assistant lays it out. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
+      <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
+    </div><div class="rb-label">Compile</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="add-field" title="Add a field to the compound page (melting point, Rf, IR, optical rotation…), or one of your own">Add Field…</button>
@@ -1201,10 +1211,28 @@ export class SiMode {
     }
   }
 
+  /** Compile the project into a document (SI Assistant's layout), opened in a tab of its own; what was left out is said after. */
+  private async compile(pdf: boolean): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    this.host.flash('Compiling the SI…', 1500);
+    let got;
+    try {
+      got = await compileSi(p, { contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (m) => this.host.siFacts(m) });
+    } catch (e) {
+      this.host.flash(`Could not compile the SI: ${e instanceof Error ? e.message : String(e)}`, 6000);
+      return;
+    }
+    await this.host.openCompiled(got.doc, `${p.title} SI`, pdf);
+    if (got.notes.length) {
+      await ask('Compile Notes', [], { noCancel: true, ok: 'OK', note: `The SI was compiled. ${got.notes.length === 1 ? 'One thing' : `${got.notes.length} things`} to know:`, points: got.notes });
+    }
+  }
+
   async run(cmd: string): Promise<void> {
     const p = this.project;
     if (!p) return;
-    if (p.readOnly && !['reload', 'project-settings', 'warnings'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
+    if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
     this.commitAll();
     const s = this.currentSection();
     const c = this.currentCompound();
@@ -1330,6 +1358,10 @@ export class SiMode {
       }
       case 'warnings':
         this.go({ kind: 'warnings' });
+        return;
+      case 'compile-doc':
+      case 'compile-pdf':
+        await this.compile(cmd === 'compile-pdf');
         return;
       case 'reload':
         this.forgetStructure();

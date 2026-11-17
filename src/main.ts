@@ -8206,6 +8206,14 @@ function loadSiMode(): Promise<SiMode> {
       },
       pickFiles: (label, exts) => openManyBytesDialog(label, exts).catch(async (e) => { await showError(String(e)); return []; }),
       siFacts: (mols) => chem.siFacts(mols),
+      sizeOf: (c) => figures.size(c, SI_STYLE),
+      openCompiled: async (doc, name, pdf) => {
+        ws.showDocument({ ...doc, drawingStyle: { ...SI_STYLE } }, name.replace(/[\\/:*?"<>|]/g, '-'));
+        renderTabs();
+        if (!pdf) return;
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        await exportPdf();
+      },
     });
     applyIconSet(document.querySelector('#si-ribbon') ?? document);
     if (ws.active.mode === 'si') siMode.show(ws.active);

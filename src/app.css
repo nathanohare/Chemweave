@@ -4761,3 +4761,7 @@ dialog.si-pick { width: min(92vw, 480px); }
 .si-pick-row:first-child { border-top: 0; }
 .si-pick-row > small { grid-column: 2; }
 .si-pick-list > p { margin: 8px; }
+
+/* A list of points in a message (Compile Notes) */
+.ask-points { margin: 4px 0 8px; padding-left: 18px; max-height: 50vh; overflow-y: auto; font-size: 12.5px; line-height: 1.4; }
+.ask-points li { margin: 2px 0; }
