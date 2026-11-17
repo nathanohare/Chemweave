@@ -5,6 +5,7 @@
 // Ctrl+B, Ctrl+I and Ctrl+U as in Word; Ctrl+= subscript, Ctrl+Shift+= superscript; typing
 // "@" offers the project's compounds to mention.
 
+import { checkSpelling, spellingMenu } from './si-spell';
 import { MENTION, STRUCT, parseMarkup, writeMarkup, type Paragraph, type Run, type VAlign } from '../si/markup';
 
 export interface SiRichHost {
@@ -121,8 +122,11 @@ export class SiRichBox {
     this.last = text;
     render(el, parseMarkup(text), host, multiline);
     this.empty();
-    el.addEventListener('input', () => { this.empty(); this.later(); this.offerMentions(); });
-    el.addEventListener('blur', () => { this.commit(); setTimeout(() => this.closeMenu(), 150); });
+    // (once the box is on the page)
+    setTimeout(() => checkSpelling(el), 0);
+    el.addEventListener('input', () => { this.empty(); this.later(); this.offerMentions(); this.spellLater(); });
+    el.addEventListener('blur', () => { this.commit(); checkSpelling(el); setTimeout(() => this.closeMenu(), 150); });
+    el.addEventListener('contextmenu', (e) => { spellingMenu(el, e); });
     el.addEventListener('keydown', (e) => this.key(e));
     el.addEventListener('paste', (e) => {
       // pasted text comes in plain (its formatting from other programs is not SI formatting)
@@ -141,6 +145,13 @@ export class SiRichBox {
     this.last = text;
     render(this.el, parseMarkup(text), this.host, this.multiline);
     this.empty();
+    setTimeout(() => checkSpelling(this.el), 0);
+  }
+
+  private spellTimer: ReturnType<typeof setTimeout> | null = null;
+  private spellLater(): void {
+    if (this.spellTimer) clearTimeout(this.spellTimer);
+    this.spellTimer = setTimeout(() => checkSpelling(this.el), 350);
   }
 
   /** Mentions show their compounds' IDs as they are now. */

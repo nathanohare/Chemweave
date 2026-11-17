@@ -4955,6 +4955,7 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-scheme-arrow { height: 10px; color: var(--text); }
 .si-scheme-arrow svg { display: block; width: 100%; height: 10px; }
 .si-scheme-empty { flex: 0 0 auto; padding: 18px 8px; border: 1px dashed var(--line); border-radius: var(--r-control); background: transparent; color: var(--muted); cursor: pointer; }
+::highlight(si-misspelled) { text-decoration: underline wavy #d32f2f; text-decoration-skip-ink: none; }
 .si-inline-struct { display: inline-block; vertical-align: middle; margin: 0 2px; background: #fff; border-radius: 2px; }
 .si-inline-struct svg { display: block; }
 .si-xray-pic { margin: 4px 0; }

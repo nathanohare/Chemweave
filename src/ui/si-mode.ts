@@ -26,6 +26,8 @@ import { SiPictures, PICTURE_MIME } from './si-picture';
 import { SiXrayPage } from './si-xray';
 import { SiFrontPage } from './si-front';
 import { SiSchemePage } from './si-scheme';
+import { nextMisspelled } from './si-spell';
+import { typingPrefs } from '../text/typing';
 import { editReference } from './references-dialog';
 import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Reference } from '../document/references';
 import { newTable } from '../si/tables';
@@ -355,6 +357,7 @@ const RIBBON = `
     </div><div class="rb-label">Library</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="warnings" data-ic="check-structure" title="Every automatic warning in the project (HRMS, NMR, yields, spectra, IDs), by compound: dismiss or restore them"><span class="rb-icon">⚠</span>Warnings</button>
+      <button class="rb-big" data-si="spelling" data-ic="spelling" title="Spelling (F7): go to the next misspelled word on this page, with its corrections. Chemistry words, abbreviations (MeOH, CDCl3) and systematic names count as spelled right; right-click an underlined word for the same menu"><span class="rb-icon">✓</span>Spelling</button>
     </div><div class="rb-label">Checks</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data, laid out as Chem SI Assistant lays it out. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
@@ -421,7 +424,7 @@ export class SiMode {
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si-scheme="align"], [data-si-scheme="insert-structure"]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"]')) e.preventDefault(); });
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
@@ -2115,6 +2118,7 @@ export class SiMode {
     const inText = (e.target as HTMLElement).closest('input, select, textarea, [contenteditable="true"]');
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); void this.run(e.key === 'ArrowUp' ? 'move-up' : 'move-down'); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); void this.run('new-compound'); return; }
+    if (e.key === 'F7' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); void this.run('spelling'); return; }
     if (inText) return;
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       const rows = [...this.tree.querySelectorAll<HTMLElement>('.si-row')];
@@ -2339,6 +2343,9 @@ export class SiMode {
       }
       case 'warnings':
         this.go({ kind: 'warnings' });
+        return;
+      case 'spelling':
+        if (!nextMisspelled(this.page)) this.host.flash(typingPrefs.spelling ? 'No misspelled words on this page.' : 'The spelling check is off (Edit ▸ Typing and Spelling).');
         return;
       case 'compile-doc':
       case 'compile-pdf':
