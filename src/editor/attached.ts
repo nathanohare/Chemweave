@@ -196,6 +196,9 @@ export function refitAttached(doc: Doc, before: ReadonlyMap<string, Entity | nul
       doc.updateCaption(c.id, { attach: at });
       continue;
     }
+    // centred above or below its structure: Center puts it back in the middle of that side, as a
+    // label made there sits (it was left off the middle when tied where it stood, or dragged)
+    if (old && old.justify !== 'center' && c.justify === 'center' && (a.side === 'below' || a.side === 'above') && at.shift !== 0) at = { ...at, shift: 0 };
     if (at !== a) doc.updateCaption(c.id, { attach: at });
     placeAttached(doc, doc.captions.get(c.id)!, m);
   }

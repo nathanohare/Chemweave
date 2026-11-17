@@ -111,6 +111,29 @@ describe('a tied caption follows its structure', () => {
     expect(c.y1 - s.y2).toBeCloseTo(8, 6);
   });
 
+  it('goes back to the middle when set to Center after sitting off it (issue: Center did not move it)', () => {
+    const { doc, cap, capBox, sBox } = setup();
+    // tied where it stood, off the middle and left-aligned, as Link Text to Structure leaves it
+    doc.edit('Off middle', () => { const c = doc.captions.get(cap)!; doc.updateCaption(cap, { justify: 'left', attach: { ...c.attach!, shift: -9 } }); });
+    expect((capBox().x1 + capBox().x2) / 2 - (sBox().x1 + sBox().x2) / 2).toBeCloseTo(-9, 6);
+    doc.edit('Justification', () => doc.updateCaption(cap, { justify: 'center' }));
+    expect(doc.captions.get(cap)!.attach!.shift).toBe(0);
+    const c = capBox(), s = sBox();
+    expect((c.x1 + c.x2) / 2).toBeCloseTo((s.x1 + s.x2) / 2, 6);
+    doc.undo();
+    expect(doc.captions.get(cap)!.attach!.shift).toBe(-9);
+  });
+
+  it('keeps its shift when already centered text is restyled, or when it sits beside the structure', () => {
+    const { doc, cap } = setup();
+    doc.edit('Off middle', () => { const c = doc.captions.get(cap)!; doc.updateCaption(cap, { attach: { ...c.attach!, shift: 4 } }); });
+    doc.edit('Bold', () => { const c = doc.captions.get(cap)!; doc.updateCaption(cap, { runs: c.runs.map((r) => ({ ...r, bold: true })) }); });
+    expect(doc.captions.get(cap)!.attach!.shift).toBe(4);
+    doc.edit('Right side', () => { const c = doc.captions.get(cap)!; doc.updateCaption(cap, { justify: 'left', attach: { ...c.attach!, side: 'right', shift: 3 } }); });
+    doc.edit('Justification', () => doc.updateCaption(cap, { justify: 'center' }));
+    expect(doc.captions.get(cap)!.attach!.shift).toBe(3);
+  });
+
   it('goes when its structure is deleted', () => {
     const { doc, ids, cap } = setup();
     doc.edit('Delete', () => { for (const id of ids) doc.removeAtom(id); });
