@@ -287,6 +287,8 @@ import { DeckStore, type DeckZoteroHost } from './deck/zotero-deck';
 import { DEFAULT_KEEP, type KeepPrefs } from './keep/prefs';
 import { Brush, paintObjects, pickObjectLook, type ObjectLook, type TextLook } from './format-painter';
 import { popupMenu } from './ui/popup-menu';
+import { DEFAULT_FOCAL_PREFS, focalAtoms, parseFocalPrefs, setFocal, setFocalDefault, type FocalPrefs } from './chem/focal';
+import { FOCAL_LOOKS, drawFocalMark } from './editor/focal-marks';
 import { favoriteSummary, freshFavoriteName, ribbonFavorites, withFavorite, type FormatFavorite } from './ui/format-favorites';
 import { SymbolWindow } from './ui/symbol-window';
 import { Navigator, EdgeArrows, paintGrid, paintTint, type Target } from './ui/orientation';
@@ -783,6 +785,9 @@ let canvasTextRows: { font: HTMLElement; paragraph: HTMLElement } | null = null;
 let canvasFont: { refresh(): void } | null = null;
 // (NMR prediction is desktop only: its ribbon groups are left out elsewhere)
 if (!nmrHere) for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.name !== 'NMR');
+/** Focal point settings (Preferences, the Distribute menu's choice). */
+const focalPrefs: FocalPrefs = { ...DEFAULT_FOCAL_PREFS };
+
 const canvasRibbon = new CanvasRibbon({
   command: (cmd) => { command(cmd); },
   pickTool: (name) => pickTool(name),
@@ -790,7 +795,9 @@ const canvasRibbon = new CanvasRibbon({
   icon: (it) => ('cmd' in it ? commandIcon(it.cmd) ?? RIBBON_ONLY_ICONS[it.cmd] ?? ICONS[it.cmd] : ICONS[it.tool]),
   textGroups: (font, paragraph) => { canvasTextRows = { font, paragraph }; },
   pasteMenu: (r) => { popupMenu(r.left, r.bottom + 2, [['Paste', () => command('paste')], ['Paste SMILES', () => command('paste-smiles')]]); },
+  itemMenu: (cmd, r) => { if (cmd === 'distribute-h' || cmd === 'distribute-v') distributeMenu(r); },
 }, $('#sheet-ribbon'));
+refreshDistributeTips();
 const analysisBox = new AnalysisBox($('#analysis-section'));
 const warningsBox = new WarningsBox($('#warnings-section'));
 canvasRibbon.bodyEnd.append(analysisBox.el);
@@ -1033,6 +1040,52 @@ let quickBar: QuickBar | null = null;
 const STRESS_SIZES = [100, 500, 2000, 5000];
 $('#help-hotkeys').addEventListener('click', () => { $<HTMLDialogElement>('#help').close(); hotkeysDialog.open(); });
 $('#help-close').addEventListener('click', () => $<HTMLDialogElement>('#help').close());
+/**
+ * Pointing at Align Center or Middle, Distribute or Arrange in a Row or Column (on the ribbon, a
+ * menu or the right-click menu) shows each selected structure's focal point and where it would go.
+ */
+const LAYOUT_PREVIEWS = new Set(['align-hcenter', 'align-vcenter', 'distribute-h', 'distribute-v', 'distribute-h-gaps', 'distribute-v-gaps', 'distribute-h-focal', 'distribute-v-focal', 'arrange-row', 'arrange-column']);
+let layoutPreviewOn: string | null = null;
+document.addEventListener('pointerover', (e) => {
+  const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-cmd], [data-hover-cmd]');
+  const cmd = el ? el.dataset.hoverCmd ?? el.dataset.cmd ?? null : null;
+  // (the ribbon's Distribute buttons space things the way their menu says)
+  const how = (cmd === 'distribute-h' || cmd === 'distribute-v') && focalPrefs.distribute === 'focal' ? `${cmd}-focal` : cmd;
+  const want = how && LAYOUT_PREVIEWS.has(how) && ws.active.mode === 'drawing' ? how : null;
+  if (want === layoutPreviewOn) return;
+  layoutPreviewOn = want;
+  editor.previewLayout(want);
+}, true);
+// (a click runs the command: the preview goes)
+document.addEventListener('pointerdown', () => { if (layoutPreviewOn) { layoutPreviewOn = null; editor.previewLayout(null); } }, true);
+
+/** The Distribute buttons' ▾: what they make equal, the gaps or the spacing of focal points (remembered). */
+function distributeMenu(r: DOMRect): void {
+  const dot = (on: boolean) => (on ? '<svg viewBox="0 0 16 16" width="12" height="12"><circle cx="8" cy="8" r="3.5" fill="currentColor"/></svg>' : '');
+  const pick = (by: FocalPrefs['distribute']) => () => { focalPrefs.distribute = by; storeSettings(); refreshDistributeTips(); };
+  popupMenu(r.left, r.bottom + 2, [
+    ['Equal Gaps', pick('gaps'), true, dot(focalPrefs.distribute === 'gaps')],
+    ['Equal Focal Point Spacing', pick('focal'), true, dot(focalPrefs.distribute === 'focal')],
+    null,
+    ['Distribute Horizontally', () => command('distribute-h')],
+    ['Distribute Vertically', () => command('distribute-v')],
+  ]);
+}
+
+/** The Distribute buttons' tooltips say which spacing they use. */
+function refreshDistributeTips(): void {
+  const by = focalPrefs.distribute === 'focal' ? 'equal focal point spacing' : 'equal gaps';
+  for (const [cmd, name] of [['distribute-h', 'Distribute Horizontally'], ['distribute-v', 'Distribute Vertically']] as const)
+    for (const b of document.querySelectorAll<HTMLElement>(`#canvas-ribbon [data-cmd="${cmd}"]`)) b.title = `${name} (${by}; ▾ to change)`;
+}
+
+/** Arrange ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
+function showFocalPoints(on: boolean): void {
+  editor.showFocal = on;
+  for (const b of document.querySelectorAll('[data-cmd="show-focal-points"]')) b.setAttribute(b.getAttribute('role')?.startsWith('menuitem') ? 'aria-checked' : 'aria-pressed', String(on));
+  editor.requestOverlay();
+}
+
 /** View > Show R/S Preview: every R/S and E/Z label in red, on screen only. */
 function previewStereo(on: boolean): void {
   renderer.previewStereo = on;
@@ -4000,7 +4053,14 @@ function showDevTools(on: boolean): void {
 }
 
 function align(how: Align): void {
-  if (!editor.align(how)) flash('Select two or more structures, captions, arrows or shapes to line them up.');
+  // once ever: structures that share a ring could line up on it
+  const tip = (how === 'hcenter' || how === 'vcenter') && !focalPrefs.tipShown && editor.shareRingNoFocal();
+  if (!editor.align(how)) { flash('Select two or more structures, captions, arrows or shapes to line them up.'); return; }
+  if (tip) {
+    focalPrefs.tipShown = true;
+    storeSettings();
+    flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Arrange ▸ Match Focal Points.', 9000);
+  }
 }
 
 let flashTimer = 0;
@@ -5566,6 +5626,44 @@ async function orientLikeFirst(scheme = false): Promise<number | null> {
   });
   if (moves.length) editor.reorient(moves);
   return moves.length;
+}
+
+/**
+ * Arrange ▸ Match Focal Points: the selected structures (or all of them, with nothing selected)
+ * take the focal point of the one that has its own (the first in reading order if several do), on
+ * the same atom, bond or ring of the part they share with it (largest common substructure).
+ */
+async function matchFocalPoints(): Promise<void> {
+  if (!chem.ready) { flash('The chemistry engine is still loading; try again in a moment.'); return; }
+  const picked = editor.sel.atoms;
+  const frags = doc.fragments().filter((f) => [...f].some((id) => !doc.atoms.get(id)?.multi) && (!picked.size || [...f].some((id) => picked.has(id))));
+  const own = frags.filter((f) => focalAtoms(doc, f).length);
+  if (frags.length < 2 || !own.length) { flash('Set a focal point on one structure, then select it with the others to give them the same one.', 6000); return; }
+  const top = (f: Set<number>) => Math.min(...[...f].map((id) => doc.atoms.get(id)!.y));
+  const left = (f: Set<number>) => Math.min(...[...f].map((id) => doc.atoms.get(id)!.x));
+  const ref = own.reduce((p, q) => (top(q) < top(p) - doc.style.bondLength * 2 || (Math.abs(top(q) - top(p)) <= doc.style.bondLength * 2 && left(q) < left(p)) ? q : p));
+  const others = frags.filter((f) => f !== ref);
+  const refEx = toMolfile(doc, ref);
+  const exs = others.map((f) => toMolfile(doc, f));
+  const pairs = await chem.common(refEx.molblock, exs.map((e) => e.molblock)).catch(() => null);
+  if (!pairs) { flash('Could not compare the structures.'); return; }
+  const refIndex = new Map<number, number>();
+  refEx.map.forEach((id, i) => { if (id !== undefined) refIndex.set(id, i); });
+  const spot = focalAtoms(doc, ref).map((id) => refIndex.get(id));
+  const sets: number[][] = [];
+  let missed = 0;
+  exs.forEach((ex, i) => {
+    const m = new Map(pairs[i] ?? []);
+    const to = spot.map((r) => (r === undefined ? undefined : ex.map[m.get(r) ?? -1]));
+    if (to.every((id): id is number => id !== undefined && doc.atoms.has(id))) sets.push(to);
+    else missed++;
+  });
+  if (sets.length) {
+    doc.edit('Match Focal Points', () => { for (const s of sets) setFocal(doc, s); });
+    editor.changed();
+  }
+  const n = sets.length;
+  flash(n ? `${n} structure${n > 1 ? 's' : ''} now share${n > 1 ? '' : 's'} its focal point${missed ? `; ${missed} ${missed > 1 ? 'don\'t' : 'doesn\'t'} have that part` : ''}.` : 'None of the other structures has the part the focal point is on.', 5000);
 }
 
 /** After a flip: nothing selected, or a plain flip that made the mirror image of a structure with wedges. */
@@ -9135,8 +9233,19 @@ const COMMANDS: Record<string, () => unknown> = {
   'align-top': () => align('top'),
   'align-vcenter': () => align('vcenter'),
   'align-bottom': () => align('bottom'),
-  'distribute-h': () => editor.distribute('h') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
-  'distribute-v': () => editor.distribute('v') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  // (equal gaps, or equal focal point spacing: the choice on the Distribute buttons' menu)
+  'distribute-h': () => editor.distribute('h', focalPrefs.distribute) || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  'distribute-v': () => editor.distribute('v', focalPrefs.distribute) || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  'distribute-h-gaps': () => editor.distribute('h', 'gaps') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  'distribute-v-gaps': () => editor.distribute('v', 'gaps') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  'distribute-h-focal': () => editor.distribute('h', 'focal') || flash('Select three or more structures, captions, arrows or shapes to space their focal points evenly.'),
+  'distribute-v-focal': () => editor.distribute('v', 'focal') || flash('Select three or more structures, captions, arrows or shapes to space their focal points evenly.'),
+  // with no atom, bond or ring picked, the next click on the drawing names the spot
+  'set-focal-point': () => editor.setFocalPoint() || startFocalPick(),
+  'pick-focal-point': () => startFocalPick(),
+  'match-focal-points': () => void matchFocalPoints(),
+  'reset-focal-point': () => editor.resetFocalPoint() || flash('None of the selected structures has a focal point of its own.'),
+  'show-focal-points': () => showFocalPoints(!editor.showFocal),
   'arrange-row': () => editor.arrangeGrid({ kind: 'row', gap: gridGap() }) || flash('Select two or more structures or objects to put in a row (or they already are, evenly spaced).'),
   'arrange-column': () => editor.arrangeGrid({ kind: 'column', gap: gridGap() }) || flash('Select two or more structures or objects to put in a column (or they already are, evenly spaced).'),
   'arrange-grid': () => void arrangeInGrid(),
@@ -10842,6 +10951,11 @@ async function personalPreferences(): Promise<void> {
       help: 'Off, a counterion typed without its charge is still read as that ion, and flagged until the charge is added.' },
     { name: 'saltGroups', label: 'Group each with the adjacent oppositely charged structure or ion, as one salt', type: 'checkbox', value: String(chemText.saltGroups), inline: (v) => saltSwatch(v === 'true', doc.style),
       help: 'Grouped, the two count as one salt: one formula and mass, and a SMILES with both parts.' },
+    { name: 'focalHeading', label: 'Focal Points', type: 'heading', value: '', help: 'A focal point is the spot on a structure that lines up with other structures when you align, distribute or arrange them (right-click an atom, bond or ring ▸ Set as Focal Point).' },
+    { name: 'focalLook', label: 'Mark focal points with', value: focalPrefs.look, short: true, options: FOCAL_LOOKS.map((l) => ({ value: l.look, label: l.name })), inline: (v) => focalSwatch(v) },
+    { name: 'focalDefault', label: 'Structures without their own focal point line up by', value: focalPrefs.dflt, short: true, options: [
+      { value: 'box', label: 'The middle of the structure' }, { value: 'ring', label: 'The middle of its largest ring' }],
+      help: 'Largest ring: the biggest ring, nearest the middle if there are several. A structure with no ring always uses its middle.' },
     { name: 'iconsHeading', label: 'Icons', type: 'heading', value: '' },
     { name: 'iconSet', label: 'Icon set', value: iconSet(), short: true, options: [
       { value: 'new', label: 'New: one style in every mode' },
@@ -10855,12 +10969,36 @@ async function personalPreferences(): Promise<void> {
   chemText.saltGroups = r.saltGroups === 'true';
   templatesOnNew = { document: r.tplDocument === 'true', sheet: r.tplSheet === 'true', slides: r.tplSlides === 'true' };
   setIconSet(r.iconSet === 'classic' ? 'classic' : 'new');
+  Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
+  editor.focalLook = focalPrefs.look;
+  setFocalDefault(focalPrefs.dflt);
+  editor.requestOverlay();
   editor.aids = { ...editor.aids, angle: r.aidAngle === 'true', length: r.aidLength === 'true', hints: r.aidHints === 'true', look: r.aidLook === 'box' || r.aidLook === 'solid' ? r.aidLook : 'plain', units: r.aidUnits === 'px' || r.aidUnits === 'mm' ? r.aidUnits : 'in' };
   const look = parseAlkylLook(r.alkylLook);
   const changed = look !== alkylPrefs.look;
   alkylPrefs.look = look;
   storeSettings();
   if (changed && look !== 'typed') await offerAlkylRestyle(look);
+}
+
+/** A focal point mark in Preferences, as drawn on a ring. */
+function focalSwatch(look: string): HTMLElement {
+  const c = document.createElement('canvas');
+  const k = devicePixelRatio || 1;
+  c.width = 44 * k; c.height = 30 * k;
+  c.style.width = '44px'; c.style.height = '30px';
+  const ctx = c.getContext('2d');
+  if (ctx) {
+    ctx.scale(k, k);
+    ctx.strokeStyle = getComputedStyle(document.body).color || '#000';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 3; const x = 22 + 12 * Math.cos(a), y = 15 + 12 * Math.sin(a); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+    ctx.stroke();
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#0f7f86';
+    drawFocalMark(ctx, { x: 22, y: 15 }, 1, accent, (FOCAL_LOOKS.find((l) => l.look === look)?.look ?? 'target'), true);
+  }
+  return c;
 }
 
 const ALKYL_LOOK_CHOICES: { value: AlkylLook; label: string }[] = [
@@ -10998,6 +11136,7 @@ function currentSettings(): Settings {
     mapLook: mapLookPrefs.look,
     mapBox: { ...mapLookPrefs.custom },
     depthShade: { ...depthShadePrefs },
+    focal: { ...focalPrefs },
     linkSide,
     slideTemplate,
     slideThemes,
@@ -11240,6 +11379,10 @@ function applySettings(s: Settings): void {
   mapLookPrefs.look = s.mapLook;
   mapLookPrefs.custom = { ...s.mapBox };
   Object.assign(depthShadePrefs, s.depthShade);
+  Object.assign(focalPrefs, s.focal);
+  editor.focalLook = focalPrefs.look;
+  setFocalDefault(focalPrefs.dflt);
+  refreshDistributeTips();
   for (const el of document.querySelectorAll('[data-cmd="depth-shading"][role="menuitemcheckbox"]')) el.setAttribute('aria-checked', String(depthShadePrefs.on));
   linkSide = s.linkSide;
   slideTemplate = s.slideTemplate;
@@ -12800,9 +12943,14 @@ function drawingMenu(): MenuItem[] {
   const arrange: MenuItem[] = [
     { cmd: 'align-left' }, { cmd: 'align-hcenter' }, { cmd: 'align-right' }, null,
     { cmd: 'align-top' }, { cmd: 'align-vcenter' }, { cmd: 'align-bottom' }, null,
-    { cmd: 'distribute-h' }, { cmd: 'distribute-v' }, null,
+    { cmd: 'distribute-h-gaps' }, { cmd: 'distribute-v-gaps' }, { cmd: 'distribute-h-focal' }, { cmd: 'distribute-v-focal' }, null,
     { cmd: 'arrange-row' }, { cmd: 'arrange-column' }, { cmd: 'arrange-grid' },
   ];
+  // an atom, a bond or a ring picked: it can be the structure's focal point
+  const spot = editor.focalSpot();
+  const focal: MenuItem[] = atoms || s.bonds.size
+    ? [...(spot ? [{ cmd: 'set-focal-point', label: `Set ${spot.length === 1 ? 'Atom' : spot.length === 2 ? 'Bond' : 'Ring'} as Focal Point` }] : []), ...(editor.canMatchFocal() ? [{ cmd: 'match-focal-points' }] : []), ...(editor.hasOwnFocal() ? [{ cmd: 'reset-focal-point' }] : [])]
+    : [];
   const turn: MenuItem[] = [
     { cmd: 'flip-h' }, { cmd: 'flip-v' }, { cmd: 'flip-h-keep' }, { cmd: 'flip-v-keep' }, null,
     { cmd: 'rotate-cw' }, { cmd: 'rotate-ccw' }, { cmd: 'rotate-180' }, { cmd: 'rotate-dialog' }, null, { cmd: 'scale' },
@@ -12822,6 +12970,7 @@ function drawingMenu(): MenuItem[] {
     ...(focus === 'atom' ? atomMenu() : repeatLabelMenu()),
     ...bonds,
     ...fuseRingMenu(),
+    ...(focal.length ? [...focal, null] : []),
     ...(focus === 'bond' && s.bonds.size <= 2 && !s.arrows.size ? [{ cmd: 'homolysis-arrows' }] : []),
     ...arrows,
     ...(editor.selectedEnergy() !== null ? [{ cmd: 'edit-energy' }, null] : []),
@@ -13123,6 +13272,18 @@ stylePanel.energy = {
   restyle: (id, patch) => { const d = doc.shapes.get(id)?.energy; if (d) editor.putEnergyDiagram({ ...d, ...patch }, pasteCentre(), id); },
 };
 stylePanel.ringFill = () => void command('fill-rings');
+stylePanel.focalPick = () => startFocalPick();
+editor.onFocalLost = () => flash('A focal point\'s atom, bond or ring was taken away, so that structure lines up by the middle of its box again.', 5000);
+editor.onFocalPicked = (kind) => {
+  if (kind) flash(`Focal point set on the ${kind}.`);
+  else $('#flash').classList.remove('show');
+};
+
+/** Arrange ▸ Set as Focal Point with nothing to set it on: the next click on the drawing names the spot. */
+function startFocalPick(): void {
+  editor.startFocalPick();
+  flash('Click an atom, a bond or inside a ring to make it its structure\'s focal point. Esc cancels.', 60000);
+}
 stylePanel.highlightUsed = (c) => { highlightColour = c; };
 stylePanel.highlightStyleUsed = (st) => { highlightStyle = tidyStyle(st); };
 // ---------------------------------------------------------------- Format Painter
@@ -14235,7 +14396,7 @@ addLookToggle(canvasRibbon.el, { simple: () => ribbonLook === 'simple', toggle: 
 // (in the order of the list: the pages of a group together, under its heading)
 const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'general', group: 'General', title: 'General', words: 'backup back up copy move settings file new computer install reinstall export import groups selecting click outline linked text above below ask whole page tracked changes reviewer name start view recent files chemdraw objects ole word powerpoint docx pptx save structures pictures svg png compatibility', open: generalPreferences },
-  { id: 'preferences', group: 'General', title: 'Preferences', words: 'personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
+  { id: 'preferences', group: 'General', title: 'Preferences', words: 'focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
   { id: 'hotkeys', group: 'General', title: 'Keyboard Shortcuts', words: 'keys keyboard shortcuts import export reset', open: () => hotkeysDialog.open() },
   { id: 'typing', group: 'General', title: 'Typing and Spelling', words: 'typing spelling dictionary autocorrect replacements chemistry formulas subscripts', open: () => typingDialog.open() },
   { id: 'autosave', group: 'General', title: 'AutoSave and Recovery', words: 'autosave recovery versions backup copies shared folders onedrive', open: () => keeper.optionsCommand() },

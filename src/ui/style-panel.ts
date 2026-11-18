@@ -34,6 +34,7 @@ import type { TableData } from '../model';
 import { labelAlignment, labelAlignPatch, type LabelAlign } from '../chem/label-align';
 import { labelAtoms, labelLookOf, setLabelFont, setLabelSize } from '../editor/label-font';
 import { ringsThroughBond } from '../chem/aromatic';
+import { clearFocal, focalKind } from '../chem/focal';
 import { canMerge, deleteColumn, deleteRow, fitColumns, insertColumn, insertRow, mergeDown, mergeRight, rowSpanOf, setColumnAlign, setColumnWidth, setRowSpan, setSpan, spanOf, splitCell, type TablePart } from '../table';
 import { SLIDE_TABLE_STYLES, lookOf, slideCellLook, slideTableStyle } from '../deck/table-styles';
 import type { Measure } from '../text/layout';
@@ -132,6 +133,8 @@ export class StylePanel {
   highlightLooks: { list(): HighlightLookPreset[]; apply(look: HighlightLookPreset): void; save(): void } = { list: () => [], apply: () => {}, save: () => {} };
   /** Fill the rings in the selection (set up by the app). */
   ringFill: (() => void) | null = null;
+  /** Click the spot on the drawing to make a structure's focal point (set up by the app). */
+  focalPick: (() => void) | null = null;
   /** Picture Format… for the selected pictures (set up by the app). */
   formatPicture: () => void = () => {};
   /** Make a picture's white background see-through (set up by the app). */
@@ -1348,6 +1351,36 @@ export class StylePanel {
       this.body.append(row);
     }
     this.methylControls(atoms.map((a) => a.id));
+    this.focalControls(atoms);
+  }
+
+  /** One whole structure picked: what its focal point is on, with Reset and Pick on the drawing. */
+  private focalControls(atoms: Atom[]): void {
+    if (!atoms.length || !this.focalPick) return;
+    const frag = this.doc.fragmentOf(atoms[0].id);
+    if (frag.size !== atoms.length || atoms.some((a) => !frag.has(a.id))) return;
+    const kind = focalKind(this.doc, frag);
+    const names = { atom: 'Atom', bond: 'Bond', ring: 'Ring' } as const;
+    const sel = document.createElement('select');
+    const opts: [string, string][] = [...(kind ? [['own', names[kind]] as [string, string]] : []), ['box', 'Center of box'], ['pick', 'Pick atom, bond or ring…']];
+    for (const [v, text] of opts) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = text;
+      sel.appendChild(o);
+    }
+    sel.value = kind ? 'own' : 'box';
+    sel.addEventListener('change', () => {
+      if (sel.value === 'box' && kind) this.edit('Reset Focal Point', () => clearFocal(this.doc, frag));
+      else if (sel.value === 'pick') { sel.value = kind ? 'own' : 'box'; this.focalPick?.(); }
+    });
+    const row = document.createElement('label');
+    row.className = 'style-row';
+    const name = document.createElement('span');
+    name.textContent = 'Focal point';
+    addInfo(name, 'The spot that counts as this structure\'s middle when lining things up (Align Center and Middle, Distribute, Arrange). Set it on an atom, a bond or a ring so compounds that share a core line up on the core. Center of box goes back to the middle of the structure.');
+    row.append(name, sel);
+    this.body.appendChild(row);
   }
 
   /**

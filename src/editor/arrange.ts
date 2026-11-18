@@ -8,6 +8,7 @@ import { isOrbitalPart } from '../chem/orbitals';
 import { pointShape, shapeAxis } from '../chem/pins';
 import { arrowPoints, boxOf, shapeBox, unionRect } from '../objects';
 import { frameMembers } from './frames';
+import { alignPoint, focalDefault } from '../chem/focal';
 
 export interface Selection {
   atoms: Set<number>;
@@ -37,6 +38,20 @@ export interface Unit {
   arrows: number[];
   shapes: number[];
   box: Rect;
+  /**
+   * Where a structure lines up with others when centering: its focal point (chem/focal.ts), when it
+   * has one of its own (or the Largest ring preference gives it one). The middle of `box` otherwise.
+   */
+  focus?: Vec;
+}
+
+/** The point of a unit that centers: its focal point, or the middle of its box. */
+export const focusOf = (u: Unit): Vec => u.focus ?? { x: (u.box.x1 + u.box.x2) / 2, y: (u.box.y1 + u.box.y2) / 2 };
+
+/** A structure's unit: its atoms, box and focal point. */
+function atomUnit(doc: Doc, atoms: number[], box: Rect): Unit {
+  const f = alignPoint(doc, atoms, { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 }, focalDefault());
+  return { atoms, captions: [], arrows: [], shapes: [], box, ...(f ? { focus: f } : {}) };
 }
 
 export type Align = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom';
@@ -67,7 +82,7 @@ export function units(doc: Doc, sel: Selection, m: Measure): Unit[] {
       atoms.push(a);
       for (const n of doc.neighbors(a)) if (sel.atoms.has(n.id) && !seen.has(n.id)) { seen.add(n.id); stack.push(n.id); }
     }
-    out.push({ atoms, captions: [], arrows: [], shapes: [], box: atomsBox(doc, atoms, m) });
+    out.push(atomUnit(doc, atoms, atomsBox(doc, atoms, m)));
   }
   for (const id of sel.captions) { const c = doc.captions.get(id); if (c && !carried.captions.has(id)) out.push({ atoms: [], captions: [id], arrows: [], shapes: [], box: m.captionBox(c) }); }
   for (const id of sel.arrows) { const r = doc.arrows.get(id); if (r && !carried.arrows.has(id)) out.push({ atoms: [], captions: [], arrows: [id], shapes: [], box: boxOf(arrowPoints(r)) }); }
@@ -95,7 +110,7 @@ export function joinGroups(doc: Doc, us: Unit[]): Unit[] {
     // the joined units this one shares a group with (it can bridge two)
     const hits = [...new Set(gs.map((g) => byGrp.get(g)).filter((x): x is Unit => !!x))];
     if (!hits.length) {
-      const copy = { atoms: [...u.atoms], captions: [...u.captions], arrows: [...u.arrows], shapes: [...u.shapes], box: { ...u.box } };
+      const copy: Unit = { atoms: [...u.atoms], captions: [...u.captions], arrows: [...u.arrows], shapes: [...u.shapes], box: { ...u.box }, ...(u.focus ? { focus: u.focus } : {}) };
       out.push(copy);
       for (const g of gs) byGrp.set(g, copy);
       continue;
@@ -104,6 +119,7 @@ export function joinGroups(doc: Doc, us: Unit[]): Unit[] {
     for (const other of [u, ...hits.slice(1)]) {
       into.atoms.push(...other.atoms); into.captions.push(...other.captions); into.arrows.push(...other.arrows); into.shapes.push(...other.shapes);
       into.box = unionRect(into.box, other.box)!;
+      if (!into.focus && other.focus) into.focus = other.focus;
       if (other !== u) { out.splice(out.indexOf(other), 1); for (const [g, v] of byGrp) if (v === other) byGrp.set(g, into); }
     }
     for (const g of gs) byGrp.set(g, into);
@@ -129,32 +145,50 @@ export function selectionBox(doc: Doc, sel: Selection, m: Measure): Rect | null 
   return r;
 }
 
-/** How far to move each object so their edges or centres line up. */
+/**
+ * How far to move each object so their edges or centers line up. Centers are focal points (the
+ * middle of the box for anything without one); when any has a focal point of its own they line up
+ * halfway between the outermost two, so focal points already in line stay where they are.
+ */
 export function alignOffsets(us: Unit[], how: Align): Vec[] {
   if (us.length < 2) return us.map(() => ({ x: 0, y: 0 }));
   let all: Rect | null = null;
   for (const u of us) all = unionRect(all, u.box);
   const a = all!;
-  return us.map(({ box: b }) => {
+  const fs = us.map(focusOf);
+  // (with no focal points, centers line up on the middle of everything, as in Office)
+  const own = us.some((u) => u.focus);
+  const fx = own ? (Math.min(...fs.map((f) => f.x)) + Math.max(...fs.map((f) => f.x))) / 2 : (a.x1 + a.x2) / 2;
+  const fy = own ? (Math.min(...fs.map((f) => f.y)) + Math.max(...fs.map((f) => f.y))) / 2 : (a.y1 + a.y2) / 2;
+  return us.map(({ box: b }, i) => {
     switch (how) {
       case 'left': return { x: a.x1 - b.x1, y: 0 };
       case 'right': return { x: a.x2 - b.x2, y: 0 };
-      case 'hcenter': return { x: (a.x1 + a.x2) / 2 - (b.x1 + b.x2) / 2, y: 0 };
+      case 'hcenter': return { x: fx - fs[i].x, y: 0 };
       case 'top': return { x: 0, y: a.y1 - b.y1 };
       case 'bottom': return { x: 0, y: a.y2 - b.y2 };
-      case 'vcenter': return { x: 0, y: (a.y1 + a.y2) / 2 - (b.y1 + b.y2) / 2 };
+      case 'vcenter': return { x: 0, y: fy - fs[i].y };
     }
   });
 }
 
 /**
- * How far to move each object so the gaps between neighbours are equal. The outermost two
- * stay where they are; objects are taken in order of their centres.
+ * How far to move each object so the gaps between neighbours are equal ('gaps', as in Office), or
+ * so their focal points are evenly spaced ('focal'). The outermost two stay where they are;
+ * objects are taken in order of their centers.
  */
-export function distributeOffsets(us: Unit[], axis: 'h' | 'v'): Vec[] {
+export function distributeOffsets(us: Unit[], axis: 'h' | 'v', by: 'gaps' | 'focal' = 'gaps'): Vec[] {
   const out = us.map(() => ({ x: 0, y: 0 }));
   if (us.length < 3) return out;
   const lo = (r: Rect) => (axis === 'h' ? r.x1 : r.y1), hi = (r: Rect) => (axis === 'h' ? r.x2 : r.y2);
+  const put = (i: number, d: number) => { out[i] = axis === 'h' ? { x: d, y: 0 } : { x: 0, y: d }; };
+  if (by === 'focal') {
+    const at = (i: number) => (axis === 'h' ? focusOf(us[i]).x : focusOf(us[i]).y);
+    const order = us.map((_u, i) => i).sort((i, j) => at(i) - at(j));
+    const first = at(order[0]), step = (at(order[order.length - 1]) - first) / (order.length - 1);
+    order.forEach((i, k) => put(i, first + k * step - at(i)));
+    return out;
+  }
   const order = us.map((_u, i) => i).sort((i, j) => lo(us[i].box) + hi(us[i].box) - lo(us[j].box) - hi(us[j].box));
   const first = us[order[0]].box, last = us[order[order.length - 1]].box;
   let sizes = 0;
@@ -162,8 +196,7 @@ export function distributeOffsets(us: Unit[], axis: 'h' | 'v'): Vec[] {
   const gap = (hi(last) - lo(first) - sizes) / (order.length - 1);
   let at = lo(first);
   for (const i of order) {
-    const d = at - lo(us[i].box);
-    out[i] = axis === 'h' ? { x: d, y: 0 } : { x: 0, y: d };
+    put(i, at - lo(us[i].box));
     at += hi(us[i].box) - lo(us[i].box) + gap;
   }
   return out;
