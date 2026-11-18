@@ -72,9 +72,17 @@ describe('butane turned about its middle bond', () => {
     const words = frame.captions.map((c) => doc.captions.get(c)!.runs.map((r) => r.text).join(''));
     for (const w of ['synperiplanar', 'eclipsed', 'gauche', 'antiperiplanar', '60°', '360°']) expect(words).toContain(w);
     expect(words.some((w) => /^E \(kcal\/mol\)$/.test(w))).toBe(true);
-    // a barrier for each distinct height: gauche, eclipsed and synperiplanar
-    const barriers = frame.captions.map((c) => doc.captions.get(c)!).filter((c) => c.runs[0]?.color === '#1a56db');
-    expect(barriers.length).toBe(3);
+    // every turning point's energy is written under its name (seven: the one at 0° again at 360°), none inside the plot
+    const energies = frame.captions.map((c) => doc.captions.get(c)!).filter((c) => c.runs[0]?.color === '#1a56db');
+    expect(energies.length).toBe(7);
+    const L = doc.style.bondLength;
+    for (const c of energies) { const b = m.captionBox(c); expect(b.y1 > 200 + butane.h || b.y2 < 200 - 0.4 * L, c.runs[0].text).toBe(true); }
+    // a climb (dashed arrow) for each distinct height: gauche, eclipsed and synperiplanar
+    expect(frame.arrows.map((a) => doc.arrows.get(a)!).filter((a) => a.line === 'dashed' && a.color === '#1a56db' && Math.abs(a.tail.x - a.head.x) < 0.5).length).toBe(3);
+    // the maxima's projections stand in one row: their circles at one height
+    const tops = frame.shapes.map((x) => doc.shapes.get(x)!).filter((x) => x.kind === 'oval' && x.color === '#000000' && x.y2 < 200).map((x) => Math.round(x.y1 * 10));
+    expect(tops.length).toBe(4);
+    expect(new Set(tops).size).toBe(1);
     // seven projections (the one at 0° again at 360°), each a circle, and the sawhorse's box with its eye (pupil and all)
     expect(frame.shapes.filter((s) => doc.shapes.get(s)!.kind === 'oval' && doc.shapes.get(s)!.color === '#000000').length).toBe(7);
     expect(frame.shapes.filter((s) => doc.shapes.get(s)!.kind === 'oval' && doc.shapes.get(s)!.color === '#1a56db').length).toBe(1);
@@ -131,7 +139,7 @@ describe('the chart as a textbook draws it', () => {
     expect(front.some((a) => Math.abs(a) < 1e-6 || Math.abs(a - 360) < 1e-6)).toBe(true);
   });
 
-  it('moves a barrier arrow and its number to the side together, with a dashed grey line back to its level, and keeps the move through a file', () => {
+  it('moves a barrier arrow to the side, with a dashed grey line back to its level, and keeps the move through a file', () => {
     const doc = new Doc();
     const m = plainMeasure(doc);
     doc.beforeCommit = (before) => refitTorsion(doc, m, before);
@@ -153,10 +161,6 @@ describe('the chart as a textbook draws it', () => {
     expect(after.tail.x).toBeCloseTo(before.tail.x - 50, 5);
     expect(after.tail.y).toBeCloseTo(before.tail.y, 5);
     expect(greyLines(doc, id)).toBe(1);
-    // its number went with it: the 5.x kcal/mol caption sits beside the moved arrow
-    const num = doc.shapes.get(id)!.frame!.captions.map((c) => doc.captions.get(c)!).find((c) => c.runs[0]?.color === '#1a56db' && /^5\./.test(c.runs[0].text))!;
-    const nb = m.captionBox(num);
-    expect(Math.min(Math.abs(nb.x1 - after.tail.x), Math.abs(nb.x2 - after.tail.x))).toBeLessThan(0.5 * doc.style.bondLength);
     // through a file, and dragged again there
     const back = readCdxml(writeCdxml(doc)).doc;
     const s2 = [...back.shapes.values()].find((x) => x.torsion)!;

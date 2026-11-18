@@ -45,7 +45,8 @@ function threeSteps() {
     const a = chain(doc, 0, 0, 3, -L / 2);
     const r1 = arrow(doc, 2.4 * L, 4.2 * L, 4);
     const t1 = caption(doc, 'NaBH4', 2.6 * L, -8);
-    const b = chain(doc, 5 * L, 9, 2);
+    // (each structure within a bond length of its arrows' line, or it is not theirs)
+    const b = chain(doc, 5 * L, 6, 2);
     const r2 = arrow(doc, 6.6 * L, 15 * L, -6);
     const t2 = caption(doc, 'Pd(PPh3)4, K2CO3', 6.8 * L, -18);
     const c = chain(doc, 16 * L, -3, 4, L / 2);

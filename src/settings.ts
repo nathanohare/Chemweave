@@ -3,6 +3,7 @@
 // %APPDATA%\io.github.nathanohare.chemillustrator); in a browser, the browser's storage for
 // this page. Drawings never go here.
 
+import { DEFAULT_FOCAL_PREFS, parseFocalPrefs, type FocalPrefs } from './chem/focal';
 import { parseKbLayouts, type KbLayout } from './kb/tables';
 import { type OrientPrefs, DEFAULT_ORIENT, parseOrient } from './orientation-prefs';
 import { type PageLook, DEFAULT_PAGE_LOOK, parsePageLook, readPageTag } from './page-grid';
@@ -190,8 +191,12 @@ export interface Settings {
   mapBox: MapBoxStyle;
   /** Depth shading of structures drawn in 3-D (see render/depth-shade.ts). */
   depthShade: DepthShade;
-  /** Where Format > Link Text to Structure puts the text: where it is, or a side of the structure. */
-  linkSide: 'keep' | 'below' | 'above' | 'left' | 'right';
+  /**
+   * What Format > Link Text to Structure does to the text: gives it the drawing style's ID label
+   * or caption look and place ('style'), or leaves it where it is, as it looks ('keep'). (It
+   * replaced linkSide, whose 'keep' was only the old default, so that setting is not read.)
+   */
+  linkLook: 'style' | 'keep';
   /** Ask before a command with nothing selected changes every structure on the page (Edit > Settings). */
   askWholeDrawing: boolean;
   /** Your own colour rows, in every colour menu and every mode (Edit > Colour Palettes). */
@@ -281,6 +286,8 @@ export interface Settings {
   analysis: AnalysisPrefs;
   /** How Newman projections and torsion energy charts look (Settings > Newman Projections). */
   newman: NewmanPrefs;
+  /** Focal points: the mark, where structures without one center, and the Distribute choice. */
+  focal: FocalPrefs;
   /** AutoSave, recovery copies, Version History and shared folders (File > Versions and Recovery > AutoSave and Recovery Options). */
   keep: KeepPrefs;
   /** The person's own AI model, if they linked one (Edit > Settings > AI Model). Its key is kept apart, never here. */
@@ -296,7 +303,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkeys: {}, keepHotspotOnBond: true, stickyHotspot: false, fixedLength: true, fixedAngles: true, devTools: false, showRoles: true,
   chemTyping: true, stereoItalic: true, boldNumbers: false, autoLinks: true, linkCtrlClick: true, spellCheck: true, replacements: DEFAULT_TYPING.replacements, dictionary: [],
   modeColours: DEFAULT_MODE_COLOURS, nicknames: {}, templates: [], splitWidth: 0.38, slidePaneWidth: 160, notesHeight: 32, slideNotes: true, scrollBars: true, ribbonCollapsed: false, ribbonAutoFold: false, tabsInMenu: true, uiScale: 1, titleBar: typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent) ? 'system' : 'app', page: { name: 'letter', w: 540, h: 720, grow: true }, welcomed: false, textBar: 'docked', appTheme: 'darkgray', density: 'cozy', shadows: 'light', iconLook: 'mode', iconSet: 'new', shapeInk: 'neutral', oneColumnTools: false, toolCells: 'off', canvasRibbon: 'classic', startView: true, enterFinishesText: false, offerFigures: true, templatesOnNew: { document: true, sheet: true, slides: true }, groupTips: true, toolTips: true, touchMode: 'auto', penSketch: false,
-  citeStyle: DEFAULT_STYLE, citeOptions: {}, methylStyle: 'Me', axialStyle: 'RaSa', circledCharges: false, ionCharges: false, saltGroups: false, groupClick: 'group', groupOutline: true, rerouteArrows: true, arrowProducts: true, arrowStartGap: null, arrowEndGap: null, superscriptR: true, superscriptRText: false, alkylLook: 'typed', warnLook: 'box', bondEnds: DEFAULT_BOND_ENDS, mapLook: 'grey', mapBox: { ...DEFAULT_MAP_BOX }, depthShade: { ...DEFAULT_DEPTH_SHADE }, linkSide: 'keep', slideTemplate: null, slideThemes: [], askWholeDrawing: true, palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null,
+  citeStyle: DEFAULT_STYLE, citeOptions: {}, methylStyle: 'Me', axialStyle: 'RaSa', circledCharges: false, ionCharges: false, saltGroups: false, groupClick: 'group', groupOutline: true, rerouteArrows: true, arrowProducts: true, arrowStartGap: null, arrowEndGap: null, superscriptR: true, superscriptRText: false, alkylLook: 'typed', warnLook: 'box', bondEnds: DEFAULT_BOND_ENDS, mapLook: 'grey', mapBox: { ...DEFAULT_MAP_BOX }, depthShade: { ...DEFAULT_DEPTH_SHADE }, linkLook: 'style', slideTemplate: null, slideThemes: [], askWholeDrawing: true, palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null,
   myStyles: [], modeStyles: {}, darkPage: false, darkPalette: 'Graphite', darkPalettes: [],
   guides: { slides: true, design: true },
   orient: { ...DEFAULT_ORIENT },
@@ -313,6 +320,7 @@ export const DEFAULT_SETTINGS: Settings = {
   scheme: DEFAULT_SCHEME_PREFS,
   analysis: DEFAULT_ANALYSIS,
   newman: DEFAULT_NEWMAN_PREFS,
+  focal: DEFAULT_FOCAL_PREFS,
   keep: DEFAULT_KEEP,
   ai: DEFAULT_AI,
   kbColumns: {},
@@ -325,7 +333,7 @@ const STORAGE_KEY = 'chem-illustrator.settings';
 
 /** Read settings saved as text, keeping only what makes sense. */
 export function parseSettings(text: string | null | undefined): Settings {
-  const s: Settings = { ...DEFAULT_SETTINGS, hotkeys: {}, replacements: DEFAULT_SETTINGS.replacements.map(([a, b]) => [a, b]), dictionary: [], modeColours: { ...DEFAULT_MODE_COLOURS }, nicknames: {}, templates: [], palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null, myStyles: [], modeStyles: {}, darkPalettes: [], guides: { ...DEFAULT_SETTINGS.guides }, orient: { ...DEFAULT_ORIENT }, pageLook: { ...DEFAULT_PAGE_LOOK }, docPins: [], recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], scheme: { ...DEFAULT_SCHEME_PREFS }, analysis: parseAnalysisPrefs(null), newman: parseNewmanPrefs(null), keep: { ...DEFAULT_KEEP }, ai: { ...DEFAULT_AI }, kbColumns: {}, officeStructures: { ...DEFAULT_SETTINGS.officeStructures } };
+  const s: Settings = { ...DEFAULT_SETTINGS, hotkeys: {}, replacements: DEFAULT_SETTINGS.replacements.map(([a, b]) => [a, b]), dictionary: [], modeColours: { ...DEFAULT_MODE_COLOURS }, nicknames: {}, templates: [], palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null, myStyles: [], modeStyles: {}, darkPalettes: [], guides: { ...DEFAULT_SETTINGS.guides }, orient: { ...DEFAULT_ORIENT }, pageLook: { ...DEFAULT_PAGE_LOOK }, docPins: [], recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], scheme: { ...DEFAULT_SCHEME_PREFS }, analysis: parseAnalysisPrefs(null), newman: parseNewmanPrefs(null), focal: { ...DEFAULT_FOCAL_PREFS }, keep: { ...DEFAULT_KEEP }, ai: { ...DEFAULT_AI }, kbColumns: {}, officeStructures: { ...DEFAULT_SETTINGS.officeStructures } };
   if (!text) return s;
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return s; }
@@ -340,6 +348,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   else if (r.mapLook === 'peach') s.mapLook = 'custom';
   if (r.mapBox !== undefined) s.mapBox = mapBoxStyle(r.mapBox);
   if (r.depthShade) s.depthShade = readDepthShade(r.depthShade);
+  if (r.focal !== undefined) s.focal = parseFocalPrefs(r.focal);
   if (r.touchMode === 'auto' || r.touchMode === 'on' || r.touchMode === 'off') s.touchMode = r.touchMode;
   s.orient = parseOrient(r.orient);
   s.pageLook = parsePageLook(r.pageLook);
@@ -380,7 +389,7 @@ export function parseSettings(text: string | null | undefined): Settings {
     const t = r.templatesOnNew as Record<string, unknown>;
     s.templatesOnNew = { document: t.document !== false, sheet: t.sheet !== false, slides: t.slides !== false };
   }
-  if (typeof r.linkSide === 'string' && ['keep', 'below', 'above', 'left', 'right'].includes(r.linkSide)) s.linkSide = r.linkSide as Settings['linkSide'];
+  if (r.linkLook === 'style' || r.linkLook === 'keep') s.linkLook = r.linkLook;
   if (Array.isArray(r.replacements)) {
     s.replacements = r.replacements.filter((x): x is [string, string] => Array.isArray(x) && typeof x[0] === 'string' && typeof x[1] === 'string' && x[0] !== '').map(([a, b]) => [a, b]);
   }

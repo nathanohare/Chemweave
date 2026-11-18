@@ -6,6 +6,7 @@
 import { showContextMenu, topMenuEntry, type MenuItem } from './context-menu';
 import { commandIcon } from './command-icons';
 import { COMMAND_NAMES } from '../editor/keymap';
+import { parseSideLayouts, type SideLayout } from './side-sections';
 import { listToGrid, narrowed, parseGrid, withoutGone, type Grid } from './toolbox-grid';
 
 export type Dock = 'left' | 'right' | 'top' | 'bottom' | 'float';
@@ -57,6 +58,8 @@ export interface ToolboxState {
   ownFlyouts?: OwnBox[];
   /** Set once the side panel has been floated at the top right for settings saved when it started docked. */
   sideFloats?: boolean;
+  /** The side panel's sections in each mode: which are tabs, which are stacked under them, their order. */
+  sideLayout?: Record<string, SideLayout>;
 }
 
 export type Overflow = 'scroll' | 'wrap';
@@ -161,7 +164,7 @@ export function withLayoutReset(st: ToolboxState): ToolboxState {
   const places = d.places;
   (st.own ?? []).forEach((b, i) => { places[b.id] = { shown: true, dock: 'float', x: 160 + i * 24, y: 120 + i * 64 }; });
   for (const id of st.removed ?? []) places[id] = { ...places[id], shown: false };
-  const { sideByMode: _, ...rest } = st;
+  const { sideByMode: _, sideLayout: _2, ...rest } = st;
   return { ...rest, locked: d.locked, places, sideCollapsed: d.sideCollapsed };
 }
 
@@ -243,6 +246,8 @@ export function parseToolboxes(raw: unknown): ToolboxState {
     if (own.length) s.ownFlyouts = own;
   }
   if (r.jiggle === false) s.jiggle = false;
+  const sideLayout = parseSideLayouts(r.sideLayout);
+  if (sideLayout) s.sideLayout = sideLayout;
   if (typeof r.stripHeight === 'number' && isFinite(r.stripHeight)) s.stripHeight = Math.min(4000, Math.max(STRIP_MIN, Math.round(r.stripHeight)));
   const grids = (v: unknown, valid: (k: string) => boolean, ok: (id: string) => boolean): Record<string, Grid> | undefined => {
     if (!v || typeof v !== 'object') return undefined;

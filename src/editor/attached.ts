@@ -6,6 +6,7 @@
 import type { AttachSide, Attachment, Caption, Doc, Entity } from '../model';
 import type { Rect, Vec } from '../geom';
 import { POINTS, selectionBox, type Measure } from './arrange';
+import { alignPoint, focalDefault } from '../chem/focal';
 
 /** The name of the tag that saves a caption's tie in a CDXML file. */
 export const ATTACH_TAG = 'Chem Illustrator attached';
@@ -13,6 +14,8 @@ export const ATTACH_TAG = 'Chem Illustrator attached';
 export const IGNORE_TAG = 'Chem Illustrator ignore';
 /** The objecttag on a text box set by hand to be read as chemistry ('yes') or as plain text ('no'). */
 export const CHEM_TAG = 'Chem Illustrator chemistry';
+/** Marks text under a reaction arrow as its Results line (yield, ee, dr); ChemDraw sees ordinary text below the arrow. */
+export const RESULTS_TAG = 'Chem Illustrator results';
 
 /** The usual gap between a structure and its label: a third of a bond length. */
 export function defaultGap(doc: Doc): number {
@@ -31,15 +34,29 @@ export function structureBox(doc: Doc, atoms: Set<number>, m: Measure): Rect | n
   return selectionBox(doc, { atoms, bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() }, m);
 }
 
-/** The point of the caption's box that is held to the structure: the edge facing it, in the middle. */
-function capPoint(cap: Rect, side: AttachSide): Vec {
-  const cx = (cap.x1 + cap.x2) / 2, cy = (cap.y1 + cap.y2) / 2;
+type Place = Pick<Attachment, 'side' | 'gap' | 'shift' | 'align'>;
+/** Above or below, the edge (or middle) of a box that lines up with the structure's. */
+const across = (r: Rect, align: Attachment['align'], mid?: number) =>
+  align === 'left' ? r.x1 : align === 'right' ? r.x2 : mid ?? (r.x1 + r.x2) / 2;
+
+/**
+ * Where the structure's middle is, for centering what is tied to it: its focal point (one set on
+ * it, or its largest ring when that is the default in Preferences), else the middle of its box.
+ */
+export function structureMiddle(doc: Doc, atoms: Set<number>, box: Rect): Vec {
+  const middle = { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
+  return alignPoint(doc, [...atoms], middle, focalDefault()) ?? middle;
+}
+
+/** The point of the caption's box that is held to the structure: the edge facing it, in the middle (or at the lined-up edge). */
+function capPoint(cap: Rect, side: AttachSide, align?: Attachment['align']): Vec {
+  const cx = across(cap, align), cy = (cap.y1 + cap.y2) / 2;
   return side === 'below' ? { x: cx, y: cap.y1 } : side === 'above' ? { x: cx, y: cap.y2 } : side === 'left' ? { x: cap.x2, y: cy } : { x: cap.x1, y: cy };
 }
 
-/** Where that point goes, beside the structure's box. */
-export function anchorPoint(box: Rect, a: Pick<Attachment, 'side' | 'gap' | 'shift'>): Vec {
-  const cx = (box.x1 + box.x2) / 2, cy = (box.y1 + box.y2) / 2;
+/** Where that point goes, beside the structure's box (`mid`: the structure's middle, when not its box's). */
+export function anchorPoint(box: Rect, a: Place, mid?: Vec): Vec {
+  const cx = across(box, a.align, mid?.x), cy = mid?.y ?? (box.y1 + box.y2) / 2;
   switch (a.side) {
     case 'below': return { x: cx + a.shift, y: box.y2 + a.gap };
     case 'above': return { x: cx + a.shift, y: box.y1 - a.gap };
@@ -49,15 +66,17 @@ export function anchorPoint(box: Rect, a: Pick<Attachment, 'side' | 'gap' | 'shi
 }
 
 /** How far to move a caption (its box `cap`) so it sits in its place beside the structure's box. */
-export function attachOffset(box: Rect, cap: Rect, a: Pick<Attachment, 'side' | 'gap' | 'shift'>): Vec {
-  const want = anchorPoint(box, a), now = capPoint(cap, a.side);
+export function attachOffset(box: Rect, cap: Rect, a: Place, mid?: Vec): Vec {
+  const vertical = a.side === 'below' || a.side === 'above';
+  const want = anchorPoint(box, a, mid), now = capPoint(cap, a.side, vertical ? a.align : undefined);
   return { x: want.x - now.x, y: want.y - now.y };
 }
 
 /** The gap and shift of a caption where it is now (after it was moved by hand), on its side. */
-export function readPlace(box: Rect, cap: Rect, side: AttachSide): { gap: number; shift: number } {
-  const p = capPoint(cap, side);
-  const cx = (box.x1 + box.x2) / 2, cy = (box.y1 + box.y2) / 2;
+export function readPlace(box: Rect, cap: Rect, side: AttachSide, align?: Attachment['align'], mid?: Vec): { gap: number; shift: number } {
+  const vertical = side === 'below' || side === 'above';
+  const p = capPoint(cap, side, vertical ? align : undefined);
+  const cx = across(box, vertical ? align : undefined, mid?.x), cy = mid?.y ?? (box.y1 + box.y2) / 2;
   const r = (v: number) => Math.round(v * 100) / 100;
   switch (side) {
     case 'below': return { gap: r(p.y - box.y2), shift: r(p.x - cx) };
@@ -147,12 +166,21 @@ export function placeBox(doc: Doc, c: Caption, atoms: Set<number>, m: Measure): 
   return out;
 }
 
+/** The structure's middle (its own box, not grown past other captions), or undefined when that is its box's. */
+function middleFor(doc: Doc, atoms: Set<number>, m: Measure): Vec | undefined {
+  const box = structureBox(doc, atoms, m);
+  if (!box) return undefined;
+  const mid = structureMiddle(doc, atoms, box);
+  return Math.abs(mid.x - (box.x1 + box.x2) / 2) < 1e-9 && Math.abs(mid.y - (box.y1 + box.y2) / 2) < 1e-9 ? undefined : mid;
+}
+
 /** Put a caption in its place beside its structure (inside an edit). */
 export function placeAttached(doc: Doc, c: Caption, m: Measure): void {
   if (!c.attach) return;
-  const box = placeBox(doc, c, attachedAtoms(doc, c.attach), m);
+  const atoms = attachedAtoms(doc, c.attach);
+  const box = placeBox(doc, c, atoms, m);
   if (!box) return;
-  const d = attachOffset(box, m.captionBox(c), c.attach);
+  const d = attachOffset(box, m.captionBox(c), c.attach, middleFor(doc, atoms, m));
   if (Math.abs(d.x) > 1e-6 || Math.abs(d.y) > 1e-6) doc.updateCaption(c.id, { x: c.x + d.x, y: c.y + d.y });
 }
 
@@ -192,20 +220,24 @@ export function refitAttached(doc: Doc, before: ReadonlyMap<string, Entity | nul
       // moved by hand: it stays there, and follows the structure from there on
       const box = placeBox(doc, c, atoms, m);
       if (!box) continue;
-      at = { ...at, ...readPlace(box, m.captionBox(c), a.side) };
+      at = { ...at, ...readPlace(box, m.captionBox(c), a.side, a.align, middleFor(doc, atoms, m)) };
       doc.updateCaption(c.id, { attach: at });
       continue;
     }
-    // centred above or below its structure: Center puts it back in the middle of that side, as a
-    // label made there sits (it was left off the middle when tied where it stood, or dragged)
-    if (old && old.justify !== 'center' && c.justify === 'center' && (a.side === 'below' || a.side === 'above') && at.shift !== 0) at = { ...at, shift: 0 };
+    // above or below its structure, its alignment is also where it lines up with the structure:
+    // Center puts it back in the middle (as a label made there sits; it was left off the middle
+    // when tied where it stood, or dragged), Left and Right line up its edge with the structure's
+    if (old && old.justify !== c.justify && (a.side === 'below' || a.side === 'above')) {
+      const align = c.justify === 'left' || c.justify === 'right' ? c.justify : undefined;
+      if (at.shift !== 0 || at.align !== align) { at = { ...at, shift: 0 }; if (align) at.align = align; else delete at.align; }
+    }
     if (at !== a) doc.updateCaption(c.id, { attach: at });
     placeAttached(doc, doc.captions.get(c.id)!, m);
   }
 }
 
 function sameAttach(x: Attachment | undefined, y: Attachment): boolean {
-  return !!x && x.side === y.side && x.gap === y.gap && x.shift === y.shift;
+  return !!x && x.side === y.side && x.gap === y.gap && x.shift === y.shift && x.align === y.align;
 }
 
 /**
@@ -217,7 +249,7 @@ export function attachWhereItIs(doc: Doc, c: Caption, atoms: Set<number>, m: Mea
   if (!box) return null;
   const cap = m.captionBox(c);
   const side = extra.side ?? sideOf(box, cap);
-  return { atoms: [...atoms], side, ...readPlace(box, cap, side), role, ...extra };
+  return { atoms: [...atoms], side, ...readPlace(box, cap, side, extra.align, middleFor(doc, atoms, m)), role, ...extra };
 }
 
 /** The structure nearest a caption (its box closest to the caption's box), for tying one after the fact. */
@@ -270,6 +302,7 @@ export function attachFromTag(text: string | null): Attachment | undefined {
     if (Array.isArray(v.show)) out.show = v.show.filter((k) => KEYS.includes(k) || (typeof k === 'string' && /^calc:[\w-]{1,20}$/.test(k)));
     if (typeof v.adduct === 'string') out.adduct = v.adduct;
     if (v.keepText === true) out.keepText = true;
+    if ((v.align === 'left' || v.align === 'right') && (out.side === 'below' || out.side === 'above')) out.align = v.align;
     if (role === 'descriptors' && typeof v.sig === 'string' && v.sig) out.sig = v.sig;
     return out;
   } catch {

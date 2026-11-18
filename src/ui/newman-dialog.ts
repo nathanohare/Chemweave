@@ -1,10 +1,16 @@
 // The Newman Projection window (right-click a single bond ▸ Newman Projection…, or the Newman
-// tool): which end to look from, Newman or sawhorse, the most stable conformers from a conformer
-// search (or the conformation the wedges draw), a Turn dial, and a preview that redraws as
-// anything changes. Tab and Shift+Tab in the preview step through the conformers.
+// tool): the Newman projection and the sawhorse side by side (the sawhorse with the eye that shows
+// which end is looked from, and Reverse Direction on its box), then the most stable conformers
+// from a conformer search (or the conformation the wedges draw), a Turn dial and how the labels
+// are written. Drag either picture onto the canvas, or select one and press Insert: the window
+// closes and the picture follows the pointer until a click places it. Tab and Shift+Tab in a
+// picture step through the conformers.
 
 import { commonName, norm180, type NewmanConformer } from '../chem/newman';
 import { chartTab, type ChartChoice, type ChartHost } from './newman-chart-tab';
+import type { NewmanText } from '../design/newman-prefs';
+import { addInfo, infoIcon, setInfo } from './info-tip';
+import { FONT_GROUPS } from '../fonts';
 
 /** What the window settles on; the caller makes the projection from it. */
 export interface NewmanChoice {
@@ -20,19 +26,22 @@ export interface NewmanChoice {
   method: 'mmff' | 'xtb';
   mark: boolean;
   linked: boolean;
+  /** Textbook angles (120° apart, staggered at exactly 60°) rather than the conformer's own. */
+  ideal: boolean;
+  /** The sawhorse's wedge and hashed wedge on each atom, and R/S beside its stereocenters. */
+  wedges: boolean;
+  rs: boolean;
+  /** How the labels are written. */
+  text: NewmanText;
 }
 
 export interface NewmanHost {
-  /** How each end is named at first: [the end picked, the other end]. */
-  ends: [string, string];
-  /** Better names once known (each end's group, as written from the other end). */
-  names?: Promise<[string, string]>;
   /** The conformers seen down the bond, lowest first (`progress` tells how a search is going). Rejects with a readable reason. */
   list(reversed: boolean, method: 'mmff' | 'xtb', progress: (text: string) => void): Promise<NewmanConformer[]>;
   /** The conformation the wedges and bold bonds draw, or why there is none. */
   drawn(reversed: boolean): Promise<NewmanConformer | string>;
-  /** Draw the projection the choice makes on the preview canvas. */
-  paint(choice: NewmanChoice, conf: NewmanConformer, canvas: HTMLCanvasElement): void;
+  /** Draw the choice as a Newman projection or as a sawhorse (with the eye at the end looked from) on a preview canvas. */
+  paint(choice: NewmanChoice, conf: NewmanConformer, canvas: HTMLCanvasElement, kind: NewmanChoice['kind']): void;
   /** xTB can be used (the desktop app, which runs the person's xtb). */
   xtb: boolean;
   /** Stop a search under way. */
@@ -57,7 +66,8 @@ export interface ChartOffer<S> {
   first?: boolean;
 }
 
-export type NewmanResult<S> = { choice: NewmanChoice; conf: NewmanConformer } | { choice: NewmanChoice; chart: ChartChoice; scan: S };
+/** `drag`: a picture was dragged out of the window, the pointer now at this place with its button still down. */
+export type NewmanResult<S> = { choice: NewmanChoice; conf: NewmanConformer; drag?: { x: number; y: number } } | { choice: NewmanChoice; chart: ChartChoice; scan: S };
 
 export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, editing: boolean, offer?: ChartOffer<S>): Promise<NewmanResult<S> | null> {
   return new Promise((resolve) => {
@@ -68,42 +78,50 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
     const d = el('dialog', { className: 'ask newman-dialog' });
     d.setAttribute('aria-label', 'Newman projection');
     const form = el('form', { method: 'dialog' });
+    const fontOptions = FONT_GROUPS.map((g) => `<optgroup label="${esc(g.name)}">${g.fonts.map((f) => `<option>${esc(f)}</option>`).join('')}</optgroup>`).join('');
     form.innerHTML = `<h2>${editing ? 'Edit Newman Projection' : 'Newman Projection'}</h2>
       ${offer ? '<div class="np-tabs" role="tablist"><button type="button" role="tab" data-tab="proj">Projection</button><button type="button" role="tab" data-tab="chart">Energy Chart</button></div>' : ''}
-      <label class="ask-row np-end"><span>Looking from</span><select name="end"></select><button type="button" data-act="swap" title="Look from the other end">⇄</button></label>
       <div class="np-page" data-page="proj">
+      <div class="np-views" role="radiogroup" aria-label="Draw as">
+        <div class="np-view" data-kind="newman" role="radio" tabindex="0"><span class="np-cap">Newman</span><canvas class="np-preview" role="img" aria-label="Newman projection preview"></canvas></div>
+        <div class="np-view" data-kind="sawhorse" role="radio" tabindex="0"><span class="np-cap">Sawhorse</span><button type="button" class="np-swap" data-act="swap" title="Reverse Direction" aria-label="Reverse Direction">⇄</button><canvas class="np-preview" role="img" aria-label="Sawhorse preview"></canvas></div>
+      </div>
       <div class="np-grid">
         <div class="np-left">
-          <canvas class="np-preview" tabindex="0" role="img" aria-label="Preview. Tab and Shift+Tab step through the conformers"></canvas>
-          <label class="ask-row np-turn"><span>Turn</span><input name="turn" type="range" min="-180" max="180" step="5" aria-label="Turn the back atom" /><output class="muted"></output></label>
-          <p class="muted small np-tip">Tab in the preview: next conformer · Shift+Tab: previous</p>
-        </div>
-        <div class="np-right">
-          <div class="ask-row"><span>Draw as</span><span class="np-radios"><label><input type="radio" name="kind" value="newman" /> Newman</label><label><input type="radio" name="kind" value="sawhorse" /> Sawhorse</label></span></div>
           <label class="ask-row"><span>Conformation</span><select name="source"><option value="stable">Most stable (conformer search)</option><option value="drawn">As drawn (wedges)</option></select></label>
           <label class="ask-row"><span>Energies</span><select name="method"><option value="mmff">MMFF94s+ (fast)</option><option value="xtb">GFN2-xTB (your xtb)</option></select></label>
-          <div class="np-list" role="listbox" aria-label="Conformers"><table><thead><tr><th>#</th><th>Torsion</th><th class="num">kcal/mol</th><th class="num">Share</th></tr></thead><tbody></tbody></table></div>
+          <label class="ask-row np-turn"><span>Turn</span><input name="turn" type="range" min="-180" max="180" step="5" aria-label="Turn the back atom" /><output class="muted"></output></label>
+          <div class="ask-row np-text"><span>Text</span><span class="np-textrow"><select name="font" aria-label="Font"><option value="">Drawing font</option>${fontOptions}</select><input name="size" type="number" min="4" max="72" step="0.5" placeholder="Auto" aria-label="Font size, points" /><button type="button" class="np-face" data-face="bold" aria-pressed="false" title="Bold"><b>B</b></button><button type="button" class="np-face" data-face="italic" aria-pressed="false" title="Italic"><i>I</i></button></span></div>
+        </div>
+        <div class="np-right">
+          <div class="np-list" role="listbox" aria-label="Conformers"><table><thead><tr><th>#</th><th class="np-th-torsion">Torsion</th><th class="num">kcal/mol</th><th class="num">Share</th></tr></thead><tbody></tbody></table></div>
           <p class="muted small np-status" aria-live="polite"></p>
         </div>
       </div>
-      <label class="ask-row ask-check"><input name="mark" type="checkbox" /><span>Mark the viewing direction on the structure (eye and dotted arrow)</span></label>
-      <label class="ask-row ask-check"><input name="linked" type="checkbox" /><span>Keep linked: draw it again when the structure changes</span></label>
-      <p class="muted small">Groups are colored by size on each atom (largest, middle, smallest by A-value): change this in Settings ▸ Newman Projections.</p>
+      <div class="np-checks">
+        <label title="Draw the bonds 120° apart and staggered at exactly 60°, as textbooks do. Off: the conformer's own angles."><input name="ideal" type="checkbox" /> Idealized Angles</label>
+        <label title="Make the labels smaller, down to 70%, where they would not fit at full size."><input name="auto" type="checkbox" /> Auto-Scale Text</label>
+        <label title="On the sawhorse, a wedge and a hashed wedge on each atom show which groups point toward and away from you."><input name="wedges" type="checkbox" /> Wedges</label>
+        <label title="On the sawhorse, show R or S beside each stereocenter."><input name="rs" type="checkbox" /> R/S Labels</label>
+        <label title="Mark the viewing direction on the structure with an eye and a dotted arrow."><input name="mark" type="checkbox" /> Viewing Mark</label>
+        <label title="Draw the projection again whenever its structure changes."><input name="linked" type="checkbox" /> Linked</label>
+      </div>
       </div>
       ${offer ? '<div class="np-page" data-page="chart" hidden></div>' : ''}
       <p class="ask-buttons"><button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary">${editing ? 'Redraw' : 'Insert'}</button></p>`;
     const $ = <T extends Element>(q: string) => form.querySelector<T>(q)!;
-    const canvas = $<HTMLCanvasElement>('.np-preview');
+    addInfo(form.querySelector('h2'), `${editing ? 'Select the Newman projection or the sawhorse, then click Redraw.' : 'Drag the Newman projection or the sawhorse onto the canvas, or select one and click Insert, then click where it should go.'} The eye on the sawhorse shows which end you are looking from. Groups are colored by size on each atom (largest, middle, smallest by A-value): change this in Settings ▸ Newman Projections.`);
+    const listInfo = infoIcon('Conformers looking down this bond, most stable first. Tab in a preview: next conformer. Shift+Tab: previous.');
+    $<HTMLElement>('.np-th-torsion').append(' ', listInfo);
+    const views = [...form.querySelectorAll<HTMLElement>('.np-view')];
+    const canvases = new Map(views.map((v) => [v.dataset.kind as NewmanChoice['kind'], v.querySelector('canvas')!] as const));
     const turn = $<HTMLInputElement>('input[name=turn]');
     const turnOut = $<HTMLOutputElement>('.np-turn output');
-    const endSel = $<HTMLSelectElement>('select[name=end]');
     const sourceSel = $<HTMLSelectElement>('select[name=source]');
     const methodSel = $<HTMLSelectElement>('select[name=method]');
     const body = $<HTMLTableElement>('.np-list table').tBodies[0];
     const status = $<HTMLParagraphElement>('.np-status');
     const submit = $<HTMLButtonElement>('button[type=submit]');
-    endSel.innerHTML = host.ends.map((e, i) => `<option value="${i}">${esc(e)}</option>`).join('');
-    host.names?.then((n) => n.forEach((t, i) => { endSel.options[i].textContent = t; }), () => {});
     if (!host.xtb) {
       const o = methodSel.options[1];
       o.disabled = true;
@@ -112,14 +130,19 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
 
     const current = (): NewmanConformer | null => (choice.source === 'drawn' ? drawnConf : confs[choice.index] ?? null);
     let tab: 'proj' | 'chart' = offer?.first ? 'chart' : 'proj';
-    const chart = offer ? chartTab(form.querySelector<HTMLElement>('[data-page=chart]')!, offer.host, offer.start, () => choice.reversed, host.xtb, () => { if (tab === 'chart') paint(); }) : null;
+    const chart = offer ? chartTab(form.querySelector<HTMLElement>('[data-page=chart]')!, offer.host, offer.start, () => choice.reversed, host.xtb, () => { if (tab === 'chart') paint(); }, () => reverse()) : null;
     const paint = () => {
       if (tab === 'chart') { submit.disabled = !chart?.result(); return; }
       const c = current();
       submit.disabled = !c || busy > 0;
-      const ctx = canvas.getContext('2d');
-      if (!c) { if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height); return; }
-      try { host.paint(choice, c, canvas); } catch { /* drawn on the next change */ }
+      for (const [kind, cv] of canvases) {
+        if (!c) { cv.getContext('2d')?.clearRect(0, 0, cv.width, cv.height); continue; }
+        try { host.paint(choice, c, cv, kind); } catch { /* drawn on the next change */ }
+      }
+    };
+    const pickKind = (kind: NewmanChoice['kind']) => {
+      choice.kind = kind;
+      for (const v of views) v.setAttribute('aria-checked', String(v.dataset.kind === kind));
     };
     const fillList = () => {
       body.innerHTML = '';
@@ -131,7 +154,7 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
         tr.setAttribute('aria-selected', String(on));
         tr.className = on ? 'on' : '';
         tr.innerHTML = `<td>${choice.source === 'drawn' ? '–' : i + 1}</td><td>${esc(torsionText(c))}</td><td class="num">${c.energy === null ? '–' : c.energy.toFixed(2)}</td><td class="num">${c.population === undefined ? '–' : Math.round(c.population * 100) + '%'}</td>`;
-        if (choice.source !== 'drawn') tr.addEventListener('click', () => { pick(i); canvas.focus(); });
+        if (choice.source !== 'drawn') tr.addEventListener('click', () => { pick(i); views.find((v) => v.dataset.kind === choice.kind)?.focus(); });
       });
     };
     const pick = (i: number) => {
@@ -155,7 +178,8 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
           if (ask !== busy) return;
           confs = got;
           if (choice.index >= confs.length) choice.index = 0;
-          status.textContent = confs.length ? `${confs.length} conformer${confs.length === 1 ? '' : 's'} looking down this bond, most stable first (${choice.method === 'xtb' ? 'GFN2-xTB' : 'MMFF94s+'}).` : 'No conformers were found.';
+          status.textContent = confs.length ? '' : 'No conformers were found.';
+          setInfo(listInfo, `${confs.length} conformer${confs.length === 1 ? '' : 's'} looking down this bond, most stable first (${choice.method === 'xtb' ? 'GFN2-xTB' : 'MMFF94s+'}). Tab in a preview: next conformer. Shift+Tab: previous.`);
         }
       } catch (e) {
         if (ask !== busy) return;
@@ -169,28 +193,63 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
       paint();
     };
 
-    endSel.value = choice.reversed ? '1' : '0';
-    form.querySelector<HTMLInputElement>(`input[name=kind][value=${choice.kind}]`)!.checked = true;
+    pickKind(choice.kind);
     sourceSel.value = choice.source;
     methodSel.value = choice.method === 'xtb' && host.xtb ? 'xtb' : 'mmff';
     choice.method = methodSel.value as 'mmff' | 'xtb';
     methodSel.disabled = choice.source === 'drawn';
     turn.value = String(choice.turn);
     turnOut.textContent = `${choice.turn}°`;
-    $<HTMLInputElement>('input[name=mark]').checked = choice.mark;
-    $<HTMLInputElement>('input[name=linked]').checked = choice.linked;
+    choice.text = { ...choice.text };
+    const flags = ['ideal', 'wedges', 'rs', 'mark', 'linked'] as const;
+    for (const k of flags) {
+      const box = $<HTMLInputElement>(`input[name=${k}]`);
+      box.checked = choice[k];
+      box.addEventListener('change', () => { choice[k] = box.checked; paint(); });
+    }
+    const autoBox = $<HTMLInputElement>('input[name=auto]'), fontSel = $<HTMLSelectElement>('select[name=font]'), sizeBox = $<HTMLInputElement>('input[name=size]');
+    autoBox.checked = choice.text.auto;
+    autoBox.addEventListener('change', () => { choice.text.auto = autoBox.checked; paint(); });
+    if (choice.text.font && ![...fontSel.options].some((o) => o.value === choice.text.font)) fontSel.add(new Option(choice.text.font, choice.text.font));
+    fontSel.value = choice.text.font ?? '';
+    fontSel.addEventListener('change', () => { if (fontSel.value) choice.text.font = fontSel.value; else delete choice.text.font; paint(); });
+    sizeBox.value = choice.text.size !== undefined ? String(choice.text.size) : '';
+    sizeBox.addEventListener('input', () => { const v = Number(sizeBox.value); if (sizeBox.value !== '' && isFinite(v) && v >= 4 && v <= 72) choice.text.size = v; else delete choice.text.size; paint(); });
+    for (const b of form.querySelectorAll<HTMLButtonElement>('.np-face')) {
+      const k = b.dataset.face as 'bold' | 'italic';
+      b.setAttribute('aria-pressed', String(!!choice.text[k]));
+      b.addEventListener('click', () => { if (choice.text[k]) delete choice.text[k]; else choice.text[k] = true; b.setAttribute('aria-pressed', String(!!choice.text[k])); paint(); });
+    }
 
     turn.addEventListener('input', () => { choice.turn = Number(turn.value) || 0; turnOut.textContent = `${choice.turn}°`; paint(); });
     turn.addEventListener('dblclick', () => { choice.turn = 0; turn.value = '0'; turnOut.textContent = '0°'; paint(); });
-    for (const r of form.querySelectorAll<HTMLInputElement>('input[name=kind]')) r.addEventListener('change', () => { choice.kind = r.value as NewmanChoice['kind']; paint(); });
-    endSel.addEventListener('change', () => { choice.reversed = endSel.value === '1'; choice.index = 0; void load(); chartStale = true; if (tab === 'chart') { chartStale = false; chart?.open(true); } });
-    $<HTMLButtonElement>('[data-act=swap]').addEventListener('click', () => { endSel.value = endSel.value === '1' ? '0' : '1'; endSel.dispatchEvent(new Event('change')); });
+    const reverse = () => { choice.reversed = !choice.reversed; choice.index = 0; void load(); chartStale = true; if (tab === 'chart') { chartStale = false; chart?.open(true); } };
+    for (const b of form.querySelectorAll<HTMLButtonElement>('[data-act=swap]')) b.addEventListener('click', (e) => { e.stopPropagation(); reverse(); });
     sourceSel.addEventListener('change', () => { choice.source = sourceSel.value as NewmanChoice['source']; methodSel.disabled = choice.source === 'drawn'; void load(); });
     methodSel.addEventListener('change', () => { choice.method = methodSel.value as NewmanChoice['method']; choice.index = 0; void load(); });
-    $<HTMLInputElement>('input[name=mark]').addEventListener('change', (e) => { choice.mark = (e.target as HTMLInputElement).checked; });
-    $<HTMLInputElement>('input[name=linked]').addEventListener('change', (e) => { choice.linked = (e.target as HTMLInputElement).checked; });
+    // a picture is selected by a click (or Space), and dragged out of the window onto the canvas
+    for (const v of views) {
+      const kind = v.dataset.kind as NewmanChoice['kind'];
+      v.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pickKind(kind); } });
+      v.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || (e.target as Element).closest('button')) return;
+        pickKind(kind);
+        const c = current();
+        if (editing || !c || busy > 0) return;
+        const x0 = e.clientX, y0 = e.clientY;
+        const move = (ev: PointerEvent) => {
+          if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+          stopDrag();
+          d.close();
+          finish({ choice: { ...choice, text: { ...choice.text } }, conf: c, drag: { x: ev.clientX, y: ev.clientY } });
+        };
+        const stopDrag = () => { window.removeEventListener('pointermove', move, true); window.removeEventListener('pointerup', stopDrag, true); };
+        window.addEventListener('pointermove', move, true);
+        window.addEventListener('pointerup', stopDrag, true);
+      });
+    }
     // Tab steps through the conformers while the preview has focus; past either end it moves on as usual
-    canvas.addEventListener('keydown', (e) => {
+    for (const v of views) v.addEventListener('keydown', (e) => {
       if (choice.source === 'drawn' || !confs.length) return;
       const step = e.key === 'Tab' ? (e.shiftKey ? -1 : 1) : e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
       if (!step) return;
@@ -233,11 +292,11 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
       const c = current();
       if (!c) return;
       d.close();
-      finish({ choice: { ...choice }, conf: c });
+      finish({ choice: { ...choice, text: { ...choice.text } }, conf: c });
     });
     d.showModal();
     if (offer) show(tab);
-    if (tab === 'proj') canvas.focus(); else form.querySelector<HTMLButtonElement>('[data-tab=chart]')!.focus();
+    if (tab === 'proj') views.find((v) => v.dataset.kind === choice.kind)?.focus(); else form.querySelector<HTMLButtonElement>('[data-tab=chart]')!.focus();
     void load();
   });
 }

@@ -127,6 +127,12 @@ The panel on the right changes with what you are doing. In a canvas it has:
 - **Warnings**: possible problems in the structures, such as a carbon with five bonds (see [Canvas](drawing.md#warnings)).
 - **Analysis**: formula, masses and more for the selected structure (see [Canvas](drawing.md#the-analysis-panel)).
 
+The panel's header is one row: its sections as tabs, the padlock and the **×**. With one section showing, the header names it and what is selected ("Style: 2 Captions"); with nothing selected the panel is just that row. When several sections are showing (Style, Animation and Comments beside a slide, say), click a tab to switch between them. Tabs with no room are listed under **»**.
+
+- **Stack a section** so it always shows: drag its tab down into the panel (or right-click the tab ▸ **Stack Below**). It sits under the tabs with its own heading; click the heading to collapse or expand it.
+- **Reorder**: drag a tab sideways, or a stacked heading up or down. Drag a stacked heading back up to the header row to make it a tab again.
+- Each kind of tab (canvas, presentation, spreadsheet, document, design) keeps its own arrangement. **View ▸ Toolboxes ▸ Reset Toolboxes** puts it back.
+
 The **×** at the top of the panel closes it all the way to give the drawing more room (also **View ▸ Collapse Side Panel**). Each kind of tab remembers this on its own, so you can keep the panel folded in spreadsheets and open in canvases. In a window narrower than about 1,200 pixels the panel folds automatically so the drawing keeps its room, and opens again when the window is widened; **›** still opens it while the window is narrow.
 
 **View ▸ Focus View** (Ctrl+Shift+F1) hides the toolboxes, the side panel and the ribbon at once, to give the page the whole window on a laptop; the same key brings them back. In Presentation, Spreadsheet, Document and Design tabs, **View ▸ Toolboxes ▸ One Column Outside Canvas** shows the toolboxes docked at the side in one narrow column.
@@ -244,7 +250,7 @@ Presentations, spreadsheets, documents and designs save in their own formats; se
 | **Keyboard Shortcuts** | Every key, to change, import or export (see [Keyboard and mouse](keyboard-and-mouse.md)). |
 | **Typing and Spelling** | Chemistry typing (subscripts in formulas), spelling, your dictionary and replacements. |
 | **Color Palettes**, **Mode Colors**, **Reading Mode** | Your rows of colors, the color of each tab type, and Reading Mode's colors. |
-| **Schemes** | Gaps around arrows and + signs, text size above and below arrows, and the + boxes on new arrows. |
+| **Schemes** | Gaps around arrows and + signs, text alignment above and below arrows and the Results line, and the text guides on reaction arrows. |
 | **AutoSave and Recovery** | AutoSave, how often unsaved work is copied for recovery, and how many versions are kept. |
 | **Apps and System** | Which file types Chemweave is offered for under **Open with** in Explorer, and a button to Windows' Default apps page (see [Files and sharing](files-and-sharing.md#opening-files-from-explorer-or-finder-desktop-app)); drawings in Word, PowerPoint and Excel opening here; and the offer to make structures figures when a document is opened. |
 | **Online** | Looking up names on PubChem (sends the name typed to PubChem; clear it to keep everything on your computer) and the update check and whether to get Stable or Latest updates (desktop app only). |

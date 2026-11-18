@@ -16,12 +16,13 @@ import type { MethylStyle } from './chem/hydrogens';
 import { STANDARD_COLOURS, usedColours } from './colours';
 import { ICONS } from './icons';
 import { Toolboxes, isOwnFlyout, lockIcon, sideFolded, commandButton, defaultToolboxes, menuCommands, boxIds, boxGrid, boxTitle, flyGrid, isEditable, withoutGoneItems, isOwnBox, overflowOf, CONTEXT_BOXES, type ContextBox, type Pickable, type ToolboxDef, type ToolboxState } from './ui/toolboxes';
+import { SideSections } from './ui/side-sections';
 import { gridItems, inBlock, oneColumn, shownGrid, wrapped, type Grid, type Shown } from './ui/toolbox-grid';
 import { ToolboxEditor, initials } from './ui/toolbox-editor';
 import { RibbonEditor } from './ui/ribbon-editor';
 import { readRibbons, applyRibbon, type RibbonInfo, type RibbonsPrefs } from './ui/ribbon-custom';
 import { editPalettes, getPalettes, onPalettes, setPalettes, useDrawingColours, usePaletteMenus } from './ui/palette-ui';
-import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, outsideValence, Contents, CHIRAL_FLAGS, PICTURE_STYLES, type PictureLook, type Attachment, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, type PageSetup, type PageWalls } from './model';
+import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, outsideValence, Contents, CHIRAL_FLAGS, PICTURE_STYLES, type PictureLook, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, type PageSetup, type PageWalls } from './model';
 import { Renderer, measureText, forgetTextWidths, WARN_LOOKS, type WarnLook } from './render/renderer';
 import { Editor, TOOLS, ringsWereFilled, setMarkTint, type HighlightToggle, type Selection } from './editor/editor';
 import { LENGTH_UNITS, setAidTint } from './editor/cursor-aids';
@@ -50,7 +51,8 @@ import { newCalc } from './chem/bench';
 import { dragRow } from './ui/row-drag';
 import { askLabCalc, analysisSettingsPage, analysisSettingsAt, placeCalc, type AnalysisSettingsHost } from './ui/analysis-settings';
 import { analysisHtml, benchValues, ribbonRow, formulaHtml, electronsHtml, analysisRuns, withRepeats, polymerHtml, descriptorRuns, newDescriptors, nameHtml, type RepeatUnit, type NameState } from './ui/analysis-panel';
-import { attachedAtoms, attachWhereItIs, defaultGap, nearestStructure, placeAttached, structureSig } from './editor/attached';
+import { attachedAtoms, attachWhereItIs, nearestStructure, placeAttached, structureSig } from './editor/attached';
+import { fullLook, lookCaption, lookPatch, looksLikeId } from './editor/tied-look';
 import { repeatGroups, lipDirection } from './chem/polymer';
 import { rGroupsOf, substituted, rowNumbers, parseRows, rGroupCells, type RowMass } from './chem/rgroup';
 import type { Rect, Vec } from './geom';
@@ -175,7 +177,8 @@ import { selectedGroup } from './chem/group-smiles';
 import { templateIcon } from './ui/template-icons';
 import { StructureChecks } from './chem/warnings';
 import { idText, labelClashes, parseIdStart, type IdStyle } from './chem/compound-numbers';
-import { schemeItems, isReactionArrow, reactionSteps, itemFinder, plainMeasure } from './chem/reaction';
+import { arrowKind, schemeItems, isReactionArrow, reactionSteps, itemFinder, plainMeasure } from './chem/reaction';
+import { canShowGuides, guidesOn as arrowGuidesOn, plainReactionArrow } from './chem/arrow-text';
 import { stoichiometryBook, type StoichRow, type StoichRole } from './chem/stoichiometry';
 import { isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
 import { showBalance } from './ui/balance-dialog';
@@ -271,7 +274,7 @@ import { objectPicture, type ObjectPicture } from './render/object-picture';
 import { ACS_1996, BOND_END_CHOICES, bondEndPrefs, DocStyle, docMapLook, MAP_LOOKS, mapLookPrefs, type MapBoxStyle, type MapLook } from './style';
 import { DEFAULT_DEPTH_SHADE, depthShadePrefs } from './render/depth-shade';
 import { emptyTable, tableFromCells } from './table';
-import type { TableData } from './model';
+import type { ArrowKind, TableData } from './model';
 import { checkDrawing, checkDocument, checkWorkbook, repeatedTitles, structureAlt, setStructureAlt, type Issue, type IssuePlace } from './accessibility';
 import { AccessibilityPane, askAltText } from './ui/accessibility-pane';
 import type { PreflightPane } from './ui/preflight-pane';
@@ -287,6 +290,8 @@ import { DeckStore, type DeckZoteroHost } from './deck/zotero-deck';
 import { DEFAULT_KEEP, type KeepPrefs } from './keep/prefs';
 import { Brush, paintObjects, pickObjectLook, type ObjectLook, type TextLook } from './format-painter';
 import { popupMenu } from './ui/popup-menu';
+import { DEFAULT_FOCAL_PREFS, focalAtoms, parseFocalPrefs, setFocal, setFocalDefault, type FocalPrefs } from './chem/focal';
+import { FOCAL_LOOKS, drawFocalMark } from './editor/focal-marks';
 import { favoriteSummary, freshFavoriteName, ribbonFavorites, withFavorite, type FormatFavorite } from './ui/format-favorites';
 import { SymbolWindow } from './ui/symbol-window';
 import { Navigator, EdgeArrows, paintGrid, paintTint, type Target } from './ui/orientation';
@@ -453,20 +458,28 @@ new ResizeObserver(() => {
 const ARROWS: PaletteDef = {
   palette: 'arrows',
   title: 'Arrows',
+  columns: 4,
+  // what each kind is for: a reaction step (its conditions typed above and below), a mechanism's
+  // electrons, or plain (resonance, retrosynthetic, dipole), which only lines up with its neighbors
+  groups: [
+    { title: 'Reaction', items: ['arrow', 'arrow-dashed', 'arrow-hollow', 'arrow-equilibrium', 'arrow-nogo', 'arrow-nogo-hash'] },
+    { title: 'Mechanism', items: ['arrow-curved', 'arrow-fishhook', 'arrow-s', 'arrow-s-fishhook'] },
+    { title: 'Plain', items: ['arrow-double', 'arrow-retro', 'arrow-dipole'] },
+  ],
   items: [
     { name: 'arrow', title: 'Reaction arrow. Shift+drag from an arrow\'s end or middle to branch a new arrow off it' },
-    { name: 'arrow-dashed', title: 'Dashed arrow' },
-    { name: 'arrow-hollow', title: 'Arrow with a hollow head' },
+    { name: 'arrow-dashed', title: 'Dashed reaction arrow' },
+    { name: 'arrow-hollow', title: 'Reaction arrow with a hollow head' },
     { name: 'arrow-double', title: 'Resonance arrow (heads at both ends)' },
     { name: 'arrow-equilibrium', title: 'Equilibrium arrows' },
     { name: 'arrow-retro', title: 'Retrosynthetic arrow' },
     { name: 'arrow-nogo', title: 'Crossed-out arrow (reaction does not go)' },
     { name: 'arrow-nogo-hash', title: 'Hashed-out arrow (reaction does not proceed)' },
     { name: 'arrow-dipole', title: 'Dipole arrow (the crossed end is the positive end)' },
-    { name: 'arrow-curved', title: 'Curved arrow (electron pair): drag from an atom or bond to an atom or bond; it snaps like a mechanism arrow. Hold Alt or Space to draw freely' },
-    { name: 'arrow-fishhook', title: 'Curved half-headed arrow (one electron). Snaps between atoms and bonds like the curved arrow; hold Alt or Space to draw freely' },
-    { name: 'arrow-s', title: 'S-shaped curved arrow (two bends), for electrons that have to go around something. Snaps like the curved arrow; hold Alt to draw freely' },
-    { name: 'arrow-s-fishhook', title: 'S-shaped half-headed arrow (one electron, two bends). Snaps like the curved arrow; hold Alt to draw freely' },
+    { name: 'arrow-curved', title: 'Mechanism arrow (electron pair): drag from an atom or bond to an atom or bond; it snaps to where electrons come from and go. Hold Alt or Space to draw freely' },
+    { name: 'arrow-fishhook', title: 'Fishhook arrow (one electron). Snaps between atoms and bonds like the mechanism arrow; hold Alt or Space to draw freely' },
+    { name: 'arrow-s', title: 'S-shaped mechanism arrow (two bends), for electrons that have to go around something. Snaps like the mechanism arrow; hold Alt to draw freely' },
+    { name: 'arrow-s-fishhook', title: 'S-shaped fishhook arrow (one electron, two bends). Snaps like the mechanism arrow; hold Alt to draw freely' },
   ],
 };
 
@@ -783,6 +796,9 @@ let canvasTextRows: { font: HTMLElement; paragraph: HTMLElement } | null = null;
 let canvasFont: { refresh(): void } | null = null;
 // (NMR prediction is desktop only: its ribbon groups are left out elsewhere)
 if (!nmrHere) for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.name !== 'NMR');
+/** Focal point settings (Preferences, the Distribute menu's choice). */
+const focalPrefs: FocalPrefs = { ...DEFAULT_FOCAL_PREFS };
+
 const canvasRibbon = new CanvasRibbon({
   command: (cmd) => { command(cmd); },
   pickTool: (name) => pickTool(name),
@@ -790,7 +806,9 @@ const canvasRibbon = new CanvasRibbon({
   icon: (it) => ('cmd' in it ? commandIcon(it.cmd) ?? RIBBON_ONLY_ICONS[it.cmd] ?? ICONS[it.cmd] : ICONS[it.tool]),
   textGroups: (font, paragraph) => { canvasTextRows = { font, paragraph }; },
   pasteMenu: (r) => { popupMenu(r.left, r.bottom + 2, [['Paste', () => command('paste')], ['Paste SMILES', () => command('paste-smiles')]]); },
+  itemMenu: (cmd, r) => { if (cmd === 'distribute-h' || cmd === 'distribute-v') distributeMenu(r); },
 }, $('#sheet-ribbon'));
+refreshDistributeTips();
 const analysisBox = new AnalysisBox($('#analysis-section'));
 const warningsBox = new WarningsBox($('#warnings-section'));
 canvasRibbon.bodyEnd.append(analysisBox.el);
@@ -1041,6 +1059,68 @@ let quickBar: QuickBar | null = null;
 const STRESS_SIZES = [100, 500, 2000, 5000];
 $('#help-hotkeys').addEventListener('click', () => { $<HTMLDialogElement>('#help').close(); hotkeysDialog.open(); });
 $('#help-close').addEventListener('click', () => $<HTMLDialogElement>('#help').close());
+/**
+ * Pointing at Align Center or Middle, Distribute or Arrange in a Row or Column (on the ribbon, a
+ * menu or the right-click menu) shows each selected structure's focal point and where it would go.
+ */
+const LAYOUT_PREVIEWS = new Set(['align-hcenter', 'align-vcenter', 'distribute-h', 'distribute-v', 'distribute-h-gaps', 'distribute-v-gaps', 'distribute-h-focal', 'distribute-v-focal', 'arrange-row', 'arrange-column']);
+let layoutPreviewOn: string | null = null;
+document.addEventListener('pointerover', (e) => {
+  const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-cmd], [data-hover-cmd]');
+  const cmd = el ? el.dataset.hoverCmd ?? el.dataset.cmd ?? null : null;
+  // (the ribbon's Distribute buttons space things the way their menu says)
+  const how = (cmd === 'distribute-h' || cmd === 'distribute-v') && focalPrefs.distribute === 'focal' ? `${cmd}-focal` : cmd;
+  const mode = ws.active.mode;
+  const want = how && LAYOUT_PREVIEWS.has(how) && (mode === 'drawing' || mode === 'slides' || mode === 'design') ? how : null;
+  if (want === layoutPreviewOn) return;
+  layoutPreviewOn = want;
+  editor.previewLayout(want);
+}, true);
+// (a click runs the command: the preview goes)
+document.addEventListener('pointerdown', () => { if (layoutPreviewOn) { layoutPreviewOn = null; editor.previewLayout(null); } }, true);
+
+/** The Distribute buttons' ▾: what they make equal, the gaps or the spacing of focal points (remembered). */
+function distributeMenu(r: DOMRect): void {
+  const dot = (on: boolean) => (on ? '<svg viewBox="0 0 16 16" width="12" height="12"><circle cx="8" cy="8" r="3.5" fill="currentColor"/></svg>' : '');
+  const pick = (by: FocalPrefs['distribute']) => () => { focalPrefs.distribute = by; storeSettings(); refreshDistributeTips(); };
+  popupMenu(r.left, r.bottom + 2, [
+    ['Equal Gaps', pick('gaps'), true, dot(focalPrefs.distribute === 'gaps')],
+    ['Equal Focal Point Spacing', pick('focal'), true, dot(focalPrefs.distribute === 'focal')],
+    null,
+    ['Distribute Horizontally', () => command('distribute-h')],
+    ['Distribute Vertically', () => command('distribute-v')],
+  ]);
+}
+
+/** The Distribute buttons' tooltips say which spacing they use. */
+function refreshDistributeTips(): void {
+  const by = focalPrefs.distribute === 'focal' ? 'equal focal point spacing' : 'equal gaps';
+  for (const [cmd, name] of [['distribute-h', 'Distribute Horizontally'], ['distribute-v', 'Distribute Vertically']] as const)
+    for (const b of document.querySelectorAll<HTMLElement>(`.ribbon [data-cmd="${cmd}"]`)) b.title = `${name} (${by}; ▾ to change)`;
+}
+
+// the Presentation and Design ribbons' Distribute buttons get the same ▾ as the Canvas ribbon's
+for (const b of document.querySelectorAll<HTMLElement>('.ribbon:not(#canvas-ribbon) [data-cmd="distribute-h"], .ribbon:not(#canvas-ribbon) [data-cmd="distribute-v"]')) {
+  b.classList.add('cr-has-drop');
+  b.setAttribute('aria-haspopup', 'menu');
+  b.insertAdjacentHTML('beforeend', '<span class="cr-drop" aria-hidden="true">▾</span>');
+}
+document.addEventListener('click', (e) => {
+  const drop = (e.target as HTMLElement | null)?.closest('.cr-drop');
+  const b = drop?.closest<HTMLElement>('.ribbon:not(#canvas-ribbon) [data-cmd]');
+  if (!b) return;
+  e.stopPropagation();
+  e.preventDefault();
+  distributeMenu(b.getBoundingClientRect());
+}, true);
+
+/** Arrange ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
+function showFocalPoints(on: boolean): void {
+  editor.showFocal = on;
+  for (const b of document.querySelectorAll('[data-cmd="show-focal-points"]')) b.setAttribute(b.getAttribute('role')?.startsWith('menuitem') ? 'aria-checked' : 'aria-pressed', String(on));
+  editor.requestOverlay();
+}
+
 /** View > Show R/S Preview: every R/S and E/Z label in red, on screen only. */
 function previewStereo(on: boolean): void {
   renderer.previewStereo = on;
@@ -2277,7 +2357,7 @@ function torsionData(s: ChartScan, c: ChartChoice, look = newmanPrefs.look): Tor
   return {
     profile: s.profile, extrema: s.extrema, front: s.front, back: s.back, phi0: s.phi0, a: c.a, d: c.d,
     unit: c.unit, insets: c.insets, names: c.names, barriers: c.barriers, barrierColor: newmanPrefs.chart.barrierColor,
-    digits: 1, w: 26 * L, h: 8 * L, method: s.method, look: structuredClone(look), sawhorse: c.sawhorse, points: s.points,
+    digits: 1, w: 26 * L, h: 8 * L, method: s.method, look: structuredClone(look), sawhorse: c.sawhorse, points: s.points, layout: c.layout,
   };
 }
 
@@ -2299,10 +2379,11 @@ function paintTorsionPreview(d: TorsionData, canvas: HTMLCanvasElement): void {
 }
 
 /** The projection a choice in the Newman window makes. */
-function newmanData(w: ReturnType<typeof newmanWork>, choice: NewmanChoice, conf: NewmanConformer, frontId: number, backId: number, look = newmanPrefs.look): NewmanData {
+function newmanData(w: ReturnType<typeof newmanWork>, choice: NewmanChoice, conf: NewmanConformer, frontId: number, backId: number, look = newmanPrefs.look, kind = choice.kind): NewmanData {
   const [f, b] = choice.reversed ? [backId, frontId] : [frontId, backId];
+  look = { ...look, ideal: choice.ideal, wedges: choice.wedges, rs: choice.rs, text: { ...choice.text } };
   return {
-    kind: choice.kind, front: conf.view.front, back: conf.view.back, turn: choice.turn,
+    kind, front: conf.view.front, back: conf.view.back, turn: choice.turn,
     conformer: choice.source === 'drawn' ? 0 : choice.index,
     ...(conf.energy !== null ? { energy: conf.energy } : {}),
     method: choice.source === 'drawn' ? 'as drawn' : choice.method === 'xtb' ? 'GFN2-xTB' : 'MMFF94s+',
@@ -2312,9 +2393,14 @@ function newmanData(w: ReturnType<typeof newmanWork>, choice: NewmanChoice, conf
   };
 }
 
+/** R or S of a projection's front and back atoms on the structure it shows, for a preview's labels. */
+function linkRs(d: NewmanData): [string | null | undefined, string | null | undefined] | undefined {
+  return d.link && d.look.rs ? [live.atom(d.link.front), live.atom(d.link.back)] : undefined;
+}
+
 /** The Newman window's preview: the projection fitted to the canvas. */
-function paintNewmanPreview(d: NewmanData, canvas: HTMLCanvasElement): void {
-  const { doc: tmp, box } = editor.newmanPreview(d);
+function paintNewmanPreview(d: NewmanData, canvas: HTMLCanvasElement, eye?: string): void {
+  const { doc: tmp, box } = editor.newmanPreview(d, eye, linkRs(d));
   const w = canvas.clientWidth || 230, h = canvas.clientHeight || 200, dpr = window.devicePixelRatio || 1;
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
@@ -2323,8 +2409,8 @@ function paintNewmanPreview(d: NewmanData, canvas: HTMLCanvasElement): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const bw = box.x2 - box.x1, bh = box.y2 - box.y1, pad = 10;
-  const k = Math.min((w - 2 * pad) / bw, (h - 2 * pad) / bh, 3);
+  const bw = box.x2 - box.x1, bh = box.y2 - box.y1, pad = 14;
+  const k = Math.min((w - 2 * pad) / bw, (h - 2 * pad) / bh, 2.2);
   ctx.setTransform(k * dpr, 0, 0, k * dpr, (w / 2 - (box.x1 + bw / 2) * k) * dpr, (h / 2 - (box.y1 + bh / 2) * k) * dpr);
   drawDrawing(ctx, tmp);
 }
@@ -2358,14 +2444,13 @@ async function newmanProjection(bondId: number | null, frontId: number | null, e
     method: newmanPrefs.method,
     mark: old ? !!old.mark : newmanPrefs.mark,
     linked: old ? true : lastNewman.linked,
+    ...lookChoice(old?.look ?? newmanPrefs.look),
   };
   const got = await askNewman(start, {
-    ends: ['The end you picked', 'The other end'],
-    names: w.names(),
     xtb: !!conformerTools(w.ex.molblock).xtb,
     list: (rev, method, progress) => w.list(rev, method, progress),
     drawn: (rev) => w.drawn(rev),
-    paint: (choice, conf, canvas) => paintNewmanPreview(newmanData(w, choice, conf, front, back, old?.look), canvas),
+    paint: (choice, conf, canvas, kind) => paintNewmanPreview(newmanData(w, choice, conf, front, back, old?.look, kind), canvas, kind === 'sawhorse' ? old?.mark?.color ?? newmanPrefs.markColor : undefined),
     stop: () => model3d.stop(),
   }, !!old, old ? undefined : {
     first: chartFirst,
@@ -2380,12 +2465,80 @@ async function newmanProjection(bondId: number | null, frontId: number | null, e
   if (!got) return;
   lastNewman = { kind: got.choice.kind, source: got.choice.source, linked: got.choice.linked };
   if ('chart' in got) {
-    editor.putTorsionChart(torsionData(got.scan as ChartScan, got.chart), { near: front, page: deckNow()?.size });
+    const chart = torsionData(got.scan as ChartScan, got.chart);
+    const at = await placeWithPointer(editor.torsionPreview(chart), 'chart');
+    if (at) editor.putTorsionChart(chart, { near: front, page: deckNow()?.size, at });
     return;
   }
   if (!doc.atoms.has(front) || !doc.atoms.has(back)) { flash('The structure was changed while the window was open. Open Newman Projection again.'); return; }
   const data = newmanData(w, got.choice, got.conf, front, back, old?.look);
-  editor.putNewmanProjection(data, { id: editId, mark: got.choice.mark ? (old?.mark?.color ?? newmanPrefs.markColor) : null, linked: got.choice.linked, page: deckNow()?.size });
+  const mark = got.choice.mark ? (old?.mark?.color ?? newmanPrefs.markColor) : null;
+  if (old) { editor.putNewmanProjection(data, { id: editId, mark, linked: got.choice.linked, page: deckNow()?.size }); return; }
+  // a new one follows the pointer until a click (or, dragged out of the window, until the button is let go) places it
+  const at = await placeWithPointer(editor.newmanPreview(data, undefined, linkRs(data)), data.kind === 'sawhorse' ? 'sawhorse' : 'projection', got.drag);
+  if (!at) return;
+  if (!doc.atoms.has(front) || !doc.atoms.has(back)) { flash('The structure was changed before the projection was placed. Open Newman Projection again.'); return; }
+  editor.putNewmanProjection(data, { mark, linked: got.choice.linked, page: deckNow()?.size, at });
+}
+
+/** The look choices the Newman window offers, as a projection's look (or the settings) has them. */
+function lookChoice(look: NewmanLook): Pick<NewmanChoice, 'ideal' | 'wedges' | 'rs' | 'text'> {
+  return { ideal: !!look.ideal, wedges: !!look.wedges, rs: !!look.rs, text: { ...(look.text ?? { auto: false }) } };
+}
+
+/**
+ * A picture about to be put in the drawing follows the pointer, faint, at the size it will be:
+ * a click on the canvas places its middle there (or, when it was dragged here with the button
+ * down, letting go does). Escape, or letting go off the canvas, cancels. Resolves to the place in
+ * the drawing, or null.
+ */
+function placeWithPointer(preview: { doc: Doc; box: { x1: number; y1: number; x2: number; y2: number } }, what: string, drag?: { x: number; y: number }): Promise<{ x: number; y: number } | null> {
+  return new Promise((resolve) => {
+    const over = document.querySelector<HTMLElement>('#overlay');
+    if (!over) { resolve(null); return; }
+    const { doc: tmp, box } = preview;
+    const o = renderer.toScreen({ x: 0, y: 0 }), u = renderer.toScreen({ x: 1, y: 0 });
+    const k = Math.hypot(u.x - o.x, u.y - o.y) || 1;
+    const w = Math.max(8, (box.x2 - box.x1) * k), h = Math.max(8, (box.y2 - box.y1) * k), dpr = window.devicePixelRatio || 1;
+    const ghost = document.createElement('canvas');
+    ghost.className = 'place-ghost';
+    ghost.width = Math.round(w * dpr);
+    ghost.height = Math.round(h * dpr);
+    ghost.style.cssText = `position:fixed;z-index:2147482000;pointer-events:none;opacity:0.55;width:${w}px;height:${h}px;left:-9999px;top:0`;
+    const ctx = ghost.getContext('2d');
+    if (ctx) { ctx.setTransform(k * dpr, 0, 0, k * dpr, -box.x1 * k * dpr, -box.y1 * k * dpr); drawDrawing(ctx, tmp); }
+    document.body.append(ghost);
+    const at = (x: number, y: number) => { ghost.style.left = `${x - w / 2}px`; ghost.style.top = `${y - h / 2}px`; };
+    if (drag) at(drag.x, drag.y);
+    const inside = (e: PointerEvent) => { const r = over.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; };
+    const done = (e: PointerEvent | null) => {
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('keydown', key, true);
+      ghost.remove();
+      over.style.cursor = '';
+      if (!e) { resolve(null); return; }
+      const r = over.getBoundingClientRect();
+      resolve(renderer.toDoc(e.clientX - r.left, e.clientY - r.top));
+    };
+    const move = (e: PointerEvent) => at(e.clientX, e.clientY);
+    const down = (e: PointerEvent) => {
+      if (drag) return;
+      // a click anywhere else (a menu, a ribbon button) leaves the picture unplaced
+      e.preventDefault();
+      e.stopPropagation();
+      done(e.button === 0 && inside(e) ? e : null);
+    };
+    const up = (e: PointerEvent) => { if (drag) { e.stopPropagation(); done(inside(e) ? e : null); } };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('keydown', key, true);
+    over.style.cursor = 'copy';
+    if (!drag) flash(`Click where the ${what} should go. Esc cancels.`, 6000);
+  });
 }
 
 /** A projection no longer linked to a structure: only its look and the Turn dial can change. */
@@ -2419,7 +2572,7 @@ async function redoNewman(id: number): Promise<void> {
     if (!conf || typeof conf === 'string') throw new Error(typeof conf === 'string' ? conf : 'No conformer was found.');
     const shape = doc.shapes.get(id);
     if (!shape?.newman?.link || !doc.atoms.has(front) || !doc.atoms.has(back)) return;
-    const choice: NewmanChoice = { reversed: false, kind: d.kind, source: d.source === 'drawn' ? 'drawn' : 'stable', index: 0, turn: d.turn, method, mark: !!d.mark, linked: true };
+    const choice: NewmanChoice = { reversed: false, kind: d.kind, source: d.source === 'drawn' ? 'drawn' : 'stable', index: 0, turn: d.turn, method, mark: !!d.mark, linked: true, ...lookChoice(d.look) };
     editor.putNewmanProjection(newmanData(w, choice, conf, front, back, d.look), { id, mark: d.mark ? d.mark.color : null, amend: true });
   } catch (e) {
     flash(`The Newman projection couldn't be recalculated: ${(e as Error).message}`);
@@ -2591,7 +2744,7 @@ async function structureToName(): Promise<void> {
   const m = editor.measure();
   doc.edit(found.length > 1 ? 'Name captions' : 'Name caption', () => {
     for (const t of found) {
-      const c = doc.addCaption({ x: 0, y: 0, runs: nameRuns(t.name), justify: 'center', attach: { atoms: [...t.frag], side: 'below', gap: defaultGap(doc), shift: 0, role: 'caption' } });
+      const c = doc.addCaption(lookCaption(doc, 'caption', t.frag, nameRuns(t.name), {}, true));
       placeAttached(doc, c, m);
     }
   });
@@ -3057,7 +3210,7 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
 }
 
 /** How Number Compounds counted last time (offered again). */
-const numbering = { style: 'numbers' as IdStyle, prefix: '', suffix: '', bold: true, same: true, align: true };
+const numbering = { style: 'numbers' as IdStyle, prefix: '', suffix: '', same: true, align: true };
 
 /**
  * Each structure's key for "the same structure, the same ID": its canonical SMILES (with
@@ -3136,6 +3289,32 @@ async function cleanUpStructures(): Promise<void> {
   else if (r.k > 0) flash(`${r.label} (${r.k + 1} of ${r.of}). Clean Up again for the next, or Clean Up Options… to see them all.`, 4000);
 }
 
+/**
+ * Smart Clean (Ctrl+Shift+K): the clean-up that fits what is selected. A catalytic cycle is
+ * cleaned up as a cycle; curved (mechanism) arrows on their own are redrawn clear of the
+ * structure; a scheme (a reaction arrow or resonance arrow, or a structure in its step) gets its
+ * structures tidied and the scheme laid out, then (pressed again) each arrow fitted to its own
+ * text; anything else is Clean Up Structure.
+ */
+async function smartClean(): Promise<void> {
+  finishTyping();
+  if (smartIsCycle()) { COMMANDS['clean-up-cycle'](); return; }
+  const s = editor.sel;
+  const arrows = [...s.arrows].map((id) => doc.arrows.get(id)).filter((r): r is Arrow => !!r);
+  if (arrows.length && !s.atoms.size && !s.captions.size && !s.shapes.size && arrows.every((r) => isCurved(r) && !r.step)) { COMMANDS['clean-up-arrow'](); return; }
+  if (!editor.schemeInContext()) { await cleanUpStructures(); return; }
+  const r = editor.smartCleanScheme(await engineLayouts());
+  if (!r) flash('Nothing to clean up: the structures and the scheme are already tidy.');
+  else if (r === 'tidied') flash('Scheme tidied. Smart Clean again to fit each arrow to its own text.', 4000);
+  else if (r === 'fitted') flash('Each arrow fitted to its own text. Smart Clean again to make them all the same length.', 4000);
+}
+
+/** Arrow Type: make the selected arrows reaction, mechanism or plain arrows. */
+function setKindOfArrows(kind: ArrowKind): void {
+  if (!editor.sel.arrows.size) { flash('Select an arrow first.'); return; }
+  if (!editor.setArrowKind(kind)) flash(kind === 'reaction' && pickedCurved() ? 'A curved arrow can\'t be a reaction step: draw a straight arrow for that.' : `The selected arrows are ${kind} arrows already.`);
+}
+
 /** Structure > Clean Up Options…: every way Clean Up can lay out the picked structures, to choose from. */
 async function cleanUpChoices(): Promise<void> {
   finishTyping();
@@ -3172,13 +3351,17 @@ async function cleanUpChoices(): Promise<void> {
 function schemeFrom(got: Record<string, string>): Partial<SchemePrefs> {
   const len = (k: SchemeDistance) => { const v = got[k]; return !v || v.trim() === '' ? null : clampSchemeDistance(k, Number(v)) ?? null; };
   const align = (v: string | undefined) => (v === 'left' || v === 'center' || v === 'right' ? v : null);
+  const bonds = (v: string | undefined) => { const n = Number(v); return !v || !v.trim() || !isFinite(n) || n <= 0 ? null : Math.min(20, Math.max(0.2, n)); };
   return {
-    structGap: len('structGap'), plusGap: len('plusGap'), textGap: len('textGap'), textGapBelow: len('textGapBelow'), lead: len('lead'), headGap: len('headGap'),
+    structGap: len('structGap'), plusGap: len('plusGap'), textGap: len('textGap'), textGapBelow: len('textGapBelow'), resultsGap: len('resultsGap'), lead: len('lead'), headGap: len('headGap'),
     // (its size and font are the drawing style's now: Settings > Drawing Style)
     textSize: null,
     textAlign: align(got.textAlign) ?? 'center',
     textAlignBelow: align(got.textAlignBelow),
+    textAlignResults: align(got.textAlignResults),
+    listLeft: got.listLeft !== 'false',
     helpers: got.helpers === 'true', fit: got.fit === 'true', sameLength: got.sameLength === 'true',
+    roleReach: bonds(got.roleReach), roleLane: bonds(got.roleLane),
   };
 }
 
@@ -3194,15 +3377,20 @@ async function schemeSettings(): Promise<void> {
   const got = await ask('Scheme Settings', [
     dist('structGap', 'Gap between arrow and structures', auto(SPACING.gap)),
     dist('plusGap', 'Space either side of +', auto(SPACING.plus)),
-    { name: 'helpers', label: 'Show + boxes above and below new arrows', value: String(p.helpers), type: 'checkbox' },
+    { name: 'helpers', label: 'Show text guides on reaction arrows', value: String(p.helpers), type: 'checkbox' },
     { name: 'textAlign', label: 'Text alignment above the arrow', value: p.textAlign, options: aligns },
     dist('textGap', 'Gap between arrow and text above', auto(SPACING.conditions)),
     { name: 'textAlignBelow', label: 'Text alignment below the arrow', value: p.textAlignBelow ?? '', options: [{ value: '', label: 'Same as above' }, ...aligns] },
     dist('textGapBelow', 'Gap between arrow and text below', 'Same as above'),
+    { name: 'textAlignResults', label: 'Results alignment (yield, ee under the text below)', value: p.textAlignResults ?? '', options: [{ value: '', label: 'Same as below' }, ...aligns] },
+    dist('resultsGap', 'Gap between text below and Results', auto(SPACING.results)),
+    { name: 'listLeft', label: 'Left-align a numbered list of steps', value: String(p.listLeft ?? true), type: 'checkbox' },
     { name: 'fit', label: 'Fit arrow length to its text (moves the products)', value: String(p.fit), type: 'checkbox' },
     { name: 'sameLength', label: 'Clean Up Reaction makes arrows the same length', value: String(p.sameLength), type: 'checkbox' },
     dist('lead', 'Arrow before the text starts', auto(SPACING.overhang)),
     dist('headGap', 'Space between text and arrowhead', auto(SPACING.overhang)),
+    { name: 'roleReach', label: 'Starting materials and products: up to this far past the arrow', value: p.roleReach ? String(p.roleReach) : '', type: 'number', unit: 'bonds', placeholder: '3', min: 0.2, max: 20 },
+    { name: 'roleLane', label: 'Starting materials and products: up to this far off its line', value: p.roleLane ? String(p.roleLane) : '', type: 'number', unit: 'bonds', placeholder: '1', min: 0.2, max: 20 },
   ], { ok: 'Save', note: 'Default spacing for text beside arrows, used by Clean Up Reaction and Arrange Scheme. A drawing style\'s own values (Drawing Style ▸ Reaction arrows) take priority. Leave a distance blank to scale with bond length. Existing schemes update when next cleaned up.',
     preview: { title: 'Preview', below: true, draw: (v, focus) => schemePreview(doc.style, schemeFrom(v), undefined, focus) } });
   if (!got) return;
@@ -3225,7 +3413,8 @@ async function numberCompounds(): Promise<void> {
     { name: 'start', label: 'Start at', value: numbering.style === 'letters' ? String(next) : startText, type: 'text', placeholder: '1, c or iii' },
     { name: 'prefix', label: 'Before each', value: numbering.prefix, type: 'text', placeholder: 'e.g. S for S1, S2' },
     { name: 'suffix', label: 'After each', value: numbering.suffix, type: 'text', placeholder: 'e.g. ′' },
-    { name: 'bold', label: 'Bold', value: String(numbering.bold), type: 'checkbox' },
+    // (the drawing style's ID label bold: changing it here changes it there)
+    { name: 'bold', label: 'Bold', value: String(fullLook(doc.style, 'label').bold), type: 'checkbox' },
     { name: 'same', label: 'Same structure, same ID', value: String(numbering.same), type: 'checkbox' },
     { name: 'align', label: 'Align numbers in each row', value: String(numbering.align), type: 'checkbox' },
     { name: 'old', label: 'Existing IDs', value: 'renumber', options: [{ value: 'renumber', label: 'Renumber' }, { value: 'keep', label: 'Keep' }] },
@@ -3235,13 +3424,13 @@ async function numberCompounds(): Promise<void> {
   const style = got.style as IdStyle;
   const start = parseIdStart(got.start, style);
   if (start === null) { flash(`“${got.start}” isn't a place to start counting ${style === 'roman' || style === 'ROMAN' ? 'in roman numerals' : style === 'lower' || style === 'upper' ? 'in letters' : 'from'}.`); return; }
-  Object.assign(numbering, { style, prefix: got.prefix, suffix: got.suffix, bold: got.bold === 'true', same: got.same === 'true', align: got.align === 'true' });
+  Object.assign(numbering, { style, prefix: got.prefix, suffix: got.suffix, same: got.same === 'true', align: got.align === 'true' });
   let keyOf: ((atoms: number[]) => string | undefined) | undefined;
   if (numbering.same) {
     const keys = await structureKeys();
     keyOf = (atoms) => keys.get(atoms[0]);
   }
-  const n = editor.numberCompounds({ start: Math.max(0, start), style, prefix: got.prefix, suffix: got.suffix, bold: numbering.bold, align: numbering.align, keep: got.old === 'keep', reagents: got.reagents === 'number', keyOf });
+  const n = editor.numberCompounds({ start: Math.max(0, start), style, prefix: got.prefix, suffix: got.suffix, bold: got.bold === 'true', align: numbering.align, keep: got.old === 'keep', reagents: got.reagents === 'number', keyOf });
   if (!n) flash('No structures to number.');
 }
 
@@ -3280,8 +3469,7 @@ async function addTiedText(role: 'label' | 'caption'): Promise<void> {
       const k = keys.get([...f][0]);
       const text = role === 'caption' ? '' : (k && known.get(k)) || freshId();
       if (k && role === 'label' && !known.has(k)) known.set(k, text);
-      const c = doc.addCaption({ x: 0, y: 0, runs: [{ text, bold: role === 'label' && numbering.bold ? true : undefined }], justify: 'center',
-        attach: { atoms: [...f], side: 'below', gap: defaultGap(doc), shift: 0, role } });
+      const c = doc.addCaption(lookCaption(doc, role, f, [{ text }]));
       placeAttached(doc, c, m);
       made.push(c.id);
     }
@@ -3668,6 +3856,8 @@ const pickedCurved = (): boolean => [...editor.sel.arrows].some((id) => { const 
 /** Whether the selection is in a Smart Scheme laid out as a cycle (Clean Up Cycle applies). */
 const smartIsCycle = (): boolean => { const id = editor.selectedSmart(); return id !== null && editor.smartIsCycle(id); };
 const smartTakesBranch = (): boolean => { const id = editor.selectedSmart(); return id !== null && editor.smartTakesBranch(id); };
+/** The selected straight arrows that can show text guides. */
+const pickedStraightArrows = (): number[] => [...editor.sel.arrows].filter((id) => { const r = doc.arrows.get(id); return !!r && canShowGuides(r); });
 const pickedReactionArrow = (): number | undefined => [...editor.sel.arrows].find((id) => { const r = doc.arrows.get(id); return !!r && isReactionArrow(r); });
 
 const mapChoice: Record<string, string> = { numbers: 'true', colours: 'false', bonds: 'false' };
@@ -3936,7 +4126,14 @@ function showDevTools(on: boolean): void {
 }
 
 function align(how: Align): void {
-  if (!editor.align(how)) flash('Select two or more structures, captions, arrows or shapes to line them up.');
+  // once ever: structures that share a ring could line up on it
+  const tip = (how === 'hcenter' || how === 'vcenter') && !focalPrefs.tipShown && editor.shareRingNoFocal();
+  if (!editor.align(how)) { flash('Select two or more structures, captions, arrows or shapes to line them up.'); return; }
+  if (tip) {
+    focalPrefs.tipShown = true;
+    storeSettings();
+    flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Arrange ▸ Match Focal Points.', 9000);
+  }
 }
 
 let flashTimer = 0;
@@ -5504,6 +5701,44 @@ async function orientLikeFirst(scheme = false): Promise<number | null> {
   return moves.length;
 }
 
+/**
+ * Arrange ▸ Match Focal Points: the selected structures (or all of them, with nothing selected)
+ * take the focal point of the one that has its own (the first in reading order if several do), on
+ * the same atom, bond or ring of the part they share with it (largest common substructure).
+ */
+async function matchFocalPoints(): Promise<void> {
+  if (!chem.ready) { flash('The chemistry engine is still loading; try again in a moment.'); return; }
+  const picked = editor.sel.atoms;
+  const frags = doc.fragments().filter((f) => [...f].some((id) => !doc.atoms.get(id)?.multi) && (!picked.size || [...f].some((id) => picked.has(id))));
+  const own = frags.filter((f) => focalAtoms(doc, f).length);
+  if (frags.length < 2 || !own.length) { flash('Set a focal point on one structure, then select it with the others to give them the same one.', 6000); return; }
+  const top = (f: Set<number>) => Math.min(...[...f].map((id) => doc.atoms.get(id)!.y));
+  const left = (f: Set<number>) => Math.min(...[...f].map((id) => doc.atoms.get(id)!.x));
+  const ref = own.reduce((p, q) => (top(q) < top(p) - doc.style.bondLength * 2 || (Math.abs(top(q) - top(p)) <= doc.style.bondLength * 2 && left(q) < left(p)) ? q : p));
+  const others = frags.filter((f) => f !== ref);
+  const refEx = toMolfile(doc, ref);
+  const exs = others.map((f) => toMolfile(doc, f));
+  const pairs = await chem.common(refEx.molblock, exs.map((e) => e.molblock)).catch(() => null);
+  if (!pairs) { flash('Could not compare the structures.'); return; }
+  const refIndex = new Map<number, number>();
+  refEx.map.forEach((id, i) => { if (id !== undefined) refIndex.set(id, i); });
+  const spot = focalAtoms(doc, ref).map((id) => refIndex.get(id));
+  const sets: number[][] = [];
+  let missed = 0;
+  exs.forEach((ex, i) => {
+    const m = new Map(pairs[i] ?? []);
+    const to = spot.map((r) => (r === undefined ? undefined : ex.map[m.get(r) ?? -1]));
+    if (to.every((id): id is number => id !== undefined && doc.atoms.has(id))) sets.push(to);
+    else missed++;
+  });
+  if (sets.length) {
+    doc.edit('Match Focal Points', () => { for (const s of sets) setFocal(doc, s); });
+    editor.changed();
+  }
+  const n = sets.length;
+  flash(n ? `${n} structure${n > 1 ? 's' : ''} now share${n > 1 ? '' : 's'} its focal point${missed ? `; ${missed} ${missed > 1 ? 'don\'t' : 'doesn\'t'} have that part` : ''}.` : 'None of the other structures has the part the focal point is on.', 5000);
+}
+
 /** After a flip: nothing selected, or a plain flip that made the mirror image of a structure with wedges. */
 function flipped(r: boolean | 'stereo'): void {
   if (!r) flash('Select something to flip.');
@@ -6048,7 +6283,7 @@ function compoundDrawing(c: LibCompound, style: DocStyle, withLabel: boolean): D
   fitPasted(d, style);
   if (withLabel && c.label && d.atoms.size) {
     d.bulk(() => {
-      const cap = d.addCaption({ x: 0, y: 0, runs: [{ text: c.label, bold: numbering.bold ? true : undefined }], justify: 'center', attach: { atoms: [...d.atoms.keys()], side: 'below', gap: defaultGap(d), shift: 0, role: 'label' } });
+      const cap = d.addCaption(lookCaption(d, 'label', d.atoms.keys(), [{ text: c.label }]));
       placeAttached(d, cap, plainMeasure(d));
     });
   }
@@ -9071,8 +9306,19 @@ const COMMANDS: Record<string, () => unknown> = {
   'align-top': () => align('top'),
   'align-vcenter': () => align('vcenter'),
   'align-bottom': () => align('bottom'),
-  'distribute-h': () => editor.distribute('h') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
-  'distribute-v': () => editor.distribute('v') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  // (equal gaps, or equal focal point spacing: the choice on the Distribute buttons' menu)
+  'distribute-h': () => editor.distribute('h', focalPrefs.distribute) || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  'distribute-v': () => editor.distribute('v', focalPrefs.distribute) || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  'distribute-h-gaps': () => editor.distribute('h', 'gaps') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  'distribute-v-gaps': () => editor.distribute('v', 'gaps') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
+  'distribute-h-focal': () => editor.distribute('h', 'focal') || flash('Select three or more structures, captions, arrows or shapes to space their focal points evenly.'),
+  'distribute-v-focal': () => editor.distribute('v', 'focal') || flash('Select three or more structures, captions, arrows or shapes to space their focal points evenly.'),
+  // with no atom, bond or ring picked, the next click on the drawing names the spot
+  'set-focal-point': () => editor.setFocalPoint() || startFocalPick(),
+  'pick-focal-point': () => startFocalPick(),
+  'match-focal-points': () => void matchFocalPoints(),
+  'reset-focal-point': () => editor.resetFocalPoint() || flash('None of the selected structures has a focal point of its own.'),
+  'show-focal-points': () => showFocalPoints(!editor.showFocal),
   'arrange-row': () => editor.arrangeGrid({ kind: 'row', gap: gridGap() }) || flash('Select two or more structures or objects to put in a row (or they already are, evenly spaced).'),
   'arrange-column': () => editor.arrangeGrid({ kind: 'column', gap: gridGap() }) || flash('Select two or more structures or objects to put in a column (or they already are, evenly spaced).'),
   'arrange-grid': () => void arrangeInGrid(),
@@ -9242,6 +9488,10 @@ const COMMANDS: Record<string, () => unknown> = {
   'save-highlight-look': () => void saveHighlightLook(),
   'delete-highlight-look': () => void deleteHighlightLook(),
   'clean-up': () => void cleanUpStructures(),
+  'smart-clean': () => void smartClean(),
+  'arrow-kind-reaction': () => setKindOfArrows('reaction'),
+  'arrow-kind-mechanism': () => setKindOfArrows('mechanism'),
+  'arrow-kind-plain': () => setKindOfArrows('plain'),
   'clean-up-options': () => void cleanUpChoices(),
   'clean-up-arrow': () => {
     if (!pickedCurved()) { flash('Select one or more curved (mechanism) arrows first.'); return; }
@@ -9418,6 +9668,13 @@ const COMMANDS: Record<string, () => unknown> = {
   'explicit-h': () => flash(editor.toggleHydrogens(), 6000),
   'periodic-table': () => { editor.setTool('element'); periodicTable.open(); },
   'aromatic-circles': () => flash(editor.toggleAromaticCircles() ?? 'No aromatic rings here: select a ring with alternating double bonds, or one drawn with a circle.', 5000),
+  'text-guides': () => {
+    const ids = [...editor.sel.arrows].filter((id) => { const r = doc.arrows.get(id); return !!r && canShowGuides(r); });
+    if (!ids.length) { flash('Select a straight arrow first.'); return; }
+    const on = !ids.every((id) => arrowGuidesOn(doc.arrows.get(id)!));
+    editor.setArrowGuides(ids, on === ids.every((id) => plainReactionArrow(doc.arrows.get(id)!)) ? null : on);
+  },
+  'split-steps': () => { if (!editor.splitSteps()) flash('No numbered steps to split. Write them as "1. n-BuLi; 2. PhCHO".'); },
   'show-roles': () => { editor.showRoles = !editor.showRoles; $('[data-cmd="show-roles"]')?.setAttribute('aria-checked', String(editor.showRoles)); editor.requestScene(); storeSettings(); },
   'check-structure': () => checkStructure(),
   'stereo-labels': () => toggleStereoLabels(),
@@ -10172,8 +10429,8 @@ function chooseMethylStyle(style: MethylStyle): void {
 
 /** Ask before a command with nothing selected changes every structure on the page (Edit > Settings). */
 let askWholeDrawing = true;
-/** Where linked text goes (Edit > Settings). */
-let linkSide: Settings['linkSide'] = 'keep';
+/** What linking text to a structure does to it (Settings ▸ Preferences). */
+let linkLook: Settings['linkLook'] = 'style';
 
 /**
  * Show Terminal Methyls: on the selection, or with nothing selected on every structure, after
@@ -10630,7 +10887,7 @@ async function generalPreferences(): Promise<void> {
   const r = await ask('General', [
     { name: 'groupClick', label: 'Clicking something in a group selects', value: editor.options.groupClick, options: [{ value: 'group', label: 'The whole group' }, { value: 'item', label: 'Only that object' }] },
     { name: 'groupOutline', label: 'Outline the rest of a group when part of it is selected', type: 'checkbox', value: String(editor.options.groupOutline) },
-    { name: 'linkSide', label: 'Text linked to a structure goes', value: linkSide, options: [{ value: 'keep', label: 'Where it is' }, { value: 'below', label: 'Below' }, { value: 'above', label: 'Above' }, { value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }] },
+    { name: 'linkLook', label: 'Text linked to a structure', value: linkLook, options: [{ value: 'style', label: 'Takes the ID label or caption style' }, { value: 'keep', label: 'Stays where it is, as it looks' }] },
     { name: 'ask', label: 'Confirm before changing all structures when nothing is selected', type: 'checkbox', value: String(askWholeDrawing) },
     { name: 'matchStructure', label: 'New bonds match the structure they\'re added to', type: 'checkbox', value: String(matchStructure.on),
       help: 'Bonds, rings and chains added to a structure take its own bond length, line widths and colors, so a structure drawn with other settings stays consistent. Off: they always take the document\'s drawing settings.' },
@@ -10650,7 +10907,7 @@ async function generalPreferences(): Promise<void> {
   if (!r) return;
   editor.options.groupClick = r.groupClick === 'item' ? 'item' : 'group';
   editor.options.groupOutline = r.groupOutline === 'true';
-  linkSide = (['below', 'above', 'left', 'right'].includes(r.linkSide) ? r.linkSide : 'keep') as Settings['linkSide'];
+  linkLook = r.linkLook === 'keep' ? 'keep' : 'style';
   askWholeDrawing = r.ask === 'true';
   docRead.convertChemDraw = r.convertChemDraw === 'true';
   officeStructures = { docx: r.docxStructures === 'chemdraw' ? 'chemdraw' : 'pictures', pptx: r.pptxStructures === 'chemdraw' ? 'chemdraw' : 'pictures' };
@@ -10784,6 +11041,11 @@ async function personalPreferences(): Promise<void> {
       help: 'Off, a counterion typed without its charge is still read as that ion, and flagged until the charge is added.' },
     { name: 'saltGroups', label: 'Group each with the adjacent oppositely charged structure or ion, as one salt', type: 'checkbox', value: String(chemText.saltGroups), inline: (v) => saltSwatch(v === 'true', doc.style),
       help: 'Grouped, the two count as one salt: one formula and mass, and a SMILES with both parts.' },
+    { name: 'focalHeading', label: 'Focal Points', type: 'heading', value: '', help: 'A focal point is the spot on a structure that lines up with other structures when you align, distribute or arrange them (right-click an atom, bond or ring ▸ Set as Focal Point).' },
+    { name: 'focalLook', label: 'Mark focal points with', value: focalPrefs.look, short: true, options: FOCAL_LOOKS.map((l) => ({ value: l.look, label: l.name })), inline: (v) => focalSwatch(v) },
+    { name: 'focalDefault', label: 'Structures without their own focal point line up by', value: focalPrefs.dflt, short: true, options: [
+      { value: 'box', label: 'The middle of the structure' }, { value: 'ring', label: 'The middle of its largest ring' }],
+      help: 'Largest ring: the biggest ring, nearest the middle if there are several. A structure with no ring always uses its middle.' },
     { name: 'iconsHeading', label: 'Icons', type: 'heading', value: '' },
     { name: 'iconSet', label: 'Icon set', value: iconSet(), short: true, options: [
       { value: 'new', label: 'New: one style in every mode' },
@@ -10797,12 +11059,36 @@ async function personalPreferences(): Promise<void> {
   chemText.saltGroups = r.saltGroups === 'true';
   templatesOnNew = { document: r.tplDocument === 'true', sheet: r.tplSheet === 'true', slides: r.tplSlides === 'true' };
   setIconSet(r.iconSet === 'classic' ? 'classic' : 'new');
+  Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
+  editor.focalLook = focalPrefs.look;
+  setFocalDefault(focalPrefs.dflt);
+  editor.requestOverlay();
   editor.aids = { ...editor.aids, angle: r.aidAngle === 'true', length: r.aidLength === 'true', hints: r.aidHints === 'true', look: r.aidLook === 'box' || r.aidLook === 'solid' ? r.aidLook : 'plain', units: r.aidUnits === 'px' || r.aidUnits === 'mm' ? r.aidUnits : 'in' };
   const look = parseAlkylLook(r.alkylLook);
   const changed = look !== alkylPrefs.look;
   alkylPrefs.look = look;
   storeSettings();
   if (changed && look !== 'typed') await offerAlkylRestyle(look);
+}
+
+/** A focal point mark in Preferences, as drawn on a ring. */
+function focalSwatch(look: string): HTMLElement {
+  const c = document.createElement('canvas');
+  const k = devicePixelRatio || 1;
+  c.width = 44 * k; c.height = 30 * k;
+  c.style.width = '44px'; c.style.height = '30px';
+  const ctx = c.getContext('2d');
+  if (ctx) {
+    ctx.scale(k, k);
+    ctx.strokeStyle = getComputedStyle(document.body).color || '#000';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 3; const x = 22 + 12 * Math.cos(a), y = 15 + 12 * Math.sin(a); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+    ctx.stroke();
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#0f7f86';
+    drawFocalMark(ctx, { x: 22, y: 15 }, 1, accent, (FOCAL_LOOKS.find((l) => l.look === look)?.look ?? 'target'), true);
+  }
+  return c;
 }
 
 const ALKYL_LOOK_CHOICES: { value: AlkylLook; label: string }[] = [
@@ -10940,7 +11226,8 @@ function currentSettings(): Settings {
     mapLook: mapLookPrefs.look,
     mapBox: { ...mapLookPrefs.custom },
     depthShade: { ...depthShadePrefs },
-    linkSide,
+    focal: { ...focalPrefs },
+    linkLook,
     slideTemplate,
     slideThemes,
     askWholeDrawing,
@@ -11182,8 +11469,12 @@ function applySettings(s: Settings): void {
   mapLookPrefs.look = s.mapLook;
   mapLookPrefs.custom = { ...s.mapBox };
   Object.assign(depthShadePrefs, s.depthShade);
+  Object.assign(focalPrefs, s.focal);
+  editor.focalLook = focalPrefs.look;
+  setFocalDefault(focalPrefs.dflt);
+  refreshDistributeTips();
   for (const el of document.querySelectorAll('[data-cmd="depth-shading"][role="menuitemcheckbox"]')) el.setAttribute('aria-checked', String(depthShadePrefs.on));
-  linkSide = s.linkSide;
+  linkLook = s.linkLook;
   slideTemplate = s.slideTemplate;
   slideThemes = s.slideThemes;
   askWholeDrawing = s.askWholeDrawing;
@@ -11321,6 +11612,7 @@ function revealStylePanel(focus = false): void {
   setTimeout(() => {
     const sec = $('#style-section');
     if (sec.hidden || sec.classList.contains('empty')) return;
+    sideSections.show('style-section');
     sec.scrollIntoView({ block: 'nearest' });
     if (focus) sec.querySelector<HTMLElement>('input, select, button')?.focus();
   }, 60);
@@ -11692,7 +11984,7 @@ $('#analysis-body').addEventListener('click', (e) => {
     if (st?.kind !== 'found' || !frag) return;
     const m = editor.measure();
     doc.edit('CAS caption', () => {
-      const c = doc.addCaption({ x: 0, y: 0, runs: casRuns(st.cas[0]), justify: 'center', attach: { atoms: [...frag], side: 'below', gap: defaultGap(doc), shift: 0, role: 'caption' } });
+      const c = doc.addCaption(lookCaption(doc, 'caption', frag, casRuns(st.cas[0]), {}, true));
       placeAttached(doc, c, m);
     });
     editor.changed();
@@ -11707,7 +11999,7 @@ $('#analysis-body').addEventListener('click', (e) => {
     // (the structure stays selected, so the panel stays open for the other buttons)
     const m = editor.measure();
     doc.edit(kind === 'pcname' ? 'Name caption' : kind === 'pccas' ? 'CAS caption' : 'Hazards caption', () => {
-      const c = doc.addCaption({ x: 0, y: 0, runs, justify: 'center', attach: { atoms: [...frag], side: 'below', gap: defaultGap(doc), shift: 0, role: 'caption' } });
+      const c = doc.addCaption(lookCaption(doc, 'caption', frag, runs, {}, true));
       placeAttached(doc, c, m);
     });
     editor.changed();
@@ -11784,8 +12076,7 @@ async function attachDescriptors(frags = chosenStructures()): Promise<void> {
       if (!r) return;
       const adduct = adductSel.value;
       const runs = descriptorRuns(r, show, adduct, analysisPrefs(), benchOf(r), names[i]);
-      const attach: Attachment = { atoms: [...f], side: 'below', gap: defaultGap(doc), shift: 0, role: 'descriptors', show, adduct, sig: structureSig(doc, f) };
-      const c = doc.addCaption({ x: 0, y: 0, runs, justify: 'center', attach });
+      const c = doc.addCaption(lookCaption(doc, 'descriptors', f, runs, { show, adduct, sig: structureSig(doc, f) }, true));
       placeAttached(doc, c, editor.measure());
       made.push(c.id);
     });
@@ -12453,7 +12744,9 @@ stylePanel.bracketPartner = { state: () => editor.bracketPartnerState(), toggle:
 
 /**
  * Tie captions (text boxes) to a structure: `to` (a selected structure's atoms), or else the one
- * nearest each. They stay where they are, or go to the side chosen in Edit > Settings.
+ * nearest each. They take the drawing style's ID label or caption look and place, as if made
+ * there (text that reads as an ID becomes an ID label), or with "Stays where it is" in Settings ▸
+ * Preferences, they keep where they are and how they look.
  */
 function tieCaptions(ids: number[], to: Set<number> | null = null): void {
   const m = editor.measure();
@@ -12464,10 +12757,14 @@ function tieCaptions(ids: number[], to: Set<number> | null = null): void {
       if (!c) continue;
       const f = to ?? nearestStructure(doc, m.captionBox(c), m);
       if (!f?.size) continue;
-      const side = linkSide === 'keep' ? undefined : linkSide;
-      const a = side ? { atoms: [...f], side, gap: defaultGap(doc), shift: 0, role: 'caption' as const } : attachWhereItIs(doc, c, f, m, 'caption');
-      if (!a) continue;
-      doc.updateCaption(id, { attach: a, ...(side ? { justify: side === 'right' ? 'left' as const : side === 'left' ? 'right' as const : 'center' as const } : {}) });
+      if (linkLook === 'style') {
+        doc.updateCaption(id, lookPatch(doc, c, f));
+        placeAttached(doc, doc.captions.get(id)!, m);
+      } else {
+        const a = attachWhereItIs(doc, c, f, m, looksLikeId(plainText(c.runs)) ? 'label' : 'caption');
+        if (!a) continue;
+        doc.updateCaption(id, { attach: a });
+      }
       n++;
     }
   });
@@ -12733,7 +13030,7 @@ function drawingMenu(): MenuItem[] {
       ...(ws.active.mode === 'slides' || design ? [{ cmd: 'format-background', label: 'Format Background…' }, { cmd: 'slide-references', label: 'References on Slide…' }, null] : []),
       ...(ws.active.mode === 'slides' && deckNow()?.current?.canvas ? [{ label: 'Keyframes', items: keyframeMenu() }, null] : []),
       { label: 'Insert', items: [{ cmd: 'name-to-structure' }, { cmd: 'sequence-to-structure' }, { cmd: 'periodic-table' }, { cmd: 'insert-picture' }, { cmd: 'import-picture', label: 'Structure from Picture…' }, { cmd: 'text-box' }, { cmd: 'insert-reference', label: 'Reference…' }, { cmd: 'insert-symbol' }, ...(design ? [{ cmd: 'design-shapes', label: 'Shape…' }, { cmd: 'design-icons', label: 'Icon…' }, { cmd: 'connector-tool' }] : []), ...(ws.active.mode === 'slides' ? [{ cmd: 'slide-shapes', label: 'Shape…' }, { cmd: 'slide-icons', label: 'Icon…' }] : [])] },
-      { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'arrange-scheme' }, { cmd: 'number-compounds' }, { cmd: 'smart-scheme' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }] },
+      { label: 'Scheme', items: [{ cmd: 'smart-clean' }, { cmd: 'clean-up-reaction' }, { cmd: 'arrange-scheme' }, { cmd: 'number-compounds' }, { cmd: 'smart-scheme' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }] },
       { cmd: 'drawing-style' },
       ...(ws.active.mode === 'drawing' && pageEdgesMenu() ? [pageEdgesMenu()!] : []),
       view,
@@ -12742,9 +13039,14 @@ function drawingMenu(): MenuItem[] {
   const arrange: MenuItem[] = [
     { cmd: 'align-left' }, { cmd: 'align-hcenter' }, { cmd: 'align-right' }, null,
     { cmd: 'align-top' }, { cmd: 'align-vcenter' }, { cmd: 'align-bottom' }, null,
-    { cmd: 'distribute-h' }, { cmd: 'distribute-v' }, null,
+    { cmd: 'distribute-h-gaps' }, { cmd: 'distribute-v-gaps' }, { cmd: 'distribute-h-focal' }, { cmd: 'distribute-v-focal' }, null,
     { cmd: 'arrange-row' }, { cmd: 'arrange-column' }, { cmd: 'arrange-grid' },
   ];
+  // an atom, a bond or a ring picked: it can be the structure's focal point
+  const spot = editor.focalSpot();
+  const focal: MenuItem[] = atoms || s.bonds.size
+    ? [...(spot ? [{ cmd: 'set-focal-point', label: `Set ${spot.length === 1 ? 'Atom' : spot.length === 2 ? 'Bond' : 'Ring'} as Focal Point` }] : []), ...(editor.canMatchFocal() ? [{ cmd: 'match-focal-points' }] : []), ...(editor.hasOwnFocal() ? [{ cmd: 'reset-focal-point' }] : [])]
+    : [];
   const turn: MenuItem[] = [
     { cmd: 'flip-h' }, { cmd: 'flip-v' }, { cmd: 'flip-h-keep' }, { cmd: 'flip-v-keep' }, null,
     { cmd: 'rotate-cw' }, { cmd: 'rotate-ccw' }, { cmd: 'rotate-180' }, { cmd: 'rotate-dialog' }, null, { cmd: 'scale' },
@@ -12764,6 +13066,7 @@ function drawingMenu(): MenuItem[] {
     ...(focus === 'atom' ? atomMenu() : repeatLabelMenu()),
     ...bonds,
     ...fuseRingMenu(),
+    ...(focal.length ? [...focal, null] : []),
     ...(focus === 'bond' && s.bonds.size <= 2 && !s.arrows.size ? [{ cmd: 'homolysis-arrows' }] : []),
     ...arrows,
     ...(editor.selectedEnergy() !== null ? [{ cmd: 'edit-energy' }, null] : []),
@@ -12807,6 +13110,8 @@ function drawingMenu(): MenuItem[] {
       { label: 'Shape', items: [{ cmd: 'arrow-s-shape', label: 'S' }, { cmd: 'arrow-single-curve', label: 'Single Curve' }, { cmd: 'arrow-shape-u', label: 'U-Turn' }, { cmd: 'arrow-shape-loop', label: 'Loop' }] },
       { cmd: 'flip-arrow-bend' }, { cmd: 'arrow-reverse' }, { cmd: 'arrow-smooth-path' }, { cmd: 'arrow-simplify-path' }, null, { cmd: 'attach-arrow' }, { cmd: 'detach-arrow' },
     ] }, ...(editor.options.arrowProducts ? [{ cmd: 'draw-from-arrows' }, { cmd: 'check-arrows' }] : [])] : []),
+    ...(s.arrows.size ? [{ label: 'Arrow Type', items: (['reaction', 'mechanism', 'plain'] as const).map((k): MenuItem => ({ cmd: `arrow-kind-${k}`, checked: [...s.arrows].every((id) => { const r = doc.arrows.get(id); return !!r && arrowKind(r) === k; }) })) }] : []),
+    ...(pickedStraightArrows().length ? [{ cmd: 'text-guides', checked: pickedStraightArrows().every((id) => arrowGuidesOn(doc.arrows.get(id)!)) }, ...(pickedReactionArrow() !== undefined ? [{ cmd: 'split-steps' }] : [])] : []),
     ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : []),
     // (a scheme is about whole structures and arrows, not an atom or a bond picked on its own)
     // (a catalytic cycle: another loop, or a species off it, at what was clicked)
@@ -13047,6 +13352,7 @@ editor.onContextMenu = (e) => {
 stylePanel.cropWithMouse = () => cropPicture();
 stylePanel.formatPicture = () => void formatPicture();
 stylePanel.removeWhite = (ids) => void removeWhite(ids);
+stylePanel.newman = { look: (id, patch) => editor.relookNewman(id, patch), edit: (id) => void newmanProjection(null, null, id) };
 stylePanel.frames = { add: () => void command('add-frame'), fit: (id) => editor.fitFrame(id) };
 stylePanel.smart = {
   layouts: (id) => editor.smartLayouts(id),
@@ -13071,6 +13377,18 @@ stylePanel.energy = {
   restyle: (id, patch) => { const d = doc.shapes.get(id)?.energy; if (d) editor.putEnergyDiagram({ ...d, ...patch }, pasteCentre(), id); },
 };
 stylePanel.ringFill = () => void command('fill-rings');
+stylePanel.focalPick = () => startFocalPick();
+editor.onFocalLost = () => flash('A focal point\'s atom, bond or ring was taken away, so that structure lines up by the middle of its box again.', 5000);
+editor.onFocalPicked = (kind) => {
+  if (kind) flash(`Focal point set on the ${kind}.`);
+  else $('#flash').classList.remove('show');
+};
+
+/** Arrange ▸ Set as Focal Point with nothing to set it on: the next click on the drawing names the spot. */
+function startFocalPick(): void {
+  editor.startFocalPick();
+  flash('Click an atom, a bond or inside a ring to make it its structure\'s focal point. Esc cancels.', 60000);
+}
 stylePanel.highlightUsed = (c) => { highlightColour = c; };
 stylePanel.highlightStyleUsed = (st) => { highlightStyle = tidyStyle(st); };
 // ---------------------------------------------------------------- Format Painter
@@ -13416,6 +13734,12 @@ let colourMode: 'line' | 'highlight' | 'fill' = 'line';
 
 /** The side panel's contents: in the panel at the right, or in the "details" toolbox when taken out. */
 const sideContent = $('#side-content');
+// its sections as tabs in the header row (dragged down to stack them, sideways to reorder), kept for each mode
+const sideSections = new SideSections(sideContent, {
+  mode: () => ws.active.mode,
+  get: (mode) => toolboxState.sideLayout?.[mode] ?? {},
+  set: (mode, layout) => { toolboxState = { ...toolboxState, sideLayout: { ...toolboxState.sideLayout, [mode]: layout } }; storeSettings(); },
+});
 
 /** The highlight looks as buttons: one click gives the selection that look. */
 function looksList(vertical: boolean): HTMLElement {
@@ -13601,7 +13925,11 @@ const SPECIAL_BOXES: Record<string, (body: HTMLElement, vertical: boolean) => vo
   // The side panel (Style, Warnings, Analysis; Format in documents, Cell in sheets) is a toolbox,
   // docked at the right to start with. Its arrow goes with it, so it shows even when the title bar is
   // locked away.
-  details: (body) => { body.before(sideFold()); body.append(sideContent); },
+  details: (body) => {
+    body.append(sideContent);
+    const head = body.parentElement?.querySelector<HTMLElement>(':scope > .tb-head');
+    if (head) sideSections.mount(head, sideFold()); else body.before(sideFold());
+  },
   text: (body, vertical) => { textToolbox = buildTextToolbox(body, vertical, textToolboxHooks); },
   guides: (body, vertical) => { guidesToolbox = buildGuidesToolbox(body, vertical, guidesToolboxHooks); },
   // the Smart Scheme species list, docked (it floats beside the scheme otherwise)
@@ -14183,7 +14511,7 @@ addLookToggle(canvasRibbon.el, { simple: () => ribbonLook === 'simple', toggle: 
 // (in the order of the list: the pages of a group together, under its heading)
 const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'general', group: 'General', title: 'General', words: 'backup back up copy move settings file new computer install reinstall export import groups selecting click outline linked text above below ask whole page tracked changes reviewer name start view recent files chemdraw objects ole word powerpoint docx pptx save structures pictures svg png compatibility', open: generalPreferences },
-  { id: 'preferences', group: 'General', title: 'Preferences', words: 'personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
+  { id: 'preferences', group: 'General', title: 'Preferences', words: 'focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
   { id: 'hotkeys', group: 'General', title: 'Keyboard Shortcuts', words: 'keys keyboard shortcuts import export reset', open: () => hotkeysDialog.open() },
   { id: 'typing', group: 'General', title: 'Typing and Spelling', words: 'typing spelling dictionary autocorrect replacements chemistry formulas subscripts', open: () => typingDialog.open() },
   { id: 'autosave', group: 'General', title: 'AutoSave and Recovery', words: 'autosave recovery versions backup copies shared folders onedrive', open: () => keeper.optionsCommand() },
@@ -14234,6 +14562,8 @@ stylePanel.reaction = {
   arrange: () => command('arrange-scheme'),
   sideText: (id) => editor.arrowSideText(id),
   setSideText: (id, side, text) => editor.setArrowSideText(id, side, text),
+  setTextAlign: (id, side, how) => editor.setArrowTextAlign(id, side, how),
+  setGuides: (ids, on) => editor.setArrowGuides(ids, on),
 };
 stylePanel.tables = {
   part: () => editor.tablePart,

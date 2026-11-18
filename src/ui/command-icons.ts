@@ -78,6 +78,12 @@ export const COMMAND_ICONS: Record<string, string> = {
   'arrange-row': svg('<rect x="2" y="9" width="5" height="6"/><rect x="9.5" y="9" width="5" height="6"/><rect x="17" y="9" width="5" height="6"/>'),
   'arrange-column': svg('<rect x="9" y="2" width="6" height="5"/><rect x="9" y="9.5" width="6" height="5"/><rect x="9" y="17" width="6" height="5"/>'),
   'arrange-grid': svg('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>'),
+  'distribute-h-focal': svg('<line x1="3" y1="4" x2="3" y2="20"/><line x1="21" y1="4" x2="21" y2="20"/><circle cx="7" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="17" cy="12" r="2"/>'),
+  'distribute-v-focal': svg('<line x1="4" y1="3" x2="20" y2="3"/><line x1="4" y1="21" x2="20" y2="21"/><circle cx="12" cy="7" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="17" r="2"/>'),
+  'set-focal-point': svg(hex(12, 12, 9) + '<circle cx="12" cy="12" r="3.5"/><path d="M12 6.5v2M12 15.5v2M6.5 12h2M15.5 12h2"/>'),
+  'reset-focal-point': svg(hex(12, 12, 9) + '<circle cx="12" cy="12" r="3.5" stroke-dasharray="1.6 1.4"/><path d="M4 20L20 4"/>'),
+  'show-focal-points': svg(hex(7.5, 8.5, 5.5) + hex(16.5, 15.5, 5.5) + '<circle cx="7.5" cy="8.5" r="1.8"/><circle cx="16.5" cy="15.5" r="1.8"/>'),
+  'match-focal-points': svg(hex(7.5, 12, 5.5) + hex(16.5, 12, 5.5) + '<path d="M2 12h20" stroke-dasharray="1.5 1.5"/><circle cx="7.5" cy="12" r="1.8"/><circle cx="16.5" cy="12" r="1.8"/>'),
   'distribute-v': svg('<line x1="4" y1="3" x2="20" y2="3"/><line x1="4" y1="21" x2="20" y2="21"/><rect x="8" y="6" width="8" height="3"/><rect x="8" y="10.5" width="8" height="3"/><rect x="8" y="15" width="8" height="3"/>'),
   // ---- object: flip and turn
   'flip-h': svg('<line x1="12" y1="3" x2="12" y2="21" stroke-dasharray="2 2"/><path d="M10 6v12L4 18z"' + filled() + '/><path d="M14 6v12l6 0z"/>'),
@@ -95,6 +101,8 @@ export const COMMAND_ICONS: Record<string, string> = {
   scale: svg('<rect x="3" y="11" width="10" height="10"/><path d="M8 3h13v13" stroke-dasharray="2 2"/><path d="M12 12l7-7M14 5h5v5"/>'),
   'rotate-dialog': svg('<path d="M18.5 12.5a6.5 6.5 0 1 1-2.2-5"/><path d="M17 3.5v4h-4"/>' + txt(11.5, 15.5, '°', 9)),
   // ---- structure
+  // a structure and an arrow, with a sparkle: cleans up whichever is selected
+  'smart-clean': svg('<path d="M4.5 9.5l3-1.7 3 1.7v3.4l-3 1.7-3-1.7z"/><path d="M12.5 19h7.5"/><path d="M17.5 16.5l2.5 2.5-2.5 2.5"/><path d="M19 2.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none"/>'),
   'clean-up': svg(hex(10.5, 13, 7) + '<path d="M19 2.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none"/>'),
   // three small layouts to pick from
   'clean-up-options': svg(hex(6.5, 7.5, 4) + hex(17.5, 7.5, 4) + hex(12, 17, 4)),
