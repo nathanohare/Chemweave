@@ -82,6 +82,8 @@ export interface SiModeHost {
   library(): Promise<{ now: LibraryData; change(f: (lib: LibraryData) => LibraryData): void }>;
   /** Files chosen to add (spectra, other files). */
   pickFiles(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array }[]>;
+  /** File ▸ New ▸ SI Project: a new project, opened in its tab (null: none made; absent: can't be made here). */
+  newSiProject?: (() => Promise<SiProject | null>) | null;
   /** What the checks need from structures (molfiles): formula, pieces, distinct carbons, H counts. */
   siFacts(mols: string[]): Promise<(MolFacts | null)[]>;
   /** A drawing's own size in points, in the SI drawing style. */
@@ -162,6 +164,9 @@ const RIBBON = `
     <button role="tab" data-si-tab="spectrum" aria-selected="false" class="rb-context" hidden title="Shown on a compound's spectra page">Spectrum</button>
   </div>
   <div class="rb-panel" data-si-panel="insert" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="import-si" data-ic="get-data" title="Import SI: read a Supporting Information (Word or PDF) and import its general procedures, compounds, sections, figures, tables and references, after checking them in a review window. One step of Undo"><span class="rb-icon">⇩</span>Import SI…</button>
+    </div><div class="rb-label">Import</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="new-table" data-ic="table" title="Add a table at the end of the Custom section's text (3 × 3, the first row its header); type its caption in the text"><span class="rb-icon">▦</span>Table</button>
     </div><div class="rb-label">Tables</div></div>
@@ -481,6 +486,7 @@ const RIBBON = `
         <button data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance">Project Settings…</button>
         <button data-si="snapshot" title="Save Snapshot: the whole project zipped into its snapshots folder, for milestones such as the submitted version (as Chem SI Assistant saves them)">Save Snapshot…</button>
       </div>
+
     </div><div class="rb-label">Manage</div></div>
   </div>`;
 
@@ -3264,8 +3270,75 @@ export class SiMode {
     }
   }
 
+  /**
+   * SI Project ▸ Import SI…: a Word or PDF SI read, its general procedures, compounds, sections,
+   * figures, tables and references shown in the review window, and what is kept written into
+   * this project (or a new one) as one Undo step (SI Assistant's File ▸ Import SI…).
+   */
+  private async importSi(): Promise<void> {
+    const [f] = await this.host.pickFiles('Supporting Information (Word or PDF)', ['docx', 'pdf']);
+    if (!f) return;
+    this.commitAll();
+    const [{ readSiFile }, I, { askImport, importSummary }, { applyPlan }, { emfToSvg }] = await Promise.all([
+      import('../si/si-import-read'), import('../si/si-import'), import('./si-import-dialog'), import('../si/si-import-apply'), import('../render/emf-read'),
+    ]);
+    this.host.flash(`Reading “${f.name}”…`, 60000);
+    let read;
+    try {
+      read = await readSiFile(f.name, f.bytes, (done, total) => { this.host.hint(`Reading “${f.name}”: ${done} of ${total}`); });
+    } catch (e) {
+      read = null;
+      this.host.flash(`“${f.name}” could not be read: ${e instanceof Error ? e.message : String(e)}`, 8000);
+    } finally { this.host.hint(''); }
+    if (!read) return;
+    this.host.flash('', 1);
+    if (read.error) { await ask('Import SI', [], { noCancel: true, ok: 'OK', note: read.error }); return; }
+    const plan = I.analyse(read.paras);
+    if (!plan.compounds.length && !plan.gps.length && !plan.sections.length) {
+      await ask('Import SI', [], { noCancel: true, ok: 'OK', note: `No compounds, general procedures or sections were recognized in “${f.name}”. Compounds are found by a heading with the name and ID, such as “1-Phenylethanol (2a).”, followed by its data.`, points: read.notes });
+      return;
+    }
+    const p = this.project;
+    const choice = await askImport(plan, read, {
+      pictureOf: (m) => this.host.pictureOf(m),
+      analyze: (m) => this.host.analyze(m),
+      dataSections: p && !p.readOnly ? p.dataSections.map((s) => ({ id: s.id, name: s.name })) : null,
+      canMakeProject: !!this.host.newSiProject,
+    });
+    if (!choice) return;
+    const target = choice.newProject ? await this.host.newSiProject?.() ?? null : p;
+    if (!target) return;
+    if (target.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    // (a drawing's or a Mnova spectrum's EMF as an SVG, its EMF kept beside it to convert again)
+    const fromEmf = async (emf: Uint8Array): Promise<[Uint8Array, string, Uint8Array | null, string] | null> => {
+      const svg = emfToSvg(emf);
+      return svg ? [new TextEncoder().encode(svg.svg), '.svg', emf, '.emf'] : null;
+    };
+    journalOf(target.folder)?.settle();
+    let result;
+    try {
+      result = await applyPlan(target, plan, read.file_name, {
+        mode: choice.mode, sectionId: choice.sectionId,
+        pictureFor: fromEmf, figureFor: fromEmf, spectrumFor: fromEmf,
+        factsOf: async (m) => (await this.host.siFacts([m]))[0] ?? null,
+        progress: (_d, _t, text) => this.host.hint(text),
+      });
+    } catch (e) {
+      this.host.flash(`The import stopped: ${e instanceof Error ? e.message : String(e)}. What was written so far is one step of Edit ▸ Undo.`, 10000);
+      return;
+    } finally {
+      this.host.hint('');
+      this.forgetStructure();
+      this.labelsRead = false;
+      this.shownKey = '';
+      this.refresh();
+      this.host.changed();
+    }
+    await ask('Import SI', [], { noCancel: true, ok: 'OK', note: `Imported “${read.file_name}”. Edit ▸ Undo takes the whole import back.`, points: importSummary(result, plan) });
+  }
+
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
-  private static NO_STEP = new Set(['trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview']);
+  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
@@ -3540,6 +3613,7 @@ export class SiMode {
       case 'compile-pdf':
         await this.compile(cmd === 'compile-pdf');
         return;
+      case 'import-si': await this.importSi(); return;
       case 'reload':
         this.forgetStructure();
         await this.act(() => p.reload());

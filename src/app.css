@@ -4823,6 +4823,76 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-ms-problem .si-ms-status { color: var(--warn, #d35400); }
 .si-ms-ok .si-ms-status { color: var(--ok, #2e7d32); }
 .si-ms-note td, .si-ms-dismissed td { color: var(--muted, #7f7f7f); }
+/* SI Project ▸ Import SI…: the review window (the list on the left, the item's page on the right) */
+dialog.si-import { width: min(96vw, 1120px); height: min(92vh, 820px); padding: 10px 12px; }
+dialog.si-import > form { display: flex; flex-direction: column; height: 100%; gap: 6px; }
+dialog.si-import h2 { margin: 0; }
+.si-imp-intro { margin: 0; font-size: var(--fs-sm); }
+.si-imp-notes { margin: 0; padding-left: 18px; font-size: var(--fs-sm); color: var(--muted); max-height: 5.5em; overflow-y: auto; }
+.si-imp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 300px) 1fr; border: 1px solid var(--line); border-radius: var(--r-control); }
+.si-imp-tree { overflow-y: auto; border-right: 1px solid var(--line); padding: 4px 0; font-size: var(--fs-sm); }
+.si-imp-item { display: flex; align-items: center; gap: 4px; padding: 0 6px; }
+.si-imp-group > .si-imp-item { padding-left: 16px; }
+.si-imp-group .si-imp-group > .si-imp-item { padding-left: 28px; }
+.si-imp-top > .si-imp-item { padding-left: 6px; }
+.si-imp-item.on { background: var(--accent-soft, color-mix(in srgb, var(--accent) 16%, transparent)); }
+.si-imp-label { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 2px 2px; font: inherit; color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.si-imp-head .si-imp-label { font-weight: 600; }
+.si-imp-head .si-imp-label:disabled { cursor: default; opacity: 1; }
+.si-imp-page { overflow-y: auto; padding: 8px 10px; min-width: 0; }
+.si-imp-form { display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; gap: 4px 8px; align-items: start; font-size: var(--fs-sm); }
+.si-imp-form > p, .si-imp-form > h3, .si-imp-form > table, .si-imp-form > .si-imp-made, .si-imp-form > .si-imp-bar { grid-column: 1 / -1; margin: 0; }
+.si-imp-row { display: contents; }
+.si-imp-name { grid-column: 1; padding-top: 3px; color: var(--muted); max-width: 12em; }
+.si-imp-row > :nth-child(2) { grid-column: 2; }
+.si-imp-row > :nth-child(3) { grid-column: 3; }
+.si-imp-row > :only-child, .si-imp-row > .si-imp-name:empty + *, .si-imp-row > :last-child:nth-child(2) { grid-column: 2 / -1; }
+.si-imp-form input[type=text], .si-imp-form select { padding: 2px 5px; font: inherit; min-width: 0; }
+.si-imp-row > input[type=text] { width: 100%; }
+.si-imp-row > input.si-imp-id { width: 8em; }
+.si-imp-text { width: 100%; font: inherit; padding: 3px 5px; resize: vertical; }
+.si-imp-text[readonly] { background: var(--bg, transparent); color: var(--muted); }
+.si-imp-parts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.si-imp-parts input[type=text] { width: 9em; }
+.si-imp-part-name { color: var(--muted); }
+.si-imp-stack { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.si-imp-stack > .si-imp-text { width: 100%; }
+.si-imp-thumb { width: 220px; height: 140px; display: grid; place-items: center; background: #fff; color: #555; border: 1px solid var(--line); border-radius: var(--r-control); overflow: hidden; text-align: center; font-size: var(--fs-xs, 11px); padding: 2px; }
+.si-imp-thumb > img { width: 100%; height: 100%; object-fit: contain; }
+.si-imp-thumb > svg { max-width: 100%; max-height: 100%; }
+.si-imp-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.si-imp-row > .si-imp-side { grid-column: 3; max-width: 26em; }
+.si-imp-row > .si-imp-thumb { grid-column: 2; }
+.si-imp-check { display: inline-flex; align-items: center; gap: 4px; }
+.si-imp-warn { color: var(--warn, #a15c00); white-space: pre-line; }
+.si-imp-table { border-collapse: collapse; width: 100%; }
+.si-imp-table th, .si-imp-table td { border-bottom: 1px solid var(--line); padding: 2px 4px; text-align: left; vertical-align: middle; }
+.si-imp-table th { font-weight: 600; color: var(--muted); }
+.si-imp-table input[type=text] { width: 100%; }
+.si-imp-refs { table-layout: fixed; }
+.si-imp-refs th:nth-child(1) { width: 3.6em; }
+.si-imp-refs th:nth-child(2) { width: 2.6em; }
+.si-imp-refs th:nth-child(3) { width: 22%; }
+.si-imp-refs th:nth-child(4) { width: 26%; }
+.si-imp-refs th:nth-child(6), .si-imp-refs th:nth-child(7) { width: 4.2em; }
+.si-imp-refs th:nth-child(8) { width: 6em; }
+.si-imp-made { display: flex; flex-direction: column; gap: 2px; }
+.si-imp-made-row { display: flex; align-items: center; gap: 6px; }
+.si-imp-made-row input[type=text] { width: 18em; }
+.si-imp-nobox { width: 13px; }
+.si-imp-bar { display: flex; align-items: center; gap: 8px; }
+.si-imp-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.si-imp-choice { margin: 0; padding: 4px 8px 6px; border: 1px solid var(--line); border-radius: var(--r-control); display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); }
+.si-imp-choice legend { padding: 0 4px; font-weight: 600; }
+.si-imp-dest { display: flex; align-items: center; gap: 6px; }
+.si-imp-dest select { flex: 1; min-width: 0; }
+.si-imp-dest-note { margin: 2px 0 0; }
+dialog.si-import .ask-buttons { margin: 0; }
+@media (max-width: 700px) {
+  .si-imp-body { grid-template-columns: 1fr; grid-template-rows: 30% 1fr; }
+  .si-imp-tree { border-right: 0; border-bottom: 1px solid var(--line); }
+  .si-imp-bottom { grid-template-columns: 1fr; }
+}
 .si-formula sub { font-size: 75%; }
 
 /* a box for SI text (src/ui/si-rich.ts) */

@@ -74,7 +74,7 @@ describe('Import SI: writing into a project (as SI Assistant writes it)', () => 
     expect(p.idReport().ids.get(c.id)).toBe('5a');
     const phenol = p.compound(result.created[3]);
     expect(p.compoundText(phenol, 'notes')).toContain('LRMS m/z 94.');
-    expect(p.compoundText(phenol, 'notes')).toContain('Imported from si.docx, not recognised:');
+    expect(p.compoundText(phenol, 'notes')).toContain('Imported from si.docx, not recognized:');
     expect(await j.undo()).toBe('Import SI from si.docx');
     await p.reload();
     expect(p.dataSections.map((s) => s.id)).not.toContain(result.section_id);

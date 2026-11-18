@@ -32,7 +32,7 @@ export type PrintMode = typeof PRINT_FROM_FIELDS | typeof PRINT_AS_IMPORTED;
 export const FIELD_ORDER = ['structure', 'name', 'procedure', 'scale', 'yield', 'physical_state', 'purification', 'rf', 'mp', 'ir', 'rotation', 'ee', 'dr', 'nmr', 'hrms', 'ea', 'xray', 'references', 'spectra', 'si_text'] as const;
 const DEFAULT_SECTION_FIELDS = ['structure', 'name', 'procedure', 'yield', 'physical_state', 'nmr', 'hrms', 'spectra'];
 const REQUIRED = new Set(['structure', 'procedure', 'yield', 'physical_state', 'nmr', 'hrms', 'spectra']);
-export const notesHeading = (file: string): string => `Imported from ${file}, not recognised:`;
+export const notesHeading = (file: string): string => `Imported from ${file}, not recognized:`;
 const DEFAULT_GENERAL_HEADING = 'General Information';
 
 /** A spectrum found in the SI (si-import-spectra.ts): a Word Mnova picture (EMF), or a part of a PDF page (a one-page PDF). */

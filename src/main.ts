@@ -8294,6 +8294,7 @@ function loadSiMode(): Promise<SiMode> {
         return { now: lib.now, change: (f) => lib.change(f) };
       },
       pickFiles: (label, exts) => openManyBytesDialog(label, exts).catch(async (e) => { await showError(String(e)); return []; }),
+      newSiProject: isTauri() ? () => openSiProject(true) : null,
       siFacts: (mols) => chem.siFacts(mols),
       sizeOf: (c) => figures.size(c, siStyleNow()),
       siStyle: () => siStyleNow(),
@@ -8439,27 +8440,27 @@ function siJournal(folder: SiFolderT): JournalFolder {
   return j;
 }
 
-async function openSiProject(create: boolean, at?: string): Promise<void> {
-  if (!isTauri()) { flash('SI projects are folders on this computer: open them in the desktop app for now.', 6000); return; }
+async function openSiProject(create: boolean, at?: string): Promise<SiProjectT | null> {
+  if (!isTauri()) { flash('SI projects are folders on this computer: open them in the desktop app for now.', 6000); return null; }
   finishTab();
   const [{ SiProject, SiProjectError, PROJECT_FILE }, { DiskFolder }, { safeFilename }] = await Promise.all([import('./si/project'), import('./si/folder'), import('./si/ids')]);
   let path = at ?? await pickFolder();
-  if (!path) return;
+  if (!path) return null;
   const call = <T,>(cmd: string, args?: Record<string, unknown>, opts?: { headers: Record<string, string> }): Promise<T> => invoke<T>(cmd, args as never, opts as never);
   let project: SiProjectT;
   try {
     if (create) {
       const got = await ask('New SI Project', [{ name: 'title', label: 'Title', value: '', placeholder: 'e.g. NaBH4 Reduction SI' }], { ok: 'Make Project', note: 'The project is a new folder, named after it, inside the folder you picked. Chem SI Assistant opens it too.' });
-      if (!got?.title.trim()) return;
+      if (!got?.title.trim()) return null;
       const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
       path = path.replace(/[\\/]+$/, '') + sep + safeFilename(got.title.trim());
       await invoke('make_folder', { path });
       project = await SiProject.create(siJournal(new DiskFolder(path, call)), got.title.trim());
     } else {
       const folder = new DiskFolder(path, call);
-      if (!(await folder.exists(PROJECT_FILE))) { await showError(`This folder is not an SI project (it has no ${PROJECT_FILE}). Pick the project's own folder: the one Chem SI Assistant made, with project.json and sections inside.`); return; }
+      if (!(await folder.exists(PROJECT_FILE))) { await showError(`This folder is not an SI project (it has no ${PROJECT_FILE}). Pick the project's own folder: the one Chem SI Assistant made, with project.json and sections inside.`); return null; }
       const already = ws.tabs.find((t) => t.si?.folder.where === path);
-      if (already) { ws.activate(already); return; }
+      if (already) { ws.activate(already); return already.si ?? null; }
       project = await SiProject.open(siJournal(folder));
       const held = project.readOnly ? null : await project.currentLock();
       if (held) {
@@ -8468,7 +8469,7 @@ async function openSiProject(create: boolean, at?: string): Promise<void> {
           { value: 'edit', label: 'Open for Editing' },
           { value: 'cancel', label: 'Cancel' },
         ], 'cancel', 'If it was left open after a crash, or you closed it there, open it for editing: the lock passes to you.');
-        if (pick === 'cancel') return;
+        if (pick === 'cancel') return null;
         if (pick === 'read') project.readOnly = true;
       }
     }
@@ -8480,13 +8481,14 @@ async function openSiProject(create: boolean, at?: string): Promise<void> {
     }
   } catch (e) {
     await showError(e instanceof SiProjectError ? e.message : `The SI project could not be opened: ${e instanceof Error ? e.message : String(e)}`);
-    return;
+    return null;
   }
   await loadSiMode();
   ws.openSi(project);
   siLinked.delete(project.folder.where);
   siChanged(project.folder.where);
   if (project.warnings.length) flash(`Opened with ${project.warnings.length} problem${project.warnings.length === 1 ? '' : 's'}: see the project's page.`, 6000);
+  return project;
 }
 
 // (development only: open an SI project kept in memory, for trying the tab in a browser without files)
