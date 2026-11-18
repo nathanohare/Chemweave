@@ -386,8 +386,8 @@ interface TemplateChoice {
 }
 
 let PREVIEW = '#2f6fdf';
-/** How far (screen pixels) the selection box's tilt handles sit out from it, below and to the right. */
-const TILT_OUT = 18;
+/** How far (screen pixels) the selection box's tilt handles sit either side of its rotate handle. */
+const TILT_GAP = 20;
 
 /**
  * Colours of the marks drawn over the page. With View > Reading Mode on, the marks go through the
@@ -4378,19 +4378,19 @@ export class Editor {
   }
 
   /**
-   * The selection box's tilt handles, for selected structures with the selection tool: one below
-   * the box (drag down or up to tip the structures about the left–right axis) and one to its right
-   * (drag across to swing them about the up–down axis), turning them as flat sheets.
+   * The selection box's tilt handles, for selected structures with the selection tool: either side
+   * of the rotate handle, clear of the captions and numbers under a structure. The left one tips
+   * the structures about the left–right axis (drag down or up); the right one swings them about the
+   * up–down axis (drag across). Both turn them as flat sheets.
    */
   tiltHandles(): { x: Vec; y: Vec } | null {
-    if (!this.rotateHandle() || this.sel.atoms.size < 2) return null;
-    const b = this.selBox();
-    if (!b) return null;
-    const out = this.tol(TILT_OUT);
-    return { x: { x: (b.x1 + b.x2) / 2, y: b.y2 + out }, y: { x: b.x2 + out, y: (b.y1 + b.y2) / 2 } };
+    const rh = this.sel.atoms.size < 2 ? null : this.rotateHandle();
+    if (!rh) return null;
+    const gap = this.tol(TILT_GAP);
+    return { x: { x: rh.x - gap, y: rh.y }, y: { x: rh.x + gap, y: rh.y } };
   }
 
-  /** The tilt handle at a point, if any: 'x' tips (the one below), 'y' swings (the one at the right). */
+  /** The tilt handle at a point, if any: 'x' tips (left of the rotate handle), 'y' swings (right of it). */
   private tiltAt(p: Vec): 'x' | 'y' | null {
     const t = this.tiltHandles();
     if (!t) return null;
@@ -4931,26 +4931,22 @@ export class Editor {
   }
 
   /**
-   * The tilt handles (see tiltHandles): a stem out from the box's edge to a small knob with a
-   * two-headed arrow through it, up–down below the box and left–right beside it. While one is
-   * dragged (`only`) just that one shows.
+   * The tilt handles (see tiltHandles): small knobs either side of the rotate handle, each with a
+   * two-headed arrow through it, up–down (tip) on the left and left–right (swing) on the right.
+   * While one is dragged (`only`) just that one shows, where it started.
    */
-  private drawTiltHandles(ctx: CanvasRenderingContext2D, px: number, b: Rect, stroke: string, only?: 'x' | 'y'): void {
-    const out = TILT_OUT * px, r = 5.5 * px, a = 3.2 * px, head = 1.6 * px;
-    const knobs: { axis: 'x' | 'y'; at: Vec; from: Vec }[] = [
-      { axis: 'x', at: { x: (b.x1 + b.x2) / 2, y: b.y2 + out }, from: { x: (b.x1 + b.x2) / 2, y: b.y2 + 2 * px } },
-      { axis: 'y', at: { x: b.x2 + out, y: (b.y1 + b.y2) / 2 }, from: { x: b.x2 + 2 * px, y: (b.y1 + b.y2) / 2 } },
+  private drawTiltHandles(ctx: CanvasRenderingContext2D, px: number, b: Rect, only?: 'x' | 'y'): void {
+    const r = 5.5 * px, a = 3.2 * px, head = 1.6 * px;
+    const top = b.y1 - 24 * px, mid = (b.x1 + b.x2) / 2, gap = TILT_GAP * px;
+    const knobs: { axis: 'x' | 'y'; at: Vec }[] = [
+      { axis: 'x', at: { x: mid - gap, y: top } },
+      { axis: 'y', at: { x: mid + gap, y: top } },
     ];
     ctx.save();
     ctx.lineWidth = px;
     for (const k of knobs) {
       if (only && k.axis !== only) continue;
       const u = k.axis === 'x' ? { x: 0, y: 1 } : { x: 1, y: 0 };
-      ctx.strokeStyle = stroke;
-      ctx.beginPath();
-      ctx.moveTo(k.from.x, k.from.y);
-      ctx.lineTo(k.at.x - u.x * r, k.at.y - u.y * r);
-      ctx.stroke();
       ctx.beginPath();
       ctx.arc(k.at.x, k.at.y, r, 0, Math.PI * 2);
       ctx.fillStyle = '#fff';
@@ -7911,7 +7907,7 @@ export class Editor {
       ctx.fill();
       ctx.strokeStyle = PREVIEW;
       ctx.stroke();
-      this.drawTiltHandles(ctx, px, b, mk.box);
+      this.drawTiltHandles(ctx, px, b);
       const r = this.drag?.rot;
       if (r && this.drag!.moved) {
         ctx.font = `${12 * px}px system-ui, sans-serif`;
@@ -7923,7 +7919,7 @@ export class Editor {
     const tp = this.drag?.persp;
     if (tp?.axis && !rh) {
       const b = this.selBox();
-      if (b) this.drawTiltHandles(ctx, px, b, mk.box, tp.axis);
+      if (b) this.drawTiltHandles(ctx, px, b, tp.axis);
       if (this.drag!.moved) {
         const deg = Math.round((tp.axis === 'x' ? tp.dy : tp.dx) * DEG_PER_PX);
         const shown = tp.shift ? Math.round(deg / 15) * 15 : deg;
