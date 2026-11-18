@@ -100,7 +100,7 @@ import { imageFor } from '../render/images';
 import { gridOffsets, inferGrid, sharedAnchors, usualGap, withLabels, type GridHow } from './grid-arrange';
 import { BEND, BRUSH, ROTATE, handleCursor, pointerFor } from './cursors';
 import { flatten, prepareTurn, stillMeans, structuresOf, type PerspectiveHost, type Prepared } from './perspective';
-import { anglesTurn, dragTurn, IDENT as IDENT_TURN, type M3 } from '../chem/perspective';
+import { anglesTurn, dragTurn, DEG_PER_PX, IDENT as IDENT_TURN, type M3 } from '../chem/perspective';
 import type { TextEditing } from '../text/editing';
 
 export type Tool =
@@ -343,8 +343,20 @@ interface Drag {
 }
 
 /** A drag with a Perspective tool: the structures, once ready (a 3-D shape may be building), and the drag so far in screen pixels. */
+/** A 3-D Rotation being tried out (Editor.previewTurn). */
+export interface TurnPreview {
+  /** Why a structure turns flat when its 3-D shape was asked for. */
+  notes: string[];
+  /** Turn by these angles (degrees) from where the structures were; returns how many stereocenters can't be drawn so they read right. */
+  set(x: number, y: number, z: number): number;
+  keep(): void;
+  cancel(): void;
+}
+
 interface PerspDrag {
   real: boolean;
+  /** A tilt handle of the selection box: only the drag down (about X) or across (about Y) counts. */
+  axis?: 'x' | 'y';
   ready: Prepared | null;
   begun: boolean;
   dx: number;
@@ -373,6 +385,8 @@ interface TemplateChoice {
 }
 
 let PREVIEW = '#2f6fdf';
+/** How far (screen pixels) the selection box's tilt handles sit either side of its rotate handle. */
+const TILT_GAP = 20;
 
 /**
  * Colours of the marks drawn over the page. With View > Reading Mode on, the marks go through the
@@ -1172,10 +1186,12 @@ export class Editor {
     const painting = !!this.painter && e.button === 0;
     const rh = e.button === 0 && !painting ? this.rotateHandle() : null;
     const rotating = !!rh && dist(rh, p) <= this.tol(7);
+    // a tilt handle of the selection box: a drag tips or swings the structures in perspective
+    const tilt = e.button === 0 && !painting && !rotating ? this.tiltAt(p) : null;
     // Shift+drag from an arrow with an arrow tool branches a new arrow off it (not its handles)
     const branching = e.shiftKey && this.tool.kind === 'arrow';
-    const handle = e.button === 0 && !rotating && !branching && !painting ? this.handleAt(p) : null;
-    const hit = handle || rotating ? null : this.hitTest(p);
+    const handle = e.button === 0 && !rotating && !tilt && !branching && !painting ? this.handleAt(p) : null;
+    const hit = handle || rotating || tilt ? null : this.hitTest(p);
     this.drag = {
       start: p, startScreen: { x: e.clientX - rect.left, y: e.clientY - rect.top }, hit, button: e.button, moved: false,
       shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey, mode: handle ? 'handle' : rotating ? 'rotate' : 'none', last: p, path: [p],
@@ -1183,6 +1199,7 @@ export class Editor {
       ...(e.pointerType === 'pen' ? { pen: true } : {}),
     };
     if (handle) this.drag.handle = handle;
+    if (tilt) this.startTilt(this.drag, tilt);
     // the selection tool on a guide (where nothing else is): the guide is dragged
     const gh = e.button === 0 && !handle && !rotating && !painting && !hit && this.tool.kind === 'select' ? this.guideUnder(p) : null;
     if (gh) { this.drag.mode = 'guide'; this.drag.guideGrab = gh; }
@@ -1242,8 +1259,9 @@ export class Editor {
     if (!d) {
       const rh = this.rotateHandle();
       const onRotate = !!rh && dist(rh, p) <= this.tol(7);
-      const handle = onRotate ? null : this.handleAt(p);
-      const h = handle || onRotate ? null : this.hitTest(p);
+      const tilt = onRotate ? null : this.tiltAt(p);
+      const handle = onRotate || tilt ? null : this.handleAt(p);
+      const h = handle || onRotate || tilt ? null : this.hitTest(p);
       if (!sameHit(h, this.hover)) { this.hover = h; }
       // the keyboard highlight gives way to the mouse once it moves (a finger doesn't hover, so
       // a touch leaves it); in ChemDraw's way, once the mouse rests on something new
@@ -1256,7 +1274,7 @@ export class Editor {
         else if (sameHit(h, this.keyHotHover)) this.cancelTakeover();
         else this.takeoverSoon(h);
       }
-      this.lastHover = { onRotate, handle, h };
+      this.lastHover = { onRotate, handle, h, tilt };
       // the "+" box shows only where nothing else is under the pointer (Alt hides it)
       const near = !handle && !onRotate && !e.altKey ? this.helperAt(p, true) : null;
       const slot = near && (!h || h.kind === 'arrow' && h.id === near.id) ? near : null;
@@ -4369,6 +4387,46 @@ export class Editor {
     });
   }
 
+  /** The turn a Perspective drag has reached: a tilt handle counts only its own way (down for X, across for Y). */
+  private dragTurnOf(t: PerspDrag): M3 {
+    return dragTurn(t.axis === 'x' ? 0 : t.dx, t.axis === 'y' ? 0 : t.dy, t.shift);
+  }
+
+  /**
+   * The selection box's tilt handles, for selected structures with the selection tool: either side
+   * of the rotate handle, clear of the captions and numbers under a structure. The left one tips
+   * the structures about the left–right axis (drag down or up); the right one swings them about the
+   * up–down axis (drag across). Both turn them as flat sheets.
+   */
+  tiltHandles(): { x: Vec; y: Vec } | null {
+    const rh = this.sel.atoms.size < 2 ? null : this.rotateHandle();
+    if (!rh) return null;
+    const gap = this.tol(TILT_GAP);
+    return { x: { x: rh.x - gap, y: rh.y }, y: { x: rh.x + gap, y: rh.y } };
+  }
+
+  /** The tilt handle at a point, if any: 'x' tips (left of the rotate handle), 'y' swings (right of it). */
+  private tiltAt(p: Vec): 'x' | 'y' | null {
+    const t = this.tiltHandles();
+    if (!t) return null;
+    const r = this.tol(7);
+    return dist(t.x, p) <= r ? 'x' : dist(t.y, p) <= r ? 'y' : null;
+  }
+
+  /** A tilt handle pressed: the selected structures get ready to turn as flat sheets, one way only. */
+  private startTilt(d: Drag, axis: 'x' | 'y'): void {
+    const structures = structuresOf(this.doc, this.sel.atoms);
+    if (!structures.length) return;
+    const t: PerspDrag = { real: false, axis, ready: null, begun: false, dx: 0, dy: 0, shift: false, unshown: 0, told: false };
+    d.persp = t;
+    const doc = this.doc;
+    void prepareTurn(doc, structures, false, this.perspectiveHost).then((prep) => {
+      if (this.drag !== d || this.doc !== doc) return;
+      t.ready = prep;
+      if (d.moved) this.turnTo(d);
+    });
+  }
+
   /** Turn the structures for the drag so far (nothing yet while a 3-D shape is building). */
   private turnTo(d: Drag): void {
     const t = d.persp!;
@@ -4377,7 +4435,7 @@ export class Editor {
       return;
     }
     if (!t.begun) { this.doc.begin(t.real ? '3-D Rotation' : 'Rotate in Perspective'); t.begun = true; }
-    const R = dragTurn(t.dx, t.dy, t.shift);
+    const R = this.dragTurnOf(t);
     t.unshown = t.ready.turn.apply(this.doc, R);
     if (!t.unshown) t.ready.turn.lastGood = R;
     this.onHint(t.unshown ? 'From this angle a stereocenter can\'t be drawn so it reads right: let go and it goes back to the last angle that worked.' : t.shift ? 'Turning in 15° steps' : 'Shift: turn in 15° steps, one way at a time');
@@ -4390,7 +4448,7 @@ export class Editor {
     const t = d.persp;
     if (!t?.begun || !t.ready) { this.requestScene(); return; }
     const turn = t.ready.turn;
-    const R = t.unshown ? turn.lastGood : dragTurn(t.dx, t.dy, t.shift);
+    const R = t.unshown ? turn.lastGood : this.dragTurnOf(t);
     const left = turn.apply(this.doc, R, true);
     turn.remember(this.doc);
     this.doc.commit();
@@ -4436,6 +4494,52 @@ export class Editor {
     this.changed();
     this.checkTurn(prep.turn, left);
     return true;
+  }
+
+  /**
+   * A live 3-D Rotation (the dialog): the selected structures got ready to turn, then turned by
+   * angles from where they were as each is typed or slid, in one undoable step. `keep` settles
+   * the wedges and keeps the turn; `cancel` puts everything back. Null when nothing is selected.
+   */
+  async previewTurn(real: boolean): Promise<TurnPreview | null> {
+    const structures = structuresOf(this.doc, this.sel.atoms);
+    if (!structures.length) return null;
+    const doc = this.doc;
+    const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
+    if (this.doc !== doc) return null;
+    const label = real ? '3-D Rotation' : 'Rotate in Perspective';
+    let begun = false, done = false, R: M3 = IDENT_TURN, unshown = 0;
+    const live = () => !done && this.doc === doc;
+    return {
+      notes: prep.notes,
+      set: (x, y, z) => {
+        if (!live()) return 0;
+        if (!begun) { doc.begin(label); begun = true; }
+        R = anglesTurn(x, y, z);
+        unshown = prep.turn.apply(doc, R);
+        if (!unshown) prep.turn.lastGood = R;
+        if (hasPins(doc)) followPins(doc);
+        this.requestScene();
+        return unshown;
+      },
+      keep: () => {
+        if (!live()) return;
+        done = true;
+        if (!begun) return;
+        const left = prep.turn.apply(doc, unshown ? prep.turn.lastGood : R, true);
+        prep.turn.remember(doc);
+        doc.commit();
+        this.changed();
+        if (unshown) this.onNotice('From that angle a stereocenter can\'t be drawn so it reads right, so the structure went back to the last angle where it could.', 6000);
+        this.checkTurn(prep.turn, left);
+      },
+      cancel: () => {
+        if (!live()) return;
+        done = true;
+        if (begun) { doc.abandon(); this.afterUndo(); }
+        this.requestScene();
+      },
+    };
   }
 
   /**
@@ -4839,6 +4943,44 @@ export class Editor {
     if (s.atoms.size === 1 && !s.arrows.size && !s.shapes.size && !s.captions.size) return null;
     const b = this.selBox();
     return b ? { x: (b.x1 + b.x2) / 2, y: b.y1 - this.tol(24) } : null;
+  }
+
+  /**
+   * The tilt handles (see tiltHandles): small knobs either side of the rotate handle, each with a
+   * two-headed arrow through it, up–down (tip) on the left and left–right (swing) on the right.
+   * While one is dragged (`only`) just that one shows, where it started.
+   */
+  private drawTiltHandles(ctx: CanvasRenderingContext2D, px: number, b: Rect, only?: 'x' | 'y'): void {
+    const r = 5.5 * px, a = 3.2 * px, head = 1.6 * px;
+    const top = b.y1 - 24 * px, mid = (b.x1 + b.x2) / 2, gap = TILT_GAP * px;
+    const knobs: { axis: 'x' | 'y'; at: Vec }[] = [
+      { axis: 'x', at: { x: mid - gap, y: top } },
+      { axis: 'y', at: { x: mid + gap, y: top } },
+    ];
+    ctx.save();
+    ctx.lineWidth = px;
+    for (const k of knobs) {
+      if (only && k.axis !== only) continue;
+      const u = k.axis === 'x' ? { x: 0, y: 1 } : { x: 1, y: 0 };
+      ctx.beginPath();
+      ctx.arc(k.at.x, k.at.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.strokeStyle = PREVIEW;
+      ctx.stroke();
+      // the two-headed arrow: which way to drag
+      const p1 = { x: k.at.x - u.x * a, y: k.at.y - u.y * a }, p2 = { x: k.at.x + u.x * a, y: k.at.y + u.y * a };
+      const n = { x: u.y, y: u.x };
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+      for (const [tip, dir] of [[p1, -1], [p2, 1]] as const) {
+        ctx.moveTo(tip.x - dir * u.x * head + n.x * head, tip.y - dir * u.y * head + n.y * head);
+        ctx.lineTo(tip.x, tip.y);
+        ctx.lineTo(tip.x - dir * u.x * head - n.x * head, tip.y - dir * u.y * head - n.y * head);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /** Line up the selected objects. Returns false when fewer than two are selected. */
@@ -7018,7 +7160,7 @@ export class Editor {
   dark = false;
 
   /** What the pointer was last over (to change the pointer when Ctrl is pressed or let go). */
-  private lastHover: { onRotate: boolean; handle: Handle | null; h: Hit } | null = null;
+  private lastHover: { onRotate: boolean; handle: Handle | null; h: Hit; tilt?: 'x' | 'y' | null } | null = null;
 
   /** Show the pointer that says what a click or drag will do where the mouse is. */
   private showPointer(ctrl: boolean): void {
@@ -7026,6 +7168,7 @@ export class Editor {
     if (!o || this.drag) return;
     if (this.painter) { this.r.overlay.style.cursor = BRUSH; return; }
     const { onRotate, handle, h } = o;
+    if (o.tilt) { this.r.overlay.style.cursor = o.tilt === 'x' ? 'ns-resize' : 'ew-resize'; return; }
     // a curved arrow tool over a selected S's line: a drag there reshapes it
     if (!onRotate && !handle && h?.kind === 'arrow' && this.curvedTool() && this.isSelected(h) && bezPoints(this.doc.arrows.get(h.id)!)) { this.r.overlay.style.cursor = BEND; return; }
     this.r.overlay.style.cursor = onRotate ? ROTATE : handle ? handleCursor(handle.which) : pointerFor({
@@ -7789,11 +7932,25 @@ export class Editor {
       ctx.fill();
       ctx.strokeStyle = PREVIEW;
       ctx.stroke();
+      this.drawTiltHandles(ctx, px, b);
       const r = this.drag?.rot;
       if (r && this.drag!.moved) {
         ctx.font = `${12 * px}px system-ui, sans-serif`;
         ctx.fillStyle = PREVIEW;
         ctx.fillText(`${Math.round(r.angle / DEG)}°`, this.pointer.x + 10 * px, this.pointer.y - 10 * px);
+      }
+    }
+    // while a tilt handle is dragged: the box, the handle, and how far it has turned
+    const tp = this.drag?.persp;
+    if (tp?.axis && !rh) {
+      const b = this.selBox();
+      if (b) this.drawTiltHandles(ctx, px, b, tp.axis);
+      if (this.drag!.moved) {
+        const deg = Math.round((tp.axis === 'x' ? tp.dy : tp.dx) * DEG_PER_PX);
+        const shown = tp.shift ? Math.round(deg / 15) * 15 : deg;
+        ctx.font = `${12 * px}px system-ui, sans-serif`;
+        ctx.fillStyle = PREVIEW;
+        ctx.fillText(`${shown}°`, this.pointer.x + 10 * px, this.pointer.y - 10 * px);
       }
     }
     // how far an arrow is bent, while bending it

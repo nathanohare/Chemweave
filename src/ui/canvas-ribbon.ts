@@ -65,6 +65,12 @@ export const CANVAS_TABS: RibbonTab[] = [
       { name: 'Align', items: [c('align-left', 'Align Left'), c('align-hcenter', 'Align Center'), c('align-right', 'Align Right'), c('align-top', 'Align Top'), c('align-vcenter', 'Align Middle'), c('align-bottom', 'Align Bottom')] },
       { name: 'Distribute', items: [c('distribute-h', 'Distribute Horizontally'), c('distribute-v', 'Distribute Vertically'), c('arrange-row', 'Arrange in a Row'), c('arrange-column', 'Arrange in a Column'), c('arrange-grid', 'Arrange in a Grid…')] },
       { name: 'Rotate', items: [c('flip-h', 'Flip Horizontal'), c('flip-v', 'Flip Vertical'), c('rotate-cw', 'Rotate Right 90°'), c('rotate-ccw', 'Rotate Left 90°'), c('rotate-dialog', 'Rotate…')] },
+      // (turning in 3-D: the two Perspective tools drag a structure round; 3-D Rotation… turns it by angles typed in)
+      { name: '3-D', items: [
+        { tool: 'perspective', label: 'Perspective', major: true, tip: 'Perspective: drag a structure to tilt it in 3-D as a flat sheet (Shift: 15° steps)' },
+        { tool: 'perspective-3d', label: '3-D Perspective', tip: '3-D Perspective: drag a structure to rotate its real 3-D shape (Shift: 15° steps)' },
+        c('turn-3d', '3-D Rotation…'), c('flatten-3d', 'Flatten'),
+      ] },
       { name: 'Order', items: [c('shape-front', 'Bring to Front'), c('shape-forward', 'Bring Forward'), c('shape-back', 'Send to Back'), c('shape-backward', 'Send Backward')] },
     ],
   },

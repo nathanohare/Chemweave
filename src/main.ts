@@ -240,6 +240,7 @@ import { chargeAndMultiplicity, xyzFile, type QmOptions } from './chem/qm-input'
 import { NameDialog } from './ui/name-dialog';
 import { SequenceDialog } from './ui/sequence-dialog';
 import { ArrangeDialog } from './ui/arrange-dialog';
+import { openTurn3d, type Turn3dShape } from './ui/turn3d-dialog';
 import type { AnimateDialog } from './ui/animate-dialog';
 import { PeriodicTable } from './ui/periodic-table';
 import type { SheetMode, ClipboardCells } from './ui/sheet-mode';
@@ -1979,22 +1980,24 @@ editor.perspectiveHost = {
   smiles: (molblock) => chem.molToSmiles(molblock),
 };
 
-let lastTurn3d = { x: '0', y: '30', z: '0', shape: 'real' };
-/** Turn in 3-D…: the selected structures turned by angles typed in, in their real shape or as a flat sheet. */
+/** How the 3-D Rotation window last turned structures (flat sheet or real shape), kept for next time. */
+let lastTurn3dShape: Turn3dShape = 'flat';
+/** 3-D Rotation…: the selected structures turned by angles slid or typed in, shown live on the drawing. */
 async function turn3dDialog(): Promise<void> {
   if (!editor.sel.atoms.size) { flash('Select a structure to rotate in 3-D.'); return; }
-  const r = await ask('3-D Rotation', [
-    { name: 'x', label: 'About X (left–right)', value: lastTurn3d.x, unit: 'degrees', type: 'number', help: 'Positive tips the top toward you.' },
-    { name: 'y', label: 'About Y (up–down)', value: lastTurn3d.y, unit: 'degrees', type: 'number', help: 'Positive brings the left side toward you.' },
-    { name: 'z', label: 'About Z (in the page)', value: lastTurn3d.z, unit: 'degrees', type: 'number', help: 'Positive values rotate clockwise.' },
-    { name: 'shape', label: 'Turn', value: lastTurn3d.shape, options: [{ value: 'real', label: 'The real 3-D shape' }, { value: 'flat', label: 'The drawing as a flat sheet' }] },
-  ], { ok: 'Turn', note: 'Drag with the Perspective tools to turn by eye.' });
-  if (!r) return;
-  const [x, y, z] = [r.x, r.y, r.z].map((v) => parseFloat(v || '0'));
-  if (![x, y, z].every(Number.isFinite)) { flash('Type each angle in degrees.'); return; }
-  lastTurn3d = { x: r.x, y: r.y, z: r.z, shape: r.shape };
-  if (r.shape === 'real') flash('Building the 3-D shape…');
-  await editor.turnSelectionBy(x, y, z, r.shape === 'real');
+  const r = await openTurn3d({
+    prepare: (real) => editor.previewTurn(real),
+    side: () => {
+      // (the window goes on the side of the drawing away from the selection)
+      const b = editor.selBox();
+      const rect = $<HTMLElement>('#overlay').getBoundingClientRect();
+      if (!b) return 'right';
+      const mid = renderer.toScreen({ x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 });
+      return mid.x > rect.width * 0.55 ? 'left' : 'right';
+    },
+    area: () => $<HTMLElement>('#overlay').getBoundingClientRect(),
+  }, lastTurn3dShape);
+  if (r) lastTurn3dShape = r.shape;
 }
 
 /** Depth shading on or off (Format ▸ Depth Shading): structures in 3-D fade from black in front to grey behind. */
@@ -13426,14 +13429,14 @@ const cmds = (list: (string | null)[]) => list.map((c) => (c ? `cmd:${c}` : 'sep
 const BOX_ITEMS: Record<string, readonly string[]> = {
   main: MAIN_ITEMS,
   structure: cmds(['clean-up', 'clean-up-options', 'add-frame', 'fill-rings', 'highlight', 'remove-highlight', null, 'aromatic-circles', 'stereo-labels', null, 'add-id-label', 'add-caption', 'attach-descriptors', 'number-compounds', null, 'contract-label', 'expand-label', 'expand-label-full', 'hapto-bond', 'name-to-structure']),
-  arrange: cmds(['align-left', 'align-hcenter', 'align-right', 'align-top', 'align-vcenter', 'align-bottom', null, 'distribute-h', 'distribute-v', 'arrange-row', 'arrange-column', 'arrange-grid', null, 'flip-h', 'flip-v', 'rotate-cw', 'rotate-ccw', null, 'shape-front', 'shape-back']),
+  arrange: [...cmds(['align-left', 'align-hcenter', 'align-right', 'align-top', 'align-vcenter', 'align-bottom', null, 'distribute-h', 'distribute-v', 'arrange-row', 'arrange-column', 'arrange-grid', null, 'flip-h', 'flip-v', 'rotate-cw', 'rotate-ccw']), 'pal:perspective', 'cmd:turn-3d', ...cmds([null, 'shape-front', 'shape-back'])],
   highlight: [...cmds(['highlight', 'remove-highlight', null, 'smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight', null, 'save-highlight-look']), 'w:looks'],
   custom: defaultToolboxes().custom,
   schemes: cmds(['smart-scheme', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
   diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
   tables: cmds(['insert-table', 'rgroup-table', 'stoichiometry-table', null, 'insert-chart', 'edit-chart', null, 'tlc-plate', 'gel', 'edit-plate']),
   biopolymers: ['cmd:sequence-to-structure', 'sep', 'pal:tpl-amino', 'pal:tpl-sugars', 'pal:tpl-nucleic'],
-  perspective: [...cmds(['model-3d', 'turn-3d', 'flatten-3d', null, 'depth-shading', 'depth-shading-settings', null, 'ring-chair', 'ring-chair-flip', 'newman-projection', 'crystal-structure']), 'sep', 'pal:tpl-perspective', 'pal:tpl-conformers', 'pal:tpl-projections'],
+  perspective: ['tool:perspective', 'tool:perspective-3d', 'sep', ...cmds(['turn-3d', 'flatten-3d', 'model-3d', null, 'depth-shading', 'depth-shading-settings', null, 'ring-chair', 'ring-chair-flip', 'newman-projection', 'crystal-structure']), 'sep', 'pal:tpl-perspective', 'pal:tpl-conformers', 'pal:tpl-projections'],
 };
 /** Short names on toolbox buttons for commands with no icon. */
 const SHORT_LABEL: Record<string, string> = {
