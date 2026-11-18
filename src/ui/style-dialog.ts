@@ -152,6 +152,21 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     textGapBelow.title = 'Leave blank for the same gap as above. From 0 to 30 pt';
     textGapBelow.dataset.span = 'textGapBelow';
     row('Gap between arrow and text below', textGapBelow, el('span', { className: 'muted', textContent: 'pt' }));
+    // the Results line under the text below (yield, ee, dr): its own look, alignment and gap
+    const resultsFont = fontSelect(), resultsSize = el('input', { type: 'number', className: 'md-num', step: 'any' });
+    resultsFont.prepend(new Option('Same as arrow text', ''));
+    resultsSize.title = 'Leave blank for the size of the text above and below arrows';
+    keepInRange(resultsSize, ...LIMITS.captionSize, 'pt');
+    row('Results under arrows', resultsFont, resultsSize, el('span', { className: 'muted', textContent: 'pt' }));
+    const alignResults = el('select');
+    alignResults.append(new Option('Same as below', ''));
+    for (const [v, t] of [['center', 'Centered'], ['left', 'Left'], ['right', 'Right']]) alignResults.append(new Option(t, v));
+    row('Results alignment', alignResults);
+    const resultsGap = schemeNum('resultsGap');
+    resultsGap.dataset.span = 'resultsGap';
+    row('Gap between text below and Results', resultsGap, el('span', { className: 'muted', textContent: 'pt' }));
+    const listLeft = el('input', { type: 'checkbox' });
+    row('', listLeft, el('span', { className: 'muted', textContent: 'Left-align a numbered list of steps (1. n-BuLi; 2. PhCHO)' }));
     const fit = el('input', { type: 'checkbox' });
     row('', fit, el('span', { className: 'muted', textContent: 'Fit the arrow to its text (moves the products)' }));
     const lead = schemeNum('lead'), headGap = schemeNum('headGap');
@@ -165,7 +180,8 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       // blank: the app's scheme settings, most of them growing with the bond length
       const sp = spacing(parseFloat(inputs.get('bondLength')!.value) || shown.bondLength);
       const auto = (v: number) => String(Math.round(v * 10) / 10);
-      textGap.placeholder = auto(sp.conditions); textGapBelow.placeholder = textGap.value || auto(sp.conditions); lead.placeholder = auto(sp.lead); headGap.placeholder = auto(sp.headGap);
+      textGap.placeholder = auto(sp.conditions); textGapBelow.placeholder = textGap.value || auto(sp.conditions); resultsGap.placeholder = auto(sp.results);
+      resultsSize.placeholder = arrowSize.value || arrowSize.placeholder; lead.placeholder = auto(sp.lead); headGap.placeholder = auto(sp.headGap);
       structGap.placeholder = auto(sp.gap); plusGap.placeholder = auto(sp.plus);
       beyond.style.opacity = fit.checked ? '' : '0.5';
     };
@@ -302,6 +318,11 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       const sc = st.scheme ?? {};
       align.value = sc.textAlign ?? schemePrefs.textAlign;
       alignBelow.value = sc.textAlignBelow ?? schemePrefs.textAlignBelow ?? '';
+      alignResults.value = sc.textAlignResults ?? schemePrefs.textAlignResults ?? '';
+      resultsGap.value = pt(sc.resultsGap);
+      listLeft.checked = sc.listLeft ?? schemePrefs.listLeft ?? true;
+      if (st.resultsTextFont) pickFont(resultsFont, st.resultsTextFont); else resultsFont.value = '';
+      resultsSize.value = st.resultsTextSize !== undefined ? String(+st.resultsTextSize.toFixed(3)) : '';
       textGap.value = pt(sc.textGap); textGapBelow.value = pt(sc.textGapBelow); lead.value = pt(sc.lead); headGap.value = pt(sc.headGap);
       structGap.value = pt(sc.structGap); plusGap.value = pt(sc.plusGap);
       fit.checked = sc.fit ?? schemePrefs.fit;
@@ -335,13 +356,19 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       own(headLength, 'arrowHeadLength');
       own(headWidth, 'arrowHeadWidth');
       const sc: StyleScheme = {};
-      for (const [k, i] of [['textGap', textGap], ['textGapBelow', textGapBelow], ['lead', lead], ['headGap', headGap], ['structGap', structGap], ['plusGap', plusGap]] as const) {
+      const rf = resultsFont.value.trim(), rs = parseFloat(resultsSize.value);
+      if (rf && rf !== (st.arrowTextFont ?? st.captionFont)) st.resultsTextFont = rf; else delete st.resultsTextFont;
+      if (Number.isFinite(rs) && rs > 0 && Math.abs(rs - (st.arrowTextSize ?? st.captionSize)) > 1e-6) st.resultsTextSize = rs; else delete st.resultsTextSize;
+      for (const [k, i] of [['textGap', textGap], ['textGapBelow', textGapBelow], ['resultsGap', resultsGap], ['lead', lead], ['headGap', headGap], ['structGap', structGap], ['plusGap', plusGap]] as const) {
         const v = i.value.trim() === '' ? undefined : clampSchemeDistance(k, parseFloat(i.value));
         if (v !== undefined) sc[k] = v;
       }
       if (align.value !== schemePrefs.textAlign && (align.value === 'left' || align.value === 'center' || align.value === 'right')) sc.textAlign = align.value;
       const below = alignBelow.value;
       if (below !== (schemePrefs.textAlignBelow ?? '') && (below === 'left' || below === 'center' || below === 'right')) sc.textAlignBelow = below;
+      const res = alignResults.value;
+      if (res !== (schemePrefs.textAlignResults ?? '') && (res === 'left' || res === 'center' || res === 'right')) sc.textAlignResults = res;
+      if (listLeft.checked !== (schemePrefs.listLeft ?? true)) sc.listLeft = listLeft.checked;
       if (fit.checked !== schemePrefs.fit) sc.fit = fit.checked;
       if (Object.keys(sc).length) st.scheme = sc; else delete st.scheme;
       const idLook = readTied(idCtl, st, 'label'), tiedLook = readTied(capCtl, st, 'caption');

@@ -86,6 +86,7 @@ const NUMBERS = ['bondLength', 'lineWidth', 'boldWidth', 'marginWidth', 'hashSpa
 export function sameLook(a: DocStyle, b: DocStyle): boolean {
   return NUMBERS.every((k) => Math.abs(a[k] - b[k]) < 1e-6) && a.labelFont === b.labelFont && a.captionFont === b.captionFont
     && Math.abs(arrowTextSizeOf(a) - arrowTextSizeOf(b)) < 1e-6 && arrowTextFontOf(a) === arrowTextFontOf(b)
+    && Math.abs(resultsTextSizeOf(a) - resultsTextSizeOf(b)) < 1e-6 && resultsTextFontOf(a) === resultsTextFontOf(b)
     && ARROW_SIZES.every((k) => (a[k] ?? null) === (b[k] ?? null))
     && JSON.stringify(cleanScheme(a.scheme) ?? null) === JSON.stringify(cleanScheme(b.scheme) ?? null)
     && JSON.stringify(cleanTiedLook(a.idLook) ?? null) === JSON.stringify(cleanTiedLook(b.idLook) ?? null)
@@ -100,7 +101,8 @@ export function cleanScheme(raw: unknown): StyleScheme | undefined {
   const r = raw as Record<string, unknown>;
   const out: StyleScheme = {};
   for (const k of SCHEME_DISTANCES) { const raw = r[k]; const v = typeof raw === 'number' && raw >= 0 ? clampSchemeDistance(k, raw) : undefined; if (v !== undefined) out[k] = v; }
-  for (const k of ['textAlign', 'textAlignBelow'] as const) { const v = r[k]; if (v === 'left' || v === 'center' || v === 'right') out[k] = v; }
+  for (const k of ['textAlign', 'textAlignBelow', 'textAlignResults'] as const) { const v = r[k]; if (v === 'left' || v === 'center' || v === 'right') out[k] = v; }
+  if (typeof r.listLeft === 'boolean') out.listLeft = r.listLeft;
   if (typeof r.fit === 'boolean') out.fit = r.fit;
   return Object.keys(out).length ? out : undefined;
 }
@@ -112,6 +114,9 @@ export const ARROW_SIZES = ['arrowWidth', 'arrowHeadLength', 'arrowHeadWidth'] a
 export const arrowTextSizeOf = (s: DocStyle): number => s.arrowTextSize ?? s.captionSize;
 /** Its font (the captions' unless set). */
 export const arrowTextFontOf = (s: DocStyle): string => s.arrowTextFont ?? s.captionFont;
+/** The Results line's size and font under reaction arrows (the arrow text's unless set). */
+export const resultsTextSizeOf = (s: DocStyle): number => s.resultsTextSize ?? arrowTextSizeOf(s);
+export const resultsTextFontOf = (s: DocStyle): string => s.resultsTextFont ?? arrowTextFontOf(s);
 
 /** A style read back from the settings file: every number present and sensible, else null. */
 export function cleanStyle(raw: unknown): DocStyle | null {
@@ -129,6 +134,8 @@ export function cleanStyle(raw: unknown): DocStyle | null {
   if (typeof r.captionFace === 'number') out.captionFace = r.captionFace;
   if (typeof r.arrowTextSize === 'number' && Number.isFinite(r.arrowTextSize) && r.arrowTextSize > 0) out.arrowTextSize = r.arrowTextSize;
   if (typeof r.arrowTextFont === 'string' && r.arrowTextFont.trim()) out.arrowTextFont = r.arrowTextFont.trim();
+  if (typeof r.resultsTextSize === 'number' && Number.isFinite(r.resultsTextSize) && r.resultsTextSize > 0) out.resultsTextSize = r.resultsTextSize;
+  if (typeof r.resultsTextFont === 'string' && r.resultsTextFont.trim()) out.resultsTextFont = r.resultsTextFont.trim();
   for (const k of ARROW_SIZES) { const v = r[k]; if (typeof v === 'number' && Number.isFinite(v) && v > 0) out[k] = Math.min(30, v); }
   const scheme = cleanScheme(r.scheme);
   if (scheme) out.scheme = scheme;

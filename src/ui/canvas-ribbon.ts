@@ -53,8 +53,9 @@ export const CANVAS_TABS: RibbonTab[] = [
   },
   {
     id: 'chemistry', title: 'Chemistry', groups: [
-      { name: 'Structure', items: [c('clean-up', 'Clean Up', true), c('check-structure', 'Check Structure'), c('expand-label', 'Expand Label'), c('contract-label', 'Contract Label'), c('stereo-labels', 'Stereo Labels')] },
-      { name: 'Reaction', items: [c('clean-up-reaction', 'Clean Up Reaction', true), c('number-compounds', 'Number Compounds'), c('add-frame', 'Add Frame'), c('attach-descriptors', 'Attach Descriptors')] },
+      // (Smart Clean: a scheme, cycle, mechanism arrow or structure, whichever is selected)
+      { name: 'Structure', items: [c('smart-clean', 'Smart Clean', true), c('clean-up', 'Clean Up Structure'), c('check-structure', 'Check Structure'), c('expand-label', 'Expand Label'), c('contract-label', 'Contract Label'), c('stereo-labels', 'Stereo Labels')] },
+      { name: 'Reaction', items: [c('number-compounds', 'Number Compounds', true), c('clean-up-reaction', 'Clean Up Reaction'), c('add-frame', 'Add Frame'), c('attach-descriptors', 'Attach Descriptors')] },
       { name: 'NMR', items: [c('predict-nmr', 'Predict NMR', true), { cmd: 'nmr-1h', label: '¹H', tip: 'Show the ¹H prediction' }, { cmd: 'nmr-13c', label: '¹³C', tip: 'Show the ¹³C prediction' }, { cmd: 'nmr-solvent', label: 'Solvent…', tip: 'Solvent for the prediction' }, c('nmr-window', 'Spectrum Window'), c('nmr-marks', 'Show on Drawing'), c('nmr-check', 'Check Data…'), c('nmr-settings', 'NMR Settings…')] },
       { name: 'Rings', items: [c('aromatic-circles', 'Aromatic Circles'), c('fill-rings', 'Fill Rings'), c('hapto-bond', 'Add Hapto Bond (η)')] },
       // (once on an Arrow tab that came up with a selected arrow)

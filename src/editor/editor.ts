@@ -7,7 +7,7 @@ import { DEFAULT_CURSOR_AIDS, drawCursorAids, hintLines, modifierHints, readoutT
 import { Sketcher } from './sketch';
 import { installPenAndTouch } from './touch';
 import { labelAtoms, labelLookOf, setLabelFont, setLabelSize, toggleLabelBold } from './label-font';
-import { Doc, Atom, Bond, BondDisplay, PARTIAL, ELEMENT_WITH_H, Arrow, Shape, Caption, isMetalAtom, isWedge, applyBase, captionBase, stripBase, type StepRoles, type Justify, type HighlightStyle, type Entity } from '../model';
+import { Doc, Atom, Bond, BondDisplay, PARTIAL, ELEMENT_WITH_H, Arrow, Shape, Caption, isMetalAtom, isWedge, applyBase, captionBase, stripBase, type StepRoles, type ArrowKind, type Justify, type TextRun, type HighlightStyle, type Entity } from '../model';
 import { doubleBondGap, scaleOwnWidths } from '../style';
 import { CaptionEditor } from '../ui/caption-editor';
 import { followLink, linkTip } from '../ui/links-ui';
@@ -51,11 +51,11 @@ import { keymap, chordOf, parseAction, KeyContext } from './keymap';
 import { sproutGroup, fuseChair, SPROUT_KINDS, SproutKind, nextNumber } from '../chem/sprouts';
 import { joinAtoms, joinBonds, mergeAtom } from '../chem/join';
 import { extractDrawing, insertDrawing } from '../io/clipboard';
-import { isReactionArrow, itemFinder, rolesOf, ROLES, schemeItems, type Item, type Role } from '../chem/reaction';
+import { arrowKind, drawnKind, isReactionArrow, isSequenceArrow, itemFinder, neighborsOf, rolesOf, ROLES, schemeItems, type Item, type Role } from '../chem/reaction';
 import { applySchemePlan, planCleanUp } from '../chem/scheme-layout';
 import { clearFocal, focalAtoms, focalPoint, focalTarget, setFocal, tidyFocal } from '../chem/focal';
 import { drawFocalMark, drawLayoutPreview, type FocalLook, type LayoutPreview } from './focal-marks';
-import { adoptSideCaption, arrowTexts, helperBox, setSideText, sideSlot, takesHelpers, textJustify, textSize, type ArrowSide } from '../chem/arrow-text';
+import { adoptSideCaption, ARROW_SIDES, arrowTexts, helperBox, lineUpText, setSideText, sideAlign, sideSlot, splitStepRuns, takesHelpers, textFont, textJustify, textSize, type ArrowSide } from '../chem/arrow-text';
 import { prefsOf, schemePrefs, spacing } from '../chem/scheme-layout';
 import { arrowEnd, boxOf, productDrawing, pushArrowsOf, pushedAtoms, readPushes, type PushIssue, type PushReading } from '../chem/push-electrons';
 import { freeSpace } from './free-space';
@@ -5440,7 +5440,7 @@ export class Editor {
     const picked = this.hasSelection();
     if (!this.doc.arrows.size) return this.autoArrange();
     const steps = picked ? this.selectedSteps() : undefined;
-    const anySteps = [...this.doc.arrows.values()].some((r) => { const q = !r.sweep && this.reactionRoles(r.id); return !!q && (q.reactants.length > 0 || q.products.length > 0); });
+    const anySteps = [...this.doc.arrows.values()].some((r) => { const q = !r.sweep && (this.reactionRoles(r.id) ?? this.sequenceRoles(r.id)); return !!q && (q.reactants.length > 0 || q.products.length > 0); });
     if (picked ? steps?.length : anySteps) {
       const m = this.fullMeasure();
       const plan = planCleanUp(this.doc, m, steps);
@@ -5485,7 +5485,7 @@ export class Editor {
   /** Outline the parts of a reaction arrow's step, each in its role's colour with a small name. */
   private drawRoles(ctx: CanvasRenderingContext2D, arrowId: number, px: number): void {
     const roles = this.reactionRoles(arrowId);
-    if (!roles) return;
+    if (!roles) { this.drawNeighbors(ctx, arrowId, px); return; }
     const find = itemFinder(this.schemeItems());
     const pad = 3 * px;
     ctx.save();
@@ -5502,8 +5502,30 @@ export class Editor {
         ctx.strokeStyle = colour;
         ctx.strokeRect(b.x1 - pad, b.y1 - pad, b.x2 - b.x1 + 2 * pad, b.y2 - b.y1 + 2 * pad);
         ctx.fillStyle = colour;
-        ctx.fillText(name, b.x1 - pad, b.y1 - pad - px);
+        ctx.fillText(k === 'below' && it.caption !== undefined && this.doc.captions.get(it.caption)?.results ? 'results' : name, b.x1 - pad, b.y1 - pad - px);
       }
+    }
+    ctx.restore();
+  }
+
+  /** A plain arrow's (resonance, retrosynthetic) structures before and after it: softly tinted, with no role names. */
+  private drawNeighbors(ctx: CanvasRenderingContext2D, arrowId: number, px: number): void {
+    const roles = this.sequenceRoles(arrowId);
+    if (!roles) return;
+    const find = itemFinder(this.schemeItems());
+    const pad = 3 * px;
+    ctx.save();
+    // (in the selection's color, the mode's accent, lightly)
+    ctx.fillStyle = (this.dark ? MARKS.dark : MARKS.light).selFill;
+    ctx.strokeStyle = (this.dark ? MARKS.dark : MARKS.light).selLine;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = px;
+    ctx.setLineDash([3 * px, 3 * px]);
+    for (const ref of [...roles.reactants, ...roles.products]) {
+      const b = find(ref)?.box;
+      if (!b) continue;
+      ctx.fillRect(b.x1 - pad, b.y1 - pad, b.x2 - b.x1 + 2 * pad, b.y2 - b.y1 + 2 * pad);
+      ctx.strokeRect(b.x1 - pad, b.y1 - pad, b.x2 - b.x1 + 2 * pad, b.y2 - b.y1 + 2 * pad);
     }
     ctx.restore();
   }
@@ -5541,10 +5563,21 @@ export class Editor {
     for (const id of s.shapes) { const it = find('s' + id); if (it) picked.add(it); }
     const out: number[] = [];
     for (const r of this.doc.arrows.values()) {
-      const roles = this.reactionRoles(r.id);
+      const roles = this.reactionRoles(r.id) ?? this.sequenceRoles(r.id);
       if (roles && ROLES.some((k) => roles[k].some((ref) => { const it = find(ref); return it && picked.has(it); }))) out.push(r.id);
     }
     return out.length ? out : undefined;
+  }
+
+  /**
+   * A plain straight arrow's (resonance, retrosynthetic) structures before and after it, as roles
+   * (starting materials before, products after), for lining them up; null for any other arrow.
+   */
+  sequenceRoles(arrowId: number): StepRoles | null {
+    const r = this.doc.arrows.get(arrowId);
+    if (!r || !isSequenceArrow(r) || energyFrameOf(this.doc, 'arrow', arrowId) !== null) return null;
+    const n = neighborsOf(r, this.schemeItems(), this.doc.style.bondLength);
+    return { reactants: n.before, products: n.after, above: [], below: [] };
   }
 
   /**
@@ -5554,7 +5587,7 @@ export class Editor {
   cleanUpReaction(): false | 'matched' | 'fitted' {
     const m = this.fullMeasure();
     const steps = this.selectedSteps();
-    const key = steps ? [...steps].sort((a, b) => a - b).join(',') : 'all';
+    const key = this.stepsKey(steps);
     // pressed again on the same steps: each arrow shrinks to fit its own text (the structures
     // move up to keep the spacing even); again, and they match once more
     const c = this.reactionCycle;
@@ -5573,6 +5606,37 @@ export class Editor {
 
   /** The last Clean Up Reaction: which steps, and whether it fitted each arrow to its own text. */
   private reactionCycle: { version: number; key: string; fitted: boolean } | null = null;
+  private stepsKey(steps: number[] | undefined): string { return steps ? [...steps].sort((a, b) => a - b).join(',') : 'all'; }
+
+  /**
+   * Is a scheme what Smart Clean is for: a reaction step or a resonance arrow among what is
+   * selected (an arrow, or a structure in its step), or anywhere in the drawing with nothing selected?
+   */
+  schemeInContext(): boolean {
+    const straight = (id: number) => { const r = this.doc.arrows.get(id); return !!r && !r.sweep && !r.bez?.length && (isReactionArrow(r) || isSequenceArrow(r)); };
+    const steps = this.hasSelection() ? this.selectedSteps() ?? [] : [...this.doc.arrows.keys()];
+    return steps.some((id) => {
+      if (!straight(id)) return false;
+      const q = this.reactionRoles(id) ?? this.sequenceRoles(id);
+      return !!q && (q.reactants.length > 0 || q.products.length > 0 || (this.sel.arrows.has(id) && q.above.length + q.below.length > 0));
+    });
+  }
+
+  /**
+   * Smart Clean on a scheme: the structures tidied and the scheme laid out (as Clean Up Structure);
+   * pressed again straight away, each arrow fits its own text, then they match again (as Clean Up
+   * Reaction). 'tidied', the Clean Up Reaction result, or false when there was nothing to change.
+   */
+  smartCleanScheme(seeds: Map<number, Vec>[] = []): 'tidied' | 'matched' | 'fitted' | false {
+    const key = this.stepsKey(this.selectedSteps());
+    const c = this.reactionCycle;
+    if (c && c.version === this.doc.version && c.key === key) return this.cleanUpReaction();
+    if (!this.cleanUp(seeds)) return this.cleanUpReaction();
+    // (pressed again: the arrows fit their text, rather than stepping through other layouts)
+    this.cleanCycle = null;
+    this.reactionCycle = { version: this.doc.version, key, fitted: false };
+    return 'tidied';
+  }
 
   /**
    * Arrange the selected scheme (or the whole drawing) in one go: in a line, in rows, as a
@@ -7005,14 +7069,17 @@ export class Editor {
     setTimeout(() => { if (this.freshArrow?.until === until) { this.freshArrow = null; this.requestOverlay(); } }, Editor.HELPER_TIME + 20);
   }
 
-  /** Which sides of an arrow have no text yet (worked out once per change to the drawing). */
+  /**
+   * Which sides of an arrow offer a guide for new text (worked out once per change to the
+   * drawing): above and below while empty, and the Results line once there is text below but no Results yet.
+   */
   private sidesFree(r: Arrow): Record<ArrowSide, boolean> {
     const v = this.doc.version;
     if (this.emptySides?.version !== v) this.emptySides = { version: v, map: new Map() };
     let got = this.emptySides.map.get(r.id);
     if (!got) {
       const t = arrowTexts(this.doc, this.measure(), r);
-      got = { above: !t.above.length, below: !t.below.length };
+      got = { above: !t.above.length, below: !t.below.length, results: !!t.below.length && !t.results.length };
       this.emptySides.map.set(r.id, got);
     }
     return got;
@@ -7026,8 +7093,9 @@ export class Editor {
       if (!takesHelpers(r)) continue;
       const fresh = this.freshArrow?.id === r.id;
       const shown = (s: ArrowSide) => fresh || this.helperHover?.id === r.id && this.helperHover.side === s;
-      for (const side of ['above', 'below'] as ArrowSide[]) {
-        const b = helperBox(this.doc, r, side);
+      for (const side of ARROW_SIDES) {
+        if (!this.sidesFree(r)[side]) continue;
+        const b = helperBox(this.doc, r, side, this.measure());
         // hovering finds a box within reach; a click needs the box to be showing and under it
         const pad = hovering ? L * 0.5 : 0;
         if (p.x < b.x1 - pad || p.x > b.x2 + pad || p.y < b.y1 - pad || p.y > b.y2 + pad) continue;
@@ -7043,10 +7111,10 @@ export class Editor {
     const boxes: Rect[] = [];
     const f = this.freshArrow;
     const fr = f && performance.now() < f.until ? this.doc.arrows.get(f.id) : undefined;
-    if (fr && takesHelpers(fr)) for (const side of ['above', 'below'] as ArrowSide[]) if (this.sidesFree(fr)[side]) boxes.push(helperBox(this.doc, fr, side));
+    if (fr && takesHelpers(fr)) for (const side of ARROW_SIDES) if (this.sidesFree(fr)[side]) boxes.push(helperBox(this.doc, fr, side, this.measure()));
     const h = this.helperHover;
     const hr = h ? this.doc.arrows.get(h.id) : undefined;
-    if (h && hr && hr !== fr && takesHelpers(hr) && this.sidesFree(hr)[h.side]) boxes.push(helperBox(this.doc, hr, h.side));
+    if (h && hr && hr !== fr && takesHelpers(hr) && this.sidesFree(hr)[h.side]) boxes.push(helperBox(this.doc, hr, h.side, this.measure()));
     if (!boxes.length) return;
     ctx.save();
     ctx.strokeStyle = colour;
@@ -7078,13 +7146,13 @@ export class Editor {
     const m = this.measure();
     const slot = sideSlot(this.doc, m, r, side);
     // the first line's baseline, so the text sits about where it will settle
-    const size = textSize(this.doc);
+    const size = textSize(this.doc, side);
     const at = add(slot.mid, mul(slot.out, slot.gap + size * (side === 'above' ? 0.25 : 0.8)));
     this.sel = emptySel();
     this.openCaption(null, at, undefined, undefined, {
-      justify: textJustify(this.doc, side),
+      justify: textJustify(this.doc, side, r),
       size,
-      font: this.doc.style.arrowTextFont,
+      font: textFont(this.doc, side),
       // once typed: counted as the arrow's conditions, the arrow fitted to it and the text lined up
       done: (cid) => {
         const a = this.doc.arrows.get(id);
@@ -7094,21 +7162,100 @@ export class Editor {
     this.requestOverlay();
   }
 
-  /** The text above and below a reaction arrow (the side panel's fields), as plain text. */
-  arrowSideText(id: number): { above: string; below: string } | null {
+  /** The text above and below a reaction arrow and its Results line (the side panel's fields), as plain text, with how each lines up. */
+  arrowSideText(id: number): (Record<ArrowSide, string> & { align: Record<ArrowSide, 'left' | 'center' | 'right'> }) | null {
     const r = this.doc.arrows.get(id);
     if (!r || !isReactionArrow(r)) return null;
     const t = arrowTexts(this.doc, this.measure(), r);
-    return { above: t.above[0] ? plainText(t.above[0].runs) : '', below: t.below[0] ? plainText(t.below[0].runs) : '' };
+    const one = (cs: Caption[]) => (cs[0] ? plainText(cs[0].runs) : '');
+    const align = { above: sideAlign(this.doc, r, 'above', t.above), below: sideAlign(this.doc, r, 'below', t.below), results: sideAlign(this.doc, r, 'results', t.results) };
+    return { above: one(t.above), below: one(t.below), results: one(t.results), align };
   }
 
-  /** Set the text above or below the picked reaction arrow from the side panel. */
+  /** Set the text above or below the picked reaction arrow, or its Results line, from the side panel. */
   setArrowSideText(id: number, side: ArrowSide, text: string): void {
     const r = this.doc.arrows.get(id);
     if (!r) return;
     const before = this.doc.version;
-    this.doc.edit(side === 'above' ? 'Text Above Arrow' : 'Text Below Arrow', () => setSideText(this.doc, this.measure(), r, side, text));
+    this.doc.edit(side === 'above' ? 'Text Above Arrow' : side === 'below' ? 'Text Below Arrow' : 'Results Under Arrow', () => setSideText(this.doc, this.measure(), r, side, text));
     if (this.doc.version !== before) this.changed();
+  }
+
+  /** Line up one side of an arrow's text its own way (null: as the drawing style says), then line the text up again. */
+  setArrowTextAlign(id: number, side: ArrowSide, how: 'left' | 'center' | 'right' | null): void {
+    const r = this.doc.arrows.get(id);
+    if (!r) return;
+    const align = { ...r.textLook?.align };
+    if (how) align[side] = how; else delete align[side];
+    const look = { ...r.textLook, align: Object.keys(align).length ? align : undefined };
+    if (!look.align) delete look.align;
+    this.doc.edit('Arrow Text Alignment', () => {
+      this.doc.updateArrow(id, { textLook: Object.keys(look).length ? look : undefined });
+      const now = this.doc.arrows.get(id)!;
+      // with no choice of its own a side goes back to the drawing's alignment
+      if (!how) {
+        const t = arrowTexts(this.doc, this.measure(), now);
+        const j = sideAlign(this.doc, now, side, t[side]);
+        for (const c of t[side]) if (c.justify !== j) this.doc.updateCaption(c.id, { justify: j });
+      }
+      lineUpText(this.doc, this.measure(), now);
+    });
+    this.changed();
+  }
+
+  /** Show or hide the dashed text guides on the selected arrows (null: as usual, only on plain reaction arrows). */
+  setArrowGuides(ids: number[], on: boolean | null): void {
+    this.doc.edit(on === false ? 'Hide Text Guides' : 'Show Text Guides', () => {
+      for (const id of ids) {
+        const r = this.doc.arrows.get(id);
+        if (!r) continue;
+        const look = { ...r.textLook };
+        if (on === null) delete look.guides; else look.guides = on;
+        this.doc.updateArrow(id, { textLook: Object.keys(look).length ? look : undefined });
+      }
+    });
+    // shown at once, as a new arrow's are
+    if (on && ids.length === 1) { const r = this.doc.arrows.get(ids[0]); if (r && takesHelpers(r)) { const until = performance.now() + Editor.HELPER_TIME; this.freshArrow = { id: r.id, until }; setTimeout(() => { if (this.freshArrow?.until === until) { this.freshArrow = null; this.requestOverlay(); } }, Editor.HELPER_TIME + 20); } }
+    this.changed();
+  }
+
+  /**
+   * Make the selected arrows reaction, mechanism or plain arrows (Arrow Type). A curved arrow
+   * can't be a reaction step (outside a catalytic cycle). How many changed.
+   */
+  setArrowKind(kind: ArrowKind): number {
+    const ids = [...this.sel.arrows].filter((id) => {
+      const r = this.doc.arrows.get(id);
+      return !!r && arrowKind(r) !== kind && !(kind === 'reaction' && (r.sweep || r.bez?.length) && !r.step);
+    });
+    if (!ids.length) return 0;
+    this.doc.edit('Arrow Type', () => {
+      for (const id of ids) { const r = this.doc.arrows.get(id)!; this.doc.updateArrow(id, { kind: kind === drawnKind(r) ? undefined : kind }); }
+    });
+    this.changed();
+    return ids.length;
+  }
+
+  /** Put each numbered step of the selected arrows' text (or selected text) on a line of its own ("1. n-BuLi; 2. PhCHO"). True when something changed. */
+  splitSteps(): boolean {
+    const ids = new Set<number>(this.sel.captions);
+    const arrows: Arrow[] = [];
+    for (const id of this.sel.arrows) {
+      const r = this.doc.arrows.get(id);
+      if (!r) continue;
+      arrows.push(r);
+      const t = arrowTexts(this.doc, this.measure(), r);
+      for (const c of [...t.above, ...t.below, ...t.results]) ids.add(c.id);
+    }
+    const changes: [number, TextRun[]][] = [];
+    for (const id of ids) { const c = this.doc.captions.get(id); const runs = c && splitStepRuns(c.runs); if (runs) changes.push([id, runs]); }
+    if (!changes.length) return false;
+    this.doc.edit('Split Steps onto Lines', () => {
+      for (const [id, runs] of changes) this.doc.updateCaption(id, { runs });
+      for (const r of arrows) lineUpText(this.doc, this.measure(), this.doc.arrows.get(r.id)!);
+    });
+    this.changed();
+    return true;
   }
 
   /**

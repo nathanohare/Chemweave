@@ -95,6 +95,8 @@ export function sampleDrawing(style: DocStyle, scheme: Partial<SchemePrefs> = {}
     const look = newTextLook(doc);
     doc.addCaption({ x: x0 + L * 0.3, y: y - L * 0.3, runs: [{ text: 'TFA', ...look }], justify: 'left' });
     doc.addCaption({ x: x0 + L * 0.3, y: y + L * 0.75, runs: [{ text: 'CH' }, { text: '2', sub: true }, { text: 'Cl' }, { text: '2', sub: true }, { text: ', 23 °C, 1 h' }].map((r) => ({ ...r, ...look })), justify: 'left' });
+    // the Results line under it (yield), in its own look
+    doc.addCaption({ x: x0 + L * 0.3, y: y + L * 1.6, runs: [{ text: '95%', ...newTextLook(doc, 'results') }], justify: 'left', results: true });
     // the ammonium ion after it
     const first = Math.max(...doc.atoms.keys()) + 1;
     const nh = amine(x0 + L * 6.6);
@@ -147,6 +149,7 @@ export function schemePreview(style: DocStyle, scheme: Partial<SchemePrefs>, w =
     const look = newTextLook(doc);
     doc.addCaption({ x: x0 + L * 0.3, y: -L * 0.3, runs: [{ text: 'Pd(PPh' }, { text: '3', sub: true }, { text: ')' }, { text: '4', sub: true }].map((r) => ({ ...r, ...look })), justify: 'left' });
     doc.addCaption({ x: x0 + L * 0.3, y: L * 0.75, runs: [{ text: 'K' }, { text: '2', sub: true }, { text: 'CO' }, { text: '3', sub: true }, { text: ', 80 °C' }].map((r) => ({ ...r, ...look })), justify: 'left' });
+    doc.addCaption({ x: x0 + L * 0.3, y: L * 1.6, runs: [{ text: '91%', ...newTextLook(doc, 'results') }], justify: 'left', results: true });
     aryl(x0 + L * 6, 'Ph');
   });
   laidOut(doc, scheme);

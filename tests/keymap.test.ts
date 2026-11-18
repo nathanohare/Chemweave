@@ -117,7 +117,7 @@ describe("ChemDraw's default keys", () => {
     expect(km.lookup('atom', '0')).toBe('atom ring-bond');
     expect(km.lookup('bond', '9')).toBe('fuse chair');
     expect(km.lookup('command', 'Ctrl+ArrowRight')).toBe('command reaction-right');
-    expect(km.lookup('command', 'Ctrl+Shift+K')).toBe('command clean-up');
+    expect(km.lookup('command', 'Ctrl+Shift+K')).toBe('command smart-clean');
   });
 
   it('list every action that could have a key', () => {

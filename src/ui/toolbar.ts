@@ -19,6 +19,8 @@ export interface PaletteDef {
   iconSize?: number;
   /** The open palette's cells, row by row, `columns` wide (null: an empty cell), as Customize Toolboxes sets them. Unset: the items packed in order. */
   cells?: (string | null)[];
+  /** The open palette in titled sections (Reaction, Mechanism, Plain arrows), when it is laid out as given (no `cells`). */
+  groups?: { title: string; items: string[] }[];
 }
 export type ToolbarItem = ToolDef | PaletteDef;
 
@@ -194,7 +196,25 @@ export class Toolbar {
       f.style.gridTemplateColumns = `repeat(${cols}, minmax(${w}px, auto))`;
       f.style.gridTemplateRows = `repeat(${rows}, minmax(${h}px, auto))`;
     }
-    for (const t of pal.def.items) {
+    // in titled sections, each starting a new row (as given; tools in no section come last)
+    let items = pal.def.items;
+    const heads = new Map<string, string>();
+    if (pal.def.groups && !pal.def.cells) {
+      const byName = new Map(items.map((t) => [t.name, t]));
+      const inGroups = pal.def.groups.map((g) => ({ title: g.title, tools: g.items.map((n) => byName.get(n)).filter((t): t is ToolDef => !!t) })).filter((g) => g.tools.length);
+      const listed = new Set(inGroups.flatMap((g) => g.tools));
+      items = [...inGroups.flatMap((g) => g.tools), ...items.filter((t) => !listed.has(t))];
+      for (const g of inGroups) heads.set(g.tools[0].name, g.title);
+    }
+    for (const t of items) {
+      const head = heads.get(t.name);
+      if (head) {
+        const h = document.createElement('div');
+        h.className = 'flyout-head';
+        h.setAttribute('role', 'presentation');
+        h.textContent = head;
+        f.appendChild(h);
+      }
       const b = document.createElement('button');
       const at = cell.get(t.name);
       if (at != null) { b.style.gridRow = String(Math.floor(at / cols) + 1); b.style.gridColumn = String((at % cols) + 1); }

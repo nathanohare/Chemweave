@@ -2801,7 +2801,7 @@ const GONE = Symbol('gone');
 /** A design shape's look: taken from PowerPoint when its fill, outline or effects were changed there. */
 const GEO_LOOK_KEYS = ['color', 'filled', 'fill', 'fillColor', 'fill2', 'gradAngle', 'gradRadial', 'pattern', 'patternColor', 'patternSize', 'patternTransparency', 'patternClear', 'fade', 'transparency', 'lineWidth', 'bold', 'dashed', 'dotted', 'hashSpacing', 'shadow', 'shadowBetween', 'shadowSize', 'shadowBlur', 'shadowAngle', 'shadowColor', 'shadowOpacity', 'glow', 'softEdge', 'reflection', 'bevel', 'picFill'] as const;
 /** A text box's settings PowerPoint has no place for, kept from our tag when PowerPoint's text is read. */
-const OWN_CAPTION_KEYS = ['piece', 'ole', 'grp', 'grpPath', 'stack', 'attach', 'ignoreWarnings', 'chem'] as const;
+const OWN_CAPTION_KEYS = ['piece', 'ole', 'grp', 'grpPath', 'stack', 'attach', 'ignoreWarnings', 'chem', 'results'] as const;
 
 const dropUndefined = (r: TextRun): Partial<TextRun> => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined));
 
