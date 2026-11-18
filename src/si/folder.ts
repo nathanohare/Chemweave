@@ -19,13 +19,16 @@ export interface SiFolder {
   remove(rel: string): Promise<void>;
   /** The files and folders directly inside `rel` (hidden ones left out), sorted by name; [] when there is no such folder. */
   entries(rel: string): Promise<{ name: string; folder: boolean }[]>;
-  /** Delete a folder of the project's Trash (trash/ itself or one entry in it) with everything in it. Nothing else can be deleted this way. */
+  /** Delete a folder of the project's Trash (trash/ itself or one entry in it), or of Chemweave's undo holding folder (build/chemweave-undo), with everything in it. Nothing else can be deleted this way. */
   removeTrash(rel: string): Promise<void>;
 }
 
-/** Whether `rel` is the project's trash folder or one entry directly inside it. */
+/** Where Chemweave keeps files that Undo took away, until Redo puts them back (build/ is never part of the project). */
+export const UNDO_HOLDING = 'build/chemweave-undo';
+
+/** Whether `rel` is the project's trash folder or one entry directly inside it (or the same of the undo holding folder). */
 export function isTrashPath(rel: string): boolean {
-  return /^trash(\/[^/]+)?$/.test(norm(rel)) && !norm(rel).split('/').some((x) => x === '..' || x === '.');
+  return /^(trash|build\/chemweave-undo)(\/[^/]+)?$/.test(norm(rel)) && !norm(rel).split('/').some((x) => x === '..' || x === '.');
 }
 
 /**

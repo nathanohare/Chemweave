@@ -42,6 +42,7 @@ import { addInfo } from './info-tip';
 import { openTrash } from './si-trash';
 import { compoundsUnder } from '../si/trash';
 import { saveSnapshot } from '../si/snapshot';
+import { journalOf } from '../si/journal';
 import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
 import { popupMenu } from './popup-menu';
 
@@ -2227,8 +2228,9 @@ export class SiMode {
 
   /** Run a change to the project, then show it; a problem is said, not thrown. */
   private async act(f: () => Promise<unknown>, redraw = true): Promise<void> {
+    const j = this.project ? journalOf(this.project.folder) : null;
     try {
-      await f();
+      await (j ? j.step('Edit', f) : f());
     } catch (e) {
       this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
       this.shownKey = '';
@@ -2513,7 +2515,58 @@ export class SiMode {
     }
   }
 
+  /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
+  private static NO_STEP = new Set(['trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling']);
+
+  /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
+    const j = this.project && !SiMode.NO_STEP.has(cmd) ? journalOf(this.project.folder) : null;
+    if (!j) { await this.command(cmd); return; }
+    this.commitAll();
+    j.settle();
+    await j.step(this.commandName(cmd), () => this.command(cmd));
+  }
+
+  /** What Undo calls a command: its button's name ("Undo Duplicate"). */
+  private commandName(cmd: string): string {
+    const b = this.ribbon?.querySelector<HTMLElement>(`[data-si="${cmd}"]`);
+    const text = b ? [...b.childNodes].filter((n) => !(n instanceof HTMLElement && n.classList.contains('rb-icon'))).map((n) => n.textContent ?? '').join('').replace(/[…\s]+$/u, '').trim() : '';
+    return text || ({ delete: 'Delete', rename: 'Rename', 'move-up': 'Move Up', 'move-down': 'Move Down', 'new-compound': 'New Compound', 'manual-id': 'Manual ID', 'ref-edit': 'Edit Reference' } as Record<string, string>)[cmd] || 'Change';
+  }
+
+  /** The name of the step Undo (or Redo) would take back: null with none. */
+  history(redo: boolean): string | null {
+    const j = this.project && !this.project.readOnly ? journalOf(this.project.folder) : null;
+    return j ? j.history(redo) : null;
+  }
+
+  /** Edit ▸ Undo (Ctrl+Z) and Redo: the project's files as they were before (or after) the step; a typed change not yet saved is saved first. */
+  async undo(redo = false): Promise<void> {
+    const p = this.project;
+    const j = p ? journalOf(p.folder) : null;
+    if (!p || !j) return;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    this.commitAll();
+    await new Promise((r) => setTimeout(r, 0));
+    let label: string | null = null;
+    try {
+      label = redo ? await j.redo() : await j.undo();
+    } catch (e) {
+      this.host.flash(e instanceof Error ? e.message : String(e), 9000);
+      return;
+    }
+    if (label === null) { this.host.flash(redo ? 'Nothing to redo.' : 'Nothing to undo.'); return; }
+    try { await p.reload(); } catch (e) { this.host.flash(`The project could not be read again: ${e instanceof Error ? e.message : String(e)}`, 8000); }
+    this.forgetStructure();
+    this.shownKey = '';
+    this.refresh();
+    this.host.changed();
+    this.host.flash(`${redo ? 'Redid' : 'Undid'} ${label}.`, 2500);
+    // (keys go on to the tree, for the next Ctrl+Z)
+    if (!this.pane.contains(document.activeElement)) (this.tree.querySelector<HTMLElement>('.si-row.on') ?? this.tree).focus({ preventScroll: true });
+  }
+
+  private async command(cmd: string): Promise<void> {
     const p = this.project;
     if (!p) return;
     if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'trash'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }

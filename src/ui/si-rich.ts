@@ -119,8 +119,10 @@ export class SiRichBox {
     if (placeholder) el.dataset.placeholder = placeholder;
     el.setAttribute('role', 'textbox');
     if (multiline) el.setAttribute('aria-multiline', 'true');
-    this.last = text;
     render(el, parseMarkup(text), host, multiline);
+    // (as the box reads it back, so a file is only saved again when something is typed: leaving
+    // a box untouched never rewrites a file another program wrote its own way)
+    this.last = this.text;
     this.empty();
     // (once the box is on the page)
     setTimeout(() => checkSpelling(el), 0);
@@ -142,8 +144,8 @@ export class SiRichBox {
   /** Show other text (the page was changed elsewhere). */
   set(text: string): void {
     if (text === this.last) return;
-    this.last = text;
     render(this.el, parseMarkup(text), this.host, this.multiline);
+    this.last = this.text;
     this.empty();
     setTimeout(() => checkSpelling(this.el), 0);
   }

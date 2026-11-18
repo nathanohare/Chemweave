@@ -258,6 +258,8 @@ import type { SiMode, SiCard } from './ui/si-mode';
 import type { SiProject as SiProjectT } from './si/project';
 import { siDrawingStyle } from './si/drawing-style';
 import type { SiView } from './si/manuscript';
+import { JournalFolder, journalOf } from './si/journal';
+import type { SiFolder as SiFolderT } from './si/folder';
 import type { SiAccess } from './ui/doc-si';
 import { readScene, sceneToDoc } from './io/chem-formats';
 import { cellName, colOf, rowOf } from './sheet/refs';
@@ -4109,7 +4111,7 @@ const ws: Workspace = new Workspace(doc, {
   dropped: (tab) => {
     keeper.dropped(tab);
     // an SI project: Chem SI Assistant can open it for editing again
-    if (tab.si) void tab.si.release().catch(() => {});
+    if (tab.si) { const si = tab.si; void (async () => { await journalOf(si.folder)?.clear().catch(() => {}); await si.release().catch(() => {}); })(); }
     // a drawing being edited for Word: Word hears that the editing is over
     const id = embeddedTabs.get(tab);
     if (id !== undefined) { embeddedTabs.delete(tab); void invoke('ole_close', { id }).catch(() => {}); }
@@ -5493,6 +5495,7 @@ function flipped(r: boolean | 'stereo'): void {
 
 /** Undo and Redo: in Slides mode the deck's history covers every slide and the slide list; a sheet has its own. */
 function undo(): void {
+  if (ws.active.mode === 'si') { void siMode?.undo(false).then(refreshHistory); return; }
   if (sheetActive()) { sheetMode.undo(); return; }
   if (docActive()) { docMode.run('undo'); return; }
   const d = deckNow();
@@ -5503,6 +5506,7 @@ function undo(): void {
 }
 
 function redo(): void {
+  if (ws.active.mode === 'si') { void siMode?.undo(true).then(refreshHistory); return; }
   if (sheetActive()) { sheetMode.redo(); return; }
   if (docActive()) { docMode.run('redo'); return; }
   const d = deckNow();
@@ -5514,6 +5518,7 @@ function redo(): void {
 
 /** The name of the step Undo (or Redo) would take back in the tab in front: null with nothing to take back, '' when it has no name. */
 function historyStep(redo: boolean): string | null {
+  if (ws.active.mode === 'si') return siMode?.history(redo) ?? null;
   if (sheetActive()) return sheetMode.history(redo);
   if (docActive()) return docMode.canUndo(redo) ? '' : null;
   const h = deckNow() ?? doc;
@@ -8425,6 +8430,13 @@ function siCardEl(c: SiCard): HTMLElement {
   return box;
 }
 
+/** An SI project's folder with the history Undo and Redo use (Edit ▸ Undo names the step). */
+function siJournal(folder: SiFolderT): JournalFolder {
+  const j = new JournalFolder(folder);
+  j.onChange = refreshHistory;
+  return j;
+}
+
 async function openSiProject(create: boolean, at?: string): Promise<void> {
   if (!isTauri()) { flash('SI projects are folders on this computer: open them in the desktop app for now.', 6000); return; }
   finishTab();
@@ -8440,13 +8452,13 @@ async function openSiProject(create: boolean, at?: string): Promise<void> {
       const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
       path = path.replace(/[\\/]+$/, '') + sep + safeFilename(got.title.trim());
       await invoke('make_folder', { path });
-      project = await SiProject.create(new DiskFolder(path, call), got.title.trim());
+      project = await SiProject.create(siJournal(new DiskFolder(path, call)), got.title.trim());
     } else {
       const folder = new DiskFolder(path, call);
       if (!(await folder.exists(PROJECT_FILE))) { await showError(`This folder is not an SI project (it has no ${PROJECT_FILE}). Pick the project's own folder: the one Chem SI Assistant made, with project.json and sections inside.`); return; }
       const already = ws.tabs.find((t) => t.si?.folder.where === path);
       if (already) { ws.activate(already); return; }
-      project = await SiProject.open(folder);
+      project = await SiProject.open(siJournal(folder));
       const held = project.readOnly ? null : await project.currentLock();
       if (held) {
         const pick = await askChoice('SI Project Open Elsewhere', `${held.user} has this project open on ${held.computer}${held.opened_at ? ' since ' + held.opened_at.replace('T', ' ') : ''} (in Chem SI Assistant, or Chemweave). Two programs changing it at once can lose changes.`, [
@@ -8461,6 +8473,8 @@ async function openSiProject(create: boolean, at?: string): Promise<void> {
     if (!project.readOnly) {
       const me = await invoke<{ user: string; host: string }>('who_am_i').catch(() => ({ user: '', host: '' }));
       await project.acquireLock(me.user || 'Chemweave', me.host);
+      // (what an earlier session's Undo set aside, if it ended without closing the project)
+      await journalOf(project.folder)?.clear().catch(() => {});
     }
   } catch (e) {
     await showError(e instanceof SiProjectError ? e.message : `The SI project could not be opened: ${e instanceof Error ? e.message : String(e)}`);
@@ -8483,7 +8497,7 @@ if (import.meta.env.DEV) {
       if (v.startsWith('base64:')) folder.files.set(k, Uint8Array.from(atob(v.slice(7)), (ch) => ch.charCodeAt(0)));
       else await folder.writeText(k, v);
     }
-    const project = await SiProject.open(folder);
+    const project = await SiProject.open(siJournal(folder));
     await loadSiMode();
     ws.openSi(project);
   };
@@ -8598,7 +8612,7 @@ async function siPicture(link: SiLink, key: string): Promise<string | null> {
 
 /** The window is closing: Chem SI Assistant can open the projects for editing again. */
 async function releaseSiProjects(): Promise<void> {
-  await Promise.all(ws.tabs.map((t) => t.si?.release().catch(() => {})));
+  await Promise.all(ws.tabs.map(async (t) => { if (!t.si) return; await journalOf(t.si.folder)?.clear().catch(() => {}); await t.si.release().catch(() => {}); }));
 }
 
 /** Sheet or document mode's code didn't load (a broken install, or the web version gone offline). */
@@ -10020,6 +10034,16 @@ window.addEventListener('keydown', (e) => {
     if (m) { e.preventDefault(); e.stopImmediatePropagation(); if (!inMenuBar()) beforeMenus = document.activeElement as HTMLElement | null; showMenu(m); }
   }
 }, true);
+// Undo and Redo in the SI Project tab, on the keys set for them (a text box keeps its own undo while typing)
+window.addEventListener('keydown', (e) => {
+  if (ws.active.mode !== 'si' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu')) return;
+  const chord = chordOf(e);
+  const action = chord ? keymap.lookup('command', chord) : null;
+  const verb = action ? parseAction(action).arg : '';
+  if (verb !== 'undo' && verb !== 'redo') return;
+  e.preventDefault();
+  if (verb === 'undo') undo(); else redo();
+});
 window.addEventListener('keyup', (e) => {
   if (e.key !== 'Alt') return;
   const alone = altAlone;

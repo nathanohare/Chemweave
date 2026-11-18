@@ -6,6 +6,7 @@
 import { showDialog } from './dialog-host';
 import { addInfo } from './info-tip';
 import { askChoice } from './ask';
+import { journalOf } from '../si/journal';
 import { deleteFromTrash, emptyTrash, KIND_NAMES, listTrash, restoreFromTrash, RESTORABLE, type TrashEntry } from '../si/trash';
 import type { SiProject } from '../si/project';
 
@@ -105,10 +106,12 @@ export async function openTrash(p: SiProject, changed: (message: string) => void
     }
     update();
   };
-  const busy = async (f: () => Promise<void>): Promise<void> => {
+  // (each thing done here is one step of Undo, named as its button)
+  const busy = async (f: () => Promise<void>, label: string): Promise<void> => {
     for (const b of [restore, del, empty]) b.disabled = true;
+    const j = journalOf(p.folder);
     try {
-      await f();
+      await (j ? j.step(label, f) : f());
     } catch (err) {
       say.textContent = err instanceof Error ? err.message : String(err);
     }
@@ -120,22 +123,22 @@ export async function openTrash(p: SiProject, changed: (message: string) => void
     const message = await restoreFromTrash(p, e.id);
     say.textContent = message;
     changed(message);
-  });
+  }, 'Restore');
   restore.addEventListener('click', () => void doRestore());
   del.addEventListener('click', () => void busy(async () => {
     const e = entries.find((x) => x.id === picked);
     if (!e) return;
-    const sure = await askChoice('Delete from Trash', `Delete “${e.name}” for good? It can’t be restored afterwards, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep');
+    const sure = await askChoice('Delete from Trash', `Delete “${e.name}” for good? Edit ▸ Undo brings it back until the project is closed; after that it can’t be restored, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep');
     if (sure !== 'delete') return;
     await deleteFromTrash(p, e.id);
     say.textContent = `Deleted “${e.name}”.`;
-  }));
+  }, 'Delete from Trash'));
   empty.addEventListener('click', () => void busy(async () => {
-    const sure = await askChoice('Empty Trash', `Delete all ${entries.length} item${entries.length === 1 ? '' : 's'} in the Trash for good? They can’t be restored afterwards, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'empty', label: 'Empty Trash', primary: true }], 'keep');
+    const sure = await askChoice('Empty Trash', `Delete all ${entries.length} item${entries.length === 1 ? '' : 's'} in the Trash for good? Edit ▸ Undo brings them back until the project is closed; after that they can’t be restored, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'empty', label: 'Empty Trash', primary: true }], 'keep');
     if (sure !== 'empty') return;
     await emptyTrash(p);
     say.textContent = 'The Trash was emptied.';
-  }));
+  }, 'Empty Trash'));
   close.addEventListener('click', () => d.close());
   list.addEventListener('keydown', (ev) => {
     if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown' && ev.key !== 'Enter') return;

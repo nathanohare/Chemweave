@@ -129,15 +129,18 @@ pub fn si_list_dir(path: String) -> Result<serde_json::Value, String> {
     Ok(serde_json::Value::Array(out))
 }
 
-/// Whether `p` is an SI project's trash folder, or one entry directly inside it (a project
-/// folder is one with a project.json).
+/// Whether `p` is an SI project's trash folder, or one entry directly inside it, or Chemweave's
+/// undo holding folder (build/chemweave-undo) or one entry inside that (a project folder is one
+/// with a project.json).
 fn is_si_trash(p: &Path) -> bool {
     let named = |x: &Path, n: &str| x.file_name().and_then(|f| f.to_str()) == Some(n);
     let project = |x: Option<&Path>| x.is_some_and(|d| d.join("project.json").is_file());
     if p.components().any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir)) {
         return false;
     }
-    (named(p, "trash") && project(p.parent())) || p.parent().is_some_and(|t| named(t, "trash") && project(t.parent()))
+    let trash = |x: &Path| named(x, "trash") && project(x.parent());
+    let holding = |x: &Path| named(x, "chemweave-undo") && x.parent().is_some_and(|b| named(b, "build") && project(b.parent()));
+    trash(p) || holding(p) || p.parent().is_some_and(|t| trash(t) || holding(t))
 }
 
 /// SI projects: Empty Trash, or remove one item from it, in the Trash window. Only the
@@ -194,6 +197,12 @@ mod tests {
         assert!(!entry.exists() && root.join("trash").exists());
         si_remove_trash(root.join("trash").to_string_lossy().into_owned()).unwrap();
         assert!(!root.join("trash").exists() && root.join("sections").exists());
+        let held = root.join("build").join("chemweave-undo").join("u1");
+        std::fs::create_dir_all(&held).unwrap();
+        assert!(si_remove_trash(root.join("build").to_string_lossy().into_owned()).is_err());
+        si_remove_trash(held.to_string_lossy().into_owned()).unwrap();
+        si_remove_trash(root.join("build").join("chemweave-undo").to_string_lossy().into_owned()).unwrap();
+        assert!(root.join("build").exists() && !root.join("build").join("chemweave-undo").exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
