@@ -113,8 +113,9 @@ describe('a tied caption follows its structure', () => {
 
   it('goes back to the middle when set to Center after sitting off it (issue: Center did not move it)', () => {
     const { doc, cap, capBox, sBox } = setup();
-    // tied where it stood, off the middle and left-aligned, as Link Text to Structure leaves it
-    doc.edit('Off middle', () => { const c = doc.captions.get(cap)!; doc.updateCaption(cap, { justify: 'left', attach: { ...c.attach!, shift: -9 } }); });
+    // tied where it stood, off the middle, as Link Text to Structure could leave it
+    doc.edit('Left', () => doc.updateCaption(cap, { justify: 'left' }));
+    doc.edit('Off middle', () => { const c = doc.captions.get(cap)!; doc.updateCaption(cap, { attach: { ...c.attach!, align: undefined, shift: -9 } }); });
     expect((capBox().x1 + capBox().x2) / 2 - (sBox().x1 + sBox().x2) / 2).toBeCloseTo(-9, 6);
     doc.edit('Justification', () => doc.updateCaption(cap, { justify: 'center' }));
     expect(doc.captions.get(cap)!.attach!.shift).toBe(0);
@@ -130,8 +131,31 @@ describe('a tied caption follows its structure', () => {
     doc.edit('Bold', () => { const c = doc.captions.get(cap)!; doc.updateCaption(cap, { runs: c.runs.map((r) => ({ ...r, bold: true })) }); });
     expect(doc.captions.get(cap)!.attach!.shift).toBe(4);
     doc.edit('Right side', () => { const c = doc.captions.get(cap)!; doc.updateCaption(cap, { justify: 'left', attach: { ...c.attach!, side: 'right', shift: 3 } }); });
+    expect(doc.captions.get(cap)!.attach!.align).toBeUndefined();
     doc.edit('Justification', () => doc.updateCaption(cap, { justify: 'center' }));
     expect(doc.captions.get(cap)!.attach!.shift).toBe(3);
+  });
+
+  it('lines its left or right edge up with the structure\'s when set to Left or Right above or below', () => {
+    const { doc, cap, capBox, sBox } = setup();
+    doc.edit('Justification', () => doc.updateCaption(cap, { justify: 'left' }));
+    expect(doc.captions.get(cap)!.attach!.align).toBe('left');
+    expect(capBox().x1).toBeCloseTo(sBox().x1, 6);
+    doc.edit('Justification', () => doc.updateCaption(cap, { justify: 'right' }));
+    expect(capBox().x2).toBeCloseTo(sBox().x2, 6);
+    // dragged from there, it keeps its shift from that edge
+    doc.edit('Move caption', () => { const c = doc.captions.get(cap)!; doc.updateCaption(cap, { x: c.x - 4 }); });
+    expect(doc.captions.get(cap)!.attach!.shift).toBeCloseTo(-4, 6);
+    expect(capBox().x2 - sBox().x2).toBeCloseTo(-4, 6);
+    doc.edit('Justification', () => doc.updateCaption(cap, { justify: 'center' }));
+    expect(doc.captions.get(cap)!.attach!.align).toBeUndefined();
+    expect((capBox().x1 + capBox().x2) / 2).toBeCloseTo((sBox().x1 + sBox().x2) / 2, 6);
+  });
+
+  it('saves the lined-up edge with the tie', () => {
+    const a: Attachment = { atoms: [], side: 'below', gap: 3, shift: 0, role: 'label', align: 'right' };
+    expect(attachFromTag(attachTag(a))!.align).toBe('right');
+    expect(attachFromTag('{"side":"left","align":"right","role":"label"}')!.align).toBeUndefined();
   });
 
   it('goes when its structure is deleted', () => {

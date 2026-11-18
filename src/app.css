@@ -1343,7 +1343,18 @@ dialog.master-dialog form { margin: 0; }
 dialog.master-dialog > form > .muted { margin: 2px 0 6px; max-width: 60ch; }
 .md-grid { display: grid; grid-template-columns: 1fr; max-height: 60vh; overflow-y: auto; padding-right: 4px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .md-grid h3 { margin: 12px 0 2px; }
+.md-grid h3 .info-icon { margin-left: 4px; vertical-align: middle; }
 .md-row { display: grid; grid-template-columns: 11em minmax(0, 1fr); align-items: center; gap: 8px; margin: 3px 0; }
+/* Drawing Style: ID labels and linked captions side by side */
+.md-tied { display: grid; grid-template-columns: 11em minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 4px 8px; margin: 2px 0 4px; }
+.md-tied > select { font: inherit; min-width: 0; width: 100%; }
+.md-tied-hd { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
+.md-toggles { display: inline-flex; }
+.md-toggle { width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-family: Georgia, 'Times New Roman', serif; }
+.md-toggle + .md-toggle { margin-left: -1px; }
+.md-toggle:first-child { border-radius: var(--r-control) 0 0 var(--r-control); }
+.md-toggle:last-child { border-radius: 0 var(--r-control) var(--r-control) 0; }
+.md-toggle[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft, var(--panel)); position: relative; }
 .md-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .md-controls input[type='text'] { flex: 1 1 12em; min-width: 0; font: inherit; padding: 3px 6px; }
 .md-controls select { font: inherit; }

@@ -3,7 +3,11 @@
 // structures already drawn (redrawn in the new style, or left as they look now).
 
 import { previewSlot, showDialog } from './dialog-host';
-import { clampSchemeDistance, SCHEME_LIMITS, type DocStyle, type SchemeDistance, type StyleScheme } from '../style';
+import { clampSchemeDistance, SCHEME_LIMITS, type DocStyle, type SchemeDistance, type StyleScheme, type TiedLook } from '../style';
+import { Doc } from '../model';
+import { cleanTiedLook, fullLook, USUAL } from '../editor/tied-look';
+import { colourButton } from './colour-picker';
+import { infoIcon } from './info-tip';
 import { schemePrefs, spacing } from '../chem/scheme-layout';
 import { keepInRange } from './num-range';
 import { FONT_GROUPS } from '../fonts';
@@ -176,6 +180,83 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     };
     for (const i of [arrowWidth, inputs.get('lineWidth')!]) i.addEventListener('input', showArrowLook);
 
+    // ID labels and linked captions: each kind's look and place, side by side (blank: the
+    // captions' font and size, or the usual gap of a third of a bond length)
+    const tiedHead = el('h3', { textContent: 'ID labels and captions' });
+    tiedHead.append(infoIcon('ID labels: compound numbers from Add ID Label and Number Compounds, and text that reads as an ID when you link it to a structure. Linked captions: names, CAS numbers, descriptors and other text linked to a structure. Linking text gives it this look and place.'));
+    const tiedGrid = el('div', { className: 'md-tied' });
+    grid.append(tiedHead, tiedGrid);
+    tiedGrid.append(el('span'), el('span', { className: 'md-tied-hd', textContent: 'ID labels' }), el('span', { className: 'md-tied-hd', textContent: 'Linked captions' }));
+    type TiedCtl = { font: HTMLSelectElement; size: HTMLInputElement; b: HTMLButtonElement; i: HTMLButtonElement; u: HTMLButtonElement; color: HTMLSpanElement; colorValue?: string; side: HTMLSelectElement; align: HTMLSelectElement; gap: HTMLInputElement };
+    const toggle = (html: string, title: string) => {
+      const b = el('button', { type: 'button', className: 'md-toggle', innerHTML: html, title });
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', () => { b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); b.dispatchEvent(new Event('input', { bubbles: true })); });
+      return b;
+    };
+    const tiedCtl = (): TiedCtl => {
+      const font = fontSelect();
+      font.prepend(new Option('Same as captions', ''));
+      const size = el('input', { type: 'number', className: 'md-num', step: 'any' });
+      size.title = 'Leave blank for the captions\' size';
+      keepInRange(size, ...LIMITS.captionSize, 'pt');
+      const side = el('select'), align = el('select');
+      for (const [v, t] of [['below', 'Below'], ['above', 'Above'], ['left', 'Left'], ['right', 'Right']]) side.append(new Option(t, v));
+      for (const [v, t] of [['center', 'Centered'], ['left', 'Left edges lined up'], ['right', 'Right edges lined up']]) align.append(new Option(t, v));
+      align.title = 'Above or below the structure: centered under it, or lined up with its left or right edge';
+      const gap = el('input', { type: 'number', className: 'md-num', step: 'any' });
+      gap.title = 'Leave blank for a third of the bond length. From 0 to 100 pt';
+      keepInRange(gap, 0, 100, 'pt');
+      side.addEventListener('change', () => { align.disabled = side.value === 'left' || side.value === 'right'; });
+      return { font, size, b: toggle('<b>B</b>', 'Bold'), i: toggle('<i>I</i>', 'Italic'), u: toggle('<u>U</u>', 'Underline'), color: el('span'), side, align, gap };
+    };
+    const idCtl = tiedCtl(), capCtl = tiedCtl();
+    const pair = (...k: (HTMLElement | string)[]) => el('span', { className: 'md-controls' }, ...k);
+    const tiedRow = (label: string, f: (c: TiedCtl) => HTMLElement) => tiedGrid.append(el('span', { textContent: label }), f(idCtl), f(capCtl));
+    tiedRow('Font', (c) => c.font);
+    tiedRow('Size', (c) => pair(c.size, el('span', { className: 'muted', textContent: 'pt' })));
+    tiedRow('Style', (c) => pair(el('span', { className: 'md-toggles' }, c.b, c.i, c.u), c.color));
+    tiedRow('Sits', (c) => c.side);
+    tiedRow('Alignment', (c) => c.align);
+    tiedRow('Gap to the structure', (c) => pair(c.gap, el('span', { className: 'muted', textContent: 'pt' })));
+    const showColor = (c: TiedCtl) => {
+      c.color.replaceChildren(colourButton(new Doc(), c.colorValue, (v) => { c.colorValue = v && v.toLowerCase() !== '#000000' ? v.toLowerCase() : undefined; showColor(c); c.color.dispatchEvent(new Event('input', { bubbles: true })); }, { autoLabel: 'Automatic', autoSwatch: '#000000' }));
+    };
+    const showTiedHints = () => {
+      const bl = parseFloat(inputs.get('bondLength')!.value) || shown.bondLength;
+      for (const c of [idCtl, capCtl]) { c.size.placeholder = captionSize.value; c.gap.placeholder = String(Math.round(bl * 0.3 * 10) / 10); }
+    };
+    captionSize.addEventListener('input', showTiedHints);
+    inputs.get('bondLength')!.addEventListener('input', showTiedHints);
+    const fillTied = (c: TiedCtl, st: DocStyle, role: 'label' | 'caption') => {
+      const look = fullLook(st, role), own = (role === 'label' ? st.idLook : st.tiedLook) ?? {};
+      if (own.font) pickFont(c.font, own.font); else c.font.value = '';
+      c.size.value = own.size !== undefined ? String(+own.size.toFixed(3)) : '';
+      c.b.setAttribute('aria-pressed', String(look.bold));
+      c.i.setAttribute('aria-pressed', String(look.italic));
+      c.u.setAttribute('aria-pressed', String(look.underline));
+      c.colorValue = own.color;
+      showColor(c);
+      c.side.value = look.side;
+      c.align.value = look.align;
+      c.align.disabled = look.side === 'left' || look.side === 'right';
+      c.gap.value = own.gap !== undefined ? String(+own.gap.toFixed(3)) : '';
+    };
+    const readTied = (c: TiedCtl, st: DocStyle, role: 'label' | 'caption'): TiedLook | undefined => {
+      const u = USUAL[role], out: TiedLook = {};
+      const f = c.font.value.trim();
+      if (f && f !== st.captionFont) out.font = f;
+      const size = parseFloat(c.size.value);
+      if (Number.isFinite(size) && size > 0 && Math.abs(size - st.captionSize) > 1e-6) out.size = within(LIMITS.captionSize, size);
+      for (const [k, b] of [['bold', c.b], ['italic', c.i], ['underline', c.u]] as const) { const on = b.getAttribute('aria-pressed') === 'true'; if (on !== u[k]) out[k] = on; }
+      if (c.colorValue) out.color = c.colorValue;
+      if (c.side.value !== u.side) out.side = c.side.value as TiedLook['side'];
+      if (c.align.value !== u.align) out.align = c.align.value as TiedLook['align'];
+      const gap = c.gap.value.trim() === '' ? NaN : parseFloat(c.gap.value);
+      if (Number.isFinite(gap)) out.gap = Math.min(100, Math.max(0, gap));
+      return cleanTiedLook(out);
+    };
+
     // your own
     grid.append(el('h3', { textContent: 'Your own styles' }));
     const name = el('input', { type: 'text', placeholder: 'e.g. My group meeting style' });
@@ -225,6 +306,9 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       structGap.value = pt(sc.structGap); plusGap.value = pt(sc.plusGap);
       fit.checked = sc.fit ?? schemePrefs.fit;
       showScheme();
+      fillTied(idCtl, st, 'label');
+      fillTied(capCtl, st, 'caption');
+      showTiedHints();
       name.value = st.name;
       showCm();
     };
@@ -260,6 +344,9 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       if (below !== (schemePrefs.textAlignBelow ?? '') && (below === 'left' || below === 'center' || below === 'right')) sc.textAlignBelow = below;
       if (fit.checked !== schemePrefs.fit) sc.fit = fit.checked;
       if (Object.keys(sc).length) st.scheme = sc; else delete st.scheme;
+      const idLook = readTied(idCtl, st, 'label'), tiedLook = readTied(capCtl, st, 'caption');
+      if (idLook) st.idLook = idLook; else delete st.idLook;
+      if (tiedLook) st.tiedLook = tiedLook; else delete st.tiedLook;
       return st;
     };
 

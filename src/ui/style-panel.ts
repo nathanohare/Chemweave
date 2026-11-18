@@ -31,6 +31,8 @@ import { ringFillsOn } from '../chem/ring-fill';
 import { frameMembers } from '../editor/frames';
 import { methylState, writeTerminalMethyls, type MethylStyle } from '../chem/hydrogens';
 import type { TableData } from '../model';
+import { attachedAtoms } from '../editor/attached';
+import { lookPatch } from '../editor/tied-look';
 import { labelAlignment, labelAlignPatch, type LabelAlign } from '../chem/label-align';
 import { labelAtoms, labelLookOf, setLabelFont, setLabelSize } from '../editor/label-font';
 import { ringsThroughBond } from '../chem/aromatic';
@@ -93,6 +95,7 @@ const OPEN_GROUPS = new Set<string>();
 const SIDES: Opt<AttachSide>[] = [['below', 'Below'], ['above', 'Above'], ['left', 'Left'], ['right', 'Right']];
 const READ_AS: Opt<'auto' | 'on' | 'off'>[] = [['auto', 'Automatically'], ['on', 'Chemical'], ['off', 'Plain text']];
 const JUSTIFY: Opt<Caption['justify']>[] = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
+const TIED_KINDS: Opt<'label' | 'caption'>[] = [['label', 'ID label'], ['caption', 'Caption']];
 const TABLE_LINES: Opt<TableData['lines']>[] = [['acs', 'ACS style (rules above and below the headings, and at the end)'], ['grid', 'Every cell boxed'], ['none', 'None']];
 
 /** How an atom's label lines up on the atom (ChemDraw's label alignment; Above and Below are one Center choice). */
@@ -1052,8 +1055,18 @@ export class StylePanel {
       this.edit(label, () => { for (const x of tied) this.doc.updateCaption(x.id, { attach: { ...x.attach!, ...patch(x.attach!) } }); });
     this.heading(a.role === 'descriptors' ? 'Attached Descriptors' : a.role === 'label' ? 'Attached ID Label' : 'Attached to Structure');
     // text beside a structure lines up towards it; above and below, centred (Line up changes it back)
+    if (tied.every((x) => x.attach!.role !== 'descriptors')) {
+      const roles = new Set(tied.map((x) => x.attach!.role));
+      this.select<'label' | 'caption'>('Kind', TIED_KINDS, roles.size === 1 ? a.role as 'label' | 'caption' : 'caption', (v) => this.edit(v === 'label' ? 'Make ID label' : 'Make caption', () => {
+        for (const x of tied) this.doc.updateCaption(x.id, { attach: { ...x.attach!, role: v } });
+      }));
+    }
     this.select<AttachSide>('Sits', SIDES, a.side, (v) => this.edit('Caption side', () => {
-      for (const x of tied) this.doc.updateCaption(x.id, { attach: { ...x.attach!, side: v, shift: 0 }, justify: v === 'right' ? 'left' : v === 'left' ? 'right' : 'center' });
+      for (const x of tied) {
+        const at: Attachment = { ...x.attach!, side: v, shift: 0 };
+        if (v === 'left' || v === 'right') delete at.align;
+        this.doc.updateCaption(x.id, { attach: at, justify: v === 'right' ? 'left' : v === 'left' ? 'right' : at.align ?? 'center' });
+      }
     }));
     this.number('Gap (pt)', round(a.gap, 10), 0.5, -200, 500, (v) => setA('Caption gap', () => ({ gap: v })),
       'Space between the structure (with its atom labels) and the caption. You can also drag the caption.');
@@ -1079,6 +1092,8 @@ export class StylePanel {
       this.check('Update when the structure changes', !desc[0].attach!.keepText, (v) => setA(v ? 'Update descriptors' : 'Keep descriptor text', (x) => (x.role === 'descriptors' ? { keepText: v ? undefined : true, sig: v ? undefined : x.sig } : {})),
         'Turn off to keep the text as it is, for instance after typing over it by hand.');
     }
+    button('Reset to Default Look', 'Give it the ID label or caption look and place set in File ▸ Drawing Style', () =>
+      this.edit('Reset to Default Look', () => { for (const x of tied) this.doc.updateCaption(x.id, lookPatch(this.doc, x, attachedAtoms(this.doc, x.attach!))); }));
     button('Unpin from Structure', 'Leave the caption where it is as ordinary text: it no longer follows the structure', () =>
       this.edit('Unpin Caption', () => { for (const x of tied) this.doc.updateCaption(x.id, { attach: undefined }); }));
     if (loose.length && this.tie) button('Tie the others too', 'Tie the selected captions that are loose to the structure nearest each', () => this.tie?.(loose.map((x) => x.id)));
