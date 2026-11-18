@@ -4801,6 +4801,28 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-ref-row[aria-selected="true"] { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
 .si-ref-n { color: var(--muted); text-align: right; }
 .si-ref-uses { grid-column: 2; font-size: var(--fs-xs); }
+/* the Manuscript Check page */
+.si-ms.si-drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.si-ms.si-busy .si-ms-summary { color: var(--muted, var(--text)); }
+.si-ms-files { display: flex; flex-direction: column; margin: 2px 0 6px; font-size: var(--fs-sm); }
+.si-ms-file { display: flex; gap: 8px; align-items: baseline; padding: 2px 4px; border-radius: var(--r-control); cursor: default; outline: none; }
+.si-ms-file:hover { background: var(--hover, var(--accent-soft)); }
+.si-ms-file[aria-selected="true"] { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.si-ms-file.si-bad .si-ms-fname { color: var(--warn, #d35400); }
+.si-ms-kind { font-size: var(--fs-xs); }
+.si-ms-summary { margin: 2px 0 4px; font-weight: 600; font-size: var(--fs-sm); }
+.si-ms-notes { margin: 0 0 6px; padding-left: 18px; color: var(--warn, #d35400); font-size: var(--fs-xs); }
+.si-ms-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); table-layout: auto; }
+.si-ms-table th { text-align: left; font-weight: 600; padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.si-ms-table td { padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.si-ms-table tbody tr { cursor: default; outline: none; }
+.si-ms-table tbody tr:hover { background: var(--hover, var(--accent-soft)); }
+.si-ms-table tbody tr[aria-selected="true"] { background: var(--accent-soft); }
+.si-ms-table td:first-child { font-weight: 600; white-space: nowrap; }
+.si-ms-status { white-space: nowrap; }
+.si-ms-problem .si-ms-status { color: var(--warn, #d35400); }
+.si-ms-ok .si-ms-status { color: var(--ok, #2e7d32); }
+.si-ms-note td, .si-ms-dismissed td { color: var(--muted, #7f7f7f); }
 .si-formula sub { font-size: 75%; }
 
 /* a box for SI text (src/ui/si-rich.ts) */

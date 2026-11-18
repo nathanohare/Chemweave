@@ -8297,6 +8297,7 @@ function loadSiMode(): Promise<SiMode> {
       siFacts: (mols) => chem.siFacts(mols),
       sizeOf: (c) => figures.size(c, siStyleNow()),
       siStyle: () => siStyleNow(),
+      openDocuments: () => ws.tabs.filter((t) => t.mode === 'document' && t.document && !t.windowOf).map((t) => ({ name: t.name, bytes: async () => (await import('./io/docx-write')).writeDocx(t.document!.t, docFiles, t.name) })),
       openCompiled: async (doc, name, pdf) => {
         ws.showDocument({ ...doc, drawingStyle: { ...siStyleNow() } }, name.replace(/[\\/:*?"<>|]/g, '-'));
         renderTabs();

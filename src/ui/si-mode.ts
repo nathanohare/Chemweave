@@ -27,6 +27,8 @@ import { SiFigureEditor } from './si-figure';
 import { SiPictures, PICTURE_MIME, toPng as pngOf } from './si-picture';
 import { SiXrayPage } from './si-xray';
 import { SiAttachmentPage } from './si-attachment';
+import { SiManuscriptPage, newManuscriptState, type ManuscriptState } from './si-manuscript';
+import { cachedResult, problemsOf, type Finding as MsFinding } from '../si/ms-check';
 import { SiFrontPage } from './si-front';
 import { SiSchemePage } from './si-scheme';
 import { SiSpectraPage } from './si-spectra';
@@ -96,6 +98,8 @@ export interface SiModeHost {
   nameStructure(molfile: string): Promise<{ ok: true; name: string } | { ok: false; message: string }>;
   /** The Drawing Style window, for an SI project's style (Project Settings ▸ Structures); null when cancelled. */
   chooseDrawingStyle(current: DocStyle, note: string): Promise<DocStyle | null>;
+  /** The documents open in Chemweave (for the manuscript check), each saved as .docx when asked. */
+  openDocuments(): { name: string; bytes(): Promise<Uint8Array> }[];
 }
 
 /** An SI compound as the Canvas shows it (its card in the Analysis panel). */
@@ -114,7 +118,7 @@ export interface SiCard {
   hrms: string;
 }
 
-type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'spectra'; id: string; section: string } | { kind: 'references' } | { kind: 'warnings' } | { kind: 'dashboard' };
+type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'spectra'; id: string; section: string } | { kind: 'references' } | { kind: 'manuscript' } | { kind: 'warnings' } | { kind: 'dashboard' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -152,6 +156,7 @@ const RIBBON = `
     <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
     <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
     <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
+    <button role="tab" data-si-tab="ms" aria-selected="false" class="rb-context" hidden title="Shown on the Manuscript Check page">Manuscript Check</button>
     <button role="tab" data-si-tab="dash" aria-selected="false" class="rb-context" hidden title="Shown on the Dashboard and on a Data section's page">Dashboard</button>
     <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
     <button role="tab" data-si-tab="spectrum" aria-selected="false" class="rb-context" hidden title="Shown on a compound's spectra page">Spectrum</button>
@@ -296,6 +301,31 @@ const RIBBON = `
         <button data-si="ref-delete" data-ic="delete" title="Take the reference picked off the list; its citations stay in the text with a warning">Delete Reference</button>
       </div>
     </div><div class="rb-label">Reference</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="ms" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-ms="ms-add" data-ic="file-open" title="Add the manuscript (PDF or Word .docx) and its ChemDraw files (.cdxml) to the project’s manuscript folder; they are never printed"><span class="rb-icon">＋</span>Add Files…</button>
+      <div class="rb-col">
+        <button data-si-ms="ms-add-doc" title="Add a document open in Chemweave, saved into the manuscript folder as a Word file as it is now">Add Open Document…</button>
+        <button data-si-ms="ms-remove" data-ic="delete" title="Move the file picked to the project Trash (Home ▸ Trash, or Undo, puts it back)">Remove File</button>
+      </div>
+    </div><div class="rb-label">Files</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-ms="ms-check" data-ic="refresh" title="Read the files again and compare them with the SI"><span class="rb-icon">⟳</span>Check Again</button>
+      <div class="rb-col">
+        <label class="rb-field" title="Which results the list shows">Show <select data-si-ms="ms-filter">
+          <option value="problems">Problems Only</option><option value="notes">Problems and Notes</option><option value="all">All Results</option>
+        </select></label>
+        <button data-si-ms="ms-dismissed" aria-pressed="false" title="Also list the results you dismissed (pick one and click Restore to bring it back)">Show Dismissed</button>
+      </div>
+    </div><div class="rb-label">Check</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-ms="ms-open" title="Open the compound of the result picked at the field concerned (double-click a result does the same)">Open Compound</button>
+        <button data-si-ms="ms-dismiss" title="Hide the result picked, with a reason: it comes back if the values it is about change">Dismiss…</button>
+        <button data-si-ms="ms-restore" title="Bring back the dismissed result picked">Restore</button>
+      </div>
+    </div><div class="rb-label">Result</div></div>
   </div>
   <div class="rb-panel" data-si-panel="dash" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -526,6 +556,8 @@ export class SiMode {
       if (xr) { void this.xrayPage?.command(xr.dataset.siXray!); return; }
       const at = t.closest<HTMLElement>('[data-si-attach]');
       if (at) { if (this.project?.readOnly) { this.host.flash('This SI project is open read-only.'); return; } void (at.dataset.siAttach === 'choose' ? this.attachPage?.choose() : this.attachPage?.remove()); return; }
+      const ms = t.closest<HTMLElement>('button[data-si-ms]');
+      if (ms) { void this.msCommand(ms.dataset.siMs!); return; }
       const da = t.closest<HTMLElement>('button[data-si-dash]');
       if (da) { void this.dashCommand(da.dataset.siDash!); return; }
       const fig = t.closest<HTMLElement>('[data-si-fig]');
@@ -534,6 +566,8 @@ export class SiMode {
       if (b) void this.run(b.dataset.si!);
     });
     this.ribbon.addEventListener('change', (e) => {
+      const mf = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-ms]');
+      if (mf) { void this.msCommand(mf.dataset.siMs!, mf.value); return; }
       const ds = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-dash]');
       if (ds) { void this.dashCommand(ds.dataset.siDash!, ds.value); return; }
       const f = (e.target as HTMLElement).closest<HTMLInputElement>('[data-si-field]');
@@ -669,6 +703,43 @@ export class SiMode {
     });
     out.append(page.el);
     this.schemeShown(page);
+  }
+
+  /** The Manuscript Check page shown (its ribbon tab acts on it), and what it keeps per project. */
+  private msPage: SiManuscriptPage | null = null;
+  private lastPageKind = '';
+  private msStates = new WeakMap<SiProject, ManuscriptState>();
+  private msState(p: SiProject): ManuscriptState {
+    let st = this.msStates.get(p);
+    if (!st) { st = newManuscriptState(); this.msStates.set(p, st); }
+    return st;
+  }
+  private msShown(x: SiManuscriptPage | null): void {
+    const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="ms"]')!;
+    this.msPage = x;
+    tab.hidden = !x;
+    if (!x && tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home');
+    if (!x || !this.project) return;
+    const st = this.msState(this.project);
+    this.ribbon.querySelector<HTMLSelectElement>('select[data-si-ms="ms-filter"]')!.value = st.filter;
+    this.ribbon.querySelector<HTMLElement>('[data-si-ms="ms-dismissed"]')!.setAttribute('aria-pressed', String(st.showDismissed));
+  }
+  private async msCommand(cmd: string, value = ''): Promise<void> {
+    if (!this.msPage) return;
+    await this.msPage.command(cmd, value);
+    if (cmd === 'ms-dismissed' && this.project) this.ribbon.querySelector<HTMLElement>('[data-si-ms="ms-dismissed"]')!.setAttribute('aria-pressed', String(this.msState(this.project).showDismissed));
+  }
+  /** The last manuscript check's result, worked out once from what was read last time (for the tree's count and the Warnings page). */
+  private msWarming = new WeakSet<SiProject>();
+  private msWarm(p: SiProject): void {
+    const st = this.msState(p);
+    if (st.result || this.msWarming.has(p)) return;
+    this.msWarming.add(p);
+    void cachedResult(p, { facts: (m) => this.host.siFacts(m) }).then((r) => {
+      if (!r || st.result) return;
+      st.result = r;
+      if (this.project === p) this.renderTree();
+    });
   }
 
   private attachPage: SiAttachmentPage | null = null;
@@ -1164,6 +1235,9 @@ export class SiMode {
       }
     };
     walk(p.top, 1);
+    this.msWarm(p);
+    const msProblems = (() => { const r = this.msState(p).result; return r ? problemsOf(r).length : 0; })();
+    row(1, svg('check', 15), `Manuscript Check${msProblems ? ` (${msProblems})` : ''}`, { kind: 'manuscript' }, (r) => { r.classList.toggle('si-has-warn', msProblems > 0); r.title = 'Compare the manuscript (PDF, Word or a Chemweave document) and its ChemDraw files with the SI'; });
     row(1, svg('refs', 15), `References (${p.references.length})`, { kind: 'references' });
     const total = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0);
     row(1, svg('warn', 15), `Warnings (${total})`, { kind: 'warnings' }, (r) => { r.classList.toggle('si-has-warn', total > 0); r.title = 'Every automatic warning in the project, by compound'; });
@@ -1187,6 +1261,7 @@ export class SiMode {
     this.spectraShown(null);
     this.front = null;
     this.ribbon.querySelector<HTMLElement>('[data-si-tab="refs"]')!.hidden = this.pick.kind !== 'references';
+    this.msShown(null);
     this.dashRedraw = null;
     const p = this.project!;
     const pick = this.pick;
@@ -1208,12 +1283,16 @@ export class SiMode {
       const c = p.compounds.find((x) => x.id === pick.id);
       if (c) this.spectraCompoundPage(out, c, pick.section); else this.pick = { kind: 'project' };
     } else if (pick.kind === 'references') this.referencesPage(out);
+    else if (pick.kind === 'manuscript') this.manuscriptPage(out);
     else if (pick.kind === 'warnings') this.warningsPage(out);
     else if (pick.kind === 'dashboard') this.dashboardPage(out);
     if (this.pick.kind === 'project') this.projectPage(out);
     this.dashShown();
     this.page.replaceChildren(out);
     if (keep && this.ribbon.querySelector<HTMLElement>(`[data-si-tab="${keep}"]`)?.hidden === false) this.showRibbonTab(keep);
+    // (the Manuscript Check tab comes forward when its page is first shown: its commands are the page's only ones)
+    if (this.pick.kind === 'manuscript' && this.lastPageKind !== 'manuscript') this.showRibbonTab('ms');
+    this.lastPageKind = this.pick.kind;
     void this.readLabels();
   }
 
@@ -1253,6 +1332,32 @@ export class SiMode {
 
   /** The reference picked on the References page (the References tab's Edit and Delete act on it). */
   private refPicked = '';
+
+  private manuscriptPage(out: HTMLElement): void {
+    const p = this.project!;
+    const page = new SiManuscriptPage({
+      project: p,
+      flash: (m, ms) => this.host.flash(m, ms),
+      pickFiles: (l, x) => this.host.pickFiles(l, x),
+      openDocuments: () => this.host.openDocuments(),
+      smiles: (m) => this.host.smiles(m),
+      facts: (m) => this.host.siFacts(m),
+      act: async (label, f) => {
+        const j = journalOf(p.folder);
+        try {
+          this.commitAll();
+          await (j ? j.step(label, f) : f());
+        } catch (e) {
+          this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
+        }
+        this.refresh();
+      },
+      openAt: (c, field) => this.openAt(c, field),
+      resultChanged: () => { if (this.project === p) { this.renderTree(); if (this.pick.kind === 'warnings') { this.shownKey = ''; this.refresh(); } } },
+    }, this.msState(p));
+    out.append(page.el);
+    this.msShown(page);
+  }
 
   private referencesPage(out: HTMLElement): void {
     const p = this.project!;
@@ -2654,9 +2759,35 @@ export class SiMode {
       any = true;
       card.append(el('h3', 'si-sub', s.name), ...rows);
     }
+    const ms = this.msState(p).result;
+    const msList = ms ? ms.findings.filter((f) => f.status === 'problem' || (this.showDismissed && f.status === 'dismissed')) : [];
+    if (msList.length) {
+      any = true;
+      const head3 = el('h3', 'si-sub', 'Manuscript Check');
+      const go = el('button', 'si-link', 'Open the Manuscript Check');
+      go.type = 'button';
+      go.addEventListener('click', () => this.go({ kind: 'manuscript' }));
+      card.append(head3, ...msList.map((f) => this.msWarningLine(f)), go);
+    }
     if (this.loadingFacts || p.compounds.some((c) => !this.warnings.has(c.id))) card.append(el('p', 'muted si-note', 'Still reading some structures…'));
     else if (!any) card.append(el('p', 'muted si-note', this.showDismissed ? 'No warnings.' : 'No warnings to look at.'));
     out.append(card);
+  }
+
+  /** A manuscript check result on the Warnings page: click it to open the compound at the field concerned. */
+  private msWarningLine(f: MsFinding): HTMLElement {
+    const line = el('div', `si-warn${f.status === 'dismissed' ? ' dismissed' : ''}`);
+    line.innerHTML = svg('warn', 13);
+    line.append(el('span', 'si-warn-text', f.message));
+    const c = this.project!.compounds.find((x) => x.id === f.compound_id);
+    if (c) {
+      const b = el('button', 'si-link', 'Open');
+      b.type = 'button';
+      b.title = 'Open the compound at the field concerned';
+      b.addEventListener('click', () => this.openAt(c, ({ structure: 'structure', yield: 'yield', ee: 'ee', dr: 'dr', name: 'name', conditions: 'procedure', deviation: 'procedure' } as Record<string, string>)[f.kind] ?? ''));
+      line.append(b);
+    }
+    return line;
   }
 
   private partsEditor(body: HTMLElement, c: SiCompound, def: FieldDef): void {

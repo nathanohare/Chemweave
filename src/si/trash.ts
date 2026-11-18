@@ -50,7 +50,7 @@ export const KIND_NAMES: Record<string, string> = {
 };
 
 /** Kinds Chemweave puts back; the others are restored in SI Assistant. */
-export const RESTORABLE = new Set(['section', 'compound', 'scheme', 'gp', 'figure', 'table', 'file', 'compound_file', 'scheme_box']);
+export const RESTORABLE = new Set(['section', 'compound', 'scheme', 'gp', 'figure', 'table', 'file', 'compound_file', 'scheme_box', 'manuscript_file']);
 
 /** Everything in the Trash, newest first. */
 export async function listTrash(p: SiProject): Promise<TrashEntry[]> {
@@ -276,6 +276,16 @@ const RESTORE: Record<string, Restore> = {
     list.push({ ...kept, file: pick });
     await p.saveCompound(c);
     return `Restored ${pick} to “${str(e.info.compound_name) || 'the compound'}”.`;
+  },
+
+  async manuscript_file(p, _e, folder, item) {
+    // a file of the manuscript check: back into manuscript/ (a name now taken gets " (2)")
+    const dot = item.lastIndexOf('.');
+    const stem = dot > 0 ? item.slice(0, dot) : item, ext = dot > 0 ? item.slice(dot) : '';
+    let pick = item;
+    for (let n = 2; await p.folder.exists(join('manuscript', pick)); n++) pick = `${stem} (${n})${ext}`;
+    await p.folder.move(join(folder, item), join('manuscript', pick));
+    return `Restored ${pick} to the manuscript check.`;
   },
 
   async scheme_box(p, e, folder) {

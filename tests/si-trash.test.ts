@@ -116,15 +116,15 @@ describe('the Trash', () => {
   it('lists what it can’t restore and leaves it for SI Assistant', async () => {
     const f = exampleFolder();
     const p = await SiProject.open(f);
-    f.files.set('trash/20261101-120000-aaaa/entry.json', new TextEncoder().encode('{"kind": "manuscript_file", "name": "paper.docx", "item": "paper.docx", "deleted_at": "2026-11-01T12:00:00", "deleted_by": "Nathan"}'));
-    f.files.set('trash/20261101-120000-aaaa/paper.docx', new Uint8Array([1]));
+    f.files.set('trash/20261101-120000-aaaa/entry.json', new TextEncoder().encode('{"kind": "scheme_file", "name": "paper.png", "item": "paper.png", "deleted_at": "2026-11-01T12:00:00", "deleted_by": "Nathan"}'));
+    f.files.set('trash/20261101-120000-aaaa/paper.png', new Uint8Array([1]));
     f.files.set('trash/20261102-090000-bbbb/stray.pdf', new Uint8Array([2]));
     f.files.set('trash/20261103-090000-cccc/entry.json', new TextEncoder().encode('{"kind": "compound", "name": "x", "item": "../project.json", "pending": true}'));
     const list = await listTrash(p);
     expect(list.map((e) => [e.kind, e.name])).toEqual([
       ['compound', 'x (deletion did not finish)'],
       ['incomplete', 'Unfinished deletion: stray.pdf'],
-      ['manuscript_file', 'paper.docx'],
+      ['scheme_file', 'paper.png'],
     ]);
     expect(list[2]).toMatchObject({ deletedAt: '2026-11-01T12:00:00', deletedBy: 'Nathan' });
     await expect(restoreFromTrash(p, list[2].id)).rejects.toThrow(/restored in Chem SI Assistant/);

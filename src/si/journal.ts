@@ -22,8 +22,8 @@ export interface UndoStep { label: string; changes: Change[] }
 
 /** The most steps kept (the oldest goes first). */
 export const MAX_STEPS = 100;
-/** Files no step records: the lock, the build output (and the undo holding folder in it), snapshots. */
-const UNRECORDED = /^(\.lock$|build(\/|$)|snapshots(\/|$))/;
+/** Files no step records: the lock, the build output (and the undo holding folder in it), snapshots, the manuscript check's cache. */
+const UNRECORDED = /^(\.lock$|build(\/|$)|snapshots(\/|$)|manuscript\/check\.json$)/;
 
 const norm = (rel: string): string => rel.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
 const parentOf = (p: string): string => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
