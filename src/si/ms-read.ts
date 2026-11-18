@@ -61,7 +61,7 @@ const BOLD_FONT = /(bold|black|heavy|semibold|demi|-bd\b|,bold)/i;
 const ITALIC_FONT = /(italic|oblique|-it\b|,italic|-bdit\b|-boldit)/i;
 
 const suffix = (name: string): string => { const m = /\.[^./\\]*$/.exec(name); return m ? m[0].toLowerCase() : ''; };
-const errName = (e: unknown): string => (e instanceof Error ? (e.name && e.name !== 'Error' ? e.name : e.constructor?.name || 'Error') : 'Error');
+export const errName = (e: unknown): string => (e instanceof Error ? (e.name && e.name !== 'Error' ? e.name : e.constructor?.name || 'Error') : 'Error');
 
 /** Read one file of the manuscript folder (by its extension). `bytes` null: it could not be opened just now. */
 export async function readFile(name: string, bytes: Uint8Array | null, opts: ReadOptions = {}): Promise<Source> {
@@ -213,7 +213,7 @@ function lineY(lines: P.Line[], rec: Rec): number {
   return pick.length ? pick[0].bbox[3] : 0;
 }
 
-async function pdfjsLib() {
+export async function pdfjsLib() {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
     pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
@@ -444,7 +444,7 @@ export function partName(targetIn: string): string {
 
 type WBlock = { kind: 'p'; text: string; bold: string[]; images: string[] } | { kind: 'tbl'; el: Element };
 
-function parseXml(text: string): Document {
+export function parseXml(text: string): Document {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) { const e = new Error('not well-formed'); e.name = 'ParseError'; throw e; }
   return doc;
