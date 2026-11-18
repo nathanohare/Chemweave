@@ -57,6 +57,10 @@ export interface NewmanLook {
   ideal?: boolean;
   /** How the labels are written (absent: the drawing's caption text, never made smaller). */
   text?: NewmanText;
+  /** Labels beside the circle are turned to run along their bonds: only when level ones would touch, or always (absent: off). */
+  tilt?: 'off' | 'crowded' | 'always';
+  /** The most a label is turned, in degrees (absent: 30). */
+  tiltMax?: number;
   /** A sawhorse shows which groups point toward and away from the reader with a wedge and a hashed wedge on each atom. */
   wedges?: boolean;
   /** A sawhorse shows R or S beside each stereocenter. */
