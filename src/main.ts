@@ -5579,9 +5579,9 @@ async function matchFocalPoints(): Promise<void> {
   const spot = focalAtoms(doc, ref).map((id) => refIndex.get(id));
   const sets: number[][] = [];
   let missed = 0;
-  others.forEach((f, i) => {
+  exs.forEach((ex, i) => {
     const m = new Map(pairs[i] ?? []);
-    const to = spot.map((r) => (r === undefined ? undefined : exs[i].map[m.get(r) ?? -1]));
+    const to = spot.map((r) => (r === undefined ? undefined : ex.map[m.get(r) ?? -1]));
     if (to.every((id): id is number => id !== undefined && doc.atoms.has(id))) sets.push(to);
     else missed++;
   });
