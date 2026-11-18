@@ -2246,7 +2246,7 @@ function torsionData(s: ChartScan, c: ChartChoice, look = newmanPrefs.look): Tor
   return {
     profile: s.profile, extrema: s.extrema, front: s.front, back: s.back, phi0: s.phi0, a: c.a, d: c.d,
     unit: c.unit, insets: c.insets, names: c.names, barriers: c.barriers, barrierColor: newmanPrefs.chart.barrierColor,
-    digits: 1, w: 26 * L, h: 8 * L, method: s.method, look: structuredClone(look), sawhorse: c.sawhorse, points: s.points,
+    digits: 1, w: 26 * L, h: 8 * L, method: s.method, look: structuredClone(look), sawhorse: c.sawhorse, points: s.points, layout: c.layout,
   };
 }
 
@@ -2268,10 +2268,11 @@ function paintTorsionPreview(d: TorsionData, canvas: HTMLCanvasElement): void {
 }
 
 /** The projection a choice in the Newman window makes. */
-function newmanData(w: ReturnType<typeof newmanWork>, choice: NewmanChoice, conf: NewmanConformer, frontId: number, backId: number, look = newmanPrefs.look): NewmanData {
+function newmanData(w: ReturnType<typeof newmanWork>, choice: NewmanChoice, conf: NewmanConformer, frontId: number, backId: number, look = newmanPrefs.look, kind = choice.kind): NewmanData {
   const [f, b] = choice.reversed ? [backId, frontId] : [frontId, backId];
+  look = { ...look, ideal: choice.ideal, wedges: choice.wedges, rs: choice.rs, text: { ...choice.text } };
   return {
-    kind: choice.kind, front: conf.view.front, back: conf.view.back, turn: choice.turn,
+    kind, front: conf.view.front, back: conf.view.back, turn: choice.turn,
     conformer: choice.source === 'drawn' ? 0 : choice.index,
     ...(conf.energy !== null ? { energy: conf.energy } : {}),
     method: choice.source === 'drawn' ? 'as drawn' : choice.method === 'xtb' ? 'GFN2-xTB' : 'MMFF94s+',
@@ -2281,9 +2282,14 @@ function newmanData(w: ReturnType<typeof newmanWork>, choice: NewmanChoice, conf
   };
 }
 
+/** R or S of a projection's front and back atoms on the structure it shows, for a preview's labels. */
+function linkRs(d: NewmanData): [string | null | undefined, string | null | undefined] | undefined {
+  return d.link && d.look.rs ? [live.atom(d.link.front), live.atom(d.link.back)] : undefined;
+}
+
 /** The Newman window's preview: the projection fitted to the canvas. */
-function paintNewmanPreview(d: NewmanData, canvas: HTMLCanvasElement): void {
-  const { doc: tmp, box } = editor.newmanPreview(d);
+function paintNewmanPreview(d: NewmanData, canvas: HTMLCanvasElement, eye?: string): void {
+  const { doc: tmp, box } = editor.newmanPreview(d, eye, linkRs(d));
   const w = canvas.clientWidth || 230, h = canvas.clientHeight || 200, dpr = window.devicePixelRatio || 1;
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
@@ -2292,8 +2298,8 @@ function paintNewmanPreview(d: NewmanData, canvas: HTMLCanvasElement): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const bw = box.x2 - box.x1, bh = box.y2 - box.y1, pad = 10;
-  const k = Math.min((w - 2 * pad) / bw, (h - 2 * pad) / bh, 3);
+  const bw = box.x2 - box.x1, bh = box.y2 - box.y1, pad = 14;
+  const k = Math.min((w - 2 * pad) / bw, (h - 2 * pad) / bh, 2.2);
   ctx.setTransform(k * dpr, 0, 0, k * dpr, (w / 2 - (box.x1 + bw / 2) * k) * dpr, (h / 2 - (box.y1 + bh / 2) * k) * dpr);
   drawDrawing(ctx, tmp);
 }
@@ -2327,14 +2333,13 @@ async function newmanProjection(bondId: number | null, frontId: number | null, e
     method: newmanPrefs.method,
     mark: old ? !!old.mark : newmanPrefs.mark,
     linked: old ? true : lastNewman.linked,
+    ...lookChoice(old?.look ?? newmanPrefs.look),
   };
   const got = await askNewman(start, {
-    ends: ['The end you picked', 'The other end'],
-    names: w.names(),
     xtb: !!conformerTools(w.ex.molblock).xtb,
     list: (rev, method, progress) => w.list(rev, method, progress),
     drawn: (rev) => w.drawn(rev),
-    paint: (choice, conf, canvas) => paintNewmanPreview(newmanData(w, choice, conf, front, back, old?.look), canvas),
+    paint: (choice, conf, canvas, kind) => paintNewmanPreview(newmanData(w, choice, conf, front, back, old?.look, kind), canvas, kind === 'sawhorse' ? old?.mark?.color ?? newmanPrefs.markColor : undefined),
     stop: () => model3d.stop(),
   }, !!old, old ? undefined : {
     first: chartFirst,
@@ -2349,12 +2354,80 @@ async function newmanProjection(bondId: number | null, frontId: number | null, e
   if (!got) return;
   lastNewman = { kind: got.choice.kind, source: got.choice.source, linked: got.choice.linked };
   if ('chart' in got) {
-    editor.putTorsionChart(torsionData(got.scan as ChartScan, got.chart), { near: front, page: deckNow()?.size });
+    const chart = torsionData(got.scan as ChartScan, got.chart);
+    const at = await placeWithPointer(editor.torsionPreview(chart), 'chart');
+    if (at) editor.putTorsionChart(chart, { near: front, page: deckNow()?.size, at });
     return;
   }
   if (!doc.atoms.has(front) || !doc.atoms.has(back)) { flash('The structure was changed while the window was open. Open Newman Projection again.'); return; }
   const data = newmanData(w, got.choice, got.conf, front, back, old?.look);
-  editor.putNewmanProjection(data, { id: editId, mark: got.choice.mark ? (old?.mark?.color ?? newmanPrefs.markColor) : null, linked: got.choice.linked, page: deckNow()?.size });
+  const mark = got.choice.mark ? (old?.mark?.color ?? newmanPrefs.markColor) : null;
+  if (old) { editor.putNewmanProjection(data, { id: editId, mark, linked: got.choice.linked, page: deckNow()?.size }); return; }
+  // a new one follows the pointer until a click (or, dragged out of the window, until the button is let go) places it
+  const at = await placeWithPointer(editor.newmanPreview(data, undefined, linkRs(data)), data.kind === 'sawhorse' ? 'sawhorse' : 'projection', got.drag);
+  if (!at) return;
+  if (!doc.atoms.has(front) || !doc.atoms.has(back)) { flash('The structure was changed before the projection was placed. Open Newman Projection again.'); return; }
+  editor.putNewmanProjection(data, { mark, linked: got.choice.linked, page: deckNow()?.size, at });
+}
+
+/** The look choices the Newman window offers, as a projection's look (or the settings) has them. */
+function lookChoice(look: NewmanLook): Pick<NewmanChoice, 'ideal' | 'wedges' | 'rs' | 'text'> {
+  return { ideal: !!look.ideal, wedges: !!look.wedges, rs: !!look.rs, text: { ...(look.text ?? { auto: false }) } };
+}
+
+/**
+ * A picture about to be put in the drawing follows the pointer, faint, at the size it will be:
+ * a click on the canvas places its middle there (or, when it was dragged here with the button
+ * down, letting go does). Escape, or letting go off the canvas, cancels. Resolves to the place in
+ * the drawing, or null.
+ */
+function placeWithPointer(preview: { doc: Doc; box: { x1: number; y1: number; x2: number; y2: number } }, what: string, drag?: { x: number; y: number }): Promise<{ x: number; y: number } | null> {
+  return new Promise((resolve) => {
+    const over = document.querySelector<HTMLElement>('#overlay');
+    if (!over) { resolve(null); return; }
+    const { doc: tmp, box } = preview;
+    const o = renderer.toScreen({ x: 0, y: 0 }), u = renderer.toScreen({ x: 1, y: 0 });
+    const k = Math.hypot(u.x - o.x, u.y - o.y) || 1;
+    const w = Math.max(8, (box.x2 - box.x1) * k), h = Math.max(8, (box.y2 - box.y1) * k), dpr = window.devicePixelRatio || 1;
+    const ghost = document.createElement('canvas');
+    ghost.className = 'place-ghost';
+    ghost.width = Math.round(w * dpr);
+    ghost.height = Math.round(h * dpr);
+    ghost.style.cssText = `position:fixed;z-index:2147482000;pointer-events:none;opacity:0.55;width:${w}px;height:${h}px;left:-9999px;top:0`;
+    const ctx = ghost.getContext('2d');
+    if (ctx) { ctx.setTransform(k * dpr, 0, 0, k * dpr, -box.x1 * k * dpr, -box.y1 * k * dpr); drawDrawing(ctx, tmp); }
+    document.body.append(ghost);
+    const at = (x: number, y: number) => { ghost.style.left = `${x - w / 2}px`; ghost.style.top = `${y - h / 2}px`; };
+    if (drag) at(drag.x, drag.y);
+    const inside = (e: PointerEvent) => { const r = over.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; };
+    const done = (e: PointerEvent | null) => {
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('keydown', key, true);
+      ghost.remove();
+      over.style.cursor = '';
+      if (!e) { resolve(null); return; }
+      const r = over.getBoundingClientRect();
+      resolve(renderer.toDoc(e.clientX - r.left, e.clientY - r.top));
+    };
+    const move = (e: PointerEvent) => at(e.clientX, e.clientY);
+    const down = (e: PointerEvent) => {
+      if (drag) return;
+      // a click anywhere else (a menu, a ribbon button) leaves the picture unplaced
+      e.preventDefault();
+      e.stopPropagation();
+      done(e.button === 0 && inside(e) ? e : null);
+    };
+    const up = (e: PointerEvent) => { if (drag) { e.stopPropagation(); done(inside(e) ? e : null); } };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('keydown', key, true);
+    over.style.cursor = 'copy';
+    if (!drag) flash(`Click where the ${what} should go. Esc cancels.`, 6000);
+  });
 }
 
 /** A projection no longer linked to a structure: only its look and the Turn dial can change. */
@@ -2388,7 +2461,7 @@ async function redoNewman(id: number): Promise<void> {
     if (!conf || typeof conf === 'string') throw new Error(typeof conf === 'string' ? conf : 'No conformer was found.');
     const shape = doc.shapes.get(id);
     if (!shape?.newman?.link || !doc.atoms.has(front) || !doc.atoms.has(back)) return;
-    const choice: NewmanChoice = { reversed: false, kind: d.kind, source: d.source === 'drawn' ? 'drawn' : 'stable', index: 0, turn: d.turn, method, mark: !!d.mark, linked: true };
+    const choice: NewmanChoice = { reversed: false, kind: d.kind, source: d.source === 'drawn' ? 'drawn' : 'stable', index: 0, turn: d.turn, method, mark: !!d.mark, linked: true, ...lookChoice(d.look) };
     editor.putNewmanProjection(newmanData(w, choice, conf, front, back, d.look), { id, mark: d.mark ? d.mark.color : null, amend: true });
   } catch (e) {
     flash(`The Newman projection couldn't be recalculated: ${(e as Error).message}`);

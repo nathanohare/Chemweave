@@ -4208,30 +4208,41 @@ dialog.newman-dialog { width: min(96vw, 640px); max-height: 92vh; }
 .np-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 0 0 8px; }
 .np-tabs button { background: none; border: none; border-bottom: 2px solid transparent; padding: 4px 10px; cursor: pointer; color: var(--muted); font: inherit; }
 .np-tabs button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
-.np-end { grid-template-columns: 7.5em 1fr auto; margin: 0 0 8px; }
 .np-page[hidden] { display: none; }
-.np-chart { display: block; width: 100%; height: 300px; border: 1px solid var(--line); border-radius: var(--r-tab); background: #fff; }
-.np-chart-status { min-height: 1.3em; margin: 4px 0; }
+.np-chart { display: block; width: 100%; height: 340px; border: 1px solid var(--line); border-radius: var(--r-tab); background: #fff; }
+.np-chart-status { margin: 4px 0; }
 .np-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 .np-chart-grid .ask-row { grid-template-columns: 7.5em 1fr; margin: 0 0 6px; }
 .np-chart-grid .ask-row.ask-check { grid-template-columns: auto 1fr; }
 .np-chart-copy { margin: 4px 0 0; }
 @media (max-width: 560px) { .np-chart-grid { grid-template-columns: 1fr; } }
-.np-grid { display: grid; grid-template-columns: 230px 1fr; gap: 14px; align-items: start; }
-.np-preview { display: block; width: 230px; height: 200px; border: 1px solid var(--line); border-radius: var(--r-tab); background: #fff; }
-.np-preview:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.np-left .ask-row { grid-template-columns: auto 1fr 3em; margin: 6px 0 0; }
-.np-right .ask-row { grid-template-columns: 7.5em 1fr auto; margin: 0 0 6px; }
-.np-tip { margin: 2px 0; }
-.np-radios { display: flex; gap: 12px; }
-.np-list { border: 1px solid var(--line); max-height: 132px; overflow-y: auto; font-size: 12px; }
+.np-views { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 6px; }
+.np-view { position: relative; border: 1px solid var(--line); border-radius: var(--r-tab); background: #fff; cursor: grab; }
+.np-view[aria-checked='true'] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.np-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.np-cap { position: absolute; top: 3px; left: 6px; font-size: var(--fs-xs); color: #6b7280; pointer-events: none; }
+.np-swap { position: absolute; top: 3px; right: 3px; padding: 0 5px; line-height: 1.4; z-index: 1; }
+.np-preview { display: block; width: 100%; height: 170px; border-radius: var(--r-tab); }
+.np-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+.np-left .ask-row { grid-template-columns: 6.2em 1fr; margin: 0 0 4px; }
+.np-left .ask-row.np-turn { grid-template-columns: 6.2em 1fr 2.6em; }
+.np-textrow { display: flex; gap: 3px; min-width: 0; }
+.np-textrow select { flex: 1 1 auto; min-width: 0; }
+.np-textrow input { width: 3.6em; flex: none; }
+.np-face { padding: 0 6px; min-width: 1.7em; }
+.np-face[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); }
+.np-list { border: 1px solid var(--line); height: 104px; overflow-y: auto; font-size: 12px; }
 .np-list table { width: 100%; border-collapse: collapse; }
 .np-list th { text-align: left; font-weight: 600; padding: 2px 6px; position: sticky; top: 0; background: var(--panel, #f3f4f6); }
 .np-list td { padding: 2px 6px; cursor: default; }
 .np-list .num { text-align: right; }
 .np-list tr.on td { background: var(--accent-soft, #dbeafe); }
-.np-status { min-height: 1.3em; margin: 4px 0 0; }
-@media (max-width: 560px) { .np-grid { grid-template-columns: 1fr; } .np-preview { width: 100%; } }
+.np-status { margin: 2px 0 0; }
+.np-status:empty, .np-chart-status:empty { display: none; }
+.np-checks { display: flex; flex-wrap: wrap; gap: 2px 9px; margin: 4px 0 0; }
+.np-checks label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.np-chart-box { position: relative; }
+@media (max-width: 560px) { .np-grid, .np-views { grid-template-columns: 1fr; } }
 /* Settings > Newman Projections */
 dialog.newman-settings { width: min(96vw, 600px); max-height: 92vh; }
 .newman-settings h3 { margin: 12px 0 2px; font-size: 13px; }

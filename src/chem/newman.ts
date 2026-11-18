@@ -158,6 +158,34 @@ const largest = (gs: NewmanGroup[]): NewmanGroup | undefined => [...gs].sort((p,
 export const norm360 = (a: number): number => ((a % 360) + 360) % 360;
 export const norm180 = (a: number): number => { const x = norm360(a); return x > 180 ? x - 360 : x; };
 
+/**
+ * The groups as a textbook draws them: the bonds on an atom with three groups 120° apart (in the
+ * order they really are), and the back atom turned to the nearest staggered or eclipsed position
+ * (a gauche conformer at 53° is drawn at 60°). An atom with two groups keeps them a multiple of
+ * 60° apart; one with four or more is left as it is.
+ */
+export function idealGroups(front: NewmanGroup[], back: NewmanGroup[]): { front: NewmanGroup[]; back: NewmanGroup[] } {
+  const spread = (gs: NewmanGroup[]): { gs: NewmanGroup[]; ref: NewmanGroup | undefined; shift: number } => {
+    const ref = largest(gs);
+    if (!ref || gs.length > 3) return { gs: gs.map((g) => ({ ...g })), ref, shift: 0 };
+    const rest = gs.filter((g) => g !== ref).sort((p, q) => norm360(p.angle - ref.angle) - norm360(q.angle - ref.angle));
+    const step = (g: NewmanGroup) => (gs.length === 3 ? (rest.indexOf(g) + 1) * 120 : Math.max(60, Math.min(300, Math.round(norm360(g.angle - ref.angle) / 60) * 60)));
+    const out = gs.map((g) => ({ ...g, angle: g === ref ? ref.angle : norm360(ref.angle + step(g)) }));
+    // how far the real groups sit, on average, from where the ideal ones were put
+    const shift = gs.reduce((sum, g, i) => sum + norm180(g.angle - out[i].angle), 0) / gs.length;
+    return { gs: out, ref, shift };
+  };
+  const f = spread(front), b = spread(back);
+  const turnAll = (x: typeof f, by: number) => x.gs.map((g) => ({ ...g, angle: norm360(g.angle + by) }));
+  if (!f.ref) return { front: f.gs, back: b.gs };
+  const fRef = Math.round((f.ref.angle + f.shift) / 30) * 30;
+  const fOut = turnAll(f, fRef - f.ref.angle);
+  if (!b.ref) return { front: fOut, back: b.gs };
+  const unit = front.length === 3 && back.length === 3 ? 60 : 30;
+  const rel = Math.round(norm180(b.ref.angle + b.shift - (f.ref.angle + f.shift)) / unit) * unit;
+  return { front: fOut, back: turnAll(b, fRef + rel - b.ref.angle) };
+}
+
 /** Rank of each group on its atom by size: 0 the largest, 2 the smallest, 1 between (equal sizes share a rank). */
 export function sizeRanks(gs: NewmanGroup[]): (0 | 1 | 2)[] {
   const sizes = [...new Set(gs.map((g) => Math.round(g.size * 100)))].sort((p, q) => q - p);

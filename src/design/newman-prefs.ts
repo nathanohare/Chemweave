@@ -26,6 +26,18 @@ export interface RingArcLook {
 /** How projections drawn before these settings existed look: a solid black arc and the plain eye. */
 export const OLD_RING_ARC: RingArcLook = { line: 'solid', color: '#000000', bonds: false };
 
+/** How the groups' labels are written. */
+export interface NewmanText {
+  /** The labels' font (absent: the drawing's caption font). */
+  font?: string;
+  /** Their size in points (absent: the drawing's caption size). */
+  size?: number;
+  bold?: boolean;
+  italic?: boolean;
+  /** Make the labels smaller, down to 70% of their size, where they would not fit at full size. */
+  auto: boolean;
+}
+
 export interface NewmanLook {
   /** The circle's radius, as a fraction of the drawing's bond length. */
   radius: number;
@@ -41,6 +53,14 @@ export interface NewmanLook {
   arc?: RingArcLook;
   /** The viewing mark's eye (absent: plain). */
   eye?: EyeStyle;
+  /** Textbook angles: bonds 120° apart on each atom, staggered at exactly 60° (absent: the conformer's true angles). */
+  ideal?: boolean;
+  /** How the labels are written (absent: the drawing's caption text, never made smaller). */
+  text?: NewmanText;
+  /** A sawhorse shows which groups point toward and away from the reader with a wedge and a hashed wedge on each atom. */
+  wedges?: boolean;
+  /** A sawhorse shows R or S beside each stereocenter. */
+  rs?: boolean;
 }
 
 export const NEWMAN_LOOK: NewmanLook = {
@@ -55,6 +75,10 @@ export const NEWMAN_LOOK: NewmanLook = {
   ],
   arc: { line: 'dashed', color: '#808080', bonds: false },
   eye: 'pupil',
+  ideal: true,
+  text: { auto: true },
+  wedges: true,
+  rs: false,
 };
 
 /** Settings ▸ Newman Projections: how new projections and torsion charts look. */
@@ -66,7 +90,7 @@ export interface NewmanPrefs {
   markColor: string;
   /** Where conformer energies come from: MMFF94s+ in the app, or GFN2-xTB (the desktop app runs the person's xtb). */
   method: 'mmff' | 'xtb';
-  chart: { unit: 'kcal/mol' | 'kJ/mol'; insets: 'all' | 'minima' | 'none'; names: 'textbook' | 'klyne' | 'none'; barriers: boolean; barrierColor: string };
+  chart: { unit: 'kcal/mol' | 'kJ/mol'; insets: 'all' | 'minima' | 'none'; names: 'textbook' | 'klyne' | 'none'; barriers: boolean; barrierColor: string; layout: 'rows' | 'follow' };
 }
 
 export const DEFAULT_NEWMAN_PREFS: NewmanPrefs = {
@@ -75,7 +99,7 @@ export const DEFAULT_NEWMAN_PREFS: NewmanPrefs = {
   mark: true,
   markColor: '#1a56db',
   method: 'mmff',
-  chart: { unit: 'kcal/mol', insets: 'all', names: 'textbook', barriers: true, barrierColor: '#1a56db' },
+  chart: { unit: 'kcal/mol', insets: 'all', names: 'textbook', barriers: true, barrierColor: '#1a56db', layout: 'rows' },
 };
 
 const isColour = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
@@ -92,9 +116,17 @@ export function parseNewmanPrefs(raw: unknown): NewmanPrefs {
   }) as NewmanLook['ranks'];
   const c = (r.chart && typeof r.chart === 'object' ? r.chart : {}) as Record<string, unknown>;
   const a = (l.arc && typeof l.arc === 'object' ? l.arc : {}) as Record<string, unknown>, da = D.look.arc!;
+  const t = (l.text && typeof l.text === 'object' ? l.text : {}) as Record<string, unknown>;
+  const text: NewmanText = {
+    ...(typeof t.font === 'string' && t.font.trim() ? { font: t.font.trim().slice(0, 80) } : {}),
+    ...(typeof t.size === 'number' && isFinite(t.size) ? { size: Math.max(4, Math.min(72, t.size)) } : {}),
+    ...(t.bold === true ? { bold: true } : {}), ...(t.italic === true ? { italic: true } : {}),
+    auto: typeof t.auto === 'boolean' ? t.auto : true,
+  };
+  const flag = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d);
   const arc: RingArcLook = { line: pick(a.line, ['solid', 'dashed'], da.line), color: isColour(a.color) ? a.color : da.color, bonds: typeof a.bonds === 'boolean' ? a.bonds : da.bonds };
   return {
-    look: { radius: num(l.radius, 0.2, 2, D.look.radius), reach: num(l.reach, 0.1, 3, D.look.reach), offset: num(l.offset, -45, 45, D.look.offset), dot: typeof l.dot === 'boolean' ? l.dot : D.look.dot, ranks, arc, eye: pick(l.eye, EYE_STYLES, D.look.eye!) },
+    look: { radius: num(l.radius, 0.2, 2, D.look.radius), reach: num(l.reach, 0.1, 3, D.look.reach), offset: num(l.offset, -45, 45, D.look.offset), dot: typeof l.dot === 'boolean' ? l.dot : D.look.dot, ranks, arc, eye: pick(l.eye, EYE_STYLES, D.look.eye!), ideal: flag(l.ideal, true), text, wedges: flag(l.wedges, true), rs: flag(l.rs, false) },
     kind: pick(r.kind, ['newman', 'sawhorse'], D.kind),
     mark: typeof r.mark === 'boolean' ? r.mark : D.mark,
     markColor: isColour(r.markColor) ? r.markColor : D.markColor,
@@ -105,6 +137,7 @@ export function parseNewmanPrefs(raw: unknown): NewmanPrefs {
       names: pick(c.names, ['textbook', 'klyne', 'none'], D.chart.names),
       barriers: typeof c.barriers === 'boolean' ? c.barriers : D.chart.barriers,
       barrierColor: isColour(c.barrierColor) ? c.barrierColor : D.chart.barrierColor,
+      layout: pick(c.layout, ['rows', 'follow'], D.chart.layout),
     },
   };
 }
