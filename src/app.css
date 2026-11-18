@@ -5023,7 +5023,7 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 
 /* SI Project ▸ Trash */
 .si-trash .ask-form { width: min(640px, 86vw); }
-.si-trash-list { max-height: min(52vh, 420px); min-height: 120px; overflow: auto; border: 1px solid var(--line); background: var(--panel); }
+.si-trash-list { max-height: 52vh; min-height: 120px; overflow: auto; border: 1px solid var(--line); background: var(--panel); }
 .si-trash-list:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .si-trash-row { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 0 8px; padding: 3px 8px; border-bottom: 1px solid var(--line); cursor: default; }
 .si-trash-row:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
