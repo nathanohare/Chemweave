@@ -4,7 +4,7 @@
 // Anything the drawing tools set automatically can be changed here by hand.
 
 import { addInfo, setInfo } from './info-tip';
-import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, type PictureLook, type StepRoles, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
+import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, type PictureLook, type StepRoles, type ArrowTextSide, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
 import { fullStyle, tidyStyle } from '../render/highlight';
 import type { HighlightLookPreset } from './highlight-looks';
 
@@ -31,6 +31,8 @@ import { ringFillsOn } from '../chem/ring-fill';
 import { frameMembers } from '../editor/frames';
 import { methylState, writeTerminalMethyls, type MethylStyle } from '../chem/hydrogens';
 import type { TableData } from '../model';
+import { canShowGuides, guidesOn, plainReactionArrow } from '../chem/arrow-text';
+import { RIBBON_ICONS } from './ribbon-icons';
 import { labelAlignment, labelAlignPatch, type LabelAlign } from '../chem/label-align';
 import { labelAtoms, labelLookOf, setLabelFont, setLabelSize } from '../editor/label-font';
 import { ringsThroughBond } from '../chem/aromatic';
@@ -66,10 +68,14 @@ export interface ReactionHooks {
   select(arrowId: number, role: Role): void;
   cleanUp(): void;
   arrange(): void;
-  /** The text above and below the arrow (the nearest line of each), as plain text. */
-  sideText(arrowId: number): { above: string; below: string } | null;
+  /** The text above and below the arrow and its Results line (the nearest line of each), as plain text, with how each lines up. */
+  sideText(arrowId: number): (Record<ArrowTextSide, string> & { align: Record<ArrowTextSide, 'left' | 'center' | 'right'> }) | null;
   /** Set it: a new line of text if there is none, the nearest one changed, or removed when emptied. */
-  setSideText(arrowId: number, side: 'above' | 'below', text: string): void;
+  setSideText(arrowId: number, side: ArrowTextSide, text: string): void;
+  /** Line one side up this arrow's own way (null: the drawing style's). */
+  setTextAlign(arrowId: number, side: ArrowTextSide, how: 'left' | 'center' | 'right' | null): void;
+  /** Show or hide the arrows' dashed text guides (null: as usual). */
+  setGuides(arrowIds: number[], on: boolean | null): void;
 }
 
 type Opt<T> = [T, string];
@@ -328,6 +334,11 @@ export class StylePanel {
     this.number('Head width (pt)', round(r.headWidth), 0.25, 0, 100, (v) => set('Arrowhead size', () => ({ headWidth: v })));
     this.number('Line width (pt)', round(r.lineWidth ?? lw), 0.1, 0.1, 20, (v) => set('Arrow line width', () => ({ lineWidth: Math.abs(v - lw) < 1e-9 ? undefined : v })));
     this.color('Color', r.color, (v) => set('Arrow color', () => ({ color: v })));
+    // the dashed boxes for typing text above and below: shown on plain reaction arrows, and on any other straight arrow when asked
+    if (this.reaction && arrows.every(canShowGuides)) {
+      this.check('Show text guides', arrows.every(guidesOn), (v) => this.reaction!.setGuides(arrows.map((a) => a.id), v === arrows.every(plainReactionArrow) ? null : v),
+        'The dashed boxes above and below the arrow for typing reagents, conditions and the Results line. Plain reaction arrows show them; turn them on here for any other straight arrow.');
+    }
     if (arrows.length === 1) this.reactionControls(r);
   }
 
@@ -340,11 +351,12 @@ export class StylePanel {
     // reagents and conditions typed straight in (the "+" boxes on the drawing do the same)
     const sides = hooks.sideText(r.id);
     if (sides) {
-      for (const [side, label] of [['above', 'Above arrow'], ['below', 'Below arrow']] as const) {
+      const fields: [ArrowTextSide, string, string][] = [['above', 'Above arrow', 'Reagents'], ['below', 'Below arrow', 'Solvent, temperature, time'], ['results', 'Results', 'Yield, ee, dr']];
+      for (const [side, label, hint] of fields) {
         const ta = document.createElement('textarea');
         ta.rows = Math.min(4, Math.max(1, sides[side].split('\n').length));
         ta.value = sides[side];
-        ta.placeholder = side === 'above' ? 'Reagents' : 'Solvent, temperature, time';
+        ta.placeholder = hint;
         ta.className = 'style-arrow-text';
         const set = () => { if (ta.value !== sides[side]) hooks.setSideText(r.id, side, ta.value); };
         ta.addEventListener('change', set);
@@ -353,7 +365,32 @@ export class StylePanel {
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ta.blur(); }
         });
         ta.addEventListener('input', () => { ta.rows = Math.min(4, Math.max(1, ta.value.split('\n').length)); });
-        this.row(label, ta, `Text ${side} the arrow. Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting.`);
+        // how its lines line up, beside it: this arrow's own choice; the pressed button again goes back to the drawing style's
+        const own = r.textLook?.align?.[side];
+        const seg = document.createElement('div');
+        seg.className = 'seg seg-align';
+        seg.setAttribute('role', 'radiogroup');
+        seg.setAttribute('aria-label', `${label}: alignment`);
+        for (const how of ['left', 'center', 'right'] as const) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.innerHTML = RIBBON_ICONS[`doc-align-${how}`] ?? how[0].toUpperCase();
+          const name = how === 'left' ? 'Align Left' : how === 'center' ? 'Center' : 'Align Right';
+          b.title = own === how ? `${name} (this arrow's own; click to use the drawing style's)` : name;
+          b.setAttribute('role', 'radio');
+          b.setAttribute('aria-label', name);
+          b.setAttribute('aria-checked', String(sides.align[side] === how));
+          if (own === how) b.classList.add('own');
+          b.addEventListener('click', () => hooks.setTextAlign(r.id, side, own === how ? null : how));
+          seg.append(b);
+        }
+        const box = document.createElement('div');
+        box.className = 'style-arrow-field';
+        box.append(ta, seg);
+        const tip = side === 'results'
+          ? 'The line under the text below the arrow, for yield, ee or dr. It has its own font, size, alignment and gap in Drawing Style.'
+          : `Text ${side} the arrow.`;
+        this.row(label, box, `${tip} Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting. A numbered list of steps lines up on the left unless you pick an alignment.`);
       }
     }
     const names: [Role, string, string][] = [

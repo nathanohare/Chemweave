@@ -176,6 +176,7 @@ import { templateIcon } from './ui/template-icons';
 import { StructureChecks } from './chem/warnings';
 import { idText, labelClashes, parseIdStart, type IdStyle } from './chem/compound-numbers';
 import { schemeItems, isReactionArrow, reactionSteps, itemFinder, plainMeasure } from './chem/reaction';
+import { canShowGuides, guidesOn as arrowGuidesOn, plainReactionArrow } from './chem/arrow-text';
 import { stoichiometryBook, type StoichRow, type StoichRole } from './chem/stoichiometry';
 import { isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
 import { showBalance } from './ui/balance-dialog';
@@ -3165,11 +3166,13 @@ function schemeFrom(got: Record<string, string>): Partial<SchemePrefs> {
   const len = (k: SchemeDistance) => { const v = got[k]; return !v || v.trim() === '' ? null : clampSchemeDistance(k, Number(v)) ?? null; };
   const align = (v: string | undefined) => (v === 'left' || v === 'center' || v === 'right' ? v : null);
   return {
-    structGap: len('structGap'), plusGap: len('plusGap'), textGap: len('textGap'), textGapBelow: len('textGapBelow'), lead: len('lead'), headGap: len('headGap'),
+    structGap: len('structGap'), plusGap: len('plusGap'), textGap: len('textGap'), textGapBelow: len('textGapBelow'), resultsGap: len('resultsGap'), lead: len('lead'), headGap: len('headGap'),
     // (its size and font are the drawing style's now: Settings > Drawing Style)
     textSize: null,
     textAlign: align(got.textAlign) ?? 'center',
     textAlignBelow: align(got.textAlignBelow),
+    textAlignResults: align(got.textAlignResults),
+    listLeft: got.listLeft !== 'false',
     helpers: got.helpers === 'true', fit: got.fit === 'true', sameLength: got.sameLength === 'true',
   };
 }
@@ -3186,11 +3189,14 @@ async function schemeSettings(): Promise<void> {
   const got = await ask('Scheme Settings', [
     dist('structGap', 'Gap between arrow and structures', auto(SPACING.gap)),
     dist('plusGap', 'Space either side of +', auto(SPACING.plus)),
-    { name: 'helpers', label: 'Show + boxes above and below new arrows', value: String(p.helpers), type: 'checkbox' },
+    { name: 'helpers', label: 'Show text guides on reaction arrows', value: String(p.helpers), type: 'checkbox' },
     { name: 'textAlign', label: 'Text alignment above the arrow', value: p.textAlign, options: aligns },
     dist('textGap', 'Gap between arrow and text above', auto(SPACING.conditions)),
     { name: 'textAlignBelow', label: 'Text alignment below the arrow', value: p.textAlignBelow ?? '', options: [{ value: '', label: 'Same as above' }, ...aligns] },
     dist('textGapBelow', 'Gap between arrow and text below', 'Same as above'),
+    { name: 'textAlignResults', label: 'Results alignment (yield, ee under the text below)', value: p.textAlignResults ?? '', options: [{ value: '', label: 'Same as below' }, ...aligns] },
+    dist('resultsGap', 'Gap between text below and Results', auto(SPACING.results)),
+    { name: 'listLeft', label: 'Left-align a numbered list of steps', value: String(p.listLeft ?? true), type: 'checkbox' },
     { name: 'fit', label: 'Fit arrow length to its text (moves the products)', value: String(p.fit), type: 'checkbox' },
     { name: 'sameLength', label: 'Clean Up Reaction makes arrows the same length', value: String(p.sameLength), type: 'checkbox' },
     dist('lead', 'Arrow before the text starts', auto(SPACING.overhang)),
@@ -3659,6 +3665,8 @@ const animateDialog = {
 const pickedCurved = (): boolean => [...editor.sel.arrows].some((id) => { const r = doc.arrows.get(id); return !!r && isCurved(r); });
 /** Whether the selection is in a Smart Scheme laid out as a cycle (Clean Up Cycle applies). */
 const smartIsCycle = (): boolean => { const id = editor.selectedSmart(); return id !== null && editor.smartIsCycle(id); };
+/** The selected straight arrows that can show text guides. */
+const pickedStraightArrows = (): number[] => [...editor.sel.arrows].filter((id) => { const r = doc.arrows.get(id); return !!r && canShowGuides(r); });
 const pickedReactionArrow = (): number | undefined => [...editor.sel.arrows].find((id) => { const r = doc.arrows.get(id); return !!r && isReactionArrow(r); });
 
 const mapChoice: Record<string, string> = { numbers: 'true', colours: 'false', bonds: 'false' };
@@ -9403,6 +9411,13 @@ const COMMANDS: Record<string, () => unknown> = {
   'explicit-h': () => flash(editor.toggleHydrogens(), 6000),
   'periodic-table': () => { editor.setTool('element'); periodicTable.open(); },
   'aromatic-circles': () => flash(editor.toggleAromaticCircles() ?? 'No aromatic rings here: select a ring with alternating double bonds, or one drawn with a circle.', 5000),
+  'text-guides': () => {
+    const ids = [...editor.sel.arrows].filter((id) => { const r = doc.arrows.get(id); return !!r && canShowGuides(r); });
+    if (!ids.length) { flash('Select a straight arrow first.'); return; }
+    const on = !ids.every((id) => arrowGuidesOn(doc.arrows.get(id)!));
+    editor.setArrowGuides(ids, on === ids.every((id) => plainReactionArrow(doc.arrows.get(id)!)) ? null : on);
+  },
+  'split-steps': () => { if (!editor.splitSteps()) flash('No numbered steps to split. Write them as "1. n-BuLi; 2. PhCHO".'); },
   'show-roles': () => { editor.showRoles = !editor.showRoles; $('[data-cmd="show-roles"]')?.setAttribute('aria-checked', String(editor.showRoles)); editor.requestScene(); storeSettings(); },
   'check-structure': () => checkStructure(),
   'stereo-labels': () => toggleStereoLabels(),
@@ -12792,6 +12807,7 @@ function drawingMenu(): MenuItem[] {
       { label: 'Shape', items: [{ cmd: 'arrow-s-shape', label: 'S' }, { cmd: 'arrow-single-curve', label: 'Single Curve' }, { cmd: 'arrow-shape-u', label: 'U-Turn' }, { cmd: 'arrow-shape-loop', label: 'Loop' }] },
       { cmd: 'flip-arrow-bend' }, { cmd: 'arrow-reverse' }, { cmd: 'arrow-smooth-path' }, { cmd: 'arrow-simplify-path' }, null, { cmd: 'attach-arrow' }, { cmd: 'detach-arrow' },
     ] }, ...(editor.options.arrowProducts ? [{ cmd: 'draw-from-arrows' }, { cmd: 'check-arrows' }] : [])] : []),
+    ...(pickedStraightArrows().length ? [{ cmd: 'text-guides', checked: pickedStraightArrows().every((id) => arrowGuidesOn(doc.arrows.get(id)!)) }, ...(pickedReactionArrow() !== undefined ? [{ cmd: 'split-steps' }] : [])] : []),
     ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : []),
     // (a scheme is about whole structures and arrows, not an atom or a bond picked on its own)
     // (a catalytic cycle: another loop, or a species off it, at what was clicked)
@@ -14212,6 +14228,8 @@ stylePanel.reaction = {
   arrange: () => command('arrange-scheme'),
   sideText: (id) => editor.arrowSideText(id),
   setSideText: (id, side, text) => editor.setArrowSideText(id, side, text),
+  setTextAlign: (id, side, how) => editor.setArrowTextAlign(id, side, how),
+  setGuides: (ids, on) => editor.setArrowGuides(ids, on),
 };
 stylePanel.tables = {
   part: () => editor.tablePart,

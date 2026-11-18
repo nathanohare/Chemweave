@@ -13,6 +13,8 @@ export const ATTACH_TAG = 'Chem Illustrator attached';
 export const IGNORE_TAG = 'Chem Illustrator ignore';
 /** The objecttag on a text box set by hand to be read as chemistry ('yes') or as plain text ('no'). */
 export const CHEM_TAG = 'Chem Illustrator chemistry';
+/** Marks text under a reaction arrow as its Results line (yield, ee, dr); ChemDraw sees ordinary text below the arrow. */
+export const RESULTS_TAG = 'Chem Illustrator results';
 
 /** The usual gap between a structure and its label: a third of a bond length. */
 export function defaultGap(doc: Doc): number {

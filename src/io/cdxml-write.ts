@@ -19,13 +19,13 @@ import { toSymbolPieces, isSymbolFont, faceFromStyle } from '../richtext';
 import { readMark } from '../chem/label-marks';
 import { layoutText, SINGLE } from '../text/layout';
 import { runsForChemDraw, TEXT_TAG } from '../text/chemdraw-text';
-import { ATTACH_TAG, CHEM_TAG, IGNORE_TAG, attachTag } from '../editor/attached';
+import { ATTACH_TAG, CHEM_TAG, IGNORE_TAG, RESULTS_TAG, attachTag } from '../editor/attached';
 import { captionSpecies } from '../chem/species';
 import { atomStereoText, bondStereoText, StereoPlacer, PlacedLabel } from '../chem/stereo';
 import { dataUrl, fromDataUrl, rasterPng } from '../render/images';
 import { itemsToEmf } from '../render/emf';
 import { crystalItems } from '../design/xray';
-import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, BRACKET_PAIR_TAG, PIN_TAG, CURVE_ARROW_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
+import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, BRACKET_PAIR_TAG, PIN_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
 import { stackItems, usesStacking } from '../editor/stacking';
 import { frameTag } from '../editor/frames';
 import { tableContents } from '../editor/table-figs';
@@ -302,7 +302,7 @@ class CdxmlWriter {
   private writeGuides(): boolean {
     const st = this.doc.style;
     // the drawing style's text over arrows and arrow sizes (ChemDraw's style has no place for them)
-    const own = { size: st.arrowTextSize, font: st.arrowTextFont, width: st.arrowWidth, head: st.arrowHeadLength, headWidth: st.arrowHeadWidth, scheme: st.scheme };
+    const own = { size: st.arrowTextSize, font: st.arrowTextFont, resultsSize: st.resultsTextSize, resultsFont: st.resultsTextFont, width: st.arrowWidth, head: st.arrowHeadLength, headWidth: st.arrowHeadWidth, scheme: st.scheme };
     const arrow = Object.values(own).some((v) => v !== undefined && v !== '') ? JSON.stringify(own) : null;
     const a = this.pageTag(GUIDES_TAG, guidesText(this.doc.guides));
     const b = this.pageTag(ARROW_TEXT_TAG, arrow);
@@ -1493,7 +1493,7 @@ class CdxmlWriter {
 
   private fillCaption(t: Element, c: Caption): void {
     for (const ch of kids(t)) {
-      if (ch.nodeName === 's' || (ch.nodeName === 'objecttag' && [TEXT_TAG, ATTACH_TAG, IGNORE_TAG, TURN_TAG, CHEM_TAG].includes(ch.getAttribute('Name') ?? ''))) t.removeChild(ch);
+      if (ch.nodeName === 's' || (ch.nodeName === 'objecttag' && [TEXT_TAG, ATTACH_TAG, IGNORE_TAG, TURN_TAG, CHEM_TAG, RESULTS_TAG].includes(ch.getAttribute('Name') ?? ''))) t.removeChild(ch);
     }
     const def = this.doc.style.captionSize;
     // lists and paragraph formatting are written as ChemDraw can show them, with a tag to read them back
@@ -1517,6 +1517,7 @@ class CdxmlWriter {
       t.appendChild(this.el('objecttag', { TagType: 'String', Name: ATTACH_TAG, Value: attachTag(c.attach, on === undefined ? undefined : this.nodeId(on)), Visible: 'no' }));
     }
     if (c.ignoreWarnings) t.appendChild(this.el('objecttag', { TagType: 'String', Name: IGNORE_TAG, Value: 'yes', Visible: 'no' }));
+    if (c.results) t.appendChild(this.el('objecttag', { TagType: 'String', Name: RESULTS_TAG, Value: 'yes', Visible: 'no' }));
     // text read as chemistry is marked for ChemDraw (Interpret Chemically); a choice made by hand is kept for us
     if (c.chem !== undefined) t.appendChild(this.el('objecttag', { TagType: 'String', Name: CHEM_TAG, Value: c.chem ? 'yes' : 'no', Visible: 'no' }));
     this.set(t, 'InterpretChemically', captionSpecies(this.doc, c) ? 'yes' : null);
@@ -1565,7 +1566,7 @@ class CdxmlWriter {
     // ChemDraw does
     const legacy = this.source('r', r.id, ['graphic']);
     if (legacy) {
-      if (o && sameExcept(r, o, ['step', 'reagentFor', 'pin']) && this.pinValue(r) === this.pinValue(o)) return;
+      if (o && sameExcept(r, o, ['step', 'reagentFor', 'pin', 'textLook']) && this.ownValue(r) === this.ownValue(o)) return;
       if (r.bez?.length) { this.writeCurveArrow(r, legacy, null); return; }
       const a = this.el('arrow', { id: legacy.getAttribute('id') ?? r.id });
       this.fillArrow(a, r);
@@ -1582,11 +1583,11 @@ class CdxmlWriter {
     if (r.bez?.length || e?.nodeName === 'curve') { this.writeCurveArrow(r, e, o); return; }
     if (e && o) {
       if (!deepEqual(r.morph, o.morph)) { this.writeMorph(e, r); this.changed = true; }
-      if (this.pinValue(r) !== this.pinValue(o)) { this.writePin(e, r); this.changed = true; }
-      if (sameExcept(r, o, ['step', 'reagentFor', 'morph', 'pin'])) return;
+      if (this.ownValue(r) !== this.ownValue(o)) { this.writePin(e, r); this.changed = true; }
+      if (sameExcept(r, o, ['step', 'reagentFor', 'morph', 'pin', 'textLook'])) return;
       const d = { x: r.tail.x - o.tail.x, y: r.tail.y - o.tail.y };
       const moved = { ...o, tail: r.tail, head: { x: o.head.x + d.x, y: o.head.y + d.y } };
-      if (sameExcept(r, moved, ['step', 'reagentFor', 'morph', 'pin'])) {
+      if (sameExcept(r, moved, ['step', 'reagentFor', 'morph', 'pin', 'textLook'])) {
         shift(e, d.x, d.y);
         for (const g of this.legacyOf(e)) shift(g, d.x, d.y);
       } else {
@@ -1612,8 +1613,8 @@ class CdxmlWriter {
     const ox = o.head.x - o.tail.x, oy = o.head.y - o.tail.y, d2 = ox * ox + oy * oy;
     if (d2 < 1e-9) return false;
     if (!deepEqual(r.morph, o.morph)) { this.writeMorph(e, r); this.changed = true; }
-    if (this.pinValue(r) !== this.pinValue(o)) { this.writePin(e, r); this.changed = true; }
-    if (sameExcept(r, o, ['step', 'reagentFor', 'morph', 'pin'])) return true;
+    if (this.ownValue(r) !== this.ownValue(o)) { this.writePin(e, r); this.changed = true; }
+    if (sameExcept(r, o, ['step', 'reagentFor', 'morph', 'pin', 'textLook'])) return true;
     // the move taking the old ends to the new (complex numbers: z -> tail + (z - oldTail) k)
     const rx = r.head.x - r.tail.x, ry = r.head.y - r.tail.y;
     const kx = (rx * ox + ry * oy) / d2, ky = (ry * ox - rx * oy) / d2;
@@ -1649,7 +1650,7 @@ class CdxmlWriter {
    * arc becomes an arrow again, in the curve's place.
    */
   private writeCurveArrow(r: Arrow, e: Element | null, o: Arrow | null): void {
-    if (e && o && sameExcept(r, o, ['step', 'reagentFor', 'morph', 'pin']) && this.pinValue(r) === this.pinValue(o)) return;
+    if (e && o && sameExcept(r, o, ['step', 'reagentFor', 'morph', 'pin', 'textLook']) && this.ownValue(r) === this.ownValue(o)) return;
     // still the arc of an ellipse ChemDraw drew (moved, turned or scaled whole): its arc arrow again,
     // whose head and line ChemDraw draws its own way, not a curve
     const ell = arrowEllipse(r);
@@ -1710,11 +1711,17 @@ class CdxmlWriter {
     return JSON.stringify(v);
   }
 
-  /** What an arrow's ends are stuck to, so they still follow their structure when the file is opened here again. */
+  /** What an arrow's ends are stuck to, so they still follow their structure when the file is opened here again (and its own text settings). */
   private writePin(e: Element, r: Arrow): void {
-    for (const c of kids(e)) if (c.nodeName === 'objecttag' && c.getAttribute('Name') === PIN_TAG) e.removeChild(c);
+    for (const c of kids(e)) if (c.nodeName === 'objecttag' && (c.getAttribute('Name') === PIN_TAG || c.getAttribute('Name') === ARROW_LOOK_TAG)) e.removeChild(c);
     const v = this.pinValue(r);
     if (v) e.appendChild(this.el('objecttag', { TagType: 'String', Name: PIN_TAG, Value: v, Visible: 'no' }));
+    if (r.textLook) e.appendChild(this.el('objecttag', { TagType: 'String', Name: ARROW_LOOK_TAG, Value: JSON.stringify(r.textLook), Visible: 'no' }));
+  }
+
+  /** An arrow's pins and own text settings as saved: to see whether either changed. */
+  private ownValue(r: Arrow): string {
+    return this.pinValue(r) + '|' + (r.textLook ? JSON.stringify(r.textLook) : '');
   }
 
   /** The step's animation settings, with atoms named by their nodes' ids in this file. */

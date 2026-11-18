@@ -613,6 +613,8 @@ export interface Caption {
   attach?: Attachment;
   /** Don't warn about this compound label (shared with a different structure on purpose). */
   ignoreWarnings?: boolean;
+  /** The Results line under the text below a reaction arrow (yield, ee, dr): its own place and look. */
+  results?: boolean;
   /**
    * Read as chemistry (true) or as plain text (false), set by hand; left out, a text box whose
    * whole text is a formula, ion or abbreviation (BF4−, DMAP, CH2Cl2) is read as chemistry by
@@ -826,6 +828,21 @@ export interface Arrow {
   pin?: { tail?: Pin; head?: Pin };
   /** Bent by hand: it keeps its curve when the structure changes, rather than finding its own way round. */
   bent?: boolean;
+  /** Its text above and below set for this arrow alone: how each side lines up, and whether its dashed text guides show. */
+  textLook?: ArrowTextLook;
+}
+
+/** A line of text beside a reaction arrow: above it, below it, or the Results line under the text below (yield, ee, dr). */
+export type ArrowTextSide = 'above' | 'below' | 'results';
+
+/**
+ * One arrow's own settings for its text. Each is left out to follow the drawing: the drawing
+ * style's alignment (left for a numbered list of steps), and guides only on plain reaction arrows.
+ */
+export interface ArrowTextLook {
+  align?: Partial<Record<ArrowTextSide, 'left' | 'center' | 'right'>>;
+  /** Show (true) or hide (false) the dashed boxes for typing text above and below it. */
+  guides?: boolean;
 }
 
 /**

@@ -703,6 +703,13 @@ details.style-group > :not(summary) { margin-left: 12px; }
 .role-products .role-dot { color: #16955a; }
 .role-above .role-dot, .role-below .role-dot { color: #c47a00; }
 .style-row textarea.style-arrow-text { width: 100%; resize: vertical; padding: 2px 4px; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); }
+/* an arrow's text field with its alignment buttons beside it */
+.style-row .style-arrow-field { display: flex; align-items: flex-start; gap: 3px; min-width: 0; }
+.style-row .style-arrow-field textarea.style-arrow-text { flex: 1 1 auto; min-width: 0; }
+.style-row .seg.seg-align { flex: none; }
+.style-row .seg.seg-align button { padding: 1px 2px; display: inline-flex; align-items: center; }
+.style-row .seg.seg-align button svg { width: 14px; height: 14px; }
+.style-row .seg.seg-align button.own[aria-checked='true'] { background: var(--accent); color: var(--accent-ink, #fff); }
 .style-row select, .style-row input[type='number'], .style-row input.style-font { width: 100%; padding: 2px 4px; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); }
 .style-row input[type='color'] { width: 44px; height: 22px; padding: 0 2px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); }
 #side-content table, .cr-lent table { border-collapse: collapse; width: 100%; }
