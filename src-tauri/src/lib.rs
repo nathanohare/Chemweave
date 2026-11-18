@@ -517,6 +517,8 @@ pub fn run() {
             folders::make_folder,
             folders::si_move,
             folders::si_remove_lock,
+            folders::si_list_dir,
+            folders::si_remove_trash,
             file_types::launch_files,
             file_types::file_types_get,
             file_types::file_types_set,

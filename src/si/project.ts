@@ -481,6 +481,35 @@ export class SiProject {
     this.savedTree = structuredClone(tree);
   }
 
+  /**
+   * Put a section's saved tree (a node of project.json's section_tree, as the Trash keeps it) at
+   * `index` among the sections of `parentId` (the top level when that is gone or can't hold it),
+   * save, and read the project again. Gives a note when it went to the top level instead.
+   */
+  async restoreTreeNode(node: Json, parentId: string | null, index: number | null): Promise<string> {
+    this.checkWritable();
+    const tree = this.mergeTree(this.treeJson(this.top), this.savedTree);
+    const find = (ns: Json[], id: string): Json | null => {
+      for (const n of ns) { if (n.id === id) return n; const hit = find((n.children as Json[]) ?? [], id); if (hit) return hit; }
+      return null;
+    };
+    let note = '';
+    let list = tree;
+    if (parentId) {
+      const parent = find(tree, parentId);
+      const ok = parent && this.sections.some((x) => x.id === parentId && x.type === 'text');
+      if (ok) list = ((parent.children as Json[] | undefined) ?? (parent.children = [])) as Json[];
+      else note = ' Its parent section no longer exists, so it was put at the top level.';
+    }
+    const at = note || index === null ? list.length : Math.max(0, Math.min(index, list.length));
+    list.splice(at, 0, node);
+    const out: Json = { format_version: FORMAT_VERSION, saved_by_version: this.programVersion || this.savedBy, ...this.settings, section_tree: tree };
+    copyFloats(this.settings, out);
+    await this.writeJson(PROJECT_FILE, out);
+    await this.reload();
+    return note;
+  }
+
   async saveSection(s: SiSection): Promise<void> {
     this.checkWritable();
     Object.assign(s.data, { id: s.id, type: s.type, name: s.name });
@@ -599,6 +628,54 @@ export class SiProject {
     to.splice(Math.max(0, Math.min(index, to.length)), 0, s);
     s.parentId = parent?.id ?? null;
     await this.saveSettings();
+  }
+
+  /**
+   * Move a section, with its sub-sections, to the project's Trash as one item, in the form SI
+   * Assistant's Trash shows and restores (the Spectra section stays: it can't be deleted).
+   */
+  async deleteSection(id: string): Promise<void> {
+    this.checkWritable();
+    const s = this.section(id);
+    const all = this.subtree(s);
+    if (all.some((x) => x.type === 'spectra')) {
+      throw new SiProjectError(s.type === 'spectra' ? 'The Spectra section can’t be deleted: it holds the compounds’ spectra pages. Leave it out of the compiled SI in Compile instead.' : `“${s.name}” holds the Spectra section, which can’t be deleted. Move the Spectra section out of it first.`);
+    }
+    const anchoredTo = s.type === 'xray' && s.data.anchored ? str(s.data.compound) : '';
+    const list = anchoredTo ? (this.anchored.get(anchoredTo) ?? []) : s.parentId ? this.section(s.parentId).children : this.top;
+    const index = list.indexOf(s);
+    const tree = this.mergeTree(this.treeJson([s]), this.savedTree)[0] ?? { id: s.id };
+    await this.moveToTrash(all.map((x) => x.folder), 'section', s.name, {
+      section_id: s.id, type: s.type, original_index: index, parent_id: s.parentId ?? '', tree, subsections: all.length - 1,
+      ...(anchoredTo ? { anchored_to: anchoredTo } : {}),
+    });
+    list.splice(index, 1);
+    if (anchoredTo && !list.length) this.anchored.delete(anchoredTo);
+    await this.saveSettings();
+    // X-ray structures under the compounds of a deleted Data section stay in the project, in the tree
+    const gone = new Set(all.filter((x) => x.type === 'data').flatMap((x) => compoundsOf(x).map((c) => c.id)));
+    for (const cid of gone) {
+      for (const x of this.anchored.get(cid) ?? []) { x.data.anchored = false; x.parentId = null; this.top.push(x); await this.saveSection(x).catch(() => {}); }
+      this.anchored.delete(cid);
+    }
+    if (gone.size) await this.saveSettings();
+  }
+
+  /** A section and the sections under it, the section first. */
+  subtree(s: SiSection): SiSection[] { return [s, ...s.children.flatMap((c) => this.subtree(c))]; }
+
+  /** Move a scheme page, with its compound pages, to the Trash as one item SI Assistant restores. */
+  async deleteScheme(id: string): Promise<void> {
+    this.checkWritable();
+    const k = this.scheme(id);
+    const s = this.section(k.sectionId);
+    const index = s.items.indexOf(k);
+    const folders = k.children.map((c) => c.folder);
+    await this.moveToTrash([k.folder, ...folders], 'scheme', str(k.data.name) || 'Scheme', {
+      scheme_id: k.id, section_id: s.id, section_name: s.name, original_index: index, children: folders.map(nameOf),
+    });
+    s.items.splice(index, 1);
+    await this.saveSection(s);
   }
 
   /** The text of a Custom section. */
@@ -1100,6 +1177,44 @@ export class SiProject {
     } else if (index > at) index--;
     to.items.splice(Math.max(0, Math.min(index, to.items.length)), 0, c);
     if (to !== from) await this.saveSection(from);
+    await this.saveSection(to);
+  }
+
+  /** Move a scheme page, with its compound pages, to `index` among the pages of a Data section. */
+  async moveScheme(id: string, sectionId: string, index: number): Promise<void> {
+    this.checkWritable();
+    const k = this.scheme(id);
+    const from = this.section(k.sectionId);
+    const to = this.dataSection(sectionId);
+    const at = from.items.indexOf(k);
+    if (to === from) {
+      from.items.splice(at, 1);
+      if (index > at) index--;
+      to.items.splice(Math.max(0, Math.min(index, to.items.length)), 0, k);
+      await this.saveSection(to);
+      return;
+    }
+    // its folder and its compounds' folders move together; any that can't is put back
+    const moves: [string, string][] = [];
+    const base = join(to.folder, COMPOUNDS_DIR);
+    try {
+      for (const f of [k.folder, ...k.children.map((c) => c.folder)]) {
+        const dest = await this.freeFolder(base, nameOf(f));
+        await this.folder.move(f, dest);
+        moves.push([f, dest]);
+      }
+    } catch (e) {
+      for (const [a, b] of moves.reverse()) await this.folder.move(b, a).catch(() => {});
+      throw new SiProjectError(`“${str(k.data.name)}” could not be moved, so nothing was changed. A file in it is probably open in another program or being synced. (${e instanceof Error ? e.message : String(e)})`);
+    }
+    const [[, kDest], ...rest] = moves;
+    this.renameKnown(k.folder, kDest);
+    k.folder = kDest;
+    k.sectionId = to.id;
+    k.children.forEach((c, i) => { this.renameKnown(c.folder, rest[i][1]); c.folder = rest[i][1]; c.sectionId = to.id; });
+    from.items.splice(at, 1);
+    to.items.splice(Math.max(0, Math.min(index, to.items.length)), 0, k);
+    await this.saveSection(from);
     await this.saveSection(to);
   }
 

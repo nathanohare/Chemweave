@@ -17,6 +17,15 @@ export interface SiFolder {
   move(from: string, to: string): Promise<void>;
   /** Delete one file (the lock), if it is there. */
   remove(rel: string): Promise<void>;
+  /** The files and folders directly inside `rel` (hidden ones left out), sorted by name; [] when there is no such folder. */
+  entries(rel: string): Promise<{ name: string; folder: boolean }[]>;
+  /** Delete a folder of the project's Trash (trash/ itself or one entry in it) with everything in it. Nothing else can be deleted this way. */
+  removeTrash(rel: string): Promise<void>;
+}
+
+/** Whether `rel` is the project's trash folder or one entry directly inside it. */
+export function isTrashPath(rel: string): boolean {
+  return /^trash(\/[^/]+)?$/.test(norm(rel)) && !norm(rel).split('/').some((x) => x === '..' || x === '.');
 }
 
 /**
@@ -71,6 +80,23 @@ export class MemoryFolder implements SiFolder {
     }
   }
   async remove(rel: string): Promise<void> { this.files.delete(norm(rel)); }
+  async entries(rel: string): Promise<{ name: string; folder: boolean }[]> {
+    const r = norm(rel);
+    const out = new Map<string, boolean>();
+    for (const k of this.files.keys()) {
+      if (r && !k.startsWith(r + '/')) continue;
+      const rest = r ? k.slice(r.length + 1) : k;
+      const [first, ...more] = rest.split('/');
+      if (first.startsWith('.')) continue;
+      out.set(first, (out.get(first) ?? false) || more.length > 0);
+    }
+    return [...out].map(([name, folder]) => ({ name, folder })).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  }
+  async removeTrash(rel: string): Promise<void> {
+    if (!isTrashPath(rel)) throw new Error(`Only the project's Trash can be emptied this way (not ${rel}).`);
+    const r = norm(rel);
+    for (const k of [...this.files.keys()]) if (k === r || k.startsWith(r + '/')) this.files.delete(k);
+  }
   /** Text of a file (tests). */
   text(rel: string): string | undefined {
     const b = this.files.get(norm(rel));
@@ -128,5 +154,14 @@ export class DiskFolder implements SiFolder {
   }
   async remove(rel: string): Promise<void> {
     await this.invoke('si_remove_lock', { path: this.abs(rel) });
+  }
+  async entries(rel: string): Promise<{ name: string; folder: boolean }[]> {
+    if (!(await this.exists(rel))) return [];
+    const got = await this.invoke<{ name: string; folder: boolean }[]>('si_list_dir', { path: this.abs(rel) });
+    return got.filter((e) => !e.name.startsWith('.')).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  }
+  async removeTrash(rel: string): Promise<void> {
+    if (!isTrashPath(rel)) throw new Error(`Only the project's Trash can be emptied this way (not ${rel}).`);
+    await this.invoke('si_remove_trash', { path: this.abs(rel) });
   }
 }

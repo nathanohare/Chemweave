@@ -14,7 +14,7 @@ import type { DocText } from '../document/document';
 import { compileSi, objectLabels } from '../si/compile-doc';
 import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
-import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
+import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
 import { ALL_FIELDS, NUCLEI, fieldDef, learnedChoices, nucleusLabel, partText, CORE_FIELDS, LIBRARY_FIELDS, type FieldDef, type Part, type FieldEntry } from '../si/fields';
 import { CITE, MENTION, parseMarkup } from '../si/markup';
@@ -25,6 +25,7 @@ import { SiTableEditor } from './si-table';
 import { SiFigureEditor } from './si-figure';
 import { SiPictures, PICTURE_MIME } from './si-picture';
 import { SiXrayPage } from './si-xray';
+import { SiAttachmentPage } from './si-attachment';
 import { SiFrontPage } from './si-front';
 import { SiSchemePage } from './si-scheme';
 import { SiSpectraPage } from './si-spectra';
@@ -38,6 +39,11 @@ import { ask, askChoice } from './ask';
 import { allWarnings, compoundHrms, hrmsSpecies, isDismissed, monoisotopic, outOfTolerance, ID_KEY, type SiWarning } from '../si/checks';
 import { adductDisplay, sameFormula, speciesLabel, ChemError, type MolFacts } from '../si/chem';
 import { addInfo } from './info-tip';
+import { openTrash } from './si-trash';
+import { compoundsUnder } from '../si/trash';
+import { saveSnapshot } from '../si/snapshot';
+import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
+import { popupMenu } from './popup-menu';
 
 export interface SiModeHost {
   flash(msg: string, ms?: number): void;
@@ -133,6 +139,7 @@ const RIBBON = `
     <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
     <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is picked">Picture Format</button>
     <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
+    <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
     <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
     <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
     <button role="tab" data-si-tab="spectrum" aria-selected="false" class="rb-context" hidden title="Shown on a compound's spectra page">Spectrum</button>
@@ -238,6 +245,12 @@ const RIBBON = `
       <button class="rb-big" data-si-fig="remove-figure" data-ic="delete" title="Take the figure and its caption out of the text (its picture stays in images/)"><span class="rb-icon">✕</span>Delete Figure</button>
     </div><div class="rb-label">Figure</div></div>
   </div>
+  <div class="rb-panel" data-si-panel="attach" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-attach="choose" data-ic="insert-object" title="Choose File: the PDF or picture printed as this section (a copy is kept in the project folder; the one it replaces goes to the Trash). A file can also be dropped on the preview"><span class="rb-icon">▤</span>Choose File</button>
+      <button class="rb-big" data-si-attach="remove" data-ic="delete" title="Remove File: the file goes to the project's Trash (Home ▸ Trash puts it back)"><span class="rb-icon">✕</span>Remove File</button>
+    </div><div class="rb-label">File</div></div>
+  </div>
   <div class="rb-panel" data-si-panel="xray" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-xray="choose-cif" data-ic="insert-object" title="Choose CIF: the structure's CIF file (a copy is kept in the project folder; the one it replaces goes to the Trash)"><span class="rb-icon">▤</span>Choose CIF</button>
@@ -342,9 +355,15 @@ const RIBBON = `
       <button class="rb-big" data-si="new-compound" data-ic="compound" title="A new compound page in the Data section picked, after the compound picked (Ctrl+Shift+N)"><span class="rb-icon">⬡</span>New Compound</button>
       <button class="rb-big" data-si="new-section" data-ic="section" title="A new section: a Data section holds compounds; a Custom section holds text (and sub-sections)"><span class="rb-icon">▤</span>New Section</button>
       <div class="rb-col">
-        <button data-si="delete" data-ic="delete" title="Move the compound picked to the project's Trash (SI Assistant can restore it)">Delete</button>
-        <button data-si="move-up" title="Move the compound or section picked up (Alt+↑): compound IDs follow the order">▲ Move Up</button>
+        <button data-si="delete" data-ic="delete" title="Move the compound, scheme page or section picked to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
+        <button data-si="rename" title="Rename the section or scheme page picked (F2 in the tree)">Rename</button>
+        <button data-si="duplicate" title="Copies of the compound or scheme page picked, with the fields you choose (never its spectra, files, manual ID or flags): to start analogs">Duplicate…</button>
+        <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it. Shared with Chem SI Assistant">Trash…</button>
+      </div>
+      <div class="rb-col">
+        <button data-si="move-up" title="Move the compound or section picked up (Alt+↑): compound IDs follow the order. Rows can also be dragged in the tree">▲ Move Up</button>
         <button data-si="move-down" title="Move the compound or section picked down (Alt+↓)">▼ Move Down</button>
+        <button data-si="move-to" title="Move the compound picked to another Data section, or the section picked into or out of a Custom section">Move To…</button>
       </div>
     </div><div class="rb-label">Project</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -395,6 +414,7 @@ const RIBBON = `
       </div>
       <div class="rb-col">
         <button data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance">Project Settings…</button>
+        <button data-si="snapshot" title="Save Snapshot: the whole project zipped into its snapshots folder, for milestones such as the submitted version (as Chem SI Assistant saves them)">Save Snapshot…</button>
       </div>
     </div><div class="rb-label">Manage</div></div>
   </div>`;
@@ -464,6 +484,8 @@ export class SiMode {
       if (sc) { void this.schemePage?.command(sc.dataset.siScheme!, sc.dataset.arg ?? ''); return; }
       const xr = t.closest<HTMLElement>('[data-si-xray]');
       if (xr) { void this.xrayPage?.command(xr.dataset.siXray!); return; }
+      const at = t.closest<HTMLElement>('[data-si-attach]');
+      if (at) { if (this.project?.readOnly) { this.host.flash('This SI project is open read-only.'); return; } void (at.dataset.siAttach === 'choose' ? this.attachPage?.choose() : this.attachPage?.remove()); return; }
       const fig = t.closest<HTMLElement>('[data-si-fig]');
       if (fig) { void this.activeFigure?.command(fig.dataset.siFig!); return; }
       const b = t.closest<HTMLElement>('[data-si]');
@@ -603,6 +625,15 @@ export class SiMode {
     });
     out.append(page.el);
     this.schemeShown(page);
+  }
+
+  private attachPage: SiAttachmentPage | null = null;
+  private attachShown(x: SiAttachmentPage | null): void {
+    const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="attach"]')!;
+    this.attachPage?.dispose();
+    this.attachPage = x;
+    tab.hidden = !x;
+    if (!x && tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home');
   }
 
   private xrayShown(x: SiXrayPage | null): void {
@@ -1020,6 +1051,7 @@ export class SiMode {
       r.tabIndex = on ? 0 : -1;
       extra(r);
       r.addEventListener('click', () => this.go(sel));
+      if (sel.kind === 'section' || sel.kind === 'compound' || sel.kind === 'scheme') this.treeRowActions(r, sel);
       rows.push(r);
       return r;
     };
@@ -1084,6 +1116,7 @@ export class SiMode {
     this.tableChosen(null);
     this.figureChosen(null);
     this.xrayShown(null);
+    this.attachShown(null);
     this.schemeShown(null);
     this.spectraShown(null);
     this.front = null;
@@ -1262,7 +1295,15 @@ export class SiMode {
       this.gpCard(out, s);
     } else if (s.type === 'text') this.textCard(out, s); else if (s.type === 'spectra') this.spectraCard(out, s);
     else if (s.type === 'xray') this.xrayCard(out, s);
-    else {
+    else if (s.type === 'file') {
+      const page = new SiAttachmentPage({
+        project: p, section: s, flash: (m, ms) => this.host.flash(m, ms), pickFiles: (l, x) => this.host.pickFiles(l, x),
+        pdfPages: (b) => import('../render/pdf-page').then((m) => m.pdfPages(b)),
+        redraw: () => { this.shownKey = ''; this.refresh(); },
+      });
+      out.append(page.el);
+      this.attachShown(page);
+    } else {
       out.append(el('p', 'muted si-note', `${TYPE_LABELS[s.type] ?? s.type} sections are edited in Chem SI Assistant for now; they are kept as they are here.`));
     }
   }
@@ -2210,6 +2251,246 @@ export class SiMode {
     }
   }
 
+  /** Home ▸ Delete (Delete in the tree): the compound, scheme page or section picked goes to the project's Trash, after asking. */
+  private async deletePicked(): Promise<void> {
+    const p = this.project!;
+    const pick = this.pick;
+    const yes = (title: string, text: string): Promise<boolean> => askChoice(title, `${text} Home ▸ Trash (or Chem SI Assistant's Trash) can put it back.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep').then((x) => x === 'delete');
+    if (pick.kind === 'compound') {
+      const c = p.compound(pick.id);
+      if (c.schemeId) { this.host.flash('This compound is on a scheme page: take its box out of the scheme (Scheme ▸ Remove), or delete the scheme page.'); return; }
+      if (!(await yes('Delete Compound', `Move ${this.idOf(c)} ${compoundName(c) || 'unnamed compound'} to the project's Trash? The compounds after it take the IDs before them.`))) return;
+      const sec = p.section(c.sectionId);
+      const i = sec.items.indexOf(c);
+      await this.act(async () => {
+        await p.deleteCompound(c.id);
+        const next = sec.items[Math.min(i, sec.items.length - 1)];
+        this.pick = next ? { kind: next.kind, id: next.id } : { kind: 'section', id: sec.id };
+      });
+      return;
+    }
+    if (pick.kind === 'scheme') {
+      const k = p.scheme(pick.id);
+      const n = k.children.length;
+      if (!(await yes('Delete Scheme Page', `Move the scheme page “${String(k.data.name || 'Scheme')}”${n ? ` with its ${n} compound page${n > 1 ? 's' : ''}` : ''} to the project's Trash?`))) return;
+      const sec = p.section(k.sectionId);
+      const i = sec.items.indexOf(k);
+      await this.act(async () => {
+        await p.deleteScheme(k.id);
+        const next = sec.items[Math.min(i, sec.items.length - 1)];
+        this.pick = next ? { kind: next.kind, id: next.id } : { kind: 'section', id: sec.id };
+      });
+      return;
+    }
+    if (pick.kind === 'section') {
+      const sec = p.section(pick.id);
+      const subs = p.subtree(sec).length - 1;
+      const comps = compoundsUnder(p, sec.id);
+      const what = [subs ? `${subs} sub-section${subs > 1 ? 's' : ''}` : '', comps ? `${comps} compound${comps > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ');
+      if (!(await yes('Delete Section', `Move the section “${sec.name}”${what ? ` with its ${what}` : ''} to the project's Trash?`))) return;
+      const list = sec.parentId ? p.section(sec.parentId).children : p.top;
+      const i = list.indexOf(sec);
+      await this.act(async () => {
+        await p.deleteSection(sec.id);
+        const next = list[Math.min(i, list.length - 1)];
+        this.pick = next ? { kind: 'section', id: next.id } : sec.parentId ? { kind: 'section', id: sec.parentId } : { kind: 'project' };
+      });
+      return;
+    }
+    this.host.flash('Pick a compound, scheme page or section to delete.');
+  }
+
+  /** Home ▸ Duplicate: copies of the compound or scheme page picked, with the fields chosen. */
+  private async duplicate(): Promise<void> {
+    const p = this.project!;
+    const pick = this.pick;
+    if (pick.kind !== 'compound' && pick.kind !== 'scheme') { this.host.flash('Pick a compound or scheme page to duplicate.'); return; }
+    const c = pick.kind === 'compound' ? p.compound(pick.id) : null;
+    const k = pick.kind === 'scheme' ? p.scheme(pick.id) : null;
+    const sources = c ? [c] : k!.children;
+    const fields = new Map<string, FieldDef>(), never = new Map<string, string>();
+    for (const x of sources) {
+      for (const d of copyableFields(x)) if (!fields.has(d.key)) fields.set(d.key, d);
+      for (const d of neverCopiedFields(x)) never.set(d.key, d.label);
+    }
+    const what = c ? `${this.idOf(c)} ${compoundName(c) || 'unnamed compound'}`.trim() : `“${String(k!.data.name || 'Scheme')}”`;
+    const got = await ask(`Duplicate ${c ? 'Compound' : 'Scheme Page'}`, [
+      { name: 'copies', label: 'Number of copies', value: '1', type: 'number', min: 1, max: MAX_COPIES },
+      { name: 'place', label: 'Where the copies go', value: 'end', options: [{ value: 'end', label: 'At the end of the section (nothing is renumbered)' }, { value: 'after', label: c?.schemeId ? 'Right after the scheme page (later IDs move up)' : 'Right after the original (later IDs move up)' }] },
+      ...(fields.size ? [{ name: '_h', label: 'Copy the contents of these fields', value: '', type: 'heading' as const, help: 'Copies get the same fields; the ones not ticked start empty.' }] : []),
+      ...[...fields.values()].map((d) => ({ name: `f:${d.key}`, label: d.label, value: 'true', type: 'checkbox' as const })),
+    ], { ok: 'Duplicate', note: `Copies of ${what}${k ? ' with its drawing and its compounds' : ''}.${never.size ? ` Never copied: ${[...never.values()].join(', ')}, the manual ID and flags (they belong to the original).` : ' Never copied: attached files, the manual ID and flags.'}` });
+    if (!got) return;
+    const keys = [...fields.keys()].filter((key) => got[`f:${key}`] === 'true');
+    await this.act(async () => {
+      const n = checkCopies(Math.round(Number(got.copies)));
+      const place = got.place === 'after' ? 'after' : 'end';
+      const made = c ? await duplicateCompound(p, c, keys, n, place) : await duplicateScheme(p, k!, keys, n, place);
+      if (made[0]) this.pick = { kind: made[0].kind, id: made[0].id };
+      this.host.flash(`Made ${made.length} cop${made.length === 1 ? 'y' : 'ies'} of ${what}.`);
+    });
+  }
+
+  /** Home ▸ Rename (F2 in the tree): the section or scheme page picked. */
+  private async renamePicked(): Promise<void> {
+    const p = this.project!;
+    const pick = this.pick;
+    if (pick.kind === 'compound') { this.host.flash('A compound’s name is its Name field, on its page.'); return; }
+    if (pick.kind !== 'section' && pick.kind !== 'scheme') { this.host.flash('Pick a section or scheme page to rename.'); return; }
+    const k = pick.kind === 'scheme' ? p.scheme(pick.id) : null;
+    const sec = pick.kind === 'section' ? p.section(pick.id) : null;
+    const now = k ? String(k.data.name || '') : sec!.name;
+    const got = await ask(k ? 'Rename Scheme Page' : 'Rename Section', [{ name: 'name', label: 'Name', value: now }], { ok: 'Rename' });
+    if (!got || !got.name.trim() || got.name.trim() === now) return;
+    await this.act(async () => {
+      if (k) { k.data.name = got.name.trim(); await p.saveScheme(k); } else await p.renameSection(sec!.id, got.name);
+    });
+    this.shownKey = '';
+    this.refresh();
+  }
+
+  /** Home ▸ Move To: a compound or scheme page to another Data section; a section into a Custom section, or to the top level. */
+  private async moveTo(): Promise<void> {
+    const p = this.project!;
+    const pick = this.pick;
+    if (pick.kind === 'compound' || pick.kind === 'scheme') {
+      const item = pick.kind === 'compound' ? p.compound(pick.id) : p.scheme(pick.id);
+      if (item.kind === 'compound' && item.schemeId) { this.host.flash('Compounds on a scheme page move with their scheme page.'); return; }
+      const options = p.dataSections.filter((x) => x.id !== item.sectionId).map((x) => ({ value: x.id, label: x.name }));
+      if (!options.length) { this.host.flash('There is no other Data section to move it to.'); return; }
+      const got = await ask('Move To', [{ name: 'to', label: 'Data section', value: options[0].value, options }], { ok: 'Move', note: 'It goes at the end of that section; its compound IDs follow its new place.' });
+      if (!got) return;
+      const to = p.section(got.to);
+      await this.act(() => (item.kind === 'compound' ? p.moveCompound(item.id, to.id, to.items.length) : p.moveScheme(item.id, to.id, to.items.length)));
+      return;
+    }
+    if (pick.kind === 'section') {
+      const sec = p.section(pick.id);
+      if (sec.type === 'xray' && sec.data.anchored) { this.host.flash('This X-ray structure is shown under its compound; move it from its page (Crystal Structure ▸ Under the Compound).'); return; }
+      const inside = new Set(p.subtree(sec).map((x) => x.id));
+      const height = (x: SiSection): number => 1 + Math.max(0, ...x.children.map(height));
+      const options = [{ value: '', label: 'The top level' }, ...p.sections.filter((x) => x.type === 'text' && !inside.has(x.id) && x.id !== sec.parentId && p.depth(x) + height(sec) <= MAX_SECTION_DEPTH).map((x) => ({ value: x.id, label: `Inside “${x.name}”` }))].filter((o) => o.value || sec.parentId);
+      if (!options.length) { this.host.flash('There is no Custom section this section can go into (sections go at most 3 levels deep).'); return; }
+      const got = await ask('Move To', [{ name: 'to', label: 'Where', value: options[0].value, options }], { ok: 'Move', note: 'It goes at the end, with its sub-sections.' });
+      if (!got) return;
+      const list = got.to ? p.section(got.to).children : p.top;
+      await this.act(() => p.moveSection(sec.id, list.length, got.to || null));
+      return;
+    }
+    this.host.flash('Pick a compound, scheme page or section to move.');
+  }
+
+  /** A tree row's right-click menu, F2 and Delete keys, and dragging it to another place. */
+  private treeRowActions(r: HTMLElement, sel: Pick): void {
+    r.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (JSON.stringify(sel) !== JSON.stringify(this.pick)) this.go(sel);
+      this.treeMenu(sel, e.clientX, e.clientY);
+    });
+    r.addEventListener('keydown', (e) => {
+      if (e.key === 'F2') { e.preventDefault(); void this.run('rename'); }
+      else if (e.key === 'Delete') { e.preventDefault(); void this.run('delete'); }
+    });
+    if (this.project?.readOnly) return;
+    r.draggable = true;
+    r.addEventListener('dragstart', (e) => {
+      SiMode.dragging = sel;
+      e.dataTransfer?.setData('application/x-chemweave-si-row', JSON.stringify(sel));
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      r.classList.add('si-dragging');
+    });
+    r.addEventListener('dragend', () => { SiMode.dragging = null; r.classList.remove('si-dragging'); this.clearDrop(); });
+    const place = (e: DragEvent) => {
+      const drag = SiMode.dragging;
+      if (!drag) return null;
+      const box = r.getBoundingClientRect();
+      return this.dropPlace(drag, sel, (e.clientY - box.top) / Math.max(1, box.height));
+    };
+    r.addEventListener('dragover', (e) => {
+      const got = place(e);
+      this.clearDrop();
+      if (!got) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      r.classList.add(`si-drop-${got.where}`);
+    });
+    r.addEventListener('dragleave', () => r.classList.remove('si-drop-before', 'si-drop-after', 'si-drop-in'));
+    r.addEventListener('drop', (e) => {
+      const got = place(e);
+      this.clearDrop();
+      if (!got) return;
+      e.preventDefault();
+      const moved = SiMode.dragging!;
+      SiMode.dragging = null;
+      void this.act(async () => { await got.run(); this.pick = moved; });
+    });
+  }
+  private static dragging: Pick | null = null;
+  private clearDrop(): void {
+    for (const x of this.tree.querySelectorAll('.si-drop-before, .si-drop-after, .si-drop-in')) x.classList.remove('si-drop-before', 'si-drop-after', 'si-drop-in');
+  }
+
+  /** The tree's right-click menu for a row (it is picked first). */
+  private treeMenu(sel: Pick, x: number, y: number): void {
+    const p = this.project!;
+    const ro = p.readOnly;
+    const items: ([string, () => void, boolean?] | null)[] = [];
+    const run = (cmd: string) => (): void => { void this.run(cmd); };
+    if (sel.kind === 'section') {
+      const sec = p.section(sel.id);
+      if (sec.type === 'data') items.push(['New Compound', run('new-compound'), !ro], ['New Scheme Page', run('new-scheme'), !ro], null);
+      items.push(['New Section…', run('new-section'), !ro], null);
+      items.push(['Rename…', run('rename'), !ro], ['Move Up', run('move-up'), !ro], ['Move Down', run('move-down'), !ro], ['Move To…', run('move-to'), !ro], null, ['Delete', run('delete'), !ro && sec.type !== 'spectra']);
+    } else if (sel.kind === 'compound' || sel.kind === 'scheme') {
+      const inScheme = sel.kind === 'compound' && !!p.compound(sel.id).schemeId;
+      if (sel.kind === 'scheme') items.push(['Rename…', run('rename'), !ro]);
+      items.push(['Duplicate…', run('duplicate'), !ro], null);
+      items.push(['Move Up', run('move-up'), !ro && !inScheme], ['Move Down', run('move-down'), !ro && !inScheme], ['Move To…', run('move-to'), !ro && !inScheme], null, ['Delete', run('delete'), !ro && !inScheme]);
+    } else return;
+    items.push(null, ['Trash…', run('trash')]);
+    popupMenu(x, y, items);
+  }
+
+  /**
+   * Where a row dragged in the tree would go if dropped on `target` at `frac` of its height:
+   * before or after it, or (a section on a Custom section's middle, an item on a Data section) inside it.
+   */
+  private dropPlace(drag: Pick, target: Pick, frac: number): { where: 'before' | 'after' | 'in'; run: () => Promise<void> } | null {
+    const p = this.project!;
+    if (JSON.stringify(drag) === JSON.stringify(target)) return null;
+    if (drag.kind === 'section' && target.kind === 'section') {
+      const s = p.section(drag.id), t = p.section(target.id);
+      if (s.type === 'xray' && s.data.anchored) return null;
+      if (p.subtree(s).includes(t)) return null;
+      const height = (x: SiSection): number => 1 + Math.max(0, ...x.children.map(height));
+      const canIn = t.type === 'text' && p.depth(t) + height(s) <= MAX_SECTION_DEPTH;
+      const where = canIn && frac > 0.3 && frac < 0.7 ? 'in' : frac < 0.5 ? 'before' : 'after';
+      if (where === 'in') return { where, run: () => p.moveSection(s.id, t.children.length, t.id) };
+      const parent = t.parentId ? p.section(t.parentId) : null;
+      if (parent && p.depth(parent) + height(s) > MAX_SECTION_DEPTH) return null;
+      const list = parent ? parent.children : p.top;
+      const at = list.indexOf(t) + (where === 'after' ? 1 : 0);
+      return { where, run: () => p.moveSection(s.id, at, parent?.id ?? null) };
+    }
+    if (drag.kind === 'compound' || drag.kind === 'scheme') {
+      const item = drag.kind === 'compound' ? p.compound(drag.id) : p.scheme(drag.id);
+      if (item.kind === 'compound' && item.schemeId) return null;
+      const move = (to: string, at: number) => (): Promise<void> => (item.kind === 'compound' ? p.moveCompound(item.id, to, at) : p.moveScheme(item.id, to, at));
+      if (target.kind === 'section') {
+        const t = p.section(target.id);
+        return t.type === 'data' ? { where: 'in', run: move(t.id, t.items.length) } : null;
+      }
+      if (target.kind === 'compound' || target.kind === 'scheme') {
+        const t = target.kind === 'compound' ? p.compound(target.id) : p.scheme(target.id);
+        if (t.kind === 'compound' && t.schemeId) return null;
+        const sec = p.section(t.sectionId);
+        const where = frac < 0.5 ? 'before' : 'after';
+        return { where, run: move(sec.id, sec.items.indexOf(t) + (where === 'after' ? 1 : 0)) };
+      }
+    }
+    return null;
+  }
+
   /** Compile the project into a document (SI Assistant's layout), opened in a tab of its own; what was left out is said after. */
   private async compile(pdf: boolean): Promise<void> {
     const p = this.project;
@@ -2235,7 +2516,7 @@ export class SiMode {
   async run(cmd: string): Promise<void> {
     const p = this.project;
     if (!p) return;
-    if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
+    if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'trash'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
     this.commitAll();
     const s = this.currentSection();
     const c = this.currentCompound();
@@ -2294,31 +2575,36 @@ export class SiMode {
         return;
       }
       case 'new-section': {
-        const got = await ask('New Section', [
-          { name: 'type', label: 'Kind', value: 'data', options: [{ value: 'data', label: 'Data section (compounds)' }, { value: 'text', label: 'Custom section (text)' }] },
-          { name: 'name', label: 'Name', value: '', placeholder: 'e.g. Synthesis and Characterization' },
-        ], { ok: 'Make Section' });
-        if (!got || !got.name.trim()) return;
-        // (after the top-level section picked; sub-sections are made in Chem SI Assistant for now)
+        // inside the Custom section picked (a sub-section), or after the section picked
         let top = s;
         while (top?.parentId) top = p.section(top.parentId);
-        const at = top ? p.top.indexOf(top) + 1 : undefined;
-        await this.act(async () => { const made = await p.addSection(got.type as 'data' | 'text', got.name.trim(), at, null); this.pick = { kind: 'section', id: made.id }; });
+        const canNest = !!s && s.type === 'text' && p.depth(s) < MAX_SECTION_DEPTH;
+        const fields: Parameters<typeof ask>[1] = [
+          { name: 'type', label: 'Kind', value: 'data', options: [{ value: 'data', label: 'Data section (compounds)' }, { value: 'text', label: 'Custom section (text)' }, { value: 'file', label: 'Attachment section (a PDF or picture)' }] },
+          { name: 'name', label: 'Name', value: '', placeholder: 'e.g. Synthesis and Characterization' },
+        ];
+        if (canNest) fields.push({ name: 'where', label: 'Where', value: 'after', options: [{ value: 'after', label: `After “${top!.name}”` }, { value: 'inside', label: `Inside “${s!.name}” (a sub-section)` }] });
+        const got = await ask('New Section', fields, { ok: 'Make Section' });
+        if (!got || !got.name.trim()) return;
+        const inside = canNest && got.where === 'inside';
+        const at = inside ? undefined : top ? p.top.indexOf(top) + 1 : undefined;
+        await this.act(async () => { const made = await p.addSection(got.type as 'data' | 'text' | 'file', got.name.trim(), at, inside ? s!.id : null); this.pick = { kind: 'section', id: made.id }; });
         return;
       }
-      case 'delete': {
-        if (!c) { this.host.flash('Pick a compound to delete (sections are deleted in Chem SI Assistant for now).'); return; }
-        const sure = await askChoice('Delete Compound', `Move ${this.idOf(c)} ${compoundName(c) || 'unnamed compound'} to the project's Trash? The compounds after it take the IDs before them. Chem SI Assistant's Trash can restore it.`, [{ value: 'delete', label: 'Delete', primary: true }, { value: 'keep', label: 'Cancel' }], 'keep');
-        if (sure !== 'delete') return;
-        const sec = p.section(c.sectionId);
-        const i = sec.items.indexOf(c);
-        await this.act(async () => {
-          await p.deleteCompound(c.id);
-          const next = sec.items[Math.min(i, sec.items.length - 1)];
-          this.pick = next && next.kind === 'compound' ? { kind: 'compound', id: next.id } : { kind: 'section', id: sec.id };
-        });
+      case 'delete': await this.deletePicked(); return;
+      case 'rename': await this.renamePicked(); return;
+      case 'move-to': await this.moveTo(); return;
+      case 'duplicate': await this.duplicate(); return;
+      case 'snapshot': {
+        const got = await ask('Save Snapshot', [{ name: 'label', label: 'Name', value: '', placeholder: 'e.g. submitted' }], { ok: 'Save Snapshot', note: 'The whole project is zipped into its snapshots folder, named with today’s date and time and this name. Snapshots and build files are left out.' });
+        if (!got) return;
+        this.host.flash('Saving the snapshot…', 1500);
+        await this.act(async () => { const path = await saveSnapshot(p, got.label); this.host.flash(`Saved the snapshot ${path}.`, 5000); }, false);
         return;
       }
+      case 'trash':
+        await openTrash(p, (message) => { this.forgetStructure(); this.shownKey = ''; this.refresh(); this.host.changed(); this.host.flash(message, 3000); });
+        return;
       case 'move-up':
       case 'move-down': {
         const step = cmd === 'move-up' ? -1 : 1;

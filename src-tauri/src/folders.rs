@@ -114,6 +114,47 @@ pub fn si_remove_lock(path: String) -> Result<(), String> {
     }
 }
 
+/// SI projects: the files and folders directly inside a folder of a project (its Trash, listed
+/// in the Trash window), by name, each marked as a folder or not.
+#[tauri::command]
+pub fn si_list_dir(path: String) -> Result<serde_json::Value, String> {
+    let dir = PathBuf::from(&path);
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("Could not read the folder {path}: {e}"))?;
+    let mut out = Vec::new();
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let folder = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        out.push(serde_json::json!({ "name": name, "folder": folder }));
+    }
+    Ok(serde_json::Value::Array(out))
+}
+
+/// Whether `p` is an SI project's trash folder, or one entry directly inside it (a project
+/// folder is one with a project.json).
+fn is_si_trash(p: &Path) -> bool {
+    let named = |x: &Path, n: &str| x.file_name().and_then(|f| f.to_str()) == Some(n);
+    let project = |x: Option<&Path>| x.is_some_and(|d| d.join("project.json").is_file());
+    if p.components().any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir)) {
+        return false;
+    }
+    (named(p, "trash") && project(p.parent())) || p.parent().is_some_and(|t| named(t, "trash") && project(t.parent()))
+}
+
+/// SI projects: Empty Trash, or remove one item from it, in the Trash window. Only the
+/// project's trash folder or an entry directly inside it is ever deleted here.
+#[tauri::command]
+pub fn si_remove_trash(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !is_si_trash(&p) {
+        return Err(format!("not an SI project's Trash: {path}"));
+    }
+    match std::fs::remove_dir_all(&p) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Could not delete {path}: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,6 +175,25 @@ mod tests {
         assert_eq!(got["complete"], true);
         let top = list_folder(root.to_string_lossy().into_owned(), exts, false).unwrap();
         assert_eq!(top["files"].as_array().unwrap().len(), 1);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn only_a_projects_trash_is_removed() {
+        let root = std::env::temp_dir().join(format!("ci-si-trash-{}", std::process::id()));
+        let entry = root.join("trash").join("20261118-x");
+        std::fs::create_dir_all(&entry).unwrap();
+        std::fs::write(entry.join("entry.json"), "{}").unwrap();
+        std::fs::create_dir_all(root.join("sections")).unwrap();
+        assert!(si_remove_trash(entry.to_string_lossy().into_owned()).is_err()); // no project.json yet
+        std::fs::write(root.join("project.json"), "{}").unwrap();
+        assert!(si_remove_trash(root.join("sections").to_string_lossy().into_owned()).is_err());
+        let listed = si_list_dir(root.join("trash").to_string_lossy().into_owned()).unwrap();
+        assert_eq!(listed[0]["folder"], true);
+        si_remove_trash(entry.to_string_lossy().into_owned()).unwrap();
+        assert!(!entry.exists() && root.join("trash").exists());
+        si_remove_trash(root.join("trash").to_string_lossy().into_owned()).unwrap();
+        assert!(!root.join("trash").exists() && root.join("sections").exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

@@ -5020,3 +5020,34 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-spectra-reset { border: none; background: none; color: var(--muted, #666); cursor: pointer; padding: 0 2px; font-size: 13px; line-height: 1; }
 .si-spectra-reset:hover { color: var(--accent); }
 .si-spectra-text input { width: 260px; }
+
+/* SI Project ▸ Trash */
+.si-trash .ask-form { width: min(640px, 86vw); }
+.si-trash-list { max-height: min(52vh, 420px); min-height: 120px; overflow: auto; border: 1px solid var(--line); background: var(--panel); }
+.si-trash-list:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.si-trash-row { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 0 8px; padding: 3px 8px; border-bottom: 1px solid var(--line); cursor: default; }
+.si-trash-row:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.si-trash-row.on { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.si-trash-kind { color: var(--muted); font-size: var(--fs-sm, 0.85em); }
+.si-trash-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-trash-more { grid-column: 2; font-size: var(--fs-sm, 0.85em); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-trash-elsewhere .si-trash-name { color: var(--muted); }
+.si-trash-none { padding: 12px; margin: 0; }
+.si-trash-say { min-height: 1.2em; margin: 2px 0 0; }
+.si-row.si-drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.si-row.si-drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.si-row.si-drop-in { outline: 2px solid var(--accent); outline-offset: -2px; }
+.si-row.si-dragging { opacity: 0.5; }
+
+/* SI Project ▸ an Attachment section's page */
+.si-attach-fields { display: grid; grid-template-columns: max-content minmax(0, 28em); gap: 4px 8px; align-items: center; }
+.si-attach-row { display: contents; }
+.si-attach-name { color: var(--muted); font-size: var(--fs-sm, 0.85em); }
+.si-attach-file { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; }
+.si-attach-file .si-attach-name { min-width: 4.2em; }
+.si-attach-stage { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px; background: color-mix(in srgb, var(--line) 45%, var(--bg)); min-height: 120px; }
+.si-attach-stage.drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.si-attach-paper { width: min(100%, 560px); background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); padding: 6% 7%; box-sizing: border-box; }
+.si-attach-paper img { display: block; width: 100%; height: auto; }
+.si-attach-paper img.natural { width: auto; max-width: 100%; margin: 0 auto; }
+.si-attach-row input { padding: 1px 4px; font-size: var(--fs-sm); }
