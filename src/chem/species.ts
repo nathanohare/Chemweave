@@ -547,6 +547,29 @@ export function allSpecies(doc: Doc, m: Measure = plainMeasure(doc)): PlacedSpec
 }
 
 /**
+ * Charged structures grouped (Format > Group) with this charged structure: drawn counterions,
+ * such as a Br⁻ atom grouped with a pyridinium, counted with it as one salt (as groupedIons does
+ * for ions typed as text). A neutral structure is never merged, so a molecule grouped with its
+ * label or with other compounds keeps its own numbers.
+ */
+export function groupedIonFragments(doc: Doc, frag: Set<number>): Set<number>[] {
+  const charge = (f: Iterable<number>) => { let q = 0; for (const id of f) q += doc.atoms.get(id)?.charge ?? 0; return q; };
+  if (!charge(frag)) return [];
+  const groups = new Set<number>();
+  for (const id of frag) { const g = doc.atoms.get(id)?.grp; if (g !== undefined) groups.add(g); }
+  if (!groups.size) return [];
+  const seen = new Set(frag);
+  const out: Set<number>[] = [];
+  for (const a of doc.atoms.values()) {
+    if (seen.has(a.id) || a.grp === undefined || !groups.has(a.grp)) continue;
+    const f = doc.fragmentOf(a.id);
+    for (const id of f) seen.add(id);
+    if (charge(f)) out.push(f);
+  }
+  return out;
+}
+
+/**
  * Text boxes read as ions, grouped (Format > Group) with these atoms: their counterions,
  * counted with the structure as one salt.
  */
