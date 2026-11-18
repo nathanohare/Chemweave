@@ -162,6 +162,8 @@ export class StylePanel {
   plate: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<PlateData>): void } | null = null;
   /** SmartArt-style diagrams: the window with their text, a change of layout or look, and Convert to Shapes. */
   diagram: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<DiagramData>): void; ungroup(shapeId: number): void } | null = null;
+  /** A Smart Scheme's layouts (those it can't take left out, the one it has marked) and how to change it. */
+  smart: { layouts(shapeId: number): { id: string; name: string; on: boolean }[]; arrange(shapeId: number, layout: string): void; ungroup(shapeId: number): void } | null = null;
   /** Orbitals drawn here (set up by the app): the Edit Orbital window, or the selected ones drawn again with some settings changed. */
   orbital: { edit(): void; restyle(shapeIds: number[], patch: Partial<OrbitalSpec>): void } | null = null;
   /** Tie captions to the structure nearest each (Tie to Structure). */
@@ -239,8 +241,20 @@ export class StylePanel {
     else if (diagram?.newman) this.newmanControls(diagram);
     else if (diagram?.diagram) this.diagramControls(diagram);
     else if (diagram?.smart) {
-      // how its list works is behind the "i" by the list's title
+      // how its list works is behind the "i" by the list's title; here, its layout
       this.heading('Smart Scheme');
+      const id = diagram.id;
+      const lays = this.smart?.layouts(id) ?? [];
+      if (lays.length) this.select('Layout', lays.map((l) => [l.id, l.name] as [string, string]), lays.find((l) => l.on)?.id ?? lays[0].id, (v) => this.smart?.arrange(id, v));
+      const row = document.createElement('div');
+      row.className = 'style-buttons';
+      const u = document.createElement('button');
+      u.type = 'button';
+      u.textContent = 'Ungroup';
+      u.title = 'Make it ordinary structures, text and arrows again';
+      u.addEventListener('click', () => this.smart?.ungroup(id));
+      row.append(u);
+      this.body.append(row);
     }
     else if (shapes.length && this.orbital && shapes.every((x) => x.orb)) this.orbitalControls(shapes);
     else if (shapes.length) this.shapeControls(shapes);

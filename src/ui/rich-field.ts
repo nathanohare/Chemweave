@@ -28,6 +28,8 @@ export interface RichFieldOptions {
   onState?(f: RichField): void;
   /** Bold, italic and underline can be set on characters (the text they go to keeps them). */
   looks?: boolean;
+  /** A key pressed in the field, before the field takes it: true when it was dealt with. */
+  keys?(e: KeyboardEvent, f: RichField): boolean;
 }
 
 /** Where each character of `text` goes with chemical interpretation on. */
@@ -330,6 +332,7 @@ export class RichField {
 
   private onKey(e: KeyboardEvent): void {
     const mod = e.ctrlKey || e.metaKey;
+    if (this.o.keys?.(e, this)) { e.preventDefault(); return; }
     if (e.key === 'Enter') { e.preventDefault(); this.el.blur(); return; }
     if (e.key === 'Escape') { e.preventDefault(); this.undo = []; this.load(this.wasParts); this.render(null); this.el.blur(); return; }
     if (mod && !e.altKey && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.toggle(e.shiftKey || e.key === '+' ? 'sup' : 'sub'); return; }

@@ -7,7 +7,7 @@
 import type { Doc } from '../model';
 import type { Rect } from '../geom';
 import type { Measure } from '../editor/arrange';
-import { canRemoveSlot, loopMiddles, readSmart, slotName, smartIsFree, smartLayoutOf, stepHolder, stepNamesNow, stepPartKind, SMART_LAYOUTS, type LoopJoin, type SmartData, type SmartLayout, type SmartLink, type SmartRead, type StepPart, type TextPart } from '../chem/smart-scheme';
+import { canRemoveSlot, layoutFits, loopMiddles, readSmart, slotName, smartIsFree, smartLayoutOf, stepHolder, stepNamesNow, stepPartKind, SMART_LAYOUTS, type LoopJoin, type SmartData, type SmartLayout, type SmartLink, type SmartRead, type StepPart, type TextPart } from '../chem/smart-scheme';
 import { askLoop, askBranch } from './smart-loop-pop';
 import type { TextRun } from '../model';
 import { RichField } from './rich-field';
@@ -52,14 +52,22 @@ export interface SmartPaneHooks {
   addLoop(id: number, join: LoopJoin, count: number): void;
   /** Take loop `loop` (not the first) out of a cycle. */
   removeLoop(id: number, loop: number): void;
-  /** Add a species off the cycle at slot `k`: coming in, going out, or in equilibrium with it. */
+  /** Add a species off the cycle at slot `k` (coming in, going out, or in equilibrium with it), or a branch off a scheme in a line. */
   addBranch(id: number, k: number, dir: 'in' | 'out' | 'both'): void;
+  /** Take branch `run` (not the main route) out of a scheme that branches. */
+  removeBranch(id: number, run: number): void;
+  /** Turn step `k` round (a branch that led away leads in, and back). */
+  reverseStep(id: number, k: number): void;
   /** Write the middle of loop `loop` (the catalyst's name). */
   loopMiddle(id: number, loop: number, parts: TextPart[]): void;
   /** Write every step name the cycle knows short (OA) or in full (oxidative addition). */
   stepNames(id: number, how: 'short' | 'full'): void;
   /** Give the scheme its own font, text sizes, arrows and spacing (undefined: the drawing style's). */
   format(id: number, fmt: SmartFormat | undefined): void;
+  /** The species or step of the scheme that is picked on the page (its row is marked). */
+  picked?(): { slot?: number; step?: number } | undefined;
+  /** The row the caret is in (its species is marked on the page); null: none. */
+  hot?(id: number, slot: number | null): void;
   /** Clean Up Cycle: the cycle's species onto one ellipse, its arrows along it. */
   cleanUpCycle(id: number): void;
   ungroup(id: number): void;
@@ -70,6 +78,7 @@ export const SMART_LAYOUT_ICONS: Record<SmartLayout, string> = {
   rows: '<rect x="3" y="4" width="5" height="5"/><rect x="12" y="4" width="5" height="5"/><rect x="3" y="14" width="5" height="5"/><rect x="12" y="14" width="5" height="5"/><path d="M8.5 6.5h3M8.5 16.5h3" fill="none"/>',
   snake: '<rect x="3" y="4" width="5" height="5"/><rect x="14" y="4" width="5" height="5"/><rect x="14" y="14" width="5" height="5"/><rect x="3" y="14" width="5" height="5"/><path d="M8.5 6.5h5M16.5 9.5v4M13.5 16.5h-5" fill="none"/>',
   down: '<rect x="11" y="1.5" width="5" height="5"/><rect x="11" y="9.5" width="5" height="5"/><rect x="11" y="17.5" width="5" height="5"/><path d="M13.5 6.5v3M13.5 14.5v3" fill="none"/>',
+  tree: '<rect x="2.5" y="9.5" width="5" height="5"/><rect x="19.5" y="2.5" width="5" height="5"/><rect x="19.5" y="16.5" width="5" height="5"/><path d="M8 11l11-4.5M8 13l11 4.5" fill="none"/>',
   cycle: '<rect x="11" y="1.5" width="5" height="5"/><rect x="19.5" y="9.5" width="5" height="5"/><rect x="11" y="17.5" width="5" height="5"/><rect x="2.5" y="9.5" width="5" height="5"/><circle cx="13.5" cy="12" r="7.5" fill="none" stroke-dasharray="2 2"/>',
 };
 
@@ -106,6 +115,10 @@ export class SmartPane {
   private rowOf = new Map<string, string>();
   private bar: HTMLDivElement | null = null;
   private symbols = false;
+  /** The species a row changes places with (one before or after it in its route), whether a species ends its route, and whether it can be taken out: as the rows were drawn. */
+  private beside: (k: number, d: 1 | -1) => number | undefined = () => undefined;
+  private ends: (k: number) => boolean = () => false;
+  private removable: (k: number) => boolean = () => false;
   /** Docked: the toolbox body it shows in (it is then there whether or not a scheme is selected). */
   private host: HTMLElement | null = null;
 
@@ -180,11 +193,75 @@ export class SmartPane {
       // leave the caret where it is): what is typed is finished, and the rows drawn again with the
       // caret back in the same row
       if (this.shapeOf(id) !== this.drawnShape && key !== this.drawnFor) this.redrawTyping(id);
+      this.markPicked();
       this.place();
       return;
     }
     if (this.shown !== id || key !== this.drawnFor) this.render(id);
+    this.markPicked();
     this.place();
+  }
+
+  /** Mark the row of the species or step picked on the page (and bring it into view in a long list). */
+  private markPicked(): void {
+    const at = this.hooks.picked?.();
+    const row = at?.slot !== undefined ? this.el.querySelector<HTMLElement>(`.sp-slot[data-k="${at.slot}"]`) : at?.step !== undefined ? this.el.querySelector<HTMLElement>(`.sp-step[data-step="${at.step}"]`) : null;
+    for (const li of this.el.querySelectorAll('.sp-picked')) if (li !== row) li.classList.remove('sp-picked');
+    if (!row || row.classList.contains('sp-picked')) return;
+    row.classList.add('sp-picked');
+    if (!this.el.contains(document.activeElement)) row.scrollIntoView?.({ block: 'nearest' });
+  }
+
+  /** Draw the rows again and put the caret back in the row that stands for `what` (all its text selected, or the caret at its end). */
+  private caretTo(id: number, what: string | undefined, all = false): void {
+    this.render(id);
+    const back = what === undefined ? undefined : [...this.rowOf].find(([, w]) => w === what)?.[0];
+    const g = back === undefined ? undefined : this.fields.get(back);
+    if (!g) return;
+    if (all) g.focusAll();
+    else { g.el.focus(); g.select(g.parts().reduce((n, p) => n + p.text.length, 0)); }
+  }
+
+  /**
+   * Keys in a row: Enter finishes it and goes on to the next species (at the end of a line or a
+   * branch it adds one, as a text pane's Enter adds a line); Alt+Up and Alt+Down move a species
+   * along its route; Backspace in an emptied row takes that species out.
+   */
+  private rowKey(id: number, key: string, f: RichField, e: KeyboardEvent): boolean {
+    const sl = /^s(\d+)$/.exec(key);
+    const k = sl ? Number(sl[1]) : -1;
+    const mod = e.ctrlKey || e.metaKey;
+    if (e.key === 'Enter' && !mod && !e.altKey && !e.shiftKey) {
+      const adding = sl && this.ends(k) && f.text().trim() !== '';
+      f.commit();
+      // (the scheme was laid out again as the text went in, but its rows are the same ones)
+      if (adding) { this.hooks.add(id, k); return true; }
+      const keys = [...this.fields.keys()];
+      const next = keys.slice(keys.indexOf(key) + 1).find((x) => /^s\d+$/.test(x));
+      const g = this.fields.get(next ?? key);
+      if (g) g.focusAll();
+      return true;
+    }
+    if (sl && e.altKey && !mod && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      const to = this.beside(k, e.key === 'ArrowUp' ? -1 : 1);
+      if (to === undefined) return true;
+      const what = this.rowOf.get(key);
+      f.commit();
+      this.hooks.move(id, k, to);
+      this.caretTo(id, what);
+      return true;
+    }
+    if (sl && e.key === 'Backspace' && !mod && f.text() === '' && this.removable(k)) {
+      // the caret goes to the species before it (the one after, for the first)
+      const keys = [...this.fields.keys()].filter((x) => /^s\d+$/.test(x));
+      const at = keys.indexOf(key);
+      const what = this.rowOf.get(keys[at - 1] ?? keys[at + 1] ?? '');
+      f.handOver(f);
+      this.hooks.remove(id, k);
+      this.caretTo(id, what);
+      return true;
+    }
+    return false;
   }
 
   /** What a scheme is made of (its members and layout): the rows change only when this does. */
@@ -279,9 +356,10 @@ export class SmartPane {
     info.tabIndex = 0;
     info.setAttribute('role', 'img');
     info.innerHTML = '<svg viewBox="0 0 14 14" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="7" cy="7" r="5.9"/><path d="M7 6.2v3.9" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="4.1" r=".85" fill="currentColor" stroke="none"/></svg>';
+    const tree = read.tree;
     const help = data.layout === 'cycle'
       ? 'Each row is a species in the cycle; the T row below it is the arrow text to the next species (step name, what enters and leaves). Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species. + Add at the bottom adds another loop (sharing a species or a stretch of them, turning with a step, or beside the cycle) or a species off the cycle; each loop then has its own heading here.'
-      : 'Each row is a species in the scheme; the T row below it is the text above and below the arrow to the next species. Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species.';
+      : 'Each row is a species in the scheme; the T row below it is the text above and below the arrow to the next species. Type in the rows: Enter goes on to the next species, and adds one at the end of a line or a branch. Drag a row\'s handle to reorder (or Alt+Up and Alt+Down), or drag a species on the page. Use + on the page to add a species; click a species on the page for a + on each side that starts a branch there. + Add at the bottom adds a species or a branch (a side product, another route, a fragment that comes in); each branch then has its own heading here.';
     info.title = help;
     info.setAttribute('aria-label', help);
     head.append(info);
@@ -294,7 +372,7 @@ export class SmartPane {
       const b = btn(`<svg viewBox="0 0 27 24" width="20" height="18" aria-hidden="true"><g fill="currentColor" stroke="currentColor" stroke-width="1.2">${SMART_LAYOUT_ICONS[l.id]}</g></svg>`, `${l.name}: ${l.tip}`, 'sp-layout', () => this.hooks.arrange(id, { layout: l.id }));
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', String(on));
-      if (net && l.id !== 'cycle') { b.disabled = true; b.title = `${l.name}: not for a cycle of several loops or with species off it`; }
+      if (!layoutFits(l.id, read)) { b.disabled = true; b.title = net ? `${l.name}: not for a cycle of several loops or with species off it` : `${l.name}: not for a scheme that branches`; }
       lay.append(b);
     }
     head.append(lay);
@@ -369,11 +447,11 @@ export class SmartPane {
     list.className = 'sp-list';
     this.fields.clear();
     const field = (key: string, value: TextPart[], placeholder: string, label: string, done: (v: TextPart[]) => void): HTMLDivElement => {
-      const f = new RichField(value, { placeholder, label, chem: () => chemOn, looks: true, done, onState: (x) => { if (x === this.active) this.showState(); } });
+      const f = new RichField(value, { placeholder, label, chem: () => chemOn, looks: true, done, onState: (x) => { if (x === this.active) this.showState(); }, keys: (e, x) => this.rowKey(id, key, x, e) });
       this.fields.set(key, f);
       f.el.dataset.key = key;
-      f.el.addEventListener('focus', () => { this.active = f; this.activeKey = key; this.showState(); });
-      f.el.addEventListener('blur', () => setTimeout(() => { if (!this.el.contains(document.activeElement)) this.showState(); this.refresh(); }, 0));
+      f.el.addEventListener('focus', () => { this.active = f; this.activeKey = key; this.showState(); const sl = /^s(\d+)$/.exec(key); this.hooks.hot?.(id, sl ? Number(sl[1]) : null); });
+      f.el.addEventListener('blur', () => setTimeout(() => { if (!this.el.contains(document.activeElement)) { this.showState(); this.hooks.hot?.(id, null); } this.refresh(); }, 0));
       if (key === this.activeKey && this.active) this.active = f;
       return f.el;
     };
@@ -387,7 +465,7 @@ export class SmartPane {
       const grip = document.createElement('span');
       grip.className = 'sp-grip';
       grip.textContent = '⋮⋮';
-      grip.title = net ? 'Drag to put this species somewhere else in its loop' : 'Drag to put this species somewhere else in the scheme';
+      grip.title = net ? 'Drag to put this species somewhere else in its loop' : tree ? 'Drag to put this species somewhere else in its route' : 'Drag to put this species somewhere else in the scheme';
       if (!drag) grip.style.visibility = 'hidden';
       const num = document.createElement('span');
       num.className = 'sp-num';
@@ -406,7 +484,7 @@ export class SmartPane {
         b.setAttribute('aria-pressed', 'true');
         li.append(b);
       }
-      if (canRemoveSlot(read, k)) li.append(btn('×', net ? `Remove species ${k + 1}` : `Remove species ${k + 1} and the step after it`, 'sp-x', () => this.hooks.remove(id, k)));
+      if (canRemoveSlot(read, k)) li.append(btn('×', net || tree ? `Remove species ${k + 1}` : `Remove species ${k + 1} and the step after it`, 'sp-x', () => this.hooks.remove(id, k)));
       li.addEventListener('dragstart', (e) => { this.dragFrom = k; e.dataTransfer?.setData('text/plain', String(k)); li.classList.add('dragging'); });
       li.addEventListener('dragend', () => { this.dragFrom = null; li.classList.remove('dragging'); });
       li.addEventListener('dragover', (e) => { if (this.dragFrom !== null && canDrop(this.dragFrom, k)) { e.preventDefault(); li.classList.add('drop'); } });
@@ -421,8 +499,16 @@ export class SmartPane {
       return li;
     };
     // in a cycle of several loops a species changes places only with others of its own loop (or branch)
-    const runs = net ? [...net.loops.map((lp) => lp.own), ...net.tails.map((t) => t.slots)] : [];
-    const canDrop = (from: number, to: number) => !net || runs.some((r) => r.includes(from) && r.includes(to));
+    const runs = net ? [...net.loops.map((lp) => lp.own), ...net.tails.map((t) => t.slots)] : tree ? tree.runs.map((r) => r.slots) : [];
+    const canDrop = (from: number, to: number) => (!net && !tree) || runs.some((r) => r.includes(from) && r.includes(to));
+    // (the rows a species changes places with from the keyboard: the one before and the one after in its line, loop or route)
+    this.beside = (k, d) => {
+      const run = !net && !tree ? (read.chain ? read.slots.map((_, i) => i) : []) : runs.find((r) => r.includes(k)) ?? [];
+      const to = run[run.indexOf(k) + d];
+      return run.includes(k) ? to : undefined;
+    };
+    this.ends = (k) => !read.closed && !net && !data.free && (read.chain || !!tree) && !read.links.some((l) => l.from === k);
+    this.removable = (k) => canRemoveSlot(read, k);
     /** The row of a step (by its place in the scheme's steps): the text on its arrow. `straight`: not round a loop. */
     const stepRow = (k: number, round: boolean): HTMLLIElement | null => {
       const l = read.links[k];
@@ -430,6 +516,7 @@ export class SmartPane {
       for (const p of ['inside', 'above', 'below'] as const) this.rowOf.set(`p${k}${p}`, `r${l.arrow.id}${p}`);
       const step = document.createElement('li');
       step.className = 'sp-step';
+      step.dataset.step = String(k);
       const arrow = document.createElement('span');
       arrow.className = 'sp-arrow';
       // A "T" text mark: this row holds the words written on the arrow.
@@ -465,7 +552,8 @@ export class SmartPane {
       return step;
     };
     const put = (...rows: (HTMLElement | null)[]) => { for (const r of rows) if (r) list.append(r); };
-    if (!net) {
+    if (tree) this.treeRows(id, read, { slotRow, stepRow, put, btn });
+    else if (!net) {
       read.slots.forEach((_, k) => {
         put(slotRow(k, read.chain));
         const at = read.links.findIndex((x) => x.from === k);
@@ -475,13 +563,13 @@ export class SmartPane {
     this.el.append(list);
     const foot = document.createElement('div');
     foot.className = 'sp-foot';
-    if (read.chain && !(cycle && read.closed)) foot.append(btn('+ Add Species', 'Add a species at the end, with an arrow to it', 'sp-add', () => this.hooks.add(id, read.slots.length - 1)));
-    // a cycle takes more than species: another loop, or a species off the cycle
-    if (cycle && !data.free && (net || (read.chain && read.closed))) {
-      const add = btn('+ Add ▾', 'Add a species, a loop or an off-cycle species', 'sp-add sp-add-menu', () => this.addMenu(id, add, read));
+    // a cycle takes more than species: another loop, or a species off the cycle; a line takes a branch
+    const round = cycle && !data.free && (!!net || (read.chain && read.closed));
+    if (round || (!data.free && !read.closed && (read.chain || !!tree))) {
+      const add = btn('+ Add ▾', round ? 'Add a species, a loop or an off-cycle species' : 'Add a species or a branch', 'sp-add sp-add-menu', () => this.addMenu(id, add, read, round));
       add.setAttribute('aria-haspopup', 'menu');
       foot.append(add);
-    }
+    } else if (read.chain && !(cycle && read.closed)) foot.append(btn('+ Add Species', 'Add a species at the end, with an arrow to it', 'sp-add', () => this.hooks.add(id, read.slots.length - 1)));
     const right = document.createElement('div');
     right.className = 'sp-foot-right';
     // a cycle drawn into a mess by hand: back onto one ellipse
@@ -568,6 +656,50 @@ export class SmartPane {
     }
   }
 
+  /**
+   * The rows of a scheme that branches: its main route under a heading, then each branch under
+   * its own (where it joins, add a species at its end, take the branch out). A branch that leads
+   * away starts with the arrow that joins it; one that leads in ends with it.
+   */
+  private treeRows(id: number, read: SmartRead, h: {
+    slotRow(k: number, drag: boolean): HTMLLIElement;
+    stepRow(k: number, round: boolean): HTMLLIElement | null;
+    put(...rows: (HTMLElement | null)[]): void;
+    btn(label: string, title: string, cls: string, f: () => void): HTMLButtonElement;
+  }): void {
+    const tree = read.tree!;
+    tree.runs.forEach((run, i) => {
+      const li = document.createElement('li');
+      li.className = 'sp-loop';
+      const name = document.createElement('span');
+      name.className = 'sp-loop-name';
+      const main = run.parent === undefined;
+      name.textContent = !main ? 'Branch' : i === 0 ? 'Main Route' : `Route ${tree.runs.slice(0, i + 1).filter((r) => r.parent === undefined).length}`;
+      li.append(name);
+      const first = run.slots[0], last = run.slots[run.slots.length - 1];
+      if (!main) {
+        const tag = document.createElement('span');
+        tag.className = 'sp-loop-how';
+        const both = read.links[run.via!]?.arrow.equilibrium;
+        tag.textContent = both ? `⇌ ${run.at! + 1}` : run.dir === 'in' ? `into ${run.at! + 1}` : `from ${run.at! + 1}`;
+        tag.title = both ? `In equilibrium with species ${run.at! + 1}` : run.dir === 'in' ? `Leads into species ${run.at! + 1}` : `Leads away from species ${run.at! + 1}`;
+        li.append(tag);
+      }
+      const gap = document.createElement('span');
+      gap.className = 'sp-loop-gap';
+      li.append(gap);
+      if (!main && !read.links[run.via!]?.arrow.equilibrium) li.append(h.btn('⇄', run.dir === 'in' ? 'Reverse: make this branch lead away from the species it joins' : 'Reverse: make this branch lead into the species it joins', 'sp-x sp-loop-turn', () => this.hooks.reverseStep(id, run.via!)));
+      // (a route that leads in grows at its start, one that leads away at its end)
+      if (run.dir === 'in') li.append(h.btn('+', 'Add a species at the start of this branch', 'sp-x sp-loop-add', () => this.hooks.addBranch(id, first, 'in')));
+      else if (!read.links.some((l) => l.from === last)) li.append(h.btn('+', main ? 'Add a species at the end of the main route' : 'Add a species at the end of this branch', 'sp-x sp-loop-add', () => this.hooks.add(id, last)));
+      if (!main) li.append(h.btn('×', 'Remove this branch', 'sp-x', () => this.hooks.removeBranch(id, i)));
+      h.put(li);
+      if (run.dir === 'out') h.put(h.stepRow(run.via!, false));
+      run.slots.forEach((k, q) => h.put(h.slotRow(k, run.slots.length > 1), q < run.links.length ? h.stepRow(run.links[q], false) : null));
+      if (run.dir === 'in') h.put(h.stepRow(run.via!, false));
+    });
+  }
+
   /** What Add Loop and Add Off-Cycle Species offer for this cycle, starting at `at` (else where the caret is). */
   private loopAsk(read: SmartRead, at?: { slot?: number; step?: number }) {
     const doc = this.hooks.doc();
@@ -589,7 +721,8 @@ export class SmartPane {
 
   private openBranch(id: number, anchor: HTMLElement, read: SmartRead, at?: { slot?: number; step?: number }): void {
     const { species, slot } = this.loopAsk(read, at);
-    void askBranch(anchor, { species, slot }).then((got) => { if (got) this.hooks.addBranch(id, got.slot, got.dir); });
+    const line = !read.net && !read.closed;
+    void askBranch(anchor, { species, slot, ...(line ? { line } : {}) }).then((got) => { if (got) this.hooks.addBranch(id, got.slot, got.dir); });
   }
 
   /**
@@ -602,16 +735,30 @@ export class SmartPane {
     if (id === null) return false;
     const read = readSmart(this.hooks.doc(), this.hooks.measure(), id);
     const data = this.hooks.doc().shapes.get(id)?.smart;
-    if (!read || !data || smartLayoutOf(data, read) !== 'cycle' || smartIsFree(data, read) || !(read.net || (read.chain && read.closed))) return false;
+    if (!read || !data || smartIsFree(data, read)) return false;
+    const round = smartLayoutOf(data, read) === 'cycle' && (!!read.net || (read.chain && read.closed));
+    // a loop goes on a cycle; a branch on a cycle (a species off it) or on a scheme in a line
+    if (what === 'loop' ? !round : !round && (read.closed || !(read.chain || read.tree))) return false;
     const anchor = this.el.querySelector<HTMLElement>('.sp-add-menu') ?? this.el;
     if (what === 'loop') this.openLoop(id, anchor, read, at); else this.openBranch(id, anchor, read, at);
     return true;
   }
 
   /** The cycle's + Add menu: a species, a loop, an off-cycle species. */
-  private addMenu(id: number, anchor: HTMLElement, read: SmartRead): void {
+  private addMenu(id: number, anchor: HTMLElement, read: SmartRead, round = true): void {
     const { slot } = this.loopAsk(read);
     const r = anchor.getBoundingClientRect();
+    const typing = /^[sp]\d/.test(this.activeKey);
+    if (!round) {
+      // in a line: after the species the caret is in, else at the end of the main route
+      const end = read.tree ? read.tree.runs[0].slots[read.tree.runs[0].slots.length - 1] : read.slots.length - 1;
+      const after = typing ? slot : end;
+      popupMenu(r.left, r.bottom + 2, [
+        ['Species', () => { const l = read.links.findIndex((x) => x.from === after); this.hooks.add(id, after, read.tree && l >= 0 ? l : undefined); }],
+        ['Branch…', () => this.openBranch(id, anchor, read)],
+      ]);
+      return;
+    }
     popupMenu(r.left, r.bottom + 2, [
       // a species after the one the caret is in (a + on the page puts one on any step)
       ['Species', () => { const l = read.links.findIndex((x) => x.from === slot); this.hooks.add(id, slot, l >= 0 ? l : undefined); }],

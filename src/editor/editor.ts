@@ -74,7 +74,7 @@ import { applyArrange, planArrange, readingOrder, type ArrangeOptions } from '..
 import { buildCycle, type CycleLook, type CycleSpec } from '../chem/cycles';
 import { refitTableFigures, tableContents } from './table-figs';
 import { energyFrameOf, plotFromBox, putEnergy, refitEnergy, type EnergyData } from '../design/energy';
-import { addBranch, addLoop, arrangeSmart, readSmart, smartIsFree, smartLayoutOf, cleanUpCycle, formatSmart, removeLoop, setLoopMiddle, setStepNames, type LoopJoin, stepToHolder, stepHolderToText, fillHolder, fillHoldersDrawn, holderFrameOf, holderToSlotText, insertSlot, makeSmart, moveSlot, refitSmart, removeSlot, setSlotRuns, setSlotText, setStepRuns, setStepText, smartFrameOf, smartMarks, slotToHolder, ungroupSmart, type SmartData, type StepPart, type TextPart } from '../chem/smart-scheme';
+import { SMART_LAYOUTS, layoutFits, addBranch, addLoop, arrangeSmart, branchSpots, fanSteps, removeBranch, reverseStep, readSmart, smartIsFree, smartLayoutOf, cleanUpCycle, formatSmart, removeLoop, setLoopMiddle, setStepNames, type LoopJoin, stepToHolder, stepHolderToText, fillHolder, fillHoldersDrawn, holderFrameOf, holderToSlotText, insertSlot, makeSmart, moveSlot, refitSmart, removeSlot, setSlotRuns, setSlotText, setStepRuns, setStepText, smartFrameOf, smartMarks, slotToHolder, ungroupSmart, type SmartData, type StepPart, type TextPart } from '../chem/smart-scheme';
 import type { SmartFormat } from '../chem/smart-format';
 import { plateFrameOf, plateFromBox, putPlate, refitPlates, rfAtY, setMarkAt, tlcSpotAt, type PlateData } from '../design/plates';
 import { drawMo } from '../design/mo';
@@ -1151,7 +1151,15 @@ export class Editor {
     // a click on a selected Smart Scheme's + adds a species there
     if (e.button === 0 && !e.shiftKey && !e.altKey) {
       const add = this.smartAddAt(this.docPoint(e));
-      if (add) { e.preventDefault(); this.closeCaption(); this.smartInsert(add.frame, add.after, add.link); return; }
+      if (add) {
+        e.preventDefault();
+        this.closeCaption();
+        // beside a picked species: a branch leading away from it on that side; before a route's first species: a new start
+        if (add.side !== undefined) this.smartAddBranch(add.frame, add.after, 'out', add.side);
+        else if (add.lead) this.smartAddBranch(add.frame, add.after, 'in');
+        else this.smartInsert(add.frame, add.after, add.link);
+        return;
+      }
     }
     // a click on a "+" box above or below a reaction arrow starts the text there
     // (Alt+click goes to what is under the box instead)
@@ -3904,6 +3912,18 @@ export class Editor {
     ctx.font = `600 ${9 * px}px Arial, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    // the species whose row the caret is in: a solid box, lightly filled
+    const hot = this.smartHot?.frame === id ? marks.boxes[this.smartHot.slot] : undefined;
+    if (hot) {
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = blue;
+      ctx.fillRect(hot.x1, hot.y1, hot.x2 - hot.x1, hot.y2 - hot.y1);
+      ctx.restore();
+      ctx.lineWidth = 1.5 * px;
+      ctx.strokeRect(hot.x1, hot.y1, hot.x2 - hot.x1, hot.y2 - hot.y1);
+      ctx.lineWidth = px;
+    }
     marks.boxes.forEach((b, i) => {
       const w = 13 * px, h = 11 * px;
       ctx.fillStyle = blue;
@@ -3911,28 +3931,58 @@ export class Editor {
       ctx.fillStyle = '#ffffff';
       ctx.fillText(String(i + 1), b.x1 + w / 2, b.y1 - h / 2 + 0.5 * px);
     });
-    for (const a of marks.adds) {
+    const plus = (at: Vec) => {
       const r = 7 * px;
       ctx.fillStyle = this.dark ? '#23262e' : '#ffffff';
-      ctx.beginPath(); ctx.arc(a.at.x, a.at.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(at.x, at.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(a.at.x - 3.5 * px, a.at.y); ctx.lineTo(a.at.x + 3.5 * px, a.at.y);
-      ctx.moveTo(a.at.x, a.at.y - 3.5 * px); ctx.lineTo(a.at.x, a.at.y + 3.5 * px);
+      ctx.moveTo(at.x - 3.5 * px, at.y); ctx.lineTo(at.x + 3.5 * px, at.y);
+      ctx.moveTo(at.x, at.y - 3.5 * px); ctx.lineTo(at.x, at.y + 3.5 * px);
       ctx.lineWidth = 1.5 * px;
       ctx.stroke();
       ctx.lineWidth = px;
+    };
+    for (const a of marks.adds) plus(a.at);
+    // beside a picked species: where a branch would lead away from it, as a faint arrow to a +
+    for (const b of this.smartSpots(id)) {
+      const d = { x: b.at.x - b.from.x, y: b.at.y - b.from.y }, len = Math.hypot(d.x, d.y) || 1;
+      const u = { x: d.x / len, y: d.y / len }, end = { x: b.at.x - u.x * 8.5 * px, y: b.at.y - u.y * 8.5 * px };
+      ctx.save();
+      ctx.globalAlpha = 0.75;
+      ctx.setLineDash([3 * px, 2.5 * px]);
+      ctx.beginPath(); ctx.moveTo(b.from.x, b.from.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - u.x * 5 * px - u.y * 2.5 * px, end.y - u.y * 5 * px + u.x * 2.5 * px);
+      ctx.moveTo(end.x, end.y); ctx.lineTo(end.x - u.x * 5 * px + u.y * 2.5 * px, end.y - u.y * 5 * px - u.x * 2.5 * px);
+      ctx.stroke();
+      ctx.restore();
+      plus(b.at);
     }
     ctx.restore();
   }
 
+  /** Where branches can start beside the species picked in Smart Scheme `id` (none unless one species is picked). */
+  private smartSpotsCache: { key: string; spots: ReturnType<typeof branchSpots>; slot: number } | null = null;
+  private smartSpots(id: number): ReturnType<typeof branchSpots> {
+    const key = `${id} ${this.doc.version} ${[...this.sel.captions].join()}|${[...this.sel.atoms].slice(0, 4).join()}|${[...this.sel.shapes].join()}|${this.sel.arrows.size}`;
+    if (this.smartSpotsCache?.key !== key) {
+      const slot = this.sel.shapes.has(id) ? undefined : this.smartPicked()?.slot;
+      this.smartSpotsCache = { key, slot: slot ?? -1, spots: slot === undefined ? [] : branchSpots(this.doc, this.measure(), id, slot) };
+    }
+    return this.smartSpotsCache.spots;
+  }
+
   /** A selected Smart Scheme's + button under a point, if any. */
-  private smartAddAt(p: Vec): { frame: number; after: number; link?: number } | null {
+  private smartAddAt(p: Vec): { frame: number; after: number; link?: number; lead?: boolean; side?: 1 | -1 } | null {
     const id = this.selectedSmart();
     if (id === null) return null;
     const marks = this.smartMarksOf(id);
     const r = 8 / this.r.view.scale;
+    const spot = this.smartSpots(id).find((b) => dist(b.at, p) <= r);
+    if (spot) return { frame: id, after: this.smartSpotsCache!.slot, side: spot.side };
     const hit = marks?.adds.find((a) => dist(a.at, p) <= r);
-    return hit ? { frame: id, after: hit.after, ...(hit.link !== undefined ? { link: hit.link } : {}) } : null;
+    return hit ? { frame: id, after: hit.after, ...(hit.link !== undefined ? { link: hit.link } : {}), ...(hit.lead ? { lead: true } : {}) } : null;
   }
 
   /** Run a change to a Smart Scheme as one undoable step, keeping the scheme selected. */
@@ -4008,14 +4058,29 @@ export class Editor {
   smartAddLoop(id: number, join: LoopJoin, count: number): boolean { return this.smartEdit(id, 'Add Loop', (m) => addLoop(this.doc, m, id, join, count) !== null); }
   /** Take loop `loop` (not the first) out of Smart Scheme `id`'s cycle. */
   smartRemoveLoop(id: number, loop: number): boolean { return this.smartEdit(id, 'Remove Loop', (m) => removeLoop(this.doc, m, id, loop)); }
-  /** Add a species off the cycle at species `k`, and start typing it. */
-  smartAddBranch(id: number, k: number, dir: 'in' | 'out' | 'both'): boolean {
+  /**
+   * Add a species off the cycle at species `k`, or a branch off a line (leading away from species
+   * `k`, into it, or in equilibrium with it; on `side` of its route when one is given), and start typing it.
+   */
+  smartAddBranch(id: number, k: number, dir: 'in' | 'out' | 'both', side: 1 | -1 | 0 = 0): boolean {
     let cap: number | null = null;
-    const ok = this.smartEdit(id, 'Add Off-Cycle Species', (m) => (cap = addBranch(this.doc, m, id, k, dir)) !== null);
+    const ok = this.smartEdit(id, this.smartIsCycle(id) ? 'Add Off-Cycle Species' : 'Add Branch', (m) => (cap = addBranch(this.doc, m, id, k, dir, undefined, side)) !== null);
     if (ok && cap !== null) this.onSmartAdded(id, cap);
     return ok;
   }
+  /** Take branch `run` (not the main route) out of Smart Scheme `id`, with the branches off it. */
+  smartRemoveBranch(id: number, run: number): boolean { return this.smartEdit(id, 'Remove Branch', (m) => removeBranch(this.doc, m, id, run)); }
+  /** Turn step `k` of Smart Scheme `id` round (a branch that led away leads in, and back). */
+  smartReverseStep(id: number, k: number): boolean { return this.smartEdit(id, 'Reverse Step', (m) => reverseStep(this.doc, m, id, k)); }
   smartLoopMiddle(id: number, loop: number, parts: TextPart[]): boolean { return this.smartEdit(id, 'Type Loop Middle', (m) => setLoopMiddle(this.doc, m, id, loop, parts)); }
+  /** The species whose row the caret is in, in the species list: marked on the page. */
+  private smartHot: { frame: number; slot: number } | null = null;
+  smartHotRow(id: number, slot: number | null): void {
+    const next = slot === null ? null : { frame: id, slot };
+    if (next?.frame === this.smartHot?.frame && next?.slot === this.smartHot?.slot) return;
+    this.smartHot = next;
+    this.requestOverlay();
+  }
   /** The species or step of the selected Smart Scheme that is picked on the page (where Add Loop and Add Off-Cycle Species start). */
   smartPicked(): { slot?: number; step?: number } | undefined {
     const id = this.selectedSmart();
@@ -4033,6 +4098,20 @@ export class Editor {
     if (!d) return false;
     const read = readSmart(this.doc, this.fullMeasure(), id);
     return smartLayoutOf(d, read) === 'cycle' && !smartIsFree(d, read);
+  }
+  /** The layouts Smart Scheme `id` can take (the one it has marked; laid out by hand, that comes first), for the Side Panel. */
+  smartLayouts(id: number): { id: string; name: string; on: boolean }[] {
+    const d = this.doc.shapes.get(id)?.smart, read = d ? readSmart(this.doc, this.fullMeasure(), id) : null;
+    if (!d || !read) return [];
+    const now = smartIsFree(d, read) ? null : smartLayoutOf(d, read);
+    return [...(now === null ? [{ id: '', name: 'As laid out by hand', on: true }] : []), ...SMART_LAYOUTS.filter((l) => layoutFits(l.id, read)).map((l) => ({ id: l.id, name: l.name, on: l.id === now }))];
+  }
+  /** Whether Smart Scheme `id` takes branches: one in a line, down the page or as a tree (not a cycle, not one laid out by hand). */
+  smartTakesBranch(id: number): boolean {
+    const d = this.doc.shapes.get(id)?.smart;
+    if (!d) return false;
+    const read = readSmart(this.doc, this.fullMeasure(), id);
+    return !!read && !smartIsFree(d, read) && !read.net && !read.closed && (!!read.tree || !!read.chain);
   }
   smartStepNames(id: number, how: 'short' | 'full'): boolean { return this.smartEdit(id, 'Step Names', (m) => setStepNames(this.doc, m, id, how)); }
   /** Clean Up Cycle: the selected (or given) Smart Scheme's cycle onto one ellipse that fits it, its arrows along the ellipse. */
@@ -4060,34 +4139,41 @@ export class Editor {
   insertSmartScheme(at: Vec, page?: { w: number; h: number }, layout: Exclude<SmartData['layout'], 'cycle'> = 'line'): boolean {
     const doc = this.doc, m = this.fullMeasure();
     const picked = this.selectedStructures();
-    let id: number | null = null;
+    let id: number | null = null, firstCap: number | null = null;
     doc.edit('Smart Scheme', () => {
       let sel = withFrameContents(doc, this.sel);
       if (picked.length < 2) {
         const L = doc.style.bondLength, lw = doc.style.lineWidth;
-        // (four in rows of two, so rows and snake show what they do)
-        const wraps = layout === 'rows' || layout === 'snake';
-        const names = wraps ? ['Starting material', 'Intermediate 1', 'Intermediate 2', 'Product'] : ['Starting material', 'Intermediate', 'Product'];
-        const caps = names.map((t, i) => doc.addCaption({ x: at.x + (i - 1) * 9 * L, y: at.y, runs: [{ text: t }], justify: 'center' }));
+        // (four in rows of two, so rows and snake show what they do; a tree: one species leading to three)
+        const wraps = layout === 'rows' || layout === 'snake', fan = layout === 'tree';
+        const names = fan ? ['Starting material', 'Product 1', 'Product 2', 'Product 3'] : wraps ? ['Starting material', 'Intermediate 1', 'Intermediate 2', 'Product'] : ['Starting material', 'Intermediate', 'Product'];
+        const spot = (i: number) => (fan ? { x: at.x + (i ? 4.5 : -4.5) * L, y: at.y + (i === 2 ? 3 : i === 3 ? -3 : 0) * L } : { x: at.x + (i - 1) * 9 * L, y: at.y });
+        const caps = names.map((t, i) => doc.addCaption({ ...spot(i), runs: [{ text: t }], justify: 'center' }));
+        firstCap = caps[0].id;
         sel = emptySel();
         for (const c of caps) sel.captions.add(c.id);
         for (let i = 0; i + 1 < caps.length; i++) {
+          const a = fan ? 0 : i, p = spot(a), q = spot(i + 1);
           const r = doc.addArrow({
             headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: lw * 10, headWidth: lw * 2.5,
-            tail: { x: at.x + (i - 1) * 9 * L + 3.5 * L, y: at.y - 0.3 * L }, head: { x: at.x + (i - 1) * 9 * L + 5.5 * L, y: at.y - 0.3 * L },
-            step: { reactants: ['c' + caps[i].id], products: ['c' + caps[i + 1].id], above: [], below: [], manual: true },
+            tail: { x: p.x + 3.5 * L, y: p.y - 0.3 * L }, head: { x: q.x - 3.5 * L, y: q.y - 0.3 * L },
+            step: { reactants: ['c' + caps[a].id], products: ['c' + caps[i + 1].id], above: [], below: [], manual: true },
           });
           sel.arrows.add(r.id);
         }
       }
       const data: Partial<SmartData> = { layout, ...(picked.length < 2 && (layout === 'rows' || layout === 'snake') ? { perRow: 2 } : {}) };
       id = makeSmart(doc, m, sel, data);
+      // (a tree of the structures picked: the first leads to each of the others)
+      if (id !== null && layout === 'tree' && picked.length >= 2) fanSteps(doc, m, id);
       if (id !== null) arrangeSmart(doc, m, id, data);
       if (id !== null && picked.length < 2) { this.sel = emptySel(); this.sel.shapes.add(id); this.moveClear(page); }
     });
     if (id === null) return false;
     this.selectOnly({ kind: 'shape', id });
     this.changed();
+    // a blank scheme: the caret goes straight into its first species' row, to type over it
+    if (firstCap !== null) this.onSmartAdded(id, firstCap);
     return true;
   }
 
@@ -4893,6 +4979,8 @@ export class Editor {
     // a curved arrow's join that was pressed: Delete takes out just that join
     const a = this.activePoint();
     if (a && a.i % 3 === 0 && this.removeBend(a.r.id, a.i)) return;
+    // whole species of a Smart Scheme picked on the page: they go as × in its list takes them
+    if (this.deleteSmartSpecies()) return;
     const doc = this.doc;
     const s = this.sel;
     doc.edit('Delete', () => {
@@ -4904,6 +4992,43 @@ export class Editor {
     });
     this.sel = emptySel();
     this.changed();
+  }
+
+  /**
+   * Delete with whole species of a Smart Scheme selected (and nothing else): each goes with its
+   * step, the arrows join up behind it and the scheme is laid out again, as × in the species list
+   * does. A species that can't go (one of the last two, or one other steps join at) stays, with a word why.
+   */
+  private deleteSmartSpecies(): boolean {
+    const id = this.selectedSmart(), s = this.sel;
+    if (id === null || s.shapes.has(id) || s.arrows.size) return false;
+    const read = readSmart(this.doc, this.fullMeasure(), id);
+    if (!read) return false;
+    const whole = (it: { caption?: number; shape?: number; atoms: number[] }) => (it.caption !== undefined ? s.captions.has(it.caption) : it.shape !== undefined ? s.shapes.has(it.shape) : it.atoms.length > 0 && it.atoms.every((a) => s.atoms.has(a)));
+    const gone = read.slots.filter((sl) => sl.items.length > 0 && sl.items.every(whole));
+    if (!gone.length) return false;
+    // (nothing else may be selected: part of another structure, a step's conditions)
+    const mine = { atoms: new Set<number>(), captions: new Set<number>(), shapes: new Set<number>() };
+    for (const sl of gone) for (const it of [...sl.items, ...sl.labels]) { for (const a of it.atoms) mine.atoms.add(a); if (it.caption !== undefined) mine.captions.add(it.caption); if (it.shape !== undefined) mine.shapes.add(it.shape); }
+    for (const a of s.atoms) if (!mine.atoms.has(a)) return false;
+    for (const c of s.captions) if (!mine.captions.has(c)) return false;
+    for (const x of s.shapes) if (!mine.shapes.has(x)) return false;
+    const refs = gone.map((sl) => sl.items[0].ref);
+    let done = 0, kept = '';
+    this.doc.edit('Remove Species', () => {
+      const m = this.fullMeasure();
+      for (const ref of refs) {
+        const now = readSmart(this.doc, m, id);
+        const k = now?.slots.findIndex((sl) => sl.items[0]?.ref === ref) ?? -1;
+        if (!now || k < 0) continue;
+        if (removeSlot(this.doc, m, id, k)) done++;
+        else kept = now.slots.length <= 2 ? 'A Smart Scheme keeps at least two species. To remove it all, select the whole scheme and press Delete.' : 'Other steps join at that species. Remove its branches first, or use Ungroup to edit it freely.';
+      }
+    });
+    if (kept) this.onNotice(kept, 6000);
+    if (done) { this.sel = emptySel(); this.sel.shapes.add(id); }
+    this.changed();
+    return true;
   }
 
   private erase(h: NonNullable<Hit>): void {

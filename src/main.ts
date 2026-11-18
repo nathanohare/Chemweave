@@ -951,6 +951,14 @@ function showToolStatus(): void {
     const sh = sel.shapes.size ? editor.doc.shapes.get([...sel.shapes][0]) : undefined;
     one = r ? arrowHandleHelp(r) : sh && (sh.kind === 'rect' || sh.kind === 'oval' || sh.kind === 'line') ? shapeHandleHelp(sh.kind === 'line') : null;
   }
+  // a Smart Scheme, or a species or step picked in one: what can be done with it there
+  const smartId = editor.selectedSmart();
+  if (smartId !== null && sel.atoms.size + sel.bonds.size === 0) {
+    const branch = editor.smartTakesBranch(smartId), at = editor.smartPicked();
+    if (sel.shapes.has(smartId)) one = { name: 'Smart Scheme selected', handles: ['Click + to add a species', 'Click a species to work on it', 'Type in its list'] };
+    else if (at?.slot !== undefined) one = { name: 'Species selected', handles: [...(branch ? ['Click + beside it to start a branch'] : []), 'Delete removes it and joins the arrows up'] };
+    else if (at?.step !== undefined) one = { name: 'Step selected', handles: ['Click + to add a species on it', ...(branch ? ['Right-click to reverse it'] : [])] };
+  }
   const s = statusHint({ name, label: toolLabel(name), t, st: editor.statusState(), step: toolStep, one, key: (action, ctx = 'command') => keysOf(ctx, action)[0] });
   // (the same hint again leaves the bar alone: this runs on every change to the drawing)
   if (lastStatus && $('#hint').classList.contains('steps') && JSON.stringify(s) === JSON.stringify(lastStatus)) return;
@@ -3847,6 +3855,7 @@ const animateDialog = {
 const pickedCurved = (): boolean => [...editor.sel.arrows].some((id) => { const r = doc.arrows.get(id); return !!r && isCurved(r); });
 /** Whether the selection is in a Smart Scheme laid out as a cycle (Clean Up Cycle applies). */
 const smartIsCycle = (): boolean => { const id = editor.selectedSmart(); return id !== null && editor.smartIsCycle(id); };
+const smartTakesBranch = (): boolean => { const id = editor.selectedSmart(); return id !== null && editor.smartTakesBranch(id); };
 /** The selected straight arrows that can show text guides. */
 const pickedStraightArrows = (): number[] => [...editor.sel.arrows].filter((id) => { const r = doc.arrows.get(id); return !!r && canShowGuides(r); });
 const pickedReactionArrow = (): number | undefined => [...editor.sel.arrows].find((id) => { const r = doc.arrows.get(id); return !!r && isReactionArrow(r); });
@@ -9626,6 +9635,12 @@ const COMMANDS: Record<string, () => unknown> = {
   'ungroup-smart-scheme': () => editor.ungroupSmart() || flash('Select a Smart Scheme first.'),
   'smart-add-loop': () => smartPane.ask('loop', editor.smartPicked()) || flash('Select a catalytic cycle first (a Smart Scheme in the Cycle layout).'),
   'smart-add-branch': () => smartPane.ask('branch', editor.smartPicked()) || flash('Select a catalytic cycle first (a Smart Scheme in the Cycle layout).'),
+  'smart-add-route': () => { if (!(smartTakesBranch() && smartPane.ask('branch', editor.smartPicked()))) flash('Select a Smart Scheme in the Line, Down or Tree layout first.'); },
+  'smart-reverse-step': () => {
+    const id = editor.selectedSmart(), step = editor.smartPicked()?.step;
+    if (id === null || step === undefined || !smartTakesBranch()) { flash('Select a step arrow of a Smart Scheme first.'); return; }
+    if (!editor.smartReverseStep(id, step)) flash('That step cannot be reversed: it would lead back around to itself.', 4000);
+  },
   'clean-up-cycle': () => editor.smartCleanUpCycle() || flash('Select a catalytic cycle drawn as a Smart Scheme, with three or more species in one loop.', 5000),
   'bring-front': () => restack('front'),
   'send-back': () => restack('back'),
@@ -13101,6 +13116,8 @@ function drawingMenu(): MenuItem[] {
     // (a scheme is about whole structures and arrows, not an atom or a bond picked on its own)
     // (a catalytic cycle: another loop, or a species off it, at what was clicked)
     ...(smartIsCycle() ? [{ cmd: 'smart-add-loop' }, { cmd: 'smart-add-branch' }, null] : []),
+    // (a scheme in a line or a tree: a branch at the species that was clicked, or the clicked step turned round)
+    ...(smartTakesBranch() ? [{ cmd: 'smart-add-route' }, ...(editor.smartPicked()?.step !== undefined ? [{ cmd: 'smart-reverse-step' }] : []), null] : []),
     ...(s.arrows.size || (atoms && focus === 'structure') ? [...(editor.selectedSmart() !== null ? [{ cmd: 'ungroup-smart-scheme' }, null] : []), { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'clean-up-arrow' }, ...(smartIsCycle() ? [{ cmd: 'clean-up-cycle' }] : []), { cmd: 'arrange-scheme' }, ...(editor.selectedSmart() === null ? [{ cmd: 'convert-smart-scheme' }] : []), { cmd: 'smart-scheme' }, { cmd: 'number-compounds' }, ...(s.arrows.size ? [{ cmd: 'stoichiometry-table' }, { cmd: 'check-balance' }, { cmd: 'map-atoms' }, { cmd: 'copy-reaction-smiles' }] : []), { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }, ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : [])] }] : []),
     ...(atoms && focus !== 'bond' ? [{ label: 'Label the Structure', items: [
       { cmd: 'add-id-label' }, { cmd: 'add-caption' }, { cmd: 'attach-descriptors' }, null, { cmd: 'number-compounds' },
@@ -13337,6 +13354,11 @@ stylePanel.formatPicture = () => void formatPicture();
 stylePanel.removeWhite = (ids) => void removeWhite(ids);
 stylePanel.newman = { look: (id, patch) => editor.relookNewman(id, patch), edit: (id) => void newmanProjection(null, null, id) };
 stylePanel.frames = { add: () => void command('add-frame'), fit: (id) => editor.fitFrame(id) };
+stylePanel.smart = {
+  layouts: (id) => editor.smartLayouts(id),
+  arrange: (id, layout) => { if (layout) editor.smartArrange(id, { layout: layout as NonNullable<Parameters<typeof editor.smartArrange>[1]>['layout'] }); },
+  ungroup: (id) => editor.ungroupSmart(id),
+};
 stylePanel.diagram = {
   edit: (id) => void smartDiagram(id),
   restyle: (id, patch) => { const d = doc.shapes.get(id)?.diagram; if (d) editor.putDiagramAt({ ...d, ...patch }, pasteCentre(), id); },
@@ -15171,6 +15193,10 @@ const smartPane = new SmartPane({
   addLoop: (id, join, count) => { if (!editor.smartAddLoop(id, join, count)) flash('The loop could not be joined there.', 4000); },
   removeLoop: (id, loop) => editor.smartRemoveLoop(id, loop),
   addBranch: (id, k, dir) => editor.smartAddBranch(id, k, dir),
+  removeBranch: (id, run) => editor.smartRemoveBranch(id, run),
+  picked: () => editor.smartPicked(),
+  hot: (id, slot) => editor.smartHotRow(id, slot),
+  reverseStep: (id, k) => { if (!editor.smartReverseStep(id, k)) flash('That step cannot be reversed: it would lead back around to itself.', 4000); },
   loopMiddle: (id, loop, parts) => editor.smartLoopMiddle(id, loop, parts),
   stepNames: (id, how) => editor.smartStepNames(id, how),
   cleanUpCycle: (id) => { if (!editor.smartCleanUpCycle(id)) flash('Clean Up Cycle needs a loop of three or more species.', 4000); },

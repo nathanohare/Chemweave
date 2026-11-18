@@ -139,11 +139,11 @@ describe('Smart Schemes', () => {
     expect(names(doc, m, id)).toEqual(['ArBr', 'ArAr′', 'ArCHO']);
   });
 
-  it('marks each species and offers a + between them and after the last', () => {
+  it('marks each species and offers a + between them, after the last and before the first', () => {
     const { doc, m, id } = line();
     const marks = smartMarks(doc, m, id)!;
     expect(marks.boxes.length).toBe(3);
-    expect(marks.adds.map((a) => a.after)).toEqual([0, 1, 2]);
+    expect(marks.adds.map((a) => a.after)).toEqual([0, 1, 2, -1]);
   });
 
   it('a species moved by hand takes its arrows and their conditions with it', () => {

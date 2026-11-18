@@ -13,8 +13,13 @@ import { labelsOf, spacing, fittedLength } from './scheme-layout';
 import { focalPoint } from './focal';
 import { arrowMid, sweepThrough } from '../objects';
 import { crowdedLinks, layoutNet, readNet, type Net, type NetLink } from './cycle-net';
+import { layoutTree, readTree, type Tree } from './scheme-tree';
 
-export type ArrangeKind = 'line' | 'rows' | 'snake' | 'down' | 'cycle' | 'tree';
+/**
+ * `fan`: a scheme that branches, its branches fanning out in columns (a Smart Scheme's Tree layout).
+ * A line or a column takes a scheme that branches too: its branches run beside the main route.
+ */
+export type ArrangeKind = 'line' | 'rows' | 'snake' | 'down' | 'cycle' | 'tree' | 'fan';
 
 export interface ArrangeOptions {
   kind: ArrangeKind;
@@ -35,6 +40,16 @@ export interface ArrangeOptions {
    * two loops turn together. Left out, loops that turn together are told from where their arrows are.
    */
   meshes?: [number, number][];
+  /**
+   * A scheme that branches: the side of its parent route each of these branches goes on, by the
+   * arrow (its id) that joins it: 1 below a route across the page (right of a route down it), −1
+   * the other side, 0 wherever there is more room. Branches not named keep the side they are on.
+   */
+  sides?: [number, 1 | -1 | 0][];
+  /** Line and Down take a scheme that branches (a Smart Scheme's do): its main route in the line, its branches beside it. */
+  branches?: boolean;
+  /** A scheme that branches: the way it runs as it is laid out now (across the page or down it), when that is known. Its main route is then the one drawn straight on. */
+  flow?: Vec;
 }
 
 /** What is selected: ids of atoms, captions, shapes and arrows (all empty: the whole drawing). */
@@ -200,7 +215,10 @@ export function planArrange(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOpt
   if (sh.nodes.length < 2 && !(opts.kind === 'cycle' && sh.nodes.length >= 1)) return null;
   // a cycle of several loops (or with branches off it) is laid out as its loops
   const found = opts.kind === 'cycle' && !sh.path ? schemeNet(sh, opts.meshes) : null;
-  if (opts.kind !== 'tree' && !sh.path && !found) return null;
+  // a scheme that branches (and never comes back on itself) is laid out as its main route and branches
+  const branching = !found && (opts.kind === 'fan' || (opts.branches && (opts.kind === 'line' || opts.kind === 'down') && !sh.path)) ? schemeTree(sh, opts.flow) : null;
+  if (opts.kind !== 'tree' && !sh.path && !found && !branching) return null;
+  if (opts.kind === 'fan' && !branching) return null;
   const bond = doc.style.bondLength;
   for (const n of sh.nodes) {
     const its = n.items.filter((it) => it.atoms.length);
@@ -209,6 +227,20 @@ export function planArrange(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOpt
   }
   const L = new Layout(sh, bond);
   if (found) L.net(found.net, found.links, !!opts.anticlockwise, !!opts.reagentArrows, opts.startAngle);
+  else if (branching) {
+    // each branch keeps the side of its route it is on now (one just made goes where it is told, or where there is room)
+    const vertical = opts.kind === 'down';
+    for (const run of branching.runs) {
+      if (run.at === undefined || run.via === undefined) continue;
+      const told = opts.sides?.find(([id]) => id === sh.links[run.via!].arrow?.id);
+      if (told) { if (told[1]) run.side = told[1]; continue; }
+      const a = run.dir === 'in' ? run.nodes[run.nodes.length - 1] : run.nodes[0];
+      const off = sub(centre(sh.nodes[a].box), centre(sh.nodes[run.at].box));
+      const c = vertical ? off.x : off.y;
+      if (Math.abs(c) > 0.5 * bond) run.side = c > 0 ? 1 : -1;
+    }
+    L.branches(branching, vertical, opts.kind === 'fan');
+  }
   else switch (opts.kind) {
     case 'line': L.rows(Infinity, false); break;
     case 'rows': L.rows(Math.max(1, opts.perRow ?? 3), false); break;
@@ -235,6 +267,15 @@ export function schemeNet(sh: SchemeShape, meshes?: [number, number][]): { net: 
   const pairs = meshes?.map(([a, b]) => [at(a), at(b)] as [number, number]).filter(([a, b]) => a >= 0 && b >= 0);
   const net = readNet(sh.nodes.length, links, { centres: sh.nodes.map((n) => centre(n.box)), mids: sh.links.map((l) => arrowMid(l.arrow!)) }, pairs);
   return net ? { net, links } : null;
+}
+
+/**
+ * A scheme that branches without coming back on itself: its main route and the branches off it
+ * (null when a step leads back to an earlier species, which is a cycle).
+ */
+export function schemeTree(sh: SchemeShape, flow?: Vec): Tree | null {
+  if (sh.closed) return null;
+  return readTree(sh.nodes.length, sh.links.map((l) => ({ from: l.from, to: l.to })), sh.nodes.map((n) => centre(n.box)), flow);
 }
 
 class Layout {
@@ -266,6 +307,13 @@ class Layout {
     const d = sub(c, onRow && n.focus ? { x: centre(n.box).x, y: n.focus.y } : centre(n.box));
     for (const it of n.items) this.shift(it, d);
     this.at.set(i, { x1: n.box.x1 + d.x, y1: n.box.y1 + d.y, x2: n.box.x2 + d.x, y2: n.box.y2 + d.y });
+  }
+
+  /** How wide a link's conditions are along an arrow along `u` (the widest of them). */
+  private textWidth(l: Link, u: Vec): number {
+    let widest = 0;
+    for (const it of [...l.above, ...l.inside, ...l.below]) widest = Math.max(widest, Math.abs(u.x) * width(it.box) + Math.abs(u.y) * height(it.box));
+    return widest;
   }
 
   /** Length of a straight arrow along `u` that fits its conditions. */
@@ -628,6 +676,29 @@ class Layout {
       out(l.above, amid, false);
       out(l.below, amid, true, inner);
     }
+  }
+
+  // ---------------------------------------------------------------- a main route and its branches
+
+  /**
+   * A scheme that branches: the main route straight across the page (or down it), each branch
+   * beside it. The first species of the main route stays where it is.
+   */
+  branches(tree: Tree, vertical: boolean, fan: boolean): void {
+    const { nodes, links } = this.sh, bond = this.bond;
+    const right = { x: 1, y: 0 }, dn = { x: 0, y: 1 };
+    const place = layoutTree(tree, links.map((l) => ({ from: l.from, to: l.to })), {
+      w: nodes.map((n) => width(n.box)), h: nodes.map((n) => height(n.box)),
+      lenAcross: links.map((l) => this.arrowLength(l, right)), lenDown: links.map((l) => this.arrowLength(l, dn)),
+      reachAcross: links.map((l) => { const r = this.reach(l, right); return [r.above, r.below]; }),
+      reachDown: links.map((l) => { const r = this.reach(l, dn); return [r.above, r.below]; }),
+      textAcross: links.map((l) => this.textWidth(l, right)), textDown: links.map((l) => this.textWidth(l, dn)),
+      gap: this.g, rowGap: (fan ? 1.8 : 1.2) * bond,
+    }, { vertical, fan });
+    const first = tree.runs[0].nodes[0];
+    const by = sub(centre(nodes[first].box), place.centres[first]);
+    nodes.forEach((_, i) => this.placeNode(i, add(place.centres[i], by)));
+    links.forEach((l, i) => { const a = place.arrows[i]; if (a && dist(a.tail, a.head) > 1e-6) this.straight(l, add(a.tail, by), add(a.head, by)); });
   }
 
   // ---------------------------------------------------------------- branching tree

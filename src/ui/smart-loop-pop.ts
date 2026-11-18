@@ -1,6 +1,7 @@
-// Two small popouts from a cycle's + Add menu on its species list: Add Loop (how the new loop is
-// joined to the cycle, where, and how many species it has) and Add Off-Cycle Species (where, and
-// whether it comes in, goes out, or is in equilibrium). They share the Scheme Format popout's look.
+// Small popouts from the + Add menu on a Smart Scheme's species list: Add Loop (how the new loop is
+// joined to the cycle, where, and how many species it has), Add Off-Cycle Species (where, and
+// whether it comes in, goes out, or is in equilibrium) and, for a scheme in a line, Add Branch
+// (where, and whether it leads away or in). They share the Scheme Format popout's look.
 
 import type { LoopJoin } from '../chem/smart-scheme';
 
@@ -168,16 +169,22 @@ export function askLoop(anchor: HTMLElement, o: LoopAsk): Promise<{ join: LoopJo
   });
 }
 
-/** Ask where a species off the cycle goes and which way its arrow points. Null when closed without adding. */
-export function askBranch(anchor: HTMLElement, o: { species: Species[]; slot: number }): Promise<{ slot: number; dir: 'in' | 'out' | 'both' } | null> {
-  return popout(anchor, 'Add Off-Cycle Species', (_pop, row) => {
+/**
+ * Ask where a species off the cycle goes and which way its arrow points; with `line`, where a
+ * branch joins a scheme that runs in a line and which way it leads. Null when closed without adding.
+ */
+export function askBranch(anchor: HTMLElement, o: { species: Species[]; slot: number; line?: boolean }): Promise<{ slot: number; dir: 'in' | 'out' | 'both' } | null> {
+  return popout(anchor, o.line ? 'Add Branch' : 'Add Off-Cycle Species', (_pop, row) => {
     const at = document.createElement('select');
     for (const s of o.species) at.append(speciesOption(s));
     at.value = String(o.slot);
-    row(labelled('At', 'The species of the cycle it is joined to', at));
+    row(labelled('At', o.line ? 'The species the branch is joined to' : 'The species of the cycle it is joined to', at));
     const dir = document.createElement('select');
-    dir.append(new Option('Enters the cycle', 'in'), new Option('Leaves the cycle', 'out'), new Option('In equilibrium', 'both'));
-    row(labelled('Direction', 'Enters: a precatalyst. Leaves: a deactivated species. In equilibrium: a resting state off the cycle', dir));
+    if (o.line) dir.append(new Option('Leads away', 'out'), new Option('Leads in', 'in'), new Option('In equilibrium', 'both'));
+    else dir.append(new Option('Enters the cycle', 'in'), new Option('Leaves the cycle', 'out'), new Option('In equilibrium', 'both'));
+    row(labelled('Direction', o.line
+      ? 'Leads away: a side product, or another route from this species. Leads in: a second starting material, or a fragment made separately. In equilibrium: a species this one is in equilibrium with'
+      : 'Enters: a precatalyst. Leaves: a deactivated species. In equilibrium: a resting state off the cycle', dir));
     return () => ({ slot: Number(at.value), dir: dir.value as 'in' | 'out' | 'both' });
   });
 }
