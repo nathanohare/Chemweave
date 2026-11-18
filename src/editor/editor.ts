@@ -3814,6 +3814,16 @@ export class Editor {
     this.changed();
   }
 
+  /** One projection drawn again with part of its look changed (the Side Panel's options). */
+  relookNewman(id: number, patch: Partial<NewmanData['look']>): void {
+    const doc = this.doc, s = doc.shapes.get(id);
+    const c = s?.newman ? newmanCentre(doc, s) : null;
+    if (!s?.newman || !c) return;
+    const d = { ...s.newman, look: { ...structuredClone(s.newman.look), ...patch } };
+    doc.edit('Newman Projection Look', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
+    this.changed();
+  }
+
   /** Unlink: the projection stays as drawn and no longer follows its structure (its mark stays as ordinary lines). */
   unlinkNewman(id: number): void {
     const d = this.doc.shapes.get(id)?.newman;

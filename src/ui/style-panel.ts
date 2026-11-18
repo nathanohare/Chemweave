@@ -122,6 +122,8 @@ export class StylePanel {
   cropWithMouse: (shapeId: number) => void = () => {};
   /** Frames (set up by the app): add one round the selection, or fit a box round what is inside it. */
   frames: { add(): void; fit(shapeId: number): void } | null = null;
+  /** Draws a Newman or sawhorse projection again with part of its look changed, and opens its window. */
+  newman: { look(shapeId: number, patch: Partial<NonNullable<Shape['newman']>['look']>): void; edit(shapeId: number): void } | null = null;
   /** A highlight colour was chosen (the app remembers it for Chemistry > Highlight and Fill > Highlight). */
   highlightUsed: (colour: string) => void = () => {};
   /** The look last chosen for highlights (new highlights take it). */
@@ -216,9 +218,10 @@ export class StylePanel {
     if (several) this.structureControls(selAtoms, selBonds);
     if (arrows.length) this.arrowControls(arrows);
     // an energy diagram is a frame drawn from its numbers: its own section, not a rectangle's
-    const diagram = all.length === 1 && (all[0].energy || all[0].diagram || all[0].plate || all[0].smart) ? all[0] : undefined;
+    const diagram = all.length === 1 && (all[0].energy || all[0].diagram || all[0].plate || all[0].smart || all[0].newman) ? all[0] : undefined;
     if (diagram?.energy) this.energyControls(diagram);
     else if (diagram?.plate) this.plateControls(diagram);
+    else if (diagram?.newman) this.newmanControls(diagram);
     else if (diagram?.diagram) this.diagramControls(diagram);
     else if (diagram?.smart) {
       // how its list works is behind the "i" by the list's title
@@ -555,6 +558,37 @@ export class StylePanel {
   // ------------------------------------------------------------------ energy diagrams
 
   /** An energy diagram: how it is drawn, and the window with its numbers. */
+  /** A Newman or sawhorse projection: how it is drawn and written. */
+  private newmanControls(sh: Shape): void {
+    const d = sh.newman!, look = d.look, tx = look.text ?? { auto: false };
+    const saw = d.kind === 'sawhorse';
+    this.heading(saw ? 'Sawhorse Projection' : 'Newman Projection');
+    const set = (patch: Partial<typeof look>) => this.newman?.look(sh.id, patch);
+    this.check('Idealized Angles', !!look.ideal, (v) => set({ ideal: v }), 'Bonds 120° apart on each atom and staggered at exactly 60°, as textbooks draw them. Clear it to draw the true angles.');
+    const size = document.createElement('input');
+    size.type = 'number'; size.min = '4'; size.max = '72'; size.step = '0.5'; size.placeholder = 'Auto';
+    size.value = tx.size !== undefined ? String(tx.size) : '';
+    const apply = () => { const v = Number(size.value); const { size: _old, ...rest } = tx; set({ text: size.value.trim() !== '' && Number.isFinite(v) ? { ...rest, size: Math.max(4, Math.min(72, v)) } : rest }); };
+    size.addEventListener('change', apply);
+    size.addEventListener('keydown', (e) => { if (e.key === 'Enter') { apply(); size.blur(); } e.stopPropagation(); });
+    this.row('Text Size', size, "In points. Empty: 2 points smaller than the drawing's caption text.");
+    this.check('Bold', !!tx.bold, (v) => set({ text: { ...tx, bold: v || undefined } }));
+    this.check('Italic', !!tx.italic, (v) => set({ text: { ...tx, italic: v || undefined } }));
+    if (!saw) this.check('Auto-Scale Text', !!tx.auto, (v) => set({ text: { ...tx, auto: v } }), 'Make the labels smaller, down to 70%, where they would not fit at full size.');
+    if (saw) {
+      this.check('Wedges', !!look.wedges, (v) => set({ wedges: v }), 'A wedge and a hashed wedge on each carbon show which groups point toward and away from you.');
+      this.check('R/S Labels', !!look.rs, (v) => set({ rs: v }), 'R or S beside each stereocenter.');
+    }
+    const row = document.createElement('div');
+    row.className = 'style-buttons';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = 'Edit Projection…';
+    b.addEventListener('click', () => this.newman?.edit(sh.id));
+    row.append(b);
+    this.body.append(row);
+  }
+
   private energyControls(sh: Shape): void {
     const d = sh.energy!;
     this.heading('Energy diagram');
