@@ -890,8 +890,6 @@ dialog.grid-picker { width: min(96vw, 680px); }
 .grid-pick-preview { height: 280px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-tab); padding: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .grid-pick-preview svg { max-width: 100%; max-height: 100%; width: 100%; height: 100%; }
 @media (max-width: 560px) { .grid-pick-body { grid-template-columns: 1fr; } .grid-pick-preview { height: 200px; } }
-/* Insert > Catalytic Cycle */
-dialog.cycle-dialog { width: min(96vw, 760px); max-height: 92vh; }
 .cycle-loop { border: 1px solid var(--line); border-radius: var(--r-tab); padding: 4px 8px 8px; margin: 8px 0; min-width: 0; }
 .cycle-loop table { border-collapse: collapse; width: 100%; margin-bottom: 4px; }
 .cycle-loop th { text-align: left; font-weight: 600; font-size: 0.85em; padding: 2px 3px; }
@@ -4199,6 +4197,43 @@ dialog.hotkeys:not([data-view="board"]) .hk-board { display: none; }
 .smart-pane .sp-arrow svg { display: block; margin: 0 auto; }
 .smart-pane .sp-opts { font-size: var(--fs-xs); }
 .smart-pane .sp-foot .sp-ungroup { padding: 1px 6px; font-size: var(--fs-xs); }
+/* a cycle of several loops: a heading for each loop (its name, how it is joined, the text in its middle, add a species, remove the loop) */
+.smart-pane .sp-loop { display: flex; align-items: center; gap: 4px; margin-top: 3px; padding: 1px 1px 1px 3px; border-top: 1px solid var(--line); font-size: var(--fs-xs); }
+.smart-pane .sp-loop:first-child { margin-top: 0; border-top: none; }
+.smart-pane .sp-loop-name { font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+.smart-pane .sp-loop-how { color: var(--muted); white-space: nowrap; font-size: var(--fs-xs); }
+.smart-pane .sp-loop .sp-loop-mid { flex: 1; min-width: 40px; max-width: 110px; margin-left: auto; min-height: 17px; font-size: var(--fs-xs); }
+.smart-pane .sp-loop .sp-loop-how + .sp-x, .smart-pane .sp-loop .sp-loop-name + .sp-x { margin-left: auto; }
+.smart-pane .sp-loop .sp-x { padding: 0 3px; }
+.smart-pane .sp-loop-add:hover { color: var(--accent); }
+.smart-pane .sp-shared { padding-left: 18px; opacity: 0.8; }
+.smart-pane .sp-shared .sp-num { background: none; color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.smart-pane .sp-names { font: inherit; font-size: var(--fs-xs); padding: 0 2px; }
+.smart-pane .sp-layout:disabled { opacity: 0.35; cursor: default; }
+/* the Smart Scheme gallery: layouts, then ready-made cycles, under the Smart Scheme button */
+.smart-gallery { position: fixed; z-index: 60; width: min(640px, calc(100vw - 16px)); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22); font: var(--fs-sm) var(--ui-font); padding: 5px 8px 6px; display: grid; gap: 4px; }
+.smart-gallery .sg-head { display: flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.smart-gallery .sg-layouts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 3px; }
+.smart-gallery .sg-cycles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.smart-gallery button { font: inherit; color: var(--text); cursor: pointer; }
+.smart-gallery .sg-tile, .smart-gallery .sg-card { border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); min-width: 0; }
+.smart-gallery .sg-tile { display: grid; justify-items: center; gap: 1px; padding: 5px 2px 3px; }
+.smart-gallery .sg-tile svg { color: var(--muted); }
+.smart-gallery .sg-card { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px; text-align: left; }
+.smart-gallery .sg-thumb { display: flex; align-items: center; justify-content: center; height: 92px; padding: 3px; box-sizing: border-box; border-radius: 2px; background: #fff; overflow: hidden; }
+.smart-gallery .sg-thumb img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.smart-gallery .sg-name { font-size: var(--fs-xs); line-height: 1.25; min-height: 2.5em; overflow: hidden; }
+.smart-gallery :is(.sg-tile, .sg-card):hover, .smart-gallery :is(.sg-tile, .sg-card):focus-visible { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); outline: none; }
+.smart-gallery :is(.sg-tile, .sg-card):hover svg { color: var(--accent); }
+.smart-gallery .sg-foot { display: flex; border-top: 1px solid var(--line); margin-top: 2px; padding-top: 3px; }
+.smart-gallery .sg-foot button { border: none; background: none; padding: 3px 4px; border-radius: var(--r-control); }
+.smart-gallery .sg-foot button:hover:not(:disabled), .smart-gallery .sg-foot button:focus-visible { background: var(--accent-soft); outline: none; }
+.smart-gallery .sg-foot button:disabled { color: var(--muted); opacity: 0.6; cursor: default; }
+@media (max-width: 520px) { .smart-gallery .sg-cycles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.smart-loop-pop { width: 232px; }
+.smart-loop-pop .sfp-row[hidden] { display: none; }
+.smart-loop-pop .sfp-foot { gap: 6px; }
+.smart-loop-pop .sfp-foot .primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 /* docked with no scheme selected, the list stays out of the way in the other modes (a slide's Smart Scheme selected shows it) */
 body:is(.slides-mode, .doc-mode, .sheet-mode, .design-mode) .toolbox[data-id='smart']:has(> .tb-body > .smart-pane.sp-none) { display: none; }
 .smart-pane.docked { position: static; width: auto; min-width: 230px; max-width: 300px; max-height: none; border: none; border-radius: 0; box-shadow: none; padding: 4px 6px; }

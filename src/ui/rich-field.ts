@@ -1,8 +1,8 @@
 // A one-line text field that shows subscripts and superscripts as they will look (the Smart
 // Scheme pane's rows). It keeps its own text: each character is plain, subscript or superscript,
 // either set by hand (the formatting bar, Ctrl+= and Ctrl+Shift+=) or worked out by chemical
-// interpretation as you type (the digits of formulas drop, as the Catalytic Cycle window's
-// species do). Turning interpretation off leaves the text as typed. Where the field's text can
+// interpretation as you type (the digits of formulas drop, as they do in a ready-made
+// cycle's species). Turning interpretation off leaves the text as typed. Where the field's text can
 // hold them (`looks`), characters can also be bold, italic or underlined (Ctrl+B, Ctrl+I, Ctrl+U).
 
 import { chemRuns } from '../text/chemtext';

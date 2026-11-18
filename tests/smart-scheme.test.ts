@@ -184,7 +184,7 @@ describe('Smart Schemes', () => {
     expect([...doc.arrows.values()].filter((r) => r.reagentFor !== undefined).every((r) => doc.shapes.get(id!)!.frame!.arrows.includes(r.id))).toBe(true);
   });
 
-  it('two loops turning together become a Smart Scheme laid out by hand', () => {
+  it('two loops turning together become a Smart Scheme that is laid out as its loops (not left as laid out by hand)', () => {
     const doc = new Doc();
     const m = plainMeasure(doc);
     let id: number | null = null;
@@ -195,8 +195,11 @@ describe('Smart Schemes', () => {
       for (const r of made.arrows) s.arrows.add(r);
       id = makeSmart(doc, m, s, { layout: 'cycle' });
     });
-    expect(doc.shapes.get(id!)!.smart!.free).toBe(true);
-    expect(arrangeSmart(doc, m, id!)).toBe(false);
+    expect(doc.shapes.get(id!)!.smart!.free).toBeUndefined();
+    expect(readSmart(doc, m, id!)!.net?.loops).toHaveLength(2);
+    let ok = false;
+    doc.edit('again', () => { ok = arrangeSmart(doc, m, id!); });
+    expect(ok).toBe(true);
   });
 
   it('Ungroup leaves the scheme as ordinary things', () => {

@@ -6,14 +6,13 @@
 // - a Smart Scheme's dashed species and reagent boxes come back from PowerPoint
 // - retyping or recoloring a species of a cycle leaves its arcs where the layout put them
 // - Turn in 3-D views stay with their own animations when one plays on a trigger
-// - a second loop is not offered while a step has a structure joining or leaving it
+// - a second loop added to a cycle keeps a structure that joins or leaves at a step (it was left behind once)
 
 import { describe, expect, it } from 'vitest';
 import { Doc } from '../src/model';
 import { plainMeasure } from '../src/chem/reaction';
 import { CYCLE_PRESETS, buildCycle } from '../src/chem/cycles';
-import { arrangeSmart, fillHolder, makeSmart, readSmart, refitSmart, setSlotRuns, slotName, slotToHolder, stepPartKind, stepToHolder } from '../src/chem/smart-scheme';
-import { smartCycleStart, structureReagents } from '../src/chem/smart-cycle';
+import { addLoop, arrangeSmart, fillHolder, makeSmart, readSmart, refitSmart, setSlotRuns, slotName, slotToHolder, stepPartKind, stepToHolder } from '../src/chem/smart-scheme';
 import { refitFrames } from '../src/editor/frames';
 import { markPieces, stepPieces } from '../src/deck/auto-steps';
 import { newAnim, type Anim } from '../src/deck/animation';
@@ -165,7 +164,7 @@ describe('Turn in 3-D through PowerPoint', () => {
 });
 
 describe('a second loop for a Smart Scheme cycle', () => {
-  it('is not offered while a step has a structure joining it (it would be left behind)', () => {
+  it('keeps a structure that joins at a step (the loop is added in place, nothing is drawn again)', () => {
     const doc = new Doc();
     const m = plainMeasure(doc);
     let id = 0;
@@ -176,17 +175,23 @@ describe('a second loop for a Smart Scheme cycle', () => {
       for (const r of made.arrows) s.arrows.add(r);
       id = makeSmart(doc, m, s, { layout: 'cycle' })!;
     });
-    expect(smartCycleStart(doc, m, id)).not.toBeNull();
     let box: number | null = null;
     doc.edit('box', () => { box = stepToHolder(doc, m, id, 0, 'above'); });
-    expect(structureReagents(doc, m, id)).toBe(true);
-    expect(smartCycleStart(doc, m, id)).toBeNull();
+    let atoms: number[] = [];
     doc.edit('fill', () => {
       const s = doc.shapes.get(box!)!;
       const a = doc.addAtom((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2, 35), b = doc.addAtom((s.x1 + s.x2) / 2 + 20, (s.y1 + s.y2) / 2, 6);
       doc.addBond(a.id, b.id, 1);
       fillHolder(doc, m, box!, [a.id, b.id]);
+      atoms = [a.id, b.id];
     });
-    expect(smartCycleStart(doc, m, id)).toBeNull();
+    // a loop sharing the first species: the step with the structure is right beside it
+    doc.edit('loop', () => { expect(addLoop(doc, m, id, { kind: 'share', slot: 0 }, 3)).not.toBeNull(); });
+    const read = readSmart(doc, m, id)!;
+    expect(read.net?.loops.length).toBe(2);
+    for (const a of atoms) expect(doc.atoms.has(a)).toBe(true);
+    const step = read.links.find((l) => l.above.some((it) => it.atoms.includes(atoms[0])));
+    expect(step).toBeDefined();
+    expect(doc.shapes.get(id)!.frame!.atoms.some((a) => atoms.includes(a))).toBe(true);
   });
 });
