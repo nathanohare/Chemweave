@@ -365,7 +365,13 @@ export function applyIconSet(root: ParentNode = document): void {
     if (lead) { lead.innerHTML = iconSvg(n, 16)!; continue; }
     const pic = b.querySelector<SVGElement>(':scope > svg.fp-icon');
     if (pic) { pic.outerHTML = iconSvg(n, 16)!.replace('class="ci-ic"', 'class="ci-ic fp-icon"'); continue; }
-    if (b.classList.contains('rb-iconbtn') && b.dataset.set !== n) { b.innerHTML = iconSvg(n, 16)!; b.dataset.set = n; }
+    if (b.classList.contains('rb-iconbtn') && b.dataset.set !== n) {
+      // (a button's ▾ for its options stays)
+      const drop = b.querySelector(':scope > .cr-drop');
+      b.innerHTML = iconSvg(n, 16)!;
+      if (drop) b.append(drop);
+      b.dataset.set = n;
+    }
   }
   for (const b of root.querySelectorAll<HTMLElement>('.ribbon button, button#an-views')) addTextIcon(b);
 }
