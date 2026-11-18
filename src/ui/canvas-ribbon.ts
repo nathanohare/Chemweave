@@ -12,7 +12,8 @@
 
 /** A command button (data-cmd, run as the menus run it) or a drawing tool. */
 export type RibbonItem =
-  | { cmd: string; label: string; major?: boolean; tip?: string }
+  /** `menu`: a small ▾ on the button opens its options (CanvasRibbonHost.itemMenu). */
+  | { cmd: string; label: string; major?: boolean; tip?: string; menu?: boolean }
   | { tool: string; label: string; major?: boolean; tip?: string };
 /**
  * A group: its buttons, or one built specially: the Format Favorites gallery, the Clipboard (Paste,
@@ -34,7 +35,7 @@ export const CANVAS_TABS: RibbonTab[] = [
       { name: 'Paragraph', items: [], special: 'paragraph' },
       // (filled by the shared Format Favorites gallery, as on every mode's Home tab)
       { name: 'Format Favorites', items: [], gallery: 'favorites' },
-      { name: 'Schemes', items: [c('smart-scheme', 'Smart Scheme', true), c('catalytic-cycle', 'Catalytic Cycle', true), c('convert-smart-scheme', 'Convert to Smart Scheme'), c('stoichiometry-table', 'Stoichiometry Table…'), c('check-balance', 'Check Balance…'), c('map-atoms', 'Map Atoms…')] },
+      { name: 'Schemes', items: [c('smart-scheme', 'Smart Scheme', true), c('convert-smart-scheme', 'Convert to Smart Scheme'), c('stoichiometry-table', 'Stoichiometry Table…'), c('check-balance', 'Check Balance…'), c('map-atoms', 'Map Atoms…')] },
       { name: 'Diagrams', items: [c('energy-diagram', 'Energy Diagram', true), c('mo-diagram', 'MO Diagram…'), c('orbital', 'Orbital…'), c('ts-brackets', 'Transition State Brackets ‡'), c('torsion-chart', 'Torsional Energy Chart…')] },
       { name: 'Mechanism', items: [c('animate-reaction', 'Animate', true), c('check-arrows', 'Check Arrows'), c('draw-from-arrows', 'Draw Next Intermediate'), c('homolysis-arrows', 'Homolysis Arrows'), c('model-3d', '3-D Model…')] },
       { name: 'Insert', items: [c('name-to-structure', 'Name to Structure…'), c('import-picture', 'Structures from Picture…'), c('sequence-to-structure', 'Structure from Sequence…'), c('tlc-plate', 'TLC Plate…'), c('insert-table', 'Table'), c('rgroup-table', 'R-Group Table…')] },
@@ -52,8 +53,9 @@ export const CANVAS_TABS: RibbonTab[] = [
   },
   {
     id: 'chemistry', title: 'Chemistry', groups: [
-      { name: 'Structure', items: [c('clean-up', 'Clean Up', true), c('check-structure', 'Check Structure'), c('expand-label', 'Expand Label'), c('contract-label', 'Contract Label'), c('stereo-labels', 'Stereo Labels')] },
-      { name: 'Reaction', items: [c('clean-up-reaction', 'Clean Up Reaction', true), c('number-compounds', 'Number Compounds'), c('add-frame', 'Add Frame'), c('attach-descriptors', 'Attach Descriptors')] },
+      // (Smart Clean: a scheme, cycle, mechanism arrow or structure, whichever is selected)
+      { name: 'Structure', items: [c('smart-clean', 'Smart Clean', true), c('clean-up', 'Clean Up Structure'), c('check-structure', 'Check Structure'), c('expand-label', 'Expand Label'), c('contract-label', 'Contract Label'), c('stereo-labels', 'Stereo Labels')] },
+      { name: 'Reaction', items: [c('number-compounds', 'Number Compounds', true), c('clean-up-reaction', 'Clean Up Reaction'), c('add-frame', 'Add Frame'), c('attach-descriptors', 'Attach Descriptors')] },
       { name: 'NMR', items: [c('predict-nmr', 'Predict NMR', true), { cmd: 'nmr-1h', label: '¹H', tip: 'Show the ¹H prediction' }, { cmd: 'nmr-13c', label: '¹³C', tip: 'Show the ¹³C prediction' }, { cmd: 'nmr-solvent', label: 'Solvent…', tip: 'Solvent for the prediction' }, c('nmr-window', 'Spectrum Window'), c('nmr-marks', 'Show on Drawing'), c('nmr-check', 'Check Data…'), c('nmr-settings', 'NMR Settings…')] },
       { name: 'Rings', items: [c('aromatic-circles', 'Aromatic Circles'), c('fill-rings', 'Fill Rings'), c('hapto-bond', 'Add Hapto Bond (η)')] },
       // (once on an Arrow tab that came up with a selected arrow)
@@ -63,15 +65,22 @@ export const CANVAS_TABS: RibbonTab[] = [
   {
     id: 'arrange', title: 'Arrange', groups: [
       { name: 'Align', items: [c('align-left', 'Align Left'), c('align-hcenter', 'Align Center'), c('align-right', 'Align Right'), c('align-top', 'Align Top'), c('align-vcenter', 'Align Middle'), c('align-bottom', 'Align Bottom')] },
-      { name: 'Distribute', items: [c('distribute-h', 'Distribute Horizontally'), c('distribute-v', 'Distribute Vertically'), c('arrange-row', 'Arrange in a Row'), c('arrange-column', 'Arrange in a Column'), c('arrange-grid', 'Arrange in a Grid…')] },
+      { name: 'Distribute', items: [{ ...c('distribute-h', 'Distribute Horizontally'), menu: true }, { ...c('distribute-v', 'Distribute Vertically'), menu: true }, c('arrange-row', 'Arrange in a Row'), c('arrange-column', 'Arrange in a Column'), c('arrange-grid', 'Arrange in a Grid…')] },
+      { name: 'Focal Point', items: [c('set-focal-point', 'Set as Focal Point', true), c('match-focal-points', 'Match Focal Points'), c('reset-focal-point', 'Reset Focal Point'), c('show-focal-points', 'Show Focal Points')] },
       { name: 'Rotate', items: [c('flip-h', 'Flip Horizontal'), c('flip-v', 'Flip Vertical'), c('rotate-cw', 'Rotate Right 90°'), c('rotate-ccw', 'Rotate Left 90°'), c('rotate-dialog', 'Rotate…')] },
+      // (turning in 3-D: the two Perspective tools drag a structure round; 3-D Rotation… turns it by angles typed in)
+      { name: '3-D', items: [
+        { tool: 'perspective', label: 'Perspective', major: true, tip: 'Perspective: drag a structure to tilt it in 3-D as a flat sheet (Shift: 15° steps)' },
+        { tool: 'perspective-3d', label: '3-D Perspective', tip: '3-D Perspective: drag a structure to rotate its real 3-D shape (Shift: 15° steps)' },
+        c('turn-3d', '3-D Rotation…'), c('flatten-3d', 'Flatten'),
+      ] },
       { name: 'Order', items: [c('shape-front', 'Bring to Front'), c('shape-forward', 'Bring Forward'), c('shape-back', 'Send to Back'), c('shape-backward', 'Send Backward')] },
     ],
   },
   {
     id: 'view', title: 'View', groups: [
       { name: 'Zoom', items: [c('zoom-fit', 'Fit', true), c('focus-view', 'Focus View')] },
-      { name: 'Show', items: [c('navigator', 'Document Map'), c('dark-page', 'Reading Mode'), c('show-stereo', 'Stereo Labels')] },
+      { name: 'Show', items: [c('navigator', 'Document Map'), c('dark-page', 'Reading Mode'), c('show-stereo', 'Stereo Labels'), c('show-focal-points', 'Focal Points')] },
     ],
   },
 ];
@@ -92,6 +101,8 @@ export interface CanvasRibbonHost {
   textGroups(font: HTMLElement, paragraph: HTMLElement): void;
   /** Paste's ▾: its menu, under the button. */
   pasteMenu(at: DOMRect): void;
+  /** A button's ▾ (RibbonItem.menu): its options, under the button. */
+  itemMenu?(cmd: string, at: DOMRect): void;
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
@@ -140,6 +151,7 @@ export class CanvasRibbon {
     this.el.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-cmd], button[data-cr-tool]');
       if (!b || !this.el.contains(b)) return;
+      if ((e.target as HTMLElement).closest('.cr-drop') && b.dataset.cmd) { host.itemMenu?.(b.dataset.cmd, b.getBoundingClientRect()); return; }
       if (b.dataset.crTool) host.pickTool(b.dataset.crTool);
       else if (b.dataset.cmd && !b.closest('.cr-body-end, .cr-tab-end')) host.command(b.dataset.cmd);
     });
@@ -242,6 +254,11 @@ export class CanvasRibbon {
       // a command with no picture yet shows a short form of its name
       // (where its tab has room, its name shows beside the picture: from aria-label, in app.css; ribbon-fit.ts)
       b.innerHTML = pic ?? `<span class="cr-word">${esc(name)}</span>`;
+    }
+    if ('cmd' in it && it.menu) {
+      b.classList.add('cr-has-drop');
+      b.setAttribute('aria-haspopup', 'menu');
+      b.insertAdjacentHTML('beforeend', '<span class="cr-drop" aria-hidden="true">▾</span>');
     }
     return b;
   }

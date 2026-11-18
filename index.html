@@ -536,12 +536,19 @@
     <button role="menuitem" data-cmd="align-vcenter">Align Middle</button>
     <button role="menuitem" data-cmd="align-bottom">Align Bottom</button>
     <hr />
-    <button role="menuitem" data-cmd="distribute-h">Distribute Horizontally</button>
-    <button role="menuitem" data-cmd="distribute-v">Distribute Vertically</button>
+    <button role="menuitem" data-cmd="distribute-h-gaps">Distribute Horizontally: Equal Gaps</button>
+    <button role="menuitem" data-cmd="distribute-v-gaps">Distribute Vertically: Equal Gaps</button>
+    <button role="menuitem" data-cmd="distribute-h-focal">Distribute Focal Points Horizontally</button>
+    <button role="menuitem" data-cmd="distribute-v-focal">Distribute Focal Points Vertically</button>
     <hr />
     <button role="menuitem" data-cmd="arrange-row">Arrange in a Row</button>
     <button role="menuitem" data-cmd="arrange-column">Arrange in a Column</button>
     <button role="menuitem" data-cmd="arrange-grid">Arrange in a Grid…</button>
+    <hr />
+    <button role="menuitem" data-cmd="set-focal-point">Set as Focal Point</button>
+    <button role="menuitem" data-cmd="match-focal-points">Match Focal Points</button>
+    <button role="menuitem" data-cmd="reset-focal-point">Reset Focal Point</button>
+    <button role="menuitemcheckbox" aria-checked="false" data-cmd="show-focal-points">Show Focal Points</button>
     </div>
     </div>
     <div class="submenu" data-modes="drawing slides design">
@@ -643,6 +650,7 @@
     <div class="menu-wrap">
     <button id="btn-chemistry" aria-haspopup="menu" aria-expanded="false" aria-controls="chemistry-menu" aria-keyshortcuts="Alt+C"><span class="mn">C</span>hemistry</button>
     <div id="chemistry-menu" class="menu" role="menu" data-item-modes="drawing slides design" hidden>
+    <button role="menuitem" data-cmd="smart-clean" title="Clean up whatever is selected: a scheme, a catalytic cycle, mechanism arrows or structures">Smart Clean</button>
     <button role="menuitem" data-cmd="clean-up">Clean Up Structure</button>
     <button role="menuitem" data-cmd="clean-up-reaction">Clean Up Reaction</button>
     <button role="menuitem" data-cmd="clean-up-reaction-orient" title="Turn every structure so the part it shares with the starting material lies the same way around (configuration kept), then tidy the scheme">Clean Up and Orient Reaction</button>
@@ -751,9 +759,8 @@
     <button role="menuitem" data-cmd="lab-calculator" title="Calculate mass, mmol and volume (neat or solution, with purity and equivalents), solution masses and dilutions; uses the selected structure's MW">Lab Calculator…</button>
     <button role="menuitem" data-cmd="scheme-settings" title="Spacing between structures, the text above and below arrows, the + boxes on new arrows and fitting arrows to their text">Scheme Settings…</button>
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="show-roles"><span>Show Reaction Roles</span></button>
-    <button role="menuitem" data-cmd="smart-scheme" title="Join the selected structures with arrows into one Smart Scheme object with a species list; switch its layout between line, rows, snake, column and cycle">Smart Scheme</button>
+    <button role="menuitem" data-cmd="smart-scheme" title="A reaction scheme or catalytic cycle kept as one object with a species list. Opens a gallery: the layouts (line, rows, snake, down, cycle) for the selected structures or a blank scheme, and ready-made catalytic cycles (Suzuki, Heck, Sonogashira…) to change into your own">Smart Scheme…</button>
     <button role="menuitem" data-cmd="convert-smart-scheme" title="Convert the selected scheme to a Smart Scheme: one object with a species list, switchable layout, and species you can add, remove and reorder">Convert to Smart Scheme</button>
-    <button role="menuitem" data-cmd="catalytic-cycle" title="Draw a catalytic cycle from a template (Suzuki, Heck, Sonogashira…), a blank one, or the selected structures, with step names and what enters and leaves">Catalytic Cycle…</button>
     <button role="menuitem" data-cmd="energy-diagram" title="Draw a reaction energy diagram from a table of energies, with one or more pathways and the highest barrier marked. Double-click to edit">Energy Diagram…</button>
     <button role="menuitem" data-cmd="ts-brackets" title="Add square brackets with ‡ around the selected transition state. Draw forming and breaking bonds as partial bonds (P over a bond)">Transition State Brackets ‡</button>
     </div>
@@ -2854,8 +2861,7 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-cmd="smart-scheme" title="A Smart Scheme: the selected structures joined by arrows (or three species to type over), kept as one object whose layout you can switch"><span class="rb-icon">⇢</span>Smart Scheme</button>
-          <button class="rb-big" data-cmd="catalytic-cycle" title="Draw a catalytic cycle from a template (Suzuki, Heck, Sonogashira…), a blank one, or the selected structures"><span class="rb-icon">⟳</span>Catalytic Cycle</button>
+          <button class="rb-big" data-cmd="smart-scheme" title="A Smart Scheme: a reaction scheme or catalytic cycle kept as one object. Opens a gallery of layouts and ready-made catalytic cycles"><span class="rb-icon">⇢</span>Smart Scheme</button>
           <button class="rb-big" data-cmd="energy-diagram" title="Draw a reaction energy diagram from a table of energies (double-click one to change its numbers)"><span class="rb-icon">⩘</span>Energy Diagram</button>
         </div>
         <div class="rb-label">Chemistry</div>

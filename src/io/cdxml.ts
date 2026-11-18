@@ -6,13 +6,13 @@ import { tint } from '../colours';
 import { pathId, freeformId } from '../design/geo';
 import { parseGuides } from '../editor/guides';
 import { fillFrameMembers, frameFromTag } from '../editor/frames';
-import { ATTACH_TAG, CHEM_TAG, IGNORE_TAG, attachFromTag, attachedNode, fillAttachments } from '../editor/attached';
+import { ATTACH_TAG, CHEM_TAG, IGNORE_TAG, RESULTS_TAG, attachFromTag, attachedNode, fillAttachments } from '../editor/attached';
 import { readSpecies } from '../chem/species';
 import { highlightStyleFromTag } from '../render/highlight';
 import { attachRingFills, ringGeometry, ringsIn } from '../chem/ring-fill';
 import { paperOf } from './cdxml-print';
 import { lipDirection } from '../chem/polymer';
-import { Doc, Atom, Bond, BondDisplay, TextRun, Arrow, Shape, Entity, Kind, StereoLabel, Caption, StepRoles, MorphStep, CHIRAL_FLAGS, PARTIAL, PAPER, type Pin, type OrbitalTag, type PictureFx, type ShapeMath, type HighlightStyle } from '../model';
+import { Doc, Atom, Bond, BondDisplay, TextRun, Arrow, Shape, Entity, Kind, StereoLabel, Caption, StepRoles, MorphStep, CHIRAL_FLAGS, PARTIAL, PAPER, type Pin, type ArrowTextLook, type ArrowKind, type OrbitalTag, type PictureFx, type ShapeMath, type HighlightStyle } from '../model';
 import { TEXT_TAG, parseTextTag, runsFromChemDraw } from '../text/chemdraw-text';
 import { readPageTag } from '../page-grid';
 import { DocStyle, MAP_LOOKS, mapBoxStyle, type MapLook } from '../style';
@@ -34,6 +34,7 @@ import { TABLE_TAG, TABLE_PART_TAG, applyTableTag, gridOf, linesFromBorders, par
 import { layoutTable, NOTE_SCALE } from '../table';
 import { arialWidth } from '../text-metrics';
 import { cleanScheme } from '../drawing-styles';
+import { cleanTiedLook } from '../editor/tied-look';
 import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
@@ -151,15 +152,20 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
   const arrowText = pg && kids(pg).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === ARROW_TEXT_TAG)?.getAttribute('Value');
   if (arrowText) {
     try {
-      const v = JSON.parse(arrowText) as { size?: unknown; font?: unknown; width?: unknown; head?: unknown; headWidth?: unknown; scheme?: unknown };
+      const v = JSON.parse(arrowText) as { size?: unknown; font?: unknown; resultsSize?: unknown; resultsFont?: unknown; width?: unknown; head?: unknown; headWidth?: unknown; scheme?: unknown };
       if (typeof v.size === 'number' && v.size > 0 && v.size < 400) doc.style.arrowTextSize = v.size;
       if (typeof v.font === 'string' && v.font.trim()) doc.style.arrowTextFont = v.font.trim().slice(0, 80);
+      if (typeof v.resultsSize === 'number' && v.resultsSize > 0 && v.resultsSize < 400) doc.style.resultsTextSize = v.resultsSize;
+      if (typeof v.resultsFont === 'string' && v.resultsFont.trim()) doc.style.resultsTextFont = v.resultsFont.trim().slice(0, 80);
       const pt = (x: unknown) => (typeof x === 'number' && x > 0 && x <= 30 ? x : undefined);
       if (pt(v.width)) doc.style.arrowWidth = pt(v.width);
       if (pt(v.head)) doc.style.arrowHeadLength = pt(v.head);
       if (pt(v.headWidth)) doc.style.arrowHeadWidth = pt(v.headWidth);
       const scheme = cleanScheme(v.scheme);
       if (scheme) doc.style.scheme = scheme;
+      const id = cleanTiedLook((v as { id?: unknown }).id), tied = cleanTiedLook((v as { tied?: unknown }).tied);
+      if (id) doc.style.idLook = id;
+      if (tied) doc.style.tiedLook = tied;
     } catch { /* not ours to read */ }
   }
   const mapLook = pg && kids(pg).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MAP_LOOK_TAG)?.getAttribute('Value');
@@ -378,6 +384,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
       if (altTag) extra.alt = altTag;
       const mapTag = Number(kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MAP_TAG)?.getAttribute('Value'));
       if (Number.isInteger(mapTag) && mapTag > 0) extra.mapNo = mapTag;
+      if (kids(n).some((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === FOCAL_TAG)) extra.focal = true;
       const hlA = kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === HIGHLIGHT_TAG)?.getAttribute('Value');
       if (hlA && /^#[0-9a-f]{6}$/i.test(hlA)) extra.highlight = hlA.toLowerCase();
       // ChemDraw's own atom highlight
@@ -646,6 +653,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     const attach = attachFromTag(kids(t).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === ATTACH_TAG)?.getAttribute('Value') ?? null);
     if (attach) extra.attach = attach;
     if (kids(t).some((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === IGNORE_TAG)) extra.ignoreWarnings = true;
+    if (kids(t).some((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === RESULTS_TAG)) extra.results = true;
     // read as chemistry or as text: as set here by hand, else ChemDraw's Interpret Chemically
     // (text it interprets that this program wouldn't read by itself is kept as Chemical)
     const chemTag = kids(t).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === CHEM_TAG)?.getAttribute('Value');
@@ -850,6 +858,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     // two shafts with a full head: a retrosynthetic arrow (spacing in hundredths of the line width)
     const spacing = a.getAttribute('ArrowShaftSpacing');
     if (spacing !== null && !arrow.equilibrium && Number(spacing) > 0) arrow.shaftSpacing = (Number(spacing) / 100) * lw;
+    const textLook = arrowLookFrom(a), kind = arrowKindFrom(a);
+    if (textLook) arrow.textLook = textLook;
+    if (kind) arrow.kind = kind;
     doc.addArrow(arrow);
     from('r', arrow.id, a);
     const mt = kids(a).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MORPH_TAG);
@@ -928,6 +939,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     if (ht === 'Hollow' || ht === 'Angle') arrow.headType = ht === 'Hollow' ? 'hollow' : 'angle';
     for (const k of ['headStyle', 'tailStyle', 'headType', 'line', 'headLength', 'headWidth'] as const) if (lookOk(k, look[k])) (arrow as Record<string, unknown>)[k] = look[k];
     if (lw !== st.lineWidth) arrow.lineWidth = lw;
+    const textLook = arrowLookFrom(c), kind = arrowKindFrom(c);
+    if (textLook) arrow.textLook = textLook;
+    if (kind) arrow.kind = kind;
     doc.addArrow(arrow);
     from('r', arrow.id, c);
     const pt = kids(c).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PIN_TAG);
@@ -1718,6 +1732,8 @@ function geoFromTag(saved: Partial<Shape> & Record<string, unknown>): (Partial<S
 }
 /** A reaction arrow's animation settings (MorphStep as JSON, atoms by the file's node ids). */
 export const MORPH_TAG = 'Chem Illustrator animation';
+/** An atom that is part of its structure's focal point (Atom.focal), value "yes". */
+export const FOCAL_TAG = 'Chem Illustrator focal point';
 /** An atom's atom-atom map number across a reaction (Atom.mapNo). */
 export const MAP_TAG = 'Chem Illustrator map';
 /** Auto-Animate Steps: the piece a thing moves with in the slide show (Atom.piece, Caption.piece and so on). */
@@ -1728,6 +1744,33 @@ export const BRACKET_PAIR_TAG = 'Chem Illustrator bracket pair';
 export const PIN_TAG = 'Chem Illustrator pin';
 /** An S-shaped arrow saved as a ChemDraw curve: its heads as they are here (JSON). */
 export const CURVE_ARROW_TAG = 'Chem Illustrator arrow';
+/** An arrow's own settings for its text (Arrow.textLook): how each side lines up, and its text guides. */
+export const ARROW_LOOK_TAG = 'Chem Illustrator arrow text';
+
+/** An arrow's own text settings from its tag, keeping only what makes sense. */
+export function arrowLookFrom(e: Element): ArrowTextLook | undefined {
+  const v = kids(e).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === ARROW_LOOK_TAG)?.getAttribute('Value');
+  if (!v) return undefined;
+  try {
+    const raw = JSON.parse(v) as { align?: Record<string, unknown>; guides?: unknown; kind?: unknown };
+    const out: ArrowTextLook = {};
+    const align: NonNullable<ArrowTextLook['align']> = {};
+    for (const k of ['above', 'below', 'results'] as const) { const a = raw.align?.[k]; if (a === 'left' || a === 'center' || a === 'right') align[k] = a; }
+    if (Object.keys(align).length) out.align = align;
+    if (typeof raw.guides === 'boolean') out.guides = raw.guides;
+    return Object.keys(out).length ? out : undefined;
+  } catch { return undefined; }
+}
+
+/** An arrow's kind chosen by hand (Arrow.kind), saved in the same tag as its text settings. */
+export function arrowKindFrom(e: Element): ArrowKind | undefined {
+  const v = kids(e).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === ARROW_LOOK_TAG)?.getAttribute('Value');
+  if (!v) return undefined;
+  try {
+    const k = (JSON.parse(v) as { kind?: unknown }).kind;
+    return k === 'reaction' || k === 'mechanism' || k === 'plain' ? k : undefined;
+  } catch { return undefined; }
+}
 
 /** A variable attachment's ring from our tag, while its atoms are still the ones written beside it. */
 function ringFromTag(n: Element, nodeIds: Map<string, number>): number[] | null {

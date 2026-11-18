@@ -209,7 +209,7 @@ export function readPushes(doc: Doc, m: Measure, arrows: Arrow[]): PushReading {
     if (nb < 0) {
       let text: string;
       if (e.nb === 0) text = `${Who} has no lone pair to give. Arrows start at electrons: a lone pair, a negative charge or a bond.`;
-      else if (e.nb === 1 && dnA < -1) text = `${Who} has one unpaired electron, not a pair: a fishhook (half-headed) arrow moves one electron.`;
+      else if (e.nb === 1 && dnA < -1) text = `${Who} has one unpaired electron, not a pair: a fishhook arrow moves one electron.`;
       else text = `More arrows start at ${who} than it has lone pairs for.`;
       // a backwards arrow: from where electrons are wanted to where they are
       const back = (gaveTo.get(id) ?? []).some((o) => { const eo = electronsOf(doc, o); return !!eo && eo.nb >= 2; });

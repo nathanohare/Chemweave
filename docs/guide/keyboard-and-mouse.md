@@ -148,7 +148,7 @@ Start a sequence from a highlight a key set (as above), not from the mouse resti
 | Ctrl+G, Ctrl+Shift+G | Group, Ungroup |
 | Ctrl+L | Fixed bond lengths on or off |
 | Ctrl+E | Fixed angles on or off |
-| Ctrl+Shift+K | Clean Up Structure |
+| Ctrl+Shift+K | Smart Clean (cleans up the selected scheme, cycle, mechanism arrows or structures) |
 | Ctrl+Shift+R | Clean Up Reaction |
 | Alt+K | Aromatic rings: circle or Kekulé |
 | Ctrl+Shift+N | Name to Structure |

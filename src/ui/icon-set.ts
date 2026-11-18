@@ -231,7 +231,6 @@ export const ICON_SET: Record<string, IconDef> = {
   'smart-scheme': { hue: 'purple', d: hex(5.75, 12, 3.75, 'p') + '<path class="a" d="M10.75 12h3.5M12.75 10l2 2-2 2"/>' + hex(18.25, 12, 3.75, 'p') },
   // one arrow shown, the next still faint, with a play badge: a scheme built step by step
   'auto-animate-steps': { hue: 'amber', d: '<path class="a" d="M2.75 8h6.5M7.25 6l2 2-2 2"/><path d="M11.75 8h6.5M16.25 6l2 2-2 2" stroke-opacity=".4"/><circle class="s" cx="17" cy="17" r="4.75"/><path class="k" d="M15.75 14.75v4.5l3.5-2.25z"/>' },
-  'catalytic-cycle': { hue: 'purple', d: '<path d="M12 3.75a8.25 8.25 0 0 1 8.25 8.25M20.25 12A8.25 8.25 0 0 1 12 20.25M12 20.25A8.25 8.25 0 0 1 3.75 12M3.75 12A8.25 8.25 0 0 1 12 3.75"/><path class="a" d="M18.25 9.75l2 2.25 2-2.25M14.25 18.25l-2.25 2 2.25 2M5.75 14.25l-2-2.25-2 2.25M9.75 5.75L12 3.75 9.75 1.75"/>' },
   'energy-diagram': { hue: 'purple', d: '<path d="M3.25 3.25v17.5h17.5" stroke-width="1.25"/><path class="a" d="M5.5 16.5h3M10.5 6.5h3M15.5 12.5h3" stroke-width="2.25"/><path d="M8.5 16.5l2-10M13.5 6.5l2 6" stroke-dasharray="1.5 1.5" stroke-width="1.1"/>' },
   'export-pdf': { hue: 'red', d: page(3.75, 2.75, 13.5, 18.5, 4) + '<path d="M6.75 11.5h5M6.75 14.5h3.5" stroke-opacity=".5"/><circle class="s" cx="17" cy="17" r="4.75"/><path class="k" d="M17 14.5v4.5M15 17.25l2 2 2-2"/>' },
   'export-picture': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="15.5" height="13.5" rx="2"/><path d="M2.75 14l4.5-4.5 3.5 3.5 2-2 5.5 5.5"/><circle class="s" cx="17" cy="17" r="4.75"/><path class="k" d="M17 14.5v4.5M15 17.25l2 2 2-2"/>' },
@@ -253,6 +252,16 @@ export const ICON_SET: Record<string, IconDef> = {
   'align-bottom': { hue: 'gray', d: '<path class="a" d="M2.75 20.75h18.5"/><rect class="f a" x="5.25" y="3.75" width="5" height="14" rx="1"/><rect class="p" x="13.75" y="9.25" width="5" height="8.5" rx="1"/>' },
   'distribute-h': { hue: 'gray', d: '<path class="a" d="M2.75 3.25v17.5M21.25 3.25v17.5"/><rect class="p" x="5.75" y="7.25" width="3" height="9.5" rx=".75"/><rect class="f a" x="10.5" y="7.25" width="3" height="9.5" rx=".75"/><rect class="p" x="15.25" y="7.25" width="3" height="9.5" rx=".75"/>' },
   'distribute-v': { hue: 'gray', d: '<path class="a" d="M3.25 2.75h17.5M3.25 21.25h17.5"/><rect class="p" x="7.25" y="5.75" width="9.5" height="3" rx=".75"/><rect class="f a" x="7.25" y="10.5" width="9.5" height="3" rx=".75"/><rect class="p" x="7.25" y="15.25" width="9.5" height="3" rx=".75"/>' },
+  // a ring with a target on its middle
+  'set-focal-point': { hue: 'teal', d: hex(12, 12, 8.75, 'p') + '<circle class="a" cx="12" cy="12" r="3.25"/><path class="a" d="M12 6.75v2M12 15.25v2M6.75 12h2M15.25 12h2"/><circle class="s" cx="12" cy="12" r="1"/>' },
+  // a ring with its target dashed: back to the middle of the box
+  'reset-focal-point': { hue: 'teal', d: hex(12, 12, 8.75, 'p') + '<circle class="a" cx="12" cy="12" r="3.25" stroke-dasharray="1.6 1.4"/><path d="M3.25 20.75l17.5-17.5" stroke-opacity=".55"/>' },
+  // two rings, each with its target
+  'show-focal-points': { hue: 'teal', d: hex(7.25, 8.5, 5.25, 'p') + hex(16.75, 15.5, 5.25, 'p') + '<circle class="a" cx="7.25" cy="8.5" r="1.75"/><circle class="a" cx="16.75" cy="15.5" r="1.75"/><circle class="s" cx="7.25" cy="8.5" r=".6"/><circle class="s" cx="16.75" cy="15.5" r=".6"/>' },
+  'match-focal-points': { hue: 'teal', d: hex(7.25, 12, 5.25, 'p') + hex(16.75, 12, 5.25, 'p') + '<path d="M2 12h20" stroke-opacity=".45" stroke-dasharray="1.5 1.5"/><circle class="a" cx="7.25" cy="12" r="1.75"/><circle class="a" cx="16.75" cy="12" r="1.75"/>' },
+  // three targets evenly spaced across
+  'distribute-h-focal': { hue: 'gray', d: '<path class="a" d="M2.75 3.25v17.5M21.25 3.25v17.5"/><path d="M5.5 12h13" stroke-opacity=".4" stroke-dasharray="1.5 1.5"/><circle class="f a" cx="6.75" cy="12" r="2"/><circle class="f a" cx="12" cy="12" r="2"/><circle class="f a" cx="17.25" cy="12" r="2"/>' },
+  'distribute-v-focal': { hue: 'gray', d: '<path class="a" d="M3.25 2.75h17.5M3.25 21.25h17.5"/><path d="M12 5.5v13" stroke-opacity=".4" stroke-dasharray="1.5 1.5"/><circle class="f a" cx="12" cy="6.75" r="2"/><circle class="f a" cx="12" cy="12" r="2"/><circle class="f a" cx="12" cy="17.25" r="2"/>' },
   group: { hue: 'gray', d: '<rect class="a" x="2.75" y="2.75" width="18.5" height="18.5" rx="2" stroke-dasharray="2.5 2"/><rect class="p" x="6" y="6" width="6.5" height="6.5" rx="1"/><circle class="f a" cx="15" cy="15" r="3.25"/>' },
   ungroup: { hue: 'gray', d: '<rect class="p" x="2.75" y="2.75" width="9" height="9" rx="1.5" stroke-dasharray="2.25 2"/><rect class="f a" x="12.25" y="12.25" width="9" height="9" rx="1.5" stroke-dasharray="2.25 2"/>' },
   // ---------------------------------------------------------------- slides: smaller commands
@@ -356,7 +365,13 @@ export function applyIconSet(root: ParentNode = document): void {
     if (lead) { lead.innerHTML = iconSvg(n, 16)!; continue; }
     const pic = b.querySelector<SVGElement>(':scope > svg.fp-icon');
     if (pic) { pic.outerHTML = iconSvg(n, 16)!.replace('class="ci-ic"', 'class="ci-ic fp-icon"'); continue; }
-    if (b.classList.contains('rb-iconbtn') && b.dataset.set !== n) { b.innerHTML = iconSvg(n, 16)!; b.dataset.set = n; }
+    if (b.classList.contains('rb-iconbtn') && b.dataset.set !== n) {
+      // (a button's ▾ for its options stays)
+      const drop = b.querySelector(':scope > .cr-drop');
+      b.innerHTML = iconSvg(n, 16)!;
+      if (drop) b.append(drop);
+      b.dataset.set = n;
+    }
   }
   for (const b of root.querySelectorAll<HTMLElement>('.ribbon button, button#an-views')) addTextIcon(b);
 }
