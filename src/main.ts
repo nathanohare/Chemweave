@@ -1053,7 +1053,8 @@ document.addEventListener('pointerover', (e) => {
   const cmd = el ? el.dataset.hoverCmd ?? el.dataset.cmd ?? null : null;
   // (the ribbon's Distribute buttons space things the way their menu says)
   const how = (cmd === 'distribute-h' || cmd === 'distribute-v') && focalPrefs.distribute === 'focal' ? `${cmd}-focal` : cmd;
-  const want = how && LAYOUT_PREVIEWS.has(how) && ws.active.mode === 'drawing' ? how : null;
+  const mode = ws.active.mode;
+  const want = how && LAYOUT_PREVIEWS.has(how) && (mode === 'drawing' || mode === 'slides' || mode === 'design') ? how : null;
   if (want === layoutPreviewOn) return;
   layoutPreviewOn = want;
   editor.previewLayout(want);
@@ -1078,8 +1079,23 @@ function distributeMenu(r: DOMRect): void {
 function refreshDistributeTips(): void {
   const by = focalPrefs.distribute === 'focal' ? 'equal focal point spacing' : 'equal gaps';
   for (const [cmd, name] of [['distribute-h', 'Distribute Horizontally'], ['distribute-v', 'Distribute Vertically']] as const)
-    for (const b of document.querySelectorAll<HTMLElement>(`#canvas-ribbon [data-cmd="${cmd}"]`)) b.title = `${name} (${by}; ▾ to change)`;
+    for (const b of document.querySelectorAll<HTMLElement>(`.ribbon [data-cmd="${cmd}"]`)) b.title = `${name} (${by}; ▾ to change)`;
 }
+
+// the Presentation and Design ribbons' Distribute buttons get the same ▾ as the Canvas ribbon's
+for (const b of document.querySelectorAll<HTMLElement>('.ribbon:not(#canvas-ribbon) [data-cmd="distribute-h"], .ribbon:not(#canvas-ribbon) [data-cmd="distribute-v"]')) {
+  b.classList.add('cr-has-drop');
+  b.setAttribute('aria-haspopup', 'menu');
+  b.insertAdjacentHTML('beforeend', '<span class="cr-drop" aria-hidden="true">▾</span>');
+}
+document.addEventListener('click', (e) => {
+  const drop = (e.target as HTMLElement | null)?.closest('.cr-drop');
+  const b = drop?.closest<HTMLElement>('.ribbon:not(#canvas-ribbon) [data-cmd]');
+  if (!b) return;
+  e.stopPropagation();
+  e.preventDefault();
+  distributeMenu(b.getBoundingClientRect());
+}, true);
 
 /** Arrange ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
 function showFocalPoints(on: boolean): void {
