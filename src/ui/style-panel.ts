@@ -4,7 +4,7 @@
 // Anything the drawing tools set automatically can be changed here by hand.
 
 import { addInfo, setInfo } from './info-tip';
-import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, type PictureLook, type StepRoles, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
+import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, type PictureLook, type StepRoles, type ArrowTextSide, type ArrowKind, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
 import { fullStyle, tidyStyle } from '../render/highlight';
 import type { HighlightLookPreset } from './highlight-looks';
 
@@ -13,7 +13,7 @@ import { descriptorChoices } from './analysis-panel';
 import { captionReading, speciesSummary } from '../chem/species';
 import { COMMON_ADDUCTS } from '../chem/hrms';
 import { DOT_DENSITY, PATTERN_CHOICES, PATTERNS, RING_FILL_COLOUR, patternSwatch, RING_PATTERN_COLOUR, patternSpacing, ringShadowSize, shadowLook } from '../render/fills';
-import type { Role } from '../chem/reaction';
+import { arrowKind, drawnKind, type Role } from '../chem/reaction';
 import { setStereoShown, setStereoText } from '../chem/stereo';
 import { arialWidth } from '../text-metrics';
 import { Selection } from '../editor/editor';
@@ -31,9 +31,14 @@ import { ringFillsOn } from '../chem/ring-fill';
 import { frameMembers } from '../editor/frames';
 import { methylState, writeTerminalMethyls, type MethylStyle } from '../chem/hydrogens';
 import type { TableData } from '../model';
+import { canShowGuides, guidesOn, plainReactionArrow } from '../chem/arrow-text';
+import { RIBBON_ICONS } from './ribbon-icons';
+import { attachedAtoms } from '../editor/attached';
+import { lookPatch } from '../editor/tied-look';
 import { labelAlignment, labelAlignPatch, type LabelAlign } from '../chem/label-align';
 import { labelAtoms, labelLookOf, setLabelFont, setLabelSize } from '../editor/label-font';
 import { ringsThroughBond } from '../chem/aromatic';
+import { clearFocal, focalKind } from '../chem/focal';
 import { canMerge, deleteColumn, deleteRow, fitColumns, insertColumn, insertRow, mergeDown, mergeRight, rowSpanOf, setColumnAlign, setColumnWidth, setRowSpan, setSpan, spanOf, splitCell, type TablePart } from '../table';
 import { SLIDE_TABLE_STYLES, lookOf, slideCellLook, slideTableStyle } from '../deck/table-styles';
 import type { Measure } from '../text/layout';
@@ -66,15 +71,22 @@ export interface ReactionHooks {
   select(arrowId: number, role: Role): void;
   cleanUp(): void;
   arrange(): void;
-  /** The text above and below the arrow (the nearest line of each), as plain text. */
-  sideText(arrowId: number): { above: string; below: string } | null;
+  /** The text above and below the arrow and its Results line (the nearest line of each), as plain text, with how each lines up. */
+  sideText(arrowId: number): (Record<ArrowTextSide, string> & { align: Record<ArrowTextSide, 'left' | 'center' | 'right'> }) | null;
   /** Set it: a new line of text if there is none, the nearest one changed, or removed when emptied. */
-  setSideText(arrowId: number, side: 'above' | 'below', text: string): void;
+  setSideText(arrowId: number, side: ArrowTextSide, text: string): void;
+  /** Line one side up this arrow's own way (null: the drawing style's). */
+  setTextAlign(arrowId: number, side: ArrowTextSide, how: 'left' | 'center' | 'right' | null): void;
+  /** Show or hide the arrows' dashed text guides (null: as usual). */
+  setGuides(arrowIds: number[], on: boolean | null): void;
 }
 
 type Opt<T> = [T, string];
 
 const HEADS: Opt<Arrow['headStyle']>[] = [['none', 'None'], ['full', 'Full'], ['halfLeft', 'Half, left side'], ['halfRight', 'Half, right side']];
+/** A curved arrow's half head is a fishhook: it moves one electron. */
+const CURVED_HEADS: Opt<Arrow['headStyle']>[] = [['none', 'None'], ['full', 'Full (electron pair)'], ['halfLeft', 'Fishhook, left side'], ['halfRight', 'Fishhook, right side']];
+const KINDS: Opt<ArrowKind>[] = [['reaction', 'Reaction'], ['mechanism', 'Mechanism'], ['plain', 'Plain']];
 const HEAD_TYPES: Opt<Arrow['headType']>[] = [['solid', 'Solid'], ['hollow', 'Hollow'], ['angle', 'Open']];
 const NO_GOS: Opt<'none' | 'cross' | 'hash'>[] = [['none', 'None'], ['cross', 'Cross'], ['hash', 'Hash']];
 const LINES: Opt<Arrow['line']>[] = [['solid', 'Solid'], ['dashed', 'Dashed'], ['bold', 'Bold'], ['wavy', 'Wavy']];
@@ -92,6 +104,7 @@ const OPEN_GROUPS = new Set<string>();
 const SIDES: Opt<AttachSide>[] = [['below', 'Below'], ['above', 'Above'], ['left', 'Left'], ['right', 'Right']];
 const READ_AS: Opt<'auto' | 'on' | 'off'>[] = [['auto', 'Automatically'], ['on', 'Chemical'], ['off', 'Plain text']];
 const JUSTIFY: Opt<Caption['justify']>[] = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
+const TIED_KINDS: Opt<'label' | 'caption'>[] = [['label', 'ID label'], ['caption', 'Caption']];
 const TABLE_LINES: Opt<TableData['lines']>[] = [['acs', 'ACS style (rules above and below the headings, and at the end)'], ['grid', 'Every cell boxed'], ['none', 'None']];
 
 /** How an atom's label lines up on the atom (ChemDraw's label alignment; Above and Below are one Center choice). */
@@ -122,6 +135,8 @@ export class StylePanel {
   cropWithMouse: (shapeId: number) => void = () => {};
   /** Frames (set up by the app): add one round the selection, or fit a box round what is inside it. */
   frames: { add(): void; fit(shapeId: number): void } | null = null;
+  /** Draws a Newman or sawhorse projection again with part of its look changed, and opens its window. */
+  newman: { look(shapeId: number, patch: Partial<NonNullable<Shape['newman']>['look']>): void; edit(shapeId: number): void } | null = null;
   /** A highlight colour was chosen (the app remembers it for Chemistry > Highlight and Fill > Highlight). */
   highlightUsed: (colour: string) => void = () => {};
   /** The look last chosen for highlights (new highlights take it). */
@@ -130,6 +145,8 @@ export class StylePanel {
   highlightLooks: { list(): HighlightLookPreset[]; apply(look: HighlightLookPreset): void; save(): void } = { list: () => [], apply: () => {}, save: () => {} };
   /** Fill the rings in the selection (set up by the app). */
   ringFill: (() => void) | null = null;
+  /** Click the spot on the drawing to make a structure's focal point (set up by the app). */
+  focalPick: (() => void) | null = null;
   /** Picture Format… for the selected pictures (set up by the app). */
   formatPicture: () => void = () => {};
   /** Make a picture's white background see-through (set up by the app). */
@@ -145,6 +162,8 @@ export class StylePanel {
   plate: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<PlateData>): void } | null = null;
   /** SmartArt-style diagrams: the window with their text, a change of layout or look, and Convert to Shapes. */
   diagram: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<DiagramData>): void; ungroup(shapeId: number): void } | null = null;
+  /** A Smart Scheme's layouts (those it can't take left out, the one it has marked) and how to change it. */
+  smart: { layouts(shapeId: number): { id: string; name: string; on: boolean }[]; arrange(shapeId: number, layout: string): void; ungroup(shapeId: number): void } | null = null;
   /** Orbitals drawn here (set up by the app): the Edit Orbital window, or the selected ones drawn again with some settings changed. */
   orbital: { edit(): void; restyle(shapeIds: number[], patch: Partial<OrbitalSpec>): void } | null = null;
   /** Tie captions to the structure nearest each (Tie to Structure). */
@@ -216,13 +235,26 @@ export class StylePanel {
     if (several) this.structureControls(selAtoms, selBonds);
     if (arrows.length) this.arrowControls(arrows);
     // an energy diagram is a frame drawn from its numbers: its own section, not a rectangle's
-    const diagram = all.length === 1 && (all[0].energy || all[0].diagram || all[0].plate || all[0].smart) ? all[0] : undefined;
+    const diagram = all.length === 1 && (all[0].energy || all[0].diagram || all[0].plate || all[0].smart || all[0].newman) ? all[0] : undefined;
     if (diagram?.energy) this.energyControls(diagram);
     else if (diagram?.plate) this.plateControls(diagram);
+    else if (diagram?.newman) this.newmanControls(diagram);
     else if (diagram?.diagram) this.diagramControls(diagram);
     else if (diagram?.smart) {
-      // how its list works is behind the "i" by the list's title
+      // how its list works is behind the "i" by the list's title; here, its layout
       this.heading('Smart Scheme');
+      const id = diagram.id;
+      const lays = this.smart?.layouts(id) ?? [];
+      if (lays.length) this.select('Layout', lays.map((l) => [l.id, l.name] as [string, string]), lays.find((l) => l.on)?.id ?? lays[0].id, (v) => this.smart?.arrange(id, v));
+      const row = document.createElement('div');
+      row.className = 'style-buttons';
+      const u = document.createElement('button');
+      u.type = 'button';
+      u.textContent = 'Ungroup';
+      u.title = 'Make it ordinary structures, text and arrows again';
+      u.addEventListener('click', () => this.smart?.ungroup(id));
+      row.append(u);
+      this.body.append(row);
     }
     else if (shapes.length && this.orbital && shapes.every((x) => x.orb)) this.orbitalControls(shapes);
     else if (shapes.length) this.shapeControls(shapes);
@@ -255,6 +287,12 @@ export class StylePanel {
     const lw = this.doc.style.lineWidth;
     const set = (label: string, patch: (a: Arrow) => Partial<Arrow>) => this.edit(label, () => { for (const a of arrows) this.doc.updateArrow(a.id, patch(a)); });
     this.heading(arrows.length > 1 ? `${arrows.length} arrows` : 'Arrow');
+    // what the arrow is for: a reaction step (its starting materials and products worked out), a
+    // mechanism's electron movement, or plain (resonance, retrosynthetic: lines up only)
+    const curved = arrows.some((a) => isCurved(a) && !a.step);
+    const kinds = curved ? KINDS.filter(([k]) => k !== 'reaction') : KINDS;
+    const kind = arrowKind(r);
+    this.select('Type', kinds, kinds.some(([k]) => k === kind) ? kind : kinds[0][0], (v) => set('Arrow Type', (a) => ({ kind: v === drawnKind(a) ? undefined : v })));
     const shafts = r.equilibrium ? 'equilibrium' : r.shaftSpacing ? 'retro' : 'one';
     this.select('Shafts', SHAFTS, shafts, (v) => set('Arrow shafts', (a) => {
       const w = a.lineWidth ?? lw;
@@ -263,8 +301,9 @@ export class StylePanel {
       return { equilibrium: false, shaftSpacing: undefined, ...(a.equilibrium ? { headStyle: 'full', tailStyle: 'none' } : {}), ...(a.shaftSpacing ? { headType: 'solid', headLength: w * 10, headWidth: w * 2.5 } : {}) };
     }));
     if (!r.equilibrium) {
-      this.select('Head', HEADS, r.headStyle, (v) => set('Arrowhead', () => ({ headStyle: v })));
-      this.select('Tail', HEADS, r.tailStyle, (v) => set('Arrow tail', () => ({ tailStyle: v })));
+      const heads = isCurved(r) ? CURVED_HEADS : HEADS;
+      this.select('Head', heads, r.headStyle, (v) => set('Arrowhead', () => ({ headStyle: v })));
+      this.select('Tail', heads, r.tailStyle, (v) => set('Arrow tail', () => ({ tailStyle: v })));
     }
     this.select('Head shape', HEAD_TYPES, r.headType, (v) => set('Arrowhead shape', () => ({ headType: v })));
     this.select('Line', LINES, r.line, (v) => set('Arrow line', () => ({ line: v })));
@@ -328,6 +367,11 @@ export class StylePanel {
     this.number('Head width (pt)', round(r.headWidth), 0.25, 0, 100, (v) => set('Arrowhead size', () => ({ headWidth: v })));
     this.number('Line width (pt)', round(r.lineWidth ?? lw), 0.1, 0.1, 20, (v) => set('Arrow line width', () => ({ lineWidth: Math.abs(v - lw) < 1e-9 ? undefined : v })));
     this.color('Color', r.color, (v) => set('Arrow color', () => ({ color: v })));
+    // the dashed boxes for typing text above and below: shown on plain reaction arrows, and on any other straight arrow when asked
+    if (this.reaction && arrows.every(canShowGuides)) {
+      this.check('Show text guides', arrows.every(guidesOn), (v) => this.reaction!.setGuides(arrows.map((a) => a.id), v === arrows.every(plainReactionArrow) ? null : v),
+        'The dashed boxes above and below the arrow for typing reagents, conditions and the Results line. Plain reaction arrows show them; turn them on here for any other straight arrow.');
+    }
     if (arrows.length === 1) this.reactionControls(r);
   }
 
@@ -340,11 +384,12 @@ export class StylePanel {
     // reagents and conditions typed straight in (the "+" boxes on the drawing do the same)
     const sides = hooks.sideText(r.id);
     if (sides) {
-      for (const [side, label] of [['above', 'Above arrow'], ['below', 'Below arrow']] as const) {
+      const fields: [ArrowTextSide, string, string][] = [['above', 'Above arrow', 'Reagents'], ['below', 'Below arrow', 'Solvent, temperature, time'], ['results', 'Results', 'Yield, ee, dr']];
+      for (const [side, label, hint] of fields) {
         const ta = document.createElement('textarea');
         ta.rows = Math.min(4, Math.max(1, sides[side].split('\n').length));
         ta.value = sides[side];
-        ta.placeholder = side === 'above' ? 'Reagents' : 'Solvent, temperature, time';
+        ta.placeholder = hint;
         ta.className = 'style-arrow-text';
         const set = () => { if (ta.value !== sides[side]) hooks.setSideText(r.id, side, ta.value); };
         ta.addEventListener('change', set);
@@ -353,7 +398,32 @@ export class StylePanel {
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ta.blur(); }
         });
         ta.addEventListener('input', () => { ta.rows = Math.min(4, Math.max(1, ta.value.split('\n').length)); });
-        this.row(label, ta, `Text ${side} the arrow. Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting.`);
+        // how its lines line up, beside it: this arrow's own choice; the pressed button again goes back to the drawing style's
+        const own = r.textLook?.align?.[side];
+        const seg = document.createElement('div');
+        seg.className = 'seg seg-align';
+        seg.setAttribute('role', 'radiogroup');
+        seg.setAttribute('aria-label', `${label}: alignment`);
+        for (const how of ['left', 'center', 'right'] as const) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.innerHTML = RIBBON_ICONS[`doc-align-${how}`] ?? how[0].toUpperCase();
+          const name = how === 'left' ? 'Align Left' : how === 'center' ? 'Center' : 'Align Right';
+          b.title = own === how ? `${name} (this arrow's own; click to use the drawing style's)` : name;
+          b.setAttribute('role', 'radio');
+          b.setAttribute('aria-label', name);
+          b.setAttribute('aria-checked', String(sides.align[side] === how));
+          if (own === how) b.classList.add('own');
+          b.addEventListener('click', () => hooks.setTextAlign(r.id, side, own === how ? null : how));
+          seg.append(b);
+        }
+        const box = document.createElement('div');
+        box.className = 'style-arrow-field';
+        box.append(ta, seg);
+        const tip = side === 'results'
+          ? 'The line under the text below the arrow, for yield, ee or dr. It has its own font, size, alignment and gap in Drawing Style.'
+          : `Text ${side} the arrow.`;
+        this.row(label, box, `${tip} Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting. A numbered list of steps lines up on the left unless you pick an alignment.`);
       }
     }
     const names: [Role, string, string][] = [
@@ -555,6 +625,37 @@ export class StylePanel {
   // ------------------------------------------------------------------ energy diagrams
 
   /** An energy diagram: how it is drawn, and the window with its numbers. */
+  /** A Newman or sawhorse projection: how it is drawn and written. */
+  private newmanControls(sh: Shape): void {
+    const d = sh.newman!, look = d.look, tx = look.text ?? { auto: false };
+    const saw = d.kind === 'sawhorse';
+    this.heading(saw ? 'Sawhorse Projection' : 'Newman Projection');
+    const set = (patch: Partial<typeof look>) => this.newman?.look(sh.id, patch);
+    this.check('Idealized Angles', !!look.ideal, (v) => set({ ideal: v }), 'Bonds 120° apart on each atom and staggered at exactly 60°, as textbooks draw them. Clear it to draw the true angles.');
+    const size = document.createElement('input');
+    size.type = 'number'; size.min = '4'; size.max = '72'; size.step = '0.5'; size.placeholder = 'Auto';
+    size.value = tx.size !== undefined ? String(tx.size) : '';
+    const apply = () => { const v = Number(size.value); const { size: _old, ...rest } = tx; set({ text: size.value.trim() !== '' && Number.isFinite(v) ? { ...rest, size: Math.max(4, Math.min(72, v)) } : rest }); };
+    size.addEventListener('change', apply);
+    size.addEventListener('keydown', (e) => { if (e.key === 'Enter') { apply(); size.blur(); } e.stopPropagation(); });
+    this.row('Text Size', size, "In points. Empty: 2 points smaller than the drawing's caption text.");
+    this.check('Bold', !!tx.bold, (v) => set({ text: { ...tx, bold: v || undefined } }));
+    this.check('Italic', !!tx.italic, (v) => set({ text: { ...tx, italic: v || undefined } }));
+    if (!saw) this.check('Auto-Scale Text', !!tx.auto, (v) => set({ text: { ...tx, auto: v } }), 'Make the labels smaller, down to 70%, where they would not fit at full size.');
+    if (saw) {
+      this.check('Wedges', !!look.wedges, (v) => set({ wedges: v }), 'A wedge and a hashed wedge on each carbon show which groups point toward and away from you.');
+      this.check('R/S Labels', !!look.rs, (v) => set({ rs: v }), 'R or S beside each stereocenter.');
+    }
+    const row = document.createElement('div');
+    row.className = 'style-buttons';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = 'Edit Projection…';
+    b.addEventListener('click', () => this.newman?.edit(sh.id));
+    row.append(b);
+    this.body.append(row);
+  }
+
   private energyControls(sh: Shape): void {
     const d = sh.energy!;
     this.heading('Energy diagram');
@@ -1015,8 +1116,18 @@ export class StylePanel {
       this.edit(label, () => { for (const x of tied) this.doc.updateCaption(x.id, { attach: { ...x.attach!, ...patch(x.attach!) } }); });
     this.heading(a.role === 'descriptors' ? 'Attached Descriptors' : a.role === 'label' ? 'Attached ID Label' : 'Attached to Structure');
     // text beside a structure lines up towards it; above and below, centred (Line up changes it back)
+    if (tied.every((x) => x.attach!.role !== 'descriptors')) {
+      const roles = new Set(tied.map((x) => x.attach!.role));
+      this.select<'label' | 'caption'>('Kind', TIED_KINDS, roles.size === 1 ? a.role as 'label' | 'caption' : 'caption', (v) => this.edit(v === 'label' ? 'Make ID label' : 'Make caption', () => {
+        for (const x of tied) this.doc.updateCaption(x.id, { attach: { ...x.attach!, role: v } });
+      }));
+    }
     this.select<AttachSide>('Sits', SIDES, a.side, (v) => this.edit('Caption side', () => {
-      for (const x of tied) this.doc.updateCaption(x.id, { attach: { ...x.attach!, side: v, shift: 0 }, justify: v === 'right' ? 'left' : v === 'left' ? 'right' : 'center' });
+      for (const x of tied) {
+        const at: Attachment = { ...x.attach!, side: v, shift: 0 };
+        if (v === 'left' || v === 'right') delete at.align;
+        this.doc.updateCaption(x.id, { attach: at, justify: v === 'right' ? 'left' : v === 'left' ? 'right' : at.align ?? 'center' });
+      }
     }));
     this.number('Gap (pt)', round(a.gap, 10), 0.5, -200, 500, (v) => setA('Caption gap', () => ({ gap: v })),
       'Space between the structure (with its atom labels) and the caption. You can also drag the caption.');
@@ -1042,6 +1153,8 @@ export class StylePanel {
       this.check('Update when the structure changes', !desc[0].attach!.keepText, (v) => setA(v ? 'Update descriptors' : 'Keep descriptor text', (x) => (x.role === 'descriptors' ? { keepText: v ? undefined : true, sig: v ? undefined : x.sig } : {})),
         'Turn off to keep the text as it is, for instance after typing over it by hand.');
     }
+    button('Reset to Default Look', 'Give it the ID label or caption look and place set in File ▸ Drawing Style', () =>
+      this.edit('Reset to Default Look', () => { for (const x of tied) this.doc.updateCaption(x.id, lookPatch(this.doc, x, attachedAtoms(this.doc, x.attach!))); }));
     button('Unpin from Structure', 'Leave the caption where it is as ordinary text: it no longer follows the structure', () =>
       this.edit('Unpin Caption', () => { for (const x of tied) this.doc.updateCaption(x.id, { attach: undefined }); }));
     if (loose.length && this.tie) button('Tie the others too', 'Tie the selected captions that are loose to the structure nearest each', () => this.tie?.(loose.map((x) => x.id)));
@@ -1314,6 +1427,36 @@ export class StylePanel {
       this.body.append(row);
     }
     this.methylControls(atoms.map((a) => a.id));
+    this.focalControls(atoms);
+  }
+
+  /** One whole structure picked: what its focal point is on, with Reset and Pick on the drawing. */
+  private focalControls(atoms: Atom[]): void {
+    if (!atoms.length || !this.focalPick) return;
+    const frag = this.doc.fragmentOf(atoms[0].id);
+    if (frag.size !== atoms.length || atoms.some((a) => !frag.has(a.id))) return;
+    const kind = focalKind(this.doc, frag);
+    const names = { atom: 'Atom', bond: 'Bond', ring: 'Ring' } as const;
+    const sel = document.createElement('select');
+    const opts: [string, string][] = [...(kind ? [['own', names[kind]] as [string, string]] : []), ['box', 'Center of box'], ['pick', 'Pick atom, bond or ring…']];
+    for (const [v, text] of opts) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = text;
+      sel.appendChild(o);
+    }
+    sel.value = kind ? 'own' : 'box';
+    sel.addEventListener('change', () => {
+      if (sel.value === 'box' && kind) this.edit('Reset Focal Point', () => clearFocal(this.doc, frag));
+      else if (sel.value === 'pick') { sel.value = kind ? 'own' : 'box'; this.focalPick?.(); }
+    });
+    const row = document.createElement('label');
+    row.className = 'style-row';
+    const name = document.createElement('span');
+    name.textContent = 'Focal point';
+    addInfo(name, 'The spot that counts as this structure\'s middle when lining things up (Align Center and Middle, Distribute, Arrange). Set it on an atom, a bond or a ring so compounds that share a core line up on the core. Center of box goes back to the middle of the structure.');
+    row.append(name, sel);
+    this.body.appendChild(row);
   }
 
   /**

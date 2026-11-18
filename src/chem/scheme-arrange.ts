@@ -10,9 +10,16 @@ import { add, mul, sub, fromAngle, dist } from '../geom';
 import type { Measure } from '../editor/arrange';
 import { arrowFrame, inFrame, interpretArrow, isReactionArrow, isStep, itemFinder, schemeItems, type Item } from './reaction';
 import { labelsOf, spacing, fittedLength } from './scheme-layout';
-import { sweepThrough } from '../objects';
+import { focalPoint } from './focal';
+import { arrowMid, sweepThrough } from '../objects';
+import { crowdedLinks, layoutNet, readNet, type Net, type NetLink } from './cycle-net';
+import { layoutTree, readTree, type Tree } from './scheme-tree';
 
-export type ArrangeKind = 'line' | 'rows' | 'snake' | 'down' | 'cycle' | 'tree';
+/**
+ * `fan`: a scheme that branches, its branches fanning out in columns (a Smart Scheme's Tree layout).
+ * A line or a column takes a scheme that branches too: its branches run beside the main route.
+ */
+export type ArrangeKind = 'line' | 'rows' | 'snake' | 'down' | 'cycle' | 'tree' | 'fan';
 
 export interface ArrangeOptions {
   kind: ArrangeKind;
@@ -28,13 +35,29 @@ export interface ArrangeOptions {
   startAngle?: number;
   /** Branching: the arrows from one structure to several fan out from one point (a forked arrow). */
   forked?: boolean;
+  /**
+   * Cycle of several loops, just built: the pairs of step arrows (by id) that face each other where
+   * two loops turn together. Left out, loops that turn together are told from where their arrows are.
+   */
+  meshes?: [number, number][];
+  /**
+   * A scheme that branches: the side of its parent route each of these branches goes on, by the
+   * arrow (its id) that joins it: 1 below a route across the page (right of a route down it), −1
+   * the other side, 0 wherever there is more room. Branches not named keep the side they are on.
+   */
+  sides?: [number, 1 | -1 | 0][];
+  /** Line and Down take a scheme that branches (a Smart Scheme's do): its main route in the line, its branches beside it. */
+  branches?: boolean;
+  /** A scheme that branches: the way it runs as it is laid out now (across the page or down it), when that is known. Its main route is then the one drawn straight on. */
+  flow?: Vec;
 }
 
 /** What is selected: ids of atoms, captions, shapes and arrows (all empty: the whole drawing). */
 export interface Scope { atoms: Set<number>; captions: Set<number>; shapes: Set<number>; arrows: Set<number> }
 
 /** A structure, or starting materials joined by + signs, that the scheme leads into or out of. */
-interface Node { items: Item[]; box: Rect }
+/** `focus`: the own focal point of its one structure, which goes on the arrows' line in a row. */
+interface Node { items: Item[]; box: Rect; focus?: Vec }
 /** One step: an arrow (made new when there isn't one) from one node to the next, with its conditions. */
 interface Link { from: number; to: number; arrow?: Arrow; above: Item[]; below: Item[]; plusses: Item[]; inside: Item[] }
 
@@ -190,10 +213,35 @@ function chainOf(n: number, links: Link[], extra: number[], nodes: Node[]): { pa
 export function planArrange(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOptions): ArrangePlan | null {
   const sh = readScheme(doc, m, scope);
   if (sh.nodes.length < 2 && !(opts.kind === 'cycle' && sh.nodes.length >= 1)) return null;
-  if (opts.kind !== 'tree' && !sh.path) return null;
+  // a cycle of several loops (or with branches off it) is laid out as its loops
+  const found = opts.kind === 'cycle' && !sh.path ? schemeNet(sh, opts.meshes) : null;
+  // a scheme that branches (and never comes back on itself) is laid out as its main route and branches
+  const branching = !found && (opts.kind === 'fan' || (opts.branches && (opts.kind === 'line' || opts.kind === 'down') && !sh.path)) ? schemeTree(sh, opts.flow) : null;
+  if (opts.kind !== 'tree' && !sh.path && !found && !branching) return null;
+  if (opts.kind === 'fan' && !branching) return null;
   const bond = doc.style.bondLength;
+  for (const n of sh.nodes) {
+    const its = n.items.filter((it) => it.atoms.length);
+    const f = its.length === 1 ? focalPoint(doc, its[0].atoms) : null;
+    if (f) n.focus = f;
+  }
   const L = new Layout(sh, bond);
-  switch (opts.kind) {
+  if (found) L.net(found.net, found.links, !!opts.anticlockwise, !!opts.reagentArrows, opts.startAngle);
+  else if (branching) {
+    // each branch keeps the side of its route it is on now (one just made goes where it is told, or where there is room)
+    const vertical = opts.kind === 'down';
+    for (const run of branching.runs) {
+      if (run.at === undefined || run.via === undefined) continue;
+      const told = opts.sides?.find(([id]) => id === sh.links[run.via!].arrow?.id);
+      if (told) { if (told[1]) run.side = told[1]; continue; }
+      const a = run.dir === 'in' ? run.nodes[run.nodes.length - 1] : run.nodes[0];
+      const off = sub(centre(sh.nodes[a].box), centre(sh.nodes[run.at].box));
+      const c = vertical ? off.x : off.y;
+      if (Math.abs(c) > 0.5 * bond) run.side = c > 0 ? 1 : -1;
+    }
+    L.branches(branching, vertical, opts.kind === 'fan');
+  }
+  else switch (opts.kind) {
     case 'line': L.rows(Infinity, false); break;
     case 'rows': L.rows(Math.max(1, opts.perRow ?? 3), false); break;
     case 'snake': L.rows(Math.max(1, opts.perRow ?? 3), true); break;
@@ -205,6 +253,29 @@ export function planArrange(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOpt
   const mine = new Set(sh.links.map((l) => l.arrow?.id).filter((x) => x !== undefined));
   for (const r of doc.arrows.values()) if (r.reagentFor !== undefined && mine.has(r.reagentFor)) L.plan.removed.push(r.id);
   return L.plan;
+}
+
+/**
+ * A scheme whose steps make more than one loop, or a loop with branches: its loops and how they
+ * are joined (null when the steps make one line or loop, or nothing of the kind). `meshes` as in
+ * the options.
+ */
+export function schemeNet(sh: SchemeShape, meshes?: [number, number][]): { net: Net; links: NetLink[] } | null {
+  if (sh.path || sh.links.some((l) => !l.arrow)) return null;
+  const links = sh.links.map((l) => ({ from: l.from, to: l.to }));
+  const at = (id: number) => sh.links.findIndex((l) => l.arrow!.id === id);
+  const pairs = meshes?.map(([a, b]) => [at(a), at(b)] as [number, number]).filter(([a, b]) => a >= 0 && b >= 0);
+  const net = readNet(sh.nodes.length, links, { centres: sh.nodes.map((n) => centre(n.box)), mids: sh.links.map((l) => arrowMid(l.arrow!)) }, pairs);
+  return net ? { net, links } : null;
+}
+
+/**
+ * A scheme that branches without coming back on itself: its main route and the branches off it
+ * (null when a step leads back to an earlier species, which is a cycle).
+ */
+export function schemeTree(sh: SchemeShape, flow?: Vec): Tree | null {
+  if (sh.closed) return null;
+  return readTree(sh.nodes.length, sh.links.map((l) => ({ from: l.from, to: l.to })), sh.nodes.map((n) => centre(n.box)), flow);
 }
 
 class Layout {
@@ -230,12 +301,19 @@ class Layout {
     for (const l of this.sh.labels.get(it) ?? []) this.shift(l, d);
   }
 
-  /** Put a node's box centre at `c`. */
-  private placeNode(i: number, c: Vec): void {
+  /** Put a node's box centre at `c` (`onRow`: its focal point's height, when it has its own, at c.y). */
+  private placeNode(i: number, c: Vec, onRow = false): void {
     const n = this.sh.nodes[i];
-    const d = sub(c, centre(n.box));
+    const d = sub(c, onRow && n.focus ? { x: centre(n.box).x, y: n.focus.y } : centre(n.box));
     for (const it of n.items) this.shift(it, d);
     this.at.set(i, { x1: n.box.x1 + d.x, y1: n.box.y1 + d.y, x2: n.box.x2 + d.x, y2: n.box.y2 + d.y });
+  }
+
+  /** How wide a link's conditions are along an arrow along `u` (the widest of them). */
+  private textWidth(l: Link, u: Vec): number {
+    let widest = 0;
+    for (const it of [...l.above, ...l.inside, ...l.below]) widest = Math.max(widest, Math.abs(u.x) * width(it.box) + Math.abs(u.y) * height(it.box));
+    return widest;
   }
 
   /** Length of a straight arrow along `u` that fits its conditions. */
@@ -299,6 +377,8 @@ class Layout {
     const path = this.sh.path!, nodes = this.sh.nodes, g = this.g, bond = this.bond;
     const right = { x: 1, y: 0 }, down = { x: 0, y: 1 };
     const link = (k: number) => this.linkBetween(path[k], path[k + 1]);
+    /** How far a node reaches above the row's line (to its focal point, or half its height). */
+    const upOf = (i: number) => (nodes[i].focus ? nodes[i].focus!.y - nodes[i].box.y1 : height(nodes[i].box) / 2);
     const rowsOf: number[][] = [[]];
     for (let k = 0; k < path.length - 1; k++) {
       if (rowsOf[rowsOf.length - 1].length >= per) rowsOf.push([]);
@@ -309,7 +389,7 @@ class Layout {
       let up = 0, dn = 0;
       const ns = ks.map((k) => path[k + 1]);
       if (withFirst && ks.length) ns.push(path[ks[0]]);
-      for (const i of ns) { const h = height(nodes[i].box) / 2; up = Math.max(up, h); dn = Math.max(dn, h); }
+      for (const i of ns) { up = Math.max(up, upOf(i)); dn = Math.max(dn, height(nodes[i].box) - upOf(i)); }
       for (const k of ks) { const r = this.reach(link(k), right); up = Math.max(up, r.above); dn = Math.max(dn, r.below); }
       return { up, dn };
     };
@@ -321,7 +401,7 @@ class Layout {
         this.straight(l, { x, y: axis }, { x: x + dir * len, y: axis });
         x += dir * (len + g);
         const b = path[k + 1], w = width(nodes[b].box);
-        this.placeNode(b, { x: x + dir * w / 2, y: axis });
+        this.placeNode(b, { x: x + dir * w / 2, y: axis }, true);
         x += dir * (w + g);
       }
     };
@@ -329,7 +409,7 @@ class Layout {
     let { up, dn } = extent(rowsOf[0], true);
     let axis = this.origin.y + up;
     const w0 = width(nodes[path[0]].box);
-    this.placeNode(path[0], { x: this.origin.x + w0 / 2, y: axis });
+    this.placeNode(path[0], { x: this.origin.x + w0 / 2, y: axis }, true);
     lay(rowsOf[0], this.origin.x + w0 + g, axis, 1);
     let dir: 1 | -1 = 1;
     for (let r = 1; r < rowsOf.length; r++) {
@@ -352,12 +432,12 @@ class Layout {
       const len = Math.max(this.arrowLength(dl, down) * 0.8, 2.2 * bond);
       const tail = { x: (from.x1 + from.x2) / 2, y: from.y2 + g };
       let head = { x: tail.x, y: tail.y + len };
-      const want = Math.max(low + 1.6 * bond + e.up, head.y + g + height(nodes[to].box) / 2);
-      head = { x: tail.x, y: want - g - height(nodes[to].box) / 2 };
+      const want = Math.max(low + 1.6 * bond + e.up, head.y + g + upOf(to));
+      head = { x: tail.x, y: want - g - upOf(to) };
       this.straight(dl, tail, head);
       axis = want;
       dn = e.dn;
-      this.placeNode(to, { x: tail.x, y: axis });
+      this.placeNode(to, { x: tail.x, y: axis }, true);
       dir = dir > 0 ? -1 : 1;
       const tb = this.at.get(to)!;
       lay(ks.slice(1), dir > 0 ? tb.x2 + g : tb.x1 - g, axis, dir);
@@ -466,55 +546,159 @@ class Layout {
     }
     path.forEach((i, k) => this.placeNode(i, add(cen, fromAngle(angle(k), R))));
     if (N < 2) return;
-    for (let k = 0; k < N; k++) {
-      const l = link(k);
-      const { s, e } = ends(k);
-      const tail = add(cen, fromAngle(s, R)), head = add(cen, fromAngle(e, R));
-      const mid = add(cen, fromAngle((s + e) / 2, R));
-      const sweep = sweepThrough(tail, head, mid);
-      const r: NewArrow = { tail, head, sweep, step: this.stepOf(l) };
-      if (l.arrow) this.plan.arrows.set(l.arrow.id, r); else this.plan.added.push(r);
-      // conditions sit outside the circle by the middle of their arc (those below the arrow inside it,
-      // or with reagent arrows: coming in before the middle and going out after it)
-      // (returns how far out from the circle, or in, the last one reaches)
-      const out = (its: Item[], a: number, inward: boolean, from = spacing(bond).conditions * 2) => {
-        const rad = fromAngle(a, 1);
-        let dist0 = inward ? -from : from;
-        for (const it of its) {
-          const ext = radial(it, a);
-          const c = add(cen, mul(rad, R + dist0 + (inward ? -ext : ext)));
-          this.shift(it, sub(c, centre(it.box)));
-          dist0 += (inward ? -1 : 1) * (2 * ext + spacing(bond).stack);
-        }
-        return Math.abs(dist0);
-      };
-      const amid = (s + e) / 2;
-      // the step's name inside the circle, nearest the arc
-      const inner = l.inside.length ? out(l.inside, amid, true) : spacing(bond).conditions * 2;
-      if (reagentArrows) {
-        const dirA = Math.sign(e - s) || 1, span = Math.abs(e - s);
-        const d = 1.5 * bond, delta = Math.min(span * 0.3, (1.6 * bond) / R);
-        const pt = (a: number, r: number) => add(cen, fromAngle(a, r));
-        const owner = l.arrow ? { arrow: l.arrow.id } : { added: this.plan.added.length - 1 };
-        if (l.above.length) {
-          const touch = s + (e - s) * 0.38, far = touch - dirA * delta;
-          const tail = pt(far, R + d), head = pt(touch, R + 0.12 * bond);
-          this.plan.added.push({ tail, head, sweep: sweepThrough(tail, head, pt(touch - dirA * delta * 0.3, R + d * 0.7)), small: true, reagentOf: owner });
-          out(l.above, far, false, d + 0.3 * bond);
-        }
-        if (l.below.length) {
-          const touch = s + (e - s) * 0.62, far = touch + dirA * delta;
-          const tail = pt(touch, R + 0.12 * bond), head = pt(far, R + d);
-          this.plan.added.push({ tail, head, sweep: sweepThrough(tail, head, pt(touch + dirA * delta * 0.3, R + d * 0.7)), small: true, reagentOf: owner });
-          out(l.below, far, false, d + 0.3 * bond);
-        }
-      } else {
-        out(l.above, amid, false);
-        out(l.below, amid, true, inner);
-      }
-    }
+    for (let k = 0; k < N; k++) { const { s, e } = ends(k); this.arcStep(link(k), cen, R, s, e, reagentArrows); }
     // a caption on its own (the catalyst's name) goes in the middle
     if (this.sh.loose.length === 1) { const it = this.sh.loose[0]; this.shift(it, sub(cen, centre(it.box))); }
+  }
+
+  // ---------------------------------------------------------------- several loops
+
+  /**
+   * A cycle of several loops, and branches off them: each loop round its own circle, joined to the
+   * one before as the net says. The first loop's middle stays where it is.
+   */
+  net(net: Net, links: NetLink[], anticlockwise: boolean, reagentArrows: boolean, startAngle?: number): void {
+    const nodes = this.sh.nodes, L = this.sh.links, bond = this.bond, sp = spacing(bond);
+    const big = (it: Item) => Math.max(width(it.box), height(it.box)), mean = (it: Item) => (width(it.box) + height(it.box)) / 2;
+    const need = L.map((l) => Math.max(2.8 * bond, ...[...l.above, ...l.below, ...l.inside].map((it) => 0.9 * big(it))));
+    // (a step with another loop on its far side has everything written inside it)
+    const crowd = crowdedLinks(net.loops, net.joins);
+    const block = (l: Link, k: number): { w: number; h: number } | null => {
+      if (!crowd.has(k) || !(l.above.length + l.below.length)) return null;
+      const its = [...l.inside, ...l.above, ...l.below];
+      return { w: Math.max(...its.map((it) => width(it.box))), h: its.reduce((h, it) => h + height(it.box), 0) + sp.stack * (its.length - 1) };
+    };
+    const inward = L.map((l, k) => {
+      const b = block(l, k);
+      if (b) return sp.conditions * 2 + 0.8 * Math.hypot(b.w, b.h);
+      const d = [...l.inside, ...(reagentArrows && !crowd.has(k) ? [] : l.below)].reduce((x, it) => x + mean(it) + sp.stack, 0);
+      return d > 0 ? d + sp.conditions * 2 : 0;
+    });
+    const inwide = L.map((l, k) => block(l, k)?.w ?? 0);
+    const straight = L.map((l) => this.arrowLength(l, { x: 1, y: 0 }));
+    // where the loops are now: the first one stays there, and text on its own goes in the middle of the loop it is nearest
+    const mid = (ids: number[]): Vec => mul(ids.reduce((s, i) => add(s, centre(nodes[i].box)), { x: 0, y: 0 }), 1 / ids.length);
+    const was = net.loops.map((lp) => mid(lp.nodes));
+    const middles = new Map<number, Item>();
+    for (const it of this.sh.loose) {
+      let best = 0;
+      was.forEach((c, i) => { if (dist(c, centre(it.box)) < dist(was[best], centre(it.box))) best = i; });
+      if (!middles.has(best)) middles.set(best, it);
+    }
+    const middle = net.loops.map((_, i) => { const it = middles.get(i); return it ? Math.hypot(width(it.box), height(it.box)) / 2 : 0; });
+    let start = startAngle;
+    if (start === undefined) {
+      // the first loop keeps the turn it has (to the nearest 15°), so laying out again doesn't spin it
+      const p = sub(centre(nodes[net.loops[0].nodes[0]].box), was[0]);
+      start = Math.hypot(p.x, p.y) > bond ? Math.round(Math.atan2(p.y, p.x) / (Math.PI / 12)) * (Math.PI / 12) : -Math.PI / 2;
+    }
+    const place = layoutNet(net, links, { boxes: nodes.map((n) => ({ w: width(n.box), h: height(n.box) })), need, inward, inwide, middle, straight }, { bond, gap: this.g, anticlockwise, startAngle: start });
+    const o = was[0];
+    nodes.forEach((_, i) => this.placeNode(i, add(o, place.at[i])));
+    L.forEach((l, k) => {
+      const st = place.steps[k];
+      if (!st) return;
+      if (st.kind === 'line') { this.straight(l, add(o, st.tail), add(o, st.head)); return; }
+      const ring = place.rings[st.loop];
+      this.arcStep(l, add(o, ring.c), ring.R, st.s, st.e, reagentArrows, { tail: add(o, st.tail), head: add(o, st.head) }, st.crowded);
+    });
+    for (const [i, it] of middles) if (place.rings[i]) this.shift(it, sub(add(o, place.rings[i].c), centre(it.box)));
+  }
+
+  /**
+   * One step of a loop: its arrow along the circle round `cen` from angle s to angle e, the step's
+   * name inside the circle and what comes in and goes out outside it (on small curved arrows, or
+   * written by the middle of the arc). `own`: the arrow's ends when they aren't on the circle (a
+   * species two loops share sits between them). `crowded`: another loop is on the far side, so
+   * everything is written inside.
+   */
+  private arcStep(l: Link, cen: Vec, R: number, s: number, e: number, reagentArrows: boolean, own?: { tail: Vec; head: Vec }, crowded = false): void {
+    const bond = this.bond;
+    const radial = (it: Item, a: number) => { const d = fromAngle(a, 1); return Math.abs(d.x) * width(it.box) / 2 + Math.abs(d.y) * height(it.box) / 2; };
+    const tail = own?.tail ?? add(cen, fromAngle(s, R)), head = own?.head ?? add(cen, fromAngle(e, R));
+    const mid = add(cen, fromAngle((s + e) / 2, R));
+    const sweep = sweepThrough(tail, head, mid);
+    const r: NewArrow = { tail, head, sweep, step: this.stepOf(l) };
+    if (l.arrow) this.plan.arrows.set(l.arrow.id, r); else this.plan.added.push(r);
+    // conditions sit outside the circle by the middle of their arc (those below the arrow inside it,
+    // or with reagent arrows: coming in before the middle and going out after it)
+    // (returns how far out from the circle, or in, the last one reaches)
+    const out = (its: Item[], a: number, inward: boolean, from = spacing(bond).conditions * 2) => {
+      const rad = fromAngle(a, 1);
+      let dist0 = inward ? -from : from;
+      for (const it of its) {
+        const ext = radial(it, a);
+        const c = add(cen, mul(rad, R + dist0 + (inward ? -ext : ext)));
+        this.shift(it, sub(c, centre(it.box)));
+        dist0 += (inward ? -1 : 1) * (2 * ext + spacing(bond).stack);
+      }
+      return Math.abs(dist0);
+    };
+    const amid = (s + e) / 2;
+    if (crowded && l.above.length + l.below.length > 0) {
+      // no room outside: what comes in and goes out is written inside under the step's name, the
+      // lines one below the other as one block just in from the arc
+      const its = [...l.inside, ...l.above, ...l.below], gapY = spacing(bond).stack;
+      const bw = Math.max(...its.map((it) => width(it.box))), bh = its.reduce((h, it) => h + height(it.box), 0) + gapY * (its.length - 1);
+      const rad = fromAngle(amid, 1);
+      let c = add(cen, mul(rad, R - spacing(bond).conditions * 2 - (Math.abs(rad.x) * bw + Math.abs(rad.y) * bh) / 2));
+      // (further in while it would touch the species at either end of the step)
+      const ends = [this.at.get(l.from), this.at.get(l.to)].filter((r): r is Rect => !!r), pad = this.g / 2;
+      const hits = (p: Vec) => ends.some((r) => p.x - bw / 2 < r.x2 + pad && p.x + bw / 2 > r.x1 - pad && p.y - bh / 2 < r.y2 + pad && p.y + bh / 2 > r.y1 - pad);
+      for (let tries = 0; tries < 16 && hits(c); tries++) c = sub(c, mul(rad, 0.25 * bond));
+      let y = c.y - bh / 2;
+      for (const it of its) {
+        this.shift(it, sub({ x: c.x, y: y + height(it.box) / 2 }, centre(it.box)));
+        y += height(it.box) + gapY;
+      }
+      return;
+    }
+    // the step's name inside the circle, nearest the arc
+    const inner = l.inside.length ? out(l.inside, amid, true) : spacing(bond).conditions * 2;
+    if (reagentArrows && !crowded) {
+      const dirA = Math.sign(e - s) || 1, span = Math.abs(e - s);
+      const d = 1.5 * bond, delta = Math.min(span * 0.3, (1.6 * bond) / R);
+      const pt = (a: number, r: number) => add(cen, fromAngle(a, r));
+      const owner = l.arrow ? { arrow: l.arrow.id } : { added: this.plan.added.length - 1 };
+      if (l.above.length) {
+        const touch = s + (e - s) * 0.38, far = touch - dirA * delta;
+        const tail = pt(far, R + d), head = pt(touch, R + 0.12 * bond);
+        this.plan.added.push({ tail, head, sweep: sweepThrough(tail, head, pt(touch - dirA * delta * 0.3, R + d * 0.7)), small: true, reagentOf: owner });
+        out(l.above, far, false, d + 0.3 * bond);
+      }
+      if (l.below.length) {
+        const touch = s + (e - s) * 0.62, far = touch + dirA * delta;
+        const tail = pt(touch, R + 0.12 * bond), head = pt(far, R + d);
+        this.plan.added.push({ tail, head, sweep: sweepThrough(tail, head, pt(touch + dirA * delta * 0.3, R + d * 0.7)), small: true, reagentOf: owner });
+        out(l.below, far, false, d + 0.3 * bond);
+      }
+    } else {
+      out(l.above, amid, false);
+      out(l.below, amid, true, inner);
+    }
+  }
+
+  // ---------------------------------------------------------------- a main route and its branches
+
+  /**
+   * A scheme that branches: the main route straight across the page (or down it), each branch
+   * beside it. The first species of the main route stays where it is.
+   */
+  branches(tree: Tree, vertical: boolean, fan: boolean): void {
+    const { nodes, links } = this.sh, bond = this.bond;
+    const right = { x: 1, y: 0 }, dn = { x: 0, y: 1 };
+    const place = layoutTree(tree, links.map((l) => ({ from: l.from, to: l.to })), {
+      w: nodes.map((n) => width(n.box)), h: nodes.map((n) => height(n.box)),
+      lenAcross: links.map((l) => this.arrowLength(l, right)), lenDown: links.map((l) => this.arrowLength(l, dn)),
+      reachAcross: links.map((l) => { const r = this.reach(l, right); return [r.above, r.below]; }),
+      reachDown: links.map((l) => { const r = this.reach(l, dn); return [r.above, r.below]; }),
+      textAcross: links.map((l) => this.textWidth(l, right)), textDown: links.map((l) => this.textWidth(l, dn)),
+      gap: this.g, rowGap: (fan ? 1.8 : 1.2) * bond,
+    }, { vertical, fan });
+    const first = tree.runs[0].nodes[0];
+    const by = sub(centre(nodes[first].box), place.centres[first]);
+    nodes.forEach((_, i) => this.placeNode(i, add(place.centres[i], by)));
+    links.forEach((l, i) => { const a = place.arrows[i]; if (a && dist(a.tail, a.head) > 1e-6) this.straight(l, add(a.tail, by), add(a.head, by)); });
   }
 
   // ---------------------------------------------------------------- branching tree

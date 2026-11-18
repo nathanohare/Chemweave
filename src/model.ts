@@ -180,6 +180,11 @@ export interface Atom {
    */
   mapNo?: number;
   /**
+   * Part of its structure's focal point (chem/focal.ts): the spot that lines up with other
+   * structures' when aligning. One marked atom, a bond's two, or a ring's atoms.
+   */
+  focal?: boolean;
+  /**
    * Enhanced stereo (ChemDraw's EnhancedStereoType): this stereocentre's configuration is known
    * as drawn ('abs'), or belongs to a group whose centres are a mixture of both forms ('and',
    * labelled &1) or are one form that isn't known ('or', labelled or1).
@@ -613,6 +618,8 @@ export interface Caption {
   attach?: Attachment;
   /** Don't warn about this compound label (shared with a different structure on purpose). */
   ignoreWarnings?: boolean;
+  /** The Results line under the text below a reaction arrow (yield, ee, dr): its own place and look. */
+  results?: boolean;
   /**
    * Read as chemistry (true) or as plain text (false), set by hand; left out, a text box whose
    * whole text is a formula, ion or abbreviation (BF4−, DMAP, CH2Cl2) is read as chemistry by
@@ -733,6 +740,8 @@ export interface Attachment {
   gap: number;
   /** How far it sits off the middle of that side (across for below and above, down for left and right), in points. */
   shift: number;
+  /** Above or below: its left or right edge lined up with the structure's (absent: middles lined up); shift is then from that edge. */
+  align?: 'left' | 'right';
   role: 'label' | 'caption' | 'descriptors';
   /** For descriptors: what is shown, in order, and the ion for m/z and HRMS. */
   show?: DescriptorKey[];
@@ -826,6 +835,33 @@ export interface Arrow {
   pin?: { tail?: Pin; head?: Pin };
   /** Bent by hand: it keeps its curve when the structure changes, rather than finding its own way round. */
   bent?: boolean;
+  /** Its text above and below set for this arrow alone: how each side lines up, and whether its dashed text guides show. */
+  textLook?: ArrowTextLook;
+  /**
+   * What kind of arrow it is, chosen by hand (side panel Type, right-click Arrow Type); left out,
+   * it follows from how the arrow is drawn (chem/reaction.ts arrowKind).
+   */
+  kind?: ArrowKind;
+}
+
+/**
+ * Reaction: a step, whose starting materials, products and conditions are worked out from where
+ * they sit. Mechanism: a curved arrow that moves electrons. Plain: anything else (resonance,
+ * retrosynthetic, dipole), which only lines up with the structures before and after it.
+ */
+export type ArrowKind = 'reaction' | 'mechanism' | 'plain';
+
+/** A line of text beside a reaction arrow: above it, below it, or the Results line under the text below (yield, ee, dr). */
+export type ArrowTextSide = 'above' | 'below' | 'results';
+
+/**
+ * One arrow's own settings for its text. Each is left out to follow the drawing: the drawing
+ * style's alignment (left for a numbered list of steps), and guides only on plain reaction arrows.
+ */
+export interface ArrowTextLook {
+  align?: Partial<Record<ArrowTextSide, 'left' | 'center' | 'right'>>;
+  /** Show (true) or hide (false) the dashed boxes for typing text above and below it. */
+  guides?: boolean;
 }
 
 /**

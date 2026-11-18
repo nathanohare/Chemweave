@@ -23,6 +23,9 @@ export interface DocStyle {
   /** Text above and below reaction arrows (reagents, conditions): its size and font, where not the captions'. */
   arrowTextSize?: number;
   arrowTextFont?: string;
+  /** The Results line under the text below reaction arrows (yield, ee, dr): its size and font, where not the text's. */
+  resultsTextSize?: number;
+  resultsTextFont?: string;
   /** Reaction arrows' line width and head length and width (each side), in points, where not the usual (the line width; a head 10 and 2.5 line widths). */
   arrowWidth?: number;
   arrowHeadLength?: number;
@@ -41,6 +44,29 @@ export interface DocStyle {
    */
   mapLook?: MapLook;
   mapBox?: MapBoxStyle;
+  /**
+   * How new ID labels look and sit beside their structures (absent fields: the usual, which is
+   * bold, in the captions' font and size, centered a third of a bond length below), and how other
+   * text linked to a structure does (captions, names, descriptors; absent: plain). Linking text
+   * to a structure gives it this look too (editor/tied-look.ts).
+   */
+  idLook?: TiedLook;
+  tiedLook?: TiedLook;
+}
+
+/** Where linked text sits and how it looks; every field is optional (absent: the usual). */
+export interface TiedLook {
+  font?: string;
+  size?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  color?: string;
+  /** Above or below: lined up with the structure's left edge, middle or right edge. */
+  align?: 'left' | 'center' | 'right';
+  side?: 'below' | 'above' | 'left' | 'right';
+  /** Space from the structure, in points (absent: a third of a bond length, so it scales). */
+  gap?: number;
 }
 
 export interface StyleScheme {
@@ -52,13 +78,18 @@ export interface StyleScheme {
   textAlign?: 'left' | 'center' | 'right';
   /** How the lines of text below the arrow line up (absent: as above). */
   textAlignBelow?: 'left' | 'center' | 'right';
+  /** How the Results line under the text below lines up (absent: as below), and its gap to that text. */
+  textAlignResults?: 'left' | 'center' | 'right';
+  resultsGap?: number;
+  /** Text that is a numbered list of steps (1. n-BuLi; 2. PhCHO) lines up on the left (absent: yes). */
+  listLeft?: boolean;
   fit?: boolean;
   lead?: number;
   headGap?: number;
 }
 
 /** The scheme distances a person can set, in points, and the most each may be (none less than 0). */
-export const SCHEME_LIMITS = { structGap: 50, plusGap: 30, textGap: 30, textGapBelow: 30, lead: 50, headGap: 50 } as const;
+export const SCHEME_LIMITS = { structGap: 50, plusGap: 30, textGap: 30, textGapBelow: 30, resultsGap: 30, lead: 50, headGap: 50 } as const;
 export type SchemeDistance = keyof typeof SCHEME_LIMITS;
 
 /** A scheme distance kept in its range (from 0 to its limit), or undefined when it isn't a number. */

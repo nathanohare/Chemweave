@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { Doc } from '../src/model';
 import { toMolfile } from '../src/chem/molfile';
-import { allSpecies, captionChemWarning, captionReading, captionSpecies, groupedIons, placeSpecies, reagentSpecies, readSpecies, speciesFormula, speciesSmiles } from '../src/chem/species';
+import { allSpecies, captionChemWarning, captionReading, captionSpecies, groupedIonFragments, groupedIons, placeSpecies, reagentSpecies, readSpecies, speciesFormula, speciesSmiles } from '../src/chem/species';
 import { addMolfile } from '../src/chem/molfile';
 import { reactionSteps, schemeItems } from '../src/chem/reaction';
 import { plainMeasure } from '../src/chem/reaction';
@@ -290,6 +290,27 @@ describe('text boxes in a drawing', () => {
     const { molblock } = toMolfile(doc, [n.id], '', { species: sp });
     const mol = RDKit.get_mol(molblock);
     expect(mol.get_smiles()).toBe(canonical('C[N+](C)(C)C.F[B-](F)(F)F'));
+    mol.delete();
+  });
+  it('counts a drawn counterion grouped with a charged structure as one salt (issue #646)', () => {
+    const doc = new Doc();
+    const { n, c, br, me } = doc.edit('salt', () => {
+      const n = doc.addAtom(0, 0, 7, { charge: 1 });
+      const c = doc.addAtom(15, 0, 6);
+      doc.addBond(n.id, c.id, 1);
+      const br = doc.addAtom(-30, 0, 35, { charge: -1 });
+      const me = doc.addAtom(100, 0, 6); // a neutral methane in the same group stays on its own
+      return { n, c, br, me };
+    });
+    const cation = doc.fragmentOf(n.id);
+    expect(groupedIonFragments(doc, cation)).toEqual([]);
+    doc.edit('g', () => { for (const id of [n.id, c.id, br.id, me.id]) doc.updateAtom(id, { grp: 1 }); });
+    expect(groupedIonFragments(doc, cation).map((f) => [...f])).toEqual([[br.id]]);
+    // a neutral structure never pulls ions in
+    expect(groupedIonFragments(doc, doc.fragmentOf(me.id))).toEqual([]);
+    const { molblock } = toMolfile(doc, [...cation, br.id], '');
+    const mol = RDKit.get_mol(molblock);
+    expect(mol.get_smiles()).toBe(canonical('C[NH3+].[Br-]'));
     mol.delete();
   });
   it('keeps the choice of Chemical or Plain text in CDXML, and marks chemistry for ChemDraw', () => {

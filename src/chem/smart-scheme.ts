@@ -15,22 +15,25 @@ import { chemRuns } from '../text/chemtext';
 import { plainText } from '../richtext';
 import { frameBox, frameMembers } from '../editor/frames';
 import type { Measure, Selection } from '../editor/arrange';
-import { applyArrange, planArrange, readScheme, type ArrangeKind, type Scope } from './scheme-arrange';
-import type { Item } from './reaction';
+import { applyArrange, planArrange, readScheme, schemeNet, schemeTree, type ArrangePlan, type Scope } from './scheme-arrange';
+import { crowdedLinks, type NetJoin } from './cycle-net';
+import { arrowFrame, type Item } from './reaction';
 import { spacing, withSchemePrefs } from './scheme-layout';
 import { cleanFormat, formatPrefs, restyleSmart, type SmartFormat } from './smart-format';
 import { arrowMid, sweepThrough } from '../objects';
 import { bezFrom, pathPoints } from '../arrow-path';
 import { alongCurve, cycleCurves, fitEllipse, ontoEllipse, type Ellipse } from './cycle-path';
+import { fullName, shortName } from './step-names';
 
-export type SmartLayout = Extract<ArrangeKind, 'line' | 'rows' | 'snake' | 'down' | 'cycle'>;
+export type SmartLayout = 'line' | 'rows' | 'snake' | 'down' | 'tree' | 'cycle';
 
 export const SMART_LAYOUTS: { id: SmartLayout; name: string; tip: string }[] = [
-  { id: 'line', name: 'Line', tip: 'Every step in one line, left to right' },
+  { id: 'line', name: 'Line', tip: 'Every step in one line, left to right. Branches run below and above it' },
   { id: 'rows', name: 'Rows', tip: 'Steps in rows, each row starting again on the left' },
   { id: 'snake', name: 'Snake', tip: 'Steps in rows, every other row running back' },
-  { id: 'down', name: 'Down', tip: 'Every step down the page' },
-  { id: 'cycle', name: 'Cycle', tip: 'Around a catalytic cycle, the last step back to the first species' },
+  { id: 'down', name: 'Down', tip: 'Every step down the page. Branches run beside it' },
+  { id: 'tree', name: 'Tree', tip: 'Branches fan out in columns: one species leading to several, or several coming together' },
+  { id: 'cycle', name: 'Cycle', tip: 'Around a catalytic cycle, the last step back to the first species. A cycle can have several loops and species off it' },
 ];
 
 /** How a Smart Scheme is laid out, kept on its frame. */
@@ -43,8 +46,9 @@ export interface SmartData {
   /** Cycle: what comes in and goes out on small curved arrows. */
   reagentArrows?: boolean;
   /**
-   * Laid out by hand (two loops of a cycle turning together, a scheme that branches): its slots
-   * can be retyped and its arrows follow its species, but it isn't laid out again by itself.
+   * Laid out by hand (a scheme that branches): its slots can be retyped and its arrows follow its
+   * species, but it isn't laid out again by itself. A cycle of several loops is not: whatever this
+   * says (files from before loops were read from the arrows say it), it is laid out as its loops.
    */
   free?: boolean;
   /** Its own font, text sizes, arrows and spacing (from the gear on its species list); unset parts follow the drawing style. */
@@ -74,13 +78,67 @@ export interface SmartLink {
   plusses: Item[];
 }
 
+/**
+ * A cycle of more than one loop, or with species off it: the loops its steps make, how each is
+ * joined to one before it, and its branches. Species are named by their slot, steps by their
+ * place in `links`.
+ */
+export interface SmartNet {
+  /** `own`: the species that are this loop's (not the ones it shares with the loop it joins). */
+  loops: { slots: number[]; links: number[]; own: number[] }[];
+  /** One for each loop after the first: `node` and `path` are slots, `a` and `b` steps. */
+  joins: NetJoin[];
+  /** Species off the cycle, in a row leading away from slot `at`. */
+  tails: { at: number; slots: number[]; links: number[] }[];
+}
+
+/**
+ * A scheme that branches (and never comes back on itself): its main route first, then each
+ * branch followed by its own. Species are named by their slot, steps by their place in `links`.
+ */
+export interface SmartTree {
+  /**
+   * `slots` in the order the arrows go, `links[k]` the step from `slots[k]` to `slots[k + 1]`. A
+   * branch hangs from run `parent` at slot `at`, joined by step `via`: leading `out` of it or `in` to it.
+   */
+  runs: { slots: number[]; links: number[]; parent?: number; at?: number; via?: number; dir?: 'out' | 'in' }[];
+  /** Steps between two species that are both on a route already. */
+  extra: number[];
+}
+
 export interface SmartRead {
   slots: Slot[];
   /** The steps in order: link k goes from slot k to slot k + 1 (a closed cycle's last back to slot 0). */
   links: SmartLink[];
   closed: boolean;
-  /** The steps join the species in one line or loop (otherwise slots can't be added or moved). */
+  /** The steps join the species in one line or loop. */
   chain: boolean;
+  /** Set when the steps make several loops, or a loop with branches (never with `chain`). */
+  net?: SmartNet;
+  /** Set when the steps branch without making a loop (never with `chain` or `net`). */
+  tree?: SmartTree;
+}
+
+/** How a Smart Scheme is laid out: what its data says, but several loops are always a cycle. */
+export function smartLayoutOf(data: SmartData, read: SmartRead | null): SmartLayout {
+  if (read?.net) return 'cycle';
+  // one that branches goes in a line, down the page or as a tree
+  return read?.tree && !TREE_LAYOUTS.has(data.layout) ? 'line' : data.layout;
+}
+
+/** The layouts a scheme that branches can have. */
+const TREE_LAYOUTS = new Set<SmartLayout>(['line', 'down', 'tree']);
+
+/** Whether a layout can take this scheme (several loops only go round a cycle; one that branches not in rows or round one). */
+export function layoutFits(layout: SmartLayout, read: SmartRead | null): boolean {
+  if (read?.net) return layout === 'cycle';
+  if (read?.tree) return TREE_LAYOUTS.has(layout);
+  return true;
+}
+
+/** Whether a Smart Scheme keeps the layout it was given by hand (one whose steps make no line, loops or branches that can be laid out). */
+export function smartIsFree(data: SmartData, read: SmartRead | null): boolean {
+  return !!data.free && !read?.net && !read?.tree;
 }
 
 const LAYOUT_IDS = new Set<string>(SMART_LAYOUTS.map((l) => l.id));
@@ -128,13 +186,23 @@ export function readSmart(doc: Doc, m: Measure, frameId: number): SmartRead | nu
   if (!s?.smart || !s.frame) return null;
   const scope = scopeOf(doc, s.frame);
   if (!scope.atoms.size && !scope.captions.size && !scope.arrows.size && !scope.shapes.size) return null;
-  return readSlots(doc, m, scope);
+  return readSlots(doc, m, scope, flowOf(s.smart));
+}
+
+/** The way a Smart Scheme that branches runs, by its layout: across the page or down it (not known for one laid out by hand, or in rows or round a cycle). */
+function flowOf(data: SmartData): Vec | undefined {
+  if (data.free) return undefined;
+  return data.layout === 'down' ? { x: 0, y: 1 } : data.layout === 'line' || data.layout === 'tree' ? { x: 1, y: 0 } : undefined;
 }
 
 /** Any scheme (the arrows and species in `scope`, or the whole drawing when it is empty) read as slots in arrow order, as a Smart Scheme's are. */
-export function readSlots(doc: Doc, m: Measure, scope: Scope): SmartRead | null {
+export function readSlots(doc: Doc, m: Measure, scope: Scope, flow?: Vec): SmartRead | null {
   const sh = readScheme(doc, m, scope);
-  const order = sh.path ?? sh.nodes.map((_, i) => i);
+  // several loops, or a loop with branches: its species in loop order
+  const found = sh.path ? null : schemeNet(sh);
+  // ... or a main route with branches: the main route's species first, then each branch's
+  const tree = sh.path || found || sh.links.some((l) => !l.arrow) ? null : schemeTree(sh, flow);
+  const order = sh.path ?? found?.net.order ?? tree?.order ?? sh.nodes.map((_, i) => i);
   const at = new Map(order.map((n, i) => [n, i]));
   const slots: Slot[] = order.map((n) => {
     const node = sh.nodes[n];
@@ -144,16 +212,35 @@ export function readSlots(doc: Doc, m: Measure, scope: Scope): SmartRead | null 
     const holder = items.length === 1 && items[0].shape !== undefined && doc.shapes.get(items[0].shape)?.holder ? items[0].shape : undefined;
     return { items, labels, box: node.box, ...(only !== undefined ? { caption: only } : {}), ...(holder !== undefined ? { holder } : {}) };
   });
-  const links: SmartLink[] = [];
-  for (const l of sh.links) {
-    if (!l.arrow) continue;
+  const got: { link: SmartLink; from: number }[] = [];
+  sh.links.forEach((l, i) => {
+    if (!l.arrow) return;
     const from = at.get(l.from), to = at.get(l.to);
-    if (from === undefined || to === undefined) continue;
-    links.push({ arrow: l.arrow, from, to, above: l.above, below: l.below, inside: l.inside, plusses: l.plusses });
-  }
-  links.sort((a, b) => a.from - b.from);
+    if (from === undefined || to === undefined) return;
+    got.push({ link: { arrow: l.arrow, from, to, above: l.above, below: l.below, inside: l.inside, plusses: l.plusses }, from: i });
+  });
+  got.sort((a, b) => a.link.from - b.link.from || a.from - b.from);
+  const links = got.map((g) => g.link);
   const chain = !!sh.path && links.every((l, i) => l.from === i && l.to === (i + 1) % slots.length);
-  return { slots, links, closed: sh.closed, chain };
+  const linkAt = new Map(got.map((g, k) => [g.from, k]));
+  const sl = (n: number) => at.get(n)!, lk = (i: number) => linkAt.get(i)!;
+  if (tree) {
+    const runs = tree.runs.map((r) => ({
+      slots: r.nodes.map(sl), links: r.links.map(lk),
+      ...(r.parent !== undefined ? { parent: r.parent, at: sl(r.at!), via: lk(r.via!), dir: r.dir! } : {}),
+    }));
+    return { slots, links, closed: false, chain: false, tree: { runs, extra: tree.extra.map(lk) } };
+  }
+  if (!found) return { slots, links, closed: sh.closed, chain };
+  const net = found.net;
+  const joins = net.joins.map((j): NetJoin => (j.kind === 'share' ? { ...j, node: sl(j.node) } : j.kind === 'fused' ? { ...j, path: j.path.map(sl) } : j.kind === 'mesh' ? { ...j, a: lk(j.a), b: lk(j.b) } : j));
+  const loops = net.loops.map((lp, i) => {
+    const j = joins.find((x) => x.child === i);
+    const theirs = j?.kind === 'share' ? [j.node] : j?.kind === 'fused' ? j.path : [];
+    const mine = lp.nodes.map(sl);
+    return { slots: mine, links: lp.links.map(lk), own: mine.filter((x) => !theirs.includes(x)) };
+  });
+  return { slots, links, closed: false, chain: false, net: { loops, joins, tails: net.tails.map((t) => ({ at: sl(t.at), slots: t.nodes.map(sl), links: t.links.map(lk) })) } };
 }
 
 /** A slot's name, for the species list: its text, or what kind of thing it is. */
@@ -172,7 +259,7 @@ export function slotName(doc: Doc, slot: Slot): string {
 
 /**
  * Caption runs as the text typed in the species list: subscripts and superscripts written with
- * _ and ^ (as the Catalytic Cycle window takes them), formula digits left plain where they drop
+ * _ and ^ (as the ready-made cycles are written), formula digits left plain where they drop
  * by themselves.
  */
 export function runsMarkup(runs: TextRun[]): string {
@@ -225,7 +312,15 @@ export function makeSmart(doc: Doc, m: Measure, sel: Selection, data?: Partial<S
   const pad = Math.round(0.3 * doc.style.bondLength * 10) / 10;
   f.padX = pad; f.padY = pad;
   const smart: SmartData = { layout: sh.closed ? 'cycle' : guessLayout(sh.nodes.map((n) => n.box), sh.path), ...data };
-  if (!sh.path) smart.free = true;
+  // steps that make several loops are a cycle; ones that branch are a main route with branches,
+  // laid out the way they run now; anything else keeps the layout it has
+  if (!sh.path) {
+    const tree = schemeNet(sh) ? null : schemeTree(sh);
+    if (tree && !data?.layout) smart.layout = guessTree(sh.nodes.map((n) => n.box), tree, sh.links);
+    else if (tree) { if (!TREE_LAYOUTS.has(smart.layout)) smart.layout = 'line'; }
+    else if (schemeNet(sh)) smart.layout = 'cycle';
+    else smart.free = true;
+  }
   const b = frameBox(doc, f, m);
   if (!b) return null;
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame: f, smart, name: 'Smart Scheme' }).id;
@@ -244,6 +339,26 @@ function guessLayout(boxes: Rect[], path: number[] | null): SmartLayout {
   return down ? 'rows' : 'line';
 }
 
+/** How a scheme that branches is laid out now: its main route across the page or down it, its branches squarely beside it or fanned out. */
+function guessTree(boxes: Rect[], tree: NonNullable<ReturnType<typeof schemeTree>>, links: { from: number; to: number }[]): SmartLayout {
+  const c = (i: number) => mid(boxes[i]);
+  const main = tree.runs[0].nodes;
+  let across = 0, down = 0;
+  for (let i = 1; i < main.length; i++) { const a = c(main[i - 1]), b = c(main[i]); if (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)) across++; else down++; }
+  // (a main route of one species: the way its branches lead)
+  if (!across && !down) for (const r of tree.runs) if (r.via !== undefined) { const a = c(links[r.via].from), b = c(links[r.via].to); if (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)) across++; else down++; }
+  if (down > across) return 'down';
+  // fanned out when the steps that join the branches slant
+  let square = 0, slant = 0;
+  for (const r of tree.runs) {
+    if (r.via === undefined) continue;
+    const a = c(links[r.via].from), b = c(links[r.via].to);
+    const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
+    if (dx < 0.35 * dy) square++; else slant++;
+  }
+  return slant > square ? 'tree' : 'line';
+}
+
 /** Take a Smart Scheme apart: its frame goes, and what was in it stays as it is. Call inside an edit. */
 export function ungroupSmart(doc: Doc, frameId: number): Selection | null {
   const s = doc.shapes.get(frameId);
@@ -253,13 +368,62 @@ export function ungroupSmart(doc: Doc, frameId: number): Selection | null {
   return members;
 }
 
+/**
+ * A step with another loop on its far side (at a species two loops share, where two loops turn
+ * together, into or out of a stretch they share) has no room outside it, so what joins and
+ * leaves there is written inside the loop under the step's name, marked "+" and "−". Put the
+ * marks on, and take them off steps that have room outside again (where small arrows show it).
+ */
+function markCrowded(doc: Doc, read: SmartRead, meshes?: [number, number][], unmark = false): void {
+  const net = read.net;
+  // (one loop on its own has room everywhere: its text is left as typed, unless a loop was just taken away)
+  if (!net && !unmark) return;
+  const crowd = net ? crowdedLinks(net.loops.map((lp) => ({ nodes: lp.slots, links: lp.links })), net.joins) : new Set<number>();
+  for (const pair of meshes ?? []) read.links.forEach((l, k) => { if (pair.includes(l.arrow.id)) crowd.add(k); });
+  const mark = (its: Item[], sign: '+ ' | '− ', on: boolean) => {
+    for (const it of its) {
+      const c = it.caption !== undefined ? doc.captions.get(it.caption) : undefined;
+      if (!c?.runs.length) continue;
+      const has = plainText(c.runs).startsWith(sign);
+      if (has === on) continue;
+      const runs = c.runs.map((r) => ({ ...r }));
+      if (on) {
+        const like: Partial<TextRun> = { ...runs[0] };
+        delete like.sub; delete like.sup; delete like.formula;
+        runs.unshift({ ...like, text: sign } as TextRun);
+      } else {
+        let n = sign.length;
+        while (n > 0 && runs.length) {
+          const t = runs[0].text;
+          if (t.length <= n) { n -= t.length; runs.shift(); } else { runs[0].text = t.slice(n); n = 0; }
+        }
+        if (!runs.length) continue;
+      }
+      doc.updateCaption(c.id, { runs });
+    }
+  };
+  read.links.forEach((l, k) => { mark(l.above, '+ ', crowd.has(k)); mark(l.below, '− ', crowd.has(k)); });
+}
+
 /** Lay a Smart Scheme out again as its data says (or with `patch` to its data first). Call inside an edit. */
-export function arrangeSmart(doc: Doc, m: Measure, frameId: number, patch?: Partial<SmartData>): boolean {
+export function arrangeSmart(doc: Doc, m: Measure, frameId: number, patch?: Partial<SmartData>, meshes?: [number, number][], unmark = false, sides?: [number, 1 | -1 | 0][]): boolean {
   const s = doc.shapes.get(frameId);
   if (!s?.smart || !s.frame) return false;
-  const data: SmartData = { ...s.smart, ...patch };
-  if (patch) doc.updateShape(frameId, { smart: data });
   const read = readSmart(doc, m, frameId);
+  const data: SmartData = { ...s.smart, ...patch };
+  // several loops can only go round a cycle (and are never left as laid out by hand)
+  if (read?.net) {
+    if (patch?.layout && patch.layout !== 'cycle') return false;
+    data.layout = 'cycle';
+    delete data.free;
+  }
+  // one that branches goes in a line, down the page or as a tree (and is never left as laid out by hand either)
+  if (read?.tree) {
+    if (patch?.layout && !TREE_LAYOUTS.has(patch.layout)) return false;
+    if (!TREE_LAYOUTS.has(data.layout)) data.layout = 'line';
+    delete data.free;
+  }
+  if (patch || data.layout !== s.smart.layout || data.free !== s.smart.free) doc.updateShape(frameId, { smart: data });
   if (!read || read.slots.length < 2 && data.layout !== 'cycle') return false;
   // a layout chosen by hand lays a free scheme out too, when its steps make one line or loop
   if (data.free && !patch?.layout) return false;
@@ -273,20 +437,14 @@ export function arrangeSmart(doc: Doc, m: Measure, frameId: number, patch?: Part
   // a cycle laid out again (a species added, removed or made a structure) keeps its middle where it was:
   // the middle of the circle its curved step arrows lie on
   const steps = read.links.map((l) => l.arrow.id);
-  const was = s.smart.layout === 'cycle' && data.layout === 'cycle' ? circleMiddle(doc, steps) : null;
+  // (several loops keep their first loop where it is by themselves)
+  const was = !read.net && s.smart.layout === 'cycle' && data.layout === 'cycle' ? circleMiddle(doc, steps) : null;
+  if (data.layout === 'cycle') markCrowded(doc, read, meshes, unmark);
   // its own look first, so it is laid out at the sizes it will have
   restyleSmart(doc, frameId, data.fmt, smartParts(read));
-  const scope = scopeOf(doc, doc.shapes.get(frameId)!.frame!);
-  const first = read.slots[0]?.items[0]?.ref;
-  const lay = () => {
-    const plan = planArrange(doc, m, scope, {
-      kind: data.layout, perRow: data.perRow ?? 3, anticlockwise: data.anticlockwise, reagentArrows: data.reagentArrows,
-      ...(data.layout === 'cycle' && first ? { start: first, startAngle: -Math.PI / 2 } : {}),
-    });
-    return plan ? applyArrange(doc, m, plan, 'Arrange Smart Scheme') : null;
-  };
-  const own = formatPrefs(doc, data.fmt);
-  const added = own ? withSchemePrefs(own, lay) : lay();
+  // (as it is laid out now, before any new layout: that says which route is its main one)
+  const plan = planSmart(doc, m, frameId, read, data, meshes, sides, flowOf(s.smart));
+  const added = plan ? applyArrange(doc, m, plan, 'Arrange Smart Scheme') : null;
   if (!added) return false;
   const now = doc.shapes.get(frameId)!;
   const f = now.frame!;
@@ -300,6 +458,46 @@ export function arrangeSmart(doc: Doc, m: Measure, frameId: number, patch?: Part
     moveFrameBy(doc, doc.shapes.get(frameId)!.frame!, dx, dy);
     doc.updateShape(frameId, { x1: b.x1 + dx, y1: b.y1 + dy, x2: b.x2 + dx, y2: b.y2 + dy });
   } else if (b) doc.updateShape(frameId, b);
+  return true;
+}
+
+/** Where laying a Smart Scheme out as `data` says would put everything (at its own sizes and spacing). */
+function planSmart(doc: Doc, m: Measure, frameId: number, read: SmartRead, data: SmartData, meshes?: [number, number][], sides?: [number, 1 | -1 | 0][], flow?: Vec): ArrangePlan | null {
+  const scope = scopeOf(doc, doc.shapes.get(frameId)!.frame!);
+  const first = read.slots[0]?.items[0]?.ref;
+  const lay = () => planArrange(doc, m, scope, {
+    kind: data.layout === 'tree' ? 'fan' : data.layout, perRow: data.perRow ?? 3, anticlockwise: data.anticlockwise, reagentArrows: data.reagentArrows,
+    ...(data.layout === 'cycle' && first && !read.net ? { start: first, startAngle: -Math.PI / 2 } : {}),
+    ...(meshes ? { meshes } : {}),
+    ...(sides ? { sides } : {}),
+    ...(flow ? { flow } : {}),
+    branches: true,
+  });
+  const own = formatPrefs(doc, data.fmt);
+  return own ? withSchemePrefs(own, lay) : lay();
+}
+
+/**
+ * Whether a Smart Scheme in a line, in rows, down the page or as a tree is laid out just as its
+ * layout would lay it out now (nothing in it nudged by hand): such a scheme is laid out again
+ * when a species or a step is retyped, so its spacing stays even.
+ */
+export function smartIsTidy(doc: Doc, m: Measure, frameId: number): boolean {
+  const s = doc.shapes.get(frameId);
+  const read = s?.smart && s.frame ? readSmart(doc, m, frameId) : null;
+  if (!s?.smart || !read || read.net || read.closed || read.slots.length < 2 || smartIsFree(s.smart, read)) return false;
+  const data: SmartData = { ...s.smart, layout: smartLayoutOf(s.smart, read) };
+  if (data.layout === 'cycle') return false;
+  const plan = planSmart(doc, m, frameId, read, data, undefined, undefined, flowOf(s.smart));
+  if (!plan || plan.added.length || plan.removed.length) return false;
+  const tol = 0.03 * doc.style.bondLength;
+  for (const d of plan.shifts.values()) if (Math.hypot(d.x, d.y) > tol) return false;
+  const near = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y) <= tol;
+  for (const [id, a] of plan.arrows) {
+    const r = doc.arrows.get(id);
+    if (!r || Math.abs((a.sweep ?? 0) - (r.sweep ?? 0)) > 1e-3) return false;
+    if (!(near(a.tail, r.tail) && near(a.head, r.head)) && !(near(a.tail, r.head) && near(a.head, r.tail))) return false;
+  }
   return true;
 }
 
@@ -358,7 +556,7 @@ export function formatSmart(doc: Doc, m: Measure, frameId: number, fmt: SmartFor
   if (was?.headType !== undefined && clean?.headType === undefined) back.headType = 'solid';
   if (was?.headLength !== undefined && clean?.headLength === undefined) back.headLength = st.lineWidth * 10;
   if (Object.keys(back).length) restyleSmart(doc, frameId, back, smartParts(read));
-  if (data.free) { restyleSmart(doc, frameId, data.fmt, smartParts(read)); return true; }
+  if (smartIsFree(data, read)) { restyleSmart(doc, frameId, data.fmt, smartParts(read)); return true; }
   return arrangeSmart(doc, m, frameId) || true;
 }
 
@@ -388,9 +586,14 @@ const DEFAULT_LOOK: Omit<Arrow, 'id' | 'tail' | 'head'> = {
  * Add a slot after slot `after` (−1: before the first): a new species to type over, and a new
  * arrow joining it in. The scheme is laid out again. Returns the new species' text box. Call inside an edit.
  */
-export function insertSlot(doc: Doc, m: Measure, frameId: number, after: number, text = 'new species'): number | null {
+export function insertSlot(doc: Doc, m: Measure, frameId: number, after: number, text = 'new species', link?: number): number | null {
   const read = readSmart(doc, m, frameId);
   const s = doc.shapes.get(frameId);
+  if ((read?.net || read?.tree) && s?.frame) {
+    // in a scheme that branches: on the step that was named, or after the last species of a route
+    const on = link ?? read.links.findIndex((l) => l.from === after);
+    return on >= 0 ? insertOnStep(doc, m, frameId, read, on, text) : read.tree ? addBranch(doc, m, frameId, after, 'out', text) : null;
+  }
   if (!read || !read.chain || !s?.frame) return null;
   const { slots, links, closed } = read;
   const k = Math.max(-1, Math.min(slots.length - 1, after));
@@ -412,9 +615,89 @@ export function insertSlot(doc: Doc, m: Measure, frameId: number, after: number,
   return cap.id;
 }
 
+/** An equilibrium arrow, as the arrow tool draws one (and as it is kept in files). */
+const EQUILIBRIUM: Partial<Arrow> = { headStyle: 'halfLeft', tailStyle: 'halfLeft', equilibrium: true };
+
+/** The look of a scheme's new arrows: its first arrow's (an equilibrium arrow's half heads aside). */
+function arrowLike(doc: Doc, like: Arrow | undefined): Partial<Arrow> {
+  return like
+    ? { headStyle: like.equilibrium ? 'full' : like.headStyle, tailStyle: like.equilibrium ? 'none' : like.tailStyle, headType: like.headType, line: like.line, headLength: like.headLength, headWidth: like.headWidth, ...(like.color ? { color: like.color } : {}), ...(like.lineWidth ? { lineWidth: like.lineWidth } : {}) }
+    : { headLength: doc.style.lineWidth * 10, headWidth: doc.style.lineWidth * 2.5 };
+}
+
+/** A new species to type over, as a slot (not yet in any step). */
+function newSpecies(doc: Doc, m: Measure, at: Vec, text: string): Slot {
+  const cap = doc.addCaption({ x: at.x, y: at.y, runs: chemRuns(text), justify: 'center' });
+  return { items: [{ ref: 'c' + cap.id, box: m.captionBox(cap), plus: false, atoms: [], caption: cap.id }], labels: [], box: m.captionBox(cap), caption: cap.id };
+}
+
+/** A new step arrow from slot a to slot b (straight for now: laying out gives it its place). */
+function newStep(doc: Doc, like: Arrow | undefined, a: Slot, b: Slot, extra: Partial<Arrow> = {}): Arrow {
+  const p = mid(a.box), q = mid(b.box);
+  return doc.addArrow({ ...DEFAULT_LOOK, ...arrowLike(doc, like), sweep: 0, equilibrium: false, ...extra, tail: p, head: Math.hypot(q.x - p.x, q.y - p.y) > 1 ? q : { x: p.x + doc.style.bondLength, y: p.y }, step: roles(a, b, null) });
+}
+
+/** Add what was made to a Smart Scheme's frame. */
+function intoFrame(doc: Doc, frameId: number, slots: Slot[], arrows: Arrow[], captions: number[] = []): void {
+  const f = doc.shapes.get(frameId)!.frame!;
+  doc.updateShape(frameId, { frame: { ...f, captions: [...f.captions, ...slots.flatMap((sl) => (sl.caption !== undefined ? [sl.caption] : [])), ...captions], arrows: [...f.arrows, ...arrows.map((r) => r.id)] } });
+}
+
+/** In a cycle of several loops: a new species on step `link`, between the two it joins. */
+function insertOnStep(doc: Doc, m: Measure, frameId: number, read: SmartRead, link: number, text: string): number | null {
+  const l = read.links[link];
+  if (!l) return null;
+  const a = read.slots[l.from], b = read.slots[l.to];
+  const pa = mid(a.box), pb = mid(b.box);
+  const fresh = newSpecies(doc, m, { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 }, text);
+  // the step keeps its arrow and conditions as far as the new species; a new arrow goes on from there
+  doc.updateArrow(l.arrow.id, { step: roles(a, fresh, l) });
+  const arrow = newStep(doc, read.links[0]?.arrow, fresh, b);
+  intoFrame(doc, frameId, [fresh], [arrow]);
+  arrangeSmart(doc, m, frameId, undefined, meshPairs(read));
+  return fresh.caption!;
+}
+
+/** The pairs of step arrows that face each other where two loops turn together (to keep them so when laid out again after a change). */
+function meshPairs(read: SmartRead, more: [number, number][] = []): [number, number][] | undefined {
+  if (!read.net && !more.length) return undefined;
+  const pairs = (read.net?.joins ?? []).flatMap((j): [number, number][] => (j.kind === 'mesh' ? [[read.links[j.a].arrow.id, read.links[j.b].arrow.id]] : []));
+  return [...pairs, ...more];
+}
+
+/** Take a step away: its arrow, its conditions and its small in and out arrows. */
+function dropStep(doc: Doc, l: SmartLink): void {
+  for (const it of [...l.above, ...l.below, ...l.inside, ...l.plusses]) removeItem(doc, it);
+  for (const r of [...doc.arrows.values()]) if (r.reagentFor === l.arrow.id) doc.removeArrow(r.id);
+  doc.removeArrow(l.arrow.id);
+}
+
+/** Whether slot `k` of a cycle of several loops can be taken out by itself (a species two loops share, or one a branch hangs from, can't). */
+export function canRemoveSlot(read: SmartRead, k: number): boolean {
+  if (!read.net && !read.tree) return read.chain && read.slots.length > 2;
+  if (read.slots.length <= 2) return false;
+  const ins = read.links.filter((l) => l.to === k), outs = read.links.filter((l) => l.from === k);
+  if (ins.length + outs.length === 1) return true;
+  if (ins.length !== 1 || outs.length !== 1 || ins[0].from === outs[0].to) return false;
+  // not when the species on either side are already joined by a step of their own
+  return !read.links.some((l) => l.from === ins[0].from && l.to === outs[0].to);
+}
+
 /** Take slot `k` out, with the step leading on from it (or into it, for the last). The scheme is laid out again. Call inside an edit. */
 export function removeSlot(doc: Doc, m: Measure, frameId: number, k: number): boolean {
   const read = readSmart(doc, m, frameId);
+  if (read?.net || read?.tree) {
+    if (!read.slots[k] || !canRemoveSlot(read, k)) return false;
+    const into = read.links.find((l) => l.to === k), out = read.links.find((l) => l.from === k);
+    const gone = read.slots[k];
+    for (const it of [...gone.items, ...gone.labels]) removeItem(doc, it);
+    const pairs = meshPairs(read)?.filter(([a, b]) => a !== (out ?? into)!.arrow.id && b !== (out ?? into)!.arrow.id);
+    // the step out of it goes, and the step into it leads on to the next species (at the end of a branch its one step goes)
+    if (into && out) { dropStep(doc, out); doc.updateArrow(into.arrow.id, { step: roles(read.slots[into.from], read.slots[out.to], into) }); }
+    else dropStep(doc, (into ?? out)!);
+    arrangeSmart(doc, m, frameId, undefined, pairs);
+    return true;
+  }
   if (!read || !read.chain || read.slots.length <= 2 || !read.slots[k]) return false;
   const { slots, links, closed } = read;
   const gone = slots[k];
@@ -437,6 +720,20 @@ export function removeSlot(doc: Doc, m: Measure, frameId: number, k: number): bo
 /** Move slot `from` to place `to`; the arrows and their conditions stay in their places between. Call inside an edit. */
 export function moveSlot(doc: Doc, m: Measure, frameId: number, from: number, to: number): boolean {
   const read = readSmart(doc, m, frameId);
+  if (read?.net || read?.tree) {
+    // within one loop's own species, or one branch (or route): the species change places, the steps stay
+    const runsNow = read.net ? [...read.net.loops.map((lp) => lp.own), ...read.net.tails.map((t) => t.slots)] : read.tree!.runs.map((r) => r.slots);
+    const run = runsNow.find((r) => r.includes(from) && r.includes(to));
+    if (!run || from === to) return false;
+    const next = [...run];
+    next.splice(next.indexOf(from), 1);
+    next.splice(run.indexOf(to), 0, from);
+    const now = new Map(run.map((place, i) => [place, read.slots[next[i]]]));
+    const slotAt = (i: number) => now.get(i) ?? read.slots[i];
+    for (const l of read.links) if (now.has(l.from) || now.has(l.to)) doc.updateArrow(l.arrow.id, { step: roles(slotAt(l.from), slotAt(l.to), l) });
+    arrangeSmart(doc, m, frameId, undefined, meshPairs(read));
+    return true;
+  }
   if (!read || !read.chain || from === to || !read.slots[from] || to < 0 || to >= read.slots.length) return false;
   const slots = [...read.slots];
   const [s] = slots.splice(from, 1);
@@ -685,6 +982,264 @@ export function setStepRuns(doc: Doc, m: Measure, frameId: number, k: number, pa
   return true;
 }
 
+// ---------------------------------------------------------------- loops and branches
+
+/** How a new loop is joined to a cycle: at a species both loops share, along a stretch of species (from one to another, the way the arrows go), facing a step, or beside it. */
+export type LoopJoin =
+  | { kind: 'share'; slot: number }
+  | { kind: 'fused'; from: number; to: number }
+  | { kind: 'mesh'; link: number }
+  | { kind: 'beside' };
+
+/** The species from slot `from` on to slot `to` along the steps of one loop (both included), or null when no loop runs that way. */
+export function stretch(read: SmartRead, from: number, to: number): number[] | null {
+  const loops = read.net ? read.net.loops.map((lp) => lp.slots) : read.closed && read.chain ? [read.slots.map((_, i) => i)] : [];
+  for (const lp of loops) {
+    const a = lp.indexOf(from), b = lp.indexOf(to);
+    if (a < 0 || b < 0 || a === b) continue;
+    const n = lp.length, len = ((b - a + n) % n) + 1;
+    // some of the loop has to be left over for the loop that is there already
+    if (len < 2 || len > n) continue;
+    return Array.from({ length: len }, (_, k) => lp[(a + k) % n]);
+  }
+  return null;
+}
+
+/**
+ * Add a loop of `count` new species to a cycle, joined as `join` says. The scheme is laid out
+ * again. Returns the new species' text boxes (null when it can't be joined that way). Call inside an edit.
+ */
+export function addLoop(doc: Doc, m: Measure, frameId: number, join: LoopJoin, count = 3): number[] | null {
+  const read = readSmart(doc, m, frameId);
+  const s = doc.shapes.get(frameId);
+  if (!read || !s?.frame || !s.smart) return null;
+  if (!read.net && !(read.closed && read.chain)) return null;
+  const box = frameBox(doc, s.frame, m);
+  if (!box) return null;
+  const L = doc.style.bondLength;
+  const least = join.kind === 'share' || join.kind === 'fused' ? 1 : 2;
+  const n = Math.max(least, Math.min(12, Math.round(count)));
+  let first: Slot, last: Slot;
+  if (join.kind === 'share') {
+    if (!read.slots[join.slot]) return null;
+    first = last = read.slots[join.slot];
+  } else if (join.kind === 'fused') {
+    const path = stretch(read, join.from, join.to);
+    if (!path) return null;
+    // the new loop runs on from the end of the stretch and comes back to its start
+    first = read.slots[join.to]; last = read.slots[join.from];
+  } else if (join.kind === 'mesh' && !read.links[join.link]) return null;
+  // well clear of the rest until it is laid out, so nothing of it is taken for part of another loop
+  const fresh = Array.from({ length: n }, (_, k) => newSpecies(doc, m, { x: box.x2 + (8 + 6 * k) * L, y: box.y1 - 12 * L }, `Species ${read.slots.length + k + 1}`));
+  const like = read.links[0]?.arrow;
+  const arrows: Arrow[] = [];
+  for (let k = 0; k + 1 < n; k++) arrows.push(newStep(doc, like, fresh[k], fresh[k + 1]));
+  if (join.kind === 'share' || join.kind === 'fused') {
+    arrows.unshift(newStep(doc, like, first!, fresh[0]));
+    arrows.push(newStep(doc, like, fresh[n - 1], last!));
+  } else arrows.push(newStep(doc, like, fresh[n - 1], fresh[0]));
+  intoFrame(doc, frameId, fresh, arrows);
+  const pairs = meshPairs(read, join.kind === 'mesh' ? [[read.links[join.link].arrow.id, arrows[arrows.length - 1].id]] : []) ?? [];
+  arrangeSmart(doc, m, frameId, undefined, pairs);
+  return fresh.map((sl) => sl.caption!);
+}
+
+/** Text in a Smart Scheme that is no species, label or condition: for each loop, the one nearest its middle (the catalyst's name). */
+export function loopMiddles(doc: Doc, m: Measure, frameId: number, read: SmartRead): (number | undefined)[] {
+  const f = doc.shapes.get(frameId)?.frame;
+  const loops = read.net ? read.net.loops.map((lp) => lp.slots) : read.closed ? [read.slots.map((_, i) => i)] : [];
+  if (!f || !loops.length) return [];
+  const used = new Set<number>();
+  for (const sl of read.slots) for (const it of [...sl.items, ...sl.labels]) if (it.caption !== undefined) used.add(it.caption);
+  for (const l of read.links) for (const it of [...l.above, ...l.below, ...l.inside, ...l.plusses]) if (it.caption !== undefined) used.add(it.caption);
+  const centres = loops.map((lp) => loopCentre(read, lp));
+  const out: (number | undefined)[] = loops.map(() => undefined);
+  for (const id of frameMembers(doc, f).captions) {
+    const c = doc.captions.get(id);
+    if (!c || used.has(id)) continue;
+    const p = mid(m.captionBox(c));
+    let best = 0;
+    centres.forEach((q, i) => { if (Math.hypot(q.x - p.x, q.y - p.y) < Math.hypot(centres[best].x - p.x, centres[best].y - p.y)) best = i; });
+    if (out[best] === undefined) out[best] = id;
+  }
+  return out;
+}
+
+const loopCentre = (read: SmartRead, slots: number[]): Vec => {
+  const ps = slots.map((i) => mid(read.slots[i].box));
+  return { x: ps.reduce((a, p) => a + p.x, 0) / ps.length, y: ps.reduce((a, p) => a + p.y, 0) / ps.length };
+};
+
+/** Write `parts` in the middle of loop `loop` (the catalyst's name); nothing typed takes it away. Call inside an edit. */
+export function setLoopMiddle(doc: Doc, m: Measure, frameId: number, loop: number, parts: TextPart[]): boolean {
+  const read = readSmart(doc, m, frameId);
+  if (!read) return false;
+  const now = loopMiddles(doc, m, frameId, read);
+  if (loop < 0 || loop >= now.length) return false;
+  const id = now[loop], text = partsPlain(parts).trim();
+  if (id !== undefined) {
+    const c = doc.captions.get(id)!;
+    if (text) doc.updateCaption(id, { runs: partsRuns(parts, c.runs[0]) });
+    else doc.removeCaption(id);
+  } else {
+    if (!text) return false;
+    const slots = read.net ? read.net.loops[loop].slots : read.slots.map((_, i) => i);
+    const at = loopCentre(read, slots);
+    const cap = doc.addCaption({ x: at.x, y: at.y, runs: partsRuns(parts), justify: 'center' });
+    intoFrame(doc, frameId, [], [], [cap.id]);
+  }
+  arrangeSmart(doc, m, frameId, undefined, meshPairs(read));
+  return true;
+}
+
+/**
+ * Take loop `loop` out of a cycle of several loops (not the first): its own species and steps,
+ * what is written in its middle, the branches off it, and the loops joined to it by something
+ * they share. Loops that only turned with it stay. Call inside an edit.
+ */
+export function removeLoop(doc: Doc, m: Measure, frameId: number, loop: number): boolean {
+  const read = readSmart(doc, m, frameId);
+  const net = read?.net;
+  if (!read || !net || loop < 1 || loop >= net.loops.length) return false;
+  const middles = loopMiddles(doc, m, frameId, read);
+  const loopsGone = new Set([loop]);
+  const gone = new Set(net.loops[loop].own);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const j of net.joins) {
+      if (loopsGone.has(j.child)) continue;
+      const lost = j.kind === 'share' ? gone.has(j.node) : j.kind === 'fused' ? j.path.some((x) => gone.has(x)) : false;
+      if (!lost) continue;
+      loopsGone.add(j.child);
+      for (const x of net.loops[j.child].own) gone.add(x);
+      grew = true;
+    }
+  }
+  for (const t of net.tails) if (gone.has(t.at)) for (const x of t.slots) gone.add(x);
+  const pairs = meshPairs(read)!;
+  const dead = new Set<number>();
+  for (const l of read.links) if (gone.has(l.from) || gone.has(l.to)) { dead.add(l.arrow.id); dropStep(doc, l); }
+  for (const k of gone) for (const it of [...read.slots[k].items, ...read.slots[k].labels]) removeItem(doc, it);
+  for (const li of loopsGone) { const id = middles[li]; if (id !== undefined && doc.captions.has(id)) doc.removeCaption(id); }
+  arrangeSmart(doc, m, frameId, undefined, pairs.filter(([a, b]) => !dead.has(a) && !dead.has(b)), true);
+  return true;
+}
+
+/**
+ * Add a species off the cycle at slot `k`: one that comes in (a precatalyst), goes out (a
+ * deactivated species), or is in equilibrium with it (a resting state). Returns its text box.
+ * Call inside an edit.
+ */
+export function addBranch(doc: Doc, m: Measure, frameId: number, k: number, dir: 'in' | 'out' | 'both', text?: string, side: 1 | -1 | 0 = 0): number | null {
+  const read = readSmart(doc, m, frameId);
+  const s = doc.shapes.get(frameId);
+  const on = read?.slots[k];
+  if (!read || !on || !s?.frame || !(read.net || read.tree || read.chain)) return null;
+  const box = frameBox(doc, s.frame, m);
+  if (!box) return null;
+  const L = doc.style.bondLength;
+  const round = !!read.net || read.closed;
+  // a scheme in rows goes into a line first (a scheme that branches has no rows), so its main route is plain to read
+  if (!round && read.chain && !smartIsFree(s.smart!, read) && (s.smart!.layout === 'rows' || s.smart!.layout === 'snake')) {
+    arrangeSmart(doc, m, frameId, { layout: 'line' });
+    return addBranch(doc, m, frameId, k, dir, text, side);
+  }
+  // (off a cycle: well away, to be placed; off a line: just beside the species it joins, square to the way the scheme runs, so the main route still reads as the main route)
+  const c = mid(on.box), down = s.smart!.layout === 'down';
+  const fresh = newSpecies(doc, m, round ? { x: box.x2 + 8 * L, y: box.y1 - 12 * L } : down ? { x: on.box.x2 + 4 * L, y: c.y } : { x: c.x, y: on.box.y2 + 4 * L }, text ?? (round ? 'off-cycle species' : 'new species'));
+  const like = read.links[0]?.arrow;
+  const arrow = dir === 'in' ? newStep(doc, like, fresh, on) : newStep(doc, like, on, fresh, dir === 'both' ? EQUILIBRIUM : {});
+  intoFrame(doc, frameId, [fresh], [arrow]);
+  // (off a line or a branch: on the side that was asked for; a scheme in rows becomes a line with a branch)
+  arrangeSmart(doc, m, frameId, undefined, round ? meshPairs(read) ?? [] : undefined, false, round ? undefined : [[arrow.id, side]]);
+  return fresh.caption!;
+}
+
+/**
+ * A new Smart Scheme of species with no steps yet, made a tree: the first species (furthest left,
+ * then highest) leads to each of the others. Call inside an edit, before it is arranged.
+ */
+export function fanSteps(doc: Doc, m: Measure, frameId: number): boolean {
+  const read = readSmart(doc, m, frameId);
+  if (!read || read.links.length || read.slots.length < 2) return false;
+  const at = (sl: Slot) => mid(sl.box);
+  const order = [...read.slots].sort((a, b) => at(a).x - at(b).x || at(a).y - at(b).y);
+  const arrows = order.slice(1).map((sl) => newStep(doc, undefined, order[0], sl));
+  intoFrame(doc, frameId, [], arrows);
+  return true;
+}
+
+/** The runs that go when run `run` of a scheme that branches is taken out: itself and the branches off it. */
+function runsUnder(tree: SmartTree, run: number): Set<number> {
+  const gone = new Set([run]);
+  for (let grew = true; grew;) {
+    grew = false;
+    tree.runs.forEach((r, i) => { if (r.parent !== undefined && gone.has(r.parent) && !gone.has(i)) { gone.add(i); grew = true; } });
+  }
+  return gone;
+}
+
+/**
+ * Take branch `run` out of a scheme that branches (not its main route): its species and steps,
+ * the step that joins it, and the branches off it. Call inside an edit.
+ */
+export function removeBranch(doc: Doc, m: Measure, frameId: number, run: number): boolean {
+  const read = readSmart(doc, m, frameId);
+  const tree = read?.tree;
+  if (!read || !tree || !tree.runs[run] || tree.runs[run].parent === undefined) return false;
+  const gone = new Set<number>();
+  for (const i of runsUnder(tree, run)) for (const k of tree.runs[i].slots) gone.add(k);
+  for (const l of read.links) if (gone.has(l.from) || gone.has(l.to)) dropStep(doc, l);
+  for (const k of gone) for (const it of [...read.slots[k].items, ...read.slots[k].labels]) removeItem(doc, it);
+  arrangeSmart(doc, m, frameId);
+  return true;
+}
+
+/** Turn a branch's joining step round: one that led away from the main route leads into it, and back. Call inside an edit. */
+export function reverseStep(doc: Doc, m: Measure, frameId: number, k: number): boolean {
+  const read = readSmart(doc, m, frameId);
+  const l = read?.links[k];
+  if (!read || !l || read.net || read.closed) return false;
+  // not when it would make the steps lead round in a loop
+  const next = read.links.map((x, i) => (i === k ? { from: x.to, to: x.from } : { from: x.from, to: x.to }));
+  const seen = new Set<number>();
+  const reach = (i: number): boolean => { if (i === l.to) return true; if (seen.has(i)) return false; seen.add(i); return next.some((x, xi) => xi !== k && x.from === i && reach(x.to)); };
+  if (reach(l.from)) return false;
+  doc.updateArrow(l.arrow.id, { step: roles(read.slots[l.to], read.slots[l.from], l) });
+  arrangeSmart(doc, m, frameId);
+  return true;
+}
+
+/** The names of a cycle's steps, all short (OA) or all in full (oxidative addition), where they are ones it knows; null when none is. */
+export function stepNamesNow(doc: Doc, read: SmartRead): 'short' | 'full' | null {
+  let short = 0, full = 0;
+  for (const l of read.links) for (const it of l.inside) {
+    const c = it.caption !== undefined ? doc.captions.get(it.caption) : undefined;
+    if (!c) continue;
+    const t = plainText(c.runs).trim();
+    if (fullName(t) !== t) short++; else if (shortName(t) !== t) full++;
+  }
+  return short + full === 0 ? null : full > short ? 'full' : 'short';
+}
+
+/** Write every step name the cycle knows short or in full. Call inside an edit. */
+export function setStepNames(doc: Doc, m: Measure, frameId: number, how: 'short' | 'full'): boolean {
+  const read = readSmart(doc, m, frameId);
+  if (!read) return false;
+  let any = false;
+  for (const l of read.links) for (const it of l.inside) {
+    const c = it.caption !== undefined ? doc.captions.get(it.caption) : undefined;
+    if (!c) continue;
+    const t = plainText(c.runs).trim();
+    const next = how === 'short' ? shortName(t) : fullName(t);
+    if (next === t) continue;
+    doc.updateCaption(c.id, { runs: markupRuns(next, c.runs[0]) });
+    any = true;
+  }
+  if (any) arrangeSmart(doc, m, frameId, undefined, meshPairs(read));
+  return any;
+}
+
 // ---------------------------------------------------------------- following moves made by hand
 
 /** Where the line from `p` (inside box r) towards `q` leaves r grown by `pad`. */
@@ -716,6 +1271,9 @@ export function refitSmart(doc: Doc, before: ReadonlyMap<string, Entity | null>,
     if (!moved) for (const id of mem.captions) if (before.has('c' + id)) { moved = true; break; }
     if (!moved) for (const id of mem.shapes) if (before.has('s' + id)) { moved = true; break; }
     if (!moved) continue;
+    // only retyped (a species or a step's conditions, in the list or on the page), in a scheme
+    // laid out tidily until then: laid out again, so its spacing stays even
+    if (retypedTidy(doc, m, s.id, mem, before)) { arrangeSmart(doc, m, s.id); continue; }
     const read = readSmart(doc, m, s.id);
     if (!read) continue;
     const gap = s.smart.fmt?.structGap ?? spacing(doc.style.bondLength).gap;
@@ -725,36 +1283,58 @@ export function refitSmart(doc: Doc, before: ReadonlyMap<string, Entity | null>,
       if (read.slots.some((sl) => slotMoved(doc, sl, before))) refitCycle(doc, read, gap);
       continue;
     }
-    for (const l of read.links) {
-      const a = read.slots[l.from], b = read.slots[l.to];
-      if (!a || !b) continue;
-      // a curved arrow (round a cycle) follows only a species that moved: one retyped, recolored
-      // or given another atom stays where it is, its arcs where the layout put them
-      const curved = !!l.arrow.sweep || !!l.arrow.bez?.length;
-      if (curved && !slotMoved(doc, a, before) && !slotMoved(doc, b, before)) continue;
-      // conditions moved on their own were placed by hand: leave the step as it is
-      if ([...l.above, ...l.below, ...l.inside].some((it) => it.caption !== undefined && before.has('c' + it.caption))
-        && !a.items.some((it) => it.caption !== undefined && before.has('c' + it.caption))
-        && !b.items.some((it) => it.caption !== undefined && before.has('c' + it.caption))) continue;
-      const pa = mid(a.box), pb = mid(b.box);
-      const r = l.arrow;
-      // an arc keeps its bend: its ends move to the boxes' edges facing each other
-      const tail = leave(pa, pb, a.box, gap), head = leave(pb, pa, b.box, gap);
-      const was = arrowMid(r);
-      const fwd = r.headStyle !== 'none' || r.tailStyle === 'none';
-      const next = fwd ? { tail, head } : { tail: head, head: tail };
-      if (Math.hypot(next.tail.x - r.tail.x, next.tail.y - r.tail.y) + Math.hypot(next.head.x - r.head.x, next.head.y - r.head.y) < 1e-6) continue;
-      doc.updateArrow(r.id, next);
-      const now = arrowMid({ ...r, ...next });
-      const d = { x: now.x - was.x, y: now.y - was.y };
-      for (const it of [...l.above, ...l.below, ...l.inside]) {
-        if (it.caption === undefined) continue;
-        const c = doc.captions.get(it.caption);
-        if (c) doc.updateCaption(c.id, { x: c.x + d.x, y: c.y + d.y });
-      }
-      for (const x of [...doc.arrows.values()]) if (x.reagentFor === r.id) doc.updateArrow(x.id, { tail: { x: x.tail.x + d.x, y: x.tail.y + d.y }, head: { x: x.head.x + d.x, y: x.head.y + d.y } });
-    }
+    if (read.net) { refitNet(doc, read, gap, before); continue; }
+    for (const l of read.links) refitLink(doc, read, l, gap, before);
   }
+}
+
+/** One step's arrow run again between its two species where they are now, its conditions going with it. */
+function refitLink(doc: Doc, read: SmartRead, l: SmartLink, gap: number, before: ReadonlyMap<string, Entity | null>): void {
+  const a = read.slots[l.from], b = read.slots[l.to];
+  if (!a || !b) return;
+  // a curved arrow (round a cycle) follows only a species that moved: one retyped, recolored
+  // or given another atom stays where it is, its arcs where the layout put them
+  const curved = !!l.arrow.sweep || !!l.arrow.bez?.length;
+  if (curved && !slotMoved(doc, a, before) && !slotMoved(doc, b, before)) return;
+  // conditions moved on their own were placed by hand: leave the step as it is
+  if ([...l.above, ...l.below, ...l.inside].some((it) => it.caption !== undefined && before.has('c' + it.caption))
+    && !a.items.some((it) => it.caption !== undefined && before.has('c' + it.caption))
+    && !b.items.some((it) => it.caption !== undefined && before.has('c' + it.caption))) return;
+  const pa = mid(a.box), pb = mid(b.box);
+  const r = l.arrow;
+  // an arc keeps its bend: its ends move to the boxes' edges facing each other
+  const tail = leave(pa, pb, a.box, gap), head = leave(pb, pa, b.box, gap);
+  const was = arrowMid(r);
+  const fwd = r.headStyle !== 'none' || r.tailStyle === 'none';
+  const next = fwd ? { tail, head } : { tail: head, head: tail };
+  if (Math.hypot(next.tail.x - r.tail.x, next.tail.y - r.tail.y) + Math.hypot(next.head.x - r.head.x, next.head.y - r.head.y) < 1e-6) return;
+  doc.updateArrow(r.id, next);
+  const now = arrowMid({ ...r, ...next });
+  const d = { x: now.x - was.x, y: now.y - was.y };
+  for (const it of [...l.above, ...l.below, ...l.inside]) {
+    if (it.caption === undefined) continue;
+    const c = doc.captions.get(it.caption);
+    if (c) doc.updateCaption(c.id, { x: c.x + d.x, y: c.y + d.y });
+  }
+  for (const x of [...doc.arrows.values()]) if (x.reagentFor === r.id) doc.updateArrow(x.id, { tail: { x: x.tail.x + d.x, y: x.tail.y + d.y }, head: { x: x.head.x + d.x, y: x.head.y + d.y } });
+}
+
+/**
+ * A cycle of several loops where a species moved: each loop it is in runs along its own smooth
+ * path again, and the straight steps (ones two loops share, and the branches') follow their species.
+ */
+function refitNet(doc: Doc, read: SmartRead, gap: number, before: ReadonlyMap<string, Entity | null>): void {
+  const net = read.net!;
+  const moved = new Set(read.slots.flatMap((sl, i) => (slotMoved(doc, sl, before) ? [i] : [])));
+  if (!moved.size) return;
+  const uses = new Map<number, number>();
+  for (const lp of net.loops) for (const li of lp.links) uses.set(li, (uses.get(li) ?? 0) + 1);
+  const straight = (li: number) => uses.get(li) !== 1;
+  for (const lp of net.loops) {
+    if (!lp.slots.some((i) => moved.has(i))) continue;
+    refitCycle(doc, { slots: lp.slots.map((i) => read.slots[i]), links: lp.links.map((i) => read.links[i]) }, gap, undefined, new Set(lp.links.flatMap((li, k) => (straight(li) ? [k] : []))));
+  }
+  read.links.forEach((l, li) => { if (straight(li) && (moved.has(l.from) || moved.has(l.to))) refitLink(doc, read, l, gap, before); });
 }
 
 /** Whether a Smart Scheme is one loop that its arrows go round in order (what Clean Up Cycle and the smooth path work on). */
@@ -786,6 +1366,8 @@ function shiftSlot(doc: Doc, slot: Slot, d: Vec): void {
 export function cleanUpCycle(doc: Doc, m: Measure, frameId: number): boolean {
   const data = doc.shapes.get(frameId)?.smart;
   const read = data && readSmart(doc, m, frameId);
+  // several loops: every loop back onto its circle, joined as they are
+  if (read?.net) return arrangeSmart(doc, m, frameId, undefined, meshPairs(read));
   if (!data || !read || !simpleLoop(data, read) || read.slots.length < 3) return false;
   const e = fitEllipse(read.slots.map((sl) => mid(sl.box)));
   if (!e) return false;
@@ -799,7 +1381,7 @@ export function cleanUpCycle(doc: Doc, m: Measure, frameId: number): boolean {
  * all the species (so each arrow leaves a species the way the one before came in), their names and
  * what comes in and goes out going with them.
  */
-function refitCycle(doc: Doc, read: SmartRead, gap: number, ellipse?: Ellipse): void {
+function refitCycle(doc: Doc, read: Pick<SmartRead, 'slots' | 'links'>, gap: number, ellipse?: Ellipse, skip?: Set<number>): void {
   const n = read.slots.length, bond = doc.style.bondLength;
   const pts = read.slots.map((sl) => mid(sl.box));
   const boxes = read.slots.map((sl) => ({ x1: sl.box.x1 - gap, y1: sl.box.y1 - gap, x2: sl.box.x2 + gap, y2: sl.box.y2 + gap }));
@@ -807,7 +1389,7 @@ function refitCycle(doc: Doc, read: SmartRead, gap: number, ellipse?: Ellipse): 
   const centre = { x: pts.reduce((a, p) => a + p.x, 0) / n, y: pts.reduce((a, p) => a + p.y, 0) / n };
   read.links.forEach((l, k) => {
     const c = curves[k], r = l.arrow;
-    if (!c || r.bent) return;
+    if (!c || r.bent || skip?.has(k)) return;
     const oldPath = pathPoints(r);
     const fwd = r.headStyle !== 'none' || r.tailStyle === 'none';
     const path = fwd ? c : [...c].reverse();
@@ -872,6 +1454,28 @@ function curveLength(c: Vec[]): number {
   return s;
 }
 
+/**
+ * Whether the change to a Smart Scheme's members was only text retyped where it stood, and the
+ * scheme was laid out tidily before it (worked out with the old text put back for a moment).
+ */
+function retypedTidy(doc: Doc, m: Measure, frameId: number, mem: Selection, before: ReadonlyMap<string, Entity | null>): boolean {
+  for (const id of mem.atoms) if (before.has('a' + id)) return false;
+  for (const id of mem.shapes) if (before.has('s' + id)) return false;
+  const old: [number, TextRun[]][] = [];
+  for (const id of mem.captions) {
+    if (!before.has('c' + id)) continue;
+    const was = before.get('c' + id) as Caption | null, c = doc.captions.get(id);
+    if (!was || !c || Math.hypot(c.x - was.x, c.y - was.y) > 1e-6) return false;
+    if (JSON.stringify(c.runs) !== JSON.stringify(was.runs)) old.push([id, was.runs]);
+  }
+  if (!old.length) return false;
+  const now = old.map(([id]) => doc.captions.get(id)!.runs);
+  for (const [id, runs] of old) doc.updateCaption(id, { runs });
+  const tidy = smartIsTidy(doc, m, frameId);
+  old.forEach(([id], i) => doc.updateCaption(id, { runs: now[i] }));
+  return tidy;
+}
+
 /** Whether something of a species was moved in the change (not just retyped or restyled). */
 function slotMoved(doc: Doc, slot: Slot, before: ReadonlyMap<string, Entity | null>): boolean {
   const shifted = (x: number, y: number, was: { x: number; y: number } | null | undefined) => !!was && Math.hypot(x - was.x, y - was.y) > 1e-6;
@@ -898,8 +1502,36 @@ function slotMoved(doc: Doc, slot: Slot, before: ReadonlyMap<string, Entity | nu
 export interface SmartMarks {
   /** A dashed box round each species, with its number. */
   boxes: Rect[];
-  /** Where a + adds a slot: after slot `after` (−1: before the first). */
-  adds: { at: Vec; after: number }[];
+  /**
+   * Where a + adds a slot: after slot `after` (−1: before the first), on step `link` in a cycle of
+   * several loops or a scheme that branches. `lead`: a new species leading into slot `after` (a
+   * new start for a route of a scheme that branches).
+   */
+  adds: { at: Vec; after: number; link?: number; lead?: boolean }[];
+}
+
+/** Where a + off a picked species starts a branch: `from` the species' edge, `at` the +, on `side` of its route. */
+export interface BranchSpot { from: Vec; at: Vec; side: 1 | -1 }
+
+/**
+ * The two + buttons shown beside a species picked in a scheme that runs in a line, down the page
+ * or as a tree: each starts a branch leading away from it on that side. None for a cycle.
+ */
+export function branchSpots(doc: Doc, m: Measure, frameId: number, slot: number): BranchSpot[] {
+  const s = doc.shapes.get(frameId);
+  const read = readSmart(doc, m, frameId);
+  const sl = read?.slots[slot];
+  if (!s?.smart || !read || !sl || read.net || read.closed || !(read.chain || read.tree)) return [];
+  const layout = smartLayoutOf(s.smart, read);
+  if (layout === 'cycle' || smartIsFree(s.smart, read)) return [];
+  const L = doc.style.bondLength, g = s.smart.fmt?.structGap ?? spacing(L).gap;
+  const c = mid(sl.box), hw = (sl.box.x2 - sl.box.x1) / 2, hh = (sl.box.y2 - sl.box.y1) / 2;
+  const reach = g + 1.5 * L;
+  return ([1, -1] as const).map((side) => {
+    if (layout === 'down') return { side, from: { x: c.x + side * (hw + g), y: c.y }, at: { x: c.x + side * (hw + reach), y: c.y } };
+    if (layout === 'tree') return { side, from: { x: c.x + hw + g, y: c.y + side * hh * 0.5 }, at: { x: c.x + hw + reach, y: c.y + side * (hh + 0.9 * L) } };
+    return { side, from: { x: c.x, y: c.y + side * (hh + g) }, at: { x: c.x, y: c.y + side * (hh + reach) } };
+  });
 }
 
 /** The dashed boxes and + buttons shown on a selected Smart Scheme. */
@@ -914,6 +1546,67 @@ export function smartMarks(doc: Doc, m: Measure, frameId: number): SmartMarks | 
     return { x1: b.x1 - g, y1: b.y1 - g, x2: b.x2 + g, y2: b.y2 + g };
   });
   const adds: SmartMarks['adds'] = [];
+  if (read.net) {
+    // a + on every step, just outside its own loop; where two loops face each other (or share the
+    // step) there is no outside, so it sits on the arrow, nearer its start in one loop and its end in the other
+    const net = read.net;
+    const along = (r: Arrow, t: number): Vec => {
+      const pts = pathPoints(r);
+      const at = t * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(at)), f = at - i;
+      return { x: pts[i].x + (pts[i + 1].x - pts[i].x) * f, y: pts[i].y + (pts[i + 1].y - pts[i].y) * f };
+    };
+    read.links.forEach((l, li) => {
+      const mine = net.loops.filter((x) => x.links.includes(li));
+      const mesh = net.joins.find((j) => j.kind === 'mesh' && (j.a === li || j.b === li));
+      if (mine.length !== 1 || mesh) {
+        const fwd = l.arrow.headStyle !== 'none' || l.arrow.tailStyle === 'none';
+        const t = mesh && mesh.kind === 'mesh' && mesh.b === li ? 0.75 : 0.25;
+        adds.push({ at: along(l.arrow, fwd ? t : 1 - t), after: l.from, link: li });
+        return;
+      }
+      const p = arrowMid(l.arrow), c = loopCentre(read, mine[0].slots);
+      const len = Math.hypot(p.x - c.x, p.y - c.y) || 1;
+      adds.push({ at: { x: p.x + ((p.x - c.x) / len) * 0.8 * L, y: p.y + ((p.y - c.y) / len) * 0.8 * L }, after: l.from, link: li });
+    });
+    return { boxes, adds };
+  }
+  if (read.tree) {
+    // a + on every step, beside its arrow past its conditions (under an arrow across the page), and
+    // one beyond each end: after a species nothing leads on from, before one nothing leads into
+    const snap = (d: Vec): Vec => (Math.abs(d.x) >= Math.abs(d.y) ? { x: Math.sign(d.x) || 1, y: 0 } : { x: 0, y: Math.sign(d.y) || 1 });
+    const edge = (b: Rect, d: Vec): Vec => ({ x: mid(b).x + d.x * ((b.x2 - b.x1) / 2 + 0.9 * L), y: mid(b).y + d.y * ((b.y2 - b.y1) / 2 + 0.9 * L) });
+    read.links.forEach((l, li) => {
+      const p = arrowMid(l.arrow), f = arrowFrame(l.arrow);
+      const dir = { x: -f.n.x, y: -f.n.y };
+      let t = 0.7 * L;
+      for (const it of [...l.above, ...l.below, ...l.inside]) {
+        const c = mid(it.box);
+        const along = (c.x - p.x) * dir.x + (c.y - p.y) * dir.y;
+        const half = Math.abs(dir.x) * (it.box.x2 - it.box.x1) / 2 + Math.abs(dir.y) * (it.box.y2 - it.box.y1) / 2;
+        if (along > -half) t = Math.max(t, along + half + 0.6 * L);
+      }
+      adds.push({ at: { x: p.x + dir.x * t, y: p.y + dir.y * t }, after: l.from, link: li });
+    });
+    // (an end's + goes on from the way its step leads; where an arrow or a species is in the way, across the page or down it instead)
+    const segs = read.links.map((l) => ({ a: l.arrow.tail, b: l.arrow.head }));
+    const near = (p: Vec, q: { a: Vec; b: Vec }) => {
+      const d = { x: q.b.x - q.a.x, y: q.b.y - q.a.y }, n2 = d.x * d.x + d.y * d.y || 1;
+      const t = Math.max(0, Math.min(1, ((p.x - q.a.x) * d.x + (p.y - q.a.y) * d.y) / n2));
+      return Math.hypot(p.x - q.a.x - d.x * t, p.y - q.a.y - d.y * t);
+    };
+    const clear = (p: Vec) => !segs.some((q) => near(p, q) < 0.7 * L) && !boxes.some((b) => p.x > b.x1 - 0.3 * L && p.x < b.x2 + 0.3 * L && p.y > b.y1 - 0.3 * L && p.y < b.y2 + 0.3 * L) && !adds.some((x) => Math.hypot(x.at.x - p.x, x.at.y - p.y) < 0.9 * L);
+    const beyond = (k: number, first: Vec, back: boolean): Vec | null => {
+      const f = back ? -1 : 1;
+      for (const d of [first, { x: f, y: 0 }, { x: 0, y: f }, { x: 0, y: -f }]) { const p = edge(boxes[k], d); if (clear(p)) return p; }
+      return null;
+    };
+    read.slots.forEach((_, k) => {
+      const into = read.links.find((l) => l.to === k), out = read.links.find((l) => l.from === k);
+      if (!out && into) { const at = beyond(k, snap(arrowFrame(into.arrow).u), false); if (at) adds.push({ at, after: k }); }
+      if (!into && out) { const u = arrowFrame(out.arrow).u; const at = beyond(k, snap({ x: -u.x, y: -u.y }), true); if (at) adds.push({ at, after: k, lead: true }); }
+    });
+    return { boxes, adds };
+  }
   if (!read.chain) return { boxes, adds };
   const all = boxes.reduce((a, b) => ({ x1: Math.min(a.x1, b.x1), y1: Math.min(a.y1, b.y1), x2: Math.max(a.x2, b.x2), y2: Math.max(a.y2, b.y2) }));
   const centre = mid(all);
@@ -940,6 +1633,13 @@ export function smartMarks(doc: Doc, m: Measure, frameId: number): SmartMarks | 
     const d = prev ? { x: mid(last).x - mid(prev).x, y: mid(last).y - mid(prev).y } : { x: 1, y: 0 };
     const horiz = Math.abs(d.x) >= Math.abs(d.y);
     adds.push({ at: horiz ? { x: (d.x >= 0 ? last.x2 : last.x1) + Math.sign(d.x || 1) * 0.9 * L, y: mid(last).y } : { x: mid(last).x, y: last.y2 + 0.9 * L }, after: read.slots.length - 1 });
+    // ... and one before the first species, for a new start
+    const head = boxes[0], second = boxes[1];
+    if (second) {
+      const e = { x: mid(second).x - mid(head).x, y: mid(second).y - mid(head).y };
+      const across = Math.abs(e.x) >= Math.abs(e.y);
+      adds.push({ at: across ? { x: (e.x >= 0 ? head.x1 : head.x2) - Math.sign(e.x || 1) * 0.9 * L, y: mid(head).y } : { x: mid(head).x, y: (e.y >= 0 ? head.y1 : head.y2) - Math.sign(e.y || 1) * 0.9 * L }, after: -1 });
+    }
   }
   return { boxes, adds };
 }
