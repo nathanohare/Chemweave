@@ -708,7 +708,12 @@ export class SiProject {
    * (`others`: extension → bytes, e.g. a drawing's CDXML); gives its path from the section's folder.
    */
   async addSectionPicture(s: SiSection, name: string, bytes: Uint8Array, others: Record<string, Uint8Array> = {}): Promise<string> {
+    return this.addPictureIn(s.folder, name, bytes, others);
+  }
+
+  private async addPictureIn(folder: string, name: string, bytes: Uint8Array, others: Record<string, Uint8Array> = {}): Promise<string> {
     this.checkWritable();
+    const s = { folder };
     const clean = safeFilename(name);
     const dot = clean.lastIndexOf('.');
     const stem = dot > 0 ? clean.slice(0, dot) : clean, ext = dot > 0 ? clean.slice(dot) : '';
@@ -722,6 +727,64 @@ export class SiProject {
     await this.folder.writeBytes(join(s.folder, 'images', pick + ext), bytes);
     for (const [e, b] of Object.entries(others)) await this.folder.writeBytes(join(s.folder, 'images', `${pick}.${e}`), b);
     return `images/${pick}${ext}`;
+  }
+
+  // ---------------------------------------------------------------- texts with figures and tables
+  // A text owner is a Custom section, or 'general' (General Information: its pictures and tables
+  // in front/, its figures in front/front.json), as SI Assistant keeps them.
+
+  /** The figures an owner has stored: {figure id: {file, label, width?}}. */
+  async ownerFigures(owner: SiSection | 'general'): Promise<Json> {
+    const data = owner === 'general' ? await this.frontData() : owner.data;
+    return isObj(data.figures) ? data.figures : {};
+  }
+
+  private async frontData(): Promise<Json> {
+    const got = await this.readJson('front/front.json');
+    return got.ok && isObj(got.data) ? got.data : {};
+  }
+
+  /**
+   * Store a picture as a new figure of a text (images/figure.png, under a name no picture there
+   * has, with its vector original beside it when given); gives its id ("!figure{id}" in the text).
+   */
+  async addTextFigure(owner: SiSection | 'general', bytes: Uint8Array, ext: string, opts: { vector?: Uint8Array | null; vectorExt?: string; label?: string; width?: number | null; stem?: string } = {}): Promise<string> {
+    this.checkWritable();
+    const folder = owner === 'general' ? 'front' : owner.folder;
+    const others: Record<string, Uint8Array> = {};
+    const vext = (opts.vectorExt ?? '').toLowerCase().replace(/^\./, '');
+    if (opts.vector && ['emf', 'pdf', 'cdxml', 'cdx'].includes(vext)) others[vext] = opts.vector;
+    const rel = await this.addPictureIn(folder, (opts.stem || 'figure') + (ext.startsWith('.') ? ext : `.${ext}`), bytes, others);
+    const id = newId('f');
+    const entry: Json = { file: rel, label: (opts.label ?? '').trim() };
+    if (opts.width) { entry.width = Math.round(opts.width * 100) / 100; markFloat(entry, 'width'); }
+    if (owner === 'general') {
+      const data = await this.frontData();
+      const figs = isObj(data.figures) ? data.figures : (data.figures = {});
+      figs[id] = entry;
+      await this.writeJson('front/front.json', data);
+    } else {
+      const figs = isObj(owner.data.figures) ? owner.data.figures : (owner.data.figures = {});
+      figs[id] = entry;
+      await this.saveSection(owner);
+    }
+    return id;
+  }
+
+  /** Store a table of a text (tables/<id>.json); gives its id ("!table{id}" in the text). */
+  async addTextTable(owner: SiSection | 'general', table: Json): Promise<string> {
+    this.checkWritable();
+    const id = str(table.id) || newId('t');
+    const folder = owner === 'general' ? 'front' : owner.folder;
+    await this.writeJson(join(folder, 'tables', `${safeFilename(id)}.json`), { ...table, id });
+    return id;
+  }
+
+  /** Several fields added to a compound at once (those it has are left), saved once. */
+  async addFields(c: SiCompound, entries: FieldEntry[]): Promise<void> {
+    this.checkWritable();
+    for (const e of entries) this.addFieldEntry(c, e);
+    await this.saveCompound(c);
   }
 
   async setIdTable(sectionId: string, ids: string[]): Promise<void> {
