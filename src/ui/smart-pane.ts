@@ -7,7 +7,8 @@
 import type { Doc } from '../model';
 import type { Rect } from '../geom';
 import type { Measure } from '../editor/arrange';
-import { readSmart, slotName, stepHolder, stepPartKind, SMART_LAYOUTS, type SmartData, type SmartLayout, type SmartLink, type StepPart, type TextPart } from '../chem/smart-scheme';
+import { canRemoveSlot, loopMiddles, readSmart, slotName, smartIsFree, smartLayoutOf, stepHolder, stepNamesNow, stepPartKind, SMART_LAYOUTS, type LoopJoin, type SmartData, type SmartLayout, type SmartLink, type SmartRead, type StepPart, type TextPart } from '../chem/smart-scheme';
+import { askLoop, askBranch } from './smart-loop-pop';
 import type { TextRun } from '../model';
 import { RichField } from './rich-field';
 import { SYMBOLS } from './symbol-list';
@@ -15,6 +16,7 @@ import { dropTarget, type BoxPlace } from './toolboxes';
 import { PIN_ICON, PINNED_ICON } from './float-box';
 import { formatDefaults, type SmartFormat } from '../chem/smart-format';
 import { toggleSmartFormat } from './smart-format-pop';
+import { popupMenu } from './popup-menu';
 
 export interface SmartPaneHooks {
   doc(): Doc;
@@ -41,12 +43,21 @@ export interface SmartPaneHooks {
   dock(where: Partial<BoxPlace> | null): void;
   /** The drawing area (its edges dock toolboxes), on the screen. */
   work(): DOMRect;
-  add(id: number, after: number): void;
+  /** Add a species after slot `after` (in a cycle of several loops: on step `link`). */
+  add(id: number, after: number, link?: number): void;
   remove(id: number, k: number): void;
   move(id: number, from: number, to: number): void;
   arrange(id: number, patch: Partial<SmartData>): void;
-  /** Add a second loop to a cycle (the Catalytic Cycle window, filled with this one). */
-  secondLoop(id: number): void;
+  /** Add a loop of `count` new species to a cycle, joined as `join` says. */
+  addLoop(id: number, join: LoopJoin, count: number): void;
+  /** Take loop `loop` (not the first) out of a cycle. */
+  removeLoop(id: number, loop: number): void;
+  /** Add a species off the cycle at slot `k`: coming in, going out, or in equilibrium with it. */
+  addBranch(id: number, k: number, dir: 'in' | 'out' | 'both'): void;
+  /** Write the middle of loop `loop` (the catalyst's name). */
+  loopMiddle(id: number, loop: number, parts: TextPart[]): void;
+  /** Write every step name the cycle knows short (OA) or in full (oxidative addition). */
+  stepNames(id: number, how: 'short' | 'full'): void;
   /** Give the scheme its own font, text sizes, arrows and spacing (undefined: the drawing style's). */
   format(id: number, fmt: SmartFormat | undefined): void;
   /** Clean Up Cycle: the cycle's species onto one ellipse, its arrows along it. */
@@ -54,7 +65,7 @@ export interface SmartPaneHooks {
   ungroup(id: number): void;
 }
 
-const ICONS: Record<SmartLayout, string> = {
+export const SMART_LAYOUT_ICONS: Record<SmartLayout, string> = {
   line: '<rect x="2" y="9" width="5" height="5"/><rect x="11" y="9" width="5" height="5"/><rect x="20" y="9" width="5" height="5"/><path d="M7.5 11.5h3M16.5 11.5h3" fill="none"/>',
   rows: '<rect x="3" y="4" width="5" height="5"/><rect x="12" y="4" width="5" height="5"/><rect x="3" y="14" width="5" height="5"/><rect x="12" y="14" width="5" height="5"/><path d="M8.5 6.5h3M8.5 16.5h3" fill="none"/>',
   snake: '<rect x="3" y="4" width="5" height="5"/><rect x="14" y="4" width="5" height="5"/><rect x="14" y="14" width="5" height="5"/><rect x="3" y="14" width="5" height="5"/><path d="M8.5 6.5h5M16.5 9.5v4M13.5 16.5h-5" fill="none"/>',
@@ -235,7 +246,9 @@ export class SmartPane {
     this.el.hidden = false;
     this.el.classList.toggle('folded', folded && !this.host);
     this.el.replaceChildren();
-    const data = s.smart;
+    // (several loops are always a cycle, and never left as laid out by hand, whatever an older file says)
+    const data: SmartData = { ...s.smart, layout: smartLayoutOf(s.smart, read), free: smartIsFree(s.smart, read) || undefined };
+    const net = read.net;
     const btn = (label: string, title: string, cls: string, f: () => void): HTMLButtonElement => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -267,7 +280,7 @@ export class SmartPane {
     info.setAttribute('role', 'img');
     info.innerHTML = '<svg viewBox="0 0 14 14" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="7" cy="7" r="5.9"/><path d="M7 6.2v3.9" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="4.1" r=".85" fill="currentColor" stroke="none"/></svg>';
     const help = data.layout === 'cycle'
-      ? 'Each row is a species in the cycle; the T row below it is the arrow text to the next species (step name, what enters and leaves). Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species.'
+      ? 'Each row is a species in the cycle; the T row below it is the arrow text to the next species (step name, what enters and leaves). Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species. + Add at the bottom adds another loop (sharing a species or a stretch of them, turning with a step, or beside the cycle) or a species off the cycle; each loop then has its own heading here.'
       : 'Each row is a species in the scheme; the T row below it is the text above and below the arrow to the next species. Type in the rows, drag a row\'s handle to reorder, or drag a species on the page. Use + on the page to add a species.';
     info.title = help;
     info.setAttribute('aria-label', help);
@@ -278,9 +291,10 @@ export class SmartPane {
     lay.setAttribute('aria-label', 'Layout');
     for (const l of SMART_LAYOUTS) {
       const on = data.layout === l.id && !data.free;
-      const b = btn(`<svg viewBox="0 0 27 24" width="20" height="18" aria-hidden="true"><g fill="currentColor" stroke="currentColor" stroke-width="1.2">${ICONS[l.id]}</g></svg>`, `${l.name}: ${l.tip}`, 'sp-layout', () => this.hooks.arrange(id, { layout: l.id }));
+      const b = btn(`<svg viewBox="0 0 27 24" width="20" height="18" aria-hidden="true"><g fill="currentColor" stroke="currentColor" stroke-width="1.2">${SMART_LAYOUT_ICONS[l.id]}</g></svg>`, `${l.name}: ${l.tip}`, 'sp-layout', () => this.hooks.arrange(id, { layout: l.id }));
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', String(on));
+      if (net && l.id !== 'cycle') { b.disabled = true; b.title = `${l.name}: not for a cycle of several loops or with species off it`; }
       lay.append(b);
     }
     head.append(lay);
@@ -302,7 +316,7 @@ export class SmartPane {
     this.el.append(this.formatBar(btn, gear));
     if (data.free) {
       // laid out by hand: said behind the "i" (marked), not on a line of its own
-      const why = read.chain ? 'Laid out by hand. Pick a layout to lay it out again.' : 'This scheme branches or has two loops, so it keeps the layout it has. You can still retype its species and conditions.';
+      const why = read.chain ? 'Laid out by hand. Pick a layout to lay it out again.' : 'This scheme branches, so it keeps the layout it has. You can still retype its species and conditions.';
       info.title = `${why}\n\n${info.title}`;
       info.setAttribute('aria-label', info.title);
       info.classList.add('marked');
@@ -323,9 +337,18 @@ export class SmartPane {
       // what joins and leaves on small curved arrows into and out of the loop (else written outside it)
       opts.append(check('Counterclockwise', !!data.anticlockwise, (v) => this.hooks.arrange(id, { anticlockwise: v })), check('Arrows in and out', !!data.reagentArrows, (v) => this.hooks.arrange(id, { reagentArrows: v })));
       (opts.lastElementChild as HTMLElement).title = 'Draw what enters and leaves each step on small curved arrows into and out of the loop. Off: written outside the loop';
-      if (read.chain && read.closed) {
-        const two = btn('+ Second loop…', 'Add a second loop: two cycles turning together where two steps meet, sharing a species, or side by side', 'sp-loop2', () => this.hooks.secondLoop(id));
-        opts.append(two);
+      // step names the cycle knows, short or in full
+      const now = stepNamesNow(doc, read);
+      if (now) {
+        const l = document.createElement('label');
+        const sel = document.createElement('select');
+        sel.className = 'sp-names';
+        sel.append(new Option('Short', 'short'), new Option('Full', 'full'));
+        sel.value = now;
+        sel.title = 'Step names: short (OA, TM, RE) or in full (oxidative addition)';
+        sel.addEventListener('change', () => this.hooks.stepNames(id, sel.value as 'short' | 'full'));
+        l.append(document.createTextNode('Step names '), sel);
+        opts.append(l);
       }
     } else if ((data.layout === 'rows' || data.layout === 'snake') && !data.free) {
       const l = document.createElement('label');
@@ -354,15 +377,18 @@ export class SmartPane {
       if (key === this.activeKey && this.active) this.active = f;
       return f.el;
     };
-    read.slots.forEach((slot, k) => {
+    /** A species' row. `drag`: the rows it can change places with (its own loop's, or its branch's). */
+    const slotRow = (k: number, drag: boolean): HTMLLIElement => {
+      const slot = read.slots[k];
       const li = document.createElement('li');
       li.className = 'sp-slot';
-      li.draggable = read.chain;
+      li.draggable = drag;
       li.dataset.k = String(k);
       const grip = document.createElement('span');
       grip.className = 'sp-grip';
       grip.textContent = '⋮⋮';
-      grip.title = 'Drag to put this species somewhere else in the scheme';
+      grip.title = net ? 'Drag to put this species somewhere else in its loop' : 'Drag to put this species somewhere else in the scheme';
+      if (!drag) grip.style.visibility = 'hidden';
       const num = document.createElement('span');
       num.className = 'sp-num';
       num.textContent = String(k + 1);
@@ -380,21 +406,27 @@ export class SmartPane {
         b.setAttribute('aria-pressed', 'true');
         li.append(b);
       }
-      if (read.chain && read.slots.length > 2) li.append(btn('×', `Remove species ${k + 1} and the step after it`, 'sp-x', () => this.hooks.remove(id, k)));
-      list.append(li);
+      if (canRemoveSlot(read, k)) li.append(btn('×', net ? `Remove species ${k + 1}` : `Remove species ${k + 1} and the step after it`, 'sp-x', () => this.hooks.remove(id, k)));
       li.addEventListener('dragstart', (e) => { this.dragFrom = k; e.dataTransfer?.setData('text/plain', String(k)); li.classList.add('dragging'); });
       li.addEventListener('dragend', () => { this.dragFrom = null; li.classList.remove('dragging'); });
-      li.addEventListener('dragover', (e) => { if (this.dragFrom !== null) { e.preventDefault(); li.classList.add('drop'); } });
+      li.addEventListener('dragover', (e) => { if (this.dragFrom !== null && canDrop(this.dragFrom, k)) { e.preventDefault(); li.classList.add('drop'); } });
       li.addEventListener('dragleave', () => li.classList.remove('drop'));
       li.addEventListener('drop', (e) => {
         e.preventDefault();
         li.classList.remove('drop');
         const from = this.dragFrom;
         this.dragFrom = null;
-        if (from !== null && from !== k) this.hooks.move(id, from, k);
+        if (from !== null && from !== k && canDrop(from, k)) this.hooks.move(id, from, k);
       });
-      const l = read.links.find((x) => x.from === k);
-      if (!l) return;
+      return li;
+    };
+    // in a cycle of several loops a species changes places only with others of its own loop (or branch)
+    const runs = net ? [...net.loops.map((lp) => lp.own), ...net.tails.map((t) => t.slots)] : [];
+    const canDrop = (from: number, to: number) => !net || runs.some((r) => r.includes(from) && r.includes(to));
+    /** The row of a step (by its place in the scheme's steps): the text on its arrow. `straight`: not round a loop. */
+    const stepRow = (k: number, round: boolean): HTMLLIElement | null => {
+      const l = read.links[k];
+      if (!l) return null;
       for (const p of ['inside', 'above', 'below'] as const) this.rowOf.set(`p${k}${p}`, `r${l.arrow.id}${p}`);
       const step = document.createElement('li');
       step.className = 'sp-step';
@@ -402,7 +434,7 @@ export class SmartPane {
       arrow.className = 'sp-arrow';
       // A "T" text mark: this row holds the words written on the arrow.
       arrow.innerHTML = '<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M2.5 2.75h9M7 2.75v8.5"/></svg>';
-      arrow.title = `Text on the arrow for step ${k + 1}`;
+      arrow.title = `Text on the arrow from species ${l.from + 1} to species ${l.to + 1}`;
       arrow.setAttribute('aria-hidden', 'true');
       const part = (p: StepPart, ph: string, label: string): HTMLElement => {
         if (p === 'inside') return field(`p${k}${p}`, stepParts(doc, l, p), ph, `${label}, step ${k + 1}`, (v) => this.hooks.stepRuns(id, k, p, v));
@@ -410,7 +442,7 @@ export class SmartPane {
         const wrap = document.createElement('div');
         wrap.className = 'sp-part';
         const kind = stepPartKind(doc, l, p);
-        const what = p === 'above' ? (cycle ? 'what joins the cycle' : 'the reagent above the arrow') : (cycle ? 'what leaves the cycle' : 'the reagent below the arrow');
+        const what = p === 'above' ? (round ? 'what joins the cycle' : 'the reagent above the arrow') : (round ? 'what leaves the cycle' : 'the reagent below the arrow');
         if (kind === 'text') {
           wrap.append(field(`p${k}${p}`, stepParts(doc, l, p), ph, `${label}, step ${k + 1}`, (v) => this.hooks.stepRuns(id, k, p, v)));
           wrap.append(btn(HEXAGON, `Make ${what} a structure (a box to draw or paste in)`, 'sp-struct sp-part-struct', () => this.hooks.stepToStructure(id, k, p)));
@@ -423,26 +455,169 @@ export class SmartPane {
         } else wrap.append(Object.assign(document.createElement('span'), { className: 'sp-fixed', textContent: 'structure', title: 'A drawn structure: edit it on the page (delete it there to type text instead)' }));
         return wrap;
       };
-      const parts = cycle
+      const parts = round
         ? [part('inside', 'step name (OA)', 'Step name'), part('above', 'joins', 'What joins the cycle at this step, written outside its arrow'), part('below', 'leaves', 'What leaves the cycle at this step, written outside its arrow')]
         : [part('above', 'above the arrow', 'Above the arrow'), part('below', 'below the arrow', 'Below the arrow')];
       const box = document.createElement('div');
       box.className = 'sp-step-fields';
       box.append(...parts);
       step.append(arrow, box);
-      list.append(step);
-    });
+      return step;
+    };
+    const put = (...rows: (HTMLElement | null)[]) => { for (const r of rows) if (r) list.append(r); };
+    if (!net) {
+      read.slots.forEach((_, k) => {
+        put(slotRow(k, read.chain));
+        const at = read.links.findIndex((x) => x.from === k);
+        if (at >= 0) put(stepRow(at, cycle));
+      });
+    } else this.netRows(id, read, { list, slotRow, stepRow, put, btn, field });
     this.el.append(list);
     const foot = document.createElement('div');
     foot.className = 'sp-foot';
-    if (read.chain) foot.append(btn('+ Add Species', 'Add a species at the end, with an arrow to it', 'sp-add', () => this.hooks.add(id, read.slots.length - 1)));
+    if (read.chain && !(cycle && read.closed)) foot.append(btn('+ Add Species', 'Add a species at the end, with an arrow to it', 'sp-add', () => this.hooks.add(id, read.slots.length - 1)));
+    // a cycle takes more than species: another loop, or a species off the cycle
+    if (cycle && !data.free && (net || (read.chain && read.closed))) {
+      const add = btn('+ Add ▾', 'Add a species, a loop or an off-cycle species', 'sp-add sp-add-menu', () => this.addMenu(id, add, read));
+      add.setAttribute('aria-haspopup', 'menu');
+      foot.append(add);
+    }
     const right = document.createElement('div');
     right.className = 'sp-foot-right';
     // a cycle drawn into a mess by hand: back onto one ellipse
     if (data.layout === 'cycle' && !data.free && read.closed && read.slots.length >= 3) right.append(btn('Clean Up', 'Clean Up Cycle: move the species onto one ellipse that fits where they are, with the arrows along it', 'sp-ungroup sp-cleanup', () => this.hooks.cleanUpCycle(id)));
+    else if (net) right.append(btn('Clean Up', 'Clean Up Cycle: put every loop back on its circle, joined as they are', 'sp-ungroup sp-cleanup', () => this.hooks.cleanUpCycle(id)));
     right.append(btn('Ungroup', 'Make it ordinary structures, text and arrows again', 'sp-ungroup', () => this.hooks.ungroup(id)));
     foot.append(right);
     this.el.append(foot);
+  }
+
+  /**
+   * The rows of a cycle of several loops: a heading for each loop (what is written in its middle,
+   * add a species, take the loop out), its own species and steps under it, then the species off
+   * the cycle. A loop joined at a species it shares starts with that species, to show where it leaves from.
+   */
+  private netRows(id: number, read: SmartRead, h: {
+    list: HTMLElement;
+    slotRow(k: number, drag: boolean): HTMLLIElement;
+    stepRow(k: number, round: boolean): HTMLLIElement | null;
+    put(...rows: (HTMLElement | null)[]): void;
+    btn(label: string, title: string, cls: string, f: () => void): HTMLButtonElement;
+    field(key: string, value: TextPart[], placeholder: string, label: string, done: (v: TextPart[]) => void): HTMLDivElement;
+  }): void {
+    const doc = this.hooks.doc(), net = read.net!;
+    const middles = loopMiddles(doc, this.hooks.measure(), id, read);
+    const heading = (text: string, tip: string): HTMLLIElement => {
+      const li = document.createElement('li');
+      li.className = 'sp-loop';
+      const name = document.createElement('span');
+      name.className = 'sp-loop-name';
+      name.textContent = text;
+      name.title = tip;
+      li.append(name);
+      return li;
+    };
+    const names = (ks: number[]) => ks.map((k) => k + 1).join(', ');
+    net.loops.forEach((lp, i) => {
+      const j = net.joins.find((x) => x.child === i);
+      const how = !j ? 'The first loop' : j.kind === 'share' ? `Shares species ${j.node + 1} with loop ${j.parent + 1}` : j.kind === 'fused' ? `Shares species ${names(j.path)} with loop ${j.parent + 1}` : j.kind === 'mesh' ? `Turns with loop ${j.parent + 1} where two steps meet` : 'Beside the rest';
+      const head = heading(`Loop ${i + 1}`, how);
+      if (j && j.kind !== 'beside') {
+        const tag = document.createElement('span');
+        tag.className = 'sp-loop-how';
+        tag.textContent = j.kind === 'mesh' ? `turns with loop ${j.parent + 1}` : `shares ${j.kind === 'share' ? j.node + 1 : `${j.path[0] + 1}–${j.path[j.path.length - 1] + 1}`}`;
+        tag.title = how;
+        head.append(tag);
+      }
+      const cap = middles[i] !== undefined ? doc.captions.get(middles[i]!) : undefined;
+      const mid = h.field(`m${i}`, runParts(cap?.runs ?? []), 'middle', `Text in the middle of loop ${i + 1}`, (v) => this.hooks.loopMiddle(id, i, v));
+      mid.classList.add('sp-loop-mid');
+      mid.title = 'Written in the middle of the loop (the catalyst)';
+      if (cap) this.rowOf.set(`m${i}`, `c${cap.id}`);
+      head.append(mid);
+      head.append(h.btn('+', `Add a species at the end of loop ${i + 1}`, 'sp-x sp-loop-add', () => this.hooks.add(id, lp.slots[lp.slots.length - 1], lp.links[lp.links.length - 1])));
+      if (i > 0) head.append(h.btn('×', `Remove loop ${i + 1}`, 'sp-x', () => this.hooks.removeLoop(id, i)));
+      h.put(head);
+      // the species it shares with the loop it joins, where its own steps leave from
+      const leaves = j?.kind === 'share' ? j.node : j?.kind === 'fused' ? j.path[j.path.length - 1] : undefined;
+      if (leaves !== undefined) {
+        const ref = document.createElement('li');
+        ref.className = 'sp-slot sp-shared';
+        const num = document.createElement('span');
+        num.className = 'sp-num';
+        num.textContent = String(leaves + 1);
+        const name = Object.assign(document.createElement('span'), { className: 'sp-fixed', textContent: slotName(doc, read.slots[leaves]), title: `Species ${leaves + 1}, shared with loop ${j!.parent + 1}: change it there` });
+        ref.append(num, name);
+        h.put(ref, h.stepRow(lp.links[lp.slots.indexOf(leaves)], true));
+      }
+      for (const k of lp.own) h.put(h.slotRow(k, lp.own.length > 1), h.stepRow(lp.links[lp.slots.indexOf(k)], true));
+    });
+    if (net.tails.length) {
+      h.put(heading('Off-Cycle', 'Species off the cycle: a precatalyst coming in, a resting state, a species going out'));
+      for (const t of net.tails) t.slots.forEach((k, q) => {
+        const row = h.slotRow(k, t.slots.length > 1);
+        const l = read.links[t.links[q]];
+        const tag = document.createElement('span');
+        tag.className = 'sp-loop-how';
+        const onto = l.from === k ? l.to : l.from;
+        tag.textContent = l.arrow.equilibrium ? `⇌ ${onto + 1}` : l.from === k ? `→ ${onto + 1}` : `← ${onto + 1}`;
+        tag.title = l.arrow.equilibrium ? `In equilibrium with species ${onto + 1}` : l.from === k ? `Leads to species ${onto + 1}` : `Comes from species ${onto + 1}`;
+        row.insertBefore(tag, row.querySelector('.sp-struct, .sp-x'));
+        h.put(row, h.stepRow(t.links[q], false));
+      });
+    }
+  }
+
+  /** What Add Loop and Add Off-Cycle Species offer for this cycle, starting at `at` (else where the caret is). */
+  private loopAsk(read: SmartRead, at?: { slot?: number; step?: number }) {
+    const doc = this.hooks.doc();
+    const species = read.slots.map((sl, k) => ({ k, name: slotName(doc, sl) }));
+    // what the caret is in (a species' row or a step's) is where the new thing goes
+    const row = /^s(\d+)$/.exec(this.activeKey), stepRow = /^p(\d+)/.exec(this.activeKey);
+    const step = at ? at.step : stepRow ? Number(stepRow[1]) : undefined;
+    const slot = at?.slot ?? (step !== undefined ? read.links[step]?.from : row ? Number(row[1]) : undefined) ?? 0;
+    const steps = read.links.map((l, k) => ({ k, from: l.from, to: l.to, name: stepParts(doc, l, 'inside').map((p) => p.text).join('') }));
+    const loops = read.net ? read.net.loops.map((lp) => lp.slots) : [read.slots.map((_, i) => i)];
+    // only steps round one loop (not ones two loops share, or a branch's) can have a loop turn with them
+    const round = steps.filter((x) => loops.filter((lp) => lp.includes(x.from) && lp.includes(x.to)).length === 1 && !(read.net?.tails.some((t) => t.links.includes(x.k))));
+    return { species, steps: round, loops, slot, step };
+  }
+
+  private openLoop(id: number, anchor: HTMLElement, read: SmartRead, at?: { slot?: number; step?: number }): void {
+    void askLoop(anchor, this.loopAsk(read, at)).then((got) => { if (got) this.hooks.addLoop(id, got.join, got.count); });
+  }
+
+  private openBranch(id: number, anchor: HTMLElement, read: SmartRead, at?: { slot?: number; step?: number }): void {
+    const { species, slot } = this.loopAsk(read, at);
+    void askBranch(anchor, { species, slot }).then((got) => { if (got) this.hooks.addBranch(id, got.slot, got.dir); });
+  }
+
+  /**
+   * Add Loop… or Add Off-Cycle Species… from a menu (a right-click on the cycle): the same
+   * popout as the list's + Add opens, starting at the species or step that was clicked.
+   * False when no cycle is showing.
+   */
+  ask(what: 'loop' | 'branch', at?: { slot?: number; step?: number }): boolean {
+    const id = this.shown;
+    if (id === null) return false;
+    const read = readSmart(this.hooks.doc(), this.hooks.measure(), id);
+    const data = this.hooks.doc().shapes.get(id)?.smart;
+    if (!read || !data || smartLayoutOf(data, read) !== 'cycle' || smartIsFree(data, read) || !(read.net || (read.chain && read.closed))) return false;
+    const anchor = this.el.querySelector<HTMLElement>('.sp-add-menu') ?? this.el;
+    if (what === 'loop') this.openLoop(id, anchor, read, at); else this.openBranch(id, anchor, read, at);
+    return true;
+  }
+
+  /** The cycle's + Add menu: a species, a loop, an off-cycle species. */
+  private addMenu(id: number, anchor: HTMLElement, read: SmartRead): void {
+    const { slot } = this.loopAsk(read);
+    const r = anchor.getBoundingClientRect();
+    popupMenu(r.left, r.bottom + 2, [
+      // a species after the one the caret is in (a + on the page puts one on any step)
+      ['Species', () => { const l = read.links.findIndex((x) => x.from === slot); this.hooks.add(id, slot, l >= 0 ? l : undefined); }],
+      ['Loop…', () => this.openLoop(id, anchor, read)],
+      ['Off-Cycle Species…', () => this.openBranch(id, anchor, read)],
+    ]);
   }
 
   /** Dragging the title moves the list; let go at an edge of the drawing and it docks there, elsewhere it stays as a floating toolbox. */

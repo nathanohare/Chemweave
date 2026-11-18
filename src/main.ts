@@ -62,6 +62,7 @@ import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeS
 import { bestFit, fitMove, fitMatters } from './chem/orient';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { blankCycle, type CycleLook } from './chem/cycles';
 import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
   nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, OWN_FORMAT, CDX_FORMAT, setWordObjects, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
@@ -239,6 +240,7 @@ import { chargeAndMultiplicity, xyzFile, type QmOptions } from './chem/qm-input'
 import { NameDialog } from './ui/name-dialog';
 import { SequenceDialog } from './ui/sequence-dialog';
 import { ArrangeDialog } from './ui/arrange-dialog';
+import { openTurn3d, type Turn3dShape } from './ui/turn3d-dialog';
 import type { AnimateDialog } from './ui/animate-dialog';
 import { PeriodicTable } from './ui/periodic-table';
 import type { SheetMode, ClipboardCells } from './ui/sheet-mode';
@@ -325,7 +327,6 @@ const pickSlideTemplate = later(() => import('./ui/slide-templates'), 'pickSlide
 const editLayouts = later(() => import('./ui/layout-editor'), 'editLayouts');
 const pickSlideSize = later(() => import('./ui/slide-size-dialog'), 'pickSlideSize');
 const pickTemplate = later(() => import('./ui/template-gallery'), 'pickTemplate');
-const askCycle = later(() => import('./ui/cycle-dialog'), 'askCycle');
 const askEnergy = later(() => import('./ui/energy-dialog'), 'askEnergy');
 import type { EnergyStructureHooks } from './ui/energy-dialog';
 
@@ -1331,11 +1332,31 @@ async function pasteText(text: string, html?: string): Promise<void> {
   editor.changed();
 }
 
-/** Insert ▸ Catalytic Cycle…: a ready-made cycle to edit, or the selected structures put round one. */
-async function insertCycle(): Promise<void> {
+/** How a cycle from the gallery starts out (its species list changes each of these afterwards). */
+const NEW_CYCLE_LOOK: CycleLook = { names: 'short', reagentArrows: true };
+
+/**
+ * Smart Scheme: the gallery of layouts and ready-made catalytic cycles, under the button that
+ * opened it. A layout makes a scheme of the selected structures (or a blank one); a ready-made
+ * cycle is placed as a Smart Scheme to change.
+ */
+async function smartGallery(): Promise<void> {
   finishTyping();
-  const got = await askCycle(editor.selectedStructures().length);
-  if (got) editor.insertCycle(got.spec, got.look, pasteCentre(), deckNow()?.size);
+  const anchor = [...document.querySelectorAll<HTMLElement>('.ribbon button[data-cmd="smart-scheme"], .toolbox button[data-cmd="smart-scheme"]')].find((b) => b.getBoundingClientRect().width > 0) ?? null;
+  const work = $('#work').getBoundingClientRect();
+  const { showSmartGallery } = await import('./ui/smart-gallery');
+  const pick = await showSmartGallery({
+    anchor, work,
+    preview: (p) => drawingSvg(editor.cyclePreview(p.spec, NEW_CYCLE_LOOK), null),
+    selected: editor.selectedStructures().length,
+    canConvert: editor.selectedSmart() === null && editor.hasSelection(),
+    styleKey: JSON.stringify(doc.style),
+  });
+  if (!pick) return;
+  if ('convert' in pick) { command('convert-smart-scheme'); return; }
+  if ('cycle' in pick) { editor.insertCycle(pick.cycle.spec, NEW_CYCLE_LOOK, pasteCentre(), deckNow()?.size); return; }
+  if (pick.layout === 'cycle') { editor.insertCycle(blankCycle(editor.selectedStructures().length), NEW_CYCLE_LOOK, pasteCentre(), deckNow()?.size); return; }
+  editor.insertSmartScheme(pasteCentre(), deckNow()?.size, pick.layout);
 }
 
 /** The Energy Diagram window's preview: the diagram as it will be drawn, fitted to the canvas. */
@@ -1983,22 +2004,24 @@ editor.perspectiveHost = {
   smiles: (molblock) => chem.molToSmiles(molblock),
 };
 
-let lastTurn3d = { x: '0', y: '30', z: '0', shape: 'real' };
-/** Turn in 3-D…: the selected structures turned by angles typed in, in their real shape or as a flat sheet. */
+/** How the 3-D Rotation window last turned structures (flat sheet or real shape), kept for next time. */
+let lastTurn3dShape: Turn3dShape = 'flat';
+/** 3-D Rotation…: the selected structures turned by angles slid or typed in, shown live on the drawing. */
 async function turn3dDialog(): Promise<void> {
   if (!editor.sel.atoms.size) { flash('Select a structure to rotate in 3-D.'); return; }
-  const r = await ask('3-D Rotation', [
-    { name: 'x', label: 'About X (left–right)', value: lastTurn3d.x, unit: 'degrees', type: 'number', help: 'Positive tips the top toward you.' },
-    { name: 'y', label: 'About Y (up–down)', value: lastTurn3d.y, unit: 'degrees', type: 'number', help: 'Positive brings the left side toward you.' },
-    { name: 'z', label: 'About Z (in the page)', value: lastTurn3d.z, unit: 'degrees', type: 'number', help: 'Positive values rotate clockwise.' },
-    { name: 'shape', label: 'Turn', value: lastTurn3d.shape, options: [{ value: 'real', label: 'The real 3-D shape' }, { value: 'flat', label: 'The drawing as a flat sheet' }] },
-  ], { ok: 'Turn', note: 'Drag with the Perspective tools to turn by eye.' });
-  if (!r) return;
-  const [x, y, z] = [r.x, r.y, r.z].map((v) => parseFloat(v || '0'));
-  if (![x, y, z].every(Number.isFinite)) { flash('Type each angle in degrees.'); return; }
-  lastTurn3d = { x: r.x, y: r.y, z: r.z, shape: r.shape };
-  if (r.shape === 'real') flash('Building the 3-D shape…');
-  await editor.turnSelectionBy(x, y, z, r.shape === 'real');
+  const r = await openTurn3d({
+    prepare: (real) => editor.previewTurn(real),
+    side: () => {
+      // (the window goes on the side of the drawing away from the selection)
+      const b = editor.selBox();
+      const rect = $<HTMLElement>('#overlay').getBoundingClientRect();
+      if (!b) return 'right';
+      const mid = renderer.toScreen({ x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 });
+      return mid.x > rect.width * 0.55 ? 'left' : 'right';
+    },
+    area: () => $<HTMLElement>('#overlay').getBoundingClientRect(),
+  }, lastTurn3dShape);
+  if (r) lastTurn3dShape = r.shape;
 }
 
 /** Depth shading on or off (Format ▸ Depth Shading): structures in 3-D fade from black in front to grey behind. */
@@ -3659,7 +3682,7 @@ const animateDialog = {
 /** Is a curved (mechanism) arrow among the selection? */
 const pickedCurved = (): boolean => [...editor.sel.arrows].some((id) => { const r = doc.arrows.get(id); return !!r && isCurved(r); });
 /** Whether the selection is in a Smart Scheme laid out as a cycle (Clean Up Cycle applies). */
-const smartIsCycle = (): boolean => { const id = editor.selectedSmart(); const d = id === null ? undefined : doc.shapes.get(id)?.smart; return !!d && d.layout === 'cycle' && !d.free; };
+const smartIsCycle = (): boolean => { const id = editor.selectedSmart(); return id !== null && editor.smartIsCycle(id); };
 const pickedReactionArrow = (): number | undefined => [...editor.sel.arrows].find((id) => { const r = doc.arrows.get(id); return !!r && isReactionArrow(r); });
 
 const mapChoice: Record<string, string> = { numbers: 'true', colours: 'false', bonds: 'false' };
@@ -9311,7 +9334,6 @@ const COMMANDS: Record<string, () => unknown> = {
   'stoichiometry-table': () => void stoichiometryTable(),
   'check-balance': () => void checkStepBalance(),
   'lab-calculator': () => labCalculator(),
-  'catalytic-cycle': () => void insertCycle(),
   'ts-brackets': () => { if (!editor.tsBrackets()) flash('Select the transition state first (draw it with partial bonds: P over a bond).'); },
   'energy-diagram': () => void energyDiagram(null),
   'tlc-plate': () => void plateFigure('tlc', null),
@@ -9378,9 +9400,11 @@ const COMMANDS: Record<string, () => unknown> = {
   'unlink-text': () => unlinkText() || flash('Select linked text, or a structure with text linked to it.'),
   group: () => editor.group() || flash('Select two or more things to group: structures, text, arrows or shapes.'),
   ungroup: () => editor.ungroupSmart() || editor.ungroup() || flash('Select a group to take apart.'),
-  'smart-scheme': () => { finishTyping(); editor.insertSmartScheme(pasteCentre(), deckNow()?.size); },
+  'smart-scheme': () => void smartGallery(),
   'convert-smart-scheme': () => editor.convertToSmart() || flash(editor.selectedSmart() !== null ? 'That is a Smart Scheme already.' : 'Select a reaction scheme (structures and the arrows between them) to make into a Smart Scheme.'),
   'ungroup-smart-scheme': () => editor.ungroupSmart() || flash('Select a Smart Scheme first.'),
+  'smart-add-loop': () => smartPane.ask('loop', editor.smartPicked()) || flash('Select a catalytic cycle first (a Smart Scheme in the Cycle layout).'),
+  'smart-add-branch': () => smartPane.ask('branch', editor.smartPicked()) || flash('Select a catalytic cycle first (a Smart Scheme in the Cycle layout).'),
   'clean-up-cycle': () => editor.smartCleanUpCycle() || flash('Select a catalytic cycle drawn as a Smart Scheme, with three or more species in one loop.', 5000),
   'bring-front': () => restack('front'),
   'send-back': () => restack('back'),
@@ -12723,7 +12747,7 @@ function drawingMenu(): MenuItem[] {
       ...(ws.active.mode === 'slides' || design ? [{ cmd: 'format-background', label: 'Format Background…' }, { cmd: 'slide-references', label: 'References on Slide…' }, null] : []),
       ...(ws.active.mode === 'slides' && deckNow()?.current?.canvas ? [{ label: 'Keyframes', items: keyframeMenu() }, null] : []),
       { label: 'Insert', items: [{ cmd: 'name-to-structure' }, { cmd: 'sequence-to-structure' }, { cmd: 'periodic-table' }, { cmd: 'insert-picture' }, { cmd: 'import-picture', label: 'Structure from Picture…' }, { cmd: 'text-box' }, { cmd: 'insert-reference', label: 'Reference…' }, { cmd: 'insert-symbol' }, ...(design ? [{ cmd: 'design-shapes', label: 'Shape…' }, { cmd: 'design-icons', label: 'Icon…' }, { cmd: 'connector-tool' }] : []), ...(ws.active.mode === 'slides' ? [{ cmd: 'slide-shapes', label: 'Shape…' }, { cmd: 'slide-icons', label: 'Icon…' }] : [])] },
-      { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'arrange-scheme' }, { cmd: 'number-compounds' }, { cmd: 'catalytic-cycle' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }] },
+      { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'arrange-scheme' }, { cmd: 'number-compounds' }, { cmd: 'smart-scheme' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }] },
       { cmd: 'drawing-style' },
       ...(ws.active.mode === 'drawing' && pageEdgesMenu() ? [pageEdgesMenu()!] : []),
       view,
@@ -12805,7 +12829,9 @@ function drawingMenu(): MenuItem[] {
     ] }, ...(editor.options.arrowProducts ? [{ cmd: 'draw-from-arrows' }, { cmd: 'check-arrows' }] : [])] : []),
     ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : []),
     // (a scheme is about whole structures and arrows, not an atom or a bond picked on its own)
-    ...(s.arrows.size || (atoms && focus === 'structure') ? [...(editor.selectedSmart() !== null ? [{ cmd: 'ungroup-smart-scheme' }, null] : []), { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'clean-up-arrow' }, ...(smartIsCycle() ? [{ cmd: 'clean-up-cycle' }] : []), { cmd: 'arrange-scheme' }, ...(editor.selectedSmart() === null ? [{ cmd: 'convert-smart-scheme' }] : []), { cmd: 'smart-scheme' }, { cmd: 'number-compounds' }, ...(s.arrows.size ? [{ cmd: 'stoichiometry-table' }, { cmd: 'check-balance' }, { cmd: 'map-atoms' }, { cmd: 'copy-reaction-smiles' }] : []), { cmd: 'catalytic-cycle' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }, ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : [])] }] : []),
+    // (a catalytic cycle: another loop, or a species off it, at what was clicked)
+    ...(smartIsCycle() ? [{ cmd: 'smart-add-loop' }, { cmd: 'smart-add-branch' }, null] : []),
+    ...(s.arrows.size || (atoms && focus === 'structure') ? [...(editor.selectedSmart() !== null ? [{ cmd: 'ungroup-smart-scheme' }, null] : []), { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'clean-up-arrow' }, ...(smartIsCycle() ? [{ cmd: 'clean-up-cycle' }] : []), { cmd: 'arrange-scheme' }, ...(editor.selectedSmart() === null ? [{ cmd: 'convert-smart-scheme' }] : []), { cmd: 'smart-scheme' }, { cmd: 'number-compounds' }, ...(s.arrows.size ? [{ cmd: 'stoichiometry-table' }, { cmd: 'check-balance' }, { cmd: 'map-atoms' }, { cmd: 'copy-reaction-smiles' }] : []), { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }, ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : [])] }] : []),
     ...(atoms && focus !== 'bond' ? [{ label: 'Label the Structure', items: [
       { cmd: 'add-id-label' }, { cmd: 'add-caption' }, { cmd: 'attach-descriptors' }, null, { cmd: 'number-compounds' },
       ...(!shapes.length ? [null, { cmd: 'alt-text', label: 'Alt Text…' }] : []),
@@ -13438,14 +13464,14 @@ const cmds = (list: (string | null)[]) => list.map((c) => (c ? `cmd:${c}` : 'sep
 const BOX_ITEMS: Record<string, readonly string[]> = {
   main: MAIN_ITEMS,
   structure: cmds(['clean-up', 'clean-up-options', 'add-frame', 'fill-rings', 'highlight', 'remove-highlight', null, 'aromatic-circles', 'stereo-labels', null, 'add-id-label', 'add-caption', 'attach-descriptors', 'number-compounds', null, 'contract-label', 'expand-label', 'expand-label-full', 'hapto-bond', 'name-to-structure']),
-  arrange: cmds(['align-left', 'align-hcenter', 'align-right', 'align-top', 'align-vcenter', 'align-bottom', null, 'distribute-h', 'distribute-v', 'arrange-row', 'arrange-column', 'arrange-grid', null, 'flip-h', 'flip-v', 'rotate-cw', 'rotate-ccw', null, 'shape-front', 'shape-back']),
+  arrange: [...cmds(['align-left', 'align-hcenter', 'align-right', 'align-top', 'align-vcenter', 'align-bottom', null, 'distribute-h', 'distribute-v', 'arrange-row', 'arrange-column', 'arrange-grid', null, 'flip-h', 'flip-v', 'rotate-cw', 'rotate-ccw']), 'pal:perspective', 'cmd:turn-3d', ...cmds([null, 'shape-front', 'shape-back'])],
   highlight: [...cmds(['highlight', 'remove-highlight', null, 'smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight', null, 'save-highlight-look']), 'w:looks'],
   custom: defaultToolboxes().custom,
-  schemes: cmds(['smart-scheme', 'catalytic-cycle', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
+  schemes: cmds(['smart-scheme', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
   diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
   tables: cmds(['insert-table', 'rgroup-table', 'stoichiometry-table', null, 'insert-chart', 'edit-chart', null, 'tlc-plate', 'gel', 'edit-plate']),
   biopolymers: ['cmd:sequence-to-structure', 'sep', 'pal:tpl-amino', 'pal:tpl-sugars', 'pal:tpl-nucleic'],
-  perspective: [...cmds(['model-3d', 'turn-3d', 'flatten-3d', null, 'depth-shading', 'depth-shading-settings', null, 'ring-chair', 'ring-chair-flip', 'newman-projection', 'crystal-structure']), 'sep', 'pal:tpl-perspective', 'pal:tpl-conformers', 'pal:tpl-projections'],
+  perspective: ['tool:perspective', 'tool:perspective-3d', 'sep', ...cmds(['turn-3d', 'flatten-3d', 'model-3d', null, 'depth-shading', 'depth-shading-settings', null, 'ring-chair', 'ring-chair-flip', 'newman-projection', 'crystal-structure']), 'sep', 'pal:tpl-perspective', 'pal:tpl-conformers', 'pal:tpl-projections'],
 };
 /** Short names on toolbox buttons for commands with no icon. */
 const SHORT_LABEL: Record<string, string> = {
@@ -14842,21 +14868,17 @@ const smartPane = new SmartPane({
   stepToStructure: (id, k, part) => editor.smartStepToHolder(id, k, part),
   stepToText: (id, k, part) => editor.smartStepToText(id, k, part),
   selectHolder: (shape) => editor.selectShape(shape),
-  add: (id, after) => editor.smartInsert(id, after),
+  add: (id, after, link) => editor.smartInsert(id, after, link),
   remove: (id, k) => editor.smartRemove(id, k),
   move: (id, from, to) => editor.smartMove(id, from, to),
   arrange: (id, patch) => editor.smartArrange(id, patch),
   format: (id, fmt) => editor.smartFormat(id, fmt),
-  async secondLoop(id) {
-    const st = editor.smartCycleStart(id);
-    if (!st) {
-      if (editor.smartReagentStructures(id)) flash('A second loop can\'t be added while a step has a structure joining or leaving it. Change those reagents to text in the species list, add the loop, then change them back.', 8000);
-      return;
-    }
-    const got = await askCycle(0, { spec: { loops: [st.loop] }, look: st.look, drawn: st.drawn });
-    if (got?.rows) editor.smartRebuildCycle(id, got.spec, got.look, got.rows);
-  },
-  cleanUpCycle: (id) => { if (!editor.smartCleanUpCycle(id)) flash('Clean Up Cycle needs three or more species in one loop.', 4000); },
+  addLoop: (id, join, count) => { if (!editor.smartAddLoop(id, join, count)) flash('The loop could not be joined there.', 4000); },
+  removeLoop: (id, loop) => editor.smartRemoveLoop(id, loop),
+  addBranch: (id, k, dir) => editor.smartAddBranch(id, k, dir),
+  loopMiddle: (id, loop, parts) => editor.smartLoopMiddle(id, loop, parts),
+  stepNames: (id, how) => editor.smartStepNames(id, how),
+  cleanUpCycle: (id) => { if (!editor.smartCleanUpCycle(id)) flash('Clean Up Cycle needs a loop of three or more species.', 4000); },
   ungroup: (id) => editor.ungroupSmart(id),
   dock: (where) => {
     if (where === null) { smartDockBody = null; toolboxes.toggle('smart', false); smartPane.float(); return; }
