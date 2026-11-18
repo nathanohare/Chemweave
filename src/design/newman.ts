@@ -97,6 +97,12 @@ export function layoutNewman(d: Pick<NewmanData, 'front' | 'back' | 'turn' | 'lo
   const jobs = [...front.map((g, i) => ({ g, rank: fr[i], back: false, angle: g.angle })), ...back.map((g, i) => ({ g, rank: br[i], back: true, angle: g.angle + d.turn }))];
   const n = jobs.length;
   const extra = jobs.map(() => 0), flip = jobs.map(() => false);
+  // a back bond close behind a front one without being eclipsed (a skew turn) is treated the same
+  // way: fanned a little further from it before any bond is drawn longer
+  let near = 180;
+  for (const b of back) for (const f of front) { const dd = ((b.angle + d.turn - f.angle + 540) % 360) - 180; if (Math.abs(dd) < Math.abs(near)) near = dd; }
+  const crowded = eclipsed || Math.abs(near) < 30;
+  const fanSign = eclipsed ? Math.sign(look.offset || 1) : Math.sign(near || 1), fanMax = eclipsed ? 26 : 26 - Math.abs(near);
   let scale = 1, offset = eclipsed ? look.offset : 0;
   const sym = (t: string, last: boolean) => (last ? /[A-Z][a-z]?$/.exec(t)?.[0] ?? t.slice(-1) : /^[A-Z][a-z]?/.exec(t)?.[0] ?? t.slice(0, 1));
   const lay = (): NewmanPlace[] => jobs.map((j, i) => {
@@ -140,7 +146,7 @@ export function layoutNewman(d: Pick<NewmanData, 'front' | 'back' | 'turn' | 'lo
     return out;
   };
   const upright = (i: number) => Math.abs(dir(jobs[i].angle + (jobs[i].back ? offset : 0)).x) <= 0.26;
-  const cap = (eclipsed ? 1.4 : 2.4) * R;
+  const cap = (crowded ? 1.4 : 2.4) * R;
   let ps = lay(), hs = hits(ps);
   for (let round = 0; round < 400 && hs.length; round++) {
     // 1: a label above or below its bond written the other way round, where that frees it
@@ -156,7 +162,7 @@ export function layoutNewman(d: Pick<NewmanData, 'front' | 'back' | 'turn' | 'lo
       // which label gives way: the back one, else the longer one
       const [i, k, bond] = hs[0];
       const mover = bond || !ps[k].box ? i : ps[i].back !== ps[k].back ? (ps[i].back ? i : k) : (ps[i].text.length >= ps[k].text.length ? i : k);
-      if (eclipsed && Math.abs(offset) < 26 && ps[i].back !== ps[k].back) offset += Math.sign(offset || 1) * 2;
+      if (crowded && Math.abs(offset) < fanMax && ps[i].back !== ps[k].back) offset += fanSign * 2;
       else if (extra[mover] < cap) extra[mover] += 0.08 * L;
       else if (look.text?.auto && scale > 0.705) scale -= 0.05;
       else if (extra[mover] < 3 * R) extra[mover] += 0.08 * L;
