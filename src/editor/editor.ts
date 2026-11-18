@@ -76,7 +76,7 @@ import { addBranch, addLoop, arrangeSmart, readSmart, smartIsFree, smartLayoutOf
 import type { SmartFormat } from '../chem/smart-format';
 import { plateFrameOf, plateFromBox, putPlate, refitPlates, rfAtY, setMarkAt, tlcSpotAt, type PlateData } from '../design/plates';
 import { drawMo } from '../design/mo';
-import { newmanCentre, newmanFrameOf, putMark, putNewman, refitNewman, type NewmanData } from '../design/newman';
+import { drawEyeMark, newmanCentre, newmanFrameOf, putMark, putNewman, refitNewman, type NewmanData } from '../design/newman';
 import { putTorsion, refitTorsion, torsionFrameOf, type TorsionData } from '../design/torsion';
 import {
   diagramContents, diagramFrameOf, heldLines, putDiagram, refitDiagramStructures, refitDiagrams, ungroupDiagram, type DiagramData,
@@ -3699,13 +3699,28 @@ export class Editor {
   }
 
   /** A Newman projection drawn on a page of its own, in this drawing's style (the Newman window's preview). */
-  newmanPreview(d: NewmanData): { doc: Doc; box: Rect } {
+  newmanPreview(d: NewmanData, eye?: string, rs?: [string | null | undefined, string | null | undefined]): { doc: Doc; box: Rect } {
     const tmp = new Doc();
     tmp.style = { ...this.doc.style };
     tmp.textStyles = this.doc.textStyles;
     let id = 0;
-    tmp.edit('Preview', () => { id = putNewman(tmp, this.fullMeasure(), { ...d, link: undefined, mark: undefined }, { x: 0, y: 0 }); });
-    return { doc: tmp, box: shapeBox(tmp.shapes.get(id)!) };
+    let box: Rect | null = null;
+    tmp.edit('Preview', () => {
+      id = putNewman(tmp, this.fullMeasure(), { ...d, link: undefined, mark: undefined }, { x: 0, y: 0 });
+      box = shapeBox(tmp.shapes.get(id)!);
+      // a sawhorse with the eye that shows which end is looked from (the window's preview)
+      const f = tmp.shapes.get(id)!.frame!;
+      // (a page of its own has no chemistry engine: the front and back atoms' R/S are handed in)
+      if (rs && f.atoms.length > 1) tmp.stereo = { atom: (a) => (a === f.atoms[0] ? rs[0] : a === f.atoms[1] ? rs[1] : null), bond: () => null };
+      const back = eye && d.kind === 'sawhorse' && f.atoms.length > 1 ? tmp.atoms.get(f.atoms[1]) : undefined;
+      if (back) {
+        const mark = drawEyeMark(tmp, { x: 0, y: 0 }, back, eye, d.look.eye ?? 'plain');
+        for (const p of [...mark.arrows.flatMap((a) => { const r = tmp.arrows.get(a)!; return [r.tail, r.head]; }), ...mark.shapes.flatMap((s) => { const r = shapeBox(tmp.shapes.get(s)!); return [{ x: r.x1, y: r.y1 }, { x: r.x2, y: r.y2 }]; })]) {
+          box = { x1: Math.min(box!.x1, p.x), y1: Math.min(box!.y1, p.y), x2: Math.max(box!.x2, p.x), y2: Math.max(box!.y2, p.y) };
+        }
+      }
+    });
+    return { doc: tmp, box: box! };
   }
 
   /**
@@ -3714,12 +3729,17 @@ export class Editor {
    * select it. `linked: false` lets go of the structure. `amend`
    * joins the last undo step (a linked projection worked out again after its structure changed).
    */
-  putNewmanProjection(d: NewmanData, opts: { id?: number; mark?: string | null; linked?: boolean; amend?: boolean; page?: { w: number; h: number } } = {}): number | null {
+  putNewmanProjection(d: NewmanData, opts: { id?: number; mark?: string | null; linked?: boolean; amend?: boolean; page?: { w: number; h: number }; /** Where its middle goes (clicked with the pointer); left out, beside its structure. */ at?: Vec } = {}): number | null {
     const doc = this.doc, m = this.fullMeasure(), L = doc.style.bondLength;
     const old = opts.id !== undefined ? doc.shapes.get(opts.id) : undefined;
     let frame: number | null = null;
     const run = () => {
       let c = old ? newmanCentre(doc, old) : null;
+      if (!c && opts.at) {
+        // its middle where the pointer put it (it is drawn round its front atom)
+        const b = this.newmanPreview(d).box;
+        c = { x: opts.at.x - (b.x1 + b.x2) / 2, y: opts.at.y - (b.y1 + b.y2) / 2 };
+      }
       if (!c) {
         // to the right of its structure, level with the bond
         const atoms = d.link ? doc.fragmentOf(d.link.front) : new Set<number>();
@@ -3735,7 +3755,7 @@ export class Editor {
       // not linked: it keeps no tie to the structure, and its mark is ordinary lines
       if (opts.linked === false) data = { ...data, link: undefined, mark: undefined };
       frame = putNewman(doc, m, data, c, old?.id);
-      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); this.moveClear(opts.page); }
+      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); if (!opts.at) this.moveClear(opts.page); }
     };
     const label = old ? 'Edit Newman Projection' : 'Newman Projection';
     if (opts.amend) doc.amend(label, run); else doc.edit(label, run);
@@ -3767,7 +3787,7 @@ export class Editor {
    * Draw a torsional energy chart below its structure (or chart `id` again where it is), and
    * select it.
    */
-  putTorsionChart(d: TorsionData, opts: { id?: number; near?: number; page?: { w: number; h: number } } = {}): number | null {
+  putTorsionChart(d: TorsionData, opts: { id?: number; near?: number; page?: { w: number; h: number }; /** Where its middle goes (clicked with the pointer). */ at?: Vec } = {}): number | null {
     const doc = this.doc, m = this.fullMeasure(), L = doc.style.bondLength;
     const old = opts.id !== undefined ? doc.shapes.get(opts.id) : undefined;
     let frame: number | null = null;
@@ -3778,6 +3798,9 @@ export class Editor {
         const was = shapeBox(old);
         const tmp = this.torsionPreview(old.torsion).box;
         at = { x: was.x1 - tmp.x1, y: was.y1 - tmp.y1 };
+      } else if (opts.at) {
+        const b = this.torsionPreview(d).box;
+        at = { x: opts.at.x - (b.x1 + b.x2) / 2, y: opts.at.y - (b.y1 + b.y2) / 2 };
       } else {
         // below its structure, the plot's left edge under the structure's
         const atoms = opts.near !== undefined && doc.atoms.has(opts.near) ? doc.fragmentOf(opts.near) : new Set<number>();
@@ -3786,7 +3809,7 @@ export class Editor {
         at = box ? { x: box.x1 - prev.x1, y: box.y2 + 1.5 * L - prev.y1 } : { x: 0, y: 0 };
       }
       frame = putTorsion(doc, m, d, at, old?.id);
-      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); this.moveClear(opts.page); }
+      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); if (!opts.at) this.moveClear(opts.page); }
     });
     if (frame !== null) this.selectOnly({ kind: 'shape', id: frame });
     this.changed();
@@ -3805,6 +3828,16 @@ export class Editor {
         if (c) putNewman(doc, m, { ...s.newman!, look: structuredClone(look) }, c, id);
       }
     });
+    this.changed();
+  }
+
+  /** One projection drawn again with part of its look changed (the Side Panel's options). */
+  relookNewman(id: number, patch: Partial<NewmanData['look']>): void {
+    const doc = this.doc, s = doc.shapes.get(id);
+    const c = s?.newman ? newmanCentre(doc, s) : null;
+    if (!s?.newman || !c) return;
+    const d = { ...s.newman, look: { ...structuredClone(s.newman.look), ...patch } };
+    doc.edit('Newman Projection Look', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
     this.changed();
   }
 

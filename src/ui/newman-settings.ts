@@ -4,6 +4,7 @@
 // preview that redraws as anything changes.
 
 import { previewSlot, showDialog } from './dialog-host';
+import { FONT_GROUPS } from '../fonts';
 import { DEFAULT_NEWMAN_PREFS, type EyeStyle, type NewmanLook, type NewmanPrefs, type RankLook } from '../design/newman-prefs';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}): HTMLElementTagNameMap[K] => Object.assign(document.createElement(tag), props);
@@ -46,6 +47,13 @@ export function newmanSettings(now: NewmanPrefs, preview: (look: NewmanLook, kin
       <label class="ask-row"><span>Bonds reach</span><input name="reach" type="number" step="0.02" min="0.1" max="3" /><span class="muted">× the circle's radius past it</span></label>
       <label class="ask-row"><span>Eclipsed groups</span><input name="offset" type="number" step="1" min="-45" max="45" /><span class="muted">° turned so both show (0: on top)</span></label>
       <label class="ask-row ask-check"><input name="dot" type="checkbox" /><span>Dot on the front atom</span></label>
+      <label class="ask-row ask-check" title="Bonds 120° apart on each atom and staggered at exactly 60°, as textbooks draw them. Clear it to draw the conformer's true angles."><input name="ideal" type="checkbox" /><span>Idealized Angles</span></label>
+      <label class="ask-row"><span>Text</span><select name="font" aria-label="Font"><option value="">Drawing font</option>${FONT_GROUPS.map((g) => `<optgroup label="${g.name.replace(/[&<>"]/g, '')}">${g.fonts.map((f) => `<option>${f.replace(/[&<>"]/g, '')}</option>`).join('')}</optgroup>`).join('')}</select><input name="size" type="number" min="4" max="72" step="0.5" placeholder="Auto" title="Font size in points. Empty: 2 points smaller than the drawing's caption text." aria-label="Font size, points" /></label>
+      <label class="ask-row ask-check"><input name="tbold" type="checkbox" /><span>Bold</span></label>
+      <label class="ask-row ask-check"><input name="titalic" type="checkbox" /><span>Italic</span></label>
+      <label class="ask-row ask-check" title="Make the labels smaller, down to 70%, where they would not fit at full size."><input name="auto" type="checkbox" /><span>Auto-Scale Text</span></label>
+      <label class="ask-row ask-check" title="On a sawhorse, a wedge and a hashed wedge on each carbon show which groups point toward and away from you."><input name="wedges" type="checkbox" /><span>Wedges on Sawhorses</span></label>
+      <label class="ask-row ask-check" title="On a sawhorse, R or S beside each stereocenter."><input name="rs" type="checkbox" /><span>R/S Labels on Sawhorses</span></label>
       <label class="ask-row"><span>Ring arc</span><select name="arcLine"><option value="dashed">Dashed</option><option value="solid">Solid</option></select><input name="arcColor" type="color" aria-label="Ring arc color" /></label>
       <label class="ask-row ask-check"><input name="arcBonds" type="checkbox" /><span>Ring bonds take the arc's color too</span></label>
       <label class="ask-row ask-check"><input name="mark" type="checkbox" /><span>Mark the viewing direction on the structure (eye and dotted arrow)</span></label>
@@ -54,6 +62,7 @@ export function newmanSettings(now: NewmanPrefs, preview: (look: NewmanLook, kin
       <label class="ask-row"><span>Energies from</span><select name="method"><option value="mmff">MMFF94s+ (fast)</option><option value="xtb">GFN2-xTB when installed (desktop app)</option></select></label>
       <h3>Torsion energy charts</h3>
       <label class="ask-row"><span>Units</span><select name="unit"><option value="kcal/mol">kcal/mol</option><option value="kJ/mol">kJ/mol</option></select></label>
+      <label class="ask-row"><span>Layout</span><select name="layout"><option value="rows">Projections in rows</option><option value="follow">Projections above each peak</option></select></label>
       <label class="ask-row"><span>Projections</span><select name="insets"><option value="all">At every minimum and maximum</option><option value="minima">At the minima</option><option value="none">None</option></select></label>
       <label class="ask-row"><span>Names</span><select name="names"><option value="textbook">Textbook (gauche, eclipsed, anti)</option><option value="klyne">Klyne–Prelog (synclinal…)</option><option value="none">None</option></select></label>
       <label class="ask-row ask-check"><input name="barriers" type="checkbox" /><span>Barrier heights (dotted arrows)</span></label>
@@ -73,6 +82,15 @@ export function newmanSettings(now: NewmanPrefs, preview: (look: NewmanLook, kin
       $<HTMLInputElement>('input[name=reach]').value = String(p.look.reach);
       $<HTMLInputElement>('input[name=offset]').value = String(p.look.offset);
       $<HTMLInputElement>('input[name=dot]').checked = p.look.dot;
+      $<HTMLInputElement>('input[name=ideal]').checked = !!p.look.ideal;
+      $<HTMLSelectElement>('select[name=font]').value = p.look.text?.font ?? '';
+      $<HTMLInputElement>('input[name=size]').value = p.look.text?.size !== undefined ? String(p.look.text.size) : '';
+      $<HTMLInputElement>('input[name=tbold]').checked = !!p.look.text?.bold;
+      $<HTMLInputElement>('input[name=titalic]').checked = !!p.look.text?.italic;
+      $<HTMLInputElement>('input[name=auto]').checked = !!p.look.text?.auto;
+      $<HTMLInputElement>('input[name=wedges]').checked = !!p.look.wedges;
+      $<HTMLInputElement>('input[name=rs]').checked = !!p.look.rs;
+      $<HTMLSelectElement>('select[name=layout]').value = p.chart.layout;
       const arc = p.look.arc ?? DEFAULT_NEWMAN_PREFS.look.arc!;
       $<HTMLSelectElement>('select[name=arcLine]').value = arc.line;
       $<HTMLInputElement>('input[name=arcColor]').value = arc.color;
@@ -98,6 +116,17 @@ export function newmanSettings(now: NewmanPrefs, preview: (look: NewmanLook, kin
       p.look.reach = n('reach', 0.1, 3, p.look.reach);
       p.look.offset = n('offset', -45, 45, p.look.offset);
       p.look.dot = $<HTMLInputElement>('input[name=dot]').checked;
+      p.look.ideal = $<HTMLInputElement>('input[name=ideal]').checked;
+      {
+        const font = $<HTMLSelectElement>('select[name=font]').value, sz = $<HTMLInputElement>('input[name=size]'), v = Number(sz.value);
+        p.look.text = {
+          auto: $<HTMLInputElement>('input[name=auto]').checked, ...(font ? { font } : {}), ...(sz.value !== '' && isFinite(v) && v >= 4 && v <= 72 ? { size: v } : {}),
+          ...($<HTMLInputElement>('input[name=tbold]').checked ? { bold: true } : {}), ...($<HTMLInputElement>('input[name=titalic]').checked ? { italic: true } : {}),
+        };
+      }
+      p.look.wedges = $<HTMLInputElement>('input[name=wedges]').checked;
+      p.look.rs = $<HTMLInputElement>('input[name=rs]').checked;
+      p.chart.layout = $<HTMLSelectElement>('select[name=layout]').value === 'follow' ? 'follow' : 'rows';
       p.look.arc = { line: $<HTMLSelectElement>('select[name=arcLine]').value === 'solid' ? 'solid' : 'dashed', color: $<HTMLInputElement>('input[name=arcColor]').value, bonds: $<HTMLInputElement>('input[name=arcBonds]').checked };
       p.look.eye = $<HTMLSelectElement>('select[name=eye]').value as EyeStyle;
       p.mark = $<HTMLInputElement>('input[name=mark]').checked;
