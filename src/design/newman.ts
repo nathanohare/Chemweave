@@ -68,6 +68,11 @@ export function isEclipsed(front: NewmanGroup[], back: NewmanGroup[], turn: numb
 
 interface Box { x1: number; y1: number; x2: number; y2: number }
 
+/** The size a projection's labels are written at: the one chosen, else 2 points under the drawing's caption text. */
+export function newmanTextSize(look: NewmanLook, captionSize: number): number {
+  return look.text?.size ?? Math.max(5, captionSize - 2);
+}
+
 /** Where one group's bond and label go (drawNewman's layout, worked out before anything is drawn). */
 export interface NewmanPlace {
   g: NewmanGroup; rank: 0 | 1 | 2; back: boolean;
@@ -182,10 +187,10 @@ export function drawNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec): NewmanP
   const out: NewmanParts = { captions: [], arrows: [], shapes: [] };
   const L = doc.style.bondLength, lw = doc.style.lineWidth;
   const look = d.look, tx = look.text;
-  const size = (scale: number) => (tx?.size ?? doc.style.captionSize) * scale;
+  const size = (scale: number) => newmanTextSize(look, doc.style.captionSize) * scale;
   const style = (text: string, rank: number, scale: number) => {
     const rl = look.ranks[rank];
-    const sized = tx?.size !== undefined || scale !== 1;
+    const sized = true;
     return chemRuns(text).map((r) => ({
       ...r, ...(rl.color !== '#000000' ? { color: rl.color } : {}), ...(rl.bold || tx?.bold ? { bold: true } : {}), ...(rl.italic || tx?.italic ? { italic: true } : {}),
       ...(sized ? { size: Math.round(size(scale) * 100) / 100 } : {}), ...(tx?.font ? { font: tx.font } : {}),
@@ -244,7 +249,7 @@ function ringArc(doc: Doc, look: NewmanLook, c: Vec, f: Vec, b: Vec): number {
 }
 
 /** How the sawhorse is seen: from above and to one side, the back atom up and to the right. */
-export const SAWHORSE = { yaw: 48, pitch: 32, sep: 1.35, arm: 0.95 };
+export const SAWHORSE = { yaw: 48, pitch: 32, sep: 2.0, arm: 1.25 };
 
 /** A point of the sawhorse's model (x right, y up, z along the bond away from the reader) as seen: across, up, and toward the reader. */
 function sawView(x: number, y: number, z: number): [number, number, number] {
@@ -291,8 +296,10 @@ function drawSawhorse(doc: Doc, d: NewmanData, c: Vec): NewmanParts {
   const sep = SAWHORSE.sep * L, arm = SAWHORSE.arm * L;
   const page = (v: [number, number, number]): Vec => ({ x: c.x + v[0], y: c.y - v[1] });
   const ringBoth = front.some((g) => g.ring !== undefined) && back.some((g) => g.ring !== undefined);
-  const scale = tx?.size !== undefined && doc.style.captionSize ? tx.size / doc.style.captionSize : undefined;
+  const scale = doc.style.captionSize ? newmanTextSize(look, doc.style.captionSize) / doc.style.captionSize : undefined;
   const ends: { ring: boolean; front: boolean; at: Vec }[] = [];
+  /** Each group's bond (from its atom to the group) and about half the width of its name. */
+  const tips: { from: Vec; at: Vec; box: Box | null }[] = [];
   const centre = (z0: number) => doc.addAtom(page(sawView(0, 0, z0)).x, page(sawView(0, 0, z0)).y, 6, look.rs ? { showStereo: true } : {});
   const cf = centre(0), cbk = centre(sep);
   out.atoms!.push(cf.id, cbk.id);
@@ -319,10 +326,40 @@ function drawSawhorse(doc: Doc, d: NewmanData, c: Vec): NewmanParts {
       const display = marks?.wedge === i ? 'wedge' : marks?.hash === i ? 'hashWedge' : 'solid';
       doc.addBond(atom, a.id, 1, display, rl.bond && !ring ? { color: rl.color } : {});
       if (ring) ends.push({ ring: true, front: isFront, at: p });
+      {
+        // about the box its name fills: it starts on the atom and runs away from the bond
+        const ls = doc.style.labelSize * (scale ?? 1), wd = ring ? 0 : 0.62 * ls * Math.max(1, g.label.replace(/\d/g, '').length + 0.5 * g.label.replace(/\D/g, '').length), left = p.x < page(own).x;
+        tips.push({ from: page(own), at: p, box: ring ? null : { x1: left ? p.x + 0.4 * ls - wd : p.x - 0.4 * ls, x2: left ? p.x + 0.4 * ls : p.x - 0.4 * ls + wd, y1: p.y - 0.5 * ls, y2: p.y + 0.6 * ls } });
+      }
     });
   };
   side(back, cbk.id, sep, 0.333, d.turn, false);
   side(front, cf.id, 0, -0.333, 0, true);
+  if (look.rs) {
+    // R/S labels in the clearest spot beside each atom: as far as can be from every bond and
+    // group label of the drawing (they can be dragged like any stereo label)
+    const size = 0.75 * doc.style.labelSize * (scale ?? 1), w = 1.75 * size;
+    const segs: [Vec, Vec][] = [[cf, cbk], ...tips.map((t): [Vec, Vec] => [t.from, t.at])];
+    const h = 0.8 * size;
+    // how far a point is from the label's box when the label is centred at q
+    const gapTo = (q: Vec, o: Vec) => Math.hypot(Math.max(Math.abs(o.x - q.x) - w / 2, 0), Math.max(Math.abs(o.y - q.y) - h / 2, 0));
+    const toSeg = (q: Vec, [m, n]: [Vec, Vec]) => { let d = Infinity; for (let i = 0; i <= 12; i++) d = Math.min(d, gapTo(q, { x: m.x + ((n.x - m.x) * i) / 12, y: m.y + ((n.y - m.y) * i) / 12 })); return d; };
+    const taken: Vec[] = [];
+    for (const atom of [cf, cbk]) {
+      let best = { x: atom.x, y: atom.y + 0.6 * L }, score = -Infinity;
+      for (const r of [0.5 * L, 0.65 * L, 0.8 * L, 0.95 * L, 1.1 * L]) for (let deg = 0; deg < 360; deg += 10) {
+        const q = { x: atom.x + r * Math.sin(deg * RAD), y: atom.y - r * Math.cos(deg * RAD) };
+        let sc = Math.min(...segs.map((sg) => toSeg(q, sg)));
+        for (const t of tips) if (t.box) sc = Math.min(sc, Math.hypot(Math.max(t.box.x1 - (q.x + w / 2), q.x - w / 2 - t.box.x2, 0), Math.max(t.box.y1 - (q.y + h / 2), q.y - h / 2 - t.box.y2, 0)));
+        for (const o of taken) sc = Math.min(sc, gapTo(q, o) - w / 2);
+        // clear by a comfortable margin is enough; past that, nearer its atom is better
+        sc = Math.min(sc, 0.16 * L) - 0.05 * (r - 0.5 * L);
+        if (sc > score + 1e-6) { score = sc; best = q; }
+      }
+      taken.push(best);
+      doc.updateAtom(atom.id, { stereoLabel: { text: '', dx: best.x - atom.x - w / 2, dy: best.y - atom.y + 0.36 * size, size, italic: true } });
+    }
+  }
   const f = ends.find((e) => e.front), b = ends.find((e) => !e.front);
   if (f && b) out.arrows.push(ringArc(doc, look, c, f.at, b.at));
   return out;

@@ -13,7 +13,7 @@ import { chordLocal, shapeBox } from '../objects';
 import { frameBox } from '../editor/frames';
 import { profileAt, type Extremum, type Profile } from '../chem/torsion-profile';
 import { norm180, norm360, type NewmanGroup } from '../chem/newman';
-import { drawEyeMark, drawNewman, type NewmanLook } from './newman';
+import { drawEyeMark, drawNewman, newmanTextSize, type NewmanLook } from './newman';
 
 export type ConformerNames = 'textbook' | 'klyne' | 'none';
 
@@ -179,7 +179,7 @@ export function drawTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec): Tors
       for (const id of parts.shapes) doc.removeShape(id);
       for (const id of parts.arrows) doc.removeArrow(id);
     }
-    look = { ...look, text: { ...look.text, size: Math.round((look.text.size ?? doc.style.captionSize) * least * 100) / 100, auto: false } };
+    look = { ...look, text: { ...look.text, size: Math.round(newmanTextSize(look, doc.style.captionSize) * least * 100) / 100, auto: false } };
   }
   type Block = { e: Extremum; captions: number[]; shapes: number[]; arrows: number[]; x1: number; x2: number; y1: number; y2: number; dx: number };
   /** A projection with its name and energy under it, drawn centred on x with its top at 0: moved into place after. */
