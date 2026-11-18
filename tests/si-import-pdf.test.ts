@@ -13,6 +13,9 @@ import type { ImportedReference } from '../src/si/si-import-refs';
 import { MemoryFolder } from '../src/si/folder';
 import { SiProject, compoundName, compoundsOf, valuesOf, type Json } from '../src/si/project';
 import { displayId } from '../src/si/compound-ids';
+import { PdfPages, addFigures, addPictures, type Box, type Cut } from '../src/si/si-import-pdf';
+import { pdfSpectra } from '../src/si/si-import-spectra';
+import { applyPlan } from '../src/si/si-import-apply';
 
 function exampleFolder(): MemoryFolder {
   const root = join(__dirname, 'fixtures', 'si-example');
@@ -88,5 +91,64 @@ describe('Import SI: reading a PDF', () => {
     expect(table.caption).toBe('Optimization of the reduction of 4′-bromoacetophenone');
     expect(table.is_table).toBe(true);
     expect(table.bottom).toBeGreaterThan(table.top + 100);
+  });
+});
+
+// ---------------------------------------------------------------------- pictures cut out of the pages
+
+/** The example's pages, each cut "drawn" as a picture the size of its box (no canvas here to draw on). */
+class BoxPages extends PdfPages {
+  cuts: [number, Box][] = [];
+  async cut(n: number, box: Box): Promise<Cut | null> {
+    this.cuts.push([n, box]);
+    return { data: new Uint8Array([137, 80, 78, 71]), ext: '.png', w: box[2] - box[0], h: box[3] - box[1] };
+  }
+}
+const pages = async (): Promise<BoxPages> => (await BoxPages.open(new Uint8Array(readFileSync(join(__dirname, 'fixtures', 'si-import-pdf', 'example-si.pdf')))))! as BoxPages;
+
+describe('Import SI: pictures cut out of a PDF', () => {
+  it('cuts each compound’s structure out of its page', async () => {
+    const pdf = await pages();
+    const p = analyse(read.paras);
+    expect(await addPictures(pdf, p)).toBe(7);
+    expect(p.compounds[0].picture_ext).toBe('.png');
+    expect(p.compounds[0].structure_note).toContain('between its heading and its text');
+    pdf.close();
+  });
+
+  it('cuts the figures and tables out of their pages', async () => {
+    const pdf = await pages();
+    const p = analyse(read.paras);
+    expect(await addFigures(pdf, p)).toBe(3);
+    const figures = new Map((p.sections as ImportedSection[]).flatMap((s) => [...s.figures.values()]).filter((f) => f.data).map((f) => [f.label, f]));
+    expect([...figures.keys()].sort()).toEqual(['Scheme S1', 'Scheme S2', 'Table S1']);
+    for (const f of figures.values()) expect(f.width_cm! > 5 && f.width_cm! < 17).toBe(true);
+    // the scheme's picture starts below the general procedure above it on its page
+    const gp = p.gps[0], scheme = figures.get('Scheme S1')!;
+    expect(gp.end[0]).toBe(scheme.page);
+    expect(scheme.top).toBeGreaterThan(gp.end[1]);
+    pdf.close();
+  });
+
+  it('cuts the spectrum pages at their headers, each with its compound', async () => {
+    const pdf = await pages();
+    const p = analyse(read.paras);
+    const spectra = await pdfSpectra(pdf, p, read.spectrum_pages);
+    expect(spectra.length).toBe(15);
+    expect(spectra.every((s) => s.cid)).toBe(true);
+    expect(spectra.slice(0, 3).map((s) => [s.cid, s.type])).toEqual([['2a', '1H'], ['2a', '13C'], ['2b', '1H']]);
+    expect(spectra[0].title).toBe('2a — 1H NMR (500 MHz, CDCl3)');
+    expect(spectra.map((s) => `${s.cid} ${s.type}`)).toContain('2c 19F');
+    expect(spectra.every((s) => s.shows_structure)).toBe(true);
+    // stored without a second structure (the page shows it)
+    p.spectra = spectra;
+    const project = await SiProject.create(new MemoryFolder('P'), 'P');
+    const result = await applyPlan(project, p, 'Example SI.pdf');
+    expect(result.spectra).toBe(15);
+    const items = valuesOf(project.compound(result.created[0])).spectra as Json[];
+    expect(items.map((i) => i.type)).toEqual(['1H', '13C']);
+    expect(items.every((i) => String(i.file).endsWith('.png'))).toBe(true);
+    expect(items.every((i) => (i.layout as Json | undefined)?.struct_box === false)).toBe(true);
+    pdf.close();
   });
 });

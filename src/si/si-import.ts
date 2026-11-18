@@ -54,9 +54,10 @@ export interface ImportedCompound {
   structure_note: string;
   structure_picture: Uint8Array | null;
   use_structure: boolean;
-  /** From a PDF: [heading's page, heading's bottom, text's page, text's top] (pt), and the structure cut out of the page (a PDF). */
+  /** From a PDF: [heading's page, heading's bottom, text's page, text's top] (pt), and the structure cut out of the page (a picture: `picture_ext`, ".pdf" when not given). */
   geometry: [number, number, number, number] | null;
   picture_pdf: Uint8Array | null;
+  picture_ext?: string;
   end: [number, number];
 }
 

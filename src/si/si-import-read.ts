@@ -415,7 +415,7 @@ export function readSiDocx(name: string, bytes: Uint8Array, progress: Progress =
 
 // ---------------------------------------------------------------------- PDF
 
-interface Line { spans: Span[]; base: number; size: number }
+export interface Line { spans: Span[]; base: number; size: number }
 
 const lx0 = (L: Line): number => Math.min(...L.spans.map((s) => s.x0));
 const lx1 = (L: Line): number => Math.max(...L.spans.map((s) => s.x1));
@@ -446,7 +446,7 @@ function lineRuns(L: Line): Run[] {
   return out;
 }
 
-const linePlain = (L: Line): string => cleanSpace(lineRuns(L).map((r) => r.text).join(''));
+export const linePlain = (L: Line): string => cleanSpace(lineRuns(L).map((r) => r.text).join(''));
 const r1 = (x: number): number => Math.round(x * 10) / 10;
 
 /** The most common key (the first seen on a tie, as Counter.most_common). */
@@ -457,7 +457,7 @@ function mostCommon<K>(counts: Map<K, number>): K | undefined {
 }
 
 /** Text pieces into lines: pieces whose baselines are within about half a line of each other make one line. */
-function toLines(spans: Span[]): Line[] {
+export function toLines(spans: Span[]): Line[] {
   const lines: Line[] = [];
   const sorted = [...spans].sort((a, b) => (a.y1 - 0.2 * a.size) - (b.y1 - 0.2 * b.size) || a.x0 - b.x0);
   for (const s of sorted) {

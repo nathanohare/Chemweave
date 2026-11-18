@@ -5,14 +5,14 @@
 // sections, cover page, references), on the right the page of the item picked, below how the
 // compounds print and where they go.
 
-import { ALL_FIELDS, nucleusLabel, type FieldDef } from '../si/fields';
+import { ALL_FIELDS, SPECTRUM_TYPES, nucleusLabel, type FieldDef } from '../si/fields';
 import { parseMarkup } from '../si/markup';
 import { fetchDoi } from '../document/references';
 import type { ImportedCompound, ImportedGP, ImportPlan } from '../si/si-import';
 import type { ReadResult, Para } from '../si/si-import-read';
 import { outline, type ImportedCover, type ImportedFigure, type ImportedSection } from '../si/si-import-text';
 import type { ImportedReference } from '../si/si-import-refs';
-import { PRINT_AS_IMPORTED, PRINT_FROM_FIELDS, type ApplyResult, type PrintMode } from '../si/si-import-apply';
+import { PRINT_AS_IMPORTED, PRINT_FROM_FIELDS, type ApplyResult, type ImportedSpectrum, type PrintMode } from '../si/si-import-apply';
 import { addInfo } from './info-tip';
 import { askChoice } from './ask';
 
@@ -85,6 +85,13 @@ function row(form: HTMLElement, name: string, ...content: (Node | string)[]): HT
   r.append(el('span', 'si-imp-name', name), ...content);
   form.append(r);
   return r;
+}
+
+/** A picture with what goes with it beside it (a row of the form). */
+function pair(pic: HTMLElement, side: HTMLElement): HTMLElement {
+  const p = el('div', 'si-imp-pair');
+  p.append(pic, side);
+  return p;
 }
 
 function check(label: string, on: boolean, changed: (on: boolean) => void): HTMLLabelElement {
@@ -197,6 +204,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
         first ??= it;
       }
     }
+    const compoundItems = new Set<HTMLElement>();
     if (plan.compounds.length) {
       const { list } = group('Compounds');
       for (const c of plan.compounds) {
@@ -204,6 +212,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
         const tip = [...c.warnings, ...(c.unrecognised.length ? ['Some of its text was not recognized (see “Not recognized”).'] : [])].join('\n');
         const { item: it, label } = item(list, `${flag}${c.cid}  ${c.name}`.trimEnd(), c, () => compoundPage(c, gpNames.get(c.gp_key) ?? '', (t) => { label.textContent = `${flag}${t}`; }), tip);
         first ??= it;
+        compoundItems.add(it);
       }
     }
     // the other text: sections, cover page, references
@@ -241,6 +250,47 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
       item(list, 'Cover page', plan.cover, () => coverPage(plan.cover as ImportedCover));
     }
     if (plan.references.length) group(`References (${plan.references.length})`, () => referencesPage(plan.references as ImportedReference[]));
+    // spectra no compound was found for (each can be given one)
+    const unmatchedCount = (): number => plan.spectra.filter((x) => !x.cid).length;
+    const unmatched = unmatchedCount() ? group(`Spectra not matched (${unmatchedCount()})`, () => unmatchedPage()) : null;
+    /** A spectrum given another compound: the pages showing spectra are made again when next shown. */
+    const spectraMoved = (): void => {
+      for (const it of [...built.keys()]) if (it !== current && (compoundItems.has(it) || it === unmatched?.head)) built.delete(it);
+      if (unmatched) unmatched.head.querySelector('.si-imp-label')!.textContent = `Spectra not matched (${unmatchedCount()})`;
+    };
+
+    function spectrumRow(f: HTMLElement, s: ImportedSpectrum): void {
+      const pic = el('div', 'si-imp-thumb', '…');
+      void drawPicture(pic, s.data, s.kind === 'emf' ? '.emf' : s.ext || '.pdf');
+      const side = el('span', 'si-imp-side');
+      const which = el('select');
+      which.setAttribute('aria-label', 'Compound');
+      which.append(new Option('(not matched)', ''), ...plan.compounds.map((c) => new Option(`${c.cid}  ${c.name}`.trimEnd(), c.cid)));
+      which.value = s.cid;
+      which.addEventListener('change', () => { s.cid = which.value; s.how = 'chosen by you'; spectraMoved(); });
+      const kind = el('select');
+      kind.setAttribute('aria-label', 'Type');
+      const types = [...new Set([...SPECTRUM_TYPES, s.type])];
+      kind.append(...types.map((t) => new Option(t, t)));
+      kind.value = s.type;
+      kind.addEventListener('change', () => { s.type = kind.value; });
+      const pickers = el('span', 'si-imp-parts');
+      pickers.append(which, kind);
+      const where = s.where ? `${s.where.startsWith('page') ? 'On' : 'In'} ${s.where}` : '';
+      const says = [s.how ? `Matched ${s.how}.` : '', where ? `${where}.` : ''].filter(Boolean).join(' ');
+      side.append(check('Import this spectrum', s.keep, (on) => { s.keep = on; }), pickers);
+      if (s.title) side.append(el('span', '', s.title));
+      if (says) side.append(el('span', 'muted', says));
+      row(f, 'Spectrum', pair(pic, side));
+    }
+
+    function unmatchedPage(): HTMLElement {
+      const f = el('div', 'si-imp-form');
+      const left = plan.spectra.filter((x) => !x.cid);
+      f.append(el('p', 'muted', left.length ? 'No compound could be told for these spectra. Pick each one’s compound to import it; one left “not matched” is not imported.' : 'Every spectrum has its compound (shown on the compound’s page).'));
+      for (const s of left) spectrumRow(f, s);
+      return f;
+    }
 
     // ---- the pages
     function gpPage(g: ImportedGP, users: string[], retitle: (t: string) => void): HTMLElement {
@@ -287,11 +337,11 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
           const svg = host.pictureOf(c.structure);
           if (svg) pic.innerHTML = svg; else pic.textContent = '(can’t be drawn)';
           void host.analyze(c.structure).then((a) => { if (a?.formula) note.textContent = `${a.formula}, ${note.textContent}`; });
-        } else void drawPicture(pic, c.picture_pdf!, '.pdf');
+        } else void drawPicture(pic, c.picture_pdf!, c.picture_ext || '.pdf');
         if (c.structure_picture) note.textContent += ' (with ChemDraw’s picture)';
         const side = el('span', 'si-imp-side');
         side.append(note, check('Import this structure', c.use_structure, (on) => { c.use_structure = on; }));
-        row(f, 'Structure', pic, side);
+        row(f, 'Structure', pair(pic, side));
       }
       if (c.warnings.length) row(f, '', el('span', 'si-imp-warn', c.warnings.map((w) => WARN + w).join('\n')));
       if (gpName) {
@@ -321,8 +371,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
       }
       const un = row(f, 'Not recognized', textBox(c.unrecognised.join('\n'), (v) => { c.unrecognised = v.split('\n').filter((t) => t.trim()); }, 6, 'Not recognized'));
       addInfo(un.firstElementChild, 'Text of this compound that is neither its procedure nor a recognized value. It goes to the compound’s private Notes (never printed); delete what you don’t need.');
-      const mine = plan.spectra.filter((s) => s.cid === c.cid);
-      if (mine.length) row(f, 'Spectra', el('span', '', mine.map((s) => s.type).join(', ')));
+      for (const s of plan.spectra.filter((x) => x.cid === c.cid)) spectrumRow(f, s);
       row(f, 'As printed', textBox(c.original, null, 10, 'As printed'));
       return f;
     }
@@ -354,7 +403,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
         const label = lineBox(fig.label, (v) => { fig.label = v.trim(); }, 'Label', 'automatic (Figure S1…)');
         label.title = 'The label as printed; empty: numbered by Chemweave';
         side.append(label, el('span', '', plainMarkup(fig.caption) || '(no caption)'), check(fig.kind === 'table' ? 'Import this table' : 'Import this figure', fig.keep, (on) => { fig.keep = on; }));
-        row(f, fig.kind === 'table' ? 'Table' : 'Figure', pic, side);
+        row(f, fig.kind === 'table' ? 'Table' : 'Figure', pair(pic, side));
       }
       return f;
     }

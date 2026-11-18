@@ -4824,7 +4824,7 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-ms-ok .si-ms-status { color: var(--ok, #2e7d32); }
 .si-ms-note td, .si-ms-dismissed td { color: var(--muted, #7f7f7f); }
 /* SI Project ▸ Import SI…: the review window (the list on the left, the item's page on the right) */
-dialog.si-import { width: min(96vw, 1120px); height: min(92vh, 820px); padding: 10px 12px; }
+dialog.si-import { width: min(96vw, 1120px); max-width: none; height: min(92vh, 820px); max-height: none; padding: 10px 12px; }
 dialog.si-import > form { display: flex; flex-direction: column; height: 100%; gap: 6px; }
 dialog.si-import h2 { margin: 0; }
 .si-imp-intro { margin: 0; font-size: var(--fs-sm); }
@@ -4858,11 +4858,13 @@ dialog.si-import h2 { margin: 0; }
 .si-imp-stack { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .si-imp-stack > .si-imp-text { width: 100%; }
 .si-imp-thumb { width: 220px; height: 140px; display: grid; place-items: center; background: #fff; color: #555; border: 1px solid var(--line); border-radius: var(--r-control); overflow: hidden; text-align: center; font-size: var(--fs-xs, 11px); padding: 2px; }
+.si-imp-thumb { grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
 .si-imp-thumb > img { width: 100%; height: 100%; object-fit: contain; }
 .si-imp-thumb > svg { max-width: 100%; max-height: 100%; }
 .si-imp-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.si-imp-row > .si-imp-side { grid-column: 3; max-width: 26em; }
-.si-imp-row > .si-imp-thumb { grid-column: 2; }
+.si-imp-pair { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.si-imp-pair > .si-imp-thumb { flex: none; }
+.si-imp-pair > .si-imp-side { flex: 1; max-width: 30em; }
 .si-imp-check { display: inline-flex; align-items: center; gap: 4px; }
 .si-imp-warn { color: var(--warn, #a15c00); white-space: pre-line; }
 .si-imp-table { border-collapse: collapse; width: 100%; }

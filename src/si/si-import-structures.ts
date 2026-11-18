@@ -108,6 +108,13 @@ export function drawingStructures(cdxml: string, tools: Pick<StructureTools, 'mo
   return structures;
 }
 
+/** Every ID label written in a drawing ("5a"), wherever it is. */
+export function drawingLabels(cdxml: string): string[] {
+  const root = parseCdxml(cdxml);
+  if (!root || root.tagName === 'parsererror') return [];
+  return topLevel(root).filter((el) => el.tagName === 't').map(textOf).filter((t) => t && isIdLabel(t));
+}
+
 /** Fragments of a drawing as one molfile. */
 function molOf(frags: Element[], tools: Pick<StructureTools, 'molfileOf'>): string | null {
   const ser = new XMLSerializer();

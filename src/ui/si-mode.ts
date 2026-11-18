@@ -3294,15 +3294,32 @@ export class SiMode {
     this.host.flash('', 1);
     if (read.error) { await ask('Import SI', [], { noCancel: true, ok: 'OK', note: read.error }); return; }
     const plan = I.analyse(read.paras);
-    if (plan.objects?.length || plan.own_objects?.length) {
-      // (structures from the SI's ChemDraw drawings: by their labels, or a compound's own drawing)
-      const [{ assignStructures }, { loadCdxmlReader, cdxmlMolfile }] = await Promise.all([import('../si/si-import-structures'), import('../si/ms-read')]);
+    let pdf: import('../si/si-import-pdf').PdfPages | null = null;
+    if (plan.objects?.length) {
+      // Word: structures from the SI's ChemDraw drawings (by their labels, or a compound's own
+      // drawing), then its Mnova spectra, each matched to its compound
+      const [{ assignStructures }, { wordSpectra }, { loadCdxmlReader, cdxmlMolfile }] = await Promise.all([import('../si/si-import-structures'), import('../si/si-import-spectra'), import('../si/ms-read')]);
       await loadCdxmlReader();
-      try {
-        await assignStructures(plan, { facts: (ms) => this.host.siFacts(ms).catch(() => ms.map(() => null)), molfileOf: cdxmlMolfile });
-      } catch { /* the structures can still be drawn by hand */ }
+      const tools = { facts: (ms: string[]) => this.host.siFacts(ms).catch(() => ms.map(() => null)), molfileOf: cdxmlMolfile };
+      this.host.hint('Reading the structures and spectra…');
+      try { await assignStructures(plan, tools); } catch { /* the structures can still be drawn by hand */ }
+      try { plan.spectra = await wordSpectra(plan, tools); } catch { /* the spectra can still be added by hand */ }
+      this.host.hint('');
+    } else if (read.kind === 'pdf' && read.data) {
+      // PDF: each compound's drawing, the sections' figures and tables, and the spectrum pages cut out as pictures
+      const [{ PdfPages, addPictures, addFigures }, { pdfSpectra }] = await Promise.all([import('../si/si-import-pdf'), import('../si/si-import-spectra')]);
+      pdf = await PdfPages.open(read.data);
+      if (pdf) {
+        try {
+          await addPictures(pdf, plan, (d, t) => this.host.hint(`Cutting out the structures: ${d} of ${t}`));
+          await addFigures(pdf, plan);
+          plan.spectra = await pdfSpectra(pdf, plan, read.spectrum_pages, (d, t) => this.host.hint(`Cutting out the spectra: page ${d} of ${t}`));
+        } catch { /* what was cut out stands; the rest can be added by hand */ }
+        this.host.hint('');
+      }
     }
     if (!plan.compounds.length && !plan.gps.length && !plan.sections.length) {
+      pdf?.close();
       await ask('Import SI', [], { noCancel: true, ok: 'OK', note: `No compounds, general procedures or sections were recognized in “${f.name}”. Compounds are found by a heading with the name and ID, such as “1-Phenylethanol (2a).”, followed by its data.`, points: read.notes });
       return;
     }
@@ -3312,7 +3329,9 @@ export class SiMode {
       analyze: (m) => this.host.analyze(m),
       dataSections: p && !p.readOnly ? p.dataSections.map((s) => ({ id: s.id, name: s.name })) : null,
       canMakeProject: !!this.host.newSiProject,
+      afterOutline: pdf ? async (pl) => { await import('../si/si-import-pdf').then((m) => m.addFigures(pdf!, pl)); } : undefined,
     });
+    pdf?.close();
     if (!choice) return;
     const target = choice.newProject ? await this.host.newSiProject?.() ?? null : p;
     if (!target) return;

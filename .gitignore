@@ -36,3 +36,4 @@ tests/fixtures/chemdraw-private/
 !tests/fixtures/manuscript/files/*.cdx
 !tests/fixtures/si-import-pdf/*.pdf
 !tests/fixtures/si-import/files/*.docx
+!tests/fixtures/si-import/spectra/*.docx

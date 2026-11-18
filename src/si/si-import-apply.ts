@@ -35,15 +35,23 @@ const REQUIRED = new Set(['structure', 'procedure', 'yield', 'physical_state', '
 export const notesHeading = (file: string): string => `Imported from ${file}, not recognized:`;
 const DEFAULT_GENERAL_HEADING = 'General Information';
 
-/** A spectrum found in the SI (si-import-spectra.ts): a Word Mnova picture (EMF), or a part of a PDF page (a one-page PDF). */
+/** A spectrum found in the SI (si-import-spectra.ts): a Word Mnova picture (EMF), or a part of a PDF page (a picture, `ext`). */
 export interface ImportedSpectrum {
+  /** The compound it belongs to ('' not matched). */
   cid: string;
+  /** "1H", "13C", …, "Other NMR", "2D NMR", "HPLC/SFC", "IR", "Other". */
   type: string;
   kind: 'emf' | 'pdf';
   data: Uint8Array;
   keep: boolean;
+  /** Where it was found, its header or title, and how its compound was found (in words). */
+  where?: string;
+  title?: string;
+  how?: string;
   /** (PDF) the page shows the structure already: printed without the program's structure box. */
   shows_structure?: boolean;
+  /** (PDF) the picture's type: ".png" (cut out of the page), ".pdf" (default). */
+  ext?: string;
 }
 
 /** A picture to store: [bytes, ext, vector original or null, its ext]. */
@@ -379,7 +387,7 @@ async function attachSpectra(project: SiProject, plan: ImportPlan, byCid: Map<st
       item.type = s.type;
       item.original = await project.addAttachment(comp, subdir, String(item.file).replace(/\.[^.]+$/, `.${oe}`), original ?? s.data);
     } else {
-      item.file = await project.addAttachment(comp, subdir, `${s.cid || 'spectrum'} ${s.type.replace(/\//g, '-')}.pdf`, s.data);
+      item.file = await project.addAttachment(comp, subdir, `${s.cid || 'spectrum'} ${s.type.replace(/\//g, '-')}${s.ext || '.pdf'}`, s.data);
       item.type = s.type;
       if (s.shows_structure) item.layout = cleanLayout({ struct_box: false }, false, true);
     }
@@ -452,7 +460,7 @@ function valuesFor(c: ImportedCompound, citer: Citer): Json {
 async function setStructure(project: SiProject, comp: SiCompound, c: ImportedCompound, opts: ApplyOptions): Promise<boolean> {
   if (c.picture_pdf && c.use_structure && !c.structure) {
     // From a PDF: only the drawing, as the structure's picture (its formula, for the HRMS, is the typed one).
-    await setStructureImage(project, comp, c.picture_pdf, '.pdf', null, '', 'user');
+    await setStructureImage(project, comp, c.picture_pdf, c.picture_ext || '.pdf', null, '', 'user');
     return true;
   }
   if (!(c.structure && c.use_structure)) return false;
