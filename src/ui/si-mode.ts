@@ -29,7 +29,8 @@ import { SiAttachmentPage } from './si-attachment';
 import { SiFrontPage } from './si-front';
 import { SiSchemePage } from './si-scheme';
 import { SiSpectraPage } from './si-spectra';
-import { nextMisspelled } from './si-spell';
+import { nextMisspelled, setSiDictionary } from './si-spell';
+import { addDictionaryWord, dictionaryWords } from '../si/dictionary';
 import { typingPrefs } from '../text/typing';
 import { editReference } from './references-dialog';
 import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Reference } from '../document/references';
@@ -43,6 +44,9 @@ import { openTrash } from './si-trash';
 import { compoundsUnder } from '../si/trash';
 import { saveSnapshot } from '../si/snapshot';
 import { journalOf } from '../si/journal';
+import { lookupName, PUBCHEM_PAGE } from '../si/pubchem-name';
+import { availableColumns, buildRows, chosenColumns, fieldLabel, filterOf, isCompact, isSplit, projectScope, sectionScope, setView, statusColors, storeStatusColors, summarize, summaryText, type DashboardFacts, type Row, type Scope } from '../si/dashboard';
+import { dashboardGrid, projectSummaryCard, sectionDashboard, statusColorsBody, type GridOptions } from './si-dashboard';
 import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
 import { popupMenu } from './popup-menu';
 
@@ -105,7 +109,7 @@ export interface SiCard {
   hrms: string;
 }
 
-type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'spectra'; id: string; section: string } | { kind: 'references' } | { kind: 'warnings' };
+type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'spectra'; id: string; section: string } | { kind: 'references' } | { kind: 'warnings' } | { kind: 'dashboard' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -122,6 +126,7 @@ const ICON: Record<string, string> = {
   scheme: '<polygon points="5,8 8,9.7 8,13.3 5,15 2,13.3 2,9.7"/><path d="M10 11.5h5M13.5 10l1.5 1.5-1.5 1.5"/><polygon points="19,8 22,9.7 22,13.3 19,15 16,13.3 16,9.7"/>',
   spectrum: '<path d="M2.5 20.5h19"/><path d="M4 20V18M7 20v-9M8.5 20v-6M12 20v-14M13.5 20v-4M17 20v-8M19 20v-3"/>',
   xray: '<ellipse cx="7" cy="8" rx="3" ry="2"/><ellipse cx="17" cy="9" rx="2.6" ry="3.2"/><ellipse cx="11" cy="17" rx="3.2" ry="2.2"/><path d="M9.6 9.2 10.6 14.8M14.5 9.2 7.8 7.8M15.6 11.6 13.2 15.6"/>',
+  grid: '<rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="M3.5 9h17M3.5 14.5h17M9.5 4v16"/>',
   refs: '<path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M5 18a2 2 0 0 1 2-2h11"/>',
   check: '<path d="M4 12.5l5 5 11-11"/>',
   warn: '<path d="M12 3 22 20H2z"/><path d="M12 9.5v5M12 17.2v.3"/>',
@@ -142,6 +147,7 @@ const RIBBON = `
     <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
     <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
     <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
+    <button role="tab" data-si-tab="dash" aria-selected="false" class="rb-context" hidden title="Shown on the Dashboard and on a Data section's page">Dashboard</button>
     <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
     <button role="tab" data-si-tab="spectrum" aria-selected="false" class="rb-context" hidden title="Shown on a compound's spectra page">Spectrum</button>
   </div>
@@ -284,6 +290,24 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Reference</div></div>
   </div>
+  <div class="rb-panel" data-si-panel="dash" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-dash="columns" title="Pick the fields shown as columns (NMR and spectra count as one each)"><span class="rb-icon">▥</span>Columns…</button>
+      <div class="rb-col">
+        <label class="rb-field" title="Which compounds the dashboard shows">Show <select data-si-dash="filter">
+          <option value="all">All Compounds</option><option value="incomplete">Incomplete Only</option><option value="flagged">Flagged Only</option><option value="warnings">With Warnings Only</option>
+        </select></label>
+        <button data-si-dash="split" aria-pressed="false" title="One NMR column per nucleus and one spectrum column per type, rather than one column each">Split by Nucleus</button>
+        <button data-si-dash="compact" aria-pressed="false" title="Icons only, without the structures or the short summaries: more compounds fit">Compact</button>
+      </div>
+    </div><div class="rb-label">View</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-dash="colors" title="The color of each kind of cell (filled, missing, flagged, a warning…), for this project">Status Colors…</button>
+        <button data-si-dash="refresh" title="Work out every compound's state and warnings again">Refresh</button>
+      </div>
+    </div><div class="rb-label">Dashboard</div></div>
+  </div>
   <div class="rb-panel" data-si-panel="spectrum" hidden>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
@@ -397,6 +421,7 @@ const RIBBON = `
         <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
       </div>
       <div class="rb-col">
+        <button data-si="name-pubchem" title="Name from PubChem: look the compound picked up in PubChem (by its InChIKey, which is all that is sent, and only when you click) and fill in its IUPAC name, which stays editable. Needs the internet; finds only compounds already in PubChem">Name from PubChem</button>
         <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the compound picked (or of every compound of the Data section picked that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
       </div>
     </div><div class="rb-label">Library</div></div>
@@ -487,12 +512,16 @@ export class SiMode {
       if (xr) { void this.xrayPage?.command(xr.dataset.siXray!); return; }
       const at = t.closest<HTMLElement>('[data-si-attach]');
       if (at) { if (this.project?.readOnly) { this.host.flash('This SI project is open read-only.'); return; } void (at.dataset.siAttach === 'choose' ? this.attachPage?.choose() : this.attachPage?.remove()); return; }
+      const da = t.closest<HTMLElement>('button[data-si-dash]');
+      if (da) { void this.dashCommand(da.dataset.siDash!); return; }
       const fig = t.closest<HTMLElement>('[data-si-fig]');
       if (fig) { void this.activeFigure?.command(fig.dataset.siFig!); return; }
       const b = t.closest<HTMLElement>('[data-si]');
       if (b) void this.run(b.dataset.si!);
     });
     this.ribbon.addEventListener('change', (e) => {
+      const ds = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-dash]');
+      if (ds) { void this.dashCommand(ds.dataset.siDash!, ds.value); return; }
       const f = (e.target as HTMLElement).closest<HTMLInputElement>('[data-si-field]');
       if (f?.dataset.siField === 'fig-width') { void this.activeFigure?.setWidth(Number(f.value)); return; }
       const t = this.activeTable;
@@ -707,6 +736,27 @@ export class SiMode {
     if (!this.tab) return;
     this.shownKey = '';
     this.refresh();
+    void this.loadDictionary();
+  }
+
+  private dictFor: SiProject | null = null;
+  /** The project's dictionary.txt, for the spelling and formatting checks (read again after a change, or Undo). */
+  private async loadDictionary(again = false): Promise<void> {
+    const p = this.project;
+    if (!p) { setSiDictionary(null); return; }
+    if (!again && this.dictFor === p) return;
+    this.dictFor = p;
+    const words = await dictionaryWords(p.folder);
+    if (this.project !== p) return;
+    setSiDictionary({
+      words,
+      readOnly: p.readOnly,
+      add: async (word) => {
+        let added = false;
+        await this.act(async () => { added = await addDictionaryWord(p.folder, word); }, false);
+        return added;
+      },
+    });
   }
 
   /** Save what is being typed. */
@@ -757,7 +807,7 @@ export class SiMode {
     } finally {
       this.loadingFacts = false;
     }
-    if (this.project === p) this.refresh();
+    if (this.project === p) { this.refresh(); this.dashRedraw?.(); }
   }
 
   /** Read a project's structures not read yet, and what the checks need from them. */
@@ -1058,6 +1108,7 @@ export class SiMode {
     };
     const head = row(0, svg('si', 16), p.title, { kind: 'project' });
     head.classList.add('si-root');
+    row(1, svg('grid', 15), 'Dashboard', { kind: 'dashboard' }, (r) => { r.title = 'How far along the project is, and every compound’s data at a glance'; });
     const compoundRow = (c: SiCompound, depth: number): void => {
       const k = p.completion(c);
       const flagged = Object.keys(flagsOf(c)).length > 0;
@@ -1122,6 +1173,7 @@ export class SiMode {
     this.spectraShown(null);
     this.front = null;
     this.ribbon.querySelector<HTMLElement>('[data-si-tab="refs"]')!.hidden = this.pick.kind !== 'references';
+    this.dashRedraw = null;
     const p = this.project!;
     const pick = this.pick;
     const out = el('div', 'si-sheet');
@@ -1143,7 +1195,9 @@ export class SiMode {
       if (c) this.spectraCompoundPage(out, c, pick.section); else this.pick = { kind: 'project' };
     } else if (pick.kind === 'references') this.referencesPage(out);
     else if (pick.kind === 'warnings') this.warningsPage(out);
+    else if (pick.kind === 'dashboard') this.dashboardPage(out);
     if (this.pick.kind === 'project') this.projectPage(out);
+    this.dashShown();
     this.page.replaceChildren(out);
     if (keep && this.ribbon.querySelector<HTMLElement>(`[data-si-tab="${keep}"]`)?.hidden === false) this.showRibbonTab(keep);
     void this.readLabels();
@@ -1291,6 +1345,7 @@ export class SiMode {
     card.append(h);
     out.append(card);
     if (s.type === 'data') {
+      this.dashboardCard(out, s);
       this.idTableCard(out, s);
       this.fieldsCard(out, s);
       this.gpCard(out, s);
@@ -1490,6 +1545,49 @@ export class SiMode {
    * Structure to Name: each compound's checked IUPAC name in its Name field. One compound's name
    * replaces what is there (after asking); for a section only empty names are filled.
    */
+  /** Ribbon ▸ Name from PubChem: the compound's IUPAC name from PubChem (SI Assistant's "Look up name (PubChem)"). */
+  private async nameFromPubChem(c: SiCompound | null): Promise<void> {
+    const p = this.project!;
+    if (!c) { this.host.flash('Pick a compound first: its name is looked up by its structure.'); return; }
+    if (!p.hasStructure(c)) { this.host.flash('Add a structure first: the name is looked up by the structure.'); return; }
+    await this.readFacts(p);
+    const mol = this.mols.get(c.id);
+    const facts = mol ? this.facts.get(mol) ?? null : null;
+    if (!facts) { this.host.flash('This structure could not be read, so it can’t be looked up.', 6000); return; }
+    if (!(await SiMode.pubchemOk())) return;
+    this.host.flash('Looking the structure up in PubChem…', 10000);
+    const got = await lookupName(facts.inchikey ?? '', facts.pieces.length || 1);
+    if (got.status === 'error' || got.status === 'not_found') { await ask('Name from PubChem', [], { ok: 'OK', noCancel: true, note: got.message }); return; }
+    const v = valuesOf(c).name;
+    const now = v && typeof v === 'object' && !Array.isArray(v) ? String((v as Json).text ?? '') : '';
+    if (got.status === 'no_stereo') {
+      const go = await askChoice('Name from PubChem', `${got.message}\n\nPubChem’s name: ${got.name}`, [{ value: 'no', label: 'Cancel' }, { value: 'yes', label: now ? 'Replace the Name' : 'Use It', primary: true }], 'no');
+      if (go !== 'yes') return;
+    } else if (now && now !== got.name) {
+      const go = await askChoice('Name from PubChem', `Replace the name “${now}” with PubChem’s name “${got.name}”?`, [{ value: 'no', label: 'Keep Mine' }, { value: 'yes', label: 'Replace', primary: true }], 'no');
+      if (go !== 'yes') return;
+    }
+    await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: got.name, from_pubchem: { cid: got.cid, name: got.name, stereo: got.status === 'found' } }));
+    this.host.flash(got.message, 6000);
+  }
+
+  private static pubchemAsked = false;
+  /** The note before the first lookup of a session: only the InChIKey is sent (false: cancelled). */
+  private static async pubchemOk(): Promise<boolean> {
+    let skip = false;
+    try { skip = localStorage.getItem('si.pubchem.skipNote') === '1'; } catch { /* (no storage) */ }
+    if (skip || SiMode.pubchemAsked) return true;
+    const go = await askChoice('Name from PubChem', 'To look up the name, the structure’s InChIKey (a short code worked out from the structure) is sent to PubChem, a public database of the US National Institutes of Health. Nothing else is sent. PubChem only knows compounds that are already public: look up an unpublished compound only if you are happy for its InChIKey to be sent.', [
+      { value: 'cancel', label: 'Cancel' },
+      { value: 'always', label: 'Look Up, Don’t Ask Again' },
+      { value: 'go', label: 'Look Up', primary: true },
+    ], 'cancel');
+    if (go === 'cancel') return false;
+    SiMode.pubchemAsked = true;
+    if (go === 'always') try { localStorage.setItem('si.pubchem.skipNote', '1'); } catch { /* (no storage) */ }
+    return true;
+  }
+
   private async structureToName(list: SiCompound[]): Promise<void> {
     const p = this.project!;
     const todo = list.filter((c) => p.hasStructure(c));
@@ -2025,6 +2123,146 @@ export class SiMode {
 
   // ---------------------------------------------------------------- the Warnings page
 
+  // ---------------------------------------------------------------- dashboards
+
+  /** Draws the dashboard shown again in place (once the structures are read), without the rest of the page. */
+  private dashRedraw: (() => void) | null = null;
+
+  private dashFacts(): DashboardFacts {
+    const p = this.project!;
+    const sub = (t: string): string => t.replace(/\d/g, (d) => '₀₁₂₃₄₅₆₇₈₉'[Number(d)]);
+    return {
+      idOf: (c) => this.idOf(c),
+      warnings: (c) => this.activeWarnings(c),
+      label: this.label,
+      formula: (c) => {
+        if (!p.hasStructure(c)) return null;
+        const f = this.factsOf(c);
+        return f ? { formula: sub(f.info?.formula ?? ''), generic: f.generic } : { formula: '', generic: [] };
+      },
+      hrmsPpm: (c) => { try { return compoundHrms(p, c, this.factsOf(c))[0]?.ppm ?? null; } catch { return null; } },
+    };
+  }
+
+  /** What the Dashboard tab acts on: the project's dashboard, or the Data section shown. */
+  private dashTarget(): { scope: Scope; holder: Json; viewKey: string; save: () => Promise<void> } | null {
+    const p = this.project;
+    if (!p) return null;
+    const pick = this.pick;
+    if (pick.kind === 'dashboard') return { scope: projectScope(p), holder: p.settings, viewKey: 'project_dashboard', save: () => p.saveSettings() };
+    if (pick.kind === 'section') {
+      try {
+        const s = p.section(pick.id);
+        if (s.type === 'data') return { scope: sectionScope(s), holder: s.data, viewKey: 'dashboard', save: () => p.saveSection(s) };
+      } catch { /* gone */ }
+    }
+    return null;
+  }
+
+  private gridOptions(scope: Scope, showSection: boolean): GridOptions {
+    const p = this.project!;
+    return {
+      project: p, scope, showSection, rows: buildRows(p, scope, this.dashFacts()), colors: statusColors(p.settings),
+      picture: (c) => { const m = this.mols.get(c.id); return m ? this.host.pictureOf(m) : null; },
+      open: (c, key) => this.openAt(c, key),
+    };
+  }
+
+  private get waitingForFacts(): boolean {
+    const p = this.project!;
+    return this.loadingFacts || p.compounds.some((c) => !this.warnings.has(c.id));
+  }
+
+  /** A Data section's dashboard, at the top of its page. */
+  private dashboardCard(out: HTMLElement, s: SiSection): void {
+    const slot = el('div', 'si-dash-slot');
+    const draw = (): void => { slot.replaceChildren(sectionDashboard(this.gridOptions(sectionScope(s), false), this.waitingForFacts)); };
+    draw();
+    this.dashRedraw = draw;
+    out.append(slot);
+  }
+
+  /** The project's Dashboard page: its progress, then every compound. */
+  private dashboardPage(out: HTMLElement): void {
+    const p = this.project!;
+    const slot = el('div', 'si-dash-slot');
+    const draw = (): void => {
+      const o = this.gridOptions(projectScope(p), true);
+      const bySection: [SiSection, Row[]][] = p.dataSections.map((s) => [s, o.rows.filter((r) => r.compound.sectionId === s.id)]);
+      const grid = el('div', 'si-card si-dash-card');
+      const head = el('div', 'si-card-head');
+      head.append(el('h3', 'si-sub', 'Every compound'), el('span', 'muted si-dash-sum', summaryText(o.rows)));
+      grid.append(head, dashboardGrid(o));
+      if (this.waitingForFacts) grid.append(el('p', 'muted si-note', 'Still reading some structures…'));
+      slot.replaceChildren(projectSummaryCard({
+        summary: summarize(p, bySection),
+        openSection: (s) => this.go({ kind: 'section', id: s.id }),
+        openWarnings: () => this.go({ kind: 'warnings' }),
+      }), grid);
+    };
+    draw();
+    this.dashRedraw = draw;
+    out.append(slot);
+  }
+
+  /** The Dashboard tab shows on the Dashboard and on a Data section's page, with the view's choices. */
+  private dashShown(): void {
+    const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="dash"]')!;
+    const t = this.dashTarget();
+    tab.hidden = !t;
+    if (!t) { if (tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home'); return; }
+    this.ribbon.querySelector<HTMLSelectElement>('select[data-si-dash="filter"]')!.value = filterOf(t.scope);
+    this.ribbon.querySelector<HTMLElement>('[data-si-dash="split"]')!.setAttribute('aria-pressed', String(isSplit(t.scope)));
+    this.ribbon.querySelector<HTMLElement>('[data-si-dash="compact"]')!.setAttribute('aria-pressed', String(isCompact(t.scope)));
+  }
+
+  private async dashCommand(cmd: string, value = ''): Promise<void> {
+    const p = this.project;
+    const t = this.dashTarget();
+    if (!p || !t) return;
+    if (cmd === 'refresh') { this.forgetStructure(); this.warnings.clear(); this.shownKey = ''; this.refresh(); return; }
+    if (p.readOnly) { this.host.flash('This SI project is open read-only: the dashboard’s choices can’t be saved.'); this.dashShown(); return; }
+    const change = async (f: () => void): Promise<void> => {
+      await this.act(async () => { f(); await t.save(); }, false);
+      this.dashRedraw?.();
+      this.dashShown();
+    };
+    if (cmd === 'filter') await change(() => setView(t.holder, 'filter', value, t.viewKey));
+    else if (cmd === 'split') await change(() => setView(t.holder, 'split_nuclei', !isSplit(t.scope), t.viewKey));
+    else if (cmd === 'compact') await change(() => setView(t.holder, 'compact', !isCompact(t.scope), t.viewKey));
+    else if (cmd === 'columns') {
+      const all = availableColumns(t.scope);
+      const chosen = new Set(chosenColumns(t.scope));
+      const got = await ask('Columns', all.map((k) => ({ name: k, label: fieldLabel(t.scope, k), value: String(chosen.has(k)), type: 'checkbox' as const })), {
+        ok: 'Show Columns', note: 'The fields shown as columns, besides the structure, ID and name. A field added later shows unless it is unticked here.',
+      });
+      if (!got) return;
+      const keep = all.filter((k) => got[k] === 'true');
+      await change(() => { if (keep.length === all.length) { const v = t.holder[t.viewKey]; if (v && typeof v === 'object') delete (v as Json).columns; } else setView(t.holder, 'columns', keep, t.viewKey); });
+    } else if (cmd === 'colors') {
+      const body = statusColorsBody(statusColors(p.settings));
+      const got = await ask('Status Colors', [], { ok: 'Use Colors', note: 'The color of each kind of dashboard cell, for this project (Chem SI Assistant uses the same). Cells are tinted lightly so their text stays readable.', body: body.el });
+      if (!got) return;
+      const colors = body.read();
+      await this.act(async () => { storeStatusColors(p.settings, colors); await p.saveSettings(); }, false);
+      this.dashRedraw?.();
+    }
+  }
+
+  /** Open a compound's page at one of its fields ('' for the top). */
+  private openAt(c: SiCompound, key: string): void {
+    this.go({ kind: 'compound', id: c.id });
+    if (!key) return;
+    requestAnimationFrame(() => {
+      const row = this.page.querySelector<HTMLElement>(`.si-field[data-key="${CSS.escape(key)}"]`);
+      if (!row) return;
+      row.scrollIntoView({ block: 'center' });
+      row.querySelector<HTMLElement>('input, select, textarea, [contenteditable="true"], button')?.focus({ preventScroll: true });
+      row.classList.add('si-flash');
+      setTimeout(() => row.classList.remove('si-flash'), 1200);
+    });
+  }
+
   private warningsPage(out: HTMLElement): void {
     const p = this.project!;
     const card = el('div', 'si-card si-warn-list');
@@ -2100,6 +2338,22 @@ export class SiMode {
       wrap.append(cell);
     }
     body.append(wrap);
+    // a name filled in from PubChem says so, while it is unchanged
+    const nv = valuesOf(c)[def.key];
+    const from = def.key === 'name' && nv && typeof nv === 'object' && !Array.isArray(nv) ? (nv as Json).from_pubchem : null;
+    if (from && typeof from === 'object' && !Array.isArray(from) && (from as Json).name === (nv as Json).text) {
+      const f = from as Json;
+      const note = el('div', 'muted si-note si-pubchem-note', 'Name from PubChem');
+      const cid = Number(f.cid);
+      if (cid > 0) {
+        const a = el('a', '', `CID ${cid}`);
+        a.href = PUBCHEM_PAGE + cid;
+        a.addEventListener('click', (e) => { e.preventDefault(); void import('./links-ui').then(({ followLink }) => followLink(a.href)); });
+        note.append(' ', a);
+      }
+      note.append(f.stereo === false ? ': found without stereochemistry, so check the stereodescriptors. It can be edited.' : '. It can be edited.');
+      body.append(note);
+    }
   }
 
   private usedValues(def: FieldDef, part: Part): string[] {
@@ -2560,6 +2814,7 @@ export class SiMode {
     this.forgetStructure();
     this.shownKey = '';
     this.refresh();
+    void this.loadDictionary(true);
     this.host.changed();
     this.host.flash(`${redo ? 'Redid' : 'Undid'} ${label}.`, 2500);
     // (keys go on to the tree, for the next Ctrl+Z)
@@ -2723,6 +2978,7 @@ export class SiMode {
       }
       case 'cite-library': await this.citeFromLibrary(this.pick.kind === 'references' ? null : c); return;
       case 'ref-doi': case 'ref-new': case 'ref-import': case 'ref-edit': case 'ref-delete': await this.references(cmd); return;
+      case 'name-pubchem': await this.nameFromPubChem(c); return;
       case 'structure-to-name': await this.structureToName(c ? [c] : data ? compoundsOf(data).filter((x) => !compoundName(x)) : []); return;
       case 'add-field': {
         // the compound picked gets the field; a Data section picked gets it on its list of fields
@@ -2798,6 +3054,7 @@ export class SiMode {
         this.host.changed();
       }),
       chooseDrawingStyle: (current, note) => this.host.chooseDrawingStyle(current, note),
+      dictionaryChanged: () => void this.loadDictionary(true),
     }, page), (e: unknown) => this.host.flash(`Could not open the settings: ${String(e)}`));
   }
 

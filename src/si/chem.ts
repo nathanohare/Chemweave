@@ -430,6 +430,8 @@ export interface MolFacts {
   /** ¹H hydrogens, and those on N, O or S (exchangeable). */
   hTotal: number;
   hExch: number;
+  /** The standard InChIKey of the whole structure ('' when one can't be made), for the PubChem name lookup. */
+  inchikey?: string;
 }
 
 /** Common counter-ions (left out of a salt's automatic HRMS M), and acids drawn with them. */
@@ -559,7 +561,12 @@ export function molFacts(RDKit: any, molblock: string): MolFacts | null {
       frags.molList.delete?.();
     }
     const pieces = [...seen.values()].map((x, i) => ({ ...x, i })).sort((a, b) => b.heavy - a.heavy || a.i - b.i).map((x) => x.piece);
-    return { info, generic: [], pieces, uniqueCarbons, hTotal, hExch };
+    let inchikey = '';
+    try {
+      const inchi = mol.get_inchi();
+      if (inchi) inchikey = RDKit.get_inchikey_for_inchi(inchi);
+    } catch { inchikey = ''; }
+    return { info, generic: [], pieces, uniqueCarbons, hTotal, hExch, inchikey };
   } finally {
     mol.delete();
   }

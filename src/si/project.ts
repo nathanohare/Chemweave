@@ -992,6 +992,8 @@ export class SiProject {
   /** Set a field's stored value (a parts field's {part: text}, the NMR reports…) and save. */
   async setValue(c: SiCompound, key: string, value: unknown): Promise<void> {
     this.checkWritable();
+    // (where a name came from PubChem is kept only while it is the name, as SI Assistant keeps it)
+    if (key === 'name' && isObj(value) && isObj(value.from_pubchem) && value.from_pubchem.name !== value.text) delete value.from_pubchem;
     valuesOf(c)[key] = value;
     await this.saveCompound(c);
   }

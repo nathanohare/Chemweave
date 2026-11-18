@@ -4957,6 +4957,7 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-scheme-arrow svg { display: block; width: 100%; height: 10px; }
 .si-scheme-empty { flex: 0 0 auto; padding: 18px 8px; border: 1px dashed var(--line); border-radius: var(--r-control); background: transparent; color: var(--muted); cursor: pointer; }
 ::highlight(si-misspelled) { text-decoration: underline wavy #d32f2f; text-decoration-skip-ink: none; }
+::highlight(si-format) { text-decoration: underline wavy #2f6fdf; text-decoration-skip-ink: none; }
 .si-inline-struct { display: inline-block; vertical-align: middle; margin: 0 2px; background: #fff; border-radius: 2px; }
 .si-inline-struct svg { display: block; }
 .si-xray-pic { margin: 4px 0; }
@@ -5051,3 +5052,58 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-attach-paper img { display: block; width: 100%; height: auto; }
 .si-attach-paper img.natural { width: auto; max-width: 100%; margin: 0 auto; }
 .si-attach-row input { padding: 1px 4px; font-size: var(--fs-sm); }
+
+/* SI Project Settings ▸ NMR Impurities: the table behind the impurity-peak check */
+.si-imp { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.si-imp-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.si-imp-bar label { display: inline-flex; align-items: center; gap: 4px; margin-right: auto; }
+.si-imp-wrap { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); }
+.si-imp-table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm, 0.85em); }
+.si-imp-table th { position: sticky; top: 0; background: var(--panel); text-align: left; font-weight: 600; padding: 3px 4px; border-bottom: 1px solid var(--line); z-index: 1; }
+.si-imp-table td { padding: 1px 3px; border-bottom: 1px solid var(--line); }
+.si-imp-table input:not([type=checkbox]), .si-imp-table select { width: 100%; min-width: 0; box-sizing: border-box; padding: 1px 4px; }
+.si-imp-table .si-imp-use { width: 2.4em; text-align: center; }
+.si-imp-table .si-imp-shift { width: 5.5em; }
+.si-imp-table .si-imp-what { width: 40%; }
+.si-imp-del { padding: 0 6px; min-width: 0; }
+
+/* SI dashboards: a grid of compounds by field, and the project's progress */
+.si-dash-slot { display: flex; flex-direction: column; gap: 8px; }
+.si-dash-card .si-card-head { margin-bottom: 6px; }
+.si-dash-card .si-card-head .si-sub { margin: 0; }
+.si-dash-sum { font-size: var(--fs-xs); }
+.si-dash-wrap { overflow: auto; max-height: 70vh; border: 1px solid var(--line); }
+.si-dash { border-collapse: collapse; font-size: var(--fs-xs); width: max-content; min-width: 100%; }
+.si-dash th { position: sticky; top: 0; z-index: 1; background: var(--panel); text-align: left; font-weight: 600; padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.si-dash td { padding: 2px 6px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); vertical-align: middle; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.si-dash td[data-key] { cursor: pointer; }
+.si-dash td[data-key]:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
+.si-dash td:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.si-dash .si-dc-ic { margin-left: 2px; }
+.si-dash .si-dc-t + .si-dc-ic { margin-left: 4px; }
+.si-dash .si-dc-pic { width: 64px; height: 44px; padding: 1px 2px; text-align: center; }
+.si-dash .si-dc-pic svg { width: 60px; height: 42px; display: block; margin: auto; }
+.si-dash .si-dc-name { max-width: 220px; }
+.si-dash .si-dc-sec { color: var(--muted); }
+.si-dash .si-dc-done { text-align: right; font-variant-numeric: tabular-nums; }
+.si-dash.compact td { padding: 1px 4px; text-align: center; }
+.si-dash.compact td.si-dc-name, .si-dash.compact td.si-dc-sec { text-align: left; }
+.si-dash tbody tr:hover td { box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--text) 4%, transparent); }
+.si-dash-top { display: flex; align-items: center; gap: 10px; font-size: var(--fs-sm); margin: 4px 0 8px; }
+.si-dash-top .si-bar { width: 160px; }
+.si-bar { display: inline-block; width: 100px; height: 6px; background: var(--line); vertical-align: middle; }
+.si-bar-fill { display: block; height: 100%; background: var(--ok); }
+.si-dash-secs { border-collapse: collapse; font-size: var(--fs-sm); margin-bottom: 8px; }
+.si-dash-secs th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 14px 2px 0; }
+.si-dash-secs td { padding: 2px 14px 2px 0; }
+.si-dash-secs td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.si-dash-secs .si-link { margin: 0; padding: 0; font-size: var(--fs-sm); }
+.si-dash-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.si-dash-list ul { list-style: none; margin: 0 0 4px; padding: 0; font-size: var(--fs-sm); }
+.si-dash-list li { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; border-bottom: 1px solid var(--line); }
+.si-dash-list .si-link { margin: 0; padding: 0; }
+.si-dash-colors { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); }
+.si-dash-color { display: grid; grid-template-columns: 26px 230px 44px auto; align-items: center; gap: 8px; }
+.si-dash-swatch { display: inline-flex; justify-content: center; align-items: center; height: 20px; border: 1px solid var(--line); }
+.si-dash-colors .si-link { align-self: flex-start; margin: 4px 0 0; padding: 0; }
+.si-field.si-flash { outline: 2px solid var(--accent); outline-offset: 1px; transition: outline-color 0.6s; }

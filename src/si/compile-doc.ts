@@ -9,6 +9,7 @@
 // Each compound's title paragraph carries a bookmark (si_<compound id>), so a manuscript can
 // point at the compound's block.
 
+import { dictionaryWords } from './dictionary';
 import { DocBuilder, headingId } from '../io/doc-build';
 import { OBJECT_CHAR, paraFromStyle, styleOf, type DocObject, type DocText, type NamedStyle } from '../document/document';
 import { citeSuper, formatOf } from '../document/references';
@@ -1117,9 +1118,8 @@ function toReference(r: Json): Reference {
 }
 
 /** The project's own words to print as written (dictionary.txt), lower case. */
-async function dictionaryWords(p: SiProject): Promise<Set<string>> {
-  const t = (await p.folder.readText('dictionary.txt')) ?? '';
-  return new Set(t.split(/\r?\n/).map((w) => w.trim().toLowerCase()).filter((w) => w && !w.startsWith('#')));
+async function leaveWords(p: SiProject): Promise<Set<string>> {
+  return new Set((await dictionaryWords(p.folder)).map((w) => w.toLowerCase()));
 }
 
 /**
@@ -1135,7 +1135,7 @@ export async function objectLabels(p: SiProject): Promise<Map<string, string>> {
 
 /** Compile an SI project into a document. */
 export async function compileSi(p: SiProject, host: CompileHost): Promise<CompiledSi> {
-  const c = new Compiler(p, host, await dictionaryWords(p));
+  const c = new Compiler(p, host, await leaveWords(p));
   const doc = await c.build();
   return { doc, notes: [...new Set(c.notes)], targets: c.targets };
 }

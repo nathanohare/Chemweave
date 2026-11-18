@@ -48,7 +48,7 @@ export interface AskActions {
 }
 
 /** Show the fields; resolves with what was entered, or null if the window was cancelled. */
-export function ask(title: string, fields: Field[], opts: { ok?: string; note?: string; /** Only an OK button, for a message. */ noCancel?: boolean; /** A short list under the note (two columns: what, and its value). */ lines?: [string, string][]; /** A list of points under the note (each a line of its own, left aligned). */ points?: string[]; preview?: AskPreview; /** Called with the values as they are typed or picked (a live preview). */ onInput?: (values: Record<string, string>) => void; /** A row of buttons under the fields that act at once (Export Settings…), with a name, its help behind an "i", and a line they can write to. */ actions?: AskActions } = {}): Promise<Record<string, string> | null> {
+export function ask(title: string, fields: Field[], opts: { ok?: string; note?: string; /** Only an OK button, for a message. */ noCancel?: boolean; /** A short list under the note (two columns: what, and its value). */ lines?: [string, string][]; /** A list of points under the note (each a line of its own, left aligned). */ points?: string[]; preview?: AskPreview; /** Called with the values as they are typed or picked (a live preview). */ onInput?: (values: Record<string, string>) => void; /** A row of buttons under the fields that act at once (Export Settings…), with a name, its help behind an "i", and a line they can write to. */ actions?: AskActions; /** Something of the caller's own under the fields (a table to edit), read by the caller when the window is saved. */ body?: HTMLElement } = {}): Promise<Record<string, string> | null> {
   return new Promise((resolve) => {
     const d = document.createElement('dialog');
     d.className = 'ask';
@@ -194,6 +194,7 @@ export function ask(title: string, fields: Field[], opts: { ok?: string; note?: 
       if (opts.actions.help) addInfo(name, opts.actions.help);
       form.append(row);
     }
+    if (opts.body) form.append(opts.body);
     const buttons = document.createElement('p');
     buttons.className = 'ask-buttons';
     const cancel = document.createElement('button');

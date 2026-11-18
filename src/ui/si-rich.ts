@@ -5,7 +5,8 @@
 // Ctrl+B, Ctrl+I and Ctrl+U as in Word; Ctrl+= subscript, Ctrl+Shift+= superscript; typing
 // "@" offers the project's compounds to mention.
 
-import { checkSpelling, spellingMenu } from './si-spell';
+import { checkSpelling, formatTyped, spellingMenu } from './si-spell';
+import { WORD_ENDS } from '../text/chemtext';
 import { MENTION, STRUCT, parseMarkup, writeMarkup, type Paragraph, type Run, type VAlign } from '../si/markup';
 
 export interface SiRichHost {
@@ -126,7 +127,12 @@ export class SiRichBox {
     this.empty();
     // (once the box is on the page)
     setTimeout(() => checkSpelling(el), 0);
-    el.addEventListener('input', () => { this.empty(); this.later(); this.offerMentions(); this.spellLater(); });
+    el.addEventListener('input', (e) => {
+      // (a word just finished: its chemistry formatted, H2SO4 → H₂SO₄)
+      const ie = e as InputEvent;
+      if ((ie.inputType === 'insertText' && ie.data && WORD_ENDS.includes(ie.data))) formatTyped(el);
+      this.empty(); this.later(); this.offerMentions(); this.spellLater();
+    });
     el.addEventListener('blur', () => { this.commit(); checkSpelling(el); setTimeout(() => this.closeMenu(), 150); });
     el.addEventListener('contextmenu', (e) => { spellingMenu(el, e); });
     el.addEventListener('keydown', (e) => this.key(e));

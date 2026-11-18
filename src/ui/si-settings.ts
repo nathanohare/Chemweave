@@ -13,12 +13,17 @@ import { dateText, NUMBER_STYLES, pageSettings, storePageSettings } from '../si/
 import { siDrawingStyle, storeSiDrawingStyle } from '../si/drawing-style';
 import { projectLayout, setProjectLayout } from '../si/scheme-edit';
 import { readSchemeLayout, schemeLayoutFields } from './si-scheme';
+import { askChoice } from './ask';
+import { DEFAULT_TOLERANCES, SOLVENT_NAMES, defaultImpurityTable, impurityRowFrom, impurityTolerances, projectImpurityTable, storeImpurityTable, storeImpurityTolerances, type ImpurityRow } from '../si/nmr';
+import { DICTIONARY_FILE } from '../si/dictionary';
 
 export interface SiSettingsHost {
   /** Change the project's settings and save them (says so when it can't). */
   save(change: () => void | Promise<void>): Promise<void>;
   /** Choose a drawing style (the Drawing Style window), starting from `current`; null when cancelled. */
   chooseDrawingStyle(current: DocStyle, note: string): Promise<DocStyle | null>;
+  /** The project's dictionary.txt was changed (the text boxes are checked again). */
+  dictionaryChanged(): void;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : v === undefined || v === null ? '' : String(v));
@@ -35,6 +40,8 @@ export function siSettingsWindow(p: SiProject, host: SiSettingsHost, page?: stri
     { id: 'labels', title: 'Labels', words: 'figure table scheme label word prefix numbering fig.', open: () => labels(p, host) },
     { id: 'structures', title: 'Structures', words: 'drawing style bond length line width font labels acs 1996 arrows', open: () => structures(p, host) },
     { id: 'schemes', title: 'Schemes', words: 'scheme layout conditions arrow yields ids gap fit wrap shrink', open: () => schemes(p, host) },
+    { id: 'impurities', title: 'NMR Impurities', words: 'nmr impurity impurities solvent residual peaks shifts singlet tolerance fulmer water grease check', open: () => impurities(p, host) },
+    { id: 'dictionary', title: 'Dictionary', words: 'dictionary spelling words leave as written formula formatting check dictionary.txt', open: () => dictionary(p, host) },
   ];
   new SettingsWindow(pages, null, { title: p.readOnly ? 'Project Settings (read-only)' : 'Project Settings', noDefault: true }).open(page);
 }
@@ -197,4 +204,136 @@ async function schemes(p: SiProject, host: SiSettingsHost): Promise<void> {
   const got = await ask('Schemes', schemeLayoutFields(now), { ok: 'Save', note: 'How every scheme page is laid out unless its own Layout (Scheme ▸ Layout) says otherwise.' });
   if (!got || p.readOnly) return;
   await host.save(() => setProjectLayout(p, { ...now, ...readSchemeLayout(got) }));
+}
+
+// ---------------------------------------------------------------- NMR impurities
+
+const NUCLEUS_LABEL: Record<string, string> = { '1H': '¹H', '13C': '¹³C' };
+
+/** The solvent and impurity shifts behind the impurity-peak check, as SI Assistant's Project settings ▸ NMR impurities edits them. */
+async function impurities(p: SiProject, host: SiSettingsHost): Promise<void> {
+  const s = p.settings;
+  const [tolH, tolC] = impurityTolerances(s);
+  const body = document.createElement('div');
+  body.className = 'si-imp';
+  const bar = document.createElement('div');
+  bar.className = 'si-imp-bar';
+  const show = document.createElement('select');
+  show.setAttribute('aria-label', 'Show the rows of');
+  const showLabel = document.createElement('label');
+  showLabel.append('Show ', show);
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.textContent = 'Add Row';
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.textContent = 'Reset to Built-in Table';
+  bar.append(showLabel, add, reset);
+  const wrap = document.createElement('div');
+  wrap.className = 'si-imp-wrap';
+  const table = document.createElement('table');
+  table.className = 'si-imp-table';
+  const head = table.createTHead().insertRow();
+  for (const h of ['Use', 'Solvent', 'Nucleus', 'δ (ppm)', 'What it is', '']) head.appendChild(document.createElement('th')).textContent = h;
+  const tbody = table.createTBody();
+  wrap.append(table);
+  const solvents = document.createElement('datalist');
+  solvents.id = `si-imp-solvents-${Math.random().toString(36).slice(2, 8)}`;
+  for (const name of Object.keys(SOLVENT_NAMES)) solvents.append(new Option(name));
+  const note = document.createElement('p');
+  note.className = 'muted small';
+  note.textContent = 'Rows without a number in δ are left out. Solvents are recognized however the NMR report writes them (CD3OD, MeOD or methanol-d4; DMSO-d6 or (CD3)2SO; CDCl3 or chloroform-d).';
+  body.append(bar, wrap, solvents, note);
+
+  const row = (r: Partial<ImpurityRow>): void => {
+    const tr = tbody.insertRow();
+    const on = document.createElement('input');
+    on.type = 'checkbox';
+    on.checked = r.on !== false;
+    on.setAttribute('aria-label', 'Use this row');
+    const solvent = document.createElement('input');
+    solvent.value = String(r.solvent ?? '');
+    solvent.setAttribute('list', solvents.id);
+    solvent.setAttribute('aria-label', 'Solvent');
+    const nucleus = document.createElement('select');
+    for (const n of ['1H', '13C']) nucleus.add(new Option(NUCLEUS_LABEL[n], n, false, n === (r.nucleus ?? '1H')));
+    if (r.nucleus && !NUCLEUS_LABEL[r.nucleus]) nucleus.add(new Option(r.nucleus, r.nucleus, false, true));
+    nucleus.setAttribute('aria-label', 'Nucleus');
+    const shift = document.createElement('input');
+    shift.value = r.shift === undefined || r.shift === '' ? '' : String(r.shift);
+    shift.inputMode = 'decimal';
+    shift.className = 'si-imp-shift';
+    shift.setAttribute('aria-label', 'Shift in ppm');
+    const what = document.createElement('input');
+    what.value = String(r.what ?? '');
+    what.setAttribute('aria-label', 'What it is');
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'si-imp-del';
+    del.textContent = '×';
+    del.title = 'Remove this row';
+    del.addEventListener('click', () => { tr.remove(); choices(); });
+    for (const [el, cell] of [[on, 'use'], [solvent, ''], [nucleus, ''], [shift, ''], [what, 'what'], [del, '']] as const) {
+      const td = tr.insertCell();
+      if (cell) td.className = `si-imp-${cell}`;
+      td.append(el);
+    }
+    solvent.addEventListener('change', choices);
+  };
+  const rows = (): HTMLTableRowElement[] => [...tbody.rows];
+  const cells = (tr: HTMLTableRowElement): [boolean, string, string, string, string] => {
+    const [on, solvent, nucleus, shift, what] = [...tr.cells].map((c) => c.firstElementChild as HTMLInputElement);
+    return [on.checked, solvent.value, nucleus.value, shift.value, what.value];
+  };
+  const filter = (): void => {
+    const want = show.value;
+    for (const tr of rows()) { const sv = cells(tr)[1].trim(); tr.hidden = !!want && !!sv && sv !== want; }
+  };
+  function choices(): void {
+    const now = show.value;
+    const names = [...new Set(rows().map((tr) => cells(tr)[1].trim()).filter(Boolean))].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    show.replaceChildren(new Option('All solvents', ''), ...names.map((n) => new Option(n, n)));
+    show.value = names.includes(now) ? now : '';
+    filter();
+  }
+  const load = (list: ImpurityRow[]): void => { tbody.replaceChildren(); for (const r of list) row(r); choices(); };
+  show.addEventListener('change', filter);
+  add.addEventListener('click', () => { row({ solvent: show.value, nucleus: '1H', shift: '', what: '', on: true }); const last = rows().at(-1); last?.scrollIntoView({ block: 'nearest' }); (last?.cells[1].firstElementChild as HTMLElement | null)?.focus(); });
+  reset.addEventListener('click', () => void askChoice('Reset to Built-in Table', 'Replace this table with the built-in one? Your changes to it are lost (when you save).', [{ value: 'keep', label: 'Cancel' }, { value: 'reset', label: 'Reset', primary: true }], 'keep').then((go) => {
+    if (go !== 'reset') return;
+    load(defaultImpurityTable());
+    for (const [name, v] of [['tolH', DEFAULT_TOLERANCES[0]], ['tolC', DEFAULT_TOLERANCES[1]]] as const) {
+      const el = body.closest('form')?.querySelector<HTMLInputElement>(`[data-field="${name}"] input`);
+      if (el) el.value = String(v);
+    }
+  }));
+  load(projectImpurityTable(s));
+  if (p.readOnly) for (const el of body.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input, button, select')) if (el !== show) el.disabled = true;
+
+  const got = await ask('NMR Impurities', [
+    { name: 'tolH', label: 'Match ¹H within', value: tolH.toFixed(3), unit: 'ppm', type: 'number', min: 0, max: 1, help: `Default ${DEFAULT_TOLERANCES[0].toFixed(3)} ppm.` },
+    { name: 'tolC', label: 'Match ¹³C within', value: tolC.toFixed(3), unit: 'ppm', type: 'number', min: 0, max: 1, help: `Default ${DEFAULT_TOLERANCES[1].toFixed(3)} ppm.` },
+  ], { ok: 'Save', body, note: 'A ¹H peak reported as a singlet, or any ¹³C peak, at one of these shifts (in the same solvent) gets a “check it isn’t a solvent or impurity peak” warning. The built-in values are from Fulmer et al., Organometallics 2010, 29, 2176. Untick a row to stop checking it; edit, add or remove rows. Changes apply to this project only, and SI Assistant uses them too.' });
+  if (!got || p.readOnly) return;
+  const table2 = rows().map((tr) => impurityRowFrom(...cells(tr))).filter((r): r is ImpurityRow => !!r);
+  await host.save(() => {
+    storeImpurityTable(s, table2);
+    const h = Number(got.tolH), c = Number(got.tolC);
+    storeImpurityTolerances(s, Number.isFinite(h) && h >= 0 ? h : tolH, Number.isFinite(c) && c >= 0 ? c : tolC);
+  });
+}
+
+// ---------------------------------------------------------------- dictionary
+
+/** The project's dictionary.txt: words spelled right in its text, and printed as written (not formatted as chemistry). */
+async function dictionary(p: SiProject, host: SiSettingsHost): Promise<void> {
+  const text = (await p.folder.readText(DICTIONARY_FILE).catch(() => null)) ?? '';
+  const got = await ask('Dictionary', [
+    { name: 'words', label: 'Words, one per line', value: text, type: 'textarea', placeholder: 'e.g. CDK2' },
+  ], { ok: 'Save', note: `The project's own words (${DICTIONARY_FILE} in the project folder, shared with co-authors and Chem SI Assistant). They are never underlined, and are printed as written: “CDK2” is not subscripted. Lines starting with # are comments. Right-click an underlined word ▸ Add to This Project’s Dictionary adds one.` });
+  if (!got || p.readOnly) return;
+  const next = got.words.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+  if (next === text.replace(/\r\n?/g, '\n').replace(/\n+$/, '')) return;
+  await host.save(async () => { await p.folder.writeText(DICTIONARY_FILE, next ? next + '\n' : ''); });
+  host.dictionaryChanged();
 }

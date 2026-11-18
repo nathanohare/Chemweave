@@ -14,6 +14,7 @@
 // reported singlet at exactly one of these shifts is suspicious) and only distinctive ¹³C peaks.
 
 // ---------------------------------------------------------------- solvents
+import { markFloat } from './pyjson';
 
 /** Each solvent's usual name, with the ways a report may write it (compared after `plainSolvent`). */
 export const SOLVENT_NAMES: Record<string, string[]> = {
@@ -248,4 +249,41 @@ export function impurityMatch(solvent: string, nucleus: string, shift: number, s
     if (Math.abs(v - shift) <= tol + 1e-9) hits.push(String(row.what ?? '') || 'a listed impurity');
   }
   return [...new Set(hits)].join(' / ');
+}
+
+// ---------------------------------------------------------------- editing the table (Project Settings ▸ NMR Impurities)
+
+export const DEFAULT_TOLERANCES: readonly [number, number] = [PROTON_TOLERANCE, CARBON_TOLERANCE];
+const NUCLEUS_NAMES: Record<string, string> = { '1h': '1H', '¹h': '1H', h: '1H', '13c': '13C', '¹³c': '13C', c: '13C' };
+
+/** A row as typed in the table: the solvent by its usual name, the nucleus as 1H or 13C, the shift a number (null when it isn't one: the row is left out). */
+export function impurityRowFrom(on: boolean, solvent: string, nucleus: string, shift: string, what: string): ImpurityRow | null {
+  const v = Number(shift.trim().replace('−', '-'));
+  if (!shift.trim() || !Number.isFinite(v)) return null;
+  const n = nucleus.trim();
+  return { solvent: canonicalSolvent(solvent) || solvent.trim(), nucleus: NUCLEUS_NAMES[n.toLowerCase().replace(/\s/g, '')] ?? n, shift: v, what, on };
+}
+
+const sameRow = (a: ImpurityRow, b: ImpurityRow): boolean =>
+  a.solvent === b.solvent && a.nucleus === b.nucleus && Number(a.shift) === Number(b.shift) && a.what === b.what && !!a.on === !!b.on;
+
+/** Keep the table in the project's settings, as SI Assistant does: an unedited table is not stored, so the project follows the built-in one. */
+export function storeImpurityTable(settings: Record<string, unknown>, rows: ImpurityRow[]): void {
+  const def = defaultImpurityTable();
+  if (rows.length === def.length && rows.every((r, i) => sameRow(r, def[i]))) { delete settings.impurity_table; return; }
+  settings.impurity_table = rows.map((r) => {
+    const out = { solvent: r.solvent, nucleus: r.nucleus, shift: Number(r.shift), what: r.what, on: !!r.on };
+    markFloat(out, 'shift');
+    return out;
+  });
+}
+
+/** Keep the match tolerances: a value equal to the default is not stored (the project then follows the default); the older keys go. */
+export function storeImpurityTolerances(settings: Record<string, unknown>, proton: number, carbon: number): void {
+  const keys = ['impurity_tolerance_1H_ppm', 'impurity_tolerance_13C_ppm'], old = ['impurity_tolerance_1H', 'impurity_tolerance_13C'];
+  [proton, carbon].forEach((v, i) => {
+    delete settings[old[i]];
+    if (Math.abs(v - DEFAULT_TOLERANCES[i]) < 1e-9) delete settings[keys[i]];
+    else { settings[keys[i]] = v; markFloat(settings, keys[i]); }
+  });
 }
