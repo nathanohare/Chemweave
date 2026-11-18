@@ -7,7 +7,7 @@ import { DEFAULT_CURSOR_AIDS, drawCursorAids, hintLines, modifierHints, readoutT
 import { Sketcher } from './sketch';
 import { installPenAndTouch } from './touch';
 import { labelAtoms, labelLookOf, setLabelFont, setLabelSize, toggleLabelBold } from './label-font';
-import { Doc, Atom, Bond, BondDisplay, PARTIAL, ELEMENT_WITH_H, Arrow, Shape, Caption, isMetalAtom, isWedge, applyBase, captionBase, stripBase, type StepRoles, type Justify, type TextRun, type HighlightStyle, type Entity } from '../model';
+import { Doc, Atom, Bond, BondDisplay, PARTIAL, ELEMENT_WITH_H, Arrow, Shape, Caption, isMetalAtom, isWedge, applyBase, captionBase, stripBase, type StepRoles, type ArrowKind, type Justify, type TextRun, type HighlightStyle, type Entity } from '../model';
 import { doubleBondGap, scaleOwnWidths } from '../style';
 import { CaptionEditor } from '../ui/caption-editor';
 import { followLink, linkTip } from '../ui/links-ui';
@@ -51,7 +51,7 @@ import { keymap, chordOf, parseAction, KeyContext } from './keymap';
 import { sproutGroup, fuseChair, SPROUT_KINDS, SproutKind, nextNumber } from '../chem/sprouts';
 import { joinAtoms, joinBonds, mergeAtom } from '../chem/join';
 import { extractDrawing, insertDrawing } from '../io/clipboard';
-import { isReactionArrow, itemFinder, rolesOf, ROLES, schemeItems, type Item, type Role } from '../chem/reaction';
+import { arrowKind, drawnKind, isReactionArrow, isSequenceArrow, itemFinder, neighborsOf, rolesOf, ROLES, schemeItems, type Item, type Role } from '../chem/reaction';
 import { applySchemePlan, planCleanUp } from '../chem/scheme-layout';
 import { adoptSideCaption, ARROW_SIDES, arrowTexts, helperBox, lineUpText, setSideText, sideAlign, sideSlot, splitStepRuns, takesHelpers, textFont, textJustify, textSize, type ArrowSide } from '../chem/arrow-text';
 import { prefsOf, schemePrefs, spacing } from '../chem/scheme-layout';
@@ -5199,7 +5199,7 @@ export class Editor {
     const picked = this.hasSelection();
     if (!this.doc.arrows.size) return this.autoArrange();
     const steps = picked ? this.selectedSteps() : undefined;
-    const anySteps = [...this.doc.arrows.values()].some((r) => { const q = !r.sweep && this.reactionRoles(r.id); return !!q && (q.reactants.length > 0 || q.products.length > 0); });
+    const anySteps = [...this.doc.arrows.values()].some((r) => { const q = !r.sweep && (this.reactionRoles(r.id) ?? this.sequenceRoles(r.id)); return !!q && (q.reactants.length > 0 || q.products.length > 0); });
     if (picked ? steps?.length : anySteps) {
       const m = this.fullMeasure();
       const plan = planCleanUp(this.doc, m, steps);
@@ -5244,7 +5244,7 @@ export class Editor {
   /** Outline the parts of a reaction arrow's step, each in its role's colour with a small name. */
   private drawRoles(ctx: CanvasRenderingContext2D, arrowId: number, px: number): void {
     const roles = this.reactionRoles(arrowId);
-    if (!roles) return;
+    if (!roles) { this.drawNeighbors(ctx, arrowId, px); return; }
     const find = itemFinder(this.schemeItems());
     const pad = 3 * px;
     ctx.save();
@@ -5263,6 +5263,28 @@ export class Editor {
         ctx.fillStyle = colour;
         ctx.fillText(k === 'below' && it.caption !== undefined && this.doc.captions.get(it.caption)?.results ? 'results' : name, b.x1 - pad, b.y1 - pad - px);
       }
+    }
+    ctx.restore();
+  }
+
+  /** A plain arrow's (resonance, retrosynthetic) structures before and after it: softly tinted, with no role names. */
+  private drawNeighbors(ctx: CanvasRenderingContext2D, arrowId: number, px: number): void {
+    const roles = this.sequenceRoles(arrowId);
+    if (!roles) return;
+    const find = itemFinder(this.schemeItems());
+    const pad = 3 * px;
+    ctx.save();
+    // (in the selection's color, the mode's accent, lightly)
+    ctx.fillStyle = (this.dark ? MARKS.dark : MARKS.light).selFill;
+    ctx.strokeStyle = (this.dark ? MARKS.dark : MARKS.light).selLine;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = px;
+    ctx.setLineDash([3 * px, 3 * px]);
+    for (const ref of [...roles.reactants, ...roles.products]) {
+      const b = find(ref)?.box;
+      if (!b) continue;
+      ctx.fillRect(b.x1 - pad, b.y1 - pad, b.x2 - b.x1 + 2 * pad, b.y2 - b.y1 + 2 * pad);
+      ctx.strokeRect(b.x1 - pad, b.y1 - pad, b.x2 - b.x1 + 2 * pad, b.y2 - b.y1 + 2 * pad);
     }
     ctx.restore();
   }
@@ -5300,10 +5322,21 @@ export class Editor {
     for (const id of s.shapes) { const it = find('s' + id); if (it) picked.add(it); }
     const out: number[] = [];
     for (const r of this.doc.arrows.values()) {
-      const roles = this.reactionRoles(r.id);
+      const roles = this.reactionRoles(r.id) ?? this.sequenceRoles(r.id);
       if (roles && ROLES.some((k) => roles[k].some((ref) => { const it = find(ref); return it && picked.has(it); }))) out.push(r.id);
     }
     return out.length ? out : undefined;
+  }
+
+  /**
+   * A plain straight arrow's (resonance, retrosynthetic) structures before and after it, as roles
+   * (starting materials before, products after), for lining them up; null for any other arrow.
+   */
+  sequenceRoles(arrowId: number): StepRoles | null {
+    const r = this.doc.arrows.get(arrowId);
+    if (!r || !isSequenceArrow(r) || energyFrameOf(this.doc, 'arrow', arrowId) !== null) return null;
+    const n = neighborsOf(r, this.schemeItems(), this.doc.style.bondLength);
+    return { reactants: n.before, products: n.after, above: [], below: [] };
   }
 
   /**
@@ -5313,7 +5346,7 @@ export class Editor {
   cleanUpReaction(): false | 'matched' | 'fitted' {
     const m = this.fullMeasure();
     const steps = this.selectedSteps();
-    const key = steps ? [...steps].sort((a, b) => a - b).join(',') : 'all';
+    const key = this.stepsKey(steps);
     // pressed again on the same steps: each arrow shrinks to fit its own text (the structures
     // move up to keep the spacing even); again, and they match once more
     const c = this.reactionCycle;
@@ -5332,6 +5365,37 @@ export class Editor {
 
   /** The last Clean Up Reaction: which steps, and whether it fitted each arrow to its own text. */
   private reactionCycle: { version: number; key: string; fitted: boolean } | null = null;
+  private stepsKey(steps: number[] | undefined): string { return steps ? [...steps].sort((a, b) => a - b).join(',') : 'all'; }
+
+  /**
+   * Is a scheme what Smart Clean is for: a reaction step or a resonance arrow among what is
+   * selected (an arrow, or a structure in its step), or anywhere in the drawing with nothing selected?
+   */
+  schemeInContext(): boolean {
+    const straight = (id: number) => { const r = this.doc.arrows.get(id); return !!r && !r.sweep && !r.bez?.length && (isReactionArrow(r) || isSequenceArrow(r)); };
+    const steps = this.hasSelection() ? this.selectedSteps() ?? [] : [...this.doc.arrows.keys()];
+    return steps.some((id) => {
+      if (!straight(id)) return false;
+      const q = this.reactionRoles(id) ?? this.sequenceRoles(id);
+      return !!q && (q.reactants.length > 0 || q.products.length > 0 || (this.sel.arrows.has(id) && q.above.length + q.below.length > 0));
+    });
+  }
+
+  /**
+   * Smart Clean on a scheme: the structures tidied and the scheme laid out (as Clean Up Structure);
+   * pressed again straight away, each arrow fits its own text, then they match again (as Clean Up
+   * Reaction). 'tidied', the Clean Up Reaction result, or false when there was nothing to change.
+   */
+  smartCleanScheme(seeds: Map<number, Vec>[] = []): 'tidied' | 'matched' | 'fitted' | false {
+    const key = this.stepsKey(this.selectedSteps());
+    const c = this.reactionCycle;
+    if (c && c.version === this.doc.version && c.key === key) return this.cleanUpReaction();
+    if (!this.cleanUp(seeds)) return this.cleanUpReaction();
+    // (pressed again: the arrows fit their text, rather than stepping through other layouts)
+    this.cleanCycle = null;
+    this.reactionCycle = { version: this.doc.version, key, fitted: false };
+    return 'tidied';
+  }
 
   /**
    * Arrange the selected scheme (or the whole drawing) in one go: in a line, in rows, as a
@@ -6906,6 +6970,23 @@ export class Editor {
     // shown at once, as a new arrow's are
     if (on && ids.length === 1) { const r = this.doc.arrows.get(ids[0]); if (r && takesHelpers(r)) { const until = performance.now() + Editor.HELPER_TIME; this.freshArrow = { id: r.id, until }; setTimeout(() => { if (this.freshArrow?.until === until) { this.freshArrow = null; this.requestOverlay(); } }, Editor.HELPER_TIME + 20); } }
     this.changed();
+  }
+
+  /**
+   * Make the selected arrows reaction, mechanism or plain arrows (Arrow Type). A curved arrow
+   * can't be a reaction step (outside a catalytic cycle). How many changed.
+   */
+  setArrowKind(kind: ArrowKind): number {
+    const ids = [...this.sel.arrows].filter((id) => {
+      const r = this.doc.arrows.get(id);
+      return !!r && arrowKind(r) !== kind && !(kind === 'reaction' && (r.sweep || r.bez?.length) && !r.step);
+    });
+    if (!ids.length) return 0;
+    this.doc.edit('Arrow Type', () => {
+      for (const id of ids) { const r = this.doc.arrows.get(id)!; this.doc.updateArrow(id, { kind: kind === drawnKind(r) ? undefined : kind }); }
+    });
+    this.changed();
+    return ids.length;
   }
 
   /** Put each numbered step of the selected arrows' text (or selected text) on a line of its own ("1. n-BuLi; 2. PhCHO"). True when something changed. */

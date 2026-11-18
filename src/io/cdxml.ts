@@ -12,7 +12,7 @@ import { highlightStyleFromTag } from '../render/highlight';
 import { attachRingFills, ringGeometry, ringsIn } from '../chem/ring-fill';
 import { paperOf } from './cdxml-print';
 import { lipDirection } from '../chem/polymer';
-import { Doc, Atom, Bond, BondDisplay, TextRun, Arrow, Shape, Entity, Kind, StereoLabel, Caption, StepRoles, MorphStep, CHIRAL_FLAGS, PARTIAL, PAPER, type Pin, type ArrowTextLook, type OrbitalTag, type PictureFx, type ShapeMath, type HighlightStyle } from '../model';
+import { Doc, Atom, Bond, BondDisplay, TextRun, Arrow, Shape, Entity, Kind, StereoLabel, Caption, StepRoles, MorphStep, CHIRAL_FLAGS, PARTIAL, PAPER, type Pin, type ArrowTextLook, type ArrowKind, type OrbitalTag, type PictureFx, type ShapeMath, type HighlightStyle } from '../model';
 import { TEXT_TAG, parseTextTag, runsFromChemDraw } from '../text/chemdraw-text';
 import { readPageTag } from '../page-grid';
 import { DocStyle, MAP_LOOKS, mapBoxStyle, type MapLook } from '../style';
@@ -853,8 +853,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     // two shafts with a full head: a retrosynthetic arrow (spacing in hundredths of the line width)
     const spacing = a.getAttribute('ArrowShaftSpacing');
     if (spacing !== null && !arrow.equilibrium && Number(spacing) > 0) arrow.shaftSpacing = (Number(spacing) / 100) * lw;
-    const textLook = arrowLookFrom(a);
+    const textLook = arrowLookFrom(a), kind = arrowKindFrom(a);
     if (textLook) arrow.textLook = textLook;
+    if (kind) arrow.kind = kind;
     doc.addArrow(arrow);
     from('r', arrow.id, a);
     const mt = kids(a).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MORPH_TAG);
@@ -933,8 +934,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     if (ht === 'Hollow' || ht === 'Angle') arrow.headType = ht === 'Hollow' ? 'hollow' : 'angle';
     for (const k of ['headStyle', 'tailStyle', 'headType', 'line', 'headLength', 'headWidth'] as const) if (lookOk(k, look[k])) (arrow as Record<string, unknown>)[k] = look[k];
     if (lw !== st.lineWidth) arrow.lineWidth = lw;
-    const textLook = arrowLookFrom(c);
+    const textLook = arrowLookFrom(c), kind = arrowKindFrom(c);
     if (textLook) arrow.textLook = textLook;
+    if (kind) arrow.kind = kind;
     doc.addArrow(arrow);
     from('r', arrow.id, c);
     const pt = kids(c).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PIN_TAG);
@@ -1743,13 +1745,23 @@ export function arrowLookFrom(e: Element): ArrowTextLook | undefined {
   const v = kids(e).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === ARROW_LOOK_TAG)?.getAttribute('Value');
   if (!v) return undefined;
   try {
-    const raw = JSON.parse(v) as { align?: Record<string, unknown>; guides?: unknown };
+    const raw = JSON.parse(v) as { align?: Record<string, unknown>; guides?: unknown; kind?: unknown };
     const out: ArrowTextLook = {};
     const align: NonNullable<ArrowTextLook['align']> = {};
     for (const k of ['above', 'below', 'results'] as const) { const a = raw.align?.[k]; if (a === 'left' || a === 'center' || a === 'right') align[k] = a; }
     if (Object.keys(align).length) out.align = align;
     if (typeof raw.guides === 'boolean') out.guides = raw.guides;
     return Object.keys(out).length ? out : undefined;
+  } catch { return undefined; }
+}
+
+/** An arrow's kind chosen by hand (Arrow.kind), saved in the same tag as its text settings. */
+export function arrowKindFrom(e: Element): ArrowKind | undefined {
+  const v = kids(e).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === ARROW_LOOK_TAG)?.getAttribute('Value');
+  if (!v) return undefined;
+  try {
+    const k = (JSON.parse(v) as { kind?: unknown }).kind;
+    return k === 'reaction' || k === 'mechanism' || k === 'plain' ? k : undefined;
   } catch { return undefined; }
 }
 

@@ -4,7 +4,7 @@
 // Anything the drawing tools set automatically can be changed here by hand.
 
 import { addInfo, setInfo } from './info-tip';
-import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, type PictureLook, type StepRoles, type ArrowTextSide, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
+import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, type PictureLook, type StepRoles, type ArrowTextSide, type ArrowKind, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
 import { fullStyle, tidyStyle } from '../render/highlight';
 import type { HighlightLookPreset } from './highlight-looks';
 
@@ -13,7 +13,7 @@ import { descriptorChoices } from './analysis-panel';
 import { captionReading, speciesSummary } from '../chem/species';
 import { COMMON_ADDUCTS } from '../chem/hrms';
 import { DOT_DENSITY, PATTERN_CHOICES, PATTERNS, RING_FILL_COLOUR, patternSwatch, RING_PATTERN_COLOUR, patternSpacing, ringShadowSize, shadowLook } from '../render/fills';
-import type { Role } from '../chem/reaction';
+import { arrowKind, drawnKind, type Role } from '../chem/reaction';
 import { setStereoShown, setStereoText } from '../chem/stereo';
 import { arialWidth } from '../text-metrics';
 import { Selection } from '../editor/editor';
@@ -81,6 +81,9 @@ export interface ReactionHooks {
 type Opt<T> = [T, string];
 
 const HEADS: Opt<Arrow['headStyle']>[] = [['none', 'None'], ['full', 'Full'], ['halfLeft', 'Half, left side'], ['halfRight', 'Half, right side']];
+/** A curved arrow's half head is a fishhook: it moves one electron. */
+const CURVED_HEADS: Opt<Arrow['headStyle']>[] = [['none', 'None'], ['full', 'Full (electron pair)'], ['halfLeft', 'Fishhook, left side'], ['halfRight', 'Fishhook, right side']];
+const KINDS: Opt<ArrowKind>[] = [['reaction', 'Reaction'], ['mechanism', 'Mechanism'], ['plain', 'Plain']];
 const HEAD_TYPES: Opt<Arrow['headType']>[] = [['solid', 'Solid'], ['hollow', 'Hollow'], ['angle', 'Open']];
 const NO_GOS: Opt<'none' | 'cross' | 'hash'>[] = [['none', 'None'], ['cross', 'Cross'], ['hash', 'Hash']];
 const LINES: Opt<Arrow['line']>[] = [['solid', 'Solid'], ['dashed', 'Dashed'], ['bold', 'Bold'], ['wavy', 'Wavy']];
@@ -261,6 +264,12 @@ export class StylePanel {
     const lw = this.doc.style.lineWidth;
     const set = (label: string, patch: (a: Arrow) => Partial<Arrow>) => this.edit(label, () => { for (const a of arrows) this.doc.updateArrow(a.id, patch(a)); });
     this.heading(arrows.length > 1 ? `${arrows.length} arrows` : 'Arrow');
+    // what the arrow is for: a reaction step (its starting materials and products worked out), a
+    // mechanism's electron movement, or plain (resonance, retrosynthetic: lines up only)
+    const curved = arrows.some((a) => isCurved(a) && !a.step);
+    const kinds = curved ? KINDS.filter(([k]) => k !== 'reaction') : KINDS;
+    const kind = arrowKind(r);
+    this.select('Type', kinds, kinds.some(([k]) => k === kind) ? kind : kinds[0][0], (v) => set('Arrow Type', (a) => ({ kind: v === drawnKind(a) ? undefined : v })));
     const shafts = r.equilibrium ? 'equilibrium' : r.shaftSpacing ? 'retro' : 'one';
     this.select('Shafts', SHAFTS, shafts, (v) => set('Arrow shafts', (a) => {
       const w = a.lineWidth ?? lw;
@@ -269,8 +278,9 @@ export class StylePanel {
       return { equilibrium: false, shaftSpacing: undefined, ...(a.equilibrium ? { headStyle: 'full', tailStyle: 'none' } : {}), ...(a.shaftSpacing ? { headType: 'solid', headLength: w * 10, headWidth: w * 2.5 } : {}) };
     }));
     if (!r.equilibrium) {
-      this.select('Head', HEADS, r.headStyle, (v) => set('Arrowhead', () => ({ headStyle: v })));
-      this.select('Tail', HEADS, r.tailStyle, (v) => set('Arrow tail', () => ({ tailStyle: v })));
+      const heads = isCurved(r) ? CURVED_HEADS : HEADS;
+      this.select('Head', heads, r.headStyle, (v) => set('Arrowhead', () => ({ headStyle: v })));
+      this.select('Tail', heads, r.tailStyle, (v) => set('Arrow tail', () => ({ tailStyle: v })));
     }
     this.select('Head shape', HEAD_TYPES, r.headType, (v) => set('Arrowhead shape', () => ({ headType: v })));
     this.select('Line', LINES, r.line, (v) => set('Arrow line', () => ({ line: v })));

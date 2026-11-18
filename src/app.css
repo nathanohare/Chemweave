@@ -455,6 +455,16 @@ body.cells-raised .tb-cells .tool.active { background: var(--accent-soft); borde
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
 }
 
+/* a titled section of a palette (Reaction, Mechanism, Plain arrows): a row of its own */
+.flyout-head {
+  grid-column: 1 / -1;
+  padding: 3px 2px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.flyout-head:first-child { padding-top: 0; }
+
 /* the drawing area, with the slide list and speaker notes beside it in Slides mode */
 #work {
   grid-area: canvas;

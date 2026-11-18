@@ -8,7 +8,7 @@ import type { Arrow, Doc, StepRoles } from '../model';
 import type { Rect, Vec } from '../geom';
 import { add, mul } from '../geom';
 import type { Measure } from '../editor/arrange';
-import { arrowFrame, inFrame, interpretArrow, isReactionArrow, isStep, itemFinder, linkRows, schemeItems, type Frame, type Item } from './reaction';
+import { arrowFrame, inFrame, interpretArrow, isReactionArrow, isSequenceArrow, isStep, itemFinder, linkRows, rolesOf, schemeItems, setRoleLimits, type Frame, type Item } from './reaction';
 import { plainText } from '../richtext';
 import { clampSchemeDistance, SCHEME_LIMITS, type SchemeDistance } from '../style';
 import type { ArrowTextSide, Caption } from '../model';
@@ -70,9 +70,16 @@ export interface SchemePrefs {
   sameLength: boolean;
   /** Shortest arrow, or null for the usual (from the bond length). A Smart Scheme's own format sets it. */
   arrowLength?: number | null;
+  /**
+   * How far past a reaction arrow's head (or before its tail) a structure can be and still be its
+   * product (or starting material), in bond lengths; null for 3.
+   */
+  roleReach?: number | null;
+  /** How far either side of the line an arrow points along such a structure can be, in bond lengths; null for 1. */
+  roleLane?: number | null;
 }
 
-export const DEFAULT_SCHEME_PREFS: SchemePrefs = { structGap: null, plusGap: null, textGap: null, textGapBelow: null, textSize: null, textAlign: 'center', textAlignBelow: null, textAlignResults: null, resultsGap: null, listLeft: true, helpers: true, fit: true, lead: null, headGap: null, sameLength: true };
+export const DEFAULT_SCHEME_PREFS: SchemePrefs = { structGap: null, plusGap: null, textGap: null, textGapBelow: null, textSize: null, textAlign: 'center', textAlignBelow: null, textAlignResults: null, resultsGap: null, listLeft: true, helpers: true, fit: true, lead: null, headGap: null, sameLength: true, roleReach: null, roleLane: null };
 
 export const schemePrefs: SchemePrefs = { ...DEFAULT_SCHEME_PREFS };
 
@@ -82,6 +89,7 @@ const isAlign = (v: unknown): v is 'left' | 'center' | 'right' => (ALIGNS as rea
 /** Change the scheme settings (from the saved settings or the dialog). */
 export function setSchemePrefs(p: Partial<SchemePrefs>): void {
   Object.assign(schemePrefs, p);
+  setRoleLimits({ reach: schemePrefs.roleReach, lane: schemePrefs.roleLane });
 }
 
 /**
@@ -119,6 +127,9 @@ export function parseSchemePrefs(raw: unknown): SchemePrefs {
   if (typeof r.helpers === 'boolean') out.helpers = r.helpers;
   if (typeof r.fit === 'boolean') out.fit = r.fit;
   if (typeof r.sameLength === 'boolean') out.sameLength = r.sameLength;
+  const bonds = (v: unknown) => (typeof v === 'number' && isFinite(v) && v > 0 ? Math.min(20, Math.max(0.2, v)) : null);
+  out.roleReach = bonds(r.roleReach);
+  out.roleLane = bonds(r.roleLane);
   return out;
 }
 
@@ -180,21 +191,23 @@ export interface SchemePlan {
   /** How far each item moves, by its reference. */
   shifts: Map<string, Vec>;
   /** New ends (and roles) for arrows. */
-  arrows: Map<number, { tail: Vec; head: Vec; sweep?: number; step: StepRoles }>;
+  arrows: Map<number, { tail: Vec; head: Vec; sweep?: number; step: StepRoles; plain?: boolean }>;
   /** + signs to add, by the arrow whose step they belong to, centred on the point given. */
   plusses: { arrow: number; at: Vec; role: 'reactants' | 'products' }[];
   /** How text beside an arrow lines up, where its arrow says (or it is a numbered list), by caption id. */
   justify?: Map<number, 'left' | 'center' | 'right'>;
 }
 
-interface Step { arrow: Arrow; roles: StepRoles }
+/** A reaction step, or (plain) a resonance or retrosynthetic arrow lining up with what it joins. */
+interface Step { arrow: Arrow; roles: StepRoles; plain?: boolean }
 
 /** The roles Clean Up Reaction works with: chosen by hand, or worked out again from where things are now. */
 function rolesFor(r: Arrow, items: Item[], bond: number): StepRoles {
   if (r.step?.manual) return r.step;
   const got = interpretArrow(r, items, bond);
   if (isStep(got) || !r.step) return got;
-  return r.step;
+  // the stored roles, less what has since moved out of line with the arrow
+  return rolesOf(r, items, bond);
 }
 
 /** Captions that label a structure (its compound number, say): short text just below it. */
@@ -259,11 +272,13 @@ function planIn(doc: Doc, m: Measure, arrowIds?: Iterable<number>): SchemePlan |
   const all: Step[] = [];
   for (const r of doc.arrows.values()) {
     // (curved arrows, as round a catalytic cycle, are laid out by Chemistry > Reactions and Schemes > Arrange Scheme)
-    if ((ids && !ids.has(r.id)) || !isReactionArrow(r) || r.sweep) continue;
-    all.push({ arrow: r, roles: rolesFor(r, items, bond) });
+    if ((ids && !ids.has(r.id)) || r.sweep) continue;
+    if (isReactionArrow(r)) all.push({ arrow: r, roles: rolesFor(r, items, bond) });
+    // a resonance or retrosynthetic arrow: lined up with the structures it joins, but not a step
+    else if (isSequenceArrow(r)) all.push({ arrow: r, roles: interpretArrow(r, items, bond), plain: true });
   }
   // a row of a wrapped scheme goes on from the last product of the row above
-  linkRows(all, items);
+  linkRows(all, items, bond);
   const steps = all.filter(({ roles }) => isStep(roles) || roles.above.length || roles.below.length);
   if (!steps.length) return null;
 
@@ -304,7 +319,8 @@ function planIn(doc: Doc, m: Measure, arrowIds?: Iterable<number>): SchemePlan |
   // way are all given: the longest of them, so a scheme's arrows match
   const own = new Map<Step, number>();
   const longest = new Map<string, number>();
-  const way = (f: Frame, s: Step) => (f.u.x % 1 === 0 && f.u.y % 1 === 0 ? `${f.u.x},${f.u.y}` : `arrow ${s.arrow.id}`);
+  // (resonance arrows match each other, not the reaction arrows)
+  const way = (f: Frame, s: Step) => (f.u.x % 1 === 0 && f.u.y % 1 === 0 ? `${f.u.x},${f.u.y}${s.plain ? ` ${arrowLook(s.arrow)}` : ''}` : `arrow ${s.arrow.id}`);
   for (const s of order) {
     const f = straighten(arrowFrame(s.arrow));
     const len = ownLength(s, f, find, bond, sp.minArrow);
@@ -409,7 +425,7 @@ function planIn(doc: Doc, m: Measure, arrowIds?: Iterable<number>): SchemePlan |
     // (no + signs: none listed, as the drawing keeps it, so a tidy scheme reads as unchanged)
     const { plusses: had, ...bare } = roles;
     const step: StepRoles = had?.length ? { ...bare, plusses: [...had] } : bare;
-    plan.arrows.set(arrow.id, { tail: fwd ? start : end, head: fwd ? end : start, step });
+    plan.arrows.set(arrow.id, st.plain ? { tail: fwd ? start : end, head: fwd ? end : start, step, plain: true } : { tail: fwd ? start : end, head: fwd ? end : start, step });
   }
   // nothing moved and nothing to add: already tidy
   const moved = [...plan.shifts.values()].some((d) => Math.hypot(d.x, d.y) > 0.01);
@@ -419,10 +435,13 @@ function planIn(doc: Doc, m: Measure, arrowIds?: Iterable<number>): SchemePlan |
   });
   if (!moved && !reshaped && !plan.plusses.length && !plan.justify?.size) {
     // still record the roles, so ChemDraw and later clean-ups know them
-    return [...plan.arrows].some(([id, a]) => JSON.stringify(doc.arrows.get(id)!.step) !== JSON.stringify(a.step)) ? plan : null;
+    return [...plan.arrows].some(([id, a]) => !a.plain && JSON.stringify(doc.arrows.get(id)!.step) !== JSON.stringify(a.step)) ? plan : null;
   }
   return plan;
 }
+
+/** Which plain arrows are alike, so their lengths match: resonance, retrosynthetic, or others. */
+const arrowLook = (r: Arrow) => (r.shaftSpacing ? 'retro' : r.headStyle !== 'none' && r.tailStyle !== 'none' ? 'resonance' : 'plain');
 
 /** How long a step's arrow is on its own: fitted to its conditions, or (not fitting) as drawn. */
 function ownLength(s: Step, f: Frame, find: (ref: string) => Item | undefined, bond: number, minArrow: number): number {
@@ -484,7 +503,8 @@ export function applySchemePlan(doc: Doc, m: Measure, plan: SchemePlan, label = 
       const plusses = [...(a.step.plusses ?? []), ...(added.get(id) ?? [])];
       const { plusses: _, ...rest } = a.step;
       const step: StepRoles = plusses.length ? { ...rest, plusses } : rest;
-      const patch: Partial<Arrow> = { tail: a.tail, head: a.head, step };
+      // (a plain arrow keeps no roles: it is not a reaction step)
+      const patch: Partial<Arrow> = a.plain ? { tail: a.tail, head: a.head } : { tail: a.tail, head: a.head, step };
       if (a.sweep !== undefined) patch.sweep = a.sweep;
       doc.updateArrow(id, patch);
     }

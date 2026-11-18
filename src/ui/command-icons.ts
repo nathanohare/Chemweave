@@ -95,6 +95,8 @@ export const COMMAND_ICONS: Record<string, string> = {
   scale: svg('<rect x="3" y="11" width="10" height="10"/><path d="M8 3h13v13" stroke-dasharray="2 2"/><path d="M12 12l7-7M14 5h5v5"/>'),
   'rotate-dialog': svg('<path d="M18.5 12.5a6.5 6.5 0 1 1-2.2-5"/><path d="M17 3.5v4h-4"/>' + txt(11.5, 15.5, '°', 9)),
   // ---- structure
+  // a structure and an arrow, with a sparkle: cleans up whichever is selected
+  'smart-clean': svg('<path d="M4.5 9.5l3-1.7 3 1.7v3.4l-3 1.7-3-1.7z"/><path d="M12.5 19h7.5"/><path d="M17.5 16.5l2.5 2.5-2.5 2.5"/><path d="M19 2.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none"/>'),
   'clean-up': svg(hex(10.5, 13, 7) + '<path d="M19 2.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none"/>'),
   // three small layouts to pick from
   'clean-up-options': svg(hex(6.5, 7.5, 4) + hex(17.5, 7.5, 4) + hex(12, 17, 4)),

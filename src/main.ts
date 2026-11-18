@@ -175,7 +175,7 @@ import { selectedGroup } from './chem/group-smiles';
 import { templateIcon } from './ui/template-icons';
 import { StructureChecks } from './chem/warnings';
 import { idText, labelClashes, parseIdStart, type IdStyle } from './chem/compound-numbers';
-import { schemeItems, isReactionArrow, reactionSteps, itemFinder, plainMeasure } from './chem/reaction';
+import { arrowKind, schemeItems, isReactionArrow, reactionSteps, itemFinder, plainMeasure } from './chem/reaction';
 import { canShowGuides, guidesOn as arrowGuidesOn, plainReactionArrow } from './chem/arrow-text';
 import { stoichiometryBook, type StoichRow, type StoichRole } from './chem/stoichiometry';
 import { isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
@@ -272,7 +272,7 @@ import { objectPicture, type ObjectPicture } from './render/object-picture';
 import { ACS_1996, BOND_END_CHOICES, bondEndPrefs, DocStyle, docMapLook, MAP_LOOKS, mapLookPrefs, type MapBoxStyle, type MapLook } from './style';
 import { DEFAULT_DEPTH_SHADE, depthShadePrefs } from './render/depth-shade';
 import { emptyTable, tableFromCells } from './table';
-import type { TableData } from './model';
+import type { ArrowKind, TableData } from './model';
 import { checkDrawing, checkDocument, checkWorkbook, repeatedTitles, structureAlt, setStructureAlt, type Issue, type IssuePlace } from './accessibility';
 import { AccessibilityPane, askAltText } from './ui/accessibility-pane';
 import type { PreflightPane } from './ui/preflight-pane';
@@ -454,20 +454,28 @@ new ResizeObserver(() => {
 const ARROWS: PaletteDef = {
   palette: 'arrows',
   title: 'Arrows',
+  columns: 4,
+  // what each kind is for: a reaction step (its conditions typed above and below), a mechanism's
+  // electrons, or plain (resonance, retrosynthetic, dipole), which only lines up with its neighbors
+  groups: [
+    { title: 'Reaction', items: ['arrow', 'arrow-dashed', 'arrow-hollow', 'arrow-equilibrium', 'arrow-nogo', 'arrow-nogo-hash'] },
+    { title: 'Mechanism', items: ['arrow-curved', 'arrow-fishhook', 'arrow-s', 'arrow-s-fishhook'] },
+    { title: 'Plain', items: ['arrow-double', 'arrow-retro', 'arrow-dipole'] },
+  ],
   items: [
     { name: 'arrow', title: 'Reaction arrow. Shift+drag from an arrow\'s end or middle to branch a new arrow off it' },
-    { name: 'arrow-dashed', title: 'Dashed arrow' },
-    { name: 'arrow-hollow', title: 'Arrow with a hollow head' },
+    { name: 'arrow-dashed', title: 'Dashed reaction arrow' },
+    { name: 'arrow-hollow', title: 'Reaction arrow with a hollow head' },
     { name: 'arrow-double', title: 'Resonance arrow (heads at both ends)' },
     { name: 'arrow-equilibrium', title: 'Equilibrium arrows' },
     { name: 'arrow-retro', title: 'Retrosynthetic arrow' },
     { name: 'arrow-nogo', title: 'Crossed-out arrow (reaction does not go)' },
     { name: 'arrow-nogo-hash', title: 'Hashed-out arrow (reaction does not proceed)' },
     { name: 'arrow-dipole', title: 'Dipole arrow (the crossed end is the positive end)' },
-    { name: 'arrow-curved', title: 'Curved arrow (electron pair): drag from an atom or bond to an atom or bond; it snaps like a mechanism arrow. Hold Alt or Space to draw freely' },
-    { name: 'arrow-fishhook', title: 'Curved half-headed arrow (one electron). Snaps between atoms and bonds like the curved arrow; hold Alt or Space to draw freely' },
-    { name: 'arrow-s', title: 'S-shaped curved arrow (two bends), for electrons that have to go around something. Snaps like the curved arrow; hold Alt to draw freely' },
-    { name: 'arrow-s-fishhook', title: 'S-shaped half-headed arrow (one electron, two bends). Snaps like the curved arrow; hold Alt to draw freely' },
+    { name: 'arrow-curved', title: 'Mechanism arrow (electron pair): drag from an atom or bond to an atom or bond; it snaps to where electrons come from and go. Hold Alt or Space to draw freely' },
+    { name: 'arrow-fishhook', title: 'Fishhook arrow (one electron). Snaps between atoms and bonds like the mechanism arrow; hold Alt or Space to draw freely' },
+    { name: 'arrow-s', title: 'S-shaped mechanism arrow (two bends), for electrons that have to go around something. Snaps like the mechanism arrow; hold Alt to draw freely' },
+    { name: 'arrow-s-fishhook', title: 'S-shaped fishhook arrow (one electron, two bends). Snaps like the mechanism arrow; hold Alt to draw freely' },
   ],
 };
 
@@ -3129,6 +3137,32 @@ async function cleanUpStructures(): Promise<void> {
   else if (r.k > 0) flash(`${r.label} (${r.k + 1} of ${r.of}). Clean Up again for the next, or Clean Up Options… to see them all.`, 4000);
 }
 
+/**
+ * Smart Clean (Ctrl+Shift+K): the clean-up that fits what is selected. A catalytic cycle is
+ * cleaned up as a cycle; curved (mechanism) arrows on their own are redrawn clear of the
+ * structure; a scheme (a reaction arrow or resonance arrow, or a structure in its step) gets its
+ * structures tidied and the scheme laid out, then (pressed again) each arrow fitted to its own
+ * text; anything else is Clean Up Structure.
+ */
+async function smartClean(): Promise<void> {
+  finishTyping();
+  if (smartIsCycle()) { COMMANDS['clean-up-cycle'](); return; }
+  const s = editor.sel;
+  const arrows = [...s.arrows].map((id) => doc.arrows.get(id)).filter((r): r is Arrow => !!r);
+  if (arrows.length && !s.atoms.size && !s.captions.size && !s.shapes.size && arrows.every((r) => isCurved(r) && !r.step)) { COMMANDS['clean-up-arrow'](); return; }
+  if (!editor.schemeInContext()) { await cleanUpStructures(); return; }
+  const r = editor.smartCleanScheme(await engineLayouts());
+  if (!r) flash('Nothing to clean up: the structures and the scheme are already tidy.');
+  else if (r === 'tidied') flash('Scheme tidied. Smart Clean again to fit each arrow to its own text.', 4000);
+  else if (r === 'fitted') flash('Each arrow fitted to its own text. Smart Clean again to make them all the same length.', 4000);
+}
+
+/** Arrow Type: make the selected arrows reaction, mechanism or plain arrows. */
+function setKindOfArrows(kind: ArrowKind): void {
+  if (!editor.sel.arrows.size) { flash('Select an arrow first.'); return; }
+  if (!editor.setArrowKind(kind)) flash(kind === 'reaction' && pickedCurved() ? 'A curved arrow can\'t be a reaction step: draw a straight arrow for that.' : `The selected arrows are ${kind} arrows already.`);
+}
+
 /** Structure > Clean Up Options…: every way Clean Up can lay out the picked structures, to choose from. */
 async function cleanUpChoices(): Promise<void> {
   finishTyping();
@@ -3165,6 +3199,7 @@ async function cleanUpChoices(): Promise<void> {
 function schemeFrom(got: Record<string, string>): Partial<SchemePrefs> {
   const len = (k: SchemeDistance) => { const v = got[k]; return !v || v.trim() === '' ? null : clampSchemeDistance(k, Number(v)) ?? null; };
   const align = (v: string | undefined) => (v === 'left' || v === 'center' || v === 'right' ? v : null);
+  const bonds = (v: string | undefined) => { const n = Number(v); return !v || !v.trim() || !isFinite(n) || n <= 0 ? null : Math.min(20, Math.max(0.2, n)); };
   return {
     structGap: len('structGap'), plusGap: len('plusGap'), textGap: len('textGap'), textGapBelow: len('textGapBelow'), resultsGap: len('resultsGap'), lead: len('lead'), headGap: len('headGap'),
     // (its size and font are the drawing style's now: Settings > Drawing Style)
@@ -3174,6 +3209,7 @@ function schemeFrom(got: Record<string, string>): Partial<SchemePrefs> {
     textAlignResults: align(got.textAlignResults),
     listLeft: got.listLeft !== 'false',
     helpers: got.helpers === 'true', fit: got.fit === 'true', sameLength: got.sameLength === 'true',
+    roleReach: bonds(got.roleReach), roleLane: bonds(got.roleLane),
   };
 }
 
@@ -3201,6 +3237,8 @@ async function schemeSettings(): Promise<void> {
     { name: 'sameLength', label: 'Clean Up Reaction makes arrows the same length', value: String(p.sameLength), type: 'checkbox' },
     dist('lead', 'Arrow before the text starts', auto(SPACING.overhang)),
     dist('headGap', 'Space between text and arrowhead', auto(SPACING.overhang)),
+    { name: 'roleReach', label: 'Starting materials and products: up to this far past the arrow', value: p.roleReach ? String(p.roleReach) : '', type: 'number', unit: 'bonds', placeholder: '3', min: 0.2, max: 20 },
+    { name: 'roleLane', label: 'Starting materials and products: up to this far off its line', value: p.roleLane ? String(p.roleLane) : '', type: 'number', unit: 'bonds', placeholder: '1', min: 0.2, max: 20 },
   ], { ok: 'Save', note: 'Default spacing for text beside arrows, used by Clean Up Reaction and Arrange Scheme. A drawing style\'s own values (Drawing Style ▸ Reaction arrows) take priority. Leave a distance blank to scale with bond length. Existing schemes update when next cleaned up.',
     preview: { title: 'Preview', below: true, draw: (v, focus) => schemePreview(doc.style, schemeFrom(v), undefined, focus) } });
   if (!got) return;
@@ -9241,6 +9279,10 @@ const COMMANDS: Record<string, () => unknown> = {
   'save-highlight-look': () => void saveHighlightLook(),
   'delete-highlight-look': () => void deleteHighlightLook(),
   'clean-up': () => void cleanUpStructures(),
+  'smart-clean': () => void smartClean(),
+  'arrow-kind-reaction': () => setKindOfArrows('reaction'),
+  'arrow-kind-mechanism': () => setKindOfArrows('mechanism'),
+  'arrow-kind-plain': () => setKindOfArrows('plain'),
   'clean-up-options': () => void cleanUpChoices(),
   'clean-up-arrow': () => {
     if (!pickedCurved()) { flash('Select one or more curved (mechanism) arrows first.'); return; }
@@ -12733,7 +12775,7 @@ function drawingMenu(): MenuItem[] {
       ...(ws.active.mode === 'slides' || design ? [{ cmd: 'format-background', label: 'Format Background…' }, { cmd: 'slide-references', label: 'References on Slide…' }, null] : []),
       ...(ws.active.mode === 'slides' && deckNow()?.current?.canvas ? [{ label: 'Keyframes', items: keyframeMenu() }, null] : []),
       { label: 'Insert', items: [{ cmd: 'name-to-structure' }, { cmd: 'sequence-to-structure' }, { cmd: 'periodic-table' }, { cmd: 'insert-picture' }, { cmd: 'import-picture', label: 'Structure from Picture…' }, { cmd: 'text-box' }, { cmd: 'insert-reference', label: 'Reference…' }, { cmd: 'insert-symbol' }, ...(design ? [{ cmd: 'design-shapes', label: 'Shape…' }, { cmd: 'design-icons', label: 'Icon…' }, { cmd: 'connector-tool' }] : []), ...(ws.active.mode === 'slides' ? [{ cmd: 'slide-shapes', label: 'Shape…' }, { cmd: 'slide-icons', label: 'Icon…' }] : [])] },
-      { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'arrange-scheme' }, { cmd: 'number-compounds' }, { cmd: 'smart-scheme' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }] },
+      { label: 'Scheme', items: [{ cmd: 'smart-clean' }, { cmd: 'clean-up-reaction' }, { cmd: 'arrange-scheme' }, { cmd: 'number-compounds' }, { cmd: 'smart-scheme' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }] },
       { cmd: 'drawing-style' },
       ...(ws.active.mode === 'drawing' && pageEdgesMenu() ? [pageEdgesMenu()!] : []),
       view,
@@ -12807,6 +12849,7 @@ function drawingMenu(): MenuItem[] {
       { label: 'Shape', items: [{ cmd: 'arrow-s-shape', label: 'S' }, { cmd: 'arrow-single-curve', label: 'Single Curve' }, { cmd: 'arrow-shape-u', label: 'U-Turn' }, { cmd: 'arrow-shape-loop', label: 'Loop' }] },
       { cmd: 'flip-arrow-bend' }, { cmd: 'arrow-reverse' }, { cmd: 'arrow-smooth-path' }, { cmd: 'arrow-simplify-path' }, null, { cmd: 'attach-arrow' }, { cmd: 'detach-arrow' },
     ] }, ...(editor.options.arrowProducts ? [{ cmd: 'draw-from-arrows' }, { cmd: 'check-arrows' }] : [])] : []),
+    ...(s.arrows.size ? [{ label: 'Arrow Type', items: (['reaction', 'mechanism', 'plain'] as const).map((k): MenuItem => ({ cmd: `arrow-kind-${k}`, checked: [...s.arrows].every((id) => { const r = doc.arrows.get(id); return !!r && arrowKind(r) === k; }) })) }] : []),
     ...(pickedStraightArrows().length ? [{ cmd: 'text-guides', checked: pickedStraightArrows().every((id) => arrowGuidesOn(doc.arrows.get(id)!)) }, ...(pickedReactionArrow() !== undefined ? [{ cmd: 'split-steps' }] : [])] : []),
     ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : []),
     // (a scheme is about whole structures and arrows, not an atom or a bond picked on its own)

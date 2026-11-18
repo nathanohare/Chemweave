@@ -830,7 +830,19 @@ export interface Arrow {
   bent?: boolean;
   /** Its text above and below set for this arrow alone: how each side lines up, and whether its dashed text guides show. */
   textLook?: ArrowTextLook;
+  /**
+   * What kind of arrow it is, chosen by hand (side panel Type, right-click Arrow Type); left out,
+   * it follows from how the arrow is drawn (chem/reaction.ts arrowKind).
+   */
+  kind?: ArrowKind;
 }
+
+/**
+ * Reaction: a step, whose starting materials, products and conditions are worked out from where
+ * they sit. Mechanism: a curved arrow that moves electrons. Plain: anything else (resonance,
+ * retrosynthetic, dipole), which only lines up with the structures before and after it.
+ */
+export type ArrowKind = 'reaction' | 'mechanism' | 'plain';
 
 /** A line of text beside a reaction arrow: above it, below it, or the Results line under the text below (yield, ee, dr). */
 export type ArrowTextSide = 'above' | 'below' | 'results';
