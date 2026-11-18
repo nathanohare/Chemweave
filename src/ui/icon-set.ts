@@ -258,6 +258,7 @@ export const ICON_SET: Record<string, IconDef> = {
   'reset-focal-point': { hue: 'teal', d: hex(12, 12, 8.75, 'p') + '<circle class="a" cx="12" cy="12" r="3.25" stroke-dasharray="1.6 1.4"/><path d="M3.25 20.75l17.5-17.5" stroke-opacity=".55"/>' },
   // two rings, each with its target
   'show-focal-points': { hue: 'teal', d: hex(7.25, 8.5, 5.25, 'p') + hex(16.75, 15.5, 5.25, 'p') + '<circle class="a" cx="7.25" cy="8.5" r="1.75"/><circle class="a" cx="16.75" cy="15.5" r="1.75"/><circle class="s" cx="7.25" cy="8.5" r=".6"/><circle class="s" cx="16.75" cy="15.5" r=".6"/>' },
+  'match-focal-points': { hue: 'teal', d: hex(7.25, 12, 5.25, 'p') + hex(16.75, 12, 5.25, 'p') + '<path d="M2 12h20" stroke-opacity=".45" stroke-dasharray="1.5 1.5"/><circle class="a" cx="7.25" cy="12" r="1.75"/><circle class="a" cx="16.75" cy="12" r="1.75"/>' },
   // three targets evenly spaced across
   'distribute-h-focal': { hue: 'gray', d: '<path class="a" d="M2.75 3.25v17.5M21.25 3.25v17.5"/><path d="M5.5 12h13" stroke-opacity=".4" stroke-dasharray="1.5 1.5"/><circle class="f a" cx="6.75" cy="12" r="2"/><circle class="f a" cx="12" cy="12" r="2"/><circle class="f a" cx="17.25" cy="12" r="2"/>' },
   'distribute-v-focal': { hue: 'gray', d: '<path class="a" d="M3.25 2.75h17.5M3.25 21.25h17.5"/><path d="M12 5.5v13" stroke-opacity=".4" stroke-dasharray="1.5 1.5"/><circle class="f a" cx="12" cy="6.75" r="2"/><circle class="f a" cx="12" cy="12" r="2"/><circle class="f a" cx="12" cy="17.25" r="2"/>' },

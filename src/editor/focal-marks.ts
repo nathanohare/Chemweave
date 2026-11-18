@@ -6,7 +6,13 @@ import type { Doc } from '../model';
 import { focusOf, type Unit } from './arrange';
 
 /** How a focal point is marked. */
-export type FocalLook = 'target' | 'diamond' | 'cross';
+import type { FocalLook } from '../chem/focal';
+export type { FocalLook };
+
+/** The marks in the order Preferences lists them, with their names there. */
+export const FOCAL_LOOKS: { look: FocalLook; name: string }[] = [
+  { look: 'target', name: 'Target' }, { look: 'diamond', name: 'Diamond' }, { look: 'cross', name: 'Crosshair' }, { look: 'mass', name: 'Center of mass' },
+];
 
 /**
  * One mark at p. `own`: a focal point set by hand (solid); otherwise the default middle of the
@@ -45,6 +51,16 @@ export function drawFocalMark(ctx: CanvasRenderingContext2D, p: Vec, px: number,
     const path = () => { ctx.beginPath(); ctx.moveTo(p.x, p.y - r); ctx.lineTo(p.x + r, p.y); ctx.lineTo(p.x, p.y + r); ctx.lineTo(p.x - r, p.y); ctx.closePath(); };
     halo(path);
     if (own) { ctx.globalAlpha *= 0.85; ctx.fill(); } else ctx.stroke();
+  } else if (look === 'mass') {
+    // the center-of-mass sign: a circle in quarters, two opposite quarters filled
+    const r = 6.5 * px;
+    halo(() => { ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha *= own ? 1 : 0.45;
+    for (const a0 of [-Math.PI / 2, Math.PI / 2]) {
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.arc(p.x, p.y, r, a0, a0 + Math.PI / 2); ctx.closePath(); ctx.fill();
+    }
   } else {
     const r = 9 * px, g = 2.5 * px;
     halo(() => {

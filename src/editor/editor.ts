@@ -1107,6 +1107,8 @@ export class Editor {
 
   private onDown(e: PointerEvent): void {
     this.commitLabel();
+    // picking a focal point: this click names the atom, bond or ring
+    if (this.focalPicking && e.button === 0) { this.pickFocalAt(this.docPoint(e)); return; }
     // Alt+click on a locked structure (Slides) edits it this once: the lock lifts for this press
     // and comes back when the button is let go
     if (this.structuresLocked && e.altKey && e.button === 0) {
@@ -1253,6 +1255,7 @@ export class Editor {
       this.captionEd?.pointerMove(p);
       return;
     }
+    if (!d && this.focalPicking) { this.r.overlay.style.cursor = 'crosshair'; this.requestOverlay(); return; }
     if (!d) this.linkTitle(p);
     if (!d && this.captionEd?.hit(p)) {
       this.r.overlay.style.cursor = this.captionEd.cursor(p);
@@ -5041,6 +5044,54 @@ export class Editor {
     return true;
   }
 
+  /** Arrange ▸ Focal Point ▸ Pick (or the Style panel's Pick…): the next click names the focal point. */
+  focalPicking = false;
+  /** Told when a pick ends: what was set, or null when it was stopped or missed. */
+  onFocalPicked: (kind: 'atom' | 'bond' | 'ring' | null) => void = () => {};
+
+  startFocalPick(): void {
+    this.focalPicking = true;
+    this.r.overlay.style.cursor = 'crosshair';
+    this.requestOverlay();
+  }
+
+  stopFocalPick(): void {
+    if (!this.focalPicking) return;
+    this.focalPicking = false;
+    this.r.overlay.style.cursor = '';
+    this.requestOverlay();
+    this.onFocalPicked(null);
+  }
+
+  /** The focal spot under p while picking: an atom, a bond's two atoms, or the ring p is inside. */
+  private focalSpotAt(p: Vec): number[] | null {
+    const h = this.hitTestNow(p);
+    if (h?.kind === 'atom') return [h.id];
+    if (h?.kind === 'bond') { const b = this.doc.bonds.get(h.id); return b ? [b.a1, b.a2] : null; }
+    return h ? null : ringAround(this.doc, p);
+  }
+
+  private pickFocalAt(p: Vec): void {
+    const spot = this.focalSpotAt(p);
+    this.focalPicking = false;
+    this.r.overlay.style.cursor = '';
+    if (!spot) { this.requestOverlay(); this.onFocalPicked(null); return; }
+    this.doc.edit('Set Focal Point', () => setFocal(this.doc, spot));
+    // its structure stays picked, with its new focal point marked
+    const frag = this.doc.fragmentOf(spot[0]);
+    this.clearSelection();
+    for (const id of frag) this.sel.atoms.add(id);
+    for (const b of this.doc.bonds.values()) if (frag.has(b.a1) && frag.has(b.a2)) this.sel.bonds.add(b.id);
+    this.changed();
+    this.onFocalPicked(spot.length === 1 ? 'atom' : spot.length === 2 ? 'bond' : 'ring');
+  }
+
+  /** Two or more structures picked, one with a focal point of its own (Match Focal Points). */
+  canMatchFocal(): boolean {
+    const fs = this.pickedStructures();
+    return fs.length > 1 && fs.some((f) => focalAtoms(this.doc, f).length > 0);
+  }
+
   /** Do any of the selected structures have a focal point of their own? */
   hasOwnFocal(): boolean {
     return this.pickedStructures().some((f) => focalAtoms(this.doc, f).length > 0);
@@ -5052,6 +5103,14 @@ export class Editor {
    */
   private drawFocal(ctx: CanvasRenderingContext2D, px: number): void {
     if (this.layoutPreview) { drawLayoutPreview(ctx, this.doc, this.layoutPreview, px, PREVIEW, this.focalLook); return; }
+    if (this.focalPicking && this.pointerInside) {
+      const spot = this.focalSpotAt(this.pointer);
+      if (spot) {
+        let x = 0, y = 0;
+        for (const id of spot) { const a = this.doc.atoms.get(id)!; x += a.x; y += a.y; }
+        drawFocalMark(ctx, { x: x / spot.length, y: y / spot.length }, px, PREVIEW, this.focalLook, true);
+      }
+    }
     const frags = this.showFocal ? this.doc.fragments() : this.pickedStructures();
     for (const f of frags) {
       const ids = focalAtoms(this.doc, f);
@@ -6019,6 +6078,7 @@ export class Editor {
     if (e.defaultPrevented || target?.closest?.('dialog, .menu, .flyout')) return;
     const chord = chordOf(e);
     if (!chord) return;
+    if (this.focalPicking && chord === 'Escape') { e.preventDefault(); this.stopFocalPick(); return; }
     // Tab while a template is held: the next way it can go
     if ((chord === 'Tab' || chord === 'Shift+Tab') && this.cycleTemplate(chord === 'Tab' ? 1 : -1)) { e.preventDefault(); return; }
     // in the middle of a drag (its step still open), commands wait: Undo or a tab switch now
@@ -8032,7 +8092,7 @@ export class Editor {
       ctx.restore();
     }
     // the selection's box and the handle that turns it
-    const rh = this.drag && this.drag.mode !== 'rotate' ? null : this.rotateHandle();
+    const rh = (this.drag && this.drag.mode !== 'rotate') || this.layoutPreview ? null : this.rotateHandle();
     if (rh) {
       const b = this.selBox()!;
       ctx.lineWidth = px;

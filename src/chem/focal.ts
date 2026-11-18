@@ -16,6 +16,33 @@ export type FocalKind = 'atom' | 'bond' | 'ring';
 /** The ways a structure with no focal point of its own is centered (Preferences). */
 export type FocalDefault = 'box' | 'ring';
 
+/** How focal points are marked on screen: A target (default), B diamond, C crosshair, D center of mass. */
+export type FocalLook = 'target' | 'diamond' | 'cross' | 'mass';
+
+/** Settings for focal points (Preferences ▸ Focal Points, and the Distribute menu's choice). */
+export interface FocalPrefs {
+  look: FocalLook;
+  /** Where a structure with no focal point of its own centers. */
+  dflt: FocalDefault;
+  /** What Distribute Horizontally and Vertically make equal: the gaps, or the spacing of focal points. */
+  distribute: 'gaps' | 'focal';
+  /** The one-time status bar tip about focal points has been shown. */
+  tipShown: boolean;
+}
+
+export const DEFAULT_FOCAL_PREFS: FocalPrefs = { look: 'target', dflt: 'box', distribute: 'gaps', tipShown: false };
+
+/** Focal point settings from a settings file (anything missing or odd keeps its default). */
+export function parseFocalPrefs(r: unknown): FocalPrefs {
+  const o = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>;
+  return {
+    look: o.look === 'diamond' || o.look === 'cross' || o.look === 'mass' ? o.look : 'target',
+    dflt: o.dflt === 'ring' ? 'ring' : 'box',
+    distribute: o.distribute === 'focal' ? 'focal' : 'gaps',
+    tipShown: o.tipShown === true,
+  };
+}
+
 let dflt: FocalDefault = 'box';
 /** Preferences ▸ Default focal point: how structures without their own are centered. */
 export const focalDefault = (): FocalDefault => dflt;

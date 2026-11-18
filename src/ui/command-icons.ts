@@ -83,6 +83,7 @@ export const COMMAND_ICONS: Record<string, string> = {
   'set-focal-point': svg(hex(12, 12, 9) + '<circle cx="12" cy="12" r="3.5"/><path d="M12 6.5v2M12 15.5v2M6.5 12h2M15.5 12h2"/>'),
   'reset-focal-point': svg(hex(12, 12, 9) + '<circle cx="12" cy="12" r="3.5" stroke-dasharray="1.6 1.4"/><path d="M4 20L20 4"/>'),
   'show-focal-points': svg(hex(7.5, 8.5, 5.5) + hex(16.5, 15.5, 5.5) + '<circle cx="7.5" cy="8.5" r="1.8"/><circle cx="16.5" cy="15.5" r="1.8"/>'),
+  'match-focal-points': svg(hex(7.5, 12, 5.5) + hex(16.5, 12, 5.5) + '<path d="M2 12h20" stroke-dasharray="1.5 1.5"/><circle cx="7.5" cy="12" r="1.8"/><circle cx="16.5" cy="12" r="1.8"/>'),
   'distribute-v': svg('<line x1="4" y1="3" x2="20" y2="3"/><line x1="4" y1="21" x2="20" y2="21"/><rect x="8" y="6" width="8" height="3"/><rect x="8" y="10.5" width="8" height="3"/><rect x="8" y="15" width="8" height="3"/>'),
   // ---- object: flip and turn
   'flip-h': svg('<line x1="12" y1="3" x2="12" y2="21" stroke-dasharray="2 2"/><path d="M10 6v12L4 18z"' + filled() + '/><path d="M14 6v12l6 0z"/>'),
