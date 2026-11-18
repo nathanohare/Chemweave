@@ -180,6 +180,11 @@ export interface Atom {
    */
   mapNo?: number;
   /**
+   * Part of its structure's focal point (chem/focal.ts): the spot that lines up with other
+   * structures' when aligning. One marked atom, a bond's two, or a ring's atoms.
+   */
+  focal?: boolean;
+  /**
    * Enhanced stereo (ChemDraw's EnhancedStereoType): this stereocentre's configuration is known
    * as drawn ('abs'), or belongs to a group whose centres are a mixture of both forms ('and',
    * labelled &1) or are one form that isn't known ('or', labelled or1).

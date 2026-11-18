@@ -155,6 +155,8 @@ function build(items: MenuItem[], hooks: MenuHooks, depth: number): HTMLDivEleme
         b.setAttribute('aria-checked', String(checked));
       } else b.setAttribute('role', 'menuitem');
       if (it.title) b.title = it.title;
+      // (what the command is, for previews shown while pointing at it: not data-cmd, which runs it)
+      if (it.cmd) b.dataset.hoverCmd = it.cmd;
       b.disabled = !!it.disabled;
       const opens = own && it.opens;
       if (opens) { b.classList.add('has-sub'); b.setAttribute('aria-haspopup', 'menu'); }

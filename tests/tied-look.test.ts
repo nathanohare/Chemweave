@@ -12,6 +12,7 @@ import { placeAttached, refitAttached, structureBox } from '../src/editor/attach
 import { cleanTiedLook, fullLook, lookCaption, lookPatch, lookRuns, looksLikeId, restyleTied } from '../src/editor/tied-look';
 import { applyStyle, cleanStyle, sameLook, scaleStyle } from '../src/drawing-styles';
 import { writeCdxml } from '../src/io/cdxml-write';
+import { setFocal } from '../src/chem/focal';
 import { readCdxml } from '../src/io/cdxml';
 
 // captions 4 pt a letter wide and 8 pt high, so lining up edges shows
@@ -81,6 +82,19 @@ describe('the look a drawing style gives tied text', () => {
   it('tells an ID from other text', () => {
     for (const t of ['12', '3a', 'S4', '12′', 'iv', 'IV', 'B', '(±)-7', '10ab', ' 7 ']) expect(looksLikeId(t), t).toBe(true);
     for (const t of ['crude', 'n-BuLi', '87% yield', '', '3 steps', 'THF', 'Ph']) expect(looksLikeId(t), t).toBe(false);
+  });
+});
+
+describe('a structure with a focal point', () => {
+  it('has its ID label centered under the focal point, and moved there when the focal point moves', () => {
+    const { doc, atoms } = chain();
+    let id = 0;
+    doc.edit('Label', () => { const c = doc.addCaption(lookCaption(doc, 'label', atoms, [{ text: '15' }])); placeAttached(doc, c, M); id = c.id; });
+    const mid = () => { const b = M.captionBox(doc.captions.get(id)!); return (b.x1 + b.x2) / 2; };
+    expect(mid()).toBeCloseTo(15, 6);
+    doc.edit('Focal point', () => setFocal(doc, [atoms[0]]));
+    expect(mid()).toBeCloseTo(0, 6);
+    expect(M.captionBox(doc.captions.get(id)!).y1).toBeCloseTo(12 + doc.captions.get(id)!.attach!.gap, 6);
   });
 });
 

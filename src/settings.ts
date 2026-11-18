@@ -3,6 +3,7 @@
 // %APPDATA%\io.github.nathanohare.chemillustrator); in a browser, the browser's storage for
 // this page. Drawings never go here.
 
+import { DEFAULT_FOCAL_PREFS, parseFocalPrefs, type FocalPrefs } from './chem/focal';
 import { parseKbLayouts, type KbLayout } from './kb/tables';
 import { type OrientPrefs, DEFAULT_ORIENT, parseOrient } from './orientation-prefs';
 import { type PageLook, DEFAULT_PAGE_LOOK, parsePageLook, readPageTag } from './page-grid';
@@ -285,6 +286,8 @@ export interface Settings {
   analysis: AnalysisPrefs;
   /** How Newman projections and torsion energy charts look (Settings > Newman Projections). */
   newman: NewmanPrefs;
+  /** Focal points: the mark, where structures without one center, and the Distribute choice. */
+  focal: FocalPrefs;
   /** AutoSave, recovery copies, Version History and shared folders (File > Versions and Recovery > AutoSave and Recovery Options). */
   keep: KeepPrefs;
   /** The person's own AI model, if they linked one (Edit > Settings > AI Model). Its key is kept apart, never here. */
@@ -317,6 +320,7 @@ export const DEFAULT_SETTINGS: Settings = {
   scheme: DEFAULT_SCHEME_PREFS,
   analysis: DEFAULT_ANALYSIS,
   newman: DEFAULT_NEWMAN_PREFS,
+  focal: DEFAULT_FOCAL_PREFS,
   keep: DEFAULT_KEEP,
   ai: DEFAULT_AI,
   kbColumns: {},
@@ -329,7 +333,7 @@ const STORAGE_KEY = 'chem-illustrator.settings';
 
 /** Read settings saved as text, keeping only what makes sense. */
 export function parseSettings(text: string | null | undefined): Settings {
-  const s: Settings = { ...DEFAULT_SETTINGS, hotkeys: {}, replacements: DEFAULT_SETTINGS.replacements.map(([a, b]) => [a, b]), dictionary: [], modeColours: { ...DEFAULT_MODE_COLOURS }, nicknames: {}, templates: [], palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null, myStyles: [], modeStyles: {}, darkPalettes: [], guides: { ...DEFAULT_SETTINGS.guides }, orient: { ...DEFAULT_ORIENT }, pageLook: { ...DEFAULT_PAGE_LOOK }, docPins: [], recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], scheme: { ...DEFAULT_SCHEME_PREFS }, analysis: parseAnalysisPrefs(null), newman: parseNewmanPrefs(null), keep: { ...DEFAULT_KEEP }, ai: { ...DEFAULT_AI }, kbColumns: {}, officeStructures: { ...DEFAULT_SETTINGS.officeStructures } };
+  const s: Settings = { ...DEFAULT_SETTINGS, hotkeys: {}, replacements: DEFAULT_SETTINGS.replacements.map(([a, b]) => [a, b]), dictionary: [], modeColours: { ...DEFAULT_MODE_COLOURS }, nicknames: {}, templates: [], palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null, myStyles: [], modeStyles: {}, darkPalettes: [], guides: { ...DEFAULT_SETTINGS.guides }, orient: { ...DEFAULT_ORIENT }, pageLook: { ...DEFAULT_PAGE_LOOK }, docPins: [], recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], scheme: { ...DEFAULT_SCHEME_PREFS }, analysis: parseAnalysisPrefs(null), newman: parseNewmanPrefs(null), focal: { ...DEFAULT_FOCAL_PREFS }, keep: { ...DEFAULT_KEEP }, ai: { ...DEFAULT_AI }, kbColumns: {}, officeStructures: { ...DEFAULT_SETTINGS.officeStructures } };
   if (!text) return s;
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return s; }
@@ -344,6 +348,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   else if (r.mapLook === 'peach') s.mapLook = 'custom';
   if (r.mapBox !== undefined) s.mapBox = mapBoxStyle(r.mapBox);
   if (r.depthShade) s.depthShade = readDepthShade(r.depthShade);
+  if (r.focal !== undefined) s.focal = parseFocalPrefs(r.focal);
   if (r.touchMode === 'auto' || r.touchMode === 'on' || r.touchMode === 'off') s.touchMode = r.touchMode;
   s.orient = parseOrient(r.orient);
   s.pageLook = parsePageLook(r.pageLook);

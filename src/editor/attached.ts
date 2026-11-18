@@ -6,6 +6,7 @@
 import type { AttachSide, Attachment, Caption, Doc, Entity } from '../model';
 import type { Rect, Vec } from '../geom';
 import { POINTS, selectionBox, type Measure } from './arrange';
+import { alignPoint, focalDefault } from '../chem/focal';
 
 /** The name of the tag that saves a caption's tie in a CDXML file. */
 export const ATTACH_TAG = 'Chem Illustrator attached';
@@ -37,12 +38,12 @@ const across = (r: Rect, align: Attachment['align'], mid?: number) =>
   align === 'left' ? r.x1 : align === 'right' ? r.x2 : mid ?? (r.x1 + r.x2) / 2;
 
 /**
- * Where the structure's middle is, for centering what is tied to it: the middle of its box for
- * now. (The hook for focal points: a structure's own center for lining things up, which a
- * caption centered under it should follow.)
+ * Where the structure's middle is, for centering what is tied to it: its focal point (one set on
+ * it, or its largest ring when that is the default in Preferences), else the middle of its box.
  */
-export function structureMiddle(_doc: Doc, _atoms: Set<number>, box: Rect): Vec {
-  return { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
+export function structureMiddle(doc: Doc, atoms: Set<number>, box: Rect): Vec {
+  const middle = { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
+  return alignPoint(doc, [...atoms], middle, focalDefault()) ?? middle;
 }
 
 /** The point of the caption's box that is held to the structure: the edge facing it, in the middle (or at the lined-up edge). */

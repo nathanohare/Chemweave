@@ -1822,6 +1822,10 @@ body.slides-mode #canvas-ribbon, body.design-mode #canvas-ribbon, body.sheet-mod
 .cb-pop { position: fixed; z-index: 110; width: max-content; max-width: min(420px, calc(100vw - 8px)); padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); box-shadow: var(--sh-float, 0 4px 14px rgb(0 0 0 / 0.18)); }
 .caption-spacing.cb-pop { grid-template-columns: 1fr; width: 220px; }
 .canvas-ribbon button.cr-minor svg { width: 18px; height: 18px; }
+.canvas-ribbon button.cr-has-drop { width: auto; min-width: 34px; gap: 1px; padding-right: 1px; }
+/* the ▾ that opens a button's options: after its name too, where the name shows */
+.canvas-ribbon button .cr-drop { order: 2; font-size: 9px; line-height: 1; padding: 6px 2px; color: var(--muted); border-radius: 2px; }
+.canvas-ribbon button .cr-drop:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
 .canvas-ribbon button.cr-minor .cr-word { font-size: 10px; color: var(--text); padding: 0 3px; }
 .canvas-ribbon button.cr-minor:has(.cr-word) { width: auto; }
 .canvas-ribbon button.cr-major { grid-row: span 3; justify-content: center; gap: 2px; min-width: 44px; padding: 2px 4px; font-size: var(--fs-sm); line-height: 1.15; text-align: center; }
