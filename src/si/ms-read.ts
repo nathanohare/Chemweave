@@ -808,6 +808,11 @@ export async function loadCdxmlReader(): Promise<void> {
   };
 }
 
+/** CDXML → molfile (null when it holds no structure, or an atom label that isn't an element); after loadCdxmlReader. */
+export function cdxmlMolfile(cdxml: string): string | null {
+  try { return cdxmlMol ? cdxmlMol(cdxml) : null; } catch { return null; }
+}
+
 /** Load what the readers need (the EMF and CDXML readers) before reading. */
 export async function prepareReaders(): Promise<void> {
   await Promise.all([loadEmfReader(), loadCdxmlReader()]);

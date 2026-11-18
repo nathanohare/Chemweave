@@ -3294,6 +3294,14 @@ export class SiMode {
     this.host.flash('', 1);
     if (read.error) { await ask('Import SI', [], { noCancel: true, ok: 'OK', note: read.error }); return; }
     const plan = I.analyse(read.paras);
+    if (plan.objects?.length || plan.own_objects?.length) {
+      // (structures from the SI's ChemDraw drawings: by their labels, or a compound's own drawing)
+      const [{ assignStructures }, { loadCdxmlReader, cdxmlMolfile }] = await Promise.all([import('../si/si-import-structures'), import('../si/ms-read')]);
+      await loadCdxmlReader();
+      try {
+        await assignStructures(plan, { facts: (ms) => this.host.siFacts(ms).catch(() => ms.map(() => null)), molfileOf: cdxmlMolfile });
+      } catch { /* the structures can still be drawn by hand */ }
+    }
     if (!plan.compounds.length && !plan.gps.length && !plan.sections.length) {
       await ask('Import SI', [], { noCancel: true, ok: 'OK', note: `No compounds, general procedures or sections were recognized in “${f.name}”. Compounds are found by a heading with the name and ID, such as “1-Phenylethanol (2a).”, followed by its data.`, points: read.notes });
       return;
