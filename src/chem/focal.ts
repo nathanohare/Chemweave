@@ -151,3 +151,83 @@ export function focalTarget(doc: Doc, sel: { atoms: Set<number>; bonds: Set<numb
   const ring = ringsAmong(doc, bonds).find((r) => r.length === atoms.size && r.every((a) => atoms.has(a)));
   return ring ?? null;
 }
+
+/**
+ * Keep focal points sound as a change finishes (Doc.beforeCommit): a focal point whose atom, bond
+ * or ring was broken up goes back to the default, and when joining brings two structures' focal
+ * points together only one stays: the structure drawn from (`from`, an atom of it), else the
+ * oldest. Returns how many structures lost theirs (for a note in the status bar).
+ */
+export function tidyFocal(doc: Doc, before: ReadonlyMap<string, unknown>, from?: number): number {
+  const touched = new Set<number>();
+  const created = new Set<number>();
+  let lost = 0;
+  for (const [key, was] of before) {
+    const id = Number(key.slice(1));
+    if (key[0] === 'a') {
+      if (doc.atoms.has(id)) touched.add(id);
+      else if ((was as { focal?: boolean } | null)?.focal) lost++;
+    } else if (key[0] === 'b') {
+      const now = doc.bonds.get(id);
+      const old = was as { a1: number; a2: number } | null;
+      if (!old && now) created.add(id);
+      for (const b of [old, now]) if (b) { touched.add(b.a1); touched.add(b.a2); }
+      // a bond that was a focal point taken out: its ends let go too
+      if (old && !now && doc.atoms.get(old.a1)?.focal && doc.atoms.get(old.a2)?.focal) {
+        doc.updateAtom(old.a1, { focal: undefined });
+        doc.updateAtom(old.a2, { focal: undefined });
+        lost++;
+      }
+    }
+  }
+  const done = new Set<number>();
+  for (const start of touched) {
+    if (done.has(start) || !doc.atoms.has(start)) continue;
+    const frag = doc.fragmentOf(start);
+    for (const id of frag) done.add(id);
+    const comps = markGroups(doc, frag);
+    if (!comps.length) continue;
+    // joined: the structure drawn from keeps its focal point (its side, before the new bonds)
+    let keep = comps.find((c) => c.includes(Math.min(...comps.flat()))) ?? comps[0];
+    if (comps.length > 1 && from !== undefined && frag.has(from)) {
+      const side = new Set([from]);
+      const stack = [from];
+      while (stack.length) {
+        const a = stack.pop()!;
+        for (const n of doc.neighbors(a)) {
+          const b = doc.bondBetween(a, n.id);
+          if (!b || created.has(b.id) || side.has(n.id)) continue;
+          side.add(n.id);
+          stack.push(n.id);
+        }
+      }
+      keep = comps.find((c) => c.some((id) => side.has(id))) ?? keep;
+    }
+    for (const c of comps) if (c !== keep) for (const id of c) doc.updateAtom(id, { focal: undefined });
+    if (!soundSpot(doc, keep)) { for (const id of keep) doc.updateAtom(id, { focal: undefined }); lost++; }
+  }
+  return lost;
+}
+
+/** The marked atoms of a structure in groups joined by bonds between them. */
+function markGroups(doc: Doc, frag: Set<number>): number[][] {
+  const marked = [...frag].filter((id) => doc.atoms.get(id)?.focal).sort((a, b) => a - b);
+  const seen = new Set<number>();
+  const out: number[][] = [];
+  for (const s of marked) {
+    if (seen.has(s)) continue;
+    const c = focalAtoms(doc, [s, ...marked.filter((id) => !seen.has(id) && id !== s)]);
+    // (focalAtoms starts from the lowest id given, which is s)
+    for (const id of c) seen.add(id);
+    out.push(c);
+  }
+  return out;
+}
+
+/** One atom, two bonded atoms, or exactly the atoms of one ring. */
+function soundSpot(doc: Doc, ids: number[]): boolean {
+  if (ids.length <= 2) return true;
+  const set = new Set(ids);
+  const bonds = [...doc.bonds.values()].filter((b) => set.has(b.a1) && set.has(b.a2)).map((b) => b.id);
+  return ringsAmong(doc, bonds).some((r) => r.length === ids.length && r.every((a) => set.has(a)));
+}

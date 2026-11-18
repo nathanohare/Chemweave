@@ -6,7 +6,8 @@
 
 import type { Arrow, Doc, StepRoles } from '../model';
 import type { Rect, Vec } from '../geom';
-import { add, mul } from '../geom';
+import { add, dot, mul, sub } from '../geom';
+import { focalPoint } from './focal';
 import type { Measure } from '../editor/arrange';
 import { arrowFrame, inFrame, interpretArrow, isReactionArrow, isStep, itemFinder, linkRows, schemeItems, type Frame, type Item } from './reaction';
 import { plainText } from '../richtext';
@@ -269,6 +270,15 @@ function planIn(doc: Doc, m: Measure, arrowIds?: Iterable<number>): SchemePlan |
   };
   const sp = spacing(bond);
   const g = sp.gap, pg = sp.plus;
+  /**
+   * Where a group sits across the arrow (s in the frame) by its structure's own focal point, so
+   * compounds that share a core keep the core on the arrow's line; null: by the group's box.
+   */
+  const focalS = (gr: Item[], fr: Frame): number | null => {
+    const its = gr.filter((it) => it.atoms.length);
+    const p = its.length === 1 ? focalPoint(doc, its[0].atoms) : null;
+    return p ? dot(sub(add(p, plan.shifts.get(its[0].ref) ?? { x: 0, y: 0 }), fr.tail), fr.n) : null;
+  };
   const plusSize = plusBox(doc, m);
 
   // each arrow's own length (fitted to its conditions), and the length the arrows pointing the same
@@ -305,7 +315,7 @@ function planIn(doc: Doc, m: Measure, arrowIds?: Iterable<number>): SchemePlan |
     if (anchor) {
       const q = span(anchor);
       wrapped = anchor.some((it) => placed.has(it)) && q.t1 > -0.25 * bond && Math.abs((q.s1 + q.s2) / 2) > bond;
-      if (!wrapped) f = { ...f, tail: at(f, q.t2 + g, (q.s1 + q.s2) / 2) };
+      if (!wrapped) f = { ...f, tail: at(f, q.t2 + g, focalS(anchor, f) ?? (q.s1 + q.s2) / 2) };
       else if (rowStart !== null && f.u.x === 1 && f.u.y === 0) f = { ...f, tail: { x: rowStart, y: f.tail.y } };
     }
     // the arrow fits its conditions, and matches the scheme's other arrows
@@ -337,7 +347,7 @@ function planIn(doc: Doc, m: Measure, arrowIds?: Iterable<number>): SchemePlan |
         if (gr === anchor) { cursor = q.t1; return; }
         if (gr.some((it) => placed.has(it)) && role === 'products') { cursor = q.t2; return; }
         const dt = dir > 0 ? cursor - q.t1 : cursor - q.t2;
-        const ds = -(q.s1 + q.s2) / 2;
+        const ds = -(focalS(gr, f) ?? (q.s1 + q.s2) / 2);
         for (const it of gr) moveIn(it, dt, ds);
         cursor = dir > 0 ? q.t2 + dt : q.t1 + dt;
       });

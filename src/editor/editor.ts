@@ -53,7 +53,7 @@ import { joinAtoms, joinBonds, mergeAtom } from '../chem/join';
 import { extractDrawing, insertDrawing } from '../io/clipboard';
 import { isReactionArrow, itemFinder, rolesOf, ROLES, schemeItems, type Item, type Role } from '../chem/reaction';
 import { applySchemePlan, planCleanUp } from '../chem/scheme-layout';
-import { clearFocal, focalAtoms, focalTarget, setFocal } from '../chem/focal';
+import { clearFocal, focalAtoms, focalPoint, focalTarget, setFocal, tidyFocal } from '../chem/focal';
 import { drawFocalMark, drawLayoutPreview, type FocalLook, type LayoutPreview } from './focal-marks';
 import { adoptSideCaption, arrowTexts, helperBox, setSideText, sideSlot, takesHelpers, textJustify, textSize, type ArrowSide } from '../chem/arrow-text';
 import { prefsOf, schemePrefs, spacing } from '../chem/scheme-layout';
@@ -718,6 +718,8 @@ export class Editor {
       if (frames) refitFrames(this.doc, before, this.measure());
       // mechanism arrows the change left running into something find their own way round again
       if (this.options.rerouteArrows) this.rerouteArrows(before);
+      // a focal point broken up goes back to the middle; joined structures keep the drawn-from one's
+      if (tidyFocal(this.doc, before, this.drawFrom) > 0) queueMicrotask(() => this.onFocalLost());
     };
   }
 
@@ -1230,8 +1232,7 @@ export class Editor {
     // a Perspective tool on a structure: a drag turns it (and everything selected with it)
     if (e.button === 0 && !handle && !rotating && !painting && this.tool.kind === 'perspective' && (hit?.kind === 'atom' || hit?.kind === 'bond')) this.startTurn(this.drag, hit, this.tool.real);
     if (rotating) {
-      const b = this.selBox()!;
-      const center = { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
+      const center = this.turnCentre(this.selBox()!);
       this.drag.rot = { snap: snapshot(this.doc, this.sel, this.measure()), center, from: angleOf(sub(p, center)), angle: 0 };
     }
     // a template's outline shows where it will go while the mouse is held
@@ -1679,7 +1680,8 @@ export class Editor {
     else if (d.mode === 'draw') {
       if (this.liveMods()) { d.alt = e.altKey; d.shift = e.shiftKey; }
       if (this.freeAngleTool(d)) d.alt = e.altKey || this.spaceHeld;
-      this.finishDraw(d, p);
+      this.drawFrom = d.hit?.kind === 'atom' ? d.hit.id : undefined;
+      try { this.finishDraw(d, p); } finally { this.drawFrom = undefined; }
     }
     this.hover = this.hitTest(p);
     this.requestScene(e.timeStamp);
@@ -5046,6 +5048,10 @@ export class Editor {
 
   /** Arrange ▸ Focal Point ▸ Pick (or the Style panel's Pick…): the next click names the focal point. */
   focalPicking = false;
+  /** Told when a change took away a structure's focal point (its atom, bond or ring went). */
+  onFocalLost: () => void = () => {};
+  /** The atom a bond is being drawn from, while the drawing finishes (its structure keeps its focal point on a join). */
+  private drawFrom: number | undefined;
   /** Told when a pick ends: what was set, or null when it was stopped or missed. */
   onFocalPicked: (kind: 'atom' | 'bond' | 'ring' | null) => void = () => {};
 
@@ -5084,6 +5090,16 @@ export class Editor {
     for (const b of this.doc.bonds.values()) if (frag.has(b.a1) && frag.has(b.a2)) this.sel.bonds.add(b.id);
     this.changed();
     this.onFocalPicked(spot.length === 1 ? 'atom' : spot.length === 2 ? 'bond' : 'ring');
+  }
+
+  /**
+   * What the selection turns and flips about: one structure with a focal point of its own turns
+   * about that (so it stays put in a row lined up on focal points); anything else, its box's middle.
+   */
+  private turnCentre(b: Rect): Vec {
+    const fs = this.sel.arrows.size || this.sel.shapes.size ? [] : this.pickedStructures();
+    const own = fs.length === 1 ? focalPoint(this.doc, fs[0]) : null;
+    return own ?? { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
   }
 
   /** Two or more structures picked, one with a focal point of its own (Match Focal Points). */
@@ -5167,6 +5183,16 @@ export class Editor {
     this.doc.edit('Align', () => us.forEach((u, i) => moveUnit(this.doc, u, off[i])));
     this.changed();
     return true;
+  }
+
+  /**
+   * Selected structures that share a ring but have no focal points of their own (the time to
+   * point out focal points once: they would line up on the shared ring).
+   */
+  shareRingNoFocal(): boolean {
+    const us = joinGroups(this.doc, units(this.doc, this.sel, this.measure())).filter((u) => u.atoms.length);
+    if (us.length < 2 || us.some((u) => focalAtoms(this.doc, u.atoms).length)) return false;
+    return sharedAnchors(this.doc, us).filter(Boolean).length >= 2;
   }
 
   /**
@@ -5261,7 +5287,8 @@ export class Editor {
     if (!b || !this.hasSelection()) return false;
     const doc = this.doc;
     const snap = snapshot(doc, this.sel, this.measure());
-    const f = axis === 'h' ? mirrorX((b.x1 + b.x2) / 2) : mirrorY((b.y1 + b.y2) / 2);
+    const c = this.turnCentre(b);
+    const f = axis === 'h' ? mirrorX(c.x) : mirrorY(c.y);
     const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
     // the bonds flipped: those selected, and those between selected atoms
     const wedged = [...doc.bonds.values()].filter((x) => swap[x.display] && (this.sel.bonds.has(x.id) || (this.sel.atoms.has(x.a1) && this.sel.atoms.has(x.a2))));
@@ -5298,7 +5325,7 @@ export class Editor {
     const b = this.selBox();
     if (!b || !this.hasSelection()) return false;
     const snap = snapshot(this.doc, this.sel, this.measure());
-    const c = { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
+    const c = this.turnCentre(b);
     this.doc.edit('Rotate', () => transform(this.doc, snap, rotation(c, deg * DEG), false, this.textTurn(deg)));
     this.changed();
     return true;
@@ -7382,7 +7409,7 @@ export class Editor {
     for (const f of this.doc.fragments()) {
       if ([...f].some((id) => this.sel.atoms.has(id))) continue;
       const box = selectionBox(this.doc, { ...emptySel(), atoms: f }, m);
-      if (box) out.push({ box, ...atomStops(this.doc, f) });
+      if (box) out.push({ box, ...this.withFocal(atomStops(this.doc, f), [f]) });
     }
     for (const c of this.doc.captions.values()) if (!this.sel.captions.has(c.id) && (c.runs.length || !c.ph)) add({ ...emptySel(), captions: new Set([c.id]) });
     for (const r of this.doc.arrows.values()) if (!this.sel.arrows.has(r.id)) add({ ...emptySel(), arrows: new Set([r.id]) });
@@ -7393,7 +7420,13 @@ export class Editor {
   private guideStops(): { xs: number[]; ys: number[] } | undefined {
     const s = this.sel;
     if (!s.atoms.size || s.captions.size || s.arrows.size || s.shapes.size) return undefined;
-    return atomStops(this.doc, s.atoms);
+    return this.withFocal(atomStops(this.doc, s.atoms), this.pickedStructures());
+  }
+
+  /** Stops for smart guides with the structures' own focal points added (they line up too). */
+  private withFocal(st: { xs: number[]; ys: number[] }, frags: Iterable<number>[]): { xs: number[]; ys: number[] } {
+    for (const f of frags) { const p = focalPoint(this.doc, f); if (p) { st.xs.push(p.x); st.ys.push(p.y); } }
+    return st;
   }
 
   /** Arrows drawn or dragged onto a shape's connection point stick to it (Design mode). */

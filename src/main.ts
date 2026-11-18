@@ -3980,7 +3980,14 @@ function showDevTools(on: boolean): void {
 }
 
 function align(how: Align): void {
-  if (!editor.align(how)) flash('Select two or more structures, captions, arrows or shapes to line them up.');
+  // once ever: structures that share a ring could line up on it
+  const tip = (how === 'hcenter' || how === 'vcenter') && !focalPrefs.tipShown && editor.shareRingNoFocal();
+  if (!editor.align(how)) { flash('Select two or more structures, captions, arrows or shapes to line them up.'); return; }
+  if (tip) {
+    focalPrefs.tipShown = true;
+    storeSettings();
+    flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Arrange ▸ Match Focal Points.', 9000);
+  }
 }
 
 let flashTimer = 0;
@@ -13192,6 +13199,7 @@ stylePanel.energy = {
 };
 stylePanel.ringFill = () => void command('fill-rings');
 stylePanel.focalPick = () => startFocalPick();
+editor.onFocalLost = () => flash('A focal point\'s atom, bond or ring was taken away, so that structure lines up by the middle of its box again.', 5000);
 editor.onFocalPicked = (kind) => {
   if (kind) flash(`Focal point set on the ${kind}.`);
   else $('#flash').classList.remove('show');
