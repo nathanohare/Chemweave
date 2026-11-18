@@ -53,6 +53,8 @@ import { joinAtoms, joinBonds, mergeAtom } from '../chem/join';
 import { extractDrawing, insertDrawing } from '../io/clipboard';
 import { arrowKind, drawnKind, isReactionArrow, isSequenceArrow, itemFinder, neighborsOf, rolesOf, ROLES, schemeItems, type Item, type Role } from '../chem/reaction';
 import { applySchemePlan, planCleanUp } from '../chem/scheme-layout';
+import { clearFocal, focalAtoms, focalPoint, focalTarget, setFocal, tidyFocal } from '../chem/focal';
+import { drawFocalMark, drawLayoutPreview, type FocalLook, type LayoutPreview } from './focal-marks';
 import { adoptSideCaption, ARROW_SIDES, arrowTexts, helperBox, lineUpText, setSideText, sideAlign, sideSlot, splitStepRuns, takesHelpers, textFont, textJustify, textSize, type ArrowSide } from '../chem/arrow-text';
 import { prefsOf, schemePrefs, spacing } from '../chem/scheme-layout';
 import { arrowEnd, boxOf, productDrawing, pushArrowsOf, pushedAtoms, readPushes, type PushIssue, type PushReading } from '../chem/push-electrons';
@@ -76,14 +78,15 @@ import { addBranch, addLoop, arrangeSmart, readSmart, smartIsFree, smartLayoutOf
 import type { SmartFormat } from '../chem/smart-format';
 import { plateFrameOf, plateFromBox, putPlate, refitPlates, rfAtY, setMarkAt, tlcSpotAt, type PlateData } from '../design/plates';
 import { drawMo } from '../design/mo';
-import { newmanCentre, newmanFrameOf, putMark, putNewman, refitNewman, type NewmanData } from '../design/newman';
+import { drawEyeMark, newmanCentre, newmanFrameOf, putMark, putNewman, refitNewman, type NewmanData } from '../design/newman';
 import { putTorsion, refitTorsion, torsionFrameOf, type TorsionData } from '../design/torsion';
 import {
   diagramContents, diagramFrameOf, heldLines, putDiagram, refitDiagramStructures, refitDiagrams, ungroupDiagram, type DiagramData,
 } from '../design/diagrams';
-import { attachWhereItIs, defaultGap, placeAttached, refitAttached } from './attached';
+import { attachWhereItIs, placeAttached, refitAttached } from './attached';
+import { fullLook, lookCaption, USUAL } from './tied-look';
 import { frameAround, frameBox, frameMembers, refitFrames, defaultPad, thingsInside } from './frames';
-import { atomsBox, Align, Measure, POINTS, Snapshot, type TurnText, units, joinGroups, clearOffset, alignOffsets, distributeOffsets, moveUnit, selectionBox, snapshot, transform, withFrameContents, rotation, mirrorX, mirrorY } from './arrange';
+import { atomsBox, Align, Measure, POINTS, Snapshot, type TurnText, units, joinGroups, focusOf as focusOfUnit, clearOffset, alignOffsets, distributeOffsets, moveUnit, selectionBox, snapshot, transform, withFrameContents, rotation, mirrorX, mirrorY } from './arrange';
 import { elementNumber, hasImplicitH, implicitHydrogens, SYMBOLS } from '../chem/elements';
 import { anyMarks, isMarkToggle, readMark, styleOfMark, toggleMarks, toggledMark, writeMark, type Mark, type MarkToggle } from '../chem/label-marks';
 import { tokenize, addNicknames, isBuiltInNickname, labelGraph, labelOverValent, labelPieces, labelLook, styleLabel, CAP, SUB_SCALE } from '../chem/labels';
@@ -716,6 +719,8 @@ export class Editor {
       if (frames) refitFrames(this.doc, before, this.measure());
       // mechanism arrows the change left running into something find their own way round again
       if (this.options.rerouteArrows) this.rerouteArrows(before);
+      // a focal point broken up goes back to the middle; joined structures keep the drawn-from one's
+      if (tidyFocal(this.doc, before, this.drawFrom) > 0) queueMicrotask(() => this.onFocalLost());
     };
   }
 
@@ -1105,6 +1110,8 @@ export class Editor {
 
   private onDown(e: PointerEvent): void {
     this.commitLabel();
+    // picking a focal point: this click names the atom, bond or ring
+    if (this.focalPicking && e.button === 0) { this.pickFocalAt(this.docPoint(e)); return; }
     // Alt+click on a locked structure (Slides) edits it this once: the lock lifts for this press
     // and comes back when the button is let go
     if (this.structuresLocked && e.altKey && e.button === 0) {
@@ -1216,7 +1223,7 @@ export class Editor {
       if (pts) { this.drag.mode = 'reshape'; this.drag.reshape = { id: hit.id, pts, t: nearestOnPath(pts, p).t }; }
     }
     // a curved arrow's handle or join pressed: the arrow keys and Delete go to it from now on
-    if (e.button === 0) this.contextSpot = null;
+    if (e.button === 0) { this.contextSpot = null; this.contextRing = null; }
     if (e.button === 0) this.activeHandle = handle?.kind === 'arrow' && handle.which[0] === 'b' ? { id: handle.id, which: handle.which } : null;
     // the selection tool on a charge sign: it can be dragged anywhere round its atom
     if (e.button === 0 && !handle && !rotating && !painting && this.tool.kind === 'select') {
@@ -1226,8 +1233,7 @@ export class Editor {
     // a Perspective tool on a structure: a drag turns it (and everything selected with it)
     if (e.button === 0 && !handle && !rotating && !painting && this.tool.kind === 'perspective' && (hit?.kind === 'atom' || hit?.kind === 'bond')) this.startTurn(this.drag, hit, this.tool.real);
     if (rotating) {
-      const b = this.selBox()!;
-      const center = { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
+      const center = this.turnCentre(this.selBox()!);
       this.drag.rot = { snap: snapshot(this.doc, this.sel, this.measure()), center, from: angleOf(sub(p, center)), angle: 0 };
     }
     // a template's outline shows where it will go while the mouse is held
@@ -1251,6 +1257,7 @@ export class Editor {
       this.captionEd?.pointerMove(p);
       return;
     }
+    if (!d && this.focalPicking) { this.r.overlay.style.cursor = 'crosshair'; this.requestOverlay(); return; }
     if (!d) this.linkTitle(p);
     if (!d && this.captionEd?.hit(p)) {
       this.r.overlay.style.cursor = this.captionEd.cursor(p);
@@ -1674,7 +1681,8 @@ export class Editor {
     else if (d.mode === 'draw') {
       if (this.liveMods()) { d.alt = e.altKey; d.shift = e.shiftKey; }
       if (this.freeAngleTool(d)) d.alt = e.altKey || this.spaceHeld;
-      this.finishDraw(d, p);
+      this.drawFrom = d.hit?.kind === 'atom' ? d.hit.id : undefined;
+      try { this.finishDraw(d, p); } finally { this.drawFrom = undefined; }
     }
     this.hover = this.hitTest(p);
     this.requestScene(e.timeStamp);
@@ -1699,6 +1707,21 @@ export class Editor {
     const p = this.docPoint(e);
     if (this.captionEd?.hit(p)) return null;
     const h = this.hitTest(p);
+    // inside a ring: the ring is picked (for Set as Focal Point and the ring's commands), or with
+    // its structure already picked, the menu's focal point commands are for the ring
+    this.contextRing = null;
+    if (!h) {
+      const ring = ringAround(this.doc, p);
+      if (ring) {
+        this.contextRing = ring;
+        const atoms = new Set(ring), bonds = new Set<number>();
+        for (const b of this.doc.bonds.values()) if (atoms.has(b.a1) && atoms.has(b.a2)) bonds.add(b.id);
+        const already = [...bonds].every((id) => this.sel.bonds.has(id)) || ring.every((id) => this.sel.atoms.has(id));
+        if (!already) { this.clearSelection(); for (const id of ring) this.sel.atoms.add(id); for (const id of bonds) this.sel.bonds.add(id); this.changed(); }
+        this.contextSpot = null;
+        return null;
+      }
+    }
     // empty space (outside the selection's box): the menu for the page, not the selection
     if (!h && this.hasSelection()) {
       const b = this.selBox();
@@ -3699,13 +3722,28 @@ export class Editor {
   }
 
   /** A Newman projection drawn on a page of its own, in this drawing's style (the Newman window's preview). */
-  newmanPreview(d: NewmanData): { doc: Doc; box: Rect } {
+  newmanPreview(d: NewmanData, eye?: string, rs?: [string | null | undefined, string | null | undefined]): { doc: Doc; box: Rect } {
     const tmp = new Doc();
     tmp.style = { ...this.doc.style };
     tmp.textStyles = this.doc.textStyles;
     let id = 0;
-    tmp.edit('Preview', () => { id = putNewman(tmp, this.fullMeasure(), { ...d, link: undefined, mark: undefined }, { x: 0, y: 0 }); });
-    return { doc: tmp, box: shapeBox(tmp.shapes.get(id)!) };
+    let box: Rect | null = null;
+    tmp.edit('Preview', () => {
+      id = putNewman(tmp, this.fullMeasure(), { ...d, link: undefined, mark: undefined }, { x: 0, y: 0 });
+      box = shapeBox(tmp.shapes.get(id)!);
+      // a sawhorse with the eye that shows which end is looked from (the window's preview)
+      const f = tmp.shapes.get(id)!.frame!;
+      // (a page of its own has no chemistry engine: the front and back atoms' R/S are handed in)
+      if (rs && f.atoms.length > 1) tmp.stereo = { atom: (a) => (a === f.atoms[0] ? rs[0] : a === f.atoms[1] ? rs[1] : null), bond: () => null };
+      const back = eye && d.kind === 'sawhorse' && f.atoms.length > 1 ? tmp.atoms.get(f.atoms[1]) : undefined;
+      if (back) {
+        const mark = drawEyeMark(tmp, { x: 0, y: 0 }, back, eye, d.look.eye ?? 'plain');
+        for (const p of [...mark.arrows.flatMap((a) => { const r = tmp.arrows.get(a)!; return [r.tail, r.head]; }), ...mark.shapes.flatMap((s) => { const r = shapeBox(tmp.shapes.get(s)!); return [{ x: r.x1, y: r.y1 }, { x: r.x2, y: r.y2 }]; })]) {
+          box = { x1: Math.min(box!.x1, p.x), y1: Math.min(box!.y1, p.y), x2: Math.max(box!.x2, p.x), y2: Math.max(box!.y2, p.y) };
+        }
+      }
+    });
+    return { doc: tmp, box: box! };
   }
 
   /**
@@ -3714,12 +3752,17 @@ export class Editor {
    * select it. `linked: false` lets go of the structure. `amend`
    * joins the last undo step (a linked projection worked out again after its structure changed).
    */
-  putNewmanProjection(d: NewmanData, opts: { id?: number; mark?: string | null; linked?: boolean; amend?: boolean; page?: { w: number; h: number } } = {}): number | null {
+  putNewmanProjection(d: NewmanData, opts: { id?: number; mark?: string | null; linked?: boolean; amend?: boolean; page?: { w: number; h: number }; /** Where its middle goes (clicked with the pointer); left out, beside its structure. */ at?: Vec } = {}): number | null {
     const doc = this.doc, m = this.fullMeasure(), L = doc.style.bondLength;
     const old = opts.id !== undefined ? doc.shapes.get(opts.id) : undefined;
     let frame: number | null = null;
     const run = () => {
       let c = old ? newmanCentre(doc, old) : null;
+      if (!c && opts.at) {
+        // its middle where the pointer put it (it is drawn round its front atom)
+        const b = this.newmanPreview(d).box;
+        c = { x: opts.at.x - (b.x1 + b.x2) / 2, y: opts.at.y - (b.y1 + b.y2) / 2 };
+      }
       if (!c) {
         // to the right of its structure, level with the bond
         const atoms = d.link ? doc.fragmentOf(d.link.front) : new Set<number>();
@@ -3735,7 +3778,7 @@ export class Editor {
       // not linked: it keeps no tie to the structure, and its mark is ordinary lines
       if (opts.linked === false) data = { ...data, link: undefined, mark: undefined };
       frame = putNewman(doc, m, data, c, old?.id);
-      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); this.moveClear(opts.page); }
+      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); if (!opts.at) this.moveClear(opts.page); }
     };
     const label = old ? 'Edit Newman Projection' : 'Newman Projection';
     if (opts.amend) doc.amend(label, run); else doc.edit(label, run);
@@ -3767,7 +3810,7 @@ export class Editor {
    * Draw a torsional energy chart below its structure (or chart `id` again where it is), and
    * select it.
    */
-  putTorsionChart(d: TorsionData, opts: { id?: number; near?: number; page?: { w: number; h: number } } = {}): number | null {
+  putTorsionChart(d: TorsionData, opts: { id?: number; near?: number; page?: { w: number; h: number }; /** Where its middle goes (clicked with the pointer). */ at?: Vec } = {}): number | null {
     const doc = this.doc, m = this.fullMeasure(), L = doc.style.bondLength;
     const old = opts.id !== undefined ? doc.shapes.get(opts.id) : undefined;
     let frame: number | null = null;
@@ -3778,6 +3821,9 @@ export class Editor {
         const was = shapeBox(old);
         const tmp = this.torsionPreview(old.torsion).box;
         at = { x: was.x1 - tmp.x1, y: was.y1 - tmp.y1 };
+      } else if (opts.at) {
+        const b = this.torsionPreview(d).box;
+        at = { x: opts.at.x - (b.x1 + b.x2) / 2, y: opts.at.y - (b.y1 + b.y2) / 2 };
       } else {
         // below its structure, the plot's left edge under the structure's
         const atoms = opts.near !== undefined && doc.atoms.has(opts.near) ? doc.fragmentOf(opts.near) : new Set<number>();
@@ -3786,7 +3832,7 @@ export class Editor {
         at = box ? { x: box.x1 - prev.x1, y: box.y2 + 1.5 * L - prev.y1 } : { x: 0, y: 0 };
       }
       frame = putTorsion(doc, m, d, at, old?.id);
-      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); this.moveClear(opts.page); }
+      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); if (!opts.at) this.moveClear(opts.page); }
     });
     if (frame !== null) this.selectOnly({ kind: 'shape', id: frame });
     this.changed();
@@ -3805,6 +3851,16 @@ export class Editor {
         if (c) putNewman(doc, m, { ...s.newman!, look: structuredClone(look) }, c, id);
       }
     });
+    this.changed();
+  }
+
+  /** One projection drawn again with part of its look changed (the Side Panel's options). */
+  relookNewman(id: number, patch: Partial<NewmanData['look']>): void {
+    const doc = this.doc, s = doc.shapes.get(id);
+    const c = s?.newman ? newmanCentre(doc, s) : null;
+    if (!s?.newman || !c) return;
+    const d = { ...s.newman, look: { ...structuredClone(s.newman.look), ...patch } };
+    doc.edit('Newman Projection Look', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
     this.changed();
   }
 
@@ -4945,6 +5001,176 @@ export class Editor {
     return b ? { x: (b.x1 + b.x2) / 2, y: b.y1 - this.tol(24) } : null;
   }
 
+  // ---------------------------------------------------------------- focal points
+
+  /** View: Show Focal Points (every structure's own focal point marked, not only selected ones). */
+  showFocal = false;
+  /** How focal points are marked. */
+  focalLook: FocalLook = 'target';
+  /** What pointing at Align, Distribute or Arrange would do (drawn until the pointer leaves). */
+  private layoutPreview: LayoutPreview | null = null;
+
+  /**
+   * Show what a layout command would do while the pointer is on its button (null clears it):
+   * align-hcenter, align-vcenter, distribute-h, distribute-v, distribute-h-focal,
+   * distribute-v-focal, arrange-row, arrange-column. Other commands show the focal points only.
+   */
+  previewLayout(cmd: string | null): void {
+    this.layoutPreview = null;
+    if (cmd && this.hasSelection()) {
+      const us = cmd.startsWith('arrange-') ? this.gridUnits() : joinGroups(this.doc, units(this.doc, this.sel, this.measure()));
+      if (us.length >= 2) {
+        const gap = this.doc.style.bondLength * 1.5;
+        const offsets =
+          cmd === 'align-hcenter' || cmd === 'align-vcenter' ? alignOffsets(us, cmd === 'align-hcenter' ? 'hcenter' : 'vcenter')
+          : cmd.startsWith('distribute-') ? distributeOffsets(us, cmd[11] === 'h' ? 'h' : 'v', cmd.endsWith('-focal') ? 'focal' : 'gaps')
+          : cmd === 'arrange-row' || cmd === 'arrange-column' ? this.gridMoves(us, { kind: cmd === 'arrange-row' ? 'row' : 'column', gap })
+          : us.map(() => ({ x: 0, y: 0 }));
+        const pv: LayoutPreview = { units: us, offsets };
+        if (cmd === 'align-hcenter' || cmd === 'align-vcenter') {
+          const f = focusOfUnit(us[0]), d = offsets[0];
+          pv.line = cmd === 'align-hcenter' ? { axis: 'x', at: f.x + d.x } : { axis: 'y', at: f.y + d.y };
+        }
+        this.layoutPreview = pv;
+      }
+    }
+    this.requestOverlay();
+  }
+
+  /** The structures (as atom sets) that have a selected atom or bond. */
+  private pickedStructures(): Set<number>[] {
+    const out: Set<number>[] = [];
+    const seen = new Set<number>();
+    const starts = [...this.sel.atoms, ...[...this.sel.bonds].map((id) => this.doc.bonds.get(id)?.a1).filter((x): x is number => x !== undefined)];
+    for (const id of starts) {
+      if (seen.has(id) || !this.doc.atoms.has(id)) continue;
+      const f = this.doc.fragmentOf(id);
+      for (const a of f) seen.add(a);
+      out.push(f);
+    }
+    return out;
+  }
+
+  /** The focal spot the selection names (an atom, a bond or a ring), or null. */
+  focalSpot(): number[] | null {
+    const own = focalTarget(this.doc, this.sel);
+    if (own) return own;
+    const r = this.contextRing;
+    return r && r.every((id) => this.doc.atoms.has(id) && this.sel.atoms.has(id)) ? r : null;
+  }
+
+  /** The ring right-clicked inside last (until the next click). */
+  private contextRing: number[] | null = null;
+
+  /** Right-click or Arrange ▸ Set as Focal Point: the selected atom, bond or ring. False when the selection isn't one. */
+  setFocalPoint(): boolean {
+    const on = this.focalSpot();
+    if (!on) return false;
+    this.doc.edit('Set Focal Point', () => setFocal(this.doc, on));
+    this.changed();
+    return true;
+  }
+
+  /** Reset Focal Point: the selected structures center on the middle of their box again. False when none had its own. */
+  resetFocalPoint(): boolean {
+    const fs = this.pickedStructures();
+    if (!fs.some((f) => focalAtoms(this.doc, f).length)) return false;
+    this.doc.edit('Reset Focal Point', () => { for (const f of fs) clearFocal(this.doc, f); });
+    this.changed();
+    return true;
+  }
+
+  /** Arrange ▸ Focal Point ▸ Pick (or the Style panel's Pick…): the next click names the focal point. */
+  focalPicking = false;
+  /** Told when a change took away a structure's focal point (its atom, bond or ring went). */
+  onFocalLost: () => void = () => {};
+  /** The atom a bond is being drawn from, while the drawing finishes (its structure keeps its focal point on a join). */
+  private drawFrom: number | undefined;
+  /** Told when a pick ends: what was set, or null when it was stopped or missed. */
+  onFocalPicked: (kind: 'atom' | 'bond' | 'ring' | null) => void = () => {};
+
+  startFocalPick(): void {
+    this.focalPicking = true;
+    this.r.overlay.style.cursor = 'crosshair';
+    this.requestOverlay();
+  }
+
+  stopFocalPick(): void {
+    if (!this.focalPicking) return;
+    this.focalPicking = false;
+    this.r.overlay.style.cursor = '';
+    this.requestOverlay();
+    this.onFocalPicked(null);
+  }
+
+  /** The focal spot under p while picking: an atom, a bond's two atoms, or the ring p is inside. */
+  private focalSpotAt(p: Vec): number[] | null {
+    const h = this.hitTestNow(p);
+    if (h?.kind === 'atom') return [h.id];
+    if (h?.kind === 'bond') { const b = this.doc.bonds.get(h.id); return b ? [b.a1, b.a2] : null; }
+    return h ? null : ringAround(this.doc, p);
+  }
+
+  private pickFocalAt(p: Vec): void {
+    const spot = this.focalSpotAt(p);
+    this.focalPicking = false;
+    this.r.overlay.style.cursor = '';
+    if (!spot) { this.requestOverlay(); this.onFocalPicked(null); return; }
+    this.doc.edit('Set Focal Point', () => setFocal(this.doc, spot));
+    // its structure stays picked, with its new focal point marked
+    const frag = this.doc.fragmentOf(spot[0]);
+    this.clearSelection();
+    for (const id of frag) this.sel.atoms.add(id);
+    for (const b of this.doc.bonds.values()) if (frag.has(b.a1) && frag.has(b.a2)) this.sel.bonds.add(b.id);
+    this.changed();
+    this.onFocalPicked(spot.length === 1 ? 'atom' : spot.length === 2 ? 'bond' : 'ring');
+  }
+
+  /**
+   * What the selection turns and flips about: one structure with a focal point of its own turns
+   * about that (so it stays put in a row lined up on focal points); anything else, its box's middle.
+   */
+  private turnCentre(b: Rect): Vec {
+    const fs = this.sel.arrows.size || this.sel.shapes.size ? [] : this.pickedStructures();
+    const own = fs.length === 1 ? focalPoint(this.doc, fs[0]) : null;
+    return own ?? { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
+  }
+
+  /** Two or more structures picked, one with a focal point of its own (Match Focal Points). */
+  canMatchFocal(): boolean {
+    const fs = this.pickedStructures();
+    return fs.length > 1 && fs.some((f) => focalAtoms(this.doc, f).length > 0);
+  }
+
+  /** Do any of the selected structures have a focal point of their own? */
+  hasOwnFocal(): boolean {
+    return this.pickedStructures().some((f) => focalAtoms(this.doc, f).length > 0);
+  }
+
+  /**
+   * The focal points on screen: every structure's own with Show Focal Points on; otherwise those
+   * of selected structures (lighter); and the preview of a layout command being pointed at.
+   */
+  private drawFocal(ctx: CanvasRenderingContext2D, px: number): void {
+    if (this.layoutPreview) { drawLayoutPreview(ctx, this.doc, this.layoutPreview, px, PREVIEW, this.focalLook); return; }
+    if (this.focalPicking && this.pointerInside) {
+      const spot = this.focalSpotAt(this.pointer);
+      if (spot) {
+        let x = 0, y = 0;
+        for (const id of spot) { const a = this.doc.atoms.get(id)!; x += a.x; y += a.y; }
+        drawFocalMark(ctx, { x: x / spot.length, y: y / spot.length }, px, PREVIEW, this.focalLook, true);
+      }
+    }
+    const frags = this.showFocal ? this.doc.fragments() : this.pickedStructures();
+    for (const f of frags) {
+      const ids = focalAtoms(this.doc, f);
+      if (!ids.length) continue;
+      let x = 0, y = 0;
+      for (const id of ids) { const a = this.doc.atoms.get(id)!; x += a.x; y += a.y; }
+      drawFocalMark(ctx, { x: x / ids.length, y: y / ids.length }, px, PREVIEW, this.focalLook, true, !this.showFocal);
+    }
+  }
+
   /**
    * The tilt handles (see tiltHandles): small knobs either side of the rotate handle, each with a
    * two-headed arrow through it, up–down (tip) on the left and left–right (swing) on the right.
@@ -4993,12 +5219,25 @@ export class Editor {
     return true;
   }
 
-  /** Space the selected objects evenly. Returns false when fewer than three are selected. */
-  distribute(axis: 'h' | 'v'): boolean {
+  /**
+   * Selected structures that share a ring but have no focal points of their own (the time to
+   * point out focal points once: they would line up on the shared ring).
+   */
+  shareRingNoFocal(): boolean {
+    const us = joinGroups(this.doc, units(this.doc, this.sel, this.measure())).filter((u) => u.atoms.length);
+    if (us.length < 2 || us.some((u) => focalAtoms(this.doc, u.atoms).length)) return false;
+    return sharedAnchors(this.doc, us).filter(Boolean).length >= 2;
+  }
+
+  /**
+   * Space the selected objects evenly: equal gaps between them, or (`by` 'focal') their focal
+   * points equally far apart. Returns false when fewer than three are selected.
+   */
+  distribute(axis: 'h' | 'v', by: 'gaps' | 'focal' = 'gaps'): boolean {
     const us = joinGroups(this.doc, units(this.doc, this.sel, this.measure()));
     if (us.length < 3) return false;
-    const off = distributeOffsets(us, axis);
-    this.doc.edit('Distribute', () => us.forEach((u, i) => moveUnit(this.doc, u, off[i])));
+    const off = distributeOffsets(us, axis, by);
+    this.doc.edit(by === 'focal' ? 'Distribute Focal Points' : 'Distribute', () => us.forEach((u, i) => moveUnit(this.doc, u, off[i])));
     this.changed();
     return true;
   }
@@ -5058,8 +5297,9 @@ export class Editor {
   }
 
   private gridMoves(us: ReturnType<typeof units>, how: GridHow): Vec[] {
-    // structures that share a ring line up on it
-    return gridOffsets(us.map((u) => u.box), { anchors: sharedAnchors(this.doc, us), ...how });
+    // structures line up on their focal points; without any, structures that share a ring line up on it
+    const anchors = us.some((u) => u.focus) ? us.map((u) => u.focus ?? null) : sharedAnchors(this.doc, us);
+    return gridOffsets(us.map((u) => u.box), { anchors, ...how });
   }
 
   private applyGrid(us: ReturnType<typeof units>, how: GridHow, label: string): boolean {
@@ -5081,7 +5321,8 @@ export class Editor {
     if (!b || !this.hasSelection()) return false;
     const doc = this.doc;
     const snap = snapshot(doc, this.sel, this.measure());
-    const f = axis === 'h' ? mirrorX((b.x1 + b.x2) / 2) : mirrorY((b.y1 + b.y2) / 2);
+    const c = this.turnCentre(b);
+    const f = axis === 'h' ? mirrorX(c.x) : mirrorY(c.y);
     const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
     // the bonds flipped: those selected, and those between selected atoms
     const wedged = [...doc.bonds.values()].filter((x) => swap[x.display] && (this.sel.bonds.has(x.id) || (this.sel.atoms.has(x.a1) && this.sel.atoms.has(x.a2))));
@@ -5118,7 +5359,7 @@ export class Editor {
     const b = this.selBox();
     if (!b || !this.hasSelection()) return false;
     const snap = snapshot(this.doc, this.sel, this.measure());
-    const c = { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
+    const c = this.turnCentre(b);
     this.doc.edit('Rotate', () => transform(this.doc, snap, rotation(c, deg * DEG), false, this.textTurn(deg)));
     this.changed();
     return true;
@@ -5542,9 +5783,15 @@ export class Editor {
     const m = this.fullMeasure();
     const plan = planNumbers(doc, m, this.sel.atoms, opts);
     if (!plan.labels.length) return 0;
-    const bold = opts.bold ?? true;
+    const bold = opts.bold ?? fullLook(doc.style, 'label').bold;
     const made: number[] = [];
     doc.edit('Number Compounds', () => {
+      // the Bold box is the drawing style's ID label bold
+      if (bold !== fullLook(doc.style, 'label').bold) {
+        const idLook = { ...doc.style.idLook };
+        if (bold === USUAL.label.bold) delete idLook.bold; else idLook.bold = bold;
+        doc.setStyle({ ...doc.style, idLook: Object.keys(idLook).length ? idLook : undefined });
+      }
       for (const l of plan.labels) {
         if (l.caption !== undefined) {
           const c = doc.captions.get(l.caption)!;
@@ -5555,8 +5802,7 @@ export class Editor {
           continue;
         }
         // centred under the structure and tied to it
-        const c = doc.addCaption({ x: l.at.x, y: l.at.y, runs: [{ text: l.text, bold: bold || undefined }], justify: 'center',
-          attach: { atoms: [...l.item.atoms], side: 'below', gap: defaultGap(doc), shift: 0, role: 'label' } });
+        const c = doc.addCaption({ ...lookCaption(doc, 'label', l.item.atoms, [{ text: l.text }]), x: l.at.x, y: l.at.y });
         placeAttached(doc, c, m);
         this.sel.captions.add(c.id);
         made.push(c.id);
@@ -5962,6 +6208,7 @@ export class Editor {
     if (e.defaultPrevented || target?.closest?.('dialog, .menu, .flyout')) return;
     const chord = chordOf(e);
     if (!chord) return;
+    if (this.focalPicking && chord === 'Escape') { e.preventDefault(); this.stopFocalPick(); return; }
     // Tab while a template is held: the next way it can go
     if ((chord === 'Tab' || chord === 'Shift+Tab') && this.cycleTemplate(chord === 'Tab' ? 1 : -1)) { e.preventDefault(); return; }
     // in the middle of a drag (its step still open), commands wait: Undo or a tab switch now
@@ -7348,7 +7595,7 @@ export class Editor {
     for (const f of this.doc.fragments()) {
       if ([...f].some((id) => this.sel.atoms.has(id))) continue;
       const box = selectionBox(this.doc, { ...emptySel(), atoms: f }, m);
-      if (box) out.push({ box, ...atomStops(this.doc, f) });
+      if (box) out.push({ box, ...this.withFocal(atomStops(this.doc, f), [f]) });
     }
     for (const c of this.doc.captions.values()) if (!this.sel.captions.has(c.id) && (c.runs.length || !c.ph)) add({ ...emptySel(), captions: new Set([c.id]) });
     for (const r of this.doc.arrows.values()) if (!this.sel.arrows.has(r.id)) add({ ...emptySel(), arrows: new Set([r.id]) });
@@ -7359,7 +7606,13 @@ export class Editor {
   private guideStops(): { xs: number[]; ys: number[] } | undefined {
     const s = this.sel;
     if (!s.atoms.size || s.captions.size || s.arrows.size || s.shapes.size) return undefined;
-    return atomStops(this.doc, s.atoms);
+    return this.withFocal(atomStops(this.doc, s.atoms), this.pickedStructures());
+  }
+
+  /** Stops for smart guides with the structures' own focal points added (they line up too). */
+  private withFocal(st: { xs: number[]; ys: number[] }, frags: Iterable<number>[]): { xs: number[]; ys: number[] } {
+    for (const f of frags) { const p = focalPoint(this.doc, f); if (p) { st.xs.push(p.x); st.ys.push(p.y); } }
+    return st;
   }
 
   /** Arrows drawn or dragged onto a shape's connection point stick to it (Design mode). */
@@ -7788,9 +8041,9 @@ export class Editor {
       ctx.fillStyle = '#ffffff';
       ctx.beginPath(); ctx.moveTo(cx - r * 0.35, cy - r * 0.5); ctx.lineTo(cx + r * 0.55, cy); ctx.lineTo(cx - r * 0.35, cy + r * 0.5); ctx.closePath(); ctx.fill();
     }
-    // selection
+    // selection (left out while a layout command's preview shows, so the copies read clearly)
     const s = this.sel;
-    if (s.atoms.size || s.bonds.size || s.captions.size || s.arrows.size || s.shapes.size) {
+    if (!this.layoutPreview && (s.atoms.size || s.bonds.size || s.captions.size || s.arrows.size || s.shapes.size)) {
       ctx.fillStyle = mk.selFill;
       ctx.strokeStyle = mk.selLine;
       ctx.lineCap = 'round';
@@ -8058,7 +8311,7 @@ export class Editor {
       ctx.restore();
     }
     // the selection's box and the handle that turns it
-    const rh = this.drag && this.drag.mode !== 'rotate' ? null : this.rotateHandle();
+    const rh = (this.drag && this.drag.mode !== 'rotate') || this.layoutPreview ? null : this.rotateHandle();
     if (rh) {
       const b = this.selBox()!;
       ctx.lineWidth = px;
@@ -8112,6 +8365,7 @@ export class Editor {
     }
     this.drawPorts(ctx, px);
     this.drawGuides(ctx, px);
+    this.drawFocal(ctx, px);
     if (this.guideLines.length && this.drag?.mode === 'move') {
       ctx.save();
       ctx.strokeStyle = '#e8336d';

@@ -33,9 +33,12 @@ import { methylState, writeTerminalMethyls, type MethylStyle } from '../chem/hyd
 import type { TableData } from '../model';
 import { canShowGuides, guidesOn, plainReactionArrow } from '../chem/arrow-text';
 import { RIBBON_ICONS } from './ribbon-icons';
+import { attachedAtoms } from '../editor/attached';
+import { lookPatch } from '../editor/tied-look';
 import { labelAlignment, labelAlignPatch, type LabelAlign } from '../chem/label-align';
 import { labelAtoms, labelLookOf, setLabelFont, setLabelSize } from '../editor/label-font';
 import { ringsThroughBond } from '../chem/aromatic';
+import { clearFocal, focalKind } from '../chem/focal';
 import { canMerge, deleteColumn, deleteRow, fitColumns, insertColumn, insertRow, mergeDown, mergeRight, rowSpanOf, setColumnAlign, setColumnWidth, setRowSpan, setSpan, spanOf, splitCell, type TablePart } from '../table';
 import { SLIDE_TABLE_STYLES, lookOf, slideCellLook, slideTableStyle } from '../deck/table-styles';
 import type { Measure } from '../text/layout';
@@ -101,6 +104,7 @@ const OPEN_GROUPS = new Set<string>();
 const SIDES: Opt<AttachSide>[] = [['below', 'Below'], ['above', 'Above'], ['left', 'Left'], ['right', 'Right']];
 const READ_AS: Opt<'auto' | 'on' | 'off'>[] = [['auto', 'Automatically'], ['on', 'Chemical'], ['off', 'Plain text']];
 const JUSTIFY: Opt<Caption['justify']>[] = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
+const TIED_KINDS: Opt<'label' | 'caption'>[] = [['label', 'ID label'], ['caption', 'Caption']];
 const TABLE_LINES: Opt<TableData['lines']>[] = [['acs', 'ACS style (rules above and below the headings, and at the end)'], ['grid', 'Every cell boxed'], ['none', 'None']];
 
 /** How an atom's label lines up on the atom (ChemDraw's label alignment; Above and Below are one Center choice). */
@@ -131,6 +135,8 @@ export class StylePanel {
   cropWithMouse: (shapeId: number) => void = () => {};
   /** Frames (set up by the app): add one round the selection, or fit a box round what is inside it. */
   frames: { add(): void; fit(shapeId: number): void } | null = null;
+  /** Draws a Newman or sawhorse projection again with part of its look changed, and opens its window. */
+  newman: { look(shapeId: number, patch: Partial<NonNullable<Shape['newman']>['look']>): void; edit(shapeId: number): void } | null = null;
   /** A highlight colour was chosen (the app remembers it for Chemistry > Highlight and Fill > Highlight). */
   highlightUsed: (colour: string) => void = () => {};
   /** The look last chosen for highlights (new highlights take it). */
@@ -139,6 +145,8 @@ export class StylePanel {
   highlightLooks: { list(): HighlightLookPreset[]; apply(look: HighlightLookPreset): void; save(): void } = { list: () => [], apply: () => {}, save: () => {} };
   /** Fill the rings in the selection (set up by the app). */
   ringFill: (() => void) | null = null;
+  /** Click the spot on the drawing to make a structure's focal point (set up by the app). */
+  focalPick: (() => void) | null = null;
   /** Picture Format… for the selected pictures (set up by the app). */
   formatPicture: () => void = () => {};
   /** Make a picture's white background see-through (set up by the app). */
@@ -225,9 +233,10 @@ export class StylePanel {
     if (several) this.structureControls(selAtoms, selBonds);
     if (arrows.length) this.arrowControls(arrows);
     // an energy diagram is a frame drawn from its numbers: its own section, not a rectangle's
-    const diagram = all.length === 1 && (all[0].energy || all[0].diagram || all[0].plate || all[0].smart) ? all[0] : undefined;
+    const diagram = all.length === 1 && (all[0].energy || all[0].diagram || all[0].plate || all[0].smart || all[0].newman) ? all[0] : undefined;
     if (diagram?.energy) this.energyControls(diagram);
     else if (diagram?.plate) this.plateControls(diagram);
+    else if (diagram?.newman) this.newmanControls(diagram);
     else if (diagram?.diagram) this.diagramControls(diagram);
     else if (diagram?.smart) {
       // how its list works is behind the "i" by the list's title
@@ -602,6 +611,37 @@ export class StylePanel {
   // ------------------------------------------------------------------ energy diagrams
 
   /** An energy diagram: how it is drawn, and the window with its numbers. */
+  /** A Newman or sawhorse projection: how it is drawn and written. */
+  private newmanControls(sh: Shape): void {
+    const d = sh.newman!, look = d.look, tx = look.text ?? { auto: false };
+    const saw = d.kind === 'sawhorse';
+    this.heading(saw ? 'Sawhorse Projection' : 'Newman Projection');
+    const set = (patch: Partial<typeof look>) => this.newman?.look(sh.id, patch);
+    this.check('Idealized Angles', !!look.ideal, (v) => set({ ideal: v }), 'Bonds 120° apart on each atom and staggered at exactly 60°, as textbooks draw them. Clear it to draw the true angles.');
+    const size = document.createElement('input');
+    size.type = 'number'; size.min = '4'; size.max = '72'; size.step = '0.5'; size.placeholder = 'Auto';
+    size.value = tx.size !== undefined ? String(tx.size) : '';
+    const apply = () => { const v = Number(size.value); const { size: _old, ...rest } = tx; set({ text: size.value.trim() !== '' && Number.isFinite(v) ? { ...rest, size: Math.max(4, Math.min(72, v)) } : rest }); };
+    size.addEventListener('change', apply);
+    size.addEventListener('keydown', (e) => { if (e.key === 'Enter') { apply(); size.blur(); } e.stopPropagation(); });
+    this.row('Text Size', size, "In points. Empty: 2 points smaller than the drawing's caption text.");
+    this.check('Bold', !!tx.bold, (v) => set({ text: { ...tx, bold: v || undefined } }));
+    this.check('Italic', !!tx.italic, (v) => set({ text: { ...tx, italic: v || undefined } }));
+    if (!saw) this.check('Auto-Scale Text', !!tx.auto, (v) => set({ text: { ...tx, auto: v } }), 'Make the labels smaller, down to 70%, where they would not fit at full size.');
+    if (saw) {
+      this.check('Wedges', !!look.wedges, (v) => set({ wedges: v }), 'A wedge and a hashed wedge on each carbon show which groups point toward and away from you.');
+      this.check('R/S Labels', !!look.rs, (v) => set({ rs: v }), 'R or S beside each stereocenter.');
+    }
+    const row = document.createElement('div');
+    row.className = 'style-buttons';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = 'Edit Projection…';
+    b.addEventListener('click', () => this.newman?.edit(sh.id));
+    row.append(b);
+    this.body.append(row);
+  }
+
   private energyControls(sh: Shape): void {
     const d = sh.energy!;
     this.heading('Energy diagram');
@@ -1062,8 +1102,18 @@ export class StylePanel {
       this.edit(label, () => { for (const x of tied) this.doc.updateCaption(x.id, { attach: { ...x.attach!, ...patch(x.attach!) } }); });
     this.heading(a.role === 'descriptors' ? 'Attached Descriptors' : a.role === 'label' ? 'Attached ID Label' : 'Attached to Structure');
     // text beside a structure lines up towards it; above and below, centred (Line up changes it back)
+    if (tied.every((x) => x.attach!.role !== 'descriptors')) {
+      const roles = new Set(tied.map((x) => x.attach!.role));
+      this.select<'label' | 'caption'>('Kind', TIED_KINDS, roles.size === 1 ? a.role as 'label' | 'caption' : 'caption', (v) => this.edit(v === 'label' ? 'Make ID label' : 'Make caption', () => {
+        for (const x of tied) this.doc.updateCaption(x.id, { attach: { ...x.attach!, role: v } });
+      }));
+    }
     this.select<AttachSide>('Sits', SIDES, a.side, (v) => this.edit('Caption side', () => {
-      for (const x of tied) this.doc.updateCaption(x.id, { attach: { ...x.attach!, side: v, shift: 0 }, justify: v === 'right' ? 'left' : v === 'left' ? 'right' : 'center' });
+      for (const x of tied) {
+        const at: Attachment = { ...x.attach!, side: v, shift: 0 };
+        if (v === 'left' || v === 'right') delete at.align;
+        this.doc.updateCaption(x.id, { attach: at, justify: v === 'right' ? 'left' : v === 'left' ? 'right' : at.align ?? 'center' });
+      }
     }));
     this.number('Gap (pt)', round(a.gap, 10), 0.5, -200, 500, (v) => setA('Caption gap', () => ({ gap: v })),
       'Space between the structure (with its atom labels) and the caption. You can also drag the caption.');
@@ -1089,6 +1139,8 @@ export class StylePanel {
       this.check('Update when the structure changes', !desc[0].attach!.keepText, (v) => setA(v ? 'Update descriptors' : 'Keep descriptor text', (x) => (x.role === 'descriptors' ? { keepText: v ? undefined : true, sig: v ? undefined : x.sig } : {})),
         'Turn off to keep the text as it is, for instance after typing over it by hand.');
     }
+    button('Reset to Default Look', 'Give it the ID label or caption look and place set in File ▸ Drawing Style', () =>
+      this.edit('Reset to Default Look', () => { for (const x of tied) this.doc.updateCaption(x.id, lookPatch(this.doc, x, attachedAtoms(this.doc, x.attach!))); }));
     button('Unpin from Structure', 'Leave the caption where it is as ordinary text: it no longer follows the structure', () =>
       this.edit('Unpin Caption', () => { for (const x of tied) this.doc.updateCaption(x.id, { attach: undefined }); }));
     if (loose.length && this.tie) button('Tie the others too', 'Tie the selected captions that are loose to the structure nearest each', () => this.tie?.(loose.map((x) => x.id)));
@@ -1361,6 +1413,36 @@ export class StylePanel {
       this.body.append(row);
     }
     this.methylControls(atoms.map((a) => a.id));
+    this.focalControls(atoms);
+  }
+
+  /** One whole structure picked: what its focal point is on, with Reset and Pick on the drawing. */
+  private focalControls(atoms: Atom[]): void {
+    if (!atoms.length || !this.focalPick) return;
+    const frag = this.doc.fragmentOf(atoms[0].id);
+    if (frag.size !== atoms.length || atoms.some((a) => !frag.has(a.id))) return;
+    const kind = focalKind(this.doc, frag);
+    const names = { atom: 'Atom', bond: 'Bond', ring: 'Ring' } as const;
+    const sel = document.createElement('select');
+    const opts: [string, string][] = [...(kind ? [['own', names[kind]] as [string, string]] : []), ['box', 'Center of box'], ['pick', 'Pick atom, bond or ring…']];
+    for (const [v, text] of opts) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = text;
+      sel.appendChild(o);
+    }
+    sel.value = kind ? 'own' : 'box';
+    sel.addEventListener('change', () => {
+      if (sel.value === 'box' && kind) this.edit('Reset Focal Point', () => clearFocal(this.doc, frag));
+      else if (sel.value === 'pick') { sel.value = kind ? 'own' : 'box'; this.focalPick?.(); }
+    });
+    const row = document.createElement('label');
+    row.className = 'style-row';
+    const name = document.createElement('span');
+    name.textContent = 'Focal point';
+    addInfo(name, 'The spot that counts as this structure\'s middle when lining things up (Align Center and Middle, Distribute, Arrange). Set it on an atom, a bond or a ring so compounds that share a core line up on the core. Center of box goes back to the middle of the structure.');
+    row.append(name, sel);
+    this.body.appendChild(row);
   }
 
   /**

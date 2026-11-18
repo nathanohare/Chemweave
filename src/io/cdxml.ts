@@ -34,6 +34,7 @@ import { TABLE_TAG, TABLE_PART_TAG, applyTableTag, gridOf, linesFromBorders, par
 import { layoutTable, NOTE_SCALE } from '../table';
 import { arialWidth } from '../text-metrics';
 import { cleanScheme } from '../drawing-styles';
+import { cleanTiedLook } from '../editor/tied-look';
 import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
@@ -162,6 +163,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
       if (pt(v.headWidth)) doc.style.arrowHeadWidth = pt(v.headWidth);
       const scheme = cleanScheme(v.scheme);
       if (scheme) doc.style.scheme = scheme;
+      const id = cleanTiedLook((v as { id?: unknown }).id), tied = cleanTiedLook((v as { tied?: unknown }).tied);
+      if (id) doc.style.idLook = id;
+      if (tied) doc.style.tiedLook = tied;
     } catch { /* not ours to read */ }
   }
   const mapLook = pg && kids(pg).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MAP_LOOK_TAG)?.getAttribute('Value');
@@ -380,6 +384,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
       if (altTag) extra.alt = altTag;
       const mapTag = Number(kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MAP_TAG)?.getAttribute('Value'));
       if (Number.isInteger(mapTag) && mapTag > 0) extra.mapNo = mapTag;
+      if (kids(n).some((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === FOCAL_TAG)) extra.focal = true;
       const hlA = kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === HIGHLIGHT_TAG)?.getAttribute('Value');
       if (hlA && /^#[0-9a-f]{6}$/i.test(hlA)) extra.highlight = hlA.toLowerCase();
       // ChemDraw's own atom highlight
@@ -1727,6 +1732,8 @@ function geoFromTag(saved: Partial<Shape> & Record<string, unknown>): (Partial<S
 }
 /** A reaction arrow's animation settings (MorphStep as JSON, atoms by the file's node ids). */
 export const MORPH_TAG = 'Chem Illustrator animation';
+/** An atom that is part of its structure's focal point (Atom.focal), value "yes". */
+export const FOCAL_TAG = 'Chem Illustrator focal point';
 /** An atom's atom-atom map number across a reaction (Atom.mapNo). */
 export const MAP_TAG = 'Chem Illustrator map';
 /** Auto-Animate Steps: the piece a thing moves with in the slide show (Atom.piece, Caption.piece and so on). */

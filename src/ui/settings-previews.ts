@@ -6,6 +6,8 @@
 import { newTextLook } from '../chem/arrow-text';
 import { labelPieces, styleLabel, type AlkylLook } from '../chem/labels';
 import { Doc } from '../model';
+import { lookCaption } from '../editor/tied-look';
+import { placeAttached } from '../editor/attached';
 import type { Vec } from '../geom';
 import type { DocStyle } from '../style';
 import { freeRing, placeRing, sprout } from '../chem/chemgeom';
@@ -66,8 +68,12 @@ export function sampleDrawing(style: DocStyle, scheme: Partial<SchemePrefs> = {}
     for (const a of doc.atoms.values()) if (a.id >= from) { x1 = Math.min(x1, a.x); x2 = Math.max(x2, a.x); y1 = Math.min(y1, a.y); y2 = Math.max(y2, a.y); }
     return { x1, y1, x2, y2 };
   };
-  const number = (b: { x1: number; x2: number; y2: number }, text: string) =>
-    doc.addCaption({ x: (b.x1 + b.x2) / 2 - style.captionSize * 0.3, y: b.y2 + L * 1.1, runs: [{ text, bold: true }], justify: 'left' });
+  // the compound numbers in the style's ID label look, tied to their structures (placed below, after Clean Up)
+  const number = (from: number, text: string) => {
+    const atoms = [...doc.atoms.keys()].filter((id) => id >= from);
+    const b = box(from);
+    doc.addCaption({ ...lookCaption(doc, 'label', atoms, [{ text }]), x: (b.x1 + b.x2) / 2 - style.captionSize * 0.3, y: b.y2 + L * 1.1 });
+  };
   doc.bulk(() => {
     // the carbamate
     const n = amine(0);
@@ -77,7 +83,7 @@ export function sampleDrawing(style: DocStyle, scheme: Partial<SchemePrefs> = {}
     doc.updateAtom(o.id, { label: null });
     doc.updateAtom(sprout(doc, o.id).id, { label: 'tBu' });
     const one = box(0);
-    number(one, '1');
+    number(0, '1');
     // the arrow, roughly placed (Clean Up puts it right), with its text
     const y = (one.y1 + one.y2) / 2;
     const lw = style.arrowWidth ?? style.lineWidth;
@@ -95,9 +101,11 @@ export function sampleDrawing(style: DocStyle, scheme: Partial<SchemePrefs> = {}
     const first = Math.max(...doc.atoms.keys()) + 1;
     const nh = amine(x0 + L * 6.6);
     doc.updateAtom(nh, { charge: 1 });
-    number(box(first), '2');
+    number(first, '2');
   });
   laidOut(doc, scheme);
+  const m = measureOf(doc);
+  doc.bulk(() => { for (const c of [...doc.captions.values()]) if (c.attach) placeAttached(doc, c, m); });
   return doc;
 }
 

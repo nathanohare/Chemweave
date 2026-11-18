@@ -10,6 +10,7 @@ import { add, mul, sub, fromAngle, dist } from '../geom';
 import type { Measure } from '../editor/arrange';
 import { arrowFrame, inFrame, interpretArrow, isReactionArrow, isStep, itemFinder, schemeItems, type Item } from './reaction';
 import { labelsOf, spacing, fittedLength } from './scheme-layout';
+import { focalPoint } from './focal';
 import { arrowMid, sweepThrough } from '../objects';
 import { crowdedLinks, layoutNet, readNet, type Net, type NetLink } from './cycle-net';
 
@@ -40,7 +41,8 @@ export interface ArrangeOptions {
 export interface Scope { atoms: Set<number>; captions: Set<number>; shapes: Set<number>; arrows: Set<number> }
 
 /** A structure, or starting materials joined by + signs, that the scheme leads into or out of. */
-interface Node { items: Item[]; box: Rect }
+/** `focus`: the own focal point of its one structure, which goes on the arrows' line in a row. */
+interface Node { items: Item[]; box: Rect; focus?: Vec }
 /** One step: an arrow (made new when there isn't one) from one node to the next, with its conditions. */
 interface Link { from: number; to: number; arrow?: Arrow; above: Item[]; below: Item[]; plusses: Item[]; inside: Item[] }
 
@@ -200,6 +202,11 @@ export function planArrange(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOpt
   const found = opts.kind === 'cycle' && !sh.path ? schemeNet(sh, opts.meshes) : null;
   if (opts.kind !== 'tree' && !sh.path && !found) return null;
   const bond = doc.style.bondLength;
+  for (const n of sh.nodes) {
+    const its = n.items.filter((it) => it.atoms.length);
+    const f = its.length === 1 ? focalPoint(doc, its[0].atoms) : null;
+    if (f) n.focus = f;
+  }
   const L = new Layout(sh, bond);
   if (found) L.net(found.net, found.links, !!opts.anticlockwise, !!opts.reagentArrows, opts.startAngle);
   else switch (opts.kind) {
@@ -253,10 +260,10 @@ class Layout {
     for (const l of this.sh.labels.get(it) ?? []) this.shift(l, d);
   }
 
-  /** Put a node's box centre at `c`. */
-  private placeNode(i: number, c: Vec): void {
+  /** Put a node's box centre at `c` (`onRow`: its focal point's height, when it has its own, at c.y). */
+  private placeNode(i: number, c: Vec, onRow = false): void {
     const n = this.sh.nodes[i];
-    const d = sub(c, centre(n.box));
+    const d = sub(c, onRow && n.focus ? { x: centre(n.box).x, y: n.focus.y } : centre(n.box));
     for (const it of n.items) this.shift(it, d);
     this.at.set(i, { x1: n.box.x1 + d.x, y1: n.box.y1 + d.y, x2: n.box.x2 + d.x, y2: n.box.y2 + d.y });
   }
@@ -322,6 +329,8 @@ class Layout {
     const path = this.sh.path!, nodes = this.sh.nodes, g = this.g, bond = this.bond;
     const right = { x: 1, y: 0 }, down = { x: 0, y: 1 };
     const link = (k: number) => this.linkBetween(path[k], path[k + 1]);
+    /** How far a node reaches above the row's line (to its focal point, or half its height). */
+    const upOf = (i: number) => (nodes[i].focus ? nodes[i].focus!.y - nodes[i].box.y1 : height(nodes[i].box) / 2);
     const rowsOf: number[][] = [[]];
     for (let k = 0; k < path.length - 1; k++) {
       if (rowsOf[rowsOf.length - 1].length >= per) rowsOf.push([]);
@@ -332,7 +341,7 @@ class Layout {
       let up = 0, dn = 0;
       const ns = ks.map((k) => path[k + 1]);
       if (withFirst && ks.length) ns.push(path[ks[0]]);
-      for (const i of ns) { const h = height(nodes[i].box) / 2; up = Math.max(up, h); dn = Math.max(dn, h); }
+      for (const i of ns) { up = Math.max(up, upOf(i)); dn = Math.max(dn, height(nodes[i].box) - upOf(i)); }
       for (const k of ks) { const r = this.reach(link(k), right); up = Math.max(up, r.above); dn = Math.max(dn, r.below); }
       return { up, dn };
     };
@@ -344,7 +353,7 @@ class Layout {
         this.straight(l, { x, y: axis }, { x: x + dir * len, y: axis });
         x += dir * (len + g);
         const b = path[k + 1], w = width(nodes[b].box);
-        this.placeNode(b, { x: x + dir * w / 2, y: axis });
+        this.placeNode(b, { x: x + dir * w / 2, y: axis }, true);
         x += dir * (w + g);
       }
     };
@@ -352,7 +361,7 @@ class Layout {
     let { up, dn } = extent(rowsOf[0], true);
     let axis = this.origin.y + up;
     const w0 = width(nodes[path[0]].box);
-    this.placeNode(path[0], { x: this.origin.x + w0 / 2, y: axis });
+    this.placeNode(path[0], { x: this.origin.x + w0 / 2, y: axis }, true);
     lay(rowsOf[0], this.origin.x + w0 + g, axis, 1);
     let dir: 1 | -1 = 1;
     for (let r = 1; r < rowsOf.length; r++) {
@@ -375,12 +384,12 @@ class Layout {
       const len = Math.max(this.arrowLength(dl, down) * 0.8, 2.2 * bond);
       const tail = { x: (from.x1 + from.x2) / 2, y: from.y2 + g };
       let head = { x: tail.x, y: tail.y + len };
-      const want = Math.max(low + 1.6 * bond + e.up, head.y + g + height(nodes[to].box) / 2);
-      head = { x: tail.x, y: want - g - height(nodes[to].box) / 2 };
+      const want = Math.max(low + 1.6 * bond + e.up, head.y + g + upOf(to));
+      head = { x: tail.x, y: want - g - upOf(to) };
       this.straight(dl, tail, head);
       axis = want;
       dn = e.dn;
-      this.placeNode(to, { x: tail.x, y: axis });
+      this.placeNode(to, { x: tail.x, y: axis }, true);
       dir = dir > 0 ? -1 : 1;
       const tb = this.at.get(to)!;
       lay(ks.slice(1), dir > 0 ? tb.x2 + g : tb.x1 - g, axis, dir);

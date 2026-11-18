@@ -180,6 +180,11 @@ export interface Atom {
    */
   mapNo?: number;
   /**
+   * Part of its structure's focal point (chem/focal.ts): the spot that lines up with other
+   * structures' when aligning. One marked atom, a bond's two, or a ring's atoms.
+   */
+  focal?: boolean;
+  /**
    * Enhanced stereo (ChemDraw's EnhancedStereoType): this stereocentre's configuration is known
    * as drawn ('abs'), or belongs to a group whose centres are a mixture of both forms ('and',
    * labelled &1) or are one form that isn't known ('or', labelled or1).
@@ -735,6 +740,8 @@ export interface Attachment {
   gap: number;
   /** How far it sits off the middle of that side (across for below and above, down for left and right), in points. */
   shift: number;
+  /** Above or below: its left or right edge lined up with the structure's (absent: middles lined up); shift is then from that edge. */
+  align?: 'left' | 'right';
   role: 'label' | 'caption' | 'descriptors';
   /** For descriptors: what is shown, in order, and the ion for m/z and HRMS. */
   show?: DescriptorKey[];
