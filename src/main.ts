@@ -60,7 +60,7 @@ import { isCurved } from './objects';
 import { captionPlaces, fragmentRuns } from './chem/fragments';
 import { toMolfile, addMolfile } from './chem/molfile';
 import { molfileOrSmiles } from './chem/text-molfile';
-import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeSign, chemicalCaptions, groupedIons, placeSpecies, speciesSmiles, type PlacedSpecies } from './chem/species';
+import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeSign, chemicalCaptions, groupedIonFragments, groupedIons, placeSpecies, speciesSmiles, type PlacedSpecies } from './chem/species';
 import { bestFit, fitMove, fitMatters } from './chem/orient';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -12165,6 +12165,8 @@ async function runAnalysis(force: boolean): Promise<void> {
   for (const r of roots) {
     if (seen.has(r)) continue;
     const f = doc.fragmentOf(r);
+    // drawn counterions grouped with a charged structure count with it as one salt
+    for (const g of groupedIonFragments(doc, f)) for (const x of g) f.add(x);
     for (const x of f) seen.add(x);
     const ions = groupedIons(doc, f, editor.measure());
     for (const c of ions) counted.add(c.id);
