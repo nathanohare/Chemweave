@@ -8296,6 +8296,7 @@ function loadSiMode(): Promise<SiMode> {
       pickFiles: (label, exts) => openManyBytesDialog(label, exts).catch(async (e) => { await showError(String(e)); return []; }),
       siFacts: (mols) => chem.siFacts(mols),
       sizeOf: (c) => figures.size(c, siStyleNow()),
+      siStyle: () => siStyleNow(),
       openCompiled: async (doc, name, pdf) => {
         ws.showDocument({ ...doc, drawingStyle: { ...siStyleNow() } }, name.replace(/[\\/:*?"<>|]/g, '-'));
         renderTabs();

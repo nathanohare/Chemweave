@@ -21,11 +21,12 @@ import { CITE, MENTION, parseMarkup, citationsOf, type Paragraph, type Run } fro
 import { fieldKeys, valuesOf, compoundName, compoundsOf, type Json, type SiCompound, type SiProject, type SiScheme, type SiSection } from './project';
 import { displayId, type IdReport } from './compound-ids';
 import { fieldDef, partText } from './fields';
-import { mentionKind } from './checks';
+import { hrmsCalc, hrmsSpecies, hrmsTolerance, mentionKind } from './checks';
+import { formatMz, listingFailed, peaksNear, readBytes, reportListing, summary } from './ms-reports';
 import type { MolFacts } from './chem';
 import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './format';
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
-import { attachmentDir, captionText, effective, idSizeOf, structureBoxAt, structureBoxSize, GUTTERS, headerParts, HEADER_PT, listingLines, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
+import { attachmentDir, captionText, effective, idSizeOf, structureBoxAt, structureBoxSize, GUTTERS, headerParts, HEADER_PT, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
 import type { Float, PageSetup, SectionBreak } from '../document/document';
 import { xrayAutoCaption, xrayBlock, xrayCompound, xrayDrawing, xrayTableCaption, xrayTableRows } from './xray';
 import { crystalTable } from '../chem/crystal';
@@ -1009,7 +1010,7 @@ class Compiler {
         const bytes = await this.p.folder.readBytes(joinPath(c.folder, 'hrms', file));
         if (!bytes) { this.notes.push(`${where}: the HRMS report ${file} is missing; left out.`); continue; }
         const title = (more = ''): void => this.para([R(id, { bold: true }), R(` — HRMS report: ${file}${more}`)], { keepNext: true, spaceBefore: 14, spaceAfter: 6 }, where);
-        if (kind === 'peaks') { title(); this.para([R('The peaks of this data file are not listed in the document yet; the file is kept in the project folder.', { italic: true })], {}, where, { size: 9 }); this.notes.push(`${where}: ${file} is a data file; its table of peaks is not made in the document yet.`); continue; }
+        if (kind === 'peaks') { title(); this.peaksTable(c, file, bytes, where); continue; }
         if (kind === 'pdf') {
           const pics = await this.pdfPictures(bytes, file, where, room);
           pics.forEach((pic, i) => {
@@ -1028,13 +1029,33 @@ class Compiler {
           this.b.endPara(this.full({ align: 'center' }));
           continue;
         }
-        const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-        const [lines, left] = listingLines(text);
+        const [lines, left] = reportListing(bytes, file);
+        if (listingFailed(lines)) this.notes.push(`${where}: the HRMS report ${file} could not be read (it may be damaged); only a note is printed for it.`);
         title();
         lines.forEach((l) => { this.b.text(l || ' ', { font: 'Courier New', size: 7 }); this.b.endPara(this.full({ spaceAfter: 0, keepNext: false })); });
         if (left) this.para([R(`… ${left} more line${left === 1 ? '' : 's'} not printed (the whole file is kept in the project folder).`, { italic: true })], {}, where, { size: 8 });
       }
     }
+  }
+
+  /** A data file (mzML, mzXML, mzData, netCDF): its largest peaks near the expected m/z (the chosen ion's monoisotopic m/z), the one used as found marked. */
+  private peaksTable(c: SiCompound, file: string, bytes: Uint8Array, where: string): void {
+    const data = readBytes(bytes, file);
+    const v = dict(valuesOf(c).hrms);
+    let centre: number | null = null;
+    try {
+      const sp = hrmsSpecies(this.facts.get(c.id) ?? null, v);
+      if (sp) { const peaks = hrmsCalc(sp.info, str(v.adduct), '', hrmsTolerance(this.p.settings)).peaks; centre = (peaks.find((x) => x.mono) ?? peaks[0])?.mz ?? null; }
+    } catch { centre = null; }
+    const rows = peaksNear(data, centre);
+    if (!rows.length) { this.para([R(!data.readable ? data.message : 'No peaks were found near the expected m/z in this file.')], {}, where, { size: 9 }); return; }
+    const found = str(v.found).trim();
+    const near = centre !== null ? ` The largest peaks near m/z ${centre.toFixed(4)}:` : ' The largest peaks:';
+    this.para([R(summary(data) + near)], { keepNext: true, spaceAfter: 4 }, where, { size: 9 });
+    const cell = (text: string, align: 'left' | 'right', o: { italic?: boolean } = {}): TableCell => ({ runs: [{ text, size: 9, ...o }] as TextRun[], align });
+    const head: TableCell[] = [{ runs: [{ text: 'm/z', size: 9, italic: true }] as TextRun[], align: 'right' }, cell('Intensity (%)', 'right'), cell('', 'left')];
+    const body = rows.map(([mz, rel]): TableCell[] => [cell(mz.toFixed(4), 'right'), cell(rel.toFixed(1), 'right'), cell(formatMz(mz) === found ? 'found m/z' : '', 'left')]);
+    this.b.table({ kind: 'table', table: { cols: [70, 80, 70], rows: [head, ...body], head: 1, lines: 'acs', size: 9, width: 'auto', autofit: true, align: ['right', 'right', 'left'] } }, this.full({ align: 'center', spaceAfter: 12 }));
   }
 
   private references(): void {
@@ -1046,18 +1067,30 @@ class Compiler {
 
   // -------------------------------------------------------------- the whole
 
-  async build(): Promise<DocText> {
+  /** One page of the project alone (the live preview), without spectra or the references list; page numbers are placeholders. */
+  private async buildOnly(only: SiPreviewTarget): Promise<void> {
+    const p = this.p;
+    if (only.kind === 'front') {
+      if (this.included('cover')) await this.cover();
+      if ((this.texts.get('general') ?? '').trim()) { if (this.included('cover')) this.b.pendingBreak = true; await this.general(); }
+    } else if (only.kind === 'compound') {
+      const c = p.compounds.find((x) => x.id === only.id);
+      if (c) await this.compound(c, 2);
+    } else if (only.kind === 'scheme') {
+      const k = p.schemes.find((x) => x.id === only.id);
+      const s = k ? p.sections.find((x) => x.id === k.sectionId) : undefined;
+      if (k && s) { const drawn = await this.scheme(k, s); for (const c of k.children) await this.compound(c, 2, drawn.has(c.id)); }
+    } else {
+      const s = p.sections.find((x) => x.id === only.id);
+      // (a section's spectra are left out: Compile shows them)
+      if (s && s.type !== 'spectra') { this.excluded.delete(s.id); this.spectraDone = true; await this.section(s, 1); }
+    }
+  }
+
+  async build(only?: SiPreviewTarget): Promise<DocText> {
     await this.prepare();
-    if (this.included('cover')) await this.cover();
-    if (this.included('toc')) this.toc();
-    let started = false;
-    const startPage = (): void => { if (!started && (this.included('cover') || this.included('toc'))) this.b.pendingBreak = true; started = true; };
-    if (this.included('general') && (this.texts.get('general') ?? '').trim()) { startPage(); await this.general(); }
-    for (const s of this.p.top) { if (!this.excluded.has(s.id)) startPage(); await this.section(s, 1); }
-    // a project without a Spectra section (opened read-only, older) prints its spectra at the end
-    if (!this.spectraDone && !this.excluded.has('spectra') && !this.p.sections.some((s) => s.type === 'spectra')) { this.spectraDone = true; await this.spectraSection(null, 1); }
-    this.orient('portrait');
-    this.references();
+    if (only) await this.buildOnly(only);
+    else await this.buildAll();
     const title = str(this.p.settings.title);
     const p = this.b.doc.page;
     const { hf, format } = this.pageLines(p.w - p.left - p.right);
@@ -1069,6 +1102,19 @@ class Compiler {
       props: { title: title || this.p.title },
       noFigureOffer: true,
     });
+  }
+
+  private async buildAll(): Promise<void> {
+    if (this.included('cover')) await this.cover();
+    if (this.included('toc')) this.toc();
+    let started = false;
+    const startPage = (): void => { if (!started && (this.included('cover') || this.included('toc'))) this.b.pendingBreak = true; started = true; };
+    if (this.included('general') && (this.texts.get('general') ?? '').trim()) { startPage(); await this.general(); }
+    for (const s of this.p.top) { if (!this.excluded.has(s.id)) startPage(); await this.section(s, 1); }
+    // a project without a Spectra section (opened read-only, older) prints its spectra at the end
+    if (!this.spectraDone && !this.excluded.has('spectra') && !this.p.sections.some((s) => s.type === 'spectra')) { this.spectraDone = true; await this.spectraSection(null, 1); }
+    this.orient('portrait');
+    this.references();
   }
 }
 
@@ -1134,9 +1180,13 @@ export async function objectLabels(p: SiProject): Promise<Map<string, string>> {
 }
 
 /** Compile an SI project into a document. */
-export async function compileSi(p: SiProject, host: CompileHost): Promise<CompiledSi> {
+/** What the live preview shows: the front matter (cover and General Information), a section, a scheme page or a compound. */
+export type SiPreviewTarget = { kind: 'front' } | { kind: 'section' | 'scheme' | 'compound'; id: string };
+
+/** Compile the project (or, with `only`, one page of it for the live preview) into a document. */
+export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget): Promise<CompiledSi> {
   const c = new Compiler(p, host, await leaveWords(p));
-  const doc = await c.build();
+  const doc = await c.build(only);
   return { doc, notes: [...new Set(c.notes)], targets: c.targets };
 }
 

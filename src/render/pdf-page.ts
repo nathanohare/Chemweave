@@ -70,6 +70,60 @@ export async function pdfPages(bytes: Uint8Array): Promise<ObjectPicture[] | nul
   }
 }
 
+/**
+ * A PDF's text, page by page, a line for each row of words (pieces on the same baseline joined,
+ * a wide gap kept as spaces so table columns stay apart), for reading numbers from an
+ * instrument's report. Throws when the file can't be opened.
+ */
+export async function pdfText(bytes: Uint8Array): Promise<string> {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
+  }
+  const task = pdfjs.getDocument({ data: bytes.slice() });
+  try {
+    const doc = await task.promise;
+    const pages: string[] = [];
+    for (let n = 1; n <= doc.numPages; n++) {
+      const page = await doc.getPage(n);
+      const content = await page.getTextContent();
+      type Piece = { x: number; y: number; w: number; h: number; s: string };
+      const pieces: Piece[] = [];
+      for (const it of content.items) {
+        if (!('str' in it) || !it.str) continue;
+        const t = it.transform as number[];
+        pieces.push({ x: t[4], y: t[5], w: it.width, h: Math.abs(t[3]) || it.height || 10, s: it.str });
+      }
+      // rows top to bottom; a piece joins a row when its baseline is within a third of its height
+      pieces.sort((a, b) => b.y - a.y || a.x - b.x);
+      const rows: Piece[][] = [];
+      for (const pc of pieces) {
+        const row = rows.find((r) => Math.abs(r[0].y - pc.y) <= Math.max(1, pc.h / 3));
+        if (row) row.push(pc); else rows.push([pc]);
+      }
+      const lines = rows.map((r) => {
+        r.sort((a, b) => a.x - b.x);
+        let line = '', end: number | null = null;
+        for (const pc of r) {
+          if (end !== null) {
+            const gap = pc.x - end;
+            if (gap > pc.h * 1.5) line += '    ';
+            else if (gap > pc.h * 0.15 && !line.endsWith(' ') && !pc.s.startsWith(' ')) line += ' ';
+          }
+          line += pc.s;
+          end = pc.x + pc.w;
+        }
+        return line.trimEnd();
+      });
+      pages.push(lines.join('\n'));
+      page.cleanup();
+    }
+    return pages.join('\n\n');
+  } finally {
+    void task.destroy();
+  }
+}
+
 /** Where a picture's content is (auto-crop of a spectrum): left, top, right, bottom fractions; null for nothing to cut. */
 export async function pictureContentBox(src: string): Promise<[number, number, number, number] | null> {
   const { contentBox } = await import('../si/spectra');

@@ -322,7 +322,7 @@ export function contentBox(rgba: Uint8ClampedArray | Uint8Array, w: number, h: n
 // ---------------------------------------------------------------- HRMS reports (§13n.3)
 
 const PICTURES = ['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.gif', '.svg'];
-const TEXTS = ['.csv', '.tsv', '.txt', '.tab', '.asc', '.xy', '.dat', '.prn', '.text', '.jdx', '.dx', '.jcamp', '.jcm', '.mgf'];
+const TEXTS = ['.csv', '.tsv', '.txt', '.tab', '.asc', '.xy', '.dat', '.prn', '.text', '.jdx', '.dx', '.jcamp', '.jcm', '.mgf', '.xlsx', '.xlsm'];
 const PEAKS = ['.mzml', '.mzxml', '.mzdata', '.cdf', '.nc'];
 
 /** The compound's HRMS report entries (hrms.reports), with plain file names only. */
@@ -341,7 +341,7 @@ export function printsReports(c: SiCompound, defaults: SpectrumLayout): boolean 
   return typeof own === 'boolean' ? own : defaults.hrms_reports;
 }
 
-/** How a report is printed: a PDF page by page, a picture, a text listing, a table of peaks (not yet here), or not at all. */
+/** How a report is printed: a PDF page by page, a picture, a text listing, a table of the peaks near the ion, or not at all. */
 export function printKind(name: string): 'pdf' | 'picture' | 'listing' | 'peaks' | 'none' {
   const lower = name.toLowerCase();
   const ext = lower.includes('.') ? lower.slice(lower.lastIndexOf('.')) : '';

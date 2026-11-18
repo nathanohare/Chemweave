@@ -5,6 +5,7 @@
 // Ctrl+B, Ctrl+I and Ctrl+U as in Word; Ctrl+= subscript, Ctrl+Shift+= superscript; typing
 // "@" offers the project's compounds to mention.
 
+import { cleanPastedHtml } from './si-paste-html';
 import { checkSpelling, formatTyped, spellingMenu } from './si-spell';
 import { WORD_ENDS } from '../text/chemtext';
 import { MENTION, STRUCT, parseMarkup, writeMarkup, type Paragraph, type Run, type VAlign } from '../si/markup';
@@ -137,8 +138,11 @@ export class SiRichBox {
     el.addEventListener('contextmenu', (e) => { spellingMenu(el, e); });
     el.addEventListener('keydown', (e) => this.key(e));
     el.addEventListener('paste', (e) => {
-      // pasted text comes in plain (its formatting from other programs is not SI formatting)
+      // pasted text keeps its bold, italics, sub- and superscripts (from Word or MestReNova), nothing else
       e.preventDefault();
+      const html = e.clipboardData?.getData('text/html') ?? '';
+      const clean = html ? cleanPastedHtml(html, multiline) : '';
+      if (clean && /<(b|i|sub|sup)>/.test(clean)) { document.execCommand('insertHTML', false, clean); return; }
       const t = e.clipboardData?.getData('text/plain') ?? '';
       document.execCommand('insertText', false, multiline ? t : t.replace(/\s*\n\s*/g, ' '));
     });

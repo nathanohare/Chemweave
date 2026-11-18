@@ -122,7 +122,7 @@ export class SiPictures {
 }
 
 /** A picture the browser can show (a bitmap) as PNG bytes. */
-async function toPng(bytes: Uint8Array, mime: string): Promise<Uint8Array | null> {
+export async function toPng(bytes: Uint8Array, mime: string): Promise<Uint8Array | null> {
   try {
     const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
     const c = document.createElement('canvas');

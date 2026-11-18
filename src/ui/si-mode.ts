@@ -11,19 +11,20 @@ import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
 import type { DocText } from '../document/document';
-import { compileSi, objectLabels } from '../si/compile-doc';
-import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
+import { compileSi, objectLabels, type SiPreviewTarget } from '../si/compile-doc';
+import type { DocView } from './doc-view';
+import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
-import { ALL_FIELDS, NUCLEI, fieldDef, learnedChoices, nucleusLabel, partText, CORE_FIELDS, LIBRARY_FIELDS, type FieldDef, type Part, type FieldEntry } from '../si/fields';
+import { ALL_FIELDS, NUCLEI, SPECTRUM_TYPES, fieldDef, learnedChoices, nucleusLabel, partText, CORE_FIELDS, LIBRARY_FIELDS, type FieldDef, type Part, type FieldEntry } from '../si/fields';
 import { CITE, MENTION, parseMarkup } from '../si/markup';
 import { newId } from '../si/ids';
 import { capitalizeName } from '../si/chem-names';
 import { SiRichBox } from './si-rich';
 import { SiTableEditor } from './si-table';
 import { SiFigureEditor } from './si-figure';
-import { SiPictures, PICTURE_MIME } from './si-picture';
+import { SiPictures, PICTURE_MIME, toPng as pngOf } from './si-picture';
 import { SiXrayPage } from './si-xray';
 import { SiAttachmentPage } from './si-attachment';
 import { SiFrontPage } from './si-front';
@@ -37,14 +38,16 @@ import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Refere
 import { newTable } from '../si/tables';
 import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
-import { allWarnings, compoundHrms, hrmsSpecies, isDismissed, monoisotopic, outOfTolerance, ID_KEY, type SiWarning } from '../si/checks';
-import { adductDisplay, sameFormula, speciesLabel, ChemError, type MolFacts } from '../si/chem';
+import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDismissed, monoisotopic, outOfTolerance, parseNumber, ID_KEY, type SiWarning } from '../si/checks';
+import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY, chooseMatch, foundIsFromReport, readReport, updateFound, type Match, type ReportData } from '../si/ms-reports';
+import { adductDisplay, sameFormula, speciesLabel, ChemError, type MolFacts, type Peak } from '../si/chem';
 import { addInfo } from './info-tip';
 import { openTrash } from './si-trash';
 import { compoundsUnder } from '../si/trash';
 import { saveSnapshot } from '../si/snapshot';
 import { journalOf } from '../si/journal';
 import { lookupName, PUBCHEM_PAGE } from '../si/pubchem-name';
+import { PASTE_TYPE_LABELS, guessPastedType, keptLine, pastedStem } from '../si/spectrum-paste';
 import { availableColumns, buildRows, chosenColumns, fieldLabel, filterOf, isCompact, isSplit, projectScope, sectionScope, setView, statusColors, storeStatusColors, summarize, summaryText, type DashboardFacts, type Row, type Scope } from '../si/dashboard';
 import { dashboardGrid, projectSummaryCard, sectionDashboard, statusColorsBody, type GridOptions } from './si-dashboard';
 import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
@@ -83,6 +86,8 @@ export interface SiModeHost {
   sizeOf(c: Contents): { w: number; h: number } | null;
   /** The compiled SI, opened as a document named `name` (and, with `pdf`, saved as a PDF too). */
   openCompiled(doc: DocText, name: string, pdf: boolean): Promise<void>;
+  /** The SI project's drawing style now (its structures in the live preview). */
+  siStyle(): DocStyle;
   /** Insert ▸ Symbol's window (it types into the SI text box last typed in). */
   openSymbols(): void;
   /** Put text on the clipboard as plain text and HTML. */
@@ -169,11 +174,13 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="add-spectra" data-ic="chart-line" title="Add spectra (PDFs or pictures) to the compound picked"><span class="rb-icon">⩘</span>Spectra</button>
       <div class="rb-col">
+        <button data-si="paste-spectrum" data-ic="paste" title="Paste a spectrum copied in Mnova (or a copied picture or PDF) onto the compound picked; one click picks its type. Ctrl+V on the compound's Spectra field does the same">Paste Spectrum</button>
         <button data-si="add-nmr-report" title="Another NMR peak report on the compound picked (another nucleus, or another solvent)">NMR Report</button>
-        <button data-si="add-files" data-ic="insert-object" title="Add other files (PDFs or pictures) to the compound picked">Files…</button>
-        <button data-si="add-field" title="Add a field (melting point, Rf, IR, optical rotation…, or one of your own) to the compound picked, or to the section picked's list of fields">Field…</button>
+        <button data-si="add-hrms-report" title="Add the mass spectrometer's report files (PDF, CSV/TXT or Excel peak list, mzML, mzXML, MGF, JCAMP-DX, netCDF, a picture) to the compound picked: the found m/z is read from them">HRMS Report…</button>
       </div>
       <div class="rb-col">
+        <button data-si="add-files" data-ic="insert-object" title="Add other files (PDFs or pictures) to the compound picked">Files…</button>
+        <button data-si="add-field" title="Add a field (melting point, Rf, IR, optical rotation…, or one of your own) to the compound picked, or to the section picked's list of fields">Field…</button>
         <button data-si="new-gp" title="A new general procedure in the Data section picked (or the picked compound's): its text prints once at the start of the section, and its compounds get its sentence">General Procedure</button>
       </div>
     </div><div class="rb-label">Compound Data</div></div>
@@ -416,6 +423,7 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="edit-structure" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
       <div class="rb-col">
+        <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
         <button data-si="from-library" title="A new compound page with a compound from your Compound Library (its structure and name)">From Compound Library…</button>
         <button data-si="to-library" title="Keep the structures of this section's compounds in your Compound Library, with their SI IDs and this project as where they appear">Add to Compound Library</button>
         <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
@@ -432,6 +440,7 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data, laid out as Chem SI Assistant lays it out. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
       <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
+      <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the page picked as it prints, beside it, updated about a second after each change. Spectra are left out (Compile shows them), and page numbers are placeholders"><span class="rb-icon">◧</span>Live Preview</button>
     </div><div class="rb-label">Compile</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
@@ -447,6 +456,9 @@ const RIBBON = `
 
 /** Short names for a spectrum's or file's values in its row (their full names are in the tooltip). */
 const ATT_SHORT: Record<string, string> = { title: 'Header', struct_caption: 'Caption', label: 'Label' };
+
+/** The files offered by Insert ▸ HRMS Report (any file can still be dragged in). */
+const REPORT_EXTS = ['pdf', 'csv', 'tsv', 'txt', 'tab', 'asc', 'xy', 'dat', 'prn', 'xlsx', 'mzml', 'mzxml', 'mzdata', 'xml', 'mgf', 'jdx', 'dx', 'jcamp', 'jcm', 'cdf', 'nc', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'bmp', 'gif', 'svg'];
 
 export class SiMode {
   private pane: HTMLDivElement;
@@ -484,7 +496,8 @@ export class SiMode {
     this.tree.setAttribute('role', 'tree');
     this.tree.setAttribute('aria-label', 'Sections and compounds');
     this.page = el('div', 'si-page');
-    this.pane.append(this.tree, this.page);
+    this.live = this.livePane();
+    this.pane.append(this.tree, this.page, this.live.el);
     work.append(this.pane);
     this.ribbon = el('div', 'ribbon tabbed si-ribbon si-only');
     this.ribbon.id = 'si-ribbon';
@@ -492,6 +505,7 @@ export class SiMode {
     this.ribbon.setAttribute('aria-label', 'SI Project');
     this.ribbon.hidden = true;
     this.ribbon.innerHTML = RIBBON;
+    this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(this.liveOn));
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
@@ -770,7 +784,7 @@ export class SiMode {
     this.check();
     this.renderTree();
     const key = JSON.stringify(this.pick);
-    if (key !== this.shownKey) { this.shownKey = key; this.renderPage(); } else this.relabel();
+    if (key !== this.shownKey) { this.shownKey = key; this.renderPage(); this.liveSoon(150); } else { this.relabel(); this.liveSoon(); }
     this.paintWarnings();
     this.status();
   }
@@ -790,7 +804,7 @@ export class SiMode {
         if (mol === undefined || !this.facts.has(mol)) { waiting = true; continue; }
         facts = this.facts.get(mol) ?? null;
       }
-      try { this.warnings.set(c.id, allWarnings(p, c, this.report!, facts)); } catch (e) { console.warn('SI checks failed for', c.id, e); this.warnings.set(c.id, []); }
+      try { this.warnings.set(c.id, allWarnings(p, c, this.report!, facts, this.reportMatches.get(c.id) ?? null)); } catch (e) { console.warn('SI checks failed for', c.id, e); this.warnings.set(c.id, []); }
     }
     for (const id of [...this.warnings.keys()]) if (!seen.has(id)) this.warnings.delete(id);
     if (waiting) void this.loadFacts();
@@ -846,7 +860,7 @@ export class SiMode {
     const p = tab.si!;
     const k = p.completion(c);
     let warnings: SiWarning[] = [];
-    try { warnings = allWarnings(p, c, report, facts).filter((w) => !isDismissed(c, w)); } catch { /* (shown as none) */ }
+    try { warnings = allWarnings(p, c, report, facts, this.reportMatches.get(c.id) ?? null).filter((w) => !isDismissed(c, w)); } catch { /* (shown as none) */ }
     const v = valuesOf(c);
     const part = (key: string, sub: string): string => { const x = v[key]; return x && typeof x === 'object' && !Array.isArray(x) ? partText((x as Json)[sub]).trim() : ''; };
     const pct = part('yield', 'percent'), mass = part('yield', 'mass'), unit = part('yield', 'mass_unit');
@@ -913,7 +927,7 @@ export class SiMode {
 
   /** A compound's structure changed (or the folder was read again): read it again. */
   private forgetStructure(c?: SiCompound): void {
-    if (c) this.mols.delete(c.id); else this.mols.clear();
+    if (c) this.mols.delete(c.id); else { this.mols.clear(); this.reportData.clear(); this.reportMatches.clear(); }
   }
 
   private activeWarnings(c: SiCompound): SiWarning[] { return (this.warnings.get(c.id) ?? []).filter((w) => !isDismissed(c, w)); }
@@ -1834,6 +1848,7 @@ export class SiMode {
     pic.type = 'button';
     pic.title = 'Edit Structure: draw it with the drawing tools';
     pic.addEventListener('click', () => this.editStructure(c));
+    pic.addEventListener('paste', (e) => { e.preventDefault(); void this.pasteStructure(c, e); });
     const info = el('div', 'si-cpd-info');
     const line = el('div', 'si-cpd-title');
     line.append(el('b', 'si-cid', this.idOf(c)), el('span', 'si-cpd-name', compoundName(c) || 'unnamed compound'));
@@ -1944,7 +1959,13 @@ export class SiMode {
     const list = (): Json[] => (Array.isArray(valuesOf(c)[def.key]) ? (valuesOf(c)[def.key] as Json[]) : []).filter((x) => x && typeof x === 'object' && !Array.isArray(x));
     const items = list();
     const wrap = el('div', 'si-att-list');
-    if (!items.length) wrap.append(el('span', 'muted', def.key === 'spectra' ? 'None yet: Insert ▸ Spectra adds them.' : 'None yet: Insert ▸ Files adds them.'));
+    if (!items.length) wrap.append(el('span', 'muted', def.key === 'spectra' ? 'None yet: copy one in Mnova, click here and press Ctrl+V, or Insert ▸ Spectra.' : 'None yet: Insert ▸ Files adds them.'));
+    if (def.key === 'spectra') {
+      // (a paste target: click the list, then Ctrl+V; the text boxes inside keep their own paste)
+      wrap.tabIndex = 0;
+      wrap.title = 'Click here, then Ctrl+V to paste a spectrum copied in Mnova';
+      wrap.addEventListener('paste', (e) => { if ((e.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return; e.preventDefault(); void this.pasteSpectrum(c, e); });
+    }
     items.forEach((it, i) => {
       const file = partText(it.file);
       const row = el('div', 'si-att');
@@ -2051,7 +2072,7 @@ export class SiMode {
     mIs.append(el('span', 'si-plabel', 'M is'));
     const sel = el('select');
     sel.setAttribute('aria-label', 'M is');
-    sel.addEventListener('change', () => void this.act(() => p.setPart(c, 'hrms', 'species', sel.value), false));
+    sel.addEventListener('change', () => void this.act(async () => { await p.setPart(c, 'hrms', 'species', sel.value); if (await this.syncFound(c)) await p.saveCompound(c); }, false));
     mIs.append(sel);
     const fcell = el('label', 'si-part');
     fcell.append(el('span', 'si-plabel', 'M formula'));
@@ -2059,11 +2080,13 @@ export class SiMode {
     formula.value = partText(value().formula);
     formula.setAttribute('aria-label', 'M formula');
     formula.title = 'Type M’s formula to use instead of the structure’s (the adduct is still applied). Leave empty to use the structure.';
-    formula.addEventListener('change', () => void this.act(() => p.setPart(c, 'hrms', 'formula', formula.value.trim()), false));
+    formula.addEventListener('change', () => void this.act(async () => { await p.setPart(c, 'hrms', 'formula', formula.value.trim()); if (await this.syncFound(c)) await p.saveCompound(c); }, false));
     fcell.append(formula);
     line.append(mIs, fcell);
     const calc = el('div', 'si-calc muted');
-    body.append(line, calc);
+    const note = el('div', 'si-found-note muted');
+    note.hidden = true;
+    body.append(line, calc, note, this.reportsBox(c));
   }
 
   /** The species choice and the calculated line, from the compound as it is now. */
@@ -2072,6 +2095,7 @@ export class SiMode {
     const value = ((): Json => { const v = valuesOf(c).hrms; return v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {}; })();
     const facts = this.factsOf(c);
     const waiting = p.hasStructure(c) && !this.mols.has(c.id);
+    this.paintReports(c);
     // M is: only for a structure in pieces (a salt)
     const sel = calc.parentElement?.querySelector<HTMLSelectElement>('.si-species select');
     const auto = (() => { try { return hrmsSpecies(facts, { species: value.species ?? '' }); } catch { return null; } })();
@@ -2119,6 +2143,342 @@ export class SiMode {
     }
     const shownPeaks = r.peaks.filter((x) => x.abundance >= 5).slice(0, 6);
     addInfo(calc, `Isotope pattern (m/z): ${shownPeaks.map((x) => `${x.mz.toFixed(4)} (${x.abundance.toFixed(1)}%)`).join(', ')}`);
+  }
+
+  // ---------------------------------------------------------------- the live preview (SI Assistant §13k.8)
+
+  private live: { el: HTMLElement; host: HTMLElement; state: HTMLElement; empty: HTMLElement; view: DocView | null; shown: string } = null!;
+  private liveOn = true;
+  private liveTimer = 0;
+  private liveBusy = false;
+  private liveAgain = false;
+
+  /** The pane on the right: "Live Preview" with its state, zoom and ▸ to fold it to a strip. */
+  private livePane(): typeof this.live {
+    try { this.liveOn = localStorage.getItem('si.livePreview') !== 'off'; } catch { /* (on) */ }
+    const wrap = el('div', 'si-live');
+    const strip = el('button', 'si-live-strip', 'Live Preview');
+    strip.type = 'button';
+    strip.title = 'Show the live preview (Ctrl+Shift+L)';
+    strip.addEventListener('click', () => this.setLive(true));
+    const grip = el('div', 'si-live-grip');
+    grip.title = 'Drag to change the preview’s width';
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      const right = this.pane.getBoundingClientRect().right;
+      const move = (ev: PointerEvent): void => { const w = Math.round(Math.max(240, Math.min(900, right - ev.clientX))); this.pane.style.setProperty('--si-live-w', `${w}px`); };
+      const up = (): void => {
+        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up);
+        try { localStorage.setItem('si.livePreviewWidth', this.pane.style.getPropertyValue('--si-live-w')); } catch { /* (not kept) */ }
+        this.live.view?.resize();
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+    });
+    try { const w = localStorage.getItem('si.livePreviewWidth'); if (w) this.pane.style.setProperty('--si-live-w', w); } catch { /* (default) */ }
+    const head = el('div', 'si-live-head');
+    const title = el('span', 'si-live-title', 'Live Preview');
+    const state = el('span', 'si-live-state muted');
+    const btn = (text: string, tip: string, f: () => void): HTMLButtonElement => {
+      const b = el('button', 'si-mini si-live-btn', text);
+      b.type = 'button';
+      b.title = tip;
+      b.setAttribute('aria-label', tip);
+      b.addEventListener('click', f);
+      return b;
+    };
+    const zoomBy = (k: number): void => { const v = this.live.view; if (v) { v.setZoom(Math.max(0.2, Math.min(3, v.zoom * k))); v.redraw(); } };
+    head.append(title, state, el('span', 'si-live-gap'),
+      btn('−', 'Zoom out', () => zoomBy(1 / 1.2)), btn('+', 'Zoom in', () => zoomBy(1.2)),
+      btn('↔', 'Fit width', () => { this.live.view?.fitWidth(); this.live.view?.redraw(); }),
+      btn('▸', 'Hide the live preview (Ctrl+Shift+L)', () => this.setLive(false)));
+    addInfo(head, 'The page picked, laid out as it prints in the SI, about a second after each change. Spectra are left out (Compile shows them), and page numbers are placeholders: Compile gives the real ones.');
+    const host = el('div', 'si-live-host');
+    const empty = el('div', 'si-live-empty muted');
+    wrap.append(strip, grip, head, host, empty);
+    wrap.classList.toggle('off', !this.liveOn);
+    this.pane.classList.toggle('si-live-off', !this.liveOn);
+    return { el: wrap, host, state, empty, view: null, shown: '' };
+  }
+
+  /** Show or fold the live preview (remembered on this computer). */
+  private setLive(on: boolean): void {
+    this.liveOn = on;
+    try { localStorage.setItem('si.livePreview', on ? 'on' : 'off'); } catch { /* (not kept) */ }
+    this.live.el.classList.toggle('off', !on);
+    this.pane.classList.toggle('si-live-off', !on);
+    this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(on));
+    if (on) { this.live.shown = ''; this.liveSoon(0); }
+  }
+
+  /** What the live preview shows for the page picked; null for a page it doesn't show (a Data section's overview, the lists). */
+  private liveTarget(): SiPreviewTarget | null {
+    const p = this.project!;
+    const pick = this.pick;
+    if (pick.kind === 'compound') {
+      const c = p.compounds.find((x) => x.id === pick.id);
+      // (on a scheme page the preview is the whole scheme page)
+      return c?.schemeId ? { kind: 'scheme', id: c.schemeId } : c ? { kind: 'compound', id: c.id } : null;
+    }
+    if (pick.kind === 'scheme') return { kind: 'scheme', id: pick.id };
+    if (pick.kind === 'project') return { kind: 'front' };
+    if (pick.kind === 'section') {
+      const s = p.sections.find((x) => x.id === pick.id);
+      return s && s.type !== 'data' && s.type !== 'spectra' ? { kind: 'section', id: s.id } : null;
+    }
+    return null;
+  }
+
+  /** Update the live preview in `ms` (edits close together make one update). */
+  private liveSoon(ms = 1000): void {
+    if (!this.liveOn || !this.project) return;
+    clearTimeout(this.liveTimer);
+    this.liveTimer = window.setTimeout(() => void this.liveUpdate(), ms);
+  }
+
+  private async liveUpdate(): Promise<void> {
+    if (this.liveBusy) { this.liveAgain = true; return; }
+    const p = this.project;
+    if (!p || !this.liveOn) return;
+    const target = this.liveTarget();
+    const L = this.live;
+    const key = JSON.stringify(target);
+    if (!target) {
+      L.shown = '';
+      L.host.hidden = true;
+      L.empty.hidden = false;
+      L.empty.textContent = this.pick.kind === 'section' ? 'A Data section’s page has no live preview: pick one of its compounds, or Compile to see it all.' : 'This page has no live preview.';
+      L.state.textContent = '';
+      return;
+    }
+    this.liveBusy = true;
+    L.state.textContent = 'Updating…';
+    L.state.title = '';
+    try {
+      const got = await compileSi(p, {
+        contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (ms) => this.cachedFacts(ms),
+      }, target);
+      if (this.project !== p) return;
+      const blank = !got.doc.runs.some((r) => r.text.trim()) && !Object.keys(got.doc.objects).length;
+      L.host.hidden = blank;
+      L.empty.hidden = !blank;
+      L.empty.textContent = blank ? 'Nothing to show yet.' : '';
+      if (!blank) await this.liveShow({ ...got.doc, drawingStyle: { ...this.host.siStyle() } }, key);
+      const n = got.notes.length;
+      L.state.textContent = n ? `Up to date · ${n} note${n === 1 ? '' : 's'}` : 'Up to date';
+      L.state.title = got.notes.join('\n');
+    } catch (e) {
+      L.state.textContent = '⚠ Not updated';
+      L.state.title = e instanceof Error ? e.message : String(e);
+    } finally {
+      this.liveBusy = false;
+      if (this.liveAgain) { this.liveAgain = false; this.liveSoon(0); }
+    }
+  }
+
+  /** The structures' facts, read once for each structure (the preview compiles often). */
+  private async cachedFacts(ms: string[]): Promise<(MolFacts | null)[]> {
+    const todo = [...new Set(ms.filter((m) => m && !this.facts.has(m)))];
+    if (todo.length) {
+      const got = await this.host.siFacts(todo).catch(() => todo.map(() => null));
+      todo.forEach((m, i) => this.facts.set(m, got[i] ?? null));
+    }
+    return ms.map((m) => (m ? this.facts.get(m) ?? null : null));
+  }
+
+  /** Show a compiled page in the pane: the same page updated keeps its scroll and zoom; another one fits the width. */
+  private async liveShow(doc: DocText, key: string): Promise<void> {
+    const [{ DocView }, { DocFile }] = await Promise.all([import('./doc-view'), import('../document/doc-file')]);
+    const L = this.live;
+    if (!L.view) L.view = new DocView(L.host);
+    const v = L.view;
+    const same = L.shown === key;
+    const top = v.scroller.scrollTop, left = v.scroller.scrollLeft;
+    v.file = new DocFile(doc);
+    v.resize();
+    if (same) { v.sizeSpace(); v.scroller.scrollTop = top; v.scroller.scrollLeft = left; }
+    else { v.fitWidth(); v.scroller.scrollTop = 0; }
+    v.redraw();
+    L.shown = key;
+  }
+
+  // ---------------------------------------------------------------- HRMS report files (§13n.3)
+
+  /** What was read from each report file, by its path (read once). */
+  private reportData = new Map<string, Promise<ReportData>>();
+  /** Each compound's value for Found from its reports, once worked out (for the "differs" warning). */
+  private reportMatches = new Map<string, Match | null>();
+
+  private readReportFile(c: SiCompound, file: string): Promise<ReportData> {
+    const path = [c.folder, HRMS_DIR, file].filter(Boolean).join('/');
+    let got = this.reportData.get(path);
+    if (!got) {
+      got = (async () => readReport(await this.project!.folder.readBytes(path).catch(() => null), file, async (b) => (await import('../render/pdf-page')).pdfText(b)))();
+      this.reportData.set(path, got);
+    }
+    return got;
+  }
+
+  /** Whether the compound's structure has been read (or it has none). */
+  private factsReady(c: SiCompound): boolean {
+    if (!this.project!.hasStructure(c)) return true;
+    const mol = this.mols.get(c.id);
+    return mol !== undefined && this.facts.has(mol);
+  }
+
+  /** The reports' value for the Found box (null: none close enough, or no expected m/z); undefined while the structure is still being read. */
+  private async reportMatch(c: SiCompound): Promise<Match | null | undefined> {
+    const p = this.project!;
+    const items = reportItems(c);
+    if (!items.length) return null;
+    if (!this.factsReady(c)) return undefined;
+    const v = valuesOf(c).hrms;
+    const value = v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {};
+    let peaks: Peak[] | null = null;
+    try {
+      const sp = hrmsSpecies(this.factsOf(c), value);
+      peaks = sp ? hrmsCalc(sp.info, partText(value.adduct), '', hrmsTolerance(p.settings)).peaks : null;
+    } catch (e) { if (!(e instanceof ChemError)) throw e; }
+    if (!peaks?.length) return null;
+    const reports = await Promise.all(items.map((i) => this.readReportFile(c, String(i.file))));
+    return chooseMatch(reports, peaks, hrmsTolerance(p.settings));
+  }
+
+  /**
+   * Fill the Found box from the reports when it is empty or still holds the value filled from a
+   * report before, or clear such a value that no longer fits (in the stored value, not saved). A
+   * typed value is never changed. Whether the value changed.
+   */
+  private async syncFound(c: SiCompound): Promise<boolean> {
+    const v = valuesOf(c).hrms;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+    const value = v as Json;
+    if (!reportItems(c).length && !(FOUND_FROM_KEY in value)) return false;
+    const m = await this.reportMatch(c);
+    if (m === undefined) return false;
+    this.reportMatches.set(c.id, m);
+    const before = JSON.stringify(value);
+    updateFound(value, m);
+    return JSON.stringify(value) !== before;
+  }
+
+  /** Under the HRMS boxes: the instrument's report files, what was read from each, and whether they print. */
+  private reportsBox(c: SiCompound): HTMLElement {
+    const p = this.project!;
+    const box = el('div', 'si-reports');
+    box.tabIndex = 0;
+    box.title = 'Drag report files here, or click here and press Ctrl+V to paste files copied in File Explorer or Finder';
+    const items = reportItems(c);
+    const head = el('div', 'si-reports-head');
+    head.append(el('span', 'si-plabel', 'Report files'));
+    addInfo(head, 'The files the instrument software made: a PDF report, CSV/TXT or Excel peak list, mzML/mzXML/mzData, MGF, JCAMP-DX, netCDF, a picture, or the raw data. A copy is kept in the compound’s hrms folder. The found m/z is read from PDF, text, table and data files: it fills the Found box when that is empty (a value you type is never changed).');
+    box.append(head);
+    if (!items.length) box.append(el('div', 'muted si-reports-empty', 'None yet: Insert ▸ HRMS Report, or drag files here.'));
+    for (const it of items) {
+      const file = String(it.file);
+      const row = el('div', 'si-report');
+      const name = el('span', 'si-report-name', file);
+      name.title = file;
+      const what = el('span', 'si-report-what muted', 'Reading…');
+      void this.readReportFile(c, file).then((d) => {
+        what.textContent = d.message;
+        what.title = d.message;
+        what.classList.toggle('si-bad', !d.readable || !d.mz.length);
+        if (!d.readable && /not found|missing/i.test(d.message)) name.textContent = `⚠ ${file} (missing)`;
+      });
+      const rm = el('button', 'si-x', '✕');
+      rm.type = 'button';
+      rm.title = 'Remove (moves it to the project Trash)';
+      rm.disabled = p.readOnly;
+      rm.addEventListener('click', () => {
+        this.reportData.delete([c.folder, HRMS_DIR, file].filter(Boolean).join('/'));
+        void this.act(() => p.removeHrmsReport(c, file, async () => { await this.syncFound(c); }));
+      });
+      row.append(name, what, rm);
+      box.append(row);
+    }
+    if (items.length) {
+      const pr = el('label', 'si-part si-reports-print');
+      pr.append(el('span', 'si-plabel', 'Print in the SI'));
+      const sel = el('select');
+      const spectra = p.sections.find((s) => s.type === 'spectra') ?? null;
+      const on = sectionDefaults(spectra, p.settings).hrms_reports;
+      sel.append(new Option(`As the Spectra section says (${on ? 'print' : 'don’t print'})`, ''), new Option('Print them', 'yes'), new Option('Don’t print them', 'no'));
+      const own = (valuesOf(c).hrms as Json | undefined)?.[PRINT_KEY];
+      sel.value = own === true ? 'yes' : own === false ? 'no' : '';
+      sel.disabled = p.readOnly;
+      sel.title = 'Printed in the Spectra section, in its sub-section “HRMS reports” after all the spectra. The Spectra section’s page sets this for every compound (off unless you turn it on).';
+      sel.addEventListener('change', () => void this.act(() => p.setHrmsPrint(c, sel.value === 'yes' ? true : sel.value === 'no' ? false : null), false));
+      pr.append(sel);
+      box.append(pr);
+    }
+    box.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); box.classList.add('si-drop'); } });
+    box.addEventListener('dragleave', () => box.classList.remove('si-drop'));
+    box.addEventListener('drop', (e) => {
+      box.classList.remove('si-drop');
+      const files = [...(e.dataTransfer?.files ?? [])];
+      if (!files.length) return;
+      e.preventDefault();
+      void this.addReports(c, files);
+    });
+    box.addEventListener('paste', (e) => {
+      if ((e.target as HTMLElement).closest('input, select, textarea')) return;
+      const files = [...(e.clipboardData?.files ?? [])];
+      if (!files.length) return;
+      e.preventDefault();
+      void this.addReports(c, files);
+    });
+    return box;
+  }
+
+  /** Copy report files into the compound's hrms folder and list them; Found is filled from them when it is empty. */
+  private async addReports(c: SiCompound, files: (File | { name: string; bytes: Uint8Array })[]): Promise<void> {
+    const p = this.project!;
+    if (p.readOnly) { this.host.flash('This project is open read-only.'); return; }
+    const got = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: f instanceof File ? new Uint8Array(await f.arrayBuffer()) : f.bytes })));
+    const big = got.filter((f) => f.bytes.length > MAX_REPORT_BYTES);
+    if (big.length) this.host.flash(`${big.map((f) => f.name).join(', ')}: kept, but too large to read numbers from.`, 6000);
+    if (!fieldKeys(c).includes('hrms')) await p.addField(c, { key: 'hrms' });
+    await this.act(async () => {
+      for (const f of got) await p.addHrmsReport(c, f.name, f.bytes, async () => { await this.syncFound(c); });
+    });
+    const v = valuesOf(c).hrms as Json | undefined;
+    if (v && foundIsFromReport(v)) this.host.flash(`Found m/z ${String(v.found)} filled from ${String((v[FOUND_FROM_KEY] as Json).file)}.`);
+  }
+
+  /** The found-m/z note and the "differs" warning, once the reports are read; fills Found when it should be. */
+  private paintReports(c: SiCompound): void {
+    const p = this.project!;
+    const note = this.page.querySelector<HTMLElement>('.si-found-note');
+    if (!note) return;
+    if (!reportItems(c).length) { note.hidden = true; this.reportMatches.delete(c.id); return; }
+    const shownFor = this.pick;
+    void this.reportMatch(c).then(async (m) => {
+      if (m === undefined || this.pick !== shownFor) return;
+      const before = this.reportMatches.get(c.id);
+      this.reportMatches.set(c.id, m);
+      const value = (valuesOf(c).hrms ?? {}) as Json;
+      // filled again when the structure, adduct or M changed (or a file came back from the Trash)
+      if (!p.readOnly && updateFound(structuredClone(value), m)) {
+        await this.act(async () => { if (await this.syncFound(c)) await p.saveCompound(c); });
+        return;
+      }
+      if ((before?.file ?? null) !== (m?.file ?? null) || before?.mz !== m?.mz || before === undefined) { this.check(); this.paintWarnings(); return; }
+      const fin = this.page.querySelector<HTMLInputElement>('input[aria-label="HRMS Found m/z"]');
+      if (fin && document.activeElement !== fin) fin.value = partText(value.found);
+      const tol = hrmsTolerance(p.settings);
+      let text = '';
+      if (foundIsFromReport(value)) text = `Found m/z from the report ${String((value[FOUND_FROM_KEY] as Json).file)}; type over it to use your own value.`;
+      else if (!m) text = `No m/z within ±${tol} ppm of the expected ion was found in the report files.`;
+      else {
+        const found = parseNumber(partText(value.found));
+        if (found === null) text = `The reports give ${m.mz.toFixed(4)} (${m.file}).`;
+        else text = Math.abs(((found - m.mz) / m.mz) * 1e6) > tol ? `Your value is kept; the report ${m.file} gives ${m.mz.toFixed(4)}.` : `Your value; the report ${m.file} gives ${m.mz.toFixed(4)}.`;
+      }
+      note.textContent = text;
+      note.hidden = !text;
+    });
   }
 
   // ---------------------------------------------------------------- the Warnings page
@@ -2332,7 +2692,10 @@ export class SiMode {
         input = inp;
       }
       input.setAttribute('aria-label', `${def.label}${part.label ? ' ' + part.label : ''}`);
-      input.addEventListener('change', () => void this.act(() => p.setPart(c, def.key, part.key, input.value), false));
+      input.addEventListener('change', () => void this.act(async () => {
+        await p.setPart(c, def.key, part.key, input.value);
+        if (def.key === 'hrms' && await this.syncFound(c)) await p.saveCompound(c);
+      }, false));
       cell.append(input);
       if (part.suffix) cell.append(el('span', 'si-suffix', part.suffix));
       wrap.append(cell);
@@ -2498,6 +2861,7 @@ export class SiMode {
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); void this.run(e.key === 'ArrowUp' ? 'move-up' : 'move-down'); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); void this.run('new-compound'); return; }
     if (e.key === 'F7' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); void this.run('spelling'); return; }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); this.setLive(!this.liveOn); return; }
     if (inText) return;
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       const rows = [...this.tree.querySelectorAll<HTMLElement>('.si-row')];
@@ -2770,7 +3134,7 @@ export class SiMode {
   }
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
-  private static NO_STEP = new Set(['trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling']);
+  private static NO_STEP = new Set(['trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
@@ -3001,6 +3365,23 @@ export class SiMode {
         await this.addFiles(c, ALL_FIELDS.get(key)!);
         return;
       }
+      case 'add-hrms-report': {
+        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        const files = await this.host.pickFiles('HRMS reports', REPORT_EXTS);
+        if (files.length) await this.addReports(c, files);
+        return;
+      }
+      case 'live-preview':
+        this.setLive(!this.liveOn);
+        return;
+      case 'paste-spectrum':
+        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        await this.pasteSpectrum(c);
+        return;
+      case 'paste-structure':
+        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        await this.pasteStructure(c);
+        return;
       case 'add-nmr-report': {
         if (!c) { this.host.flash('Pick a compound first.'); return; }
         const reports = (Array.isArray(valuesOf(c).nmr) ? valuesOf(c).nmr : []) as Json[];
@@ -3088,6 +3469,86 @@ export class SiMode {
         void this.act(async () => { await p.setStructure(c, m.molblock!); this.forgetStructure(c); });
       });
     });
+  }
+
+  /** The clipboard read (or a paste event's), with a message when it can't be. */
+  private async clipboard(e?: ClipboardEvent): Promise<Pasted | null> {
+    try { return await this.host.readClipboard(e); } catch (err) { this.host.flash(`The clipboard could not be read: ${err instanceof Error ? err.message : String(err)}`); return null; }
+  }
+
+  /** Paste ▸ a spectrum (Mnova's metafile kept beside its SVG; a PDF or picture as it is), its type picked with one click. */
+  private async pasteSpectrum(c: SiCompound, e?: ClipboardEvent): Promise<void> {
+    const p = this.project!;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    this.commitAll();
+    const got = await this.clipboard(e);
+    if (!got) return;
+    let main: { ext: string; bytes: Uint8Array } | null = null;
+    let original: Uint8Array | null = null;
+    let how: Parameters<typeof keptLine>[0] = 'picture';
+    if (got.kind === 'picture') {
+      if (got.mime === 'image/x-emf') {
+        const { emfToSvg } = await import('../render/emf-read');
+        const svg = emfToSvg(got.bytes);
+        if (svg) { main = { ext: 'svg', bytes: new TextEncoder().encode(svg.svg) }; original = got.bytes; how = svg.vectors > 0 ? 'svg' : 'emf-picture'; }
+        else { this.host.flash('The copied spectrum could not be read. Copy it in Mnova again (Enhanced Windows Metafile), or save it as a PDF and add it with Insert ▸ Spectra.', 8000); return; }
+      } else if (got.mime === 'application/pdf') { main = { ext: 'pdf', bytes: got.bytes }; how = 'pdf'; }
+      else if (got.mime === 'image/svg+xml') { main = { ext: 'svg', bytes: got.bytes }; how = 'svg'; }
+      else {
+        const ext = got.mime === 'image/jpeg' ? 'jpg' : got.mime === 'image/png' ? 'png' : '';
+        const bytes = ext ? got.bytes : await pngOf(got.bytes, got.mime);
+        if (!bytes) { this.host.flash('The copied picture could not be read.'); return; }
+        main = { ext: ext || 'png', bytes };
+      }
+    } else if (got.kind === 'drawing') {
+      const files = this.host.drawingFiles(got.doc);
+      if (files) { main = { ext: 'svg', bytes: new TextEncoder().encode(files.svg) }; how = 'svg'; }
+    }
+    if (!main) { this.host.flash('The clipboard has no spectrum. Copy the spectrum in Mnova (or a PDF or picture) first, then paste.', 6000); return; }
+    const guess = guessPastedType(c);
+    const type = await askChoice<string>(`Paste Spectrum into ${this.idOf(c)}`, 'What kind of spectrum is it? (Enter takes the outlined guess.)',
+      [...SPECTRUM_TYPES.map((t) => ({ value: t as string, label: PASTE_TYPE_LABELS[t], primary: t === guess })), { value: '', label: 'Cancel' }], '');
+    if (!type) return;
+    const m = main;
+    await this.act(async () => {
+      const def = ALL_FIELDS.get('spectra')!;
+      if (!fieldKeys(c).includes('spectra')) await p.addField(c, { key: 'spectra' });
+      const subdir = def.subdir || 'spectra';
+      const stem = pastedStem(type);
+      let name = `${stem}.${m.ext}`;
+      for (let n = 2; (await p.folder.exists(`${c.folder}/${subdir}/${name}`)) || (original && (await p.folder.exists(`${c.folder}/${subdir}/${name.replace(/\.[^.]+$/, '.emf')}`))); n++) name = `${stem} (${n}).${m.ext}`;
+      const file = await p.addAttachment(c, subdir, name, m.bytes);
+      const item: Json = { file, type, title: '', struct_caption: '' };
+      if (original) item.original = await p.addAttachment(c, subdir, file.replace(/\.[^.]+$/, '.emf'), original);
+      const list = (Array.isArray(valuesOf(c).spectra) ? valuesOf(c).spectra : (valuesOf(c).spectra = [])) as Json[];
+      list.push(item);
+      await p.saveCompound(c);
+    });
+    this.host.flash(`Pasted a ${PASTE_TYPE_LABELS[type as keyof typeof PASTE_TYPE_LABELS] ?? type} spectrum into ${this.idOf(c)}. ${keptLine(how)}`, 6000);
+  }
+
+  /** Paste ▸ the copied structure (ChemDraw, Chemweave, or a molfile) as the compound's structure. */
+  private async pasteStructure(c: SiCompound, e?: ClipboardEvent): Promise<void> {
+    const p = this.project!;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    const got = await this.clipboard(e);
+    if (!got) return;
+    let molblock: string | null = null;
+    if (got.kind === 'drawing') {
+      const m = this.host.molfileOf(got.doc.contents());
+      if (!m.molblock) { this.host.flash(m.problem ?? 'The copied drawing could not be read as one structure.', 6000); return; }
+      molblock = m.molblock;
+    } else if (got.kind === 'text' && got.text.includes('M  END')) {
+      const contents = this.host.contentsOf(got.text);
+      molblock = contents ? this.host.molfileOf(contents).molblock : null;
+    }
+    if (!molblock) { this.host.flash('The clipboard has no structure. Copy one in ChemDraw or Chemweave first, then paste.', 6000); return; }
+    if (p.hasStructure(c)) {
+      const go = await askChoice('Paste Structure', `Replace ${this.idOf(c)}’s structure with the copied one? (Edit ▸ Undo puts it back.)`, [{ value: 'go', label: 'Replace', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+      if (go !== 'go') return;
+    }
+    const mol = molblock;
+    await this.act(async () => { await p.setStructure(c, mol); this.forgetStructure(c); });
   }
 
   private async addFiles(c: SiCompound, def: FieldDef): Promise<void> {

@@ -1121,6 +1121,49 @@ export class SiProject {
     await this.saveCompound(c);
   }
 
+  // ---- HRMS report files (§13n.3): in the compound's hrms/ folder, listed in hrms.reports
+
+  /** The HRMS field's value, made when there is none (a hand-edited one that isn't an object too). */
+  hrmsValue(c: SiCompound): Json {
+    const values = valuesOf(c);
+    if (!isObj(values.hrms)) values.hrms = (emptyValue(fieldDef({ key: 'hrms' })!) as Json | null) ?? {};
+    return values.hrms as Json;
+  }
+
+  /** Copy an instrument's report file into hrms/ and list it (not saved: `then` may fill Found first, in the same save). */
+  async addHrmsReport(c: SiCompound, name: string, bytes: Uint8Array, then?: () => Promise<void>): Promise<string> {
+    const pick = await this.addAttachment(c, 'hrms', name, bytes);
+    const value = this.hrmsValue(c);
+    const items = Array.isArray(value.reports) ? (value.reports as Json[]) : (value.reports = []) as Json[];
+    items.push({ file: pick, kind: 'file' });
+    if (then) await then();
+    await this.saveCompound(c);
+    return pick;
+  }
+
+  /** Move a report file (or folder) to the Trash and take it off the list; `then` may fill or clear Found, in the same save. */
+  async removeHrmsReport(c: SiCompound, name: string, then?: () => Promise<void>): Promise<void> {
+    this.checkWritable();
+    const value = this.hrmsValue(c);
+    const items = Array.isArray(value.reports) ? (value.reports as Json[]) : [];
+    const item = items.find((i) => isObj(i) && i.file === name && /^[^/\\]+$/.test(name) && !/^\.\.?$/.test(name));
+    if (!item) return;
+    const path = join(c.folder, 'hrms', name);
+    await this.moveToTrash([path], 'compound_file', name, { compound_id: c.id, field_key: 'hrms_reports', item: name, item_values: structuredClone(item), compound_name: compoundName(c) });
+    items.splice(items.indexOf(item), 1);
+    if (!items.length) delete value.reports;
+    if (then) await then();
+    await this.saveCompound(c);
+  }
+
+  /** Print this compound's HRMS reports (true), not (false), or as the Spectra section says (null). */
+  async setHrmsPrint(c: SiCompound, on: boolean | null): Promise<void> {
+    this.checkWritable();
+    const value = this.hrmsValue(c);
+    if (on === null) delete value.print_reports; else value.print_reports = on;
+    await this.saveCompound(c);
+  }
+
   /** Whether a field counts as filled in. */
   fieldFilled(c: SiCompound, def: FieldDef): boolean {
     if (def.key === 'procedure' && this.compoundGp(c)) return true; // "Prepared according to General Procedure A…"

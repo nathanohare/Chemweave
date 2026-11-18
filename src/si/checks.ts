@@ -20,6 +20,8 @@ import { fp, pyF, pyG, pySigned1, sortedFp } from './pyrepr';
 import { isFloat } from './pyjson';
 import { type IdReport } from './compound-ids';
 import { type SiCompound, type SiProject, fieldKeys, fieldsOf, valuesOf } from './project';
+import { differsMessage, r6, type Match } from './ms-reports';
+import { reportItems } from './spectra';
 
 type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -288,7 +290,7 @@ function largeJMessage(r: Json, large: nmr.Coupling[], fpAtoms: string[]): strin
 }
 
 /** Every warning for a compound, dismissed or not. `facts`: its structure's (null: none, or unreadable). */
-export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, facts: MolFacts | null): SiWarning[] {
+export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, facts: MolFacts | null, reportMatch: Match | null = null): SiWarning[] {
   const out: SiWarning[] = [];
   const keys = new Set(fieldKeys(c));
   const values = valuesOf(c);
@@ -320,6 +322,14 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
         let auto: HrmsSpecies | null = null;
         try { auto = hrmsSpecies(facts, { ...value, formula: '' }); } catch { auto = null; }
         if (auto && !chem.sameFormula(auto.info.counts, sp.info.counts)) out.push(w('hrms', 'hrms', `The typed M formula (${sp.info.formula}) differs from the structure's (${auto.info.formula}).`, 'hrms:formula-differs', f, old));
+      }
+    }
+    // a found m/z typed by hand that the report files don't back up (§13n.3a); `reportMatch`: the reports' value, read by the caller
+    if (reportItems(c).length && reportMatch) {
+      const message = differsMessage(value, reportMatch, hrmsTolerance(project.settings));
+      if (message) {
+        const where = [reportMatch.file, pyF(r6(reportMatch.mz))];
+        out.push(w('hrms', 'hrms', message, 'hrms:report-differs', fp(f, ...where), old ? fp(old, ...where) : ''));
       }
     }
   }

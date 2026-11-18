@@ -244,6 +244,20 @@ const RESTORE: Record<string, Restore> = {
       await p.folder.removeTrash(folder).catch(() => {});
       return `Restored the structure of “${e.name}”.`;
     }
+    if (key === 'hrms_reports') {
+      // an HRMS report file (§13n.3): back into hrms/ and onto the HRMS field's list (Found is filled again when the page opens)
+      let pick = item;
+      const dot = item.lastIndexOf('.');
+      const stem = dot > 0 ? item.slice(0, dot) : item, ext = dot > 0 ? item.slice(dot) : '';
+      for (let n = 2; await p.folder.exists(join(c.folder, 'hrms', pick)); n++) pick = `${stem} (${n})${ext}`;
+      await p.folder.move(join(folder, item), join(c.folder, 'hrms', pick));
+      const value = p.hrmsValue(c);
+      const list = Array.isArray(value.reports) ? (value.reports as Json[]) : (value.reports = []) as Json[];
+      const kept = isObj(e.info.item_values) ? { ...e.info.item_values } : {};
+      list.push({ kind: 'file', ...kept, file: pick });
+      await p.saveCompound(c);
+      return `Restored ${pick} to “${str(e.info.compound_name) || 'the compound'}”.`;
+    }
     const def = fieldDef(fieldsOf(c).find((x) => x.key === key) ?? { key });
     if (!def || !def.subdir) throw new SiProjectError(`Files of this field are restored in Chem SI Assistant. The file is still in the Trash folder (${folder}).`);
     const values = valuesOf(c);

@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<mzXML xmlns="http://sashimi.sourceforge.net/schema_revision/mzXML_3.2"><msRun scanCount="1"><scan num="1" msLevel="1" peaksCount="6" centroided="1"><peaks precision="32" byteOrder="network" pairOrder="m/z-int" compressionType="none">QxUF+EWcQABDUBjaREgAAENeHN5Hw1AAQ18dukZKy39DdBgrRpxAAEOLlFtFO4AA</peaks></scan></msRun></mzXML>
