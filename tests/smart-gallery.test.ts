@@ -35,8 +35,11 @@ describe('the Smart Scheme gallery', () => {
 
   it('resolves with the layout or the cycle picked, and null when closed', async () => {
     let got = showSmartGallery(opts());
-    (document.querySelectorAll('.sg-tile')[4] as HTMLButtonElement).click();
+    (document.querySelectorAll('.sg-tile')[5] as HTMLButtonElement).click();
     expect(await got).toEqual({ layout: 'cycle' });
+    got = showSmartGallery(opts());
+    (document.querySelectorAll('.sg-tile')[4] as HTMLButtonElement).click();
+    expect(await got).toEqual({ layout: 'tree' });
     expect(document.querySelector('.smart-gallery')).toBeNull();
     got = showSmartGallery(opts());
     (document.querySelectorAll('.sg-card')[6] as HTMLButtonElement).click();
