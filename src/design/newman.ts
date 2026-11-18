@@ -11,10 +11,11 @@ import type { Measure } from '../editor/arrange';
 import { chemRuns } from '../text/chemtext';
 import { frameBox, frameMembers } from '../editor/frames';
 import { tokenize } from '../chem/labels';
-import { sizeRanks, type NewmanGroup } from '../chem/newman';
+import { idealGroups, sizeRanks, type NewmanGroup } from '../chem/newman';
+import { elementNumber } from '../chem/elements';
 import { OLD_RING_ARC, type EyeStyle, type NewmanLook } from './newman-prefs';
 
-export { DEFAULT_NEWMAN_PREFS, NEWMAN_LOOK, OLD_RING_ARC, parseNewmanPrefs, type EyeStyle, type NewmanLook, type NewmanPrefs, type RankLook, type RingArcLook } from './newman-prefs';
+export { DEFAULT_NEWMAN_PREFS, NEWMAN_LOOK, OLD_RING_ARC, parseNewmanPrefs, type EyeStyle, type NewmanLook, type NewmanPrefs, type NewmanText, type RankLook, type RingArcLook } from './newman-prefs';
 
 /** What a projection keeps: the view it shows and where it came from. */
 export interface NewmanData {
@@ -41,7 +42,7 @@ export interface NewmanData {
   look: NewmanLook;
 }
 
-export interface NewmanParts { captions: number[]; arrows: number[]; shapes: number[] }
+export interface NewmanParts { captions: number[]; arrows: number[]; shapes: number[]; atoms?: number[]; /** How much smaller than asked the labels were written to fit (1: full size). */ scale?: number }
 
 const RAD = Math.PI / 180;
 /** Unit vector at `deg` clockwise from up, on the page (y down). */
@@ -57,8 +58,124 @@ export function reversedLabel(label: string): string {
 /** Angles the back groups are drawn at: turned by `offset` when they would sit on a front group. */
 export function backAngles(front: NewmanGroup[], back: NewmanGroup[], turn: number, offset: number): number[] {
   const angles = back.map((g) => g.angle + turn);
-  const eclipsed = back.some((_, i) => front.some((f) => Math.abs(((angles[i] - f.angle + 540) % 360) - 180) < Math.max(4, offset * 0.6)));
-  return eclipsed ? angles.map((a) => a + offset) : angles;
+  return isEclipsed(front, back, turn) ? angles.map((a) => a + offset) : angles;
+}
+
+/** A back group sits (within a few degrees) behind a front one. */
+export function isEclipsed(front: NewmanGroup[], back: NewmanGroup[], turn: number): boolean {
+  return back.some((b) => front.some((f) => Math.abs(((b.angle + turn - f.angle + 540) % 360) - 180) < 8));
+}
+
+interface Box { x1: number; y1: number; x2: number; y2: number }
+
+/** The size a projection's labels are written at: the one chosen, else 2 points under the drawing's caption text. */
+export function newmanTextSize(look: NewmanLook, captionSize: number): number {
+  return look.text?.size ?? Math.max(5, captionSize - 2);
+}
+
+/** Where one group's bond and label go (drawNewman's layout, worked out before anything is drawn). */
+export interface NewmanPlace {
+  g: NewmanGroup; rank: 0 | 1 | 2; back: boolean;
+  /** The bond, from the atom (or the circle's edge) to its end. */
+  from: Vec; tip: Vec;
+  /** The label as written (backwards on the left) and the box its letters fill; none for a ring bond. */
+  text: string; box: Box | null;
+}
+
+/**
+ * Where the bonds and labels of a Newman projection go, centred at `c`. Every label is written
+ * at the end of its own bond with the bond aimed at the atom it joins (the C of CH3, written H3C
+ * on the left), so a label can never come away from its bond. Labels that would touch are kept
+ * apart, in this order: one above or below its bond is written the other way round; an eclipsed
+ * pair is fanned further apart; the text
+ * is made smaller (down to 70%, with `look.text.auto`); and last the bonds are drawn longer.
+ * Returns the places and the text scale used.
+ */
+export function layoutNewman(d: Pick<NewmanData, 'front' | 'back' | 'turn' | 'look'>, c: Vec, L: number, measure: (text: string, rank: number, scale: number) => { w: number; h: number }): { places: NewmanPlace[]; scale: number; R: number } {
+  const look = d.look;
+  const R = look.radius * L, end = R * (1 + look.reach), gap = 0.07 * L;
+  const { front, back } = look.ideal ? idealGroups(d.front, d.back) : { front: d.front, back: d.back };
+  const ranks = (gs: NewmanGroup[]): (0 | 1 | 2)[] => { const own = gs.filter((g) => g.ring === undefined); const r = sizeRanks(own); return gs.map((g) => (g.ring === undefined ? r[own.indexOf(g)] : 2)); };
+  const fr = ranks(front), br = ranks(back);
+  const eclipsed = isEclipsed(front, back, d.turn);
+  const bothRing = front.some((g) => g.ring !== undefined) && back.some((g) => g.ring !== undefined);
+  const jobs = [...front.map((g, i) => ({ g, rank: fr[i], back: false, angle: g.angle })), ...back.map((g, i) => ({ g, rank: br[i], back: true, angle: g.angle + d.turn }))];
+  const n = jobs.length;
+  const extra = jobs.map(() => 0), flip = jobs.map(() => false);
+  // a back bond close behind a front one without being eclipsed (a skew turn) is treated the same
+  // way: fanned a little further from it before any bond is drawn longer
+  let near = 180;
+  for (const b of back) for (const f of front) { const dd = ((b.angle + d.turn - f.angle + 540) % 360) - 180; if (Math.abs(dd) < Math.abs(near)) near = dd; }
+  const crowded = eclipsed || Math.abs(near) < 30;
+  const fanSign = eclipsed ? Math.sign(look.offset || 1) : Math.sign(near || 1), fanMax = eclipsed ? 26 : 26 - Math.abs(near);
+  let scale = 1, offset = eclipsed ? look.offset : 0;
+  const sym = (t: string, last: boolean) => (last ? /[A-Z][a-z]?$/.exec(t)?.[0] ?? t.slice(-1) : /^[A-Z][a-z]?/.exec(t)?.[0] ?? t.slice(0, 1));
+  const lay = (): NewmanPlace[] => jobs.map((j, i) => {
+    const u = dir(j.angle + (j.back ? offset : 0));
+    const from = j.back ? { x: c.x + u.x * R, y: c.y + u.y * R } : c;
+    const tip = { x: c.x + u.x * (end + extra[i]), y: c.y + u.y * (end + extra[i]) };
+    if (j.g.ring !== undefined && bothRing) return { g: j.g, rank: j.rank, back: j.back, from, tip, text: '', box: null };
+    const fwd = j.g.label, rev = reversedLabel(fwd);
+    const single = rev === fwd;
+    const upright = Math.abs(u.x) <= 0.26;
+    // written backwards on the left; above or below its bond, forwards unless turned round to make room
+    const backwards = upright ? flip[i] : u.x < 0;
+    const text = backwards ? rev : fwd;
+    const m = measure(text, j.rank, scale);
+    const hh = 0.36 * m.h;
+    // a short name of one piece (Ph, Me, H) above or below its bond sits centred on it
+    const centred = single && Math.abs(u.x) <= 0.5 && fwd.length <= 3;
+    const wa = centred ? m.w : measure(sym(text, backwards), j.rank, scale).w;
+    const t = Math.min(Math.abs(u.x) > 1e-6 ? wa / 2 / Math.abs(u.x) : Infinity, Math.abs(u.y) > 1e-6 ? hh / Math.abs(u.y) : Infinity);
+    const gc = { x: tip.x + u.x * (gap + t), y: tip.y + u.y * (gap + t) };
+    const x1 = centred ? gc.x - m.w / 2 : backwards ? gc.x + wa / 2 - m.w : gc.x - wa / 2;
+    const sub = /\d/.test(text) ? 0.1 * m.h : 0;
+    return { g: j.g, rank: j.rank, back: j.back, from, tip, text, box: { x1, y1: gc.y - hh, x2: x1 + m.w, y2: gc.y + hh + sub } };
+  });
+  /** What touches: [a label, the other label or the bond it touches, whether that is a bond]. */
+  const hits = (ps: NewmanPlace[]): [number, number, boolean][] => {
+    const out: [number, number, boolean][] = [], e = 0.05 * L;
+    for (let i = 0; i < n; i++) {
+      const a = ps[i].box;
+      if (!a) continue;
+      for (let k = i + 1; k < n; k++) { const b = ps[k].box; if (b && a.x1 - e < b.x2 && b.x1 < a.x2 + e && a.y1 - e < b.y2 && b.y1 < a.y2 + e) out.push([i, k, false]); }
+      for (let k = 0; k < n; k++) {
+        if (k === i) continue;
+        const p = ps[k];
+        for (let s = 0; s <= 16; s++) {
+          const q = { x: p.from.x + ((p.tip.x - p.from.x) * s) / 16, y: p.from.y + ((p.tip.y - p.from.y) * s) / 16 };
+          if (q.x > a.x1 - e && q.x < a.x2 + e && q.y > a.y1 - e && q.y < a.y2 + e) { out.push([i, k, true]); break; }
+        }
+      }
+    }
+    return out;
+  };
+  const upright = (i: number) => Math.abs(dir(jobs[i].angle + (jobs[i].back ? offset : 0)).x) <= 0.26;
+  const cap = (crowded ? 1.4 : 2.4) * R;
+  let ps = lay(), hs = hits(ps);
+  for (let round = 0; round < 400 && hs.length; round++) {
+    // 1: a label above or below its bond written the other way round, where that frees it
+    let better = false;
+    for (const i of new Set(hs.flatMap((h) => [h[0], h[1]]))) {
+      if (!upright(i) || !ps[i].box) continue;
+      flip[i] = !flip[i];
+      const h2 = hits(lay());
+      if (h2.length < hs.length) { better = true; break; }
+      flip[i] = !flip[i];
+    }
+    if (!better) {
+      // which label gives way: the back one, else the longer one
+      const [i, k, bond] = hs[0];
+      const mover = bond || !ps[k].box ? i : ps[i].back !== ps[k].back ? (ps[i].back ? i : k) : (ps[i].text.length >= ps[k].text.length ? i : k);
+      if (crowded && Math.abs(offset) < fanMax && ps[i].back !== ps[k].back) offset += fanSign * 2;
+      else if (extra[mover] < cap) extra[mover] += 0.08 * L;
+      else if (look.text?.auto && scale > 0.705) scale -= 0.05;
+      else if (extra[mover] < 3 * R) extra[mover] += 0.08 * L;
+      else break;
+    }
+    ps = lay(); hs = hits(ps);
+  }
+  return { places: ps, scale, R };
 }
 
 /**
@@ -66,158 +183,185 @@ export function backAngles(front: NewmanGroup[], back: NewmanGroup[], turn: numb
  * in a frame). Call inside an edit.
  */
 export function drawNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec): NewmanParts {
+  if (d.kind === 'sawhorse') return drawSawhorse(doc, d, c);
   const out: NewmanParts = { captions: [], arrows: [], shapes: [] };
   const L = doc.style.bondLength, lw = doc.style.lineWidth;
-  const look = d.look;
-  const R = look.radius * L, end = R * (1 + look.reach);
-  // ring members (the ring runs on round through the bond) are joined by an arc, not written or ranked
-  const ranks = (gs: NewmanGroup[]): (0 | 1 | 2)[] => { const own = gs.filter((g) => g.ring === undefined); const r = sizeRanks(own); return gs.map((g) => (g.ring === undefined ? r[own.indexOf(g)] : 2)); };
-  const fr = ranks(d.front), br = ranks(d.back);
-  const ringTips: { front: boolean; tip: Vec; u: Vec }[] = [];
-  const line = (a: Vec, b: Vec, color = '#000000'): number => { const id = doc.addShape({ kind: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, color }).id; out.shapes.push(id); return id; };
-  const bondInk = (rank: number) => (look.ranks[rank].bond ? look.ranks[rank].color : '#000000');
-  // labels go on after the lines: the front ones first, then the back ones, slid round clear of them
-  const jobs: { g: NewmanGroup; rank: number; u: Vec; tip: Vec; back: boolean; bond: number }[] = [];
-  const placed: { x1: number; y1: number; x2: number; y2: number }[] = [];
-  /**
-   * A group's label, at the end of its own bond: beside the bond's end for a bond running left
-   * or right (the attached atom nearest it, so H3C and HO on the left), above or below it for one
-   * running up or down. A label that would sit on another is moved out along its bond (the bond
-   * drawn longer) or a little round (the bond's end turned to meet it), whichever is the smaller
-   * move, so the bond always reaches its label.
-   */
-  const label = (g: NewmanGroup, rank: number, u: Vec, tip: Vec, bond: number) => {
+  const look = d.look, tx = look.text;
+  const size = (scale: number) => newmanTextSize(look, doc.style.captionSize) * scale;
+  const style = (text: string, rank: number, scale: number) => {
     const rl = look.ranks[rank];
-    const style = (text: string) => chemRuns(text).map((r) => ({ ...r, ...(rl.color !== '#000000' ? { color: rl.color } : {}), ...(rl.bold ? { bold: true } : {}), ...(rl.italic ? { italic: true } : {}) }));
-    const measure = (text: string) => { const c = doc.addCaption({ x: 0, y: 0, runs: style(text), justify: 'left', chem: false }); const b = m.captionBox(c); doc.removeCaption(c.id); return b; };
-    // written forwards, or backwards when it sits to the left of its bond (H3C, HO)
-    const fwd = g.label, rev = reversedLabel(g.label);
-    const bf = measure(fwd), br = rev === fwd ? bf : measure(rev);
-    const h = bf.y2 - bf.y1, gap = 0.08 * L;
-    // the letters fill about the middle 70% of the line's height: the box's edges are kept that close
-    const ink = 0.35 * h;
-    // above or below its bond, a label is centred on the atom the bond meets (the C of CO2Me)
-    let atomShift = 0;
-    const sym = /^[A-Z][a-z]?/.exec(fwd)?.[0];
-    if (sym && sym !== fwd) { const ob = measure(sym); atomShift = (bf.x2 - bf.x1) / 2 - (ob.x2 - ob.x1) / 2; }
-    type Mode = 'right' | 'left' | 'up' | 'down';
-    const width = (mode: Mode) => (mode === 'left' ? br.x2 - br.x1 : bf.x2 - bf.x1);
-    const centreFor = (t: Vec, mode: Mode): Vec => {
-      const w = width(mode);
-      if (mode === 'right') return { x: t.x + w / 2 + gap, y: t.y + u.y * ink * 0.6 };
-      if (mode === 'left') return { x: t.x - w / 2 - gap, y: t.y + u.y * ink * 0.6 };
-      // above it, the bond stops short of any subscript
-      return { x: t.x + atomShift, y: mode === 'up' ? t.y - (0.5 * h + gap * 0.5) : t.y + ink + gap };
-    };
-    const boxAt = (p: Vec, mode: Mode) => { const w = width(mode); return { x1: p.x - w / 2, y1: p.y - ink, x2: p.x + w / 2, y2: p.y + ink }; };
-    // clear of the other labels, the circle, and every other bond
-    const hits = (p: Vec, mode: Mode) => {
-      const r = boxAt(p, mode), e = 0.06 * L;
-      if (placed.some((q) => r.x1 - e < q.x2 && q.x1 < r.x2 + e && r.y1 - e < q.y2 && q.y1 < r.y2 + e)) return true;
-      if (d.kind === 'newman' && Math.hypot(Math.max(r.x1 - c.x, 0, c.x - r.x2), Math.max(r.y1 - c.y, 0, c.y - r.y2)) < R + 0.04 * L) return true;
-      for (const id of out.shapes) {
-        const l = id === bond ? undefined : doc.shapes.get(id);
-        if (l?.kind !== 'line') continue;
-        for (let i = 0; i <= 12; i++) {
-          const q = { x: l.x1 + ((l.x2 - l.x1) * i) / 12, y: l.y1 + ((l.y2 - l.y1) * i) / 12 };
-          if (q.x > r.x1 - e && q.x < r.x2 + e && q.y > r.y1 - e && q.y < r.y2 + e) return true;
-        }
-      }
-      return false;
-    };
-    // the bond may not cross another label on its way out
-    const from = (() => { const l = doc.shapes.get(bond); return l ? { x: l.x1, y: l.y1 } : tip; })();
-    const crosses = (e: Vec) => {
-      for (let i = 1; i <= 24; i++) {
-        const q = { x: from.x + ((e.x - from.x) * i) / 24, y: from.y + ((e.y - from.y) * i) / 24 };
-        if (placed.some((r) => q.x > r.x1 + 0.5 && q.x < r.x2 - 0.5 && q.y > r.y1 + 0.5 && q.y < r.y2 - 0.5)) return true;
-      }
-      return false;
-    };
-    const first: Mode = Math.abs(u.x) > 0.34 ? (u.x > 0 ? 'right' : 'left') : u.y < 0 ? 'up' : 'down';
-    // where it can go, the least change first: at the bond's end as usual; beside (or above or
-    // below) the bond's end instead, the way eclipsed groups are written side by side; then
-    // the bond drawn longer, or its end turned a little, so the bond always reaches the label
-    const tries: { at: Vec; mode: Mode; cost: number }[] = [{ at: tip, mode: first, cost: 0 }];
-    const others: Mode[] = first === 'up' || first === 'down' ? ['right', 'left'] : ['up', 'down'];
-    for (const mode of others) tries.push({ at: tip, mode, cost: 0.2 * L + (mode === 'left' && u.x > 0.1 ? 0.1 * L : 0) + (mode === 'right' && u.x < -0.1 ? 0.1 * L : 0) });
-    const t = { x: -u.y, y: u.x };
-    for (let k = 1; k <= 60; k++) {
-      const st = k * 0.05 * L;
-      tries.push({ at: { x: tip.x + u.x * st, y: tip.y + u.y * st }, mode: first, cost: 0.2 * L + st });
-      tries.push({ at: { x: tip.x + t.x * st, y: tip.y + t.y * st }, mode: first, cost: 0.2 * L + st * 1.4 });
-      tries.push({ at: { x: tip.x - t.x * st, y: tip.y - t.y * st }, mode: first, cost: 0.2 * L + st * 1.4 });
-    }
-    tries.sort((p, q) => p.cost - q.cost);
-    const pick = tries.find((x) => !hits(centreFor(x.at, x.mode), x.mode) && !crosses(x.at)) ?? tries.find((x) => !hits(centreFor(x.at, x.mode), x.mode)) ?? tries[0];
-    if (pick.at !== tip) doc.updateShape(bond, { x2: pick.at.x, y2: pick.at.y });
-    const text = pick.mode === 'left' ? rev : fwd;
-    const cap = doc.addCaption({ x: 0, y: 0, runs: style(text), justify: 'left', chem: false });
-    const b = m.captionBox(cap);
-    const ctr = centreFor(pick.at, pick.mode);
-    placed.push(boxAt(ctr, pick.mode));
-    doc.updateCaption(cap.id, { x: ctr.x - (b.x2 - b.x1) / 2 - b.x1 + cap.x, y: ctr.y - h / 2 - b.y1 + cap.y });
-    out.captions.push(cap.id);
+    const sized = true;
+    return chemRuns(text).map((r) => ({
+      ...r, ...(rl.color !== '#000000' ? { color: rl.color } : {}), ...(rl.bold || tx?.bold ? { bold: true } : {}), ...(rl.italic || tx?.italic ? { italic: true } : {}),
+      ...(sized ? { size: Math.round(size(scale) * 100) / 100 } : {}), ...(tx?.font ? { font: tx.font } : {}),
+    }));
   };
-
-  if (d.kind === 'newman') {
-    const back = backAngles(d.front, d.back, d.turn, look.offset);
-    // back bonds first, from the circle out
-    d.back.forEach((g, i) => {
-      const u = dir(back[i]);
-      const a = { x: c.x + u.x * R, y: c.y + u.y * R }, b = { x: c.x + u.x * end, y: c.y + u.y * end };
-      const bond = line(a, b, bondInk(br[i]));
-      jobs.push({ g, rank: br[i], u, tip: b, back: true, bond });
-    });
-    out.shapes.push(doc.addShape({ kind: 'oval', x1: c.x - R, y1: c.y - R, x2: c.x + R, y2: c.y + R, color: '#000000', filled: true, fillColor: '#ffffff' }).id);
-    d.front.forEach((g, i) => {
-      const u = dir(g.angle);
-      const b = { x: c.x + u.x * end, y: c.y + u.y * end };
-      const bond = line(c, b, bondInk(fr[i]));
-      jobs.push({ g, rank: fr[i], u, tip: b, back: false, bond });
-    });
-    if (look.dot) out.shapes.push(doc.addShape({ kind: 'oval', x1: c.x - 1.6 * lw, y1: c.y - 1.6 * lw, x2: c.x + 1.6 * lw, y2: c.y + 1.6 * lw, color: '#000000', filled: true, fillColor: '#000000', lineWidth: 0 }).id);
-  } else {
-    // sawhorse: the molecule seen from above and to one side, the back atom up and to the right.
-    // Each group leaves its atom at the tetrahedral angle (a third of its length along the bond).
-    const yaw = 48 * RAD, pitch = 32 * RAD, sep = 1.35 * L, arm = 0.95 * L;
-    const project = (x: number, y: number, z: number): Vec => {
-      const x1 = x * Math.cos(yaw) + z * Math.sin(yaw), z1 = -x * Math.sin(yaw) + z * Math.cos(yaw);
-      const y2 = y * Math.cos(pitch) + z1 * Math.sin(pitch);
-      return { x: c.x + x1, y: c.y - y2 };
-    };
-    const cb = project(0, 0, sep);
-    const spoke = (deg: number, z0: number, dz: number) => {
-      const s = 0.943 * arm;
-      return project(Math.sin(deg * RAD) * s, Math.cos(deg * RAD) * s, z0 + dz * arm);
-    };
-    const unit = (a: Vec, b: Vec) => { const l = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: (b.x - a.x) / l, y: (b.y - a.y) / l }; };
-    d.back.forEach((g, i) => {
-      const b = spoke(g.angle + d.turn, sep, 0.333);
-      const bond = line(cb, b, bondInk(br[i]));
-      jobs.push({ g, rank: br[i], u: unit(cb, b), tip: b, back: true, bond });
-    });
-    line(c, cb);
-    d.front.forEach((g, i) => {
-      const b = spoke(g.angle, 0, -0.333);
-      const bond = line(c, b, bondInk(fr[i]));
-      jobs.push({ g, rank: fr[i], u: unit(c, b), tip: b, back: false, bond });
-    });
-  }
-  for (const j of jobs) if (j.g.ring !== undefined) ringTips.push({ front: !j.back, tip: j.tip, u: j.u });
-  const fTip = ringTips.find((t) => t.front), bTip = ringTips.find((t) => !t.front);
+  const seen = new Map<string, { w: number; h: number }>();
+  const measure = (text: string, rank: number, scale: number) => {
+    const key = `${text}|${rank}|${scale.toFixed(2)}`;
+    let v = seen.get(key);
+    if (!v) {
+      const cap = doc.addCaption({ x: 0, y: 0, runs: style(text, rank, scale), justify: 'left', chem: false });
+      const b = m.captionBox(cap);
+      doc.removeCaption(cap.id);
+      // (a measure that can't measure, as in a test, guesses from the letters)
+      v = b.x2 > b.x1 ? { w: b.x2 - b.x1, h: b.y2 - b.y1 } : { w: text.length * 0.6 * size(scale), h: 1.2 * size(scale) };
+      seen.set(key, v);
+    }
+    return v;
+  };
+  const { places, scale, R } = layoutNewman(d, c, L, measure);
+  const bondInk = (rank: number) => (look.ranks[rank].bond ? look.ranks[rank].color : '#000000');
+  const line = (a: Vec, b: Vec, color = '#000000'): number => { const id = doc.addShape({ kind: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, color }).id; out.shapes.push(id); return id; };
+  const bonds = new Map<NewmanPlace, number>();
+  // back bonds first, from the circle out; then the circle; then the front bonds from its middle
+  for (const p of places) if (p.back) bonds.set(p, line(p.from, p.tip, bondInk(p.rank)));
+  out.shapes.push(doc.addShape({ kind: 'oval', x1: c.x - R, y1: c.y - R, x2: c.x + R, y2: c.y + R, color: '#000000', filled: true, fillColor: '#ffffff' }).id);
+  for (const p of places) if (!p.back) bonds.set(p, line(p.from, p.tip, bondInk(p.rank)));
+  if (look.dot) out.shapes.push(doc.addShape({ kind: 'oval', x1: c.x - 1.6 * lw, y1: c.y - 1.6 * lw, x2: c.x + 1.6 * lw, y2: c.y + 1.6 * lw, color: '#000000', filled: true, fillColor: '#000000', lineWidth: 0 }).id);
+  // the rest of a ring through the bond: an arc from one ring bond's end to the other's, bowed away from the middle
+  const fTip = places.find((p) => !p.back && p.g.ring !== undefined && !p.box), bTip = places.find((p) => p.back && p.g.ring !== undefined && !p.box);
   if (fTip && bTip) {
-    // the rest of the ring: an arc from one ring bond's end to the other's, bowed away from the middle
-    const mid = { x: (fTip.tip.x + bTip.tip.x) / 2 - c.x, y: (fTip.tip.y + bTip.tip.y) / 2 - c.y };
-    const chord = { x: bTip.tip.x - fTip.tip.x, y: bTip.tip.y - fTip.tip.y };
-    const outward = chord.x * mid.y - chord.y * mid.x;
-    const sweep = (outward > 0 ? -1 : 1) * 110 * RAD;
-    const arc = d.look.arc ?? OLD_RING_ARC, ink = arc.color.toLowerCase() === '#000000' ? {} : { color: arc.color };
-    out.arrows.push(doc.addArrow({ tail: fTip.tip, head: bTip.tip, headStyle: 'none', tailStyle: 'none', headType: 'solid', line: arc.line, noGo: false, equilibrium: false, sweep, headLength: 0, headWidth: 0, ...ink } as Omit<Arrow, 'id'>).id);
-    if (arc.bonds) for (const j of jobs) if (j.g.ring !== undefined && j.bond !== undefined) doc.updateShape(j.bond, { color: arc.color });
+    out.arrows.push(ringArc(doc, look, c, fTip.tip, bTip.tip));
+    if ((look.arc ?? OLD_RING_ARC).bonds) for (const p of [fTip, bTip]) doc.updateShape(bonds.get(p)!, { color: (look.arc ?? OLD_RING_ARC).color });
   }
-  for (const j of jobs.filter((j) => !j.back && (j.g.ring === undefined || !bTip))) label(j.g, j.rank, j.u, j.tip, j.bond);
-  for (const j of jobs.filter((j) => j.back && (j.g.ring === undefined || !fTip))) label(j.g, j.rank, j.u, j.tip, j.bond);
+  for (const p of places) {
+    if (!p.box) continue;
+    const cap = doc.addCaption({ x: 0, y: 0, runs: style(p.text, p.rank, scale), justify: 'left', chem: false });
+    const b = m.captionBox(cap);
+    const sub = /\d/.test(p.text) ? 0.1 * (p.box.y2 - p.box.y1) / 0.82 : 0;
+    const cy = (p.box.y1 + p.box.y2 - sub) / 2;
+    doc.updateCaption(cap.id, { x: cap.x + p.box.x1 - b.x1, y: cap.y + cy - (b.y1 + b.y2) / 2 });
+    out.captions.push(cap.id);
+  }
+  out.scale = scale;
+  return out;
+}
+
+/** The arc that stands for the rest of a ring, from one ring bond's end to the other's. */
+function ringArc(doc: Doc, look: NewmanLook, c: Vec, f: Vec, b: Vec): number {
+  const mid = { x: (f.x + b.x) / 2 - c.x, y: (f.y + b.y) / 2 - c.y };
+  const chord = { x: b.x - f.x, y: b.y - f.y };
+  const outward = chord.x * mid.y - chord.y * mid.x;
+  const sweep = (outward > 0 ? -1 : 1) * 110 * RAD;
+  const arc = look.arc ?? OLD_RING_ARC, ink = arc.color.toLowerCase() === '#000000' ? {} : { color: arc.color };
+  return doc.addArrow({ tail: f, head: b, headStyle: 'none', tailStyle: 'none', headType: 'solid', line: arc.line, noGo: false, equilibrium: false, sweep, headLength: 0, headWidth: 0, ...ink } as Omit<Arrow, 'id'>).id;
+}
+
+/** How the sawhorse is seen: from above and to one side, the back atom up and to the right. */
+export const SAWHORSE = { yaw: 48, pitch: 32, sep: 2.0, arm: 1.25 };
+
+/** A point of the sawhorse's model (x right, y up, z along the bond away from the reader) as seen: across, up, and toward the reader. */
+function sawView(x: number, y: number, z: number): [number, number, number] {
+  const yaw = SAWHORSE.yaw * RAD, pitch = SAWHORSE.pitch * RAD;
+  const x1 = x * Math.cos(yaw) + z * Math.sin(yaw), z1 = -x * Math.sin(yaw) + z * Math.cos(yaw);
+  return [x1, y * Math.cos(pitch) + z1 * Math.sin(pitch), y * Math.sin(pitch) - z1 * Math.cos(pitch)];
+}
+
+const det3 = (a: number[], b: number[], c: number[]) => a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+
+/**
+ * Which of an atom's three groups is drawn as a solid wedge and which as a hashed wedge, so the
+ * drawing read as an ordinary wedge-and-hash structure has the atom's real handedness: `subs`
+ * are the groups and `other` the other atom of the bond, each as seen (across, up, toward the
+ * reader) from the atom. The group nearest the reader is the wedge and the farthest the hash
+ * where that reads true; otherwise the next best pair that does. Null when there aren't three groups.
+ */
+export function sawhorseWedges(subs: [number, number, number][], other: [number, number, number]): { wedge: number; hash: number } | null {
+  if (subs.length !== 3) return null;
+  const real = Math.sign(det3(subs[0], subs[1], subs[2]) - det3(other, subs[1], subs[2]) + det3(other, subs[0], subs[2]) - det3(other, subs[0], subs[1]));
+  const pairs: { wedge: number; hash: number; score: number }[] = [];
+  for (let w = 0; w < 3; w++) for (let h = 0; h < 3; h++) {
+    if (w === h) continue;
+    const flat = (i: number): number[] => [subs[i][0], subs[i][1], i === w ? 1 : i === h ? -1 : 0];
+    const o = [other[0], other[1], 0];
+    const read = Math.sign(det3(flat(0), flat(1), flat(2)) - det3(o, flat(1), flat(2)) + det3(o, flat(0), flat(2)) - det3(o, flat(0), flat(1)));
+    if (read === real && real !== 0) pairs.push({ wedge: w, hash: h, score: subs[w][2] - subs[h][2] });
+  }
+  pairs.sort((p, q) => q.score - p.score);
+  return pairs[0] ? { wedge: pairs[0].wedge, hash: pairs[0].hash } : null;
+}
+
+/**
+ * A sawhorse, drawn as a structure of its own (atoms and bonds, so its labels sit on its bonds as
+ * in any structure and it opens in ChemDraw as one): the front atom at `c`, each group leaving
+ * its atom at the tetrahedral angle, and (with `look.wedges`) a wedge and a hashed wedge on each
+ * atom showing which groups point toward and away from the reader.
+ */
+function drawSawhorse(doc: Doc, d: NewmanData, c: Vec): NewmanParts {
+  const out: NewmanParts = { captions: [], arrows: [], shapes: [], atoms: [] };
+  const L = doc.style.bondLength, look = d.look, tx = look.text;
+  const { front, back } = look.ideal ? idealGroups(d.front, d.back) : { front: d.front, back: d.back };
+  const ranks = (gs: NewmanGroup[]): (0 | 1 | 2)[] => { const own = gs.filter((g) => g.ring === undefined); const r = sizeRanks(own); return gs.map((g) => (g.ring === undefined ? r[own.indexOf(g)] : 2)); };
+  const sep = SAWHORSE.sep * L, arm = SAWHORSE.arm * L;
+  const page = (v: [number, number, number]): Vec => ({ x: c.x + v[0], y: c.y - v[1] });
+  const ringBoth = front.some((g) => g.ring !== undefined) && back.some((g) => g.ring !== undefined);
+  const scale = doc.style.captionSize ? newmanTextSize(look, doc.style.captionSize) / doc.style.captionSize : undefined;
+  const ends: { ring: boolean; front: boolean; at: Vec }[] = [];
+  /** Each group's bond (from its atom to the group) and about half the width of its name. */
+  const tips: { from: Vec; at: Vec; box: Box | null }[] = [];
+  const centre = (z0: number) => doc.addAtom(page(sawView(0, 0, z0)).x, page(sawView(0, 0, z0)).y, 6, look.rs ? { showStereo: true } : {});
+  const cf = centre(0), cbk = centre(sep);
+  out.atoms!.push(cf.id, cbk.id);
+  doc.addBond(cf.id, cbk.id);
+  const side = (gs: NewmanGroup[], atom: number, z0: number, dz: number, turn: number, isFront: boolean) => {
+    const rk = ranks(gs);
+    const s = 0.943 * arm;
+    const model = gs.map((g) => [Math.sin((g.angle + turn) * RAD) * s, Math.cos((g.angle + turn) * RAD) * s, z0 + dz * arm] as const);
+    const seen = model.map((p) => sawView(p[0], p[1], p[2]));
+    const own = sawView(0, 0, z0), far = sawView(0, 0, z0 === 0 ? sep : 0);
+    const rel = (v: [number, number, number]): [number, number, number] => [v[0] - own[0], v[1] - own[1], v[2] - own[2]];
+    const marks = look.wedges ? sawhorseWedges(seen.map(rel), rel(far)) : null;
+    gs.forEach((g, i) => {
+      const p = page(seen[i]);
+      const rl = look.ranks[rk[i]];
+      const ring = g.ring !== undefined && ringBoth;
+      const el = /^[A-Z][a-z]?/.exec(g.label)?.[0] ?? 'C';
+      const plain = ring || (g.label === el && elementNumber(el) !== undefined);
+      const a = doc.addAtom(p.x, p.y, ring ? 6 : elementNumber(el) ?? 6, {
+        ...(plain ? {} : { label: g.label }), ...(rl.color !== '#000000' && !ring ? { color: rl.color } : {}),
+        ...(scale && Math.abs(scale - 1) > 0.01 ? { s: scale } : {}), ...(tx?.font ? { font: tx.font } : {}), ...(rl.bold || tx?.bold ? { face: 1 } : {}),
+      });
+      out.atoms!.push(a.id);
+      const display = marks?.wedge === i ? 'wedge' : marks?.hash === i ? 'hashWedge' : 'solid';
+      doc.addBond(atom, a.id, 1, display, rl.bond && !ring ? { color: rl.color } : {});
+      if (ring) ends.push({ ring: true, front: isFront, at: p });
+      {
+        // about the box its name fills: it starts on the atom and runs away from the bond
+        const ls = doc.style.labelSize * (scale ?? 1), wd = ring ? 0 : 0.62 * ls * Math.max(1, g.label.replace(/\d/g, '').length + 0.5 * g.label.replace(/\D/g, '').length), left = p.x < page(own).x;
+        tips.push({ from: page(own), at: p, box: ring ? null : { x1: left ? p.x + 0.4 * ls - wd : p.x - 0.4 * ls, x2: left ? p.x + 0.4 * ls : p.x - 0.4 * ls + wd, y1: p.y - 0.5 * ls, y2: p.y + 0.6 * ls } });
+      }
+    });
+  };
+  side(back, cbk.id, sep, 0.333, d.turn, false);
+  side(front, cf.id, 0, -0.333, 0, true);
+  if (look.rs) {
+    // R/S labels in the clearest spot beside each atom: as far as can be from every bond and
+    // group label of the drawing (they can be dragged like any stereo label)
+    const size = 0.75 * doc.style.labelSize * (scale ?? 1), w = 1.75 * size;
+    const segs: [Vec, Vec][] = [[cf, cbk], ...tips.map((t): [Vec, Vec] => [t.from, t.at])];
+    const h = 0.8 * size;
+    // how far a point is from the label's box when the label is centred at q
+    const gapTo = (q: Vec, o: Vec) => Math.hypot(Math.max(Math.abs(o.x - q.x) - w / 2, 0), Math.max(Math.abs(o.y - q.y) - h / 2, 0));
+    const toSeg = (q: Vec, [m, n]: [Vec, Vec]) => { let d = Infinity; for (let i = 0; i <= 12; i++) d = Math.min(d, gapTo(q, { x: m.x + ((n.x - m.x) * i) / 12, y: m.y + ((n.y - m.y) * i) / 12 })); return d; };
+    const taken: Vec[] = [];
+    for (const atom of [cf, cbk]) {
+      let best = { x: atom.x, y: atom.y + 0.6 * L }, score = -Infinity;
+      for (const r of [0.5 * L, 0.65 * L, 0.8 * L, 0.95 * L, 1.1 * L]) for (let deg = 0; deg < 360; deg += 10) {
+        const q = { x: atom.x + r * Math.sin(deg * RAD), y: atom.y - r * Math.cos(deg * RAD) };
+        let sc = Math.min(...segs.map((sg) => toSeg(q, sg)));
+        for (const t of tips) if (t.box) sc = Math.min(sc, Math.hypot(Math.max(t.box.x1 - (q.x + w / 2), q.x - w / 2 - t.box.x2, 0), Math.max(t.box.y1 - (q.y + h / 2), q.y - h / 2 - t.box.y2, 0)));
+        for (const o of taken) sc = Math.min(sc, gapTo(q, o) - w / 2);
+        // clear by a comfortable margin is enough; past that, nearer its atom is better
+        sc = Math.min(sc, 0.16 * L) - 0.05 * (r - 0.5 * L);
+        if (sc > score + 1e-6) { score = sc; best = q; }
+      }
+      taken.push(best);
+      doc.updateAtom(atom.id, { stereoLabel: { text: '', dx: best.x - atom.x - w / 2, dy: best.y - atom.y + 0.36 * size, size, italic: true } });
+    }
+  }
+  const f = ends.find((e) => e.front), b = ends.find((e) => !e.front);
+  if (f && b) out.arrows.push(ringArc(doc, look, c, f.at, b.at));
   return out;
 }
 
@@ -231,10 +375,11 @@ export function putNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec, id?: numb
     for (const x of old.frame.captions) doc.removeCaption(x);
     for (const x of old.frame.arrows) doc.removeArrow(x);
     for (const x of old.frame.shapes) doc.removeShape(x);
+    for (const x of old.frame.atoms) if (doc.atoms.has(x)) doc.removeAtom(x);
   }
   const parts = drawNewman(doc, m, d, c);
   const pad = 0.2 * doc.style.bondLength;
-  const frame: Frame = { atoms: [], captions: parts.captions, arrows: parts.arrows, shapes: parts.shapes, padX: pad, padY: pad, fit: true };
+  const frame: Frame = { atoms: parts.atoms ?? [], captions: parts.captions, arrows: parts.arrows, shapes: parts.shapes, padX: pad, padY: pad, fit: true };
   const b = frameBox(doc, frame, m) ?? { x1: c.x - 20, y1: c.y - 20, x2: c.x + 20, y2: c.y + 20 };
   const name = d.kind === 'newman' ? 'Newman projection' : 'Sawhorse projection';
   if (old) { doc.updateShape(old.id, { ...b, frame, newman: d }); return old.id; }
@@ -247,7 +392,10 @@ export function newmanCentre(doc: Doc, s: Shape): Vec | null {
   if (!f || !s.newman) return null;
   const circle = f.shapes.map((id) => doc.shapes.get(id)).find((x) => x?.kind === 'oval');
   if (circle && s.newman.kind === 'newman') return { x: (circle.x1 + circle.x2) / 2, y: (circle.y1 + circle.y2) / 2 };
-  // a sawhorse: the front atom starts the most lines (its bonds and the one to the back atom)
+  // a sawhorse drawn as a structure: its front atom is the first one made
+  const fa = f.atoms.length ? doc.atoms.get(f.atoms[0]) : undefined;
+  if (fa) return { x: fa.x, y: fa.y };
+  // an older sawhorse, drawn in lines: the front atom starts the most lines (its bonds and the one to the back atom)
   const starts = new Map<string, { p: Vec; n: number }>();
   for (const id of f.shapes) {
     const x = doc.shapes.get(id);

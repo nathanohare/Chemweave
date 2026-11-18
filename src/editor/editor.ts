@@ -70,14 +70,13 @@ import { arrowClash, bendSide, isSBez, cleanUpArrow, endCentre, endPointToward, 
 import { followPins, hasPins, makePin, mirrorBend } from '../chem/pins';
 import { applyArrange, planArrange, readingOrder, type ArrangeOptions } from '../chem/scheme-arrange';
 import { buildCycle, type CycleLook, type CycleSpec } from '../chem/cycles';
-import { rebuildSmartCycle, smartCycleStart, structureReagents, type SmartCycleStart } from '../chem/smart-cycle';
 import { refitTableFigures, tableContents } from './table-figs';
 import { energyFrameOf, plotFromBox, putEnergy, refitEnergy, type EnergyData } from '../design/energy';
-import { arrangeSmart, cleanUpCycle, formatSmart, stepToHolder, stepHolderToText, fillHolder, fillHoldersDrawn, holderFrameOf, holderToSlotText, insertSlot, makeSmart, moveSlot, refitSmart, removeSlot, setSlotRuns, setSlotText, setStepRuns, setStepText, smartFrameOf, smartMarks, slotToHolder, ungroupSmart, type SmartData, type StepPart, type TextPart } from '../chem/smart-scheme';
+import { addBranch, addLoop, arrangeSmart, readSmart, smartIsFree, smartLayoutOf, cleanUpCycle, formatSmart, removeLoop, setLoopMiddle, setStepNames, type LoopJoin, stepToHolder, stepHolderToText, fillHolder, fillHoldersDrawn, holderFrameOf, holderToSlotText, insertSlot, makeSmart, moveSlot, refitSmart, removeSlot, setSlotRuns, setSlotText, setStepRuns, setStepText, smartFrameOf, smartMarks, slotToHolder, ungroupSmart, type SmartData, type StepPart, type TextPart } from '../chem/smart-scheme';
 import type { SmartFormat } from '../chem/smart-format';
 import { plateFrameOf, plateFromBox, putPlate, refitPlates, rfAtY, setMarkAt, tlcSpotAt, type PlateData } from '../design/plates';
 import { drawMo } from '../design/mo';
-import { newmanCentre, newmanFrameOf, putMark, putNewman, refitNewman, type NewmanData } from '../design/newman';
+import { drawEyeMark, newmanCentre, newmanFrameOf, putMark, putNewman, refitNewman, type NewmanData } from '../design/newman';
 import { putTorsion, refitTorsion, torsionFrameOf, type TorsionData } from '../design/torsion';
 import {
   diagramContents, diagramFrameOf, heldLines, putDiagram, refitDiagramStructures, refitDiagrams, ungroupDiagram, type DiagramData,
@@ -102,7 +101,7 @@ import { imageFor } from '../render/images';
 import { gridOffsets, inferGrid, sharedAnchors, usualGap, withLabels, type GridHow } from './grid-arrange';
 import { BEND, BRUSH, ROTATE, handleCursor, pointerFor } from './cursors';
 import { flatten, prepareTurn, stillMeans, structuresOf, type PerspectiveHost, type Prepared } from './perspective';
-import { anglesTurn, dragTurn, IDENT as IDENT_TURN, type M3 } from '../chem/perspective';
+import { anglesTurn, dragTurn, DEG_PER_PX, IDENT as IDENT_TURN, type M3 } from '../chem/perspective';
 import type { TextEditing } from '../text/editing';
 
 export type Tool =
@@ -345,8 +344,20 @@ interface Drag {
 }
 
 /** A drag with a Perspective tool: the structures, once ready (a 3-D shape may be building), and the drag so far in screen pixels. */
+/** A 3-D Rotation being tried out (Editor.previewTurn). */
+export interface TurnPreview {
+  /** Why a structure turns flat when its 3-D shape was asked for. */
+  notes: string[];
+  /** Turn by these angles (degrees) from where the structures were; returns how many stereocenters can't be drawn so they read right. */
+  set(x: number, y: number, z: number): number;
+  keep(): void;
+  cancel(): void;
+}
+
 interface PerspDrag {
   real: boolean;
+  /** A tilt handle of the selection box: only the drag down (about X) or across (about Y) counts. */
+  axis?: 'x' | 'y';
   ready: Prepared | null;
   begun: boolean;
   dx: number;
@@ -375,6 +386,8 @@ interface TemplateChoice {
 }
 
 let PREVIEW = '#2f6fdf';
+/** How far (screen pixels) the selection box's tilt handles sit either side of its rotate handle. */
+const TILT_GAP = 20;
 
 /**
  * Colours of the marks drawn over the page. With View > Reading Mode on, the marks go through the
@@ -1132,7 +1145,7 @@ export class Editor {
     // a click on a selected Smart Scheme's + adds a species there
     if (e.button === 0 && !e.shiftKey && !e.altKey) {
       const add = this.smartAddAt(this.docPoint(e));
-      if (add) { e.preventDefault(); this.closeCaption(); this.smartInsert(add.frame, add.after); return; }
+      if (add) { e.preventDefault(); this.closeCaption(); this.smartInsert(add.frame, add.after, add.link); return; }
     }
     // a click on a "+" box above or below a reaction arrow starts the text there
     // (Alt+click goes to what is under the box instead)
@@ -1174,10 +1187,12 @@ export class Editor {
     const painting = !!this.painter && e.button === 0;
     const rh = e.button === 0 && !painting ? this.rotateHandle() : null;
     const rotating = !!rh && dist(rh, p) <= this.tol(7);
+    // a tilt handle of the selection box: a drag tips or swings the structures in perspective
+    const tilt = e.button === 0 && !painting && !rotating ? this.tiltAt(p) : null;
     // Shift+drag from an arrow with an arrow tool branches a new arrow off it (not its handles)
     const branching = e.shiftKey && this.tool.kind === 'arrow';
-    const handle = e.button === 0 && !rotating && !branching && !painting ? this.handleAt(p) : null;
-    const hit = handle || rotating ? null : this.hitTest(p);
+    const handle = e.button === 0 && !rotating && !tilt && !branching && !painting ? this.handleAt(p) : null;
+    const hit = handle || rotating || tilt ? null : this.hitTest(p);
     this.drag = {
       start: p, startScreen: { x: e.clientX - rect.left, y: e.clientY - rect.top }, hit, button: e.button, moved: false,
       shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey, mode: handle ? 'handle' : rotating ? 'rotate' : 'none', last: p, path: [p],
@@ -1185,6 +1200,7 @@ export class Editor {
       ...(e.pointerType === 'pen' ? { pen: true } : {}),
     };
     if (handle) this.drag.handle = handle;
+    if (tilt) this.startTilt(this.drag, tilt);
     // the selection tool on a guide (where nothing else is): the guide is dragged
     const gh = e.button === 0 && !handle && !rotating && !painting && !hit && this.tool.kind === 'select' ? this.guideUnder(p) : null;
     if (gh) { this.drag.mode = 'guide'; this.drag.guideGrab = gh; }
@@ -1244,8 +1260,9 @@ export class Editor {
     if (!d) {
       const rh = this.rotateHandle();
       const onRotate = !!rh && dist(rh, p) <= this.tol(7);
-      const handle = onRotate ? null : this.handleAt(p);
-      const h = handle || onRotate ? null : this.hitTest(p);
+      const tilt = onRotate ? null : this.tiltAt(p);
+      const handle = onRotate || tilt ? null : this.handleAt(p);
+      const h = handle || onRotate || tilt ? null : this.hitTest(p);
       if (!sameHit(h, this.hover)) { this.hover = h; }
       // the keyboard highlight gives way to the mouse once it moves (a finger doesn't hover, so
       // a touch leaves it); in ChemDraw's way, once the mouse rests on something new
@@ -1258,7 +1275,7 @@ export class Editor {
         else if (sameHit(h, this.keyHotHover)) this.cancelTakeover();
         else this.takeoverSoon(h);
       }
-      this.lastHover = { onRotate, handle, h };
+      this.lastHover = { onRotate, handle, h, tilt };
       // the "+" box shows only where nothing else is under the pointer (Alt hides it)
       const near = !handle && !onRotate && !e.altKey ? this.helperAt(p, true) : null;
       const slot = near && (!h || h.kind === 'arrow' && h.id === near.id) ? near : null;
@@ -3683,13 +3700,28 @@ export class Editor {
   }
 
   /** A Newman projection drawn on a page of its own, in this drawing's style (the Newman window's preview). */
-  newmanPreview(d: NewmanData): { doc: Doc; box: Rect } {
+  newmanPreview(d: NewmanData, eye?: string, rs?: [string | null | undefined, string | null | undefined]): { doc: Doc; box: Rect } {
     const tmp = new Doc();
     tmp.style = { ...this.doc.style };
     tmp.textStyles = this.doc.textStyles;
     let id = 0;
-    tmp.edit('Preview', () => { id = putNewman(tmp, this.fullMeasure(), { ...d, link: undefined, mark: undefined }, { x: 0, y: 0 }); });
-    return { doc: tmp, box: shapeBox(tmp.shapes.get(id)!) };
+    let box: Rect | null = null;
+    tmp.edit('Preview', () => {
+      id = putNewman(tmp, this.fullMeasure(), { ...d, link: undefined, mark: undefined }, { x: 0, y: 0 });
+      box = shapeBox(tmp.shapes.get(id)!);
+      // a sawhorse with the eye that shows which end is looked from (the window's preview)
+      const f = tmp.shapes.get(id)!.frame!;
+      // (a page of its own has no chemistry engine: the front and back atoms' R/S are handed in)
+      if (rs && f.atoms.length > 1) tmp.stereo = { atom: (a) => (a === f.atoms[0] ? rs[0] : a === f.atoms[1] ? rs[1] : null), bond: () => null };
+      const back = eye && d.kind === 'sawhorse' && f.atoms.length > 1 ? tmp.atoms.get(f.atoms[1]) : undefined;
+      if (back) {
+        const mark = drawEyeMark(tmp, { x: 0, y: 0 }, back, eye, d.look.eye ?? 'plain');
+        for (const p of [...mark.arrows.flatMap((a) => { const r = tmp.arrows.get(a)!; return [r.tail, r.head]; }), ...mark.shapes.flatMap((s) => { const r = shapeBox(tmp.shapes.get(s)!); return [{ x: r.x1, y: r.y1 }, { x: r.x2, y: r.y2 }]; })]) {
+          box = { x1: Math.min(box!.x1, p.x), y1: Math.min(box!.y1, p.y), x2: Math.max(box!.x2, p.x), y2: Math.max(box!.y2, p.y) };
+        }
+      }
+    });
+    return { doc: tmp, box: box! };
   }
 
   /**
@@ -3698,12 +3730,17 @@ export class Editor {
    * select it. `linked: false` lets go of the structure. `amend`
    * joins the last undo step (a linked projection worked out again after its structure changed).
    */
-  putNewmanProjection(d: NewmanData, opts: { id?: number; mark?: string | null; linked?: boolean; amend?: boolean; page?: { w: number; h: number } } = {}): number | null {
+  putNewmanProjection(d: NewmanData, opts: { id?: number; mark?: string | null; linked?: boolean; amend?: boolean; page?: { w: number; h: number }; /** Where its middle goes (clicked with the pointer); left out, beside its structure. */ at?: Vec } = {}): number | null {
     const doc = this.doc, m = this.fullMeasure(), L = doc.style.bondLength;
     const old = opts.id !== undefined ? doc.shapes.get(opts.id) : undefined;
     let frame: number | null = null;
     const run = () => {
       let c = old ? newmanCentre(doc, old) : null;
+      if (!c && opts.at) {
+        // its middle where the pointer put it (it is drawn round its front atom)
+        const b = this.newmanPreview(d).box;
+        c = { x: opts.at.x - (b.x1 + b.x2) / 2, y: opts.at.y - (b.y1 + b.y2) / 2 };
+      }
       if (!c) {
         // to the right of its structure, level with the bond
         const atoms = d.link ? doc.fragmentOf(d.link.front) : new Set<number>();
@@ -3719,7 +3756,7 @@ export class Editor {
       // not linked: it keeps no tie to the structure, and its mark is ordinary lines
       if (opts.linked === false) data = { ...data, link: undefined, mark: undefined };
       frame = putNewman(doc, m, data, c, old?.id);
-      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); this.moveClear(opts.page); }
+      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); if (!opts.at) this.moveClear(opts.page); }
     };
     const label = old ? 'Edit Newman Projection' : 'Newman Projection';
     if (opts.amend) doc.amend(label, run); else doc.edit(label, run);
@@ -3751,7 +3788,7 @@ export class Editor {
    * Draw a torsional energy chart below its structure (or chart `id` again where it is), and
    * select it.
    */
-  putTorsionChart(d: TorsionData, opts: { id?: number; near?: number; page?: { w: number; h: number } } = {}): number | null {
+  putTorsionChart(d: TorsionData, opts: { id?: number; near?: number; page?: { w: number; h: number }; /** Where its middle goes (clicked with the pointer). */ at?: Vec } = {}): number | null {
     const doc = this.doc, m = this.fullMeasure(), L = doc.style.bondLength;
     const old = opts.id !== undefined ? doc.shapes.get(opts.id) : undefined;
     let frame: number | null = null;
@@ -3762,6 +3799,9 @@ export class Editor {
         const was = shapeBox(old);
         const tmp = this.torsionPreview(old.torsion).box;
         at = { x: was.x1 - tmp.x1, y: was.y1 - tmp.y1 };
+      } else if (opts.at) {
+        const b = this.torsionPreview(d).box;
+        at = { x: opts.at.x - (b.x1 + b.x2) / 2, y: opts.at.y - (b.y1 + b.y2) / 2 };
       } else {
         // below its structure, the plot's left edge under the structure's
         const atoms = opts.near !== undefined && doc.atoms.has(opts.near) ? doc.fragmentOf(opts.near) : new Set<number>();
@@ -3770,7 +3810,7 @@ export class Editor {
         at = box ? { x: box.x1 - prev.x1, y: box.y2 + 1.5 * L - prev.y1 } : { x: 0, y: 0 };
       }
       frame = putTorsion(doc, m, d, at, old?.id);
-      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); this.moveClear(opts.page); }
+      if (!old) { this.sel = emptySel(); this.sel.shapes.add(frame); if (!opts.at) this.moveClear(opts.page); }
     });
     if (frame !== null) this.selectOnly({ kind: 'shape', id: frame });
     this.changed();
@@ -3789,6 +3829,16 @@ export class Editor {
         if (c) putNewman(doc, m, { ...s.newman!, look: structuredClone(look) }, c, id);
       }
     });
+    this.changed();
+  }
+
+  /** One projection drawn again with part of its look changed (the Side Panel's options). */
+  relookNewman(id: number, patch: Partial<NewmanData['look']>): void {
+    const doc = this.doc, s = doc.shapes.get(id);
+    const c = s?.newman ? newmanCentre(doc, s) : null;
+    if (!s?.newman || !c) return;
+    const d = { ...s.newman, look: { ...structuredClone(s.newman.look), ...patch } };
+    doc.edit('Newman Projection Look', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
     this.changed();
   }
 
@@ -3854,13 +3904,13 @@ export class Editor {
   }
 
   /** A selected Smart Scheme's + button under a point, if any. */
-  private smartAddAt(p: Vec): { frame: number; after: number } | null {
+  private smartAddAt(p: Vec): { frame: number; after: number; link?: number } | null {
     const id = this.selectedSmart();
     if (id === null) return null;
     const marks = this.smartMarksOf(id);
     const r = 8 / this.r.view.scale;
     const hit = marks?.adds.find((a) => dist(a.at, p) <= r);
-    return hit ? { frame: id, after: hit.after } : null;
+    return hit ? { frame: id, after: hit.after, ...(hit.link !== undefined ? { link: hit.link } : {}) } : null;
   }
 
   /** Run a change to a Smart Scheme as one undoable step, keeping the scheme selected. */
@@ -3874,9 +3924,9 @@ export class Editor {
   }
 
   /** Add a species after slot `after` of Smart Scheme `id` (−1: before the first), and start typing it. */
-  smartInsert(id: number, after: number): boolean {
+  smartInsert(id: number, after: number, link?: number): boolean {
     let cap: number | null = null;
-    const ok = this.smartEdit(id, 'Add Species', (m) => (cap = insertSlot(this.doc, m, id, after)) !== null);
+    const ok = this.smartEdit(id, 'Add Species', (m) => (cap = insertSlot(this.doc, m, id, after, undefined, link)) !== null);
     if (ok && cap !== null) this.onSmartAdded(id, cap);
     return ok;
   }
@@ -3932,25 +3982,37 @@ export class Editor {
   smartSlotRuns(id: number, k: number, parts: TextPart[]): boolean { return this.smartEdit(id, 'Type Species', (m) => setSlotRuns(this.doc, m, id, k, parts)); }
   smartStepRuns(id: number, k: number, part: StepPart, parts: TextPart[]): boolean { return this.smartEdit(id, 'Type Conditions', (m) => setStepRuns(this.doc, m, id, k, part, parts)); }
   /** Lay a Smart Scheme out again, with a new layout or other settings. */
-  /** A Smart Scheme's single loop as the Catalytic Cycle window's table, to add a second loop to (null for other schemes). */
-  smartCycleStart(id: number): SmartCycleStart | null { return smartCycleStart(this.doc, this.fullMeasure(), id); }
-  /** Whether a step of Smart Scheme `id` has a structure (or a box for one) joining or leaving it (no second loop then). */
-  smartReagentStructures(id: number): boolean { return structureReagents(this.doc, this.fullMeasure(), id); }
-  /**
-   * Draw Smart Scheme `id`'s cycle again with the loops from the Catalytic Cycle window (`rows`:
-   * the species each row of loop 1 keeps). It is a Smart Scheme again afterwards, selected.
-   */
-  smartRebuildCycle(id: number, spec: CycleSpec, look: CycleLook, rows: (number | null)[]): boolean {
-    let smart: number | null = null;
-    this.doc.edit('Add a Second Loop', () => {
-      const m = this.fullMeasure();
-      const made = rebuildSmartCycle(this.doc, m, id, spec, look, rows);
-      if (made) smart = this.cycleSmart(made, made.atoms, look, made.kept, made.shapes);
-    });
-    if (smart !== null) this.selectOnly({ kind: 'shape', id: smart });
-    this.changed();
-    return smart !== null;
+  /** Add a loop of `count` new species to Smart Scheme `id`'s cycle, joined as `join` says. */
+  smartAddLoop(id: number, join: LoopJoin, count: number): boolean { return this.smartEdit(id, 'Add Loop', (m) => addLoop(this.doc, m, id, join, count) !== null); }
+  /** Take loop `loop` (not the first) out of Smart Scheme `id`'s cycle. */
+  smartRemoveLoop(id: number, loop: number): boolean { return this.smartEdit(id, 'Remove Loop', (m) => removeLoop(this.doc, m, id, loop)); }
+  /** Add a species off the cycle at species `k`, and start typing it. */
+  smartAddBranch(id: number, k: number, dir: 'in' | 'out' | 'both'): boolean {
+    let cap: number | null = null;
+    const ok = this.smartEdit(id, 'Add Off-Cycle Species', (m) => (cap = addBranch(this.doc, m, id, k, dir)) !== null);
+    if (ok && cap !== null) this.onSmartAdded(id, cap);
+    return ok;
   }
+  smartLoopMiddle(id: number, loop: number, parts: TextPart[]): boolean { return this.smartEdit(id, 'Type Loop Middle', (m) => setLoopMiddle(this.doc, m, id, loop, parts)); }
+  /** The species or step of the selected Smart Scheme that is picked on the page (where Add Loop and Add Off-Cycle Species start). */
+  smartPicked(): { slot?: number; step?: number } | undefined {
+    const id = this.selectedSmart();
+    const read = id === null ? null : readSmart(this.doc, this.fullMeasure(), id);
+    if (!read) return undefined;
+    const has = (it: { caption?: number; shape?: number; atoms: number[] }) => (it.caption !== undefined && this.sel.captions.has(it.caption)) || (it.shape !== undefined && this.sel.shapes.has(it.shape)) || it.atoms.some((a) => this.sel.atoms.has(a));
+    const slot = read.slots.findIndex((sl) => sl.items.some(has));
+    if (slot >= 0) return { slot };
+    const step = read.links.findIndex((l) => this.sel.arrows.has(l.arrow.id) || [...l.inside, ...l.above, ...l.below].some(has));
+    return step >= 0 ? { step } : undefined;
+  }
+  /** Whether Smart Scheme `id` is laid out round a cycle (of one loop or several). */
+  smartIsCycle(id: number): boolean {
+    const d = this.doc.shapes.get(id)?.smart;
+    if (!d) return false;
+    const read = readSmart(this.doc, this.fullMeasure(), id);
+    return smartLayoutOf(d, read) === 'cycle' && !smartIsFree(d, read);
+  }
+  smartStepNames(id: number, how: 'short' | 'full'): boolean { return this.smartEdit(id, 'Step Names', (m) => setStepNames(this.doc, m, id, how)); }
   /** Clean Up Cycle: the selected (or given) Smart Scheme's cycle onto one ellipse that fits it, its arrows along the ellipse. */
   smartCleanUpCycle(id = this.selectedSmart()): boolean { return id !== null && this.smartEdit(id, 'Clean Up Cycle', (m) => cleanUpCycle(this.doc, m, id)); }
   smartFormat(id: number, fmt: SmartFormat | undefined): boolean { return this.smartEdit(id, 'Format Smart Scheme', (m) => formatSmart(this.doc, m, id, fmt)); }
@@ -3969,10 +4031,11 @@ export class Editor {
   }
 
   /**
-   * Insert ▸ Smart Scheme: the selected structures joined by arrows in reading order, or (with
-   * none selected) three species to type over, as a Smart Scheme in a line. It is selected.
+   * The Smart Scheme gallery's Line, Rows, Snake and Down: the selected structures joined by arrows
+   * in reading order, or (with none selected) species to type over, as a Smart Scheme in that
+   * layout. It is selected.
    */
-  insertSmartScheme(at: Vec, page?: { w: number; h: number }): boolean {
+  insertSmartScheme(at: Vec, page?: { w: number; h: number }, layout: Exclude<SmartData['layout'], 'cycle'> = 'line'): boolean {
     const doc = this.doc, m = this.fullMeasure();
     const picked = this.selectedStructures();
     let id: number | null = null;
@@ -3980,7 +4043,9 @@ export class Editor {
       let sel = withFrameContents(doc, this.sel);
       if (picked.length < 2) {
         const L = doc.style.bondLength, lw = doc.style.lineWidth;
-        const names = ['Starting material', 'Intermediate', 'Product'];
+        // (four in rows of two, so rows and snake show what they do)
+        const wraps = layout === 'rows' || layout === 'snake';
+        const names = wraps ? ['Starting material', 'Intermediate 1', 'Intermediate 2', 'Product'] : ['Starting material', 'Intermediate', 'Product'];
         const caps = names.map((t, i) => doc.addCaption({ x: at.x + (i - 1) * 9 * L, y: at.y, runs: [{ text: t }], justify: 'center' }));
         sel = emptySel();
         for (const c of caps) sel.captions.add(c.id);
@@ -3993,8 +4058,9 @@ export class Editor {
           sel.arrows.add(r.id);
         }
       }
-      id = makeSmart(doc, m, sel, { layout: 'line' });
-      if (id !== null) arrangeSmart(doc, m, id, { layout: 'line' });
+      const data: Partial<SmartData> = { layout, ...(picked.length < 2 && (layout === 'rows' || layout === 'snake') ? { perRow: 2 } : {}) };
+      id = makeSmart(doc, m, sel, data);
+      if (id !== null) arrangeSmart(doc, m, id, data);
       if (id !== null && picked.length < 2) { this.sel = emptySel(); this.sel.shapes.add(id); this.moveClear(page); }
     });
     if (id === null) return false;
@@ -4355,6 +4421,46 @@ export class Editor {
     });
   }
 
+  /** The turn a Perspective drag has reached: a tilt handle counts only its own way (down for X, across for Y). */
+  private dragTurnOf(t: PerspDrag): M3 {
+    return dragTurn(t.axis === 'x' ? 0 : t.dx, t.axis === 'y' ? 0 : t.dy, t.shift);
+  }
+
+  /**
+   * The selection box's tilt handles, for selected structures with the selection tool: either side
+   * of the rotate handle, clear of the captions and numbers under a structure. The left one tips
+   * the structures about the left–right axis (drag down or up); the right one swings them about the
+   * up–down axis (drag across). Both turn them as flat sheets.
+   */
+  tiltHandles(): { x: Vec; y: Vec } | null {
+    const rh = this.sel.atoms.size < 2 ? null : this.rotateHandle();
+    if (!rh) return null;
+    const gap = this.tol(TILT_GAP);
+    return { x: { x: rh.x - gap, y: rh.y }, y: { x: rh.x + gap, y: rh.y } };
+  }
+
+  /** The tilt handle at a point, if any: 'x' tips (left of the rotate handle), 'y' swings (right of it). */
+  private tiltAt(p: Vec): 'x' | 'y' | null {
+    const t = this.tiltHandles();
+    if (!t) return null;
+    const r = this.tol(7);
+    return dist(t.x, p) <= r ? 'x' : dist(t.y, p) <= r ? 'y' : null;
+  }
+
+  /** A tilt handle pressed: the selected structures get ready to turn as flat sheets, one way only. */
+  private startTilt(d: Drag, axis: 'x' | 'y'): void {
+    const structures = structuresOf(this.doc, this.sel.atoms);
+    if (!structures.length) return;
+    const t: PerspDrag = { real: false, axis, ready: null, begun: false, dx: 0, dy: 0, shift: false, unshown: 0, told: false };
+    d.persp = t;
+    const doc = this.doc;
+    void prepareTurn(doc, structures, false, this.perspectiveHost).then((prep) => {
+      if (this.drag !== d || this.doc !== doc) return;
+      t.ready = prep;
+      if (d.moved) this.turnTo(d);
+    });
+  }
+
   /** Turn the structures for the drag so far (nothing yet while a 3-D shape is building). */
   private turnTo(d: Drag): void {
     const t = d.persp!;
@@ -4363,7 +4469,7 @@ export class Editor {
       return;
     }
     if (!t.begun) { this.doc.begin(t.real ? '3-D Rotation' : 'Rotate in Perspective'); t.begun = true; }
-    const R = dragTurn(t.dx, t.dy, t.shift);
+    const R = this.dragTurnOf(t);
     t.unshown = t.ready.turn.apply(this.doc, R);
     if (!t.unshown) t.ready.turn.lastGood = R;
     this.onHint(t.unshown ? 'From this angle a stereocenter can\'t be drawn so it reads right: let go and it goes back to the last angle that worked.' : t.shift ? 'Turning in 15° steps' : 'Shift: turn in 15° steps, one way at a time');
@@ -4376,7 +4482,7 @@ export class Editor {
     const t = d.persp;
     if (!t?.begun || !t.ready) { this.requestScene(); return; }
     const turn = t.ready.turn;
-    const R = t.unshown ? turn.lastGood : dragTurn(t.dx, t.dy, t.shift);
+    const R = t.unshown ? turn.lastGood : this.dragTurnOf(t);
     const left = turn.apply(this.doc, R, true);
     turn.remember(this.doc);
     this.doc.commit();
@@ -4422,6 +4528,52 @@ export class Editor {
     this.changed();
     this.checkTurn(prep.turn, left);
     return true;
+  }
+
+  /**
+   * A live 3-D Rotation (the dialog): the selected structures got ready to turn, then turned by
+   * angles from where they were as each is typed or slid, in one undoable step. `keep` settles
+   * the wedges and keeps the turn; `cancel` puts everything back. Null when nothing is selected.
+   */
+  async previewTurn(real: boolean): Promise<TurnPreview | null> {
+    const structures = structuresOf(this.doc, this.sel.atoms);
+    if (!structures.length) return null;
+    const doc = this.doc;
+    const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
+    if (this.doc !== doc) return null;
+    const label = real ? '3-D Rotation' : 'Rotate in Perspective';
+    let begun = false, done = false, R: M3 = IDENT_TURN, unshown = 0;
+    const live = () => !done && this.doc === doc;
+    return {
+      notes: prep.notes,
+      set: (x, y, z) => {
+        if (!live()) return 0;
+        if (!begun) { doc.begin(label); begun = true; }
+        R = anglesTurn(x, y, z);
+        unshown = prep.turn.apply(doc, R);
+        if (!unshown) prep.turn.lastGood = R;
+        if (hasPins(doc)) followPins(doc);
+        this.requestScene();
+        return unshown;
+      },
+      keep: () => {
+        if (!live()) return;
+        done = true;
+        if (!begun) return;
+        const left = prep.turn.apply(doc, unshown ? prep.turn.lastGood : R, true);
+        prep.turn.remember(doc);
+        doc.commit();
+        this.changed();
+        if (unshown) this.onNotice('From that angle a stereocenter can\'t be drawn so it reads right, so the structure went back to the last angle where it could.', 6000);
+        this.checkTurn(prep.turn, left);
+      },
+      cancel: () => {
+        if (!live()) return;
+        done = true;
+        if (begun) { doc.abandon(); this.afterUndo(); }
+        this.requestScene();
+      },
+    };
   }
 
   /**
@@ -4827,6 +4979,44 @@ export class Editor {
     return b ? { x: (b.x1 + b.x2) / 2, y: b.y1 - this.tol(24) } : null;
   }
 
+  /**
+   * The tilt handles (see tiltHandles): small knobs either side of the rotate handle, each with a
+   * two-headed arrow through it, up–down (tip) on the left and left–right (swing) on the right.
+   * While one is dragged (`only`) just that one shows, where it started.
+   */
+  private drawTiltHandles(ctx: CanvasRenderingContext2D, px: number, b: Rect, only?: 'x' | 'y'): void {
+    const r = 5.5 * px, a = 3.2 * px, head = 1.6 * px;
+    const top = b.y1 - 24 * px, mid = (b.x1 + b.x2) / 2, gap = TILT_GAP * px;
+    const knobs: { axis: 'x' | 'y'; at: Vec }[] = [
+      { axis: 'x', at: { x: mid - gap, y: top } },
+      { axis: 'y', at: { x: mid + gap, y: top } },
+    ];
+    ctx.save();
+    ctx.lineWidth = px;
+    for (const k of knobs) {
+      if (only && k.axis !== only) continue;
+      const u = k.axis === 'x' ? { x: 0, y: 1 } : { x: 1, y: 0 };
+      ctx.beginPath();
+      ctx.arc(k.at.x, k.at.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.strokeStyle = PREVIEW;
+      ctx.stroke();
+      // the two-headed arrow: which way to drag
+      const p1 = { x: k.at.x - u.x * a, y: k.at.y - u.y * a }, p2 = { x: k.at.x + u.x * a, y: k.at.y + u.y * a };
+      const n = { x: u.y, y: u.x };
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+      for (const [tip, dir] of [[p1, -1], [p2, 1]] as const) {
+        ctx.moveTo(tip.x - dir * u.x * head + n.x * head, tip.y - dir * u.y * head + n.y * head);
+        ctx.lineTo(tip.x, tip.y);
+        ctx.lineTo(tip.x - dir * u.x * head - n.x * head, tip.y - dir * u.y * head - n.y * head);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   /** Line up the selected objects. Returns false when fewer than two are selected. */
   align(how: Align): boolean {
     const us = joinGroups(this.doc, units(this.doc, this.sel, this.measure()));
@@ -5199,9 +5389,19 @@ export class Editor {
     return readingOrder(its, this.doc.style.bondLength).map((it) => ({ atoms: it.atoms }));
   }
 
+  /** A ready-made cycle drawn on a page of its own, in this drawing's style (the Smart Scheme gallery's pictures). */
+  cyclePreview(spec: CycleSpec, look: CycleLook): Doc {
+    const tmp = new Doc();
+    tmp.style = { ...this.doc.style };
+    tmp.textStyles = this.doc.textStyles;
+    tmp.edit('Preview', () => { buildCycle(tmp, this.fullMeasure(), spec, look, { x: 0, y: 0 }, []); });
+    return tmp;
+  }
+
   /**
-   * Insert ▸ Catalytic Cycle: draw the cycle with its middle at `at`, the selected structures
-   * (if any) standing for the first loop's species. The new cycle is selected.
+   * The Smart Scheme gallery's Cycle layout and ready-made cycles: draw the cycle with its middle
+   * at `at`, the selected structures (if any) standing for the first loop's species. The new
+   * cycle is selected.
    */
   insertCycle(spec: CycleSpec, look: CycleLook, at: Vec, page?: { w: number; h: number }): void {
     const stations = this.selectedStructures();
@@ -6999,7 +7199,7 @@ export class Editor {
   dark = false;
 
   /** What the pointer was last over (to change the pointer when Ctrl is pressed or let go). */
-  private lastHover: { onRotate: boolean; handle: Handle | null; h: Hit } | null = null;
+  private lastHover: { onRotate: boolean; handle: Handle | null; h: Hit; tilt?: 'x' | 'y' | null } | null = null;
 
   /** Show the pointer that says what a click or drag will do where the mouse is. */
   private showPointer(ctrl: boolean): void {
@@ -7007,6 +7207,7 @@ export class Editor {
     if (!o || this.drag) return;
     if (this.painter) { this.r.overlay.style.cursor = BRUSH; return; }
     const { onRotate, handle, h } = o;
+    if (o.tilt) { this.r.overlay.style.cursor = o.tilt === 'x' ? 'ns-resize' : 'ew-resize'; return; }
     // a curved arrow tool over a selected S's line: a drag there reshapes it
     if (!onRotate && !handle && h?.kind === 'arrow' && this.curvedTool() && this.isSelected(h) && bezPoints(this.doc.arrows.get(h.id)!)) { this.r.overlay.style.cursor = BEND; return; }
     this.r.overlay.style.cursor = onRotate ? ROTATE : handle ? handleCursor(handle.which) : pointerFor({
@@ -7770,11 +7971,25 @@ export class Editor {
       ctx.fill();
       ctx.strokeStyle = PREVIEW;
       ctx.stroke();
+      this.drawTiltHandles(ctx, px, b);
       const r = this.drag?.rot;
       if (r && this.drag!.moved) {
         ctx.font = `${12 * px}px system-ui, sans-serif`;
         ctx.fillStyle = PREVIEW;
         ctx.fillText(`${Math.round(r.angle / DEG)}°`, this.pointer.x + 10 * px, this.pointer.y - 10 * px);
+      }
+    }
+    // while a tilt handle is dragged: the box, the handle, and how far it has turned
+    const tp = this.drag?.persp;
+    if (tp?.axis && !rh) {
+      const b = this.selBox();
+      if (b) this.drawTiltHandles(ctx, px, b, tp.axis);
+      if (this.drag!.moved) {
+        const deg = Math.round((tp.axis === 'x' ? tp.dy : tp.dx) * DEG_PER_PX);
+        const shown = tp.shift ? Math.round(deg / 15) * 15 : deg;
+        ctx.font = `${12 * px}px system-ui, sans-serif`;
+        ctx.fillStyle = PREVIEW;
+        ctx.fillText(`${shown}°`, this.pointer.x + 10 * px, this.pointer.y - 10 * px);
       }
     }
     // how far an arrow is bent, while bending it

@@ -69,6 +69,7 @@ const FORMER_NAMES: [RegExp, string][] = [
   [/^Attach File/, 'add a file'],
   [/Type$|Types\b/, 'kind'],
   [/Style|Formatting/, 'look'],
+  [/^Smart Scheme…?$/, 'catalytic cycle'],
 ];
 
 /** Old names of a command now known by `label`, as search words (empty when it kept its name). */

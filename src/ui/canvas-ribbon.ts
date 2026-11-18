@@ -34,7 +34,7 @@ export const CANVAS_TABS: RibbonTab[] = [
       { name: 'Paragraph', items: [], special: 'paragraph' },
       // (filled by the shared Format Favorites gallery, as on every mode's Home tab)
       { name: 'Format Favorites', items: [], gallery: 'favorites' },
-      { name: 'Schemes', items: [c('smart-scheme', 'Smart Scheme', true), c('catalytic-cycle', 'Catalytic Cycle', true), c('convert-smart-scheme', 'Convert to Smart Scheme'), c('stoichiometry-table', 'Stoichiometry Table…'), c('check-balance', 'Check Balance…'), c('map-atoms', 'Map Atoms…')] },
+      { name: 'Schemes', items: [c('smart-scheme', 'Smart Scheme', true), c('convert-smart-scheme', 'Convert to Smart Scheme'), c('stoichiometry-table', 'Stoichiometry Table…'), c('check-balance', 'Check Balance…'), c('map-atoms', 'Map Atoms…')] },
       { name: 'Diagrams', items: [c('energy-diagram', 'Energy Diagram', true), c('mo-diagram', 'MO Diagram…'), c('orbital', 'Orbital…'), c('ts-brackets', 'Transition State Brackets ‡'), c('torsion-chart', 'Torsional Energy Chart…')] },
       { name: 'Mechanism', items: [c('animate-reaction', 'Animate', true), c('check-arrows', 'Check Arrows'), c('draw-from-arrows', 'Draw Next Intermediate'), c('homolysis-arrows', 'Homolysis Arrows'), c('model-3d', '3-D Model…')] },
       { name: 'Insert', items: [c('name-to-structure', 'Name to Structure…'), c('import-picture', 'Structures from Picture…'), c('sequence-to-structure', 'Structure from Sequence…'), c('tlc-plate', 'TLC Plate…'), c('insert-table', 'Table'), c('rgroup-table', 'R-Group Table…')] },
@@ -65,6 +65,12 @@ export const CANVAS_TABS: RibbonTab[] = [
       { name: 'Align', items: [c('align-left', 'Align Left'), c('align-hcenter', 'Align Center'), c('align-right', 'Align Right'), c('align-top', 'Align Top'), c('align-vcenter', 'Align Middle'), c('align-bottom', 'Align Bottom')] },
       { name: 'Distribute', items: [c('distribute-h', 'Distribute Horizontally'), c('distribute-v', 'Distribute Vertically'), c('arrange-row', 'Arrange in a Row'), c('arrange-column', 'Arrange in a Column'), c('arrange-grid', 'Arrange in a Grid…')] },
       { name: 'Rotate', items: [c('flip-h', 'Flip Horizontal'), c('flip-v', 'Flip Vertical'), c('rotate-cw', 'Rotate Right 90°'), c('rotate-ccw', 'Rotate Left 90°'), c('rotate-dialog', 'Rotate…')] },
+      // (turning in 3-D: the two Perspective tools drag a structure round; 3-D Rotation… turns it by angles typed in)
+      { name: '3-D', items: [
+        { tool: 'perspective', label: 'Perspective', major: true, tip: 'Perspective: drag a structure to tilt it in 3-D as a flat sheet (Shift: 15° steps)' },
+        { tool: 'perspective-3d', label: '3-D Perspective', tip: '3-D Perspective: drag a structure to rotate its real 3-D shape (Shift: 15° steps)' },
+        c('turn-3d', '3-D Rotation…'), c('flatten-3d', 'Flatten'),
+      ] },
       { name: 'Order', items: [c('shape-front', 'Bring to Front'), c('shape-forward', 'Bring Forward'), c('shape-back', 'Send to Back'), c('shape-backward', 'Send Backward')] },
     ],
   },

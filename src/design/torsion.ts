@@ -13,7 +13,7 @@ import { chordLocal, shapeBox } from '../objects';
 import { frameBox } from '../editor/frames';
 import { profileAt, type Extremum, type Profile } from '../chem/torsion-profile';
 import { norm180, norm360, type NewmanGroup } from '../chem/newman';
-import { drawEyeMark, drawNewman, type NewmanLook } from './newman';
+import { drawEyeMark, drawNewman, newmanTextSize, type NewmanLook } from './newman';
 
 export type ConformerNames = 'textbook' | 'klyne' | 'none';
 
@@ -47,6 +47,11 @@ export interface TorsionData {
   look: NewmanLook;
   /** A boxed sawhorse of the molecule above the plot, with the eye looking down the bond (as in textbook figures). */
   sawhorse?: boolean;
+  /**
+   * Where the projections at the maxima go: in one row above the plot ('rows', the usual), or each
+   * just above its own peak ('follow'). The minima's are always in a row below the axis.
+   */
+  layout?: 'rows' | 'follow';
   /** The scan the curve was fitted to (φ in degrees, kcal/mol), for Copy Data. */
   points?: { phi: number; energy: number }[];
 }
@@ -91,7 +96,7 @@ function shownExtrema(d: Pick<TorsionData, 'extrema'>): Extremum[] {
 /** The name a barrier's sideways move is kept under. */
 const barrierKey = (e: Extremum) => `${e.kind}${Math.round(e.phi)}`;
 
-export interface TorsionParts { captions: number[]; arrows: number[]; shapes: number[] }
+export interface TorsionParts { captions: number[]; arrows: number[]; shapes: number[]; atoms?: number[] }
 
 /** Draw the diagram with its plot's top left corner at `at`. Call inside an edit. */
 export function drawTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec): TorsionParts {
@@ -152,71 +157,112 @@ export function drawTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec): Tors
     headLength: 0, headWidth: 0, color: '#9a9a9a', lineWidth: lw * 1.6, bez: bez.map((q) => chordLocal(tail, head, q)), bent: true,
   }).id);
 
-  // each minimum and maximum: a level, its projection and name, and the climb to it
-  const ext = shownExtrema(d);
+  // each minimum and maximum: a level, its projection, name and energy, and the climb to it.
+  // Nothing is written inside the plot, so no words can sit on the curve: each energy goes under
+  // its conformation's name, the maxima's projections in a row above the plot (or each above its
+  // own peak) and the minima's in a row below the axis.
+  const ext = shownExtrema(d).sort((p, q) => p.phi - q.phi);
   const bar = 0.9 * L;
   const fmt = (e: number) => (e * k).toFixed(d.digits).replace(/^-/, '−');
-  /** A projection drawn with its top (or bottom, `fromTop` false) at y, centred on x; returns its top and bottom. */
-  const inset = (cx: number, yEdge: number, fromTop: boolean, phi: number) => {
-    const v = idealView(d, phi);
-    const parts = drawNewman(doc, m, { kind: 'newman', front: v.front, back: v.back, turn: v.turn, conformer: 0, source: 'angle', look: d.look }, { x: cx, y: 0 });
-    const boxes = [...parts.captions.map((id) => m.captionBox(doc.captions.get(id)!)), ...parts.shapes.map((id) => shapeBox(doc.shapes.get(id)!))];
-    const y1 = Math.min(...boxes.map((r) => r.y1)), y2 = Math.max(...boxes.map((r) => r.y2));
-    const dy = fromTop ? yEdge - y1 : yEdge - y2;
-    for (const id of parts.captions) { const c = doc.captions.get(id)!; doc.updateCaption(id, { y: c.y + dy }); }
-    for (const id of parts.shapes) { const sh = doc.shapes.get(id)!; doc.updateShape(id, { y1: sh.y1 + dy, y2: sh.y2 + dy }); }
-    for (const id of parts.arrows) { const a = doc.arrows.get(id)!; doc.updateArrow(id, { tail: { x: a.tail.x, y: a.tail.y + dy }, head: { x: a.head.x, y: a.head.y + dy } }); }
-    out.captions.push(...parts.captions); out.shapes.push(...parts.shapes); out.arrows.push(...parts.arrows);
-    return { y1: y1 + dy, y2: y2 + dy };
-  };
-  const shown: Extremum[] = [];
-  for (const e of ext.sort((p, q) => p.phi - q.phi)) {
-    const px = x(e.phi), py = y(e.energy + lo);
-    const half = e.phi === 0 || e.phi === 360 ? bar * 0.5 : bar / 2;
-    if (e.energy > 0.02) line({ x: Math.max(at.x, px - half), y: py }, { x: Math.min(at.x + d.w, px + half), y: py });
-    const name = extremumName(e.phi, e.kind, d.names);
-    const show = d.insets === 'all' || (d.insets === 'minima' && e.kind === 'min');
-    // the projection at 0° sits clear of the energy axis
-    const cx = e.phi === 0 ? px + 2.3 * L : px;
-    if (e.kind === 'max') {
-      let yy = py - 0.3 * L;
-      if (show) yy = inset(cx, yy, false, e.phi).y1 - 0.1 * L;
-      if (name) caption(name, { x: cx, y: yy }, 'above', { runs: [{ text: name, italic: true }] });
-    } else {
-      let yy = y0 + 1.1 * L;
-      if (show) yy = inset(cx, yy, true, e.phi).y2 + 0.1 * L;
-      if (name) caption(name, { x: cx, y: yy }, 'below', { runs: [{ text: name, italic: true }] });
+  const rows = (d.layout ?? 'rows') === 'rows';
+  const wanted = (e: Extremum) => d.insets === 'all' || (d.insets === 'minima' && e.kind === 'min');
+  // every projection with its labels the same size: the smallest any of them needs
+  let look = d.look;
+  if (look.text?.auto) {
+    let least = 1;
+    for (const e of ext) {
+      if (!wanted(e) || e.phi === 360) continue;
+      const v = idealView(d, e.phi);
+      const parts = drawNewman(doc, m, { kind: 'newman', front: v.front, back: v.back, turn: v.turn, conformer: 0, source: 'angle', look }, { x: 0, y: 0 });
+      least = Math.min(least, parts.scale ?? 1);
+      for (const id of parts.captions) doc.removeCaption(id);
+      for (const id of parts.shapes) doc.removeShape(id);
+      for (const id of parts.arrows) doc.removeArrow(id);
     }
+    look = { ...look, text: { ...look.text, size: Math.round(newmanTextSize(look, doc.style.captionSize) * least * 100) / 100, auto: false } };
+  }
+  type Block = { e: Extremum; captions: number[]; shapes: number[]; arrows: number[]; x1: number; x2: number; y1: number; y2: number; dx: number };
+  /** A projection with its name and energy under it, drawn centred on x with its top at 0: moved into place after. */
+  const block = (e: Extremum, cx: number): Block => {
+    const b: Block = { e, captions: [], shapes: [], arrows: [], x1: cx, x2: cx, y1: 0, y2: 0, dx: 0 };
+    let yy = 0;
+    const grow = (r: { x1: number; y1: number; x2: number; y2: number }) => { b.x1 = Math.min(b.x1, r.x1); b.x2 = Math.max(b.x2, r.x2); b.y2 = Math.max(b.y2, r.y2); };
+    if (wanted(e)) {
+      const v = idealView(d, e.phi);
+      const parts = drawNewman(doc, m, { kind: 'newman', front: v.front, back: v.back, turn: v.turn, conformer: 0, source: 'angle', look }, { x: cx, y: 0 });
+      const boxes = [...parts.captions.map((id) => m.captionBox(doc.captions.get(id)!)), ...parts.shapes.map((id) => shapeBox(doc.shapes.get(id)!))];
+      const top = Math.min(...boxes.map((r) => r.y1));
+      for (const id of parts.captions) { const c = doc.captions.get(id)!; doc.updateCaption(id, { y: c.y - top }); }
+      for (const id of parts.shapes) { const sh = doc.shapes.get(id)!; doc.updateShape(id, { y1: sh.y1 - top, y2: sh.y2 - top }); }
+      for (const id of parts.arrows) { const a = doc.arrows.get(id)!; doc.updateArrow(id, { tail: { x: a.tail.x, y: a.tail.y - top }, head: { x: a.head.x, y: a.head.y - top } }); }
+      b.captions.push(...parts.captions); b.shapes.push(...parts.shapes); b.arrows.push(...parts.arrows);
+      for (const r of boxes) grow({ ...r, y1: r.y1 - top, y2: r.y2 - top });
+      yy = b.y2 + 0.1 * L;
+    }
+    const words = (text: string, runs: Caption['runs']) => {
+      const cap = caption(text, { x: cx, y: yy }, 'below', { runs });
+      out.captions.pop();
+      b.captions.push(cap.id);
+      const r = m.captionBox(cap);
+      grow(r);
+      yy = r.y2;
+    };
+    const name = extremumName(e.phi, e.kind, d.names);
+    if (name) words(name, [{ text: name, italic: true }]);
+    if (d.barriers) { const text = `${fmt(e.energy)} ${d.unit}`; words(text, [{ text, bold: true, color: d.barrierColor, size: doc.style.captionSize * 0.9 }]); }
+    return b;
+  };
+  const move = (b: Block, dx: number, dy: number) => {
+    for (const id of b.captions) { const c = doc.captions.get(id)!; doc.updateCaption(id, { x: c.x + dx, y: c.y + dy }); }
+    for (const id of b.shapes) { const sh = doc.shapes.get(id)!; doc.updateShape(id, { x1: sh.x1 + dx, y1: sh.y1 + dy, x2: sh.x2 + dx, y2: sh.y2 + dy }); }
+    for (const id of b.arrows) { const a = doc.arrows.get(id)!; doc.updateArrow(id, { tail: { x: a.tail.x + dx, y: a.tail.y + dy }, head: { x: a.head.x + dx, y: a.head.y + dy } }); }
+    b.x1 += dx; b.x2 += dx; b.y1 += dy; b.y2 += dy; b.dx += dx;
+    out.captions.push(...b.captions); out.shapes.push(...b.shapes); out.arrows.push(...b.arrows);
+  };
+  /** Blocks in one row kept from touching: each pushed just clear of the one on its left, the row then centred on where it was. */
+  const apart = (bs: Block[]): number[] => {
+    const gap = 0.35 * L, dx = bs.map(() => 0);
+    for (let i = 1; i < bs.length; i++) { const over = bs[i - 1].x2 + dx[i - 1] + gap - (bs[i].x1 + dx[i]); if (over > 0) dx[i] += over; }
+    const mean = dx.reduce((p, q) => p + q, 0) / (dx.length || 1);
+    return dx.map((v) => v - mean);
+  };
+  const lows = ext.filter((e) => e.kind === 'min').map((e) => block(e, x(e.phi)));
+  const highs = ext.filter((e) => e.kind === 'max').map((e) => block(e, x(e.phi)));
+  const lowDx = apart(lows);
+  lows.forEach((b, i) => move(b, lowDx[i], y0 + 1.1 * L));
+  const peakTop = at.y - 0.5 * L;
+  if (rows) {
+    const tall = Math.max(0, ...highs.map((b) => b.y2));
+    const highDx = apart(highs);
+    highs.forEach((b, i) => move(b, highDx[i], peakTop - 0.5 * L - tall));
+  } else {
+    // each above its own peak, pushed up clear of the one before where they would touch
+    highs.forEach((b, i) => {
+      const py = y(b.e.energy + lo);
+      let top = Math.min(py - 0.35 * L, b.e.phi === 0 ? peakTop - 0.2 * L : Infinity) - b.y2;
+      const prev = highs[i - 1];
+      if (prev && prev.x2 + 0.35 * L > b.x1 && top + b.y2 > prev.y1 - 0.2 * L && top < prev.y2) top = prev.y1 - 0.3 * L - b.y2;
+      move(b, 0, top);
+    });
+  }
+  const shown: Extremum[] = [];
+  for (const b of [...lows, ...highs]) {
+    const e = b.e;
+    const px = x(e.phi), py = y(e.energy + lo);
+    const half = bar / 2;
+    if (e.energy > 0.02) line({ x: Math.max(at.x, px - half), y: py }, { x: Math.min(at.x + d.w, px + half), y: py });
+    // a thin grey leader from a level to its projection, where the row had to move it aside or sits well above the peak
+    const mid = (b.x1 + b.x2) / 2;
+    if (e.kind === 'max' && (rows || Math.abs(b.dx) > 1) && b.y2 < py - 0.6 * L) line({ x: px, y: py - 0.15 * L }, { x: mid, y: b.y2 + 0.15 * L }, { color: '#b0b0b0', dotted: true, dashed: true });
+    if (e.kind === 'min' && Math.abs(b.dx) > 1) line({ x: px, y: y0 + 0.95 * L }, { x: mid, y: b.y1 - 0.05 * L }, { color: '#b0b0b0', dotted: true, dashed: true });
     if (!d.barriers || e.energy <= 0.02 || e.phi === 0) continue;
     // one climb for each distinct height (the mirror-image conformation has the same one)
-    if (e.phi !== 360 && shown.some((o) => o.kind === e.kind && Math.abs(o.energy - e.energy) < 0.3)) continue;
-    if (e.phi === 360) { const i = shown.findIndex((o) => o.kind === 'max' && Math.abs(o.energy - e.energy) < 0.3); if (i >= 0) continue; }
+    if (shown.some((o) => o.kind === e.kind && Math.abs(o.energy - e.energy) < 0.3)) continue;
     shown.push(e);
     // dragged to the side: past the end of its level, a dashed grey line leads back to it
     const ax = px + (d.shifts?.[barrierKey(e)] ?? 0);
     if (Math.abs(ax - px) > half) line({ x: ax, y: py }, { x: px + Math.sign(ax - px) * half, y: py }, { color: '#9a9a9a', dashed: true });
-    arrow({ x: ax, y: y0 }, { x: ax, y: py + lw }, { line: 'dashed', color: d.barrierColor, headLength: lw * 6, headWidth: lw * 2.2 });
-    const text = `${fmt(e.energy)} ${d.unit}`;
-    const cap = caption(text, { x: ax - 0.2 * L, y: (y0 + py) / 2 }, 'left', { runs: [{ text, bold: true, color: d.barrierColor, size: doc.style.captionSize * 0.9 }] });
-    // beside the climb, on whichever side and at whichever height crosses the curve and other words least
-    const b0 = m.captionBox(cap), w = b0.x2 - b0.x1, h = b0.y2 - b0.y1;
-    const others = out.captions.filter((id) => id !== cap.id).map((id) => m.captionBox(doc.captions.get(id)!));
-    const cost = (bx: number, by: number) => {
-      if (bx < at.x + 2 || by + h > y0 - 1) return Infinity;
-      let n = 0;
-      for (const q of dense) if (q.x > bx - 2 && q.x < bx + w + 2 && q.y > by - 2 && q.y < by + h + 2) n++;
-      for (const o of others) if (bx < o.x2 && o.x1 < bx + w && by < o.y2 && o.y1 < by + h) n += 50;
-      return n;
-    };
-    let best: Vec | null = null, bestCost = Infinity;
-    const tries: Vec[] = [];
-    if (e.kind === 'min' && ax === px) tries.push({ x: ax - 0.2 * L - w, y: py + 0.12 * L }, { x: ax + 0.2 * L, y: py + 0.12 * L });
-    for (const f of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8]) {
-      const cy = y0 + (py - y0) * f - h / 2;
-      tries.push({ x: ax - 0.2 * L - w, y: cy }, { x: ax + 0.2 * L, y: cy });
-    }
-    for (const t of tries) { const c = cost(t.x, t.y); if (c < bestCost) { bestCost = c; best = t; } }
-    if (best) doc.updateCaption(cap.id, { x: cap.x + best.x - b0.x1, y: cap.y + best.y - b0.y1 });
+    if (y0 - py > lw * 10) arrow({ x: ax, y: y0 }, { x: ax, y: py + lw }, { line: 'dashed', color: d.barrierColor, headLength: lw * 6, headWidth: lw * 2.2 });
   }
   if (d.sawhorse) drawSawhorseBox(doc, m, d, at, out);
   return out;
@@ -236,8 +282,11 @@ function drawSawhorseBox(doc: Doc, m: Measure, d: TorsionData, at: Vec, out: Tor
   const sep = 1.35 * L, yaw = (48 * Math.PI) / 180, pitch = (32 * Math.PI) / 180;
   const back = { x: sep * Math.sin(yaw), y: -sep * Math.cos(yaw) * Math.sin(pitch) };
   const mark = drawEyeMark(doc, { x: 0, y: 0 }, back, d.barrierColor, d.look.eye ?? 'plain');
-  const ids = { captions: parts.captions, shapes: [...parts.shapes, ...mark.shapes], arrows: [...parts.arrows, ...mark.arrows] };
+  const ids = { captions: parts.captions, shapes: [...parts.shapes, ...mark.shapes], arrows: [...parts.arrows, ...mark.arrows], atoms: parts.atoms ?? [] };
+  // (the sawhorse is a structure: room for a label about each of its atoms)
+  const room = 0.75 * L;
   const boxes = [
+    ...ids.atoms.map((id) => { const a = doc.atoms.get(id)!; const r = a.label || a.z !== 6 ? room * (1 + 0.22 * Math.max(0, (a.label ?? '').length - 2)) : 0; return { x1: a.x - r, y1: a.y - room * 0.6, x2: a.x + r, y2: a.y + room * 0.6 }; }),
     ...ids.captions.map((id) => m.captionBox(doc.captions.get(id)!)),
     ...ids.shapes.map((id) => shapeBox(doc.shapes.get(id)!)),
     ...ids.arrows.flatMap((id) => { const a = doc.arrows.get(id)!; return [{ x1: Math.min(a.tail.x, a.head.x), y1: Math.min(a.tail.y, a.head.y), x2: Math.max(a.tail.x, a.head.x), y2: Math.max(a.tail.y, a.head.y) }]; }),
@@ -254,6 +303,8 @@ function drawSawhorseBox(doc: Doc, m: Measure, d: TorsionData, at: Vec, out: Tor
   for (const id of ids.captions) { const c = doc.captions.get(id)!; doc.updateCaption(id, { x: c.x + dx, y: c.y + dy }); }
   for (const id of ids.shapes) { const sh = doc.shapes.get(id)!; doc.updateShape(id, { x1: sh.x1 + dx, y1: sh.y1 + dy, x2: sh.x2 + dx, y2: sh.y2 + dy }); }
   for (const id of ids.arrows) { const a = doc.arrows.get(id)!; doc.updateArrow(id, { tail: { x: a.tail.x + dx, y: a.tail.y + dy }, head: { x: a.head.x + dx, y: a.head.y + dy } }); }
+  for (const id of ids.atoms) { const a = doc.atoms.get(id)!; doc.updateAtom(id, { x: a.x + dx, y: a.y + dy }); }
+  (out.atoms ??= []).push(...ids.atoms);
   const box = doc.addShape({ kind: 'rect', x1: bx1 + dx - pad, y1: by1 + dy - pad, x2: bx2 + dx + pad, y2: by2 + dy + pad, color: '#000000', filled: false });
   out.captions.push(...ids.captions);
   out.shapes.push(box.id, ...ids.shapes);
@@ -286,8 +337,6 @@ export function refitTorsion(doc: Doc, m: Measure, before: ReadonlyMap<string, u
     const at = plotCorner(doc, d, f.arrows);
     // the whole chart moved (its axes too): nothing to do
     if (!at || f.arrows.some((id) => before.get('r' + id) && isAxis(doc.arrows.get(id)!))) continue;
-    const k = d.unit === 'kJ/mol' ? KJ : 1;
-    const fmt = (e: number) => (e * k).toFixed(d.digits).replace(/^-/, '−');
     const x = (phi: number) => at.x + (phi / 360) * d.w;
     const shifts = { ...(d.shifts ?? {}) };
     let changed = false;
@@ -297,11 +346,6 @@ export function refitTorsion(doc: Doc, m: Measure, before: ReadonlyMap<string, u
       const arrowMoved = movedArrows.find((id) => { const o = before.get('r' + id) as Arrow; return o.line === 'dashed' && o.color === d.barrierColor && Math.abs(o.tail.x - was) < 0.5 && Math.abs(o.tail.x - o.head.x) < 0.5; });
       let dx: number | null = null;
       if (arrowMoved !== undefined) dx = doc.arrows.get(arrowMoved)!.tail.x - (before.get('r' + arrowMoved) as Arrow).tail.x;
-      else {
-        const text = `${fmt(e.energy)} ${d.unit}`;
-        const capMoved = movedCaps.find((id) => { const o = before.get('c' + id) as Caption; return o.runs[0]?.color === d.barrierColor && o.runs.map((r) => r.text).join('') === text; });
-        if (capMoved !== undefined) dx = doc.captions.get(capMoved)!.x - (before.get('c' + capMoved) as Caption).x;
-      }
       if (dx === null || Math.abs(dx) < 0.01) continue;
       // a value shared by mirror-image turning points moves only the one drawn
       shifts[key] = (shifts[key] ?? 0) + dx;
@@ -338,10 +382,11 @@ export function putTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec, id?: n
     for (const x of old.frame.captions) doc.removeCaption(x);
     for (const x of old.frame.arrows) doc.removeArrow(x);
     for (const x of old.frame.shapes) doc.removeShape(x);
+    for (const x of old.frame.atoms) if (doc.atoms.has(x)) doc.removeAtom(x);
   }
   const parts = drawTorsion(doc, m, d, at);
   const pad = 0.3 * doc.style.bondLength;
-  const frame: Frame = { atoms: [], captions: parts.captions, arrows: parts.arrows, shapes: parts.shapes, padX: pad, padY: pad, fit: true };
+  const frame: Frame = { atoms: parts.atoms ?? [], captions: parts.captions, arrows: parts.arrows, shapes: parts.shapes, padX: pad, padY: pad, fit: true };
   const b = frameBox(doc, frame, m) ?? { x1: at.x, y1: at.y, x2: at.x + d.w, y2: at.y + d.h };
   if (old) { doc.updateShape(old.id, { ...b, frame, torsion: d }); return old.id; }
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, torsion: d, name: 'Torsional energy diagram' }).id;
