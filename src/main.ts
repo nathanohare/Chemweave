@@ -16,6 +16,7 @@ import type { MethylStyle } from './chem/hydrogens';
 import { STANDARD_COLOURS, usedColours } from './colours';
 import { ICONS } from './icons';
 import { Toolboxes, isOwnFlyout, lockIcon, sideFolded, commandButton, defaultToolboxes, menuCommands, boxIds, boxGrid, boxTitle, flyGrid, isEditable, withoutGoneItems, isOwnBox, overflowOf, CONTEXT_BOXES, type ContextBox, type Pickable, type ToolboxDef, type ToolboxState } from './ui/toolboxes';
+import { SideSections } from './ui/side-sections';
 import { gridItems, inBlock, oneColumn, shownGrid, wrapped, type Grid, type Shown } from './ui/toolbox-grid';
 import { ToolboxEditor, initials } from './ui/toolbox-editor';
 import { RibbonEditor } from './ui/ribbon-editor';
@@ -11522,6 +11523,7 @@ function revealStylePanel(focus = false): void {
   setTimeout(() => {
     const sec = $('#style-section');
     if (sec.hidden || sec.classList.contains('empty')) return;
+    sideSections.show('style-section');
     sec.scrollIntoView({ block: 'nearest' });
     if (focus) sec.querySelector<HTMLElement>('input, select, button')?.focus();
   }, 60);
@@ -13629,6 +13631,12 @@ let colourMode: 'line' | 'highlight' | 'fill' = 'line';
 
 /** The side panel's contents: in the panel at the right, or in the "details" toolbox when taken out. */
 const sideContent = $('#side-content');
+// its sections as tabs in the header row (dragged down to stack them, sideways to reorder), kept for each mode
+const sideSections = new SideSections(sideContent, {
+  mode: () => ws.active.mode,
+  get: (mode) => toolboxState.sideLayout?.[mode] ?? {},
+  set: (mode, layout) => { toolboxState = { ...toolboxState, sideLayout: { ...toolboxState.sideLayout, [mode]: layout } }; storeSettings(); },
+});
 
 /** The highlight looks as buttons: one click gives the selection that look. */
 function looksList(vertical: boolean): HTMLElement {
@@ -13814,7 +13822,11 @@ const SPECIAL_BOXES: Record<string, (body: HTMLElement, vertical: boolean) => vo
   // The side panel (Style, Warnings, Analysis; Format in documents, Cell in sheets) is a toolbox,
   // docked at the right to start with. Its arrow goes with it, so it shows even when the title bar is
   // locked away.
-  details: (body) => { body.before(sideFold()); body.append(sideContent); },
+  details: (body) => {
+    body.append(sideContent);
+    const head = body.parentElement?.querySelector<HTMLElement>(':scope > .tb-head');
+    if (head) sideSections.mount(head, sideFold()); else body.before(sideFold());
+  },
   text: (body, vertical) => { textToolbox = buildTextToolbox(body, vertical, textToolboxHooks); },
   guides: (body, vertical) => { guidesToolbox = buildGuidesToolbox(body, vertical, guidesToolboxHooks); },
   // the Smart Scheme species list, docked (it floats beside the scheme otherwise)

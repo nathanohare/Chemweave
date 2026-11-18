@@ -246,7 +246,7 @@ label.check { display: inline-flex; align-items: center; gap: 4px; color: var(--
 .tb-close { width: 18px; height: 18px; padding: 0; border: 0; background: none; color: var(--muted); font-size: var(--fs-lg); line-height: 1; }
 .tb-close:hover { color: var(--text); }
 /* a locked docked toolbox shows no title (floating ones keep theirs, without the grab hand) */
-.toolbox.locked:not(.floating):not(.collapsed) > .tb-head, .toolbox[data-id='details'].locked:not(.floating) > .tb-head { display: none; }
+.toolbox.locked:not(.floating):not(.collapsed) > .tb-head { display: none; }
 /* ...but a folded one keeps its title, with the arrow to open it out again; open, a slim arrow folds it */
 .tb-tab { display: none; }
 .tb-tab-fold { width: 16px; height: 14px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 9px; line-height: 14px; }
@@ -260,13 +260,6 @@ label.check { display: inline-flex; align-items: center; gap: 4px; color: var(--
 .toolbox:not(.vertical).locked:not(.floating):not(.collapsed) { flex-direction: row; align-items: stretch; }
 .toolbox:not(.vertical).locked:not(.floating):not(.collapsed) > .tb-tab { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px; flex: none; width: 16px; padding-top: 2px; border-right: 1px solid var(--line); }
 .toolbox:not(.vertical).locked:not(.floating):not(.collapsed) > .tb-body { flex: 1 1 auto; min-width: 0; }
-/* the side panel's own × (#side-fold) keeps the top right corner, so its padlock goes to the left there */
-/* (down a side, the side panel's padlock sits beside that ×, taking no row of its own) */
-.toolbox[data-id='details'].vertical.locked:not(.floating):not(.collapsed) > .tb-tab { position: absolute; top: 2px; right: 28px; z-index: 2; display: block; height: auto; }
-.toolbox[data-id='details'].vertical.locked:not(.floating):not(.collapsed) > .tb-tab > .tb-lock { height: 22px; }
-.dock-v > .toolbox[data-id='details'].locked #side-content > section:first-child > h2 { padding-right: 48px; }
-.dock-h > .toolbox[data-id='details'] > #side-fold { position: absolute; top: 2px; right: 6px; z-index: 2; margin: 0; font-size: var(--fs-md, 15px); }
-.dock-h > .toolbox[data-id='details']:not(.locked) > .tb-head { padding-right: 24px; }
 /* folded down a side, a box is a slim strip of its buttons, the open arrow first */
 .toolbox.vertical.collapsed:not(.floating):not([data-id='details']) > .tb-head { contain: none; flex-direction: column; flex-wrap: nowrap; width: 22px; align-items: center; }
 .toolbox.vertical.collapsed:not(.floating) > .tb-head > .tb-title { display: none; }
@@ -644,7 +637,6 @@ body.slides-mode #go-buttons { display: none; }
    in the mode showing, and shows even when the toolbox's title bar is locked away */
 #side-fold { display: block; width: 20px; height: 22px; margin: 0 0 0 auto; padding: 0; border: 1px solid transparent; background: none; color: var(--muted); font-size: var(--fs-lg); line-height: 1; }
 #side-fold:hover { color: var(--text); border-color: var(--line); background: var(--panel); }
-.toolbox.collapsed > #side-fold { margin: 0 auto; }
 .toolbox[data-id='details'] .tb-fold, .toolbox[data-id='details'] .tb-close { display: none; }
 .toolbox[data-id='details'] > .tb-body { display: block; width: 290px; max-height: calc(100vh - 140px); overflow-y: auto; padding: 2px 4px; }
 /* docked down a side, the details panel shrinks to the dock and scrolls inside its own width: letting it
@@ -3965,11 +3957,8 @@ body:is(.slides-mode, .design-mode):not(.show-analysis-pane) #analysis-section {
 /* Canvas: Warnings and Analysis live in the ribbon's two boxes, so the side panel leaves them out (they show again when a box borrows them) */
 body:not(.slides-mode, .design-mode, .sheet-mode, .doc-mode) #side-content > :is(#warnings-section, #analysis-section) { display: none; }
 /* the side panel closes all the way (no strip): the button at the bottom right, View > Side Panel or Ctrl+Alt+B bring it back */
-.dock-v > .toolbox[data-id="details"].collapsed { display: none; }
-/* its header is one row: the close button sits beside the first heading */
+.toolbox[data-id="details"].collapsed { display: none; }
 .dock-v > .toolbox[data-id='details'] { position: relative; }
-.dock-v > .toolbox[data-id='details'] > #side-fold { position: absolute; top: 4px; right: 6px; z-index: 2; margin: 0; font-size: var(--fs-md, 15px); }
-.dock-v > .toolbox[data-id='details'] #side-content > section > h2 { padding-right: 24px; }
 #status-side { display: inline-grid; place-items: center; width: 26px; height: 22px; padding: 0; margin-left: 4px; border: 1px solid transparent; background: none; color: var(--muted); }
 #status-side:hover { color: var(--text); border-color: var(--line); }
 #status-side[aria-pressed='true'] { color: var(--accent); }
@@ -4341,7 +4330,6 @@ dialog.newman-settings { width: min(96vw, 600px); max-height: 92vh; }
 /* less room above the side panel's first heading (STYLE) */
 #dock-right:has(> .toolbox[data-id='details']) { padding-top: 2px; }
 #side-content h2 { margin-top: 0; }
-.dock-v > .toolbox[data-id='details'] > #side-fold { top: 0; }
 .fb-font .fb-row { display: grid; grid-template-columns: 1fr 96px; align-items: center; gap: 6px; padding: 2px 0; font-size: var(--fs-sm); }
 .fb-font .fb-row input[type='number'], .fb-font .fb-row select { width: 100%; min-width: 0; }
 .fb-font .fb-row input[type='color'] { width: 100%; height: 22px; padding: 0 2px; }
@@ -4731,3 +4719,58 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .tbe-crumb input[type='text'] { width: 12em; flex: 0 1 auto; }
 .tbe-fly.word { font-size: var(--fs-sm); font-weight: 600; }
 .tool .tool-word { font-size: 11px; font-weight: 600; letter-spacing: 0; }
+
+/* ---- Side panel: one header row (grip, the sections as tabs, padlock, close) wherever it sits ----
+   (the class is tripled to outrank the title-bar rules for docked and upright toolboxes above) */
+.toolbox.toolbox.toolbox[data-id='details'] > .tb-head { display: flex; flex-wrap: nowrap; contain: inline-size; align-items: stretch; gap: 2px; min-width: 0; height: 24px; padding: 0 0 0 2px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
+.toolbox[data-id='details'] { gap: 3px; flex-direction: column !important; align-items: stretch !important; }
+.toolbox[data-id='details'].ss-bare { gap: 0; }
+.toolbox[data-id='details'].ss-bare > .tb-head { border-bottom-color: transparent; }
+.toolbox[data-id='details'].ss-bare > .tb-body { display: none; }
+.toolbox[data-id='details'].ss-bare.floating { min-width: 302px; }
+.toolbox[data-id='details'] > .tb-head > .tb-title, .toolbox[data-id='details'] > .tb-tab { display: none !important; }
+.toolbox[data-id='details'] > .tb-head > .tb-grip { align-self: center; margin-right: 2px; font-size: var(--fs-xs); }
+.toolbox[data-id='details'].locked > .tb-head > .tb-grip { display: none; }
+.toolbox[data-id='details'] > .tb-head > .tb-lock { align-self: center; flex: none; width: 20px; height: 20px; margin-left: auto; }
+.toolbox[data-id='details'] > .tb-head > #side-fold { align-self: center; flex: none; width: 20px; height: 20px; margin: 0; font-size: var(--fs-md, 15px); }
+.ss-tabs { display: flex; flex: 1 1 0; min-width: 0; overflow: hidden; margin-bottom: -1px; }
+.ss-tab { display: flex; align-items: center; flex: none; min-width: 0; gap: 0; padding: 0 6px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer; touch-action: none; }
+.ss-tab[hidden] { display: none; }
+.ss-tab:hover { color: var(--text); background: none; }
+.ss-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ss-tab[aria-selected='true'] { flex: 0 1 auto; color: var(--text); border-bottom-color: var(--accent); }
+.ss-tab > .ss-name { flex: none; text-transform: uppercase; letter-spacing: 0.05em; }
+.ss-tab > .ss-of { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.ss-tabs.ss-tight .ss-of { display: none; }
+.ss-tabs.ss-tight > .ss-tab { flex: none; }
+.ss-tab > .count { flex: none; min-width: 16px; padding: 0 5px; margin-left: 4px; border-radius: 8px; background: #e0141e; color: #fff; font-weight: 600; text-align: center; }
+/* one section: its name is the panel's title, not a tab to pick */
+.ss-tabs.single > .ss-tab { padding-left: 2px; border-bottom-color: transparent; cursor: default; }
+.toolbox:not(.locked) > .tb-head > .ss-tabs.single > .ss-tab { cursor: grab; }
+.ss-tab-x { align-self: center; flex: none; width: 14px; height: 16px; margin-left: -5px; padding: 0; border: 0; background: none; color: var(--muted); font-size: var(--fs-md, 15px); line-height: 1; }
+.ss-tab-x:hover { color: var(--text); }
+.ss-more { align-self: center; flex: none; width: 18px; height: 20px; padding: 0; border: 0; background: none; color: var(--muted); font-size: var(--fs-md, 15px); line-height: 1; }
+.ss-more:hover { color: var(--text); background: var(--accent-soft); }
+/* the sections under the header: tabs show one at a time, without their own heading */
+#side-content > section.ss-off { display: none; }
+#side-content > section.ss-tabbed, #side-content > section.ss-tabbed + section { margin-top: 0; border-top: 0; padding-top: 0; }
+#side-content > section.ss-tabbed > h2 > :is(.ss-title, .style-of, .cell-name, .an-close, .count, .info-icon) { display: none; }
+#side-content > section.ss-tabbed > h2.ss-plain { display: none; }
+#side-content > section.ss-tabbed > h2 { display: flow-root; margin: 0 0 2px; }
+#side-content > section.ss-tabbed.empty > :not(h2) { display: none; }
+/* stacked under the tabs: always showing, its heading folds and drags it */
+#side-content > section.ss-stacked { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 3px; }
+#side-content > section.ss-stacked:first-child { margin-top: 0; border-top: 0; padding-top: 0; }
+#side-content > section.ss-stacked > h2 { margin: 0 0 3px; cursor: grab; touch-action: none; }
+#side-content > section.ss-stacked > h2 > .ss-title { cursor: pointer; }
+#side-content > section.ss-stacked > h2 > .ss-title::before { content: '▾'; display: inline-block; width: 12px; font-size: 10px; letter-spacing: 0; }
+#side-content > section.ss-folded > h2 > .ss-title::before { content: '▸'; }
+#side-content > section.ss-stacked > h2 > .ss-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#side-content > section.ss-folded > :not(h2) { display: none; }
+#side-content > section.ss-folded > h2 { margin-bottom: 0; }
+/* dragging a tab or a stacked heading: its name follows the pointer, a line shows where it lands */
+.ss-ghost { position: fixed; z-index: 4000; padding: 2px 8px; border: 1px solid var(--accent); background: var(--panel); color: var(--text); box-shadow: 0 3px 10px rgb(0 0 0 / 0.25); font-size: var(--fs-sm); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; pointer-events: none; opacity: 0.94; }
+.ss-drop { position: fixed; z-index: 4000; background: var(--accent); pointer-events: none; }
+body.ss-dragging, body.ss-dragging * { cursor: grabbing !important; }
+html.touch-ui .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { height: 36px; }
+

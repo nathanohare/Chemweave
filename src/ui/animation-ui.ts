@@ -265,7 +265,7 @@ export class AnimationUI {
     ribbon.querySelector('[data-an="preview"]')!.addEventListener('click', () => this.preview(false));
     // the pane
     const h = document.createElement('h2');
-    h.textContent = 'Animation Pane';
+    h.textContent = 'Animation';
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'an-close';
