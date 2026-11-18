@@ -68,28 +68,6 @@ export function isEclipsed(front: NewmanGroup[], back: NewmanGroup[], turn: numb
 
 interface Box { x1: number; y1: number; x2: number; y2: number }
 
-/** A point as a turned label sees it (turned back about the label's pivot). */
-function unturn(q: Vec, p: { rot: number; pivot: Vec }): Vec {
-  if (!p.rot) return q;
-  const c = Math.cos(p.rot * RAD), s = Math.sin(p.rot * RAD), dx = q.x - p.pivot.x, dy = q.y - p.pivot.y;
-  return { x: p.pivot.x + dx * c + dy * s, y: p.pivot.y - dx * s + dy * c };
-}
-/** A point of a turned label's own box, where it really is on the page. */
-function turn(q: Vec, p: { rot: number; pivot: Vec }): Vec {
-  return unturn(q, { rot: -p.rot, pivot: p.pivot });
-}
-/** Two label boxes, either of them turned, come within `e` of each other (separating axes). */
-function turnedTouch(a: { box: Box | null; rot: number; pivot: Vec }, b: { box: Box | null; rot: number; pivot: Vec }, e: number): boolean {
-  const corners = (p: typeof a) => { const k = p.box!; return [{ x: k.x1 - e / 2, y: k.y1 - e / 2 }, { x: k.x2 + e / 2, y: k.y1 - e / 2 }, { x: k.x2 + e / 2, y: k.y2 + e / 2 }, { x: k.x1 - e / 2, y: k.y2 + e / 2 }].map((q) => turn(q, p)); };
-  const A = corners(a), B = corners(b);
-  for (const poly of [A, B]) for (let i = 0; i < 2; i++) {
-    const ax = { x: poly[i + 1].x - poly[i].x, y: poly[i + 1].y - poly[i].y };
-    const pa = A.map((q) => q.x * ax.x + q.y * ax.y), pb = B.map((q) => q.x * ax.x + q.y * ax.y);
-    if (Math.max(...pa) < Math.min(...pb) || Math.max(...pb) < Math.min(...pa)) return false;
-  }
-  return true;
-}
-
 /** Where one group's bond and label go (drawNewman's layout, worked out before anything is drawn). */
 export interface NewmanPlace {
   g: NewmanGroup; rank: 0 | 1 | 2; back: boolean;
@@ -97,8 +75,6 @@ export interface NewmanPlace {
   from: Vec; tip: Vec;
   /** The label as written (backwards on the left) and the box its letters fill; none for a ring bond. */
   text: string; box: Box | null;
-  /** The label turned this many degrees clockwise about `pivot` (the middle of the atom its bond joins); 0 when level. */
-  rot: number; pivot: Vec;
 }
 
 /**
@@ -128,15 +104,12 @@ export function layoutNewman(d: Pick<NewmanData, 'front' | 'back' | 'turn' | 'lo
   const crowded = eclipsed || Math.abs(near) < 30;
   const fanSign = eclipsed ? Math.sign(look.offset || 1) : Math.sign(near || 1), fanMax = eclipsed ? 26 : 26 - Math.abs(near);
   let scale = 1, offset = eclipsed ? look.offset : 0;
-  // labels beside the circle turned to run along their bonds: always, or only once level ones would touch
-  const tiltMax = look.tilt === 'off' || !look.tilt ? 0 : look.tiltMax ?? 30;
-  let tilted = look.tilt === 'always';
   const sym = (t: string, last: boolean) => (last ? /[A-Z][a-z]?$/.exec(t)?.[0] ?? t.slice(-1) : /^[A-Z][a-z]?/.exec(t)?.[0] ?? t.slice(0, 1));
   const lay = (): NewmanPlace[] => jobs.map((j, i) => {
     const u = dir(j.angle + (j.back ? offset : 0));
     const from = j.back ? { x: c.x + u.x * R, y: c.y + u.y * R } : c;
     const tip = { x: c.x + u.x * (end + extra[i]), y: c.y + u.y * (end + extra[i]) };
-    if (j.g.ring !== undefined && bothRing) return { g: j.g, rank: j.rank, back: j.back, from, tip, text: '', box: null, rot: 0, pivot: tip };
+    if (j.g.ring !== undefined && bothRing) return { g: j.g, rank: j.rank, back: j.back, from, tip, text: '', box: null };
     const fwd = j.g.label, rev = reversedLabel(fwd);
     const single = rev === fwd;
     const upright = Math.abs(u.x) <= 0.26;
@@ -148,15 +121,11 @@ export function layoutNewman(d: Pick<NewmanData, 'front' | 'back' | 'turn' | 'lo
     // a short name of one piece (Ph, Me, H) above or below its bond sits centred on it
     const centred = single && Math.abs(u.x) <= 0.5 && fwd.length <= 3;
     const wa = centred ? m.w : measure(sym(text, backwards), j.rank, scale).w;
-    let rot = 0;
-    if (tilted && !upright) { const phi = Math.atan2(u.x < 0 ? -u.y : u.y, Math.abs(u.x)) / RAD; rot = Math.max(-tiltMax, Math.min(tiltMax, phi)); }
-    // (the bond's direction as the turned label sees it)
-    const cr = Math.cos(rot * RAD), sr = Math.sin(rot * RAD), v = { x: u.x * cr + u.y * sr, y: -u.x * sr + u.y * cr };
-    const t = Math.min(Math.abs(v.x) > 1e-6 ? wa / 2 / Math.abs(v.x) : Infinity, Math.abs(v.y) > 1e-6 ? hh / Math.abs(v.y) : Infinity);
+    const t = Math.min(Math.abs(u.x) > 1e-6 ? wa / 2 / Math.abs(u.x) : Infinity, Math.abs(u.y) > 1e-6 ? hh / Math.abs(u.y) : Infinity);
     const gc = { x: tip.x + u.x * (gap + t), y: tip.y + u.y * (gap + t) };
     const x1 = centred ? gc.x - m.w / 2 : backwards ? gc.x + wa / 2 - m.w : gc.x - wa / 2;
     const sub = /\d/.test(text) ? 0.1 * m.h : 0;
-    return { g: j.g, rank: j.rank, back: j.back, from, tip, text, box: { x1, y1: gc.y - hh, x2: x1 + m.w, y2: gc.y + hh + sub }, rot, pivot: gc };
+    return { g: j.g, rank: j.rank, back: j.back, from, tip, text, box: { x1, y1: gc.y - hh, x2: x1 + m.w, y2: gc.y + hh + sub } };
   });
   /** What touches: [a label, the other label or the bond it touches, whether that is a bond]. */
   const hits = (ps: NewmanPlace[]): [number, number, boolean][] => {
@@ -164,12 +133,12 @@ export function layoutNewman(d: Pick<NewmanData, 'front' | 'back' | 'turn' | 'lo
     for (let i = 0; i < n; i++) {
       const a = ps[i].box;
       if (!a) continue;
-      for (let k = i + 1; k < n; k++) { const b = ps[k].box; if (b && (ps[i].rot || ps[k].rot ? turnedTouch(ps[i], ps[k], e) : a.x1 - e < b.x2 && b.x1 < a.x2 + e && a.y1 - e < b.y2 && b.y1 < a.y2 + e)) out.push([i, k, false]); }
+      for (let k = i + 1; k < n; k++) { const b = ps[k].box; if (b && a.x1 - e < b.x2 && b.x1 < a.x2 + e && a.y1 - e < b.y2 && b.y1 < a.y2 + e) out.push([i, k, false]); }
       for (let k = 0; k < n; k++) {
         if (k === i) continue;
         const p = ps[k];
         for (let s = 0; s <= 16; s++) {
-          const q = unturn({ x: p.from.x + ((p.tip.x - p.from.x) * s) / 16, y: p.from.y + ((p.tip.y - p.from.y) * s) / 16 }, ps[i]);
+          const q = { x: p.from.x + ((p.tip.x - p.from.x) * s) / 16, y: p.from.y + ((p.tip.y - p.from.y) * s) / 16 };
           if (q.x > a.x1 - e && q.x < a.x2 + e && q.y > a.y1 - e && q.y < a.y2 + e) { out.push([i, k, true]); break; }
         }
       }
@@ -189,7 +158,6 @@ export function layoutNewman(d: Pick<NewmanData, 'front' | 'back' | 'turn' | 'lo
       if (h2.length < hs.length) { better = true; break; }
       flip[i] = !flip[i];
     }
-    if (!better && tiltMax && !tilted) { tilted = true; better = true; }
     if (!better) {
       // which label gives way: the back one, else the longer one
       const [i, k, bond] = hs[0];
@@ -258,8 +226,7 @@ export function drawNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec): NewmanP
     const b = m.captionBox(cap);
     const sub = /\d/.test(p.text) ? 0.1 * (p.box.y2 - p.box.y1) / 0.82 : 0;
     const cy = (p.box.y1 + p.box.y2 - sub) / 2;
-    const at = turn({ x: cap.x + p.box.x1 - b.x1, y: cap.y + cy - (b.y1 + b.y2) / 2 }, p);
-    doc.updateCaption(cap.id, { x: at.x, y: at.y, ...(p.rot ? { rot: Math.round(p.rot * 10) / 10 } : {}) });
+    doc.updateCaption(cap.id, { x: cap.x + p.box.x1 - b.x1, y: cap.y + cy - (b.y1 + b.y2) / 2 });
     out.captions.push(cap.id);
   }
   out.scale = scale;
