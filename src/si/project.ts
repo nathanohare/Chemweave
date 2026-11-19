@@ -1348,8 +1348,21 @@ export class SiProject {
     const item = (items as Json[]).find((i) => isObj(i) && i.file === file);
     if (!item) return;
     const path = this.attachmentPath(c, def, file);
-    const stem = path.replace(/\.[^./]+$/, '');
-    const originals = stem !== path ? [`${stem}.cdxml`, `${stem}.emf`].filter((x) => x !== path) : [];
+    // The original kept for this file is the one its entry names. An entry that names none (an older
+    // one) has the .cdxml or .emf of its own stem, unless that file is another entry's file or original:
+    // "1H.pdf" never takes "1H.emf", the original of "1H.svg", to the Trash with it.
+    const original = str(item.original);
+    let originals: string[];
+    if (original) originals = original !== file ? [this.attachmentPath(c, def, original)].filter((x) => x !== path) : [];
+    else {
+      const used = new Set<string>();
+      for (const v of Object.values(valuesOf(c))) {
+        if (!Array.isArray(v)) continue;
+        for (const other of v as unknown[]) if (isObj(other) && other !== item) { used.add(str(other.file).toLowerCase()); used.add(str(other.original).toLowerCase()); }
+      }
+      const stem = file.replace(/\.[^./]+$/, '');
+      originals = stem !== file ? [`${stem}.cdxml`, `${stem}.emf`].filter((x) => x !== file && !used.has(x.toLowerCase())).map((x) => this.attachmentPath(c, def, x)) : [];
+    }
     await this.moveToTrash([path, ...originals], 'compound_file', file, { compound_id: c.id, field_key: def.key, item: nameOf(path), item_values: cloneJson(item), compound_name: compoundName(c) });
     (items as Json[]).splice((items as Json[]).indexOf(item), 1);
     await this.saveCompound(c);

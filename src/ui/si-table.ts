@@ -65,11 +65,29 @@ export class SiTableEditor {
     this.paint();
   }
 
-  /** Save what is being typed. */
-  commit(): void {
+  /** Save what is being typed; done when every save of this table has been written. */
+  commit(): Promise<void> {
     for (const b of this.boxes) b.commit();
     this.noteBox?.commit();
+    // (a label typed and not left yet)
+    if (this.t && !this.gone && this.labelBox.value.trim() !== String(this.t.label ?? '')) void this.change(() => { this.t!.label = this.labelBox.value.trim(); }, false);
+    return this.pending;
   }
+
+  /** Done when every save of this table so far has been written. */
+  settled(): Promise<void> { return this.pending; }
+
+  /** The editor is leaving the page: its pictures' object URLs are given back. */
+  dispose(): void {
+    for (const u of this.urls) URL.revokeObjectURL(u);
+    // (frozen: a picture still being read makes no URL for a list nobody keeps)
+    Object.freeze(this.urls);
+    this.urls = [];
+    this.gone = true;
+  }
+  private gone = false;
+  /** The table's saves, one after another, so an older one never lands on a newer (never rejected). */
+  private pending: Promise<void> = Promise.resolve();
 
   /** Mentions show their compounds' IDs (and tables' labels) as they are now. */
   relabel(): void {
@@ -159,7 +177,9 @@ export class SiTableEditor {
   private paint(): void {
     const t = this.t!;
     for (const u of this.urls) URL.revokeObjectURL(u);
+    Object.freeze(this.urls);
     this.urls = [];
+    if (this.gone) return;
     this.boxes = [];
     const head = Math.max(0, Math.round(Number(t.header_rows ?? 1)) || 0);
     const rows = rowsOf(t);
@@ -225,8 +245,11 @@ export class SiTableEditor {
 
   // ------------------------------------------------------------------ changes
 
-  private async save(): Promise<void> {
-    try { await this.host.project.writeTable(this.host.section, this.t!); } catch (e) { this.host.flash(`The table could not be saved: ${e instanceof Error ? e.message : String(e)}`); }
+  private save(): Promise<void> {
+    this.pending = this.pending.then(async () => {
+      try { await this.host.project.writeTable(this.host.section, this.t!); } catch (e) { this.host.flash(`The table could not be saved: ${e instanceof Error ? e.message : String(e)}`); }
+    }).then(() => {}, () => {});
+    return this.pending;
   }
 
   /** Change the table, save it, and (`repaint`) show it again with the selection kept where it can be. */

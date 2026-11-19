@@ -122,6 +122,21 @@ export interface SiCard {
   hrms: string;
 }
 
+/** What is kept for one open project: its structures as read, its warnings, its report files as read, its thumbnails, and its saves in order. */
+interface Kept {
+  mols: Map<string, string>;
+  warnings: Map<string, SiWarning[]>;
+  reportData: Map<string, Promise<ReportData>>;
+  reportMatches: Map<string, Match | null>;
+  /** Its structures are being read. */
+  loading: boolean;
+  /** Small pictures of attached files by path, and the object URLs made for them. */
+  thumbs: Map<string, Promise<string | null>>;
+  urls: string[];
+  /** Its changes, one after another (never rejected). */
+  queue: Promise<void>;
+}
+
 type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'spectra'; id: string; section: string } | { kind: 'references' } | { kind: 'manuscript' } | { kind: 'warnings' } | { kind: 'dashboard' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
@@ -500,6 +515,9 @@ const RIBBON = `
 /** Short names for a spectrum's or file's values in its row (their full names are in the tooltip). */
 const ATT_SHORT: Record<string, string> = { title: 'Header', struct_caption: 'Caption', label: 'Label' };
 
+/** The extensions a pasted picture, or the original kept beside it, can have. */
+const PASTED_EXTS = ['svg', 'png', 'jpg', 'jpeg', 'emf', 'cdxml', 'pdf'];
+
 /** The files offered by Insert ▸ HRMS Report (any file can still be dragged in). */
 const REPORT_EXTS = ['pdf', 'csv', 'tsv', 'txt', 'tab', 'asc', 'xy', 'dat', 'prn', 'xlsx', 'mzml', 'mzxml', 'mzdata', 'xml', 'mgf', 'jdx', 'dx', 'jcamp', 'jcm', 'cdf', 'nc', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'bmp', 'gif', 'svg'];
 
@@ -518,14 +536,35 @@ export class SiMode {
   private figures: SiFigureEditor[] = [];
   private shownKey = '';
   private analyzed = new Map<string, { formula: string; mw: number; exact: number } | null>();
-  /** Small pictures of attached files, by project and path. */
-  private thumbs = new WeakMap<SiProject, Map<string, Promise<string | null>>>();
-  /** Compounds' structures as last read (compound id → molfile), and what the checks read from each molfile. */
+  /** What is kept for each project open (two projects in two tabs never share any of it). */
+  private keptOf = new WeakMap<SiProject, Kept>();
+  private kept(p: SiProject): Kept {
+    let k = this.keptOf.get(p);
+    if (!k) {
+      k = { mols: new Map(), warnings: new Map(), reportData: new Map(), reportMatches: new Map(), loading: false, thumbs: new Map(), urls: [], queue: Promise.resolve() };
+      this.keptOf.set(p, k);
+    }
+    return k;
+  }
+  /** The project shown: `mols`, `warnings`, `reportData` and `reportMatches` are its own. */
+  private use(p: SiProject): void {
+    const k = this.kept(p);
+    this.mols = k.mols;
+    this.warnings = k.warnings;
+    this.reportData = k.reportData;
+    this.reportMatches = k.reportMatches;
+  }
+  /** Compounds' structures as last read (compound id → molfile) of the project shown, and what the checks read from each molfile. */
   private mols = new Map<string, string>();
   private facts = new Map<string, MolFacts | null>();
-  private loadingFacts = false;
-  /** Every warning of each compound (dismissed too), as last worked out. */
+  /** Every warning of each compound of the project shown (dismissed too), as last worked out. */
   private warnings = new Map<string, SiWarning[]>();
+  /** What saves the plain inputs of the page shown, when one holds text not saved yet. */
+  private flushers: (() => void)[] = [];
+  /** Counts the pages drawn (what a page reads later is dropped when another page has been drawn since). */
+  private drawn = 0;
+  /** Redraws the compound page's header (ID, name, how complete) in place. */
+  private headPaint: (() => void) | null = null;
   /** Dismissed warnings are listed too (with Restore). */
   private showDismissed = false;
 
@@ -711,6 +750,8 @@ export class SiMode {
       readClipboard: () => this.host.readClipboard(),
       idOf: (c) => this.idOf(c),
       chosen: (x) => { if (x === this.schemePage) this.schemeShown(x); },
+      // (a scheme page's action as one named step of Undo, after the saves on their way)
+      step: async (label, f) => { await this.pendingOf(p); const j = journalOf(p.folder); return j ? j.step(label, f) : f(); },
       redraw: () => { for (const c of k.children) this.forgetStructure(c); this.shownKey = ''; this.refresh(); },
       openCompound: (id) => this.go({ kind: 'compound', id }),
     });
@@ -828,10 +869,12 @@ export class SiMode {
 
   /** Show this tab's project (null: another kind of tab shows). */
   show(tab: Tab | null): void {
-    if (this.tab && this.tab !== tab) this.commitAll();
+    // (what was being typed in the tab left is saved to its own project, in the background)
+    if (this.tab && this.tab !== tab) void this.commitAll();
     this.tab = tab && tab.si ? tab : null;
     this.pane.hidden = this.ribbon.hidden = !this.tab;
     if (!this.tab) return;
+    this.use(this.tab.si!);
     this.shownKey = '';
     this.refresh();
     void this.loadDictionary();
@@ -857,15 +900,56 @@ export class SiMode {
     });
   }
 
-  /** Save what is being typed. */
-  commitAll(): void { for (const b of [...this.boxes, ...(this.xrayPage?.boxes ?? []), ...(this.front?.boxes ?? []), ...(this.schemePage?.boxes ?? [])]) b.commit(); for (const t of this.tables) t.commit(); }
+  /**
+   * Save what is being typed (text boxes, plain inputs, table cells). The promise is done when
+   * every change of the project shown has been written to its folder.
+   */
+  commitAll(): Promise<void> {
+    const p = this.project;
+    for (const f of this.flushers) f();
+    for (const b of [...this.boxes, ...(this.xrayPage?.boxes ?? []), ...(this.front?.boxes ?? []), ...(this.schemePage?.boxes ?? [])]) b.commit();
+    const others: Promise<unknown>[] = [...this.tables.map((t) => t.commit()), ...this.figures.map((f) => f.settled())];
+    if (this.front) others.push(this.front.settled());
+    if (!p) return Promise.all(others).then(() => {}, () => {});
+    // (the editors' own saves join the project's queue, so they are waited for after the page has gone too)
+    const k = this.kept(p);
+    k.queue = Promise.all([k.queue, ...others]).then(() => {}, () => {});
+    return k.queue;
+  }
 
-  /** Everything again: the tree, the page, the status bar. */
-  refresh(): void {
+  /** Done when every change made to a project so far is in its folder (the project shown: what is being typed too). */
+  saved(p: SiProject | null = this.project): Promise<void> {
+    if (!p) return Promise.resolve();
+    return p === this.project ? this.commitAll() : this.kept(p).queue;
+  }
+
+  /** A project's tab closed: what was kept for it goes. */
+  closed(p: SiProject): void {
+    const k = this.keptOf.get(p);
+    if (!k) return;
+    for (const u of k.urls) URL.revokeObjectURL(u);
+    this.keptOf.delete(p);
+  }
+
+  /** The pick, when what it picked is gone (deleted, or taken back by Undo): the project's page. */
+  private keepPick(): void {
+    const p = this.project!;
+    const pick = this.pick;
+    const there = pick.kind === 'compound' ? p.compounds.some((c) => c.id === pick.id)
+      : pick.kind === 'section' ? p.sections.some((s) => s.id === pick.id)
+      : pick.kind === 'scheme' ? p.schemes.some((k) => k.id === pick.id)
+      : pick.kind === 'spectra' ? p.compounds.some((c) => c.id === pick.id)
+      : true;
+    if (!there) this.pick = { kind: 'project' };
+  }
+
+  /** Everything again: the tree, the page, the status bar (`only`: a change to this compound's values alone). */
+  refresh(only?: SiCompound): void {
     const p = this.project;
     if (!p) return;
+    this.keepPick();
     this.report = p.idReport();
-    this.check();
+    this.check(only);
     this.renderTree();
     const key = JSON.stringify(this.pick);
     if (key !== this.shownKey) { this.shownKey = key; this.renderPage(); this.liveSoon(150); } else { this.relabel(); this.liveSoon(); }
@@ -873,14 +957,19 @@ export class SiMode {
     this.status();
   }
 
+  /** The status bar's line again (the window sets its own when a tab comes to the front). */
+  showStatus(): void { this.status(); }
+
   // ---------------------------------------------------------------- checks
 
   /** Work out every compound's warnings again (those whose structure is still being read keep the ones they had). */
-  private check(): void {
+  private check(only?: SiCompound): void {
     const p = this.project!;
     let waiting = false;
     const seen = new Set<string>();
-    for (const c of p.compounds) {
+    // (a compound's own values changed: the others' warnings stand, once every compound has been checked)
+    const one = !!only && p.compounds.includes(only) && p.compounds.every((c) => this.warnings.has(c.id));
+    for (const c of one ? [only!] : p.compounds) {
       seen.add(c.id);
       let facts: MolFacts | null = null;
       if (p.hasStructure(c)) {
@@ -890,28 +979,37 @@ export class SiMode {
       }
       try { this.warnings.set(c.id, allWarnings(p, c, this.report!, facts, this.reportMatches.get(c.id) ?? null)); } catch (e) { console.warn('SI checks failed for', c.id, e); this.warnings.set(c.id, []); }
     }
-    for (const id of [...this.warnings.keys()]) if (!seen.has(id)) this.warnings.delete(id);
+    if (!one) for (const id of [...this.warnings.keys()]) if (!seen.has(id)) this.warnings.delete(id);
     if (waiting) void this.loadFacts();
   }
 
   /** Read the structures not read yet, and what the checks need from them (off the main thread), then check again. */
   private async loadFacts(): Promise<void> {
-    if (this.loadingFacts) return;
     const p = this.project;
     if (!p) return;
-    this.loadingFacts = true;
+    const k = this.kept(p);
+    // (each project reads its own: one being read in another tab doesn't hold this one up)
+    if (k.loading) return;
+    k.loading = true;
     try {
       await this.readFacts(p);
+    } catch (e) {
+      console.warn('SI structures could not be read', e);
     } finally {
-      this.loadingFacts = false;
+      k.loading = false;
     }
     if (this.project === p) { this.refresh(); this.dashRedraw?.(); }
   }
 
   /** Read a project's structures not read yet, and what the checks need from them. */
   private async readFacts(p: SiProject): Promise<void> {
-    for (const c of p.compounds) if (p.hasStructure(c) && !this.mols.has(c.id)) this.mols.set(c.id, await p.readStructure(c));
-    const todo = [...new Set([...this.mols.values()].filter((m) => !this.facts.has(m)))];
+    const mols = this.kept(p).mols;
+    for (const c of [...p.compounds]) {
+      if (!p.hasStructure(c) || mols.has(c.id)) continue;
+      // (one that can't be read is checked as having none, and the others are still read)
+      mols.set(c.id, await p.readStructure(c).catch((e) => { console.warn('SI structure not read', c.id, e); return ''; }));
+    }
+    const todo = [...new Set([...mols.values()].filter((m) => !this.facts.has(m)))];
     if (!todo.length) return;
     const got = await this.host.siFacts(todo).catch(() => todo.map(() => null));
     todo.forEach((m, i) => this.facts.set(m, got[i] ?? null));
@@ -929,7 +1027,7 @@ export class SiMode {
       await this.readFacts(p);
       let report: IdReport | null = null;
       for (const c of p.compounds) {
-        const f = this.factsOf(c);
+        const f = this.factsOf(c, p);
         const smi = f?.info?.smiles;
         if (!smi || !want.has(smi)) continue;
         report ??= p.idReport();
@@ -944,7 +1042,7 @@ export class SiMode {
     const p = tab.si!;
     const k = p.completion(c);
     let warnings: SiWarning[] = [];
-    try { warnings = allWarnings(p, c, report, facts, this.reportMatches.get(c.id) ?? null).filter((w) => !isDismissed(c, w)); } catch { /* (shown as none) */ }
+    try { warnings = allWarnings(p, c, report, facts, this.kept(p).reportMatches.get(c.id) ?? null).filter((w) => !isDismissed(c, w)); } catch { /* (shown as none) */ }
     const v = valuesOf(c);
     const part = (key: string, sub: string): string => { const x = v[key]; return x && typeof x === 'object' && !Array.isArray(x) ? partText((x as Json)[sub]).trim() : ''; };
     const pct = part('yield', 'percent'), mass = part('yield', 'mass'), unit = part('yield', 'mass_unit');
@@ -976,9 +1074,11 @@ export class SiMode {
     const p = tab.si;
     if (!p) return null;
     try {
-      const c = await p.addCompound(sectionId);
-      await p.setStructure(c, molfile);
-      this.forgetStructure(c);
+      await this.saved(p);
+      const j = journalOf(p.folder);
+      const make = async (): Promise<SiCompound> => { const made = await p.addCompound(sectionId); await p.setStructure(made, molfile); return made; };
+      const c = await (j ? j.step('Add from Canvas', make) : make());
+      this.forgetStructure(c, p);
       if (this.tab === tab) { this.shownKey = ''; this.refresh(); }
       return { id: c.id, label: displayId(p.idReport(), c.id) };
     } catch (e) {
@@ -993,8 +1093,10 @@ export class SiMode {
     const c = p?.compounds.find((x) => x.id === compoundId);
     if (!p || !c) return false;
     try {
-      await p.setStructure(c, molfile);
-      this.forgetStructure(c);
+      await this.saved(p);
+      const j = journalOf(p.folder);
+      await (j ? j.step('Replace Structure', () => p.setStructure(c, molfile)) : p.setStructure(c, molfile));
+      this.forgetStructure(c, p);
       if (this.tab === tab) { this.shownKey = ''; this.refresh(); }
       return true;
     } catch (e) {
@@ -1010,14 +1112,16 @@ export class SiMode {
   }
 
   /** A compound's structure changed (or the folder was read again): read it again. */
-  private forgetStructure(c?: SiCompound): void {
-    if (c) this.mols.delete(c.id); else { this.mols.clear(); this.reportData.clear(); this.reportMatches.clear(); }
+  private forgetStructure(c?: SiCompound, p: SiProject | null = this.project): void {
+    if (!p) return;
+    const k = this.kept(p);
+    if (c) k.mols.delete(c.id); else { k.mols.clear(); k.reportData.clear(); k.reportMatches.clear(); this.forgetThumbs(p); }
   }
 
   private activeWarnings(c: SiCompound): SiWarning[] { return (this.warnings.get(c.id) ?? []).filter((w) => !isDismissed(c, w)); }
   private dismissedWarnings(c: SiCompound): SiWarning[] { return (this.warnings.get(c.id) ?? []).filter((w) => isDismissed(c, w)); }
-  private factsOf(c: SiCompound): MolFacts | null {
-    const mol = this.mols.get(c.id);
+  private factsOf(c: SiCompound, p: SiProject | null = this.project): MolFacts | null {
+    const mol = (p ? this.kept(p).mols : this.mols).get(c.id);
     return mol === undefined ? null : this.facts.get(mol) ?? null;
   }
 
@@ -1090,25 +1194,37 @@ export class SiMode {
   private relabel(): void {
     for (const b of this.boxes) b.relabel();
     for (const t of this.tables) t.relabel();
-    // the header's ID and the completion counts
-    const pick = this.pick;
-    if (pick.kind === 'compound') this.renderPage();
+    // the header's ID, name and completion count, in place (the fields being typed in stay as they are)
+    this.headPaint?.();
+  }
+
+  /** Every save on its way to a project's folder (the shown page's editors' own too) has landed. */
+  private pendingOf(p: SiProject): Promise<void> {
+    const mine: Promise<unknown>[] = p === this.project ? [...this.tables.map((t) => t.settled()), ...this.figures.map((f) => f.settled()), ...(this.front ? [this.front.settled()] : [])] : [];
+    return Promise.all([this.kept(p).queue, ...mine]).then(() => {}, () => {});
   }
 
   /** Number the tables, figures and schemes again (after the page is drawn), and show mentions of them with their labels. */
   private async readLabels(): Promise<void> {
     const p = this.project;
-    if (!p || this.labelsRead) return;
+    if (!p) return;
+    // (asked for while they are being read: read once more after, so a page drawn meanwhile gets them)
+    if (this.labelsRead) { this.labelsAgain = true; return; }
     this.labelsRead = true;
     try {
+      await this.pendingOf(p);
       const got = await objectLabels(p);
       if (this.project !== p) return;
       this.objLabels = got;
       for (const b of this.boxes) b.relabel();
       for (const t of this.tables) { t.relabel(); t.setTitle(got.get(t.id) ?? ''); }
       for (const f of this.figures) f.setTitle(got.get(f.id) ?? '');
-    } catch { /* (the kinds' names show instead) */ } finally { this.labelsRead = false; }
+    } catch { /* (the kinds' names show instead) */ } finally {
+      this.labelsRead = false;
+      if (this.labelsAgain) { this.labelsAgain = false; void this.readLabels(); }
+    }
   }
+  private labelsAgain = false;
 
   private idOf(c: SiCompound): string { return this.report ? displayId(this.report, c.id) : 'ID?'; }
 
@@ -1175,7 +1291,7 @@ export class SiMode {
   }
 
   private go(pick: Pick): void {
-    this.commitAll();
+    void this.commitAll();
     this.pick = pick;
     this.refresh();
   }
@@ -1184,50 +1300,31 @@ export class SiMode {
 
   private renderTree(): void {
     const p = this.project!;
-    const rows: HTMLElement[] = [];
     const pick = this.pick;
-    const row = (depth: number, icon: string, text: string, sel: Pick, extra: (r: HTMLElement) => void = () => {}): HTMLElement => {
-      const r = el('div', 'si-row');
-      r.setAttribute('role', 'treeitem');
-      r.style.paddingLeft = `${6 + depth * 14}px`;
-      r.innerHTML = icon;
-      const t = el('span', 'si-row-text');
-      t.textContent = text;
-      r.append(t);
-      const on = JSON.stringify(sel) === JSON.stringify(pick);
-      r.classList.toggle('on', on);
-      r.setAttribute('aria-selected', String(on));
-      r.tabIndex = on ? 0 : -1;
-      extra(r);
-      r.addEventListener('click', () => this.go(sel));
-      if (sel.kind === 'section' || sel.kind === 'compound' || sel.kind === 'scheme') this.treeRowActions(r, sel);
-      rows.push(r);
-      return r;
-    };
-    const head = row(0, svg('si', 16), p.title, { kind: 'project' });
-    head.classList.add('si-root');
-    row(1, svg('grid', 15), 'Dashboard', { kind: 'dashboard' }, (r) => { r.title = 'How far along the project is, and every compound’s data at a glance'; });
+    const pickKey = JSON.stringify(pick);
+    // what each row shows (the rows are only made again when one of them changed)
+    interface RowSpec { depth: number; icon: string; text: string; sel: Pick; title?: string; cls?: string; cid?: string }
+    const specs: RowSpec[] = [];
+    const row = (depth: number, icon: string, text: string, sel: Pick, more: Partial<RowSpec> = {}): void => { specs.push({ depth, icon, text, sel, ...more }); };
+    row(0, svg('si', 16), p.title, { kind: 'project' }, { cls: 'si-root' });
+    row(1, svg('grid', 15), 'Dashboard', { kind: 'dashboard' }, { title: 'How far along the project is, and every compound’s data at a glance' });
     const compoundRow = (c: SiCompound, depth: number): void => {
       const k = p.completion(c);
       const flagged = Object.keys(flagsOf(c)).length > 0;
       const active = this.activeWarnings(c);
       const tip = active.map((w) => w.message).join('\n').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       const icon = flagged ? `<span class="si-st flag" title="Flagged for checking">${svg('flag')}</span>` : active.length ? `<span class="si-st warn" title="${tip}">${svg('warn')}</span>`
-        : k.filled === k.total ? `<span class="si-st ok" title="Every required field is filled in">${svg('check')}</span>` : `<span class="si-st" title="Missing: ${k.missing.join(', ')}">${svg('open')}</span>`;
-      row(depth, icon, '', { kind: 'compound', id: c.id }, (r) => {
-        const t = r.querySelector('.si-row-text')!;
-        t.innerHTML = '';
-        t.append(el('b', 'si-cid', this.idOf(c)), document.createTextNode(' ' + (compoundName(c) || 'unnamed compound')));
-      });
+        : k.filled === k.total ? `<span class="si-st ok" title="Every required field is filled in">${svg('check')}</span>` : `<span class="si-st" title="Missing: ${k.missing.join(', ').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}">${svg('open')}</span>`;
+      row(depth, icon, compoundName(c) || 'unnamed compound', { kind: 'compound', id: c.id }, { cid: this.idOf(c) });
     };
     const walk = (list: SiSection[], depth: number): void => {
       for (const s of list) {
         const icon = svg(s.type === 'data' ? 'flask' : s.type === 'spectra' ? 'spectrum' : s.type === 'xray' ? 'xray' : 'page', 15);
-        row(depth, icon, s.name, { kind: 'section', id: s.id }, (r) => { r.title = `${TYPE_LABELS[s.type] ?? s.type} section`; });
+        row(depth, icon, s.name, { kind: 'section', id: s.id }, { title: `${TYPE_LABELS[s.type] ?? s.type} section` });
         if (s.type === 'data') {
           for (const it of s.items) {
             if (it.kind === 'scheme') {
-              row(depth + 1, svg('scheme'), String(it.data.name || 'Scheme'), { kind: 'scheme', id: it.id }, (r) => { r.title = 'A scheme page: its reaction scheme, and its compounds under it'; r.classList.add('si-scheme'); });
+              row(depth + 1, svg('scheme'), String(it.data.name || 'Scheme'), { kind: 'scheme', id: it.id }, { title: 'A scheme page: its reaction scheme, and its compounds under it', cls: 'si-scheme' });
               for (const c of it.children) compoundRow(c, depth + 2);
             } else compoundRow(it, depth + 1);
           }
@@ -1236,12 +1333,7 @@ export class SiMode {
           // each compound with spectra: its spectra page
           for (const c of p.compounds) {
             if (!spectrumItems(c).some(([, i]) => i.file)) continue;
-            row(depth + 1, svg('spectrum', 13), '', { kind: 'spectra', id: c.id, section: s.id }, (r) => {
-              const t = r.querySelector('.si-row-text')!;
-              t.innerHTML = '';
-              t.append(el('b', 'si-cid', this.idOf(c)), document.createTextNode(' ' + (compoundName(c) || 'unnamed compound')));
-              r.title = 'This compound’s spectra as they print: drag the structure box, and set this spectrum’s own look';
-            });
+            row(depth + 1, svg('spectrum', 13), compoundName(c) || 'unnamed compound', { kind: 'spectra', id: c.id, section: s.id }, { cid: this.idOf(c), title: 'This compound’s spectra as they print: drag the structure box, and set this spectrum’s own look' });
           }
         }
         walk(s.children, depth + 1);
@@ -1250,19 +1342,62 @@ export class SiMode {
     walk(p.top, 1);
     this.msWarm(p);
     const msProblems = (() => { const r = this.msState(p).result; return r ? problemsOf(r).length : 0; })();
-    row(1, svg('check', 15), `Manuscript Check${msProblems ? ` (${msProblems})` : ''}`, { kind: 'manuscript' }, (r) => { r.classList.toggle('si-has-warn', msProblems > 0); r.title = 'Compare the manuscript (PDF, Word or a Chemweave document) and its ChemDraw files with the SI'; });
+    row(1, svg('check', 15), `Manuscript Check${msProblems ? ` (${msProblems})` : ''}`, { kind: 'manuscript' }, { cls: msProblems > 0 ? 'si-has-warn' : '', title: 'Compare the manuscript (PDF, Word or a Chemweave document) and its ChemDraw files with the SI' });
     row(1, svg('refs', 15), `References (${p.references.length})`, { kind: 'references' });
     const total = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0);
-    row(1, svg('warn', 15), `Warnings (${total})`, { kind: 'warnings' }, (r) => { r.classList.toggle('si-has-warn', total > 0); r.title = 'Every automatic warning in the project, by compound'; });
+    row(1, svg('warn', 15), `Warnings (${total})`, { kind: 'warnings' }, { cls: total > 0 ? 'si-has-warn' : '', title: 'Every automatic warning in the project, by compound' });
+
+    const mark = (r: HTMLElement): void => {
+      const on = r.dataset.sel === pickKey;
+      r.classList.toggle('on', on);
+      r.setAttribute('aria-selected', String(on));
+      r.tabIndex = on ? 0 : -1;
+    };
+    const sig = JSON.stringify([p.readOnly, specs]);
+    if (this.treeFor === p && this.treeSig === sig && this.tree.childElementCount === specs.length) {
+      // nothing but the pick changed: the rows stay (and the keys stay on the row they were on)
+      for (const r of this.tree.children) mark(r as HTMLElement);
+      return;
+    }
+    const hadKeys = this.tree.contains(document.activeElement);
+    const rows = specs.map((x) => {
+      const r = el('div', 'si-row');
+      r.setAttribute('role', 'treeitem');
+      r.style.paddingLeft = `${6 + x.depth * 14}px`;
+      r.innerHTML = x.icon;
+      const t = el('span', 'si-row-text');
+      if (x.cid !== undefined) t.append(el('b', 'si-cid', x.cid), document.createTextNode(' ' + x.text)); else t.textContent = x.text;
+      r.append(t);
+      if (x.title) r.title = x.title;
+      if (x.cls) r.classList.add(x.cls);
+      r.dataset.sel = JSON.stringify(x.sel);
+      mark(r);
+      const sel = x.sel;
+      r.addEventListener('click', () => this.go(sel));
+      if (sel.kind === 'section' || sel.kind === 'compound' || sel.kind === 'scheme') this.treeRowActions(r, sel);
+      return r;
+    });
     this.tree.replaceChildren(...rows);
+    this.treeFor = p;
+    this.treeSig = sig;
+    // (the row that had the keys was made again: they go to the row picked, so the next key still works)
+    if (hadKeys) this.tree.querySelector<HTMLElement>('.si-row.on')?.focus({ preventScroll: true });
   }
+  /** The tree as last drawn: its project, and what its rows showed. */
+  private treeFor: SiProject | null = null;
+  private treeSig = '';
 
   // ---------------------------------------------------------------- pages
 
   private renderPage(): void {
     // (a contextual tab open before stays open when the page drawn again has it)
     const keep = this.ribbon.querySelector<HTMLElement>('[data-si-tab][aria-selected="true"]')?.dataset.siTab ?? '';
-    this.commitAll();
+    void this.commitAll();
+    this.drawn++;
+    this.flushers = [];
+    this.headPaint = null;
+    for (const t of this.tables) t.dispose();
+    for (const f of this.figures) f.dispose();
     this.boxes = [];
     this.tables = [];
     this.figures = [];
@@ -1301,6 +1436,7 @@ export class SiMode {
     else if (pick.kind === 'dashboard') this.dashboardPage(out);
     if (this.pick.kind === 'project') this.projectPage(out);
     this.dashShown();
+    this.lockFields(out);
     this.page.replaceChildren(out);
     if (keep && this.ribbon.querySelector<HTMLElement>(`[data-si-tab="${keep}"]`)?.hidden === false) this.showRibbonTab(keep);
     // (the Manuscript Check tab comes forward when its page is first shown: its commands are the page's only ones)
@@ -1358,7 +1494,7 @@ export class SiMode {
       act: async (label, f) => {
         const j = journalOf(p.folder);
         try {
-          this.commitAll();
+          await this.commitAll();
           await (j ? j.step(label, f) : f());
         } catch (e) {
           this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
@@ -1472,7 +1608,7 @@ export class SiMode {
     const name = el('input', 'si-name-input');
     name.value = s.name;
     name.setAttribute('aria-label', 'Section name');
-    name.addEventListener('change', () => void this.act(() => p.renameSection(s.id, name.value)));
+    this.bind(name, () => void this.act(() => p.renameSection(s.id, name.value)), false);
     h.append(name, el('span', 'si-chip', `${TYPE_LABELS[s.type] ?? s.type} section`));
     card.append(h);
     out.append(card);
@@ -1517,12 +1653,12 @@ export class SiMode {
       name.value = partText(gp.name);
       name.setAttribute('aria-label', 'Name');
       name.placeholder = 'General Procedure A';
-      name.addEventListener('change', () => void this.act(() => p.updateGeneralProcedure(id, { name: name.value.trim() }), false));
+      this.bind(name, () => void this.act(() => p.updateGeneralProcedure(id, { name: name.value.trim() }), false));
       const title = el('input', 'si-gp-title');
       title.value = partText(gp.title);
       title.setAttribute('aria-label', 'Title');
       title.placeholder = 'Title (optional), e.g. Reduction of aryl methyl ketones';
-      title.addEventListener('change', () => void this.act(() => p.updateGeneralProcedure(id, { title: title.value.trim() }), false));
+      this.bind(title, () => void this.act(() => p.updateGeneralProcedure(id, { title: title.value.trim() }), false));
       const users = p.gpUsers(id);
       const used = el('span', 'muted si-gp-users', users.length ? `Used by ${users.map((c) => this.idOf(c)).join(', ')}` : 'Not used yet');
       const up = el('button', 'si-mini', '▲');
@@ -1547,7 +1683,7 @@ export class SiMode {
       const textLab = el('div', 'si-gp-label', 'Procedure');
       const textBox = new SiRichBox('', { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeGpText(id, v), false) }, true, 'The procedure as it prints under its heading: To a solution of {starting material} in…');
       this.boxes.push(textBox);
-      void p.readGpText(s, id).then((t) => textBox.set(t));
+      void p.readGpText(s, id).then((t) => textBox.set(t)).catch(() => { /* (shown empty) */ });
       const sentLab = el('div', 'si-gp-label', 'Compound sentence');
       addInfo(sentLab, 'What each compound made by this procedure prints at the start of its procedure. {GP} is this procedure’s name; {scale}, {yield}, {product} and {purification} come from the compound’s fields; other {placeholders} are typed on the compound.');
       const sentence = new SiRichBox(partText(gp.sentence), { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.updateGeneralProcedure(id, { sentence: v }), false) }, false, 'Prepared according to {GP} from {starting material} ({scale}).');
@@ -1572,7 +1708,10 @@ export class SiMode {
     th.append(h);
     t.append(th);
     out.append(t);
-    void p.readSectionText(s).then(async (text) => {
+    const drawn = this.drawn;
+    void this.pendingOf(p).then(() => p.readSectionText(s)).then(async (text) => {
+      // (another page was drawn while the text was read: this one is gone)
+      if (drawn !== this.drawn || this.project !== p) return;
       const box = new SiRichBox(text, { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeSectionText(s, v), false) }, true, 'Type the section’s text');
       this.boxes.push(box);
       t.append(box.el);
@@ -1586,7 +1725,9 @@ export class SiMode {
       for (const e of editors) {
         out.append(e.el);
         if (e instanceof SiTableEditor) { this.tables.push(e); await e.load(); } else this.figures.push(e);
+        if (drawn !== this.drawn) return;
       }
+      this.lockFields(out);
       const made = editors.find((x) => x.id === this.focusTable);
       if (made) {
         this.focusTable = '';
@@ -1598,7 +1739,7 @@ export class SiMode {
         const fig = (e.target as HTMLElement).closest<HTMLElement>('[data-figure]')?.dataset.figure;
         editors.find((x) => x.id === (id ?? fig))?.focus();
       });
-    });
+    }).catch((e) => { if (drawn === this.drawn) t.append(el('p', 'muted si-note', `The section’s text could not be read: ${e instanceof Error ? e.message : String(e)}`)); });
   }
 
   private tableHost(s: SiSection): ConstructorParameters<typeof SiTableEditor>[0] {
@@ -1639,7 +1780,7 @@ export class SiMode {
    */
   private async newFigure(s: SiSection, how: 'picture' | 'draw' | 'paste' | 'compound'): Promise<void> {
     const p = this.project!;
-    this.commitAll();
+    await this.commitAll();
     const pics = new SiPictures(this.tableHost(s));
     let rel: string | null = null, caption = 'Caption of the figure';
     try {
@@ -1666,7 +1807,7 @@ export class SiMode {
   /** A figure or table taken out of a Custom section's text with its caption; its file goes to the Trash. */
   private async removeObject(s: SiSection, kind: 'figure' | 'table', id: string): Promise<void> {
     const p = this.project!;
-    this.commitAll();
+    await this.commitAll();
     const what = this.objLabels.get(id) ?? (kind === 'figure' ? 'the figure' : 'the table');
     const go = await askChoice(`Delete ${kind === 'figure' ? 'Figure' : 'Table'}`, `Delete ${what} and its caption? ${kind === 'figure' ? 'Its picture goes' : 'It goes'} to the project’s Trash, where Chem SI Assistant can restore it.`, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
     if (go !== 'go') return;
@@ -1744,7 +1885,7 @@ export class SiMode {
   private async newTable(s: SiSection): Promise<void> {
     const p = this.project!;
     if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
-    this.commitAll();
+    await this.commitAll();
     const id = newId('t');
     await this.act(async () => {
       await p.writeTable(s, newTable(id));
@@ -1830,7 +1971,7 @@ export class SiMode {
       box.min = String(min);
       box.max = String(max);
       box.value = String(Math.round(Number(now[key]) * k * 100) / 100);
-      box.addEventListener('change', () => { const v = Number(box.value); if (Number.isFinite(v)) save(key, v / k); });
+      this.bind(box, () => { const v = Number(box.value); if (Number.isFinite(v)) save(key, v / k); }, false);
       cell.append(box);
       if (suffix) cell.append(el('span', 'si-plabel', suffix));
       r.append(cell);
@@ -1900,13 +2041,13 @@ export class SiMode {
       const input = el('input');
       input.value = table[i] ?? '';
       input.setAttribute('aria-label', `ID for row ${i + 1}`);
-      input.addEventListener('change', () => {
+      this.bind(input, () => {
         const next = idTableOf(s).slice();
         while (next.length <= i) next.push('');
         next[i] = input.value.trim();
         while (next.length && !next[next.length - 1]) next.pop();
         void this.act(() => p.setIdTable(s.id, next));
-      });
+      }, false);
       const c = cs[i];
       const warn = this.report?.tableWarnings.get(cellKey(s.id, i));
       r.append(el('span', 'si-rown', String(i + 1)), input, el('span', 'si-idwho', c ? `${compoundName(c) || 'unnamed compound'}${idOverride(c) ? ` (Manual ID ${idOverride(c)})` : ''}` : ''));
@@ -1969,13 +2110,23 @@ export class SiMode {
     pic.addEventListener('paste', (e) => { e.preventDefault(); void this.pasteStructure(c, e); });
     const info = el('div', 'si-cpd-info');
     const line = el('div', 'si-cpd-title');
-    line.append(el('b', 'si-cid', this.idOf(c)), el('span', 'si-cpd-name', compoundName(c) || 'unnamed compound'));
+    const cid = el('b', 'si-cid'), cname = el('span', 'si-cpd-name');
+    line.append(cid, cname);
     const facts = el('div', 'si-cpd-facts muted', p.hasStructure(c) ? '' : 'No structure yet.');
-    const k = p.completion(c);
     const chips = el('div', 'si-chips');
-    const done = el('span', `si-chip ${k.filled === k.total ? 'ok' : ''}`, `${k.filled} / ${k.total} required`);
-    if (k.missing.length) done.title = 'Missing: ' + k.missing.join(', ');
-    const idChip = el('button', 'si-chip si-chip-btn', idOverride(c) ? `Manual ID ${idOverride(c)}` : 'ID from table');
+    const done = el('span', 'si-chip');
+    const idChip = el('button', 'si-chip si-chip-btn');
+    // (drawn again in place after each change, so the fields being typed in are never made again)
+    this.headPaint = (): void => {
+      cid.textContent = this.idOf(c);
+      cname.textContent = compoundName(c) || 'unnamed compound';
+      const k = p.completion(c);
+      done.className = `si-chip ${k.filled === k.total ? 'ok' : ''}`;
+      done.textContent = `${k.filled} / ${k.total} required`;
+      done.title = k.missing.length ? 'Missing: ' + k.missing.join(', ') : '';
+      idChip.textContent = idOverride(c) ? `Manual ID ${idOverride(c)}` : 'ID from table';
+    };
+    this.headPaint();
     idChip.type = 'button';
     idChip.title = 'Change the compound’s ID (a Manual ID, or the one in its section’s ID table)';
     idChip.addEventListener('click', () => void this.run('manual-id'));
@@ -2017,7 +2168,8 @@ export class SiMode {
 
   private async fillStructure(c: SiCompound, pic: HTMLElement, facts: HTMLElement): Promise<void> {
     const p = this.project!;
-    const mol = await p.readStructure(c);
+    const mol = await p.readStructure(c).catch(() => null);
+    if (mol === null) { pic.textContent = 'Structure'; facts.textContent = 'The structure file could not be read.'; return; }
     const shown = this.host.pictureOf(mol);
     if (shown) pic.innerHTML = shown; else pic.textContent = 'Structure';
     const key = mol;
@@ -2098,7 +2250,7 @@ export class SiMode {
       const file = partText(it.file);
       const row = el('div', 'si-att');
       const thumb = el('div', 'si-att-thumb');
-      void this.thumbnail(p.attachmentPath(c, def, file)).then((src) => {
+      void this.thumbnail(p.attachmentPath(c, def, file)).catch(() => null).then((src) => {
         if (src) { const img = el('img'); img.src = src; img.alt = file; thumb.append(img); }
         else thumb.textContent = file.slice(file.lastIndexOf('.') + 1).toUpperCase() || 'FILE';
       });
@@ -2131,14 +2283,16 @@ export class SiMode {
         }
         if (part.label?.includes('automatic')) cell.title = `${part.label}`;
         input.setAttribute('aria-label', `${file} ${short}`);
-        input.addEventListener('change', () => void this.act(async () => {
+        const save = (): void => void this.act(async () => {
+          if (p.readOnly) throw new SiProjectError('This SI project is open read-only.');
           const all = list();
           const target = all.find((x) => x.file === file);
           if (!target) return;
           const v = input.value.trim();
           if (v) target[part.key] = v; else delete target[part.key];
           await p.setValue(c, def.key, all);
-        }, false));
+        }, false, c);
+        if (input instanceof HTMLInputElement) this.bind(input, save); else input.addEventListener('change', save);
         cell.append(input);
         parts.append(cell);
       }
@@ -2158,7 +2312,7 @@ export class SiMode {
       del.title = 'Remove this file (it goes to the Trash)';
       del.addEventListener('click', async () => {
         const go = await askChoice(`Remove ${file}`, 'The file goes to the project’s Trash with its values, so it can be put back.', [{ value: 'go', label: 'Remove', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
-        if (go === 'go') await this.act(() => p.removeAttachment(c, def, file));
+        if (go === 'go') await this.act(async () => { await p.removeAttachment(c, def, file); this.forgetThumbs(p); });
       });
       tools.append(up, del);
       row.append(thumb, info, tools);
@@ -2170,9 +2324,8 @@ export class SiMode {
   /** A small picture of an attached file (a PDF's first page, a picture), kept while the project is open; null for other files. */
   private thumbnail(path: string): Promise<string | null> {
     const p = this.project!;
-    let mine = this.thumbs.get(p);
-    if (!mine) this.thumbs.set(p, (mine = new Map()));
-    let got = mine.get(path);
+    const k = this.kept(p);
+    let got = k.thumbs.get(path);
     if (!got) {
       got = (async () => {
         const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
@@ -2180,13 +2333,29 @@ export class SiMode {
         if (ext !== 'pdf' && !mime) return null;
         const bytes = await p.folder.readBytes(path).catch(() => null);
         if (!bytes) return null;
-        if (mime) return URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
+        if (mime) {
+          const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
+          // (given back when the project closes, or its files change: forgetThumbs)
+          if (this.keptOf.get(p) === k && k.thumbs.get(path) === got) k.urls.push(url); else { URL.revokeObjectURL(url); return null; }
+          return url;
+        }
         const { pdfFirstPage } = await import('../render/pdf-page');
         return (await pdfFirstPage(bytes))?.src ?? null;
       })();
-      mine.set(path, got);
+      k.thumbs.set(path, got);
     }
     return got;
+  }
+
+  /** A project's files changed (one added, removed, put back or replaced): its small pictures are made again when next shown. */
+  private forgetThumbs(p: SiProject): void {
+    const k = this.keptOf.get(p);
+    if (!k) return;
+    const old = k.urls;
+    k.urls = [];
+    k.thumbs = new Map();
+    // (pictures on the page now have loaded theirs; a moment's grace for one still loading)
+    setTimeout(() => { for (const u of old) URL.revokeObjectURL(u); }, 2000);
   }
 
   // ---------------------------------------------------------------- HRMS
@@ -2200,7 +2369,7 @@ export class SiMode {
     mIs.append(el('span', 'si-plabel', 'M is'));
     const sel = el('select');
     sel.setAttribute('aria-label', 'M is');
-    sel.addEventListener('change', () => void this.act(async () => { await p.setPart(c, 'hrms', 'species', sel.value); if (await this.syncFound(c)) await p.saveCompound(c); }, false));
+    sel.addEventListener('change', () => void this.act(async () => { await p.setPart(c, 'hrms', 'species', sel.value); if (await this.syncFound(c)) await p.saveCompound(c); }, false, c));
     mIs.append(sel);
     const fcell = el('label', 'si-part');
     fcell.append(el('span', 'si-plabel', 'M formula'));
@@ -2208,7 +2377,7 @@ export class SiMode {
     formula.value = partText(value().formula);
     formula.setAttribute('aria-label', 'M formula');
     formula.title = 'Type M’s formula to use instead of the structure’s (the adduct is still applied). Leave empty to use the structure.';
-    formula.addEventListener('change', () => void this.act(async () => { await p.setPart(c, 'hrms', 'formula', formula.value.trim()); if (await this.syncFound(c)) await p.saveCompound(c); }, false));
+    this.bind(formula, () => void this.act(async () => { await p.setPart(c, 'hrms', 'formula', formula.value.trim()); if (await this.syncFound(c)) await p.saveCompound(c); }, false, c));
     fcell.append(formula);
     line.append(mIs, fcell);
     const calc = el('div', 'si-calc muted');
@@ -2384,6 +2553,9 @@ export class SiMode {
     L.state.textContent = 'Updating…';
     L.state.title = '';
     try {
+      // (the saves on their way land first: the preview reads the folder)
+      await this.pendingOf(p);
+      if (this.project !== p) return;
       const got = await compileSi(p, {
         contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (ms) => this.cachedFacts(ms),
         // (a PDF's first page, kept for the next update: the preview compiles often)
@@ -2608,7 +2780,8 @@ export class SiMode {
       const value = (valuesOf(c).hrms ?? {}) as Json;
       // filled again when the structure, adduct or M changed (or a file came back from the Trash)
       if (!p.readOnly && updateFound(structuredClone(value), m)) {
-        await this.act(async () => { if (await this.syncFound(c)) await p.saveCompound(c); });
+        // (in place: the page's fields, perhaps being typed in, are not made again)
+        await this.act(async () => { if (await this.syncFound(c)) await p.saveCompound(c); }, false, c);
         return;
       }
       if ((before?.file ?? null) !== (m?.file ?? null) || before?.mz !== m?.mz || before === undefined) { this.check(); this.paintWarnings(); return; }
@@ -2677,7 +2850,7 @@ export class SiMode {
 
   private get waitingForFacts(): boolean {
     const p = this.project!;
-    return this.loadingFacts || p.compounds.some((c) => !this.warnings.has(c.id));
+    return this.kept(p).loading || p.compounds.some((c) => !this.warnings.has(c.id));
   }
 
   /** A Data section's dashboard, at the top of its page. */
@@ -2811,7 +2984,7 @@ export class SiMode {
       go.addEventListener('click', () => this.go({ kind: 'manuscript' }));
       card.append(head3, ...msList.map((f) => this.msWarningLine(f)), go);
     }
-    if (this.loadingFacts || p.compounds.some((c) => !this.warnings.has(c.id))) card.append(el('p', 'muted si-note', 'Still reading some structures…'));
+    if (this.kept(p).loading || p.compounds.some((c) => !this.warnings.has(c.id))) card.append(el('p', 'muted si-note', 'Still reading some structures…'));
     else if (!any) card.append(el('p', 'muted si-note', this.showDismissed ? 'No warnings.' : 'No warnings to look at.'));
     out.append(card);
   }
@@ -2865,10 +3038,11 @@ export class SiMode {
         input = inp;
       }
       input.setAttribute('aria-label', `${def.label}${part.label ? ' ' + part.label : ''}`);
-      input.addEventListener('change', () => void this.act(async () => {
+      const save = (): void => void this.act(async () => {
         await p.setPart(c, def.key, part.key, input.value);
         if (def.key === 'hrms' && await this.syncFound(c)) await p.saveCompound(c);
-      }, false));
+      }, false, c);
+      if (input instanceof HTMLInputElement) this.bind(input, save); else input.addEventListener('change', save);
       cell.append(input);
       if (part.suffix) cell.append(el('span', 'si-suffix', part.suffix));
       wrap.append(cell);
@@ -2902,7 +3076,7 @@ export class SiMode {
 
   private textBox(body: HTMLElement, c: SiCompound, key: string, placeholder = ''): void {
     const p = this.project!;
-    const box = new SiRichBox(p.compoundText(c, key), { label: this.label, mentionable: this.mentionable, changed: (t) => void this.act(() => p.writeCompoundText(c, key, t), false) }, true, placeholder);
+    const box = new SiRichBox(p.compoundText(c, key), { label: this.label, mentionable: this.mentionable, changed: (t) => void this.act(() => p.writeCompoundText(c, key, t), false, c) }, true, placeholder);
     this.boxes.push(box);
     body.append(box.el);
   }
@@ -2941,7 +3115,13 @@ export class SiMode {
       cell.append(el('span', 'si-plabel', name));
       const box = new SiRichBox(partText(vals[stored]), {
         label: this.label, mentionable: this.mentionable,
-        changed: (t) => void this.act(() => p.setValue(c, 'procedure', { ...choice, values: { ...vals, [stored]: t } }), false),
+        // (from the compound as it is when saved: the other boxes' values typed since the page was drawn are kept)
+        changed: (t) => void this.act(() => {
+          const now = valuesOf(c).procedure;
+          const cur = now && typeof now === 'object' && !Array.isArray(now) ? (now as Json) : {};
+          const curVals = (cur.values && typeof cur.values === 'object' && !Array.isArray(cur.values) ? cur.values : {}) as Json;
+          return p.setValue(c, 'procedure', { ...cur, values: { ...curVals, [stored]: t } });
+        }, false, c),
       }, false, AUTO[k] ? `auto: ${AUTO[k]}` : '');
       this.boxes.push(box);
       cell.append(box.el);
@@ -2979,13 +3159,13 @@ export class SiMode {
       if (nuc && !(NUCLEI as readonly string[]).includes(nuc)) sel.add(new Option(nuc, nuc));
       sel.value = nuc;
       sel.setAttribute('aria-label', 'Nucleus');
-      sel.addEventListener('change', () => { r.nucleus = sel.value; void this.act(save, false); });
-      const box = new SiRichBox(partText(r.text), { label: this.label, changed: (t) => { r.text = t; void this.act(save, false); } }, false, `${nucleusLabel(nuc || '1H')} NMR (400 MHz, CDCl3) δ …`);
+      sel.addEventListener('change', () => void this.act(() => { r.nucleus = sel.value; return save(); }, false, c));
+      const box = new SiRichBox(partText(r.text), { label: this.label, changed: (t) => void this.act(() => { if (p.readOnly) return save(); r.text = t; return save(); }, false, c) }, false, `${nucleusLabel(nuc || '1H')} NMR (400 MHz, CDCl3) δ …`);
       this.boxes.push(box);
       const rm = el('button', 'si-mini', '✕');
       rm.type = 'button';
       rm.title = 'Remove this report';
-      rm.addEventListener('click', () => { reports.splice(reports.indexOf(r), 1); void this.act(save); });
+      rm.addEventListener('click', () => void this.act(() => { if (!p.readOnly) reports.splice(reports.indexOf(r), 1); return save(); }));
       line.append(sel, box.el, rm);
       body.append(line);
     }
@@ -2996,7 +3176,8 @@ export class SiMode {
     const v = valuesOf(c).references;
     const value = (v && typeof v === 'object' && !Array.isArray(v) ? v : { text: '', refs: [] }) as Json;
     const refs = Array.isArray(value.refs) ? (value.refs as string[]) : [];
-    const box = new SiRichBox(partText(value.text), { label: this.label, changed: (t) => void this.act(() => p.setValue(c, 'references', { ...value, text: t }), false) }, false);
+    const live = (): Json => { const now = valuesOf(c).references; return (now && typeof now === 'object' && !Array.isArray(now) ? now : value) as Json; };
+    const box = new SiRichBox(partText(value.text), { label: this.label, changed: (t) => void this.act(() => p.setValue(c, 'references', { ...live(), text: t }), false, c) }, false);
     this.boxes.push(box);
     body.append(box.el);
     const chips = el('div', 'si-chips');
@@ -3007,7 +3188,7 @@ export class SiMode {
       const x = el('button', 'si-x', '✕');
       x.type = 'button';
       x.title = 'Take this citation out';
-      x.addEventListener('click', () => void this.act(() => p.setValue(c, 'references', { ...value, refs: refs.filter((y) => y !== id) })));
+      x.addEventListener('click', () => void this.act(() => { const now = live(); return p.setValue(c, 'references', { ...now, refs: (Array.isArray(now.refs) ? (now.refs as string[]) : []).filter((y) => y !== id) }); }));
       chip.append(x);
       chips.append(chip);
     }
@@ -3017,25 +3198,68 @@ export class SiMode {
   // ---------------------------------------------------------------- commands
 
   /** Run a change to the project, then show it; a problem is said, not thrown. */
-  private async act(f: () => Promise<unknown>, redraw = true): Promise<void> {
-    const j = this.project ? journalOf(this.project.folder) : null;
-    try {
-      await (j ? j.step('Edit', f) : f());
-    } catch (e) {
-      this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
-      this.shownKey = '';
-    }
-    if (redraw) this.shownKey = '';
-    this.refresh();
+  /**
+   * `f` must not wait for another `act` (or `commitAll`) itself: a project's changes run one
+   * after another, each written before the next starts, so two saves of one file can't cross.
+   * `only`: the change is to this compound's values alone (the other compounds aren't checked again).
+   */
+  private act(f: () => Promise<unknown>, redraw = true, only?: SiCompound): Promise<void> {
+    const p = this.project;
+    if (!p) return Promise.resolve();
+    const k = this.kept(p);
+    const run = k.queue.then(async () => {
+      const j = journalOf(p.folder);
+      let failed = false;
+      try {
+        await (j ? j.step('Edit', f) : f());
+      } catch (e) {
+        failed = true;
+        this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
+      }
+      // (the project of another tab by now: its page is drawn when its tab shows)
+      if (this.project !== p) return;
+      if (redraw || failed) this.shownKey = '';
+      try { this.refresh(failed || redraw ? undefined : only); } catch (e) { console.error('SI page could not be drawn', e); }
+    });
+    k.queue = run.then(() => {}, () => {});
+    return k.queue;
+  }
+
+  /**
+   * A plain input saved as it is typed in: 0.7 s after the last key (`live`), when it is left,
+   * and by commitAll (a tab switched or closed, the window closing) while it still has the keys.
+   * Inputs whose change draws the page again are not `live`.
+   */
+  private bind(input: HTMLInputElement, save: () => void, live = true): void {
+    let last = input.value;
+    let timer = 0;
+    const flush = (): void => {
+      clearTimeout(timer);
+      timer = 0;
+      if (input.value === last) return;
+      last = input.value;
+      save();
+    };
+    if (live) input.addEventListener('input', () => { clearTimeout(timer); timer = window.setTimeout(flush, 700); });
+    input.addEventListener('change', flush);
+    this.flushers.push(flush);
+  }
+
+  /** A read-only project's fields can be read and copied, not changed. */
+  private lockFields(root: HTMLElement): void {
+    if (!this.project?.readOnly) return;
+    for (const x of root.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('.si-fields input, .si-fields select, .si-fields .si-mini, .si-fields .si-x, .si-name-input, .si-idgrid input, .si-fieldlist input, .si-fieldlist button, .si-gp input, .si-gp button, .si-spectra-row input, .si-spectra-row select')) x.disabled = true;
+    for (const x of root.querySelectorAll<HTMLElement>('.si-fields .si-rich, .si-gp .si-rich')) x.contentEditable = 'false';
   }
 
   private key(e: KeyboardEvent): void {
     const inText = (e.target as HTMLElement).closest('input, select, textarea, [contenteditable="true"]');
-    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); void this.run(e.key === 'ArrowUp' ? 'move-up' : 'move-down'); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); void this.run('new-compound'); return; }
     if (e.key === 'F7' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); void this.run('spelling'); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); this.setLive(!this.liveOn); return; }
+    // (in a text box or a list, Alt and the arrows are the box's own keys)
     if (inText) return;
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); void this.run(e.key === 'ArrowUp' ? 'move-up' : 'move-down'); return; }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       const rows = [...this.tree.querySelectorAll<HTMLElement>('.si-row')];
       const at = rows.findIndex((r) => r.classList.contains('on'));
@@ -3308,7 +3532,12 @@ export class SiMode {
       if (target.kind === 'compound' || target.kind === 'scheme') {
         const t = target.kind === 'compound' ? p.compound(target.id) : p.scheme(target.id);
         // a compound dropped on the middle of a scheme page's row goes into it (after its compounds)
-        if (item.kind === 'compound' && t.kind === 'scheme' && frac > 0.3 && frac < 0.7 && item.schemeId !== t.id) return { where: 'in', run: move(t.sectionId, t.children.length, t.id) };
+        if (item.kind === 'compound' && t.kind === 'scheme') {
+          // (a scheme page's own compounds are listed right under its row: a drop on the row's lower part
+          // goes into the scheme, never past its compounds; one of its own compounds stays where it is)
+          const low = t.children.length ? frac >= 0.3 : frac > 0.3 && frac < 0.7;
+          if (low) return item.schemeId === t.id ? null : { where: 'in', run: move(t.sectionId, t.children.length, t.id) };
+        }
         const where = frac < 0.5 ? 'before' : 'after';
         if (t.kind === 'compound' && t.schemeId) {
           // among a scheme page's compounds (only compounds go there)
@@ -3330,6 +3559,8 @@ export class SiMode {
     this.host.flash('Compiling the SI…', 1500);
     let got;
     try {
+      // (what is being typed, and every save on its way, is in the folder before it is read)
+      await this.commitAll();
       got = await compileSi(p, {
         contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (m) => this.host.siFacts(m),
         pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPages(b, most)),
@@ -3362,7 +3593,7 @@ export class SiMode {
   private async importSiNow(): Promise<void> {
     const [f] = await this.host.pickFiles('Supporting Information (Word or PDF)', ['docx', 'pdf']);
     if (!f) return;
-    this.commitAll();
+    await this.commitAll();
     const [{ readSiFile }, I, { askImport, importSummary, importProgress }, { applyPlan }, { emfToSvg }] = await Promise.all([
       import('../si/si-import-read'), import('../si/si-import'), import('./si-import-dialog'), import('../si/si-import-apply'), import('../render/emf-read'),
     ]);
@@ -3435,7 +3666,7 @@ export class SiMode {
         const svg = emfToSvg(emf);
         return svg ? [new TextEncoder().encode(svg.svg), '.svg', emf, '.emf'] : null;
       };
-      this.commitAll();
+      await this.commitAll();
       journalOf(target.folder)?.settle();
       busy.canCancel(false);        // (from here it is one Undo step: Edit ▸ Undo takes it back)
       busy.say('Writing the compounds and sections…');
@@ -3472,11 +3703,20 @@ export class SiMode {
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
-    const j = this.project && !SiMode.NO_STEP.has(cmd) ? journalOf(this.project.folder) : null;
-    if (!j) { await this.command(cmd); return; }
-    this.commitAll();
-    j.settle();
-    await j.step(this.commandName(cmd), () => this.command(cmd));
+    const p = this.project;
+    if (!p) return;
+    try {
+      const j = !SiMode.NO_STEP.has(cmd) ? journalOf(p.folder) : null;
+      if (!j) { await this.command(cmd); return; }
+      // (what was typed is saved as its own step first, so Undo takes the command back alone)
+      await this.commitAll();
+      if (this.project !== p) return;
+      j.settle();
+      await j.step(this.commandName(cmd), () => this.command(cmd));
+    } catch (e) {
+      this.host.flash(e instanceof SiProjectError ? e.message : `${this.commandName(cmd)} did not finish: ${e instanceof Error ? e.message : String(e)}`, 8000);
+      if (this.project === p) { this.shownKey = ''; try { this.refresh(); } catch { /* (said already) */ } }
+    }
   }
 
   /** What Undo calls a command: its button's name ("Undo Duplicate"). */
@@ -3493,13 +3733,21 @@ export class SiMode {
   }
 
   /** Edit ▸ Undo (Ctrl+Z) and Redo: the project's files as they were before (or after) the step; a typed change not yet saved is saved first. */
-  async undo(redo = false): Promise<void> {
+  undo(redo = false): Promise<void> {
+    // (one at a time: Ctrl+Z held down never starts an Undo while another is putting files back)
+    const run = this.undoing.then(() => this.undoNow(redo));
+    this.undoing = run.then(() => {}, () => {});
+    return run;
+  }
+  private undoing: Promise<void> = Promise.resolve();
+
+  private async undoNow(redo: boolean): Promise<void> {
     const p = this.project;
     const j = p ? journalOf(p.folder) : null;
     if (!p || !j) return;
     if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
-    this.commitAll();
-    await new Promise((r) => setTimeout(r, 0));
+    await this.commitAll();
+    if (this.project !== p) return;
     let label: string | null = null;
     try {
       label = redo ? await j.redo() : await j.undo();
@@ -3509,7 +3757,8 @@ export class SiMode {
     }
     if (label === null) { this.host.flash(redo ? 'Nothing to redo.' : 'Nothing to undo.'); return; }
     try { await p.reload(); } catch (e) { this.host.flash(`The project could not be read again: ${e instanceof Error ? e.message : String(e)}`, 8000); }
-    this.forgetStructure();
+    this.forgetStructure(undefined, p);
+    if (this.project !== p) return;
     this.shownKey = '';
     this.refresh();
     void this.loadDictionary(true);
@@ -3523,7 +3772,8 @@ export class SiMode {
     const p = this.project;
     if (!p) return;
     if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'trash'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
-    this.commitAll();
+    await this.commitAll();
+    if (this.project !== p) return;
     const s = this.currentSection();
     const c = this.currentCompound();
     const data = s?.type === 'data' ? s : null;
@@ -3822,7 +4072,7 @@ export class SiMode {
   private async pasteSpectrum(c: SiCompound, e?: ClipboardEvent): Promise<void> {
     const p = this.project!;
     if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
-    this.commitAll();
+    await this.commitAll();
     const got = await this.clipboard(e);
     if (!got) return;
     let main: { ext: string; bytes: Uint8Array } | null = null;
@@ -3857,14 +4107,22 @@ export class SiMode {
       if (!fieldKeys(c).includes('spectra')) await p.addField(c, { key: 'spectra' });
       const subdir = def.subdir || 'spectra';
       const stem = pastedStem(type);
-      let name = `${stem}.${m.ext}`;
-      for (let n = 2; (await p.folder.exists(`${c.folder}/${subdir}/${name}`)) || (original && (await p.folder.exists(`${c.folder}/${subdir}/${name.replace(/\.[^.]+$/, '.emf')}`))); n++) name = `${stem} (${n}).${m.ext}`;
+      // (a name whose stem no picture there has, whatever its extension: the pasted original, an .emf or
+      // .cdxml of the same stem, is never one that belongs to another spectrum; as SI Assistant names them)
+      const taken = async (base: string): Promise<boolean> => {
+        for (const x of new Set([m.ext, ...PASTED_EXTS])) if (await p.folder.exists(`${c.folder}/${subdir}/${base}.${x}`)) return true;
+        return false;
+      };
+      let base = stem;
+      for (let n = 2; await taken(base); n++) base = `${stem} (${n})`;
+      const name = `${base}.${m.ext}`;
       const file = await p.addAttachment(c, subdir, name, m.bytes);
       const item: Json = { file, type, title: '', struct_caption: '' };
       if (original) item.original = await p.addAttachment(c, subdir, file.replace(/\.[^.]+$/, '.emf'), original);
       const list = (Array.isArray(valuesOf(c).spectra) ? valuesOf(c).spectra : (valuesOf(c).spectra = [])) as Json[];
       list.push(item);
       await p.saveCompound(c);
+      this.forgetThumbs(p);
     });
     this.host.flash(`Pasted a ${PASTE_TYPE_LABELS[type as keyof typeof PASTE_TYPE_LABELS] ?? type} spectrum into ${this.idOf(c)}. ${keptLine(how)}`, 6000);
   }
@@ -3905,6 +4163,7 @@ export class SiMode {
         list.push(item);
       }
       await p.saveCompound(c);
+      this.forgetThumbs(p);
     });
   }
 

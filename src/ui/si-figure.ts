@@ -66,18 +66,44 @@ export class SiFigureEditor {
 
   setTitle(label: string): void { if (label) this.title.textContent = label; }
 
+  /** Done when every save of this figure so far has been written. */
+  settled(): Promise<void> {
+    // (a label typed and not left yet)
+    if (!this.gone && this.labelBox.value.trim() !== String(this.entry.label ?? '')) void this.save({ label: this.labelBox.value.trim() });
+    return this.pending;
+  }
+  /** The figure's saves, one after another (never rejected). */
+  private pending: Promise<void> = Promise.resolve();
+
+  /** The editor is leaving the page: its picture's object URL is given back. */
+  dispose(): void {
+    for (const u of this.urls) URL.revokeObjectURL(u);
+    // (frozen: a picture still being read makes no URL for a list nobody keeps)
+    Object.freeze(this.urls);
+    this.urls = [];
+    this.gone = true;
+  }
+  private gone = false;
+
   focus(): void { this.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); this.el.focus(); }
 
   private paint(): void {
     for (const u of this.urls) URL.revokeObjectURL(u);
+    Object.freeze(this.urls);
     this.urls = [];
+    if (this.gone) return;
     const st = this.state;
     this.labelBox.value = String(this.entry.label ?? '');
     this.pic.replaceChildren(st.file ? this.pics.preview(st.file, this.urls, { w: 620, h: 420 }, st.width) : el('p', 'muted si-note', 'No picture yet: use the Figure tab’s Picture, Paste Picture or Draw Structure.'));
   }
 
   /** Change the figure's entry in section.json (a value of undefined takes it out). */
-  private async save(change: Json): Promise<void> {
+  private save(change: Json): Promise<void> {
+    this.pending = this.pending.then(() => this.saveNow(change)).then(() => {}, () => {});
+    return this.pending;
+  }
+
+  private async saveNow(change: Json): Promise<void> {
     const s = this.host.section;
     const figs = (s.data.figures && typeof s.data.figures === 'object' && !Array.isArray(s.data.figures) ? s.data.figures : (s.data.figures = {})) as Json;
     const e = { ...this.entry };

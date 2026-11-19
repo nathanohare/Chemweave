@@ -107,6 +107,8 @@ export class SiPictures {
     if (!mime) { box.textContent = `[${name}]`; return box; }
     void this.host.project.readSectionFile(this.host.section, rel).then((bytes) => {
       if (!bytes) { box.textContent = `[missing: ${name}]`; box.classList.add('si-missing'); return; }
+      // (the editor repainted or left the page while the file was read: no URL is made to be forgotten)
+      if (Object.isFrozen(urls)) return;
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
       urls.push(url);
       const img = document.createElement('img');

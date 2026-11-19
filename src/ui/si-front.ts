@@ -40,9 +40,25 @@ export class SiFrontPage {
   private get p(): SiProject { return this.host.project; }
   private get s(): Json { return this.p.settings; }
 
-  private async save(redraw = false): Promise<void> {
-    try { await this.p.saveSettings(); } catch (e) { this.host.flash(`The change could not be saved: ${e instanceof Error ? e.message : String(e)}`, 8000); }
-    if (redraw) this.host.redraw();
+  /** The page's saves, one after another (never rejected). */
+  private pending: Promise<void> = Promise.resolve();
+  private flushers: (() => void)[] = [];
+  private track(f: () => Promise<unknown>): Promise<void> {
+    this.pending = this.pending.then(f).then(() => {}, () => {});
+    return this.pending;
+  }
+
+  /** What is typed in a box that still has the keys is saved; done when every save of this page has been written. */
+  settled(): Promise<void> {
+    for (const f of this.flushers) f();
+    return this.pending;
+  }
+
+  private save(redraw = false): Promise<void> {
+    return this.track(async () => {
+      try { await this.p.saveSettings(); } catch (e) { this.host.flash(`The change could not be saved: ${e instanceof Error ? e.message : String(e)}`, 8000); }
+      if (redraw) this.host.redraw();
+    });
   }
 
   /** A text box saved as you leave it. */
@@ -51,7 +67,10 @@ export class SiFrontPage {
     i.value = value;
     i.placeholder = placeholder;
     i.setAttribute('aria-label', label);
-    i.addEventListener('change', () => save(i.value.trim()));
+    let last = i.value;
+    const flush = (): void => { if (i.value === last) return; last = i.value; save(i.value.trim()); };
+    i.addEventListener('change', flush);
+    this.flushers.push(flush);
     return i;
   }
 
@@ -146,7 +165,7 @@ export class SiFrontPage {
     const extraHead = el('div', 'si-front-head', 'Extra text');
     addInfo(extraHead, 'Printed under the emails on the cover page (a note, a list of contents…).');
     cover.append(extraHead);
-    const extra = new SiRichBox('', { label: this.host.label, mentionable: this.host.mentionable, changed: (v) => void p.writeFrontText('cover', v).catch((e: unknown) => this.host.flash(`Not saved: ${String(e)}`)) }, true, 'Anything else for the cover page (optional)');
+    const extra = new SiRichBox('', { label: this.host.label, mentionable: this.host.mentionable, changed: (v) => void this.track(() => p.writeFrontText('cover', v).catch((e: unknown) => this.host.flash(`Not saved: ${String(e)}`))) }, true, 'Anything else for the cover page (optional)');
     this.boxes.push(extra);
     void p.readFrontText('cover').then((t) => extra.set(t));
     cover.append(extra.el);
@@ -184,7 +203,7 @@ export class SiFrontPage {
       void this.save();
     }));
     gi.append(gg);
-    const text = new SiRichBox('', { label: this.host.label, mentionable: this.host.mentionable, changed: (v) => void p.writeFrontText('general', v).catch((e: unknown) => this.host.flash(`Not saved: ${String(e)}`)) }, true, 'Materials, instruments and general methods…');
+    const text = new SiRichBox('', { label: this.host.label, mentionable: this.host.mentionable, changed: (v) => void this.track(() => p.writeFrontText('general', v).catch((e: unknown) => this.host.flash(`Not saved: ${String(e)}`))) }, true, 'Materials, instruments and general methods…');
     this.boxes.push(text);
     void p.readFrontText('general').then((t) => text.set(t));
     gi.append(text.el);

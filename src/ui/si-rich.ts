@@ -5,7 +5,7 @@
 // Ctrl+B, Ctrl+I and Ctrl+U as in Word; Ctrl+= subscript, Ctrl+Shift+= superscript; typing
 // "@" offers the project's compounds to mention.
 
-import { cleanPastedHtml } from './si-paste-html';
+import { cleanPastedHtml, hasFormatting } from './si-paste-html';
 import { checkSpelling, formatTyped, spellingMenu } from './si-spell';
 import { WORD_ENDS } from '../text/chemtext';
 import { MENTION, STRUCT, parseMarkup, writeMarkup, type Paragraph, type Run, type VAlign } from '../si/markup';
@@ -57,9 +57,35 @@ function render(box: HTMLElement, ps: Paragraph[], host: SiRichHost, multiline: 
   box.replaceChildren(...kids);
 }
 
-/** The editor's HTML as paragraphs. */
-function read(box: HTMLElement): Paragraph[] {
+/**
+ * A text node's text as stored. The browser writes a non-breaking space for a space at the
+ * start or end of a line and next to another space, so those are spaces again; one between two
+ * words ("400\u00a0MHz", typed or pasted) is the writer's own and is kept.
+ */
+function spaces(t: string, first: boolean, last: boolean): string {
+  let s = t.replace(/\n/g, ' ');
+  if (!s.includes('\u00a0')) return s;
+  s = s.replace(/\u00a0(?=[ \u00a0])|(?<=[ \u00a0])\u00a0/g, ' ');
+  if (first) s = s.replace(/^\u00a0/, ' ');
+  if (last) s = s.replace(/\u00a0$/, ' ');
+  return s;
+}
+
+/** The editor's HTML as paragraphs (`multiline` false: a line break is a space). */
+function read(box: HTMLElement, multiline = true): Paragraph[] {
   const out: Paragraph[] = [];
+  // line breaks inside a paragraph (Shift+Enter, or pasted) waiting for the text after them: each starts a new paragraph
+  let breaks = 0;
+  const begin = (): Paragraph => {
+    if (breaks && cur) {
+      if (!multiline) { cur.runs.push({ text: ' ' }); breaks = 0; return cur; }
+      out.push(cur);
+      for (let i = 1; i < breaks; i++) out.push({ runs: [] });
+      cur = { runs: [] };
+    }
+    breaks = 0;
+    return (cur ??= para(null));
+  };
   const para = (el: HTMLElement | null): Paragraph => {
     const p: Paragraph = { runs: [] };
     if (el) {
@@ -72,13 +98,14 @@ function read(box: HTMLElement): Paragraph[] {
   let cur: Paragraph | null = null;
   const walk = (node: Node, f: { bold?: boolean; italic?: boolean; underline?: boolean; valign?: VAlign }): void => {
     if (node.nodeType === Node.TEXT_NODE) {
-      const t = (node.textContent ?? '').replace(/ /g, ' ').replace(/\n/g, ' ');
-      if (t) (cur ??= para(null)).runs.push({ text: t, ...f });
+      const t = spaces(node.textContent ?? '', !cur?.runs.length || breaks > 0, !following(node));
+      if (t) begin().runs.push({ text: t, ...f });
       return;
     }
     if (!(node instanceof HTMLElement)) return;
-    if (node.dataset.ref) { (cur ??= para(null)).runs.push({ text: '', ...f, ref: node.dataset.ref }); return; }
-    if (node.tagName === 'BR') return;
+    if (node.dataset.ref) { begin().runs.push({ text: '', ...f, ref: node.dataset.ref }); return; }
+    // (a break with nothing after it in its paragraph is the browser's own, to keep the line open)
+    if (node.tagName === 'BR') { if (following(node)) breaks++; return; }
     const k = TAGS[node.tagName];
     const g = { ...f };
     if (k === 'sup') g.valign = 'super';
@@ -91,13 +118,26 @@ function read(box: HTMLElement): Paragraph[] {
     if (/underline/.test(st.textDecoration)) g.underline = true;
     for (const c of node.childNodes) walk(c, g);
   };
+  /** Whether anything shows after `node` in its paragraph (text or a link). */
+  const following = (node: Node): boolean => {
+    for (let n: Node | null = node; n && n !== box; n = n.parentNode) {
+      if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P') && n.parentNode === box) return false;
+      for (let s = n.nextSibling; s; s = s.nextSibling) {
+        if (s instanceof HTMLElement && (s.tagName === 'DIV' || s.tagName === 'P') && s.parentNode === box) return false;
+        if (s.nodeType === Node.TEXT_NODE ? !!s.textContent : s instanceof HTMLElement && (!!s.dataset.ref || !!s.textContent || !!s.querySelector('[data-ref]'))) return true;
+      }
+    }
+    return false;
+  };
   for (const n of box.childNodes) {
     if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')) {
       if (cur) out.push(cur);
+      breaks = 0;
       cur = para(n);
       for (const c of n.childNodes) walk(c, {});
       out.push(cur);
       cur = null;
+      breaks = 0;
     } else walk(n, {});
   }
   if (cur) out.push(cur);
@@ -142,14 +182,14 @@ export class SiRichBox {
       e.preventDefault();
       const html = e.clipboardData?.getData('text/html') ?? '';
       const clean = html ? cleanPastedHtml(html, multiline) : '';
-      if (clean && /<(b|i|sub|sup)>/.test(clean)) { document.execCommand('insertHTML', false, clean); return; }
+      if (clean && hasFormatting(clean)) { document.execCommand('insertHTML', false, clean); return; }
       const t = e.clipboardData?.getData('text/plain') ?? '';
       document.execCommand('insertText', false, multiline ? t : t.replace(/\s*\n\s*/g, ' '));
     });
   }
 
   /** The text as stored. */
-  get text(): string { return writeMarkup(read(this.el)); }
+  get text(): string { return writeMarkup(read(this.el, this.multiline)); }
 
   /** Show other text (the page was changed elsewhere). */
   set(text: string): void {

@@ -38,6 +38,8 @@ export interface SiSchemeHost {
   idOf(c: SiCompound): string;
   /** A box or step was picked: the Scheme tab shows what it can do. */
   chosen(page: SiSchemePage): void;
+  /** Run `f` as one named step of Undo ("Undo Move Box"), after the saves on their way have landed. */
+  step?<T>(label: string, f: () => Promise<T>): Promise<T>;
   /** The tree and the page are drawn again (the scheme's compounds changed). */
   redraw(): void;
   openCompound(id: string): void;

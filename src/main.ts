@@ -4340,7 +4340,8 @@ const ws: Workspace = new Workspace(doc, {
   dropped: (tab) => {
     keeper.dropped(tab);
     // an SI project: Chem SI Assistant can open it for editing again
-    if (tab.si) void closeSiProject(tab.si);
+    // (once what was being typed in it has been written: the history and the lock go after the last save)
+    if (tab.si) { const si = tab.si; void (async () => { await siMode?.saved(si).catch(() => {}); siMode?.closed(si); await closeSiProject(si); })(); }
     // a drawing being edited for Word: Word hears that the editing is over
     const id = embeddedTabs.get(tab);
     if (id !== undefined) { embeddedTabs.delete(tab); void invoke('ole_close', { id }).catch(() => {}); }
@@ -4528,7 +4529,8 @@ function enterTab(tab: Tab, opened: boolean): void {
   void refreshDescriptors();
   if (sheet && !splitDrawing) setHint(SHEET_HINT);
   else if (words && !splitDrawing) setHint(DOC_HINT);
-  else if (siTab) siMode?.refresh();
+  // (show() above drew the SI tab already: only its status line again, over the drawing's)
+  else if (siTab) siMode?.showStatus();
   else editor.onToolChange(editor.toolName);
 }
 
@@ -5762,7 +5764,7 @@ function flipped(r: boolean | 'stereo'): void {
 
 /** Undo and Redo: in Slides mode the deck's history covers every slide and the slide list; a sheet has its own. */
 function undo(): void {
-  if (ws.active.mode === 'si') { void siMode?.undo(false).then(refreshHistory); return; }
+  if (ws.active.mode === 'si') { void siMode?.undo(false).then(refreshHistory, () => {}); return; }
   if (sheetActive()) { sheetMode.undo(); return; }
   if (docActive()) { docMode.run('undo'); return; }
   const d = deckNow();
@@ -5773,7 +5775,7 @@ function undo(): void {
 }
 
 function redo(): void {
-  if (ws.active.mode === 'si') { void siMode?.undo(true).then(refreshHistory); return; }
+  if (ws.active.mode === 'si') { void siMode?.undo(true).then(refreshHistory, () => {}); return; }
   if (sheetActive()) { sheetMode.redo(); return; }
   if (docActive()) { docMode.run('redo'); return; }
   const d = deckNow();
@@ -8707,6 +8709,15 @@ function siJournal(folder: SiFolderT): JournalFolder {
   return j;
 }
 
+/** SI project folders being opened now (so one asked for twice opens once). */
+const siOpening = new Set<string>();
+/** A folder's path to compare by: separators and a trailing one aside, and letter case aside where file names ignore it (Windows, macOS). */
+function folderKey(path: string): string {
+  const p = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  return /linux|android/i.test(navigator.userAgent) && !/^[a-z]:\//i.test(p) ? p : p.toLowerCase();
+}
+const sameFolder = (a: string, b: string): boolean => folderKey(a) === folderKey(b);
+
 async function openSiProject(create: boolean, at?: string): Promise<SiProjectT | null> {
   if (!isTauri()) { flash('SI projects are folders on this computer: open them in the desktop app for now.', 6000); return null; }
   finishTab();
@@ -8715,6 +8726,7 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
   if (!path) return null;
   const call = <T,>(cmd: string, args?: Record<string, unknown>, opts?: { headers: Record<string, string> }): Promise<T> => invoke<T>(cmd, args as never, opts as never);
   let project: SiProjectT;
+  let opening = '';
   try {
     if (create) {
       const got = await ask('New SI Project', [{ name: 'title', label: 'Title', value: '', placeholder: 'e.g. NaBH4 Reduction SI' }], { ok: 'Make Project', note: 'The project is a new folder, named after it, inside the folder you picked. Chem SI Assistant opens it too.' });
@@ -8728,6 +8740,10 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
       if (!(await folder.exists(PROJECT_FILE))) { await showError(`This folder is not an SI project (it has no ${PROJECT_FILE}). Pick the project's own folder: the one Chem SI Assistant made, with project.json and sections inside.`); return null; }
       const already = ws.tabs.find((t) => t.si && sameFolder(t.si.folder.where, path!));
       if (already) { ws.activate(already); return already.si ?? null; }
+      // (asked for twice in a row, from a link and the menu say: the first one is opening it)
+      if (siOpening.has(folderKey(path))) return null;
+      siOpening.add(folderKey(path));
+      opening = folderKey(path);
       project = await SiProject.open(siJournal(folder));
       const held = project.readOnly ? null : await project.currentLock();
       if (held) {
@@ -8749,6 +8765,8 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
   } catch (e) {
     await showError(e instanceof SiProjectError ? e.message : `The SI project could not be opened: ${e instanceof Error ? e.message : String(e)}`);
     return null;
+  } finally {
+    if (opening) siOpening.delete(opening);
   }
   // someone took the project over, or its folder moved: it is read-only from then on, and the person is told
   project.onReadOnly = (message) => { void showError(message); siMode?.refresh(); };
@@ -8949,13 +8967,6 @@ async function siPicture(link: SiLink, key: string): Promise<string | null> {
   return scene ? drawingSvg(sceneToDoc(scene, siStyleOf(p)).doc, null) : null;
 }
 
-/** Whether two folder paths are one folder: "/" or "\\", one at the end or not, and capitals too where the file system ignores them (Windows, macOS). */
-function sameFolder(a: string, b: string): boolean {
-  const anyCase = /win|mac/i.test(navigator.platform || navigator.userAgent);
-  const tidy = (p: string): string => { const t = p.replace(/\\/g, '/').replace(/\/+$/, ''); return anyCase ? t.toLowerCase() : t; };
-  return tidy(a) === tidy(b);
-}
-
 /**
  * An SI project is closed: Chem SI Assistant can open it for editing again. What Undo set aside
  * is only cleared by the program that has the project for editing (never by one that has it
@@ -8966,6 +8977,13 @@ async function closeSiProject(si: SiProjectT): Promise<void> {
   if (!(await si.lockStillOurs().catch(() => false))) return;
   await journalOf(si.folder)?.clear().catch(() => {});
   await si.release().catch(() => {});
+}
+
+/** Every open SI project's changes are in its folder (what is being typed in the one showing too). */
+async function siSavedAll(): Promise<void> {
+  if (!siMode) return;
+  const mode = siMode;
+  await Promise.all(ws.tabs.map((t) => (t.si ? mode.saved(t.si).catch(() => {}) : null)));
 }
 
 /** The window is closing: Chem SI Assistant can open the projects for editing again. */
@@ -11092,7 +11110,7 @@ const updates = new UpdateUI({
   channel: () => updateChannel,
   openPage: (url) => openWebPage(url),
   // as when the window closes: the recovery copies and lock files aren't needed
-  closing: async () => { await keeper.end(); await diagnostics.end(); },
+  closing: async () => { await siSavedAll(); await keeper.end(); await diagnostics.end(); await releaseSiProjects(); },
 });
 /** The desktop app's version when it last ran (for What's New after an update). */
 let lastVersion: string | null = null;
@@ -12147,6 +12165,8 @@ function revealStylePanel(focus = false): void {
 if (isTauri()) {
   getCurrentWindow().onCloseRequested(async (e) => {
     finishTab();
+    // (an SI project saves as it is typed in: what was typed last is written before the window goes)
+    await siSavedAll();
     if (!(await ws.closeAll())) e.preventDefault();
     // closing normally: the recovery copies and lock files aren't needed
     else { await keeper.end(); await diagnostics.end(); await releaseSiProjects(); }
