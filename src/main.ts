@@ -4340,7 +4340,7 @@ const ws: Workspace = new Workspace(doc, {
   dropped: (tab) => {
     keeper.dropped(tab);
     // an SI project: Chem SI Assistant can open it for editing again
-    if (tab.si) { const si = tab.si; void (async () => { await journalOf(si.folder)?.clear().catch(() => {}); await si.release().catch(() => {}); })(); }
+    if (tab.si) void closeSiProject(tab.si);
     // a drawing being edited for Word: Word hears that the editing is over
     const id = embeddedTabs.get(tab);
     if (id !== undefined) { embeddedTabs.delete(tab); void invoke('ole_close', { id }).catch(() => {}); }
@@ -8726,7 +8726,7 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
     } else {
       const folder = new DiskFolder(path, call);
       if (!(await folder.exists(PROJECT_FILE))) { await showError(`This folder is not an SI project (it has no ${PROJECT_FILE}). Pick the project's own folder: the one Chem SI Assistant made, with project.json and sections inside.`); return null; }
-      const already = ws.tabs.find((t) => t.si?.folder.where === path);
+      const already = ws.tabs.find((t) => t.si && sameFolder(t.si.folder.where, path!));
       if (already) { ws.activate(already); return already.si ?? null; }
       project = await SiProject.open(siJournal(folder));
       const held = project.readOnly ? null : await project.currentLock();
@@ -8750,6 +8750,8 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
     await showError(e instanceof SiProjectError ? e.message : `The SI project could not be opened: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
+  // someone took the project over, or its folder moved: it is read-only from then on, and the person is told
+  project.onReadOnly = (message) => { void showError(message); siMode?.refresh(); };
   await loadSiMode();
   ws.openSi(project);
   siLinked.delete(project.folder.where);
@@ -8881,10 +8883,34 @@ async function siPicture(link: SiLink, key: string): Promise<string | null> {
   return scene ? drawingSvg(sceneToDoc(scene, siStyleOf(p)).doc, null) : null;
 }
 
+/** Whether two folder paths are one folder: "/" or "\\", one at the end or not, and capitals too where the file system ignores them (Windows, macOS). */
+function sameFolder(a: string, b: string): boolean {
+  const anyCase = /win|mac/i.test(navigator.platform || navigator.userAgent);
+  const tidy = (p: string): string => { const t = p.replace(/\\/g, '/').replace(/\/+$/, ''); return anyCase ? t.toLowerCase() : t; };
+  return tidy(a) === tidy(b);
+}
+
+/**
+ * An SI project is closed: Chem SI Assistant can open it for editing again. What Undo set aside
+ * is only cleared by the program that has the project for editing (never by one that has it
+ * read-only: those files are the editor's, on this computer or another).
+ */
+async function closeSiProject(si: SiProjectT): Promise<void> {
+  if (si.readOnly || !si.lock) return;
+  if (!(await si.lockStillOurs().catch(() => false))) return;
+  await journalOf(si.folder)?.clear().catch(() => {});
+  await si.release().catch(() => {});
+}
+
 /** The window is closing: Chem SI Assistant can open the projects for editing again. */
 async function releaseSiProjects(): Promise<void> {
-  await Promise.all(ws.tabs.map(async (t) => { if (!t.si) return; await journalOf(t.si.folder)?.clear().catch(() => {}); await t.si.release().catch(() => {}); }));
+  await Promise.all(ws.tabs.map(async (t) => { if (t.si) await closeSiProject(t.si); }));
 }
+
+// Coming back to the window: has someone taken an open SI project over meanwhile (or its folder been moved)?
+window.addEventListener('focus', () => {
+  for (const t of ws.tabs) if (t.si && !t.si.readOnly && t.si.lock) void t.si.checkLock().catch(() => {});
+});
 
 /** Sheet or document mode's code didn't load (a broken install, or the web version gone offline). */
 function modeFailed(err: unknown): void {

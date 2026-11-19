@@ -6,8 +6,18 @@
 // which Python keeps as a float): reading remembers where those were, and writing puts the
 // ".0" back, also when the value there has been changed since.
 
-/** Values read as decimals: the objects and arrays they are in, and their keys. */
+/** Values read as decimals: the objects and arrays they are in, and their keys ("*" in a list: every number in it). */
 const floats = new WeakMap<object, Set<string>>();
+
+/**
+ * Settings SI Assistant always keeps as decimals (its number boxes give decimals: "caption_size": 9.0),
+ * so one set here is written the same way even when it is whole and the object holding it was made
+ * anew. One a person typed whole into the file by hand ("hrms_tolerance_ppm": 5) stays whole until it changes.
+ */
+const FLOAT_KEYS = new Set(['hrms_tolerance_ppm', 'id_size', 'struct_scale', 'caption_size', 'struct_frame_width', 'spectrum_frame_width']);
+
+/** Whole numbers kept as the file wrote them while they are unchanged: ones too large to hold exactly, and whole ones under a decimal's key. */
+const written = new WeakMap<object, Map<string, { v: number; text: string }>>();
 
 /** Mark `key` of `holder` as a decimal (written with ".0" when whole). */
 export function markFloat(holder: object, key: string | number): void {
@@ -20,9 +30,30 @@ export function markFloat(holder: object, key: string | number): void {
 export function copyFloats(from: object, to: object): void {
   const set = floats.get(from);
   if (set) for (const k of set) markFloat(to, k);
+  const as = written.get(from);
+  if (as) {
+    let mine = written.get(to);
+    if (!mine) written.set(to, (mine = new Map()));
+    for (const [k, x] of as) if (!mine.has(k)) mine.set(k, x);
+  }
 }
 
-export const isFloat = (holder: object, key: string | number): boolean => floats.get(holder)?.has(String(key)) ?? false;
+/** A copy of JSON data, all the way down, that is written as the original would be (structuredClone loses which numbers are decimals). */
+export function cloneJson<T>(v: T): T {
+  if (v === null || typeof v !== 'object') return v;
+  const out = (Array.isArray(v) ? v.map((x) => cloneJson(x)) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cloneJson(x)]))) as object;
+  // ("__proto__" stays an ordinary key, as when it was read)
+  if (!Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, '__proto__')) Object.defineProperty(out, '__proto__', { value: cloneJson((v as Record<string, unknown>).__proto__), enumerable: true, writable: true, configurable: true });
+  copyFloats(v, out);
+  return out as T;
+}
+
+export const isFloat = (holder: object, key: string | number): boolean => {
+  const set = floats.get(holder);
+  if (!set) return false;
+  // (a list of decimals stays one when items are added, taken out or moved)
+  return Array.isArray(holder) && set.has('*') ? true : set.has(String(key));
+};
 
 /** Read JSON text (a byte-order mark at the start is skipped, as Python's utf-8-sig does). */
 export function parsePyJson(text: string): unknown {
@@ -42,8 +73,13 @@ export function parsePyJson(text: string): unknown {
     const raw = text.slice(start, i++);
     return simple ? raw : (JSON.parse(`"${raw}"`) as string);
   };
-  // returns [value, written as a decimal]
-  const val = (): [unknown, boolean] => {
+  const keep = (holder: object, key: string | number, v: number, raw: string): void => {
+    let m = written.get(holder);
+    if (!m) written.set(holder, (m = new Map()));
+    m.set(String(key), { v, text: raw });
+  };
+  // returns [value, written as a decimal, a whole number's own text]
+  const val = (): [unknown, boolean, string?] => {
     ws();
     const c = text[i];
     if (c === '{') {
@@ -57,10 +93,15 @@ export function parsePyJson(text: string): unknown {
         const k = str();
         ws();
         if (text[i++] !== ':') fail('Expected ":"');
-        const [v, f] = val();
+        const [v, f, raw] = val();
         // (a key read twice: the last wins, as in Python; "__proto__" stays an ordinary key)
         Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true });
         if (f) markFloat(o, k);
+        else {
+          floats.get(o)?.delete(k);
+          if (raw !== undefined && (FLOAT_KEYS.has(k) || !Number.isSafeInteger(v))) keep(o, k, v as number, raw);
+          else written.get(o)?.delete(k);
+        }
         ws();
         const d = text[i++];
         if (d === '}') return [o, false];
@@ -72,13 +113,19 @@ export function parsePyJson(text: string): unknown {
       const a: unknown[] = [];
       ws();
       if (text[i] === ']') { i++; return [a, false]; }
+      let numbers = 0, decimals = 0;
       for (;;) {
-        const [v, f] = val();
+        const [v, f, raw] = val();
+        if (typeof v === 'number') { numbers++; if (f) decimals++; }
         if (f) markFloat(a, a.length);
+        else if (raw !== undefined && !Number.isSafeInteger(v)) keep(a, a.length, v as number, raw);
         a.push(v);
         ws();
         const d = text[i++];
-        if (d === ']') return [a, false];
+        if (d === ']') {
+          if (numbers && numbers === decimals) floats.set(a, new Set(['*']));
+          return [a, false];
+        }
         if (d !== ',') fail('Expected "," or "]"');
       }
     }
@@ -93,7 +140,8 @@ export function parsePyJson(text: string): unknown {
     const m = /^-?\d+(\.\d+)?([eE][+-]?\d+)?/.exec(text.slice(i, i + 400));
     if (!m) fail('Unexpected character');
     i += m![0].length;
-    return [Number(m![0]), !!(m![1] || m![2])];
+    const float = !!(m![1] || m![2]);
+    return [Number(m![0]), float, float ? undefined : m![0]];
   };
   const [v] = val();
   ws();
@@ -136,8 +184,11 @@ function write(v: unknown, indent: string, out: string[], holder: object | null,
   if (v === null || v === undefined) { out.push('null'); return; }
   if (typeof v === 'boolean') { out.push(v ? 'true' : 'false'); return; }
   if (typeof v === 'number') {
-    if (holder && isFloat(holder, key)) out.push(pyFloat(v));
-    else if (Number.isInteger(v)) out.push(String(v));
+    const was = holder ? written.get(holder)?.get(String(key)) : undefined;
+    if (was && was.v === v) out.push(was.text === '-0' ? '0' : was.text);
+    else if (holder && (isFloat(holder, key) || (!Array.isArray(holder) && FLOAT_KEYS.has(String(key))))) out.push(pyFloat(v));
+    // (Python writes a whole number's every digit, however large)
+    else if (Number.isInteger(v)) out.push(Math.abs(v) >= 1e21 ? BigInt(v).toString() : String(v));
     else out.push(pyFloat(v));
     return;
   }

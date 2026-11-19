@@ -16,8 +16,8 @@
 // layout SI Assistant writes (pyjson.ts). Nothing here is user interface, so it is tested
 // directly (tests/si-project.test.ts).
 
-import { copyFloats, dumpPyJson, markFloat, parsePyJson } from './pyjson';
-import type { SiFolder } from './folder';
+import { cloneJson, copyFloats, dumpPyJson, markFloat, parsePyJson } from './pyjson';
+import { UNDO_HOLDING, type SiFolder } from './folder';
 import { newId, safeFilename, slugify } from './ids';
 import { parseMarkup } from './markup';
 import { DEFAULT_NMR_NUCLEI, DEFAULT_SECTION_FIELDS, emptyValue, fieldDef, isFilled, partText, type FieldDef, type FieldEntry } from './fields';
@@ -136,7 +136,7 @@ export const idTableOf = (s: SiSection): string[] => {
   return (s.data.id_table as unknown[]).map((v) => (v === null || v === undefined ? '' : String(v)));
 };
 export const defaultFieldsOf = (s: SiSection): FieldEntry[] => {
-  if (!Array.isArray(s.data.default_fields)) s.data.default_fields = structuredClone(DEFAULT_SECTION_FIELDS) as FieldEntry[];
+  if (!Array.isArray(s.data.default_fields)) s.data.default_fields = cloneJson(DEFAULT_SECTION_FIELDS) as FieldEntry[];
   return s.data.default_fields as FieldEntry[];
 };
 /** Every compound of a Data section in order (those of its scheme pages too): IDs follow this order. */
@@ -168,6 +168,23 @@ export class SiProject {
   private savedTree: unknown[] = [];
   /** Keys project.json had, in its order, that are not settings. */
   private programVersion: string;
+  /** Pages and sections sent to the Trash: a late save of one (a lookup that finishes afterwards) must not make its folder again. */
+  private gone = new WeakSet<object>();
+  /** Why the project became read-only while open (the lock was taken over, or the folder moved); '' otherwise. */
+  lostWhy = '';
+  /** Told when the project becomes read-only while open, with what to tell the person. */
+  onReadOnly: ((message: string) => void) | null = null;
+  private lockChecked = 0;
+  /** JSON files being read ahead while the project opens: file → its text (or why not). */
+  private ahead = new Map<string, Promise<{ text: string | null } | { why: string }>>();
+  /** Changes to the project's structure (adding, moving, deleting pages and sections, reading it again) run one at a time. */
+  private chain: Promise<unknown> = Promise.resolve();
+
+  private exclusive<T>(f: () => Promise<T>): Promise<T> {
+    const run = this.chain.then(f, f);
+    this.chain = run.catch(() => {});
+    return run;
+  }
 
   private constructor(readonly folder: SiFolder, programVersion: string) {
     this.programVersion = programVersion;
@@ -177,7 +194,13 @@ export class SiProject {
   static async open(folder: SiFolder, opts: { readOnly?: boolean; programVersion?: string } = {}): Promise<SiProject> {
     const p = new SiProject(folder, opts.programVersion ?? '');
     p.readOnly = !!opts.readOnly;
-    await p.reload();
+    await p.read();
+    // every change to the folder first asks this project whether it may still be made (see guard)
+    if (!p.readOnly) {
+      let disk: SiFolder = folder;
+      while ((disk as { inner?: SiFolder }).inner) disk = (disk as unknown as { inner: SiFolder }).inner;
+      if ('beforeChange' in disk) disk.beforeChange = () => p.guard();
+    }
     return p;
   }
 
@@ -200,10 +223,18 @@ export class SiProject {
 
   private async readJson(rel: string): Promise<{ ok: true; data: unknown } | { ok: false; why: string }> {
     let text: string | null;
-    try {
-      text = await this.folder.readText(rel);
-    } catch (e) {
-      return { ok: false, why: `could not be read (${e instanceof Error ? e.message : String(e)})` };
+    const early = this.ahead.get(rel);
+    if (early) {
+      this.ahead.delete(rel);
+      const got = await early;
+      if ('why' in got) return { ok: false, why: got.why };
+      text = got.text;
+    } else {
+      try {
+        text = await this.folder.readText(rel);
+      } catch (e) {
+        return { ok: false, why: `could not be read (${e instanceof Error ? e.message : String(e)})` };
+      }
     }
     if (text === null) return { ok: true, data: undefined };
     try {
@@ -213,8 +244,32 @@ export class SiProject {
     }
   }
 
-  /** Read the whole project again from its files. */
-  async reload(): Promise<void> {
+  /**
+   * Read the whole project again from its files. Everything is read first and only then replaces
+   * what is in memory, so a failure part-way changes nothing (and nothing sees a half-read project).
+   */
+  reload(): Promise<void> { return this.exclusive(() => this.reloadNow()); }
+
+  private async reloadNow(): Promise<void> {
+    const fresh = new SiProject(this.folder, this.programVersion);
+    fresh.readOnly = this.readOnly;
+    await fresh.read();
+    this.settings = fresh.settings;
+    this.top = fresh.top;
+    this.anchored = fresh.anchored;
+    this.references = fresh.references;
+    this.refsUnread = fresh.refsUnread;
+    this.warnings = fresh.warnings;
+    this.savedFormat = fresh.savedFormat;
+    this.savedBy = fresh.savedBy;
+    this.readOnly = fresh.readOnly;
+    this.texts = fresh.texts;
+    this.present = fresh.present;
+    this.skipped = fresh.skipped;
+    this.savedTree = fresh.savedTree;
+  }
+
+  private async read(): Promise<void> {
     const got = await this.readJson(PROJECT_FILE);
     if (!got.ok) throw new SiProjectError(`${PROJECT_FILE} ${got.why}.`);
     if (got.data === undefined) throw new SiProjectError(`This folder is not an SI project (no ${PROJECT_FILE} found): ${this.folder.where}`);
@@ -242,7 +297,18 @@ export class SiProject {
     this.present = new Set();
     const files = await this.folder.list(SECTIONS_DIR, ['json', 'txt', 'mol']);
     for (const f of files) this.present.add(f);
-    const top = await this.loadSections(tree as unknown[], files);
+    // the sections', compounds' and scheme pages' files are all asked for at once, then read in order
+    this.ahead = new Map();
+    for (const f of files) {
+      if (!/\/(section|compound|scheme)\.json$/.test(f)) continue;
+      this.ahead.set(f, this.folder.readText(f).then((text) => ({ text }), (e: unknown) => ({ why: `could not be read (${e instanceof Error ? e.message : String(e)})` })));
+    }
+    let top: SiSection[];
+    try {
+      top = await this.loadSections(tree as unknown[], files);
+    } finally {
+      this.ahead = new Map();
+    }
     const refs = await this.readJson(REFERENCES_FILE);
     if (!refs.ok) this.warnings.push(`${REFERENCES_FILE} ${refs.why}; the reference list is shown empty and is not saved over.`);
     this.references = refs.ok && Array.isArray(refs.data) ? refs.data.filter(isObj) : [];
@@ -252,8 +318,8 @@ export class SiProject {
     await Promise.all(textFiles.map(async (f) => this.texts.set(f, (await this.folder.readText(f)) ?? '')));
     this.settings = settings;
     this.top = top;
-    this.savedTree = structuredClone(tree as unknown[]);
-    if (this.newerFormat && !this.readOnly) {
+    this.savedTree = cloneJson(tree as unknown[]);
+    if (this.newerFormat) {
       this.readOnly = true;
       this.warnings.unshift(`This project was saved by a newer version of Chem SI Assistant (file format ${this.savedFormat}), so it is open read-only here: saving could lose what that version added.`);
     }
@@ -408,7 +474,61 @@ export class SiProject {
   // ---------------------------------------------------------------- saving
 
   private checkWritable(): void {
-    if (this.readOnly) throw new SiProjectError('This SI project is open read-only.');
+    if (this.readOnly) throw new SiProjectError(this.lostWhy || 'This SI project is open read-only.');
+  }
+
+  /** A page or section in the Trash is not saved again (its folder would be made again, with only that file in it). */
+  private checkThere(x: object, name: string): void {
+    if (this.gone.has(x)) throw new SiProjectError(`“${name}” is in the project’s Trash, so the change to it was not saved. Restore it from the Trash (Home ▸ Trash) to change it.`);
+  }
+
+  /**
+   * Asked before every change to the project's files. While this program has the lock, the lock
+   * is read again (at most every second or so): if someone took the project over, or the folder
+   * was renamed or moved, nothing more is written (it would overwrite their changes, or make the
+   * old folder again with only the changed files in it) and the project becomes read-only.
+   */
+  private async guard(): Promise<void> {
+    this.checkWritable();
+    if (!this.lock || Date.now() - this.lockChecked < 1500) return;
+    if (!(await this.checkLock())) throw new SiProjectError(`${this.lostWhy} The last change was not saved.`);
+  }
+
+  /**
+   * Whether the project is still this program's to change: false once the lock is someone else's
+   * or gone (the project is read-only from then on, and `onReadOnly` is told why). A lock that
+   * can't be read just now (being synced) is "don't know": nothing changes.
+   */
+  async checkLock(): Promise<boolean> {
+    if (this.readOnly) return false;
+    const mine = this.lock;
+    if (!mine) return true;
+    const got = await this.readJson(LOCK_FILE);
+    if (this.lock !== mine || this.readOnly) return !this.readOnly;
+    if (!got.ok) return true;
+    if (isObj(got.data) && str(got.data.session) === mine.session) { this.lockChecked = Date.now(); return true; }
+    let why: string;
+    if (isObj(got.data)) {
+      why = `${str(got.data.user) || 'Someone'} has taken this project over for editing${str(got.data.computer) ? ` on ${str(got.data.computer)}` : ''}, so it is read-only here now. Close it and open it again to see their changes.`;
+    } else if (!(await this.folder.exists(PROJECT_FILE).catch(() => true))) {
+      why = `The project folder is no longer at ${this.folder.where}: it may have been renamed or moved, so nothing more is saved there. Close the project and open it again from its new place.`;
+    } else {
+      why = 'This project’s lock is gone: it may have been opened and closed in another program since. So that nothing changed there is overwritten, it is read-only here now. Close it and open it again to go on editing.';
+    }
+    this.readOnly = true;
+    this.lostWhy = why;
+    this.lock = null;
+    this.onReadOnly?.(why);
+    return false;
+  }
+
+  /**
+   * Put a file Chemweave made in this same step out of the project (into build/chemweave-undo,
+   * emptied when the project closes): project files are never deleted outright.
+   */
+  async setAside(path: string): Promise<void> {
+    if (!(await this.folder.exists(path))) return;
+    await this.folder.move(path, `${UNDO_HOLDING}/${Date.now().toString(36)}-${newId('h').slice(2)}/${path}`);
   }
 
   private async writeJson(rel: string, data: unknown): Promise<void> {
@@ -478,7 +598,7 @@ export class SiProject {
     const out: Json = { format_version: FORMAT_VERSION, saved_by_version: this.programVersion || this.savedBy, ...this.settings, section_tree: tree };
     copyFloats(this.settings, out);
     await this.writeJson(PROJECT_FILE, out);
-    this.savedTree = structuredClone(tree);
+    this.savedTree = cloneJson(tree);
   }
 
   /**
@@ -486,7 +606,9 @@ export class SiProject {
    * `index` among the sections of `parentId` (the top level when that is gone or can't hold it),
    * save, and read the project again. Gives a note when it went to the top level instead.
    */
-  async restoreTreeNode(node: Json, parentId: string | null, index: number | null): Promise<string> {
+  restoreTreeNode(node: Json, parentId: string | null, index: number | null): Promise<string> { return this.exclusive(() => this.restoreTreeNodeNow(node, parentId, index)); }
+
+  private async restoreTreeNodeNow(node: Json, parentId: string | null, index: number | null): Promise<string> {
     this.checkWritable();
     const tree = this.mergeTree(this.treeJson(this.top), this.savedTree);
     const find = (ns: Json[], id: string): Json | null => {
@@ -506,12 +628,13 @@ export class SiProject {
     const out: Json = { format_version: FORMAT_VERSION, saved_by_version: this.programVersion || this.savedBy, ...this.settings, section_tree: tree };
     copyFloats(this.settings, out);
     await this.writeJson(PROJECT_FILE, out);
-    await this.reload();
+    await this.reloadNow();
     return note;
   }
 
   async saveSection(s: SiSection): Promise<void> {
     this.checkWritable();
+    this.checkThere(s, s.name);
     Object.assign(s.data, { id: s.id, type: s.type, name: s.name });
     if (s.type === 'data') s.data.compound_order = this.mergeIds(s.items.map((i) => i.id), s.data.compound_order);
     await this.writeJson(join(s.folder, SECTION_FILE), s.data);
@@ -519,12 +642,14 @@ export class SiProject {
 
   async saveCompound(c: SiCompound): Promise<void> {
     this.checkWritable();
+    this.checkThere(c, compoundName(c) || 'This compound');
     c.data.id = c.id;
     await this.writeJson(join(c.folder, COMPOUND_FILE), c.data);
   }
 
   async saveScheme(k: SiScheme): Promise<void> {
     this.checkWritable();
+    this.checkThere(k, str(k.data.name) || 'This scheme page');
     Object.assign(k.data, { id: k.id, children: this.mergeIds(k.children.map((c) => c.id), k.data.children) });
     await this.writeJson(join(k.folder, SCHEME_FILE), k.data);
   }
@@ -538,7 +663,9 @@ export class SiProject {
   }
 
   /** A new scheme page in a Data section (one empty starting material and one step, as SI Assistant starts one), at `index` (the end when not given). */
-  async addScheme(sectionId: string, index?: number, name = ''): Promise<SiScheme> {
+  addScheme(sectionId: string, index?: number, name = ''): Promise<SiScheme> { return this.exclusive(() => this.addSchemeNow(sectionId, index, name)); }
+
+  private async addSchemeNow(sectionId: string, index?: number, name = ''): Promise<SiScheme> {
     this.checkWritable();
     const s = this.dataSection(sectionId);
     const id = newId('k');
@@ -554,7 +681,9 @@ export class SiProject {
   }
 
   /** A new compound page of a scheme page (a box marked as a compound), at `index` among its compounds. */
-  async addSchemeCompound(k: SiScheme, index: number, name = ''): Promise<SiCompound> {
+  addSchemeCompound(k: SiScheme, index: number, name = ''): Promise<SiCompound> { return this.exclusive(() => this.addSchemeCompoundNow(k, index, name)); }
+
+  private async addSchemeCompoundNow(k: SiScheme, index: number, name = ''): Promise<SiCompound> {
     this.checkWritable();
     const s = this.dataSection(k.sectionId);
     const id = newId('c');
@@ -583,7 +712,9 @@ export class SiProject {
   // ---------------------------------------------------------------- sections
 
   /** A new section at `index` among the top-level ones, or in the Custom section `parentId`. */
-  async addSection(type: 'text' | 'data' | 'file', name: string, index?: number, parentId: string | null = null): Promise<SiSection> {
+  addSection(type: 'text' | 'data' | 'file', name: string, index?: number, parentId: string | null = null): Promise<SiSection> { return this.exclusive(() => this.addSectionNow(type, name, index, parentId)); }
+
+  private async addSectionNow(type: 'text' | 'data' | 'file', name: string, index?: number, parentId: string | null = null): Promise<SiSection> {
     this.checkWritable();
     const parent = parentId ? this.section(parentId) : null;
     if (parent && (parent.type !== 'text' || this.depth(parent) >= MAX_SECTION_DEPTH)) throw new SiProjectError(`A sub-section can only go in a Custom section, at most ${MAX_SECTION_DEPTH} levels deep.`);
@@ -591,7 +722,7 @@ export class SiProject {
     const folder = join(SECTIONS_DIR, `${id}_${slugify(name, SECTION_SLUG)}`);
     const data: Json = { id, type, name };
     if (type === 'file') Object.assign(data, { file: null, heading: '', caption: '' });
-    if (type === 'data') Object.assign(data, { id_table: [], default_fields: structuredClone(DEFAULT_SECTION_FIELDS), compound_order: [] });
+    if (type === 'data') Object.assign(data, { id_table: [], default_fields: cloneJson(DEFAULT_SECTION_FIELDS), compound_order: [] });
     const s: SiSection = { id, type, name, folder, data, items: [], children: [], parentId };
     await this.saveSection(s);
     if (type === 'text') { await this.folder.writeText(join(folder, TEXT_CONTENT_FILE), ''); }
@@ -603,6 +734,7 @@ export class SiProject {
 
   /** Rename a section (its folder keeps its first name: renaming folders upsets sync programs). */
   async renameSection(id: string, name: string): Promise<void> {
+    this.checkWritable();
     const s = this.section(id);
     if (!name.trim()) throw new SiProjectError('Please give the section a name.');
     s.name = name.trim();
@@ -610,7 +742,9 @@ export class SiProject {
   }
 
   /** Move a section to `index` among the sections of `parentId` (null: the top level). */
-  async moveSection(id: string, index: number, parentId: string | null): Promise<void> {
+  moveSection(id: string, index: number, parentId: string | null): Promise<void> { return this.exclusive(() => this.moveSectionNow(id, index, parentId)); }
+
+  private async moveSectionNow(id: string, index: number, parentId: string | null): Promise<void> {
     this.checkWritable();
     const s = this.section(id);
     const parent = parentId ? this.section(parentId) : null;
@@ -622,6 +756,7 @@ export class SiProject {
     }
     const from = s.parentId ? this.section(s.parentId).children : this.top;
     const at = from.indexOf(s);
+    if (at < 0) throw new SiProjectError(`“${s.name}” can’t be moved from where it is (an X-ray structure under a compound is moved from its own page).`);
     from.splice(at, 1);
     const to = parent ? parent.children : this.top;
     if (to === from && index > at) index--;
@@ -634,7 +769,9 @@ export class SiProject {
    * Move a section, with its sub-sections, to the project's Trash as one item, in the form SI
    * Assistant's Trash shows and restores (the Spectra section stays: it can't be deleted).
    */
-  async deleteSection(id: string): Promise<void> {
+  deleteSection(id: string): Promise<void> { return this.exclusive(() => this.deleteSectionNow(id)); }
+
+  private async deleteSectionNow(id: string): Promise<void> {
     this.checkWritable();
     const s = this.section(id);
     const all = this.subtree(s);
@@ -649,23 +786,42 @@ export class SiProject {
       section_id: s.id, type: s.type, original_index: index, parent_id: s.parentId ?? '', tree, subsections: all.length - 1,
       ...(anchoredTo ? { anchored_to: anchoredTo } : {}),
     });
-    list.splice(index, 1);
+    if (index >= 0) list.splice(index, 1);
+    for (const x of all) { this.gone.add(x); for (const i of x.items) { this.gone.add(i); if (i.kind === 'scheme') for (const c of i.children) this.gone.add(c); } }
     if (anchoredTo && !list.length) this.anchored.delete(anchoredTo);
     await this.saveSettings();
     // X-ray structures under the compounds of a deleted Data section stay in the project, in the tree
-    const gone = new Set(all.filter((x) => x.type === 'data').flatMap((x) => compoundsOf(x).map((c) => c.id)));
-    for (const cid of gone) {
-      for (const x of this.anchored.get(cid) ?? []) { x.data.anchored = false; x.parentId = null; this.top.push(x); await this.saveSection(x).catch(() => {}); }
-      this.anchored.delete(cid);
+    await this.freeAnchored(all.filter((x) => x.type === 'data').flatMap((x) => compoundsOf(x).map((c) => c.id)), null);
+  }
+
+  /**
+   * X-ray structures under compounds that are going away: put in the tree (after `after`'s
+   * top-level section, else at the end), not under a compound any more, as SI Assistant does.
+   */
+  private async freeAnchored(compoundIds: string[], after: SiSection | null): Promise<void> {
+    const freed: SiSection[] = [];
+    for (const cid of compoundIds) { freed.push(...(this.anchored.get(cid) ?? [])); this.anchored.delete(cid); }
+    if (!freed.length) return;
+    let top = after;
+    while (top && top.parentId) top = this.parent(top);
+    let index = top && this.top.includes(top) ? this.top.indexOf(top) + 1 : this.top.length;
+    for (const x of freed) {
+      x.data.anchored = false;
+      x.parentId = null;
+      this.top.splice(index++, 0, x);
+      // (one that can't be saved now comes back into the tree at the next opening anyway)
+      await this.saveSection(x).catch(() => {});
     }
-    if (gone.size) await this.saveSettings();
+    await this.saveSettings();
   }
 
   /** A section and the sections under it, the section first. */
   subtree(s: SiSection): SiSection[] { return [s, ...s.children.flatMap((c) => this.subtree(c))]; }
 
   /** Move a scheme page, with its compound pages, to the Trash as one item SI Assistant restores. */
-  async deleteScheme(id: string): Promise<void> {
+  deleteScheme(id: string): Promise<void> { return this.exclusive(() => this.deleteSchemeNow(id)); }
+
+  private async deleteSchemeNow(id: string): Promise<void> {
     this.checkWritable();
     const k = this.scheme(id);
     const s = this.section(k.sectionId);
@@ -674,8 +830,11 @@ export class SiProject {
     await this.moveToTrash([k.folder, ...folders], 'scheme', str(k.data.name) || 'Scheme', {
       scheme_id: k.id, section_id: s.id, section_name: s.name, original_index: index, children: folders.map(nameOf),
     });
-    s.items.splice(index, 1);
+    if (index >= 0) s.items.splice(index, 1);
+    this.gone.add(k);
+    for (const c of k.children) this.gone.add(c);
     await this.saveSection(s);
+    await this.freeAnchored(k.children.map((c) => c.id), s);
   }
 
   /** The text of a Custom section. */
@@ -788,14 +947,16 @@ export class SiProject {
   }
 
   async setIdTable(sectionId: string, ids: string[]): Promise<void> {
+    this.checkWritable();
     const s = this.dataSection(sectionId);
     s.data.id_table = ids.map((i) => String(i).trim());
     await this.saveSection(s);
   }
 
   async setDefaultFields(sectionId: string, entries: FieldEntry[]): Promise<void> {
+    this.checkWritable();
     const s = this.dataSection(sectionId);
-    s.data.default_fields = structuredClone(entries);
+    s.data.default_fields = cloneJson(entries);
     await this.saveSection(s);
   }
 
@@ -874,7 +1035,7 @@ export class SiProject {
     const path = join(s.folder, GP_DIR, `${safeFilename(gpId)}.txt`);
     if (!(await this.folder.exists(path))) await this.folder.writeText(path, '');
     const list = s.data.general_procedures as Json[];
-    await this.moveToTrash([path], 'gp', str(gp.name) || 'General procedure', { section_id: s.id, section_name: s.name, gp: structuredClone(gp), index: list.indexOf(gp) });
+    await this.moveToTrash([path], 'gp', str(gp.name) || 'General procedure', { section_id: s.id, section_name: s.name, gp: cloneJson(gp), index: list.indexOf(gp) });
     list.splice(list.indexOf(gp), 1);
     await this.saveSection(s);
   }
@@ -923,7 +1084,7 @@ export class SiProject {
     try {
       if (old) await this.moveToTrash([join(s.folder, old)], 'file', nameOf(old), { section_id: s.id, section_name: s.name });
     } catch (e) {
-      await this.folder.remove(passing).catch(() => {});
+      await this.setAside(passing).catch(() => {});
       throw e;
     }
     const clean = safeFilename(name) || 'structure.cif';
@@ -997,7 +1158,9 @@ export class SiProject {
   }
 
   /** A new compound page in a Data section, at `index` (the end when not given). */
-  async addCompound(sectionId: string, index?: number, name = ''): Promise<SiCompound> {
+  addCompound(sectionId: string, index?: number, name = ''): Promise<SiCompound> { return this.exclusive(() => this.addCompoundNow(sectionId, index, name)); }
+
+  private async addCompoundNow(sectionId: string, index?: number, name = ''): Promise<SiCompound> {
     this.checkWritable();
     const s = this.dataSection(sectionId);
     const id = newId('c');
@@ -1035,6 +1198,7 @@ export class SiProject {
 
   /** Give every compound of the section the section's fields, in its order (others kept after them). */
   async applyDefaultFields(sectionId: string, removeOthers = false): Promise<number> {
+    this.checkWritable();
     const s = this.dataSection(sectionId);
     const keys = defaultFieldsOf(s).map((e) => e.key);
     let changed = 0;
@@ -1063,6 +1227,8 @@ export class SiProject {
 
   /** Change one part of a parts field ("yield" ▸ "percent") and save. */
   async setPart(c: SiCompound, key: string, part: string, text: string): Promise<void> {
+    this.checkWritable();
+    this.checkThere(c, compoundName(c) || 'This compound');
     const values = valuesOf(c);
     const v = isObj(values[key]) ? (values[key] as Json) : (values[key] = {});
     v[part] = text;
@@ -1090,7 +1256,7 @@ export class SiProject {
   /** Hide an automatic warning for this compound (SI Assistant's SPEC §8): it comes back when the data it was about changes (its fingerprint no longer matches). */
   async dismissWarning(c: SiCompound, warning: { key: string; fingerprint: string; message: string }, reason = ''): Promise<void> {
     this.checkWritable();
-    const before = structuredClone(c.data.dismissed);
+    const before = cloneJson(c.data.dismissed);
     if (!isObj(c.data.dismissed)) c.data.dismissed = {};
     (c.data.dismissed as Json)[warning.key] = { fingerprint: warning.fingerprint, message: warning.message, reason: reason.trim(), by: this.lock?.user || '', at: localIso(new Date()) };
     await this.saveDismissed(c, before);
@@ -1099,7 +1265,7 @@ export class SiProject {
   /** Show a dismissed warning again. */
   async restoreWarning(c: SiCompound, key: string): Promise<void> {
     this.checkWritable();
-    const before = structuredClone(c.data.dismissed);
+    const before = cloneJson(c.data.dismissed);
     const d = c.data.dismissed;
     if (!isObj(d) || !(key in d)) return;
     delete d[key];
@@ -1126,6 +1292,7 @@ export class SiProject {
   }
   async writeCompoundText(c: SiCompound, key: string, text: string): Promise<void> {
     this.checkWritable();
+    this.checkThere(c, compoundName(c) || 'This compound');
     const path = this.textPath(c, key);
     if (!text && !this.present.has(path)) return;
     await this.folder.writeText(path, text);
@@ -1142,18 +1309,22 @@ export class SiProject {
   /** Store a structure drawn here (a V2000 molfile). A ChemDraw picture pasted with an earlier structure no longer matches it, so it stops being used. */
   async setStructure(c: SiCompound, molblock: string): Promise<void> {
     this.checkWritable();
+    this.checkThere(c, compoundName(c) || 'This compound');
     const values = valuesOf(c);
     const old = isObj(values.structure) ? (values.structure as Json) : {};
     if (old.image_override && old.image_source === 'chemdraw') { old.image_override = ''; old.image_source = ''; }
     await this.folder.writeText(join(c.folder, STRUCTURE_FILE), molblock.endsWith('\n') ? molblock : molblock + '\n');
     this.present.add(join(c.folder, STRUCTURE_FILE));
-    values.structure = { ...old, from_scheme: false };
+    // (the same object, so the numbers in it are written as they were read)
+    old.from_scheme = false;
+    values.structure = old;
     await this.saveCompound(c);
   }
 
   /** Copy a file into the compound's folder (spectra/ or files/), under a name no file there has; gives the name used. */
   async addAttachment(c: SiCompound, subdir: string, name: string, bytes: Uint8Array): Promise<string> {
     this.checkWritable();
+    this.checkThere(c, compoundName(c) || 'This compound');
     const clean = safeFilename(name);
     const dot = clean.lastIndexOf('.');
     const stem = dot > 0 ? clean.slice(0, dot) : clean, ext = dot > 0 ? clean.slice(dot) : '';
@@ -1179,7 +1350,7 @@ export class SiProject {
     const path = this.attachmentPath(c, def, file);
     const stem = path.replace(/\.[^./]+$/, '');
     const originals = stem !== path ? [`${stem}.cdxml`, `${stem}.emf`].filter((x) => x !== path) : [];
-    await this.moveToTrash([path, ...originals], 'compound_file', file, { compound_id: c.id, field_key: def.key, item: nameOf(path), item_values: structuredClone(item), compound_name: compoundName(c) });
+    await this.moveToTrash([path, ...originals], 'compound_file', file, { compound_id: c.id, field_key: def.key, item: nameOf(path), item_values: cloneJson(item), compound_name: compoundName(c) });
     (items as Json[]).splice((items as Json[]).indexOf(item), 1);
     await this.saveCompound(c);
   }
@@ -1212,7 +1383,7 @@ export class SiProject {
     const item = items.find((i) => isObj(i) && i.file === name && /^[^/\\]+$/.test(name) && !/^\.\.?$/.test(name));
     if (!item) return;
     const path = join(c.folder, 'hrms', name);
-    await this.moveToTrash([path], 'compound_file', name, { compound_id: c.id, field_key: 'hrms_reports', item: name, item_values: structuredClone(item), compound_name: compoundName(c) });
+    await this.moveToTrash([path], 'compound_file', name, { compound_id: c.id, field_key: 'hrms_reports', item: name, item_values: cloneJson(item), compound_name: compoundName(c) });
     items.splice(items.indexOf(item), 1);
     if (!items.length) delete value.reports;
     if (then) await then();
@@ -1285,7 +1456,9 @@ export class SiProject {
    * scheme page leaves a copy of its structure and picture in the box that showed it; a scheme
    * page's compounds stay in the order of their boxes.
    */
-  async moveCompound(id: string, sectionId: string, index: number, schemeId: string | null = null): Promise<void> {
+  moveCompound(id: string, sectionId: string, index: number, schemeId: string | null = null): Promise<void> { return this.exclusive(() => this.moveCompoundNow(id, sectionId, index, schemeId)); }
+
+  private async moveCompoundNow(id: string, sectionId: string, index: number, schemeId: string | null = null): Promise<void> {
     this.checkWritable();
     const c = this.compound(id);
     const src = this.containerOf(c.sectionId, c.schemeId);
@@ -1293,6 +1466,7 @@ export class SiProject {
     const E = await import('./scheme-edit');
     if (src.scheme && src.scheme !== dst.scheme) await E.compoundLeaving(this, src.scheme, c.id);
     const at = src.list.indexOf(c);
+    if (at < 0) throw new SiProjectError('That compound is no longer where it was: nothing was moved.');
     const before = [...src.list];
     src.list.splice(at, 1);
     if (src.section !== dst.section) {
@@ -1316,26 +1490,31 @@ export class SiProject {
   }
 
   /** A compound page made a scheme page (Change to Reaction Scheme…): the new scheme page takes its place, with the compound as the product of its one step (its data and ID kept). */
-  async convertToScheme(id: string): Promise<SiScheme> {
+  convertToScheme(id: string): Promise<SiScheme> { return this.exclusive(() => this.convertToSchemeNow(id)); }
+
+  private async convertToSchemeNow(id: string): Promise<SiScheme> {
     this.checkWritable();
     const c = this.compound(id);
     if (c.schemeId) throw new SiProjectError('This compound is already part of a scheme page.');
     const [sectionId, , index] = this.position(c);
     const name = compoundName(c);
-    const k = await this.addScheme(sectionId, index, name ? `Scheme: ${name}` : '');
-    await this.moveCompound(c.id, sectionId, 0, k.id);
+    const k = await this.addSchemeNow(sectionId, index, name ? `Scheme: ${name}` : '');
+    await this.moveCompoundNow(c.id, sectionId, 0, k.id);
     (await import('./scheme-edit')).startWithCompound(k, c);
     await this.saveScheme(k);
     return k;
   }
 
   /** Move a scheme page, with its compound pages, to `index` among the pages of a Data section. */
-  async moveScheme(id: string, sectionId: string, index: number): Promise<void> {
+  moveScheme(id: string, sectionId: string, index: number): Promise<void> { return this.exclusive(() => this.moveSchemeNow(id, sectionId, index)); }
+
+  private async moveSchemeNow(id: string, sectionId: string, index: number): Promise<void> {
     this.checkWritable();
     const k = this.scheme(id);
     const from = this.section(k.sectionId);
     const to = this.dataSection(sectionId);
     const at = from.items.indexOf(k);
+    if (at < 0) throw new SiProjectError('That scheme page is no longer where it was: nothing was moved.');
     if (to === from) {
       from.items.splice(at, 1);
       if (index > at) index--;
@@ -1389,12 +1568,15 @@ export class SiProject {
    * Move a compound to the project's Trash (trash/<when>-<id>/), in the form SI Assistant's
    * Trash shows and restores.
    */
-  async deleteCompound(id: string): Promise<void> {
+  deleteCompound(id: string): Promise<void> { return this.exclusive(() => this.deleteCompoundNow(id)); }
+
+  private async deleteCompoundNow(id: string): Promise<void> {
     this.checkWritable();
     const c = this.compound(id);
     const where = this.containerOf(c.sectionId, c.schemeId);
     const s = where.section, k = where.scheme;
     const index = where.list.indexOf(c);
+    if (index < 0) throw new SiProjectError('That compound is no longer where it was: nothing was deleted.');
     const now = new Date();
     const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-`;
     const entry = join(TRASH_DIR, stamp + newId('t').slice(2));
@@ -1403,13 +1585,13 @@ export class SiProject {
       compound_id: c.id, section_id: s.id, section_name: s.name, scheme_id: k?.id ?? '', original_index: index,
     };
     // A scheme page's box that showed it keeps a copy of its structure and picture.
-    const editorBefore = k ? structuredClone(k.data.editor) : undefined;
+    const editorBefore = k ? cloneJson(k.data.editor) : undefined;
     const copies = k ? await (await import('./scheme-edit')).compoundLeaving(this, k, c.id, false) : [];
     const putBack = async (): Promise<void> => {
       where.list.splice(index, 0, c);
       if (k) {
         k.data.editor = editorBefore;
-        for (const f of copies) await this.folder.remove(f).catch(() => {});
+        for (const f of copies) await this.setAside(f).catch(() => {});
       }
       await this.saveContainer(where).catch(() => {});
     };
@@ -1430,6 +1612,9 @@ export class SiProject {
       throw new SiProjectError(`“${info.name}” could not be moved to the Trash, so nothing was deleted. A file in it is probably open in another program or being synced: close it and try again. (${e instanceof Error ? e.message : String(e)})`);
     }
     this.renameKnown(c.folder, join(entry, nameOf(c.folder)));
+    this.gone.add(c);
+    // its X-ray structures stay in the project, in the tree after its section
+    await this.freeAnchored([c.id], s).catch(() => {});
   }
 
   // ---------------------------------------------------------------- references
@@ -1438,12 +1623,14 @@ export class SiProject {
 
   /** Add a reference (from My Library, or typed): it gets an id of its own; one already there with the same DOI is used instead. */
   async addReference(ref: Json): Promise<string> {
+    this.checkWritable();
+    if (this.refsUnread) throw new SiProjectError(`${REFERENCES_FILE} could not be read when the project opened, so it is not saved over. Repair it, then reopen the project.`);
     const doi = str(ref.doi).trim().toLowerCase();
     const same = doi ? this.references.find((r) => str(r.doi).trim().toLowerCase() === doi) : undefined;
     if (same) return str(same.id);
     const id = newId('r');
     this.references.push({ ...ref, id });
-    await this.saveReferences();
+    try { await this.saveReferences(); } catch (e) { this.references.pop(); throw e; }
     return id;
   }
 

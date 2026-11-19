@@ -81,21 +81,67 @@ pub fn make_folder(path: String) -> Result<(), String> {
     std::fs::create_dir_all(&path).map_err(|e| format!("Could not make the folder {path}: {e}"))
 }
 
+/// Another program (OneDrive, an antivirus, an indexer) may hold a file for a moment; on Windows
+/// that makes a rename fail (access denied, or a sharing or lock violation). Such a failure is
+/// tried again for about a second, as Chem SI Assistant does; any other failure is given at once.
+pub(crate) fn rename_retrying(from: &Path, to: &Path) -> std::io::Result<()> {
+    const ATTEMPTS: u32 = 10;
+    let mut attempt = 1;
+    loop {
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) if attempt < ATTEMPTS && held_for_a_moment(&e) => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+fn held_for_a_moment(e: &std::io::Error) -> bool {
+    // Windows: 5 access denied, 32 sharing violation, 33 lock violation
+    e.kind() == std::io::ErrorKind::PermissionDenied || (cfg!(windows) && matches!(e.raw_os_error(), Some(5 | 32 | 33)))
+}
+
+/// Whether a path has no "." or ".." in it (so it is where it says it is).
+fn plain(p: &Path) -> bool {
+    !p.components().any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir))
+}
+
+/// Whether `from` and `to` are both inside one SI project's folder (a folder with a project.json):
+/// `root` when the page names it, else any folder above `from`.
+fn in_one_project(from: &Path, to: &Path, root: Option<&Path>) -> bool {
+    if !plain(from) || !plain(to) {
+        return false;
+    }
+    let holds = |dir: &Path| dir.join("project.json").is_file() && from != dir && to != dir && from.starts_with(dir) && to.starts_with(dir);
+    match root {
+        Some(r) => plain(r) && holds(r),
+        None => from.ancestors().skip(1).any(holds),
+    }
+}
+
 /// SI projects (Chem SI Assistant's folders): move a file or folder, such as a deleted compound
-/// into the project's trash folder. Never writes over anything: `to` must not be there yet.
+/// into the project's trash folder. Never writes over anything: `to` must not be there yet. Both
+/// must be inside the same project folder: nothing is ever moved into or out of a project here.
 #[tauri::command]
-pub fn si_move(from: String, to: String) -> Result<(), String> {
+pub fn si_move(from: String, to: String, root: Option<String>) -> Result<(), String> {
     let (f, t) = (PathBuf::from(&from), PathBuf::from(&to));
+    if !in_one_project(&f, &t, root.as_deref().map(Path::new)) {
+        return Err(format!("{from} was not moved: it and {to} are not both inside one SI project's folder."));
+    }
     if !f.exists() {
         return Err(format!("{from} is not there (it may have been moved or deleted)."));
     }
-    if t.exists() {
+    // (symlink_metadata: a link that points nowhere is still something in the way)
+    if t.symlink_metadata().is_ok() {
         return Err(format!("{to} is already there."));
     }
     if let Some(parent) = t.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Could not make the folder {}: {e}", parent.display()))?;
     }
-    std::fs::rename(&f, &t).map_err(|e| format!("Could not move {from}: {e}"))
+    rename_retrying(&f, &t).map_err(|e| format!("Could not move {from}: {e}"))
 }
 
 /// SI projects: take away the project's ".lock" (who has it open) when it is closed. Only a
@@ -189,6 +235,35 @@ mod tests {
         let top = list_folder(root.to_string_lossy().into_owned(), exts, false).unwrap();
         assert_eq!(top["files"].as_array().unwrap().len(), 1);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn moves_stay_inside_one_project() {
+        let root = std::env::temp_dir().join(format!("ci-si-move-{}", std::process::id()));
+        let outside = std::env::temp_dir().join(format!("ci-si-move-out-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("sections").join("a")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(root.join("sections").join("a").join("x.txt"), "x").unwrap();
+        std::fs::write(outside.join("thesis.docx"), "t").unwrap();
+        let s = |p: PathBuf| p.to_string_lossy().into_owned();
+        let from = root.join("sections").join("a").join("x.txt");
+        let to = root.join("trash").join("e").join("x.txt");
+        assert!(si_move(s(from.clone()), s(to.clone()), Some(s(root.clone()))).is_err()); // no project.json yet
+        std::fs::write(root.join("project.json"), "{}").unwrap();
+        // a file outside the project never moves in, by ".." or by its own path
+        let sneaky = root.join("sections").join("a").join("..").join("..").join("..").join(outside.file_name().unwrap()).join("thesis.docx");
+        assert!(si_move(s(sneaky), s(root.join("trash").join("e").join("thesis.docx")), Some(s(root.clone()))).is_err());
+        assert!(si_move(s(outside.join("thesis.docx")), s(root.join("trash").join("thesis.docx")), None).is_err());
+        assert!(si_move(s(from.clone()), s(outside.join("x.txt")), Some(s(root.clone()))).is_err());
+        assert!(outside.join("thesis.docx").exists() && from.exists());
+        si_move(s(from.clone()), s(to.clone()), Some(s(root.clone()))).unwrap();
+        assert!(to.exists() && !from.exists());
+        si_move(s(to.clone()), s(from.clone()), None).unwrap(); // (an older page that names no root)
+        assert!(from.exists());
+        std::fs::write(&to, "y").unwrap();
+        assert!(si_move(s(from.clone()), s(to), None).is_err()); // never writes over anything
+        std::fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&outside).unwrap();
     }
 
     #[test]

@@ -135,8 +135,9 @@ fn write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
     let mut tmp = target.clone().into_os_string();
     tmp.push(".saving");
     let tmp = PathBuf::from(tmp);
+    // (a rename a sync program or antivirus holds up for a moment is tried again)
     std::fs::write(&tmp, bytes)
-        .and_then(|_| std::fs::rename(&tmp, &target))
+        .and_then(|_| folders::rename_retrying(&tmp, &target))
         .map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
             format!("Could not save {path}: {e}")

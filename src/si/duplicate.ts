@@ -14,6 +14,7 @@ import { SiProjectError, fieldsOf, valuesOf, type Json, type SiCompound, type Si
 import { DEFAULT_NMR_NUCLEI, fieldDef, type FieldDef } from './fields';
 import { allBoxes, editorData, syncChildren } from './scheme-edit';
 import { newId } from './ids';
+import { cloneJson } from './pyjson';
 
 export const NEVER_COPIED_KINDS = ['attachments', 'private', 'nmr'];
 export const MAX_COPIES = 50;
@@ -56,7 +57,7 @@ async function copyFile(p: SiProject, from: string, to: string): Promise<boolean
 
 /** Give `copy` the fields of `original` and the contents of the fields in `keys`. */
 async function fillCopy(p: SiProject, original: SiCompound, copy: SiCompound, keys: Set<string>): Promise<void> {
-  copy.data.fields = structuredClone(original.data.fields ?? []);
+  copy.data.fields = cloneJson(original.data.fields ?? []);
   const values: Json = {};
   copy.data.values = values;
   const from = valuesOf(original);
@@ -70,7 +71,7 @@ async function fillCopy(p: SiProject, original: SiCompound, copy: SiCompound, ke
     if (def.kind === 'structure') {
       const mol = await p.readStructure(original);
       if (mol) await p.setStructure(copy, mol);
-      const v = isObj(from.structure) ? structuredClone(from.structure) : null;
+      const v = isObj(from.structure) ? cloneJson(from.structure) : null;
       if (v) {
         const pic = typeof v.image_override === 'string' ? v.image_override : '';
         if (pic && (await copyFile(p, join(original.folder, pic), join(copy.folder, pic)))) {
@@ -82,11 +83,11 @@ async function fillCopy(p: SiProject, original: SiCompound, copy: SiCompound, ke
       continue;
     }
     if (def.key in from) {
-      const v = structuredClone(from[def.key]);
+      const v = cloneJson(from[def.key]);
       if (def.key === 'hrms' && isObj(v)) for (const k of HRMS_FILE_KEYS) delete v[k];
       values[def.key] = v;
     }
-    if (def.key === 'scale' && 'scale_from_gp' in original.data) copy.data.scale_from_gp = structuredClone(original.data.scale_from_gp);
+    if (def.key === 'scale' && 'scale_from_gp' in original.data) copy.data.scale_from_gp = cloneJson(original.data.scale_from_gp);
   }
   await p.saveCompound(copy);
 }
@@ -117,7 +118,7 @@ export async function duplicateScheme(p: SiProject, k: SiScheme, keys: Iterable<
     const mapping = new Map<string, string>();
     try {
       for (const f of await p.folder.entries(join(k.folder, 'editor'))) if (!f.folder) await copyFile(p, join(k.folder, 'editor', f.name), join(made.folder, 'editor', f.name));
-      const editor = structuredClone(editorData(k)) as Json;
+      const editor = cloneJson(editorData(k)) as Json;
       delete editor.locked;
       made.data.editor = editor;
       for (const child of k.children) {
