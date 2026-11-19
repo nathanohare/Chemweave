@@ -359,7 +359,7 @@ const PICTURE_ORIGINALS = ['.emf', '.pdf', '.cdxml'];
  * shows the compound (the scheme still shows the same structure). The box's own files from
  * before go to the Trash (they were hidden while it showed the compound). Gives the files written.
  */
-export async function takeCompoundFiles(p: SiProject, k: SiScheme, box: Json, c: SiCompound): Promise<string[]> {
+export async function takeCompoundFiles(p: SiProject, k: SiScheme, box: Json, c: SiCompound, after?: (() => Promise<void>)[]): Promise<string[]> {
   const written: string[] = [];
   const old = await ownFiles(p, k, box);
   const id = text(box.id) || 'box';
@@ -389,7 +389,8 @@ export async function takeCompoundFiles(p: SiProject, k: SiScheme, box: Json, c:
       written.push(to);
     }
   }
-  await trashSuperseded(p, k, box, old);
+  // (`after`: the caller sends them to the Trash itself, once what it is doing can no longer fail)
+  if (after) { const was = { ...box }; after.push(() => trashSuperseded(p, k, was, old)); } else await trashSuperseded(p, k, box, old);
   delete box.compound;
   delete box.structure;
   delete box.picture;
@@ -398,13 +399,13 @@ export async function takeCompoundFiles(p: SiProject, k: SiScheme, box: Json, c:
 }
 
 /** A compound leaves this scheme page (moved out, or deleted): each box that showed it keeps a copy of its structure and picture. Saves the scheme unless `save` is false. */
-export async function compoundLeaving(p: SiProject, k: SiScheme, compoundId: string, save = true): Promise<string[]> {
+export async function compoundLeaving(p: SiProject, k: SiScheme, compoundId: string, save = true, after?: (() => Promise<void>)[]): Promise<string[]> {
   if (!isObj(k.data.editor)) return [];  // (a scheme from before the scheme editor: no boxes)
   const boxes = allBoxes(k).map(([b]) => b).filter((b) => text(b.compound) === compoundId);
   const c = k.children.find((x) => x.id === compoundId) ?? null;
   const written: string[] = [];
   for (const b of boxes) {
-    if (c) written.push(...await takeCompoundFiles(p, k, b, c));
+    if (c) written.push(...await takeCompoundFiles(p, k, b, c, after));
     else delete b.compound;
   }
   if (boxes.length && save) await p.saveScheme(k);

@@ -170,6 +170,8 @@ export class SiProject {
   private programVersion: string;
   /** Pages and sections sent to the Trash: a late save of one (a lookup that finishes afterwards) must not make its folder again. */
   private gone = new WeakSet<object>();
+  /** Goes up each time the project is read again: its sections, pages and compounds are new objects from then on (the ones from before must not be saved). */
+  revision = 0;
   /** Why the project became read-only while open (the lock was taken over, or the folder moved); '' otherwise. */
   lostWhy = '';
   /** Told when the project becomes read-only while open, with what to tell the person. */
@@ -251,6 +253,7 @@ export class SiProject {
   reload(): Promise<void> { return this.exclusive(() => this.reloadNow()); }
 
   private async reloadNow(): Promise<void> {
+    this.revision++;
     const fresh = new SiProject(this.folder, this.programVersion);
     fresh.readOnly = this.readOnly;
     await fresh.read();
@@ -262,7 +265,8 @@ export class SiProject {
     this.warnings = fresh.warnings;
     this.savedFormat = fresh.savedFormat;
     this.savedBy = fresh.savedBy;
-    this.readOnly = fresh.readOnly;
+    // (never writable again here: the lock may have been found lost while the folder was read)
+    this.readOnly = this.readOnly || fresh.readOnly;
     this.texts = fresh.texts;
     this.present = fresh.present;
     this.skipped = fresh.skipped;
@@ -490,9 +494,21 @@ export class SiProject {
    */
   private async guard(): Promise<void> {
     this.checkWritable();
-    if (!this.lock || Date.now() - this.lockChecked < 1500) return;
+    if (!this.lock || this.sure || Date.now() - this.lockChecked < 1500) return;
     if (!(await this.checkLock())) throw new SiProjectError(`${this.lostWhy} The last change was not saved.`);
   }
+
+  /**
+   * `f` with the lock checked once, now, and not again until it is done: Undo puts several files
+   * back, and a check that failed half-way would leave them half put back.
+   */
+  async whileSure<T>(f: () => Promise<T>): Promise<T> {
+    this.checkWritable();
+    if (this.lock && !(await this.checkLock())) throw new SiProjectError(this.lostWhy || 'This SI project is open read-only.');
+    this.sure++;
+    try { return await f(); } finally { this.sure--; }
+  }
+  private sure = 0;
 
   /**
    * Whether the project is still this program's to change: false once the lock is someone else's
@@ -1119,9 +1135,18 @@ export class SiProject {
       for (const x of present) { const to = join(entry, nameOf(x)); await this.folder.move(x, to); done.push([x, to]); }
     } catch (e) {
       for (const [from, to] of done.reverse()) await this.folder.move(to, from).catch(() => {});
+      await this.dropEntry(entry);
       throw new SiProjectError(`“${name}” could not be moved to the Trash, so nothing was deleted. A file in it is probably open in another program or being synced: close it and try again. (${e instanceof Error ? e.message : String(e)})`);
     }
     await this.writeJson(join(entry, 'entry.json'), info);
+  }
+
+  /** A Trash entry that was begun and holds nothing but its description (the deletion failed) goes again. */
+  private async dropEntry(entry: string): Promise<void> {
+    try {
+      const inside = await this.folder.entries(entry);
+      if (inside.every((e) => e.name === 'entry.json')) await this.folder.removeTrash(entry);
+    } catch { /* (it shows in the Trash as a deletion that did not finish) */ }
   }
 
   private dataSection(id: string): SiSection {
@@ -1599,7 +1624,9 @@ export class SiProject {
     };
     // A scheme page's box that showed it keeps a copy of its structure and picture.
     const editorBefore = k ? cloneJson(k.data.editor) : undefined;
-    const copies = k ? await (await import('./scheme-edit')).compoundLeaving(this, k, c.id, false) : [];
+    // (the box's own files from before go to the Trash only once the compound has: `after`)
+    const after: (() => Promise<void>)[] = [];
+    const copies = k ? await (await import('./scheme-edit')).compoundLeaving(this, k, c.id, false, after) : [];
     const putBack = async (): Promise<void> => {
       where.list.splice(index, 0, c);
       if (k) {
@@ -1616,16 +1643,21 @@ export class SiProject {
       await putBack();
       throw e;
     }
+    const inTrash = join(entry, nameOf(c.folder));
     try {
       await this.writeJson(join(entry, 'entry.json'), { ...info, pending: true });
-      await this.folder.move(c.folder, join(entry, nameOf(c.folder)));
+      await this.folder.move(c.folder, inTrash);
       await this.writeJson(join(entry, 'entry.json'), info);
     } catch (e) {
+      // (moved already, and only its description could not be finished: it comes back first)
+      if (await this.folder.exists(inTrash).catch(() => false)) await this.folder.move(inTrash, c.folder).catch(() => {});
+      await this.dropEntry(entry);
       await putBack();
       throw new SiProjectError(`“${info.name}” could not be moved to the Trash, so nothing was deleted. A file in it is probably open in another program or being synced: close it and try again. (${e instanceof Error ? e.message : String(e)})`);
     }
-    this.renameKnown(c.folder, join(entry, nameOf(c.folder)));
+    this.renameKnown(c.folder, inTrash);
     this.gone.add(c);
+    for (const f of after) await f().catch(() => { /* (the files stay in the scheme's folder, unused) */ });
     // its X-ray structures stay in the project, in the tree after its section
     await this.freeAnchored([c.id], s).catch(() => {});
   }

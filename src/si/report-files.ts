@@ -12,7 +12,9 @@ import type { ReportRequest, ReportResponse } from '../worker/ms-report-worker';
 
 let worker: Worker | null | undefined;
 let next = 1;
-const waiting = new Map<number, { name: string; resolve: (d: ReportData) => void }>();
+/** Files to read, one at a time: the first is with the worker, the others still here (so a worker that stops takes only its own file with it). */
+const waiting: { id: number; name: string; bytes: Uint8Array; resolve: (d: ReportData) => void }[] = [];
+let active = false;
 
 const stopped = (name: string): ReportData => ({
   name, kind: 'file', mz: [], intensity: [], measured: new Set(), calculated: [], readable: false, profile: false, scans: 0,
@@ -27,17 +29,19 @@ function start(): Worker | null {
       ? new Worker(new URL('../worker/ms-report-worker.ts', import.meta.url), { type: 'module' })
       : new Worker(new URL('../worker/ms-report-worker.ts', import.meta.url));
     worker.onmessage = (e: MessageEvent<ReportResponse>) => {
-      const w = waiting.get(e.data.id);
-      if (!w) return;
-      waiting.delete(e.data.id);
+      const w = waiting[0];
+      if (!active || !w || w.id !== e.data.id) return;
+      waiting.shift();
+      active = false;
       w.resolve(e.data.data);
+      pump();
     };
-    // (out of memory, say: each file waiting says so, and the next file starts a new worker)
+    // (out of memory, say: the file being read says so, and the files after it are read by a new worker)
     worker.onerror = () => {
-      for (const w of waiting.values()) w.resolve(stopped(w.name));
-      waiting.clear();
       worker?.terminate();
       worker = undefined;
+      if (active) { const w = waiting.shift(); active = false; w?.resolve(stopped(w.name)); }
+      pump();
     };
   } catch {
     worker = null;
@@ -45,15 +49,30 @@ function start(): Worker | null {
   return worker;
 }
 
+/** Hand the next file to the worker (read here when no worker can run any more). */
+function pump(): void {
+  while (!active && waiting.length) {
+    const w = waiting[0];
+    const wk = start();
+    if (!wk) { waiting.shift(); w.resolve(readReportBytes(w.bytes, w.name)); continue; }
+    active = true;
+    try {
+      wk.postMessage({ id: w.id, bytes: w.bytes, name: w.name } satisfies ReportRequest, [w.bytes.buffer as ArrayBuffer]);
+    } catch {
+      active = false;
+      waiting.shift();
+      w.resolve(stopped(w.name));
+    }
+  }
+}
+
 /** A report that isn't a PDF, read in the background worker (here when no worker can run). The bytes are handed over to the worker: don't use them after. */
 export function readInBackground(bytes: Uint8Array, name: string): Promise<ReportData> {
-  const w = start();
-  if (!w) return Promise.resolve(readReportBytes(bytes, name));
-  const id = next++;
+  if (!start()) return Promise.resolve(readReportBytes(bytes, name));
   const own = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength && bytes.buffer instanceof ArrayBuffer ? bytes : bytes.slice();
   return new Promise((resolve) => {
-    waiting.set(id, { name, resolve });
-    w.postMessage({ id, bytes: own, name } satisfies ReportRequest, [own.buffer as ArrayBuffer]);
+    waiting.push({ id: next++, name, bytes: own, resolve });
+    pump();
   });
 }
 

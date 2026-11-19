@@ -59,6 +59,9 @@ import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateSc
 import { popupMenu } from './popup-menu';
 import { allBoxes } from '../si/scheme-edit';
 
+/** Said when a change was made on a page of before the project was read again (Undo, Reload): its objects are no longer the project's. */
+const READ_AGAIN = 'The project was being read again when this change was made, so the change was not saved. Make it again.';
+
 export interface SiModeHost {
   flash(msg: string, ms?: number): void;
   /** The status bar's text. */
@@ -761,7 +764,7 @@ export class SiMode {
       idOf: (c) => this.idOf(c),
       chosen: (x) => { if (x === this.schemePage) this.schemeShown(x); },
       // (a scheme page's action as one named step of Undo, after the saves on their way)
-      step: async (label, f) => { await this.pendingOf(p); const j = journalOf(p.folder); return j ? j.step(label, f) : f(); },
+      step: (label, f) => this.change(p, label, f),
       redraw: () => { for (const c of k.children) this.forgetStructure(c); this.shownKey = ''; this.refresh(); },
       openCompound: (id) => this.go({ kind: 'compound', id }),
     });
@@ -1555,10 +1558,9 @@ export class SiMode {
       smiles: (m) => this.host.smiles(m),
       facts: (m) => this.host.siFacts(m),
       act: async (label, f) => {
-        const j = journalOf(p.folder);
         try {
           await this.commitAll();
-          await (j ? j.step(label, f) : f());
+          await this.change(p, label, f);   // (in the project's queue, as one step of Undo)
         } catch (e) {
           this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
         }
@@ -1744,12 +1746,12 @@ export class SiMode {
       })());
       top.append(name, title, used, up, down, rm);
       const textLab = el('div', 'si-gp-label', 'Procedure');
-      const textBox = new SiRichBox('', { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeGpText(id, v), false) }, true, 'The procedure as it prints under its heading: To a solution of {starting material} in…');
+      const textBox = new SiRichBox('', { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeGpText(id, v), false, undefined, () => textBox) }, true, 'The procedure as it prints under its heading: To a solution of {starting material} in…');
       this.boxes.push(textBox);
       void p.readGpText(s, id).then((t) => textBox.set(t)).catch(() => { /* (shown empty) */ });
       const sentLab = el('div', 'si-gp-label', 'Compound sentence');
       addInfo(sentLab, 'What each compound made by this procedure prints at the start of its procedure. {GP} is this procedure’s name; {scale}, {yield}, {product} and {purification} come from the compound’s fields; other {placeholders} are typed on the compound.');
-      const sentence = new SiRichBox(partText(gp.sentence), { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.updateGeneralProcedure(id, { sentence: v }), false) }, false, 'Prepared according to {GP} from {starting material} ({scale}).');
+      const sentence = new SiRichBox(partText(gp.sentence), { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.updateGeneralProcedure(id, { sentence: v }), false, undefined, () => sentence) }, false, 'Prepared according to {GP} from {starting material} ({scale}).');
       this.boxes.push(sentence);
       box.append(top, textLab, textBox.el, sentLab, sentence.el);
       card.append(box);
@@ -1775,7 +1777,7 @@ export class SiMode {
     void this.pendingOf(p).then(() => p.readSectionText(s)).then(async (text) => {
       // (another page was drawn while the text was read: this one is gone)
       if (drawn !== this.drawn || this.project !== p) return;
-      const box = new SiRichBox(text, { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeSectionText(s, v), false) }, true, 'Type the section’s text');
+      const box = new SiRichBox(text, { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeSectionText(s, v), false, undefined, () => box) }, true, 'Type the section’s text');
       this.boxes.push(box);
       t.append(box.el);
       // the tables and figures under the text, in its order
@@ -1978,6 +1980,7 @@ export class SiMode {
       idOf: (id) => { const c = p.compounds.find((x) => x.id === id); return c ? this.idOf(c) : '??'; },
       redraw: () => { this.shownKey = ''; this.refresh(); },
       copyRich: (t, h) => this.host.copyRich(t, h),
+      change: (f) => this.change(p, 'Edit', f),
     });
     this.xrayPage = page;
     out.append(page.el);
@@ -3182,7 +3185,7 @@ export class SiMode {
 
   private textBox(body: HTMLElement, c: SiCompound, key: string, placeholder = ''): void {
     const p = this.project!;
-    const box = new SiRichBox(p.compoundText(c, key), { label: this.label, mentionable: this.mentionable, changed: (t) => void this.act(() => p.writeCompoundText(c, key, t), false, c) }, true, placeholder);
+    const box = new SiRichBox(p.compoundText(c, key), { label: this.label, mentionable: this.mentionable, changed: (t) => void this.act(() => p.writeCompoundText(c, key, t), false, c, () => box) }, true, placeholder);
     this.boxes.push(box);
     body.append(box.el);
   }
@@ -3309,18 +3312,27 @@ export class SiMode {
    * after another, each written before the next starts, so two saves of one file can't cross.
    * `only`: the change is to this compound's values alone (the other compounds aren't checked again).
    */
-  private act(f: () => Promise<unknown>, redraw = true, only?: SiCompound): Promise<void> {
+  private act(f: () => Promise<unknown>, redraw = true, only?: SiCompound, typed?: () => SiRichBox): Promise<void> {
     const p = this.project;
     if (!p) return Promise.resolve();
     const k = this.kept(p);
+    const rev = p.revision;
     const run = k.queue.then(async () => {
       const j = journalOf(p.folder);
       let failed = false;
       try {
+        if (p.revision !== rev) throw new SiProjectError(READ_AGAIN);
         await (j ? j.step('Edit', f) : f());
       } catch (e) {
         failed = true;
         this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
+        // (a text box's save: the page is not drawn again from the folder, which would take away what was typed;
+        // the text stays in its box, to be saved again when the box is left, or copied when the project is read-only now)
+        if (typed && p.revision === rev && this.project === p) {
+          k.stale = true;
+          if (p.readOnly) this.lockPage(); else typed().unsaved();
+          return;
+        }
       }
       // (the project of another tab by now: its page is drawn when its tab shows)
       // (anything but one compound's own values: labels and the project's warnings may have changed)
@@ -3331,6 +3343,42 @@ export class SiMode {
     });
     k.queue = run.then(() => {}, () => {});
     return k.queue;
+  }
+
+  /**
+   * A change to a project's files made by a page of its own (a scheme page, an X-ray structure's),
+   * or from outside the tab: in the project's queue with every other change, as one step of
+   * Undo. Its failure is the caller's to say. `f` must not wait for the queue itself.
+   */
+  change<T>(p: SiProject, label: string, f: () => Promise<T>): Promise<T> {
+    const rev = p.revision;
+    return this.queued(p, () => {
+      if (p.revision !== rev) throw new SiProjectError(READ_AGAIN);
+      const j = journalOf(p.folder);
+      return j ? j.step(label, f) : f();
+    });
+  }
+
+  /** `f` in a project's queue: after the changes on their way, before any made later. */
+  private queued<T>(p: SiProject, f: () => Promise<T>): Promise<T> {
+    const k = this.kept(p);
+    const run = k.queue.then(f);
+    k.queue = run.then(() => {}, () => {});
+    return run;
+  }
+
+  /** The project shown became read-only while open: its page's fields are locked where they are (what is typed in them stays, to be copied). */
+  readOnlyNow(p: SiProject): void {
+    if (this.project !== p) return;
+    this.lockPage();
+    try { this.refresh(); } catch (e) { console.error('SI page could not be drawn', e); }
+  }
+
+  private lockPage(): void {
+    if (!this.project?.readOnly) return;
+    this.lockFields(this.page);
+    for (const x of this.page.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')) x.disabled = true;
+    for (const x of this.page.querySelectorAll<HTMLElement>('.si-rich')) x.contentEditable = 'false';
   }
 
   /**
@@ -3843,11 +3891,15 @@ export class SiMode {
   /** Edit ▸ Undo (Ctrl+Z) and Redo: the project's files as they were before (or after) the step; a typed change not yet saved is saved first. */
   undo(redo = false): Promise<void> {
     // (one at a time: Ctrl+Z held down never starts an Undo while another is putting files back)
-    const run = this.undoing.then(() => this.undoNow(redo));
+    // (nothing is typed on the page until it is drawn again: its fields are of the project as it was before)
+    this.undos++;
+    this.page.inert = true;
+    const run = this.undoing.then(() => this.undoNow(redo)).finally(() => { if (--this.undos === 0) this.page.inert = false; });
     this.undoing = run.then(() => {}, () => {});
     return run;
   }
   private undoing: Promise<void> = Promise.resolve();
+  private undos = 0;
 
   private async undoNow(redo: boolean): Promise<void> {
     const p = this.project;
@@ -3858,13 +3910,20 @@ export class SiMode {
     if (this.project !== p) return;
     let label: string | null = null;
     try {
-      label = redo ? await j.redo() : await j.undo();
+      // (in the project's queue, with the folder read again: no change runs between the files put back and the page drawn from them;
+      // the lock is checked once, before: a check that failed half-way would leave the step half put back)
+      label = await this.queued(p, async () => {
+        const got = await p.whileSure(() => (redo ? j.redo() : j.undo()));
+        if (got !== null) {
+          try { await p.reload(); } catch (e) { this.host.flash(`The project could not be read again: ${e instanceof Error ? e.message : String(e)}`, 8000); }
+        }
+        return got;
+      });
     } catch (e) {
       this.host.flash(e instanceof Error ? e.message : String(e), 9000);
       return;
     }
     if (label === null) { this.host.flash(redo ? 'Nothing to redo.' : 'Nothing to undo.'); return; }
-    try { await p.reload(); } catch (e) { this.host.flash(`The project could not be read again: ${e instanceof Error ? e.message : String(e)}`, 8000); }
     this.forgetStructure(undefined, p);
     if (this.project !== p) return;
     this.shownKey = '';

@@ -26,6 +26,8 @@ export interface SiXrayHost {
   redraw(): void;
   /** Put text on the clipboard as plain text and HTML (the crystal data table). */
   copyRich(text: string, html: string): Promise<void>;
+  /** A change to the project's files, run with the project's other changes in order (when the host keeps them in order). */
+  change?<T>(f: () => Promise<T>): Promise<T>;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
@@ -54,7 +56,9 @@ export class SiXrayPage {
 
   private async save(change: Json, redraw = false): Promise<void> {
     for (const [k, v] of Object.entries(change)) { if (v === undefined) delete this.data[k]; else this.data[k] = v; }
-    try { await this.host.project.saveSection(this.s); } catch (e) { this.host.flash(`The change could not be saved: ${e instanceof Error ? e.message : String(e)}`, 8000); }
+    const s = this.s;
+    const write = (): Promise<void> => this.host.project.saveSection(s);
+    try { await (this.host.change ? this.host.change(write) : write()); } catch (e) { this.host.flash(`The change could not be saved: ${e instanceof Error ? e.message : String(e)}`, 8000); }
     if (redraw) this.host.redraw();
   }
 

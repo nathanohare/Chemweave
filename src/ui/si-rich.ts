@@ -149,7 +149,7 @@ function read(box: HTMLElement, multiline = true): Paragraph[] {
 /** A rich text box over SI text. `multiline` false keeps it to one paragraph (an NMR report). */
 export class SiRichBox {
   readonly el: HTMLDivElement;
-  private last: string;
+  private last: string | null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private menu: HTMLDivElement | null = null;
 
@@ -239,6 +239,9 @@ export class SiRichBox {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => this.commit(), 700);
   }
+
+  /** What was typed could not be saved: it is saved again when the box is next left (or the page goes). */
+  unsaved(): void { this.last = null; }
 
   /** Save what was typed, if it changed. */
   commit(): void {

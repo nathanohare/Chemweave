@@ -8769,7 +8769,7 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
     if (opening) siOpening.delete(opening);
   }
   // someone took the project over, or its folder moved: it is read-only from then on, and the person is told
-  project.onReadOnly = (message) => { void showError(message); siMode?.refresh(); };
+  project.onReadOnly = (message) => { void showError(message); siMode?.readOnlyNow(project); };
   await loadSiMode();
   ws.openSi(project);
   siLinked.delete(project.folder.where);
@@ -8938,14 +8938,22 @@ const siAccess: SiAccess = {
       return null;
     }
     const done: typeof todo = [];
-    try {
-      for (const x of todo) { await p.setIdOverride(x.c, x.to); done.push(x); }
-    } catch (e) {
-      // all or none: those already given their new ID get their old one back
-      let back = true;
-      for (const x of done.reverse()) {
-        try { await p.setIdOverride(x.c, typeof x.was === 'string' ? x.was : ''); } catch { back = false; }
+    let back = true;
+    // (after the SI tab's own saves, and as one step of its Undo)
+    const write = async (): Promise<void> => {
+      try {
+        for (const x of todo) { await p.setIdOverride(x.c, x.to); done.push(x); }
+      } catch (e) {
+        // all or none: those already given their new ID get their old one back
+        for (const x of done.reverse()) {
+          try { await p.setIdOverride(x.c, typeof x.was === 'string' ? x.was : ''); } catch { back = false; }
+        }
+        throw e;
       }
+    };
+    try {
+      if (siMode) { await siMode.saved(p); await siMode.change(p, 'Renumber SI', write); } else await write();
+    } catch (e) {
       siMode?.refresh();
       siBump(link.path);
       await showError(`The SI could not be renumbered: ${e instanceof Error ? e.message : String(e)}. ${back ? 'No ID was changed.' : `Some IDs were changed and could not be put back: check the Manual IDs of ${done.map((x) => x.to).join(', ')} in the SI project.`}`);
