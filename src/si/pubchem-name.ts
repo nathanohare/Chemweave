@@ -17,7 +17,8 @@ export type Fetch = typeof fetch;
 
 const BASE = 'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/inchikey/';
 const PROPERTIES = 'IUPACName,Title';
-const TIMEOUT_MS = 10000;
+/** How long a lookup may take, answer included. */
+export const TIMEOUT_MS = 10000;
 export const PUBCHEM_PAGE = 'https://pubchem.ncbi.nlm.nih.gov/compound/';
 export const NOT_FOUND_TEXT = 'This exact structure is not in PubChem: paste the name from ChemDraw (Structure ▸ Convert Structure to Name), or use Structure to Name.';
 
@@ -38,19 +39,32 @@ class Failed extends Error {}
 
 async function getJson(url: string, fetchFn: Fetch): Promise<unknown> {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-  let res: Response;
+  // (the time limit covers reading the answer too, so an answer that stalls part-way never hangs the lookup)
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { ctl.abort(); reject(new Failed('PubChem could not be reached. Check the internet connection and try again.')); }, TIMEOUT_MS);
+  });
   try {
-    res = await fetchFn(url, { headers: { Accept: 'application/json' }, signal: ctl.signal });
-  } catch {
-    throw new Failed('PubChem could not be reached. Check the internet connection and try again.');
+    let res: Response;
+    try {
+      res = await Promise.race([fetchFn(url, { headers: { Accept: 'application/json' }, signal: ctl.signal }), timeout]);
+    } catch (e) {
+      if (e instanceof Failed) throw e;
+      throw new Failed('PubChem could not be reached. Check the internet connection and try again.');
+    }
+    if (res.status === 404) throw new NotFound();
+    if (res.status === 503 || res.status === 504) throw new Failed('PubChem is busy at the moment. Please try again in a minute.');
+    if (!res.ok) throw new Failed(`PubChem answered with an error (HTTP ${res.status}). Please try again later.`);
+    try {
+      return await Promise.race([res.json() as Promise<unknown>, timeout]);
+    } catch (e) {
+      if (e instanceof Failed) throw e;
+      throw new Failed('PubChem’s answer could not be read. Please try again later.');
+    }
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
+    timeout.catch(() => {});
   }
-  if (res.status === 404) throw new NotFound();
-  if (res.status === 503 || res.status === 504) throw new Failed('PubChem is busy at the moment. Please try again in a minute.');
-  if (!res.ok) throw new Failed(`PubChem answered with an error (HTTP ${res.status}). Please try again later.`);
-  try { return await res.json(); } catch { throw new Failed('PubChem’s answer could not be read. Please try again later.'); }
 }
 
 function properties(answer: unknown): Record<string, unknown>[] {

@@ -43,7 +43,9 @@ const ALNUM = /[\p{L}\p{N}]/u;
 
 /** The first NMR solvent a text names (the longest spelling where two start at the same place). */
 export function findSolvent(text: string): { name: string; written: string; start: number; end: number } | null {
-  const low = [...plainChars(text)].map((c) => c.toLowerCase().slice(0, 1) || c).join('');
+  // (one UTF-16 unit for each of the text's, so the places found are the text's places: a character
+  // outside the Basic Multilingual Plane, such as 𝛿 pasted from a PDF, keeps its two)
+  const low = [...plainChars(text)].map((c) => { const l = c.toLowerCase(); return c.length === 1 ? l.slice(0, 1) || c : l.length === c.length ? l : c; }).join('');
   const chars: string[] = [], where: number[] = [];
   for (let i = 0; i < low.length; i++) if (!/\s/.test(low[i])) { chars.push(low[i]); where.push(i); }
   const squeezed = chars.join('');
@@ -52,7 +54,8 @@ export function findSolvent(text: string): { name: string; written: string; star
     let i = squeezed.indexOf(alias);
     while (i !== -1) {
       const begin = where[i], end = where[i + alias.length - 1] + 1;
-      const before = begin > 0 ? low[begin - 1] : '', after = end < low.length ? low[end] : '';
+      const before = begin > 0 ? String.fromCodePoint(low.codePointAt(begin - 2 >= 0 && /[\uDC00-\uDFFF]/.test(low[begin - 1]) ? begin - 2 : begin - 1)!) : '';
+      const after = end < low.length ? String.fromCodePoint(low.codePointAt(end)!) : '';
       if (!(ALNUM.test(before) || ALNUM.test(after))) {
         const key: [number, number, string] = [i, -alias.length, alias];
         if (!best || key[0] < best[0] || (key[0] === best[0] && (key[1] < best[1] || (key[1] === best[1] && key[2] < best[2])))) best = key;
@@ -68,7 +71,17 @@ export function findSolvent(text: string): { name: string; written: string; star
 }
 
 /** The usual name of a solvent typed on its own ("cdcl3" → "CDCl3"); the text (trimmed) if it isn't one. */
-export const canonicalSolvent = (t: string): string => ALIASES.get(plainSolvent(t)) ?? t.trim();
+export function canonicalSolvent(t: string): string {
+  // (remembered per text, as SI Assistant's lru_cache: the check asks for every table row at every peak)
+  let got = canonicalSeen.get(t);
+  if (got === undefined) {
+    got = ALIASES.get(plainSolvent(t)) ?? t.trim();
+    if (canonicalSeen.size >= 1024) canonicalSeen.clear();
+    canonicalSeen.set(t, got);
+  }
+  return got;
+}
+const canonicalSeen = new Map<string, string>();
 
 /** "CDCl3" → "CDCl₃" for messages. */
 export const prettySolvent = (name: string): string => name.replace(/(?<=[A-Za-z])(\d+)/g, (d) => [...d].map((c) => String.fromCharCode(0x2080 + Number(c))).join(''));

@@ -170,13 +170,91 @@ export function checkSpelling(box: HTMLElement): void {
 
 const hit = (r: Range, x: number, y: number): boolean => [...r.getClientRects()].some((rect) => x >= rect.left - 1 && x <= rect.right + 1 && y >= rect.top - 1 && y <= rect.bottom + 1);
 
-/** Make the changes of a Fix (or of formatting as typed) in a paragraph, through the browser's editing, so the box saves them and Ctrl+Z undoes them. */
+/**
+ * Make the changes of a Fix (or of formatting as typed) in a paragraph, through the browser's
+ * editing, so the box saves them and one Ctrl+Z undoes them all.
+ */
 let applying = false;
 function applyEdits(box: HTMLElement, block: Node, edits: readonly FixEdit[]): void {
   if (!edits.length) return;
   applying = true;
-  try { editAll(box, block, edits); } finally { applying = false; }
+  try { if (!editAtOnce(box, block, edits)) editAll(box, block, edits); } finally { applying = false; }
 }
+
+interface Look { pos: 'base' | 'sub' | 'sup'; italic: boolean; bold: boolean; underline: boolean }
+
+/** How a character of the paragraph looks now (as the box reads it back). */
+function fullLookOf(t: Text, block: Node): Look {
+  const look: Look = { pos: 'base', italic: false, bold: false, underline: false };
+  let pos: Look['pos'] | null = null;
+  for (let n: Node | null = t.parentNode; n && n !== block; n = n.parentNode) {
+    if (!(n instanceof HTMLElement)) continue;
+    if (!pos && n.tagName === 'SUB') pos = 'sub';
+    else if (!pos && n.tagName === 'SUP') pos = 'sup';
+    if (n.tagName === 'I' || n.tagName === 'EM' || n.style.fontStyle === 'italic') look.italic = true;
+    if (n.tagName === 'B' || n.tagName === 'STRONG' || n.style.fontWeight === 'bold' || Number(n.style.fontWeight) >= 600) look.bold = true;
+    if (n.tagName === 'U' || /underline/.test(n.style.textDecoration)) look.underline = true;
+  }
+  look.pos = pos ?? 'base';
+  return look;
+}
+
+const escapeHtml = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * The changes made at once: the stretch of the paragraph they cover written again with them (as
+ * the box writes formatting: b, i, u, then sub or sup) and put in with one insertHTML, so they
+ * are one undo step. False (nothing done) when the stretch holds a mention or a line break.
+ */
+function editAtOnce(box: HTMLElement, block: Node, edits: readonly FixEdit[]): boolean {
+  const { text, at } = textOf(block);
+  const lo = Math.min(...edits.map((e) => e.start)), hi = Math.max(...edits.map((e) => e.end));
+  if (lo < 0 || hi > text.length || hi <= lo) return false;
+  const chars: { ch: string; look: Look }[] = [];
+  for (let i = lo; i < hi; i++) {
+    const t = at[i][0];
+    if (!t) return false;
+    chars.push({ ch: text[i], look: fullLookOf(t, block) });
+  }
+  // the formatting first (where the characters are now), then the new text, from the end back,
+  // each piece looking like the first character it replaces (as the document editor does it)
+  for (const e of edits) {
+    for (let i = e.start; i < e.end; i++) {
+      const l = chars[i - lo].look = { ...chars[i - lo].look };
+      if (e.pos) l.pos = e.pos;
+      if (e.italic !== undefined) l.italic = e.italic;
+      if (e.bold !== undefined) l.bold = e.bold;
+    }
+  }
+  for (const e of [...edits].filter((x) => x.text !== undefined).sort((a, b) => b.start - a.start)) {
+    const look = (chars[e.start - lo] ?? chars[e.start - lo - 1] ?? chars[0]).look;
+    chars.splice(e.start - lo, e.end - e.start, ...[...e.text!].map((ch) => ({ ch, look })));
+  }
+  let html = '';
+  for (let i = 0; i < chars.length;) {
+    const l = chars[i].look;
+    let j = i;
+    let t = '';
+    const same = (m: Look): boolean => m.pos === l.pos && m.italic === l.italic && m.bold === l.bold && m.underline === l.underline;
+    while (j < chars.length && same(chars[j].look)) t += chars[j++].ch;
+    let h = escapeHtml(t);
+    if (l.pos !== 'base') h = `<${l.pos}>${h}</${l.pos}>`;
+    if (l.underline) h = `<u>${h}</u>`;
+    if (l.italic) h = `<i>${h}</i>`;
+    if (l.bold) h = `<b>${h}</b>`;
+    html += h;
+    i = j;
+  }
+  const r = rangeOf(at, lo, hi);
+  const sel = getSelection();
+  if (!r || !sel) return false;
+  if (document.activeElement !== box) box.focus();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  return document.execCommand('insertHTML', false, html);
+}
+
+/** The changes one by one (each its own undo step): where they can't be made at once. */
 function editAll(box: HTMLElement, block: Node, edits: readonly FixEdit[]): void {
   if (document.activeElement !== box) box.focus();
   const sel = getSelection();

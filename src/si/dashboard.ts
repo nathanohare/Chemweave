@@ -361,15 +361,36 @@ export interface ProjectSummary {
   complete: number;
   filled: number;
   required: number;
-  /** Required fields still empty, by field name: how many compounds miss each. */
+  /** Required data still missing, by field (NMR and spectra by nucleus: "¹³C NMR"), in the order of the sections' fields: how many compounds miss each. */
   missing: [string, number][];
-  /** Active warnings by check (plain names), most first. */
+  /** Active warnings by check (plain names), in the order of CHECK_LABELS. */
   warnings: [string, number][];
   flags: number;
 }
 
-/** The project at a glance: progress overall and by Data section, what is missing and the warnings by kind. */
-export function summarize(p: SiProject, rowsBySection: [SiSection, Row[]][]): ProjectSummary {
+/**
+ * The required data a compound is missing, by field, as SI Assistant counts it. NMR and spectra
+ * are counted per nucleus ("¹³C NMR", "¹³C spectrum": a report left empty, or a report with no
+ * spectrum), so they are listed for a compound whose NMR field as a whole counts as filled.
+ */
+export function missingFields(s: SiSection, row: Row): string[] {
+  const scope = sectionScope(s);
+  const out: string[] = [];
+  for (const key of defaultFieldsOf(s).filter((e) => e.required).map((e) => e.key)) {
+    const cell = row.cells.get(key);
+    if (!cell || cell.state === 'not_used') continue;
+    const subs = SPLIT_FIELDS.includes(key) ? [...row.cells].filter(([k, c]) => k.startsWith(key + ':') && c.state === 'missing').map(([k]) => k) : [];
+    if (subs.length) out.push(...subs.map((k) => fieldLabel(scope, k)));
+    else if (cell.state === 'missing') out.push(fieldLabel(scope, key));
+  }
+  return out;
+}
+
+/**
+ * The project at a glance: progress overall and by Data section, what is missing and the warnings
+ * by kind. `projectWarnings` (project-warnings.ts) are counted with the compounds' warnings.
+ */
+export function summarize(p: SiProject, rowsBySection: [SiSection, Row[]][], projectWarnings: readonly { check: string }[] = []): ProjectSummary {
   const sections: SectionProgress[] = [];
   const missing = new Map<string, number>();
   const checks = new Map<string, number>();
@@ -381,17 +402,33 @@ export function summarize(p: SiProject, rowsBySection: [SiSection, Row[]][]): Pr
       filled: rows.reduce((n, r) => n + r.filled, 0), required: rows.reduce((n, r) => n + r.total, 0),
     });
     for (const r of rows) {
-      for (const m of r.missing) missing.set(m, (missing.get(m) ?? 0) + 1);
+      for (const m of missingFields(s, r)) missing.set(m, (missing.get(m) ?? 0) + 1);
       for (const [k, n] of r.checks) checks.set(k, (checks.get(k) ?? 0) + n);
       flags += r.flags;
     }
   }
-  const order = Object.keys(CHECK_LABELS);
-  const warnings = [...checks].sort((a, b) => b[1] - a[1] || order.indexOf(a[0]) - order.indexOf(b[0])).map(([k, n]): [string, number] => [CHECK_LABELS[k] ?? k, n]);
+  for (const w of projectWarnings) checks.set(w.check, (checks.get(w.check) ?? 0) + 1);
+  // Fields in the order they come in the sections' defaults (so a list keeps its order as it shrinks).
+  // (each label's first place in the list; one not there goes after as many places as labels: SI Assistant's order)
+  const rank = new Map<string, number>();
+  let i = 0;
+  for (const [s] of rowsBySection) {
+    const scope = sectionScope(s);
+    for (const e of defaultFieldsOf(s)) for (const k of [e.key, ...(SPLIT_FIELDS.includes(e.key) ? splitKeys(scope, e.key) : [])]) {
+      const label = fieldLabel(scope, k);
+      if (!rank.has(label)) rank.set(label, i);
+      i++;
+    }
+  }
+  const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  const known = Object.keys(CHECK_LABELS);
+  const place = (k: string): number => (known.includes(k) ? known.indexOf(k) : known.length);
+  const warnings = [...checks].filter(([, n]) => n > 0).sort((a, b) => place(a[0]) - place(b[0]) || cmp(a[0], b[0])).map(([k, n]): [string, number] => [CHECK_LABELS[k] ?? k, n]);
+  const at = (label: string): number => rank.get(label) ?? rank.size;
   return {
     sections, compounds: sections.reduce((n, s) => n + s.compounds, 0), complete: sections.reduce((n, s) => n + s.complete, 0),
     filled: sections.reduce((n, s) => n + s.filled, 0), required: sections.reduce((n, s) => n + s.required, 0),
-    missing: [...missing].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)), warnings, flags,
+    missing: [...missing].sort((a, b) => at(a[0]) - at(b[0]) || cmp(a[0], b[0])), warnings, flags,
   };
 }
 

@@ -9,11 +9,14 @@
 // - symmetry-distinct carbons (≈ ¹³C signals) and ¹H counts (with NH/OH/SH apart).
 //
 // Masses and abundances: Chemweave's isotope table (chem/analysis.ts: NIST, masses from the 2016
-// Atomic Mass Evaluation); the electron mass is CODATA 2018 (chem/hrms.ts).
+// Atomic Mass Evaluation) for the natural isotopes; labelled isotopes ([14C], T, [18F]…) and
+// elements with none in nature (Tc, Pm…) from isotope-masses.ts (NIST SRD 144, as SI Assistant
+// has them through RDKit); the electron mass is CODATA 2018 (chem/hrms.ts).
 
 import { ISOTOPES } from '../chem/analysis';
 import { ELECTRON } from '../chem/hrms';
 import { elementNumber, SYMBOLS } from '../chem/elements';
+import { isotopeMassOf, mostCommonIsotope } from './isotope-masses';
 
 export class ChemError extends Error {}
 
@@ -45,24 +48,29 @@ export interface MolInfo {
 
 // ---------------------------------------------------------------- isotopes and masses
 
-/** An element's natural isotopes: [mass number, mass, fraction], the most common first. */
+/** An element's natural isotopes: [mass number, mass, fraction], the most common first. An element with none in nature (Tc, Pm, Po…) has its most common isotope only, as SI Assistant takes it. */
 export function naturalIsotopes(sym: string): [number, number, number][] {
-  const list = ISOTOPES[sym];
-  if (!list?.length) throw new ChemError(`There is no isotope data for “${sym}”.`);
+  const list = (ISOTOPES[sym] ?? []).filter((x) => x[1] > 0);
+  if (!list.length) {
+    const common = sym === 'D' || sym === 'T' ? null : mostCommonIsotope(sym);
+    if (!common) throw new ChemError(`There is no isotope data for “${sym}”.`);
+    return [[common[0], common[1], 1]];
+  }
   const top = list.reduce((a, b) => (b[1] > a[1] ? b : a));
-  const all = list.filter((x) => x[1] > 0).map(([mass, pct]) => [Math.round(mass), mass, pct / 100] as [number, number, number]);
+  const all = list.map(([mass, pct]) => [Math.round(mass), mass, pct / 100] as [number, number, number]);
   return [...all.filter((x) => x[1] === top[0]), ...all.filter((x) => x[1] !== top[0])];
 }
 
+/** An isotope's mass: from the natural isotopes' table, else from the full table (isotope-masses.ts: [14C], [18F], T…). */
 function isotopeMass(sym: string, massNumber: number): number | null {
   if (sym === 'H' && massNumber === 2) return ISOTOPES.D[0][0];
   const hit = (ISOTOPES[sym] ?? []).find(([m]) => Math.round(m) === massNumber);
-  return hit ? hit[0] : null;
+  return hit ? hit[0] : isotopeMassOf(sym, massNumber);
 }
 
 function atomMass(sym: string, iso: number): number {
   if (sym === 'D') return ISOTOPES.D[0][0];
-  if (sym === 'T') throw new ChemError('Tritium (T) has no mass in the isotope table.');
+  if (sym === 'T') return isotopeMass('H', 3)!;
   if (iso) {
     const m = isotopeMass(sym, iso);
     if (m === null) throw new ChemError(`“${iso}${sym}” is not an isotope I know.`);
@@ -74,7 +82,7 @@ function atomMass(sym: string, iso: number): number {
 function averageWeight(sym: string): number {
   const list = ISOTOPES[sym === 'D' || sym === 'T' ? 'H' : sym] ?? [];
   const total = list.reduce((s, [, p]) => s + p, 0);
-  return total ? list.reduce((s, [m, p]) => s + m * p, 0) / total : 0;
+  return total ? list.reduce((s, [m, p]) => s + m * p, 0) / total : naturalIsotopes(sym)[0][1];
 }
 
 export function countsMass(counts: Counts): number {
@@ -172,7 +180,9 @@ const TYPED_CHARGE = new RegExp(`(?<n>[${SUPER}]*)(?<signs>[+\\-−–⁺⁻]+)(
 const EXPLICIT_CHARGE = [
   new RegExp(`\\(\\s*(?<n>[${DIGITS}]*)\\s*(?<signs>[${SIGNS}]+)\\s*(?<n2>[${DIGITS}]*)\\s*\\)$`),
   new RegExp(`\\^\\s*(?<n>[${DIGITS}]*)\\s*(?<signs>[${SIGNS}]+)\\s*(?<n2>[${DIGITS}]*)$`),
-  new RegExp(`\\s+(?<n>[${DIGITS}]*)\\s*(?<signs>[${SIGNS}]+)\\s*(?<n2>[${DIGITS}]*)$`),
+  // (starting only where a run of spaces starts, and no two space runs side by side: a long run
+  // of spaces is read in one go, not tried at each of its spaces)
+  new RegExp(`(?<!\\s)\\s+(?:(?<n>[${DIGITS}]+)\\s*)?(?<signs>[${SIGNS}]+)\\s*(?<n2>[${DIGITS}]*)$`),
   new RegExp(`(?<n>)(?<signs>[${SIGNS}])(?<n2>[0-9]+)$`),
 ];
 const BRACKETED_ION = new RegExp(`^\\[(?<f>[A-Z].*)\\][${RADICAL}]?(?<n>[${DIGITS}]*)(?<signs>[${SIGNS}]+)(?<n2>[${DIGITS}]*)$`);
@@ -181,8 +191,9 @@ const CHARGE_HINT = 'Write a charge at the end of the formula, as in C₁₀H₈
 function chargeFrom(g: Record<string, string>, text: string): number {
   const signs = g.signs.replace(/[−–]/g, '-').replace(/⁺/g, '+').replace(/⁻/g, '-');
   if (new Set(signs).size === 2) throw new ChemError(`The charge at the end of “${text.trim()}” has both + and −.`);
-  const digits = superToPlain(g.n + g.n2);
-  if (digits && (signs.length > 1 || (g.n && g.n2))) throw new ChemError(`The charge at the end of “${text.trim()}” can't be read: write it as ²⁺ or ++, not both.`);
+  const n = g.n ?? '', n2 = g.n2 ?? '';
+  const digits = superToPlain(n + n2);
+  if (digits && (signs.length > 1 || (n && n2))) throw new ChemError(`The charge at the end of “${text.trim()}” can't be read: write it as ²⁺ or ++, not both.`);
   const size = digits ? Number(digits) : signs.length;
   if (size === 0) throw new ChemError(`The charge at the end of “${text.trim()}” is zero. ${CHARGE_HINT}`);
   return signs[0] === '+' ? size : -size;
@@ -319,13 +330,19 @@ export function isotopePattern(info: MolInfo, adductLabel: string, minPercent = 
   return got.map((p) => ({ ...p }));
 }
 
+/** A composition of the ion so far: its mass and probability, and the element spread that made it (only read for the peaks kept). */
+interface PatternState { mass: number; p: number; heavy: boolean; prev: PatternState | null; sym: string; comp: number[] | null }
+
 function computePattern(info: MolInfo, adductLabel: string, minPercent: number, maxPeaks: number): Peak[] {
   const adduct = parseAdduct(adductLabel);
   const counts = ionCounts(info, adduct);
   let fixedMass = 0;
   const fixed: Counts = new Map();
-  // {heavy-isotope composition: [mass, probability]}, the composition as "sym:iso:n;…"
-  let states = new Map<string, [number, number]>([['', [0, 1]]]);
+  // Every isotopic composition, element by element, pruned below PRUNE of the most likely one.
+  // (The same sums in the same order as SI Assistant's, so the same numbers; compositions are
+  // kept as counts, and written out as formulas only for the peaks kept, so heavy-metal ions
+  // with many isotopes, e.g. Sn₆Br₆, are quick.)
+  let states: PatternState[] = [{ mass: 0, p: 1, heavy: false, prev: null, sym: '', comp: null }];
   const entries = [...counts].map(([k, n]) => [splitKey(k), n] as [[string, number], number]).sort((a, b) => cmp(a[0][0], b[0][0]) || a[0][1] - b[0][1]);
   for (const [[sym, iso], n] of entries) {
     if (iso || sym === 'D' || sym === 'T') {
@@ -334,56 +351,66 @@ function computePattern(info: MolInfo, adductLabel: string, minPercent: number, 
       continue;
     }
     const isotopes = naturalIsotopes(sym);
-    // the n atoms over the isotopes, atom by atom
-    let element = new Map<string, number>([[isotopes.map(() => 0).join(','), 1]]);
+    // the n atoms over the isotopes, atom by atom; a composition's key is its counts as one
+    // number (base n + 1), or as text when that number would be too big to be exact
+    const K = isotopes.length, R = n + 1;
+    const numeric = Math.pow(R, K) < Number.MAX_SAFE_INTEGER;
+    const step = isotopes.map((_, k) => Math.pow(R, k));
+    type Comp = { c: number[]; p: number; key: number | string };
+    let element: Comp[] = [{ c: isotopes.map(() => 0), p: 1, key: 0 }];
     for (let a = 0; a < n; a++) {
-      const next = new Map<string, number>();
-      for (const [comp, p] of element) {
-        const c = comp.split(',').map(Number);
+      const next = new Map<number | string, Comp>();
+      for (const { c, p, key } of element) {
         isotopes.forEach(([, , frac], k) => {
-          c[k]++;
-          const kk = c.join(',');
-          next.set(kk, (next.get(kk) ?? 0) + p * frac);
-          c[k]--;
+          let kk: number | string;
+          if (numeric) kk = (key as number) + step[k];
+          else { c[k]++; kk = c.join(','); c[k]--; }
+          const got = next.get(kk);
+          if (got) got.p += p * frac;
+          else { const cc = c.slice(); cc[k]++; next.set(kk, { c: cc, p: 0 + p * frac, key: kk }); }
         });
       }
       let top = 0;
-      for (const p of next.values()) if (p > top) top = p;
-      element = new Map([...next].filter(([, p]) => p >= top * PRUNE));
+      for (const x of next.values()) if (x.p > top) top = x.p;
+      element = [...next.values()].filter((x) => x.p >= top * PRUNE);
     }
-    const combined = new Map<string, [number, number]>();
-    for (const [key, [mass, p]] of states) {
-      for (const [comp, q] of element) {
-        const c = comp.split(',').map(Number);
-        const heavy = c.map((x, k) => (k && x ? `${sym}:${isotopes[k][0]}:${x}` : '')).filter(Boolean).join(';');
-        const m = mass + c.reduce((s, x, k) => s + x * isotopes[k][1], 0);
-        combined.set(key && heavy ? `${key};${heavy}` : key || heavy, [m, p * q]);
-      }
+    const masses = element.map(({ c }) => c.reduce((s, x, k) => s + x * isotopes[k][1], 0));
+    const heavies = element.map(({ c }) => c.some((x, k) => k > 0 && x > 0));
+    const combined: PatternState[] = [];
+    for (const st of states) {
+      element.forEach(({ c, p: q }, j) => {
+        combined.push({ mass: st.mass + masses[j], p: st.p * q, heavy: st.heavy || heavies[j], prev: st, sym, comp: c });
+      });
     }
     let top = 0;
-    for (const [, p] of combined.values()) if (p > top) top = p;
-    states = new Map([...combined].filter(([, v]) => v[1] >= top * PRUNE));
+    for (const x of combined) if (x.p > top) top = x.p;
+    states = combined.filter((x) => x.p >= top * PRUNE);
   }
   let top = 0;
-  for (const [, p] of states.values()) if (p > top) top = p;
-  const out: Peak[] = [];
-  for (const [heavy, [mass, p]] of states) {
-    const percent = (p / top) * 100;
+  for (const x of states) if (x.p > top) top = x.p;
+  const kept: { mz: number; abundance: number; st: PatternState }[] = [];
+  for (const st of states) {
+    const percent = (st.p / top) * 100;
     if (percent < minPercent) continue;
-    const fc: Counts = new Map(fixed);
-    for (const [k, n] of counts) { const [s, i] = splitKey(k); if (!i && s !== 'D' && s !== 'T') fc.set(k, (fc.get(k) ?? 0) + n); }
-    if (heavy) {
-      for (const part of heavy.split(';')) {
-        const [s, i, c] = part.split(':');
-        fc.set(s, (fc.get(s) ?? 0) - Number(c));
-        fc.set(isoKey(s, Number(i)), (fc.get(isoKey(s, Number(i))) ?? 0) + Number(c));
-      }
-    }
-    out.push({ mz: (mass + fixedMass - adduct.charge * ELECTRON) / Math.abs(adduct.charge), abundance: percent, formula: hillFormula(fc), mono: !heavy });
+    kept.push({ mz: (st.mass + fixedMass - adduct.charge * ELECTRON) / Math.abs(adduct.charge), abundance: percent, st });
   }
   const r6 = (x: number): number => Math.round(x * 1e6) / 1e6;
-  out.sort((a, b) => r6(b.abundance) - r6(a.abundance) || a.mz - b.mz);
-  return out.slice(0, maxPeaks);
+  kept.sort((a, b) => r6(b.abundance) - r6(a.abundance) || a.mz - b.mz);
+  return kept.slice(0, maxPeaks).map(({ mz, abundance, st }) => {
+    const fc: Counts = new Map(fixed);
+    for (const [k, n] of counts) { const [s, i] = splitKey(k); if (!i && s !== 'D' && s !== 'T') fc.set(k, (fc.get(k) ?? 0) + n); }
+    const chain: PatternState[] = [];
+    for (let x: PatternState | null = st; x && x.comp; x = x.prev) chain.unshift(x);
+    for (const x of chain) {
+      const isotopes = naturalIsotopes(x.sym);
+      x.comp!.forEach((n, k) => {
+        if (!k || !n) return;
+        fc.set(x.sym, (fc.get(x.sym) ?? 0) - n);
+        fc.set(isoKey(x.sym, isotopes[k][0]), (fc.get(isoKey(x.sym, isotopes[k][0])) ?? 0) + n);
+      });
+    }
+    return { mz, abundance, formula: hillFormula(fc), mono: !st.heavy };
+  });
 }
 
 export const nearestPeak = (peaks: Peak[], found: number): Peak => peaks.reduce((a, b) => (Math.abs(b.mz - found) < Math.abs(a.mz - found) ? b : a));
@@ -432,7 +459,13 @@ export interface MolFacts {
   hExch: number;
   /** The standard InChIKey of the whole structure ('' when one can't be made), for the PubChem name lookup. */
   inchikey?: string;
+  /** Why there is no formula or masses for a structure without a generic atom (it couldn't be read, or an atom has no mass data): said where the formula would show. */
+  error?: string;
 }
+
+/** What the checks have for a structure that can't be read at all. */
+export const UNREADABLE_STRUCTURE = 'This structure could not be read (check its valences and charges), so no formula or masses can be calculated. Fix the structure, or type the M formula in the HRMS field (✎) if you need the calculated m/z.';
+export const unreadableFacts = (error = UNREADABLE_STRUCTURE): MolFacts => ({ info: null, generic: [], pieces: [], uniqueCarbons: 0, hTotal: 0, hExch: 0, error });
 
 /** Common counter-ions (left out of a salt's automatic HRMS M), and acids drawn with them. */
 export const COUNTER_ION_SMILES = [
@@ -539,7 +572,13 @@ export function molFacts(RDKit: any, molblock: string): MolFacts | null {
     const uniqueCarbons = new Set(atoms.flatMap((a, i) => (a.z === 6 ? [cls[i]] : []))).size;
     if (generic.length || atoms.some((a) => a.z === 0)) return { info: null, generic: generic.length ? generic : ['R'], pieces: [], uniqueCarbons, hTotal, hExch };
     const mw = JSON.parse(mol.get_descriptors()).amw as number;
-    const info = infoOf(atoms, mw, mol.get_smiles());
+    let info: MolInfo;
+    try {
+      info = infoOf(atoms, mw, mol.get_smiles());
+    } catch (e) {
+      if (!(e instanceof ChemError)) throw e;
+      return { info: null, generic: [], pieces: [], uniqueCarbons, hTotal, hExch, error: `No formula or masses can be calculated for this structure: ${e.message} Type the M formula in the HRMS field (✎) if you need the calculated m/z.` };
+    }
     // the pieces (a salt's cation and anion), each once, the largest first
     const keys = counterIonKeys(RDKit);
     const seen = new Map<string, { heavy: number; piece: Piece }>();

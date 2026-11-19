@@ -16,12 +16,14 @@ import { type MolFacts, type MolInfo, ChemError } from './chem';
 import { fieldDef, nucleusLabel, partText, NUCLEI, SPECTRUM_TYPES } from './fields';
 import { parseMarkup, mentionsIn, citationsIn } from './markup';
 import * as nmr from './nmr';
-import { fp, pyF, pyG, pySigned1, sortedFp } from './pyrepr';
+import { fp, pyF, pyG, pyRepr, PyTuple, pySigned1 } from './pyrepr';
+import { sha } from '../sha';
 import { isFloat } from './pyjson';
 import { type IdReport } from './compound-ids';
 import { type SiCompound, type SiProject, fieldKeys, fieldsOf, valuesOf } from './project';
 import { differsMessage, r6, type Match } from './ms-reports';
 import { reportItems } from './spectra';
+import type { SiLabels } from './labels';
 
 type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -38,12 +40,45 @@ export interface SiWarning {
   message: string;
   /** Which warning of the compound it is (a dismissal is kept under it). */
   key: string;
-  fingerprint: string;
+  /** Worked out when first read (a dismissal of this key, or dismissing it), from the data as it was checked. */
+  readonly fingerprint: string;
   /** The fingerprint an earlier SI Assistant gave the same warning ('' if none). */
-  legacy: string;
+  readonly legacy: string;
 }
 
-const w = (check: string, field: string, message: string, key: string, fingerprint: string, legacy = ''): SiWarning => ({ check, field, message, key, fingerprint, legacy });
+/** A fingerprint: given, or worked out when first asked for. */
+type Fp = string | (() => string);
+
+/**
+ * fp(...parts) for later: the text it hashes (Python's repr of the parts) is made now, from the
+ * data as it is, and hashed only when the fingerprint is read — most warnings are never
+ * dismissed, so most are never hashed (the hashing was a third of a check of every compound).
+ */
+function later(...parts: unknown[]): () => string {
+  const repr = pyRepr(new PyTuple(parts));
+  let got: string | null = null;
+  return () => (got ??= [...sha('SHA-1', new TextEncoder().encode(repr))].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12));
+}
+/** sortedFp(...parts) for later (sets sorted now; '' when a set mixes text and None, as sortedFp). */
+function sortedLater(...parts: unknown[]): Fp {
+  const out: unknown[] = [];
+  for (const p of parts) {
+    if (!(p instanceof Set)) { out.push(p); continue; }
+    const items = [...p];
+    if (items.some((x) => typeof x !== 'string') && items.some((x) => typeof x === 'string')) return '';
+    out.push(items.sort((a, b) => (String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0)));
+  }
+  return later(...out);
+}
+const read = (f: Fp): string => (typeof f === 'string' ? f : f());
+
+function w(check: string, field: string, message: string, key: string, fingerprint: Fp, legacy: Fp = ''): SiWarning {
+  const x = { check, field, message, key } as SiWarning;
+  let fpGot: string | null = null, legacyGot: string | null = null;
+  Object.defineProperty(x, 'fingerprint', { get: () => (fpGot ??= read(fingerprint)), enumerable: true });
+  Object.defineProperty(x, 'legacy', { get: () => (legacyGot ??= read(legacy)), enumerable: true });
+  return x;
+}
 
 export const genericStructureMessage = (atoms: string[]): string =>
   `The structure has a generic atom (${atoms.join(', ')}), so no formula or masses can be calculated. Draw the actual group, or type the M formula in the HRMS field (✎) if you need the calculated m/z.`;
@@ -103,14 +138,20 @@ export interface HrmsSpecies {
   automatic: [string, string, MolInfo] | null;
 }
 
-/** M for the HRMS field: the typed formula, else the chosen piece of a salt, else the whole structure; null without a structure. */
+/** The structure's formula can't be worked out (MolFacts.error): said in the HRMS field, never a warning of its own (SI Assistant has none). */
+export class StructureError extends ChemError {}
+
+/** M for the HRMS field: the typed formula, else the chosen piece of a salt, else the whole structure; null without a structure. Throws StructureError when the structure's formula can't be worked out. */
 export function hrmsSpecies(facts: MolFacts | null, value: Json): HrmsSpecies | null {
   const formula = partText(value.formula).trim();
   if (formula) {
     const [counts, charge] = chem.parseMFormulaAndCharge(formula);
     return { info: chem.infoFromCounts(counts, charge), manual: true, choices: null, key: '', automatic: null };
   }
-  if (!facts?.info) return null;
+  if (!facts?.info) {
+    if (facts?.error && !facts.generic.length) throw new StructureError(facts.error);
+    return null;
+  }
   if (facts.pieces.length <= 1) return { info: facts.info, manual: false, choices: null, key: '', automatic: null };
   const choices: [string, string, MolInfo][] = [['whole', `Whole structure (${chem.speciesLabel(facts.info)})`, facts.info]];
   for (const p of facts.pieces) choices.push([`frag:${p.smiles}`, chem.speciesLabel(p.info), p.info]);
@@ -149,7 +190,7 @@ export function compoundHrms(project: SiProject, c: SiCompound, facts: MolFacts 
   if (!fieldKeys(c).includes('hrms')) return [null, ''];
   const value = obj(valuesOf(c).hrms);
   let sp: HrmsSpecies | null;
-  try { sp = hrmsSpecies(facts, value); } catch (e) { if (e instanceof ChemError) return [null, `HRMS formula: ${e.message}`]; throw e; }
+  try { sp = hrmsSpecies(facts, value); } catch (e) { if (e instanceof StructureError) return [null, e.message]; if (e instanceof ChemError) return [null, `HRMS formula: ${e.message}`]; throw e; }
   if (!sp) return [null, ''];
   let r: HrmsResult;
   try { r = hrmsCalc(sp.info, partText(value.adduct), partText(value.found), hrmsTolerance(project.settings)); } catch (e) { if (e instanceof ChemError) return [null, e.message]; throw e; }
@@ -182,8 +223,8 @@ function asRead(holder: Json, key: string): unknown {
   return typeof v === 'number' && isFloat(holder, key) ? pyF(v) : v;
 }
 
-function hrmsFp(smiles: string, value: Json, tolerance: unknown): string {
-  return fp(smiles, pyStrOf(value.formula).trim(), pyStrOf(value.species), pyStrOf(value.adduct) || '[M+H]+', pyStrOf(value.found).trim(), tolerance);
+function hrmsFp(smiles: string, value: Json, tolerance: unknown): () => string {
+  return later(smiles, pyStrOf(value.formula).trim(), pyStrOf(value.species), pyStrOf(value.adduct) || '[M+H]+', pyStrOf(value.found).trim(), tolerance);
 }
 
 /** The placeholders of a general procedure's sentence, as written, in order, once each. */
@@ -289,8 +330,13 @@ function largeJMessage(r: Json, large: nmr.Coupling[], fpAtoms: string[]): strin
   return head + parts.join(' ');
 }
 
-/** Every warning for a compound, dismissed or not. `facts`: its structure's (null: none, or unreadable). */
-export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, facts: MolFacts | null, reportMatch: Match | null = null): SiWarning[] {
+/**
+ * Every warning for a compound, dismissed or not. `facts`: its structure's (null: none, or
+ * unreadable). `labels` (labels.ts computeLabels, worked out once for all compounds): with them,
+ * a mention of a deleted figure, table or scheme is reported too. Cheap to call for one compound:
+ * fingerprints are only worked out when read.
+ */
+export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, facts: MolFacts | null, reportMatch: Match | null = null, labels: SiLabels | null = null): SiWarning[] {
   const out: SiWarning[] = [];
   const keys = new Set(fieldKeys(c));
   const values = valuesOf(c);
@@ -298,23 +344,25 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
   const smiles = info?.smiles ?? '';
 
   // IDs
-  for (const msg of ids.compoundWarnings.get(c.id) ?? []) out.push(w('id', ID_KEY, msg, `id:${fp(msg)}`, fp(msg)));
+  for (const msg of ids.compoundWarnings.get(c.id) ?? []) { const f = fp(msg); out.push(w('id', ID_KEY, msg, `id:${f}`, f)); }
 
   // a generic atom (R, X…): kept, but no formula or masses
-  if (facts && !facts.info && keys.has('structure') && facts.generic.length) out.push(w('structure', 'structure', genericStructureMessage(facts.generic), GENERIC_STRUCTURE_KEY, fp(facts.generic)));
+  if (facts && !facts.info && keys.has('structure') && facts.generic.length) out.push(w('structure', 'structure', genericStructureMessage(facts.generic), GENERIC_STRUCTURE_KEY, later(facts.generic)));
 
   // 1. HRMS
   if (keys.has('hrms')) {
     const value = obj(values.hrms);
     const tol = asRead(project.settings, 'hrms_tolerance_ppm');
-    let f = hrmsFp(smiles, value, tol);
-    let old = fp(smiles, value, tol);
     let sp: HrmsSpecies | null = null, unreadable: string | null = null;
-    try { sp = hrmsSpecies(facts, value); } catch (e) { if (!(e instanceof ChemError)) throw e; unreadable = e.message; }
-    if (sp?.automatic && !sp.key && sp.automatic !== sp.choices![1]) { f = fp(f, chem.speciesLabel(sp.info)); old = ''; }
+    try { sp = hrmsSpecies(facts, value); } catch (e) { if (!(e instanceof ChemError)) throw e; if (!(e instanceof StructureError)) unreadable = e.message; }
+    // (a salt on Automatic whose M skips a counter-ion: the M used is part of the fingerprint, and there is no legacy one)
+    const salt = sp?.automatic && !sp.key && sp.automatic !== sp.choices![1] ? chem.speciesLabel(sp.info) : null;
+    const base = hrmsFp(smiles, value, tol);
+    const f: Fp = salt === null ? base : (() => { let got: string | null = null; return () => (got ??= fp(base(), salt)); })();
+    const old: Fp = salt === null ? later(smiles, value, tol) : '';
     if (unreadable !== null) out.push(w('hrms', 'hrms', `HRMS formula: ${unreadable}`, 'hrms:formula-unreadable', f, old));
     const [, problem] = compoundHrms(project, c, facts);
-    if (problem && !problem.startsWith('HRMS formula')) out.push(w('hrms', 'hrms', problem, 'hrms:ppm', f, old));
+    if (problem && !problem.startsWith('HRMS formula') && problem !== facts?.error) out.push(w('hrms', 'hrms', problem, 'hrms:ppm', f, old));
     if (sp) {
       const hint = chargedAdductHint(sp.info, partText(value.adduct));
       if (hint) out.push(w('hrms', 'hrms', hint, 'hrms:charged', f, old));
@@ -329,7 +377,7 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
       const message = differsMessage(value, reportMatch, hrmsTolerance(project.settings));
       if (message) {
         const where = [reportMatch.file, pyF(r6(reportMatch.mz))];
-        out.push(w('hrms', 'hrms', message, 'hrms:report-differs', fp(f, ...where), old ? fp(old, ...where) : ''));
+        out.push(w('hrms', 'hrms', message, 'hrms:report-differs', () => fp(read(f), ...where), old ? () => fp(read(old), ...where) : ''));
       }
     }
   }
@@ -348,14 +396,14 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
       const label = r.label ? ` (${r.label})` : '';
       if (r.nucleus === '13C') {
         const n = nmr.carbonSignalCount(text);
-        if (n && n !== facts.uniqueCarbons) out.push(w('c13', 'nmr', `¹³C NMR${label} lists ${n} signals; the structure has ${facts.uniqueCarbons} symmetry-distinct carbons. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)`, `c13:${rid}`, fp(text, smiles)));
+        if (n && n !== facts.uniqueCarbons) out.push(w('c13', 'nmr', `¹³C NMR${label} lists ${n} signals; the structure has ${facts.uniqueCarbons} symmetry-distinct carbons. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)`, `c13:${rid}`, later(text, smiles)));
       }
       if (r.nucleus === '1H') {
         const total = nmr.protonCount(text);
         if (total && Math.abs(total - facts.hTotal) > 0.05) {
           let note = '';
           if (facts.hExch && Math.abs(facts.hTotal - total - facts.hExch) <= 0.05) note = ` The difference matches the ${facts.hExch} NH/OH hydrogen${facts.hExch !== 1 ? 's' : ''}, which often exchange and are not seen.`;
-          out.push(w('h1', 'nmr', `¹H NMR${label} integrations add up to ${pyG(total)} H; the structure has ${facts.hTotal} H.${note}`, `h1:${rid}`, fp(text, smiles)));
+          out.push(w('h1', 'nmr', `¹H NMR${label} integrations add up to ${pyG(total)} H; the structure has ${facts.hTotal} H.${note}`, `h1:${rid}`, later(text, smiles)));
         }
       }
     });
@@ -373,7 +421,7 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
       if (p.end !== null) continue;
       const singlet = ['s', 'br s', 'brs', 'bs', 'br. s'].includes(nmr.multiplicity(p));
       const what = nmr.impurityMatch(solvent, nucleus, p.shift, singlet, table, tolH, tolC);
-      if (what) out.push(w('impurity', 'nmr', `${nucleusLabel(nucleus)} NMR: δ ${pyG(p.shift)}${nucleus === '1H' ? ' (s)' : ''} is where ${what} appears in ${nmr.prettySolvent(solvent)} — check it isn't a solvent or impurity peak.`, `impurity:${rid}:${pyG(p.shift)}`, fp(text)));
+      if (what) out.push(w('impurity', 'nmr', `${nucleusLabel(nucleus)} NMR: δ ${pyG(p.shift)}${nucleus === '1H' ? ' (s)' : ''} is where ${what} appears in ${nmr.prettySolvent(solvent)} — check it isn't a solvent or impurity peak.`, `impurity:${rid}:${pyG(p.shift)}`, later(text)));
     }
   });
 
@@ -382,7 +430,7 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
   reports.forEach((r, i) => {
     if (r.nucleus !== '1H') return;
     const large = nmr.couplings(textOf(r, i)).filter((x) => x.value > LARGE_J_HZ);
-    if (large.length) out.push(w('coupling', 'nmr', largeJMessage(r, large, fpAtoms), `coupling:${idOf(r, i)}`, fp(large.map((x) => x.written))));
+    if (large.length) out.push(w('coupling', 'nmr', largeJMessage(r, large, fpAtoms), `coupling:${idOf(r, i)}`, later(large.map((x) => x.written))));
   });
 
   // 5. yield
@@ -392,7 +440,7 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
     const massUnit = partText(y.mass_unit) || 'mg', scaleUnit = partText(s.unit) || 'mmol';
     if (pct !== null && mass && scale) {
       const expected = ((mass * (MASS_TO_MG[massUnit] ?? 1)) / (scale * (AMOUNT_TO_MMOL[scaleUnit] ?? 1) * info.mw)) * 100;
-      if (Math.abs(expected - pct) > 1) out.push(w('yield', 'yield', `${partText(y.mass)} ${massUnit} of this compound (MW ${info.mw.toFixed(2)}) from ${partText(s.value)} ${scaleUnit} is ${expected.toFixed(1)}%, not ${pyG(pct)}%. (If the yield is based on a different reagent or stoichiometry, dismiss this warning.)`, 'yield', fp(y, s, smiles)));
+      if (Math.abs(expected - pct) > 1) out.push(w('yield', 'yield', `${partText(y.mass)} ${massUnit} of this compound (MW ${info.mw.toFixed(2)}) from ${partText(s.value)} ${scaleUnit} is ${expected.toFixed(1)}%, not ${pyG(pct)}%. (If the yield is based on a different reagent or stoichiometry, dismiss this warning.)`, 'yield', later(y, s, smiles)));
     }
   }
 
@@ -401,16 +449,16 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
     const reported = new Set(reports.flatMap((r, i) => (textOf(r, i).trim() ? [r.nucleus as string | undefined] : [])));
     const items = (Array.isArray(values.spectra) ? (values.spectra as unknown[]) : []).filter(isObj).map((x) => cleanReport(x));
     const attached = new Set(items.map((x) => x.type as string | undefined));
-    const old = sortedFp(new Set([...reported].map((x) => x ?? null)), new Set([...attached].map((x) => x ?? null)));
+    const old = sortedLater(new Set([...reported].map((x) => x ?? null)), new Set([...attached].map((x) => x ?? null)));
     for (const n of [...reported].filter((x): x is string => typeof x === 'string' && (SPECTRUM_TYPES as readonly string[]).includes(x)).sort()) {
       if (attached.has(n)) continue;
       const idsN = reports.flatMap((r, i) => (r.nucleus === n && textOf(r, i).trim() ? [String(r.id ?? i)] : [])).sort();
-      out.push(w('spectra', 'spectra', `There is a ${nucleusLabel(n)} NMR report but no ${nucleusLabel(n)} spectrum attached.`, `spectra:missing:${n}`, fp('missing', n, idsN), old));
+      out.push(w('spectra', 'spectra', `There is a ${nucleusLabel(n)} NMR report but no ${nucleusLabel(n)} spectrum attached.`, `spectra:missing:${n}`, later('missing', n, idsN), old));
     }
     for (const n of [...attached].filter((x): x is string => typeof x === 'string' && (NUCLEI as readonly string[]).includes(x)).sort()) {
       if (reported.has(n)) continue;
       const files = items.filter((x) => x.type === n).map((x) => (x.file ? pyStrOf(x.file) : '')).sort();
-      out.push(w('spectra', 'nmr', `A ${nucleusLabel(n)} spectrum is attached but there is no ${nucleusLabel(n)} NMR report.`, `spectra:extra:${n}`, fp('extra', n, files), old));
+      out.push(w('spectra', 'nmr', `A ${nucleusLabel(n)} spectrum is attached but there is no ${nucleusLabel(n)} NMR report.`, `spectra:extra:${n}`, later('extra', n, files), old));
     }
   }
 
@@ -424,7 +472,7 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
       const expected = hFreqs.map((h) => h * NMR_RATIOS[n]);
       if (expected.every((e) => Math.abs(f - e) / e > 0.03)) {
         const hs = [...new Set(hFreqs)].sort((a, b) => a - b), es = [...new Set(expected)].sort((a, b) => a - b);
-        out.push(w('frequency', 'nmr', `${nucleusLabel(n)} NMR at ${pyG(f)} MHz doesn't match ¹H at ${hs.map(pyG).join(', ')} MHz (expected ≈ ${es.map((e) => e.toFixed(0)).join(', ')} MHz).`, `frequency:${r.id ?? i}`, fp(text, hFreqs.map(pyF))));
+        out.push(w('frequency', 'nmr', `${nucleusLabel(n)} NMR at ${pyG(f)} MHz doesn't match ¹H at ${hs.map(pyG).join(', ')} MHz (expected ≈ ${es.map((e) => e.toFixed(0)).join(', ')} MHz).`, `frequency:${r.id ?? i}`, later(text, hFreqs.map(pyF))));
       }
     });
   }
@@ -435,13 +483,13 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
     for (const n of heteroatomNuclei(project.settings, info)) {
       if (have.has(n)) continue;
       const element = n.replace(/^\d+/, '');
-      out.push(w('heteroatom', 'nmr', `The structure contains ${element} but there is no ${nucleusLabel(n)} NMR data.`, `heteroatom:${n}`, fp(smiles, n), sortedFp(smiles, new Set([...have].map((x) => x ?? null)))));
+      out.push(w('heteroatom', 'nmr', `The structure contains ${element} but there is no ${nucleusLabel(n)} NMR data.`, `heteroatom:${n}`, later(smiles, n), sortedLater(smiles, new Set([...have].map((x) => x ?? null)))));
     }
   }
 
   // 9. broken mentions and citations
   const seen = new Set<string>();
-  const exists = new Set(project.compounds.map((x) => x.id));
+  let exists: Set<string> | null = null; // (made only when a text mentions a compound)
   const gp = project.compoundGp(c);
   const places: [string, string][] = [];
   for (const e of fieldsOf(c)) {
@@ -459,14 +507,15 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
   }
   for (const [field, text] of places) {
     const ps = parseMarkup(text);
-    const gone = [...new Set(mentionsIn(ps))].filter((m) => mentionKind(m) === 'compound' && !exists.has(m));
+    // (a figure, table or scheme is known to be gone only when the labels are given)
+    const gone = [...new Set(mentionsIn(ps))].filter((m) => (mentionKind(m) === 'compound' ? !(exists ??= new Set(project.compounds.map((x) => x.id))).has(m) : !!labels && !labels.byId.has(m)));
     const missing = [...new Set(citationsIn(ps))].filter((r) => !project.reference(r));
     for (const id of gone) {
-      const x = w('mention', field, `This text mentions a compound that has been deleted (printed as “??”). Restore it from the Trash, or remove the mention.`, `mention:${field}:${id}`, fp(id));
+      const x = w('mention', field, 'This text ' + goneText(project, id), `mention:${field}:${id}`, later(id));
       if (!seen.has(x.key)) { seen.add(x.key); out.push(x); }
     }
     for (const id of missing) {
-      const x = w('citation', field, 'This cites a reference that is no longer in the References list; it will be left out of the SI.', `citation:${field}:${id}`, fp(id));
+      const x = w('citation', field, 'This cites a reference that is no longer in the References list; it will be left out of the SI.', `citation:${field}:${id}`, later(id));
       if (!seen.has(x.key)) { seen.add(x.key); out.push(x); }
     }
   }
@@ -474,7 +523,7 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
   // the general procedure chosen
   const choice = obj(values.procedure);
   if (keys.has('procedure') && choice.gp) {
-    if (!gp) out.push(w('gp', 'procedure', 'The general procedure chosen for this compound no longer exists (it may have been deleted). Choose another, or restore it from the Trash.', 'gp:missing', fp(choice.gp)));
+    if (!gp) out.push(w('gp', 'procedure', 'The general procedure chosen for this compound no longer exists (it may have been deleted). Choose another, or restore it from the Trash.', 'gp:missing', later(choice.gp)));
     else {
       const typedRaw = choice.values;
       const typed = obj(typedRaw);
@@ -485,14 +534,14 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
       for (const ph of placeholders(sentence)) {
         const k = gpKey(ph);
         if (typedKeys.has(k) || auto.has(k)) continue;
-        out.push(w('gp', 'procedure', `“${name || 'The general procedure'}” needs a value for {${ph}} (it would be printed as [${ph}]).`, `gp:value:${k}`, fp(sentence, k), fp(sentence, typedRaw ?? {})));
+        out.push(w('gp', 'procedure', `“${name || 'The general procedure'}” needs a value for {${ph}} (it would be printed as [${ph}]).`, `gp:value:${k}`, later(sentence, k), later(sentence, typedRaw ?? {})));
       }
       const conflict = scaleConflict(c, gp);
-      if (conflict) out.push(w('gp', 'procedure', conflict, 'gp:scale-differs', fp(typedRaw ?? {}, values.scale)));
+      if (conflict) out.push(w('gp', 'procedure', conflict, 'gp:scale-differs', later(typedRaw ?? {}, values.scale)));
       const pur = values.purification;
       const own = isObj(pur) ? pyStrOf(pur.sentence).trim() : '';
       if (keys.has('purification') && own && placeholders(sentence).map(gpKey).includes('purification')) {
-        out.push(w('gp', 'purification', `“${name || 'The general procedure'}” places {purification} itself, so the sentence typed in “Printed as” is not printed. To print your own wording, type it in the {purification} box under the general procedure (Experimental procedure field), or take {purification} out of the general procedure's sentence.`, 'gp:purification-sentence', fp(own, sentence)));
+        out.push(w('gp', 'purification', `“${name || 'The general procedure'}” places {purification} itself, so the sentence typed in “Printed as” is not printed. To print your own wording, type it in the {purification} box under the general procedure (Experimental procedure field), or take {purification} out of the general procedure's sentence.`, 'gp:purification-sentence', later(own, sentence)));
       }
     }
   }
@@ -500,6 +549,23 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
 }
 
 /** "compound", "figure", "table" or "scheme" for a mentioned id. */
+const A_KIND: Record<string, string> = { compound: 'a compound', figure: 'a figure', table: 'a table', scheme: 'a scheme' };
+
+/**
+ * "mentions … (printed as “??”) …" for a mention whose target has no label: deleted, or a scheme
+ * printed without its label and caption (the default).
+ */
+export function goneText(project: SiProject, id: string): string {
+  if (mentionKind(id) === 'scheme') {
+    const k = project.schemes.find((x) => x.id === id);
+    if (k) {
+      const name = typeof k.data.name === 'string' && k.data.name ? k.data.name : 'Scheme';
+      return `mentions scheme “${name}”, which is printed without a label (printed as “??”). Tick “Label and caption” in the scheme's Layout…, or remove the mention.`;
+    }
+  }
+  return `mentions ${A_KIND[mentionKind(id)]} that has been deleted (printed as “??”). Restore it from the Trash, or remove the mention.`;
+}
+
 export function mentionKind(id: string): string {
   if (!id.includes('-')) return 'compound';
   return ({ f: 'figure', t: 'table', k: 'scheme' } as Record<string, string>)[id.split('-')[0]] ?? 'compound';

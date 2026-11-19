@@ -9,7 +9,7 @@ import { molProps, substructureMatches, structureLibrary, libraryMatches, panelP
 import type { MolProps } from '../sheet/properties';
 import { namerGraph, type NamerGraph } from '../chem/namer-graph';
 import { hammettSites, type HammettResult } from '../chem/hammett-match';
-import { molFacts, type MolFacts } from '../si/chem';
+import { molFacts, unreadableFacts, type MolFacts } from '../si/chem';
 type InitRDKit = (opts: { locateFile: () => string }) => Promise<any>;
 
 export type ChemRequest =
@@ -216,7 +216,8 @@ self.onmessage = async (e: MessageEvent<ChemRequest>) => {
     } else if (m.type === 'fragments') {
       post({ type: 'fragments', id: m.id, results: massFragments(RDKit, m.molblock, m.cuts) });
     } else if (m.type === 'siFacts') {
-      post({ type: 'siFacts', id: m.id, results: m.mols.map((x) => { try { return molFacts(RDKit, x); } catch { return null; } }) });
+      // (no structure: null; one RDKit can't read: facts that say so, shown where its formula would be)
+      post({ type: 'siFacts', id: m.id, results: m.mols.map((x) => { if (!x.trim()) return null; try { return molFacts(RDKit, x) ?? unreadableFacts(); } catch { return unreadableFacts(); } }) });
     } else if (m.type === 'common') {
       post({ type: 'common', id: m.id, results: m.mols.map((x) => commonPart(m.ref, x)) });
     }
