@@ -8781,16 +8781,19 @@ if (import.meta.env.DEV) {
 // compounds, labels and pages. The project is the one open in a tab, else it is read (read-only,
 // no lock) from its folder. The SI compiled is kept until the project changes.
 
-/** Bumped whenever an SI project changes, so what was compiled is made again. */
-let siVersion = 0;
-const siCompiled = new Map<string, { version: number; view: Promise<SiView | null> }>();
+/** Bumped whenever an SI project changes (by its folder; `siAllVersion` for all of them), so what was compiled is made again: only that project's. */
+let siAllVersion = 0;
+const siVersions = new Map<string, number>();
+const siVersionOf = (path: string): string => `${siAllVersion}.${siVersions.get(path) ?? 0}`;
+const siBump = (path: string | null): void => { if (path === null) siAllVersion++; else siVersions.set(path, (siVersions.get(path) ?? 0) + 1); };
+const siCompiled = new Map<string, { version: string; view: Promise<SiView | null> }>();
 /** SI projects linked documents read that aren't open in a tab (read-only), by folder. */
 const siLinked = new Map<string, SiProjectT>();
 let siChangeTimer = 0;
 
 /** An SI project changed: linked documents follow it (soon, so typing in the SI isn't slowed). */
 function siChanged(path: string | null): void {
-  siVersion++;
+  siBump(path);
   clearTimeout(siChangeTimer);
   siChangeTimer = window.setTimeout(() => { if (docModeLoading && docMode) docMode.siChanged(path); }, 1200);
 }
@@ -8810,6 +8813,48 @@ async function siProjectAt(path: string): Promise<SiProjectT | null> {
   siLinked.set(path, p);
   return p;
 }
+
+/** What a project read from its folder holds, to tell whether Chem SI Assistant changed it since (structures apart: IDs, labels and values are in these). */
+function siSignature(p: SiProjectT): string {
+  try { return JSON.stringify([p.title, p.settings, p.references, p.compounds.map((c) => [c.id, c.data])]); } catch { return String(Math.random()); }
+}
+
+/**
+ * A linked SI project that isn't open in a tab, read again from its folder (it may have been
+ * changed in Chem SI Assistant meanwhile). `always`: asked for (Update from SI, Check Against
+ * SI); else (the window came to the front) only what was read is compared, and nothing is
+ * compiled again unless it differs. True when the linked documents should follow.
+ */
+const siRereading = new Map<string, Promise<boolean>>();
+function rereadLinkedSi(path: string, always: boolean): Promise<boolean> {
+  if (ws.tabs.some((t) => t.si?.folder.where === path) || !siLinked.has(path)) return Promise.resolve(false);
+  const going = siRereading.get(path);
+  if (going) return going;
+  const run = (async () => {
+    const old = siLinked.get(path)!;
+    siLinked.delete(path);
+    let fresh: SiProjectT | null = null;
+    try { fresh = await siProjectAt(path); } catch { fresh = null; }
+    // (opened in a tab meanwhile: that one is used)
+    if (ws.tabs.some((t) => t.si?.folder.where === path)) { siLinked.delete(path); return false; }
+    // (it can't be read just now, a cloud folder offline, say: what was read before is kept)
+    if (!fresh) { siLinked.set(path, old); return false; }
+    if (!always && siSignature(fresh) === siSignature(old)) { siLinked.set(path, old); return false; }
+    siBump(path);
+    return true;
+  })().finally(() => siRereading.delete(path));
+  siRereading.set(path, run);
+  return run;
+}
+
+// the window came to the front: a linked SI that Chem SI Assistant has open may have changed
+let siFocusAt = 0;
+window.addEventListener('focus', () => {
+  const path = ws.active.document?.t.siLink?.path;
+  if (!path || !siLinked.has(path) || performance.now() - siFocusAt < 15000) return;
+  siFocusAt = performance.now();
+  void rereadLinkedSi(path, false).then((changed) => { if (changed && docModeLoading && docMode) docMode.siChanged(path); });
+});
 
 async function compileForLink(link: SiLink): Promise<SiView | null> {
   const p = await siProjectAt(link.path).catch(() => null);
@@ -8839,11 +8884,13 @@ const siAccess: SiAccess = {
   },
   view: (link) => {
     const had = siCompiled.get(link.path);
-    if (had && had.version === siVersion) return had.view;
+    const version = siVersionOf(link.path);
+    if (had && had.version === version) return had.view;
     const view = compileForLink(link).catch((e: unknown) => { flash(`The linked SI could not be compiled: ${e instanceof Error ? e.message : String(e)}`, 7000); return null; });
-    siCompiled.set(link.path, { version: siVersion, view });
+    siCompiled.set(link.path, { version, view });
     return view;
   },
+  reread: async (link) => { await rereadLinkedSi(link.path, true); },
   openCompound: (link, key) => {
     const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
     if (tab) { openSiCompound(tab, key); return; }
@@ -8861,15 +8908,34 @@ const siAccess: SiAccess = {
     if (!tab?.si) { flash('Open the SI project to renumber it (Linked SI ▸ Open).', 6000); siAccess.openProject(link); return null; }
     const p = tab.si;
     if (p.readOnly) { flash('The SI project is open read-only, so it can’t be renumbered.', 6000); return null; }
-    let n = 0;
+    // every compound is looked up first, so nothing is written when one of them is gone
+    const todo: { c: ReturnType<SiProjectT['compound']>; to: string; was: unknown }[] = [];
+    const gone: string[] = [];
+    for (const x of ids) {
+      const c = p.compounds.find((k) => k.id === x.key);
+      if (c) todo.push({ c, to: x.to, was: c.data.id_override }); else gone.push(x.to);
+    }
+    if (gone.length) {
+      await showError(`The SI was not renumbered: ${gone.length === 1 ? `the compound that would become ${gone[0]} is` : `${gone.length} compounds (${gone.join(', ')}) are`} no longer in the SI project. Use References ▸ Update from SI, then Renumber SI again.`);
+      return null;
+    }
+    const done: typeof todo = [];
     try {
-      for (const x of ids) { await p.setIdOverride(p.compound(x.key), x.to); n++; }
+      for (const x of todo) { await p.setIdOverride(x.c, x.to); done.push(x); }
     } catch (e) {
-      await showError(`The SI could not be renumbered: ${e instanceof Error ? e.message : String(e)}`);
+      // all or none: those already given their new ID get their old one back
+      let back = true;
+      for (const x of done.reverse()) {
+        try { await p.setIdOverride(x.c, typeof x.was === 'string' ? x.was : ''); } catch { back = false; }
+      }
+      siMode?.refresh();
+      siBump(link.path);
+      await showError(`The SI could not be renumbered: ${e instanceof Error ? e.message : String(e)}. ${back ? 'No ID was changed.' : `Some IDs were changed and could not be put back: check the Manual IDs of ${done.map((x) => x.to).join(', ')} in the SI project.`}`);
+      return null;
     }
     siMode?.refresh();
-    siVersion++;
-    return n;
+    siBump(link.path);
+    return done.length;
   },
 };
 

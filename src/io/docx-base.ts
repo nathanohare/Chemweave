@@ -170,7 +170,9 @@ export interface DocxModel {
   references?: Reference[];
   /** The SI project the document is linked to (its compounds' IDs and labels are SI_FIELD fields). */
   siLink?: { path: string; title: string };
-  /** Each compound number's SI compounds (by letter), in the order of the compound numbers in the text (null for one not linked). */
+  /** Each linked compound number's SI compounds (by letter), by the name of the bookmark round its field. */
+  siLinks?: Record<string, Record<string, string>>;
+  /** (files saved before siLinks: the same by the order of the compound numbers in the text, null for one not linked; used only while the numbers are as many as were saved) */
   siNumbers?: (Record<string, string> | null)[];
   citeStyle?: CiteStyle;
   citeOptions?: Partial<CiteFormat>;

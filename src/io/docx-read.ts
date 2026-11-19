@@ -31,7 +31,7 @@ import { SINGLE, type Measure } from '../text/layout';
 import { arialWidth } from '../text-metrics';
 import { documentMeasure } from '../text/font-measure';
 import {
-  OBJECT_CHAR, compoundSeqs, defaultCharStyles, defaultHeaderFooter, defaultPage, defaultStyles,
+  OBJECT_CHAR, COMPOUND, compoundSeqs, defaultCharStyles, defaultHeaderFooter, defaultPage, defaultStyles,
   COL_GAP, FLOAT_GAP, columnsOf, contentsPrint, lookExtent, usedObjects,
   type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
 } from '../document/document';
@@ -118,6 +118,7 @@ const WARN = {
   vmerge: 'Table cells merged down a column were split (merging across a row is kept).',
   nested: 'A table inside a table cell was kept as text.',
   cellObjects: 'Pictures and structures inside table cells were left out.',
+  siLinks: 'Compound numbers were added or removed since this file was saved, so their links to the SI were dropped. References ▸ Linked SI links them again.',
   cellBoxes: 'Text boxes inside table cells were left out.',
   wmf: 'Some pictures are in the older Windows Metafile (WMF) format, which can\'t be shown here yet. They are kept, and saved back to Word unchanged.',
   pictureFx: 'Some picture effects (artistic effects, saturation, color temperature) were left off.',
@@ -3148,13 +3149,28 @@ class DocxReader {
       for (const [id, c] of Object.entries(cm.comments)) if (on.has(Number(id))) comments[Number(id)] = c;
       if (!Object.keys(comments).length) comments = undefined;
     } else for (let i = 0; i < runs.length; i++) if (runs[i].cmt) { const { cmt: _, ...rest } = runs[i]; runs[i] = rest; }
-    // compound numbers linked to SI compounds (by the order of the numbers, as written)
-    if (Array.isArray(m?.siNumbers)) {
-      compoundSeqs({ runs, objects }).forEach((id, i) => {
-        const si = m.siNumbers![i];
-        const o = objects[id];
-        if (o?.kind === 'seq' && si && typeof si === 'object') objects[id] = { ...o, si: Object.fromEntries(Object.entries(si).filter(([, v]) => typeof v === 'string')) };
-      });
+    // compound numbers linked to SI compounds: each by the bookmark round its own field
+    const linkSeq = (id: number | undefined, si: unknown): void => {
+      const o = id === undefined ? undefined : objects[id];
+      if (o?.kind !== 'seq' || o.name !== COMPOUND || !si || typeof si !== 'object' || Array.isArray(si)) return;
+      const links = Object.fromEntries(Object.entries(si).filter(([, v]) => typeof v === 'string'));
+      if (Object.keys(links).length) objects[id!] = { ...o, si: links as Record<string, string> };
+    };
+    if (m?.siLinks && typeof m.siLinks === 'object' && !Array.isArray(m.siLinks)) {
+      // (a bookmark Word gave to two numbers, or to none, links nothing)
+      const seen = new Set<number>();
+      for (const [name, si] of Object.entries(m.siLinks)) {
+        const id = this.markSeq.get(name);
+        if (id === undefined || seen.has(id)) continue;
+        seen.add(id);
+        linkSeq(id, si);
+      }
+    } else if (Array.isArray(m?.siNumbers)) {
+      // a file from before: by the order of the numbers, and only when none was added or taken
+      // out since (else the links would land on other compounds: they are dropped, to link again)
+      const seqs = compoundSeqs({ runs, objects });
+      if (seqs.length === m.siNumbers.length) seqs.forEach((id, i) => linkSeq(id, m.siNumbers![i]));
+      else this.warn('siLinks');
     }
     return {
       runs: rt.normalizeRuns(runs),

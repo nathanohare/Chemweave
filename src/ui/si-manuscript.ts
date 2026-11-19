@@ -10,7 +10,7 @@ import type { SiCompound, SiProject } from '../si/project';
 import type { MolFacts } from '../si/chem';
 import {
   CHEMDRAW_EXTENSIONS, DISMISSED, MANUSCRIPT_EXTENSIONS, NOTE, OK, PROBLEM, FIELD_OF,
-  addManuscriptFile, cachedSources, checkManuscript, dismissFinding, findingWhat, forget, manuscriptFiles,
+  addManuscriptFile, checkManuscript, dismissFinding, findingWhat, forget, manuscriptFiles,
   readAll, removeManuscriptFile, restoreFinding, summary, type Finding, type Result,
 } from '../si/ms-check';
 import { Stopped, type Source } from '../si/ms-read';
@@ -65,6 +65,8 @@ export class SiManuscriptPage {
   private table = el('table', 'si-ms-table');
   private rows: Finding[] = [];
   private busy = false;
+  /** A check asked for while one was running (with its `force`), made when that one ends. */
+  private queued: boolean | null = null;
   private names: string[] = [];
 
   constructor(private host: SiManuscriptHost, private state: ManuscriptState) {
@@ -101,7 +103,9 @@ export class SiManuscriptPage {
 
   /** Read the files (unless nothing changed and not `force`) and compare. */
   async check(force: boolean): Promise<void> {
-    if (this.busy) return;
+    // a check is running (a long PDF being read): this one is made right after it, so a file
+    // added or a result dismissed meanwhile is not left out
+    if (this.busy) { this.queued = this.queued === null ? force : this.queued || force; return; }
     this.names = await manuscriptFiles(this.p);
     if (!this.names.length) {
       forget(this.p);
@@ -115,25 +119,25 @@ export class SiManuscriptPage {
     this.busy = true;
     this.el.classList.add('si-busy');
     try {
-      let sources = force ? null : await cachedSources(this.p);
-      if (!sources || sources.some((s) => s.transient)) {
-        this.summaryEl.textContent = 'Reading the manuscript…';
-        sources = await readAll(this.p, {
-          force,
-          smiles: (m) => this.host.smiles(m),
-          progress: (message) => { this.summaryEl.textContent = message; return this.el.isConnected; },
-        });
-      }
+      // (files that haven't changed since they were read are not read again, unless `force`)
+      const sources = await readAll(this.p, {
+        force,
+        smiles: (m) => this.host.smiles(m),
+        progress: (message) => { this.summaryEl.textContent = message; return this.el.isConnected; },
+      });
       this.state.sources = sources;
       this.state.result = await checkManuscript(this.p, sources, { facts: (m) => this.host.facts(m), files: this.names.length });
       this.state.checked = true;
     } catch (e) {
-      if (e instanceof Stopped) { this.summaryEl.textContent = 'The check was stopped. Click Check Again to finish it.'; return; }
+      if (e instanceof Stopped) { this.queued = null; this.summaryEl.textContent = 'The check was stopped. Click Check Again to finish it.'; return; }
       this.host.flash(`The manuscript could not be checked: ${e instanceof Error ? e.message : String(e)}`, 8000);
     } finally {
       this.busy = false;
       this.el.classList.remove('si-busy');
     }
+    const again = this.queued;
+    this.queued = null;
+    if (again !== null && this.el.isConnected) { await this.check(again); return; }
     if (!this.el.isConnected && !this.state.result) return;
     this.draw();
     this.host.resultChanged();
@@ -159,7 +163,8 @@ export class SiManuscriptPage {
       let bytes: Uint8Array;
       try { bytes = await pick.bytes(); } catch (e) { this.host.flash(`The document could not be saved for the check: ${e instanceof Error ? e.message : String(e)}`, 8000); return; }
       const name = /\.docx$/i.test(pick.name) ? pick.name : `${pick.name.replace(/\.[^.]*$/, '') || 'Manuscript'}.docx`;
-      await this.add([{ name, bytes }]);
+      // (the document added before is replaced by it as it is now: the old copy goes to the Trash)
+      await this.add([{ name, bytes }], true);
     } else if (cmd === 'ms-remove') {
       const name = this.state.file;
       if (!name || !this.names.includes(name)) { this.host.flash('Pick a file in the list first.'); return; }
@@ -193,7 +198,7 @@ export class SiManuscriptPage {
     }
   }
 
-  private async add(files: { name: string; bytes: Uint8Array }[]): Promise<void> {
+  private async add(files: { name: string; bytes: Uint8Array }[], replace = false): Promise<void> {
     if (!files.length) return;
     if (this.p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
     const ok = files.filter((f) => MS_EXTS.includes(extOf(f.name).slice(1)));
@@ -202,7 +207,7 @@ export class SiManuscriptPage {
     if (!ok.length) return;
     const added: string[] = [];
     await this.host.act(ok.length === 1 ? `Add Manuscript File ${ok[0].name}` : `Add ${ok.length} Manuscript Files`, async () => {
-      for (const f of ok) added.push(await addManuscriptFile(this.p, f.name, f.bytes));
+      for (const f of ok) added.push(await addManuscriptFile(this.p, f.name, f.bytes, replace));
     });
     if (added.some((a) => extOf(a) === '.cdx')) this.host.flash('ChemDraw files are read as .cdxml, not .cdx: open the file in ChemDraw, use File ▸ Save As…, choose “CDXML” and add that file.', 9000);
     else if (added.length) this.host.flash(`Added ${added.join(', ')}.`);

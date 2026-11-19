@@ -137,14 +137,22 @@ const safeName = (name: string): string => {
   return n || 'file';
 };
 
-/** Copy a file into manuscript/ (a second file of the same name gets " (2)"). The name it was stored under. */
-export async function addManuscriptFile(p: SiProject, name: string, bytes: Uint8Array): Promise<string> {
+/**
+ * Copy a file into manuscript/ (a second file of the same name gets " (2)"). `replace`: a file of
+ * that name already there is the same document as it was before (an open document added again):
+ * it is moved to the project Trash (restorable) and this one takes its place, so the check does
+ * not read both. The name it was stored under.
+ */
+export async function addManuscriptFile(p: SiProject, name: string, bytes: Uint8Array, replace = false): Promise<string> {
   if (p.readOnly) throw new Error('This SI project is open read-only.');
   let base = safeName(name);
   if (damagedCopy(base)) base = base.replace(/^dismissed\./i, 'dismissed_');
   const dot = base.lastIndexOf('.');
   const stem = dot > 0 ? base.slice(0, dot) : base, ext = dot > 0 ? base.slice(dot) : '';
   let pick = base;
+  if (replace && !OWN_FILES.includes(pick) && (await p.folder.exists(join(MANUSCRIPT_DIR, pick)))) {
+    await p.trashFiles([join(MANUSCRIPT_DIR, pick)], 'manuscript_file', pick, {});
+  }
   for (let n = 2; OWN_FILES.includes(pick) || (await p.folder.exists(join(MANUSCRIPT_DIR, pick))); n++) pick = `${stem} (${n})${ext}`;
   await p.folder.writeBytes(join(MANUSCRIPT_DIR, pick), bytes);
   return pick;

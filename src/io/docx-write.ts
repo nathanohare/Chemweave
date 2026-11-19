@@ -212,9 +212,14 @@ class DocxWriter {
     if (t.design) this.model.design = t.design;
     if (t.noFigureOffer) this.model.noFigureOffer = true;
     if (t.siLink) this.model.siLink = { path: t.siLink.path, title: t.siLink.title };
-    {
-      const nums = compoundSeqs(t).map((id) => { const o = t.objects[id]; return o?.kind === 'seq' && o.si && Object.keys(o.si).length ? o.si : null; });
-      if (nums.some(Boolean)) this.model.siNumbers = nums;
+    // each linked compound number's SI compounds, by the bookmark round its own field: the link
+    // stays with its number when numbers are added, deleted, moved or copied in Word
+    for (const id of compoundSeqs(t)) {
+      const o = t.objects[id];
+      if (o?.kind !== 'seq' || !o.si || !Object.keys(o.si).length) continue;
+      const name = this.bookmarks.get(id) ?? `_Ref${100000000 + id}`;
+      this.bookmarks.set(id, name);
+      (this.model.siLinks ??= {})[name] = o.si;
     }
     if (t.citeOptions && Object.keys(t.citeOptions).length) this.model.citeOptions = t.citeOptions;
     if (t.citeManager) this.model.citeManager = t.citeManager;

@@ -10,7 +10,7 @@ import type { TextLayout } from '../text/layout';
 import type { TextEditing } from '../text/editing';
 import type { RunStyle } from '../richtext';
 import { COMPOUND } from '../document/document';
-import { checkAgainstSi, mentionCounts, compoundNumbers, isCompoundNumber, linkNumber, linkTypedIds, manuscriptIds, nextLetter, numberKey, renumberPlan, siField, updateSiFields, useSiValue, type SiFinding, type SiView } from '../si/manuscript';
+import { checkAgainstSi, mentionCounts, compoundNumbers, isCompoundNumber, linkNumber, linkTypedIds, manuscriptIds, nextLetter, numberKey, renumberClashes, renumberPlan, siField, updateSiFields, useSiValue, type SiFinding, type SiView } from '../si/manuscript';
 import { ask, askChoice } from './ask';
 
 /** What the app gives documents of SI projects. */
@@ -25,8 +25,10 @@ export interface SiAccess {
   openCompound(link: SiLink, key: string): void;
   /** Show the SI project's tab. */
   openProject(link: SiLink): void;
-  /** Give SI compounds these IDs (as Manual IDs); how many were changed, or null when the SI can't be changed (read-only, or with why, flashed). */
+  /** Give SI compounds these IDs (as Manual IDs), all of them or none; how many were changed, or null when the SI can't be changed (read-only, or with why, shown). */
   renumber(link: SiLink, ids: { key: string; to: string }[]): Promise<number | null>;
+  /** Read the SI project again from its folder when it isn't open in a tab (it may have been changed in Chem SI Assistant). */
+  reread?(link: SiLink): Promise<void>;
 }
 
 export interface DocSiHost {
@@ -51,12 +53,13 @@ export class DocSiUI {
 
   private get f(): DocFile | null { return this.host.file(); }
 
-  /** The linked SI, as compiled now; with a message when there is none. */
-  private async view(): Promise<{ link: SiLink; view: SiView } | null> {
+  /** The linked SI, as compiled now; with a message when there is none (unless `quiet`). `fresh`: read again from its folder first, when it isn't open in a tab. */
+  private async view(fresh = false, quiet = false): Promise<{ link: SiLink; view: SiView } | null> {
     const f = this.f, si = this.host.si();
     const link = f?.t.siLink;
-    if (!f || !si) { this.host.flash('SI projects open in the desktop app.'); return null; }
-    if (!link) { this.host.flash('Link this document to its SI project first: References ▸ Linked SI.', 6000); return null; }
+    if (!f || !si) { if (!quiet) this.host.flash('SI projects open in the desktop app.'); return null; }
+    if (!link) { if (!quiet) this.host.flash('Link this document to its SI project first: References ▸ Linked SI.', 6000); return null; }
+    if (fresh) await si.reread?.(link).catch(() => {});
     const view = await si.view(link);
     return view ? { link, view } : null;
   }
@@ -93,13 +96,31 @@ export class DocSiUI {
     await this.update(got.typed === 'true', true);
   }
 
-  /** Bring the SI fields up to date from the SI (and, with `typed`, make bold compound numbers SI fields). */
-  async update(typed = false, say = false): Promise<void> {
+  /**
+   * Bring the SI fields up to date from the SI (and, with `typed`, make bold compound numbers
+   * Compound Number fields, after showing which). `quiet`: the document was only shown again, so
+   * nothing is said unless something points at what the SI no longer has.
+   */
+  async update(typed = false, say = false, quiet = false): Promise<void> {
     const f = this.f;
-    const got = await this.view();
+    const got = await this.view(say, quiet);
     if (!got || this.f !== f || !f) return;
     let t = f.t, made = 0, changed: { from: string; to: string }[] = [];
-    if (typed) ({ t, made, changed } = linkTypedIds(t, got.view));
+    if (typed) {
+      const r = linkTypedIds(t, got.view);
+      if (r.made) {
+        // what will become compound numbers, shown first: a bold number that isn't a compound can be left out by cancelling
+        const shown = [...new Set(r.typed)];
+        const pick = await askChoice('Make Compound Numbers',
+          `${r.made} bold number${r.made === 1 ? '' : 's'} will become Compound Number fields:\n\n${short(shown.join(', '), 600)}${r.changed.length ? `\n\nNumbered by first mention, these change: ${r.changed.map((x) => `${x.from} → ${x.to}`).join(', ')}` : ''}`,
+          [{ value: 'yes', label: 'Make Compound Numbers', primary: true }, { value: 'no', label: 'Leave as Typed' }], 'no',
+          'Numbers after Table, Figure or entry, amounts (1.5 equiv, 3 h), headings and the reference list are left alone. If a number listed here is not a compound, choose Leave as Typed, take its bold off and try again. Undo puts everything back.');
+        this.host.focus();
+        if (this.f !== f) return;
+        // (the document may have been typed into meanwhile: worked out again from it as it is now)
+        if (pick === 'yes') ({ t, made, changed } = linkTypedIds(f.t, got.view)); else t = f.t;
+      }
+    }
     const up = updateSiFields(t, got.view);
     if (up.t !== f.t) f.ed.update(up.t, made ? 'Make compound numbers' : 'Update from SI');
     if (!say && !up.missing.length) return;
@@ -181,13 +202,18 @@ export class DocSiUI {
   /** References ▸ Renumber SI: the SI's compounds given the manuscript's IDs (as Manual IDs). */
   async renumberSi(): Promise<void> {
     const f = this.f, si = this.host.si();
-    const got = await this.view();
-    if (!got || !f || !si) return;
+    const got = await this.view(true);
+    if (!got || !f || !si || this.f !== f) return;
     const plan = renumberPlan(f.t, got.view);
     const clash = [...manuscriptIds(f.t, got.view)].filter(([, ids]) => ids.size > 1);
     if (!plan.length) { this.host.flash(clash.length ? `Nothing to change, but ${clash.length} SI compound${clash.length === 1 ? ' has' : 's have'} two IDs here: see Check Against SI.` : 'The SI’s IDs already match the manuscript.', 6000); return; }
-    const sure = await askChoice('Renumber SI', `Give ${plan.length} SI compound${plan.length === 1 ? '' : 's'} the manuscript’s ID${plan.length === 1 ? '' : 's'}?\n\n${plan.map((x) => `${x.from || 'ID?'} → ${x.to}`).join('\n')}`,
-      [{ value: 'yes', label: 'Renumber SI', primary: true }, { value: 'no', label: 'Cancel' }], 'no',
+    // IDs two SI compounds would share afterwards (a compound the manuscript doesn't mention keeps its ID): said first, never stopped
+    const twice = renumberClashes(plan, got.view);
+    const warn = twice.length
+      ? `\n\n⚠ ${twice.length === 1 ? 'One ID' : `${twice.length} IDs`} would then be used twice in the SI:\n${twice.slice(0, 12).map((x) => `${x.id}: ${x.compounds.map((c) => (c.renumbered ? `${c.was || 'ID?'} (renumbered)` : `${c.was}${c.caption ? ' ' + short(c.caption, 30) : ''} (not renumbered)`)).join(' and ')}`).join('\n')}${twice.length > 12 ? '\n…' : ''}\nMention the other compounds in the manuscript, or give them other IDs in the SI afterwards.`
+      : '';
+    const sure = await askChoice('Renumber SI', `Give ${plan.length} SI compound${plan.length === 1 ? '' : 's'} the manuscript’s ID${plan.length === 1 ? '' : 's'}?\n\n${plan.map((x) => `${x.from || 'ID?'} → ${x.to}`).join('\n')}${warn}`,
+      [{ value: 'yes', label: twice.length ? 'Renumber SI Anyway' : 'Renumber SI', primary: true }, { value: 'no', label: 'Cancel' }], 'no',
       'Each becomes the compound’s Manual ID in the SI project (SI Assistant shows it too). The ID table is left as it is; clear a Manual ID on the compound’s page to go back to it.');
     this.host.focus();
     if (sure !== 'yes') return;
@@ -225,7 +251,7 @@ export class DocSiUI {
   /** References ▸ Check Against SI: the findings, with the SI's value offered for a table's. */
   async check(): Promise<SiFinding[] | null> {
     const f = this.f;
-    const got = await this.view();
+    const got = await this.view(true);
     if (!got || !f || this.f !== f) return null;
     this.findings = checkAgainstSi(f.t, got.view);
     return this.findings;

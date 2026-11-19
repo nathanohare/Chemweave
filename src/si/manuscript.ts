@@ -16,6 +16,7 @@ import type { TableCell, TextRun } from '../model';
 import type { SiTarget } from './compile-doc';
 import { valuesOf, compoundName, type SiProject } from './project';
 import { partText } from './fields';
+import * as C from './ms-check';
 
 /** What the manuscript needs from the SI: its targets (compounds and labels) and the page each is on. */
 export interface SiView {
@@ -95,8 +96,15 @@ function idIndex(view: SiView): Map<string, SiTarget> {
 /** What reading mentions needs: the objects, what the numbers show, and the SI's compounds. */
 interface Ctx { objects: Record<number, DocObject>; shown: Map<number, string>; ids: Map<string, SiTarget>; keys: Set<string> }
 
+/** (kept per document and SI as they are now: the panel asks several things of the same pair after each change) */
+const ctxCache = new WeakMap<DocText, { view: SiView; ctx: Ctx }>();
+
 function ctxOf(t: DocText, view: SiView): Ctx {
-  return { objects: t.objects, shown: fieldTexts(t), ids: idIndex(view), keys: new Set(view.targets.filter((x) => x.kind === 'compound').map((x) => x.key)) };
+  const had = ctxCache.get(t);
+  if (had && had.view === view) return had.ctx;
+  const ctx: Ctx = { objects: t.objects, shown: fieldTexts(t), ids: idIndex(view), keys: new Set(view.targets.filter((x) => x.kind === 'compound').map((x) => x.key)) };
+  ctxCache.set(t, { view, ctx });
+  return ctx;
 }
 
 /** The compound number field a run is (a Compound seq, or a reference to one): the seq's id. */
@@ -108,19 +116,53 @@ function numberSeq(r: TextRun, objects: Record<number, DocObject>): number | nul
   return null;
 }
 
-/** Bold runs' compound numbers: each match with where it is in its run list. */
-function typedIds(runs: readonly TextRun[]): { run: number; start: number; end: number; num: string; letters: string }[] {
+/** What follows a number that is an amount, not a compound: "1.5 equiv", "3 h", "80 °C", "5 mol%". */
+const UNIT_AFTER = /^[    ]?(?:equiv|eq\b|eq\.|mmol|µmol|μmol|mol\b|mol\s?%|mol%|wt\s?%|mg\b|kg\b|g\b|mL\b|µL\b|μL\b|L\b|h\b|hrs?\b|min\b|s\b|d\b|days?\b|°|º|K\b|M\b|mM\b|N\b|%|Hz\b|MHz\b|nm\b|ppm\b|atm\b|bar\b|psi\b|W\b|V\b|mA\b|steps?\b|×|x\b|times\b|cm\b|mm\b|Å)/;
+/** A paragraph that starts the list of references: bold numbers after it are volumes and years. */
+const REFERENCES_HEAD = /^\s*(?:\d+\.?\s*)?(?:references(?:\s+and\s+notes)?|notes\s+and\s+references|bibliography|literature\s+cited|works\s+cited)\s*:?\s*$/i;
+/** Paragraph styles whose numbers are a heading's ("2.1 Synthesis"), not compounds. */
+const HEADING_STYLE = /^(?:heading\s*\d|title|subtitle|toc\s*\d|tocheading|caption)/i;
+
+/** Where typed compound numbers are not looked for: paragraphs in heading styles, and the text from the references on. */
+export interface TypedScope { paras?: readonly ({ style?: string } | undefined)[]; /** The references start at this object (a bibliography). */ stopAt?: (obj: number) => boolean }
+
+/**
+ * Bold runs' compound numbers: each match with where it is in its run list. Left alone, since
+ * they are not compounds: numbers after "Table", "entry"…; decimals and their parts ("2.1",
+ * "1.5"); amounts ("3 h", "5 mol%"); a heading's number (a heading style, or "2. Results" at the
+ * start of a paragraph); and everything from the references on (volumes, years).
+ */
+function typedIds(runs: readonly TextRun[], scope: TypedScope = {}): { run: number; start: number; end: number; num: string; letters: string }[] {
   const out: { run: number; start: number; end: number; num: string; letters: string }[] = [];
+  // the whole text (a field is one character), to look round each number and to know its paragraph
+  const starts: number[] = [];
+  let full = '';
+  for (const r of runs) { starts.push(full.length); full += r.obj !== undefined ? OBJECT_CHAR : r.text; }
+  // where the references start: their heading, or the bibliography itself
+  let stop = full.length;
+  let at = 0;
+  for (const line of full.split('\n')) {
+    if (REFERENCES_HEAD.test(line) && at > 0) { stop = at; break; }
+    at += line.length + 1;
+  }
+  if (scope.stopAt) runs.forEach((r, i) => { if (r.obj !== undefined && scope.stopAt!(r.obj) && starts[i] < stop) stop = starts[i]; });
+  const paraAt = (k: number): number => { let n = 0; for (let j = full.indexOf('\n'); j >= 0 && j < k; j = full.indexOf('\n', j + 1)) n++; return n; };
   runs.forEach((r, i) => {
     if (!r.bold || r.obj !== undefined || r.sup || r.sub) return;
-    // a letter right after a compound number field is that number's (2 + "a"), not a number of its own
-    const before = (k: number): string => {
-      let s = r.text.slice(0, k);
-      for (let j = i - 1; j >= 0 && s.length < 24; j--) s = (runs[j].obj !== undefined ? ' ' : runs[j].text) + s;
-      return s;
-    };
+    if (starts[i] >= stop) return;
     for (const m of r.text.matchAll(ID_TOKEN)) {
-      if (NOT_COMPOUND.test(before(m.index!))) continue;
+      const a = starts[i] + m.index!, b = a + m[0].length;
+      const before = full.slice(Math.max(0, a - 24), a).replace(new RegExp(OBJECT_CHAR, 'g'), ' ');
+      if (NOT_COMPOUND.test(before)) continue;
+      const after = full.slice(b, b + 12);
+      // a decimal, or part of one: 2.1, 1,5, 0.25
+      if (/\d[.,]$/.test(before) || /^[.,]\d/.test(after)) continue;
+      // an amount
+      if (!m[2] && UNIT_AFTER.test(after)) continue;
+      // a heading's number: "2. Results", "3) Scope" at the start of a paragraph
+      const lineStart = full.lastIndexOf('\n', a - 1) + 1;
+      if (!full.slice(lineStart, a).trim() && /^[.)]\s+\p{Lu}/u.test(after)) continue;
+      if (scope.paras && HEADING_STYLE.test(scope.paras[paraAt(a)]?.style ?? '')) continue;
       out.push({ run: i, start: m.index!, end: m.index! + m[0].length, num: m[1], letters: m[2] });
     }
   });
@@ -180,6 +222,9 @@ export function manuscriptIds(t: DocText, view: SiView): Map<string, Set<string>
   return out;
 }
 
+/** An ID that can be given to an SI compound: a compound number as printed ("2a", "12", "3b′", "S4"), never a field's error text. */
+export const validId = (id: string): boolean => /^[\p{L}\p{N}′'″().,+±-]{1,16}$/u.test(id) && /\d/.test(id);
+
 /** The SI IDs to change so the SI matches the manuscript: each SI compound the manuscript gives one ID to, where the SI's differs. */
 export function renumberPlan(t: DocText, view: SiView): { key: string; from: string; to: string }[] {
   const out: { key: string; from: string; to: string }[] = [];
@@ -187,9 +232,29 @@ export function renumberPlan(t: DocText, view: SiView): { key: string; from: str
     if (ids.size !== 1) continue;
     const to = [...ids][0];
     const from = view.targets.find((x) => x.key === key)?.label ?? '';
-    if (to && normId(to) !== normId(from)) out.push({ key, from, to });
+    if (to && validId(to) && normId(to) !== normId(from)) out.push({ key, from, to });
   }
   return out;
+}
+
+/**
+ * IDs two SI compounds would share once a plan is carried out: a compound given an ID that
+ * another compound (one the manuscript doesn't mention, or mentions unclearly) keeps. Each with
+ * the compounds that would have it, as the SI names them now.
+ */
+export function renumberClashes(plan: readonly { key: string; to: string }[], view: SiView): { id: string; compounds: { key: string; was: string; caption: string; renumbered: boolean }[] }[] {
+  const to = new Map(plan.map((x) => [x.key, x.to]));
+  const by = new Map<string, { id: string; compounds: { key: string; was: string; caption: string; renumbered: boolean }[] }>();
+  for (const x of view.targets) {
+    if (x.kind !== 'compound') continue;
+    const id = to.get(x.key) ?? x.label;
+    if (!id || id === 'ID?') continue;
+    const k = normId(id);
+    const e = by.get(k) ?? { id, compounds: [] };
+    e.compounds.push({ key: x.key, was: x.label, caption: x.caption ?? '', renumbered: to.has(x.key) });
+    by.set(k, e);
+  }
+  return [...by.values()].filter((e) => e.compounds.length > 1 && e.compounds.some((c) => c.renumbered));
 }
 
 /**
@@ -199,15 +264,16 @@ export function renumberPlan(t: DocText, view: SiView): { key: string; from: str
  * numbers follow first mention, so a number typed out of order changes: `changed` lists those.
  * Numbers after "Table", "Figure", "entry"… are left alone.
  */
-export function linkTypedIds(t: DocText, view: SiView): { t: DocText; made: number; changed: { from: string; to: string }[] } {
+export function linkTypedIds(t: DocText, view: SiView): { t: DocText; made: number; changed: { from: string; to: string }[]; /** The numbers made fields, as they were typed, in the order of the text. */ typed: string[] } {
   const ids = idIndex(view);
   const objects: Record<number, DocObject> = { ...t.objects };
   let nextId = nextObjectId(t) - 1;
   const seqOf = new Map<string, number>();
   // compound numbers already in the document keep theirs (by what they show)
   const shown = fieldTexts(t);
-  for (const [k, o] of Object.entries(t.objects)) if (o.kind === 'seq' && o.name === COMPOUND) seqOf.set(shown.get(Number(k)) ?? '', Number(k));
+  for (const [k, o] of Object.entries(t.objects)) if (o.kind === 'seq' && o.name === COMPOUND && shown.has(Number(k))) seqOf.set(shown.get(Number(k))!, Number(k));
   let made = 0;
+  const typed: string[] = [];
   const typedAs = new Map<number, string>();
   const link = (seq: number, letters: string): void => {
     const o = objects[seq];
@@ -216,8 +282,9 @@ export function linkTypedIds(t: DocText, view: SiView): { t: DocText; made: numb
     const target = ids.get(normId((typedAs.get(seq) ?? shown.get(seq) ?? '') + letters));
     if (target) objects[seq] = { ...o, si: { ...(o.si ?? {}), [letters]: target.key } };
   };
-  const convert = (runs: TextRun[]): TextRun[] => {
-    const found = typedIds(runs);
+  const scope: TypedScope = { paras: t.paras, stopAt: (obj) => objects[obj]?.kind === 'bib' };
+  const convert = (runs: TextRun[], top = false): TextRun[] => {
+    const found = typedIds(runs, top ? scope : {});
     const out: TextRun[] = [];
     runs.forEach((r, i) => {
       if (r.obj !== undefined && objects[r.obj]?.kind === 'table') {
@@ -250,18 +317,19 @@ export function linkTypedIds(t: DocText, view: SiView): { t: DocText; made: numb
         out.push({ ...r, text: OBJECT_CHAR, obj: id });
         if (x.letters) out.push({ ...r, text: x.letters });
         made++;
+        typed.push(x.num + x.letters);
         pos = x.end;
       }
       if (pos < r.text.length) out.push({ ...r, text: r.text.slice(pos) });
     });
     return made ? out : runs;
   };
-  const runs = convert(t.runs);
-  if (!made) return { t, made: 0, changed: [] };
+  const runs = convert(t.runs, true);
+  if (!made) return { t, made: 0, changed: [], typed };
   const next: DocText = { ...t, runs, objects };
   const now = fieldTexts(next);
   const changed = [...typedAs].filter(([seq, was]) => now.get(seq) !== was).map(([seq, was]) => ({ from: was, to: now.get(seq) ?? '' }));
-  return { t: next, made, changed };
+  return { t: next, made, changed, typed };
 }
 
 /**
@@ -278,7 +346,8 @@ export function linkNumber(t: DocText, seq: number, letters: string, key: string
 export function compoundNumbers(t: DocText): { seq: number; number: string; si: Record<string, string> }[] {
   const shown = fieldTexts(t);
   const out: { seq: number; number: string; si: Record<string, string> }[] = [];
-  for (const [k, o] of Object.entries(t.objects)) if (o.kind === 'seq' && o.name === COMPOUND) out.push({ seq: Number(k), number: shown.get(Number(k)) ?? '', si: o.si ?? {} });
+  // (a number deleted from the text is still among the objects until the document is saved: not one of these)
+  for (const [k, o] of Object.entries(t.objects)) if (o.kind === 'seq' && o.name === COMPOUND && shown.has(Number(k))) out.push({ seq: Number(k), number: shown.get(Number(k))!, si: o.si ?? {} });
   return out.sort((a, b) => Number(a.number) - Number(b.number));
 }
 
@@ -315,65 +384,49 @@ export interface SiFinding {
 const textOf = (runs: readonly TextRun[], c: Pick<Ctx, 'objects' | 'shown'>): string =>
   runs.map((r) => (r.obj !== undefined ? c.shown.get(r.obj) ?? OBJECT_CHAR : r.text)).join('');
 
-/** Numbers in a yield, as printed ("92", "92.0", ">99", "quant."). */
+/** Numbers in a yield, as printed ("92", "92.0", "92,5", ">99", "quant."). */
 function yieldValues(s: string): string[] {
   const out: string[] = [];
-  for (const m of s.matchAll(/(quant\.?)|([<>≥≤]?\s*\d+(?:\.\d+)?)/gi)) out.push(m[1] ? 'quant.' : m[2].replace(/\s+/g, ''));
+  for (const m of s.replace(/(\d),(\d)/g, '$1.$2').matchAll(/(quant(?:itative|\.)?)|([<>≥≤]?\s*\d+(?:\.\d+)?)/gi)) out.push(m[1] ? 'quant.' : m[2].replace(/\s+/g, ''));
   return out;
 }
 
-/** The same printed yield: 92 = 92.0, ">99" ≠ "99", "quant." = 99, >99 or 100. */
+// Values are compared as the Manuscript Check page compares them (ms-check.ts, which follows SI
+// Assistant), so the two checks never disagree about the same pair of values.
+
+/** The same printed yield: 92 = 92.0, ">99" ≠ "99", "quant." = 99, >99, ≥99 or 100. */
 export function sameYield(a: string, b: string): boolean {
-  const n = (s: string): { op: string; v: number } | 'q' => (s === 'quant.' ? 'q' : { op: /^[<>≥≤]/.test(s) ? s[0] : '', v: Number(s.replace(/^[<>≥≤]/, '')) });
-  const x = n(a), y = n(b);
-  if (x === 'q' && y === 'q') return true;
-  if (x === 'q' || y === 'q') { const o = (x === 'q' ? y : x) as { op: string; v: number }; return (o.op === '' && (o.v === 99 || o.v === 100)) || (o.op === '>' && o.v === 99); }
-  return x.op === y.op && x.v === y.v;
+  return C.sameYield(a, b);
 }
 
 /** An ee as a number: "94% ee", "94", or an er converted ("97:3 er" = 94). */
 export function eeOf(s: string): { ee: number; er: boolean } | null {
-  const er = /(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/.exec(s);
-  if (er) { const a = Number(er[1]), b = Number(er[2]); return a + b > 0 ? { ee: (Math.abs(a - b) / (a + b)) * 100, er: true } : null; }
-  if (/\brac(?:emic)?\b/i.test(s)) return { ee: 0, er: false };
-  const m = /(\d+(?:\.\d+)?)/.exec(s);
-  return m ? { ee: Number(m[1]), er: false } : null;
+  const v = C.eeValue(s);
+  return v ? { ee: v[1], er: v[2] } : null;
 }
 
-/** The same ee: exactly, or within 0.5 when an er is involved (the printed precision). */
+/** The same ee: the same number and sign (">99" is not "99"), or within 0.5 when an er is involved (the printed precision). A value with no number says nothing. */
 export function sameEe(a: string, b: string): boolean {
-  const x = eeOf(a), y = eeOf(b);
+  const x = C.eeValue(a), y = C.eeValue(b);
   if (!x || !y) return true;
-  return x.er || y.er ? Math.abs(x.ee - y.ee) <= 0.5 : x.ee === y.ee;
+  return C.sameEe(x, y);
 }
 
-/** A dr as a fraction of the major isomer ("5:1" = 0.833, "83:17" = 0.83, ">20:1"). */
-function drOf(s: string): { major: number; op: string; text: string } | null {
-  const m = /([<>≥≤]?)\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/.exec(s);
-  if (!m) return null;
-  const a = Number(m[2]), b = Number(m[3]);
-  return a + b > 0 ? { major: Math.max(a, b) / (a + b), op: m[1], text: `${a}:${b}` } : null;
-}
+const RATIO = /\d+(?:[.,]\d+)?\s*:\s*\d+(?:[.,]\d+)?/;
 
-/** The same dr: written the same way, or within 2%. */
+/** The same dr: written the same way; "5:1" and "83:17" (two ways of writing it) within the printed precision. A value with no ratio says nothing. */
 export function sameDr(a: string, b: string): boolean {
-  const x = drOf(a), y = drOf(b);
-  if (!x || !y) return true;
-  if (x.op !== y.op) return false;
-  return x.text === y.text || Math.abs(x.major - y.major) <= 0.02;
+  if (!RATIO.test(a) || !RATIO.test(b)) return true;
+  return C.sameDr(a, b);
 }
 
 type Col = 'yield' | 'ee' | 'dr';
 const COLS: [Col, RegExp][] = [['yield', /yield/i], ['ee', /\bee\b|\ber\b|e\.e\.|e\.r\./i], ['dr', /\bdr\b|d\.r\./i]];
 
 /** A table's label ("Table 1"), from the caption paragraph just before or after it. */
-function tableName(t: DocText, para: number, n: number, c: Ctx): string {
-  const paraText = (p: number): string => {
-    const lines = textOf(t.runs, c).split('\n');
-    return lines[p] ?? '';
-  };
+function tableName(lines: readonly string[], para: number, n: number): string {
   for (const p of [para - 1, para - 2, para + 1]) {
-    const m = /^\s*(Table\s+[A-Z]?\d+[a-z]?)/.exec(paraText(p));
+    const m = /^\s*(Table\s+[A-Z]?\d+[a-z]?)/.exec(lines[p] ?? '');
     if (m) return m[1];
   }
   return `table ${n}`;
@@ -417,6 +470,7 @@ export function checkAgainstSi(t: DocText, view: SiView): SiFinding[] {
   // tables: a row with one SI compound and a yield, ee or dr column
   const paraOf = objectParas(t.runs);
   let tableNo = 0;
+  let paraLines: string[] | null = null;
   const tableIds = Object.entries(t.objects).filter(([, o]) => o.kind === 'table').map(([k]) => Number(k)).sort((a, b) => (paraOf.get(a) ?? 1e9) - (paraOf.get(b) ?? 1e9));
   const inTables = new Set<string>();
   for (const tid of tableIds) {
@@ -432,7 +486,7 @@ export function checkAgainstSi(t: DocText, view: SiView): SiFinding[] {
         for (const [col, re] of COLS) if (re.test(s) && !cols.has(k)) cols.set(k, col);
       });
     }
-    const name = tableName(t, paraOf.get(tid) ?? 0, tableNo, c);
+    const name = tableName(paraLines ??= textOf(t.runs, c).split('\n'), paraOf.get(tid) ?? 0, tableNo);
     for (let r = headRows; r < rows.length; r++) {
       const row = rows[r];
       const ms = row.flatMap((cell) => mentionsIn(cell.runs, c));
@@ -522,11 +576,17 @@ const withPct = (v: string, col: string): string => (col === 'yield' && /^\s*[<>
 
 const label = (c: Col): string => (c === 'yield' ? 'yield' : c);
 
+/**
+ * A yield in the manuscript agrees with the SI's when the value the manuscript gives is the SI's.
+ * A cell with a value in brackets after it ("85 (92 brsm)", "90 (1 mmol)") gives the one before
+ * the brackets; a cell with no number ("n.d.", "–") says nothing.
+ */
 function agreeYield(manuscript: string, si: string): boolean {
   const mine = yieldValues(si);
-  const theirs = yieldValues(manuscript);
+  const outside = yieldValues(manuscript.replace(/[([][^)\]]*[)\]]/g, ' '));
+  const theirs = outside.length ? outside : yieldValues(manuscript);
   if (!mine.length || !theirs.length) return true;
-  return theirs.some((x) => mine.some((y) => sameYield(x, y)));
+  return theirs.some((x) => sameYield(x, mine[0]));
 }
 
 /** Where a cell's value is, when it is a single number (so the SI's can replace it). */
