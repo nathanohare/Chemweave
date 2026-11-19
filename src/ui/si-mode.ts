@@ -2385,6 +2385,8 @@ export class SiMode {
     try {
       const got = await compileSi(p, {
         contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (ms) => this.cachedFacts(ms),
+        // (a PDF's first page, kept for the next update: the preview compiles often)
+        pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPagesKept(b, most ?? 1)),
       }, target);
       if (this.project !== p) return;
       const blank = !got.doc.runs.some((r) => r.text.trim()) && !Object.keys(got.doc.objects).length;
@@ -3312,7 +3314,7 @@ export class SiMode {
     try {
       got = await compileSi(p, {
         contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (m) => this.host.siFacts(m),
-        pdfPages: (b) => import('../render/pdf-page').then((m) => m.pdfPages(b)),
+        pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPages(b, most)),
         contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
       });
     } catch (e) {

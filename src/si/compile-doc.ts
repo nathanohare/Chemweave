@@ -22,7 +22,7 @@ import { fieldKeys, valuesOf, compoundName, compoundsOf, type Json, type SiCompo
 import { displayId, type IdReport } from './compound-ids';
 import { fieldDef, partText } from './fields';
 import { hrmsCalc, hrmsSpecies, hrmsTolerance, mentionKind } from './checks';
-import { formatMz, listingFailed, peaksNear, readBytes, reportListing, summary } from './ms-reports';
+import { formatMz, listingFailed, peaksNear, readReport, reportListing, summary } from './ms-reports';
 import type { MolFacts } from './chem';
 import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './format';
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
@@ -47,14 +47,14 @@ export interface CompileHost {
   sizeOf(c: Contents): { w: number; h: number } | null;
   /** Formula and pieces of each structure (for the HRMS and elemental analysis sentences). */
   facts(mols: string[]): Promise<(MolFacts | null)[]>;
-  /** Each page of a PDF as a picture, with its size in points (null when it can't be read). Without it, PDFs are left out. */
-  pdfPages?(bytes: Uint8Array): Promise<PagePicture[] | null>;
+  /** Each page of a PDF (or only its first `most`) as a picture, with its size in points (null when it can't be read). Without it, PDFs are left out. */
+  pdfPages?(bytes: Uint8Array, most?: number): Promise<PagePicture[] | null>;
   /** Where the content of a picture is, for auto-crop (null: nothing to cut, or it can't be measured). */
   contentBox?(src: string): Promise<Crop | null>;
 }
 
-/** A page of a PDF drawn as a picture: its data URL, its size in points and in pixels. */
-export interface PagePicture { src: string; w: number; h: number; px?: { w: number; h: number } }
+/** A page of a PDF drawn as a picture: its data URL, its size in points and in pixels, and how many pages the PDF has. */
+export interface PagePicture { src: string; w: number; h: number; px?: { w: number; h: number }; of?: number }
 
 export interface CompiledSi {
   doc: DocText;
@@ -132,8 +132,17 @@ class Labels {
 
 /** A text's figure and table paragraphs: (kind, id), in order. */
 type TextObject = { kind: 'figure' | 'table'; id: string };
-const textObjects = (text: string): TextObject[] =>
-  parseMarkup(text).flatMap((p): TextObject[] => (p.table ? [{ kind: 'table', id: p.table }] : p.figure ? [{ kind: 'figure', id: p.figure }] : p.image ? [{ kind: 'figure', id: '' }] : []));
+const objectsOfText = new Map<string, TextObject[]>();
+/** (Worked out once for each text: labels are worked out each time a page is shown.) */
+function textObjects(text: string): TextObject[] {
+  let got = objectsOfText.get(text);
+  if (!got) {
+    got = parseMarkup(text).flatMap((p): TextObject[] => (p.table ? [{ kind: 'table', id: p.table }] : p.figure ? [{ kind: 'figure', id: p.figure }] : p.image ? [{ kind: 'figure', id: '' }] : []));
+    if (objectsOfText.size >= 200) objectsOfText.delete(objectsOfText.keys().next().value!);
+    objectsOfText.set(text, got);
+  }
+  return got;
+}
 
 // ---------------------------------------------------------------- pictures
 
@@ -218,6 +227,8 @@ class Compiler {
   private groups = 0;
   private landscape = false;
   private spectraDone = false;
+  /** Compiling one page for the live preview (PDFs show their first page). */
+  private preview = false;
 
   /** Turn the pages that follow (a section break before the next paragraph), when they aren't already. */
   private orient(o: 'portrait' | 'landscape'): void {
@@ -245,14 +256,18 @@ class Compiler {
 
   // -------------------------------------------------------------- reading first
 
-  /** Every text with figures or tables, the structures' facts, and the labels, before anything is written. */
-  async prepare(): Promise<void> {
+  /**
+   * Every text with figures or tables, the structures' facts of the compounds `printed` (only
+   * theirs: a structure file is read only for a compound that prints), and the labels, before
+   * anything is written.
+   */
+  async prepare(printed: SiCompound[] = []): Promise<void> {
     this.texts.set('general', (await this.p.folder.readText('front/general_information.txt')) ?? '');
     this.texts.set('cover', (await this.p.folder.readText('front/cover_text.txt')) ?? '');
     for (const s of this.p.sections) if (s.type === 'text') this.texts.set(s.id, await this.p.readSectionText(s));
-    const compounds = this.p.compounds;
+    const compounds = [...new Set(printed)];
     const mols = await Promise.all(compounds.map((c) => (this.p.hasStructure(c) ? this.p.readStructure(c) : Promise.resolve(''))));
-    const facts = await this.host.facts(mols.map((m) => m || ''));
+    const facts = compounds.length ? await this.host.facts(mols.map((m) => m || '')) : [];
     compounds.forEach((c, i) => this.facts.set(c.id, mols[i] ? facts[i] ?? null : null));
     // labels, in the order SI Assistant numbers them
     const ownerObjects = async (owner: Owner): Promise<void> => {
@@ -404,13 +419,23 @@ class Compiler {
     return { ...paraFromStyle(styleOf(this.b.doc, ps), ps), ...ps };
   }
 
-  /** Runs for a table cell or a table's notes (paragraphs of the cell on lines of their own). */
-  private cellRuns(text: string, where: string, look: RunStyle): TextRun[] {
+  /**
+   * Runs for a table cell or a table's notes (paragraphs of the cell on lines of their own). With
+   * `cites`, citations are kept as citation objects (numbered with the rest of the document, as
+   * SI Assistant prints them); without (a scheme's conditions, drawn text), they are left out.
+   */
+  private cellRuns(text: string, where: string, look: RunStyle, cites = false): TextRun[] {
     const out: TextRun[] = [];
     parseMarkup(text).filter((p) => p.runs.length).forEach((p, i) => {
       if (i) out.push({ ...look, text: '\n' });
       for (const r of this.resolve(this.chemistry(p.runs), where)) {
-        if (r.ref?.startsWith(CITE)) continue;   // (citations in tables: the number is left out)
+        if (r.ref?.startsWith(CITE)) {
+          if (!cites) continue;
+          const obj = this.b.reserve({ kind: 'cite', refs: citationsOf(r) });
+          out.push({ ...look, obj, text: OBJECT_CHAR, ...(this.citeSup ? { sup: true } : {}), sub: undefined });
+          this.cited = true;
+          continue;
+        }
         const t: TextRun = { ...look, text: r.text };
         if (r.bold) t.bold = true;
         if (r.italic) t.italic = true;
@@ -493,11 +518,19 @@ class Compiler {
     return true;
   }
 
-  /** A PDF's pages as pictures fitted to `room` (none when it can't be read, said in the notes). */
-  private async pdfPictures(bytes: Uint8Array, name: string, where: string, room: { w: number; h: number }, widthPt?: number): Promise<Extract<DocObject, { kind: 'picture' }>[]> {
-    const pages = this.host.pdfPages ? await this.host.pdfPages(bytes).catch(() => null) : null;
+  /**
+   * A PDF's pages as pictures fitted to `room` (none when it can't be read, said in the notes);
+   * with `most`, only that many (a table cell shows the first). The live preview shows the first
+   * page only, and says so.
+   */
+  private async pdfPictures(bytes: Uint8Array, name: string, where: string, room: { w: number; h: number }, widthPt?: number, most?: number): Promise<Extract<DocObject, { kind: 'picture' }>[]> {
+    if (this.preview) most = 1;
+    const pages = this.host.pdfPages ? await this.host.pdfPages(bytes, most).catch(() => null) : null;
     if (!this.host.pdfPages) { this.notes.push(`${where}: ${name} is a PDF; PDFs are placed only in the desktop app and the web app (left out).`); return []; }
     if (!pages?.length) { this.notes.push(`${where}: ${unreadablePdf(name)}`); return []; }
+    if (most && pages.length > most) pages.length = most;
+    const of = pages[0].of ?? pages.length;
+    if (this.preview && of > pages.length) this.notes.push(`${where}: the live preview shows the first page of ${name} (it has ${of}); Compile prints them all.`);
     return pages.map((pg) => {
       let w = pg.w, h = pg.h;
       if (widthPt) { h *= widthPt / w; w = widthPt; }
@@ -524,7 +557,7 @@ class Compiler {
       const name = image.slice(image.lastIndexOf('/') + 1);
       if (!bytes) { this.notes.push(`${where}: the picture ${name} in a table cell is no longer in the project; left out.`); continue; }
       const widthCm = Number(cd.image_width) || 0;
-      const pic = /\.pdf$/i.test(name) ? (await this.pdfPictures(bytes, name, where, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? (widthCm / 2.54) * PT : undefined))[0] : pictureObject(name, bytes, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined);
+      const pic = /\.pdf$/i.test(name) ? (await this.pdfPictures(bytes, name, where, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? (widthCm / 2.54) * PT : undefined, 1))[0] : pictureObject(name, bytes, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined);
       if (!pic) { if (!/\.pdf$/i.test(name)) this.notes.push(`${where}: the picture ${name} in a table cell could not be read; left out.`); continue; }
       pictures.set(`${r}:${k}`, this.b.reserve(pic));
     }
@@ -532,7 +565,7 @@ class Compiler {
       const c = row[k];
       if (c === null || c === undefined) return { runs: [] };
       const cd = typeof c === 'string' ? { text: c } : dict(c);
-      const text = this.cellRuns(str(cd.text), where, look);
+      const text = this.cellRuns(str(cd.text), where, look, true);
       const picId = pictures.get(`${r}:${k}`);
       const cell: TableCell = { runs: picId !== undefined ? [{ ...look, obj: picId, text: OBJECT_CHAR }, ...(text.length ? [{ ...look, text: '\n' }, ...text] : [])] : text };
       const span = Math.round(Number(cd.colspan) || 1), rowSpan = Math.round(Number(cd.rowspan) || 1);
@@ -558,7 +591,10 @@ class Compiler {
     notes.forEach((n, i) => {
       const ps: ParaStyle = { align: 'left', spaceAfter: i === notes.length - 1 ? 12 : 0, ...(i < notes.length - 1 ? { keepNext: true } : {}) };
       const nl: RunStyle = { ...this.b.styleLook(ps), size: 9 };
-      for (const r of this.cellRuns(n, where, nl)) this.b.text(r.text, r);
+      for (const r of this.cellRuns(n, where, nl, true)) {
+        // (a citation: its object put in the text, where it is numbered with the others)
+        if (r.obj !== undefined) { const { obj, text: _t, ...l } = r; this.b.object(this.b.objects[obj], l); } else this.b.text(r.text, r);
+      }
       this.b.endPara(this.full(ps));
     });
   }
@@ -770,10 +806,13 @@ class Compiler {
     const drawn = new Set<string>();
     const name = str(k.data.name) || 'Scheme';
     const where = `${s.name} ▸ scheme “${name}”`;
-    const editor = dict(k.data.editor);
-    if (k.data.mode !== 'editor' || !Object.keys(editor).length) {
-      this.notes.push(`${where}: made from a pasted picture, which isn’t drawn here; open its scheme page, which sets it out as a scheme to edit (its compounds as the first step’s products). Its compounds are printed with their own structures.`);
-      return drawn;
+    let editor = dict(k.data.editor);
+    if (k.data.mode !== 'editor') {
+      // A scheme page made as one pasted picture (before the scheme editor) prints as SI Assistant
+      // prints it (scheme_editor.upgrade_old_scheme, in memory only): the boxes and steps it already
+      // has, or else its compounds as the products of one step. Its picture isn't printed.
+      if (!list(editor.starting).length && !list(editor.steps).length) editor = { ...editor, starting: [], steps: [{ products: k.children.map((c) => ({ compound: c.id })) }] };
+      this.notes.push(`${where}: it was made from a pasted picture, which isn’t printed; its compounds are drawn as the products of one step. Open its scheme page to set it out as you want it.`);
     }
     const lay = this.schemeLayoutOf(k);
     const conditions = (t: unknown): TextRun[] => this.cellRuns(str(t), where, {});
@@ -921,6 +960,8 @@ class Compiler {
       await this.spectraPage(pg.slots, pg.per, page, top);
     }
     if (hrms.length) await this.hrmsReports(hrms, level + 1, name, !headed, level);
+    // the pages after it are portrait again (the sections after the Spectra section)
+    this.orient('portrait');
   }
 
   /** One page of spectra: an empty paragraph that anchors them, and each slot floating at its place. */
@@ -994,53 +1035,80 @@ class Compiler {
     return out;
   }
 
-  /** The HRMS reports sub-section (§13n.3): each compound's report files, compound by compound. */
+  /**
+   * The HRMS reports sub-section (§13n.3): each compound's report files, compound by compound.
+   * Its heading (and the Spectra section's, when `withSection`) is printed only once a report
+   * prints something; a report that can't be read is said in the notes, never stops the compile.
+   */
   private async hrmsReports(compounds: SiCompound[], level: number, sectionName: string, withSection: boolean, sectionLevel: number): Promise<void> {
-    this.orient('portrait');
-    if (withSection) this.sectionHeading(sectionLevel, sectionName, { pageBreak: true });
-    this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.rank >= 2), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
+    let started = false;
+    /** The headings, before the first report printed (which then goes under them, not on a page of its own). */
+    const start = (): boolean => {
+      if (started) return false;
+      started = true;
+      this.orient('portrait');
+      if (withSection) this.sectionHeading(sectionLevel, sectionName, { pageBreak: true });
+      this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.rank >= 2), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
+      return true;
+    };
     const room = { w: TEXT_W, h: 7.4 * PT };
     for (const c of compounds) {
       const id = displayId(this.report, c.id);
       for (const r of reportItems(c)) {
         const file = String(r.file);
         const where = `${id} ▸ HRMS`;
-        const kind = printKind(file);
-        if (kind === 'none') { this.notes.push(`${where}: the HRMS report ${file} can't be printed (raw data or a kind of file that can't be shown); left out.`); continue; }
-        const bytes = await this.p.folder.readBytes(joinPath(c.folder, 'hrms', file));
-        if (!bytes) { this.notes.push(`${where}: the HRMS report ${file} is missing; left out.`); continue; }
-        const title = (more = ''): void => this.para([R(id, { bold: true }), R(` — HRMS report: ${file}${more}`)], { keepNext: true, spaceBefore: 14, spaceAfter: 6 }, where);
-        if (kind === 'peaks') { title(); this.peaksTable(c, file, bytes, where); continue; }
-        if (kind === 'pdf') {
-          const pics = await this.pdfPictures(bytes, file, where, room);
-          pics.forEach((pic, i) => {
-            if (i > 0 || pics.length > 1) this.b.pendingBreak = true;
-            title(pics.length > 1 ? ` (page ${i + 1} of ${pics.length})` : '');
-            this.b.object(pic);
-            this.b.endPara(this.full({ align: 'center' }));
-          });
-          continue;
+        try {
+          await this.hrmsReport(c, file, where, room, start);
+        } catch (e) {
+          this.notes.push(`${where}: the HRMS report ${file} could not be printed (${e instanceof Error ? e.message : String(e)}); left out.`);
         }
-        if (kind === 'picture') {
-          const pic = pictureObject(file, bytes, room);
-          if (!pic) { this.notes.push(`${where}: ${file} could not be read as a picture; left out.`); continue; }
-          title();
-          this.b.object(pic);
-          this.b.endPara(this.full({ align: 'center' }));
-          continue;
-        }
-        const [lines, left] = reportListing(bytes, file);
-        if (listingFailed(lines)) this.notes.push(`${where}: the HRMS report ${file} could not be read (it may be damaged); only a note is printed for it.`);
-        title();
-        lines.forEach((l) => { this.b.text(l || ' ', { font: 'Courier New', size: 7 }); this.b.endPara(this.full({ spaceAfter: 0, keepNext: false })); });
-        if (left) this.para([R(`… ${left} more line${left === 1 ? '' : 's'} not printed (the whole file is kept in the project folder).`, { italic: true })], {}, where, { size: 8 });
       }
     }
   }
 
+  /** One HRMS report file; `start` puts the headings in first (true for the first report printed). */
+  private async hrmsReport(c: SiCompound, file: string, where: string, room: { w: number; h: number }, start: () => boolean): Promise<void> {
+    const id = displayId(this.report, c.id);
+    const kind = printKind(file);
+    if (kind === 'none') { this.notes.push(`${where}: the HRMS report ${file} can't be printed (raw data or a kind of file that can't be shown); left out.`); return; }
+    const bytes = await this.p.folder.readBytes(joinPath(c.folder, 'hrms', file));
+    if (!bytes) { this.notes.push(`${where}: the HRMS report ${file} is missing; left out.`); return; }
+    const title = (more = ''): void => this.para([R(id, { bold: true }), R(` — HRMS report: ${file}${more}`)], { keepNext: true, spaceBefore: 14, spaceAfter: 6 }, where);
+    if (kind === 'peaks') { start(); title(); await this.peaksTable(c, file, bytes, where); return; }
+    if (kind === 'pdf') {
+      const pics = await this.pdfPictures(bytes, file, where, room);
+      pics.forEach((pic, i) => {
+        // each page of a report of several on a page of its own (the first under the headings, when it is the first report)
+        const first = start();
+        if (i > 0 || (pics.length > 1 && !first)) this.b.pendingBreak = true;
+        title(pics.length > 1 ? ` (page ${i + 1} of ${pics.length})` : '');
+        this.b.object(pic);
+        this.b.endPara(this.full({ align: 'center' }));
+      });
+      return;
+    }
+    if (kind === 'picture') {
+      const pic = pictureObject(file, bytes, room);
+      if (!pic) { this.notes.push(`${where}: ${file} could not be read as a picture; left out.`); return; }
+      start();
+      title();
+      this.b.object(pic);
+      this.b.endPara(this.full({ align: 'center' }));
+      return;
+    }
+    const [lines, left] = reportListing(bytes, file);
+    if (listingFailed(lines)) this.notes.push(`${where}: the HRMS report ${file} could not be read (it may be damaged); only a note is printed for it.`);
+    start();
+    title();
+    lines.forEach((l) => { this.b.text(l || ' ', { font: 'Courier New', size: 7 }); this.b.endPara(this.full({ spaceAfter: 0, keepNext: false })); });
+    if (left) this.para([R(`… ${left} more line${left === 1 ? '' : 's'} not printed (the whole file is kept in the project folder).`, { italic: true })], {}, where, { size: 8 });
+  }
+
   /** A data file (mzML, mzXML, mzData, netCDF): its largest peaks near the expected m/z (the chosen ion's monoisotopic m/z), the one used as found marked. */
-  private peaksTable(c: SiCompound, file: string, bytes: Uint8Array, where: string): void {
-    const data = readBytes(bytes, file);
+  private async peaksTable(c: SiCompound, file: string, bytes: Uint8Array, where: string): Promise<void> {
+    // (never throws: a damaged file gives a message, printed under its title and said in the notes)
+    const data = await readReport(bytes, file);
+    if (!data.readable) this.notes.push(`${where}: the HRMS report ${file} could not be read (it may be damaged); only a note is printed for it.`);
     const v = dict(valuesOf(c).hrms);
     let centre: number | null = null;
     try {
@@ -1087,8 +1155,21 @@ class Compiler {
     }
   }
 
+  /** The compounds the document (or the preview's page) prints. */
+  private printedCompounds(only?: SiPreviewTarget): SiCompound[] {
+    if (!only) return this.includedCompounds(this.p.top);
+    if (only.kind === 'compound') return this.p.compounds.filter((c) => c.id === only.id);
+    if (only.kind === 'scheme') return this.p.schemes.find((k) => k.id === only.id)?.children ?? [];
+    if (only.kind === 'section') {
+      const s = this.p.sections.find((x) => x.id === only.id);
+      return s ? [...(s.type === 'data' ? compoundsOf(s) : []), ...this.includedCompounds(s.children)] : [];
+    }
+    return [];
+  }
+
   async build(only?: SiPreviewTarget): Promise<DocText> {
-    await this.prepare();
+    this.preview = !!only;
+    await this.prepare(this.printedCompounds(only));
     if (only) await this.buildOnly(only);
     else await this.buildAll();
     const title = str(this.p.settings.title);

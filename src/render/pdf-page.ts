@@ -24,7 +24,10 @@ export async function pdfFirstPage(bytes: Uint8Array): Promise<ObjectPicture | n
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvas, canvasContext: ctx, viewport: view }).promise;
-    return { src: canvas.toDataURL('image/png'), w: own.width, h: own.height, px: { w: canvas.width, h: canvas.height } };
+    const px = { w: canvas.width, h: canvas.height };
+    const src = canvas.toDataURL('image/png');
+    canvas.width = canvas.height = 0;   // (its memory freed now)
+    return { src, w: own.width, h: own.height, px };
   } catch {
     return null;
   } finally {
@@ -32,12 +35,17 @@ export async function pdfFirstPage(bytes: Uint8Array): Promise<ObjectPicture | n
   }
 }
 
+/** A PDF page drawn as a picture, with how many pages the whole PDF has. */
+export interface PdfPagePicture extends ObjectPicture { of: number }
+
 /**
- * Every page of a PDF as a picture, sharp enough to print (about 150 dpi, at most 2400 pixels
- * on its longer side), with its size in points; null when the file can't be read (damaged,
- * password-protected, not a PDF). For spectra and PDF figures in a compiled SI.
+ * Every page of a PDF as a picture (or only the first `most`), sharp enough to print (about 150
+ * dpi, at most 2400 pixels on its longer side), with its size in points; null when the file can't
+ * be read (damaged, password-protected, not a PDF). For spectra and PDF figures in a compiled SI.
+ * Each page is drawn on a canvas that is emptied once its picture is taken, so a long PDF (or
+ * hundreds of spectra) doesn't keep a canvas's memory for every page until it is collected.
  */
-export async function pdfPages(bytes: Uint8Array): Promise<ObjectPicture[] | null> {
+export async function pdfPages(bytes: Uint8Array, most?: number): Promise<PdfPagePicture[] | null> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
     pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
@@ -45,8 +53,9 @@ export async function pdfPages(bytes: Uint8Array): Promise<ObjectPicture[] | nul
   const task = pdfjs.getDocument({ data: bytes.slice() });
   try {
     const doc = await task.promise;
-    const out: ObjectPicture[] = [];
-    for (let n = 1; n <= doc.numPages; n++) {
+    const out: PdfPagePicture[] = [];
+    const last = most && most > 0 ? Math.min(doc.numPages, most) : doc.numPages;
+    for (let n = 1; n <= last; n++) {
       const page = await doc.getPage(n);
       const own = page.getViewport({ scale: 1 });
       const scale = Math.min(150 / 72, 2400 / Math.max(own.width, own.height));
@@ -54,13 +63,20 @@ export async function pdfPages(bytes: Uint8Array): Promise<ObjectPicture[] | nul
       const canvas = document.createElement('canvas');
       canvas.width = Math.ceil(view.width);
       canvas.height = Math.ceil(view.height);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      await page.render({ canvas, canvasContext: ctx, viewport: view }).promise;
-      out.push({ src: canvas.toDataURL('image/png'), w: own.width, h: own.height, px: { w: canvas.width, h: canvas.height } });
-      page.cleanup();
+      const px = { w: canvas.width, h: canvas.height };
+      try {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvas, canvasContext: ctx, viewport: view }).promise;
+        out.push({ src: canvas.toDataURL('image/png'), w: own.width, h: own.height, px, of: doc.numPages });
+      } finally {
+        // (its memory freed now, not when the canvas is collected)
+        canvas.width = 0;
+        canvas.height = 0;
+        page.cleanup();
+      }
     }
     return out;
   } catch {
@@ -68,6 +84,39 @@ export async function pdfPages(bytes: Uint8Array): Promise<ObjectPicture[] | nul
   } finally {
     void task.destroy();
   }
+}
+
+/** PDFs drawn lately (by their bytes): the live preview draws the same ones again after each change. */
+const drawnLately: { key: string; bytes: Uint8Array; most: number; pages: Promise<PdfPagePicture[] | null> }[] = [];
+const LATELY = 12;
+
+/** As pdfPages, the last few PDFs drawn kept (for the live preview, which compiles often). */
+export function pdfPagesKept(bytes: Uint8Array, most = 1): Promise<PdfPagePicture[] | null> {
+  const key = `${bytes.length}:${fingerprint(bytes)}`;
+  const at = drawnLately.findIndex((d) => d.key === key && d.most === most && sameBytes(d.bytes, bytes));
+  if (at >= 0) {
+    const [hit] = drawnLately.splice(at, 1);
+    drawnLately.push(hit);
+    return hit.pages;
+  }
+  const pages = pdfPages(bytes, most);
+  drawnLately.push({ key, bytes, most, pages });
+  if (drawnLately.length > LATELY) drawnLately.shift();
+  return pages;
+}
+
+/** A quick fingerprint of some bytes (FNV-1a), to tell files apart. */
+export function fingerprint(b: Uint8Array): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16);
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 /**
@@ -141,5 +190,7 @@ export async function pictureContentBox(src: string): Promise<[number, number, n
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, w, h);
   ctx.drawImage(img, 0, 0, w, h);
-  return contentBox(ctx.getImageData(0, 0, w, h).data, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+  canvas.width = canvas.height = 0;   // (its memory freed now)
+  return contentBox(data, w, h);
 }

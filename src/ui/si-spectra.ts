@@ -50,8 +50,22 @@ const PT_PX = 1.1;            // the preview: pixels to a point at 100 %
 const PAGE_BODY = { w: 6.5 * 72, h: 9 * 72 - 40 };
 /** The spectrum last shown for each compound (its page opens on it again). */
 const lastShown = new Map<string, string>();
-/** Pages of spectrum files read so far (by compound folder and file), kept while Chemweave is open. */
-const pagesRead = new Map<string, { src: string; w: number; h: number }[] | null>();
+type Pages = { src: string; w: number; h: number }[];
+/**
+ * Pages of spectrum files drawn lately, for each project open (forgotten with it), by the file's
+ * path and its bytes' length and fingerprint: a file replaced under the same name (a corrected
+ * spectrum added after the old one went to the Trash, or one SI Assistant wrote) is drawn again.
+ * A file that couldn't be read isn't kept, so it is read again next time. At most PAGES_KEPT files.
+ */
+const pagesRead = new WeakMap<SiProject, Map<string, { key: string; pages: Pages }>>();
+const PAGES_KEPT = 40;
+
+/** A quick fingerprint of a file's bytes (FNV-1a) with its length. */
+function bytesKey(b: Uint8Array): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 0x01000193); }
+  return `${b.length}:${(h >>> 0).toString(16)}`;
+}
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -129,17 +143,28 @@ export class SiSpectraPage {
       const file = String(item.file ?? '');
       if (!file) continue;
       const path = `${c.folder}/${attachmentDir(c, key)}/${file}`;
-      let pages = pagesRead.get(path);
-      if (pages === undefined) {
-        const bytes = await this.p.folder.readBytes(path).catch(() => null);
-        if (!bytes) pages = null;
-        else if (/\.pdf$/i.test(file)) pages = await this.host.pdfPages(bytes).catch(() => null);
+      let kept = pagesRead.get(this.p);
+      if (!kept) pagesRead.set(this.p, (kept = new Map()));
+      const bytes = await this.p.folder.readBytes(path).catch(() => null);
+      const bkey = bytes ? bytesKey(bytes) : '';
+      let pages: Pages | null = null;
+      const hit = kept.get(path);
+      if (bytes && hit?.key === bkey) {
+        pages = hit.pages;
+        kept.delete(path);
+        kept.set(path, hit);   // (the most lately used last)
+      } else if (bytes) {
+        if (/\.pdf$/i.test(file)) pages = await this.host.pdfPages(bytes).catch(() => null);
         else {
           const mime = pictureMime(file, bytes);
           const px = mime ? imageSize(bytes, mime) : null;
           pages = mime && px && px.w > 0 ? [{ src: dataUrl(bytes, mime), w: px.w, h: px.h }] : null;
         }
-        pagesRead.set(path, pages);
+        kept.delete(path);
+        if (pages) {
+          kept.set(path, { key: bkey, pages });
+          while (kept.size > PAGES_KEPT) kept.delete(kept.keys().next().value!);
+        }
       }
       if (!pages?.length) { out.push({ key, item, file, page: 1, pages: 1, src: null, aspect: 1.3, crop: null, problem: pages === null ? 'This file is missing or can’t be read as a picture or PDF.' : 'This PDF has no pages.' }); continue; }
       pages.forEach((pg, i) => out.push({ key, item, file, page: i + 1, pages: pages!.length, src: pg.src, aspect: pg.h / pg.w, crop: null }));
