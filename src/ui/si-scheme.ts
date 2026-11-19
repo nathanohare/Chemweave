@@ -17,6 +17,7 @@ import { newId } from '../si/ids';
 import { siDrawingStyle } from '../si/drawing-style';
 import { drawScheme, SCHEME_DEFAULTS, type DrawBox, type DrawStep, type SchemeLayout } from '../si/scheme-draw';
 import * as E from '../si/scheme-edit';
+import { journalOf } from '../si/journal';
 import { SiRichBox } from './si-rich';
 import { addInfo } from './info-tip';
 import { ask, askChoice, type Field } from './ask';
@@ -101,7 +102,7 @@ export class SiSchemePage {
     name.value = str(this.k.data.name);
     name.setAttribute('aria-label', 'Scheme name');
     name.title = 'The scheme’s name (in the tree; printed as “Scheme S1. Name” when its Layout shows a label)';
-    name.addEventListener('change', () => void this.act(async () => { this.k.data.name = name.value.trim() || 'Scheme'; await this.p.saveScheme(this.k); }, true));
+    name.addEventListener('change', () => void this.act('Rename Scheme', async () => { this.k.data.name = name.value.trim() || 'Scheme'; await this.p.saveScheme(this.k); }, true));
     const top = el('div', 'si-scheme-head');
     top.append(h, name);
     head.append(top, this.preview);
@@ -149,7 +150,7 @@ export class SiSchemePage {
   private emptySlot(where: string): HTMLElement {
     const b = el('button', 'si-scheme-empty', where === E.START ? '+ Starting material' : '+ Product');
     b.type = 'button';
-    b.addEventListener('click', () => void this.act(() => E.addBox(this.p, this.k, where).then(() => {})));
+    b.addEventListener('click', () => void this.act('Add Structure', () => E.addBox(this.p, this.k, where).then(() => {})));
     return b;
   }
 
@@ -180,7 +181,7 @@ export class SiSchemePage {
       lab.placeholder = 'ID';
       lab.setAttribute('aria-label', 'ID label');
       lab.title = 'The ID printed under the structure (bold). Mark as Compound gives it an ID from the ID table and a data page instead.';
-      lab.addEventListener('change', () => void this.act(() => E.setBoxValues(this.p, this.k, id, { label: lab.value })));
+      lab.addEventListener('change', () => void this.act('Edit Label', () => E.setBoxValues(this.p, this.k, id, { label: lab.value })));
       idRow.append(lab);
     }
     const yl = el('input', 'si-scheme-yield');
@@ -189,7 +190,7 @@ export class SiSchemePage {
     yl.placeholder = auto ? `auto: ${auto}%` : 'yield';
     yl.setAttribute('aria-label', 'Yield');
     yl.title = c ? 'The yield printed under it: empty uses the compound’s Yield field; type to print something else' : 'The yield printed under it (empty: none)';
-    yl.addEventListener('change', () => void this.act(() => E.setBoxValues(this.p, this.k, id, { yield: yl.value.trim() ? yl.value : c ? null : '' })));
+    yl.addEventListener('change', () => void this.act('Edit Yield', () => E.setBoxValues(this.p, this.k, id, { yield: yl.value.trim() ? yl.value : c ? null : '' })));
     idRow.append(yl);
     wrap.append(pic, idRow);
     const pick = (): void => { this.picked = { kind: 'box', id, where }; this.mark(); this.host.chosen(this); };
@@ -206,7 +207,7 @@ export class SiSchemePage {
         label: (ref) => (ref.startsWith(STRUCT) ? '[structure]' : this.host.label(ref)),
         mentionable: () => this.host.mentionable(),
         picture: (ref) => this.inlinePics.get(ref.slice(STRUCT.length)) ?? null,
-        changed: (t) => void this.act(() => E.setConditions(this.p, this.k, st.id, which, t), false, true),
+        changed: (t) => void this.act('Edit Conditions', () => E.setConditions(this.p, this.k, st.id, which, t), false, true),
       }, true, which === 'top' ? 'Conditions above' : 'Conditions below');
       rb.el.classList.add('si-scheme-cond', `si-cond-${which}`);
       const align = st[`${which}_align`] || this.layout[`${which}_align`];
@@ -298,8 +299,10 @@ export class SiSchemePage {
 
   // ---------------------------------------------------------------- commands
 
-  private async act(f: () => Promise<unknown>, redraw = false, quiet = false): Promise<void> {
-    try { await f(); } catch (e) { this.host.flash(`The scheme could not be changed: ${e instanceof Error ? e.message : String(e)}`, 8000); }
+  /** A change to the scheme, as one step of Undo called `label`. */
+  private async act(label: string, f: () => Promise<unknown>, redraw = false, quiet = false): Promise<void> {
+    const j = journalOf(this.p.folder);
+    try { await (j ? j.step(label, f) : f()); } catch (e) { this.host.flash(`The scheme could not be changed: ${e instanceof Error ? e.message : String(e)}`, 8000); }
     if (redraw) { this.host.redraw(); return; }
     if (quiet) await this.drawPreview(); else await this.paint();
     this.host.chosen(this);
@@ -349,7 +352,7 @@ export class SiSchemePage {
           if (!got.atoms.length) { this.host.flash('Nothing was drawn, so the structure is as it was.'); return; }
           const m = this.host.molfileOf(got);
           if (!m.molblock) { this.host.flash(m.problem ?? 'The drawing could not be read as a structure.'); return; }
-          void this.act(() => E.setBoxStructure(p, k, str(b.id), m.molblock!), !!c);
+          void this.act('Draw Structure', () => E.setBoxStructure(p, k, str(b.id), m.molblock!), !!c);
         });
         return;
       }
@@ -361,13 +364,13 @@ export class SiSchemePage {
         if (got.kind !== 'drawing') { this.host.flash('The clipboard has no structure. Copy one in ChemDraw or Chemweave first.'); return; }
         const m = this.host.molfileOf(got.doc.contents());
         if (!m.molblock) { this.host.flash(m.problem ?? 'The copied drawing could not be read as one structure.'); return; }
-        await this.act(() => E.setBoxStructure(p, k, str(b.id), m.molblock!), !!E.boxCompound(k, b));
+        await this.act('Paste Structure', () => E.setBoxStructure(p, k, str(b.id), m.molblock!), !!E.boxCompound(k, b));
         return;
       }
       case 'add-start': {
         const f = this.picked?.kind === 'box' ? E.findBox(k, this.picked.id) : null;
         const at = f && f.where === E.START ? f.list.indexOf(f.box) + 1 : undefined;
-        await this.act(async () => { const b = await E.addBox(p, k, E.START, at); this.picked = { kind: 'box', id: str(b.id), where: E.START }; });
+        await this.act('Add Starting Material', async () => { const b = await E.addBox(p, k, E.START, at); this.picked = { kind: 'box', id: str(b.id), where: E.START }; });
         return;
       }
       case 'add-product': {
@@ -377,25 +380,25 @@ export class SiSchemePage {
         if (!where) { this.host.flash('Add a step first: a product follows a step’s arrow.'); return; }
         const f = this.picked?.kind === 'box' ? E.findBox(k, this.picked.id) : null;
         const at = f && f.where === where ? f.list.indexOf(f.box) + 1 : undefined;
-        await this.act(async () => { const b = await E.addBox(p, k, where, at); this.picked = { kind: 'box', id: str(b.id), where }; });
+        await this.act('Add Product', async () => { const b = await E.addBox(p, k, where, at); this.picked = { kind: 'box', id: str(b.id), where }; });
         return;
       }
       case 'add-step': {
         const d = E.editorData(k);
         const cur = this.pickedStep();
         const at = cur ? d.steps.findIndex((s) => s.id === cur) + 1 : undefined;
-        await this.act(async () => { const st = await E.addStep(p, k, at); this.picked = { kind: 'box', id: str(st.products[0].id), where: st.id }; });
+        await this.act('Add Step', async () => { const st = await E.addStep(p, k, at); this.picked = { kind: 'box', id: str(st.products[0].id), where: st.id }; });
         return;
       }
       case 'move-left': case 'move-right': {
         const b = box();
-        if (b) await this.act(() => E.moveBox(p, k, str(b.id), cmd === 'move-left' ? -1 : 1), !!E.boxCompound(k, b));
+        if (b) await this.act('Move Structure', () => E.moveBox(p, k, str(b.id), cmd === 'move-left' ? -1 : 1), !!E.boxCompound(k, b));
         return;
       }
       case 'step-left': case 'step-right': {
         const st = this.pickedStep();
         if (!st) { this.host.flash('Click a step’s conditions or one of its products first.'); return; }
-        await this.act(() => E.moveStep(p, k, st, cmd === 'step-left' ? -1 : 1), true);
+        await this.act('Move Step', () => E.moveStep(p, k, st, cmd === 'step-left' ? -1 : 1), true);
         return;
       }
       case 'remove': {
@@ -405,7 +408,7 @@ export class SiSchemePage {
         const go = await askChoice('Remove Structure', c ? `The box goes; ${this.host.idOf(c)}’s compound page stays a compound of this scheme page (delete it from the tree if it isn’t needed).` : 'The box goes; its structure goes to the project’s Trash, so it can be put back.', [{ value: 'go', label: 'Remove', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
         if (go !== 'go') return;
         this.picked = null;
-        await this.act(() => E.removeBox(p, k, str(b.id)), !!c);
+        await this.act('Remove Structure', () => E.removeBox(p, k, str(b.id)), !!c);
         return;
       }
       case 'remove-step': {
@@ -414,14 +417,14 @@ export class SiSchemePage {
         const go = await askChoice('Remove Step', 'The arrow, its conditions and its products go; the products’ structures go to the project’s Trash. Compound pages they showed stay compounds of this scheme page.', [{ value: 'go', label: 'Remove', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
         if (go !== 'go') return;
         this.picked = null;
-        await this.act(() => E.removeStep(p, k, st), true);
+        await this.act('Remove Step', () => E.removeStep(p, k, st), true);
         return;
       }
       case 'mark-compound': {
         const b = box();
         if (!b) return;
         if (E.boxCompound(k, b)) { this.host.flash('This box is already a compound.'); return; }
-        await this.act(() => E.markAsCompound(p, k, str(b.id)), true);
+        await this.act('Mark as Compound', () => E.markAsCompound(p, k, str(b.id)), true);
         return;
       }
       case 'show-compound': {
@@ -431,12 +434,12 @@ export class SiSchemePage {
         const free = k.children.filter((c) => !shown.has(c.id));
         if (!free.length) { this.host.flash('Every compound of this scheme page is already shown by a box. Mark as Compound makes a new one.'); return; }
         const got = await ask('Show Compound', [{ name: 'c', label: 'Compound', value: free[0].id, options: free.map((c) => ({ value: c.id, label: `${this.host.idOf(c)} ${compoundName(c) || 'unnamed compound'}` })) }], { ok: 'Show', note: 'The box shows the compound’s structure and ID (a compound with no structure takes the box’s).' });
-        if (got) await this.act(() => E.linkCompound(p, k, str(b.id), got.c), true);
+        if (got) await this.act('Show Compound', () => E.linkCompound(p, k, str(b.id), got.c), true);
         return;
       }
       case 'unlink': {
         const b = box();
-        if (b && E.boxCompound(k, b)) await this.act(() => E.unlinkBox(p, k, str(b.id)), true);
+        if (b && E.boxCompound(k, b)) await this.act('Unlink Compound', () => E.unlinkBox(p, k, str(b.id)), true);
         return;
       }
       case 'open-compound': {
@@ -455,7 +458,8 @@ export class SiSchemePage {
           const m = this.host.molfileOf(got);
           if (!m.molblock) { this.host.flash(m.problem ?? 'The drawing could not be read as a structure.'); return; }
           void (async () => {
-            const sid = await E.addInlineStructure(p, k, m.molblock!);
+            const j = journalOf(p.folder);
+            const sid = await (j ? j.step('Insert Structure', () => E.addInlineStructure(p, k, m.molblock!)) : E.addInlineStructure(p, k, m.molblock!));
             const svg = this.host.pictureOf(m.molblock!);
             if (svg) this.inlinePics.set(sid, sized(svg, this.layout.cond_structure_pct / 100 * 0.75));
             into.insertRef(STRUCT + sid);
@@ -466,7 +470,7 @@ export class SiSchemePage {
       case 'align': {
         const pk = this.picked;
         if (pk?.kind !== 'step') { this.host.flash('Click in the conditions above or under an arrow first.'); return; }
-        await this.act(() => E.setConditionsAlign(p, k, pk.id, pk.which, (arg as '' | 'left' | 'center' | 'right')));
+        await this.act('Align Conditions', () => E.setConditionsAlign(p, k, pk.id, pk.which, (arg as '' | 'left' | 'center' | 'right')));
         this.conds.get(`${pk.id}:${pk.which}`)?.el.focus();
         return;
       }
@@ -486,7 +490,7 @@ export class SiSchemePage {
     const got = await ask('Scheme Layout', fields, { ok: 'Apply', preview: { title: 'As it prints', below: true, draw: (v) => { const box = el('div', 'si-scheme-preview'); void this.drawPreview({ ...now, ...read(v) }, box); return box; } } });
     if (!got) return;
     const values = { ...now, ...read(got) };
-    await this.act(async () => {
+    await this.act('Scheme Layout', async () => {
       if (got.scope === 'project') {
         await E.setProjectLayout(p, values);
         // this scheme follows the project's defaults now

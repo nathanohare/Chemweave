@@ -171,6 +171,29 @@ async function ownFiles(p: SiProject, k: SiScheme, box: Json): Promise<{ picture
   return out;
 }
 
+const PICTURE_KEYS = ['picture_source', 'image_bond_pt', 'image_bond_override'];
+
+/**
+ * Files a box no longer shows (a picture drawn over, or its own files from before it showed a
+ * compound) go to the Trash, never deleted: as a "scheme_box" item, which either program puts
+ * back as a box of its own in the same step, so the old structure can be had again.
+ */
+async function trashSuperseded(p: SiProject, k: SiScheme, box: Json, own: { picture: string[]; structure: string[] }): Promise<void> {
+  const files = [...own.picture, ...own.structure];
+  if (!files.length) return;
+  const base = (f: string): string => f.slice(f.lastIndexOf('/') + 1);
+  const kept: Json = {};
+  const old: Json = { id: text(box.id) };
+  if (own.picture.length) {
+    kept.picture = base(own.picture[0]);
+    old.picture = text(box.picture);
+    for (const key of PICTURE_KEYS) if (key in box) old[key] = box[key];
+  }
+  if (own.structure.length) { kept.structure = base(own.structure[0]); old.structure = text(box.structure); }
+  const where = findBox(k, text(box.id))?.where ?? START;
+  await p.trashFiles(files, 'scheme_box', `earlier structure from scheme “${text(k.data.name)}”`, { scheme_id: k.id, scheme_name: text(k.data.name), where, box: old, files: kept });
+}
+
 /** Take a box out of the scheme: its own files go to the Trash (one item SI Assistant restores into its step); a compound it showed stays a compound of the page. */
 export async function removeBox(p: SiProject, k: SiScheme, id: string): Promise<void> {
   const f = findBox(k, id);
@@ -219,8 +242,8 @@ export async function setBoxStructure(p: SiProject, k: SiScheme, id: string, mol
   const c = boxCompound(k, f.box);
   if (c) { await p.setStructure(c, molblock); return; }
   const own = await ownFiles(p, k, f.box);
-  if (own.picture.length) await p.trashFiles(own.picture, 'file', `picture from scheme “${text(k.data.name)}”`, { scheme_id: k.id });
-  for (const key of ['picture', 'picture_source', 'image_bond_pt', 'image_bond_override']) delete f.box[key];
+  await trashSuperseded(p, k, f.box, { picture: own.picture, structure: [] });
+  for (const key of ['picture', ...PICTURE_KEYS]) delete f.box[key];
   const rel = own.structure.length ? text(f.box.structure) : await freePath(p, k, text(f.box.id), '.mol');
   await p.folder.writeText(join(k.folder, rel), molblock.endsWith('\n') ? molblock : molblock + '\n');
   f.box.structure = rel;
@@ -334,7 +357,7 @@ const PICTURE_ORIGINALS = ['.emf', '.pdf', '.cdxml'];
 /**
  * A copy of the compound's structure and picture becomes the box's own, and the box no longer
  * shows the compound (the scheme still shows the same structure). The box's own files from
- * before are removed (they were hidden while it showed the compound). Gives the files written.
+ * before go to the Trash (they were hidden while it showed the compound). Gives the files written.
  */
 export async function takeCompoundFiles(p: SiProject, k: SiScheme, box: Json, c: SiCompound): Promise<string[]> {
   const written: string[] = [];
@@ -366,7 +389,7 @@ export async function takeCompoundFiles(p: SiProject, k: SiScheme, box: Json, c:
       written.push(to);
     }
   }
-  for (const f of [...old.picture, ...old.structure]) if (!written.includes(f)) await p.folder.remove(f);
+  await trashSuperseded(p, k, box, old);
   delete box.compound;
   delete box.structure;
   delete box.picture;
