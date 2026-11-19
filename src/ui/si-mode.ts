@@ -45,6 +45,8 @@ import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY
 import { readReportFile } from '../si/report-files';
 import { adductDisplay, sameFormula, speciesLabel, ChemError, type MolFacts, type Peak } from '../si/chem';
 import { addInfo } from './info-tip';
+import { computeLabels, type SiLabels } from '../si/labels';
+import { projectWarnings, type ProjectWarning } from '../si/project-warnings';
 import { openTrash } from './si-trash';
 import { compoundsUnder } from '../si/trash';
 import { saveSnapshot } from '../si/snapshot';
@@ -135,6 +137,14 @@ interface Kept {
   urls: string[];
   /** Its changes, one after another (never rejected). */
   queue: Promise<void>;
+  /** Its figure, table and scheme labels as last worked out (null: not yet), for mentions of ones that are gone. */
+  labels: SiLabels | null;
+  /** The warnings about the project as a whole (duplicate labels, broken mentions in section texts…), as last worked out. */
+  projectWarnings: ProjectWarning[];
+  /** Something other than one compound's values changed since they were worked out; they are being worked out; asked for again meanwhile. */
+  stale: boolean;
+  busy: boolean;
+  timer: number;
 }
 
 type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'spectra'; id: string; section: string } | { kind: 'references' } | { kind: 'manuscript' } | { kind: 'warnings' } | { kind: 'dashboard' };
@@ -541,7 +551,7 @@ export class SiMode {
   private kept(p: SiProject): Kept {
     let k = this.keptOf.get(p);
     if (!k) {
-      k = { mols: new Map(), warnings: new Map(), reportData: new Map(), reportMatches: new Map(), loading: false, thumbs: new Map(), urls: [], queue: Promise.resolve() };
+      k = { mols: new Map(), warnings: new Map(), reportData: new Map(), reportMatches: new Map(), loading: false, thumbs: new Map(), urls: [], queue: Promise.resolve(), labels: null, projectWarnings: [], stale: true, busy: false, timer: 0 };
       this.keptOf.set(p, k);
     }
     return k;
@@ -928,6 +938,7 @@ export class SiMode {
     const k = this.keptOf.get(p);
     if (!k) return;
     for (const u of k.urls) URL.revokeObjectURL(u);
+    clearTimeout(k.timer);
     this.keptOf.delete(p);
   }
 
@@ -955,7 +966,56 @@ export class SiMode {
     if (key !== this.shownKey) { this.shownKey = key; this.renderPage(); this.liveSoon(150); } else { this.relabel(); this.liveSoon(); }
     this.paintWarnings();
     this.status();
+    this.projectChecksSoon(p);
   }
+
+  /**
+   * The labels and the project's own warnings are worked out again when something other than one
+   * compound's values changed (never on a field's keystrokes): at once when the Warnings page or
+   * the Dashboard shows, else once changes have stopped for a moment.
+   */
+  private projectChecksSoon(p: SiProject): void {
+    const k = this.kept(p);
+    if (!k.stale || k.busy) return;
+    clearTimeout(k.timer);
+    const shown = this.pick.kind === 'warnings' || this.pick.kind === 'dashboard';
+    k.timer = window.setTimeout(() => void this.projectChecks(p), shown || !k.labels ? 0 : 1500);
+  }
+
+  /** Work out a project's labels and its own warnings (from its folder, after the saves on their way), then show them. */
+  private async projectChecks(p: SiProject): Promise<void> {
+    const k = this.keptOf.get(p);
+    if (!k || k.busy) return;
+    k.busy = true;
+    k.stale = false;
+    try {
+      await this.pendingOf(p);
+      const labels = await computeLabels(p, {}, p.idReport());
+      const list = await projectWarnings(p, labels);
+      if (this.keptOf.get(p) !== k) return;
+      const sig = (l: SiLabels | null): string => (l ? JSON.stringify(l.items.map((i) => [i.kind, i.id, i.label])) : '');
+      const labelsChanged = sig(labels) !== sig(k.labels);
+      const changed = labelsChanged || JSON.stringify(list) !== JSON.stringify(k.projectWarnings);
+      k.labels = labels;
+      k.projectWarnings = list;
+      if (!changed || this.project !== p) return;
+      // (a figure, table or scheme came or went: the compounds that mention one are checked again)
+      if (labelsChanged) this.check();
+      this.renderTree();
+      this.paintWarnings();
+      this.status();
+      this.dashRedraw?.();
+      if (this.pick.kind === 'warnings') { this.shownKey = JSON.stringify(this.pick); this.renderPage(); }
+    } catch (e) {
+      console.warn('SI project warnings could not be worked out', e);
+    } finally {
+      k.busy = false;
+      if (k.stale && this.project === p) this.projectChecksSoon(p);
+    }
+  }
+
+  /** The project's own warnings as last worked out. */
+  private get projectWarningsNow(): ProjectWarning[] { return this.project ? this.kept(this.project).projectWarnings : []; }
 
   /** The status bar's line again (the window sets its own when a tab comes to the front). */
   showStatus(): void { this.status(); }
@@ -977,7 +1037,7 @@ export class SiMode {
         if (mol === undefined || !this.facts.has(mol)) { waiting = true; continue; }
         facts = this.facts.get(mol) ?? null;
       }
-      try { this.warnings.set(c.id, allWarnings(p, c, this.report!, facts, this.reportMatches.get(c.id) ?? null)); } catch (e) { console.warn('SI checks failed for', c.id, e); this.warnings.set(c.id, []); }
+      try { this.warnings.set(c.id, allWarnings(p, c, this.report!, facts, this.reportMatches.get(c.id) ?? null, this.kept(p).labels)); } catch (e) { console.warn('SI checks failed for', c.id, e); this.warnings.set(c.id, []); }
     }
     if (!one) for (const id of [...this.warnings.keys()]) if (!seen.has(id)) this.warnings.delete(id);
     if (waiting) void this.loadFacts();
@@ -1042,7 +1102,7 @@ export class SiMode {
     const p = tab.si!;
     const k = p.completion(c);
     let warnings: SiWarning[] = [];
-    try { warnings = allWarnings(p, c, report, facts, this.kept(p).reportMatches.get(c.id) ?? null).filter((w) => !isDismissed(c, w)); } catch { /* (shown as none) */ }
+    try { warnings = allWarnings(p, c, report, facts, this.kept(p).reportMatches.get(c.id) ?? null, this.kept(p).labels).filter((w) => !isDismissed(c, w)); } catch { /* (shown as none) */ }
     const v = valuesOf(c);
     const part = (key: string, sub: string): string => { const x = v[key]; return x && typeof x === 'object' && !Array.isArray(x) ? partText((x as Json)[sub]).trim() : ''; };
     const pct = part('yield', 'percent'), mass = part('yield', 'mass'), unit = part('yield', 'mass_unit');
@@ -1115,6 +1175,7 @@ export class SiMode {
   private forgetStructure(c?: SiCompound, p: SiProject | null = this.project): void {
     if (!p) return;
     const k = this.kept(p);
+    k.stale = true;
     if (c) k.mols.delete(c.id); else { k.mols.clear(); k.reportData.clear(); k.reportMatches.clear(); this.forgetThumbs(p); }
   }
 
@@ -1259,7 +1320,7 @@ export class SiMode {
     const p = this.project;
     if (!p) return;
     const flags = p.compounds.reduce((n, c) => n + Object.keys(flagsOf(c)).length, 0);
-    const warns = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0);
+    const warns = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0) + this.projectWarningsNow.length;
     const s = this.currentSection();
     let lead = p.title;
     if (s?.type === 'data') {
@@ -1291,6 +1352,8 @@ export class SiMode {
   }
 
   private go(pick: Pick): void {
+    // (a page whose editors save by themselves: a table's or figure's label, the cover, a scheme, an X-ray structure)
+    if (this.project && (this.tables.length || this.figures.length || this.front || this.schemePage || this.xrayPage || this.attachPage || this.msPage)) this.kept(this.project).stale = true;
     void this.commitAll();
     this.pick = pick;
     this.refresh();
@@ -1344,7 +1407,7 @@ export class SiMode {
     const msProblems = (() => { const r = this.msState(p).result; return r ? problemsOf(r).length : 0; })();
     row(1, svg('check', 15), `Manuscript Check${msProblems ? ` (${msProblems})` : ''}`, { kind: 'manuscript' }, { cls: msProblems > 0 ? 'si-has-warn' : '', title: 'Compare the manuscript (PDF, Word or a Chemweave document) and its ChemDraw files with the SI' });
     row(1, svg('refs', 15), `References (${p.references.length})`, { kind: 'references' });
-    const total = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0);
+    const total = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0) + this.projectWarningsNow.length;
     row(1, svg('warn', 15), `Warnings (${total})`, { kind: 'warnings' }, { cls: total > 0 ? 'si-has-warn' : '', title: 'Every automatic warning in the project, by compound' });
 
     const mark = (r: HTMLElement): void => {
@@ -2875,7 +2938,7 @@ export class SiMode {
       grid.append(head, dashboardGrid(o));
       if (this.waitingForFacts) grid.append(el('p', 'muted si-note', 'Still reading some structures…'));
       slot.replaceChildren(projectSummaryCard({
-        summary: summarize(p, bySection),
+        summary: summarize(p, bySection, this.projectWarningsNow),
         openSection: (s) => this.go({ kind: 'section', id: s.id }),
         openWarnings: () => this.go({ kind: 'warnings' }),
       }), grid);
@@ -2943,6 +3006,27 @@ export class SiMode {
     });
   }
 
+  /** Where a project warning is: how the Warnings page names the place, and what opens it. */
+  private placeOf(w: ProjectWarning): { id: string; name: string; open: (() => void) | null } {
+    const p = this.project!;
+    const [kind, id] = w.place;
+    if (kind === 'front') return { id: '', name: id === 'cover' ? 'Cover page' : 'General Information', open: () => this.go({ kind: 'project' }) };
+    if (kind === 'references') return { id: '', name: 'References', open: () => this.go({ kind: 'references' }) };
+    if (kind === 'section') {
+      const s = p.sections.find((x) => x.id === id);
+      if (s) return { id: '', name: s.name, open: () => this.go({ kind: 'section', id }) };
+    }
+    if (kind === 'scheme') {
+      const k = p.schemes.find((x) => x.id === id);
+      if (k) return { id: '', name: `Scheme page “${String(k.data.name || 'Scheme')}”`, open: () => this.go({ kind: 'scheme', id }) };
+    }
+    if (kind === 'compound') {
+      const c = p.compounds.find((x) => x.id === id);
+      if (c) return { id: this.idOf(c), name: compoundName(c) || 'unnamed compound', open: () => this.openAt(c, w.field) };
+    }
+    return { id: '', name: 'The project', open: null };
+  }
+
   private warningsPage(out: HTMLElement): void {
     const p = this.project!;
     const card = el('div', 'si-card si-warn-list');
@@ -2958,6 +3042,28 @@ export class SiMode {
     head.append(h, show);
     card.append(head);
     let any = false;
+    // the project's own warnings first, each under where it is (they are about the project, not one compound's data, so there is nothing to dismiss: SI Assistant lists them the same way)
+    const own = this.projectWarningsNow;
+    if (own.length) {
+      any = true;
+      card.append(el('h3', 'si-sub', 'Project'));
+      const groups = new Map<string, ProjectWarning[]>();
+      for (const w of own) groups.set(w.place.join(':'), [...(groups.get(w.place.join(':')) ?? []), w]);
+      for (const list of groups.values()) {
+        const at = this.placeOf(list[0]);
+        const who = el(at.open ? 'button' : 'div', 'si-warn-cpd');
+        if (who instanceof HTMLButtonElement) { who.type = 'button'; who.title = 'Open this page'; }
+        if (at.id) who.append(el('b', 'si-cid', at.id), document.createTextNode(' ' + at.name)); else who.textContent = at.name;
+        if (at.open) who.addEventListener('click', at.open);
+        card.append(who);
+        for (const w of list) {
+          const line = el('div', 'si-warn si-warn-project');
+          line.innerHTML = svg('warn', 13);
+          line.append(el('span', 'si-warn-text', w.message));
+          card.append(line);
+        }
+      }
+    }
     for (const s of p.dataSections) {
       const rows: HTMLElement[] = [];
       for (const c of compoundsOf(s)) {
@@ -3217,6 +3323,8 @@ export class SiMode {
         this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
       }
       // (the project of another tab by now: its page is drawn when its tab shows)
+      // (anything but one compound's own values: labels and the project's warnings may have changed)
+      if (!only || failed) k.stale = true;
       if (this.project !== p) return;
       if (redraw || failed) this.shownKey = '';
       try { this.refresh(failed || redraw ? undefined : only); } catch (e) { console.error('SI page could not be drawn', e); }
