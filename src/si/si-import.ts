@@ -960,8 +960,9 @@ function nameUnlabelledGps(plan: ImportPlan): void {
   const unlabelled = plan.gps.filter((g) => !g.label);
   if (plan.gps.length > 1 && unlabelled.length) {
     const used = new Set(plan.gps.filter((g) => g.label).map((g) => g.label));
-    const letters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].filter((ch) => !used.has(ch));
-    unlabelled.forEach((g, i) => { g.label = letters[i]; g.name = `General Procedure ${g.label}`; });
+    // (A–Z, then 1, 2, 3…, as a new general procedure is named in a project)
+    const marks = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', ...Array.from({ length: unlabelled.length }, (_x, i) => String(i + 1))].filter((ch) => !used.has(ch));
+    unlabelled.forEach((g, i) => { g.label = marks[i]; g.name = `General Procedure ${g.label}`; });
   }
 }
 

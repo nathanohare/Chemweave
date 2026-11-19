@@ -105,14 +105,17 @@ function check(label: string, on: boolean, changed: (on: boolean) => void): HTML
 }
 
 /** A picture (PNG, JPEG, EMF or PDF bytes) drawn into `box` (the first time it is shown). */
-async function drawPicture(box: HTMLElement, data: Uint8Array, ext: string): Promise<void> {
+async function drawPicture(box: HTMLElement, data: Uint8Array, ext: string, urls: string[]): Promise<void> {
   try {
     let src = '';
     if (ext === '.pdf') src = (await import('../render/pdf-page').then((m) => m.pdfFirstPage(data)))?.src ?? '';
     else if (ext === '.emf') {
       const svg = (await import('../render/emf-read')).emfToSvg(data);
       if (svg) src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.svg);
-    } else if (ext !== '.wmf') src = URL.createObjectURL(new Blob([data.slice()], { type: ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/jpeg' }));
+    } else if (ext !== '.wmf') {
+      src = URL.createObjectURL(new Blob([data.slice()], { type: ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/jpeg' }));
+      urls.push(src);      // (given back when the window closes)
+    }
     if (!src) { box.textContent = '(no preview here)'; return; }
     const img = el('img');
     img.alt = '';
@@ -128,6 +131,12 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
   return new Promise((resolve) => {
     const d = el('dialog', 'ask si-import');
     d.setAttribute('aria-label', `Import SI: ${read.file_name}`);
+    const urls: string[] = [];          // the pictures shown, to give back
+    let closed = false;
+    // Each spectrum's compound is the compound itself, not its ID's text: an ID can be empty, be
+    // another compound's for a moment while it is retyped, or be used twice.
+    for (const s of plan.spectra as ImportedSpectrum[]) if (s.owner === undefined) s.owner = (s.cid && plan.compounds.find((c) => c.cid === s.cid)) || null;
+    const spectraOf = (c: ImportedCompound | null): ImportedSpectrum[] => (plan.spectra as ImportedSpectrum[]).filter((s) => (s.owner ?? null) === c);
     const form = el('form');
     form.method = 'dialog';
     const nC = plan.compounds.length, nG = plan.gps.length;
@@ -137,7 +146,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
     const notes = [...read.notes, ...plan.warnings];
     const other = (plan.sections as ImportedSection[]).filter((s) => s.kind !== 'data' && s.kind !== 'references');
     if (plan.spectra.length) {
-      const matched = plan.spectra.filter((s) => s.cid).length;
+      const matched = plan.spectra.length - spectraOf(null).length;
       notes.push(`${plan.spectra.length} spectra found, ${matched} matched to their compound (shown on its page)${matched < plan.spectra.length ? `; ${plan.spectra.length - matched} not matched.` : '.'}`);
     }
     if (other.length || plan.references.length || plan.cover) {
@@ -251,7 +260,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
     }
     if (plan.references.length) group(`References (${plan.references.length})`, () => referencesPage(plan.references as ImportedReference[]));
     // spectra no compound was found for (each can be given one)
-    const unmatchedCount = (): number => plan.spectra.filter((x) => !x.cid).length;
+    const unmatchedCount = (): number => spectraOf(null).length;
     const unmatched = unmatchedCount() ? group(`Spectra not matched (${unmatchedCount()})`, () => unmatchedPage()) : null;
     /** A spectrum given another compound: the pages showing spectra are made again when next shown. */
     const spectraMoved = (): void => {
@@ -261,13 +270,18 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
 
     function spectrumRow(f: HTMLElement, s: ImportedSpectrum): void {
       const pic = el('div', 'si-imp-thumb', '…');
-      void drawPicture(pic, s.data, s.kind === 'emf' ? '.emf' : s.ext || '.pdf');
+      void drawPicture(pic, s.data, s.kind === 'emf' ? '.emf' : s.ext || '.pdf', urls);
       const side = el('span', 'si-imp-side');
       const which = el('select');
       which.setAttribute('aria-label', 'Compound');
-      which.append(new Option('(not matched)', ''), ...plan.compounds.map((c) => new Option(`${c.cid}  ${c.name}`.trimEnd(), c.cid)));
-      which.value = s.cid;
-      which.addEventListener('change', () => { s.cid = which.value; s.how = 'chosen by you'; spectraMoved(); });
+      which.append(new Option('(not matched)', ''), ...plan.compounds.map((c, k) => new Option(`${c.cid}  ${c.name}`.trimEnd(), String(k))));
+      which.value = s.owner ? String(plan.compounds.indexOf(s.owner)) : '';
+      which.addEventListener('change', () => {
+        s.owner = which.value ? plan.compounds[Number(which.value)] ?? null : null;
+        s.cid = s.owner ? s.owner.cid : '';
+        s.how = 'chosen by you';
+        spectraMoved();
+      });
       const kind = el('select');
       kind.setAttribute('aria-label', 'Type');
       const types = [...new Set([...SPECTRUM_TYPES, s.type])];
@@ -286,7 +300,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
 
     function unmatchedPage(): HTMLElement {
       const f = el('div', 'si-imp-form');
-      const left = plan.spectra.filter((x) => !x.cid);
+      const left = spectraOf(null);
       f.append(el('p', 'muted', left.length ? 'No compound could be told for these spectra. Pick each one’s compound to import it; one left “not matched” is not imported.' : 'Every spectrum has its compound (shown on the compound’s page).'));
       for (const s of left) spectrumRow(f, s);
       return f;
@@ -322,9 +336,8 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
       const f = el('div', 'si-imp-form');
       const title = (): void => retitle(`${c.cid}  ${c.name}`.trimEnd());
       const idBox = lineBox(c.cid, (v) => {
-        const old = c.cid;
         c.cid = v.trim();
-        for (const s of plan.spectra) if (s.cid === old) s.cid = c.cid;   // (its spectra follow)
+        for (const s of spectraOf(c)) s.cid = c.cid;   // (its own spectra follow, no others)
         title();
       }, 'ID');
       idBox.classList.add('si-imp-id');
@@ -337,7 +350,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
           const svg = host.pictureOf(c.structure);
           if (svg) pic.innerHTML = svg; else pic.textContent = '(can’t be drawn)';
           void host.analyze(c.structure).then((a) => { if (a?.formula) note.textContent = `${a.formula}, ${note.textContent}`; });
-        } else void drawPicture(pic, c.picture_pdf!, c.picture_ext || '.pdf');
+        } else void drawPicture(pic, c.picture_pdf!, c.picture_ext || '.pdf', urls);
         if (c.structure_picture) note.textContent += ' (with ChemDraw’s picture)';
         const side = el('span', 'si-imp-side');
         side.append(note, check('Import this structure', c.use_structure, (on) => { c.use_structure = on; }));
@@ -371,7 +384,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
       }
       const un = row(f, 'Not recognized', textBox(c.unrecognised.join('\n'), (v) => { c.unrecognised = v.split('\n').filter((t) => t.trim()); }, 6, 'Not recognized'));
       addInfo(un.firstElementChild, 'Text of this compound that is neither its procedure nor a recognized value. It goes to the compound’s private Notes (never printed); delete what you don’t need.');
-      for (const s of plan.spectra.filter((x) => x.cid === c.cid)) spectrumRow(f, s);
+      for (const s of spectraOf(c)) spectrumRow(f, s);
       row(f, 'As printed', textBox(c.original, null, 10, 'As printed'));
       return f;
     }
@@ -398,7 +411,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
         const pic = el('div', 'si-imp-thumb', '…');
         if (fig.kind === 'table') pic.textContent = fig.table?.rows ? `Table: ${fig.table.rows.length} rows` : 'Table';
         else if (!fig.data) pic.textContent = '(not cut out: its caption is imported as text)';
-        else void drawPicture(pic, fig.data, fig.ext);
+        else void drawPicture(pic, fig.data, fig.ext, urls);
         const side = el('span', 'si-imp-side');
         const label = lineBox(fig.label, (v) => { fig.label = v.trim(); }, 'Label', 'automatic (Figure S1…)');
         label.title = 'The label as printed; empty: numbered by Chemweave';
@@ -498,11 +511,12 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
         const todo = refs.filter((r) => (r.ref as unknown as Record<string, unknown>).doi && r.looked_up !== 'done');
         let done = 0, failed = 0;
         look.disabled = true;
-        for (let k = 0; k < todo.length; k++) {
+        for (let k = 0; k < todo.length && !closed; k++) {      // (not after the window has closed)
           const r = todo[k];
           status.textContent = `Looking up ${k + 1} of ${todo.length}…`;
           try {
             const found = await fetchDoi(String((r.ref as unknown as Record<string, unknown>).doi));
+            if (closed) return;
             r.ref = { ...found, id: r.ref.id ?? found.id };
             r.looked_up = 'done';
             done++;
@@ -568,13 +582,26 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
     }
 
     /** A heading's level changed: the sections are worked out again (names and ticks changed so far are kept). */
-    async function setLevel(p: Para, level: number): Promise<void> {
-      plan.level_overrides.set(p, level);
-      outline(plan, plan.body_size);
-      await host.afterOutline?.(plan);
-      fillSections();
-      refreshSectionsPage();
-      destinationChanged();
+    let working: Promise<void> = Promise.resolve();
+    let pendingLevels = 0;
+    function setLevel(p: Para, level: number): Promise<void> {
+      // One at a time, and no Import meanwhile: a PDF's figures are being cut out again.
+      pendingLevels++;
+      go.disabled = true;
+      go.title = 'The sections are being worked out again…';
+      working = working.then(async () => {
+        if (closed) return;
+        plan.level_overrides.set(p, level);
+        outline(plan, plan.body_size);
+        try { await host.afterOutline?.(plan); } catch { /* (a figure not cut out keeps its caption as text) */ }
+        if (closed) return;
+        fillSections();
+        refreshSectionsPage();
+        destinationChanged();
+      }).finally(() => {
+        if (--pendingLevels === 0) { go.disabled = !canImport(); go.title = ''; }
+      });
+      return working;
     }
 
     // ---- how the compounds print, and where they go
@@ -627,7 +654,8 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
     cancel.type = 'button';
     const go = el('button', 'primary', 'Import');
     go.type = 'submit';
-    go.disabled = !(plan.compounds.length || plan.gps.length || plan.sections.length);
+    const canImport = (): boolean => !!(plan.compounds.length || plan.gps.length || plan.sections.length);
+    go.disabled = !canImport();
     buttons.append(cancel, go);
 
     const body = el('div', 'si-imp-body');
@@ -637,11 +665,19 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
     form.append(body, bottom, buttons);
     d.append(form);
 
-    const finish = (v: SiImportChoice | null): void => { d.remove(); resolve(v); };
+    const finish = (v: SiImportChoice | null): void => {
+      if (closed) return;
+      closed = true;
+      for (const u of urls) URL.revokeObjectURL(u);
+      urls.length = 0;
+      d.remove();
+      resolve(v);
+    };
     cancel.addEventListener('click', () => { d.close(); finish(null); });
     d.addEventListener('cancel', () => finish(null));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (pendingLevels || closed) return;
       const kept = plan.compounds.filter((c) => c.keep);
       const ids = kept.map((c) => c.cid);
       const missing = kept.filter((c) => !c.cid).map((c) => c.name || 'a compound');
@@ -658,6 +694,44 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
     d.showModal();
     if (first) show(first);
   });
+}
+
+/** The small window shown while an SI is read and written: nothing else can be done meanwhile (an edit would become part of the import's Undo step). */
+export interface ImportProgress {
+  /** What is being done now. */
+  say(text: string): void;
+  /** Whether Cancel is offered (not once writing has started). */
+  canCancel(on: boolean): void;
+  readonly cancelled: boolean;
+  /** Hidden while another window (the review, a question) is shown, and shown again after. */
+  hide(): void;
+  show(): void;
+  close(): void;
+}
+
+export function importProgress(title: string): ImportProgress {
+  const d = el('dialog', 'ask si-import-busy');
+  d.setAttribute('aria-label', title);
+  const text = el('p', '', title);
+  text.setAttribute('role', 'status');
+  const buttons = el('p', 'ask-buttons');
+  const cancel = el('button', '', 'Cancel');
+  cancel.type = 'button';
+  buttons.append(cancel);
+  d.append(el('h2', '', title), text, buttons);
+  let cancelled = false, allowed = true, open = false;
+  const stop = (): void => { if (!allowed) return; cancelled = true; cancel.disabled = true; text.textContent = 'Stopping…'; };
+  cancel.addEventListener('click', stop);
+  d.addEventListener('cancel', (e) => { e.preventDefault(); stop(); });     // (Esc: the same as Cancel, never just closing it)
+  const show = (): void => { if (open) return; open = true; document.body.append(d); try { d.showModal(); } catch { /* (no modal windows here) */ } };
+  const hide = (): void => { if (!open) return; open = false; try { d.close(); } catch { /* */ } d.remove(); };
+  show();
+  return {
+    say: (t) => { if (!cancelled) text.textContent = t; },
+    canCancel: (on) => { allowed = on; cancel.hidden = !on; },
+    get cancelled() { return cancelled; },
+    hide, show, close: hide,
+  };
 }
 
 /** What the import did, a line for each kind of thing. */

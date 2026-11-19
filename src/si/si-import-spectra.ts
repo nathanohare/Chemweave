@@ -17,7 +17,7 @@
 import { cdxToCdxml } from '../io/cdx';
 import type { MolFacts } from './chem';
 import { peaks as reportPeaks } from './nmr';
-import type { ImportedCompound, ImportPlan } from './si-import';
+import { STEREO, type ImportedCompound, type ImportPlan } from './si-import';
 import type { ImportedSpectrum } from './si-import-apply';
 import { drawingLabels, drawingStructures, type StructureTools } from './si-import-structures';
 import { linePlain, toLines, type DocObject } from './si-import-read';
@@ -355,12 +355,16 @@ function settle(spectra: ImportedSpectrum[]): void {
 // ---------------------------------------------------------------------- PDF
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** A stereo prefix (STEREO, not optional here). */
+const STEREO_PREFIX = STEREO.replace(/\?$/, '');
 
 /** The first compound ID in a header ("2a — 1H NMR…", "1H NMR of 2", "9a13C NMR"). */
 export function findId(text: string, ids: string[]): string {
   let best: [number, string] | null = null;
   for (const cid of ids) {
-    const re = new RegExp(`(?<![\\w-])${escapeRe(cid)}(?=$|[^\\w-]|\\d{1,3}[A-Z])`, 'g');
+    if (!cid) continue;
+    // (the ID on its own, or after its stereo prefix: "(±)-3", "(S)-2a", "rac-5", which is not part of the ID)
+    const re = new RegExp(`(?:(?<![\\w-])|(?<=(?<![\\w-])${STEREO_PREFIX}))${escapeRe(cid)}(?=$|[^\\w-]|\\d{1,3}[A-Z])`, 'g');
     for (const m of text.matchAll(re)) {
       const end = m.index + m[0].length;
       // not the nucleus itself ("1H", "13C": an ID "1" or "13" must not match there)
@@ -372,18 +376,18 @@ export function findId(text: string, ids: string[]): string {
 }
 
 /** The spectra on a PDF SI's spectrum pages: each page cut at its headers (one picture per spectrum, trimmed to its ink), with the compound the header names. */
-export async function pdfSpectra(pdf: PdfPages, plan: ImportPlan, pages: number[], progress?: (done: number, total: number) => void): Promise<ImportedSpectrum[]> {
+export async function pdfSpectra(pdf: PdfPages, plan: ImportPlan, pages: number[], progress?: (done: number, total: number) => boolean | void): Promise<ImportedSpectrum[]> {
   const ids = plan.compounds.map((c) => c.cid).sort((a, b) => b.length - a.length);
   const out: ImportedSpectrum[] = [];
   for (let k = 0; k < pages.length; k++) {
     const n = pages[k];
-    progress?.(k, pages.length);
+    if (progress?.(k, pages.length) === false) return out;      // (stopped)
     let spans, size;
     try { spans = await pdf.spans(n); size = await pdf.size(n); } catch { continue; }
     const [width, height] = size;
     const lines = toLines(spans);
     const headers = lines.filter((L) => { const t = linePlain(L); return HEADER.test(t) && t.length < 160; });
-    const pageIds = new Set(lines.map((L) => linePlain(L)).filter((t) => /^[\w′'\-\s]{1,40}$/.test(t)).map((t) => findId(t, ids)).filter(Boolean));
+    const pageIds = new Set(lines.map((L) => linePlain(L)).filter((t) => /^[\w′'\-\s()±+−,]{1,40}$/.test(t)).map((t) => findId(t, ids)).filter(Boolean));
     const left = spans.length ? Math.min(...spans.map((s) => s.x0)) : 36;
     const right = spans.length ? Math.max(...spans.map((s) => s.x1)) : 576;
     const bottomText = lines.filter((L) => L.base > 0.9 * height);    // (page numbers, footers)

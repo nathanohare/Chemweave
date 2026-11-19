@@ -3330,93 +3330,121 @@ export class SiMode {
    * figures, tables and references shown in the review window, and what is kept written into
    * this project (or a new one) as one Undo step (SI Assistant's File ▸ Import SI…).
    */
+  /** An SI is being imported (read, reviewed or written): a second import waits for it. */
+  private importing = false;
+
   private async importSi(): Promise<void> {
+    if (this.importing) { this.host.flash('An SI is being imported already. Wait for it to finish, then import the next one.'); return; }
+    this.importing = true;
+    try { await this.importSiNow(); } finally { this.importing = false; }
+  }
+
+  private async importSiNow(): Promise<void> {
     const [f] = await this.host.pickFiles('Supporting Information (Word or PDF)', ['docx', 'pdf']);
     if (!f) return;
     this.commitAll();
-    const [{ readSiFile }, I, { askImport, importSummary }, { applyPlan }, { emfToSvg }] = await Promise.all([
+    const [{ readSiFile }, I, { askImport, importSummary, importProgress }, { applyPlan }, { emfToSvg }] = await Promise.all([
       import('../si/si-import-read'), import('../si/si-import'), import('./si-import-dialog'), import('../si/si-import-apply'), import('../render/emf-read'),
     ]);
-    this.host.flash(`Reading “${f.name}”…`, 60000);
-    let read;
-    try {
-      read = await readSiFile(f.name, f.bytes, (done, total) => { this.host.hint(`Reading “${f.name}”: ${done} of ${total}`); });
-    } catch (e) {
-      read = null;
-      this.host.flash(`“${f.name}” could not be read: ${e instanceof Error ? e.message : String(e)}`, 8000);
-    } finally { this.host.hint(''); }
-    if (!read) return;
-    this.host.flash('', 1);
-    if (read.error) { await ask('Import SI', [], { noCancel: true, ok: 'OK', note: read.error }); return; }
-    const plan = I.analyse(read.paras);
+    // A window of its own from here to the end: the project can't be changed while the SI is read
+    // and written (a change would become part of the import's Undo step), and reading can be cancelled.
+    const busy = importProgress(`Import SI: ${f.name}`);
     let pdf: import('../si/si-import-pdf').PdfPages | null = null;
-    if (plan.objects?.length) {
-      // Word: structures from the SI's ChemDraw drawings (by their labels, or a compound's own
-      // drawing), then its Mnova spectra, each matched to its compound
-      const [{ assignStructures }, { wordSpectra }, { loadCdxmlReader, cdxmlMolfile }] = await Promise.all([import('../si/si-import-structures'), import('../si/si-import-spectra'), import('../si/ms-read')]);
-      await loadCdxmlReader();
-      const tools = { facts: (ms: string[]) => this.host.siFacts(ms).catch(() => ms.map(() => null)), molfileOf: cdxmlMolfile };
-      this.host.hint('Reading the structures and spectra…');
-      try { await assignStructures(plan, tools); } catch { /* the structures can still be drawn by hand */ }
-      try { plan.spectra = await wordSpectra(plan, tools); } catch { /* the spectra can still be added by hand */ }
-      this.host.hint('');
-    } else if (read.kind === 'pdf' && read.data) {
-      // PDF: each compound's drawing, the sections' figures and tables, and the spectrum pages cut out as pictures
-      const [{ PdfPages, addPictures, addFigures }, { pdfSpectra }] = await Promise.all([import('../si/si-import-pdf'), import('../si/si-import-spectra')]);
-      pdf = await PdfPages.open(read.data);
-      if (pdf) {
-        try {
-          await addPictures(pdf, plan, (d, t) => this.host.hint(`Cutting out the structures: ${d} of ${t}`));
-          await addFigures(pdf, plan);
-          plan.spectra = await pdfSpectra(pdf, plan, read.spectrum_pages, (d, t) => this.host.hint(`Cutting out the spectra: page ${d} of ${t}`));
-        } catch { /* what was cut out stands; the rest can be added by hand */ }
-        this.host.hint('');
-      }
-    }
-    if (!plan.compounds.length && !plan.gps.length && !plan.sections.length) {
-      pdf?.close();
-      await ask('Import SI', [], { noCancel: true, ok: 'OK', note: `No compounds, general procedures or sections were recognized in “${f.name}”. Compounds are found by a heading with the name and ID, such as “1-Phenylethanol (2a).”, followed by its data.`, points: read.notes });
-      return;
-    }
-    const p = this.project;
-    const choice = await askImport(plan, read, {
-      pictureOf: (m) => this.host.pictureOf(m),
-      analyze: (m) => this.host.analyze(m),
-      dataSections: p && !p.readOnly ? p.dataSections.map((s) => ({ id: s.id, name: s.name })) : null,
-      canMakeProject: !!this.host.newSiProject,
-      afterOutline: pdf ? async (pl) => { await import('../si/si-import-pdf').then((m) => m.addFigures(pdf!, pl)); } : undefined,
-    });
-    pdf?.close();
-    if (!choice) return;
-    const target = choice.newProject ? await this.host.newSiProject?.() ?? null : p;
-    if (!target) return;
-    if (target.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
-    // (a drawing's or a Mnova spectrum's EMF as an SVG, its EMF kept beside it to convert again)
-    const fromEmf = async (emf: Uint8Array): Promise<[Uint8Array, string, Uint8Array | null, string] | null> => {
-      const svg = emfToSvg(emf);
-      return svg ? [new TextEncoder().encode(svg.svg), '.svg', emf, '.emf'] : null;
-    };
-    journalOf(target.folder)?.settle();
-    let result;
     try {
-      result = await applyPlan(target, plan, read.file_name, {
-        mode: choice.mode, sectionId: choice.sectionId,
-        pictureFor: fromEmf, figureFor: fromEmf, spectrumFor: fromEmf,
-        factsOf: async (m) => (await this.host.siFacts([m]))[0] ?? null,
-        progress: (_d, _t, text) => this.host.hint(text),
+      busy.say(`Reading “${f.name}”…`);
+      let read;
+      try {
+        read = await readSiFile(f.name, f.bytes, (done, total) => { busy.say(`Reading “${f.name}”: ${done} of ${total}`); return !busy.cancelled; });
+      } catch (e) {
+        busy.close();
+        this.host.flash(`“${f.name}” could not be read: ${e instanceof Error ? e.message : String(e)}`, 8000);
+        return;
+      }
+      if (busy.cancelled || read.stopped) return;
+      if (read.error) { busy.hide(); await ask('Import SI', [], { noCancel: true, ok: 'OK', note: read.error }); return; }
+      busy.say('Finding the compounds…');
+      await new Promise((r) => setTimeout(r, 0));
+      const plan = I.analyse(read.paras);
+      if (plan.objects?.length) {
+        // Word: structures from the SI's ChemDraw drawings (by their labels, or a compound's own
+        // drawing), then its Mnova spectra, each matched to its compound
+        const [{ assignStructures }, { wordSpectra }, { loadCdxmlReader, cdxmlMolfile }] = await Promise.all([import('../si/si-import-structures'), import('../si/si-import-spectra'), import('../si/ms-read')]);
+        await loadCdxmlReader();
+        const tools = { facts: (ms: string[]) => this.host.siFacts(ms).catch(() => ms.map(() => null)), molfileOf: cdxmlMolfile };
+        busy.say('Reading the structures and spectra…');
+        await new Promise((r) => setTimeout(r, 0));
+        try { await assignStructures(plan, tools); } catch { /* the structures can still be drawn by hand */ }
+        if (busy.cancelled) return;
+        try { plan.spectra = await wordSpectra(plan, tools); } catch { /* the spectra can still be added by hand */ }
+      } else if (read.kind === 'pdf' && read.data) {
+        // PDF: each compound's drawing, the sections' figures and tables, and the spectrum pages cut out as pictures
+        const [{ PdfPages, addPictures, addFigures }, { pdfSpectra }] = await Promise.all([import('../si/si-import-pdf'), import('../si/si-import-spectra')]);
+        pdf = await PdfPages.open(read.data);
+        if (pdf) {
+          try {
+            await addPictures(pdf, plan, (d, t) => { busy.say(`Cutting out the structures: ${d} of ${t}`); return !busy.cancelled; });
+            busy.say('Cutting out the figures and tables…');
+            await addFigures(pdf, plan, () => !busy.cancelled);
+            plan.spectra = await pdfSpectra(pdf, plan, read.spectrum_pages, (d, t) => { busy.say(`Cutting out the spectra: page ${d} of ${t}`); return !busy.cancelled; });
+          } catch { /* what was cut out stands; the rest can be added by hand */ }
+        }
+      }
+      if (busy.cancelled) return;
+      busy.hide();
+      if (!plan.compounds.length && !plan.gps.length && !plan.sections.length) {
+        await ask('Import SI', [], { noCancel: true, ok: 'OK', note: `No compounds, general procedures or sections were recognized in “${f.name}”. Compounds are found by a heading with the name and ID, such as “1-Phenylethanol (2a).”, followed by its data.`, points: read.notes });
+        return;
+      }
+      const p = this.project;
+      const thePdf = pdf;
+      const choice = await askImport(plan, read, {
+        pictureOf: (m) => this.host.pictureOf(m),
+        analyze: (m) => this.host.analyze(m),
+        dataSections: p && !p.readOnly ? p.dataSections.map((s) => ({ id: s.id, name: s.name })) : null,
+        canMakeProject: !!this.host.newSiProject,
+        afterOutline: thePdf ? async (pl) => { await import('../si/si-import-pdf').then((m) => m.addFigures(thePdf, pl)); } : undefined,
       });
-    } catch (e) {
-      this.host.flash(`The import stopped: ${e instanceof Error ? e.message : String(e)}. What was written so far is one step of Edit ▸ Undo.`, 10000);
-      return;
+      pdf?.close();
+      pdf = null;
+      if (!choice) return;
+      const target = choice.newProject ? await this.host.newSiProject?.() ?? null : p;
+      if (!target) return;
+      if (target.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+      // (a drawing's or a Mnova spectrum's EMF as an SVG, its EMF kept beside it to convert again)
+      const fromEmf = async (emf: Uint8Array): Promise<[Uint8Array, string, Uint8Array | null, string] | null> => {
+        const svg = emfToSvg(emf);
+        return svg ? [new TextEncoder().encode(svg.svg), '.svg', emf, '.emf'] : null;
+      };
+      this.commitAll();
+      journalOf(target.folder)?.settle();
+      busy.canCancel(false);        // (from here it is one Undo step: Edit ▸ Undo takes it back)
+      busy.say('Writing the compounds and sections…');
+      busy.show();
+      let result;
+      try {
+        result = await applyPlan(target, plan, read.file_name, {
+          mode: choice.mode, sectionId: choice.sectionId,
+          pictureFor: fromEmf, figureFor: fromEmf, spectrumFor: fromEmf,
+          factsOf: async (m) => (await this.host.siFacts([m]))[0] ?? null,
+          progress: (_d, _t, text) => busy.say(text),
+        });
+      } catch (e) {
+        busy.close();
+        this.host.flash(`The import stopped: ${e instanceof Error ? e.message : String(e)}. What was written so far is one step of Edit ▸ Undo.`, 10000);
+        return;
+      } finally {
+        this.forgetStructure();
+        this.labelsRead = false;
+        this.shownKey = '';
+        this.refresh();
+        this.host.changed();
+      }
+      busy.close();
+      await ask('Import SI', [], { noCancel: true, ok: 'OK', note: `Imported “${read.file_name}”. Edit ▸ Undo takes the whole import back.`, points: importSummary(result, plan) });
     } finally {
-      this.host.hint('');
-      this.forgetStructure();
-      this.labelsRead = false;
-      this.shownKey = '';
-      this.refresh();
-      this.host.changed();
+      pdf?.close();
+      busy.close();
     }
-    await ask('Import SI', [], { noCancel: true, ok: 'OK', note: `Imported “${read.file_name}”. Edit ▸ Undo takes the whole import back.`, points: importSummary(result, plan) });
   }
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */

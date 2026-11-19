@@ -299,10 +299,12 @@ export function outline(plan: ImportPlan, bodySize: number): void {
   const paras = seq.filter(([k]) => k === 'para').map(([, o]) => o as Para);
   const first = headingLevels(paras, bodySize);
   const [coverEnd, tocEndAt] = front(seq, first);
+  // (worked out again after a heading's level changed: the cover page as changed in the review window stays, the same object)
+  const oldCover = plan.cover as ImportedCover | null;
   plan.cover = null;
   if (coverEnd) {
     const cover = readCover(seq.slice(0, coverEnd).filter(([k]) => k === 'para').map(([, o]) => o as Para), first);
-    if (cover.title || cover.authors.length) plan.cover = cover;
+    if (cover.title || cover.authors.length) plan.cover = oldCover ?? cover;
   }
   // (the levels again without the cover and contents: their large type would count)
   const after = seq.slice(tocEndAt);
@@ -314,6 +316,8 @@ export function outline(plan: ImportPlan, bodySize: number): void {
   plan.levels = levels;
   const oldSections = new Map<string, ImportedSection>();
   for (const s of plan.sections as ImportedSection[]) oldSections.set(identity(s, plan.sections as ImportedSection[]), s);
+  const oldFigures = new Map<string, ImportedFigure[]>();
+  for (const s of plan.sections as ImportedSection[]) for (const f of s.figures.values()) { const k = figureIdentity(f); oldFigures.set(k, [...(oldFigures.get(k) ?? []), f]); }
   const oldRefs = new Map<string, ReturnType<typeof readList>[number]>();
   for (const r of plan.references as ReturnType<typeof readList>) oldRefs.set(`${r.number}\u0000${r.text}`, r);
   const sections: ImportedSection[] = [];
@@ -368,6 +372,18 @@ export function outline(plan: ImportPlan, bodySize: number): void {
     const old = oldSections.get(identity(s, sections));
     if (old) { s.name = old.name; s.keep = old.keep; }
   }
+  // (so are the figures' and tables' ticks and labels; a PDF figure cut out of the same part of its page keeps its picture)
+  for (const s of sections) {
+    for (const f of s.figures.values()) {
+      const old = oldFigures.get(figureIdentity(f))?.shift();
+      if (!old) continue;
+      f.keep = old.keep;
+      f.label = old.label;
+      if (f.kind === 'cut' && old.data && f.top === old.top && f.bottom === old.bottom && String(f.below) === String(old.below)) {
+        f.data = old.data; f.ext = old.ext; f.width_cm = old.width_cm; f.cut_below = old.cut_below;
+      }
+    }
+  }
   plan.sections = sections;
 }
 
@@ -375,6 +391,15 @@ export function outline(plan: ImportPlan, bodySize: number): void {
 function identity(s: ImportedSection, sections: ImportedSection[]): string {
   const parent = sections.find((p) => p.key === s.parent);
   return [s.kind, s.heading, parent ? parent.heading : '', !s.heading ? s.name : ''].join('\u0000');
+}
+
+/** What a figure or table is, whatever its key and its label (which can be changed): its kind, page, caption and picture. Those alike are told apart by their order. */
+const pictureIds = new WeakMap<Uint8Array, number>();
+let pictureCount = 0;
+function figureIdentity(f: ImportedFigure): string {
+  let pic = 0;
+  if (f.kind !== 'cut' && f.data) { pic = pictureIds.get(f.data) ?? ++pictureCount; pictureIds.set(f.data, pic); }
+  return [f.kind, f.page, f.caption, pic, f.kind === 'table' ? JSON.stringify(f.table?.rows ?? null) : ''].join('\u0000');
 }
 
 const captionMarker = (label: string, caption: string): string => `\u0000${label}\u0000${caption}`;

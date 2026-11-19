@@ -39,6 +39,8 @@ const DEFAULT_GENERAL_HEADING = 'General Information';
 export interface ImportedSpectrum {
   /** The compound it belongs to ('' not matched). */
   cid: string;
+  /** The compound itself, once the review window has told (IDs can be empty, doubled or retyped there); it then counts instead of `cid`. null: not matched. */
+  owner?: ImportedCompound | null;
   /** "1H", "13C", …, "Other NMR", "2D NMR", "HPLC/SFC", "IR", "Other". */
   type: string;
   kind: 'emf' | 'pdf';
@@ -137,6 +139,7 @@ async function write(project: SiProject, plan: ImportPlan, sourceName: string, o
   const dataSections = await writeSections(project, plan, result, opts.figureFor ?? null, citer, !opts.sectionId);
   const gpIds = new Map<string, string>();
   const byCid = new Map<string, SiCompound>();
+  const byObj = new Map<ImportedCompound, SiCompound>();
   const fill = (comp: SiCompound, c: ImportedCompound): Promise<void> => fillCompound(project, comp, c, gpIds, mode, sourceName, opts, citer);
   if (opts.sectionId) {
     const section = project.section(opts.sectionId);
@@ -152,12 +155,14 @@ async function write(project: SiProject, plan: ImportPlan, sourceName: string, o
       const target = existing.get(c.cid);
       if (target) {
         result.merged[c.cid] = await mergeCompound(project, target, c, gpIds, mode, sourceName, opts, citer);
+        byObj.set(c, target);
         if (!byCid.has(c.cid)) byCid.set(c.cid, target);
       } else {
         await makeRoomForId(project, section, c.cid);
         const comp = await project.addCompound(section.id, undefined, c.name);
         await fill(comp, c);
         result.created.push(comp.id);
+        byObj.set(c, comp);
         if (!byCid.has(c.cid)) byCid.set(c.cid, comp);
       }
     }
@@ -186,11 +191,12 @@ async function write(project: SiProject, plan: ImportPlan, sourceName: string, o
         const comp = await project.addCompound(section.id, undefined, c.name);
         await fill(comp, c);
         result.created.push(comp.id);
+        byObj.set(c, comp);
         if (!byCid.has(c.cid)) byCid.set(c.cid, comp);
       }
     }
   }
-  result.spectra = await attachSpectra(project, plan, byCid, opts, result);
+  result.spectra = await attachSpectra(project, plan, byCid, byObj, opts, result);
   return result;
 }
 
@@ -365,13 +371,15 @@ async function figurePicture(fig: ImportedFigure, figureFor: ApplyOptions['figur
  * cut out of a PDF page as a one-page PDF (printed without the program's structure box: the page
  * shows the structure already). Gives how many.
  */
-async function attachSpectra(project: SiProject, plan: ImportPlan, byCid: Map<string, SiCompound>, opts: ApplyOptions, result: ApplyResult): Promise<number> {
-  const todo = ((plan.spectra ?? []) as ImportedSpectrum[]).filter((s) => s.keep && byCid.has(s.cid));
+async function attachSpectra(project: SiProject, plan: ImportPlan, byCid: Map<string, SiCompound>, byObj: Map<ImportedCompound, SiCompound>, opts: ApplyOptions, result: ApplyResult): Promise<number> {
+  // (its compound as the review window told it; else by its ID, and a spectrum without one belongs to no compound)
+  const compOf = (s: ImportedSpectrum): SiCompound | undefined => (s.owner !== undefined ? (s.owner ? byObj.get(s.owner) : undefined) : s.cid ? byCid.get(s.cid) : undefined);
+  const todo = ((plan.spectra ?? []) as ImportedSpectrum[]).filter((s) => s.keep && compOf(s));
   let count = 0, skipped = 0;
   for (let k = 0; k < todo.length; k++) {
     const s = todo[k];
     opts.progress?.(k, todo.length, `Spectrum ${k + 1} of ${todo.length} (${s.cid}, ${s.type})`);
-    const comp = byCid.get(s.cid)!;
+    const comp = compOf(s)!;
     if (!fieldKeys(comp).includes('spectra')) await project.addFields(comp, [{ key: 'spectra' }]);
     const subdir = ALL_FIELDS.get('spectra')?.subdir || 'spectra';
     const item: Json = {};
@@ -406,16 +414,25 @@ async function attachSpectra(project: SiProject, plan: ImportPlan, byCid: Map<st
 
 /** {plan key: GP id}: new general procedures; one whose name the section has already is not made again, and its compounds keep their own sentence (not linked). */
 async function writeGps(project: SiProject, section: SiSection, gps: ImportedGP[], result: ApplyResult, citer: Citer): Promise<Map<string, string>> {
-  const have = new Set(project.generalProcedures(section).map((g) => String(g.name ?? '').trim().toLowerCase()));
+  const low = (n: unknown): string => String(n ?? '').trim().toLowerCase();
+  const have = new Set(project.generalProcedures(section).map((g) => low(g.name)));
+  // (a general procedure's name is its own in the whole project, as a new one's is)
+  const elsewhere = new Set(project.dataSections.filter((s) => s !== section).flatMap((s) => project.generalProcedures(s).map((g) => low(g.name))));
   const out = new Map<string, string>();
   for (const g of gps) {
-    if (have.has(g.name.trim().toLowerCase())) {
+    if (have.has(low(g.name))) {
       result.notes.push(`${g.name} is already in this section, so it was not imported again; its compounds keep their own sentence.`);
       continue;
     }
     const gp = await project.addGeneralProcedure(section.id);
     const id = String(gp.id);
-    await project.updateGeneralProcedure(id, { name: g.name, title: g.title, sentence: citer.cite(g.sentence) });
+    let name = g.name.trim() || String(gp.name);
+    if (elsewhere.has(low(name))) {
+      result.notes.push(`The project already has a ${name} in another section, so the imported one was named ${String(gp.name)}. You can rename it on its page.`);
+      name = String(gp.name);
+    }
+    elsewhere.add(low(name));
+    await project.updateGeneralProcedure(id, { name, title: g.title, sentence: citer.cite(g.sentence) });
     await project.writeGpText(id, citer.cite(g.text));
     out.set(g.key, id);
     result.gps.push(id);
@@ -432,6 +449,9 @@ async function makeRoomForId(project: SiProject, section: SiSection, cid: string
   const pos = compoundsOf(section).length;
   while (table.length < pos) table.push('');
   if (pos < table.length && table[pos].trim() === cid) return;
+  // (a row further down that was waiting for this ID is this one: it moves up, and is not left behind as a second one)
+  const waiting = cid ? table.findIndex((t, i) => i > pos && t.trim() === cid) : -1;
+  if (waiting >= 0) table.splice(waiting, 1);
   table.splice(pos, 0, cid);
   await project.setIdTable(section.id, table);
 }

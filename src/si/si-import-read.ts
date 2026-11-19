@@ -136,7 +136,7 @@ const suffixOf = (name: string): string => { const m = /\.[^./\\]*$/.exec(name);
 /** Read a .docx or .pdf SI (by its extension). */
 export async function readSiFile(name: string, bytes: Uint8Array, progress: Progress = null): Promise<ReadResult> {
   const suffix = suffixOf(name);
-  if (suffix === '.docx') return readSiDocx(name, bytes, progress);
+  if (suffix === '.docx') return readSiDocxSteps(name, bytes, progress);
   if (suffix === '.pdf') return readSiPdf(name, bytes, progress);
   const res = newResult(name, suffix.replace(/^\./, ''));
   res.error = `“${name}” is not a Word (.docx) or PDF file. Older Word files (.doc) can be saved as .docx from Word (File ▸ Save As).`;
@@ -349,8 +349,10 @@ function* own(el: Element, local: string): Generator<Element> {
   }
 }
 
-export function readSiDocx(name: string, bytes: Uint8Array, progress: Progress = null): ReadResult {
+/** A .docx opened: the result so far (with its `error` when it can't be read), the parts of its body, and what reads one of them. */
+function openDocx(name: string, bytes: Uint8Array): { res: ReadResult; parts: Element[]; take: (child: Element) => void } {
   const res = newResult(name, 'docx');
+  const none = { res, parts: [], take: (): void => {} };
   let z: Record<string, Uint8Array>;
   let doc: Document;
   try {
@@ -359,11 +361,11 @@ export function readSiDocx(name: string, bytes: Uint8Array, progress: Progress =
     doc = parseXml(new TextDecoder().decode(z['word/document.xml']));
   } catch (e) {
     res.error = `“${name}” could not be opened as a Word document (${errName(e)}). It may be damaged, or still open and locked: save it again from Word.`;
-    return res;
+    return none;
   }
   const styles = styleInfo(z);
   const body = find(doc.documentElement, W, 'body');
-  if (!body) { res.error = `“${name}” has no text.`; return res; }
+  if (!body) { res.error = `“${name}” has no text.`; return none; }
   const rels = new Map<string, string>();
   try {
     const relXml = z['word/_rels/document.xml.rels'];
@@ -371,45 +373,77 @@ export function readSiDocx(name: string, bytes: Uint8Array, progress: Progress =
   } catch { /* no relationships */ }
   const reader = new DocxReader(z, rels);
   let tables = 0;
-  const walk = (parent: Element, cell: Para['cell']): void => {
-    for (const child of kids(parent)) {
-      if (is(child, W, 'p')) {
-        const objects = reader.objects(child);
-        let pieces = docxParagraph(child, styles);
-        if (!pieces.length && (objects.length || cell)) pieces = [[[], 0]];   // (only a drawing; or an empty table cell)
-        pieces.forEach(([runs, level], i) => {
-          res.paras.push(newPara(runs, { heading: level, table: !!cell, objects: i === 0 ? objects : [], cell }));
-        });
-      } else if (is(child, W, 'tbl')) {
-        if (cell) {          // (a table in a table: its cells' text only)
-          for (const tc of Array.from(child.getElementsByTagNameNS(W, 'tc'))) walk(tc, cell);
-          continue;
-        }
-        tables++;
-        let r = 0;
-        for (const tr of own(child, 'tr')) {
-          let col = 0;
-          for (const tc of own(tr, 'tc')) {
-            let span = 1, merge = '';
-            const tcpr = find(tc, W, 'tcPr');
-            if (tcpr) {
-              const gs = find(tcpr, W, 'gridSpan');
-              const v = gs ? wAttr(gs, 'val') || '1' : '1';
-              span = /^\s*[-+]?\d+\s*$/.test(v) ? Math.max(1, parseInt(v, 10)) : 1;
-              const vm = find(tcpr, W, 'vMerge');
-              if (vm) merge = wAttr(vm, 'val') === 'restart' ? 'restart' : 'continue';
-            }
-            walk(tc, [tables, r, col, span, merge]);
-            col += span;
+  const take = (child: Element, cell: Para['cell'] = null): void => {
+    if (is(child, W, 'p')) {
+      const objects = reader.objects(child);
+      let pieces = docxParagraph(child, styles);
+      if (!pieces.length && (objects.length || cell)) pieces = [[[], 0]];   // (only a drawing; or an empty table cell)
+      pieces.forEach(([runs, level], i) => {
+        res.paras.push(newPara(runs, { heading: level, table: !!cell, objects: i === 0 ? objects : [], cell }));
+      });
+    } else if (is(child, W, 'tbl')) {
+      if (cell) {          // (a table in a table: its cells' text only)
+        for (const tc of Array.from(child.getElementsByTagNameNS(W, 'tc'))) walk(tc, cell);
+        return;
+      }
+      tables++;
+      let r = 0;
+      for (const tr of own(child, 'tr')) {
+        let col = 0;
+        for (const tc of own(tr, 'tc')) {
+          let span = 1, merge = '';
+          const tcpr = find(tc, W, 'tcPr');
+          if (tcpr) {
+            const gs = find(tcpr, W, 'gridSpan');
+            const v = gs ? wAttr(gs, 'val') || '1' : '1';
+            span = /^\s*[-+]?\d+\s*$/.test(v) ? Math.max(1, parseInt(v, 10)) : 1;
+            const vm = find(tcpr, W, 'vMerge');
+            if (vm) merge = wAttr(vm, 'val') === 'restart' ? 'restart' : 'continue';
           }
-          r++;
+          walk(tc, [tables, r, col, span, merge]);
+          col += span;
         }
-      } else if (['sdt', 'sdtContent', 'customXml', 'ins', 'smartTag'].some((t) => is(child, W, t))) walk(child, cell);
-    }
+        r++;
+      }
+    } else if (['sdt', 'sdtContent', 'customXml', 'ins', 'smartTag'].some((t) => is(child, W, t))) walk(child, cell);
   };
-  walk(body, null);
+  const walk = (parent: Element, cell: Para['cell']): void => { for (const child of kids(parent)) take(child, cell); };
+  return { res, parts: kids(body), take: (child) => take(child) };
+}
+
+export function readSiDocx(name: string, bytes: Uint8Array, progress: Progress = null): ReadResult {
+  const { res, parts, take } = openDocx(name, bytes);
+  if (res.error) return res;
+  for (const child of parts) take(child);
   progress?.(1, 1);
   if (!res.paras.length) res.error = `No text was found in “${name}”.`;
+  return res;
+}
+
+/**
+ * readSiDocx in pieces, for a window that must stay alive: after every 40 ms of reading the
+ * progress is told (false stops the reading) and the window gets its turn.
+ */
+export async function readSiDocxSteps(name: string, bytes: Uint8Array, progress: Progress = null): Promise<ReadResult> {
+  const turn = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+  if (progress && progress(0, 1) === false) { const r = newResult(name, 'docx'); r.stopped = true; return r; }
+  await turn();        // (what the caller shows first is drawn before the file is unpacked)
+  const { res, parts, take } = openDocx(name, bytes);
+  if (res.error) return res;
+  let last = Date.now();
+  for (let k = 0; k < parts.length; k++) {
+    take(parts[k]);
+    if (Date.now() - last < 40) continue;
+    if (progress && progress(k + 1, parts.length) === false) {
+      res.stopped = true;
+      res.notes.push('Reading was stopped before the end of the file.');
+      break;
+    }
+    await turn();
+    last = Date.now();
+  }
+  if (!res.stopped) progress?.(parts.length || 1, parts.length || 1);
+  if (!res.paras.length && !res.stopped) res.error = `No text was found in “${name}”.`;
   return res;
 }
 

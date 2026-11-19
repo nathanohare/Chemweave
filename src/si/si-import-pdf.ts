@@ -15,7 +15,7 @@
 
 import { pdfjsLib, pdfSpans } from './ms-read';
 import type { Span } from './ms-parse';
-import { isIdLabel, type ImportPlan } from './si-import';
+import { isIdLabel, STEREO, type ImportPlan } from './si-import';
 import { linePlain, toLines } from './si-import-read';
 import type { ImportedFigure, ImportedSection } from './si-import-text';
 
@@ -78,6 +78,7 @@ export class PdfPages {
       const content = await page.getTextContent();
       const items = (content.items as { str?: string }[]).filter((i) => 'str' in i) as Parameters<typeof pdfSpans>[0];
       this.spansCache.set(n, pdfSpans(items, page.view[3], () => '').frames[0] ?? []);
+      try { page.cleanup(); } catch { /* (being drawn: freed after) */ }
     }
     return this.spansCache.get(n)!;
   }
@@ -96,27 +97,36 @@ export class PdfPages {
     if (bw <= 0 || bh <= 0) return null;
     const scale = Math.min(DPI / 72, MAX_PIXELS / Math.max(bw, bh));
     const view = page.getViewport({ scale, offsetX: (page.view[0] - box[0]) * scale, offsetY: -box[1] * scale });
+    // (a page drawn at 300 dpi is tens of megabytes: the canvases and the page's own data are given back at once, not when the PDF is closed)
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.ceil(bw * scale));
-    canvas.height = Math.max(1, Math.ceil(bh * scale));
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return null;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvas, canvasContext: ctx, viewport: view }).promise;
-    const ink = inkBox(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
-    if (!ink) return null;
-    const pad = Math.round(scale * 1.5);
-    const [x0, y0] = [Math.max(0, ink[0] - pad), Math.max(0, ink[1] - pad)];
-    const [x1, y1] = [Math.min(canvas.width, ink[2] + pad), Math.min(canvas.height, ink[3] + pad)];
-    if ((x1 - x0) / scale < 8 || (y1 - y0) / scale < 8) return null;
-    const out = document.createElement('canvas');
-    out.width = x1 - x0;
-    out.height = y1 - y0;
-    out.getContext('2d')!.drawImage(canvas, -x0, -y0);
-    const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/png'));
-    if (!blob) return null;
-    return { data: new Uint8Array(await blob.arrayBuffer()), ext: '.png', w: out.width / scale, h: out.height / scale };
+    let out: HTMLCanvasElement | null = null;
+    try {
+      canvas.width = Math.max(1, Math.ceil(bw * scale));
+      canvas.height = Math.max(1, Math.ceil(bh * scale));
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return null;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvas, canvasContext: ctx, viewport: view }).promise;
+      const ink = inkBox(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+      if (!ink) return null;
+      const pad = Math.round(scale * 1.5);
+      const [x0, y0] = [Math.max(0, ink[0] - pad), Math.max(0, ink[1] - pad)];
+      const [x1, y1] = [Math.min(canvas.width, ink[2] + pad), Math.min(canvas.height, ink[3] + pad)];
+      if ((x1 - x0) / scale < 8 || (y1 - y0) / scale < 8) return null;
+      out = document.createElement('canvas');
+      out.width = x1 - x0;
+      out.height = y1 - y0;
+      out.getContext('2d')!.drawImage(canvas, -x0, -y0);
+      const made = out;
+      const blob = await new Promise<Blob | null>((resolve) => made.toBlob(resolve, 'image/png'));
+      if (!blob) return null;
+      return { data: new Uint8Array(await blob.arrayBuffer()), ext: '.png', w: made.width / scale, h: made.height / scale };
+    } finally {
+      canvas.width = canvas.height = 0;
+      if (out) out.width = out.height = 0;
+      try { page.cleanup(); } catch { /* (still being drawn elsewhere) */ }
+    }
   }
 }
 
@@ -127,10 +137,13 @@ function margins(spans: Span[]): [number, number] {
 }
 
 const plainOf = (s: Span): string => s.text.trim().replace(/\.+$/, '');
+/** A label's ID: without its stereo prefix ("(±)-3", "(S)-2a", "rac-5": not part of the ID). */
+const STEREO_START = new RegExp('^' + STEREO);
+const idOf = (s: Span): string => plainOf(s).replace(STEREO_START, '');
 
 function textInside(spans: Span[], box: Box, skip = ''): number {
   const [x0, y0, x1, y1] = box;
-  return spans.filter((s) => s.x0 >= x0 - 1 && s.x1 <= x1 + 1 && s.y0 >= y0 - 1 && s.y1 <= y1 + 1 && plainOf(s) !== skip).reduce((n, s) => n + s.text.trim().length, 0);
+  return spans.filter((s) => s.x0 >= x0 - 1 && s.x1 <= x1 + 1 && s.y0 >= y0 - 1 && s.y1 <= y1 + 1 && (!skip || idOf(s) !== skip)).reduce((n, s) => n + s.text.trim().length, 0);
 }
 
 function gapRegion(spans: Span[], headingBottom: number, textTop: number): Box | null {
@@ -146,7 +159,7 @@ function labelRegion(spans: Span[], cid: string): Box | null {
   const labels = spans.filter((s) => isIdLabel(plainOf(s)));
   const mid = (s: Span): number => (s.y0 + s.y1) / 2;
   const cx = (s: Span): number => (s.x0 + s.x1) / 2;
-  for (const lab of labels.filter((s) => plainOf(s) === cid)) {
+  for (const lab of labels.filter((s) => idOf(s) === cid)) {
     // a label, not the ID in running text: nothing else on its line but labels
     if (spans.some((s) => Math.abs(mid(s) - mid(lab)) < 3 && !labels.includes(s) && s.text.trim().length > 2)) continue;
     const row = labels.filter((s) => Math.abs(s.y0 - lab.y0) < 4).sort((a, b) => a.x0 - b.x0);
@@ -177,10 +190,10 @@ function labelRegion(spans: Span[], cid: string): Box | null {
  * `picture_pdf` (with `picture_ext`); a compound with a structure already is left alone. Gives
  * how many were found.
  */
-export async function addPictures(pdf: PdfPages, plan: ImportPlan, progress?: (done: number, total: number) => void): Promise<number> {
+export async function addPictures(pdf: PdfPages, plan: ImportPlan, progress?: (done: number, total: number) => boolean | void): Promise<number> {
   let found = 0;
   for (let k = 0; k < plan.compounds.length; k++) {
-    progress?.(k, plan.compounds.length);
+    if (progress?.(k, plan.compounds.length) === false) return found;      // (stopped)
     const c = plan.compounds[k];
     if (c.structure || !c.geometry) continue;
     let [page] = c.geometry;
@@ -231,11 +244,12 @@ function proseInside(spans: Span[], box: Box): boolean {
  * last row, across the text width, trimmed to the ink. Gives how many were cut out; a figure that
  * can't be (nothing there) keeps no picture, and its caption is imported as text.
  */
-export async function addFigures(pdf: PdfPages, plan: ImportPlan): Promise<number> {
+export async function addFigures(pdf: PdfPages, plan: ImportPlan, goOn?: () => boolean): Promise<number> {
   let found = 0;
   for (const s of (plan.sections ?? []) as ImportedSection[]) {
     for (const fig of s.figures.values() as Iterable<ImportedFigure>) {
       if (fig.kind !== 'cut' || !fig.page || fig.page > pdf.count || fig.data) continue;
+      if (goOn && !goOn()) return found;      // (stopped)
       let cut: Cut | null = null;
       try {
         const [, height] = await pdf.size(fig.page);
