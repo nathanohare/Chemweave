@@ -299,10 +299,17 @@ export class SiSchemePage {
 
   // ---------------------------------------------------------------- commands
 
+  /** `f` as one named step of Undo: through the host when it offers that (after pending saves), else the project's own history. */
+  private step<T>(label: string, f: () => Promise<T>): Promise<T> {
+    const host = this.host as SiSchemeHost & { step?<R>(label: string, f: () => Promise<R>): Promise<R> };
+    if (host.step) return host.step(label, f);
+    const j = journalOf(this.p.folder);
+    return j ? j.step(label, f) : f();
+  }
+
   /** A change to the scheme, as one step of Undo called `label`. */
   private async act(label: string, f: () => Promise<unknown>, redraw = false, quiet = false): Promise<void> {
-    const j = journalOf(this.p.folder);
-    try { await (j ? j.step(label, f) : f()); } catch (e) { this.host.flash(`The scheme could not be changed: ${e instanceof Error ? e.message : String(e)}`, 8000); }
+    try { await this.step(label, f); } catch (e) { this.host.flash(`The scheme could not be changed: ${e instanceof Error ? e.message : String(e)}`, 8000); }
     if (redraw) { this.host.redraw(); return; }
     if (quiet) await this.drawPreview(); else await this.paint();
     this.host.chosen(this);
@@ -458,8 +465,7 @@ export class SiSchemePage {
           const m = this.host.molfileOf(got);
           if (!m.molblock) { this.host.flash(m.problem ?? 'The drawing could not be read as a structure.'); return; }
           void (async () => {
-            const j = journalOf(p.folder);
-            const sid = await (j ? j.step('Insert Structure', () => E.addInlineStructure(p, k, m.molblock!)) : E.addInlineStructure(p, k, m.molblock!));
+            const sid = await this.step('Insert Structure', () => E.addInlineStructure(p, k, m.molblock!));
             const svg = this.host.pictureOf(m.molblock!);
             if (svg) this.inlinePics.set(sid, sized(svg, this.layout.cond_structure_pct / 100 * 0.75));
             into.insertRef(STRUCT + sid);
