@@ -54,6 +54,7 @@ import { availableColumns, buildRows, chosenColumns, fieldLabel, filterOf, isCom
 import { dashboardGrid, projectSummaryCard, sectionDashboard, statusColorsBody, type GridOptions } from './si-dashboard';
 import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
 import { popupMenu } from './popup-menu';
+import { allBoxes } from '../si/scheme-edit';
 
 export interface SiModeHost {
   flash(msg: string, ms?: number): void;
@@ -180,6 +181,11 @@ const RIBBON = `
     </div><div class="rb-label">Figures</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="new-scheme" data-ic="smart-scheme" title="A new scheme page in the Data section picked (after the compound picked): starting materials, steps with their conditions, and products that can be compounds with IDs and data pages"><span class="rb-icon">⇶</span>Scheme Page</button>
+      <div class="rb-col">
+        <button data-si="to-scheme" title="Change the compound picked to a reaction scheme: a scheme page takes its place, with the compound (its data and ID kept) as the product of its first step">Change to Reaction Scheme…</button>
+        <button data-si="out-of-scheme" title="Move the compound picked off its scheme page, to right after the scheme page; the box that showed it keeps a copy of its structure">Move Out of Scheme</button>
+        <button data-si="into-scheme" title="Move the compound picked into a scheme page (listed after the compounds its boxes show; mark a box as it in the scheme to show it there)">Move Into Scheme…</button>
+      </div>
     </div><div class="rb-label">Schemes</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="add-spectra" data-ic="chart-line" title="Add spectra (PDFs or pictures) to the compound picked"><span class="rb-icon">⩘</span>Spectra</button>
@@ -430,7 +436,7 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si="move-up" title="Move the compound or section picked up (Alt+↑): compound IDs follow the order. Rows can also be dragged in the tree">▲ Move Up</button>
         <button data-si="move-down" title="Move the compound or section picked down (Alt+↓)">▼ Move Down</button>
-        <button data-si="move-to" title="Move the compound picked to another Data section, or the section picked into or out of a Custom section">Move To…</button>
+        <button data-si="move-to" title="Move the compound picked to another Data section or into or out of a scheme page, or the section picked into or out of a Custom section">Move To…</button>
       </div>
     </div><div class="rb-label">Project</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -1978,6 +1984,16 @@ export class SiMode {
     shown.title = 'Show the warnings dismissed for this compound (with Restore), or hide them again';
     shown.addEventListener('click', () => { this.showDismissed = !this.showDismissed; this.paintWarnings(); });
     chips.append(done, idChip, shown);
+    if (c.schemeId) {
+      // (SI Assistant's scheme note: whether its structure prints with its data or in the scheme)
+      const k2 = p.scheme(c.schemeId);
+      const drawn = allBoxes(k2).some(([b]) => b.compound === c.id);
+      const sch = el('button', 'si-chip si-chip-btn', `Scheme “${String(k2.data.name || 'Scheme')}”`);
+      sch.type = 'button';
+      sch.title = drawn ? 'Part of this scheme page: its structure is not printed with its data (the scheme is). Click to open the scheme.' : 'Part of this scheme page, not drawn in the scheme: its structure is printed with its data. Click to open the scheme.';
+      sch.addEventListener('click', () => this.go({ kind: 'scheme', id: k2.id }));
+      chips.append(sch);
+    }
     const headWarn = el('div', 'si-fwarn si-head-warn');
     headWarn.dataset.key = '';
     headWarn.hidden = true;
@@ -3015,14 +3031,15 @@ export class SiMode {
     const yes = (title: string, text: string): Promise<boolean> => askChoice(title, `${text} Home ▸ Trash (or Chem SI Assistant's Trash) can put it back.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep').then((x) => x === 'delete');
     if (pick.kind === 'compound') {
       const c = p.compound(pick.id);
-      if (c.schemeId) { this.host.flash('This compound is on a scheme page: take its box out of the scheme (Scheme ▸ Remove), or delete the scheme page.'); return; }
-      if (!(await yes('Delete Compound', `Move ${this.idOf(c)} ${compoundName(c) || 'unnamed compound'} to the project's Trash? The compounds after it take the IDs before them.`))) return;
+      const k = c.schemeId ? p.scheme(c.schemeId) : null;
+      if (!(await yes('Delete Compound', `Move ${this.idOf(c)} ${compoundName(c) || 'unnamed compound'} to the project's Trash? The compounds after it take the IDs before them.${k ? ' Its box in the scheme keeps a copy of its structure.' : ''}`))) return;
       const sec = p.section(c.sectionId);
-      const i = sec.items.indexOf(c);
+      const list: { kind: 'compound' | 'scheme'; id: string }[] = k ? k.children : sec.items;
+      const i = list.indexOf(c);
       await this.act(async () => {
         await p.deleteCompound(c.id);
-        const next = sec.items[Math.min(i, sec.items.length - 1)];
-        this.pick = next ? { kind: next.kind, id: next.id } : { kind: 'section', id: sec.id };
+        const next = list[Math.min(i, list.length - 1)];
+        this.pick = next ? { kind: next.kind, id: next.id } : k ? { kind: 'scheme', id: k.id } : { kind: 'section', id: sec.id };
       });
       return;
     }
@@ -3106,18 +3123,47 @@ export class SiMode {
     this.refresh();
   }
 
-  /** Home ▸ Move To: a compound or scheme page to another Data section; a section into a Custom section, or to the top level. */
-  private async moveTo(): Promise<void> {
+  /** A compound of a scheme page moved off it, to right after the scheme page (its box keeps a copy of its structure). */
+  private async moveOutOfScheme(id: string): Promise<void> {
+    const p = this.project!;
+    const c = p.compound(id);
+    if (!c.schemeId) return;
+    const k = p.scheme(c.schemeId);
+    const sec = p.section(k.sectionId);
+    await p.moveCompound(c.id, sec.id, sec.items.indexOf(k) + 1);
+    this.pick = { kind: 'compound', id: c.id };
+  }
+
+  /** Insert ▸ Change to Reaction Scheme…: the compound picked becomes the product of a new scheme page in its place. */
+  private async toScheme(): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
+    const c = pick.kind === 'compound' ? p.compound(pick.id) : null;
+    if (!c) { this.host.flash('Pick a compound page to change to a reaction scheme.'); return; }
+    if (c.schemeId) { this.host.flash('This compound is already on a scheme page.'); return; }
+    const go = await askChoice('Change to Reaction Scheme', `Make a scheme page for ${this.idOf(c)} ${compoundName(c) || 'this compound'}? The compound becomes the product of the scheme's first step (its data and ID are kept). You can then draw the scheme and add the other compounds in it.`, [{ value: 'no', label: 'Cancel' }, { value: 'yes', label: 'Change', primary: true }], 'no');
+    if (go !== 'yes') return;
+    await this.act(async () => { const k = await p.convertToScheme(c.id); this.pick = { kind: 'scheme', id: k.id }; });
+  }
+
+  /** Home ▸ Move To: a compound or scheme page to another Data section (a compound also into or out of a scheme page); a section into a Custom section, or to the top level. */
+  private async moveTo(onlySchemes = false): Promise<void> {
+    const p = this.project!;
+    const pick = this.pick;
+    if (onlySchemes && pick.kind !== 'compound') { this.host.flash('Pick a compound to move into a scheme page.'); return; }
     if (pick.kind === 'compound' || pick.kind === 'scheme') {
       const item = pick.kind === 'compound' ? p.compound(pick.id) : p.scheme(pick.id);
-      if (item.kind === 'compound' && item.schemeId) { this.host.flash('Compounds on a scheme page move with their scheme page.'); return; }
-      const options = p.dataSections.filter((x) => x.id !== item.sectionId).map((x) => ({ value: x.id, label: x.name }));
-      if (!options.length) { this.host.flash('There is no other Data section to move it to.'); return; }
-      const got = await ask('Move To', [{ name: 'to', label: 'Data section', value: options[0].value, options }], { ok: 'Move', note: 'It goes at the end of that section; its compound IDs follow its new place.' });
+      const options: { value: string; label: string }[] = [];
+      if (item.kind === 'compound' && item.schemeId && !onlySchemes) options.push({ value: `out:${item.schemeId}`, label: `Out of the scheme (after the scheme page, in “${p.section(item.sectionId).name}”)` });
+      for (const x of p.dataSections) if (x.id !== item.sectionId && !onlySchemes) options.push({ value: `s:${x.id}`, label: `The Data section “${x.name}”` });
+      if (item.kind === 'compound') for (const k of p.schemes) if (k.id !== item.schemeId) options.push({ value: `k:${k.id}`, label: `The scheme page “${String(k.data.name || 'Scheme')}” (${p.section(k.sectionId).name})` });
+      if (!options.length) { this.host.flash(onlySchemes ? 'There is no other scheme page to move it into (Insert ▸ Scheme Page makes one).' : 'There is no other Data section to move it to.'); return; }
+      const got = await ask(onlySchemes ? 'Move Into Scheme' : 'Move To', [{ name: 'to', label: 'Move to', value: options[0].value, options }], { ok: 'Move', note: 'It goes at the end there; compound IDs follow the new order. A compound leaving a scheme page leaves a copy of its structure in the box that showed it; one moved into a scheme page is listed after the compounds its boxes show.' });
       if (!got) return;
-      const to = p.section(got.to);
+      const [how, id] = [got.to.slice(0, got.to.indexOf(':')), got.to.slice(got.to.indexOf(':') + 1)];
+      if (how === 'out') { await this.act(() => this.moveOutOfScheme(item.id)); return; }
+      if (how === 'k') { const k = p.scheme(id); await this.act(() => p.moveCompound(item.id, k.sectionId, k.children.length, k.id)); return; }
+      const to = p.section(id);
       await this.act(() => (item.kind === 'compound' ? p.moveCompound(item.id, to.id, to.items.length) : p.moveScheme(item.id, to.id, to.items.length)));
       return;
     }
@@ -3202,7 +3248,10 @@ export class SiMode {
       const inScheme = sel.kind === 'compound' && !!p.compound(sel.id).schemeId;
       if (sel.kind === 'scheme') items.push(['Rename…', run('rename'), !ro]);
       items.push(['Duplicate…', run('duplicate'), !ro], null);
-      items.push(['Move Up', run('move-up'), !ro && !inScheme], ['Move Down', run('move-down'), !ro && !inScheme], ['Move To…', run('move-to'), !ro && !inScheme], null, ['Delete', run('delete'), !ro && !inScheme]);
+      items.push(['Move Up', run('move-up'), !ro], ['Move Down', run('move-down'), !ro], ['Move To…', run('move-to'), !ro]);
+      if (inScheme) items.push(['Move Out of Scheme', run('out-of-scheme'), !ro]);
+      else if (sel.kind === 'compound') items.push(['Change to Reaction Scheme…', run('to-scheme'), !ro]);
+      items.push(null, ['Delete', run('delete'), !ro]);
     } else return;
     items.push(null, ['Trash…', run('trash')]);
     popupMenu(x, y, items);
@@ -3231,17 +3280,23 @@ export class SiMode {
     }
     if (drag.kind === 'compound' || drag.kind === 'scheme') {
       const item = drag.kind === 'compound' ? p.compound(drag.id) : p.scheme(drag.id);
-      if (item.kind === 'compound' && item.schemeId) return null;
-      const move = (to: string, at: number) => (): Promise<void> => (item.kind === 'compound' ? p.moveCompound(item.id, to, at) : p.moveScheme(item.id, to, at));
+      const move = (to: string, at: number, scheme: string | null = null) => (): Promise<void> => (item.kind === 'compound' ? p.moveCompound(item.id, to, at, scheme) : p.moveScheme(item.id, to, at));
       if (target.kind === 'section') {
         const t = p.section(target.id);
         return t.type === 'data' ? { where: 'in', run: move(t.id, t.items.length) } : null;
       }
       if (target.kind === 'compound' || target.kind === 'scheme') {
         const t = target.kind === 'compound' ? p.compound(target.id) : p.scheme(target.id);
-        if (t.kind === 'compound' && t.schemeId) return null;
-        const sec = p.section(t.sectionId);
+        // a compound dropped on the middle of a scheme page's row goes into it (after its compounds)
+        if (item.kind === 'compound' && t.kind === 'scheme' && frac > 0.3 && frac < 0.7 && item.schemeId !== t.id) return { where: 'in', run: move(t.sectionId, t.children.length, t.id) };
         const where = frac < 0.5 ? 'before' : 'after';
+        if (t.kind === 'compound' && t.schemeId) {
+          // among a scheme page's compounds (only compounds go there)
+          if (item.kind !== 'compound') return null;
+          const k = p.scheme(t.schemeId);
+          return { where, run: move(k.sectionId, k.children.indexOf(t) + (where === 'after' ? 1 : 0), k.id) };
+        }
+        const sec = p.section(t.sectionId);
         return { where, run: move(sec.id, sec.items.indexOf(t) + (where === 'after' ? 1 : 0)) };
       }
     }
@@ -3497,6 +3552,13 @@ export class SiMode {
       case 'delete': await this.deletePicked(); return;
       case 'rename': await this.renamePicked(); return;
       case 'move-to': await this.moveTo(); return;
+      case 'into-scheme': await this.moveTo(true); return;
+      case 'out-of-scheme': {
+        if (!c?.schemeId) { this.host.flash('Pick a compound of a scheme page.'); return; }
+        await this.act(() => this.moveOutOfScheme(c.id));
+        return;
+      }
+      case 'to-scheme': await this.toScheme(); return;
       case 'duplicate': await this.duplicate(); return;
       case 'snapshot': {
         const got = await ask('Save Snapshot', [{ name: 'label', label: 'Name', value: '', placeholder: 'e.g. submitted' }], { ok: 'Save Snapshot', note: 'The whole project is zipped into its snapshots folder, named with today’s date and time and this name. Snapshots and build files are left out.' });
@@ -3512,12 +3574,12 @@ export class SiMode {
       case 'move-down': {
         const step = cmd === 'move-up' ? -1 : 1;
         if (c) {
-          const sec = p.section(c.sectionId);
-          const i = sec.items.indexOf(c);
-          if (i < 0) { this.host.flash('Compounds on a scheme page are moved in the scheme (Chem SI Assistant) for now.'); return; }
+          const [sid, kid, i] = p.position(c);
+          const size = kid ? p.scheme(kid).children.length : p.section(sid).items.length;
           const j = i + step;
-          if (j < 0 || j >= sec.items.length) return;
-          await this.act(() => p.moveCompound(c.id, sec.id, step > 0 ? j + 1 : j));
+          if (j < 0 || j >= size) return;
+          await this.act(() => p.moveCompound(c.id, sid, step > 0 ? j + 1 : j, kid));
+          if (kid && p.position(c)[2] === i) this.host.flash('A scheme page’s compounds follow the order of their boxes: move the box in the scheme instead.', 4000);
         } else if (s) {
           const list = s.parentId ? p.section(s.parentId).children : p.top;
           const i = list.indexOf(s), j = i + step;

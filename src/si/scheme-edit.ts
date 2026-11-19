@@ -14,6 +14,8 @@
 // it restores into their step. The scheme's compounds are kept in the order of their boxes.
 
 import type { Json, SiCompound, SiProject, SiScheme } from './project';
+
+const valuesOfCompound = (c: SiCompound): Json => (isObj(c.data.values) ? c.data.values : (c.data.values = {}));
 import { newId } from './ids';
 import { parseMarkup, STRUCT } from './markup';
 import { SCHEME_DEFAULTS, schemeLayout, type SchemeLayout } from './scheme-draw';
@@ -317,20 +319,81 @@ export async function markAsCompound(p: SiProject, k: SiScheme, id: string, name
   return c;
 }
 
-/** A box stops showing its compound (the compound page stays; the box keeps a copy of its structure). */
+/** A box stops showing its compound (the compound page stays; the box keeps a copy of its structure and picture). */
 export async function unlinkBox(p: SiProject, k: SiScheme, id: string): Promise<void> {
   const f = findBox(k, id);
   const c = f ? boxCompound(k, f.box) : null;
   if (!f || !c) return;
-  if (p.hasStructure(c)) {
-    const mol = await p.readStructure(c);
-    const rel = text(f.box.structure) || (await freePath(p, k, text(f.box.id), '.mol'));
-    await p.folder.writeText(join(k.folder, rel), mol);
-    f.box.structure = rel;
-  }
-  delete f.box.compound;
+  await takeCompoundFiles(p, k, f.box, c);
   syncChildren(k);
   await p.saveScheme(k);
+}
+
+const PICTURE_ORIGINALS = ['.emf', '.pdf', '.cdxml'];
+
+/**
+ * A copy of the compound's structure and picture becomes the box's own, and the box no longer
+ * shows the compound (the scheme still shows the same structure). The box's own files from
+ * before are removed (they were hidden while it showed the compound). Gives the files written.
+ */
+export async function takeCompoundFiles(p: SiProject, k: SiScheme, box: Json, c: SiCompound): Promise<string[]> {
+  const written: string[] = [];
+  const old = await ownFiles(p, k, box);
+  const id = text(box.id) || 'box';
+  const next: Json = {};
+  if (p.hasStructure(c)) {
+    const rel = await freePath(p, k, id, '.mol');
+    await p.folder.writeText(join(k.folder, rel), await p.readStructure(c));
+    written.push(join(k.folder, rel));
+    next.structure = rel;
+  }
+  const v = valuesOfCompound(c).structure;
+  const pic = isObj(v) ? text(v.image_override) : '';
+  const bytes = pic ? await p.folder.readBytes(join(c.folder, pic)) : null;
+  if (pic && bytes) {
+    const ext = (/\.[^./]+$/.exec(pic)?.[0] ?? '.png').toLowerCase();
+    const rel = await freePath(p, k, id, ext);
+    await p.folder.writeBytes(join(k.folder, rel), bytes);
+    written.push(join(k.folder, rel));
+    next.picture = rel;
+    const stem = pic.replace(/\.[^./]+$/, '');
+    for (const e of PICTURE_ORIGINALS) {
+      if (e === ext) continue;
+      const original = await p.folder.readBytes(join(c.folder, stem + e));
+      if (!original) continue;
+      const to = join(k.folder, rel.replace(/\.[^./]+$/, e));
+      await p.folder.writeBytes(to, original);
+      written.push(to);
+    }
+  }
+  for (const f of [...old.picture, ...old.structure]) if (!written.includes(f)) await p.folder.remove(f);
+  delete box.compound;
+  delete box.structure;
+  delete box.picture;
+  Object.assign(box, next);
+  return written;
+}
+
+/** A compound leaves this scheme page (moved out, or deleted): each box that showed it keeps a copy of its structure and picture. Saves the scheme unless `save` is false. */
+export async function compoundLeaving(p: SiProject, k: SiScheme, compoundId: string, save = true): Promise<string[]> {
+  if (!isObj(k.data.editor)) return [];  // (a scheme from before the scheme editor: no boxes)
+  const boxes = allBoxes(k).map(([b]) => b).filter((b) => text(b.compound) === compoundId);
+  const c = k.children.find((x) => x.id === compoundId) ?? null;
+  const written: string[] = [];
+  for (const b of boxes) {
+    if (c) written.push(...await takeCompoundFiles(p, k, b, c));
+    else delete b.compound;
+  }
+  if (boxes.length && save) await p.saveScheme(k);
+  return written;
+}
+
+/** A scheme page made from a compound page (Change to Reaction Scheme…): an empty starting material, one step, and the compound as its product. */
+export function startWithCompound(k: SiScheme, c: SiCompound): void {
+  const data = editorData(k);
+  data.starting = [{ id: newId('b') }];
+  data.steps = [{ id: newId('st'), top: '', bottom: '', products: [{ id: newId('b'), compound: c.id }] }];
+  k.data.mode = 'editor';
 }
 
 // ---------------------------------------------------------------- layout

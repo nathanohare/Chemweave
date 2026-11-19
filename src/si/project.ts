@@ -1261,31 +1261,72 @@ export class SiProject {
     return out;
   }
 
-  /** Move a compound to `index` of a Data section (the same one, or another). Compounds of scheme pages are moved in SI Assistant's scheme editor. */
-  async moveCompound(id: string, sectionId: string, index: number): Promise<void> {
+  /** The list a compound sits in (its section's pages, or its scheme page's compounds), with the section and the scheme page (null: none) whose file keeps that order. */
+  private containerOf(sectionId: string, schemeId: string | null): { list: (SiCompound | SiScheme)[]; section: SiSection; scheme: SiScheme | null } {
+    const section = this.dataSection(sectionId);
+    if (!schemeId) return { list: section.items, section, scheme: null };
+    const scheme = this.scheme(schemeId);
+    if (scheme.sectionId !== section.id) throw new SiProjectError('That scheme page is in a different section.');
+    return { list: scheme.children, section, scheme };
+  }
+
+  private async saveContainer(where: { section: SiSection; scheme: SiScheme | null }): Promise<void> {
+    if (where.scheme) await this.saveScheme(where.scheme); else await this.saveSection(where.section);
+  }
+
+  /** [section id, scheme page id or null, index among the compounds there] of a compound. */
+  position(c: SiCompound): [string, string | null, number] {
+    return [c.sectionId, c.schemeId, this.containerOf(c.sectionId, c.schemeId).list.indexOf(c)];
+  }
+
+  /**
+   * Move a compound to `index` of a Data section, or of a scheme page in it (`schemeId`), within
+   * and between sections and scheme pages (SI Assistant's move_compound). A compound leaving a
+   * scheme page leaves a copy of its structure and picture in the box that showed it; a scheme
+   * page's compounds stay in the order of their boxes.
+   */
+  async moveCompound(id: string, sectionId: string, index: number, schemeId: string | null = null): Promise<void> {
     this.checkWritable();
     const c = this.compound(id);
-    if (c.schemeId) throw new SiProjectError('This compound is on a scheme page: move it in the scheme (Chem SI Assistant’s scheme editor) for now.');
-    const from = this.section(c.sectionId);
-    const to = this.dataSection(sectionId);
-    const at = from.items.indexOf(c);
-    const before = [...from.items];
-    from.items.splice(at, 1);
-    if (to !== from) {
-      const dest = await this.freeFolder(join(to.folder, COMPOUNDS_DIR), nameOf(c.folder));
+    const src = this.containerOf(c.sectionId, c.schemeId);
+    const dst = this.containerOf(sectionId, schemeId);
+    const E = await import('./scheme-edit');
+    if (src.scheme && src.scheme !== dst.scheme) await E.compoundLeaving(this, src.scheme, c.id);
+    const at = src.list.indexOf(c);
+    const before = [...src.list];
+    src.list.splice(at, 1);
+    if (src.section !== dst.section) {
+      // (another section: its folder moves into that section's compounds folder)
+      const dest = await this.freeFolder(join(dst.section.folder, COMPOUNDS_DIR), nameOf(c.folder));
       try {
         await this.folder.move(c.folder, dest);
       } catch (e) {
-        from.items = before;
+        src.list.splice(0, src.list.length, ...before);
         throw e;
       }
       this.renameKnown(c.folder, dest);
       c.folder = dest;
-      c.sectionId = to.id;
-    } else if (index > at) index--;
-    to.items.splice(Math.max(0, Math.min(index, to.items.length)), 0, c);
-    if (to !== from) await this.saveSection(from);
-    await this.saveSection(to);
+    } else if (src.list === dst.list && index > at) index--;
+    c.sectionId = dst.section.id;
+    c.schemeId = dst.scheme?.id ?? null;
+    dst.list.splice(Math.max(0, Math.min(index, dst.list.length)), 0, c);
+    if (dst.scheme) E.syncChildren(dst.scheme);
+    if (src.list !== dst.list) await this.saveContainer(src);
+    await this.saveContainer(dst);
+  }
+
+  /** A compound page made a scheme page (Change to Reaction Scheme…): the new scheme page takes its place, with the compound as the product of its one step (its data and ID kept). */
+  async convertToScheme(id: string): Promise<SiScheme> {
+    this.checkWritable();
+    const c = this.compound(id);
+    if (c.schemeId) throw new SiProjectError('This compound is already part of a scheme page.');
+    const [sectionId, , index] = this.position(c);
+    const name = compoundName(c);
+    const k = await this.addScheme(sectionId, index, name ? `Scheme: ${name}` : '');
+    await this.moveCompound(c.id, sectionId, 0, k.id);
+    (await import('./scheme-edit')).startWithCompound(k, c);
+    await this.saveScheme(k);
+    return k;
   }
 
   /** Move a scheme page, with its compound pages, to `index` among the pages of a Data section. */
@@ -1351,22 +1392,33 @@ export class SiProject {
   async deleteCompound(id: string): Promise<void> {
     this.checkWritable();
     const c = this.compound(id);
-    if (c.schemeId) throw new SiProjectError('This compound is on a scheme page: delete it in the scheme (Chem SI Assistant’s scheme editor) for now.');
-    const s = this.section(c.sectionId);
-    const index = s.items.indexOf(c);
+    const where = this.containerOf(c.sectionId, c.schemeId);
+    const s = where.section, k = where.scheme;
+    const index = where.list.indexOf(c);
     const now = new Date();
     const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-`;
     const entry = join(TRASH_DIR, stamp + newId('t').slice(2));
     const info: Json = {
       kind: 'compound', name: compoundName(c) || 'unnamed compound', item: nameOf(c.folder), deleted_at: localIso(now), deleted_by: this.lock?.user ?? '',
-      compound_id: c.id, section_id: s.id, section_name: s.name, scheme_id: '', original_index: index,
+      compound_id: c.id, section_id: s.id, section_name: s.name, scheme_id: k?.id ?? '', original_index: index,
     };
-    // the section's order without it is saved first: if that can't be written, nothing has changed
-    s.items.splice(index, 1);
+    // A scheme page's box that showed it keeps a copy of its structure and picture.
+    const editorBefore = k ? structuredClone(k.data.editor) : undefined;
+    const copies = k ? await (await import('./scheme-edit')).compoundLeaving(this, k, c.id, false) : [];
+    const putBack = async (): Promise<void> => {
+      where.list.splice(index, 0, c);
+      if (k) {
+        k.data.editor = editorBefore;
+        for (const f of copies) await this.folder.remove(f).catch(() => {});
+      }
+      await this.saveContainer(where).catch(() => {});
+    };
+    // the order without it is saved first: if that can't be written, nothing has changed
+    where.list.splice(index, 1);
     try {
-      await this.saveSection(s);
+      await this.saveContainer(where);
     } catch (e) {
-      s.items.splice(index, 0, c);
+      await putBack();
       throw e;
     }
     try {
@@ -1374,8 +1426,7 @@ export class SiProject {
       await this.folder.move(c.folder, join(entry, nameOf(c.folder)));
       await this.writeJson(join(entry, 'entry.json'), info);
     } catch (e) {
-      s.items.splice(index, 0, c);
-      await this.saveSection(s).catch(() => {});
+      await putBack();
       throw new SiProjectError(`“${info.name}” could not be moved to the Trash, so nothing was deleted. A file in it is probably open in another program or being synced: close it and try again. (${e instanceof Error ? e.message : String(e)})`);
     }
     this.renameKnown(c.folder, join(entry, nameOf(c.folder)));
