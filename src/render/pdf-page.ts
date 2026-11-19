@@ -194,3 +194,48 @@ export async function pictureContentBox(src: string): Promise<[number, number, n
   canvas.width = canvas.height = 0;   // (its memory freed now)
   return contentBox(data, w, h);
 }
+
+/** A PDF opened to draw its pages one at a time, each when it is needed (a long PDF shown on screen); close() frees it. */
+export interface PdfPageReader {
+  count: number;
+  /** A page's size in points (1-based). */
+  size(n: number): Promise<{ w: number; h: number }>;
+  /** A page as a PNG picture, as sharp as pdfPages draws it; null when it can't be drawn. */
+  picture(n: number): Promise<Blob | null>;
+  close(): void;
+}
+
+/** The PDF opened for drawing its pages one at a time; null when the file can't be read. */
+export async function openPdf(bytes: Uint8Array): Promise<PdfPageReader | null> {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
+  }
+  const task = pdfjs.getDocument({ data: bytes.slice() });
+  let doc: Awaited<typeof task.promise>;
+  try { doc = await task.promise; } catch { void task.destroy(); return null; }
+  return {
+    count: doc.numPages,
+    async size(n) { const v = (await doc.getPage(n)).getViewport({ scale: 1 }); return { w: v.width, h: v.height }; },
+    async picture(n) {
+      try {
+        const page = await doc.getPage(n);
+        const own = page.getViewport({ scale: 1 });
+        const view = page.getViewport({ scale: Math.min(150 / 72, 2400 / Math.max(own.width, own.height)) });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(view.width);
+        canvas.height = Math.ceil(view.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvas, canvasContext: ctx, viewport: view }).promise;
+        page.cleanup();
+        return await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/png'));
+      } catch {
+        return null;
+      }
+    },
+    close() { void task.destroy(); },
+  };
+}

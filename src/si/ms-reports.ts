@@ -19,7 +19,7 @@
 // empty or still holds the value filled before (hrms.found_from = {file, mz}); a value typed
 // by hand is never changed, and a warning says when it differs from the reports'.
 
-import { unzipSync, inflateSync } from 'fflate';
+import { unzipSync, Inflate } from 'fflate';
 import type { Peak } from './chem';
 
 export const HRMS_DIR = 'hrms';
@@ -34,6 +34,8 @@ const MAX_PEAKS_PER_SCAN = 3000;
 const MAX_PEAKS = 50000;
 export const MAX_FILE_BYTES = 400 * 1024 * 1024;
 const MAX_ARRAY_BYTES = 256 * 1024 * 1024;
+/** A sheet's XML (or the shared strings) unpacked, at most (a damaged or "zip bomb" workbook is not unpacked). */
+const XLSX_MAX_PART_BYTES = 200 * 1024 * 1024;
 const MAX_POINTS = 20_000_000;
 
 const PICTURE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.gif', '.svg'];
@@ -64,6 +66,18 @@ export interface ReportData {
 }
 
 export const r6 = (v: number): number => Math.round(v * 1e6) / 1e6;
+
+/** The largest finite value (-Infinity for none): a loop, as Math.max(...a) overflows the stack beyond about 100 000 values. */
+export function maxOf(a: ArrayLike<number>): number {
+  let top = -Infinity;
+  for (let i = 0; i < a.length; i++) if (a[i] > top && Number.isFinite(a[i])) top = a[i];
+  return top;
+}
+
+/** Append every value of `from` to `to` (push(...from) overflows the stack for a long list). */
+function append(to: number[], from: ArrayLike<number>): void {
+  for (let i = 0; i < from.length; i++) to.push(from[i]);
+}
 
 function data(kind: string, over: Partial<ReportData> = {}): ReportData {
   return { name: '', kind, mz: [], intensity: [], measured: new Set(), calculated: [], message: '', readable: true, profile: false, scans: 0, ...over };
@@ -121,32 +135,92 @@ export function summary(d: ReportData): string {
 export type PdfText = (bytes: Uint8Array) => Promise<string>;
 
 /** What can be read from one report file. Never throws: a file that can't be read gives `readable: false` and a message saying why. */
-export async function readReport(bytes: Uint8Array | null, name: string, pdfText?: PdfText): Promise<ReportData> {
+/** Reads a report that isn't a PDF (e.g. in a background worker); see readReportBytes. */
+export type ReportReader = (bytes: Uint8Array, name: string) => Promise<ReportData>;
+
+/** What can be read from one report file. Never throws: a file that can't be read gives `readable: false` and a message saying why. `background` reads a file that isn't a PDF (off the page's thread); without it, it is read here. */
+export async function readReport(bytes: Uint8Array | null, name: string, pdfText?: PdfText, background?: ReportReader): Promise<ReportData> {
   if (!bytes) return data('missing', { name, readable: false, message: `${name} is missing from the compound's folder.` });
-  const raw = vendorRawKind(name);
-  if (raw) return data(raw, { name, readable: false, message: rawDataMessage(name, raw) });
-  const ext = extOf(name);
-  if (PICTURE_EXTENSIONS.includes(ext)) return data('picture', { name, readable: false, message: pictureMessage(name) });
-  if (ext === '.xls') return data('old Excel file', { name, readable: false, message: `${name} is an old Excel file (.xls), which can't be read. Save it as .xlsx or CSV in Excel and add that.` });
-  if (['.doc', '.docx', '.rtf', '.odt'].includes(ext)) return data('document', { name, readable: false, message: `${name} can't be read. Save it as PDF and add that.` });
-  if (bytes.length > MAX_FILE_BYTES) return data('large file', { name, readable: false, message: `${name} is too large to read here (${Math.round(bytes.length / 1e6)} MB). Export a peak list or a PDF report of the spectrum and add that.` });
+  const known = reportWithoutReading(name, { size: bytes.length });
+  if (known) return known;
+  if (!isPdf(bytes)) return background ? background(bytes, name) : readReportBytes(bytes, name);
   let d: ReportData;
   try {
-    if (isPdf(bytes)) {
-      let text: string;
-      try { text = pdfText ? await pdfText(bytes) : ''; } catch { throw new ReportReadError(`${name} could not be opened as a PDF (it may be damaged).`); }
-      if (!pdfText) throw new ReportReadError(`${name} is a PDF; its text can't be read here.`);
-      if (!text.trim()) throw new ReportReadError('This PDF has no text in it (probably a scanned picture), so no m/z can be read from it. Type the found m/z yourself.');
-      d = parseReportText(text, 'PDF report');
-    } else d = readBytes(bytes, name);
+    let text: string;
+    try { text = pdfText ? await pdfText(bytes) : ''; } catch { throw new ReportReadError(`${name} could not be opened as a PDF (it may be damaged).`); }
+    if (!pdfText) throw new ReportReadError(`${name} is a PDF; its text can't be read here.`);
+    if (!text.trim()) throw new ReportReadError('This PDF has no text in it (probably a scanned picture), so no m/z can be read from it. Type the found m/z yourself.');
+    d = parseReportText(text, 'PDF report');
   } catch (e) {
-    if (e instanceof ReportReadError) return data(kindName(name), { name, readable: false, message: e.message });
-    return data(kindName(name), { name, readable: false, message: `${name} could not be read (it may be damaged, or a variant this program doesn't know): ${e instanceof Error ? e.name : 'Error'}.` });
+    return failed(name, e);
   }
   d.name = name;
   if (!d.message) d.message = summary(d);
   return d;
 }
+
+/** What a failure to read a report says (as SI Assistant says it). */
+function failed(name: string, e: unknown): ReportData {
+  if (e instanceof ReportReadError) return data(kindName(name), { name, readable: false, message: e.message });
+  return data(kindName(name), { name, readable: false, message: `${name} could not be read (it may be damaged, or a variant this program doesn't know): ${e instanceof Error ? e.name : 'Error'}.` });
+}
+
+/**
+ * A report that isn't a PDF, read from its bytes (in a background worker, or here). Never
+ * throws: a file that can't be read gives `readable: false` and a message saying why.
+ */
+export function readReportBytes(bytes: Uint8Array, name: string): ReportData {
+  const known = reportWithoutReading(name, { size: bytes.length });
+  if (known) return known;
+  let d: ReportData;
+  try { d = readBytes(bytes, name); } catch (e) { return failed(name, e); }
+  d.name = name;
+  if (!d.message) d.message = summary(d);
+  return d;
+}
+
+/** What is known of a report file without reading it: its size in bytes (null: not known), whether it is a folder, and the names inside it. */
+export interface ReportFileInfo { size?: number | null; folder?: boolean; children?: string[] }
+
+/**
+ * A report that needn't (or can't) be read, from its name, size and whether it is a folder
+ * alone, as SI Assistant decides before opening a file: instrument raw data (a file or a
+ * folder), a folder, a picture, an old Excel file, a document, a file too large to read.
+ * Null when its bytes are to be read.
+ */
+export function reportWithoutReading(name: string, info: ReportFileInfo = {}): ReportData | null {
+  const fail = (kind: string, message: string): ReportData => data(kind, { name, readable: false, message });
+  if (info.folder) {
+    const ext = extOf(name);
+    const inside = new Set((info.children ?? []).map((n) => n.toLowerCase()));
+    let raw: string | null = null;
+    if (ext === '.d') {
+      raw = ['analysis.baf', 'analysis.tdf', 'analysis.yep'].some((n) => inside.has(n)) ? 'Bruker .d data folder'
+        : inside.has('acqdata') || inside.has('msscan.bin') || inside.has('msprofile.bin') ? 'Agilent .d data folder' : 'Agilent or Bruker .d data folder';
+    } else if (ext === '.raw') raw = 'Waters .raw data folder';
+    else if (VENDOR_DIR_FILES.some((n) => inside.has(n))) raw = 'a folder of instrument raw data';
+    if (raw) return fail(raw, rawDataMessage(name, raw));
+    return fail('folder', `${name} is a folder: it is kept, but not read.`);
+  }
+  const raw = vendorRawKind(name);
+  if (raw) return fail(raw, rawDataMessage(name, raw));
+  const ext = extOf(name);
+  if (PICTURE_EXTENSIONS.includes(ext)) return fail('picture', pictureMessage(name));
+  if (ext === '.xls') return fail('old Excel file', `${name} is an old Excel file (.xls), which can't be read. Save it as .xlsx or CSV in Excel and add that.`);
+  if (['.doc', '.docx', '.rtf', '.odt'].includes(ext)) return fail('document', `${name} can't be read. Save it as PDF and add that.`);
+  const size = info.size ?? null;
+  if (size !== null && size > MAX_FILE_BYTES) return fail('large file', `${name} is too large to read here (${Math.round(size / 1e6)} MB). Export a peak list or a PDF report of the spectrum and add that.`);
+  return null;
+}
+
+/** A report file that is there but can't be opened just now (an online-only OneDrive file while offline, or one locked by another program): not remembered, so it is tried again next time. */
+export function notOpened(name: string, why = 'Error'): ReportData {
+  return data(kindName(name), { name, readable: false, message: notOpenedMessage(name, why) });
+}
+
+/** The message for a report that exists but can't be opened just now (it is tried again next time). */
+export const notOpenedMessage = (name: string, why = 'Error'): string =>
+  `${name} could not be opened just now (${why}): it may be an online-only OneDrive file while you are offline, or open in another program. It will be read again next time.`;
 
 const isPdf = (b: Uint8Array): boolean => b.length > 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2d;
 const isZip = (b: Uint8Array): boolean => b.length > 4 && b[0] === 0x50 && b[1] === 0x4b && ((b[2] === 3 && b[3] === 4) || (b[2] === 5 && b[3] === 6));
@@ -175,9 +249,9 @@ export function readBytes(content: Uint8Array, name = ''): ReportData {
 }
 
 function readZip(content: Uint8Array, name: string): ReportData {
+  // (the names only: no entry is unpacked)
   let names: string[] = [];
-  try { names = Object.keys(unzipSync(content, { filter: () => false })); } catch { names = []; }
-  if (!names.length) { try { names = Object.keys(unzipSync(content)); } catch { names = []; } }
+  try { unzipSync(content, { filter: (f) => { names.push(f.name); return false; } }); } catch { names = []; }
   if (names.includes('xl/workbook.xml') || names.some((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))) return readXlsx(content);
   const shown = name || 'This file';
   for (const n of names) {
@@ -240,7 +314,7 @@ export function centroid(mz: number[], intensity: number[], minRel = MIN_REL_INT
   const order = argsort(mz);
   const x = order.map((i) => mz[i]), y = order.map((i) => intensity[i]);
   const n = x.length;
-  const top = Math.max(...y.filter(Number.isFinite), -Infinity);
+  const top = maxOf(y);
   if (n < 3 || !(top > 0)) return [[], []];
   let inner: number[] = [];
   for (let i = 1; i < n - 1; i++) if (y[i] > y[i - 1] && y[i] >= y[i + 1] && y[i] >= minRel * top) inner.push(i);
@@ -281,7 +355,7 @@ function scanPeaks(mzIn: ArrayLike<number>, intIn: ArrayLike<number>, profile: b
   const isProfile = profile === null ? looksProfile(mz, inten) : profile;
   if (isProfile) [mz, inten] = centroid(mz, inten);
   else {
-    const top = Math.max(...inten);
+    const top = maxOf(inten);
     if (top > 0) {
       const keep = inten.map((v, i) => [v, i] as const).filter(([v]) => v >= MIN_REL_INTENSITY * top).map(([, i]) => i);
       mz = keep.map((i) => mz[i]); inten = keep.map((i) => inten[i]);
@@ -333,9 +407,24 @@ function base64Bytes(text: string): Uint8Array {
   return out;
 }
 
-function inflate(raw: Uint8Array): Uint8Array {
-  const out = inflateSync(raw.subarray(2)); // (zlib: a 2-byte header before the deflate data)
-  if (out.length > MAX_ARRAY_BYTES) throw new ReportReadError('A data array in this file is too large to read here.');
+/** zlib-unpacked data, at most MAX_ARRAY_BYTES: unpacking stops as soon as it would be larger (ReportReadError). */
+export function inflate(raw: Uint8Array, most = MAX_ARRAY_BYTES): Uint8Array {
+  const body = raw.subarray(2); // (zlib: a 2-byte header before the deflate data)
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const inf = new Inflate((chunk) => {
+    total += chunk.length;
+    if (total > most) throw new ReportReadError('A data array in this file is too large to read here.');
+    chunks.push(chunk);
+  });
+  // (in small pieces, so that a piece that unpacks to far too much is stopped early)
+  const STEP = 64 * 1024;
+  if (!body.length) inf.push(body, true);
+  for (let i = 0; i < body.length; i += STEP) inf.push(body.subarray(i, i + STEP), i + STEP >= body.length);
+  if (chunks.length === 1) return chunks[0];
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) { out.set(c, at); at += c.length; }
   return out;
 }
 
@@ -485,8 +574,8 @@ export function readMgf(text: string): ReportData {
     }
   }
   const d = spectraResult('MGF', scans, flags);
-  d.mz.push(...extra);
-  d.intensity.push(...extra.map(() => NaN));
+  append(d.mz, extra);
+  append(d.intensity, extra.map(() => NaN));
   return d;
 }
 
@@ -568,14 +657,14 @@ export function readJcamp(text: string): ReportData {
       labels[label] = value;
       continue;
     }
-    if (mode === 'pairs') rows.push(...numbersIn(s));
+    if (mode === 'pairs') append(rows, numbersIn(s));
     else if (mode === 'xydata' && s) {
       const [values, endsDif] = ASDF_CHARS.test(s) ? decodeAsdfLine(s) : [numbersIn(s), false];
       if (!values.length) continue;
       xsFirst.push(values[0]);
       let ys = values.slice(1);
       if (checkNext && ys.length) ys = ys.slice(1);
-      xy.push(...ys);
+      append(xy, ys);
       if (xy.length > MAX_POINTS) throw new ReportReadError('This JCAMP-DX file has too many points to read here.');
       checkNext = endsDif;
     }
@@ -646,7 +735,7 @@ export function readNetcdfVariables(content: Uint8Array): [Record<string, unknow
   let recsize = recordVars.reduce((a, s) => a + s.vsize, 0);
   if (recordVars.length === 1) recsize = NC_TYPES[recordVars[0].type] * recordVars[0].dimids.slice(1).reduce((a, d) => a * dims[d][1], 1);
   if (recordVars.length) {
-    const first = Math.min(...recordVars.map((s) => s.begin));
+    const first = recordVars.reduce((a, s) => Math.min(a, s.begin), Infinity);
     const fit = recsize > 0 && first < content.length ? Math.floor((content.length - first) / recsize) : 0;
     numrecs = numrecs === STREAMING ? fit : Math.min(numrecs, Math.max(0, fit));
   }
@@ -660,7 +749,7 @@ export function readNetcdfVariables(content: Uint8Array): [Record<string, unknow
       const per = shape.slice(1).reduce((a, b) => a * b, 1);
       if (numrecs && (per * size > recsize || s.begin + (numrecs - 1) * recsize + per * size > content.length)) throw new ReportReadError('This netCDF file is damaged (its records don’t fit).');
       arr = [];
-      for (let k = 0; k < numrecs; k++) arr.push(...read(s.type, per, s.begin + k * recsize));
+      for (let k = 0; k < numrecs; k++) append(arr, read(s.type, per, s.begin + k * recsize));
     } else {
       const count = shape.reduce((a, b) => a * b, 1);
       if (s.begin + count * size > content.length) throw new ReportReadError('This netCDF file is damaged (a variable is cut off).');
@@ -893,7 +982,14 @@ function excelNumber(text: string): string {
 
 /** Every sheet of an .xlsx workbook as rows of cell texts (shared and inline strings resolved). */
 export function xlsxRows(content: Uint8Array, maxRows = 100000): string[][][] {
-  const files = unzipSync(content, { filter: (f) => f.name === 'xl/sharedStrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(f.name) });
+  const files = unzipSync(content, {
+    filter: (f) => {
+      const wanted = f.name === 'xl/sharedStrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(f.name);
+      // (fflate unpacks an entry into a buffer of its stated size, so a larger one stops there)
+      if (wanted && f.originalSize > XLSX_MAX_PART_BYTES) throw new ReportReadError('This Excel file is too large to read here. Save the peak list as CSV and add that.');
+      return wanted;
+    },
+  });
   const dec = new TextDecoder();
   const shared: string[] = [];
   if (files['xl/sharedStrings.xml']) {
@@ -910,7 +1006,7 @@ export function xlsxRows(content: Uint8Array, maxRows = 100000): string[][][] {
       const cells = new Map<number, string>();
       for (const c of elements(row.inner, 'c')) {
         const ref = attr(c.attrs, 'r') ?? '';
-        const col = ref ? columnIndex(ref) : cells.size ? Math.max(...cells.keys()) + 1 : 0;
+        const col = ref ? columnIndex(ref) : cells.size ? maxOf([...cells.keys()]) + 1 : 0;
         if (col < 0 || col >= XLSX_MAX_COLUMN) continue;
         const t = attr(c.attrs, 't') ?? '';
         const vm = /<(?:\w+:)?v(?:\s[^>]*)?>([\s\S]*?)<\/(?:\w+:)?v>/.exec(c.inner);
@@ -1023,7 +1119,7 @@ export function peaksNear(d: ReportData, centre: number | null, below = 2, above
   if (!idx.length) return [];
   const inten = (i: number): number => (Number.isFinite(d.intensity[i]) ? d.intensity[i] : 0);
   const top = [...idx].sort((a, b) => inten(a) - inten(b)).slice(-count);
-  const base = Math.max(...idx.map(inten)) || 1;
+  const base = maxOf(idx.map(inten)) || 1;
   return top.map((i): [number, number] => [d.mz[i], (inten(i) / base) * 100]).sort((a, b) => a[0] - b[0]);
 }
 

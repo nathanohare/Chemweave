@@ -41,7 +41,8 @@ import { newTable } from '../si/tables';
 import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
 import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDismissed, monoisotopic, outOfTolerance, parseNumber, ID_KEY, type SiWarning } from '../si/checks';
-import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY, chooseMatch, foundIsFromReport, readReport, updateFound, type Match, type ReportData } from '../si/ms-reports';
+import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY, chooseMatch, foundIsFromReport, updateFound, vendorRawKind, type Match, type ReportData } from '../si/ms-reports';
+import { readReportFile } from '../si/report-files';
 import { adductDisplay, sameFormula, speciesLabel, ChemError, type MolFacts, type Peak } from '../si/chem';
 import { addInfo } from './info-tip';
 import { openTrash } from './si-trash';
@@ -2434,7 +2435,10 @@ export class SiMode {
 
   // ---------------------------------------------------------------- HRMS report files (§13n.3)
 
-  /** What was read from each report file, by its path (read once). */
+  /** A report file larger than this is not copied into the project (it would have to be held in memory whole). */
+  private static readonly MAX_REPORT_COPY_BYTES = 1024 * 1024 * 1024;
+
+  /** Each report file being read, by its path (each is read once at a time). */
   private reportData = new Map<string, Promise<ReportData>>();
   /** Each compound's value for Found from its reports, once worked out (for the "differs" warning). */
   private reportMatches = new Map<string, Match | null>();
@@ -2443,8 +2447,11 @@ export class SiMode {
     const path = [c.folder, HRMS_DIR, file].filter(Boolean).join('/');
     let got = this.reportData.get(path);
     if (!got) {
-      got = (async () => readReport(await this.project!.folder.readBytes(path).catch(() => null), file, async (b) => (await import('../render/pdf-page')).pdfText(b)))();
+      // (read once while it is being read; remembered by readReportFile until the file changes)
+      const dir = [c.folder, HRMS_DIR].filter(Boolean).join('/');
+      got = readReportFile(this.project!.folder, dir, file, async (b) => (await import('../render/pdf-page')).pdfText(b));
       this.reportData.set(path, got);
+      void got.finally(() => { if (this.reportData.get(path) === got) this.reportData.delete(path); });
     }
     return got;
   }
@@ -2565,13 +2572,24 @@ export class SiMode {
   private async addReports(c: SiCompound, files: (File | { name: string; bytes: Uint8Array })[]): Promise<void> {
     const p = this.project!;
     if (p.readOnly) { this.host.flash('This project is open read-only.'); return; }
-    const got = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: f instanceof File ? new Uint8Array(await f.arrayBuffer()) : f.bytes })));
-    const big = got.filter((f) => f.bytes.length > MAX_REPORT_BYTES);
+    // (one file at a time, so that only one is in memory; one too large to copy is left out with a note)
+    const sizeOf = (f: File | { name: string; bytes: Uint8Array }): number => (f instanceof File ? f.size : f.bytes.length);
+    const tooLarge = files.filter((f) => sizeOf(f) > SiMode.MAX_REPORT_COPY_BYTES);
+    if (tooLarge.length) this.host.flash(`${tooLarge.map((f) => `${f.name} (${(sizeOf(f) / 1e9).toFixed(1)} GB)`).join(', ')}: too large to copy into the project, so not added. Keep the raw data where it is, and add a report exported from the instrument software (PDF or CSV) instead.`, 10000);
+    const todo = files.filter((f) => sizeOf(f) <= SiMode.MAX_REPORT_COPY_BYTES);
+    if (!todo.length) return;
+    const big = todo.filter((f) => sizeOf(f) > MAX_REPORT_BYTES && !vendorRawKind(f.name));
     if (big.length) this.host.flash(`${big.map((f) => f.name).join(', ')}: kept, but too large to read numbers from.`, 6000);
     if (!fieldKeys(c).includes('hrms')) await p.addField(c, { key: 'hrms' });
+    const failed: string[] = [];
     await this.act(async () => {
-      for (const f of got) await p.addHrmsReport(c, f.name, f.bytes, async () => { await this.syncFound(c); });
+      for (const f of todo) {
+        let bytes: Uint8Array;
+        try { bytes = f instanceof File ? new Uint8Array(await f.arrayBuffer()) : f.bytes; } catch (e) { failed.push(`${f.name} (${e instanceof Error ? e.message : String(e)})`); continue; }
+        await p.addHrmsReport(c, f.name, bytes, async () => { await this.syncFound(c); });
+      }
     });
+    if (failed.length) this.host.flash(`Could not read ${failed.join(', ')}, so it was not added. Check that the file is on this computer (not online-only) and not open in another program, then add it again.`, 10000);
     const v = valuesOf(c).hrms as Json | undefined;
     if (v && foundIsFromReport(v)) this.host.flash(`Found m/z ${String(v.found)} filled from ${String((v[FOUND_FROM_KEY] as Json).file)}.`);
   }

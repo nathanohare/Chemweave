@@ -6,7 +6,27 @@
 // its own size, shrunk to fit.
 
 import type { SiProject, SiSection } from '../si/project';
+import type { PdfPageReader } from '../render/pdf-page';
 import { addInfo } from './info-tip';
+
+/**
+ * The pages of the PDFs shown last (picture URLs by page, drawn when first scrolled to), so
+ * going back to an Attachment section doesn't draw its pages again. Two files at most; the
+ * URLs of one dropped are revoked.
+ */
+const drawnPdfs = new Map<string, (string | undefined)[]>();
+function drawnPages(key: string, count: number): (string | undefined)[] {
+  let got = drawnPdfs.get(key);
+  if (got) { drawnPdfs.delete(key); drawnPdfs.set(key, got); return got; }
+  got = new Array<string | undefined>(count);
+  drawnPdfs.set(key, got);
+  while (drawnPdfs.size > 2) {
+    const [old, urls] = drawnPdfs.entries().next().value!;
+    for (const u of urls) if (u) URL.revokeObjectURL(u);
+    drawnPdfs.delete(old);
+  }
+  return got;
+}
 
 export interface SiAttachmentHost {
   project: SiProject;
@@ -14,6 +34,8 @@ export interface SiAttachmentHost {
   flash(text: string, ms?: number): void;
   pickFiles(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array }[]>;
   pdfPages(bytes: Uint8Array): Promise<{ src: string; w: number; h: number }[] | null>;
+  /** A PDF opened to draw its pages one at a time (by default PDF.js, loaded when first needed). */
+  openPdf?(bytes: Uint8Array): Promise<PdfPageReader | null>;
   /** The page is drawn again (after a new file). */
   redraw(): void;
 }
@@ -31,6 +53,9 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''):
 export class SiAttachmentPage {
   readonly el = el('div', 'si-card si-attach');
   private urls: string[] = [];
+  private disposed = false;
+  private reader: PdfPageReader | null = null;
+  private observer: IntersectionObserver | null = null;
 
   constructor(private host: SiAttachmentHost) {
     void this.draw();
@@ -79,7 +104,68 @@ export class SiAttachmentPage {
     try { await this.host.project.saveSection(this.s); } catch (e) { this.host.flash(`Could not save: ${e instanceof Error ? e.message : String(e)}`, 6000); }
   }
 
-  dispose(): void { for (const u of this.urls) URL.revokeObjectURL(u); this.urls = []; }
+  /** The page is gone: its pictures are let go, and a PDF's pages still to be drawn are not. */
+  dispose(): void {
+    this.disposed = true;
+    for (const u of this.urls) URL.revokeObjectURL(u);
+    this.urls = [];
+    this.observer?.disconnect();
+    this.observer = null;
+    this.reader?.close();
+    this.reader = null;
+  }
+
+  /**
+   * A PDF's pages, each drawn when it is first scrolled near (a long PDF is not drawn whole each
+   * time the page shows); pages drawn before are shown again at once. Null when it can't be read.
+   */
+  private async pdfStage(stage: HTMLElement, bytes: Uint8Array, file: string): Promise<number | null> {
+    const open = this.host.openPdf ?? ((b: Uint8Array) => import('../render/pdf-page').then((m) => m.openPdf(b)));
+    const reader = await open(bytes).catch(() => null);
+    if (this.disposed) { reader?.close(); return 0; }
+    if (!reader || !reader.count) { reader?.close(); return null; }
+    this.reader = reader;
+    const first = await reader.size(1).catch(() => ({ w: 595, h: 842 }));
+    if (this.disposed) return 0;
+    const drawn = drawnPages(`${this.s.folder}/${file}\0${bytes.length}`, reader.count);
+    const imgs: HTMLImageElement[] = [];
+    for (let i = 0; i < reader.count; i++) {
+      const paper = el('div', 'si-attach-paper');
+      const img = el('img');
+      img.alt = `Page ${i + 1} of ${file}`;
+      img.dataset.page = String(i);
+      // (the size of the first page until it is drawn)
+      img.style.aspectRatio = `${first.w} / ${first.h}`;
+      if (drawn[i]) { img.src = drawn[i]!; img.style.aspectRatio = ''; }
+      paper.append(img);
+      stage.append(paper);
+      imgs.push(img);
+    }
+    // one page drawn at a time, those scrolled near first
+    const queue: number[] = [];
+    let busy = false;
+    const pump = async (): Promise<void> => {
+      if (busy) return;
+      busy = true;
+      while (queue.length && !this.disposed && this.reader === reader) {
+        const i = queue.shift()!;
+        if (drawn[i]) { imgs[i].src = drawn[i]!; imgs[i].style.aspectRatio = ''; continue; }
+        const blob = await reader.picture(i + 1);
+        if (!blob || this.disposed || drawnPdfs.get(`${this.s.folder}/${file}\0${bytes.length}`) !== drawn) continue;
+        drawn[i] = URL.createObjectURL(blob);
+        imgs[i].src = drawn[i]!;
+        imgs[i].style.aspectRatio = '';
+      }
+      busy = false;
+    };
+    const want = (i: number): void => { if (!drawn[i] && !queue.includes(i)) { queue.push(i); void pump(); } };
+    if (typeof IntersectionObserver === 'undefined') imgs.forEach((_, i) => want(i));
+    else {
+      this.observer = new IntersectionObserver((seen) => { for (const e of seen) if (e.isIntersecting) want(Number((e.target as HTMLElement).dataset.page)); }, { rootMargin: '800px 0px' });
+      for (const img of imgs) this.observer.observe(img);
+    }
+    return reader.count;
+  }
 
   private async draw(): Promise<void> {
     const p = this.host.project;
@@ -114,11 +200,17 @@ export class SiAttachmentPage {
     this.el.replaceChildren(h, rows, fileRow, stage);
     if (!file) { stage.append(el('p', 'muted si-note', 'Drop a PDF or picture here, or choose one with Attachment ▸ Choose File.')); return; }
     const bytes = await p.readSectionFile(this.s, file).catch(() => null);
+    if (this.disposed) return;
     if (!bytes) { stage.append(el('p', 'muted si-note', `${file} can’t be read just now (it may be open in another program, or not downloaded by OneDrive).`)); return; }
     const ext = (/\.([^.]+)$/.exec(file)?.[1] ?? '').toLowerCase();
+    if (ext === 'pdf') {
+      const count = await this.pdfStage(stage, bytes, file);
+      if (count === null) stage.append(el('p', 'muted si-note', `${file} could not be shown.`));
+      else if (count > 1) fileRow.append(el('span', 'muted', `· ${count} pages`));
+      return;
+    }
     let pages: { src: string }[] | null = null;
-    if (ext === 'pdf') pages = await this.host.pdfPages(bytes).catch(() => null);
-    else if (MIME[ext]) {
+    if (MIME[ext]) {
       const u = URL.createObjectURL(new Blob([bytes as BlobPart], { type: MIME[ext] }));
       this.urls.push(u);
       pages = [{ src: u }];

@@ -115,7 +115,9 @@ pub fn si_remove_lock(path: String) -> Result<(), String> {
 }
 
 /// SI projects: the files and folders directly inside a folder of a project (its Trash, listed
-/// in the Trash window), by name, each marked as a folder or not.
+/// in the Trash window), by name, each marked as a folder or not, with its size in bytes and
+/// when it was last changed (milliseconds since 1970; 0 when not known), so a file need not be
+/// read to know whether it changed or is too large.
 #[tauri::command]
 pub fn si_list_dir(path: String) -> Result<serde_json::Value, String> {
     let dir = PathBuf::from(&path);
@@ -124,7 +126,15 @@ pub fn si_list_dir(path: String) -> Result<serde_json::Value, String> {
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         let folder = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        out.push(serde_json::json!({ "name": name, "folder": folder }));
+        let meta = std::fs::metadata(e.path()).ok();
+        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+        let modified = meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        out.push(serde_json::json!({ "name": name, "folder": folder, "size": size, "modified": modified }));
     }
     Ok(serde_json::Value::Array(out))
 }

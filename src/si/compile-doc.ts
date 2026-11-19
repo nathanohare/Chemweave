@@ -22,7 +22,8 @@ import { fieldKeys, valuesOf, compoundName, compoundsOf, type Json, type SiCompo
 import { displayId, type IdReport } from './compound-ids';
 import { fieldDef, partText } from './fields';
 import { hrmsCalc, hrmsSpecies, hrmsTolerance, mentionKind } from './checks';
-import { formatMz, listingFailed, peaksNear, readReport, reportListing, summary } from './ms-reports';
+import { formatMz, listingFailed, peaksNear, reportListing, summary, type ReportData } from './ms-reports';
+import { readReportFile } from './report-files';
 import type { MolFacts } from './chem';
 import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './format';
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
@@ -1071,10 +1072,15 @@ class Compiler {
     const id = displayId(this.report, c.id);
     const kind = printKind(file);
     if (kind === 'none') { this.notes.push(`${where}: the HRMS report ${file} can't be printed (raw data or a kind of file that can't be shown); left out.`); return; }
+    const title = (more = ''): void => this.para([R(id, { bold: true }), R(` — HRMS report: ${file}${more}`)], { keepNext: true, spaceBefore: 14, spaceAfter: 6 }, where);
+    if (kind === 'peaks') {
+      // (read through the shared cache, off the UI thread: the compound page has usually read it already)
+      const data = await readReportFile(this.p.folder, joinPath(c.folder, 'hrms'), file);
+      if (data.kind === 'missing') { this.notes.push(`${where}: the HRMS report ${file} is missing; left out.`); return; }
+      start(); title(); this.peaksTable(c, file, data, where); return;
+    }
     const bytes = await this.p.folder.readBytes(joinPath(c.folder, 'hrms', file));
     if (!bytes) { this.notes.push(`${where}: the HRMS report ${file} is missing; left out.`); return; }
-    const title = (more = ''): void => this.para([R(id, { bold: true }), R(` — HRMS report: ${file}${more}`)], { keepNext: true, spaceBefore: 14, spaceAfter: 6 }, where);
-    if (kind === 'peaks') { start(); title(); await this.peaksTable(c, file, bytes, where); return; }
     if (kind === 'pdf') {
       const pics = await this.pdfPictures(bytes, file, where, room);
       pics.forEach((pic, i) => {
@@ -1105,9 +1111,8 @@ class Compiler {
   }
 
   /** A data file (mzML, mzXML, mzData, netCDF): its largest peaks near the expected m/z (the chosen ion's monoisotopic m/z), the one used as found marked. */
-  private async peaksTable(c: SiCompound, file: string, bytes: Uint8Array, where: string): Promise<void> {
-    // (never throws: a damaged file gives a message, printed under its title and said in the notes)
-    const data = await readReport(bytes, file);
+  private peaksTable(c: SiCompound, file: string, data: ReportData, where: string): void {
+    // (a damaged file gives a message, printed under its title and said in the notes)
     if (!data.readable) this.notes.push(`${where}: the HRMS report ${file} could not be read (it may be damaged); only a note is printed for it.`);
     const v = dict(valuesOf(c).hrms);
     let centre: number | null = null;

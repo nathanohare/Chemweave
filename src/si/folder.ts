@@ -17,11 +17,14 @@ export interface SiFolder {
   move(from: string, to: string): Promise<void>;
   /** Delete one file (the lock), if it is there. */
   remove(rel: string): Promise<void>;
-  /** The files and folders directly inside `rel` (hidden ones left out), sorted by name; [] when there is no such folder. */
-  entries(rel: string): Promise<{ name: string; folder: boolean }[]>;
+  /** The files and folders directly inside `rel` (hidden ones left out), sorted by name; [] when there is no such folder. A file's size in bytes and when it last changed (ms since 1970) are given when known. */
+  entries(rel: string): Promise<FolderEntry[]>;
   /** Delete a folder of the project's Trash (trash/ itself or one entry in it), or of Chemweave's undo holding folder (build/chemweave-undo), with everything in it. Nothing else can be deleted this way. */
   removeTrash(rel: string): Promise<void>;
 }
+
+/** One file or folder directly inside a folder: its size in bytes and when it last changed (ms since 1970) when known. */
+export interface FolderEntry { name: string; folder: boolean; size?: number; modified?: number }
 
 /** Where Chemweave keeps files that Undo took away, until Redo puts them back (build/ is never part of the project). */
 export const UNDO_HOLDING = 'build/chemweave-undo';
@@ -83,7 +86,7 @@ export class MemoryFolder implements SiFolder {
     }
   }
   async remove(rel: string): Promise<void> { this.files.delete(norm(rel)); }
-  async entries(rel: string): Promise<{ name: string; folder: boolean }[]> {
+  async entries(rel: string): Promise<FolderEntry[]> {
     const r = norm(rel);
     const out = new Map<string, boolean>();
     for (const k of this.files.keys()) {
@@ -93,7 +96,8 @@ export class MemoryFolder implements SiFolder {
       if (first.startsWith('.')) continue;
       out.set(first, (out.get(first) ?? false) || more.length > 0);
     }
-    return [...out].map(([name, folder]) => ({ name, folder })).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    return [...out].map(([name, folder]): FolderEntry => (folder ? { name, folder } : { name, folder, size: this.files.get(r ? `${r}/${name}` : name)?.length ?? 0 }))
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   }
   async removeTrash(rel: string): Promise<void> {
     if (!isTrashPath(rel)) throw new Error(`Only the project's Trash can be emptied this way (not ${rel}).`);
@@ -158,9 +162,9 @@ export class DiskFolder implements SiFolder {
   async remove(rel: string): Promise<void> {
     await this.invoke('si_remove_lock', { path: this.abs(rel) });
   }
-  async entries(rel: string): Promise<{ name: string; folder: boolean }[]> {
+  async entries(rel: string): Promise<FolderEntry[]> {
     if (!(await this.exists(rel))) return [];
-    const got = await this.invoke<{ name: string; folder: boolean }[]>('si_list_dir', { path: this.abs(rel) });
+    const got = await this.invoke<FolderEntry[]>('si_list_dir', { path: this.abs(rel) });
     return got.filter((e) => !e.name.startsWith('.')).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   }
   async removeTrash(rel: string): Promise<void> {
