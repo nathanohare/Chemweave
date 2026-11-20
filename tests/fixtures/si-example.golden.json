@@ -1,0 +1,99 @@
+{
+ "c-26c39a99": [
+  {
+   "hrms": [
+    145.06238564009098,
+    0.788349843519063,
+    145.06238564009098,
+    "C8H10NaO"
+   ]
+  }
+ ],
+ "c-cf3f4417": [
+  {
+   "hrms": [
+    175.07295032409098,
+    -0.8586368751025277,
+    175.07295032409098,
+    "C9H12NaO2"
+   ]
+  }
+ ],
+ "c-e2e36085": [
+  {
+   "check": "frequency",
+   "field": "nmr",
+   "key": "frequency:r-417bf4c3",
+   "fp": "d38cdfef09b0",
+   "legacy": "",
+   "message": "¹³C NMR at 126 MHz doesn't match ¹H at 400 MHz (expected ≈ 101 MHz).",
+   "dismissed": true
+  },
+  {
+   "hrms": [
+    163.05296382809098,
+    1.4484367746429996,
+    163.05296382809098,
+    "C8H9FNaO"
+   ]
+  }
+ ],
+ "c-1eebe878": [
+  {
+   "check": "frequency",
+   "field": "nmr",
+   "key": "frequency:r-27e09363",
+   "fp": "1d3986b70d79",
+   "legacy": "",
+   "message": "¹³C NMR at 126 MHz doesn't match ¹H at 400 MHz (expected ≈ 101 MHz).",
+   "dismissed": true
+  },
+  {
+   "hrms": [
+    179.02341328809098,
+    -0.6328115909057751,
+    179.02341328809098,
+    "C8H9ClNaO"
+   ]
+  }
+ ],
+ "c-ad564675": [
+  {
+   "hrms": [
+    222.97289770809098,
+    -0.8866911315762892,
+    222.97289770809098,
+    "C8H9BrNaO"
+   ]
+  }
+ ],
+ "c-bfbaadc9": [
+  {
+   "check": "impurity",
+   "field": "nmr",
+   "key": "impurity:r-d6cb9885:128.4",
+   "fp": "2cb07b3df80a",
+   "legacy": "",
+   "message": "¹³C NMR: δ 128.4 is where benzene appears in CDCl₃ — check it isn't a solvent or impurity peak.",
+   "dismissed": true
+  },
+  {
+   "hrms": [
+    195.07803570409098,
+    0.3295907137626309,
+    195.07803570409098,
+    "C12H12NaO"
+   ]
+  }
+ ],
+ "c-6c300e43": [
+  {
+   "hrms": [
+    264.983462392091,
+    0.8966895777913694,
+    264.983462392091,
+    "C10H11BrNaO2"
+   ]
+  }
+ ]
+}

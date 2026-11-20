@@ -36,6 +36,10 @@ export interface StyleDialogOptions {
   /** A sample drawing in the style shown, beside the settings (drawn again as they change). */
   /** `focus` names the box being hovered or typed in (textGap, headLength…), for the preview to show what it sets. */
   preview?: (st: DocStyle, focus?: string) => Node;
+  /** No "Use this style for new …" box (a style kept in a file of its own, such as an SI project's). */
+  noForNew?: boolean;
+  /** A note under the settings (what the style is used for). */
+  note?: string;
 }
 
 
@@ -283,7 +287,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     grid.append(said);
 
     // what happens
-    grid.append(el('h3', { textContent: 'When you apply it' }));
+    if (o.hasStructures || !o.noForNew) grid.append(el('h3', { textContent: 'When you apply it' }));
     const redraw = el('input', { type: 'radio', name: 'how', value: 'restyle', checked: true });
     const keepLook = el('input', { type: 'radio', name: 'how', value: 'new-only' });
     if (o.hasStructures) {
@@ -293,7 +297,8 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       );
     }
     const forNew = el('input', { type: 'checkbox', checked: o.isDefault });
-    grid.append(el('label', { className: 'style-radio' }, forNew, ` Use this style for new ${o.kindPlural}`));
+    if (!o.noForNew) grid.append(el('label', { className: 'style-radio' }, forNew, ` Use this style for new ${o.kindPlural}`));
+    if (o.note) grid.append(el('p', { className: 'muted', textContent: o.note }));
 
     const cancel = el('button', { type: 'button', textContent: 'Cancel' });
     const ok = el('button', { type: 'submit', className: 'primary', textContent: 'Apply' });

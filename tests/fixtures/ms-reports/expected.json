@@ -1,0 +1,699 @@
+{
+ "peaks": [
+  {
+   "mz": 222.112469792091,
+   "abundance": 100.0,
+   "formula": "C12H16NO3",
+   "mono": true
+  },
+  {
+   "mz": 223.11582463209098,
+   "abundance": 12.978873951278686,
+   "formula": "C11[13C]H16NO3",
+   "mono": false
+  }
+ ],
+ "files": {
+  "centroid-zlib-64.mzML": {
+   "readable": true,
+   "kind": "mzML",
+   "count": 6,
+   "profile": false,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "mzML: 6 peaks from 1 spectrum.",
+   "match": {
+    "mz": 222.11275853830173,
+    "ppm": 1.3000000000569807,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11275853830173,
+     100.0
+    ],
+    [
+     223.116114682663,
+     12.978873951278688
+    ]
+   ]
+  },
+  "profile-indexed-32.mzML": {
+   "readable": true,
+   "kind": "mzML",
+   "count": 6,
+   "profile": true,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "mzML: 6 peaks from 1 spectrum (profile data, centroided).",
+   "match": {
+    "mz": 222.1126678893352,
+    "ppm": 0.8918780849801607,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.1126678893352,
+     100.0
+    ],
+    [
+     223.11602482305034,
+     12.978874614203109
+    ]
+   ]
+  },
+  "numpress.mzML": {
+   "readable": false,
+   "kind": "mzML",
+   "count": 0,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "This mzML file is compressed with MS-Numpress, which this program can't read. Convert it again with MSConvert with Numpress switched off.",
+   "match": null,
+   "near": []
+  },
+  "ms2-only.mzML": {
+   "readable": false,
+   "kind": "mzML",
+   "count": 0,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "This mzML file has no MS1 spectra (only MS/MS), so no found m/z can be read from it.",
+   "match": null,
+   "near": []
+  },
+  "two-scans.mzML": {
+   "readable": true,
+   "kind": "mzML",
+   "count": 6,
+   "profile": false,
+   "scans": 2,
+   "measured": 0,
+   "calculated": [],
+   "message": "mzML: 6 peaks from 2 spectra.",
+   "match": {
+    "mz": 222.11254753145542,
+    "ppm": 0.35000000000549775,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11254753145542,
+     100.0
+    ],
+    [
+     223.1159027226296,
+     12.978873951278688
+    ]
+   ]
+  },
+  "centroid.mzXML": {
+   "readable": true,
+   "kind": "mzXML",
+   "count": 6,
+   "profile": false,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "mzXML: 6 peaks from 1 spectrum.",
+   "match": {
+    "mz": 222.11276245117188,
+    "ppm": 1.3176166162935132,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11276245117188,
+     100.0
+    ],
+    [
+     223.11611938476562,
+     12.9788740234375
+    ]
+   ]
+  },
+  "zlib-64-ms2.mzXML": {
+   "readable": true,
+   "kind": "mzXML",
+   "count": 6,
+   "profile": false,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "mzXML: 6 peaks from 1 spectrum.",
+   "match": {
+    "mz": 222.11275853830173,
+    "ppm": 1.3000000000569807,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11275853830173,
+     100.0
+    ],
+    [
+     223.116114682663,
+     12.978873951278688
+    ]
+   ]
+  },
+  "profile.mzXML": {
+   "readable": true,
+   "kind": "mzXML",
+   "count": 6,
+   "profile": true,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "mzXML: 6 peaks from 1 spectrum (profile data, centroided).",
+   "match": {
+    "mz": 222.1126678893352,
+    "ppm": 0.8918780849801607,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.1126678893352,
+     100.0
+    ],
+    [
+     223.11602482305034,
+     12.978874614203109
+    ]
+   ]
+  },
+  "peaks.mzData": {
+   "readable": true,
+   "kind": "mzData",
+   "count": 6,
+   "profile": false,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "mzData: 6 peaks from 1 spectrum.",
+   "match": {
+    "mz": 222.11275853830173,
+    "ppm": 1.3000000000569807,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11275853830173,
+     100.0
+    ],
+    [
+     223.116114682663,
+     12.9788740234375
+    ]
+   ]
+  },
+  "3a.mgf": {
+   "readable": true,
+   "kind": "MGF",
+   "count": 7,
+   "profile": false,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "MGF: 7 peaks from 1 spectrum.",
+   "match": {
+    "mz": 222.11263,
+    "ppm": 0.7212918264102967,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11263,
+     0.0
+    ],
+    [
+     222.11263,
+     100.0
+    ],
+    [
+     223.11598,
+     12.9789
+    ]
+   ]
+  },
+  "peak-table.jdx": {
+   "readable": true,
+   "kind": "JCAMP-DX",
+   "count": 6,
+   "profile": false,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "JCAMP-DX: 6 peaks from 1 spectrum.",
+   "match": {
+    "mz": 222.11223,
+    "ppm": -1.0795976074845137,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11223,
+     100.0
+    ],
+    [
+     223.11558,
+     12.9789
+    ]
+   ]
+  },
+  "xydata.jdx": {
+   "readable": true,
+   "kind": "JCAMP-DX",
+   "count": 6,
+   "profile": true,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "JCAMP-DX: 6 peaks from 1 spectrum (profile data, centroided).",
+   "match": null,
+   "near": [
+    [
+     224.8431323652067,
+     100.0
+    ]
+   ]
+  },
+  "xydata-asdf.jdx": {
+   "readable": true,
+   "kind": "JCAMP-DX",
+   "count": 6,
+   "profile": true,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "JCAMP-DX: 6 peaks from 1 spectrum (profile data, centroided).",
+   "match": null,
+   "near": [
+    [
+     225.0514664623639,
+     100.0
+    ]
+   ]
+  },
+  "andi.cdf": {
+   "readable": true,
+   "kind": "netCDF (ANDI-MS)",
+   "count": 6,
+   "profile": false,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "netCDF (ANDI-MS): 6 peaks from 1 spectrum.",
+   "match": {
+    "mz": 222.11275853830173,
+    "ppm": 1.3000000000569807,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11275853830173,
+     100.0
+    ],
+    [
+     223.116114682663,
+     12.9788740234375
+    ]
+   ]
+  },
+  "andi-scaled.cdf": {
+   "readable": true,
+   "kind": "netCDF (ANDI-MS)",
+   "count": 6,
+   "profile": false,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "netCDF (ANDI-MS): 6 peaks from 1 spectrum.",
+   "match": {
+    "mz": 222.113,
+    "ppm": 2.387114552842972,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.113,
+     100.0
+    ],
+    [
+     223.116,
+     12.9788740234375
+    ]
+   ]
+  },
+  "andi-profile.cdf": {
+   "readable": true,
+   "kind": "netCDF (ANDI-MS)",
+   "count": 6,
+   "profile": true,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "netCDF (ANDI-MS): 6 peaks from 1 spectrum (profile data, centroided).",
+   "match": {
+    "mz": 222.11266969305294,
+    "ppm": 0.8999988255159634,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11266969305294,
+     100.0
+    ],
+    [
+     223.11602543619503,
+     12.978874614203109
+    ]
+   ]
+  },
+  "comma.csv": {
+   "readable": true,
+   "kind": "peak list",
+   "count": 6,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "peak list: 6 m/z values.",
+   "match": {
+    "mz": 222.11216,
+    "ppm": -1.3947532585280713,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11216,
+     100.0
+    ],
+    [
+     223.11551,
+     12.9789
+    ]
+   ]
+  },
+  "semicolon-decimal-comma.csv": {
+   "readable": true,
+   "kind": "peak list",
+   "count": 6,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "peak list: 6 m/z values.",
+   "match": {
+    "mz": 222.11216,
+    "ppm": -1.3947532585280713,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11216,
+     100.0
+    ],
+    [
+     223.11551,
+     12.9789
+    ]
+   ]
+  },
+  "tab-no-header.txt": {
+   "readable": true,
+   "kind": "peak list",
+   "count": 6,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "peak list: 6 m/z values.",
+   "match": {
+    "mz": 222.11216,
+    "ppm": -1.3947532585280713,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11216,
+     100.0
+    ],
+    [
+     223.11551,
+     12.9789
+    ]
+   ]
+  },
+  "spaces.txt": {
+   "readable": true,
+   "kind": "peak list",
+   "count": 6,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "peak list: 6 m/z values.",
+   "match": {
+    "mz": 222.11256,
+    "ppm": 0.4061361754947,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11256,
+     100.0
+    ],
+    [
+     223.11591,
+     12.979
+    ]
+   ]
+  },
+  "profile.csv": {
+   "readable": true,
+   "kind": "peak list",
+   "count": 6,
+   "profile": true,
+   "scans": 1,
+   "measured": 0,
+   "calculated": [],
+   "message": "peak list: 6 peaks from 1 spectrum (profile data, centroided).",
+   "match": {
+    "mz": 222.1126696718138,
+    "ppm": 0.8999032021339296,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.1126696718138,
+     100.0
+    ],
+    [
+     223.11602528993524,
+     12.978875388057121
+    ]
+   ]
+  },
+  "formula.csv": {
+   "readable": true,
+   "kind": "peak list",
+   "count": 1,
+   "profile": false,
+   "scans": 0,
+   "measured": 1,
+   "calculated": [
+    222.1125
+   ],
+   "message": "peak list: 1 m/z value (1 marked measured).",
+   "match": {
+    "mz": 222.113,
+    "ppm": 2.387114552842972,
+    "measured": true,
+    "mono": true
+   },
+   "near": [
+    [
+     222.113,
+     0.0
+    ]
+   ]
+  },
+  "shared.xlsx": {
+   "readable": true,
+   "kind": "Excel file",
+   "count": 6,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "Excel file: 6 m/z values.",
+   "match": {
+    "mz": 222.11284738,
+    "ppm": 1.6999851893396711,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11284738,
+     100.0
+    ],
+    [
+     223.11620393,
+     12.97887395128
+    ]
+   ]
+  },
+  "inline.xlsx": {
+   "readable": true,
+   "kind": "Excel file",
+   "count": 6,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "Excel file: 6 m/z values.",
+   "match": {
+    "mz": 222.11284738,
+    "ppm": 1.6999851893396711,
+    "measured": false,
+    "mono": true
+   },
+   "near": [
+    [
+     222.11284738,
+     100.0
+    ],
+    [
+     223.11620393,
+     12.97887395128
+    ]
+   ]
+  },
+  "agilent-like.txt": {
+   "readable": true,
+   "kind": "text report",
+   "count": 3,
+   "profile": false,
+   "scans": 0,
+   "measured": 2,
+   "calculated": [
+    222.1125,
+    223.1158
+   ],
+   "message": "text report: 3 m/z values (2 marked measured).",
+   "match": {
+    "mz": 222.1127,
+    "ppm": 1.0364474773258936,
+    "measured": true,
+    "mono": true
+   },
+   "near": [
+    [
+     222.1127,
+     0.0
+    ],
+    [
+     223.1161,
+     0.0
+    ]
+   ]
+  },
+  "running-text.txt": {
+   "readable": true,
+   "kind": "text report",
+   "count": 2,
+   "profile": false,
+   "scans": 0,
+   "measured": 1,
+   "calculated": [
+    222.1125
+   ],
+   "message": "text report: 2 m/z values (1 marked measured).",
+   "match": {
+    "mz": 222.1127,
+    "ppm": 1.0364474773258936,
+    "measured": true,
+    "mono": true
+   },
+   "near": [
+    [
+     222.1127,
+     0.0
+    ]
+   ]
+  },
+  "3a.raw": {
+   "readable": false,
+   "kind": "Thermo .raw data",
+   "count": 0,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "3a.raw is Thermo .raw data: the instrument's own format, which this program can't read. It is kept with the compound. To fill in the found m/z automatically, also add a report exported from the instrument software (PDF or CSV), or convert the data to mzML with ProteoWizard MSConvert (free) and add that.",
+   "match": null,
+   "near": []
+  },
+  "picture.png": {
+   "readable": false,
+   "kind": "picture",
+   "count": 0,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "picture.png is a picture: it is kept (and can be printed), but numbers can't be read from pictures. Type the found m/z yourself.",
+   "match": null,
+   "near": []
+  },
+  "damaged.mzML": {
+   "readable": false,
+   "kind": "mzML",
+   "count": 0,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "damaged.mzML could not be read (it may be damaged, or a variant this program doesn't know): ParseError.",
+   "match": null,
+   "near": []
+  },
+  "damaged.xlsx": {
+   "readable": false,
+   "kind": "Excel file",
+   "count": 0,
+   "profile": false,
+   "scans": 0,
+   "measured": 0,
+   "calculated": [],
+   "message": "This Excel file could not be read (it may be damaged).",
+   "match": null,
+   "near": []
+  }
+ }
+}

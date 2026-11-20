@@ -1,10 +1,10 @@
 // View > Window and Colours > Mode Colours…: each kind of file has its own colour (teal for canvases, orange for
-// slides, green for sheets, Word's deep blue for documents, purple for designs), so you can tell at a glance which mode you are in. By default only the accent
+// slides, green for sheets, Word's deep blue for documents, purple for designs, crimson for SI projects), so you can tell at a glance which mode you are in. By default only the accent
 // colour changes (buttons, highlights, tab icons); "Whole window" also colours the menu bar.
 // Every colour can be changed, and the choice is saved in the settings file.
 
 import { showDialog } from './dialog-host';
-export type ColourMode = 'drawing' | 'slides' | 'sheet' | 'document' | 'design';
+export type ColourMode = 'drawing' | 'slides' | 'sheet' | 'document' | 'design' | 'si';
 export type ModeColourStyle = 'accent' | 'window' | 'off';
 export interface ModeColours {
   /** accent: buttons, highlights and a line under the chosen tabs; window: the menu bar and ribbon tabs as a band of colour too; off: the drawing colour everywhere. */
@@ -14,10 +14,12 @@ export interface ModeColours {
   sheet: string;
   document: string;
   design: string;
+  /** SI projects (Chem SI Assistant's folders). */
+  si: string;
 }
 
 // (canvases were blue #2f6fdf until 2026-10-30: too close to the documents' blue to tell the two apart at a glance)
-export const DEFAULT_MODE_COLOURS: ModeColours = { style: 'accent', drawing: '#0e7c93', slides: '#c8572a', sheet: '#1e8a50', document: '#2647a8', design: '#7b3fbf' };
+export const DEFAULT_MODE_COLOURS: ModeColours = { style: 'accent', drawing: '#0e7c93', slides: '#c8572a', sheet: '#1e8a50', document: '#2647a8', design: '#7b3fbf', si: '#b4234f' };
 /** The canvases' colour before the teal: a saved settings file that holds it is read as the teal. */
 const OLD_DRAWING = '#2f6fdf';
 const STYLES: ModeColourStyle[] = ['accent', 'window', 'off'];
@@ -29,7 +31,7 @@ export function parseModeColours(raw: unknown): ModeColours {
   if (!raw || typeof raw !== 'object') return c;
   const r = raw as Record<string, unknown>;
   if (STYLES.includes(r.style as ModeColourStyle)) c.style = r.style as ModeColourStyle;
-  for (const k of ['drawing', 'slides', 'sheet', 'document', 'design'] as const) if (typeof r[k] === 'string' && HEX.test(r[k] as string)) c[k] = (r[k] as string).toLowerCase();
+  for (const k of ['drawing', 'slides', 'sheet', 'document', 'design', 'si'] as const) if (typeof r[k] === 'string' && HEX.test(r[k] as string)) c[k] = (r[k] as string).toLowerCase();
   // (the old blue was the canvases' colour until 2026-10-30, and every settings file saved before then
   // holds it, though nobody chose it: it goes to the teal, as the other modes' colours never changed)
   if (c.drawing === OLD_DRAWING) c.drawing = DEFAULT_MODE_COLOURS.drawing;
@@ -143,7 +145,7 @@ export function applyModeColours(mode: ColourMode, c: ModeColours, root: HTMLEle
   const vars: Record<string, string> = {
     '--mode-accent': p.accent, '--mode-soft': p.soft, '--mode-accent-dark': p.accentDark, '--mode-soft-dark': p.softDark,
     '--mode-bar': p.bar, '--mode-bar-dark': p.barDark, '--mode-on-accent': p.onAccent, '--mode-on-accent-dark': p.onAccentDark, '--mode-drawing': c.drawing, '--mode-slides': c.style === 'off' ? c.drawing : c.slides,
-    '--mode-sheet': c.style === 'off' ? c.drawing : c.sheet, '--mode-document': c.style === 'off' ? c.drawing : c.document, '--mode-design': c.style === 'off' ? c.drawing : c.design,
+    '--mode-sheet': c.style === 'off' ? c.drawing : c.sheet, '--mode-document': c.style === 'off' ? c.drawing : c.document, '--mode-design': c.style === 'off' ? c.drawing : c.design, '--mode-si': c.style === 'off' ? c.drawing : c.si,
   };
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
   document.body.classList.toggle('mode-window', c.style === 'window');
@@ -157,7 +159,7 @@ export interface ModeColoursDialogOptions {
   set(c: ModeColours): void;
 }
 
-const NAMES: Record<ColourMode, string> = { drawing: 'Canvases', slides: 'Presentations', sheet: 'Spreadsheets', document: 'Documents', design: 'Designs' };
+const NAMES: Record<ColourMode, string> = { drawing: 'Canvases', slides: 'Presentations', sheet: 'Spreadsheets', document: 'Documents', design: 'Designs', si: 'SI Projects' };
 
 export class ModeColoursDialog {
   private d: HTMLDialogElement;
@@ -180,7 +182,7 @@ export class ModeColoursDialog {
         <span class="hk-buttons"><button type="button" data-act="close" class="primary">Close</button></span>
       </div>`;
     const box = d.querySelector('.mc-colours')!;
-    for (const mode of ['drawing', 'slides', 'sheet', 'document', 'design'] as ColourMode[]) {
+    for (const mode of ['drawing', 'slides', 'sheet', 'document', 'design', 'si'] as ColourMode[]) {
       const row = document.createElement('label');
       row.className = 'md-row';
       const name = document.createElement('span');

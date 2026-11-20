@@ -1,0 +1,7 @@
+Qualitative Analysis Report (made up)
+Peak List
+m/z  Abund  Formula  Calc m/z  Diff (ppm)
+222.1127  123400  C12H16NO3  222.1125  1.20
+223.1161  16015  C12H16NO3  223.1158  1.20
+244.0941  20412
+Acquired 2026-10-07 10:15:42.123

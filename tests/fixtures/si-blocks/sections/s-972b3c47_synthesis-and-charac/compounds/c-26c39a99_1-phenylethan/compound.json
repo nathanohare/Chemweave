@@ -1,0 +1,211 @@
+{
+  "id": "c-26c39a99",
+  "id_override": "",
+  "fields": [
+    {
+      "key": "structure"
+    },
+    {
+      "key": "name"
+    },
+    {
+      "key": "procedure"
+    },
+    {
+      "key": "scale"
+    },
+    {
+      "key": "yield"
+    },
+    {
+      "key": "physical_state"
+    },
+    {
+      "key": "purification"
+    },
+    {
+      "key": "rf"
+    },
+    {
+      "key": "nmr"
+    },
+    {
+      "key": "hrms"
+    },
+    {
+      "key": "spectra"
+    },
+    {
+      "key": "references"
+    },
+    {
+      "key": "mp"
+    },
+    {
+      "key": "ir"
+    },
+    {
+      "key": "rotation"
+    },
+    {
+      "key": "ee"
+    },
+    {
+      "key": "dr"
+    },
+    {
+      "key": "ea"
+    },
+    {
+      "key": "xray"
+    },
+    {
+      "key": "cf-solvent",
+      "custom": {
+        "label": "Storage",
+        "type": "short_text"
+      }
+    },
+    {
+      "key": "cf-temp",
+      "custom": {
+        "label": "Kept at",
+        "type": "number_unit"
+      }
+    },
+    {
+      "key": "notes"
+    }
+  ],
+  "values": {
+    "name": {
+      "text": "1-Phenylethan-1-ol"
+    },
+    "scale": {
+      "value": "0.50",
+      "unit": "mmol"
+    },
+    "yield": {
+      "percent": "94",
+      "mass": "57.4",
+      "mass_unit": "mg"
+    },
+    "physical_state": {
+      "text": "colorless oil"
+    },
+    "purification": {
+      "method": "flash column chromatography",
+      "phase": "SiO₂",
+      "eluent": "n-hexane/EtOAc 4:1",
+      "sentence": ""
+    },
+    "rf": {
+      "value": "0.23",
+      "eluent": "n-hexane/EtOAc 4:1",
+      "visualization": "UV, KMnO4"
+    },
+    "nmr": [
+      {
+        "id": "r-77b66975",
+        "nucleus": "1H",
+        "label": "major rotamer",
+        "text": "1H NMR (500 MHz, CDCl3) δ 7.39 – 7.34 (m, 4H), 7.30 – 7.27 (m, 1H), 4.90 (q, J = 6.5 Hz, 1H), 1.96 (s, 1H), 1.50 (d, J = 6.5 Hz, 3H)."
+      },
+      {
+        "id": "r-a2c773f9",
+        "nucleus": "13C",
+        "label": "",
+        "text": "13C NMR (126 MHz, CDCl3) δ 146.0, 128.6, 127.6, 125.5, 70.5, 25.3."
+      },
+      {
+        "id": "r-x19f",
+        "nucleus": "19F",
+        "label": "minor",
+        "text": "δ -115.5 (s), 7.36-7.29 ppm"
+      }
+    ],
+    "hrms": {
+      "ionization": "ESI",
+      "adduct": "[M+Na]+",
+      "found": "145.0625",
+      "species": "",
+      "formula": ""
+    },
+    "spectra": [
+      {
+        "file": "2a_1H.pdf",
+        "type": "1H",
+        "title": "",
+        "struct_caption": ""
+      },
+      {
+        "file": "2a_13C.pdf",
+        "type": "13C",
+        "title": "",
+        "struct_caption": ""
+      }
+    ],
+    "references": {
+      "text": "Spectral data matched those reported in the literature.",
+      "refs": [
+        "r-30ec8485",
+        "r-f111eece"
+      ]
+    },
+    "procedure": {
+      "gp": "gp-cb78be13",
+      "values": {
+        "ketone": "acetophenone",
+        "ketone ID": "**1a**",
+        "mass": "60.1 mg"
+      }
+    },
+    "structure": {
+      "from_scheme": false
+    },
+    "mp": {
+      "value": "45-47",
+      "solvent": "CH2Cl2/hexanes"
+    },
+    "ir": {
+      "bands": "3350, 2970, 1450",
+      "method": "ATR"
+    },
+    "rotation": {
+      "value": "+42.1",
+      "temperature": "20",
+      "c": "1.00",
+      "solvent": "CHCl3"
+    },
+    "ee": {
+      "value": "99%",
+      "method": "HPLC",
+      "column": "Chiralpak ID",
+      "eluent": "10% iPrOH/hexanes",
+      "flow": "1.0",
+      "wavelength": "254",
+      "t_major": "12.3",
+      "t_minor": "14.8"
+    },
+    "dr": {
+      "value": ">20:1",
+      "method": "1H NMR of the crude mixture"
+    },
+    "ea": {
+      "calcd": "C, 78.65; H, 8.25",
+      "found": "C, 78.60; H, 8.31",
+      "formula": ""
+    },
+    "xray": {
+      "ccdc": "2345678"
+    },
+    "cf-solvent": {
+      "text": "dried over Na2SO4"
+    },
+    "cf-temp": {
+      "value": "-20",
+      "unit": "°C"
+    }
+  },
+  "flags": {}
+}

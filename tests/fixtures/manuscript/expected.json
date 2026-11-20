@@ -1,0 +1,6707 @@
+{
+ "parse": [
+  {
+   "fn": "annotateText",
+   "args": [
+    "3a, 92%, 95% ee"
+   ],
+   "out": {
+    "text": "3a, 92%, 95% ee",
+    "ids": [
+     "3a"
+    ],
+    "ee": "95",
+    "yield": "92",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3a, 92%, 95% ee"
+   ],
+   "out": {
+    "ee": "95",
+    "yield": "92",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "4b (85% yield, 97:3 er)"
+   ],
+   "out": {
+    "text": "4b (85% yield, 97:3 er)",
+    "ids": [
+     "4b"
+    ],
+    "er": "97:3",
+    "yield": "85",
+    "ee_from_er": 94.0
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "4b (85% yield, 97:3 er)"
+   ],
+   "out": {
+    "er": "97:3",
+    "yield": "85",
+    "ee_from_er": 94.0
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "12c: 71%, >20:1 dr, 90% ee"
+   ],
+   "out": {
+    "text": "12c: 71%, >20:1 dr, 90% ee",
+    "ids": [
+     "12c"
+    ],
+    "ee": "90",
+    "dr": ">20:1",
+    "yield": "71",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "12c: 71%, >20:1 dr, 90% ee"
+   ],
+   "out": {
+    "ee": "90",
+    "dr": ">20:1",
+    "yield": "71",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "(±)-5, 64% (NMR yield)"
+   ],
+   "out": {
+    "text": "(±)-5, 64% (NMR yield)",
+    "ids": [
+     "(±)-5"
+    ],
+    "yield_nmr": "64"
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "(±)-5, 64% (NMR yield)"
+   ],
+   "out": {
+    "yield_nmr": "64"
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "S7, 88%, E/Z = 10:1"
+   ],
+   "out": {
+    "text": "S7, 88%, E/Z = 10:1",
+    "ids": [
+     "S7"
+    ],
+    "ez": "10:1",
+    "yield": "88",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "S7, 88%, E/Z = 10:1"
+   ],
+   "out": {
+    "ez": "10:1",
+    "yield": "88",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "6aa 40% conv., 12 h, −20 °C"
+   ],
+   "out": {
+    "text": "6aa 40% conv., 12 h, −20 °C",
+    "ids": [
+     "6aa"
+    ],
+    "conversion": "40",
+    "temperature": "-20 °C",
+    "time": "12 h"
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "6aa 40% conv., 12 h, −20 °C"
+   ],
+   "out": {
+    "conversion": "40",
+    "temperature": "-20 °C",
+    "time": "12 h"
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "Table 1, entry 3: 3a, 92%"
+   ],
+   "out": {
+    "text": "Table 1, entry 3: 3a, 92%",
+    "ids": [
+     "3a"
+    ],
+    "yield": "92",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "Table 1, entry 3: 3a, 92%"
+   ],
+   "out": {
+    "yield": "92",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3d"
+   ],
+   "out": {
+    "text": "3d",
+    "ids": [
+     "3d"
+    ]
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3d"
+   ],
+   "out": {}
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3h, 70%"
+   ],
+   "out": {
+    "text": "3h, 70%",
+    "ids": [
+     "3h"
+    ],
+    "yield": "70",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3h, 70%"
+   ],
+   "out": {
+    "yield": "70",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "85%^b, 97:3 er"
+   ],
+   "out": {
+    "text": "85%^b, 97:3 er",
+    "ids": [],
+    "er": "97:3",
+    "yield": "85",
+    "yield_assumed": true,
+    "ee_from_er": 94.0,
+    "footnotes": [
+     "b"
+    ]
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "85%^b, 97:3 er"
+   ],
+   "out": {
+    "er": "97:3",
+    "yield": "85",
+    "yield_assumed": true,
+    "ee_from_er": 94.0
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3a, 90%a"
+   ],
+   "out": {
+    "text": "3a, 90%a",
+    "ids": [
+     "3a"
+    ],
+    "yield": "90",
+    "yield_assumed": true,
+    "footnotes": [
+     "a"
+    ]
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3a, 90%a"
+   ],
+   "out": {
+    "yield": "90",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "8k[c]"
+   ],
+   "out": {
+    "text": "8k[c]",
+    "ids": [
+     "8k"
+    ],
+    "footnotes": [
+     "c"
+    ]
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "8k[c]"
+   ],
+   "out": {}
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3h^c"
+   ],
+   "out": {
+    "text": "3h^c",
+    "ids": [
+     "3h"
+    ],
+    "footnotes": [
+     "c"
+    ]
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3h^c"
+   ],
+   "out": {}
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3b, 97% (58%: Pd = 3 mol %)"
+   ],
+   "out": {
+    "text": "3b, 97% (58%: Pd = 3 mol %)",
+    "ids": [
+     "3b"
+    ],
+    "alternative_results": [
+     "58%: Pd = 3 mol %"
+    ],
+    "yield": "97",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3b, 97% (58%: Pd = 3 mol %)"
+   ],
+   "out": {
+    "alternative_results": [
+     "58%: Pd = 3 mol %"
+    ],
+    "yield": "97",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3a, 92% (95% ee)"
+   ],
+   "out": {
+    "text": "3a, 92% (95% ee)",
+    "ids": [
+     "3a"
+    ],
+    "ee": "95",
+    "yield": "92",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3a, 92% (95% ee)"
+   ],
+   "out": {
+    "ee": "95",
+    "yield": "92",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3a, 81% yield (90% ee)"
+   ],
+   "out": {
+    "text": "3a, 81% yield (90% ee)",
+    "ids": [
+     "3a"
+    ],
+    "ee": "90",
+    "yield": "81"
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3a, 81% yield (90% ee)"
+   ],
+   "out": {
+    "ee": "90",
+    "yield": "81"
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3c, 70% (10:1 dr)"
+   ],
+   "out": {
+    "text": "3c, 70% (10:1 dr)",
+    "ids": [
+     "3c"
+    ],
+    "dr": "10:1",
+    "yield": "70",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3c, 70% (10:1 dr)"
+   ],
+   "out": {
+    "dr": "10:1",
+    "yield": "70",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "benzo[b]thiophene 3a, 70%"
+   ],
+   "out": {
+    "text": "benzo[b]thiophene 3a, 70%",
+    "ids": [
+     "3a"
+    ],
+    "yield": "70",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "benzo[b]thiophene 3a, 70%"
+   ],
+   "out": {
+    "yield": "70",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "(S,S)-3b, 64%"
+   ],
+   "out": {
+    "text": "(S,S)-3b, 64%",
+    "ids": [
+     "(S,S)-3b"
+    ],
+    "yield": "64",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "(S,S)-3b, 64%"
+   ],
+   "out": {
+    "yield": "64",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3e, quant., rac"
+   ],
+   "out": {
+    "text": "3e, quant., rac",
+    "ids": [
+     "3e"
+    ]
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3e, quant., rac"
+   ],
+   "out": {}
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "9, 45%, 3:1 rr"
+   ],
+   "out": {
+    "text": "9, 45%, 3:1 rr",
+    "ids": [
+     "9"
+    ],
+    "rr": "3:1",
+    "yield": "45",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "9, 45%, 3:1 rr"
+   ],
+   "out": {
+    "rr": "3:1",
+    "yield": "45",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3f, 72% (2 steps), >99% ee"
+   ],
+   "out": {
+    "text": "3f, 72% (2 steps), >99% ee",
+    "ids": [
+     "3f",
+     "2"
+    ],
+    "ee": ">99",
+    "yield": "72",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3f, 72% (2 steps), >99% ee"
+   ],
+   "out": {
+    "ee": ">99",
+    "yield": "72",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "11b′, 55%, 93:7 er"
+   ],
+   "out": {
+    "text": "11b′, 55%, 93:7 er",
+    "ids": [
+     "11b'"
+    ],
+    "er": "93:7",
+    "yield": "55",
+    "yield_assumed": true,
+    "ee_from_er": 86.0
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "11b′, 55%, 93:7 er"
+   ],
+   "out": {
+    "er": "93:7",
+    "yield": "55",
+    "yield_assumed": true,
+    "ee_from_er": 86.0
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "SI-4, 61%"
+   ],
+   "out": {
+    "text": "SI-4, 61%",
+    "ids": [
+     "SI-4"
+    ],
+    "yield": "61",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "SI-4, 61%"
+   ],
+   "out": {
+    "yield": "61",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "ent-3a, 90%, 96% ee"
+   ],
+   "out": {
+    "text": "ent-3a, 90%, 96% ee",
+    "ids": [
+     "ent-3a"
+    ],
+    "ee": "96",
+    "yield": "90",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "ent-3a, 90%, 96% ee"
+   ],
+   "out": {
+    "ee": "96",
+    "yield": "90",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3g, 60%, d.r. 4:1"
+   ],
+   "out": {
+    "text": "3g, 60%, d.r. 4:1",
+    "ids": [
+     "3g"
+    ],
+    "dr": "4:1",
+    "yield": "60",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3g, 60%, d.r. 4:1"
+   ],
+   "out": {
+    "dr": "4:1",
+    "yield": "60",
+    "yield_assumed": true
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3k (78%, 99:1 e.r.)"
+   ],
+   "out": {
+    "text": "3k (78%, 99:1 e.r.)",
+    "ids": [
+     "3k"
+    ],
+    "er": "99:1",
+    "yield": "78",
+    "yield_assumed": true,
+    "ee_from_er": 98.0
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3k (78%, 99:1 e.r.)"
+   ],
+   "out": {
+    "er": "99:1",
+    "yield": "78",
+    "yield_assumed": true,
+    "ee_from_er": 98.0
+   }
+  },
+  {
+   "fn": "annotateText",
+   "args": [
+    "3m: 88% yield, 92% ee (S)"
+   ],
+   "out": {
+    "text": "3m: 88% yield, 92% ee (S)",
+    "ids": [
+     "3m"
+    ],
+    "ee": "92",
+    "yield": "88"
+   }
+  },
+  {
+   "fn": "parseValues",
+   "args": [
+    "3m: 88% yield, 92% ee (S)"
+   ],
+   "out": {
+    "ee": "92",
+    "yield": "88"
+   }
+  },
+  {
+   "fn": "findIds",
+   "args": [
+    "3h was isolated"
+   ],
+   "out": [
+    "3h"
+   ]
+  },
+  {
+   "fn": "findIds",
+   "args": [
+    "(1R,2S)-3b and (1R, 2S)-4b"
+   ],
+   "out": [
+    "(1R,2S)-3b",
+    "(1R,2S)-4b"
+   ]
+  },
+  {
+   "fn": "findIds",
+   "args": [
+    "compounds 3a–3c and 4a"
+   ],
+   "out": [
+    "4a"
+   ]
+  },
+  {
+   "fn": "findIds",
+   "args": [
+    "products 5a, 5b and 6"
+   ],
+   "out": [
+    "5a",
+    "5b",
+    "6"
+   ]
+  },
+  {
+   "fn": "findIds",
+   "args": [
+    "rac-5 and ent-7 and cis-5a"
+   ],
+   "out": [
+    "rac-5",
+    "ent-7",
+    "cis-5a"
+   ]
+  },
+  {
+   "fn": "findIds",
+   "args": [
+    "Table 2 entry 4, 3 h, 12 equiv"
+   ],
+   "out": [
+    "3",
+    "12"
+   ]
+  },
+  {
+   "fn": "findIds",
+   "args": [
+    "S12 and SI-3 in 2.5 h"
+   ],
+   "out": [
+    "S12",
+    "SI-3"
+   ]
+  },
+  {
+   "fn": "erToEe",
+   "args": [
+    "97:3"
+   ],
+   "out": 94.0
+  },
+  {
+   "fn": "erToEe",
+   "args": [
+    "97.5:2.5"
+   ],
+   "out": 95.0
+  },
+  {
+   "fn": "erToEe",
+   "args": [
+    "abc"
+   ],
+   "out": null
+  },
+  {
+   "fn": "erToEe",
+   "args": [
+    "50:50"
+   ],
+   "out": 0.0
+  },
+  {
+   "fn": "erToEe",
+   "args": [
+    ">99:1"
+   ],
+   "out": 98.0
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "3A"
+   ],
+   "out": "3a"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "3A"
+   ],
+   "out": "3a"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "3A"
+   ],
+   "out": "3a"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    " 3a "
+   ],
+   "out": "3a"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    " 3a "
+   ],
+   "out": "3a"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    " 3a "
+   ],
+   "out": "3a"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "12b’"
+   ],
+   "out": "12b'"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "12b’"
+   ],
+   "out": "12b'"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "12b’"
+   ],
+   "out": "12b'"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "cis-5a"
+   ],
+   "out": "cis-5a"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "cis-5a"
+   ],
+   "out": "5a"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "cis-5a"
+   ],
+   "out": "cis-5a"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "(±)-5"
+   ],
+   "out": "(±)-5"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "(±)-5"
+   ],
+   "out": "5"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "(±)-5"
+   ],
+   "out": "5"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "trans-5a"
+   ],
+   "out": "trans-5a"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "trans-5a"
+   ],
+   "out": "5a"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "trans-5a"
+   ],
+   "out": "trans-5a"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "(1R,2S)-3b"
+   ],
+   "out": "(1r,2s)-3b"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "(1R,2S)-3b"
+   ],
+   "out": "3b"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "(1R,2S)-3b"
+   ],
+   "out": "(1r,2s)-3b"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "rac-5"
+   ],
+   "out": "rac-5"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "rac-5"
+   ],
+   "out": "5"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "rac-5"
+   ],
+   "out": "5"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "ent-5"
+   ],
+   "out": "ent-5"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "ent-5"
+   ],
+   "out": "5"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "ent-5"
+   ],
+   "out": "5"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "(S)-4b"
+   ],
+   "out": "(s)-4b"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "(S)-4b"
+   ],
+   "out": "4b"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "(S)-4b"
+   ],
+   "out": "(s)-4b"
+  },
+  {
+   "fn": "idKey",
+   "args": [
+    "(+/-)-6"
+   ],
+   "out": "(+/-)-6"
+  },
+  {
+   "fn": "idBase",
+   "args": [
+    "(+/-)-6"
+   ],
+   "out": "(+/-)-6"
+  },
+  {
+   "fn": "idWithoutRac",
+   "args": [
+    "(+/-)-6"
+   ],
+   "out": "6"
+  },
+  {
+   "fn": "namesWithIds",
+   "args": [
+    "The ester methyl 4-bromobenzoate (3a) was obtained in 92% yield. Then 2-phenylpropanoic acid (3c) and the product (3d) were made. Ketone 3e was formed in 76% yield and 90% ee."
+   ],
+   "out": [
+    [
+     "methyl 4-bromobenzoate",
+     "3a"
+    ],
+    [
+     "2-phenylpropanoic acid",
+     "3c"
+    ]
+   ]
+  },
+  {
+   "fn": "sentenceRecords",
+   "args": [
+    "The ester methyl 4-bromobenzoate (3a) was obtained in 92% yield. Then 2-phenylpropanoic acid (3c) and the product (3d) were made. Ketone 3e was formed in 76% yield and 90% ee."
+   ],
+   "out": [
+    {
+     "ids": [
+      "3a"
+     ],
+     "text": "The ester methyl 4-bromobenzoate (3a) was obtained in 92% yield.",
+     "yield": "92"
+    },
+    {
+     "ids": [
+      "3e"
+     ],
+     "text": "Ketone 3e was formed in 76% yield and 90% ee.",
+     "ee": "90",
+     "yield": "76"
+    }
+   ]
+  },
+  {
+   "fn": "mentionedIds",
+   "args": [
+    "The ester methyl 4-bromobenzoate (3a) was obtained in 92% yield. Then 2-phenylpropanoic acid (3c) and the product (3d) were made. Ketone 3e was formed in 76% yield and 90% ee."
+   ],
+   "out": [
+    "3a",
+    "3c",
+    "3d"
+   ]
+  },
+  {
+   "fn": "allTokens",
+   "args": [
+    "The ester methyl 4-bromobenzoate (3a) was obtained in 92% yield. Then 2-phenylpropanoic acid (3c) and the product (3d) were made. Ketone 3e was formed in 76% yield and 90% ee."
+   ],
+   "out": [
+    "2-phenylpropanoic",
+    "3a",
+    "3c",
+    "3d",
+    "3e",
+    "4-bromobenzoate",
+    "76%",
+    "90%",
+    "92%",
+    "acid",
+    "and",
+    "ee",
+    "ester",
+    "formed",
+    "in",
+    "ketone",
+    "made",
+    "methyl",
+    "obtained",
+    "product",
+    "the",
+    "then",
+    "was",
+    "were",
+    "yield"
+   ]
+  },
+  {
+   "fn": "namesWithIds",
+   "args": [
+    "The 2-naphthyl (3a) and electron-poor (3b) substrates reacted, as did the benzoic (3d) one. Methyl 4-bromo-benzoate (3c) too."
+   ],
+   "out": [
+    [
+     "Methyl 4-bromo-benzoate",
+     "3c"
+    ]
+   ]
+  },
+  {
+   "fn": "sentenceRecords",
+   "args": [
+    "The 2-naphthyl (3a) and electron-poor (3b) substrates reacted, as did the benzoic (3d) one. Methyl 4-bromo-benzoate (3c) too."
+   ],
+   "out": []
+  },
+  {
+   "fn": "mentionedIds",
+   "args": [
+    "The 2-naphthyl (3a) and electron-poor (3b) substrates reacted, as did the benzoic (3d) one. Methyl 4-bromo-benzoate (3c) too."
+   ],
+   "out": [
+    "3a",
+    "3b",
+    "3c",
+    "3d"
+   ]
+  },
+  {
+   "fn": "allTokens",
+   "args": [
+    "The 2-naphthyl (3a) and electron-poor (3b) substrates reacted, as did the benzoic (3d) one. Methyl 4-bromo-benzoate (3c) too."
+   ],
+   "out": [
+    "2-naphthyl",
+    "3a",
+    "3b",
+    "3c",
+    "3d",
+    "4-bromo-benzoate",
+    "and",
+    "as",
+    "benzoic",
+    "did",
+    "electron-poor",
+    "methyl",
+    "one",
+    "reacted",
+    "substrates",
+    "the",
+    "too"
+   ]
+  },
+  {
+   "fn": "namesWithIds",
+   "args": [
+    "Using Pd(OAc)2 instead, compound 3b formed in 85% yield. Without the ligand, 3e was formed in only 12% yield. On a 5 mmol scale, 3a was obtained in 80% yield. The amine 3h was isolated in 64% yield."
+   ],
+   "out": []
+  },
+  {
+   "fn": "sentenceRecords",
+   "args": [
+    "Using Pd(OAc)2 instead, compound 3b formed in 85% yield. Without the ligand, 3e was formed in only 12% yield. On a 5 mmol scale, 3a was obtained in 80% yield. The amine 3h was isolated in 64% yield."
+   ],
+   "out": [
+    {
+     "ids": [
+      "3b"
+     ],
+     "text": "Using Pd(OAc)2 instead, compound 3b formed in 85% yield.",
+     "yield": "85"
+    },
+    {
+     "ids": [
+      "3h"
+     ],
+     "text": "The amine 3h was isolated in 64% yield.",
+     "yield": "64"
+    }
+   ]
+  },
+  {
+   "fn": "mentionedIds",
+   "args": [
+    "Using Pd(OAc)2 instead, compound 3b formed in 85% yield. Without the ligand, 3e was formed in only 12% yield. On a 5 mmol scale, 3a was obtained in 80% yield. The amine 3h was isolated in 64% yield."
+   ],
+   "out": [
+    "3b"
+   ]
+  },
+  {
+   "fn": "allTokens",
+   "args": [
+    "Using Pd(OAc)2 instead, compound 3b formed in 85% yield. Without the ligand, 3e was formed in only 12% yield. On a 5 mmol scale, 3a was obtained in 80% yield. The amine 3h was isolated in 64% yield."
+   ],
+   "out": [
+    "12%",
+    "3a",
+    "3b",
+    "3e",
+    "3h",
+    "5",
+    "64%",
+    "80%",
+    "85%",
+    "a",
+    "amine",
+    "compound",
+    "formed",
+    "in",
+    "instead",
+    "isolated",
+    "ligand",
+    "mmol",
+    "obtained",
+    "on",
+    "only",
+    "pd(oac)2",
+    "scale",
+    "the",
+    "using",
+    "was",
+    "without",
+    "yield"
+   ]
+  },
+  {
+   "fn": "namesWithIds",
+   "args": [
+    "Ketone 9z formed in 50% yield."
+   ],
+   "out": []
+  },
+  {
+   "fn": "sentenceRecords",
+   "args": [
+    "Ketone 9z formed in 50% yield."
+   ],
+   "out": [
+    {
+     "ids": [
+      "9z"
+     ],
+     "text": "Ketone 9z formed in 50% yield.",
+     "yield": "50"
+    }
+   ]
+  },
+  {
+   "fn": "mentionedIds",
+   "args": [
+    "Ketone 9z formed in 50% yield."
+   ],
+   "out": []
+  },
+  {
+   "fn": "allTokens",
+   "args": [
+    "Ketone 9z formed in 50% yield."
+   ],
+   "out": [
+    "50%",
+    "9z",
+    "formed",
+    "in",
+    "ketone",
+    "yield"
+   ]
+  },
+  {
+   "fn": "namesWithIds",
+   "args": [
+    "The ester methyl 4-bromobenzoate (3a) was made on a large scale; ethyl 2-phenylpropanoate (3c) too."
+   ],
+   "out": [
+    [
+     "methyl 4-bromobenzoate",
+     "3a"
+    ],
+    [
+     "ethyl 2-phenylpropanoate",
+     "3c"
+    ]
+   ]
+  },
+  {
+   "fn": "sentenceRecords",
+   "args": [
+    "The ester methyl 4-bromobenzoate (3a) was made on a large scale; ethyl 2-phenylpropanoate (3c) too."
+   ],
+   "out": []
+  },
+  {
+   "fn": "mentionedIds",
+   "args": [
+    "The ester methyl 4-bromobenzoate (3a) was made on a large scale; ethyl 2-phenylpropanoate (3c) too."
+   ],
+   "out": [
+    "3a",
+    "3c"
+   ]
+  },
+  {
+   "fn": "allTokens",
+   "args": [
+    "The ester methyl 4-bromobenzoate (3a) was made on a large scale; ethyl 2-phenylpropanoate (3c) too."
+   ],
+   "out": [
+    "2-phenylpropanoate",
+    "3a",
+    "3c",
+    "4-bromobenzoate",
+    "a",
+    "ester",
+    "ethyl",
+    "large",
+    "made",
+    "methyl",
+    "on",
+    "scale",
+    "the",
+    "too",
+    "was"
+   ]
+  },
+  {
+   "fn": "namesWithIds",
+   "args": [
+    "Alcohol 4b was obtained in 81% yield with 94:6 er (Table 2, entry 3), and 4c (75%, >20:1 dr) followed."
+   ],
+   "out": []
+  },
+  {
+   "fn": "sentenceRecords",
+   "args": [
+    "Alcohol 4b was obtained in 81% yield with 94:6 er (Table 2, entry 3), and 4c (75%, >20:1 dr) followed."
+   ],
+   "out": []
+  },
+  {
+   "fn": "mentionedIds",
+   "args": [
+    "Alcohol 4b was obtained in 81% yield with 94:6 er (Table 2, entry 3), and 4c (75%, >20:1 dr) followed."
+   ],
+   "out": []
+  },
+  {
+   "fn": "allTokens",
+   "args": [
+    "Alcohol 4b was obtained in 81% yield with 94:6 er (Table 2, entry 3), and 4c (75%, >20:1 dr) followed."
+   ],
+   "out": [
+    "2",
+    "3",
+    "4b",
+    "4c",
+    "75%",
+    "81%",
+    "94:6",
+    ">20:1",
+    "alcohol",
+    "and",
+    "dr",
+    "entry",
+    "er",
+    "followed",
+    "in",
+    "obtained",
+    "table",
+    "was",
+    "with",
+    "yield"
+   ]
+  },
+  {
+   "fn": "namesWithIds",
+   "args": [
+    "After 3 h the mixture was filtered. Compounds 3a–3d were made by GP A."
+   ],
+   "out": []
+  },
+  {
+   "fn": "sentenceRecords",
+   "args": [
+    "After 3 h the mixture was filtered. Compounds 3a–3d were made by GP A."
+   ],
+   "out": []
+  },
+  {
+   "fn": "mentionedIds",
+   "args": [
+    "After 3 h the mixture was filtered. Compounds 3a–3d were made by GP A."
+   ],
+   "out": []
+  },
+  {
+   "fn": "allTokens",
+   "args": [
+    "After 3 h the mixture was filtered. Compounds 3a–3d were made by GP A."
+   ],
+   "out": [
+    "3",
+    "3a-3d",
+    "a",
+    "after",
+    "by",
+    "compounds",
+    "filtered",
+    "gp",
+    "h",
+    "made",
+    "mixture",
+    "the",
+    "was",
+    "were"
+   ]
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "K3PO4 (2.0 equiv), Pd(OAc)2 (5 mol%) in CH2Cl2 (0.1 M) at reflux, 0.20 mmol, rt, -78 °C, 30 min, 2 days"
+   ],
+   "out": [
+    [
+     "temperature",
+     -78.0,
+     "-78 °C"
+    ],
+    [
+     "temperature",
+     "reflux",
+     "reflux"
+    ],
+    [
+     "temperature",
+     "rt",
+     "rt"
+    ],
+    [
+     "time",
+     30.0,
+     "30 min"
+    ],
+    [
+     "time",
+     2880.0,
+     "2 days"
+    ],
+    [
+     "equiv",
+     2.0,
+     "2.0 equiv"
+    ],
+    [
+     "loading",
+     5.0,
+     "5 mol%"
+    ],
+    [
+     "scale",
+     0.2,
+     "0.20 mmol"
+    ],
+    [
+     "conc",
+     0.1,
+     "0.1 M"
+    ],
+    [
+     "reagent",
+     "DCM",
+     "CH2Cl2"
+    ],
+    [
+     "reagent",
+     "K3PO4",
+     "K3PO4"
+    ],
+    [
+     "reagent",
+     "Pd(OAc)2",
+     "Pd(OAc)2"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "K3PO4 (2.0 equiv), Pd(OAc)2 (5 mol%) in CH2Cl2 (0.1 M) at reflux, 0.20 mmol, rt, -78 °C, 30 min, 2 days"
+   ],
+   "out": [
+    [
+     "temperature",
+     -78.0,
+     "-78 °C"
+    ],
+    [
+     "temperature",
+     "reflux",
+     "reflux"
+    ],
+    [
+     "temperature",
+     "rt",
+     "rt"
+    ],
+    [
+     "time",
+     30.0,
+     "30 min"
+    ],
+    [
+     "time",
+     2880.0,
+     "2 days"
+    ],
+    [
+     "equiv",
+     2.0,
+     "2.0 equiv"
+    ],
+    [
+     "loading",
+     5.0,
+     "5 mol%"
+    ],
+    [
+     "scale",
+     0.2,
+     "0.20 mmol"
+    ],
+    [
+     "conc",
+     0.1,
+     "0.1 M"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "K3PO4 (2.0 equiv), Pd(OAc)2 (5 mol%) in CH2Cl2 (0.1 M) at reflux, 0.20 mmol, rt, -78 °C, 30 min, 2 days"
+   ],
+   "out": [
+    [
+     "reagent",
+     "DCM",
+     "CH2Cl2"
+    ],
+    [
+     "reagent",
+     "K3PO4",
+     "K3PO4"
+    ],
+    [
+     "reagent",
+     "Pd(OAc)2",
+     "Pd(OAc)2"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "K3PO4 (2.0 equiv), Pd(OAc)2 (5 mol%) in CH2Cl2 (0.1 M) at reflux, 0.20 mmol, rt, -78 °C, 30 min, 2 days"
+   ],
+   "out": "K3PO4 (2.0 equiv), Pd(OAc)2 (5 mol%) in CH2Cl2 (0.1 M) at reflux, 0.20 mmol, rt, -78 °C, 30 min, 2 days"
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "in dichloromethane"
+   ],
+   "out": [
+    [
+     "reagent",
+     "DCM",
+     "dichloromethane"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "in dichloromethane"
+   ],
+   "out": []
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "in dichloromethane"
+   ],
+   "out": [
+    [
+     "reagent",
+     "DCM",
+     "dichloromethane"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "in dichloromethane"
+   ],
+   "out": "in dichloromethane"
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "stirred for 3 h, then 3h was filtered"
+   ],
+   "out": [
+    [
+     "time",
+     180.0,
+     "3 h"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "stirred for 3 h, then 3h was filtered"
+   ],
+   "out": [
+    [
+     "time",
+     180.0,
+     "3 h"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "stirred for 3 h, then 3h was filtered"
+   ],
+   "out": []
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "stirred for 3 h, then 3h was filtered"
+   ],
+   "out": ""
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "compound 3h and 4d"
+   ],
+   "out": []
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "compound 3h and 4d"
+   ],
+   "out": []
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "compound 3h and 4d"
+   ],
+   "out": []
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "compound 3h and 4d"
+   ],
+   "out": "compound 3h and 4d"
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "under argon"
+   ],
+   "out": [
+    [
+     "reagent",
+     "Ar",
+     "argon"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "under argon"
+   ],
+   "out": []
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "under argon"
+   ],
+   "out": [
+    [
+     "reagent",
+     "Ar",
+     "argon"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "under argon"
+   ],
+   "out": "under argon"
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "under an Ar atmosphere"
+   ],
+   "out": [
+    [
+     "reagent",
+     "Ar",
+     "Ar"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "under an Ar atmosphere"
+   ],
+   "out": []
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "under an Ar atmosphere"
+   ],
+   "out": [
+    [
+     "reagent",
+     "Ar",
+     "Ar"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "under an Ar atmosphere"
+   ],
+   "out": "under an Ar atmosphere"
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "Ar = 4-MeOC6H4"
+   ],
+   "out": [
+    [
+     "reagent",
+     "MeOC6H4",
+     "MeOC6H4"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "Ar = 4-MeOC6H4"
+   ],
+   "out": []
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "Ar = 4-MeOC6H4"
+   ],
+   "out": [
+    [
+     "reagent",
+     "MeOC6H4",
+     "MeOC6H4"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "Ar = 4-MeOC6H4"
+   ],
+   "out": "Ar = 4-MeOC6H4"
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "in air"
+   ],
+   "out": [
+    [
+     "reagent",
+     "O2",
+     "air"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "in air"
+   ],
+   "out": []
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "in air"
+   ],
+   "out": [
+    [
+     "reagent",
+     "O2",
+     "air"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "in air"
+   ],
+   "out": "in air"
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "Reaction run for 48 h at 60 °C."
+   ],
+   "out": [
+    [
+     "temperature",
+     60.0,
+     "60 °C"
+    ],
+    [
+     "time",
+     2880.0,
+     "48 h"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "Reaction run for 48 h at 60 °C."
+   ],
+   "out": [
+    [
+     "temperature",
+     60.0,
+     "60 °C"
+    ],
+    [
+     "time",
+     2880.0,
+     "48 h"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "Reaction run for 48 h at 60 °C."
+   ],
+   "out": []
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "Reaction run for 48 h at 60 °C."
+   ],
+   "out": "Reaction run for 48 h at 60 °C."
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "Using 10 mol% catalyst in toluene."
+   ],
+   "out": [
+    [
+     "loading",
+     10.0,
+     "10 mol%"
+    ],
+    [
+     "reagent",
+     "toluene",
+     "toluene"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "Using 10 mol% catalyst in toluene."
+   ],
+   "out": [
+    [
+     "loading",
+     10.0,
+     "10 mol%"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "Using 10 mol% catalyst in toluene."
+   ],
+   "out": [
+    [
+     "reagent",
+     "toluene",
+     "toluene"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "Using 10 mol% catalyst in toluene."
+   ],
+   "out": "Using 10 mol% catalyst in toluene."
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "Reaction run at 23 °C under N2 overnight."
+   ],
+   "out": [
+    [
+     "temperature",
+     23.0,
+     "23 °C"
+    ],
+    [
+     "time",
+     "overnight",
+     "overnight"
+    ],
+    [
+     "reagent",
+     "N2",
+     "N2"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "Reaction run at 23 °C under N2 overnight."
+   ],
+   "out": [
+    [
+     "temperature",
+     23.0,
+     "23 °C"
+    ],
+    [
+     "time",
+     "overnight",
+     "overnight"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "Reaction run at 23 °C under N2 overnight."
+   ],
+   "out": [
+    [
+     "reagent",
+     "N2",
+     "N2"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "Reaction run at 23 °C under N2 overnight."
+   ],
+   "out": "Reaction run at 23 °C under N2 overnight."
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "The aryl halide (0.20 mmol), the catalyst (5 mol%) and K3PO4 (2.0 equiv) in THF were stirred at 60 °C for 24 h."
+   ],
+   "out": [
+    [
+     "temperature",
+     60.0,
+     "60 °C"
+    ],
+    [
+     "time",
+     1440.0,
+     "24 h"
+    ],
+    [
+     "equiv",
+     2.0,
+     "2.0 equiv"
+    ],
+    [
+     "loading",
+     5.0,
+     "5 mol%"
+    ],
+    [
+     "scale",
+     0.2,
+     "0.20 mmol"
+    ],
+    [
+     "reagent",
+     "THF",
+     "THF"
+    ],
+    [
+     "reagent",
+     "K3PO4",
+     "K3PO4"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "The aryl halide (0.20 mmol), the catalyst (5 mol%) and K3PO4 (2.0 equiv) in THF were stirred at 60 °C for 24 h."
+   ],
+   "out": [
+    [
+     "temperature",
+     60.0,
+     "60 °C"
+    ],
+    [
+     "time",
+     1440.0,
+     "24 h"
+    ],
+    [
+     "equiv",
+     2.0,
+     "2.0 equiv"
+    ],
+    [
+     "loading",
+     5.0,
+     "5 mol%"
+    ],
+    [
+     "scale",
+     0.2,
+     "0.20 mmol"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "The aryl halide (0.20 mmol), the catalyst (5 mol%) and K3PO4 (2.0 equiv) in THF were stirred at 60 °C for 24 h."
+   ],
+   "out": [
+    [
+     "reagent",
+     "THF",
+     "THF"
+    ],
+    [
+     "reagent",
+     "K3PO4",
+     "K3PO4"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "The aryl halide (0.20 mmol), the catalyst (5 mol%) and K3PO4 (2.0 equiv) in THF were stirred at 60 °C for 24 h."
+   ],
+   "out": "The aryl halide (0.20 mmol), the catalyst (5 mol%) and K3PO4 (2.0 equiv) in THF were stirred at 60 °C for 24 h."
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "After cooling to room temperature, the mixture was diluted with water and stirred for 10 min."
+   ],
+   "out": [
+    [
+     "temperature",
+     "rt",
+     "room temperature"
+    ],
+    [
+     "time",
+     10.0,
+     "10 min"
+    ],
+    [
+     "reagent",
+     "water",
+     "water"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "After cooling to room temperature, the mixture was diluted with water and stirred for 10 min."
+   ],
+   "out": [
+    [
+     "temperature",
+     "rt",
+     "room temperature"
+    ],
+    [
+     "time",
+     10.0,
+     "10 min"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "After cooling to room temperature, the mixture was diluted with water and stirred for 10 min."
+   ],
+   "out": [
+    [
+     "reagent",
+     "water",
+     "water"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "After cooling to room temperature, the mixture was diluted with water and stirred for 10 min."
+   ],
+   "out": ""
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "K3PO4 (3.0 equiv) in toluene was stirred at 60 °C for 36 h. The mixture was cooled and filtered."
+   ],
+   "out": [
+    [
+     "temperature",
+     60.0,
+     "60 °C"
+    ],
+    [
+     "time",
+     2160.0,
+     "36 h"
+    ],
+    [
+     "equiv",
+     3.0,
+     "3.0 equiv"
+    ],
+    [
+     "reagent",
+     "toluene",
+     "toluene"
+    ],
+    [
+     "reagent",
+     "K3PO4",
+     "K3PO4"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "K3PO4 (3.0 equiv) in toluene was stirred at 60 °C for 36 h. The mixture was cooled and filtered."
+   ],
+   "out": [
+    [
+     "temperature",
+     60.0,
+     "60 °C"
+    ],
+    [
+     "time",
+     2160.0,
+     "36 h"
+    ],
+    [
+     "equiv",
+     3.0,
+     "3.0 equiv"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "K3PO4 (3.0 equiv) in toluene was stirred at 60 °C for 36 h. The mixture was cooled and filtered."
+   ],
+   "out": [
+    [
+     "reagent",
+     "toluene",
+     "toluene"
+    ],
+    [
+     "reagent",
+     "K3PO4",
+     "K3PO4"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "K3PO4 (3.0 equiv) in toluene was stirred at 60 °C for 36 h. The mixture was cooled and filtered."
+   ],
+   "out": "K3PO4 (3.0 equiv) in toluene was stirred at 60 °C for 36 h."
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "Stirred at room temperature under nitrogen for 16 h."
+   ],
+   "out": [
+    [
+     "temperature",
+     "rt",
+     "room temperature"
+    ],
+    [
+     "time",
+     960.0,
+     "16 h"
+    ],
+    [
+     "reagent",
+     "N2",
+     "nitrogen"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "Stirred at room temperature under nitrogen for 16 h."
+   ],
+   "out": [
+    [
+     "temperature",
+     "rt",
+     "room temperature"
+    ],
+    [
+     "time",
+     960.0,
+     "16 h"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "Stirred at room temperature under nitrogen for 16 h."
+   ],
+   "out": [
+    [
+     "reagent",
+     "N2",
+     "nitrogen"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "Stirred at room temperature under nitrogen for 16 h."
+   ],
+   "out": "Stirred at room temperature under nitrogen for 16 h."
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "in MeCN/H2O (4:1, 0.05 M) at 0 °C to rt for 12 h with Et3N (1.5 equiv.)"
+   ],
+   "out": [
+    [
+     "temperature",
+     0.0,
+     "0 °C"
+    ],
+    [
+     "temperature",
+     "rt",
+     "rt"
+    ],
+    [
+     "time",
+     720.0,
+     "12 h"
+    ],
+    [
+     "equiv",
+     1.5,
+     "1.5 equiv."
+    ],
+    [
+     "conc",
+     0.05,
+     "0.05 M"
+    ],
+    [
+     "reagent",
+     "MeCN",
+     "MeCN"
+    ],
+    [
+     "reagent",
+     "water",
+     "H2O"
+    ],
+    [
+     "reagent",
+     "Et3N",
+     "Et3N"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "in MeCN/H2O (4:1, 0.05 M) at 0 °C to rt for 12 h with Et3N (1.5 equiv.)"
+   ],
+   "out": [
+    [
+     "temperature",
+     0.0,
+     "0 °C"
+    ],
+    [
+     "temperature",
+     "rt",
+     "rt"
+    ],
+    [
+     "time",
+     720.0,
+     "12 h"
+    ],
+    [
+     "equiv",
+     1.5,
+     "1.5 equiv."
+    ],
+    [
+     "conc",
+     0.05,
+     "0.05 M"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "in MeCN/H2O (4:1, 0.05 M) at 0 °C to rt for 12 h with Et3N (1.5 equiv.)"
+   ],
+   "out": [
+    [
+     "reagent",
+     "MeCN",
+     "MeCN"
+    ],
+    [
+     "reagent",
+     "water",
+     "H2O"
+    ],
+    [
+     "reagent",
+     "Et3N",
+     "Et3N"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "in MeCN/H2O (4:1, 0.05 M) at 0 °C to rt for 12 h with Et3N (1.5 equiv.)"
+   ],
+   "out": "in MeCN/H2O (4:1, 0.05 M) at 0 °C to rt for 12 h with Et3N (1.5 equiv.)"
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "1.2 eq. of NaH in DMF at −10 °C, then 40 °C, 1 d"
+   ],
+   "out": [
+    [
+     "temperature",
+     -10.0,
+     "-10 °C"
+    ],
+    [
+     "temperature",
+     40.0,
+     "40 °C"
+    ],
+    [
+     "time",
+     1440.0,
+     "1 d"
+    ],
+    [
+     "equiv",
+     1.2,
+     "1.2 eq."
+    ],
+    [
+     "reagent",
+     "DMF",
+     "DMF"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "1.2 eq. of NaH in DMF at −10 °C, then 40 °C, 1 d"
+   ],
+   "out": [
+    [
+     "temperature",
+     -10.0,
+     "-10 °C"
+    ],
+    [
+     "temperature",
+     40.0,
+     "40 °C"
+    ],
+    [
+     "time",
+     1440.0,
+     "1 d"
+    ],
+    [
+     "equiv",
+     1.2,
+     "1.2 eq."
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "1.2 eq. of NaH in DMF at −10 °C, then 40 °C, 1 d"
+   ],
+   "out": [
+    [
+     "reagent",
+     "DMF",
+     "DMF"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "1.2 eq. of NaH in DMF at −10 °C, then 40 °C, 1 d"
+   ],
+   "out": "1.2 eq. of NaH in DMF at -10 °C, then 40 °C, 1 d"
+  },
+  {
+   "fn": "quantities",
+   "args": [
+    "NiCl2·glyme (10 mol %), dtbbpy (15 mol %), Zn (3 equiv), DMA, 25 °C, 18 h"
+   ],
+   "out": [
+    [
+     "temperature",
+     25.0,
+     "25 °C"
+    ],
+    [
+     "time",
+     1080.0,
+     "18 h"
+    ],
+    [
+     "equiv",
+     3.0,
+     "3 equiv"
+    ],
+    [
+     "loading",
+     10.0,
+     "10 mol %"
+    ],
+    [
+     "loading",
+     15.0,
+     "15 mol %"
+    ],
+    [
+     "reagent",
+     "DMA",
+     "DMA"
+    ],
+    [
+     "reagent",
+     "NiCl2",
+     "NiCl2"
+    ]
+   ]
+  },
+  {
+   "fn": "quantitiesNoReagents",
+   "args": [
+    "NiCl2·glyme (10 mol %), dtbbpy (15 mol %), Zn (3 equiv), DMA, 25 °C, 18 h"
+   ],
+   "out": [
+    [
+     "temperature",
+     25.0,
+     "25 °C"
+    ],
+    [
+     "time",
+     1080.0,
+     "18 h"
+    ],
+    [
+     "equiv",
+     3.0,
+     "3 equiv"
+    ],
+    [
+     "loading",
+     10.0,
+     "10 mol %"
+    ],
+    [
+     "loading",
+     15.0,
+     "15 mol %"
+    ]
+   ]
+  },
+  {
+   "fn": "reagents",
+   "args": [
+    "NiCl2·glyme (10 mol %), dtbbpy (15 mol %), Zn (3 equiv), DMA, 25 °C, 18 h"
+   ],
+   "out": [
+    [
+     "reagent",
+     "DMA",
+     "DMA"
+    ],
+    [
+     "reagent",
+     "NiCl2",
+     "NiCl2"
+    ]
+   ]
+  },
+  {
+   "fn": "reactionPart",
+   "args": [
+    "NiCl2·glyme (10 mol %), dtbbpy (15 mol %), Zn (3 equiv), DMA, 25 °C, 18 h"
+   ],
+   "out": "NiCl2·glyme (10 mol %), dtbbpy (15 mol %), Zn (3 equiv), DMA, 25 °C, 18 h"
+  },
+  {
+   "fn": "sameQuantity",
+   "args": [
+    [
+     "temperature",
+     "rt",
+     "rt"
+    ],
+    [
+     "temperature",
+     23.0,
+     "23 °C"
+    ]
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameQuantity",
+   "args": [
+    [
+     "temperature",
+     "rt",
+     "rt"
+    ],
+    [
+     "temperature",
+     40.0,
+     "40 °C"
+    ]
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameQuantity",
+   "args": [
+    [
+     "time",
+     "overnight",
+     "overnight"
+    ],
+    [
+     "time",
+     960.0,
+     "16 h"
+    ]
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameQuantity",
+   "args": [
+    [
+     "time",
+     "overnight",
+     "overnight"
+    ],
+    [
+     "time",
+     2880.0,
+     "48 h"
+    ]
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameQuantity",
+   "args": [
+    [
+     "time",
+     2880.0,
+     "48 h"
+    ],
+    [
+     "time",
+     2880.0,
+     "2 days"
+    ]
+   ],
+   "out": true
+  },
+  {
+   "fn": "linesAndFootnotes",
+   "args": [
+    [
+     {
+      "text": "85%",
+      "x0": 10,
+      "y0": 43.25,
+      "x1": 23.5,
+      "y1": 51.8,
+      "size": 9.0,
+      "bold": false,
+      "script": false,
+      "italic": false
+     },
+     {
+      "text": "b",
+      "x0": 23.6,
+      "y0": 42.95,
+      "x1": 26.3,
+      "y1": 48.08,
+      "size": 5.4,
+      "bold": false,
+      "script": false,
+      "italic": false
+     },
+     {
+      "text": ", 97:3 er",
+      "x0": 26.5,
+      "y0": 43.25,
+      "x1": 67.0,
+      "y1": 51.8,
+      "size": 9.0,
+      "bold": false,
+      "script": false,
+      "italic": false
+     },
+     {
+      "text": "a",
+      "x0": 10,
+      "y0": 92.95,
+      "x1": 12.7,
+      "y1": 98.08,
+      "size": 5.4,
+      "bold": false,
+      "script": false,
+      "italic": false
+     },
+     {
+      "text": "Isolated yields.",
+      "x0": 12.8,
+      "y0": 93.25,
+      "x1": 84.8,
+      "y1": 101.8,
+      "size": 9.0,
+      "bold": false,
+      "script": false,
+      "italic": false
+     },
+     {
+      "text": "b",
+      "x0": 86,
+      "y0": 92.95,
+      "x1": 88.7,
+      "y1": 98.08,
+      "size": 5.4,
+      "bold": false,
+      "script": false,
+      "italic": false
+     },
+     {
+      "text": "Run at 60 °C for 48 h.",
+      "x0": 88.8,
+      "y0": 93.25,
+      "x1": 187.8,
+      "y1": 101.8,
+      "size": 9.0,
+      "bold": false,
+      "script": false,
+      "italic": false
+     }
+    ]
+   ],
+   "out": {
+    "marked": [
+     {
+      "text": "85%",
+      "x0": 10,
+      "y0": 43.25,
+      "x1": 23.5,
+      "y1": 51.8,
+      "size": 9.0,
+      "bold": false,
+      "script": false,
+      "italic": false
+     },
+     {
+      "text": "b",
+      "x0": 23.6,
+      "y0": 42.95,
+      "x1": 26.3,
+      "y1": 48.08,
+      "size": 5.4,
+      "bold": false,
+      "script": true,
+      "italic": false
+     },
+     {
+      "text": ", 97:3 er",
+      "x0": 26.5,
+      "y0": 43.25,
+      "x1": 67.0,
+      "y1": 51.8,
+      "size": 9.0,
+      "bold": false,
+      "script": false,
+      "italic": false
+     },
+     {
+      "text": "a",
+      "x0": 10,
+      "y0": 92.95,
+      "x1": 12.7,
+      "y1": 98.08,
+      "size": 5.4,
+      "bold": false,
+      "script": true,
+      "italic": false
+     },
+     {
+      "text": "Isolated yields.",
+      "x0": 12.8,
+      "y0": 93.25,
+      "x1": 84.8,
+      "y1": 101.8,
+      "size": 9.0,
+      "bold": false,
+      "script": false,
+      "italic": false
+     },
+     {
+      "text": "b",
+      "x0": 86,
+      "y0": 92.95,
+      "x1": 88.7,
+      "y1": 98.08,
+      "size": 5.4,
+      "bold": false,
+      "script": true,
+      "italic": false
+     },
+     {
+      "text": "Run at 60 °C for 48 h.",
+      "x0": 88.8,
+      "y0": 93.25,
+      "x1": 187.8,
+      "y1": 101.8,
+      "size": 9.0,
+      "bold": false,
+      "script": false,
+      "italic": false
+     }
+    ],
+    "lines": [
+     {
+      "text": "85%^b, 97:3 er",
+      "bbox": [
+       10,
+       43.25,
+       67.0,
+       51.8
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "starts_with_marker": false
+     },
+     {
+      "text": "^aIsolated yields.^bRun at 60 °C for 48 h.",
+      "bbox": [
+       10,
+       93.25,
+       187.8,
+       101.8
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "starts_with_marker": true
+     }
+    ],
+    "entries": [
+     [
+      "a",
+      "Isolated yields.",
+      93.25
+     ],
+     [
+      "b",
+      "Run at 60 °C for 48 h.",
+      93.25
+     ]
+    ]
+   }
+  },
+  {
+   "fn": "labelRecords",
+   "args": [
+    [
+     {
+      "text": "3a",
+      "bbox": [
+       50,
+       100,
+       59.0,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": [
+       "3a"
+      ]
+     },
+     {
+      "text": "92%, 95% ee",
+      "bbox": [
+       40,
+       111,
+       89.5,
+       120.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "3b, 85%, 97:3 er",
+      "bbox": [
+       200,
+       100,
+       272.0,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "3h",
+      "bbox": [
+       50,
+       220,
+       59.0,
+       229.0
+      ],
+      "size": 9.0,
+      "bold_parts": [
+       "3h"
+      ]
+     },
+     {
+      "text": "64%",
+      "bbox": [
+       48,
+       231,
+       61.5,
+       240.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "3i",
+      "bbox": [
+       200,
+       220,
+       209.0,
+       229.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "77%, 90% ee",
+      "bbox": [
+       190,
+       231,
+       239.5,
+       240.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     }
+    ]
+   ],
+   "out": [
+    {
+     "text": "3a / 92%, 95% ee",
+     "ids": [
+      "3a"
+     ],
+     "bbox": [
+      50,
+      100,
+      59.0,
+      120.0
+     ],
+     "ee": "95",
+     "yield": "92",
+     "yield_assumed": true
+    },
+    {
+     "text": "3b, 85%, 97:3 er",
+     "ids": [
+      "3b"
+     ],
+     "er": "97:3",
+     "yield": "85",
+     "yield_assumed": true,
+     "ee_from_er": 94.0,
+     "bbox": [
+      200,
+      100,
+      272.0,
+      109.0
+     ]
+    },
+    {
+     "text": "3h / 64%",
+     "ids": [
+      "3h"
+     ],
+     "bbox": [
+      50,
+      220,
+      59.0,
+      240.0
+     ],
+     "yield": "64",
+     "yield_assumed": true
+    },
+    {
+     "text": "3i / 77%, 90% ee",
+     "ids": [
+      "3i"
+     ],
+     "bbox": [
+      200,
+      220,
+      209.0,
+      240.0
+     ],
+     "ee": "90",
+     "yield": "77",
+     "yield_assumed": true
+    }
+   ]
+  },
+  {
+   "fn": "labelRecords",
+   "args": [
+    [
+     {
+      "text": "3a, n = 2",
+      "bbox": [
+       50,
+       100,
+       90.5,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     }
+    ]
+   ],
+   "out": [
+    {
+     "text": "3a, n = 2",
+     "ids": [
+      "3a"
+     ],
+     "bbox": [
+      50,
+      100,
+      90.5,
+      109.0
+     ]
+    }
+   ]
+  },
+  {
+   "fn": "labelRecords",
+   "args": [
+    [
+     {
+      "text": "3a (from 1b)",
+      "bbox": [
+       50,
+       100,
+       104.0,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     }
+    ]
+   ],
+   "out": [
+    {
+     "text": "3a (from 1b)",
+     "ids": [
+      "3a"
+     ],
+     "bbox": [
+      50,
+      100,
+      104.0,
+      109.0
+     ]
+    }
+   ]
+  },
+  {
+   "fn": "labelRecords",
+   "args": [
+    [
+     {
+      "text": "3a, 92%, 95% ee (2 steps)",
+      "bbox": [
+       50,
+       100,
+       162.5,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     }
+    ]
+   ],
+   "out": [
+    {
+     "text": "3a, 92%, 95% ee (2 steps)",
+     "ids": [
+      "3a"
+     ],
+     "ee": "95",
+     "yield": "92",
+     "yield_assumed": true,
+     "bbox": [
+      50,
+      100,
+      162.5,
+      109.0
+     ]
+    }
+   ]
+  },
+  {
+   "fn": "labelRecords",
+   "args": [
+    [
+     {
+      "text": "3a (from 1b)",
+      "bbox": [
+       50,
+       100,
+       104.0,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "92%, 95% ee",
+      "bbox": [
+       45,
+       111,
+       94.5,
+       120.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     }
+    ]
+   ],
+   "out": [
+    {
+     "text": "3a (from 1b) / 92%, 95% ee",
+     "ids": [
+      "3a"
+     ],
+     "bbox": [
+      50,
+      100,
+      104.0,
+      120.0
+     ],
+     "ee": "95",
+     "yield": "92",
+     "yield_assumed": true
+    }
+   ]
+  },
+  {
+   "fn": "assignToStructures",
+   "args": [
+    [
+     [
+      40,
+      40,
+      100,
+      90
+     ],
+     [
+      180,
+      40,
+      240,
+      90
+     ],
+     [
+      40,
+      200,
+      100,
+      250
+     ]
+    ],
+    [
+     {
+      "text": "3a / 92%",
+      "bbox": [
+       45,
+       100,
+       95,
+       120
+      ]
+     },
+     {
+      "text": "3b, 80%",
+      "bbox": [
+       185,
+       100,
+       235,
+       110
+      ]
+     },
+     {
+      "text": "3h / 64%",
+      "bbox": [
+       45,
+       260,
+       95,
+       280
+      ]
+     },
+     {
+      "text": "12 h",
+      "bbox": [
+       120,
+       60,
+       150,
+       70
+      ]
+     }
+    ]
+   ],
+   "out": [
+    [
+     "3a / 92%"
+    ],
+    [
+     "3b, 80%"
+    ],
+    [
+     "3h / 64%"
+    ]
+   ]
+  },
+  {
+   "fn": "tables",
+   "args": [
+    [
+     {
+      "text": "Entry",
+      "bbox": [
+       30,
+       100,
+       52.5,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "Product",
+      "bbox": [
+       80,
+       100,
+       111.5,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "Yield (%)^a",
+      "bbox": [
+       130,
+       100,
+       179.5,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "ee (%)",
+      "bbox": [
+       190,
+       100,
+       217.0,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "1",
+      "bbox": [
+       30,
+       115,
+       34.5,
+       124.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "3d",
+      "bbox": [
+       80,
+       115,
+       89.0,
+       124.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "88",
+      "bbox": [
+       130,
+       115,
+       139.0,
+       124.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "91",
+      "bbox": [
+       190,
+       115,
+       199.0,
+       124.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "2^c",
+      "bbox": [
+       30,
+       129,
+       43.5,
+       138.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "3e",
+      "bbox": [
+       80,
+       129,
+       89.0,
+       138.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "76",
+      "bbox": [
+       130,
+       129,
+       139.0,
+       138.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "93",
+      "bbox": [
+       190,
+       129,
+       199.0,
+       138.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "^aIsolated yield. ^cAt 60 °C for a long time indeed.",
+      "bbox": [
+       30,
+       150,
+       300,
+       159.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     }
+    ]
+   ],
+   "out": {
+    "entries": [
+     [
+      "a",
+      "Isolated yield.",
+      150
+     ],
+     [
+      "c",
+      "At 60 °C for a long time indeed.",
+      150
+     ]
+    ],
+    "tables": [
+     {
+      "columns": [
+       "Entry",
+       "Product",
+       "Yield (%)^a",
+       "ee (%)"
+      ],
+      "rows": [
+       {
+        "cells": {
+         "Entry": "1",
+         "Product": "3d",
+         "Yield (%)^a": "88",
+         "ee (%)": "91"
+        },
+        "bbox": [
+         30,
+         115,
+         199.0,
+         124.0
+        ],
+        "fields": {
+         "entry": "1",
+         "product_id": "3d",
+         "yield": "88",
+         "ee": "91"
+        }
+       },
+       {
+        "cells": {
+         "Entry": "2^c",
+         "Product": "3e",
+         "Yield (%)^a": "76",
+         "ee (%)": "93"
+        },
+        "bbox": [
+         30,
+         129,
+         199.0,
+         138.0
+        ],
+        "fields": {
+         "entry": "2",
+         "footnotes": [
+          "c"
+         ],
+         "product_id": "3e",
+         "yield": "76",
+         "ee": "93"
+        }
+       }
+      ],
+      "bbox": [
+       30,
+       100,
+       257.0,
+       138.0
+      ]
+     }
+    ],
+    "records": [
+     [
+      {
+       "ids": [
+        "3d"
+       ],
+       "text": "entry: 1 | product_id: 3d | yield: 88 | ee: 91",
+       "entry": "1",
+       "yield": "88",
+       "ee": "91"
+      },
+      {
+       "ids": [
+        "3e"
+       ],
+       "text": "entry: 2 | product_id: 3e | yield: 76 | ee: 93",
+       "entry": "2",
+       "yield": "76",
+       "ee": "93",
+       "footnotes": [
+        "c"
+       ]
+      }
+     ]
+    ],
+    "lines": [
+     {
+      "text": "Entry",
+      "bbox": [
+       30,
+       100,
+       52.5,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "Product",
+      "bbox": [
+       80,
+       100,
+       111.5,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "Yield (%)^a",
+      "bbox": [
+       130,
+       100,
+       179.5,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "ee (%)",
+      "bbox": [
+       190,
+       100,
+       217.0,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "1",
+      "bbox": [
+       30,
+       115,
+       34.5,
+       124.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "3d",
+      "bbox": [
+       80,
+       115,
+       89.0,
+       124.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "88",
+      "bbox": [
+       130,
+       115,
+       139.0,
+       124.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "91",
+      "bbox": [
+       190,
+       115,
+       199.0,
+       124.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "2^c",
+      "bbox": [
+       30,
+       129,
+       43.5,
+       138.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "3e",
+      "bbox": [
+       80,
+       129,
+       89.0,
+       138.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "76",
+      "bbox": [
+       130,
+       129,
+       139.0,
+       138.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "93",
+      "bbox": [
+       190,
+       129,
+       199.0,
+       138.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "in_table": true
+     },
+     {
+      "text": "^aIsolated yield. ^cAt 60 °C for a long time indeed.",
+      "bbox": [
+       30,
+       150,
+       300,
+       159.0
+      ],
+      "size": 9.0,
+      "bold_parts": [],
+      "footnote": true
+     }
+    ]
+   }
+  },
+  {
+   "fn": "tableRecords",
+   "args": [
+    {
+     "rows": [
+      {
+       "fields": {
+        "entry": "1",
+        "product_id": "3a",
+        "yield": "40"
+       }
+      },
+      {
+       "fields": {
+        "entry": "2",
+        "product_id": "3a",
+        "yield": "92",
+        "footnotes": [
+         "b"
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "out": [
+    {
+     "ids": [
+      "3a"
+     ],
+     "text": "entry: 1 | product_id: 3a | yield: 40",
+     "entry": "1",
+     "repeated": true
+    },
+    {
+     "ids": [
+      "3a"
+     ],
+     "text": "entry: 2 | product_id: 3a | yield: 92",
+     "entry": "2",
+     "repeated": true,
+     "footnotes": [
+      "b"
+     ]
+    }
+   ]
+  },
+  {
+   "fn": "footnoteEntries",
+   "args": [
+    [
+     {
+      "text": "We made up this paragraph to stand here and it goes on for a while in the made-up text",
+      "bbox": [
+       30,
+       100,
+       400,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "with more words here",
+      "bbox": [
+       30,
+       113,
+       200,
+       122.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "a Lewis acid catalysts at 80 °C in DMF for 3 days were tried later",
+      "bbox": [
+       30,
+       126,
+       400,
+       135.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     }
+    ]
+   ],
+   "out": []
+  },
+  {
+   "fn": "footnoteEntries",
+   "args": [
+    [
+     {
+      "text": "3a",
+      "bbox": [
+       60,
+       100,
+       69.0,
+       109.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "92%, 95% ee",
+      "bbox": [
+       50,
+       111,
+       99.5,
+       120.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     },
+     {
+      "text": "a Reaction run at 23 °C for 12 h.",
+      "bbox": [
+       30,
+       124,
+       300,
+       133.0
+      ],
+      "size": 9.0,
+      "bold_parts": []
+     }
+    ]
+   ],
+   "out": [
+    [
+     "a",
+     "Reaction run at 23 °C for 12 h.",
+     124
+    ]
+   ]
+  },
+  {
+   "fn": "footnotesFor",
+   "args": [
+    [
+     [
+      "c",
+      "first",
+      100.0
+     ],
+     [
+      "c",
+      "second",
+      300.0
+     ]
+    ],
+    [
+     50,
+     200,
+     400
+    ]
+   ],
+   "out": [
+    {
+     "c": "first"
+    },
+    {
+     "c": "second"
+    },
+    {
+     "c": "second"
+    }
+   ]
+  },
+  {
+   "fn": "dehyphenate",
+   "args": [
+    "methyl 4-bromo-\nbenzoate (3c)"
+   ],
+   "out": "methyl 4-bromobenzoate (3c)"
+  },
+  {
+   "fn": "dehyphenate",
+   "args": [
+    "tert-\nbutyl and 2-\nmethyl and N-\nmethyl"
+   ],
+   "out": "tert-butyl and 2-methyl and N-methyl"
+  },
+  {
+   "fn": "dehyphenate",
+   "args": [
+    "electro­\nchemical"
+   ],
+   "out": "electrochemical"
+  },
+  {
+   "fn": "dehyphenate",
+   "args": [
+    "the cata-\nlyst and (S)-\nproline, 4-\n(dimethylamino)pyridine"
+   ],
+   "out": "the catalyst and (S)- proline, 4-(dimethylamino)pyridine"
+  },
+  {
+   "fn": "sameYield",
+   "args": [
+    "92",
+    "92.0"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameYield",
+   "args": [
+    "quant.",
+    "99"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameYield",
+   "args": [
+    "quant.",
+    ">99"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameYield",
+   "args": [
+    "quant.",
+    "98"
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameYield",
+   "args": [
+    "85",
+    "82"
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameYield",
+   "args": [
+    "quant",
+    "quantitative"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameYield",
+   "args": [
+    "100",
+    "quant."
+   ],
+   "out": true
+  },
+  {
+   "fn": "eeValue",
+   "args": [
+    "94% ee"
+   ],
+   "out": [
+    "",
+    94.0,
+    false
+   ]
+  },
+  {
+   "fn": "eeValue",
+   "args": [
+    "97:3 er"
+   ],
+   "out": [
+    "",
+    94.0,
+    true
+   ]
+  },
+  {
+   "fn": "eeValue",
+   "args": [
+    ">99% ee"
+   ],
+   "out": [
+    ">",
+    99.0,
+    false
+   ]
+  },
+  {
+   "fn": "eeValue",
+   "args": [
+    "99"
+   ],
+   "out": [
+    "",
+    99.0,
+    false
+   ]
+  },
+  {
+   "fn": "eeValue",
+   "args": [
+    "rac"
+   ],
+   "out": [
+    "",
+    0.0,
+    false
+   ]
+  },
+  {
+   "fn": "eeValue",
+   "args": [
+    "racemic"
+   ],
+   "out": [
+    "",
+    0.0,
+    false
+   ]
+  },
+  {
+   "fn": "eeValue",
+   "args": [
+    ""
+   ],
+   "out": null
+  },
+  {
+   "fn": "eeValue",
+   "args": [
+    "abc"
+   ],
+   "out": null
+  },
+  {
+   "fn": "sameEe",
+   "args": [
+    "94% ee",
+    "97:3 er"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameEe",
+   "args": [
+    "95% ee",
+    "97:3"
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameEe",
+   "args": [
+    ">99% ee",
+    "99"
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameDr",
+   "args": [
+    ">20:1",
+    ">20:1"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameDr",
+   "args": [
+    ">20:1",
+    "20:1"
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameDr",
+   "args": [
+    "10:1",
+    "91:9"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameDr",
+   "args": [
+    "10:1",
+    "5:1"
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameDr",
+   "args": [
+    "5:1",
+    "83:17"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameDr",
+   "args": [
+    "5:1",
+    "90:10"
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameDr",
+   "args": [
+    "83:17",
+    "80:20"
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameDr",
+   "args": [
+    "single diastereomer",
+    "Single  diastereomer"
+   ],
+   "out": false
+  },
+  {
+   "fn": "sameDr",
+   "args": [
+    "2.5:1",
+    "71:29"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameName",
+   "args": [
+    "Methyl 4‑bromobenzoate.",
+    "methyl  4-bromobenzoate"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameName",
+   "args": [
+    "N’-methyl",
+    "N'-Methyl"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameName",
+   "args": [
+    "Methyl 4-bromo-benzoate",
+    "methyl 4-bromobenzoate"
+   ],
+   "out": true
+  },
+  {
+   "fn": "sameName",
+   "args": [
+    "methyl 3-bromobenzoate",
+    "methyl 4-bromobenzoate"
+   ],
+   "out": false
+  },
+  {
+   "fn": "partName",
+   "args": [
+    "/word/media/image1.emf"
+   ],
+   "out": "word/media/image1.emf"
+  },
+  {
+   "fn": "partName",
+   "args": [
+    "media/image1.emf"
+   ],
+   "out": "word/media/image1.emf"
+  },
+  {
+   "fn": "partName",
+   "args": [
+    "../media/x.emf"
+   ],
+   "out": "media/x.emf"
+  }
+ ],
+ "files": {
+  "scheme.cdxml": {
+   "file": "scheme.cdxml",
+   "kind": "cdxml",
+   "records": [
+    {
+     "id": "3a",
+     "file": "scheme.cdxml",
+     "where": "scheme.cdxml",
+     "source": "cdxml",
+     "confidence": "exact",
+     "text": "3a / 92%, 95% ee",
+     "yield": "92",
+     "ee": "95",
+     "smiles": "COC(=O)c1ccc(Br)cc1",
+     "yield_assumed": true
+    },
+    {
+     "id": "3b",
+     "file": "scheme.cdxml",
+     "where": "scheme.cdxml",
+     "source": "cdxml",
+     "confidence": "exact",
+     "text": "3b, 85%^b, 97:3 er",
+     "yield": "85",
+     "er": "97:3",
+     "ee_from_er": 94.0,
+     "footnotes": [
+      "b"
+     ],
+     "conditions": {
+      "b": "Reaction run for 48 h at 60 °C."
+     },
+     "smiles": "COC(=O)c1ccc(Cl)cc1",
+     "yield_assumed": true
+    },
+    {
+     "id": "3c",
+     "file": "scheme.cdxml",
+     "where": "scheme.cdxml",
+     "source": "cdxml",
+     "confidence": "exact",
+     "text": "3c / 70%, >20:1 dr",
+     "yield": "70",
+     "dr": ">20:1",
+     "smiles": "CCOC(=O)Cc1ccc(C)cc1",
+     "yield_assumed": true
+    },
+    {
+     "id": "3h",
+     "file": "scheme.cdxml",
+     "where": "scheme.cdxml",
+     "source": "cdxml",
+     "confidence": "exact",
+     "text": "3h^c / 64%",
+     "yield": "64",
+     "footnotes": [
+      "c"
+     ],
+     "conditions": {
+      "c": "Using 10 mol% catalyst in toluene."
+     },
+     "smiles": "CC(N)c1ccccc1",
+     "yield_assumed": true
+    },
+    {
+     "id": "3i",
+     "file": "scheme.cdxml",
+     "where": "scheme.cdxml",
+     "source": "cdxml",
+     "confidence": "exact",
+     "text": "3i / 77%, 90% ee",
+     "yield": "77",
+     "ee": "90",
+     "smiles": "CC(=O)c1ccccc1",
+     "yield_assumed": true
+    }
+   ],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "10",
+    "3a",
+    "3b",
+    "3c",
+    "3h^c",
+    "3i",
+    "48",
+    "60",
+    "64%",
+    "70%",
+    "77%",
+    "85%^b",
+    "90%",
+    "92%",
+    "95%",
+    "97:3",
+    ">20:1",
+    "^aisolated",
+    "^breaction",
+    "^cusing",
+    "at",
+    "catalyst",
+    "dr",
+    "ee",
+    "er",
+    "for",
+    "h",
+    "in",
+    "mol%",
+    "run",
+    "toluene",
+    "yields",
+    "°c"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "ms.docx": {
+   "file": "ms.docx",
+   "kind": "docx",
+   "records": [
+    {
+     "id": "3d",
+     "file": "ms.docx",
+     "where": "Table 1",
+     "source": "table",
+     "confidence": "high",
+     "text": "entry: 1 | product_id: 3d | yield: 88 | ee: 91",
+     "yield": "88",
+     "ee": "91",
+     "entry": "1"
+    },
+    {
+     "id": "3e",
+     "file": "ms.docx",
+     "where": "Table 1",
+     "source": "table",
+     "confidence": "high",
+     "text": "entry: 2 | product_id: 3e | yield: 76 | ee: 93",
+     "yield": "76",
+     "ee": "93",
+     "footnotes": [
+      "c"
+     ],
+     "conditions": {
+      "c": "Using 10 mol% catalyst in toluene."
+     },
+     "entry": "2"
+    }
+   ],
+   "names": [
+    {
+     "name": "methyl 4-bromobenzoate",
+     "id": "3a",
+     "where": "paragraph 2"
+    },
+    {
+     "name": "ethyl 2-phenylpropanoate",
+     "id": "3c",
+     "where": "paragraph 2"
+    }
+   ],
+   "mentioned": [
+    "3a",
+    "3c"
+   ],
+   "tokens": [
+    "%",
+    "1",
+    "10",
+    "2",
+    "2-phenylpropanoate",
+    "2^c",
+    "3",
+    "3a",
+    "3c",
+    "3d",
+    "3e",
+    "4-bromobenzoate",
+    "48",
+    "60",
+    "76",
+    "88",
+    "91",
+    "93",
+    "^aisolated",
+    "^breaction",
+    "^cusing",
+    "a",
+    "after",
+    "at",
+    "catalyst",
+    "coupling",
+    "ee",
+    "entry",
+    "ester",
+    "ethyl",
+    "filtered",
+    "for",
+    "further",
+    "h",
+    "in",
+    "large",
+    "made",
+    "made-up",
+    "methyl",
+    "mixture",
+    "mol%",
+    "of",
+    "on",
+    "product",
+    "products",
+    "run",
+    "scale",
+    "scheme",
+    "scope",
+    "table",
+    "testing",
+    "the",
+    "toluene",
+    "too",
+    "was",
+    "yield",
+    "yields",
+    "°c"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "ms.pdf": {
+   "file": "ms.pdf",
+   "kind": "pdf",
+   "records": [
+    {
+     "id": "3a",
+     "file": "ms.pdf",
+     "where": "Scheme 2, p. 1",
+     "source": "figure",
+     "confidence": "high",
+     "text": "3a / 92%, 95% ee",
+     "yield": "92",
+     "ee": "95",
+     "yield_assumed": true
+    },
+    {
+     "id": "3b",
+     "file": "ms.pdf",
+     "where": "Scheme 2, p. 1",
+     "source": "figure",
+     "confidence": "high",
+     "text": "3b / 85%^b, 97:3 er",
+     "yield": "85",
+     "er": "97:3",
+     "ee_from_er": 94.0,
+     "footnotes": [
+      "b"
+     ],
+     "conditions": {
+      "b": "Reaction run for 48 h at 60 °C."
+     },
+     "yield_assumed": true
+    },
+    {
+     "id": "3c",
+     "file": "ms.pdf",
+     "where": "Scheme 2, p. 1",
+     "source": "figure",
+     "confidence": "high",
+     "text": "3c, 70%, >20:1 dr",
+     "yield": "70",
+     "dr": ">20:1",
+     "yield_assumed": true
+    },
+    {
+     "id": "3i",
+     "file": "ms.pdf",
+     "where": "Scheme 2, p. 1",
+     "source": "figure",
+     "confidence": "high",
+     "text": "3i / 77%, 90% ee",
+     "yield": "77",
+     "ee": "90",
+     "yield_assumed": true
+    },
+    {
+     "id": "3h",
+     "file": "ms.pdf",
+     "where": "Scheme 2, p. 1",
+     "source": "figure",
+     "confidence": "high",
+     "text": "3h^c / 64%",
+     "yield": "64",
+     "footnotes": [
+      "c"
+     ],
+     "conditions": {
+      "c": "Using 10 mol% catalyst in toluene."
+     },
+     "yield_assumed": true
+    }
+   ],
+   "names": [
+    {
+     "name": "methyl 4-bromobenzoate",
+     "id": "3a",
+     "where": "p. 1"
+    },
+    {
+     "name": "Ethyl 2-phenylpropanoate",
+     "id": "3c",
+     "where": "p. 1"
+    }
+   ],
+   "mentioned": [
+    "3e",
+    "3a",
+    "3c"
+   ],
+   "tokens": [
+    "%",
+    "%)a",
+    "1",
+    "10",
+    "2",
+    "2-phenylpropanoate",
+    "2c",
+    "3",
+    "3a",
+    "3b",
+    "3c",
+    "3d",
+    "3e",
+    "3hc",
+    "3i",
+    "4-bromobenzoate",
+    "48",
+    "60",
+    "64%",
+    "70%",
+    "76",
+    "77%",
+    "85%b",
+    "88",
+    "90%",
+    "91",
+    "92%",
+    "93",
+    "95%",
+    "97:3",
+    ">20:1",
+    "a",
+    "after",
+    "aisolated",
+    "also",
+    "at",
+    "breaction",
+    "catalyst",
+    "compound",
+    "coupling",
+    "couplinga",
+    "cusing",
+    "dr",
+    "ee",
+    "entry",
+    "er",
+    "ester",
+    "ethyl",
+    "example",
+    "filtered",
+    "for",
+    "further",
+    "h",
+    "in",
+    "is",
+    "large",
+    "made",
+    "made-up",
+    "methyl",
+    "mixture",
+    "mol%",
+    "of",
+    "on",
+    "product",
+    "products",
+    "run",
+    "scale",
+    "scheme",
+    "scope",
+    "table",
+    "testing",
+    "the",
+    "toluene",
+    "was",
+    "yield",
+    "yields",
+    "°c"
+   ],
+   "notes": [
+    "Some text on p. 1 of “ms.pdf” is set at a slant, so it was not read."
+   ],
+   "error": "",
+   "figure_text": true,
+   "pages": 1,
+   "transient": false
+  },
+  "ms-nofig.pdf": {
+   "file": "ms-nofig.pdf",
+   "kind": "pdf",
+   "records": [],
+   "names": [
+    {
+     "name": "methyl 4-bromobenzoate",
+     "id": "3a",
+     "where": "p. 1"
+    },
+    {
+     "name": "Ethyl 2-phenylpropanoate",
+     "id": "3c",
+     "where": "p. 1"
+    }
+   ],
+   "mentioned": [
+    "3e",
+    "3a",
+    "3c"
+   ],
+   "tokens": [
+    "%",
+    "%)a",
+    "1",
+    "10",
+    "2",
+    "2-phenylpropanoate",
+    "2c",
+    "3",
+    "3a",
+    "3c",
+    "3d",
+    "3e",
+    "4-bromobenzoate",
+    "48",
+    "60",
+    "76",
+    "88",
+    "91",
+    "93",
+    "a",
+    "after",
+    "aisolated",
+    "also",
+    "at",
+    "breaction",
+    "catalyst",
+    "compound",
+    "coupling",
+    "couplinga",
+    "cusing",
+    "ee",
+    "entry",
+    "ester",
+    "ethyl",
+    "example",
+    "filtered",
+    "for",
+    "further",
+    "h",
+    "in",
+    "is",
+    "large",
+    "made",
+    "made-up",
+    "methyl",
+    "mixture",
+    "mol%",
+    "of",
+    "on",
+    "product",
+    "products",
+    "run",
+    "scale",
+    "scheme",
+    "scope",
+    "table",
+    "testing",
+    "the",
+    "toluene",
+    "was",
+    "yield",
+    "yields",
+    "°c"
+   ],
+   "notes": [
+    "Some text on p. 1 of “ms-nofig.pdf” is set at a slant, so it was not read.",
+    "“ms-nofig.pdf”: no compound labels with yields were found in the figures. Their text is probably outlined or part of a picture, so only the body text and tables could be checked. Add the ChemDraw files (.cdxml) of the schemes to check them."
+   ],
+   "error": "",
+   "figure_text": false,
+   "pages": 1,
+   "transient": false
+  },
+  "arrow-text.cdxml": {
+   "file": "arrow-text.cdxml",
+   "kind": "cdxml",
+   "records": [
+    {
+     "id": "1a",
+     "file": "arrow-text.cdxml",
+     "where": "arrow-text.cdxml",
+     "source": "cdxml",
+     "confidence": "exact",
+     "text": "1a",
+     "smiles": "COC(=O)c1ccc(Br)cc1"
+    },
+    {
+     "id": "3a",
+     "file": "arrow-text.cdxml",
+     "where": "arrow-text.cdxml",
+     "source": "cdxml",
+     "confidence": "exact",
+     "text": "3a / 92%, 95% ee",
+     "yield": "92",
+     "ee": "95",
+     "smiles": "COC(=O)c1ccc(-c2ccccc2)cc1",
+     "yield_assumed": true
+    }
+   ],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "1.5",
+    "1a",
+    "24",
+    "2a",
+    "3a",
+    "5",
+    "92%",
+    "95%",
+    "ee",
+    "equiv",
+    "h",
+    "mol%",
+    "pd"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "arrow.cdxml": {
+   "file": "arrow.cdxml",
+   "kind": "cdxml",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "2a"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "two.cdxml": {
+   "file": "two.cdxml",
+   "kind": "cdxml",
+   "records": [
+    {
+     "id": "3a",
+     "file": "two.cdxml",
+     "where": "two.cdxml",
+     "source": "cdxml",
+     "confidence": "exact",
+     "text": "3a^b / 92%",
+     "yield": "92",
+     "footnotes": [
+      "b"
+     ],
+     "conditions": {
+      "b": "Reaction run at 40 °C."
+     },
+     "smiles": "COC(=O)c1ccc(Br)cc1",
+     "yield_assumed": true
+    },
+    {
+     "id": "4a",
+     "file": "two.cdxml",
+     "where": "two.cdxml",
+     "source": "cdxml",
+     "confidence": "exact",
+     "text": "4a^b / 70%",
+     "yield": "70",
+     "footnotes": [
+      "b"
+     ],
+     "conditions": {
+      "b": "Reaction run for 48 h."
+     },
+     "smiles": "CC(=O)c1ccccc1",
+     "yield_assumed": true
+    }
+   ],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "3a^b",
+    "40",
+    "48",
+    "4a^b",
+    "70%",
+    "92%",
+    "^breaction",
+    "at",
+    "for",
+    "h",
+    "run",
+    "°c"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "merged.docx": {
+   "file": "merged.docx",
+   "kind": "docx",
+   "records": [
+    {
+     "id": "3d",
+     "file": "merged.docx",
+     "where": "Table 1",
+     "source": "table",
+     "confidence": "high",
+     "text": "entry: 1 | product_id: 3d | yield: 88 | ee: 91",
+     "yield": "88",
+     "ee": "91",
+     "entry": "1"
+    },
+    {
+     "id": "3e",
+     "file": "merged.docx",
+     "where": "Table 1",
+     "source": "table",
+     "confidence": "high",
+     "text": "entry: 2 | product_id: 3e | yield: 76 | ee: 93",
+     "yield": "76",
+     "ee": "93",
+     "entry": "2"
+    }
+   ],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "%",
+    "1",
+    "2",
+    "3d",
+    "3e",
+    "76",
+    "88",
+    "91",
+    "93",
+    "ee",
+    "entry",
+    "product",
+    "results",
+    "scope",
+    "table",
+    "yield"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "span.docx": {
+   "file": "span.docx",
+   "kind": "docx",
+   "records": [
+    {
+     "id": "3d",
+     "file": "span.docx",
+     "where": "table 1",
+     "source": "table",
+     "confidence": "high",
+     "text": "entry: 1 | substrate_id: 1d | product_id: 3d | yield: 88",
+     "yield": "88",
+     "entry": "1"
+    }
+   ],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "%",
+    "1",
+    "1d",
+    "1e",
+    "2",
+    "2e",
+    "3d",
+    "76",
+    "88",
+    "and",
+    "entry",
+    "product",
+    "substrate",
+    "yield"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "f.docx": {
+   "file": "f.docx",
+   "kind": "docx",
+   "records": [
+    {
+     "id": "3a",
+     "file": "f.docx",
+     "where": "paragraph 1",
+     "source": "text",
+     "confidence": "medium",
+     "text": "Ketone 3a^a was obtained in 90% yield.",
+     "yield": "90",
+     "footnotes": [
+      "a"
+     ],
+     "conditions": {}
+    }
+   ],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "3a^a",
+    "80",
+    "90%",
+    "a",
+    "acid",
+    "at",
+    "in",
+    "ketone",
+    "lewis",
+    "obtained",
+    "tried",
+    "was",
+    "yield",
+    "°c"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "g.docx": {
+   "file": "g.docx",
+   "kind": "docx",
+   "records": [
+    {
+     "id": "3a",
+     "file": "g.docx",
+     "where": "paragraph 1",
+     "source": "text",
+     "confidence": "medium",
+     "text": "Ketone 3a^a was obtained in 90% yield.",
+     "yield": "90",
+     "footnotes": [
+      "a"
+     ],
+     "conditions": {
+      "a": "Run at 80 °C."
+     }
+    }
+   ],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "1",
+    "3a^a",
+    "80",
+    "90%",
+    "a",
+    "at",
+    "in",
+    "ketone",
+    "made-up",
+    "obtained",
+    "run",
+    "table",
+    "was",
+    "yield",
+    "°c"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "t.docx": {
+   "file": "t.docx",
+   "kind": "docx",
+   "records": [
+    {
+     "id": "3d",
+     "file": "t.docx",
+     "where": "table 1",
+     "source": "table",
+     "confidence": "high",
+     "text": "entry: 1 | product_id: 3d | yield: 88",
+     "yield": "88",
+     "entry": "1"
+    },
+    {
+     "id": "3e",
+     "file": "t.docx",
+     "where": "table 1",
+     "source": "table",
+     "confidence": "high",
+     "text": "entry: 2 | product_id: 3e | yield: 76",
+     "yield": "76",
+     "footnotes": [
+      "c"
+     ],
+     "conditions": {
+      "c": "Using 10 mol% catalyst in toluene."
+     },
+     "entry": "2"
+    }
+   ],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "%",
+    "1",
+    "10",
+    "2^c",
+    "3d",
+    "3e",
+    "76",
+    "88",
+    "^cusing",
+    "a",
+    "catalyst",
+    "entry",
+    "in",
+    "isolated",
+    "mol%",
+    "product",
+    "toluene",
+    "yield"
+   ],
+   "notes": [],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "bad.pdf": {
+   "file": "bad.pdf",
+   "kind": "pdf",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [],
+   "error": "“bad.pdf” could not be opened as a PDF (PdfStreamError). It may be damaged or password-protected; save it again from Word or the journal's site and add it again.",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "empty.pdf": {
+   "file": "empty.pdf",
+   "kind": "pdf",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [],
+   "error": "“empty.pdf” could not be opened as a PDF (EmptyFileError). It may be damaged or password-protected; save it again from Word or the journal's site and add it again.",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "bad.docx": {
+   "file": "bad.docx",
+   "kind": "docx",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [],
+   "error": "“bad.docx” could not be opened as a Word document (BadZipFile). It may be damaged; save it again from Word.",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "bad.cdxml": {
+   "file": "bad.cdxml",
+   "kind": "cdxml",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [],
+   "error": "“bad.cdxml” could not be read as a ChemDraw .cdxml file (ParseError). Save it again from ChemDraw (File ▸ Save As ▸ CDXML).",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "odd.cdxml": {
+   "file": "odd.cdxml",
+   "kind": "cdxml",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [
+    "“odd.cdxml”: no structures were found in this ChemDraw file."
+   ],
+   "error": "",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "s.cdx": {
+   "file": "s.cdx",
+   "kind": "other",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [],
+   "error": "“s.cdx” is a ChemDraw .cdx file, which this program can't read. In ChemDraw, use File ▸ Save As… and choose “CDXML” as the type, then add that file instead.",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "m.doc": {
+   "file": "m.doc",
+   "kind": "other",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [],
+   "error": "“m.doc” is an old-style Word file (.doc). Open it in Word and save it as .docx (File ▸ Save As ▸ Word Document), then add that file instead.",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "notes.txt": {
+   "file": "notes.txt",
+   "kind": "other",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [],
+   "error": "“notes.txt” is not a PDF, Word .docx or ChemDraw .cdxml file, so it was not read.",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "x.docx": {
+   "file": "x.docx",
+   "kind": "docx",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [],
+   "error": "“x.docx” could not be opened as a Word document (KeyError). It may be damaged; save it again from Word.",
+   "figure_text": true,
+   "pages": 0,
+   "transient": false
+  },
+  "rotated.pdf": {
+   "file": "rotated.pdf",
+   "kind": "pdf",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "%",
+    "1",
+    "2",
+    "3d",
+    "3e",
+    "76",
+    "88",
+    "91",
+    "93",
+    "ee",
+    "entry",
+    "made-up",
+    "product",
+    "products",
+    "some",
+    "text.table",
+    "yield"
+   ],
+   "notes": [
+    "Some text on p. 1 of “rotated.pdf” is set at a slant, so it was not read.",
+    "“rotated.pdf”: no compound labels with yields were found in the figures. Their text is probably outlined or part of a picture, so only the body text and tables could be checked. Add the ChemDraw files (.cdxml) of the schemes to check them."
+   ],
+   "error": "",
+   "figure_text": false,
+   "pages": 1,
+   "transient": false
+  },
+  "slanted.pdf": {
+   "file": "slanted.pdf",
+   "kind": "pdf",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [
+    "%",
+    "1",
+    "2",
+    "3d",
+    "3e",
+    "76",
+    "88",
+    "91",
+    "93",
+    "ee",
+    "entry",
+    "made-up",
+    "product",
+    "products",
+    "some",
+    "table",
+    "text",
+    "yield"
+   ],
+   "notes": [
+    "Some text on p. 1 of “slanted.pdf” is set at a slant, so it was not read.",
+    "“slanted.pdf”: no compound labels with yields were found in the figures. Their text is probably outlined or part of a picture, so only the body text and tables could be checked. Add the ChemDraw files (.cdxml) of the schemes to check them."
+   ],
+   "error": "",
+   "figure_text": false,
+   "pages": 1,
+   "transient": false
+  },
+  "justified-12cm.pdf": {
+   "file": "justified-12cm.pdf",
+   "kind": "pdf",
+   "records": [],
+   "names": [],
+   "mentioned": [
+    "3c"
+   ],
+   "tokens": [
+    "-",
+    "3c",
+    "48",
+    "4b",
+    "70%",
+    "80%",
+    "a",
+    "after",
+    "all",
+    "also",
+    "and",
+    "behaved",
+    "but",
+    "case",
+    "cases",
+    "catalyst",
+    "changed",
+    "cleanly",
+    "conditions",
+    "discuss",
+    "do",
+    "dropped",
+    "ers",
+    "examined",
+    "expected",
+    "experiments",
+    "extending",
+    "further",
+    "gave",
+    "good",
+    "h",
+    "here",
+    "in",
+    "iso",
+    "it",
+    "lated",
+    "ligand",
+    "longer",
+    "made-up",
+    "modest",
+    "next",
+    "not",
+    "obtained",
+    "of",
+    "oth",
+    "overall",
+    "product",
+    "raised",
+    "reaction",
+    "required",
+    "result",
+    "scope",
+    "selec",
+    "short",
+    "showed",
+    "similarly",
+    "substrate",
+    "tert-butyl",
+    "that",
+    "the",
+    "these",
+    "time",
+    "times",
+    "tivity",
+    "to",
+    "under",
+    "variant",
+    "was",
+    "we",
+    "when",
+    "which",
+    "with",
+    "yield"
+   ],
+   "notes": [
+    "Some text on p. 1 of “justified-12cm.pdf” is set at a slant, so it was not read.",
+    "“justified-12cm.pdf”: no compound labels with yields were found in the figures. Their text is probably outlined or part of a picture, so only the body text and tables could be checked. Add the ChemDraw files (.cdxml) of the schemes to check them."
+   ],
+   "error": "",
+   "figure_text": false,
+   "pages": 1,
+   "transient": false
+  },
+  "justified-14cm.pdf": {
+   "file": "justified-14cm.pdf",
+   "kind": "pdf",
+   "records": [],
+   "names": [],
+   "mentioned": [
+    "3c"
+   ],
+   "tokens": [
+    "-",
+    "3c",
+    "48",
+    "4b",
+    "70%",
+    "80%",
+    "a",
+    "after",
+    "all",
+    "also",
+    "and",
+    "behaved",
+    "but",
+    "case",
+    "cases",
+    "catalyst",
+    "changed",
+    "cleanly",
+    "conditions",
+    "discuss",
+    "do",
+    "dropped",
+    "examined",
+    "expected",
+    "experiments",
+    "extend",
+    "further",
+    "gave",
+    "good",
+    "h",
+    "here",
+    "in",
+    "ing",
+    "iso-lated",
+    "it",
+    "ligand",
+    "longer",
+    "made-up",
+    "madeup",
+    "modest",
+    "next",
+    "not",
+    "obtained",
+    "of",
+    "others",
+    "overall",
+    "product",
+    "raised",
+    "reaction",
+    "required",
+    "result",
+    "scope",
+    "selectivity",
+    "short",
+    "showed",
+    "similarly",
+    "strate",
+    "sub",
+    "tert-butyl",
+    "that",
+    "the",
+    "these",
+    "time",
+    "times",
+    "to",
+    "under",
+    "variant",
+    "was",
+    "we",
+    "when",
+    "which",
+    "with",
+    "yield"
+   ],
+   "notes": [
+    "Some text on p. 1 of “justified-14cm.pdf” is set at a slant, so it was not read.",
+    "“justified-14cm.pdf”: no compound labels with yields were found in the figures. Their text is probably outlined or part of a picture, so only the body text and tables could be checked. Add the ChemDraw files (.cdxml) of the schemes to check them."
+   ],
+   "error": "",
+   "figure_text": false,
+   "pages": 1,
+   "transient": false
+  },
+  "pic.pdf": {
+   "file": "pic.pdf",
+   "kind": "pdf",
+   "records": [],
+   "names": [],
+   "mentioned": [],
+   "tokens": [],
+   "notes": [],
+   "error": "“pic.pdf” has no text that can be read (it is probably a scanned or picture-only PDF), so it could not be checked. Add the Word file or a PDF saved from Word instead.",
+   "figure_text": false,
+   "pages": 1,
+   "transient": false
+  }
+ },
+ "synth": {
+  "internal": [
+   {
+    "file": "a.pdf",
+    "kind": "pdf",
+    "records": [
+     {
+      "id": "3a",
+      "yield": "92",
+      "ee": "95",
+      "where": "Scheme 2"
+     },
+     {
+      "id": "3a",
+      "yield": "90",
+      "where": "Table 1"
+     },
+     {
+      "id": "3b",
+      "er": "97:3",
+      "where": "Scheme 2"
+     },
+     {
+      "id": "3d",
+      "er": "96:4",
+      "where": "Scheme 2"
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   }
+  ],
+  "a4": [
+   {
+    "file": "s.cdxml",
+    "kind": "cdxml",
+    "records": [
+     {
+      "id": "1a",
+      "smiles": "Brc1ccccc1",
+      "where": "s.cdxml",
+      "source": "cdxml"
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   }
+  ],
+  "b5": [
+   {
+    "file": "ms.docx",
+    "kind": "docx",
+    "records": [
+     {
+      "id": "3d",
+      "yield": "88",
+      "where": "Table 1",
+      "source": "table"
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   },
+   {
+    "file": "ms.pdf",
+    "kind": "pdf",
+    "records": [
+     {
+      "id": "3d",
+      "yield": "88",
+      "where": "Table 1, p. 1",
+      "source": "table"
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   },
+   {
+    "file": "s.cdxml",
+    "kind": "cdxml",
+    "records": [
+     {
+      "id": "3d",
+      "smiles": "CC(O)c1ccccc1",
+      "where": "s.cdxml",
+      "source": "cdxml"
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   }
+  ],
+  "conditions-ok": [
+   {
+    "file": "ms.pdf",
+    "kind": "pdf",
+    "records": [
+     {
+      "id": "3b",
+      "yield": "82",
+      "footnotes": [
+       "b"
+      ],
+      "where": "Scheme 2",
+      "conditions": {
+       "b": "Reaction run at 60 °C for 24 h."
+      }
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   }
+  ],
+  "missing-footnote": [
+   {
+    "file": "ms.pdf",
+    "kind": "pdf",
+    "records": [
+     {
+      "id": "3b",
+      "yield": "82",
+      "footnotes": [
+       "d"
+      ],
+      "where": "Scheme 2"
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   }
+  ],
+  "nmr-yield": [
+   {
+    "file": "ms.pdf",
+    "kind": "pdf",
+    "records": [
+     {
+      "id": "3f",
+      "yield_nmr": "40",
+      "where": "Scheme 2"
+     },
+     {
+      "id": "3c",
+      "yield": "70",
+      "dr": "10:1",
+      "where": "Scheme 2"
+     },
+     {
+      "id": "3e",
+      "ee": "rac",
+      "where": "Scheme 2"
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   }
+  ],
+  "b1": [
+   {
+    "file": "ms.docx",
+    "kind": "docx",
+    "records": [
+     {
+      "id": "3b",
+      "file": "ms.docx",
+      "where": "paragraph 3",
+      "source": "text",
+      "confidence": "medium",
+      "text": "Using Pd(OAc)2 instead, compound 3b formed in 85% yield.",
+      "yield": "85"
+     },
+     {
+      "id": "3h",
+      "file": "ms.docx",
+      "where": "paragraph 3",
+      "source": "text",
+      "confidence": "medium",
+      "text": "The amine 3h was isolated in 64% yield.",
+      "yield": "64"
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   }
+  ],
+  "a5": [
+   {
+    "file": "ms.pdf",
+    "kind": "pdf",
+    "records": [
+     {
+      "id": "3a",
+      "file": "ms.pdf",
+      "where": "Table 1",
+      "source": "table",
+      "confidence": "high",
+      "text": "entry: 1 | product_id: 3a | yield: 40",
+      "entry": "1",
+      "repeated": true
+     },
+     {
+      "id": "3a",
+      "file": "ms.pdf",
+      "where": "Table 1",
+      "source": "table",
+      "confidence": "high",
+      "text": "entry: 2 | product_id: 3a | yield: 92",
+      "footnotes": [
+       "b"
+      ],
+      "conditions": {
+       "b": "At 80 °C in DMF."
+      },
+      "entry": "2",
+      "repeated": true
+     }
+    ],
+    "names": [],
+    "mentioned": [],
+    "tokens": [],
+    "notes": [],
+    "error": "",
+    "figure_text": true,
+    "pages": 0,
+    "transient": false
+   }
+  ]
+ },
+ "checks": {
+  "pdf+cdxml": {
+   "summary": "No manuscript added yet.",
+   "checked": 5,
+   "notes": [
+    "Some text on p. 1 of “ms.pdf” is set at a slant, so it was not read."
+   ],
+   "findings": [
+    {
+     "kind": "conditions",
+     "label": "3b",
+     "message": "3b: footnote b of the manuscript (“Reaction run for 48 h at 60 °C.”) mentions 48 h, which is not in its SI procedure: its own text and its general procedure.",
+     "status": "problem",
+     "ms_value": "Reaction run for 48 h at 60 °C.",
+     "si_value": "not in the SI: 48 h",
+     "where": "Scheme 2, p. 1 (PDF)",
+     "key": "conditions:3b:b",
+     "fingerprint": "cca99e3c770b",
+     "compound": "3b"
+    },
+    {
+     "kind": "yield",
+     "label": "3b",
+     "message": "3b: the manuscript gives 85% yield, the SI 82%.",
+     "status": "problem",
+     "ms_value": "85%",
+     "si_value": "82%",
+     "where": "Scheme 2, p. 1 (PDF)",
+     "key": "yield:3b",
+     "fingerprint": "37683176ad19",
+     "compound": "3b"
+    },
+    {
+     "kind": "name",
+     "label": "3c",
+     "message": "3c: the manuscript calls it “Ethyl 2-phenylpropanoate”; the SI name is “Ethyl 2-phenylacetate”.",
+     "status": "problem",
+     "ms_value": "Ethyl 2-phenylpropanoate",
+     "si_value": "Ethyl 2-phenylacetate",
+     "where": "p. 1 (PDF)",
+     "key": "name:3c",
+     "fingerprint": "df2ae88c6821",
+     "compound": "3c"
+    },
+    {
+     "kind": "structure",
+     "label": "3c",
+     "message": "3c: the structure in scheme.cdxml (C11H14O2) is not the SI structure (C10H12O2).",
+     "status": "problem",
+     "ms_value": "C11H14O2",
+     "si_value": "C10H12O2",
+     "where": "scheme.cdxml",
+     "key": "structure:3c:scheme.cdxml",
+     "fingerprint": "fb22181068f0",
+     "compound": "3c"
+    },
+    {
+     "kind": "missing_si",
+     "label": "3i",
+     "message": "3i: the manuscript gives data for it (77% yield, 90% ee, a structure) but no compound in the SI has this ID.",
+     "status": "problem",
+     "ms_value": "77% yield, 90% ee, a structure",
+     "si_value": "no compound with this ID",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml",
+     "key": "missing_si:3i",
+     "fingerprint": "de49afeb6e91",
+     "compound": ""
+    },
+    {
+     "kind": "ee",
+     "label": "3a",
+     "message": "3a: the ee/er agrees (95% ee).",
+     "status": "ok",
+     "ms_value": "95% ee",
+     "si_value": "95% ee",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "ee:3a",
+     "fingerprint": "162bd25d4978",
+     "compound": "3a"
+    },
+    {
+     "kind": "name",
+     "label": "3a",
+     "message": "3a: the name agrees.",
+     "status": "ok",
+     "ms_value": "methyl 4-bromobenzoate",
+     "si_value": "Methyl 4‑bromobenzoate",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "name:3a",
+     "fingerprint": "89c2a256d596",
+     "compound": "3a"
+    },
+    {
+     "kind": "structure",
+     "label": "3a",
+     "message": "3a: the structure agrees (C8H7BrO2).",
+     "status": "ok",
+     "ms_value": "C8H7BrO2",
+     "si_value": "C8H7BrO2",
+     "where": "scheme.cdxml",
+     "key": "structure:3a",
+     "fingerprint": "ae14857f103f",
+     "compound": "3a"
+    },
+    {
+     "kind": "yield",
+     "label": "3a",
+     "message": "3a: the yield agrees (92%).",
+     "status": "ok",
+     "ms_value": "92%",
+     "si_value": "92%",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "yield:3a",
+     "fingerprint": "000aab5c41c3",
+     "compound": "3a"
+    },
+    {
+     "kind": "ee",
+     "label": "3b",
+     "message": "3b: the ee/er agrees (94% ee).",
+     "status": "ok",
+     "ms_value": "97:3 er",
+     "si_value": "94% ee",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml",
+     "key": "ee:3b",
+     "fingerprint": "76a065f346c0",
+     "compound": "3b"
+    },
+    {
+     "kind": "structure",
+     "label": "3b",
+     "message": "3b: the structure agrees (C8H7ClO2).",
+     "status": "ok",
+     "ms_value": "C8H7ClO2",
+     "si_value": "C8H7ClO2",
+     "where": "scheme.cdxml",
+     "key": "structure:3b",
+     "fingerprint": "fca616a34c09",
+     "compound": "3b"
+    },
+    {
+     "kind": "dr",
+     "label": "3c",
+     "message": "3c: the dr agrees (>20:1).",
+     "status": "ok",
+     "ms_value": ">20:1",
+     "si_value": ">20:1",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "dr:3c",
+     "fingerprint": "5e403b317be1",
+     "compound": "3c"
+    },
+    {
+     "kind": "yield",
+     "label": "3c",
+     "message": "3c: the yield agrees (70%).",
+     "status": "ok",
+     "ms_value": "70%",
+     "si_value": "70%",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "yield:3c",
+     "fingerprint": "2b0fea072b30",
+     "compound": "3c"
+    },
+    {
+     "kind": "conditions",
+     "label": "3h",
+     "message": "3h: footnote c (“Using 10 mol% catalyst in toluene.”) agrees with its SI procedure.",
+     "status": "ok",
+     "ms_value": "Using 10 mol% catalyst in toluene.",
+     "si_value": "found",
+     "where": "Scheme 2, p. 1 (PDF)",
+     "key": "conditions:3h:c",
+     "fingerprint": "89735996cef0",
+     "compound": "3h"
+    },
+    {
+     "kind": "structure",
+     "label": "3h",
+     "message": "3h: the structure agrees (C8H11N).",
+     "status": "ok",
+     "ms_value": "C8H11N",
+     "si_value": "C8H11N",
+     "where": "scheme.cdxml",
+     "key": "structure:3h",
+     "fingerprint": "008e00a307fd",
+     "compound": "3h"
+    },
+    {
+     "kind": "yield",
+     "label": "3h",
+     "message": "3h: the yield agrees (64%).",
+     "status": "ok",
+     "ms_value": "64%",
+     "si_value": "64%",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml",
+     "key": "yield:3h",
+     "fingerprint": "603ea38d895d",
+     "compound": "3h"
+    }
+   ]
+  },
+  "docx+cdxml": {
+   "summary": "No manuscript added yet.",
+   "checked": 6,
+   "notes": [],
+   "findings": [
+    {
+     "kind": "conditions",
+     "label": "3b",
+     "message": "3b: footnote b of the manuscript (“Reaction run for 48 h at 60 °C.”) mentions 48 h, which is not in its SI procedure: its own text and its general procedure.",
+     "status": "problem",
+     "ms_value": "Reaction run for 48 h at 60 °C.",
+     "si_value": "not in the SI: 48 h",
+     "where": "scheme.cdxml",
+     "key": "conditions:3b:b",
+     "fingerprint": "cca99e3c770b",
+     "compound": "3b"
+    },
+    {
+     "kind": "yield",
+     "label": "3b",
+     "message": "3b: the manuscript gives 85% yield, the SI 82%.",
+     "status": "problem",
+     "ms_value": "85%",
+     "si_value": "82%",
+     "where": "scheme.cdxml",
+     "key": "yield:3b",
+     "fingerprint": "37683176ad19",
+     "compound": "3b"
+    },
+    {
+     "kind": "name",
+     "label": "3c",
+     "message": "3c: the manuscript calls it “ethyl 2-phenylpropanoate”; the SI name is “Ethyl 2-phenylacetate”.",
+     "status": "problem",
+     "ms_value": "ethyl 2-phenylpropanoate",
+     "si_value": "Ethyl 2-phenylacetate",
+     "where": "Word file, paragraph 2",
+     "key": "name:3c",
+     "fingerprint": "268409904ac2",
+     "compound": "3c"
+    },
+    {
+     "kind": "structure",
+     "label": "3c",
+     "message": "3c: the structure in scheme.cdxml (C11H14O2) is not the SI structure (C10H12O2).",
+     "status": "problem",
+     "ms_value": "C11H14O2",
+     "si_value": "C10H12O2",
+     "where": "scheme.cdxml",
+     "key": "structure:3c:scheme.cdxml",
+     "fingerprint": "fb22181068f0",
+     "compound": "3c"
+    },
+    {
+     "kind": "deviation",
+     "label": "3d",
+     "message": "3d: its SI procedure uses 36 h, where General Procedure A has 24 h, but the manuscript has no footnote on 3d saying so.",
+     "status": "problem",
+     "ms_value": "no footnote",
+     "si_value": "time: 36 h",
+     "where": "Table 1 (Word)",
+     "key": "deviation:3d:time",
+     "fingerprint": "7946bd1d0305",
+     "compound": "3d"
+    },
+    {
+     "kind": "conditions",
+     "label": "3e",
+     "message": "3e: footnote c of the manuscript (“Using 10 mol% catalyst in toluene.”) mentions 10 mol%, toluene, which are not in its SI procedure: its own text and its general procedure.",
+     "status": "problem",
+     "ms_value": "Using 10 mol% catalyst in toluene.",
+     "si_value": "not in the SI: 10 mol%, toluene",
+     "where": "Table 1 (Word)",
+     "key": "conditions:3e:c",
+     "fingerprint": "58c316cdc9e3",
+     "compound": "3e"
+    },
+    {
+     "kind": "missing_si",
+     "label": "3i",
+     "message": "3i: the manuscript gives data for it (77% yield, 90% ee, a structure) but no compound in the SI has this ID.",
+     "status": "problem",
+     "ms_value": "77% yield, 90% ee, a structure",
+     "si_value": "no compound with this ID",
+     "where": "scheme.cdxml",
+     "key": "missing_si:3i",
+     "fingerprint": "de49afeb6e91",
+     "compound": ""
+    },
+    {
+     "kind": "ee",
+     "label": "3a",
+     "message": "3a: the ee/er agrees (95% ee).",
+     "status": "ok",
+     "ms_value": "95% ee",
+     "si_value": "95% ee",
+     "where": "scheme.cdxml; Word file, paragraph 2",
+     "key": "ee:3a",
+     "fingerprint": "162bd25d4978",
+     "compound": "3a"
+    },
+    {
+     "kind": "name",
+     "label": "3a",
+     "message": "3a: the name agrees.",
+     "status": "ok",
+     "ms_value": "methyl 4-bromobenzoate",
+     "si_value": "Methyl 4‑bromobenzoate",
+     "where": "scheme.cdxml; Word file, paragraph 2",
+     "key": "name:3a",
+     "fingerprint": "89c2a256d596",
+     "compound": "3a"
+    },
+    {
+     "kind": "structure",
+     "label": "3a",
+     "message": "3a: the structure agrees (C8H7BrO2).",
+     "status": "ok",
+     "ms_value": "C8H7BrO2",
+     "si_value": "C8H7BrO2",
+     "where": "scheme.cdxml",
+     "key": "structure:3a",
+     "fingerprint": "ae14857f103f",
+     "compound": "3a"
+    },
+    {
+     "kind": "yield",
+     "label": "3a",
+     "message": "3a: the yield agrees (92%).",
+     "status": "ok",
+     "ms_value": "92%",
+     "si_value": "92%",
+     "where": "scheme.cdxml; Word file, paragraph 2",
+     "key": "yield:3a",
+     "fingerprint": "000aab5c41c3",
+     "compound": "3a"
+    },
+    {
+     "kind": "ee",
+     "label": "3b",
+     "message": "3b: the ee/er agrees (94% ee).",
+     "status": "ok",
+     "ms_value": "97:3 er",
+     "si_value": "94% ee",
+     "where": "scheme.cdxml",
+     "key": "ee:3b",
+     "fingerprint": "76a065f346c0",
+     "compound": "3b"
+    },
+    {
+     "kind": "structure",
+     "label": "3b",
+     "message": "3b: the structure agrees (C8H7ClO2).",
+     "status": "ok",
+     "ms_value": "C8H7ClO2",
+     "si_value": "C8H7ClO2",
+     "where": "scheme.cdxml",
+     "key": "structure:3b",
+     "fingerprint": "fca616a34c09",
+     "compound": "3b"
+    },
+    {
+     "kind": "dr",
+     "label": "3c",
+     "message": "3c: the dr agrees (>20:1).",
+     "status": "ok",
+     "ms_value": ">20:1",
+     "si_value": ">20:1",
+     "where": "scheme.cdxml; Word file, paragraph 2",
+     "key": "dr:3c",
+     "fingerprint": "5e403b317be1",
+     "compound": "3c"
+    },
+    {
+     "kind": "yield",
+     "label": "3c",
+     "message": "3c: the yield agrees (70%).",
+     "status": "ok",
+     "ms_value": "70%",
+     "si_value": "70%",
+     "where": "scheme.cdxml; Word file, paragraph 2",
+     "key": "yield:3c",
+     "fingerprint": "2b0fea072b30",
+     "compound": "3c"
+    },
+    {
+     "kind": "ee",
+     "label": "3d",
+     "message": "3d: the ee/er agrees (91% ee).",
+     "status": "ok",
+     "ms_value": "91% ee",
+     "si_value": "91% ee",
+     "where": "Table 1 (Word)",
+     "key": "ee:3d",
+     "fingerprint": "ba37bacd3dcf",
+     "compound": "3d"
+    },
+    {
+     "kind": "yield",
+     "label": "3d",
+     "message": "3d: the yield agrees (88%).",
+     "status": "ok",
+     "ms_value": "88%",
+     "si_value": "88%",
+     "where": "Table 1 (Word)",
+     "key": "yield:3d",
+     "fingerprint": "069990f219b8",
+     "compound": "3d"
+    },
+    {
+     "kind": "ee",
+     "label": "3e",
+     "message": "3e: the ee/er agrees (93% ee).",
+     "status": "ok",
+     "ms_value": "93% ee",
+     "si_value": "93% ee",
+     "where": "Table 1 (Word)",
+     "key": "ee:3e",
+     "fingerprint": "dd56abd16157",
+     "compound": "3e"
+    },
+    {
+     "kind": "yield",
+     "label": "3e",
+     "message": "3e: the yield agrees (76%).",
+     "status": "ok",
+     "ms_value": "76%",
+     "si_value": "76%",
+     "where": "Table 1 (Word)",
+     "key": "yield:3e",
+     "fingerprint": "bc2c93ec67d8",
+     "compound": "3e"
+    },
+    {
+     "kind": "conditions",
+     "label": "3h",
+     "message": "3h: footnote c (“Using 10 mol% catalyst in toluene.”) agrees with its SI procedure.",
+     "status": "ok",
+     "ms_value": "Using 10 mol% catalyst in toluene.",
+     "si_value": "found",
+     "where": "scheme.cdxml",
+     "key": "conditions:3h:c",
+     "fingerprint": "89735996cef0",
+     "compound": "3h"
+    },
+    {
+     "kind": "structure",
+     "label": "3h",
+     "message": "3h: the structure agrees (C8H11N).",
+     "status": "ok",
+     "ms_value": "C8H11N",
+     "si_value": "C8H11N",
+     "where": "scheme.cdxml",
+     "key": "structure:3h",
+     "fingerprint": "008e00a307fd",
+     "compound": "3h"
+    },
+    {
+     "kind": "yield",
+     "label": "3h",
+     "message": "3h: the yield agrees (64%).",
+     "status": "ok",
+     "ms_value": "64%",
+     "si_value": "64%",
+     "where": "scheme.cdxml",
+     "key": "yield:3h",
+     "fingerprint": "603ea38d895d",
+     "compound": "3h"
+    }
+   ]
+  },
+  "internal": {
+   "summary": "No manuscript added yet.",
+   "checked": 3,
+   "notes": [],
+   "findings": [
+    {
+     "kind": "internal",
+     "label": "3a",
+     "message": "3a: the manuscript gives different yields: 92% in Scheme 2 (PDF) and 90% in Table 1 (PDF).",
+     "status": "problem",
+     "ms_value": "92% / 90%",
+     "si_value": "",
+     "where": "Scheme 2 (PDF)",
+     "key": "internal:yield:3a",
+     "fingerprint": "46c23b300c90",
+     "compound": "3a"
+    },
+    {
+     "kind": "deviation",
+     "label": "3d",
+     "message": "3d: its SI procedure uses 36 h, where General Procedure A has 24 h, but the manuscript has no footnote on 3d saying so.",
+     "status": "problem",
+     "ms_value": "no footnote",
+     "si_value": "time: 36 h",
+     "where": "Scheme 2 (PDF)",
+     "key": "deviation:3d:time",
+     "fingerprint": "7946bd1d0305",
+     "compound": "3d"
+    },
+    {
+     "kind": "ee",
+     "label": "3d",
+     "message": "3d: the manuscript gives 96:4 er, the SI 91% ee; 96:4 er = 92% ee.",
+     "status": "problem",
+     "ms_value": "96:4 er",
+     "si_value": "91% ee",
+     "where": "Scheme 2 (PDF)",
+     "key": "ee:3d",
+     "fingerprint": "76426b0835db",
+     "compound": "3d"
+    },
+    {
+     "kind": "ee",
+     "label": "3a",
+     "message": "3a: the ee/er agrees (95% ee).",
+     "status": "ok",
+     "ms_value": "95% ee",
+     "si_value": "95% ee",
+     "where": "Scheme 2 (PDF); Table 1 (PDF)",
+     "key": "ee:3a",
+     "fingerprint": "162bd25d4978",
+     "compound": "3a"
+    },
+    {
+     "kind": "yield",
+     "label": "3a",
+     "message": "3a: the yield agrees (92%).",
+     "status": "ok",
+     "ms_value": "92%, 90%",
+     "si_value": "92%",
+     "where": "Scheme 2 (PDF); Table 1 (PDF)",
+     "key": "yield:3a",
+     "fingerprint": "56db0ef4c730",
+     "compound": "3a"
+    },
+    {
+     "kind": "ee",
+     "label": "3b",
+     "message": "3b: the ee/er agrees (94% ee).",
+     "status": "ok",
+     "ms_value": "97:3 er",
+     "si_value": "94% ee",
+     "where": "Scheme 2 (PDF)",
+     "key": "ee:3b",
+     "fingerprint": "76a065f346c0",
+     "compound": "3b"
+    }
+   ]
+  },
+  "a4": {
+   "summary": "No manuscript added yet.",
+   "checked": 0,
+   "notes": [],
+   "findings": [
+    {
+     "kind": "mention",
+     "label": "1a",
+     "message": "1a is in the manuscript (a labelled structure) but no compound in the SI has this ID. That is fine for a known compound, a starting material or a reagent.",
+     "status": "note",
+     "ms_value": "a labelled structure",
+     "si_value": "no compound with this ID",
+     "where": "s.cdxml",
+     "key": "mention:1a",
+     "fingerprint": "3ae73465bd7d",
+     "compound": ""
+    }
+   ]
+  },
+  "b5": {
+   "summary": "No manuscript added yet.",
+   "checked": 1,
+   "notes": [],
+   "findings": [
+    {
+     "kind": "deviation",
+     "label": "3d",
+     "message": "3d: its SI procedure uses 36 h, where General Procedure A has 24 h, but the manuscript has no footnote on 3d saying so.",
+     "status": "problem",
+     "ms_value": "no footnote",
+     "si_value": "time: 36 h",
+     "where": "Table 1 (Word); Table 1, p. 1 (PDF); s.cdxml",
+     "key": "deviation:3d:time",
+     "fingerprint": "7946bd1d0305",
+     "compound": "3d"
+    },
+    {
+     "kind": "structure",
+     "label": "3d",
+     "message": "3d: the structure agrees (C8H10O).",
+     "status": "ok",
+     "ms_value": "C8H10O",
+     "si_value": "C8H10O",
+     "where": "s.cdxml",
+     "key": "structure:3d",
+     "fingerprint": "812433424783",
+     "compound": "3d"
+    },
+    {
+     "kind": "yield",
+     "label": "3d",
+     "message": "3d: the yield agrees (88%).",
+     "status": "ok",
+     "ms_value": "88%",
+     "si_value": "88%",
+     "where": "Table 1 (Word); Table 1, p. 1 (PDF); s.cdxml",
+     "key": "yield:3d",
+     "fingerprint": "069990f219b8",
+     "compound": "3d"
+    }
+   ]
+  },
+  "conditions-ok": {
+   "summary": "No manuscript added yet.",
+   "checked": 1,
+   "notes": [],
+   "findings": [
+    {
+     "kind": "conditions",
+     "label": "3b",
+     "message": "3b: footnote b (“Reaction run at 60 °C for 24 h.”) agrees with its SI procedure.",
+     "status": "ok",
+     "ms_value": "Reaction run at 60 °C for 24 h.",
+     "si_value": "found",
+     "where": "Scheme 2 (PDF)",
+     "key": "conditions:3b:b",
+     "fingerprint": "60b81bb8b9ef",
+     "compound": "3b"
+    },
+    {
+     "kind": "yield",
+     "label": "3b",
+     "message": "3b: the yield agrees (82%).",
+     "status": "ok",
+     "ms_value": "82%",
+     "si_value": "82%",
+     "where": "Scheme 2 (PDF)",
+     "key": "yield:3b",
+     "fingerprint": "cdd1a1ce05a7",
+     "compound": "3b"
+    }
+   ]
+  },
+  "missing-footnote": {
+   "summary": "No manuscript added yet.",
+   "checked": 1,
+   "notes": [],
+   "findings": [
+    {
+     "kind": "conditions",
+     "label": "3b",
+     "message": "3b: footnote d was not found in the manuscript, so its conditions could not be checked.",
+     "status": "note",
+     "ms_value": "footnote d",
+     "si_value": "",
+     "where": "Scheme 2 (PDF)",
+     "key": "conditions:3b:d",
+     "fingerprint": "39ca5a2516f7",
+     "compound": "3b"
+    },
+    {
+     "kind": "yield",
+     "label": "3b",
+     "message": "3b: the yield agrees (82%).",
+     "status": "ok",
+     "ms_value": "82%",
+     "si_value": "82%",
+     "where": "Scheme 2 (PDF)",
+     "key": "yield:3b",
+     "fingerprint": "cdd1a1ce05a7",
+     "compound": "3b"
+    }
+   ]
+  },
+  "nmr-yield": {
+   "summary": "No manuscript added yet.",
+   "checked": 3,
+   "notes": [],
+   "findings": [
+    {
+     "kind": "dr",
+     "label": "3c",
+     "message": "3c: the manuscript gives 10:1 dr, the SI >20:1.",
+     "status": "problem",
+     "ms_value": "10:1",
+     "si_value": ">20:1",
+     "where": "Scheme 2 (PDF)",
+     "key": "dr:3c",
+     "fingerprint": "5f7bc8aa5b1d",
+     "compound": "3c"
+    },
+    {
+     "kind": "ee",
+     "label": "3e",
+     "message": "3e: the manuscript gives rac, the SI 93% ee.",
+     "status": "problem",
+     "ms_value": "rac",
+     "si_value": "93% ee",
+     "where": "Scheme 2 (PDF)",
+     "key": "ee:3e",
+     "fingerprint": "c748bd8ec294",
+     "compound": "3e"
+    },
+    {
+     "kind": "yield",
+     "label": "3f",
+     "message": "3f: the manuscript gives only an NMR/GC yield (40%); it is not compared with the SI's isolated yield.",
+     "status": "note",
+     "ms_value": "40% (NMR)",
+     "si_value": "50%",
+     "where": "Scheme 2 (PDF)",
+     "key": "yield:3f",
+     "fingerprint": "b97094bb3767",
+     "compound": "3f"
+    },
+    {
+     "kind": "yield",
+     "label": "3c",
+     "message": "3c: the yield agrees (70%).",
+     "status": "ok",
+     "ms_value": "70%",
+     "si_value": "70%",
+     "where": "Scheme 2 (PDF)",
+     "key": "yield:3c",
+     "fingerprint": "2b0fea072b30",
+     "compound": "3c"
+    }
+   ]
+  },
+  "b1": {
+   "summary": "No manuscript added yet.",
+   "checked": 2,
+   "notes": [],
+   "findings": [
+    {
+     "kind": "yield",
+     "label": "3b",
+     "message": "3b: the text says “Using Pd(OAc)2 instead, compound 3b formed in 85% yield.”, giving 85%; the SI has 82%. Running text is only noted: check whether this sentence is about the same experiment.",
+     "status": "note",
+     "ms_value": "85% (in the text)",
+     "si_value": "82%",
+     "where": "Word file, paragraph 3",
+     "key": "text:yield:3b:0",
+     "fingerprint": "f13d74bd100a",
+     "compound": "3b"
+    },
+    {
+     "kind": "yield",
+     "label": "3h",
+     "message": "3h: the yield in the text agrees (64%): “The amine 3h was isolated in 64% yield.”",
+     "status": "ok",
+     "ms_value": "64% (in the text)",
+     "si_value": "64%",
+     "where": "Word file, paragraph 3",
+     "key": "text:yield:3h:0",
+     "fingerprint": "50bd557b63dc",
+     "compound": "3h"
+    }
+   ]
+  },
+  "a5": {
+   "summary": "No manuscript added yet.",
+   "checked": 1,
+   "notes": [],
+   "findings": []
+  },
+  "dismissed": {
+   "summary": "No manuscript added yet.",
+   "checked": 5,
+   "notes": [
+    "Some text on p. 1 of “ms.pdf” is set at a slant, so it was not read."
+   ],
+   "findings": [
+    {
+     "kind": "conditions",
+     "label": "3b",
+     "message": "3b: footnote b of the manuscript (“Reaction run for 48 h at 60 °C.”) mentions 48 h, which is not in its SI procedure: its own text and its general procedure.",
+     "status": "problem",
+     "ms_value": "Reaction run for 48 h at 60 °C.",
+     "si_value": "not in the SI: 48 h",
+     "where": "Scheme 2, p. 1 (PDF)",
+     "key": "conditions:3b:b",
+     "fingerprint": "cca99e3c770b",
+     "compound": "3b"
+    },
+    {
+     "kind": "name",
+     "label": "3c",
+     "message": "3c: the manuscript calls it “Ethyl 2-phenylpropanoate”; the SI name is “Ethyl 2-phenylacetate”.",
+     "status": "problem",
+     "ms_value": "Ethyl 2-phenylpropanoate",
+     "si_value": "Ethyl 2-phenylacetate",
+     "where": "p. 1 (PDF)",
+     "key": "name:3c",
+     "fingerprint": "df2ae88c6821",
+     "compound": "3c"
+    },
+    {
+     "kind": "structure",
+     "label": "3c",
+     "message": "3c: the structure in scheme.cdxml (C11H14O2) is not the SI structure (C10H12O2).",
+     "status": "problem",
+     "ms_value": "C11H14O2",
+     "si_value": "C10H12O2",
+     "where": "scheme.cdxml",
+     "key": "structure:3c:scheme.cdxml",
+     "fingerprint": "fb22181068f0",
+     "compound": "3c"
+    },
+    {
+     "kind": "missing_si",
+     "label": "3i",
+     "message": "3i: the manuscript gives data for it (77% yield, 90% ee, a structure) but no compound in the SI has this ID.",
+     "status": "problem",
+     "ms_value": "77% yield, 90% ee, a structure",
+     "si_value": "no compound with this ID",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml",
+     "key": "missing_si:3i",
+     "fingerprint": "de49afeb6e91",
+     "compound": ""
+    },
+    {
+     "kind": "yield",
+     "label": "3b",
+     "message": "3b: the manuscript gives 85% yield, the SI 82%.",
+     "status": "dismissed",
+     "ms_value": "85%",
+     "si_value": "82%",
+     "where": "Scheme 2, p. 1 (PDF)",
+     "key": "yield:3b",
+     "fingerprint": "37683176ad19",
+     "compound": "3b"
+    },
+    {
+     "kind": "ee",
+     "label": "3a",
+     "message": "3a: the ee/er agrees (95% ee).",
+     "status": "ok",
+     "ms_value": "95% ee",
+     "si_value": "95% ee",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "ee:3a",
+     "fingerprint": "162bd25d4978",
+     "compound": "3a"
+    },
+    {
+     "kind": "name",
+     "label": "3a",
+     "message": "3a: the name agrees.",
+     "status": "ok",
+     "ms_value": "methyl 4-bromobenzoate",
+     "si_value": "Methyl 4‑bromobenzoate",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "name:3a",
+     "fingerprint": "89c2a256d596",
+     "compound": "3a"
+    },
+    {
+     "kind": "structure",
+     "label": "3a",
+     "message": "3a: the structure agrees (C8H7BrO2).",
+     "status": "ok",
+     "ms_value": "C8H7BrO2",
+     "si_value": "C8H7BrO2",
+     "where": "scheme.cdxml",
+     "key": "structure:3a",
+     "fingerprint": "ae14857f103f",
+     "compound": "3a"
+    },
+    {
+     "kind": "yield",
+     "label": "3a",
+     "message": "3a: the yield agrees (92%).",
+     "status": "ok",
+     "ms_value": "92%",
+     "si_value": "92%",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "yield:3a",
+     "fingerprint": "000aab5c41c3",
+     "compound": "3a"
+    },
+    {
+     "kind": "ee",
+     "label": "3b",
+     "message": "3b: the ee/er agrees (94% ee).",
+     "status": "ok",
+     "ms_value": "97:3 er",
+     "si_value": "94% ee",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml",
+     "key": "ee:3b",
+     "fingerprint": "76a065f346c0",
+     "compound": "3b"
+    },
+    {
+     "kind": "structure",
+     "label": "3b",
+     "message": "3b: the structure agrees (C8H7ClO2).",
+     "status": "ok",
+     "ms_value": "C8H7ClO2",
+     "si_value": "C8H7ClO2",
+     "where": "scheme.cdxml",
+     "key": "structure:3b",
+     "fingerprint": "fca616a34c09",
+     "compound": "3b"
+    },
+    {
+     "kind": "dr",
+     "label": "3c",
+     "message": "3c: the dr agrees (>20:1).",
+     "status": "ok",
+     "ms_value": ">20:1",
+     "si_value": ">20:1",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "dr:3c",
+     "fingerprint": "5e403b317be1",
+     "compound": "3c"
+    },
+    {
+     "kind": "yield",
+     "label": "3c",
+     "message": "3c: the yield agrees (70%).",
+     "status": "ok",
+     "ms_value": "70%",
+     "si_value": "70%",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml; p. 1 (PDF)",
+     "key": "yield:3c",
+     "fingerprint": "2b0fea072b30",
+     "compound": "3c"
+    },
+    {
+     "kind": "conditions",
+     "label": "3h",
+     "message": "3h: footnote c (“Using 10 mol% catalyst in toluene.”) agrees with its SI procedure.",
+     "status": "ok",
+     "ms_value": "Using 10 mol% catalyst in toluene.",
+     "si_value": "found",
+     "where": "Scheme 2, p. 1 (PDF)",
+     "key": "conditions:3h:c",
+     "fingerprint": "89735996cef0",
+     "compound": "3h"
+    },
+    {
+     "kind": "structure",
+     "label": "3h",
+     "message": "3h: the structure agrees (C8H11N).",
+     "status": "ok",
+     "ms_value": "C8H11N",
+     "si_value": "C8H11N",
+     "where": "scheme.cdxml",
+     "key": "structure:3h",
+     "fingerprint": "008e00a307fd",
+     "compound": "3h"
+    },
+    {
+     "kind": "yield",
+     "label": "3h",
+     "message": "3h: the yield agrees (64%).",
+     "status": "ok",
+     "ms_value": "64%",
+     "si_value": "64%",
+     "where": "Scheme 2, p. 1 (PDF); scheme.cdxml",
+     "key": "yield:3h",
+     "fingerprint": "603ea38d895d",
+     "compound": "3h"
+    }
+   ]
+  }
+ },
+ "si": {
+  "project.json": "{\n  \"format_version\": 1,\n  \"saved_by_version\": \"1.3.0\",\n  \"title\": \"Made-up SI\",\n  \"authors\": [],\n  \"affiliations\": [],\n  \"journal_style\": \"ACS\",\n  \"hrms_tolerance_ppm\": 5.0,\n  \"auto_nmr_31P\": false,\n  \"auto_nmr_11B\": false,\n  \"compile_structures\": \"pictures\",\n  \"format_text\": true,\n  \"paste_dpi\": 1200,\n  \"section_tree\": [\n    {\n      \"id\": \"s-47aecfc4\"\n    }\n  ]\n}\n",
+  "references.json": "[]\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-0ef7da25_butan-1-ol/compound.json": "{\n  \"id\": \"c-0ef7da25\",\n  \"id_override\": \"\",\n  \"fields\": [\n    {\n      \"key\": \"structure\"\n    },\n    {\n      \"key\": \"name\"\n    },\n    {\n      \"key\": \"procedure\"\n    },\n    {\n      \"key\": \"scale\"\n    },\n    {\n      \"key\": \"yield\"\n    },\n    {\n      \"key\": \"physical_state\"\n    },\n    {\n      \"key\": \"rf\"\n    },\n    {\n      \"key\": \"nmr\"\n    },\n    {\n      \"key\": \"hrms\"\n    },\n    {\n      \"key\": \"spectra\"\n    },\n    {\n      \"key\": \"files\"\n    },\n    {\n      \"key\": \"notes\"\n    }\n  ],\n  \"values\": {\n    \"name\": {\n      \"text\": \"Butan-1-ol\"\n    },\n    \"scale\": {\n      \"value\": \"\",\n      \"unit\": \"\"\n    },\n    \"yield\": {\n      \"percent\": \"50\",\n      \"mass\": \"\",\n      \"mass_unit\": \"mg\"\n    },\n    \"physical_state\": {\n      \"text\": \"\"\n    },\n    \"rf\": {\n      \"value\": \"\",\n      \"eluent\": \"\",\n      \"visualization\": \"\"\n    },\n    \"nmr\": [\n      {\n        \"id\": \"r-cf05b5a7\",\n        \"nucleus\": \"1H\",\n        \"label\": \"\",\n        \"text\": \"\"\n      },\n      {\n        \"id\": \"r-da4f5198\",\n        \"nucleus\": \"13C\",\n        \"label\": \"\",\n        \"text\": \"\"\n      }\n    ],\n    \"hrms\": {\n      \"ionization\": \"ESI\",\n      \"adduct\": \"[M+H]+\",\n      \"found\": \"\"\n    },\n    \"spectra\": [],\n    \"files\": [],\n    \"structure\": {\n      \"from_scheme\": false\n    }\n  },\n  \"flags\": {}\n}\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-0ef7da25_butan-1-ol/structure.mol": "\n     RDKit          2D\n\n  5  4  0  0  0  0  0  0  0  0999 V2000\n   -1.7322   -0.1986    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.8658    0.3006    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.0002   -0.2000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.8662    0.2994    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.7318   -0.2014    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\n  3  4  1  0\n  4  5  1  0\nM  END\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-297214ca_ethyl-2-phenyl/compound.json": "{\n  \"id\": \"c-297214ca\",\n  \"id_override\": \"\",\n  \"fields\": [\n    {\n      \"key\": \"structure\"\n    },\n    {\n      \"key\": \"name\"\n    },\n    {\n      \"key\": \"procedure\"\n    },\n    {\n      \"key\": \"scale\"\n    },\n    {\n      \"key\": \"yield\"\n    },\n    {\n      \"key\": \"physical_state\"\n    },\n    {\n      \"key\": \"rf\"\n    },\n    {\n      \"key\": \"nmr\"\n    },\n    {\n      \"key\": \"hrms\"\n    },\n    {\n      \"key\": \"spectra\"\n    },\n    {\n      \"key\": \"files\"\n    },\n    {\n      \"key\": \"dr\"\n    },\n    {\n      \"key\": \"notes\"\n    }\n  ],\n  \"values\": {\n    \"name\": {\n      \"text\": \"Ethyl 2-phenylacetate\"\n    },\n    \"scale\": {\n      \"value\": \"\",\n      \"unit\": \"\"\n    },\n    \"yield\": {\n      \"percent\": \"70\",\n      \"mass\": \"\",\n      \"mass_unit\": \"mg\"\n    },\n    \"physical_state\": {\n      \"text\": \"\"\n    },\n    \"rf\": {\n      \"value\": \"\",\n      \"eluent\": \"\",\n      \"visualization\": \"\"\n    },\n    \"nmr\": [\n      {\n        \"id\": \"r-f48ba514\",\n        \"nucleus\": \"1H\",\n        \"label\": \"\",\n        \"text\": \"\"\n      },\n      {\n        \"id\": \"r-9aecf474\",\n        \"nucleus\": \"13C\",\n        \"label\": \"\",\n        \"text\": \"\"\n      }\n    ],\n    \"hrms\": {\n      \"ionization\": \"ESI\",\n      \"adduct\": \"[M+H]+\",\n      \"found\": \"\"\n    },\n    \"spectra\": [],\n    \"files\": [],\n    \"structure\": {\n      \"from_scheme\": false\n    },\n    \"dr\": {\n      \"value\": \">20:1\",\n      \"method\": \"\"\n    }\n  },\n  \"flags\": {}\n}\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-297214ca_ethyl-2-phenyl/structure.mol": "\n     RDKit          2D\n\n 12 12  0  0  0  0  0  0  0  0999 V2000\n   -3.5337   -0.7209    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -2.6695   -0.2179    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.8017   -0.7147    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.9373   -0.2117    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.9411    0.7883    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.0695   -0.7085    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7945   -0.2055    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.6625   -0.7025    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    2.5265   -0.1993    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    2.5231    0.8007    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.6553    1.2977    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7911    0.7945    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\n  3  4  1  0\n  4  5  2  0\n  4  6  1  0\n  6  7  1  0\n  7  8  2  0\n  8  9  1  0\n  9 10  2  0\n 10 11  1  0\n 11 12  2  0\n 12  7  1  0\nM  END\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-2c1a2410_methyl-4-bromo/compound.json": "{\n  \"id\": \"c-2c1a2410\",\n  \"id_override\": \"\",\n  \"fields\": [\n    {\n      \"key\": \"structure\"\n    },\n    {\n      \"key\": \"name\"\n    },\n    {\n      \"key\": \"procedure\"\n    },\n    {\n      \"key\": \"scale\"\n    },\n    {\n      \"key\": \"yield\"\n    },\n    {\n      \"key\": \"physical_state\"\n    },\n    {\n      \"key\": \"rf\"\n    },\n    {\n      \"key\": \"nmr\"\n    },\n    {\n      \"key\": \"hrms\"\n    },\n    {\n      \"key\": \"spectra\"\n    },\n    {\n      \"key\": \"files\"\n    },\n    {\n      \"key\": \"ee\"\n    },\n    {\n      \"key\": \"notes\"\n    }\n  ],\n  \"values\": {\n    \"name\": {\n      \"text\": \"Methyl 4‑bromobenzoate\"\n    },\n    \"scale\": {\n      \"value\": \"\",\n      \"unit\": \"\"\n    },\n    \"yield\": {\n      \"percent\": \"92\",\n      \"mass\": \"\",\n      \"mass_unit\": \"mg\"\n    },\n    \"physical_state\": {\n      \"text\": \"\"\n    },\n    \"rf\": {\n      \"value\": \"\",\n      \"eluent\": \"\",\n      \"visualization\": \"\"\n    },\n    \"nmr\": [\n      {\n        \"id\": \"r-c99d6adf\",\n        \"nucleus\": \"1H\",\n        \"label\": \"\",\n        \"text\": \"\"\n      },\n      {\n        \"id\": \"r-45ed1b4c\",\n        \"nucleus\": \"13C\",\n        \"label\": \"\",\n        \"text\": \"\"\n      }\n    ],\n    \"hrms\": {\n      \"ionization\": \"ESI\",\n      \"adduct\": \"[M+H]+\",\n      \"found\": \"\"\n    },\n    \"spectra\": [],\n    \"files\": [],\n    \"structure\": {\n      \"from_scheme\": false\n    },\n    \"ee\": {\n      \"value\": \"95% ee\",\n      \"method\": \"HPLC\"\n    }\n  },\n  \"flags\": {}\n}\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-2c1a2410_methyl-4-bromo/structure.mol": "\n     RDKit          2D\n\n 11 11  0  0  0  0  0  0  0  0999 V2000\n   -2.7530    0.6916    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.8888    0.1886    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.0210    0.6854    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.0174    1.6854    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1568    0.1824    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7110    0.6794    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5752    0.1762    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5718   -0.8238    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    2.4358   -1.3268    0.0000 Br  0  0  0  0  0  0  0  0  0  0  0  0\n    0.7038   -1.3208    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1602   -0.8176    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\n  3  4  2  0\n  3  5  1  0\n  5  6  1  0\n  6  7  2  0\n  7  8  1  0\n  8  9  1  0\n  8 10  2  0\n 10 11  1  0\n 11  5  2  0\nM  END\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-3f2b5f9f_1-phenylethan/compound.json": "{\n  \"id\": \"c-3f2b5f9f\",\n  \"id_override\": \"\",\n  \"fields\": [\n    {\n      \"key\": \"structure\"\n    },\n    {\n      \"key\": \"name\"\n    },\n    {\n      \"key\": \"procedure\"\n    },\n    {\n      \"key\": \"scale\"\n    },\n    {\n      \"key\": \"yield\"\n    },\n    {\n      \"key\": \"physical_state\"\n    },\n    {\n      \"key\": \"rf\"\n    },\n    {\n      \"key\": \"nmr\"\n    },\n    {\n      \"key\": \"hrms\"\n    },\n    {\n      \"key\": \"spectra\"\n    },\n    {\n      \"key\": \"files\"\n    },\n    {\n      \"key\": \"notes\"\n    }\n  ],\n  \"values\": {\n    \"name\": {\n      \"text\": \"1-Phenylethan-1-amine\"\n    },\n    \"scale\": {\n      \"value\": \"\",\n      \"unit\": \"\"\n    },\n    \"yield\": {\n      \"percent\": \"64\",\n      \"mass\": \"\",\n      \"mass_unit\": \"mg\"\n    },\n    \"physical_state\": {\n      \"text\": \"\"\n    },\n    \"rf\": {\n      \"value\": \"\",\n      \"eluent\": \"\",\n      \"visualization\": \"\"\n    },\n    \"nmr\": [\n      {\n        \"id\": \"r-1fefd621\",\n        \"nucleus\": \"1H\",\n        \"label\": \"\",\n        \"text\": \"\"\n      },\n      {\n        \"id\": \"r-63a6cf86\",\n        \"nucleus\": \"13C\",\n        \"label\": \"\",\n        \"text\": \"\"\n      }\n    ],\n    \"hrms\": {\n      \"ionization\": \"ESI\",\n      \"adduct\": \"[M+H]+\",\n      \"found\": \"\"\n    },\n    \"spectra\": [],\n    \"files\": [],\n    \"structure\": {\n      \"from_scheme\": false\n    }\n  },\n  \"flags\": {}\n}\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-3f2b5f9f_1-phenylethan/procedure.txt": "Using 10 mol% of the catalyst in toluene at 60 °C.",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-3f2b5f9f_1-phenylethan/structure.mol": "\n     RDKit          2D\n\n  9  9  0  0  0  0  0  0  0  0999 V2000\n   -1.9245    0.1096    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.0589    0.6104    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.0597    1.6104    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1925    0.1110    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1917   -0.8890    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.6747   -1.3884    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5403   -0.8876    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5395    0.1124    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.6731    0.6116    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\n  2  4  1  0\n  4  5  2  0\n  5  6  1  0\n  6  7  2  0\n  7  8  1  0\n  8  9  2  0\n  9  4  1  0\nM  END\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-6c217e6d_1-phenylethan/compound.json": "{\n  \"id\": \"c-6c217e6d\",\n  \"id_override\": \"\",\n  \"fields\": [\n    {\n      \"key\": \"structure\"\n    },\n    {\n      \"key\": \"name\"\n    },\n    {\n      \"key\": \"procedure\"\n    },\n    {\n      \"key\": \"scale\"\n    },\n    {\n      \"key\": \"yield\"\n    },\n    {\n      \"key\": \"physical_state\"\n    },\n    {\n      \"key\": \"rf\"\n    },\n    {\n      \"key\": \"nmr\"\n    },\n    {\n      \"key\": \"hrms\"\n    },\n    {\n      \"key\": \"spectra\"\n    },\n    {\n      \"key\": \"files\"\n    },\n    {\n      \"key\": \"ee\"\n    },\n    {\n      \"key\": \"notes\"\n    }\n  ],\n  \"values\": {\n    \"name\": {\n      \"text\": \"1-Phenylethan-1-ol\"\n    },\n    \"scale\": {\n      \"value\": \"\",\n      \"unit\": \"\"\n    },\n    \"yield\": {\n      \"percent\": \"88\",\n      \"mass\": \"\",\n      \"mass_unit\": \"mg\"\n    },\n    \"physical_state\": {\n      \"text\": \"\"\n    },\n    \"rf\": {\n      \"value\": \"\",\n      \"eluent\": \"\",\n      \"visualization\": \"\"\n    },\n    \"nmr\": [\n      {\n        \"id\": \"r-7909588a\",\n        \"nucleus\": \"1H\",\n        \"label\": \"\",\n        \"text\": \"\"\n      },\n      {\n        \"id\": \"r-bcf0caf0\",\n        \"nucleus\": \"13C\",\n        \"label\": \"\",\n        \"text\": \"\"\n      }\n    ],\n    \"hrms\": {\n      \"ionization\": \"ESI\",\n      \"adduct\": \"[M+H]+\",\n      \"found\": \"\"\n    },\n    \"spectra\": [],\n    \"files\": [],\n    \"structure\": {\n      \"from_scheme\": false\n    },\n    \"ee\": {\n      \"value\": \"91% ee\",\n      \"method\": \"HPLC\"\n    },\n    \"procedure\": {\n      \"gp\": \"gp-ac180fc6\",\n      \"values\": {\n        \"starting material\": \"1a (35 mg)\",\n        \"scale\": \"0.20 mmol\"\n      }\n    }\n  },\n  \"flags\": {}\n}\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-6c217e6d_1-phenylethan/procedure.txt": "The mixture was stirred at 60 °C for 36 h.",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-6c217e6d_1-phenylethan/structure.mol": "\n     RDKit          2D\n\n  9  9  0  0  0  0  0  0  0  0999 V2000\n   -1.9245    0.1096    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.0589    0.6104    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.0597    1.6104    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1925    0.1110    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1917   -0.8890    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.6747   -1.3884    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5403   -0.8876    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5395    0.1124    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.6731    0.6116    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\n  2  4  1  0\n  4  5  2  0\n  5  6  1  0\n  6  7  2  0\n  7  8  1  0\n  8  9  2  0\n  9  4  1  0\nM  END\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-8489e5e4_methyl-4-chlor/compound.json": "{\n  \"id\": \"c-8489e5e4\",\n  \"id_override\": \"\",\n  \"fields\": [\n    {\n      \"key\": \"structure\"\n    },\n    {\n      \"key\": \"name\"\n    },\n    {\n      \"key\": \"procedure\"\n    },\n    {\n      \"key\": \"scale\"\n    },\n    {\n      \"key\": \"yield\"\n    },\n    {\n      \"key\": \"physical_state\"\n    },\n    {\n      \"key\": \"rf\"\n    },\n    {\n      \"key\": \"nmr\"\n    },\n    {\n      \"key\": \"hrms\"\n    },\n    {\n      \"key\": \"spectra\"\n    },\n    {\n      \"key\": \"files\"\n    },\n    {\n      \"key\": \"ee\"\n    },\n    {\n      \"key\": \"notes\"\n    }\n  ],\n  \"values\": {\n    \"name\": {\n      \"text\": \"Methyl 4-chlorobenzoate\"\n    },\n    \"scale\": {\n      \"value\": \"\",\n      \"unit\": \"\"\n    },\n    \"yield\": {\n      \"percent\": \"82\",\n      \"mass\": \"\",\n      \"mass_unit\": \"mg\"\n    },\n    \"physical_state\": {\n      \"text\": \"\"\n    },\n    \"rf\": {\n      \"value\": \"\",\n      \"eluent\": \"\",\n      \"visualization\": \"\"\n    },\n    \"nmr\": [\n      {\n        \"id\": \"r-909ef56d\",\n        \"nucleus\": \"1H\",\n        \"label\": \"\",\n        \"text\": \"\"\n      },\n      {\n        \"id\": \"r-7897cacf\",\n        \"nucleus\": \"13C\",\n        \"label\": \"\",\n        \"text\": \"\"\n      }\n    ],\n    \"hrms\": {\n      \"ionization\": \"ESI\",\n      \"adduct\": \"[M+H]+\",\n      \"found\": \"\"\n    },\n    \"spectra\": [],\n    \"files\": [],\n    \"structure\": {\n      \"from_scheme\": false\n    },\n    \"ee\": {\n      \"value\": \"94% ee\",\n      \"method\": \"HPLC\"\n    }\n  },\n  \"flags\": {}\n}\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-8489e5e4_methyl-4-chlor/procedure.txt": "The mixture was stirred at 60 °C for 24 h.",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-8489e5e4_methyl-4-chlor/structure.mol": "\n     RDKit          2D\n\n 11 11  0  0  0  0  0  0  0  0999 V2000\n   -2.7530    0.6916    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.8888    0.1886    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.0210    0.6854    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.0174    1.6854    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1568    0.1824    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7110    0.6794    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5752    0.1762    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5718   -0.8238    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    2.4358   -1.3268    0.0000 Cl  0  0  0  0  0  0  0  0  0  0  0  0\n    0.7038   -1.3208    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1602   -0.8176    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\n  3  4  2  0\n  3  5  1  0\n  5  6  1  0\n  6  7  2  0\n  7  8  1  0\n  8  9  1  0\n  8 10  2  0\n 10 11  1  0\n 11  5  2  0\nM  END\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-d225bb1b_phenylmethanol/compound.json": "{\n  \"id\": \"c-d225bb1b\",\n  \"id_override\": \"\",\n  \"fields\": [\n    {\n      \"key\": \"structure\"\n    },\n    {\n      \"key\": \"name\"\n    },\n    {\n      \"key\": \"procedure\"\n    },\n    {\n      \"key\": \"scale\"\n    },\n    {\n      \"key\": \"yield\"\n    },\n    {\n      \"key\": \"physical_state\"\n    },\n    {\n      \"key\": \"rf\"\n    },\n    {\n      \"key\": \"nmr\"\n    },\n    {\n      \"key\": \"hrms\"\n    },\n    {\n      \"key\": \"spectra\"\n    },\n    {\n      \"key\": \"files\"\n    },\n    {\n      \"key\": \"ee\"\n    },\n    {\n      \"key\": \"notes\"\n    }\n  ],\n  \"values\": {\n    \"name\": {\n      \"text\": \"Phenylmethanol\"\n    },\n    \"scale\": {\n      \"value\": \"\",\n      \"unit\": \"\"\n    },\n    \"yield\": {\n      \"percent\": \"76\",\n      \"mass\": \"\",\n      \"mass_unit\": \"mg\"\n    },\n    \"physical_state\": {\n      \"text\": \"\"\n    },\n    \"rf\": {\n      \"value\": \"\",\n      \"eluent\": \"\",\n      \"visualization\": \"\"\n    },\n    \"nmr\": [\n      {\n        \"id\": \"r-d5d59cfb\",\n        \"nucleus\": \"1H\",\n        \"label\": \"\",\n        \"text\": \"\"\n      },\n      {\n        \"id\": \"r-3fe26481\",\n        \"nucleus\": \"13C\",\n        \"label\": \"\",\n        \"text\": \"\"\n      }\n    ],\n    \"hrms\": {\n      \"ionization\": \"ESI\",\n      \"adduct\": \"[M+H]+\",\n      \"found\": \"\"\n    },\n    \"spectra\": [],\n    \"files\": [],\n    \"structure\": {\n      \"from_scheme\": false\n    },\n    \"ee\": {\n      \"value\": \"93% ee\",\n      \"method\": \"HPLC\"\n    }\n  },\n  \"flags\": {}\n}\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-d225bb1b_phenylmethanol/procedure.txt": "Stirred in THF for 24 h.",
+  "sections/s-47aecfc4_scope-of-the-couplin/compounds/c-d225bb1b_phenylmethanol/structure.mol": "\n     RDKit          2D\n\n  8  8  0  0  0  0  0  0  0  0999 V2000\n    0.7616    1.9360    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1054    1.4376    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1074    0.4378    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.9744   -0.0606    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.9764   -1.0606    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1114   -1.5622    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7556   -1.0640    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7576   -0.0640    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\n  3  4  2  0\n  4  5  1  0\n  5  6  2  0\n  6  7  1  0\n  7  8  2  0\n  8  3  1  0\nM  END\n",
+  "sections/s-47aecfc4_scope-of-the-couplin/procedures/gp-ac180fc6.txt": "The aryl halide (0.20 mmol), the catalyst (5 mol%) and K3PO4 (2.0 equiv) in THF were stirred at 60 °C for 24 h.",
+  "sections/s-47aecfc4_scope-of-the-couplin/section.json": "{\n  \"id\": \"s-47aecfc4\",\n  \"type\": \"data\",\n  \"name\": \"Scope of the coupling\",\n  \"id_table\": [\n    \"3a\",\n    \"3b\",\n    \"3c\",\n    \"3d\",\n    \"3e\",\n    \"3h\",\n    \"3f\"\n  ],\n  \"default_fields\": [\n    {\n      \"key\": \"structure\",\n      \"required\": true\n    },\n    {\n      \"key\": \"name\",\n      \"required\": false\n    },\n    {\n      \"key\": \"procedure\",\n      \"required\": true\n    },\n    {\n      \"key\": \"scale\",\n      \"required\": true\n    },\n    {\n      \"key\": \"yield\",\n      \"required\": true\n    },\n    {\n      \"key\": \"physical_state\",\n      \"required\": true\n    },\n    {\n      \"key\": \"rf\",\n      \"required\": false\n    },\n    {\n      \"key\": \"nmr\",\n      \"required\": true\n    },\n    {\n      \"key\": \"hrms\",\n      \"required\": true\n    },\n    {\n      \"key\": \"spectra\",\n      \"required\": true\n    },\n    {\n      \"key\": \"files\",\n      \"required\": false\n    }\n  ],\n  \"compound_order\": [\n    \"c-2c1a2410\",\n    \"c-8489e5e4\",\n    \"c-297214ca\",\n    \"c-6c217e6d\",\n    \"c-d225bb1b\",\n    \"c-3f2b5f9f\",\n    \"c-0ef7da25\"\n  ],\n  \"general_procedures\": [\n    {\n      \"id\": \"gp-ac180fc6\",\n      \"name\": \"General Procedure A\",\n      \"title\": \"\",\n      \"sentence\": \"Prepared according to {GP} from {starting material} ({scale}).\"\n    }\n  ]\n}\n"
+ },
+ "dismissed": {
+  "yield:3b": {
+   "fingerprint": "37683176ad19",
+   "message": "3b: the manuscript gives 85% yield, the SI 82%.",
+   "reason": "typo in the SI",
+   "by": "Tester",
+   "at": "2026-11-18T20:49:56"
+  }
+ }
+}

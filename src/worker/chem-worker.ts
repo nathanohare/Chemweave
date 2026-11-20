@@ -9,6 +9,7 @@ import { molProps, substructureMatches, structureLibrary, libraryMatches, panelP
 import type { MolProps } from '../sheet/properties';
 import { namerGraph, type NamerGraph } from '../chem/namer-graph';
 import { hammettSites, type HammettResult } from '../chem/hammett-match';
+import { molFacts, unreadableFacts, type MolFacts } from '../si/chem';
 type InitRDKit = (opts: { locateFile: () => string }) => Promise<any>;
 
 export type ChemRequest =
@@ -36,7 +37,9 @@ export type ChemRequest =
   /** A molfile as the systematic namer reads it, with its SMILES to check the name against. */
   | { type: 'namerGraph'; id: number; molblock: string }
   /** A SMILES string written the one way RDKit writes that structure, to compare two. */
-  | { type: 'canonical'; id: number; smiles: string };
+  | { type: 'canonical'; id: number; smiles: string }
+  /** What an SI project's checks need from compounds' structures (src/si/chem.ts), molfiles in, null for an unreadable one. */
+  | { type: 'siFacts'; id: number; mols: string[] };
 
 export interface FragmentResult {
   formula: string;
@@ -65,7 +68,8 @@ export type ChemResponse =
   | { type: 'fragments'; id: number; results: MassFragment[] | { error: string } }
   | { type: 'common'; id: number; results: ([number, number][] | null)[] }
   | { type: 'namerGraph'; id: number; graph: NamerGraph | null; smiles: string | null }
-  | { type: 'canonical'; id: number; smiles: string | null };
+  | { type: 'canonical'; id: number; smiles: string | null }
+  | { type: 'siFacts'; id: number; results: (MolFacts | null)[] };
 
 let RDKit: any = null;
 /** Sets of structures kept for substructure searches, by name (see substructureIn). */
@@ -211,6 +215,9 @@ self.onmessage = async (e: MessageEvent<ChemRequest>) => {
       post({ type: 'hammett', id: m.id, results: m.mols.map((x) => hammettSites(RDKit, x, m.core)) });
     } else if (m.type === 'fragments') {
       post({ type: 'fragments', id: m.id, results: massFragments(RDKit, m.molblock, m.cuts) });
+    } else if (m.type === 'siFacts') {
+      // (no structure: null; one RDKit can't read: facts that say so, shown where its formula would be)
+      post({ type: 'siFacts', id: m.id, results: m.mols.map((x) => { if (!x.trim()) return null; try { return molFacts(RDKit, x) ?? unreadableFacts(); } catch { return unreadableFacts(); } }) });
     } else if (m.type === 'common') {
       post({ type: 'common', id: m.id, results: m.mols.map((x) => commonPart(m.ref, x)) });
     }

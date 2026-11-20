@@ -72,3 +72,12 @@ describe('everyday chemistry words', () => {
     expect(wrong(s, 'the Wielandd step')).toEqual(['Wielandd']);
   });
 });
+
+describe('an SI procedure', () => {
+  it('underlines only the misspelled word, not the chemistry', () => {
+    const sp = speller();
+    const text = 'To a solution of the ketone in MeOH and CH2Cl2 at 0 °C was added NaBH4 (1.5 equiv). The mixture was stired, quenched with satd aq NH4Cl and extracted with EtOAc; Et3N, THF, CDCl3 and TLC.';
+    expect(sp.misspelled(text).map(([a, b]) => text.slice(a, b))).toEqual(['stired']);
+    expect(sp.suggestions('stired')).toContain('stirred');
+  });
+});

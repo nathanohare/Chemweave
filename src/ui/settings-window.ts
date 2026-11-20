@@ -88,7 +88,8 @@ export class SettingsWindow {
   /** While a page is being applied: whether as the default (a page about the open file reads this). */
   mode: ApplyMode = 'apply';
 
-  constructor(private pages: SettingsPage[], private host: SettingsHost | null = null) {}
+  /** `title`: the window's name (Settings); `noDefault`: Apply only, with no Set as Default (settings kept in a file, such as an SI project's). */
+  constructor(private pages: SettingsPage[], private host: SettingsHost | null = null, private opts: { title?: string; noDefault?: boolean } = {}) {}
 
   get isOpen(): boolean { return !!this.d?.open; }
 
@@ -109,9 +110,10 @@ export class SettingsWindow {
   private build(): void {
     if (this.d) return;
     const d = document.createElement('dialog');
-    d.className = 'settings-window';
-    d.setAttribute('aria-label', 'Settings');
-    d.innerHTML = `<div class="sw-head"><h2>Settings</h2><input type="search" class="sw-search" placeholder="Find a setting" aria-label="Find a setting"><button type="button" class="sw-close" title="Close (Esc)">×</button></div>`
+    const title = this.opts.title ?? 'Settings';
+    d.className = 'settings-window' + (this.opts.noDefault ? ' sw-no-default' : '');
+    d.setAttribute('aria-label', title);
+    d.innerHTML = `<div class="sw-head"><h2>${title.replace(/[<&]/g, '')}</h2><input type="search" class="sw-search" placeholder="Find a setting" aria-label="Find a setting"><button type="button" class="sw-close" title="Close (Esc)">×</button></div>`
       + `<div class="sw-body"><nav class="sw-list" aria-label="Pages"></nav><div class="sw-pane"></div><div class="sw-aside" role="complementary" aria-label="Preview" hidden></div></div>`
       + `<div class="sw-foot"><span class="sw-note muted"></span><button type="button" class="sw-default" title="Use these settings now and keep them: for next time, and for new files">Set as Default</button><button type="button" class="primary sw-apply" title="Use these settings now and keep them for next time">Apply</button></div>`;
     this.list = d.querySelector('.sw-list')!;
@@ -253,7 +255,7 @@ export class SettingsWindow {
     if (this.asking) return false;
     this.asking = true;
     const title = this.pageOf(this.page).title;
-    const answer = await askUnapplied(this.d!, title);
+    const answer = await askUnapplied(this.d!, title, this.opts.noDefault);
     this.asking = false;
     if (answer === 'stay') return false;
     if (answer === 'discard') {
@@ -343,13 +345,13 @@ export class SettingsWindow {
 }
 
 /** Apply, Set as Default, Discard, or stay on the page. */
-function askUnapplied(over: HTMLDialogElement, title: string): Promise<ApplyMode | 'discard' | 'stay'> {
+function askUnapplied(over: HTMLDialogElement, title: string, noDefault = false): Promise<ApplyMode | 'discard' | 'stay'> {
   return new Promise((resolve) => {
     const d = document.createElement('dialog');
     d.className = 'ask sw-unapplied';
     d.innerHTML = `<form method="dialog"><h2>Apply your changes?</h2><p class="muted"></p><p class="ask-buttons">`
       + `<button type="button" data-a="stay">Keep Editing</button><button type="button" data-a="discard">Discard</button>`
-      + `<button type="button" data-a="default">Set as Default</button><button type="button" class="primary" data-a="apply">Apply</button></p></form>`;
+      + (noDefault ? '' : `<button type="button" data-a="default">Set as Default</button>`) + `<button type="button" class="primary" data-a="apply">Apply</button></p></form>`;
     d.querySelector('p.muted')!.textContent = `${title} has changes that haven't been applied.`;
     let done = false;
     const finish = (a: ApplyMode | 'discard' | 'stay') => { if (done) return; done = true; d.close(); d.remove(); resolve(a); };

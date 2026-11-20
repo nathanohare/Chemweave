@@ -402,7 +402,7 @@ export type DocObject =
    */
   | { kind: 'table'; table: TableData }
   /** A caption's number (Figure 1, Scheme 2): it counts the captions of its name. */
-  | { kind: 'seq'; name: string }
+  | { kind: 'seq'; name: string; /** A compound number's compounds in the linked SI: by the letter typed after the number ('' for none), the compound's id in the SI project. */ si?: Record<string, string> }
   /** A reference to a caption ("see Figure 2"), which follows its number. */
   | { kind: 'ref'; target: number }
   /** A citation of references in the document's list (by their ids): numbers in order of first citation. */
@@ -443,7 +443,20 @@ export type DocObject =
    * list, filled in by whoever has the document, also when it is protected for filling in forms
    * (Review > Restrict Editing). `name` is its name in Word (Text1, Check1, Dropdown1).
    */
-  | { kind: 'form'; type: FormType; name?: string; value?: string; checked?: boolean; items?: string[]; help?: string };
+  | { kind: 'form'; type: FormType; name?: string; value?: string; checked?: boolean; items?: string[]; help?: string }
+  /**
+   * Something of the linked SI project (`DocText.siLink`, see si/manuscript.ts): a compound's ID
+   * (`id`, by the compound's id in the project), a table's, figure's or scheme's label (`label`,
+   * "Table S1") or the SI page a compound or label is on (`page`, "S6"). `text` is what it showed
+   * when last brought up to date from the SI, so it shows the same with the SI closed.
+   */
+  | { kind: 'si'; what: SiFieldWhat; key: string; text: string };
+
+/** What an SI field shows: a compound's ID, a label, or the SI page something is on. */
+export type SiFieldWhat = 'id' | 'label' | 'page';
+
+/** The SI project a manuscript is linked to: its folder, and its title when linked (to name it while it is closed). */
+export interface SiLink { path: string; title: string }
 
 /** A form field's kind: a text box, a check box or a drop-down list. */
 export type FormType = 'text' | 'check' | 'drop';
@@ -505,6 +518,8 @@ export interface DocText extends RichText {
   controls?: Record<string, ContentControl>;
   /** Other programs' data in the file that nothing here uses (custom XML, custom properties, add-in settings), saved back as it was. */
   kept?: KeptParts;
+  /** The SI project this manuscript is linked to (References ▸ Linked SI): its compounds' IDs and labels show here. */
+  siLink?: SiLink;
 }
 
 /** What Design has set: names of the choices made (kept with the document, so the galleries show them). */
@@ -983,6 +998,7 @@ export function usedObjects(t: Pick<DocText, 'runs' | 'objects'> & Partial<Pick<
 
 /** Keep only the objects the text still uses (before saving). */
 export function pruneObjects(t: DocText): DocText {
+  t = promoteCompoundMentions(t);
   const used = usedObjects(t);
   const objects: Record<number, DocObject> = {};
   for (const [k, v] of Object.entries(t.objects)) if (used.has(Number(k))) objects[Number(k)] = v;
@@ -1013,6 +1029,72 @@ export function objectOffsets(runs: TextRun[]): Map<number, number> {
 export const COMPOUND = 'Compound';
 
 /**
+ * Compound numbers whose first mention (the number itself) was deleted while later mentions
+ * remain: the first mention left stands in for it (by the deleted number's id, the mention's id).
+ */
+export function compoundStandIns(t: Pick<DocText, 'objects'>, order: readonly number[]): Map<number, number> {
+  const out = new Map<number, number>();
+  let present: Set<number> | null = null;
+  for (const id of order) {
+    const o = t.objects[id];
+    if (o?.kind !== 'ref') continue;
+    const s = t.objects[o.target];
+    if (s?.kind !== 'seq' || s.name !== COMPOUND) continue;
+    present ??= new Set(order);
+    if (!present.has(o.target) && !out.has(o.target)) out.set(o.target, id);
+  }
+  return out;
+}
+
+/**
+ * The same made real (before saving): the first mention left becomes the number, with its link
+ * to the SI, and the other mentions refer to it.
+ */
+export function promoteCompoundMentions(t: DocText): DocText {
+  const standIns = compoundStandIns(t, objectsInText(flatRuns(t)));
+  if (!standIns.size) return t;
+  const objects = { ...t.objects };
+  for (const [seq, ref] of standIns) objects[ref] = objects[seq];
+  const retarget = (o: DocObject): DocObject => (o.kind === 'ref' && standIns.has(o.target) ? { ...o, target: standIns.get(o.target)! } : o);
+  for (const [k, o] of Object.entries(objects)) {
+    const id = Number(k);
+    if (o.kind === 'ref' && standIns.has(o.target) && standIns.get(o.target) !== id) objects[id] = retarget(o);
+  }
+  for (const seq of standIns.keys()) delete objects[seq];
+  return { ...t, objects };
+}
+
+/**
+ * The objects of a copy pasted into a document, each under a new id (`ids`: its id in the copy →
+ * here). A compound number copied from this same document (`sameDoc`) must not give one compound
+ * two numbers: while its number is still in the text the copy is another mention of it, and when
+ * its number was cut out it is put back as it was (so the mentions left still refer to it).
+ */
+export function pastedObjects(t: DocText, own: Record<number, DocObject>, sameDoc: boolean): { ids: Map<number, number>; objects: Record<number, DocObject> } {
+  let next = nextObjectId(t);
+  const ids = new Map<number, number>();
+  const objects = { ...t.objects };
+  const inText = sameDoc ? new Set(objectsInText(flatRuns(t))) : null;
+  const sameNumber = (k: number, o: DocObject): boolean => {
+    const mine = t.objects[k];
+    return !!inText && o.kind === 'seq' && o.name === COMPOUND && mine?.kind === 'seq' && mine.name === COMPOUND && JSON.stringify(mine.si ?? {}) === JSON.stringify(o.si ?? {});
+  };
+  for (const [k, o] of Object.entries(own)) {
+    const was = Number(k);
+    if (sameNumber(was, o) && !inText!.has(was)) { ids.set(was, was); inText!.add(was); continue; }
+    const id = next++;
+    ids.set(was, id);
+    objects[id] = sameNumber(was, o) ? { kind: 'ref', target: was } : o;
+  }
+  return { ids, objects };
+}
+
+/** The compound numbers (Compound seq fields) in the order of the text, tables included. */
+export function compoundSeqs(t: Pick<DocText, 'runs' | 'objects'>): number[] {
+  return objectsInText(flatRuns(t)).filter((id) => { const o = t.objects[id]; return o?.kind === 'seq' && o.name === COMPOUND; });
+}
+
+/**
  * What each field shows: a caption's number counts the captions of its name before it (the
  * third Figure caption shows 3); a reference shows its caption's label and number, as Word's
  * "label and number" does: the caption's text from its start up to the number ("Figure S3").
@@ -1027,14 +1109,24 @@ export function fieldTexts(t: Pick<DocText, 'runs' | 'objects'> & Partial<Pick<D
   t = { ...t, runs: flatRuns(t) };
   const order = objectsInText(t.runs);
   let foot = 0, end = 0;
+  // a compound number deleted while later mentions remain: the first of them is the number now
+  const standIns = order.some((id) => t.objects[id]?.kind === 'ref') ? compoundStandIns(t, order) : null;
   for (const id of order) {
     const o = t.objects[id];
+    if (o?.kind === 'ref' && standIns?.get(o.target) === id) {
+      const n = (counts.get(COMPOUND) ?? 0) + 1;
+      counts.set(COMPOUND, n);
+      shown.set(id, String(n));
+      shown.set(o.target, String(n));
+      continue;
+    }
     // footnotes and endnotes are numbered apart, each in its own format
     if (o?.kind === 'note') {
       shown.set(id, o.end ? noteLabel(++end, t.notes?.end ?? END_FORMAT) : noteLabel(++foot, t.notes?.foot ?? FOOT_FORMAT));
       continue;
     }
     if (o?.kind === 'form') { shown.set(id, formShown(o)); continue; }
+    if (o?.kind === 'si') { shown.set(id, o.text || '??'); continue; }
     if (o?.kind !== 'seq') continue;
     const n = (counts.get(o.name) ?? 0) + 1;
     counts.set(o.name, n);
@@ -1046,6 +1138,7 @@ export function fieldTexts(t: Pick<DocText, 'runs' | 'objects'> & Partial<Pick<D
     for (const id of order) {
       const o = t.objects[id];
       if (o?.kind !== 'ref') continue;
+      if (standIns?.has(o.target)) { shown.set(id, shown.get(o.target)!); continue; }
       const target = at.get(o.target);
       if (target === undefined || !shown.has(o.target)) { shown.set(id, 'Error! Reference source not found.'); continue; }
       const seq = t.objects[o.target];

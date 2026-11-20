@@ -1,0 +1,2 @@
+HRMS (ESI) m/z: [M+H]+ calcd for C12H16NO3 222.1125; found 222.1127.
+Instrument: made-up Q-TOF, resolution 30000, lock mass 556.2771 (calibrant).

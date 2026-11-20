@@ -168,6 +168,12 @@ export interface DocxModel {
   tables: Record<number, { table: TableData; text: string; pr?: string }>;
   /** The document's references and citation style (citations are ADDIN fields naming them). */
   references?: Reference[];
+  /** The SI project the document is linked to (its compounds' IDs and labels are SI_FIELD fields). */
+  siLink?: { path: string; title: string };
+  /** Each linked compound number's SI compounds (by letter), by the name of the bookmark round its field. */
+  siLinks?: Record<string, Record<string, string>>;
+  /** (files saved before siLinks: the same by the order of the compound numbers in the text, null for one not linked; used only while the numbers are as many as were saved) */
+  siNumbers?: (Record<string, string> | null)[];
   citeStyle?: CiteStyle;
   citeOptions?: Partial<CiteFormat>;
   /** The reference manager citations are saved for (Zotero, Mendeley, EndNote), when chosen. */
@@ -197,6 +203,8 @@ export const CHART_NAME = 'Chart';
 
 /** The field instruction of a citation: Word shows the numbers written as its result and leaves them alone. */
 export const CITE_FIELD = 'ADDIN CHEMILLUSTRATOR_CITE';
+/** The field instruction of something of the linked SI (a compound's ID, a label, a page): ` ADDIN CHEMILLUSTRATOR_SI id c-1a2b3c4d `, showing its last text. */
+export const SI_FIELD = 'ADDIN CHEMILLUSTRATOR_SI';
 /** Bookmarks round a bibliography's paragraphs (hidden in Word: they start with _). */
 export const BIB_MARK = '_ChemBib';
 

@@ -1,0 +1,338 @@
+// The text of one compound's block in the compiled SI, ACS style, as Chem SI Assistant writes
+// it (compile/blocks.py):
+//
+//   **1-Phenylethan-1-ol (2a).**  [structure]
+//   <procedure>
+//   Colorless oil (57.4 mg, 94%). *R*f = 0.23 (…). **¹H NMR** (500 MHz, CDCl₃) δ 7.39–7.34 (m, 4H), …
+//   **HRMS** (ESI) *m/z*: [M+Na]⁺ calcd for C₈H₁₀NaO 145.0624; found 145.0625.
+//
+// Paragraphs of runs, the stored text format, so the user's own "SI text" field can replace the
+// generated text exactly as typed.
+
+import { CITE, parseMarkup, type Paragraph, type Run } from './markup';
+import { eeWithUnit, fieldDef, partText, type FieldDef } from './fields';
+import { fieldKeys, fieldsOf, valuesOf, compoundName, type Json, type SiCompound, type SiProject } from './project';
+import { hrmsCalc, hrmsSpecies, hrmsTolerance, monoisotopic, outOfTolerance, parseNumber } from './checks';
+import { ChemError, type MolFacts } from './chem';
+import { nameRuns } from './chem-names';
+import { R, but, chargeRuns, formatChemistry, formatNmr, formulaRuns, plain, type Leave } from './format';
+import { DEFAULT_GP_SENTENCE, autoValues, fillSentence, purificationSentence, usesPurification } from './procedures';
+
+export const SI_TEXT_KEY = 'si_text';
+const SKIP = new Set(['structure', 'name', 'notes', 'private_files', 'spectra', 'files', 'scale', SI_TEXT_KEY]);
+
+export interface InlineFigure { field: string; file: string; caption: string }
+
+export interface CompoundBlock {
+  title: Run[];
+  paragraphs: Paragraph[];
+  figures: InlineFigure[];
+  /** The user's own SI text replaced the generated text. */
+  customText: boolean;
+}
+
+/** What building a block needs besides the project: the structure's facts and how to format. */
+export interface BlockOptions {
+  facts: MolFacts | null;
+  /** Format chemistry in the text (the project's "format_text", on unless turned off). */
+  helpers: boolean;
+  leave?: Leave;
+}
+
+const dict = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {});
+const valueOf = (c: SiCompound, key: string): Json => dict(valuesOf(c)[key]);
+const itemsOf = (c: SiCompound, key: string): Json[] => {
+  const v = valuesOf(c)[key];
+  return Array.isArray(v) ? v.filter((i): i is Json => !!i && typeof i === 'object' && !Array.isArray(i)) : [];
+};
+const fieldDefs = (c: SiCompound): FieldDef[] => fieldsOf(c).map(fieldDef).filter((d): d is FieldDef => d !== null);
+
+function endSentence(runs: Run[]): Run[] {
+  const t = plain(runs).trimEnd();
+  return t && !'.;:!?'.includes(t[t.length - 1]) ? [...runs, R('.')] : runs;
+}
+const dashRanges = (t: string): string => t.replace(/(?<=\d)\s*-\s*(?=\d)/g, '–');
+const withSpace = (runs: Run[]): Run[] => (runs.length ? [...runs, R(' ')] : runs);
+
+/** The first n characters made bold. */
+function boldPrefix(runs: Run[], n: number): Run[] {
+  const out: Run[] = [];
+  let left = n;
+  for (const r of runs) {
+    if (left <= 0) out.push(r);
+    else if (r.text.length <= left) { out.push(but(r, { bold: true })); left -= r.text.length; }
+    else { out.push(but(r, { text: r.text.slice(0, left), bold: true }), but(r, { text: r.text.slice(left) })); left = 0; }
+  }
+  return out;
+}
+
+/** `text` put in at character `index`. */
+function insertAt(runs: Run[], index: number, t: string): Run[] {
+  const out: Run[] = [];
+  let pos = 0, done = false;
+  for (const r of runs) {
+    if (!done && pos <= index && index <= pos + r.text.length) {
+      const cut = index - pos;
+      out.push(but(r, { text: r.text.slice(0, cut) }), R(t), but(r, { text: r.text.slice(cut) }));
+      done = true;
+    } else out.push(r);
+    pos += r.text.length;
+  }
+  if (!done) out.push(R(t));
+  return out.filter((r) => r.text);
+}
+
+const NMR_HEADER = /^\s*\d{1,3}\s*[A-Z][a-z]?(?:\s*\{\s*\d{1,3}\s*[A-Z][a-z]?\s*\})?\s*NMR/;
+
+/** One peak report as a sentence, starting with its bold "¹H NMR". */
+export function nmrSentence(report: Json, o: BlockOptions): Run[] {
+  const paras = parseMarkup(partText(report.text));
+  let runs = paras.flatMap((p) => [...p.runs, R(' ')]).slice(0, -1);
+  if (!plain(runs).trim()) return [];
+  if (o.helpers) runs = formatNmr(runs, o.leave);
+  const t = plain(runs);
+  const m = NMR_HEADER.exec(t);
+  const label = partText(report.label).trim();
+  if (m) {
+    const end = m[0].length;
+    runs = boldPrefix(runs, end);
+    if (label) {
+      const par = /^\s*\(([^)]*)\)/.exec(t.slice(end));
+      runs = par ? insertAt(runs, end + par[0].length - 1, `, ${label}`) : insertAt(runs, end, ` (${label})`);
+    }
+  } else {
+    const n = partText(report.nucleus) || '1H';
+    const digits = /^\d*/.exec(n)![0];
+    const header = [...(digits ? [R(digits, { bold: true, valign: 'super' })] : []), R(n.slice(digits.length) + ' NMR', { bold: true })];
+    runs = [...header, ...(label ? [R(` (${label})`)] : []), R(' '), ...runs];
+  }
+  return endSentence(runs);
+}
+
+/** "HRMS (ESI) m/z: [M+Na]⁺ calcd for C₈H₁₀NaO 145.0624; found 145.0625." */
+export function hrmsSentence(p: SiProject, c: SiCompound, facts: MolFacts | null): Run[] {
+  const value = valueOf(c, 'hrms');
+  const foundText = partText(value.found);
+  const found = parseNumber(foundText);
+  const ion = partText(value.ionization).trim();
+  const adduct = partText(value.adduct).trim() || '[M+H]+';
+  let runs = [R('HRMS', { bold: true }), ...(ion ? [R(` (${ion})`)] : []), R(' '), R('m/z', { italic: true }), R(': '), ...chargeRuns(adduct)];
+  let result = null;
+  try {
+    const sp = hrmsSpecies(facts, value);
+    result = sp ? hrmsCalc(sp.info, adduct, foundText, hrmsTolerance(p.settings)) : null;
+  } catch (e) {
+    if (!(e instanceof ChemError)) throw e;
+  }
+  if (result) {
+    const peak = result.matched && !outOfTolerance(result) ? result.matched : monoisotopic(result);
+    runs = [...runs, R(' calcd for '), ...formulaRuns(peak.formula), R(` ${peak.mz.toFixed(4)}`)];
+    if (found !== null) runs.push(R(`; found ${found.toFixed(4)}`));
+  } else if (found !== null) runs.push(R(` found ${found.toFixed(4)}`));
+  else return [];
+  return endSentence(runs);
+}
+
+const FORMULA_PIECE = /^(\d+(?:\.\d+)?)?((?:\[\d+[A-Z][a-z]?\]|[A-Z][a-z]?|\d+)+)$/;
+
+/** A typed formula, maybe a solvate ("C12H15NO·0.25H2O"): only atom counts subscripted; anything else as typed. */
+export function typedFormulaRuns(t: string): Run[] {
+  const pieces = t.trim().split(/\s*([·•∙])\s*/);
+  const out: Run[] = [];
+  for (let i = 0; i < pieces.length; i++) {
+    if (i % 2) { out.push(R(pieces[i])); continue; }
+    const m = FORMULA_PIECE.exec(pieces[i]);
+    if (!m) return [R(t.trim())];
+    if (m[1]) out.push(R(m[1]));
+    out.push(...formulaRuns(m[2]));
+  }
+  return out;
+}
+
+/** "99% ee. HPLC (Chiralpak ID, …): tR (major) = 12.3 min, tR (minor) = 14.8 min." */
+export function eeSentence(v: Record<string, string>, fmt: (runs: Run[]) => Run[] = (r) => r): Run[] {
+  const value = eeWithUnit(v.value ?? '');
+  if (!value) return [];
+  const conditions = [v.column ?? '', v.eluent ?? '', v.flow ? `${v.flow} mL/min` : '', v.wavelength ? `${v.wavelength} nm` : ''].filter(Boolean).join(', ');
+  const times: Run[][] = [];
+  for (const [which, k] of [['major', 't_major'], ['minor', 't_minor']]) {
+    if (v[k]) times.push([R('t', { italic: true }), R('R', { valign: 'sub' }), R(` (${which}) = ${v[k]} min`)]);
+  }
+  const method = v.method ?? '';
+  if (!conditions && !times.length) return endSentence([R(value + (method ? ` (${method})` : ''))]);
+  let runs = [...endSentence([R(value)]), R(' ' + (method || 'HPLC'))];
+  if (conditions) runs = [...runs, R(' ('), ...fmt([R(conditions)]), R(')')];
+  if (times.length) {
+    runs.push(R(': '));
+    times.forEach((t, i) => { if (i) runs.push(R(', ')); runs.push(...t); });
+  }
+  return endSentence(runs);
+}
+
+/** "Colorless oil (57.4 mg, 94%)." */
+export function stateAndYield(c: SiCompound): Run[] {
+  const keys = fieldKeys(c);
+  const state = keys.includes('physical_state') ? partText(valueOf(c, 'physical_state').text).trim() : '';
+  const y = keys.includes('yield') ? valueOf(c, 'yield') : {};
+  const [mass, unit, pct, note] = ['mass', 'mass_unit', 'percent', 'note'].map((k) => partText(y[k]).trim());
+  let amounts = [mass ? `${mass} ${unit}`.trim() : '', pct ? `${pct}%` : ''].filter(Boolean).join(', ');
+  if (note) amounts = pct ? `${amounts} ${note}` : [amounts, note].filter(Boolean).join(', ');
+  let t: string;
+  if (state) t = state[0].toUpperCase() + state.slice(1) + (amounts ? ` (${amounts})` : '');
+  else if (amounts) t = `Yield: ${amounts}`;
+  else return [];
+  return endSentence([R(t)]);
+}
+
+/** The chosen general procedure's compound sentence, filled in. */
+export function gpSentence(p: SiProject, c: SiCompound, problems?: string[]): Run[] {
+  const gp = p.compoundGp(c);
+  if (!gp) return [];
+  const choice = valueOf(c, 'procedure');
+  const runs = fillSentence(partText(gp.sentence) || DEFAULT_GP_SENTENCE, dict(choice.values), autoValues(c, gp), problems);
+  return runs.length ? endSentence(runs) : [];
+}
+
+/** "Spectral data matched those reported in the literature.¹²" */
+export function citationSentence(c: SiCompound, key = 'references'): Run[] {
+  const value = valueOf(c, key);
+  const ids = Array.isArray(value.refs) ? value.refs.filter((i): i is string => typeof i === 'string' && !!i) : [];
+  const t = partText(value.text).trim();
+  if (!ids.length && !t) return [];
+  let runs = t ? parseMarkup(t).flatMap((x) => x.runs) : [];
+  if (runs.length) runs = endSentence(runs);
+  if (ids.length) runs.push(R('', { ref: CITE + ids.join(',') }));
+  return runs;
+}
+
+function partsSentence(c: SiCompound, def: FieldDef, o: BlockOptions): Run[] {
+  const v: Record<string, string> = Object.fromEntries(Object.entries(valueOf(c, def.key)).map(([k, x]) => [k, partText(x).trim()]));
+  const fmt = (runs: Run[]): Run[] => (o.helpers ? formatChemistry(runs, o.leave) : runs);
+  switch (def.key) {
+    case 'rf': {
+      if (!v.value) return [];
+      const extra = [v.eluent ?? '', v.visualization ?? ''].filter(Boolean).join('; ');
+      return endSentence([R('R', { italic: true }), R('f', { italic: true, valign: 'sub' }), R(` = ${v.value}`), ...fmt(extra ? [R(` (${extra})`)] : [])]);
+    }
+    case 'mp': {
+      if (!v.value) return [];
+      return endSentence([R('mp'), R(` ${dashRanges(v.value)} °C`), ...fmt(v.solvent ? [R(` (${v.solvent})`)] : [])]);
+    }
+    case 'ir': {
+      if (!v.bands) return [];
+      return endSentence([R('IR', { bold: true }), R((v.method ? ` (${v.method})` : '') + ' '), R('ν', { italic: true }), R('max', { valign: 'sub' }), R(` ${v.bands} cm`), R('−1', { valign: 'super' })]);
+    }
+    case 'rotation': {
+      if (!v.value) return [];
+      let runs = [R('[α]'), R('D', { valign: 'sub' })];
+      if (v.temperature) runs.push(R(v.temperature, { valign: 'super' }));
+      runs.push(R(` ${v.value}`));
+      let inside = v.c ? [R('c', { italic: true }), R(` ${v.c}`)] : [];
+      if (v.solvent) inside = [...inside, ...(inside.length ? [R(', ')] : []), ...fmt([R(v.solvent)])];
+      if (inside.length) runs = [...runs, R(' ('), ...inside, R(')')];
+      return endSentence(runs);
+    }
+    case 'ee': return eeSentence(v, fmt);
+    case 'dr': {
+      if (!v.value) return [];
+      let runs = [R(`d.r. = ${v.value}`)];
+      if (v.method) runs = [...runs, R(' (determined by '), ...(o.helpers ? formatNmr([R(v.method)], o.leave) : [R(v.method)]), R(')')];
+      return endSentence(runs);
+    }
+    case 'ea': {
+      if (!v.calcd && !v.found) return [];
+      const runs = [R('Anal.')];
+      if (v.calcd) {
+        runs.push(R(' Calcd'));
+        if (v.formula) runs.push(R(' for '), ...typedFormulaRuns(v.formula));
+        else if (o.facts?.info) runs.push(R(' for '), ...formulaRuns(o.facts.info.formula));
+        runs.push(R(`: ${v.calcd}` + (v.found ? '.' : '')));
+      }
+      if (v.found) runs.push(R(` Found: ${v.found}`));
+      return endSentence(runs);
+    }
+    case 'xray': return v.ccdc ? endSentence([R(`CCDC ${v.ccdc}`)]) : [];
+  }
+  if (def.custom) {
+    const t = [v.text ?? '', v.value ?? '', v.unit ?? ''].filter(Boolean).join(' ');
+    return t ? endSentence([R(`${def.label}: `), ...fmt([R(t)])]) : [];
+  }
+  return [];
+}
+
+/** The title: "Name (2a)." in bold, or "Compound 2a." */
+export function compoundTitle(c: SiCompound, displayId: string): Run[] {
+  const name = compoundName(c);
+  // the name with its conventional italics (N-, tert-, (E)-…, or as typed with *…*)
+  return name ? [...nameRuns(name, { bold: true }), R(` (${displayId}).`, { bold: true })] : [R(`Compound ${displayId}.`, { bold: true })];
+}
+
+/** The text the program writes for this compound: the procedure, then the data. */
+export function generatedParagraphs(p: SiProject, c: SiCompound, o: BlockOptions): Paragraph[] {
+  const paragraphs: Paragraph[] = [];
+  let data: Run[] = [];
+  let didState = false;
+  const keys = fieldKeys(c);
+  const chemistry = (runs: Run[]): Run[] => (o.helpers ? formatChemistry(runs, o.leave) : runs);
+  // the Purification field's sentence ends the procedure, unless the GP's sentence places it
+  let purification = purificationSentence(c);
+  if (purification && usesPurification(p.compoundGp(c))) purification = '';
+  const withProcedure = keys.includes('procedure');
+  for (const def of fieldDefs(c)) {
+    if (SKIP.has(def.key)) continue;
+    if (def.key === 'purification') {
+      if (purification && !withProcedure) paragraphs.push({ runs: chemistry([R(purification)]) });
+      continue;
+    }
+    if (def.kind === 'richtext') {
+      const own = parseMarkup(p.compoundText(c, def.key)).filter((x) => x.runs.length);
+      if (def.key === 'procedure') {
+        const sentence = gpSentence(p, c);
+        if (sentence.length) {
+          const first = own.length ? own.shift()!.runs : [];
+          own.unshift({ runs: [...sentence, ...(first.length ? [R(' '), ...first] : [])] });
+        }
+        if (purification) {
+          const last = own.length ? own.pop()!.runs : [];
+          own.push({ runs: [...(last.length ? [...last, R(' ')] : []), R(purification)] });
+        }
+      }
+      for (const x of own) paragraphs.push({ runs: chemistry(x.runs) });
+      continue;
+    }
+    if (def.kind === 'citations') { data = [...data, ...withSpace(citationSentence(c, def.key))]; continue; }
+    if (def.key === 'physical_state' || def.key === 'yield') {
+      if (!didState) { data = [...data, ...withSpace(stateAndYield(c))]; didState = true; }
+      continue;
+    }
+    if (def.kind === 'nmr') {
+      for (const report of itemsOf(c, 'nmr')) data = [...data, ...withSpace(nmrSentence(report, o))];
+      continue;
+    }
+    if (def.key === 'hrms') { data = [...data, ...withSpace(hrmsSentence(p, c, o.facts))]; continue; }
+    if (def.kind === 'parts') data = [...data, ...withSpace(partsSentence(c, def, o))];
+  }
+  if (data.length) paragraphs.push({ runs: data[data.length - 1].text === ' ' ? data.slice(0, -1) : data });
+  return paragraphs;
+}
+
+/** The files of a compound's file fields shown with it (not Spectra): "Inline with compound" and named. */
+export function inlineFigures(c: SiCompound): InlineFigure[] {
+  const out: InlineFigure[] = [];
+  for (const def of fieldDefs(c)) {
+    if (def.kind !== 'attachments' || def.key === 'spectra') continue;
+    for (const item of itemsOf(c, def.key)) {
+      if ((item.placement ?? 'inline') === 'inline' && partText(item.file)) out.push({ field: def.key, file: partText(item.file), caption: partText(item.caption) });
+    }
+  }
+  return out;
+}
+
+export function compoundBlock(p: SiProject, c: SiCompound, displayId: string, o: BlockOptions): CompoundBlock {
+  const title = compoundTitle(c, displayId);
+  const custom = fieldKeys(c).includes(SI_TEXT_KEY) ? p.compoundText(c, SI_TEXT_KEY).trim() : '';
+  const paragraphs = custom
+    ? parseMarkup(custom).filter((x) => x.runs.length).map((x) => ({ runs: x.runs, ...(x.heading ? { heading: x.heading } : {}) }))
+    : generatedParagraphs(p, c, o);
+  return { title, paragraphs, figures: inlineFigures(c), customText: !!custom };
+}

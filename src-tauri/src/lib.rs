@@ -135,8 +135,9 @@ fn write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
     let mut tmp = target.clone().into_os_string();
     tmp.push(".saving");
     let tmp = PathBuf::from(tmp);
+    // (a rename a sync program or antivirus holds up for a moment is tried again)
     std::fs::write(&tmp, bytes)
-        .and_then(|_| std::fs::rename(&tmp, &target))
+        .and_then(|_| folders::rename_retrying(&tmp, &target))
         .map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
             format!("Could not save {path}: {e}")
@@ -515,6 +516,10 @@ pub fn run() {
             open_dialog::open_shared_dialog,
             folders::list_folder,
             folders::make_folder,
+            folders::si_move,
+            folders::si_remove_lock,
+            folders::si_list_dir,
+            folders::si_remove_trash,
             file_types::launch_files,
             file_types::file_types_get,
             file_types::file_types_set,

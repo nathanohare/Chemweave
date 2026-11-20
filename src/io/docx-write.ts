@@ -32,7 +32,7 @@ import { facesToEmbed, newGuid, obfuscate, type FontSource } from './font-embed'
 import { fromDataUrl } from '../render/images';
 import { chemdrawProg, chemdrawObject, embeddedPart, OLE_REL, OLE_TYPE } from './ole-object';
 import { BULLETS, fitParas, listInfo, paraCount, samePara, schemeOf, splitParagraphs, type ListInfo } from '../text/paragraphs';
-import { BOX_PAD, COL_GAP, COMPOUND, END_FORMAT, FOOT_FORMAT, columnsOf, contentsPrint, OBJECT_CHAR, SHADOWS, charStylesOf, watermarkPlace, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, pruneObjects, EMPTY_FORM, styleOf, runStyleOf, type CharStyle, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type HeaderFooter, type HfBody, type HfKey, type NamedStyle, type PageBorder, type PageSetup, type Watermark } from '../document/document';
+import { BOX_PAD, COL_GAP, COMPOUND, compoundSeqs, END_FORMAT, FOOT_FORMAT, columnsOf, contentsPrint, OBJECT_CHAR, SHADOWS, charStylesOf, watermarkPlace, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, pruneObjects, EMPTY_FORM, styleOf, runStyleOf, type CharStyle, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type HeaderFooter, type HfBody, type HfKey, type NamedStyle, type PageBorder, type PageSetup, type Watermark } from '../document/document';
 import { ACS_LINE, GRID_LINE, bibHang, docCellAlign, shownSize } from '../document/doc-layout';
 import { sectionsOf, type Section } from '../document/sections';
 import { bibliography, piecesText, type Reference } from '../document/references';
@@ -58,7 +58,7 @@ import type { ChartBox } from '../sheet/chart-box';
 import { appPropsXml, corePropsXml, writeKeptParts, type ContentControl } from './kept-parts';
 import { cmlGuid, contentsSig, writeCml } from './cml';
 import {
-  BIB_MARK, CHART_NAME, CITE_FIELD, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
+  BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
 } from './docx-base';
 
 export interface DocxDeps {
@@ -211,6 +211,16 @@ class DocxWriter {
     if (t.citeStyle) this.model.citeStyle = t.citeStyle;
     if (t.design) this.model.design = t.design;
     if (t.noFigureOffer) this.model.noFigureOffer = true;
+    if (t.siLink) this.model.siLink = { path: t.siLink.path, title: t.siLink.title };
+    // each linked compound number's SI compounds, by the bookmark round its own field: the link
+    // stays with its number when numbers are added, deleted, moved or copied in Word
+    for (const id of compoundSeqs(t)) {
+      const o = t.objects[id];
+      if (o?.kind !== 'seq' || !o.si || !Object.keys(o.si).length) continue;
+      const name = this.bookmarks.get(id) ?? `_Ref${100000000 + id}`;
+      this.bookmarks.set(id, name);
+      (this.model.siLinks ??= {})[name] = o.si;
+    }
     if (t.citeOptions && Object.keys(t.citeOptions).length) this.model.citeOptions = t.citeOptions;
     if (t.citeManager) this.model.citeManager = t.citeManager;
     this.fullW = Math.max(36, t.page.w - t.page.left - t.page.right);
@@ -933,6 +943,8 @@ class DocxWriter {
       return bm ? field(rPr, ` REF ${bm} \\h \\* CHARFORMAT `, shown) : run(rPr, shown);
     }
     if (o.kind === 'cite') return this.citeXml(o, rPr, shown);
+    // something of the linked SI: Word shows its last text and leaves it alone
+    if (o.kind === 'si') return field(rPr, ` ${SI_FIELD} ${o.what} ${xml(o.key)} `, shown);
     // a footnote's or endnote's number: Word's own reference to it (Word numbers it)
     if (o.kind === 'note') {
       const n = this.noteIds.get(id);

@@ -114,7 +114,7 @@ import { recordingToWav, NARRATION_NAME } from './deck/narration';
 import { clockText } from './deck/show-link';
 import type { PresenterView } from './ui/presenter-view';
 import { editDrawingStyle } from './ui/style-dialog';
-import { usedObjects, type DocText } from './document/document';
+import { usedObjects, type DocText, type SiLink } from './document/document';
 import { DARK_PALETTES, darkPaletteNamed, showDarkPage, type DarkPalette } from './dark-page';
 import { STYLE_PRESETS, applyStyle, presetNamed, restyleContents, sameLook, styleNamed, type StyleMode } from './drawing-styles';
 import { askCleanUpOption } from './ui/cleanup-picker';
@@ -259,6 +259,14 @@ import { preferredStyle, setPreferredStyle } from './document/cite-styles';
 import { layoutTable } from './table';
 import { SheetChem } from './sheet/sheet-chem';
 import { structureDoc, structureMolfile } from './sheet/structure-doc';
+import type { SiMode, SiCard } from './ui/si-mode';
+import type { SiProject as SiProjectT } from './si/project';
+import { siDrawingStyle } from './si/drawing-style';
+import type { SiView } from './si/manuscript';
+import { JournalFolder, journalOf } from './si/journal';
+import type { SiFolder as SiFolderT } from './si/folder';
+import type { SiAccess } from './ui/doc-si';
+import { readScene, sceneToDoc } from './io/chem-formats';
 import { cellName, colOf, rowOf } from './sheet/refs';
 import { checkDrawings, type PlacedDrawing } from './ui/mode-problems';
 import { StructurePictures } from './ui/structure-pictures';
@@ -4180,7 +4188,7 @@ const sizeSel = $<HTMLSelectElement>('#rb-size');
 let modeColours: ModeColours = { ...DEFAULT_MODE_COLOURS };
 // Each mode keeps its own tool: drawings and slides start with Select (the marquee; on a slide,
 // click a placeholder to type), structures drawn for sheet cells and documents with a bond.
-const START_TOOL: Readonly<Record<Tab['mode'], string>> = { drawing: 'select', slides: 'select', sheet: 'bond-single', document: 'bond-single', design: 'select' };
+const START_TOOL: Readonly<Record<Tab['mode'], string>> = { drawing: 'select', slides: 'select', sheet: 'bond-single', document: 'bond-single', design: 'select', si: 'bond-single' };
 const modeTool: Record<Tab['mode'], string> = { ...START_TOOL };
 
 // ---------------------------------------------------------------- sheets
@@ -4313,7 +4321,7 @@ const ws: Workspace = new Workspace(doc, {
     read: async (bytes, name) => (await import('./io/doc-files')).readDocumentFile(bytes, name, docRead),
     write: async (d, name) => (await import('./io/doc-files')).writeDocumentFile(d, name, docFiles),
   },
-  newStyle: (mode) => { const n = modeStyleFor(mode); return n ? styleNamed(n, ownStyles) ?? null : null; },
+  newStyle: (mode) => { const n = mode === 'si' ? null : modeStyleFor(mode); return n ? styleNamed(n, ownStyles) ?? null : null; },
   newPage: () => (defaultPage ? { ...defaultPage } : null),
   newMaster: (m) => { const t = themeById(slideTemplate); return t && t.id !== 'plain' ? applyTemplate(m, t) : null; },
   beforeWrite: (tab, ref, name, how) => keeper.beforeWrite(tab, ref, name, how),
@@ -4331,6 +4339,9 @@ const ws: Workspace = new Workspace(doc, {
   styleSheet: (tab, style) => void offerStyleSheet(tab, style),
   dropped: (tab) => {
     keeper.dropped(tab);
+    // an SI project: Chem SI Assistant can open it for editing again
+    // (once what was being typed in it has been written: the history and the lock go after the last save)
+    if (tab.si) { const si = tab.si; void (async () => { await siMode?.saved(si).catch(() => {}); siMode?.closed(si); await closeSiProject(si); })(); }
     // a drawing being edited for Word: Word hears that the editing is over
     const id = embeddedTabs.get(tab);
     if (id !== undefined) { embeddedTabs.delete(tab); void invoke('ole_close', { id }).catch(() => {}); }
@@ -4435,6 +4446,8 @@ function enterTab(tab: Tab, opened: boolean): void {
   const slides = !!deck && !design;
   const sheet = tab.mode === 'sheet';
   const words = tab.mode === 'document';
+  const siTab = tab.mode === 'si';
+  document.body.classList.toggle('si-mode', siTab);
   document.body.classList.toggle('slides-mode', slides);
   document.body.classList.toggle('design-mode', design);
   editor.glueArrows = design;
@@ -4453,7 +4466,7 @@ function enterTab(tab: Tab, opened: boolean): void {
   tickToolboxes();
   applyModeColours(tab.mode, modeColours);
   for (const el of document.querySelectorAll<HTMLElement>('.slides-only')) el.hidden = !slides;
-  canvasRibbon.show(!deck && !sheet && !words && !design);
+  canvasRibbon.show(!deck && !sheet && !words && !design && !siTab);
   fileChecksKey = '';
   placeProblemsBox();
   // another tab: back to Normal view
@@ -4465,13 +4478,15 @@ function enterTab(tab: Tab, opened: boolean): void {
   if (outlineView.shown) outlineView.show(false);
   if (notesView.shown) { notesView.show(false); $('#notes-pane').classList.remove('np-hidden'); }
   showSheetParts();
-  editor.paused = sheet || words;
+  editor.paused = sheet || words || siTab;
   // a sheet's or document's own code may still be loading: it shows the tab when it's ready
   if (sheet && !sheetMode) void loadSheetMode().catch(modeFailed);
   if (words && !docMode) void loadDocMode().catch(modeFailed);
   sheetMode?.show(sheet ? tab : null);
   if (words) fieldEnv.fileName = ws.mainOf(tab).name;
   docMode?.show(words ? tab : null);
+  if (siTab && !siMode) void loadSiMode().catch(modeFailed);
+  siMode?.show(siTab ? tab : null);
   renderer.screen = !!deck;
   renderer.page = deck ? slidePage : drawingBackdrop;
   editor.slideKeys = slides;
@@ -4514,6 +4529,8 @@ function enterTab(tab: Tab, opened: boolean): void {
   void refreshDescriptors();
   if (sheet && !splitDrawing) setHint(SHEET_HINT);
   else if (words && !splitDrawing) setHint(DOC_HINT);
+  // (show() above drew the SI tab already: only its status line again, over the drawing's)
+  else if (siTab) siMode?.showStatus();
   else editor.onToolChange(editor.toolName);
 }
 
@@ -5747,6 +5764,7 @@ function flipped(r: boolean | 'stereo'): void {
 
 /** Undo and Redo: in Slides mode the deck's history covers every slide and the slide list; a sheet has its own. */
 function undo(): void {
+  if (ws.active.mode === 'si') { void siMode?.undo(false).then(refreshHistory, () => {}); return; }
   if (sheetActive()) { sheetMode.undo(); return; }
   if (docActive()) { docMode.run('undo'); return; }
   const d = deckNow();
@@ -5757,6 +5775,7 @@ function undo(): void {
 }
 
 function redo(): void {
+  if (ws.active.mode === 'si') { void siMode?.undo(true).then(refreshHistory, () => {}); return; }
   if (sheetActive()) { sheetMode.redo(); return; }
   if (docActive()) { docMode.run('redo'); return; }
   const d = deckNow();
@@ -5768,6 +5787,7 @@ function redo(): void {
 
 /** The name of the step Undo (or Redo) would take back in the tab in front: null with nothing to take back, '' when it has no name. */
 function historyStep(redo: boolean): string | null {
+  if (ws.active.mode === 'si') return siMode?.history(redo) ?? null;
   if (sheetActive()) return sheetMode.history(redo);
   if (docActive()) return docMode.canUndo(redo) ? '' : null;
   const h = deckNow() ?? doc;
@@ -5810,6 +5830,8 @@ const TAB_ICONS: Record<Tab['mode'], [string, string]> = {
   slides: [tabSvg('<rect x="2" y="3" width="12" height="8.5" rx="1"/><path d="M8 11.5V14M5.5 14h5"/>'), 'Presentation'],
   sheet: [tabSvg('<rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M2.5 6.5h11M2.5 10h11M6.5 2.5v11"/>'), 'Spreadsheet'],
   design: [tabSvg('<circle cx="5" cy="11" r="2.6"/><rect x="8.3" y="2.5" width="5.2" height="5.2" rx="0.6"/><path d="M3 4.5l3-2.2 1.5 3.4z"/>'), 'Design'],
+  // a page with "SI" on it
+  si: [tabSvg('<path d="M4 2.5h6l2.5 2.5v8.5h-8.5z"/><text x="8.2" y="11.6" font-size="5.4" font-weight="700" text-anchor="middle" stroke="none" fill="currentColor">SI</text>'), 'SI Project'],
 };
 
 function renderTabs(): void {
@@ -8119,7 +8141,7 @@ function editCellStructure(contents: Contents | null, title: string, done: (c: C
   // in a mode whose page is the drawing area itself (Canvas, Presentation, Design), the structure
   // is drawn in a box over a faded picture of the page, as a spreadsheet cell's is (or, for the
   // Knowledge Base's Draw window, in the window's box, the page left as a picture behind it)
-  const pageIsDrawing = ws.active.mode !== 'sheet' && ws.active.mode !== 'document';
+  const pageIsDrawing = ws.active.mode !== 'sheet' && ws.active.mode !== 'document' && ws.active.mode !== 'si';
   const boxed = !inPlace && !area && pageIsDrawing;
   if (boxed || (area && pageIsDrawing)) {
     const back = $<HTMLDivElement>('#drawing-backdrop');
@@ -8128,6 +8150,8 @@ function editCellStructure(contents: Contents | null, title: string, done: (c: C
     back.hidden = false;
     if (boxed) document.body.classList.add('boxed-drawing');
   }
+  // an SI compound's structure: the same box, over the faded compound page
+  if (ws.active.mode === 'si') document.body.classList.add('boxed-drawing');
   editor.clearSelection();
   // (no keyboard highlight left from the last structure: its atom ids mean nothing in this one)
   editor.setKeyHot(null);
@@ -8139,7 +8163,7 @@ function editCellStructure(contents: Contents | null, title: string, done: (c: C
   layoutSplit();
   $('#structure-title').textContent = title;
   $('#structure-bar').hidden = false;
-  if (ws.active.mode === 'sheet' || boxed) setStructureSize(0);
+  if (ws.active.mode === 'sheet' || ws.active.mode === 'si' || boxed) setStructureSize(0);
   showSheetParts();
   editor.paused = false;
   editor.lastEdited = null;
@@ -8228,7 +8252,8 @@ function finishCellStructure(keep: boolean): void {
   $('#structure-bar').hidden = true;
   const sheet = ws.active.mode === 'sheet';
   const words = ws.active.mode === 'document';
-  editor.paused = sheet || words;
+  const siTab = ws.active.mode === 'si';
+  editor.paused = sheet || words || siTab;
   splitDrawing = false;
   layoutSplit();
   if (ws.pane) { resize(); renderer.repaintAll(); }
@@ -8237,6 +8262,7 @@ function finishCellStructure(keep: boolean): void {
   if (sheet) setHint(SHEET_HINT);
   if (words) setHint(DOC_HINT);
   e.done(result);
+  if (siTab) siMode?.refresh();
   if (!result && sheet) sheetMode?.focus();
   if (!result && words) docMode?.focus();
 }
@@ -8388,6 +8414,9 @@ function loadDocMode(): Promise<DocumentMode> {
   docModeLoading ??= import('./ui/doc-mode').then(({ DocumentMode }) => {
     docMode = new DocumentMode({
       flash,
+      si: () => siAccess,
+      siPicture: (link, key) => siPicture(link, key),
+      revealSide: () => { if (sideIsFolded()) command('fold-side'); },
       key: (e) => docKey(e),
       command: (name) => command(name),
       changed: () => ws.noteChange(),
@@ -8464,6 +8493,516 @@ function modeLoaded(mode: 'sheet' | 'document'): void {
   if (mode === 'sheet') sheetMode.show(ws.active);
   else docMode.show(ws.active);
 }
+
+// ---------------------------------------------------------------- SI projects
+
+// File ▸ Open SI Project: a Supporting Information kept as Chem SI Assistant keeps it (a folder of
+// readable files), worked on in a tab of its own (ui/si-mode.ts). Changes are saved as they are
+// made; the project's .lock tells SI Assistant it is open here.
+let siMode: SiMode | null = null;
+let siModeLoading: Promise<SiMode> | null = null;
+
+/**
+ * SI structures are drawn in the project's drawing style (Project Settings ▸ Structures): ACS 1996
+ * with SI Assistant's own Structures settings unless another is chosen.
+ */
+const siStyleOf = (p: SiProjectT | null | undefined): DocStyle => (p ? siDrawingStyle(p.settings) : ACS_1996);
+const siStyleNow = (): DocStyle => siStyleOf(ws.active.si);
+
+function loadSiMode(): Promise<SiMode> {
+  siModeLoading ??= import('./ui/si-mode').then(({ SiMode: Mode }) => {
+    siMode = new Mode({
+      flash,
+      hint: (t) => { if (ws.active.mode === 'si' && !cellEdit) setHint(t); },
+      changed: () => { renderTabs(); updateTitle(); siChanged(ws.active.si?.folder.where ?? null); },
+      contentsOf: (mol) => {
+        const scene = readScene('mol', mol);
+        return scene ? sceneToDoc(scene, siStyleNow()).doc.contents() : null;
+      },
+      molfileOf: (c) => structureMolfile(c, siStyleNow()),
+      pictureOf: (mol) => {
+        const scene = readScene('mol', mol);
+        return scene ? drawingSvg(sceneToDoc(scene, siStyleNow()).doc, null) : null;
+      },
+      analyze: async (mol) => {
+        const got = await chem.analyze([{ molblock: mol, map: [] }]);
+        const f = got.results[0];
+        return f && !f.error ? { formula: f.formula, mw: f.mw, exact: f.exact } : null;
+      },
+      smiles: (mol) => chem.molToSmiles(mol),
+      editStructure: (contents, title, done) => editCellStructure(contents, title, done, siStyleNow()),
+      chooseDrawingStyle: async (current, note) => {
+        const got = await editDrawingStyle({
+          current, own: ownStyles, kindPlural: 'SI projects', where: 'this SI project', isDefault: false, hasStructures: false, noForNew: true, note,
+          preview: (st, focus) => stylePreview(st, undefined, undefined, focus),
+        });
+        if (!got) return null;
+        if (got.own !== ownStyles) { ownStyles = got.own; storeSettings(); }
+        return got.style;
+      },
+      // a table cell's picture: the drawing as SVG, and as CDXML beside it to draw it again
+      drawingFiles: (d) => {
+        const drawing = d instanceof Doc ? d : structureDoc(d, siStyleNow());
+        const svg = drawingSvg(drawing, null);
+        return svg ? { svg, cdxml: writeCdxml(drawing, { name: 'picture.cdxml', textMeasure: measureText }) } : null;
+      },
+      contentsOfCdxml: (text) => { try { return readCdxml(text).doc.contents(); } catch { return null; } },
+      openSymbols: () => symbolWindow.open(),
+      copyRich: (text, html) => crystalOptions().copy(text, html),
+      nameStructure: async (mol) => {
+        if (!chem.ready) return { ok: false, message: 'The chemistry engine is still loading. Try again in a moment.' };
+        const smiles = await chem.molToSmiles(mol);
+        if (!smiles) return { ok: false, message: 'That structure can\'t be read (check valences).' };
+        if (!namer.ready) flash('Loading the namer (first time only)…', 15000);
+        const st = await nameOf(smiles, mol);
+        return st.kind === 'found' ? { ok: true, name: st.name } : { ok: false, message: st.kind === 'none' ? st.message : 'No name found.' };
+      },
+      readClipboard: (e) => (e ? readPasteEvent(e) : nativeClipboard ? readNativeClipboard() : readWebClipboard()),
+      library: async () => {
+        const lib = await useLibrary();
+        return { now: lib.now, change: (f) => lib.change(f) };
+      },
+      pickFiles: (label, exts) => openManyBytesDialog(label, exts).catch(async (e) => { await showError(String(e)); return []; }),
+      newSiProject: isTauri() ? () => openSiProject(true) : null,
+      siFacts: (mols) => chem.siFacts(mols),
+      sizeOf: (c) => figures.size(c, siStyleNow()),
+      siStyle: () => siStyleNow(),
+      openDocuments: () => ws.tabs.filter((t) => t.mode === 'document' && t.document && !t.windowOf).map((t) => ({ name: t.name, bytes: async () => (await import('./io/docx-write')).writeDocx(t.document!.t, docFiles, t.name) })),
+      openCompiled: async (doc, name, pdf) => {
+        ws.showDocument({ ...doc, drawingStyle: { ...siStyleNow() } }, name.replace(/[\\/:*?"<>|]/g, '-'));
+        renderTabs();
+        if (!pdf) return;
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        await exportPdf();
+      },
+    });
+    applyIconSet(document.querySelector('#si-ribbon') ?? document);
+    if (ws.active.mode === 'si') siMode.show(ws.active);
+    return siMode;
+  }, (err: unknown) => {
+    siModeLoading = null;
+    throw err;
+  });
+  return siModeLoading;
+}
+
+/** File ▸ Open SI Project… (or File ▸ New ▸ SI Project…, `create`). */
+// ---------------------------------------------------------------- SI projects from the Canvas (layout C)
+
+/** Right-click > Add to SI Project: each open SI project's Data sections (a section whose ID table has the structure's number puts it on that page), then another project. */
+function siMenu(): MenuItem | null {
+  const tabs = ws.tabs.filter((t) => t.si);
+  if (!tabs.length && !isTauri()) return null;
+  const parts = partsOf(doc, new Set(chosenStructures().flatMap((f) => [...f])));
+  const number = parts.length === 1 ? parts[0].label?.trim() : undefined;
+  const items: MenuItem[] = [];
+  for (const t of siMode ? tabs : []) {
+    const sections = siMode!.dataSectionsOf(t);
+    if (!sections.length) continue;
+    if (items.length) items.push(null);
+    const name = t.si!.title;
+    items.push({ label: name.length > 44 ? name.slice(0, 42).trimEnd() + '…' : name, run: () => {}, disabled: true, title: name });
+    for (const sec of sections) {
+      const hit = number ? sec.ids.get(number) : undefined;
+      items.push({ label: sec.name, key: hit ? `as ${number}` : 'new compound', title: hit ? `Put this structure on ${number}’s page (its structure is replaced)` : 'A new compound page at the end of this section, with this structure', run: () => void addStructureToSi(t, sec.id, hit, number) });
+    }
+  }
+  if (items.length) items.push(null);
+  items.push({ cmd: 'open-si-project', label: 'Other SI Project…' }, { cmd: 'new-si-project', label: 'New SI Project…' });
+  return { label: 'Add to SI Project', items };
+}
+
+/** The structure picked, on an SI project's compound page: a new one, or the page of compound `replace`. */
+async function addStructureToSi(tab: Tab, sectionId: string, replace?: string, number?: string): Promise<void> {
+  finishTyping();
+  const got = await selectedForLibrary();
+  if (typeof got === 'string') { flash(got, 6000); return; }
+  const mode = await loadSiMode();
+  const title = tab.si?.title ?? 'the SI project';
+  const open = (id: string) => ({ label: 'Open', run: () => openSiCompound(tab, id) });
+  if (replace) {
+    if (got.length !== 1) { flash('Select one structure to put on an existing compound page.', 6000); return; }
+    const sure = await askChoice('Replace Structure', `Put this structure on ${number}’s page in “${title}”? The structure there now is replaced.`, [{ value: 'yes', label: 'Replace', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+    if (sure !== 'yes') return;
+    if (await mode.replaceFromCanvas(tab, replace, got[0].molfile)) flash(`Put on ${number} in “${title}”.`, 6000, open(replace));
+  } else {
+    const made: { id: string; label: string }[] = [];
+    for (const g of got) { const r = await mode.addFromCanvas(tab, sectionId, g.molfile); if (r) made.push(r); }
+    const short = title.length > 40 ? title.slice(0, 38).trimEnd() + '…' : title;
+    const ids = made.map((m) => m.label).filter((x) => x !== 'ID?');
+    if (made.length) flash(ids.length === made.length ? `Added to “${short}” as ${ids.join(', ')}.` : `Added to “${short}”: ${made.length === 1 ? 'the new compound needs' : 'the new compounds need'} a row in the section’s ID table for an ID.`, 7000, open(made[0].id));
+  }
+  scheduleAnalysis(true);
+}
+
+function openSiCompound(tab: Tab, compoundId: string): void {
+  if (!ws.tabs.includes(tab)) return;
+  siMode?.pickCompound(tab, compoundId);
+  ws.activate(tab);
+}
+
+/** The side panel's SI Compound card: for each structure picked that is a compound of an open SI project (the same structure), its ID, how complete it is, and its warnings. */
+async function showSiCards(smiles: string[], seq: number): Promise<void> {
+  const sec = $('#si-section');
+  const tabs = ws.tabs.filter((t) => t.si);
+  const drawing = ws.active.mode === 'drawing';
+  if (!drawing || !tabs.length || !siMode || !smiles.some(Boolean)) { sec.hidden = true; return; }
+  const found = await siMode.compoundsFor(tabs, smiles).catch(() => null);
+  if (seq !== analysisSeq) return;
+  const cards = [...new Set(smiles)].flatMap((smi) => (smi && found?.get(smi)) || []);
+  sec.hidden = !cards.length;
+  $('#si-body').replaceChildren(...cards.map(siCardEl));
+}
+
+function siCardEl(c: SiCard): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'si-an';
+  {
+    const t = document.createElement('table');
+    const row = (th: string, td: Node | string, tip = '', one = false) => {
+      const tr = document.createElement('tr');
+      const a = document.createElement('th'); a.textContent = th;
+      const b = document.createElement('td'); b.append(td);
+      if (tip) b.title = tip;
+      if (one) b.className = 'si-an-one';
+      tr.append(a, b);
+      t.append(tr);
+    };
+    row('Project', c.project, `${c.project}${c.section ? ` ▸ ${c.section}` : ''}`, true);
+    const who = document.createElement('span');
+    const id = document.createElement('b'); id.className = 'si-an-id'; id.textContent = c.id;
+    who.append(id, ' ' + (c.name || 'unnamed compound'));
+    row('Compound', who, `${c.id} ${c.name}`, true);
+    const status = document.createElement('span');
+    status.className = 'si-an-status';
+    const req = document.createElement('span');
+    req.className = `si-an-chip${c.filled === c.total ? ' ok' : ''}`;
+    req.textContent = `${c.filled} / ${c.total} required`;
+    if (c.missing.length) req.title = 'Missing: ' + c.missing.join(', ');
+    const w = document.createElement('span');
+    w.className = `si-an-chip${c.warnings.length ? ' warn' : ' ok'}`;
+    w.textContent = c.warnings.length ? `${c.warnings.length} warning${c.warnings.length === 1 ? '' : 's'}` : 'no warnings';
+    if (c.warnings.length) w.title = c.warnings.join('\n');
+    status.append(req, w);
+    row('Status', status);
+    if (c.yieldText) row('Yield', c.yieldText);
+    if (c.hrms) row('HRMS', c.hrms);
+    t.className = 'si-an-table';
+    box.append(t);
+    const btns = document.createElement('div');
+    btns.className = 'an-buttons';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = 'Open Compound Page';
+    b.title = 'Show this compound’s page in its SI project';
+    b.addEventListener('click', () => openSiCompound(c.tab, c.compoundId));
+    btns.append(b);
+    box.append(btns);
+  }
+  return box;
+}
+
+/** An SI project's folder with the history Undo and Redo use (Edit ▸ Undo names the step). */
+function siJournal(folder: SiFolderT): JournalFolder {
+  const j = new JournalFolder(folder);
+  j.onChange = refreshHistory;
+  return j;
+}
+
+/** SI project folders being opened now (so one asked for twice opens once). */
+const siOpening = new Set<string>();
+/** A folder's path to compare by: separators and a trailing one aside, and letter case aside where file names ignore it (Windows, macOS). */
+function folderKey(path: string): string {
+  const p = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  return /linux|android/i.test(navigator.userAgent) && !/^[a-z]:\//i.test(p) ? p : p.toLowerCase();
+}
+const sameFolder = (a: string, b: string): boolean => folderKey(a) === folderKey(b);
+
+async function openSiProject(create: boolean, at?: string): Promise<SiProjectT | null> {
+  if (!isTauri()) { flash('SI projects are folders on this computer: open them in the desktop app for now.', 6000); return null; }
+  finishTab();
+  const [{ SiProject, SiProjectError, PROJECT_FILE }, { DiskFolder }, { safeFilename }] = await Promise.all([import('./si/project'), import('./si/folder'), import('./si/ids')]);
+  let path = at ?? await pickFolder();
+  if (!path) return null;
+  const call = <T,>(cmd: string, args?: Record<string, unknown>, opts?: { headers: Record<string, string> }): Promise<T> => invoke<T>(cmd, args as never, opts as never);
+  let project: SiProjectT;
+  let opening = '';
+  try {
+    if (create) {
+      const got = await ask('New SI Project', [{ name: 'title', label: 'Title', value: '', placeholder: 'e.g. NaBH4 Reduction SI' }], { ok: 'Make Project', note: 'The project is a new folder, named after it, inside the folder you picked. Chem SI Assistant opens it too.' });
+      if (!got?.title.trim()) return null;
+      const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
+      path = path.replace(/[\\/]+$/, '') + sep + safeFilename(got.title.trim());
+      await invoke('make_folder', { path });
+      project = await SiProject.create(siJournal(new DiskFolder(path, call)), got.title.trim());
+    } else {
+      const folder = new DiskFolder(path, call);
+      if (!(await folder.exists(PROJECT_FILE))) { await showError(`This folder is not an SI project (it has no ${PROJECT_FILE}). Pick the project's own folder: the one Chem SI Assistant made, with project.json and sections inside.`); return null; }
+      const already = ws.tabs.find((t) => t.si && sameFolder(t.si.folder.where, path!));
+      if (already) { ws.activate(already); return already.si ?? null; }
+      // (asked for twice in a row, from a link and the menu say: the first one is opening it)
+      if (siOpening.has(folderKey(path))) return null;
+      siOpening.add(folderKey(path));
+      opening = folderKey(path);
+      project = await SiProject.open(siJournal(folder));
+      const held = project.readOnly ? null : await project.currentLock();
+      if (held) {
+        const pick = await askChoice('SI Project Open Elsewhere', `${held.user} has this project open on ${held.computer}${held.opened_at ? ' since ' + held.opened_at.replace('T', ' ') : ''} (in Chem SI Assistant, or Chemweave). Two programs changing it at once can lose changes.`, [
+          { value: 'read', label: 'Open Read-Only', primary: true },
+          { value: 'edit', label: 'Open for Editing' },
+          { value: 'cancel', label: 'Cancel' },
+        ], 'cancel', 'If it was left open after a crash, or you closed it there, open it for editing: the lock passes to you.');
+        if (pick === 'cancel') return null;
+        if (pick === 'read') project.readOnly = true;
+      }
+    }
+    if (!project.readOnly) {
+      const me = await invoke<{ user: string; host: string }>('who_am_i').catch(() => ({ user: '', host: '' }));
+      await project.acquireLock(me.user || 'Chemweave', me.host);
+      // (what an earlier session's Undo set aside, if it ended without closing the project)
+      await journalOf(project.folder)?.clear().catch(() => {});
+    }
+  } catch (e) {
+    await showError(e instanceof SiProjectError ? e.message : `The SI project could not be opened: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  } finally {
+    if (opening) siOpening.delete(opening);
+  }
+  // someone took the project over, or its folder moved: it is read-only from then on, and the person is told
+  project.onReadOnly = (message) => { void showError(message); siMode?.readOnlyNow(project); };
+  await loadSiMode();
+  ws.openSi(project);
+  siLinked.delete(project.folder.where);
+  siChanged(project.folder.where);
+  if (project.warnings.length) flash(`Opened with ${project.warnings.length} problem${project.warnings.length === 1 ? '' : 's'}: see the project's page.`, 6000);
+  return project;
+}
+
+// (development only: open an SI project kept in memory, for trying the tab in a browser without files)
+if (import.meta.env.DEV) {
+  (window as unknown as { openMemorySi?: (files: Record<string, string>) => Promise<void> }).openMemorySi = async (files) => {
+    const [{ SiProject }, { MemoryFolder }] = await Promise.all([import('./si/project'), import('./si/folder')]);
+    const folder = new MemoryFolder('Example SI (in memory)');
+    // (a file given as "base64:…" is binary: a spectrum's PDF or a picture)
+    for (const [k, v] of Object.entries(files)) {
+      if (v.startsWith('base64:')) folder.files.set(k, Uint8Array.from(atob(v.slice(7)), (ch) => ch.charCodeAt(0)));
+      else await folder.writeText(k, v);
+    }
+    const project = await SiProject.open(siJournal(folder));
+    await loadSiMode();
+    ws.openSi(project);
+  };
+}
+
+// ---------------------------------------------------------------- manuscripts linked to their SI (phase 4)
+// A document linked to an SI project (References ▸ Linked SI) reads the SI compiled: its
+// compounds, labels and pages. The project is the one open in a tab, else it is read (read-only,
+// no lock) from its folder. The SI compiled is kept until the project changes.
+
+/** Bumped whenever an SI project changes (by its folder; `siAllVersion` for all of them), so what was compiled is made again: only that project's. */
+let siAllVersion = 0;
+const siVersions = new Map<string, number>();
+const siVersionOf = (path: string): string => `${siAllVersion}.${siVersions.get(path) ?? 0}`;
+const siBump = (path: string | null): void => { if (path === null) siAllVersion++; else siVersions.set(path, (siVersions.get(path) ?? 0) + 1); };
+const siCompiled = new Map<string, { version: string; view: Promise<SiView | null> }>();
+/** SI projects linked documents read that aren't open in a tab (read-only), by folder. */
+const siLinked = new Map<string, SiProjectT>();
+let siChangeTimer = 0;
+
+/** An SI project changed: linked documents follow it (soon, so typing in the SI isn't slowed). */
+function siChanged(path: string | null): void {
+  siBump(path);
+  clearTimeout(siChangeTimer);
+  siChangeTimer = window.setTimeout(() => { if (docModeLoading && docMode) docMode.siChanged(path); }, 1200);
+}
+
+async function siProjectAt(path: string): Promise<SiProjectT | null> {
+  const tab = ws.tabs.find((t) => t.si?.folder.where === path);
+  if (tab?.si) return tab.si;
+  const known = siLinked.get(path);
+  if (known) return known;
+  if (!isTauri()) return null;
+  const [{ SiProject, PROJECT_FILE }, { DiskFolder }] = await Promise.all([import('./si/project'), import('./si/folder')]);
+  const call = <T,>(cmd: string, args?: Record<string, unknown>, opts?: { headers: Record<string, string> }): Promise<T> => invoke<T>(cmd, args as never, opts as never);
+  const folder = new DiskFolder(path, call);
+  if (!(await folder.exists(PROJECT_FILE).catch(() => false))) return null;
+  const p = await SiProject.open(folder);
+  p.readOnly = true;
+  siLinked.set(path, p);
+  return p;
+}
+
+/** What a project read from its folder holds, to tell whether Chem SI Assistant changed it since (structures apart: IDs, labels and values are in these). */
+function siSignature(p: SiProjectT): string {
+  try { return JSON.stringify([p.title, p.settings, p.references, p.compounds.map((c) => [c.id, c.data])]); } catch { return String(Math.random()); }
+}
+
+/**
+ * A linked SI project that isn't open in a tab, read again from its folder (it may have been
+ * changed in Chem SI Assistant meanwhile). `always`: asked for (Update from SI, Check Against
+ * SI); else (the window came to the front) only what was read is compared, and nothing is
+ * compiled again unless it differs. True when the linked documents should follow.
+ */
+const siRereading = new Map<string, Promise<boolean>>();
+function rereadLinkedSi(path: string, always: boolean): Promise<boolean> {
+  if (ws.tabs.some((t) => t.si?.folder.where === path) || !siLinked.has(path)) return Promise.resolve(false);
+  const going = siRereading.get(path);
+  if (going) return going;
+  const run = (async () => {
+    const old = siLinked.get(path)!;
+    siLinked.delete(path);
+    let fresh: SiProjectT | null = null;
+    try { fresh = await siProjectAt(path); } catch { fresh = null; }
+    // (opened in a tab meanwhile: that one is used)
+    if (ws.tabs.some((t) => t.si?.folder.where === path)) { siLinked.delete(path); return false; }
+    // (it can't be read just now, a cloud folder offline, say: what was read before is kept)
+    if (!fresh) { siLinked.set(path, old); return false; }
+    if (!always && siSignature(fresh) === siSignature(old)) { siLinked.set(path, old); return false; }
+    siBump(path);
+    return true;
+  })().finally(() => siRereading.delete(path));
+  siRereading.set(path, run);
+  return run;
+}
+
+// the window came to the front: a linked SI that Chem SI Assistant has open may have changed
+let siFocusAt = 0;
+window.addEventListener('focus', () => {
+  const path = ws.active.document?.t.siLink?.path;
+  if (!path || !siLinked.has(path) || performance.now() - siFocusAt < 15000) return;
+  siFocusAt = performance.now();
+  void rereadLinkedSi(path, false).then((changed) => { if (changed && docModeLoading && docMode) docMode.siChanged(path); });
+});
+
+async function compileForLink(link: SiLink): Promise<SiView | null> {
+  const p = await siProjectAt(link.path).catch(() => null);
+  if (!p) { flash(`The linked SI project isn’t at ${link.path} any more. References ▸ Linked SI links it again.`, 7000); return null; }
+  const [{ compileSi }, { siPages, siDataOf }, { DocLayouter }, { docMeasure }] = await Promise.all([import('./si/compile-doc'), import('./si/manuscript'), import('./document/doc-layout'), import('./document/doc-file')]);
+  const got = await compileSi(p, {
+    contentsOf: (mol) => { const scene = readScene('mol', mol); return scene ? sceneToDoc(scene, siStyleOf(p)).doc.contents() : null; },
+    sizeOf: (c) => figures.size(c, siStyleOf(p)),
+    facts: (mols) => chem.siFacts(mols),
+  });
+  const doc = { ...got.doc, drawingStyle: { ...siStyleOf(p) } };
+  const lay = new DocLayouter({ measure: docMeasure, drawingSize: (c, s) => figures.size(c, s) }).layout(doc);
+  const paraPage = lay.paraTops.map((pt) => lay.pages[pt.page]?.number ?? '');
+  return { title: p.title, targets: got.targets, pages: siPages(doc, got.targets, paraPage), data: siDataOf(p) };
+}
+
+/** What documents get of SI projects (the desktop app, and the in-memory projects of a dev browser). */
+const siAccess: SiAccess = {
+  open: () => ws.tabs.filter((t) => t.si).map((t) => ({ path: t.si!.folder.where, title: t.si!.title })),
+  pick: async () => {
+    if (!isTauri()) { flash('SI projects are folders on this computer: link them in the desktop app.', 6000); return null; }
+    const path = await pickFolder();
+    if (!path) return null;
+    const p = await siProjectAt(path).catch(() => null);
+    if (!p) { await showError('This folder is not an SI project (it has no project.json). Pick the project’s own folder: the one Chem SI Assistant made.'); return null; }
+    return { path, title: p.title };
+  },
+  view: (link) => {
+    const had = siCompiled.get(link.path);
+    const version = siVersionOf(link.path);
+    if (had && had.version === version) return had.view;
+    const view = compileForLink(link).catch((e: unknown) => { flash(`The linked SI could not be compiled: ${e instanceof Error ? e.message : String(e)}`, 7000); return null; });
+    siCompiled.set(link.path, { version, view });
+    return view;
+  },
+  reread: async (link) => { await rereadLinkedSi(link.path, true); },
+  openCompound: (link, key) => {
+    const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
+    if (tab) { openSiCompound(tab, key); return; }
+    void openSiProject(false, link.path).then(() => {
+      const t = ws.tabs.find((x) => x.si?.folder.where === link.path);
+      if (t) openSiCompound(t, key);
+    });
+  },
+  openProject: (link) => {
+    const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
+    if (tab) ws.activate(tab); else void openSiProject(false, link.path);
+  },
+  renumber: async (link, ids) => {
+    const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
+    if (!tab?.si) { flash('Open the SI project to renumber it (Linked SI ▸ Open).', 6000); siAccess.openProject(link); return null; }
+    const p = tab.si;
+    if (p.readOnly) { flash('The SI project is open read-only, so it can’t be renumbered.', 6000); return null; }
+    // every compound is looked up first, so nothing is written when one of them is gone
+    const todo: { c: ReturnType<SiProjectT['compound']>; to: string; was: unknown }[] = [];
+    const gone: string[] = [];
+    for (const x of ids) {
+      const c = p.compounds.find((k) => k.id === x.key);
+      if (c) todo.push({ c, to: x.to, was: c.data.id_override }); else gone.push(x.to);
+    }
+    if (gone.length) {
+      await showError(`The SI was not renumbered: ${gone.length === 1 ? `the compound that would become ${gone[0]} is` : `${gone.length} compounds (${gone.join(', ')}) are`} no longer in the SI project. Use References ▸ Update from SI, then Renumber SI again.`);
+      return null;
+    }
+    const done: typeof todo = [];
+    let back = true;
+    // (after the SI tab's own saves, and as one step of its Undo)
+    const write = async (): Promise<void> => {
+      try {
+        for (const x of todo) { await p.setIdOverride(x.c, x.to); done.push(x); }
+      } catch (e) {
+        // all or none: those already given their new ID get their old one back
+        for (const x of done.reverse()) {
+          try { await p.setIdOverride(x.c, typeof x.was === 'string' ? x.was : ''); } catch { back = false; }
+        }
+        throw e;
+      }
+    };
+    try {
+      if (siMode) { await siMode.saved(p); await siMode.change(p, 'Renumber SI', write); } else await write();
+    } catch (e) {
+      siMode?.refresh();
+      siBump(link.path);
+      await showError(`The SI could not be renumbered: ${e instanceof Error ? e.message : String(e)}. ${back ? 'No ID was changed.' : `Some IDs were changed and could not be put back: check the Manual IDs of ${done.map((x) => x.to).join(', ')} in the SI project.`}`);
+      return null;
+    }
+    siMode?.refresh();
+    siBump(link.path);
+    return done.length;
+  },
+};
+
+/** An SI compound's structure as an SVG picture, for the Linked SI panel. */
+async function siPicture(link: SiLink, key: string): Promise<string | null> {
+  const p = await siProjectAt(link.path).catch(() => null);
+  const c = p?.compounds.find((x) => x.id === key);
+  if (!p || !c || !p.hasStructure(c)) return null;
+  const mol = await p.readStructure(c);
+  const scene = mol ? readScene('mol', mol) : null;
+  return scene ? drawingSvg(sceneToDoc(scene, siStyleOf(p)).doc, null) : null;
+}
+
+/**
+ * An SI project is closed: Chem SI Assistant can open it for editing again. What Undo set aside
+ * is only cleared by the program that has the project for editing (never by one that has it
+ * read-only: those files are the editor's, on this computer or another).
+ */
+async function closeSiProject(si: SiProjectT): Promise<void> {
+  if (si.readOnly || !si.lock) return;
+  if (!(await si.lockStillOurs().catch(() => false))) return;
+  await journalOf(si.folder)?.clear().catch(() => {});
+  await si.release().catch(() => {});
+}
+
+/** Every open SI project's changes are in its folder (what is being typed in the one showing too). */
+async function siSavedAll(): Promise<void> {
+  if (!siMode) return;
+  const mode = siMode;
+  await Promise.all(ws.tabs.map((t) => (t.si ? mode.saved(t.si).catch(() => {}) : null)));
+}
+
+/** The window is closing: Chem SI Assistant can open the projects for editing again. */
+async function releaseSiProjects(): Promise<void> {
+  await Promise.all(ws.tabs.map(async (t) => { if (t.si) await closeSiProject(t.si); }));
+}
+
+// Coming back to the window: has someone taken an open SI project over meanwhile (or its folder been moved)?
+window.addEventListener('focus', () => {
+  for (const t of ws.tabs) if (t.si && !t.si.readOnly && t.si.lock) void t.si.checkLock().catch(() => {});
+});
 
 /** Sheet or document mode's code didn't load (a broken install, or the web version gone offline). */
 function modeFailed(err: unknown): void {
@@ -9102,6 +9641,8 @@ const COMMANDS: Record<string, () => unknown> = {
   'save-workspace': () => saveWorkspace(false),
   'save-workspace-as': () => saveWorkspace(true),
   'open-workspace': () => openWorkspace(),
+  'open-si-project': () => openSiProject(false),
+  'new-si-project': () => openSiProject(true),
   'close-tab': () => { finishTab(); return ws.close(); },
   'next-tab': () => ws.cycle(1),
   'prev-tab': () => ws.cycle(-1),
@@ -9911,6 +10452,16 @@ window.addEventListener('keydown', (e) => {
     if (m) { e.preventDefault(); e.stopImmediatePropagation(); if (!inMenuBar()) beforeMenus = document.activeElement as HTMLElement | null; showMenu(m); }
   }
 }, true);
+// Undo and Redo in the SI Project tab, on the keys set for them (a text box keeps its own undo while typing)
+window.addEventListener('keydown', (e) => {
+  if (ws.active.mode !== 'si' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu')) return;
+  const chord = chordOf(e);
+  const action = chord ? keymap.lookup('command', chord) : null;
+  const verb = action ? parseAction(action).arg : '';
+  if (verb !== 'undo' && verb !== 'redo') return;
+  e.preventDefault();
+  if (verb === 'undo') undo(); else redo();
+});
 window.addEventListener('keyup', (e) => {
   if (e.key !== 'Alt') return;
   const alone = altAlone;
@@ -10567,7 +11118,7 @@ const updates = new UpdateUI({
   channel: () => updateChannel,
   openPage: (url) => openWebPage(url),
   // as when the window closes: the recovery copies and lock files aren't needed
-  closing: async () => { await keeper.end(); await diagnostics.end(); },
+  closing: async () => { await siSavedAll(); await keeper.end(); await diagnostics.end(); await releaseSiProjects(); },
 });
 /** The desktop app's version when it last ran (for What's New after an update). */
 let lastVersion: string | null = null;
@@ -11622,9 +12173,11 @@ function revealStylePanel(focus = false): void {
 if (isTauri()) {
   getCurrentWindow().onCloseRequested(async (e) => {
     finishTab();
+    // (an SI project saves as it is typed in: what was typed last is written before the window goes)
+    await siSavedAll();
     if (!(await ws.closeAll())) e.preventDefault();
     // closing normally: the recovery copies and lock files aren't needed
-    else { await keeper.end(); await diagnostics.end(); }
+    else { await keeper.end(); await diagnostics.end(); await releaseSiProjects(); }
   }).catch(() => {});
 } else {
   window.addEventListener('beforeunload', (e) => {
@@ -12191,6 +12744,7 @@ async function runAnalysis(force: boolean): Promise<void> {
   if (!frags.length) {
     panel.innerHTML = '<p class="muted" title="Or select text read as chemistry, such as BF4⁻ or DMAP, or draw a structure.">Select a structure to see its formula and masses.</p>';
     analysisBox.set(null);
+    $('#si-section').hidden = true;
     return;
   }
   const seq = ++analysisSeq;
@@ -12255,6 +12809,7 @@ async function runAnalysis(force: boolean): Promise<void> {
     const slot = frag.querySelector('.an-nmr-slot'), nmr = frag.querySelector(':scope > details.nmr');
     if (slot && nmr) slot.replaceWith(nmr);
   }
+  void showSiCards(results.map((r, i) => (r.error || polymers[i] ? '' : r.smiles)), seq);
   updatePanels();
 }
 
@@ -13062,9 +13617,11 @@ function drawingMenu(): MenuItem[] {
   const arrows = arrowMenu();
   // (the bond and arrow commands end with their own Properties…)
   const props: MenuItem[] = bonds.length || arrows.length ? [] : [{ cmd: 'show-style', ...(focus === 'atom' && !s.captions.size ? { label: 'Atom Properties…' } : {}) }];
+  const si = atoms && focus === 'structure' && ws.active.mode === 'drawing' ? siMenu() : null;
   return [
     { row: [{ cmd: 'cut' }, { cmd: 'copy' }, { cmd: 'paste' }, { cmd: 'delete', label: 'Delete' }] },
     null,
+    ...(si ? [si, null] : []),
     ...(focus === 'atom' ? atomMenu() : repeatLabelMenu()),
     ...bonds,
     ...fuseRingMenu(),
@@ -13584,6 +14141,7 @@ function insertSymbol(ch: string): boolean {
     flash('Pick a cell to type the symbol into.');
     return false;
   }
+  if (ws.active.mode === 'si') return siMode?.insertText(ch) ?? false;
   if (docActive()) {
     if (docMode.insertText(ch)) return true;
     flash('Symbols can\'t be typed in Read Mode: go back to Print Layout (View).');

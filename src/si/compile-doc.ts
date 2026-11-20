@@ -1,0 +1,1278 @@
+// An SI project compiled into a Chemweave document, laid out as Chem SI Assistant lays out its
+// PDF (compile/document.py with the ACS style): a cover page, the table of contents, General
+// Information, then every section in tree order (custom sections' text with its figures and
+// tables; Data sections' general procedures and compound blocks), and the references cited.
+// Page numbers are S1, S2…; figure, table and scheme labels are numbered as SI Assistant
+// numbers them (core/labels.py). The document is ordinary text, so it can be edited, saved as
+// .docx or printed to PDF; its structures are drawings, editable with the drawing tools.
+//
+// Each compound's title paragraph carries a bookmark (si_<compound id>), so a manuscript can
+// point at the compound's block.
+
+import { dictionaryWords } from './dictionary';
+import { DocBuilder, headingId } from '../io/doc-build';
+import { OBJECT_CHAR, paraFromStyle, styleOf, type DocObject, type DocText, type NamedStyle } from '../document/document';
+import { citeSuper, formatOf } from '../document/references';
+import type { Reference, RefType } from '../document/references';
+import type { Contents, Justify, ParaStyle, TableCell, TextRun } from '../model';
+import type { RunStyle } from '../richtext';
+import { dataUrl, imageSize, pictureMime } from '../render/images';
+import { CITE, MENTION, parseMarkup, citationsOf, type Paragraph, type Run } from './markup';
+import { fieldKeys, valuesOf, compoundName, compoundsOf, type Json, type SiCompound, type SiProject, type SiScheme, type SiSection } from './project';
+import { displayId, type IdReport } from './compound-ids';
+import { fieldDef, partText } from './fields';
+import { hrmsCalc, hrmsSpecies, hrmsTolerance, mentionKind } from './checks';
+import { formatMz, listingFailed, peaksNear, reportListing, summary, type ReportData } from './ms-reports';
+import { readReportFile } from './report-files';
+import type { MolFacts } from './chem';
+import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './format';
+import { compoundBlock, gpSentence, inlineFigures } from './blocks';
+import { attachmentDir, captionText, effective, idSizeOf, structureBoxAt, structureBoxSize, GUTTERS, headerParts, HEADER_PT, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
+import type { Float, PageSetup, SectionBreak } from '../document/document';
+import { xrayAutoCaption, xrayBlock, xrayCompound, xrayDrawing, xrayTableCaption, xrayTableRows } from './xray';
+import { crystalTable } from '../chem/crystal';
+import { newPlate, putPlate } from '../design/plates';
+import { POINTS } from '../editor/arrange';
+import { Doc } from '../model';
+import { drawScheme, schemeLayout, type DrawBox, type DrawStep, type SchemeLayout } from './scheme-draw';
+import { inlineIds, inlineMol } from './scheme-edit';
+import { headerFooter } from './page-setup';
+import { siDrawingStyle } from './drawing-style';
+import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
+
+/** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
+export interface CompileHost {
+  /** A molfile as a drawing (null when it can't be read). */
+  contentsOf(molfile: string): Contents | null;
+  /** A drawing's own size in points, in the document's drawing style. */
+  sizeOf(c: Contents): { w: number; h: number } | null;
+  /** Formula and pieces of each structure (for the HRMS and elemental analysis sentences). */
+  facts(mols: string[]): Promise<(MolFacts | null)[]>;
+  /** Each page of a PDF (or only its first `most`) as a picture, with its size in points (null when it can't be read). Without it, PDFs are left out. */
+  pdfPages?(bytes: Uint8Array, most?: number): Promise<PagePicture[] | null>;
+  /** Where the content of a picture is, for auto-crop (null: nothing to cut, or it can't be measured). */
+  contentBox?(src: string): Promise<Crop | null>;
+}
+
+/** A page of a PDF drawn as a picture: its data URL, its size in points and in pixels, and how many pages the PDF has. */
+export interface PagePicture { src: string; w: number; h: number; px?: { w: number; h: number }; of?: number }
+
+export interface CompiledSi {
+  doc: DocText;
+  /** Things to know about the result (left out, missing, printed as "??"), in plain words. */
+  notes: string[];
+  /** What a manuscript can point at: each compound, table, figure and scheme, in the order printed. */
+  targets: SiTarget[];
+}
+
+/**
+ * Something in the compiled SI a manuscript can mention: a compound (its ID) or a table, figure or
+ * scheme (its label). `mark` is the bookmark on its title or caption paragraph, which gives the
+ * page it is on.
+ */
+export interface SiTarget { key: string; kind: 'compound' | 'table' | 'figure' | 'scheme'; label: string; caption: string; mark: string }
+
+const PT = 72;
+const TEXT_W = 6.5 * PT;
+/** Structures under compound titles: at most this big (SI Assistant's 3.25 × 2.6 in). */
+const STRUCTURE_MAX = { w: 3.25 * PT, h: 2.6 * PT };
+const FIGURE_MAX_H = 7 * PT;
+const ATTACHMENT_MAX_H = 8 * PT;
+
+const TOC_DEPTHS = ['sections', 'subsections', 'procedures', 'compounds'];
+export const COVER_HEADINGS: Record<string, string> = { ACS: 'Supporting Information', Wiley: 'Supporting Information', RSC: 'Electronic Supplementary Information' };
+const LABEL_KINDS = ['figure', 'table', 'scheme'] as const;
+type LabelKind = (typeof LABEL_KINDS)[number];
+const REF_TYPES = new Set<RefType>(['article', 'book', 'chapter', 'thesis', 'web', 'misc']);
+
+const dict = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {});
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const str = (v: unknown): string => partText(v);
+const joinPath = (...parts: string[]): string => parts.filter(Boolean).join('/');
+
+/** A bookmark name for a compound's block (letters, digits and _ as Word wants, starting with a letter). */
+export const compoundBookmark = (compoundId: string): string => siMark(compoundId);
+
+/** The bookmark on a compound's title or a caption in the compiled SI (si_ and its key, as Word wants names). */
+export const siMark = (key: string): string => `si_${key.replace(/[^A-Za-z0-9]/g, '_')}`.slice(0, 40);
+
+// ---------------------------------------------------------------- labels (core/labels.py)
+
+const formatNumber = (n: number, style: string): string => countText(n, (['I', 'i', 'a', 'A'].includes(style) ? style : '1') as CountStyle);
+
+function labelRules(settings: Json): Record<LabelKind, { word: string; prefix: string; style: string }> {
+  const journal = str(settings.journal_style) || 'ACS';
+  const raw = dict(settings.labels);
+  const out = {} as Record<LabelKind, { word: string; prefix: string; style: string }>;
+  for (const kind of LABEL_KINDS) {
+    const rule = { word: kind === 'figure' && journal === 'RSC' ? 'Fig.' : kind[0].toUpperCase() + kind.slice(1), prefix: 'S', style: '1' };
+    const stored = dict(raw[kind]);
+    if (typeof stored.word === 'string') rule.word = stored.word.trim();
+    if (typeof stored.prefix === 'string') rule.prefix = stored.prefix.trim();
+    if (['1', 'I', 'i', 'a'].includes(str(stored.style))) rule.style = str(stored.style);
+    out[kind] = rule;
+  }
+  return out;
+}
+
+class Labels {
+  private counters: Record<LabelKind, number> = { figure: 0, table: 0, scheme: 0 };
+  readonly byId = new Map<string, string>();
+  readonly byPlace = new Map<string, string>();
+  constructor(private rules: ReturnType<typeof labelRules>) {}
+  add(kind: LabelKind, id: string, owner: string, index: number, custom: string): void {
+    const rule = this.rules[kind];
+    const n = ++this.counters[kind];
+    const number = rule.prefix + formatNumber(n, rule.style);
+    const label = custom.trim() || (rule.word ? `${rule.word} ${number}` : number);
+    if (id && !this.byId.has(id)) this.byId.set(id, label);
+    this.byPlace.set(`${owner}#${index}`, label);
+  }
+  at(owner: string, index: number): string { return this.byPlace.get(`${owner}#${index}`) ?? ''; }
+}
+
+/** A text's figure and table paragraphs: (kind, id), in order. */
+type TextObject = { kind: 'figure' | 'table'; id: string };
+const objectsOfText = new Map<string, TextObject[]>();
+/** (Worked out once for each text: labels are worked out each time a page is shown.) */
+function textObjects(text: string): TextObject[] {
+  let got = objectsOfText.get(text);
+  if (!got) {
+    got = parseMarkup(text).flatMap((p): TextObject[] => (p.table ? [{ kind: 'table', id: p.table }] : p.figure ? [{ kind: 'figure', id: p.figure }] : p.image ? [{ kind: 'figure', id: '' }] : []));
+    if (objectsOfText.size >= 200) objectsOfText.delete(objectsOfText.keys().next().value!);
+    objectsOfText.set(text, got);
+  }
+  return got;
+}
+
+// ---------------------------------------------------------------- pictures
+
+/** Dots per inch a PNG or JPEG says it was made at (null when it doesn't say). */
+function pictureDpi(b: Uint8Array, mime: string): number | null {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  if (mime === 'image/png') {
+    for (let i = 8; i + 12 <= b.length;) {
+      const len = dv.getUint32(i);
+      const type = String.fromCharCode(b[i + 4], b[i + 5], b[i + 6], b[i + 7]);
+      if (type === 'pHYs' && len >= 9 && b[i + 16] === 1) return dv.getUint32(i + 8) * 0.0254;
+      if (type === 'IDAT' || type === 'IEND') break;
+      i += 12 + len;
+    }
+  }
+  if (mime === 'image/jpeg' && b.length > 18 && String.fromCharCode(b[6], b[7], b[8], b[9]) === 'JFIF') {
+    const unit = b[13], x = dv.getUint16(14);
+    if (unit === 1 && x > 1) return x;
+    if (unit === 2 && x > 1) return x * 2.54;
+  }
+  return null;
+}
+
+/** A picture file as a document picture, at its own size (its dpi, or 96), no bigger than the room; null when it isn't one. */
+function pictureObject(name: string, bytes: Uint8Array, room: { w: number; h: number }, widthPt?: number): Extract<DocObject, { kind: 'picture' }> | null {
+  const mime = pictureMime(name, bytes);
+  if (!mime || !['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/bmp', 'image/webp'].includes(mime)) return null;
+  const px = imageSize(bytes, mime);
+  if (!px || px.w <= 0 || px.h <= 0) return null;
+  const dpi = mime === 'image/svg+xml' ? 72 : pictureDpi(bytes, mime) ?? 96;
+  let w = (px.w / dpi) * PT, h = (px.h / dpi) * PT;
+  if (widthPt) { h *= widthPt / w; w = widthPt; }
+  const k = Math.min(1, room.w / w, room.h / h);
+  w *= k; h *= k;
+  return { kind: 'picture', src: dataUrl(bytes, mime), w: Math.round(w * 100) / 100, h: Math.round(h * 100) / 100, px: { w: px.w, h: px.h } };
+}
+
+// ---------------------------------------------------------------- the compiler
+
+interface Owner { key: string; name: string; folder: string; figures: Json }
+
+class Compiler {
+  readonly b = new DocBuilder();
+  readonly notes: string[] = [];
+  readonly targets: SiTarget[] = [];
+  private readonly styles: Record<string, NamedStyle>;
+  private readonly report: IdReport;
+  readonly labels: Labels;
+  private readonly rank: number;
+  private readonly excluded: Set<string>;
+  private readonly leave: Leave;
+  private readonly helpers: boolean;
+  private readonly knownRefs: Set<string>;
+  private facts = new Map<string, MolFacts | null>();
+  private texts = new Map<string, string>();
+  private cited = false;
+  /** Citations are raised, as the document's citation style (ACS) has them. */
+  private readonly citeSup = citeSuper(formatOf({}));
+
+  constructor(readonly p: SiProject, readonly host: CompileHost, words: Set<string>) {
+    this.styles = this.b.doc.styles;
+    this.report = p.idReport();
+    this.labels = new Labels(labelRules(p.settings));
+    const toc = dict(p.settings.toc);
+    const depth = typeof toc.depth === 'string' && TOC_DEPTHS.includes(toc.depth) ? toc.depth : p.settings.list_compounds_in_toc ? 'compounds' : 'procedures';
+    this.rank = TOC_DEPTHS.indexOf(depth) + 1;
+    this.excluded = new Set(list(p.settings.export_excluded).map(String));
+    this.leave = { words };
+    this.helpers = p.settings.format_text !== false;
+    this.knownRefs = new Set(p.references.map((r) => str(r.id)));
+    // a section break waiting for the next paragraph (spectra pages turned landscape, and back)
+    const end = this.b.endPara.bind(this.b);
+    this.b.endPara = (ps: ParaStyle) => {
+      const sec = this.pendingSection;
+      this.pendingSection = null;
+      end(sec ? { ...ps, section: sec } : ps);
+    };
+  }
+
+  private pendingSection: SectionBreak | null = null;
+  /** Groups of floating figures made so far (each spectrum's structure box is one). */
+  private groups = 0;
+  private landscape = false;
+  private spectraDone = false;
+  /** Compiling one page for the live preview (PDFs show their first page). */
+  private preview = false;
+
+  /** Turn the pages that follow (a section break before the next paragraph), when they aren't already. */
+  private orient(o: 'portrait' | 'landscape'): void {
+    if ((o === 'landscape') === this.landscape) return;
+    this.landscape = o === 'landscape';
+    const p = this.b.doc.page;
+    const page = this.landscape ? { ...p, w: p.h, h: p.w } : { ...p };
+    // (its own header and footer, as the document's but on its first page too: only the cover goes without)
+    const { hf, format } = this.pageLines(page.w - page.left - page.right, true);
+    this.pendingSection = { kind: 'nextPage', page, hf, format };
+  }
+
+  /**
+   * The header and footer of Project settings ▸ Page for a text this wide, and how its numbers
+   * are written. With no cover printed, the first page is numbered like any other.
+   */
+  private pageLines(width: number, onCover?: boolean): ReturnType<typeof headerFooter> {
+    const s = this.p.settings;
+    const authors = list(s.authors).map(dict).map((a) => str(a.name).trim()).filter(Boolean).join(', ');
+    const cover = onCover ?? (!this.included('cover') || undefined);
+    return headerFooter(s, { title: str(s.title), authors }, (code) => this.b.reserve({ kind: 'field', code }), width, cover);
+  }
+
+  private included(key: string): boolean { return !this.excluded.has(key) && !this.excluded.has('front'); }
+
+  // -------------------------------------------------------------- reading first
+
+  /**
+   * Every text with figures or tables, the structures' facts of the compounds `printed` (only
+   * theirs: a structure file is read only for a compound that prints), and the labels, before
+   * anything is written.
+   */
+  async prepare(printed: SiCompound[] = []): Promise<void> {
+    this.texts.set('general', (await this.p.folder.readText('front/general_information.txt')) ?? '');
+    this.texts.set('cover', (await this.p.folder.readText('front/cover_text.txt')) ?? '');
+    for (const s of this.p.sections) if (s.type === 'text') this.texts.set(s.id, await this.p.readSectionText(s));
+    const compounds = [...new Set(printed)];
+    const mols = await Promise.all(compounds.map((c) => (this.p.hasStructure(c) ? this.p.readStructure(c) : Promise.resolve(''))));
+    const facts = compounds.length ? await this.host.facts(mols.map((m) => m || '')) : [];
+    compounds.forEach((c, i) => this.facts.set(c.id, mols[i] ? facts[i] ?? null : null));
+    // labels, in the order SI Assistant numbers them
+    const ownerObjects = async (owner: Owner): Promise<void> => {
+      const objs = textObjects(this.texts.get(owner.key) ?? '');
+      for (let index = 0; index < objs.length; index++) {
+        const o = objs[index];
+        if (o.kind === 'table') {
+          const t = dict(await this.readJson(joinPath(owner.folder, 'tables', `${o.id}.json`)));
+          this.labels.add('table', o.id, owner.key, index, str(t.label));
+        } else this.labels.add('figure', o.id, owner.key, index, str(dict(owner.figures[o.id]).label));
+      }
+    };
+    await ownerObjects(await this.owner('general'));
+    for (const s of this.p.sections) {
+      if (s.type === 'text') await ownerObjects(await this.owner(s.id));
+      else if (s.type === 'xray') this.xrayLabels(s);
+      else if (s.type === 'data') {
+        for (const item of s.items) {
+          if (item.kind === 'scheme' && this.schemeShowsLabel(item)) this.labels.add('scheme', item.id, item.id, 0, str(item.data.label));
+          for (const c of item.kind === 'scheme' ? item.children : [item]) {
+            let index = 0;
+            for (const def of fieldsOfCompound(c)) {
+              if (def.kind !== 'attachments' || def.key === 'spectra') continue;
+              for (const it of list(valuesOf(c)[def.key])) {
+                const x = dict(it);
+                if ((x.placement ?? 'inline') !== 'inline' || !str(x.file)) continue;
+                this.labels.add('figure', str(x.id), c.id, index++, str(x.label));
+              }
+            }
+            for (const x of this.p.anchored.get(c.id) ?? []) this.xrayLabels(x);
+          }
+        }
+      }
+    }
+  }
+
+  private xrayLabels(s: SiSection): void {
+    if (!s.data.file) return;
+    this.labels.add('figure', s.id, s.id, 0, str(s.data.label));
+    if (s.data.table !== false) this.labels.add('table', s.id + '#table', s.id, 1, str(s.data.table_label));
+  }
+
+  private schemeShowsLabel(k: SiScheme): boolean {
+    return this.schemeLayoutOf(k).show_label;
+  }
+
+  private schemeLayoutOf(k: SiScheme): SchemeLayout {
+    return schemeLayout(dict(this.p.settings.schemes), dict(dict(k.data.editor).layout));
+  }
+
+  private async readJson(rel: string): Promise<unknown> {
+    const t = await this.p.folder.readText(rel);
+    if (t === null) return null;
+    try { return JSON.parse(t); } catch { return null; }
+  }
+
+  private async owner(key: string): Promise<Owner> {
+    if (key === 'general') return { key, name: 'General Information', folder: 'front', figures: dict(dict(await this.readJson('front/front.json')).figures) };
+    const s = this.p.section(key);
+    return { key, name: s.name, folder: s.folder, figures: dict(s.data.figures) };
+  }
+
+  // -------------------------------------------------------------- styles
+
+  private headingStyle(level: number, listed: boolean): string {
+    const lv = Math.max(1, Math.min(9, level));
+    if (listed) return headingId(lv);
+    const id = `SIHeading${lv}`;
+    if (!this.styles[id]) {
+      const s: NamedStyle = { ...this.styles[headingId(lv)], id, name: `SI Heading ${lv}`, custom: true };
+      delete s.outline;
+      this.styles[id] = s;
+    }
+    return id;
+  }
+
+  /** A compound's title: 11 pt bold, kept with its structure; in the contents only when they go down to compounds. */
+  private compoundStyle(level: number, listed: boolean): string {
+    const id = listed ? `SICompound${level}` : 'SICompound';
+    if (!this.styles[id]) {
+      const s: NamedStyle = { ...this.styles.Normal, id, name: listed ? `SI Compound ${level}` : 'SI Compound', size: 11, bold: true, align: 'left', spaceBefore: 15, spaceAfter: 5, keepNext: true, next: 'Normal', custom: true };
+      if (listed) s.outline = level;
+      this.styles[id] = s;
+    }
+    return id;
+  }
+
+  private plainStyle(id: string, name: string, more: Partial<NamedStyle>): string {
+    if (!this.styles[id]) this.styles[id] = { ...this.styles.Normal, id, name, next: 'Normal', custom: true, ...more };
+    return id;
+  }
+
+  // -------------------------------------------------------------- text
+
+  /** Mentions as text (compounds' IDs in bold, figures' and tables' labels); citations kept only for references there are. */
+  private resolve(runs: Run[], where: string): Run[] {
+    const out: Run[] = [];
+    for (const r of runs) {
+      if (r.ref?.startsWith(MENTION)) {
+        const id = r.ref.slice(MENTION.length);
+        const kind = mentionKind(id);
+        let text: string | null;
+        if (kind === 'compound') text = this.compoundExists(id) ? displayId(this.report, id) : null;
+        else text = this.labels.byId.get(id) ?? null;
+        if (text === null) {
+          text = '??';
+          this.notes.push(`${where}: a mention points to a ${kind} that no longer exists (printed as “??”).`);
+        }
+        out.push(R(text, { bold: kind === 'compound' || r.bold, italic: r.italic, underline: r.underline, valign: r.valign }));
+      } else if (r.ref?.startsWith(CITE)) {
+        const ids = citationsOf(r);
+        const known = ids.filter((i) => this.knownRefs.has(i));
+        if (known.length < ids.length) this.notes.push(`${where}: a citation points to a reference that is no longer in the References list; it was left out.`);
+        if (known.length) out.push(R('', { ref: CITE + known.join(','), valign: r.valign }));
+      } else if (r.ref) continue;   // (a small structure of a scheme's conditions)
+      else out.push(r);
+    }
+    return scriptCharacters(out);
+  }
+
+  private compoundExists(id: string): boolean { return this.p.compounds.some((c) => c.id === id); }
+
+  private chemistry(runs: Run[]): Run[] { return this.helpers ? formatChemistry(runs, this.leave) : runs; }
+
+  /** Runs written into the document in the paragraph's look. */
+  private put(runs: Run[], look: RunStyle): void {
+    for (const r of runs) {
+      const l: RunStyle = { ...look };
+      if (r.bold) l.bold = true;
+      if (r.italic) l.italic = true;
+      if (r.underline) l.underline = true;
+      if (r.valign === 'sub') l.sub = true;
+      if (r.valign === 'super') l.sup = true;
+      if (r.ref?.startsWith(CITE)) {
+        this.b.object({ kind: 'cite', refs: citationsOf(r) }, { ...l, sup: this.citeSup || undefined, sub: undefined });
+        this.cited = true;
+      } else this.b.text(r.text, l);
+    }
+  }
+
+  /** A paragraph: its runs (mentions resolved), in style `ps`, with `look` over the style's own. */
+  private para(runs: Run[], ps: ParaStyle, where: string, look: RunStyle = {}): void {
+    this.put(this.resolve(runs, where), { ...this.b.styleLook(ps), ...look });
+    this.b.endPara(this.full(ps));
+  }
+
+  /** A paragraph's settings with its style's written in (as Word writes them), its own on top. */
+  private full(ps: ParaStyle): ParaStyle {
+    return { ...paraFromStyle(styleOf(this.b.doc, ps), ps), ...ps };
+  }
+
+  /**
+   * Runs for a table cell or a table's notes (paragraphs of the cell on lines of their own). With
+   * `cites`, citations are kept as citation objects (numbered with the rest of the document, as
+   * SI Assistant prints them); without (a scheme's conditions, drawn text), they are left out.
+   */
+  private cellRuns(text: string, where: string, look: RunStyle, cites = false): TextRun[] {
+    const out: TextRun[] = [];
+    parseMarkup(text).filter((p) => p.runs.length).forEach((p, i) => {
+      if (i) out.push({ ...look, text: '\n' });
+      for (const r of this.resolve(this.chemistry(p.runs), where)) {
+        if (r.ref?.startsWith(CITE)) {
+          if (!cites) continue;
+          const obj = this.b.reserve({ kind: 'cite', refs: citationsOf(r) });
+          out.push({ ...look, obj, text: OBJECT_CHAR, ...(this.citeSup ? { sup: true } : {}), sub: undefined });
+          this.cited = true;
+          continue;
+        }
+        const t: TextRun = { ...look, text: r.text };
+        if (r.bold) t.bold = true;
+        if (r.italic) t.italic = true;
+        if (r.underline) t.underline = true;
+        if (r.valign === 'sub') t.sub = true;
+        if (r.valign === 'super') t.sup = true;
+        out.push(t);
+      }
+    });
+    return out.filter((r) => r.text);
+  }
+
+  private alignOf(p: Paragraph, object: boolean): Justify | undefined {
+    const a = p.align;
+    if (a === 'left' || a === 'center' || a === 'right' || (!object && a === 'justify')) return a;
+    return undefined;
+  }
+
+  /** A stored text: headings `offset` levels down (in the contents up to `listedLevels`), with its figures and tables. */
+  private async richText(text: string, where: string, owner: Owner | null, offset: number, listedLevels: number, keepAlign = true, numberHeadings = false): Promise<void> {
+    let index = 0;
+    for (const p of parseMarkup(text)) {
+      if (p.table || p.figure || p.image) {
+        const label = owner ? this.labels.at(owner.key, index) : '';
+        const key = p.table || p.figure || (owner ? `${owner.key}#${index}` : '');
+        index++;
+        if (p.table) await this.table(owner, p.table, label, p.runs, where, keepAlign ? this.alignOf(p, true) : undefined);
+        else await this.figure(owner, p, label, where, keepAlign ? this.alignOf(p, true) : undefined, key);
+        continue;
+      }
+      if (!p.runs.length) continue;
+      const runs = this.chemistry(p.runs);
+      if (p.heading) {
+        const level = p.heading + offset;
+        const num = numberHeadings ? this.numbered(level, true) : '';
+        this.para(num ? [R(num), ...runs] : runs, { style: this.headingStyle(level, level <= listedLevels) }, where);
+      } else {
+        const align = keepAlign ? this.alignOf(p, false) : undefined;
+        this.para(runs, align ? { align } : {}, where);
+      }
+    }
+  }
+
+  /** A label and its caption; with `target`, bookmarked and listed for manuscripts to point at. */
+  private caption(label: string, runs: Run[], where: string, ps: ParaStyle, target?: { key: string; kind: 'table' | 'figure' | 'scheme' }): void {
+    const body = this.chemistry(runs);
+    const mark = target?.key ? siMark(target.key) : '';
+    if (target?.key && label) this.targets.push({ key: target.key, kind: target.kind, label, caption: plainOf(body), mark });
+    this.para([R(`${label || 'Figure'}.`, { bold: true }), ...(body.length ? [R(' '), ...body] : [])], { style: 'Caption', ...ps, ...(mark ? { marks: [mark] } : {}) }, where);
+  }
+
+  private async figure(owner: Owner | null, p: Paragraph, label: string, where: string, align?: Justify, key = ''): Promise<void> {
+    let file = '', widthCm = 0;
+    if (p.figure && owner) {
+      const entry = dict(owner.figures[p.figure]);
+      file = str(entry.file);
+      widthCm = Number(entry.width ?? entry.width_cm ?? 0) || 0;
+      if (!file) { this.notes.push(`${where}: a figure's picture is no longer in the project; left out.`); return; }
+    } else if (p.image && owner) file = p.image;
+    if (!file || !owner) return;
+    await this.pictureBlock(joinPath(owner.folder, file), { w: TEXT_W, h: FIGURE_MAX_H }, where, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined, align);
+    this.caption(label || 'Figure', p.runs, where, { align: align ?? 'center' }, { key, kind: 'figure' });
+  }
+
+  /** A picture in a paragraph of its own; false when it couldn't be used (said in the notes). */
+  private async pictureBlock(rel: string, room: { w: number; h: number }, where: string, widthPt?: number, align?: Justify): Promise<boolean> {
+    const bytes = await this.p.folder.readBytes(rel);
+    const name = rel.slice(rel.lastIndexOf('/') + 1);
+    if (!bytes) { this.notes.push(`${where}: ${name} is no longer in the project; left out.`); return false; }
+    const pics = /\.pdf$/i.test(name) ? await this.pdfPictures(bytes, name, where, room, widthPt) : [pictureObject(name, bytes, room, widthPt)];
+    if (!pics.length || !pics[0]) {
+      if (!/\.pdf$/i.test(name)) this.notes.push(`${where}: ${name} could not be read as a picture${/\.tiff?$/i.test(name) ? ' (TIFF pictures are not placed in the document yet)' : ''}; left out.`);
+      return false;
+    }
+    for (const pic of pics) {
+      if (!pic) continue;
+      this.b.object(pic);
+      this.b.endPara(this.full({ align: align ?? 'center', keepNext: true, spaceAfter: 4 }));
+    }
+    return true;
+  }
+
+  /**
+   * A PDF's pages as pictures fitted to `room` (none when it can't be read, said in the notes);
+   * with `most`, only that many (a table cell shows the first). The live preview shows the first
+   * page only, and says so.
+   */
+  private async pdfPictures(bytes: Uint8Array, name: string, where: string, room: { w: number; h: number }, widthPt?: number, most?: number): Promise<Extract<DocObject, { kind: 'picture' }>[]> {
+    if (this.preview) most = 1;
+    const pages = this.host.pdfPages ? await this.host.pdfPages(bytes, most).catch(() => null) : null;
+    if (!this.host.pdfPages) { this.notes.push(`${where}: ${name} is a PDF; PDFs are placed only in the desktop app and the web app (left out).`); return []; }
+    if (!pages?.length) { this.notes.push(`${where}: ${unreadablePdf(name)}`); return []; }
+    if (most && pages.length > most) pages.length = most;
+    const of = pages[0].of ?? pages.length;
+    if (this.preview && of > pages.length) this.notes.push(`${where}: the live preview shows the first page of ${name} (it has ${of}); Compile prints them all.`);
+    return pages.map((pg) => {
+      let w = pg.w, h = pg.h;
+      if (widthPt) { h *= widthPt / w; w = widthPt; }
+      const k = Math.min(1, room.w / w, room.h / h);
+      return { kind: 'picture' as const, src: pg.src, w: round2(w * k), h: round2(h * k), ...(pg.px ? { px: pg.px } : {}) };
+    });
+  }
+
+  private async table(owner: Owner | null, id: string, label: string, caption: Run[], where: string, align?: Justify): Promise<void> {
+    const data = owner ? dict(await this.readJson(joinPath(owner.folder, 'tables', `${id}.json`))) : {};
+    const rows = list(data.rows).filter(Array.isArray) as unknown[][];
+    const nCols = Math.max(0, ...rows.map((r) => r.length));
+    if (!rows.length || !nCols) { this.notes.push(`${where}: a table could not be found or is empty (tables/${id}.json); left out.`); return; }
+    const look: RunStyle = { ...this.b.styleLook({}), size: 10 };
+    const cols = list(data.columns).map(String);
+    // a cell's picture (Lauren's pictures in table cells, rewritten): above its text, at its own
+    // size or the width typed for it (image_width, cm), never wider than the text
+    const pictures = new Map<string, number>();
+    for (const [r, row] of rows.entries()) for (const [k, c] of row.entries()) {
+      const cd = c && typeof c === 'object' ? dict(c) : {};
+      const image = str(cd.image);
+      if (!image || !owner) continue;
+      const bytes = await this.p.folder.readBytes(joinPath(owner.folder, image));
+      const name = image.slice(image.lastIndexOf('/') + 1);
+      if (!bytes) { this.notes.push(`${where}: the picture ${name} in a table cell is no longer in the project; left out.`); continue; }
+      const widthCm = Number(cd.image_width) || 0;
+      const pic = /\.pdf$/i.test(name) ? (await this.pdfPictures(bytes, name, where, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? (widthCm / 2.54) * PT : undefined, 1))[0] : pictureObject(name, bytes, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined);
+      if (!pic) { if (!/\.pdf$/i.test(name)) this.notes.push(`${where}: the picture ${name} in a table cell could not be read; left out.`); continue; }
+      pictures.set(`${r}:${k}`, this.b.reserve(pic));
+    }
+    const cells: TableCell[][] = rows.map((row, r) => Array.from({ length: nCols }, (_, k) => {
+      const c = row[k];
+      if (c === null || c === undefined) return { runs: [] };
+      const cd = typeof c === 'string' ? { text: c } : dict(c);
+      const text = this.cellRuns(str(cd.text), where, look, true);
+      const picId = pictures.get(`${r}:${k}`);
+      const cell: TableCell = { runs: picId !== undefined ? [{ ...look, obj: picId, text: OBJECT_CHAR }, ...(text.length ? [{ ...look, text: '\n' }, ...text] : [])] : text };
+      const span = Math.round(Number(cd.colspan) || 1), rowSpan = Math.round(Number(cd.rowspan) || 1);
+      if (span > 1) cell.span = span;
+      if (rowSpan > 1) cell.rowSpan = rowSpan;
+      const a = str(cd.align);
+      if (a === 'left' || a === 'center' || a === 'right') cell.align = a;
+      return cell;
+    }));
+    const head = Math.max(0, Math.min(rows.length, Math.round(Number(data.header_rows ?? 1)) || 0));
+    // the label and caption above, kept with the table
+    this.caption(label || 'Table', caption, where, { align: align ?? 'center', keepNext: true, spaceAfter: 4 }, { key: id, kind: 'table' });
+    const table: Extract<DocObject, { kind: 'table' }> = {
+      kind: 'table',
+      table: {
+        cols: Array.from({ length: nCols }, () => Math.round((TEXT_W / nCols) * 100) / 100),
+        rows: cells, head, lines: 'acs', size: 10, width: 'auto', autofit: true,
+        align: Array.from({ length: nCols }, (_, k) => (['left', 'center', 'right'].includes(cols[k]) ? cols[k] : 'center') as Justify),
+      },
+    };
+    this.b.table(table, this.full({ align: align ?? 'center' }));
+    const notes = list(data.footnotes).map(str).filter((n) => n.trim());
+    notes.forEach((n, i) => {
+      const ps: ParaStyle = { align: 'left', spaceAfter: i === notes.length - 1 ? 12 : 0, ...(i < notes.length - 1 ? { keepNext: true } : {}) };
+      const nl: RunStyle = { ...this.b.styleLook(ps), size: 9 };
+      for (const r of this.cellRuns(n, where, nl, true)) {
+        // (a citation: its object put in the text, where it is numbered with the others)
+        if (r.obj !== undefined) { const { obj, text: _t, ...l } = r; this.b.object(this.b.objects[obj], l); } else this.b.text(r.text, r);
+      }
+      this.b.endPara(this.full(ps));
+    });
+  }
+
+  // -------------------------------------------------------------- the parts
+
+  private async cover(): Promise<void> {
+    const s = this.p.settings;
+    const cover = dict(s.cover);
+    const heading = str(cover.heading).trim() || COVER_HEADINGS[str(s.journal_style)] || 'Supporting Information';
+    // Cover page ▸ Spacing: Normal (1), More (2) or Much more (3) times the gaps between the parts
+    const k = coverSpacing(s);
+    const gap = (pt: number): number => Math.round(pt * k * 10) / 10;
+    this.para([R(heading)], { align: 'center', spaceAfter: gap(14) }, 'Cover page', { size: 16, bold: true });
+    this.para(this.chemistry([R(str(s.title))]), { align: 'center', spaceAfter: gap(14) }, 'Cover page', { size: 14, bold: true });
+    const authors = list(s.authors).map(dict);
+    const names: Run[][] = authors.map((a) => {
+      const marks = list(a.affiliations).map(String).join(',') + (a.corresponding ? '*' : '');
+      return [R(str(a.name)), ...(marks ? [R(marks, { valign: 'super' })] : [])];
+    });
+    const line: Run[] = [];
+    names.forEach((n, i) => {
+      if (i) line.push(R(i === names.length - 1 ? (names.length > 2 ? ', and ' : ' and ') : ', '));
+      line.push(...n);
+    });
+    if (line.length) this.para(line, { align: 'center', spaceAfter: gap(8) }, 'Cover page');
+    const affs = list(s.affiliations).map(dict);
+    affs.forEach((a, i) => this.para([R(str(a.marker), { valign: 'super' }), R(str(a.text))], { align: 'center', spaceAfter: i === affs.length - 1 ? gap(6) : 0 }, 'Cover page', { size: 10 }));
+    const emails = authors.filter((a) => a.corresponding && str(a.email)).map((a) => str(a.email));
+    if (emails.length) this.para([R('*Email: ' + emails.join('; '))], { align: 'center', spaceAfter: gap(18) }, 'Cover page', { size: 10 });
+    const extra = this.texts.get('cover') ?? '';
+    if (extra.trim()) await this.richText(extra, 'Cover page', null, 1, 0);
+  }
+
+  private toc(): void {
+    const toc = dict(this.p.settings.toc);
+    const title = typeof toc.title === 'string' ? toc.title : 'Table of Contents';
+    const style = this.plainStyle('SITocHeading', 'Contents Heading', { size: 13, bold: true, align: 'left', spaceBefore: 0, spaceAfter: 10, keepNext: true });
+    this.b.pendingBreak = true;
+    if (title.trim()) this.para([R(title)], { style }, 'Table of contents');
+    this.b.object({ kind: 'toc', levels: 3 });
+    this.b.endPara(this.full({}));
+  }
+
+  private async general(): Promise<boolean> {
+    const text = this.texts.get('general') ?? '';
+    if (!text.trim()) return false;
+    const info = dict(this.p.settings.general_information);
+    const title = info.heading === undefined ? 'General Information' : str(info.heading).trim();
+    if (title) this.para([R(this.numbered(1, true) + title)], { style: headingId(1) }, 'General Information');
+    await this.richText(text, title || 'General Information', await this.owner('general'), 1, this.rank >= 2 ? 2 : 0, true, true);
+    return true;
+  }
+
+  private sectionHeading(level: number, name: string, ps: ParaStyle = {}): void {
+    this.para([R(this.numbered(level) + name)], { style: this.headingStyle(level, level === 1 || this.rank >= 2), ...ps }, name);
+  }
+
+  // ---------------------------------------------------------- heading numbers (Lauren's, rewritten)
+  // Project Settings ▸ Headings (si/heading-format.ts): as the journal style does (Wiley 1., 1.1.;
+  // RSC 1, 1.1; ACS none), SI Assistant's outline (1, A, a, i) or numbers (1, 1.1, 1.1.1), or any
+  // format of Chemweave's. Chosen formats can number headings typed in a section's or General
+  // Information's text and the General Information heading too. General procedure headings,
+  // compound titles and headings in a compound's text never are. The numbers are written into
+  // the headings, so the contents show them.
+
+  private counters: number[] = [];
+  private headingFmtNow: ReturnType<typeof headingFormat> | undefined;
+  private get headingFmt(): ReturnType<typeof headingFormat> { return this.headingFmtNow === undefined ? (this.headingFmtNow = headingFormat(this.p.settings)) : this.headingFmtNow; }
+
+  /** The number for the next heading at `level` ("1.2. "), or '' when headings aren't numbered. `text`: a heading typed in a text (or General Information's). */
+  private numbered(level: number, text = false): string {
+    const f = this.headingFmt;
+    if (!f || (text && !f.text)) return '';
+    const lv = Math.max(1, Math.min(9, level));
+    while (this.counters.length < lv) this.counters.push(0);
+    this.counters.length = lv;
+    this.counters[lv - 1]++;
+    return headingNumber(f, this.counters);
+  }
+
+  private async section(s: SiSection, level: number): Promise<void> {
+    if (this.excluded.has(s.id)) return;
+    if (s.type === 'spectra') {
+      if (this.excluded.has('spectra')) return;
+      if (this.spectraDone) { this.notes.push(`“${s.name}”: a project has only one Spectra section; this one was left out.`); return; }
+      this.spectraDone = true;
+      await this.spectraSection(s, level);
+      return;
+    }
+    if (s.type === 'text') {
+      this.sectionHeading(level, s.name);
+      await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.rank >= 2 ? level + 1 : 0, true, true);
+    } else if (s.type === 'file') await this.fileSection(s, level);
+    else if (s.type === 'xray') await this.xray(s, level, true); else if (s.type === 'data') await this.dataSection(s, level);
+    for (const child of s.children) await this.section(child, level + 1);
+  }
+
+  private async fileSection(s: SiSection, level: number): Promise<void> {
+    const heading = str(s.data.heading).trim();
+    if (heading) this.sectionHeading(level, heading);
+    const file = str(s.data.file);
+    if (!file) { this.notes.push(`Attachment section “${s.name}” has no file attached.`); return; }
+    const ok = await this.pictureBlock(joinPath(s.folder, file), { w: TEXT_W, h: ATTACHMENT_MAX_H }, `Attachment section “${s.name}”`);
+    const caption = str(s.data.caption).trim();
+    if (ok && caption) this.para([R(caption)], { align: 'center' }, s.name, { size: 10 });
+  }
+
+  private async dataSection(s: SiSection, level: number): Promise<void> {
+    this.sectionHeading(level, s.name);
+    for (const gp of this.p.generalProcedures(s)) {
+      const name = str(gp.name).trim() || 'General Procedure';
+      const title = str(gp.title).trim();
+      this.para(this.chemistry([R(name + (title ? `: ${title}` : ''))]), { style: this.headingStyle(level + 1, this.rank >= 3) }, `${s.name} ▸ ${name}`);
+      const text = await this.p.readGpText(s, str(gp.id));
+      if (!text.trim()) this.notes.push(`“${name}” in “${s.name}” has no text yet.`);
+      await this.richText(text, `${s.name} ▸ ${name}`, null, level + 1, 0, false);
+    }
+    for (const item of s.items) {
+      if (item.kind === 'scheme') {
+        const drawn = await this.scheme(item, s);
+        for (const c of item.children) await this.compound(c, level + 1, drawn.has(c.id));
+      } else await this.compound(item, level + 1);
+    }
+  }
+
+  private async compound(c: SiCompound, level: number, inScheme = false): Promise<void> {
+    const id = displayId(this.report, c.id);
+    const name = compoundName(c);
+    const where = name ? `${id} (${name})` : id;
+    const facts = this.facts.get(c.id) ?? null;
+    const block = compoundBlock(this.p, c, id, { facts, helpers: this.helpers, leave: this.leave });
+    this.para(block.title, { style: this.compoundStyle(level, this.rank >= 4), marks: [compoundBookmark(c.id)] }, where);
+    this.targets.push({ key: c.id, kind: 'compound', label: id, caption: name, mark: compoundBookmark(c.id) });
+    if (!inScheme) await this.structure(c, where);
+    if (!block.customText) {
+      const problems: string[] = [];
+      gpSentence(this.p, c, problems);
+      for (const x of problems) this.notes.push(`${where}: general procedure sentence has ${x}; printed in [brackets].`);
+      const choice = dict(valuesOf(c).procedure);
+      if (str(choice.gp) && fieldKeys(c).includes('procedure') && !this.p.compoundGp(c)) this.notes.push(`${where}: its general procedure no longer exists; the “Prepared according to…” sentence was left out.`);
+    }
+    for (const x of block.paragraphs) {
+      if (x.heading) this.para(x.runs, { style: this.headingStyle(x.heading + level, false) }, where);
+      else this.para(x.runs, {}, where);
+    }
+    const figures = inlineFigures(c);
+    for (let i = 0; i < figures.length; i++) {
+      const f = figures[i];
+      const def = fieldsOfCompound(c).find((d) => d.key === f.field);
+      const ok = await this.pictureBlock(joinPath(c.folder, def?.subdir ?? 'files', f.file), { w: TEXT_W, h: 4 * PT }, where);
+      if (ok) this.caption(this.labels.at(c.id, i) || 'Figure', [R(f.caption)], where, { align: 'center' }, { key: `${c.id}#${i}`, kind: 'figure' });
+    }
+    if (id === 'ID?') this.notes.push(`“${name || 'A compound'}” has no ID (printed as “ID?”).`);
+    // its X-ray structures, right after it and without a heading
+    for (const x of this.p.anchored.get(c.id) ?? []) if (!this.excluded.has(x.id)) await this.xray(x, level, false);
+  }
+
+  /**
+   * An X-ray structure (SPEC §13v): its drawing as a live crystal structure (double-click it in
+   * the document to turn it or change its look), the figure caption (typed, or made from how it
+   * is drawn), then the crystal data table when the section prints it. Among the sections it has
+   * its name as heading; under a compound, none.
+   */
+  private async xray(s: SiSection, level: number, heading: boolean): Promise<void> {
+    if (heading) this.sectionHeading(level, s.name);
+    const where = `X-ray structure “${s.name}”`;
+    const file = str(s.data.file);
+    if (!file) { this.notes.push(`${where}: no CIF file has been chosen yet; left out.`); return; }
+    const cif = await this.p.folder.readText(joinPath(s.folder, file));
+    if (cif === null) { this.notes.push(`${where}: ${file} is no longer in the project; left out.`); return; }
+    const { block, error } = xrayBlock(cif, str(s.data.block));
+    if (!block) { this.notes.push(`${where}: ${error}; left out.`); return; }
+    const got = xrayDrawing(block, dict(s.data.view), TEXT_W);
+    if ('error' in got) { this.notes.push(`${where}: ${got.error}; left out.`); return; }
+    const doc = new Doc();
+    doc.edit('Crystal Structure', () => {
+      putPlate(doc, POINTS, { ...newPlate('crystal', doc.style.bondLength), w: got.w, h: got.h, crystal: { ...got.spec, table: crystalTable(block).map(([, l, v]) => [l, v]) } }, { x: 0, y: 0 });
+    });
+    this.b.object({ kind: 'drawing', contents: doc.contents(), alt: `Crystal structure ${s.name}` });
+    this.b.endPara(this.full({ align: 'center', keepNext: true, spaceBefore: 6, spaceAfter: 2 }));
+    const ref = xrayCompound(s.data, (id) => this.compoundExists(id));
+    const rows = xrayTableRows(s.data, block);
+    const ccdc = rows.find(([k]) => k === 'ccdc')?.[2] ?? '';
+    const caption = str(s.data.caption).trim() || xrayAutoCaption(got.spec.view, ref, ccdc);
+    this.caption(this.labels.at(s.id, 0) || 'Figure', parseMarkup(caption).flatMap((p) => p.runs), where, { align: 'center', spaceAfter: 10 }, { key: s.id, kind: 'figure' });
+    if (s.data.table === false) return;
+    if (!rows.length) { this.notes.push(`${where}: its crystal data table has no values; left out.`); return; }
+    const look: RunStyle = { ...this.b.styleLook({}), size: 10 };
+    // its width: as its contents need (the default), or a share of the text's width
+    const tableW = Math.max(0, Math.min(100, Number(s.data.table_width) || 0));
+    const share = tableW ? Math.max(0.2, tableW / 100) : 1;
+    const cells: TableCell[][] = rows.map(([, label, value]) => [
+      { runs: this.cellRuns(label, where, look), align: 'left' },
+      { runs: this.cellRuns(value, where, look), align: 'left' },
+    ]);
+    this.caption(this.labels.at(s.id, 1) || 'Table', parseMarkup(xrayTableCaption(s.data, ref)).flatMap((p) => p.runs), where, { align: 'center', keepNext: true, spaceAfter: 4 }, { key: s.id + '#table', kind: 'table' });
+    this.b.table({
+      kind: 'table',
+      table: { cols: [TEXT_W * 0.45, TEXT_W * 0.55].map((w) => Math.round(w * share * 100) / 100), rows: cells, head: 0, lines: 'acs', size: 10, width: tableW ? { pct: Math.round(share * 100) } : 'auto', autofit: !tableW, align: ['left', 'left'] },
+    }, this.full({ align: 'center', spaceAfter: 12 }));
+  }
+
+  /**
+   * A scheme page's scheme, drawn (SPEC §13n.4) as one editable drawing with its caption when its
+   * Layout shows one; the compounds its boxes show, whose structures it prints, are returned.
+   */
+  private async scheme(k: SiScheme, s: SiSection): Promise<Set<string>> {
+    const drawn = new Set<string>();
+    const name = str(k.data.name) || 'Scheme';
+    const where = `${s.name} ▸ scheme “${name}”`;
+    let editor = dict(k.data.editor);
+    if (k.data.mode !== 'editor') {
+      // A scheme page made as one pasted picture (before the scheme editor) prints as SI Assistant
+      // prints it (scheme_editor.upgrade_old_scheme, in memory only): the boxes and steps it already
+      // has, or else its compounds as the products of one step. Its picture isn't printed.
+      if (!list(editor.starting).length && !list(editor.steps).length) editor = { ...editor, starting: [], steps: [{ products: k.children.map((c) => ({ compound: c.id })) }] };
+      this.notes.push(`${where}: it was made from a pasted picture, which isn’t printed; its compounds are drawn as the products of one step. Open its scheme page to set it out as you want it.`);
+    }
+    const lay = this.schemeLayoutOf(k);
+    const conditions = (t: unknown): TextRun[] => this.cellRuns(str(t), where, {});
+    // structures in the conditions (@struct{s-…}): drawn from their structure files
+    const structures = async (t: unknown): Promise<Contents[]> => {
+      const out: Contents[] = [];
+      for (const sid of inlineIds(str(t))) {
+        const mol = await inlineMol(this.p, k, sid);
+        const c = mol ? this.host.contentsOf(mol) : null;
+        if (c) out.push(c);
+        else this.notes.push(`${where}: a structure in the conditions ${mol ? 'could not be drawn' : 'is only a picture (no structure file), which isn’t drawn in the scheme yet'}; left out.`);
+      }
+      return out;
+    };
+    const box = async (b: Json): Promise<DrawBox | null> => {
+      const cid = str(b.compound);
+      const linked = cid ? k.children.find((c) => c.id === cid) : undefined;
+      if (cid && !linked) this.notes.push(`${where}: a box shows a compound that is no longer on the scheme page; its own copy of the structure is drawn.`);
+      let mol = '';
+      if (linked && this.p.hasStructure(linked)) mol = await this.p.readStructure(linked);
+      else if (str(b.structure)) mol = (await this.p.folder.readText(joinPath(k.folder, str(b.structure)))) ?? '';
+      const contents = mol ? this.host.contentsOf(mol) : null;
+      if (!contents) {
+        if (str(b.picture) || (linked && str(dict(valuesOf(linked).structure).image_override))) this.notes.push(`${where}: a structure that is only a picture (no structure file) isn’t drawn in the scheme yet; left out.`);
+        else if (mol) this.notes.push(`${where}: a structure could not be drawn; left out.`);
+        else this.notes.push(`${where}: an empty box was left out.`);
+        return null;
+      }
+      if (linked) drawn.add(linked.id);
+      let label = this.cellRuns(str(b.label), where, { bold: true });
+      if (!label.length && linked) label = [{ text: displayId(this.report, linked.id), bold: true }];
+      let yieldText = '';
+      if ('yield' in b) yieldText = str(b.yield).trim();
+      else if (linked && fieldKeys(linked).includes('yield')) {
+        const pct = partText(dict(valuesOf(linked).yield).percent).trim();
+        if (pct) yieldText = `${pct}%`;
+      }
+      return { contents, label, yieldText, dx: Number(b.label_dx) || 0, dy: Number(b.label_dy) || 0 };
+    };
+    const starting: DrawBox[] = [];
+    for (const b of list(editor.starting)) { const x = await box(dict(b)); if (x) starting.push(x); }
+    const steps: DrawStep[] = [];
+    for (const raw of list(editor.steps)) {
+      const st = dict(raw);
+      const products: DrawBox[] = [];
+      for (const b of list(st.products)) { const x = await box(dict(b)); if (x) products.push(x); }
+      if (!list(st.products).length) this.notes.push(`${where}: a step has no products.`);
+      const align = (v: unknown) => (v === 'left' || v === 'center' || v === 'right' ? v : undefined);
+      steps.push({ top: conditions(st.top), bottom: conditions(st.bottom), topAlign: align(st.top_align), bottomAlign: align(st.bottom_align), products, topStructures: await structures(st.top), bottomStructures: await structures(st.bottom) });
+    }
+    const got = drawScheme(starting, steps, lay, TEXT_W, siDrawingStyle(this.p.settings));
+    if (!got) {
+      this.notes.push(`${where}: it has no structures to draw; left out. Its compounds are printed with their own structures.`);
+      drawn.clear();
+      return drawn;
+    }
+    if (got.textPt < 6) this.notes.push(`${where}: its conditions print at only ${got.textPt.toFixed(1)} pt; make the scheme narrower or its text larger (Scheme ▸ Layout on its page).`);
+    const scale = Math.round(got.scale * 1000) / 1000;
+    this.b.object({ kind: 'drawing', contents: got.contents, ...(scale !== 1 ? { scale } : {}), alt: name });
+    const label = lay.show_label ? this.labels.byId.get(k.id) ?? '' : '';
+    this.b.endPara(this.full({ align: 'center', keepNext: !!label, spaceBefore: 6, spaceAfter: label ? 2 : 10 }));
+    if (label) this.caption(label, [R(name)], where, { align: 'center', spaceAfter: 10 }, { key: k.id, kind: 'scheme' });
+    return drawn;
+  }
+
+  private async structure(c: SiCompound, where: string): Promise<void> {
+    const mol = this.p.hasStructure(c) ? await this.p.readStructure(c) : '';
+    const contents = mol ? this.host.contentsOf(mol) : null;
+    if (contents) {
+      const size = this.host.sizeOf(contents);
+      const scale = size && size.w > 0 && size.h > 0 ? Math.min(1, STRUCTURE_MAX.w / size.w, STRUCTURE_MAX.h / size.h) : 1;
+      this.b.object({ kind: 'drawing', contents, ...(scale < 1 ? { scale: Math.round(scale * 1000) / 1000 } : {}) });
+      this.b.endPara(this.full({ align: 'center', keepNext: true, spaceBefore: 2, spaceAfter: 8 }));
+      return;
+    }
+    const picture = str(dict(valuesOf(c).structure).image_override);
+    if (picture) await this.pictureBlock(joinPath(c.folder, picture), STRUCTURE_MAX, where);
+    else if (mol) this.notes.push(`${where}: its structure could not be drawn; left out.`);
+  }
+
+  // -------------------------------------------------------------- spectra (SPEC §13k.12)
+
+  /** The compounds of the Data sections in `sections` (and below) that are printed, in tree order. */
+  private includedCompounds(sections: readonly SiSection[]): SiCompound[] {
+    const out: SiCompound[] = [];
+    for (const s of sections) {
+      if (this.excluded.has(s.id)) continue;
+      if (s.type === 'data') out.push(...compoundsOf(s));
+      out.push(...this.includedCompounds(s.children));
+    }
+    return out;
+  }
+
+  /**
+   * The Spectra section: each compound's spectra, page by page, set out as the section's defaults
+   * and each spectrum's own settings say (1, 2 or 4 to a page, portrait or landscape), each with
+   * its header line and the compound's structure + ID on a box over it; then the HRMS reports.
+   * Everything on a spectra page floats at its place, so it can be moved and stays editable.
+   */
+  private async spectraSection(s: SiSection | null, level: number): Promise<void> {
+    const defaults = sectionDefaults(s, this.p.settings);
+    const compounds = this.includedCompounds(this.p.top);
+    const name = s?.name ?? 'Spectra';
+    type Entry = { c: SiCompound; item: Json; page: PagePicture; pageNo: number; eff: SpectrumLayout };
+    const entries: Entry[] = [];
+    for (const c of compounds) {
+      for (const [key, item] of spectrumItems(c)) {
+        const file = partText(item.file);
+        if (!file) continue;
+        const where = `${displayId(this.report, c.id)} ▸ ${key === 'spectra' ? 'Spectra' : 'Additional files'}`;
+        const bytes = await this.p.folder.readBytes(joinPath(c.folder, attachmentDir(c, key), file));
+        if (!bytes) { this.notes.push(`${where}: ${file} is no longer in the project; left out.`); continue; }
+        let pages: PagePicture[] = [];
+        if (/\.pdf$/i.test(file)) {
+          if (!this.host.pdfPages) { this.notes.push(`${where}: ${file} is a PDF; PDFs are placed only in the desktop app and the web app (left out).`); continue; }
+          pages = (await this.host.pdfPages(bytes).catch(() => null)) ?? [];
+          if (!pages.length) { this.notes.push(`${where}: ${unreadablePdf(file)}`); continue; }
+        } else {
+          const pic = pictureObject(file, bytes, { w: 1e6, h: 1e6 });
+          if (!pic) { this.notes.push(`${where}: ${file} could not be read as a picture${/\.tiff?$/i.test(file) ? ' (TIFF pictures are not placed in the document yet)' : ''}; left out.`); continue; }
+          pages = [{ src: pic.src, w: pic.w, h: pic.h, ...(pic.px ? { px: pic.px } : {}) }];
+        }
+        pages.forEach((page, i) => entries.push({ c, item, page, pageNo: i + 1, eff: effective(defaults, item, String(i + 1)) }));
+      }
+    }
+    // pages: a spectrum that needs another layout (number to a page, orientation) starts a new page
+    const pages: { orientation: SpectrumLayout['orientation']; per: number; slots: Entry[] }[] = [];
+    for (const e of entries) {
+      const last = pages[pages.length - 1];
+      if (!last || last.orientation !== e.eff.orientation || last.per !== e.eff.per_page || last.slots.length >= last.per) pages.push({ orientation: e.eff.orientation, per: e.eff.per_page, slots: [] });
+      pages[pages.length - 1].slots.push(e);
+    }
+    const hrms = this.excluded.has('hrms_reports') ? [] : compounds.filter((c) => printsReports(c, defaults));
+    if (!pages.length && !hrms.length) return;
+    let headed = false;
+    for (const pg of pages) {
+      this.orient(pg.orientation);
+      const page = this.landscape ? { ...this.b.doc.page, w: this.b.doc.page.h, h: this.b.doc.page.w } : this.b.doc.page;
+      let top = 0;
+      if (!headed) {
+        this.sectionHeading(level, name, { pageBreak: true });
+        headed = true;
+        top = HEADING_ROOM;
+      } else this.b.pendingBreak = true;
+      await this.spectraPage(pg.slots, pg.per, page, top);
+    }
+    if (hrms.length) await this.hrmsReports(hrms, level + 1, name, !headed, level);
+    // the pages after it are portrait again (the sections after the Spectra section)
+    this.orient('portrait');
+  }
+
+  /** One page of spectra: an empty paragraph that anchors them, and each slot floating at its place. */
+  private async spectraPage(slots: { c: SiCompound; item: Json; page: PagePicture; pageNo: number; eff: SpectrumLayout }[], per: number, page: PageSetup, top: number): Promise<void> {
+    const bw = page.w - page.left - page.right, bh = page.h - page.top - page.bottom - top - 2;
+    const slot = slotSize(bw, bh, per, this.landscape);
+    const [cols] = per === 4 ? [2] : per === 2 && this.landscape ? [2] : [1];
+    const floats: DocObject[] = [];
+    let z = 1;
+    for (let i = 0; i < slots.length; i++) {
+      const { c, item, page: pic, pageNo, eff } = slots[i];
+      const col = i % cols, row = Math.floor(i / cols);
+      const sx = col * (slot.w + GUTTERS[0]), sy = row * (slot.h + GUTTERS[1]);
+      const id = displayId(this.report, c.id);
+      let headH = 0;
+      if (eff.header_line) {
+        const runs = this.helpers ? formatNmr(headerParts(c, item, id, pageNo).map((t) => R(t)), this.leave) : headerParts(c, item, id, pageNo).map((t) => R(t));
+        headH = HEADER_PT * 1.25 + 2 * 3.6 + 3;
+        floats.push({ kind: 'textbox', runs: textRuns(runs, { bold: true, size: HEADER_PT }), paras: [{ align: 'center' }], w: slot.w, float: this.at(sx, sy, z++, `Header ${id}`) });
+      }
+      const crop = eff.auto_crop && this.host.contentBox ? await this.host.contentBox(pic.src).catch(() => null) : null;
+      const shown = shownSize({ w: slot.w, h: Math.max(10, slot.h - headH) }, pic.h / pic.w, crop);
+      const px = sx + (slot.w - shown.w) / 2, py = sy + headH;
+      floats.push({
+        kind: 'picture', src: pic.src, w: round2(shown.w), h: round2(shown.h), ...(pic.px ? { px: pic.px } : {}),
+        ...(crop ? { crop: { l: crop[0], t: crop[1], r: 1 - crop[2], b: 1 - crop[3] } } : {}),
+        ...(eff.spectrum_frame ? { look: { frame: eff.spectrum_frame_width, frameColor: eff.spectrum_frame_color } } : {}),
+        alt: headerParts(c, item, id, pageNo).join(''), float: this.at(px, py, z++, `Spectrum ${id}`),
+      });
+      if (eff.struct_box) floats.push(...(await this.structureBox(c, item, eff, { x: px, y: py, w: shown.w, h: shown.h }, () => z++)));
+    }
+    // the anchor: an empty paragraph as tall as the page's body, so the next page starts after it
+    for (const f of floats) this.b.object(f);
+    this.b.endPara(this.full({ spaceAfter: 0, spaceBefore: 0, linePt: Math.max(12, Math.floor(bh - 6)), lineRule: 'exact' }));
+  }
+
+  /** A float at (x, y) from the margin and the anchor paragraph, in front of the text. */
+  private at(x: number, y: number, z: number, name: string): Float {
+    return { wrap: 'front', x: round2(x), y: round2(y), xFrom: 'margin', yFrom: 'para', gap: 0, z, name };
+  }
+
+  /** The compound's structure, ID and caption on a box over a spectrum (in its corner, or where it was dragged). */
+  private async structureBox(c: SiCompound, item: Json, eff: SpectrumLayout, spec: { x: number; y: number; w: number; h: number }, z: () => number): Promise<DocObject[]> {
+    const mol = this.p.hasStructure(c) ? await this.p.readStructure(c) : '';
+    const contents = mol ? this.host.contentsOf(mol) : null;
+    const own = contents ? this.host.sizeOf(contents) : null;
+    const size = contents ? structureSize(own, eff.struct_scale) : { w: 0, h: 0 };
+    const id = displayId(this.report, c.id);
+    const idSize = idSizeOf(eff);
+    const caption = eff.caption ? captionText(c, item) : '';
+    const capRuns = caption ? (this.helpers ? formatNmr([R(caption)], this.leave) : [R(caption)]) : [];
+    const { w, h } = structureBoxSize(size, id, idSize, caption, eff.caption_size);
+    const { x: bx, y: by } = structureBoxAt(eff, spec, { w, h });
+    // the box (its background and frame), the structure on it, and the ID and caption under the
+    // structure: grouped, so they move together (Alt-drag moves one on its own)
+    const group = ++this.groups;
+    const at = (x: number, y: number, name: string): Float => ({ ...this.at(x, y, z(), name), group });
+    const out: DocObject[] = [{
+      kind: 'textbox', runs: [], w: round2(w), h: round2(h), fill: eff.struct_bg,
+      ...(eff.struct_frame ? { look: { frame: eff.struct_frame_width, frameColor: eff.struct_frame_color } } : {}),
+      float: at(bx, by, `Structure box ${id}`),
+    }];
+    const runs: TextRun[] = [...textRuns([R(id)], { bold: eff.id_bold || undefined, size: idSize })];
+    const paras: ParaStyle[] = [{ align: 'center', spaceBefore: 0, spaceAfter: 0 }];
+    if (caption) { runs.push({ text: '\n' }, ...textRuns(capRuns, { size: eff.caption_size })); paras.push({ align: 'center', spaceAfter: 0 }); }
+    out.push({ kind: 'textbox', runs, paras, w: round2(w), float: at(bx + (eff.label_dx ?? 0), by + SI_BOX_PAD + size.h + (eff.label_dy ?? 0), `Compound ID ${id}`) });
+    if (contents) {
+      const scale = own && own.w > 0 ? size.w / own.w : 1;
+      out.push({ kind: 'drawing', contents, ...(Math.abs(scale - 1) > 1e-3 ? { scale: Math.round(scale * 1000) / 1000 } : {}), float: at(bx + (w - size.w) / 2, by + SI_BOX_PAD, `Structure ${id}`) });
+    } else if (mol) this.notes.push(`${id}: its structure could not be drawn on its spectra; left out.`);
+    return out;
+  }
+
+  /**
+   * The HRMS reports sub-section (§13n.3): each compound's report files, compound by compound.
+   * Its heading (and the Spectra section's, when `withSection`) is printed only once a report
+   * prints something; a report that can't be read is said in the notes, never stops the compile.
+   */
+  private async hrmsReports(compounds: SiCompound[], level: number, sectionName: string, withSection: boolean, sectionLevel: number): Promise<void> {
+    let started = false;
+    /** The headings, before the first report printed (which then goes under them, not on a page of its own). */
+    const start = (): boolean => {
+      if (started) return false;
+      started = true;
+      this.orient('portrait');
+      if (withSection) this.sectionHeading(sectionLevel, sectionName, { pageBreak: true });
+      this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.rank >= 2), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
+      return true;
+    };
+    const room = { w: TEXT_W, h: 7.4 * PT };
+    for (const c of compounds) {
+      const id = displayId(this.report, c.id);
+      for (const r of reportItems(c)) {
+        const file = String(r.file);
+        const where = `${id} ▸ HRMS`;
+        try {
+          await this.hrmsReport(c, file, where, room, start);
+        } catch (e) {
+          this.notes.push(`${where}: the HRMS report ${file} could not be printed (${e instanceof Error ? e.message : String(e)}); left out.`);
+        }
+      }
+    }
+  }
+
+  /** One HRMS report file; `start` puts the headings in first (true for the first report printed). */
+  private async hrmsReport(c: SiCompound, file: string, where: string, room: { w: number; h: number }, start: () => boolean): Promise<void> {
+    const id = displayId(this.report, c.id);
+    const kind = printKind(file);
+    if (kind === 'none') { this.notes.push(`${where}: the HRMS report ${file} can't be printed (raw data or a kind of file that can't be shown); left out.`); return; }
+    const title = (more = ''): void => this.para([R(id, { bold: true }), R(` — HRMS report: ${file}${more}`)], { keepNext: true, spaceBefore: 14, spaceAfter: 6 }, where);
+    if (kind === 'peaks') {
+      // (read through the shared cache, off the UI thread: the compound page has usually read it already)
+      const data = await readReportFile(this.p.folder, joinPath(c.folder, 'hrms'), file);
+      if (data.kind === 'missing') { this.notes.push(`${where}: the HRMS report ${file} is missing; left out.`); return; }
+      start(); title(); this.peaksTable(c, file, data, where); return;
+    }
+    const bytes = await this.p.folder.readBytes(joinPath(c.folder, 'hrms', file));
+    if (!bytes) { this.notes.push(`${where}: the HRMS report ${file} is missing; left out.`); return; }
+    if (kind === 'pdf') {
+      const pics = await this.pdfPictures(bytes, file, where, room);
+      pics.forEach((pic, i) => {
+        // each page of a report of several on a page of its own (the first under the headings, when it is the first report)
+        const first = start();
+        if (i > 0 || (pics.length > 1 && !first)) this.b.pendingBreak = true;
+        title(pics.length > 1 ? ` (page ${i + 1} of ${pics.length})` : '');
+        this.b.object(pic);
+        this.b.endPara(this.full({ align: 'center' }));
+      });
+      return;
+    }
+    if (kind === 'picture') {
+      const pic = pictureObject(file, bytes, room);
+      if (!pic) { this.notes.push(`${where}: ${file} could not be read as a picture; left out.`); return; }
+      start();
+      title();
+      this.b.object(pic);
+      this.b.endPara(this.full({ align: 'center' }));
+      return;
+    }
+    const [lines, left] = reportListing(bytes, file);
+    if (listingFailed(lines)) this.notes.push(`${where}: the HRMS report ${file} could not be read (it may be damaged); only a note is printed for it.`);
+    start();
+    title();
+    lines.forEach((l) => { this.b.text(l || ' ', { font: 'Courier New', size: 7 }); this.b.endPara(this.full({ spaceAfter: 0, keepNext: false })); });
+    if (left) this.para([R(`… ${left} more line${left === 1 ? '' : 's'} not printed (the whole file is kept in the project folder).`, { italic: true })], {}, where, { size: 8 });
+  }
+
+  /** A data file (mzML, mzXML, mzData, netCDF): its largest peaks near the expected m/z (the chosen ion's monoisotopic m/z), the one used as found marked. */
+  private peaksTable(c: SiCompound, file: string, data: ReportData, where: string): void {
+    // (a damaged file gives a message, printed under its title and said in the notes)
+    if (!data.readable) this.notes.push(`${where}: the HRMS report ${file} could not be read (it may be damaged); only a note is printed for it.`);
+    const v = dict(valuesOf(c).hrms);
+    let centre: number | null = null;
+    try {
+      const sp = hrmsSpecies(this.facts.get(c.id) ?? null, v);
+      if (sp) { const peaks = hrmsCalc(sp.info, str(v.adduct), '', hrmsTolerance(this.p.settings)).peaks; centre = (peaks.find((x) => x.mono) ?? peaks[0])?.mz ?? null; }
+    } catch { centre = null; }
+    const rows = peaksNear(data, centre);
+    if (!rows.length) { this.para([R(!data.readable ? data.message : 'No peaks were found near the expected m/z in this file.')], {}, where, { size: 9 }); return; }
+    const found = str(v.found).trim();
+    const near = centre !== null ? ` The largest peaks near m/z ${centre.toFixed(4)}:` : ' The largest peaks:';
+    this.para([R(summary(data) + near)], { keepNext: true, spaceAfter: 4 }, where, { size: 9 });
+    const cell = (text: string, align: 'left' | 'right', o: { italic?: boolean } = {}): TableCell => ({ runs: [{ text, size: 9, ...o }] as TextRun[], align });
+    const head: TableCell[] = [{ runs: [{ text: 'm/z', size: 9, italic: true }] as TextRun[], align: 'right' }, cell('Intensity (%)', 'right'), cell('', 'left')];
+    const body = rows.map(([mz, rel]): TableCell[] => [cell(mz.toFixed(4), 'right'), cell(rel.toFixed(1), 'right'), cell(formatMz(mz) === found ? 'found m/z' : '', 'left')]);
+    this.b.table({ kind: 'table', table: { cols: [70, 80, 70], rows: [head, ...body], head: 1, lines: 'acs', size: 9, width: 'auto', autofit: true, align: ['right', 'right', 'left'] } }, this.full({ align: 'center', spaceAfter: 12 }));
+  }
+
+  private references(): void {
+    if (!this.cited) return;
+    this.para([R('References')], { style: headingId(1), pageBreak: true }, 'References');
+    this.b.object({ kind: 'bib' });
+    this.b.endPara(this.full({}));
+  }
+
+  // -------------------------------------------------------------- the whole
+
+  /** One page of the project alone (the live preview), without spectra or the references list; page numbers are placeholders. */
+  private async buildOnly(only: SiPreviewTarget): Promise<void> {
+    const p = this.p;
+    if (only.kind === 'front') {
+      if (this.included('cover')) await this.cover();
+      if ((this.texts.get('general') ?? '').trim()) { if (this.included('cover')) this.b.pendingBreak = true; await this.general(); }
+    } else if (only.kind === 'compound') {
+      const c = p.compounds.find((x) => x.id === only.id);
+      if (c) await this.compound(c, 2);
+    } else if (only.kind === 'scheme') {
+      const k = p.schemes.find((x) => x.id === only.id);
+      const s = k ? p.sections.find((x) => x.id === k.sectionId) : undefined;
+      if (k && s) { const drawn = await this.scheme(k, s); for (const c of k.children) await this.compound(c, 2, drawn.has(c.id)); }
+    } else {
+      const s = p.sections.find((x) => x.id === only.id);
+      // (a section's spectra are left out: Compile shows them)
+      if (s && s.type !== 'spectra') { this.excluded.delete(s.id); this.spectraDone = true; await this.section(s, 1); }
+    }
+  }
+
+  /** The compounds the document (or the preview's page) prints. */
+  private printedCompounds(only?: SiPreviewTarget): SiCompound[] {
+    if (!only) return this.includedCompounds(this.p.top);
+    if (only.kind === 'compound') return this.p.compounds.filter((c) => c.id === only.id);
+    if (only.kind === 'scheme') return this.p.schemes.find((k) => k.id === only.id)?.children ?? [];
+    if (only.kind === 'section') {
+      const s = this.p.sections.find((x) => x.id === only.id);
+      return s ? [...(s.type === 'data' ? compoundsOf(s) : []), ...this.includedCompounds(s.children)] : [];
+    }
+    return [];
+  }
+
+  async build(only?: SiPreviewTarget): Promise<DocText> {
+    this.preview = !!only;
+    await this.prepare(this.printedCompounds(only));
+    if (only) await this.buildOnly(only);
+    else await this.buildAll();
+    const title = str(this.p.settings.title);
+    const p = this.b.doc.page;
+    const { hf, format } = this.pageLines(p.w - p.left - p.right);
+    return this.b.finish({
+      styles: this.styles,
+      hf,
+      ...(format !== 'decimal' ? { numFormat: format } : {}),
+      references: this.p.references.map(toReference),
+      props: { title: title || this.p.title },
+      noFigureOffer: true,
+    });
+  }
+
+  private async buildAll(): Promise<void> {
+    if (this.included('cover')) await this.cover();
+    if (this.included('toc')) this.toc();
+    let started = false;
+    const startPage = (): void => { if (!started && (this.included('cover') || this.included('toc'))) this.b.pendingBreak = true; started = true; };
+    if (this.included('general') && (this.texts.get('general') ?? '').trim()) { startPage(); await this.general(); }
+    for (const s of this.p.top) { if (!this.excluded.has(s.id)) startPage(); await this.section(s, 1); }
+    // a project without a Spectra section (opened read-only, older) prints its spectra at the end
+    if (!this.spectraDone && !this.excluded.has('spectra') && !this.p.sections.some((s) => s.type === 'spectra')) { this.spectraDone = true; await this.spectraSection(null, 1); }
+    this.orient('portrait');
+    this.references();
+  }
+}
+
+const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join('').trim();
+
+/** The cover page's spacing: Normal 1, More 2, Much more 3, or a number typed into project.json (0.5–6). */
+export const COVER_SPACINGS: Record<string, number> = { Normal: 1, More: 2, 'Much more': 3 };
+export function coverSpacing(settings: Json): number {
+  const v = Number(dict(settings.cover).spacing);
+  return Number.isFinite(v) && v > 0 ? Math.min(6, Math.max(0.5, v)) : 1;
+}
+
+const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+/** The room the Spectra section's heading takes at the top of its first page (points). */
+const HEADING_ROOM = 34;
+
+/** What is said when a PDF can't be opened (SI Assistant's words). */
+const unreadablePdf = (name: string): string => `${name} could not be opened as a PDF (it may be damaged, password-protected or not really a PDF). Export it again and replace it on the compound page; left out.`;
+
+/** Runs as a text box's text, in `look`. */
+function textRuns(runs: Run[], look: RunStyle): TextRun[] {
+  return runs.map((r) => {
+    const l: TextRun = { text: r.text, ...look };
+    if (r.bold) l.bold = true;
+    if (r.italic) l.italic = true;
+    if (r.underline) l.underline = true;
+    if (r.valign === 'sub') l.sub = true;
+    if (r.valign === 'super') l.sup = true;
+    for (const k of Object.keys(l) as (keyof TextRun)[]) if (l[k] === undefined) delete l[k];
+    return l;
+  });
+}
+
+const fieldsOfCompound = (c: SiCompound) => (Array.isArray(c.data.fields) ? (c.data.fields as Json[]) : []).map((e) => fieldDef(e)).filter((d): d is NonNullable<typeof d> => d !== null);
+
+/** An SI reference (references.json) as the document's. */
+function toReference(r: Json): Reference {
+  const type = str(r.type) as RefType;
+  return {
+    id: str(r.id), type: REF_TYPES.has(type) ? type : 'article',
+    authors: list(r.authors).map(String).filter(Boolean),
+    title: str(r.title), journal: str(r.journal), year: str(r.year), volume: str(r.volume), issue: str(r.issue),
+    pages: str(r.pages), doi: str(r.doi), url: str(r.url), publisher: str(r.publisher), note: str(r.note),
+    ...(str(r.typed).trim() ? { typed: str(r.typed) } : {}),
+  };
+}
+
+/** The project's own words to print as written (dictionary.txt), lower case. */
+async function leaveWords(p: SiProject): Promise<Set<string>> {
+  return new Set((await dictionaryWords(p.folder)).map((w) => w.toLowerCase()));
+}
+
+/**
+ * The labels the compiled SI gives its tables, figures and schemes ("Table S1"), by their ids, as
+ * a mention of one shows them in the SI tab. Only the files are read (no structures are worked
+ * out), so it is quick.
+ */
+export async function objectLabels(p: SiProject): Promise<Map<string, string>> {
+  const c = new Compiler(p, { contentsOf: () => null, sizeOf: () => null, facts: async (m) => m.map(() => null) }, new Set());
+  await c.prepare();
+  return c.labels.byId;
+}
+
+/** Compile an SI project into a document. */
+/** What the live preview shows: the front matter (cover and General Information), a section, a scheme page or a compound. */
+export type SiPreviewTarget = { kind: 'front' } | { kind: 'section' | 'scheme' | 'compound'; id: string };
+
+/** Compile the project (or, with `only`, one page of it for the live preview) into a document. */
+export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget): Promise<CompiledSi> {
+  const c = new Compiler(p, host, await leaveWords(p));
+  const doc = await c.build(only);
+  return { doc, notes: [...new Set(c.notes)], targets: c.targets };
+}
+

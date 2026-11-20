@@ -38,6 +38,7 @@ import { FontBox } from './font-box';
 import { WORD_HIGHLIGHTS } from '../io/docx-base';
 import { DocFind } from './doc-find';
 import { askLink, followLink, linkTip } from './links-ui';
+import { DocSiPanel, DocSiUI, type SiAccess } from './doc-si';
 import { bookmarkName, linkAtPoint } from '../links';
 import { addBookmark, bookmarkPara, bookmarksOf, docPlaces, placeLink, placeName, removeBookmark } from '../document/bookmarks';
 import { DocComments } from './doc-comments';
@@ -75,7 +76,7 @@ import { DocNav } from './doc-nav';
 import { DocInsertUI } from './doc-insert-ui';
 import { DocParagraphUI } from './doc-paragraph-ui';
 import { DocArrangeUI } from './doc-arrange-ui';
-import type { DocDesign } from '../document/document';
+import type { DocDesign, SiLink } from '../document/document';
 import { setParaSpacing, setStyleSet, setTheme, setThemeColors, setThemeFonts, PARA_SPACINGS, STYLE_SETS, THEMES, THEME_COLORS, THEME_FONTS } from '../document/themes';
 import { groupOf, turnOf, withFloats } from '../document/arrange';
 import { PLACE_MARGIN, type InPlace } from './in-place';
@@ -92,7 +93,7 @@ import { lookOfTable } from '../document/table-styles';
 import type { BorderLine, BorderSide, TableLook } from '../model';
 import { BREAK_NAMES, changeSection, newBreak, pageNumText, sectionAt, sectionsOf, type Section, type SectionPatch } from '../document/sections';
 import {
-  type HfKey, A4, COMPOUND, INCH, LETTER, OBJECT_CHAR, CAPTION_NAMES, END_FORMAT, FOOT_FORMAT, captionRuns, noteLabel, noteStyle, nextObjectId, objectRun, objectsInText, runStyleOf, setParaStyle, styleOf, fieldTexts, objectOffsets, inlineMove,
+  type HfKey, A4, COMPOUND, INCH, LETTER, OBJECT_CHAR, CAPTION_NAMES, END_FORMAT, FOOT_FORMAT, captionRuns, noteLabel, noteStyle, nextObjectId, pastedObjects, objectRun, objectsInText, runStyleOf, setParaStyle, styleOf, fieldTexts, objectOffsets, inlineMove,
   floatOf, lookExtent, lookOf, cellHolding, innerObjects, emptyContents,
   WATERMARKS, applyCharStyle, charStylesOf, clearCharStyle, clearFormatting, defaultPageBorder, defaultWatermark, deleteStyle, modifyCharStyle, newCharStyle, newParaStyle, withStyle,
   type CharStyle, type PageBorder, type Watermark,
@@ -101,6 +102,12 @@ import {
 
 export interface DocModeHost {
   flash(msg: string, ms?: number): void;
+  /** SI projects, for manuscripts linked to their SI (the desktop app). */
+  si?(): SiAccess | null;
+  /** An SI compound's structure as an SVG picture (for the Linked SI panel). */
+  siPicture?(link: SiLink, key: string): Promise<string | null>;
+  /** Show the side panel if it is closed (the Linked SI panel is in it). */
+  revealSide?(): void;
   /** A key the document doesn't use itself (menu commands). True when it did something. */
   key(e: KeyboardEvent): boolean;
   /** One of the app's commands (a ribbon button the document doesn't run itself). */
@@ -291,6 +298,19 @@ export class DocumentMode {
   readonly nav: DocNav;
   /** Insert > Cover Page, Blank Page, Quick Parts, Date and Time, and cross-references. */
   readonly inserts: DocInsertUI;
+  /** References ▸ Compounds and SI: the manuscript's link to its SI project. */
+  readonly siUi: DocSiUI;
+  private readonly siPanel: DocSiPanel;
+  /** Counts the changes of SI projects, and the count each document last followed. */
+  private siTick = 0;
+  private siSeen = new WeakMap<DocFile, number>();
+  /** A name for each open document, to know a copy pasted back into the document it came from. */
+  private docKeys = new WeakMap<DocFile, string>();
+  private docKey(f: DocFile): string {
+    let k = this.docKeys.get(f);
+    if (!k) { k = `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`; this.docKeys.set(f, k); }
+    return k;
+  }
   /** Home > Borders, Shading and Sort. */
   readonly paragraphs: DocParagraphUI;
   readonly proofing: DocProofingUI;
@@ -412,6 +432,24 @@ export class DocumentMode {
       showFound: () => this.redraw(),
       resized: () => { for (const v of this.views) v.resize(); this.redraw(); },
       focus: () => this.focus(),
+    });
+    this.siUi = new DocSiUI({
+      file: () => this.file,
+      ed: () => this.ed,
+      insertObject: (o, kind, look) => this.insertObject(o, kind, look),
+      flash: (msg, ms) => this.host.flash(msg, ms),
+      focus: () => this.focus(),
+      si: () => this.host.si?.() ?? null,
+      reveal: () => this.host.revealSide?.(),
+    });
+    this.siPanel = new DocSiPanel($('#msi-section'), $('#msi-body'), this.siUi, {
+      file: () => this.file,
+      ed: () => this.ed,
+      insertObject: (o, kind, look) => this.insertObject(o, kind, look),
+      flash: (msg, ms) => this.host.flash(msg, ms),
+      focus: () => this.focus(),
+      si: () => this.host.si?.() ?? null,
+      picture: (link, key) => this.host.siPicture?.(link, key) ?? Promise.resolve(null),
     });
     this.inserts = new DocInsertUI({
       file: () => this.file,
@@ -1021,6 +1059,17 @@ export class DocumentMode {
   // ---------------------------------------------------------------- showing a tab
 
   /** A document tab came to the front (or null: another kind of tab). */
+  /** An SI project changed (or was opened or closed): the linked document's labels, pages and panel follow it. */
+  siChanged(path: string | null): void {
+    // (documents not shown now follow it when they are next shown)
+    this.siTick++;
+    const f = this.file;
+    if (!f?.t.siLink || (path !== null && f.t.siLink.path !== path)) return;
+    this.siSeen.set(f, this.siTick);
+    this.siPanel.forget();
+    void this.siUi.update(false, false, true).then(() => this.siPanel.refresh());
+  }
+
   show(tab: Tab | null): void {
     if (this.tab && this.tab !== tab) { this.leave(); this.figureOffer.leave(); }
     this.tab?.document?.endBox();
@@ -1028,6 +1077,8 @@ export class DocumentMode {
     const f = tab?.document ?? null;
     for (const v of this.views) v.file = f;
     if (!f) {
+      const msi = document.getElementById('msi-section');
+      if (msi) msi.hidden = true;
       if (this.blink) { clearInterval(this.blink); this.blink = null; }
       this.panel.closeBoxes();
       this.fontBox?.close();
@@ -1037,6 +1088,12 @@ export class DocumentMode {
       return;
     }
     f.listener = (kind) => this.changed(kind);
+    // the SI changed while this document wasn't shown (or it was just opened): its labels and pages follow it now
+    if (f.t.siLink && this.siSeen.get(f) !== this.siTick) {
+      this.siSeen.set(f, this.siTick);
+      void this.siUi.update(false, false, true).then(() => { if (this.file === f) this.siPanel.refresh(); });
+    }
+    this.siPanel.refresh();
     f.onRefused = () => this.indexes.refused(f);
     // chemistry as it's typed: CH2Cl2 becomes a formula, -> an arrow… (Edit > Typing and Spelling)
     f.ed.onTyped = (typed) => afterTyping(f.ed, typed);
@@ -1118,6 +1175,8 @@ export class DocumentMode {
   private changed(kind: 'text' | 'selection'): void {
     const f = this.file;
     if (!f) return;
+    // the Linked SI panel follows the text (soon after typing stops)
+    if (kind === 'text' && (f.t.siLink || document.getElementById('msi-section')?.hidden === false)) this.siPanel.refresh(700);
     // text with similar formatting stays selected until the caret moves or the text changes another way
     if (this.similar && (this.similar.t !== f.t || f.ed.start !== this.similar.at[0] || f.ed.end !== this.similar.at[1])) this.similar = null;
     // the text box being typed into was taken away (Undo, Cut)
@@ -1919,8 +1978,9 @@ export class DocumentMode {
     const references = (f.t.references ?? []).filter((r) => cited.has(r.id));
     // (comments stay with the words they are on: a copy doesn't bring them)
     const runs = sel.runs.map((r) => { if (!r.cmt) return r; const { cmt: _, ...rest } = r; return rest; });
-    this.clip = { text: plain, runs, paras: sel.paras, objects, references };
-    try { e.clipboardData.setData('application/x-' + OWN_KIND, JSON.stringify({ runs, paras: sel.paras, objects, references })); } catch { /* not every browser allows own types */ }
+    const from = this.docKey(f);
+    this.clip = { text: plain, runs, paras: sel.paras, objects, references, from };
+    try { e.clipboardData.setData('application/x-' + OWN_KIND, JSON.stringify({ runs, paras: sel.paras, objects, references, from })); } catch { /* not every browser allows own types */ }
     // a picture on its own also goes as a PNG, for other programs and the other modes (which takes
     // the clipboard over: pasted back here, it is known by its size and comes back as copied)
     if (lone?.kind === 'picture' && this.host.copyPicture) {
@@ -2005,19 +2065,16 @@ export class DocumentMode {
   /** Paste text copied in a document here, with new ids for its figures and fields. */
   private pasteOwn(own: OwnCopy): void {
     const f = this.file!;
-    let next = nextObjectId(f.t);
-    const ids = new Map<number, number>();
-    const objects = { ...f.t.objects };
-    for (const [k, o] of Object.entries(own.objects)) {
-      const id = next++;
-      ids.set(Number(k), id);
-      objects[id] = o;
-    }
+    const { ids, objects } = pastedObjects(f.t, own.objects, own.from === this.docKey(f));
     // a pasted reference keeps pointing at its pasted caption, or at the caption it pointed to here
     const remap = (runs: TextRun[]) => runs.map((r) => (r.obj !== undefined ? { ...r, obj: ids.get(r.obj) } : r)).filter((r) => r.obj !== undefined || !r.text.includes(OBJECT_CHAR));
     for (const [, id] of ids) {
       const o = objects[id];
-      if (o.kind === 'ref' && ids.has(o.target)) objects[id] = { ...o, target: ids.get(o.target)! };
+      if (o.kind === 'ref' && ids.has(o.target)) {
+        // (a compound number pasted as another mention of the number still here: that number is the target)
+        const to = objects[ids.get(o.target)!];
+        objects[id] = { ...o, target: to?.kind === 'ref' ? to.target : ids.get(o.target)! };
+      }
       // the structures in a pasted table's cells are its own copies
       if (o.kind === 'table') objects[id] = { ...o, table: { ...o.table, rows: o.table.rows.map((row) => row.map((cell) => ({ ...cell, runs: remap(cell.runs) }))) } };
       // and the citations in a pasted footnote
@@ -2659,6 +2716,9 @@ export class DocumentMode {
     if (((isMac ? e.metaKey : e.ctrlKey) || this.reading) && !e.shiftKey && !e.altKey) {
       const link = this.linkAtPoint(p);
       if (link) { void followLink(link); return; }
+      // a compound number or label of the linked SI: open it in the SI
+      const si = f.box ? null : DocSiUI.fieldAt(f.layout().text, f.t, p.x, p.y);
+      if (si !== null) { this.siUi.follow(si); return; }
     }
     const now0 = performance.now();
     const c0 = this.clicks;
@@ -2799,8 +2859,8 @@ export class DocumentMode {
         ed.select(at, at + 1);
         // a floating figure is moved by dragging it
         const fl = floatOf(obj);
-        // (a group moves together)
-        if (fl) { this.dragging = { kind: 'move', id, from: p, float: fl, moved: false, others: groupOf(f.t, id).filter((x) => x !== id).map((x) => [x, floatOf(f.t.objects[x])!]) }; s.setPointerCapture(e.pointerId); }
+        // (a group moves together; Alt-drag moves one of it on its own, as a Canvas label is)
+        if (fl) { this.dragging = { kind: 'move', id, from: p, float: fl, moved: false, others: e.altKey ? [] : groupOf(f.t, id).filter((x) => x !== id).map((x) => [x, floatOf(f.t.objects[x])!]) }; s.setPointerCapture(e.pointerId); }
         // one in line with the text is dragged to another place in the text, as in Word
         else if (obj?.kind !== 'table' && !f.box) { this.dragging = { kind: 'inline', id, from: p, to: null }; s.setPointerCapture(e.pointerId); }
         return;
@@ -2840,9 +2900,10 @@ export class DocumentMode {
       const across = box && picked !== null ? this.cornerAt(picked, box, p) : null;
       // a structure: a hand, since a double-click opens it for drawing (and a click picks it)
       const link = id === null || o?.kind === 'table' || o?.kind === 'textbox' ? this.linkAtPoint(p) : null;
-      const tip = link ? linkTip(link, !this.reading) : '';
+      const siField = !link && id === null && !f.box ? DocSiUI.fieldAt(f.layout().text, f.t, p.x, p.y) : null;
+      const tip = link ? linkTip(link, !this.reading) : siField !== null ? this.siUi.tip(siField) : '';
       if (this.view.scroller.title !== tip) this.view.scroller.title = tip;
-      if (link && (this.reading || (isMac ? e.metaKey : e.ctrlKey))) { this.view.scroller.style.cursor = 'pointer'; return; }
+      if ((link || siField !== null) && (this.reading || (isMac ? e.metaKey : e.ctrlKey))) { this.view.scroller.style.cursor = 'pointer'; return; }
       if (this.tables.painting && this.cellAt(p)) { this.view.scroller.style.cursor = 'crosshair'; return; }
       if (this.painter && !this.reading) { this.view.scroller.style.cursor = BRUSH; return; }
       this.view.scroller.style.cursor = across && across.left !== across.top ? 'nesw-resize' : corner || across ? 'nwse-resize' : id === null || o?.kind === 'table' ? 'text'
@@ -3625,6 +3686,12 @@ export class DocumentMode {
       case 'insert-caption': void this.insertCaption(); break;
       case 'cross-reference': void this.crossReference(); break;
       case 'compound-number': void this.compoundNumber(); break;
+      case 'si-link': void this.siUi.linkMenu(); break;
+      case 'si-compound': void this.siUi.insertCompound(); break;
+      case 'si-reference': void this.siUi.insertReference(); break;
+      case 'si-check': void this.siUi.showCheck(); break;
+      case 'si-update': void this.siUi.update(true, true); break;
+      case 'si-renumber': void this.siUi.renumberSi(); break;
       case 'insert-citation': void this.insertCitation(); break;
       case 'zotero-cite': void this.zotero('addEditCitation'); break;
       case 'zotero-bib': void this.zotero('addEditBibliography'); break;
@@ -5428,7 +5495,7 @@ export class DocumentMode {
 }
 
 /** Our own copy of document text: its runs, paragraphs, figures and fields, and the references its citations cite. */
-interface OwnCopy { runs: TextRun[]; paras: ParaStyle[]; objects: Record<number, DocObject>; references?: Reference[] }
+interface OwnCopy { runs: TextRun[]; paras: ParaStyle[]; objects: Record<number, DocObject>; references?: Reference[]; /** Which open document it was copied from (so a compound number pasted back into it stays the same compound). */ from?: string }
 
 /** Is this pasted HTML a table and nothing more (cells copied), rather than text with a table in it? */
 export function onlyTable(html: string): boolean {

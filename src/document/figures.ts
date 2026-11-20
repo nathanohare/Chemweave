@@ -7,6 +7,7 @@ import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
 import { structureDoc } from '../sheet/structure-doc';
 import { recordPicture, pictureCanvas, type Picture } from '../render/picture';
+import { imageLoading } from '../render/images';
 
 /** Space round a drawing's picture, in points (as for structures in sheet cells). */
 export const FIGURE_MARGIN = 1.5;
@@ -82,6 +83,12 @@ export class FigurePictures {
     const r = this.record(contents, style);
     if (!r.pic) return null;
     const { canvas } = pictureCanvas(r.doc, r.pic, step * 72);
+    // a picture in it still loading (a crystal structure, a photo): drawn without it for now, and
+    // not kept, so it is drawn again with the picture once it has loaded
+    if (contents.shapes.some((s) => s.kind === 'picture' && !!s.src && !s.chart && !s.math && imageLoading(s.src))) {
+      this.recorded.delete(contents);
+      return canvas;
+    }
     this.bitmaps.set(key, canvas);
     this.bytes += canvas.width * canvas.height * 4;
     // the oldest go first, when there are too many or they take too much memory (a figure zoomed right in is big)

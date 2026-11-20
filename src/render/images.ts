@@ -47,6 +47,13 @@ export function showableSrc(src: string): string | null {
   return s;
 }
 
+/** Whether a picture is still loading (starting it when it hasn't been asked for yet): false once it is ready or has failed. */
+export function imageLoading(src: string): boolean {
+  if (imageFor(src)) return false;
+  const e = cache.get(src);
+  return !!e && !e.failed && typeof Image !== 'undefined';
+}
+
 /** The decoded image, or null while it loads (or when it can't be shown). */
 export function imageFor(src: string): HTMLImageElement | null {
   let e = cache.get(src);

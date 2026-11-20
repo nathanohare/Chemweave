@@ -19,9 +19,11 @@
         <button role="menuitem" data-cmd="new-sheet">Spreadsheet (Tables, Charts, and Dashboards)</button>
         <button role="menuitem" data-cmd="new-document">Document (Text Document)</button>
         <button role="menuitem" data-cmd="new-design">Design (Posters, Graphical Abstracts, Figures)…</button>
+        <button role="menuitem" class="desktop-only" data-cmd="new-si-project" title="A new Supporting Information project: a folder Chem SI Assistant can open too" hidden>SI Project (Supporting Information)…</button>
     </div>
     </div>
         <button role="menuitem" data-cmd="open">Open…</button>
+        <button role="menuitem" class="desktop-only" data-cmd="open-si-project" title="Open a Chem SI Assistant project folder in a tab of its own" hidden>Open SI Project…</button>
     <div class="submenu" id="recent-sub" hidden>
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Open Recent</button>
     <div class="menu sub" role="menu" hidden>
@@ -1873,8 +1875,14 @@
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-doc="compound-number" title="A bold compound number: a new compound gets the next number, and mentions of it follow when numbers change"><span class="rb-icon"><b>1</b></span>Compound Number</button>
+          <button class="rb-big si-accent" data-doc="si-link" data-ic="si-link" title="Link this manuscript to its SI project: compound numbers, labels (Table S1) and pages (S6) follow the SI. Ctrl+click a linked number to open it in the SI"><span class="rb-icon">🔗</span>Linked SI</button>
+          <div class="rb-col">
+            <button class="rb-labelled si-accent" data-doc="si-compound" data-ic="si-compound" title="A compound's ID from the linked SI, in bold, which changes when the SI renumbers"><span class="rb-lead"></span>SI Compound…</button>
+            <button class="rb-labelled si-accent" data-doc="si-reference" data-ic="si-reference" title="A table's, figure's or scheme's label in the SI (Table S1), or the SI page something is on (S6)"><span class="rb-lead"></span>SI Reference…</button>
+            <button class="rb-labelled si-accent" data-doc="si-check" data-ic="si-check" title="Compare the manuscript with the SI: compounds missing from the SI, and yields, ee and dr that differ"><span class="rb-lead"></span>Check Against SI</button>
+          </div>
         </div>
-        <div class="rb-label">Compounds</div>
+        <div class="rb-label">Compounds and SI</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
@@ -3030,11 +3038,19 @@
       <h2>Style</h2>
       <div id="style-body"></div>
     </section>
+    <section id="si-section" hidden>
+      <h2>SI Compound</h2>
+      <div id="si-body"></div>
+    </section>
     <section id="layers-section" hidden></section>
     <section id="warnings-section">
       <h2>Warnings <span id="warnings-count" class="count"></span>
         <label class="check small" title="Red boxes around problems on the drawing (never printed, saved or copied)"><input id="show-warnings" type="checkbox" checked /> Show on Drawing</label></h2>
       <div id="warnings-body"><p class="muted">No problems found.</p></div>
+    </section>
+    <section id="msi-section" hidden>
+      <h2>Linked SI <span class="info-i" title="The SI project this manuscript is linked to (References ▸ Linked SI): how the manuscript's compounds agree with it. The manuscript's compound numbers lead; Renumber SI gives the SI the same IDs. Double-click a compound to open it in the SI.">i</span></h2>
+      <div id="msi-body"></div>
     </section>
     <section id="doc-section">
       <h2>Format</h2>

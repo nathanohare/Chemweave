@@ -30,3 +30,10 @@ opsin-js/target/
 !tests/fixtures/chemdraw-clipboard/*.cdxml
 # files ChemDraw made from it: kept private, never committed
 tests/fixtures/chemdraw-private/
+# the manuscript check's made-up samples, written by SI Assistant's test makers (tests/si-manuscript-check.test.ts)
+!tests/fixtures/manuscript/files/*.pdf
+!tests/fixtures/manuscript/files/*.cdxml
+!tests/fixtures/manuscript/files/*.cdx
+!tests/fixtures/si-import-pdf/*.pdf
+!tests/fixtures/si-import/files/*.docx
+!tests/fixtures/si-import/spectra/*.docx

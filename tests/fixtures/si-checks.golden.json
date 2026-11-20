@@ -1,0 +1,307 @@
+{
+ "c-26c39a99": [
+  {
+   "check": "hrms",
+   "field": "hrms",
+   "key": "hrms:ppm",
+   "fp": "98746b0a425d",
+   "legacy": "d0738319d0c2",
+   "message": "HRMS error +52.5 ppm is outside the ±5 ppm tolerance.",
+   "dismissed": false
+  },
+  {
+   "check": "h1",
+   "field": "nmr",
+   "key": "h1:r-77b66975",
+   "fp": "eeecbfbfb4da",
+   "legacy": "",
+   "message": "¹H NMR integrations add up to 11 H; the structure has 10 H.",
+   "dismissed": false
+  },
+  {
+   "check": "c13",
+   "field": "nmr",
+   "key": "c13:r-a2c773f9",
+   "fp": "cd3fc913cecd",
+   "legacy": "",
+   "message": "¹³C NMR lists 5 signals; the structure has 6 symmetry-distinct carbons. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)",
+   "dismissed": false
+  },
+  {
+   "check": "coupling",
+   "field": "nmr",
+   "key": "coupling:r-77b66975",
+   "fp": "0ec8dbb04690",
+   "legacy": "",
+   "message": "¹H NMR: J = 26.5 Hz is larger than 20 Hz. H–H coupling constants are rarely this large: check it for a typo.",
+   "dismissed": false
+  },
+  {
+   "hrms": [
+    145.06238564009098,
+    52.49024325233943,
+    145.06238564009098,
+    "C8H10NaO"
+   ]
+  }
+ ],
+ "c-cf3f4417": [
+  {
+   "check": "h1",
+   "field": "nmr",
+   "key": "h1:r-b8f859a6",
+   "fp": "79a57b1bbc2b",
+   "legacy": "",
+   "message": "¹H NMR integrations add up to 13 H; the structure has 12 H.",
+   "dismissed": false
+  },
+  {
+   "check": "impurity",
+   "field": "nmr",
+   "key": "impurity:r-b8f859a6:7.26",
+   "fp": "549b4c7908be",
+   "legacy": "",
+   "message": "¹H NMR: δ 7.26 (s) is where residual CHCl₃ appears in CDCl₃ — check it isn't a solvent or impurity peak.",
+   "dismissed": false
+  },
+  {
+   "check": "yield",
+   "field": "yield",
+   "key": "yield",
+   "fp": "b769ae3a0e30",
+   "legacy": "",
+   "message": "80.0 mg of this compound (MW 152.19) from 0.50 mmol is 105.1%, not 91%. (If the yield is based on a different reagent or stoichiometry, dismiss this warning.)",
+   "dismissed": false
+  },
+  {
+   "check": "spectra",
+   "field": "spectra",
+   "key": "spectra:missing:13C",
+   "fp": "107323c2c4fa",
+   "legacy": "cee1f104ac40",
+   "message": "There is a ¹³C NMR report but no ¹³C spectrum attached.",
+   "dismissed": false
+  },
+  {
+   "check": "frequency",
+   "field": "nmr",
+   "key": "frequency:r-1f4d4dbb",
+   "fp": "4903dbc80a50",
+   "legacy": "",
+   "message": "¹³C NMR at 150 MHz doesn't match ¹H at 500 MHz (expected ≈ 126 MHz).",
+   "dismissed": false
+  },
+  {
+   "hrms": [
+    175.07295032409098,
+    -0.8586368751025277,
+    175.07295032409098,
+    "C9H12NaO2"
+   ]
+  }
+ ],
+ "c-e2e36085": [
+  {
+   "check": "hrms",
+   "field": "hrms",
+   "key": "hrms:ppm",
+   "fp": "37512da8c079",
+   "legacy": "8a661e9a82f4",
+   "message": "HRMS error -89207.4 ppm is outside the ±5 ppm tolerance.",
+   "dismissed": false
+  },
+  {
+   "check": "hrms",
+   "field": "hrms",
+   "key": "hrms:formula-differs",
+   "fp": "37512da8c079",
+   "legacy": "8a661e9a82f4",
+   "message": "The typed M formula (C8H9ClO) differs from the structure's (C8H9FO).",
+   "dismissed": false
+  },
+  {
+   "check": "spectra",
+   "field": "nmr",
+   "key": "spectra:extra:19F",
+   "fp": "7c74b12e3a76",
+   "legacy": "efcfc8003995",
+   "message": "A ¹⁹F spectrum is attached but there is no ¹⁹F NMR report.",
+   "dismissed": false
+  },
+  {
+   "check": "frequency",
+   "field": "nmr",
+   "key": "frequency:r-417bf4c3",
+   "fp": "d38cdfef09b0",
+   "legacy": "",
+   "message": "¹³C NMR at 126 MHz doesn't match ¹H at 400 MHz (expected ≈ 101 MHz).",
+   "dismissed": true
+  },
+  {
+   "check": "heteroatom",
+   "field": "nmr",
+   "key": "heteroatom:19F",
+   "fp": "44d9c9a9dc0b",
+   "legacy": "f94895cf28a4",
+   "message": "The structure contains F but there is no ¹⁹F NMR data.",
+   "dismissed": false
+  },
+  {
+   "hrms": [
+    179.02341328809098,
+    -89207.40027669525,
+    179.02341328809098,
+    "C8H9ClNaO"
+   ]
+  }
+ ],
+ "c-1eebe878": [
+  {
+   "check": "hrms",
+   "field": "hrms",
+   "key": "hrms:ppm",
+   "fp": "868fd393c0b1",
+   "legacy": "4936c718ed4f",
+   "message": "Unknown element “Xx” in “Xx”.",
+   "dismissed": false
+  },
+  {
+   "check": "frequency",
+   "field": "nmr",
+   "key": "frequency:r-27e09363",
+   "fp": "1d3986b70d79",
+   "legacy": "",
+   "message": "¹³C NMR at 126 MHz doesn't match ¹H at 400 MHz (expected ≈ 101 MHz).",
+   "dismissed": true
+  }
+ ],
+ "c-ad564675": [
+  {
+   "check": "hrms",
+   "field": "hrms",
+   "key": "hrms:ppm",
+   "fp": "7ec90a8f3881",
+   "legacy": "",
+   "message": "HRMS error +1750803.4 ppm is outside the ±5 ppm tolerance.",
+   "dismissed": false
+  },
+  {
+   "check": "hrms",
+   "field": "hrms",
+   "key": "hrms:charged",
+   "fp": "7ec90a8f3881",
+   "legacy": "",
+   "message": "M is already charged (C5H6N+); it is usually reported as [M]⁺.",
+   "dismissed": false
+  },
+  {
+   "check": "h1",
+   "field": "nmr",
+   "key": "h1:r-c0e989ae",
+   "fp": "de97c689e187",
+   "legacy": "",
+   "message": "¹H NMR integrations add up to 9 H; the structure has 6 H.",
+   "dismissed": false
+  },
+  {
+   "check": "c13",
+   "field": "nmr",
+   "key": "c13:r-592d0341",
+   "fp": "5fb5115bc1e0",
+   "legacy": "",
+   "message": "¹³C NMR lists 6 signals; the structure has 4 symmetry-distinct carbons. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)",
+   "dismissed": false
+  },
+  {
+   "check": "yield",
+   "field": "yield",
+   "key": "yield",
+   "fp": "7aa77e6fd8aa",
+   "legacy": "",
+   "message": "95.5 mg of this compound (MW 229.18) from 0.50 mmol is 83.3%, not 95%. (If the yield is based on a different reagent or stoichiometry, dismiss this warning.)",
+   "dismissed": false
+  },
+  {
+   "check": "heteroatom",
+   "field": "nmr",
+   "key": "heteroatom:19F",
+   "fp": "bda9afc0dd82",
+   "legacy": "aeacb2654867",
+   "message": "The structure contains F but there is no ¹⁹F NMR data.",
+   "dismissed": false
+  },
+  {
+   "hrms": [
+    81.057300644091,
+    1750803.4221252408,
+    81.057300644091,
+    "C5H7N"
+   ]
+  }
+ ],
+ "c-bfbaadc9": [
+  {
+   "check": "impurity",
+   "field": "nmr",
+   "key": "impurity:r-d6cb9885:128.4",
+   "fp": "2cb07b3df80a",
+   "legacy": "",
+   "message": "¹³C NMR: δ 128.4 is where benzene appears in CDCl₃ — check it isn't a solvent or impurity peak.",
+   "dismissed": true
+  },
+  {
+   "check": "citation",
+   "field": "references",
+   "key": "citation:references:r-missing1",
+   "fp": "2ec630d63332",
+   "legacy": "",
+   "message": "This cites a reference that is no longer in the References list; it will be left out of the SI.",
+   "dismissed": false
+  },
+  {
+   "check": "mention",
+   "field": "procedure",
+   "key": "mention:procedure:c-deadbeef",
+   "fp": "20e84f1b2344",
+   "legacy": "",
+   "message": "This text mentions a compound that has been deleted (printed as “??”). Restore it from the Trash, or remove the mention.",
+   "dismissed": false
+  },
+  {
+   "check": "gp",
+   "field": "procedure",
+   "key": "gp:value:mass",
+   "fp": "254953efc736",
+   "legacy": "e1fd7ee508df",
+   "message": "“General Procedure A” needs a value for {mass} (it would be printed as [mass]).",
+   "dismissed": false
+  },
+  {
+   "check": "gp",
+   "field": "procedure",
+   "key": "gp:scale-differs",
+   "fp": "f8590d52792e",
+   "legacy": "",
+   "message": "The {scale} box of “General Procedure A” says “0.30 mmol”, but the Reaction scale field says 0.50 mmol. The Reaction scale field is printed: change whichever is wrong.",
+   "dismissed": false
+  },
+  {
+   "hrms": [
+    195.07803570409098,
+    0.3295907137626309,
+    195.07803570409098,
+    "C12H12NaO"
+   ]
+  }
+ ],
+ "c-6c300e43": [
+  {
+   "hrms": [
+    264.983462392091,
+    0.8966895777913694,
+    264.983462392091,
+    "C10H11BrNaO2"
+   ]
+  }
+ ]
+}

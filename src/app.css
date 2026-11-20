@@ -33,6 +33,7 @@
   --tab-sheet: var(--mode-sheet, #1e8a50);
   --tab-document: var(--mode-document, #2647a8);
   --tab-design: var(--mode-design, #7b3fbf);
+  --tab-si: var(--mode-si, #b4234f);
   --surround: #d5d8de;
   /* the paper behind clip-art previews: always light, so black outlines show in dark mode too */
   --tile: transparent;
@@ -768,7 +769,7 @@ footer {
 }
 #hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .zoom-pick select { font: var(--fs-sm) var(--ui-font); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 1px 4px; }
-body.sheet-mode .canvas-only, body.doc-mode:not(.split-view) .canvas-only { display: none; }
+body.sheet-mode .canvas-only, body.doc-mode:not(.split-view) .canvas-only, body.si-mode .canvas-only { display: none; }
 
 #flash {
   position: fixed;
@@ -1130,6 +1131,7 @@ dialog.typing-dialog p { margin: 2px 0 6px; }
 .tab-sheet .tab-icon { background: var(--tab-sheet); }
 .tab-document .tab-icon { background: var(--tab-document); }
 .tab-design .tab-icon { background: var(--tab-design); }
+.tab-si .tab-icon { background: var(--tab-si); }
 .tab-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.dirty .tab-name::before { content: '• '; color: var(--accent); }
 .tab-close { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--r-control); background: transparent; color: var(--muted); font-size: var(--fs-lg); line-height: 1; }
@@ -1453,7 +1455,7 @@ body.boxed-drawing #structure-bar .muted { overflow: hidden; text-overflow: elli
 body.boxed-drawing #structure-bigger { display: inline-block; }
 /* the pop-out drawing area has no scroll bars (the wheel and Space+drag move round it) */
 body.floating-drawing #canvas-host .scrollbar { display: none; }
-body.floating-drawing #sheet-ribbon, body.floating-drawing #doc-ribbon { opacity: 0.55; pointer-events: none; }
+body.floating-drawing #sheet-ribbon, body.floating-drawing #doc-ribbon, body.floating-drawing #si-ribbon { opacity: 0.55; pointer-events: none; }
 /* a document's structure drawn in place: a clear drawing layer exactly over the pages (placed from
    script), the page under it showing the structure as it is drawn; the bar floats over the page */
 body.doc-mode.drawing-in-place #canvas-host {
@@ -1585,7 +1587,7 @@ dialog.sheet-preview:not([open]) { display: none; }
 #cell-section, #doc-section { display: none; }
 body.doc-mode:not(.floating-drawing):not(.split-drawing) #doc-section { display: block; }
 body.doc-mode:not(.floating-drawing):not(.split-drawing) #doc-section, body.sheet-mode:not(.floating-drawing):not(.split-drawing) #cell-section { margin-top: 0; border-top: 0; padding-top: 0; }
-body.doc-mode:not(.floating-drawing):not(.split-drawing) #side-content > section:not(#doc-section) { display: none; }
+body.doc-mode:not(.floating-drawing):not(.split-drawing) #side-content > section:not(#doc-section):not(#msi-section) { display: none; }
 body.sheet-mode:not(.floating-drawing):not(.split-drawing) #cell-section { display: block; }
 body.sheet-mode:not(.floating-drawing):not(.split-drawing) #side-content > section:not(#cell-section) { display: none; }
 .cell-name { font-family: var(--mono-font); text-transform: none; letter-spacing: 0; color: var(--accent); margin-left: 4px; }
@@ -1808,7 +1810,7 @@ body.ribbon-collapsed .ribbon.rb-peek > .rb-tabs [role='tab'][aria-selected='tru
 .ribbon button.rb-launch:hover { background: var(--hover, rgb(0 0 0 / 0.08)); color: var(--text); }
 /* ------------------------------------------------------------------ the Canvas ribbon */
 /* (only on a Canvas: the other modes have ribbons of their own) */
-body.slides-mode #canvas-ribbon, body.design-mode #canvas-ribbon, body.sheet-mode #canvas-ribbon, body.doc-mode #canvas-ribbon { display: none; }
+body.slides-mode #canvas-ribbon, body.design-mode #canvas-ribbon, body.sheet-mode #canvas-ribbon, body.doc-mode #canvas-ribbon, body.si-mode #canvas-ribbon { display: none; }
 /* three rows of buttons under the tabs, as the other ribbons have, with the group names under them;
    the major commands picture over name, all three rows tall */
 .canvas-ribbon > .rb-panel { align-items: stretch; }
@@ -3011,6 +3013,7 @@ dialog.settings-window { max-width: none; }
 .sw-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); }
 .sw-foot .sw-note { margin-right: auto; font-size: var(--fs-sm, 0.85em); }
 .sw-foot.sw-actions .sw-default, .sw-foot.sw-actions .sw-apply { display: none; }
+.sw-no-default .sw-default { display: none; }
 .sw-pane .sw-hidden { display: none !important; }
 /* labels on one line where the window has room; the pane scrolls as a whole (no inner scroll box with empty room under it) */
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > .ask-name { max-width: 26em; }
@@ -3044,6 +3047,8 @@ dialog.settings-window { max-width: none; }
 .rb-fold-name { display: block; }
 .ribbon .rb-style.rb-gal-out { display: none; }
 .rb-group.rb-folded > :not(.rb-fold-btn) { display: none; }
+/* (a folded group that had first stepped down to small buttons: its row's grid would show it again) */
+.rb-group.rb-folded:not(.rb-popped) > .rb-row { display: none; }
 .rb-group.rb-folded.rb-popped > .rb-row { display: flex; position: fixed; z-index: 60; left: var(--pop-x); top: var(--pop-y); max-width: calc(100vw - 8px); padding: 6px 8px;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-tab); box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); }
 .rb-group.rb-folded > .rb-launch { display: none; }
@@ -4692,6 +4697,345 @@ dialog.analysis-settings .ask-form { display: block; }
 .as-cap { white-space: normal; }
 .as-calc-preview { grid-column: 1 / -1; padding: 4px 8px; border: 1px dashed var(--line); border-radius: var(--r-control); font-size: var(--fs-sm); }
 
+/* ------------------------------------------------------------------ SI projects (src/ui/si-mode.ts) */
+
+/* the project's sections and compounds on the left, the page picked beside them; the drawing area,
+   the drawing tools and the side panel come back only while a structure is drawn */
+body.si-mode #canvas-host { display: none; }
+body.si-mode:not(.floating-drawing) :is(#dock-left, #dock-right) { display: none; }
+/* (a toolbox floated out of the docks stays with the drawing modes, as the docks do) */
+body.si-mode:not(.floating-drawing) .toolbox.floating { display: none; }
+body.si-mode.floating-drawing #canvas-host { display: block; }
+body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
+#si-pane { grid-area: host; display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr) var(--si-live-w, 400px); min-width: 0; min-height: 0; background: var(--surround); }
+#si-pane.si-live-off { grid-template-columns: minmax(200px, 260px) minmax(0, 1fr) 22px; }
+/* the live preview: the page picked as it prints, on the right; folded to a strip */
+.si-live { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--line); background: var(--surround); }
+.si-live-grip { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
+.si-live-head { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: var(--fs-sm); white-space: nowrap; }
+.si-live-title { font-weight: 600; }
+.si-live-state { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.si-live-gap { flex: 1; }
+.si-live-btn { width: 22px; height: 20px; font-size: 12px; }
+.si-live-host { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.si-live-host .doc-scroll { cursor: default; }
+.si-live-host[hidden] { display: none; }
+.si-live-empty { padding: 16px 12px; font-size: var(--fs-sm); }
+.si-live-empty[hidden] { display: none; }
+.si-live-strip { display: none; }
+.si-live.off > * { display: none; }
+.si-live.off > .si-live-strip { display: block; flex: 1; border: 0; padding: 8px 0; background: var(--panel); color: var(--muted); font-size: var(--fs-sm); writing-mode: vertical-rl; cursor: pointer; }
+.si-live.off > .si-live-strip:hover { color: var(--text); background: var(--accent-soft); }
+#si-pane[hidden] { display: none; }
+.si-ic { flex: none; vertical-align: -2px; }
+
+.si-tree { overflow: auto; padding: 4px 0; background: var(--panel); border-right: 1px solid var(--line); font-size: var(--fs-sm); }
+.si-row { display: flex; align-items: center; gap: 5px; min-height: 22px; padding: 1px 6px; color: var(--text); cursor: default; white-space: nowrap; }
+.si-row:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.si-row.on { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.si-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.si-row > .si-ic { color: var(--muted); }
+.si-row-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.si-root { font-weight: 600; border-bottom: 1px solid var(--line); margin-bottom: 2px; padding-top: 3px; padding-bottom: 4px; }
+.si-root > .si-ic { color: var(--accent); }
+.si-scheme { font-style: italic; color: var(--muted); }
+.si-cid { color: var(--accent); font-weight: 700; }
+.si-st { display: inline-flex; flex: none; color: var(--muted); }
+.si-st.ok { color: var(--ok); }
+.si-st.warn { color: var(--warn); }
+.si-st.flag { color: var(--slow); }
+
+.si-page { overflow: auto; padding: 10px 12px 24px; }
+.si-sheet { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.si-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 10px; }
+.si-title { margin: 0 0 6px; font-size: var(--fs-lg, 15px); font-weight: 600; }
+.si-sub { margin: 0 0 6px; font-size: var(--fs-sm); font-weight: 600; text-transform: none; }
+.si-note { margin: 0; font-size: var(--fs-sm); }
+.si-warnings { background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); border-radius: var(--r-control); padding: 4px 10px; color: var(--text); font-size: var(--fs-sm); }
+.si-warnings p { margin: 2px 0; }
+.si-facts { border-collapse: collapse; font-size: var(--fs-sm); }
+.si-facts th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 14px 2px 0; }
+.si-facts td { padding: 2px 0; word-break: break-all; }
+.si-head-row { display: flex; align-items: center; gap: 8px; }
+.si-name-input { flex: 1; min-width: 0; font-size: var(--fs-lg, 15px); font-weight: 600; padding: 2px 4px; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--text); }
+.si-name-input:hover, .si-name-input:focus { border-color: var(--line); }
+.si-tools { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.si-btn { padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); font-size: var(--fs-sm); line-height: 18px; cursor: pointer; }
+.si-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.si-mini { width: 20px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--muted); font-size: 10px; line-height: 1; cursor: pointer; }
+.si-mini:hover:not(:disabled) { border-color: var(--line); color: var(--text); }
+.si-mini:disabled { opacity: 0.35; cursor: default; }
+.si-att-list { display: flex; flex-direction: column; gap: 4px; }
+.si-att { display: grid; grid-template-columns: 84px 1fr auto; gap: 8px; align-items: start; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); }
+.si-att-thumb { width: 84px; height: 64px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: var(--fs-xs); overflow: hidden; }
+.si-att-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.si-att-info { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.si-att-name { font-weight: 600; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-att-wide { flex: 1 1 180px; }
+.si-att .si-plabel { white-space: nowrap; }
+.si-att-wide input { width: 100%; }
+.si-att-tools { display: flex; gap: 2px; }
+.si-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.si-chip { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); font-size: var(--fs-xs); line-height: 18px; white-space: nowrap; }
+.si-chip.ok { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); color: var(--ok); }
+.si-chip.warn { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); color: var(--warn); white-space: normal; }
+.si-chip-btn { cursor: pointer; }
+.si-chip-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.si-x { border: 0; padding: 0 0 0 2px; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
+.si-x:hover { color: var(--slow); }
+
+/* the ID table: row, ID, the compound that has it */
+.si-idgrid { display: grid; grid-template-columns: 28px 90px minmax(0, 1fr) auto; gap: 1px 6px; align-items: center; font-size: var(--fs-sm); }
+.si-idrow { display: contents; }
+.si-rown { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.si-idrow input { width: 100%; box-sizing: border-box; padding: 1px 4px; font-weight: 600; }
+.si-idwho { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.si-fieldlist { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+.si-fieldrow { display: flex; align-items: center; gap: 2px; font-size: var(--fs-sm); }
+.si-fieldname { flex: 1; display: flex; align-items: center; gap: 6px; }
+
+/* a compound's page: the header, then one row per field */
+.si-cpd-head { display: grid; grid-template-columns: 150px minmax(0, 1fr); grid-template-areas: 'pic info' 'pic chips'; gap: 4px 12px; align-items: start; }
+.si-struct { grid-area: pic; width: 150px; height: 110px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-control); background: #fff; color: #1d2330; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; }
+.si-struct:hover { border-color: var(--accent); }
+.si-struct svg { max-width: 100%; max-height: 100%; }
+.si-cpd-info { grid-area: info; min-width: 0; }
+.si-cpd-head > .si-chips { grid-area: chips; }
+.si-cpd-head > .si-head-warn { grid-column: 1 / -1; }
+.si-cpd-title { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-lg, 15px); }
+.si-cpd-title .si-cid { font-size: 18px; }
+.si-cpd-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.si-cpd-facts { font-size: var(--fs-sm); margin: 2px 0; }
+.si-fields { padding: 2px 10px; }
+.si-field { display: grid; grid-template-columns: 150px minmax(0, 1fr) 22px; gap: 8px; align-items: start; padding: 5px 0; border-top: 1px solid var(--line); }
+.si-field:first-child { border-top: 0; }
+.si-flabel { padding-top: 3px; font-size: var(--fs-sm); font-weight: 500; color: var(--text); }
+.si-req { color: var(--accent); margin-left: 2px; }
+.si-fbody { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.si-fbody > .si-btn { align-self: flex-start; }
+.si-flag { width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--muted); opacity: 0.5; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.si-field:hover .si-flag, .si-flag:focus-visible { opacity: 1; }
+.si-flag.on { opacity: 1; color: var(--slow); }
+.si-flag:hover { border-color: var(--line); }
+.si-parts { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.si-part { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); }
+.si-part input, .si-part select { padding: 1px 4px; font-size: var(--fs-sm); max-width: 220px; }
+.si-part input.si-num { width: 6em; }
+.si-plabel { color: var(--muted); }
+/* SI checks: warnings under their field, the Warnings page, the HRMS line */
+.si-fwarn[hidden], .si-chip[hidden], .si-part[hidden] { display: none; }
+.si-fwarn { display: flex; flex-direction: column; gap: 2px; }
+.si-warn { display: flex; align-items: flex-start; gap: 5px; color: var(--warn); font-size: var(--fs-sm); line-height: 17px; }
+.si-warn > .si-ic { flex: none; margin-top: 2px; }
+.si-warn-text { min-width: 0; color: var(--text); }
+.si-warn.dismissed { color: var(--muted); }
+.si-warn.dismissed .si-warn-text { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 50%, transparent); }
+.si-warn-why { color: var(--muted); font-style: italic; }
+.si-link { flex: none; margin-left: auto; padding: 0 4px; border: 0; background: none; color: var(--accent); font-size: var(--fs-xs); line-height: 17px; cursor: pointer; white-space: nowrap; }
+.si-link:hover { text-decoration: underline; }
+.si-dismissed-chip.on { border-color: var(--accent); background: var(--accent-soft); }
+.si-calc { font-size: var(--fs-sm); line-height: 18px; }
+.si-calc b { color: var(--text); font-variant-numeric: tabular-nums; }
+.si-found-note { font-size: var(--fs-sm); line-height: 18px; }
+/* HRMS report files under the HRMS boxes: name, what was read, ✕ */
+.si-reports { margin-top: 4px; padding: 3px 6px; border: 1px dashed var(--line); border-radius: var(--r-control); font-size: var(--fs-sm); outline: none; }
+.si-reports:focus-visible, .si-reports.si-drop { border-color: var(--accent); background: var(--accent-soft); }
+.si-reports-head { display: flex; align-items: center; gap: 4px; }
+.si-reports-empty { line-height: 20px; }
+.si-report { display: grid; grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) auto; gap: 8px; align-items: baseline; line-height: 20px; }
+.si-report-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.si-report-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-reports-print { margin-top: 2px; }
+.si-reports-print select { width: auto; max-width: 100%; }
+.si-calc.bad, .si-bad { color: var(--warn); }
+.si-good { color: var(--ok); }
+.si-part input.si-manual { border-color: var(--accent); }
+.si-manual-mark { color: var(--accent); }
+.si-card-head { display: flex; align-items: center; gap: 10px; }
+.si-card-head > .si-title { margin-bottom: 0; }
+.si-check { margin-left: auto; font-size: var(--fs-sm); display: inline-flex; align-items: center; gap: 4px; }
+.si-sub { margin: 8px 0 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); text-transform: none; }
+.si-warn-list .si-warn { padding-left: 16px; }
+.si-warn-cpd { display: block; margin: 4px 0 1px; padding: 0; border: 0; background: none; color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.si-warn-cpd:hover { color: var(--accent); }
+.si-row.si-has-warn > .si-ic { color: var(--warn); }
+/* the Canvas's SI Compound card, in the side panel */
+#si-section > h2 { color: var(--tab-si, #b4234f); }
+.si-an + .si-an { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.si-an-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.si-an-table th { width: 70px; padding: 2px 8px 2px 0; text-align: left; font-weight: 400; color: var(--muted); vertical-align: top; }
+#side-content .si-an-table td { padding: 2px 0; font-family: inherit; }
+#side-content .si-an-table td.si-an-one { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-an .an-buttons { margin-top: 4px; }
+.si-an-id { color: var(--tab-si, #b4234f); }
+.si-an-status { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.si-an-chip { padding: 0 6px; border: 1px solid var(--line); border-radius: 9px; font-size: var(--fs-xs); line-height: 16px; white-space: nowrap; }
+.si-an-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.si-an-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+.si-suffix { color: var(--muted); }
+.si-gp-part { flex: 1 1 220px; }
+.si-gp-part .si-rich { flex: 1; }
+.si-nmr { display: grid; grid-template-columns: 70px minmax(0, 1fr) 20px; gap: 6px; align-items: start; }
+.si-nmr select { font-size: var(--fs-sm); padding: 1px 2px; }
+.si-refs { display: flex; flex-direction: column; margin: 6px 0 0; font-size: var(--fs-sm); }
+.si-ref-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 4px; padding: 3px 4px; border-radius: var(--r-control); cursor: default; outline: none; }
+.si-ref-row:hover { background: var(--hover, var(--accent-soft)); }
+.si-ref-row[aria-selected="true"] { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.si-ref-n { color: var(--muted); text-align: right; }
+.si-ref-uses { grid-column: 2; font-size: var(--fs-xs); }
+/* the Manuscript Check page */
+.si-ms.si-drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.si-ms.si-busy .si-ms-summary { color: var(--muted, var(--text)); }
+.si-ms-files { display: flex; flex-direction: column; margin: 2px 0 6px; font-size: var(--fs-sm); }
+.si-ms-file { display: flex; gap: 8px; align-items: baseline; padding: 2px 4px; border-radius: var(--r-control); cursor: default; outline: none; }
+.si-ms-file:hover { background: var(--hover, var(--accent-soft)); }
+.si-ms-file[aria-selected="true"] { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.si-ms-file.si-bad .si-ms-fname { color: var(--warn, #d35400); }
+.si-ms-kind { font-size: var(--fs-xs); }
+.si-ms-summary { margin: 2px 0 4px; font-weight: 600; font-size: var(--fs-sm); }
+.si-ms-notes { margin: 0 0 6px; padding-left: 18px; color: var(--warn, #d35400); font-size: var(--fs-xs); }
+.si-ms-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); table-layout: auto; }
+.si-ms-table th { text-align: left; font-weight: 600; padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.si-ms-table td { padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.si-ms-table tbody tr { cursor: default; outline: none; }
+.si-ms-table tbody tr:hover { background: var(--hover, var(--accent-soft)); }
+.si-ms-table tbody tr[aria-selected="true"] { background: var(--accent-soft); }
+.si-ms-table td:first-child { font-weight: 600; white-space: nowrap; }
+.si-ms-status { white-space: nowrap; }
+.si-ms-problem .si-ms-status { color: var(--warn, #d35400); }
+.si-ms-ok .si-ms-status { color: var(--ok, #2e7d32); }
+.si-ms-note td, .si-ms-dismissed td { color: var(--muted, #7f7f7f); }
+/* SI Project ▸ Import SI…: the review window (the list on the left, the item's page on the right) */
+dialog.si-import { width: min(96vw, 1120px); max-width: none; height: min(92vh, 820px); max-height: none; padding: 10px 12px; }
+dialog.si-import > form { display: flex; flex-direction: column; height: 100%; gap: 6px; }
+dialog.si-import h2 { margin: 0; }
+.si-imp-intro { margin: 0; font-size: var(--fs-sm); }
+.si-imp-notes { margin: 0; padding-left: 18px; font-size: var(--fs-sm); color: var(--muted); max-height: 5.5em; overflow-y: auto; }
+.si-imp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 300px) 1fr; border: 1px solid var(--line); border-radius: var(--r-control); }
+.si-imp-tree { overflow-y: auto; border-right: 1px solid var(--line); padding: 4px 0; font-size: var(--fs-sm); }
+.si-imp-item { display: flex; align-items: center; gap: 4px; padding: 0 6px; }
+.si-imp-group > .si-imp-item { padding-left: 16px; }
+.si-imp-group .si-imp-group > .si-imp-item { padding-left: 28px; }
+.si-imp-top > .si-imp-item { padding-left: 6px; }
+.si-imp-item.on { background: var(--accent-soft, color-mix(in srgb, var(--accent) 16%, transparent)); }
+.si-imp-label { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 2px 2px; font: inherit; color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.si-imp-head .si-imp-label { font-weight: 600; }
+.si-imp-head .si-imp-label:disabled { cursor: default; opacity: 1; }
+.si-imp-page { overflow-y: auto; padding: 8px 10px; min-width: 0; }
+.si-imp-form { display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; gap: 4px 8px; align-items: start; font-size: var(--fs-sm); }
+.si-imp-form > p, .si-imp-form > h3, .si-imp-form > table, .si-imp-form > .si-imp-made, .si-imp-form > .si-imp-bar { grid-column: 1 / -1; margin: 0; }
+.si-imp-row { display: contents; }
+.si-imp-name { grid-column: 1; padding-top: 3px; color: var(--muted); max-width: 12em; }
+.si-imp-row > :nth-child(2) { grid-column: 2; }
+.si-imp-row > :nth-child(3) { grid-column: 3; }
+.si-imp-row > :only-child, .si-imp-row > .si-imp-name:empty + *, .si-imp-row > :last-child:nth-child(2) { grid-column: 2 / -1; }
+.si-imp-form input[type=text], .si-imp-form select { padding: 2px 5px; font: inherit; min-width: 0; }
+.si-imp-row > input[type=text] { width: 100%; }
+.si-imp-row > input.si-imp-id { width: 8em; }
+.si-imp-text { width: 100%; font: inherit; padding: 3px 5px; resize: vertical; }
+.si-imp-text[readonly] { background: var(--bg, transparent); color: var(--muted); }
+.si-imp-parts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.si-imp-parts input[type=text] { width: 9em; }
+.si-imp-part-name { color: var(--muted); }
+.si-imp-stack { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.si-imp-stack > .si-imp-text { width: 100%; }
+.si-imp-thumb { width: 220px; height: 140px; display: grid; place-items: center; background: #fff; color: #555; border: 1px solid var(--line); border-radius: var(--r-control); overflow: hidden; text-align: center; font-size: var(--fs-xs, 11px); padding: 2px; }
+.si-imp-thumb { grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
+.si-imp-thumb > img { width: 100%; height: 100%; object-fit: contain; }
+.si-imp-thumb > svg { max-width: 100%; max-height: 100%; }
+.si-imp-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.si-imp-pair { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.si-imp-pair > .si-imp-thumb { flex: none; }
+.si-imp-pair > .si-imp-side { flex: 1; max-width: 30em; }
+.si-imp-check { display: inline-flex; align-items: center; gap: 4px; }
+.si-imp-warn { color: var(--warn, #a15c00); white-space: pre-line; }
+.si-imp-table { border-collapse: collapse; width: 100%; }
+.si-imp-table th, .si-imp-table td { border-bottom: 1px solid var(--line); padding: 2px 4px; text-align: left; vertical-align: middle; }
+.si-imp-table th { font-weight: 600; color: var(--muted); }
+.si-imp-table input[type=text] { width: 100%; }
+.si-imp-refs { table-layout: fixed; }
+.si-imp-refs th:nth-child(1) { width: 3.6em; }
+.si-imp-refs th:nth-child(2) { width: 2.6em; }
+.si-imp-refs th:nth-child(3) { width: 22%; }
+.si-imp-refs th:nth-child(4) { width: 26%; }
+.si-imp-refs th:nth-child(6), .si-imp-refs th:nth-child(7) { width: 4.2em; }
+.si-imp-refs th:nth-child(8) { width: 6em; }
+.si-imp-made { display: flex; flex-direction: column; gap: 2px; }
+.si-imp-made-row { display: flex; align-items: center; gap: 6px; }
+.si-imp-made-row input[type=text] { width: 18em; }
+.si-imp-nobox { width: 13px; }
+.si-imp-bar { display: flex; align-items: center; gap: 8px; }
+.si-imp-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.si-imp-choice { margin: 0; padding: 4px 8px 6px; border: 1px solid var(--line); border-radius: var(--r-control); display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); }
+.si-imp-choice legend { padding: 0 4px; font-weight: 600; }
+.si-imp-dest { display: flex; align-items: center; gap: 6px; }
+.si-imp-dest select { flex: 1; min-width: 0; }
+.si-imp-dest-note { margin: 2px 0 0; }
+dialog.si-import .ask-buttons { margin: 0; }
+@media (max-width: 700px) {
+  .si-imp-body { grid-template-columns: 1fr; grid-template-rows: 30% 1fr; }
+  .si-imp-tree { border-right: 0; border-bottom: 1px solid var(--line); }
+  .si-imp-bottom { grid-template-columns: 1fr; }
+}
+.si-formula sub { font-size: 75%; }
+
+/* a box for SI text (src/ui/si-rich.ts) */
+.si-rich { position: relative; min-height: 20px; padding: 2px 5px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; outline: none; }
+.si-rich.si-multi { min-height: 44px; }
+.si-rich:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.si-rich.si-empty::before { content: attr(data-placeholder); position: absolute; left: 6px; right: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); pointer-events: none; }
+.si-rich > div { min-height: 1.45em; }
+.si-rich .si-h1, .si-rich .si-h2, .si-rich .si-h3 { font-weight: 700; }
+.si-rich .si-h1 { font-size: 1.2em; }
+.si-rich .si-object { color: var(--muted); font-style: italic; }
+.si-rich .si-object[data-table], .si-rich .si-object[data-figure] { cursor: pointer; }
+/* an SI table's editor (Custom sections): the grid as it prints (rules under the header and the table), label, footnotes */
+.si-table-card { display: flex; flex-direction: column; gap: 4px; }
+.si-label-input { width: 160px; }
+.si-tgrid { border-collapse: collapse; margin: 4px 0; border-top: 1.5px solid var(--text); border-bottom: 1.5px solid var(--text); font-size: var(--fs-sm); }
+.si-tgrid td { border: 1px dashed var(--line); padding: 2px 6px; vertical-align: top; min-width: 48px; }
+.si-tgrid tr.si-thead-last td { border-bottom: 1px solid var(--text); }
+.si-tgrid tr.si-thead td { font-weight: 600; }
+.si-tgrid td:focus-within { outline: 1.5px solid var(--accent); outline-offset: -1px; }
+.si-tgrid td.si-tsel { background: var(--accent-soft); }
+.si-tgrid .si-rich { min-height: 18px; border: 0; padding: 0; background: transparent; }
+.si-tpic { text-align: center; }
+.si-tpic img { max-width: 220px; max-height: 140px; }
+.si-tpic.si-missing { color: var(--warn, #b54); font-size: var(--fs-sm); }
+/* a figure (Custom sections): its picture at about printed size, picked to show the Picture Format tab */
+.si-figure-card { display: flex; flex-direction: column; gap: 4px; outline: none; }
+.si-figure-card:focus-within, .si-figure-card:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.si-fig-pic { padding: 6px; border: 1px dashed var(--line); background: #fff; cursor: default; }
+.si-fig-pic .si-note { margin: 0; }
+/* a Data section's general procedures: name, title, who uses it; its text and compound sentence */
+.si-gp { display: flex; flex-direction: column; gap: 3px; padding: 6px 0; border-top: 1px solid var(--line); }
+.si-gp:first-of-type { border-top: 0; }
+.si-gp-top { display: flex; align-items: center; gap: 6px; }
+.si-gp-name { width: 170px; font-weight: 600; }
+.si-gp-title { flex: 1; min-width: 120px; }
+.si-gp-users { font-size: var(--fs-sm); white-space: nowrap; }
+.si-gp-label { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--muted); }
+.si-tbottom { display: flex; flex-direction: column; gap: 4px; }
+.si-tnotes .si-rich { min-height: 22px; }
+.si-mention, .si-cite { padding: 0 3px; border-radius: 3px; background: var(--accent-soft); color: var(--accent); font-weight: 700; white-space: nowrap; user-select: all; }
+.si-cite { font-weight: 500; }
+.si-mention-menu { position: fixed; z-index: 50; min-width: 200px; max-width: 360px; padding: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
+.si-mention-menu button { display: flex; gap: 6px; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: var(--text); text-align: left; font-size: var(--fs-sm); cursor: pointer; }
+.si-mention-menu button b { color: var(--accent); }
+.si-mention-menu button.hot, .si-mention-menu button:hover { background: var(--accent-soft); }
+
+/* picking from the Compound Library or My Library */
+dialog.si-pick { width: min(92vw, 480px); }
+.si-pick input[type='search'] { width: 100%; box-sizing: border-box; margin: 4px 0; }
+.si-pick-list { max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-control); }
+.si-pick-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 6px; padding: 3px 6px; font-size: var(--fs-sm); border-top: 1px solid var(--line); }
+.si-pick-row:first-child { border-top: 0; }
+.si-pick-row > small { grid-column: 2; }
+.si-pick-list > p { margin: 8px; }
+
+/* A list of points in a message (Compile Notes) */
+.ask-points { margin: 4px 0 8px; padding-left: 18px; max-height: 50vh; overflow-y: auto; font-size: 12.5px; line-height: 1.4; }
+.ask-points li { margin: 2px 0; }
 /* ---- UI audit 2026-11-16 (U3): a window's own buttons stay in view. A window too tall for the
    screen scrolls its body under the button row, which is pinned to the bottom edge; and a window
    may use nearly the whole height of the screen, so big displays show more of it at once. */
@@ -4750,6 +5094,224 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .tbe-crumb input[type='text'] { width: 12em; flex: 0 1 auto; }
 .tbe-fly.word { font-size: var(--fs-sm); font-weight: 600; }
 .tool .tool-word { font-size: 11px; font-weight: 600; letter-spacing: 0; }
+
+/* The Linked SI panel (a manuscript linked to its SI project; ui/doc-si.ts) */
+#msi-section:not([hidden]) { display: block; }
+#msi-section > h2 { color: var(--tab-si, #b4234f); }
+#msi-section .info-i { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px; border: 1px solid currentColor; border-radius: 50%; font: 600 9px/1 var(--ui-font, system-ui); color: var(--muted); cursor: help; vertical-align: 1px; margin-left: 3px; }
+.msi-proj { display: flex; align-items: center; gap: 8px; padding: 2px 0 6px; }
+.msi-proj-name { flex: 1; min-width: 0; font-size: var(--fs-sm); }
+.msi-proj-name b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msi-sum { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 6px; }
+.msi-chip { padding: 0 6px; border: 1px solid var(--line); border-radius: 9px; font-size: var(--fs-xs); line-height: 16px; white-space: nowrap; }
+.msi-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.msi-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+.msi-chip.note { color: var(--muted); }
+.msi-chip.bad { color: var(--danger, #c62828); border-color: color-mix(in srgb, var(--danger, #c62828) 50%, var(--line)); }
+.msi-list { border-top: 1px solid var(--line); max-height: 42vh; overflow-y: auto; }
+.msi-row { display: grid; grid-template-columns: 48px 34px minmax(0, 1fr) 14px; align-items: center; gap: 6px; height: 30px; padding: 0 4px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); font-size: var(--fs-sm); cursor: default; }
+.msi-row:hover { background: color-mix(in srgb, var(--tab-si, #b4234f) 6%, transparent); }
+.msi-row.sel { background: color-mix(in srgb, var(--tab-si, #b4234f) 12%, transparent); box-shadow: inset 2px 0 0 var(--tab-si, #b4234f); }
+.msi-pic { display: flex; align-items: center; justify-content: center; width: 48px; height: 26px; background: #fff; border-radius: 2px; color: var(--muted); overflow: hidden; }
+.msi-pic svg { width: 100%; height: 100%; }
+.msi-row.missing .msi-pic { border: 1px dashed var(--line); background: none; }
+.msi-id { color: var(--tab-si, #b4234f); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msi-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.msi-row.warn .msi-text { color: var(--warn); }
+.msi-row.missing .msi-text { color: var(--danger, #c62828); }
+.msi-row.note .msi-text { color: var(--muted); }
+.msi-row.nokey .msi-pic { border: 1px dashed var(--line); background: none; }
+.msi-st.note { color: var(--muted); }
+.msi-st.ok { color: var(--ok); } .msi-st.warn { color: var(--warn); } .msi-st.missing { color: var(--danger, #c62828); }
+.msi-fix { border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.msi-finding { padding: 6px 4px; font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 3px; }
+.msi-finding + .msi-finding { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.msi-btns { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.msi-btn { height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.msi-btn:hover { border-color: var(--tab-si, #b4234f); }
+.msi-btn.primary { background: var(--tab-si, #b4234f); border-color: var(--tab-si, #b4234f); color: #fff; }
+.msi-foot { padding: 6px 0 2px; font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 4px; }
+.msi-empty { padding: 6px 2px; font-size: var(--fs-sm); }
+
+/* the SI tab's Spectra section page: one row per group of settings */
+.si-spectra-row { align-items: center; padding: 4px 0; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.si-spectra-group { min-width: 116px; font-size: var(--fs-sm); font-weight: 600; }
+.si-spectra-row input[type=color] { width: 32px; height: 20px; padding: 0 1px; }
+/* SI Projects: an X-ray structure section's page */
+.si-scheme-head { display: flex; align-items: center; gap: 10px; }
+.si-scheme-head .si-sub { margin: 0; }
+.si-scheme-name { flex: 1 1 auto; max-width: 420px; font-weight: 600; }
+.si-scheme-preview { margin-top: 6px; overflow-x: auto; }
+.si-scheme-paper { background: #fff; color: #000; border: 1px solid var(--line); padding: 10px 0; display: flex; justify-content: center; box-sizing: content-box; }
+.si-scheme-paper svg { display: block; }
+.si-scheme-strip { display: flex; align-items: center; gap: 6px; overflow-x: auto; padding: 4px 2px 8px; }
+.si-scheme-box { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); cursor: default; outline: none; }
+.si-scheme-box.on, .si-scheme-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.si-scheme-pic { min-width: 96px; min-height: 64px; display: flex; align-items: center; justify-content: center; background: #fff; color: #000; }
+.si-scheme-pic svg { display: block; }
+.si-scheme-pic .muted { font-size: var(--fs-xs); padding: 0 6px; text-align: center; }
+.si-scheme-id { display: flex; gap: 3px; }
+.si-scheme-label { width: 64px; font-weight: 600; text-align: center; }
+.si-scheme-yield { width: 64px; text-align: center; }
+.si-scheme-cpd { min-width: 64px; padding: 0 6px; border: 1px solid var(--accent); border-radius: var(--r-control); background: var(--accent-soft); color: var(--accent); font-weight: 600; cursor: pointer; }
+.si-scheme-plus { flex: 0 0 auto; font-size: 18px; color: var(--muted); }
+.si-scheme-step { flex: 0 0 auto; width: 190px; display: flex; flex-direction: column; gap: 2px; padding: 2px; border: 1px solid transparent; border-radius: var(--r-control); }
+.si-scheme-step.on { border-color: var(--line); }
+.si-scheme-cond { min-height: 22px; font-size: 12px; }
+.si-scheme-arrow { height: 10px; color: var(--text); }
+.si-scheme-arrow svg { display: block; width: 100%; height: 10px; }
+.si-scheme-empty { flex: 0 0 auto; padding: 18px 8px; border: 1px dashed var(--line); border-radius: var(--r-control); background: transparent; color: var(--muted); cursor: pointer; }
+::highlight(si-misspelled) { text-decoration: underline wavy #d32f2f; text-decoration-skip-ink: none; }
+::highlight(si-format) { text-decoration: underline wavy #2f6fdf; text-decoration-skip-ink: none; }
+.si-inline-struct { display: inline-block; vertical-align: middle; margin: 0 2px; background: #fff; border-radius: 2px; }
+.si-inline-struct svg { display: block; }
+.si-xray-pic { margin: 4px 0; }
+.si-xray-pic img { display: block; max-width: 100%; height: auto; }
+.si-xray-caption { margin: 2px 0 6px; font-size: 12px; }
+.si-xray { display: flex; flex-direction: column; gap: 8px; }
+/* the project's front matter: cover page, contents, General Information */
+.si-front { display: flex; flex-direction: column; gap: 8px; }
+.si-front-grid { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 3px 8px; align-items: center; font-size: var(--fs-sm); margin-bottom: 4px; }
+.si-front-grid input, .si-front-grid select { padding: 1px 4px; font-size: var(--fs-sm); max-width: 520px; }
+.si-front-lab { color: var(--muted); }
+.si-front-title { font-weight: 600; }
+.si-front-head { display: flex; align-items: center; gap: 4px; margin: 6px 0 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
+.si-front-list { display: flex; flex-direction: column; gap: 2px; }
+.si-front-author, .si-front-aff { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+.si-front-author input, .si-front-aff input { padding: 1px 4px; font-size: var(--fs-sm); }
+.si-front-name { width: 200px; }
+.si-front-marks { width: 60px; }
+.si-front-email { width: 220px; }
+.si-front-mark { width: 36px; text-align: center; }
+.si-front-afftext { flex: 1; min-width: 0; }
+.si-fill { flex: 1; }
+.si-xray-pic { cursor: zoom-in; }
+.si-xray-rows { display: grid; grid-template-columns: 18px minmax(160px, max-content) minmax(0, 1fr); gap: 1px 6px; align-items: center; font-size: var(--fs-sm); margin-top: 4px; }
+.si-xray-row { display: contents; }
+.si-xray-value { padding: 1px 4px; font-size: var(--fs-sm); }
+.si-xray-value.si-typed { font-weight: 700; }
+.si-xray .si-num { width: 5em; }
+/* Project Settings ▸ Headings and Labels: how they will read; ▸ Page: a page with its header and footer */
+.si-heading-example { margin: 0; font-size: 13px; }
+.si-page-example { width: 340px; height: 150px; border: 1px solid var(--line, #ccc); background: #fff; color: #222; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 14px; box-sizing: border-box; font-size: 9px; }
+.si-page-example > .si-page-header, .si-page-example > .si-page-footer { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; min-height: 12px; }
+.si-page-example span:nth-child(2) { text-align: center; }
+.si-page-example span:nth-child(3) { text-align: right; }
+.si-page-body { flex: 1; margin: 8px 0; background: repeating-linear-gradient(#fff 0 6px, #e6e6e6 6px 8px); }
+/* A compound's spectra page: its spectra listed, the one picked drawn as it prints, its settings */
+.si-spectra-body { display: flex; gap: 12px; align-items: flex-start; }
+.si-spectra-list { display: flex; flex-direction: column; gap: 2px; width: 190px; flex: none; }
+.si-spectra-item { display: grid; grid-template-columns: 1fr auto; text-align: left; padding: 4px 6px; border: 1px solid transparent; background: none; border-radius: 3px; cursor: pointer; font: inherit; color: inherit; }
+.si-spectra-item:hover { background: var(--hover, rgba(0,0,0,.05)); }
+.si-spectra-item.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.si-spectra-type { font-weight: 600; font-size: 12px; }
+.si-spectra-file { grid-column: 1; font-size: 11px; color: var(--muted, #666); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-spectra-own { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--accent); font-weight: 700; }
+.si-spectra-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.si-spectra-stage { background: #d9dce1; padding: 10px; display: flex; justify-content: center; border-radius: 3px; }
+.si-spectra-paper { position: relative; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); overflow: hidden; }
+.si-spectra-head { position: absolute; left: 0; right: 0; top: 4px; text-align: center; font-weight: 700; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.si-spectra-view { position: absolute; overflow: hidden; }
+.si-spectra-view img { position: absolute; max-width: none; user-select: none; }
+.si-spectra-box { position: absolute; cursor: move; touch-action: none; box-sizing: border-box; }
+.si-spectra-box:hover { box-shadow: 0 0 0 1px var(--accent); }
+.si-spectra-struct { position: absolute; pointer-events: none; }
+.si-spectra-struct svg { display: block; }
+.si-spectra-label { position: absolute; text-align: center; color: #000; line-height: 1.2; white-space: nowrap; }
+.si-spectra-handle { position: absolute; width: 8px; height: 8px; background: #fff; border: 1px solid var(--accent); opacity: 0; }
+.si-spectra-box:hover .si-spectra-handle { opacity: 1; }
+.si-spectra-handle.nw { left: -4px; top: -4px; cursor: nwse-resize; } .si-spectra-handle.se { right: -4px; bottom: -4px; cursor: nwse-resize; }
+.si-spectra-handle.ne { right: -4px; top: -4px; cursor: nesw-resize; } .si-spectra-handle.sw { left: -4px; bottom: -4px; cursor: nesw-resize; }
+.si-part.si-own .si-plabel:first-of-type, .si-part.si-own > span:not(.si-plabel) { font-weight: 700; }
+.si-spectra-reset { border: none; background: none; color: var(--muted, #666); cursor: pointer; padding: 0 2px; font-size: 13px; line-height: 1; }
+.si-spectra-reset:hover { color: var(--accent); }
+.si-spectra-text input { width: 260px; }
+
+/* SI Project ▸ Trash */
+.si-trash .ask-form { width: min(640px, 86vw); }
+.si-trash-list { max-height: 52vh; min-height: 120px; overflow: auto; border: 1px solid var(--line); background: var(--panel); }
+.si-trash-list:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.si-trash-row { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 0 8px; padding: 3px 8px; border-bottom: 1px solid var(--line); cursor: default; }
+.si-trash-row:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.si-trash-row.on { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.si-trash-kind { color: var(--muted); font-size: var(--fs-sm, 0.85em); }
+.si-trash-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-trash-more { grid-column: 2; font-size: var(--fs-sm, 0.85em); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-trash-elsewhere .si-trash-name { color: var(--muted); }
+.si-trash-none { padding: 12px; margin: 0; }
+.si-trash-say { min-height: 1.2em; margin: 2px 0 0; }
+.si-row.si-drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.si-row.si-drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.si-row.si-drop-in { outline: 2px solid var(--accent); outline-offset: -2px; }
+.si-row.si-dragging { opacity: 0.5; }
+
+/* SI Project ▸ an Attachment section's page */
+.si-attach-fields { display: grid; grid-template-columns: max-content minmax(0, 28em); gap: 4px 8px; align-items: center; }
+.si-attach-row { display: contents; }
+.si-attach-name { color: var(--muted); font-size: var(--fs-sm, 0.85em); }
+.si-attach-file { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; }
+.si-attach-file .si-attach-name { min-width: 4.2em; }
+.si-attach-stage { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px; background: color-mix(in srgb, var(--line) 45%, var(--bg)); min-height: 120px; }
+.si-attach-stage.drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.si-attach-paper { width: min(100%, 560px); background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); padding: 6% 7%; box-sizing: border-box; }
+.si-attach-paper img { display: block; width: 100%; height: auto; }
+.si-attach-paper img.natural { width: auto; max-width: 100%; margin: 0 auto; }
+.si-attach-row input { padding: 1px 4px; font-size: var(--fs-sm); }
+
+/* SI Project Settings ▸ NMR Impurities: the table behind the impurity-peak check */
+.si-imp { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.si-imp-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.si-imp-bar label { display: inline-flex; align-items: center; gap: 4px; margin-right: auto; }
+.si-imp-wrap { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); }
+.si-imp-table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm, 0.85em); }
+.si-imp-table th { position: sticky; top: 0; background: var(--panel); text-align: left; font-weight: 600; padding: 3px 4px; border-bottom: 1px solid var(--line); z-index: 1; }
+.si-imp-table td { padding: 1px 3px; border-bottom: 1px solid var(--line); }
+.si-imp-table input:not([type=checkbox]), .si-imp-table select { width: 100%; min-width: 0; box-sizing: border-box; padding: 1px 4px; }
+.si-imp-table .si-imp-use { width: 2.4em; text-align: center; }
+.si-imp-table .si-imp-shift { width: 5.5em; }
+.si-imp-table .si-imp-what { width: 40%; }
+.si-imp-del { padding: 0 6px; min-width: 0; }
+
+/* SI dashboards: a grid of compounds by field, and the project's progress */
+.si-dash-slot { display: flex; flex-direction: column; gap: 8px; }
+.si-dash-card .si-card-head { margin-bottom: 6px; }
+.si-dash-card .si-card-head .si-sub { margin: 0; }
+.si-dash-sum { font-size: var(--fs-xs); }
+.si-dash-wrap { overflow: auto; max-height: 70vh; border: 1px solid var(--line); }
+.si-dash { border-collapse: collapse; font-size: var(--fs-xs); width: max-content; min-width: 100%; }
+.si-dash th { position: sticky; top: 0; z-index: 1; background: var(--panel); text-align: left; font-weight: 600; padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.si-dash td { padding: 2px 6px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); vertical-align: middle; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.si-dash td[data-key] { cursor: pointer; }
+.si-dash td[data-key]:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
+.si-dash td:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.si-dash .si-dc-ic { margin-left: 2px; }
+.si-dash .si-dc-t + .si-dc-ic { margin-left: 4px; }
+.si-dash .si-dc-pic { width: 64px; height: 44px; padding: 1px 2px; text-align: center; }
+.si-dash .si-dc-pic svg { width: 60px; height: 42px; display: block; margin: auto; }
+.si-dash .si-dc-name { max-width: 220px; }
+.si-dash .si-dc-sec { color: var(--muted); }
+.si-dash .si-dc-done { text-align: right; font-variant-numeric: tabular-nums; }
+.si-dash.compact td { padding: 1px 4px; text-align: center; }
+.si-dash.compact td.si-dc-name, .si-dash.compact td.si-dc-sec { text-align: left; }
+.si-dash tbody tr:hover td { box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--text) 4%, transparent); }
+.si-dash-top { display: flex; align-items: center; gap: 10px; font-size: var(--fs-sm); margin: 4px 0 8px; }
+.si-dash-top .si-bar { width: 160px; }
+.si-bar { display: inline-block; width: 100px; height: 6px; background: var(--line); vertical-align: middle; }
+.si-bar-fill { display: block; height: 100%; background: var(--ok); }
+.si-dash-secs { border-collapse: collapse; font-size: var(--fs-sm); margin-bottom: 8px; }
+.si-dash-secs th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 14px 2px 0; }
+.si-dash-secs td { padding: 2px 14px 2px 0; }
+.si-dash-secs td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.si-dash-secs .si-link { margin: 0; padding: 0; font-size: var(--fs-sm); }
+.si-dash-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.si-dash-list ul { list-style: none; margin: 0 0 4px; padding: 0; font-size: var(--fs-sm); }
+.si-dash-list li { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; border-bottom: 1px solid var(--line); }
+.si-dash-list .si-link { margin: 0; padding: 0; }
+.si-dash-colors { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); }
+.si-dash-color { display: grid; grid-template-columns: 26px 230px 44px auto; align-items: center; gap: 8px; }
+.si-dash-swatch { display: inline-flex; justify-content: center; align-items: center; height: 20px; border: 1px solid var(--line); }
+.si-dash-colors .si-link { align-self: flex-start; margin: 4px 0 0; padding: 0; }
+.si-field.si-flash { outline: 2px solid var(--accent); outline-offset: 1px; transition: outline-color 0.6s; }
 
 /* ---- Side panel: one header row (grip, the sections as tabs, padlock, close) wherever it sits ----
    (the class is tripled to outrank the title-bar rules for docked and upright toolboxes above) */

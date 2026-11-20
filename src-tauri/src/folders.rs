@@ -81,6 +81,139 @@ pub fn make_folder(path: String) -> Result<(), String> {
     std::fs::create_dir_all(&path).map_err(|e| format!("Could not make the folder {path}: {e}"))
 }
 
+/// Another program (OneDrive, an antivirus, an indexer) may hold a file for a moment; on Windows
+/// that makes a rename fail (access denied, or a sharing or lock violation). Such a failure is
+/// tried again for about a second, as Chem SI Assistant does; any other failure is given at once.
+pub(crate) fn rename_retrying(from: &Path, to: &Path) -> std::io::Result<()> {
+    const ATTEMPTS: u32 = 10;
+    let mut attempt = 1;
+    loop {
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) if attempt < ATTEMPTS && held_for_a_moment(&e) => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+fn held_for_a_moment(e: &std::io::Error) -> bool {
+    // Windows: 5 access denied, 32 sharing violation, 33 lock violation
+    e.kind() == std::io::ErrorKind::PermissionDenied || (cfg!(windows) && matches!(e.raw_os_error(), Some(5 | 32 | 33)))
+}
+
+/// Whether a path has no "." or ".." in it (so it is where it says it is).
+fn plain(p: &Path) -> bool {
+    !p.components().any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir))
+}
+
+/// Whether `from` and `to` are both inside one SI project's folder (a folder with a project.json):
+/// `root` when the page names it, else any folder above `from`.
+fn in_one_project(from: &Path, to: &Path, root: Option<&Path>) -> bool {
+    if !plain(from) || !plain(to) {
+        return false;
+    }
+    let holds = |dir: &Path| dir.join("project.json").is_file() && from != dir && to != dir && from.starts_with(dir) && to.starts_with(dir);
+    match root {
+        Some(r) => plain(r) && holds(r),
+        None => from.ancestors().skip(1).any(holds),
+    }
+}
+
+/// SI projects (Chem SI Assistant's folders): move a file or folder, such as a deleted compound
+/// into the project's trash folder. Never writes over anything: `to` must not be there yet. Both
+/// must be inside the same project folder: nothing is ever moved into or out of a project here.
+#[tauri::command]
+pub fn si_move(from: String, to: String, root: Option<String>) -> Result<(), String> {
+    let (f, t) = (PathBuf::from(&from), PathBuf::from(&to));
+    if !in_one_project(&f, &t, root.as_deref().map(Path::new)) {
+        return Err(format!("{from} was not moved: it and {to} are not both inside one SI project's folder."));
+    }
+    if !f.exists() {
+        return Err(format!("{from} is not there (it may have been moved or deleted)."));
+    }
+    // (symlink_metadata: a link that points nowhere is still something in the way)
+    if t.symlink_metadata().is_ok() {
+        return Err(format!("{to} is already there."));
+    }
+    if let Some(parent) = t.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Could not make the folder {}: {e}", parent.display()))?;
+    }
+    rename_retrying(&f, &t).map_err(|e| format!("Could not move {from}: {e}"))
+}
+
+/// SI projects: take away the project's ".lock" (who has it open) when it is closed. Only a
+/// file called .lock beside a project.json is ever deleted here.
+#[tauri::command]
+pub fn si_remove_lock(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    let is_lock = p.file_name().and_then(|n| n.to_str()) == Some(".lock") && p.parent().is_some_and(|d| d.join("project.json").is_file());
+    if !is_lock {
+        return Err(format!("not an SI project's lock: {path}"));
+    }
+    match std::fs::remove_file(&p) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Could not delete {path}: {e}")),
+    }
+}
+
+/// SI projects: the files and folders directly inside a folder of a project (its Trash, listed
+/// in the Trash window), by name, each marked as a folder or not, with its size in bytes and
+/// when it was last changed (milliseconds since 1970; 0 when not known), so a file need not be
+/// read to know whether it changed or is too large.
+#[tauri::command]
+pub fn si_list_dir(path: String) -> Result<serde_json::Value, String> {
+    let dir = PathBuf::from(&path);
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("Could not read the folder {path}: {e}"))?;
+    let mut out = Vec::new();
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let folder = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let meta = std::fs::metadata(e.path()).ok();
+        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+        let modified = meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        out.push(serde_json::json!({ "name": name, "folder": folder, "size": size, "modified": modified }));
+    }
+    Ok(serde_json::Value::Array(out))
+}
+
+/// Whether `p` is an SI project's trash folder, or one entry directly inside it, or Chemweave's
+/// undo holding folder (build/chemweave-undo) or one entry inside that (a project folder is one
+/// with a project.json).
+fn is_si_trash(p: &Path) -> bool {
+    let named = |x: &Path, n: &str| x.file_name().and_then(|f| f.to_str()) == Some(n);
+    let project = |x: Option<&Path>| x.is_some_and(|d| d.join("project.json").is_file());
+    if p.components().any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir)) {
+        return false;
+    }
+    let trash = |x: &Path| named(x, "trash") && project(x.parent());
+    let holding = |x: &Path| named(x, "chemweave-undo") && x.parent().is_some_and(|b| named(b, "build") && project(b.parent()));
+    trash(p) || holding(p) || p.parent().is_some_and(|t| trash(t) || holding(t))
+}
+
+/// SI projects: Empty Trash, or remove one item from it, in the Trash window. Only the
+/// project's trash folder or an entry directly inside it is ever deleted here.
+#[tauri::command]
+pub fn si_remove_trash(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !is_si_trash(&p) {
+        return Err(format!("not an SI project's Trash: {path}"));
+    }
+    match std::fs::remove_dir_all(&p) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Could not delete {path}: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,6 +234,60 @@ mod tests {
         assert_eq!(got["complete"], true);
         let top = list_folder(root.to_string_lossy().into_owned(), exts, false).unwrap();
         assert_eq!(top["files"].as_array().unwrap().len(), 1);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn moves_stay_inside_one_project() {
+        let root = std::env::temp_dir().join(format!("ci-si-move-{}", std::process::id()));
+        let outside = std::env::temp_dir().join(format!("ci-si-move-out-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("sections").join("a")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(root.join("sections").join("a").join("x.txt"), "x").unwrap();
+        std::fs::write(outside.join("thesis.docx"), "t").unwrap();
+        let s = |p: PathBuf| p.to_string_lossy().into_owned();
+        let from = root.join("sections").join("a").join("x.txt");
+        let to = root.join("trash").join("e").join("x.txt");
+        assert!(si_move(s(from.clone()), s(to.clone()), Some(s(root.clone()))).is_err()); // no project.json yet
+        std::fs::write(root.join("project.json"), "{}").unwrap();
+        // a file outside the project never moves in, by ".." or by its own path
+        let sneaky = root.join("sections").join("a").join("..").join("..").join("..").join(outside.file_name().unwrap()).join("thesis.docx");
+        assert!(si_move(s(sneaky), s(root.join("trash").join("e").join("thesis.docx")), Some(s(root.clone()))).is_err());
+        assert!(si_move(s(outside.join("thesis.docx")), s(root.join("trash").join("thesis.docx")), None).is_err());
+        assert!(si_move(s(from.clone()), s(outside.join("x.txt")), Some(s(root.clone()))).is_err());
+        assert!(outside.join("thesis.docx").exists() && from.exists());
+        si_move(s(from.clone()), s(to.clone()), Some(s(root.clone()))).unwrap();
+        assert!(to.exists() && !from.exists());
+        si_move(s(to.clone()), s(from.clone()), None).unwrap(); // (an older page that names no root)
+        assert!(from.exists());
+        std::fs::write(&to, "y").unwrap();
+        assert!(si_move(s(from.clone()), s(to), None).is_err()); // never writes over anything
+        std::fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&outside).unwrap();
+    }
+
+    #[test]
+    fn only_a_projects_trash_is_removed() {
+        let root = std::env::temp_dir().join(format!("ci-si-trash-{}", std::process::id()));
+        let entry = root.join("trash").join("20261118-x");
+        std::fs::create_dir_all(&entry).unwrap();
+        std::fs::write(entry.join("entry.json"), "{}").unwrap();
+        std::fs::create_dir_all(root.join("sections")).unwrap();
+        assert!(si_remove_trash(entry.to_string_lossy().into_owned()).is_err()); // no project.json yet
+        std::fs::write(root.join("project.json"), "{}").unwrap();
+        assert!(si_remove_trash(root.join("sections").to_string_lossy().into_owned()).is_err());
+        let listed = si_list_dir(root.join("trash").to_string_lossy().into_owned()).unwrap();
+        assert_eq!(listed[0]["folder"], true);
+        si_remove_trash(entry.to_string_lossy().into_owned()).unwrap();
+        assert!(!entry.exists() && root.join("trash").exists());
+        si_remove_trash(root.join("trash").to_string_lossy().into_owned()).unwrap();
+        assert!(!root.join("trash").exists() && root.join("sections").exists());
+        let held = root.join("build").join("chemweave-undo").join("u1");
+        std::fs::create_dir_all(&held).unwrap();
+        assert!(si_remove_trash(root.join("build").to_string_lossy().into_owned()).is_err());
+        si_remove_trash(held.to_string_lossy().into_owned()).unwrap();
+        si_remove_trash(root.join("build").join("chemweave-undo").to_string_lossy().into_owned()).unwrap();
+        assert!(root.join("build").exists() && !root.join("build").join("chemweave-undo").exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
