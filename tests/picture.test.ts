@@ -110,3 +110,31 @@ describe('Export Picture resolution', () => {
     expect(48 * 72 * k * 36 * 72 * k).toBeLessThanOrEqual(64e6 + 1);
   });
 });
+
+describe('pictures with text in other fonts (issue #648)', () => {
+  it('places runs in Times New Roman by Times widths, not Arial widths', () => {
+    // a stand-in canvas: every letter in Times is 0.4 em wide
+    const real = HTMLCanvasElement.prototype.getContext;
+    const ctx = { font: '', measureText(t: string) { return { width: [...t].length * (/Times/.test(this.font) ? 40 : 60) }; } };
+    HTMLCanvasElement.prototype.getContext = (() => ctx) as unknown as typeof real;
+    try {
+      const doc = new Doc();
+      doc.bulk(() => doc.addCaption({ x: 20, y: 20, justify: 'left', runs: [
+        { text: 'Scheme 5', bold: true, font: 'Times New Roman', size: 10 },
+        { text: '. Applications', font: 'Times New Roman', size: 10 },
+      ] }));
+      const p = recordPicture(doc)!;
+      const texts = p.items.filter((i) => i.kind === 'text');
+      const a = texts.find((i) => i.kind === 'text' && i.text.startsWith('Scheme'))!;
+      const b = texts.find((i) => i.kind === 'text' && i.text.startsWith('.'))!;
+      if (a.kind !== 'text' || b.kind !== 'text') throw new Error('no text');
+      // the plain run starts where the bold one ends in Times (8 letters × 4 pt), not Arial
+      expect(b.x - a.x).toBeCloseTo(8 * 4, 1);
+      expect(b.x - a.x).toBeLessThan(arialWidth('Scheme 5', 10, true) - 1);
+      // and the letters are spaced by Times widths too
+      expect(a.widths.reduce((n, w) => n + w, 0)).toBeCloseTo(8 * 4, 1);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = real;
+    }
+  });
+});

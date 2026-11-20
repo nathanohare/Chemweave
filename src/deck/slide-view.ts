@@ -4,10 +4,9 @@
 
 import { cssFamily, ASCENT } from '../text/layout';
 import { Doc } from '../model';
-import { Renderer, withMeasure } from '../render/renderer';
+import { Renderer, withMeasure, pictureMeasure, pictureCharWidth } from '../render/renderer';
 import { imageFor } from '../render/images';
 import { VectorContext, VecPath, Item } from '../render/vector';
-import { arialWidth } from '../text-metrics';
 import { Master, SlideSize, LayoutId, type ArtLayer, decorFrames, showsNumber, showsFooter, showsDate, dateText, type SlideHF, slideColours, slideBackground, decorShapes, layoutFrames, placeRefs, type DecorShape } from './deck';
 import { lineGap, type RefBlock } from './slide-refs';
 import { backgroundColour, paintBackground, type Background } from './background';
@@ -246,15 +245,15 @@ export function drawDrawing(ctx: CanvasRenderingContext2D, doc: Doc): void {
 
 /**
  * A whole slide recorded as shapes and text (for PDF pages), in slide points. Text is laid out
- * with Arial's widths, as in the pictures for PowerPoint, to match the PDF's Helvetica.
+ * with the same widths as the pictures for PowerPoint (pictureMeasure).
  */
 export function recordSlide(p: SlidePage, doc: Doc): Item[] {
-  const ctx = new VectorContext();
+  const ctx = new VectorContext(pictureCharWidth);
   const r = new Renderer(noCanvas, noCanvas);
   r.showWarnings = false;
   r.makePath = () => new VecPath() as unknown as Path2D;
   const c = ctx as unknown as CanvasRenderingContext2D;
-  withMeasure((t, s, _font, style) => arialWidth(t, s, /bold/.test(style)), () => {
+  withMeasure(pictureMeasure, () => {
     drawSlidePage(c, p);
     r.drawDocument(c, doc);
   });
