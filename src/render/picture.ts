@@ -2,11 +2,10 @@
 // the recording becomes an EMF (Word, PowerPoint), an SVG, or a PNG.
 
 import { Doc } from '../model';
-import { Renderer, withMeasure } from './renderer';
+import { Renderer, withMeasure, pictureMeasure, pictureCharWidth } from './renderer';
 import { VectorContext, VecPath, Item, itemBounds } from './vector';
 import { itemsToEmf, EmfBox } from './emf';
 import { itemsToSvg } from './svg';
-import { arialWidth } from '../text-metrics';
 
 export interface Picture {
   items: Item[];
@@ -23,9 +22,9 @@ export function recordPicture(doc: Doc, margin = 2, /** Change the renderer firs
   r.showWarnings = false;
   setup?.(r);
   r.makePath = () => new VecPath() as unknown as Path2D;
-  const ctx = new VectorContext();
-  // Word and PowerPoint draw the text in Arial, so lay it out with Arial's widths
-  withMeasure((t, s, _font, style) => arialWidth(t, s, /bold/.test(style)), () => r.drawDocument(ctx as unknown as CanvasRenderingContext2D, doc));
+  const ctx = new VectorContext(pictureCharWidth);
+  // text in Arial is laid out with Arial's published widths, other fonts with their own (pictureMeasure)
+  withMeasure(pictureMeasure, () => r.drawDocument(ctx as unknown as CanvasRenderingContext2D, doc));
   const b = itemBounds(ctx.items);
   if (!b) return null;
   return { items: ctx.items, box: { x1: b.x1 - margin, y1: b.y1 - margin, x2: b.x2 + margin, y2: b.y2 + margin } };
@@ -70,7 +69,7 @@ export function pictureCanvas(doc: Doc, p: Picture, dpi = 300, /** Change the re
   const r = new Renderer(noCanvas, noCanvas);
   r.showWarnings = false;
   setup?.(r);
-  withMeasure((t, s, _font, style) => arialWidth(t, s, /bold/.test(style)), () => r.drawDocument(ctx, doc));
+  withMeasure(pictureMeasure, () => r.drawDocument(ctx, doc));
   return { canvas, dpi: k * 72 };
 }
 
