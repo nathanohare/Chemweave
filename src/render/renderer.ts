@@ -134,7 +134,33 @@ export function measureText(text: string, size: number, font = FONT_STACK, style
   return measureImpl(text, size, font, style);
 }
 
-/** Run `fn` with another way of measuring text (pictures use Arial's published widths). */
+/** The first family named in a CSS font list, unquoted and in lower case. */
+function firstFamily(font: string): string {
+  return (font.split(',')[0] ?? '').trim().replace(/^['"]|['"]$/g, '').toLowerCase();
+}
+
+/**
+ * Widths for pictures (PNG, TIFF, SVG, EMF, EPS, PDF, the clipboard): text in Arial or the
+ * default font uses Arial's published widths, so the layout is the same on every computer.
+ * Text in another font (Times New Roman, Courier...) is drawn in that font, so it is measured
+ * in that font: Arial's wider letters would leave gaps between its bold, plain and
+ * superscript runs (issue #648).
+ */
+export const pictureMeasure: TextMeasure = (text, size, font, style) => {
+  const f = firstFamily(font);
+  if (!f || /^(arial|helvetica|liberation sans|arimo|sans-serif)\b/.test(f)) return arialWidth(text, size, /bold/.test(style));
+  try {
+    return screenMeasure(text, size, font, style);
+  } catch {
+    return arialWidth(text, size, /bold/.test(style));
+  }
+};
+
+/** One letter's width for a recorded picture (VectorContext), measured as `pictureMeasure` does. */
+export const pictureCharWidth = (ch: string, size: number, family: string, bold: boolean, italic: boolean): number =>
+  pictureMeasure(ch, size, family, `${italic ? 'italic ' : ''}${bold ? 'bold' : ''}`.trim());
+
+/** Run `fn` with another way of measuring text (pictures use `pictureMeasure`). */
 export function withMeasure<T>(m: TextMeasure, fn: () => T): T {
   const old = measureImpl;
   measureImpl = m;
