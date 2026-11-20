@@ -41,6 +41,16 @@ jobs:
         with:
           workspaces: src-tauri
           key: ios
+      - name: Use the newest released Xcode on the Mac
+        # App Store Connect wants apps built with the newest iOS SDK (from April 2027, the iOS 27
+        # SDK in Xcode 27 or later). macos-latest doesn't always default to the newest Xcode, so
+        # pick the highest released one installed (betas and release candidates are refused for
+        # uploads, so they are skipped); without one, the default stays.
+        run: |
+          pick=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|_rc|release_candidate' | sed -E 's#.*/Xcode_([0-9.]+)\.app#\1 &#' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 | cut -d' ' -f2)
+          if [ -n "$pick" ]; then sudo xcode-select -s "$pick/Contents/Developer"; fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
       - run: npm ci
       - run: brew install xcodegen
       - name: Number this version
