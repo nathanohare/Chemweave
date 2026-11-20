@@ -90,14 +90,20 @@ describe('the relay', () => {
 });
 
 describe('relay set-up problems', () => {
-  it('says what is missing, and which GitHub step failed', async () => {
+  it('says what is missing, and logs (not returns) which GitHub step failed', async () => {
     delete env.FEEDBACK_KV;
     const a = await (await post({ title: 'x' })).json();
     expect(a.setup).toBe('missing: FEEDBACK_KV');
     env.FEEDBACK_KV = new Kv();
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 }));
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await post({ title: 'x' });
     expect(res.status).toBe(502);
-    expect((await res.json()).detail).toBe('GitHub 401 filing an issue in o/private: Bad credentials');
+    // the failing step goes to the Worker's log, not back to the sender (code scanning alert #38)
+    const body = await res.json();
+    expect(body.detail).toBeUndefined();
+    expect(JSON.stringify(body)).not.toMatch(/Bad credentials|o\/private/);
+    expect(String(logged.mock.calls[0]?.[0]?.message ?? logged.mock.calls[0]?.[0])).toBe('GitHub 401 filing an issue in o/private: Bad credentials');
+    logged.mockRestore();
   });
 });
