@@ -42,9 +42,10 @@ export default {
     try {
       return await feedback(request, env);
     } catch (e) {
+      // the failing step (e.g. "GitHub 401: Bad credentials") goes to the Worker's log
+      // (Cloudflare dashboard ▸ Workers ▸ Logs, or `wrangler tail`), never back to the sender
       console.error(e);
-      // `detail` names the failing step (e.g. "GitHub 401: Bad credentials"); it never holds the token
-      return reply(502, { error: 'The report couldn’t be filed just now. Try again later, or use Copy Text.', detail: String(e?.message ?? e).slice(0, 300) });
+      return refuse(502, 'The report couldn’t be filed just now. Try again later, or use Copy Text.');
     }
   },
 };
