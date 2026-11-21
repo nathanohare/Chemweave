@@ -4535,16 +4535,18 @@ export class Editor {
   }
 
   /**
-   * The selection box's tilt handles, for selected structures with the selection tool: either side
-   * of the rotate handle, clear of the captions and numbers under a structure. The left one tips
-   * the structures about the left–right axis (drag down or up); the right one swings them about the
-   * up–down axis (drag across). Both turn them as flat sheets.
+   * The selection box's tilt handles, only while a Perspective tool is in use and structures are
+   * selected: above the middle of the box, where the selection tool's rotate handle would be, clear
+   * of the captions and numbers under a structure. The left one tips the structures about the
+   * left–right axis (drag down or up); the right one swings them about the up–down axis (drag
+   * across). Never with the selection tool, so a plain selection shows only its own handles.
    */
   tiltHandles(): { x: Vec; y: Vec } | null {
-    const rh = this.sel.atoms.size < 2 ? null : this.rotateHandle();
-    if (!rh) return null;
-    const gap = this.tol(TILT_GAP);
-    return { x: { x: rh.x - gap, y: rh.y }, y: { x: rh.x + gap, y: rh.y } };
+    if (this.tool.kind !== 'perspective' || this.sel.atoms.size < 2 || !structuresOf(this.doc, this.sel.atoms).length) return null;
+    const b = this.selBox();
+    if (!b) return null;
+    const mid = (b.x1 + b.x2) / 2, y = b.y1 - this.tol(24), gap = this.tol(TILT_GAP);
+    return { x: { x: mid - gap, y }, y: { x: mid + gap, y } };
   }
 
   /** The tilt handle at a point, if any: 'x' tips (left of the rotate handle), 'y' swings (right of it). */
@@ -4559,10 +4561,12 @@ export class Editor {
   private startTilt(d: Drag, axis: 'x' | 'y'): void {
     const structures = structuresOf(this.doc, this.sel.atoms);
     if (!structures.length) return;
-    const t: PerspDrag = { real: false, axis, ready: null, begun: false, dx: 0, dy: 0, shift: false, unshown: 0, told: false };
+    // the 3-D Perspective tool's handles turn the real 3-D shape (flat when it can't be built)
+    const real = this.tool.kind === 'perspective' && this.tool.real && !!this.perspectiveHost;
+    const t: PerspDrag = { real, axis, ready: null, begun: false, dx: 0, dy: 0, shift: false, unshown: 0, told: false };
     d.persp = t;
     const doc = this.doc;
-    void prepareTurn(doc, structures, false, this.perspectiveHost).then((prep) => {
+    void prepareTurn(doc, structures, real, this.perspectiveHost).then((prep) => {
       if (this.drag !== d || this.doc !== doc) return;
       t.ready = prep;
       if (d.moved) this.turnTo(d);
@@ -8457,13 +8461,23 @@ export class Editor {
       ctx.fill();
       ctx.strokeStyle = PREVIEW;
       ctx.stroke();
-      this.drawTiltHandles(ctx, px, b);
       const r = this.drag?.rot;
       if (r && this.drag!.moved) {
         ctx.font = `${12 * px}px system-ui, sans-serif`;
         ctx.fillStyle = PREVIEW;
         ctx.fillText(`${Math.round(r.angle / DEG)}°`, this.pointer.x + 10 * px, this.pointer.y - 10 * px);
       }
+    }
+    // a Perspective tool with structures selected: their box and its tilt handles (never with the
+    // selection tool, where a plain selection shows only its own handles)
+    if (!this.drag && !this.layoutPreview && this.tiltHandles()) {
+      const b = this.selBox()!;
+      ctx.lineWidth = px;
+      ctx.strokeStyle = mk.box;
+      ctx.setLineDash([3 * px, 3 * px]);
+      ctx.strokeRect(b.x1 - 2 * px, b.y1 - 2 * px, b.x2 - b.x1 + 4 * px, b.y2 - b.y1 + 4 * px);
+      ctx.setLineDash([]);
+      this.drawTiltHandles(ctx, px, b);
     }
     // while a tilt handle is dragged: the box, the handle, and how far it has turned
     const tp = this.drag?.persp;
