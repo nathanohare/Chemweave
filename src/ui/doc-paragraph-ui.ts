@@ -29,6 +29,8 @@ const LINE_WIDTHS = ['0.25', '0.5', '0.75', '1', '1.5', '2.25', '3', '4.5', '6']
 export class DocParagraphUI {
   /** The line the Borders menu draws (set in Borders and Shading), as Word's last-used border. */
   line: BorderLine = { ...DEFAULT_LINE };
+  /** The choice the Borders button's main half puts on (the last one picked from its menu, as in Word). */
+  last: BorderChoice = 'bottom';
 
   constructor(private host: DocParagraphHost) {}
 
@@ -50,6 +52,7 @@ export class DocParagraphUI {
   /** Home > Borders: a choice from the menu, for each selected paragraph. */
   border(choice: BorderChoice): void {
     if (!this.host.file()) return;
+    if (choice !== 'none') this.last = choice;
     const ed = this.host.ed();
     const [a, b] = ed.selectedParas();
     const paras = fitParas(ed.result().paras ?? [], paraCount(ed.text));
