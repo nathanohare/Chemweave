@@ -159,7 +159,7 @@ import { freeRing, matchStructure, straightenLinear, fusedRing, placeRing, sprou
 import { Toolbar, ToolbarItem, PaletteDef, type ToolDef } from './ui/toolbar';
 import { StylePanel, tidyStyle } from './ui/style-panel';
 import { installCombos } from './ui/combo';
-import { installFontList, registerBundledFonts, bundledFaces, pdfFonts } from './fonts';
+import { installFontList, registerBundledFonts, registerEmbeddedFont, bundledFaces, pdfFonts } from './fonts';
 import { applyRibbonIcons } from './ui/ribbon-icons';
 import { iconSet, setIconSet } from './ui/icon-swap';
 import { applyIconSet } from './ui/icon-set';
@@ -4259,6 +4259,8 @@ let officeStructures: Settings['officeStructures'] = { docx: 'pictures', pptx: '
 /** Opening Word files: ChemDraw objects in them become structures, kept at the size they had. */
 const docRead: DocxReadDeps = {
   convertChemDraw: false,
+  // fonts embedded in a Word file show it where they aren't installed
+  embeddedFont: registerEmbeddedFont,
   chemdraw: (cdx, style) => docRead.cdxml!(cdxToCdxml(cdx), style),
   cdxml: (text, style) => {
     const d = readCdxml(text).doc;

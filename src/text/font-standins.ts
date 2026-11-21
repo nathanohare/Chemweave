@@ -23,6 +23,20 @@ export function hintFontClass(name: string, cls: FontClass): void {
   stacks.clear();
 }
 
+/** Fonts embedded in open documents, by lower-case name: the name each is loaded under. */
+const embedded = new Map<string, string>();
+
+/**
+ * A font embedded in a document is loaded under `alias`: it comes after the font itself, so it is
+ * used only where the font isn't installed, before any stand-in.
+ */
+export function useEmbeddedFont(name: string, alias: string): void {
+  const k = key(name);
+  if (!k || embedded.get(k) === alias) return;
+  embedded.set(k, alias);
+  stacks.clear();
+}
+
 /** The kind of font from Word's font family (w:family): null for 'auto' and the rest. */
 export function wordFontClass(family: string | null | undefined): FontClass | null {
   switch ((family ?? '').toLowerCase()) {
@@ -66,7 +80,8 @@ export function fallbackFonts(family: string): string[] {
     : c === 'serif' ? ['Times New Roman', 'Tinos']
       : c === 'mono' ? ['Courier New', 'Cousine']
         : [];
-  s = list.filter((x) => x.toLowerCase() !== f);
+  const own = embedded.get(f);
+  s = [...(own ? [own] : []), ...list.filter((x) => x.toLowerCase() !== f)];
   stacks.set(f, s);
   return s;
 }

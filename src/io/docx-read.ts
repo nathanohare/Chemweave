@@ -24,6 +24,7 @@ import { cleanBorders } from '../document/para-borders';
 import { ACS_1996, type DocStyle } from '../style';
 import * as rt from '../richtext';
 import { NS, PackageReader, REL, bytesHash, kid, kids, rAttr, fromEmu } from './ooxml';
+import { embeddable, obfuscate } from './font-embed';
 import { dataUrl, imageSize, pictureMime } from '../render/images';
 import { drawingInEmf } from '../render/emf';
 import { BULLETS, BULLET_LIBRARY, LIST_SCHEMES, cleanPara, listInfo, ownSchemeId, type NumFormat } from '../text/paragraphs';
@@ -61,6 +62,11 @@ import { cmlGuid, contentsSig } from './cml';
 import { GEOS, GEO_BY_ID } from '../design/geo';
 
 export interface DocxReadDeps {
+  /**
+   * A font face embedded in the file (TrueType, its embedding allowed), for showing the document
+   * where the font isn't installed.
+   */
+  embeddedFont?(family: string, bold: boolean, italic: boolean, data: Uint8Array): void;
   /** A ChemDraw drawing (CDX data) as a drawing in the document's style; null when it can't be read. */
   chemdraw?(cdx: Uint8Array, style: DocStyle): Contents | null;
   /**
@@ -142,7 +148,7 @@ const WARN = {
 
 type Pos = 'base' | 'sub' | 'sup';
 /** Text formatting as a file gives it (only what it gives). `color` null is "automatic". */
-interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; noKern?: boolean; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
+interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
 /** Paragraph formatting as a file gives it, in points. */
 interface PProps {
   align?: Justify; before?: number; after?: number; line?: { v: number; rule: string };
@@ -177,7 +183,7 @@ function finalTabs(p: PProps): TabStop[] | undefined {
 interface CellLook { p: PProps; r: RProps }
 interface WStyle { id: string; type: string; name: string; basedOn?: string; next?: string; isDefault: boolean; p: PProps; r: RProps; el: Element }
 /** A list level: its number format and text, its indents, its start value and the level after which it starts again (lvlRestart, 1-based; 0 never). */
-interface Level { fmt: string; text: string; p: PProps; start: number; restart?: number }
+interface Level { fmt: string; text: string; p: PProps; start: number; restart?: number; /** The number's own bold and italic (w:lvl/w:rPr). */ r?: { bold?: boolean; italic?: boolean } }
 interface Piece { runs: TextRun[]; pageBreak: boolean; soft: boolean; colBreak?: boolean; /** Index entries and marked citations in it (XE and TA fields). */ xe?: IndexMark[]; ta?: AuthorityMark[] }
 interface Ctx { base: RProps; pieces: Piece[]; cell: boolean }
 interface Field { instr: string; phase: 'instr' | 'result'; swallow: boolean; /** The field's own data (w:fldData, base64): EndNote's citations. */ data?: string; text: string; props: RProps; /** How its result's first text looks, which is what Word shows (EndNote sets superscript only there). */ shown?: RProps; done: boolean; ref?: { id: number; mark: string; text: string; above?: boolean; page?: boolean }; toc?: boolean; /** A table of contents (TOC \\o): its object, which takes the look of its lines as Word last wrote them. */ tocId?: number; /** A form field's settings (w:ffData), and the form field made of it. */ ff?: Element; form?: number; /** A HYPERLINK field: the link open before it, put back at its end. */ before?: { link: string | undefined }; /** A manager's citation (its object) whose shown text is kept; a manager's bibliography (its object) whose entries are kept. */ cite?: number; bib?: number; /** Its separator (where its result starts). */ sep?: Element; /** Another field inside its instruction. */ inner?: boolean; /** A field kept as Word had it: the object made of it (its result is gathered into it). */ kept?: number }
@@ -189,6 +195,14 @@ export async function readDocx(bytes: Uint8Array, deps: DocxReadDeps = {}): Prom
   const app = deps.keepBibliography ? reader.bibliographyApp() : null;
   if (app) reader.keepBib = await deps.keepBibliography!(app);
   return reader.read();
+}
+
+/**
+ * Word kerns letters only where kerning is set (w:kern) and the text is at least that size, so
+ * text without it is not kerned (TextRun.noKern).
+ */
+function noKernOf(r: RProps): true | undefined {
+  return !r.kern || (r.size ?? WORD_SIZE) < r.kern ? true : undefined;
 }
 
 /** An on/off attribute that is there and on. */
@@ -506,7 +520,7 @@ class DocxReader {
         case 'caps': out.allCaps = this.on(c); break;
         // character spacing (twentieths of a point) and kerning taken off
         case 'spacing': { const v = parseFloat(this.a(c) ?? ''); out.spacing = Number.isFinite(v) && v ? Math.round((v / 20) * 100) / 100 : undefined; break; }
-        case 'kern': out.noKern = this.a(c) === '0' || undefined; break;
+        case 'kern': { const v = Number(this.a(c) ?? 0); out.kern = Number.isFinite(v) && v > 0 ? v / 2 : 0; break; }
         // Word 2010's text effects (w14)
         case 'shadow': out.shadow = c.namespaceURI?.includes('2010') ? true : this.on(c) || undefined; break;
         case 'textOutline': {
@@ -770,7 +784,10 @@ class DocxReader {
   private readLevel(l: Element): Level {
     const start = Number(this.a(kid(l, 'start')) ?? 0);
     const restart = kid(l, 'lvlRestart') ? Number(this.a(kid(l, 'lvlRestart'))) : NaN;
+    const rp = this.readRPr(kid(l, 'rPr'));
+    const r = { ...(rp.bold !== undefined ? { bold: rp.bold } : {}), ...(rp.italic !== undefined ? { italic: rp.italic } : {}) };
     return {
+      ...(Object.keys(r).length ? { r } : {}),
       fmt: this.a(kid(l, 'numFmt')) ?? 'decimal', text: this.a(kid(l, 'lvlText')) ?? '', p: this.readPPr(kid(l, 'pPr')),
       start: Number.isFinite(start) ? Math.round(start) : 0, ...(Number.isFinite(restart) ? { restart: Math.round(restart) } : {}),
     };
@@ -840,6 +857,21 @@ class DocxReader {
       const alt = val('altName');
       const cls = wordFontClass(val('family')) ?? (alt ? fontClass(alt) : null);
       if (cls) hintFontClass(name, cls);
+      // fonts embedded in the file (obfuscated with their key, ECMA-376 part 1, 17.8.1)
+      if (!this.deps.embeddedFont || !path) continue;
+      for (const [tag, bold, italic] of [['embedRegular', false, false], ['embedBold', true, false], ['embedItalic', false, true], ['embedBoldItalic', true, true]] as const) {
+        const el = f.getElementsByTagNameNS(W_NS, tag)[0];
+        const id = el ? rAttr(el, 'id') : null;
+        const key = el?.getAttributeNS(W_NS, 'fontKey');
+        const part = id ? this.pkg.rels(path).get(id) : undefined;
+        const bytes = part && !part.external ? this.pkg.bytes(part.target) : null;
+        if (!bytes || !key || !/^\{?[0-9A-F]{8}(-?[0-9A-F]{4}){3}-?[0-9A-F]{12}\}?$/i.test(key)) continue;
+        try {
+          const ttf = obfuscate(bytes, key);
+          // (a font whose maker restricts embedding is left to the computer's own)
+          if (embeddable(ttf)) this.deps.embeddedFont(name, bold, italic, ttf);
+        } catch { /* a damaged font is skipped */ }
+      }
     }
   }
 
@@ -1416,6 +1448,13 @@ class DocxReader {
       tabs: finalTabs(p), scheme, bullet,
       border: cleanBorders(p.border), shade: p.shade && p.shade !== '#ffffff' ? p.shade : undefined,
     };
+    // the number as Word draws it: in the paragraph mark's bold and italic (its style's, unless the
+    // mark sets its own), then the list level's; kept where that isn't the style's
+    if (list === 'number' && level) {
+      const bold = level.r?.bold ?? !!mark.bold, italic = level.r?.italic ?? !!mark.italic;
+      const look = { ...(bold !== !!base.bold ? { bold } : {}), ...(italic !== !!base.italic ? { italic } : {}) };
+      if (Object.keys(look).length) ps.numLook = look;
+    }
     const markStyle = this.runStyle({ ...mark, cstyle: undefined });
     const mrEl = kid(kid(pPr, 'rPr'), 'ins') ?? kid(kid(pPr, 'rPr'), 'del');
     const markRevOf = mrEl ? revText({ kind: mrEl.localName === 'ins' ? 'ins' : 'del', author: this.a(mrEl, 'author') ?? '', date: this.a(mrEl, 'date') ?? '' }) : undefined;
@@ -1488,7 +1527,7 @@ class DocxReader {
     return rt.cleanStyle({
       font: r.font ?? WORD_FONT, size: r.size ?? WORD_SIZE, bold: r.bold, italic: r.italic, underline: r.underline,
       strike: r.strike, smallCaps: r.smallCaps, allCaps: r.allCaps, cstyle: r.cstyle,
-      spacing: r.spacing, noKern: r.noKern, noFill: r.noFill, transparency: r.transparency, outline: r.outline, outlineW: r.outlineW, shadow: r.shadow, wfx: r.wfx,
+      spacing: r.spacing, noKern: noKernOf(r), noFill: r.noFill, transparency: r.transparency, outline: r.outline, outlineW: r.outlineW, shadow: r.shadow, wfx: r.wfx,
       lang: r.lang && r.lang.toLowerCase() !== (this.docDefaults.r.lang ?? 'en-US').toLowerCase() ? r.lang : undefined, noProof: r.noProof, raise: r.raise || undefined,
       color: r.color ?? undefined, highlight: r.highlight ?? undefined, formula: formula || undefined,
       sub: (!formula && r.pos === 'sub') || undefined, sup: (!formula && r.pos === 'sup') || undefined,
@@ -3091,6 +3130,15 @@ class DocxReader {
       const id = Array.from(pict.getElementsByTagNameNS('*', 'shape')).map((e) => e.getAttribute('id') ?? '').join(' ');
       if (/PowerPlusWaterMarkObject|WordPictureWatermark/.test(id)) pict.parentNode?.removeChild(pict);
     }
+    // a framed paragraph (a page number in a frame, w:framePr) floats over the paragraph after it,
+    // taking no line of its own: it takes the place of that paragraph when that one is empty
+    for (const p of Array.from(root.getElementsByTagNameNS(this.W, 'p'))) {
+      const fr = kid(kid(p, 'pPr'), 'framePr');
+      const next = p.nextElementSibling;
+      if (!fr || this.a(fr, 'dropCap') || this.a(fr, 'vAnchor') === 'page' || next?.localName !== 'p' || next.namespaceURI !== this.W) continue;
+      if (next.getElementsByTagNameNS(this.W, 't').length || next.getElementsByTagNameNS(this.W, 'drawing').length || next.getElementsByTagNameNS(this.W, 'fldChar').length) continue;
+      next.parentNode?.removeChild(next);
+    }
     const fields = this.fields, cmt = this.cmtOpen, math = this.displayMath, part = this.part, link = this.link, marks = this.pendingMarks;
     this.fields = [];
     this.cmtOpen = new Set();
@@ -3119,6 +3167,8 @@ class DocxReader {
     let lines = 0;
     // blank paragraphs above the first text (they move it down the page)
     let blankAbove = 0, texted = false;
+    // and, in a footer, below the last (they lift it up from the bottom of the page)
+    let blankBelow = 0;
     // how the three places' text is shown: in Normal's font, at 10 pt at most (as saved here), or at Normal's size (as Word's header style has it)
     const normal = this.paraProps(null).base;
     const zoneLook = { font: normal.font ?? WORD_FONT, size: Math.min(10, normal.size ?? WORD_SIZE), normal: normal.size ?? WORD_SIZE };
@@ -3199,13 +3249,14 @@ class DocxReader {
         }
       };
       visit(p);
-      if (texts.some((t) => t.trim())) { lines++; texted = true; }
-      else if (!texted && !p.getElementsByTagNameNS(this.W, 'fldChar').length && !p.getElementsByTagNameNS(this.W, 'fldSimple').length) blankAbove++;
-      else texted = true;
+      const field = p.getElementsByTagNameNS(this.W, 'fldChar').length > 0 || p.getElementsByTagNameNS(this.W, 'fldSimple').length > 0;
+      if (texts.some((t) => t.trim())) { lines++; texted = true; blankBelow = 0; }
+      else if (!field) { if (texted) blankBelow++; else blankAbove++; }
+      else { texted = true; blankBelow = 0; }
       texts.forEach((t, i) => { const s = t.trim(); if (s) zones[i] = zones[i] ? `${zones[i]} ${s}` : s; });
     }
     // (text on more than one line is kept as it is, not run together on one)
-    if (lines > 1 || root.getElementsByTagNameNS(this.W, 'tbl').length || (texted && blankAbove > 0)) rich = true;
+    if (lines > 1 || root.getElementsByTagNameNS(this.W, 'tbl').length || (texted && blankAbove > 0) || (texted && blankBelow > 0 && root.localName === 'ftr')) rich = true;
     if (after.trim() && !rich) this.warn('pageText');
     return { zones, page, rich };
   }

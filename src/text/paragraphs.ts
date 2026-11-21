@@ -5,7 +5,7 @@
 
 import type { ParaStyle, TextRun } from '../model';
 
-const KEYS = ['list', 'level', 'cont', 'soft', 'align', 'spaceBefore', 'spaceAfter', 'indent', 'style', 'pageBreak', 'colBreak', 'firstLine', 'line', 'keepNext', 'keepLines', 'noWidow', 'indentRight', 'linePt', 'lineRule', 'section', 'noLineNumbers', 'noHyphen', 'marks', 'tabs', 'scheme', 'bullet', 'numType', 'startAt', 'border', 'shade', 'xe', 'ta', 'cc'] as const;
+const KEYS = ['list', 'level', 'cont', 'soft', 'align', 'spaceBefore', 'spaceAfter', 'indent', 'style', 'pageBreak', 'colBreak', 'firstLine', 'line', 'keepNext', 'keepLines', 'noWidow', 'indentRight', 'linePt', 'lineRule', 'section', 'noLineNumbers', 'noHyphen', 'marks', 'tabs', 'scheme', 'bullet', 'numType', 'startAt', 'numLook', 'border', 'shade', 'xe', 'ta', 'cc'] as const;
 
 /** A paragraph style with nothing unset or zero, so two styles compare simply. */
 export function cleanPara(p: ParaStyle | undefined): ParaStyle {
@@ -18,8 +18,8 @@ export function cleanPara(p: ParaStyle | undefined): ParaStyle {
     o[k] = v;
   }
   // a level or a continuation means nothing outside a list
-  if (!o.list) { delete o.level; delete o.cont; delete o.scheme; delete o.bullet; delete o.numType; delete o.startAt; }
-  else if (o.list === 'bullet') { delete o.scheme; delete o.numType; delete o.startAt; }
+  if (!o.list) { delete o.level; delete o.cont; delete o.scheme; delete o.bullet; delete o.numType; delete o.startAt; delete o.numLook; }
+  else if (o.list === 'bullet') { delete o.scheme; delete o.numType; delete o.startAt; delete o.numLook; }
   else delete o.bullet;
   return o as ParaStyle;
 }

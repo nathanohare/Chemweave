@@ -624,6 +624,17 @@ export function newDocument(): DocText {
 // ---------------------------------------------------------------- styles
 
 /** The named style of a paragraph (Normal when it names none, or one the document doesn't have). */
+/**
+ * How a paragraph's list number is set, as Word sets it: in its paragraph style's bold and italic,
+ * unless the paragraph gives the number its own ('bold ', 'italic bold ', '' as layouts write them).
+ */
+export function numberStyle(t: Pick<DocText, 'styles'>, p: ParaStyle | undefined): string {
+  if (p?.list !== 'number') return '';
+  const st = styleOf(t, p);
+  const bold = p.numLook?.bold ?? !!st.bold, italic = p.numLook?.italic ?? !!st.italic;
+  return `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}`;
+}
+
 export function styleOf(t: Pick<DocText, 'styles'>, p: ParaStyle | undefined): NamedStyle {
   return t.styles[p?.style ?? 'Normal'] ?? t.styles.Normal ?? defaultStyles().Normal;
 }

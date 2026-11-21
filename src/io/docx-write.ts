@@ -627,7 +627,10 @@ class DocxWriter {
     if (align !== st.align) pPr.push(`<w:jc w:val="${JC[align]}"/>`);
     // the paragraph mark itself inserted or deleted while tracking
     const mr = parseRev(index >= 0 ? this.markRev[index] : undefined);
-    if (mr) pPr.push(`<w:rPr><w:${mr.kind} ${this.revAttrs(this.markRev[index]!)}/></w:rPr>`);
+    // (and a list number's own bold or italic, which Word takes from the mark)
+    const nl = ps.list === 'number' ? ps.numLook : undefined;
+    const markLook = `${nl?.bold !== undefined ? (nl.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>') : ''}${nl?.italic !== undefined ? (nl.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>') : ''}`;
+    if (mr || markLook) pPr.push(`<w:rPr>${mr ? `<w:${mr.kind} ${this.revAttrs(this.markRev[index]!)}/>` : ''}${markLook}</w:rPr>`);
     // the section ending with this paragraph
     if (sectXml) pPr.push(sectXml);
 
@@ -1513,7 +1516,7 @@ class DocxWriter {
     const t = this.t;
     const normal = styleOf(t, undefined);
     const out: string[] = [HEAD, `<w:styles xmlns:w="${W_NS}">`];
-    out.push(`<w:docDefaults><w:rPrDefault><w:rPr>${fontsXml(normal.font)}<w:sz w:val="${half(normal.size)}"/><w:szCs w:val="${half(normal.size)}"/><w:lang w:val="${xml(t.lang ?? 'en-US')}" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>` +
+    out.push(`<w:docDefaults><w:rPrDefault><w:rPr>${fontsXml(normal.font)}<w:kern w:val="2"/><w:sz w:val="${half(normal.size)}"/><w:szCs w:val="${half(normal.size)}"/><w:lang w:val="${xml(t.lang ?? 'en-US')}" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>` +
       `<w:pPrDefault><w:pPr><w:widowControl/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>`);
     const ids = Object.keys(t.styles);
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {
@@ -1589,10 +1592,11 @@ class DocxWriter {
       const sc = key.startsWith('n*') ? schemeOf(key.slice(2).split('|')[i]) : schemeOf(key.slice(1));
       const fmt = bullet ? 'bullet' : sc.levels[i].fmt;
       const text = bullet ? key.slice(1) || BULLETS[i % BULLETS.length] : sc.levels[i].text;
-      // bullets that ordinary fonts may lack come from a symbol font
+      // bullets that ordinary fonts may lack come from a symbol font; bullets are plain, numbers
+      // take the paragraph's bold and italic (its style's, or its mark's: ParaStyle.numLook)
       const font = bullet && /[✓➢★◆]/.test(text) ? 'Segoe UI Symbol' : normal.font;
       return `<w:lvl w:ilvl="${i}"><w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:lvlText w:val="${xml(text)}"/><w:lvlJc w:val="left"/>` +
-        `<w:pPr><w:ind w:left="${twips(left)}" w:hanging="${twips(hang)}"/></w:pPr><w:rPr>${fontsXml(font)}<w:b w:val="0"/><w:i w:val="0"/></w:rPr></w:lvl>`;
+        `<w:pPr><w:ind w:left="${twips(left)}" w:hanging="${twips(hang)}"/></w:pPr><w:rPr>${fontsXml(font)}${bullet ? '<w:b w:val="0"/><w:i w:val="0"/>' : ''}</w:rPr></w:lvl>`;
     }).join('');
     const out = [HEAD, `<w:numbering xmlns:w="${W_NS}">`];
     for (const [key, abs] of this.abstractNums) out.push(`<w:abstractNum w:abstractNumId="${abs}"><w:multiLevelType w:val="${key === 'b' || key === 'n' ? 'hybridMultilevel' : 'multilevel'}"/>${lvls(key)}</w:abstractNum>`);

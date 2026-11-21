@@ -337,10 +337,10 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
           usedFonts.add(f);
           // the text matrix turns the letters the right way up again
           const m = `${num(cos)} ${num(-sin)} ${num(-sin)} ${num(-cos)} ${num(it.x + dx * cos)} ${num(it.y - dx * sin)}`;
-          ops.push(`BT /${f} ${num(it.size)} Tf ${m} Tm ${s} Tj ET`);
+          ops.push(`BT /${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
         };
         for (const piece of keptPieces(it.text, it.widths, kept)) {
-          if (piece.font) show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text));
+          if (piece.font) show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size));
           else for (const p of textPieces(piece.text, piece.widths)) show(fontRef(p.symbol ? 'Symbol' : standardFont(it.family, it.bold, it.italic)), piece.dx + p.dx, pdfString(p.codes));
         }
         ops.push('Q');

@@ -39,6 +39,12 @@ export const withStack = (font: string): string => {
   return `${cssFamily(font)}, ${extra.length ? `${extra.map(cssFamily).join(', ')}, ` : ''}${FONT_STACK}`;
 };
 
+/**
+ * Added to the style a document measures unkerned text with (Word's kerning off). Only documents'
+ * measures (documentMeasure) are given it; they take it off before measuring on screen.
+ */
+export const NO_KERN = 'nokern ';
+
 /** Width in points of text in a font: (text, size in points, CSS font family, 'bold '/'italic '). */
 export type Measure = (text: string, size: number, family: string, style: string) => number;
 
@@ -60,6 +66,8 @@ export interface TextFrame {
   single?: number;
   /** Bullets and numbers worked out elsewhere (a document lays out one paragraph at a time). */
   markers?: (string | null)[];
+  /** How each paragraph's number is set ('bold ', 'italic '...): documents set it in the paragraph style's (Word's); plain when not given. */
+  markerStyles?: string[];
   /**
    * Lines stack as boxes of single spacing (times the line spacing), as in Word. Without it a
    * line steps down by the size of the line above, as ChemDraw's captions do.
@@ -475,8 +483,9 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       if (m) {
         const first = pSegs[0];
         const family = first?.family ?? FONT_STACK;
-        // bullets and numbers are plain (not bold or italic), in the colour of the text
-        marker = { text: m, start: paraStart, x: markLeft, w: measure(m, em, family, ''), dy: 0, size: em, family, style: '', color: first?.color };
+        // bullets and numbers are plain (not bold or italic) unless a document says otherwise, in the colour of the text
+        const style = (ps.list === 'number' && f.markerStyles?.[p]) || '';
+        marker = { text: m, start: paraStart, x: markLeft, w: measure(m, em, family, style), dy: 0, size: em, family, style, color: first?.color };
         left = Math.max(left, markLeft + marker.w + 0.3 * em);
       }
     } else firstLine = ps.firstLine ?? 0;
@@ -499,7 +508,7 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       }
     }
     const segWidth = (s: Seg, a: number, b: number): number =>
-      s.hide ? 0 : s.obj !== undefined || s.tab ? (b > a ? s.w ?? 0 : 0) : measure(unshy(s.text.slice(a, b)), s.size, s.family, s.style) + (s.spacing ? s.spacing * (b - a) : 0);
+      s.hide ? 0 : s.obj !== undefined || s.tab ? (b > a ? s.w ?? 0 : 0) : measure(unshy(s.text.slice(a, b)), s.size, s.family, f.boxes && s.fx?.noKern ? s.style + NO_KERN : s.style) + (s.spacing ? s.spacing * (b - a) : 0);
 
     // the width of part of the paragraph (offsets within it), piece by piece
     const widthOf = (a: number, b: number): number => {
@@ -528,7 +537,13 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
         let stop: TabStop | undefined = stops.find((st) => st.pos > at + 0.01);
         // a hanging indent is a tab stop too (a list's or a reference's number, then a tab)
         if (hang !== null && hang > at + 0.01 && (!stop || hang < stop.pos)) stop = { pos: hang, kind: 'left' };
-        if (!stop) stop = { pos: (Math.floor(Math.max(at, lastStop) / DEFAULT_TAB) + 1) * DEFAULT_TAB, kind: 'left' };
+        if (!stop) {
+          stop = { pos: (Math.floor(Math.max(at, lastStop) / DEFAULT_TAB) + 1) * DEFAULT_TAB, kind: 'left' };
+          // (in a document, a tab with no stop before the right margin goes only as far as the
+          // margin, as in Word, so a tab after the last words doesn't push them onto a new line)
+          const edge = f.boxes && f.wrap ? f.wrap - (ps.indentRight ?? 0) : Infinity;
+          if (stop.pos > edge) stop = { pos: Math.max(at, edge), kind: 'left' };
+        }
         // the text after the tab, up to the next tab or the end of the line
         let after = 0, toPoint = -1;
         for (let j = i + 1; j < pSegs.length; j++) {
