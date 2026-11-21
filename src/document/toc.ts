@@ -7,7 +7,7 @@
 import type { ParaStyle, TextRun } from '../model';
 import * as rt from '../richtext';
 import { withStack, layoutText, type Glyphs, type LaidLine, type Measure } from '../text/layout';
-import { fitParas, paraCount, splitParagraphs } from '../text/paragraphs';
+import { fitParas, listInfo, paraCount, splitParagraphs } from '../text/paragraphs';
 import { COMPOUND, fieldTexts, styleOf, type DocText, type NamedStyle } from './document';
 
 export interface TocEntry {
@@ -16,6 +16,8 @@ export interface TocEntry {
   text: string;
   /** The heading's paragraph. */
   para: number;
+  /** Its number, when the heading is numbered (A., 2.1): shown before its text, as Word's contents do. */
+  num?: string;
 }
 
 /** What the contents show when there are no headings yet (on screen and in the PDF only). */
@@ -26,12 +28,16 @@ export function tocEntries(t: DocText, levels = 3): TocEntry[] {
   const runs = splitParagraphs(t.runs);
   const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
   const out: TocEntry[] = [];
+  let lists: ReturnType<typeof listInfo> | null = null;
   paras.forEach((ps, p) => {
     const level = styleOf(t, ps).outline;
     if (!level || level > levels) return;
     // figures and fields in a heading are left out; a line break is a space
     const text = (runs[p] ?? []).filter((r) => r.obj === undefined).map((r) => r.text).join('').replace(/\s+/g, ' ').trim();
-    if (text) out.push({ level, text, para: p });
+    if (!text) return;
+    // a numbered heading's number comes too
+    const num = ps.list === 'number' ? (lists ??= listInfo(paras))[p]?.marker : null;
+    out.push({ level, text, para: p, ...(num ? { num } : {}) });
   });
   return out;
 }
@@ -43,38 +49,52 @@ export const TOC_INDENT = 11;
  * The contents' lines, laid out `wrap` wide from the origin: each heading's text (wrapping short
  * of the page numbers), then dots and its page number at the right of its last line.
  */
-export function tocLines(entries: TocEntry[], pageOf: (para: number) => string, st: NamedStyle, line: number | undefined, wrap: number, measure: Measure, empty = EMPTY_TOC, spaced = true): LaidLine[] {
+export function tocLines(entries: TocEntry[], pageOf: (para: number) => string, st: NamedStyle, line: number | undefined, wrap: number, measure: Measure, empty = EMPTY_TOC, spaced = true, levelStyle?: (level: number) => NamedStyle | undefined): LaidLine[] {
   const base = { font: st.font, size: st.size };
-  const family = withStack(st.font);
   if (!entries.length) {
     return layoutText({ runs: [{ ...base, italic: true, color: '#8a8f98', text: empty }], paras: [{ line }], justify: 'left', wrap, boxes: true }, st.size, measure).lines;
   }
+  // each level in the document's own style for it (Word's "toc 1" to "toc 9"), when it has one
+  type Look = { font: string; size: number; bold?: boolean; italic?: boolean; color?: string; own: NamedStyle | null };
+  const looks = entries.map((e): Look => {
+    const ls = levelStyle?.(e.level);
+    return ls ? { font: ls.font, size: ls.size, ...(ls.bold ? { bold: true } : {}), ...(ls.italic ? { italic: true } : {}), ...(ls.color ? { color: ls.color } : {}), own: ls } : { ...base, own: null };
+  });
+  // (as the layout writes a run's style for measuring)
+  const styleKey = (i: number) => `${looks[i]?.italic ? 'italic ' : ''}${looks[i]?.bold ? 'bold ' : ''}`;
   const labels = entries.map((e) => pageOf(e.para));
-  const numW = Math.max(0, ...labels.map((l) => measure(l, st.size, family, '')));
+  const numW = Math.max(0, ...labels.map((l, i) => measure(l, looks[i].size, withStack(looks[i].font), styleKey(i))));
   // room kept at the right for the dots and the number
   const keep = numW + 2 * st.size;
   const runs: TextRun[] = [];
   entries.forEach((e, i) => {
-    if (i) runs.push({ ...base, text: '\n' });
-    runs.push({ ...base, text: e.text });
+    const { own: _own, ...look } = looks[i];
+    if (i) runs.push({ ...look, text: '\n' });
+    runs.push({ ...look, text: e.num ? `${e.num}\t${e.text}` : e.text });
   });
-  const paras: ParaStyle[] = entries.map((e) => ({ indent: (e.level - 1) * TOC_INDENT, indentRight: keep, line, spaceBefore: spaced && e.level === 1 && entries.length > 1 ? 0.25 * st.size : 0 }));
+  const paras: ParaStyle[] = entries.map((e, i) => {
+    const own = looks[i].own;
+    const before = own ? own.spaceBefore : spaced && e.level === 1 && entries.length > 1 ? 0.25 * st.size : 0;
+    return { indent: (own ? own.indent : (e.level - 1) * TOC_INDENT), indentRight: keep, line, spaceBefore: i === 0 && own ? 0 : before };
+  });
   const lay = layoutText({ runs, paras, justify: 'left', wrap, boxes: true }, st.size, measure);
   const unit = '. ';
-  const unitW = measure(unit, st.size, family, '');
   const lines = lay.lines.map((l) => ({ ...l, pieces: [...l.pieces] }));
   for (const l of lines) {
     if (!l.last) continue;
+    const look: Look = looks[l.para] ?? { ...base, own: null };
+    const size = look.size, family = withStack(look.font), style = styleKey(l.para);
+    const unitW = measure(unit, size, family, style);
     const label = labels[l.para] ?? '';
-    const w = measure(label, st.size, family, '');
+    const w = measure(label, size, family, style);
     const numX = wrap - w;
-    const from = l.x + l.width + 0.4 * st.size;
-    const to = numX - 0.3 * st.size;
+    const from = l.x + l.width + 0.4 * size;
+    const to = numX - 0.3 * size;
     const n = unitW > 0 ? Math.floor((to - from) / unitW) : 0;
-    const piece = (text: string, x: number, pw: number): Glyphs => ({ text, start: l.end, x, w: pw, dy: 0, size: st.size, family, style: '', decor: true });
+    const piece = (text: string, x: number, pw: number): Glyphs => ({ text, start: l.end, x, w: pw, dy: 0, size, family, style, decor: true, ...(look.color ? { color: look.color } : {}) });
     if (n > 0) {
       const dots = unit.repeat(n).trimEnd();
-      const dw = measure(dots, st.size, family, '');
+      const dw = measure(dots, size, family, style);
       l.pieces.push(piece(dots, to - dw, dw));
     }
     l.pieces.push(piece(label, numX, w));
@@ -85,7 +105,7 @@ export function tocLines(entries: TocEntry[], pageOf: (para: number) => string, 
 
 /** The contents as plain text, a line each ("Synthesis\t4"): for Word files and finding text. */
 export function tocText(entries: TocEntry[], pageOf: (para: number) => string): string {
-  return entries.map((e) => `${e.text}\t${pageOf(e.para)}`).join('\n');
+  return entries.map((e) => `${e.num ? `${e.num}\t` : ''}${e.text}\t${pageOf(e.para)}`).join('\n');
 }
 
 /** Is this run the contents? */

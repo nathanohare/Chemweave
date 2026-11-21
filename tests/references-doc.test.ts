@@ -65,7 +65,8 @@ describe('citations and the bibliography in a document', () => {
     const g = lay.text.lines.flatMap((l) => l.pieces).find((p) => p.obj === 1)!;
     expect(g.shown).toBe('1');
     expect(g.dy).toBeLessThan(0);
-    expect(g.size).toBeCloseTo(11 * 0.75);
+    // documents use Word's script metrics: two thirds of the size, raised a third of an em
+    expect(g.size).toBeCloseTo((11 * 2) / 3);
   });
 
   it('lays the bibliography out as lines of entries that hold its one character', () => {

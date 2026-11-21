@@ -769,7 +769,7 @@ class DocxWriter {
     const paras = entries.map((e, i) => {
       const pPr = `<w:pPr><w:pStyle w:val="TOC${e.level}"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="${twips(textW)}"/></w:tabs>` +
         `<w:spacing w:before="${e.level === 1 && i > 0 ? twips(0.25 * st.size) : 0}" w:after="0"${line}/><w:ind w:left="${twips((e.level - 1) * TOC_INDENT)}"/></w:pPr>`;
-      return `<w:p>${pPr}${i === 0 ? begin : ''}${run('', e.text)}${run('', `\t${pages?.[e.para] ?? ''}`)}${i === entries.length - 1 ? end : ''}</w:p>`;
+      return `<w:p>${pPr}${i === 0 ? begin : ''}${run('', e.num ? `${e.num}\t${e.text}` : e.text)}${run('', `\t${pages?.[e.para] ?? ''}`)}${i === entries.length - 1 ? end : ''}</w:p>`;
     });
     // no headings yet: the field with nothing in it, for Word to fill in
     if (!paras.length) paras.push(`<w:p>${begin}${end}</w:p>`);
@@ -1509,7 +1509,7 @@ class DocxWriter {
     }
     // the contents' lines (Word's own "toc 1" to "toc 3", which Update Field uses)
     if (Object.values(t.objects).some((o) => o.kind === 'toc')) {
-      for (let n = 1; n <= 3; n++) out.push(`<w:style w:type="paragraph" w:styleId="TOC${n}"><w:name w:val="toc ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips((n - 1) * TOC_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`);
+      for (let n = 1; n <= 3; n++) if (!t.styles[`TOC${n}`]) out.push(`<w:style w:type="paragraph" w:styleId="TOC${n}"><w:name w:val="toc ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips((n - 1) * TOC_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`);
     }
     // the table of figures' lines (Word's own "table of figures")
     if (Object.values(t.objects).some((o) => o.kind === 'tof')) {
