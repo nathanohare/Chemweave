@@ -12,6 +12,7 @@ import { textFx } from './fx';
 import type { Rect } from '../geom';
 import { formulaRunParts } from '../richtext';
 import { fitParas, laidParas, listMarkers, paraCount } from './paragraphs';
+import { fallbackFonts } from './font-standins';
 
 export const FONT_STACK = "Arial, 'Liberation Sans', Helvetica, sans-serif";
 
@@ -28,8 +29,15 @@ export function cssFamily(name: string): string {
   return `"${n.replace(/["\\]/g, '')}"`;
 }
 
-/** A font, then the usual fallbacks. */
-export const withStack = (font: string): string => `${cssFamily(font)}, ${FONT_STACK}`;
+/**
+ * A font, then the usual fallbacks: first a free font with the same letter widths where there is
+ * one (Carlito for Calibri, Caladea for Cambria, Times New Roman or Tinos for a serif font), so
+ * text keeps its line breaks on a computer without the font.
+ */
+export const withStack = (font: string): string => {
+  const extra = fallbackFonts(font);
+  return `${cssFamily(font)}, ${extra.length ? `${extra.map(cssFamily).join(', ')}, ` : ''}${FONT_STACK}`;
+};
 
 /** Width in points of text in a font: (text, size in points, CSS font family, 'bold '/'italic '). */
 export type Measure = (text: string, size: number, family: string, style: string) => number;

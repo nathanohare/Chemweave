@@ -32,7 +32,7 @@ import { facesToEmbed, newGuid, obfuscate, type FontSource } from './font-embed'
 import { fromDataUrl } from '../render/images';
 import { chemdrawProg, chemdrawObject, embeddedPart, OLE_REL, OLE_TYPE } from './ole-object';
 import { BULLETS, fitParas, listInfo, paraCount, samePara, schemeOf, splitParagraphs, type ListInfo } from '../text/paragraphs';
-import { BOX_PAD, COL_GAP, COMPOUND, compoundSeqs, END_FORMAT, FOOT_FORMAT, columnsOf, contentsPrint, OBJECT_CHAR, SHADOWS, charStylesOf, watermarkPlace, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, pruneObjects, EMPTY_FORM, styleOf, runStyleOf, type CharStyle, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type HeaderFooter, type HfBody, type HfKey, type NamedStyle, type PageBorder, type PageSetup, type Watermark } from '../document/document';
+import { BOX_PAD, COL_GAP, COMPOUND, compoundSeqs, END_FORMAT, FOOT_FORMAT, columnsOf, contentsPrint, OBJECT_CHAR, SHADOWS, charStylesOf, watermarkPlace, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, pruneObjects, EMPTY_FORM, styleOf, runStyleOf, type CharStyle, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type HeaderFooter, type HfBody, type HfKey, type NamedStyle, type PageBorder, type PageSetup, type TocLook, type Watermark } from '../document/document';
 import { ACS_LINE, GRID_LINE, bibHang, docCellAlign, shownSize } from '../document/doc-layout';
 import { sectionsOf, type Section } from '../document/sections';
 import { bibliography, piecesText, type Reference } from '../document/references';
@@ -55,7 +55,7 @@ import { addChart, C_NS } from './office-chart';
 import { CX_NS, CX1_NS } from './xlsx-chart';
 import { isChartEx } from '../sheet/chart';
 import type { ChartBox } from '../sheet/chart-box';
-import { appPropsXml, corePropsXml, writeKeptParts, type ContentControl } from './kept-parts';
+import { appPropsXml, corePropsXml, relativeTarget, writeKeptParts, writeTree, type ContentControl, type KeptTree } from './kept-parts';
 import { cmlGuid, contentsSig, writeCml } from './cml';
 import {
   BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
@@ -289,17 +289,24 @@ class DocxWriter {
     const ownProps: [string, string][] = this.t.citeManager === 'zotero'
       ? splitPrefs(this.t.zoteroPrefs ?? newZoteroPrefs(this.t.citeStyle ?? preferredStyle().style)).map((v, i) => [`ZOTERO_PREF_${i + 1}`, v])
       : [];
-    writeKeptParts(pkg, this.t.kept, { main, firstItem: 2, ownProps, replaceXml: changedCml(this.t) });
+    // (the file's own font table is written below, with the fonts embedded here added to it)
+    const keptFonts = this.t.kept?.trees?.find((tr) => tr.type === DOCX_REL.fontTable && tr.from === 'main');
+    const keptParts = keptFonts ? { ...this.t.kept, trees: this.t.kept!.trees!.filter((tr) => tr !== keptFonts) } : this.t.kept;
+    writeKeptParts(pkg, keptParts, { main, firstItem: 2, ownProps, replaceXml: changedCml(this.t) });
     // the free fonts the document uses go inside it, so it looks the same where they aren't installed
     const embed = await facesToEmbed(pkg.xmlTexts(), this.deps.fonts);
-    if (embed.length) {
-      const FT = 'word/fontTable.xml';
-      pkg.relate(main, DOCX_REL.fontTable, 'fontTable.xml');
+    if (embed.length || keptFonts) {
+      // the file's own table as it was (Word's hints for substitutes, fonts embedded in it), less
+      // the entries for fonts embedded afresh here
+      const own = keptFonts ? keptFontTable(keptFonts, new Set(embed.map((e) => e.family.toLowerCase()))) : null;
+      const FT = own?.tree.path ?? 'word/fontTable.xml';
+      if (!(own && writeTree(pkg, own.tree, main))) pkg.relate(main, DOCX_REL.fontTable, relativeTarget(main, FT));
       let n = 0;
       const fonts = embed.map(({ family, faces }) => {
         const parts = faces.map((f) => {
           const key = newGuid();
-          const name = `fonts/font${++n}.odttf`;
+          while (pkg.has(`word/fonts/font${++n}.odttf`));
+          const name = `fonts/font${n}.odttf`;
           pkg.add(`word/${name}`, obfuscate(f.data, key), DOCX_CT.font);
           const id = pkg.relate(FT, DOCX_REL.font, name);
           const tag = f.bold ? (f.italic ? 'embedBoldItalic' : 'embedBold') : f.italic ? 'embedItalic' : 'embedRegular';
@@ -309,8 +316,11 @@ class DocxWriter {
         parts.sort((a, b) => order.indexOf(a.tag) - order.indexOf(b.tag));
         return `<w:font w:name="${xml(family)}"><w:charset w:val="00"/><w:family w:val="auto"/><w:pitch w:val="variable"/>${parts.map((p) => p.xml).join('')}</w:font>`;
       });
-      pkg.add(FT, `${HEAD}<w:fonts xmlns:w="${W_NS}" xmlns:r="${NS.r}">${fonts.join('')}</w:fonts>`, DOCX_CT.fontTable);
-      pkg.add('word/settings.xml', settings(true), DOCX_CT.settings);
+      const table = own
+        ? own.xml.replace(/<\/w:fonts>\s*$/, `${fonts.join('')}</w:fonts>`)
+        : `${HEAD}<w:fonts xmlns:w="${W_NS}" xmlns:r="${NS.r}">${fonts.join('')}</w:fonts>`;
+      pkg.add(FT, table, DOCX_CT.fontTable);
+      if (embed.length || own?.embeds) pkg.add('word/settings.xml', settings(true), DOCX_CT.settings);
     }
     return pkg.build();
   }
@@ -395,7 +405,7 @@ class DocxWriter {
           if (part.some((x) => x.text)) out.push(await partPara());
           part = [];
           const o = t.objects[r.obj!];
-          out.push(o?.kind === 'toc' ? this.contents(o.levels, ps) : o?.kind === 'tof' ? this.figureList(o.name, ps)
+          out.push(o?.kind === 'toc' ? this.contents(o.levels, ps, o.look) : o?.kind === 'tof' ? this.figureList(o.name, ps)
             : o?.kind === 'index' ? this.indexField(o, ps) : o?.kind === 'toa' ? this.toaField(o, ps) : this.bibliography(r.obj!, ps));
         }
         if (part.some((x) => x.text) || own.xe || own.ta) out.push(await partPara());
@@ -756,7 +766,7 @@ class DocxWriter {
    * written here, and works them out again with Update Field. Without page numbers from the
    * layout here, the field is marked for Word to update when the file is opened.
    */
-  private contents(levels: number, ps: ParaStyle): string {
+  private contents(levels: number, ps: ParaStyle, look?: (TocLook | null)[]): string {
     const t = this.t;
     const entries = tocEntries(t, levels);
     const pages = this.pages;
@@ -769,7 +779,10 @@ class DocxWriter {
     const paras = entries.map((e, i) => {
       const pPr = `<w:pPr><w:pStyle w:val="TOC${e.level}"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="${twips(textW)}"/></w:tabs>` +
         `<w:spacing w:before="${e.level === 1 && i > 0 ? twips(0.25 * st.size) : 0}" w:after="0"${line}/><w:ind w:left="${twips((e.level - 1) * TOC_INDENT)}"/></w:pPr>`;
-      return `<w:p>${pPr}${i === 0 ? begin : ''}${run('', e.num ? `${e.num}\t${e.text}` : e.text)}${run('', `\t${pages?.[e.para] ?? ''}`)}${i === entries.length - 1 ? end : ''}</w:p>`;
+      // (the look Word gave the entries, kept as their own formatting, as Word wrote them)
+      const l = look?.[e.level - 1];
+      const rPr = l ? `${l.font ? fontsXml(l.font) : ''}${l.bold !== undefined ? (l.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>') : ''}${l.italic !== undefined ? (l.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>') : ''}${l.size ? `<w:sz w:val="${Math.round(2 * l.size)}"/><w:szCs w:val="${Math.round(2 * l.size)}"/>` : ''}` : '';
+      return `<w:p>${pPr}${i === 0 ? begin : ''}${run(rPr, e.num ? `${e.num}\t${e.text}` : e.text)}${run(rPr, `\t${pages?.[e.para] ?? ''}`)}${i === entries.length - 1 ? end : ''}</w:p>`;
     });
     // no headings yet: the field with nothing in it, for Word to fill in
     if (!paras.length) paras.push(`<w:p>${begin}${end}</w:p>`);
@@ -2029,3 +2042,35 @@ function newDocGuid(): string {
   const hex = (n: number) => Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16).toUpperCase()).join('');
   return `{${hex(8)}-${hex(4)}-4${hex(3)}-${'89AB'[Math.floor(Math.random() * 4)]}${hex(3)}-${hex(12)}}`;
 }
+
+/**
+ * A Word file's own font table, kept to save back: its entries (with Word's hints for substitutes
+ * and the fonts embedded in the file), less those for the fonts in `drop`, which are embedded
+ * afresh. `embeds` tells whether any embedded font is left.
+ */
+export function keptFontTable(tree: KeptTree, drop: Set<string>): { tree: KeptTree; xml: string; embeds: boolean } | null {
+  const top = tree.parts.find((p) => p.path === tree.path);
+  if (!top?.xml || !/<\/w:fonts>\s*$/.test(top.xml)) return null;
+  const gone = new Set<string>();
+  let text = top.xml.replace(/<w:font\b[^>]*?\bw:name="([^"]*)"[^>]*?(?:\/>|>[\s\S]*?<\/w:font>)/g, (el, name: string) => {
+    if (!drop.has(name.replace(/&amp;/g, '&').replace(/&quot;/g, '"').toLowerCase())) return el;
+    for (const m of el.matchAll(/\br:id="([^"]*)"/g)) gone.add(m[1]);
+    return '';
+  });
+  // (the fonts embedded here refer to their files by r:id)
+  if (!/<w:fonts\b[^>]*\bxmlns:r=/.test(text)) text = text.replace(/<w:fonts\b/, `<w:fonts xmlns:r="${NS.r}"`);
+  const rels = tree.rels.filter((r) => !(r.from === tree.path && r.id && gone.has(r.id)));
+  // the parts still reached from the table
+  const reach = new Set([tree.path]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const r of rels) {
+      if (r.external || !reach.has(r.from)) continue;
+      if (!reach.has(r.target)) { reach.add(r.target); grew = true; }
+    }
+  }
+  const parts = tree.parts.map((p) => (p.path === tree.path ? { ...p, xml: text } : p)).filter((p) => reach.has(p.path));
+  const embeds = rels.some((r) => r.from === tree.path && r.type === DOCX_REL.font);
+  return { tree: { ...tree, parts, rels: rels.filter((r) => reach.has(r.from)) }, xml: text, embeds };
+}
+

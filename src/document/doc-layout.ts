@@ -20,7 +20,7 @@ import * as rt from '../richtext';
 import { drawingOwnSize, nestedTables, BOX_PAD, LINE_NUMBER_GAP, OBJECT_CHAR, columnsOf, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, styleOf, FORM_SHADE, type DocObject, type DocText, type HeaderFooter, type NamedStyle, type PageSetup, type WrapKind } from './document';
 import { pageNumText, samePaper, sectionOfParas, sectionsOf } from './sections';
 import { bibliography, type BibEntry } from './references';
-import { emptyTof, tocEntries, tocLines, tofEntries, type TocEntry } from './toc';
+import { emptyTof, tocEntries, tocLevelStyle, tocLines, tofEntries, type TocEntry } from './toc';
 import { EMPTY_INDEX, emptyToa, indexItems, listLines, toaItems, type ListItem } from './index-toa';
 import { ALL_MARKUP, authorColours, changesIn, hasChanges, showChanges, type ReviewView } from './revisions';
 import { layoutMath, type MathBox } from './math';
@@ -551,7 +551,7 @@ export class DocLayouter {
     const isBib = (r: { obj?: number }) => r.obj !== undefined && ['bib', 'toc', 'tof', 'index', 'toa'].includes(t.objects[r.obj]?.kind);
     const blockLines = (id: number, st: NamedStyle, ps: ParaStyle, wrap: number): LaidLine[] | null => {
       const o = t.objects[id];
-      if (o?.kind === 'toc') return tocLines(tocs.get(o.levels) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, undefined, true, (n) => t.styles[`TOC${n}`]);
+      if (o?.kind === 'toc') return tocLines(tocs.get(o.levels) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, undefined, true, (n) => tocLevelStyle(t, o, n));
       if (o?.kind === 'tof') return tocLines(tofs.get(o.name) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, emptyTof(o.name), false);
       if (o?.kind === 'index') return listLines(listOf(o), st, ps.line, wrap, this.deps.measure, EMPTY_INDEX, !!o.right);
       if (o?.kind === 'toa') return listLines(listOf(o), st, ps.line, wrap, this.deps.measure, emptyToa(o.cat), true);

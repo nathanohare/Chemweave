@@ -30,10 +30,11 @@ import { BULLETS, BULLET_LIBRARY, LIST_SCHEMES, cleanPara, listInfo, ownSchemeId
 import { SINGLE, type Measure } from '../text/layout';
 import { arialWidth } from '../text-metrics';
 import { documentMeasure } from '../text/font-measure';
+import { fontClass, hintFontClass, wordFontClass } from '../text/font-standins';
 import {
   OBJECT_CHAR, COMPOUND, compoundSeqs, defaultCharStyles, defaultHeaderFooter, defaultPage, defaultStyles,
   COL_GAP, FLOAT_GAP, columnsOf, contentsPrint, lookExtent, usedObjects,
-  type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
+  type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type TocLook, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
 } from '../document/document';
 import { parseFieldInstr, type DocProps } from '../document/fields';
 import { shownSize } from '../document/doc-layout';
@@ -179,7 +180,7 @@ interface WStyle { id: string; type: string; name: string; basedOn?: string; nex
 interface Level { fmt: string; text: string; p: PProps; start: number; restart?: number }
 interface Piece { runs: TextRun[]; pageBreak: boolean; soft: boolean; colBreak?: boolean; /** Index entries and marked citations in it (XE and TA fields). */ xe?: IndexMark[]; ta?: AuthorityMark[] }
 interface Ctx { base: RProps; pieces: Piece[]; cell: boolean }
-interface Field { instr: string; phase: 'instr' | 'result'; swallow: boolean; /** The field's own data (w:fldData, base64): EndNote's citations. */ data?: string; text: string; props: RProps; /** How its result's first text looks, which is what Word shows (EndNote sets superscript only there). */ shown?: RProps; done: boolean; ref?: { id: number; mark: string; text: string; above?: boolean; page?: boolean }; toc?: boolean; /** A form field's settings (w:ffData), and the form field made of it. */ ff?: Element; form?: number; /** A HYPERLINK field: the link open before it, put back at its end. */ before?: { link: string | undefined }; /** A manager's citation (its object) whose shown text is kept; a manager's bibliography (its object) whose entries are kept. */ cite?: number; bib?: number; /** Its separator (where its result starts). */ sep?: Element; /** Another field inside its instruction. */ inner?: boolean; /** A field kept as Word had it: the object made of it (its result is gathered into it). */ kept?: number }
+interface Field { instr: string; phase: 'instr' | 'result'; swallow: boolean; /** The field's own data (w:fldData, base64): EndNote's citations. */ data?: string; text: string; props: RProps; /** How its result's first text looks, which is what Word shows (EndNote sets superscript only there). */ shown?: RProps; done: boolean; ref?: { id: number; mark: string; text: string; above?: boolean; page?: boolean }; toc?: boolean; /** A table of contents (TOC \\o): its object, which takes the look of its lines as Word last wrote them. */ tocId?: number; /** A form field's settings (w:ffData), and the form field made of it. */ ff?: Element; form?: number; /** A HYPERLINK field: the link open before it, put back at its end. */ before?: { link: string | undefined }; /** A manager's citation (its object) whose shown text is kept; a manager's bibliography (its object) whose entries are kept. */ cite?: number; bib?: number; /** Its separator (where its result starts). */ sep?: Element; /** Another field inside its instruction. */ inner?: boolean; /** A field kept as Word had it: the object made of it (its result is gathered into it). */ kept?: number }
 interface OutPara { ps: ParaStyle; runs: TextRun[]; mark: rt.RunStyle; style: string; contextual: boolean; table?: boolean; bib?: string; markRev?: string; /** A list item: Word's list (numId), the levels it uses (abstractNumId) and its level. */ num?: { id: string; abs: string; ilvl: number } }
 
 /** Open a Word file. Throws only when the file is not a Word file at all. */
@@ -822,10 +823,31 @@ class DocxReader {
     }
   }
 
+  /**
+   * Word's font table: what kind each font is (roman, swiss, modern), so a font this computer
+   * doesn't have is drawn with a stand-in of the same kind, serif for serif, as Word does. The
+   * table itself (with any fonts embedded in the file) is kept and saved back.
+   */
+  private readFontTable(): void {
+    const path = this.pkg.relOfType(this.main, DOCX_REL.fontTable);
+    let root: Element | null | undefined = null;
+    try { root = path ? this.pkg.xml(path)?.documentElement : null; } catch { root = null; }
+    if (!root) return;
+    for (const f of Array.from(root.getElementsByTagNameNS(W_NS, 'font'))) {
+      const name = f.getAttributeNS(W_NS, 'name');
+      if (!name) continue;
+      const val = (tag: string) => f.getElementsByTagNameNS(W_NS, tag)[0]?.getAttributeNS(W_NS, 'val');
+      const alt = val('altName');
+      const cls = wordFontClass(val('family')) ?? (alt ? fontClass(alt) : null);
+      if (cls) hintFontClass(name, cls);
+    }
+  }
+
   /** Other programs' data, kept as it is; Chem4Word's structures by their id. */
   private readKept(): void {
     // (with Word's building blocks stored in the file, and its list of the people who commented)
-    this.kept = readKeptParts(this.pkg, { main: this.main, ours: (root) => root.namespaceURI === MODEL_NS, ownProp: (name) => /^ZOTERO_PREF_\d+$/.test(name), theme: true, trees: [GLOSSARY_REL, PEOPLE_REL] });
+    this.kept = readKeptParts(this.pkg, { main: this.main, ours: (root) => root.namespaceURI === MODEL_NS, ownProp: (name) => /^ZOTERO_PREF_\d+$/.test(name), theme: true, trees: [GLOSSARY_REL, PEOPLE_REL, DOCX_REL.fontTable] });
+    this.readFontTable();
     for (const x of this.kept?.xml ?? []) {
       const guid = cmlGuid(x.xml);
       if (guid) this.cml.set(guid, x.xml);
@@ -1285,11 +1307,45 @@ class DocxReader {
     return { style, p, direct, base, mark };
   }
 
+  /** The style of the paragraph being read. */
+  private paraStyleNow = '';
+
+  /**
+   * A line of a table of contents as Word last wrote it: the first text of each level gives how
+   * that level looks (Word writes its entries with their own formatting, which shows until the
+   * table is updated there).
+   */
+  private tocLook(text: string, r: RProps, para: RProps): void {
+    const f = [...this.fields].reverse().find((x) => x.tocId !== undefined);
+    // (Word's built-in "toc 1" to "toc 9", by its name, whatever the id in another language)
+    const name = this.wstyles.get(`paragraph:${this.paraStyleNow}`)?.name ?? this.paraStyleNow;
+    const level = Number(/^toc\s*([1-9])$/i.exec(name)?.[1] ?? /^toc\s*([1-9])$/i.exec(this.paraStyleNow)?.[1] ?? 0);
+    const o = f ? this.objects[f.tocId!] : undefined;
+    const seen = `${f?.tocId}:${level}`;
+    if (!level || o?.kind !== 'toc' || !text.trim() || r.hidden || this.tocSeen.has(seen)) return;
+    this.tocSeen.add(seen);
+    // only what the entry's own formatting changes from its style (none in contents saved here)
+    const own: TocLook = {};
+    if (r.font && r.font !== para.font) own.font = r.font;
+    if (r.size && r.size !== para.size) own.size = r.size;
+    if (!!r.bold !== !!para.bold) own.bold = !!r.bold;
+    if (!!r.italic !== !!para.italic) own.italic = !!r.italic;
+    if (!Object.keys(own).length) return;
+    const look = [...(o.look ?? [])];
+    while (look.length < level - 1) look.push(null);
+    look[level - 1] = own;
+    this.objects[f!.tocId!] = { ...o, look };
+  }
+
+  /** The levels of each table of contents whose look has been read. */
+  private tocSeen = new Set<string>();
+
   private paragraph(el: Element): void {
     // (a page break the paragraph before ended with)
     const carried = this.pageNext;
     const pPr = kid(el, 'pPr');
     const { style, p: own, direct, base, mark } = this.paraProps(pPr);
+    this.paraStyleNow = style;
     // a section ends with this paragraph: the next one starts a new page unless the section break says otherwise
     const sect = kid(pPr, 'sectPr');
     const ctx: Ctx = { base, pieces: [{ runs: [], pageBreak: false, soft: false }], cell: false };
@@ -1462,7 +1518,7 @@ class DocxReader {
       props = { ...r, font: ctx.base.font };
     }
     if (!r.hidden && (top?.ref || top?.form !== undefined || top?.kept !== undefined) && top.phase === 'result') top.text += text;
-    if (this.swallowing()) return;
+    if (this.swallowing()) { this.tocLook(text, r, ctx.base); return; }
     // (hidden text in a manager's bibliography being gathered is left out, as before)
     if (r.hidden) { if (!this.capture) this.hiddenText(ctx, text, props); return; }
     const run: TextRun = { ...this.runStyle(props), ...(this.rev ? { rev: this.rev } : {}), ...(this.fmt ? { fmt: this.fmt } : {}), ...this.cmtMark(ctx), ...(this.link ? { link: this.link } : {}), ...this.ccMark(ctx), text };
@@ -2016,7 +2072,7 @@ class DocxReader {
     if (toc && !ctx.cell) {
       const depth = /\\o\s*"?\s*\d+\s*-\s*(\d+)/i.exec(toc[1]);
       const id = this.emitObject(ctx, { kind: 'toc', levels: Math.max(1, Math.min(3, depth ? Number(depth[1]) : 3)) }, f.props);
-      if (id !== null) { f.swallow = true; f.toc = true; }
+      if (id !== null) { f.swallow = true; f.toc = true; f.tocId = id; }
       return;
     }
     // an older Word's link: HYPERLINK "address" (or \l "bookmark"); the text it shows is the link's

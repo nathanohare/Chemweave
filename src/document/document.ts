@@ -378,6 +378,9 @@ export interface Embedded {
   icon?: boolean;
 }
 
+/** How one level of a table of contents looked in Word (its last update's own formatting). */
+export interface TocLook { font?: string; size?: number; bold?: boolean; italic?: boolean }
+
 export type DocObject =
   /** A structure, scheme or table: a drawing, edited with the drawing tools. `scale` 1 is the drawing's own size. */
   | { kind: 'drawing'; contents: Contents; scale?: number; look?: FigureLook; float?: Float; alt?: string; /** A figure: a set area of the page (in the drawing's points) its structures are drawn in, sized by it rather than by them, so drawing inside it never moves the text round it. Never drawn when printed. */ frame?: FigureFrame; /** Turned and flipped, as a picture (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean; /** A Chem4Word structure: its id in the file's CML part, and a fingerprint of the drawing as read (changed = the CML is written afresh). */ c4w?: { guid: string; sig: string }; /** Saved as a ChemDraw object, by this program name (ChemDraw.Document.6.0): one that came from a ChemDraw object stays one, to open in ChemDraw from Word. */ ole?: string; /** Cropping and color changes Word made to its picture: not shown here, saved back to Word while the structure is as read. */ wordLook?: WordLook }
@@ -410,7 +413,7 @@ export type DocObject =
   /** The bibliography: the references cited, in citation order, in the citation style (a block of its own). */
   | { kind: 'bib'; /** Kept by Zotero, citing live through it: its field's code and entries. */ live?: BibLive }
   /** A table of contents: the headings down to `levels` (1 to 3) deep with their page numbers (a block of its own). */
-  | { kind: 'toc'; levels: number }
+  | { kind: 'toc'; levels: number; /** From a Word file: how its entries looked there, level by level (index 0 for level 1), which wins over the TOC 1 to 3 styles until Word updates the table. */ look?: (TocLook | null)[] }
   /**
    * A table of figures: the captions of one label (Figure, Scheme, Table, Chart), or of all of
    * them when `name` is '', with their page numbers (a block of its own, like the contents).
