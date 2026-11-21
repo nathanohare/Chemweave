@@ -8,7 +8,7 @@ import type { ParaStyle, TextRun } from '../model';
 import * as rt from '../richtext';
 import { withStack, layoutText, type Glyphs, type LaidLine, type Measure } from '../text/layout';
 import { fitParas, listInfo, paraCount, splitParagraphs } from '../text/paragraphs';
-import { COMPOUND, fieldTexts, styleOf, type DocText, type NamedStyle } from './document';
+import { COMPOUND, fieldTexts, styleOf, type DocText, type NamedStyle, type TocLook } from './document';
 
 export interface TocEntry {
   /** 1 for Heading 1, and so on. */
@@ -146,3 +146,18 @@ export function tofEntries(t: DocText, name: string, shown: Map<number, string> 
 
 /** Is this run a table of figures? */
 export const isTof = (t: Pick<DocText, 'objects'>, r: { obj?: number }): boolean => r.obj !== undefined && t.objects[r.obj]?.kind === 'tof';
+
+/**
+ * The look of one level of the contents: the document's TOC style for it ("toc 1"...), with the
+ * look Word gave the entries over it when the table came from a Word file and keeps it.
+ */
+export function tocLevelStyle(t: Pick<DocText, 'styles'>, o: { look?: (TocLook | null)[] }, level: number): NamedStyle | undefined {
+  const own = t.styles[`TOC${level}`];
+  const look = o.look?.[level - 1];
+  if (!look) return own;
+  if (own) return { ...own, ...look };
+  // (no TOC style: the usual indent and spacing of the level)
+  const n = t.styles.Normal;
+  return n ? { ...n, ...look, indent: (level - 1) * TOC_INDENT, spaceBefore: level === 1 ? 0.25 * n.size : 0 } : undefined;
+}
+

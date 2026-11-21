@@ -4582,7 +4582,7 @@ export class DocumentMode {
    */
   private async insertToc(): Promise<void> {
     const f = this.file!;
-    const levels = await this.askTocLevels(3, 'Insert');
+    const levels = (await this.askTocLevels(3, 'Insert'))?.levels;
     if (!levels) return;
     const ed = f.ed;
     const id = nextObjectId(f.t);
@@ -4607,21 +4607,23 @@ export class DocumentMode {
     if (!tocEntries(f.t, levels).length) this.host.flash('The table of contents lists Heading 1, 2 and 3 paragraphs (Home ▸ Styles). Apply those styles to your headings to list them here with page numbers.', 9000);
   }
 
-  private async askTocLevels(now: number, ok: string): Promise<number | null> {
+  private async askTocLevels(now: number, ok: string, wordLook = false): Promise<{ levels: number; wordLook: boolean } | null> {
     const got = await ask('Table of Contents', [
       { name: 'levels', label: 'Show levels', value: String(now), options: [{ value: '1', label: 'Heading 1' }, { value: '2', label: 'Heading 2' }, { value: '3', label: 'Heading 3' }] },
+      // a table from a Word file shows its entries as Word last did, until switched to the TOC styles (as Word's Update Table does)
+      ...(wordLook ? [{ name: 'look', label: 'Entries look', value: 'word', options: [{ value: 'word', label: 'As in the Word file' }, { value: 'styles', label: 'TOC 1 to 3 styles' }] }] : []),
     ], { ok, note: 'The table of contents updates automatically as headings change or move. In Word, right-click ▸ Update Field after editing there.' });
-    return got ? Math.max(1, Math.min(3, Number(got.levels) || 3)) : null;
+    return got ? { levels: Math.max(1, Math.min(3, Number(got.levels) || 3)), wordLook: wordLook && got.look !== 'styles' } : null;
   }
 
-  /** Double-click on the contents: how many levels they show. */
+  /** Double-click on the contents: how many levels they show, and (from a Word file) whether they keep Word's look. */
   private async tocOptions(id: number): Promise<void> {
     const f = this.file!;
     const o = f.t.objects[id];
     if (o?.kind !== 'toc') return;
-    const levels = await this.askTocLevels(o.levels, 'Apply');
-    if (!levels || levels === o.levels) return;
-    f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: { kind: 'toc', levels } } } as DocText, 'Table of contents levels');
+    const got = await this.askTocLevels(o.levels, 'Apply', !!o.look);
+    if (!got || (got.levels === o.levels && got.wordLook === !!o.look)) return;
+    f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: { kind: 'toc', levels: got.levels, ...(got.wordLook && o.look ? { look: o.look } : {}) } } } as DocText, 'Table of contents');
   }
 
   /**

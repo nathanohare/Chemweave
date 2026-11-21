@@ -13,15 +13,18 @@
 //   contents show the headings' numbers, in the file's own TOC 1 style.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import { woffToSfnt } from '../src/io/font-embed';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { emfToSvg } from '../src/render/emf-read';
 import { emfPlusPixels } from '../src/render/emf-plus';
 import { listInfo } from '../src/text/paragraphs';
-import { tocEntries, tocLines } from '../src/document/toc';
+import { tocEntries, tocLevelStyle, tocLines } from '../src/document/toc';
+import { pdfStandIn } from '../src/fonts';
 import { newDocument, paraFromStyle, styleOf, type DocText } from '../src/document/document';
 import { DocLayouter } from '../src/document/doc-layout';
-import { layoutText } from '../src/text/layout';
+import { FONT_STACK, layoutText, withStack } from '../src/text/layout';
 import type { TextRun } from '../src/model';
 
 // ---------------------------------------------------------------- EMF+ only pictures
@@ -101,7 +104,7 @@ const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 2, 0, 0, 0, 1]);
 const deps: DocxDeps = { async picture() { return { png: PNG, w: 10, h: 10 }; }, async svgToPng() { return PNG; } };
 
-function wordFile(body: string, parts: { styles?: string; numbering?: string; header?: string; footer?: string; settings?: string } = {}): Uint8Array {
+function wordFile(body: string, parts: { styles?: string; numbering?: string; header?: string; footer?: string; settings?: string; fontTable?: string; fontFiles?: Record<string, Uint8Array> } = {}): Uint8Array {
   const rels = [`<Relationship Id="rId5" Type="${REL}image" Target="media/image1.png"/>`, `<Relationship Id="rId6" Type="${REL}image" Target="media/image2.emf"/>`];
   const files: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="emf" ContentType="image/x-emf"/></Types>'),
@@ -115,6 +118,13 @@ function wordFile(body: string, parts: { styles?: string; numbering?: string; he
   if (parts.settings) { files['word/settings.xml'] = strToU8(`<?xml version="1.0"?><w:settings ${NS}>${parts.settings}</w:settings>`); rels.push(`<Relationship Id="rIdT" Type="${REL}settings" Target="settings.xml"/>`); }
   if (parts.header) { files['word/header1.xml'] = strToU8(`<?xml version="1.0"?><w:hdr ${NS}>${parts.header}</w:hdr>`); rels.push(`<Relationship Id="rIdH" Type="${REL}header" Target="header1.xml"/>`); sect = `<w:headerReference w:type="default" r:id="rIdH"/>${sect}`; }
   if (parts.footer) { files['word/footer1.xml'] = strToU8(`<?xml version="1.0"?><w:ftr ${NS}>${parts.footer}</w:ftr>`); rels.push(`<Relationship Id="rIdF" Type="${REL}footer" Target="footer1.xml"/>`); sect = `<w:footerReference w:type="default" r:id="rIdF"/>${sect}`; }
+  if (parts.fontTable) {
+    files['word/fontTable.xml'] = strToU8(`<?xml version="1.0"?><w:fonts ${NS}>${parts.fontTable}</w:fonts>`);
+    rels.push(`<Relationship Id="rIdFT" Type="${REL}fontTable" Target="fontTable.xml"/>`);
+    const own = Object.keys(parts.fontFiles ?? {});
+    for (const name of own) files[`word/${name}`] = parts.fontFiles![name];
+    if (own.length) files['word/_rels/fontTable.xml.rels'] = strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${own.map((n, i) => `<Relationship Id="rId${i + 1}" Type="${REL}font" Target="${n}"/>`).join('')}</Relationships>`);
+  }
   files['word/_rels/document.xml.rels'] = strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.join('')}</Relationships>`);
   files['word/document.xml'] = strToU8(`<?xml version="1.0"?><w:document ${NS}><w:body>${body}<w:sectPr>${sect}</w:sectPr></w:body></w:document>`);
   return zipSync(files);
@@ -332,3 +342,90 @@ describe('document text as Word lays it out', () => {
     expect(fig.y + fig.h).toBeLessThanOrEqual(page.top + t.page.h - t.page.bottom + 0.01);
   });
 });
+
+describe('Word fonts', () => {
+  it('stands in Carlito for Calibri and Caladea for Cambria, in PDFs and on screen', () => {
+    expect(pdfStandIn('Calibri')).toBe('Carlito');
+    expect(pdfStandIn('Cambria')).toBe('Caladea');
+    expect(pdfStandIn('Cambria Math')).toBe('Tinos');
+    expect(pdfStandIn('Arial')).toBe('Arimo');
+    expect(pdfStandIn('Times New Roman')).toBe('Tinos');
+    expect(pdfStandIn('Inter')).toBe('Inter');
+    expect(withStack('Calibri')).toBe(`"Calibri", "Carlito", ${FONT_STACK}`);
+    expect(withStack('Georgia')).toBe(`"Georgia", "Times New Roman", "Tinos", ${FONT_STACK}`);
+    expect(withStack('Arial')).toBe(`"Arial", ${FONT_STACK}`);
+  });
+
+  // a serif font this computer won't have, a sans one, and Calibri embedded in the file
+  const fontTable = '<w:font w:name="New York Test"><w:altName w:val="Times New Roman"/><w:family w:val="roman"/><w:pitch w:val="variable"/></w:font>'
+    + '<w:font w:name="Myriad Test"><w:altName w:val="Corbel"/><w:family w:val="swiss"/></w:font>'
+    + '<w:font w:name="Calibri"><w:panose1 w:val="020F0502020204030204"/><w:family w:val="swiss"/><w:embedRegular r:id="rId1" w:fontKey="{11111111-2222-3333-4444-555555555555}"/></w:font>';
+  const font = new Uint8Array(64).fill(7);
+  const body = '<w:p><w:r><w:rPr><w:rFonts w:ascii="New York Test" w:hAnsi="New York Test"/></w:rPr><w:t>Serif text</w:t></w:r></w:p>';
+
+  it('draws a missing font with a stand-in of the kind Word\'s font table gives it (serif for roman)', async () => {
+    const { doc } = await readDocx(wordFile(body, { fontTable }));
+    expect(doc.runs[0].font).toBe('New York Test');
+    expect(withStack('New York Test')).toBe(`"New York Test", "Times New Roman", "Tinos", ${FONT_STACK}`);
+    expect(pdfStandIn('New York Test')).toBe('Tinos');
+    expect(pdfStandIn('Myriad Test')).toBe('Arimo');
+  });
+
+  it('saves the file\'s own font table back, with its embedded fonts', async () => {
+    const { doc } = await readDocx(wordFile(body, { fontTable, fontFiles: { 'fonts/font1.odttf': font }, settings: '<w:embedTrueTypeFonts/><w:saveSubsetFonts/>' }));
+    const files = unzipSync(await writeDocx(doc, deps));
+    const table = strFromU8(files['word/fontTable.xml']);
+    expect(table).toContain('<w:altName w:val="Times New Roman"/>');
+    expect(table).toContain('w:fontKey="{11111111-2222-3333-4444-555555555555}"');
+    const rels = strFromU8(files['word/_rels/fontTable.xml.rels']);
+    const target = /Id="rId1"[^>]*Target="([^"]+)"|Target="([^"]+)"[^>]*Id="rId1"/.exec(rels)!;
+    expect(files[`word/${target[1] ?? target[2]}`]).toEqual(font);
+    expect(strFromU8(files['word/_rels/document.xml.rels'])).toMatch(/fontTable\.xml/);
+    expect(strFromU8(files['word/settings.xml'])).toContain('<w:embedTrueTypeFonts/>');
+    // and again after a second save
+    const again = unzipSync(await writeDocx((await readDocx(await writeDocx(doc, deps))).doc, deps));
+    expect(strFromU8(again['word/fontTable.xml']).match(/w:name="Calibri"/g)).toHaveLength(1);
+  });
+
+  it('adds the free fonts it embeds to the file\'s own table', async () => {
+    const { doc } = await readDocx(wordFile(body, { fontTable }));
+    doc.runs.push({ text: ' more', font: 'Inter' });
+    const inter = woffToSfnt(new Uint8Array(readFileSync('node_modules/@fontsource/inter/files/inter-latin-400-normal.woff')));
+    const withFonts: DocxDeps = { ...deps, fonts: async (family) => (family === 'Inter' ? [{ bold: false, italic: false, data: inter }] : []) };
+    const files = unzipSync(await writeDocx(doc, withFonts));
+    const table = strFromU8(files['word/fontTable.xml']);
+    expect(table).toContain('w:name="New York Test"');
+    expect(table).toMatch(/<w:font w:name="Inter">.*<w:embedRegular r:id="rId\d+"/);
+    expect(strFromU8(files['word/settings.xml'])).toContain('<w:embedTrueTypeFonts/>');
+  });
+});
+
+describe('Word contents as Word last showed them', () => {
+  const styles = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="24"/></w:rPr></w:style>'
+    + '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style>'
+    + '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:i/></w:rPr></w:style>';
+  const tnr = '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b w:val="0"/><w:i w:val="0"/></w:rPr>';
+  const toc = '<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+    + `<w:r>${tnr}<w:t>Materials</w:t></w:r><w:r>${tnr}<w:tab/><w:t>2</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`;
+  const body = toc + '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Materials</w:t></w:r></w:p>';
+
+  it('draws the entries in the font Word gave them (Times, not bold or italic), not the TOC 1 style\'s', async () => {
+    const { doc } = await readDocx(wordFile(body, { styles }));
+    const o = Object.values(doc.objects).find((x) => x.kind === 'toc') as Extract<DocText['objects'][number], { kind: 'toc' }>;
+    expect(o.look?.[0]).toEqual({ font: 'Times New Roman', bold: false, italic: false });
+    const st = tocLevelStyle(doc, o, 1)!;
+    expect([st.font, !!st.bold, !!st.italic]).toEqual(['Times New Roman', false, false]);
+    // with the look turned off, the TOC 1 style's
+    expect(tocLevelStyle(doc, { ...o, look: undefined }, 1)?.bold).toBe(true);
+  });
+
+  it('saves the entries with that look, and opens it again', async () => {
+    const { doc } = await readDocx(wordFile(body, { styles }));
+    const xml = strFromU8(unzipSync(await writeDocx(doc, deps))['word/document.xml']);
+    expect(xml).toMatch(/<w:pStyle w:val="TOC1"\/>.*?<w:rFonts w:ascii="Times New Roman"[^>]*\/><w:b w:val="0"\/><w:bCs w:val="0"\/><w:i w:val="0"\/>/);
+    const again = (await readDocx(await writeDocx(doc, deps))).doc;
+    const o = Object.values(again.objects).find((x) => x.kind === 'toc') as Extract<DocText['objects'][number], { kind: 'toc' }>;
+    expect(o.look?.[0]).toMatchObject({ font: 'Times New Roman', bold: false, italic: false });
+  });
+});
+

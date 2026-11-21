@@ -8,6 +8,7 @@
 
 import { woffToSfnt, type EmbedFace, type FontSource } from './io/font-embed';
 import type { PdfFontSource } from './io/pdf-fonts';
+import { STAND_IN_FONTS, standInFont } from './text/font-standins';
 
 export interface FontGroup {
   name: string;
@@ -65,6 +66,8 @@ export function registerBundledFonts(changed: () => void): void {
   registered = true;
   const family = new Map<string, string>();
   for (const g of BUNDLED_GROUPS) for (const f of g.fonts) family.set(packageName(f), f);
+  // (and the stand-ins for Calibri, Cambria, Arial, Times and Courier, used where those are missing)
+  for (const f of STAND_IN_FONTS) family.set(packageName(f), f);
   for (const [path, url] of Object.entries(FILES)) {
     const f = readFontFile(path);
     const name = f && family.get(f.pkg);
@@ -111,12 +114,9 @@ export const bundledFaces: FontSource = async (family) => {
   return out;
 };
 
-/** The free font a PDF uses for a family the app doesn't ship: same letter widths as Arial, Times New Roman or Courier New. */
+/** The free font a PDF uses for a family the app doesn't ship: same letter widths as Calibri, Cambria, Arial, Times New Roman or Courier New. */
 export function pdfStandIn(family: string): string {
-  if (isBundled(family)) return family;
-  if (/courier|consolas|mono/i.test(family)) return 'Cousine';
-  if (/times|georgia|cambria|garamond|book antiqua|palatino|serif$/i.test(family) && !/sans/i.test(family)) return 'Tinos';
-  return 'Arimo';
+  return isBundled(family) ? family : standInFont(family);
 }
 
 /** The bundled files (Latin, then Latin-extended, then Greek) of a face, nearest weight and style first. */

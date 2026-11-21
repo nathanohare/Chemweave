@@ -271,7 +271,7 @@ To remove a section break, put the cursor at the start of the paragraph after it
 
 Give your headings **Heading 1**, **2** or **3**, put the cursor where the contents should go, and choose **References** tab ▸ **Table of Contents** (also **Insert ▸ Document ▸ Tables and Indexes ▸ Table of Contents…**). Pick how many heading levels to show.
 
-The contents keep themselves up to date: page numbers change as text moves, and renamed headings change as you type. There is no Update button. Double-click the contents to change the number of levels. With S1, S2 page numbering, the contents use the same numbers.
+The contents keep themselves up to date: page numbers change as text moves, and renamed headings change as you type. There is no Update button. Double-click the contents to change the number of levels. With S1, S2 page numbering, the contents use the same numbers. Contents from a Word file keep the font and style Word gave their lines; to use the TOC 1 to 3 styles instead (as Word does after Update Table), double-click the contents and set **Entries look** to **TOC 1 to 3 styles**.
 
 ## Table of figures
 
