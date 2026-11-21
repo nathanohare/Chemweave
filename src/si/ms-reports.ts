@@ -237,7 +237,7 @@ export function readBytes(content: Uint8Array, name = ''): ReportData {
   if (['.mzml', '.mzxml', '.mzdata'].includes(ext) || lower.endsWith('.mzdata.xml') || head.startsWith('<')) {
     const root = xmlRootName(text);
     // a file cut short (or not XML at all) is damaged, as an XML reader finds it
-    if (['mzML', 'indexedmzML', 'mzXML', 'msRun', 'mzData'].includes(root) && !new RegExp(`</(?:[\\w.-]+:)?${root.replace(/[.]/g, '\\.')}\\s*>\\s*$`).test(text)) throw new XmlParseError(`${root} is not closed`);
+    if (['mzML', 'indexedmzML', 'mzXML', 'msRun', 'mzData'].includes(root) && !new RegExp(`</(?:[\\w.-]+:)?${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*>\\s*$`).test(text)) throw new XmlParseError(`${root} is not closed`);
     if (root === 'mzML' || root === 'indexedmzML') return readMzml(text);
     if (root === 'mzXML' || root === 'msRun') return readMzxml(text);
     if (root === 'mzData') return readMzdata(text);
