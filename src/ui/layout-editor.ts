@@ -9,7 +9,7 @@ import { foldIntoInfo } from './info-tip';
 import { Doc, type Placeholder } from '../model';
 import {
   type Master, type SlideSize, type LayoutDef, type LayoutId, type PlaceholderBox,
-  deckLayouts, copyLayout, isBuiltinLayout, builtinLayout, newLayoutId,
+  deckLayouts, copyLayout, isBuiltinLayout, builtinLayout, newLayoutId, slideColours,
 } from '../deck/deck';
 import { paintSlide } from '../deck/slide-view';
 
@@ -272,6 +272,8 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
       const m = masterNow();
       paintSlide(canvas, SW, SH, window.devicePixelRatio || 1, { size, master: m, layout: l.id, index: 0 }, new Doc());
       for (const old of stage.querySelectorAll('.le-ph')) old.remove();
+      // the prompts in the layout's own text colors, so they read on a band or a dark title slide
+      const ink = slideColours(m, l.id);
       l.boxes.forEach((b, i) => {
         const el = document.createElement('div');
         el.className = i === box ? 'le-ph picked' : 'le-ph';
@@ -280,6 +282,7 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
         el.style.width = `${b.w * SW}px`;
         el.style.height = `${b.h * SH}px`;
         el.style.textAlign = b.justify === 'center' ? 'center' : b.justify === 'right' ? 'right' : 'left';
+        el.style.setProperty('--ph-ink', b.ph === 'title' ? ink.titleColor : ink.textColor);
         el.title = `${PH_NAME[b.ph]} placeholder: drag to move, drag the corner to size`;
         const t = document.createElement('span');
         t.className = `le-ph-text le-ph-${b.ph}`;
