@@ -27,7 +27,7 @@ import { tocEntries, tocLevelStyle, tocLines } from '../src/document/toc';
 import { pdfStandIn } from '../src/fonts';
 import { newDocument, numberStyle, paraFromStyle, styleOf, type DocText } from '../src/document/document';
 import { DocLayouter } from '../src/document/doc-layout';
-import { FONT_STACK, layoutText, withStack, SQUEEZE } from '../src/text/layout';
+import { DESCENT, FONT_STACK, layoutText, withStack, SQUEEZE } from '../src/text/layout';
 import { lineFactor } from '../src/text/font-standins';
 import type { TextRun } from '../src/model';
 
@@ -672,5 +672,52 @@ describe('lines, pages and tables measured as Word measures them', () => {
     expect(lined[0]).toBeCloseTo(8 * 1.15 + 0.5, 2);
     expect(lined[1]).toBeCloseTo(8 * 1.15 + 0.5, 2);
     expect(lined[2]).toBeCloseTo(8 * 1.15 + 1, 2);
+  });
+});
+
+describe('figures and raised text measured as Word measures them', () => {
+  const measure = (s: string, size: number) => s.length * size * 0.5;
+  const run = (text: string, more: Partial<TextRun> = {}): TextRun => ({ font: 'Times New Roman', size: 12, text, ...more });
+
+  it('keeps text clear of the border Word drew round a group (its effect extent), and saves it back', async () => {
+    const bordered = hplcGroup(3, 20).replace('<wp:effectExtent l="0" t="0" r="0" b="0"/>', `<wp:effectExtent l="${EMU}" t="${EMU}" r="${EMU}" b="${2 * EMU}"/>`);
+    const { doc } = await readDocx(wordFile(bordered));
+    const pics = Object.values(doc.objects).filter((o) => o.kind === 'picture');
+    expect(pics).toHaveLength(2);
+    // each picture still where the group puts it, the border's room kept beside it
+    expect(pics[0]).toMatchObject({ float: { x: 20, y: 10, effect: { l: 1, t: 1, r: 1, b: 2 } } });
+    const xml = strFromU8(unzipSync(await writeDocx(doc, deps))['word/document.xml']);
+    expect(xml).toContain(`<wp:effectExtent l="${EMU}" t="${EMU}" r="${EMU}" b="${2 * EMU}"/>`);
+    expect((await readDocx(await writeDocx(doc, deps))).doc.objects[Number(Object.keys(doc.objects)[0])]).toMatchObject({ float: { effect: { l: 1, t: 1, r: 1, b: 2 } } });
+  });
+
+  it('starts a paragraph below a figure above and below its text that its first line would run into, and its own figure from there', () => {
+    const d = newDocument();
+    const p = { ...paraFromStyle(d.styles.Normal, {}), spaceBefore: 0, spaceAfter: 0, line: 1 };
+    // "Traces", its figure 14 pt below its top (just below its line); then a paragraph holding only another figure, 0 pt below its top
+    const t: DocText = {
+      ...d, runs: [run('Traces'), run('￼', { obj: 1 }), run('\n'), run('￼', { obj: 2 }), run('\nText')], paras: [p, p, p],
+      objects: {
+        1: { kind: 'picture', src: 'data:image/png;base64,', w: 100, h: 80, float: { wrap: 'topBottom', x: 0, y: 14, gap: 0 } },
+        2: { kind: 'picture', src: 'data:image/png;base64,', w: 100, h: 50, float: { wrap: 'topBottom', x: 0, y: 0, gap: 0 } },
+      },
+    };
+    const lay = new DocLayouter({ measure, drawingSize: () => ({ w: 10, h: 10 }) }).layout(t);
+    const a = lay.objects.find((o) => o.id === 1)!, b = lay.objects.find((o) => o.id === 2)!;
+    expect(b.y).toBeGreaterThanOrEqual(a.y + a.h - 0.01);
+    const text = lay.text.lines[lay.text.lines.length - 1];
+    expect(text.y).toBeGreaterThan(b.y + b.h);
+  });
+
+  it('makes a line taller for text raised or lowered by some points (Word\'s position), not for a plain superscript', () => {
+    const line = (runs: TextRun[]) => layoutText({ runs, justify: 'left', boxes: true }, 12, measure).lines[0];
+    const plain = line([run('[M+H]+')]);
+    const sup = line([run('[M+H]'), run('+', { sup: true })]);
+    const raised = line([run('[M+H]'), run('+', { sup: true, raise: 5 })]);
+    const lowered = line([run('C'), run('18', { raise: -2.5 })]);
+    expect(sup.above).toBeCloseTo(plain.above!);
+    // 12 pt Times: 2/3 size, raised 4 pt as a superscript and 5 pt more
+    expect(raised.above!).toBeCloseTo((1.15 - DESCENT) * 8 + 4 + 5, 1);
+    expect(lowered.below! - plain.below!).toBeCloseTo(2.5, 1);
   });
 });

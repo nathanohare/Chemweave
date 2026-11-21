@@ -318,6 +318,11 @@ export interface Float {
   name?: string;
   /** Hidden from the page in the Selection Pane (still in the document). */
   hidden?: boolean;
+  /**
+   * Room Word's own effects take round the figure (a border or shadow Word drew, wp:effectExtent),
+   * beyond what its look here takes, in points: text keeps clear of it too, as in Word.
+   */
+  effect?: { l: number; t: number; r: number; b: number };
 }
 
 /** The room text keeps from a floating figure unless set (Word's 0.13 inch). */
