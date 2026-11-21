@@ -270,6 +270,8 @@ interface Seg {
   spacing?: number;
   /** Text effects (kerning, fill, outline, shadow). */
   fx?: TextFx;
+  /** Raised or lowered by some points (Word's position): a document's line makes room for it. */
+  raised?: boolean;
   /** A figure, table or field (documents): its id, and once laid out its width, what it shows and its height. */
   obj?: number; w?: number; shown?: string; objAscent?: number; objDescent?: number;
   /** A tab: its width (`w`) is worked out from where it starts and its tab stop. */
@@ -372,6 +374,7 @@ function segments(runs: TextRun[], defaultSize: number, n: number, sc = SCRIPTS,
     // and so do its text effects
     const fx = textFx(r);
     if (fx) for (let q = from.p; q <= Math.min(p, n - 1); q++) for (const sg of segs[q].slice(q === from.p ? from.k : 0)) sg.fx = fx;
+    if (r.raise) for (let q = from.p; q <= Math.min(p, n - 1); q++) for (const sg of segs[q].slice(q === from.p ? from.k : 0)) sg.raised = true;
   }
 }
 
@@ -704,6 +707,9 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       // (a document's line is as tall as its tallest font's single spacing: Calibri's is taller)
       let single = 0;
       let objUp = 0, objDown = 0;
+      // (text raised or lowered by some points reaches above or below the line's own height in a
+      // document, and the line makes room for it, as Word does; a plain subscript or superscript doesn't)
+      let liftUp = 0, liftDown = 0;
       for (const s of pSegs) {
         const s0 = s.start - paraStart, s1 = s0 + s.text.length;
         const a = Math.max(pl.start, s0), b = Math.min(pl.end, s1);
@@ -727,6 +733,10 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
         x += w;
         size = Math.max(size, s.base);
         if (f.boxes && !s.hide) single = Math.max(single, lineFactor(s.family) * s.base);
+        if (f.boxes && s.raised) {
+          liftUp = Math.max(liftUp, (lineFactor(s.family) - DESCENT) * s.size - s.dy);
+          liftDown = Math.max(liftDown, DESCENT * s.size + s.dy);
+        }
       }
       if (pl.hyphen) pieces.push({ ...pl.hyphen, start: paraStart + pl.end, x });
       if (!size) size = em;
@@ -746,6 +756,8 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
         const extra = Math.max(0, sgl * (pSpacing - 1) * size);
         l.above = Math.max((sgl * Math.min(1, pSpacing) - DESCENT) * size, objUp);
         l.below = l.descent + extra;
+        if (liftUp > l.above) l.above = liftUp;
+        if (liftDown > l.descent) l.below += liftDown - l.descent;
         // spacing in points: exactly (figures may then reach into the line above), or at least
         if (ps.linePt && ps.linePt > 0) l.above = ps.lineRule === 'exact' ? Math.max(0, ps.linePt - l.below) : Math.max(l.above, ps.linePt - l.below);
         // moved down past a figure

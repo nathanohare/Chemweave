@@ -1264,6 +1264,8 @@ class DocxReader {
       : kind === 'wrapNone' ? (yes(anchor.getAttribute('behindDoc')) ? 'behind' as const : 'front' as const)
       : 'square' as const;
     const fl: Float = { wrap, x: round(x - l), y: round(y - t) };
+    const fx = effectBeyond(anchor, look ?? undefined);
+    if (fx) fl.effect = fx;
     if (xFrom) fl.xFrom = xFrom;
     if (yFrom) fl.yFrom = yFrom;
     // the room kept from the text on each side (Word's own figures: 0.13 in at the sides, none above and below)
@@ -2393,12 +2395,19 @@ class DocxReader {
     for (const { pic, x, y, w, h } of pics.found) {
       const size = { w: round(w * kx), h: round(h * ky) };
       if (size.w <= 0 || size.h <= 0) continue;
-      const fl: Float = { ...base, x: round(base.x + x * kx), y: round(base.y + y * ky), group: g };
+      // (each picture where the group puts it, its own border drawn round it; the group's effects,
+      // what of them its border doesn't take, kept clear of by the text)
+      const look = readLook(kid(pic, 'spPr'));
+      const [pl, pt] = lookExtent(look ?? undefined);
+      const fl: Float = { ...base, x: round(base.x + x * kx - pl), y: round(base.y + y * ky - pt), group: g };
       delete fl.name;
+      delete fl.effect;
+      const fx = box.localName === 'anchor' ? effectBeyond(box, look ?? undefined) : null;
+      if (fx) fl.effect = fx;
       if (rh !== null) this.stack.push({ fl, rh });
       const pr = kid(pic, 'nvPicPr', 'cNvPr');
       const descr = pr?.getAttribute('descr')?.trim() ?? '';
-      this.wordPicture(pic, pr?.getAttribute('name') ?? '', descr ? { alt: descr } : {}, size, r, ctx, readLook(kid(pic, 'spPr')), fl);
+      this.wordPicture(pic, pr?.getAttribute('name') ?? '', descr ? { alt: descr } : {}, size, r, ctx, look, fl);
     }
   }
 
@@ -3604,4 +3613,14 @@ export function groupPictures(group: Element): { found: { pic: Element; x: numbe
 function pictureGroup(choice: Element): boolean {
   const groups = Array.from(choice.getElementsByTagNameNS('*', 'wgp'));
   return groups.length > 0 && groups.every((g) => { const got = groupPictures(g); return got.found.length > 0 && !got.skipped; });
+}
+
+/** The room Word's effects take round a figure (wp:effectExtent) beyond what its look here takes, in points; null when none. */
+function effectBeyond(anchor: Element, look: FigureLook | undefined): Float['effect'] | null {
+  const e = kid(anchor, 'effectExtent');
+  if (!e) return null;
+  const own = lookExtent(look);
+  const side = (k: string, i: number) => round(Math.max(0, fromEmu(e.getAttribute(k) ?? '0') - own[i]));
+  const fx = { l: side('l', 0), t: side('t', 1), r: side('r', 2), b: side('b', 3) };
+  return fx.l > 0.05 || fx.t > 0.05 || fx.r > 0.05 || fx.b > 0.05 ? fx : null;
 }
