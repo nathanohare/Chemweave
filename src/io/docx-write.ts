@@ -1121,7 +1121,7 @@ class DocxWriter {
     if (!pic) return null;
     const smiles = await this.deps.smiles?.(o.contents, t.drawingStyle).catch(() => null) ?? null;
     const alt = o.alt?.trim() || contentsAlt(o.contents) || structureAltText(smiles) || '';
-    this.model.drawings[id] = { contents: o.contents, w: pic.w, h: pic.h, png: bytesHash(pic.png), cdx: bytesHash(cdx), alt, ...(o.ole ? { ole: o.ole } : {}) };
+    this.model.drawings[id] = { contents: o.contents, w: pic.w, h: pic.h, png: bytesHash(pic.png), cdx: bytesHash(cdx), alt, ...(o.ole ? { ole: o.ole } : {}), ...(o.fromPicture ? { fromPicture: o.fromPicture } : {}) };
     const size = shownSize({ w: pic.w, h: pic.h }, o.scale ?? 1, this.textW);
     const img = this.media(main, pic.png, 'png');
     return this.objectXml(main, { bytes: chemdrawObject(cdx, prog, pic.emf ? { emf: pic.emf, w: pic.w, h: pic.h } : null), type: OLE_TYPE, rel: OLE_REL, path: 'oleObject{n}.bin' }, prog, img, { w: pic.w, h: pic.h }, size, rPr, false, alt);
@@ -1157,7 +1157,7 @@ class DocxWriter {
           `${kids}</wpg:wgp></a:graphicData></a:graphic>`;
       }
       const svg = pic.svg ? new TextEncoder().encode(pic.svg) : null;
-      this.model.drawings[id] = { contents: o.contents, w: pic.w, h: pic.h, png: bytesHash(pic.png), ...(svg ? { svg: bytesHash(svg) } : {}), ...(o.frame ? { frame: o.frame } : {}), ...(o.ole ? { ole: o.ole } : {}) };
+      this.model.drawings[id] = { contents: o.contents, w: pic.w, h: pic.h, png: bytesHash(pic.png), ...(svg ? { svg: bytesHash(svg) } : {}), ...(o.frame ? { frame: o.frame } : {}), ...(o.ole ? { ole: o.ole } : {}), ...(o.fromPicture ? { fromPicture: o.fromPicture } : {}) };
       blip = this.media(main, pic.png, 'png');
       if (svg) svgId = this.media(main, svg, 'svg');
       size = shownSize({ w: pic.w, h: pic.h }, o.scale ?? 1, this.textW);

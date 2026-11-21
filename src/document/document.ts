@@ -363,6 +363,23 @@ export function floatOf(o: DocObject | undefined): Float | undefined {
  * Another program's file kept whole in the document, shown as its picture (Insert > Document > Object, or
  * an object in a Word file): double-clicking it opens the file in its program.
  */
+/**
+ * Make Editable: the picture a structure was made from (a picture of a structure pasted from
+ * another program), kept with it so the two can be compared and the picture put back.
+ */
+export interface FromPicture {
+  /** The picture as it was: its object whole (size, place on the page, look, cropping). */
+  picture: Extract<DocObject, { kind: 'picture' }>;
+  /** Where the whole picture lies in the structure's points (it is shown over the structure there to compare). */
+  at: { x: number; y: number; w: number; h: number };
+  /** Drawn to look like the picture, or in the document's style. */
+  style: 'match' | 'default';
+  /** How the picture was drawn, as measured (points): kept to say so, and to change style without reading it again. */
+  look?: { bondLength: number; lineWidth: number | null; labelSize: number | null; preset?: string };
+  /** What the reader read: its atoms and their places in the picture (the reader on this computer), or a molfile (an AI model). */
+  read?: { graph: { symbols: string[]; coords: [number, number][]; edges: number[][]; confidence: number }; frame: { x: number; y: number; w: number; h: number }; px: { w: number; h: number } } | { molblock: string };
+}
+
 export interface Embedded {
   /** The program's name for the kind of object, as Word records it (Excel.Sheet.12, Package). */
   prog: string;
@@ -380,7 +397,7 @@ export interface Embedded {
 
 export type DocObject =
   /** A structure, scheme or table: a drawing, edited with the drawing tools. `scale` 1 is the drawing's own size. */
-  | { kind: 'drawing'; contents: Contents; scale?: number; look?: FigureLook; float?: Float; alt?: string; /** A figure: a set area of the page (in the drawing's points) its structures are drawn in, sized by it rather than by them, so drawing inside it never moves the text round it. Never drawn when printed. */ frame?: FigureFrame; /** Turned and flipped, as a picture (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean; /** A Chem4Word structure: its id in the file's CML part, and a fingerprint of the drawing as read (changed = the CML is written afresh). */ c4w?: { guid: string; sig: string }; /** Saved as a ChemDraw object, by this program name (ChemDraw.Document.6.0): one that came from a ChemDraw object stays one, to open in ChemDraw from Word. */ ole?: string; /** Cropping and color changes Word made to its picture: not shown here, saved back to Word while the structure is as read. */ wordLook?: WordLook }
+  | { kind: 'drawing'; contents: Contents; scale?: number; look?: FigureLook; float?: Float; alt?: string; /** A figure: a set area of the page (in the drawing's points) its structures are drawn in, sized by it rather than by them, so drawing inside it never moves the text round it. Never drawn when printed. */ frame?: FigureFrame; /** Turned and flipped, as a picture (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean; /** A Chem4Word structure: its id in the file's CML part, and a fingerprint of the drawing as read (changed = the CML is written afresh). */ c4w?: { guid: string; sig: string }; /** Saved as a ChemDraw object, by this program name (ChemDraw.Document.6.0): one that came from a ChemDraw object stays one, to open in ChemDraw from Word. */ ole?: string; /** Cropping and color changes Word made to its picture: not shown here, saved back to Word while the structure is as read. */ wordLook?: WordLook; /** Made from a picture (Make Editable): the picture, kept to compare with and to go back to. */ fromPicture?: FromPicture }
   /**
    * A picture: its own size is w × h points (`px` its pixels); `scale` 1 is that size. A chart
    * (Insert > Chart) is a picture with its chart and data: drawn from them, saved as Word's chart.
