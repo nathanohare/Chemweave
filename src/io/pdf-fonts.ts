@@ -132,15 +132,26 @@ export class EmbeddedFont {
   readonly used = new Map<number, string>();
   constructor(readonly font: TrueType, readonly id: number, readonly tag: string) {}
 
-  /** A run of text as the font's two-byte glyph codes, in PDF hex form. */
-  show(text: string): string {
+  /**
+   * A run of text as the font's two-byte glyph codes, in PDF hex form. Given the width each
+   * character takes in the layout (`widths`, in points, at `size`), a letter whose layout width
+   * differs from the font's own (a kerned pair, AV) is moved to match, as an array for TJ.
+   */
+  show(text: string, widths?: number[], size?: number): string {
+    const parts: string[] = [];
     let hex = '';
-    for (const ch of text) {
+    [...text].forEach((ch, i) => {
       const gid = this.font.glyph(ch.codePointAt(0)!);
       if (!this.used.has(gid)) this.used.set(gid, ch);
       hex += gid.toString(16).padStart(4, '0');
-    }
-    return `<${hex.toUpperCase()}>`;
+      const want = widths?.[i];
+      if (want === undefined || !size || i === text.length - 1) return;
+      // (TJ's numbers are taken off the advance, in thousandths of the size)
+      const adjust = Math.round(this.font.width(gid) - (want * 1000) / size);
+      if (Math.abs(adjust) >= 1) { parts.push(`<${hex.toUpperCase()}>`, String(adjust)); hex = ''; }
+    });
+    if (hex || !parts.length) parts.push(`<${hex.toUpperCase()}>`);
+    return parts.length === 1 ? parts[0] : `[${parts.join(' ')}]`;
   }
 
   /** The objects that describe the font: [body of the Type0 font, the CID font, the descriptor, the ToUnicode map]. */

@@ -15,14 +15,17 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
-import { woffToSfnt } from '../src/io/font-embed';
+import { woffToSfnt, obfuscate } from '../src/io/font-embed';
+import { TrueType, EmbeddedFont } from '../src/io/pdf-fonts';
+import { layoutMath } from '../src/document/math';
+import { chemPoints, hyphenPoints } from '../src/text/hyphenate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { emfToSvg } from '../src/render/emf-read';
 import { emfPlusPixels } from '../src/render/emf-plus';
 import { listInfo } from '../src/text/paragraphs';
 import { tocEntries, tocLevelStyle, tocLines } from '../src/document/toc';
 import { pdfStandIn } from '../src/fonts';
-import { newDocument, paraFromStyle, styleOf, type DocText } from '../src/document/document';
+import { newDocument, numberStyle, paraFromStyle, styleOf, type DocText } from '../src/document/document';
 import { DocLayouter } from '../src/document/doc-layout';
 import { FONT_STACK, layoutText, withStack } from '../src/text/layout';
 import type { TextRun } from '../src/model';
@@ -429,3 +432,120 @@ describe('Word contents as Word last showed them', () => {
   });
 });
 
+
+// ---------------------------------------------------------------- round 3: numbers, kerning, hyphens, fonts, header and footer
+
+describe('Word list numbers in bold styles', () => {
+  const styles = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>'
+    + '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/></w:rPr></w:style>';
+  const numbering = (rPr = '') => `<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="upperLetter"/><w:lvlText w:val="%1."/>${rPr}</w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>`;
+  const body = '<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>Materials</w:t></w:r></w:p>';
+
+  it('sets a number in its heading\'s bold, as Word does, unless the list level says plain', async () => {
+    const bold = (await readDocx(wordFile(body, { styles, numbering: numbering() }))).doc;
+    expect(bold.paras[0].numLook).toBeUndefined();
+    expect(numberStyle(bold, bold.paras[0])).toBe('bold ');
+    const plain = (await readDocx(wordFile(body, { styles, numbering: numbering('<w:rPr><w:b w:val="0"/></w:rPr>') }))).doc;
+    expect(plain.paras[0].numLook).toEqual({ bold: false });
+    expect(numberStyle(plain, plain.paras[0])).toBe('');
+  });
+
+  it('draws the number in the style it is given', () => {
+    const run: TextRun = { font: 'Times New Roman', size: 12, text: 'Materials', bold: true };
+    const measure = (s: string, size: number, _f: string, style: string) => s.length * size * (style.includes('bold') ? 0.6 : 0.5);
+    const line = layoutText({ runs: [run], paras: [{ list: 'number' }], markers: ['A.'], markerStyles: ['bold '], justify: 'left', boxes: true }, 12, measure).lines[0];
+    expect(line.marker?.style).toBe('bold ');
+    expect(line.marker?.w).toBeCloseTo(2 * 12 * 0.6);
+    expect(layoutText({ runs: [run], paras: [{ list: 'number' }], markers: ['A.'], justify: 'left', boxes: true }, 12, measure).lines[0].marker?.style).toBe('');
+  });
+
+  it('saves a plain number on its paragraph mark, and opens it plain again; the list level itself sets nothing', async () => {
+    const { doc } = await readDocx(wordFile(body, { styles, numbering: numbering('<w:rPr><w:b w:val="0"/></w:rPr>') }));
+    const files = unzipSync(await writeDocx(doc, deps));
+    expect(strFromU8(files['word/document.xml'])).toMatch(/<w:pPr>.*<w:rPr><w:b w:val="0"\/><w:bCs w:val="0"\/><\/w:rPr><\/w:pPr>/);
+    const lvl = /<w:lvl w:ilvl="0">.*?<\/w:lvl>/.exec(strFromU8(files['word/numbering.xml']))![0];
+    expect(lvl).not.toContain('<w:b w:val="0"/>');
+    const again = (await readDocx(await writeDocx(doc, deps))).doc;
+    expect(numberStyle(again, again.paras[0])).toBe('');
+    const bold = (await readDocx(wordFile(body, { styles, numbering: numbering() }))).doc;
+    const boldAgain = (await readDocx(await writeDocx(bold, deps))).doc;
+    expect(numberStyle(boldAgain, boldAgain.paras[0])).toBe('bold ');
+  });
+});
+
+describe('Word kerning, equations in a line, chemical names', () => {
+  it('kerns text only where Word does: w:kern on and the text at least that size', async () => {
+    const r = (kern: string, t: string) => `<w:r><w:rPr>${kern}<w:sz w:val="24"/></w:rPr><w:t>${t}</w:t></w:r>`;
+    const { doc } = await readDocx(wordFile(`<w:p>${r('', 'plain ')}${r('<w:kern w:val="2"/>', 'kerned ')}${r('<w:kern w:val="28"/>', 'too small')}</w:p>`));
+    const of = (t: string) => doc.runs.find((x) => x.text.startsWith(t))!.noKern;
+    expect(of('plain')).toBe(true);
+    expect(of('kerned')).toBeUndefined();
+    expect(of('too small')).toBe(true);
+    // and a saved document kerns from 1 pt up, as Word's new documents do
+    const styles = strFromU8(unzipSync(await writeDocx(newDocument(), deps))['word/styles.xml']);
+    expect(styles).toMatch(/<w:rPrDefault><w:rPr>.*<w:kern w:val="2"\/>/);
+  });
+
+  it('moves a kerned letter in a PDF to where the layout put it', () => {
+    const inter = new TrueType(woffToSfnt(new Uint8Array(readFileSync('node_modules/@fontsource/inter/files/inter-latin-400-normal.woff'))));
+    const f = new EmbeddedFont(inter, 1, 'AAAAAA');
+    const a = inter.width(inter.glyph(65)) / 100, v = inter.width(inter.glyph(86)) / 100; // at 10 pt
+    expect(f.show('AV')).toMatch(/^<[0-9A-F]{8}>$/);
+    expect(f.show('AV', [a, v], 10)).toMatch(/^<[0-9A-F]{8}>$/);
+    const tj = f.show('AV', [a - 0.5, v], 10);
+    expect(tj).toMatch(/^\[<[0-9A-F]{4}> 50 <[0-9A-F]{4}>\]$/);
+  });
+
+  it('sets an equation in a document line without extra room either side (25 °C)', () => {
+    const measure = (s: string, size: number) => s.length * size * 0.5;
+    const drawing = layoutMath('x', 12, 'Times New Roman', measure);
+    const doc = layoutMath('x', 12, 'Times New Roman', measure, 0);
+    expect(drawing.w - doc.w).toBeCloseTo(2 * 0.08 * 12);
+  });
+
+  it('may break a chemical name between its parts, as Word does', () => {
+    expect(chemPoints('Dimethoxyphenylboronic')).toEqual([2, 9, 15]);
+    expect(chemPoints('Diode')).toEqual([]);
+    expect(hyphenPoints('Dimethoxyphenylboronic')).toContain(9);
+  });
+});
+
+describe('fonts embedded in a Word file', () => {
+  it('hands each embedded font that may be shown to the app, un-obfuscated', async () => {
+    const inter = woffToSfnt(new Uint8Array(readFileSync('node_modules/@fontsource/inter/files/inter-latin-400-normal.woff')));
+    const key = '{11111111-2222-3333-4444-555555555555}';
+    const fontTable = `<w:font w:name="Lab Font"><w:family w:val="swiss"/><w:embedRegular r:id="rId1" w:fontKey="${key}"/><w:embedBold r:id="rId2" w:fontKey="${key}"/></w:font>`;
+    const got: [string, boolean, boolean, Uint8Array][] = [];
+    await readDocx(wordFile('<w:p><w:r><w:t>Text</w:t></w:r></w:p>', { fontTable, fontFiles: { 'fonts/font1.odttf': obfuscate(inter, key), 'fonts/font2.odttf': new Uint8Array(64).fill(7) } }),
+      { embeddedFont: (family, bold, italic, data) => got.push([family, bold, italic, data]) });
+    // (the second isn't a font, so it is left out)
+    expect(got).toHaveLength(1);
+    expect(got[0].slice(0, 3)).toEqual(['Lab Font', false, false]);
+    expect(got[0][3]).toEqual(inter);
+  });
+});
+
+describe('Word headers and footers placed as Word places them', () => {
+  const styles = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>'
+    + '<w:style w:type="paragraph" w:styleId="Footer"><w:name w:val="footer"/><w:basedOn w:val="Normal"/></w:style>';
+
+  it('keeps a footer whose framed page number has blank lines below as Word\'s paragraphs, the number over the first of them', async () => {
+    const footer = '<w:p><w:pPr><w:pStyle w:val="Footer"/><w:framePr w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:xAlign="right" w:y="1"/></w:pPr>'
+      + '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">PAGE  </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>15</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+      + '<w:p><w:pPr><w:pStyle w:val="Footer"/><w:ind w:right="360"/></w:pPr></w:p><w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr></w:p>';
+    const { doc } = await readDocx(wordFile('<w:p><w:r><w:t>Text</w:t></w:r></w:p>', { styles, footer }));
+    const body = doc.hf?.bodies?.footer;
+    expect(body).toBeDefined();
+    // the empty paragraph the frame sits over is gone, so the number is on the first line and one blank line is below
+    expect(body!.paras).toHaveLength(2);
+    expect(body!.runs.map((r) => r.text).join('').split('\n')[1]).toBe('');
+  });
+
+  it('takes a tab after the last words in a document line no further than the right margin', () => {
+    const measure = (s: string, size: number) => s.length * size * 0.5;
+    // 90 pt of words, then a tab whose next default stop (108 pt) is past the 100 pt line
+    const lines = layoutText({ runs: [{ font: 'Times New Roman', size: 12, text: 'aa bb cc dd eee\t' }], justify: 'left', boxes: true, wrap: 100 }, 12, measure).lines;
+    expect(lines).toHaveLength(1);
+    expect(lines[0].width).toBeCloseTo(100);
+  });
+});

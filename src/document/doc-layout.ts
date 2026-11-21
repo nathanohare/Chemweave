@@ -17,7 +17,7 @@ import { withStack, layoutText, type Glyphs, type InlineBox, type LaidLine, type
 import { fitParas, laidParas, listMarkers, paraCount, splitParagraphs } from '../text/paragraphs';
 import { isCovered, rowSpanOf, spanOf } from '../table';
 import * as rt from '../richtext';
-import { drawingOwnSize, nestedTables, BOX_PAD, LINE_NUMBER_GAP, OBJECT_CHAR, columnsOf, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, styleOf, FORM_SHADE, type DocObject, type DocText, type HeaderFooter, type NamedStyle, type PageSetup, type WrapKind } from './document';
+import { drawingOwnSize, nestedTables, BOX_PAD, LINE_NUMBER_GAP, OBJECT_CHAR, columnsOf, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, styleOf, numberStyle, FORM_SHADE, type DocObject, type DocText, type HeaderFooter, type NamedStyle, type PageSetup, type WrapKind } from './document';
 import { pageNumText, samePaper, sectionOfParas, sectionsOf } from './sections';
 import { bibliography, type BibEntry } from './references';
 import { emptyTof, tocEntries, tocLevelStyle, tocLines, tofEntries, type TocEntry } from './toc';
@@ -399,7 +399,7 @@ export class DocLayouter {
     };
     const resolved = runs.map((r) => (r.font && r.size ? r : { ...r, font: r.font ?? N.font, size: r.size ?? N.size }));
     const ps = fitParas(paras, paraCount(rt.plainText(runs)));
-    const lay = layoutText({ runs: resolved, paras: ps, justify: 'left', boxes: true, markers: listMarkers(ps), inline }, N.size, this.deps.measure);
+    const lay = layoutText({ runs: resolved, paras: ps, justify: 'left', boxes: true, markers: listMarkers(ps), markerStyles: ps.map((x) => numberStyle(t, x)), inline }, N.size, this.deps.measure);
     return Math.max(0, ...lay.lines.map((l) => l.x + l.width)) + 2 * CELL_PAD.x;
   }
 
@@ -490,7 +490,7 @@ export class DocLayouter {
       const o = r.obj !== undefined ? t.objects[r.obj] : undefined;
       if (o?.kind !== 'math') return;
       const size = r.size ?? st.size, family = withStack(r.font ?? st.font);
-      const m = layoutMath(o.tex, size, family, this.deps.measure);
+      const m = layoutMath(o.tex, size, family, this.deps.measure, 0);
       maths.set(r.obj!, { ...m, family, color: r.color ?? '#000' });
       sizes.set(r.obj!, { w: m.w, h: m.ascent + m.descent });
     };
@@ -631,19 +631,19 @@ export class DocLayouter {
       const tabs = runs.filter(isTable).map((r) => tableOf(r.obj!)!);
       const bib = runs.some(isBib) || tabs.length > 0;
       const W = widthOf(p);
-      const key = JSON.stringify([resolved, ps, markers[p], W, objs, st.size, bib ? [t.citeStyle, t.citeOptions, entries.map((e) => [e.label, e.pieces]), st.font, tocKey] : 0, tabs.map((x) => [x.xs, x.hs]), hyph && !ps.noHyphen ? t.hyphen : 0]);
+      const key = JSON.stringify([resolved, ps, markers[p], numberStyle(t, ps), W, objs, st.size, bib ? [t.citeStyle, t.citeOptions, entries.map((e) => [e.label, e.pieces]), st.font, tocKey] : 0, tabs.map((x) => [x.xs, x.hs]), hyph && !ps.noHyphen ? t.hyphen : 0]);
       const hy = hyph && !ps.noHyphen ? { hyphenate: hyph } : {};
       let lay = this.cache.get(key);
       if (!lay) {
         const frame: TextFrame = {
-          runs: resolved, paras: [ps], justify: 'left', wrap: W, boxes: true, markers: [markers[p]], inline, ...hy,
+          runs: resolved, paras: [ps], justify: 'left', wrap: W, boxes: true, markers: [markers[p]], markerStyles: [numberStyle(t, ps)], inline, ...hy,
         };
         lay = bib ? this.withBlocks(frame, st, blockLines, tableOf) : layoutText(frame, st.size, this.deps.measure);
         this.cache.set(key, lay);
       }
       this.used.add(key);
       laid.push(lay);
-      again.push(bib ? null : { key, frame: { runs: resolved, paras: [ps], justify: 'left', wrap: W, boxes: true, markers: [markers[p]], inline, ...hy }, size: st.size });
+      again.push(bib ? null : { key, frame: { runs: resolved, paras: [ps], justify: 'left', wrap: W, boxes: true, markers: [markers[p]], markerStyles: [numberStyle(t, ps)], inline, ...hy }, size: st.size });
     }
     // a paragraph laid out again round the floating figures beside it (`y` its top on the page)
     const wrapped = (p: number, y: number, all: WrapRect[], dx: number): TextLayout => {
@@ -1236,7 +1236,7 @@ export class DocLayouter {
     let lay = this.cache.get(key);
     if (!lay) {
       const inline = (x: number) => { const f = fields?.get(x); return f !== undefined ? { text: f } : null; };
-      lay = layoutText({ runs: resolved, paras: first, justify: 'left', wrap: Math.max(6, w), boxes: true, markers: listMarkers(first), inline }, st.size, this.deps.measure);
+      lay = layoutText({ runs: resolved, paras: first, justify: 'left', wrap: Math.max(6, w), boxes: true, markers: listMarkers(first), markerStyles: first.map((x) => numberStyle(t, x)), inline }, st.size, this.deps.measure);
       const l0 = lay.lines[0];
       if (l0) {
         const mark: Glyphs = { text: label, start: 0, x: l0.x - lw, w: lw - 0.3 * st.size, dy: -0.42 * st.size, size: small, family, style: '', decor: true };
@@ -1255,7 +1255,7 @@ export class DocLayouter {
     const resolved = runs.map((r) => (r.font && r.size ? r : { ...r, font: r.font ?? N.font, size: r.size ?? N.size }));
     const n = paraCount(rt.plainText(runs));
     const ps = fitParas(paras, n);
-    const frame: TextFrame = { runs: resolved, paras: ps, justify: 'left', wrap: Math.max(6, w - 2 * BOX_PAD.x), boxes: true, markers: listMarkers(ps) };
+    const frame: TextFrame = { runs: resolved, paras: ps, justify: 'left', wrap: Math.max(6, w - 2 * BOX_PAD.x), boxes: true, markers: listMarkers(ps), markerStyles: ps.map((x) => numberStyle(t, x)) };
     const key = `box|${JSON.stringify([resolved, ps, w])}`;
     let lay = this.cache.get(key);
     if (!lay) {
