@@ -158,7 +158,37 @@ export const LIST_SCHEMES: ListScheme[] = [
 ];
 
 export function schemeOf(id: string | undefined): ListScheme {
-  return LIST_SCHEMES.find((s) => s.id === (id ?? '')) ?? LIST_SCHEMES[0];
+  return LIST_SCHEMES.find((s) => s.id === (id ?? '')) ?? (id?.startsWith(OWN) ? ownScheme(id) : null) ?? LIST_SCHEMES[0];
+}
+
+/**
+ * A list's own multilevel scheme, as a Word file has it when it isn't one of the library's
+ * (A. then 1., say): written in its id, so it goes wherever the id goes and back into Word.
+ * The id is "own:" and each level's format letter (1, a, A, i, I) and label, joined by tabs.
+ */
+const OWN = 'own:';
+const FMT_CODE: Record<NumFormat, string> = { decimal: '1', lowerLetter: 'a', upperLetter: 'A', lowerRoman: 'i', upperRoman: 'I' };
+const CODE_FMT = Object.fromEntries(Object.entries(FMT_CODE).map(([f, c]) => [c, f])) as Record<string, NumFormat>;
+const owns = new Map<string, ListScheme>();
+
+/** The id of a list's own scheme with these levels (up to nine; the library's 1. a. i. below them); null when a label can't be kept in one (it has a tab or a | in it). */
+export function ownSchemeId(levels: SchemeLevel[]): string | null {
+  if (levels.some((l) => /[\t|]/.test(l.text))) return null;
+  return OWN + levels.slice(0, 9).map((l) => FMT_CODE[l.fmt] + l.text).join('\t');
+}
+
+function ownScheme(id: string): ListScheme | null {
+  let s = owns.get(id);
+  if (s) return s;
+  const parts = id.slice(OWN.length).split('\t');
+  const levels = LIST_SCHEMES[0].levels.map((l, i) => {
+    const p = parts[i];
+    const fmt = p ? CODE_FMT[p[0]] : undefined;
+    return fmt ? { fmt, text: p.slice(1) } : l;
+  });
+  s = { id, name: levels.slice(0, 3).map((l, i) => l.text.replace(/%(\d)/g, (_, d: string) => formatNumber(1, levels[Number(d) - 1]?.fmt ?? 'decimal')).trim() || `${i + 1}`).join(' '), levels };
+  owns.set(id, s);
+  return s;
 }
 
 /**

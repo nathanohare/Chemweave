@@ -537,7 +537,7 @@ export class DocLayouter {
     const tofs = new Map<string, TocEntry[]>();
     for (const o of Object.values(t.objects)) if (o.kind === 'tof' && !tofs.has(o.name)) tofs.set(o.name, tofEntries(t, o.name, fields));
     const pageOf = (p: number) => this.tocPages[p] ?? '';
-    const listKey = (m: Map<unknown, TocEntry[]>) => [...m].map(([k, es]) => [k, es.map((e) => [e.level, e.text, pageOf(e.para)])]);
+    const listKey = (m: Map<unknown, TocEntry[]>) => [...m].map(([k, es]) => [k, es.map((e) => [e.level, e.num, e.text, pageOf(e.para)])]);
     // the indexes' and tables of authorities' lines, each kind asked for worked out once
     const lists = new Map<string, ListItem[]>();
     const listOf = (o: Extract<DocObject, { kind: 'index' | 'toa' }>): ListItem[] => {
@@ -551,7 +551,7 @@ export class DocLayouter {
     const isBib = (r: { obj?: number }) => r.obj !== undefined && ['bib', 'toc', 'tof', 'index', 'toa'].includes(t.objects[r.obj]?.kind);
     const blockLines = (id: number, st: NamedStyle, ps: ParaStyle, wrap: number): LaidLine[] | null => {
       const o = t.objects[id];
-      if (o?.kind === 'toc') return tocLines(tocs.get(o.levels) ?? [], pageOf, st, ps.line, wrap, this.deps.measure);
+      if (o?.kind === 'toc') return tocLines(tocs.get(o.levels) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, undefined, true, (n) => t.styles[`TOC${n}`]);
       if (o?.kind === 'tof') return tocLines(tofs.get(o.name) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, emptyTof(o.name), false);
       if (o?.kind === 'index') return listLines(listOf(o), st, ps.line, wrap, this.deps.measure, EMPTY_INDEX, !!o.right);
       if (o?.kind === 'toa') return listLines(listOf(o), st, ps.line, wrap, this.deps.measure, emptyToa(o.cat), true);
@@ -807,6 +807,18 @@ export class DocLayouter {
     // room for paragraph borders above and below the text
     const bRoom = paras.some((q) => q.border) ? borderRoom(paras) : null;
     let paraStart = 0;
+    /** How far below a paragraph's top the figures floating from it (placed from the paragraph, text kept off them) reach; 0 for none, or when they can't fit on any page. */
+    const floatsBelow = (p: number): number => {
+      let most = 0;
+      for (const r of paraRuns[p] ?? []) {
+        const fl = r.obj !== undefined ? floatOf(t.objects[r.obj]) : undefined;
+        const s = r.obj !== undefined ? sizes.get(r.obj) : undefined;
+        if (!fl || !s || fl.hidden || fl.yFrom || (fl.wrap !== 'topBottom' && fl.wrap !== 'square')) continue;
+        const [, et, , eb] = extentOf(r.obj!);
+        most = Math.max(most, fl.y + s.h + et + eb);
+      }
+      return most <= textH ? most : 0;
+    };
     for (let p = 0; p < n; p++) {
       const ps = paras[p];
       const lay = laid[p];
@@ -841,14 +853,17 @@ export class DocLayouter {
       // space above a paragraph isn't kept at the top of a page, except on the first page
       const before = () => (hasContent || pageIdx === 0 ? ps.spaceBefore ?? 0 : 0) + (bRoom?.above[p] ?? 0);
       // a heading moves to the next page when the start of the paragraph after it won't fit beside it
+      // (nor the figures that float below that paragraph's top)
       if (ps.keepNext && hasContent && p + 1 < n) {
         const next = laid[p + 1].lines;
-        const nextNeed = (paras[p + 1].spaceBefore ?? 0) + next.slice(0, Math.min(2, next.length)).reduce((a, l) => a + heightOf(l), 0);
+        const nextNeed = (paras[p + 1].spaceBefore ?? 0) + Math.max(next.slice(0, Math.min(2, next.length)).reduce((a, l) => a + heightOf(l), 0), floatsBelow(p + 1));
         const need = before() + sum(hs) + (ps.spaceAfter ?? 0) + nextNeed;
         if (cursor + need > room() + 0.01 && need <= textH) nextColumn();
       }
-      // a paragraph's first line isn't left alone at the bottom of a page
-      const firstNeed = sum(hs.slice(0, pl.length >= 2 ? 2 : 1));
+      // a paragraph's first line isn't left alone at the bottom of a page; and a paragraph whose
+      // figures (floating from it, text above and below or round them) would run off the page goes
+      // to the next one with them, as Word moves it
+      const firstNeed = Math.max(sum(hs.slice(0, pl.length >= 2 ? 2 : 1)), floatsBelow(p));
       if (hasContent && cursor + before() + firstNeed > room() + 0.01) nextColumn();
       cursor += before();
       paraTops.push({ y: pageTop(pageIdx) + page.top + cursor, page: pageIdx });

@@ -26,7 +26,7 @@ import * as rt from '../richtext';
 import { NS, PackageReader, REL, bytesHash, kid, kids, rAttr, fromEmu } from './ooxml';
 import { dataUrl, imageSize, pictureMime } from '../render/images';
 import { drawingInEmf } from '../render/emf';
-import { BULLETS, BULLET_LIBRARY, LIST_SCHEMES, cleanPara, listInfo } from '../text/paragraphs';
+import { BULLETS, BULLET_LIBRARY, LIST_SCHEMES, cleanPara, listInfo, ownSchemeId, type NumFormat } from '../text/paragraphs';
 import { SINGLE, type Measure } from '../text/layout';
 import { arialWidth } from '../text-metrics';
 import { documentMeasure } from '../text/font-measure';
@@ -540,6 +540,14 @@ class DocxReader {
     for (const c of kids(el)) {
       switch (c.localName) {
         case 'jc': { const j = JUSTIFY[this.a(c) ?? '']; if (j) out.align = j; break; }
+        case 'framePr': {
+          // a text frame set at the right or in the middle of the margins (a page number in a footer, as older Words made it): its paragraph is aligned there
+          if (c.getAttributeNS(this.W, 'dropCap') ?? c.getAttribute('w:dropCap')) break;
+          const x = c.getAttributeNS(this.W, 'xAlign') ?? c.getAttribute('w:xAlign');
+          const shown = x === 'right' || x === 'outside' ? 'right' as const : x === 'center' ? 'center' as const : null;
+          if (shown && !kid(el, 'jc')) out.align = shown;
+          break;
+        }
         case 'spacing': {
           const b = this.tw(c, 'before'), af = this.tw(c, 'after'), line = this.a(c, 'line');
           // "automatic" spacing (from web pages) is 14 pt
@@ -566,7 +574,7 @@ class DocxReader {
         case 'pageBreakBefore': out.pageBreak = this.on(c); break;
         case 'suppressLineNumbers': out.noLineNumbers = this.on(c); break;
         case 'suppressAutoHyphens': out.noHyphen = this.on(c); break;
-        case 'outlineLvl': { const v = Number(this.a(c)); if (v >= 0 && v < 9) out.outline = v + 1; break; }
+        case 'outlineLvl': { const v = Number(this.a(c)); if (v >= 0 && v <= 9) out.outline = v + 1; break; } // (9: body text, which a style can set over a heading's level: 10 here)
         case 'contextualSpacing': out.contextual = this.on(c); break;
         case 'pBdr': {
           const b: ParaBorders = {};
@@ -1164,6 +1172,8 @@ class DocxReader {
     if (choice && /(^|\s)wps(\s|$)/.test(choice.getAttribute('Requires') ?? '') && choice.getElementsByTagNameNS('*', 'wsp').length) return choice;
     // one of our diagrams as a group of shapes (Word puts an older shape in place of our picture when it saves)
     if (choice && /(^|\s)wpg(\s|$)/.test(choice.getAttribute('Requires') ?? '') && Array.from(choice.getElementsByTagNameNS('*', 'docPr')).some((d) => new RegExp(`^${DRAWING_NAME} \\d+$`).test(this.model?.floats?.[Number(d.getAttribute('id'))]?.was ?? d.getAttribute('name') ?? ''))) return choice;
+    // Word's own group of pictures: read from the group, where each picture is (the older shape keeps only the first well)
+    if (choice && /(^|\s)wpg(\s|$)/.test(choice.getAttribute('Requires') ?? '') && pictureGroup(choice)) return choice;
     // Word 2016's newer charts (histograms, box charts): their fallback is only a picture
     if (choice && /(^|\s)cx\d*(\s|$)/.test(choice.getAttribute('Requires') ?? '') && Array.from(choice.getElementsByTagNameNS('*', 'graphicData')).some((g) => /chartex/.test(g.getAttribute('uri') ?? ''))) return choice;
     return kid(el, 'Fallback') ?? choice;
@@ -1276,6 +1286,8 @@ class DocxReader {
   }
 
   private paragraph(el: Element): void {
+    // (a page break the paragraph before ended with)
+    const carried = this.pageNext;
     const pPr = kid(el, 'pPr');
     const { style, p: own, direct, base, mark } = this.paraProps(pPr);
     // a section ends with this paragraph: the next one starts a new page unless the section break says otherwise
@@ -1290,6 +1302,15 @@ class DocxReader {
     this.inline(kids(el), ctx);
     // the contents' own lines (and the paragraph its field ends in): left out
     const sectionBreak = () => { if (sect) this.breakNext = this.sectionAfter(sect); };
+    // a page break that ends the paragraph, with only its mark after it: Word (2013 on) keeps the
+    // mark on the break's page, so the next page starts with the next paragraph, not an empty line
+    const last = ctx.pieces[ctx.pieces.length - 1];
+    let popped = false;
+    if (ctx.pieces.length > 1 && last.pageBreak && !last.runs.length && !last.soft && !last.colBreak && !last.xe && !last.ta && !sect
+      && el.nextElementSibling?.localName === 'p' && this.compatMode() >= 15) {
+      ctx.pieces.pop();
+      popped = true;
+    }
     if (inToc && ctx.pieces.every((pc) => !pc.runs.length)) { sectionBreak(); return; }
     const bib = bibBefore ?? this.bibMet ?? undefined;
     const text = ctx.pieces.map((pc) => rt.plainText(pc.runs)).join('\n');
@@ -1354,7 +1375,7 @@ class DocxReader {
           if (list) q.cont = true;
         }
       } else {
-        if (pc.pageBreak) q.pageBreak = true;
+        if (pc.pageBreak || carried) q.pageBreak = true;
         if (pc.colBreak) q.colBreak = true;
         if (this.pendingMarks.length) { q.marks = this.pendingMarks; this.pendingMarks = []; }
       }
@@ -1367,8 +1388,24 @@ class DocxReader {
       const num = i === 0 && list && numId ? { id: numId, abs: this.nums.get(numId) ?? '', ilvl } : undefined;
       this.out.push({ ps: q, runs: pc.runs, mark: markStyle, style: ours, contextual: !!p.contextual, bib, ...(mr ? { markRev: mr } : {}), ...(num ? { num } : {}) });
     });
+    this.pageNext = popped;
     sectionBreak();
   }
+
+  /** A page break the paragraph before ended with, which starts this one's page. */
+  private pageNext = false;
+
+  /** Word's compatibility mode (settings.xml): 15 for Word 2013 and later, 12 for files that don't say. */
+  private compatMode(): number {
+    if (this.compat === null) {
+      const path = this.pkg.relOfType(this.main, DOCX_REL.settings);
+      const set = path ? Array.from(this.pkg.xml(path)?.getElementsByTagNameNS('*', 'compatSetting') ?? []) : [];
+      const mode = set.find((c) => c.getAttributeNS(this.W, 'name') === 'compatibilityMode' || c.getAttribute('w:name') === 'compatibilityMode');
+      this.compat = Number(mode?.getAttributeNS(this.W, 'val') ?? mode?.getAttribute('w:val')) || 12;
+    }
+    return this.compat;
+  }
+  private compat: number | null = null;
 
   private takeBreak(): SectionBreak | undefined {
     const b = this.breakNext;
@@ -2229,7 +2266,50 @@ class DocxReader {
       this.emitObject(ctx, { kind: 'drawing', contents, scale, ...(m.frame ? { frame: structuredClone(m.frame) } : {}), ...(look ? { look } : {}), ...(float ? { float } : {}), ...(contentsAlt(contents) ? {} : alt), ...turn, ...(m.ole ? { ole: m.ole } : {}), ...(wordLook ? { wordLook: { ...wordLook, print: contentsPrint(contents) } } : {}) }, r);
       return;
     }
+    // Word's own group of pictures (pictures kept together, such as a trace over its table): each picture where the group puts it
+    if (!pic && group) { this.wordGroup(group, box, shown, r, ctx); return; }
     if (!pic) { this.warn('shapes'); return; }
+    this.wordPicture(pic, name, alt, shown, r, ctx, look, float);
+  }
+
+  /**
+   * A group of pictures Word made (Group, or pasted as one), not one of ours: each picture is a
+   * figure of its own, placed where the group has it and grouped with the rest (as Arrange >
+   * Group does), so they move together. A group in the line becomes figures above and below the
+   * text at the paragraph. Shapes, text boxes and anything else in it are left out (and said so).
+   */
+  private wordGroup(group: Element, box: Element, shown: { w: number; h: number }, r: RProps, ctx: Ctx): void {
+    const base: Float = (box.localName === 'anchor' ? this.floatOf(box, null, shown.w) : null) ?? { wrap: 'topBottom', x: 0, y: 0, gapTop: 0, gapBottom: 0 };
+    // (each picture takes the group's place in the stack, not the group itself)
+    const at = this.stack.findIndex((e) => e.fl === base);
+    const rh = at >= 0 ? this.stack.splice(at, 1)[0].rh : null;
+    const g = this.newGroup();
+    const pics = groupPictures(group);
+    if (pics.skipped) this.warn('shapes');
+    const root = groupSpace(kid(group, 'grpSpPr', 'xfrm'));
+    // the group's own space to points on the page, at the size it is shown
+    const kx = root.ext.w > 0 ? shown.w / root.ext.w : 0, ky = root.ext.h > 0 ? shown.h / root.ext.h : 0;
+    for (const { pic, x, y, w, h } of pics.found) {
+      const size = { w: round(w * kx), h: round(h * ky) };
+      if (size.w <= 0 || size.h <= 0) continue;
+      const fl: Float = { ...base, x: round(base.x + x * kx), y: round(base.y + y * ky), group: g };
+      delete fl.name;
+      if (rh !== null) this.stack.push({ fl, rh });
+      const pr = kid(pic, 'nvPicPr', 'cNvPr');
+      const descr = pr?.getAttribute('descr')?.trim() ?? '';
+      this.wordPicture(pic, pr?.getAttribute('name') ?? '', descr ? { alt: descr } : {}, size, r, ctx, readLook(kid(pic, 'spPr')), fl);
+    }
+  }
+
+  /** A number for a new group of floating figures, not used by any group kept in the file. */
+  private newGroup(): number {
+    if (this.groups === null) this.groups = Math.max(0, ...Object.values(this.model?.floats ?? {}).map((f) => f.group ?? 0)) + 1;
+    return this.groups++;
+  }
+  private groups: number | null = null;
+
+  /** A picture (pic:pic) of Word's: its file, cropping, effects and turn. */
+  private wordPicture(pic: Element, name: string, alt: { alt?: string }, shown: { w: number; h: number }, r: RProps, ctx: Ctx, look: FigureLook | null, float: Float | null): void {
     const blip = kid(pic, 'blipFill', 'blip');
     const svg = blip ? Array.from(blip.getElementsByTagNameNS('*', 'svgBlip'))[0] : undefined;
     let target = this.relTarget(rAttr(svg, 'embed')) ?? this.relTarget(rAttr(blip, 'embed'));
@@ -2726,8 +2806,8 @@ class DocxReader {
     const indent = (this.a(ind, 'type') ?? 'dxa') === 'dxa' ? this.tw(ind, 'w') : undefined;
     if (indent && Math.abs(indent) >= 0.05) table.indent = round(indent);
     if (this.autofitOf(tblPr, style)) table.autofit = true;
-    // the cell margins, when not the standard ones
-    const mar = readMargins(kid(tblPr, 'tblCellMar'), this.a.bind(this));
+    // the cell margins, when not the standard ones: the table's own, else its style's (or Word's default table style's, Normal Table: none above and below)
+    const mar = { ...this.styleCellMargins(style), ...readMargins(kid(tblPr, 'tblCellMar'), this.a.bind(this)) };
     if (Object.keys(mar).length) {
       const pad = { ...DEFAULT_MARGINS, ...mar };
       if (Object.entries(pad).some(([k, v]) => Math.abs(v - DEFAULT_MARGINS[k as keyof typeof DEFAULT_MARGINS]) > 0.01)) table.pad = pad;
@@ -2844,6 +2924,17 @@ class DocxReader {
       out.set(c.localName, !/^(nil|none)$/i.test(v));
     }
     return out;
+  }
+
+  /** The cell margins a table style gives (with those of the styles it is based on), or Word's default table style's. */
+  private styleCellMargins(id: string | null | undefined): ReturnType<typeof readMargins> {
+    const list: WStyle[] = [];
+    const seen = new Set<string>();
+    for (let s = this.wstyles.get(`table:${id ?? this.defaultTable}`) ?? this.wstyles.get(`table:${this.defaultTable}`); s && !seen.has(s.id); s = s.basedOn ? this.wstyles.get(`table:${s.basedOn}`) : undefined) {
+      seen.add(s.id);
+      list.unshift(s);
+    }
+    return Object.assign({}, ...list.map((s) => readMargins(kid(kid(s.el, 'tblPr'), 'tblCellMar'), this.a.bind(this))));
   }
 
   private styleTableBorders(id: string): Map<string, boolean> {
@@ -2970,9 +3061,27 @@ class DocxReader {
     let page: { zone: number; prefix: string } | null = null;
     let after = '';
     let lines = 0;
+    // blank paragraphs above the first text (they move it down the page)
+    let blankAbove = 0, texted = false;
+    // how the three places' text is shown: in Normal's font, at 10 pt at most (as saved here), or at Normal's size (as Word's header style has it)
+    const normal = this.paraProps(null).base;
+    const zoneLook = { font: normal.font ?? WORD_FONT, size: Math.min(10, normal.size ?? WORD_SIZE), normal: normal.size ?? WORD_SIZE };
     for (const p of Array.from(root.getElementsByTagNameNS(this.W, 'p'))) {
-      const { p: props } = this.paraProps(kid(p, 'pPr'));
+      const pPr = kid(p, 'pPr');
+      const { p: props } = this.paraProps(pPr);
       let zone = props.align === 'center' ? 1 : props.align === 'right' ? 2 : 0;
+      // tab stops other than the centre and right ones the three places use, or text that looks other than they show it
+      // (Normal's font and size, plain): kept as Word's paragraphs, where they show
+      if (kids(kid(pPr, 'tabs'), 'tab').some((t) => !['center', 'right'].includes(t.getAttributeNS(this.W, 'val') ?? t.getAttribute('w:val') ?? ''))) rich = true;
+      if (!rich) {
+        const { base } = this.paraProps(pPr);
+        for (const r of Array.from(p.getElementsByTagNameNS(this.W, 'r'))) {
+          if (!kid(r, 't')) continue;
+          const own = merge<RProps>(base, this.readRPr(kid(r, 'rPr')));
+          const size = own.size ?? WORD_SIZE;
+          if ((own.font ?? WORD_FONT) !== zoneLook.font || (Math.abs(size - zoneLook.size) > 0.25 && Math.abs(size - zoneLook.normal) > 0.25) || own.bold || own.italic || own.underline || (own.color && own.color !== '#000000') || own.highlight || (own.pos && own.pos !== 'base')) { rich = true; break; }
+        }
+      }
       const texts: [string, string, string] = ['', '', ''];
       const fields: { instr: string; result: boolean }[] = [];
       const add = (s: string) => {
@@ -3034,11 +3143,13 @@ class DocxReader {
         }
       };
       visit(p);
-      if (texts.some((t) => t.trim())) lines++;
+      if (texts.some((t) => t.trim())) { lines++; texted = true; }
+      else if (!texted && !p.getElementsByTagNameNS(this.W, 'fldChar').length && !p.getElementsByTagNameNS(this.W, 'fldSimple').length) blankAbove++;
+      else texted = true;
       texts.forEach((t, i) => { const s = t.trim(); if (s) zones[i] = zones[i] ? `${zones[i]} ${s}` : s; });
     }
     // (text on more than one line is kept as it is, not run together on one)
-    if (lines > 1 || root.getElementsByTagNameNS(this.W, 'tbl').length) rich = true;
+    if (lines > 1 || root.getElementsByTagNameNS(this.W, 'tbl').length || (texted && blankAbove > 0)) rich = true;
     if (after.trim() && !rich) this.warn('pageText');
     return { zones, page, rich };
   }
@@ -3297,8 +3408,16 @@ function colourOf(v: string | null | undefined): string | null {
 function schemeFor(levels: Level[], ilvl: number): string | null {
   const same = (l: Level | undefined, i: number, s: (typeof LIST_SCHEMES)[number]) => !!l && l.fmt === s.levels[i].fmt && l.text === s.levels[i].text;
   const fits = LIST_SCHEMES.filter((s) => same(levels[ilvl], ilvl, s));
-  if (!fits.length) return null;
-  return (fits.find((s) => levels.every((l, i) => !l || l.fmt === 'bullet' || l.fmt === 'none' || i > 8 || same(l, i, s))) ?? fits[0]).id;
+  const whole = fits.find((s) => levels.every((l, i) => !l || l.fmt === 'bullet' || l.fmt === 'none' || i > 8 || same(l, i, s)));
+  if (whole) return whole.id;
+  // the list's own numbering (A. at the top, say): kept as Word has it, where each numbered level's format is one shown here
+  const formats = new Set<string>(LIST_SCHEMES[0].levels.map((l) => l.fmt).concat(['upperLetter', 'upperRoman']));
+  const lib = LIST_SCHEMES[0].levels;
+  if (levels[ilvl] && formats.has(levels[ilvl].fmt)) {
+    const own = ownSchemeId(lib.map((d, i) => { const l = levels[i]; return l && formats.has(l.fmt) ? { fmt: l.fmt as NumFormat, text: l.text } : d; }));
+    if (own) return own;
+  }
+  return fits[0]?.id ?? null;
 }
 
 /** The content controls the text still has (those round runs or paragraphs), for DocText.controls. */
@@ -3323,4 +3442,53 @@ function ownName(pr: Element | null, box: Element): string | null {
   if (ours.test(pr?.getAttribute('name') ?? '')) return null;
   const inner = kid(box, 'graphic', 'graphicData', 'pic', 'nvPicPr', 'cNvPr')?.getAttribute('name') ?? '';
   return ours.test(inner) ? inner : null;
+}
+
+/** A group's space (a:xfrm): where it is and how big in its parent's units, and its children's units. */
+function groupSpace(xf: Element | null): { off: { x: number; y: number }; ext: { w: number; h: number }; chOff: { x: number; y: number }; chExt: { w: number; h: number } } {
+  const n = (el: Element | null, k: string) => Number(el?.getAttribute(k) ?? 0) || 0;
+  const off = kid(xf, 'off'), ext = kid(xf, 'ext'), chOff = kid(xf, 'chOff'), chExt = kid(xf, 'chExt');
+  const e = { w: n(ext, 'cx'), h: n(ext, 'cy') };
+  return { off: { x: n(off, 'x'), y: n(off, 'y') }, ext: e, chOff: chOff ? { x: n(chOff, 'x'), y: n(chOff, 'y') } : { x: 0, y: 0 }, chExt: chExt ? { w: n(chExt, 'cx'), h: n(chExt, 'cy') } : e };
+}
+
+/**
+ * The pictures in a Word group (wpg:wgp), with groups inside it, each placed in the outer group's
+ * own units (EMU, from its top left). `skipped`: anything else was in it (shapes, text boxes).
+ */
+export function groupPictures(group: Element): { found: { pic: Element; x: number; y: number; w: number; h: number }[]; skipped: boolean } {
+  const found: { pic: Element; x: number; y: number; w: number; h: number }[] = [];
+  let skipped = false;
+  // a point in a group's children's units to the outer group's (an affine map per axis: v·k + d)
+  type Map1 = { kx: number; dx: number; ky: number; dy: number };
+  const walk = (g: Element, sp: ReturnType<typeof groupSpace>, outer: Map1, depth: number) => {
+    const kx = sp.chExt.w ? sp.ext.w / sp.chExt.w : 1, ky = sp.chExt.h ? sp.ext.h / sp.chExt.h : 1;
+    // children's units to this group's parent's, then on out
+    const m: Map1 = {
+      kx: kx * outer.kx, dx: (sp.off.x - sp.chOff.x * kx) * outer.kx + outer.dx,
+      ky: ky * outer.ky, dy: (sp.off.y - sp.chOff.y * ky) * outer.ky + outer.dy,
+    };
+    for (const c of kids(g)) {
+      const n = c.localName;
+      if (n === 'cNvPr' || n === 'cNvGrpSpPr' || n === 'grpSpPr' || n === 'nvGrpSpPr' || n === 'extLst') continue;
+      if (n === 'pic') {
+        const xf = kid(c, 'spPr', 'xfrm');
+        const off = kid(xf, 'off'), ext = kid(xf, 'ext');
+        const x = Number(off?.getAttribute('x') ?? 0) || 0, y = Number(off?.getAttribute('y') ?? 0) || 0;
+        const w = Number(ext?.getAttribute('cx') ?? 0) || 0, h = Number(ext?.getAttribute('cy') ?? 0) || 0;
+        found.push({ pic: c, x: x * m.kx + m.dx, y: y * m.ky + m.dy, w: w * m.kx, h: h * m.ky });
+      } else if (n === 'grpSp' && depth < 20) walk(c, groupSpace(kid(c, 'grpSpPr', 'xfrm')), m, depth + 1);
+      else skipped = true;
+    }
+  };
+  // (the outer group itself sits at 0,0 of the figure: its own off is where Word puts the figure)
+  const root = groupSpace(kid(group, 'grpSpPr', 'xfrm'));
+  walk(group, { ...root, off: { x: 0, y: 0 } }, { kx: 1, dx: 0, ky: 1, dy: 0 }, 0);
+  return { found, skipped };
+}
+
+/** Whether a choice of contents is a Word group of nothing but pictures (read from the group itself). */
+function pictureGroup(choice: Element): boolean {
+  const groups = Array.from(choice.getElementsByTagNameNS('*', 'wgp'));
+  return groups.length > 0 && groups.every((g) => { const got = groupPictures(g); return got.found.length > 0 && !got.skipped; });
 }

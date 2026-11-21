@@ -4,11 +4,12 @@
 // keeps (pens, brushes, fonts, the mapping from the picture's units to the page, clipping),
 // and each line, shape, piece of text and bitmap becomes SVG.
 //
-// Skipped: palettes and colour management (they only matter on old screens and printers), and
-// EMF+ records. EMF+ sits in comments, and "dual" files, which is what Windows programs write,
-// repeat everything as ordinary records, so nothing is lost.
+// Skipped: palettes and colour management (they only matter on old screens and printers). EMF+
+// records sit in comments, and "dual" files, which is what Windows programs write, repeat
+// everything as ordinary records; the EMF+ is played (emf-plus.ts) only when those draw nothing.
 
 import { zlibSync } from 'fflate';
+import { playEmfPlus } from './emf-plus';
 
 export interface EmfSvg {
   svg: string;
@@ -546,7 +547,8 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
     return d;
   };
 
-  // ---- play the records
+  // ---- play the records (and keep the EMF+ in the comments, for files with nothing else)
+  const plus: Uint8Array[] = [];
   let off = 0;
   for (let count = 0; off + 8 <= bytes.length && count < 2_000_000; count++) {
     const type = u32(off), size = u32(off + 4);
@@ -806,11 +808,21 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
         bitmap(o, size, u32(o + 48), u32(o + 52), u32(o + 56), u32(o + 60), u32(o + 68), dest, [i32(o + 32), i32(o + 36), i32(o + 40), i32(o + 44)]);
         break;
       }
-      default: break; // comments (and the EMF+ inside them), palettes, colour management
+      case 70: // Comment: EMF+ records after the "EMF+" identifier
+        if (size >= 16 && u32(o + 8) >= 4 && u32(o + 12) === 0x2b464d45) plus.push(bytes.subarray(o + 16, o + 12 + Math.min(u32(o + 8), size - 12)));
+        break;
+      default: break; // palettes, colour management
     }
   }
   flush();
   if (openClip) body.push('</g>');
+  if (!drawn && plus.length) {
+    const got = playEmfPlus(plus, [fx, fy, fw, fh], { png: rgbaToPng, base64, metafile: (b) => emfToSvg(b) }, clipIds);
+    defs.push(...got.defs);
+    body.push(...got.body);
+    drawn += got.images;
+    images += got.images;
+  }
   if (!drawn) return null;
   const W = fw / pxPerPt, H = fh / pxPerPt;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${num(W)}pt" height="${num(H)}pt" viewBox="${num(fx)} ${num(fy)} ${num(fw)} ${num(fh)}">` +

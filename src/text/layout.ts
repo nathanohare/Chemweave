@@ -272,7 +272,17 @@ function capsParts(text: string, small: boolean): { text: string; small: boolean
 }
 
 /** Cut runs into pieces of one look, with formula style worked out, paragraph by paragraph. */
-function segments(runs: TextRun[], defaultSize: number, n: number): { segs: Seg[][]; sizes: number[] } {
+/**
+ * Subscripts and superscripts: their size and how far they are lowered and raised, as fractions of
+ * the text's size. Drawings and slides keep the program's own; documents (lines stacked as boxes,
+ * as Word's) use Word's, measured on Word's own PDFs (12 pt Times New Roman: 8 pt figures, a
+ * subscript's baseline 0.08 em down, a superscript's a third of an em up), so text spaced for Word
+ * (a subscript lowered more with Word's position) doesn't reach the next line.
+ */
+const SCRIPTS = { size: 0.75, sub: 0.22, sup: 0.42 };
+export const WORD_SCRIPTS = { size: 2 / 3, sub: 0.08, sup: 1 / 3 };
+
+function segments(runs: TextRun[], defaultSize: number, n: number, sc = SCRIPTS): { segs: Seg[][]; sizes: number[] } {
   const segs: Seg[][] = Array.from({ length: n }, () => []);
   // the size an empty paragraph takes: that of the text its line break was typed in
   const sizes: number[] = Array.from({ length: n }, () => 0);
@@ -292,9 +302,9 @@ function segments(runs: TextRun[], defaultSize: number, n: number): { segs: Seg[
     const family = r.font ? withStack(r.font) : FONT_STACK;
     if (r.obj !== undefined) {
       // each object character is a piece of its own (a field in superscript, a citation, shows its text raised)
-      const size = r.sub || r.sup ? base * 0.75 : base;
+      const size = r.sub || r.sup ? base * sc.size : base;
       // a run raised or lowered by some points (Word's position) moves on top of that
-      const dy = (r.sub ? base * 0.22 : r.sup ? -base * 0.42 : 0) - (r.raise ?? 0);
+      const dy = (r.sub ? base * sc.sub : r.sup ? -base * sc.sup : 0) - (r.raise ?? 0);
       for (const ch of r.text) {
         if (ch === '\n') { off++; p++; if (p < n) sizes[p] = base; continue; }
         if (p < n) segs[p].push({ text: ch, start: off, size, base, dy, family, style, color: r.color, underline: r.underline, strike: r.strike, highlight: r.highlight, obj: r.obj });
@@ -306,8 +316,8 @@ function segments(runs: TextRun[], defaultSize: number, n: number): { segs: Seg[
     const parts = r.formula && !r.sub && !r.sup ? formulaRunParts(runs, k) : [{ text: r.text, pos: r.sub ? 'sub' : r.sup ? 'sup' : 'base' }];
     for (const part of parts) {
       const small = part.pos !== 'base';
-      const size = small ? base * 0.75 : base;
-      const dy = (part.pos === 'sub' ? base * 0.22 : part.pos === 'sup' ? -base * 0.42 : 0) - (r.raise ?? 0);
+      const size = small ? base * sc.size : base;
+      const dy = (part.pos === 'sub' ? base * sc.sub : part.pos === 'sup' ? -base * sc.sup : 0) - (r.raise ?? 0);
       const chunks = part.text.split('\n');
       chunks.forEach((t, i) => {
         if (i > 0) {
@@ -342,16 +352,18 @@ function segments(runs: TextRun[], defaultSize: number, n: number): { segs: Seg[
 /**
  * Places a line may break before (offsets into the paragraph): after spaces, and after a hyphen
  * or slash inside a word, as ChemDraw breaks lines; and either side of a figure (`around`).
+ * Documents (`word`) break as Word does: after a hyphen or dash, but not after a slash ("EtOAc/hexanes")
+ * or a degree sign.
  */
-function breakPoints(text: string, around: ReadonlySet<number> = new Set()): number[] {
+function breakPoints(text: string, around: ReadonlySet<number> = new Set(), word = false): number[] {
   const out: number[] = [];
   for (let i = 1; i < text.length; i++) {
     const prev = text[i - 1], ch = text[i];
     if (prev === ' ' && ch !== ' ') out.push(i);
     else if ((around.has(i) || around.has(i - 1)) && ch !== ' ') out.push(i);
-    else if ((prev === '-' || prev === '–' || prev === '—' || prev === '/') && ch !== ' ' && i >= 2 && /[\p{L}\p{N})\]]/u.test(text[i - 2])) out.push(i);
+    else if ((prev === '-' || prev === '–' || prev === '—' || (prev === '/' && !word)) && ch !== ' ' && i >= 2 && /[\p{L}\p{N})\]]/u.test(text[i - 2])) out.push(i);
     // ChemDraw also breaks between a degree sign and a letter ("−78 °" | "C")
-    else if (prev === '°' && /\p{L}/u.test(ch)) out.push(i);
+    else if (prev === '°' && !word && /\p{L}/u.test(ch)) out.push(i);
   }
   out.push(text.length);
   return out;
@@ -430,7 +442,7 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
   const n = paraCount(text);
   const paras = laidParas(fitParas(f.paras, n));
   const markers = f.markers ?? listMarkers(paras);
-  const { segs, sizes } = segments(f.runs, defaultSize, n);
+  const { segs, sizes } = segments(f.runs, defaultSize, n, f.boxes ? WORD_SCRIPTS : SCRIPTS);
   const spacing = f.lineSpacing && f.lineSpacing > 0 ? f.lineSpacing : 1;
   const lines: LaidLine[] = [];
   let paraStart = 0;
@@ -536,7 +548,7 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
     // words: from one break point to the next, with the spaces after them
     const words: Word[] = [];
     let ws = 0;
-    for (const bp of breakPoints(pText, around)) {
+    for (const bp of breakPoints(pText, around, !!f.boxes)) {
       let be = bp;
       while (be > ws && pText[be - 1] === ' ') be--;
       words.push({ start: ws, end: bp, body: widthOf(ws, be), spaces: widthOf(be, bp) });
@@ -675,9 +687,11 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       if (pl.cut.right) l.cutRight = pl.cut.right;
       if (l.marker && pl.cut.left) l.marker = { ...l.marker, x: l.marker.x + pl.cut.left };
       if (f.boxes) {
-        // a document's line: the height of single spacing (times the line spacing), or of its tallest figure
-        l.above = Math.max((SINGLE * pSpacing - DESCENT) * size, objUp);
-        l.below = l.descent;
+        // a document's line: the height of single spacing (times the line spacing), or of its tallest figure;
+        // the extra of spacing over single goes below the text, as Word puts it (less than single takes from above)
+        const extra = Math.max(0, SINGLE * (pSpacing - 1) * size);
+        l.above = Math.max((SINGLE * Math.min(1, pSpacing) - DESCENT) * size, objUp);
+        l.below = l.descent + extra;
         // spacing in points: exactly (figures may then reach into the line above), or at least
         if (ps.linePt && ps.linePt > 0) l.above = ps.lineRule === 'exact' ? Math.max(0, ps.linePt - l.below) : Math.max(l.above, ps.linePt - l.below);
         // moved down past a figure
