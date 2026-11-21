@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
-import { DocLayouter, SINGLE_ROW, CELL_PAD } from '../src/document/doc-layout';
+import { DocLayouter } from '../src/document/doc-layout';
 import { newDocument, objectRun, paraFromStyle, runStyleOf, type DocText } from '../src/document/document';
 import { deleteRow, insertRow } from '../src/table';
 import { sortTableRows } from '../src/document/sort';
@@ -58,11 +58,12 @@ describe('row heights (W5)', () => {
     const { doc } = await readDocx(wordFile(tbl('<w:tblW w:w="5760" w:type="dxa"/>', ROWS)));
     const lay = new DocLayouter({ measure: (s: string, size: number) => s.length * size * 0.5, drawingSize: () => ({ w: 10, h: 10 }) }).layout(doc);
     const tb = [...lay.tables.values()][0];
-    const plain = SINGLE_ROW * doc.styles.Normal.size + 2 * CELL_PAD.y;
+    // a row with no height of its own is as tall as its text (and its margins), as in Word
+    const plain = (r: number) => tb.cells[r][0]!.box.y2 - tb.cells[r][0]!.box.y1 + tb.pads[r][0].top + tb.pads[r][0].bottom;
     expect(tb.hs[0]).toBeCloseTo(72);
     expect(tb.hs[1]).toBeCloseTo(36);
-    expect(tb.hs[2]).toBeCloseTo(plain);
-    expect(tb.hs[3]).toBeCloseTo(plain);
+    expect(tb.hs[2]).toBeCloseTo(plain(2));
+    expect(tb.hs[3]).toBeCloseTo(plain(3));
   });
 
   it('keeps each row\'s height with its row when rows are put in, taken out or sorted', () => {

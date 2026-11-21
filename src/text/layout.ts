@@ -12,7 +12,7 @@ import { textFx } from './fx';
 import type { Rect } from '../geom';
 import { formulaRunParts } from '../richtext';
 import { fitParas, laidParas, listMarkers, paraCount } from './paragraphs';
-import { fallbackFonts } from './font-standins';
+import { fallbackFonts, lineFactor } from './font-standins';
 
 export const FONT_STACK = "Arial, 'Liberation Sans', Helvetica, sans-serif";
 
@@ -68,6 +68,8 @@ export interface TextFrame {
   markers?: (string | null)[];
   /** How each paragraph's number is set ('bold ', 'italic '...): documents set it in the paragraph style's (Word's); plain when not given. */
   markerStyles?: string[];
+  /** The font of a paragraph with no text (a document's empty paragraph is as tall as its style's font makes it). */
+  font?: string;
   /**
    * Lines stack as boxes of single spacing (times the line spacing), as in Word. Without it a
    * line steps down by the size of the line above, as ChemDraw's captions do.
@@ -209,6 +211,13 @@ export const SMALL_CAPS = 0.8;
 /** Fraction of the text size above and below the baseline (Arial). */
 export const ASCENT = 0.8;
 export const DESCENT = 0.25;
+/**
+ * How narrow Word (2013 on) lets the spaces of a justified line get to fit one more word on it,
+ * as a part of their width. Measured from Word's own PDF of a document: the narrowest spaces in
+ * its justified lines are about 0.76 to 0.8 of a space (LibreOffice's Word-compatible
+ * justification allows 0.8); not a value Word publishes.
+ */
+export const SQUEEZE = 0.8;
 /** Single line spacing as a multiple of the text size. */
 export const SINGLE = 1.15;
 /**
@@ -298,19 +307,20 @@ function capsParts(text: string, small: boolean): { text: string; small: boolean
 const SCRIPTS = { size: 0.75, sub: 0.22, sup: 0.42 };
 export const WORD_SCRIPTS = { size: 2 / 3, sub: 0.08, sup: 1 / 3 };
 
-function segments(runs: TextRun[], defaultSize: number, n: number, sc = SCRIPTS): { segs: Seg[][]; sizes: number[] } {
+function segments(runs: TextRun[], defaultSize: number, n: number, sc = SCRIPTS, font?: string): { segs: Seg[][]; sizes: number[]; fams: string[] } {
   const segs: Seg[][] = Array.from({ length: n }, () => []);
-  // the size an empty paragraph takes: that of the text its line break was typed in
+  // the size (and font) an empty paragraph takes: that of the text its line break was typed in
   const sizes: number[] = Array.from({ length: n }, () => 0);
+  const fams: string[] = Array.from({ length: n }, () => (font ? withStack(font) : FONT_STACK));
   let p = 0, off = 0;
-  if (runs.length) sizes[0] = runs[0].size ?? defaultSize;
+  if (runs.length) { sizes[0] = runs[0].size ?? defaultSize; if (runs[0].font) fams[0] = withStack(runs[0].font); }
   for (const [k, r] of runs.entries()) {
     const from0 = { p, k: segs[p]?.length ?? 0 };
     collect(r, k);
     // hidden text (a markup view's): every piece the run made
     if (r.hide) for (let q = from0.p; q <= Math.min(p, n - 1); q++) for (const sg of segs[q].slice(q === from0.p ? from0.k : 0)) sg.hide = true;
   }
-  return { segs, sizes };
+  return { segs, sizes, fams };
 
   function collect(r: TextRun, k: number): void {
     const base = r.size ?? defaultSize;
@@ -322,7 +332,7 @@ function segments(runs: TextRun[], defaultSize: number, n: number, sc = SCRIPTS)
       // a run raised or lowered by some points (Word's position) moves on top of that
       const dy = (r.sub ? base * sc.sub : r.sup ? -base * sc.sup : 0) - (r.raise ?? 0);
       for (const ch of r.text) {
-        if (ch === '\n') { off++; p++; if (p < n) sizes[p] = base; continue; }
+        if (ch === '\n') { off++; p++; if (p < n) { sizes[p] = base; fams[p] = family; } continue; }
         if (p < n) segs[p].push({ text: ch, start: off, size, base, dy, family, style, color: r.color, underline: r.underline, strike: r.strike, highlight: r.highlight, obj: r.obj });
         off += ch.length;
       }
@@ -339,7 +349,7 @@ function segments(runs: TextRun[], defaultSize: number, n: number, sc = SCRIPTS)
         if (i > 0) {
           off++;
           p++;
-          if (p < n) sizes[p] = base;
+          if (p < n) { sizes[p] = base; fams[p] = family; }
         }
         if (!t || p >= n) { off += t.length; return; }
         // tabs are pieces of their own (their width depends on where they are)
@@ -458,7 +468,7 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
   const n = paraCount(text);
   const paras = laidParas(fitParas(f.paras, n));
   const markers = f.markers ?? listMarkers(paras);
-  const { segs, sizes } = segments(f.runs, defaultSize, n, f.boxes ? WORD_SCRIPTS : SCRIPTS);
+  const { segs, sizes, fams } = segments(f.runs, defaultSize, n, f.boxes ? WORD_SCRIPTS : SCRIPTS, f.font);
   const spacing = f.lineSpacing && f.lineSpacing > 0 ? f.lineSpacing : 1;
   const lines: LaidLine[] = [];
   let paraStart = 0;
@@ -599,8 +609,14 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
     };
     let cut = cutAt();
     if (cut.down) top += cut.down;
-    let cur: { start: number; end: number; width: number; full: number } | null = null;
+    // (spc: the width of the spaces between the line's words so far)
+    let cur: { start: number; end: number; width: number; full: number; spc: number } | null = null;
     let hyphensInRow = 0;
+    // a document's justified line may take one more word by narrowing its spaces, as Word (2013 on)
+    // does, down to SQUEEZE of their width; and spaces at the end of a document's line hang past
+    // the margin, as in Word, so they don't push the last word onto the next line
+    const squeeze = f.boxes && (ps.align ?? f.justify) === 'justify' ? 1 - SQUEEZE : 0;
+    const trailing = (w: Word) => (f.boxes ? 0 : w.spaces);
     const emit = (hyphen?: Glyphs) => {
       if (cur) {
         pLines.push({ start: cur.start, end: cur.end, width: cur.width, cut, ...(hyphen ? { hyphen } : {}) });
@@ -627,20 +643,27 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       }
       return null;
     };
-    /** Where to break a word that doesn't fit on the line (`room` left after the line so far), with the hyphen to draw; null to leave it whole. */
-    const hyphenBreak = (w: Word, room: number): { at: number; width: number; hyphen: Glyphs } | null => {
+    /**
+     * Where to break a word that doesn't fit on the line (`room` left after the line so far, its
+     * spaces squeezed; `gap` without squeezing them), with the hyphen to draw; null to leave it whole.
+     */
+    const hyphenBreak = (w: Word, room: number, gap = room): { at: number; width: number; hyphen: Glyphs } | null => {
       // an optional hyphen the writer put in (Word's soft hyphen) breaks the word there, hyphenation on or off
       const shy = softBreak(w, room);
       if (shy !== undefined) return shy;
       const hy = f.hyphenate;
-      if (!hy || room <= hy.zone || (hy.limit > 0 && hyphensInRow >= hy.limit)) return null;
-      const m = /^(\p{L}+)([^\p{L}\d\s]*)\s*$/u.exec(pText.slice(w.start, w.end));
-      if (!m || m[1].length < 5 || (!hy.caps && m[1] === m[1].toUpperCase())) return null;
+      if (!hy || gap <= hy.zone || (hy.limit > 0 && hyphensInRow >= hy.limit)) return null;
+      // (in a document, as in Word, also a word in brackets, or with more after its letters:
+      // "(methylenedioxy)phenylboronic" breaks in "methylenedioxy")
+      const m = (f.boxes ? /^([(\[{"'\u201c\u2018]*)(\p{L}+)(\S*)\s*$/u : /^()(\p{L}+)([^\p{L}\d\s]*)\s*$/u).exec(pText.slice(w.start, w.end));
+      if (!m || m[2].length < 5 || (!hy.caps && m[2] === m[2].toUpperCase())) return null;
+      const at0 = w.start + m[1].length;
       // the word in one plain piece of text (not a formula, figure or field)
-      const s = segAt(w.start);
-      if (!s || s.obj !== undefined || s.tab || s.start - paraStart + s.text.length < w.start + m[1].length) return null;
-      const points = hy.points(m[1]).filter((k) => k >= 2 && k <= m[1].length - 2).sort((a, b) => b - a);
-      for (const k of points) {
+      const s = segAt(at0);
+      if (!s || s.obj !== undefined || s.tab || s.start - paraStart + s.text.length < at0 + m[2].length) return null;
+      const points = hy.points(m[2]).filter((k) => k >= 2 && k <= m[2].length - 2).sort((a, b) => b - a);
+      for (const k0 of points) {
+        const k = m[1].length + k0;
         const hw = measure('-', s.size, s.family, s.style);
         const width = widthOf(w.start, w.start + k) + hw;
         if (width <= room + 1e-6) return { at: w.start + k, width, hyphen: { text: '-', start: 0, x: 0, w: hw, dy: s.dy, size: s.size, family: s.family, style: s.style, color: s.color, decor: true } };
@@ -649,9 +672,12 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
     };
     for (let w of words) {
       const lineRoom = (pLines.length ? room : room - firstLine) - cut.left - cut.right;
-      // a word fits when it and the space after it do (ChemDraw counts that space too)
-      if (cur && cur.full + w.body + w.spaces > lineRoom + 1e-6) {
-        const hb = hyphenBreak(w, lineRoom - cur.full);
+      // a word fits when it and the space after it do (ChemDraw counts that space too; Word doesn't)
+      // (the spaces between the words already on the line may be squeezed; counting the space before
+      // this word as well matched Word's line ends less well: 283 against 307 of 504 lines)
+      const give = cur ? squeeze * cur.spc : 0;
+      if (cur && cur.full + w.body + trailing(w) - give > lineRoom + 1e-6) {
+        const hb = hyphenBreak(w, lineRoom - cur.full + give, lineRoom - cur.full);
         if (hb) {
           // the start of the word, and a hyphen, end this line; the rest starts the next
           cur.end = hb.at;
@@ -662,8 +688,8 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
           w = { start: hb.at, end: w.end, body: widthOf(hb.at, be), spaces: w.spaces };
         } else emit();
       }
-      if (!cur) cur = { start: w.start, end: w.end, width: w.body, full: w.body + w.spaces };
-      else { cur.end = w.end; cur.width = cur.full + w.body; cur.full += w.body + w.spaces; }
+      if (!cur) cur = { start: w.start, end: w.end, width: w.body, full: w.body + w.spaces, spc: 0 };
+      else { cur.spc += cur.full - cur.width; cur.end = w.end; cur.width = cur.full + w.body; cur.full += w.body + w.spaces; }
     }
     emit();
     if (!pLines.length) pLines.push({ start: 0, end: 0, width: 0, cut });
@@ -675,6 +701,8 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       const pieces: Glyphs[] = [];
       let x = 0;
       let size = 0;
+      // (a document's line is as tall as its tallest font's single spacing: Calibri's is taller)
+      let single = 0;
       let objUp = 0, objDown = 0;
       for (const s of pSegs) {
         const s0 = s.start - paraStart, s1 = s0 + s.text.length;
@@ -698,9 +726,11 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
         pieces.push(g);
         x += w;
         size = Math.max(size, s.base);
+        if (f.boxes && !s.hide) single = Math.max(single, lineFactor(s.family) * s.base);
       }
       if (pl.hyphen) pieces.push({ ...pl.hyphen, start: paraStart + pl.end, x });
       if (!size) size = em;
+      if (f.boxes && !single) single = lineFactor(pSegs[0]?.family ?? fams[p]) * size;
       const last = li === pLines.length - 1;
       const lineLeft = (li === 0 ? left + firstLine : left) + pl.cut.left;
       const l: LaidLine = {
@@ -712,8 +742,9 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       if (f.boxes) {
         // a document's line: the height of single spacing (times the line spacing), or of its tallest figure;
         // the extra of spacing over single goes below the text, as Word puts it (less than single takes from above)
-        const extra = Math.max(0, SINGLE * (pSpacing - 1) * size);
-        l.above = Math.max((SINGLE * Math.min(1, pSpacing) - DESCENT) * size, objUp);
+        const sgl = single / size;
+        const extra = Math.max(0, sgl * (pSpacing - 1) * size);
+        l.above = Math.max((sgl * Math.min(1, pSpacing) - DESCENT) * size, objUp);
         l.below = l.descent + extra;
         // spacing in points: exactly (figures may then reach into the line above), or at least
         if (ps.linePt && ps.linePt > 0) l.above = ps.lineRule === 'exact' ? Math.max(0, ps.linePt - l.below) : Math.max(l.above, ps.linePt - l.below);
@@ -746,7 +777,7 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
     let shift = 0;
     if (align === 'center') shift = (room - l.width) / 2;
     else if (align === 'right') shift = room - l.width;
-    else if (align === 'justify' && !l.last && f.wrap !== undefined) spread(l, room, text);
+    else if (align === 'justify' && f.wrap !== undefined && (!l.last ? l.width < room || f.boxes : f.boxes && l.width > room + 1e-6)) spread(l, room, text);
     l.x = l.left + shift;
     for (const g of l.pieces) g.x += l.x;
     // a bullet or number moves with its centred or right-aligned text, as in Word
@@ -774,7 +805,8 @@ function trailingSpaces(text: string, a: number, b: number): number {
 /** Stretch the spaces of a line so it fills its room (justified text). */
 function spread(l: LaidLine, room: number, text: string): void {
   const extra = room - l.width;
-  if (extra <= 0) return;
+  // (a negative extra narrows the spaces: a document's line squeezed to take one more word)
+  if (Math.abs(extra) < 1e-6) return;
   // spaces inside the line (not the ones it ends with)
   let inner = 0;
   const end = l.end - trailingSpaces(text, l.start, l.end);

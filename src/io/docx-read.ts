@@ -1399,6 +1399,12 @@ class DocxReader {
       ctx.pieces.pop();
       popped = true;
     }
+    // (and a paragraph that holds only a page break: its empty line stays on the page before)
+    else if (ctx.pieces.length === 1 && last.pageBreak && !last.runs.length && !last.soft && !last.colBreak && !last.xe && !last.ta && !sect
+      && el.nextElementSibling?.localName === 'p' && this.compatMode() >= 15) {
+      last.pageBreak = false;
+      popped = true;
+    }
     if (inToc && ctx.pieces.every((pc) => !pc.runs.length)) { sectionBreak(); return; }
     const bib = bibBefore ?? this.bibMet ?? undefined;
     const text = ctx.pieces.map((pc) => rt.plainText(pc.runs)).join('\n');

@@ -27,7 +27,8 @@ import { tocEntries, tocLevelStyle, tocLines } from '../src/document/toc';
 import { pdfStandIn } from '../src/fonts';
 import { newDocument, numberStyle, paraFromStyle, styleOf, type DocText } from '../src/document/document';
 import { DocLayouter } from '../src/document/doc-layout';
-import { FONT_STACK, layoutText, withStack } from '../src/text/layout';
+import { FONT_STACK, layoutText, withStack, SQUEEZE } from '../src/text/layout';
+import { lineFactor } from '../src/text/font-standins';
 import type { TextRun } from '../src/model';
 
 // ---------------------------------------------------------------- EMF+ only pictures
@@ -547,5 +548,129 @@ describe('Word headers and footers placed as Word places them', () => {
     const lines = layoutText({ runs: [{ font: 'Times New Roman', size: 12, text: 'aa bb cc dd eee\t' }], justify: 'left', boxes: true, wrap: 100 }, 12, measure).lines;
     expect(lines).toHaveLength(1);
     expect(lines[0].width).toBeCloseTo(100);
+  });
+});
+
+// ---------------------------------------------------------------- Word's line heights, justification, tables
+
+describe('lines, pages and tables measured as Word measures them', () => {
+  const measure = (s: string, size: number) => s.length * size * 0.5;
+  const run = (text: string, more: Partial<TextRun> = {}): TextRun => ({ font: 'Times New Roman', size: 12, text, ...more });
+  const lines = (text: string, f: Partial<Parameters<typeof layoutText>[0]> = {}) => layoutText({ runs: [run(text)], justify: 'left', boxes: true, ...f }, 12, measure).lines;
+  const shownText = (text: string, ls: { start: number; end: number }[]) => ls.map((l) => text.slice(l.start, l.end).trim());
+
+  it('makes a single line as tall as each font does in Word: Calibri taller than Times', () => {
+    expect(lineFactor('Calibri')).toBeCloseTo(2500 / 2048, 4);
+    expect(lineFactor('Carlito, sans-serif')).toBeCloseTo(2500 / 2048, 4);
+    expect(lineFactor('Courier New')).toBeCloseTo(2320 / 2048, 4);
+    expect(lineFactor('Times New Roman')).toBeCloseTo(1.15);
+    const pitch = (font: string) => {
+      const ls = layoutText({ runs: [run('a\nb', { font, size: 11 })], justify: 'left', boxes: true }, 11, measure).lines;
+      return ls[1].y - ls[0].y;
+    };
+    expect(pitch('Calibri')).toBeCloseTo(11 * 2500 / 2048, 2);
+    expect(pitch('Times New Roman')).toBeCloseTo(11 * 1.15, 2);
+  });
+
+  it('makes an empty paragraph as tall as its paragraph mark\'s font size, not its style\'s', () => {
+    const d = newDocument();
+    const p = { ...paraFromStyle(d.styles.Normal, {}), spaceBefore: 0, spaceAfter: 0, line: 1 };
+    const span = (size: number) => {
+      const t: DocText = { ...d, runs: [run('A\n'), run('\n', { size }), run('B')], paras: [p, p, p] };
+      const ls = new DocLayouter({ measure, drawingSize: () => ({ w: 10, h: 10 }) }).layout(t).text.lines;
+      return ls[2].y - ls[0].y;
+    };
+    expect(span(24) - span(12)).toBeCloseTo(12 * 1.15, 1);
+  });
+
+  it('keeps a paragraph that holds only a page break on the page before (Word 2013 on), so the next page starts with text', async () => {
+    const only = '<w:p><w:r><w:t>Spectra</w:t></w:r></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>Next</w:t></w:r></w:p>';
+    const { doc } = await readDocx(wordFile(only, { settings: word2013 }));
+    expect(doc.paras).toHaveLength(3);
+    expect(doc.paras[1].pageBreak).toBeFalsy();
+    expect(doc.paras[2].pageBreak).toBe(true);
+    // saved and opened again: the same paragraphs, the break still before "Next"
+    const again = (await readDocx(await writeDocx(doc, deps))).doc;
+    expect(again.runs.map((r) => r.text).join('')).toBe(doc.runs.map((r) => r.text).join(''));
+    expect(again.paras.map((p) => !!p.pageBreak)).toEqual([false, false, true]);
+    // files made for older Words: the empty line starts the next page, as before
+    const old = (await readDocx(wordFile(only))).doc;
+    expect(old.paras[1].pageBreak).toBe(true);
+  });
+
+  it('moves a paragraph to the next page, figure and all, when its first line no longer fits below its figure', () => {
+    const d = newDocument();
+    const N = d.styles.Normal;
+    const filler = Array.from({ length: 20 }, (_, i) => run(`Line ${i}\n`));
+    const make = (h: number): DocText => ({
+      ...d,
+      runs: [...filler, run('￼', { obj: 1 }), run('Text under the figure')],
+      paras: [...filler.map(() => paraFromStyle(N, {})), paraFromStyle(N, {})],
+      objects: { 1: { kind: 'picture', src: 'data:image/png;base64,', w: 100, h, float: { wrap: 'topBottom', x: 0, y: 0 } } },
+    });
+    const layouter = () => new DocLayouter({ measure, drawingSize: () => ({ w: 10, h: 10 }) });
+    const first = layouter().layout(make(10));
+    const page = first.pages[0];
+    const fig0 = first.objects.find((o) => o.id === 1)!;
+    // a figure that just fits on the page, with no room left for the line below it
+    const h = page.top + d.page.h - d.page.bottom - fig0.y - 4;
+    const lay = layouter().layout(make(h));
+    const fig = lay.objects.find((o) => o.id === 1)!;
+    const text = lay.text.lines[lay.text.lines.length - 1];
+    expect(fig.page).toBe(1);
+    expect(text.y).toBeGreaterThan(lay.pages[1].top);
+    expect(text.y).toBeGreaterThan(fig.y + fig.h);
+  });
+
+  it('squeezes the spaces of a justified document line (to 80%) to fit one more word, as Word does', () => {
+    const text = 'a b c d e f g h';
+    // 90 pt of text; the six spaces between a…g squeezed to 80% give back 7.2 pt (82.8 pt)
+    expect(SQUEEZE).toBe(0.8);
+    expect(lines(text, { justify: 'justify', wrap: 83 })).toHaveLength(1);
+    expect(lines(text, { justify: 'left', wrap: 83 })).toHaveLength(2);
+    expect(lines(text, { justify: 'justify', wrap: 82 })).toHaveLength(2);
+    // (a drawing's text is never squeezed)
+    expect(layoutText({ runs: [run(text)], justify: 'justify', wrap: 83 }, 12, measure).lines).toHaveLength(2);
+  });
+
+  it('lets a document line\'s last space hang past the margin, as Word does', () => {
+    const text = 'aaaa bbbb cc';
+    expect(shownText(text, lines(text, { wrap: 56 }))).toEqual(['aaaa bbbb', 'cc']);
+    expect(shownText(text, layoutText({ runs: [run(text)], justify: 'left', wrap: 56 }, 12, measure).lines)).toEqual(['aaaa', 'bbbb cc']);
+  });
+
+  it('hyphenates only when the room left without squeezing is more than the hyphenation zone', () => {
+    const text = 'a b c d e f g h i j k l m n o p abcdefghij';
+    const hy = (zone: number) => ({ points: () => [2, 4, 6], zone, limit: 0, caps: false });
+    // 4 pt left at the end of the line (22 pt with its spaces squeezed)
+    expect(shownText(text, lines(text, { justify: 'justify', wrap: 196, hyphenate: hy(6) }))[1]).toBe('abcdefghij');
+    expect(shownText(text, lines(text, { justify: 'justify', wrap: 196, hyphenate: hy(2) }))[1]).toBe('cdefghij');
+  });
+
+  it('hyphenates a word in brackets in a document, "(methylenedioxy)"', () => {
+    const text = 'aaaa (abcdefghij)';
+    const hyphenate = { points: () => [3], zone: 0, limit: 0, caps: false };
+    expect(shownText(text, lines(text, { wrap: 70, hyphenate }))).toEqual(['aaaa (abc', 'defghij)']);
+    expect(shownText(text, layoutText({ runs: [run(text)], justify: 'left', wrap: 70, hyphenate }, 12, measure).lines)).toEqual(['aaaa', '(abcdefghij)']);
+  });
+
+  it('sizes a table cell\'s text, and an empty cell, from its paragraph\'s style, and makes room for the row lines', async () => {
+    const styles = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="24"/></w:rPr></w:style>'
+      + '<w:style w:type="paragraph" w:styleId="Small"><w:name w:val="Small"/><w:basedOn w:val="Normal"/><w:rPr><w:sz w:val="16"/></w:rPr></w:style>';
+    const cell = (text: string) => `<w:tc><w:tcPr><w:tcW w:w="2880" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:pStyle w:val="Small"/></w:pPr>${text ? `<w:r><w:t>${text}</w:t></w:r>` : ''}</w:p></w:tc>`;
+    const borders = (w: number) => `<w:tblBorders><w:top w:val="single" w:sz="${w}"/><w:insideH w:val="single" w:sz="${w}"/><w:bottom w:val="single" w:sz="${w}"/></w:tblBorders>`;
+    const tbl = (lines: string) => `<w:tbl><w:tblPr>${lines}<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="2880"/></w:tblGrid><w:tr>${cell('x')}</w:tr><w:tr>${cell('')}</w:tr><w:tr>${cell('y')}</w:tr></w:tbl><w:p/>`;
+    const rows = async (lines: string) => {
+      const { doc } = await readDocx(wordFile(tbl(lines), { styles }));
+      return [...new DocLayouter({ measure, drawingSize: () => ({ w: 10, h: 10 }) }).layout(doc).tables.values()][0].hs;
+    };
+    const plain = await rows('');
+    expect(plain[0]).toBeCloseTo(8 * 1.15, 2);
+    expect(plain[1]).toBeCloseTo(8 * 1.15, 2);
+    // half-point lines: each row makes room for the line along its top, the last also for the one along its bottom
+    const lined = await rows(borders(4));
+    expect(lined[0]).toBeCloseTo(8 * 1.15 + 0.5, 2);
+    expect(lined[1]).toBeCloseTo(8 * 1.15 + 0.5, 2);
+    expect(lined[2]).toBeCloseTo(8 * 1.15 + 1, 2);
   });
 });
