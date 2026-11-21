@@ -878,6 +878,15 @@ export class DocLayouter {
       // figures floating from this paragraph go on its page, and text on the page wraps round them
       const own = lay.lines;
       const placeFloats = () => {
+        // a paragraph whose first line would run into a figure above it (text above and below the
+        // figure) starts below that figure, as in Word: the figures floating from it go from there too
+        for (let moved = true; moved && hs.length;) {
+          moved = false;
+          for (const r of rects) {
+            if (r.wrap === 'topBottom' && r.y1 < cursor + hs[0] - 0.01 && r.y2 > cursor + 0.01) { cursor = r.y2; moved = true; }
+          }
+        }
+        paraTops[paraTops.length - 1] = { y: pageTop(pageIdx) + page.top + cursor, page: pageIdx };
         for (const r of paraRuns[p] ?? []) {
           const fl = r.obj !== undefined ? floatOf(t.objects[r.obj]) : undefined;
           const s = r.obj !== undefined ? sizes.get(r.obj) : undefined;
@@ -891,7 +900,9 @@ export class DocLayouter {
           by = Math.max(0, Math.min(by, page.h - bh));
           objects.push({ id: r.obj!, page: pageIdx, x: ox + bx + el, y: pageTop(pageIdx) + by + et, w: s.w, h: s.h, line: lines.length, wrap: fl.wrap });
           const g = floatGaps(fl);
-          rects.push({ x1: bx - page.left - g.l, y1: by - page.top - g.t, x2: bx + bw - page.left + g.r, y2: by + bh - page.top + g.b, wrap: fl.wrap });
+          // (text keeps clear of Word's effects round it too: a border Word drew on a group)
+          const fx = fl.effect ?? { l: 0, t: 0, r: 0, b: 0 };
+          rects.push({ x1: bx - page.left - g.l - fx.l, y1: by - page.top - g.t - fx.t, x2: bx + bw - page.left + g.r + fx.r, y2: by + bh - page.top + g.b + fx.b, wrap: fl.wrap });
         }
         const wl = rects.length ? wrapped(p, cursor, rects, colX[col]).lines : own;
         pl = only?.firstLine?.has(p) ? wl.slice(0, 1) : wl;
@@ -905,7 +916,6 @@ export class DocLayouter {
         objects.length = objectsAt;
         rects.length = rectsAt;
         nextColumn();
-        paraTops[paraTops.length - 1] = { y: pageTop(pageIdx) + page.top + cursor, page: pageIdx };
         placeFloats();
       }
 

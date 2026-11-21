@@ -978,9 +978,11 @@ class DocxWriter {
    * wrapping round it (wp:anchor), its place measured from the margin, page or paragraph.
    */
   private placed(o: DocObject, cx: number, cy: number, inner: string): string {
-    const [el, et, er, eb] = lookExtent(lookOf(o)).map(emu);
-    const ext = `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="${el}" t="${et}" r="${er}" b="${eb}"/>`;
     const fl = floatOf(o);
+    // (with the room Word's own effects took round a figure from a Word file)
+    const fx = fl?.effect;
+    const [el, et, er, eb] = lookExtent(lookOf(o)).map((v, i) => emu(v + (fx ? [fx.l, fx.t, fx.r, fx.b][i] : 0)));
+    const ext = `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="${el}" t="${et}" r="${er}" b="${eb}"/>`;
     if (!fl) return `<wp:inline distT="0" distB="0" distL="0" distR="0">${ext}${inner}</wp:inline>`;
     // hidden in the Selection Pane (Word's own mark); its group and name kept with our data, by its id
     const pr = /<wp:docPr id="(\d+)"/.exec(inner);
