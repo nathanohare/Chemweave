@@ -2057,7 +2057,7 @@ export function keptFontTable(tree: KeptTree, drop: Set<string>): { tree: KeptTr
   if (!top?.xml || !/<\/w:fonts>\s*$/.test(top.xml)) return null;
   const gone = new Set<string>();
   let text = top.xml.replace(/<w:font\b[^>]*?\bw:name="([^"]*)"[^>]*?(?:\/>|>[\s\S]*?<\/w:font>)/g, (el, name: string) => {
-    if (!drop.has(name.replace(/&amp;/g, '&').replace(/&quot;/g, '"').toLowerCase())) return el;
+    if (!drop.has(name.replace(/&(amp|quot);/g, (_, e: string) => (e === 'amp' ? '&' : '"')).toLowerCase())) return el;
     for (const m of el.matchAll(/\br:id="([^"]*)"/g)) gone.add(m[1]);
     return '';
   });
