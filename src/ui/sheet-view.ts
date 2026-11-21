@@ -235,6 +235,8 @@ export class SheetView {
   private objImages = new Map<string, HTMLImageElement>();
   /** Page Layout > Page Breaks: the lines where pages end, drawn on the grid. */
   showPageBreaks = false;
+  /** Draw the cells and charts only (a template's picture): no selection, pane lines, prompts or drop-down buttons. */
+  bare = false;
   private breakCache: { key: string; rows: Set<number>; cols: Set<number>; manualRows: Set<number>; manualCols: Set<number>; pages: PrintPage[]; innerRows: Set<number>; innerCols: Set<number> } | null = null;
   /** Shows a dashboard sheet in place of the grid. */
   readonly dash: DashboardView;
@@ -683,6 +685,11 @@ export class SheetView {
     });
   }
 
+  /** The grid's canvas as last drawn (a template's picture is copied from it). */
+  get picture(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
   /** Draw now (tests and screenshots). */
   draw(): void {
     const s = this.sheet;
@@ -710,7 +717,7 @@ export class SheetView {
       ctx.rect(g.x, g.y, g.w, g.h);
       ctx.clip();
       this.drawRegion(g, budget);
-      this.drawSelection(g);
+      if (!this.bare) this.drawSelection(g);
       ctx.restore();
     }
     if (s.viewOpts?.layout === 'pageBreakPreview') for (const g of regions) this.drawBreakPreview(g);
@@ -718,6 +725,7 @@ export class SheetView {
     this.drawCharts(vw, vh);
     this.drawObjects(vw, vh);
     this.drawHeaders(regions);
+    if (this.bare) { this.host.drawn?.(); return; }
     const { FH, FW, SH, SW, x0, y0 } = this.frozen();
     ctx.strokeStyle = '#9aa3b5';
     ctx.lineWidth = 1;

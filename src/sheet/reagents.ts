@@ -6,15 +6,20 @@
 // Units: mmol × g/mol = mg; mg ÷ (g/mL) = µL; mmol ÷ (mol/L) = mL, × 1000 = µL.
 
 import type { Sheet } from './workbook';
+import { formatUnitColumn, formatUnitWholeColumn, headingFor, type UnitPlace } from './template-units';
 
 export const REAGENT_HEADS = ['Reagent', 'Structure', 'MW (g/mol)', 'equiv', 'mmol', 'mass (mg)', 'density (g/mL)', 'conc. (M)', 'volume (µL)'];
 // wide enough for each heading in the sheet's bold 11 pt (MW (g/mol), density (g/mL))
 const WIDTHS = [140, 160, 96, 60, 70, 88, 112, 76, 96];
 
-/** Lay out a reagent table on an empty sheet, with the limiting reagent (1 equiv, 1 mmol) in row 2. */
-export function fillReagentTable(sh: Sheet): void {
+/**
+ * Lay out a reagent table on an empty sheet, with the limiting reagent (1 equiv, 1 mmol) in row 2.
+ * Each column with a unit gets that unit's number format: the unit in its heading over plain
+ * numbers ('header'), or in every cell ('cell'; see template-units).
+ */
+export function fillReagentTable(sh: Sheet, units: UnitPlace = 'header'): void {
   REAGENT_HEADS.forEach((h, c) => {
-    sh.setInput(0, c, h);
+    sh.setInput(0, c, headingFor(h, units));
     sh.setColWidth(c, WIDTHS[c]);
   });
   sh.patchStyle({ r1: 0, c1: 0, r2: 0, c2: REAGENT_HEADS.length - 1 }, { bold: true, borders: { bottom: { style: 'thin' } } });
@@ -27,4 +32,9 @@ export function fillReagentTable(sh: Sheet): void {
   sh.setColDef(4, { formula: '=IF(D3="","",D3*$E$2/$D$2)', firstRow: 2, style: { numFmt: '0.00' } });
   sh.setColDef(5, { formula: '=IF(OR(C2="",E2=""),"",C2*E2)', firstRow: 1, style: { numFmt: '0.0' } });
   sh.setColDef(8, { formula: '=IF(G2<>"",IF(F2="","",F2/G2),IF(AND(H2<>"",E2<>""),1000*E2/H2,""))', firstRow: 1, style: { numFmt: '0' } });
+  // every column with a unit, all the way down (the table grows as reagents are added)
+  REAGENT_HEADS.forEach((h, c) => {
+    formatUnitWholeColumn(sh, h, c, units);
+    formatUnitColumn(sh, h, c, 1, 1, units);
+  });
 }

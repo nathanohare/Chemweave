@@ -289,6 +289,7 @@ import type { PreflightPane } from './ui/preflight-pane';
 import { shapeBox } from './objects';
 import { SlideComparePane } from './ui/slide-compare';
 import { documentCategories, sheetCategories, slideCategories } from './ui/file-templates';
+import { unitPrefs } from './sheet/template-units';
 import { showTemplateWindow, closeTemplateWindow } from './ui/template-window';
 import type { PastedRows } from './io/table-clip';
 import { Keeper } from './keep/keeper';
@@ -9357,7 +9358,7 @@ function offerTemplates(kind: 'document' | 'sheet' | 'slides', always = false): 
     }) });
   } else if (kind === 'sheet') {
     showTemplateWindow({ mode: 'sheet', title: 'New Spreadsheet', note, remember: 'newSheetCategory', showPref, categories: sheetCategories((t) => {
-      ws.newSheet(t.make(), blank);
+      ws.newSheet(t.make(unitPrefs.place), blank);
       flash(`Started from the ${t.name} template: type over the text in [brackets].`);
     }) });
   } else {
@@ -11589,6 +11590,9 @@ async function personalPreferences(): Promise<void> {
     { name: 'tplDocument', label: 'Show templates when creating new documents', type: 'checkbox', value: String(templatesOnNew.document) },
     { name: 'tplSheet', label: 'Show templates when creating new spreadsheets', type: 'checkbox', value: String(templatesOnNew.sheet) },
     { name: 'tplSlides', label: 'Show templates when creating new presentations', type: 'checkbox', value: String(templatesOnNew.slides) },
+    { name: 'tplUnits', label: 'Units in spreadsheet templates', value: unitPrefs.place, short: true, options: [
+      { value: 'header', label: 'In the heading only: Temp (°C) over −78' }, { value: 'cell', label: 'In every cell: Temp over −78 °C' }],
+      help: 'For the columns of new spreadsheets from a template, and Insert ▸ Reagent Table. Either way each cell holds just the number, so it sorts and works in formulas. Change any column later with Home ▸ Number.' },
     { name: 'counterions', label: 'Counterions Typed as Text', type: 'heading', value: '' },
     { name: 'ionCharges', label: 'Add their charges (BF₄ becomes BF₄⁻, NBu₄ becomes NBu₄⁺)', type: 'checkbox', value: String(chemText.ionCharges), inline: (v) => counterionSwatch(v === 'true', doc.style),
       help: 'Off, a counterion typed without its charge is still read as that ion, and flagged until the charge is added.' },
@@ -11611,6 +11615,7 @@ async function personalPreferences(): Promise<void> {
   chemText.ionCharges = r.ionCharges === 'true';
   chemText.saltGroups = r.saltGroups === 'true';
   templatesOnNew = { document: r.tplDocument === 'true', sheet: r.tplSheet === 'true', slides: r.tplSlides === 'true' };
+  unitPrefs.place = r.tplUnits === 'cell' ? 'cell' : 'header';
   setIconSet(r.iconSet === 'classic' ? 'classic' : 'new');
   Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
   editor.focalLook = focalPrefs.look;
@@ -11735,6 +11740,7 @@ function currentSettings(): Settings {
     enterFinishesText,
     offerFigures,
     templatesOnNew: { ...templatesOnNew },
+    sheetTemplateUnits: unitPrefs.place,
     page: defaultPage,
     welcomed,
     groupTips: labelTips.enabled,
@@ -11979,6 +11985,7 @@ function applySettings(s: Settings): void {
   setRibbonLook(s.canvasRibbon);
   startView = s.startView;
   templatesOnNew = { ...s.templatesOnNew };
+  unitPrefs.place = s.sheetTemplateUnits;
   enterFinishesText = s.enterFinishesText;
   offerFigures = s.offerFigures;
   showGroupTips(s.groupTips);

@@ -12,6 +12,7 @@ import { Workbook, Sheet, Structure, CellStyle, CellBlock, Cell, Condition, Comp
 import { Range, MAX_ROWS, MAX_COLS, colName, colIndex, cellName, parseRange, parseCellRef, keyOf, rowOf, colOf, inRange } from '../sheet/refs';
 import { showsChem, chemPieces } from '../sheet/cell-text';
 import { fillReagentTable } from '../sheet/reagents';
+import { unitPrefs } from '../sheet/template-units';
 import { shiftFormula } from '../sheet/formula';
 import { PROPERTIES, MolProps, propertyValue } from '../sheet/properties';
 import { FORMATS, changeDecimals, describeFormat } from '../sheet/numfmt';
@@ -1912,7 +1913,7 @@ export class SheetMode {
     for (let i = 2; names.has(name.toLowerCase()); i++) name = `Reagents ${i}`;
     const s = wb.edit('Reagent table', () => {
       const sh = wb.addSheet(name, wb.active + 1);
-      fillReagentTable(sh);
+      fillReagentTable(sh, unitPrefs.place);
       return sh;
     }, v.place());
     v.goSheet(wb.sheets.indexOf(s));

@@ -6,6 +6,7 @@ import { Workbook } from './workbook';
 import { fillReagentTable } from './reagents';
 import { chartFromRange } from './chart';
 import { newCondFormat } from './conditional';
+import { formatUnitColumn, headingFor, type UnitPlace } from './template-units';
 
 /** The categories in the template window, in order. */
 export const SHEET_CATEGORIES = [
@@ -21,7 +22,34 @@ export interface SheetTemplate {
   name: string;
   blurb: string;
   category: SheetCategory;
-  make(): Workbook;
+  /** A new workbook from the template, with the units of its columns in the headings or in the cells (Settings ▸ Preferences ▸ New Files). */
+  make(units?: UnitPlace): Workbook;
+}
+
+/** While a template is being made: where units go, and the columns given a unit's format once the template's own formats are in. */
+let place: UnitPlace = 'header';
+let pending: { sh: Sheet; heading: string; col: number; r1: number; r2: number }[] = [];
+
+/** A template's maker, with each column with a unit given that unit's number format afterwards. */
+function withUnits(make: () => Workbook): (units?: UnitPlace) => Workbook {
+  return (units = 'header') => {
+    place = units;
+    pending = [];
+    try {
+      const wb = make();
+      const todo = pending;
+      wb.build(() => { for (const p of todo) formatUnitColumn(p.sh, p.heading, p.col, p.r1, p.r2, units); });
+      return wb;
+    } finally {
+      place = 'header';
+      pending = [];
+    }
+  };
+}
+
+/** The cells under a heading (rows r1 to r2) take its unit's format when the template is finished. */
+function unitCells(sh: Sheet, heading: string, col: number, r1: number, r2: number): void {
+  pending.push({ sh, heading, col, r1, r2 });
 }
 
 const REACTION_HEADS = ['Entry', 'Substrate', 'Catalyst', 'Loading (mol %)', 'Ligand', 'Additive', 'Solvent', 'Conc. (M)', 'Temp (°C)', 'Time (h)', 'Conv. (%)', 'Yield (%)', 'ee (%)', 'dr', 'Notes'];
@@ -32,7 +60,7 @@ function reactionTable(): Workbook {
   const wb = new Workbook(['Optimization']);
   wb.build(() => {
     const sh = wb.sheets[0];
-    REACTION_HEADS.forEach((h, c) => { sh.setInput(0, c, h); sh.setColWidth(c, REACTION_WIDTHS[c]); });
+    REACTION_HEADS.forEach((h, c) => { sh.setInput(0, c, headingFor(h, place)); sh.setColWidth(c, REACTION_WIDTHS[c]); unitCells(sh, h, c, 1, 12); });
     const last = REACTION_HEADS.length - 1;
     sh.patchStyle({ r1: 0, c1: 0, r2: 0, c2: last }, { bold: true, wrap: true, borders: { bottom: { style: 'thin' } } });
     for (let r = 1; r <= 12; r++) sh.setInput(r, 0, String(r));
@@ -45,6 +73,7 @@ function reactionTable(): Workbook {
     sh.setInput(15, 11, '=IF(L15="","",INDEX(A2:A13,MATCH(L15,L2:L13,0)))');
     sh.patchStyle({ r1: 14, c1: 0, r2: 15, c2: 0 }, { bold: true });
     sh.patchStyle({ r1: 14, c1: 11, r2: 15, c2: 11 }, { bold: true, align: 'center' });
+    unitCells(sh, 'Yield (%)', 11, 14, 14);
     sh.frozen = { rows: 1, cols: 1 };
   });
   return wb;
@@ -54,7 +83,7 @@ function reactionTable(): Workbook {
 function reagentSheet(): Workbook {
   const wb = new Workbook(['Reagents', 'Yield']);
   wb.build(() => {
-    fillReagentTable(wb.sheets[0]);
+    fillReagentTable(wb.sheets[0], place);
     wb.sheets[0].frozen = { rows: 1, cols: 0 };
     const y = wb.sheets[1];
     const rows: [string, string, string?][] = [
@@ -67,9 +96,10 @@ function reagentSheet(): Workbook {
       ['Yield (%)', '=IF(OR(B6="",B5="",B5=0),"",100*B6/B5)', '0'],
     ];
     rows.forEach(([label, input, fmt], r) => {
-      y.setInput(r, 0, label);
+      y.setInput(r, 0, headingFor(label, place));
       if (input) y.setInput(r, 1, input);
       if (fmt) y.patchStyle({ r1: r, c1: 1, r2: r, c2: 1 }, { numFmt: fmt });
+      unitCells(y, label, 1, r, r);
     });
     y.setInput(0, 2, 'Type the product\'s name in B1, draw or type its SMILES in B2, and its isolated mass in B6.');
     y.patchStyle({ r1: 0, c1: 0, r2: rows.length - 1, c2: 0 }, { bold: true });
@@ -82,18 +112,26 @@ function reagentSheet(): Workbook {
 
 type Sheet = Workbook['sheets'][number];
 
-/** A heading row in bold over a thin line, with the columns' widths; the heading row stays in view. */
-function heads(sh: Sheet, row: number, names: string[], widths: number[], col = 0): void {
-  names.forEach((h, c) => { sh.setInput(row, col + c, h); if (widths[c]) sh.setColWidth(col + c, widths[c]); });
+/**
+ * A heading row in bold over a thin line, with the columns' widths. The cells below a heading
+ * with a unit, down to row `last`, take the unit's number format.
+ */
+function heads(sh: Sheet, row: number, names: string[], widths: number[], col = 0, last = row): void {
+  names.forEach((h, c) => {
+    sh.setInput(row, col + c, headingFor(h, place));
+    if (widths[c]) sh.setColWidth(col + c, widths[c]);
+    if (last > row) unitCells(sh, h, col + c, row + 1, last);
+  });
   sh.patchStyle({ r1: row, c1: col, r2: row, c2: col + names.length - 1 }, { bold: true, wrap: true, borders: { bottom: { style: 'thin' } } });
 }
 
-/** Labels down column A (bold) with values or formulas beside them in B, and number formats. */
+/** Labels down column A (bold) with values or formulas beside them in B, and number formats (a unit in a label gives its value the unit's). */
 function labelled(sh: Sheet, row: number, rows: [string, string, string?][]): void {
   rows.forEach(([label, input, fmt], r) => {
-    sh.setInput(row + r, 0, label);
+    sh.setInput(row + r, 0, headingFor(label, place));
     if (input) sh.setInput(row + r, 1, input);
     if (fmt) sh.patchStyle({ r1: row + r, c1: 1, r2: row + r, c2: 1 }, { numFmt: fmt });
+    unitCells(sh, label, 1, row + r, row + r);
   });
   sh.patchStyle({ r1: row, c1: 0, r2: row + rows.length - 1, c2: 0 }, { bold: true });
 }
@@ -105,7 +143,7 @@ function substrateScope(): Workbook {
   const wb = new Workbook(['Scope']);
   wb.build(() => {
     const sh = wb.sheets[0];
-    heads(sh, 0, ['Entry', 'Substrate', 'MW (g/mol)', 'Product', 'Yield (%)', 'ee (%)', 'dr', 'Notebook', 'Notes'], [48, 150, 84, 150, 70, 60, 52, 90, 200]);
+    heads(sh, 0, ['Entry', 'Substrate', 'MW (g/mol)', 'Product', 'Yield (%)', 'ee (%)', 'dr', 'Notebook', 'Notes'], [48, 150, 84, 150, 70, 60, 52, 90, 200], 0, 20);
     for (let r = 1; r <= 20; r++) {
       sh.setInput(r, 0, String(r));
       sh.setInput(r, 2, `=IF(B${r + 1}="","",MW(B${r + 1}))`);
@@ -157,6 +195,9 @@ function plate(rows: number, cols: number): Workbook {
     res.setInput(rows + 4, 1, `=IF(COUNT(${area})=0,"",AVERAGE(${area}))`);
     res.patchStyle({ r1: rows + 3, c1: 0, r2: rows + 4, c2: 0 }, { bold: true });
     res.patchStyle({ r1: rows + 3, c1: 1, r2: rows + 4, c2: 1 }, { numFmt: '0' });
+    // the yields, in the plate and below it, as percentages
+    for (let c = 1; c <= cols; c++) unitCells(res, 'Yield (%)', c, 2, 1 + rows);
+    unitCells(res, 'Yield (%)', 1, rows + 3, rows + 4);
   });
   return wb;
 }
@@ -166,9 +207,10 @@ function kinetics(): Workbook {
   const wb = new Workbook(['Kinetics']);
   wb.build(() => {
     const sh = wb.sheets[0];
-    heads(sh, 0, ['Time (min)', '[A] (M)', 'ln[A]'], [80, 80, 80]);
+    heads(sh, 0, ['Time (min)', '[A] (M)', 'ln[A]'], [80, 80, 80], 0, 15);
     for (let r = 1; r <= 15; r++) sh.setInput(r, 2, `=IF(B${r + 1}="","",LN(B${r + 1}))`);
-    sh.patchStyle({ r1: 1, c1: 2, r2: 15, c2: 2 }, { numFmt: '0.000' });
+    // concentrations to three places (0.335 M), times whole minutes
+    sh.patchStyle({ r1: 1, c1: 1, r2: 15, c2: 2 }, { numFmt: '0.000' });
     const at = 17;
     labelled(sh, at, [
       ['k (min⁻¹)', '=IF(COUNT(B2:B16)<2,"",-SLOPE(C2:C16,A2:A16))', '0.0000'],
@@ -203,7 +245,7 @@ function inventory(): Workbook {
   wb.build(() => {
     const sh = wb.sheets[0];
     const names = ['Name', 'Structure', 'MW (g/mol)', 'Amount', 'Unit', 'Location', 'Hazard class', 'Supplier', 'Catalog no.', 'Received', 'Opened', 'Owner', 'Notes'];
-    heads(sh, 0, names, [150, 120, 80, 64, 44, 100, 110, 100, 90, 80, 80, 80, 180]);
+    heads(sh, 0, names, [150, 120, 80, 64, 44, 100, 110, 100, 90, 80, 80, 80, 180], 0, 200);
     for (let r = 1; r <= 200; r++) sh.setInput(r, 2, `=IF(B${r + 1}="","",MW(B${r + 1}))`);
     sh.patchStyle({ r1: 1, c1: 2, r2: 200, c2: 2 }, { numFmt: '0.00' });
     sh.patchStyle({ r1: 1, c1: 9, r2: 200, c2: 10 }, { numFmt: 'yyyy-mm-dd' });
@@ -254,8 +296,8 @@ function solventLog(): Workbook {
   const wb = new Workbook(['Gas cylinders', 'Solvents']);
   wb.build(() => {
     const [gas, sol] = wb.sheets;
-    heads(gas, 0, ['Date', 'Gas', 'Cylinder no.', 'Location', 'Gauge (psi)', 'Changed?', 'By', 'Notes'], [80, 80, 90, 100, 80, 70, 70, 200]);
-    heads(sol, 0, ['Date', 'Solvent', 'Still or column', 'Action', 'Volume (L)', 'Water (ppm)', 'Indicator', 'By', 'Notes'], [80, 90, 110, 140, 70, 80, 90, 70, 200]);
+    heads(gas, 0, ['Date', 'Gas', 'Cylinder no.', 'Location', 'Gauge (psi)', 'Changed?', 'By', 'Notes'], [80, 80, 90, 100, 80, 70, 70, 200], 0, 300);
+    heads(sol, 0, ['Date', 'Solvent', 'Still or column', 'Action', 'Volume (L)', 'Water (ppm)', 'Indicator', 'By', 'Notes'], [80, 90, 110, 140, 70, 80, 90, 70, 200], 0, 300);
     sol.setInput(1, 3, '[Refilled / Regenerated / Checked]');
     for (const sh of [gas, sol]) {
       sh.patchStyle({ r1: 1, c1: 0, r2: 300, c2: 0 }, { numFmt: 'yyyy-mm-dd' });
@@ -273,7 +315,7 @@ function calibration(): Workbook {
   wb.build(() => {
     const sh = wb.sheets[0];
     sh.setInput(0, 0, 'Standards');
-    heads(sh, 1, ['Concentration (mM)', 'Peak area'], [130, 100]);
+    heads(sh, 1, ['Concentration (mM)', 'Peak area'], [130, 100], 0, 11);
     const std = [[0.5, 10450], [1, 20980], [2, 41500], [5, 104300], [10, 207900]];
     std.forEach(([c, a], i) => { sh.setInput(2 + i, 0, String(c)); sh.setInput(2 + i, 1, String(a)); });
     labelled(sh, 13, [
@@ -282,7 +324,7 @@ function calibration(): Workbook {
       ['R²', '=IF(COUNT(B3:B12)<2,"",RSQ(B3:B12,A3:A12))', '0.0000'],
     ]);
     sh.setInput(0, 4, 'Unknowns');
-    heads(sh, 1, ['Sample', 'Peak area', 'Concentration (mM)'], [100, 90, 130], 4);
+    heads(sh, 1, ['Sample', 'Peak area', 'Concentration (mM)'], [100, 90, 130], 4, 21);
     for (let r = 2; r <= 21; r++) sh.setInput(r, 6, `=IF(OR(F${r + 1}="",$B$14=""),"",(F${r + 1}-$B$15)/$B$14)`);
     sh.patchStyle({ r1: 2, c1: 6, r2: 21, c2: 6 }, { numFmt: '0.000' });
     for (const c of [0, 4]) sh.patchStyle({ r1: 0, c1: c, r2: 0, c2: c }, { bold: true, size: 12 });
@@ -305,7 +347,7 @@ function eeFromAreas(): Workbook {
   const wb = new Workbook(['ee']);
   wb.build(() => {
     const sh = wb.sheets[0];
-    heads(sh, 0, ['Sample', 'Area, first peak', 'Area, second peak', 'er (first:second)', 'ee (%)', 'Major'], [110, 110, 120, 120, 70, 70]);
+    heads(sh, 0, ['Sample', 'Area, first peak', 'Area, second peak', 'er (first:second)', 'ee (%)', 'Major'], [110, 110, 120, 120, 70, 70], 0, 30);
     for (let r = 1; r <= 30; r++) {
       const n = r + 1, a = `B${n}`, b = `C${n}`, ok = `AND(ISNUMBER(${a}),ISNUMBER(${b}),${a}+${b}>0)`;
       sh.setInput(r, 3, `=IF(${ok},TEXT(100*${a}/(${a}+${b}),"0.0")&":"&TEXT(100*${b}/(${a}+${b}),"0.0"),"")`);
@@ -334,7 +376,7 @@ function nmrYield(): Workbook {
       ['mmol of standard', '=IF(OR(B2="",B3=""),"",B3/B2)', '0.0000'],
       ['Theoretical product (mmol)', ''],
     ]);
-    heads(sh, 7, ['Sample', 'Standard integral', 'Product integral', 'Product protons', 'Product (mmol)', 'Yield (%)'], [190, 110, 110, 100, 100, 70]);
+    heads(sh, 7, ['Sample', 'Standard integral', 'Product integral', 'Product protons', 'Product (mmol)', 'Yield (%)'], [190, 110, 110, 100, 100, 70], 0, 27);
     for (let r = 8; r <= 27; r++) {
       const n = r + 1;
       sh.setInput(r, 4, `=IF(OR(B${n}="",B${n}=0,C${n}="",D${n}="",$B$5=""),"",$B$5*(C${n}/D${n})/(B${n}/$B$4))`);
@@ -360,7 +402,7 @@ function titration(): Workbook {
       ['Titrant MW (g/mol)', '212.24', '0.00'],
       ['Equivalents of reagent per titrant', '1'],
     ]);
-    heads(sh, 6, ['Run', 'Titrant (mg)', 'Titrant (mmol)', 'Reagent to endpoint (mL)', 'Molarity (M)'], [190, 90, 100, 150, 90]);
+    heads(sh, 6, ['Run', 'Titrant (mg)', 'Titrant (mmol)', 'Reagent to endpoint (mL)', 'Molarity (M)'], [190, 90, 100, 150, 90], 0, 11);
     for (let r = 7; r <= 11; r++) {
       const n = r + 1;
       sh.setInput(r, 0, String(r - 6));
@@ -448,20 +490,20 @@ function rota(): Workbook {
 }
 
 export const SHEET_TEMPLATES: SheetTemplate[] = [
-  { id: 'reaction-table', category: 'reactions', name: 'Reaction table', blurb: 'Optimization entries: catalyst, loading, solvent, temperature, time, conversion, yield, ee and dr, with the best entry found for you.', make: reactionTable },
-  { id: 'substrate-scope', category: 'reactions', name: 'Substrate scope table', blurb: 'One row per substrate: structure, MW worked out, product, yield, ee and dr, with the averages below.', make: substrateScope },
-  { id: 'plate-24', category: 'reactions', name: '24-well screening plate', blurb: 'A 4 × 6 plate map of conditions and a matching grid of yields shaded from low to high.', make: () => plate(4, 6) },
-  { id: 'plate-96', category: 'reactions', name: '96-well screening plate', blurb: 'An 8 × 12 plate map of conditions and a matching grid of yields shaded from low to high.', make: () => plate(8, 12) },
-  { id: 'kinetics', category: 'reactions', name: 'Kinetics time course', blurb: 'Time, concentration and ln[A], a chart of the time course, and the first-order rate constant and half-life.', make: kinetics },
-  { id: 'reagent-sheet', category: 'stock', name: 'Reagent sheet', blurb: 'MW from each structure, amounts from equivalents, masses and volumes, and the percent yield from the isolated mass.', make: reagentSheet },
-  { id: 'inventory', category: 'stock', name: 'Chemical inventory', blurb: 'Structure, MW, amount, location, hazard class, supplier, and dates received and opened, with a filter.', make: inventory },
-  { id: 'stock-solution', category: 'stock', name: 'Stock solution calculator', blurb: 'The mass to weigh for a concentration and volume, the volume of a neat liquid, or a stock to dilute.', make: stockSolution },
-  { id: 'solvent-log', category: 'stock', name: 'Gas cylinder and solvent still log', blurb: 'Cylinders: gauge pressure and changes. Stills and solvent systems: refills, regeneration and water checks.', make: solventLog },
-  { id: 'calibration', category: 'analysis', name: 'HPLC/GC calibration curve', blurb: 'Standards against peak area, the fitted line with R², and unknowns worked out from it.', make: calibration },
-  { id: 'ee-areas', category: 'analysis', name: 'ee and er from HPLC peak areas', blurb: 'The two enantiomers\' peak areas give er, ee and the major enantiomer for each sample.', make: eeFromAreas },
-  { id: 'nmr-yield', category: 'analysis', name: 'NMR yield with an internal standard', blurb: 'From the standard\'s mass and protons and the integrals: the product in mmol and the yield.', make: nmrYield },
-  { id: 'titration', category: 'analysis', name: 'Titration (organolithium)', blurb: 'Titrant mass and reagent volume at the endpoint for each run, and the average molarity.', make: titration },
-  { id: 'orders', category: 'lab', name: 'Order tracker', blurb: 'What was ordered, from whom, price, account, and status from requested to received.', make: orders },
-  { id: 'booking', category: 'lab', name: 'Instrument booking', blurb: 'A week of hourly slots for one instrument, to write your name in.', make: booking },
-  { id: 'rota', category: 'lab', name: 'Group duties rota', blurb: 'Weekly duties (solvent system, waste, glassware, NMR tubes) with this week picked out.', make: rota },
+  { id: 'reaction-table', category: 'reactions', name: 'Reaction table', blurb: 'Optimization entries: catalyst, loading, solvent, temperature, time, conversion, yield, ee and dr, with the best entry found for you.', make: withUnits(reactionTable) },
+  { id: 'substrate-scope', category: 'reactions', name: 'Substrate scope table', blurb: 'One row per substrate: structure, MW worked out, product, yield, ee and dr, with the averages below.', make: withUnits(substrateScope) },
+  { id: 'plate-24', category: 'reactions', name: '24-well screening plate', blurb: 'A 4 × 6 plate map of conditions and a matching grid of yields shaded from low to high.', make: withUnits(() => plate(4, 6)) },
+  { id: 'plate-96', category: 'reactions', name: '96-well screening plate', blurb: 'An 8 × 12 plate map of conditions and a matching grid of yields shaded from low to high.', make: withUnits(() => plate(8, 12)) },
+  { id: 'kinetics', category: 'reactions', name: 'Kinetics time course', blurb: 'Time, concentration and ln[A], a chart of the time course, and the first-order rate constant and half-life.', make: withUnits(kinetics) },
+  { id: 'reagent-sheet', category: 'stock', name: 'Reagent sheet', blurb: 'MW from each structure, amounts from equivalents, masses and volumes, and the percent yield from the isolated mass.', make: withUnits(reagentSheet) },
+  { id: 'inventory', category: 'stock', name: 'Chemical inventory', blurb: 'Structure, MW, amount, location, hazard class, supplier, and dates received and opened, with a filter.', make: withUnits(inventory) },
+  { id: 'stock-solution', category: 'stock', name: 'Stock solution calculator', blurb: 'The mass to weigh for a concentration and volume, the volume of a neat liquid, or a stock to dilute.', make: withUnits(stockSolution) },
+  { id: 'solvent-log', category: 'stock', name: 'Gas cylinder and solvent still log', blurb: 'Cylinders: gauge pressure and changes. Stills and solvent systems: refills, regeneration and water checks.', make: withUnits(solventLog) },
+  { id: 'calibration', category: 'analysis', name: 'HPLC/GC calibration curve', blurb: 'Standards against peak area, the fitted line with R², and unknowns worked out from it.', make: withUnits(calibration) },
+  { id: 'ee-areas', category: 'analysis', name: 'ee and er from HPLC peak areas', blurb: 'The two enantiomers\' peak areas give er, ee and the major enantiomer for each sample.', make: withUnits(eeFromAreas) },
+  { id: 'nmr-yield', category: 'analysis', name: 'NMR yield with an internal standard', blurb: 'From the standard\'s mass and protons and the integrals: the product in mmol and the yield.', make: withUnits(nmrYield) },
+  { id: 'titration', category: 'analysis', name: 'Titration (organolithium)', blurb: 'Titrant mass and reagent volume at the endpoint for each run, and the average molarity.', make: withUnits(titration) },
+  { id: 'orders', category: 'lab', name: 'Order tracker', blurb: 'What was ordered, from whom, price, account, and status from requested to received.', make: withUnits(orders) },
+  { id: 'booking', category: 'lab', name: 'Instrument booking', blurb: 'A week of hourly slots for one instrument, to write your name in.', make: withUnits(booking) },
+  { id: 'rota', category: 'lab', name: 'Group duties rota', blurb: 'Weekly duties (solvent system, waste, glassware, NMR tubes) with this week picked out.', make: withUnits(rota) },
 ];

@@ -8,6 +8,7 @@ import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from '../deck/temp
 import { STARTER_DECKS, type StarterDeck } from '../deck/starters';
 import type { Master, SlideSize } from '../deck/deck';
 import { keyOf } from '../sheet/refs';
+import { unitPrefs } from '../sheet/template-units';
 import { forgetTextWidths } from '../render/renderer';
 import type { TemplateCategory, TemplateCard } from './template-window';
 
@@ -54,15 +55,28 @@ export function sheetPreview(t: SheetTemplate): HTMLElement {
   return grid;
 }
 
+/** Draw a card's picture with the real drawing code (loaded when first needed), falling back to the plain outline. */
+async function realPicture(host: HTMLElement, plain: () => HTMLElement, real: (m: typeof import('./template-thumbs')) => HTMLElement): Promise<void> {
+  try {
+    const m = await import('./template-thumbs');
+    if (!host.isConnected) return;
+    host.replaceChildren(real(m));
+  } catch {
+    host.replaceChildren(plain());
+  }
+}
+
 const docCard = (t: DocTemplate, use: (t: DocTemplate) => void): TemplateCard => ({
   id: t.id, name: t.name, tip: t.blurb,
-  preview: (host) => { host.replaceChildren(docPreview(t)); },
+  // the first page as it prints, shrunk whole
+  preview: (host) => realPicture(host, () => docPreview(t), (m) => m.docPage(t.make())),
   pick: () => use(t),
 });
 
 const sheetCard = (t: SheetTemplate, use: (t: SheetTemplate) => void): TemplateCard => ({
   id: t.id, name: t.name, tip: t.blurb,
-  preview: (host) => { host.replaceChildren(sheetPreview(t)); },
+  // the first sheet as the grid draws it
+  preview: (host) => realPicture(host, () => sheetPreview(t), (m) => m.sheetPicture(t.make(unitPrefs.place))),
   pick: () => use(t),
 });
 
