@@ -88,3 +88,16 @@ export function fallbackFonts(family: string): string[] {
 
 /** The stand-in fonts, which the screen loads only when a missing font needs one. */
 export const STAND_IN_FONTS = ['Carlito', 'Caladea', 'Arimo', 'Tinos', 'Cousine'];
+
+/**
+ * Word's single line spacing for a font, as a multiple of the size: the font's own line height
+ * (its ascent, descent and line gap). Calibri's is 1.22 (14.65 pt at 12 pt), Courier New's 1.13;
+ * Times New Roman's and Arial's, and any font not listed, 1.15. The heights are those of the
+ * stand-ins (Carlito, Cousine, Tinos, Arimo), which match the fonts they stand in for. `family`
+ * may be a CSS font stack: its first font counts.
+ */
+export function lineFactor(family: string): number {
+  const first = key(family.split(',')[0] ?? '');
+  return LINE_FACTORS[first] ?? 1.15;
+}
+const LINE_FACTORS: Record<string, number> = { calibri: 2500 / 2048, carlito: 2500 / 2048, 'courier new': 2320 / 2048, cousine: 2320 / 2048, 'liberation mono': 2320 / 2048 };

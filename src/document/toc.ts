@@ -78,7 +78,8 @@ export function tocLines(entries: TocEntry[], pageOf: (para: number) => string, 
     return { indent: (own ? own.indent : (e.level - 1) * TOC_INDENT), indentRight: keep, line, spaceBefore: i === 0 && own ? 0 : before };
   });
   const lay = layoutText({ runs, paras, justify: 'left', wrap, boxes: true }, st.size, measure);
-  const unit = '. ';
+  // (close dots, as Word's dot leader draws them)
+  const unit = '.';
   const lines = lay.lines.map((l) => ({ ...l, pieces: [...l.pieces] }));
   for (const l of lines) {
     if (!l.last) continue;

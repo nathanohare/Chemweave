@@ -289,6 +289,17 @@ export function listMarkers(paras: ParaStyle[]): (string | null)[] {
 // ------------------------------------------------------------------ text helpers
 
 /** Split runs at line breaks into the runs of each paragraph (empty paragraphs give []). */
+/**
+ * Each paragraph's mark: the run holding the line break that ends it (undefined for the last).
+ * An empty paragraph is as tall as its mark's font and size make it, as in Word.
+ */
+export function paragraphMarks(runs: TextRun[]): (TextRun | undefined)[] {
+  const out: (TextRun | undefined)[] = [];
+  for (const r of runs) for (const ch of r.text) if (ch === '\n') out.push(r);
+  out.push(undefined);
+  return out;
+}
+
 export function splitParagraphs(runs: TextRun[]): TextRun[][] {
   const out: TextRun[][] = [[]];
   for (const r of runs) {

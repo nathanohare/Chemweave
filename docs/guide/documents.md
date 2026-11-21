@@ -12,6 +12,8 @@ Click **+** at the end of the tab strip and choose **Document (Text document)**,
 
 The ribbon has Word's tabs: **Home**, **Insert**, **Design**, **Layout**, **References**, **Review** and **View**, plus a **Table** tab that appears while the cursor is in a table. Text flows on to the next page automatically. The status bar at the bottom shows the page and word count; Ctrl+mouse wheel or the − and + buttons zoom, and **Page Width** fits the page to the window.
 
+Text is laid out as Word lays it out, so a Word file breaks its lines and pages in the same places here: each font has its own line height (Calibri lines are taller than Times lines), a justified line may squeeze its spaces a little to fit one more word, a line's last space may run past the margin, and a table row is as tall as its text plus the lines around it.
+
 ## The chemistry toolbox
 
 The drawing toolbox shows on the left in Document mode too. Pick a drawing tool there and the selected structure opens for editing with that tool; if no structure is selected, a new drawing starts at the cursor. Press **Done** above the drawing to restore it in the text.

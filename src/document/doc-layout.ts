@@ -14,7 +14,7 @@ import type { FieldObj } from './fields';
 import type { CellMargins, Contents, Justify, ParaStyle, TableData, TextRun } from '../model';
 import type { DocStyle } from '../style';
 import { withStack, layoutText, type Glyphs, type InlineBox, type LaidLine, type Measure, type Narrow, type TextFrame, type TextLayout } from '../text/layout';
-import { fitParas, laidParas, listMarkers, paraCount, splitParagraphs } from '../text/paragraphs';
+import { fitParas, laidParas, listMarkers, paraCount, paragraphMarks, splitParagraphs } from '../text/paragraphs';
 import { isCovered, rowSpanOf, spanOf } from '../table';
 import * as rt from '../richtext';
 import { drawingOwnSize, nestedTables, BOX_PAD, LINE_NUMBER_GAP, OBJECT_CHAR, columnsOf, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, styleOf, numberStyle, FORM_SHADE, type DocObject, type DocText, type HeaderFooter, type NamedStyle, type PageSetup, type WrapKind } from './document';
@@ -173,7 +173,7 @@ export interface TableBox {
 }
 
 export { CELL_PAD, GRID_LINE, ACS_LINE } from './table-styles';
-import { CELL_PAD, cellMargins, resolveTable, type CellText } from './table-styles';
+import { CELL_PAD, cellMargins, resolveTable, type CellText, type Edge } from './table-styles';
 
 /** How a cell's text lines up across: its own choice, its column's, or left. */
 export function docCellAlign(t: TableData, r: number, c: number): Justify {
@@ -356,7 +356,10 @@ export class DocLayouter {
         if (i === 0) pieces.push({ text: OBJECT_CHAR, start: at, x: l.x, w: l.width, dy: 0, size: st.size, family: withStack(st.font), style: '', obj: id, shown: '' });
         pieces.push(...shown);
         if (i === bl.length - 1 && i > 0) pieces.push({ text: '', start: at + 1, x: l.x + l.width, w: 0, dy: 0, size: st.size, family: withStack(st.font), style: '' });
-        lines.push({ ...l, para: 0, block: id, marker: undefined, start: i === 0 ? at : at + 1, end: at + 1, last: false, pieces });
+        // (the space between the block's own paragraphs, a contents' TOC 1 space above, kept in the line's height)
+        const prev = bl[i - 1];
+        const above = prev ? Math.max(l.above ?? l.ascent, l.y - prev.y - (prev.below ?? prev.descent)) : l.above;
+        lines.push({ ...l, para: 0, block: id, marker: undefined, start: i === 0 ? at : at + 1, end: at + 1, last: false, pieces, ...(above !== undefined ? { above } : {}) });
       });
       at += 1;
       first = false;
@@ -399,7 +402,7 @@ export class DocLayouter {
     };
     const resolved = runs.map((r) => (r.font && r.size ? r : { ...r, font: r.font ?? N.font, size: r.size ?? N.size }));
     const ps = fitParas(paras, paraCount(rt.plainText(runs)));
-    const lay = layoutText({ runs: resolved, paras: ps, justify: 'left', boxes: true, markers: listMarkers(ps), markerStyles: ps.map((x) => numberStyle(t, x)), inline }, N.size, this.deps.measure);
+    const lay = layoutText({ runs: resolved, paras: ps, justify: 'left', boxes: true, markers: listMarkers(ps), markerStyles: ps.map((x) => numberStyle(t, x)), font: N.font, inline }, N.size, this.deps.measure);
     return Math.max(0, ...lay.lines.map((l) => l.x + l.width)) + 2 * CELL_PAD.x;
   }
 
@@ -455,6 +458,7 @@ export class DocLayouter {
     const fields = fieldTexts(t, (p) => this.tocPages[p] ?? '', this.pageCount);
     const hyph = hyphenation(t.hyphen);
     const paraRuns = splitParagraphs(t.runs);
+    const marks = paragraphMarks(t.runs);
     const colours = hasChanges(t.runs) ? authorColours(t.runs) : null;
     // the sections, each with its own paper, margins and columns (in columns, text is set in a column's width)
     const secs = sectionsOf({ ...t, paras });
@@ -622,6 +626,9 @@ export class DocLayouter {
         if (r.obj !== undefined && !r.highlight && t.objects[r.obj]?.kind === 'form') r = { ...r, highlight: FORM_SHADE };
         return r.font && r.size ? r : { ...r, font: r.font ?? st.font, size: r.size ?? st.size };
       });
+      // an empty paragraph: as tall as its mark's font and size (Word's paragraph mark)
+      const mk = marks[p];
+      if (!resolved.length && mk && (mk.font || mk.size) && !mk.obj) resolved.push({ font: mk.font ?? st.font, size: mk.size ?? st.size, text: '' });
       const objs = runs.filter((r) => r.obj !== undefined).map((r) => {
         const f = fields.get(r.obj!);
         const s = sizes.get(r.obj!);
@@ -631,19 +638,19 @@ export class DocLayouter {
       const tabs = runs.filter(isTable).map((r) => tableOf(r.obj!)!);
       const bib = runs.some(isBib) || tabs.length > 0;
       const W = widthOf(p);
-      const key = JSON.stringify([resolved, ps, markers[p], numberStyle(t, ps), W, objs, st.size, bib ? [t.citeStyle, t.citeOptions, entries.map((e) => [e.label, e.pieces]), st.font, tocKey] : 0, tabs.map((x) => [x.xs, x.hs]), hyph && !ps.noHyphen ? t.hyphen : 0]);
+      const key = JSON.stringify([resolved, ps, markers[p], numberStyle(t, ps), W, objs, st.size, st.font, bib ? [t.citeStyle, t.citeOptions, entries.map((e) => [e.label, e.pieces]), st.font, tocKey] : 0, tabs.map((x) => [x.xs, x.hs]), hyph && !ps.noHyphen ? t.hyphen : 0]);
       const hy = hyph && !ps.noHyphen ? { hyphenate: hyph } : {};
       let lay = this.cache.get(key);
       if (!lay) {
         const frame: TextFrame = {
-          runs: resolved, paras: [ps], justify: 'left', wrap: W, boxes: true, markers: [markers[p]], markerStyles: [numberStyle(t, ps)], inline, ...hy,
+          runs: resolved, paras: [ps], justify: 'left', wrap: W, boxes: true, markers: [markers[p]], markerStyles: [numberStyle(t, ps)], font: st.font, inline, ...hy,
         };
         lay = bib ? this.withBlocks(frame, st, blockLines, tableOf) : layoutText(frame, st.size, this.deps.measure);
         this.cache.set(key, lay);
       }
       this.used.add(key);
       laid.push(lay);
-      again.push(bib ? null : { key, frame: { runs: resolved, paras: [ps], justify: 'left', wrap: W, boxes: true, markers: [markers[p]], markerStyles: [numberStyle(t, ps)], inline, ...hy }, size: st.size });
+      again.push(bib ? null : { key, frame: { runs: resolved, paras: [ps], justify: 'left', wrap: W, boxes: true, markers: [markers[p]], markerStyles: [numberStyle(t, ps)], font: st.font, inline, ...hy }, size: st.size });
     }
     // a paragraph laid out again round the floating figures beside it (`y` its top on the page)
     const wrapped = (p: number, y: number, all: WrapRect[], dx: number): TextLayout => {
@@ -869,23 +876,38 @@ export class DocLayouter {
       paraTops.push({ y: pageTop(pageIdx) + page.top + cursor, page: pageIdx });
 
       // figures floating from this paragraph go on its page, and text on the page wraps round them
-      for (const r of paraRuns[p] ?? []) {
-        const fl = r.obj !== undefined ? floatOf(t.objects[r.obj]) : undefined;
-        const s = r.obj !== undefined ? sizes.get(r.obj) : undefined;
-        // (hidden in the Selection Pane: not on the page, and the text doesn't go round it)
-        if (!fl || !s || fl.hidden) continue;
-        const [el, et, er, eb] = extentOf(r.obj!);
-        const bw = s.w + el + er, bh = s.h + et + eb;
-        let bx = (fl.xFrom === 'page' ? 0 : page.left) + fl.x;
-        let by = (fl.yFrom === 'page' ? 0 : fl.yFrom === 'margin' ? page.top : page.top + cursor) + fl.y;
-        bx = Math.max(0, Math.min(bx, page.w - bw));
-        by = Math.max(0, Math.min(by, page.h - bh));
-        objects.push({ id: r.obj!, page: pageIdx, x: ox + bx + el, y: pageTop(pageIdx) + by + et, w: s.w, h: s.h, line: lines.length, wrap: fl.wrap });
-        const g = floatGaps(fl);
-        rects.push({ x1: bx - page.left - g.l, y1: by - page.top - g.t, x2: bx + bw - page.left + g.r, y2: by + bh - page.top + g.b, wrap: fl.wrap });
+      const own = lay.lines;
+      const placeFloats = () => {
+        for (const r of paraRuns[p] ?? []) {
+          const fl = r.obj !== undefined ? floatOf(t.objects[r.obj]) : undefined;
+          const s = r.obj !== undefined ? sizes.get(r.obj) : undefined;
+          // (hidden in the Selection Pane: not on the page, and the text doesn't go round it)
+          if (!fl || !s || fl.hidden) continue;
+          const [el, et, er, eb] = extentOf(r.obj!);
+          const bw = s.w + el + er, bh = s.h + et + eb;
+          let bx = (fl.xFrom === 'page' ? 0 : page.left) + fl.x;
+          let by = (fl.yFrom === 'page' ? 0 : fl.yFrom === 'margin' ? page.top : page.top + cursor) + fl.y;
+          bx = Math.max(0, Math.min(bx, page.w - bw));
+          by = Math.max(0, Math.min(by, page.h - bh));
+          objects.push({ id: r.obj!, page: pageIdx, x: ox + bx + el, y: pageTop(pageIdx) + by + et, w: s.w, h: s.h, line: lines.length, wrap: fl.wrap });
+          const g = floatGaps(fl);
+          rects.push({ x1: bx - page.left - g.l, y1: by - page.top - g.t, x2: bx + bw - page.left + g.r, y2: by + bh - page.top + g.b, wrap: fl.wrap });
+        }
+        const wl = rects.length ? wrapped(p, cursor, rects, colX[col]).lines : own;
+        pl = only?.firstLine?.has(p) ? wl.slice(0, 1) : wl;
+        hs = pl.map(heightOf);
+      };
+      const objectsAt = objects.length, rectsAt = rects.length;
+      placeFloats();
+      // a paragraph whose first line (moved down past a figure above it) doesn't fit goes to the
+      // next page whole, laid out there afresh: the figure it was moved past isn't on that page
+      if (hasContent && pl.length && rects.length && cursor + hs[0] > textH - footArea(lineFeet(pl[0])) + 0.01) {
+        objects.length = objectsAt;
+        rects.length = rectsAt;
+        nextColumn();
+        paraTops[paraTops.length - 1] = { y: pageTop(pageIdx) + page.top + cursor, page: pageIdx };
+        placeFloats();
       }
-      const wl = rects.length ? wrapped(p, cursor, rects, colX[col]).lines : pl;
-      if (wl !== pl) { pl = only?.firstLine?.has(p) ? wl.slice(0, 1) : wl; hs = pl.map(heightOf); }
 
       let i = 0;
       let onPage = 0;
@@ -1032,6 +1054,7 @@ export class DocLayouter {
         const ownKey = (id: number) => (t.objects[id]?.kind === 'field' ? `=${hfFieldText(t.objects[id] as FieldObj, t, num, pages.length)}` : objKey(id));
         const parts: ({ lay: TextLayout } | { id: number; tb: TableBox; align: Justify })[] = [];
         const runsOf = splitParagraphs(body.runs);
+        const hfMarks = paragraphMarks(body.runs);
         const ps = fitParas(body.paras, runsOf.length);
         let h = 0;
         runsOf.forEach((runs, p) => {
@@ -1045,7 +1068,8 @@ export class DocLayouter {
           }
           const st = styleOf(t, ps[p]);
           const resolved = runs.map((r) => (r.font && r.size ? r : { ...r, font: r.font ?? st.font, size: r.size ?? st.size }));
-          const lay = layoutText({ runs: resolved.length ? resolved : [{ font: st.font, size: st.size, text: '' }], paras: [{ ...ps[p], spaceBefore: ps[p].spaceBefore ?? 0, spaceAfter: ps[p].spaceAfter ?? 0 }], justify: 'left', wrap: W, boxes: true, inline: own }, st.size, this.deps.measure);
+          const mk = hfMarks[p];
+          const lay = layoutText({ runs: resolved.length ? resolved : [{ font: mk?.font ?? st.font, size: mk?.size ?? st.size, text: '' }], paras: [{ ...ps[p], spaceBefore: ps[p].spaceBefore ?? 0, spaceAfter: ps[p].spaceAfter ?? 0 }], justify: 'left', wrap: W, boxes: true, inline: own }, st.size, this.deps.measure);
           parts.push({ lay });
           h += lay.box.y2 - lay.box.y1 + (ps[p].spaceAfter ?? 0);
         });
@@ -1152,18 +1176,25 @@ export class DocLayouter {
     const hs: number[] = [];
     const pads: CellMargins[][] = [];
     const tall = (l: TextLayout | null) => (l ? l.box.y2 - l.box.y1 : 0);
-    const looks = resolveTable(tb, kept).text;
+    const resolved = resolveTable(tb, kept);
+    const looks = resolved.text;
+    // Word makes room for a row's lines: the line along its top (and, for the last row, along its bottom) adds its width
+    const lineW = (e: Edge | null | undefined) => (e && e.style !== 'none' ? e.w : 0);
+    const rowLine = (k: number) => Math.max(0, ...(resolved.h[k] ?? []).map(lineW));
     // cells merged down several rows: the rows they cover make room for them after
     const merged: { r: number; c: number; down: number }[] = [];
     tb.rows.forEach((row, r) => {
       const out: (TextLayout | null)[] = [];
       const ms: CellMargins[] = [];
-      let h = SINGLE_ROW * N.size + 2 * CELL_PAD.y;
+      // every cell holds at least one paragraph, so its text sets the row's height (an empty cell is sized from its style)
+      let h = 0;
+      const top = rowLine(r);
+      const bottom = r === tb.rows.length - 1 ? rowLine(r + 1) : 0;
       for (let c = 0; c < tb.cols.length; c++) {
-        const m = cellMargins(tb, r, c);
+        const m0 = cellMargins(tb, r, c);
+        const m = top || bottom ? { ...m0, top: m0.top + top, bottom: m0.bottom + bottom } : m0;
         ms.push(m);
         if (isCovered(tb, r, c)) { out.push(null); continue; }
-        h = Math.max(h, SINGLE_ROW * N.size + m.top + m.bottom);
         const cell = row[c] ?? { runs: [] };
         const lay = this.cellText(N, cell.runs, cell.paras, xs[c + spanOf(tb, r, c)] - xs[c], docCellAlign(tb, r, c), inline, objKey, m, looks[r]?.[c]);
         out.push(lay);
@@ -1172,6 +1203,7 @@ export class DocLayouter {
         else h = Math.max(h, tall(lay) + m.top + m.bottom);
       }
       // a row's own height (Word's row height): at least that tall, or exactly
+      if (!h) h = SINGLE_ROW * N.size + top + bottom;
       const own = tb.rowH?.[r];
       if (own && own.h > 0) h = own.exact ? own.h : Math.max(h, own.h);
       hs.push(h);
@@ -1202,15 +1234,26 @@ export class DocLayouter {
     if (hasChanges(runs)) runs = showChanges(runs, this.review);
     // the table style's bold, italic and colour, where the text has none of its own
     if (look) runs = runs.map((r) => ({ ...r, bold: r.bold ?? look.bold, italic: r.italic ?? look.italic, color: r.color ?? look.color }));
-    const resolved = runs.map((r) => (r.font && r.size ? r : { ...r, font: r.font ?? N.font, size: r.size ?? N.size }));
     const n = paraCount(rt.plainText(runs));
     const ps = fitParas(paras, n);
+    // runs without a font or size of their own take their paragraph style's (a cell's paragraph in
+    // a style of its own, Times in a Calibri document, is as tall as Times makes it)
+    const styles = this.cellCtx?.t.styles;
+    let k = 0;
+    const resolved = runs.map((r) => {
+      const st = (ps[k]?.style && styles?.[ps[k].style!]) || N;
+      k += (r.text.match(/\n/g) ?? []).length;
+      return r.font && r.size ? r : { ...r, font: r.font ?? st.font, size: r.size ?? st.size };
+    });
+    // (an empty cell: as tall as its paragraph's style makes it)
+    const st0 = (ps[0]?.style && styles?.[ps[0].style!]) || N;
+    if (!resolved.length) resolved.push({ font: st0.font, size: st0.size, text: '' });
     const objs = runs.filter((r) => r.obj !== undefined).map((r) => `${r.obj}${objKey(r.obj!)}`);
     const room = w - pad.left - pad.right;
-    const key = `cell|${JSON.stringify([resolved, ps, room, align, objs])}`;
+    const key = `cell|${JSON.stringify([resolved, ps, room, align, objs, N.font, N.size])}`;
     let lay = this.cache.get(key);
     if (!lay) {
-      lay = layoutText({ runs: resolved, paras: ps, justify: align, wrap: Math.max(6, room), boxes: true, markers: listMarkers(ps), inline }, N.size, this.deps.measure);
+      lay = layoutText({ runs: resolved, paras: ps, justify: align, wrap: Math.max(6, room), boxes: true, markers: listMarkers(ps), font: N.font, inline }, N.size, this.deps.measure);
       this.cache.set(key, lay);
     }
     this.used.add(key);
@@ -1255,8 +1298,8 @@ export class DocLayouter {
     const resolved = runs.map((r) => (r.font && r.size ? r : { ...r, font: r.font ?? N.font, size: r.size ?? N.size }));
     const n = paraCount(rt.plainText(runs));
     const ps = fitParas(paras, n);
-    const frame: TextFrame = { runs: resolved, paras: ps, justify: 'left', wrap: Math.max(6, w - 2 * BOX_PAD.x), boxes: true, markers: listMarkers(ps), markerStyles: ps.map((x) => numberStyle(t, x)) };
-    const key = `box|${JSON.stringify([resolved, ps, w])}`;
+    const frame: TextFrame = { runs: resolved, paras: ps, justify: 'left', wrap: Math.max(6, w - 2 * BOX_PAD.x), boxes: true, markers: listMarkers(ps), markerStyles: ps.map((x) => numberStyle(t, x)), font: N.font };
+    const key = `box|${JSON.stringify([resolved, ps, w, N.font])}`;
     let lay = this.cache.get(key);
     if (!lay) {
       lay = layoutText(frame, N.size, this.deps.measure);

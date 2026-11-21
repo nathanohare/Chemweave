@@ -49,11 +49,23 @@ describe('table of contents', () => {
     expect(tocText(tocEntries(sample()).slice(0, 1), () => 'S2')).toBe('General Information\tS2');
   });
 
+  it('keeps the space above each entry its TOC style gives it, so the page below moves down by it too', () => {
+    const d = sample();
+    d.styles.TOC1 = { ...d.styles.Normal, id: 'TOC1', name: 'toc 1', spaceBefore: 12, spaceAfter: 0, line: 1 };
+    const lay = layouter().layout(d);
+    const lines = tocLinesOf(lay);
+    const gap = (i: number) => lines[i].y - lines[i - 1].y;
+    // the entry after a level-2 entry ("NMR Spectra" after "Ketone 3") has its 12 pt above it
+    expect(gap(3) - gap(2)).toBeGreaterThan(11.9);
+    // and each line says so itself (what the page uses to place the lines after the contents)
+    for (let i = 1; i < lines.length; i++) expect(lines[i].above! + lines[i - 1].below!).toBeCloseTo(gap(i));
+  });
+
   it('shows each heading with dots up to its page number at the right', () => {
     const lay = layouter().layout(sample());
     const lines = tocLinesOf(lay);
     expect(lines).toHaveLength(4);
-    expect(shown(lines[0])).toMatch(/^General Information\. \.( \.)* *1$/);
+    expect(shown(lines[0])).toMatch(/^General Information\.{3,} *1$/); // Word's dot leader: close dots
     // the numbers end at the right margin
     const right = lay.pageW - 72;
     for (const l of lines) {
