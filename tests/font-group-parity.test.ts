@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { FONT_ROWS, FONT_LOOK, fontGroupHtml, installFontGroups, FONT_SIZE_LIST, type FontMode } from '../src/ui/font-group';
+import { FONT_ROWS, FONT_LOOK, fontGroupHtml, installFontGroups, FONT_SIZE_LIST, SI_FONT_OFF, SI_FONT_REASON, type FontMode } from '../src/ui/font-group';
 import { buildTextBar } from '../src/ui/text-bar';
 import { CanvasRibbon } from '../src/ui/canvas-ribbon';
 
@@ -23,7 +23,7 @@ const group = (mode: FontMode) => { const t = document.createElement('template')
 describe('the shared Font group (G5-26)', () => {
   it('has the same controls in the same order in Document, Presentation and Spreadsheet', () => {
     expect(FONT_ROWS.flat()).toHaveLength(13);
-    for (const m of ['document', 'slides', 'sheet'] as const) {
+    for (const m of ['document', 'slides', 'sheet', 'si'] as const) {
       const g = group(m);
       expect(shared(g), m).toEqual(ORDER);
       expect(g.querySelector('.rb-label')!.textContent).toBe('Font');
@@ -73,5 +73,15 @@ describe('the shared Font group (G5-26)', () => {
     const font = [...rb.el.querySelectorAll('.rb-group')].find((g) => g.querySelector('.rb-label')?.textContent === 'Font')!;
     font.querySelector<HTMLButtonElement>('.rb-launch')!.click();
     expect(ran).toEqual(['toolbox-text']);
+  });
+  it('the SI tab has the same group, with Symbol after it, and greys what SI text cannot hold (R13)', () => {
+    const g = group('si');
+    expect(shared(g)).toEqual(ORDER);
+    const btns = [...g.querySelectorAll<HTMLButtonElement>('button:not(.rb-launch)')];
+    expect(btns.at(-1)!.dataset.si).toBe('symbol');
+    expect(btns.at(-1)!.textContent).toBe('Ω');
+    expect(SI_FONT_OFF).toEqual(['font', 'size', 'grow', 'shrink', 'strike', 'color']);
+    for (const c of ['bold', 'italic', 'underline', 'subscript', 'superscript', 'clear', 'formula']) expect(g.querySelector(`[data-si-fmt="${c}"]`), c).not.toBeNull();
+    expect(SI_FONT_REASON).toContain('journal style');
   });
 });

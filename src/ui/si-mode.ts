@@ -59,6 +59,9 @@ import { availableColumns, buildRows, chosenColumns, fieldLabel, filterOf, isCom
 import { dashboardGrid, projectSummaryCard, sectionDashboard, statusColorsBody, type GridOptions } from './si-dashboard';
 import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
 import { popupMenu } from './popup-menu';
+import { fontGroupHtml, SI_FONT_OFF, SI_FONT_REASON } from './font-group';
+import { paintCanRun } from './can-run';
+import { chemPieces } from '../sheet/cell-text';
 import { allBoxes } from '../si/scheme-edit';
 
 /** Said when a change was made on a page of before the project was read again (Undo, Reload): its objects are no longer the project's. */
@@ -472,20 +475,7 @@ const RIBBON = `
         <button data-si="move-to" title="Move the selected compound to another Data section or into or out of a scheme page, or the selected section into or out of a Custom section">Move To…</button>
       </div>
     </div><div class="rb-label">Project</div></div>
-    <div class="rb-group"><div class="rb-row">
-      <div class="rb-col">
-        <div class="rb-pair">
-          <button class="rb-sq" data-si-fmt="bold" title="Bold (Ctrl+B)"><b>B</b></button>
-          <button class="rb-sq" data-si-fmt="italic" title="Italic (Ctrl+I)"><i>I</i></button>
-          <button class="rb-sq" data-si-fmt="underline" title="Underline (Ctrl+U)"><u>U</u></button>
-        </div>
-        <div class="rb-pair">
-          <button class="rb-sq" data-si-fmt="subscript" title="Subscript (Ctrl+=)">x<sub>2</sub></button>
-          <button class="rb-sq" data-si-fmt="superscript" title="Superscript (Ctrl+Shift+=)">x<sup>2</sup></button>
-          <button class="rb-sq" data-si="symbol" title="Symbol: type °, Å, ±, Greek letters, arrows… where you are typing">Ω</button>
-        </div>
-      </div>
-    </div><div class="rb-label">Font</div></div>
+    ${fontGroupHtml('si')}
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="id-table" data-ic="compound-number" title="The ID table of the selected Data section: compound IDs follow the compounds' order"><span class="rb-icon">#</span>ID Table</button>
       <div class="rb-col">
@@ -606,6 +596,20 @@ export class SiMode {
     this.ribbon.setAttribute('aria-label', 'SI Project');
     this.ribbon.hidden = true;
     this.ribbon.innerHTML = RIBBON;
+    // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
+    paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? SI_FONT_REASON : null));
+    for (const el of this.ribbon.querySelectorAll<HTMLInputElement>('.rb-font-group input[data-si-fmt]')) {
+      el.disabled = true;
+      (el.closest('label') ?? el).title = SI_FONT_REASON;
+    }
+    // Bold, Italic… show whether the text being typed has them
+    document.addEventListener('selectionchange', () => {
+      if (this.ribbon.hidden || !this.typing || document.activeElement !== this.typing) return;
+      for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]')) {
+        const c = b.dataset.siFmt!;
+        if (['bold', 'italic', 'underline', 'subscript', 'superscript'].includes(c)) b.setAttribute('aria-pressed', String(document.queryCommandState(c)));
+      }
+    });
     this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(this.liveOn));
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
@@ -617,6 +621,7 @@ export class SiMode {
       if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
       if (fmt) { this.format(fmt.dataset.siFmt!); return; }
+      if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
       if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
       const sp = t.closest<HTMLElement>('[data-si-spectrum]');
@@ -857,8 +862,29 @@ export class SiMode {
 
   /** Bold, italic, underline, subscript or superscript on the text being typed (the ribbon's Font buttons). */
   private format(cmd: string): void {
+    if (SI_FONT_OFF.includes(cmd)) { this.host.flash(SI_FONT_REASON, 6000); return; }
     if (!this.restoreTyping()) { this.host.flash('Click in a text box first (a procedure, a report, a section’s text or a table’s cell).'); return; }
+    if (cmd === 'clear') { document.execCommand('removeFormat'); return; }
+    if (cmd === 'formula') { this.formulaStyle(); return; }
     document.execCommand(cmd);
+  }
+
+  /** Formula style on the selected text: numbers lowered (CH₂Cl₂), charges raised (PF₆⁻), as the other modes do. */
+  private formulaStyle(): void {
+    const sel = getSelection();
+    if (!sel?.rangeCount || sel.isCollapsed) { this.host.flash('Select the formula first (CH2Cl2, PF6-), then Formula style.'); return; }
+    // (a mention, citation or structure in the selection is left as it is: plain text only)
+    if (sel.getRangeAt(0).cloneContents().querySelector(':not(b, i, u, sub, sup, strong, em, span:not([class]), br)')) {
+      this.host.flash('Select plain text only: Formula style leaves compound mentions and citations as they are.');
+      return;
+    }
+    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = chemPieces(sel.toString()).map((p) => {
+      const t = esc(p.text);
+      const x = p.pos === 'sub' ? `<sub>${t}</sub>` : p.pos === 'sup' ? `<sup>${t}</sup>` : t;
+      return p.italic ? `<i>${x}</i>` : x;
+    }).join('');
+    document.execCommand('insertHTML', false, html);
   }
 
   /** Put the typing back where it was in the last SI text box (false when there is none). */

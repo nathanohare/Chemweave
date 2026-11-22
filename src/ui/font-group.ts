@@ -7,9 +7,17 @@
 // italics), and the ⬊ for the Font settings in the corner. Each mode keeps its own way of running
 // the controls (its data-* attributes and ids); only the controls, their order, pictures and tips
 // are shared. The Canvas ribbon builds its group in text-bar.ts from the same FONT_ROWS and FONT_LOOK.
+// The SI tab has the same group too (review of F5, R13), with Symbol (Ω) at the end; SI text keeps
+// only bold, italic, underline, subscript and superscript (the journal style sets its font, size
+// and color), so the other controls are greyed there with that reason (SI_FONT_REASON).
+
+/** Why the SI tab's font, size, strikethrough and color controls are greyed. */
+export const SI_FONT_REASON = 'SI text takes its font, size and color from the journal style (Project Settings ▸ Output). It keeps bold, italic, underline, subscript and superscript.';
+/** The SI Font group controls SI text cannot hold. */
+export const SI_FONT_OFF: readonly string[] = ['font', 'size', 'grow', 'shrink', 'strike', 'color'];
 
 export type FontControl = 'font' | 'size' | 'grow' | 'shrink' | 'clear' | 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'formula' | 'color';
-export type FontMode = 'document' | 'slides' | 'sheet';
+export type FontMode = 'document' | 'slides' | 'sheet' | 'si';
 
 /** The controls of the Font group, row by row, in order. */
 export const FONT_ROWS: readonly (readonly FontControl[])[] = [
@@ -125,6 +133,28 @@ const MODES: Record<FontMode, ModeFont> = {
       '<button class="rb-sq" data-sh="borders" title="Borders">▦</button><button class="rb-sq rb-colour" data-sh="fill-colour" title="Fill Color"><span>▨</span><span class="sw"></span></button>',
     ],
     launcher: { attr: 'data-sh', value: 'format-cells', tip: 'Format Cells (Ctrl+1): the number format, alignment, font, border and fill of the selected cells, in the side panel' },
+  },
+  si: {
+    controls: {
+      font: { attr: 'data-si-fmt', value: 'font', tip: 'Font' },
+      size: { attr: 'data-si-fmt', value: 'size' },
+      grow: { attr: 'data-si-fmt', value: 'grow' },
+      shrink: { attr: 'data-si-fmt', value: 'shrink' },
+      clear: { attr: 'data-si-fmt', value: 'clear', tip: 'Clear All Formatting: the selected text loses its bold, italic, underline, subscript and superscript' },
+      bold: { attr: 'data-si-fmt', value: 'bold' },
+      italic: { attr: 'data-si-fmt', value: 'italic' },
+      underline: { attr: 'data-si-fmt', value: 'underline' },
+      strike: { attr: 'data-si-fmt', value: 'strike' },
+      sub: { attr: 'data-si-fmt', value: 'subscript', tip: 'Subscript (Ctrl+=)' },
+      sup: { attr: 'data-si-fmt', value: 'superscript', tip: 'Superscript (Ctrl+Shift+=)' },
+      formula: { attr: 'data-si-fmt', value: 'formula', tip: 'Formula style: numbers in the selected text lowered (CH₂Cl₂), charges raised' },
+      color: { attr: 'data-si-fmt', value: 'color' },
+    },
+    extra: [
+      '',
+      '<button class="rb-sq" data-si="symbol" title="Symbol: type °, Å, ±, Greek letters, arrows… where you are typing" aria-label="Symbol">Ω</button>',
+    ],
+    launcher: { attr: 'data-si-font', value: 'settings', tip: 'Project Settings ▸ Output: the journal style sets the font and size of SI text' },
   },
 };
 
