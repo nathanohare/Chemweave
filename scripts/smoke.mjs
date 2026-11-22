@@ -160,6 +160,8 @@ try {
       await frame();
       if (tab.mode === 'sheet' || tab.mode === 'document') continue;
       const box = document.querySelector('.toolbox[data-id="main"]'), body = box?.querySelector('.tb-body');
+      // the SI tab has no canvas (its structures open in a drawing window): no docked toolbox shows there
+      if (tab.mode === 'si') { out.push({ mode: 'si', siShown: !!box?.offsetParent }); continue; }
       const cells = box?.querySelector('.tb-cells');
       if (!cells || !box.offsetParent) { out.push({ mode: tab.mode, cols: 0 }); continue; }
       const b = box.getBoundingClientRect();
@@ -168,7 +170,9 @@ try {
     ws.activate(ws.tabs.find((t) => t.mode === 'drawing'));
     return out;
   });
+  if (!columns.some((x) => x.mode === 'si')) fail('the toolbox step did not visit the SI tab');
   for (const x of columns) {
+    if (x.mode === 'si') { if (x.siShown) fail('the SI tab shows the docked Drawing Tools toolbox, but it has no canvas to draw on'); continue; }
     if (x.cols !== 2) fail(`the Drawing Tools toolbox in a ${x.mode} tab is ${x.cols} columns wide, not two`);
     else if (x.bottom > x.h || x.page > x.h) fail(`the Drawing Tools toolbox in a ${x.mode} tab runs past the window's foot (${Math.round(x.bottom)} px of ${x.h})`);
   }
