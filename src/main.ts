@@ -199,6 +199,7 @@ import { htmlToRich } from './text/html';
 import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
+import { fieldFileCommand, isTypingField } from './editor/field-keys';
 import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
@@ -1189,10 +1190,7 @@ async function dropFiles(files: File[], at: { x: number; y: number }): Promise<v
 
 /** True when keys go into a text box rather than to the drawing. */
 function isTyping(t: EventTarget | null): boolean {
-  const el = t as HTMLElement | null;
-  if (!el || !el.tagName) return false;
-  if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
-  return el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'range', 'color', 'file'].includes((el as HTMLInputElement).type);
+  return isTypingField(t);
 }
 
 /** True when some text on the page (not the drawing) is selected, so Ctrl+C should copy that. */
@@ -5650,7 +5648,19 @@ function formatNotes(f: TextFormat): boolean {
   return true;
 }
 /** Commands whose keys work while typing speaker notes. */
-const NOTES_FILE_KEYS = new Set(['save', 'save-as', 'open', 'new', 'new-slides', 'print', 'close-tab', 'next-tab', 'prev-tab', 'autosave']);
+// the file's own keys (Save, Open, Print…) from any text box, what is typed going in first (editor/field-keys.ts)
+window.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || !(e.ctrlKey || e.metaKey)) return;
+  const name = fieldFileCommand(e.target, chordOf(e), (c) => keymap.lookup('command', c));
+  if (!name) return;
+  e.preventDefault();
+  e.stopPropagation();
+  // a box that takes its text when changed or left (Outline View, a Smart Scheme row) takes it now
+  (e.target as HTMLElement).dispatchEvent(new Event('change', { bubbles: true }));
+  flushNotes();
+  void command(name);
+}, true);
+
 notesBox.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
@@ -5659,18 +5669,7 @@ notesBox.addEventListener('keydown', (e) => {
       : mod && !e.altKey && !e.shiftKey && key === 'u' ? { kind: 'toggle', key: 'underline' }
         : mod && !e.altKey && e.shiftKey && key === 'l' ? { kind: 'list', list: 'bullet' } : null;
   if (f) { e.preventDefault(); e.stopPropagation(); formatNotes(f); return; }
-  // the file's own keys (Save, Save As, Open, Print…) work from the notes too, as in PowerPoint;
-  // the browser's own use of them (Ctrl+Shift+S) would take the keys away from the page
-  const chord = mod ? chordOf(e) : null;
-  const act = chord ? keymap.lookup('command', chord) : undefined;
-  const name = act?.startsWith('command ') ? act.slice(8) : null;
-  if (name && NOTES_FILE_KEYS.has(name)) {
-    e.preventDefault();
-    e.stopPropagation();
-    flushNotes();
-    void command(name);
-    return;
-  }
+  // (the file's own keys, Save, Open, Print…, are sent from every text box: FIELD_FILE_KEYS)
   // Enter on a bulleted line: the next line is bulleted too (on an empty one, the bullet goes)
   // (any other Enter is a plain new line, kept as "\n" rather than the browser's own <div>)
   if (e.key === 'Enter' && !mod && !e.altKey) {
@@ -16016,6 +16015,7 @@ CaptionEditor.onState = () => { textRibbonNow()?.refresh(); textToolbox?.refresh
 // the Smart Scheme pane: the selected scheme's species, beside it
 const smartPane = new SmartPane({
   doc: () => editor.doc,
+  history: (r) => { if (r) redo(); else undo(); },
   measure: () => editor.fullMeasure(),
   selected: () => (editor.sel.shapes.size + editor.sel.captions.size + editor.sel.arrows.size + editor.sel.atoms.size ? editor.selectedSmart() : null),
   screenRect: (r) => {
