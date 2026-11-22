@@ -121,6 +121,8 @@ export const REAGENT_SAFETY: KbTable = {
     { label: 'Hazardous Substances Data Bank (LD50, LC50, vapor pressure), via PubChem', url: 'https://pubchem.ncbi.nlm.nih.gov/source/hsdb' },
     { label: 'NOAA CAMEO Chemicals (reactivity alerts)', url: 'https://cameochemicals.noaa.gov/' },
     { label: 'EU Regulation 1272/2008, Annex VI (harmonized classification)', url: 'https://eur-lex.europa.eu/eli/reg/2008/1272/oj' },
+    // (the EU classification reaches PubChem through ECHA, whose legal notice, section 5.1.1, asks for this line)
+    { label: 'Source: European Chemicals Agency, http://echa.europa.eu/', url: 'https://echa.europa.eu/' },
     { label: 'Tiers, badges, Have ready and incidents written for Chemweave' },
     { label: 'Skin Kp estimated with the Potts–Guy equation, Pharm. Res. 1992, 9, 663 (log Kow from HSDB, else PubChem XLogP3)', url: 'https://doi.org/10.1023/A:1015810312465' },
   ],

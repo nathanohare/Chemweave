@@ -16,6 +16,9 @@ import { labelPieces } from '../src/chem/labels';
 import { toSymbolPieces } from '../src/richtext';
 import { Doc } from '../src/model';
 import { CHEMDRAW_DIR, noChemDraw } from './chemdraw-private';
+import { realFilesMissing } from './real-files';
+
+realFilesMissing('chemdraw-fresh-save', noChemDraw, 'CHEMDRAW_FIXTURES');
 
 const table = '<fonttable><font id="3" name="Arial"/></fonttable><colortable><color r="1" g="1" b="1"/><color r="0" g="0" b="0"/><color r="0.18" g="0.306" b="0.78"/><color r="0.6" g="0.2" b="0.6"/></colortable>';
 const fresh = (body: string) => {

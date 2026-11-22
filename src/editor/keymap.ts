@@ -213,7 +213,7 @@ export const COMMAND_NAMES: Record<string, string> = {
   'filter-structure': 'Filter by a Substructure…', 'freeze-header': 'Freeze Header Row',
   'property-column': 'Property Columns…', 'isotope-pattern': 'Isotope Pattern…', 'structure-from-name': 'Structure from Name or SMILES…',
   'draw-structure': 'Structure in Cell', 'reset-calculated': 'Reset to Calculated',
-  'merge-cells': 'Merge and Center',
+  'merge-cells': 'Merge and Center', 'remove-embedded-objects': 'Remove Embedded Objects',
   'new-note': 'New Note or Edit Note', 'edit-note': 'Change the cell\'s note', 'delete-note': 'Delete Notes and Comments',
   'show-note': 'Show/Hide Note', 'show-all-notes': 'Show All Notes', 'convert-notes': 'Convert Notes to Comments',
   'data-validation': 'Data Validation…', 'circle-invalid': 'Circle Invalid Data', 'pick-from-list': 'Pick from Drop-Down List',

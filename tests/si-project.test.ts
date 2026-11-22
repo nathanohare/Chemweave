@@ -203,6 +203,14 @@ describe('compound IDs', () => {
     expect(r.tableWarnings.get('s1:0')).toMatch(/also in row\(s\) 2/);
     expect(r.tableWarnings.get('s2:0')).toMatch(/already used by/);
   });
+  it('keeps a repeated ID’s warning to one short line when many compounds share it', () => {
+    const many = Array.from({ length: 54 }, (_, i) => `c${i}`);
+    const r = checkIds([{ sectionId: 's1', sectionName: 'A', table: many.map(() => '#'), compoundIds: many, overrides: many.map(() => ''), compoundNames: many.map((c) => `Name of ${c}`) }]);
+    expect(r.compoundWarnings.get('c0')).toEqual(['Duplicate ID “#”: also used by 53 other compounds.']);
+    // one or two others are still named
+    const two = checkIds([{ sectionId: 's1', sectionName: 'A', table: ['7', '7'], compoundIds: ['a', 'b'], overrides: ['', ''], compoundNames: ['Alpha', 'Beta'] }]);
+    expect(two.compoundWarnings.get('a')).toEqual(['Duplicate ID “7”: also used by 7 (Beta, “A”).']);
+  });
 });
 
 describe('the field library', () => {

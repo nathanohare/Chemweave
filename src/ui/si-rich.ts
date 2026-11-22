@@ -19,7 +19,16 @@ export interface SiRichHost {
   picture?(ref: string): string | null;
   /** Typing stopped (or the box was left) with this text. */
   changed(text: string): void;
+  /**
+   * A paste with no text on the clipboard (a drawing or a picture) or a CDXML drawing as text:
+   * the host makes it an object of the text (a figure). `place` puts the object's paragraph where
+   * the caret was (on an empty line, in its place; else after the caret's line) and gives the
+   * box's text with it, for the host to save. Without this, such a paste does nothing.
+   */
+  pasteObject?(e: ClipboardEvent, place: (p: Paragraph) => string): void;
 }
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 const TAGS: Record<string, keyof Run | 'sup' | 'sub'> = { B: 'bold', STRONG: 'bold', I: 'italic', EM: 'italic', U: 'underline', SUP: 'sup', SUB: 'sub' };
 
@@ -32,6 +41,7 @@ function render(box: HTMLElement, ps: Paragraph[], host: SiRichHost, multiline: 
     // figures, tables and alignment (made in SI Assistant) are kept in the paragraph's own attributes
     for (const k of ['figure', 'table', 'image', 'align'] as const) if (p[k]) div.dataset[k] = p[k];
     if (p.figure || p.table || p.image) div.classList.add('si-object');
+    if (p.figure || p.table) div.title = `${isMac ? '⌘' : 'Ctrl'}+click to go to the ${p.figure ? 'figure' : 'table'}`;
     for (const r of p.runs) {
       let n: Node;
       if (r.ref) {
@@ -180,11 +190,18 @@ export class SiRichBox {
     el.addEventListener('paste', (e) => {
       // pasted text keeps its bold, italics, sub- and superscripts (from Word or MestReNova), nothing else
       e.preventDefault();
+      const plain = e.clipboardData?.getData('text/plain') ?? '';
       const html = e.clipboardData?.getData('text/html') ?? '';
+      // a drawing or picture: a figure where the caret is (when the box's text can hold one)
+      if (multiline && this.host.pasteObject && ((!plain.trim() && !html.trim()) || /^\s*(<\?xml[^>]*>\s*)?(<!DOCTYPE[^>]*>\s*)?<CDXML[\s>]/i.test(plain))) {
+        const sel = getSelection();
+        const at = sel && sel.rangeCount && el.contains(sel.getRangeAt(0).startContainer) ? sel.getRangeAt(0).cloneRange() : null;
+        this.host.pasteObject(e, (p) => this.place(at, p));
+        return;
+      }
       const clean = html ? cleanPastedHtml(html, multiline) : '';
       if (clean && hasFormatting(clean)) { document.execCommand('insertHTML', false, clean); return; }
-      const t = e.clipboardData?.getData('text/plain') ?? '';
-      document.execCommand('insertText', false, multiline ? t : t.replace(/\s*\n\s*/g, ' '));
+      document.execCommand('insertText', false, multiline ? plain : plain.replace(/\s*\n\s*/g, ' '));
     });
   }
 
@@ -231,6 +248,24 @@ export class SiRichBox {
     }
     this.empty();
     this.commit();
+  }
+
+  /** Put a paragraph (a figure's) at `at`'s line: in place of an empty line, else after it (at the end with no caret); gives the text with it, taken as saved. */
+  private place(at: Range | null, p: Paragraph): string {
+    const tmp = document.createElement('div');
+    render(tmp, [p], this.host, true);
+    const div = tmp.firstElementChild;
+    if (!div) return this.text;
+    let line: Node | null = at && this.el.contains(at.startContainer) ? at.startContainer : null;
+    while (line && line.parentNode !== this.el) line = line.parentNode;
+    const blank = line instanceof HTMLElement && (line.tagName === 'DIV' || line.tagName === 'P') && !line.textContent?.trim() && !line.querySelector('[data-ref]') && !line.classList.contains('si-object');
+    if (blank) (line as HTMLElement).replaceWith(div);
+    else if (line) (line as ChildNode).after(div);
+    else this.el.append(div);
+    this.empty();
+    // (the host saves it: leaving the box doesn't save it again)
+    this.last = this.text;
+    return this.last;
   }
 
   private empty(): void { this.el.classList.toggle('si-empty', !this.el.textContent?.trim() && !this.el.querySelector('[data-ref]')); }

@@ -666,7 +666,10 @@ export async function checkManuscript(p: SiProject, sources: Source[] | null, op
         out.push(finding('missing_si', mc.label, `${mc.label}: the manuscript gives data for it (${data}) but no compound in the SI has this ID.`, PROBLEM, { ms_value: data, si_value: 'no compound with this ID', where: mc.where }));
       } else {
         const what = mc.records.some((r) => r.smiles) ? 'a labeled structure' : mc.textRecords.length ? 'a value in the text' : 'mentioned';
-        out.push(finding('mention', mc.label, `${mc.label} is in the manuscript (${what}) but no compound in the SI has this ID. That is fine for a known compound, a starting material or a reagent.`, NOTE, { ms_value: what, si_value: 'no compound with this ID', where: mc.where }));
+        // (its fingerprint from SI Assistant's wording, "labelled", so a note dismissed there or before the
+        // American spelling of G5-09 stays dismissed)
+        const print = fp(what === 'a labeled structure' ? 'a labelled structure' : what, 'no compound with this ID', '');
+        out.push(finding('mention', mc.label, `${mc.label} is in the manuscript (${what}) but no compound in the SI has this ID. That is fine for a known compound, a starting material or a reagent.`, NOTE, { fingerprint: print, ms_value: what, si_value: 'no compound with this ID', where: mc.where }));
       }
       continue;
     }

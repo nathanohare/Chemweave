@@ -16,9 +16,9 @@ export const SHEET_REASONS = {
   'text-to-columns': 'Select one column of text to split (Text to Columns works on one column at a time).',
   'property-column': 'Click in a table with a column of structures (or SMILES) first. To start one, draw a structure in a cell (Chemistry ▸ Structure).',
 } as const;
-export type SheetCheck = keyof typeof SHEET_REASONS | 'data-table';
+export type SheetCheck = keyof typeof SHEET_REASONS | 'data-table' | 'remove-embedded-objects';
 /** The commands that have a check (the others answer undefined). */
-export const CAN_RUN_CHECKS: ReadonlySet<string> = new Set<string>([...Object.keys(SHEET_REASONS), 'data-table']);
+export const CAN_RUN_CHECKS: ReadonlySet<string> = new Set<string>([...Object.keys(SHEET_REASONS), 'data-table', 'remove-embedded-objects']);
 
 /**
  * Is there a table where the selection is (what Sort and Remove Duplicates work on)? True for a
@@ -71,10 +71,12 @@ export class SheetCanRun {
    */
   why(s: Sheet, sel: SheetSelection, cmd: string, edits: number, lazy = false): string | null | undefined {
     if (!CAN_RUN_CHECKS.has(cmd)) return undefined;
-    if (s.dashboard) return null;
+    if (s.dashboard && cmd !== 'remove-embedded-objects') return null;
     switch (cmd as SheetCheck) {
       case 'remove-duplicates': case 'custom-sort': return tableHere(s, sel) ? null : SHEET_REASONS[cmd as 'custom-sort'];
       case 'text-to-columns': { const R = s.clip(sel.range) ?? sel.range; return R.c1 === R.c2 ? null : SHEET_REASONS['text-to-columns']; }
+      // the sheet's own answer: off on a sheet with no objects kept from Excel (review F2b-R04)
+      case 'remove-embedded-objects': return s.removeOleBlocked;
       case 'data-table': { const ref = dataTableRef(sel.range); return typeof ref === 'string' ? ref : null; }
       case 'property-column': {
         const key = `${edits}:${sel.active.r}:${sel.active.c}`;

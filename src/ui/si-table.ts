@@ -95,8 +95,13 @@ export class SiTableEditor {
     this.noteBox?.relabel();
   }
 
-  /** The table's label as the compiled SI gives it. */
-  setTitle(label: string): void { if (label) this.title.textContent = label; }
+  /** The table's label as the compiled SI gives it; `auto`: the numbered one it gets without a typed label (the Label box's placeholder). */
+  setTitle(label: string, auto = ''): void {
+    if (label) this.title.textContent = label;
+    this.autoLabel = auto;
+    this.labelBox.placeholder = auto ? `${auto} (automatic)` : 'Automatic';
+  }
+  private autoLabel = '';
 
   focus(): void {
     this.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -155,7 +160,7 @@ export class SiTableEditor {
     const box = el('div', 'si-tbottom');
     const lab = el('label', 'si-part');
     this.labelBox.value = String(this.t!.label ?? '');
-    this.labelBox.placeholder = 'Table S1 (automatic)';
+    this.labelBox.placeholder = this.autoLabel ? `${this.autoLabel} (automatic)` : 'Automatic';
     this.labelBox.addEventListener('change', () => void this.change(() => { this.t!.label = this.labelBox.value.trim(); }, false));
     lab.append('Label', this.labelBox);
     lab.title = 'The table’s label, typed over the automatic one (Table S1, S2…)';

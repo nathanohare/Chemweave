@@ -23,6 +23,7 @@ import { REL, kids, xml, type Package, type PackageReader } from './ooxml';
 import { dataUrl, fromDataUrl } from '../render/images';
 import { CUSTOM_PROPS_FMTID } from './docx-base';
 import { reviewAuthor } from '../document/revisions';
+import type { KeptSettings } from './docx-settings';
 
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
 export const KEPT_REL = {
@@ -83,6 +84,22 @@ export interface KeptParts {
   vars?: string;
   /** Word's ids for the document (settings' w14:docId and w15:docId), kept from save to save. */
   docIds?: { w14?: string; w15?: string };
+  /** Word's settings this program doesn't set (settings.xml's compatibility options, m:mathPr...), see docx-settings.ts. */
+  settings?: KeptSettings;
+  /**
+   * Word's styles that aren't styles here (unused ones, such as a journal template's, character,
+   * table and list styles nothing uses), each as its w:style element without the w namespace's
+   * declaration, written back as they were (ECMA-376 part 1, 17.7.4.17 style); and w:latentStyles
+   * (17.7.4.5), which also names Word's built-in styles.
+   */
+  styles?: { type: string; id: string; xml: string }[];
+  latentStyles?: string;
+  /**
+   * Word's list definitions as the file had them (ECMA-376 part 1, 17.9.1 abstractNum and 17.9.15
+   * num, without the w namespace's declaration): written back for the lists not changed here, so
+   * their numbers keep their own font, size, tab and restart settings.
+   */
+  numbering?: { abs: { id: string; xml: string }[]; nums: { id: string; abs: string; xml: string }[] };
   trees?: KeptTree[];
   docProps?: KeptProps;
   /**

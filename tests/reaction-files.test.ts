@@ -10,11 +10,12 @@ import { join } from 'node:path';
 import { readCdxml } from '../src/io/cdxml';
 import type { Arrow, StepRoles } from '../src/model';
 import { arrowFrame, inFrame, type Item, interpretArrow, isReactionArrow, isStep, itemFinder, plainMeasure, ROLES, schemeItems } from '../src/chem/reaction';
+import { realFilesMissing } from './real-files';
 
 const dir = process.env.CHEM_TEST_FILES ?? '';
 const files = dir && existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.cdxml')) : [];
 
-describe.skipIf(!files.length)('reaction steps in real ChemDraw files', { timeout: 120000 }, () => {
+describe.skipIf(realFilesMissing('reaction-files', !files.length, 'CHEM_TEST_FILES'))('reaction steps in real ChemDraw files', { timeout: 120000 }, () => {
   it('worked-out roles match the steps ChemDraw saved', () => {
     let steps = 0, same = 0, extra = 0, arrows = 0, grouped = 0, stale = 0;
     const misses: string[] = [];

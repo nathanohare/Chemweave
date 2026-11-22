@@ -3,7 +3,12 @@
 // fills the same space in both.
 
 export const DEFAULT_COL_W = 64;
-export const DEFAULT_ROW_H = 20;
+/**
+ * A row's height when nothing sets it: 22 px (16.5 pt), a little taller than Excel's 20 px so
+ * subscripts (K₂CO₃, Pd(PPh₃)₄) aren't cut off at the bottom of the cell (Nate, 2026-11-21).
+ * Saved to Excel as the sheet's default row height, so the rows are the same height there.
+ */
+export const DEFAULT_ROW_H = 22;
 /** Pixels per point for structures in cells at 100% zoom. */
 export const STRUCTURE_SCALE = 1;
 /** Space between a structure and its cell's edges. */

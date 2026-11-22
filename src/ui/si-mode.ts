@@ -12,7 +12,7 @@ import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
 import { defaultStyles, type DocText } from '../document/document';
-import { compileSi, objectLabels, type SiPreviewTarget } from '../si/compile-doc';
+import { compileSi, objectLabelSets, type SiPreviewTarget } from '../si/compile-doc';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
@@ -20,7 +20,7 @@ import type { LibCompound, LibraryData, LibReference } from '../library/library'
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
 import { ALL_FIELDS, NUCLEI, SPECTRUM_TYPES, fieldDef, learnedChoices, nucleusLabel, partText, CORE_FIELDS, LIBRARY_FIELDS, type FieldDef, type Part, type FieldEntry } from '../si/fields';
-import { CITE, MENTION, parseMarkup } from '../si/markup';
+import { CITE, MENTION, parseMarkup, type Paragraph } from '../si/markup';
 import { newId } from '../si/ids';
 import { capitalizeName } from '../si/chem-names';
 import { SiRichBox } from './si-rich';
@@ -45,7 +45,8 @@ import { ask, askChoice } from './ask';
 import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDismissed, monoisotopic, outOfTolerance, parseNumber, ID_KEY, type SiWarning } from '../si/checks';
 import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY, chooseMatch, foundIsFromReport, updateFound, vendorRawKind, type Match, type ReportData } from '../si/ms-reports';
 import { readReportFile } from '../si/report-files';
-import { adductDisplay, sameFormula, speciesLabel, ChemError, type MolFacts, type Peak } from '../si/chem';
+import { adductDisplay, sameFormula, speciesLabel, ChemError, unreadableFacts, type MolFacts, type Peak } from '../si/chem';
+import { ENGINE_SKIPPED } from '../chem/client';
 import { addInfo } from './info-tip';
 import { computeLabels, type SiLabels } from '../si/labels';
 import { projectWarnings, type ProjectWarning } from '../si/project-warnings';
@@ -540,6 +541,8 @@ export class SiMode {
   private boxes: SiRichBox[] = [];
   /** Tables', figures' and schemes' labels ("Table S1"), as the compiled SI numbers them. */
   private objLabels = new Map<string, string>();
+  /** The numbered label each table and figure gets without a typed one (its Label box's placeholder). */
+  private objAutoLabels = new Map<string, string>();
   private labelsRead = false;
   private tables: SiTableEditor[] = [];
   private figures: SiFigureEditor[] = [];
@@ -1105,8 +1108,46 @@ export class SiMode {
     }
     const todo = [...new Set([...mols.values()].filter((m) => !this.facts.has(m)))];
     if (!todo.length) return;
-    const got = await this.host.siFacts(todo).catch(() => todo.map(() => null));
-    todo.forEach((m, i) => this.facts.set(m, got[i] ?? null));
+    await this.fetchFacts(todo);
+  }
+
+  /**
+   * Ask the engine for structures' facts and keep them. When it can't answer (it is restarting, it
+   * failed to load, or one structure broke it) each structure is asked on its own, so one bad
+   * structure doesn't take the others' checks with it; a structure still without an answer is
+   * checked with that said where its formula would show, and is asked again once the engine is
+   * ready (engineReady). A failure is never kept as if it were the structure's facts.
+   */
+  private async fetchFacts(todo: string[]): Promise<void> {
+    const got = await this.host.siFacts(todo).catch(() => null);
+    if (got) { todo.forEach((m, i) => this.facts.set(m, got[i] ?? null)); return; }
+    for (const m of todo) {
+      const one = await this.host.siFacts([m]).then((r) => r[0] ?? null, (e: unknown) => e instanceof Error ? e : new Error(String(e)));
+      if (one instanceof Error && one.message === ENGINE_SKIPPED) {
+        // (a structure that broke the engine is left out for the session: not asked again)
+        this.facts.set(m, unreadableFacts(`No formula or masses: ${one.message}`));
+      } else if (one instanceof Error) {
+        this.facts.set(m, unreadableFacts(`No formula or masses for now: ${one.message.replace(/\.?$/, '.')} The checks that need the structure are run again once the chemistry engine is ready.`));
+        this.factsFailed.add(m);
+      } else this.facts.set(m, one);
+    }
+  }
+  /** Structures whose facts the engine couldn't give: asked again when it is ready. */
+  private factsFailed = new Set<string>();
+
+  /**
+   * The chemistry engine is ready (at start-up, or after a restart): what it couldn't answer
+   * before is asked again, and the open project checked again.
+   */
+  engineReady(): void {
+    for (const m of this.factsFailed) this.facts.delete(m);
+    const had = this.factsFailed.size > 0;
+    this.factsFailed.clear();
+    // (nothing failed, as at an ordinary start-up: no redraw, which could take the focus from a field)
+    if (!this.project || !had) return;
+    this.warnings.clear();
+    this.shownKey = '';
+    this.refresh();
   }
 
   // ---------------------------------------------------------------- for the Canvas (layout C)
@@ -1308,12 +1349,13 @@ export class SiMode {
     this.labelsRead = true;
     try {
       await this.pendingOf(p);
-      const got = await objectLabels(p);
+      const { labels: got, auto } = await objectLabelSets(p);
       if (this.project !== p) return;
       this.objLabels = got;
+      this.objAutoLabels = auto;
       for (const b of this.boxes) b.relabel();
-      for (const t of this.tables) { t.relabel(); t.setTitle(got.get(t.id) ?? ''); }
-      for (const f of this.figures) f.setTitle(got.get(f.id) ?? '');
+      for (const t of this.tables) { t.relabel(); t.setTitle(got.get(t.id) ?? '', auto.get(t.id) ?? ''); }
+      for (const f of this.figures) f.setTitle(got.get(f.id) ?? '', auto.get(f.id) ?? '');
     } catch { /* (the kinds' names show instead) */ } finally {
       this.labelsRead = false;
       if (this.labelsAgain) { this.labelsAgain = false; void this.readLabels(); }
@@ -1792,8 +1834,8 @@ export class SiMode {
 
   /**
    * A Custom section's text, and an editor for each of its tables (in the text's order). New
-   * Table adds one at the end of the text, its caption on the line under it; double-clicking a
-   * table in the text goes to its editor.
+   * Table adds one at the end of the text, its caption on the line under it; Ctrl+clicking a
+   * table's or figure's caption line in the text goes to its editor.
    */
   private textCard(out: HTMLElement, s: SiSection): void {
     const p = this.project!;
@@ -1808,7 +1850,11 @@ export class SiMode {
     void this.pendingOf(p).then(() => p.readSectionText(s)).then(async (text) => {
       // (another page was drawn while the text was read: this one is gone)
       if (drawn !== this.drawn || this.project !== p) return;
-      const box = new SiRichBox(text, { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeSectionText(s, v), false, undefined, () => box) }, true, 'Type the section’s text');
+      const box = new SiRichBox(text, {
+        label: this.label, mentionable: this.mentionable,
+        changed: (v) => void this.act(() => p.writeSectionText(s, v), false, undefined, () => box),
+        pasteObject: (e, place) => void this.pasteFigure(s, e, place),
+      }, true, 'Type the section’s text');
       this.boxes.push(box);
       t.append(box.el);
       // the tables and figures under the text, in its order
@@ -1819,6 +1865,7 @@ export class SiMode {
         return [];
       });
       for (const e of editors) {
+        e.setTitle('', this.objAutoLabels.get(e.id) ?? '');
         out.append(e.el);
         if (e instanceof SiTableEditor) { this.tables.push(e); await e.load(); } else this.figures.push(e);
         if (drawn !== this.drawn) return;
@@ -1830,10 +1877,16 @@ export class SiMode {
         made.focus();
         if (made instanceof SiTableEditor) { this.tableChosen(made); this.showRibbonTab('table'); } else { this.figureChosen(made); this.showRibbonTab('figure'); }
       }
-      box.el.addEventListener('dblclick', (e) => {
+      // Ctrl+click (⌘-click) on a table's or figure's caption line goes to it, as a link in Word does
+      // (not a double-click, which selects a word of the caption, and starts a triple-click's line)
+      box.el.addEventListener('click', (e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
         const id = (e.target as HTMLElement).closest<HTMLElement>('[data-table]')?.dataset.table;
         const fig = (e.target as HTMLElement).closest<HTMLElement>('[data-figure]')?.dataset.figure;
-        editors.find((x) => x.id === (id ?? fig))?.focus();
+        const to = editors.find((x) => x.id === (id ?? fig));
+        if (!to) return;
+        e.preventDefault();
+        to.focus();
       });
     }).catch((e) => { if (drawn === this.drawn) t.append(el('p', 'muted si-note', `The section’s text could not be read: ${e instanceof Error ? e.message : String(e)}`)); });
   }
@@ -1900,6 +1953,37 @@ export class SiMode {
     this.focusTable = id;
   }
 
+  /**
+   * Ctrl+V of a drawing or picture in a Custom section's text: a new figure (as Insert ▸ Paste
+   * Picture makes) on the caret's line, or after it.
+   */
+  private async pasteFigure(s: SiSection, e: ClipboardEvent, place: (para: Paragraph) => string): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    // (read while the paste event lasts: its clipboard data is gone after it)
+    const reading = this.clipboard(e);
+    const pics = new SiPictures(this.tableHost(s));
+    let rel: string | null = null;
+    try {
+      const got = await reading;
+      if (!got) return;
+      rel = await pics.fromPasted(got);
+      if (!rel && got.kind !== 'picture') this.host.flash('The clipboard has no picture or drawing. Copy a structure in ChemDraw or Chemweave, or a picture, first.');
+    } catch (err) { this.host.flash(`The picture could not be added: ${err instanceof Error ? err.message : String(err)}`); return; }
+    if (!rel || this.project !== p) return;
+    const id = newId('f');
+    const text = place(parseMarkup(`!figure{${id}} Caption of the figure`)[0]);
+    const file = rel;
+    // (the figure gets the focus when the page is drawn again with it)
+    this.focusTable = id;
+    await this.act(async () => {
+      const figs = (s.data.figures && typeof s.data.figures === 'object' && !Array.isArray(s.data.figures) ? s.data.figures : (s.data.figures = {})) as Json;
+      figs[id] = { file };
+      await p.saveSection(s);
+      await p.writeSectionText(s, text);
+    });
+  }
+
   /** A figure or table taken out of a Custom section's text with its caption; its file goes to the Trash. */
   private async removeObject(s: SiSection, kind: 'figure' | 'table', id: string): Promise<void> {
     const p = this.project!;
@@ -1926,6 +2010,8 @@ export class SiMode {
     if (!(await SiMode.pubchemOk())) return;
     this.host.flash('Looking the structure up in PubChem…', 10000);
     const got = await lookupName(facts.inchikey ?? '', facts.pieces.length || 1);
+    // (the lookup takes up to 10 s: the name is for the structure it was asked for, in this project)
+    if (!this.sameStructure(p, c, mol!)) { this.host.flash('The structure changed (or another project is showing) while PubChem was asked, so its name was not used. Look it up again.', 8000); return; }
     if (got.status === 'error' || got.status === 'not_found') { await ask('Name from PubChem', [], { ok: 'OK', noCancel: true, note: got.message }); return; }
     const v = valuesOf(c).name;
     const now = v && typeof v === 'object' && !Array.isArray(v) ? String((v as Json).text ?? '') : '';
@@ -1936,8 +2022,14 @@ export class SiMode {
       const go = await askChoice('Name from PubChem', `Replace the name “${now}” with PubChem’s name “${got.name}”?`, [{ value: 'no', label: 'Keep Mine' }, { value: 'yes', label: 'Replace', primary: true }], 'no');
       if (go !== 'yes') return;
     }
+    if (!this.sameStructure(p, c, mol!)) { this.host.flash('The structure changed (or another project is showing) meanwhile, so PubChem’s name was not used. Look it up again.', 8000); return; }
     await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: got.name, from_pubchem: { cid: got.cid, name: got.name, stereo: got.status === 'found' } }));
     this.host.flash(got.message, 6000);
+  }
+
+  /** Whether a compound in a project still has the structure (molfile) some slow work started from, in the project showing. */
+  private sameStructure(p: SiProject, c: SiCompound, mol: string): boolean {
+    return this.project === p && p.compounds.includes(c) && this.kept(p).mols.get(c.id) === mol;
   }
 
   private static pubchemAsked = false;
@@ -1967,7 +2059,11 @@ export class SiMode {
     }
     let named = 0, why = '';
     for (const c of todo) {
-      const got = await this.host.nameStructure(await p.readStructure(c)).catch((e: unknown) => ({ ok: false as const, message: e instanceof Error ? e.message : String(e) }));
+      const mol = await p.readStructure(c).catch(() => '');
+      const got = await this.host.nameStructure(mol).catch((e: unknown) => ({ ok: false as const, message: e instanceof Error ? e.message : String(e) }));
+      if (this.project !== p) { this.host.flash('Another project is showing now, so Structure to Name stopped. Run it again.', 6000); return; }
+      // (a structure redrawn while it was named keeps its own name: the new name was for the old drawing)
+      if (!p.compounds.includes(c) || (await p.readStructure(c).catch(() => '')) !== mol) { why = 'The structure changed while it was being named, so the name was not used.'; continue; }
       if (!got.ok) { why = got.message; continue; }
       const v = valuesOf(c).name;
       await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: capitalizeName(got.name) }));
@@ -2270,7 +2366,8 @@ export class SiMode {
     const shown = this.host.pictureOf(mol);
     if (shown) pic.innerHTML = shown; else pic.textContent = 'Structure';
     const key = mol;
-    if (!this.analyzed.has(key)) this.analyzed.set(key, await this.host.analyze(mol).catch(() => null));
+    // (no answer from the engine, as while it loads or restarts, is not kept: the page is drawn again when it is ready)
+    if (!this.analyzed.has(key)) { const got = await this.host.analyze(mol).then((r) => r, () => undefined); if (got !== undefined) this.analyzed.set(key, got); }
     const a = this.analyzed.get(key);
     if (a) {
       facts.replaceChildren();
@@ -2709,10 +2806,7 @@ export class SiMode {
   /** The structures' facts, read once for each structure (the preview compiles often). */
   private async cachedFacts(ms: string[]): Promise<(MolFacts | null)[]> {
     const todo = [...new Set(ms.filter((m) => m && !this.facts.has(m)))];
-    if (todo.length) {
-      const got = await this.host.siFacts(todo).catch(() => todo.map(() => null));
-      todo.forEach((m, i) => this.facts.set(m, got[i] ?? null));
-    }
+    if (todo.length) await this.fetchFacts(todo);
     return ms.map((m) => (m ? this.facts.get(m) ?? null : null));
   }
 

@@ -197,6 +197,12 @@ Add, delete or move captions and every number and reference follows.
 
 **References** tab ▸ **Compound Number** (Alt+Shift+N) puts a bold compound number in the text. Choose **A new compound** for the next number, or pick one already numbered to mention it again. Numbers follow the order compounds are first mentioned, so adding one earlier in the text renumbers the rest. Type a letter after a number for a series (2a, 2b).
 
+### Linking a manuscript to its SI project
+
+<!-- index: Linked SI, SI Compound, SI Reference, Check Against SI -->
+
+A manuscript can be linked to its [SI project](si-project.md#linking-a-manuscript-to-its-si) with **References** tab ▸ **Linked SI**. **SI Compound…** then puts in a compound's number from the SI, **SI Reference…** a label such as Table S1 or an SI page number, and **Check Against SI** lists compounds missing from the SI and yields, ee and dr that differ.
+
 ## References and bibliography
 
 <!-- index: Citations, Bibliography -->

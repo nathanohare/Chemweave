@@ -15,6 +15,7 @@ import { PackageReader, NS } from '../src/io/ooxml';
 import { isChemDraw } from '../src/io/ole-object';
 import { Doc } from '../src/model';
 import { boxOf } from '../src/objects';
+import { realFilesMissing } from './real-files';
 
 const dir = process.env.CHEM_TEST_PPTX ?? '';
 const files = dir && existsSync(dir) ? readdirSync(dir).filter((f) => /\.pptx$/i.test(f) && !f.startsWith('~$')) : [];
@@ -47,7 +48,7 @@ function chemdrawObjects(bytes: Uint8Array): number[] {
 
 const summary: Record<string, unknown> = {};
 
-describe.skipIf(!files.length)('opening real PowerPoint decks', { timeout: 300000 }, () => {
+describe.skipIf(realFilesMissing('pptx-decks-files', !files.length, 'CHEM_TEST_PPTX'))('opening real PowerPoint decks', { timeout: 300000 }, () => {
   for (const f of files) {
     it(f, async () => {
       const bytes = new Uint8Array(readFileSync(join(dir, f)));

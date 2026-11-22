@@ -32,6 +32,8 @@ export class LiveStereo implements StereoInfo {
   private watch: AtomWatch;
   private running: Promise<void> | null = null;
   private again = false;
+  /** Atoms of structures the engine failed on (it stopped or was restarted): worked out again by retry(). */
+  private failed = new Set<number>();
 
   constructor(private doc: Doc, private run: StereoRunner) {
     this.watch = doc.watchAtoms();
@@ -80,11 +82,20 @@ export class LiveStereo implements StereoInfo {
     return this.running;
   }
 
+  /** Work out again the structures the engine failed on, e.g. once it has restarted. */
+  retry(): Promise<void> {
+    if (!this.failed.size) return this.running ?? Promise.resolve();
+    for (const id of this.failed) this.watch.ids.add(id);
+    this.failed.clear();
+    return this.update();
+  }
+
   private async pass(): Promise<void> {
     const doc = this.doc, w = this.watch;
     const changedAtoms = new Set<number>(), changedBonds = new Set<number>();
     let frags: Set<number>[];
     if (w.all) {
+      this.failed.clear();
       for (const id of this.atomLabels.keys()) changedAtoms.add(id);
       for (const id of this.bondLabels.keys()) changedBonds.add(id);
       for (const id of this.undecidedAtoms) changedAtoms.add(id);
@@ -135,7 +146,9 @@ export class LiveStereo implements StereoInfo {
       try {
         results = await this.run(part.map((p) => p.job));
       } catch {
-        continue; // the engine failed: these structures keep showing what was saved with them
+        // the engine failed: these structures keep showing what was saved with them until retry()
+        for (const p of part) for (const id of p.frag) this.failed.add(id);
+        continue;
       }
       if (this.cache.size > CACHE_MAX) this.cache.clear();
       part.forEach((p, k) => {
