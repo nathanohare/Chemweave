@@ -146,7 +146,9 @@ export function attachPoints(g: MSgroup, bonds: MBond[]): { atom: number; id: st
  */
 export function v3000Ctab(atoms: MAtom[], bonds: MBond[], extra: CtabExtra = {}): string[] {
   const n = (v: number) => (Math.abs(v) < 5e-5 ? 0 : v).toFixed(4);
-  const q = (t: string) => (/[\s"()=]/.test(t) || t === '' ? `"${t.replace(/"/g, '""')}"` : t);
+  // (a value with a space, quote, bracket or "=", or one ending in "-" (Cl-, AcO-), which would read
+  // as going on to the next line, goes in double quotes, a quote in it doubled; review F1c-R01)
+  const q = (t: string) => (/[\s"()=]|-$/.test(t) || t === '' ? `"${t.replace(/"/g, '""')}"` : t);
   // a label kept as an alias is a "*" atom with a one-atom superatom group holding the label (so no
   // program reads Ar, aryl, as argon; review F1-R06)
   const type = (a: MAtom) => q(a.alias ? '*' : a.sym);
@@ -255,9 +257,12 @@ export function v2000Molfile(head: string[], atoms: MAtom[], bonds: MBond[], ext
 /**
  * Whether a label is written to a file as a superatom group, so it comes back as the label: any
  * label of several atoms, and a one-atom label that is more than its atom's element with
- * hydrogens (Me, DCM's Cl… but not N, OH or NH2 on N, which read back as the element; review F1b-R02).
+ * hydrogens (Me, DCM's Cl… but not N, OH or NH2 on N, which read back as the element; review F1b-R02),
+ * nor D or T.
  */
 function asGroup(g: MiniGraph, label: string, z: number | undefined): boolean {
+  // (D and T are hydrogen with its mass, which every format holds: never a group; review F1c-R02)
+  if (g.atoms.length === 1 && (label === 'D' || label === 'T') && g.atoms[0].z === 1) return false;
   return g.atoms.length > 1 || (g.atoms.length === 1 && (z === undefined || labelHydrogens(label, z) === null || g.atoms[0].z !== z));
 }
 
@@ -552,8 +557,22 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
   // (a Rac or Rel flag on wedged centres: V2000 can say only 0, the same as no flag; V3000's
   // and/or groups say which, review F1b-R13)
   const flagGroups = files && racRel && bonds.some((b) => (b.stereo === 1 || b.stereo === 6) && map[b.a] >= 0 && flagOf.get(map[b.a])?.flag !== 'Absolute' && !!flagOf.get(map[b.a])) ? 'a Rac or Rel chiral flag' : null;
-  const because = opts.v3000 ? null : (files ? needsV3000(atoms, bonds) ?? flagGroups : null) ?? big;
+  // (Abs structures beside wedged ones with no flag in one file: V2000's one flag would make them
+  // all absolute; V3000 keeps the others relative, each in an or group; review F1c-R03)
+  const unflagged = (k: number) => map[k] >= 0 && !flagOf.has(map[k]) && !atoms[k].enh;
+  const mixedAbs = files && hasAbs && bonds.some((b) => (b.stereo === 1 || b.stereo === 6) && unflagged(b.a)) ? 'structures with and without an Abs chiral flag' : null;
+  const because = opts.v3000 ? null : (files ? needsV3000(atoms, bonds) ?? flagGroups ?? mixedAbs : null) ?? big;
   const v3 = !!(opts.v3000 || because);
+  if (files && v3 && mixedAbs) {
+    let next = Math.max(0, ...atoms.map((t) => (t.enh?.type === 'or' ? t.enh.group ?? 1 : 0)));
+    const groupOf = new Map<number, EnhancedStereo>();
+    for (const b of bonds) {
+      if ((b.stereo !== 1 && b.stereo !== 6) || !unflagged(b.a)) continue;
+      const frag = Math.min(...doc.fragmentOf(map[b.a]));
+      if (!groupOf.has(frag)) groupOf.set(frag, { type: 'or', group: ++next });
+      atoms[b.a] = { ...atoms[b.a], enh: groupOf.get(frag)! };
+    }
+  }
   if (files && v3 && racRel) {
     const next = { and: 0, or: 0 };
     for (const t of atoms) if (t.enh && t.enh.type !== 'abs') next[t.enh.type] = Math.max(next[t.enh.type], t.enh.group ?? 1);

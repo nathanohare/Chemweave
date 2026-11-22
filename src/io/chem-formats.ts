@@ -316,10 +316,17 @@ function v3Lines(lines: string[], from: number): { words: string[][]; end: numbe
     const body = l.slice(7);
     // a connection table ends at END CTAB (in an RXN file the next one follows)
     if (body.trim() === 'END CTAB') break;
-    if (body.endsWith('-')) { cur += body.slice(0, -1); continue; }
+    // a line ending in "-" goes on to the next (a writer breaks lines at 80 characters), except a
+    // short line whose last word is a whole value ending in "-": LABEL=Cl- as a writer that doesn't
+    // quote it leaves it (review F1c-R01)
+    if (body.endsWith('-') && !(l.length < 79 && /(?:^|\s)[A-Za-z]+=[^\s"(=]+-$/.test(body) && /^M {2}V30 /.test(lines[i + 1] ?? '') && /^\d+\s|^END\b/.test(lines[i + 1].slice(7)))) { cur += body.slice(0, -1); continue; }
     cur += body;
-    // a word runs to the next space outside quotes and brackets: ATOMS=(3 7 8) and LABEL="t Bu" are one word each
-    words.push(cur.match(/(?:"[^"]*"|\([^)]*\)|[^\s"(])+/g)?.map((w) => w.replace(/="(.*)"$/, '=$1').replace(/^"|"$/g, '')) ?? []);
+    // a word runs to the next space outside quotes and brackets: ATOMS=(3 7 8) and LABEL="t Bu" are one
+    // word each; a quote inside a quoted value is written twice
+    words.push(cur.match(/(?:"(?:[^"]|"")*"|\([^)]*\)|[^\s"(])+/g)?.map((w) => {
+      const m = /^([^"]*?=)?"((?:[^"]|"")*)"$/.exec(w);
+      return m ? (m[1] ?? '') + m[2].replace(/""/g, '"') : w;
+    }) ?? []);
     cur = '';
   }
   return { words, end: i };
@@ -417,6 +424,13 @@ function contract(mol: FMol, groups: SupGroup[], ours = false): FMol {
     if (!g.label || !g.atoms.length || g.expanded) continue;
     // a one-atom group on a "*" (or R#, A, Q, X) atom is an alias, bonded or not (review F1b-R03)
     if (g.atoms.length === 1 && /^(\*|R#?|A|Q|X)$/.test(mol.atoms[g.atoms[0]]?.sym ?? '')) {
+      const a = { ...mol.atoms[g.atoms[0]] };
+      aliasAtom(a, g.label);
+      mol.atoms[g.atoms[0]] = a;
+      continue;
+    }
+    // D or T over a hydrogen atom (written so before review F1c-R02): the atom with its mass is already the label
+    if (g.atoms.length === 1 && (g.label === 'D' || g.label === 'T') && mol.atoms[g.atoms[0]]?.sym === 'H') {
       const a = { ...mol.atoms[g.atoms[0]] };
       aliasAtom(a, g.label);
       mol.atoms[g.atoms[0]] = a;
@@ -569,6 +583,8 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
         // a label kept as an alias: Marvin's mrvAlias, or a CML atom's label
         const alias = r.mrvAlias || (list.length ? kids(list[rows.indexOf(r)], 'label')[0]?.getAttribute('value') : '');
         if (alias && (sym === '*' || sym === 'R')) { sym = alias; label = true; }
+        // D and T are hydrogen with its mass, not a label (review F1c-R02)
+        if (label && (sym === 'D' || sym === 'T')) label = false;
         const a: FAtom = { sym, x: num(r.x2 ?? r.x3), y: num(r.y2 ?? r.y3), ...(label ? { label } : {}) };
         const chg = parseInt(r.formalCharge ?? '', 10), iso = parseInt(r.isotopeNumber ?? r.isotope ?? '', 10), map = parseInt(r.mrvMap ?? '', 10);
         if (chg) a.charge = chg;
@@ -946,8 +962,9 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
         doc.addBond(ids[b.a], ids[b.b], b.order, b.dative ? 'dative' : b.hbond ? 'hydrogen' : b.stereo ? DISPLAY[b.stereo] : 'solid');
         stats.bonds++;
       }
-      // a chiral flag of 1 (the wedges show the absolute configuration) comes in as an Abs flag (review F1-R02)
-      if (absFlag(m)) addChiralFlag(doc, ids, 'Absolute');
+      // a chiral flag of 1 (the wedges show the absolute configuration) comes in as an Abs flag on
+      // each structure it applies to (review F1-R02, F1c-R03)
+      addAbsFlags(doc, m, ids);
       stats.atoms += ids.length;
       firstAtom.push(ids.length ? Math.min(...ids) : -1);
     }
@@ -1031,9 +1048,27 @@ export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number): 
     if (ids[b.a] === undefined || ids[b.b] === undefined || b.a === b.b) continue;
     doc.addBond(ids[b.a], ids[b.b], b.order, b.dative ? 'dative' : b.hbond ? 'hydrogen' : b.stereo ? DISPLAY[b.stereo] : 'solid');
   }
-  // a chiral flag of 1 comes in as an Abs flag beside the structure, so saving it again keeps it
-  if (absFlag(m)) addChiralFlag(doc, ids, 'Absolute');
+  // a chiral flag of 1 comes in as an Abs flag beside each structure it applies to, so saving it again keeps it
+  addAbsFlags(doc, m, ids);
   return ids;
+}
+
+/**
+ * A molfile's chiral flag of 1 drawn as an Abs flag on each of its structures (connected parts)
+ * with a wedged centre not in a stereo group: the flag is the whole file's, so it says each of
+ * them shows its absolute configuration (BIOVIA CTfile Formats 2020; review F1c-R03). `ids` are
+ * the drawing's atoms for the file's.
+ */
+function addAbsFlags(doc: Doc, m: FMol, ids: number[]): void {
+  if (!absFlag(m)) return;
+  const part = m.atoms.map((_, i) => i);
+  const top = (i: number): number => (part[i] === i ? i : (part[i] = top(part[i])));
+  for (const b of m.bonds) part[top(b.a)] = top(b.b);
+  const wedged = new Set(m.bonds.filter((b) => (b.stereo === 'wedge' || b.stereo === 'hash') && !m.atoms[b.a]?.enh).map((b) => top(b.a)));
+  for (const p of wedged) {
+    const atoms = m.atoms.flatMap((_, i) => (top(i) === p && ids[i] !== undefined ? [ids[i]] : []));
+    if (atoms.length) addChiralFlag(doc, atoms, 'Absolute');
+  }
 }
 
 /**
@@ -1180,7 +1215,7 @@ function molblockOf(mols: FMol[], name = '', v3000 = false): { text: string; bec
 }
 
 /** A note for a file written as V3000 although V2000 was asked for. */
-const v3000Note = (because: string | null | undefined) => (because ? [`written as V3000, since V2000 can't hold its ${because}`] : []);
+const v3000Note = (because: string | null | undefined) => (because ? [`written as V3000, since V2000 can't hold ${because}`] : []);
 
 /** How molfiles, SD and RXN files are written: V2000 (the most widely read) unless asked for V3000 or too big for it. */
 export interface CtabOptions { v3000?: boolean }
