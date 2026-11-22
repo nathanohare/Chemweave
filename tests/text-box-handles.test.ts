@@ -8,6 +8,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { Doc } from '../src/model';
 import { Renderer } from '../src/render/renderer';
 import { Editor } from '../src/editor/editor';
+import { turnedHandleCursor } from '../src/editor/cursors';
+import { turnAbout, turnedCorners } from '../src/geom';
 
 window.requestAnimationFrame = () => 0;
 // a stand-in for measuring text (jsdom has no canvas): every letter 0.6 em wide
@@ -146,5 +148,66 @@ describe('text box handles in Slides and Design', () => {
     press(overlay, r, { x: f.x2, y: (f.y1 + f.y2) / 2 }, { x: 60, y: 0 });
     expect(ed.captionOpen()).toBe(false);
     expect(doc.captions.get(id)!.wrap).toBeCloseTo(360, 3);
+  });
+});
+
+describe('turned text boxes', () => {
+  function turned(rot: number) {
+    const t = setup();
+    t.doc.edit('Turn', () => t.doc.updateCaption(t.id, { rot }));
+    t.ed.sel.captions = new Set([t.id]);
+    return t;
+  }
+
+  it('have the same handles, turned with the box, and a rotate handle above its turned top', () => {
+    const { ed, r, doc, id } = turned(30);
+    const c = doc.captions.get(id)!, f = r.captionFrame(c);
+    const corners = turnedCorners(f, c, 30);
+    const hs = ed.handles();
+    expect(hs.length).toBe(8);
+    const nw = hs.find((h) => h.which === 'nw')!.at, se = hs.find((h) => h.which === 'se')!.at;
+    expect(nw.x).toBeCloseTo(corners[0].x, 6); expect(nw.y).toBeCloseTo(corners[0].y, 6);
+    expect(se.x).toBeCloseTo(corners[2].x, 6); expect(se.y).toBeCloseTo(corners[2].y, 6);
+    const rh = ed.rotateHandle()!;
+    const want = turnAbout({ x: (f.x1 + f.x2) / 2, y: f.y1 - 24 / r.view.scale }, c, 30);
+    expect(rh.x).toBeCloseTo(want.x, 6); expect(rh.y).toBeCloseTo(want.y, 6);
+  });
+
+  it('size along their own sides, the sides not dragged staying put', () => {
+    const { ed, r, doc, overlay, id } = turned(90);
+    const c0 = doc.captions.get(id)!, f0 = r.captionFrame(c0);
+    const before = turnedCorners(f0, c0, 90);
+    // turned a quarter clockwise, the right-hand side faces down: dragging its handle down widens the box
+    const e = ed.handles().find((h) => h.which === 'e')!.at;
+    press(overlay, r, e, { x: 0, y: 100 });
+    let c = doc.captions.get(id)!;
+    expect(c.wrap).toBeCloseTo(400, 3);
+    let after = turnedCorners(r.captionFrame(c), c, 90);
+    // the left side (top-left and bottom-left corners) hasn't moved
+    expect(after[0].x).toBeCloseTo(before[0].x, 3); expect(after[0].y).toBeCloseTo(before[0].y, 3);
+    expect(after[3].x).toBeCloseTo(before[3].x, 3); expect(after[3].y).toBeCloseTo(before[3].y, 3);
+    // the top-left handle: the bottom-right corner stays
+    const nw = ed.handles().find((h) => h.which === 'nw')!.at;
+    const keep = after[2];
+    press(overlay, r, nw, { x: -20, y: 30 });
+    c = doc.captions.get(id)!;
+    after = turnedCorners(r.captionFrame(c), c, 90);
+    expect(after[2].x).toBeCloseTo(keep.x, 3); expect(after[2].y).toBeCloseTo(keep.y, 3);
+    expect(c.rot).toBe(90);
+  });
+
+  it('show resize pointers turned with the box, and move by the border', () => {
+    expect(turnedHandleCursor('e', 0)).toBe('ew-resize');
+    expect(turnedHandleCursor('e', 90)).toBe('ns-resize');
+    expect(turnedHandleCursor('n', 45)).toBe('nesw-resize');
+    expect(turnedHandleCursor('ne', -45)).toBe('ns-resize');
+    const { r, doc, overlay, id } = turned(90);
+    const c = doc.captions.get(id)!, f = r.captionFrame(c);
+    // the middle of the box's top side, turned
+    const top = turnAbout({ x: (f.x1 + f.x2) / 2 + 40, y: f.y1 }, c, 90);
+    press(overlay, r, top, { x: 30, y: 25 });
+    const m = doc.captions.get(id)!;
+    expect(m.x).toBeCloseTo(c.x + 30, 3);
+    expect(m.y).toBeCloseTo(c.y + 25, 3);
   });
 });

@@ -101,7 +101,7 @@ import { isEmptyText } from '../deck/deck';
 import { crossedBonds, lineAcross } from '../chem/fragments';
 import { imageFor } from '../render/images';
 import { gridOffsets, inferGrid, sharedAnchors, usualGap, withLabels, type GridHow } from './grid-arrange';
-import { BEND, BRUSH, ROTATE, handleCursor, pointerFor } from './cursors';
+import { BEND, BRUSH, ROTATE, handleCursor, turnedHandleCursor, pointerFor } from './cursors';
 import { flatten, prepareTurn, stillMeans, structuresOf, type PerspectiveHost, type Prepared } from './perspective';
 import { anglesTurn, dragTurn, DEG_PER_PX, IDENT as IDENT_TURN, type M3 } from '../chem/perspective';
 import type { TextEditing } from '../text/editing';
@@ -1004,7 +1004,10 @@ export class Editor {
   handles(): Handle[] {
     // text boxes in Slides and Design: round handles on the corners and edges, as in PowerPoint
     const boxes = this.textBoxes();
-    if (boxes.length) return boxes.flatMap((id) => textBoxHandles(id, this.textBoxFrame(id)!));
+    if (boxes.length) return boxes.flatMap((id) => {
+      const c = this.doc.captions.get(id)!;
+      return textBoxHandles(id, this.textBoxFrame(id)!).map((h) => (c.rot ? { ...h, at: turnAbout(h.at, c, c.rot) } : h));
+    });
     const s = this.sel;
     const n = s.arrows.size + s.shapes.size;
     if (!n || n > 4 || s.atoms.size || s.bonds.size) return [];
@@ -1038,12 +1041,12 @@ export class Editor {
 
   /**
    * The text boxes that show PowerPoint's frame and handles (Slides and Design, with the selection
-   * tool): the one being typed in, else the text boxes selected on their own (up to four). Turned
-   * text keeps its plain selection box.
+   * tool): the one being typed in, else the text boxes selected on their own (up to four), turned
+   * ones too (their frame and handles turn with them).
    */
   textBoxes(): number[] {
     if (!this.textFirst || this.layoutPreview) return [];
-    const ok = (id: number) => { const c = this.doc.captions.get(id); return !!c && !c.rot && !c.hidden; };
+    const ok = (id: number) => { const c = this.doc.captions.get(id); return !!c && !c.hidden; };
     if (this.captionEd?.isOpen) return this.captionEdId !== null && ok(this.captionEdId) ? [this.captionEdId] : [];
     if (this.tool.kind !== 'select') return [];
     const s = this.sel;
@@ -1069,10 +1072,12 @@ export class Editor {
     if (!this.textFirst || this.tool.kind !== 'select') return null;
     const out = this.tol(5), inside = this.tol(3);
     for (const c of [...this.doc.captions.values()].reverse()) {
-      if (c.hidden || c.rot) continue;
+      if (c.hidden) continue;
       const f = this.textBoxFrame(c.id)!;
-      const near = p.x >= f.x1 - out && p.x <= f.x2 + out && p.y >= f.y1 - out && p.y <= f.y2 + out;
-      const deep = p.x > f.x1 + inside && p.x < f.x2 - inside && p.y > f.y1 + inside && p.y < f.y2 - inside;
+      // (turned text: the point turned back, against the box's own sides)
+      const q = c.rot ? turnAbout(p, c, -c.rot) : p;
+      const near = q.x >= f.x1 - out && q.x <= f.x2 + out && q.y >= f.y1 - out && q.y <= f.y2 + out;
+      const deep = q.x > f.x1 + inside && q.x < f.x2 - inside && q.y > f.y1 + inside && q.y < f.y2 - inside;
       if (near && !deep) return c.id;
     }
     return null;
@@ -1084,7 +1089,10 @@ export class Editor {
     const c = doc.captions.get(h.id);
     if (!c) return;
     const f = { ...s.frame };
-    const dx = p.x - d.start.x, dy = p.y - d.start.y, w = h.which;
+    // a turned box: the pull measured along its own sides
+    const rot = c.rot ?? 0;
+    const pull = turnAbout(sub(p, d.start), { x: 0, y: 0 }, -rot);
+    const dx = pull.x, dy = pull.y, w = h.which;
     const minW = 12, minH = Math.min(12, s.frame.y2 - s.frame.y1);
     if (w.includes('w')) f.x1 = Math.min(s.frame.x1 + dx, s.frame.x2 - minW);
     if (w.includes('e')) f.x2 = Math.max(s.frame.x2 + dx, s.frame.x1 + minW);
@@ -1100,7 +1108,11 @@ export class Editor {
     // text that only just got a width (or set centred) can lay out from another edge: keep the frame where it was dragged
     const got = this.r.captionFrame(doc.captions.get(c.id)!);
     const fx = across ? f.x1 - got.x1 : 0, fy = down ? f.y1 - got.y1 : 0;
-    if (Math.abs(fx) > 1e-6 || Math.abs(fy) > 1e-6) doc.updateCaption(c.id, { x: patch.x! + fx, y: patch.y! + fy });
+    const local = { x: patch.x! + fx, y: patch.y! + fy };
+    // a turned box turns about its text's start, which has moved: put that start where the box,
+    // turned about the old start, has it, so the edges not dragged stay where they were
+    const to = rot ? turnAbout(local, { x: s.x, y: s.y }, rot) : local;
+    if (Math.abs(to.x - patch.x!) > 1e-9 || Math.abs(to.y - patch.y!) > 1e-9) doc.updateCaption(c.id, to);
     doc.dirtyRects.push(this.r.captionBox(doc.captions.get(c.id)!));
   }
 
@@ -5232,8 +5244,23 @@ export class Editor {
     if (this.tool.kind !== 'select' || (!s.atoms.size && !s.arrows.size && !s.shapes.size && !s.captions.size)) return null;
     // one atom on its own turns round itself, which does nothing (its label stays level): no handle
     if (s.atoms.size === 1 && !s.arrows.size && !s.shapes.size && !s.captions.size) return null;
+    const tb = this.textBoxTop();
+    if (tb) return tb.handle;
     const b = this.selBox();
     return b ? { x: (b.x1 + b.x2) / 2, y: b.y1 - this.tol(24) } : null;
+  }
+
+  /**
+   * One text box selected on its own (Slides, Design): the middle of its top edge and its rotate
+   * handle above it, both turned with the box, as in PowerPoint.
+   */
+  private textBoxTop(): { top: Vec; handle: Vec } | null {
+    const ids = this.textBoxes();
+    if (ids.length !== 1 || this.captionEd?.isOpen || !this.sel.captions.has(ids[0])) return null;
+    const c = this.doc.captions.get(ids[0]), f = this.textBoxFrame(ids[0]);
+    if (!c || !f) return null;
+    const mid = (f.x1 + f.x2) / 2, rot = c.rot ?? 0;
+    return { top: turnAbout({ x: mid, y: f.y1 }, c, rot), handle: turnAbout({ x: mid, y: f.y1 - this.tol(24) }, c, rot) };
   }
 
   // ---------------------------------------------------------------- focal points
@@ -7621,8 +7648,8 @@ export class Editor {
       defaultFont: base?.font ?? st.captionFont,
       redraw: () => this.requestOverlay(),
       enterFinishes: () => this.enterFinishesText(c?.ph ? 'other' : 'text'),
-      // a text box on a slide or design page shows its own frame and handles (not turned text)
-      framed: this.textFirst && !!c && !c.rot,
+      // a text box on a slide or design page shows its own frame and handles
+      framed: this.textFirst && !!c,
     };
     // (on a slide, lines spaced as PowerPoint spaces them, as they are drawn)
     const lines = this.r.slideLines();
@@ -7805,7 +7832,7 @@ export class Editor {
     if (this.overBorder && !o.handle && !o.onRotate) { this.r.overlay.style.cursor = 'move'; return; }
     // a curved arrow tool over a selected S's line: a drag there reshapes it
     if (!onRotate && !handle && h?.kind === 'arrow' && this.curvedTool() && this.isSelected(h) && bezPoints(this.doc.arrows.get(h.id)!)) { this.r.overlay.style.cursor = BEND; return; }
-    this.r.overlay.style.cursor = onRotate ? ROTATE : handle ? handleCursor(handle.which) : pointerFor({
+    this.r.overlay.style.cursor = onRotate ? ROTATE : handle ? (handle.kind === 'caption' ? turnedHandleCursor(handle.which, this.doc.captions.get(handle.id)?.rot ?? 0) : handleCursor(handle.which)) : pointerFor({
       tool: this.tool.kind,
       over: !h ? null : h.kind === 'atom' || h.kind === 'bond' ? 'chem' : 'object',
       overSelection: !!h && this.isSelected(h),
@@ -8451,8 +8478,12 @@ export class Editor {
       ctx.strokeStyle = PREVIEW;
       if (typing) ctx.setLineDash([4 * px, 3 * px]);
       for (const id of this.textBoxes()) {
-        const f = this.textBoxFrame(id);
-        if (f) ctx.strokeRect(f.x1, f.y1, f.x2 - f.x1, f.y2 - f.y1);
+        const f = this.textBoxFrame(id), c = this.doc.captions.get(id);
+        if (!f || !c) continue;
+        ctx.beginPath();
+        turnedCorners(f, c, c.rot ?? 0).forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+        ctx.closePath();
+        ctx.stroke();
       }
       ctx.restore();
     }
@@ -8581,9 +8612,13 @@ export class Editor {
         ctx.strokeRect(b.x1 - 2 * px, b.y1 - 2 * px, b.x2 - b.x1 + 4 * px, b.y2 - b.y1 + 4 * px);
         ctx.setLineDash([]);
       }
+      // the stem, from the top of the box (a text box's own top, turned with it) to the handle
+      const tb = this.textBoxTop();
+      const from = tb ? tb.top : { x: rh.x, y: b.y1 - 2 * px };
+      const u = norm(sub(from, rh));
       ctx.beginPath();
-      ctx.moveTo(rh.x, b.y1 - 2 * px);
-      ctx.lineTo(rh.x, rh.y + 4.5 * px);
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(rh.x + u.x * 4.5 * px, rh.y + u.y * 4.5 * px);
       ctx.stroke();
       ctx.beginPath();
       ctx.arc(rh.x, rh.y, 4.5 * px, 0, Math.PI * 2);
