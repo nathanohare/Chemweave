@@ -46,7 +46,7 @@ import { pubchemHtml, pubchemRuns, type PubChemState } from './ui/pubchem-panel'
 import { paragraphPages } from './document/doc-file';
 import { reviewAuthor, setReviewAuthor } from './document/revisions';
 import { NMR_SOLVENTS, NmrPanel, solventLabel } from './ui/nmr-panel';
-import { paintCanRun, clearCanRun } from './ui/can-run';
+import { paintCanRun, clearCanRun, cantRun } from './ui/can-run';
 import { whyNot, WHY, NEEDS, type Picked } from './editor/can-run';
 import { StepCache } from './chem/step-cache';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
@@ -10727,6 +10727,9 @@ for (const m of menus) {
     if (recent !== undefined) { showMenu(null); void openRecent(recent); return; }
     const cmd = b.dataset.cmd;
     if (!cmd) return;
+    // a greyed command says why and the menu stays open on it, for the keys to go on from (F5b-R09)
+    const why = cantRun(b) ? whyCannotRun(cmd) : null;
+    if (why) { flash(why); b.focus(); return; }
     showMenu(null);
     command(cmd);
   });
