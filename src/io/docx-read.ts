@@ -639,6 +639,8 @@ class DocxReader {
     const st = path ? this.pkg.xml(path) : null;
     const root = st?.documentElement;
     if (!root) return;
+    const latent = kid(root, 'latentStyles');
+    if (latent) this.latentXml = elementXml(latent).replaceAll(` xmlns:w="${W_NS}"`, '');
     const dd = kid(root, 'docDefaults');
     this.docDefaults = { r: this.readRPrPlain(kid(dd, 'rPrDefault', 'rPr')), p: this.readPPr(kid(dd, 'pPrDefault', 'pPr')) };
     for (const s of kids(root, 'style')) {
@@ -673,6 +675,23 @@ class DocxReader {
       this.idMap.set(ws.id, id);
       taken.add(id);
     }
+  }
+
+  /** The file's w:latentStyles, kept to write back. */
+  private latentXml: string | undefined;
+
+  /**
+   * The file's styles that aren't styles here, as Word had them, to write back: every one but the
+   * defaults (written afresh) and the paragraph styles read as styles here (`styles`, by our ids).
+   */
+  private keptStyles(styles: Record<string, unknown>): KeptParts['styles'] {
+    const out: NonNullable<KeptParts['styles']> = [];
+    for (const ws of this.wstyles.values()) {
+      if (ws.isDefault || !ws.id) continue;
+      if (ws.type === 'paragraph' && (ws.id === this.defaultPara || styles[this.idMap.get(ws.id) ?? ''])) continue;
+      out.push({ type: ws.type, id: ws.id, xml: elementXml(ws.el).replaceAll(` xmlns:w="${W_NS}"`, '') });
+    }
+    return out.length ? out : undefined;
   }
 
   /** Text formatting without character styles (for the styles themselves). */
@@ -3405,6 +3424,9 @@ class DocxReader {
       if (seqs.length === m.siNumbers.length) seqs.forEach((id, i) => linkSeq(id, m.siNumbers![i]));
       else this.warn('siLinks');
     }
+    // Word's styles that aren't styles here (a journal template's unused ones...), kept as they were
+    const wordStyles = this.keptStyles(styles);
+    if (wordStyles || this.latentXml) this.kept = { ...this.kept, ...(wordStyles ? { styles: wordStyles } : {}), ...(this.latentXml ? { latentStyles: this.latentXml } : {}) };
     return {
       runs: rt.normalizeRuns(runs),
       ...(comments ? { comments } : {}),

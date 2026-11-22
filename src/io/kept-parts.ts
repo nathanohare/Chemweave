@@ -83,6 +83,14 @@ export interface KeptParts {
   vars?: string;
   /** Word's ids for the document (settings' w14:docId and w15:docId), kept from save to save. */
   docIds?: { w14?: string; w15?: string };
+  /**
+   * Word's styles that aren't styles here (unused ones, such as a journal template's, character,
+   * table and list styles nothing uses), each as its w:style element without the w namespace's
+   * declaration, written back as they were (ECMA-376 part 1, 17.7.4.17 style); and w:latentStyles
+   * (17.7.4.5), which also names Word's built-in styles.
+   */
+  styles?: { type: string; id: string; xml: string }[];
+  latentStyles?: string;
   trees?: KeptTree[];
   docProps?: KeptProps;
   /**

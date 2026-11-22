@@ -106,6 +106,36 @@ const WORD_NAMES: Record<string, string> = {
   Normal: 'Normal', Title: 'Title', Caption: 'caption',
   ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`Heading${n}`, `heading ${n}`])),
 };
+/**
+ * Names of Word's built-in styles, as Word writes them in w:name (ECMA-376 part 1, 17.7.4.9: a
+ * style with one of them is Word's own, not marked w:customStyle). These are the names Word lists
+ * in its own files' w:latentStyles (17.7.4.5); a file read also brings its own list.
+ */
+const range = (stem: string, from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => `${stem} ${from + i}`);
+const ACCENTS = ['', ...[1, 2, 3, 4, 5, 6].map((n) => ` Accent ${n}`)];
+const GRID_KINDS = ['Light', '', '', '', '', 'Dark', 'Colorful', 'Colorful'];
+export const WORD_BUILT_IN_NAMES: readonly string[] = [
+  'Normal', ...range('heading', 1, 9), ...range('index', 1, 9), ...range('toc', 1, 9), 'Normal Indent', 'footnote text', 'annotation text', 'header', 'footer',
+  'index heading', 'caption', 'table of figures', 'envelope address', 'envelope return', 'footnote reference', 'annotation reference', 'line number', 'page number',
+  'endnote reference', 'endnote text', 'table of authorities', 'macro', 'toa heading', 'List', 'List Bullet', 'List Number', ...range('List', 2, 5),
+  ...range('List Bullet', 2, 5), ...range('List Number', 2, 5), 'Title', 'Closing', 'Signature', 'Default Paragraph Font', 'Body Text', 'Body Text Indent',
+  'List Continue', ...range('List Continue', 2, 5), 'Message Header', 'Subtitle', 'Salutation', 'Date', 'Body Text First Indent', 'Body Text First Indent 2',
+  'Note Heading', 'Body Text 2', 'Body Text 3', 'Body Text Indent 2', 'Body Text Indent 3', 'Block Text', 'Hyperlink', 'FollowedHyperlink', 'Strong', 'Emphasis',
+  'Document Map', 'Plain Text', 'E-mail Signature', 'HTML Top of Form', 'HTML Bottom of Form', 'Normal (Web)', 'HTML Acronym', 'HTML Address', 'HTML Cite',
+  'HTML Code', 'HTML Definition', 'HTML Keyboard', 'HTML Preformatted', 'HTML Sample', 'HTML Typewriter', 'HTML Variable', 'Normal Table', 'annotation subject',
+  'No List', 'Outline List 1', 'Outline List 2', 'Outline List 3', 'Balloon Text', 'Table Grid', 'Table Theme', 'Placeholder Text', 'No Spacing', 'Revision',
+  'List Paragraph', 'Quote', 'Intense Quote', 'Subtle Emphasis', 'Intense Emphasis', 'Subtle Reference', 'Intense Reference', 'Book Title', 'Bibliography',
+  'TOC Heading', 'Table Grid Light', ...range('Plain Table', 1, 5), 'Mention', 'Smart Hyperlink', 'Hashtag', 'Unresolved Mention', 'Smart Link',
+  ...[1, 2, 3, 4, 5, 6, 7].flatMap((n) => ACCENTS.flatMap((a) => [`Grid Table ${n}${GRID_KINDS[n] ? ` ${GRID_KINDS[n]}` : ''}${a}`, `List Table ${n}${GRID_KINDS[n] ? ` ${GRID_KINDS[n]}` : ''}${a}`])),
+];
+const BUILT_IN_BY_LOWER = new Map(WORD_BUILT_IN_NAMES.map((n) => [n.toLowerCase(), n]));
+
+/** A style name as Word writes it when it is one of Word's built-in styles (`more` adds a file's own list); null for anyone else's. */
+export function wordBuiltInName(name: string, more?: ReadonlyMap<string, string>): string | null {
+  const k = name.trim().toLowerCase();
+  return BUILT_IN_BY_LOWER.get(k) ?? more?.get(k) ?? null;
+}
+
 const PRIORITY: Record<string, number> = { Normal: 0, Title: 10, Caption: 35, ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`Heading${n}`, 9])) };
 /** Word's own character styles, by id: their names, and where Word lists them. */
 const WORD_CHAR: Record<string, [string, number]> = { Emphasis: ['Emphasis', 20], Strong: ['Strong', 22], SubtleEmphasis: ['Subtle Emphasis', 19], IntenseEmphasis: ['Intense Emphasis', 21] };
@@ -171,6 +201,8 @@ class DocxWriter {
   private nums: { abs: number; restart: boolean; at?: { level: number; value: number } }[] = [];
   /** Each list's kind (its key), by numId − 1. */
   private numKeys: string[] = [];
+  /** Word lists kept from the file read: their ids there to the ids written (see numbering()). */
+  private keptNumIds = new Map<string, string>();
   /** The one list each kind of bulleted list (and each numbered list in table cells) shares. */
   private sharedNums = new Map<string, number>();
 
@@ -1469,7 +1501,12 @@ class DocxWriter {
     }
     // drop the tabs after the last zone with something in it
     while (parts.length && parts[parts.length - 1].includes('<w:tab/>')) parts.pop();
-    const pPr = `<w:pPr><w:tabs><w:tab w:val="center" w:pos="${twips(fullW / 2)}"/><w:tab w:val="right" w:pos="${twips(fullW)}"/></w:tabs>` +
+    // in Word's Header or Footer style when the file read had it (its look is written on the paragraph itself as well)
+    // (with the style's own tab stops cleared where they aren't these, so the three places stay where they are)
+    const hfStyle = t.kept?.styles?.find((k) => k.type === 'paragraph' && new RegExp(`<w:name w:val="${kind}"/>`, 'i').test(k.xml));
+    const tabsAt = [twips(fullW / 2), twips(fullW)].map(String);
+    const clear = hfStyle ? [...hfStyle.xml.matchAll(/<w:tab w:val="(?!clear)[^"]*" w:pos="(-?\d+)"/g)].map((m) => m[1]).filter((x) => !tabsAt.includes(x)).map((x) => `<w:tab w:val="clear" w:pos="${x}"/>`).join('') : '';
+    const pPr = `<w:pPr>${hfStyle ? `<w:pStyle w:val="${xml(hfStyle.id)}"/>` : ''}<w:tabs>${clear}<w:tab w:val="center" w:pos="${tabsAt[0]}"/><w:tab w:val="right" w:pos="${tabsAt[1]}"/></w:tabs>` +
       `<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="0" w:firstLine="0"/><w:jc w:val="left"/></w:pPr>`;
     const vml = wm ? ` xmlns:v="${V_NS}" xmlns:o="${O_NS}" xmlns:w10="${W10_NS}"` : '';
     return `${HEAD}<w:${kind === 'header' ? 'hdr' : 'ftr'} ${PART_NS}${vml}><w:p>${pPr}${wm}${parts.join('')}</w:p></w:${kind === 'header' ? 'hdr' : 'ftr'}>`;
@@ -1518,12 +1555,17 @@ class DocxWriter {
     const t = this.t;
     const normal = styleOf(t, undefined);
     const out: string[] = [HEAD, `<w:styles xmlns:w="${W_NS}">`];
+    // Word's built-in style names: ours, and those the file read lists in its latent styles
+    const latent = new Map([...(t.kept?.latentStyles ?? '').matchAll(/<w:lsdException\b[^>]*\bw:name="([^"]+)"/g)].map((m) => { const n = unxml(m[1]); return [n.toLowerCase(), n]; }));
+    const builtIn = (name: string) => wordBuiltInName(name, latent);
     out.push(`<w:docDefaults><w:rPrDefault><w:rPr>${fontsXml(normal.font)}<w:kern w:val="2"/><w:sz w:val="${half(normal.size)}"/><w:szCs w:val="${half(normal.size)}"/><w:lang w:val="${xml(t.lang ?? 'en-US')}" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>` +
       `<w:pPrDefault><w:pPr><w:widowControl/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>`);
+    // (ECMA-376 part 1, 17.7.4.18: latent styles come after the defaults, before the styles)
+    if (t.kept?.latentStyles) out.push(t.kept.latentStyles);
     const ids = Object.keys(t.styles);
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {
       const s = t.styles[id];
-      if (s) out.push(styleXml(s, ids));
+      if (s) out.push(styleXml(s, ids, builtIn));
     }
     // the contents' lines (Word's own "toc 1" to "toc 3", which Update Field uses)
     if (Object.values(t.objects).some((o) => o.kind === 'toc')) {
@@ -1563,7 +1605,7 @@ class DocxWriter {
     }
     out.push(`<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/><w:unhideWhenUsed/></w:style>`);
     // the character styles (Emphasis, Strong, Compound Number and the person's own)
-    for (const cs of Object.values(this.charStyles)) out.push(charStyleXml(cs));
+    for (const cs of Object.values(this.charStyles)) out.push(charStyleXml(cs, builtIn));
     // formulas look like any other text in Word: the style only marks them, so they stay formulas when opened here
     out.push(`<w:style w:type="character" w:customStyle="1" w:styleId="${FORMULA_STYLE}"><w:name w:val="Chemical Formula"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="1"/></w:style>`);
     // the table styles the tables use, as Word's own (so Word draws them as they are drawn here)
@@ -1576,6 +1618,10 @@ class DocxWriter {
     out.push(`<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/>` +
       `<w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>`);
     out.push(`<w:style w:type="numbering" w:default="1" w:styleId="NoList"><w:name w:val="No List"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/></w:style>`);
+    // the file's styles that aren't styles here (a journal template's unused ones, character and
+    // table styles nothing uses), as Word had them, unless one of the same kind and id is written above
+    const written = new Set([...out.join('').matchAll(/<w:style\b[^>]*?\bw:type="([^"]+)"[^>]*?\bw:styleId="([^"]+)"/g)].map((m) => `${m[1]}:${unxml(m[2])}`));
+    for (const k of t.kept?.styles ?? []) if (!written.has(`${k.type}:${k.id}`)) out.push(keptStyleXml(k, this.keptNumIds));
     out.push('</w:styles>');
     return out.join('');
   }
@@ -1927,9 +1973,27 @@ function pageBordersXml(b: PageBorder): string {
   return `<w:pgBorders w:offsetFrom="${b.from}">${['top', 'left', 'bottom', 'right'].map(side).join('')}</w:pgBorders>`;
 }
 
+/** Text of an XML attribute value back as text. */
+const unxml = (s: string) => s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/**
+ * A style kept from the file read, as Word had it; its list (w:numPr) only while that list is
+ * written as the file had it (`numIds`: the file's list ids to those written), else left out, so
+ * it never names a list that isn't there.
+ */
+function keptStyleXml(k: { xml: string }, numIds: ReadonlyMap<string, string>): string {
+  return k.xml.replace(/<w:numPr\b[^>]*?(?:\/>|>[\s\S]*?<\/w:numPr>)/g, (m) => {
+    const id = /<w:numId w:val="([^"]+)"/.exec(m)?.[1];
+    const to = id === undefined ? undefined : numIds.get(id);
+    return to ? m.replace(/(<w:numId w:val=")[^"]+"/, `$1${to}"`) : '';
+  });
+}
+
 /** A character style: only what it sets. */
-function charStyleXml(s: CharStyle): string {
+function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = wordBuiltInName): string {
   const own = WORD_CHAR[s.id];
+  // (Word's own by its name too: Book Title, Subtle Reference...)
+  const word = own ? null : builtIn(s.name);
   const rPr: string[] = [];
   if (s.font) rPr.push(fontsXml(s.font));
   if (s.bold !== undefined) rPr.push(s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>');
@@ -1940,17 +2004,19 @@ function charStyleXml(s: CharStyle): string {
   if (s.color) rPr.push(`<w:color w:val="${hex6(s.color)}"/>`);
   if (s.size) rPr.push(`<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`);
   if (s.underline) rPr.push('<w:u w:val="single"/>');
-  return `<w:style w:type="character"${own ? '' : ' w:customStyle="1"'} w:styleId="${xml(s.id)}"><w:name w:val="${xml(own?.[0] ?? s.name)}"/><w:basedOn w:val="DefaultParagraphFont"/>` +
+  return `<w:style w:type="character"${own || word ? '' : ' w:customStyle="1"'} w:styleId="${xml(s.id)}"><w:name w:val="${xml(own?.[0] ?? word ?? s.name)}"/><w:basedOn w:val="DefaultParagraphFont"/>` +
     `<w:uiPriority w:val="${own?.[1] ?? 29}"/><w:qFormat/>${rPr.length ? `<w:rPr>${rPr.join('')}</w:rPr>` : ''}</w:style>`;
 }
 
 /** A named style, with all its settings written out. */
-function styleXml(s: NamedStyle, ids: string[]): string {
+function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName): string {
   const id = s.id;
-  const name = WORD_NAMES[id] ?? s.name;
+  // a style with one of Word's built-in names (header, No Spacing, toc 1...) is Word's own: not marked custom
+  const word = WORD_NAMES[id] ?? builtIn(s.name);
+  const name = word ?? s.name;
   const head = id === 'Normal'
     ? `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/>`
-    : `<w:style w:type="paragraph"${WORD_NAMES[id] ? '' : ' w:customStyle="1"'} w:styleId="${xml(id)}"><w:name w:val="${xml(name)}"/><w:basedOn w:val="Normal"/>` +
+    : `<w:style w:type="paragraph"${word ? '' : ' w:customStyle="1"'} w:styleId="${xml(id)}"><w:name w:val="${xml(name)}"/><w:basedOn w:val="Normal"/>` +
       `${s.next && ids.includes(s.next) ? `<w:next w:val="${xml(s.next)}"/>` : ''}<w:uiPriority w:val="${PRIORITY[id] ?? 29}"/><w:qFormat/>`;
   const pPr: string[] = [];
   pPr.push(s.keepNext ? '<w:keepNext/>' : '<w:keepNext w:val="0"/>');
