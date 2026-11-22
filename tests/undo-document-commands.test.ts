@@ -82,6 +82,9 @@ describe('Document: every command that changes the document is one undo step', (
         const before = state(f), n0 = steps(f);
         try { dm.run(cmd); } catch { /* a command that needs the app around it: nothing to check */ }
         closeWindows();
+        // (a header or footer opened to type into is finished first: opening one with nothing
+        // typed leaves the document as it was, as in Word)
+        if (f.box?.hf) dm.run('hf-close');
         const after = state(f), made = steps(f) - n0;
         if (after === before && made === 0) continue;
         changed++;
@@ -126,6 +129,29 @@ describe('Document: commands that were not one undo step', () => {
       expect(state(f)).toBe(before);
     }, 60000);
   }
+
+  it('typing in a header: Ctrl+Z takes the typing back, Ctrl+Y brings it back, closing leaves it', async () => {
+    const { dm, f } = await fresh();
+    f.ed.setCaret(30);
+    const before = state(f);
+    dm.run('header-edit');
+    expect(f.box?.hf).toBeTruthy();
+    f.box!.ed.type('Running head');
+    const typed = state(f);
+    expect(typed).not.toBe(before);
+    dm.run('undo');
+    dm.run('hf-close');
+    expect(state(f)).toBe(before);
+    dm.run('redo');
+    expect(state(f)).toContain('Running head');
+    // closed with nothing typed: no change and no step
+    const { dm: dm2, f: f2 } = await fresh();
+    const b2 = state(f2);
+    dm2.run('header-edit');
+    dm2.run('hf-close');
+    expect(state(f2)).toBe(b2);
+    expect(steps(f2)).toBe(0);
+  }, 60000);
 
   it('a command that changes nothing makes no undo step', async () => {
     const { dm, f } = await fresh();
