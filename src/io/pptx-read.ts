@@ -51,6 +51,7 @@ import { gluePoint, arrowPoints, boxOf as pointsBox } from '../objects';
 import { stackAsRead, type StackItem } from '../editor/stacking';
 import { roughBox } from '../deck/split-slide';
 import { readEffects } from './pptx-effects';
+import { readRunKept, finishRunKept, readParaKept, finishParaKept, keptFrame } from './pptx-keep';
 import { readViewProps, readSlideGuides } from '../deck/guides';
 import { readMasterHF } from '../deck/notes-pages';
 import { readShowPr, readCustShows } from '../deck/show-setup';
@@ -1861,6 +1862,9 @@ class Reader {
     const tbox = quarter ? { ...box, ...swapBox(box), rot: box.rot + quarter } : box;
     let c = this.ourText(tags[TAG.text], sp, tbox, ph, from) ?? turned(this.text(sp, tbox, ph, from), tbox);
     if (c && quarter) c = { ...c, dir: quarter > 0 ? 'vert' : 'vert270' };
+    // a text box of PowerPoint's: its frame as the file had it (size, place, anchor and margins), kept while it isn't resized here
+    if (c && !ph && !c.pbox) c = { ...c, pbox: keptFrame(sp, c) ?? undefined };
+    if (c && !c.pbox) delete c.pbox;
     // a table's title or footnotes, saved here as a text box beside it
     const part = (() => {
       try { return tags[TAG.tablePart] ? JSON.parse(tags[TAG.tablePart]) as { key: string; part: 'title' | 'notes' } : null; } catch { return null; }
@@ -2616,16 +2620,31 @@ class Reader {
           if (Number.isInteger(at) && at > 1) para.startAt = at;
         }
       }
-      if (pi === 0) {
+      // line spacing (21.1.2.2.5 lnSpc): the box's from its first paragraph, and a paragraph's own
+      // where it differs from that (one paragraph at 150 % in a box at single spacing)
+      {
         const ls = inheritEl(pPr, chain, lvl, ['lnSpc']);
         const pct = kid(ls, 'spcPct')?.getAttribute('val'), fixed = kid(ls, 'spcPts')?.getAttribute('val');
-        if (fixed) lineHeight = Number(fixed) / 100;
-        else if (pct && Number(pct) !== 100000) lineSpacing = Number(pct) / 100000;
         const red = shrinks ? 0 : Number(kid(bodyPrs[0], 'normAutofit')?.getAttribute('lnSpcReduction') ?? 0) / 100000;
-        if (red) lineSpacing = (lineSpacing ?? 1) * (1 - red);
+        const own = fixed ? { pt: Number(fixed) / 100 } : { pct: (pct ? Number(pct) / 100000 : 1) * (1 - red) };
+        if (pi === 0) {
+          if (own.pt !== undefined) lineHeight = own.pt;
+          else if (own.pct !== 1) lineSpacing = own.pct;
+        } else if (own.pt !== undefined ? own.pt !== lineHeight : lineHeight !== undefined || Math.abs(own.pct - (lineSpacing ?? 1)) > 1e-6) {
+          if (own.pt !== undefined) { para.linePt = own.pt; para.lineRule = 'exact'; } else para.line = +own.pct.toFixed(3);
+        }
       }
+      // its own tab stops (21.1.2.2.13 tabLst)
+      const tabs = kids(kid(pPr, 'tabLst'), 'tab').map((t) => {
+        const al = t.getAttribute('algn');
+        return { pos: +fromEmu(t.getAttribute('pos') ?? 0).toFixed(2), kind: (al === 'ctr' ? 'center' : al === 'r' ? 'right' : al === 'dec' ? 'decimal' : 'left') as NonNullable<ParaStyle['tabs']>[number]['kind'] };
+      });
+      if (tabs.length) para.tabs = tabs;
       const marL = fromEmu(inherit(pPr, chain, lvl, (e) => e.getAttribute('marL')));
       const indent = fromEmu(inherit(pPr, chain, lvl, (e) => e.getAttribute('indent')));
+      // what PowerPoint has that isn't read here (right to left, a bullet's colour, the margins it sets)
+      const kept = readParaKept(pPr, !!list);
+      if (kept) para.ppx = JSON.stringify(kept);
       // our lists put the marker one step in per level; anything further in is extra indent
       const pieces = kids(p).filter((k) => k.localName === 'r' || k.localName === 'fld' || k.localName === 'br' || (k.localName === 'm' && k.namespaceURI === NS_A14 && !!this.inlineMath));
       const firstSize = (() => {
@@ -2713,6 +2732,9 @@ class Reader {
           r.link = link;
           Object.assign(r, this.linkLook(kid(rPr, 'hlinkClick'), r.color));
         }
+        // what PowerPoint has that isn't read here (a gradient, glow, a double underline, a theme font...)
+        const keptRun = readRunKept(rPr);
+        if (keptRun) r.pfx = JSON.stringify(keptRun);
         runs.push(r);
       }
     });
@@ -2733,6 +2755,8 @@ class Reader {
       if (x.font === 'Arial') delete x.font;
       return x;
     });
+    // (what each run kept, with its looks as they are now, to tell later whether they were changed)
+    out = out.map(finishRunKept);
     // the box: inside its margins
     const ins = (k: string, d: number) => {
       const v = bp(k);
@@ -2742,6 +2766,7 @@ class Reader {
     const w = box.x2 - box.x1 - l - rI;
     const justify: Justify = paras[0]?.align ?? 'left';
     for (const p of paras) if (p.align === justify) delete p.align;
+    paras.forEach((p, i) => { paras[i] = finishParaKept(p, justify); });
     const c: Omit<Caption, 'id'> = { x: box.x1 + l, y: 0, runs: out, justify };
     if (paras.some((p) => Object.keys(p).length)) c.paras = paras;
     if (lineHeight) c.lineHeight = lineHeight;
@@ -2762,7 +2787,8 @@ class Reader {
     }
     if (!kind) {
       if (shrinks) c.fit = 'shrink';
-      else if (kid(bodyPrs[0], 'noAutofit')) c.fit = 'fixed';
+      // (a box with no AutoFit of its own keeps its size in PowerPoint, as with noAutofit: 21.1.2.1.1)
+      else if (kid(bodyPrs[0], 'noAutofit') || (bodyPrs[0] && !kid(bodyPrs[0], 'spAutoFit'))) c.fit = 'fixed';
       if (c.fit) c.boxH = Math.max(1, box.y2 - box.y1 - tI - bI);
     }
     if (kind) {

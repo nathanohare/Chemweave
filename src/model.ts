@@ -402,6 +402,12 @@ export interface TextRun {
    * shadow, outline and fill only while they still match the run's own above.
    */
   wfx?: string;
+  /**
+   * Slides: PowerPoint's run formatting this program doesn't model (a gradient fill, glow, a
+   * double underline, a theme or East Asian font...), as the file had it (JSON, io/pptx-keep.ts),
+   * written back while the looks it goes with are unchanged.
+   */
+  pfx?: string;
   /** Documents: not spell- or grammar-checked (Word's Do not check spelling or grammar: chemical names, citations). */
   noProof?: boolean;
   /** Documents: the text raised (less than 0: lowered) from the line by this many points, at its own size (Word's Font > Advanced > Position). */
@@ -490,6 +496,12 @@ export interface ParaStyle {
   indent?: number;
   /** Documents: the named style (Normal when left out), for Heading 1 and the rest. */
   style?: string;
+  /**
+   * Slides: PowerPoint's paragraph settings this program doesn't model (right to left, font
+   * alignment, a bullet's colour and size, its margins as PowerPoint had them...), as the file had
+   * them (JSON, io/pptx-keep.ts), written back while the paragraph's own settings are unchanged.
+   */
+  ppx?: string;
   /** Documents: starts a new page. */
   pageBreak?: boolean;
   /** Documents set in columns: starts the next column. */
@@ -652,6 +664,12 @@ export interface Caption {
   fit?: 'shrink' | 'fixed';
   /** Text direction: the text runs down (rotated 90°) or up (270°). Its turn is in `rot`; this says it is the text's direction, for PowerPoint. */
   dir?: 'vert' | 'vert270';
+  /**
+   * Slides: a PowerPoint text box's frame as the file had it (JSON, io/pptx-keep.ts): its size and
+   * place, where its text sits in it (anchor, margins) and how it fits, written back (moved with the
+   * text) while the box's width, height, fit, direction and turn are unchanged here.
+   */
+  pbox?: string;
 }
 
 /**
