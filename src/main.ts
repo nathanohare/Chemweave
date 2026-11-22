@@ -8447,6 +8447,8 @@ function loadDocMode(): Promise<DocumentMode> {
       structureReader: {
         read: (p) => readForEditing(importHost, p),
         check: async (r) => (await checkRead(r, docStyle(), chem)).problems,
+        // the text reader comes with the app; loaded only when a scheme's text is read
+        readText: async (p) => { flash('Reading the text in the picture…', 30000); return (await import('./recognise/text-reader')).readText(p); },
         flash,
       },
       pickObjectFile: () => pickObjectFile(),

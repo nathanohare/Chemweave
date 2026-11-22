@@ -12,6 +12,7 @@ import type { ReadGraph } from './molscribe';
 import { inkBox, type Pixels } from './picture';
 import { addReadAt, parseSymbol, readBonds } from './to-drawing';
 import { leftover, leftoverPng, partPixels, type StructureInk } from './leftover';
+import { captionsFrom, findArrows, marksOf, rubOut, textRuns, type ReadLine } from './scheme-extras';
 import { bondLengthPx, labelSizePx, lineWidthPx, refineAtoms, strokeWidthPx, type MeasureBond } from './measure';
 
 export type StyleChoice = 'match' | 'default';
@@ -177,7 +178,7 @@ export interface EditableParts extends Editable {
  * the reader didn't read is kept as a picture behind them, in its place (`rest`, and a picture in
  * the drawing).
  */
-export function editableFromParts(parts: PartRead[], p: Pixels, ptPerPx: number, choice: StyleChoice, ds: DocStyle, presets: StylePreset[]): EditableParts {
+export function editableFromParts(parts: PartRead[], p: Pixels, ptPerPx: number, choice: StyleChoice, ds: DocStyle, presets: StylePreset[], texts?: ReadLine[]): EditableParts {
   const pieces = parts.map((part) => {
     const box = part.box ?? { x: 0, y: 0, w: p.width, h: p.height };
     const sub = part.box ? partPixels(p, part.box) : p;
@@ -215,6 +216,35 @@ export function editableFromParts(parts: PartRead[], p: Pixels, ptPerPx: number,
       }
     }
     rest = leftover(p, inks, whole);
+    // the whole scheme made editable: its arrows, then the text read
+    if (rest && texts) {
+      const unit = inks.length ? [...inks.map((k) => k.bondPx)].sort((a, b) => a - b)[Math.floor((inks.length - 1) / 2)] : Math.max(p.width, p.height) / 12;
+      const at = (v: { x: number; y: number }) => ({ x: v.x * K, y: v.y * K });
+      const match = choice === 'match';
+      const lw = ds.arrowWidth ?? ds.lineWidth;
+      const arrows = findArrows(rest, Math.max(12, unit * 0.9));
+      for (const a of arrows) {
+        doc.addArrow({
+          tail: at(a.tail), head: at(a.head), headStyle: a.headStyle, tailStyle: a.tailStyle, headType: a.headType, line: 'solid', noGo: false, equilibrium: a.equilibrium, sweep: 0,
+          headLength: match ? r2(a.headLength * K) : ds.arrowHeadLength ?? lw * 10,
+          headWidth: match ? r2(Math.max(a.headWidth, a.lineWidth) * K) : ds.arrowHeadWidth ?? lw * 2.5,
+          ...(match ? { lineWidth: r2(a.lineWidth * K) } : ds.arrowWidth ? { lineWidth: ds.arrowWidth } : {}),
+        });
+      }
+      rest = rubOut(rest, arrows.flatMap((a) => a.marks));
+      const caps = captionsFrom(texts, rest, marksOf(rest));
+      const labelPt = look?.labelSize ?? null;
+      for (const c of caps) {
+        // the size it was written at: the structures' label size, or the document's text size for the look, when it is about that
+        let size = c.size * K;
+        const near = [labelPt, ds.captionSize * ((look?.bondLength ?? ds.bondLength) / ds.bondLength)].find((v) => v && Math.abs(size / v - 1) < 0.12);
+        size = near ?? Math.round(size * 2) / 2;
+        const runs = textRuns(c.lines.join('\n')).map((r) => ({ ...r, ...(match ? { size: r2(size) } : {}), ...(c.bold ? { bold: true } : {}) }));
+        doc.addCaption({ x: c.x * K, y: c.y * K, runs, justify: c.center ? 'center' : 'left' });
+      }
+      rest = rubOut(rest, caps.flatMap((c) => c.marks));
+      if (!marksOf(rest, Math.max(8, (0.12 * unit) ** 2)).length) rest = null;
+    }
     if (rest) doc.addShape({ kind: 'picture', x1: 0, y1: 0, x2: p.width * K, y2: p.height * K, src: leftoverPng(rest), px: { w: p.width, h: p.height }, alt: 'The rest of the original picture (arrows and text)' });
   });
   return { contents: doc.contents(), at: { x: 0, y: 0, w: p.width * K, h: p.height * K }, look: look ?? { bondLength: ds.bondLength, lineWidth: null, labelSize: null }, problems, rest };

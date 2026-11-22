@@ -8,6 +8,7 @@ import { readBonds, parseSymbol } from '../src/recognise/to-drawing';
 import { bondLengthPx, labelSizePx, lineWidthPx, refineAtoms, strokeWidthPx, type MeasureBond } from '../src/recognise/measure';
 import { editableFromGraph, editableFromParts, readFrame, snapLook, type PartRead } from '../src/recognise/editable';
 import { partPixels, schemeParts } from '../src/recognise/leftover';
+import { findArrows, isFormula, textLineBoxes, textRuns, type ReadLine } from '../src/recognise/scheme-extras';
 import { isStructure, partGap } from '../src/ui/doc-make-editable';
 import { ACS_1996 } from '../src/style';
 import { STYLE_PRESETS } from '../src/drawing-styles';
@@ -240,5 +241,122 @@ describe('Make Editable: a picture of a scheme', () => {
     expect(e.contents.atoms.map((a) => [a.x, a.y])).toEqual(same.contents.atoms.map((a) => [a.x, a.y]));
     expect(e.rest).toBeNull();
     expect(e.contents.shapes).toHaveLength(0);
+  });
+});
+
+describe('Make Editable: the whole scheme', () => {
+  const p = readPng(new Uint8Array(readFileSync(join(DIR, 'scheme-150dpi.png'))));
+  const f = JSON.parse(readFileSync(join(DIR, 'scheme-150dpi.json'), 'utf8')) as { dpi: number; structures: { symbols: string[]; truth: [number, number][]; edges: number[][] }[]; arrow: { x1: number; x2: number; y: number } };
+  // what Tesseract read in the rest of the picture (tests/fixtures/make-editable/scheme-150dpi.text.json, read line by line as the app does)
+  const texts = JSON.parse(readFileSync(join(DIR, 'scheme-150dpi.text.json'), 'utf8')) as ReadLine[];
+  const k = f.dpi / 72;
+  const boxes = schemeParts(p, partGap(1 / k))!;
+  const reads: PartRead[] = boxes.flatMap((box) => {
+    const s = f.structures.find((st) => st.truth.every(([x, y]) => x > box.x && x < box.x + box.w && y > box.y && y < box.y + box.h));
+    if (!s) return [];
+    const sub = partPixels(p, box), frame = readFrame(sub), q = (v: number) => Math.round(v * 63) / 63;
+    const graph: ReadGraph = { smiles: '', symbols: s.symbols, edges: s.edges, atomScores: s.symbols.map(() => 1), confidence: 0.9,
+      coords: s.truth.map(([x, y]) => [q((x - box.x - frame.x) / frame.w), q((y - box.y - frame.y) / frame.h)]) };
+    return [{ box, graph, frame }];
+  });
+
+  it('finds the arrow: where it is, its full solid head, and its line width', () => {
+    const e = editableFromParts(reads, p, 1 / k, 'match', ACS_1996, STYLE_PRESETS, texts);
+    expect(e.contents.arrows).toHaveLength(1);
+    const a = e.contents.arrows[0];
+    expect(a.headStyle).toBe('full');
+    expect(a.tailStyle).toBe('none');
+    expect(a.headType).toBe('solid');
+    expect(a.head.x).toBeGreaterThan(a.tail.x);
+    expect(a.tail.x).toBeCloseTo(f.arrow.x1 / k, 0);
+    // (a head's point is its faintest pixels: within a point)
+    expect(Math.abs(a.head.x - f.arrow.x2 / k)).toBeLessThan(1);
+    expect(a.tail.y).toBeCloseTo(f.arrow.y / k, 0);
+    expect(a.lineWidth).toBeCloseTo(ACS_1996.lineWidth, 1);
+  });
+
+  it('makes the text captions: conditions over and under the arrow, and bold compound numbers', () => {
+    const e = editableFromParts(reads, p, 1 / k, 'match', ACS_1996, STYLE_PRESETS, texts);
+    const caps = e.contents.captions.map((c) => ({ text: c.runs.map((r) => r.text).join(''), bold: c.runs.every((r) => r.bold), size: c.runs[0].size }));
+    expect(caps.map((c) => c.text).sort()).toEqual(['1', '2', 'LiOH', 'THF, 23 °C']);
+    expect(caps.filter((c) => c.bold).map((c) => c.text).sort()).toEqual(['1', '2']);
+    for (const c of caps) expect(c.size).toBeCloseTo(10, 0);
+    // nothing is left as picture
+    expect(e.rest).toBeNull();
+    expect(e.contents.shapes).toHaveLength(0);
+  });
+
+  it('draws the arrow and text in the document style for Use Default Style', () => {
+    const e = editableFromParts(reads, p, 1 / k, 'default', ACS_1996, STYLE_PRESETS, texts);
+    expect(e.contents.arrows[0].lineWidth).toBeUndefined();
+    expect(e.contents.arrows[0].headLength).toBeCloseTo(ACS_1996.lineWidth * 10, 5);
+    expect(e.contents.captions.every((c) => c.runs.every((r) => r.size === undefined))).toBe(true);
+  });
+
+  it('without the text read, keeps the rest as picture (as before)', () => {
+    const e = editableFromParts(reads, p, 1 / k, 'match', ACS_1996, STYLE_PRESETS);
+    expect(e.contents.arrows).toHaveLength(0);
+    expect(e.contents.shapes).toHaveLength(1);
+  });
+
+  it('finds where each line of text is, a lone compound number too', () => {
+    const rest = editableFromParts(reads, p, 1 / k, 'match', ACS_1996, STYLE_PRESETS, []).rest!;
+    expect(textLineBoxes(rest)).toHaveLength(4);
+  });
+
+  it('writes formulas with subscript digits, and leaves other words alone', () => {
+    expect(textRuns('Et3N, CH2Cl2, 23 °C')).toEqual([{ text: 'Et3N', formula: true }, { text: ', ' }, { text: 'CH2Cl2', formula: true }, { text: ', 23 °C' }]);
+    for (const w of ['H2O', 'NaBH4', 'Pd(PPh3)4', 'BF3·OEt2'.split('·')[0]]) expect(isFormula(w)).toBe(true);
+    for (const w of ['23', '1a', 'THF', '4.0', 'rt', '(2)']) expect(isFormula(w)).toBe(false);
+  });
+});
+
+describe('Make Editable: arrows of other kinds', () => {
+  // a picture with lines drawn into it (black on white): `segs` are [x1, y1, x2, y2, width]
+  const pic = (w: number, h: number, segs: number[][], tris: number[][][] = []) => {
+    const data = new Uint8ClampedArray(w * h * 4).fill(255);
+    const ink = (x: number, y: number) => { if (x >= 0 && y >= 0 && x < w && y < h) data.set([0, 0, 0, 255], (y * w + x) * 4); };
+    for (const [x1, y1, x2, y2, lw] of segs) {
+      const L = Math.hypot(x2 - x1, y2 - y1);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const t = Math.max(0, Math.min(1, ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / (L * L)));
+        if (Math.hypot(x - x1 - t * (x2 - x1), y - y1 - t * (y2 - y1)) <= lw / 2) ink(x, y);
+      }
+    }
+    for (const [a, b, c] of tris) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const s = (p: number[], q: number[]) => (q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0]);
+        const d1 = s(a, b), d2 = s(b, c), d3 = s(c, a);
+        if (!((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))) ink(x, y);
+      }
+    }
+    return { width: w, height: h, data };
+  };
+
+  it('a filled head, pointing left', () => {
+    const a = findArrows(pic(200, 40, [[30, 20, 180, 20, 2]], [[[10, 20], [32, 12], [32, 28]]]), 20);
+    expect(a).toHaveLength(1);
+    expect(a[0].headStyle).toBe('full');
+    expect(a[0].headType).toBe('solid');
+    expect(a[0].head.x).toBeLessThan(a[0].tail.x);
+  });
+
+  it('an open head', () => {
+    const a = findArrows(pic(200, 40, [[10, 20, 180, 20, 2], [180, 20, 164, 11, 2], [180, 20, 164, 29, 2]]), 20);
+    expect(a).toHaveLength(1);
+    expect(a[0].headStyle).toBe('full');
+    expect(a[0].headType).toBe('angle');
+  });
+
+  it('two half-headed arrows: one equilibrium arrow', () => {
+    const a = findArrows(pic(200, 60, [[10, 24, 180, 24, 2], [180, 24, 164, 15, 2], [20, 36, 190, 36, 2], [20, 36, 36, 45, 2]]), 20);
+    expect(a).toHaveLength(1);
+    expect(a[0].equilibrium).toBe(true);
+  });
+
+  it('a plain line with no head is a line, and letters are not arrows', () => {
+    const a = findArrows(pic(200, 40, [[10, 20, 180, 20, 2]]), 20);
+    expect(a.map((x) => [x.headStyle, x.tailStyle])).toEqual([['none', 'none']]);
+    expect(findArrows(pic(60, 60, [[10, 10, 30, 50, 3], [30, 50, 50, 10, 3]]), 20)).toHaveLength(0);
   });
 });

@@ -392,6 +392,8 @@ export interface FromPicture {
    */
   parts?: FromPictureRead[];
   px?: { w: number; h: number };
+  /** The text read in the rest of the picture (a scheme's reagents, conditions, compound numbers): each line's words with their boxes and how sure (0 to 100), and its baseline, in the pixels read. */
+  texts?: { words: { t: string; box: [number, number, number, number]; c: number }[]; base: number }[];
 }
 
 export interface Embedded {

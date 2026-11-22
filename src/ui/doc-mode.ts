@@ -4214,7 +4214,7 @@ export class DocumentMode {
     if (!reader) { this.host.flash('Reading structures needs the app.'); return; }
     const ds = f.t.drawingStyle;
     openMakeEditableWindow({
-      reading: readPicture(reader, o).then((r) => (r ? (choice: StyleChoice) => madeFrom(o, r, choice, ds) : null)),
+      reading: readPicture(reader, o, ds).then((r) => (r ? (choice: StyleChoice) => madeFrom(o, r, choice, ds) : null)),
       style: ds,
       initial: lastEditStyle(),
       apply: (made, keep, choice) => {
