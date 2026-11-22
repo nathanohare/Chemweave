@@ -51,6 +51,10 @@ To also check saving against your own ChemDraw files (they stay on your computer
 
 The `bench/` scripts drive the app in a headless browser to measure speed. Start `npm run build` and `npm run preview` first, then for example `node bench/perf.mjs stress`. They need Playwright's Chromium once: `npx playwright install chromium`.
 
+## The wiki
+
+The repository's [wiki](https://github.com/nathanohare/Chemweave/wiki) is made from the user guide in `docs/`, so write and correct the guide there, never on the wiki: each merge into `main` that changes `docs/` rebuilds the wiki (the **Wiki** workflow, `.github/workflows/wiki.yml`) and replaces edits made on it. `scripts/build-wiki.mjs` lists the wiki's pages and splits the long Canvas page into shorter ones; when you add a `##` section to `docs/guide/drawing.md`, add its heading to one of the Canvas pages there (until then it stays on the main Canvas page). `node scripts/build-wiki.mjs --check` lists any link or picture in `docs/` that leads nowhere, and the unit tests check the same.
+
 ## Where things are
 
 | Folder | What is in it |

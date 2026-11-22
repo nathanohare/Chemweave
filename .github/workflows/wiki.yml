@@ -1,0 +1,50 @@
+name: Wiki
+
+# Rebuilds the GitHub wiki (the repository's Wiki tab) from the user guide in docs/ with
+# scripts/build-wiki.mjs, after each merge into main that changes the guide, and when started by
+# hand from the Actions tab. docs/ is where the guide is written; edits made on the wiki itself are
+# replaced by the next rebuild. The Checks workflow's unit tests (tests/build-wiki.test.ts) already
+# catch broken links in docs/ on each pull request, so this only builds and pushes (under a minute).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'scripts/build-wiki.mjs'
+      - '.github/workflows/wiki.yml'
+  workflow_dispatch:
+
+# the workflow's own token pushes the wiki, which counts as writing the repository's contents
+permissions:
+  contents: write
+
+# two merges close together rebuild one after the other, never at the same time
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+jobs:
+  wiki:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # the script uses only Node's own modules, so no npm ci
+      - name: Build the wiki and push it
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
+          node scripts/build-wiki.mjs wiki
+          cd wiki
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The wiki already matches docs/"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Rebuild from docs/ at ${GITHUB_SHA::7}"
+          git push
