@@ -595,7 +595,11 @@ export function emfSpans(data: Uint8Array): P.Span[] {
   const spans: P.Span[] = [];
   for (const m of svg.matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/g)) {
     const attrs = Object.fromEntries([...m[1].matchAll(/([\w:-]+)="([^"]*)"/g)].map((a) => [a[1], a[2]]));
-    const text = m[2].replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+    // (tags stripped until none is left, then the entities decoded in one pass, so "&amp;lt;" stays "&lt;")
+    let inner = m[2];
+    for (let was = ''; was !== inner; ) { was = inner; inner = inner.replace(/<[^<>]*>/g, ''); }
+    const ENT: Record<string, string> = { lt: '<', gt: '>', quot: '"', '#39': "'", amp: '&' };
+    const text = inner.replace(/&(lt|gt|quot|#39|amp);/g, (_, e: string) => ENT[e]);
     if (!text.trim()) continue;
     let a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;
     const tr = /translate\(([-\d.e]+)[ ,]+([-\d.e]+)\)/.exec(attrs.transform ?? '');

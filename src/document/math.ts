@@ -549,10 +549,14 @@ function isOp(n: MathNode): boolean {
   return (n.t === 'sym' && (n.style === 'op' || n.s === '(' || n.s === '[' || n.s === '{' || n.s === ',')) || n.t === 'arrow';
 }
 
-/** An equation laid out (with a little room either side, as in Word). */
-export function layoutMath(src: string, size: number, family: string, measure: Measure): MathBox {
+/**
+ * An equation laid out, with a little room either side (`pad`, in ems). A document's equations
+ * have none, as in Word, where an equation in a line ("25 °C") sits as close to the text as its
+ * letters do.
+ */
+export function layoutMath(src: string, size: number, family: string, measure: Measure, padEm = 0.08): MathBox {
   const b = new MathLayout(measure, family).box(parseMath(src), size);
-  const pad = 0.08 * size;
+  const pad = padEm * size;
   return { w: b.w + 2 * pad, ascent: Math.max(b.ascent, 0.72 * size), descent: Math.max(b.descent, 0.22 * size), items: shift(b, pad, 0) };
 }
 

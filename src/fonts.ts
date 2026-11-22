@@ -8,6 +8,7 @@
 
 import { woffToSfnt, type EmbedFace, type FontSource } from './io/font-embed';
 import type { PdfFontSource } from './io/pdf-fonts';
+import { STAND_IN_FONTS, standInFont, useEmbeddedFont } from './text/font-standins';
 
 export interface FontGroup {
   name: string;
@@ -58,13 +59,17 @@ const FILES = import.meta.glob('/node_modules/@fontsource/*/files/*-{latin,latin
 const WOFF = import.meta.glob('/node_modules/@fontsource/*/files/*-{latin,latin-ext,greek}-{400,700}-{normal,italic}.woff', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 
 let registered = false;
+let fontsChanged: (() => void) | null = null;
 
 /** Tell the page about the bundled fonts (each file loads when text first uses it). `changed` runs when files have loaded. */
 export function registerBundledFonts(changed: () => void): void {
   if (registered || typeof FontFace === 'undefined') return;
   registered = true;
+  fontsChanged = changed;
   const family = new Map<string, string>();
   for (const g of BUNDLED_GROUPS) for (const f of g.fonts) family.set(packageName(f), f);
+  // (and the stand-ins for Calibri, Cambria, Arial, Times and Courier, used where those are missing)
+  for (const f of STAND_IN_FONTS) family.set(packageName(f), f);
   for (const [path, url] of Object.entries(FILES)) {
     const f = readFontFile(path);
     const name = f && family.get(f.pkg);
@@ -72,6 +77,27 @@ export function registerBundledFonts(changed: () => void): void {
     document.fonts.add(new FontFace(name, `url(${url}) format('woff2')`, { weight: String(f.weight), style: f.style, unicodeRange: RANGES[f.subset], display: 'swap' }));
   }
   document.fonts.addEventListener('loadingdone', () => changed());
+}
+
+const embeddedFaces = new Set<string>();
+
+/**
+ * A font embedded in a Word document, for showing it on a computer without that font: loaded
+ * under a name of its own ("Calibri (embedded)"), which comes after the font itself, so an
+ * installed copy is still used first. Fonts that forbid it never get here (embeddable()).
+ */
+export function registerEmbeddedFont(family: string, bold: boolean, italic: boolean, data: Uint8Array): void {
+  if (typeof FontFace === 'undefined' || typeof document === 'undefined') return;
+  const alias = `${family.trim()} (embedded)`;
+  const k = `${alias}|${bold}|${italic}`;
+  if (embeddedFaces.has(k)) return;
+  embeddedFaces.add(k);
+  try {
+    const face = new FontFace(alias, data.slice().buffer, { weight: bold ? '700' : '400', style: italic ? 'italic' : 'normal' });
+    document.fonts.add(face);
+    useEmbeddedFont(family, alias);
+    void face.load().then(() => fontsChanged?.(), () => { /* a font the browser can't read is left out */ });
+  } catch { /* left out */ }
 }
 
 /** The bundled Latin file of a font (WOFF, which can be turned into the TrueType that Word and PowerPoint embed). */
@@ -111,12 +137,9 @@ export const bundledFaces: FontSource = async (family) => {
   return out;
 };
 
-/** The free font a PDF uses for a family the app doesn't ship: same letter widths as Arial, Times New Roman or Courier New. */
+/** The free font a PDF uses for a family the app doesn't ship: same letter widths as Calibri, Cambria, Arial, Times New Roman or Courier New. */
 export function pdfStandIn(family: string): string {
-  if (isBundled(family)) return family;
-  if (/courier|consolas|mono/i.test(family)) return 'Cousine';
-  if (/times|georgia|cambria|garamond|book antiqua|palatino|serif$/i.test(family) && !/sans/i.test(family)) return 'Tinos';
-  return 'Arimo';
+  return isBundled(family) ? family : standInFont(family);
 }
 
 /** The bundled files (Latin, then Latin-extended, then Greek) of a face, nearest weight and style first. */

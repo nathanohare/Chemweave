@@ -5,7 +5,7 @@
 
 import type { ParaStyle, TextRun } from '../model';
 
-const KEYS = ['list', 'level', 'cont', 'soft', 'align', 'spaceBefore', 'spaceAfter', 'indent', 'style', 'pageBreak', 'colBreak', 'firstLine', 'line', 'keepNext', 'keepLines', 'noWidow', 'indentRight', 'linePt', 'lineRule', 'section', 'noLineNumbers', 'noHyphen', 'marks', 'tabs', 'scheme', 'bullet', 'numType', 'startAt', 'border', 'shade', 'xe', 'ta', 'cc'] as const;
+const KEYS = ['list', 'level', 'cont', 'soft', 'align', 'spaceBefore', 'spaceAfter', 'indent', 'style', 'pageBreak', 'colBreak', 'firstLine', 'line', 'keepNext', 'keepLines', 'noWidow', 'indentRight', 'linePt', 'lineRule', 'section', 'noLineNumbers', 'noHyphen', 'marks', 'tabs', 'scheme', 'bullet', 'numType', 'startAt', 'numLook', 'border', 'shade', 'xe', 'ta', 'cc'] as const;
 
 /** A paragraph style with nothing unset or zero, so two styles compare simply. */
 export function cleanPara(p: ParaStyle | undefined): ParaStyle {
@@ -18,8 +18,8 @@ export function cleanPara(p: ParaStyle | undefined): ParaStyle {
     o[k] = v;
   }
   // a level or a continuation means nothing outside a list
-  if (!o.list) { delete o.level; delete o.cont; delete o.scheme; delete o.bullet; delete o.numType; delete o.startAt; }
-  else if (o.list === 'bullet') { delete o.scheme; delete o.numType; delete o.startAt; }
+  if (!o.list) { delete o.level; delete o.cont; delete o.scheme; delete o.bullet; delete o.numType; delete o.startAt; delete o.numLook; }
+  else if (o.list === 'bullet') { delete o.scheme; delete o.numType; delete o.startAt; delete o.numLook; }
   else delete o.bullet;
   return o as ParaStyle;
 }
@@ -158,7 +158,37 @@ export const LIST_SCHEMES: ListScheme[] = [
 ];
 
 export function schemeOf(id: string | undefined): ListScheme {
-  return LIST_SCHEMES.find((s) => s.id === (id ?? '')) ?? LIST_SCHEMES[0];
+  return LIST_SCHEMES.find((s) => s.id === (id ?? '')) ?? (id?.startsWith(OWN) ? ownScheme(id) : null) ?? LIST_SCHEMES[0];
+}
+
+/**
+ * A list's own multilevel scheme, as a Word file has it when it isn't one of the library's
+ * (A. then 1., say): written in its id, so it goes wherever the id goes and back into Word.
+ * The id is "own:" and each level's format letter (1, a, A, i, I) and label, joined by tabs.
+ */
+const OWN = 'own:';
+const FMT_CODE: Record<NumFormat, string> = { decimal: '1', lowerLetter: 'a', upperLetter: 'A', lowerRoman: 'i', upperRoman: 'I' };
+const CODE_FMT = Object.fromEntries(Object.entries(FMT_CODE).map(([f, c]) => [c, f])) as Record<string, NumFormat>;
+const owns = new Map<string, ListScheme>();
+
+/** The id of a list's own scheme with these levels (up to nine; the library's 1. a. i. below them); null when a label can't be kept in one (it has a tab or a | in it). */
+export function ownSchemeId(levels: SchemeLevel[]): string | null {
+  if (levels.some((l) => /[\t|]/.test(l.text))) return null;
+  return OWN + levels.slice(0, 9).map((l) => FMT_CODE[l.fmt] + l.text).join('\t');
+}
+
+function ownScheme(id: string): ListScheme | null {
+  let s = owns.get(id);
+  if (s) return s;
+  const parts = id.slice(OWN.length).split('\t');
+  const levels = LIST_SCHEMES[0].levels.map((l, i) => {
+    const p = parts[i];
+    const fmt = p ? CODE_FMT[p[0]] : undefined;
+    return fmt ? { fmt, text: p.slice(1) } : l;
+  });
+  s = { id, name: levels.slice(0, 3).map((l, i) => l.text.replace(/%(\d)/g, (_, d: string) => formatNumber(1, levels[Number(d) - 1]?.fmt ?? 'decimal')).trim() || `${i + 1}`).join(' '), levels };
+  owns.set(id, s);
+  return s;
 }
 
 /**
@@ -259,6 +289,17 @@ export function listMarkers(paras: ParaStyle[]): (string | null)[] {
 // ------------------------------------------------------------------ text helpers
 
 /** Split runs at line breaks into the runs of each paragraph (empty paragraphs give []). */
+/**
+ * Each paragraph's mark: the run holding the line break that ends it (undefined for the last).
+ * An empty paragraph is as tall as its mark's font and size make it, as in Word.
+ */
+export function paragraphMarks(runs: TextRun[]): (TextRun | undefined)[] {
+  const out: (TextRun | undefined)[] = [];
+  for (const r of runs) for (const ch of r.text) if (ch === '\n') out.push(r);
+  out.push(undefined);
+  return out;
+}
+
 export function splitParagraphs(runs: TextRun[]): TextRun[][] {
   const out: TextRun[][] = [[]];
   for (const r of runs) {

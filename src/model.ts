@@ -516,6 +516,12 @@ export interface ParaStyle {
   noLineNumbers?: boolean;
   /** Don't hyphenate this paragraph (Word's Don't hyphenate, under Line and Page Breaks). */
   noHyphen?: boolean;
+  /**
+   * Documents: a list number's own bold or italic, where it differs from the paragraph style's
+   * (from a Word file: its paragraph mark's or its list level's formatting). Numbers otherwise take
+   * the paragraph style's bold and italic, as in Word.
+   */
+  numLook?: { bold?: boolean; italic?: boolean };
   /** Documents: bookmarks at this paragraph (Insert > Document > Bookmark), by name, for links to point at. */
   marks?: string[];
   /** Documents: tab stops, in points from the left margin, in order (Word's default every half inch past the last). */
