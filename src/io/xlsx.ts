@@ -1388,9 +1388,10 @@ function cellRuns(runs: FileRun[] | undefined, style: CellStyle | undefined, min
       ...(l.bold !== !!style?.bold ? { bold: l.bold } : {}),
       ...(l.italic !== !!style?.italic ? { italic: l.italic } : {}),
       ...(l.underline !== !!style?.underline ? { underline: l.underline } : {}),
-      ...(l.strike ? { strike: true } : {}),
+      // (off as well as on: a word left plain in a struck-through or lowered cell; review of F5, R05)
+      ...(l.strike !== !!style?.strike ? { strike: l.strike } : {}),
       ...(color ? { color } : {}),
-      ...(l.pos ? { pos: l.pos } : {}),
+      ...((l.pos ?? 'base') !== (style?.pos ?? 'base') ? { pos: l.pos ?? 'base' } : {}),
       ...(l.size !== undefined && l.size !== size ? { size: l.size } : {}),
       ...(font ? { font } : {}),
     };

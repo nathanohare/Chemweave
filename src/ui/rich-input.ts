@@ -190,7 +190,7 @@ export class RichInput {
       if (l.color) span.style.color = l.color;
       if (l.font) span.style.fontFamily = `"${l.font}"`;
       if (l.size) span.style.fontSize = `${(l.size * 4) / 3}px`;
-      if (l.pos) { span.style.verticalAlign = l.pos === 'sub' ? 'sub' : 'super'; span.style.fontSize = '70%'; }
+      if (l.pos === 'sub' || l.pos === 'sup') { span.style.verticalAlign = l.pos === 'sub' ? 'sub' : 'super'; span.style.fontSize = '70%'; }
       el.append(span);
     }
     // the line after a last new line shows, and an empty box keeps its height
