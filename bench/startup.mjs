@@ -31,3 +31,25 @@ export function startupSlower(base, head) {
   const was = Math.min(...base.map((o) => o.up)), now = Math.min(...head.map((o) => o.up));
   return now > was * STARTUP_LIMIT && now - was > STARTUP_FLOOR_MS;
 }
+
+/** The pull request label that passes an expected slowdown (the check still prints the times). */
+export const SLOWER_OK_LABEL = 'slower start-up expected';
+
+/** { fail, text }: the start-up check's answer; `accepted` when the pull request carries SLOWER_OK_LABEL. */
+export function startupVerdict(base, head, accepted = false) {
+  const was = Math.min(...base.map((o) => o.up)), now = Math.min(...head.map((o) => o.up));
+  if (!startupSlower(base, head)) return { fail: false, text: 'Start-up did not get noticeably slower.' };
+  const by = `The app takes ${now - was} ms (${Math.round((now / was - 1) * 100)}%) longer to start than on the base branch.`;
+  if (accepted) return { fail: false, text: `${by} Passed: the pull request has the label “${SLOWER_OK_LABEL}”.` };
+  return { fail: true, text: `${by} If that is expected, say why in the pull request, add the label “${SLOWER_OK_LABEL}” and run this check again.` };
+}
+
+/** startOnce, saying which side did not start (the base branch or the pull request) instead of a bare timeout. */
+export async function startSide(browser, side, url, settle, start = startOnce) {
+  try {
+    return await start(browser, url, settle);
+  } catch (e) {
+    const who = side === 'base' ? 'The base branch’s app' : 'This pull request’s app';
+    throw new Error(`${who} did not start at ${url} (${String(e?.message ?? e).split('\n')[0]}). Build and open it to see why.`);
+  }
+}
