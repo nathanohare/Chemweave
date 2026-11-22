@@ -61,7 +61,7 @@ import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateSc
 import { popupMenu } from './popup-menu';
 import { fontGroupHtml, SI_FONT_OFF, SI_FONT_REASON } from './font-group';
 import { paintCanRun } from './can-run';
-import { chemPieces } from '../sheet/cell-text';
+import { formulaStyleRange } from './si-formula';
 import { allBoxes } from '../si/scheme-edit';
 
 /** Said when a change was made on a page of before the project was read again (Undo, Reload): its objects are no longer the project's. */
@@ -878,13 +878,14 @@ export class SiMode {
       this.host.flash('Select plain text only: Formula style leaves compound mentions and citations as they are.');
       return;
     }
-    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const html = chemPieces(sel.toString()).map((p) => {
-      const t = esc(p.text);
-      const x = p.pos === 'sub' ? `<sub>${t}</sub>` : p.pos === 'sup' ? `<sup>${t}</sup>` : t;
-      return p.italic ? `<i>${x}</i>` : x;
-    }).join('');
-    document.execCommand('insertHTML', false, html);
+    // only the numbers and charges are wrapped, where they are: bold, italic and underline round them stay (F5b-R04)
+    const copy = document.createElement('div');
+    copy.append(sel.getRangeAt(0).cloneContents());
+    const all = document.createRange();
+    all.selectNodeContents(copy);
+    if (!formulaStyleRange(all)) { this.host.flash('Nothing to change: the selection has no numbers or charges to lower or raise.'); return; }
+    // (put back as typing is, so Ctrl+Z takes it back)
+    document.execCommand('insertHTML', false, copy.innerHTML);
   }
 
   /** Put the typing back where it was in the last SI text box (false when there is none). */
