@@ -10700,7 +10700,9 @@ function showMenu(m: Menu | null, focus = true): void {
   if (!m) return;
   refreshHistory();
   // commands that cannot run now are greyed, with the reason in the tooltip (S15, S85)
-  paintCanRun([...m.list.querySelectorAll<HTMLButtonElement>('button[data-cmd]')].filter((b) => !b.closest('[data-mode-hid]')), 'cmd', (c) => whyCannotRun(c, true));
+  // (a sheet's checks are asked in full: the costliest, Property Columns, takes about 20 ms on 20,000 rows; F5b-R05)
+  const lazy = menuMode() !== 'sheet';
+  paintCanRun([...m.list.querySelectorAll<HTMLButtonElement>('button[data-cmd]')].filter((b) => !b.closest('[data-mode-hid]')), 'cmd', (c) => whyCannotRun(c, lazy));
   m.list.style.setProperty('--menu-top', `${m.btn.getBoundingClientRect().bottom}px`);
   fitMenu(m.list);
   if (focus) menuItems(m.list)[0]?.focus();
