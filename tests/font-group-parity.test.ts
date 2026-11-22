@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { FONT_ROWS, FONT_LOOK, fontGroupHtml, installFontGroups, FONT_SIZE_LIST, SI_FONT_OFF, SI_FONT_REASON, type FontMode } from '../src/ui/font-group';
+import { FONT_ROWS, FONT_LOOK, fontGroupHtml, installFontGroups, siFontBoxes, FONT_SIZE_LIST, SI_FONT_OFF, SI_FONT_REASON, type FontMode } from '../src/ui/font-group';
 import { buildTextBar } from '../src/ui/text-bar';
 import { CanvasRibbon } from '../src/ui/canvas-ribbon';
 
@@ -83,5 +83,20 @@ describe('the shared Font group (G5-26)', () => {
     expect(SI_FONT_OFF).toEqual(['font', 'size', 'grow', 'shrink', 'strike', 'color']);
     for (const c of ['bold', 'italic', 'underline', 'subscript', 'superscript', 'clear', 'formula']) expect(g.querySelector(`[data-si-fmt="${c}"]`), c).not.toBeNull();
     expect(SI_FONT_REASON).toContain('journal style');
+  });
+});
+
+describe('SI Font group boxes (F5b-R08)', () => {
+  it('shows the SI text\'s own font and size, disabled with the reason, as the color picker is', () => {
+    const host = document.createElement('div');
+    host.innerHTML = fontGroupHtml('si');
+    siFontBoxes(host, { font: 'Calibri', size: 11 });
+    const font = host.querySelector<HTMLInputElement>('input[data-si-fmt="font"]')!;
+    const size = host.querySelector<HTMLInputElement>('input[data-si-fmt="size"]')!;
+    const color = host.querySelector<HTMLInputElement>('input[data-si-fmt="color"]')!;
+    expect([font.value, size.value]).toEqual(['Calibri', '11']);
+    for (const el of [font, size, color]) expect(el.disabled).toBe(true);
+    expect(font.title).toBe(SI_FONT_REASON);
+    expect(color.closest('label')!.title).toBe(SI_FONT_REASON);
   });
 });

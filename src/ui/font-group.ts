@@ -161,6 +161,19 @@ const MODES: Record<FontMode, ModeFont> = {
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const at = (b: Bind) => (b.value === undefined ? b.attr : `${b.attr}="${esc(b.value)}"`);
 
+/**
+ * The SI tab's font box, size box and text color, which SI text cannot change: disabled, with the
+ * reason as their tip, and the boxes showing the SI text's own font and size (review F5b-R08).
+ */
+export function siFontBoxes(root: ParentNode, normal: { font?: string; size?: number }): void {
+  for (const el of root.querySelectorAll<HTMLInputElement>('.rb-font-group input[data-si-fmt]')) {
+    el.disabled = true;
+    (el.closest('label') ?? el).title = SI_FONT_REASON;
+    if (el.dataset.siFmt === 'font') el.value = normal.font ?? '';
+    if (el.dataset.siFmt === 'size') el.value = normal.size === undefined ? '' : String(normal.size);
+  }
+}
+
 /** One control's HTML in a mode. */
 function control(mode: FontMode, c: FontControl): string {
   const b = MODES[mode].controls[c];

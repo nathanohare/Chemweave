@@ -11,7 +11,7 @@ import { fieldLabelNodes } from './field-label';
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
-import type { DocText } from '../document/document';
+import { defaultStyles, type DocText } from '../document/document';
 import { compileSi, objectLabels, type SiPreviewTarget } from '../si/compile-doc';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
@@ -59,7 +59,7 @@ import { availableColumns, buildRows, chosenColumns, fieldLabel, filterOf, isCom
 import { dashboardGrid, projectSummaryCard, sectionDashboard, statusColorsBody, type GridOptions } from './si-dashboard';
 import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
 import { popupMenu } from './popup-menu';
-import { fontGroupHtml, SI_FONT_OFF, SI_FONT_REASON } from './font-group';
+import { fontGroupHtml, siFontBoxes, SI_FONT_OFF, SI_FONT_REASON } from './font-group';
 import { paintCanRun } from './can-run';
 import { formulaStyleRange } from './si-formula';
 import { allBoxes } from '../si/scheme-edit';
@@ -598,10 +598,7 @@ export class SiMode {
     this.ribbon.innerHTML = RIBBON;
     // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? SI_FONT_REASON : null));
-    for (const el of this.ribbon.querySelectorAll<HTMLInputElement>('.rb-font-group input[data-si-fmt]')) {
-      el.disabled = true;
-      (el.closest('label') ?? el).title = SI_FONT_REASON;
-    }
+    siFontBoxes(this.ribbon, defaultStyles().Normal);
     // Bold, Italic… show whether the text being typed has them
     document.addEventListener('selectionchange', () => {
       if (this.ribbon.hidden || !this.typing || document.activeElement !== this.typing) return;

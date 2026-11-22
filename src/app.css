@@ -178,6 +178,8 @@ header, .ribbon, .toolbox, .menu, .context-menu, #tabs, footer#status { -webkit-
 .menu button:disabled:hover { background: transparent; }
 /* a command that cannot run now (can-run.ts): greyed, but it still takes focus and shows its reason */
 button[data-cant-run] { color: var(--muted); opacity: 0.55; cursor: default; }
+/* a Font group's box or color picker that cannot be used looks greyed as its buttons do (SI: F5b-R08) */
+.rb-font-group input:disabled, .rb-font-group label:has(> input:disabled) { opacity: 0.55; cursor: default; }
 .menu button[data-cant-run]:hover, .ribbon button[data-cant-run]:hover, .toolbox button[data-cant-run]:hover { background: transparent; border-color: transparent; }
 /* the menu names keep one height in every mode, so the bar never jumps */
 header > .menu-wrap > button { height: 26px; padding: 0 8px; border-color: transparent; background: transparent; }
