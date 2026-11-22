@@ -45,6 +45,7 @@ import { paragraphPages } from './document/doc-file';
 import { reviewAuthor, setReviewAuthor } from './document/revisions';
 import { NMR_SOLVENTS, NmrPanel, solventLabel } from './ui/nmr-panel';
 import { paintCanRun, clearCanRun } from './ui/can-run';
+import { StepCache } from './chem/step-cache';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
 import { compareMode, nmrQuality, nmrSpectrumMhz, sampleSpectrumData, setCompareMode, setNmrQuality, setNmrSpectrumMhz, spectrumSvg, type CompareMode } from './ui/nmr-spectrum';
 import { nmrAutoPredict, nmrRange, peakLabels, setNmrAutoPredict, setNmrRange, setPeakLabels, type PeakLabels } from './ui/nmr-settings';
@@ -2939,11 +2940,11 @@ interface StepSpecies {
  * said) when there is none to choose.
  */
 type PickedStep = { step: ReturnType<typeof reactionSteps>[number]; items: ReturnType<typeof schemeItems>; m: ReturnType<typeof editor.measure> };
+/** The drawing's reaction steps, worked out once per change of the drawing (G5-28). */
+const stepCache = new StepCache();
 /** The reaction step of the selected arrow (or the only one), or why there is none. */
 function findStep(what: string): PickedStep | string {
-  const m = editor.measure();
-  const items = schemeItems(doc, m);
-  const steps = reactionSteps(doc, items);
+  const { m, items, steps } = stepCache.get(doc, () => editor.measure());
   const picked = steps.filter((s) => editor.sel.arrows.has(s.arrow.id));
   const step = picked[0] ?? (steps.length === 1 ? steps[0] : null);
   if (!step) return steps.length ? `Select the arrow of the step to ${what}.` : 'No reaction step found: draw the starting materials, an arrow and the products.';
@@ -2960,13 +2961,16 @@ function pickedStep(what: string): PickedStep | null {
  * toast, null when it can run, undefined when it has no check. The menus and the ribbon grey the
  * command out with this reason in its tooltip.
  */
-function whyDrawingCannotRun(cmd: string): string | null | undefined {
+function whyDrawingCannotRun(cmd: string, lazy = false): string | null | undefined {
   const root = () => { const r = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited; return r !== null && doc.atoms.has(r) ? r : null; };
   switch (cmd) {
     case 'contract-label': { const g = selectedGroup(doc, editor.sel.atoms); return 'error' in g ? g.error : null; }
     case 'arrange-grid': return editor.gridCount() < 2 ? 'Select two or more structures or objects to put in a grid.' : null;
     case 'stoichiometry-table': case 'check-balance': {
       if (!doc.arrows.size) return 'No reaction step found: draw the starting materials, an arrow and the products.';
+      // (until the steps of the drawing as it is now are known, it stays enabled: they are worked
+      // out when its menu opens or the pointer rests on it, not on every change of a big drawing)
+      if (lazy && !stepCache.fresh(doc)) return null;
       const got = findStep(cmd === 'check-balance' ? 'check' : 'make the table for');
       return typeof got === 'string' ? got : null;
     }
@@ -2987,10 +2991,10 @@ function whyDrawingCannotRun(cmd: string): string | null | undefined {
   }
 }
 /** Why a command cannot run in the mode now (the sheet answers for its own); undefined: no check. */
-function whyCannotRun(cmd: string): string | null | undefined {
+function whyCannotRun(cmd: string, lazy = false): string | null | undefined {
   const mode = menuMode();
   if (mode === 'sheet') return sheetMode?.cannotRun(cmd);
-  if (mode === 'drawing' || mode === 'slides' || mode === 'design') return whyDrawingCannotRun(cmd);
+  if (mode === 'drawing' || mode === 'slides' || mode === 'design') return whyDrawingCannotRun(cmd, lazy);
   return undefined;
 }
 
@@ -5915,10 +5919,15 @@ function refreshCanRun(): void {
     const mode = menuMode();
     if (mode !== 'drawing' && mode !== 'slides' && mode !== 'design') return;
     const shown = [...document.querySelectorAll<HTMLButtonElement>('#canvas-ribbon button[data-cmd], #ribbon button[data-cmd]')].filter((b) => b.getClientRects().length > 0);
-    paintCanRun(shown, 'cmd', whyDrawingCannotRun);
+    paintCanRun(shown, 'cmd', (c) => whyDrawingCannotRun(c, true));
   });
 }
 for (const ev of ['pointerup', 'keyup'] as const) document.addEventListener(ev, refreshCanRun, true);
+// the pointer resting on a ribbon button: its costly check is made now (G5-28)
+for (const id of ['#canvas-ribbon', '#ribbon']) document.querySelector(id)?.addEventListener('pointerover', (e) => {
+  const b = (e.target as Element).closest<HTMLButtonElement>('button[data-cmd]');
+  if (b && (b.dataset.cmd === 'stoichiometry-table' || b.dataset.cmd === 'check-balance')) paintCanRun([b], 'cmd', (c) => whyDrawingCannotRun(c));
+});
 
 function refreshHistory(): void {
   if (historyQueued) return;
@@ -10632,6 +10641,8 @@ function openSub(item: HTMLButtonElement, focus: boolean): void {
   const sub = item.nextElementSibling as HTMLElement;
   sub.hidden = false;
   item.setAttribute('aria-expanded', 'true');
+  // the submenu's commands as they are now, the costly checks included (G5-28)
+  paintCanRun(sub.querySelectorAll<HTMLButtonElement>(':scope > button[data-cmd]'), 'cmd', (c) => whyCannotRun(c));
   const r = item.getBoundingClientRect(), w = sub.offsetWidth, h = sub.offsetHeight;
   const left = r.right + w + 4 <= innerWidth ? r.right + 2 : Math.max(4, r.left - w - 2);
   sub.style.left = `${left}px`;
@@ -10657,7 +10668,7 @@ function showMenu(m: Menu | null, focus = true): void {
   if (!m) return;
   refreshHistory();
   // commands that cannot run now are greyed, with the reason in the tooltip (S15, S85)
-  paintCanRun([...m.list.querySelectorAll<HTMLButtonElement>('button[data-cmd]')].filter((b) => !b.closest('[data-mode-hid]')), 'cmd', whyCannotRun);
+  paintCanRun([...m.list.querySelectorAll<HTMLButtonElement>('button[data-cmd]')].filter((b) => !b.closest('[data-mode-hid]')), 'cmd', (c) => whyCannotRun(c, true));
   m.list.style.setProperty('--menu-top', `${m.btn.getBoundingClientRect().bottom}px`);
   fitMenu(m.list);
   if (focus) menuItems(m.list)[0]?.focus();

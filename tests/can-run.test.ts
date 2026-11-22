@@ -59,8 +59,8 @@ describe('the checks (G5-28)', () => {
     expect(f).toContain("'error' in g ? g.error : null");
   });
   it('are applied when a menu opens and to the ribbon buttons on show', () => {
-    expect(main).toContain("paintCanRun([...m.list.querySelectorAll<HTMLButtonElement>('button[data-cmd]')].filter((b) => !b.closest('[data-mode-hid]')), 'cmd', whyCannotRun);");
-    expect(main).toContain("paintCanRun(shown, 'cmd', whyDrawingCannotRun);");
+    expect(main).toContain("paintCanRun([...m.list.querySelectorAll<HTMLButtonElement>('button[data-cmd]')].filter((b) => !b.closest('[data-mode-hid]')), 'cmd', (c) => whyCannotRun(c, true));");
+    expect(main).toContain("paintCanRun(shown, 'cmd', (c) => whyDrawingCannotRun(c, true));");
     expect(main).toContain('editor.onChange = () => { refreshCanRun();');
   });
   it('the sheet answers for remove duplicates, sort, text to columns, properties and data table', () => {
