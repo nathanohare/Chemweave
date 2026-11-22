@@ -72,3 +72,48 @@ function drawGlyphs(ctx: CanvasRenderingContext2D, lay: TextLayout, l: LaidLine,
     ctx.fillRect(ox + g.x, oy + l.y + g.dy - g.size * 0.27, g.w, Math.max(0.5, g.size * 0.05));
   }
 }
+
+/** The color formatting marks are drawn in (Home > Show/Hide ¶): a muted blue, as Word's are on screen. */
+export const MARK_COLOR = '#5b78a8';
+
+/**
+ * Formatting marks over a laid-out text (Home > Show/Hide ¶, as Word's): a raised dot for each
+ * space, an arrow across each tab, and ¶ where each paragraph ends (or ¤ at the end of a table
+ * cell's text, `cell`). Only for the screen: never in a picture, a print or a file.
+ */
+export function drawMarks(ctx: CanvasRenderingContext2D, lay: TextLayout, ox: number, oy: number, from = 0, to = lay.lines.length, cell = false): void {
+  ctx.save();
+  ctx.fillStyle = MARK_COLOR;
+  ctx.textAlign = 'center';
+  for (let i = from; i < to; i++) {
+    const l = lay.lines[i];
+    let end = l.x, last: Glyphs | undefined;
+    for (const g of l.pieces) {
+      if (g.hidden || g.decor) continue;
+      last = g;
+      end = Math.max(end, g.x + g.w);
+      if (g.obj !== undefined && !g.tab) continue;
+      const y = oy + l.y + g.dy;
+      if (g.tab) {
+        ctx.font = `${g.size}px ${g.family}`;
+        ctx.fillText('→', ox + g.x + g.w / 2, y);
+        continue;
+      }
+      // a space's dot sits at its middle, as high as the middle of the small letters
+      for (let k = g.text.indexOf(' '); k >= 0; k = g.text.indexOf(' ', k + 1)) {
+        const a = pieceX(lay, g, k), b = pieceX(lay, g, k + 1);
+        const r = Math.max(0.45, g.size * 0.055);
+        ctx.beginPath();
+        ctx.arc(ox + g.x + (a + b) / 2, y - g.size * 0.27, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    if (!l.last) continue;
+    const size = last?.size ?? l.size ?? 12;
+    ctx.font = `${size}px ${last?.family ?? 'serif'}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(cell && i === lay.lines.length - 1 ? '¤' : '¶', ox + end + size * 0.08, oy + l.y);
+    ctx.textAlign = 'center';
+  }
+  ctx.restore();
+}

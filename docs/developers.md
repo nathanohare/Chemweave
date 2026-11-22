@@ -47,9 +47,15 @@ Every pull request runs all of these (the **Checks** workflow), plus a speed che
 
 To see whether real drawings survive a save and reopen, `npm run roundtrip -- <folder>` (after a build) opens every `.cdxml`, `.cdx`, `.mol` and `.sdf` file in the folder, saves it as CDXML, opens it again and lists any file whose atoms, bonds, text, arrows or structures changed. The files are read where they are and never copied.
 
+To check Undo everywhere, `npm run undo-audit` (after a build) runs every Document, Spreadsheet, Canvas, Presentation and Design command in the built app, and drags all over each kind of object, undoing and redoing each one and comparing the file with how it was. It lists anything that changed without an undo step, took more than one Ctrl+Z, or wasn't put back exactly. `npm run undo-audit -- document <file.docx>` runs the Document part on a Word file of your own (read where it is, never copied); `npm run undo-audit -- sheet` (or `canvas`, `slides`, `design`, `drags`) runs one part. The unit tests `tests/undo-*.test.ts` check the same for Document mode's commands and drags and Edit Layouts on every pull request.
+
 To also check saving against your own ChemDraw files (they stay on your computer), point the tests at a folder of `.cdxml` files: in PowerShell `$env:CHEM_TEST_FILES="C:\path\to\folder"; npm test`. Any `.cdx` files saved by ChemDraw in that folder, or in a folder inside it, are also checked against the `.cdxml` file of the same name. Big files need more memory than Node gives by default: also set `$env:NODE_OPTIONS="--max-old-space-size=8192"`.
 
 The `bench/` scripts drive the app in a headless browser to measure speed. Start `npm run build` and `npm run preview` first, then for example `node bench/perf.mjs stress`. They need Playwright's Chromium once: `npx playwright install chromium`.
+
+## The wiki
+
+The repository's [wiki](https://github.com/nathanohare/Chemweave/wiki) is made from the user guide in `docs/`, so write and correct the guide there, never on the wiki: each merge into `main` that changes `docs/` rebuilds the wiki (the **Wiki** workflow, `.github/workflows/wiki.yml`) and replaces edits made on it. `scripts/build-wiki.mjs` lists the wiki's pages and splits the long Canvas page into shorter ones; when you add a `##` section to `docs/guide/drawing.md`, add its heading to one of the Canvas pages there (until then it stays on the main Canvas page). `node scripts/build-wiki.mjs --check` lists any link or picture in `docs/` that leads nowhere, and the unit tests check the same.
 
 ## Where things are
 
@@ -57,9 +63,12 @@ The `bench/` scripts drive the app in a headless browser to measure speed. Start
 |---|---|
 | `src/model.ts` | The drawing: atoms, bonds, text, arrows, shapes, undo and redo |
 | `src/render/` | Drawing to the screen (tiles, bond and label drawing), and pictures for other programs (EMF, SVG, PNG) |
-| `src/editor/` | Mouse tools and hotkeys; align, flip and rotate |
-| `src/ui/` | Tool bar, Style panel, the caption text box and template pictures |
-| `src/richtext.ts` | Styled caption text (bold, subscripts, Greek letters) |
+| `src/editor/` | Mouse tools and keyboard shortcuts; align, flip and rotate |
+| `src/ui/` | Everything on screen around the drawing: toolboxes, ribbons, the Style panel, dialogs and windows, and each mode's own screen (`sheet-mode.ts`, `si-mode.ts` and so on) |
+| `src/commands/` | The command list (`registry.ts`) that the Insert menu and Search are built from |
+| `index.html` | The other menus and the Presentation, Spreadsheet, Document and Design ribbons |
+| `src/ui/canvas-ribbon.ts` | The Canvas ribbon |
+| `src/richtext.ts`, `src/text/` | Styled text (bold, subscripts, Greek letters), text read as chemistry, font measuring |
 | `src/chem/` | Elements, labels, ring and chain geometry, templates, Clean Up Structure, molfile, formula |
 | `scripts/make-templates.mjs` | Makes the template shapes (`src/chem/templates.json`) with RDKit |
 | `src/io/cdxml.ts`, `cdxml-write.ts` | Reading and saving ChemDraw `.cdxml` files |
@@ -70,6 +79,16 @@ The `bench/` scripts drive the app in a headless browser to measure speed. Start
 | `src/design/`, `src/ui/design-panel.ts`, `layers-panel.ts`, `template-gallery.ts` | Design mode: the shape library, the icon library (`design/icons.ts`, data made by `scripts/build-icons.mjs` from `@mdi/svg`), ready-made layouts, the Layers panel |
 | `src/document/` | Document mode: the document, page layout, captions and fields, references and citations, find and replace, printing |
 | `src/io/docx-write.ts`, `docx-read.ts`, `cfb.ts` | Saving and opening Word files, and the ChemDraw objects embedded in them |
+| `src/deck/`, `src/io/pptx-read.ts`, `pptx-write.ts` | Presentation mode: slides, layouts, templates, animation and transitions, and PowerPoint files |
+| `src/sheet/`, `src/io/xlsx-*.ts` | Spreadsheet mode: the workbook, formulas and functions, chemistry functions, charts, templates, and Excel files |
+| `src/si/`, `src/ui/si-mode.ts`, `doc-si.ts` | SI Project: compounds, data, checks and the Supporting Information it builds |
+| `src/kb/` | The Knowledge Base tables and their data, each value with its source |
+| `src/library/` | Your own library of references and compounds, and **Find Structure in Files** |
+| `src/keep/` | AutoSave, recovery of unsaved work and version history |
+| `src/morph/` | Reaction animation (ported from cdxmorph, MIT) and its GIF and MP4 export |
+| `src/recognise/` | Reading structures from pictures and PDFs |
+| `src/ai/` | The Assistant: what a request would send, and the link to the person's own AI model |
+| `src/vendor/` | Third-party code kept in the repository (OPSIN, for name to structure) |
 | `src/worker/` | The RDKit chemistry engine, running in the background |
 | `src-tauri/` | The desktop app shell (Tauri), its settings and icons |
 | `tests/` | Unit tests |

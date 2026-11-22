@@ -10,7 +10,9 @@ import { DocLayouter, movedLayout, type DocLayout } from './doc-layout';
 import { reviewAuthor, revisionDate, type ReviewView } from './revisions';
 import { setPart } from '../table';
 import { FigurePictures } from './figures';
-import { BOX_PAD, newDocument, noteStyle, runStyleOf, styleOf, type DocObject, type DocText } from './document';
+import { BOX_PAD, newDocument, nextObjectId, noteStyle, runStyleOf, styleOf, type DocObject, type DocText, type HfKey } from './document';
+import { bodyAsZones, hfKeyFor, plainLook, zonesAsBody } from './hf-bodies';
+import { changeSection, sectionsOf } from './sections';
 import { allowedEdit } from './protect';
 import type { ParaStyle, TextRun } from '../model';
 import { fitParas, paraCount, storedParas } from '../text/paragraphs';
@@ -43,13 +45,21 @@ export const paragraphPages = new WeakMap<DocText, string[]>();
 interface Box {
   id: number;
   cell?: { r: number; c: number };
+  /** A header or footer being typed into on its page (Word's header and footer editing): `id` is -1. */
+  hf?: HfPlace;
   ed: TextEditing;
   recorded: boolean;
-  made: (x: { runs: TextRun[]; paras: ParaStyle[] }) => DocObject | null;
+  /** The document with the box's text as `x` (null when the box has gone). */
+  made: (x: { runs: TextRun[]; paras: ParaStyle[] }) => DocText | null;
   /** The box's text as the session started. */
   start: unknown;
   step?: object;
+  /** A header or footer: the document before it was typed into. */
+  before?: DocText;
 }
+
+/** A header or footer on a page: its page, header or footer, which of the section's, and the section it belongs to (a section linked to the one before shows that one's). */
+export interface HfPlace { page: number; kind: 'header' | 'footer'; key: HfKey; section: number }
 
 export class DocFile {
   readonly ed: TextEditing;
@@ -126,15 +136,13 @@ export class DocFile {
     };
     // tracked like the document's own text, and protected with it
     ed.track = this.ed.track;
-    const made = (x: { runs: TextRun[]; paras: ParaStyle[] }): DocObject | null => { const cur = this.t.objects[id]; return cur?.kind === 'textbox' ? { ...cur, runs: x.runs, paras: storedParas(x.paras) } : null; };
-    this.guardBox(ed, made, id);
+    const made = this.withObject(id, (cur, x) => (cur?.kind === 'textbox' ? { ...cur, runs: x.runs, paras: storedParas(x.paras) } : null));
+    this.guardBox(ed, made);
     const box: Box = { id, ed, recorded: false, made, start: ed.t };
     ed.onChange = (kind) => {
       if (kind === 'text') {
-        const cur = this.t.objects[id];
-        if (cur?.kind === 'textbox') {
-          this.record(box, { ...cur, runs: ed.t.runs, paras: storedParas(ed.t.paras) }, 'Edit text box');
-        }
+        const t = made(ed.t);
+        if (t) this.record(box, t, 'Edit text box');
         ed.relayout();
       }
       this.listener(kind);
@@ -162,15 +170,14 @@ export class DocFile {
     };
     // tracked like the document's own text, and protected with it
     ed.track = this.ed.track;
-    const made = (x: { runs: TextRun[]; paras: ParaStyle[] }): DocObject | null => { const cur = this.t.objects[id]; return cur?.kind === 'note' ? { ...cur, runs: x.runs, paras: storedParas(x.paras) } : null; };
-    this.guardBox(ed, made, id);
+    const made = this.withObject(id, (cur, x) => (cur?.kind === 'note' ? { ...cur, runs: x.runs, paras: storedParas(x.paras) } : null));
+    this.guardBox(ed, made);
     const box: Box = { id, ed, recorded: false, made, start: ed.t };
     ed.onChange = (kind) => {
       if (kind === 'text') {
+        const t = made(ed.t);
         const cur = this.t.objects[id];
-        if (cur?.kind === 'note') {
-          this.record(box, { ...cur, runs: ed.t.runs, paras: storedParas(ed.t.paras) }, cur.end ? 'Edit endnote' : 'Edit footnote');
-        }
+        if (t) this.record(box, t, cur?.kind === 'note' && cur.end ? 'Edit endnote' : 'Edit footnote');
         ed.relayout();
       }
       this.listener(kind);
@@ -205,16 +212,13 @@ export class DocFile {
     };
     // tracked like the document's own text, and protected with it
     ed.track = this.ed.track;
-    const made = (x: { runs: TextRun[]; paras: ParaStyle[] }): DocObject | null => { const cur = this.t.objects[id]; return cur?.kind === 'table' && cur.table.rows[r]?.[c] ? { ...cur, table: setPart(cur.table, { r, c }, { runs: x.runs, paras: storedParas(x.paras) }) } : null; };
-    this.guardBox(ed, made, id);
+    const made = this.withObject(id, (cur, x) => (cur?.kind === 'table' && cur.table.rows[r]?.[c] ? { ...cur, table: setPart(cur.table, { r, c }, { runs: x.runs, paras: storedParas(x.paras) }) } : null));
+    this.guardBox(ed, made);
     const box: Box = { id, cell: { r, c }, ed, recorded: false, made, start: ed.t };
     ed.onChange = (kind) => {
       if (kind === 'text') {
-        const cur = this.t.objects[id];
-        if (cur?.kind === 'table' && cur.table.rows[r]?.[c]) {
-          const table = setPart(cur.table, { r, c }, { runs: ed.t.runs, paras: storedParas(ed.t.paras) });
-          this.record(box, { ...cur, table }, 'Edit table');
-        }
+        const t = made(ed.t);
+        if (t) this.record(box, t, 'Edit table');
         ed.relayout();
       }
       this.listener(kind);
@@ -230,39 +234,123 @@ export class DocFile {
     try { f(); } finally { this.ed.guard = g; }
   }
 
-  /** A text box's, note's or cell's changes are let through when the document with them would be. */
-  private guardBox(ed: TextEditing, made: (t: { runs: TextRun[]; paras: ParaStyle[] }) => DocObject | null, id: number): void {
+  /** The document with an object changed by the text typed into it (`change` gives the object, or null when it has gone). */
+  private withObject(id: number, change: (cur: DocObject | undefined, x: { runs: TextRun[]; paras: ParaStyle[] }) => DocObject | null): Box['made'] {
+    return (x) => {
+      const o = change(this.t.objects[id], x);
+      return o ? { ...this.t, objects: { ...this.t.objects, [id]: o } } as DocText : null;
+    };
+  }
+
+  /** A text box's, note's, cell's or header's changes are let through when the document with them would be. */
+  private guardBox(ed: TextEditing, made: Box['made']): void {
     ed.guard = (_before, after) => {
       if (!this.t.protect) return true;
-      const o = made(after);
-      return !!o && allowedEdit(this.t, { ...this.t, objects: { ...this.t.objects, [id]: o } });
+      const t = made(after as { runs: TextRun[]; paras: ParaStyle[] });
+      return !!t && allowedEdit(this.t, t);
     };
     ed.refused = () => this.onRefused();
   }
 
-  /** A change typed into a text box, note or cell goes back into the document: the session's first as a step of Undo, the rest added to it. */
-  private record(box: Box, o: DocObject, label: string): void {
+  /** A change typed into a text box, note, cell or header goes back into the document: the session's first as a step of Undo, the rest added to it. */
+  private record(box: Box, t: DocText, label: string): void {
     const was = this.t;
-    this.ed.update({ ...this.t, objects: { ...this.t.objects, [box.id]: o } } as DocText, box.recorded ? null : label);
+    this.ed.update(t, box.recorded ? null : label);
     if (box.recorded || this.t === was) return;
     box.recorded = true;
     box.step = this.ed.lastStep;
   }
 
   /**
+   * Start typing into the header or footer of a page, on the page (Word's double-click on a
+   * header): its text edited on its own, laid out where it is drawn, every change going back
+   * into the section it belongs to (the one before, for a section linked to it), all of it one
+   * step of Undo. A plain header (left, centre and right text) becomes Word's paragraphs to type
+   * into, and plain text again when it is done if it still is (endBox).
+   */
+  editHf(page: number, kind: 'header' | 'footer'): TextEditing | null {
+    if (continuous(this.shown.kind)) return null;
+    const pg = this.layout().pages[page];
+    if (!pg) return null;
+    const secs = sectionsOf(this.t);
+    let section = pg.section;
+    while (section > 0 && secs[section].linked) section--;
+    const key = hfKeyFor(pg.hf, kind, !!pg.starts, pg.n ?? page + 1);
+    if (this.box?.hf && this.box.hf.page === page && this.box.hf.key === key && this.box.hf.kind === kind) return this.box.ed;
+    if (this.box) this.endBox();
+    const sec = sectionsOf(this.t)[section];
+    const textW = Math.max(36, sec.page.w - sec.page.left - sec.page.right);
+    const before = this.t;
+    let body = sec.hf.bodies?.[key];
+    const plain = !body;
+    if (!body) {
+      // plain text: as Word's paragraphs (its page number a PAGE field), the session's first step
+      const objects = { ...before.objects };
+      let next = nextObjectId(before);
+      body = zonesAsBody(before, sec.hf, key, textW, () => { const id = next++; objects[id] = { kind: 'field', code: 'page' }; return id; });
+      this.ed.update(changeSection({ ...before, objects }, section, { hf: { ...sec.hf, bodies: { ...sec.hf.bodies, [key]: body } } }), kind === 'header' ? 'Edit header' : 'Edit footer');
+    }
+    const look = plainLook(this.t);
+    const ed = new TextEditing({ runs: body.runs, paras: body.paras ?? [], justify: 'left', wrap: textW }, look, docMeasure, look.size ?? 10);
+    ed.anchor = ed.focus = ed.text.length;
+    // laid out as the page shows it (the document's own layout of it, so the caret is where the text is drawn)
+    ed.layoutWith = () => this.layout().hfs.find((h) => h.page === page && h.kind === kind)?.whole
+      ?? { lines: [], boxWidth: textW, box: { x1: 0, y1: 0, x2: 0, y2: 0 }, length: 0, measure: docMeasure };
+    // (Word can track changes in headers; here they go in as typed)
+    const made: Box['made'] = (x) => {
+      const cur = sectionsOf(this.t)[section]?.hf;
+      if (!cur) return null;
+      return changeSection(this.t, section, { hf: { ...cur, bodies: { ...cur.bodies, [key]: { runs: rt.normalizeRuns(x.runs), paras: storedParas(x.paras) } } } });
+    };
+    this.guardBox(ed, made);
+    const box: Box = { id: -1, hf: { page, kind, key, section }, ed, recorded: plain, made, start: ed.t, before, ...(plain ? { step: this.ed.lastStep } : {}) };
+    ed.onChange = (k) => {
+      if (k === 'text') {
+        const t = made(ed.t);
+        if (t) this.record(box, t, kind === 'header' ? 'Edit header' : 'Edit footer');
+        ed.relayout();
+      }
+      this.listener(k);
+    };
+    this.box = box;
+    return ed;
+  }
+
+  /**
    * Stop typing into the text box. When everything typed into it was undone there, its step of
    * the document's Undo changes nothing and goes (Undo then takes back the step before), and
-   * Redo brings back what the box could still redo.
+   * Redo brings back what the box could still redo. A header or footer goes back to plain text
+   * when that is all it is.
    */
   endBox(): void {
     const b = this.box;
     this.box = null;
-    if (!b?.recorded) return;
-    const id = b.id, runs = this.t.runs;
+    if (!b) return;
+    if (b.hf) { this.endHf(b, b.hf); return; }
+    if (!b.recorded) return;
+    const runs = this.t.runs;
     const ahead = b.ed.redoneText;
-    const o = ahead && b.made(ahead as { runs: TextRun[]; paras: ParaStyle[] });
+    const t = ahead && b.made(ahead as { runs: TextRun[]; paras: ParaStyle[] });
     // the box's text is the very text it started with: everything typed was undone
-    this.ed.dropStep(b.step, (before) => b.ed.t === b.start && (before as DocText).runs === runs, o ? { ...this.t, objects: { ...this.t.objects, [id]: o } } as DocText : undefined);
+    this.ed.dropStep(b.step, (before) => b.ed.t === b.start && (before as DocText).runs === runs, t || undefined);
+  }
+
+  /** A header or footer typed into: plain text again if that is all it is; one left as it was (everything typed undone) as it was, with no step of Undo. */
+  private endHf(b: Box, at: HfPlace): void {
+    if (b.recorded && b.before && b.ed.t === b.start && this.ed.lastStep === b.step) {
+      // (what was typed and undone there can still be brought back by Redo, as in Word)
+      const ahead = b.ed.redoneText;
+      const t = ahead ? b.made(ahead as { runs: TextRun[]; paras: ParaStyle[] }) : null;
+      this.ed.update(b.before, null);
+      this.ed.dropStep(b.step, () => true, t || undefined);
+      return;
+    }
+    if (!b.recorded) return;
+    const sec = sectionsOf(this.t)[at.section];
+    const body = sec?.hf.bodies?.[at.key];
+    if (!body) return;
+    const plain = bodyAsZones(body, this.t, sec.hf, at.key, Math.max(36, sec.page.w - sec.page.left - sec.page.right));
+    if (plain) this.ed.update(changeSection(this.t, at.section, { hf: plain }), null);
   }
 
   get t(): DocText {

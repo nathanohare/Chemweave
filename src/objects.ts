@@ -485,7 +485,8 @@ export function shapeHit(s: Shape, p: Vec, tol: number): boolean {
 export type HandleId = 'tail' | 'head' | 'mid' | 'ea' | 'eb' | `b${number}` | 'p1' | 'p2' | 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 export interface Handle {
-  kind: 'arrow' | 'shape';
+  /** 'caption': a text box's corner or edge in Slides and Design (it resizes the box, as in PowerPoint). */
+  kind: 'arrow' | 'shape' | 'caption';
   id: number;
   which: HandleId;
   at: Vec;
@@ -518,6 +519,13 @@ export function shapeHandles(s: Shape): Handle[] {
   const corners = [h('nw', x1, y1), h('ne', x2, y1), h('se', x2, y2), h('sw', x1, y2)];
   // a circle stays a circle, so it only gets corners
   return isCircle(s) ? corners : [...corners, h('n', mx, y1), h('e', x2, my), h('s', mx, y2), h('w', x1, my)];
+}
+
+/** A text box's handles (Slides, Design): its four corners and the middles of its edges, on its frame. */
+export function textBoxHandles(id: number, f: { x1: number; y1: number; x2: number; y2: number }): Handle[] {
+  const h = (which: HandleId, x: number, y: number): Handle => ({ kind: 'caption', id, which, at: { x, y } });
+  const mx = (f.x1 + f.x2) / 2, my = (f.y1 + f.y2) / 2;
+  return [h('nw', f.x1, f.y1), h('n', mx, f.y1), h('ne', f.x2, f.y1), h('e', f.x2, my), h('se', f.x2, f.y2), h('s', mx, f.y2), h('sw', f.x1, f.y2), h('w', f.x1, my)];
 }
 
 const NO_CROP = { l: 0, t: 0, r: 0, b: 0 };

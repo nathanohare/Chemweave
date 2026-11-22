@@ -1,6 +1,6 @@
 # Keyboard and mouse
 
-This page lists the keyboard shortcuts in Canvas mode, explains how to change them, and describes what the mouse does with Shift, Ctrl and Alt held and what each mouse pointer means.
+This page lists the keyboard shortcuts in Canvas mode and the other modes' own keys, explains how to change them, and describes what the mouse does with Shift, Ctrl and Alt held and what each mouse pointer means.
 
 The keys are ChemDraw's wherever ChemDraw has one, so your fingers should already know most of them. On a Mac, Cmd works wherever this page says Ctrl, and Option wherever it says Alt; the menus show the Mac symbols (⌘, ⌥).
 
@@ -171,7 +171,94 @@ Start a sequence from a highlight a key set (as above), not from the mouse resti
 | Ctrl+Shift+V | Paste as plain text |
 | Esc | Finish typing |
 
-Presentations, spreadsheets and documents have their own keys (PowerPoint's, Excel's and Word's), which take priority while that tab type is showing. For example, F5 starts a slide show in a presentation, and Ctrl+D fills down in a spreadsheet. See their pages.
+Presentations, spreadsheets and documents have their own keys (PowerPoint's, Excel's and Word's), which take priority while that tab type is showing. For example, F5 starts a slide show in a presentation, and Ctrl+D fills down in a spreadsheet. They are listed under [In a presentation, spreadsheet or document](#in-a-presentation-spreadsheet-or-document).
+
+## In a presentation, spreadsheet or document
+
+<!-- index: PowerPoint keys, Excel keys, Word keys -->
+
+Each of these modes adds the keys of the Office program it works like. They take priority while that kind of tab is showing, and all of them can be changed (see [Changing keyboard shortcuts](#changing-keyboard-shortcuts)). The keys under [Anywhere](#anywhere) work in these modes too, except where a key below takes its place.
+
+### Presentation
+
+| Key | Does |
+|---|---|
+| Ctrl+M | New slide after this one |
+| Ctrl+N | New presentation |
+| Page Down, Page Up | Next slide, previous slide |
+| Ctrl+D | Duplicate the selected slides (in the slide list) |
+| F5, Shift+F5 | Slide show from the first slide, or from this slide |
+| Alt+F5 | Presenter View |
+| Alt+F10 | Selection Pane |
+| Ctrl+K | Link |
+| Alt+= | Equation |
+| Ctrl+Alt+M | New comment |
+
+The keys that work during the show are listed under [Giving the show](slides.md#giving-the-show) and [Laser pointer, pen and highlighter](slides.md#laser-pointer-pen-and-highlighter).
+
+### Spreadsheet
+
+| Key | Does |
+|---|---|
+| F2 | Edit the cell |
+| Ctrl+Enter | Fill every selected cell with what you typed |
+| Ctrl+D, Ctrl+R | Fill down, fill right |
+| Ctrl+E | Flash Fill |
+| Alt+= | AutoSum |
+| Shift+F3 | Insert Function |
+| Ctrl+F3, Ctrl+Shift+F3 | Name Manager, Create Names from Selection |
+| Ctrl+B, Ctrl+I, Ctrl+U (or Ctrl+2, Ctrl+3, Ctrl+4) | Bold, italic, underline |
+| Ctrl+1 | Format Cells |
+| Ctrl+Shift+` , Ctrl+Shift+1, Ctrl+Shift+5, Ctrl+Shift+6 | General, number, percent and scientific format |
+| Ctrl++ (or Ctrl+Shift+=), Ctrl+− | Insert cells, delete cells |
+| Ctrl+9, Ctrl+Shift+9 | Hide rows, unhide rows |
+| Ctrl+0, Ctrl+Shift+0 | Hide columns, unhide columns |
+| Shift+Alt+→, Shift+Alt+← | Group, ungroup rows or columns |
+| Ctrl+Shift+L | Filter |
+| Ctrl+F, Ctrl+H, Shift+F4 | Find, Replace, Find Next |
+| Ctrl+G or F5 | Go To |
+| Ctrl+Alt+V | Paste Special |
+| Alt+↓ | Pick from the cell's drop-down list |
+| Ctrl+Shift+N | Structures from the selected names or SMILES |
+| Ctrl+K | Link |
+| Shift+F2, Ctrl+Alt+M | New note, new comment |
+| Shift+F11 | New worksheet |
+| Ctrl+N | New spreadsheet |
+
+### Document
+
+| Key | Does |
+|---|---|
+| Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J | Align left, center, right, justify |
+| Ctrl+1, Ctrl+5, Ctrl+2 | Single, 1.5 and double line spacing |
+| Ctrl+], Ctrl+[ | Bigger text, smaller text |
+| Ctrl+Shift+K, Ctrl+Shift+A | Small caps, all caps |
+| Shift+F3 | Change case |
+| Ctrl+Space | Clear the character formatting |
+| Ctrl+Shift+L | Bullets |
+| Ctrl+Alt+1, Ctrl+Alt+2, Ctrl+Alt+3 | Heading 1, Heading 2, Heading 3 |
+| Ctrl+Shift+N | Normal style |
+| Ctrl+Alt+Shift+S | Styles pane |
+| Ctrl+Shift+8 | Show/Hide ¶ |
+| Ctrl+Enter, Ctrl+Shift+Enter | Page break, column break |
+| Ctrl+F, Ctrl+H | Find, Replace |
+| Ctrl+G or F5 | Go To |
+| F7, Shift+F7 | Spelling & Grammar, Thesaurus |
+| Ctrl+Shift+G | Word Count |
+| Ctrl+K, Ctrl+Shift+F5 | Link, Bookmark |
+| Alt+= | Equation |
+| Ctrl+Alt+F, Ctrl+Alt+D | Footnote, endnote |
+| Alt+Shift+N | Compound number |
+| Alt+Shift+D | Date |
+| Alt+Shift+X, Alt+Shift+I | Mark an index entry, mark a citation for the table of authorities |
+| Ctrl+Shift+E | Track Changes |
+| Ctrl+Alt+M | New comment |
+| Ctrl+Alt+N, Ctrl+Alt+S | Draft view, Split |
+| Alt+Shift+←, Alt+Shift+→ | Outline: promote, demote |
+| Alt+Shift+↑, Alt+Shift+↓ | Outline: move up, move down |
+| Alt+Shift++, Alt+Shift+− | Outline: expand, collapse |
+| Alt+Shift+1 to 9, Alt+Shift+A | Outline: show headings to that level, or everything |
+| Ctrl+N | New document |
 
 ## Navigating with the keyboard
 
@@ -183,6 +270,8 @@ Presentations, spreadsheets and documents have their own keys (PowerPoint's, Exc
 - Screen readers hear which drawing tool is on, and what is selected ("Selected C6H5Br, 7 atoms").
 
 ## Changing keyboard shortcuts
+
+<!-- index: Hotkeys -->
 
 Every key can be changed. Open **Edit ▸ Keyboard Shortcuts…**, or **Help ▸ Keyboard Shortcuts and Tips** and then **Show and change all keyboard shortcuts…**.
 
@@ -237,6 +326,8 @@ Boxes, ovals, frames and pictures have square handles on their corners and sides
 - **Middle-drag** or **right-drag** pans the drawing.
 
 ## Pen and touch (tablets)
+
+<!-- index: Apple Pencil, Touch Mode, Touch screens -->
 
 On a tablet or touch screen (an iPad with Apple Pencil, a Surface pen), **View ▸ Window and Colors ▸ Touch Mode** makes the buttons, menus and toolboxes big enough for a fingertip. It is **Automatic** to start with: it comes on automatically on a touch screen, or the first time a pen or finger touches the window.
 

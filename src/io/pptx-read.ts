@@ -73,7 +73,7 @@ const GEO_BY_PRST = new Map(GEOS.filter((g) => g.prst).map((g) => [g.prst!, g.id
 /** PowerPoint shapes that come into slides as plain boxes and ovals (with their text beside them as text boxes). */
 const PLAIN_PRST = new Set(['rect', 'roundRect', 'ellipse', 'snip1Rect', 'flowChartProcess', 'flowChartAlternateProcess']);
 
-export interface PptxSlide extends SlideRefs { layout: LayoutId; contents: Contents; notes: string; notesKept?: NotesKept; notesLook?: NotesLook; transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData }
+export interface PptxSlide extends SlideRefs { layout: LayoutId; contents: Contents; notes: string; notesKept?: NotesKept; notesLook?: NotesLook; transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; ownItems?: boolean }
 
 /** How a slide made from a canvas slide's keyframe was marked when saved, and the print of what it holds now. */
 interface PartRead { uid: string; index: number; count: number; print: string; now: string; keep?: CanvasKeep }
@@ -940,7 +940,7 @@ class Reader {
       layout: lay, contents: doc.contents(), ...this.notes(path),
       ...(background ? { background } : {}), ...(hideGraphics ? { hideGraphics } : {}), ...(hidden ? { hidden } : {}), ...(hf ? { hf } : {}),
       ...(transition && (transition.kind !== 'none' || transition.advanceAfter) ? { transition } : {}), ...(anims.length ? { anims } : {}),
-      ...(comments.length ? { comments } : {}), ...(canvas ? { canvas } : {}),
+      ...(comments.length ? { comments } : {}), ...(canvas ? { canvas } : {}), ...(tags[TAG.ownItems] === '1' ? { ownItems: true } : {}),
     };
   }
 

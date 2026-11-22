@@ -2,7 +2,7 @@
 //
 // Turning structures in 3-D, made easier to find and to use: the 3-D Rotation window turns the
 // selection live as its angles change (Cancel puts it back, Rotate keeps it as one undo step), the
-// selection box has tilt handles that tip or swing the selection as a flat sheet, and the
+// selection box has tilt handles (with a Perspective tool) that tip or swing the selection, and the
 // Perspective tools are on the ribbon's Arrange tab and in the toolboxes.
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -103,10 +103,17 @@ describe('3-D Rotation window: a live preview', () => {
 });
 
 describe('tilt handles on the selection box', () => {
-  it('come with a selected structure and the selection tool only', () => {
+  it('come with a selected structure and a Perspective tool only', () => {
     const { doc, ed } = setup();
     const ids = chain(doc, ed);
+    // the selection tool: a selected structure shows only its rotate handle (review round 2, #14)
+    expect(ed.rotateHandle()).not.toBeNull();
+    expect(ed.tiltHandles()).toBeNull();
+    ed.setTool('perspective');
     expect(ed.tiltHandles()).not.toBeNull();
+    ed.setTool('perspective-3d');
+    expect(ed.tiltHandles()).not.toBeNull();
+    ed.setTool('perspective');
     ed.sel.atoms = new Set([ids[0]]);
     ed.sel.bonds = new Set();
     expect(ed.tiltHandles()).toBeNull();
@@ -115,9 +122,24 @@ describe('tilt handles on the selection box', () => {
     expect(ed.tiltHandles()).toBeNull();
   });
 
+  it('never show for a text box, with any tool', () => {
+    // a stand-in for measuring text (jsdom has no canvas)
+    const ctx = { font: '', measureText(t: string) { return { width: [...t].length * 60 }; } };
+    HTMLCanvasElement.prototype.getContext = (() => ctx) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    const { doc, ed } = setup();
+    let id = 0;
+    doc.edit('Text', () => { id = doc.addCaption({ x: 100, y: 100, runs: [{ text: 'Title' }], justify: 'left' }).id; });
+    ed.sel.captions = new Set([id]);
+    expect(ed.rotateHandle()).not.toBeNull();
+    expect(ed.tiltHandles()).toBeNull();
+    ed.setTool('perspective');
+    expect(ed.tiltHandles()).toBeNull();
+  });
+
   it('tip the selection about the left–right axis, or swing it about the up–down one, in one undo step', async () => {
     const { doc, ed, r, overlay } = setup();
     chain(doc, ed);
+    ed.setTool('perspective');
     const w = width(doc);
     const ys = () => [...doc.atoms.values()].map((a) => a.y);
     const h0 = Math.max(...ys()) - Math.min(...ys());

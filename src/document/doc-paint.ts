@@ -7,7 +7,7 @@ import { VectorContext } from '../render/vector';
 import type { Picture } from '../render/picture';
 import type { Contents } from '../model';
 import type { DocStyle } from '../style';
-import { drawLayout } from '../text/draw';
+import { drawLayout, drawMarks } from '../text/draw';
 import { BOX_PAD, SHADOWS, borderRect, lookOf, styleOf, watermarkPlace, type DocText, type HeaderFooter, type NumberPlace, type PageBorder, type Watermark } from './document';
 import { withStack, type TextLayout } from '../text/layout';
 import { geoDef, moveSteps, traceSteps } from '../design/geo';
@@ -336,7 +336,7 @@ export function placeItems(pic: Picture, at: { x: number; y: number; w: number; 
  * can be seen while typing (always, or only in a table with no lines at all); leave it null to
  * draw none (print). `kept` is the document's own table styles.
  */
-export function drawDocTable(ctx: CanvasRenderingContext2D, t: TableData, tb: TableBox, page: number, faint: { color: string; px: number; always?: boolean } | null, kept?: Record<string, TableStyleDef>): void {
+export function drawDocTable(ctx: CanvasRenderingContext2D, t: TableData, tb: TableBox, page: number, faint: { color: string; px: number; always?: boolean } | null, kept?: Record<string, TableStyleDef>, marks = false): void {
   const n = t.cols.length;
   const rows = tb.rows.map((at, r) => ({ ...at, r })).filter((at) => at.page === page);
   if (!rows.length) return;
@@ -365,6 +365,7 @@ export function drawDocTable(ctx: CanvasRenderingContext2D, t: TableData, tb: Ta
         ctx.clip();
       }
       drawLayout(ctx, cl, x + tb.xs[c] + m.left, y + m.top + tb.drop[r][c] - cl.box.y1);
+      if (marks) drawMarks(ctx, cl, x + tb.xs[c] + m.left, y + m.top + tb.drop[r][c] - cl.box.y1, 0, cl.lines.length, true);
       if (cut) ctx.restore();
     });
   }

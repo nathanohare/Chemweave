@@ -17,6 +17,7 @@ import { copyPinned, type PinnedComment } from '../document/comments';
 import { Doc, Caption, Placeholder, TextBase, ParaStyle, Contents, Shape, applyBase } from '../model';
 import { DocStyle, ACS_1996, scaleOwnWidths } from '../style';
 import { applyStyle, type RestyleHow } from '../drawing-styles';
+import { freshGroups } from '../editor/groups';
 import type { Rect } from '../geom';
 import { ASCENT } from '../text/layout';
 import { slideIdLinks } from '../links';
@@ -24,8 +25,9 @@ import type { Transition, Anim } from './animation';
 import { clampZoom, copyCanvas, keyRect, newCanvas, syncCamera, type CanvasData, type Keyframe } from './canvas';
 import { backgroundColour, copyBackground, isPlain, sameBackground, solid, type Background } from './background';
 import type { ShowSetup, CustomShow } from './show-setup';
-import { fitEntries, lineGap, mergeReferences, refArea, slideRefBlock, type DeckRefs, type LaidLine, type Measure, type RefBlock, type RefListSpec, type RefLook, type SlideRefs, type SlideZotero } from './slide-refs';
-import type { Reference } from '../document/references';
+import { deckFormat, refLook, fitEntries, lineGap, mergeReferences, refArea, slideCiteNumbers, slideRefBlock, type DeckRefs, type LaidLine, type Measure, type RefBlock, type RefListSpec, type RefLook, type SlideRefs, type SlideZotero } from './slide-refs';
+import { citeSuper, citeText, findDuplicate, type Reference } from '../document/references';
+import { MASTER_PAGE, masterPageDoc, layoutPageDoc, masterBase, masterBoxes, readMasterPage, readLayoutPage, withLayout, captionLook, pagePlaceholders } from './master-view';
 
 /**
  * Settings of the deck as a whole that aren't part of its look: how the slide show runs (Set Up
@@ -106,6 +108,21 @@ export const isBuiltinLayout = (id: string): id is BuiltinLayout => LAYOUTS.some
  */
 export interface PlaceholderBox { ph: Placeholder; x: number; y: number; w: number; h: number; justify: Caption['justify']; pptType?: 'body'; lst?: string }
 
+/**
+ * How a kind of placeholder's text looks (Slide Master view): its font, size, color, bold and
+ * italic, line spacing (a multiple of single), space before and after its paragraphs in points,
+ * and its bullets. On the master these are every layout's; a layout's own (LayoutDef.fmt) take
+ * their place on slides with that layout. Left out, a value comes from the master.
+ */
+export interface PlaceholderFmt {
+  font?: string; size?: number; color?: string; bold?: boolean; italic?: boolean;
+  lineSpacing?: number; spaceBefore?: number; spaceAfter?: number; bullet?: 'bullet' | 'number' | 'none';
+}
+
+/** The text settings of a PlaceholderFmt (the rest are its paragraphs'). */
+export const FMT_TEXT = ['font', 'size', 'color', 'bold', 'italic'] as const;
+export const FMT_PARA = ['lineSpacing', 'spaceBefore', 'spaceAfter', 'bullet'] as const;
+
 /** A picture placeholder on a layout (Picture with Caption's picture), as fractions of the slide, with its text styles as the layout had them. */
 export interface PicturePlaceholder { x: number; y: number; w: number; h: number; lst?: string }
 
@@ -120,6 +137,18 @@ export interface LayoutDef {
   pptType?: string;
   /** Its picture placeholders (see Shape.phPic). */
   pics?: PicturePlaceholder[];
+  /** Its own text look for each kind of placeholder, over the master's (Slide Master view). */
+  fmt?: Partial<Record<Placeholder, PlaceholderFmt>>;
+  /**
+   * What is drawn on the layout itself (Slide Master view): pictures, shapes, text and structures
+   * on every slide with it, behind the slide's own things and not picked or moved there.
+   */
+  items?: Contents;
+  /**
+   * Its References placeholder (as fractions of the slide): where slides with it show their
+   * reference lines, in place of the corner the lines' look picks (review round 2, finding 17).
+   */
+  refsBox?: { x: number; y: number; w: number; h: number };
 }
 
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
@@ -180,6 +209,14 @@ export interface Master {
   layouts?: LayoutDef[];
   /** A PowerPoint template's own artwork and theme, kept from the file the deck was opened from (see TemplateArt). */
   art?: TemplateArt;
+  /** The master's and layouts' items are on every slide as its own, to change there (Slide Master ▸ Lock Layout Items unticked); new slides get them too. */
+  itemsUnlocked?: boolean;
+  /** The rest of each kind of placeholder's look on the master (italic, paragraph spacing, bullets; see masterFmt). */
+  phFmt?: Partial<Record<Placeholder, Pick<PlaceholderFmt, 'italic' | 'lineSpacing' | 'spaceBefore' | 'spaceAfter' | 'bullet'>>>;
+  /** Where the master's own title and text boxes are (Slide Master view); layouts whose boxes are there follow them. Title and Content's when not set. */
+  phBoxes?: PlaceholderBox[];
+  /** What is drawn on the master itself (Slide Master view): on every slide, behind its layout's things. */
+  items?: Contents;
 }
 
 /**
@@ -303,29 +340,49 @@ function hexagon(cx: number, cy: number, r: number): [number, number][] {
   });
 }
 
-/** Where a template's shapes go on a slide of this size and layout, in points. */
-/** Where a template's rule or tab sits on the title slide (halfway between the title and subtitle), and under the title on other slides, as fractions of the slide's height. */
-const TITLE_MID = 0.5, CONTENT_RULE = 0.14;
-
+/**
+ * Where a template's shapes go on a slide of this size and layout, in points.
+ *
+ * The title slide's own (bigger) shapes go only on layouts shaped like a title slide: ones with
+ * the title slide's colors, no text box, and the title (if any) lower than the top of the slide.
+ * Giving Title and Content or Title Only the title slide's colors changes their colors and
+ * background, not their shapes. Shapes that belong to the title (the band behind it, the rule or
+ * tab by it) follow the layout's title placeholder, wherever it has been moved; a layout without
+ * a title puts them where the built-in layout has its title.
+ */
 export function decorShapes(size: SlideSize, m: Master, layout: LayoutId): DecorShape[] {
   const { w, h } = size;
-  const title = titleLook(m, layout);
+  const def = layoutDef(m, layout);
+  const own = def.boxes.find((x) => x.ph === 'title');
+  const title = titleLook(m, layout) && !def.boxes.some((x) => x.ph === 'body') && (!own || own.y + own.h / 2 > 0.25);
+  const tb = own ?? builtinLayout(title ? 'title' : 'title-content').boxes[0];
+  // (fractions of the slide) the title's bottom edge; on a title slide the rule sits a little
+  // below it, halfway to the subtitle; elsewhere right under it
+  const under = tb.y + tb.h, mid = under + 0.02;
+  // a short rule under the title, `half` of the slide's width each side of its middle when the
+  // title is centered, else from the side the title's text starts at (at most the title's width)
+  const across = (half: number): [number, number] => {
+    const span = Math.min(2 * half, tb.w);
+    const x1 = tb.justify === 'right' ? tb.x + tb.w - span : tb.justify === 'center' ? tb.x + (tb.w - span) / 2 : tb.x;
+    return [x1 * w, (x1 + span) * w];
+  };
   const a = m.accent, b = m.accent2;
   switch (m.decor) {
     case 'top-bar':
       return title
         ? [{ kind: 'rect', x1: 0, y1: 0, x2: w, y2: 0.035 * h, color: a }, { kind: 'rect', x1: 0, y1: h - 0.035 * h, x2: w, y2: h, color: a }]
         : [{ kind: 'rect', x1: 0, y1: 0, x2: w, y2: 0.022 * h, color: a }];
-    case 'title-band':
-      return title
-        ? [{ kind: 'rect', x1: 0, y1: 0.345 * h, x2: w, y2: 0.49 * h, color: a }]
-        : [{ kind: 'rect', x1: 0, y1: 0, x2: w, y2: 0.15 * h, color: a }];
+    case 'title-band': {
+      // behind the title, running to the top edge when the title is near it
+      const top = tb.y - 0.042;
+      return [{ kind: 'rect', x1: 0, y1: top < 0.03 ? 0 : top * h, x2: w, y2: (under + 0.01) * h, color: a }];
+    }
     case 'left-strip':
       return [{ kind: 'rect', x1: 0, y1: 0, x2: (title ? 0.02 : 0.014) * w, y2: h, color: a }];
-    case 'title-rule':
-      return title
-        ? [{ kind: 'line', x1: 0.3 * w, y1: TITLE_MID * h, x2: 0.7 * w, y2: TITLE_MID * h, color: a, width: 2 }]
-        : [{ kind: 'line', x1: 0.05 * w, y1: CONTENT_RULE * h, x2: 0.95 * w, y2: CONTENT_RULE * h, color: a, width: 2 }];
+    case 'title-rule': {
+      if (title) { const [x1, x2] = across(0.2); return [{ kind: 'line', x1, y1: mid * h, x2, y2: mid * h, color: a, width: 2 }]; }
+      return [{ kind: 'line', x1: tb.x * w, y1: under * h, x2: (tb.x + tb.w) * w, y2: under * h, color: a, width: 2 }];
+    }
     case 'corner': {
       const k = (title ? 0.34 : 0.2) * h;
       return [
@@ -345,27 +402,33 @@ export function decorShapes(size: SlideSize, m: Master, layout: LayoutId): Decor
       const k = (title ? 0.02 : 0.01) * w;
       return [{ kind: 'rect', x1: 0, y1: 0, x2: k, y2: h, color: a }, { kind: 'rect', x1: w - k, y1: 0, x2: w, y2: h, color: b }];
     }
-    case 'double-rule':
-      return title
-        ? [{ kind: 'line', x1: 0.3 * w, y1: (TITLE_MID - 0.006) * h, x2: 0.7 * w, y2: (TITLE_MID - 0.006) * h, color: a, width: 2 },
-          { kind: 'line', x1: 0.38 * w, y1: (TITLE_MID + 0.006) * h, x2: 0.62 * w, y2: (TITLE_MID + 0.006) * h, color: b, width: 1 }]
-        : [{ kind: 'line', x1: 0.05 * w, y1: CONTENT_RULE * h, x2: 0.95 * w, y2: CONTENT_RULE * h, color: a, width: 2 },
-          { kind: 'line', x1: 0.05 * w, y1: (CONTENT_RULE + 0.012) * h, x2: 0.95 * w, y2: (CONTENT_RULE + 0.012) * h, color: b, width: 1 }];
+    case 'double-rule': {
+      if (title) {
+        const [l1, r1] = across(0.2), [l2, r2] = across(0.12);
+        return [{ kind: 'line', x1: l1, y1: (mid - 0.006) * h, x2: r1, y2: (mid - 0.006) * h, color: a, width: 2 },
+          { kind: 'line', x1: l2, y1: (mid + 0.006) * h, x2: r2, y2: (mid + 0.006) * h, color: b, width: 1 }];
+      }
+      const x1 = tb.x * w, x2 = (tb.x + tb.w) * w;
+      return [{ kind: 'line', x1, y1: under * h, x2, y2: under * h, color: a, width: 2 },
+        { kind: 'line', x1, y1: (under + 0.012) * h, x2, y2: (under + 0.012) * h, color: b, width: 1 }];
+    }
     case 'hairlines':
       return title
         ? [{ kind: 'line', x1: 0.2 * w, y1: 0.25 * h, x2: 0.8 * w, y2: 0.25 * h, color: a, width: 1.5 },
           { kind: 'line', x1: 0.2 * w, y1: 0.75 * h, x2: 0.8 * w, y2: 0.75 * h, color: a, width: 1.5 }]
         : [{ kind: 'line', x1: 0.05 * w, y1: 0.035 * h, x2: 0.95 * w, y2: 0.035 * h, color: a, width: 0.75 },
           { kind: 'line', x1: 0.05 * w, y1: 0.915 * h, x2: 0.95 * w, y2: 0.915 * h, color: b, width: 0.75 }];
-    case 'title-tab':
-      return title
-        ? [{ kind: 'rect', x1: 0.46 * w, y1: (TITLE_MID - 0.005) * h, x2: 0.54 * w, y2: (TITLE_MID + 0.005) * h, color: a }]
-        : [{ kind: 'rect', x1: 0.025 * w, y1: 0.055 * h, x2: 0.033 * w, y2: 0.118 * h, color: a }];
+    case 'title-tab': {
+      if (title) { const [x1, x2] = across(0.04); return [{ kind: 'rect', x1, y1: (mid - 0.005) * h, x2, y2: (mid + 0.005) * h, color: a }]; }
+      // a short upright tab just left of the title
+      const x1 = Math.max(0, tb.x - 0.025);
+      return [{ kind: 'rect', x1: x1 * w, y1: (tb.y + 0.005) * h, x2: (x1 + 0.008) * w, y2: Math.max(tb.y + 0.01, under - 0.022) * h, color: a }];
+    }
     case 'header-block':
       return title
         // (on the title slide a block at the top left over a rule along the top, so the title stays centered)
         ? [{ kind: 'rect', x1: 0, y1: 0, x2: 0.2 * w, y2: 0.1 * h, color: a }, { kind: 'rect', x1: 0.2 * w, y1: 0, x2: w, y2: 0.012 * h, color: b }]
-        : [{ kind: 'rect', x1: 0, y1: 0, x2: 0.03 * w, y2: CONTENT_RULE * h, color: a }, { kind: 'line', x1: 0.03 * w, y1: CONTENT_RULE * h, x2: w, y2: CONTENT_RULE * h, color: b, width: 1 }];
+        : [{ kind: 'rect', x1: 0, y1: 0, x2: 0.03 * w, y2: under * h, color: a }, { kind: 'line', x1: 0.03 * w, y1: under * h, x2: w, y2: under * h, color: b, width: 1 }];
     case 'two-tone-footer': {
       const y = (title ? 0.95 : 0.975) * h;
       return [{ kind: 'rect', x1: 0, y1: y, x2: 0.7 * w, y2: h, color: a }, { kind: 'rect', x1: 0.7 * w, y1: y, x2: w, y2: h, color: b }];
@@ -454,14 +517,67 @@ export function completeMaster(m: Partial<Master>): Master {
   return { ...defaultMaster(), ...m };
 }
 
-/** The look of each kind of placeholder text, from the master (on a title slide, in its own colours). */
-export function textStyles(m: Master, layout?: LayoutId): Record<Placeholder, TextBase> {
+/** The usual bullets of a kind of placeholder: text boxes have them, titles and subtitles don't. */
+const usualBullet = (ph: Placeholder): 'bullet' | 'none' => (ph === 'body' ? 'bullet' : 'none');
+
+/** The master's look for a kind of placeholder (in a layout's colors when given: a title slide's own). */
+export function masterFmt(m: Master, ph: Placeholder, layout?: LayoutId): PlaceholderFmt {
   const c = layout ? slideColours(m, layout) : m;
+  const own = m.phFmt?.[ph] ?? {};
+  const text: PlaceholderFmt = ph === 'title'
+    ? { font: m.titleFont, size: m.titleSize, color: c.titleColor, bold: m.titleBold }
+    : { font: m.bodyFont, size: ph === 'subtitle' ? m.subtitleSize : m.bodySize, color: c.textColor, bold: false };
+  return { ...text, italic: !!own.italic, lineSpacing: own.lineSpacing ?? 1, spaceBefore: own.spaceBefore ?? 0, spaceAfter: own.spaceAfter ?? 0, bullet: own.bullet ?? usualBullet(ph) };
+}
+
+/** How a kind of placeholder looks on slides with this layout: the master's, with the layout's own over it. */
+export function phFmt(m: Master, layout: LayoutId, ph: Placeholder): PlaceholderFmt {
+  const own = layoutDef(m, layout).fmt?.[ph] ?? {};
+  const out = masterFmt(m, ph, layout);
+  for (const k of [...FMT_TEXT, ...FMT_PARA]) if (own[k] !== undefined) (out as Record<string, unknown>)[k] = own[k];
+  return out;
+}
+
+/**
+ * The look of each kind of placeholder text, from the master (on a title slide, in its own
+ * colours) and the layout's own looks; without `own`, the master's alone.
+ */
+export function textStyles(m: Master, layout?: LayoutId, own = true): Record<Placeholder, TextBase> {
+  const out = {} as Record<Placeholder, TextBase>;
+  for (const ph of ['title', 'subtitle', 'body'] as const) {
+    const f = layout && own ? phFmt(m, layout, ph) : masterFmt(m, ph, layout);
+    out[ph] = { font: f.font, size: f.size, color: f.color, ...(f.bold ? { bold: true } : {}), ...(f.italic ? { italic: true } : {}) };
+  }
+  return out;
+}
+
+/** Paragraph formatting for a placeholder's paragraph in this look (its bullet and spacing). */
+export function paraOf(f: PlaceholderFmt): ParaStyle {
   return {
-    title: { font: m.titleFont, size: m.titleSize, color: c.titleColor, bold: m.titleBold || undefined },
-    subtitle: { font: m.bodyFont, size: m.subtitleSize, color: c.textColor },
-    body: { font: m.bodyFont, size: m.bodySize, color: c.textColor },
+    ...(f.bullet && f.bullet !== 'none' ? { list: f.bullet } : {}),
+    ...(f.spaceBefore ? { spaceBefore: f.spaceBefore } : {}),
+    ...(f.spaceAfter ? { spaceAfter: f.spaceAfter } : {}),
   };
+}
+
+/**
+ * A placeholder's paragraphs moved from one look to another: line spacing, spacing and bullets
+ * that were the old look's take the new one's; ones set on the slide itself stay as they are.
+ */
+export function refitParas(c: Pick<Caption, 'runs' | 'paras' | 'lineSpacing'>, from: PlaceholderFmt, to: PlaceholderFmt): Pick<Caption, 'paras' | 'lineSpacing'> {
+  const n = 1 + c.runs.reduce((k, r) => k + (r.text.match(/\n/g)?.length ?? 0), 0);
+  const paras: ParaStyle[] = [];
+  for (let i = 0; i < Math.max(n, c.paras?.length ?? 0); i++) {
+    const p: ParaStyle = { ...(c.paras?.[i] ?? {}) };
+    if ((p.list ?? 'none') === (from.bullet ?? 'none') && from.bullet !== to.bullet) { if (to.bullet && to.bullet !== 'none') p.list = to.bullet; else delete p.list; }
+    for (const k of ['spaceBefore', 'spaceAfter'] as const) {
+      if ((p[k] ?? 0) === (from[k] ?? 0) && from[k] !== to[k]) { if (to[k]) p[k] = to[k]; else delete p[k]; }
+    }
+    paras.push(p);
+  }
+  while (paras.length && !Object.keys(paras[paras.length - 1]).length) paras.pop();
+  const ls = (c.lineSpacing ?? 1) === (from.lineSpacing ?? 1) && from.lineSpacing !== to.lineSpacing ? to.lineSpacing : c.lineSpacing;
+  return { paras: paras.length ? paras : undefined, lineSpacing: ls === 1 ? undefined : ls };
 }
 
 /** Where the slide number, footer and logo go on every slide (in points), as on screen and in saved files. */
@@ -505,6 +621,12 @@ export function placeRefs(p: { size: SlideSize; master: Master; layout: LayoutId
     const bottom = rowTop ?? size.h - 0.04 * size.h;
     const fit = fitEntries(b.entries, w, bottom - top, b.look.size, measure, 8);
     return { x, w, top, align: 'left', ...fit, ...(color ? { color } : {}), list: true };
+  }
+  // the layout's References placeholder, when it has one: the lines fill it from the top
+  const box = refsBoxRect(m, p.layout, size);
+  if (box) {
+    const fit = fitEntries(b.entries, box.x2 - box.x1, box.y2 - box.y1, b.look.size, measure);
+    return { x: box.x1, w: box.x2 - box.x1, top: box.y1, align: 'left', ...fit, ...(color ? { color } : {}) };
   }
   const a = refArea(b.look.place, size.w, size.h, rowTop);
   const fit = fitEntries(b.entries, a.w, a.bottom - a.top, b.look.size, measure);
@@ -597,9 +719,9 @@ export interface Frame { ph: Placeholder; x: number; y: number; w: number; h: nu
  */
 const FRAMES: Record<BuiltinLayout, [Placeholder, number, number, number, number, Caption['justify']][]> = {
   // the title slide: a one-line title just above the middle of the slide, the subtitle as far below
-  // it, so a rule or tab at the middle (TITLE_MID) sits halfway between them
+  // it, so a rule or tab just under the title (see decorShapes) sits halfway between them
   title: [['title', 0.08, 0.387, 0.84, 0.093, 'center'], ['subtitle', 0.08, 0.556, 0.84, 0.16, 'center']],
-  // other slides: the text starts a short way under the title, below a rule at CONTENT_RULE
+  // other slides: the text starts a short way under the title, below a rule along the title's bottom
   'title-content': [['title', 0.05, 0.05, 0.9, 0.09, 'left'], ['body', 0.05, 0.17, 0.9, 0.73, 'left']],
   'two-content': [['title', 0.05, 0.05, 0.9, 0.09, 'left'], ['body', 0.05, 0.17, 0.44, 0.73, 'left'], ['body', 0.51, 0.17, 0.44, 0.73, 'left']],
   'title-only': [['title', 0.05, 0.05, 0.9, 0.09, 'left']],
@@ -615,7 +737,16 @@ export function builtinLayout(id: BuiltinLayout): LayoutDef {
   };
 }
 
-export const copyLayout = (l: LayoutDef): LayoutDef => ({ ...l, boxes: l.boxes.map((b) => ({ ...b })) });
+export const copyLayout = (l: LayoutDef): LayoutDef => ({
+  ...l, boxes: l.boxes.map((b) => ({ ...b })),
+  ...(l.fmt ? { fmt: structuredClone(l.fmt) } : {}), ...(l.items ? { items: structuredClone(l.items) } : {}), ...(l.refsBox ? { refsBox: { ...l.refsBox } } : {}),
+});
+
+/** A layout's References placeholder in slide points, or null when it has none. */
+export function refsBoxRect(m: Master, layout: LayoutId, size: SlideSize): Rect | null {
+  const b = layoutDef(m, layout).refsBox;
+  return b ? { x1: b.x * size.w, y1: b.y * size.h, x2: (b.x + b.w) * size.w, y2: (b.y + b.h) * size.h } : null;
+}
 
 /** Every layout of a deck with this master, in the order the slide master shows them: the five built in (as edited), then the ones made here. */
 export function deckLayouts(m: Master | undefined): LayoutDef[] {
@@ -671,9 +802,16 @@ export function layoutFrames(layout: LayoutId, size: SlideSize, m?: Master): Fra
   return layoutDef(m, layout).boxes.map((b) => ({ ph: b.ph, x: b.x * size.w, y: b.y * size.h, w: b.w * size.w, h: b.h * size.h, justify: b.justify }));
 }
 
-/** Text a placeholder starts with: body text is a bulleted list. */
-function emptyParas(ph: Placeholder): ParaStyle[] | undefined {
-  return ph === 'body' ? [{ list: 'bullet' }] : undefined;
+/** Text a placeholder starts with, in its layout's look: a body's is a bulleted list (unless the look says otherwise). */
+function emptyParas(ph: Placeholder, f?: PlaceholderFmt): ParaStyle[] | undefined {
+  const p = paraOf(f ?? { bullet: usualBullet(ph) });
+  return Object.keys(p).length ? [p] : undefined;
+}
+
+/** A new empty placeholder's paragraphs and line spacing on slides with this layout. */
+function startFields(m: Master, layout: LayoutId, ph: Placeholder): Pick<Caption, 'paras' | 'lineSpacing'> {
+  const f = phFmt(m, layout, ph);
+  return { paras: emptyParas(ph, f), lineSpacing: f.lineSpacing && f.lineSpacing !== 1 ? f.lineSpacing : undefined };
 }
 
 /** Caption fields that put a placeholder in a frame (its first baseline sits one ascent below the top). */
@@ -711,6 +849,11 @@ export interface Slide {
   hideGraphics?: boolean;
   /** Hide Slide: skipped in the slide show, but kept (and saved) with the rest. */
   hidden?: boolean;
+  /**
+   * The master's and layout's items (Slide Master view) are this slide's own, to move, change or
+   * delete (Unlock Layout Items): copies of them are in its drawing, and the layout's aren't drawn.
+   */
+  ownItems?: boolean;
   /** The section it is in (Deck.sections), when the deck has sections. */
   section?: number;
   /** Its own say on the slide number, footer and date (Header & Footer > Apply). */
@@ -745,7 +888,7 @@ export interface SectionCount { name: string; count: number }
 export type SizeFit = 'centre' | 'fit' | 'max';
 
 /** A slide's transition, animations, comments, own background and whether it is hidden, copied (for duplicates and the undo history). */
-export interface Motion { transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; refs?: string[]; refLook?: Partial<RefLook>; refList?: RefListSpec; zotero?: SlideZotero; notesKept?: NotesKept; notesLook?: NotesLook }
+export interface Motion { ownItems?: boolean; transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; refs?: string[]; refLook?: Partial<RefLook>; refList?: RefListSpec; zotero?: SlideZotero; notesKept?: NotesKept; notesLook?: NotesLook }
 
 /**
  * Speaker notes as PowerPoint had them, formatting and all (its notes text body, links as kept
@@ -753,6 +896,7 @@ export interface Motion { transition?: Transition; anims?: Anim[]; comments?: Pi
  */
 export interface NotesKept { text: string; xml: string; rels: KeptRel[] }
 const copyMotion = (m: Motion): Motion => ({
+  ...(m.ownItems ? { ownItems: true } : {}),
   ...(m.transition ? { transition: { ...m.transition } } : {}),
   ...(m.anims?.length ? { anims: m.anims.map((a) => ({ ...a, target: { ...a.target }, ...(a.trigger ? { trigger: { ...a.trigger } } : {}) })) } : {}),
   ...(m.comments?.length ? { comments: copyPinned(m.comments) } : {}),
@@ -816,7 +960,68 @@ function scaleKeyframe(key: Keyframe, from: SlideSize, to: SlideSize, k: number)
   return { ...key, x: mx - (to.w * zoom) / 2, y: my - (to.h * zoom) / 2, zoom };
 }
 
+
+/** Does a slide with this layout have items from the master or layout (Slide Master view)? */
+export const hasItems = (m: Master, layout: LayoutId): boolean => !!(m.items || layoutDef(m, layout).items);
+
+/** The master's and layout's items copied onto a slide's drawing, with ids of their own (Unlock Layout Items). */
+function copyItems(d: Doc, m: Master, layout: LayoutId, masterToo = true): void {
+  const added = { atoms: new Set<number>(), bonds: new Set<number>(), captions: new Set<number>(), arrows: new Set<number>(), shapes: new Set<number>() };
+  for (const c of [masterToo ? m.items : undefined, layoutDef(m, layout).items]) {
+    if (!c) continue;
+    const atoms = new Map<number, number>();
+    for (const a of c.atoms.filter((x) => !x.multi)) atoms.set(a.id, d.addAtom(a.x, a.y, a.z, (({ id: _i, ...rest }) => rest)(structuredClone(a))).id);
+    for (const a of c.atoms.filter((x) => x.multi)) {
+      const multi = a.multi!.map((x) => atoms.get(x)).filter((x): x is number => x !== undefined);
+      if (multi.length >= 2) atoms.set(a.id, d.addAtom(a.x, a.y, a.z, { ...(({ id: _i, ...rest }) => rest)(structuredClone(a)), multi }).id);
+    }
+    for (const id of atoms.values()) added.atoms.add(id);
+    for (const b of c.bonds) {
+      const a1 = atoms.get(b.a1), a2 = atoms.get(b.a2);
+      if (a1 === undefined || a2 === undefined) continue;
+      added.bonds.add(d.addBond(a1, a2, b.order, b.display, { ...(({ id: _i, ...rest }) => rest)(structuredClone(b)), a1, a2 }).id);
+    }
+    // (text tied to a structure, and arrows stuck to shapes, are kept where they are, untied)
+    for (const x of c.captions) { const { id: _i, attach: _a, ...rest } = structuredClone(x); added.captions.add(d.addCaption(rest).id); }
+    for (const x of c.arrows) { const { id: _i, from: _f, to: _t, ...rest } = structuredClone(x); added.arrows.add(d.addArrow(rest).id); }
+    for (const x of c.shapes) { const { id: _i, ...rest } = structuredClone(x); added.shapes.add(d.addShape(rest).id); }
+  }
+  freshGroups(d, added);
+}
+
+/**
+ * The copies of the master's and layout's items on a slide's drawing taken off (Lock Layout
+ * Items): those still where the layout has them; ones moved on the slide stay as its own.
+ */
+function dropItems(d: Doc, m: Master, layout: LayoutId, masterToo = true): void {
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  for (const c of [masterToo ? m.items : undefined, layoutDef(m, layout).items]) {
+    if (!c) continue;
+    for (const x of c.shapes) { const y = [...d.shapes.values()].find((s) => s.kind === x.kind && near(s.x1, x.x1) && near(s.y1, x.y1) && near(s.x2, x.x2) && near(s.y2, x.y2)); if (y) d.removeShape(y.id); }
+    for (const x of c.captions) { const y = [...d.captions.values()].find((s) => !s.ph && near(s.x, x.x) && near(s.y, x.y) && s.runs.map((r) => r.text).join('') === x.runs.map((r) => r.text).join('')); if (y) d.removeCaption(y.id); }
+    for (const x of c.arrows) { const y = [...d.arrows.values()].find((s) => near(s.tail.x, x.tail.x) && near(s.tail.y, x.tail.y) && near(s.head.x, x.head.x) && near(s.head.y, x.head.y)); if (y) d.removeArrow(y.id); }
+    for (const x of c.atoms) { const y = [...d.atoms.values()].find((s) => s.z === x.z && near(s.x, x.x) && near(s.y, x.y)); if (y) d.removeAtom(y.id); }
+  }
+}
+
 const sameStyle = (a: DocStyle, b: DocStyle) => JSON.stringify({ ...a, name: '' }) === JSON.stringify({ ...b, name: '' });
+
+/**
+ * Slide Master view while it is open: the deck's own slides, place and history put aside, and
+ * for each page the layout as it was (its id, name, title slide colors and own looks) and the
+ * paragraph settings its page was given (see master-view.ts). `base` is the master page's text
+ * base (the master as the view opened), `shown` the master pages are drawn with (without the
+ * items on the page being edited).
+ */
+interface MasterView {
+  real: { slides: Slide[]; index: number; undo: HistoryEntry[]; redo: HistoryEntry[]; sections: Section[]; master: Master };
+  defs: Map<Slide, LayoutDef>;
+  wrote: Map<Slide, Partial<Record<Placeholder, PlaceholderFmt>>>;
+  base: Record<Placeholder, TextBase>;
+  shown: { master: Master; layout: Master };
+  /** Ids given to layouts in this view (so one deleted isn't given again). */
+  ids: Set<LayoutId>;
+}
 
 type HistoryEntry =
   | { kind: 'slide'; slide: Slide }
@@ -860,6 +1065,8 @@ export class Deck {
   private redoList: HistoryEntry[] = [];
   /** True while this deck's slide is in `host` (its tab is the one showing). */
   private attached = false;
+  /** Slide Master view, while it is open (see openMasterView). */
+  private view: MasterView | null = null;
 
   constructor(public host: Doc) {}
 
@@ -870,18 +1077,21 @@ export class Deck {
    * canvas slide, `view` is the part of the canvas keyframe `key` shows (the first by default),
    * with the canvas (for its background) and the keyframe's title.
    */
-  page(i = this.index, key = 0): { size: SlideSize; master: Master; layout: LayoutId; index: number; own?: Background; hideGraphics?: boolean; hf?: SlideHF; view?: Rect; canvas?: CanvasData; title?: string; refs?: RefBlock } {
+  page(i = this.index, key = 0): { size: SlideSize; master: Master; layout: LayoutId; index: number; own?: Background; hideGraphics?: boolean; hf?: SlideHF; view?: Rect; canvas?: CanvasData; title?: string; refs?: RefBlock; ownItems?: boolean } {
     const s = this.slides[i];
+    // Slide Master view: the master's or a layout's page, without its own items (they are on the page to edit)
+    if (this.view) return { size: this.size, master: s?.layout === MASTER_PAGE ? this.view.shown.master : this.view.shown.layout, layout: s?.layout ?? MASTER_PAGE, index: i };
     const k = s?.canvas?.keys[Math.max(0, Math.min(s.canvas.keys.length - 1, key))];
     const refs = slideRefBlock(this.settings.refs, this.slides, i);
     return {
-      size: this.size, master: this.master, layout: s?.layout ?? 'blank', index: i, own: s?.background, hideGraphics: s?.hideGraphics, hf: s?.hf, ...(refs ? { refs } : {}),
+      size: this.size, master: this.master, layout: s?.layout ?? 'blank', index: i, own: s?.background, hideGraphics: s?.hideGraphics, hf: s?.hf, ...(refs ? { refs } : {}), ...(s?.ownItems ? { ownItems: true } : {}),
       ...(k ? { view: keyRect(k, this.size), canvas: s.canvas, ...(k.title ? { title: k.title } : {}) } : {}),
     };
   }
 
   /** Restyle every slide's drawing after the master or backgrounds change. */
   private restyleAll(): void {
+    if (this.view) { this.syncView(); return; }
     for (let i = 0; i < this.slides.length; i++) this.styleDoc(this.docOf(i), this.slides[i].layout, this.slides[i].background);
   }
 
@@ -896,7 +1106,7 @@ export class Deck {
     this.host.swap(this.current.doc);
     this.attached = true;
     this.host.onCommit = () => this.noteSlideEdit();
-    this.host.onAmend = () => { this.edits++; this.onChange(); };
+    this.host.onAmend = () => { this.edits++; if (this.view) this.syncView(); this.onChange(); };
   }
 
   /** Take the current slide out of the app's document (another tab is shown). */
@@ -917,7 +1127,8 @@ export class Deck {
     this.styleDoc(d, layout);
     const styles = textStyles(this.master, layout);
     d.bulk(() => {
-      for (const f of layoutFrames(layout, this.size, this.master)) d.addCaption({ ...frameFields(f, styles), runs: [], paras: emptyParas(f.ph) });
+      for (const f of layoutFrames(layout, this.size, this.master)) d.addCaption({ ...frameFields(f, styles), runs: [], ...startFields(this.master, layout, f.ph) });
+      if (this.master.itemsUnlocked) copyItems(d, this.master, layout);
     });
     return d;
   }
@@ -1034,6 +1245,7 @@ export class Deck {
     if (this.undoList.length > 2000) this.undoList.shift();
     this.redoList.length = 0;
     this.edits++;
+    if (this.view) this.syncView();
     this.onChange();
   }
 
@@ -1074,6 +1286,7 @@ export class Deck {
     }
     this.redoList.push(e);
     this.edits++;
+    if (this.view) this.syncView();
     this.onChange();
     return true;
   }
@@ -1092,6 +1305,7 @@ export class Deck {
     }
     this.undoList.push(e);
     this.edits++;
+    if (this.view) this.syncView();
     this.onChange();
     return true;
   }
@@ -1159,7 +1373,7 @@ export class Deck {
     // as in PowerPoint, a new slide after the title slide gets Title and Content, otherwise the current layout
     const cur = this.current?.layout;
     const lay = layout ?? (!cur || cur === 'title' ? 'title-content' : cur);
-    const s: Slide = { id: this.nextSlideId++, layout: lay, doc: this.newSlideDoc(lay), notes: '' };
+    const s: Slide = { id: this.nextSlideId++, layout: lay, doc: this.newSlideDoc(lay), notes: '', ...(this.master.itemsUnlocked && hasItems(this.master, lay) ? { ownItems: true } : {}) };
     this.insert(this.index + 1, [s], 'New slide');
   }
 
@@ -1343,6 +1557,7 @@ export class Deck {
         moving.forEach((s, k) => { if (secs[k] === undefined) delete s.section; else s.section = secs[k]; });
       });
       this.goFresh(list.indexOf(cur));
+      this.refreshCites();
     };
     put(after, secsAfter);
     this.record(moving.length > 1 ? 'Move slides' : 'Move slide', () => put(before, secsBefore), () => put(after, secsAfter));
@@ -1500,7 +1715,11 @@ export class Deck {
       slide.layout = layout;
       const d = this.docOf(i);
       this.styleDoc(d, layout, slide.background);
-      d.bulk(() => this.fitPlaceholders(d, layout));
+      d.bulk(() => {
+        this.fitPlaceholders(d, layout, this.master, { master: this.master, layout: old });
+        // a slide with its own copies of the layout items gets the new layout's instead
+        if (slide.ownItems) { dropItems(d, this.master, old, false); copyItems(d, this.master, layout, false); }
+      });
     }, () => { slide.layout = old; this.styleDoc(this.docOf(this.slides.indexOf(slide)), old, slide.background); }, () => { slide.layout = layout; this.styleDoc(this.docOf(this.slides.indexOf(slide)), layout, slide.background); });
   }
 
@@ -1509,7 +1728,7 @@ export class Deck {
    * text and move there; missing ones are added empty; ones it doesn't have are removed when
    * empty and otherwise kept where they are (so no text is lost).
    */
-  private fitPlaceholders(d: Doc, layout: LayoutId, master = this.master): void {
+  private fitPlaceholders(d: Doc, layout: LayoutId, master = this.master, was?: { master: Master; layout: LayoutId }): void {
     const styles = textStyles(master, layout);
     const frames = layoutFrames(layout, this.size, master);
     const have = [...d.captions.values()].filter((c) => c.ph);
@@ -1521,9 +1740,11 @@ export class Deck {
       const fields = frameFields(f, styles);
       if (c) {
         used.add(c);
-        const paras = c.ph !== f.ph && isEmptyText(c) ? emptyParas(f.ph) : c.paras;
-        d.updateCaption(c.id, { ...fields, paras });
-      } else d.addCaption({ ...fields, runs: [], paras: emptyParas(f.ph) });
+        if (c.ph !== f.ph && isEmptyText(c)) { d.updateCaption(c.id, { ...fields, ...startFields(master, layout, f.ph) }); continue; }
+        // its paragraphs follow the layout's look where they had the old one's
+        const look = was ? refitParas(c, phFmt(was.master, was.layout, c.ph!), phFmt(master, layout, f.ph)) : {};
+        d.updateCaption(c.id, { ...fields, ...look });
+      } else d.addCaption({ ...fields, runs: [], ...startFields(master, layout, f.ph) });
     }
     for (const c of have) if (!used.has(c) && isEmptyText(c)) d.removeCaption(c.id);
   }
@@ -1534,28 +1755,48 @@ export class Deck {
    * was deleted get Title and Content. One undo step.
    */
   setLayouts(layouts: LayoutDef[], label = 'Edit slide layouts'): void {
+    this.applyMaster({ ...this.master, layouts }, label);
+  }
+
+  /**
+   * A new master with its layouts (Close Master View): slides whose layout changed (its boxes,
+   * its look, its title slide colors) or was deleted have their placeholders put in its places
+   * and given its look where they had the old one; slides whose layout was deleted get Title and
+   * Content. A new drawing style redraws the structures on every slide. One undo step.
+   */
+  applyMaster(next: Master, label = 'Edit slide master'): void {
     const before = this.master;
     // built-in layouts left as they come are not kept as edits
-    const own = layouts.filter((l) => !isBuiltinLayout(l.id) || JSON.stringify(l) !== JSON.stringify(builtinLayout(l.id))).map(copyLayout);
-    const after: Master = { ...before, layouts: own };
+    const own = (next.layouts ?? []).filter((l) => !isBuiltinLayout(l.id) || JSON.stringify(l) !== JSON.stringify(builtinLayout(l.id))).map(copyLayout);
+    const after: Master = { ...next, layouts: own };
     if (!own.length) delete after.layouts;
-    if (JSON.stringify(before.layouts ?? []) === JSON.stringify(after.layouts ?? [])) return;
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
     const slides = this.slides.slice();
     const laysBefore = slides.map((s) => s.layout);
     const laysAfter = slides.map((s) => (hasLayout(after, s.layout) ? s.layout : 'title-content'));
-    const changed = slides.map((_, i) => i).filter((i) => JSON.stringify(layoutDef(before, laysBefore[i]).boxes) !== JSON.stringify(layoutDef(after, laysAfter[i]).boxes) || titleLook(before, laysBefore[i]) !== titleLook(after, laysAfter[i]));
-    const use = (m: Master, lays: LayoutId[]) => {
+    const look = (m: Master, l: LayoutId) => JSON.stringify([layoutDef(m, l).boxes, titleLook(m, l), (['title', 'subtitle', 'body'] as const).map((ph) => phFmt(m, l, ph))]);
+    const restyle = !sameStyle(before.drawing, after.drawing);
+    // layout items: unlocked deck-wide, every slide has its own copies (locked again, the copies go)
+    const ownBefore = slides.map((s) => !!s.ownItems);
+    const ownAfter = slides.map((_, i) => (after.itemsUnlocked ? ownBefore[i] || hasItems(after, laysAfter[i]) : before.itemsUnlocked ? false : ownBefore[i]));
+    const changed = slides.map((_, i) => i).filter((i) => restyle || laysBefore[i] !== laysAfter[i] || ownBefore[i] !== ownAfter[i] || look(before, laysBefore[i]) !== look(after, laysAfter[i]));
+    const use = (m: Master, lays: LayoutId[], own: boolean[]) => {
       this.master = m;
-      slides.forEach((s, k) => { s.layout = lays[k]; });
+      slides.forEach((s, k) => { s.layout = lays[k]; if (own[k]) s.ownItems = true; else delete s.ownItems; });
       this.restyleAll();
     };
     this.contentEdit(label, changed, () => {
-      use(after, laysAfter);
+      use(after, laysAfter, ownAfter);
       for (const i of changed) {
         const d = this.docOf(i);
-        d.bulk(() => this.fitPlaceholders(d, slides[i].layout));
+        d.bulk(() => {
+          if (restyle) applyStyle(d, after.drawing, 'restyle');
+          this.fitPlaceholders(d, slides[i].layout, after, { master: before, layout: laysBefore[i] });
+          if (ownAfter[i] && !ownBefore[i]) copyItems(d, after, laysAfter[i]);
+          else if (ownBefore[i] && !ownAfter[i]) dropItems(d, before, laysBefore[i]);
+        });
       }
-    }, () => use(before, laysBefore), () => use(after, laysAfter));
+    }, () => use(before, laysBefore, ownBefore), () => use(after, laysAfter, ownAfter));
   }
 
   /**
@@ -1581,6 +1822,13 @@ export class Deck {
   /** Change the master (fonts, colours, background, logo, numbers, drawing style). */
   setMaster(m: Master): void {
     const before = this.master;
+    if (this.view) {
+      // Slide Master view: the master's settings beside its pages (fonts and the rest of the text's look are on its page)
+      const put = (x: Master) => { this.master = x; this.syncView(); this.onSwitch(); };
+      put(m);
+      this.record('Change slide master', () => put(before), () => put(m));
+      return;
+    }
     const apply = (x: Master) => {
       this.master = x;
       this.restyleAll();
@@ -1646,8 +1894,9 @@ export class Deck {
       d.bulk(() => {
         layoutFrames(p.layout, this.size, this.master).forEach((f, i) => {
           const t = p.text[i] ?? '';
-          const paras = f.ph === 'body' && t ? t.split('\n').map(() => ({ list: 'bullet' as const })) : emptyParas(f.ph);
-          d.addCaption({ ...frameFields(f, styles), runs: t ? [{ text: t }] : [], paras });
+          const start = startFields(this.master, p.layout, f.ph);
+          const paras = t && start.paras ? t.split('\n').map(() => ({ ...start.paras![0] })) : start.paras;
+          d.addCaption({ ...frameFields(f, styles), runs: t ? [{ text: t }] : [], ...start, paras });
         });
       });
       return { id: this.nextSlideId++, layout: p.layout, doc: d, notes: p.notes ?? '' };
@@ -2033,6 +2282,7 @@ export class Deck {
     const put = (v: DeckRefs | undefined, ids: (string[] | undefined)[]) => {
       if (v) this.settings.refs = structuredClone(v); else delete this.settings.refs;
       slides.forEach((s, k) => { if (ids[k]?.length) s.refs = [...ids[k]!]; else delete s.refs; });
+      this.refreshCites();
       this.looks++;
       this.onSwitch();
     };
@@ -2064,6 +2314,7 @@ export class Deck {
         if (v[k].refs?.length) s.refs = [...v[k].refs!]; else delete s.refs;
         if (v[k].refLook) s.refLook = { ...v[k].refLook }; else delete s.refLook;
       });
+      this.refreshCites();
       this.looks++;
       this.onSwitch();
     };
@@ -2104,6 +2355,7 @@ export class Deck {
         if (!got) continue;
         for (const k of keys) { if (got[k] !== undefined && !(k === 'refs' && !got.refs?.length)) (s as unknown as Record<string, unknown>)[k] = structuredClone(got[k]); else delete s[k]; }
       }
+      this.refreshCites();
       this.looks++;
       this.onSwitch();
     };
@@ -2121,6 +2373,62 @@ export class Deck {
   /** The last step setRefState made, and how things were before it (for the next change to join it). */
   private refJoin: { entry: unknown; before: { refs?: DeckRefs; slides: Map<number, SlideRefs> } } | null = null;
 
+  /**
+   * Citations in the slides' text (Insert ▸ Citation) show the numbers their slides' lines give
+   * the references, in the citation style's look: after the references, their numbering or the
+   * slides' order change. A citation of a reference no longer listed shows [?]. Outside undo:
+   * the numbers follow from the references, which undo puts back.
+   */
+  refreshCites(): void {
+    if (this.view) return;
+    const f = deckFormat(this.settings.refs);
+    const raised = citeSuper(f);
+    this.slides.forEach((s, i) => {
+      const d = this.docOf(i);
+      const cited = [...d.captions.values()].filter((c) => c.runs.some((r) => r.cite));
+      if (!cited.length) return;
+      const nums = slideCiteNumbers(this.settings.refs, this.slides, i);
+      const known = new Set(this.references.map((r) => r.id));
+      d.bulk(() => {
+        for (const c of cited) {
+          const runs = c.runs.map((r) => {
+            if (!r.cite) return r;
+            const n = nums.get(r.cite);
+            const text = n !== undefined ? citeText([n], f) : known.has(r.cite) && s.refs?.includes(r.cite) ? '*' : '[?]';
+            return r.text === text && !!r.sup === raised ? r : { ...r, text, ...(raised ? { sup: true } : { sup: undefined }) };
+          });
+          if (runs.some((r, k) => r !== c.runs[k])) d.updateCaption(c.id, { runs });
+        }
+      });
+    });
+  }
+
+  /**
+   * The References box's tick list: show (or stop showing) a reference on slide i, adding it to the
+   * presentation's list first when it comes from the library or another file (or the same reference
+   * already there, found by its DOI or title). `numbered`: for a citation in the text, the slide's
+   * lines get numbers if they had none. One undo step. Returns the reference's id in the list.
+   */
+  tickRef(i: number, ref: Reference, on = true, numbered = false): string {
+    const s = this.slides[i];
+    if (!s) return ref.id;
+    const cur: DeckRefs = this.settings.refs ? structuredClone(this.settings.refs) : { list: [] };
+    const have = cur.list.find((r) => r.id === ref.id) ?? findDuplicate(cur.list, ref);
+    const id = have?.id ?? ref.id;
+    if (!have) cur.list.push(structuredClone(ref));
+    const refs = on ? (s.refs?.includes(id) ? [...s.refs] : [...(s.refs ?? []), id]) : (s.refs ?? []).filter((x) => x !== id);
+    const look = numbered && refLook(cur, s.refLook).numbering === 'none' ? { ...(s.refLook ?? {}), numbering: 'slide' as const } : s.refLook;
+    this.setRefState(cur, new Map([[s.id, { refs, refLook: look, refList: s.refList, zotero: s.zotero }]]), on ? 'Show reference on slide' : 'Take reference off slide');
+    return id;
+  }
+
+  /** The references cited in slide i's text (Insert ▸ Citation), by id. */
+  citedOn(i = this.index): Set<string> {
+    const out = new Set<string>();
+    for (const c of this.docOf(i).captions.values()) for (const r of c.runs) if (r.cite) out.add(r.cite);
+    return out;
+  }
+
   /** Change what a References slide lists. One undo step. */
   setRefList(spec: RefListSpec | undefined, i = this.index): void {
     const s = this.slides[i];
@@ -2130,6 +2438,273 @@ export class Deck {
     const put = (v: RefListSpec | undefined) => { if (v) s.refList = { ...v }; else delete s.refList; this.looks++; this.onSwitch(); };
     put(spec);
     this.record(spec ? 'References slide' : 'Stop listing references', () => put(before), () => put(spec), s);
+  }
+
+  /**
+   * Unlock Layout Items on these slides (on: copies of the master's and layout's items become the
+   * slides' own, to move, change or delete), or lock them again (off: the copies still where the
+   * layout has them go, and the layout's show again). One undo step.
+   */
+  setOwnItems(indices: number[], on: boolean, label = on ? 'Unlock layout items' : 'Lock layout items'): number {
+    const slides = indices.map((i) => this.slides[i]).filter((s) => s && !!s.ownItems !== on && hasItems(this.master, s.layout));
+    if (!slides.length) return 0;
+    const idx = slides.map((s) => this.slides.indexOf(s));
+    const put = (v: boolean) => { for (const s of slides) { if (v) s.ownItems = true; else delete s.ownItems; } this.looks++; };
+    this.contentEdit(label, idx, () => {
+      for (const i of idx) {
+        const d = this.docOf(i);
+        d.bulk(() => (on ? copyItems(d, this.master, this.slides[i].layout) : dropItems(d, this.master, this.slides[i].layout)));
+      }
+      put(on);
+    }, () => put(!on), () => put(on));
+    return slides.length;
+  }
+
+  /**
+   * Slide Master ▸ Lock Layout Items on Slides: every slide's layout items locked (drawn from the
+   * layout), or unlocked (each slide gets its own copies, new slides too). One undo step; in Slide
+   * Master view it is a master setting, applied to the slides when the view closes.
+   */
+  setItemsLocked(locked: boolean): void {
+    if (!!this.master.itemsUnlocked === !locked) return;
+    const next: Master = { ...this.master };
+    if (locked) delete next.itemsUnlocked; else next.itemsUnlocked = true;
+    if (this.view) this.setMaster(next);
+    else this.applyMaster(next, locked ? 'Lock layout items' : 'Unlock layout items');
+  }
+
+  // ---------------------------------------------------------------- Slide Master view
+
+  /** Is Slide Master view open? (Its pages are then the deck's slides.) */
+  get inMasterView(): boolean { return !!this.view; }
+
+  /** In Slide Master view: page i's layout as it now is (null for the master's page, or outside the view). */
+  pageLayout(i = this.index): LayoutDef | null {
+    const s = this.slides[i];
+    if (!this.view || !s || s.layout === MASTER_PAGE) return null;
+    return layoutDef(this.master, s.layout);
+  }
+
+  /** How many of the deck's slides have this layout (in Slide Master view too). */
+  layoutUses(id: LayoutId): number {
+    return (this.view ? this.view.real.slides : this.slides).filter((s) => s.layout === id).length;
+  }
+
+  /**
+   * Open Slide Master view: the master's page, then a page for each layout, edited like slides
+   * (the deck's slides and history wait until it is closed). Opens at the layout `at` (the slide
+   * being edited's by default).
+   */
+  openMasterView(at?: LayoutId): void {
+    if (this.view || !this.current) return;
+    const was = this.attached;
+    this.detach();
+    const m = this.master;
+    const v: MasterView = {
+      real: { slides: this.slides, index: this.index, undo: this.undoList, redo: this.redoList, sections: this.sections, master: m },
+      defs: new Map(), wrote: new Map(), base: masterBase(m), shown: { master: m, layout: m }, ids: new Set(),
+    };
+    const pages: Slide[] = [{ id: this.nextSlideId++, layout: MASTER_PAGE, doc: masterPageDoc(m, this.size), notes: '' }];
+    for (const def of deckLayouts(m)) {
+      const meta = copyLayout(def);
+      const { doc, wrote } = layoutPageDoc(m, meta, this.size);
+      const s: Slide = { id: this.nextSlideId++, layout: def.id, doc, notes: '' };
+      v.defs.set(s, meta);
+      v.wrote.set(s, wrote);
+      v.ids.add(def.id);
+      pages.push(s);
+    }
+    const want = at ?? this.current.layout;
+    this.view = v;
+    this.slides = pages;
+    this.sections = [];
+    this.undoList = [];
+    this.redoList = [];
+    this.index = Math.max(0, pages.findIndex((s) => s.layout === want));
+    this.master = { ...m, layouts: deckLayouts(m).map(copyLayout) };
+    this.syncView();
+    if (was) this.attach();
+    this.onSwitch();
+    this.onChange();
+  }
+
+  /**
+   * Close Slide Master view: the master and layouts as their pages now have them are the deck's,
+   * its slides follow them, and the slides it was on come back. One undo step (Undo puts the
+   * master and slides back as they were before the view opened).
+   */
+  closeMasterView(): void {
+    const v = this.view;
+    if (!v) return;
+    this.syncView();
+    const next = this.master;
+    const was = this.attached;
+    this.detach();
+    this.view = null;
+    this.slides = v.real.slides;
+    this.index = Math.max(0, Math.min(v.real.index, this.slides.length - 1));
+    this.undoList = v.real.undo;
+    this.redoList = v.real.redo;
+    this.sections = v.real.sections;
+    this.master = v.real.master;
+    if (was) this.attach();
+    this.applyMaster(next, 'Slide master');
+    this.onSwitch();
+    this.onChange();
+  }
+
+  /** Do `fn` with the deck's own slides in place of Slide Master view's pages (saving while the view is open). */
+  outOfView<T>(fn: () => T): T {
+    const v = this.view;
+    if (!v) return fn();
+    const now = { slides: this.slides, index: this.index, undo: this.undoList, redo: this.redoList, sections: this.sections, master: this.master, attached: this.attached };
+    this.view = null;
+    this.slides = v.real.slides; this.index = v.real.index; this.sections = v.real.sections; this.master = v.real.master;
+    // the deck's own slides are all in their own drawings while the view is open
+    this.attached = false;
+    try {
+      return fn();
+    } finally {
+      this.view = v;
+      this.slides = now.slides; this.index = now.index; this.undoList = now.undo; this.redoList = now.redo; this.sections = now.sections; this.master = now.master;
+      this.attached = now.attached;
+    }
+  }
+
+  /** A new layout after the page being edited (Insert Layout): a title and a text box. */
+  insertLayout(): void {
+    const v = this.view;
+    if (!v) return;
+    const id = newLayoutId([...v.ids].map((x) => ({ id: x }) as LayoutDef));
+    const names = new Set(deckLayouts(this.master).map((l) => l.name));
+    let name = 'Custom Layout';
+    for (let n = 2; names.has(name); n++) name = `Custom Layout ${n}`;
+    this.addPage({ id, name, boxes: builtinLayout('title-content').boxes }, 'Insert Layout');
+  }
+
+  /** A copy of the layout being edited, after it (Duplicate Layout). */
+  duplicateLayout(): void {
+    const v = this.view;
+    const def = this.pageLayout();
+    if (!v || !def) return;
+    const id = newLayoutId([...v.ids].map((x) => ({ id: x }) as LayoutDef));
+    const { pptType: _p, ...rest } = copyLayout(def);
+    void _p;
+    this.addPage({ ...rest, id, name: `${def.name} copy` }, 'Duplicate Layout');
+  }
+
+  private addPage(def: LayoutDef, label: string): void {
+    const v = this.view!;
+    v.ids.add(def.id);
+    const { doc, wrote } = layoutPageDoc(this.master, def, this.size);
+    const s: Slide = { id: this.nextSlideId++, layout: def.id, doc, notes: '' };
+    const { items: _i, ...meta } = def;
+    void _i;
+    v.defs.set(s, meta);
+    v.wrote.set(s, wrote);
+    this.insert(this.index + 1, [s], label);
+    this.syncView();
+  }
+
+  /** Delete the layout being edited (only layouts made in the deck; slides with it get Title and Content). */
+  deleteLayout(): boolean {
+    const s = this.current;
+    if (!this.view || !s || s.layout === MASTER_PAGE || isBuiltinLayout(s.layout)) return false;
+    const ok = this.remove([this.index]);
+    this.syncView();
+    return ok;
+  }
+
+  /** Rename the layout being edited, or give it the title slide's colors and background. One undo step. */
+  setLayoutMeta(patch: Partial<Pick<LayoutDef, 'name' | 'titleLook'>>, label = 'Layout'): void {
+    const v = this.view, s = this.current;
+    const meta = s && v?.defs.get(s);
+    if (!v || !s || !meta) return;
+    const before = meta, after = { ...meta, ...patch };
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    const put = (x: LayoutDef) => { v.defs.set(s, x); this.syncView(); this.looks++; this.onSwitch(); };
+    put(after);
+    this.record(label, () => put(before), () => put(after), s);
+  }
+
+  /**
+   * Read the master and layouts back from their pages after a change in the view, and show the
+   * change on every page: the layouts' text follows the master's looks it doesn't set itself
+   * (its boxes staying where they are when its size changes), boxes that were where the
+   * master's are follow them, and the pages take the master's colors and background.
+   */
+  private syncView(): void {
+    const v = this.view;
+    if (!v) return;
+    const before = this.master;
+    const mi = this.slides.findIndex((s) => s.layout === MASTER_PAGE);
+    const m: Master = mi >= 0 ? readMasterPage(this.docOf(mi), before, v.base, this.size) : { ...before };
+    const oldBoxes = masterBoxes(before), newBoxes = masterBoxes(m);
+    const boxMoved = JSON.stringify(oldBoxes) !== JSON.stringify(newBoxes);
+    const layouts: LayoutDef[] = [];
+    this.slides.forEach((s, i) => {
+      const meta = v.defs.get(s);
+      if (!meta) return;
+      const d = this.docOf(i);
+      const w = v.wrote.get(s) ?? {};
+      const was = withLayout(before, meta), now = withLayout(m, meta);
+      const oldBase = d.textStyles ?? textStyles(was, meta.id, false), newBase = textStyles(now, meta.id, false);
+      d.bulk(() => {
+        for (const c of pagePlaceholders(d)) {
+          const ph = c.ph!;
+          const patch: Partial<Caption> = {};
+          // its box stays put when its text's size changes (a box's top is a line's ascent above its first baseline)
+          const dy = ASCENT * ((newBase[ph].size ?? 18) - (oldBase[ph]?.size ?? 18));
+          if (Math.abs(dy) > 1e-9) patch.y = c.y + dy;
+          // where the master's box was, it follows it
+          if (boxMoved && ph !== 'subtitle') {
+            const r = placeholderRect(c, oldBase[ph]);
+            const ob = oldBoxes.find((b) => b.ph === ph), nb = newBoxes.find((b) => b.ph === ph);
+            const at = (b: PlaceholderBox) => ({ x1: b.x * this.size.w, y1: b.y * this.size.h, x2: (b.x + b.w) * this.size.w, y2: (b.y + b.h) * this.size.h });
+            if (ob && nb) {
+              const o = at(ob);
+              if (Math.abs(r.x1 - o.x1) + Math.abs(r.y1 - o.y1) + Math.abs(r.x2 - o.x2) + Math.abs(r.y2 - o.y2) < 0.5) {
+                const n = at(nb);
+                Object.assign(patch, frameFields({ ph, x: n.x1, y: n.y1, w: n.x2 - n.x1, h: n.y2 - n.y1, justify: c.justify }, newBase));
+                delete patch.justify;
+              }
+            }
+          }
+          // paragraph settings it takes from the master follow it
+          const from = w[ph];
+          if (from) {
+            const to = { ...from };
+            const oldM = masterFmt(was, ph, meta.id), newM = masterFmt(now, ph, meta.id);
+            for (const k of FMT_PARA) {
+              if (meta.fmt?.[ph]?.[k] !== undefined || oldM[k] === newM[k]) continue;
+              if (captionLook(c).para[k] === from[k]) (to as Record<string, unknown>)[k] = newM[k];
+            }
+            if (JSON.stringify(to) !== JSON.stringify(from)) Object.assign(patch, refitParas(c, from, to));
+          }
+          if (Object.keys(patch).length) d.updateCaption(c.id, patch);
+        }
+        // the paragraph settings now given (after every box of a kind was refitted from the old ones)
+        for (const ph of ['title', 'subtitle', 'body'] as const) {
+          const from = w[ph];
+          if (!from) continue;
+          const oldM = masterFmt(was, ph, meta.id), newM = masterFmt(now, ph, meta.id);
+          for (const k of FMT_PARA) if (meta.fmt?.[ph]?.[k] === undefined && oldM[k] !== newM[k]) (from as Record<string, unknown>)[k] = newM[k];
+        }
+      });
+      d.textStyles = newBase;
+      layouts.push(readLayoutPage(d, meta, m, w, this.size));
+    });
+    m.layouts = layouts;
+    this.master = m;
+    const bare = (x: Master): Master => ({ ...x, layouts: x.layouts?.map((l) => { const { items: _i, refsBox: _r, ...rest } = l; void _i; void _r; return rest; }) });
+    v.shown = { master: { ...bare(m), items: undefined }, layout: bare(m) };
+    this.slides.forEach((s, i) => {
+      const d = this.docOf(i);
+      d.style = { ...m.drawing };
+      d.background = backgroundColour(slideBackground(this.page(i).master, s.layout));
+      d.allDirty = true;
+      d.version++;
+    });
   }
 
   /**

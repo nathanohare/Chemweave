@@ -32,6 +32,17 @@ export function textAnglePic(deg: number, stacked = false, size = 20): string {
 }
 
 const MARGINS: Record<string, [number, number]> = { normal: [1, 1], narrow: [0.5, 0.5], moderate: [1, 0.75], wide: [1, 2] };
+
+/**
+ * The text area of a 36 × 46 picture of a Letter page (8.5 × 11 in, about 4.2 px an inch) with
+ * margins `tb` inches at the top and bottom and `lr` at the sides: the dotted guide and its lines of
+ * text, the same distance in from each opposite edge.
+ */
+export function marginGuide(tb: number, lr: number): string {
+  const W = 36, H = 46, k = W / 8.5;
+  const x = lr * k, y = tb * k, w = W - 2 * x, h = H - 2 * y;
+  return `<rect class="gal-guide" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}"/>` + lines(x + 2, y + 3, w - 4, h - 5, 4);
+}
 const WRAPS: Record<string, string> = {
   inline: lines(3, 6, 26, 4, 4, 1) + '<rect class="gal-acc" x="3" y="12" width="10" height="9" rx="1"/>' + lines(15, 18, 14, 2, 4, 1) + lines(3, 25, 26, 4, 4, 0.7),
   square: lines(3, 5, 26, 4, 4, 1) + '<rect class="gal-acc" x="3" y="10" width="11" height="10" rx="1"/>' + lines(17, 10, 12, 10, 4, 1) + lines(3, 23, 26, 6, 4, 0.7),
@@ -45,8 +56,7 @@ const PICS: Record<string, (v: string) => string> = {
   margins: (v) => {
     const m = MARGINS[v];
     if (!m) return '';
-    const k = 4, [tb, lr] = m;
-    return svg(36, 46, paper(0, 0, 36, 46) + `<rect class="gal-guide" x="${(lr * k).toFixed(1)}" y="${(tb * k).toFixed(1)}" width="${(34 - 2 * lr * k).toFixed(1)}" height="${(44 - 2 * tb * k).toFixed(1)}"/>` + lines(lr * k + 2, tb * k + 3, 34 - 2 * lr * k - 4, 44 - 2 * tb * k - 4, 4));
+    return svg(36, 46, paper(0, 0, 36, 46) + marginGuide(m[0], m[1]));
   },
   orient: (v) => (v === 'portrait' ? svg(36, 46, paper(4, 1, 28, 36) + lines(8, 6, 20, 28, 4)) : v === 'landscape' ? svg(36, 46, paper(0, 8, 36, 28) + lines(4, 13, 28, 20, 4)) : ''),
   paper: (v) => (v === 'letter' ? svg(36, 46, paper(4, 1, 28.5, 37) + '<text class="gal-cap" x="18" y="44" text-anchor="middle">8.5×11</text>') : v === 'a4' ? svg(36, 46, paper(4.5, 0, 27.5, 39) + '<text class="gal-cap" x="18" y="45" text-anchor="middle">A4</text>') : ''),
@@ -145,6 +155,14 @@ const PICS: Record<string, (v: string) => string> = {
   },
 };
 
+/**
+ * Pictures a mode draws itself (Insert > Cover Page's pages, laid out by the document's own code):
+ * registered by the mode when it loads, so this module needs none of that code.
+ */
+export function registerGalleryPics(name: string, pic: (v: string) => string): void {
+  PICS[name] = pic;
+}
+
 function themeTile(font: string, c: { heading: string; accents: string[] }): string {
   return `<span class="gal-theme"><span class="gal-aa" style="font-family:'${esc(font)}',serif;color:${c.heading}">Aa</span>` +
     svg(54, 6, c.accents.map((a, i) => `<rect x="${i * 9}" y="0" width="8" height="6" rx="1" fill="${a}"/>`).join('')) + '</span>';
@@ -193,8 +211,8 @@ export function buildSelectGalleries(root: ParentNode = document): void {
     menu.hidden = true;
     if (box.dataset.gal) menu.dataset.gal = box.dataset.gal;
     box.append(btn, menu);
-    const pic = PICS[box.dataset.pic ?? ''];
-    menu.addEventListener('rb-fly-open', () => fill(menu, sel, pic));
+    // (looked up as it opens: a mode registers its own pictures when it loads)
+    menu.addEventListener('rb-fly-open', () => fill(menu, sel, PICS[box.dataset.pic ?? '']));
     menu.addEventListener('click', (e) => {
       const it = (e.target as HTMLElement).closest<HTMLButtonElement>('.gal-it');
       if (!it || it.disabled) return;

@@ -463,9 +463,9 @@ body.cells-raised .tb-cells .tool.active { background: var(--accent-soft); borde
 #work {
   grid-area: canvas;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   grid-template-rows: minmax(0, 1fr) auto;
-  grid-template-areas: 'list host split' 'list notes split';
+  grid-template-areas: 'list host split mpanel' 'list notes split mpanel';
   min-width: 0;
   min-height: 0;
 }
@@ -824,7 +824,8 @@ dialog ul { margin: 0; padding-left: 16px; }
     grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto auto;
     grid-template-areas: 'top top' 'tabs tabs' 'ribbon ribbon' 'dockt dockt' 'dockl canvas' 'dockb dockb' 'dockr dockr' 'side side' 'status status';
   }
-  #work { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto; grid-template-areas: 'list' 'host' 'notes' 'split'; }
+  #work { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto auto; grid-template-areas: 'list' 'host' 'notes' 'split' 'mpanel'; }
+  #master-panel { width: auto; max-height: 32vh; border-left: 0; border-top: 1px solid var(--line); }
   #split-pane { width: auto; max-width: none; height: 45vh; border-left: 0; border-top: 1px solid var(--line); }
   #split-handle, .pane-handle { display: none; }
   #slide-list, #design-lib { width: auto !important; max-height: 120px; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -1793,7 +1794,13 @@ body.ribbon-collapsed .ribbon.rb-peek > .rb-tabs [role='tab'][aria-selected='tru
 .rb-caption { font-size: var(--fs-xs); color: var(--muted); align-self: flex-start; }
 #doc-ribbon .rb-field input.rb-num { width: 46px; }
 /* Document mode: the highlighter button, and its colours */
+/* a small split button (Highlight, Bullets, Numbering, Borders): the command and its arrow side by
+   side, each lit across its own whole area when pointed at, one outline round both (review 2, item 2) */
 .rb-split { display: inline-flex; }
+.ribbon .rb-split:not(.rb-fly) { flex-direction: row; align-items: stretch; }
+.ribbon .rb-split:not(.rb-fly) > :first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.ribbon .rb-split:not(.rb-fly) > .rb-drop { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+.ribbon .rb-split:not(.rb-fly):hover > :is(button, select) { border-color: var(--line); }
 .ribbon button.rb-hl { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding-bottom: 2px; }
 .hl-ab { font-size: var(--fs-xs); line-height: 1; }
 .hl-bar { width: 14px; height: 4px; border-radius: 1px; background: #ffff00; border: 1px solid rgb(0 0 0 / 0.15); }
@@ -3103,36 +3110,34 @@ dialog.settings-window { max-width: none; }
 .styles-pane .sp-buttons button { padding: 3px 8px; }
 .styles-pane label.sp-preview { display: flex; align-items: center; gap: 5px; margin-top: 6px; color: var(--muted); }
 
-/* ------------------------------------------------------------------ Slide Layouts (Edit Layouts…) */
-dialog.layout-editor { width: min(96vw, 900px); }
-dialog.layout-editor form { margin: 0; }
-.le-body { display: flex; gap: 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 8px 0; }
-.le-side { flex: none; display: flex; flex-direction: column; gap: 6px; width: 150px; }
-.le-list { display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow-y: auto; padding: 2px; }
-.le-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; font-size: var(--fs-xs); border: 1px solid transparent; background: none; }
-.le-item canvas { display: block; background: #fff; border: 1px solid var(--line); }
-.le-item.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.le-item-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.le-side-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.le-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.le-top, .le-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.le-name { width: 16em; font: inherit; padding: 3px 6px; }
-.le-check { display: inline-flex; align-items: center; gap: 4px; }
-.le-pos { display: inline-flex; gap: 6px; }
-.le-pos input { width: 4.4em; font: inherit; padding: 2px 4px; }
-.le-stage-wrap { overflow: auto; }
-.le-stage { position: relative; outline: none; box-shadow: var(--page-shadow); background: #fff; }
-.le-canvas { position: absolute; left: 0; top: 0; display: block; }
-.le-ph { position: absolute; box-sizing: border-box; border: 1px dashed rgba(70, 80, 100, 0.7); cursor: move; overflow: hidden; padding: 3px 5px; color: rgba(60, 70, 90, 0.75); font: var(--fs-sm)/1.3 system-ui, sans-serif; user-select: none; }
-.le-ph.picked { border: 1.5px solid var(--accent); background: rgba(47, 111, 223, 0.06); }
-.le-ph-title { font-size: var(--fs-lg); font-weight: 600; }
-.le-handle { position: absolute; width: 9px; height: 9px; background: #fff; border: 1px solid var(--accent); display: none; }
-.le-ph.picked .le-handle { display: block; }
-.le-handle.nw { left: -1px; top: -1px; cursor: nwse-resize; }
-.le-handle.ne { right: -1px; top: -1px; cursor: nesw-resize; }
-.le-handle.sw { left: -1px; bottom: -1px; cursor: nesw-resize; }
-.le-handle.se { right: -1px; bottom: -1px; cursor: nwse-resize; }
-.le-status { margin: 0; min-height: 1.3em; }
+/* ------------------------------------------------------------------ Slide Master view (src/ui/master-panel.ts) */
+#master-panel { grid-area: mpanel; width: 272px; overflow-y: auto; padding: 8px 10px; border-left: 1px solid var(--line); background: var(--pane, var(--panel)); font-size: var(--fs-sm); }
+#master-panel[hidden] { display: none; }
+#master-panel h2 { display: flex; align-items: center; gap: 4px; margin: 0 0 4px; font-size: var(--fs-sm); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+#master-panel h3 { margin: 8px 0 2px; font-size: var(--fs-sm); font-weight: 600; }
+.mp-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) 18px; align-items: center; gap: 4px; min-height: 24px; }
+.mp-label { color: var(--text); }
+.mp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0; }
+.mp-controls input, .mp-controls select { font: inherit; padding: 1px 4px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); }
+.mp-text, .mp-select { flex: 1 1 auto; min-width: 0; width: 100%; }
+.mp-num { width: 56px; }
+.mp-pct { width: 44px; }
+.mp-color { width: 34px; height: 22px; padding: 0 1px !important; }
+.mp-unit { color: var(--muted); }
+.mp-value { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-toggle { min-width: 24px; height: 22px; padding: 0 5px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); font-weight: 600; }
+.mp-toggle[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
+.mp-italic { font-style: italic; font-family: Georgia, serif; }
+.mp-check { display: inline-flex; align-items: center; gap: 4px; }
+/* a layout's values that come from the master */
+.mp-inherited { color: var(--muted) !important; font-style: italic; }
+.mp-reset { width: 18px; height: 18px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.mp-reset:hover { color: var(--accent); }
+.mp-reset[hidden] { visibility: hidden; display: inline-block; }
+.mp-wide { display: block; margin: 8px 0 0; padding: 3px 8px; }
+/* the slide list in the view: the master, with its layouts under it and how many slides use each */
+body.master-view #slide-list .sl-layout { padding-left: 16px; }
+.sl-uses { position: absolute; top: 4px; right: 6px; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--muted); color: #fff; font: 600 10px/16px var(--ui-font); text-align: center; }
 
 /* ------------------------------------------------------------------ Theme editor and Slide Size */
 dialog.theme-editor { width: min(96vw, 820px); }
@@ -3487,8 +3492,6 @@ dialog.show-setup { width: min(94vw, 600px); }
 .custom-views .cv-list { width: 100%; min-width: 260px; font: inherit; }
 
 /* Header and footer: a first or even page's left, centre and right text in one row */
-.dp-three { display: flex; gap: 3px; min-width: 0; }
-.dp-three .dp-input { flex: 1 1 0; min-width: 0; }
 .dp-note[hidden] { display: none; }
 
 /* Document mode: the Selection Pane (Arrange) */
@@ -3938,8 +3941,9 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .rb-fly-menu .rb-icon .ci-ic { width: 20px; height: 20px; }
 .rb-fly-menu hr { width: 100%; margin: 3px 0; border: 0; border-top: 1px solid var(--line); }
 .rb-fly-menu .rb-fly-head { padding: 4px 8px 2px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-/* a split button: the command on top, its arrow underneath, one outline when either is pointed at */
-.rb-split { flex-direction: column; }
+/* a large split button: the command on top, its arrow underneath, one outline when either is pointed at
+   (the small ones in Document's Font and Paragraph groups keep their arrow beside them, below) */
+.rb-fly.rb-split { flex-direction: column; }
 .rb-split > button.rb-big { padding-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .ribbon .rb-split > .rb-fly-btn { padding: 0 4px; line-height: 12px; font-size: 10px; min-width: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
 .rb-split:hover > button { border-color: var(--line); }
@@ -3975,6 +3979,8 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 /* Ribbon galleries in Word's style (select-gallery.ts): each choice with a small picture of it */
 .rb-gal-menu { min-width: 200px; max-height: 70vh; overflow-y: auto; }
 .rb-gal-menu .gal-items { display: flex; flex-direction: column; gap: 1px; }
+/* Insert > Cover Page: each design's first page, as a sheet of paper */
+.gal-cover { display: block; height: auto; border: 1px solid var(--line); background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
 .rb-gal-menu .gal-grid { display: grid; grid-template-columns: repeat(3, auto); gap: 4px; padding: 2px; }
 .ribbon .rb-gal-menu button.gal-it { display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 4px; border: 1px solid transparent; border-radius: var(--r-ctl, 3px); text-align: left; line-height: 1.25; }
 .ribbon .rb-gal-menu .gal-grid button.gal-it { flex-direction: column; gap: 3px; padding: 5px 6px; text-align: center; min-width: 76px; }
@@ -4097,7 +4103,9 @@ body:not(.slides-mode, .design-mode, .sheet-mode, .doc-mode) #side-content > :is
 header, footer { background: var(--chrome); }
 .ribbon.tabbed, .doc-ribbon { background: var(--chrome); border-bottom: 0; }
 body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
-.ribbon.tabbed > .rb-panel:not([hidden]), .doc-ribbon > .rb-panel:not([hidden]) { margin: 0 6px 5px; background: var(--rb-surface); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--rb-shadow); }
+/* (review round 2, item 24, Nate's pick A) the panel runs the window's full width and meets the page
+   directly: no band of the chrome tone under or beside it, only its shadow (kept above the page) */
+.ribbon.tabbed > .rb-panel:not([hidden]), .doc-ribbon > .rb-panel:not([hidden]) { position: relative; z-index: 2; margin: 0; background: var(--rb-surface); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; box-shadow: var(--rb-shadow); }
 .ribbon.tabbed > .rb-panel .rb-group, .doc-ribbon > .rb-panel .rb-group { background: transparent; }
 #formula-bar { background: var(--pane); }
 .dock, aside { background: var(--pane); }
@@ -5388,3 +5396,23 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 body.ss-dragging, body.ss-dragging * { cursor: grabbing !important; }
 html.touch-ui .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { height: 36px; }
 
+
+/* The References box's tick list on a slide (refs-box.ts) */
+.refs-box { position: fixed; z-index: 70; width: 420px; max-width: calc(100vw - 16px); display: flex; flex-direction: column; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: 0 6px 18px rgb(0 0 0 / 0.18); font: var(--fs-sm) var(--ui-font); }
+.refs-box .rfb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+.refs-box .rfb-title { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.refs-box .rfb-style { max-width: 150px; padding: 1px 4px; }
+.refs-box .rb-find { margin: 6px 8px 2px; padding: 3px 6px; }
+.refs-box .rfb-list { max-height: 260px; overflow-y: auto; padding: 2px 0; }
+.refs-box .rfb-row { display: flex; align-items: flex-start; gap: 6px; padding: 3px 8px; cursor: pointer; }
+.refs-box .rfb-row:hover, .refs-box .rfb-row:focus-visible { background: var(--accent-soft); outline: none; }
+.refs-box .rfb-row input { margin: 2px 0 0; accent-color: var(--accent); }
+.refs-box .rfb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.refs-box .rfb-sub { color: var(--muted); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.refs-box .rfb-sub:empty { display: none; }
+.refs-box .rfb-cited, .refs-box .rfb-lib { flex: none; padding: 0 5px; border: 1px solid var(--accent); border-radius: 8px; color: var(--accent); font-size: var(--fs-xs); line-height: 16px; }
+.refs-box .rfb-lib { border-color: var(--line); color: var(--muted); }
+.refs-box .rfb-group { padding: 4px 8px 1px; color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.refs-box .rfb-none { padding: 8px; color: var(--muted); }
+.refs-box .rfb-foot { display: flex; gap: 6px; padding: 6px 8px; border-top: 1px solid var(--line); }
+.refs-box .rfb-look { margin-left: auto; }

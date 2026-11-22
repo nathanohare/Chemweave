@@ -836,10 +836,11 @@ export class Workspace {
     if (tab.deck) {
       const deck = tab.deck;
       const { writePptx } = await import('./io/pptx-write');
-      const bytes = await writePptx({
+      // (in Slide Master view, the deck's own slides and master, as they were when it opened)
+      const bytes = await writePptx(deck.outOfView(() => ({
         size: deck.size, master: deck.master, design: tab.mode === 'design', sections: deck.sectionCounts(), settings: deck.settings, kept: deck.kept, oleKept: deck.oleKept, picKept: deck.picKept,
-        slides: deck.slides.map((s, i) => ({ id: s.id, layout: s.layout, doc: deck.docOf(i), notes: s.notes, notesKept: s.notesKept, notesLook: s.notesLook, transition: s.transition, anims: s.anims, comments: s.comments, background: s.background, hideGraphics: s.hideGraphics, hidden: s.hidden, hf: s.hf, canvas: s.canvas, refs: s.refs, refLook: s.refLook, refList: s.refList, zotero: s.zotero })),
-      }, { ...this.hooks.pptx, title: name.replace(/\.[^.]+$/, '') });
+        slides: deck.slides.map((s, i) => ({ id: s.id, layout: s.layout, doc: deck.docOf(i), notes: s.notes, notesKept: s.notesKept, notesLook: s.notesLook, transition: s.transition, anims: s.anims, comments: s.comments, background: s.background, hideGraphics: s.hideGraphics, hidden: s.hidden, hf: s.hf, canvas: s.canvas, refs: s.refs, refLook: s.refLook, refList: s.refList, zotero: s.zotero, ownItems: s.ownItems })),
+      })), { ...this.hooks.pptx, title: name.replace(/\.[^.]+$/, '') });
       return { data: bytes, type: PPTX, note: '' };
     }
     if (tab.mode === 'sheet') {

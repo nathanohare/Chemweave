@@ -128,7 +128,7 @@ export function toolHelp(name: string, t: Tool | undefined): ToolHelp {
         what: t.real
           ? 'Drag a structure to rotate its 3-D shape; wedges and bold bonds set which shape is meant.'
           : 'Drag a structure to tilt it in 3-D as a flat sheet.',
-        steps: ['Drag a structure to rotate it'],
+        steps: ['Drag a structure to rotate it', 'Or select it and drag a tilt handle to turn one way only'],
         keys: [],
         dragKeys: [['Shift', 'Snap to 15°']],
       };
