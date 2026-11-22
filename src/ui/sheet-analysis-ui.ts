@@ -534,7 +534,7 @@ export class SheetAnalysis {
       const busy = target.sheet.keysIn(R).some((k) => { const c = target.sheet.cells.get(k); return !!(c?.input || c?.structure); });
       if (busy) {
         return ask('Overwrite?', [], { ok: 'Overwrite', note: `Output range ${rangeName(R)} will overwrite existing data. Press Overwrite to write over the data in it.` })
-          .then((ok) => { if (!ok) return 'Pick another output range.'; go(); return null; });
+          .then((ok) => { if (!ok) return 'Choose another output range.'; go(); return null; });
       }
     }
     go();
@@ -607,10 +607,13 @@ export class SheetAnalysis {
 
   /** Data > What-If Analysis menu. */
   whatIfMenu(x: number, y: number): void {
-    popupMenu(x, y, [
+    // Data Table is greyed, with the reason as its tooltip, until a table is selected (S15, S85)
+    const ref = dataTableRef(this.view.sel.range);
+    const m = popupMenu(x, y, [
       ['Goal Seek…', () => this.goalSeekWindow()],
-      ['Data Table…', () => this.dataTableWindow()],
+      ['Data Table…', () => this.dataTableWindow(), typeof ref !== 'string'],
     ]);
+    if (typeof ref === 'string') m.querySelectorAll('button')[1].title = ref;
   }
 
   /** Goal Seek: find the value of one cell that makes a formula give a target. */
@@ -735,7 +738,7 @@ export class SheetAnalysis {
       return { lhs: `=${lhs.value.trim().replace(/^=/, '')}`, rel: r, rhs: `=${rhs.value.trim().replace(/^=/, '')}` };
     };
     btn('Add', () => { const c = current(); if (typeof c === 'string') { w.error(c); return; } w.error(null); constraints.push(c); fill(); lhs.value = ''; rhs.value = ''; lhs.focus(); });
-    btn('Change', () => { const i = Number(list.value); const c = current(); if (!(i >= 0) || list.selectedIndex < 0) { w.error('Pick a constraint in the list first.'); return; } if (typeof c === 'string') { w.error(c); return; } constraints[i] = c; fill(); });
+    btn('Change', () => { const i = Number(list.value); const c = current(); if (!(i >= 0) || list.selectedIndex < 0) { w.error('Select a constraint in the list first.'); return; } if (typeof c === 'string') { w.error(c); return; } constraints[i] = c; fill(); });
     btn('Delete', () => { const i = list.selectedIndex; if (i < 0) return; constraints.splice(i, 1); fill(); });
     btn('Reset All', () => { constraints.length = 0; fill(); obj.value = ''; vars.value = ''; });
     cg.append(conBtns);

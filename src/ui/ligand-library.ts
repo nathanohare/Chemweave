@@ -191,7 +191,7 @@ export class LigandLibraryWindow {
 
   private showDetails(): void {
     const l = this.current;
-    if (!l) { this.details.replaceChildren(el('p', { className: 'muted', textContent: 'Pick a ligand to see it here.' })); return; }
+    if (!l) { this.details.replaceChildren(el('p', { className: 'muted', textContent: 'Select a ligand to see it here.' })); return; }
     const t = templateById(l.tpl);
     const pic = el('div', { className: 'lig-big' });
     { const icon = t ? svgNode(templateIcon(t, BIG)) : null; if (icon) pic.append(icon); }

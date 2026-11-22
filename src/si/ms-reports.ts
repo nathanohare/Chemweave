@@ -810,7 +810,7 @@ export function headerColumns(line: string): string[] | null {
 }
 
 /** For each number of a line of running text: "calc" or "found" after the nearest such word before it, else "". */
-function labelled(line: string, numbers: [number, number][]): string[] {
+function labeled(line: string, numbers: [number, number][]): string[] {
   const words = [...line.matchAll(KEYWORD)];
   return numbers.map(([pos]) => { const before = words.filter((w) => (w.index ?? 0) + w[0].length <= pos); return before.length ? groupOf(before[before.length - 1]) : ''; });
 }
@@ -821,7 +821,7 @@ function textResult(kind: string, measured: number[], calculated: number[], plai
   return data(kind, { mz: values, intensity: values.map((v) => intensity?.get(v) ?? NaN), measured: new Set(measured.map(r6)), calculated: [...new Set(calculated)] });
 }
 
-/** The m/z values in a report's text: table rows by their header's columns, labelled numbers in running text, and other plausible m/z values. */
+/** The m/z values in a report's text: table rows by their header's columns, labeled numbers in running text, and other plausible m/z values. */
 export function parseReportText(text: string, kind = 'text report'): ReportData {
   const measured: number[] = [], calculated: number[] = [], plain: number[] = [];
   let columns: string[] | null = null;
@@ -832,7 +832,7 @@ export function parseReportText(text: string, kind = 'text report'): ReportData 
     const numbers = [...line.matchAll(MZ_TEXT)].map((m): [number, number] => [m.index ?? 0, Number(m[1])]).filter(([, v]) => inRange(v));
     if (!numbers.length) { if (line.trim() && ++idle > 3) columns = null; continue; }
     idle = 0;
-    const labels = labelled(line, numbers);
+    const labels = labeled(line, numbers);
     if (columns && numbers.length >= columns.length && !labels.some(Boolean)) {
       numbers.slice(0, columns.length).forEach(([, v], k) => (columns![k] === 'calc' ? calculated : measured).push(v));
       plain.push(...numbers.slice(columns.length).map(([, v]) => v));

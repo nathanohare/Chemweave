@@ -202,31 +202,15 @@ export function setRibbonCollapsed(on: boolean): void {
 }
 export const ribbonCollapsed = () => collapsed;
 
-/**
- * A ribbon whose arrow switches it between its Classic look (two rows) and its Simplified one (one
- * row), as Office's does, instead of folding it to its tabs. Double-clicking a tab or Ctrl+F1
- * still folds it, and when folded the arrow opens it again.
- */
-const lookToggles = new Map<Element, { simple: () => boolean; toggle: () => void }>();
-export function addLookToggle(ribbon: HTMLElement, look: { simple: () => boolean; toggle: () => void }): void {
-  lookToggles.set(ribbon, look);
-  repaintArrows();
-}
+/** Paint every ribbon's ▴ (after the ribbon collapses or opens). */
 export function repaintArrows(): void {
   for (const b of document.querySelectorAll<HTMLElement>('.rb-collapse')) paintArrow(b);
 }
 
+/** The ▴ does the same in every mode, Canvas included: it collapses the ribbon to its tabs (G5-36, S17). */
 function paintArrow(b: HTMLElement): void {
-  const look = lookToggles.get(b.closest('.ribbon') as Element);
-  if (look && !collapsed) {
-    const simple = look.simple();
-    b.textContent = simple ? '▾' : '▴';
-    b.title = simple ? 'Classic ribbon: two rows of buttons' : 'Simplified ribbon: one row of buttons, for more room';
-    b.title += '. Double-click a tab (or Ctrl+F1) to collapse the ribbon to its tabs';
-  } else {
-    b.textContent = collapsed ? '▾' : '▴';
-    b.title = collapsed ? 'Pin the ribbon open (Ctrl+F1)' : 'Collapse the ribbon to its tabs, for more room (Ctrl+F1). Click a tab to use its buttons';
-  }
+  b.textContent = collapsed ? '▾' : '▴';
+  b.title = collapsed ? 'Pin the ribbon open (Ctrl+F1)' : 'Collapse the ribbon to its tabs, for more room (Ctrl+F1). Click a tab to use its buttons';
   b.setAttribute('aria-label', b.title);
 }
 
@@ -242,11 +226,7 @@ function addCollapseButtons(): void {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'rb-collapse';
-    b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const look = lookToggles.get(b.closest('.ribbon') as Element);
-      if (look && !collapsed) { look.toggle(); paintArrow(b); } else toggleCollapsed();
-    });
+    b.addEventListener('click', (e) => { e.stopPropagation(); toggleCollapsed(); });
     tabs.append(b);
     paintArrow(b);
   }

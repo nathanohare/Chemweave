@@ -167,9 +167,9 @@ export class ModeColoursDialog {
   constructor(private opts: ModeColoursDialogOptions) {
     const d = (this.d = document.createElement('dialog'));
     d.className = 'mode-dialog';
-    d.setAttribute('aria-label', 'Mode colors');
+    d.setAttribute('aria-label', 'Mode Colors');
     d.innerHTML = `
-      <h2 data-info="Each file type has its own color, so you can see at a glance whether you are working on a canvas, a presentation, a spreadsheet, a document or a design.">Mode colors</h2>
+      <h2 data-info="Each file type has its own color, so you can see at a glance whether you are working on a canvas, a presentation, a spreadsheet, a document or a design.">Mode Colors</h2>
       <fieldset class="mc-styles">
         <legend>Use the color for</legend>
         <label class="hk-opt"><input type="radio" name="mc-style" value="accent" /><span>Buttons, highlights and tab icons (the window keeps its usual look)</span></label>

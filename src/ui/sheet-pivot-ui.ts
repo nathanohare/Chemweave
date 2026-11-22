@@ -161,7 +161,7 @@ export class SheetPivots {
         if (typeof rep === 'string') return rep;
         const problem = placeProblem(sheet, fresh, reportRange(fresh, rep));
         if (problem) return problem;
-        if (wouldCover(sheet, fresh, reportRange(fresh, rep))) return 'The PivotTable would go over cells that have something in them: pick an empty place.';
+        if (wouldCover(sheet, fresh, reportRange(fresh, rep))) return 'The PivotTable would go over cells that have something in them: choose an empty place.';
         this.view.commitEdit();
         this.wb.edit('Insert PivotTable', () => { writePivot(sheet, fresh); if (chart) this.addChart(sheet, fresh); }, this.view.place());
       } else {

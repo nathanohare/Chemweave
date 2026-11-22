@@ -462,7 +462,7 @@ export function analysisHtml(r: FragmentResult, i: number, adductText: string, e
     : nameOn ? extras.name ?? '' : '';
   return `<div class="frag${edit ? ' an-customize' : ''}">
     <div class="formula"><b>${formulaHtml(r.formula)}</b>${name}</div>
-    ${core ? `<p class="muted small">${extras.rGroups!.map(esc).join(', ')} could be anything, so there are no masses. Chemistry ▸ R-Group Table calculates each compound.</p>` : ''}
+    ${core ? `<p class="muted small">${extras.rGroups!.map(esc).join(', ')} could be anything, so there are no masses. Chemistry ▸ Polymers and R-Groups ▸ R-Group Table… calculates each compound.</p>` : ''}
     ${html}
     ${extras.unknown?.length ? `<p class="warn">Not recognized (skipped): ${extras.unknown.map(esc).join(', ')}</p>` : ''}
     ${edit ? `<div class="an-buttons an-edit-add"><button type="button" data-analysis-calc="new" title="A row that calculates an amount for the selection: mass, volume or mmol">Add Lab Calculation…</button></div>` : ''}

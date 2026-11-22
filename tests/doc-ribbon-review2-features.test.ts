@@ -53,7 +53,9 @@ describe('Show/Hide ¶', () => {
   });
 
   it('is a pressed-state button on Home, beside Shrink Font', () => {
-    expect(html).toMatch(/<button class="rb-sq" data-doc="show-marks" aria-pressed="false"[^>]*>¶<\/button>/);
+    // (the Font group is made by src/ui/font-group.ts, the same for every mode; ¶ is Document's own, G5-26)
+    const fg = readFileSync(new URL('../src/ui/font-group.ts', import.meta.url), 'utf8');
+    expect(fg).toMatch(/<button class="rb-sq" data-doc="show-marks" aria-pressed="false"[^>]*>¶<\/button>/);
   });
 });
 

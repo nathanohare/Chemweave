@@ -1,5 +1,5 @@
 // A compound's spectra page (under the Spectra section in the tree, SPEC §13k.12): its spectra
-// listed (each page of a PDF on its own), the one picked drawn as it prints (its header line, the
+// listed (each page of a PDF on its own), the selected one drawn as it prints (its header line, the
 // spectrum, auto-cropped when that is on, at the size of its place on the page, and the structure
 // box on it), and that spectrum's own settings beside it. The box is dragged anywhere on the
 // spectrum and resized by its corners; its parts move together, and Alt-drag moves the ID and
@@ -109,7 +109,7 @@ export class SiSpectraPage {
     const c = host.compound;
     const h = el('h2', 'si-title');
     h.append(el('b', 'si-cid', host.idOf(c)), document.createTextNode(' Spectra'));
-    addInfo(h, 'This compound’s spectra as they print in the Spectra section. Pick one on the left; drag the structure box anywhere on the spectrum and resize it by its corners (its parts move together; Alt-drag moves the ID and caption on their own). Its settings below win over the Spectra section’s; a setting in bold is this spectrum’s own (× follows the section again). The Spectrum tab on the ribbon changes the order and says whether settings are for this page or the whole file.');
+    addInfo(h, 'This compound’s spectra as they print in the Spectra section. Select one on the left; drag the structure box anywhere on the spectrum and resize it by its corners (its parts move together; Alt-drag moves the ID and caption on their own). Its settings below win over the Spectra section’s; a setting in bold is this spectrum’s own (× follows the section again). The Spectrum tab on the ribbon changes the order and says whether settings are for this page or the whole file.');
     const body = el('div', 'si-spectra-body');
     const right = el('div', 'si-spectra-right');
     right.append(this.stage, this.settings);

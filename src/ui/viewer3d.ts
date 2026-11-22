@@ -82,7 +82,7 @@ export class Viewer3d {
   private showH = true;
   private labels = false;
   private spinning = false;
-  /** Depth shading: the back of the model fades (follows Format ▸ Depth Shading; its own box here). */
+  /** Depth shading: the back of the model fades (follows Format ▸ Rotate and Flip ▸ Depth Shading; its own box here). */
   private fog = depthShadePrefs.on;
   private fogBox: HTMLInputElement | null = null;
   private frame = 0;
@@ -138,7 +138,7 @@ export class Viewer3d {
     spin.title = 'Turn the model slowly around and around';
     spin.setAttribute('aria-pressed', 'false');
     spin.addEventListener('click', () => { this.spinning = !this.spinning; spin.setAttribute('aria-pressed', String(this.spinning)); if (this.spinning) this.tick(); });
-    const fog = check('Depth', 'Depth shading: the back of the model fades, as Format ▸ Depth Shading fades structures on the page', this.fog, (v) => (this.fog = v));
+    const fog = check('Depth', 'Depth shading: the back of the model fades, as Format ▸ Rotate and Flip ▸ Depth Shading fades structures on the page', this.fog, (v) => (this.fog = v));
     this.fogBox = fog.querySelector('input');
     bar.append(style, check('H', 'Show hydrogens', this.showH, (v) => (this.showH = v)), check('Labels', 'Show element symbols (not C or H)', this.labels, (v) => (this.labels = v)), fog, spin);
 
@@ -402,7 +402,7 @@ export class Viewer3d {
     const near = cleanerNearby(base, this.rot, sk, 45);
     if (!near) {
       this.rot = cleanestView(base, sk, this.drawn);
-      this.flash('From this angle atoms would land on top of each other, so the model was turned to its cleanest view first.');
+      this.flash('From this angle atoms would land on top of each other, so the model was rotated to its cleanest view first.');
     } else if (near.deg) {
       this.rot = near.rot;
       this.flash(`Turned the model ${near.deg}° first, so no atoms land on top of each other.`);
@@ -473,7 +473,7 @@ export class Viewer3d {
     });
   }
 
-  /** Draw again with the depth shading setting as it now is (Format ▸ Depth Shading changed). */
+  /** Draw again with the depth shading setting as it now is (Format ▸ Rotate and Flip ▸ Depth Shading changed). */
   redraw(): void {
     this.fog = depthShadePrefs.on;
     if (this.fogBox) this.fogBox.checked = this.fog;

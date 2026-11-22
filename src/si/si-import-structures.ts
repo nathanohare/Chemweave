@@ -1,9 +1,9 @@
 // Import SI, structures (SPEC §13u.7): each compound's structure from the ChemDraw drawings
 // embedded in a Word SI (CDX inside an OLE object), as SI Assistant's assign_structures finds
-// them: the structure labelled with its ID (several: the one fitting its HRMS formula, else one
+// them: the structure labeled with its ID (several: the one fitting its HRMS formula, else one
 // in its own text); else, when its own text holds one drawing of one structure, that one. A
 // structure that doesn't fit the HRMS formula gets a warning; when only one structure in the SI
-// fits that formula, it is taken instead (a mislabelled drawing).
+// fits that formula, it is taken instead (a mislabeled drawing).
 //
 // The drawings are read with Chemweave's own CDX and CDXML readers; the formulas need RDKit
 // (`facts`), so this runs after analyse(), before the review window.
@@ -137,7 +137,7 @@ const countsOf = (f: MolFacts | null): Counts | null => {
   return f.pieces.length > 1 ? f.pieces[mainSpecies(f.pieces)].info.counts : f.info.counts;
 };
 
-/** Every structure in the ChemDraw drawings, with its label (a salt's counter-ion, drawn near its cation and not labelled itself, is joined to it). */
+/** Every structure in the ChemDraw drawings, with its label (a salt's counter-ion, drawn near its cation and not labeled itself, is joined to it). */
 async function drawnStructures(objects: DocObject[], tools: StructureTools): Promise<Drawn[]> {
   const out: Omit<Drawn, 'facts' | 'key'>[] = [];
   objects.forEach((obj, index) => {
@@ -151,7 +151,7 @@ async function drawnStructures(objects: DocObject[], tools: StructureTools): Pro
     for (const s of structures) {
       if (ions.includes(s) || (s.atoms <= 1 && !s.charge)) continue;   // (a counter-ion, or a lone atom: a label read as carbon)
       let molblock = s.molblock;
-      if (s.charge) {   // join the nearest unlabelled ions of the opposite charge
+      if (s.charge) {   // join the nearest unlabeled ions of the opposite charge
         let need = s.charge;
         const frags = [...s.frags];
         for (const ion of [...ions].sort((a, b) => boxGap(a.box, s.box) - boxGap(b.box, s.box))) {
@@ -197,7 +197,7 @@ export async function assignStructures(plan: ImportPlan, tools: StructureTools):
     if (cands.length) {
       const rank = (d: Drawn): [number, number, number] => [fits(d, want) ? 0 : 1, own.has(d.drawing) ? 0 : 1, d.drawing];
       chosen = [...cands].sort((a, b) => { const x = rank(a), y = rank(b); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; })[0];
-      note = `from the ChemDraw drawing labelled “${c.cid}”`;
+      note = `from the ChemDraw drawing labeled “${c.cid}”`;
       const others = new Set(cands.map((d) => d.key));
       others.delete(chosen.key);
       if (others.size) c.warnings.push(`“${c.cid}” labels ${others.size + 1} different structures in the SI's drawings; the one that fits its HRMS formula (or is next to its text) was taken. Check it.`);
@@ -208,12 +208,12 @@ export async function assignStructures(plan: ImportPlan, tools: StructureTools):
     if (!chosen) return;
     let got = countsOf(chosen.facts);
     if (want && got && !sameFormula(got, want)) {
-      // the labelled structure doesn't fit the HRMS: if just one structure in the whole SI does (by its formula), it is that one, labelled otherwise
+      // the labeled structure doesn't fit the HRMS: if just one structure in the whole SI does (by its formula), it is that one, labeled otherwise
       const fitting = new Map<string, Drawn>();
       for (const d of drawn) if (fits(d, want) && !fitting.has(d.key)) fitting.set(d.key, d);
       if (fitting.size === 1) {
         const other = [...fitting.values()][0];
-        c.warnings.push(`The drawing labelled “${c.cid}” shows a structure (${hillFormula(got)}) that does not fit its HRMS; the only structure in the SI that does (drawn ${other.label ? `as “${other.label}”` : 'unlabelled'}) was taken instead. Check it.`);
+        c.warnings.push(`The drawing labeled “${c.cid}” shows a structure (${hillFormula(got)}) that does not fit its HRMS; the only structure in the SI that does (drawn ${other.label ? `as “${other.label}”` : 'unlabeled'}) was taken instead. Check it.`);
         chosen = other;
         got = countsOf(other.facts);
         note = 'the one structure in the SI\'s drawings that fits its HRMS formula';

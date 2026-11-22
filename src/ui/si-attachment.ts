@@ -171,7 +171,7 @@ export class SiAttachmentPage {
     const p = this.host.project;
     const file = str(this.s.data.file);
     const h = el('h3', 'si-sub', 'Attachment');
-    addInfo(h, 'A whole PDF or picture printed as a section of its own. A PDF’s pages fill the text width; a picture prints at its own size, shrunk to fit the page. The heading prints over it (leave it empty for none) and the caption under it. Attachment ▸ Choose File picks the file (a copy is kept in the project folder; the one it replaces goes to the Trash); a file can also be dropped on the preview.');
+    addInfo(h, 'A whole PDF or picture printed as a section of its own. A PDF’s pages fill the text width; a picture prints at its own size, shrunk to fit the page. The heading prints over it (leave it empty for none) and the caption under it. Attachment ▸ Choose File sets the file (a copy is kept in the project folder; the one it replaces goes to the Trash); a file can also be dropped on the preview.');
     const rows = el('div', 'si-attach-fields');
     const field = (key: 'heading' | 'caption', label: string, placeholder: string): void => {
       const lab = el('label', 'si-attach-row');

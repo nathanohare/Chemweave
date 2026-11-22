@@ -1,7 +1,8 @@
 // Insert ▸ TLC Plate… and Insert ▸ Gel… (and their Edit windows). A TLC plate has a row for each
 // spot under its lane's name: its Rf, and a Description menu for how it looks (intensity, size,
-// streak, color). A gel has a row for each lane with its bands typed as a short list. Then the
-// stain or dye and what is written on it, with a preview that redraws as you go.
+// streak, color). A gel has a row for each band in the same way: its size and Description (G5-08),
+// and a Marker box on each lane. Then the stain or dye and what is written on it, with a preview
+// that redraws as you go.
 
 import { addInfo, foldIntoInfo } from './info-tip';
 import { GEL_LOOKS, LADDERS, LOCK_SPOTS_INFO, SPOT_COLORS, TLC_LOOKS, newPlate, spotColorHex, spotRows, spotSummary, spotText, type PlateData, type PlateKind, type PlateLane, type SpotRow } from '../design/plates';
@@ -23,11 +24,11 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
     const looks = (tlc ? TLC_LOOKS : GEL_LOOKS).map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
     form.innerHTML = `<h2>${title}</h2>
       <canvas class="plate-preview" aria-label="Preview" role="img"></canvas>
-      <div class="plate-table-wrap"><table class="plate-table${tlc ? ' plate-spots' : ''}"><thead><tr><th>Lane</th>${tlc ? '<th class="plate-rf">Rf</th><th>Description</th>' : '<th>Bands (size)</th><th title="A size marker: its sizes are written beside the gel">Marker</th>'}<th></th></tr></thead><tbody></tbody></table></div>
+      <div class="plate-table-wrap"><table class="plate-table plate-spots"><thead><tr><th>Lane</th>${tlc ? '<th class="plate-rf">Rf</th>' : '<th class="plate-rf">Size</th>'}<th>Description</th><th></th></tr></thead><tbody></tbody></table></div>
       <p class="plate-rows"><button type="button" data-act="lane">+ Lane</button>${tlc ? ' <button type="button" data-act="co" title="A lane with every spot of the lanes either side of it, as a co-spot shows">+ Co-spot lane</button>' : ` <label class="plate-ladder">Marker <select name="ladder"><option value="">Add a marker lane…</option>${LADDERS.map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</select></label>`}</p>
       <p class="muted small plate-help">${tlc
         ? 'Each spot\'s Rf, from 0 (the start line) to 1 (the solvent front). + Spot adds one to the lane. On the canvas, drag a spot up or down to change its Rf.'
-        : 'Type each band\'s size, with commas between: 3, 1.2 faint. Bands run by size on a log scale. After a number: faint or strong, big or small, or a color.'}</p>
+        : 'Each band\'s size, in the units under Sizes in. Bands run by size on a log scale. + Band adds one to the lane; check Marker for a lane of size markers (their sizes can be written beside the gel).'}</p>
       <label class="ask-row"><span>${tlc ? 'Stain' : 'Dye'}</span><select name="look">${looks}</select></label>
       ${tlc ? '' : '<label class="ask-row"><span>Sizes in</span><select name="unit"><option value="bp">bp</option><option value="kb">kb</option><option value="kDa">kDa</option></select></label>'}
       <label class="ask-row"><span>${tlc ? 'Eluent' : 'Caption'}</span><input name="note" placeholder="${tlc ? '20% EtOAc/hexanes' : 'optional'}" /></label>
@@ -41,40 +42,13 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
     if (tlc) addInfo($('.plate-lock'), LOCK_SPOTS_INFO);
     const body = $<HTMLTableElement>('.plate-table').tBodies[0];
 
-    // a TLC plate's lanes as rows of spots (kept as they change; `lanes` is made from them)
-    let tl = lanes.map((l) => ({ label: l.label, spots: spotRows(l.marks) }));
-    const read = () => {
-      if (tlc) { lanes = tl.map((l) => ({ label: l.label, marks: spotText(l.spots) })); return; }
-      lanes = [...body.rows].map((tr) => ({
-        label: tr.querySelector<HTMLInputElement>('input[data-k=label]')!.value,
-        marks: tr.querySelector<HTMLInputElement>('input[data-k=marks]')!.value,
-        ...(tr.querySelector<HTMLInputElement>('input[data-k=ladder]')?.checked ? { ladder: true } : {}),
-      }));
-    };
-    const draw = () => {
-      body.innerHTML = '';
-      if (tlc) { drawSpots(); return; }
-      lanes.forEach((l, i) => {
-        const tr = body.insertRow();
-        const name = el('input', { value: l.label, className: 'plate-name' });
-        name.dataset.k = 'label';
-        name.setAttribute('aria-label', `Lane ${i + 1} name`);
-        const marks = el('input', { value: l.marks, inputMode: 'decimal' });
-        marks.dataset.k = 'marks';
-        marks.setAttribute('aria-label', `Lane ${i + 1} ${tlc ? 'spots' : 'bands'}`);
-        tr.insertCell().append(name);
-        tr.insertCell().append(marks);
-        if (!tlc) {
-          const lad = el('input', { type: 'checkbox', checked: !!l.ladder });
-          lad.dataset.k = 'ladder';
-          lad.setAttribute('aria-label', `Lane ${i + 1} is a size marker`);
-          tr.insertCell().append(lad);
-        }
-        const del = el('button', { type: 'button', textContent: '×', title: 'Remove this lane' });
-        del.addEventListener('click', () => { read(); if (lanes.length > 1) lanes.splice(i, 1); draw(); redraw(); });
-        tr.insertCell().append(del);
-      });
-    };
+    // the lanes as rows of spots or bands (kept as they change; `lanes` is made from them)
+    type Lane = { label: string; spots: SpotRow[]; ladder?: boolean };
+    const toRows = (ls: PlateLane[]): Lane[] => ls.map((l) => ({ label: l.label, spots: spotRows(l.marks), ...(l.ladder ? { ladder: true } : {}) }));
+    let tl = toRows(lanes);
+    const read = () => { lanes = tl.map((l) => ({ label: l.label, marks: spotText(l.spots), ...(l.ladder ? { ladder: true } : {}) })); };
+    const draw = () => { body.innerHTML = ''; drawSpots(); };
+    const mark = tlc ? 'spot' : 'band';
     let menu: HTMLElement | null = null;
     const closeMenu = () => { menu?.remove(); menu = null; body.querySelector('.plate-desc[aria-expanded=true]')?.setAttribute('aria-expanded', 'false'); };
     /** A spot's Description menu: intensity, size, shape and color, each a row of choices. */
@@ -82,7 +56,7 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
       closeMenu();
       const m = el('div', { className: 'plate-menu' });
       m.setAttribute('role', 'group');
-      m.setAttribute('aria-label', 'Spot description');
+      m.setAttribute('aria-label', tlc ? 'Spot description' : 'Band description');
       const show = () => { btn.firstChild!.textContent = spotSummary(spot); redraw(); };
       const seg = <T extends string | boolean>(name: string, choices: [T, string][], get: () => T, set: (v: T) => void) => {
         const row = el('div', { className: 'plate-menu-row' });
@@ -98,7 +72,7 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
       };
       seg('Intensity', [['faint', 'Faint'], ['', 'Normal'], ['strong', 'Strong']], () => spot.strength, (v) => { spot.strength = v; });
       seg('Size', [['small', 'Small'], ['', 'Normal'], ['large', 'Large']], () => spot.size, (v) => { spot.size = v; });
-      seg('Shape', [[false, 'Spot'], [true, 'Streak']], () => spot.streak, (v) => { spot.streak = v; });
+      if (tlc) seg('Shape', [[false, 'Spot'], [true, 'Streak']], () => spot.streak, (v) => { spot.streak = v; });
       const row = el('div', { className: 'plate-menu-row' });
       const sw = el('span', { className: 'plate-swatches' });
       for (const c of ['', ...SPOT_COLORS]) {
@@ -131,7 +105,7 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
       b.addEventListener('click', () => { closeMenu(); act(); draw(); redraw(); });
       return b;
     };
-    /** A TLC plate's table: for each lane, its name (beside all its spots) and a row for each spot. */
+    /** The table: for each lane, its name (beside all its spots or bands) and a row for each. */
     const drawSpots = () => {
       tl.forEach((lane, li) => {
         const n = lane.spots.length;
@@ -146,31 +120,39 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
         const box = el('span', { className: 'plate-lane-box' });
         box.append(name, xButton('Delete lane', () => { if (tl.length > 1) tl.splice(li, 1); }));
         nameCell.append(box);
+        if (!tlc) {
+          const lad = el('input', { type: 'checkbox', checked: !!lane.ladder });
+          lad.setAttribute('aria-label', `Lane ${li + 1} is a size marker`);
+          lad.addEventListener('change', () => { if (lad.checked) lane.ladder = true; else delete lane.ladder; });
+          const lab = el('label', { className: 'plate-marker', title: 'A size marker: its sizes are written beside the gel' });
+          lab.append(lad, ' Marker');
+          nameCell.append(lab);
+        }
         lane.spots.forEach((spot, si) => {
           const tr = si === 0 ? first : body.insertRow();
           const rf = el('input', { value: spot.rf, inputMode: 'decimal', className: 'plate-rf-in' });
           rf.dataset.k = 'rf';
-          rf.setAttribute('aria-label', `Lane ${li + 1} spot ${si + 1} Rf`);
+          rf.setAttribute('aria-label', tlc ? `Lane ${li + 1} spot ${si + 1} Rf` : `Lane ${li + 1} band ${si + 1} size`);
           rf.addEventListener('input', () => { spot.rf = rf.value; });
           const desc = el('button', { type: 'button', className: 'plate-desc' });
           desc.append(el('span', { textContent: spotSummary(spot) }), el('span', { className: 'plate-caret', textContent: '▾' }));
           desc.setAttribute('aria-haspopup', 'true');
-          desc.setAttribute('aria-label', `Lane ${li + 1} spot ${si + 1} description`);
+          desc.setAttribute('aria-label', `Lane ${li + 1} ${mark} ${si + 1} description`);
           desc.addEventListener('click', () => { if (menu && desc.getAttribute('aria-expanded') === 'true') { closeMenu(); desc.setAttribute('aria-expanded', 'false'); } else openMenu(desc, spot); });
           tr.insertCell().append(rf);
           tr.insertCell().append(desc);
-          tr.insertCell().append(xButton('Delete spot', () => { lane.spots.splice(si, 1); }));
+          tr.insertCell().append(xButton(tlc ? 'Delete spot' : 'Delete band', () => { lane.spots.splice(si, 1); }));
         });
         const addRow = n ? body.insertRow() : first;
         addRow.classList.add('plate-add-row');
         const cell = addRow.insertCell();
         cell.colSpan = 3;
-        const add = el('button', { type: 'button', className: 'plate-add', textContent: '+ Spot' });
+        const add = el('button', { type: 'button', className: 'plate-add', textContent: tlc ? '+ Spot' : '+ Band' });
         add.addEventListener('click', () => {
           lane.spots.push({ rf: '', strength: '', size: '', streak: false, color: '' });
           closeMenu();
           draw();
-          const rows = [...body.querySelectorAll<HTMLInputElement>(`input[aria-label^="Lane ${li + 1} spot"]`)];
+          const rows = [...body.querySelectorAll<HTMLInputElement>(`input[aria-label^="Lane ${li + 1} ${mark}"]`)];
           rows[rows.length - 1]?.focus();
         });
         cell.append(add);
@@ -188,10 +170,10 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
 
     form.querySelector('[data-act=lane]')!.addEventListener('click', () => {
       read();
-      lanes.push({ label: String(lanes.length + 1), marks: '' });
-      if (tl.length < lanes.length) tl.push({ label: String(tl.length + 1), spots: [] });
+      tl.push({ label: String(tl.length + 1), spots: [] });
+      read();
       draw();
-      const names = body.querySelectorAll<HTMLInputElement>(tlc ? 'input.plate-name' : 'tr:last-child input');
+      const names = body.querySelectorAll<HTMLInputElement>('input.plate-name');
       names[names.length - 1]?.select();
     });
     form.querySelector('[data-act=co]')?.addEventListener('click', () => {
@@ -201,7 +183,7 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
       const seen = new Set<string>();
       const marks = [...a.split(','), ...b.split(',')].map((x) => x.trim()).filter((x) => x && !seen.has(x.split(/\s+/)[0]) && seen.add(x.split(/\s+/)[0]));
       lanes.splice(Math.max(0, lanes.length - 1), 0, { label: 'co', marks: marks.join(', ') });
-      tl = lanes.map((l) => ({ label: l.label, spots: spotRows(l.marks) }));
+      tl = toRows(lanes);
       draw();
     });
     const ladderSel = form.querySelector<HTMLSelectElement>('select[name=ladder]');
@@ -211,6 +193,7 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
       if (!lad) return;
       read();
       lanes.unshift({ label: 'M', marks: lad.sizes.join(', '), ladder: true });
+      tl = toRows(lanes);
       $<HTMLSelectElement>('select[name=unit]').value = lad.unit;
       draw();
     });
@@ -260,6 +243,6 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
     });
     d.showModal();
     redraw();
-    body.querySelector<HTMLInputElement>(tlc ? 'input[data-k=rf]' : 'input[data-k=marks]')?.focus();
+    body.querySelector<HTMLInputElement>('input[data-k=rf]')?.focus();
   });
 }

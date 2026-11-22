@@ -71,7 +71,7 @@ export function openConvertFigureWindow(o: ConvertFigureWindow): void {
   form.method = 'dialog';
   form.noValidate = true;
   const h = document.createElement('h2');
-  h.append('Convert to Figure ', infoIcon('The picture is replaced by an empty figure of the same size, in the same place (its wrapping and spacing kept, so nothing on the page moves), for you to draw in. The picture stays beside the figure while you draw, to copy, or to trace with Trace. Pick the style what you draw takes: the picture\'s own, measured from it (change any value and the preview follows), or the document\'s. Revert to Picture puts the picture back.'));
+  h.append('Convert to Figure ', infoIcon('The picture is replaced by an empty figure of the same size, in the same place (its wrapping and spacing kept, so nothing on the page moves), for you to draw in. The picture stays beside the figure while you draw, to copy, or to trace with Trace. Choose the style for what you draw: the picture\'s own, measured from it (change any value and the preview follows), or the document\'s. Revert to Picture puts the picture back.'));
 
   const cards = document.createElement('div');
   cards.className = 'cf-cards';

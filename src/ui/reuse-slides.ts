@@ -25,7 +25,7 @@ export function pickReuseSlides(name: string, from: Deck, keep: boolean, wording
     const note = document.createElement('p');
     note.className = 'muted';
     const n = from.slides.length;
-    note.textContent = wording?.note ?? `${name}: ${n} slide${n === 1 ? '' : 's'}. Click the slides you want (Shift+click picks a run of them); they go in after the slide you are on.`;
+    note.textContent = wording?.note ?? `${name}: ${n} slide${n === 1 ? '' : 's'}. Click the slides you want (Shift+click selects a run of them); they go in after the slide you are on.`;
     const grid = document.createElement('div');
     grid.className = 'tg-grid rs-grid';
     grid.setAttribute('role', 'listbox');

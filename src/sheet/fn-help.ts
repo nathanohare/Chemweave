@@ -216,7 +216,7 @@ const HELP: Record<string, Entry> = {
   XMATCH: [R, 'Where a value is in a row or column.', 'lookup_value: what to find', 'lookup_array: where to look', '[match_mode]: 0 exact, −1, 1 or 2 wildcards', '[search_mode]: 1, −1, 2 or −2'],
   INDEX: [R, 'The value at a row and column of a block (0 for the whole row or column).', 'array: the block', 'row_num: the row', '[column_num]: the column'],
   LOOKUP: [R, 'Finds the largest value at or below one in a sorted row or column, and gives the value in the same place of another.', 'lookup_value: what to find', 'lookup_vector: where to look (sorted ascending), or a block (its first row or column)', '[result_vector]: what to give; the block\'s last row or column when left out'],
-  CHOOSE: [R, 'Picks a value from a list by its number.', 'index_num: 1 for the first value', 'value…: the values'],
+  CHOOSE: [R, 'Chooses a value from a list by its number.', 'index_num: 1 for the first value', 'value…: the values'],
   OFFSET: [R, 'A reference moved some rows and columns from another, and sized.', 'reference: where to start', 'rows: rows down (negative up)', 'cols: columns across (negative left)', '[height]: rows tall', '[width]: columns wide'],
   INDIRECT: [R, 'The reference written in a text.', 'ref_text: such as "B2" or "Sheet2!A1:C5"', '[a1]: FALSE for R1C1 style'],
   ROW: [R, 'The row number of a reference (or of the formula\'s own cell).', '[reference]: a cell or block'],

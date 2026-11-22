@@ -4,6 +4,7 @@
 
 import { amounts, dilution, show, solutionMass, type Given } from '../chem/lab-calc';
 import { showDialog } from './dialog-host';
+import { addInfo } from './info-tip';
 
 export interface CalcStart {
   /** The compound's name or formula, shown as a heading. */
@@ -165,7 +166,8 @@ export function showLabCalculator(start: CalcStart = {}): Promise<void> {
     sGroup.append(sConc.row, sVol.row, sMw.row, sPurity.row);
     const sOut = el('div', 'calc-group calc-results');
     sOut.append(sMass.row);
-    s.append(sGroup, sOut, el('p', 'muted small', 'Dissolve, then make up to the volume in a volumetric flask.'));
+    addInfo(sMass.row.querySelector('span'), 'Dissolve, then make up to the volume in a volumetric flask.');
+    s.append(sGroup, sOut);
     if (start.mw) sMw.input.value = start.mw.toFixed(2);
     sPurity.input.value = '100';
     const solveSolution = () => {
@@ -182,9 +184,8 @@ export function showLabCalculator(start: CalcStart = {}): Promise<void> {
     const v2 = box('Final volume (V₂)', VOL);
     const dGroup = el('div', 'calc-group');
     dGroup.append(c1.row, v1.row, c2.row, v2.row);
-    const dNote = el('p', 'muted small', 'Leave one box empty and it is calculated (c₁V₁ = c₂V₂).');
-    dNote.setAttribute('role', 'status');
-    dl.append(dGroup, dNote);
+    addInfo(c1.row.querySelector('span'), 'Leave one box empty and it is calculated (c₁V₁ = c₂V₂).');
+    dl.append(dGroup);
     const dBoxes = { c1, v1, c2, v2 };
     let blank: keyof typeof dBoxes | null = null;
     const solveDilution = (typed?: keyof typeof dBoxes) => {

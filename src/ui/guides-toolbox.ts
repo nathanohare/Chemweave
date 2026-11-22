@@ -15,6 +15,9 @@ export interface GuidesToolboxHooks {
   units(): 'in' | 'cm';
 }
 
+/** The name of the Guides toolbox's snapping check box (Nate's C10 wording). */
+export const SNAP_TO_OBJECTS = 'Snap to Objects';
+
 const SNAP_LABEL: Record<GuideSnap, [string, string]> = {
   major: ['Major', 'Snap to the major ticks only'],
   minor: ['Minor', 'Snap to the minor ticks between the major ones'],
@@ -108,14 +111,14 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
   const minor = field('Minor', 'minor');
   body.append(ticks);
 
-  // snapping onto the guides and their ticks, on or off
+  // Snap to Objects (Nate's C10, 2026-11-22: a checkable command, no "Toggle"): onto the guides and their ticks
   const snapRow = d.createElement('label');
   snapRow.className = 'gt-row gt-check';
   const box = d.createElement('input');
   box.type = 'checkbox';
   box.addEventListener('change', () => change({ snapOff: box.checked ? undefined : true }));
-  snapRow.append(box, d.createTextNode('Toggle object snapping'));
-  snapRow.title = 'Snap dragged objects to guides and tick marks. Hold Alt to move freely.';
+  snapRow.append(box, d.createTextNode(SNAP_TO_OBJECTS));
+  snapRow.title = 'Snap to Objects: a dragged atom, bond end or caption corner snaps onto the guides and their ticks. Hold Alt to move freely.';
   body.append(snapRow);
 
   // snapping

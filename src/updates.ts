@@ -149,6 +149,11 @@ export function notesSince(releases: readonly PublishedRelease[], before: string
     .filter((r) => r.notes);
 }
 
+/** Help ▸ What's New: the newest `count` versions' notes up to this one (All Release Notes links to the rest; review of F5, R16). */
+export function newestNotes(releases: readonly PublishedRelease[], now: string, count = 3): { version: string; notes: string }[] {
+  return notesSince(releases, '0', now).slice(0, count);
+}
+
 /** The project's releases on GitHub (the newest 30), for What's New. Throws when GitHub can't be reached. */
 export async function publishedReleases(): Promise<PublishedRelease[]> {
   const r = await fetch('https://api.github.com/repos/nathanohare/Chemweave/releases?per_page=30', { headers: { Accept: 'application/vnd.github+json' } });

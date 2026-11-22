@@ -371,7 +371,7 @@ describe('opening files made in Excel', () => {
     expect(s.colWidths.get(1)).toBe(145);
     expect(s.colWidths.get(2)).toBe(145);
     // CONCAT is worked out here; RANDARRAY isn't
-    expect(warnings).toEqual(['1 formula uses Excel functions this program can\'t work out yet.']);
+    expect(warnings).toEqual(['1 formula uses Excel functions Chemweave can\'t calculate yet.']);
   });
 
   it('works out theme colours and their tints as Excel does', async () => {

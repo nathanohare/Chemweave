@@ -105,6 +105,7 @@ import { BEND, BRUSH, ROTATE, handleCursor, turnedHandleCursor, pointerFor } fro
 import { flatten, prepareTurn, stillMeans, structuresOf, type PerspectiveHost, type Prepared } from './perspective';
 import { anglesTurn, dragTurn, DEG_PER_PX, IDENT as IDENT_TURN, type M3 } from '../chem/perspective';
 import type { TextEditing } from '../text/editing';
+import { WHY } from './can-run';
 
 export type Tool =
   /** `lasso`: drag round what to select, freehand, instead of a box. */
@@ -2472,7 +2473,7 @@ export class Editor {
     const sel = [...this.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && !a.multi && !a.attach);
     const metals = sel.filter((a) => isMetalAtom(a));
     const rest = sel.filter((a) => !isMetalAtom(a));
-    if (metals.length !== 1 || rest.length < 2) return 'Select one metal and the atoms of the ring or π-bond it is bonded to (two or more).';
+    if (metals.length !== 1 || rest.length < 2) return WHY.hapto;
     const m = metals[0];
     doc.edit('Add Hapto Bond', () => {
       for (const a of rest) { const b = doc.bondBetween(m.id, a.id); if (b) doc.removeBond(b.id); }
@@ -2506,7 +2507,7 @@ export class Editor {
     const ids = new Set<number>();
     for (const bid of this.sel.bonds) { const b = doc.bonds.get(bid); if (b && centreEnd(doc, b)) ids.add(bid); }
     for (const aid of this.sel.atoms) for (const bid of doc.adj.get(aid) ?? []) { const b = doc.bonds.get(bid)!; if (centreEnd(doc, b)) ids.add(bid); }
-    if (!ids.size) return 'Select a hapto (η) bond, or the metal it comes from.';
+    if (!ids.size) return WHY.splitHapto;
     let n = 0;
     doc.edit('Split Hapto Bond', () => { for (const id of ids) n += splitHapto(doc, id).length; });
     this.sel = emptySel();
@@ -3970,7 +3971,7 @@ export class Editor {
     const doc = this.doc, m = this.fullMeasure();
     const ids = [...doc.shapes.values()].filter((s) => s.newman).map((s) => s.id);
     if (!ids.length) return;
-    doc.edit('Newman Projection Look', () => {
+    doc.edit('Newman Projection Style', () => {
       for (const id of ids) {
         const s = doc.shapes.get(id)!;
         const c = newmanCentre(doc, s);
@@ -3986,7 +3987,7 @@ export class Editor {
     const c = s?.newman ? newmanCentre(doc, s) : null;
     if (!s?.newman || !c) return;
     const d = { ...s.newman, look: { ...structuredClone(s.newman.look), ...patch } };
-    doc.edit('Newman Projection Look', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
+    doc.edit('Newman Projection Style', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
     this.changed();
   }
 
@@ -4950,7 +4951,7 @@ export class Editor {
       const f = doc.shapes.get(id)?.frame;
       if (f) for (const b of frameMembers(doc, f).bonds) bonds.add(b);
     }
-    if (!bonds.size) return 'Select the rings to fill (or the whole structure) first.';
+    if (!bonds.size) return WHY.fillRings;
     let ids: number[] = [];
     doc.edit('Fill rings', () => { ids = fillRings(doc, bonds); });
     if (!ids.length) return 'No rings in the selection.';
@@ -5054,7 +5055,7 @@ export class Editor {
     const bonds = [...this.sel.bonds].map((id) => doc.bonds.get(id)).filter((b): b is Bond => !!b && lit(b));
     if (!atoms.length && !bonds.length) return false;
     const hl = style && tidyStyle(style);
-    doc.edit('Highlight look', () => {
+    doc.edit('Highlight Style', () => {
       for (const a of atoms) doc.updateAtom(a.id, { highlight: colour ?? a.highlight, hl });
       for (const b of bonds) doc.updateBond(b.id, { highlight: colour ?? b.highlight, hl });
     });
@@ -6141,7 +6142,7 @@ export class Editor {
     const ids = [...this.sel.atoms];
     let r = { removed: 0, added: 0 };
     this.doc.edit('Explicit Hydrogens', () => { r = toggleExplicitHydrogens(this.doc, ids); });
-    if (!r.removed && !r.added) return ids.length ? 'These atoms have no hydrogens to draw.' : 'No H atoms to hide. Select atoms to draw their hydrogens as atoms.';
+    if (!r.removed && !r.added) return ids.length ? 'These atoms have no hydrogens to draw.' : WHY.hydrogens;
     this.sel = emptySel();
     this.changed();
     return r.removed ? `${r.removed} H atom${r.removed > 1 ? 's' : ''} hidden (those on wedges, charged or on heteroatoms are kept).` : r.added > 1 ? `${r.added} hydrogens drawn as atoms.` : '1 hydrogen drawn as an atom.';
@@ -6767,7 +6768,7 @@ export class Editor {
     };
     if (act === 'select') { this.selectOnly({ kind: 'bond', id }); return true; }
     if (act === 'properties') { this.selectOnly({ kind: 'bond', id }); this.onProperties(); return true; }
-    doc.edit('Bond hotkey', () => {
+    doc.edit('Bond Hotkey', () => {
       if (act === 'delete') { this.removeBondAndOrphans(id); return; }
       if (act === 'wedge' || act === 'hash-wedge') {
         const disp: BondDisplay = act === 'wedge' ? 'wedge' : 'hashWedge';

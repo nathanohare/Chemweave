@@ -406,7 +406,7 @@ const FUNCTIONS: Record<string, FnDef> = {
     min: 1, max: 1,
     fn: num1((x) => {
       const n = Math.trunc(x);
-      if (n < 0 || n > 170) return ERR.num('FACT works out 0 to 170');
+      if (n < 0 || n > 170) return ERR.num('FACT accepts 0 to 170');
       let f = 1;
       for (let i = 2; i <= n; i++) f *= i;
       return f;
@@ -664,7 +664,7 @@ const LAZY: Record<string, (argNodes: Node[], host: EvalHost) => Arg> = {
     return i < argNodes.length ? evalNode(argNodes[i], host) : ERR.na('No match, and no value for otherwise');
   },
   CHOOSE: (argNodes, host) => {
-    if (argNodes.length < 2) return ERR.value('CHOOSE needs a number and the values to pick from');
+    if (argNodes.length < 2) return ERR.value('CHOOSE needs a number and the values to choose from');
     const i = chooseIndex(scalar(evalNode(argNodes[0], host)), argNodes.length - 1);
     return isError(i) ? i : evalNode(argNodes[i], host);
   },

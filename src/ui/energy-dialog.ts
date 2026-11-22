@@ -386,7 +386,7 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
         out.className = 'muted';
         const g = (k: number) => { const v = parseFloat((rows[k]?.[b.path]?.g ?? '').replace(/[−–]/g, '-')); return isFinite(v) ? v : null; };
         const a = g(b.from), z = g(b.to);
-        out.textContent = a === null || z === null || b.from === b.to ? 'pick two species with energies'
+        out.textContent = a === null || z === null || b.from === b.to ? 'select two species with energies'
           : bracketText({ quantity: $<HTMLSelectElement>('select[name=quantity]').value }, { label: name(b.from, b.path), g: a }, { label: name(b.to, b.path), g: z }, (v) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(Number($<HTMLInputElement>('input[name=digits]').value) || 0)).replace('^‡', '‡');
         const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Remove this bracket' });
         del.setAttribute('aria-label', `Take out bracket ${n + 1}`);

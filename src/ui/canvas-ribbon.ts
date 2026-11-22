@@ -194,6 +194,17 @@ export class CanvasRibbon {
       label.className = 'rb-label';
       label.textContent = g.name;
       group.append(row, label);
+      // the Font group's ⬊, as every mode's Font group has one (G5-26)
+      if (g.special === 'font') {
+        const launch = document.createElement('button');
+        launch.type = 'button';
+        launch.className = 'rb-launch';
+        launch.dataset.cmd = 'toolbox-text';
+        launch.title = 'Font settings: the Text Formatting toolbox, with character and line spacing, symbols and every text setting';
+        launch.setAttribute('aria-label', 'Font settings');
+        launch.textContent = '⬊';
+        group.append(launch);
+      }
       p.append(group);
     }
     if (text.font && text.paragraph) this.host.textGroups(text.font, text.paragraph);

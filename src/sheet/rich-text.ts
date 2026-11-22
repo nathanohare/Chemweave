@@ -19,8 +19,9 @@ export interface RunLook {
   strike?: boolean;
   /** Text colour, "#rrggbb". */
   color?: string;
-  /** Lowered or raised (Format Cells > Font > Subscript, Superscript). */
-  pos?: 'sub' | 'sup';
+  /** Lowered or raised (Format Cells > Font > Subscript, Superscript); 'base' is on the line in a
+   *  cell that is lowered or raised, as Excel keeps a run written without vertAlign. */
+  pos?: 'sub' | 'sup' | 'base';
   font?: string;
   /** Font size in points. */
   size?: number;
@@ -70,6 +71,7 @@ export function lookOver<T extends { bold?: boolean; italic?: boolean; underline
     const v = unset(run[k]);
     if (v !== undefined) (out as Record<string, unknown>)[k] = v;
   }
+  if ((out.pos as string | undefined) === 'base') delete out.pos;
   return out;
 }
 

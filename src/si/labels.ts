@@ -23,7 +23,7 @@ export interface LabelItem {
   id: string;
   /** 'general', a section's, a compound's or a scheme's id. */
   owner: string;
-  /** Its place among the owner's labelled items (0, 1, …). */
+  /** Its place among the owner's labeled items (0, 1, …). */
   index: number;
   /** The automatic label ("Table S2"). */
   auto: string;
