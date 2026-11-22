@@ -182,12 +182,19 @@ function labelledFormula(text: string): Counts {
  * it (Fe(C5H5)2, Ca(OH)2, [Cu(NH3)4]SO4), and hydrate or solvate parts after a dot with their count
  * before them (CuSO4·5H2O, C6H12O6·H2O, also with . or *). Isotope labels stay as they are ([13C]).
  */
+/** A formula's groups or dots are wrong (said as it is: the charge hint is no help there). */
+class GroupError extends ChemError {}
+
 function groupedFormula(text: string): Counts {
+  // (a hydrate count with a decimal point, as in CuSO4·0.5H2O, is named: M is one ion, whole atoms only)
+  const frac = /[·•.*](\d*[.,]\d+)\s*([A-Z(\[][^·•*]*)/.exec(text);
+  if (frac) throw new GroupError(`“${text}” has a fractional count (${frac[1]}${frac[2]}). M is one ion, so it has whole atoms: leave the solvate out, or type the formula of the ion that was measured.`);
   const out: Counts = new Map();
   const addTo = (c: Counts, k: number): void => { for (const [key, n] of c) out.set(key, (out.get(key) ?? 0) + n * k); };
   for (const part of text.split(/[·•.*](?=\d*[A-Z([])/)) {
     const m = /^(\d*)(.*)$/.exec(part)!;
-    if (!m[2]) throw new ChemError(`“${text}” has an empty part after a dot.`);
+    if (!m[2]) throw new GroupError(`“${text}” has an empty part after a dot.`);
+    if (m[1] && Number(m[1]) === 0) throw new GroupError(`“${text}” has a part with the count 0 after a dot.`);
     addTo(groupBody(m[2], text), m[1] ? Number(m[1]) : 1);
   }
   return out;
@@ -199,9 +206,9 @@ function groupBody(t: string, whole: string): Counts {
   let flat = '';
   for (let i = 0; i < t.length; i++) {
     const c = t[i];
-    const opens = c === '(' || (c === '[' && /[A-Z([]/.test(t[i + 1] ?? ''));
+    const opens = c === '(' || (c === '[' && /[A-Z([\]]/.test(t[i + 1] ?? ''));
     if (!opens) {
-      if (c === ')' || c === ']') { if (c === ']' && flat.lastIndexOf('[') > flat.lastIndexOf(']')) { flat += c; continue; } throw new ChemError(`“${whole}” has a closing bracket without its opening one.`); }
+      if (c === ')' || c === ']') { if (c === ']' && flat.lastIndexOf('[') > flat.lastIndexOf(']')) { flat += c; continue; } throw new GroupError(`“${whole}” has a closing bracket without its opening one.`); }
       flat += c;
       continue;
     }
@@ -211,9 +218,11 @@ function groupBody(t: string, whole: string): Counts {
       if (t[j] === c) depth++;
       else if (t[j] === close && --depth === 0) break;
     }
-    if (j >= t.length) throw new ChemError(`“${whole}” has a bracket that isn't closed.`);
+    if (j >= t.length) throw new GroupError(`“${whole}” has a bracket that isn’t closed.`);
     const digits = /^\d*/.exec(t.slice(j + 1))![0];
     const inner = groupBody(t.slice(i + 1, j), whole);
+    if (!inner.size) throw new GroupError(`“${whole}” has an empty group ${c}${close}.`);
+    if (digits && Number(digits) === 0) throw new GroupError(`“${whole}” has a group with the count 0 (${t.slice(i, j + 1 + digits.length)}).`);
     for (const [k, n] of inner) out.set(k, (out.get(k) ?? 0) + n * (digits ? Number(digits) : 1));
     i = j + digits.length;
   }
@@ -269,7 +278,7 @@ export function parseMFormulaAndCharge(text: string): [Counts, number] {
     // (a plain formula as before; one with groups or a hydrate dot multiplied out first)
     return [/[()[\]·•.*]/.test(cleaned.replace(/\[\d+[A-Z][a-z]?\]/g, '')) ? groupedFormula(cleaned) : labelledFormula(cleaned), charge];
   } catch (e) {
-    if (e instanceof ChemError && /[+\-−–⁺⁻()^]/.test(text ?? '')) throw new ChemError(`${e.message} ${CHARGE_HINT}`);
+    if (e instanceof ChemError && !(e instanceof GroupError) && /[+\-−–⁺⁻()^]/.test(text ?? '')) throw new ChemError(`${e.message} ${CHARGE_HINT}`);
     throw e;
   }
 }

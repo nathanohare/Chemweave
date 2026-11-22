@@ -177,7 +177,7 @@ describe('masses', () => {
     const best = (n: number) => Math.min(time(n), time(n), time(n));
     const t600 = best(600), t1200 = best(1200);
     expect(t1200 < 1500 || t1200 / t600 < 10, `${Math.round(t600)} ms → ${Math.round(t1200)} ms`).toBe(true);
-  });
+  }, 30_000); // (seven runs: more than the usual 5 s on a busy machine)
 });
 
 describe('formulas typed and written', () => {
@@ -207,6 +207,22 @@ describe('formulas typed and written', () => {
     // still refused, with the reason
     expect(() => parseMFormulaAndCharge('Fe(C5H5')).toThrow(ChemError);
     expect(() => parseMFormulaAndCharge('Fe)2')).toThrow(ChemError);
+  });
+  it('refuses an empty group or a count of 0, names a fractional hydrate count, and gives no charge hint for a bracket (review F4-R11)', () => {
+    const msg = (t: string): string => { try { parseMFormulaAndCharge(t); return ''; } catch (e) { return (e as Error).message; } };
+    expect(msg('()')).toBe('“()” has an empty group ().');
+    expect(msg('C2H6[]')).toMatch(/empty group/);
+    expect(msg('(C2H5)0')).toBe('“(C2H5)0” has a group with the count 0 ((C2H5)0).');
+    expect(msg('CuSO4·0H2O')).toMatch(/count 0 after a dot/);
+    expect(msg('CuSO4·0.5H2O')).toMatch(/^“CuSO4·0\.5H2O” has a fractional count \(0\.5H2O\)\. M is one ion/);
+    expect(msg('C10H12O2·0.25H2O')).toMatch(/fractional count \(0\.25H2O\)/);
+    // a bracket error is said as it is, without "Write a charge at the end of the formula"
+    expect(msg('Fe(C5H5')).toBe('“Fe(C5H5” has a bracket that isn’t closed.');
+    expect(msg('Fe)2')).not.toMatch(/charge/);
+    // (still read: PubChem formulas of sodium carbonate decahydrate CH20Na2O13, CID 151402, and
+    // potassium ferrocyanide trihydrate C6H6FeK4N6O3, CID 161067)
+    expect(hillFormula(parseMFormulaAndCharge('Na2CO3·10H2O')[0])).toBe('CH20Na2O13');
+    expect(hillFormula(parseMFormulaAndCharge('K4[Fe(CN)6]·3H2O')[0])).toBe('C6H6FeK4N6O3');
   });
 });
 
