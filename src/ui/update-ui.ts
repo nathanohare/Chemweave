@@ -90,13 +90,39 @@ export class UpdateUI {
   }
 
   /**
-   * After an update: a card in the corner saying what changed since the version that ran last
-   * (from the releases on GitHub). Nothing when GitHub can't be reached or there are no notes.
+   * After an update: a note in the status bar, never a card over the canvas (S86). Clicking it
+   * shows what changed since the version that ran last (from the releases on GitHub). Nothing when
+   * GitHub can't be reached or there are no notes; Help ▸ What's New shows them any time.
    */
-  async whatsNew(before: string, now: string): Promise<void> {
+  async whatsNewNote(before: string, now: string): Promise<void> {
     let found: { version: string; notes: string }[];
     try { found = notesSince(await publishedReleases(), before, now); } catch { return; }
-    if (!found.length || this.box) return;
+    if (!found.length) return;
+    document.getElementById('status-whats-new')?.remove();
+    const note = document.createElement('button');
+    note.type = 'button';
+    note.id = 'status-whats-new';
+    note.textContent = `Updated to ${now}: What’s New`;
+    note.title = 'See what changed in this version (also in Help ▸ What’s New)';
+    note.addEventListener('click', () => { note.remove(); this.showWhatsNew(found, now); });
+    const status = document.getElementById('status');
+    if (!status) return;
+    status.insertBefore(note, document.getElementById('status-side'));
+  }
+
+  /** Help ▸ What's New: the notes of the newest versions up to this one (the web version opens the releases page). */
+  async whatsNew(): Promise<void> {
+    const now = await appVersion();
+    let found: { version: string; notes: string }[] = [];
+    if (now !== 'web') try { found = notesSince(await publishedReleases(), '0', now); } catch { /* offline: the page says it */ }
+    if (!found.length) { this.host.openPage(RELEASES_PAGE); return; }
+    document.getElementById('status-whats-new')?.remove();
+    this.showWhatsNew(found, now);
+  }
+
+  /** The card in the corner with the notes, opened from the status-bar note or the Help menu. */
+  private showWhatsNew(found: { version: string; notes: string }[], now: string): void {
+    if (this.box) return;
     const box = document.createElement('div');
     box.className = 'update-box whats-new';
     box.setAttribute('role', 'status');

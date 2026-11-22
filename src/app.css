@@ -4050,6 +4050,8 @@ body:not(.slides-mode, .design-mode, .sheet-mode, .doc-mode) #side-content > :is
 #status-side { display: inline-grid; place-items: center; width: 26px; height: 22px; padding: 0; margin-left: 4px; border: 1px solid transparent; background: none; color: var(--muted); }
 #status-side:hover { color: var(--text); border-color: var(--line); }
 #status-side[aria-pressed='true'] { color: var(--accent); }
+#status-whats-new { height: 22px; padding: 0 8px; margin-left: 6px; border: 1px solid var(--line); border-radius: 4px; background: none; color: var(--text); font: inherit; font-size: 12px; white-space: nowrap; }
+#status-whats-new:hover { border-color: var(--accent); }
 #status-side[aria-pressed='false'] .sp-fill { opacity: 0; }
 /* a dock holding only the closed side panel takes no room */
 .dock:not(.drop):not(:has(> :not(.toolbox[data-id='details'].collapsed))) { display: none; }
