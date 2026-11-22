@@ -1652,7 +1652,7 @@ class Writer {
     // saves the file): PowerPoint shows the worked-in picture and this program gets the original back
     let baked: Uint8Array | null = null;
     if (pic && bakedPart(fx) && this.opts.bakePicture) baked = await this.opts.bakePicture(pic).catch(() => null);
-    const tagFor = (orig?: { bytes: Uint8Array; mime: string }) => {
+    const tagFor = (orig?: { bytes: Uint8Array; mime: string }, shown?: Uint8Array) => {
       const t: Record<string, unknown> = {};
       if (fx?.bg?.tol !== undefined) t.tol = fx.bg.tol;
       if (orig) {
@@ -1662,7 +1662,9 @@ class Writer {
         t.fx = { ...(fx?.bg ? { bg: fx.bg } : {}), ...(fx?.sharpen ? { sharpen: fx.sharpen } : {}) };
       } else if (fx?.bg || fx?.sharpen) {
         // not worked in (nothing here could draw it): the picture is the original, and the settings ride with it
+        // (beside a print of that picture: after Change Picture in PowerPoint they belong to none)
         t.fx = { ...(fx.bg ? { bg: fx.bg } : {}), ...(fx.sharpen ? { sharpen: fx.sharpen } : {}) };
+        if (shown) t.print = bytesHash(shown);
       }
       // a crystal structure keeps its data, so it opens in its window again
       const plate = pic?.plate ? { [TAG.plate]: JSON.stringify(pic.plate) } : {};
@@ -1676,14 +1678,14 @@ class Writer {
         const blip = this.addMedia(from, baked, 'png');
         return picXml(id, name, blip, null, box, crop, tagFor({ bytes: png, mime: 'image/png' }), look, descr, fx, more);
       }
-      return picXml(id, name, this.addMedia(from, png, 'png'), this.addMedia(from, bytes, 'svg'), box, crop, tagFor(), look, descr, fx, more);
+      return picXml(id, name, this.addMedia(from, png, 'png'), this.addMedia(from, bytes, 'svg'), box, crop, tagFor(undefined, png), look, descr, fx, more);
     }
     if (baked) {
       const blip = this.addMedia(from, baked, 'png');
       return picXml(id, name, blip, null, box, crop, tagFor({ bytes, mime }), look, descr, fx, more);
     }
     const own = this.addMedia(from, bytes, ext);
-    return picXml(id, name, own, null, box, crop, tagFor(), look, descr, fx, more);
+    return picXml(id, name, own, null, box, crop, tagFor(undefined, bytes), look, descr, fx, more);
   }
 
   /** A title, text placeholder or text box. */
