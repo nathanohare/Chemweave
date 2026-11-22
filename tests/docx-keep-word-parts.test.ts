@@ -121,3 +121,36 @@ describe('Word underline kinds and double strikethrough (G2-07)', () => {
     expect(rPrOf('struck')).toContain('<w:strike/>');
   });
 });
+
+describe('Word settings are kept (G2-15)', () => {
+  it('keeps the compatibility options, equation settings and the rest in the standard\'s order', async () => {
+    const settings = '<w:zoom w:percent="120"/><w:proofState w:spelling="clean"/><w:defaultTabStop w:val="720"/><w:characterSpacingControl w:val="doNotCompress"/>' +
+      '<w:compat><w:useFELayout/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>' +
+      '<w:compatSetting w:name="overrideTableStyleFontSizeAndJustification" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/>' +
+      '<w:compatSetting w:name="enableOpenTypeFeatures" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/></w:compat>' +
+      '<w:rsids><w:rsidRoot w:val="00A1B2C3"/><w:rsid w:val="00A1B2C3"/></w:rsids>' +
+      '<m:mathPr><m:mathFont m:val="Cambria Math"/><m:brkBin m:val="before"/></m:mathPr>' +
+      '<w:themeFontLang w:val="en-US"/><w:clrSchemeMapping w:bg1="light1" w:t1="dark1" w:bg2="light2" w:t2="dark2" w:accent1="accent1" w:accent2="accent2" w:accent3="accent3" w:accent4="accent4" w:accent5="accent5" w:accent6="accent6" w:hyperlink="hyperlink" w:followedHyperlink="followedHyperlink"/>' +
+      '<w:decimalSymbol w:val="."/><w:listSeparator w:val=","/>';
+    const xml = (await roundTrip({ settings, body: '<w:p><w:r><w:t>Text</w:t></w:r></w:p>' }))['word/settings.xml'];
+    const doc = parse(xml);
+    expect(doc.getElementsByTagName('parsererror').length).toBe(0);
+    const names = Array.from(doc.documentElement.children).map((e) => e.localName);
+    for (const n of ['rsids', 'mathPr', 'themeFontLang', 'clrSchemeMapping', 'decimalSymbol', 'listSeparator']) expect(names).toContain(n);
+    // spelling marked as checked is not kept (the text may have changed)
+    expect(names).not.toContain('proofState');
+    // one zoom, one compat, in the standard's order
+    expect(names.filter((n) => n === 'zoom').length).toBe(1);
+    const at = (n: string) => names.indexOf(n);
+    expect(at('compat')).toBeLessThan(at('rsids'));
+    expect(at('rsids')).toBeLessThan(at('mathPr'));
+    expect(at('mathPr')).toBeLessThan(at('themeFontLang'));
+    expect(at('decimalSymbol')).toBeLessThan(at('listSeparator'));
+    expect(at('listSeparator')).toBeLessThan(at('docId'));
+    // the compatibility options, the mode once, after the flags
+    expect(xml).toContain('<w:compat><w:useFELayout/><w:compatSetting w:name="compatibilityMode"');
+    expect(xml.match(/compatibilityMode/g)!.length).toBe(1);
+    expect(xml).toContain('w:name="overrideTableStyleFontSizeAndJustification"');
+    expect(xml).toContain('<m:mathFont m:val="Cambria Math"/>');
+  });
+});

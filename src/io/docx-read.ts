@@ -13,6 +13,7 @@
 // typed into here, and a table of figures (a TOC field for captions) as one worked out here.
 
 import { COVER_MARK } from '../document/quick-parts';
+import { readKeptSettings } from './docx-settings';
 import type { AuthorityMark, CellBorders, Contents, IndexMark, Justify, ParaBorders, ParaStyle, PictureFx, RowHeight, TabStop, TableCell, TableData, TextRun } from '../model';
 import { parseIndex, parseTa, parseToa, parseXe } from '../document/index-toa';
 import { ALG_SIDS, type ProtectKind, type Protection } from '../document/protect';
@@ -922,6 +923,9 @@ class DocxReader {
     const idOf = (ns: string, re: RegExp) => { const v = settings?.getElementsByTagNameNS(ns, 'docId')[0]?.getAttributeNS(ns, 'val') ?? ''; return re.test(v) ? v.toUpperCase() : undefined; };
     const w14 = idOf(W14_NS, /^[0-9A-F]{8}$/i), w15 = idOf(W15_NS, /^\{[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}\}$/i);
     if (w14 || w15) this.kept = { ...this.kept, docIds: { ...(w14 ? { w14 } : {}), ...(w15 ? { w15 } : {}) } };
+    // and the settings this program doesn't set, to write back
+    const keptSettings = readKeptSettings(settings);
+    if (keptSettings) this.kept = { ...this.kept, settings: keptSettings };
   }
 
   /**

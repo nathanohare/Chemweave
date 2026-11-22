@@ -56,6 +56,7 @@ import { CX_NS, CX1_NS } from './xlsx-chart';
 import { isChartEx } from '../sheet/chart';
 import type { ChartBox } from '../sheet/chart-box';
 import { appPropsXml, corePropsXml, relativeTarget, writeKeptParts, writeTree, type ContentControl, type KeptTree } from './kept-parts';
+import { settingsChildren } from './docx-settings';
 import { cmlGuid, contentsSig, writeCml } from './cml';
 import {
   BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
@@ -297,9 +298,23 @@ class DocxWriter {
     // Word's ids for the document, kept from the file or made afresh: without them Word 365 shows
     // a comment's replies as comments of their own (laptop check 57)
     const docIds = `<w14:docId w14:val="${this.t.kept?.docIds?.w14 ?? newDocId()}"/><w15:docId w15:val="${this.t.kept?.docIds?.w15 ?? newDocGuid()}"/>`;
-    const settings = (embed: boolean) => `${HEAD}<w:settings xmlns:w="${W_NS}" xmlns:mc="${MC_NS}" xmlns:w14="${W14_NS}" xmlns:w15="${W15_NS}" mc:Ignorable="w14 w15"><w:zoom w:percent="100"/>${this.t.pageColor ? '<w:displayBackgroundShape/>' : ''}${embed ? '<w:embedTrueTypeFonts/><w:saveSubsetFonts/>' : ''}${this.t.track ? '<w:trackRevisions/>' : ''}${protectionXml(this.t.protect)}<w:defaultTabStop w:val="720"/>${hyphenXml(this.t.hyphen)}${allHf(this.t).some((h) => h.oddEven) ? '<w:evenAndOddHeaders/>' : ''}` +
-      `<w:characterSpacingControl w:val="doNotCompress"/>${notes}` +
-      `<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>${this.t.kept?.vars ?? ''}${docIds}</w:settings>`;
+    // this program's settings, with those of the file's it doesn't set kept among them (docx-settings.ts)
+    const settings = (embed: boolean) => `${HEAD}<w:settings xmlns:w="${W_NS}" xmlns:mc="${MC_NS}" xmlns:w14="${W14_NS}" xmlns:w15="${W15_NS}" mc:Ignorable="w14 w15">` + settingsChildren([
+      ['zoom', '<w:zoom w:percent="100"/>'],
+      ['displayBackgroundShape', this.t.pageColor ? '<w:displayBackgroundShape/>' : ''],
+      ['embedTrueTypeFonts', embed ? '<w:embedTrueTypeFonts/>' : ''],
+      ['saveSubsetFonts', embed ? '<w:saveSubsetFonts/>' : ''],
+      ['trackRevisions', this.t.track ? '<w:trackRevisions/>' : ''],
+      ['documentProtection', protectionXml(this.t.protect)],
+      ['defaultTabStop', '<w:defaultTabStop w:val="720"/>'],
+      ['autoHyphenation', hyphenXml(this.t.hyphen)],
+      ['evenAndOddHeaders', allHf(this.t).some((h) => h.oddEven) ? '<w:evenAndOddHeaders/>' : ''],
+      ['characterSpacingControl', '<w:characterSpacingControl w:val="doNotCompress"/>'],
+      ['footnotePr', notes],
+      // (the mode this program lays text out for, with the file's other options)
+      ['compat', `<w:compat>${(this.t.kept?.settings?.compat ?? '').replace(/^((?:<w:(?!compatSetting)[^>]*\/>)*)/, '$1<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>')}</w:compat>`],
+      ['docVars', this.t.kept?.vars ?? ''],
+    ], this.t.kept?.settings, docIds) + '</w:settings>';
     pkg.add('word/settings.xml', settings(false), DOCX_CT.settings);
     // our own part: each structure's drawing, and each table as made here
     pkg.relate(main, DOCX_REL.customXml, '../customXml/item1.xml');
