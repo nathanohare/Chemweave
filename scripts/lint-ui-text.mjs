@@ -134,7 +134,7 @@ export function formulaParts(word) {
  * assay values. Single-letter elements with a count (H2, N2, O2, I2) are not flagged at all: they
  * are also cell references (H2 is a cell), so the check cannot tell them apart and leaves them.
  */
-const NOT_FORMULA = /^(?:[A-Z]\d+|F\d{1,2}|H\d|MP\d|B3LYP|SN[12]|S[NE][12]'?|E[12]|CYP\d\w*|COVID\d+|Win\d+|UTF\d+|PDF\d?|ISO\d+|PEG\d+|(?:IC|EC|ED|LD|GI|CC|TD)50|USB\d?|CSS\d?|HTML\d?|HDF\d|ES\d+|P\d{3})$/;
+const NOT_FORMULA = /^(?:[A-Z]\d+|F\d{1,2}|H\d|MP\d|B3LYP|SN[12]|S[NE][12]'?|E[12]|CYP\d\w*|COVID\d+|Win\d+|UTF\d+|PDF\d?|ISO\d+|PEG\d+|(?:IC|EC|ED|LD|GI|CC|TD)50|USB\d?|CSS\d?|HTML\d?|HDF\d|H\d{3}[A-Za-z]{0,2}|ES\d+|P\d{3})$/;
 
 /**
  * Formulas written flat (S27): an element symbol or group followed by digits, as in CH4, H2O,
@@ -202,7 +202,7 @@ export function chemdrawInCommand(label) {
 }
 
 /** Every problem in one user-visible string. `command` true for a command's name (menu item, ribbon button). */
-export function checkText(text, { command = false, input = false, shown = null } = {}) {
+export function checkText(text, { command = false, input = false } = {}) {
   const out = [];
   const t = text.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/\s+/g, ' ');
   for (const b of BANNED) {
@@ -220,7 +220,7 @@ export function checkText(text, { command = false, input = false, shown = null }
   // A SMILES string is not a formula and can't have subscripts.
   const prose = input || /→/.test(t) ? '' : t.replace(/"[^"]*"|“[^”]*”/g, ' ').replace(/\b[A-Z][A-Z0-9.]+\([^)]*\)/g, ' ')
     .split(/(\s+)/).map((w) => (isSmiles(w) ? ' ' : w)).join('');
-  for (const f of flatFormulas(shown ? shown(prose) : prose)) out.push({ rule: 'S27', found: f, use: 'real subscripts and raised charges (chemRuns / ₀–₉ ⁺ ⁻)' });
+  for (const f of flatFormulas(prose)) out.push({ rule: 'S27', found: f, use: 'real subscripts and raised charges (chemRuns / ₀–₉ ⁺ ⁻)' });
   if (command) for (const c of chemdrawInCommand(t)) out.push({ rule: 'S82', found: c, use: '"ChemDraw-style", or the format name' });
   return out;
 }
@@ -240,10 +240,11 @@ export const UI_CALLS = new Set(['flash', 'alert', 'confirm', 'prompt', 'showSta
 /** Calls whose strings people never see. */
 const HIDDEN_CALLS = /^(?:console\.\w+|require|import|querySelector(?:All)?|getElementById|closest|matches|addEventListener|removeEventListener|dispatchEvent|getAttribute|setAttribute|removeAttribute|hasAttribute|toggleAttribute|getPropertyValue|setProperty|createElement(?:NS)?|getItem|setItem|removeItem|postMessage|fetch|RegExp|describe|it|test|expect)$/;
 /**
- * Properties whose text the person types or edits: a placeholder (a format hint) and the value
- * an input starts with (an adduct such as [M+H]+ is typed flat). Banned words are still checked.
+ * Properties whose text the person types: a placeholder (a format hint). Banned words are still
+ * checked. (An input's starting value can be shown text too, so it is checked; the few that are
+ * typed formulas are in ALLOWED.)
  */
-const INPUT_PROPS = new Set(['placeholder', 'value']);
+const INPUT_PROPS = new Set(['placeholder']);
 /** Calls that take an atom's or bond's own data (a label is drawn as chemistry, with real subscripts). */
 const MODEL_CALLS = /^(?:add|update|set|new)(?:Atom|Bond)s?$/;
 function modelCall(obj) {
@@ -444,60 +445,17 @@ export const ALLOWED = [
   { file: 'src/ui/sheet-mode.ts', text: 'or a formula such as C10H12N2O', why: 'a formula typed into a spreadsheet function' },
   { file: 'src/sheet/isotopes.ts', text: 'a formula such as C10H12N2O', why: 'a formula typed into a spreadsheet function' },
   { file: 'src/ui/property-dialog.ts', text: '(any adduct can be typed)', why: 'the adducts as they are typed into this box' },
+  // An input's starting value that is typed text: an adduct is typed flat, and parsed as typed
+  { file: 'src/ui/property-dialog.ts', text: '[M+H]+', exact: true, why: "the Ion box's starting value, typed text that parseAdduct reads" },
+  { file: 'src/ui/sheet-mode.ts', text: '[M+H]+', exact: true, why: "the Isotope Pattern window's Ion box starting value, typed text that parseAdduct reads" },
   // Data that happens to sit under a `label` key but is drawn as chemistry text, not shown as written
-  { file: 'src/main.ts', text: 'CH3', exact: true, why: "a Newman preview's group label, drawn with real subscripts" },
+  { file: 'src/main.ts', text: 'CH3', exact: true, why: "a Newman preview's group label, drawn with real subscripts, and the Terminal methyls option's stored value (its label is CH₃)" },
   { file: 'src/chem/analysis.ts', text: '-CH2- (ring)', exact: true, why: "a Joback group's key in the JOBACK table; the Properties tooltip shows it with real subscripts (jobackGroupList in analysis-panel.ts)" },
   // Proper names keep their own spelling (S29)
   { file: 'src/kb/glossary.ts', text: 'Classification, Labelling and Packaging', why: 'the title of EU Regulation (EC) No 1272/2008 (CLP), a proper name' },
   // Text sent to an AI model, never shown
   { file: 'src/recognise/reader.ts', text: 'Expand abbreviations (Ph, OMe, Boc, Ts, TBS, CO2Et) into atoms.', why: 'part of the instructions sent to the AI model that reads a drawing (AI_SYSTEM); the person never sees it' },
 ];
-
-/**
- * The function a file's text is shown through, when that function writes formulas properly.
- * The Knowledge Base keeps its tables in plain text, so that searching "CDCl3" and copying a
- * table work, and the Knowledge Base window shows every title, cell, heading, column tip and
- * abbreviation tip through prettyChem (src/kb/pretty.ts), which subscripts the counts (CDCl₃,
- * Et₃N). So in a src/kb/ file that only the Knowledge Base window uses, only what prettyChem
- * leaves flat (a charge such as NH3+) is a problem. A src/kb/ file that other code imports (the
- * spreadsheet's HAMMETT, Settings) may be shown elsewhere, so it is checked as written.
- */
-export function shownThrough(file, root = ROOT) {
-  return file.startsWith('src/kb/') && !kbUsedElsewhere(root).has(file) ? kbPretty(root) : null;
-}
-
-let usedElsewhere = null;
-/** The src/kb/ files imported (not only for types) by code other than src/kb/ and the Knowledge Base window. */
-export function kbUsedElsewhere(root = ROOT) {
-  if (usedElsewhere) return usedElsewhere;
-  usedElsewhere = new Set();
-  for (const file of uiFiles(root)) {
-    if (!file.endsWith('.ts') || file.startsWith('src/kb/') || file === 'src/ui/knowledge-base.ts') continue;
-    for (const m of readFileSync(join(root, file), 'utf8').matchAll(/^import\s+(?!type\b)[^;]*?from\s+'([^']*\/kb\/[^']*)'/gm)) {
-      usedElsewhere.add(join(dirname(file), m[1]).replace(/\\/g, '/') + '.ts');
-    }
-  }
-  return usedElsewhere;
-}
-
-let prettyFn = null;
-/** prettyChem from src/kb/pretty.ts, compiled here with TypeScript so the check needs no build step. */
-export function kbPretty(root = ROOT) {
-  if (prettyFn) return prettyFn;
-  const load = (file, req) => {
-    const js = ts.transpileModule(readFileSync(join(root, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-    const module = { exports: {} };
-    new Function('exports', 'require', 'module', js)(module.exports, req, module);
-    return module.exports;
-  };
-  const elements = load('src/chem/elements.ts', () => ({}));
-  const pretty = load('src/kb/pretty.ts', (p) => {
-    if (p === '../chem/elements') return elements;
-    throw new Error(`lint-ui-text: src/kb/pretty.ts now imports ${p}; add it to kbPretty()`);
-  });
-  prettyFn = pretty.prettyChem;
-  return prettyFn;
-}
 
 // Problems that were in the app when this check was added are listed in lint-ui-text-known.mjs.
 export { KNOWN_UI_TEXT };
@@ -543,9 +501,8 @@ export function lintRepo(root = ROOT) {
   for (const file of uiFiles(root)) {
     const src = readFileSync(join(root, file), 'utf8');
     const strings = file.endsWith('.html') ? pageStrings(src) : tsStrings(src, file);
-    const shown = shownThrough(file, root);
     for (const s of strings) {
-      for (const p of checkText(s.text, { command: s.command, input: s.input, shown })) {
+      for (const p of checkText(s.text, { command: s.command, input: s.input })) {
         if (ALLOWED.some((a) => (a.prefix ? file.startsWith(a.file) : a.file === file) && (a.re ? a.re.test(s.text) : a.exact ? s.text.trim() === a.text : s.text.includes(a.text)))) continue;
         out.push({ file, line: s.line, text: s.text.replace(/\s+/g, ' ').trim(), ...p, known: known.has(keyOf(file, p.found, s.text)) });
       }

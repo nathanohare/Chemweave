@@ -5,10 +5,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { checkText, flatFormulas, formulaParts, tsStrings, pageStrings, lintRepo, describeProblem, staleKnown, isSmiles, shownThrough, kbPretty, KNOWN_UI_TEXT } from '../scripts/lint-ui-text.mjs';
+import { checkText, flatFormulas, formulaParts, tsStrings, pageStrings, lintRepo, describeProblem, staleKnown, isSmiles, KNOWN_UI_TEXT } from '../scripts/lint-ui-text.mjs';
 
 const ROOT = join(__dirname, '..');
-const rules = (s: string, o?: { command?: boolean; input?: boolean; shown?: (t: string) => string }) => checkText(s, o).map((p: { rule: string; found: string }) => `${p.rule}:${p.found}`);
+const rules = (s: string, o?: { command?: boolean; input?: boolean }) => checkText(s, o).map((p: { rule: string; found: string }) => `${p.rule}:${p.found}`);
 
 describe('the checker', () => {
   it('passes text that follows the style guide', () => {
@@ -120,20 +120,13 @@ describe('the checker', () => {
     expect(rules('netCDF-4/HDF5 files can’t be read')).toEqual([]);
   });
 
-  it('checks Knowledge Base text as the Knowledge Base window shows it (through prettyChem)', () => {
-    const pretty = kbPretty();
-    expect(pretty('Water and CO2 make it worse')).toBe('Water and CO₂ make it worse');
-    expect(rules('Water and CO2 make it worse', { shown: pretty })).toEqual([]);
-    expect(rules('Water and CO2 make it worse')).toEqual(['S27:CO2']);
-    // prettyChem leaves charges flat, so those are still found, and words are checked as written
-    expect(rules('an amino acid\'s NH3+ and CO2⁻', { shown: pretty })).toEqual(['S27:NH₃+']);
-    expect(rules('BF₄- and NH₃⁺')).toEqual(['S27:BF₄-']); // a subscript count with a charge written flat
-    expect(rules('the colour of CO2', { shown: pretty })).toEqual(['UI rule 2:colour']);
-    expect(shownThrough('src/kb/glossary.ts')).toBe(pretty);
-    expect(shownThrough('src/ui/knowledge-base.ts')).toBe(null);
-    // also used outside the Knowledge Base window (the spreadsheet's HAMMETT, Settings): checked as written
-    expect(shownThrough('src/kb/hammett.ts')).toBe(null);
-    expect(shownThrough('src/kb/tables.ts')).toBe(null);
+  it('checks Knowledge Base text as written, like any other (a planted NO2 fails)', () => {
+    const planted = tsStrings("export const T = { about: 'Search by group (NO2, OMe), name or structure.' };", 'src/kb/planted.ts');
+    expect(planted.flatMap((s: { text: string }) => rules(s.text))).toEqual(['S27:NO2']);
+    expect(rules('Search by group (NO₂, OMe), name or structure.')).toEqual([]);
+    // a charge written flat after a subscript count is found too
+    expect(rules("an amino acid's NH₃+ and CO₂⁻")).toEqual(['S27:NH₃+']);
+    expect(rules('BF₄- and NH₃⁺')).toEqual(['S27:BF₄-']);
   });
 
   it('finds "ChemDraw" in a command name only (S82)', () => {
@@ -174,9 +167,12 @@ describe('the checker', () => {
     const found = tsStrings(src).map((s: { text: string }) => s.text);
     expect(found).toEqual(['Fill colour', 'Done', 'Toggle grid', 'Saved   files to your own folder', 'Centre atoms', 'Grey', 'Picked items', 'Behaviour', 'Organise',
       'Grey', 'Delete row', 'Could not open the colour file', 'Turn the molecule', 'Pick a slide first', 'Ion', '[M+H]+', 'Paste a list: 1H NMR (400 MHz, CDCl3) δ 7.30']);
-    // an input's starting value and a placeholder are typed text: formulas stay flat there, words are still checked
+    // a placeholder is typed text: formulas stay flat there, words are still checked
     const typed = tsStrings(src).filter((s: { input: boolean }) => s.input).map((s: { text: string }) => s.text);
-    expect(typed).toEqual(['[M+H]+', 'Paste a list: 1H NMR (400 MHz, CDCl3) δ 7.30']);
+    expect(typed).toEqual(['Paste a list: 1H NMR (400 MHz, CDCl3) δ 7.30']);
+    // an input's starting value can be shown text, so its formulas are checked (the typed ones are in ALLOWED)
+    const shown = tsStrings(`rows.push({ label: 'Solvent', value: 'CDCl3 (dried over K2CO3)' }); out.value = 'Made with NaBH4 in CH2Cl2';`);
+    expect(shown.flatMap((s: { text: string; input: boolean }) => checkText(s.text, s).map((p: { found: string }) => p.found))).toEqual(['CDCl3', 'K2CO3', 'NaBH4', 'CH2Cl2']);
   });
 
   it('reads text and tooltips in HTML, not ids, classes or scripts', () => {

@@ -5,6 +5,7 @@
 // filtered to one value.
 
 import type { Template } from '../chem/templates';
+import { plainScripts } from '../text/plain-scripts';
 
 export type Cell = string | number | null;
 
@@ -157,14 +158,17 @@ export function cellShiftRanges(c: Cell): [number, number][] {
 
 const ROW_TEXT = new WeakMap<Record<string, Cell>, string>();
 
-/** A row's text for searching: every cell, lower case (kept, so a long table searches quickly). */
 /** Rows whose SMILES is already RDKit's canonical form (the big tables, made so when built). */
 export const CANONICAL_ROWS = new WeakSet<Record<string, Cell>>();
 
+/**
+ * A row's text for searching: every cell, lower case, subscripts as plain digits so D2O finds D₂O
+ * (kept, so a long table searches quickly).
+ */
 export function rowText(row: Record<string, Cell>): string {
   let s = ROW_TEXT.get(row);
   if (s === undefined) {
-    s = Object.values(row).filter((v) => v !== null).join(' • ').toLowerCase();
+    s = plainScripts(Object.values(row).filter((v) => v !== null).join(' • ').toLowerCase());
     ROW_TEXT.set(row, s);
   }
   return s;
@@ -228,7 +232,7 @@ export function findRows(t: KbTable, query: string, filters: Record<string, stri
     if (hit.length) return hit.map((row) => ({ row }));
   }
   if (isCas(q) && t.columns.some((c) => c.key === 'cas')) return rows.filter((r) => r.cas === q).map((row) => ({ row }));
-  const words = q.toLowerCase().split(/\s+/);
+  const words = plainScripts(q.toLowerCase()).split(/\s+/);
   return rows.filter((r) => { const s = rowText(r); return words.every((w) => s.includes(w)); }).map((row) => ({ row }));
 }
 

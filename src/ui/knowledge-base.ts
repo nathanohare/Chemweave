@@ -363,8 +363,8 @@ export class KnowledgeBaseWindow {
     const q = this.search.value.trim();
     this.list.replaceChildren(...this.tables.map((t) => {
       const n = q && !t.noSearch ? this.matches(t, false).length : t.rows.length;
-      const b = el('button', { type: 'button', className: `kb-tab${t === this.current ? ' on' : ''}`, title: t.about },
-        el('span', { textContent: t.title }), el('span', { className: 'muted', textContent: String(n) }));
+      const b = el('button', { type: 'button', className: `kb-tab${t === this.current ? ' on' : ''}`, title: prettyChem(t.about) },
+        el('span', { textContent: prettyChem(t.title) }), el('span', { className: 'muted', textContent: String(n) }));
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-selected', String(t === this.current));
       if (t.personal) b.classList.add('personal');
@@ -672,7 +672,7 @@ export class KnowledgeBaseWindow {
     if (c.picture) th.classList.add('kb-pic');
     else if (!sortable) th.classList.add('kb-nosort');
     if (sortable) {
-      th.title = `Sort by ${c.label}. Drag to move the column; right-click for more`;
+      th.title = `Sort by ${prettyChem(c.label, true)}. Drag to move the column; right-click for more`;
       if (this.sort?.key === c.key) th.append(this.sort.down ? ' ▾' : ' ▴');
       th.addEventListener('click', () => { if (!this.moved) sort(); });
     }
@@ -809,9 +809,9 @@ export class KnowledgeBaseWindow {
     if (t.noSearch) this.closeDraw(true);
     // filter lists
     this.filters.replaceChildren(...t.columns.filter((c) => c.filter).map((c) => {
-      const s = el('select', { title: `Show only one ${c.label.toLowerCase()}` });
+      const s = el('select', { title: `Show only one ${prettyChem(c.label.toLowerCase())}` });
       s.append(el('option', { value: '', textContent: 'All' }));
-      if (c.filter === 'present') s.append(el('option', { value: PRESENT, textContent: `With ${c.label.toLowerCase()}` }));
+      if (c.filter === 'present') s.append(el('option', { value: PRESENT, textContent: `With ${prettyChem(c.label.toLowerCase())}` }));
       else s.append(...filterValues(t, c.key).map((v) => el('option', { value: v, textContent: prettyChem(v, c.key === 'nucleus') })));
       const solvent = c === solventColumn(t);
       s.value = (solvent ? this.filtersFor(t)[c.key] : this.picked[c.key]) ?? '';
@@ -821,7 +821,7 @@ export class KnowledgeBaseWindow {
         this.showTable();
       });
       if (solvent) s.title = 'The solvent your NMR was taken in: impurity shifts change with it. Remembered for the other impurity tables';
-      return el('label', {}, el('span', { textContent: solvent ? 'NMR taken in' : c.label }), ...(c.hidden && c.info ? [infoIcon(prettyChem(c.info))] : []), s);
+      return el('label', {}, el('span', { textContent: solvent ? 'NMR taken in' : prettyChem(c.label, true) }), ...(c.hidden && c.info ? [infoIcon(prettyChem(c.info))] : []), s);
     }));
     // a table in groups: fold or open every group at once
     if (t.group) {
@@ -870,7 +870,7 @@ export class KnowledgeBaseWindow {
     const table = el('table', { className: 'refs-table kb-table' + (t.picture && !this.compact ? ' kb-pictures' : '') + (t.fit ? ' kb-fit' : '') + (this.compact ? ' kb-compact' : '') }, el('thead', {}, el('tr', {}, ...cols.map((c) => this.header(c, id, cols.map((x) => x.key))))), body);
     if (!rows.length) {
       const q = this.search.value.trim();
-      const empty = el('p', { className: 'muted kb-empty', textContent: this.lookingInside ? `Looking for compounds containing ${q}…` : this.queryCanon ? `Nothing in ${t.title} matches or contains ${q}.` : q ? `Nothing in ${t.title} matches “${q}”.` : 'This table is empty.' });
+      const empty = el('p', { className: 'muted kb-empty', textContent: this.lookingInside ? `Looking for compounds containing ${q}…` : this.queryCanon ? `Nothing in ${prettyChem(t.title)} matches or contains ${q}.` : q ? `Nothing in ${prettyChem(t.title)} matches “${q}”.` : 'This table is empty.' });
       // a compound the table doesn't have can be rated live from PubChem
       const live = q && t.id === 'reagent-safety' && this.host.lookUpSafety && !Object.values(this.picked).some(Boolean)
         ? [button(`Rate “${q.length > 40 ? q.slice(0, 39) + '…' : q}” from PubChem`, 'Look the compound up on PubChem and rate it with the same rules, from the same open sources (needs the internet)', () => void this.rateLive(q))]
@@ -889,16 +889,16 @@ export class KnowledgeBaseWindow {
     t.sources.forEach((s, i) => {
       if (i) this.sources.append(el('br'));
       if (s.url) {
-        const a = el('a', { href: s.url, textContent: s.label });
+        const a = el('a', { href: s.url, textContent: prettyChem(s.label) });
         a.addEventListener('click', (e) => { e.preventDefault(); this.host.openUrl(s.url!); });
         this.sources.append(a);
-      } else this.sources.append(s.label);
+      } else this.sources.append(prettyChem(s.label));
     });
   }
 
   /** A heading row across the table (a structure search's two groups). */
   private groupRow(span: number, text: string): HTMLTableRowElement {
-    const th = el('th', { colSpan: span, textContent: text });
+    const th = el('th', { colSpan: span, textContent: prettyChem(text) });
     th.scope = 'rowgroup';
     return el('tr', { className: 'kb-group' }, th);
   }
@@ -912,8 +912,8 @@ export class KnowledgeBaseWindow {
     const head = t.groupHeading?.(name, rows);
     const pic = head?.picture ? svgNode(templateIcon(head.picture, GROUP_PIC, 9)) : null;
     if (pic) pic.classList.add('kb-fold-pic');
-    const note = head?.note ? [el('span', { className: 'kb-fold-note', textContent: head.note })] : [];
-    const th = el('th', { colSpan: span }, el('span', { className: 'kb-chev', textContent: closed ? '▸' : '▾' }), ...(pic ? [pic] : []), name || 'Other', el('span', { className: 'kb-fold-count', textContent: String(rows.length) }), ...note, ...extra);
+    const note = head?.note ? [el('span', { className: 'kb-fold-note', textContent: prettyChem(head.note) })] : [];
+    const th = el('th', { colSpan: span }, el('span', { className: 'kb-chev', textContent: closed ? '▸' : '▾' }), ...(pic ? [pic] : []), name ? prettyChem(name) : 'Other', el('span', { className: 'kb-fold-count', textContent: String(rows.length) }), ...note, ...extra);
     th.scope = 'rowgroup';
     th.tabIndex = 0;
     th.setAttribute('role', 'button');
@@ -1086,7 +1086,7 @@ export class KnowledgeBaseWindow {
   private async copy(): Promise<void> {
     const rows = this.matches(this.current);
     await this.host.copyText(tableTsv(this.current, rows));
-    this.host.flash(`Copied ${rows.length} row${rows.length === 1 ? '' : 's'} of ${this.current.title}: paste into a sheet or a table.`);
+    this.host.flash(`Copied ${rows.length} row${rows.length === 1 ? '' : 's'} of ${prettyChem(this.current.title)}: paste into a sheet or a table.`);
   }
 
   private async importTable(): Promise<void> {
@@ -1112,13 +1112,13 @@ export class KnowledgeBaseWindow {
     this.sort = null;
     this.showList();
     this.showTable();
-    this.host.flash(`Imported ${t.rows.length} rows into ${t.title}.`);
+    this.host.flash(`Imported ${t.rows.length} rows into ${prettyChem(t.title)}.`);
   }
 
   private async removeImported(): Promise<void> {
     const t = this.current;
     if (!t.personal) return;
-    const ok = await ask('Remove Table', [], { ok: 'Remove', note: `Remove ${t.title} (${t.rows.length} rows) from this computer? The file it came from is not changed.` });
+    const ok = await ask('Remove Table', [], { ok: 'Remove', note: `Remove ${prettyChem(t.title)} (${t.rows.length} rows) from this computer? The file it came from is not changed.` });
     if (!ok) return;
     this.tables = this.tables.filter((x) => x !== t);
     await this.saveImported();
