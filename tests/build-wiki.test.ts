@@ -1,7 +1,7 @@
 // The wiki is built from docs/ by scripts/build-wiki.mjs. These check the heading ids it works out
 // match GitHub's, and that every link on every page it makes leads to a page and heading that exist.
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { slug, headingText, buildWiki, PAGES } from '../scripts/build-wiki.mjs';
@@ -65,6 +65,21 @@ describe('the wiki made from docs/', () => {
       }
     }
     expect(bad).toEqual([]);
+  });
+
+  it("is where the README's links to the guide lead", () => {
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+    const wiki = 'https://github.com/nathanohare/Chemweave/wiki';
+    const links = [...readme.matchAll(/\]\((https:\/\/github\.com\/nathanohare\/Chemweave\/wiki[^)\s]*)\)/g)].map((m) => m[1]);
+    expect(links.length).toBeGreaterThan(5);
+    const bad = links.filter((url) => {
+      const [page, id] = url.slice(wiki.length).replace(/^\//, '').split('#');
+      const md = (files as Record<string, string>)[page || 'Home'];
+      return !md || (id !== undefined && !ids(md).has(id));
+    });
+    expect(bad).toEqual([]);
+    // the guide's own files are for the in-app guide and the wiki; the README sends people to the wiki
+    expect(readme).not.toMatch(/\]\(docs\/(README|guide\/|developers)/);
   });
 
   it('points pictures at docs/images on GitHub', () => {
