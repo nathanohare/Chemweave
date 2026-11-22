@@ -146,8 +146,9 @@ function noteHeight(text: string, w: number): number {
 
 /**
  * The top rows of a template (its first `rows` rows), at full size, with a comment box for each
- * worked-out column or cell, as Excel shows its notes: a small red mark in the cell's top-right
- * corner and a thin line from there to a pale yellow box saying how it is worked out. Column
+ * worked-out column or cell, much as Excel shows its notes: a thin line from the middle of the
+ * cell's nearest edge (its heading, for a column) to a box in the mode's green saying how it is
+ * worked out. Column
  * notes sit in a row of boxes above the cells (below them when the headings are lower down),
  * moved along so they don't overlap; notes on single cells go down the right-hand side.
  */
@@ -164,7 +165,7 @@ export function sheetCallouts(wb: Workbook, rows: number, notes: Callout[], head
   const band = head === 0 ? 'above' : 'below';
   let right = -Infinity;
   const placed = colNotes.map((g) => {
-    const ax = g.rect!.x + g.rect!.w;
+    const ax = g.rect!.x + g.rect!.w / 2;
     const x = Math.max(0, ax - NOTE.w / 2, right + NOTE.gap);
     right = x + NOTE.w;
     return { g, x, h: noteHeight(g.n.text, NOTE.w) };
@@ -194,15 +195,15 @@ export function sheetCallouts(wb: Workbook, rows: number, notes: Callout[], head
   svg.setAttribute('width', String(width));
   svg.setAttribute('height', String(height));
   box.append(canvas, svg);
-  /** The red mark in a cell's top-right corner, and the line from it to its box. */
+  /** The line from a box to its cell (the middle of the cell's nearest edge), ending in a dot there. */
   const lead = (cx: number, cy: number, bx: number, by: number) => {
     const l = document.createElementNS(svgNs, 'line');
     for (const [k, v] of Object.entries({ x1: cx, y1: cy, x2: bx, y2: by })) l.setAttribute(k, String(v));
     svg.append(l);
-    const mark = document.createElementNS(svgNs, 'path');
-    mark.setAttribute('d', `M${cx - 6} ${cy}H${cx}V${cy + 6}z`);
-    mark.setAttribute('class', 'ft-mark');
-    svg.append(mark);
+    const dot = document.createElementNS(svgNs, 'circle');
+    for (const [k, v] of Object.entries({ cx, cy, r: 2.5 })) dot.setAttribute(k, String(v));
+    dot.setAttribute('class', 'ft-mark');
+    svg.append(dot);
   };
   const note = (text: string, x: number, y: number, w: number) => {
     const d = document.createElement('div');
@@ -213,10 +214,12 @@ export function sheetCallouts(wb: Workbook, rows: number, notes: Callout[], head
   };
   for (const p of placed) {
     const r = p.g.rect!;
-    const cx = r.x + r.w - 1, cy = top + r.y + 1;
+    // to the middle of the heading's top edge (above), or of the column's foot (below), so the
+    // line never crosses the cells' text
+    const cx = r.x + r.w / 2, cy = band === 'above' ? top + r.y + 1 : top + cssH - 1;
     const y = band === 'above' ? top - NOTE.gap - 8 - p.h : top + cssH + NOTE.gap + 8;
     note(p.g.n.text, p.x, y, NOTE.w);
-    // to the box's nearer bottom (above) or top (below) corner area
+    // straight up or down to the box where it is over the column
     const bx = Math.min(Math.max(cx, p.x + 10), p.x + NOTE.w - 10);
     lead(cx, cy, bx, band === 'above' ? y + p.h : y);
   }
@@ -224,7 +227,8 @@ export function sheetCallouts(wb: Workbook, rows: number, notes: Callout[], head
     const r = sd.g.rect!;
     const x = cssW + 24;
     note(sd.g.n.text, x, sd.y, NOTE.side);
-    lead(r.x + r.w - 1, top + r.y + 1, x, sd.y + Math.min(sd.h / 2, 12));
+    // to the middle of the cell's right-hand edge
+    lead(r.x + r.w - 1, top + r.y + r.h / 2, x, sd.y + Math.min(sd.h / 2, 12));
   }
   return box;
 }
