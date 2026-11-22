@@ -43,6 +43,7 @@ import { readPptx } from '../src/io/pptx-read';
 import { writeDocx, readDocx, type DocxDeps } from '../src/io/docx';
 import { newDocument, objectRun, paraFromStyle, runStyleOf, type DocText } from '../src/document/document';
 import * as rt from '../src/richtext';
+import { chordLocal, ellipseArcPoints } from '../src/objects';
 import { Workbook, type Cell } from '../src/sheet/workbook';
 import { writeXlsx, readXlsx, type XlsxPictures } from '../src/io/xlsx';
 
@@ -127,6 +128,17 @@ function autoSample(type: string, name = ''): unknown | null {
 
 // The ids in the test drawings: atoms 1 to 3 (1–2–3 bonded), bond 4 (1–2), bond 5 (2–3); the
 // object under test is atom 2, bond 4, or the one caption, arrow or shape.
+/**
+ * An arc arrow along an ellipse, from the test arrow's tail (100, 200) to its head (180, 200): the
+ * ellipse's centre and the ends of its half-axes (40 and 20 long) on the page, and its curve. An
+ * arrow keeps both in its own frame along the line from tail to head (objects.ts chordLocal).
+ */
+const ARC_ENDS = [{ x: 100, y: 200 }, { x: 180, y: 200 }] as const;
+const onArc = (p: { x: number; y: number }) => chordLocal(ARC_ENDS[0], ARC_ENDS[1], p);
+const ELLIPSE = { center: onArc({ x: 140, y: 200 }), major: onArc({ x: 180, y: 200 }), minor: onArc({ x: 140, y: 180 }), angular: 180 };
+const ELLIPSE_BEZ = (ellipseArcPoints({ x: 140, y: 200 }, { x: 40, y: 0 }, { x: 0, y: -20 }, ARC_ENDS[0], ARC_ENDS[1], 180) ?? []).map(onArc);
+/** Which way the test drawing's bond a1–a2 runs (build: a2 is one bond length right of a1 and 10 up). */
+const ALONG = (() => { const L = new Doc().style.bondLength, l = Math.hypot(L, 10); return { x: L / l, y: -10 / l }; })();
 const STEREO = { text: '(R)', dx: 4, dy: -6, size: 8, italic: true, manual: true };
 const HL = { shape: 'straight', size: 1.5, shadow: true };
 /** Office's looks (glow, bevel, text inside…) are tested on an Office shape (Insert ▸ Shapes), not on a ChemDraw-style rectangle. */
@@ -150,7 +162,9 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     fileLabel: { v: true, with: { label: 'OMe' } },
     color: { v: '#ff0000' },
     s: { v: 1.5 },
-    face: { v: 1, with: { label: 'OMe' } },
+    // (bold, as Home ▸ Bold sets it: the drawing's formula bits with bold; the formula bits only say the label is set as
+    // a formula, which a label always is, labels.ts labelRuns)
+    face: { v: 97, with: { label: 'OMe' } },
     font: { v: 'Times New Roman', with: { label: 'OMe' } },
     marginWidth: { v: 2.5, with: { label: 'OMe' } },
     xyz: { v: [1.5, -2.25, 3] },
@@ -189,7 +203,8 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     multi: { v: (i) => [i.a1, i.a3] },
     kekule: { v: true, with: (i) => ({ multi: [i.a1, i.a3] }) },
     variable: { v: true, with: (i) => ({ multi: [i.a1, i.a3] }) },
-    ringOf: { v: (i) => [i.a1, i.a3], with: (i) => ({ multi: [i.a1, i.a3], variable: true }) },
+    // (a ring has three atoms at least: the reader takes no shorter one)
+    ringOf: { v: (i) => [i.a1, i.a2, i.a3], with: (i) => ({ multi: [i.a1, i.a3], variable: true }) },
   },
   Bond: {
     order: { v: 2 },
@@ -276,7 +291,9 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     elbow: { v: true },
     morph: { v: (i) => ({ pairs: [[i.a1, i.a3]], exact: true }) },
     bez: { v: [{ x: 120, y: 60 }, { x: 160, y: 60 }] },
-    ellipse: { v: { center: { x: 150, y: 100 }, major: { x: 180, y: 100 }, minor: { x: 150, y: 80 }, angular: 90 } },
+    // (an arc from the tail over the top to the head, with `bez` drawn along it: the ellipse is only good while the
+    // arrow is still that arc, objects.ts arrowEllipse)
+    ellipse: { v: ELLIPSE, with: { bez: ELLIPSE_BEZ } },
     // (`was` is where the tail is, as it would be when stuck)
     pin: { v: (i) => ({ tail: { on: 'atom', ref: [i.a1, i.a2], at: { x: 0.2, y: 0.1 }, hand: 1, was: { x: 100, y: 200 } } }) },
     bent: { v: true },
@@ -293,7 +310,9 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     kind: { v: 'oval' },
     ring: { v: (i) => [i.a1, i.a2, i.a3], with: { kind: 'ring', filled: true, fillColor: '#ffd966', poly: [{ x: 100, y: 100 }, { x: 115, y: 90 }, { x: 130, y: 100 }] } },
     poly: { v: [{ x: 100, y: 100 }, { x: 150, y: 120 }, { x: 120, y: 160 }], with: { kind: 'geo', geo: 'freeform' } },
-    pin: { v: (i) => ({ on: 'atom', ref: [i.a1, i.a2], at: { x: 0.2, y: 0.1 }, hand: 1, was: { x: 100, y: 200 } }), with: { kind: 'symbol', symbol: 'LonePair' } },
+    // (a lone pair on a1, its dots along the bond to a2: a pin is dropped on opening when the thing is no longer where
+    // it holds it, and worked out again when it points a way it does not say, chem/pins.ts pinSymbols)
+    pin: { v: (i) => ({ on: 'atom', ref: [i.a1, i.a2], at: { x: 0, y: 0 }, hand: 1, was: { x: 100, y: 100 }, dir: { x: 1, y: 0 } }), with: { kind: 'symbol', symbol: 'LonePair', x1: 100 - 4 * ALONG.x, y1: 100 - 4 * ALONG.y, x2: 100 + 4 * ALONG.x, y2: 100 + 4 * ALONG.y } },
     geo: { v: 'star5', with: { kind: 'geo' } },
     orbital: { v: 's', with: { kind: 'oval' } },
     orb: { v: { kind: 'p', look: 'shaded', part: 0 }, with: { kind: 'symbol', orbital: 'p' } },
@@ -336,7 +355,8 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     symbol: { v: 'plusCircle', with: { kind: 'symbol' } },
     bracket: { v: 'curly', with: { kind: 'bracket' } },
     pair: { v: true, with: { kind: 'bracket', bracket: 'round' } },
-    bracketPair: { v: (i) => i.shape, with: { kind: 'bracket', bracket: 'round' } },
+    // (a number both halves of a pair share, not another shape's id: src/model.ts)
+    bracketPair: { v: 4, label: true, with: { kind: 'bracket', bracket: 'round' } },
     repeat: { v: 'n', with: { kind: 'bracket', bracket: 'round' } },
     repeatLook: { v: { color: '#ff0000', face: 1, size: 9 }, with: { kind: 'bracket', bracket: 'round', repeat: 'n' } },
     picture: { v: true, with: { kind: 'picture', src: PNG1 } },
@@ -540,6 +560,9 @@ const NOT_WALKED_IN: Partial<Record<Column, Record<string, string>>> = {
     'TextRun.cmt': 'names a comment in DocText.comments, which this test document has not (tests/docx-comment-parts.test.ts)',
     'ParaStyle.soft': "a soft paragraph is saved in the same Word paragraph as the one above it, so it needs one above (tests/docx-soft-breaks.test.ts)",
   },
+  pptx: {
+    'Shape.phPic': "a picture in one of the slide layout's picture placeholders, which this test's blank layout has not (tests/pptx-picture-placeholder.test.ts)",
+  },
   excel: {
     'CellStyle.cellStyle': "names one of the workbook's cell styles (ExcelStyles.named), which this test workbook has not (tests/xlsx.test.ts)",
   },
@@ -627,105 +650,11 @@ const CANT_CARRY: Partial<Record<Column, Record<string, string>>> = {
  * "Type.field" -> what is lost, per format: lost today, and should not be. Found when this test
  * was added (2026-11-22). Fix the writer or reader, then delete the line (the test fails while a
  * fixed field is still listed). Word and Excel keep each drawing's own data whole, so they lose
- * nothing; PowerPoint keeps a slide's structures as CDXML, so it shares CDXML's atom and bond gaps.
+ * nothing; PowerPoint keeps a slide's structures as CDXML, so a CDXML gap is a PowerPoint gap too.
  */
 const KNOWN_GAPS: Partial<Record<Column, Record<string, string>>> = {
-  cdxml: {
-    'Arrow.bent': "a hand-bent curved arrow comes back unbent, so it finds its own way round again when the structure changes",
-    'Arrow.ellipse': "an arrow drawn along an ellipse loses its ellipse",
-    'Arrow.reagentFor': "a catalytic cycle's reagent arrow loses which step it feeds",
-    'Atom.asTyped': "a lone typed label (NH2) loses \"shown as typed\"",
-    'Atom.depth': "an atom's depth from a perspective drawing is not saved, so which crossing bond is in front can change",
-    'Atom.face': "a label face of 1 (bold, not formula) comes back 97 (bold formula)",
-    'Atom.labelMarks': "\"=\" marks (on the line, set by hand) come back \".\" ",
-    'Atom.ringOf': "a variable attachment loses its ring (it then sits at the middle of multi)",
-    'Atom.stereoLabel': "a hand-typed stereo label (manual) comes back as fromFile, so it is replaced once the structure changes",
-    'Atom.supDigits': "supDigits false on R1 (keep the 1 down) comes back true",
-    'Bond.stereoLabel': "a hand-typed E/Z label (manual) comes back as fromFile, so it is replaced once the structure changes",
-    'Bond.z': "a bond's place among crossing bonds is not kept",
-    'Caption.colGap': "the gap between text box columns is lost (see cols)",
-    'Caption.cols': "text box columns are lost (if text boxes with columns are slide-only, move this to CANT_CARRY)",
-    'Caption.fit': "shrink-to-fit is lost (if only slide text boxes have it, move this to CANT_CARRY)",
-    'Caption.width': "the text box width read from a file is not written back",
-    'Shape.crop': "a picture's crop is lost",
-    'Shape.frame': "a frame forgets what it surrounds (atoms come back []), so it stops following the structure",
-    'Shape.hidden': "hidden in the Layers panel (Design) is lost",
-    'Shape.holder': "a Smart Scheme placeholder box loses its waiting label",
-    'Shape.madeLabels': "labels of a frame drawn from data are lost (checked on a plain rectangle, not a real energy diagram)",
-    'Shape.name': "the Layers panel name (Design) is lost",
-    'Shape.pin': "a lone pair stuck to its atom comes unstuck",
-    'Shape.repeat': "a bracket's repeat label (n) is lost (checked on one round bracket, not a pair)",
-    'Shape.repeatLook': "the repeat label's own look is lost (see repeat)",
-    'Shape.video': "a video on a picture is lost (if videos are slide-only, move this to CANT_CARRY)",
-    'TextRun.noFill': "text effects (Font box) are not kept on drawing text",
-    'TextRun.noKern': "text effects (Font box) are not kept on drawing text",
-    'TextRun.outline': "text effects (Font box) are not kept on drawing text",
-    'TextRun.outlineW': "text effects (Font box) are not kept on drawing text",
-    'TextRun.shadow': "text effects (Font box) are not kept on drawing text",
-    'TextRun.spacing': "character spacing is not kept on drawing text",
-    'TextRun.strike': "strikethrough is not kept on drawing text",
-    'TextRun.symbolFont': "which font a sign was in is not written back",
-    'TextRun.transparency': "text effects (Font box) are not kept on drawing text",
-    'Pin.dir': "a pinned thing's direction (a lone pair's two dots) is lost, so it no longer turns with its atoms",
-    'TableCell.fill': "a table cell's shading is lost",
-    'TableCell.rowSpan': "cells merged down are split again",
-    'TableData.look': "the table style options (header row, banded rows…) are lost (see style)",
-    'TableData.style': "a table style (PowerPoint's, used on drawings too) is lost",
-    'TextRun.dstrike': "double strikethrough is lost (see strike)",
-  },
-  pptx: {
-    'Arrow.step': "the slide's structures go through CDXML with new ids: a step loses its species",
-    'Arrow.bent': "the slide's structures go through CDXML: a hand-bent curved arrow comes back unbent, so it finds its own way round again when the structure changes",
-    'Arrow.ellipse': "the slide's structures go through CDXML: an arrow drawn along an ellipse loses its ellipse",
-    'Arrow.from': "the slide's structures go through CDXML: a connector's tail comes unstuck from its shape",
-    'Arrow.morph': "the animation's atom pairs are lost",
-    'Arrow.pin': "an electron-pushing arrow comes unstuck from its atoms",
-    'Arrow.reagentFor': "the slide's structures go through CDXML: a catalytic cycle's reagent arrow loses which step it feeds",
-    'Arrow.to': "the slide's structures go through CDXML: a connector's head comes unstuck from its shape",
-    'Atom.asTyped': "the slide's structures go through CDXML: a lone typed label (NH2) loses \"shown as typed\"",
-    'Atom.depth': "the slide's structures go through CDXML: an atom's depth from a perspective drawing is not saved, so which crossing bond is in front can change",
-    'Atom.face': "the slide's structures go through CDXML: a label face of 1 (bold, not formula) comes back 97 (bold formula)",
-    'Atom.labelMarks': "the slide's structures go through CDXML: \"=\" marks (on the line, set by hand) come back \".\" ",
-    'Atom.ringOf': "the slide's structures go through CDXML: a variable attachment loses its ring (it then sits at the middle of multi)",
-    'Atom.stereoLabel': "the slide's structures go through CDXML: a hand-typed stereo label (manual) comes back as fromFile, so it is replaced once the structure changes",
-    'Atom.supDigits': "the slide's structures go through CDXML: supDigits false on R1 (keep the 1 down) comes back true",
-    'Bond.stereoLabel': "the slide's structures go through CDXML: a hand-typed E/Z label (manual) comes back as fromFile, so it is replaced once the structure changes",
-    'Bond.z': "the slide's structures go through CDXML: a bond's place among crossing bonds is not kept",
-    'Caption.attach': "a caption tied to a structure keeps the old atom ids while the structure's atoms are renumbered on reading, so it points at the wrong atoms",
-    'Shape.bracketPair': "a bracket keeps the old id of its partner while shapes are renumbered",
-    'Shape.frame': "the slide's structures go through CDXML: a frame forgets what it surrounds (atoms come back []), so it stops following the structure",
-    'Shape.grp': "a ChemDraw-style shape loses its group",
-    'Shape.grpPath': "a ChemDraw-style shape loses its group nesting",
-    'Shape.hashSpacing': "a ChemDraw-style dashed rectangle loses its dash length",
-    'Shape.holder': "the slide's structures go through CDXML: a Smart Scheme placeholder box loses its waiting label",
-    'Shape.lineWidth': "a ChemDraw-style rectangle loses its line width",
-    'Shape.madeLabels': "the slide's structures go through CDXML: labels of a frame drawn from data are lost (checked on a plain rectangle, not a real energy diagram)",
-    'Shape.orbital': "a ChemDraw orbital comes back a plain oval",
-    'Shape.pattern': "a ChemDraw-style rectangle loses its pattern fill",
-    'Shape.patternClear': "a ChemDraw-style rectangle loses its pattern fill",
-    'Shape.patternColor': "a ChemDraw-style rectangle loses its pattern fill",
-    'Shape.patternSize': "a ChemDraw-style rectangle loses its pattern fill",
-    'Shape.patternTransparency': "a ChemDraw-style rectangle loses its pattern fill",
-    'Shape.phPic': "a picture in a layout's picture placeholder is not put back in it (checked without a layout that has one)",
-    'Shape.piece': "a ChemDraw-style shape loses its Auto-Animate piece",
-    'Shape.pin': "the slide's structures go through CDXML: a lone pair stuck to its atom comes unstuck",
-    'Shape.repeat': "the slide's structures go through CDXML: a bracket's repeat label (n) is lost (checked on one round bracket, not a pair)",
-    'Shape.repeatLook': "the slide's structures go through CDXML: the repeat label's own look is lost (see repeat)",
-    'Shape.ring': "a ring fill keeps the old atom ids while the structure's atoms are renumbered on reading, so it points at the wrong atoms",
-    'Shape.shadow': "a ChemDraw-style rectangle loses its shadow",
-    'Shape.shadowSize': "a ChemDraw-style rectangle loses its shadow size",
-    'Shape.stack': "a ChemDraw-style shape loses its Format ▸ Order place",
-    'Shape.z': "a ChemDraw-style shape loses its drawing order",
-    'Shape.zoom': "a Slide Zoom is lost (checked without the slide it zooms to)",
-    'Media.across': "a video's Play Across Slides is lost",
-    'Media.audio': "a sound (not a video) comes back as a video",
-    'Media.hide': "a video's Hide While Not Playing is lost",
-    'Media.length': "a video's length is lost",
-    'Media.narration': "a recorded narration comes back as an ordinary sound or video",
-    'Media.rewind': "a video's Rewind After Playing is lost",
-    'PictureFx.bg': "Remove Background's marks (keep, drop, tolerance) are lost",
-    'PictureFx.sharpen': "a picture's Sharpen or Soften is lost",
-  },
+  cdxml: {},
+  pptx: {},
   'docx-drawing': {},
   'xlsx-drawing': {},
   word: {

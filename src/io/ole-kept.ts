@@ -7,7 +7,7 @@ import { Doc } from '../model';
 import type { Vec } from '../geom';
 import { extractDrawing } from './clipboard';
 import { bytesHash } from './ooxml';
-import { remapFrames, remapStep } from './remap-refs';
+import { REF_FIELDS, remapField, remapFrames, remapStep, type IdOf, type RefKind } from './remap-refs';
 import type { Selection } from '../editor/arrange';
 
 export interface KeptOle {
@@ -36,8 +36,8 @@ export interface KeptOle {
 }
 
 /** Add a drawing to `doc`, with every position passed through `map`. */
-export function mergeDrawing(doc: Doc, src: Doc, map: (p: Vec) => Vec): void {
-  const ids = new Map<number, number>();
+export function mergeDrawing(doc: Doc, src: Doc, map: (p: Vec) => Vec): MergedIds {
+  const ids = new Map<number, number>(), bonds = new Map<number, number>();
   // (multicentre points after the atoms they stand for)
   const atoms = [...src.atoms.values()];
   for (const a of [...atoms.filter((x) => !x.multi), ...atoms.filter((x) => x.multi)]) {
@@ -49,8 +49,8 @@ export function mergeDrawing(doc: Doc, src: Doc, map: (p: Vec) => Vec): void {
   for (const b of src.bonds.values()) {
     const a1 = ids.get(b.a1), a2 = ids.get(b.a2);
     if (a1 === undefined || a2 === undefined) continue;
-    const { id: _id, ...rest } = structuredClone(b);
-    doc.addBond(a1, a2, b.order, b.display, { ...rest, a1, a2 });
+    const { id, ...rest } = structuredClone(b);
+    bonds.set(id, doc.addBond(a1, a2, b.order, b.display, { ...rest, a1, a2 }).id);
   }
   const caps = new Map<number, number>(), shapes = new Map<number, number>(), arrows = new Map<number, number>();
   const maps = { atoms: ids, captions: caps, shapes, arrows };
@@ -70,7 +70,26 @@ export function mergeDrawing(doc: Doc, src: Doc, map: (p: Vec) => Vec): void {
     arrows.set(id, doc.addArrow({ ...rest, tail: map(r.tail), head: map(r.head) }).id);
   }
   remapFrames(doc, maps);
+  // what the copies name by id (a ring fill's atoms, a pin, a tied caption…) names the copies
+  const all: Record<RefKind, Map<number, number>> = { a: ids, b: bonds, c: caps, r: arrows, s: shapes };
+  const idOf: IdOf = (k, id) => all[k].get(id);
+  const things: [RefKind, Map<number, object>][] = [['a', doc.atoms], ['b', doc.bonds], ['c', doc.captions], ['r', doc.arrows], ['s', doc.shapes]];
+  for (const [k, m] of things) {
+    for (const id of all[k].values()) {
+      const o = m.get(id) as Record<string, unknown> | undefined;
+      if (!o) continue;
+      const fields = REF_FIELDS[k].filter((f) => o[f] !== undefined && !(k === 'r' && f === 'step') && !(k === 's' && f === 'frame'));
+      if (!fields.length) continue;
+      const patch: Record<string, unknown> = {};
+      for (const f of fields) patch[f] = remapField(k, f, o[f], idOf, false);
+      if (k === 'a') doc.updateAtom(id, patch); else if (k === 'b') doc.updateBond(id, patch); else if (k === 'c') doc.updateCaption(id, patch); else if (k === 'r') doc.updateArrow(id, patch); else doc.updateShape(id, patch);
+    }
+  }
+  return all;
 }
+
+/** What each thing of a drawing merged into another became there, by kind (old id → new id). */
+export type MergedIds = Record<RefKind, Map<number, number>>;
 
 /** A print of a drawing wherever it stands, and where its first thing stood. */
 export function olePrint(doc: Doc, sel: Selection): { print: string; x: number; y: number } {

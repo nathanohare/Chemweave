@@ -26,6 +26,7 @@ import { layoutTable, cellAlign, spanOf, rowSpanOf, coveringCell, tableText, NOT
 import { PPT_STYLE_IDS, lookOf, slideCellLook, styledRuns, type CellLine, type Side } from '../deck/table-styles';
 import { tableBorders } from './cdxml-table';
 import { writeCdxml } from './cdxml-write';
+import { REF_FIELDS, type RefKind } from './remap-refs';
 import { cdxmlToCdx } from './cdx';
 import { chemdrawProg, chemdrawInObject, chemdrawObject, chemdrawObjectName, OLE_REL, OLE_TYPE } from './ole-object';
 import { extractDrawing } from './clipboard';
@@ -90,6 +91,8 @@ export const TAG = {
   design: 'CHEMILLUSTRATOR_DESIGN',
   /** A design shape (Design mode): which shape and how it looks, used when it comes back. */
   geo: 'CHEMILLUSTRATOR_GEO',
+  /** A box, oval or line drawn here (not a design shape): the shape as it was, see plainShape. */
+  shape: 'CHEMILLUSTRATOR_SHAPE',
   /** A connector (an arrow stuck to design shapes, or bent square): the arrow as it was. */
   connector: 'CHEMILLUSTRATOR_CONNECTOR',
   /**
@@ -101,6 +104,8 @@ export const TAG = {
   zoom: 'CHEMILLUSTRATOR_ZOOM',
   /** A picture that is a lab figure (a crystal structure): its data, so it opens in its window again. */
   plate: 'CHEMILLUSTRATOR_PLATE',
+  /** A video's or sound's settings PowerPoint has no place for (its length, Rewind after Playing, a narration), and a video's sound settings. */
+  media: 'CHEMILLUSTRATOR_MEDIA',
   /** The slide's id here, so links kept in our own tags find their slide again. */
   slideId: 'CHEMILLUSTRATOR_SLIDE_ID',
   /** A SmartArt-style diagram (a group of shapes): its text and look, kept on the group. */
@@ -122,6 +127,12 @@ export const TAG = {
   turn3d: 'CHEMILLUSTRATOR_TURN3D',
   /** Reaction steps whose roles name things in another picture (a scheme built step by step): see step-tag.ts. */
   steps: 'CHEMILLUSTRATOR_STEPS',
+  /**
+   * What the slide's things name by id (a caption tied to a structure, a ring fill's atoms, a
+   * pin, a connector's ends, a frame's members…; remap-refs.ts REF_FIELDS), by the ids they had
+   * when saved, so they are joined up again across the slide's pictures, shapes and text.
+   */
+  links: 'CHEMILLUSTRATOR_LINKS',
   /**
    * A slide made from a canvas slide's keyframe: which canvas, which of its slides, and a print of
    * what it held (to tell whether PowerPoint changed it). The first also has canvasKeep, the canvas itself.
@@ -1112,7 +1123,7 @@ class Writer {
       mark({ shapes: new Set([p.id]) }, id);
       if (p.kind !== 'picture') {
         spOf.set(p.id, id);
-        out.push(p.kind === 'geo' ? this.geo(path, p, id++, doc, styles.body?.size ?? doc.style.captionSize) : shapeXml(p, id++, doc.style.lineWidth, this.clr));
+        out.push(p.kind === 'geo' ? this.geo(path, p, id++, doc, styles.body?.size ?? doc.style.captionSize) : this.plainShape(path, p, id++, doc.style.lineWidth));
         return;
       }
       const box = { x1: Math.min(p.x1, p.x2), y1: Math.min(p.y1, p.y2), x2: Math.max(p.x1, p.x2), y2: Math.max(p.y1, p.y2) };
@@ -1209,7 +1220,8 @@ class Writer {
     }
     const refTag = slideRefsTag(s);
     const stepTag = stepsTag(doc, drawings.map((d) => d.sel));
-    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.ownItems ? { [TAG.ownItems]: '1' } : {}), ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims) } : {}), ...turnTag(s.anims, (a) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined)), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...part });
+    const linksTag = slideLinks(doc);
+    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.ownItems ? { [TAG.ownItems]: '1' } : {}), ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims) } : {}), ...turnTag(s.anims, (a) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined)), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...(linksTag ? { [TAG.links]: linksTag } : {}), ...part });
     const bg = s.background ? await this.background(path, s.background) : '';
     return `${HEAD}<p:sld ${XMLNS}${s.hideGraphics ? ' showMasterSp="0"' : ''}${s.hidden ? ' show="0"' : ''}><p:cSld>${bg}<p:spTree>${GROUP}${out.join('')}</p:spTree><p:custDataLst><p:tags r:id="${tags}"/></p:custDataLst></p:cSld>` +
       `<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${transitionXml(s.transition)}${timingXml(expandParas(s.anims ?? [], (cid) => { const c = doc.captions.get(cid); return c ? plainText(c.runs).split('\n') : null; }), (a) => spids.get(targetKey(a.target)) ?? [], videos, (t) => spids.get(targetKey(t))?.[0])}` +
@@ -1513,8 +1525,15 @@ class Writer {
     const fade = m.fadeIn || m.fadeOut ? `<p14:fade${m.fadeIn ? ` in="${ms(m.fadeIn)}"` : ''}${m.fadeOut ? ` out="${ms(m.fadeOut)}"` : ''}/>` : '';
     const p14 = trim || fade ? `<p14:media xmlns:p14="${NS_P14}" r:embed="${media}">${trim}${fade}</p14:media>` : `<p14:media xmlns:p14="${NS_P14}" r:embed="${media}"/>`;
     const name = m.audio ? `Audio ${id - 1}` : `Video ${id - 1}`;
+    // what PowerPoint has no place for: its length, Rewind after Playing, a narration, and the
+    // sound's settings (Play Across Slides, Hide During Show) on a video
+    const own: Partial<Media> = {
+      ...(m.length !== undefined ? { length: m.length } : {}), ...(m.rewind ? { rewind: true } : {}), ...(m.narration ? { narration: true } : {}),
+      ...(!m.audio && m.across ? { across: true } : {}), ...(!m.audio && m.hide ? { hide: true } : {}),
+    };
+    const tags = Object.keys(own).length ? `<p:custDataLst><p:tags r:id="${this.addTags(from, { [TAG.media]: JSON.stringify({ v: 1, ...own }) })}"/></p:custDataLst>` : '';
     return `<p:pic><p:nvPicPr><p:cNvPr id="${id}"${nameAttrs(s?.name?.trim() || name, s?.hidden)}><a:hlinkClick r:id="" action="ppaction://media"/></p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>` +
-      `<p:nvPr>${m.audio ? `<a:audioFile r:link="${link}"/>` : `<a:videoFile r:link="${link}"/>`}<p:extLst><p:ext uri="{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}">${p14}</p:ext></p:extLst></p:nvPr></p:nvPicPr>` +
+      `<p:nvPr>${m.audio ? `<a:audioFile r:link="${link}"/>` : `<a:videoFile r:link="${link}"/>`}${tags}<p:extLst><p:ext uri="{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}">${p14}</p:ext></p:extLst></p:nvPr></p:nvPicPr>` +
       `<p:blipFill><a:blip r:embed="${blip}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
       `<p:spPr>${xfrm(box, rotAttr(s?.rot))}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
   }
@@ -1551,6 +1570,19 @@ class Writer {
       `${spPr}${txBody}</p:sp>`;
   }
 
+  /**
+   * A box, oval or line as PowerPoint's shape, with a tag keeping what PowerPoint's shape has no
+   * place for (its group, drawing order, pattern fill, ChemDraw-style line widths and dashes, an
+   * orbital's look…) and a print of its look as written, to tell what PowerPoint changed.
+   */
+  private plainShape(path: string, s: Shape, id: number, lw: number): string {
+    const xmlText = shapeXml(s, id, lw, this.clr);
+    const { id: _, x1: _a, y1: _b, x2: _c, y2: _d, ...look } = s;
+    const spPr = fragment(/<p:spPr>[\s\S]*<\/p:spPr>/.exec(xmlText)?.[0] ?? '');
+    const tag = this.addTags(path, { [TAG.shape]: JSON.stringify({ v: 1, s: look, sid: s.id, ...(spPr ? { pr: spPrPrint(spPr, 'look') } : {}) }) });
+    return xmlText.replace('<p:nvPr/>', `<p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr>`);
+  }
+
   /** A shape's picture fill as PowerPoint's blipFill, the picture added to the file (null when it can't be read). */
   private picFillXml(path: string, f: NonNullable<Shape['picFill']>): string | null {
     const m = /^data:image\/(png|jpeg|jpg|gif);base64,(.*)$/i.exec(f.src);
@@ -1579,7 +1611,7 @@ class Writer {
     // with a print of its line as written, to tell whether PowerPoint changed it (native-print.ts)
     const lineXml = fragment(`<p:spPr>${geom}${ln}</p:spPr>`);
     const pr = lineXml ? spPrPrint(lineXml, 'look') : '';
-    const tag = this.addTags(path, { [TAG.connector]: JSON.stringify({ v: 1, a: keep, ...(pr ? { pr } : {}) }) });
+    const tag = this.addTags(path, { [TAG.connector]: JSON.stringify({ v: 1, a: keep, sid: r.id, ...(pr ? { pr } : {}) }) });
     const nvPr = `<p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr>`;
     // a curved arrow is a shape drawn along the curve (programs route a connector afresh, square),
     // and so is an elbow PowerPoint has no bent connector for: PowerPoint repairs a connector
@@ -1618,6 +1650,9 @@ class Writer {
         // the picture the original belongs to (after Change Picture in PowerPoint it belongs to none)
         if (baked) t.print = bytesHash(baked);
         t.fx = { ...(fx?.bg ? { bg: fx.bg } : {}), ...(fx?.sharpen ? { sharpen: fx.sharpen } : {}) };
+      } else if (fx?.bg || fx?.sharpen) {
+        // not worked in (nothing here could draw it): the picture is the original, and the settings ride with it
+        t.fx = { ...(fx.bg ? { bg: fx.bg } : {}), ...(fx.sharpen ? { sharpen: fx.sharpen } : {}) };
       }
       // a crystal structure keeps its data, so it opens in its window again
       const plate = pic?.plate ? { [TAG.plate]: JSON.stringify(pic.plate) } : {};
@@ -1692,7 +1727,7 @@ class Writer {
     const txBody = `<p:txBody>${bodyPr}<a:lstStyle/>${body}</p:txBody>`;
     // and a print of the text as written (how each piece looks), to tell whether PowerPoint changed it (native-print.ts)
     const pr = textPrint(fragment(txBody));
-    const tag = this.addTags(path, { [TAG.text]: JSON.stringify({ c: { ...c, id: undefined }, plain, at, o, ...(pr ? { pr } : {}) }), ...more });
+    const tag = this.addTags(path, { [TAG.text]: JSON.stringify({ c: { ...c, id: undefined }, sid: c.id, plain, at, o, ...(pr ? { pr } : {}) }), ...more });
     let ph = '';
     if (c.ph) {
       const k = c.ph === 'title' ? 'title' : 'body';
@@ -2374,4 +2409,23 @@ export function turnTag(anims: Anim[] | undefined, saved: (a: Anim) => boolean =
   const live = (anims ?? []).filter(saved);
   const turns = [...mainAnims(live), ...[...triggerSeqs(live).values()].flatMap((g) => g.anims)].filter((a) => a.effect === 'turn3d');
   return turns.length ? { [TAG.turn3d]: JSON.stringify(turns.map((a) => a.view ?? null)) } : {};
+}
+
+/**
+ * The slide's references by id (TAG.links): each thing that names others, with what it names, by
+ * the ids things have on the slide as saved (a structure picture's drawing keeps them as its
+ * elements' ids; text, connectors and shapes in their tags as `sid`). Null when there are none.
+ */
+function slideLinks(doc: Doc): string | null {
+  const out: { k: RefKind; id: number; f: Record<string, unknown> }[] = [];
+  const things: [RefKind, Map<number, object>][] = [['a', doc.atoms], ['b', doc.bonds], ['c', doc.captions], ['r', doc.arrows], ['s', doc.shapes]];
+  for (const [k, m] of things) {
+    for (const o of m.values()) {
+      const x = o as Record<string, unknown> & { id: number };
+      const f: Record<string, unknown> = {};
+      for (const name of REF_FIELDS[k]) if (x[name] !== undefined) f[name] = x[name];
+      if (Object.keys(f).length) out.push({ k, id: x.id, f });
+    }
+  }
+  return out.length ? JSON.stringify(out) : null;
 }
