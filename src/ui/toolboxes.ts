@@ -195,8 +195,9 @@ export function parseToolboxes(raw: unknown): ToolboxState {
       };
     }
   }
-  // the side panel floats at the top right only in new settings: saved settings keep where it was,
-  // docked at the right included (S87: a new default never overrides a saved choice)
+  // settings saved while the side panel started docked at the right: it floats there now, once (U4,
+  // #633). Docked again after that move (sideFloats is then saved as true), it stays docked (S87)
+  if (r.sideFloats !== true && s.places.details.dock === 'right') s.places.details = { ...s.places.details, dock: 'float', corner: true };
   // the side panel can't be hidden (older settings could put it away)
   s.places.details = { ...s.places.details, shown: true };
   const list = (v: unknown, max = 200): string[] | null => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && ITEM.test(x)))].slice(0, max) : null);

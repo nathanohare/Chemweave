@@ -8,11 +8,14 @@ describe('the side panel floats at the top right to start with', () => {
     const d = defaultToolboxes().places.details;
     expect(d).toMatchObject({ shown: true, dock: 'float', corner: true });
   });
-  it('floats at the top right in new settings; saved settings keep it docked (S87)', () => {
+  it('floats once for settings saved before the move (U4), and a later choice to dock stays (S87)', () => {
     expect(parseToolboxes(undefined).places.details).toMatchObject({ dock: 'float', corner: true });
     const old = parseToolboxes({ places: { details: { shown: true, dock: 'right', x: 900, y: 90 } } });
-    expect(old.places.details.dock).toBe('right');
-    expect(old.places.details.corner).toBeUndefined();
+    expect(old.places.details).toMatchObject({ dock: 'float', corner: true });
+    // the move is saved (sideFloats), so docking it again afterwards is the user's choice and is kept
+    expect(old.sideFloats).toBe(true);
+    const docked = parseToolboxes({ ...old, places: { ...old.places, details: { shown: true, dock: 'right', x: 900, y: 90 } } });
+    expect(docked.places.details.dock).toBe('right');
     const again = parseToolboxes({ sideFloats: true, places: { details: { shown: true, dock: 'right', x: 900, y: 90 } } });
     expect(again.places.details.dock).toBe('right');
     expect(again.places.details.corner).toBeUndefined();
