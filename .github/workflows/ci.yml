@@ -75,7 +75,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename' > files.txt
-          if grep -qvE '^(docs/|tests/|[^/]+\.md$|\.github/ISSUE_TEMPLATE/)' files.txt; then
+          if grep -qvE '^(docs/|tests/|[^/]+\.md$|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)' files.txt; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "Only the guide, tests or text changed: nothing to time."
