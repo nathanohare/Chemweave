@@ -9,6 +9,7 @@ import { unzlibSync } from 'fflate';
 import { emfToSvg, emfSize, decodeDib, rgbaToPng, pngWithDpi, crc32 } from '../src/render/emf-read';
 import { itemsToEmf } from '../src/render/emf';
 import { VecPath } from '../src/render/vector';
+import { realFilesMissing } from './real-files';
 
 /** Builds an EMF a record at a time, with a header for a 1000 × 500 pixel picture on a 100 px/mm device. */
 class Emf {
@@ -167,7 +168,7 @@ describe('EMF pictures as SVG', () => {
   });
 
   const dir = process.env.CHEM_TEST_FILES ?? '';
-  it.skipIf(!dir || !existsSync(dir))('shows every metafile in the ChemDraw test files', () => {
+  it.skipIf(realFilesMissing('emf-read', !dir || !existsSync(dir), 'CHEM_TEST_FILES'))('shows every metafile in the ChemDraw test files', () => {
     let n = 0;
     for (const name of readdirSync(dir).filter((f) => f.endsWith('.cdxml'))) {
       const text = readFileSync(join(dir, name), 'utf8');

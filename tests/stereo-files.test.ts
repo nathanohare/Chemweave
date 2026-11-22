@@ -17,6 +17,7 @@ import { readCdxml } from '../src/io/cdxml';
 import { LiveStereo } from '../src/chem/live-stereo';
 import { stereoTags, StereoPlacer } from '../src/chem/stereo';
 import { arialWidth } from '../src/text-metrics';
+import { realFilesMissing } from './real-files';
 
 const dir = process.env.CHEM_TEST_FILES ?? '';
 const files = dir && existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.cdxml')) : [];
@@ -27,7 +28,7 @@ beforeAll(async () => {
   if (files.length) RDKit = await createRequire(import.meta.url)('@rdkit/rdkit')();
 }, 30000);
 
-describe.skipIf(!files.length)('R/S and E/Z match ChemDraw on real files', { timeout: 300000 }, () => {
+describe.skipIf(realFilesMissing('stereo-files', !files.length, 'CHEM_TEST_FILES'))('R/S and E/Z match ChemDraw on real files', { timeout: 300000 }, () => {
   it('agrees with the labels ChemDraw saved', async () => {
     let agree = 0, theirsOnly = 0, oursOnly = 0, undecided = 0, bondUndecided = 0;
     const differ: string[] = [];

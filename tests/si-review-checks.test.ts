@@ -32,7 +32,9 @@ describe('labelled isotopes and elements with no natural abundance', () => {
   it('works out 14C, T, 18F and 125I compounds as SI Assistant does (masses from RDKit, NIST SRD 144)', () => {
     // (Python: Chem.Descriptors / chem.mol_info → exact masses of the structures as drawn)
     const c14 = molFacts(RDKit, mb('[14CH3]C(=O)Oc1ccccc1'))!;
-    expect(c14.info!.formula).toBe('C7H8[14C]O2') // (Hill order as SI Assistant writes it: only [13C] goes after C);
+    // (G4-13: every labelled carbon right after C, as CAS Hill order keeps a nuclide with its element;
+    // SI Assistant still writes C7H8[14C]O2, putting only [13C] after C)
+    expect(c14.info!.formula).toBe('C7[14C]H8O2');
     expect(c14.info!.exact).toBeCloseTo(7 * 12 + 14.00324199 + 8 * 1.00782503223 + 2 * 15.99491461957, 6);
     const t = molFacts(RDKit, mb('[3H]C(=O)c1ccccc1'))!;
     expect(t.info!.formula).toBe('C7H5TO');

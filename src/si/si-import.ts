@@ -313,6 +313,14 @@ export function mFormula(ionFormula: string, adduct: string, calcd: string): str
     stripped.set(el, (stripped.get(el) ?? 0) - n);
     if (stripped.get(el)! < 0) ok = false;
   }
+  // [2M+Na]⁺: what is left is two M, so each count is halved (a count that doesn't divide means
+  // the printed formula isn't this ion's)
+  if (ok && add.multimer > 1) {
+    for (const [el, n] of stripped) {
+      if (n % add.multimer) { ok = false; break; }
+      stripped.set(el, n / add.multimer);
+    }
+  }
   if (ok) candidates.push(positive(stripped));
   candidates.push(positive(counts));     // the printed formula is M's already
   for (const cand of candidates) {

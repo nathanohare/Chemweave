@@ -50,5 +50,6 @@ export default defineConfig({
   worker: { format: 'iife', rollupOptions: { output: { entryFileNames: '[name].js' } } },
   // Tests run on UTC, as on the Checks machines, so tests with clock times (Word comment dates)
   // give the same answer on a computer in any time zone. A test about time zones sets its own.
-  test: { env: { TZ: 'UTC' } },
+  // The real-file suites (tests/real-files.ts) are counted when skipped, and the count printed at the end.
+  test: { env: { TZ: 'UTC' }, globalSetup: ['tests/setup/real-files-summary.ts'] },
 });

@@ -15,6 +15,9 @@ import { Doc } from '../src/model';
 import { labelSpec, layoutLabel } from '../src/chem/labels';
 import { ACS_1996, bondWidths, labelBold } from '../src/style';
 import { CHEMDRAW_DIR, noChemDraw } from './chemdraw-private';
+import { realFilesMissing } from './real-files';
+
+realFilesMissing('chemdraw-paste-read', noChemDraw, 'CHEMDRAW_FIXTURES');
 
 const dir = CHEMDRAW_DIR + '/';
 const fromChemDraw = () => readCdxml(readFileSync(dir + 'clip-props.cd.cdxml', 'utf8')).doc;

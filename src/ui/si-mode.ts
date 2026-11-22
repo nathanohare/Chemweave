@@ -43,7 +43,8 @@ import { ask, askChoice } from './ask';
 import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDismissed, monoisotopic, outOfTolerance, parseNumber, ID_KEY, type SiWarning } from '../si/checks';
 import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY, chooseMatch, foundIsFromReport, updateFound, vendorRawKind, type Match, type ReportData } from '../si/ms-reports';
 import { readReportFile } from '../si/report-files';
-import { adductDisplay, sameFormula, speciesLabel, ChemError, type MolFacts, type Peak } from '../si/chem';
+import { adductDisplay, sameFormula, speciesLabel, ChemError, unreadableFacts, type MolFacts, type Peak } from '../si/chem';
+import { ENGINE_SKIPPED } from '../chem/client';
 import { addInfo } from './info-tip';
 import { computeLabels, type SiLabels } from '../si/labels';
 import { projectWarnings, type ProjectWarning } from '../si/project-warnings';
@@ -1076,8 +1077,46 @@ export class SiMode {
     }
     const todo = [...new Set([...mols.values()].filter((m) => !this.facts.has(m)))];
     if (!todo.length) return;
-    const got = await this.host.siFacts(todo).catch(() => todo.map(() => null));
-    todo.forEach((m, i) => this.facts.set(m, got[i] ?? null));
+    await this.fetchFacts(todo);
+  }
+
+  /**
+   * Ask the engine for structures' facts and keep them. When it can't answer (it is restarting, it
+   * failed to load, or one structure broke it) each structure is asked on its own, so one bad
+   * structure doesn't take the others' checks with it; a structure still without an answer is
+   * checked with that said where its formula would show, and is asked again once the engine is
+   * ready (engineReady). A failure is never kept as if it were the structure's facts.
+   */
+  private async fetchFacts(todo: string[]): Promise<void> {
+    const got = await this.host.siFacts(todo).catch(() => null);
+    if (got) { todo.forEach((m, i) => this.facts.set(m, got[i] ?? null)); return; }
+    for (const m of todo) {
+      const one = await this.host.siFacts([m]).then((r) => r[0] ?? null, (e: unknown) => e instanceof Error ? e : new Error(String(e)));
+      if (one instanceof Error && one.message === ENGINE_SKIPPED) {
+        // (a structure that broke the engine is left out for the session: not asked again)
+        this.facts.set(m, unreadableFacts(`No formula or masses: ${one.message}`));
+      } else if (one instanceof Error) {
+        this.facts.set(m, unreadableFacts(`No formula or masses for now: ${one.message.replace(/\.?$/, '.')} The checks that need the structure are run again once the chemistry engine is ready.`));
+        this.factsFailed.add(m);
+      } else this.facts.set(m, one);
+    }
+  }
+  /** Structures whose facts the engine couldn't give: asked again when it is ready. */
+  private factsFailed = new Set<string>();
+
+  /**
+   * The chemistry engine is ready (at start-up, or after a restart): what it couldn't answer
+   * before is asked again, and the open project checked again.
+   */
+  engineReady(): void {
+    for (const m of this.factsFailed) this.facts.delete(m);
+    const had = this.factsFailed.size > 0;
+    this.factsFailed.clear();
+    // (nothing failed, as at an ordinary start-up: no redraw, which could take the focus from a field)
+    if (!this.project || !had) return;
+    this.warnings.clear();
+    this.shownKey = '';
+    this.refresh();
   }
 
   // ---------------------------------------------------------------- for the Canvas (layout C)
@@ -1940,6 +1979,8 @@ export class SiMode {
     if (!(await SiMode.pubchemOk())) return;
     this.host.flash('Looking the structure up in PubChem…', 10000);
     const got = await lookupName(facts.inchikey ?? '', facts.pieces.length || 1);
+    // (the lookup takes up to 10 s: the name is for the structure it was asked for, in this project)
+    if (!this.sameStructure(p, c, mol!)) { this.host.flash('The structure changed (or another project is showing) while PubChem was asked, so its name was not used. Look it up again.', 8000); return; }
     if (got.status === 'error' || got.status === 'not_found') { await ask('Name from PubChem', [], { ok: 'OK', noCancel: true, note: got.message }); return; }
     const v = valuesOf(c).name;
     const now = v && typeof v === 'object' && !Array.isArray(v) ? String((v as Json).text ?? '') : '';
@@ -1950,8 +1991,14 @@ export class SiMode {
       const go = await askChoice('Name from PubChem', `Replace the name “${now}” with PubChem’s name “${got.name}”?`, [{ value: 'no', label: 'Keep Mine' }, { value: 'yes', label: 'Replace', primary: true }], 'no');
       if (go !== 'yes') return;
     }
+    if (!this.sameStructure(p, c, mol!)) { this.host.flash('The structure changed (or another project is showing) meanwhile, so PubChem’s name was not used. Look it up again.', 8000); return; }
     await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: got.name, from_pubchem: { cid: got.cid, name: got.name, stereo: got.status === 'found' } }));
     this.host.flash(got.message, 6000);
+  }
+
+  /** Whether a compound in a project still has the structure (molfile) some slow work started from, in the project showing. */
+  private sameStructure(p: SiProject, c: SiCompound, mol: string): boolean {
+    return this.project === p && p.compounds.includes(c) && this.kept(p).mols.get(c.id) === mol;
   }
 
   private static pubchemAsked = false;
@@ -1981,7 +2028,11 @@ export class SiMode {
     }
     let named = 0, why = '';
     for (const c of todo) {
-      const got = await this.host.nameStructure(await p.readStructure(c)).catch((e: unknown) => ({ ok: false as const, message: e instanceof Error ? e.message : String(e) }));
+      const mol = await p.readStructure(c).catch(() => '');
+      const got = await this.host.nameStructure(mol).catch((e: unknown) => ({ ok: false as const, message: e instanceof Error ? e.message : String(e) }));
+      if (this.project !== p) { this.host.flash('Another project is showing now, so Structure to Name stopped. Run it again.', 6000); return; }
+      // (a structure redrawn while it was named keeps its own name: the new name was for the old drawing)
+      if (!p.compounds.includes(c) || (await p.readStructure(c).catch(() => '')) !== mol) { why = 'The structure changed while it was being named, so the name was not used.'; continue; }
       if (!got.ok) { why = got.message; continue; }
       const v = valuesOf(c).name;
       await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: capitalizeName(got.name) }));
@@ -2284,7 +2335,8 @@ export class SiMode {
     const shown = this.host.pictureOf(mol);
     if (shown) pic.innerHTML = shown; else pic.textContent = 'Structure';
     const key = mol;
-    if (!this.analyzed.has(key)) this.analyzed.set(key, await this.host.analyze(mol).catch(() => null));
+    // (no answer from the engine, as while it loads or restarts, is not kept: the page is drawn again when it is ready)
+    if (!this.analyzed.has(key)) { const got = await this.host.analyze(mol).then((r) => r, () => undefined); if (got !== undefined) this.analyzed.set(key, got); }
     const a = this.analyzed.get(key);
     if (a) {
       facts.replaceChildren();
@@ -2693,10 +2745,7 @@ export class SiMode {
   /** The structures' facts, read once for each structure (the preview compiles often). */
   private async cachedFacts(ms: string[]): Promise<(MolFacts | null)[]> {
     const todo = [...new Set(ms.filter((m) => m && !this.facts.has(m)))];
-    if (todo.length) {
-      const got = await this.host.siFacts(todo).catch(() => todo.map(() => null));
-      todo.forEach((m, i) => this.facts.set(m, got[i] ?? null));
-    }
+    if (todo.length) await this.fetchFacts(todo);
     return ms.map((m) => (m ? this.facts.get(m) ?? null : null));
   }
 
