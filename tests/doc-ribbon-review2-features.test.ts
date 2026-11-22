@@ -52,7 +52,7 @@ describe('Show/Hide ¶', () => {
     expect(r.texts.map((x) => x.t)).toContain('¤');
   });
 
-  it('is a pressed-state button on Home > Paragraph', () => {
+  it('is a pressed-state button on Home, beside Shrink Font', () => {
     expect(html).toMatch(/<button class="rb-sq" data-doc="show-marks" aria-pressed="false"[^>]*>¶<\/button>/);
   });
 });
