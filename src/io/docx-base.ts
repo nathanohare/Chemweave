@@ -143,14 +143,15 @@ export const TABLE_MARK = '_ChemTable_';
  * Hidden bookmarks for what Word's own markup has no place for, each with the native value it was
  * written beside, so a change made in Word since wins (read back by docx-read.ts):
  * `_ChemCont242_7` at the start of a paragraph that carries on the list item above (Shift+Enter
- * here), written with Word's "no numbering" and a left indent of 242 twips; `_ChemHeads2_8` at the
- * start of a table's first cell: its first 2 rows are heading rows that do not repeat (in a table
- * with no style and no rule under the headings, where nothing else says so).
+ * here), written with Word's "no numbering" and a left indent of 242 twips; `_ChemHead_8` at the
+ * start of the first cell of each heading row that does not repeat (in a table with no style and
+ * no rule under the headings, where nothing else says so), so a row inserted or deleted in Word
+ * takes or leaves its own mark.
  */
 export const CONT_MARK = '_ChemCont';
-export const HEADS_MARK = '_ChemHeads';
-/** One of those bookmarks: its kind and number (the indent or the heading rows). */
-export const OWN_MARK = /^_Chem(Cont|Heads)(\d+)_\d+$/;
+export const HEAD_MARK = '_ChemHead_';
+/** One of those bookmarks: its kind, and the indent for a continuation. */
+export const OWN_MARK = /^_Chem(?:(Cont)(\d+)|(Head))_\d+$/;
 /** The character style that marks chemical formulas (CH₂Cl₂), so they stay formulas here. */
 export const FORMULA_STYLE = 'ChemFormula';
 

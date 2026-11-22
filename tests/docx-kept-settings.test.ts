@@ -87,7 +87,7 @@ describe('Repeat Header Rows from Word or another program (review F7b-R06)', () 
   it('are not saved off: a bookmark keeps heading rows that don\'t repeat', async () => {
     const xml = await xmlOf(withTable({ ...plain, head: 2, noRepeat: true }));
     expect(xml).not.toContain('tblHeader');
-    expect(xml).toMatch(/w:name="_ChemHeads2_\d+"/);
+    expect(xml.match(/w:name="_ChemHead_\d+"/g)).toHaveLength(2);
     expect(tableOf(await trip(withTable({ ...plain, head: 2, noRepeat: true }))).head).toBe(2);
   });
 });
@@ -103,6 +103,23 @@ describe('a table with no style (R3)', () => {
   it('keeps heading rows that don\'t repeat on each page', async () => {
     const t = tableOf(await trip(withTable({ ...TABLE, noRepeat: true })));
     expect([t.head, t.noRepeat]).toEqual([1, true]);
+  });
+});
+
+describe('heading rows that don\'t repeat, after rows were inserted or deleted in Word (review F7b2-R02)', () => {
+  const four = { ...TABLE, rows: [...structuredClone(TABLE.rows), [{ runs: [{ text: '2' }] }, { runs: [{ text: '85' }] }], [{ runs: [{ text: '3' }] }, { runs: [{ text: '71' }] }]], head: 2, noRepeat: true };
+  const rowsOf = (x: string) => x.match(/<w:tr>[\s\S]*?<\/w:tr>/g)!;
+  it('the second heading row deleted: one heading row, not the first body row', async () => {
+    const t = tableOf(await tripEdited(withTable(four), (x) => x.replace(rowsOf(x)[1], '')));
+    expect([t.head, t.rows[1][0].runs.map((r) => r.text).join('')]).toEqual([1, '2']);
+  });
+  it('a row inserted between the two: only the rows still marked lead', async () => {
+    const t = tableOf(await tripEdited(withTable(four), (x) => { const r = rowsOf(x); return x.replace(r[1], r[3].replace(/>3</, '>new<') + r[1]); }));
+    expect(t.head).toBe(1);
+  });
+  it('a row inserted above them: no heading rows', async () => {
+    const t = tableOf(await tripEdited(withTable(four), (x) => { const r = rowsOf(x); return x.replace(r[0], r[3].replace(/>3</, '>new<') + r[0]); }));
+    expect(t.head).toBe(0);
   });
 });
 

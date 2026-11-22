@@ -59,7 +59,7 @@ import { appPropsXml, corePropsXml, relativeTarget, writeKeptParts, writeTree, t
 import { settingsChildren } from './docx-settings';
 import { cmlGuid, contentsSig, writeCml } from './cml';
 import {
-  BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, CONT_MARK, HEADS_MARK, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
+  BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, CONT_MARK, HEAD_MARK, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
 } from './docx-base';
 
 export interface DocxDeps {
@@ -1677,11 +1677,11 @@ class DocxWriter {
         this.shownN = outer;
         // (Word's cells end with a paragraph, after any table in them)
         if (lastTable || !paras.length) paras.push('<w:p/>');
-        // heading rows that don't repeat, where neither a style nor a rule under them says they are
-        // heading rows: a hidden bookmark at the start of the first cell (HEADS_MARK, read back by docx-read.ts)
-        if (r === 0 && !cells.length && tab.head > 0 && tab.noRepeat && !styled && tab.lines !== 'acs') {
+        // a heading row that doesn't repeat, where neither a style nor a rule under it says it is one:
+        // a hidden bookmark at the start of its first cell (HEAD_MARK, read back by docx-read.ts)
+        if (r < tab.head && !cells.length && tab.noRepeat && !styled && tab.lines !== 'acs') {
           const id = this.bookmarkId++;
-          paras.unshift(`<w:bookmarkStart w:id="${id}" w:name="${HEADS_MARK}${tab.head}_${id}"/><w:bookmarkEnd w:id="${id}"/>`);
+          paras.unshift(`<w:bookmarkStart w:id="${id}" w:name="${HEAD_MARK}${id}"/><w:bookmarkEnd w:id="${id}"/>`);
         }
         cells.push(`<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${paras.join('')}</w:tc>`);
       }

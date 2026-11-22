@@ -3119,11 +3119,18 @@ class DocxReader {
     table.lines = b.get('insideV') || cellV ? 'grid' : b.get('top') || b.get('bottom') || b.get('insideH') || cellH ? 'acs' : 'none';
     table.head = head || (table.lines === 'acs' && underRow >= 0 && underRow < 3 ? underRow + 1 : 0);
     // heading rows that don't repeat, saved here in a table with no style and no rule under them
-    // (HEADS_MARK in its first cell): while Word shows no heading rows of its own and nothing else
-    // says which (Repeat Header Rows set in Word, a style, a rule: those win)
-    const tc0 = rows[0] ? this.cellsOf(rows[0])[0] : undefined;
-    const heads = tc0 ? ownMark(this.a.bind(this), [...kids(tc0, 'bookmarkStart'), ...kids(kid(tc0, 'p'), 'bookmarkStart')], 'Heads') : null;
-    if (heads !== null && !head && !styleId && table.lines !== 'acs') table.head = Math.min(Number(heads), table.rows.length);
+    // (HEAD_MARK in each one's first cell): the leading rows that still have theirs (a row inserted
+    // in Word has none, a deleted one took its own), while Word shows no heading rows of its own
+    // and nothing else says which (Repeat Header Rows set in Word, a style, a rule: those win)
+    if (!head && !styleId && table.lines !== 'acs') {
+      let marked = 0;
+      for (const tr of rows) {
+        const tc = this.cellsOf(tr)[0];
+        if (!tc || ownMark(this.a.bind(this), [...kids(tc, 'bookmarkStart'), ...kids(kid(tc, 'p'), 'bookmarkStart')], 'Head') === null) break;
+        marked++;
+      }
+      if (marked) table.head = Math.min(marked, table.rows.length);
+    }
     // each column lines up the way most of its cells do (columnAlign)
     // (a Word cell lined up on the left has no alignment of its own here: it counts as on the left, and keeps that in a column that isn't)
     table.align = cols.map((_, ci) => columnAlign(table.rows, ci, 'left'));
@@ -3737,9 +3744,13 @@ function groupTexts(group: Element): Map<string, string> {
  * Bookmarks kept on paragraphs: those named by people, and Word's hidden ones (_Toc…, _Ref…)
  * only where a link here goes to them, so a document's every heading doesn't carry Word's own.
  */
-/** The number in one of this program's own bookmarks (OWN_MARK) of a kind among `marks`, or null. */
-function ownMark(a: (el: Element | null | undefined, name?: string) => string | null, marks: Element[], kind: 'Cont' | 'Heads'): string | null {
-  for (const b of marks) { const m = OWN_MARK.exec(a(b, 'name') ?? ''); if (m?.[1] === kind) return m[2]; }
+/** One of this program's own bookmarks (OWN_MARK) of a kind among `marks`: a continuation's indent, '' for a heading row's; null when there is none. */
+function ownMark(a: (el: Element | null | undefined, name?: string) => string | null, marks: Element[], kind: 'Cont' | 'Head'): string | null {
+  for (const b of marks) {
+    const m = OWN_MARK.exec(a(b, 'name') ?? '');
+    if (m && kind === 'Cont' && m[1]) return m[2];
+    if (m && kind === 'Head' && m[3]) return '';
+  }
   return null;
 }
 
