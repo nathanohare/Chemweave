@@ -184,7 +184,8 @@ function lookOf(rpr: Element | null): Look {
   if (u) out.underline = (wAttr(u, 'val') ?? 'single') !== 'none';
   const v = find(rpr, W, 'vertAlign'), pos = find(rpr, W, 'position');
   if (v) out.valign = ({ superscript: 'super', subscript: 'sub' } as Record<string, VAlign>)[wAttr(v, 'val') ?? ''] ?? 'normal';
-  else if (pos) { const n = Number(wAttr(pos, 'val') ?? 0); out.valign = n > 0 ? 'super' : n < 0 ? 'sub' : 'normal'; }
+  // (w:position in half-points: raised or lowered text from 2 pt, not a nudge of the baseline)
+  else if (pos) { const n = Number(wAttr(pos, 'val') ?? 0); out.valign = n >= 4 ? 'super' : n <= -4 ? 'sub' : 'normal'; }
   return out;
 }
 
@@ -213,7 +214,10 @@ function styleInfo(z: Record<string, Uint8Array>): Styles {
     else if (name === 'title') level = 1;
     out.level.set(sid, level);
     const based = find(st, W, 'basedOn');
-    own.set(sid, { look: lookOf(find(st, W, 'rPr')), base: based ? wAttr(based, 'val') ?? '' : '' });
+    // (a link's underline, from Word's Hyperlink styles, is the link's look, not the text's: review F2-R13)
+    const look = lookOf(find(st, W, 'rPr'));
+    if (name === 'hyperlink' || name === 'followedhyperlink') delete look.underline;
+    own.set(sid, { look, base: based ? wAttr(based, 'val') ?? '' : '' });
     if (wAttr(st, 'type') === 'paragraph' && ['1', 'true', 'on'].includes(wAttr(st, 'default') ?? '')) out.defaultPara = sid;
   }
   const resolve = (id: string, seen: Set<string>): Look => {

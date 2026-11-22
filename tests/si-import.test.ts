@@ -127,4 +127,18 @@ describe('Import SI from Word: underline, character styles, raised text, styles 
     expect(runs[0]).toEqual([['plain ', false, false, 'normal', false], ['under', false, false, 'normal', true], [' strong', true, false, 'normal', false], ['up', false, false, 'super', false]]);
     expect(runs[1]).toEqual([['slanted', false, true, 'normal', false]]);
   });
+
+  it('leaves out a link\'s own underline and a baseline nudge (review F2-R13)', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const styles = `<?xml version="1.0"?><w:styles ${W}>` +
+      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' +
+      '<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr></w:style></w:styles>';
+    const body = '<w:p><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t xml:space="preserve">doi.org/x </w:t></w:r><w:r><w:rPr><w:position w:val="2"/></w:rPr><w:t xml:space="preserve">nudged </w:t></w:r>' +
+      '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:u w:val="single"/></w:rPr><w:t>own</w:t></w:r></w:p>';
+    const u8 = (s: string) => new Uint8Array(strToU8(s));
+    const bytes = zipSync({ 'word/document.xml': u8(`<?xml version="1.0"?><w:document ${W}><w:body>${body}</w:body></w:document>`), 'word/styles.xml': u8(styles) });
+    const runs = runsJ(Rd.readSiDocx('made.docx', bytes).paras[0].runs);
+    expect(runs).toEqual([['doi.org/x nudged ', false, false, 'normal', false], ['own', false, false, 'normal', true]]);
+  });
 });
