@@ -608,6 +608,7 @@ body.slides-mode #go-buttons { display: none; }
 .sv-new button:hover, .sv-new button:focus-visible { border-color: var(--m); box-shadow: inset 3px 0 0 var(--m); background: color-mix(in srgb, var(--m) 9%, var(--panel)); }
 .sv-new button small { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-icon { grid-row: span 2; display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-control); background: var(--m); color: #fff; }
+.sv-new .sv-mode-drawing { grid-column: 1 / -1; }
 .sv-new .sv-mode-slides { --m: var(--tab-slides); }
 .sv-new .sv-mode-sheet { --m: var(--tab-sheet); }
 .sv-new .sv-mode-document { --m: var(--tab-document); }
@@ -3354,7 +3355,7 @@ button.sym:hover, button.sym:focus-visible { border-color: var(--accent); backgr
 .rehearse-countdown { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; background: #0006; color: #fff; font: 700 160px / 1 var(--ui-font, system-ui), sans-serif; cursor: pointer; }
 @media (prefers-reduced-motion: no-preference) { .rehearse-countdown { transition: opacity 0.2s; } }
 /* Header and Footer, Set Up Show, Custom Shows */
-dialog.hf-dialog { width: min(94vw, 520px); }
+dialog.hf-dialog { width: min(94vw, 600px); }
 .hf-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line, #ccd); margin-bottom: 10px; }
 .hf-tabs button { border: 1px solid transparent; border-bottom: 0; background: transparent; padding: 4px 12px; border-radius: var(--r-control) var(--r-control) 0 0; }
 .hf-tabs button[aria-selected="true"] { border-color: var(--line, #ccd); background: var(--panel, #fff); font-weight: 600; }
@@ -3363,7 +3364,18 @@ dialog.hf-dialog { width: min(94vw, 520px); }
 .hf-check, .hf-radio { display: flex; align-items: center; gap: 4px; margin: 3px 0; }
 .hf-radio { margin-left: 22px; }
 .hf-radio input[type="text"] { flex: 1; min-width: 0; }
-.hf-note { margin-top: 8px; }
+.hf-page:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; align-items: start; }
+.hf-fields { min-width: 0; }
+/* the preview: a slide (16:9) or a notes page (portrait), with its marks at their places */
+.hf-preview { position: relative; width: 150px; border: 1px solid var(--line); border-radius: var(--r-control); background: #fff; color: #1d2330; font-size: 8px; line-height: 1.2; overflow: hidden; }
+.hf-slide { aspect-ratio: 16 / 9; }
+.hf-notes { aspect-ratio: 8.5 / 11; width: 110px; justify-self: center; }
+.hf-body { position: absolute; inset: 22% 10% 22%; background: repeating-linear-gradient(#e3e6ea 0 2px, transparent 2px 7px); }
+.hf-notes .hf-body { inset: 14% 12% 14%; }
+.hf-notes .hf-body::before { content: ''; display: block; height: 40%; margin-bottom: 8%; border: 1px solid #c8ccd3; background: #f4f5f7; }
+.hf-spot { position: absolute; max-width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; outline: 1px dashed #9aa3b5; outline-offset: 1px; }
+.hf-tl { top: 4%; left: 5%; } .hf-tr { top: 4%; right: 5%; }
+.hf-bl { bottom: 5%; left: 5%; } .hf-bc { bottom: 5%; left: 50%; transform: translateX(-50%); } .hf-br { bottom: 5%; right: 5%; }
 dialog.show-setup { width: min(94vw, 600px); }
 .ss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
 .ss-grid fieldset { border: 1px solid var(--line, #ccd); border-radius: var(--r-tab); padding: 4px 10px 8px; margin: 0; }
@@ -4945,6 +4957,7 @@ dialog.si-import h2 { margin: 0; }
 .si-imp-page { overflow-y: auto; padding: 8px 10px; min-width: 0; }
 .si-imp-form { display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; gap: 4px 8px; align-items: start; font-size: var(--fs-sm); }
 .si-imp-form > p, .si-imp-form > h3, .si-imp-form > table, .si-imp-form > .si-imp-made, .si-imp-form > .si-imp-bar { grid-column: 1 / -1; margin: 0; }
+.si-imp-form > h3.si-imp-title { font-size: var(--fs-md); font-weight: 600; }
 .si-imp-row { display: contents; }
 .si-imp-name { grid-column: 1; padding-top: 3px; color: var(--muted); max-width: 12em; }
 .si-imp-row > :nth-child(2) { grid-column: 2; }

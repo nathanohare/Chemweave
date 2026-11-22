@@ -4,6 +4,7 @@
 // and the name box going to or giving names).
 
 import { popupMenu } from './sheet-view';
+import { addInfo } from './info-tip';
 import type { SheetView } from './sheet-view';
 import type { Sheet } from '../sheet/workbook';
 import type { Value } from '../sheet/values';
@@ -366,10 +367,11 @@ export class SheetFormulas {
       const refers = el('input');
       refers.spellcheck = false;
       refers.value = was?.formula ?? preset?.formula ?? refersTo(v.sheet!.name, v.sel.range);
-      const hint = el('p', 'ask-help muted', 'Refers to: cells (=Sheet1!$B$2:$B$20), a number (=0.082057), or a formula, including a LAMBDA (=LAMBDA(mass, mw, mass/mw)) to call it like a function.');
+      const refersRow = row('Refers to', refers);
+      addInfo(refersRow.querySelector('span'), 'Cells (=Sheet1!$B$2:$B$20), a number (=0.082057), or a formula, including a LAMBDA (=LAMBDA(mass, mw, mass/mw)) to call it like a function.');
       const problem = el('p', 'dv-problem');
       problem.hidden = true;
-      form.append(row('Name', name), row('Scope', scope), row('Comment', comment), row('Refers to', refers), hint, problem);
+      form.append(row('Name', name), row('Scope', scope), row('Comment', comment), refersRow, problem);
       const buttons = el('p', 'ask-buttons');
       const cancel = button('Cancel');
       const ok = el('button', 'primary', 'OK');

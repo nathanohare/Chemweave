@@ -77,6 +77,7 @@ import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytes
 import { writeTiff } from './render/tiff';
 import { itemsToEps } from './render/eps';
 import { Workspace, Tab } from './workspace';
+import { NEW_ITEMS } from './ui/new-items';
 import { Deck, LayoutId, WIDE, STANDARD, Image as SlideImage, sizeName, SlideSize, slideBackground, slideColours, type SlideSource, contentArea, deckLayouts, type SizeFit, isBuiltinLayout, hasItems, refsBoxRect, placeholderRect, textStyles, frameFields } from './deck/deck';
 import { NOTE_BULLET, bulletEdits, notesCharLooks, notesLookOf, type NotesLook } from './deck/notes-look';
 import { RichInput } from './ui/rich-input';
@@ -5940,10 +5941,7 @@ tabList.addEventListener('click', () => {
 });
 tabAdd.addEventListener('click', () => {
   const [x, y] = menuAt(tabAdd);
-  showContextMenu(x, y, [
-    { cmd: 'new', label: 'Canvas (Chemistry)' }, { cmd: 'new-slides', label: 'Presentation (Slideshow)' },
-    { cmd: 'new-sheet', label: 'Spreadsheet (Tables, Charts, and Dashboards)' }, { cmd: 'new-document', label: 'Document (Text document)' }, { cmd: 'new-design', label: 'Design (Posters, Graphical abstracts, Figures)' },
-  ], { run: (cmd) => void command(cmd), key: commandKey });
+  showContextMenu(x, y, NEW_ITEMS.map((n) => ({ cmd: n.cmd, label: n.label, title: n.blurb })), { run: (cmd) => void command(cmd), key: commandKey });
 });
 tabsEl.replaceChildren(tabLeft, tabStrip, tabRight, tabList, tabAdd);
 new ResizeObserver(() => fitTabs()).observe(tabsEl);

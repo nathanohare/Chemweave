@@ -52,6 +52,9 @@ const FORMER_NAMES: [RegExp, string][] = [
   [/^Custom/, 'your own'],
   [/Abbreviation/, 'nickname'],
   [/Keyboard Shortcuts/, 'hotkeys'],
+  // C9 (2026-11-22): the New items were "Presentation (Slide Show)", "Document (Text Document)", "Design (Posters…)"
+  [/^Blank (canvas|document|presentation|spreadsheet|design)$/i, 'new canvas chemistry presentation slide show slideshow spreadsheet tables charts dashboards document text design posters graphical abstracts figures'],
+  [/Snap to Objects/, 'toggle object snapping snap objects to grid'],
   [/^Clean Up and Orient Reaction/, 'orienting like the start'],
   [/^(Next|Previous) Pane$/, 'part of the window region'],
   [/^Check Structure$/, 'next warning'],

@@ -14,6 +14,7 @@ import { siDrawingStyle, storeSiDrawingStyle } from '../si/drawing-style';
 import { projectLayout, setProjectLayout } from '../si/scheme-edit';
 import { readSchemeLayout, schemeLayoutFields } from './si-scheme';
 import { askChoice } from './ask';
+import { addInfo } from './info-tip';
 import { DEFAULT_TOLERANCES, SOLVENT_NAMES, defaultImpurityTable, impurityRowFrom, impurityTolerances, projectImpurityTable, storeImpurityTable, storeImpurityTolerances, type ImpurityRow } from '../si/nmr';
 import { DICTIONARY_FILE } from '../si/dictionary';
 
@@ -234,16 +235,18 @@ async function impurities(p: SiProject, host: SiSettingsHost): Promise<void> {
   const table = document.createElement('table');
   table.className = 'si-imp-table';
   const head = table.createTHead().insertRow();
-  for (const h of ['Use', 'Solvent', 'Nucleus', 'δ (ppm)', 'What it is', '']) head.appendChild(document.createElement('th')).textContent = h;
+  for (const h of ['Use', 'Solvent', 'Nucleus', 'δ (ppm)', 'What it is', '']) {
+    const th = head.appendChild(document.createElement('th'));
+    th.textContent = h;
+    if (h === 'Solvent') addInfo(th, 'Solvents are recognized however the NMR report writes them (CD₃OD, MeOD or methanol-d₄; DMSO-d₆ or (CD₃)₂SO; CDCl₃ or chloroform-d).');
+    if (h === 'δ (ppm)') addInfo(th, 'Rows without a number in δ are left out.');
+  }
   const tbody = table.createTBody();
   wrap.append(table);
   const solvents = document.createElement('datalist');
   solvents.id = `si-imp-solvents-${Math.random().toString(36).slice(2, 8)}`;
   for (const name of Object.keys(SOLVENT_NAMES)) solvents.append(new Option(name));
-  const note = document.createElement('p');
-  note.className = 'muted small';
-  note.textContent = 'Rows without a number in δ are left out. Solvents are recognized however the NMR report writes them (CD3OD, MeOD or methanol-d4; DMSO-d6 or (CD3)2SO; CDCl3 or chloroform-d).';
-  body.append(bar, wrap, solvents, note);
+  body.append(bar, wrap, solvents);
 
   const row = (r: Partial<ImpurityRow>): void => {
     const tr = tbody.insertRow();

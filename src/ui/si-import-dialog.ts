@@ -476,7 +476,8 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
 
     function referencesPage(refs: ImportedReference[]): HTMLElement {
       const f = el('div', 'si-imp-form');
-      const h3 = el('p', 'muted', 'Each reference as read (hover over a row for the entry as printed). Numbered citations in the imported text are linked to them; one the project has already (same DOI) is not added again.');
+      const h3 = el('h3', 'si-imp-title', 'References');
+      addInfo(h3, 'Each reference as read (hover over a row for the entry as printed). Numbered citations in the imported text are linked to them; one the project has already (same DOI) is not added again.');
       const table = el('table', 'si-imp-table si-imp-refs');
       const draw = (): void => {
         table.replaceChildren();
@@ -538,7 +539,9 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
 
     function sectionsPage(): HTMLElement {
       const f = el('div', 'si-imp-form');
-      f.append(el('p', 'muted', 'The SI’s text outside its compounds becomes these sections, in this order. Untick what you don’t want and change names here. If a heading was read at the wrong level (or isn’t a heading), change it below: the sections are worked out again.'));
+      const head = el('h3', 'si-imp-title', 'Sections');
+      addInfo(head, 'The SI’s text outside its compounds becomes these sections, in this order. Uncheck what you don’t want and change names here. If a heading was read at the wrong level (or isn’t a heading), change it below: the sections are calculated again.');
+      f.append(head);
       const made = el('div', 'si-imp-made');
       const byKey = new Map((plan.sections as ImportedSection[]).map((s) => [s.key, s]));
       const depth = (s: ImportedSection): number => { let n = 0; for (let p = byKey.get(s.parent); p; p = byKey.get(p.parent)) n++; return n; };

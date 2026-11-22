@@ -16,7 +16,7 @@ import { configOf } from '../morph/clip';
 import { encodeGif } from '../morph/gif';
 import { SchemeClip, DEFAULT_CHANGE_COLORS } from '../morph/scheme-clip';
 import { Renderer } from '../render/renderer';
-import { addInfo, infoIcon } from './info-tip';
+import { addInfo, infoIcon, withInfo } from './info-tip';
 import { encodeMp4, mp4Codec } from '../morph/mp4';
 import { saveFileDialog, openFileDialog, writeFile, showError, withExtension, type FileType } from '../io/files';
 import { zipSync } from 'fflate';
@@ -425,7 +425,7 @@ export class AnimateDialog {
     let hover: { side: 'A' | 'B'; key: string } | null = null;
     const pane = this.pairPane;
     pane.replaceChildren();
-    const intro = el('p', 'muted', 'Click an atom on the left, then its match on the right; click a paired atom again to unpair it. Unpaired atoms are matched automatically unless you check the box. Red bonds break, green bonds form. Blue: your pairs; gray: automatic; orange: unmatched.');
+    const introText = 'Click an atom on the left, then its match on the right; click a paired atom again to unpair it. Unpaired atoms are matched automatically unless you check the box. Red bonds break, green bonds form. Blue: your pairs; gray: automatic; orange: unmatched.';
     const row = el('div', 'animate-pair-canvases');
     const cA = el('canvas', 'animate-pair-canvas');
     const cB = el('canvas', 'animate-pair-canvas');
@@ -462,7 +462,7 @@ export class AnimateDialog {
     const save = button(this.plan.arrows[i] !== null ? 'Save Pairing' : 'Use Pairing', this.plan.arrows[i] !== null ? 'Kept with the arrow when the drawing is saved' : 'These structures have no arrow between them, so the pairing lasts while this window is open');
     save.classList.add('primary');
     actions.append(clear, el('span', 'spacer'), cancel, save);
-    pane.append(el('h3', undefined, this.steps.length > 1 ? `Pairing for step ${i + 1}` : 'Pairing'), intro, row, exactRow, shiftRow, slideRow, facts, err, actions);
+    pane.append(withInfo(el('h3', undefined, this.steps.length > 1 ? `Pairing for step ${i + 1}` : 'Pairing'), introText), row, exactRow, shiftRow, slideRow, facts, err, actions);
     this.previewPane.hidden = true;
     this.side.hidden = true;
     pane.hidden = false;

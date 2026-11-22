@@ -181,7 +181,7 @@ The **zoom box** at the right end of that line shows how big the drawing is show
 
 The first time you open the app, a small card on the empty page lists the tips most people need first: drawing bonds and rings, typing atom labels, pasting SMILES or names, Search and the right-click menu. Close it with **Start drawing**; it doesn't come back.
 
-After that, each time the app opens on an empty canvas, a smaller **start view** offers a new Presentation, Spreadsheet, Document or Design tab, a template, Open, and your recent files. Start drawing (or click **Start drawing**) and it goes. Clear **Show at start** to stop it, or turn it back on in **Edit ▸ Settings ▸ General**.
+After that, each time the app opens on an empty canvas, a smaller **start view** offers **Blank canvas**, **Blank document**, **Blank presentation**, **Blank spreadsheet** and **Blank design**, Open, and your recent files. Start drawing (or click **Blank canvas**) and it goes. Clear **Show at start** to stop it, or turn it back on in **Edit ▸ Settings ▸ General**.
 
 ### Search (Alt+Q)
 

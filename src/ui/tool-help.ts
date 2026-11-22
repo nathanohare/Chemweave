@@ -26,7 +26,7 @@ const BY_NAME: Record<string, ToolHelp> = {
     what: 'Click or drag a box to select. Double-click selects a whole structure; Shift or Ctrl+click adds to the selection. Ctrl+drag copies; hold Shift while dragging to move straight. Delete removes.',
     steps: ['Click or drag a box to select'],
     keys: [['Double-click', 'Select molecule'], ['Shift+click', 'Add to selection'], ['Ctrl+drag', 'Copy']],
-    dragKeys: [['Shift', 'Constrain direction'], ['Alt', 'Toggle snapping']],
+    dragKeys: [['Shift', 'Constrain direction'], ['Alt', 'Move freely (no snapping)']],
   },
   lasso: {
     what: 'Drag a loop around what to select, to pick pieces out of a crowded scheme. Then drag what is selected to move it.',
@@ -88,7 +88,7 @@ export function toolHelp(name: string, t: Tool | undefined): ToolHelp {
           what: CURVE_WHAT,
           steps: ['Press where the electrons start', 'Drag to where they go'],
           keys: [['Ctrl', 'Freehand'], ['Shift', 'Branch from an arrow']],
-          dragKeys: [['Alt', 'Toggle snapping']],
+          dragKeys: [['Alt', 'Move freely (no snapping)']],
         };
       }
       return {
@@ -152,7 +152,7 @@ export function arrowHandleHelp(r: Pick<Arrow, 'sweep' | 'bez' | 'equilibrium'> 
     return {
       name: 'Elliptical arrow selected',
       handles: ['Drag ends to reattach', 'Drag diamonds to stretch the ellipse'],
-      keys: [['Alt', 'Toggle snapping to a circle']],
+      keys: [['Alt', 'Free shape (no snapping to a circle)']],
     };
   }
   if (r.bez?.length) {
@@ -166,7 +166,7 @@ export function arrowHandleHelp(r: Pick<Arrow, 'sweep' | 'bez' | 'equilibrium'> 
     return {
       name: 'Curved arrow selected',
       handles: ['Drag ends to reattach', 'Drag middle dot to bend', 'Drag diamonds to stretch into an ellipse'],
-      keys: [['Alt', 'Toggle snapping']],
+      keys: [['Alt', 'Move freely (no snapping)']],
     };
   }
   return {

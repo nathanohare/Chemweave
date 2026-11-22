@@ -15,10 +15,11 @@
     <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">New</button>
     <div class="menu sub" role="menu" hidden>
-        <button role="menuitem" data-cmd="new-slides">Presentation (Slide Show)</button>
-        <button role="menuitem" data-cmd="new-sheet">Spreadsheet (Tables, Charts, and Dashboards)</button>
-        <button role="menuitem" data-cmd="new-document">Document (Text Document)</button>
-        <button role="menuitem" data-cmd="new-design">Design (Posters, Graphical Abstracts, Figures)…</button>
+        <button role="menuitem" data-cmd="new" data-new-item title="Structures and reaction schemes">Blank canvas</button>
+        <button role="menuitem" data-cmd="new-document" data-new-item title="Text, as in Word">Blank document</button>
+        <button role="menuitem" data-cmd="new-slides" data-new-item title="Slide show, as in PowerPoint">Blank presentation</button>
+        <button role="menuitem" data-cmd="new-sheet" data-new-item title="Tables, charts and dashboards">Blank spreadsheet</button>
+        <button role="menuitem" data-cmd="new-design" data-new-item title="Posters, graphical abstracts and figures">Blank design</button>
         <button role="menuitem" class="desktop-only" data-cmd="new-si-project" title="A new Supporting Information project: a folder Chem SI Assistant can open too" hidden>SI Project (Supporting Information)…</button>
     </div>
     </div>
@@ -3121,13 +3122,14 @@
       </section>
       <section id="start-view" class="welcome-card start-view" aria-label="Start" hidden>
         <div class="sv-new">
-          <button type="button" class="sv-mode-slides" data-start="new-slides" data-mode="slides"><span class="sv-icon"></span><span>New Presentation</span><small>Slide Show</small></button>
-          <button type="button" class="sv-mode-sheet" data-start="new-sheet" data-mode="sheet"><span class="sv-icon"></span><span>New Spreadsheet</span><small>Tables, Charts, and Dashboards</small></button>
-          <button type="button" class="sv-mode-document" data-start="new-document" data-mode="document"><span class="sv-icon"></span><span>New Document</span><small>Text document</small></button>
-          <button type="button" class="sv-mode-design" data-start="new-design" data-mode="design"><span class="sv-icon"></span><span>New Design</span><small>Posters, Graphical abstracts, Figures</small></button>
+          <button type="button" class="sv-mode-drawing" data-start="draw" data-mode="drawing"><span class="sv-icon"></span><span>Blank canvas</span><small>Structures and reaction schemes</small></button>
+          <button type="button" class="sv-mode-document" data-start="new-document" data-mode="document"><span class="sv-icon"></span><span>Blank document</span><small>Text, as in Word</small></button>
+          <button type="button" class="sv-mode-slides" data-start="new-slides" data-mode="slides"><span class="sv-icon"></span><span>Blank presentation</span><small>Slide show, as in PowerPoint</small></button>
+          <button type="button" class="sv-mode-sheet" data-start="new-sheet" data-mode="sheet"><span class="sv-icon"></span><span>Blank spreadsheet</span><small>Tables, charts and dashboards</small></button>
+          <button type="button" class="sv-mode-design" data-start="new-design" data-mode="design"><span class="sv-icon"></span><span>Blank design</span><small>Posters, graphical abstracts and figures</small></button>
         </div>
         <div class="sv-recent" hidden><h3>Recent</h3><div class="sv-files"></div></div>
-        <p class="welcome-buttons"><button type="button" data-start="open">Open…</button><span class="grow"></span><label class="sv-again"><input type="checkbox" checked> Show at start</label><button type="button" class="primary" data-start="draw">Start drawing</button></p>
+        <p class="welcome-buttons"><button type="button" data-start="open">Open…</button><span class="grow"></span><label class="sv-again"><input type="checkbox" checked> Show at start</label></p>
       </section>
     </div>
     <div id="main-snap" hidden title="Click to work on the slide again"><canvas></canvas></div>
