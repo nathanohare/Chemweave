@@ -1643,6 +1643,9 @@ class DocxWriter {
         // too: Word counts them with the lists round the table, in order (F2b-R05)
         const shownHere = listInfo(ps);
         const outer = this.shownN;
+        // a cell's numbered lists made here, as the text's: a new Word list where the number starts
+        // again (at its start number), one on the same levels for an item with its own (review F2c-R03)
+        let cellList = 0;
         for (let i = 0; i < n; i++) {
           const pr = parts[i] ?? [];
           const inner = pr.length === 1 && pr[0].obj !== undefined && pr[0].text === OBJECT_CHAR ? this.t.objects[pr[0].obj] : undefined;
@@ -1653,9 +1656,14 @@ class DocxWriter {
             continue;
           }
           const cps = { ...ps[i], align: ps[i]?.align ?? ca };
+          const key = `n${cps.scheme ?? ''}`;
+          if (cps.list === 'number' && shownHere[i]?.start) cellList = this.newList(key, cps.startAt);
+          else if (cps.list === 'number' && !cps.cont && cps.startAt !== undefined && shownHere[i]?.n === cps.startAt && cellList > 0 && this.numKeys[cellList - 1] === key) {
+            cellList = this.addNum(key, false, { level: Math.max(0, Math.min(8, cps.level ?? 0)), value: cps.startAt });
+          }
           this.shownN = cps.list === 'number' && !cps.cont ? shownHere[i]?.n : undefined;
-          if (i > 0 && !lastTable && paras.length && joins({ ...ps[i - 1], align: ps[i - 1]?.align ?? ca }, cps)) paras[paras.length - 1] = joinTo(paras[paras.length - 1], await this.paragraph(main, cps, pr, 0, -1, '', true));
-          else paras.push(await this.paragraph(main, cps, pr, 0));
+          if (i > 0 && !lastTable && paras.length && joins({ ...ps[i - 1], align: ps[i - 1]?.align ?? ca }, cps)) paras[paras.length - 1] = joinTo(paras[paras.length - 1], await this.paragraph(main, cps, pr, cellList, -1, '', true));
+          else paras.push(await this.paragraph(main, cps, pr, cellList));
           lastTable = false;
         }
         this.shownN = outer;
