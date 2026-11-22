@@ -5466,3 +5466,24 @@ html.touch-ui .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { height: 3
 .refs-box .rfb-none { padding: 8px; color: var(--muted); }
 .refs-box .rfb-foot { display: flex; gap: 6px; padding: 6px 8px; border-top: 1px solid var(--line); }
 .refs-box .rfb-look { margin-left: auto; }
+/* G5-09: Document ▸ Paragraph ▸ Tabs…, as Word's Tabs window */
+dialog.tabs-dialog { width: min(94vw, 440px); }
+.tabs-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.tabs-left { display: flex; flex-direction: column; gap: 4px; }
+.tabs-pos { display: flex; flex-direction: column; gap: 3px; }
+.tabs-pos > input { width: 100%; box-sizing: border-box; }
+.tabs-list { width: 100%; min-height: 8em; font: inherit; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); }
+.tabs-right fieldset { border: 1px solid var(--line); border-radius: var(--r-control); margin: 0 0 8px; padding: 4px 10px 6px; }
+.tabs-right legend { padding: 0 4px; color: var(--muted); font-size: var(--fs-sm); }
+.tabs-right label { display: block; margin: 2px 0; }
+.tabs-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0; }
+.tabs-status { color: var(--muted); font-size: var(--fs-sm); }
+/* G5-10: Chemistry ▸ R-Group Table's compounds, one row each */
+.rg-grid-wrap { margin-top: 8px; }
+.rg-grid-title { margin: 6px 0 4px; font-size: var(--fs-md); }
+.rg-grid-scroll { max-height: 40vh; overflow: auto; }
+.rg-grid { border-collapse: collapse; }
+.rg-grid th { font-weight: 600; font-size: var(--fs-sm); color: var(--muted); text-align: left; padding: 0 4px 2px; }
+.rg-grid td { padding: 1px 2px; }
+.rg-grid td > input[type='text'] { width: 6.5em; box-sizing: border-box; }
+.rg-grid td:first-child > input[type='text'] { width: 4em; }

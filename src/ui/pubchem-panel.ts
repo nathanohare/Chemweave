@@ -25,10 +25,10 @@ function values(label: string, v: string[]): string {
 /** The section for structure i in the Analysis panel. */
 export function pubchemHtml(state: PubChemState, i: number): string {
   const ask = (label: string) => `<button type="button" data-pubchem="${i}" title="Send this structure (as SMILES) to PubChem, the free NIH database, and show what it has on it: name, CAS number, hazards and measured values">${label}</button>`;
-  if (state.kind === 'idle') return `<div class="pubchem an-buttons">${ask('Look up on PubChem')}</div>`;
+  if (state.kind === 'idle') return `<div class="pubchem an-buttons">${ask('Look Up on PubChem')}</div>`;
   if (state.kind === 'busy') return '<div class="pubchem"><p class="muted small">Looking it up on PubChem…</p></div>';
-  if (state.kind === 'none') return `<div class="pubchem"><p class="muted small">PubChem has no record of this exact structure (stereochemistry and charges count).</p><div class="an-buttons">${ask('Look up again')}</div></div>`;
-  if (state.kind === 'error') return `<div class="pubchem"><p class="warn">${esc(state.message)}</p><div class="an-buttons">${ask('Try again')}</div></div>`;
+  if (state.kind === 'none') return `<div class="pubchem"><p class="muted small">PubChem has no record of this exact structure (stereochemistry and charges count).</p><div class="an-buttons">${ask('Look Up Again')}</div></div>`;
+  if (state.kind === 'error') return `<div class="pubchem"><p class="warn">${esc(state.message)}</p><div class="an-buttons">${ask('Try Again')}</div></div>`;
   const c = state.c;
   const h = c.hazards;
   const iupac = c.iupac && c.iupac.toLowerCase() !== c.title.toLowerCase()

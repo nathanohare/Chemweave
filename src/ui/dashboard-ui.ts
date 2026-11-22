@@ -134,7 +134,7 @@ export class DashboardUi {
     switch (kind) {
       case 'chart': {
         if (hasLevels(chartKind)) return this.addLevelChart(res, base, chartKind);
-        const got = await ask('Add Chart: what it shows', [
+        const got = await ask('Add Chart', [
           { name: 'kind', label: 'Type', value: chartKind, options: KINDS.map((k) => ({ value: k, label: CHART_NAMES[k] })) },
           { name: 'x', label: 'Horizontal axis (x or labels)', value: res.names[0], options: [{ value: '', label: '(1, 2, 3…)' }, ...cols] },
           { name: 'group', label: 'Rows with the same label', value: 'auto', options: [

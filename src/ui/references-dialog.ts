@@ -838,7 +838,7 @@ export class ReferencesDialog {
       found = await this.lookup(doi);
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);
-      const by = await ask('Could not look up the DOI', [], { ok: 'Enter Manually', note: `${why} Enter the reference by hand instead?` });
+      const by = await ask('Could Not Look Up the DOI', [], { ok: 'Enter Manually', note: `${why} Enter the reference by hand instead?` });
       if (by) await this.addByHand({ ...blankRef(), doi: normaliseDoi(doi) });
       return;
     }

@@ -55,7 +55,8 @@ import { analysisHtml, benchValues, ribbonRow, formulaHtml, electronsHtml, analy
 import { attachedAtoms, attachWhereItIs, nearestStructure, placeAttached, structureSig } from './editor/attached';
 import { fullLook, lookCaption, lookPatch, looksLikeId } from './editor/tied-look';
 import { repeatGroups, lipDirection } from './chem/polymer';
-import { rGroupsOf, substituted, rowNumbers, parseRows, rGroupCells, type RowMass } from './chem/rgroup';
+import { rGroupsOf, substituted, rowNumbers, rGroupCells, type RowMass } from './chem/rgroup';
+import { rGroupGrid, type RGroupRow } from './ui/rgroup-grid';
 import type { Rect, Vec } from './geom';
 import { isCurved } from './objects';
 import { captionPlaces, fragmentRuns } from './chem/fragments';
@@ -13213,7 +13214,7 @@ async function setStereoGroup(): Promise<void> {
   }
   const first = centres[0].enhStereo;
   const free = (t: 'and' | 'or') => { let n = 1; while (used[t].has(n)) n++; return n; };
-  const got = await ask('Stereo group', [
+  const got = await ask('Stereo Group', [
     { name: 'type', label: 'Group', value: first?.type ?? 'and', options: [
       { value: 'abs', label: 'abs: configuration known as drawn' },
       { value: 'and', label: '& (AND): a mixture of both forms' },
@@ -13225,7 +13226,7 @@ async function setStereoGroup(): Promise<void> {
   if (!got) return;
   const type = got.type as 'abs' | 'and' | 'or' | 'none';
   const group = Math.max(1, Math.round(Number(got.group) || 1));
-  doc.edit('Stereo group', () => {
+  doc.edit('Stereo Group', () => {
     for (const a of centres) doc.updateAtom(a.id, { enhStereo: type === 'none' ? undefined : type === 'abs' ? { type } : { type, group } });
   });
   editor.changed();
@@ -13241,7 +13242,7 @@ async function setRepeatGroup(): Promise<void> {
   // the label goes on the closing bracket (lips pointing back to the left), as ChemDraw puts it
   const closing = br.find((s) => lipDirection(s).x < -0.5) ?? br[br.length - 1];
   const now = br.find((s) => s.repeat)?.repeat ?? 'n';
-  const got = await ask('Polymer or repeat brackets', [{ name: 'text', label: 'Label', value: now }], {
+  const got = await ask('Polymer or Repeat Brackets', [{ name: 'text', label: 'Label', value: now }], {
     ok: 'Set', note: 'Type n (or another letter) for a polymer repeat unit, or a number for a repeated group. Leave empty to remove the label. The atoms inside the brackets form the unit.',
   });
   if (!got) return;
@@ -13259,11 +13260,11 @@ async function setRepeatGroup(): Promise<void> {
   }
 }
 
-let rGroupLast = { rows: '', prefix: '', cols: 'formula-mw', extra: 'Yield (%)' };
+let rGroupLast: { rows: RGroupRow[]; prefix: string; cols: string; extra: string } = { rows: [], prefix: '', cols: 'formula-mw', extra: 'Yield (%)' };
 
 /**
  * Chemistry > Polymers and R-Groups > R-Group Table: a table under a core structure with R groups (R1, R2…) listing what
- * each group is in each compound, with each compound's number, formula and mass worked out by
+ * each group is in each compound, with each compound's number, formula and mass calculated by
  * putting its groups in place. The result is an ordinary table, so anything in it can be typed over.
  */
 async function rGroupTable(): Promise<void> {
@@ -13273,8 +13274,10 @@ async function rGroupTable(): Promise<void> {
   const groups = rGroupsOf(doc, ids);
   if (!groups.length) { flash('This structure has no R groups. Type R1, R2… (or R, X, Ar) as atom labels where the groups go.'); return; }
   const labels = groups.map((g) => g.label);
-  const got = await ask('R-group table', [
-    { name: 'rows', label: `One compound per line: ${labels.join(', ')}`, value: rGroupLast.rows, type: 'textarea', placeholder: labels.map((_, i) => ['Me', 'H', 'Ph', 'OMe'][i % 4]).join(', ') + '\n' + labels.map((_, i) => ['OMe', 'Cl', 'CF3', 'Et'][i % 4]).join(', ') },
+  // the compounds as a grid, one row each (G5-10); the rows kept from last time when the R groups match
+  let prefix = rGroupLast.prefix;
+  const grid = rGroupGrid(labels, rGroupLast.rows.filter((r) => r.values.length === labels.length), (i) => rowNumbers(i + 1, prefix)[i]);
+  const got = await ask('R-Group Table', [
     { name: 'prefix', label: 'Compound number', value: rGroupLast.prefix, placeholder: 'e.g. 2 for 2a, 2b…' },
     { name: 'cols', label: 'Calculated', value: rGroupLast.cols, options: [
       { value: 'formula-mw', label: 'Formula and MW' },
@@ -13282,10 +13285,10 @@ async function rGroupTable(): Promise<void> {
       { value: 'none', label: 'Nothing' },
     ] },
     { name: 'extra', label: 'Columns to fill in', value: rGroupLast.extra, placeholder: 'e.g. Yield (%), ee (%)' },
-  ], { ok: 'Create Table', note: 'Type each compound\'s groups the way you would label an atom (Me, Ph, OMe, CO2Et, Cl, H), separated by commas, or paste cells from Excel. Start a line with #number (#12, Me, H) to give that compound its own number.' });
+  ], { ok: 'Create Table', body: grid.el, onInput: (v) => { if (v.prefix !== prefix) { prefix = v.prefix; grid.refresh(); } } });
   if (!got) return;
-  rGroupLast = { rows: got.rows, prefix: got.prefix, cols: got.cols, extra: got.extra };
-  const parsed = parseRows(got.rows, labels);
+  const parsed = grid.read();
+  rGroupLast = { rows: parsed, prefix: got.prefix, cols: got.cols, extra: got.extra };
   if (!parsed.length) { flash('Type at least one compound\'s groups.'); return; }
   const numbers = rowNumbers(parsed.length, got.prefix);
   const rows = parsed.map((r, i) => ({ number: r.number ?? numbers[i], values: r.values }));
@@ -13321,14 +13324,14 @@ async function setChiralFlag(): Promise<void> {
   const box = { x1: Math.min(...atoms.map((a) => a.x)), y1: Math.min(...atoms.map((a) => a.y)), x2: Math.max(...atoms.map((a) => a.x)), y2: Math.max(...atoms.map((a) => a.y)) };
   const L = doc.style.bondLength;
   const near = [...doc.shapes.values()].find((s) => s.kind === 'symbol' && s.symbol && CHIRAL_FLAGS[s.symbol] && s.x1 < box.x2 + L && s.x2 > box.x1 - L && s.y1 < box.y2 + 2 * L && s.y2 > box.y1 - L);
-  const got = await ask('Chiral flag', [{ name: 'flag', label: 'Flag', value: near?.symbol ?? 'Absolute', options: [
+  const got = await ask('Chiral Flag', [{ name: 'flag', label: 'Flag', value: near?.symbol ?? 'Absolute', options: [
     { value: 'Absolute', label: 'Abs: the structure is one enantiomer, as drawn' },
     { value: 'Relative', label: 'Rel: relative configuration only' },
     { value: 'Racemic', label: 'Rac: a racemic mixture' },
     { value: 'none', label: 'None (remove the flag)' },
   ] }], { ok: 'Set' });
   if (!got) return;
-  doc.edit('Chiral flag', () => {
+  doc.edit('Chiral Flag', () => {
     if (near) doc.removeShape(near.id);
     if (got.flag === 'none') return;
     const size = doc.style.captionSize;
@@ -14490,7 +14493,7 @@ function favoriteMenu(f: FormatFavorite, at: HTMLElement): void {
     [`Give the Selection “${f.name}”`, () => applyFavorite(f)],
     ['Update to Match Selection', () => void saveFavorite(f)],
     ['Rename…', async () => {
-      const got = await ask('Rename favorite', [{ name: 'name', label: 'Name', value: f.name }], { ok: 'Rename' });
+      const got = await ask('Rename Favorite', [{ name: 'name', label: 'Name', value: f.name }], { ok: 'Rename' });
       const name = got?.name.trim();
       if (!name || name === f.name) return;
       favorites = favorites.filter((x) => x.name !== name).map((x) => (x.name === f.name ? { ...x, name } : x));
@@ -15689,7 +15692,7 @@ async function keepPasteInside(): Promise<void> {
   // only near the edge, not past it: moved in, without asking
   if (!crossesWalls(box, walls)) how = 'pages';
   else if (pageLook.pasteAtWall === 'ask') {
-    const got = await ask('Pasted past a fixed edge', [
+    const got = await ask('Pasted Past a Fixed Edge', [
       { name: 'how', label: 'Fit it in by', value: 'pages', options: [
         { value: 'pages', label: 'Adding pages: keep it as it was pasted' },
         { value: 'wrap', label: 'Wrapping: put its structures on new rows at the page\'s edge' },

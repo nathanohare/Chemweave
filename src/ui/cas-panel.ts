@@ -18,7 +18,7 @@ export function casHtml(state: CasState, i: number): { row: string; button: stri
   if (state.kind === 'idle') return { row: row(find('Find')), button: '' };
   if (state.kind === 'busy') return { row: row('<span class="muted">Looking it up…</span>'), button: '' };
   if (state.kind === 'none') return { row: row(`<span class="muted" title="${esc(state.message)}">None found</span> ${find('Again')}`), button: '' };
-  if (state.kind === 'error') return { row: row(`<span class="warn">${esc(state.message)}</span> ${find('Try again')}`), button: '' };
+  if (state.kind === 'error') return { row: row(`<span class="warn">${esc(state.message)}</span> ${find('Try Again')}`), button: '' };
   const [main, ...more] = state.cas;
   const also = more.length ? `Also listed: ${more.slice(0, 6).join(', ')}${more.length > 6 ? '…' : ''}. ` : '';
   const from = state.from === 'your Compound Library' ? 'library' : state.from;
