@@ -15,7 +15,7 @@
 
 import { ISOTOPES } from '../chem/analysis';
 import { ELECTRON } from '../chem/hrms';
-import { elementNumber, SYMBOLS } from '../chem/elements';
+import { elementNumber, isMetal, SYMBOLS } from '../chem/elements';
 import { isotopeMassOf, mostCommonIsotope } from './isotope-masses';
 import { DEEP_LIMIT, longestPathBound } from '../chem/engine-guard';
 
@@ -501,8 +501,17 @@ export interface MolFacts {
   /** Labels of its generic atoms (R, R1, X, A…). */
   generic: string[];
   pieces: Piece[];
-  /** Symmetry-distinct carbons (≈ ¹³C signals). */
+  /**
+   * Symmetry-distinct carbons, stereochemistry left out (≈ ¹³C signals, as SI Assistant counts):
+   * the fewest signals expected.
+   */
   uniqueCarbons: number;
+  /**
+   * The same with diastereotopic carbons told apart (menthol's two isopropyl CH₃): the most signals
+   * expected. Diastereotopic pairs far from a stereocentre often overlap (ibuprofen's isobutyl CH₃),
+   * so any count from uniqueCarbons to this is right. Missing (old facts): the same as uniqueCarbons.
+   */
+  uniqueCarbonsMax?: number;
   /** ¹H hydrogens, and those on N, O or S (exchangeable). */
   hTotal: number;
   hExch: number;
@@ -617,11 +626,13 @@ function refine(nb: [number, number][][], start: string[]): number[] {
  * Not caught: a pair on a mirror plane of a meso structure (it is enantiotopic, so one signal),
  * which is counted as two.
  */
-export function symmetryClasses(atoms: JAtom[], bonds: [number, number, number][], cip: Set<number> = new Set()): number[] {
+export function symmetryClasses(atoms: JAtom[], bonds: [number, number, number][], cip: Set<number> = new Set(), stereo = true): number[] {
   const nb: [number, number][][] = atoms.map(() => []);
   for (const [a, b, o] of bonds) { nb[a].push([b, o]); nb[b].push([a, o]); }
   const start = atoms.map((a, i) => [a.z, a.isotope, a.chg, nb[i].length, a.impHs].join(','));
   let cls = refine(nb, start);
+  // (stereo false: the constitutional classes only, as SI Assistant counts)
+  if (!stereo) return cls;
   // the structure's pieces (a stereocentre in a counter-ion doesn't make the cation's pairs differ)
   const piece = new Int32Array(atoms.length).fill(-1);
   atoms.forEach((_, s) => {
@@ -631,7 +642,8 @@ export function symmetryClasses(atoms: JAtom[], bonds: [number, number, number][
     while (todo.length) { const v = todo.pop()!; for (const [w] of nb[v]) if (piece[w] < 0) { piece[w] = s; todo.push(w); } }
   });
   // (four ligands: the atoms bonded, and its hydrogens counted as one more kind)
-  const tetrahedral = (i: number): boolean => nb[i].length + atoms[i].impHs === 4 && atoms[i].impHs <= 1;
+  // (not a metal: four different groups on a square-planar Pt make no stereocentre of the tetrahedral kind)
+  const tetrahedral = (i: number): boolean => nb[i].length + atoms[i].impHs === 4 && atoms[i].impHs <= 1 && !isMetal(atoms[i].z);
   const stereocentre = (i: number): boolean => cip.has(i) || (tetrahedral(i) && new Set(nb[i].map(([j]) => cls[j])).size === nb[i].length);
   // Every such pair found is split at once (one of each marked), then the classes refined again:
   // pairs related by the structure's own symmetry stay alike (a C₂-symmetric structure's two
@@ -699,9 +711,10 @@ export function molFacts(RDKit: any, molblock: string): MolFacts | null {
         if (nos(a.z)) hExch += a.impHs;
       }
     });
-    const cls = symmetryClasses(atoms, bonds, cip);
-    const uniqueCarbons = new Set(atoms.flatMap((a, i) => (a.z === 6 ? [cls[i]] : []))).size;
-    if (generic.length || atoms.some((a) => a.z === 0)) return { info: null, generic: generic.length ? generic : ['R'], pieces: [], uniqueCarbons, hTotal, hExch };
+    const carbons = (cls: number[]): number => new Set(atoms.flatMap((a, i) => (a.z === 6 ? [cls[i]] : []))).size;
+    const uniqueCarbons = carbons(symmetryClasses(atoms, bonds, cip, false));
+    const uniqueCarbonsMax = carbons(symmetryClasses(atoms, bonds, cip));
+    if (generic.length || atoms.some((a) => a.z === 0)) return { info: null, generic: generic.length ? generic : ['R'], pieces: [], uniqueCarbons, uniqueCarbonsMax, hTotal, hExch };
     const mw = JSON.parse(mol.get_descriptors()).amw as number;
     let info: MolInfo;
     try {
@@ -709,7 +722,7 @@ export function molFacts(RDKit: any, molblock: string): MolFacts | null {
       info = infoOf(atoms, mw, tooDeepGraph(atoms, bonds) ? '' : mol.get_smiles());
     } catch (e) {
       if (!(e instanceof ChemError)) throw e;
-      return { info: null, generic: [], pieces: [], uniqueCarbons, hTotal, hExch, error: `No formula or masses can be calculated for this structure: ${e.message} Type the M formula in the HRMS field (✎) if you need the calculated m/z.` };
+      return { info: null, generic: [], pieces: [], uniqueCarbons, uniqueCarbonsMax, hTotal, hExch, error: `No formula or masses can be calculated for this structure: ${e.message} Type the M formula in the HRMS field (✎) if you need the calculated m/z.` };
     }
     // the pieces (a salt's cation and anion), each once, the largest first; a structure with a run
     // of atoms too long for the engine is split here from its graph, as RDKit's get_frags (and its
@@ -748,7 +761,7 @@ export function molFacts(RDKit: any, molblock: string): MolFacts | null {
       const inchi = mol.get_inchi();
       if (inchi) inchikey = RDKit.get_inchikey_for_inchi(inchi);
     } catch { inchikey = ''; }
-    return { info, generic: [], pieces, uniqueCarbons, hTotal, hExch, inchikey };
+    return { info, generic: [], pieces, uniqueCarbons, uniqueCarbonsMax, hTotal, hExch, inchikey };
   } finally {
     mol.delete();
   }

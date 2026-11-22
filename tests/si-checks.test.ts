@@ -117,23 +117,48 @@ describe('masses', () => {
     expect(salt.pieces.length).toBe(2);
     expect(salt.pieces.filter((x) => x.counterIon).length).toBe(1);
   });
-  it('counts diastereotopic carbons apart, drawn with wedges or flat (G4-07)', () => {
-    const carbons = (smiles: string): number => molFacts(RDKit, RDKit.get_mol(smiles).get_molblock())!.uniqueCarbons;
+  it('gives the ¹³C count as a range: stereo left out, and diastereotopic carbons apart (G4-07)', () => {
+    const range = (smiles: string): [number, number] => {
+      const f = molFacts(RDKit, RDKit.get_mol(smiles).get_molblock())!;
+      return [f.uniqueCarbons, f.uniqueCarbonsMax!];
+    };
     // menthol: 10 ¹³C signals, the isopropyl CH₃ pair at 16.80 and 21.80 ppm (Härtner & Reinscheid,
     // J. Mol. Struct. 2008, 872, 145; "the prochiral methyls could be differentiated")
-    expect(carbons('CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O')).toBe(10);
-    expect(carbons('CC(C)C1CCC(C)CC1O')).toBe(10);
+    expect(range('CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O')).toEqual([9, 10]);
+    expect(range('CC(C)C1CCC(C)CC1O')).toEqual([9, 10]);
     // camphor: 10 ¹³C signals, the gem-dimethyl pair at 19.8 and 19.1 ppm (NMRShiftDB2 Problem of
     // the Month 2013-05, C10H16O; Wenkert et al., J. Chem. Soc. D 1969, 1433)
-    expect(carbons('CC1(C)[C@@H]2CC[C@@]1(C)C(=O)C2')).toBe(10);
-    expect(carbons('CC1(C)C2CCC1(C)C(=O)C2')).toBe(10);
+    expect(range('CC1(C)[C@@H]2CC[C@@]1(C)C(=O)C2')).toEqual([9, 10]);
+    expect(range('CC1(C)C2CCC1(C)C(=O)C2')).toEqual([9, 10]);
+    // ibuprofen: 10 signals, its diastereotopic isobutyl CH₃ pair as one at 22.47 ppm (SDBS no. 10570,
+    // 50.32 MHz, CDCl₃, via HMDB spectrum 2954: 181.35, 140.93, 137.02, 129.47, 127.36, 45.11,
+    // 45.08, 30.25, 22.47, 18.15), so 10 must be inside the range
+    expect(range('CC(C)Cc1ccc(cc1)C(C)C(=O)O')).toEqual([10, 11]);
+    // xylitol, a meso compound: 3 signals in D₂O (BMRB bmse000129: 65.314 C1/C5, 74.628 C2/C4,
+    // 73.474 C3). Its halves lie across a mirror plane through C3, which the upper count doesn't
+    // see (it tells them apart), so the range is 3 to 5 wedged or flat, and 3 is inside it
+    expect(range('C([C@H]([C@H]([C@@H](CO)O)O)O)O')).toEqual([3, 5]);
+    expect(range('OCC(O)C(O)C(O)CO')).toEqual([3, 5]);
+    // meso-2,3-butanediol: 2; cis-1,2-dimethylcyclohexane: 4 (the halves alike)
+    expect(range('C[C@@H](O)[C@H](C)O')).toEqual([2, 2]);
+    expect(range('C[C@@H]1CCCC[C@@H]1C')).toEqual([4, 4]);
     // no stereocentre: isobutanol's two CH₃ are enantiotopic, one signal (Mislow & Raban, Top.
-    // Stereochem. 1967, 1, 1), so 3 carbons; a phenyl ring's ortho pair stays one (it turns)
-    expect(carbons('CC(C)CO')).toBe(3);
-    expect(carbons('CC(O)c1ccccc1')).toBe(6);
-    // a meso and a C2-type structure: the halves alike (cis-1,2-dimethylcyclohexane: 4 signals)
-    expect(carbons('C[C@@H](O)[C@H](C)O')).toBe(2);
-    expect(carbons('C[C@@H]1CCCC[C@@H]1C')).toBe(4);
+    // Stereochem. 1967, 1, 1); a phenyl ring's ortho pair stays one (it turns)
+    expect(range('CC(C)CO')).toEqual([3, 3]);
+    expect(range('CC(O)c1ccccc1')).toEqual([6, 6]);
+    // a square-planar metal with four different groups is no stereocentre (review F4-R13)
+    expect(range('CC(C)[Pt](N)(Cl)Br')).toEqual([2, 2]);
+  });
+  it('warns only when the ¹³C count is outside the range, naming both ends (review F4-R02)', async () => {
+    const p = await SiProject.open(folder('si-example'));
+    const c = p.compounds.find((x) => x.id === 'c-26c39a99')!; // 1-phenylethanol: its ¹³C lists 6 signals
+    const facts = molFacts(RDKit, (await p.readStructure(c)))!;
+    const c13 = (lo: number, hi: number) => allWarnings(p, c, p.idReport(), { ...facts, uniqueCarbons: lo, uniqueCarbonsMax: hi }).filter((x) => x.check === 'c13').map((x) => x.message);
+    expect(c13(6, 6)).toEqual([]);
+    expect(c13(5, 7)).toEqual([]);
+    // (the same words as SI Assistant when the two ends are the same)
+    expect(c13(7, 7)).toEqual(['¹³C NMR lists 6 signals; the structure has 7 symmetry-distinct carbons. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)']);
+    expect(c13(4, 5)).toEqual(['¹³C NMR lists 6 signals; the structure has 4 symmetry-distinct carbons, or 5 if its diastereotopic CH₃/CH₂ carbons each give their own signal. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)']);
   });
   it('works the symmetry classes out quickly for a 1,200-atom chain (G4-08)', () => {
     const n = 1200;

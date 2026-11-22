@@ -396,7 +396,13 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
       const label = r.label ? ` (${r.label})` : '';
       if (r.nucleus === '13C') {
         const n = nmr.carbonSignalCount(text);
-        if (n && n !== facts.uniqueCarbons) out.push(w('c13', 'nmr', `¹³C NMR${label} lists ${n} signals; the structure has ${facts.uniqueCarbons} symmetry-distinct carbons. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)`, `c13:${rid}`, later(text, smiles)));
+        // (from the count without stereochemistry, SI Assistant's, to the count with diastereotopic
+        // carbons told apart, which often overlap: any number in between is right)
+        const lo = facts.uniqueCarbons, hi = Math.max(lo, facts.uniqueCarbonsMax ?? lo);
+        if (n && (n < lo || n > hi)) {
+          const has = hi === lo ? `${lo} symmetry-distinct carbons` : `${lo} symmetry-distinct carbons, or ${hi} if its diastereotopic CH₃/CH₂ carbons each give their own signal`;
+          out.push(w('c13', 'nmr', `¹³C NMR${label} lists ${n} signals; the structure has ${has}. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)`, `c13:${rid}`, later(text, smiles)));
+        }
       }
       if (r.nucleus === '1H') {
         const total = nmr.protonCount(text);
