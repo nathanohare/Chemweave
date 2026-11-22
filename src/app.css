@@ -1097,6 +1097,9 @@ dialog.typing-dialog p { margin: 2px 0 6px; }
 /* scroll arrows, the list of open files and the + button: pinned at the right of the tabs */
 .tab-ctl { flex: none; width: 24px; height: 22px; margin: 0 0 2px; padding: 0; border-color: transparent; background: transparent; color: #5a6275; font-size: var(--fs-lg); line-height: 1; }
 .tab-ctl:hover:not(:disabled) { color: var(--text); border-color: var(--line); background: var(--panel); }
+/* on the dark band the light theme's #5a6275 is 2.1:1 (Dark Gray) and 2.9:1 (Dark): use the band's own muted */
+:root[data-gray] .tab-ctl:not(:hover), :root[data-theme='dark'] .tab-ctl:not(:hover) { color: var(--muted); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .tab-ctl:not(:hover) { color: var(--muted); } }
 .tab-ctl:disabled { opacity: 0.35; }
 .tab-add { font-size: var(--fs-xl); font-weight: 600; margin-left: 2px; }
 .tab {
@@ -4097,8 +4100,18 @@ body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
 /* the dark band takes each mode's dark-theme accent (as full Dark does: Canvas teal #4ea9bc), so the
    chosen ribbon tab's word, the file tabs' underline and the BETA badge read on it (4.5:1 and more) */
 :root[data-gray] header, :root[data-gray] footer, :root[data-gray] .rb-tabs { --bg: #23262b; --text: #eceef2; --muted: #b9bec8; --line: #474b53; --accent-soft: #41464f; --panel: #3a3e45; --accent: var(--mode-accent-dark, #4ea9bc); --on-accent: var(--mode-on-accent-dark, #14171c); color: var(--text); }
-:root[data-gray] .ribbon > .rb-panel, :root[data-gray] .doc-ribbon > .rb-panel { --panel: #d3d6db; --accent-soft: #c1c7d1; --line: #b3b8c0; }
-:root[data-gray] .dock, :root[data-gray] aside { --panel: #dfe1e5; --line: #c4c8cf; }
+/* --muted is a deeper gray on these gray panels: the light theme's #677084 is only 3.4:1 on #d3d6db;
+   #4f5768 keeps the same hue at 5.0:1 (4.6:1 on the hover fill) for group names, captions and ▾ */
+:root[data-gray] .ribbon > .rb-panel, :root[data-gray] .doc-ribbon > .rb-panel { --panel: #d3d6db; --accent-soft: #c1c7d1; --line: #b3b8c0; --muted: #4f5768; }
+:root[data-gray] .dock, :root[data-gray] aside { --panel: #dfe1e5; --line: #c4c8cf; --muted: #4f5768; }
+/* a pressed ribbon button keeps its accent fill and border; its words take the text color, since the
+   light-theme accent on the gray fill is under 3:1 (Presentation View ▸ Normal 2.7:1) */
+:root[data-gray] .ribbon button[aria-pressed='true'], :root[data-theme='dark'] .ribbon button[aria-pressed='true'] { color: var(--text); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .ribbon button[aria-pressed='true'] { color: var(--text); } }
+/* muted words on the darker gray fill (--bg #b4b8bf): keycaps, atomic numbers, slide numbers, the
+   add-sheet + (#677084 is 2.5:1 there; #434956 is 4.5:1) */
+:root[data-gray] :is(.kb-cap, .pt-cell small, .sh-tab-add, .sl-num) { color: #434956; }
+:root[data-gray] .sh-tab-add:hover, :root[data-gray] .sl-item.current .sl-num { color: var(--text); }
 
 /* ---- item 37: interface density (View > Window and Colours > Density). Compact is as the app comes;
    Standard and Large make the icons bigger and give the toolbox and ribbon buttons more room, rather
@@ -5051,7 +5064,7 @@ dialog { max-height: calc(100vh - 32px); }
 dialog:not(.embedded) .ask-buttons { position: sticky; bottom: -12px; z-index: 3; margin: 10px -14px -12px; padding: 8px 14px 12px; background: var(--panel); }
 dialog:not(.embedded) .ask-form > .ask-buttons { margin-bottom: -12px; }
 /* Dark Gray: windows take the panels' light gray, as the ribbon and side panel do (their boxes stay white) */
-:root[data-gray] dialog, :root[data-gray] .tool-window, :root[data-gray] .template-window { --panel: #dfe1e5; --line: #bfc3ca; --accent-soft: #c9ced7; }
+:root[data-gray] dialog, :root[data-gray] .tool-window, :root[data-gray] .template-window { --panel: #dfe1e5; --line: #bfc3ca; --accent-soft: #c9ced7; --muted: #4f5768; }
 :root[data-gray] dialog :is(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range']), select, textarea) { background: #fff; color: #1d2128; }
 /* U11: every New window opens in the middle (New Design sat in the top-left corner), and the few
    cards of a document or spreadsheet category are drawn larger so the window isn't mostly empty */
