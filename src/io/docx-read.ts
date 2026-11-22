@@ -224,7 +224,9 @@ interface Level { fmt: string; text: string; p: PProps; start: number; restart?:
 interface Piece { runs: TextRun[]; pageBreak: boolean; soft: boolean; colBreak?: boolean; /** Index entries and marked citations in it (XE and TA fields). */ xe?: IndexMark[]; ta?: AuthorityMark[] }
 interface Ctx { base: RProps; pieces: Piece[]; cell: boolean }
 interface Field { instr: string; phase: 'instr' | 'result'; swallow: boolean; /** The field's own data (w:fldData, base64): EndNote's citations. */ data?: string; text: string; props: RProps; /** How its result's first text looks, which is what Word shows (EndNote sets superscript only there). */ shown?: RProps; done: boolean; ref?: { id: number; mark: string; text: string; above?: boolean; page?: boolean }; toc?: boolean; /** A table of contents (TOC \\o): its object, which takes the look of its lines as Word last wrote them. */ tocId?: number; /** A form field's settings (w:ffData), and the form field made of it. */ ff?: Element; form?: number; /** A HYPERLINK field: the link open before it, put back at its end. */ before?: { link: string | undefined }; /** A manager's citation (its object) whose shown text is kept; a manager's bibliography (its object) whose entries are kept. */ cite?: number; bib?: number; /** Its separator (where its result starts). */ sep?: Element; /** Another field inside its instruction. */ inner?: boolean; /** A field kept as Word had it: the object made of it (its result is gathered into it). */ kept?: number }
-interface OutPara { ps: ParaStyle; runs: TextRun[]; mark: rt.RunStyle; style: string; contextual: boolean; table?: boolean; bib?: string; markRev?: string; /** A list item: Word's list (numId), the levels it uses (abstractNumId) and its level. */ num?: { id: string; abs: string; ilvl: number }; /** A list item's own w:ind as written (empty: none). */ ind?: string }
+/** A list item in a table cell: Word's list, and the cell paragraph it is (`idx` in `at.cell`'s paragraphs, the cell set once read). */
+interface CellNum { num: { id: string; abs: string; ilvl: number }; at: { cell?: TableCell }; idx: number }
+interface OutPara { ps: ParaStyle; runs: TextRun[]; mark: rt.RunStyle; style: string; contextual: boolean; table?: boolean; bib?: string; markRev?: string; /** A list item: Word's list (numId), the levels it uses (abstractNumId) and its level. */ num?: { id: string; abs: string; ilvl: number }; /** A list item's own w:ind as written (empty: none). */ ind?: string; /** A table's: the list items in its cells, in order, which Word counts with the rest (F2b-R05). */ cellNums?: CellNum[] }
 
 /** Open a Word file. Throws only when the file is not a Word file at all. */
 export async function readDocx(bytes: Uint8Array, deps: DocxReadDeps = {}): Promise<{ doc: DocText; warnings: string[] }> {
@@ -909,13 +911,22 @@ class DocxReader {
    * a level begins at its start value and starts again after a level above it is used (unless
    * its lvlRestart says otherwise). An item whose number here would differ keeps Word's as its own.
    */
+  /**
+   * A list item's paragraph, marked when it uses a list kept from the file: which list, its kind and
+   * number's look as read, and its indents as read with the paragraph's own w:ind, to tell on saving
+   * what was changed (G2-13). Others as they are.
+   */
+  private keptListMark(p: OutPara): ParaStyle {
+    if (!p.num || !p.ps.list || p.ps.cont || !this.keptNumbering.nums.some((n) => n.id === p.num!.id)) return p.ps;
+    const key = p.ps.list === 'bullet' ? `b${p.ps.bullet ?? ''}` : `n${p.ps.scheme ?? ''}`;
+    return { ...p.ps, wpx: withKept(p.ps.wpx, { num: p.num.id, nk: key, nl: JSON.stringify(p.ps.numLook ?? null), ni: String(p.ps.indent ?? 0), nv: String(p.ps.level ?? 0), nr: String(p.ps.indentRight ?? 0), nd: p.ind ?? '' }) };
+  }
+
   private listNumbers(out: OutPara[]): void {
-    if (!out.some((p) => p.num)) return;
+    if (!out.some((p) => p.num || p.cellNums?.length)) return;
     const counters = new Map<string, (number | undefined)[]>(), pending = new Map<string, (number | undefined)[]>();
     const used = new Set<string>();
-    const word = out.map((p) => {
-      const nm = p.num;
-      if (!nm) return undefined;
+    const count = (nm: { id: string; abs: string; ilvl: number }) => {
       const levels = this.levelsOf(nm.id) ?? [];
       const c = counters.get(nm.abs) ?? [], pend = pending.get(nm.abs) ?? [];
       counters.set(nm.abs, c);
@@ -929,7 +940,31 @@ class DocxReader {
         if (after > 0 && L < after) c[m] = undefined;
       }
       return c[L];
+    };
+    // (in document order: a table's cells' items before what comes after the table)
+    const inCells = new Map<TableCell, (number | undefined)[]>();
+    const word = out.map((p) => {
+      for (const e of p.cellNums ?? []) {
+        const n = count(e.num);
+        if (!e.at.cell) continue;
+        const w = inCells.get(e.at.cell) ?? [];
+        w[e.idx] = n;
+        inCells.set(e.at.cell, w);
+      }
+      return p.num ? count(p.num) : undefined;
     });
+    // each cell's items numbered as Word numbers them (a list carries on from cell to cell)
+    for (const [cell, w] of inCells) {
+      const ps = cell.paras;
+      if (!ps) continue;
+      for (let from = 0, k = 0; k < 200; k++) {
+        const info = listInfo(ps);
+        const i = ps.findIndex((q, j) => j >= from && q.list === 'number' && !q.cont && w[j] !== undefined && w[j]! >= 1 && info[j].n !== w[j]);
+        if (i < 0) break;
+        ps[i] = cleanPara({ ...ps[i], startAt: w[i] });
+        from = i + 1;
+      }
+    }
     // (each change carries on to the items after it, so the numbers are counted again after each)
     for (let from = 0, k = 0; k < 2000; k++) {
       const info = listInfo(out.map((p) => p.ps));
@@ -1410,7 +1445,7 @@ class DocxReader {
    * A text box's paragraphs, read as the document's are. `styled` keeps each paragraph's style
    * (a table cell's or text box's); `look` is what the table's style gives a cell's paragraphs.
    */
-  private boxText(content: Element, styled = false, look: CellLook | null = null): { runs: TextRun[]; paras: ParaStyle[] } {
+  private boxText(content: Element, styled = false, look: CellLook | null = null, cell = false): { runs: TextRun[]; paras: ParaStyle[]; nums: CellNum[] } {
     const out = this.out, brk = this.breakNext, was = this.cellLook;
     this.out = [];
     this.cellLook = look;
@@ -1424,7 +1459,14 @@ class DocxReader {
       runs.push(...p.runs);
     });
     if (!runs.length) runs.push({ ...(got[0]?.mark ?? {}), text: '' });
-    return { runs: rt.normalizeRuns(runs), paras: got.map((p) => { const q = cleanPara(p.ps); if (!styled) delete q.style; delete q.pageBreak; delete q.section; return q; }) };
+    // a table cell's list items, in order with those of tables in it, which Word counts with the
+    // lists round the table (F2b-R05); and each item of a list kept from the file marked as in the text
+    const at: CellNum['at'] = {}, nums: CellNum[] = [];
+    if (cell) got.forEach((p, i) => {
+      nums.push(...(p.cellNums ?? []));
+      if (p.num && p.ps.list && !p.ps.cont) { nums.push({ num: p.num, at, idx: i }); p.ps = this.keptListMark(p); }
+    });
+    return { runs: rt.normalizeRuns(runs), nums, paras: got.map((p) => { const q = cleanPara(p.ps); if (!styled) delete q.style; delete q.pageBreak; delete q.section; return q; }) };
   }
 
   /** What the style of the table whose cell is being read gives its paragraphs (null outside a cell). */
@@ -2877,12 +2919,15 @@ class DocxReader {
     this.used.add(this.defaultPara);
     this.out.push({
       ps: cleanPara({ align: jc === 'left' ? undefined : jc, spaceBefore: np.before, spaceAfter: np.after, section: this.takeBreak() }),
-      runs: ctx.pieces[0].runs, mark: this.runStyle(normal), style: 'Normal', contextual: false, table: true,
+      runs: ctx.pieces[0].runs, mark: this.runStyle(normal), style: 'Normal', contextual: false, table: true, ...this.takeCellNums(),
     });
   }
 
   /** Inside a table cell being read (a table in it becomes a drawn table). */
   private inCell = false;
+  /** The list items in the cells of the table being read, in order (each table read starts its own). */
+  private cellNums: CellNum[] = [];
+  private takeCellNums(): Pick<OutPara, 'cellNums'> { return this.cellNums.length ? { cellNums: this.cellNums.splice(0) } : {}; }
   /** Word table styles the tables use that aren't built in here (or that Word changed), by id. */
   private tableStyles: Record<string, TableStyleDef> = {};
 
@@ -2937,6 +2982,9 @@ class DocxReader {
 
   /** A Word table as a table in the text: its cells read as text is (structures and pictures kept). */
   private textTable(tbl: Element): void {
+    // (the list items in its cells, apart from those of a table round it)
+    const outerNums = this.cellNums;
+    this.cellNums = [];
     const tblPr = kid(tbl, 'tblPr');
     const rows = kids(tbl, 'tr');
     let cols = kids(kid(tbl, 'tblGrid'), 'gridCol').map((g) => this.tw(g, 'w') ?? 0);
@@ -3081,8 +3129,9 @@ class DocxReader {
     this.used.add(this.defaultPara);
     this.out.push({
       ps: cleanPara({ align: jc === 'left' ? undefined : jc, spaceBefore: 0, spaceAfter: 0, section: this.takeBreak() }),
-      runs: ctx.pieces[0].runs, mark: this.runStyle(normal), style: 'Normal', contextual: false, table: true,
+      runs: ctx.pieces[0].runs, mark: this.runStyle(normal), style: 'Normal', contextual: false, table: true, ...this.takeCellNums(),
     });
+    this.cellNums = outerNums;
   }
 
   /**
@@ -3090,7 +3139,7 @@ class DocxReader {
    * pictures stay (in their line); text boxes and the like inside a cell are left out.
    */
   private textCell(tc: Element, look: CellLook | null = null): TableCell {
-    const { runs: read, paras } = this.boxText(tc, true, look);
+    const { runs: read, paras, nums } = this.boxText(tc, true, look, true);
     // comments on the cell's text go on the whole table (Ctx.cell is off here to keep the cell's
     // other content), so its runs keep no marks of their own: with both, Word was given the
     // comment's range twice and called the saved file unreadable (laptop bench wd-551)
@@ -3115,6 +3164,8 @@ class DocxReader {
     const ps = paras.map((p) => { const q = { ...p }; if ((q.align ?? 'left') === align) delete q.align; else q.align ??= 'left'; return q; });
     if (ps.some((p) => Object.keys(p).length)) cell.paras = ps;
     if (align !== 'left') cell.align = align;
+    for (const n of nums) n.at.cell ??= cell;
+    this.cellNums.push(...nums);
     return cell;
   }
 
@@ -3491,11 +3542,7 @@ class DocxReader {
     this.listNumbers(out);
     // each list item that uses a list kept from the file: which list, its kind and number's look as
     // read, and its indents as read with the paragraph's own w:ind, to tell on saving what was changed (G2-13)
-    for (const p of out) {
-      if (!p.num || !p.ps.list || p.ps.cont || !this.keptNumbering.nums.some((n) => n.id === p.num!.id)) continue;
-      const key = p.ps.list === 'bullet' ? `b${p.ps.bullet ?? ''}` : `n${p.ps.scheme ?? ''}`;
-      p.ps = { ...p.ps, wpx: withKept(p.ps.wpx, { num: p.num.id, nk: key, nl: JSON.stringify(p.ps.numLook ?? null), ni: String(p.ps.indent ?? 0), nv: String(p.ps.level ?? 0), nr: String(p.ps.indentRight ?? 0), nd: p.ind ?? '' }) };
-    }
+    for (const p of out) p.ps = this.keptListMark(p);
     if (this.keptNumbering.nums.length) this.kept = { ...this.kept, numbering: this.keptNumbering };
     // the standard styles (the file's, or ours where it has none) and the others the text uses
     const styles = defaultStyles();

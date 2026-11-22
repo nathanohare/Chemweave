@@ -392,6 +392,58 @@ describe('Kept Word lists number in Word as they are numbered here after an edit
     expect(await allKept(cut)).toBe(true);
   });
 
+  // Word's numbers counted here independently of the program's reader (review F2b-R08): every
+  // paragraph in document order, tables' cells included, level 0 of lists on abstractNum 0, a
+  // list's startOverride applying where it is first used (ECMA-376 §17.9.27)
+  const wordNumbers = (out: Record<string, Uint8Array>): [string, number][] => {
+    const doc = parse(strFromU8(out['word/document.xml'])), nb = parse(strFromU8(out['word/numbering.xml']));
+    const val = (el: Element | undefined, tag: string) => el?.getElementsByTagNameNS(W_NS, tag)[0]?.getAttributeNS(W_NS, 'val') ?? null;
+    const nums = new Map(Array.from(nb.getElementsByTagNameNS(W_NS, 'num')).map((n) => [n.getAttributeNS(W_NS, 'numId')!, { abs: val(n, 'abstractNumId'), start: val(n, 'startOverride') }]));
+    const counter = new Map<string, number>(), used = new Set<string>();
+    const got: [string, number][] = [];
+    for (const p of Array.from(doc.getElementsByTagNameNS(W_NS, 'p'))) {
+      const id = val(p.getElementsByTagNameNS(W_NS, 'numPr')[0], 'numId');
+      const n = id ? nums.get(id) : undefined;
+      if (!n || n.abs === null) continue;
+      const first = !used.has(id!);
+      used.add(id!);
+      const v = first && n.start !== null ? Number(n.start) : (counter.get(n.abs) ?? 0) + 1;
+      counter.set(n.abs, v);
+      got.push([Array.from(p.getElementsByTagNameNS(W_NS, 't')).map((t) => t.textContent).join(''), v]);
+    }
+    return got;
+  };
+  const cellsTable = (...cells: string[]) => `<w:tbl><w:tblPr/><w:tblGrid>${cells.map(() => '<w:gridCol w:w="2000"/>').join('')}</w:tblGrid><w:tr>${cells.map((c) => `<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr>${c}</w:tc>`).join('')}</w:tr></w:tbl>`;
+
+  it('counts list items in table cells with the list round the table, and keeps their list (review F2b-R05)', async () => {
+    // a list numbered 1 and 2 in two cells of a table, then 3 and 4 under it
+    const { doc } = await readDocx(wordFile({ numbering, body: item(1, 'a') + cellsTable(item(1, 'b'), item(1, 'c')) + item(1, 'd') + item(1, 'e') }));
+    // shown here as in Word: 1 before the table, 2 and 3 in its cells, 4 and 5 after it
+    expect(shown(doc)).toEqual(['1.', '', '4.', '5.']);
+    const table = Object.values(doc.objects).find((o) => o.kind === 'table');
+    if (table?.kind !== 'table') throw new Error('no table');
+    expect(table.table.rows[0].map((c) => listInfo(c.paras ?? [{}]).map((x) => x.marker))).toEqual([['2.'], ['3.']]);
+    // saved untouched: Word numbers every item as before, all in the file's own list (no new one)
+    const out = unzipSync(await writeDocx(doc, deps));
+    expect(wordNumbers(out)).toEqual([['a', 1], ['b', 2], ['c', 3], ['d', 4], ['e', 5]]);
+    expect([...strFromU8(out['word/document.xml']).matchAll(/<w:numId w:val="(\d+)"\/>/g)].map((m) => m[1])).toEqual(['1', '1', '1', '1', '1']);
+    // the item before the table made plain: the others keep the numbers they show (each carries
+    // Word's as its own where its list's count here would differ), and Word gives them the same
+    doc.paras[0] = { ...doc.paras[0], list: undefined };
+    expect(shown(doc)).toEqual(['', '', '4.', '5.']);
+    expect(wordNumbers(unzipSync(await writeDocx(doc, deps)))).toEqual([['b', 2], ['c', 3], ['d', 4], ['e', 5]]);
+  });
+
+  it('numbers a kept item split round a table of contents once (review F2b-R08)', async () => {
+    const { doc } = await readDocx(wordFile({ numbering, body: item(1, 'a') + item(1, 'b') }));
+    const id = Math.max(0, ...Object.keys(doc.objects).map(Number)) + 1;
+    doc.objects = { ...doc.objects, [id]: { kind: 'toc', levels: 3 } };
+    const text = doc.runs.map((r) => r.text).join('');
+    const [first, second] = text.split('\n');
+    doc.runs = [{ ...doc.runs[0], text: `${first}1 ` }, { ...doc.runs[0], obj: id, text: '\uFFFC' }, { ...doc.runs[0], text: ` a2\n${second}` }];
+    expect(wordNumbers(unzipSync(await writeDocx(doc, deps)))).toEqual([['a1 ', 1], ['b', 2]]);
+  });
+
   it('writes an unedited item\'s indent as Word had it, and a changed one as laid out here', async () => {
     const body = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>a</w:t></w:r></w:p>' +
       '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:ind w:left="1080" w:hanging="360"/></w:pPr><w:r><w:t>b</w:t></w:r></w:p>';

@@ -542,7 +542,7 @@ class DocxWriter {
         let part: TextRun[] = [];
         // the paragraph's index entries and marked citations go with its first part
         let own = ps;
-        const partPara = async () => { const x = await this.paragraph(main, own, part, listNum); own = { ...ps, xe: undefined, ta: undefined }; return x; };
+        const partPara = async () => { const x = await this.paragraph(main, own, part, listNum); own = { ...ps, xe: undefined, ta: undefined, ...(ps.list ? { cont: true } : {}) }; return x; };
         for (const r of runs) {
           if (!isBib(r)) { part.push(r); continue; }
           if (part.some((x) => x.text)) out.push(await partPara());
@@ -1631,6 +1631,10 @@ class DocxWriter {
         const parts = this.splitParas(cell.runs);
         const paras: string[] = [];
         let lastTable = false;
+        // the numbers shown in the cell, which its items of a list kept from the file get from Word
+        // too: Word counts them with the lists round the table, in order (F2b-R05)
+        const shownHere = listInfo(ps);
+        const outer = this.shownN;
         for (let i = 0; i < n; i++) {
           const pr = parts[i] ?? [];
           const inner = pr.length === 1 && pr[0].obj !== undefined && pr[0].text === OBJECT_CHAR ? this.t.objects[pr[0].obj] : undefined;
@@ -1641,10 +1645,12 @@ class DocxWriter {
             continue;
           }
           const cps = { ...ps[i], align: ps[i]?.align ?? ca };
+          this.shownN = cps.list === 'number' && !cps.cont ? shownHere[i]?.n : undefined;
           if (i > 0 && !lastTable && paras.length && joins({ ...ps[i - 1], align: ps[i - 1]?.align ?? ca }, cps)) paras[paras.length - 1] = joinTo(paras[paras.length - 1], await this.paragraph(main, cps, pr, 0, -1, '', true));
           else paras.push(await this.paragraph(main, cps, pr, 0));
           lastTable = false;
         }
+        this.shownN = outer;
         // (Word's cells end with a paragraph, after any table in them)
         if (lastTable || !paras.length) paras.push('<w:p/>');
         cells.push(`<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${paras.join('')}</w:tc>`);
