@@ -27,7 +27,7 @@
 import { Doc, keepOnPage, shiftDrawing, type Arrow, type BondDisplay, type EnhancedStereo, type StepRoles } from '../model';
 import type { DocStyle } from '../style';
 import { elementNumber, hasImplicitH, implicitHydrogens, SYMBOLS } from '../chem/elements';
-import { statedHLabel } from '../chem/hydrogen-count';
+import { labelHydrogens, ruleHydrogens, statedHLabel } from '../chem/hydrogen-count';
 import { molProgramLine, needsV3000, toMolfile, v2000Molfile, v3000Ctab, v3000Molfile, type CtabExtra, type MAtom, type MBond, type MSgroup } from '../chem/molfile';
 import { plainMeasure, reactionSteps, schemeItems, itemFinder } from '../chem/reaction';
 import { placeSpecies, readSpecies } from '../chem/species';
@@ -61,6 +61,13 @@ export interface FAtom {
    * vvv, V3000 VAL=) or CML's hydrogenCount. Undefined when the file leaves them to the valence rule.
    */
   hCount?: number;
+  /**
+   * The hydrogen count is not to be stated (CML's hydrogenCount left out): the atom's label in the
+   * drawing shows a number of hydrogens the valence rule doesn't give (a methyl N labelled "N"),
+   * which this program's own molfile leaves to the rule; a reader then works it out as for the
+   * molfile, rather than trusting a stated count that may be wrong (review F1b-R12).
+   */
+  hUnstated?: boolean;
 }
 export type FStereo = 'wedge' | 'hash' | 'wavy';
 export interface FBond {
@@ -1041,6 +1048,22 @@ function absFlag(m: FMol): boolean {
 // ---------------------------------------------------------------- drawing → scene
 
 /** The drawing's structures, straight arrows, + signs and text, in bond-length units with y upwards. */
+/**
+ * Is atom `id` bonded and labelled with its element and a number of hydrogens the valence rule
+ * doesn't give it (a methyl N labelled "N")? The molfile writer leaves such an atom to the rule.
+ * (A label on its own, as OH for the hydroxyl radical, is written as it reads, so its count stands.)
+ */
+function labelDisagrees(doc: Doc, id: number): boolean {
+  const a = doc.atoms.get(id);
+  const label = a?.label?.trim();
+  if (!a || !label || !doc.adj.get(id)?.length) return false;
+  const n = labelHydrogens(label, a.z);
+  if (n === null) return false;
+  const orders = (doc.adj.get(id) ?? []).map((bid) => doc.bonds.get(bid)?.order ?? 0);
+  if (orders.some((o) => o !== 1 && o !== 2 && o !== 3)) return false;
+  return n !== ruleHydrogens(a.z, orders.reduce((t, o) => t + o, 0), a.charge ?? 0, a.radical);
+}
+
 export function docToScene(doc: Doc): { scene: FScene; unknown: string[]; step: boolean } {
   const scene: FScene = { mols: [], arrows: [], pluses: [], texts: [], unit: 1 };
   const unknown = new Set<string>();
@@ -1087,6 +1110,8 @@ export function docToScene(doc: Doc): { scene: FScene; unknown: string[]; step: 
     for (const u of ex.unknownLabels) unknown.add(u);
     const mol = readMolfile(ex.molblock, { keepSup: true });
     if (!mol || !mol.atoms.length) continue;
+    // an atom labelled with its element and a number of hydrogens the rule doesn't give: no count stated
+    if (mol.atoms.length === ex.map.length) ex.map.forEach((id, i) => { if (labelDisagrees(doc, id)) mol.atoms[i].hUnstated = true; });
     const role = roleOf.get(it.ref);
     scene.mols.push(role ? { ...mol, role } : mol);
   }
@@ -1255,7 +1280,7 @@ function cmlMoleculeXml(m: FMol, id: string, first: number, indent: string, mrv:
     // CML's hydrogenCount (plain CML; Marvin works its own out): the hydrogens on an element, drawn ones included
     // (left out next to an aromatic bond, where the count depends on the ring: pyrrole's NH)
     const aromatic = m.bonds.some((b) => (b.a === i || b.b === i) && b.order === 1.5);
-    const hc = !mrv && z !== undefined && z !== 1 && hasImplicitH(z) && (a.hCount !== undefined || !aromatic)
+    const hc = !mrv && !a.hUnstated && z !== undefined && z !== 1 && hasImplicitH(z) && (a.hCount !== undefined || !aromatic)
       ? (a.hCount ?? implicitHydrogens(z, bondSum(m.bonds, i), a.charge ?? 0, a.rad === 2 ? 1 : a.rad ? 2 : 0))
         + m.bonds.filter((b) => (b.a === i && m.atoms[b.b].sym === 'H') || (b.b === i && m.atoms[b.a].sym === 'H')).length
       : undefined;

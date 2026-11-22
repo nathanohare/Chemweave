@@ -6,7 +6,8 @@
 // - Enhanced stereo as ChemAxon's mrvStereoGroup (abs, and1, or2; Marvin Documents format).
 // - A molfile's valence (BIOVIA CTfile Formats 2020: V2000 vvv, 15 for none; V3000 VAL=).
 // Values: ethanol C2H6O (CH3 3 H, CH2 2 H, OH 1 H; PubChem CID 702); the hydroxyl radical HO
-// (PubChem CID 157350; SMILES [OH]); pyrrole C4H5N (PubChem CID 8027; NH 1 H, each CH 1 H).
+// (PubChem CID 157350; SMILES [OH]); pyrrole C4H5N (PubChem CID 8027; NH 1 H, each CH 1 H);
+// methylamine CH5N (PubChem CID 6329; CH3 3 H, NH2 2 H).
 // Structures are made up here in code.
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -97,6 +98,33 @@ describe('CML files (File > Save As .cml)', () => {
     // (the radical comes back as an O with one unpaired electron, which takes one hydrogen: HO•)
     expect(atoms.map((a) => [a.label, a.radical ?? null])).toEqual([[null, null], [null, null], [null, null], [null, 'doublet']]);
     expect(atoms.filter((a) => a.enhStereo).map((a) => a.enhStereo)).toEqual([{ type: 'or', group: 2 }]);
+  });
+});
+
+// review F1b-R12: a methyl N the user labelled "N" (methylamine's N by the valence rule, as this
+// program's molfile writes it): neither CML writer states a count the label and the rule disagree on
+describe('a bonded label whose hydrogens differ from the rule', () => {
+  const methylN = (label: string) => {
+    const d = new Doc();
+    d.style = { ...ACS_1996 };
+    d.bulk(() => { const c = d.addAtom(0, 0), n = d.addAtom(ACS_1996.bondLength, 0, 7, { label }); d.addBond(c.id, n.id); });
+    return d;
+  };
+  const contents = (label: string): Contents => ({
+    atoms: [atom(1, 6, 0), atom(2, 7, 14, { label })],
+    bonds: [{ id: 3, a1: 1, a2: 2, order: 1, display: 'solid', dpos: 'auto' }],
+    captions: [], arrows: [], shapes: [],
+  } as unknown as Contents);
+  it('leaves the N\'s hydrogenCount out in both the .cml file and the Chem4Word part', () => {
+    const file = writeCmlFile(methylN('N')).text;
+    expect(file).toMatch(/elementType="C" hydrogenCount="3"/);
+    expect(file).not.toMatch(/elementType="N"[^>]*hydrogenCount/);
+    const c4w = writeCml(contents('N'), 'g');
+    expect(hc(c4w)).toEqual([3]);
+  });
+  it('states it where the label and the rule agree (NH2: 2)', () => {
+    expect(hc(writeCmlFile(methylN('NH2')).text)).toEqual([3, 2]);
+    expect(hc(writeCml(contents('NH2'), 'g'))).toEqual([3, 2]);
   });
 });
 
