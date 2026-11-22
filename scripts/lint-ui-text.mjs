@@ -11,7 +11,7 @@
 //
 // What is read (comments, code names and file-format keywords such as w:color are left alone):
 //   - in index.html and audience.html: the text between tags and the title, aria-label,
-//     placeholder and alt attributes (not class names, ids or data-* values);
+//     placeholder, alt, data-info and data-tip attributes (not class names, ids or other data-* values);
 //   - in src/**/*.ts, every string literal and template that has words with spaces between them
 //     (that is how UI text looks; keys, ids and format keywords do not), wherever it is: menus,
 //     right-click menus, ribbon labels, toasts, dialogs, errors, status text;
@@ -229,7 +229,7 @@ const HIDDEN_CALLS = /^(?:console\.\w+|require|import|querySelector(?:All)?|getE
 const COMMAND_PROPS = new Set(['label']);
 /** A command name is short and has no sentence in it (a tooltip or a dialog's text is not one). */
 const commandLike = (t) => t.length <= 40 && !/[:.,;]\s|[.:]$/.test(t);
-const ATTRS = new Set(['title', 'aria-label', 'placeholder', 'alt']);
+const ATTRS = new Set(['title', 'aria-label', 'placeholder', 'alt', 'data-info', 'data-tip']);
 
 function looksLikeId(s) {
   if (/\s/.test(s)) return false;
@@ -240,7 +240,7 @@ function looksLikeId(s) {
 export function htmlText(html) {
   const out = [];
   const h = html.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<(script|style|svg)\b[\s\S]*?<\/\1>/gi, ' ');
-  for (const m of h.matchAll(/\s(title|aria-label|placeholder|alt)\s*=\s*("([^"]*)"|'([^']*)')/gi)) out.push({ text: m[3] ?? m[4] ?? '', attr: m[1] });
+  for (const m of h.matchAll(/\s(title|aria-label|placeholder|alt|data-info|data-tip)\s*=\s*("([^"]*)"|'([^']*)')/gi)) out.push({ text: m[3] ?? m[4] ?? '', attr: m[1] });
   const bare = h.replace(/<[^>]*>/g, '\n');
   for (const line of bare.split('\n')) if (line.trim()) out.push({ text: line.trim() });
   return out;
@@ -389,6 +389,11 @@ export function uiFiles(root = ROOT) {
  */
 export const ALLOWED = [
   { file: 'index.html', text: 'tOGGLE cASE', why: "Office's own name for this Change Case choice (UI rule 1 wins over S64 here)." },
+  { file: 'src/ui/font-group.ts', text: 'tOGGLE cASE', why: "Office's own name for this Change Case choice (UI rule 1 wins over S64 here)." },
+  { file: 'src/ui/diagram-dialog.ts', text: 'Formulas are subscripted automatically (CO2)', why: 'shows what is typed before it is subscripted' },
+  { file: 'src/ui/typing-dialog.ts', text: 'CH2Cl2 becomes CH₂Cl₂', why: 'shows what is typed before it is subscripted' },
+  { file: 'src/ui/si-mode.ts', text: 'Select the formula first (CH2Cl2, PF6-)', why: 'the plain typed text that Formula style turns into a formula' },
+  { file: 'src/ui/property-dialog.ts', text: 'any adduct can be typed, such as [M+H]+', why: 'the adduct as it is typed into this box' },
   { file: 'src/ui/font-box.ts', text: 'tOGGLE cASE', why: "Office's own name for this Change Case choice (UI rule 1 wins over S64 here)." },
   { file: 'src/editor/editor.ts', text: 'Hotkey', exact: true, why: 'the Undo step for a ChemDraw-style atom or bond key, which S82 calls a hotkey' },
   // Whole files (from the wording lint of 2026-11-16): search words, Excel's own help, and template text a person replaces

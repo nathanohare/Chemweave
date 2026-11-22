@@ -482,6 +482,8 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
  * leaves a field out, for these reasons:
  */
 const NOT_WALKED: Record<string, Record<string, string>> = {
+  Glue: { shape: "the id of the shape a connector is stuck to, renumbered on reading: connectors' round trips are in tests/cdxml-own-tags-kept.test.ts" },
+  StepRoles: Object.fromEntries(['reactants', 'products', 'above', 'below', 'inside', 'plusses'].map((k) => [k, "ids of the step's species, renumbered on reading: steps' round trips are in tests/cdxml-own-tags-kept.test.ts and tests/auto-steps.test.ts"])),
   Atom: { id: 'renumbered on reading', x: 'checked as positions relative to the other atoms', y: 'checked as positions relative to the other atoms' },
   Bond: {
     id: 'renumbered on reading', a1: 'which atoms it joins: checked by finding the bond again', a2: 'which atoms it joins: checked by finding the bond again',
@@ -494,6 +496,7 @@ const NOT_WALKED: Record<string, Record<string, string>> = {
     id: 'renumbered on reading', x1: 'position', y1: 'position', x2: 'position', y2: 'position',
     picture: "stands in for a picture kept from a ChemDraw file, so it needs that file's own picture (tests/cdxml-files.test.ts)",
     chart: 'a chart: its own round trips in tests/office-charts.test.ts and tests/chart.test.ts',
+    editedOutside: 'not written: worked out again on reading, when another program changed a frame Chemweave made (markEditedOutside in src/io/cdxml.ts)',
     energy: 'an energy diagram: its own round trip in tests/round-trip-review-objects.test.ts',
     newman: 'a Newman projection: made by the Newman tool, round trip in tests/newman.test.ts',
     torsion: 'a torsion chart: made from a conformer scan, tested in tests/torsion-chart.test.ts',
@@ -629,12 +632,8 @@ const CANT_CARRY: Partial<Record<Column, Record<string, string>>> = {
 const KNOWN_GAPS: Partial<Record<Column, Record<string, string>>> = {
   cdxml: {
     'Arrow.bent': "a hand-bent curved arrow comes back unbent, so it finds its own way round again when the structure changes",
-    'Arrow.elbow': "an elbow connector comes back straight",
     'Arrow.ellipse': "an arrow drawn along an ellipse loses its ellipse",
-    'Arrow.from': "a connector's tail comes unstuck from its shape",
     'Arrow.reagentFor': "a catalytic cycle's reagent arrow loses which step it feeds",
-    'Arrow.step': "a step set by hand (manual) comes back as worked out automatically",
-    'Arrow.to': "a connector's head comes unstuck from its shape",
     'Atom.asTyped': "a lone typed label (NH2) loses \"shown as typed\"",
     'Atom.depth': "an atom's depth from a perspective drawing is not saved, so which crossing bond is in front can change",
     'Atom.face': "a label face of 1 (bold, not formula) comes back 97 (bold formula)",
@@ -652,7 +651,6 @@ const KNOWN_GAPS: Partial<Record<Column, Record<string, string>>> = {
     'Shape.frame': "a frame forgets what it surrounds (atoms come back []), so it stops following the structure",
     'Shape.hidden': "hidden in the Layers panel (Design) is lost",
     'Shape.holder': "a Smart Scheme placeholder box loses its waiting label",
-    'Shape.look': "a picture's frame (Picture Styles) is lost",
     'Shape.madeLabels': "labels of a frame drawn from data are lost (checked on a plain rectangle, not a real energy diagram)",
     'Shape.name': "the Layers panel name (Design) is lost",
     'Shape.pin': "a lone pair stuck to its atom comes unstuck",
@@ -676,13 +674,13 @@ const KNOWN_GAPS: Partial<Record<Column, Record<string, string>>> = {
     'TextRun.dstrike': "double strikethrough is lost (see strike)",
   },
   pptx: {
+    'Arrow.step': "the slide's structures go through CDXML with new ids: a step loses its species",
     'Arrow.bent': "the slide's structures go through CDXML: a hand-bent curved arrow comes back unbent, so it finds its own way round again when the structure changes",
     'Arrow.ellipse': "the slide's structures go through CDXML: an arrow drawn along an ellipse loses its ellipse",
     'Arrow.from': "the slide's structures go through CDXML: a connector's tail comes unstuck from its shape",
     'Arrow.morph': "the animation's atom pairs are lost",
     'Arrow.pin': "an electron-pushing arrow comes unstuck from its atoms",
     'Arrow.reagentFor': "the slide's structures go through CDXML: a catalytic cycle's reagent arrow loses which step it feeds",
-    'Arrow.step': "a step loses its species and its \"set by hand\"",
     'Arrow.to': "the slide's structures go through CDXML: a connector's head comes unstuck from its shape",
     'Atom.asTyped': "the slide's structures go through CDXML: a lone typed label (NH2) loses \"shown as typed\"",
     'Atom.depth': "the slide's structures go through CDXML: an atom's depth from a perspective drawing is not saved, so which crossing bond is in front can change",
@@ -1071,7 +1069,8 @@ async function check(column: Column, all: Item[], trip: (items: Item[]) => Promi
     const want = val(it.sample.v, b.ids);
     const ok = !!b.obj && (it.sample.cmp ? it.sample.cmp(want, got) : same(want, got, it.sample.label));
     const listed = (k: string) => !!(cant[k] || gaps[k]);
-    for (const k of it.chain) if (listed(k)) outer.set(k, (outer.get(k) ?? true) && ok);
+    // (a listed field's own value counts too: its parts can all come back while it, as a whole, does not)
+    for (const k of [...it.chain, it.key]) if (listed(k)) outer.set(k, (outer.get(k) ?? true) && ok);
     if (!ok && !listed(it.key) && !it.chain.some(listed)) lost.push(`${it.key}: set ${JSON.stringify(want)?.slice(0, 120)}, came back ${b.obj ? JSON.stringify(got)?.slice(0, 120) ?? 'undefined' : '(object not found)'}`);
     if (ok && gaps[it.key]) fixed.push(`${it.key}: now kept; delete it from KNOWN_GAPS['${column}']`);
     if (ok && cant[it.key]) carried.push(`${it.key}: comes back, so the format can carry it; delete it from CANT_CARRY['${column}']`);

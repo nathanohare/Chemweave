@@ -294,11 +294,7 @@ const FILES: { name: string; make: () => Promise<Uint8Array> }[] = [
  * its entry goes.
  */
 const KNOWN_DIFFERENT: Record<string, { why: string; each: RegExp }> = {
-  // The label case: the first save writes the NMe₃ label as atoms; opened, those are ordinary
-  // atoms, so the second save lists the bonds in drawing order (the label's bonds come first).
-  'Labels.mol': { why: "bonds come back in another order (the NMe₃ label's bonds first, then the rest)", each: /^line 1[3-9]: "\s+\d+\s+\d+\s+\d\s+\d" then "\s+\d+\s+\d+\s+\d\s+\d"$/ },
   'Scheme.rxn': { why: 'the product moves closer to the starting material (from 13.9 to 7.1 Å along, measured from the first atom)', each: /^line 2[2-4]: "1[3-5]\.\d 0\.\d {4}0\.0000 [CO] .*" then "[78]\.\d 0\.\d {4}0\.0000 [CO] .*"$/ },
-  'Reagents.sdf': { why: "the cell's structure is rebuilt from the drawing when it is saved, so one coordinate moves by 0.1 Å", each: /^line 7: "1\.8 0\.0 {4}0\.0000 O .*" then "1\.7 0\.0 {4}0\.0000 O .*"$/ },
   'Talk.pptx': { why: 'the slide drawing\'s CDXML gains CaptionLineHeight="variable" on its caption', each: /^ppt\/tags\/tag\d+\.xml: first difference at character \d+: .* then .*&quot; CaptionLineHeight=&quot;variable&quot;&gt;.*$/ },
   'Poster.pptx': { why: 'the design\'s CDXML gains CaptionLineHeight="variable" on its caption', each: /^ppt\/tags\/tag\d+\.xml: first difference at character \d+: .* then .*&quot; CaptionLineHeight=&quot;variable&quot;&gt;.*$/ },
 };
