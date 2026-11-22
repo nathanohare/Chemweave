@@ -217,7 +217,7 @@ export function oleNote(objects: KeptSheetOle[]): string | null {
   const n = objects.length;
   const what = [...kinds].map(([k, c]) => `${c} ${k}${c > 1 ? 's' : ''}`).join(', ');
   return `This workbook has ${n} embedded object${n > 1 ? 's' : ''} (${what}). ${n > 1 ? 'They aren\'t' : 'It isn\'t'} shown here, ` +
-    `and ${n > 1 ? 'they are' : 'it is'} kept for Excel when you save, at the cells ${n > 1 ? 'they were' : 'it was'} placed over (Edit ▸ Data Tools ▸ Remove Embedded Objects removes ${n > 1 ? 'them' : 'it'}).`;
+    `and ${n > 1 ? 'they are' : 'it is'} kept for Excel when you save, at the cells ${n > 1 ? 'they were' : 'it was'} placed over (Edit ▸ Spreadsheet ▸ Data Tools ▸ Remove Embedded Objects removes ${n > 1 ? 'them' : 'it'}).`;
 }
 
 /** The standard VML shape type of a picture frame (part 4, 19.1.2.20), for a shape whose own wasn't found. */

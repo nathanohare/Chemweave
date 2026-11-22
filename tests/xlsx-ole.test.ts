@@ -73,7 +73,7 @@ const parse = (t: string) => new DOMParser().parseFromString(t, 'application/xml
 describe('objects embedded in an Excel sheet (G2-01)', () => {
   it('says so on opening, and does not call the twin shape a lost picture', async () => {
     const { warnings } = await readXlsx(book(false));
-    expect(warnings).toEqual(['This workbook has 1 embedded object (1 ChemDraw structure). It isn\'t shown here, and it is kept for Excel when you save, at the cells it was placed over (Edit ▸ Data Tools ▸ Remove Embedded Objects removes it).']);
+    expect(warnings).toEqual(['This workbook has 1 embedded object (1 ChemDraw structure). It isn\'t shown here, and it is kept for Excel when you save, at the cells it was placed over (Edit ▸ Spreadsheet ▸ Data Tools ▸ Remove Embedded Objects removes it).']);
   });
 
   for (const withNote of [false, true]) {
