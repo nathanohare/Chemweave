@@ -19,7 +19,7 @@ describe('comment cards', () => {
   it('keeps what was typed into a new comment on Escape', () => {
     const a = actions();
     typeAndEscape('', 'Check the yield', a);
-    expect(a.edit).toHaveBeenCalledWith('Check the yield');
+    expect(a.edit).toHaveBeenCalledWith('Check the yield', undefined, null);
     expect(a.cancelNew).not.toHaveBeenCalled();
   });
 
@@ -32,7 +32,7 @@ describe('comment cards', () => {
   it('takes back changes to an old comment on Escape', () => {
     const a = actions();
     typeAndEscape('Old text', 'New text', a);
-    expect(a.edit).toHaveBeenCalledWith('Old text');
+    expect(a.edit).toHaveBeenCalledWith('Old text', undefined, null);
   });
 });
 

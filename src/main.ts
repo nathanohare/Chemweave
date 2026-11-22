@@ -22,7 +22,7 @@ import { ToolboxEditor, initials } from './ui/toolbox-editor';
 import { RibbonEditor } from './ui/ribbon-editor';
 import { readRibbons, applyRibbon, type RibbonInfo, type RibbonsPrefs } from './ui/ribbon-custom';
 import { editPalettes, getPalettes, onPalettes, setPalettes, useDrawingColours, usePaletteMenus } from './ui/palette-ui';
-import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, type Placeholder, outsideValence, Contents, CHIRAL_FLAGS, PICTURE_STYLES, type PictureLook, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, type PageSetup, type PageWalls } from './model';
+import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, type Placeholder, outsideValence, Contents, CHIRAL_FLAGS, PICTURE_STYLES, type PictureLook, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, isDataFrame, type PageSetup, type PageWalls } from './model';
 import { Renderer, measureText, forgetTextWidths, WARN_LOOKS, type WarnLook } from './render/renderer';
 import { Editor, TOOLS, ringsWereFilled, setMarkTint, type HighlightToggle, type Selection } from './editor/editor';
 import { LENGTH_UNITS, setAidTint } from './editor/cursor-aids';
@@ -199,6 +199,7 @@ import { htmlToRich } from './text/html';
 import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
+import { fieldKeyHandler, isTypingField } from './editor/field-keys';
 import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
@@ -1189,10 +1190,7 @@ async function dropFiles(files: File[], at: { x: number; y: number }): Promise<v
 
 /** True when keys go into a text box rather than to the drawing. */
 function isTyping(t: EventTarget | null): boolean {
-  const el = t as HTMLElement | null;
-  if (!el || !el.tagName) return false;
-  if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
-  return el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'range', 'color', 'file'].includes((el as HTMLInputElement).type);
+  return isTypingField(t);
 }
 
 /** True when some text on the page (not the drawing) is selected, so Ctrl+C should copy that. */
@@ -1889,7 +1887,7 @@ async function insertActionButton(): Promise<void> {
 
 async function actionSettings(): Promise<void> {
   const d = deckNow();
-  const shapes = [...editor.sel.shapes].map((id) => doc.shapes.get(id)).filter((s): s is Shape => !!s && s.kind === 'geo' && !s.diagram && !s.energy);
+  const shapes = [...editor.sel.shapes].map((id) => doc.shapes.get(id)).filter((s): s is Shape => !!s && s.kind === 'geo' && !isDataFrame(s));
   if (!d || !shapes.length) { flash('Select an action button or a shape on a slide first (Insert ▸ Shapes ▸ Action buttons).'); return; }
   const cur = shapes[0].link ?? '';
   const slides = d.slides.map((s, i) => ({ value: `#slide=${s.id}`, label: `Slide ${i + 1}${slideTitle(d, i) ? `: ${slideTitle(d, i)}` : ''}` }));
@@ -5650,7 +5648,9 @@ function formatNotes(f: TextFormat): boolean {
   return true;
 }
 /** Commands whose keys work while typing speaker notes. */
-const NOTES_FILE_KEYS = new Set(['save', 'save-as', 'open', 'new', 'new-slides', 'print', 'close-tab', 'next-tab', 'prev-tab', 'autosave']);
+// the file's own keys (Save, Open, Print…) from any text box, what is typed going in first (editor/field-keys.ts)
+window.addEventListener('keydown', fieldKeyHandler({ lookup: (ctx, c) => keymap.lookup(ctx, c), slides: () => editor.slideKeys, flush: () => flushNotes(), run: (name) => void command(name) }), true);
+
 notesBox.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
@@ -5659,18 +5659,7 @@ notesBox.addEventListener('keydown', (e) => {
       : mod && !e.altKey && !e.shiftKey && key === 'u' ? { kind: 'toggle', key: 'underline' }
         : mod && !e.altKey && e.shiftKey && key === 'l' ? { kind: 'list', list: 'bullet' } : null;
   if (f) { e.preventDefault(); e.stopPropagation(); formatNotes(f); return; }
-  // the file's own keys (Save, Save As, Open, Print…) work from the notes too, as in PowerPoint;
-  // the browser's own use of them (Ctrl+Shift+S) would take the keys away from the page
-  const chord = mod ? chordOf(e) : null;
-  const act = chord ? keymap.lookup('command', chord) : undefined;
-  const name = act?.startsWith('command ') ? act.slice(8) : null;
-  if (name && NOTES_FILE_KEYS.has(name)) {
-    e.preventDefault();
-    e.stopPropagation();
-    flushNotes();
-    void command(name);
-    return;
-  }
+  // (the file's own keys, Save, Open, Print…, are sent from every text box: FIELD_FILE_KEYS)
   // Enter on a bulleted line: the next line is bulleted too (on an empty one, the bullet goes)
   // (any other Enter is a plain new line, kept as "\n" rather than the browser's own <div>)
   if (e.key === 'Enter' && !mod && !e.altKey) {
@@ -14192,6 +14181,7 @@ stylePanel.cropWithMouse = () => cropPicture();
 stylePanel.formatPicture = () => void formatPicture();
 stylePanel.removeWhite = (ids) => void removeWhite(ids);
 stylePanel.newman = { look: (id, patch) => editor.relookNewman(id, patch), edit: (id) => void newmanProjection(null, null, id) };
+stylePanel.torsion = { edit: (id) => void editTorsion(id) };
 stylePanel.frames = { add: () => void command('add-frame'), fit: (id) => editor.fitFrame(id) };
 stylePanel.smart = {
   layouts: (id) => editor.smartLayouts(id),
@@ -15547,7 +15537,7 @@ function togglePageEdge(side: Side): boolean {
   if (!p.grow) { flash('The drawing has a fixed number of pages, so all edges are fixed. To allow growth, choose “Add pages as the drawing grows” in File ▸ Page Setup.', 7000); return false; }
   const w = wallsOf(p), on = w[side] === undefined;
   if (on && fixedCount(w) >= 3) { flash('At most three edges can be fixed, so the drawing always has room to grow. Free another edge first.', 6000); return false; }
-  p.walls = setWall(p, doc.bounds(), side, on);
+  doc.edit(on ? 'Fix Page Edge' : 'Free Page Edge', () => doc.setPage({ ...p, walls: setWall(p, doc.bounds(), side, on) }));
   ws.noteChange();
   editor.requestScene();
   flash(on ? `The ${SIDE_NAMES[side]} edge is fixed: nothing can go past it.` : `The ${SIDE_NAMES[side]} edge is free: pages are added that way as the drawing grows.`, 3500);
@@ -15819,10 +15809,15 @@ async function pageSetup(): Promise<void> {
       next.walls = w2;
     }
   }
-  doc.page = next;
+  // one step of Undo (the page, and the drawing moved back onto fixed pages)
+  let fits = true;
+  doc.edit('Page Setup', () => {
+    doc.setPage(next);
+    if (next && !next.grow) fits = keepOnPage(doc);
+  });
   ws.noteChange();
   if (got.dflt === 'true') { defaultPage = next && { ...next, ...(next.walls ? { walls: { ...next.walls } } : {}) }; storeSettings(); }
-  if (next && !next.grow && !keepOnPage(doc)) flash('The drawing is larger than its pages, so it can\'t all be kept on them. Choose more pages, a larger page, or add pages as it grows.', 7000);
+  if (!fits) flash('The drawing is larger than its pages, so it can\'t all be kept on them. Choose more pages, a larger page, or add pages as it grows.', 7000);
   editor.changed();
   renderer.repaintAll();
   editor.requestScene();
@@ -16010,6 +16005,7 @@ CaptionEditor.onState = () => { textRibbonNow()?.refresh(); textToolbox?.refresh
 // the Smart Scheme pane: the selected scheme's species, beside it
 const smartPane = new SmartPane({
   doc: () => editor.doc,
+  history: (r) => { if (r) redo(); else undo(); },
   measure: () => editor.fullMeasure(),
   selected: () => (editor.sel.shapes.size + editor.sel.captions.size + editor.sel.arrows.size + editor.sel.atoms.size ? editor.selectedSmart() : null),
   screenRect: (r) => {

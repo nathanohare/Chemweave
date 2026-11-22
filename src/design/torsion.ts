@@ -14,6 +14,7 @@ import { frameBox } from '../editor/frames';
 import { profileAt, type Extremum, type Profile } from '../chem/torsion-profile';
 import { norm180, norm360, type NewmanGroup } from '../chem/newman';
 import { drawEyeMark, drawNewman, newmanTextSize, type NewmanLook } from './newman';
+import { keepLabels, readLabels } from './frame-labels';
 
 export type ConformerNames = 'textbook' | 'klyne' | 'none';
 
@@ -378,6 +379,7 @@ export function torsionCsv(d: Pick<TorsionData, 'points' | 'unit' | 'profile'>):
 /** Draw a diagram in a frame of its own, or the one in frame `id` again. Returns the frame's id. Call inside an edit. */
 export function putTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
+  const was = readLabels(doc, old);
   if (old?.frame) {
     for (const x of old.frame.captions) doc.removeCaption(x);
     for (const x of old.frame.arrows) doc.removeArrow(x);
@@ -388,6 +390,8 @@ export function putTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec, id?: n
   const pad = 0.3 * doc.style.bondLength;
   const frame: Frame = { atoms: parts.atoms ?? [], captions: parts.captions, arrows: parts.arrows, shapes: parts.shapes, padX: pad, padY: pad, fit: true };
   const b = frameBox(doc, frame, m) ?? { x1: at.x, y1: at.y, x2: at.x + d.w, y2: at.y + d.h };
-  if (old) { doc.updateShape(old.id, { ...b, frame, torsion: d }); return old.id; }
-  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, torsion: d, name: 'Torsional energy diagram' }).id;
+  // (looks set on its labels by hand stay)
+  const madeLabels = keepLabels(doc, was, frame);
+  if (old) { doc.updateShape(old.id, { ...b, frame, torsion: d, madeLabels }); return old.id; }
+  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, torsion: d, name: 'Torsional energy diagram', madeLabels }).id;
 }

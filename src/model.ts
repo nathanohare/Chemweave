@@ -1170,7 +1170,33 @@ export interface Shape {
    * paste into. `runs` is the text label it had, so it can go back to that.
    */
   holder?: { runs?: TextRun[] };
+  /**
+   * A frame drawn from data (energy diagram, plate, Newman, torsion chart, diagram): its labels
+   * as last drawn, so looks set on them by hand afterwards are told from the drawing's own and
+   * kept when it is drawn again (design/frame-labels.ts).
+   */
+  madeLabels?: MadeLabel[];
 }
+
+/** A label as a frame drawn from data made it: its words and their runs. */
+export interface MadeLabel { text: string; runs: TextRun[]; /** An atom's label (a sawhorse's group), not a caption's words. */ atom?: true }
+
+/**
+ * The kinds of drawing kept as data on an invisible frame round what it draws: an energy diagram,
+ * a SmartArt-style diagram, a TLC plate, gel or MO diagram, a Smart Scheme, a Newman or sawhorse
+ * projection, a torsion chart. Every place that treats such a frame apart from an ordinary
+ * rectangle (Format Painter, the Style panel, Action Settings) asks `isDataFrame`.
+ */
+export const DATA_FRAME_KINDS = ['energy', 'diagram', 'plate', 'smart', 'newman', 'torsion'] as const;
+export type DataFrameKind = (typeof DATA_FRAME_KINDS)[number];
+
+/** Which kind of drawing kept as data this shape is the frame of, or null for any other shape. */
+export function dataFrameKind(s: Pick<Shape, DataFrameKind>): DataFrameKind | null {
+  return DATA_FRAME_KINDS.find((k) => s[k] !== undefined) ?? null;
+}
+
+/** Is this shape the invisible frame of a drawing kept as data (its fill and outline aren't its own)? */
+export const isDataFrame = (s: Pick<Shape, DataFrameKind>): boolean => dataFrameKind(s) !== null;
 
 /**
  * Can this shape be turned to any angle (Slides and Design, and an orbital's lobes anywhere),
@@ -1504,8 +1530,11 @@ export function shiftDrawing(doc: Doc, dx: number, dy: number): void {
 
 export type Entity = Atom | Bond | Caption | Arrow | Shape;
 /** One letter per entity type: atom, bond, caption, arrow (r), shape. */
-/** What an undo step can hold: atoms, bonds, captions, arrows, shapes, and 'y' the drawing style. */
+/** What an undo step can hold: atoms, bonds, captions, arrows, shapes, and 'y' the drawing's settings (its style, and its page as entry PAGE_ENTRY). */
 export type Kind = 'a' | 'b' | 'c' | 'r' | 's' | 'y';
+/** The undo entry ('y' kind) that holds the drawing's page. */
+const PAGE_ENTRY = 1;
+const copyPage = (p: PageSetup | null): PageSetup | null => p && { ...p, ...(p.walls ? { walls: { ...p.walls } } : {}) };
 
 /**
  * The CDXML file a drawing was opened from. Saving rewrites only what changed and keeps
@@ -1855,7 +1884,7 @@ export class Doc {
   private snapshot(key: string): Entity | null {
     const kind = key[0] as Kind;
     const id = Number(key.slice(1));
-    if (kind === 'y') return clone(this.style) as unknown as Entity;
+    if (kind === 'y') return (id === PAGE_ENTRY ? { page: copyPage(this.page) } : clone(this.style)) as unknown as Entity;
     const e = this.mapOf(kind).get(id);
     return e ? clone(e) : null;
   }
@@ -1873,6 +1902,13 @@ export class Doc {
   setStyle(st: DocStyle): void {
     this.touch('y', 0);
     this.style = { ...st };
+    this.allDirty = true;
+  }
+
+  /** Change the page (File ▸ Page Setup, a page edge fixed or freed), as part of the edit going on. */
+  setPage(p: PageSetup | null): void {
+    this.touch('y', PAGE_ENTRY);
+    this.page = copyPage(p);
     this.allDirty = true;
   }
 
@@ -1931,7 +1967,8 @@ export class Doc {
 
   private rawSet(kind: Kind, id: number, e: Entity | null): void {
     if (kind === 'y') {
-      if (e) this.style = { ...(e as unknown as DocStyle) };
+      if (e && id === PAGE_ENTRY) this.page = copyPage((e as unknown as { page: PageSetup | null }).page);
+      else if (e) this.style = { ...(e as unknown as DocStyle) };
       this.allDirty = true;
       return;
     }

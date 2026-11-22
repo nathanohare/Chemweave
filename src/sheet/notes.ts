@@ -12,6 +12,11 @@ export interface CellNote extends CommentThread {
   shown?: boolean;
   /** A note from a file whose text didn't start with its author's name (Excel adds that line only to notes it makes): saved without it. */
   noAuthorLine?: true;
+  /**
+   * From an Excel file: the note's text element as the file had it (its runs, with their bold,
+   * italic, subscripts and fonts), written back while the note still says `text` by `author`.
+   */
+  xl?: { xml: string; text: string; author: string };
 }
 
 /** A note copied (for the undo history and pasting). */
