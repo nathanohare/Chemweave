@@ -611,7 +611,7 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
         odd.length ? `More than one imaginary frequency: ${odd.join(', ')}.` : '',
         theories.size > 1 ? `The files use different levels of theory (${[...theories].join('; ')}).` : '',
         got.some((r) => r.unfinished) ? `Did not finish normally: ${got.filter((r) => r.unfinished).map((r) => r.name).join(', ')}.` : '',
-        got.some((r) => r.missing) ? `No ${[...new Set(got.filter((r) => r.missing).map((r) => r.missing))].join(' or ')} energy found in ${got.filter((r) => r.missing).map((r) => r.name).join(', ')}: the SCF energy is used there.` : '',
+        got.some((r) => r.missing) ? `The SCF energy is used for ${got.filter((r) => r.missing).map((r) => r.name).join(', ')}: no ${[...new Set(got.filter((r) => r.missing).map((r) => r.missing))].join(' or ')} energy could be read from it.` : '',
         skipped.length ? `Not read: ${skipped.join(', ')}.` : '',
       ].filter(Boolean).join(' ');
       redraw();

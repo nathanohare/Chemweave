@@ -73,17 +73,33 @@ const lastAt = (text: string, key: string, re: RegExp): RegExpExecArray | null =
  * Fortran D exponents (-0.11531345437D+03) are read as E. Checked in this order, so a CCSD(T) job's
  * MP2 step is not taken for its answer.
  */
+const E = '(-?\\d+\\.\\d+(?:[DE][+-]?\\d+)?)';
+const line = (key: string) => new RegExp(`${key.replace(/[()]/g, '\\$&')}\\s*${E}`);
+// (a method with options: ccsd(t,full), CCSD(T,FC), ccsd=(t,maxcyc=100), qcisd(t,full), mp4(sdq);
+// the (T) is the option t among the others; review F1-R03)
+const withT = (m: string) => new RegExp(`\\b${m}(?:-t\\b|\\s*=?\\s*\\([^)]*\\bt\\b)`, 'i');
 const POST_SCF: { route: RegExp; name: string; key: string; re: RegExp }[] = [
-  { route: /\boniom\b/i, name: 'ONIOM extrapolated', key: 'ONIOM: extrapolated energy', re: /ONIOM: extrapolated energy\s*=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
-  { route: /\bccsd\(t\)|\bccsd-t\b/i, name: 'CCSD(T)', key: 'CCSD(T)=', re: /CCSD\(T\)=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
-  { route: /\bqcisd\(t\)/i, name: 'QCISD(T)', key: 'QCISD(T)=', re: /QCISD\(T\)=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
-  { route: /\bccsd\b(?!\()|\bqcisd\b(?!\()/i, name: 'CCSD', key: 'E(CORR)=', re: /E\(CORR\)=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/i },
-  { route: /\bmp4/i, name: 'MP4', key: 'UMP4(SDTQ)=', re: /UMP4\(SDTQ\)=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
-  { route: /\bmp3\b/i, name: 'MP3', key: 'EUMP3=', re: /EUMP3=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
-  { route: /\b[ru]?o?mp2\b/i, name: 'MP2', key: 'EUMP2 =', re: /EUMP2 =\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
+  { route: /\boniom\b/i, name: 'ONIOM extrapolated', key: 'ONIOM: extrapolated energy', re: new RegExp(`ONIOM: extrapolated energy\\s*=\\s*${E}`) },
+  { route: withT('ccsd'), name: 'CCSD(T)', key: 'CCSD(T)=', re: line('CCSD(T)=') },
+  { route: withT('qcisd'), name: 'QCISD(T)', key: 'QCISD(T)=', re: line('QCISD(T)=') },
+  { route: /\bccsd\b/i, name: 'CCSD', key: 'E(CORR)=', re: new RegExp(`E\\(CORR\\)=\\s*${E}`, 'i') },
+  { route: /\bqcisd\b/i, name: 'QCISD', key: 'E(CORR)=', re: new RegExp(`E\\(CORR\\)=\\s*${E}`, 'i') },
+  { route: /\bmp4\s*=?\s*\(\s*sdq\b/i, name: 'MP4(SDQ)', key: 'UMP4(SDQ)=', re: line('UMP4(SDQ)=') },
+  { route: /\bmp4\s*=?\s*\(\s*dq\b/i, name: 'MP4(DQ)', key: 'UMP4(DQ)=', re: line('UMP4(DQ)=') },
+  { route: /\bmp4/i, name: 'MP4', key: 'UMP4(SDTQ)=', re: line('UMP4(SDTQ)=') },
+  { route: /\bmp3\b/i, name: 'MP3', key: 'EUMP3=', re: line('EUMP3=') },
+  { route: /\b[ru]?o?mp2\b/i, name: 'MP2', key: 'EUMP2 =', re: line('EUMP2 =') },
   // a double hybrid's SCF energy leaves out its MP2-like part: "E2(B2PLYP) = … E(B2PLYP) = …"
-  { route: /\b(b2plyp|mpw2plyp|b2gpplyp|dsdpbep86|pbe0dh|pbeqidh)/i, name: 'double hybrid', key: 'E2(', re: /E2\([^)]*\)\s*=\s*-?\d+\.\d+(?:[DE][+-]?\d+)?\s+E\([^)]*\)\s*=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
+  { route: /\b(b2plyp|mpw2plyp|b2gpplyp|dsdpbep86|pbe0dh|pbeqidh)/i, name: 'double hybrid', key: 'E2(', re: new RegExp(`E2\\([^)]*\\)\\s*=\\s*-?\\d+\\.\\d+(?:[DE][+-]?\\d+)?\\s+E\\([^)]*\\)\\s*=\\s*${E}`) },
 ];
+/**
+ * Methods whose energy is not the SCF energy and which are not read here (CISD, Brueckner doubles,
+ * EOM, SAC-CI, MP5, CCD, CEPA…), and lines a correlated method prints: with either and no method
+ * read above, the result says the method's energy was not read, rather than passing the SCF
+ * (HF reference) energy off as the answer.
+ */
+const OTHER_CORR = /\b(cisd|cid|bd|eom-?\w*|sac-ci|mp5|ccd|lccd|cepa\w*|dlpno\w*|lpno\w*|cbs-\w+|g[1-4]\w*|w1\w*|casmp2|caspt2|mrci)\b/i;
+const CORR_LINE = /E\(CORR\)=|EUMP2 =|EUMP3=|UMP4\(|CCSD\(T\)=|QCISD\(T\)=|ONIOM: extrapolated/i;
 /** Composite methods: "CBS-QB3 (0 K)=", "G4(0 K)=", and their own "Enthalpy=" and "Free Energy=". */
 const COMPOSITE = /\b(cbs-qb3|cbs-4m|cbs-apno|g4mp2|g4|g3mp2|g3b3|g3|g2mp2|g2|g1|w1u|w1bd|w1ro)\b/i;
 const fortran = (m: RegExpExecArray | null): number | null => (m ? Number(m[1].replace(/D/i, 'E')) : null);
@@ -112,6 +128,11 @@ function readGaussian(text: string, name: string): QmResult {
       const e = fortran(lastAt(text, p.key, p.re));
       if (e !== null) { scf = e; energyFrom = p.name === 'double hybrid' ? (/E\(([^)]*)\)\s*=/.exec(text.slice(text.lastIndexOf('E2(')))?.[1] ?? p.name) : p.name; }
       else missing = p.name;
+    } else {
+      // a method not read here: say so (never the SCF energy as if it were the method's)
+      const other = OTHER_CORR.exec(routeLine.replace(/^#\w?\s*/, ''));
+      if (other) missing = other[1].toUpperCase();
+      else if (CORR_LINE.test(text)) missing = (/(\S+)\//.exec(routeLine.replace(/^#\w?\s*/, ''))?.[1] ?? 'post-SCF').toUpperCase();
     }
   }
   // the last frequency job: the negative frequencies it lists

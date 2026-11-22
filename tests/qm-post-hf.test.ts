@@ -77,4 +77,43 @@ describe('Gaussian energies beyond SCF', () => {
     expect(r.energyFrom).toBeUndefined();
     expect(r.missing).toBeUndefined();
   });
+
+  // review F1-R03: the usual option forms of the route keywords (Gaussian 16 User's Reference, CCSD
+  // and MP4 keyword pages: CCSD(T,FC), CCSD=(T,MaxCyc=N), QCISD(T,Full), MP4(SDQ), MP4(DQ))
+  const triples = [' E2 =    -0.2645323017D+00 EUMP2 =    -0.76275278793D+02', ' DE(Corr)= -0.27D+00 E(CORR)=     -76.320000000', ' CCSD(T)= -0.76332141577D+02'];
+  for (const route of ['#p ccsd(t,full)/cc-pvtz', '#p CCSD(T,FC)/cc-pVTZ', '#p ccsd=(t,maxcyc=100)/cc-pvtz', '#p ccsd(full,t)/cc-pvtz']) {
+    it(`reads the CCSD(T) energy for "${route}"`, () => {
+      const r = readQmOutput(log(route, triples), 'h2o.log')!;
+      expect(r.scf).toBeCloseTo(-76.332141577, 9);
+      expect(r.energyFrom).toBe('CCSD(T)');
+    });
+  }
+  it('reads QCISD(T) with options, and names a QCISD job QCISD', () => {
+    const r = readQmOutput(log('#p qcisd(t,full)/cc-pvtz', [' QCISD(T)= -0.76331000000D+02']), 'h2o.log')!;
+    expect(r.scf).toBeCloseTo(-76.331, 6);
+    expect(r.energyFrom).toBe('QCISD(T)');
+    const q = readQmOutput(log('#p qcisd/cc-pvtz', [' DE(Corr)= -0.27D+00 E(CORR)=     -76.300000000']), 'h2o.log')!;
+    expect(q.energyFrom).toBe('QCISD');
+    expect(q.scf).toBeCloseTo(-76.3, 6);
+  });
+  it('reads CCSD with options as CCSD', () => {
+    const r = readQmOutput(log('#p ccsd(full)/cc-pvtz', [' DE(Corr)= -0.27D+00 E(CORR)=     -76.320000000']), 'h2o.log')!;
+    expect(r.energyFrom).toBe('CCSD');
+    expect(r.scf).toBeCloseTo(-76.32, 6);
+  });
+  it('reads MP4(SDQ) and MP4(DQ) energies from their own lines', () => {
+    const body = [' UMP4(DQ)=  -0.76290000000D+02', ' UMP4(SDQ)= -0.76295000000D+02'];
+    expect(readQmOutput(log('#p mp4(sdq)/cc-pvtz', body), 'h2o.log')!.scf).toBeCloseTo(-76.295, 6);
+    expect(readQmOutput(log('#p mp4(dq)/cc-pvtz', body), 'h2o.log')!.scf).toBeCloseTo(-76.29, 6);
+  });
+  it('says so, never passing the SCF energy off as the answer, when the method is not read here', () => {
+    const bd = readQmOutput(log('#p bd(t)/cc-pvtz', []), 'h2o.log')!;
+    expect(bd.missing).toBe('BD');
+    expect(bd.energyFrom).toBeUndefined();
+    // a route not recognised, but a correlated energy in the log
+    const odd = readQmOutput(log('#p xmethod/cc-pvtz', [' CCSD(T)= -0.76332141577D+02']), 'h2o.log')!;
+    expect(odd.missing).toBe('XMETHOD');
+    // plain DFT: nothing to say
+    expect(readQmOutput(log('#p b3lyp/6-31g(d)', []), 'h2o.log')!.missing).toBeUndefined();
+  });
 });
