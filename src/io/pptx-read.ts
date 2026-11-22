@@ -42,7 +42,7 @@ import { layoutText, caretPos, ASCENT, PPT_SINGLE } from '../text/layout';
 import { Master, SlideSize, LayoutId, type TemplateArt, type ArtLayer, type KeptRel, type KeptXmlPart, type NotesKept, defaultMaster, textStyles, slideDrawingStyle, slideBackground, slideColours, hasLayout, newLayoutId, deckLayouts, type LayoutDef, type PlaceholderBox, type PicturePlaceholder, type ThemeColor, type SectionCount, type DeckSettings, type SlideHF, type DateFormat, showsNumber, showsFooter, showsDate } from '../deck/deck';
 import { backgroundColour, isPlain, sameBackground, type Background } from '../deck/background';
 import { readFill, readOneFill, type FillContext } from './pptx-background';
-import { TAG, PPT_ASCENT, MIME_EXT, arialMeasure, NS_A14, NS_M, swapBox, tableLookKey, savedTableLook, joinTagPieces, tagLooksCut } from './pptx-write';
+import { TAG, PPT_NAME, PPT_ASCENT, MIME_EXT, arialMeasure, NS_A14, NS_M, swapBox, tableLookKey, savedTableLook, joinTagPieces, tagLooksCut } from './pptx-write';
 import { ommlToTex, toOmml } from '../document/math';
 import { shapeMathPicture, shapeMathSize } from '../deck/equation';
 import { GEOS } from '../design/geo';
@@ -933,7 +933,9 @@ class Reader {
     const own: SlideHF = {};
     if (has('sldNum') !== showsNumber(m, lay)) own.number = has('sldNum');
     if (m.footer.trim() && has('ftr') !== showsFooter(m, lay)) own.footer = has('ftr');
-    // (with no footer text, its own switch from its tag)
+    // (with no footer text, its own switch from its tag, written beside no footer on the slide:
+    // a footer put on the slide in PowerPoint since is PowerPoint's)
+    else if (!m.footer.trim() && has('ftr')) own.footer = true;
     else if (!m.footer.trim() && /^[01]$/.test(tags[TAG.slideFooter] ?? '')) own.footer = tags[TAG.slideFooter] === '1';
     if (has('dt') !== showsDate(m, lay)) own.date = has('dt');
     const hf = Object.keys(own).length ? own : undefined;
@@ -1886,8 +1888,7 @@ class Reader {
         if (!look.fill && look.width > 1.75 * doc.style.lineWidth) sh.bold = true;
         if (prst === 'roundRect') {
           sh.rounded = true;
-          const adj = kid(spPr, 'prstGeom', 'avLst', 'gd')?.getAttribute('fmla')?.match(/val\s+(-?\d+)/);
-          sh.radius = (Number(adj?.[1] ?? 16667) / 100000) * Math.min(box.x2 - box.x1, box.y2 - box.y1);
+          sh.radius = roundRadius(spPr, box);
         }
         doc.addShape(sh);
       }
@@ -2095,21 +2096,33 @@ class Reader {
    * not one of ours (or is no longer a box, oval or line).
    */
   private ourShape(from: string, el: Element, spPr: Element | null, where: Pick<Shape, 'x1' | 'y1' | 'x2' | 'y2'> & { rot?: number }, doc: Doc): boolean {
-    const tag = this.tagsOf(from, kid(el, el.localName === 'cxnSp' ? 'nvCxnSpPr' : 'nvSpPr', 'nvPr'))[TAG.shape];
+    const nv = kid(el, el.localName === 'cxnSp' ? 'nvCxnSpPr' : 'nvSpPr');
+    const tag = this.tagsOf(from, kid(nv, 'nvPr'))[TAG.shape];
     if (!tag) return false;
-    let saved: { s?: Partial<Shape>; sid?: unknown; pr?: unknown } | null;
+    let saved: { s?: Partial<Shape>; sid?: unknown; pr?: unknown; g?: unknown } | null;
     try { saved = JSON.parse(tag); } catch { return false; }
     const s = saved?.s;
-    if (!s || (s.kind !== 'rect' && s.kind !== 'oval' && s.kind !== 'line')) return false;
+    if (!s || typeof s !== 'object' || (s.kind !== 'rect' && s.kind !== 'oval' && s.kind !== 'line')) return false;
     if ((s.kind === 'line') !== (el.localName === 'cxnSp')) return false;
-    const sh = { ...s, x1: where.x1, y1: where.y1, x2: where.x2, y2: where.y2 } as Omit<Shape, 'id'>;
+    // (only fields a box, oval or line has, each of its type: a damaged tag puts nothing odd on it;
+    // what it names comes back through the slide's links, its name and hidden from PowerPoint's)
+    const sh = { ...plainShapeFields(s), kind: s.kind, x1: where.x1, y1: where.y1, x2: where.x2, y2: where.y2 } as Omit<Shape, 'id'>;
     if (s.kind !== 'line') { if (where.rot) sh.rot = where.rot; else delete sh.rot; }
+    // its outline changed in PowerPoint (Change Shape, a rounded corner's handle): PowerPoint's kind and rounding
+    if (s.kind !== 'line' && typeof saved?.g === 'string' && saved.g !== spPrPrint(spPr, 'geom')) {
+      const prst = kid(spPr, 'prstGeom')?.getAttribute('prst') ?? 'rect';
+      sh.kind = prst === 'ellipse' ? 'oval' : 'rect';
+      delete sh.rounded; delete sh.radius;
+      if (prst === 'roundRect') { sh.rounded = true; sh.radius = roundRadius(spPr, where); }
+    }
+    // a name kept here (one that looks like PowerPoint's own) while PowerPoint's Selection Pane still shows it
+    if (typeof s.name === 'string' && s.name.trim() === (kid(nv, 'cNvPr')?.getAttribute('name') ?? '').trim()) sh.name = s.name;
     // its colour, fill or outline changed in PowerPoint: PowerPoint's, the rest as saved
     if (typeof saved?.pr === 'string' && saved.pr !== spPrPrint(spPr, 'look')) {
       const look = this.look(el, spPr);
       for (const k of PLAIN_LOOK_KEYS) delete (sh as Record<string, unknown>)[k];
       sh.color = look.line ?? look.fill ?? '#000000';
-      if (look.fill && s.kind !== 'line') { sh.filled = true; if (look.line && look.line.toLowerCase() !== look.fill.toLowerCase()) sh.fillColor = look.fill; else sh.color = look.fill; }
+      if (look.fill && sh.kind !== 'line') { sh.filled = true; if (look.line && look.line.toLowerCase() !== look.fill.toLowerCase()) sh.fillColor = look.fill; else sh.color = look.fill; }
       if (look.dashed) sh.dashed = true;
       if (look.dotted) sh.dotted = true;
       if (look.width > 1.75 * doc.style.lineWidth) sh.bold = true;
@@ -3063,9 +3076,6 @@ function joinCanvases(slides: PptxSlide[], parts: (PartRead | null)[], want: 'ca
   return { slides: out, place, edited, joined };
 }
 
-/** The names PowerPoint (and this program) give shapes on their own: "Picture 3", "TextBox 12". */
-const PPT_NAME = /^(Picture|Rectangle|Oval|Line|TextBox|Text Box|Title|Text Placeholder|Content Placeholder|Subtitle|Table|Chart|Equation|Animation|Straight Connector|Straight Arrow Connector|Elbow Connector|Curved Arrow|Connector|Freeform|Group|Diagram|Structure|Highlight|Graphic|Object|Shape|Google Shape|Footer|Slide Number|Date|Rounded Rectangle|Ellipse|Isosceles Triangle|Right Arrow|Arrow)( Placeholder)? \d+$/i;
-
 /** Files saved here: the shapes (by id) on the master and each layout that are the template's artwork, and whether the theme is the template's. */
 export interface ArtIds { theme?: boolean; master?: number[]; layouts?: Record<string, number[]> }
 
@@ -3245,13 +3255,49 @@ function mediaFromTag(tag: string, audio: boolean): Partial<Media> {
   return out;
 }
 
+/** A rounded rectangle's corner radius from PowerPoint's adjust value (a sixth of the short side by default). */
+function roundRadius(spPr: Element | null, box: Pick<Shape, 'x1' | 'y1' | 'x2' | 'y2'>): number {
+  const adj = kid(spPr, 'prstGeom', 'avLst', 'gd')?.getAttribute('fmla')?.match(/val\s+(-?\d+)/);
+  return (Number(adj?.[1] ?? 16667) / 100000) * Math.min(Math.abs(box.x2 - box.x1), Math.abs(box.y2 - box.y1));
+}
+
+/**
+ * The fields a box, oval or line saved here may bring back from its tag (pptx-write plainShape),
+ * with the type each must have. Not its place (where PowerPoint has it), its name and hidden
+ * (PowerPoint's Selection Pane: cNvPr), or what it names (REF_FIELDS: the slide's links).
+ */
+// (every field of Shape but those is listed, so a field added to Shape must be added here too)
+const PLAIN_SHAPE_FIELDS: { [K in Exclude<keyof Shape, 'id' | 'kind' | 'x1' | 'y1' | 'x2' | 'y2' | 'name' | 'hidden' | 'ring' | 'pin' | 'frame'>]-?: 'number' | 'string' | 'boolean' | 'object' } = {
+  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', stack: 'number', poly: 'object', geo: 'string', orbital: 'string', orb: 'object',
+  text: 'object', textAlign: 'string', textValign: 'string', lineWidth: 'number', transparency: 'number', rot: 'number', dashed: 'boolean',
+  hashSpacing: 'number', dotted: 'boolean', filled: 'boolean', fill: 'string', fill2: 'string', gradAngle: 'number', gradRadial: 'boolean',
+  pattern: 'string', patternColor: 'string', patternSize: 'number', patternTransparency: 'number', patternClear: 'boolean', fillColor: 'string',
+  fade: 'number', rounded: 'boolean', radius: 'number', shadow: 'boolean', shadowBetween: 'boolean', shadowSize: 'number', shadowColor: 'string',
+  shadowOpacity: 'number', shadowAngle: 'number', shadowBlur: 'number', glow: 'object', softEdge: 'number', bevel: 'object', reflection: 'object',
+  picFill: 'object', bold: 'boolean', symbol: 'string', bracket: 'string', pair: 'boolean', bracketPair: 'number', repeat: 'string', repeatLook: 'object',
+  picture: 'boolean', src: 'string', px: 'object', video: 'object', link: 'string', zoom: 'object', crop: 'object', phPic: 'number', look: 'object', fx: 'object',
+  color: 'string', z: 'number', alt: 'string', locked: 'boolean', table: 'object', chart: 'object', math: 'object', editedOutside: 'boolean', energy: 'object',
+  newman: 'object', torsion: 'object', plate: 'object', diagram: 'object', smart: 'object', holder: 'object', madeLabels: 'object', ole: 'object',
+};
+
+/** The tag's fields that a box, oval or line may have, each of the right type (others are left out). */
+function plainShapeFields(s: Record<string, unknown>): Partial<Shape> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(s)) {
+    const want = (PLAIN_SHAPE_FIELDS as Record<string, string | undefined>)[k];
+    if (!want || v === null || typeof v !== want || (want === 'number' && !Number.isFinite(v))) continue;
+    out[k] = v;
+  }
+  return out as Partial<Shape>;
+}
+
 /** A box's, oval's or line's look, as PowerPoint can change it (see ourShape). */
 const PLAIN_LOOK_KEYS = ['color', 'filled', 'fillColor', 'fill', 'fill2', 'gradAngle', 'gradRadial', 'dashed', 'dotted', 'bold', 'lineWidth', 'hashSpacing', 'shadow', 'shadowSize', 'pattern', 'patternColor', 'patternSize', 'patternTransparency', 'patternClear', 'transparency'] as const;
 
 /**
  * The slide's references saved by id (pptx-write slideLinks), joined up again with what each
- * saved thing became. A reference is put back only when everything it names is on the slide
- * (else the thing keeps what came with it).
+ * saved thing became. What is no longer on the slide (deleted in PowerPoint) drops out of the
+ * reference; a reference naming only things that are gone is left off.
  */
 function restoreLinks(doc: Doc, tag: string, saved: Record<RefKind, Map<number, number>>): void {
   let list: unknown;
@@ -3266,7 +3312,8 @@ function restoreLinks(doc: Doc, tag: string, saved: Record<RefKind, Map<number, 
     const patch: Record<string, unknown> = {};
     for (const [f, v] of Object.entries(e.f as Record<string, unknown>)) {
       if (!REF_FIELDS[k].includes(f)) continue;
-      const got = remapField(k, f, v, idOf, true);
+      // (what is gone, deleted in PowerPoint, drops out: a frame keeps the members still there)
+      const got = remapField(k, f, v, idOf, true) ?? remapField(k, f, v, idOf, false);
       if (got !== undefined) patch[f] = got;
     }
     if (!Object.keys(patch).length) continue;

@@ -157,6 +157,10 @@ export const TAG = {
   slideFooter: 'CHEMILLUSTRATOR_SLIDE_FOOTER',
 };
 
+/** The names PowerPoint (and this program) give shapes on their own: "Picture 3", "TextBox 12" (not read as names given by hand). */
+export const PPT_NAME = /^(Picture|Rectangle|Oval|Line|TextBox|Text Box|Title|Text Placeholder|Content Placeholder|Subtitle|Table|Chart|Equation|Animation|Straight Connector|Straight Arrow Connector|Elbow Connector|Curved Arrow|Connector|Freeform|Group|Diagram|Structure|Highlight|Graphic|Object|Shape|Google Shape|Footer|Slide Number|Date|Rounded Rectangle|Ellipse|Isosceles Triangle|Right Arrow|Arrow)( Placeholder)? \d+$/i;
+
+
 /**
  * PowerPoint (365 for Windows) cuts a tag's value at this many characters when it saves, without
  * a word: an 8 MB value comes back as its first 5 MB.
@@ -1581,7 +1585,11 @@ class Writer {
     const xmlText = shapeXml(s, id, lw, this.clr);
     const { id: _, x1: _a, y1: _b, x2: _c, y2: _d, ...look } = s;
     const spPr = fragment(/<p:spPr>[\s\S]*<\/p:spPr>/.exec(xmlText)?.[0] ?? '');
-    const tag = this.addTags(path, { [TAG.shape]: JSON.stringify({ v: 1, s: look, sid: s.id, ...(spPr ? { pr: spPrPrint(spPr, 'look') } : {}) }) });
+    // (with prints of its look and outline as written, to tell what PowerPoint changed: native-print.ts;
+    // not its name and hidden, which PowerPoint's cNvPr has, unless the name is one like PowerPoint's own)
+    const { name, hidden: _h, ...rest } = look;
+    const keep = name !== undefined && PPT_NAME.test(name.trim()) ? { ...rest, name } : rest;
+    const tag = this.addTags(path, { [TAG.shape]: JSON.stringify({ v: 1, s: keep, sid: s.id, ...(spPr ? { pr: spPrPrint(spPr, 'look'), g: spPrPrint(spPr, 'geom') } : {}) }) });
     return xmlText.replace('<p:nvPr/>', `<p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr>`);
   }
 
