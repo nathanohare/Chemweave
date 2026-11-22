@@ -1000,7 +1000,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       `${HEAD}<worksheet xmlns="${MAIN}" xmlns:r="${RNS}">` +
       `${sheetPr}<dimension ref="${used}"/>` +
       `<sheetViews><sheetView${sheetViewAttrs(own.viewOpts)}${own.excel?.viewAttrs ?? ''}${si === book.active ? ' tabSelected="1"' : ''} workbookViewId="0">${view}</sheetView></sheetViews>` +
-      `<sheetFormatPr defaultRowHeight="${own.fileRowHeight?.pt ?? 15}"${own.fileRowHeight?.custom ? ' customHeight="1"' : ''}${own.fileRowHeight?.zero ? ' zeroHeight="1"' : ''}${outlineLevelAttrs(s)}/>` +
+      `<sheetFormatPr defaultRowHeight="${own.fileRowHeight?.pt ?? ptFromPx(DEFAULT_ROW_H)}"${own.fileRowHeight ? (own.fileRowHeight.custom ? ' customHeight="1"' : '') : ' customHeight="1"'}${own.fileRowHeight?.zero ? ' zeroHeight="1"' : ''}${outlineLevelAttrs(s)}/>` +
       (colXml.length ? `<cols>${colXml.join('')}</cols>` : '') +
       `<sheetData>${rowXml.join('')}</sheetData>${sheetProtectionXml(own.excel)}${filterXml}${own.excel?.sortState ?? ''}${standIn ? '' : customSheetViewsXml(book, own)}${merges}${cfXml}${dvXml}${hyperlinks}` +
       `${page.printOptions}${page.pageMargins}${page.pageSetup}${page.headerFooter}${page.breaks}${own.excel?.ignoredErrors ?? ''}${drawingXml}${tableParts}${sparkExt ? `<extLst>${sparkExt}</extLst>` : ''}</worksheet>`,
