@@ -1777,7 +1777,8 @@ function remark(v: string, from: string, to: string): string {
   return v.slice(0, start) + mid + v.slice(end);
 }
 /** A number as a caption shows it (minus signs as hyphens), for matching an energy typed over in ChemDraw. */
-const asNumber = (t: string): number | null => { const v = Number(t.trim().replace(/[−–]/g, '-')); return t.trim() && Number.isFinite(v) ? v : null; };
+// (digits with a sign and decimal point only: not 0x10 or 1e3, which Number() would read; review F1c-R09)
+const asNumber = (t: string): number | null => { const u = t.trim().replace(/[−–]/g, '-'); return /^[+-]?\d+(?:\.\d+)?$/.test(u) ? Number(u) : null; };
 
 /**
  * A frame's drawing whose texts were changed in ChemDraw (G1-13): `was` the texts as written,
@@ -1795,7 +1796,9 @@ export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
   const left = [...now];
   const removed: string[] = [];
   for (const t of was) { const i = left.indexOf(t); if (i >= 0) left.splice(i, 1); else removed.push(t); }
-  if (!removed.length) return true;
+  // the same texts in other places (Left and Right swapped round): not something the settings can
+  // follow, so the frame is marked rather than drawn the old way round (review F1c-R09)
+  if (!removed.length) return was.length !== now.length || was.every((t, i) => t === now[i]);
   const sorted = (v: string[]) => JSON.stringify([...v].sort());
   let pairs: [string, string][];
   if (removed.length === 1 && left.length === 1) pairs = [[removed[0], left[0]]];
@@ -1834,6 +1837,13 @@ export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
   };
   const patch: Partial<Shape> = {};
   for (const k of FRAME_DATA) if (s[k]) (patch as Record<string, unknown>)[k] = swap(s[k]);
+  // an MO diagram's molecular orbitals name the atomic orbitals they come from (`from`): renamed with them
+  const mo = patch.plate?.mo;
+  if (mo && s.plate?.mo) {
+    const renamed = new Map<string, string>();
+    s.plate.mo.levels.forEach((l, i) => { const now = mo.levels[i]?.label; if (now !== undefined && now !== l.label) renamed.set(shown(l.label), shown(now)); });
+    if (renamed.size) patch.plate = { ...patch.plate!, mo: { ...mo, levels: mo.levels.map((l) => (l.from ? { ...l, from: l.from.split(/,\s*/).map((x) => renamed.get(shown(x)) ?? x).join(', ') } : l)) } };
+  }
   // every changed text must be one the data holds, or none is taken
   if (hits.size !== pairs.length) return false;
   doc.updateShape(s.id, patch);

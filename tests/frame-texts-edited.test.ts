@@ -181,3 +181,35 @@ describe('every redraw of a marked frame waits for the user (review F1c-R04)', (
     expect(d.shapes.get(id)!.editedOutside).toBeUndefined();
   });
 });
+
+describe('smaller points of the third review (F1c-R09)', () => {
+  it('takes an energy only as plain digits: 0x10 and 1e3 are not numbers here', () => {
+    for (const typed of ['0x10', '1e3']) {
+      const got = readCdxml(write(energy()).replace(/>22\.0</, `>${typed}<`));
+      const s = frameOf(got.doc, 'energy');
+      expect(s.energy!.paths[0].points.map((p) => p.g), typed).toEqual([0, 22, -8]);
+      expect(s.editedOutside, typed).toBe(true);
+    }
+  });
+  it('marks a diagram whose two texts were swapped round, rather than drawing them the old way', () => {
+    const d = new Doc();
+    d.edit('d', () => putDiagram(d, POINTS, newDiagram('org', 'Boss\n\tLeft\n\tRight'), { x: 50, y: 40 }));
+    const got = readCdxml(write(d).replace(/>Left</, '>@@<').replace(/>Right</, '>Left<').replace(/>@@</, '>Right<'));
+    const s = frameOf(got.doc, 'diagram');
+    expect(s.diagram!.text).toBe('Boss\n\tLeft\n\tRight');
+    expect(s.editedOutside).toBe(true);
+  });
+  it('renames the atomic orbital a molecular orbital comes from with its label (HF: F 2p)', () => {
+    const d = new Doc();
+    const p = newPlate('mo', d.style.bondLength);
+    const spec = structuredClone(MO_PRESETS.find((m) => m.id === 'hf')!.spec);
+    p.mo = { ...spec, labelBack: 'white' };
+    d.edit('MO', () => { putPlate(d, POINTS, p, { x: 0, y: 0 }); });
+    const xml = write(d);
+    expect(xml.match(/>2p</g)).toHaveLength(1);
+    const mo = frameOf(readCdxml(xml.replace(/>2p</, '>2pz<')).doc, 'plate').plate!.mo!;
+    expect(mo.levels.filter((l) => l.label === '2pz')).toHaveLength(1);
+    expect(mo.levels.map((l) => l.from).filter(Boolean)).toEqual(spec.levels.map((l) => l.from).filter(Boolean).map((f) => f!.split(', ').map((x) => (x === '2p' ? '2pz' : x)).join(', ')));
+  });
+});
+
