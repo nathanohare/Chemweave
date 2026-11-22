@@ -44,6 +44,7 @@ export const PAGES = [
   {
     name: 'Canvas', src: 'docs/guide/drawing.md', label: 'Canvas', group: 'The five modes',
     split: [
+      { name: 'Canvas-Ribbon', label: 'Ribbon', sections: ['The Canvas ribbon'] },
       { name: 'Canvas-Toolbox', label: 'Toolbox', sections: ['The toolbox', 'Keyboard shortcuts on atoms and bonds'] },
       { name: 'Canvas-Text-and-Captions', label: 'Text and captions', sections: ['Text and captions'] },
       { name: 'Canvas-Moving-and-Rotating', label: 'Moving and rotating', sections: ['Rotating a structure in perspective', 'Moving, rotating and the Format menu'] },
@@ -52,7 +53,7 @@ export const PAGES = [
       { name: 'Canvas-Page-and-Styles', label: 'Page, styles and colors', sections: ['Drawing styles', 'Navigating the page', 'The page', 'Reading Mode', 'Colors and palettes'] },
       { name: 'Canvas-Analysis-Panel', label: 'Analysis panel', sections: ['The Analysis panel', 'Mass fragmentation'] },
       { name: 'Canvas-Pictures-and-References', label: 'Pictures, hand drawings and references', sections: ['Structures from pictures and hand drawings', 'Pictures and tables', 'References as text'] },
-      { name: 'Canvas-Ribbon-and-Toolboxes', label: 'Ribbon, toolboxes and right-click menu', sections: ['The Canvas ribbon', 'Toolboxes', 'The right-click menu'] },
+      { name: 'Canvas-Toolboxes', label: 'Toolboxes and right-click menu', sections: ['Toolboxes', 'The right-click menu'] },
     ],
   },
   { name: 'Presentation', src: 'docs/guide/slides.md', label: 'Presentation', group: 'The five modes' },

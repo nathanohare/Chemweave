@@ -11757,7 +11757,7 @@ function setRibbonLook(look: Settings['canvasRibbon']): void {
 async function toolboxPreferences(): Promise<void> {
   const r = await ask('Toolboxes and Ribbon', [
     { name: 'look', label: 'Canvas ribbon', value: ribbonLook, options: [{ value: 'classic', label: 'Classic: two rows of buttons' }, { value: 'simple', label: 'Simplified: one row' }],
-      help: 'Both keep the tabs and collapse with the arrow at the right end of the tabs.' },
+      help: 'Both keep the tabs. The arrow at the right end of the tabs switches between them; Ctrl+F1 (or a double-click on a tab) collapses the ribbon to its tabs.' },
     { name: 'cells', label: 'Button cells', value: toolCells, options: [{ value: 'off', label: 'None' }, { value: 'grid', label: 'Grid lines' }, { value: 'raised', label: 'Raised buttons' }, { value: 'both', label: 'Grid lines and raised buttons' }],
       help: 'Gives each toolbox button a cell of its own, so the buttons are easier to tell apart and to hit.' },
     { name: 'tips', label: 'Detailed tooltips', type: 'checkbox', value: String(toolTip.enabled) },
