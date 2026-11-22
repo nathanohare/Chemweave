@@ -6,7 +6,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { MemoryFolder } from '../src/si/folder';
 import { SiProject, type Json } from '../src/si/project';
-import { compileSi, objectLabels, type CompileHost, type PagePicture } from '../src/si/compile-doc';
+import { compileSi, objectLabels, objectLabelSets, type CompileHost, type PagePicture } from '../src/si/compile-doc';
 import { readScene, sceneToDoc } from '../src/io/chem-formats';
 import { ACS_1996 } from '../src/style';
 import { plainText } from '../src/richtext';
@@ -88,6 +88,16 @@ describe('compiling an SI project (review fixes)', () => {
     }
     expect(landscapeSeen).toBe(true);
     expect(page.w < page.h).toBe(true);
+  });
+
+  it('gives each table its own automatic label beside a typed one', async () => {
+    const f = fixture();
+    const rel = 'sections/s-c1aa3466_reaction-optimizatio/tables/t-1ece4eb2.json';
+    const t = JSON.parse(new TextDecoder().decode(f.files.get(rel)!));
+    f.files.set(rel, new TextEncoder().encode(JSON.stringify({ ...t, label: 'Table A' })));
+    const { labels, auto } = await objectLabelSets(await SiProject.open(f));
+    expect(labels.get('t-1ece4eb2')).toBe('Table A');
+    expect(auto.get('t-1ece4eb2')).toBe('Table S1');
   });
 
   it('reads structure files only for the compounds that print', async () => {

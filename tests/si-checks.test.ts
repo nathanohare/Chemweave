@@ -91,6 +91,11 @@ describe('NMR reports', () => {
     expect(protonCount(h)).toBe(9);
     expect(couplings(h).map((c) => c.value)).toEqual([6.5, 6.5]);
     expect(carbonSignalCount('¹³C NMR (101 MHz, CDCl₃) δ 145.8, 128.5, 127.5, 125.4, 70.4, 25.2.')).toBe(6);
+    // a placeholder for a missing list is not a signal (the "13" of "13C" least of all), and a report's closing period ends its last peak
+    expect(carbonSignalCount('[MISSING: 13C NMR peak list]')).toBe(0);
+    expect(carbonSignalCount('13C NMR peak list missing')).toBe(0);
+    expect(carbonSignalCount('13C NMR (101 MHz, CDCl3) δ 145.8, 25.2. [one signal not seen]')).toBe(2);
+    expect(carbonSignalCount('13C NMR (101 MHz, CDCl3): 145.8, 128.5 (2C), 25.2.')).toBe(3);
   });
   it('spots residual solvent peaks', () => {
     const table = defaultImpurityTable();

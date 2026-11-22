@@ -47,7 +47,8 @@ A project also has a **Spectra** section, where every compound's spectra print, 
 In a Custom section, type the text on the page. A line starting with `#` is a heading. Type `@` to mention a compound, table or figure; it prints as its ID or label (**2a**, **Table S1**) and follows any renumbering. **Home ▸ Font** has bold, italic, underline, subscript, superscript and **Symbol**.
 
 - **Insert ▸ Table** adds a table. Click a cell to type in it and Shift+click to pick a block. The **Table Layout** tab adds and deletes rows and columns, merges cells, sets header rows and alignment, and puts a picture, a drawn structure or a compound's structure in a cell. Ctrl+V in a cell pastes cells from Excel or Word.
-- **Insert ▸ Picture**, **Draw Structure**, **Paste Picture** and **Compound…** add a figure. Click a figure for the **Picture Format** tab, which changes the picture or sets its printed width. A structure drawn here can be opened again with the drawing tools.
+- **Insert ▸ Picture**, **Draw Structure**, **Paste Picture** and **Compound…** add a figure. Ctrl+V of a copied drawing or picture in the text also adds one, on the line where the cursor is. Click a figure for the **Picture Format** tab, which changes the picture or sets its printed width. A structure drawn here can be opened again with the drawing tools.
+- Each table and figure has a caption line in the text (shown in gray italics). Edit it like any other line. Ctrl+click it (⌘-click on a Mac) to go to its table or figure.
 
 Tables, figures and schemes are numbered in the order they print.
 

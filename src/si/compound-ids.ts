@@ -87,6 +87,11 @@ export const displayId = (r: IdReport, compoundId: string): string => r.ids.get(
 
 export const cellKey = (sectionId: string, row: number): string => `${sectionId}:${row}`;
 
+/** The other compounds with an ID: named when one or two, otherwise only counted (a page with many is kept short). */
+export function othersText(others: readonly string[]): string {
+  return others.length <= 2 ? others.join('; ') : `${others.length} other compounds`;
+}
+
 export function checkIds(sections: readonly SectionIds[]): IdReport {
   const report: IdReport = { ids: new Map(), compoundWarnings: new Map(), tableWarnings: new Map() };
   const warn = (cid: string, msg: string): void => {
@@ -131,7 +136,7 @@ export function checkIds(sections: readonly SectionIds[]): IdReport {
   // one ID on two compounds anywhere in the project
   for (const places of used.values()) {
     if (places.length < 2) continue;
-    for (const [cid] of places) warn(cid, `Duplicate ID: also used by ${places.filter(([c]) => c !== cid).map(([, w]) => w).join('; ')}.`);
+    for (const [cid] of places) warn(cid, `Duplicate ID “${report.ids.get(cid)}”: also used by ${othersText(places.filter(([c]) => c !== cid).map(([, w]) => w))}.`);
   }
   // table cells that clash with another section's compound or a Manual ID
   sections.forEach((s, si) => {
@@ -139,7 +144,7 @@ export function checkIds(sections: readonly SectionIds[]): IdReport {
       const k = normalizeId(v);
       if (!k || report.tableWarnings.has(cellKey(s.sectionId, row))) return;
       const clashes = (used.get(k) ?? []).filter(([cid]) => !(row < s.compoundIds.length && s.compoundIds[row] === cid)).map(([, w]) => w);
-      if (clashes.length) report.tableWarnings.set(cellKey(s.sectionId, row), `“${v.trim()}” is already used by ${clashes.join('; ')}.`);
+      if (clashes.length) report.tableWarnings.set(cellKey(s.sectionId, row), `“${v.trim()}” is already used by ${othersText(clashes)}.`);
     });
   });
   return report;

@@ -11,14 +11,14 @@ import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
 import type { DocText } from '../document/document';
-import { compileSi, objectLabels, type SiPreviewTarget } from '../si/compile-doc';
+import { compileSi, objectLabelSets, type SiPreviewTarget } from '../si/compile-doc';
 import type { DocView } from './doc-view';
 import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
 import { ALL_FIELDS, NUCLEI, SPECTRUM_TYPES, fieldDef, learnedChoices, nucleusLabel, partText, CORE_FIELDS, LIBRARY_FIELDS, type FieldDef, type Part, type FieldEntry } from '../si/fields';
-import { CITE, MENTION, parseMarkup } from '../si/markup';
+import { CITE, MENTION, parseMarkup, type Paragraph } from '../si/markup';
 import { newId } from '../si/ids';
 import { capitalizeName } from '../si/chem-names';
 import { SiRichBox } from './si-rich';
@@ -544,6 +544,8 @@ export class SiMode {
   private boxes: SiRichBox[] = [];
   /** Tables', figures' and schemes' labels ("Table S1"), as the compiled SI numbers them. */
   private objLabels = new Map<string, string>();
+  /** The numbered label each table and figure gets without a typed one (its Label box's placeholder). */
+  private objAutoLabels = new Map<string, string>();
   private labelsRead = false;
   private tables: SiTableEditor[] = [];
   private figures: SiFigureEditor[] = [];
@@ -1277,12 +1279,13 @@ export class SiMode {
     this.labelsRead = true;
     try {
       await this.pendingOf(p);
-      const got = await objectLabels(p);
+      const { labels: got, auto } = await objectLabelSets(p);
       if (this.project !== p) return;
       this.objLabels = got;
+      this.objAutoLabels = auto;
       for (const b of this.boxes) b.relabel();
-      for (const t of this.tables) { t.relabel(); t.setTitle(got.get(t.id) ?? ''); }
-      for (const f of this.figures) f.setTitle(got.get(f.id) ?? '');
+      for (const t of this.tables) { t.relabel(); t.setTitle(got.get(t.id) ?? '', auto.get(t.id) ?? ''); }
+      for (const f of this.figures) f.setTitle(got.get(f.id) ?? '', auto.get(f.id) ?? '');
     } catch { /* (the kinds' names show instead) */ } finally {
       this.labelsRead = false;
       if (this.labelsAgain) { this.labelsAgain = false; void this.readLabels(); }
@@ -1761,8 +1764,8 @@ export class SiMode {
 
   /**
    * A Custom section's text, and an editor for each of its tables (in the text's order). New
-   * Table adds one at the end of the text, its caption on the line under it; double-clicking a
-   * table in the text goes to its editor.
+   * Table adds one at the end of the text, its caption on the line under it; Ctrl+clicking a
+   * table's or figure's caption line in the text goes to its editor.
    */
   private textCard(out: HTMLElement, s: SiSection): void {
     const p = this.project!;
@@ -1777,7 +1780,11 @@ export class SiMode {
     void this.pendingOf(p).then(() => p.readSectionText(s)).then(async (text) => {
       // (another page was drawn while the text was read: this one is gone)
       if (drawn !== this.drawn || this.project !== p) return;
-      const box = new SiRichBox(text, { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeSectionText(s, v), false, undefined, () => box) }, true, 'Type the section’s text');
+      const box = new SiRichBox(text, {
+        label: this.label, mentionable: this.mentionable,
+        changed: (v) => void this.act(() => p.writeSectionText(s, v), false, undefined, () => box),
+        pasteObject: (e, place) => void this.pasteFigure(s, e, place),
+      }, true, 'Type the section’s text');
       this.boxes.push(box);
       t.append(box.el);
       // the tables and figures under the text, in its order
@@ -1788,6 +1795,7 @@ export class SiMode {
         return [];
       });
       for (const e of editors) {
+        e.setTitle('', this.objAutoLabels.get(e.id) ?? '');
         out.append(e.el);
         if (e instanceof SiTableEditor) { this.tables.push(e); await e.load(); } else this.figures.push(e);
         if (drawn !== this.drawn) return;
@@ -1799,10 +1807,16 @@ export class SiMode {
         made.focus();
         if (made instanceof SiTableEditor) { this.tableChosen(made); this.showRibbonTab('table'); } else { this.figureChosen(made); this.showRibbonTab('figure'); }
       }
-      box.el.addEventListener('dblclick', (e) => {
+      // Ctrl+click (⌘-click) on a table's or figure's caption line goes to it, as a link in Word does
+      // (not a double-click, which selects a word of the caption, and starts a triple-click's line)
+      box.el.addEventListener('click', (e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
         const id = (e.target as HTMLElement).closest<HTMLElement>('[data-table]')?.dataset.table;
         const fig = (e.target as HTMLElement).closest<HTMLElement>('[data-figure]')?.dataset.figure;
-        editors.find((x) => x.id === (id ?? fig))?.focus();
+        const to = editors.find((x) => x.id === (id ?? fig));
+        if (!to) return;
+        e.preventDefault();
+        to.focus();
       });
     }).catch((e) => { if (drawn === this.drawn) t.append(el('p', 'muted si-note', `The section’s text could not be read: ${e instanceof Error ? e.message : String(e)}`)); });
   }
@@ -1867,6 +1881,37 @@ export class SiMode {
       await p.writeSectionText(s, `${text ? text + '\n' : ''}!figure{${id}} ${caption}`);
     });
     this.focusTable = id;
+  }
+
+  /**
+   * Ctrl+V of a drawing or picture in a Custom section's text: a new figure (as Insert ▸ Paste
+   * Picture makes) on the caret's line, or after it.
+   */
+  private async pasteFigure(s: SiSection, e: ClipboardEvent, place: (para: Paragraph) => string): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    // (read while the paste event lasts: its clipboard data is gone after it)
+    const reading = this.clipboard(e);
+    const pics = new SiPictures(this.tableHost(s));
+    let rel: string | null = null;
+    try {
+      const got = await reading;
+      if (!got) return;
+      rel = await pics.fromPasted(got);
+      if (!rel && got.kind !== 'picture') this.host.flash('The clipboard has no picture or drawing. Copy a structure in ChemDraw or Chemweave, or a picture, first.');
+    } catch (err) { this.host.flash(`The picture could not be added: ${err instanceof Error ? err.message : String(err)}`); return; }
+    if (!rel || this.project !== p) return;
+    const id = newId('f');
+    const text = place(parseMarkup(`!figure{${id}} Caption of the figure`)[0]);
+    const file = rel;
+    // (the figure gets the focus when the page is drawn again with it)
+    this.focusTable = id;
+    await this.act(async () => {
+      const figs = (s.data.figures && typeof s.data.figures === 'object' && !Array.isArray(s.data.figures) ? s.data.figures : (s.data.figures = {})) as Json;
+      figs[id] = { file };
+      await p.saveSection(s);
+      await p.writeSectionText(s, text);
+    });
   }
 
   /** A figure or table taken out of a Custom section's text with its caption; its file goes to the Trash. */
