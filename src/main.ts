@@ -288,8 +288,9 @@ import { AccessibilityPane, askAltText } from './ui/accessibility-pane';
 import type { PreflightPane } from './ui/preflight-pane';
 import { shapeBox } from './objects';
 import { SlideComparePane } from './ui/slide-compare';
-import { documentCategories, sheetCategories, slideCategories } from './ui/file-templates';
+import { documentCategories, sheetCategories, slideCategories, templateChem } from './ui/file-templates';
 import { unitPrefs } from './sheet/template-units';
+import { smilesPrefs } from './sheet/smiles-cells';
 import { showTemplateWindow, closeTemplateWindow } from './ui/template-window';
 import type { PastedRows } from './io/table-clip';
 import { Keeper } from './keep/keeper';
@@ -7936,7 +7937,7 @@ function loadSheetMode(): Promise<SheetMode> {
       command: (name) => command(name),
       changed: (book) => ws.noteChange(book && ws.tabs.find((t) => t.book === book)),
       isOpen: (book) => ws.tabs.some((t) => t.book === book),
-      toStructure: (text, style) => textToStructure(text, style),
+      toStructure: (text, style, smilesOnly) => textToStructure(text, style, smilesOnly),
       writeCells: (own, text, html) => writeCells(own, text, html),
       copyStructure: async (contents, style) => (await copyDrawing(structureDoc(contents, style), null)).replace(/^Copied the whole drawing/, 'Copied the structure'),
       readCells: (e) => readCells(e),
@@ -7993,13 +7994,14 @@ function sheetKey(e: KeyboardEvent): boolean {
 }
 
 /** A SMILES string, molfile or name as a drawing, for a cell. */
-async function textToStructure(text: string, style: DocStyle): Promise<{ contents: Contents; notes: string[] } | { error: string }> {
+async function textToStructure(text: string, style: DocStyle, smilesOnly = false): Promise<{ contents: Contents; notes: string[] } | { error: string }> {
   const t = text.trim();
   if (!t) return { error: 'Type a name or SMILES.' };
   if (!chem.ready) return { error: 'The chemistry engine is still loading; try again in a moment.' };
   let got: { mb: string; attach: number[]; warnings: string[] } | null = null;
   const mb = await molfileOrSmiles(text, (s) => chem.smilesToMol(s));
   if (mb) got = { mb, attach: [], warnings: [] };
+  else if (smilesOnly) return { error: `"${t}" isn't SMILES.` };
   else {
     const named = await nameToMolfile(t);
     if ('error' in named) return { error: named.bad !== undefined || named.details ? `"${t}" isn't SMILES or a name that could be read. Check the spelling, or try a CAS number or a simpler name.` : named.error };
@@ -8014,6 +8016,12 @@ async function textToStructure(text: string, style: DocStyle): Promise<{ content
   }
   return { contents: d.contents(), notes: got.warnings };
 }
+
+// the New Spreadsheet window's pictures draw their example SMILES as structures
+templateChem.toStructure = async (smiles, wb) => {
+  const got = await textToStructure(smiles, wb.drawingStyle, true);
+  return 'error' in got ? null : got.contents;
+};
 
 /**
  * Cells to the clipboard: our own copy (formulas, structures and formats), an HTML table (Excel
@@ -11591,8 +11599,12 @@ async function personalPreferences(): Promise<void> {
     { name: 'tplSheet', label: 'Show templates when creating new spreadsheets', type: 'checkbox', value: String(templatesOnNew.sheet) },
     { name: 'tplSlides', label: 'Show templates when creating new presentations', type: 'checkbox', value: String(templatesOnNew.slides) },
     { name: 'tplUnits', label: 'Units in spreadsheet templates', value: unitPrefs.place, short: true, options: [
+      { value: 'both', label: 'In the heading and every cell: Temp (°C) over −78 °C' },
       { value: 'cell', label: 'In every cell: Temp over −78 °C' }, { value: 'header', label: 'In the heading only: Temp (°C) over −78' }],
       help: 'For the columns of new spreadsheets from a template, and Insert ▸ Reagent Table. Either way each cell holds just the number, so it sorts and works in formulas. Change any column later with Home ▸ Number.' },
+    { name: 'sheetsHeading', label: 'Spreadsheets', type: 'heading', value: '' },
+    { name: 'smilesCells', label: 'Draw SMILES typed or pasted into a cell as the structure', type: 'checkbox', value: String(smilesPrefs.draw),
+      help: 'The SMILES shows in the formula bar when the cell is selected, as for a structure drawn there. Undo straight after puts the text back. Off, use Paste Special ▸ Paste SMILES or Structure from Name or SMILES. A name typed in a column headed Structure is always drawn.' },
     { name: 'counterions', label: 'Counterions Typed as Text', type: 'heading', value: '' },
     { name: 'ionCharges', label: 'Add their charges (BF₄ becomes BF₄⁻, NBu₄ becomes NBu₄⁺)', type: 'checkbox', value: String(chemText.ionCharges), inline: (v) => counterionSwatch(v === 'true', doc.style),
       help: 'Off, a counterion typed without its charge is still read as that ion, and flagged until the charge is added.' },
@@ -11615,7 +11627,8 @@ async function personalPreferences(): Promise<void> {
   chemText.ionCharges = r.ionCharges === 'true';
   chemText.saltGroups = r.saltGroups === 'true';
   templatesOnNew = { document: r.tplDocument === 'true', sheet: r.tplSheet === 'true', slides: r.tplSlides === 'true' };
-  unitPrefs.place = r.tplUnits === 'header' ? 'header' : 'cell';
+  unitPrefs.place = r.tplUnits === 'header' || r.tplUnits === 'cell' ? r.tplUnits : 'both';
+  smilesPrefs.draw = r.smilesCells === 'true';
   setIconSet(r.iconSet === 'classic' ? 'classic' : 'new');
   Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
   editor.focalLook = focalPrefs.look;
@@ -11741,6 +11754,7 @@ function currentSettings(): Settings {
     offerFigures,
     templatesOnNew: { ...templatesOnNew },
     sheetTemplateUnits: unitPrefs.place,
+    sheetSmilesStructures: smilesPrefs.draw,
     page: defaultPage,
     welcomed,
     groupTips: labelTips.enabled,
@@ -11986,6 +12000,7 @@ function applySettings(s: Settings): void {
   startView = s.startView;
   templatesOnNew = { ...s.templatesOnNew };
   unitPrefs.place = s.sheetTemplateUnits;
+  smilesPrefs.draw = s.sheetSmilesStructures;
   enterFinishesText = s.enterFinishesText;
   offerFigures = s.offerFigures;
   showGroupTips(s.groupTips);

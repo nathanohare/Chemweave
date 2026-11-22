@@ -27,12 +27,12 @@ export interface SheetTemplate {
 }
 
 /** While a template is being made: where units go, and the columns given a unit's format once the template's own formats are in. */
-let place: UnitPlace = 'cell';
+let place: UnitPlace = 'both';
 let pending: { sh: Sheet; heading: string; col: number; r1: number; r2: number }[] = [];
 
 /** A template's maker, with each column with a unit given that unit's number format afterwards. */
 function withUnits(make: () => Workbook): (units?: UnitPlace) => Workbook {
-  return (units = 'cell') => {
+  return (units = 'both') => {
     place = units;
     pending = [];
     try {
@@ -41,7 +41,7 @@ function withUnits(make: () => Workbook): (units?: UnitPlace) => Workbook {
       wb.build(() => { for (const p of todo) formatUnitColumn(p.sh, p.heading, p.col, p.r1, p.r2, units); });
       return wb;
     } finally {
-      place = 'cell';
+      place = 'both';
       pending = [];
     }
   };
@@ -376,7 +376,7 @@ function nmrYield(): Workbook {
       ['mmol of standard', '=IF(OR(B2="",B3=""),"",B3/B2)', '0.0000'],
       ['Theoretical product (mmol)', ''],
     ]);
-    heads(sh, 7, ['Sample', 'Standard integral', 'Product integral', 'Product protons', 'Product (mmol)', 'Yield (%)'], [190, 110, 110, 100, 100, 70], 0, 27);
+    heads(sh, 7, ['Sample', 'Standard integral', 'Product integral', 'Product protons', 'Product (mmol)', 'Yield (%)'], [240, 110, 110, 100, 100, 70], 0, 27);
     for (let r = 8; r <= 27; r++) {
       const n = r + 1;
       sh.setInput(r, 4, `=IF(OR(B${n}="",B${n}=0,C${n}="",D${n}="",$B$5=""),"",$B$5*(C${n}/D${n})/(B${n}/$B$4))`);

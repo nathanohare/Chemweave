@@ -2,7 +2,8 @@
 // what it holds once in use (an optimization table with entries, an inventory with bottles).
 // They are put into the card's own copy only: a template picked from the window starts empty.
 // The values are made up to look like ordinary lab work; molecular weights are typed in, not
-// worked out from structures, so the picture needs no chemistry engine.
+// worked out from structures. Structures are written as SMILES and drawn for the picture when
+// the chemistry engine is ready (otherwise the SMILES shows).
 
 import type { Workbook } from './workbook';
 
@@ -45,10 +46,10 @@ export const TEMPLATE_SAMPLES: Record<string, (wb: Workbook) => void> = {
   },
   'inventory': (wb) => rows(wb.sheets[0], 1, 0, [
     ['Triethylamine', 'CCN(CC)CC', 101.19, 500, 'mL', 'Flammables cabinet', 'Flammable, corrosive', 'Sigma-Aldrich', 'T0886', '2026-08-04', '2026-08-11', 'NO', ''],
-    ['Palladium(II) acetate', '', 224.51, 1, 'g', 'Desiccator 2', 'Irritant', 'Strem', '46-1780', '2026-07-21', '2026-07-30', 'LR', ''],
+    ['Palladium(II) acetate', 'CC(=O)O[Pd]OC(C)=O', 224.51, 1, 'g', 'Desiccator 2', 'Irritant', 'Strem', '46-1780', '2026-07-21', '2026-07-30', 'LR', ''],
     ['Sodium borohydride', '[BH4-].[Na+]', 37.83, 25, 'g', 'Glove box', 'Water-reactive', 'Oakwood', '094138', '2026-06-02', '', 'NO', 'unopened'],
     ['Dichloromethane', 'ClCCl', 84.93, 4, 'L', 'Solvent room', 'Toxic', 'Fisher', 'D37-4', '2026-09-15', '2026-09-15', 'Group', ''],
-    ['n-Butyllithium, 2.5 M', '', 64.06, 100, 'mL', 'Fridge 1', 'Pyrophoric', 'Sigma-Aldrich', '230707', '2026-10-01', '2026-10-03', 'LR', 'titrated 10-03'],
+    ['n-Butyllithium, 2.5 M', '[Li]CCCC', 64.06, 100, 'mL', 'Fridge 1', 'Pyrophoric', 'Sigma-Aldrich', '230707', '2026-10-01', '2026-10-03', 'LR', 'titrated 10-03'],
   ]),
   'stock-solution': (wb) => {
     const sh = wb.sheets[0];
@@ -76,10 +77,11 @@ export const TEMPLATE_SAMPLES: Record<string, (wb: Workbook) => void> = {
     sh.setInput(2, 1, '16.8');
     sh.setInput(5, 1, '0.20');
     rows(sh, 8, 0, [
-      ['NO-3-112, crude', 1.00, 1.71, 1],
-      ['NO-3-113, crude', 1.00, 1.42, 1],
-      ['NO-3-114, crude', 1.00, 1.88, 1],
-      ['NO-3-115, crude', 1.00, 0.95, 1],
+      // yields of about 85, 72, 93 and 46%
+      ['NO-3-112, crude', 1.00, 1.70, 3],
+      ['NO-3-113, crude', 1.00, 1.44, 3],
+      ['NO-3-114, crude', 1.00, 1.86, 3],
+      ['NO-3-115, crude', 1.00, 0.92, 3],
     ]);
   },
   'titration': (wb) => rows(wb.sheets[0], 7, 1, [
@@ -121,62 +123,88 @@ export function withSample(id: string, wb: Workbook): Workbook {
   return wb;
 }
 
-/** A note on a template's enlarged picture: a column (under its heading) or one cell, what goes in it or (calc) what is worked out there. */
-export interface Callout { col: number; row?: number; text: string; calc?: boolean }
+/**
+ * A note on a template's enlarged picture, drawn as a comment box: on a column (`col`, pointing
+ * at its heading) or one cell (`row` too), saying how what is there is worked out. Only worked-out
+ * columns and cells get one (what you type is plain from the heading, Nate 2026-11-21), and the
+ * text never repeats the heading.
+ */
+export interface Callout { col: number; row?: number; text: string }
 
-/** The notes on each template's enlarged picture, and how many of its top rows it shows. */
-export const TEMPLATE_CALLOUTS: Record<string, { rows: number; notes: Callout[] }> = {
-  'reaction-table': {
-    rows: 6,
-    notes: [
-      { col: 0, text: 'Entry number, filled in 1 to 12' },
-      { col: 1, text: 'Substrate: compound number or SMILES' },
-      { col: 2, text: 'Catalyst, as text (subscripts are set for you)' },
-      { col: 3, text: 'Catalyst loading, shown in mol %' },
-      { col: 4, text: 'Ligand' },
-      { col: 5, text: 'Additive or base' },
-      { col: 6, text: 'Solvent' },
-      { col: 7, text: 'Concentration, shown in M' },
-      { col: 8, text: 'Temperature, shown in °C (−78 with a true minus)' },
-      { col: 9, text: 'Time, shown in h' },
-      { col: 10, text: 'Conversion, shown in %' },
-      { col: 11, text: 'Yield, shown in %; the best is found below the table' },
-      { col: 12, text: 'ee, shown in %' },
-      { col: 13, text: 'dr, as text (>20:1)' },
-      { col: 14, text: 'Notes' },
-    ],
-  },
+/**
+ * The notes on each template's enlarged picture, how many of its top rows it shows, and the row
+ * of the column headings the column notes point at (0 when not given). A template with nothing
+ * worked out has none, and its card has its description as a tooltip instead.
+ */
+export const TEMPLATE_CALLOUTS: Record<string, { rows: number; head?: number; notes: Callout[] }> = {
   'reagent-sheet': {
     rows: 6,
     notes: [
-      { col: 0, text: 'Reagent name' },
-      { col: 1, text: 'Structure: draw it or type SMILES' },
-      { col: 2, text: 'MW worked out from the structure (or type it)', calc: true },
-      { col: 3, text: 'Equivalents: 1 for the limiting reagent' },
-      { col: 4, text: 'mmol: type the limiting reagent\'s; the rest = equiv × that', calc: true },
-      { col: 5, text: 'Mass = mmol × MW', calc: true },
-      { col: 6, text: 'Density, for a liquid' },
-      { col: 7, text: 'Concentration, for a solution' },
-      { col: 8, text: 'Volume from the mass and density, or mmol and concentration', calc: true },
+      { col: 2, text: 'From the structure. Type over it to use your own.' },
+      { col: 4, text: 'Type the limiting reagent\'s; the others are equiv × that.' },
+      { col: 5, text: '= mmol × MW' },
+      { col: 8, text: '= mass ÷ density, or mmol ÷ conc.' },
     ],
+  },
+  'substrate-scope': {
+    rows: 6,
+    notes: [{ col: 2, text: 'From the substrate\'s structure' }],
+  },
+  'inventory': {
+    rows: 6,
+    notes: [{ col: 2, text: 'From the structure' }],
   },
   'stock-solution': {
     rows: 19,
     notes: [
-      { col: 1, row: 1, text: 'Name of the solid' },
-      { col: 1, row: 2, text: 'SMILES, or its MW' },
-      { col: 1, row: 3, text: 'MW, from the structure', calc: true },
-      { col: 1, row: 4, text: 'Concentration you want' },
-      { col: 1, row: 5, text: 'Volume you want' },
-      { col: 1, row: 6, text: 'Mass to weigh = M × mL × MW', calc: true },
-      { col: 1, row: 9, text: 'Density of the liquid' },
-      { col: 1, row: 10, text: 'Its purity' },
-      { col: 1, row: 11, text: 'Volume to measure', calc: true },
-      { col: 1, row: 14, text: 'Stock\'s concentration' },
-      { col: 1, row: 15, text: 'Concentration you want' },
-      { col: 1, row: 16, text: 'Final volume' },
-      { col: 1, row: 17, text: 'Stock to take (C1V1 = C2V2)', calc: true },
-      { col: 1, row: 18, text: 'Solvent to add', calc: true },
+      { col: 1, row: 3, text: 'From the structure above, or the MW typed there' },
+      { col: 1, row: 6, text: '= M × mL × MW' },
+      { col: 1, row: 11, text: '= mass ÷ (density × purity)' },
+      { col: 1, row: 17, text: 'C₁V₁ = C₂V₂' },
+      { col: 1, row: 18, text: '= final volume − stock' },
+    ],
+  },
+  'kinetics': {
+    rows: 20,
+    notes: [
+      { col: 2, text: '= LN([A])' },
+      { col: 1, row: 17, text: '−slope of ln[A] against time' },
+      { col: 1, row: 18, text: '= ln 2 ÷ k' },
+      { col: 1, row: 19, text: 'Near 1 means first order' },
+    ],
+  },
+  'calibration': {
+    rows: 16,
+    head: 1,
+    notes: [
+      { col: 6, text: '= (area − intercept) ÷ slope' },
+      { col: 1, row: 13, text: 'Least-squares line through the standards: area = slope × conc. + intercept' },
+    ],
+  },
+  'ee-areas': {
+    rows: 6,
+    notes: [
+      { col: 3, text: 'Each area as % of the total' },
+      { col: 4, text: '= |first − second| ÷ total × 100' },
+      { col: 5, text: 'The larger peak' },
+    ],
+  },
+  'nmr-yield': {
+    rows: 13,
+    head: 7,
+    notes: [
+      { col: 1, row: 4, text: '= mass ÷ MW' },
+      { col: 4, text: '= mmol of standard × (integral ÷ protons) ÷ (standard integral ÷ its protons)' },
+      { col: 5, text: '= product ÷ theoretical × 100' },
+    ],
+  },
+  'titration': {
+    rows: 15,
+    head: 6,
+    notes: [
+      { col: 2, text: '= mg ÷ MW' },
+      { col: 4, text: '= mmol × equiv ÷ mL' },
+      { col: 1, row: 13, text: 'Mean of the runs' },
     ],
   },
 };

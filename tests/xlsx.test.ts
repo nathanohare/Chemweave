@@ -198,8 +198,8 @@ describe('saving for Excel', () => {
       wb.sheets[1].setFrozen(0, 1);
     });
     const bytes = await writeXlsx(wb, pictures);
-    // (100 + 64) pixels across and 3 × 20 down, in twentieths of a point
-    expect(part(bytes, 'xl/worksheets/sheet1.xml')).toContain('<pane xSplit="2460" ySplit="900" topLeftCell="C4" activePane="bottomRight"/>');
+    // (100 + 64) pixels across and 3 × 22 down, in twentieths of a point
+    expect(part(bytes, 'xl/worksheets/sheet1.xml')).toContain('<pane xSplit="2460" ySplit="990" topLeftCell="C4" activePane="bottomRight"/>');
     expect(part(bytes, 'xl/worksheets/sheet2.xml')).toContain('<pane xSplit="1" topLeftCell="B1" activePane="topRight" state="frozen"/>');
     const { book } = await readXlsx(bytes);
     expect(book.sheets[0].split).toEqual({ rows: 3, cols: 2 });

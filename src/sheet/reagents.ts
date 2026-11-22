@@ -16,9 +16,9 @@ const WIDTHS = [140, 160, 110, 84, 84, 88, 112, 76, 96];
 /**
  * Lay out a reagent table on an empty sheet, with the limiting reagent (1 equiv, 1 mmol) in row 2.
  * Each column with a unit gets that unit's number format: the unit in its heading over plain
- * numbers ('header'), or in every cell ('cell'; see template-units).
+ * numbers ('header'), in every cell ('cell'), or both ('both'; see template-units).
  */
-export function fillReagentTable(sh: Sheet, units: UnitPlace = 'cell'): void {
+export function fillReagentTable(sh: Sheet, units: UnitPlace = 'both'): void {
   REAGENT_HEADS.forEach((h, c) => {
     sh.setInput(0, c, headingFor(h, units));
     sh.setColWidth(c, WIDTHS[c]);

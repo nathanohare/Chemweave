@@ -11,7 +11,7 @@ import { Workbook } from '../src/sheet/workbook';
 import { fillReagentTable } from '../src/sheet/reagents';
 import { writeXlsx, readXlsx } from '../src/io/xlsx';
 
-const make = (id: string, units: 'header' | 'cell' = 'header') => SHEET_TEMPLATES.find((t) => t.id === id)!.make(units);
+const make = (id: string, units: 'header' | 'cell' | 'both' = 'header') => SHEET_TEMPLATES.find((t) => t.id === id)!.make(units);
 const shown = (fmt: string | undefined, v: number) => formatValue(v, fmt).text;
 
 describe('units in headings', () => {
@@ -24,12 +24,14 @@ describe('units in headings', () => {
     expect(headingFor('Time (h)', 'cell')).toBe('Time');
     expect(headingFor('Time (h)', 'header')).toBe('Time (h)');
     expect(headingFor('mmol', 'cell')).toBe('mmol');
+    expect(headingFor('Time (h)', 'both')).toBe('Time (h)');
   });
 
   it('formats keep the number part a column already has, and leave dates and currency alone', () => {
     expect(unitColumnFormat('°C', 'header')).toBe('0;"−"0');
     expect(unitColumnFormat('°C', 'cell')).toBe('0" °C";"−"0" °C"');
     expect(unitColumnFormat('%', 'cell')).toBe('0"%";"−"0"%"');
+    expect(unitColumnFormat('°C', 'both')).toBe('0" °C";"−"0" °C"');
     expect(unitColumnFormat('mmol', 'cell', '0.0000')).toBe('0.0000" mmol";"−"0.0000" mmol"');
     expect(unitColumnFormat('mg', 'cell', 'yyyy-mm-dd')).toBe('yyyy-mm-dd');
     expect(unitColumnFormat('mg', 'header', 'General')).toBe('0.0;"−"0.0');
@@ -49,7 +51,7 @@ describe('units in headings', () => {
 
 describe('templates', () => {
   it('the reaction table: no column with a unit is General, in either place', () => {
-    for (const units of ['header', 'cell'] as const) {
+    for (const units of ['header', 'cell', 'both'] as const) {
       const sh = make('reaction-table', units).sheets[0];
       const col = (name: string) => [...Array(15).keys()].find((c) => sh.cell(0, c)?.input === headingFor(name, units))!;
       for (const h of ['Loading (mol %)', 'Conc. (M)', 'Temp (°C)', 'Time (h)', 'Conv. (%)', 'Yield (%)', 'ee (%)']) {
@@ -58,7 +60,7 @@ describe('templates', () => {
         for (const r of [1, 12]) expect(sh.styleAt(r, c)?.numFmt, `${h} row ${r}`).toBeTruthy();
       }
       const temp = sh.styleAt(1, col('Temp (°C)'))?.numFmt;
-      expect(shown(temp, -78)).toBe(units === 'cell' ? '−78 °C' : '−78');
+      expect(shown(temp, -78)).toBe(units === 'header' ? '−78' : '−78 °C');
       // the headings keep their bold and line
       expect(sh.styleAt(0, col('Temp (°C)'))?.bold).toBe(true);
       // columns without a unit stay as they were
@@ -114,5 +116,16 @@ describe('reagent table', () => {
       expect(sh.styleAt(0, 3)?.numFmt).toBeUndefined();
       expect(sh.cell(0, 5)?.input).toBe(units === 'cell' ? 'mass' : 'mass (mg)');
     }
+  });
+});
+
+describe('SMILES typed into a cell', () => {
+  it('is tried only for text with ring numbers, bonds or brackets', async () => {
+    const { smilesCandidate, smilesPrefs } = await import('../src/sheet/smiles-cells');
+    for (const t of ['COc1ccc(Br)cc1', 'C=O', 'OB(O)c1ccccc1', '[BH4-].[Na+]']) expect(smilesCandidate(t), t).toBe(true);
+    for (const t of ['toluene', '12.5', 'Notes on 1a', '=A1*2', "'C=O", 'CCO', 'NO-3-112', '3.76']) expect(smilesCandidate(t), t).toBe(false);
+    smilesPrefs.draw = false;
+    expect(smilesCandidate('C=O')).toBe(false);
+    smilesPrefs.draw = true;
   });
 });

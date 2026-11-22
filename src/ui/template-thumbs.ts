@@ -11,6 +11,8 @@ import { itemsToSvg } from '../render/svg';
 import type { Workbook } from '../sheet/workbook';
 import type { Callout } from '../sheet/template-samples';
 import { SheetView } from './sheet-view';
+import { StructurePictures } from './structure-pictures';
+import type { DocStyle } from '../style';
 
 /** How much of a document's first page a card shows, from the top (the rest is cut off so the text is larger). */
 export const DOC_SHOWN = 0.5;
@@ -38,6 +40,9 @@ export function docPage(t: DocText): HTMLElement {
 export const SHEET_SHOT = { aspect: 1.4, minW: 420, maxW: 960 };
 
 let shared: { host: HTMLDivElement; view: SheetView } | null = null;
+/** The workbook being drawn (its drawing style draws the structures in its cells). */
+let drawing: Workbook | null = null;
+const pictures = new StructurePictures(() => drawing?.drawingStyle ?? ({} as DocStyle));
 
 /** One grid, off screen, that draws each template in turn. */
 function offscreenView(): { host: HTMLDivElement; view: SheetView } {
@@ -53,8 +58,9 @@ function offscreenView(): { host: HTMLDivElement; view: SheetView } {
   Object.assign(host.style, { position: 'fixed', left: '-10000px', top: '0', width: `${SHEET_SHOT.minW}px`, height: `${Math.round(SHEET_SHOT.minW / SHEET_SHOT.aspect)}px`, display: 'flex', flexDirection: 'column', visibility: 'hidden', pointerEvents: 'none' });
   document.body.append(host);
   const view = new SheetView(host, {
-    structureBox: () => ({ w: 0, h: 0 }),
-    structureBitmap: () => null,
+    structureBox: (st) => pictures.box(st),
+    // made straight away: the picture is taken once, not redrawn when bitmaps are ready
+    structureBitmap: (st, scale) => pictures.bitmap(st, Math.abs(scale), true),
     editStructure: () => {},
     key: () => false,
     changed: () => {},
@@ -88,6 +94,7 @@ function drawSheet<T>(wb: Workbook, size: (view: SheetView) => { w: number; h: n
   // a picture of the cells only (the card has its own copy: the template isn't changed)
   sh.viewOpts = { ...(sh.viewOpts ?? {}), headings: false };
   wb.active = 0;
+  drawing = wb;
   view.show(wb);
   const { w, h } = size(view);
   host.style.width = `${Math.round(w)}px`;
@@ -100,6 +107,7 @@ function drawSheet<T>(wb: Workbook, size: (view: SheetView) => { w: number; h: n
   out.height = src.height;
   out.getContext('2d')?.drawImage(src, 0, 0);
   view.show(null);
+  drawing = null;
   // out of the page between pictures, its big canvas let go (drawn at full size again next time)
   src.width = src.height = 0;
   host.remove();
@@ -121,43 +129,59 @@ export function sheetPicture(wb: Workbook): HTMLCanvasElement {
 }
 
 
-/** Room for the notes above and below the cells, and their width (CSS pixels at 100%). */
-const NOTE = { w: 132, line: 13, tier: 50, gap: 6, side: 190 };
+/** The comment boxes' width, the room between them and the cells, and their text's line height (CSS pixels at 100%). */
+const NOTE = { w: 168, gap: 10, line: 15, pad: 12, side: 200 };
+
+/** A comment box's height for its text (a few characters short of a line wraps). */
+function noteHeight(text: string, w: number): number {
+  const perLine = Math.max(8, Math.floor((w - NOTE.pad) / 6.4));
+  const words = text.split(/\s+/);
+  let lines = 1, used = 0;
+  for (const word of words) {
+    const need = (used ? 1 : 0) + word.length;
+    if (used && used + need > perLine) { lines++; used = word.length; } else used += need;
+  }
+  return lines * NOTE.line + NOTE.pad;
+}
 
 /**
- * The top rows of a template (its first `rows` rows), at full size, with a note for each of its
- * columns or cells: a label with a line to what it describes, in blue for what you type and in
- * the mode's color for what is worked out. Column notes sit above and below in up to two tiers
- * each, so they don't overlap; notes on single cells go down the right-hand side.
+ * The top rows of a template (its first `rows` rows), at full size, with a comment box for each
+ * worked-out column or cell, as Excel shows its notes: a small red mark in the cell's top-right
+ * corner and a thin line from there to a pale yellow box saying how it is worked out. Column
+ * notes sit in a row of boxes above the cells (below them when the headings are lower down),
+ * moved along so they don't overlap; notes on single cells go down the right-hand side.
  */
-export function sheetCallouts(wb: Workbook, rows: number, notes: Callout[]): HTMLElement {
-  type Placed = { n: Callout; x: number; y: number; w: number; h: number };
+export function sheetCallouts(wb: Workbook, rows: number, notes: Callout[], head = 0): HTMLElement {
   const { canvas, got } = drawSheet(wb, (view) => {
     let h = 0;
     for (let r = 0; r < rows; r++) h += view.rowHeight(r);
     return { w: usedWidth(wb, (c) => view.colWidth(c)) + 2, h: h + 2 };
-  }, (view) => notes.map((n) => ({ n, rect: view.cellRect(n.row ?? 0, n.col) })));
+  }, (view) => notes.map((n) => ({ n, rect: view.cellRect(n.row ?? head, n.col) })));
   const cssW = canvas.width / (devicePixelRatio || 1), cssH = canvas.height / (devicePixelRatio || 1);
   const colNotes = got.filter((g) => g.n.row === undefined && g.rect).sort((a, b) => a.rect!.x - b.rect!.x);
-  const cellNotes = got.filter((g) => g.n.row !== undefined && g.rect);
-  // up to two tiers above and two below; each note in the first tier where it fits beside the last one there
-  const tiers: { side: 'above' | 'below'; level: number; right: number }[] = [
-    { side: 'above', level: 0, right: -Infinity }, { side: 'below', level: 0, right: -Infinity },
-    { side: 'above', level: 1, right: -Infinity }, { side: 'below', level: 1, right: -Infinity },
-  ];
-  const placed: (Placed & { side: 'above' | 'below'; level: number; ax: number })[] = [];
-  for (const g of colNotes) {
-    const ax = g.rect!.x + g.rect!.w / 2;
-    const x = Math.max(0, ax - NOTE.w / 2);
-    const tier = tiers.find((t) => x >= t.right + NOTE.gap) ?? tiers.reduce((a, b) => (a.right <= b.right ? a : b));
-    const at = Math.max(x, tier.right + NOTE.gap);
-    tier.right = at + NOTE.w;
-    placed.push({ n: g.n, x: at, y: 0, w: NOTE.w, h: NOTE.tier - 10, side: tier.side, level: tier.level, ax });
-  }
-  const above = placed.some((p) => p.side === 'above' && p.level === 1) ? 2 : placed.some((p) => p.side === 'above') ? 1 : 0;
-  const below = placed.some((p) => p.side === 'below' && p.level === 1) ? 2 : placed.some((p) => p.side === 'below') ? 1 : 0;
-  const top = above * NOTE.tier, side = cellNotes.length ? NOTE.side : 0;
-  const width = Math.max(cssW, ...placed.map((p) => p.x + p.w)) + side, height = top + cssH + below * NOTE.tier;
+  const cellNotes = got.filter((g) => g.n.row !== undefined && g.rect).sort((a, b) => a.rect!.y - b.rect!.y);
+  // column notes in one band, each as near its column as the one before allows
+  const band = head === 0 ? 'above' : 'below';
+  let right = -Infinity;
+  const placed = colNotes.map((g) => {
+    const ax = g.rect!.x + g.rect!.w;
+    const x = Math.max(0, ax - NOTE.w / 2, right + NOTE.gap);
+    right = x + NOTE.w;
+    return { g, x, h: noteHeight(g.n.text, NOTE.w) };
+  });
+  const bandH = placed.length ? Math.max(...placed.map((p) => p.h)) + 2 * NOTE.gap + 8 : 0;
+  const top = band === 'above' ? bandH : 0;
+  const side = cellNotes.length ? NOTE.side + 24 : 0;
+  // side notes go down beside their cells, pushed down when one would overlap the one above
+  let below = -Infinity;
+  const sided = cellNotes.map((g) => {
+    const h = noteHeight(g.n.text, NOTE.side);
+    const y = Math.max(top + g.rect!.y - 4, below + 6);
+    below = y + h;
+    return { g, y, h };
+  });
+  const width = Math.max(cssW + side, right);
+  const height = Math.max(top + cssH + (band === 'below' ? bandH : 0), below + 4);
 
   const box = document.createElement('div');
   box.className = 'ft-callouts';
@@ -169,35 +193,38 @@ export function sheetCallouts(wb: Workbook, rows: number, notes: Callout[]): HTM
   const svg = document.createElementNS(svgNs, 'svg');
   svg.setAttribute('width', String(width));
   svg.setAttribute('height', String(height));
-  svg.innerHTML = '<defs><marker id="ft-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 8 4 0 8z" fill="context-stroke"/></marker></defs>';
   box.append(canvas, svg);
-  const line = (x1: number, y1: number, x2: number, y2: number, calc?: boolean) => {
+  /** The red mark in a cell's top-right corner, and the line from it to its box. */
+  const lead = (cx: number, cy: number, bx: number, by: number) => {
     const l = document.createElementNS(svgNs, 'line');
-    for (const [k, v] of Object.entries({ x1, y1, x2, y2 })) l.setAttribute(k, String(v));
-    l.setAttribute('class', calc ? 'ft-calc' : 'ft-input');
-    l.setAttribute('marker-end', 'url(#ft-arrow)');
+    for (const [k, v] of Object.entries({ x1: cx, y1: cy, x2: bx, y2: by })) l.setAttribute(k, String(v));
     svg.append(l);
+    const mark = document.createElementNS(svgNs, 'path');
+    mark.setAttribute('d', `M${cx - 6} ${cy}H${cx}V${cy + 6}z`);
+    mark.setAttribute('class', 'ft-mark');
+    svg.append(mark);
   };
-  const label = (n: Callout, x: number, y: number, w: number) => {
+  const note = (text: string, x: number, y: number, w: number) => {
     const d = document.createElement('div');
-    d.className = `ft-note ${n.calc ? 'ft-calc' : 'ft-input'}`;
-    d.textContent = n.text;
+    d.className = 'ft-note';
+    d.textContent = text;
     Object.assign(d.style, { left: `${x}px`, top: `${y}px`, width: `${w}px` });
     box.append(d);
-    return d;
   };
   for (const p of placed) {
-    const y = p.side === 'above' ? top - (p.level + 1) * NOTE.tier : top + cssH + p.level * NOTE.tier + 8;
-    label(p.n, p.x, y, p.w).classList.add(p.side === 'below' ? 'ft-below' : 'ft-above');
-    // the line runs from the label's edge to the heading (above) or the last row shown (below)
-    if (p.side === 'above') line(Math.min(Math.max(p.ax, p.x + 8), p.x + p.w - 8), y + NOTE.tier - 12, p.ax, top + 2, p.n.calc);
-    else line(Math.min(Math.max(p.ax, p.x + 8), p.x + p.w - 8), y - 2, p.ax, top + cssH - 2, p.n.calc);
+    const r = p.g.rect!;
+    const cx = r.x + r.w - 1, cy = top + r.y + 1;
+    const y = band === 'above' ? top - NOTE.gap - 8 - p.h : top + cssH + NOTE.gap + 8;
+    note(p.g.n.text, p.x, y, NOTE.w);
+    // to the box's nearer bottom (above) or top (below) corner area
+    const bx = Math.min(Math.max(cx, p.x + 10), p.x + NOTE.w - 10);
+    lead(cx, cy, bx, band === 'above' ? y + p.h : y);
   }
-  for (const g of cellNotes) {
-    const r = g.rect!;
-    const y = top + r.y + r.h / 2;
-    label(g.n, cssW + 18, y - 7, NOTE.side - 22).classList.add('ft-side');
-    line(cssW + 16, y, r.x + r.w - 2, y, g.n.calc);
+  for (const sd of sided) {
+    const r = sd.g.rect!;
+    const x = cssW + 24;
+    note(sd.g.n.text, x, sd.y, NOTE.side);
+    lead(r.x + r.w - 1, top + r.y + 1, x, sd.y + Math.min(sd.h / 2, 12));
   }
   return box;
 }

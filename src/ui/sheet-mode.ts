@@ -13,6 +13,7 @@ import { Range, MAX_ROWS, MAX_COLS, colName, colIndex, cellName, parseRange, par
 import { showsChem, chemPieces } from '../sheet/cell-text';
 import { fillReagentTable } from '../sheet/reagents';
 import { unitPrefs } from '../sheet/template-units';
+import { smilesCandidate, smilesPrefs } from '../sheet/smiles-cells';
 import { shiftFormula } from '../sheet/formula';
 import { PROPERTIES, MolProps, propertyValue } from '../sheet/properties';
 import { FORMATS, changeDecimals, describeFormat } from '../sheet/numfmt';
@@ -95,8 +96,8 @@ export interface SheetModeHost {
   changed(book?: Workbook): void;
   /** Whether the workbook is still open in a tab (for work that finishes after an await). */
   isOpen(book: Workbook): boolean;
-  /** A name or SMILES as a drawing in this style. */
-  toStructure(text: string, style: DocStyle): Promise<{ contents: Contents; notes: string[] } | { error: string }>;
+  /** A name or SMILES as a drawing in this style (`smilesOnly`: SMILES or a molfile, never read as a name). */
+  toStructure(text: string, style: DocStyle, smilesOnly?: boolean): Promise<{ contents: Contents; notes: string[] } | { error: string }>;
   /** Put cells on the clipboard: our own copy, tab-separated text and an HTML table. */
   writeCells(own: string, text: string, html: string): Promise<void>;
   /** Put one structure on the clipboard as a drawing (for ChemDraw, Word and PowerPoint). */
@@ -1627,18 +1628,48 @@ export class SheetMode {
 
   /**
    * A SMILES or name typed into a column headed "Structure" (a reagent table's) is drawn there,
-   * in place of the text. Text that can't be read stays as it was typed.
+   * in place of the text; elsewhere, text that is valid SMILES is (Settings ▸ Preferences ▸
+   * Spreadsheets). Text that can't be read stays as it was typed.
    */
   private async typedStructure(r: number, c: number, text: string): Promise<void> {
     const s = this.view.sheet, wb = this.book;
-    if (!s || !wb || r === 0 || /\s/.test(text) && !/[a-z]{3}/i.test(text)) return;
+    if (!s || !wb) return;
     const head = s.values.get(keyOf(0, c));
-    if (typeof head !== 'string' || !/^structures?$/i.test(head.trim())) return;
-    const res = await this.host.toStructure(text, wb.drawingStyle);
+    const inColumn = r > 0 && typeof head === 'string' && /^structures?$/i.test(head.trim()) && !(/\s/.test(text) && !/[a-z]{3}/i.test(text));
+    if (!inColumn && !smilesCandidate(text)) return;
+    if (s.colDefs.has(c) && r >= s.colDefs.get(c)!.firstRow) return;
+    const res = await this.host.toStructure(text, wb.drawingStyle, !inColumn);
     // still the same text in the same cell (nothing typed over it meanwhile)
     if ('error' in res || this.book !== wb || s.values.get(keyOf(r, c)) !== text || s.cell(r, c)?.structure) return;
     // not through edit(): that would end typing begun in the next cell meanwhile
     wb.edit('Structure from typing', () => s.setStructure(r, c, res.contents), this.view.place());
+    this.view.refresh();
+    this.host.changed();
+  }
+
+  /** SMILES pasted as text (from Excel, a paper or a web page) is drawn in its cells, as one step that Undo takes back to the text. */
+  private async pastedSmiles(s: Sheet, R: Range): Promise<void> {
+    const wb = this.book;
+    if (!wb || !smilesPrefs.draw) return;
+    const texts: { r: number; c: number; text: string }[] = [];
+    for (let r = R.r1; r <= Math.min(R.r2, s.lastRow); r++) {
+      for (let c = R.c1; c <= Math.min(R.c2, s.lastCol); c++) {
+        const cell = s.cell(r, c);
+        if (cell?.structure || !cell?.input || (s.colDefs.has(c) && r >= s.colDefs.get(c)!.firstRow)) continue;
+        if (smilesCandidate(cell.input)) texts.push({ r, c, text: cell.input });
+        if (texts.length >= 500) break;
+      }
+    }
+    if (!texts.length) return;
+    const got: { r: number; c: number; text: string; contents: Contents }[] = [];
+    for (const t of texts) {
+      const res = await this.host.toStructure(t.text, wb.drawingStyle, true);
+      if (!('error' in res)) got.push({ ...t, contents: res.contents });
+    }
+    // only cells that still hold the text pasted
+    const still = got.filter((g) => this.book === wb && s.cell(g.r, g.c)?.input === g.text && !s.cell(g.r, g.c)?.structure);
+    if (!still.length) return;
+    wb.edit(still.length > 1 ? 'Structures from SMILES' : 'Structure from SMILES', () => { for (const g of still) s.setStructure(g.r, g.c, g.contents); }, this.view.place());
     this.view.refresh();
     this.host.changed();
   }
@@ -2187,6 +2218,8 @@ export class SheetMode {
     }, () => target);
     if (cut) { this.clip = null; v.copied = null; }
     v.select(target, { r: top, c: left }, { r: top, c: left });
+    // text from elsewhere (not cells copied here): SMILES in it is drawn
+    if (!fromClip && !got.own && what !== 'formats') void this.pastedSmiles(s, target);
   }
 
   /** Copy as SMILES: the structures in the selection, one per line. */

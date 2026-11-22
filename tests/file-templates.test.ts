@@ -107,7 +107,7 @@ describe('sheet templates', () => {
   it('the reaction table picks out the best entry', () => {
     const wb = sheet('reaction-table');
     const sh = wb.sheets[0];
-    expect(sh.cells.get(keyOf(0, 11))?.input).toBe('Yield');
+    expect(sh.cells.get(keyOf(0, 11))?.input).toBe('Yield (%)');
     wb.edit('yields', () => { sh.setInput(1, 11, '62'); sh.setInput(2, 11, '88'); sh.setInput(3, 11, '71'); });
     expect(sh.values.get(keyOf(14, 11))).toBe(88);
     expect(sh.values.get(keyOf(15, 11))).toBe(2);

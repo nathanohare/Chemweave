@@ -4,16 +4,18 @@
 //  - 'header': the unit stays in the heading and the cells are plain numbers, each column with a
 //    fixed number of decimal places (as journal tables are set: "Temp (°C)" over "−78").
 //  - 'cell': the unit moves out of the heading into every cell's format ("Temp" over "−78 °C").
+//  - 'both': the unit in the heading and in every cell ("Temp (°C)" over "−78 °C"), the default
+//    (Nate, 2026-11-21).
 // Either way the cell holds just the number, so it still sorts, filters and works in formulas,
 // and the format is an ordinary Excel one that Excel shows the same way. Any cell's format can
 // be changed afterwards (Home ▸ Number), as with any other.
 
 import type { Sheet } from './workbook';
 
-export type UnitPlace = 'header' | 'cell';
+export type UnitPlace = 'header' | 'cell' | 'both';
 
 /** The choice in Settings ▸ Preferences (set by the program when settings load or change). */
-export const unitPrefs: { place: UnitPlace } = { place: 'cell' };
+export const unitPrefs: { place: UnitPlace } = { place: 'both' };
 
 /**
  * The units the templates' headings use, with the decimal places a column of them gets (chosen
@@ -55,9 +57,9 @@ export function headingUnit(heading: string): { label: string; unit: string } | 
   return null;
 }
 
-/** The heading as shown with units in the cells: without its bracketed unit (a heading that is only a unit stays). */
+/** The heading as shown: with units only in the cells, without its bracketed unit (a heading that is only a unit stays). */
 export function headingFor(heading: string, place: UnitPlace): string {
-  if (place === 'header') return heading;
+  if (place !== 'cell') return heading;
   const u = headingUnit(heading);
   return u && u.label ? u.label : heading;
 }
@@ -77,7 +79,7 @@ export function unitColumnFormat(unit: string, place: UnitPlace, own?: string): 
     if (!/^[0#?.,]+$/.test(own)) return own;
     num = own;
   }
-  const lit = place === 'cell' ? `"${TIGHT.has(unit) ? '' : ' '}${unit}"` : '';
+  const lit = place !== 'header' ? `"${TIGHT.has(unit) ? '' : ' '}${unit}"` : '';
   return `${num}${lit};"−"${num}${lit}`;
 }
 
