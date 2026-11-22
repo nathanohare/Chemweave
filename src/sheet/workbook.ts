@@ -604,7 +604,7 @@ export class Sheet {
     this.wb.record({ sheet: this, field, key: key as unknown as number, before, after: value });
   }
 
-  /** Data ▸ Remove Embedded Objects: the objects kept from Excel go (with Undo); how many there were. */
+  /** Edit ▸ Spreadsheet ▸ Data Tools ▸ Remove Embedded Objects: the objects kept from Excel go (with Undo); how many there were. */
   removeOle(): number {
     const n = this.ole?.length ?? 0;
     if (n) this.assign('ole', undefined);
