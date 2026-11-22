@@ -9,7 +9,12 @@ export interface QmResult {
   program: 'Gaussian' | 'ORCA';
   /** The name the job goes by (the file's name without its extension). */
   name: string;
-  /** Energies in hartree, where the output gives them. */
+  /**
+   * Energies in hartree, where the output gives them. `scf` is the electronic energy at the job's
+   * own level: the SCF energy for HF and DFT, the method's own final energy for post-HF methods
+   * (MP2, CCSD(T)…), double hybrids and ONIOM, and the 0 K energy of a composite method (CBS-QB3,
+   * G4…), whose free energy and enthalpy are its own too, not the lower-level frequency job's.
+   */
   scf: number | null;
   enthalpy: number | null;
   free: number | null;
@@ -20,6 +25,10 @@ export interface QmResult {
   atoms: QmAtom[];
   /** The job did not finish normally. */
   unfinished: boolean;
+  /** Where `scf` came from when it isn't the SCF energy (MP2, CCSD(T), CBS-QB3 (0 K), ONIOM extrapolated). */
+  energyFrom?: string;
+  /** The route asks for a post-HF, double-hybrid, composite or ONIOM energy that the output doesn't give, so `scf` is the SCF energy only. */
+  missing?: string;
 }
 
 /** Hartree in each unit the diagram offers. */
@@ -57,19 +66,63 @@ const lastAt = (text: string, key: string, re: RegExp): RegExpExecArray | null =
 
 // ---------------------------------------------------------------- Gaussian
 
+/**
+ * The final energies Gaussian prints for methods beyond SCF, as its output writes them (Gaussian 16
+ * User's Reference, and Foresman and Frisch, "Exploring Chemistry with Electronic Structure
+ * Methods", 3rd ed., 2015): the route keyword that asks for it, its name, and the line holding it.
+ * Fortran D exponents (-0.11531345437D+03) are read as E. Checked in this order, so a CCSD(T) job's
+ * MP2 step is not taken for its answer.
+ */
+const POST_SCF: { route: RegExp; name: string; key: string; re: RegExp }[] = [
+  { route: /\boniom\b/i, name: 'ONIOM extrapolated', key: 'ONIOM: extrapolated energy', re: /ONIOM: extrapolated energy\s*=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
+  { route: /\bccsd\(t\)|\bccsd-t\b/i, name: 'CCSD(T)', key: 'CCSD(T)=', re: /CCSD\(T\)=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
+  { route: /\bqcisd\(t\)/i, name: 'QCISD(T)', key: 'QCISD(T)=', re: /QCISD\(T\)=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
+  { route: /\bccsd\b(?!\()|\bqcisd\b(?!\()/i, name: 'CCSD', key: 'E(CORR)=', re: /E\(CORR\)=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/i },
+  { route: /\bmp4/i, name: 'MP4', key: 'UMP4(SDTQ)=', re: /UMP4\(SDTQ\)=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
+  { route: /\bmp3\b/i, name: 'MP3', key: 'EUMP3=', re: /EUMP3=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
+  { route: /\b[ru]?o?mp2\b/i, name: 'MP2', key: 'EUMP2 =', re: /EUMP2 =\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
+  // a double hybrid's SCF energy leaves out its MP2-like part: "E2(B2PLYP) = … E(B2PLYP) = …"
+  { route: /\b(b2plyp|mpw2plyp|b2gpplyp|dsdpbep86|pbe0dh|pbeqidh)/i, name: 'double hybrid', key: 'E2(', re: /E2\([^)]*\)\s*=\s*-?\d+\.\d+(?:[DE][+-]?\d+)?\s+E\([^)]*\)\s*=\s*(-?\d+\.\d+(?:[DE][+-]?\d+)?)/ },
+];
+/** Composite methods: "CBS-QB3 (0 K)=", "G4(0 K)=", and their own "Enthalpy=" and "Free Energy=". */
+const COMPOSITE = /\b(cbs-qb3|cbs-4m|cbs-apno|g4mp2|g4|g3mp2|g3b3|g3|g2mp2|g2|g1|w1u|w1bd|w1ro)\b/i;
+const fortran = (m: RegExpExecArray | null): number | null => (m ? Number(m[1].replace(/D/i, 'E')) : null);
+
 function readGaussian(text: string, name: string): QmResult {
-  const scf = num(lastAt(text, 'SCF Done:', /SCF Done:\s+E\([^)]*\)\s*=\s*(-?\d+\.\d+)/));
-  const free = num(lastAt(text, 'Sum of electronic and thermal Free Energies=', /Sum of electronic and thermal Free Energies=\s*(-?\d+\.\d+)/));
-  const enthalpy = num(lastAt(text, 'Sum of electronic and thermal Enthalpies=', /Sum of electronic and thermal Enthalpies=\s*(-?\d+\.\d+)/));
+  let scf = num(lastAt(text, 'SCF Done:', /SCF Done:\s+E\([^)]*\)\s*=\s*(-?\d+\.\d+)/));
+  let free = num(lastAt(text, 'Sum of electronic and thermal Free Energies=', /Sum of electronic and thermal Free Energies=\s*(-?\d+\.\d+)/));
+  let enthalpy = num(lastAt(text, 'Sum of electronic and thermal Enthalpies=', /Sum of electronic and thermal Enthalpies=\s*(-?\d+\.\d+)/));
+  const routeLine = gaussianRoute(text);
+  let energyFrom: string | undefined, missing: string | undefined;
+  const comp = COMPOSITE.exec(routeLine.replace(/^#\w?\s*/, ''));
+  if (comp) {
+    // the composite's own energies; its frequency job's free energy is at the lower level
+    const label = comp[1].toLowerCase() === 'cbs-4m' ? 'CBS-4' : comp[1].toUpperCase();
+    const esc = label.replace(/[-()]/g, '\\$&');
+    const at = (key: string, re: RegExp) => { const i = text.lastIndexOf(key); return i < 0 ? null : fortran(re.exec(text.slice(Math.max(0, i - 40), i + 200))); };
+    const e0 = at('(0 K)=', new RegExp(`${esc}\\s*\\(0 K\\)=\\s*(-?\\d+\\.\\d+)`));
+    if (e0 !== null) {
+      scf = e0; energyFrom = `${label} (0 K)`;
+      enthalpy = at(' Enthalpy=', new RegExp(`${esc}\\s+Enthalpy=\\s*(-?\\d+\\.\\d+)`));
+      free = at(' Free Energy=', new RegExp(`${esc}\\s+Free Energy=\\s*(-?\\d+\\.\\d+)`));
+    } else missing = label;
+  } else {
+    const p = POST_SCF.find((x) => x.route.test(routeLine));
+    if (p) {
+      const e = fortran(lastAt(text, p.key, p.re));
+      if (e !== null) { scf = e; energyFrom = p.name === 'double hybrid' ? (/E\(([^)]*)\)\s*=/.exec(text.slice(text.lastIndexOf('E2(')))?.[1] ?? p.name) : p.name; }
+      else missing = p.name;
+    }
+  }
   // the last frequency job: the negative frequencies it lists
   let imaginary: number | null = null;
   const freqAt = text.lastIndexOf('Harmonic frequencies');
   if (freqAt >= 0) imaginary = [...text.slice(freqAt).matchAll(/Frequencies --\s+([^\n]+)/g)].flatMap((m) => m[1].trim().split(/\s+/).map(Number)).filter((f) => f < 0).length;
-  const route = gaussianRoute(text);
   const atoms = gaussianGeometry(text);
   return {
     program: 'Gaussian', name, scf, enthalpy, free, imaginary,
-    theory: route ? gaussianTheory(route) : '', atoms, unfinished: !/Normal termination of Gaussian/.test(text.slice(-4000)),
+    theory: routeLine ? gaussianTheory(routeLine) : '', atoms, unfinished: !/Normal termination of Gaussian/.test(text.slice(-4000)),
+    ...(energyFrom ? { energyFrom } : {}), ...(missing ? { missing } : {}),
   };
 }
 
