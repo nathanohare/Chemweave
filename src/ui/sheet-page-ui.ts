@@ -263,7 +263,7 @@ export class SheetPage {
     const words = (h: HeaderFooter | undefined, k: keyof HeaderFooter) => codesToWords(h?.[k] ?? '');
     const SUGGEST = ['&[Page]', 'Page &[Page]', 'Page &[Page] of &[Pages]', '&[Tab]', '&[File]', '&[Date]', '&[Time]', '&[Date] &[Time]', 'Confidential', 'Prepared by '];
     const part = (prefix: string, label: string, h: HeaderFooter | undefined): Field[] => (['left', 'center', 'right'] as const).map((k) => ({
-      name: `${prefix}-${k}`, label: `${label}: ${k === 'center' ? 'centre' : k}`, value: words(h, k), suggestions: SUGGEST,
+      name: `${prefix}-${k}`, label: `${label}: ${k}`, value: words(h, k), suggestions: SUGGEST,
     }));
     const got = await ask('Header and Footer', [
       ...part('h', 'Header', ps.header),
