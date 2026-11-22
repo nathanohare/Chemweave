@@ -5,7 +5,7 @@ Chemweave is a free program for drawing chemical structures and putting them to 
 ## Start here
 
 - **[Getting started](guide/getting-started.md)**: install the program (Windows, macOS, Linux), find your way around the window, open your ChemDraw files, save.
-- **[Keyboard and mouse](guide/keyboard-and-mouse.md)**: the Canvas keyboard shortcuts, how to change them, what Shift, Ctrl and Alt do while you drag, and what each mouse pointer means.
+- **[Keyboard and mouse](guide/keyboard-and-mouse.md)**: the keyboard shortcuts of the Canvas and of the other modes, how to change them, what Shift, Ctrl and Alt do while you drag, and what each mouse pointer means.
 
 ## The five modes
 

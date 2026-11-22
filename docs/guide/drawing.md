@@ -1,10 +1,21 @@
 # Canvas (Chemistry)
 
-This page covers Canvas mode in depth: the tools, keyboard shortcuts on atoms and bonds, text, arrows and shapes, the Chemistry and Format menus, drawing styles, Reading Mode, the Analysis panel and the other chemistry tools.
+This page covers Canvas mode in depth: the ribbon, the tools, keyboard shortcuts on atoms and bonds, text, arrows and shapes, the Chemistry and Format menus, drawing styles, Reading Mode, the Analysis panel and the other chemistry tools.
 
 If you use ChemDraw, most of this will feel familiar: the keyboard shortcuts are ChemDraw's, new canvases use the ACS Document 1996 style, and files are saved as `.cdxml` or `.cdx`. Mac users: read Cmd for Ctrl and Option for Alt.
 
-![A drawing with a reaction scheme, the toolbox on the left and the side panel on the right](../images/drawing.png)
+![A drawing with a reaction scheme: the ribbon above it, the toolbox on the left and the side panel floating at the top right](../images/drawing.png)
+
+## The Canvas ribbon
+
+<!-- index: Classic and Simplified ribbon -->
+
+Above the drawing, a compact ribbon holds the clipboard and text formatting commands and the chemistry commands that have no toolbox of their own. Its tabs are **Home** (Clipboard, Font, Paragraph, Format Favorites, Schemes, Diagrams, Mechanism, Insert, NMR and Look Up), **Insert** (Structures, Projections, Lab), **Chemistry** (Structure, Reaction, NMR, Rings, Arrows), **Arrange** (Align, Distribute, Focal Point, Rotate, 3-D, Order) and **View** (Zoom, Show). The bigger commands (Smart Scheme, Energy Diagram, Animate) carry their names; the rest show their names when you rest the mouse on them. **Ctrl+F1**, or a double-click on a tab, folds the ribbon away to just its tabs; the arrow at the right end of the tabs switches between the two-row and one-row ribbon (below), and the gear beside it opens the ribbon's settings.
+
+- **Arrows**: the **Chemistry** tab's **Arrows** group cleans up, reverses, reshapes (single curve, S-shape, U-turn, loop), bends and smooths the selected arrows, and attaches them to or detaches them from a structure. Right-click an arrow for the same commands. The tabs stay as they are whatever you select.
+- **Warnings**, at the far right of the tabs, counts the problems found in the drawing. Click it to see the list. Warnings and Analysis live only here in the Canvas, so the side panel keeps to Style.
+- **Analysis**, at the right end of the buttons, shows the formula and molecular weight of what is selected (or the whole drawing) on one line. Click it to see everything the Analysis panel has, and **Pop Out** to put that in a window of its own, which you can move anywhere or pin at the right.
+- **Settings ▸ Toolboxes and Ribbon** offers the **Simplified** ribbon (one row of buttons) instead of the **Classic** two rows. The Classic ribbon names each group under it, as the other modes' ribbons do; the Simplified one leaves the names out to save the height.
 
 ## The toolbox
 
@@ -117,6 +128,8 @@ To make a custom template, select a structure and click the first button on the 
 
 <!-- index: Curved arrows, Mechanism arrows, Fishhook arrows (homolysis), Lone pairs, Charges, Brackets -->
 
+![A Diels–Alder reaction drawn with curved arrows: from each C=C of butadiene and acrolein to where a new bond forms, then the acrolein dragged away and back while the arrows follow it](../images/mechanism.gif)
+
 - **Arrow types:** every arrow is one of three kinds, and the Arrows palette is laid out under those headings.
   - **Reaction**: reaction, dashed, hollow-headed, equilibrium, crossed-out and hashed-out arrows. Chemweave works out each one's starting materials, products and conditions, and plain reaction arrows show the dashed text guides for typing reagents.
   - **Mechanism**: the mechanism arrow (electron pair) and the fishhook arrow (one electron), each also S-shaped. They snap to where electrons come from and go, and **Draw Next Intermediate** draws the next step from them.
@@ -197,6 +210,8 @@ Useful keys while typing:
 Formula style writes CH3CO2H with its numbers lowered and raises a charge (NH4+, TfO-), as ChemDraw does. A hyphen in a name stays on the line (Red-Al). To raise a charge's number (Fe3+), select it and use superscript.
 
 As you type, common chemistry is tidied for you: CH2Cl2 gets its subscripts, `0 oC` becomes 0 °C, `1H NMR` gets its superscript, and the letters of a stereodescriptor go italic as the name goes on ((*S*)-proline, (2*E*,4*Z*)-). Compound numbers can go bold as you type them, (**4**) or compound **4a**: check that in **Edit ▸ Typing and Spelling…** (it is off at first, so list items such as (1) stay plain). Press Ctrl+Z immediately to undo just that change. Misspelled words get a red underline and formatting slips (a hyphen in a range, a number run into its unit) a blue one; right-click for suggestions. **Edit ▸ Typing and Spelling…** turns these helpers off, adds your own replacements (`rxn` → reaction) and edits your dictionary.
+
+![Right-clicking marked words in a caption: CH2Cl2, 5mL, 10-15, 1H and CDCl3 get their formatting fixed, and two misspellings are corrected](../images/spelling.gif)
 
 You can paste formatted text from Word into a text box; bold, italic, subscripts, colors and lists come across.
 
@@ -311,9 +326,15 @@ To start a reaction quickly, select a structure and press Ctrl+→ (or Ctrl+←,
 - **Define Abbreviation…**: select a group that hangs off a structure by one bond and give it a name. Typing that name as a label anywhere then counts as the full group for formula and mass. **Delete Abbreviation…** removes one.
 - **Insert ▸ Structure from Name or SMILES…** (Ctrl+Shift+N; its window is called Name to Structure): type a systematic, CAS-style or common name and the structure is drawn. Select a caption holding a name first to turn the caption into the structure. Names are read on your computer, so this works offline; names it can't read (DMAP, DIPEA) are looked up on PubChem unless you turn that off in **Settings ▸ Online**. You can type a CAS RN (50-78-2) too; see [CAS RNs](#cas-rns). When a name can't be read, the window says so, underlines the part the name reader stopped at, and keeps the reader's own explanation under **Details**.
 
+![Typing an IUPAC name into Name to Structure draws ibuprofen, and the Analysis box shows its formula and masses](../images/name-to-structure.gif)
+
 ### Frames, highlights and fills
 
 <!-- index: Highlighting atoms and bonds, Ring fills -->
+
+![A frame around a structure grows as bonds are added with keyboard shortcuts, and moves with it when it is dragged](../images/frames.gif)
+
+![Estrone with each ring filled differently (gradient, hatching, dots, solid), and a kinase inhibitor with its parts highlighted in round, diamond and square shapes](../images/ring-fills.png)
 
 - **Add Frame**: draws a box around the selection that grows, shrinks and moves with what is inside. Click the frame to set the gap across and up and down in the Style panel, clear **Fit around its contents** to stop it following, or click **Fit now**. Dragging a corner by hand also stops it following.
 - **Highlight**: a soft band of color (yellow to start) behind the selected atoms and bonds. With highlighted atoms selected, the Style panel sets the color, **Highlight shape** (round or straight), **Smooth outline** (round) or **Highlight ends** (straight), **Center on double bonds**, **Highlight size (%)**, **Grow around atom labels**, a shadow and soft edges. **Remove Highlight** removes it.
@@ -451,6 +472,8 @@ Most of the commands here are in **Chemistry ▸ Reactions and Schemes**. The cl
 
 ### Tidying and arranging a scheme
 
+![A row of four palladium intermediates turned into a Suzuki–Miyaura catalytic cycle with Arrange Scheme](../images/catalytic-cycle.gif)
+
 - **Clean Up Reaction** (Ctrl+Shift+R): lines up the structures on the arrow, centers the reagents over and under it, and spaces everything evenly. Steps that follow on from one another go on one line, each structure centered on it, and every arrow is made as long as the longest one (the text above and below each stays centered on its arrow). A scheme wrapped onto more rows keeps its rows: each row is tidied on its own line, and later rows start under the first. Press it again immediately on the same steps and each arrow shrinks to fit its own text instead, the structures moving up to keep the spacing even; once more and the arrows match again.
 - **Clean Up and Orient Reaction** does the same, first turning each structure so the part it shares with the starting material lies the same way around (see **Match Orientation of First**, next).
 - **Match Orientation of First**: select two or more structures. Each is turned so the part it shares with the first one (top left, as a scheme is read) lies the same way around. The shared part is the largest common substructure, with whole rings only. A structure that has to be turned over to match has its wedges and hashes swapped, so its configuration is kept. Structures that share less than a third of their atoms with the first are left alone.
@@ -483,6 +506,8 @@ You can also color each atom and its partner the same, and mark bonds made in gr
 ### Number Compounds
 
 <!-- index: Compound numbers -->
+
+![Moving, growing and flipping structures: each compound number stays underneath its structure](../images/id-labels.gif)
 
 **Number Compounds…** puts numbers under the structures in scheme order. Choose 1, 2, 3; 1a, 1b; a, b; A, B; i, ii or I, II; where to start; text before and after (S for S1, S2); bold (the drawing style's ID label bold: changing it here changes it there); whether copies of one structure share a number (**Same structure, same ID**); whether to renumber or keep existing numbers; whether reagents over arrows get numbers; and whether the numbers in each row of a scheme line up on one line (on unless you turn it off). Each number is an ordinary caption you can retype. If two different structures end up with the same number, the Warnings panel says so.
 
@@ -607,6 +632,8 @@ Drag to turn it, Shift+drag (or the right button) to turn it in the page, use th
 
 <!-- index: Reaction animation, GIF and MP4 of a reaction -->
 
+![A decalone turned in 3-D into its chair conformation, then its ketone taken on to an imine and an amine, and back again; made with Save GIF](../images/reaction-animation.gif)
+
 **Chemistry ▸ Animate ▸ Animate Reaction…** turns each structure of the scheme into the next as a short animation: atoms move to where they are in the product, bonds that break fade out and bonds that form fade in. It follows the arrows from the first step to the last; with structures selected it keeps to those, and with no arrows it takes the structures from left to right. Right-click a reaction arrow (or pick it and use **Chemistry ▸ Animate ▸ Animate This Step…**) to animate just that step. Starting materials written side by side without a + sign (an enol and the ketone it attacks, with curved arrows between them) are all taken as starting materials, left to right. The animation is based on [cdxmorph](https://github.com/rshenvi/cdxmorph) by Ryan Shenvi (Shenvi Lab), used with permission.
 
 - **Style** (under **Animation**) picks how it plays. **Morph Structures** moves each structure into the next. **Whole Scheme** keeps every structure, arrow and condition where it is drawn and shows each step in turn: the bonds it breaks turn red and fade, and the bonds it forms turn green, then everything settles back to the scheme as drawn. Electrons are counted the way curved arrows count them: an arrow moves one pair, from a lone pair, a σ bond or a π bond. So when a double bond becomes a single bond (C=C to C–C), only its second line, the π bond, turns red and fades: its σ bond is still there and stays black. In the same way only the new line of a bond that gains one (C–O to C=O⁺) turns green, and a whole bond is colored only when the bond itself goes or comes. **Colors** sets the **Breaking** and **Forming** colors (red and green unless you choose others). The pairing decides which bonds those are, so **Edit Pairing…** changes them too, and the step list names the π bonds each step loses and gains. Saving and **Put on Slide** use the chosen style.
@@ -623,6 +650,8 @@ Drag to turn it, Shift+drag (or the right button) to turn it in the page, use th
 Put an equivalency sign (two short level lines, =) between two drawings of the same molecule in different orientations, and the animation turns the first into the second in 3-D instead of sliding the atoms flat. The 3-D comes from a structure with 3-D coordinates (for example a .cdxml whose atoms carry `xyz`, as Chem3D writes) placed just above each drawing; without them the step is animated as a flat move. The two 3-D structures are paired by ChemDraw atom numbers when they have them, otherwise by their order, and fitted so the turn is a single rotation. **Steps** shows a turn as "(turn)" with its angle and axis, and warns when the two are mirror images, which no turn can join. Turns and reaction arrows can be mixed in one clip: a scheme like A = A′ → B turns A, then reacts.
 
 ### Reagents and conditions on an arrow
+
+![Typing reagents above and conditions below a new reaction arrow: the arrow lengthens to fit the text and the product moves along](../images/smart-arrows.gif)
 
 When you draw a level reaction arrow, dashed text guides with a **+** appear above and below it for a few seconds. Click one and type the reagents or conditions; formulas such as K2CO3 get their subscripts as you type. When you finish, the text is lined up and (with fitting on) the arrow is sized to it. Afterwards, move the mouse just above or below an arrow that has no text on that side and the guide comes back. Once there is text below the arrow, a third guide under it takes the **Results** line: the yield, ee or dr, for when you write them under the arrow rather than under the product. It has its own font, size, alignment and gap (**Drawing Style ▸ Reaction arrows**), keeps its place under the text below through Clean Up Reaction, and is saved as ordinary text below the arrow, so ChemDraw shows it where it is.
 
@@ -651,6 +680,8 @@ Rest the mouse on an abbreviation or condensed label (OTBS, NHBoc, CO2Me, CH2OH)
 Press **Apply**. One Undo puts everything back.
 
 ## Navigating the page
+
+![Panning a long route with the right and middle mouse buttons, zooming at the pointer with Ctrl+wheel and scrolling sideways with Shift+wheel, with the keys and buttons shown as they are pressed](../images/navigation.gif)
 
 On a big white drawing it is easy to lose your place, especially zoomed in. These help, and each can be switched off in **Settings ▸ Navigation** (or from **View ▸ Navigation**):
 
@@ -792,17 +823,6 @@ Every color button opens a palette: Automatic, the standard colors, the colors a
 
 **Edit ▸ Color Palettes…** makes rows of your custom colors, which show in every color menu in every mode. Start a **New palette**, add a ready-made row (color-blind safe, grays, blues or warm), or make one from the drawing's colors.
 
-## The Canvas ribbon
-
-<!-- index: Classic and Simplified ribbon -->
-
-Above the drawing, a compact ribbon holds the chemistry commands that have no toolbox of their own. Its tabs are **Home** (Format Favorites, Schemes, Diagrams, Mechanism, Insert and Look Up), **Insert**, **Chemistry**, **Arrange** and **View**. The bigger commands (Smart Scheme, Energy Diagram, Animate) carry their names; the rest show their names when you rest the mouse on them. The arrow at the right end of the tabs folds the ribbon away to just its tabs.
-
-- **Arrows**: the **Chemistry** tab's **Arrows** group cleans up, reverses, reshapes (single curve, S-shape, U-turn, loop), bends and smooths the selected arrows, and attaches them to or detaches them from a structure. Right-click an arrow for the same commands. The tabs stay as they are whatever you select.
-- **Warnings**, at the far right of the tabs, counts the problems found in the drawing. Click it to see the list. Warnings and Analysis live only here in the Canvas, so the side panel keeps to Style.
-- **Analysis**, at the right end of the buttons, shows the formula and molecular weight of what is selected (or the whole drawing) on one line. Click it to see everything the Analysis panel has, and **Pop Out** to put that in a window of its own, which you can move anywhere or pin at the right.
-- **Settings ▸ Toolboxes and Ribbon** offers the **Simplified** ribbon (one row of buttons) instead of the **Classic** two rows. The Canvas ribbon has no group names (rest the mouse on a button for its name); the other modes' ribbons name each group under it.
-
 ## Toolboxes
 
 **View ▸ Toolboxes** can show more toolboxes besides the drawing tools:
@@ -826,6 +846,8 @@ Five more toolboxes stay hidden until you open them, and come out on their own w
 
 ### Customize Toolboxes
 
+![Toolboxes moved to new places around the drawing, with Reading Mode in its Slate colors](../images/customize.png)
+
 **View ▸ Toolboxes ▸ Customize Toolboxes…** (or right-click a toolbox ▸ **Customize This Toolbox…**) changes what is in any toolbox, much as you rearrange apps on a phone's home screen. On the left is every drawing tool, fly-out palette and menu command, each with its icon, with a search box. On the right, pick a toolbox from the list: it shows cell by cell, laid out just as it is on screen, its icons jiggling while you work on them.
 
 - **Grid size**: each toolbox is a grid of so many columns by so many rows. Type the numbers next to **Grid**, or pick one of the **Presets** (a tall strip of two columns, a square, a wide strip, one row and so on). A bigger grid keeps every button where it is; a smaller one asks first if it would leave no room for some, and names them.
@@ -843,7 +865,7 @@ Five more toolboxes stay hidden until you open them, and come out on their own w
 
 The Templates, Colors and side panel toolboxes are laid out by the app; they can be renamed, hidden, moved in the list and (except the side panel) deleted.
 
-To move a toolbox, unlock it first: click the padlock on its title bar (or right-click the toolbox and choose **Unlock**). Each toolbox locks on its own, and its padlock stays in view when locked: down the left end of a toolbox docked at the top or bottom, or in the slim row over one docked at a side. The padlock in the top bar (or **View ▸ Toolboxes ▸ Lock Toolboxes**) locks or unlocks them all at once. Then drag a toolbox by its title to the left, right, top or bottom edge of the drawing to dock it there, or anywhere else to float it. Right-click a toolbox's title for **Dock Left**, **Dock Right**, **Dock at the Top**, **Dock at the Bottom**, **Float** and more. The side panel (Style, and in the other modes Warnings and Analysis) is a toolbox too: it starts docked at the right, and moves, floats and locks like the others. Its arrow (or **View ▸ Side Panel**) folds it to a strip, separately in each mode. The app remembers where you left them.
+To move a toolbox, unlock it first: click the padlock on its title bar (or right-click the toolbox and choose **Unlock**). Each toolbox locks on its own, and its padlock stays in view when locked: down the left end of a toolbox docked at the top or bottom, or in the slim row over one docked at a side. The padlock in the top bar (or **View ▸ Toolboxes ▸ Lock Toolboxes**) locks or unlocks them all at once. Then drag a toolbox by its title to the left, right, top or bottom edge of the drawing to dock it there, or anywhere else to float it. Right-click a toolbox's title for **Dock Left**, **Dock Right**, **Dock at the Top**, **Dock at the Bottom**, **Float** and more. The side panel (Style, and in the other modes Warnings and Analysis) is a toolbox too: it starts floating at the top right of the drawing, and moves, docks and locks like the others. Its arrow (or **View ▸ Side Panel**) folds it to a strip, separately in each mode. The app remembers where you left them.
 
 ## The right-click menu
 

@@ -51,6 +51,29 @@ New slides go in the section of the slide before them. Sections are saved as Pow
 
 **View** tab ▸ **Slide Sorter** (or **View ▸ Presentation ▸ Slide Sorter**) shows every slide in rows of larger pictures, under their section headings. Drag slides (or whole sections) to reorder them, pick several with Ctrl or Shift, and use the same keys and right-click commands as in the slide list. Double-click a slide, or press Enter, to open it in **Normal** view.
 
+### Outline View, Notes Page and Reading View
+
+<!-- index: Outline View, Notes Page, Reading View -->
+
+The **View** tab's **Presentation Views** group has three more views beside **Normal** and **Slide Sorter**:
+
+- **Outline View** shows the slides' titles and bullets as an outline you can type in. Tab and Shift+Tab change a line's level; a line moved all the way out starts a new slide.
+- **Notes Page** shows each slide on a page with its speaker notes under it, as they print, to read and type in.
+- **Reading View** plays the show inside the window from the slide you are on, with **Back** and **Next** under it. Esc comes back.
+
+### Rulers, gridlines and guides
+
+<!-- index: Rulers, Gridlines, Guides on a slide -->
+
+The **View** tab's **Show** group has check boxes for these:
+
+- **Ruler** puts rulers along the top and left of the slide, measured from its middle. Drag out of a ruler to make a guide.
+- **Gridlines** shows a grid over the slide, on screen only.
+- **Guides** shows the drawing guides. Drag one to move it, Ctrl+drag to copy it, and drag it off the slide to remove it. **Add Vertical Guide** and **Add Horizontal Guide** put a new one through the middle of the slide. Guides are saved with the file.
+- **Grid Settings…** sets the grid's spacing and whether things snap to it, the rulers' units, and the smart guides that show while you drag.
+
+The same group's **Notes** button shows or hides the speaker notes under the slide, and **Warnings** and **Analysis** add those sections to the side panel.
+
 ### Copying slides between decks
 
 Pick slides in one deck's list and press Ctrl+C, then click in the list of another deck (or the same one) and press Ctrl+V: the copies go in after the slide selected. They take the style of the deck they go into, as PowerPoint's *Use Destination Theme* does. When that changes how they look, a **Keep source formatting** button appears for a few seconds to paste them again with their own background, fonts and colors; **Edit ▸ Presentation ▸ Paste Slides (Keep Source Formatting)** (or right-click ▸ **Paste (Keep Source Formatting)**) does that immediately. Structures drawn in another drawing style are redrawn in this deck's, or keep their formatting when you keep the source formatting. Slides from a deck of another size stay centered, with their titles and text boxes moved to this deck's places.
@@ -168,12 +191,18 @@ As in PowerPoint, a text box shows its frame (dashed while you type, solid while
 
 The **Font** and **Paragraph** groups on the **Home** tab work as in PowerPoint. While you are typing they change the selected words (or what you type next); with a text box or a shape selected, they change all of its text at once.
 
-- **Font:** font, size, **A+** and **A−** (bigger and smaller in PowerPoint's steps), bold, italic, underline, subscript, superscript, formula style (CH₂Cl₂ with the numbers lowered) and color.
-- **Paragraph:** bullets, numbering, list level (or indent), line spacing, and lining up left, center, right or both edges.
+- **Font:** font, size, **A+** and **A−** (bigger and smaller in PowerPoint's steps), **Clear All Formatting**, bold, italic, underline, strikethrough, subscript, superscript, formula style (CH₂Cl₂ with the numbers lowered) and color. **Character spacing** runs from Very Tight to Very Loose (**More Spacing…** takes any amount), and the small arrow at the corner of the group has **Change Case** (Sentence case, lowercase, UPPERCASE, Capitalize Each Word, tOGGLE cASE).
+- **Paragraph:** bullets, numbering, list level (or indent), line spacing, and lining up left, center, right or both edges. Three more set the whole text box: **Text Direction** (Horizontal, or all the text turned 90° or 270°), **Columns** (one, two, three, or **More Columns…**) and **AutoFit**, which says what happens when the text is longer than its box: **Resize shape to fit text**, **Shrink text on overflow** or **Do Not AutoFit**.
 
 The small bar that appears above text while you type has the same buttons, plus Greek letters and symbols and the paragraph spacing. **Insert** tab ▸ **Symbol** has many more, found by name.
 
 **Format Painter** (Home tab, beside **Copy**) copies the formatting of the selected text, text box, shape or arrow to the next one you click; double-click it to keep painting until Esc. See [Getting started](getting-started.md#format-painter-every-mode). **Format Favorites** beside it keep whole looks under names, for one-click use on any slide ([Format Favorites](getting-started.md#format-favorites-every-mode)).
+
+### Header and footer, date and slide number
+
+<!-- index: Header & Footer, Slide number, Date on slides -->
+
+**Insert** tab ▸ **Header & Footer** adds the date, the slide number and a footer to the selected slides or to every slide, and sets the headers and footers of notes pages and handouts. **Date & Time** and **Slide Number** beside it open the same window. The date can be today's, in the form you pick, or fixed text.
 
 ## Shapes
 
@@ -184,6 +213,10 @@ The small bar that appears above text while you type has the same buttons, plus 
 **Insert** tab ▸ **Diagram** draws a list, process, cycle, hierarchy, Venn diagram, matrix or pyramid from lines of text, like PowerPoint's SmartArt, saved to PowerPoint as a group of shapes. See [Design: Diagrams](design.md#diagrams).
 
 **Insert** tab ▸ **Icons** opens the same library on its **Icons** tab: about 7,000 icons, with a **Lab and science** group first (glassware, molecules, lab equipment, hazard and safety signs). Search by name or by what it means ("hazard", "rbf"). An icon is placed like a shape, filled in one color; change its color in the **Style** panel. See [Design: Icons](design.md#icons).
+
+### Selection Pane
+
+**Home** tab ▸ **Selection Pane** (Alt+F10) lists every text box, structure, picture and shape on the slide, front to back. Pick, hide, rename or reorder them there, which helps when one thing lies under another.
 
 ## Structures on slides
 
@@ -205,6 +238,12 @@ To put a canvas beside your slides while you work, see Split View in [Files and 
 ### Videos
 
 An animated reaction can go on a slide as a video: in Presentation mode, open **Chemistry ▸ Animate ▸ Animate Reaction…** and click **Put on Slide** (see [Animating a reaction](drawing.md#animating-a-reaction)). The video shows a play mark while you edit, plays on its own and loops in the slide show, and is saved into the .pptx as a PowerPoint video that starts automatically. On slides that have their own animations, PowerPoint plays it when clicked.
+
+**Insert** tab ▸ **Video** puts a video file on the slide: MP4 plays everywhere, including PowerPoint; MOV and WebM play here. It plays on a click in the show. Double-click it to trim it, fade it in or out, or set how it plays.
+
+### Audio
+
+**Insert** tab ▸ **Audio** adds a sound (MP3, M4A, WAV, AAC or OGG). Double-click it to trim it, fade it, hide it during the show or keep it playing across slides. Narration recorded with **Record** is kept the same way, one sound on each slide (see [Rehearse Timings and Record](#rehearse-timings-and-record)).
 
 ### Frames, rounded corners and shadows
 
@@ -283,6 +322,8 @@ Open the **Animations** tab, select something on the slide (a structure, picture
 
 - **Coming in:** Appear, Fade, Wipe or Fly In.
 - **Going out:** Disappear, Fade Out, Wipe Out or Fly Out.
+- **Emphasis**, for something already showing, which stays changed afterwards: **Pulse**, **Grow/Shrink**, **Spin**, **Transparency**, **Color Change** (**Color** on the ribbon picks the color) and, for structures, **3-D Rotation** (below).
+- **Motion paths:** **Path** moves the selection along a line, arc, turn, shape or a path you draw, and leaves it there. The path shows while the Animations tab is open, with a green start and a red end; **Reverse Path** runs it the other way.
 
 The same effects are on the right-click menu under **Animation**. Each animation has its own settings on the ribbon:
 
@@ -293,7 +334,11 @@ The same effects are on the right-click menu under **Animation**. Each animation
 | **Delay** | Seconds to wait before it starts |
 | **Effect** | The side it comes from or goes to (Wipe and Fly) |
 | **▲ Earlier** / **▼ Later** | Change its place in the order |
+| **Sequence** | Text: as one object, or a paragraph at a time |
+| **Trigger** | Play in click order, or when a certain object is clicked in the show |
 | **Remove** | Take it off |
+
+**Animation Painter** copies the selected object's animations to the next object you click; double-click it to keep going until Esc. **Preview** plays the slide's animations.
 
 A reagent written over an arrow animates with its whole scheme, because the scheme is a single picture in PowerPoint.
 
@@ -354,6 +399,30 @@ Each click plays the next animation, then moves on to the next slide with its tr
 
 On a canvas slide you can leave the route to look around: drag to pan and scroll to zoom anywhere on the canvas (up to twelve times closer, or out to the whole canvas). While you look around, the map of the whole canvas shows in the corner with where you are. Click the map to move the view there. Picking a canvas slide from every slide (G) opens it ready to look around. Esc, a click or the next key glides back to where the show was, and the show goes on from there. The controls in the top right corner (they fade until you move the mouse) zoom, take you back, show the map and show every slide.
 
+### Laser pointer, pen and highlighter
+
+<!-- index: Laser pointer, Pen in the slide show, Highlighter in the slide show, Ink -->
+
+A small bar at the bottom left of the show (and of Presenter View) has the pointer tools. Their keys are PowerPoint's:
+
+| Tool | Key |
+|---|---|
+| Laser pointer, a red dot that follows the mouse | Ctrl+L |
+| Pen, to draw on the slide | Ctrl+P |
+| Highlighter | Ctrl+I |
+| Eraser: click or drag over ink to remove it | Ctrl+E |
+| Back to the arrow, so clicks move the show on | Ctrl+A, or Esc |
+| Erase all the ink on the slide | E |
+
+The bar also picks the pen's color. When the show ends you are asked whether to keep the ink; kept ink goes on the slides as shapes you can move, recolor or delete, and it is saved to PowerPoint too.
+
+### Custom shows and Set Up Slide Show
+
+<!-- index: Custom Slide Show, Kiosk mode -->
+
+- **Slide Show** tab ▸ **Custom Slide Show** plays one of the deck's custom shows: a named list of its slides, in any order, for a shorter or rearranged version of a talk. **Custom Shows…** on its menu makes and changes them.
+- **Set Up Slide Show** chooses how the show runs: with Presenter View, in a window or as a kiosk; which slides (all, a range or a custom show); whether it loops; and whether narration, animations and timings play.
+
 ### Presenter View
 
 <!-- index: Speaker notes -->
@@ -390,11 +459,15 @@ When the show ends, a window lists each slide's time (🎙 marks the ones with n
 
 For handouts you can also pick the paper and **Frame the slides**. You pick the printer and the number of copies next (in the system's Print window, or in the Windows app its own Print window), which can also save a PDF.
 
+**View** tab ▸ **Notes Master…** sets how notes pages are laid out (orientation, the size of the slide's picture, the notes' font, header, footer, date and page number), and **Handout Master…** does the same for handouts (slides per page, orientation, borders round the slides, header, footer, date and page number).
+
 ## Links
 
 - **Insert ▸ Link…** (Ctrl+K in slides, as in PowerPoint; Scale… stays on the Format menu) links the selected text to a web page or DOI, a file, an email address, another **slide in this deck**, or the first, last, next or previous slide of the show.
 - **Ctrl+click** a link while editing; in the slide show a click on a link follows it (slides jump within the show, web pages and files open outside it).
 - A link to a slide keeps going to that slide when slides are moved. PowerPoint files keep links as PowerPoint's own, both ways.
+- **Insert** tab ▸ **Zoom** ▸ **Slide Zoom** puts small pictures of the slides you choose on a slide. In the show, a click on one zooms into that slide; with **Return to Zoom** checked for it in the Style panel, the show comes back to the zoom slide afterwards. **Summary Zoom** makes a slide of zooms, one for each part of the talk (pick each part's first slide); a click plays that part and returns.
+- **Insert** tab ▸ **Action** sets what a click on the selected shape does in the show: the next slide, a chosen slide, the last one viewed, the end of the show or a web page. Ready-made action buttons are described under [Shapes](#shapes).
 
 ## Saving and sharing
 

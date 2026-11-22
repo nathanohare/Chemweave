@@ -82,6 +82,14 @@ describe('the wiki made from docs/', () => {
     expect(readme).not.toMatch(/\]\(docs\/(README|guide\/|developers)/);
   });
 
+  it('starts the Canvas pages with the ribbon, then the toolbox', () => {
+    const side = files._Sidebar as string;
+    const at = (page: string) => side.indexOf(`](${page})`);
+    expect(at('Canvas-Ribbon')).toBeGreaterThan(at('Canvas'));
+    expect(at('Canvas-Toolbox')).toBeGreaterThan(at('Canvas-Ribbon'));
+    expect(files['Canvas-Ribbon']).toContain('## The Canvas ribbon');
+  });
+
   it('points pictures at docs/images on GitHub', () => {
     expect(files.Home).toContain('https://raw.githubusercontent.com/nathanohare/Chemweave/main/docs/images/drawing.png');
     expect(Object.values(files).join('\n')).not.toMatch(/\]\(\.\.\/images\//);

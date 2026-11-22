@@ -87,7 +87,7 @@ Chemweave is in **beta**: it is still being built, new features arrive often, an
 
 ### The menu bar
 
-Along the top are the menus: **File**, **Edit**, **View**, **Insert**, **Format**, **Chemistry** and **Help**. Each menu shows the commands for the tab type you are in; a command for another kind of tab is left out (Insert ▸ Chart shows in a spreadsheet, not in a canvas). Presentations, spreadsheets, documents and designs also have a ribbon of buttons under the menu bar, like Word, Excel and PowerPoint.
+Along the top are the menus: **File**, **Edit**, **View**, **Insert**, **Format**, **Chemistry** and **Help**. Each menu shows the commands for the tab type you are in; a command for another kind of tab is left out (Insert ▸ Chart shows in a spreadsheet, not in a canvas). Under the menu bar every kind of tab has a ribbon of buttons, like Word, Excel and PowerPoint (see [The ribbon](#the-ribbon)).
 
 **Help** has this **User Guide** built in (it works without an internet connection), the keyboard shortcuts, and short notes on each part of Chemweave. **F1** (**Help ▸ Help on This Tool or Mode**) opens the guide at the part about the tool or kind of tab in use: with the ring tool, for example, it opens at Rings.
 
@@ -117,17 +117,30 @@ New files are called **Canvas 1**, **Presentation 1**, **Spreadsheet 1** and so 
 
 The same commands are in the **File** menu (**New Canvas**, and **Presentation**, **Spreadsheet**, **Document** and **Design…** under **File ▸ New**). To change the tab colors, use **View ▸ Window and Colors ▸ Mode Colors…**.
 
+### The ribbon
+
+<!-- index: Ribbon, Ribbon tabs -->
+
+The ribbon is the band of buttons under the menu bar. Its tabs run along its top, and each kind of file has its own: a canvas has **Home**, **Insert**, **Chemistry**, **Arrange** and **View**. The buttons are in named groups, and the bigger commands carry their names; rest the mouse on any other button to see its name.
+
+In a canvas, the **Home** tab starts as a spreadsheet's does, with **Clipboard** (Paste, Cut, Copy, Format Painter), **Font** and **Paragraph**. Then come the chemistry groups: **Format Favorites**, **Schemes**, **Diagrams**, **Mechanism**, **Insert**, **NMR** (where NMR prediction is offered) and **Look Up**. Two boxes on the canvas ribbon report on the drawing:
+
+- **Warnings**, at the right end of the row of tabs, says **No problems** or counts the possible problems in the structures, such as a carbon with five bonds. Click it for the list (see [Warnings](drawing.md#warnings)).
+- **Analysis**, at the right end of the buttons, shows the formula and masses of the selected structure. Click it for everything else (see [The Analysis panel](drawing.md#the-analysis-panel)).
+
+**Ctrl+F1**, or a double-click on a ribbon tab, folds the ribbon to its row of tabs and opens it again. [The Canvas ribbon](drawing.md#the-canvas-ribbon) has more on the canvas's tabs, and the pages on [Presentation](slides.md), [Spreadsheet](sheets.md), [Document](documents.md) and [Design](design.md) describe theirs. To choose the ribbon's tabs, groups and buttons yourself, see [Customize the Ribbon](#customize-the-ribbon).
+
 ### The toolbox on the left
 
 In a canvas, the drawing tools run down the left side: select, eraser, bonds, then text, arrows, mechanism symbols, brackets, shapes and mass fragmentation, then rings and templates. A button with a small arrow in its corner holds a set of related tools: click the corner, click the button a second time, or right-click it to see them all. Rest the mouse on any button to see its name and shortcut key. [Canvas](drawing.md) explains each tool.
 
 ### The side panel on the right
 
-The panel on the right changes with what you are doing. In a canvas it has:
+The **Side Panel** changes with what you are doing. To start with it floats at the top right of the drawing, as a single row when nothing is selected, and opens when you select something. It is a toolbox like the others, so it can be docked at an edge of the window instead (see [Toolboxes](drawing.md#toolboxes)).
 
-- **Style**: the style of whatever is selected (line widths, colors, fonts, fills, and the settings of a single atom or bond).
-- **Warnings**: possible problems in the structures, such as a carbon with five bonds (see [Canvas](drawing.md#warnings)).
-- **Analysis**: formula, masses and more for the selected structure (see [Canvas](drawing.md#the-analysis-panel)).
+- **Style** is its main section: the style of whatever is selected (line widths, colors, fonts, fills, and the settings of a single atom or bond).
+- In a canvas, **Warnings** and **Analysis** are on [the ribbon](#the-ribbon), so the panel keeps to Style.
+- In a presentation or a design they are sections of the side panel, turned on with the **Warnings** and **Analysis** boxes on the ribbon's **View** tab (presentations) or **Page** tab (designs). Other sections, such as Animation and Comments beside a slide, show when they are in use.
 
 The panel's header is one row: its sections as tabs, the padlock and the **×**. With one section showing, the header names it and what is selected ("Style: 2 Captions"); with nothing selected the panel is just that row. When several sections are showing (Style, Animation and Comments beside a slide, say), click a tab to switch between them. Tabs with no room are listed under **»**.
 

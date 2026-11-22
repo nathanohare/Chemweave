@@ -16,7 +16,7 @@ Nothing to install: the browser version opens immediately. The desktop app adds 
 
 **[User guide](https://github.com/nathanohare/Chemweave/wiki)** · **[Send feedback](https://github.com/nathanohare/Chemweave/wiki/Feedback)**
 
-![A two-step reaction scheme in Canvas mode (dark interface), with the Analysis panel showing the product's formula and masses](docs/images/drawing-dark-ui.png)
+![A two-step reaction scheme in Canvas mode (dark interface), with the Analysis box on the ribbon showing the product's formula and masses](docs/images/drawing-dark-ui.png)
 
 ## Smart reaction arrows
 
@@ -45,7 +45,7 @@ Draw an arrow between two structures and a **+** box appears above and below it.
 
 ## Colour that means something
 
-Fill rings with a colour, a gradient, hatching or dots (patterns can be see-through over a color), add a drop shadow, and pick out parts of a structure with round or straight highlights, soft-edged, with a shadow, or centered between a double bond's lines. Fills and highlights move with their atoms and come along when you copy a structure.
+Fill rings with a color, a gradient, hatching or dots (patterns can be see-through over a color), add a drop shadow, and pick out parts of a structure with round or straight highlights, soft-edged, with a shadow, or centered between a double bond's lines. Fills and highlights move with their atoms and come along when you copy a structure.
 
 ![Estrone with each ring filled differently (gradient, hatching, dots, solid), and a kinase inhibitor with its parts highlighted in round, diamond and square shapes](docs/images/ring-fills.png)
 
@@ -60,7 +60,7 @@ Fill rings with a colour, a gradient, hatching or dots (patterns can be see-thro
 
 | Abbreviations explained on hover | Name to Structure, offline |
 |---|---|
-| ![Resting the mouse on an OTBS label shows a tooltip with the group drawn out, its full name and formula](docs/images/group-tooltip.png) | ![Typing an IUPAC name into Name to Structure draws ibuprofen, and the side panel shows its formula, masses and stereochemistry](docs/images/name-to-structure.gif) |
+| ![Resting the mouse on an OTBS label shows a tooltip with the group drawn out, its full name and formula](docs/images/group-tooltip.png) | ![Typing an IUPAC name into Name to Structure draws ibuprofen, and the Analysis box shows its formula and masses](docs/images/name-to-structure.gif) |
 | Rest the mouse on OTBS, Boc, CO2Me or any other abbreviation to see what it stands for. | Type a systematic or common name and the structure is drawn. Names are read on your computer; others can be looked up on PubChem. |
 
 Select anything and the side panel shows its formula, exact mass, m/z for the ion you pick, elemental analysis, isotope pattern, cLogP and TPSA. R/S and E/Z come from the IUPAC 2013 rules, including axial chirality, and atoms with impossible valences get a red mark.
@@ -81,7 +81,7 @@ Text on canvases, slides and documents is spell-checked, and a second check catc
 
 The eye button shows the page dark on screen, with your structures in light ink. Files, printing and copies keep their white paper. Choose Graphite, Slate or Warm dark, or mix your own in **View ▸ Window and Colours ▸ Reading Mode Colours**.
 
-![Turning Reading Mode on, then switching its colours between palettes](docs/images/dark-mode.gif)
+![Turning Reading Mode on, then switching its colors between palettes](docs/images/dark-mode.gif)
 
 The interface itself follows your system's dark setting in every mode, as in the screenshots on this page.
 
@@ -95,7 +95,7 @@ Right-drag or middle-drag to pan, Ctrl+wheel to zoom in on the spot under the po
 
 Every keyboard shortcut can be changed (**Edit ▸ Keyboard Shortcuts…**), and the keyboard shortcuts can be exported and shared. Toolboxes unlock to dock on any edge or float anywhere, and **Customize Toolboxes** rearranges any of them (or new ones of your own) by dragging icons about, as on a phone's home screen. The Reading Mode colors, each mode's accent color, the scheme spacing, custom templates, nicknames and drawing styles are all settings, kept in one file you can export and import on another computer.
 
-![Toolboxes moved to new places, Reading Mode in Slate colors, and the Keyboard Shortcuts window open](docs/images/customize.png)
+![Toolboxes moved to new places around the drawing, with Reading Mode in its Slate colors](docs/images/customize.png)
 
 ## Presentations, spreadsheets, documents and designs
 
@@ -108,7 +108,7 @@ Chemweave has five modes: **Canvas** (Chemistry), **Presentation** (Slideshow), 
 
 | Document | Design |
 |---|---|
-| ![Document mode with an experimental paragraph and a structure in the text](docs/images/document.png) | ![Design mode with the conference poster template and the shape library](docs/images/design.png) |
+| ![Document mode with an experimental paragraph and a structure in the text](docs/images/document.png) | ![Design mode with a three-column poster layout and the shape library](docs/images/design.png) |
 | Word's styles and keys, structures in the text, numbered captions, references, tracked changes, comments and equations. Saves as `.docx`. | Posters, TOC graphics and graphical abstracts at the journals' sizes, with templates and a shape library that includes flowcharts and lab glassware. |
 
 **Split View** puts a canvas beside a document, spreadsheet or presentation, so you can draw on one side and insert on the other.
