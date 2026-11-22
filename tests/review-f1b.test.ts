@@ -95,3 +95,29 @@ describe('a pasted Abs flag goes with its structure (F1b-R04)', () => {
     expect(flagOf(toMolfile(d, ids, '', { files: true }).molblock)).toBe('1');
   });
 });
+
+describe('a Rac or Rel flag is not lost to V2000 (F1b-R13)', () => {
+  it('a Racemic structure is written as V3000, saying why, with its centre in a STERAC group', () => {
+    const d = newDoc();
+    const rac = alanineAt(d, 0, 0, 'Racemic');
+    const out = toMolfile(d, rac, '', { files: true });
+    expect(out.molblock).toMatch(/V3000/);
+    expect(out.molblock).toMatch(/MDLV30\/STERAC1 ATOMS=\(1 1\)/);
+    expect(out.v3000Because).toBe('a Rac or Rel chiral flag');
+    // RDKit reads it as racemic at that centre: an "and" group (&1)
+    const m = RDKit.get_mol(out.molblock);
+    expect(m.get_cxsmiles()).toMatch(/&1:/);
+    m.delete();
+  });
+  it('a Relative structure is written as V3000 with a STEREL group; an Absolute one stays V2000', () => {
+    const d = newDoc();
+    const rel = alanineAt(d, 0, 0, 'Relative');
+    const abs = alanineAt(d, 5 * L, 0, 'Absolute');
+    const r = toMolfile(d, rel, '', { files: true });
+    expect(r.v3000Because).toBe('a Rac or Rel chiral flag');
+    expect(r.molblock).toMatch(/MDLV30\/STEREL1/);
+    const a = toMolfile(d, abs, '', { files: true });
+    expect(a.v3000Because).toBeUndefined();
+    expect(a.molblock).toMatch(/V2000/);
+  });
+});
