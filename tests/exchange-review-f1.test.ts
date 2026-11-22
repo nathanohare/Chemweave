@@ -202,3 +202,24 @@ describe('frame texts and picture settings (F1-R11, F1-R12)', () => {
       .toEqual({ look: { round: 0.5, shadow: 'soft' }, locked: true, link: 'https://example.org/' });
   });
 });
+
+describe('superatom attachment points (F1-R14)', () => {
+  it('each bond out of a group gets an M  SAP / SAP= point on the group\'s atom, which RDKit keeps', () => {
+    const d = methylAmine('Ts');
+    const v2 = writeMolFile(d).text, v3 = writeMolFile(d, '', { v3000: true }).text;
+    const lines = v2.split('\n');
+    // the sulfur is the group's first atom; N (atom 2) is outside, so the point is on S with no leaving atom
+    const s = lines.findIndex((l) => / S   0/.test(l)) - 4;
+    expect(lines).toContain(`M  SAP   1  1 ${String(s + 1).padStart(3)}   0 1 `);
+    // (V3000 lines longer than 80 characters go on with "-")
+    expect(v3.replace(/-\nM {2}V30 /g, '')).toMatch(new RegExp(`SUP 0 ATOMS=.* LABEL=Ts SAP=\\(3 ${s + 1} 0 1\\)`));
+    for (const text of [v2, v3]) {
+      const m = RDKit.get_mol(text);
+      expect(m.get_molblock()).toMatch(/M {2}SAP {3}1 {2}1/);
+      expect(m.get_smiles()).toBe(canon('CNS(=O)(=O)c1ccc(C)cc1'));
+      m.delete();
+      // and our own reader still gives the label back
+      expect([...back('x.mol', text).atoms.values()].map((a) => a.label).filter(Boolean)).toEqual(['Ts']);
+    }
+  });
+});

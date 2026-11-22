@@ -124,10 +124,21 @@ function crossingBonds(g: MSgroup, bonds: MBond[]): number[] {
 }
 
 /**
+ * A superatom group's attachment points (CTfile Formats 2020: V2000 "M  SAP", V3000 "SAP="): for each
+ * bond that leaves the group, the group's atom on it, no leaving atom (0: nothing is removed when the
+ * group is expanded or contracted), and an id counting from 1. Some programs need these to show the
+ * group contracted (review F1-R14).
+ */
+export function attachPoints(g: MSgroup, bonds: MBond[]): { atom: number; id: string }[] {
+  const inG = new Set(g.atoms);
+  return crossingBonds(g, bonds).map((k, j) => ({ atom: inG.has(bonds[k].a) ? bonds[k].a : bonds[k].b, id: String(j + 1) }));
+}
+
+/**
  * The connection table of a V3000 molfile ("M  V30 BEGIN CTAB" … "M  V30 END CTAB"), from BIOVIA's
  * CTfile Formats (2020), V3000 section: atoms with CHG=, MASS=, RAD=, VAL=, RGROUPS= and their map
  * number; bonds with CFG= (1 up, 2 either, 3 down) and types 9 (coordination) and 10 (hydrogen);
- * superatom S-groups (SUP with ATOMS=, XBONDS= and LABEL=); enhanced stereo as the collections
+ * superatom S-groups (SUP with ATOMS=, XBONDS=, LABEL= and SAP=); enhanced stereo as the collections
  * MDLV30/STEABS, MDLV30/STERACn (and) and MDLV30/STERELn (or); the chiral flag in COUNTS. A label
  * kept as an alias is a "*" atom in a one-atom SUP group with the label (quoted when it has spaces). Lines longer than 80 characters
  * go on to the next with "-".
@@ -154,7 +165,8 @@ export function v3000Ctab(atoms: MAtom[], bonds: MBond[], extra: CtabExtra = {})
     out.push('BEGIN SGROUP');
     sgroups.forEach((g, i) => {
       const x = crossingBonds(g, bonds);
-      out.push(`${i + 1} SUP 0 ATOMS=(${g.atoms.length} ${g.atoms.map((k) => k + 1).join(' ')})${x.length ? ` XBONDS=(${x.length} ${x.map((k) => k + 1).join(' ')})` : ''} LABEL=${q(g.label)}`);
+      const sap = attachPoints(g, bonds).map((p) => ` SAP=(3 ${p.atom + 1} 0 ${p.id})`).join('');
+      out.push(`${i + 1} SUP 0 ATOMS=(${g.atoms.length} ${g.atoms.map((k) => k + 1).join(' ')})${x.length ? ` XBONDS=(${x.length} ${x.map((k) => k + 1).join(' ')})` : ''} LABEL=${q(g.label)}${sap}`);
     });
     out.push('END SGROUP');
   }
@@ -189,7 +201,7 @@ const i3 = (v: number) => String(v).padStart(3);
  * A whole V2000 molfile, from BIOVIA's CTfile Formats (2020), V2000 section: the counts line (with
  * the chiral flag), the atom block (valence in vvv, map number in mmm), the bond block, A alias
  * lines, then the properties block: M  CHG, ISO, RAD, RGP (R-group numbers on R# atoms) and the
- * superatom S-groups (M  STY … SUP, SAL, SBL, SMT), and M  END. Coordination and hydrogen
+ * superatom S-groups (M  STY … SUP, SAL, SBL, SAP, SMT), and M  END. Coordination and hydrogen
  * bonds (types 9 and 10) and enhanced stereo are V3000 only; see needsV3000.
  */
 export function v2000Molfile(head: string[], atoms: MAtom[], bonds: MBond[], extra: CtabExtra = {}): string {
@@ -227,6 +239,12 @@ export function v2000Molfile(head: string[], atoms: MAtom[], bonds: MBond[], ext
     };
     each('SAL', g.atoms);
     each('SBL', crossingBonds(g, bonds));
+    const sap = attachPoints(g, bonds);
+    // M  SAP sssnn6 iii ooo cc: up to six points a line (attachment atom, leaving atom, id)
+    for (let k = 0; k < sap.length; k += 6) {
+      const part = sap.slice(k, k + 6);
+      lines.push(`M  SAP ${s}${i3(part.length)}` + part.map((p) => ` ${i3(p.atom + 1)} ${i3(0)} ${p.id.padEnd(2)}`).join(''));
+    }
     lines.push(`M  SMT ${s} ${g.label}`);
   });
   lines.push('M  END');
