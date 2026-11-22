@@ -1565,6 +1565,7 @@
               <select id="doc-line" title="Line spacing" aria-label="Line spacing">
                 <option value="1">Single</option><option value="1.15">1.15</option><option value="1.5">1.5</option><option value="2">Double</option><option value="" hidden>Other</option><option value="more">Line Spacing Options…</option>
               </select>
+              <button class="rb-sq" data-doc="show-marks" aria-pressed="false" title="Show/Hide ¶ (Ctrl+Shift+8): show paragraph marks, spaces and tabs. They show on screen only, never in print or a saved file">¶</button>
             </div>
             <div class="rb-pair">
               <button class="rb-sq" data-doc="doc-align-left" aria-pressed="false" title="Align left">Left</button>
@@ -1614,7 +1615,15 @@
     <div class="rb-panel" data-doc-panel="insert" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="cover-page" aria-haspopup="true" title="Cover Page: a first page with the document's title, subtitle, author, institution and date, in one of several styles"><span class="rb-icon">▤</span>Cover Page ▾</button>
+          <div class="rb-fly rb-selgal" data-name="Cover Page" data-ic="cover-page" data-pic="cover" data-gal="grid" title="Cover Page: a first page with the document's title, subtitle, author, institution and date, in one of several designs"><select id="doc-cover" data-doc-prefix="cover" aria-label="Cover Page">
+              <option value="" hidden></option>
+              <option value="plain" title="The title in the middle of the page, the author and date under it">Plain</option>
+              <option value="banded" title="The title in white on a band of the accent color">Banded</option>
+              <option value="ruled" title="The title between two heavy rules, to the left">Ruled</option>
+              <option value="report" title="A report's front page: what, who, where and when, down a line in the margin">Lab Report</option>
+              <option value="si" title="A journal's Supporting Information front page: the heading, the paper's title, its authors and institution">Supporting Information</option>
+              <option value="remove">Remove Current Cover Page</option>
+            </select></div>
           <button class="rb-big" data-doc="blank-page" title="Blank Page: an empty page at the cursor"><span class="rb-icon">▯</span>Blank Page</button>
           <button class="rb-big" data-doc="page-break" title="Start a new page here"><span class="rb-icon">⤓</span>Page Break</button>
         </div>
