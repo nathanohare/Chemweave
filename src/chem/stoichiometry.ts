@@ -56,8 +56,9 @@ export function stoichiometryBook(rows: readonly StoichRow[], mmol = 1): Workboo
       sh.setInput(y, 3, r.mw.toFixed(2));
       if (y === refRow) { sh.setInput(y, 4, '1'); sh.setInput(y, 5, String(mmol)); }
       else { sh.setInput(y, 4, '1'); sh.setInput(y, 5, `=E${n}*$F$${refRow + 1}`); }
-      // mass weighed out: the compound's own mass over its purity (empty: pure)
-      sh.setInput(y, 6, `=IF(H${n}="",F${n}*D${n},F${n}*D${n}*100/H${n})`);
+      // mass weighed out: the compound's own mass over its purity. 98, 98% and 0.98 all mean 98%
+      // (a number of 1 or less is a fraction); empty, 0 or text: pure
+      sh.setInput(y, 6, `=IF(OR(H${n}="",NOT(ISNUMBER(H${n}))),F${n}*D${n},IF(H${n}<=0,F${n}*D${n},IF(H${n}<=1,F${n}*D${n}/H${n},F${n}*D${n}*100/H${n})))`);
       // volume: of the solution when a concentration is given (mmol ÷ mol/L = mL), else of the liquid from its density
       sh.setInput(y, 10, `=IF(J${n}<>"",1000*F${n}/J${n},IF(I${n}="","",G${n}/I${n}))`);
     });
@@ -71,16 +72,19 @@ export function stoichiometryBook(rows: readonly StoichRow[], mmol = 1): Workboo
       sh.patchStyle({ r1: g.title, c1: 0, r2: g.title, c2: 0 }, { bold: true });
       const put = (r: number, label: string, f: string) => { sh.setInput(r, 0, label); if (f) sh.setInput(r, 3, f); };
       put(g.isolated, 'Product isolated (mg)', '');
-      put(g.yield, 'Yield (%)', `=IF(${iso}="","",100*${iso}/G${pr})`);
+      // (from the product's own theoretical mass, not column G: a purity typed on its row doesn't change the yield)
+      put(g.yield, 'Yield (%)', `=IF(${iso}="","",100*${iso}/(F${pr}*D${pr}))`);
       put(g.eFactor, 'E-factor', `=IF(${iso}="","",(SUMIF(${col('A')},"<>Product",${col('G')})-${iso})/${iso})`);
       put(g.pmi, 'PMI', `=IF(${iso}="","",SUMIF(${col('A')},"<>Product",${col('G')})/${iso})`);
-      sh.setInput(g.note, 0, 'E-factor and PMI count the masses in column G: add solvents and work-up as rows (with a density and volume) to count them too.');
+      sh.setInput(g.note, 0, 'E-factor and PMI count the masses in column G (for a solution, only the compound in it): add solvents and work-up as rows (with a density and volume) to count them too.');
       sh.patchStyle({ r1: g.yield, c1: 3, r2: g.pmi, c2: 3 }, { numFmt: '0.0' });
       sh.patchStyle({ r1: g.note, c1: 0, r2: g.note, c2: 0 }, { italic: true });
     }
     sh.patchStyle({ r1: 1, c1: 3, r2: rows.length, c2: 3 }, { numFmt: '0.00' });
     sh.patchStyle({ r1: 1, c1: 5, r2: rows.length, c2: 6 }, { numFmt: '0.00' });
     sh.patchStyle({ r1: 1, c1: 10, r2: rows.length, c2: 10 }, { numFmt: '0.0' });
+    // the purity as it is read: 98, 98% and 0.98 all show as 98.0%
+    sh.patchStyle({ r1: 1, c1: 7, r2: rows.length, c2: 7 }, { numFmt: '[<=1]0.0%;0.0"%"' });
     [130, 200, 110, 90, 60, 70, 80, 75, 100, 75, 90].forEach((w, c) => sh.setColWidth(c, w));
   });
   return wb;

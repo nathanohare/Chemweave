@@ -75,3 +75,38 @@ describe('green metrics', () => {
     expect(v(g.pmi)).toBeCloseTo(inMass / 190, 4);
   });
 });
+
+describe('purity typed in any of the usual ways (review F4-R01, F4-R10)', () => {
+  const book = () => stoichiometryBook([
+    { role: 'Starting material', name: 'C7H6O', formula: 'C7H6O', mw: 106.12 },
+    { role: 'Product', name: 'C7H8O', formula: 'C7H8O', mw: 108.14 },
+  ], 2);
+  it('reads 98, 98% and 0.98 as 98%, and shows each as 98.0%', () => {
+    // 2 mmol × 106.12 g/mol = 212.24 mg of pure compound; at 98% purity 212.24 ÷ 0.98 = 216.57 mg
+    for (const typed of ['98', '98%', '0.98']) {
+      const wb = book();
+      const sh = wb.sheets[0];
+      wb.edit('purity', () => sh.setInput(1, 7, typed));
+      expect(Number(sh.value(1, 6)), typed).toBeCloseTo(216.57, 2);
+      expect(sh.shownText(1, 7), typed).toBe('98.0%');
+    }
+  });
+  it('takes an empty, zero or text purity as pure, not as an error', () => {
+    for (const typed of ['', '0', 'n/a']) {
+      const wb = book();
+      const sh = wb.sheets[0];
+      wb.edit('purity', () => sh.setInput(1, 7, typed));
+      expect(Number(sh.value(1, 6)), typed).toBeCloseTo(212.24, 2);
+    }
+  });
+  it('works the yield out from the product itself, whatever purity is typed on its row', () => {
+    const wb = book();
+    const sh = wb.sheets[0];
+    const rows = sh.usedRange()!.r2 + 1;
+    const yieldRow = [...Array(rows).keys()].find((r) => sh.value(r, 0) === 'Yield (%)')!;
+    const isolated = [...Array(rows).keys()].find((r) => sh.value(r, 0) === 'Product isolated (mg)')!;
+    // 2 mmol of C7H8O is 216.28 mg; 194.65 mg isolated is 90.0%
+    wb.edit('iso', () => { sh.setInput(isolated, 3, '194.65'); sh.setInput(2, 7, '90'); });
+    expect(Number(sh.value(yieldRow, 3))).toBeCloseTo(90.0, 1);
+  });
+});
