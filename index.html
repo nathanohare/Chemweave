@@ -428,12 +428,13 @@
     </div>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="focus-view" title="Hide the toolboxes, side panel and ribbon to give the page the whole window; press again (Ctrl+Shift+F1) to bring them back"><span>Focus View</span></button>
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="fold-side" title="The side panel at the right: Style, Warnings, Analysis, Format (Ctrl+Alt+B shows or closes it)"><span>Side Panel</span></button>
-    <div class="submenu" data-modes="slides sheet document design">
+    <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Ribbon</button>
     <div class="menu sub" role="menu" hidden>
+    <button data-modes="drawing" role="menuitemcheckbox" aria-checked="false" data-cmd="ribbon-simplified" title="The Canvas ribbon as one row of buttons, for more room; off: the Classic ribbon's two rows"><span>Simplified Ribbon</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="collapse-ribbon" title="Show the ribbon's tabs only, for more room; click a tab to use its buttons (Ctrl+F1, or double-click a tab)"><span>Collapse the Ribbon</span><kbd>Ctrl+F1</kbd></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="ribbon-auto-fold" title="Collapse the ribbon to its tabs when the window is under 760 px tall; it expands again when the window is taller"><span>Auto-Collapse on Short Windows</span></button>
-    <button role="menuitem" data-cmd="customize-ribbon" title="Reorder, rename or hide ribbon tabs and groups, and create custom groups of commands">Customize the Ribbon…</button>
+    <button data-modes="slides sheet document design" role="menuitem" data-cmd="customize-ribbon" title="Reorder, rename or hide ribbon tabs and groups, and create custom groups of commands">Customize the Ribbon…</button>
     </div>
     </div>
     <div class="submenu">
