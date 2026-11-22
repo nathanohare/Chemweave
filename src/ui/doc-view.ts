@@ -1046,3 +1046,4 @@ function squiggle(ctx: CanvasRenderingContext2D, r: Rect, px: number): void {
   }
   ctx.stroke();
 }
+

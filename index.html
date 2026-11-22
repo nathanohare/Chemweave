@@ -1489,6 +1489,7 @@
       <button role="tab" data-doc-tab="review" aria-selected="false">Review</button>
       <button role="tab" data-doc-tab="view" aria-selected="false">View</button>
       <button role="tab" data-doc-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table</button>
+      <button role="tab" data-doc-tab="picture" aria-selected="false" class="rb-context" hidden title="Shown while a picture is picked">Picture Format</button>
       <button role="tab" data-doc-tab="hf" aria-selected="false" class="rb-context" hidden title="Shown while you are typing in a header or footer">Header &amp; Footer</button>
     </div>
     <div class="rb-panel" data-doc-panel="home">
@@ -1948,6 +1949,7 @@
             <button data-doc="delete-all-comments" title="Delete every comment in the document">Delete All</button>
           </div>
           <button class="rb-big" data-doc="show-comments" aria-pressed="true" title="Show the comments beside the page, or hide them"><span class="rb-icon">☰</span>Show Comments</button>
+          <button class="rb-big" data-doc="original-pictures-menu" data-ic="original-pictures" aria-haspopup="true" title="Original Pictures: the pictures figures were converted from (and structures made from), shown beside them: Show All, Show When Editing (only while that figure is drawn in), or Hide All"><span class="rb-icon"></span>Original Pictures ▾</button>
         </div>
         <div class="rb-label">Comments</div>
       </div>
@@ -2050,6 +2052,39 @@
           <button class="rb-big" data-doc="view-print" title="Close Outline View: back to Print Layout"><span class="rb-icon">✕</span>Close Outline View</button>
         </div>
         <div class="rb-label">Close</div>
+      </div>
+    </div>
+    <div class="rb-panel" data-doc-panel="picture" hidden>
+      <div class="rb-group">
+        <div class="rb-row">
+          <span class="rb-split">
+            <button class="rb-big" data-doc="make-editable" data-ic="make-editable" title="Make Editable: read the structure in the picture and put an editable structure in its place, in the style picked under ▾ (the picture is kept, to compare with or revert to)"><span class="rb-icon"></span>Make Editable</button>
+            <button class="rb-fly-btn" data-doc="make-editable-menu" aria-haspopup="true" title="Match Original Style or Use Default Style; Compare with Original; Revert to Picture" aria-label="Make Editable options">▾</button>
+          </span>
+          <button class="rb-big" data-doc="convert-to-figure" data-ic="convert-to-figure" title="Convert to Figure: replace the picture with an empty figure of the same size, in the same place, to draw the structure in yourself, with the picture beside it to copy or trace (for pictures Make Editable can't read)"><span class="rb-icon"></span>Convert to Figure</button>
+        </div>
+        <div class="rb-label">Chemistry</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <div class="rb-col">
+            <button class="rb-labelled" data-doc="picture-format" data-ic="picture-format" title="Brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to a shape or proportions"><span class="rb-lead"></span>Picture Format…</button>
+            <button class="rb-labelled" data-doc="alt-text" title="What the picture shows, for people who can't see it (screen readers); kept as its alt text in Word"><span class="rb-lead"></span>Alt Text…</button>
+            <button class="rb-labelled" data-doc="insert-caption" title="A numbered caption: Figure 1, Scheme 2, Table S1…"><span class="rb-lead"></span>Insert Caption…</button>
+          </div>
+        </div>
+        <div class="rb-label">Adjust</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="arrange-position" data-ic="position" aria-haspopup="true" title="Position the picture on the page, with text wrapping around it"><span class="rb-icon"></span>Position ▾</button>
+          <div class="rb-col">
+            <button data-doc="arrange-forward" class="rb-labelled" data-ic="shape-forward" aria-haspopup="true" title="Bring the picture forward one level, or to the front"><span class="rb-lead"></span>Bring Forward ▾</button>
+            <button data-doc="arrange-backward" class="rb-labelled" data-ic="shape-backward" aria-haspopup="true" title="Send the picture back one level, or to the back"><span class="rb-lead"></span>Send Backward ▾</button>
+            <button data-doc="arrange-rotate" class="rb-labelled" data-ic="rotate-by" aria-haspopup="true" title="Rotate the picture 90° right or left, flip it, or rotate by any angle"><span class="rb-lead"></span>Rotate ▾</button>
+          </div>
+        </div>
+        <div class="rb-label">Arrange</div>
       </div>
     </div>
     <div class="rb-panel" data-doc-panel="hf" hidden>
