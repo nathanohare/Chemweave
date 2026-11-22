@@ -35,10 +35,12 @@ describe('no submenu named after a mode (S85; review of F5, R11)', () => {
     const page = new DOMParser().parseFromString(html, 'text/html');
     const heads = [...page.querySelectorAll('header .submenu > button.has-sub')].map((b) => b.textContent!.trim());
     for (const m of ['Canvas', 'Presentation', 'Spreadsheet', 'Document', 'Design']) expect(heads, m).not.toContain(m);
-    const where = (cmd: string) => page.querySelector<HTMLElement>(`header .menu:not(.sub) > [data-cmd="${cmd}"]`);
+    // each mode's commands are marked with their mode, straight in the menu or in a submenu named after the Office group (F5b-R01)
+    const where = (cmd: string) => page.querySelector<HTMLElement>(`header .menu [data-cmd="${cmd}"]`);
+    const modes = (el: HTMLElement) => el.dataset.modes ?? el.closest<HTMLElement>('.submenu[data-modes]')?.dataset.modes;
     for (const [cmd, mode] of [['delete-slide', 'slides'], ['go-to', 'sheet'], ['freeze-header', 'sheet'], ['view-normal', 'slides'], ['canvas-background', 'slides']]) {
       expect(where(cmd), cmd).not.toBeNull();
-      expect(where(cmd)!.dataset.modes, cmd).toBe(mode);
+      expect(modes(where(cmd)!), cmd).toBe(mode);
     }
   });
 });

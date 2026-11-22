@@ -63,6 +63,19 @@
         <button role="menuitem" data-modes="drawing slides design" data-cmd="import-paste" title="Read the structure in a picture on the clipboard (such as a screenshot of a paper)">Paste Picture as Structure</button>
     </div>
     </div>
+    <!-- Excel's Data ▸ Get Data, beside Import (as Excel for Mac has File ▸ Import), so Edit fits at 1024 × 700 (F5b-R01) -->
+    <div class="submenu" data-modes="sheet">
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Get Data</button>
+    <div class="menu sub" role="menu" hidden>
+    <button role="menuitem" data-cmd="from-text">From Text/CSV…</button>
+    <button role="menuitem" data-cmd="from-json">From JSON…</button>
+    <button role="menuitem" data-cmd="from-web">From Web…</button>
+    <button role="menuitem" data-cmd="from-workbook">From Workbook…</button>
+    <hr />
+    <button role="menuitem" data-cmd="queries-pane">Queries &amp; Connections</button>
+    <button role="menuitem" data-cmd="refresh-all">Refresh All</button>
+    </div>
+    </div>
     <div class="submenu" data-modes="drawing slides design document">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Export</button>
     <div class="menu sub" role="menu" hidden>
@@ -183,27 +196,32 @@
     </div>
     </div>
     <button role="menuitem" data-cmd="format-painter" title="Format Painter: copy the style of what is selected to the next thing you click or drag over. Double-click to keep painting until Esc">Format Painter</button>
-    <button role="menuitem" data-cmd="save-format-favorite" title="Save the selection's formatting (fill, line, effects, text) under a name to apply with one click in any mode">Save Format as Favorite…</button>
-    <button role="menuitem" data-cmd="format-favorites" title="Your Format Favorites: click one to apply its formatting to the selection">Format Favorites…</button>
     <hr />
     <button role="menuitem" data-cmd="select-all">Select All</button>
-    <button data-modes="sheet document" role="menuitem" data-cmd="find">Find…</button>
-    <button data-modes="sheet document" role="menuitem" data-cmd="replace">Replace…</button>
-    <hr />
-    <!-- Presentation commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
-    <hr />
-    <button data-modes="slides" role="menuitem" data-cmd="delete-slide">Delete Slide</button>
-    <button data-modes="slides" role="menuitem" data-cmd="cut-slides" title="Cut the selected slides to paste into this or another presentation">Cut Slides</button>
-    <button data-modes="slides" role="menuitem" data-cmd="copy-slides" title="Copy the selected slides to paste into this or another presentation (Ctrl+C in the slide list)">Copy Slides</button>
-    <button data-modes="slides" role="menuitem" data-cmd="paste-slides" title="Paste copied slides after the selected slide, using this presentation's theme (Ctrl+V in the slide list)">Paste Slides</button>
-    <button data-modes="slides" role="menuitem" data-cmd="paste-slides-keep" title="Paste the slides copied, each keeping its own background, fonts and colors">Paste Slides (Keep Source Formatting)</button>
-    <hr />
-    <!-- Spreadsheet commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
-    <hr />
-    <button data-modes="sheet" role="menuitem" data-cmd="delete-cells">Delete Rows or Columns</button>
+    <div class="submenu" data-modes="sheet document">
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Find &amp; Select</button>
+    <div class="menu sub" role="menu" hidden>
+    <button role="menuitem" data-cmd="find">Find…</button>
+    <button role="menuitem" data-cmd="replace">Replace…</button>
     <button data-modes="sheet" role="menuitem" data-cmd="go-to">Go To…</button>
     <button data-modes="sheet" role="menuitem" data-cmd="go-to-special">Go To Special…</button>
+    </div>
+    </div>
     <hr />
+    <!-- grouped as on the Office ribbon, never in a submenu named after the mode (S42, S85; review F5b-R01) -->
+    <div class="submenu" data-modes="slides">
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Slides</button>
+    <div class="menu sub" role="menu" hidden>
+    <button role="menuitem" data-cmd="delete-slide">Delete Slide</button>
+    <hr />
+    <button role="menuitem" data-cmd="cut-slides" title="Cut the selected slides to paste into this or another presentation">Cut Slides</button>
+    <button role="menuitem" data-cmd="copy-slides" title="Copy the selected slides to paste into this or another presentation (Ctrl+C in the slide list)">Copy Slides</button>
+    <button role="menuitem" data-cmd="paste-slides" title="Paste copied slides after the selected slide, using this presentation's theme (Ctrl+V in the slide list)">Paste Slides</button>
+    <button role="menuitem" data-cmd="paste-slides-keep" title="Paste the slides copied, each keeping its own background, fonts and colors">Paste Slides (Keep Source Formatting)</button>
+    </div>
+    </div>
+    <hr />
+    <button data-modes="sheet" role="menuitem" data-cmd="delete-cells">Delete Rows or Columns</button>
     <div class="submenu" data-modes="sheet">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Fill</button>
     <div class="menu sub" role="menu" hidden>
@@ -233,30 +251,15 @@
     <button role="menuitem" data-cmd="text-to-columns">Text to Columns…</button>
     <button role="menuitem" data-cmd="remove-duplicates">Remove Duplicates…</button>
     <button role="menuitem" data-cmd="flash-fill">Flash Fill</button>
-    </div>
-    </div>
-    <div class="submenu" data-modes="sheet">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Analysis</button>
-    <div class="menu sub" role="menu" hidden>
-    <button role="menuitem" data-cmd="data-analysis">Data Analysis…</button>
+    <button role="menuitem" data-cmd="compound" title="Look up the selected names on PubChem and convert them to compounds">Data Type: Compound</button>
+    <hr />
     <button role="menuitem" data-cmd="goal-seek">Goal Seek…</button>
     <button role="menuitem" data-cmd="data-table">Data Table…</button>
-    <button role="menuitem" data-cmd="solver">Solver…</button>
-    <button role="menuitem" data-cmd="refresh-all">Refresh All</button>
-    </div>
-    </div>
-    <div class="submenu" data-modes="sheet">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Get Data</button>
-    <div class="menu sub" role="menu" hidden>
-    <button role="menuitem" data-cmd="from-text">From Text/CSV…</button>
-    <button role="menuitem" data-cmd="from-json">From JSON…</button>
-    <button role="menuitem" data-cmd="from-web">From Web…</button>
-    <button role="menuitem" data-cmd="from-workbook">From Workbook…</button>
-    <button role="menuitem" data-cmd="queries-pane">Queries &amp; Connections</button>
-    <button role="menuitem" data-cmd="compound" title="Look up the selected names on PubChem and convert them to compounds">Data Type: Compound</button>
-    </div>
-    </div>
     <hr />
+    <button role="menuitem" data-cmd="data-analysis">Data Analysis…</button>
+    <button role="menuitem" data-cmd="solver">Solver…</button>
+    </div>
+    </div>
     <hr />
     <button role="menuitem" data-cmd="command-search" title="Find any command by typing part of its name">Search Commands…</button>
     <button role="menuitem" data-cmd="assistant" title="Ask your AI model about the page, for a structure, a scheme check or writing help (opt-in: nothing is sent until you turn it on)">Assistant…</button>
@@ -582,6 +585,14 @@
     <button data-modes="drawing slides design" role="menuitem" data-cmd="ungroup" title="Take the selected groups apart">Ungroup</button>
     <button data-modes="drawing slides design" role="menuitem" data-cmd="link-text" title="Link the selected text to the selected structure (or the nearest), so it moves with it">Link Text to Structure</button>
     <button data-modes="drawing slides design" role="menuitem" data-cmd="unlink-text" title="Leave the selected text where it is, no longer following its structure">Unlink Text</button>
+    <hr />
+    <div class="submenu">
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Favorites</button>
+    <div class="menu sub" role="menu" hidden>
+    <button role="menuitem" data-cmd="save-format-favorite" title="Save the selection's formatting (fill, line, effects, text) under a name to apply with one click in any mode">Save Format as Favorite…</button>
+    <button role="menuitem" data-cmd="format-favorites" title="Your Format Favorites: click one to apply its formatting to the selection">Format Favorites…</button>
+    </div>
+    </div>
     <hr />
     <!-- Presentation commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
     <hr />

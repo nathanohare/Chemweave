@@ -18,94 +18,124 @@ export interface CommandDef {
 /** A menu's entries: commands, '-' for a line, and submenus. */
 export type MenuEntry = CommandDef | '-' | { submenu: string; modes?: string; items: MenuEntry[] };
 
+/** The Reference Manager: in References, and on its own in a sheet (one command in two places, never both in one mode). */
+const REFERENCE_MANAGER: CommandDef = { id: 'references', label: 'Reference Manager…', title: 'Manage your reference library (collections, tags, PDFs, Zotero) and the references in every open file, and copy references between them' };
+
+/** Picture Format…: in Picture Tools, and on its own in a document. */
+const PICTURE_FORMAT: CommandDef = { id: 'picture-format', label: 'Picture Format…', title: 'Brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to a shape or proportions' };
+
 /** Insert. */
 export const INSERT_MENU: MenuEntry[] = [
+  // grouped as on the Office Insert tab (Slides, Tables, Illustrations, Media, Text, Links…), each mode's
+  // commands marked with their mode, never in a submenu named after the mode (S42, S85; review F5b-R01)
   { id: 'name-to-structure', label: 'Structure from Name or SMILES…', title: 'A structure from its name or SMILES: in the drawing, in the text at the cursor, or in the selected cell' },
   { id: 'sequence-to-structure', label: 'Structure from Sequence…', modes: 'drawing slides design', title: 'Draw a peptide from its sequence: one-letter (GLYP; lowercase for D) or three-letter codes (Boc-Ala-D-Phe-OMe), with the end groups you choose' },
   { id: 'insert-compound', label: 'Compound from Library…', title: 'Insert a compound from your Compound Library: in a drawing or slide with its number, in text at the cursor, or in the selected cell' },
   { id: 'insert-structure', label: 'Structure', modes: 'document', title: 'Draw a structure or scheme to put in the text at the cursor' },
   { id: 'draw-structure', label: 'Structure in Cell', modes: 'sheet' },
+  { id: 'property-column', label: 'Property Columns…', modes: 'sheet' },
+  { id: 'isotope-pattern', label: 'Isotope Pattern…', modes: 'sheet' },
   '-',
-  { id: 'insert-picture', label: 'Picture…', modes: 'drawing slides design document' },
-  { submenu: 'Picture Tools', modes: 'drawing slides design document', items: [
-    { id: 'crop', label: 'Crop Picture', modes: 'drawing slides design', title: 'Cut the edges off the selected picture' },
-    { id: 'picture-format', label: 'Picture Format…', modes: 'drawing slides design document', title: 'Brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to a shape or proportions' },
+  { submenu: 'Slides', modes: 'slides', items: [
+    { id: 'new-slide', label: 'New Slide', modes: 'slides' },
+    { id: 'new-canvas-slide', label: 'New Canvas Slide', modes: 'slides', title: 'A slide with no edge: draw a whole route across it, then add keyframes, the windows the slide show steps through' },
+    { id: 'duplicate-slide', label: 'Duplicate Slide', modes: 'slides' },
+    '-',
+    { id: 'reuse-slides', label: 'Reuse Slides…', modes: 'slides', title: 'Slides from another PowerPoint file: see them all, pick the ones you want' },
+    { id: 'insert-slide-zoom', label: 'Slide Zoom…', modes: 'slides', title: 'Pictures of other slides that zoom into them in the slide show' },
+    { id: 'insert-summary-zoom', label: 'Summary Zoom…', modes: 'slides', title: 'A slide of zooms, one for each part of the talk' },
+    '-',
+    { id: 'header-footer', label: 'Header & Footer…', modes: 'slides', title: 'The date, slide number and footer on the slides, and the header and footer of notes pages and handouts' },
   ] },
-  { id: 'text-box', label: 'Text Box', modes: 'drawing slides design' },
+  { submenu: 'Keyframes', modes: 'slides', items: [
+    { id: 'add-keyframe', label: 'Add Keyframe', modes: 'slides', className: 'keyframes-only', title: 'Add a keyframe after the selected one, half a slide to the right' },
+    { id: 'keyframe-here', label: 'Keyframe from Window', modes: 'slides', className: 'keyframes-only', title: 'A new keyframe showing what is in the window now' },
+    { id: 'fit-keyframe', label: 'Fit Keyframe to Selection', modes: 'slides', className: 'keyframes-only', title: 'Fit the selected keyframe to the selection' },
+    { id: 'delete-keyframe', label: 'Delete Keyframe', modes: 'slides', className: 'keyframes-only', title: 'Delete the selected keyframe' },
+    '-',
+    { id: 'keyframe-title', label: 'Keyframe Title…', modes: 'slides', className: 'keyframes-only', title: 'Title shown on screen while the show is at the selected keyframe' },
+    { id: 'keyframe-zone', label: 'Zone Color…', modes: 'slides', className: 'keyframes-only', title: 'Add a soft background tint around the selected keyframe to color-code part of the route' },
+    { id: 'canvas-heading', label: 'Canvas Heading', modes: 'slides', className: 'keyframes-only', title: 'A large, faint label marking a part of the route, such as Fragment A or Endgame' },
+    { id: 'keyframe-spotlight', label: 'Spotlight Selection', modes: 'slides', className: 'keyframes-only', title: 'In the show, keep the selection bright and dim the rest of the keyframe (with nothing selected, removes the spotlight)' },
+    { id: 'keyframe-detour', label: 'Mark as Detour', modes: 'slides', className: 'keyframes-only', title: 'Make the selected keyframe a detour (a side reaction or failed attempt): the show then returns to the main route. Click again to undo' },
+    '-',
+    { id: 'canvas-show-options', label: 'Canvas Show Options…', modes: 'slides', className: 'keyframes-only', title: 'In the show: dim what is outside the keyframe, a mini-map of the whole canvas, compound numbers that fly back to where the compound was made' },
+  ] },
+  { submenu: 'Breaks', modes: 'document', items: [
+    { id: 'page-break', label: 'Page Break', modes: 'document' },
+    { id: 'breaks-nextPage', label: 'Section Break (Next Page)', modes: 'document', title: 'A new section on a new page: it can have its own paper, margins, columns, header and footer, page numbers and line numbers' },
+    { id: 'breaks-continuous', label: 'Section Break (Continuous)', modes: 'document', title: 'A new section on the same page (one column of title and abstract, then two columns of text)' },
+  ] },
+  { id: 'insert-cells', label: 'Rows or Columns', modes: 'sheet' },
+  { id: 'insert-sheet', label: 'Worksheet', modes: 'sheet' },
+  '-',
   { id: 'insert-table', label: 'Table…', modes: 'drawing slides design document', title: 'A table in the ACS style; or paste cells from Excel or a sheet' },
-  { id: 'insert-chart', label: 'Chart…', modes: 'drawing slides design document', title: 'A chart with its own data (type or paste it in a grid), saved as a Word or PowerPoint chart' },
-  { id: 'insert-shapes', label: 'Shapes…', modes: 'slides design document', title: 'Basic shapes, block arrows, flowchart shapes, callouts and lab glassware' },
-  { id: 'insert-icons', label: 'Icons…', modes: 'slides design document', title: 'About 7,000 icons, lab and science ones first: glassware, molecules, hazard and safety signs' },
-  { id: 'insert-diagram', label: 'Diagram…', modes: 'drawing slides design document', title: 'Lists, processes, cycles, hierarchies, Venn diagrams, matrices and pyramids drawn from lines of text, like PowerPoint\'s SmartArt' },
+  { submenu: 'Tables', modes: 'sheet', items: [
+    { id: 'insert-pivot', label: 'PivotTable…', modes: 'sheet' },
+    { id: 'reagent-table', label: 'New Reagent Table', modes: 'sheet' },
+  ] },
+  { id: 'insert-picture', label: 'Picture…', modes: 'drawing slides design document' },
+  { id: 'insert-picture-sheet', label: 'Picture…', modes: 'sheet' },
+  // a document has no Crop Picture, so Picture Format… is straight in the menu there, not alone in Picture Tools
+  { ...PICTURE_FORMAT, modes: 'document' },
+  { submenu: 'Picture Tools', modes: 'drawing slides design', items: [
+    { id: 'crop', label: 'Crop Picture', modes: 'drawing slides design', title: 'Cut the edges off the selected picture' },
+    { ...PICTURE_FORMAT, modes: 'drawing slides design' },
+  ] },
+  { submenu: 'Illustrations', modes: 'drawing slides design document', items: [
+    { id: 'insert-shapes', label: 'Shapes…', modes: 'slides design document', title: 'Basic shapes, block arrows, flowchart shapes, callouts and lab glassware' },
+    { id: 'insert-icons', label: 'Icons…', modes: 'slides design document', title: 'About 7,000 icons, lab and science ones first: glassware, molecules, hazard and safety signs' },
+    { id: 'insert-diagram', label: 'Diagram…', modes: 'drawing slides design document', title: 'Lists, processes, cycles, hierarchies, Venn diagrams, matrices and pyramids drawn from lines of text, like PowerPoint\'s SmartArt' },
+    { id: 'insert-chart', label: 'Chart…', modes: 'drawing slides design document', title: 'A chart with its own data (type or paste it in a grid), saved as a Word or PowerPoint chart' },
+  ] },
+  { submenu: 'Charts', modes: 'sheet', items: [
+    { id: 'chart-scatter', label: 'Scatter Chart', modes: 'sheet' },
+    { id: 'chart-column', label: 'Column Chart', modes: 'sheet' },
+    { id: 'insert-pivot-chart', label: 'PivotChart…', modes: 'sheet' },
+    '-',
+    { id: 'insert-dashboard', label: 'Dashboard', modes: 'sheet' },
+  ] },
   { submenu: 'Lab Figures', modes: 'drawing slides design document', items: [
     { id: 'tlc-plate', label: 'TLC Plate…', modes: 'drawing slides design document', title: 'Draw a TLC plate from each lane\'s Rf values, with stain colors (UV, KMnO₄, anisaldehyde, CAM…) or a notebook sketch. Double-click it to edit the spots' },
     { id: 'gel', label: 'Gel…', modes: 'drawing slides design document', title: 'Draw an agarose or SDS-PAGE gel from each lane\'s band sizes, with a size marker. Double-click it to edit the bands' },
     { id: 'crystal-structure', label: 'Crystal Structure (CIF)…', modes: 'drawing slides design document', title: 'Show an X-ray structure from a CIF file as thermal ellipsoids (ORTEP) or ball-and-stick, with the crystal data table. Double-click it to change the view' },
   ] },
-  { id: 'insert-equation', label: 'Equation…', modes: 'slides design document', title: 'An equation typed as LaTeX (x^2, \\frac{a}{b}, \\alpha), shown as math; a Word or PowerPoint equation in .docx and .pptx files' },
-  { id: 'insert-reference', label: 'Formatted Reference…', modes: 'drawing slides design', title: 'Insert references from any open file, or by DOI, as formatted text (full or short) in the citation style you choose' },
-  { id: 'references', label: 'Reference Manager…', title: 'Manage your reference library (collections, tags, PDFs, Zotero) and the references in every open file, and copy references between them' },
+  { submenu: 'Media', modes: 'slides', items: [
+    { id: 'insert-video', label: 'Video…', modes: 'slides', title: 'A video from a file that plays in the slide show and in PowerPoint' },
+    { id: 'insert-audio', label: 'Audio…', modes: 'slides', title: 'A sound from a file that plays in the slide show and in PowerPoint' },
+  ] },
   '-',
+  { id: 'text-box', label: 'Text Box', modes: 'drawing slides design' },
+  { id: 'insert-text-box', label: 'Text Box', modes: 'sheet' },
+  { id: 'insert-object', label: 'Object…', modes: 'document', title: 'Embed another program\'s file (an Excel workbook, a PDF…), shown as its content or an icon. Double-click it to open it in its program' },
+  { id: 'insert-equation', label: 'Equation…', modes: 'slides design document', title: 'An equation typed as LaTeX (x^2, \\frac{a}{b}, \\alpha), shown as math; a Word or PowerPoint equation in .docx and .pptx files' },
   { id: 'insert-symbol', label: 'Symbol…', title: 'Insert Greek letters, arrows, math and chemistry signs or accented letters. Search by name (degree, angstrom) or code; recently used first' },
+  '-',
   { id: 'insert-link', label: 'Link…', title: 'Link the selected text to a web page, a DOI, a file or a place in this file (Ctrl+K while typing). Ctrl+click a link to follow it' },
+  { id: 'action-settings', label: 'Action…', modes: 'slides', title: 'What a click on the selected shape or action button does in the slide show' },
+  { id: 'insert-bookmark', label: 'Bookmark…', modes: 'document', title: 'Name the paragraph the cursor is in, so links can go to it (Ctrl+Shift+F5)' },
   { id: 'alt-text', label: 'Alt Text…', title: 'Describe the selected picture, chart or structure for screen readers. Saved as alt text in Word, PowerPoint and Excel' },
   { id: 'new-comment', label: 'New Comment', modes: 'slides sheet' },
-  '-',
-  // each mode's own commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11)
-  { id: 'new-slide', label: 'New Slide', modes: 'slides' },
-  { id: 'new-canvas-slide', label: 'New Canvas Slide', modes: 'slides', title: 'A slide with no edge: draw a whole route across it, then add keyframes, the windows the slide show steps through' },
-  { id: 'duplicate-slide', label: 'Duplicate Slide', modes: 'slides' },
-  { id: 'add-keyframe', label: 'Add Keyframe', modes: 'slides', className: 'keyframes-only', title: 'Add a keyframe after the selected one, half a slide to the right' },
-  { id: 'keyframe-here', label: 'Keyframe from Window', modes: 'slides', className: 'keyframes-only', title: 'A new keyframe showing what is in the window now' },
-  { id: 'fit-keyframe', label: 'Fit Keyframe to Selection', modes: 'slides', className: 'keyframes-only', title: 'Fit the selected keyframe to the selection' },
-  { id: 'delete-keyframe', label: 'Delete Keyframe', modes: 'slides', className: 'keyframes-only', title: 'Delete the selected keyframe' },
-  { id: 'keyframe-title', label: 'Keyframe Title…', modes: 'slides', className: 'keyframes-only', title: 'Title shown on screen while the show is at the selected keyframe' },
-  { id: 'keyframe-zone', label: 'Zone Color…', modes: 'slides', className: 'keyframes-only', title: 'Add a soft background tint around the selected keyframe to color-code part of the route' },
-  { id: 'canvas-heading', label: 'Canvas Heading', modes: 'slides', className: 'keyframes-only', title: 'A large, faint label marking a part of the route, such as Fragment A or Endgame' },
-  { id: 'keyframe-spotlight', label: 'Spotlight Selection', modes: 'slides', className: 'keyframes-only', title: 'In the show, keep the selection bright and dim the rest of the keyframe (with nothing selected, removes the spotlight)' },
-  { id: 'keyframe-detour', label: 'Mark as Detour', modes: 'slides', className: 'keyframes-only', title: 'Make the selected keyframe a detour (a side reaction or failed attempt): the show then returns to the main route. Click again to undo' },
-  { id: 'canvas-show-options', label: 'Canvas Show Options…', modes: 'slides', className: 'keyframes-only', title: 'In the show: dim what is outside the keyframe, a mini-map of the whole canvas, compound numbers that fly back to where the compound was made' },
-  { id: 'reuse-slides', label: 'Reuse Slides…', modes: 'slides', title: 'Slides from another PowerPoint file: see them all, pick the ones you want' },
-  { id: 'insert-slide-zoom', label: 'Slide Zoom…', modes: 'slides', title: 'Pictures of other slides that zoom into them in the slide show' },
-  { id: 'insert-summary-zoom', label: 'Summary Zoom…', modes: 'slides', title: 'A slide of zooms, one for each part of the talk' },
-  { id: 'action-settings', label: 'Action…', modes: 'slides', title: 'What a click on the selected shape or action button does in the slide show' },
-  { id: 'insert-video', label: 'Video…', modes: 'slides', title: 'A video from a file that plays in the slide show and in PowerPoint' },
-  { id: 'insert-audio', label: 'Audio…', modes: 'slides', title: 'A sound from a file that plays in the slide show and in PowerPoint' },
-  { id: 'header-footer', label: 'Header & Footer…', modes: 'slides', title: 'The date, slide number and footer on the slides, and the header and footer of notes pages and handouts' },
-  { id: 'slide-references', label: 'References on Slide…', modes: 'slides', title: 'Select which of the presentation\'s references this slide shows at the bottom; the lines are written, placed and formatted for you' },
-  { id: 'references-slide', label: 'References Slide…', modes: 'slides', title: 'A slide at the end listing the references shown on the slides, in full, kept up to date' },
-  '-',
   { id: 'new-note', label: 'New Note', modes: 'sheet' },
-  { id: 'property-column', label: 'Property Columns…', modes: 'sheet' },
-  { id: 'isotope-pattern', label: 'Isotope Pattern…', modes: 'sheet' },
-  { id: 'reagent-table', label: 'New Reagent Table', modes: 'sheet' },
   '-',
-  { id: 'chart-scatter', label: 'Scatter Chart', modes: 'sheet' },
-  { id: 'chart-column', label: 'Column Chart', modes: 'sheet' },
-  { id: 'insert-pivot', label: 'PivotTable…', modes: 'sheet' },
-  { id: 'insert-pivot-chart', label: 'PivotChart…', modes: 'sheet' },
-  { id: 'insert-dashboard', label: 'Dashboard', modes: 'sheet' },
-  '-',
-  { id: 'insert-picture-sheet', label: 'Picture…', modes: 'sheet' },
-  { id: 'insert-text-box', label: 'Text Box', modes: 'sheet' },
-  { id: 'insert-cells', label: 'Rows or Columns', modes: 'sheet' },
-  { id: 'insert-sheet', label: 'Worksheet', modes: 'sheet' },
-  '-',
-  { id: 'insert-object', label: 'Object…', modes: 'document', title: 'Embed another program\'s file (an Excel workbook, a PDF…), shown as its content or an icon. Double-click it to open it in its program' },
-  { id: 'insert-caption', label: 'Caption…', modes: 'document', title: 'A numbered caption: Figure 1, Scheme 2, Table S1…' },
-  { id: 'cross-reference', label: 'Cross-reference…', modes: 'document', title: '"Figure 2" in the text, which follows the caption\'s number' },
-  { id: 'compound-number', label: 'Compound Number…', modes: 'document', title: 'A bold compound number that renumbers itself' },
-  { id: 'insert-citation', label: 'Citation…', modes: 'document', title: 'Cite references: superscript numbers in order of first citation' },
-  { id: 'insert-bibliography', label: 'Bibliography', modes: 'document', title: 'The references cited, numbered, in the journal style' },
-  '-',
-  { id: 'insert-footnote', label: 'Footnote', modes: 'document', title: 'A footnote at the bottom of the page (Ctrl+Alt+F)' },
-  { id: 'insert-endnote', label: 'Endnote', modes: 'document', title: 'An endnote after the text (Ctrl+Alt+D)' },
-  { id: 'insert-bookmark', label: 'Bookmark…', modes: 'document', title: 'Name the paragraph the cursor is in, so links can go to it (Ctrl+Shift+F5)' },
-  '-',
-  { id: 'page-break', label: 'Page Break', modes: 'document' },
-  { id: 'breaks-nextPage', label: 'Section Break (Next Page)', modes: 'document', title: 'A new section on a new page: it can have its own paper, margins, columns, header and footer, page numbers and line numbers' },
-  { id: 'breaks-continuous', label: 'Section Break (Continuous)', modes: 'document', title: 'A new section on the same page (one column of title and abstract, then two columns of text)' },
-  '-',
+  { submenu: 'References', modes: 'drawing slides design document', items: [
+    { id: 'insert-reference', label: 'Formatted Reference…', modes: 'drawing slides design', title: 'Insert references from any open file, or by DOI, as formatted text (full or short) in the citation style you choose' },
+    { id: 'slide-references', label: 'References on Slide…', modes: 'slides', title: 'Select which of the presentation\'s references this slide shows at the bottom; the lines are written, placed and formatted for you' },
+    { id: 'references-slide', label: 'References Slide…', modes: 'slides', title: 'A slide at the end listing the references shown on the slides, in full, kept up to date' },
+    { id: 'insert-citation', label: 'Citation…', modes: 'document', title: 'Cite references: superscript numbers in order of first citation' },
+    { id: 'insert-bibliography', label: 'Bibliography', modes: 'document', title: 'The references cited, numbered, in the journal style' },
+    '-',
+    { id: 'insert-footnote', label: 'Footnote', modes: 'document', title: 'A footnote at the bottom of the page (Ctrl+Alt+F)' },
+    { id: 'insert-endnote', label: 'Endnote', modes: 'document', title: 'An endnote after the text (Ctrl+Alt+D)' },
+    '-',
+    { id: 'insert-caption', label: 'Caption…', modes: 'document', title: 'A numbered caption: Figure 1, Scheme 2, Table S1…' },
+    { id: 'cross-reference', label: 'Cross-reference…', modes: 'document', title: '"Figure 2" in the text, which follows the caption\'s number' },
+    { id: 'compound-number', label: 'Compound Number…', modes: 'document', title: 'A bold compound number that renumbers itself' },
+    '-',
+    { ...REFERENCE_MANAGER, modes: 'drawing slides design document' },
+  ] },
+  // the Reference Manager on its own in a sheet, which has no other references commands
+  { ...REFERENCE_MANAGER, modes: 'sheet' },
   { submenu: 'Tables and Indexes', modes: 'document', items: [
     { id: 'insert-toc', label: 'Table of Contents…', modes: 'document', title: 'Headings 1–3 with page numbers; updates automatically' },
     { id: 'insert-tof', label: 'Table of Figures…', modes: 'document', title: 'Figure, Scheme, Table or Chart captions with page numbers; updates automatically' },
@@ -127,7 +157,11 @@ function collect(items: MenuEntry[]): void {
   for (const it of items) {
     if (it === '-') continue;
     if ('submenu' in it) collect(it.items);
-    else BY_ID.set(it.id, it);
+    else {
+      // a command placed twice, for different modes, is one command that works in all of them
+      const was = BY_ID.get(it.id);
+      BY_ID.set(it.id, was ? { ...was, modes: was.modes && it.modes ? `${was.modes} ${it.modes}` : undefined } : it);
+    }
   }
 }
 collect(INSERT_MENU);
