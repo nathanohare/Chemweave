@@ -30,6 +30,26 @@ describe('Tabs window', () => {
     expect(document.querySelector('dialog.tabs-dialog textarea')).toBeNull();
     expect(readFileSync(join(__dirname, '..', 'src/ui/doc-mode.ts'), 'utf8')).not.toContain("'centre'");
   });
+  it('OK with nothing changed gives back the stops as they were, a metric one included (review R02)', async () => {
+    // 1 cm = 28.35 pt (as in any metric Word file, or a stop set by clicking the ruler) shows as 0.39 in
+    const before = [{ pos: 28.35, kind: 'right' as const, leader: 'dot' as const }, { pos: 100, kind: 'left' as const }];
+    const got = editTabStops(before);
+    expect(q<HTMLInputElement>('.tabs-pos input').value).toBe('0.39 in');
+    ok();
+    expect(await got).toEqual(before);
+  });
+  it('changing only the alignment of the stop shown keeps its exact position', async () => {
+    const got = editTabStops([{ pos: 28.35, kind: 'right', leader: 'dot' }, { pos: 100, kind: 'left' }]);
+    pick('kind', 'center');
+    button('Set').click();
+    expect(q<HTMLSelectElement>('.tabs-list').options).toHaveLength(2);
+    // picking the second stop and pressing OK unchanged keeps it too
+    const list = q<HTMLSelectElement>('.tabs-list');
+    list.value = '1';
+    list.dispatchEvent(new Event('change'));
+    ok();
+    expect(await got).toEqual([{ pos: 28.35, kind: 'center', leader: 'dot' }, { pos: 100, kind: 'left' }]);
+  });
   it('sets, changes, clears and sorts stops; OK sets what is typed', async () => {
     const got = editTabStops([{ pos: 216, kind: 'right', leader: 'dot' }]);
     type('1');

@@ -94,9 +94,13 @@ export function editTabStops(current: readonly TabStop[]): Promise<TabStop[] | n
       if (at === null || at <= 0) { status.textContent = 'Type a position above 0, such as 1.5 or 3 cm.'; pos.focus(); return false; }
       status.textContent = '';
       const leader = checked('leader') as Leader;
-      const stop: TabStop = { pos: at, kind: (checked('kind') || 'left') as Kind, ...(leader ? { leader } : {}) };
-      // a stop at the same place (to a hundredth of a point) is changed, not doubled
-      stops = stops.filter((t) => Math.abs(t.pos - at) > 0.01);
+      const kind = (checked('kind') || 'left') as Kind;
+      // the stop shown in the box (or one shown with the same text) keeps its own position: the box
+      // shows it rounded to 0.01 in, and reading that back would move it (a 1 cm stop is 28.35 pt,
+      // shown as 0.39 in = 28.08 pt), so an unchanged OK changed the tabs (review of F5, R02)
+      const same = stops.find((t) => showLength(t.pos, 'in') === showLength(at, 'in'));
+      const stop: TabStop = { pos: same ? same.pos : at, kind, ...(leader ? { leader } : {}) };
+      stops = stops.filter((t) => t !== same);
       stops.push(stop);
       stops.sort((a, b) => a.pos - b.pos);
       picked = stops.indexOf(stop);
