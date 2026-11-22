@@ -860,7 +860,7 @@ export class Workspace {
     keepOnPage(this.docOf(tab));
     const exchange = CHEM_EXCHANGE.find((t) => t.extension === ext);
     if (exchange) return exchangeFile(this.docOf(tab), exchange, name, tab.v3000);
-    const text = atFirstPage(this.docOf(tab), () => writeCdxml(this.docOf(tab), { name, textMeasure: this.hooks.measure }));
+    const text = atFirstPage(this.docOf(tab), () => writeCdxml(this.docOf(tab), { name, textMeasure: this.hooks.measure, cdx: ext === 'cdx' }));
     return ext === 'cdx' ? { data: cdxmlToCdx(text), type: CDX, note: '' } : { data: text, type: CDXML, note: '' };
   }
 

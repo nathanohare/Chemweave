@@ -354,7 +354,7 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
   if (!pic) return 'There is nothing to copy.';
   // our own copy keeps pictures in any format, and their cropping; ChemDraw's gets what it reads
   const own = writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText, own: true });
-  const cdxml = hasPictures(part) ? writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText }) : own;
+  const cdxml = hasPictures(part) ? writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText, cdx: true }) : own;
   lastCopy = own;
   lastPart = part;
   const what = sel ? 'Copied' : 'Copied the whole drawing';

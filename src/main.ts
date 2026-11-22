@@ -4257,7 +4257,7 @@ const docFiles: DocxDeps = {
   fonts: bundledFaces,
   smiles: (contents, style) => drawingSmiles(structureDoc(contents, style)),
   // structures as ChemDraw objects (Settings ▸ General)
-  cdx: (contents, style) => cdxmlToCdx(writeCdxml(structureDoc(contents, style), { name: 'Document drawing.cdxml', textMeasure: measureText })),
+  cdx: (contents, style) => cdxmlToCdx(writeCdxml(structureDoc(contents, style), { name: 'Document drawing.cdxml', textMeasure: measureText, cdx: true })),
   get chemdrawObjects() { return officeStructures.docx === 'chemdraw'; },
 };
 

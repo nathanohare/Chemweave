@@ -14,6 +14,7 @@ import { labelBonds, labelSpec, layoutLabel, labelDir, labelGraph, tokenize, isG
 import { Vec, DEG, arcCenter, norm, sub, Rect, turnedCorners } from '../geom';
 import { arrowEllipse, bezPoints, boxOf, elbowRoute, shapeTurn } from '../objects';
 import { kids, descendants, wellFormed, withoutDoctype } from './xml';
+import { withoutCdxOnly } from './cdx';
 import { arialWidth } from '../text-metrics';
 import { toSymbolPieces, isSymbolFont, faceFromStyle } from '../richtext';
 import { readMark } from '../chem/label-marks';
@@ -79,6 +80,8 @@ export interface WriteOptions {
    * or null. By default the browser's copy of it (render/images.ts rasterPng).
    */
   raster?: (src: string, w: number, h: number) => string | null;
+  /** The CDXML goes on to CDX: CDX properties kept from a CDX file stay in it (see cdx.ts CDX_KEEP). */
+  cdx?: boolean;
 }
 
 const NEW_PROLOG = '<?xml version="1.0" encoding="UTF-8" ?>\n<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >\n';
@@ -130,7 +133,9 @@ export function chemDrawCurves(steps: GeoStep[]): { points: Vec[]; closed: boole
 }
 
 export function writeCdxml(doc: Doc, opts: WriteOptions = {}): string {
-  return new CdxmlWriter(doc, opts).write();
+  const text = new CdxmlWriter(doc, opts).write();
+  // (the CDX properties kept from a CDX file go on to CDX and our own clipboard only)
+  return opts.cdx || opts.own ? text : withoutCdxOnly(text);
 }
 
 class CdxmlWriter {

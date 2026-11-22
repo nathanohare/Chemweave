@@ -224,8 +224,8 @@ describe('reading CDX defensively', () => {
     expect(back).toContain(`>${long}</s>`);
   });
 
-  it('skips properties it does not know', () => {
-    expect(xmlOf('04 80 01 00 00 00 FF 3F 02 00 01 02 02 04 02 00 07 00 00 00')).toContain('<n id="1" Element="7"/>');
+  it('keeps properties it does not know as they are (for saving back to CDX), and reads the rest', () => {
+    expect(xmlOf('04 80 01 00 00 00 FF 3F 02 00 01 02 02 04 02 00 07 00 00 00')).toContain('<n id="1" ChemIllustratorCdx3FFF="0102" Element="7"/>');
   });
 
   it('stops with a message on cut-short data', () => {
