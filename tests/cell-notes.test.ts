@@ -148,7 +148,10 @@ describe('in Excel files', () => {
     expect(strFromU8(files['[Content_Types].xml'])).toContain('Extension="vml"');
 
     const back = (await readXlsx(bytes)).book.sheet;
-    expect(back.noteAt(0, 0)).toEqual({ kind: 'note', author: 'Nate', date: '', text: 'Dried over P2O5\nfor 2 h', shown: true });
+    const { xl: kept, ...n0 } = back.noteAt(0, 0)!;
+    expect(n0).toEqual({ kind: 'note', author: 'Nate', date: '', text: 'Dried over P2O5\nfor 2 h', shown: true });
+    // (with its text element as written, kept for saving again)
+    expect(kept?.text).toBe('Dried over P2O5\nfor 2 h');
     const c = back.noteAt(3, 2)!;
     expect(c.kind).toBe('comment');
     expect(c.done).toBe(true);
@@ -170,7 +173,7 @@ Check the mass</t></r></text></comment></commentList></comments>`);
     // Excel's VML isn't always well-formed XML (<br> without its end)
     const vml = '<xml><v:shape id="_x0000_s1025" style="visibility:visible"><v:textbox><div><br></div></v:textbox><x:ClientData ObjectType="Note"><x:Row>2</x:Row><x:Column>1</x:Column></x:ClientData></v:shape></xml>';
     const notes = readNotes(comments, shownNotes(vml), null, null);
-    expect([...notes.values()]).toEqual([{ kind: 'note', author: 'Jo Smith', date: '', text: 'Check the mass', shown: true }]);
+    expect([...notes.values()].map(({ xl: _, ...n }) => n)).toEqual([{ kind: 'note', author: 'Jo Smith', date: '', text: 'Check the mass', shown: true }]);
     const ws = parse(`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">
       <extLst><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:dataValidations count="1"><x14:dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1">
       <x14:formula1><xm:f>Reagents!$A$2:$A$40</xm:f></x14:formula1><xm:sqref>C2:C100</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst></worksheet>`).documentElement;
@@ -178,5 +181,41 @@ Check the mass</t></r></text></comment></commentList></comments>`);
     expect(rule.kind).toBe('list');
     expect(rule.value1).toBe('=Reagents!$A$2:$A$40');
     expect(rule.ranges).toEqual([r(1, 2, 99, 2)]);
+  });
+});
+
+describe('formatted notes from Excel (G3-06)', () => {
+  // a note as Excel keeps one (ECMA-376 Part 1, 18.7.3 comment, 18.4.4 r, 18.4.7 rPr with
+  // b, i and vertAlign): hand-written here from the standard's element names
+  const RICH = `<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>Nate</author></authors><commentList>
+    <comment ref="A1" authorId="0" shapeId="0"><text><r><rPr><b/><sz val="9"/><rFont val="Tahoma"/></rPr><t>Nate:</t></r><r><rPr><sz val="9"/><rFont val="Tahoma"/></rPr><t xml:space="preserve">
+Dried over Na</t></r><r><rPr><vertAlign val="subscript"/><sz val="9"/><rFont val="Tahoma"/></rPr><t>2</t></r><r><rPr><sz val="9"/><rFont val="Tahoma"/></rPr><t>SO</t></r><r><rPr><vertAlign val="subscript"/><sz val="9"/><rFont val="Tahoma"/></rPr><t>4</t></r><r><rPr><sz val="9"/><rFont val="Tahoma"/></rPr><t xml:space="preserve"> </t></r><r><rPr><i/><sz val="9"/><rFont val="Tahoma"/></rPr><t>in vacuo</t></r></text></comment></commentList></comments>`;
+
+  async function roundTrip(change?: (n: CellNote) => CellNote): Promise<string> {
+    const notes = readNotes(parse(RICH), new Set(), null, null);
+    const n = notes.values().next().value!;
+    expect(n.text).toBe('Dried over Na2SO4 in vacuo');
+    const wb = new Workbook();
+    wb.edit('note', () => wb.sheet.setNote(0, 0, change ? change(n) : n));
+    return strFromU8(unzipSync(await writeXlsx(wb, pictures))['xl/comments1.xml']);
+  }
+
+  it('an unchanged note is saved with its subscripts and italics', async () => {
+    const xml = await roundTrip();
+    expect(xml).toContain('<vertAlign val="subscript"/>');
+    expect(xml).toContain('<i/>');
+    expect(xml).toMatch(/<t>in vacuo<\/t>/);
+    // the namespace is not repeated on every run
+    expect(xml.match(/xmlns=/g)?.length).toBe(1);
+    // and reads back the same
+    const back = readNotes(parse(xml), new Set(), null, null).values().next().value!;
+    expect(back.text).toBe('Dried over Na2SO4 in vacuo');
+    expect(back.author).toBe('Nate');
+  });
+
+  it('a note changed here is saved as typed (its old formatting no longer fits the words)', async () => {
+    const xml = await roundTrip((n) => ({ ...n, text: 'Dried over MgSO4' }));
+    expect(xml).not.toContain('vertAlign');
+    expect(xml).toContain('Dried over MgSO4');
   });
 });

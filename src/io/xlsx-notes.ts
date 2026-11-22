@@ -111,7 +111,9 @@ export function notesParts(s: Sheet, sheetNo: number, persons: Persons): { comme
       comments.push(`<comment ref="${ref}" authorId="${authorNo(`tc=${id}`)}"><text><r>${plain}${tText(body)}</r></text></comment>`);
     } else {
       // the author's name in bold first, as Excel starts a note, unless the note didn't have it
-      const head = n.author && !n.noAuthorLine ? `<r>${bold}${tText(n.author + ':')}</r><r>${plain}${tText('\n' + noteText(n))}</r>` : `<r>${plain}${tText(noteText(n))}</r>`;
+      // (a note from a file, unchanged: its text as the file had it, with its formatting)
+      const kept = n.xl && n.xl.text === n.text && n.xl.author === n.author ? n.xl.xml : null;
+      const head = kept !== null ? kept : n.author && !n.noAuthorLine ? `<r>${bold}${tText(n.author + ':')}</r><r>${plain}${tText('\n' + noteText(n))}</r>` : `<r>${plain}${tText(noteText(n))}</r>`;
       comments.push(`<comment ref="${ref}" authorId="${authorNo(n.author)}"><text>${head}</text></comment>`);
     }
     // the box, beside the cell, a little up (as Excel places a new note)
@@ -199,7 +201,11 @@ export function readNotes(comments: Document | null, shown: Set<number>, threade
       // Excel starts a note with its author's name in bold: that is the note's author, not its text
       const authorLine = !!author && text.startsWith(author + ':');
       if (authorLine) text = text.slice(author.length + 1).replace(/^\n/, '');
-      out.set(key, { kind: 'note', author, date: '', text, ...(shown.has(key) ? { shown: true } : {}), ...(author && !authorLine ? { noAuthorLine: true as const } : {}) });
+      // its text element as it is, to write back while the note is unchanged (it keeps the runs' looks)
+      const el = kid(c, 'text');
+      // (without the namespace each piece is given on its own: the comments part has it already)
+      const xl = el ? { xml: Array.from(el.childNodes).map((n) => new XMLSerializer().serializeToString(n).split(` xmlns="${MAIN}"`).join('')).join(''), text, author } : undefined;
+      out.set(key, { kind: 'note', author, date: '', text, ...(shown.has(key) ? { shown: true } : {}), ...(author && !authorLine ? { noAuthorLine: true as const } : {}), ...(xl ? { xl } : {}) });
     }
   }
   return out;
