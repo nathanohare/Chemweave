@@ -6023,10 +6023,12 @@ function redo(): void {
   if (sheetActive()) { sheetMode.redo(); return; }
   if (docActive()) { docMode.run('redo'); return; }
   const d = deckNow();
+  // nothing to do again: typing carries on (stopped for nothing, a new text box left empty would stay in the file)
+  if (!(d ?? doc).canRedo()) return;
   editor.finishTypingForUndo();
   flushNotes();
   if (!d) { editor.redo(); return; }
-  if (d.redo()) editor.afterUndo();
+  if (d.redo()) { editor.afterUndo(); editor.reopenRedone(); }
   refreshHistory();
 }
 

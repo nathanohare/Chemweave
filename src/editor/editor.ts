@@ -6589,7 +6589,22 @@ export class Editor {
   }
 
   redo(): void {
-    if (this.doc.redo()) { if (!this.markedHot()) this.selectApplied(); this.afterUndo(); }
+    if (!this.doc.redo()) return;
+    const applied = this.doc.lastApplied;
+    if (!this.markedHot()) this.selectApplied();
+    this.afterUndo();
+    this.reopenRedone(applied);
+  }
+
+  /**
+   * After Redo: a text box it brought back empty (Add Caption, then Undo before anything was
+   * typed) is open for typing again, as Add Caption left it, rather than an empty box nobody sees;
+   * left empty again, it goes with its step as it would have then.
+   */
+  reopenRedone(applied: string[] = this.doc.lastApplied): void {
+    const id = applied.filter((k) => k[0] === 'c').map((k) => Number(k.slice(1)))
+      .find((c) => { const cap = this.doc.captions.get(c); return !!cap && !cap.ph && !plainText(cap.runs).trim(); });
+    if (id !== undefined && !this.captionEd?.isOpen) this.typeInto(id);
   }
 
   /** The highlight a step taken back or done again by a key had (see runAction), if it is still there. */

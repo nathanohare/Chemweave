@@ -105,10 +105,12 @@ try {
   const run = (cmd) => Promise.race([(PLANTED[cmd] ? page.evaluate(PLANTED[cmd]) : page.evaluate((c) => window.__app.command(c), cmd)).catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
   // windows and menus a command opened are closed unchanged (and Slide Master view, a view of the
   // file like a window: opened and closed with nothing changed, the file must be as it was)
+  // (true when Slide Master view would not close: what is probed after that is no longer the file)
   const tidy = () => page.evaluate(() => {
     for (const d of document.querySelectorAll('dialog[open]')) d.close();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     if (window.__app.slideList?.deck?.inMasterView) window.__app.command('close-master-view');
+    return !!window.__app.slideList?.deck?.inMasterView;
   });
 
   /**
@@ -125,7 +127,7 @@ try {
       await run(cmd);
       // (time for a command that waits on the chemistry engine, such as Add ID Label, to finish)
       await page.waitForTimeout(250);
-      await tidy();
+      if (await tidy()) { report(where, `${cmd}: Slide Master view did not close`); await reset(); continue; }
       await page.waitForTimeout(40);
       const b = await probe();
       const steps = b.n - a.n;
