@@ -8614,8 +8614,10 @@ export class Editor {
       }
       // the stem, from the top of the box (a text box's own top, turned with it) to the handle
       const tb = this.textBoxTop();
-      const from = tb ? tb.top : { x: rh.x, y: b.y1 - 2 * px };
-      const u = norm(sub(from, rh));
+      const top = tb ? tb.top : { x: rh.x, y: b.y1 - 2 * px };
+      const u = norm(sub(top, rh));
+      // (a text box has a round handle on that spot: the stem stops at its edge, behind it)
+      const from = tb ? sub(top, mul(u, 3.5 * 1.15 * px)) : top;
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.lineTo(rh.x + u.x * 4.5 * px, rh.y + u.y * 4.5 * px);
