@@ -918,6 +918,8 @@ dialog.energy-dialog { width: min(96vw, 680px); max-height: 92vh; }
 .energy-table td { padding: 1px 2px; }
 .energy-table td input { width: 8em; font: inherit; padding: 2px 4px; box-sizing: border-box; }
 .energy-table td input.energy-num { width: 5em; text-align: right; }
+.energy-table .energy-rich { display: inline-block; vertical-align: middle; width: 8em; font-size: inherit; }
+.energy-table th .energy-rich { width: 9em; font-weight: 400; }
 .energy-table .energy-grip { cursor: grab; color: var(--muted); padding: 0 2px; user-select: none; }
 .energy-table .energy-structure { width: 80px; height: 40px; padding: 1px; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid var(--line); border-radius: 2px; cursor: pointer; font: inherit; font-size: 0.85em; color: var(--muted); }
 .energy-table .energy-structure canvas { width: 72px; height: 36px; display: block; }
