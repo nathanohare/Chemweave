@@ -28,6 +28,7 @@ describe('Label in Name (WCAG 2.5.3)', () => {
     expect(still('<button aria-label="No problems: no structures to check"><span aria-hidden="true">✓</span><span>No problems</span></button>')).toBe(false);
     // words hidden with aria-hidden still count: hiding a real label does not pass
     expect(still('<button aria-label="Delete"><span aria-hidden="true">Save file</span></button>')).toBe(true);
+    expect(still('<button aria-label="Remove"><span aria-hidden="true">Go On</span></button>')).toBe(true);
     // symbols not marked as an icon count too
     expect(still('<button aria-label="Increase Font Size">A<sup>+</sup></button>')).toBe(true);
   });

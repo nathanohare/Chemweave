@@ -64,7 +64,7 @@ export interface Adduct {
 export function parseAdduct(text: string): Adduct {
   const s = text.replace(/\s+/g, '').replace(/[−–]/g, '-').replace(/[·•]$/, '');
   const m = /^\[?(\d*)M((?:[+-]\d*[A-Za-z][A-Za-z0-9]*)*)\]?(\d*)([+-]?)\.?$/.exec(s);
-  if (!m) throw new Error(`"${text}" is not an adduct Chemweave can read. Write it like "[M+H]+", "[M+Na]+" or "[M-H]-".`);
+  if (!m) throw new Error(`“${text}” is not an adduct Chemweave can read. Write it like “[M+H]+”, “[M+Na]+” or “[M-H]-”.`);
   const n = m[1] ? Number(m[1]) : 1;
   const parts: Adduct['parts'] = [];
   let ionCharge = 0;
@@ -80,7 +80,7 @@ export function parseAdduct(text: string): Adduct {
   if (m[4]) z = (m[3] ? Number(m[3]) : 1) * (m[4] === '+' ? 1 : -1);
   else if (m[3]) throw new Error(`Add + or − after the charge in ${text}.`);
   else z = ionCharge;
-  if (z === 0) throw new Error(`${text} has no charge. Write the charge after it, like "[M+H]+".`);
+  if (z === 0) throw new Error(`“${text}” has no charge. Write the charge after it, like “[M+H]+”.`);
   const body = parts.map((p) => `${p.sign > 0 ? '+' : '-'}${p.count > 1 ? p.count : ''}${p.formula}`).join('');
   const label = `[${n > 1 ? n : ''}M${body}]${Math.abs(z) > 1 ? Math.abs(z) : ''}${z > 0 ? '+' : '-'}`;
   return { n, parts, z, label };

@@ -43,7 +43,8 @@ const axeLine = (look, v, node) => `axe ${v.id}${v.id === 'color-contrast' ? ` (
 export function labelInNameStill(target) {
   const el = document.querySelector(target);
   if (!el) return true;
-  const icon = (n) => n.getAttribute('aria-hidden') === 'true' && (n.closest('svg') || !/\p{L}{3,}/u.test(n.textContent || ''));
+  // an icon: hidden, and a picture or one short glyph (A⁺, x₂, Aa, 3D, R/S), never words ("Go On")
+  const icon = (n) => n.getAttribute('aria-hidden') === 'true' && (n.closest('svg') || !/\p{L}{3,}|\S\s+\S/u.test((n.textContent || '').trim()));
   const words = (n) => [...n.childNodes].map((c) => (c.nodeType === 3 ? c.nodeValue : c.nodeType !== 1 ? '' : c.nodeName === 'BR' ? ' ' : icon(c) || getComputedStyle(c).display === 'none' ? ' ' : words(c))).join('');
   const norm = (t) => t.toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, ' ').trim();
   const visible = norm(words(el));
@@ -84,10 +85,11 @@ export async function a11yProblems(page, log = () => {}) {
       await runAxe(look, name);
       // every other ribbon tab of this kind of tab (in the Light look only, to keep the run short)
       if (look !== 'Light') continue;
-      const tabs = await page.evaluate(() => [...document.querySelectorAll('.ribbon [role="tablist"] > [role="tab"]')]
+      // (every tablist but the open files', whose tabs would switch away from this kind of tab)
+      const tabs = await page.evaluate(() => [...document.querySelectorAll('[role="tablist"]:not(.tab-strip) > [role="tab"]')]
         .filter((b) => b.offsetParent && !b.hidden && b.getAttribute('aria-selected') !== 'true').map((b) => b.textContent.trim()));
       for (const t of tabs) {
-        await page.evaluate((t) => [...document.querySelectorAll('.ribbon [role="tablist"] > [role="tab"]')].find((b) => b.offsetParent && b.textContent.trim() === t)?.click(), t);
+        await page.evaluate((t) => [...document.querySelectorAll('[role="tablist"]:not(.tab-strip) > [role="tab"]')].find((b) => b.offsetParent && b.textContent.trim() === t)?.click(), t);
         await page.waitForTimeout(150);
         await runAxe(look, `${name}, ${t} ribbon tab`);
       }

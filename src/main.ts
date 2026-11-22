@@ -6098,6 +6098,16 @@ const TAB_ICONS: Record<Tab['mode'], [string, string]> = {
   si: [tabSvg('<path d="M4 2.5h6l2.5 2.5v8.5h-8.5z"/><text x="8.2" y="11.6" font-size="5.4" font-weight="700" text-anchor="middle" stroke="none" fill="currentColor">SI</text>'), 'SI Project'],
 };
 
+/**
+ * The keys on the tab showing. A document or sheet takes them on the next frame as it shows: they
+ * come back to the tab then, so Delete closes it and the arrows go on along the tabs.
+ */
+function keepTabFocus(): void {
+  const back = () => $('#tabs').querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+  back();
+  requestAnimationFrame(() => { if (!document.activeElement?.closest('#tabs, dialog, .context-menu')) back(); });
+}
+
 function renderTabs(): void {
   refreshHistory();
   fitRibbons();
@@ -6117,13 +6127,17 @@ function renderTabs(): void {
         e.preventDefault();
         const n = ws.tabs[(to + ws.tabs.length) % ws.tabs.length];
         if (n !== ws.active) ws.activate(n);
-        $('#tabs').querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
-      } else if (e.key === 'Delete') { e.preventDefault(); void ws.close(t); }
+        keepTabFocus();
+      } else if (e.key === 'Delete') {
+        e.preventDefault();
+        // the keys stay on the tabs, now on the one showing, so the next Delete or arrow goes on
+        void ws.close(t).then(() => { if (!ws.tabs.includes(t)) keepTabFocus(); });
+      }
     });
     // the file's name first: a tab squeezed to its icon shows it only here
     el.title = `${ws.label(t)} (${TAB_ICONS[t.mode][1]})` + (t.ref.kind === 'path' ? `\n${t.ref.path}` : '') + (t.dirty ? '\nNot saved' : '')
       + (t.savedAt ? `\n${t.savedHow === 'autosaved' ? 'AutoSaved' : 'Saved'} ${new Date(t.savedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : '')
-      + (keeper.autoSaveWanted(t) && ws.canAutoSave(t) ? ' (AutoSave on)' : '');
+      + (keeper.autoSaveWanted(t) && ws.canAutoSave(t) ? ' (AutoSave on)' : '') + '\nPress Delete to close it';
     const icon = document.createElement('span');
     icon.className = 'tab-icon';
     icon.innerHTML = TAB_ICONS[t.mode][0];
