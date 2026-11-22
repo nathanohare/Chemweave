@@ -50,7 +50,7 @@ export function feedbackIssue(f: Feedback): Issue {
   if (f.kind === 'problem' && f.steps?.trim()) parts.push('', '**Steps to make it happen**', '', f.steps.trim());
   if (f.extra?.trim()) parts.push('', '**Error details**', '', '```', f.extra.trim().replace(/```/g, '``\u200b`'), '```');
   const about = Object.entries(f.about ?? {}).filter(([, v]) => v);
-  if (about.length) parts.push('', '**About the program**', '', ...about.map(([k, v]) => `- ${k}: ${v}`));
+  if (about.length) parts.push('', '**About Chemweave**', '', ...about.map(([k, v]) => `- ${k}: ${v}`));
   parts.push('', '_Sent from Chemweave (Help ▸ Send Feedback)._');
   return { title, body: parts.join('\n') };
 }

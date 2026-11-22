@@ -115,7 +115,7 @@ export class Viewer3d {
     this.canvas.className = 'v3d-canvas';
     this.canvas.tabIndex = 0;
     this.canvas.setAttribute('role', 'img');
-    this.canvas.setAttribute('aria-label', '3-D model. Drag to turn it, Shift+drag to move it, the wheel to zoom, arrow keys to turn it in steps.');
+    this.canvas.setAttribute('aria-label', '3-D model. Drag to rotate it, Shift+drag to move it, the wheel to zoom, arrow keys to rotate it in steps.');
     const bar = document.createElement('div');
     bar.className = 'v3d-bar';
     const style = document.createElement('select');
@@ -776,7 +776,7 @@ export class Viewer3d {
       if (run !== this.run) return;
       const msg = String((e as Error)?.message ?? e);
       if (this.stopped) { this.flash('xTB stopped unexpectedly.'); return; }
-      this.flash(/could not be started|No such file|not found|cannot find/i.test(msg) ? `xtb could not be started from "${opts.exe}". Install it, or give the full path to the program.` : msg);
+      this.flash(/could not be started|No such file|not found|cannot find/i.test(msg) ? `xtb could not be started from "${opts.exe}". Install it, or give the full path to xtb.` : msg);
     } finally {
       if (run === this.run) this.setBusy(false);
     }

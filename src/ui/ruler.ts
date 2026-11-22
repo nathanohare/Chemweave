@@ -225,7 +225,7 @@ export class Ruler {
     ctx.lineWidth = 1;
     ctx.strokeRect(g.pageLeft + 0.5, 3.5, g.pageRight - g.pageLeft - 1, H - 7);
     // inches from the left margin, with eighths
-    ctx.fillStyle = css.getPropertyValue('--muted') || '#677084';
+    ctx.fillStyle = css.getPropertyValue('--muted') || '#5f687b';
     ctx.font = '9px system-ui, sans-serif';
     ctx.textAlign = 'center';
     const step = 9 * g.zoom;

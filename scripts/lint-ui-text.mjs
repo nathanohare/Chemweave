@@ -113,7 +113,7 @@ export function formulaParts(word) {
     if (ch === '(' || ch === '[') { depth++; parts.push({ sym: ch, n: '' }); i++; continue; }
     if (ch === ')' || ch === ']') {
       if (!depth--) return null;
-      const n = /\d*/y; n.lastIndex = i + 1;
+      const n = /[\d₀-₉]*/y; n.lastIndex = i + 1;
       const d = n.exec(word)[0];
       parts.push({ sym: ch, n: d });
       i += 1 + d.length;
@@ -121,7 +121,7 @@ export function formulaParts(word) {
     }
     const tok = TOKENS.find((t) => word.startsWith(t, i));
     if (!tok) return null;
-    const n = /\d*/y; n.lastIndex = i + tok.length;
+    const n = /[\d₀-₉]*/y; n.lastIndex = i + tok.length;
     const d = n.exec(word)[0];
     parts.push({ sym: tok, n: d, group: GROUPS.has(tok) && !ELEMENTS.has(tok) });
     i += tok.length + d.length;
@@ -134,7 +134,7 @@ export function formulaParts(word) {
  * assay values. Single-letter elements with a count (H2, N2, O2, I2) are not flagged at all: they
  * are also cell references (H2 is a cell), so the check cannot tell them apart and leaves them.
  */
-const NOT_FORMULA = /^(?:[A-Z]\d+|F\d{1,2}|H\d|MP\d|B3LYP|SN[12]|S[NE][12]'?|E[12]|CYP\d\w*|COVID\d+|Win\d+|UTF\d+|PDF\d?|ISO\d+|PEG\d+|(?:IC|EC|ED|LD|GI|CC|TD)50|USB\d?|CSS\d?|HTML\d?|ES\d+|P\d{3})$/;
+const NOT_FORMULA = /^(?:[A-Z]\d+|F\d{1,2}|H\d|MP\d|B3LYP|SN[12]|S[NE][12]'?|E[12]|CYP\d\w*|COVID\d+|Win\d+|UTF\d+|PDF\d?|ISO\d+|PEG\d+|(?:IC|EC|ED|LD|GI|CC|TD)50|USB\d?|CSS\d?|HTML\d?|HDF\d|H\d{3}[A-Za-z]{0,2}|ES\d+|P\d{3})$/;
 
 /**
  * Formulas written flat (S27): an element symbol or group followed by digits, as in CH4, H2O,
@@ -143,7 +143,8 @@ const NOT_FORMULA = /^(?:[A-Z]\d+|F\d{1,2}|H\d|MP\d|B3LYP|SN[12]|S[NE][12]'?|E[1
  */
 export function flatFormulas(text) {
   const out = [];
-  for (const m of text.matchAll(/[\[(]*[A-Za-z0-9()[\]]+[+\-−]?/g)) {
+  // subscript counts (₀–₉) are read as part of the word, so NH₃+ is found as a charge written flat
+  for (const m of text.matchAll(/[\[(]*[A-Za-z0-9₀-₉()[\]]+[+\-−]?/g)) {
     let raw = m[0];
     let w = raw;
     let charge = '';
@@ -162,7 +163,8 @@ export function flatFormulas(text) {
     if (!core || NOT_FORMULA.test(core)) continue;
     const parts = /^[A-Z([]/.test(core) ? formulaParts(core) : null;
     const atoms = parts?.filter((p) => p.sym !== '(' && p.sym !== '[') ?? [];
-    const hasDigit = atoms.some((p) => p.n);
+    const hasDigit = atoms.some((p) => /\d/.test(p.n)); // a count written flat
+    const hasCount = atoms.some((p) => p.n);
     const hasGroup = atoms.some((p) => p.group);
     const letters = atoms.filter((p) => /[A-Za-z]/.test(p.sym));
     const flat = parts && hasDigit && (letters.length >= 2 || (letters.length === 1 && letters[0].sym.length >= 2));
@@ -170,7 +172,7 @@ export function flatFormulas(text) {
     if (charge) {
       // a bare charge: after a formula with a digit or a group (BF4-, OTf-), or + / − after an ion or a bracket (Na+, [M+H]+)
       const bracket = /[\])]$/.test(w) && /^[\[(]/.test(w);
-      if (parts && (hasDigit || hasGroup)) out.push(raw);
+      if (parts && (hasCount || hasGroup)) out.push(raw);
       else if (charge !== '-' && (bracket || (parts && letters.length <= 3 && core.length <= 4 && !/^[CAXYZ]$/.test(core)))) out.push(raw);
     }
   }
@@ -178,6 +180,16 @@ export function flatFormulas(text) {
   const m = text.match(/\[[A-Za-z0-9+\-−]+\][+\-−](?=$|[\s,.;:)])/g);
   if (m) for (const x of m) if (!out.some((o) => x.endsWith(o))) out.push(x);
   return out;
+}
+
+/**
+ * A SMILES string (typed input that can't have subscripts): one word of SMILES characters with an
+ * atom map ([NH2:1]) or two ring closures on aromatic atoms (c1ccccc1), as in [NH2:1]c1ccc(*)cc1.
+ */
+export function isSmiles(word) {
+  const w = word.replace(/^[("“]+|[)"”,.;:]+$/g, '');
+  if (!/^[A-Za-z0-9@+\-[\]()=#$:.\/\\%*]+$/.test(w)) return false;
+  return /\[[A-Za-z0-9@+\-]+:\d+\]/.test(w) || /[cnosp]\d.*[cnosp(]\S*?[cnosp]\d/.test(w) || /^[A-Za-z]*[cnosp]1[cnosp]+.*[cnosp]1/.test(w);
 }
 
 /** "ChemDraw" in a command's name (S82): say "ChemDraw-style" instead. File type names may keep it. */
@@ -205,7 +217,9 @@ export function checkText(text, { command = false, input = false } = {}) {
   }
   // Formulas the person types are shown flat on purpose: a placeholder (a format hint), a
   // before → after example, and what goes inside a formula's quotes or brackets (HRMS(B2,"[M+Na]+")).
-  const prose = input || /→/.test(t) ? '' : t.replace(/"[^"]*"|“[^”]*”/g, ' ').replace(/\b[A-Z][A-Z0-9.]+\([^)]*\)/g, ' ');
+  // A SMILES string is not a formula and can't have subscripts.
+  const prose = input || /→/.test(t) ? '' : t.replace(/"[^"]*"|“[^”]*”/g, ' ').replace(/\b[A-Z][A-Z0-9.]+\([^)]*\)/g, ' ')
+    .split(/(\s+)/).map((w) => (isSmiles(w) ? ' ' : w)).join('');
   for (const f of flatFormulas(prose)) out.push({ rule: 'S27', found: f, use: 'real subscripts and raised charges (chemRuns / ₀–₉ ⁺ ⁻)' });
   if (command) for (const c of chemdrawInCommand(t)) out.push({ rule: 'S82', found: c, use: '"ChemDraw-style", or the format name' });
   return out;
@@ -225,6 +239,21 @@ export const UI_CALLS = new Set(['flash', 'alert', 'confirm', 'prompt', 'showSta
   'option', 'opt', 'radio', 'tab', 'group', 'field', 'input', 'select', 'link', 'dialog', 'showDialog', 'openDialog', 'register', 'add', 'push']);
 /** Calls whose strings people never see. */
 const HIDDEN_CALLS = /^(?:console\.\w+|require|import|querySelector(?:All)?|getElementById|closest|matches|addEventListener|removeEventListener|dispatchEvent|getAttribute|setAttribute|removeAttribute|hasAttribute|toggleAttribute|getPropertyValue|setProperty|createElement(?:NS)?|getItem|setItem|removeItem|postMessage|fetch|RegExp|describe|it|test|expect)$/;
+/**
+ * Properties whose text the person types: a placeholder (a format hint). Banned words are still
+ * checked. (An input's starting value can be shown text too, so it is checked; the few that are
+ * typed formulas are in ALLOWED.)
+ */
+const INPUT_PROPS = new Set(['placeholder']);
+/** Calls that take an atom's or bond's own data (a label is drawn as chemistry, with real subscripts). */
+const MODEL_CALLS = /^(?:add|update|set|new)(?:Atom|Bond)s?$/;
+function modelCall(obj) {
+  const c = obj && ts.isObjectLiteralExpression(obj) ? obj.parent : null;
+  if (!c || !ts.isCallExpression(c) || !c.arguments.includes(obj)) return false;
+  const e = c.expression;
+  const name = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : '';
+  return MODEL_CALLS.test(name);
+}
 /** Command names: these properties and calls hold a command's own name (S82 applies). */
 const COMMAND_PROPS = new Set(['label']);
 /** A command name is short and has no sentence in it (a tooltip or a dialog's text is not one). */
@@ -257,11 +286,14 @@ function uiContext(node) {
     if (ts.isParenthesizedExpression(p) || ts.isAsExpression(p) || ts.isTemplateSpan(p) || ts.isTemplateExpression(p) || ts.isArrayLiteralExpression(p) || ts.isSatisfiesExpression?.(p)) { n = p; continue; }
     if (ts.isPropertyAssignment(p) && p.initializer === n) {
       const k = p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : '';
-      return UI_PROPS.has(k) ? { command: COMMAND_PROPS.has(k), input: k === 'placeholder' } : null;
+      if (!UI_PROPS.has(k)) return null;
+      // an atom's or bond's own data, such as doc.updateAtom(id, { label: 'CO2Et' }): drawn as chemistry, not shown as written
+      if (modelCall(p.parent)) return null;
+      return { command: COMMAND_PROPS.has(k), input: INPUT_PROPS.has(k) };
     }
     if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && p.right === n) {
       const l = p.left;
-      if (ts.isPropertyAccessExpression(l) && UI_PROPS.has(l.name.text)) return { command: false, input: l.name.text === 'placeholder' };
+      if (ts.isPropertyAccessExpression(l) && UI_PROPS.has(l.name.text)) return { command: false, input: INPUT_PROPS.has(l.name.text) };
       return null;
     }
     if ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.arguments?.includes(n)) {
@@ -290,6 +322,9 @@ function hiddenContext(node) {
       return HIDDEN_CALLS.test(name);
     }
     if (ts.isElementAccessExpression(p) && p.argumentExpression === n) return true;
+    // class names (el.className = 'menu popup-menu colour-menu', { className: '…' })
+    if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && p.right === n && ts.isPropertyAccessExpression(p.left) && p.left.name.text === 'className') return true;
+    if (ts.isPropertyAssignment(p) && p.initializer === n && p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && p.name.text === 'className') return true;
     if (ts.isCaseClause(p) || (ts.isBinaryExpression(p) && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken].includes(p.operatorToken.kind))) return true;
     if (ts.isPropertyAssignment(p) || ts.isVariableDeclaration(p) || ts.isReturnStatement(p) || ts.isBlock(p)) return false;
   }
@@ -326,12 +361,12 @@ export function tsStrings(source, fileName = 'x.ts') {
       ctx = { command: false, input: false, broad: true };
     }
     const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
-    const pieces = html ? htmlText(text).map((x) => x.text) : [text];
-    for (const p of pieces) {
+    const pieces = html ? htmlText(text) : [{ text }];
+    for (const { text: p, attr } of pieces) {
       const t = p.trim();
       if (!t || looksLikeId(t)) continue;
       if (ctx.broad ? !WORDS.test(t) || codeLike(t) : dataLike(t)) continue;
-      out.push({ text: p, line, command: ctx.command && commandLike(t), input: !!ctx.input });
+      out.push({ text: p, line, command: ctx.command && commandLike(t), input: !!ctx.input || attr === 'placeholder' });
     }
   };
   const visit = (node) => {
@@ -410,8 +445,16 @@ export const ALLOWED = [
   { file: 'src/ui/sheet-mode.ts', text: 'or a formula such as C10H12N2O', why: 'a formula typed into a spreadsheet function' },
   { file: 'src/sheet/isotopes.ts', text: 'a formula such as C10H12N2O', why: 'a formula typed into a spreadsheet function' },
   { file: 'src/ui/property-dialog.ts', text: '(any adduct can be typed)', why: 'the adducts as they are typed into this box' },
+  // An input's starting value that is typed text: an adduct is typed flat, and parsed as typed
+  { file: 'src/ui/property-dialog.ts', text: '[M+H]+', exact: true, why: "the Ion box's starting value, typed text that parseAdduct reads" },
+  { file: 'src/ui/sheet-mode.ts', text: '[M+H]+', exact: true, why: "the Isotope Pattern window's Ion box starting value, typed text that parseAdduct reads" },
   // Data that happens to sit under a `label` key but is drawn as chemistry text, not shown as written
-  { file: 'src/main.ts', text: 'CH3', exact: true, why: "a Newman preview's group label, drawn with real subscripts" },
+  { file: 'src/main.ts', text: 'CH3', exact: true, why: "a Newman preview's group label, drawn with real subscripts, and the Terminal methyls option's stored value (its label is CH₃)" },
+  { file: 'src/chem/analysis.ts', text: '-CH2- (ring)', exact: true, why: "a Joback group's key in the JOBACK table; the Properties tooltip shows it with real subscripts (jobackGroupList in analysis-panel.ts)" },
+  // Proper names keep their own spelling (S29)
+  { file: 'src/kb/glossary.ts', text: 'Classification, Labelling and Packaging', why: 'the title of EU Regulation (EC) No 1272/2008 (CLP), a proper name' },
+  // Text sent to an AI model, never shown
+  { file: 'src/recognise/reader.ts', text: 'Expand abbreviations (Ph, OMe, Boc, Ts, TBS, CO2Et) into atoms.', why: 'part of the instructions sent to the AI model that reads a drawing (AI_SYSTEM); the person never sees it' },
 ];
 
 // Problems that were in the app when this check was added are listed in lint-ui-text-known.mjs.
@@ -433,7 +476,8 @@ const KNOWN_HEADER = `// Problems in user-visible text that were in Chemweave wh
 // run node scripts/lint-ui-text.mjs --prune); the test fails while a fixed line is still here.
 // Never add a line for new text: fix the text, or for a deliberate exception add it to ALLOWED in
 // lint-ui-text.mjs with the reason. --write re-records the whole list; use it only after merging
-// branches that each changed UI text, and check the diff adds nothing new.
+// branches that each changed UI text, and check the diff adds nothing new. Every listed problem
+// was fixed on 2026-11-22 and the list is empty: keep it so.
 `;
 
 function writeKnown(list) {
@@ -446,7 +490,7 @@ function writeKnown(list) {
     seen.add(key);
     rows.push(`  ${JSON.stringify({ file: k.file, found: k.found, text })},`);
   }
-  writeFileSync(join(ROOT, 'scripts/lint-ui-text-known.mjs'), `${KNOWN_HEADER}export const KNOWN_UI_TEXT = [\n${rows.join('\n')}\n];\n`);
+  writeFileSync(join(ROOT, 'scripts/lint-ui-text-known.mjs'), `${KNOWN_HEADER}export const KNOWN_UI_TEXT = [\n${rows.map((r) => r + '\n').join('')}];\n`);
   return rows.length;
 }
 

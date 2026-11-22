@@ -53,7 +53,7 @@ async function chooseReader(host: ImportHost, preferAi: boolean): Promise<'here'
   if (canReadHere && await packReady()) return 'here';
   if (!canReadHere) {
     if (linked) return 'ai';
-    await ask('Import Structures', [], { noCancel: true, note: 'In the browser, structures are read by an AI model of your own: link one in Edit ▸ Settings ▸ AI Model. The desktop app can also read them on your computer, with nothing sent anywhere.' });
+    await ask('Import Structures', [], { noCancel: true, note: 'In the browser, structures are read by an AI model you link: set one up in Edit ▸ Settings ▸ AI Model. The desktop app can also read them on your computer, with nothing sent anywhere.' });
     return null;
   }
   const r = await ask('Import Structures', linked ? [{ name: 'how', label: 'Read with', value: 'here', options: [
@@ -144,7 +144,7 @@ async function review(host: ImportHost, how: 'here' | 'ai', found: FoundPicture[
 }
 
 async function noReader(): Promise<void> {
-  await ask('Import Structures', [], { noCancel: true, note: 'In the browser, structures are read by an AI model of your own: link one in Edit ▸ Settings ▸ AI Model. The desktop app can also read them on your computer, with nothing sent anywhere.' });
+  await ask('Import Structures', [], { noCancel: true, note: 'In the browser, structures are read by an AI model you link: set one up in Edit ▸ Settings ▸ AI Model. The desktop app can also read them on your computer, with nothing sent anywhere.' });
 }
 
 /** Whether anything here can read structures (asked before a PDF's pages are searched); says how to get one when not. */

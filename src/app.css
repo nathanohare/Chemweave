@@ -17,11 +17,13 @@
   --bg: #eef0f3;
   --panel: #ffffff;
   --text: #1d2330;
-  --muted: #677084;
+  /* muted words read at 4.5:1 or more on every light surface they sit on, the chrome (#e9ebef) included
+     (#677084 until 2026-11: 4.2:1 on the chrome) */
+  --muted: #5f687b;
   --line: #d6dae1;
   /* the accent follows the mode (View > Mode Colours sets --mode-*; see src/ui/mode-colours.ts); until
      it does, the Canvas teal's */
-  --accent: var(--mode-accent, #0e7c93);
+  --accent: var(--mode-accent, #0d7287);
   --accent-soft: var(--mode-soft, #ddedf0);
   --bar: var(--mode-bar, #0e7c93);
   --ok: #18794e;
@@ -210,6 +212,8 @@ header > button, header > select { white-space: nowrap; flex-shrink: 0; }
 }
 .menu button[hidden] { display: none; }
 .menu button:hover, .menu button:focus-visible { background: var(--accent-soft); outline: none; }
+/* the keyboard's place in a menu also shows as a ring (the fill alone is the hover's, and pale) */
+.menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .menu kbd { font: var(--fs-xs) var(--mono-font); color: var(--muted); }
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; width: auto; }
 .recent-files { display: grid; }
@@ -1174,7 +1178,7 @@ dialog.typing-dialog p { margin: 2px 0 6px; }
 .tab-si .tab-icon { background: var(--tab-si); }
 .tab-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.dirty .tab-name::before { content: '• '; color: var(--accent); }
-.tab-close { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--r-control); background: transparent; color: var(--muted); font-size: var(--fs-lg); line-height: 1; }
+.tab-close { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--r-control); background: transparent; color: var(--muted); font-size: var(--fs-lg); line-height: 1; }
 .tab-close:hover { background: var(--accent-soft); color: var(--text); }
 
 /* ------------------------------------------------------------------ the ribbons (Slides and Sheet) */
@@ -1589,6 +1593,7 @@ button.primary:hover { filter: brightness(1.08); }
 }
 .sh-input[hidden] { display: none; }
 .sh-tabs { flex: none; display: flex; align-items: stretch; gap: 1px; min-height: 28px; padding: 0 6px; overflow-x: auto; background: var(--bg); border-top: 1px solid var(--line); scrollbar-width: thin; }
+.sh-tab-list { display: contents; }
 .sh-tab { flex: none; padding: 3px 14px; border: 0; border-radius: 0 0 var(--r-tab) var(--r-tab); background: transparent; color: var(--muted); font-size: var(--fs-sm); }
 .sh-tab:hover { color: var(--text); background: color-mix(in srgb, var(--panel) 60%, transparent); }
 .sh-tab[aria-selected='true'] { background: var(--panel); color: var(--accent); font-weight: 600; box-shadow: inset 0 3px 0 var(--accent); }
@@ -1754,6 +1759,9 @@ body.doc-reading #doc-pane.nav-open > :not(#doc-nav) { margin-left: 0; }
 
 .doc-ribbon, .ribbon.tabbed { flex-direction: column; padding: 0; overflow: visible; }
 .rb-tabs { display: flex; gap: 2px; padding: 3px 8px 0; background: var(--bar); }
+/* the tabs themselves, in their own tablist so that the buttons beside them (warnings, the gear, ▴) are
+   not in it; laid out as if they were the row's own children */
+.rb-tablist { display: contents; }
 .rb-tabs button { padding: 3px 14px 4px; border: 0; border-radius: var(--r-control) var(--r-control) 0 0; background: transparent; color: rgba(255, 255, 255, 0.86); font-size: var(--fs-sm); }
 .rb-tabs button:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
 .rb-tabs button[aria-selected='true'] { background: var(--panel); color: var(--accent); font-weight: 600; }
@@ -2653,7 +2661,7 @@ dialog.toolbox-dialog { width: min(96vw, 900px); }
 .label-tip[hidden] { display: none; }
 .label-tip-head { align-self: stretch; text-align: left; }
 .label-tip img { display: block; max-width: 300px; height: auto; }
-.label-tip-formula { color: #677084; font-variant-numeric: tabular-nums; }
+.label-tip-formula { color: #5f687b; font-variant-numeric: tabular-nums; }
 /* Sheet: contextual ribbon tabs, table looks and conditional formatting */
 .rb-tabs button.rb-context { color: #fff; background: rgba(255, 255, 255, 0.18); }
 .rb-tabs button.rb-context[aria-selected='true'] { background: var(--panel); color: var(--accent); }
@@ -2704,7 +2712,7 @@ dialog.cf-manage { width: min(92vw, 640px); }
 .dash-kpi { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 0 10px; font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; color: #1d2330; white-space: nowrap; }
 .dash-kpi.good { color: #18794e; }
 .dash-kpi.bad { color: #b4232a; }
-.dash-sub { flex: none; padding: 0 10px 8px; font-size: var(--fs-xs); color: #677084; text-align: center; }
+.dash-sub { flex: none; padding: 0 10px 8px; font-size: var(--fs-xs); color: #5f687b; text-align: center; }
 .dash-table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .dash-table th { position: sticky; top: 0; background: #f6f7f9; padding: 4px 8px; text-align: left; font-weight: 600; border-bottom: 1px solid #dfe3e8; cursor: pointer; white-space: nowrap; }
 .dash-table th:hover { color: var(--accent); }
@@ -2715,7 +2723,7 @@ dialog.cf-manage { width: min(92vw, 640px); }
 .dash-slicer button { padding: 3px 10px; font-size: var(--fs-sm); border: 1px solid #cfd5dd; border-radius: var(--r-control); background: #ffffff; color: #1d2330; cursor: pointer; }
 .dash-slicer button:hover { border-color: var(--accent); }
 .dash-slicer button[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.dash-clear { margin-left: auto; padding: 0 5px; border: 0; background: transparent; color: #677084; font-size: var(--fs-sm); cursor: pointer; }
+.dash-clear { margin-left: auto; padding: 0 5px; border: 0; background: transparent; color: #5f687b; font-size: var(--fs-sm); cursor: pointer; }
 .dash-clear:hover { color: #b4232a; }
 .dash-gallery { display: grid; gap: 8px; padding: 8px 10px; }
 .dash-card { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; border: 1px solid #eef0f3; border-radius: var(--r-control); }
@@ -2723,7 +2731,7 @@ dialog.cf-manage { width: min(92vw, 640px); }
 .dash-label:first-of-type { font-weight: 600; }
 .dash-nostruct { color: #9aa3b5; font-size: var(--fs-sm); padding: 20px 0; }
 .dash-text { padding: 4px 10px; white-space: pre-wrap; color: #1d2330; }
-.dash-empty { position: absolute; left: 50%; top: 80px; transform: translateX(-50%); max-width: 460px; padding: 16px 20px; text-align: center; font-size: var(--fs-md); color: #677084; border: 1px dashed #cfd5dd; border-radius: var(--r-panel); }
+.dash-empty { position: absolute; left: 50%; top: 80px; transform: translateX(-50%); max-width: 460px; padding: 16px 20px; text-align: center; font-size: var(--fs-md); color: #5f687b; border: 1px dashed #cfd5dd; border-radius: var(--r-panel); }
 .dash-missing { margin: 6px 10px; font-size: var(--fs-xs); color: #9a5b00; }
 .sh-tab.dash-tab::before { content: '▦ '; color: var(--accent); }
 #cell-body .cp-textarea { flex: 1 1 auto; min-width: 0; min-height: 54px; font: var(--fs-sm) var(--ui-font); padding: 3px 6px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); resize: vertical; }
@@ -4195,7 +4203,7 @@ body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
 /* the dark band takes each mode's dark-theme accent (as full Dark does: Canvas teal #4ea9bc), so the
    chosen ribbon tab's word, the file tabs' underline and the BETA badge read on it (4.5:1 and more) */
 :root[data-gray] header, :root[data-gray] footer, :root[data-gray] .rb-tabs { --bg: #23262b; --text: #eceef2; --muted: #b9bec8; --line: #474b53; --accent-soft: #41464f; --panel: #3a3e45; --accent: var(--mode-accent-dark, #4ea9bc); --on-accent: var(--mode-on-accent-dark, #14171c); color: var(--text); }
-/* --muted is a deeper gray on these gray panels: the light theme's #677084 is only 3.4:1 on #d3d6db;
+/* --muted is a deeper gray on these gray panels: the light theme's #5f687b is only 3.8:1 on #d3d6db;
    #4f5768 keeps the same hue at 5.0:1 (4.6:1 on the hover fill) for group names, captions and ▾ */
 :root[data-gray] .ribbon > .rb-panel, :root[data-gray] .doc-ribbon > .rb-panel { --panel: #d3d6db; --accent-soft: #c1c7d1; --line: #b3b8c0; --muted: #4f5768; }
 :root[data-gray] .dock, :root[data-gray] aside { --panel: #dfe1e5; --line: #c4c8cf; --muted: #4f5768; }
@@ -4204,7 +4212,7 @@ body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
 :root[data-gray] .ribbon button[aria-pressed='true'], :root[data-theme='dark'] .ribbon button[aria-pressed='true'] { color: var(--text); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .ribbon button[aria-pressed='true'] { color: var(--text); } }
 /* muted words on the darker gray fill (--bg #b4b8bf): keycaps, atomic numbers, slide numbers, the
-   add-sheet + (#677084 is 2.5:1 there; #434956 is 4.5:1) */
+   add-sheet + (#5f687b is 2.8:1 there; #434956 is 4.5:1) */
 :root[data-gray] :is(.kb-cap, .pt-cell small, .sh-tab-add, .sl-num) { color: #434956; }
 :root[data-gray] .sh-tab-add:hover, :root[data-gray] .sl-item.current .sl-num { color: var(--text); }
 

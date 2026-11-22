@@ -273,7 +273,7 @@ export class WarningsBox extends DropBox {
     this.button.innerHTML = n
       ? `${WARN_ICON}<span>${n} warning${n === 1 ? '' : 's'}</span><span class="cr-chev" aria-hidden="true">▾</span>`
       : `<span class="cr-ok" aria-hidden="true">✓</span><span>No problems</span>`;
-    this.button.setAttribute('aria-label', n ? `${n} warning${n === 1 ? '' : 's'}: show the list` : this.button.disabled ? 'No structures to check' : 'No problems found');
+    this.button.setAttribute('aria-label', n ? `${n} warning${n === 1 ? '' : 's'}: show the list` : this.button.disabled ? 'No problems: no structures to check' : 'No problems found');
   }
 
   protected override ownList(): boolean {

@@ -186,18 +186,20 @@ const svg = (k: string, s = 14): string => `<svg class="si-ic" viewBox="0 0 24 2
 
 /** The ribbon: what each button does is its data-si command. */
 const RIBBON = `
-  <div class="rb-tabs" role="tablist">
-    <button role="tab" data-si-tab="home" aria-selected="true">Home</button>
-    <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
-    <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
-    <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
-    <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
-    <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
-    <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
-    <button role="tab" data-si-tab="ms" aria-selected="false" class="rb-context" hidden title="Shown on the Manuscript Check page">Manuscript Check</button>
-    <button role="tab" data-si-tab="dash" aria-selected="false" class="rb-context" hidden title="Shown on the Dashboard and on a Data section's page">Dashboard</button>
-    <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
-    <button role="tab" data-si-tab="spectrum" aria-selected="false" class="rb-context" hidden title="Shown on a compound's spectra page">Spectrum</button>
+  <div class="rb-tabs">
+    <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
+      <button role="tab" data-si-tab="home" aria-selected="true">Home</button>
+      <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
+      <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
+      <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
+      <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
+      <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
+      <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
+      <button role="tab" data-si-tab="ms" aria-selected="false" class="rb-context" hidden title="Shown on the Manuscript Check page">Manuscript Check</button>
+      <button role="tab" data-si-tab="dash" aria-selected="false" class="rb-context" hidden title="Shown on the Dashboard and on a Data section's page">Dashboard</button>
+      <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
+      <button role="tab" data-si-tab="spectrum" aria-selected="false" class="rb-context" hidden title="Shown on a compound's spectra page">Spectrum</button>
+    </div>
   </div>
   <div class="rb-panel" data-si-panel="insert" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -322,7 +324,7 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="xray" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-xray="choose-cif" data-ic="insert-object" title="Choose CIF: the structure's CIF file (a copy is kept in the project folder; the one it replaces goes to the Trash)"><span class="rb-icon">▤</span>Choose CIF</button>
-      <button class="rb-big" data-si-xray="edit" data-ic="structure" title="Edit Structure: turn it, change its style (ORTEP, ball-and-stick…), its labels and what is shown, in the crystal structure window (double-click the structure does the same)"><span class="rb-icon">⌬</span>Edit Structure</button>
+      <button class="rb-big" data-si-xray="edit" data-ic="structure" title="Edit Structure: rotate it, change its style (ORTEP, ball-and-stick…), its labels and what is shown, in the crystal structure window (double-click the structure does the same)"><span class="rb-icon">⌬</span>Edit Structure</button>
     </div><div class="rb-label">Structure</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
@@ -505,7 +507,7 @@ const RIBBON = `
     </div><div class="rb-label">Library</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="warnings" data-ic="check-structure" title="Every automatic warning in the project (HRMS, NMR, yields, spectra, IDs), by compound: dismiss or restore them"><span class="rb-icon">⚠</span>Warnings</button>
-      <button class="rb-big" data-si="spelling" data-ic="spelling" title="Spelling (F7): go to the next misspelled word on this page, with its corrections. Chemistry words, abbreviations (MeOH, CDCl3) and systematic names count as spelled right; right-click an underlined word for the same menu"><span class="rb-icon">✓</span>Spelling</button>
+      <button class="rb-big" data-si="spelling" data-ic="spelling" title="Spelling (F7): go to the next misspelled word on this page, with its corrections. Chemistry words, abbreviations (MeOH, CDCl₃) and systematic names count as spelled right; right-click an underlined word for the same menu"><span class="rb-icon">✓</span>Spelling</button>
     </div><div class="rb-label">Checks</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data, laid out as Chem SI Assistant lays it out. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
@@ -3491,7 +3493,7 @@ export class SiMode {
       sel.value = nuc;
       sel.setAttribute('aria-label', 'Nucleus');
       sel.addEventListener('change', () => void this.act(() => { r.nucleus = sel.value; return save(); }, false, c));
-      const box = new SiRichBox(partText(r.text), { label: this.label, changed: (t) => void this.act(() => { if (p.readOnly) return save(); r.text = t; return save(); }, false, c) }, false, `${nucleusLabel(nuc || '1H')} NMR (400 MHz, CDCl3) δ …`);
+      const box = new SiRichBox(partText(r.text), { label: this.label, changed: (t) => void this.act(() => { if (p.readOnly) return save(); r.text = t; return save(); }, false, c) }, false, `${nucleusLabel(nuc || '1H')} NMR (400 MHz, CDCl₃) δ …`);
       this.boxes.push(box);
       const rm = el('button', 'si-mini', '✕');
       rm.type = 'button';

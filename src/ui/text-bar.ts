@@ -268,7 +268,7 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   g = group();
   button(g, 'link', svg('<path d="M6.6 9.4a.8.8 0 0 1 0-1.1l1.7-1.7a.8.8 0 1 1 1.1 1.1L7.7 9.4a.8.8 0 0 1-1.1 0z"/><path d="M8.9 3.2a3 3 0 0 1 4.2 4.2l-1.6 1.6a.8.8 0 1 1-1.1-1.1L12 6.3a1.4 1.4 0 0 0-2-2L8.4 5.9a.8.8 0 1 1-1.1-1.1zM4 9.7l1.6-1.6a.8.8 0 1 1 1.1 1.1L5.1 10.8a1.4 1.4 0 0 0 2 2l1.6-1.6a.8.8 0 1 1 1.1 1.1l-1.6 1.6a3 3 0 0 1-4.2-4.2z"/>'),
     'Link to a web page, DOI, file or slide (Ctrl+K)', () => ops.link());
-  button(g, 'symbols', 'αΩ', 'Greek letters and symbols', panel(symbols, spacing, 'symbols'));
+  button(g, 'symbols', '<span aria-hidden="true">αΩ</span>', 'Greek letters and symbols', panel(symbols, spacing, 'symbols'));
   for (const row of TEXT_SYMBOL_ROWS) {
     const r = d.createElement('div');
     r.className = 'cs-row';

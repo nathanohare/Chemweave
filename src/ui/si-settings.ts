@@ -318,7 +318,7 @@ async function impurities(p: SiProject, host: SiSettingsHost): Promise<void> {
   const got = await ask('NMR Impurities', [
     { name: 'tolH', label: 'Match ¹H within', value: tolH.toFixed(3), unit: 'ppm', type: 'number', min: 0, max: 1, help: `Default ${DEFAULT_TOLERANCES[0].toFixed(3)} ppm.` },
     { name: 'tolC', label: 'Match ¹³C within', value: tolC.toFixed(3), unit: 'ppm', type: 'number', min: 0, max: 1, help: `Default ${DEFAULT_TOLERANCES[1].toFixed(3)} ppm.` },
-  ], { ok: 'Save', body, note: 'A ¹H peak reported as a singlet, or any ¹³C peak, at one of these shifts (in the same solvent) gets a “check it isn’t a solvent or impurity peak” warning. The built-in values are from Fulmer et al., Organometallics 2010, 29, 2176. Untick a row to stop checking it; edit, add or remove rows. Changes apply to this project only, and SI Assistant uses them too.' });
+  ], { ok: 'Save', body, note: 'A ¹H peak reported as a singlet, or any ¹³C peak, at one of these shifts (in the same solvent) gets a “check it isn’t a solvent or impurity peak” warning. The built-in values are from Fulmer et al., Organometallics 2010, 29, 2176. Uncheck a row to stop checking it; edit, add or remove rows. Changes apply to this project only, and SI Assistant uses them too.' });
   if (!got || p.readOnly) return;
   const table2 = rows().map((tr) => impurityRowFrom(...cells(tr))).filter((r): r is ImpurityRow => !!r);
   await host.save(() => {

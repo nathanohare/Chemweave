@@ -67,7 +67,7 @@ export function libraryHolder(lib: Library, host: LibraryRefsHost): RefHolder {
   };
   return {
     key: LIBRARY_KEY, name: 'My Library', kind: 'Library',
-    note: () => 'Your own references, kept between sessions and shared by every file. Copy them into a document or presentation to cite them there.',
+    note: () => 'References you add, kept between sessions and shared by every file. Copy them into a document or presentation to cite them there.',
     refs: () => now().references,
     setRefs: (_label, refs) => lib.change((l) => applyRefList(l, refs)),
     citeStyle: () => preferredStyle().style,

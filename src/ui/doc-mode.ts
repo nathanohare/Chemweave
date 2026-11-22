@@ -1631,7 +1631,7 @@ export class DocumentMode {
     // Cut, Copy, Paste and Delete in a row, as every mode's menu starts (UI audit U13)
     items.push({ row: [{ cmd: 'cut', label: 'Cut' }, { cmd: 'copy', label: 'Copy' }, { cmd: 'paste', label: 'Paste' }, { cmd: 'delete', label: 'Delete' }] }, null);
     if (this.host.clipboardObject) cmd('Paste as Object', 'paste-object', 'Cells copied in Excel (or another program\'s object) kept whole: double-click to change them in their program');
-    cmd('Format Painter', 'format-painter', 'Copy the look of the text here (or of the selection) to the text you click or drag over next');
+    cmd('Format Painter', 'format-painter', 'Copy the formatting of the text here (or of the selection) to the text you click or drag over next');
     line();
     // a footnote's number, or typing in a note: to the other end, or the other kind
     const fb = this.file?.box && !this.file.box.cell && this.file.t.objects[this.file.box.id]?.kind === 'note' ? this.file.box.id : null;
@@ -2263,7 +2263,9 @@ export class DocumentMode {
     const kind = f.view.kind;
     const set = (cmd: string, on: boolean) => {
       for (const b of document.querySelectorAll<HTMLElement>(`[data-doc="${cmd}"]`)) if (b.hasAttribute('aria-pressed')) b.setAttribute('aria-pressed', String(on));
-      for (const b of document.querySelectorAll<HTMLElement>(`[data-cmd="${cmd}"]`)) b.setAttribute('aria-checked', String(on));
+      // the menus' radio items; a button elsewhere that runs a command of the same name (Presentation's
+      // View ▸ Outline View) is not this view's, and aria-checked is not allowed on a button
+      for (const b of document.querySelectorAll<HTMLElement>(`[data-cmd="${cmd}"]:is([role="menuitemradio"], [role="menuitemcheckbox"])`)) b.setAttribute('aria-checked', String(on));
     };
     for (const [cmd, k] of Object.entries(VIEW_COMMANDS)) set(cmd, k === kind);
     const pages = !continuous(kind) && kind !== 'read';

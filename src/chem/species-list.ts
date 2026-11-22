@@ -268,7 +268,7 @@ const REAGENTS: SpeciesEntry[] = [
   { names: ['K2OsO4'], smiles: '[K+].[K+].[O-][Os](=O)(=O)[O-]', name: 'potassium osmate', kind: 'reagent' },
   { names: ['NaBO3'], smiles: '[Na+].[O-]OB=O', name: 'sodium perborate', kind: 'reagent' },
   { names: ['KHSO5'], smiles: '[K+].OOS(=O)(=O)[O-]', name: 'potassium peroxymonosulfate', kind: 'reagent' },
-  { names: ['Oxone'], smiles: '[K+].[K+].[K+].[K+].[K+].OOS(=O)(=O)[O-].OOS(=O)(=O)[O-].OS(=O)(=O)[O-].[O-]S(=O)(=O)[O-]', name: 'Oxone (2KHSO5·KHSO4·K2SO4)', kind: 'reagent' },
+  { names: ['Oxone'], smiles: '[K+].[K+].[K+].[K+].[K+].OOS(=O)(=O)[O-].OOS(=O)(=O)[O-].OS(=O)(=O)[O-].[O-]S(=O)(=O)[O-]', name: 'Oxone (2KHSO₅·KHSO₄·K₂SO₄)', kind: 'reagent' },
   { names: ['K2S2O8'], smiles: '[K+].[K+].[O-]S(=O)(=O)OOS(=O)(=O)[O-]', name: 'potassium persulfate', kind: 'reagent' },
   { names: ['(NH4)2S2O8'], smiles: '[NH4+].[NH4+].[O-]S(=O)(=O)OOS(=O)(=O)[O-]', name: 'ammonium persulfate', kind: 'reagent' },
   { names: ['NaHSO3'], smiles: '[Na+].OS([O-])=O', name: 'sodium bisulfite', kind: 'reagent' },
