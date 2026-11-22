@@ -161,15 +161,22 @@ describe('masses', () => {
     expect(c13(4, 5)).toEqual(['¹³C NMR lists 6 signals; the structure has 4 symmetry-distinct carbons, or 5 if its diastereotopic CH₃/CH₂ carbons each give their own signal. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)']);
   });
   it('works the symmetry classes out quickly for a 1,200-atom chain (G4-08)', () => {
-    const n = 1200;
-    const atoms = Array.from({ length: n }, (_, i) => ({ z: 6, isotope: 0, chg: 0, impHs: i === 0 || i === n - 1 ? 3 : 2 }));
-    const bonds = Array.from({ length: n - 1 }, (_, i) => [i, i + 1, 1] as [number, number, number]);
-    const t0 = performance.now();
+    const chain = (n: number) => ({
+      atoms: Array.from({ length: n }, (_, i) => ({ z: 6, isotope: 0, chg: 0, impHs: i === 0 || i === n - 1 ? 3 : 2 })),
+      bonds: Array.from({ length: n - 1 }, (_, i) => [i, i + 1, 1] as [number, number, number]),
+    });
+    const time = (n: number): number => { const { atoms, bonds } = chain(n); const t0 = performance.now(); symmetryClasses(atoms, bonds); return performance.now() - t0; };
+    const { atoms, bonds } = chain(1200);
     const cls = symmetryClasses(atoms, bonds);
-    // (was about 1.9 s; the classes pair each atom with its mirror atom from the other end)
-    expect(new Set(cls).size).toBe(n / 2);
-    expect(cls[0]).toBe(cls[n - 1]);
-    expect(performance.now() - t0).toBeLessThan(1500);
+    // (the classes pair each atom with its mirror atom from the other end)
+    expect(new Set(cls).size).toBe(600);
+    expect(cls[0]).toBe(cls[1199]);
+    // Doubling the chain: the old refinement took 11.7 times as long (162 ms → 1.9 s), this one
+    // about 3.4 times (132 → 446 ms), up to about 7 on a busy machine. Timed side by side, so a
+    // busy machine slows both alike; best of three. (Or simply quick.)
+    const best = (n: number) => Math.min(time(n), time(n), time(n));
+    const t600 = best(600), t1200 = best(1200);
+    expect(t1200 < 1500 || t1200 / t600 < 10, `${Math.round(t600)} ms → ${Math.round(t1200)} ms`).toBe(true);
   });
 });
 
