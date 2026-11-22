@@ -223,3 +223,19 @@ describe('superatom attachment points (F1-R14)', () => {
     }
   });
 });
+
+describe('D and T as alias lines (F1b-R10)', () => {
+  it('stay deuterium and tritium, not a label "H"', () => {
+    // CD3H written by another program: carbon with an H atom whose alias is D (BIOVIA CTfile: A lines)
+    for (const [alias, iso, want] of [['D', 2, '[2H]C'], ['T', 3, '[3H]C']] as const) {
+      const mb = `\n  test\n\n  2  1  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\nA    2\n${alias}\nM  END\n`;
+      const m = readMolfile(mb)!;
+      expect(m.atoms[1]).toMatchObject({ sym: 'H', iso });
+      expect(m.atoms[1].label).toBeUndefined();
+      const d = back('x.mol', mb);
+      const h = [...d.atoms.values()].find((a) => a.z === 1)!;
+      expect([h.isotope, h.label]).toEqual([iso, null]);
+      expect(canon(writeMolFile(d).text)).toBe(canon(want));
+    }
+  });
+});

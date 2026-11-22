@@ -31,7 +31,7 @@ import { statedHLabel } from '../chem/hydrogen-count';
 import { molProgramLine, needsV3000, toMolfile, v2000Molfile, v3000Ctab, v3000Molfile, type CtabExtra, type MAtom, type MBond, type MSgroup } from '../chem/molfile';
 import { plainMeasure, reactionSteps, schemeItems, itemFinder } from '../chem/reaction';
 import { placeSpecies, readSpecies } from '../chem/species';
-import { labelGraph } from '../chem/labels';
+import { labelGraph, type MiniGraph } from '../chem/labels';
 import { plainText } from '../richtext';
 import { arialWidth } from '../text-metrics';
 import { addChiralFlag } from '../chem/chiral-flag';
@@ -165,7 +165,9 @@ export function readMolfile(text: string, o: { keepSup?: boolean } = {}): FMol |
 /** The molecule starting at `start` (its name line) and the line after its M  END. */
 function molAt(lines: string[], start: number, keepSup = false): { mol: FMol; end: number } | null {
   const counts = lines[start + 3] ?? '';
-  if (/V3000/.test(counts)) return v3000At(lines, start + 4, lines[start]?.trim(), keepSup);
+  // written here (the header's program field): every abbreviation group in it is a label drawn here
+  const ours = OUR_HEADER.test(lines[start + 1] ?? '');
+  if (/V3000/.test(counts)) return v3000At(lines, start + 4, lines[start]?.trim(), keepSup, ours);
   const na = parseInt(counts.slice(0, 3), 10), nb = parseInt(counts.slice(3, 6), 10);
   if (!Number.isFinite(na) || !Number.isFinite(nb) || na < 0) return null;
   const atoms: FAtom[] = [];
@@ -203,7 +205,7 @@ function molAt(lines: string[], start: number, keepSup = false): { mol: FMol; en
     if (l.startsWith('A  ')) {
       const n = parseInt(l.slice(3), 10) - 1;
       const alias = (lines[i + 1] ?? '').trim();
-      if (atoms[n] && alias) { atoms[n].sym = alias; atoms[n].label = true; }
+      if (atoms[n] && alias) aliasAtom(atoms[n], alias);
       i++;
       continue;
     }
@@ -252,7 +254,7 @@ function molAt(lines: string[], start: number, keepSup = false): { mol: FMol; en
   hFromValence(atoms, bonds, vals);
   const mol: FMol = { atoms, bonds, ...(lines[start]?.trim() ? { name: lines[start].trim() } : {}), ...(chiral ? { chiral } : {}) };
   for (const a of atoms) fixHydrogenIsotopes(a);
-  return { mol: keepSup ? withSup(mol, [...sup.values()]) : contract(mol, [...sup.values()]), end: i };
+  return { mol: keepSup ? withSup(mol, [...sup.values()]) : contract(mol, [...sup.values()], ours), end: i };
 }
 
 /**
@@ -274,6 +276,21 @@ function bondOf(a: number, b: number, order: number, stereo: number, v3000: bool
 /** D and T as hydrogen isotopes. */
 function fixHydrogenIsotopes(a: FAtom): void {
   if (a.sym === 'D' || a.sym === 'T') { a.iso = a.sym === 'D' ? 2 : 3; a.sym = 'H'; }
+}
+
+/** A molfile header's second line as this program writes it (molProgramLine; "Chemweave" in older files of this phase). */
+const OUR_HEADER = /^.{2}Chemweav/;
+
+/**
+ * An atom given an alias (V2000 A lines, V3000's one-atom group on a "*" atom): shown as that
+ * label, whatever it spells. D and T are deuterium and tritium, and an alias that is the atom's
+ * own element says nothing more: those stay atoms (review F1b-R10).
+ */
+function aliasAtom(a: FAtom, alias: string): void {
+  if (alias === 'D' || alias === 'T') { a.sym = alias; delete a.label; fixHydrogenIsotopes(a); return; }
+  if (alias === a.sym && elementNumber(alias) !== undefined) return;
+  a.sym = alias;
+  a.label = true;
 }
 
 /** One V3000 field of an atom or bond line (CHG=1, CFG=3, MASS=13). */
@@ -302,7 +319,7 @@ function v3Lines(lines: string[], from: number): { words: string[][]; end: numbe
 }
 
 /** A V3000 connection table starting at `from` (after the counts line). */
-function v3000At(lines: string[], from: number, name?: string, keepSup = false): { mol: FMol; end: number } | null {
+function v3000At(lines: string[], from: number, name?: string, keepSup = false, ours = false): { mol: FMol; end: number } | null {
   const { words, end } = v3Lines(lines, from);
   const atoms: FAtom[] = [];
   const bonds: FBond[] = [];
@@ -358,7 +375,7 @@ function v3000At(lines: string[], from: number, name?: string, keepSup = false):
   }
   hFromValence(atoms, bonds, vals);
   const mol: FMol = { atoms, bonds, ...(name ? { name } : {}), ...(chiral ? { chiral } : {}) };
-  return { mol: keepSup ? withSup(mol, sup) : contract(mol, sup), end: end + 1 };
+  return { mol: keepSup ? withSup(mol, sup) : contract(mol, sup, ours), end: end + 1 };
 }
 
 /** A superatom S-group as read: its atoms, label, and whether the file shows it expanded. */
@@ -368,7 +385,7 @@ interface SupGroup { atoms: number[]; label: string; expanded?: boolean }
 function withSup(mol: FMol, groups: SupGroup[]): FMol {
   // (a one-atom group on a "*" atom is V3000's alias: the atom is that label)
   const alias = (g: SupGroup) => g.label && g.atoms.length === 1 && mol.atoms[g.atoms[0]]?.sym === '*';
-  for (const g of groups) if (alias(g)) mol.atoms[g.atoms[0]] = { ...mol.atoms[g.atoms[0]], sym: g.label, label: true };
+  for (const g of groups) if (alias(g)) { const a = { ...mol.atoms[g.atoms[0]] }; aliasAtom(a, g.label); mol.atoms[g.atoms[0]] = a; }
   const sup = groups.filter((g) => g.label && g.atoms.length && !alias(g)).map((g) => {
     const inG = new Set(g.atoms);
     const head = mol.bonds.find((b) => inG.has(b.a) !== inG.has(b.b));
@@ -387,17 +404,25 @@ function withSup(mol: FMol, groups: SupGroup[]): FMol {
  * a "*" atom is how V3000 carries an alias: it becomes that label. The label atom is marked as a
  * label, so a group spelling an element (Ts, Ac, Pr, Np) stays the group (F1-R01).
  */
-function contract(mol: FMol, groups: SupGroup[]): FMol {
+function contract(mol: FMol, groups: SupGroup[], ours = false): FMol {
   const drop = new Set<number>();
   for (const g of groups) {
     if (!g.label || !g.atoms.length || g.expanded) continue;
+    // a one-atom group on a "*" (or R#, A, Q, X) atom is an alias, bonded or not (review F1b-R03)
+    if (g.atoms.length === 1 && /^(\*|R#?|A|Q|X)$/.test(mol.atoms[g.atoms[0]]?.sym ?? '')) {
+      const a = { ...mol.atoms[g.atoms[0]] };
+      aliasAtom(a, g.label);
+      mol.atoms[g.atoms[0]] = a;
+      continue;
+    }
     const inG = new Set(g.atoms);
     const crossing = mol.bonds.filter((b) => inG.has(b.a) !== inG.has(b.b));
     // (a label bonded twice, as this app writes one in a chain, has both bonds on its first atom)
     const heads = new Set(crossing.map((b) => (inG.has(b.a) ? b.a : b.b)));
-    if (heads.size > 1 || (!crossing.length && g.atoms.length < 2)) continue;
-    const alias = g.atoms.length === 1 && /^(\*|R#?|A|Q|X)$/.test(mol.atoms[g.atoms[0]]?.sym ?? '');
-    if (!alias && !sameAtoms(g.label, g.atoms.map((k) => mol.atoms[k]?.sym ?? ''), crossing.reduce((t, b) => t + Math.round(b.order), 0))) continue;
+    if (heads.size > 1) continue;
+    // in a file written here every group is a label drawn here; in another program's, only a
+    // label that stands for these very atoms here (review F1-R04, F1b-R02)
+    if (!ours && !sameAtoms(g.label, g.atoms.map((k) => mol.atoms[k]?.sym ?? ''), crossing.reduce((t, b) => t + Math.round(b.order), 0))) continue;
     const head = crossing.length ? [...heads][0] : g.atoms[0];
     const was = mol.atoms[head];
     mol.atoms[head] = { sym: g.label, x: was.x, y: was.y, label: true, ...(was.map ? { map: was.map } : {}), ...(was.enh ? { enh: was.enh } : {}) };
@@ -416,12 +441,17 @@ function contract(mol: FMol, groups: SupGroup[]): FMol {
  * abbreviation or condensed formula bonded `ext` times, or, bonded to nothing, as a formula.
  */
 function sameAtoms(label: string, syms: string[], ext: number): boolean {
-  const g = labelGraph(label, Math.max(ext, 1)) ?? (ext ? null : readSpecies(label, { fragments: true })?.graph ?? null);
-  if (!g || g.atoms.some((a) => a.dummy)) return false;
+  // the way the molfile writer expands a label (toMolfile): on its own, as a text box read as
+  // chemistry reads it (a reagent name, DCM, LDA); bonded, as an abbreviation or condensed formula
+  let g: MiniGraph | null = null;
+  if (!ext) { const sp = readSpecies(label, { fragments: true }); if (sp && !sp.expected && !sp.graph.atoms.some((a) => a.dummy)) g = sp.graph; }
+  g ??= labelGraph(label, ext) ?? (ext ? null : labelGraph(label, 1));
+  if (!g) return false;
+  // an undefined part of a label (the R of OR, NR2, CO2R) is written as a "*" atom; hydrogens are left aside
   const key = (zs: number[]) => zs.filter((z) => z !== 1).sort((p, q) => p - q).join(',');
-  const zs = syms.map((t) => elementNumber(t));
+  const zs = syms.map((t) => (/^(\*|R#?|R\d*|A|Q|X|Du)$/.test(t) ? 0 : elementNumber(t)));
   if (zs.some((z) => z === undefined)) return false;
-  return key(zs as number[]) === key(g.atoms.map((a) => a.z));
+  return key(zs as number[]) === key(g.atoms.map((a) => (a.dummy ? 0 : a.z)));
 }
 
 /** The molecules of an SD file. */
@@ -445,6 +475,8 @@ export function readRxnFile(text: string): FScene | null {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const head = lines.findIndex((l) => l.startsWith('$RXN'));
   if (head < 0) return null;
+  // (an RXN file written here: its line 3 names this program after six initials columns)
+  const ours = /^.{6}Chemweav/.test(lines[head + 2] ?? '');
   const mols: FMol[] = [];
   if (lines[head].includes('V3000')) {
     let role: FRole | null = null;
@@ -454,7 +486,7 @@ export function readRxnFile(text: string): FScene | null {
       if (m) { role = m[1] === 'REACTANT' ? 'reactant' : m[1] === 'PRODUCT' ? 'product' : 'agent'; continue; }
       if (/^M {2}V30 END (REACTANT|PRODUCT|AGENT)/.test(l)) { role = null; continue; }
       if (role && l.startsWith('M  V30 BEGIN CTAB')) {
-        const got = v3000At(lines, i, '');
+        const got = v3000At(lines, i, '', false, ours);
         if (!got) return null;
         mols.push({ ...got.mol, role });
         i = got.end - 1;
@@ -1206,7 +1238,7 @@ function cmlMoleculeXml(m: FMol, id: string, first: number, indent: string, mrv:
   const groups = mrv ? (m.sup ?? []).filter((g) => {
     const inG = new Set(g.atoms);
     const crossing = m.bonds.filter((b) => inG.has(b.a) !== inG.has(b.b));
-    if (g.atoms.length < 2 || crossing.length > 1) return false;
+    if (crossing.length > 1) return false;
     return !crossing.length || (inG.has(crossing[0].a) ? crossing[0].a : crossing[0].b) === g.atoms[0];
   }) : [];
   const groupOf = new Map<number, number>();
