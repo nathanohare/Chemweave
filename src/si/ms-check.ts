@@ -668,7 +668,7 @@ export async function checkManuscript(p: SiProject, sources: Source[] | null, op
         const what = mc.records.some((r) => r.smiles) ? 'a labeled structure' : mc.textRecords.length ? 'a value in the text' : 'mentioned';
         // (its fingerprint from SI Assistant's wording, "labelled", so a note dismissed there or before the
         // American spelling of G5-09 stays dismissed)
-        const print = fp(what === 'a labeled structure' ? 'a labelled structure' : what, 'no compound with this ID', '');
+        const print = fp(what.replace('labeled', 'labelled'), 'no compound with this ID', '');
         out.push(finding('mention', mc.label, `${mc.label} is in the manuscript (${what}) but no compound in the SI has this ID. That is fine for a known compound, a starting material or a reagent.`, NOTE, { fingerprint: print, ms_value: what, si_value: 'no compound with this ID', where: mc.where }));
       }
       continue;

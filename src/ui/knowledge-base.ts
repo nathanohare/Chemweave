@@ -1092,7 +1092,7 @@ export class KnowledgeBaseWindow {
   private async importTable(): Promise<void> {
     const how = await ask('Import Table', [
       { name: 'title', label: 'Name', value: '', placeholder: 'NMR impurities (my copy)' },
-      { name: 'paste', label: 'Or paste the table', value: '', type: 'textarea', placeholder: 'Tab- or comma-separated; first line is the header', help: 'Leave this empty to pick a CSV or tab-separated file. Columns named 1H or 13C (ppm) are searched as chemical shifts.' },
+      { name: 'paste', label: 'Or paste the table', value: '', type: 'textarea', placeholder: 'Tab- or comma-separated; first line is the header', help: 'Leave this empty to choose a CSV or tab-separated file. Columns named 1H or 13C (ppm) are searched as chemical shifts.' },
     ], { ok: 'Import', note: 'A custom table, kept on this computer only and never shared with Chemweave. The first line names the columns.' });
     if (!how) return;
     let text = how.paste.trim(), name = how.title.trim();

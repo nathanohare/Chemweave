@@ -287,7 +287,7 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
       e.preventDefault();
       const link = target();
       if (!link) {
-        note.textContent = kind === 'place' ? 'Pick a place for the link to go to.' : kind === 'file' ? 'Type or browse to the file the link opens.' : kind === 'mail' ? 'Type the email address.' : 'Type the address or DOI the link goes to.';
+        note.textContent = kind === 'place' ? 'Choose a place for the link to go to.' : kind === 'file' ? 'Type or browse to the file the link opens.' : kind === 'mail' ? 'Type the email address.' : 'Type the address or DOI the link goes to.';
         note.hidden = false;
         return;
       }

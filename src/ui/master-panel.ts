@@ -260,7 +260,7 @@ export class MasterPanel {
   private master(deck: Deck): void {
     const m = () => deck.master;
     const set = (patch: Partial<Master>) => { this.hooks.finishTyping(); deck.setMaster({ ...m(), ...patch }); };
-    this.head('Slide Master', 'Every slide\'s background, shapes, logo, numbers and footer. Pick the title or text box on the page to set the text styles every layout starts from.');
+    this.head('Slide Master', 'Every slide\'s background, shapes, logo, numbers and footer. Select the title or text box on the page to set the text styles every layout starts from.');
 
     this.sub('Text styles');
     const summary = (ph: Placeholder) => {
@@ -343,7 +343,7 @@ export class MasterPanel {
 
   private layout(deck: Deck): void {
     const def = () => deck.pageLayout();
-    this.head('Layout', 'Pick a placeholder to set how its text looks on this layout\'s slides; anything else drawn here is on every slide with this layout, behind the slide\'s own things.');
+    this.head('Layout', 'Select a placeholder to set how its text looks on this layout\'s slides; anything else drawn here is on every slide with this layout, behind the slide\'s own things.');
     const name = this.input('text', 'mp-text', (v) => { if (v.trim()) deck.setLayoutMeta({ name: v.trim() }, 'Rename Layout'); }, { 'aria-label': 'Layout name' });
     this.fills.push(() => { name.value = def()?.name ?? ''; });
     this.row('Name', [name]);

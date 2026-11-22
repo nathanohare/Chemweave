@@ -536,7 +536,7 @@ export class SheetData {
     const dest = el('input');
     dest.value = absName({ r1: R.r1, c1: R.c1, r2: R.r1, c2: R.c1 });
     const preview = el('div', 'sd-preview');
-    w.form.append(mode.box, delim, breakRow, row('Destination', dest), el('p', 'muted small', 'Data preview (pick each column\'s format above it):'), preview);
+    w.form.append(mode.box, delim, breakRow, row('Destination', dest), el('p', 'muted small', 'Data preview (choose each column\'s format above it):'), preview);
     let formats: SplitOptions['formats'] = [];
     const options = (): SplitOptions => ({
       mode: mode.value(),

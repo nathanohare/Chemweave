@@ -70,7 +70,7 @@ export class SheetValidation {
     }
     const now = s.shownText(r, c);
     const m = popupMenu(at.x, at.y, items.map((t) => [t, () => {
-      this.host.edit('Pick from list', (sh) => sh.setInput(r, c, asInput(t)));
+      this.host.edit('Pick From Drop-down List', (sh) => sh.setInput(r, c, asInput(t)));
       this.host.view.focus();
     }] as [string, () => void]));
     m.classList.add('sh-drop');

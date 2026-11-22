@@ -234,7 +234,7 @@ function waste(): DesignTemplate {
 
 function quickGuide(): DesignTemplate {
   const th = T.blue;
-  const steps = ['Log in and sign the logbook', 'Insert the sample', 'Lock and shim', 'Pick the experiment and start', 'Save and process the data', 'Eject the sample and log out'];
+  const steps = ['Log in and sign the logbook', 'Insert the sample', 'Lock and shim', 'Choose the experiment and start', 'Save and process the data', 'Eject the sample and log out'];
   return {
     id: 'flyer-quick-guide', name: 'Instrument quick guide', category: 'flyer', sizeId: 'letter',
     blurb: 'Six numbered steps, each with a picture, for posting beside an instrument.',

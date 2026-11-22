@@ -440,7 +440,7 @@ export class AnimationUI {
     if (!hl.length) { this.highlights.replaceChildren(); return; }
     const head = document.createElement('div');
     head.className = 'muted small';
-    head.textContent = 'Highlights (pick one, then an effect):';
+    head.textContent = 'Highlights (choose one, then an effect):';
     this.highlights.replaceChildren(head, ...hl.map((p) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -791,7 +791,7 @@ export class AnimationUI {
     if (!anims.length) {
       const p = document.createElement('p');
       p.className = 'muted';
-      p.textContent = 'No animations on this slide. Select something on the slide, then pick an effect in the Animations tab.';
+      p.textContent = 'No animations on this slide. Select something on the slide, then choose an effect in the Animations tab.';
       this.list.replaceChildren(p);
       return;
     }

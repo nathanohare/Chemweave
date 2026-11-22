@@ -1689,7 +1689,7 @@ export class DocumentMode {
         null,
         command('Split Table', 'table-split-table', 'A new table from this row down'),
         command('Convert to Text…', 'table-to-text', 'The table\'s rows back into paragraphs'),
-        command('Select Table', 'table-select', 'Pick the whole table (to copy, cut or delete it)'),
+        command('Select Table', 'table-select', 'Select the whole table (to copy, cut or delete it)'),
       );
       items.push({ label: 'Table', items: t });
       line();

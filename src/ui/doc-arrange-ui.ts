@@ -197,7 +197,7 @@ export class DocArrangeUI {
     tool('Hide All', 'Hide every floating figure from the pages (they stay in the document)', () => this.update(withFloats(t, [...all].map((id) => [id, { hidden: true }])), 'Hide all'));
     tool('▲', 'Bring Forward', () => { const id = this.host.picked(); if (id !== null && all.has(id)) this.restack(id, 'forward'); });
     tool('▼', 'Send Backward', () => { const id = this.host.picked(); if (id !== null && all.has(id)) this.restack(id, 'backward'); });
-    tool('Group', 'Group the figures selected here (Ctrl+click picks more): they move together', () => this.group());
+    tool('Group', 'Group the figures selected here (Ctrl+click selects more): they move together', () => this.group());
     body.append(tools);
     const list = document.createElement('div');
     list.className = 'sel-list';
@@ -222,7 +222,7 @@ export class DocArrangeUI {
       const name = document.createElement('span');
       name.className = 'sel-name';
       name.textContent = (fl.group !== undefined ? `Group ${fl.group} · ` : '') + objectName(t, id);
-      name.title = 'Click to pick (Ctrl+click to pick more); double-click to rename';
+      name.title = 'Click to select (Ctrl+click to select more); double-click to rename';
       name.addEventListener('click', (e) => {
         if (e.ctrlKey || e.metaKey || e.shiftKey) { if (this.chosen.has(id)) this.chosen.delete(id); else this.chosen.add(id); }
         else { this.chosen = new Set([id]); if (!fl.hidden) this.host.pick(id); }
@@ -243,7 +243,7 @@ export class DocArrangeUI {
     if (ids.length >= 2) {
       const note = document.createElement('p');
       note.className = 'sel-none';
-      note.textContent = `${ids.length} picked.`;
+      note.textContent = `${ids.length} selected.`;
       body.append(note);
     }
   }

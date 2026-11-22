@@ -73,7 +73,7 @@ export async function fileTypesPage(host: FileTypesHost): Promise<void> {
     subhead('File Types', host.platform === 'web'
       ? 'In the web version, open files with File ▸ Open or drag them onto the window. The desktop app can open files directly.'
       : host.platform === 'mac'
-        ? 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files: right-click a file in Finder and choose Open With. To always open a file type here, choose File ▸ Get Info in Finder, pick Chemweave under Open with, and click Change All.'
+        ? 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files: right-click a file in Finder and choose Open With. To always open a file type here, choose File ▸ Get Info in Finder, choose Chemweave under Open with, and click Change All.'
         : 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files in your file manager\'s Open With menu. Your desktop\'s settings (Default Applications) choose which program opens each file type.');
     subhead('Documents from Other Programs');
     form.append(figRow);

@@ -244,7 +244,7 @@ export class LayersPanel {
     name.textContent = layerName(s);
     name.title = 'Double-click to rename';
     const eye = this.toggle(s.hidden ? ICONS.hidden : ICONS.shown, s.hidden ? 'Show' : 'Hide', () => this.hooks.edit(s.hidden ? 'Show' : 'Hide', () => this.doc!.updateShape(s.id, { hidden: s.hidden ? undefined : true })));
-    const lock = this.toggle(s.locked ? ICONS.locked : ICONS.unlocked, s.locked ? 'Unlock (clicks pick it again)' : 'Lock (clicks pass through it)', () => this.hooks.edit(s.locked ? 'Unlock' : 'Lock', () => this.doc!.updateShape(s.id, { locked: s.locked ? undefined : true })));
+    const lock = this.toggle(s.locked ? ICONS.locked : ICONS.unlocked, s.locked ? 'Unlock (clicks select it again)' : 'Lock (clicks pass through it)', () => this.hooks.edit(s.locked ? 'Unlock' : 'Lock', () => this.doc!.updateShape(s.id, { locked: s.locked ? undefined : true })));
     lock.classList.toggle('on', !!s.locked);
     row.append(grip, name, eye, lock);
     row.addEventListener('click', (e) => {

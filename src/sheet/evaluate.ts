@@ -664,7 +664,7 @@ const LAZY: Record<string, (argNodes: Node[], host: EvalHost) => Arg> = {
     return i < argNodes.length ? evalNode(argNodes[i], host) : ERR.na('No match, and no value for otherwise');
   },
   CHOOSE: (argNodes, host) => {
-    if (argNodes.length < 2) return ERR.value('CHOOSE needs a number and the values to pick from');
+    if (argNodes.length < 2) return ERR.value('CHOOSE needs a number and the values to choose from');
     const i = chooseIndex(scalar(evalNode(argNodes[0], host)), argNodes.length - 1);
     return isError(i) ? i : evalNode(argNodes[i], host);
   },

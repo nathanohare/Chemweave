@@ -331,7 +331,7 @@ export class DashboardUi {
     };
     const res = 'source' in t ? resolveSource(this.wb, t.source) : null;
     const names: [string, string][] = (res?.names ?? []).map((n) => [n, n]);
-    if ('source' in t && t.kind !== 'kpi' && !res) out.push(note(`The data (${sourceName(t.source)}) isn't in this workbook any more: pick it again.`, 'cp-error'));
+    if ('source' in t && t.kind !== 'kpi' && !res) out.push(note(`The data (${sourceName(t.source)}) isn't in this workbook any more: choose it again.`, 'cp-error'));
 
     switch (t.kind) {
       case 'chart': {

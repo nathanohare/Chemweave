@@ -209,7 +209,7 @@ export class ToolboxEditor {
     this.box = made.id;
     this.folder = null;
     this.draw();
-    this.say('A new toolbox, floating over the drawing: name it, pick its grid size, then drag tools and commands into its cells from the left.');
+    this.say('A new toolbox, floating over the drawing: name it, choose its grid size, then drag tools and commands into its cells from the left.');
     this.els.name.focus();
     this.els.name.select();
   }
@@ -527,7 +527,7 @@ export class ToolboxEditor {
    */
   private newFlyout(at: number | null): void {
     if (this.folder) { this.folder = null; }
-    if (!isEditable(this.box)) { this.say('Pick or make a toolbox you can put buttons in (New makes one).'); return; }
+    if (!isEditable(this.box)) { this.say('Choose or make a toolbox you can put buttons in (New makes one).'); return; }
     const g = this.grid();
     const from = at === null ? null : g.cells[at];
     if (at !== null && !/^(tool|cmd):/.test(from ?? '')) return;
@@ -612,7 +612,7 @@ export class ToolboxEditor {
 
   /** Whether a key can go in the grid showing (say why not). */
   private fits(key: string): boolean {
-    if (!isEditable(this.box)) { this.say('Pick or make a toolbox you can put buttons in (New makes one).'); return false; }
+    if (!isEditable(this.box)) { this.say('Choose or make a toolbox you can put buttons in (New makes one).'); return false; }
     if (this.folder && !/^(tool|cmd):/.test(key)) { this.say('A fly-out holds drawing tools and commands.'); return false; }
     return true;
   }

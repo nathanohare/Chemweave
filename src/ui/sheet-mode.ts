@@ -1896,7 +1896,7 @@ export class SheetMode {
         const n = sts.length, none = n - once - several, name = refLabel(ref).replace(/^\S+ /, '').toLowerCase();
         let note = once === n ? (n === 1 ? 'Found in the structure.' : `Found once in each of the ${n} structures.`)
           : once || several ? `Found once in ${once} of the ${n} structures${none ? `; ${none} ${none === 1 ? 'has' : 'have'} none and will show #N/A` : ''}${several ? `; ${several} ${several === 1 ? 'has' : 'have'} more than one and will show #N/A` : ''}.`
-          : `None of the structures has a ${name} attachment point yet: right-click a ring carbon and pick Attachment Point.`;
+          : `None of the structures has a ${name} attachment point yet: right-click a ring carbon and choose Attachment Point.`;
         if (once + several && !onRing) note += ' It must sit on a benzene ring carbon, with nothing between it and the ring.';
         const fit = onRing && this.pictures.fitted(onRing, w, h);
         const m = fit && refMarks(fit.doc, ref);

@@ -3213,7 +3213,7 @@ export class SheetView {
       const overDrop = this.overDrop(x, y);
       if (overDrop) this.scroller.style.cursor = 'pointer';
       // a note's card says what a tip would (and the drop-down's button what it is)
-      const tip = overDrop ? 'Pick from the list (Alt+Down)' : h.where === 'cell' && !this.sheet?.noteAt(h.r, h.c) ? this.tipFor(h.r, h.c) : '';
+      const tip = overDrop ? 'Choose from the list (Alt+Down)' : h.where === 'cell' && !this.sheet?.noteAt(h.r, h.c) ? this.tipFor(h.r, h.c) : '';
       if (tip !== this.hoverTip) { this.hoverTip = tip; this.scroller.title = tip; }
       return;
     }

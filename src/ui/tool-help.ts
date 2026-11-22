@@ -29,7 +29,7 @@ const BY_NAME: Record<string, ToolHelp> = {
     dragKeys: [['Shift', 'Constrain direction'], ['Alt', 'Move freely (no snapping)']],
   },
   lasso: {
-    what: 'Drag a loop around what to select, to pick pieces out of a crowded scheme. Then drag what is selected to move it.',
+    what: 'Drag a loop around what to select, to select a few pieces in a crowded scheme. Then drag what is selected to move it.',
     steps: ['Drag a loop around what to select'],
     keys: [['Shift', 'Add to selection'], ['Ctrl+drag', 'Copy']],
   },
@@ -47,7 +47,7 @@ const BY_NAME: Record<string, ToolHelp> = {
     keys: [['Alt', 'Repeat last length']],
   },
   text: { what: 'Click an atom to type a label (OMe, CO2Et, NHBoc…), or click empty space for a caption.', steps: ['Click an atom or empty space', 'Type; Esc to finish'], keys: [['Ctrl', 'Follow a link']] },
-  element: { what: 'Click atoms to change them to the element selected in the periodic table, or empty space to add one.', steps: ['Pick an element', 'Click atoms'], keys: [] },
+  element: { what: 'Click atoms to change them to the element selected in the periodic table, or empty space to add one.', steps: ['Choose an element', 'Click atoms'], keys: [] },
   'bond-hapto': {
     what: 'Drag from a metal to a ring (η⁵, η⁶) or a bond (η²), or the reverse. Click a ring or bond to add a new metal; or select an allyl or diene, then click the metal. Click a hapto bond to draw it to each atom.',
     steps: ['Drag from a metal to a ring or π-bond'],

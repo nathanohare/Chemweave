@@ -71,6 +71,9 @@ const BANNED: [RegExp, string][] = [
   [/\bturned (with|to read|to match|to its)\b|\bEach is turned\b|\bNothing to turn\b/, 'rotate, not turn (S26)'],
   [/\bpick from Insert\b/i, 'choose (S26; Pick From Drop-down List is Excel\'s own name)'],
   [/\bturned in 3-D\b/, 'rotated in 3-D (S26)'],
+  // in every tooltip, dialog and label, not only toasts (class names such as grid-pick aren't words);
+  // Excel's own command name stays
+  [/(?<![-\w])pick(s|ing)?(?![-\w])(?! From Drop-down List)/i, 'select (objects, cells, slides) or choose (options, files) (S26)'],
 ];
 
 /** Words the messages shown in a toast (flash) must not use (review of F5, F5b-R10). */

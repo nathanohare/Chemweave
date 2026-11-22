@@ -672,7 +672,7 @@ const SELECT_TOOLS: PaletteDef = {
   title: 'Select',
   items: [
     { name: 'select', title: 'Select and move: drag a box around what to select' },
-    { name: 'lasso', title: 'Lasso select: drag a loop around what to select, to pick pieces out of a crowded scheme' },
+    { name: 'lasso', title: 'Lasso select: drag a loop around what to select, to select a few pieces in a crowded scheme' },
   ],
   columns: 2,
 };
@@ -734,7 +734,7 @@ const TOOL_GROUPS: ToolbarItem[][] = [
 /** Tools kept off the bar, still reached by their keys, Search and the menus (Chemistry > Periodic Table). */
 const OFF_BAR: ToolbarItem[] = [
   { name: 'bond-hollowWedge', title: 'Hollow wedge. Click again to reverse' },
-  { name: 'element', title: 'Periodic table: pick an element, then click atoms to change them' },
+  { name: 'element', title: 'Periodic table: choose an element, then click atoms to change them' },
 ];
 
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -1870,8 +1870,8 @@ async function insertZoom(summary: boolean): Promise<void> {
   refreshZooms(d);
   const here = sameDrawing(summary ? 'The Summary Zoom' : 'The zoom');
   const pick = await pickReuseSlides('', d, false, summary
-    ? { title: 'Summary Zoom', note: 'Click the first slide of each part of your talk (Shift+click picks a run). A new slide goes in before the first of them, with a zoom for each part: in the show, a click on one plays its part and comes back.', verb: (n) => (n ? `Insert Summary Zoom (${n} part${n === 1 ? '' : 's'})` : 'Insert Summary Zoom') }
-    : { title: 'Slide Zoom', note: 'Click the slides to zoom to (Shift+click picks a run). In the show, a click on a zoom zooms into its slide; turn on Return to Zoom in the panel to come back afterward.', verb: (n) => (n > 1 ? `Insert ${n} Zooms` : 'Insert Zoom') });
+    ? { title: 'Summary Zoom', note: 'Click the first slide of each part of your talk (Shift+click selects a run). A new slide goes in before the first of them, with a zoom for each part: in the show, a click on one plays its part and comes back.', verb: (n) => (n ? `Insert Summary Zoom (${n} part${n === 1 ? '' : 's'})` : 'Insert Summary Zoom') }
+    : { title: 'Slide Zoom', note: 'Click the slides to zoom to (Shift+click selects a run). In the show, a click on a zoom zooms into its slide; turn on Return to Zoom in the panel to come back afterward.', verb: (n) => (n > 1 ? `Insert ${n} Zooms` : 'Insert Zoom') });
   if (!pick?.indices.length || here.left()) return;
   if (summary) {
     const parts = summaryParts(pick.indices, d.slides.length);
@@ -2314,7 +2314,7 @@ function newmanWork(frontId: number, backId: number) {
   const ex = toMolfile(doc, ids, '');
   if (ex.generic.length) throw new Error('A structure with R groups or labels that can\'t be read has no 3-D shape. Replace them with atoms first.');
   const fi = ex.map.indexOf(frontId), bi = ex.map.indexOf(backId);
-  if (fi < 0 || bi < 0) throw new Error('Pick a bond between two atoms drawn as atoms, not inside a label.');
+  if (fi < 0 || bi < 0) throw new Error('Select a bond between two atoms drawn as atoms, not inside a label.');
   // a group drawn as a label (OTBS, CO2Et) keeps its label in the projection
   const drawn = (i: number): string | null => {
     const id = ex.map[i];
@@ -6538,7 +6538,7 @@ async function numberedForLibrary(): Promise<StructureIn[] | string> {
   const docs: Doc[] = [];
   if (t.deck) t.deck.slides.forEach((_, i) => docs.push(t.deck!.docOf(i)));
   else if (t.document) for (const id of usedObjects(t.document.t)) { const o = t.document.t.objects[id]; if (o?.kind === 'drawing') docs.push(structureDoc(o.contents, t.document.t.drawingStyle)); }
-  else if (t.book) return 'Add Numbered works on drawings, slides and documents: in a spreadsheet, pick a cell and use Add Selected.';
+  else if (t.book) return 'Add Numbered works on drawings, slides and documents: in a spreadsheet, select a cell and use Add Selected.';
   else docs.push(ws.docOf(t));
   for (const d of docs) out.push(...await structuresFor(d, partsOf(d).filter((p) => p.label)));
   return out.length ? out : 'No structure in this file has a compound number under it (Chemistry ▸ Labels and Numbers ▸ Number Compounds… adds them).';
@@ -9208,7 +9208,7 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
       project = await SiProject.create(siJournal(new DiskFolder(path, call)), got.title.trim());
     } else {
       const folder = new DiskFolder(path, call);
-      if (!(await folder.exists(PROJECT_FILE))) { await showError(`This folder is not an SI project (it has no ${PROJECT_FILE}). Pick the project's own folder: the one Chem SI Assistant made, with project.json and sections inside.`); return null; }
+      if (!(await folder.exists(PROJECT_FILE))) { await showError(`This folder is not an SI project (it has no ${PROJECT_FILE}). Choose the project's own folder: the one Chem SI Assistant made, with project.json and sections inside.`); return null; }
       const already = ws.tabs.find((t) => t.si && sameFolder(t.si.folder.where, path!));
       if (already) { ws.activate(already); return already.si ?? null; }
       // (asked for twice in a row, from a link and the menu say: the first one is opening it)
@@ -9368,7 +9368,7 @@ const siAccess: SiAccess = {
     const path = await pickFolder();
     if (!path) return null;
     const p = await siProjectAt(path).catch(() => null);
-    if (!p) { await showError('This folder is not an SI project (it has no project.json). Pick the project’s own folder: the one Chem SI Assistant made.'); return null; }
+    if (!p) { await showError('This folder is not an SI project (it has no project.json). Choose the project’s own folder: the one Chem SI Assistant made.'); return null; }
     return { path, title: p.title };
   },
   view: (link) => {
@@ -9821,7 +9821,7 @@ function offerTemplates(kind: 'document' | 'sheet' | 'slides', always = false): 
     get: () => templatesOnNew[kind],
     set: (on: boolean) => { templatesOnNew = { ...templatesOnNew, [kind]: on }; storeSettings(); },
   };
-  const note = 'Pick a template, or click outside this window to keep the blank file. Type over the text in [brackets].';
+  const note = 'Choose a template, or click outside this window to keep the blank file. Type over the text in [brackets].';
   if (kind === 'document') {
     showTemplateWindow({ mode: 'document', title: 'New Document', note, remember: 'newDocCategory', showPref, categories: documentCategories((t) => {
       ws.newDocument(t.make(), blank);
@@ -9836,7 +9836,7 @@ function offerTemplates(kind: 'document' | 'sheet' | 'slides', always = false): 
     const d = blank.deck;
     if (!d) return;
     const fresh = () => ws.active === blank && d.edits === 0;
-    showTemplateWindow({ mode: 'slides', title: 'New Presentation', note: 'Pick a theme or a starter deck, or click outside this window to keep the blank presentation. Design ▸ Templates changes the theme later.', remember: 'newSlidesCategory', showPref, categories: slideCategories({
+    showTemplateWindow({ mode: 'slides', title: 'New Presentation', note: 'Choose a theme or a starter deck, or click outside this window to keep the blank presentation. Design ▸ Templates changes the theme later.', remember: 'newSlidesCategory', showPref, categories: slideCategories({
       master: d.master, size: d.size, mine: slideThemes,
       paint: (c, m, size, w, h, stacked) => { void import('./ui/slide-templates').then((x) => x.paintTemplate(c, m, size, w, h, stacked)); },
       useTheme: (t) => {
@@ -11663,7 +11663,7 @@ async function saveWorkspace(choosePlace: boolean): Promise<void> {
     { name: 'save', label: 'Save changes to tabs already saved as files', type: 'checkbox', value: String(workspaceChoices.saveChanges) },
   ], {
     ok: path ? 'Save' : 'Choose Folder…',
-    note: (path ? `Saves the open tabs as the workspace ${baseName(path)}.` : 'A workspace is a folder with your files and a small .ciworkspace file listing the tabs, their order and split views. Next, pick or make a folder and name the workspace.')
+    note: (path ? `Saves the open tabs as the workspace ${baseName(path)}.` : 'A workspace is a folder with your files and a small .ciworkspace file listing the tabs, their order and split views. Next, choose or make a folder and name the workspace.')
       + (unsaved.length ? ` These tabs have never been saved and go into the workspace folder: ${unsaved.join(', ')}.` : ''),
   });
   if (!r) return;

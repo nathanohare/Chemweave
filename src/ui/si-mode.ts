@@ -1588,7 +1588,7 @@ export class SiMode {
     const p = this.project!;
     const card = el('div', 'si-card');
     const h = el('h2', 'si-title', p.title);
-    addInfo(h, 'An SI project is a folder Chem SI Assistant reads and writes too: changes made here are saved to its files at once, and open there as they are. Pick a section or a compound on the left.');
+    addInfo(h, 'An SI project is a folder Chem SI Assistant reads and writes too: changes made here are saved to its files at once, and open there as they are. Select a section or a compound on the left.');
     card.append(h);
     const rows: [string, string][] = [
       ['Folder', p.folder.where],

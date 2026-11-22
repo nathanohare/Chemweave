@@ -176,7 +176,7 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
     });
     const swatch = document.createElement('span');
     swatch.className = 'pic-swatch';
-    const pickClear = button('Pick in the picture', 'Click the color in the preview to make transparent (a white or colored background)', () => { clickDoes = clickDoes === 'clear' ? 'none' : 'clear'; show(); });
+    const pickClear = button('Choose in the picture', 'Click the color in the preview to make transparent (a white or colored background)', () => { clickDoes = clickDoes === 'clear' ? 'none' : 'clear'; show(); });
     const noClear = button('None', 'No transparent color', () => { fx.clear = undefined; clickDoes = clickDoes === 'clear' ? 'none' : clickDoes; show(); draw(); });
     row(grid, 'Transparent Color', swatch, pickClear, noClear);
     const alpha = slider((fx.alpha ?? 0) * 100, 0, 100, (v) => { fx.alpha = v / 100; draw(); }, 'Transparency: how much the whole picture lets show through');

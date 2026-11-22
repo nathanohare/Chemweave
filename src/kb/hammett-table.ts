@@ -53,7 +53,7 @@ export const HAMMETT_TABLE: KbTable = {
     { key: 'R', label: 'R', numeric: true, info: FR_INFO },
     { key: 'refs', label: 'Original source', prose: true, info: 'The paper(s) each value was measured or first reported in, as Hansch, Leo and Taft cite them (Table I for σm and σp, Table V for σp⁺ and σp⁻). Hydrogen is 0 by definition.' },
     { key: 'row', label: 'Table I no.', numeric: true, narrow: true },
-    { key: 'joins', label: 'Attached through', filter: true, hidden: true, info: 'The atom that bonds the group to the benzene ring: carbon for CF₃, oxygen for OMe, nitrogen for NO₂. Pick one to compare only groups attached the same way. Halogen is F, Cl, Br or I itself; Fused ring (3,4-) is a ring joined to the benzene at two places.' },
+    { key: 'joins', label: 'Attached through', filter: true, hidden: true, info: 'The atom that bonds the group to the benzene ring: carbon for CF₃, oxygen for OMe, nitrogen for NO₂. Choose one to compare only groups attached the same way. Halogen is F, Cl, Br or I itself; Fused ring (3,4-) is a ring joined to the benzene at two places.' },
   ],
   picture: (row: Record<string, Cell>) => groupPicture(String(row.id)),
   drawOn: 'c1ccccc1',

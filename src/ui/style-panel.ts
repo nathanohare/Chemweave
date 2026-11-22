@@ -426,7 +426,7 @@ export class StylePanel {
         const tip = side === 'results'
           ? 'The line under the text below the arrow, for yield, ee or dr. It has its own font, size, alignment and gap in Drawing Style.'
           : `Text ${side} the arrow.`;
-        this.row(label, box, `${tip} Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting. A numbered list of steps lines up on the left unless you pick an alignment.`);
+        this.row(label, box, `${tip} Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting. A numbered list of steps lines up on the left unless you choose an alignment.`);
       }
     }
     const names: [Role, string, string][] = [
@@ -1454,7 +1454,7 @@ export class StylePanel {
     const kind = focalKind(this.doc, frag);
     const names = { atom: 'Atom', bond: 'Bond', ring: 'Ring' } as const;
     const sel = document.createElement('select');
-    const opts: [string, string][] = [...(kind ? [['own', names[kind]] as [string, string]] : []), ['box', 'Center of box'], ['pick', 'Pick atom, bond or ring…']];
+    const opts: [string, string][] = [...(kind ? [['own', names[kind]] as [string, string]] : []), ['box', 'Center of box'], ['pick', 'Click an atom, bond or ring…']];
     for (const [v, text] of opts) {
       const o = document.createElement('option');
       o.value = v;
