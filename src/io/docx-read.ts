@@ -145,7 +145,6 @@ const WARN = {
   hiddenCells: 'Hidden text in table cells and notes was left out.',
   moves: 'Text moved while changes were tracked, without a name for the move, shows as a deletion and an insertion.',
   propChanges: 'Tracked changes to paragraph, section and table formatting were accepted (changes to text and its formatting are kept).',
-  wordGroups: 'Groups of pictures made in Word move together here, but are saved back to Word as separate pictures in the same places (select them in Word and use Group to join them again).',
 };
 
 type Pos = 'base' | 'sub' | 'sup';
@@ -2519,8 +2518,7 @@ class DocxReader {
     const g = this.newGroup();
     const pics = groupPictures(group);
     if (pics.skipped) this.warn('shapes');
-    // (not written back as one group yet: audit G2-14)
-    if (pics.found.length > 1) this.warn('wordGroups');
+    // (written back as one group while its pictures stay together in this paragraph: audit G2-14)
     const root = groupSpace(kid(group, 'grpSpPr', 'xfrm'));
     // the group's own space to points on the page, at the size it is shown
     const kx = root.ext.w > 0 ? shown.w / root.ext.w : 0, ky = root.ext.h > 0 ? shown.h / root.ext.h : 0;

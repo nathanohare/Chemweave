@@ -736,6 +736,7 @@ class DocxWriter {
       control = want;
       if (want !== undefined) out.push(this.sdtStart(this.t.controls![want]));
     };
+    this.noteWordGroups(runs);
     for (const r of runs) {
       controlTo(r.cc);
       linkTo(r.link);
@@ -1033,6 +1034,14 @@ class DocxWriter {
     if (o.kind === 'form') return formField(o, rPr, this.formNames, this.bookmarkId++);
     if (o.kind === 'bib' || o.kind === 'toc' || o.kind === 'tof' || o.kind === 'index' || o.kind === 'toa' || o.kind === 'math') return '';
     if (o.kind === 'textbox') return this.textBox(main, id, o, rPr);
+    // a group of pictures: written once, as Word's group, by its first picture
+    const group = this.wordGroups.get(id);
+    if (group && group[0] !== id) return '';
+    if (group) {
+      const got = await this.pictureGroup(main, group, rPr);
+      if (got) return got;
+      for (const g of group) this.wordGroups.delete(g);
+    }
     return this.picture(main, id, o, rPr);
   }
 
@@ -1055,14 +1064,91 @@ class DocxWriter {
     const was = fl.name ? /<wp:docPr [^>]*?name="([^"]*)"/.exec(inner)?.[1] : undefined;
     if (fl.name && was !== undefined) inner = inner.replace(/(<wp:docPr [^>]*?name=")[^"]*"/, (_, a: string) => `${a}${xmlAttr(fl.name!)}"`);
     if (pr && (fl.group !== undefined || fl.name)) (this.model.floats ??= {})[Number(pr[1])] = { ...(fl.group !== undefined ? { group: fl.group } : {}), ...(fl.name ? { name: fl.name } : {}), ...(was !== undefined ? { was } : {}) };
-    const gap = floatGaps(fl);
     const [l, t] = lookExtent(lookOf(o));
+    return this.anchor(fl, emu(fl.x + l), emu(fl.y + t), ext, inner);
+  }
+
+  /** wp:anchor (ECMA-376 part 1 §20.4.2.3): a frame placed at x, y (EMU) as `fl` places it, with the text wrapping round it as `fl` says. */
+  private anchor(fl: NonNullable<ReturnType<typeof floatOf>>, x: number, y: number, ext: string, inner: string): string {
+    const gap = floatGaps(fl);
     const h = fl.xFrom === 'page' ? 'page' : 'margin';
     const v = fl.yFrom === 'page' ? 'page' : fl.yFrom === 'margin' ? 'margin' : 'paragraph';
     const wrap = fl.wrap === 'square' ? '<wp:wrapSquare wrapText="largest"/>' : fl.wrap === 'topBottom' ? '<wp:wrapTopAndBottom/>' : '<wp:wrapNone/>';
     return `<wp:anchor distT="${emu(gap.t)}" distB="${emu(gap.b)}" distL="${emu(gap.l)}" distR="${emu(gap.r)}" simplePos="0" relativeHeight="${251659264 + (fl.z !== undefined ? fl.z + 1 : this.docPr) * 1024}" behindDoc="${fl.wrap === 'behind' ? 1 : 0}" locked="0" layoutInCell="1" allowOverlap="1">` +
-      `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="${h}"><wp:posOffset>${emu(fl.x + l)}</wp:posOffset></wp:positionH>` +
-      `<wp:positionV relativeFrom="${v}"><wp:posOffset>${emu(fl.y + t)}</wp:posOffset></wp:positionV>${ext}${wrap}${inner}</wp:anchor>`;
+      `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="${h}"><wp:posOffset>${x}</wp:posOffset></wp:positionH>` +
+      `<wp:positionV relativeFrom="${v}"><wp:posOffset>${y}</wp:posOffset></wp:positionV>${ext}${wrap}${inner}</wp:anchor>`;
+  }
+
+  /**
+   * Pictures grouped here that came from (or make) a Word group: all of the group's figures are
+   * pictures floating from this paragraph, placed the same way. Each picture's id to the group's,
+   * in the order of the text (the first one writes the group).
+   */
+  private wordGroups = new Map<number, number[]>();
+  private noteWordGroups(runs: TextRun[]): void {
+    const by = new Map<number, number[]>();
+    for (const r of runs) {
+      if (r.obj === undefined || r.rev) continue;
+      const o = this.t.objects[r.obj];
+      const fl = floatOf(o);
+      if (o?.kind !== 'picture' || o.chart || o.embed || fl?.group === undefined) continue;
+      const list = by.get(fl.group);
+      if (list) list.push(r.obj); else by.set(fl.group, [r.obj]);
+    }
+    for (const [g, ids] of by) {
+      if (ids.length < 2) continue;
+      const all = Object.values(this.t.objects).filter((o) => floatOf(o)?.group === g);
+      const fls = ids.map((id) => floatOf(this.t.objects[id])!);
+      const same = fls.every((f) => !f.hidden && f.wrap === fls[0].wrap && (f.xFrom ?? 'margin') === (fls[0].xFrom ?? 'margin') && (f.yFrom ?? 'para') === (fls[0].yFrom ?? 'para'));
+      if (all.length === ids.length && same) for (const id of ids) this.wordGroups.set(id, ids);
+    }
+  }
+
+  /**
+   * A group of pictures as Word writes one (Arrange > Group): one wp:anchor holding a wpg:wgp
+   * (Word 2010's group, [MS-ODRAWXML] 2.4) with each picture where it is, inside an
+   * mc:AlternateContent (ECMA-376 part 3 §10.2) whose fallback is the VML v:group older Words read.
+   * Null when a picture can't go in it (they are then saved one by one).
+   */
+  private async pictureGroup(main: string, ids: number[], rPr: string): Promise<string | null> {
+    const items: { pic: string; blip: string; id: number; x: number; y: number; cx: number; cy: number; e: number[] }[] = [];
+    for (const id of ids) {
+      const o = this.t.objects[id];
+      const fl = floatOf(o);
+      if (!o || !fl) return null;
+      const one = await this.picture(main, id, { ...o, float: undefined } as DocObject, '');
+      const ext = /<wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(one);
+      const docPr = /<wp:docPr id="(\d+)"[^>]*?(?: descr="([^"]*)")?\/>/.exec(one);
+      const blip = /<a:blip r:embed="([^"]+)"/.exec(one);
+      let pic = /<pic:pic>[\s\S]*<\/pic:pic>/.exec(one)?.[0];
+      if (!ext || !docPr || !blip || !pic) return null;
+      const [l, t] = lookExtent(lookOf(o));
+      const fx = fl.effect;
+      const e = lookExtent(lookOf(o)).map((v, i) => emu(v + (fx ? [fx.l, fx.t, fx.r, fx.b][i] : 0)));
+      // its id and alt text on the picture itself, where Word looks for them inside a group
+      pic = pic.replace(/<pic:cNvPr id="0" name="([^"]*)"\/>/, (_, n: string) => `<pic:cNvPr id="${docPr[1]}" name="${n}"${docPr[2] !== undefined ? ` descr="${docPr[2]}"` : ''}/>`);
+      items.push({ pic, blip: blip[1], id, x: emu(fl.x + l), y: emu(fl.y + t), cx: Number(ext[1]), cy: Number(ext[2]), e });
+    }
+    const x0 = Math.min(...items.map((i) => i.x)), y0 = Math.min(...items.map((i) => i.y));
+    const W = Math.max(...items.map((i) => i.x + i.cx)) - x0, H = Math.max(...items.map((i) => i.y + i.cy)) - y0;
+    // the room the pictures' effects take beyond the group's frame
+    const el = Math.max(0, ...items.map((i) => i.e[0] - (i.x - x0))), et = Math.max(0, ...items.map((i) => i.e[1] - (i.y - y0)));
+    const er = Math.max(0, ...items.map((i) => i.x + i.cx + i.e[2] - (x0 + W))), eb = Math.max(0, ...items.map((i) => i.y + i.cy + i.e[3] - (y0 + H)));
+    const kids = items.map((i) => i.pic.replace(/(<pic:spPr><a:xfrm[^>]*>)<a:off x="0" y="0"\/>/, `$1<a:off x="${i.x - x0}" y="${i.y - y0}"/>`)).join('');
+    const n = this.docPr++;
+    const fl = floatOf(this.t.objects[ids[0]])!;
+    const drawing = '<w:drawing>' + this.anchor(fl, x0, y0, `<wp:extent cx="${W}" cy="${H}"/><wp:effectExtent l="${el}" t="${et}" r="${er}" b="${eb}"/>`,
+      `<wp:docPr id="${n}" name="Group ${n}"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="${WPG_NS}"><wpg:wgp><wpg:cNvGrpSpPr/>` +
+      `<wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${W}" cy="${H}"/><a:chOff x="0" y="0"/><a:chExt cx="${W}" cy="${H}"/></a:xfrm></wpg:grpSpPr>${kids}</wpg:wgp></a:graphicData></a:graphic>`) + '</w:drawing>';
+    // VML for older Words: the group in its own units (EMU here), each picture a shape in it
+    const pt = (v: number) => Math.round((v / 12700) * 100) / 100;
+    const hRel = fl.xFrom === 'page' ? 'page' : 'margin', vRel = fl.yFrom === 'page' ? 'page' : fl.yFrom === 'margin' ? 'margin' : 'text';
+    const wrap = fl.wrap === 'square' ? '<w10:wrap type="square"/>' : fl.wrap === 'topBottom' ? '<w10:wrap type="topAndBottom"/>' : '';
+    const z = fl.wrap === 'behind' ? -251658240 + n : 251659264 + n;
+    const shapes = items.map((i) => `<v:shape id="Picture ${i.id}" o:spid="_x0000_s${2048 + n * 8 + items.indexOf(i)}" type="#_x0000_t75" style="position:absolute;left:${i.x - x0};top:${i.y - y0};width:${i.cx};height:${i.cy}"><v:imagedata r:id="${i.blip}" o:title=""/></v:shape>`).join('');
+    const vml = `<w:pict xmlns:v="${V_NS}" xmlns:o="${O_NS}" xmlns:w10="${W10_NS}">${T75}<v:group id="Group ${n}" o:spid="_x0000_s${2048 + n * 8 + 7}" style="position:absolute;margin-left:${pt(x0)}pt;margin-top:${pt(y0)}pt;width:${pt(W)}pt;height:${pt(H)}pt;z-index:${z};mso-position-horizontal-relative:${hRel};mso-position-vertical-relative:${vRel}" coordsize="${W},${H}">${shapes}${wrap}</v:group></w:pict>`;
+    const r = rPr ? `<w:rPr>${rPr}</w:rPr>` : '';
+    return `<w:r>${r}<mc:AlternateContent><mc:Choice Requires="wpg">${drawing}</mc:Choice><mc:Fallback>${vml}</mc:Fallback></mc:AlternateContent></w:r>`;
   }
 
   /** A text box: Word's text box shape, with its paragraphs inside it (Word fits its height to them). */

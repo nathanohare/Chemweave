@@ -169,9 +169,8 @@ describe('Word pictures', () => {
     const { doc, warnings } = await readDocx(wordFile(hplcGroup(3, 20) + hplcGroup(4, 250)));
     const pics = Object.values(doc.objects).filter((o) => o.kind === 'picture') as Extract<(typeof doc.objects)[number], { kind: 'picture' }>[];
     expect(pics).toHaveLength(4);
-    // (said: the group is saved back to Word as separate pictures, audit G2-14)
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/^Groups of pictures made in Word/);
+    // (nothing to say: the group is saved back to Word as a group, audit G2-14)
+    expect(warnings).toHaveLength(0);
     // the trace (the group's top, full width) and its table below it, at half the children's size
     expect(pics[0]).toMatchObject({ w: 200, h: 100, float: { wrap: 'topBottom', x: 20, y: 10 } });
     expect(pics[1]).toMatchObject({ w: 180, h: 40, float: { wrap: 'topBottom', x: 30, y: 120 } });
