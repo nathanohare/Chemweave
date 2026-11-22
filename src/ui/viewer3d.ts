@@ -10,6 +10,7 @@
 
 import { FloatBox } from './float-box';
 import { SYMBOLS } from '../chem/elements';
+import { molProgramLine } from '../chem/molfile-header';
 import type { Model3d } from '../chem/model3d-build';
 import { hornFit, rotation } from '../morph/rotate';
 import { ident, mul, axisTurn, skeleton, cleanerNearby, cleanestView, type M3, type P3 } from '../chem/view3d';
@@ -846,7 +847,7 @@ export function molfile3d(m: Model3d, conf: number, name = ''): string {
   const xyz = m.conformers[conf].xyz;
   const f = (v: number) => v.toFixed(4).padStart(10);
   const i3 = (v: number) => String(v).padStart(3);
-  const lines = [name.slice(0, 80), '  Chemweave3D', '', `${i3(m.atoms.length)}${i3(m.bonds.length)}  0  0  0  0  0  0  0  0999 V2000`];
+  const lines = [name.slice(0, 80), molProgramLine('3D'), '', `${i3(m.atoms.length)}${i3(m.bonds.length)}  0  0  0  0  0  0  0  0999 V2000`];
   m.atoms.forEach((a, i) => {
     const sym = (SYMBOLS[a.z] ?? 'C').padEnd(3);
     // OpenChemLib's y runs down: turn it back to a right-handed frame

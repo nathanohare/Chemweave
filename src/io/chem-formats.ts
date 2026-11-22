@@ -24,10 +24,10 @@
 //   bonds, s shapes with Line arrows; y downwards).
 // ACD/ChemSketch's .sk2 has no published description, so it isn't read (ChemSketch saves MOL).
 
-import { Doc, keepOnPage, shiftDrawing, type Arrow, type BondDisplay, type StepRoles } from '../model';
+import { Doc, keepOnPage, shiftDrawing, type Arrow, type BondDisplay, type EnhancedStereo, type StepRoles } from '../model';
 import type { DocStyle } from '../style';
 import { elementNumber, SYMBOLS } from '../chem/elements';
-import { toMolfile, v3000Ctab, v3000Molfile, type MAtom, type MBond } from '../chem/molfile';
+import { molProgramLine, needsV3000, toMolfile, v2000Molfile, v3000Ctab, v3000Molfile, type CtabExtra, type MAtom, type MBond, type MSgroup } from '../chem/molfile';
 import { plainMeasure, reactionSteps, schemeItems, itemFinder } from '../chem/reaction';
 import { placeSpecies } from '../chem/species';
 import { plainText } from '../richtext';
@@ -46,6 +46,8 @@ export interface FAtom {
   rad?: number;
   /** Atom-atom map number in a reaction. */
   map?: number;
+  /** Enhanced stereo: absolute, or in an and (racemic) or or (one unknown form) group. */
+  enh?: EnhancedStereo;
 }
 export type FStereo = 'wedge' | 'hash' | 'wavy';
 export interface FBond {
@@ -55,6 +57,8 @@ export interface FBond {
   order: number;
   stereo?: FStereo;
   dative?: boolean;
+  /** A hydrogen bond (a the H): V3000 and KET bond type 10. */
+  hbond?: boolean;
 }
 export type FRole = 'reactant' | 'agent' | 'product';
 export interface FMol {
@@ -62,6 +66,13 @@ export interface FMol {
   bonds: FBond[];
   name?: string;
   role?: FRole;
+  /**
+   * Abbreviations written out as atoms (superatom S-groups), first atom the one bonded to the rest.
+   * Only in a scene made from a drawing for writing: the readers put each back as one labelled atom.
+   */
+  sup?: { atoms: number[]; label: string }[];
+  /** The molfile's chiral flag: the wedges show the absolute configuration. */
+  chiral?: boolean;
 }
 export type FArrowKind = 'synthesis' | 'retro' | 'equilibrium' | 'resonance';
 export interface FScene {
@@ -111,16 +122,20 @@ export function chemFormatOf(name: string, text: string): ChemFormat | null {
 
 const RADICAL_OF = (rad: number | undefined) => rad === 1 ? 'singlet' as const : rad === 2 ? 'doublet' as const : rad === 3 ? 'triplet' as const : undefined;
 
-/** The molecule of a molfile (V2000 or V3000), or null when it can't be read. */
-export function readMolfile(text: string): FMol | null {
+/**
+ * The molecule of a molfile (V2000 or V3000), or null when it can't be read. Abbreviations
+ * (superatom S-groups) come back as one atom with the label, unless `keepSup` (for writing a
+ * drawing out again: the atoms stay, with the groups in `sup`).
+ */
+export function readMolfile(text: string, o: { keepSup?: boolean } = {}): FMol | null {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
-  return molAt(lines, 0)?.mol ?? null;
+  return molAt(lines, 0, !!o.keepSup)?.mol ?? null;
 }
 
 /** The molecule starting at `start` (its name line) and the line after its M  END. */
-function molAt(lines: string[], start: number): { mol: FMol; end: number } | null {
+function molAt(lines: string[], start: number, keepSup = false): { mol: FMol; end: number } | null {
   const counts = lines[start + 3] ?? '';
-  if (/V3000/.test(counts)) return v3000At(lines, start + 4, lines[start]?.trim());
+  if (/V3000/.test(counts)) return v3000At(lines, start + 4, lines[start]?.trim(), keepSup);
   const na = parseInt(counts.slice(0, 3), 10), nb = parseInt(counts.slice(3, 6), 10);
   if (!Number.isFinite(na) || !Number.isFinite(nb) || na < 0) return null;
   const atoms: FAtom[] = [];
@@ -172,7 +187,15 @@ function molAt(lines: string[], start: number): { mol: FMol; end: number } | nul
       pairs('charge');
     } else if (l.startsWith('M  ISO')) pairs('iso');
     else if (l.startsWith('M  RAD')) pairs('rad');
-    else if (l.startsWith('M  STY')) {
+    else if (l.startsWith('M  RGP')) {
+      // M  RGP: the R-group number of each R# atom
+      const n = parseInt(l.slice(6, 9), 10);
+      for (let k = 0; k < n; k++) {
+        const idx = parseInt(l.slice(10 + k * 8, 13 + k * 8), 10) - 1;
+        const v = parseInt(l.slice(14 + k * 8, 17 + k * 8), 10);
+        if (atoms[idx] && atoms[idx].sym === 'R#' && v > 0) atoms[idx].sym = 'R' + v;
+      }
+    } else if (l.startsWith('M  STY')) {
       const n = parseInt(l.slice(6, 9), 10);
       for (let k = 0; k < n; k++) {
         const id = parseInt(l.slice(10 + k * 8, 13 + k * 8), 10);
@@ -187,16 +210,21 @@ function molAt(lines: string[], start: number): { mol: FMol; end: number } | nul
       if (g) g.label = l.slice(11).trim();
     }
   }
-  const mol: FMol = { atoms, bonds, ...(lines[start]?.trim() ? { name: lines[start].trim() } : {}) };
+  const chiral = parseInt(counts.slice(12, 15), 10) === 1;
+  const mol: FMol = { atoms, bonds, ...(lines[start]?.trim() ? { name: lines[start].trim() } : {}), ...(chiral ? { chiral } : {}) };
   for (const a of atoms) fixHydrogenIsotopes(a);
-  return { mol: contract(mol, [...sup.values()]), end: i };
+  return { mol: keepSup ? withSup(mol, [...sup.values()]) : contract(mol, [...sup.values()]), end: i };
 }
 
-/** A bond from molfile numbers (order 1–4, 8 any, 9 dative; stereo 1 wedge, 6 hash, 4 either). */
+/**
+ * A bond from molfile numbers (BIOVIA CTfile: order 1–4, 8 any, 9 coordination, 10 hydrogen bond,
+ * the last two V3000's; stereo 1 wedge, 6 hash, 4 either). Ketcher's KET uses the same numbers.
+ */
 function bondOf(a: number, b: number, order: number, stereo: number, v3000: boolean): FBond | null {
   if (!(a >= 0) || !(b >= 0)) return null;
-  const f: FBond = { a, b, order: order === 2 ? 2 : order === 3 ? 3 : order === 4 ? 1.5 : order === 10 ? 0.5 : 1 };
+  const f: FBond = { a, b, order: order === 2 ? 2 : order === 3 ? 3 : order === 4 ? 1.5 : 1 };
   if (order === 9) f.dative = true;
+  if (order === 10) f.hbond = true;
   // V3000 CFG: 1 up, 2 either, 3 down
   const st = v3000 ? (stereo === 1 ? 'wedge' : stereo === 3 ? 'hash' : stereo === 2 ? 'wavy' : undefined)
     : (stereo === 1 ? 'wedge' : stereo === 6 ? 'hash' : stereo === 4 ? 'wavy' : undefined);
@@ -235,16 +263,28 @@ function v3Lines(lines: string[], from: number): { words: string[][]; end: numbe
 }
 
 /** A V3000 connection table starting at `from` (after the counts line). */
-function v3000At(lines: string[], from: number, name?: string): { mol: FMol; end: number } | null {
+function v3000At(lines: string[], from: number, name?: string, keepSup = false): { mol: FMol; end: number } | null {
   const { words, end } = v3Lines(lines, from);
   const atoms: FAtom[] = [];
   const bonds: FBond[] = [];
   const index = new Map<string, number>();
   const sup: { atoms: number[]; label: string }[] = [];
+  const listOf = (v: string | undefined) => (v ? v.replace(/[()]/g, '').trim().split(/\s+/).slice(1) : []).map((id) => index.get(id) ?? -1).filter((k) => k >= 0);
   let block = '';
+  let chiral = false;
   for (const w of words) {
     if (w[0] === 'BEGIN') { block = w[1]; continue; }
     if (w[0] === 'END') { block = ''; continue; }
+    // COUNTS na nb nsg n3d chiral
+    if (w[0] === 'COUNTS') { chiral = w[5] === '1'; continue; }
+    if (block === 'COLLECTION') {
+      // enhanced stereo (BIOVIA CTfile V3000 collections): MDLV30/STEABS, STERACn (and), STERELn (or)
+      const m = /^MDLV30\/STE(ABS|RAC|REL)(\d*)$/.exec(w[0] ?? '');
+      if (!m) continue;
+      const enh: EnhancedStereo = m[1] === 'ABS' ? { type: 'abs' } : { type: m[1] === 'RAC' ? 'and' : 'or', group: parseInt(m[2], 10) || 1 };
+      for (const k of listOf(v3Field(w.slice(1), 'ATOMS'))) atoms[k].enh = enh;
+      continue;
+    }
     if (block === 'ATOM') {
       const [idx, sym, x, y] = w;
       let s = sym;
@@ -269,14 +309,22 @@ function v3000At(lines: string[], from: number, name?: string): { mol: FMol; end
       if (b) bonds.push(b);
     } else if (block === 'SGROUP') {
       if (w[1] !== 'SUP') continue;
-      const list = v3Field(w.slice(3), 'ATOMS');
-      const label = v3Field(w.slice(3), 'LABEL') ?? '';
-      const ids = list ? list.replace(/[()]/g, '').trim().split(/\s+/).slice(1) : [];
-      sup.push({ atoms: ids.map((id) => index.get(id) ?? -1).filter((k) => k >= 0), label });
+      sup.push({ atoms: listOf(v3Field(w.slice(3), 'ATOMS')), label: v3Field(w.slice(3), 'LABEL') ?? '' });
     }
   }
-  const mol: FMol = { atoms, bonds, ...(name ? { name } : {}) };
-  return { mol: contract(mol, sup), end: end + 1 };
+  const mol: FMol = { atoms, bonds, ...(name ? { name } : {}), ...(chiral ? { chiral } : {}) };
+  return { mol: keepSup ? withSup(mol, sup) : contract(mol, sup), end: end + 1 };
+}
+
+/** A molecule with its superatom groups kept as they are (atoms written out), the atom bonded to the rest first in each. */
+function withSup(mol: FMol, groups: { atoms: number[]; label: string }[]): FMol {
+  const sup = groups.filter((g) => g.label && g.atoms.length).map((g) => {
+    const inG = new Set(g.atoms);
+    const head = mol.bonds.find((b) => inG.has(b.a) !== inG.has(b.b));
+    const h = head ? (inG.has(head.a) ? head.a : head.b) : g.atoms[0];
+    return { atoms: [h, ...g.atoms.filter((k) => k !== h)], label: g.label };
+  });
+  return sup.length ? { ...mol, sup } : mol;
 }
 
 /**
@@ -289,9 +337,12 @@ function contract(mol: FMol, groups: { atoms: number[]; label: string }[]): FMol
     if (!g.label || !g.atoms.length) continue;
     const inG = new Set(g.atoms);
     const crossing = mol.bonds.filter((b) => inG.has(b.a) !== inG.has(b.b));
-    if (crossing.length !== 1) continue;
-    const head = inG.has(crossing[0].a) ? crossing[0].a : crossing[0].b;
-    mol.atoms[head] = { sym: g.label, x: mol.atoms[head].x, y: mol.atoms[head].y };
+    // (a label bonded twice, as this app writes one in a chain, has both bonds on its first atom)
+    const heads = new Set(crossing.map((b) => (inG.has(b.a) ? b.a : b.b)));
+    if (heads.size > 1 || (!crossing.length && g.atoms.length < 2)) continue;
+    const head = crossing.length ? [...heads][0] : g.atoms[0];
+    const was = mol.atoms[head];
+    mol.atoms[head] = { sym: g.label, x: was.x, y: was.y, ...(was.map ? { map: was.map } : {}) };
     for (const k of g.atoms) if (k !== head) drop.add(k);
   }
   if (!drop.size) return mol;
@@ -381,7 +432,7 @@ const num = (s: string | null | undefined) => { const v = parseFloat(s ?? ''); r
  * bond children. Superatom groups shown contracted (an atom R pointing at a SuperatomSgroup)
  * become an atom with the group's name; expanded ones are read as atoms.
  */
-function cmlMolecule(m: Element, mrv: boolean): FMol {
+function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol {
   const atoms: FAtom[] = [];
   const bonds: FBond[] = [];
   const index = new Map<string, number>();
@@ -413,8 +464,12 @@ function cmlMolecule(m: Element, mrv: boolean): FMol {
         const rad = r.radical ?? r.spinMultiplicity;
         if (rad) a.rad = rad === 'monovalent' || rad === '2' ? 2 : rad === 'divalent1' || rad === 'divalent' || rad === '1' ? 1 : rad === 'divalent3' || rad === '3' ? 3 : undefined;
         if (!a.rad) delete a.rad;
+        // Marvin's enhanced stereo: mrvStereoGroup abs, and1, or2
+        const sg = /^(abs|and|or)(\d*)$/i.exec(r.mrvStereoGroup ?? '');
+        if (sg) a.enh = sg[1].toLowerCase() === 'abs' ? { type: 'abs' } : { type: sg[1].toLowerCase() as 'and' | 'or', group: parseInt(sg[2], 10) || 1 };
         fixHydrogenIsotopes(a);
         index.set(id, atoms.length);
+        byId?.set(id, a);
         atoms.push(a);
       }
     }
@@ -446,7 +501,11 @@ function cmlMolecule(m: Element, mrv: boolean): FMol {
     addAtoms(s);
     addBonds(s);
   }
-  return { atoms, bonds, ...(m.getAttribute('title') ? { name: m.getAttribute('title')! } : {}) };
+  // a superatom group shown expanded that names the parent's atoms (atomRefs) is put back as its label
+  const expanded = mrv ? kids(m, 'molecule').filter((s) => s.getAttribute('role') === 'SuperatomSgroup' && s.getAttribute('atomRefs') && s.getAttribute('title'))
+    .map((s) => ({ atoms: (s.getAttribute('atomRefs') ?? '').trim().split(/\s+/).map((r) => index.get(r) ?? -1).filter((k) => k >= 0), label: s.getAttribute('title')! })) : [];
+  const mol: FMol = { atoms, bonds, ...(m.getAttribute('title') ? { name: m.getAttribute('title')! } : {}) };
+  return expanded.length ? contract(mol, expanded) : mol;
 }
 
 /** An atomArray written as attribute arrays: one record per atom. */
@@ -509,6 +568,7 @@ export function readCmlFile(text: string): FScene | null {
   const c4w = /xmlns:\w+="http:\/\/www\.chem4word\.com\/cml"/.test(text.slice(0, 4000));
   const scene: FScene = { mols: [], arrows: [], pluses: [], texts: [], unit: 1.54, ...(c4w ? { yDown: true } : {}) };
   const inReaction = new Set<Element>();
+  const byId = new Map<string, FAtom>();
   for (const r of below(doc, 'reaction')) {
     const lists: [string, string, FRole][] = [['reactantList', 'reactant', 'reactant'], ['spectatorList', 'spectator', 'agent'], ['productList', 'product', 'product']];
     for (const [list, item, role] of lists) {
@@ -518,10 +578,18 @@ export function readCmlFile(text: string): FScene | null {
             if (inReaction.has(m)) continue;
             for (const inner of below(m, 'molecule')) inReaction.add(inner);
             inReaction.add(m);
-            scene.mols.push({ ...cmlMolecule(m, false), role });
+            scene.mols.push({ ...cmlMolecule(m, false, byId), role });
           }
         }
       }
+    }
+    // the reaction's atom map (cmlReact): each link joins a starting material atom to its product atom
+    for (const map of kids(r, 'map')) {
+      if ((map.getAttribute('fromType') ?? 'atom') !== 'atom' || (map.getAttribute('toType') ?? 'atom') !== 'atom') continue;
+      kids(map, 'link').forEach((l, k) => {
+        const n = parseInt(/(\d+)$/.exec(l.getAttribute('id') ?? '')?.[1] ?? '', 10) || k + 1;
+        for (const ref of [l.getAttribute('from'), l.getAttribute('to')]) { const a = byId.get(ref ?? ''); if (a) a.map = n; }
+      });
     }
   }
   for (const m of below(doc, 'molecule')) {
@@ -585,6 +653,9 @@ export function readKet(text: string): FScene | null {
         if (typeof a.isotope === 'number' && a.isotope) f.iso = a.isotope;
         if (typeof a.radical === 'number' && a.radical) f.rad = a.radical;
         if (typeof a.mapping === 'number' && a.mapping) f.map = a.mapping;
+        // Ketcher's enhanced stereo label: abs, &1 (and), or1
+        const sl = /^(abs|&|and|or)(\d*)$/i.exec(typeof a.stereoLabel === 'string' ? a.stereoLabel : '');
+        if (sl) f.enh = sl[1].toLowerCase() === 'abs' ? { type: 'abs' } : { type: sl[1].toLowerCase() === 'or' ? 'or' : 'and', group: parseInt(sl[2], 10) || 1 };
         fixHydrogenIsotopes(f);
         return f;
       });
@@ -732,7 +803,8 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
   const firstAtom: number[] = [];
   const lw = style.lineWidth;
   doc.bulk(() => {
-    for (const m of scene.mols) {
+    for (const mol of scene.mols) {
+      const m = mol.sup?.length ? contract({ ...mol, atoms: mol.atoms.map((a) => ({ ...a })) }, mol.sup) : mol;
       const ids: number[] = [];
       for (const a of m.atoms) {
         const z = elementNumber(a.sym);
@@ -742,12 +814,13 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
         const atom = doc.addAtom(p.x, p.y, z ?? 6, {
           charge: a.charge ?? 0, label, ...(a.iso ? { isotope: a.iso } : {}), ...(radical ? { radical } : {}),
           ...(a.map ? { mapNo: a.map, atomNumber: String(a.map), showNumber: true } : {}),
+          ...(a.enh ? { enhStereo: { ...a.enh } } : {}),
         });
         ids.push(atom.id);
       }
       for (const b of m.bonds) {
         if (ids[b.a] === undefined || ids[b.b] === undefined || b.a === b.b) continue;
-        doc.addBond(ids[b.a], ids[b.b], b.order, b.dative ? 'dative' : b.stereo ? DISPLAY[b.stereo] : 'solid');
+        doc.addBond(ids[b.a], ids[b.b], b.order, b.dative ? 'dative' : b.hbond ? 'hydrogen' : b.stereo ? DISPLAY[b.stereo] : 'solid');
         stats.bonds++;
       }
       stats.atoms += ids.length;
@@ -820,8 +893,8 @@ export function docToScene(doc: Doc): { scene: FScene; unknown: string[]; step: 
     if (!cap) return null;
     const species = placeSpecies(doc, [cap], m);
     if (!species.length) return null;
-    const ex = toMolfile(doc, [], plainText(cap.runs).trim(), { species, maps: true, aliases: true });
-    const mol = readMolfile(ex.molblock);
+    const ex = toMolfile(doc, [], plainText(cap.runs).trim(), { species, maps: true, files: true, v3000: true });
+    const mol = readMolfile(ex.molblock, { keepSup: true });
     return mol ? { ...mol, ...(role ? { role } : {}) } : null;
   };
   const step = steps[0];
@@ -843,10 +916,12 @@ export function docToScene(doc: Doc): { scene: FScene; unknown: string[]; step: 
   }
   for (const it of items) {
     if (!it.atoms.length) continue;
-    // (atom-atom map numbers go too, so a mapped reaction stays mapped in RXN, Marvin and Ketcher files)
-    const ex = toMolfile(doc, it.atoms, '', { maps: true, aliases: true });
+    // (atom-atom map numbers go too, so a mapped reaction stays mapped in RXN, Marvin and Ketcher
+    // files; written as V3000, which holds everything a file can, and read back with the
+    // abbreviations' atoms kept, for the writers to mark)
+    const ex = toMolfile(doc, it.atoms, '', { maps: true, files: true, v3000: true });
     for (const u of ex.unknownLabels) unknown.add(u);
-    const mol = readMolfile(ex.molblock);
+    const mol = readMolfile(ex.molblock, { keepSup: true });
     if (!mol || !mol.atoms.length) continue;
     const role = roleOf.get(it.ref);
     scene.mols.push(role ? { ...mol, role } : mol);
@@ -870,87 +945,103 @@ export function docToScene(doc: Doc): { scene: FScene; unknown: string[]; step: 
 
 const fx = (v: number, d = 4) => (Math.abs(v) < 5e-5 ? 0 : v).toFixed(d);
 
-/** Molecules as molfile atoms and bonds (atoms counted from 0 across them all). */
-function ctabOf(mols: FMol[]): [MAtom[], MBond[]] {
+/**
+ * Molecules as molfile atoms and bonds (atoms counted from 0 across them all), with their
+ * abbreviations as superatom S-groups and the chiral flag (BIOVIA CTfile Formats). R1, R2 are R#
+ * atoms with their numbers; other labels that aren't elements are "*" atoms with the label as
+ * their alias (an A line in V2000, the atom's type in V3000).
+ */
+function ctabOf(mols: FMol[]): [MAtom[], MBond[], CtabExtra] {
   const atoms: MAtom[] = [];
   const bonds: MBond[] = [];
+  const sgroups: MSgroup[] = [];
+  let chiral = false;
   for (const m of mols) {
     const o = atoms.length;
     for (const a of m.atoms) {
       const z = elementNumber(a.sym);
-      const sym = z === undefined ? (/^R\d*$/.test(a.sym) ? 'R#' : a.sym === '*' ? '*' : 'R') : a.sym;
-      atoms.push({ sym, x: a.x, y: a.y, charge: a.charge ?? 0, iso: a.iso ?? 0, rad: a.rad ?? 0, map: a.map ?? 0, ...(z === undefined && sym === 'R' ? { alias: a.sym } : {}) });
+      const rg = z === undefined ? /^R(\d+)$/.exec(a.sym) : null;
+      const sym = z !== undefined ? a.sym : rg ? 'R#' : '*';
+      atoms.push({
+        sym, x: a.x, y: a.y, charge: a.charge ?? 0, iso: a.iso ?? 0, rad: a.rad ?? 0, map: a.map ?? 0,
+        ...(rg ? { rg: +rg[1] } : z === undefined && a.sym !== '*' ? { alias: a.sym } : {}), ...(a.enh ? { enh: a.enh } : {}),
+      });
     }
     for (const b of m.bonds) {
-      bonds.push({ a: b.a + o, b: b.b + o, order: b.dative ? 9 : b.order === 1.5 ? 4 : b.order === 0.5 ? 1 : b.order,
+      bonds.push({ a: b.a + o, b: b.b + o, order: b.dative ? 9 : b.hbond ? 10 : b.order === 1.5 ? 4 : b.order === 0.5 ? 1 : b.order,
         stereo: b.stereo === 'wedge' ? 1 : b.stereo === 'hash' ? 6 : b.stereo === 'wavy' ? 4 : 0 });
     }
+    for (const g of m.sup ?? []) sgroups.push({ atoms: g.atoms.map((k) => k + o), label: g.label });
+    if (m.chiral) chiral = true;
   }
-  return [atoms, bonds];
+  return [atoms, bonds, { sgroups, chiral }];
 }
 
-/** Molecules → one molfile: V2000, or V3000 when asked or when there are more than 999 atoms or bonds. */
-function molblockOf(mols: FMol[], name = '', v3000 = false): string {
-  const [atoms, bonds] = ctabOf(mols);
-  const head = [name.slice(0, 80), '  Chemweave', ''];
-  if (v3000 || atoms.length > 999 || bonds.length > 999) return v3000Molfile(head, atoms, bonds);
-  const i3 = (n: number) => String(n).padStart(3);
-  const f10 = (v: number) => fx(v).padStart(10);
-  const lines = [...head, `${i3(atoms.length)}${i3(bonds.length)}  0  0  0  0  0  0  0  0999 V2000`];
-  const aliases: string[] = [];
-  atoms.forEach((a, i) => {
-    if (a.alias) aliases.push(`A  ${i3(i + 1)}`, a.alias);
-    lines.push(`${f10(a.x)}${f10(a.y)}${f10(0)} ${a.sym.padEnd(3)} 0  0  0  0  0  0  0  0  0${i3(a.map ?? 0)}  0  0`);
-  });
-  for (const b of bonds) lines.push(`${i3(b.a + 1)}${i3(b.b + 1)}${i3(b.order)}${i3(b.stereo)}`);
-  lines.push(...aliases);
-  const prop = (tag: string, vals: [number, number][]) => {
-    for (let k = 0; k < vals.length; k += 8) {
-      const part = vals.slice(k, k + 8);
-      lines.push(`M  ${tag}${i3(part.length)}` + part.map(([i, v]) => ` ${i3(i + 1)} ${i3(v)}`).join(''));
-    }
-  };
-  prop('CHG', atoms.map((a, i) => [i, a.charge] as [number, number]).filter(([, v]) => v));
-  prop('ISO', atoms.map((a, i) => [i, a.iso] as [number, number]).filter(([, v]) => v));
-  prop('RAD', atoms.map((a, i) => [i, a.rad ?? 0] as [number, number]).filter(([, v]) => v));
-  lines.push('M  END');
-  return lines.join('\n') + '\n';
+/**
+ * Molecules → one molfile: V2000, or V3000 when asked, when there are more than 999 atoms or
+ * bonds, or when it holds what V2000 can't (coordination or hydrogen bonds, and/or stereo groups;
+ * `because` says which).
+ */
+function molblockOf(mols: FMol[], name = '', v3000 = false): { text: string; because: string | null } {
+  const [atoms, bonds, extra] = ctabOf(mols);
+  const head = [name.slice(0, 80), molProgramLine(), ''];
+  const because = v3000 ? null : needsV3000(atoms, bonds);
+  if (v3000 || because || atoms.length > 999 || bonds.length > 999) return { text: v3000Molfile(head, atoms, bonds, extra), because };
+  return { text: v2000Molfile(head, atoms, bonds, extra), because: null };
 }
+
+/** A note for a file written as V3000 although V2000 was asked for. */
+const v3000Note = (because: string | null | undefined) => (because ? [`written as V3000, since V2000 can't hold its ${because}`] : []);
 
 /** How molfiles, SD and RXN files are written: V2000 (the most widely read) unless asked for V3000 or too big for it. */
 export interface CtabOptions { v3000?: boolean }
 
+/**
+ * What a chemistry file writer gives: the text, labels kept as text rather than read as chemistry,
+ * and notes on what the file holds differently from the drawing (said with the save, never stopping it).
+ */
+export interface WrittenChem { text: string; unknown: string[]; notes?: string[] }
+
 /** A drawing as a molfile: all its structures (and text read as chemistry) in one. */
-export function writeMolFile(doc: Doc, name = '', o: CtabOptions = {}): { text: string; unknown: string[] } {
+export function writeMolFile(doc: Doc, name = '', o: CtabOptions = {}): WrittenChem {
   const ids = [...doc.atoms.keys()];
   const species = placeSpecies(doc, doc.captions.values(), plainMeasure(doc));
   // V2000 can't count past 999 atoms or bonds
   const v3000 = o.v3000 || ids.length > 999 || doc.bonds.size > 999;
-  const ex = toMolfile(doc, ids, name, { species, v3000, maps: true, aliases: true });
-  return { text: ex.molblock, unknown: ex.unknownLabels };
+  const ex = toMolfile(doc, ids, name, { species, v3000, maps: true, files: true });
+  return { text: ex.molblock, unknown: ex.unknownLabels, notes: v3000Note(ex.v3000Because) };
 }
 
-/** A drawing as an SD file: each structure a record of its own. */
-export function writeSdfFile(doc: Doc, o: CtabOptions = {}): { text: string; unknown: string[] } {
+/** A drawing as an SD file: each structure a record of its own (a record V2000 can't hold written as V3000). */
+export function writeSdfFile(doc: Doc, o: CtabOptions = {}): WrittenChem {
   const { scene, unknown } = docToScene(doc);
-  return { text: scene.mols.map((m, i) => molblockOf([m], m.name ?? `Structure ${i + 1}`, o.v3000) + '$$$$\n').join(''), unknown };
+  const recs = scene.mols.map((m, i) => molblockOf([m], m.name ?? `Structure ${i + 1}`, o.v3000));
+  const because = [...new Set(recs.map((r) => r.because).filter((b): b is string => !!b))].join('; ');
+  return { text: recs.map((r) => r.text + '$$$$\n').join(''), unknown, notes: because ? [`structures with ${because} written as V3000, since V2000 can't hold them`] : [] };
 }
+
+/**
+ * Line 3 of an RXN file's header (BIOVIA CTfile Formats, RXN header block): the user's initials
+ * (6 columns), then the program name (9 columns), which "Chemweave" fills.
+ */
+const RXN_PROGRAM_LINE = '      Chemweave';
 
 /** A drawing's first reaction step as an RXN file; throws when there is none. */
-export function writeRxnFile(doc: Doc, name = '', o: CtabOptions = {}): { text: string; unknown: string[] } {
+export function writeRxnFile(doc: Doc, name = '', o: CtabOptions = {}): WrittenChem {
   const { scene, unknown, step } = docToScene(doc);
   if (!step) throw new Error('There is no reaction to save as RXN: draw the starting materials, an arrow and the products.');
   const of = (role: FRole) => scene.mols.filter((m) => m.role === role);
   const r = of('reactant'), p = of('product'), a = of('agent');
   const i3 = (n: number) => String(n).padStart(3);
-  if (o.v3000 || [...r, ...p, ...a].some((m) => m.atoms.length > 999 || m.bonds.length > 999)) {
+  const because = o.v3000 ? null : [...new Set([...r, ...p, ...a].map((m) => needsV3000(...ctabOf([m]).slice(0, 2) as [MAtom[], MBond[]])).filter((b): b is string => !!b))].join('; ') || null;
+  if (o.v3000 || because || [...r, ...p, ...a].some((m) => m.atoms.length > 999 || m.bonds.length > 999)) {
     // $RXN V3000: the molecules' connection tables inside REACTANT, PRODUCT and AGENT blocks
     const block = (tag: string, ms: FMol[]) => ms.length ? [`M  V30 BEGIN ${tag}`, ...ms.flatMap((m) => v3000Ctab(...ctabOf([m]))), `M  V30 END ${tag}`] : [];
-    const text = [`$RXN V3000`, name, '  Chemweave', '', `M  V30 COUNTS ${r.length} ${p.length}${a.length ? ` ${a.length}` : ''}`,
+    const text = [`$RXN V3000`, name, RXN_PROGRAM_LINE, '', `M  V30 COUNTS ${r.length} ${p.length}${a.length ? ` ${a.length}` : ''}`,
       ...block('REACTANT', r), ...block('PRODUCT', p), ...block('AGENT', a), 'M  END', ''].join('\n');
-    return { text, unknown };
+    return { text, unknown, notes: v3000Note(because) };
   }
-  const text = `$RXN\n${name}\n  Chemweave\n\n${i3(r.length)}${i3(p.length)}${a.length ? i3(a.length) : ''}\n` + [...r, ...p, ...a].map((m) => '$MOL\n' + molblockOf([m], m.name ?? '')).join('');
+  const text = `$RXN\n${name}\n${RXN_PROGRAM_LINE}\n\n${i3(r.length)}${i3(p.length)}${a.length ? i3(a.length) : ''}\n` + [...r, ...p, ...a].map((m) => '$MOL\n' + molblockOf([m], m.name ?? '').text).join('');
   return { text, unknown };
 }
 
@@ -968,48 +1059,88 @@ function scaled(scene: FScene, bond: number, yDown = false): FScene {
 
 const att = (v: string | number) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** CML-style molecule XML (MRV and CML both use it), atoms numbered from `first`. */
-function cmlMoleculeXml(m: FMol, id: string, first: number, indent: string, mrv: boolean): string {
+/**
+ * CML-style molecule XML (MRV and CML both use it), atoms numbered from `first`; `used` is how
+ * many atom and bond numbers it took. In a Marvin document an abbreviation (superatom S-group) is
+ * written contracted, as Marvin writes one: an R atom in its place pointing at a child molecule
+ * with role SuperatomSgroup, which holds the group's atoms and marks the one bonded to the rest
+ * (sgroupRef, sgroupAttachmentPoint; ChemAxon's Marvin Documents format). Enhanced stereo is the
+ * atom's mrvStereoGroup (abs, and1, or1). CML has no abbreviations, so there its atoms are written out.
+ */
+function cmlMoleculeXml(m: FMol, id: string, first: number, indent: string, mrv: boolean): { xml: string; used: number } {
   const aid = (i: number) => `a${first + i}`;
-  const lines = [`${indent}<molecule ${mrv ? 'molID' : 'id'}="${id}"${m.name && !mrv ? ` title="${att(m.name)}"` : ''}>`, `${indent}  <atomArray>`];
-  m.atoms.forEach((a, i) => {
+  let extra = m.atoms.length;
+  // the abbreviations Marvin can show contracted: bonded to the rest at one atom at most
+  const groups = mrv ? (m.sup ?? []).filter((g) => {
+    const inG = new Set(g.atoms);
+    const crossing = m.bonds.filter((b) => inG.has(b.a) !== inG.has(b.b));
+    if (g.atoms.length < 2 || crossing.length > 1) return false;
+    return !crossing.length || (inG.has(crossing[0].a) ? crossing[0].a : crossing[0].b) === g.atoms[0];
+  }) : [];
+  const groupOf = new Map<number, number>();
+  groups.forEach((g, k) => { for (const i of g.atoms) groupOf.set(i, k); });
+  const rAtom = groups.map(() => aid(extra++));
+  const atomXml = (a: FAtom, i: number, ind: string, attach = '') => {
     const z = elementNumber(a.sym);
     const r = /^R(\d+)$/.exec(a.sym);
     const el = z !== undefined ? a.sym : r || a.sym === 'R' ? 'R' : mrv ? 'R' : 'Du';
     // (a label kept as an alias: Marvin's mrvAlias; in CML the atom's label)
     const label = z === undefined && !r && a.sym !== 'R' && a.sym !== '*' && !mrv ? `<label value="${att(a.sym)}"/>` : '';
-    const extra = [
+    const enh = a.enh && mrv ? (a.enh.type === 'abs' ? 'abs' : `${a.enh.type}${a.enh.group ?? 1}`) : '';
+    const more = [
       a.charge ? ` formalCharge="${a.charge}"` : '',
       a.iso ? ` isotope${mrv ? '' : 'Number'}="${a.iso}"` : '',
       a.rad ? ` ${mrv ? 'radical' : 'spinMultiplicity'}="${mrv ? (a.rad === 2 ? 'monovalent' : a.rad === 1 ? 'divalent1' : 'divalent3') : a.rad === 2 ? 2 : a.rad === 1 ? 1 : 3}"` : '',
       r ? ` rgroupRef="${r[1]}"` : '',
       a.map && mrv ? ` mrvMap="${a.map}"` : '',
       z === undefined && !r && a.sym !== 'R' && a.sym !== '*' && mrv ? ` mrvAlias="${att(a.sym)}"` : '',
+      enh ? ` mrvStereoGroup="${enh}"` : '',
+      attach,
     ].join('');
-    lines.push(`${indent}    <atom id="${aid(i)}" elementType="${el}"${extra} x2="${fx(a.x)}" y2="${fx(a.y)}"${label ? `>${label}</atom>` : '/>'}`);
+    return `${ind}<atom id="${aid(i)}" elementType="${el}"${more} x2="${fx(a.x)}" y2="${fx(a.y)}"${label ? `>${label}</atom>` : '/>'}`;
+  };
+  const bondXml = (b: FBond, i: number, ind: string, from: string, to: string) => {
+    const order = b.order === 1.5 ? 'A' : b.order === 2 ? '2' : b.order === 3 ? '3' : '1';
+    const conv = b.dative && mrv ? ' convention="cxn:coord"' : '';
+    const st = b.stereo === 'wedge' ? 'W' : b.stereo === 'hash' ? 'H' : '';
+    const open = `${ind}<bond id="b${first + i}" atomRefs2="${from} ${to}"${conv ? conv : ` order="${order}"`}`;
+    return st ? `${open}><bondStereo>${st}</bondStereo></bond>` : `${open}/>`;
+  };
+  const lines = [`${indent}<molecule ${mrv ? 'molID' : 'id'}="${id}"${m.name && !mrv ? ` title="${att(m.name)}"` : ''}>`, `${indent}  <atomArray>`];
+  m.atoms.forEach((a, i) => { if (!groupOf.has(i)) lines.push(atomXml(a, i, `${indent}    `)); });
+  groups.forEach((g, k) => {
+    const h = m.atoms[g.atoms[0]];
+    lines.push(`${indent}    <atom id="${rAtom[k]}" elementType="R" sgroupRef="sg${first}_${k + 1}" x2="${fx(h.x)}" y2="${fx(h.y)}"/>`);
   });
   lines.push(`${indent}  </atomArray>`);
-  if (m.bonds.length) {
+  // a bond into a contracted group goes to its R atom
+  const ref = (i: number) => (groupOf.has(i) ? rAtom[groupOf.get(i)!] : aid(i));
+  const outer = m.bonds.map((b, i) => [b, i] as const).filter(([b]) => !(groupOf.has(b.a) && groupOf.get(b.a) === groupOf.get(b.b)));
+  if (outer.length) {
     lines.push(`${indent}  <bondArray>`);
-    m.bonds.forEach((b, i) => {
-      const order = b.order === 1.5 ? 'A' : b.order === 2 ? '2' : b.order === 3 ? '3' : '1';
-      const conv = b.dative && mrv ? ' convention="cxn:coord"' : '';
-      const st = b.stereo === 'wedge' ? 'W' : b.stereo === 'hash' ? 'H' : '';
-      const open = `${indent}    <bond id="b${first + i}" atomRefs2="${aid(b.a)} ${aid(b.b)}"${conv ? conv : ` order="${order}"`}`;
-      lines.push(st ? `${open}><bondStereo>${st}</bondStereo></bond>` : `${open}/>`);
-    });
+    for (const [b, i] of outer) lines.push(bondXml(b, i, `${indent}    `, ref(b.a), ref(b.b)));
     lines.push(`${indent}  </bondArray>`);
   }
+  groups.forEach((g, k) => {
+    const inG = new Set(g.atoms);
+    const bonded = m.bonds.some((b) => inG.has(b.a) !== inG.has(b.b));
+    lines.push(`${indent}  <molecule molID="${id}_${k + 1}" id="sg${first}_${k + 1}" role="SuperatomSgroup" title="${att(g.label)}">`, `${indent}    <atomArray>`);
+    g.atoms.forEach((i, j) => lines.push(atomXml(m.atoms[i], i, `${indent}      `, j === 0 && bonded ? ' sgroupAttachmentPoint="1"' : '')));
+    lines.push(`${indent}    </atomArray>`);
+    const inner = m.bonds.map((b, i) => [b, i] as const).filter(([b]) => inG.has(b.a) && inG.has(b.b));
+    if (inner.length) lines.push(`${indent}    <bondArray>`, ...inner.map(([b, i]) => bondXml(b, i, `${indent}      `, aid(b.a), aid(b.b))), `${indent}    </bondArray>`);
+    lines.push(`${indent}  </molecule>`);
+  });
   lines.push(`${indent}</molecule>`);
-  return lines.join('\n');
+  return { xml: lines.join('\n'), used: Math.max(extra, m.bonds.length) };
 }
 
 /** A drawing as a Marvin document (MRV). */
-export function writeMrvFile(doc: Doc): { text: string; unknown: string[] } {
+export function writeMrvFile(doc: Doc): WrittenChem {
   const got = docToScene(doc);
   const scene = scaled(got.scene, 1.54);
   let next = 1, mid = 1;
-  const molXml = (m: FMol, ind: string) => { const s = cmlMoleculeXml(m, `m${mid++}`, next, ind, true); next += Math.max(m.atoms.length, m.bonds.length); return s; };
+  const molXml = (m: FMol, ind: string) => { const s = cmlMoleculeXml(m, `m${mid++}`, next, ind, true); next += s.used; return s.xml; };
   const out = ['<?xml version="1.0" encoding="UTF-8"?>', '<cml xmlns="http://www.chemaxon.com" version="ChemAxon file format v20.20.0, generated by Chemweave">', '<MDocument>'];
   const inStep = scene.mols.filter((m) => m.role);
   const rest = scene.mols.filter((m) => !m.role);
@@ -1040,14 +1171,20 @@ export function writeMrvFile(doc: Doc): { text: string; unknown: string[] } {
   return { text: out.join('\n') + '\n', unknown: got.unknown };
 }
 
-/** A drawing as a CML file. */
-export function writeCmlFile(doc: Doc): { text: string; unknown: string[] } {
+/**
+ * A drawing as a CML file. Atom-atom map numbers in the reaction are written as CML's reaction
+ * map (cmlReact: a map of links from each reactant atom to the product atom with its number);
+ * map numbers outside the reaction, or with no partner, have no place in CML and are said.
+ */
+export function writeCmlFile(doc: Doc): WrittenChem {
   const got = docToScene(doc);
   const scene = scaled(got.scene, 1.54);
   let next = 1, mid = 1;
-  const molXml = (m: FMol, ind: string) => { const s = cmlMoleculeXml(m, `m${mid++}`, next, ind, false); next += Math.max(m.atoms.length, m.bonds.length); return s; };
+  const firsts = new Map<FMol, number>();
+  const molXml = (m: FMol, ind: string) => { firsts.set(m, next); const s = cmlMoleculeXml(m, `m${mid++}`, next, ind, false); next += s.used; return s.xml; };
   const out = ['<?xml version="1.0" encoding="UTF-8"?>', '<cml xmlns="http://www.xml-cml.org/schema">'];
   const inStep = scene.mols.filter((m) => m.role);
+  let linked = 0;
   if (got.step && inStep.length) {
     out.push('  <reaction id="r1">');
     for (const [list, item, role] of [['reactantList', 'reactant', 'reactant'], ['spectatorList', 'spectator', 'agent'], ['productList', 'product', 'product']] as const) {
@@ -1055,15 +1192,31 @@ export function writeCmlFile(doc: Doc): { text: string; unknown: string[] } {
       if (!ms.length) continue;
       out.push(`    <${list}>`, ...ms.map((m) => `      <${item}>\n${molXml(m, '        ')}\n      </${item}>`), `    </${list}>`);
     }
+    const ids = (role: FRole) => {
+      const at = new Map<number, string>();
+      for (const m of inStep.filter((q) => q.role === role)) m.atoms.forEach((a, i) => { if (a.map && !at.has(a.map)) at.set(a.map, `a${firsts.get(m)! + i}`); });
+      return at;
+    };
+    const from = ids('reactant'), to = ids('product');
+    const pairs = [...from].filter(([n]) => to.has(n)).sort(([p], [q]) => p - q);
+    if (pairs.length) {
+      out.push('    <map fromType="atom" toType="atom" fromContext="reactant" toContext="product">', ...pairs.map(([n, a]) => `      <link id="map${n}" from="${a}" to="${to.get(n)}"/>`), '    </map>');
+      linked = pairs.length * 2;
+    }
     out.push('  </reaction>');
   }
   for (const m of scene.mols.filter((q) => !q.role || !got.step)) out.push(molXml(m, '  '));
   out.push('</cml>');
-  return { text: out.join('\n') + '\n', unknown: got.unknown };
+  const maps = scene.mols.reduce((t, m) => t + m.atoms.filter((a) => a.map).length, 0);
+  return { text: out.join('\n') + '\n', unknown: got.unknown, notes: maps > linked ? ['atom-atom map numbers outside the reaction, or with no partner on the other side, left out (CML keeps a map only as a link from a starting material atom to a product atom)'] : [] };
 }
 
-/** A drawing as a Ketcher KET file. */
-export function writeKetFile(doc: Doc): { text: string; unknown: string[] } {
+/**
+ * A drawing as a Ketcher KET file (the JSON schema in EPAM's Ketcher): R1 as an rg-label atom,
+ * other labels as aliases, abbreviations as SUP S-groups over their atoms, enhanced stereo as the
+ * atom's stereoLabel (abs, &1, or1), dative and hydrogen bonds as types 9 and 10.
+ */
+export function writeKetFile(doc: Doc): WrittenChem {
   const got = docToScene(doc);
   const scene = got.scene;
   const out: Record<string, unknown> = {};
@@ -1081,9 +1234,11 @@ export function writeKetFile(doc: Doc): { text: string; unknown: string[] } {
           label: z !== undefined ? a.sym : 'C', location: [+fx(a.x), +fx(a.y), 0],
           ...(z === undefined ? { alias: a.sym } : {}),
           ...(a.charge ? { charge: a.charge } : {}), ...(a.iso ? { isotope: a.iso } : {}), ...(a.rad ? { radical: a.rad } : {}), ...(a.map ? { mapping: a.map } : {}),
+          ...(a.enh ? { stereoLabel: a.enh.type === 'abs' ? 'abs' : `${a.enh.type === 'and' ? '&' : 'or'}${a.enh.group ?? 1}` } : {}),
         };
       }),
-      bonds: m.bonds.map((b) => ({ type: b.dative ? 9 : b.order === 1.5 ? 4 : b.order === 0.5 ? 1 : b.order, atoms: [b.a, b.b], ...(b.stereo ? { stereo: b.stereo === 'wedge' ? 1 : b.stereo === 'hash' ? 6 : 4 } : {}) })),
+      bonds: m.bonds.map((b) => ({ type: b.dative ? 9 : b.hbond ? 10 : b.order === 1.5 ? 4 : b.order === 0.5 ? 1 : b.order, atoms: [b.a, b.b], ...(b.stereo ? { stereo: b.stereo === 'wedge' ? 1 : b.stereo === 'hash' ? 6 : 4 } : {}) })),
+      ...(m.sup?.length ? { sgroups: m.sup.map((g) => ({ type: 'SUP', atoms: g.atoms, name: g.label })) } : {}),
     };
   });
   for (const r of scene.arrows) {
@@ -1101,8 +1256,11 @@ export function writeKetFile(doc: Doc): { text: string; unknown: string[] } {
   return { text: JSON.stringify({ root: { nodes }, ...out }, null, 2) + '\n', unknown: got.unknown };
 }
 
-/** A drawing as ChemDoodle JSON. Text isn't part of the format, so it is left out. */
-export function writeChemDoodleJson(doc: Doc): { text: string; unknown: string[]; leftOut: number } {
+/**
+ * A drawing as ChemDoodle JSON. Text isn't part of the format, so it is left out, and so are
+ * atom-atom map numbers (said in `notes`); abbreviations are written out as their atoms.
+ */
+export function writeChemDoodleJson(doc: Doc): WrittenChem & { leftOut: number } {
   const got = docToScene(doc);
   const scene = scaled(got.scene, 20, true);
   const j = {
@@ -1112,5 +1270,6 @@ export function writeChemDoodleJson(doc: Doc): { text: string; unknown: string[]
     })),
     ...(scene.arrows.length ? { s: scene.arrows.map((r) => ({ t: 'Line', x1: +fx(r.x1, 3), y1: +fx(r.y1, 3), x2: +fx(r.x2, 3), y2: +fx(r.y2, 3), a: r.kind === 'retro' ? 'retrosynthetic' : r.kind === 'equilibrium' ? 'equilibrium' : r.kind === 'resonance' ? 'resonance' : 'synthetic' })) } : {}),
   };
-  return { text: JSON.stringify(j) + '\n', unknown: got.unknown, leftOut: scene.texts.length + scene.pluses.length };
+  const maps = scene.mols.some((m) => m.atoms.some((a) => a.map));
+  return { text: JSON.stringify(j) + '\n', unknown: got.unknown, leftOut: scene.texts.length + scene.pluses.length, notes: maps ? ['atom-atom map numbers left out (ChemDoodle JSON has no place for them)'] : [] };
 }

@@ -156,7 +156,8 @@ function exchangeFile(doc: Doc, type: FileType, name: string, v3000 = false): { 
     : type === MRV ? writeMrvFile(doc) : type === KET ? writeKetFile(doc) : type === CML ? writeCmlFile(doc) : writeChemDoodleJson(doc);
   const kept = type === MOL || type === SDF ? 'structures only' : type === RXN ? 'the first reaction step only' : type === CDJSON ? 'structures and arrows only' : 'structures, straight arrows and text only';
   const unknown = got.unknown.length ? `; labels kept as text, not read as chemistry: ${got.unknown.join(', ')}` : '';
-  return { data: got.text, type, note: ` (${kept}: save as .cdxml to keep everything${unknown})` };
+  const notes = (got.notes ?? []).map((n) => `; ${n}`).join('');
+  return { data: got.text, type, note: ` (${kept}: save as .cdxml to keep everything${unknown}${notes})` };
 }
 
 /** Tabs already told, this session, how their structures look in Office (said once, not on every save). */
