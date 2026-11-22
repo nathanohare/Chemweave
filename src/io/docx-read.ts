@@ -174,7 +174,12 @@ const KEPT_PPR: Record<string, string> = {
   mirrorIndents: 'd', suppressOverlap: 'd', textDirection: 'e', textAlignment: 'e', textboxTightWrap: 'e', outlineLvl: 'e',
 };
 
-interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; /** Run properties not read here, as written (see TextRun.wrx). */ wrx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; ukind?: string; ucolor?: string; dstrike?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
+/** Theme attributes of an element as written (` w:themeColor="accent1" w:themeShade="BF"`). */
+function themeAttrs(el: Element, ns: string, names: string[]): string {
+  return names.map((n) => { const v = el.getAttributeNS(ns, n); return v === null ? '' : ` w:${n}="${v.replace(/[&"<]/g, (ch) => (ch === '&' ? '&amp;' : ch === '"' ? '&quot;' : '&lt;'))}"`; }).join('');
+}
+
+interface RProps { /** A theme colour's and a theme font's attributes as written, and the colour and font they gave. */ thc?: string; thcv?: string; thf?: string; thfv?: string; /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; /** Run properties not read here, as written (see TextRun.wrx). */ wrx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; ukind?: string; ucolor?: string; dstrike?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
 /** Paragraph formatting as a file gives it, in points. */
 interface PProps {
   align?: Justify; before?: number; after?: number; line?: { v: number; rule: string };
@@ -517,6 +522,9 @@ class DocxReader {
           const f = th ? (/^major/.test(th) ? this.theme.major : this.theme.minor) : null;
           const font = f || this.a(c, 'ascii') || this.a(c, 'hAnsi');
           if (font) out.font = font;
+          // the theme's font named (17.3.2.26, 17.18.96), kept beside the font it gives
+          out.thf = th ? themeAttrs(c, this.W, ['asciiTheme', 'hAnsiTheme', 'eastAsiaTheme', 'cstheme']) : undefined;
+          out.thfv = th ? font || undefined : undefined;
           break;
         }
         case 'b': out.bold = this.on(c); break;
@@ -534,6 +542,10 @@ class DocxReader {
         case 'color': {
           const v = this.a(c) ?? 'auto';
           out.color = /^[0-9a-f]{6}$/i.test(v) ? `#${v.toLowerCase()}` : null;
+          // a theme colour (17.3.2.6), kept beside the colour Word wrote with it
+          const tc = this.a(c, 'themeColor');
+          out.thc = tc ? themeAttrs(c, this.W, ['themeColor', 'themeTint', 'themeShade']) : undefined;
+          out.thcv = tc ? out.color ?? undefined : undefined;
           break;
         }
         case 'vertAlign': { const v = this.a(c); out.pos = v === 'subscript' ? 'sub' : v === 'superscript' ? 'sup' : 'base'; break; }
@@ -598,6 +610,9 @@ class DocxReader {
       out.wfx = fx.join('');
       Object.assign(out, w14Look(out.wfx));
     }
+    // (the run's own theme colour and font, with what they give)
+    if (direct && out.thc) { raw.thc = out.thc; raw.thcv = out.thcv ?? ''; }
+    if (direct && out.thf) { raw.thf = out.thf; raw.thfv = out.thfv ?? ''; }
     if (Object.keys(raw).length) out.wrx = JSON.stringify(raw);
     return out;
   }
@@ -793,6 +808,7 @@ class DocxReader {
       if (r.smallCaps) cs.smallCaps = true;
       if (r.allCaps) cs.allCaps = true;
       if (r.strike) cs.strike = true;
+      if (r.thc || r.thf) cs.wth = JSON.stringify({ ...(r.thc ? { c: r.thc, cv: r.thcv ?? '' } : {}), ...(r.thf ? { f: r.thf, fv: r.thfv ?? '' } : {}) });
       out[id] = cs;
     }
     return out;
@@ -3383,6 +3399,8 @@ class DocxReader {
       ...(p.keepLines ? { keepLines: true } : {}), ...(p.widow === false ? { noWidow: true } : {}),
       next: next && next !== ours ? next : ours === 'Normal' ? undefined : dflt?.next,
       outline: OUTLINE[ours] ?? (p.outline && p.outline <= 9 && ours !== 'Normal' ? p.outline : undefined),
+      // its theme colour and font, written back while it has the colour and font they gave
+      ...(r.thc || r.thf ? { wth: JSON.stringify({ ...(r.thc ? { c: r.thc, cv: r.thcv ?? '' } : {}), ...(r.thf ? { f: r.thf, fv: r.thfv ?? '' } : {}) }) } : {}),
     };
   }
 

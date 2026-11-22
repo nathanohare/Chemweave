@@ -14,7 +14,7 @@ const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
 const deps: DocxDeps = { async picture() { return null; } };
 const u8 = (s: string) => new Uint8Array(strToU8(s));
 
-export interface WordParts { body: string; styles?: string; numbering?: string; settings?: string; header?: string }
+export interface WordParts { body: string; styles?: string; numbering?: string; settings?: string; header?: string; /** A theme with these major and minor fonts. */ fonts?: [string, string] }
 
 /** A Word file with the parts given (styles, numbering, settings and a header as their root's contents). */
 export function wordFile(p: WordParts): Uint8Array {
@@ -24,6 +24,7 @@ export function wordFile(p: WordParts): Uint8Array {
   if (p.styles !== undefined) part('styles.xml', 'styles', `<?xml version="1.0"?><w:styles ${W}>${p.styles}</w:styles>`);
   if (p.numbering !== undefined) part('numbering.xml', 'numbering', `<?xml version="1.0"?><w:numbering ${W}>${p.numbering}</w:numbering>`);
   if (p.settings !== undefined) part('settings.xml', 'settings', `<?xml version="1.0"?><w:settings ${W} xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">${p.settings}</w:settings>`);
+  if (p.fonts) part('theme/theme1.xml', 'theme', `<?xml version="1.0"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office"><a:themeElements><a:fontScheme name="Office"><a:majorFont><a:latin typeface="${p.fonts[0]}"/></a:majorFont><a:minorFont><a:latin typeface="${p.fonts[1]}"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>`);
   let sect = '<w:sectPr/>';
   if (p.header !== undefined) {
     part('header1.xml', 'header', `<?xml version="1.0"?><w:hdr ${W}>${p.header}</w:hdr>`);
@@ -206,5 +207,23 @@ describe('Word patterned shading is kept (G2-10)', () => {
     const xml = (await roundTrip({ body }))['word/document.xml'];
     expect(xml).toContain('<w:shd w:val="pct20" w:color="FF0000" w:fill="FFFF00"/>');
     expect(xml).not.toContain('<w:highlight');
+  });
+});
+
+describe('Word theme colours and fonts are kept (G2-09)', () => {
+  const theme = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' +
+    '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"/><w:color w:val="2F5496" w:themeColor="accent1" w:themeShade="BF"/><w:sz w:val="32"/></w:rPr></w:style>';
+  it('writes a run\'s and a style\'s theme colour and font back while they are what the theme gave', async () => {
+    const body = '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Results</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:rPr><w:color w:val="ED7D31" w:themeColor="accent2"/></w:rPr><w:t>orange</w:t></w:r><w:r><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"/></w:rPr><w:t>display</w:t></w:r></w:p>';
+    const out = await roundTrip({ styles: theme, body, fonts: ['Calibri Light', 'Calibri'] });
+    const doc = out['word/document.xml'], styles = out['word/styles.xml'];
+    expect(doc).toContain('<w:color w:val="ED7D31" w:themeColor="accent2"/>');
+    expect(doc).toContain('<w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"/>');
+    const h1 = styleEls(styles).find((e) => nameOf(e) === 'heading 1')!;
+    const h1x = new XMLSerializer().serializeToString(h1);
+    expect(h1x).toContain('w:themeColor="accent1"');
+    expect(h1x).toContain('w:themeShade="BF"');
+    expect(h1x).toContain('w:asciiTheme="majorHAnsi"');
   });
 });

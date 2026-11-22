@@ -1735,9 +1735,27 @@ const half = (pt: number): number => Math.max(2, Math.round(pt * 2));
  * ascii, hAnsi and complex script fonts. The East Asian font only for an East Asian font, so
  * Chinese, Japanese or Korean text keeps the document's own (SimSun is not made Arial).
  */
-function fontsXml(font: string): string {
+function fontsXml(font: string, th?: Theme): string {
+  // the theme's font, while it is the font (Design > Fonts in Word then reaches the text)
+  if (th?.f && th.fv === font) return `<w:rFonts${th.f}/>`;
   const f = xml(font);
   return `<w:rFonts w:ascii="${f}"${eastAsianFont(font) ? ` w:eastAsia="${f}"` : ''} w:hAnsi="${f}" w:cs="${f}"/>`;
+}
+
+/** Word's theme colour and font kept for a run or style (thc/thf as written, with what they gave). */
+interface Theme { c?: string; cv?: string; f?: string; fv?: string }
+function themeOf(json: string | undefined): Theme | undefined {
+  if (!json) return undefined;
+  try {
+    const k = JSON.parse(json) as Record<string, string>;
+    return { c: k.c ?? k.thc, cv: k.cv ?? k.thcv, f: k.f ?? k.thf, fv: k.fv ?? k.thfv };
+  } catch { return undefined; }
+}
+
+/** A colour (17.3.2.6): with its theme colour while it is the colour the theme gave. */
+function colorXml(color: string | undefined, th?: Theme): string {
+  const v = color ? hex6(color) : 'auto';
+  return `<w:color w:val="${v}"${th?.c && color && th.cv === color ? th.c : ''}/>`;
 }
 
 /** An East Asian font, by its name (Windows' and macOS's Chinese, Japanese and Korean fonts, or a name in their scripts). */
@@ -1784,7 +1802,8 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   else if (cs) out.push(`<w:rStyle w:val="${xml(cs.id)}"/>`);
   if (cs) st = { ...st, font: cs.font ?? st.font, size: cs.size ?? st.size, bold: cs.bold ?? st.bold, italic: cs.italic ?? st.italic, color: cs.color ?? st.color };
   const font = r.font ?? st.font;
-  if (font !== st.font) out.push(fontsXml(font));
+  const th = themeOf(r.wrx);
+  if (font !== st.font) out.push(fontsXml(font, th));
   if (!!r.bold !== st.bold) out.push(r.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>');
   if (!!r.italic !== st.italic) out.push(r.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>');
   // capitals and strikethrough (on, or off where the character style has them)
@@ -1801,7 +1820,7 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   // raised or lowered from the line, in half-points
   if (r.raise) out.push(`<w:position w:val="${Math.round(r.raise * 2)}"/>`);
   const color = r.color ?? st.color;
-  if ((color ?? '') !== (st.color ?? '')) out.push(`<w:color w:val="${color ? hex6(color) : 'auto'}"/>`);
+  if ((color ?? '') !== (st.color ?? '')) out.push(colorXml(color, th));
   // character spacing (twentieths of a point) and kerning taken off
   if (r.spacing) out.push(`<w:spacing w:val="${Math.round(r.spacing * 20)}"/>`);
   out.push(raw.d ?? '');
@@ -2069,13 +2088,14 @@ function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = w
   // (Word's own by its name too: Book Title, Subtle Reference...)
   const word = own ? null : builtIn(s.name);
   const rPr: string[] = [];
-  if (s.font) rPr.push(fontsXml(s.font));
+  const th = themeOf(s.wth);
+  if (s.font) rPr.push(fontsXml(s.font, th));
   if (s.bold !== undefined) rPr.push(s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>');
   if (s.italic !== undefined) rPr.push(s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>');
   if (s.allCaps) rPr.push('<w:caps/>');
   if (s.smallCaps) rPr.push('<w:smallCaps/>');
   if (s.strike) rPr.push('<w:strike/>');
-  if (s.color) rPr.push(`<w:color w:val="${hex6(s.color)}"/>`);
+  if (s.color) rPr.push(colorXml(s.color, th));
   if (s.size) rPr.push(`<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`);
   if (s.underline) rPr.push('<w:u w:val="single"/>');
   return `<w:style w:type="character"${own || word ? '' : ' w:customStyle="1"'} w:styleId="${xml(s.id)}"><w:name w:val="${xml(own?.[0] ?? word ?? s.name)}"/><w:basedOn w:val="DefaultParagraphFont"/>` +
@@ -2101,8 +2121,9 @@ function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => strin
   pPr.push(`<w:ind w:left="${twips(s.indent)}" ${s.firstLine < 0 ? `w:hanging="${twips(-s.firstLine)}"` : `w:firstLine="${twips(s.firstLine)}"`}/>`);
   pPr.push(`<w:jc w:val="${JC[s.align]}"/>`);
   if (s.outline) pPr.push(`<w:outlineLvl w:val="${s.outline - 1}"/>`);
-  const rPr = `${fontsXml(s.font)}${s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>'}${s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>'}` +
-    `<w:color w:val="${s.color ? hex6(s.color) : 'auto'}"/><w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`;
+  const th = themeOf(s.wth);
+  const rPr = `${fontsXml(s.font, th)}${s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>'}${s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>'}` +
+    `${colorXml(s.color, th)}<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`;
   return `${head}<w:pPr>${pPr.join('')}</w:pPr><w:rPr>${rPr}</w:rPr></w:style>`;
 }
 
