@@ -14,7 +14,8 @@ import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { KNOWN_A11Y } from './a11y-known.mjs';
 
-const AXE = fileURLToPath(new URL('../node_modules/axe-core/axe.min.js', import.meta.url));
+// (worked out when the check runs, so that a test can load this file in jsdom)
+const axePath = () => fileURLToPath(new URL('../node_modules/axe-core/axe.min.js', import.meta.url));
 const LOOKS = [['Light', 'theme-light'], ['Dark Gray', 'theme-darkgray']];
 const MODES = [['Canvas', 'drawing', 'new'], ['Spreadsheet', 'sheet', 'new-sheet'], ['Document', 'document', 'new-document'], ['Presentation', 'slides', 'new-slides'], ['Design', 'design', 'new-design']];
 
@@ -28,12 +29,40 @@ const STATE = /\.(rb-folded|rb-compact|rb-idle|active|open|selected|on|checked|h
 export const selectorKey = (target) => target.join(' ').replace(/:nth-(child|of-type)\(\d+\)/g, '').replace(STATE, '').replace(/\s+/g, ' ').slice(0, 160);
 const axeLine = (look, v, node) => `axe ${v.id}${v.id === 'color-contrast' ? ` (${look})` : ''}: ${selectorKey(node.target)}`;
 
+/**
+ * axe's label-content-name-mismatch (WCAG 2.5.3, Label in Name) compares a button's name with all the
+ * text drawn inside it, and that counts the letters of icons too: the "Aa" of the Styles icon, the
+ * ring size in a ring tool's picture, the "A⁺" picture of Increase Font Size. WCAG's Understanding
+ * 2.5.3 leaves symbols that stand for a command out (a "B" for Bold), and axe itself skips single
+ * letters and the icons "Aa" and "abc"; it can't tell an icon's letters from a label, so this asks
+ * the page. A node is kept as a problem unless, leaving out what is marked as an icon (inside an
+ * aria-hidden element that is an <svg>, or whose text has no word of three letters or more), the
+ * button's visible words are in its name. Words hidden that way still count, so hiding a real label
+ * with aria-hidden does not pass.
+ */
+export function labelInNameStill(target) {
+  const el = document.querySelector(target);
+  if (!el) return true;
+  const icon = (n) => n.getAttribute('aria-hidden') === 'true' && (n.closest('svg') || !/\p{L}{3,}/u.test(n.textContent || ''));
+  const words = (n) => [...n.childNodes].map((c) => (c.nodeType === 3 ? c.nodeValue : c.nodeType !== 1 ? '' : c.nodeName === 'BR' ? ' ' : icon(c) || getComputedStyle(c).display === 'none' ? ' ' : words(c))).join('');
+  const norm = (t) => t.toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, ' ').trim();
+  const visible = norm(words(el));
+  const named = el.getAttribute('aria-labelledby')?.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? '').join(' ') || el.getAttribute('aria-label') || el.textContent || '';
+  return !!visible && !` ${norm(named)} `.includes(` ${visible} `);
+}
+
 /** Every accessibility problem on `page` (the app already started): a sorted list of lines. */
 export async function a11yProblems(page, log = () => {}) {
   const found = new Set();
-  if (!(await page.evaluate(() => !!window.axe))) await page.evaluate(fs.readFileSync(AXE, 'utf8'));
+  if (!(await page.evaluate(() => !!window.axe))) await page.evaluate(fs.readFileSync(axePath(), 'utf8'));
   const runAxe = async (look, where) => {
-    const r = await page.evaluate(() => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] }));
+    // (one expression, so that labelInNameStill runs in the page without eval, which a page's CSP may forbid)
+    const r = await page.evaluate(`(async () => {
+      const still = ${labelInNameStill.toString()};
+      const r = await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] });
+      for (const v of r.violations) if (v.id === 'label-content-name-mismatch') v.nodes = v.nodes.filter((n) => still(n.target[0]));
+      return { violations: r.violations.filter((v) => v.nodes.length) };
+    })()`);
     let n = 0;
     for (const v of r.violations) for (const node of v.nodes) { found.add(axeLine(look, v, node)); n++; }
     log(`  axe, ${look}, ${where}: ${n} problem${n === 1 ? '' : 's'}`);
@@ -55,14 +84,14 @@ export async function a11yProblems(page, log = () => {}) {
       await runAxe(look, name);
       // every other ribbon tab of this kind of tab (in the Light look only, to keep the run short)
       if (look !== 'Light') continue;
-      const tabs = await page.evaluate(() => [...document.querySelectorAll('[role="tablist"] > [role="tab"]')]
+      const tabs = await page.evaluate(() => [...document.querySelectorAll('.ribbon [role="tablist"] > [role="tab"]')]
         .filter((b) => b.offsetParent && !b.hidden && b.getAttribute('aria-selected') !== 'true').map((b) => b.textContent.trim()));
       for (const t of tabs) {
-        await page.evaluate((t) => [...document.querySelectorAll('[role="tablist"] > [role="tab"]')].find((b) => b.offsetParent && b.textContent.trim() === t)?.click(), t);
+        await page.evaluate((t) => [...document.querySelectorAll('.ribbon [role="tablist"] > [role="tab"]')].find((b) => b.offsetParent && b.textContent.trim() === t)?.click(), t);
         await page.waitForTimeout(150);
         await runAxe(look, `${name}, ${t} ribbon tab`);
       }
-      await page.evaluate(() => [...document.querySelectorAll('[role="tablist"] > [role="tab"]')].find((b) => b.offsetParent && !b.hidden)?.click());
+      await page.evaluate(() => [...document.querySelectorAll('.ribbon [role="tablist"] > [role="tab"]')].find((b) => b.offsetParent && !b.hidden)?.click());
       if (mode === 'drawing') {
         // a right-click menu, on the empty page
         const box = await page.locator('#overlay').boundingBox();
@@ -199,7 +228,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       const file = fileURLToPath(new URL('./a11y-known.mjs', import.meta.url));
       const src = fs.readFileSync(file, 'utf8');
       const head = src.slice(0, src.indexOf('export const KNOWN_A11Y'));
-      fs.writeFileSync(file, `${head}export const KNOWN_A11Y = [\n${found.map((x) => `  ${JSON.stringify(x)},`).join('\n')}\n];\n`);
+      fs.writeFileSync(file, `${head}export const KNOWN_A11Y = [\n${found.map((x) => `  ${JSON.stringify(x)},\n`).join('')}];\n`);
       console.log(`Wrote ${found.length} known problems to scripts/a11y-known.mjs.`);
     } else {
       const { fresh, gone } = compareA11y(found);

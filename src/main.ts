@@ -5614,7 +5614,8 @@ function setSlideView(v: 'normal' | 'outline' | 'sorter' | 'notes'): void {
   showSlideState();
   for (const b of document.querySelectorAll<HTMLElement>('[data-cmd="view-outline"], [data-cmd="view-notes-page"]')) {
     const on = b.dataset.cmd === 'view-outline' ? outlineView.shown : notesView.shown;
-    if (b.getAttribute('role') !== 'menuitem') b.setAttribute('aria-pressed', String(on));
+    // the ribbon's buttons (the Document's View menu has an Outline radio item of its own, not this one's)
+    if (!b.hasAttribute('role')) b.setAttribute('aria-pressed', String(on));
   }
   if (v === 'normal') overlay.focus();
 }
@@ -6107,6 +6108,7 @@ function renderTabs(): void {
     el.setAttribute('aria-selected', String(t === ws.active));
     // the keys reach the tab showing; the arrow keys go along to the others
     el.tabIndex = t === ws.active ? 0 : -1;
+    el.setAttribute('aria-keyshortcuts', 'Delete');
     el.addEventListener('keydown', (e) => {
       if (e.target !== el) return;
       const i = ws.tabs.indexOf(t);
@@ -6128,11 +6130,12 @@ function renderTabs(): void {
     const name = document.createElement('span');
     name.className = 'tab-name';
     name.textContent = ws.label(t);
-    const close = document.createElement('button');
+    // the × is for the mouse: a control inside a tab can't be reached in the tab order, so the
+    // keyboard closes the tab with Delete (or Ctrl+W), as aria-keyshortcuts tells screen readers
+    const close = document.createElement('span');
     close.className = 'tab-close';
-    close.type = 'button';
     close.title = 'Close';
-    close.setAttribute('aria-label', `Close ${t.name}`);
+    close.setAttribute('aria-hidden', 'true');
     close.textContent = '×';
     close.addEventListener('click', (e) => { e.stopPropagation(); void ws.close(t); });
     el.addEventListener('click', () => { if (!tabDragged) ws.activate(t); });
@@ -6152,6 +6155,9 @@ function renderTabs(): void {
 // and one + button for a new file of any kind stay pinned at the right.
 const tabStrip = document.createElement('div');
 tabStrip.className = 'tab-strip';
+// the tabs alone are the tablist: the arrows, the list and + beside them are not tabs
+tabStrip.setAttribute('role', 'tablist');
+tabStrip.setAttribute('aria-label', 'Open files');
 const tabButton = (cls: string, text: string, title: string) => {
   const b = document.createElement('button');
   b.type = 'button';

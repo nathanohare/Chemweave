@@ -2263,7 +2263,9 @@ export class DocumentMode {
     const kind = f.view.kind;
     const set = (cmd: string, on: boolean) => {
       for (const b of document.querySelectorAll<HTMLElement>(`[data-doc="${cmd}"]`)) if (b.hasAttribute('aria-pressed')) b.setAttribute('aria-pressed', String(on));
-      for (const b of document.querySelectorAll<HTMLElement>(`[data-cmd="${cmd}"]`)) b.setAttribute('aria-checked', String(on));
+      // the menus' radio items; a button elsewhere that runs a command of the same name (Presentation's
+      // View ▸ Outline View) is not this view's, and aria-checked is not allowed on a button
+      for (const b of document.querySelectorAll<HTMLElement>(`[data-cmd="${cmd}"]:is([role="menuitemradio"], [role="menuitemcheckbox"])`)) b.setAttribute('aria-checked', String(on));
     };
     for (const [cmd, k] of Object.entries(VIEW_COMMANDS)) set(cmd, k === kind);
     const pages = !continuous(kind) && kind !== 'read';

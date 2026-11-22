@@ -186,18 +186,20 @@ const svg = (k: string, s = 14): string => `<svg class="si-ic" viewBox="0 0 24 2
 
 /** The ribbon: what each button does is its data-si command. */
 const RIBBON = `
-  <div class="rb-tabs" role="tablist">
-    <button role="tab" data-si-tab="home" aria-selected="true">Home</button>
-    <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
-    <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
-    <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
-    <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
-    <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
-    <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
-    <button role="tab" data-si-tab="ms" aria-selected="false" class="rb-context" hidden title="Shown on the Manuscript Check page">Manuscript Check</button>
-    <button role="tab" data-si-tab="dash" aria-selected="false" class="rb-context" hidden title="Shown on the Dashboard and on a Data section's page">Dashboard</button>
-    <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
-    <button role="tab" data-si-tab="spectrum" aria-selected="false" class="rb-context" hidden title="Shown on a compound's spectra page">Spectrum</button>
+  <div class="rb-tabs">
+    <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
+      <button role="tab" data-si-tab="home" aria-selected="true">Home</button>
+      <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
+      <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
+      <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
+      <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
+      <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
+      <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
+      <button role="tab" data-si-tab="ms" aria-selected="false" class="rb-context" hidden title="Shown on the Manuscript Check page">Manuscript Check</button>
+      <button role="tab" data-si-tab="dash" aria-selected="false" class="rb-context" hidden title="Shown on the Dashboard and on a Data section's page">Dashboard</button>
+      <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
+      <button role="tab" data-si-tab="spectrum" aria-selected="false" class="rb-context" hidden title="Shown on a compound's spectra page">Spectrum</button>
+    </div>
   </div>
   <div class="rb-panel" data-si-panel="insert" hidden>
     <div class="rb-group"><div class="rb-row">

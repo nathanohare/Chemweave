@@ -858,26 +858,28 @@
         <button role="menuitem" data-cmd="dev-tools" title="Turn off Developer Tools (speed readout, stress test, Error Console). Turn them back on in View ▸ Developer Tools">Turn Off Developer Tools</button>
       </div>
     </div>
-    <div id="tabs" role="tablist" aria-label="Open files"></div>
+    <div id="tabs"></div>
     <button id="btn-search" type="button" class="search-box" title="Search for a command by name (Alt+Q)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><span>Search</span><kbd>Alt+Q</kbd></button>
     <h1 class="app-name">Chemweave</h1>
   </header>
 
 
   <div id="sheet-ribbon" class="ribbon tabbed sheet-only" role="toolbar" aria-label="Spreadsheet" hidden>
-    <div class="rb-tabs" role="tablist">
-      <button role="tab" data-sh-tab="home" aria-selected="true">Home</button>
-      <button role="tab" data-sh-tab="dashboard" aria-selected="false" hidden>Dashboard</button>
-      <button role="tab" data-sh-tab="insert" aria-selected="false">Insert</button>
-      <button role="tab" data-sh-tab="page" aria-selected="false">Page Layout</button>
-      <button role="tab" data-sh-tab="formulas" aria-selected="false">Formulas</button>
-      <button role="tab" data-sh-tab="data" aria-selected="false">Data</button>
-      <button role="tab" data-sh-tab="review" aria-selected="false">Review</button>
-      <button role="tab" data-sh-tab="view" aria-selected="false">View</button>
-      <button role="tab" data-sh-tab="table" aria-selected="false" class="rb-context" hidden>Table Design</button>
-      <button role="tab" data-sh-tab="chart" aria-selected="false" class="rb-context" hidden>Chart</button>
-      <button role="tab" data-sh-tab="pivot" aria-selected="false" class="rb-context" hidden>PivotTable</button>
-      <button role="tab" data-sh-tab="sparkline" aria-selected="false" class="rb-context" hidden>Sparkline</button>
+    <div class="rb-tabs">
+      <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
+        <button role="tab" data-sh-tab="home" aria-selected="true">Home</button>
+        <button role="tab" data-sh-tab="dashboard" aria-selected="false" hidden>Dashboard</button>
+        <button role="tab" data-sh-tab="insert" aria-selected="false">Insert</button>
+        <button role="tab" data-sh-tab="page" aria-selected="false">Page Layout</button>
+        <button role="tab" data-sh-tab="formulas" aria-selected="false">Formulas</button>
+        <button role="tab" data-sh-tab="data" aria-selected="false">Data</button>
+        <button role="tab" data-sh-tab="review" aria-selected="false">Review</button>
+        <button role="tab" data-sh-tab="view" aria-selected="false">View</button>
+        <button role="tab" data-sh-tab="table" aria-selected="false" class="rb-context" hidden>Table Design</button>
+        <button role="tab" data-sh-tab="chart" aria-selected="false" class="rb-context" hidden>Chart</button>
+        <button role="tab" data-sh-tab="pivot" aria-selected="false" class="rb-context" hidden>PivotTable</button>
+        <button role="tab" data-sh-tab="sparkline" aria-selected="false" class="rb-context" hidden>Sparkline</button>
+      </div>
     </div>
     <div class="rb-panel" data-sh-panel="home">
       <div class="rb-group">
@@ -936,7 +938,7 @@
             <div class="rb-pair">
               <button data-sh="decimals-more" title="More decimal places">+.0</button>
               <button data-sh="decimals-less" title="Fewer decimal places">−.0</button>
-              <button data-sh="format-chem" aria-pressed="false" title="Formula style: numbers in formulas lowered (CH₂Cl₂), charges raised">C₉H₈</button>
+              <button data-sh="format-chem" aria-pressed="false" title="Formula style: numbers in formulas lowered (CH₂Cl₂), charges raised"><span aria-hidden="true">C₉H₈</span></button>
             </div>
           </div>
         </div>
@@ -1479,18 +1481,20 @@
   </div>
 
   <div id="doc-ribbon" class="ribbon doc-ribbon doc-only" role="toolbar" aria-label="Document" hidden>
-    <div class="rb-tabs" role="tablist">
-      <button role="tab" data-doc-tab="outlining" aria-selected="false" class="rb-context" hidden title="Shown in Outline view">Outlining</button>
-      <button role="tab" data-doc-tab="home" aria-selected="true">Home</button>
-      <button role="tab" data-doc-tab="insert" aria-selected="false">Insert</button>
-      <button role="tab" data-doc-tab="design" aria-selected="false">Design</button>
-      <button role="tab" data-doc-tab="layout" aria-selected="false">Layout</button>
-      <button role="tab" data-doc-tab="references" aria-selected="false">References</button>
-      <button role="tab" data-doc-tab="review" aria-selected="false">Review</button>
-      <button role="tab" data-doc-tab="view" aria-selected="false">View</button>
-      <button role="tab" data-doc-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table</button>
-      <button role="tab" data-doc-tab="picture" aria-selected="false" class="rb-context" hidden title="Shown while a picture is selected">Picture Format</button>
-      <button role="tab" data-doc-tab="hf" aria-selected="false" class="rb-context" hidden title="Shown while you are typing in a header or footer">Header &amp; Footer</button>
+    <div class="rb-tabs">
+      <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
+        <button role="tab" data-doc-tab="outlining" aria-selected="false" class="rb-context" hidden title="Shown in Outline view">Outlining</button>
+        <button role="tab" data-doc-tab="home" aria-selected="true">Home</button>
+        <button role="tab" data-doc-tab="insert" aria-selected="false">Insert</button>
+        <button role="tab" data-doc-tab="design" aria-selected="false">Design</button>
+        <button role="tab" data-doc-tab="layout" aria-selected="false">Layout</button>
+        <button role="tab" data-doc-tab="references" aria-selected="false">References</button>
+        <button role="tab" data-doc-tab="review" aria-selected="false">Review</button>
+        <button role="tab" data-doc-tab="view" aria-selected="false">View</button>
+        <button role="tab" data-doc-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table</button>
+        <button role="tab" data-doc-tab="picture" aria-selected="false" class="rb-context" hidden title="Shown while a picture is selected">Picture Format</button>
+        <button role="tab" data-doc-tab="hf" aria-selected="false" class="rb-context" hidden title="Shown while you are typing in a header or footer">Header &amp; Footer</button>
+      </div>
     </div>
     <div class="rb-panel" data-doc-panel="home">
       <div class="rb-group">
@@ -2267,17 +2271,19 @@
   </div>
 
   <div id="ribbon" class="ribbon tabbed slides-only" role="toolbar" aria-label="Presentation" hidden>
-    <div class="rb-tabs" role="tablist">
-      <button role="tab" data-sl-tab="master" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while Slide Master view is open">Slide Master</button>
-      <button role="tab" data-sl-tab="home" aria-selected="true">Home</button>
-      <button role="tab" data-sl-tab="insert" aria-selected="false">Insert</button>
-      <button role="tab" data-sl-tab="transitions" aria-selected="false" title="The slides' design (themes, slide size, background) and the transitions between them">Design &amp; Transitions</button>
-      <button role="tab" data-sl-tab="animations" aria-selected="false">Animations</button>
-      <button role="tab" data-sl-tab="show" aria-selected="false">Slide Show</button>
-      <button role="tab" data-sl-tab="review" aria-selected="false">Review</button>
-      <button role="tab" data-sl-tab="view" aria-selected="false">View</button>
-      <button role="tab" data-sl-tab="format" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while a shape is selected">Shape Format</button>
-      <button role="tab" data-sl-tab="picture" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while a picture is selected">Picture Format</button>
+    <div class="rb-tabs">
+      <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
+        <button role="tab" data-sl-tab="master" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while Slide Master view is open">Slide Master</button>
+        <button role="tab" data-sl-tab="home" aria-selected="true">Home</button>
+        <button role="tab" data-sl-tab="insert" aria-selected="false">Insert</button>
+        <button role="tab" data-sl-tab="transitions" aria-selected="false" title="The slides' design (themes, slide size, background) and the transitions between them">Design &amp; Transitions</button>
+        <button role="tab" data-sl-tab="animations" aria-selected="false">Animations</button>
+        <button role="tab" data-sl-tab="show" aria-selected="false">Slide Show</button>
+        <button role="tab" data-sl-tab="review" aria-selected="false">Review</button>
+        <button role="tab" data-sl-tab="view" aria-selected="false">View</button>
+        <button role="tab" data-sl-tab="format" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while a shape is selected">Shape Format</button>
+        <button role="tab" data-sl-tab="picture" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while a picture is selected">Picture Format</button>
+      </div>
     </div>
     <div class="rb-panel" data-sl-panel="home">
       <div class="rb-group">
@@ -2870,12 +2876,14 @@
   </div>
 
   <div id="design-ribbon" class="ribbon tabbed design-only" role="toolbar" aria-label="Design" hidden>
-    <div class="rb-tabs" role="tablist">
-      <button role="tab" data-dz-tab="home" aria-selected="true">Home</button>
-      <button role="tab" data-dz-tab="insert" aria-selected="false">Insert</button>
-      <button role="tab" data-dz-tab="page" aria-selected="false">Page</button>
-      <button role="tab" data-dz-tab="format" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while a shape is selected">Shape Format</button>
-      <button role="tab" data-dz-tab="picture" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while a picture is selected">Picture Format</button>
+    <div class="rb-tabs">
+      <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
+        <button role="tab" data-dz-tab="home" aria-selected="true">Home</button>
+        <button role="tab" data-dz-tab="insert" aria-selected="false">Insert</button>
+        <button role="tab" data-dz-tab="page" aria-selected="false">Page</button>
+        <button role="tab" data-dz-tab="format" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while a shape is selected">Shape Format</button>
+        <button role="tab" data-dz-tab="picture" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while a picture is selected">Picture Format</button>
+      </div>
     </div>
     <div class="rb-panel" data-dz-panel="home">
       <div class="rb-group">
