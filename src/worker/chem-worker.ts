@@ -4,6 +4,7 @@
 
 /// <reference lib="webworker" />
 import { formulaFromJson } from '../chem/formula';
+import { smilesMolblock } from '../chem/smiles-molfile';
 import { stereoTags, StereoTags } from '../chem/stereo';
 import { molProps, substructureMatches, structureLibrary, libraryMatches, panelProps, massFragments, type PanelProps, type MassFragment, type StructureLibrary } from '../chem/props';
 import type { MolProps } from '../sheet/properties';
@@ -167,12 +168,7 @@ self.onmessage = async (e: MessageEvent<ChemRequest>) => {
       const results = m.mols.map((x) => stereoTags(RDKit, x.molblock, x.skip, undefined, x.generic));
       post({ type: 'stereo', id: m.id, results, ms: performance.now() - t0 });
     } else if (m.type === 'smilesToMol') {
-      const mol = RDKit.get_mol(m.smiles);
-      if (!mol || !mol.is_valid()) { post({ type: 'smilesToMol', id: m.id, molblock: null }); return; }
-      mol.set_new_coords(true);
-      const mb = mol.get_molblock();
-      mol.delete();
-      post({ type: 'smilesToMol', id: m.id, molblock: mb });
+      post({ type: 'smilesToMol', id: m.id, molblock: smilesMolblock(RDKit, m.smiles) });
     } else if (m.type === 'layouts') {
       // the engine's own 2-D layouts (its classic one and CoordGen's), for Clean Up to start from
       const coords: [number, number][][] = [];

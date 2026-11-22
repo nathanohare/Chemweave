@@ -33,7 +33,7 @@ import { emfToSvg } from '../render/emf-read';
 import type { Item } from '../render/vector';
 import { itemsToEmf, withDrawing, drawingInEmf, type EmfBox } from '../render/emf';
 import { imageSize, fromDataUrl } from '../render/images';
-import { isReactionSmiles } from '../chem/reaction-io';
+import { cxSmiles, isReactionSmiles } from '../chem/reaction-io';
 
 /** Our own clipboard format: the drawing as CDXML text. */
 export const OWN_FORMAT = 'Chem Illustrator CDXML';
@@ -562,10 +562,10 @@ export type Pasted =
   | { kind: 'table'; rows: PastedRows }
   | { kind: 'nothing' };
 
-/** Text that could be a structure (a molfile, or one word that could be SMILES). */
+/** Text that could be a structure (a molfile, one word that could be SMILES, or a CXSMILES with its |…| extras). */
 export function looksLikeChemistry(text: string): boolean {
   const t = text.trim();
-  return t.includes('M  END') || isReactionSmiles(t) || (!!t && !/\s/.test(t) && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(t));
+  return t.includes('M  END') || isReactionSmiles(t) || !!cxSmiles(t) || (!!t && !/\s/.test(t) && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(t));
 }
 
 /** A Windows bitmap from the clipboard (no file header) as a .bmp file a web page can show. */

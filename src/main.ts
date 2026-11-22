@@ -184,7 +184,7 @@ import { idText, labelClashes, parseIdStart, type IdStyle } from './chem/compoun
 import { arrowKind, schemeItems, isReactionArrow, reactionSteps, itemFinder, plainMeasure } from './chem/reaction';
 import { canShowGuides, guidesOn as arrowGuidesOn, plainReactionArrow } from './chem/arrow-text';
 import { stoichiometryBook, type StoichRow, type StoichRole } from './chem/stoichiometry';
-import { isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
+import { cxSmiles, cxSmilesLeftOut, isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
 import { showBalance } from './ui/balance-dialog';
 import { withoutCharge } from './chem/formula';
 import { ORBITAL_KINDS, ORBITAL_LOOKS, angleOfDir, openDirection, orbitalAtom, orbitalShapes, orbitalsAmong, putOrbital, readAngle, readOrbital, redrawOrbital, takenDirections, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from './chem/orbitals';
@@ -1360,8 +1360,12 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
   const c = pastePoint();
   if (isRxn(text) || isReactionSmiles(text)) return pasteReaction(text.trim(), c);
   let mb: string | null = text.includes('M  END') ? text : null;
-  if (!mb && !/\s/.test(text)) mb = await chem.smilesToMol(text);
+  // (a CXSMILES keeps its enhanced stereo, coordinates and labels; what a drawing can't hold is said)
+  const cx = mb ? null : cxSmiles(text);
+  if (!mb && (cx || !/\s/.test(text))) mb = await chem.smilesToMol(text.trim());
   if (!mb) { if (!quiet) flash('Paste a SMILES string or a molfile.'); return false; }
+  const leftOut = cx ? cxSmilesLeftOut(cx.extras) : [];
+  if (leftOut.length) flash(`Pasted the structure; its CXSMILES ${leftOut.join(', ')} are left out, as a drawing has no place for them.`, 6000);
   try {
     let ids: number[] = [];
     doc.edit('Paste', () => {
