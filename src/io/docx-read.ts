@@ -1656,13 +1656,15 @@ class DocxReader {
       const id = Number(this.a(c, 'id'));
       if (!Number.isInteger(id) || id < 0) continue;
       const paras = [...c.getElementsByTagNameNS(this.W, 'p')];
-      const text = paras.map((p) => [...p.getElementsByTagNameNS(this.W, '*')]
-        .map((e) => (e.localName === 't' ? e.textContent ?? '' : e.localName === 'tab' ? '\t' : e.localName === 'br' ? '\n' : '')).join('')).join('\n');
+      const texts = paras.map((p) => [...p.getElementsByTagNameNS(this.W, '*')]
+        .map((e) => (e.localName === 't' ? e.textContent ?? '' : e.localName === 'tab' ? '\t' : e.localName === 'br' ? '\n' : '')).join(''));
+      const text = texts.join('\n');
       const last = paras[paras.length - 1];
       const kept = this.commentParas(c, path!);
       // (the initials Word shows on it, as written: Word makes them only when the comment is made)
       const ini = this.a(c, 'initials');
-      const word = { ...(kept ? { paras: kept.paras, text, ...(kept.links.length ? { links: kept.links } : {}) } : {}), ...(ini ? { initials: ini } : {}) };
+      // (each paragraph's own text too, so the paragraphs left as they were keep their looks when another is changed)
+      const word = { ...(kept ? { paras: kept.paras, text, ...(texts.length === kept.paras.length ? { texts } : {}), ...(kept.links.length ? { links: kept.links } : {}) } : {}), ...(ini ? { initials: ini } : {}) };
       notes.set(id, { author: this.a(c, 'author') ?? '', date: fromWordDate(this.a(c, 'date') ?? ''), text, para: last?.getAttributeNS(W14_NS, 'paraId') ?? '', ...(Object.keys(word).length ? { word } : {}) });
     }
     // Word 365 keeps each comment's time in UTC too, by a lasting id found from its paragraph id

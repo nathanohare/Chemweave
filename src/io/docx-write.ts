@@ -547,13 +547,14 @@ class DocxWriter {
     const note = (id: number, c: CommentNote, parent: string | null, done: boolean): string => {
       // a comment from a Word file whose text wasn't changed here: its paragraphs as Word wrote
       // them (with their formatting), its links related to the comments part afresh
-      const word = c.word?.paras?.length && c.word.text === c.text ? c.word.paras : null;
+      // (changed here: the paragraphs still as they were as Word wrote them, the others plain)
       const links = c.word?.links ?? [];
-      const lines = c.text.split('\n');
-      const ids = (word ?? lines).map(() => (para++).toString(16).toUpperCase());
-      const ps = word ? word.map((p, i) => p.replace(/^<w:p\b/, `<w:p w14:paraId="${ids[i]}" w14:textId="77777777"`)
-        .replace(/ r:id="link:(\d+)"/g, (_, k: string) => ` r:id="${this.pkg.relate(part, REL.hyperlink, links[Number(k)] ?? '', true)}"`))
-        : lines.map((line, i) => `<w:p w14:paraId="${ids[i]}" w14:textId="77777777">${i === 0 ? '<w:r><w:annotationRef/></w:r>' : ''}${run('', line)}</w:p>`);
+      const pieces = commentPieces(c);
+      const ids = pieces.map(() => (para++).toString(16).toUpperCase());
+      const ps = pieces.map((p, i) => (typeof p === 'number'
+        ? (i ? noAnnotationRef(c.word!.paras![p]) : c.word!.paras![p]).replace(/^<w:p\b/, `<w:p w14:paraId="${ids[i]}" w14:textId="77777777"`)
+          .replace(/ r:id="link:(\d+)"/g, (_, k: string) => ` r:id="${this.pkg.relate(part, REL.hyperlink, links[Number(k)] ?? '', true)}"`)
+        : `<w:p w14:paraId="${ids[i]}" w14:textId="77777777">${i === 0 ? '<w:r><w:annotationRef/></w:r>' : ''}${run('', p.line)}</w:p>`));
       const last = ids[ids.length - 1];
       const date = c.date ? ` w:date="${xml(toWordDate(c.date))}"` : '';
       // (the initials the comment came with, else made from the name as Word makes them)
@@ -1884,6 +1885,39 @@ function formField(o: Extract<DocObject, { kind: 'form' }>, rPr: string, names: 
 }
 
 /** A run of text (tabs as Word's tabs, optional hyphens as its soft hyphens). */
+/**
+ * A comment's paragraphs to write: the number of one of the paragraphs Word wrote (kept as it
+ * was), or a line of plain text. Unchanged, all of Word's; changed here, Word's for each paragraph
+ * whose text is still there in its place, in order, and plain lines for the rest.
+ */
+export function commentPieces(c: CommentNote): (number | { line: string })[] {
+  const w = c.word;
+  if (w?.paras?.length && w.text === c.text) return w.paras.map((_, i) => i);
+  const plain = () => c.text.split('\n').map((line) => ({ line }));
+  if (!w?.paras?.length || w.texts?.length !== w.paras.length) return plain();
+  const texts: string[] = w.texts;
+  const out: (number | { line: string })[] = [];
+  const t = c.text;
+  let at = 0, next = 0;
+  for (;;) {
+    // a paragraph of Word's (from those after the last one used) whose whole text comes next
+    let k = -1;
+    for (let j = next; j < texts.length && k < 0; j++) {
+      const end = at + texts[j].length;
+      if (t.startsWith(texts[j], at) && (end === t.length || t[end] === '\n')) k = j;
+    }
+    let end: number;
+    if (k >= 0) { out.push(k); next = k + 1; end = at + texts[k].length; }
+    else { const nl = t.indexOf('\n', at); end = nl < 0 ? t.length : nl; out.push({ line: t.slice(at, end) }); }
+    if (end >= t.length) break;
+    at = end + 1;
+  }
+  return out;
+}
+
+/** A paragraph of a comment without its comment mark (w:annotationRef, which goes in the first only). */
+const noAnnotationRef = (p: string) => p.replace(/<w:r\b(?:(?!<\/w:r>)[\s\S])*?<w:annotationRef\/>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/, '');
+
 function run(rPr: string, text: string): string {
   if (!text) return '';
   const body = text.split(/([\t\u00ad])/).map((s) => (s === '\t' ? '<w:tab/>' : s === '\u00ad' ? '<w:softHyphen/>' : s ? `<w:t xml:space="preserve">${xml(s)}</w:t>` : '')).join('');
