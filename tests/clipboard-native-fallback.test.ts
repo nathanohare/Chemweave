@@ -19,10 +19,11 @@ vi.mock('@tauri-apps/api/core', () => ({
   },
 }));
 
-import { nativeDrawing, nativeDrawingText, nativeClipboardDrawing, NATIVE_FORMAT, OWN_FORMAT } from '../src/io/clipboard';
+import { nativeDrawing, nativeDrawingText, nativeClipboardDrawing, insertDrawing, NATIVE_FORMAT, OWN_FORMAT } from '../src/io/clipboard';
 import { writeCdxml } from '../src/io/cdxml-write';
 import { Doc } from '../src/model';
 import { putPlate, newPlate } from '../src/design/plates';
+import { putEnergy, ENERGY_DEFAULTS, ENERGY_PRESETS, type EnergyData } from '../src/design/energy';
 import { POINTS } from '../src/editor/arrange';
 import { addChiralFlag } from '../src/chem/chiral-flag';
 
@@ -110,5 +111,108 @@ describe('nested parts and far places are checked too (F1c-R05)', () => {
     expect([...got.shapes.values()].some((s) => s.plate && s.frame)).toBe(true);
     expect([...got.shapes.values()].some((s) => s.symbol === 'Absolute' && s.pin?.on === 'atom')).toBe(true);
     expect(() => writeCdxml(got, { name: 'x.cdxml' })).not.toThrow();
+  });
+});
+
+describe('the check is complete without a trial save, and quick (review F1d-R03)', () => {
+  /** Ethanol with a wedge, a caption, an arrow, a TLC plate, an energy diagram and an Abs flag. */
+  const rich = () => {
+    const d = ethanol();
+    d.edit('Wedge', () => { d.updateBond([...d.bonds.keys()][1], { display: 'wedge' }); });
+    d.edit('Arrow', () => { d.addArrow({ tail: { x: 40, y: 0 }, head: { x: 90, y: 0 } } as never); });
+    d.edit('TLC', () => { putPlate(d, POINTS, newPlate('tlc', d.style.bondLength), { x: 100, y: 0 }); });
+    d.edit('E', () => { putEnergy(d, POINTS, { ...ENERGY_DEFAULTS, ...structuredClone(ENERGY_PRESETS[0].data), w: 200, h: 150 } as EnergyData, { x: 0, y: 200 }); });
+    d.edit('Flag', () => { addChiralFlag(d, [...d.atoms.keys()].slice(0, 3), 'Absolute'); });
+    return d;
+  };
+  const pastesAndSaves = (got: Doc) => {
+    const into = new Doc();
+    insertDrawing(into, got, { x: 0, y: 0 });
+    writeCdxml(into, { name: 'x.cdxml' });
+  };
+  it('turns down a value outside its list, two objects with one id, and a pin without its place', () => {
+    expect(nativeDrawing(edit((j) => { j.contents.bonds[0].display = 'zigzag'; }))).toBeNull();
+    expect(nativeDrawing(edit((j) => { j.contents.captions[0].justify = 'middle'; }))).toBeNull();
+    expect(nativeDrawing(edit((j) => { j.contents.atoms[1].id = j.contents.atoms[0].id; }))).toBeNull();
+    expect(nativeDrawing(edit((j) => { j.contents.shapes = [{ id: 97, kind: 'star', x1: 0, y1: 0, x2: 20, y2: 10 }]; }))).toBeNull();
+    expect(nativeDrawing(edit((j) => { j.contents.atoms[0].multi = 'all'; }))).toBeNull();
+    expect(nativeDrawing(edit((j) => { j.contents.captions[0].attach = { atoms: 1 }; }))).toBeNull();
+    const flagged = JSON.parse(nativeDrawingText(rich()));
+    const flag = (flagged.contents.shapes as Record<string, Record<string, unknown>>[]).find((s) => s.symbol === 'Absolute')!;
+    delete flag.pin.was;
+    expect(nativeDrawing(JSON.stringify(flagged))).toBeNull();
+  });
+  it('lets go of references to nothing: a bond to a missing atom is left out, a frame member or pin to one is let go on paste', () => {
+    const got = nativeDrawing(edit((j) => { j.contents.bonds[0].a2 = 999; }))!;
+    expect(got.bonds.size).toBe(1);
+    const d = rich();
+    const j = JSON.parse(nativeDrawingText(d));
+    const plate = (j.contents.shapes as Record<string, Record<string, number[]>>[]).find((s) => s.plate)!;
+    plate.frame.captions.push(9999);
+    const flag = (j.contents.shapes as Record<string, Record<string, unknown>>[]).find((s) => s.symbol === 'Absolute')!;
+    (flag.pin as { ref: number[] }).ref = [8888];
+    const taken = nativeDrawing(JSON.stringify(j))!;
+    const into = new Doc();
+    insertDrawing(into, taken, { x: 0, y: 0 });
+    const f = [...into.shapes.values()].find((s) => s.plate)!.frame!;
+    expect(f.captions.every((c) => into.captions.has(c))).toBe(true);
+    // (the flag let go is stuck again to the structure it sits beside, as any loose flag is: review F1c-R07)
+    const pin = [...into.shapes.values()].find((s) => s.symbol === 'Absolute')!.pin;
+    expect(pin === undefined || into.atoms.has(pin.ref[0])).toBe(true);
+    expect(pin?.ref).not.toEqual([8888]);
+    expect(() => writeCdxml(into, { name: 'x.cdxml' })).not.toThrow();
+  });
+  it('an atom with no element and no label (z = 0) pastes and saves', () => {
+    const got = nativeDrawing(edit((j) => { j.contents.atoms[2].z = 0; j.contents.atoms[2].label = null; }))!;
+    expect(got).not.toBeNull();
+    expect(() => pastesAndSaves(got)).not.toThrow();
+  });
+  it('a pasted Abs flag stays with the copy of its own structure, where it was put', () => {
+    const d = rich();
+    const into = new Doc();
+    insertDrawing(into, nativeDrawing(nativeDrawingText(d))!, { x: 500, y: 500 });
+    const flag = [...into.shapes.values()].find((s) => s.symbol === 'Absolute')!;
+    const was = [...d.shapes.values()].find((s) => s.symbol === 'Absolute')!;
+    expect(into.atoms.has(flag.pin!.ref[0])).toBe(true);
+    // (moved with the paste by the same amount as everything else: the copy of the same atom)
+    const dx = flag.x1 - was.x1, dy = flag.y1 - was.y1;
+    const atom = into.atoms.get(flag.pin!.ref[0])!, from = d.atoms.get(was.pin!.ref[0])!;
+    expect(atom.x - from.x).toBeCloseTo(dx, 6);
+    expect(atom.y - from.y).toBeCloseTo(dy, 6);
+    expect(flag.pin!.was.x).toBeCloseTo(was.pin!.was.x + dx, 6);
+  });
+  it('a small fuzz: 600 copies, each with one or two parts changed to a wrong value or left out; whatever is taken pastes and saves', () => {
+    const base = JSON.parse(nativeDrawingText(rich()));
+    let seed = 20261122;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const paths: (string | number)[][] = [];
+    const walk = (v: unknown, p: (string | number)[]) => { paths.push(p); if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, [...p, Array.isArray(v) ? Number(k) : k]); };
+    walk(base.contents, []);
+    const wrong: unknown[] = ['x', 'zzz', -1, -5, 0, 0.5, 1e7, null, [], {}, true, [1, 2], { x: 1 }, 'leave out'];
+    let taken = 0, refused = 0;
+    const failed: string[] = [];
+    for (let k = 0; k < 600; k++) {
+      const j = structuredClone(base);
+      let what = '';
+      for (let m = 0; m < 1 + (k % 2); m++) {
+        const p = paths[1 + Math.floor(rnd() * (paths.length - 1))];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let o: any = j.contents;
+        for (const s of p.slice(0, -1)) o = o?.[s];
+        if (!o || typeof o !== 'object') continue;
+        const v = wrong[Math.floor(rnd() * wrong.length)];
+        const last = p[p.length - 1];
+        if (v === 'leave out') { if (Array.isArray(o)) o.splice(last as number, 1); else delete o[last]; } else o[last] = v;
+        what += `${p.join('.')}=${JSON.stringify(v)} `;
+      }
+      const got = nativeDrawing(JSON.stringify(j));
+      if (!got) { refused++; continue; }
+      taken++;
+      try { pastesAndSaves(got); } catch (e) { failed.push(`${what}: ${String(e).slice(0, 80)}`); }
+    }
+    expect(failed).toEqual([]);
+    // (both ways taken: most changes are harmless, many are not)
+    expect(taken).toBeGreaterThan(50);
+    expect(refused).toBeGreaterThan(50);
   });
 });

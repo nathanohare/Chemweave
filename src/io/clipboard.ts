@@ -15,11 +15,12 @@
 // and the drawing itself is kept in memory: pasting that same picture back here gives the drawing.
 
 import { remapFrames, remapStep, type IdMaps } from './remap-refs';
+import { soundContents } from './clip-check';
 import { freshGroups } from '../editor/groups';
 import { frameMembers } from '../editor/frames';
 import { pastedTable, tableHtml, tableTsv, type PastedRows } from './table-clip';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { Doc, applyBase, type Contents, type TableData } from '../model';
+import { Doc, applyBase, type TableData } from '../model';
 import type { Vec } from '../geom';
 import type { Selection } from '../editor/editor';
 import { readCdxml } from './cdxml';
@@ -224,7 +225,8 @@ export function insertDrawing(doc: Doc, src: Doc, center: Vec, label = 'Paste'):
       if (rest.ring) rest.ring = ring!.every((a) => a !== undefined) ? (ring as number[]) : undefined;
       if (rest.pin) {
         const ref = rest.pin.ref.map((x) => ids.get(x));
-        rest.pin = ref.every((x) => x !== undefined) ? { ...rest.pin, ref: ref as number[] } : undefined;
+        // (where it was put goes with it, so it isn't taken as moved by hand: review F1d-R03)
+        rest.pin = ref.every((x) => x !== undefined) ? { ...rest.pin, ref: ref as number[], ...(rest.pin.was ? { was: { x: rest.pin.was.x + dx, y: rest.pin.was.y + dy } } : {}) } : undefined;
       }
       if (rest.poly) rest.poly = rest.poly.map((p) => ({ x: p.x + dx, y: p.y + dy }));
       const ns = doc.addShape({ ...rest, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy });
@@ -240,7 +242,7 @@ export function insertDrawing(doc: Doc, src: Doc, center: Vec, label = 'Paste'):
         for (const end of ['tail', 'head'] as const) {
           const pin = rest.pin[end];
           const ref = pin?.ref.map((x) => ids.get(x));
-          if (pin && ref) { if (ref.every((x) => x !== undefined)) pin.ref = ref as number[]; else delete rest.pin[end]; }
+          if (pin && ref) { if (ref.every((x) => x !== undefined)) Object.assign(pin, { ref, ...(pin.was ? { was: { x: pin.was.x + dx, y: pin.was.y + dy } } : {}) }); else delete rest.pin[end]; }
         }
         if (!rest.pin.tail && !rest.pin.head) rest.pin = undefined;
       }
@@ -337,13 +339,8 @@ export function nativeDrawingText(part: Doc): string {
  * later version of this program (review F1b-R05). The rule for versions: `v` is the layout's
  * version; a later program that changes the layout raises it, and a program that doesn't know
  * that version pastes the CDXML written beside it instead (which is why CDXML is still written).
- * The data is checked before it is taken (review F1b-R05, F1c-R05): every atom, caption, arrow
- * and shape must have its place as numbers within a million points of the origin (a drawing
- * further out would take a save for ever), every bond its two atoms and order, every run of text
- * its text (and a size, font and colour of the right type), a shape's text its runs, a frame its
- * lists of members, a pin its list of objects and its offset; every number anywhere must be finite.
- * Then it is pasted into a scratch drawing and saved as CDXML there: if either fails, the CDXML
- * beside it is pasted instead, so a paste can never leave a drawing that can't be saved.
+ * The data is checked before it is taken, field by field (clip-check.ts soundContents; review
+ * F1b-R05, F1c-R05, F1d-R03): anything unsound and the CDXML beside it is pasted instead.
  * Settings this version doesn't know are kept on the objects as they are.
  */
 export function nativeDrawing(text: string): Doc | null {
@@ -351,39 +348,9 @@ export function nativeDrawing(text: string): Doc | null {
     const j = JSON.parse(text) as { app?: unknown; v?: unknown; style?: unknown; background?: unknown; contents?: Record<string, unknown> };
     if (j?.app !== 'Chemweave' || !Number.isInteger(j.v) || (j.v as number) < 1 || (j.v as number) > NATIVE_VERSION) return null;
     if (!j.contents || typeof j.contents !== 'object') return null;
+    const contents = soundContents(j.contents);
+    if (!contents) return null;
     type Obj = Record<string, unknown>;
-    const fin = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
-    // (a place: a finite number no more than a million points from the origin)
-    const at = (v: unknown) => fin(v) && Math.abs(v as number) <= MAX_PLACE;
-    const pt = (v: unknown) => !!v && typeof v === 'object' && at((v as Obj).x) && at((v as Obj).y);
-    const obj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v);
-    const optional = (v: unknown, type: string) => v === undefined || v === null || typeof v === type;
-    const run = (r: unknown) => obj(r) && typeof r.text === 'string' && (r.size === undefined || (fin(r.size) && (r.size as number) > 0 && (r.size as number) < 1000)) && optional(r.font, 'string') && optional(r.color, 'string');
-    const runs = (v: unknown) => Array.isArray(v) && v.every(run);
-    const ids = (v: unknown) => Array.isArray(v) && v.every(fin);
-    const frame = (f: unknown) => f === undefined || (obj(f) && ['atoms', 'captions', 'arrows', 'shapes'].every((k) => f[k] === undefined || ids(f[k])));
-    const onePin = (p: unknown) => obj(p) && typeof p.on === 'string' && ids(p.ref) && (p.at === undefined || pt(p.at));
-    // (an arrow's pins are its tail's and head's)
-    const pin = (p: unknown) => p === undefined || onePin(p) || (obj(p) && p.on === undefined && Object.values(p).every((x) => x === undefined || onePin(x)));
-    // (every number anywhere finite: JSON's 1e400 reads as Infinity)
-    const allFinite = (v: unknown, depth = 0): boolean => depth > 40 ? false : typeof v === 'number' ? Number.isFinite(v) : Array.isArray(v) ? v.every((x) => allFinite(x, depth + 1)) : obj(v) ? Object.values(v).every((x) => allFinite(x, depth + 1)) : true;
-    if (!allFinite(j.contents)) return null;
-    const list = (k: string, ok: (o: Obj) => boolean): Obj[] | null => {
-      const v = j.contents![k];
-      if (v === undefined) return [];
-      if (!Array.isArray(v)) return null;
-      return v.every((o) => obj(o) && fin(o.id) && pin(o.pin) && ok(o)) ? (v as Obj[]) : null;
-    };
-    const atoms = list('atoms', (a) => at(a.x) && at(a.y) && fin(a.z) && (a.z as number) >= 0 && (a.z as number) < 200 && (a.label === null || a.label === undefined || typeof a.label === 'string') && (a.charge === undefined || fin(a.charge)));
-    const bonds = list('bonds', (b) => fin(b.a1) && fin(b.a2) && fin(b.order));
-    const captions = list('captions', (c) => at(c.x) && at(c.y) && runs(c.runs));
-    const arrows = list('arrows', (r) => pt(r.tail) && pt(r.head) && (r.bez === undefined || (Array.isArray(r.bez) && r.bez.every(pt))));
-    const shapes = list('shapes', (s) => at(s.x1) && at(s.y1) && at(s.x2) && at(s.y2) && typeof s.kind === 'string' && (s.text === undefined || s.text === null || (obj(s.text) && runs(s.text.runs))) && frame(s.frame));
-    if (!atoms || !bonds || !captions || !arrows || !shapes) return null;
-    if (!atoms.length && !captions.length && !arrows.length && !shapes.length) return null;
-    const have = new Set(atoms.map((a) => a.id));
-    // (a bond to an atom that isn't there is left out)
-    const joined = bonds.filter((b) => have.has(b.a1) && have.has(b.a2));
     const d = new Doc();
     // (style settings only where they have the type this version expects)
     if (j.style && typeof j.style === 'object') {
@@ -391,19 +358,12 @@ export function nativeDrawing(text: string): Doc | null {
       for (const [k, v] of Object.entries(j.style as Obj)) if (k in base ? typeof v === typeof base[k] && (typeof v !== 'number' || Number.isFinite(v)) : true) base[k] = v;
     }
     if (typeof j.background === 'string') d.background = j.background;
-    d.restoreContents({ atoms, bonds: joined, captions, arrows, shapes } as unknown as Contents);
-    // tried first: pasted into a scratch drawing and saved there as CDXML (a throw here, and the CDXML is pasted)
-    const trial = new Doc();
-    trial.style = { ...d.style };
-    insertDrawing(trial, d, { x: 0, y: 0 });
-    writeCdxml(trial, { name: 'paste.cdxml' });
+    d.restoreContents(contents);
     return d;
   } catch {
     return null;
   }
 }
-/** How far from the origin (in points) a pasted drawing's places may be: far beyond any page. */
-const MAX_PLACE = 1e6;
 
 /**
  * The drawing on the Windows clipboard, our own whole first: when that is missing, damaged or from
