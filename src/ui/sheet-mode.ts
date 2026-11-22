@@ -5,13 +5,17 @@
 // cell holds and how its value was worked out.
 
 import { paletteRows } from './palette-ui';
-import { SheetView, popupMenu, selectionName } from './sheet-view';
+import { SheetView, popupMenu, selectionName, CELL_SIZE } from './sheet-view';
 import { ACTUAL_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { showContextMenu, type MenuItem } from './context-menu';
 import { Workbook, Sheet, Structure, CellStyle, CellBlock, Cell, Condition, CompareOp, makeStructure, growToMerges } from '../sheet/workbook';
 import { Range, MAX_ROWS, MAX_COLS, colName, colIndex, cellName, parseRange, parseCellRef, keyOf, rowOf, colOf, inRange } from '../sheet/refs';
-import { showsChem, chemPieces } from '../sheet/cell-text';
+import { showsChem } from '../sheet/cell-text';
+import { cellTextHtml } from '../sheet/cell-html';
+import { runsOf } from '../sheet/rich-text';
 import { fillReagentTable } from '../sheet/reagents';
+import { unitPrefs } from '../sheet/template-units';
+import { smilesCandidate, smilesPrefs } from '../sheet/smiles-cells';
 import { shiftFormula } from '../sheet/formula';
 import { PROPERTIES, MolProps, propertyValue } from '../sheet/properties';
 import { FORMATS, changeDecimals, describeFormat } from '../sheet/numfmt';
@@ -94,8 +98,8 @@ export interface SheetModeHost {
   changed(book?: Workbook): void;
   /** Whether the workbook is still open in a tab (for work that finishes after an await). */
   isOpen(book: Workbook): boolean;
-  /** A name or SMILES as a drawing in this style. */
-  toStructure(text: string, style: DocStyle): Promise<{ contents: Contents; notes: string[] } | { error: string }>;
+  /** A name or SMILES as a drawing in this style (`smilesOnly`: SMILES or a molfile, never read as a name). */
+  toStructure(text: string, style: DocStyle, smilesOnly?: boolean): Promise<{ contents: Contents; notes: string[] } | { error: string }>;
   /** Put cells on the clipboard: our own copy, tab-separated text and an HTML table. */
   writeCells(own: string, text: string, html: string): Promise<void>;
   /** Put one structure on the clipboard as a drawing (for ChemDraw, Word and PowerPoint). */
@@ -676,6 +680,13 @@ export class SheetMode {
       // on (as text is anyway, where it has formulas) or off for these cells
       case 'format-chem': this.style('Formula style', { chem: this.chemShown() ? false : true }); break;
       case 'merge-cells': this.mergeCells(); break;
+      // the objects kept from Excel (not shown here), for a sheet that shouldn't take them back (review F2-R11)
+      case 'remove-embedded-objects': {
+        const n = v.sheet.ole?.length ?? 0;
+        if (n) this.edit('Remove Embedded Objects', (s) => { s.removeOle(); });
+        this.host.flash(n ? `${n} embedded object${n > 1 ? 's' : ''} removed from this sheet.` : 'This sheet has no embedded objects.');
+        break;
+      }
       case 'format-general': this.style('Number format', { numFmt: undefined }); break;
       case 'format-number': this.style('Number format', { numFmt: FORMATS.number }); break;
       case 'format-percent': this.style('Number format', { numFmt: FORMATS.percent }); break;
@@ -1626,18 +1637,48 @@ export class SheetMode {
 
   /**
    * A SMILES or name typed into a column headed "Structure" (a reagent table's) is drawn there,
-   * in place of the text. Text that can't be read stays as it was typed.
+   * in place of the text; elsewhere, text that is valid SMILES is (Settings ▸ Preferences ▸
+   * Spreadsheets). Text that can't be read stays as it was typed.
    */
   private async typedStructure(r: number, c: number, text: string): Promise<void> {
     const s = this.view.sheet, wb = this.book;
-    if (!s || !wb || r === 0 || /\s/.test(text) && !/[a-z]{3}/i.test(text)) return;
+    if (!s || !wb) return;
     const head = s.values.get(keyOf(0, c));
-    if (typeof head !== 'string' || !/^structures?$/i.test(head.trim())) return;
-    const res = await this.host.toStructure(text, wb.drawingStyle);
+    const inColumn = r > 0 && typeof head === 'string' && /^structures?$/i.test(head.trim()) && !(/\s/.test(text) && !/[a-z]{3}/i.test(text));
+    if (!inColumn && !smilesCandidate(text)) return;
+    if (s.colDefs.has(c) && r >= s.colDefs.get(c)!.firstRow) return;
+    const res = await this.host.toStructure(text, wb.drawingStyle, !inColumn);
     // still the same text in the same cell (nothing typed over it meanwhile)
     if ('error' in res || this.book !== wb || s.values.get(keyOf(r, c)) !== text || s.cell(r, c)?.structure) return;
     // not through edit(): that would end typing begun in the next cell meanwhile
     wb.edit('Structure from typing', () => s.setStructure(r, c, res.contents), this.view.place());
+    this.view.refresh();
+    this.host.changed();
+  }
+
+  /** SMILES pasted as text (from Excel, a paper or a web page) is drawn in its cells, as one step that Undo takes back to the text. */
+  private async pastedSmiles(s: Sheet, R: Range): Promise<void> {
+    const wb = this.book;
+    if (!wb || !smilesPrefs.draw) return;
+    const texts: { r: number; c: number; text: string }[] = [];
+    for (let r = R.r1; r <= Math.min(R.r2, s.lastRow); r++) {
+      for (let c = R.c1; c <= Math.min(R.c2, s.lastCol); c++) {
+        const cell = s.cell(r, c);
+        if (cell?.structure || !cell?.input || (s.colDefs.has(c) && r >= s.colDefs.get(c)!.firstRow)) continue;
+        if (smilesCandidate(cell.input)) texts.push({ r, c, text: cell.input });
+        if (texts.length >= 500) break;
+      }
+    }
+    if (!texts.length) return;
+    const got: { r: number; c: number; text: string; contents: Contents }[] = [];
+    for (const t of texts) {
+      const res = await this.host.toStructure(t.text, wb.drawingStyle, true);
+      if (!('error' in res)) got.push({ ...t, contents: res.contents });
+    }
+    // only cells that still hold the text pasted
+    const still = got.filter((g) => this.book === wb && s.cell(g.r, g.c)?.input === g.text && !s.cell(g.r, g.c)?.structure);
+    if (!still.length) return;
+    wb.edit(still.length > 1 ? 'Structures from SMILES' : 'Structure from SMILES', () => { for (const g of still) s.setStructure(g.r, g.c, g.contents); }, this.view.place());
     this.view.refresh();
     this.host.changed();
   }
@@ -1912,7 +1953,7 @@ export class SheetMode {
     for (let i = 2; names.has(name.toLowerCase()); i++) name = `Reagents ${i}`;
     const s = wb.edit('Reagent table', () => {
       const sh = wb.addSheet(name, wb.active + 1);
-      fillReagentTable(sh);
+      fillReagentTable(sh, unitPrefs.place);
       return sh;
     }, v.place());
     v.goSheet(wb.sheets.indexOf(s));
@@ -2027,10 +2068,24 @@ export class SheetMode {
       return `<img src="${bmp.toDataURL('image/png')}" style="width:${b.w * k}pt;height:${b.h * k}pt" alt="">`;
     };
     const st = s.styleAt(r, c);
+    const v = s.values.get(keyOf(r, c));
+    const num = typeof v === 'number';
+    // Excel reads a number with x:num and keeps its full value
+    const text = this.cellText(s, r, c);
+    // typed text: formatting on part of it, and formulas with their numbers lowered and charges
+    // raised, as the grid shows them (for copying and printing alike)
+    const typed = typeof v === 'string' && !s.cell(r, c)?.structure;
+    const runs = typed ? runsOf(s.cell(r, c)) : undefined;
+    const rich = typed ? cellTextHtml(text, st, runs && runs.map((x) => x.text).join('') === text ? runs : undefined, showsChem(st?.chem, v, s.wb.autoChem)) : null;
     const css: string[] = [];
     if (st?.bold) css.push('font-weight:700');
     if (st?.italic) css.push('font-style:italic');
-    if (st?.underline) css.push('text-decoration:underline');
+    // (a line on the cell would run under every piece of rich text: its pieces carry their own)
+    const lines = rich === null ? [...(st?.underline ? ['underline'] : []), ...(st?.excel?.strike ? ['line-through'] : [])] : [];
+    if (lines.length) css.push(`text-decoration:${lines.join(' ')}`);
+    // a double or accounting underline: as CSS draws one, and as Excel's own HTML names it
+    const uKind = st?.underline ? st.excel?.u : undefined;
+    if (rich === null && uKind) css.push(`text-decoration-style:${/^double/.test(uKind) ? 'double' : 'solid'};text-underline-style:${uKind === 'singleAccounting' ? 'single-accounting' : uKind === 'doubleAccounting' ? 'double-accounting' : 'double'}`);
     if (st?.color) css.push(`color:${st.color}`);
     if (st?.fill) css.push(`background:${st.fill}`);
     if (st?.align) css.push(`text-align:${st.align}`);
@@ -2038,8 +2093,6 @@ export class SheetMode {
       const b = st?.borders?.[side];
       if (b) css.push(`border-${side}:${b.style === 'thick' ? '2.25pt' : b.style === 'medium' ? '1.5pt' : '.5pt'} ${b.style === 'double' ? 'double' : b.style === 'dashed' ? 'dashed' : b.style === 'dotted' ? 'dotted' : 'solid'} ${b.color ?? '#000'}`);
     }
-    const v = s.values.get(keyOf(r, c));
-    const num = typeof v === 'number';
     // numbers sit on the right unless set otherwise, as on screen
     if (num && !st?.align) css.push('text-align:right');
     if (fit) {
@@ -2047,14 +2100,13 @@ export class SheetMode {
       if (st?.wrap) css.push('white-space:pre-wrap'); else css.push('white-space:pre;overflow:hidden');
       if (st?.size) css.push(`font-size:${st.size}pt`);
       if (st?.font) css.push(`font-family:'${st.font}', Calibri, Carlito, Arial, sans-serif`);
+    } else {
+      // copied: the font and size the grid shows (cells with none of their own are in the theme's body font)
+      css.push(`font-size:${st?.size ?? CELL_SIZE}pt`);
+      const family = st?.font ?? (s.wb.theme ? themeOf(s.wb.theme).minor : undefined);
+      if (family) css.push(`font-family:'${family}'`);
     }
-    // Excel reads a number with x:num and keeps its full value
-    const text = this.cellText(s, r, c);
-    // printed pages: formulas with their numbers lowered and charges raised, as on screen
-    const chem = fit && typeof v === 'string' && showsChem(st?.chem, v, s.wb.autoChem)
-      ? chemPieces(text).map((p) => { const t = esc(p.text); const x = p.pos === 'sub' ? `<sub>${t}</sub>` : p.pos === 'sup' ? `<sup>${t}</sup>` : t; return p.italic ? `<i>${x}</i>` : x; }).join('')
-      : null;
-    return { attrs: `${num ? ` x:num="${v}"` : ''}${css.length ? ` style="${css.join(';')}"` : ''}`, body: picture() ?? chem ?? esc(text).replace(/\n/g, '<br>') };
+    return { attrs: `${num ? ` x:num="${v}"` : ''}${css.length ? ` style="${css.join(';')}"` : ''}`, body: picture() ?? rich ?? esc(text).replace(/\n/g, '<br>') };
   }
 
   /** Page Layout > Print Preview: the pages as they will print. */
@@ -2186,6 +2238,8 @@ export class SheetMode {
     }, () => target);
     if (cut) { this.clip = null; v.copied = null; }
     v.select(target, { r: top, c: left }, { r: top, c: left });
+    // text from elsewhere (not cells copied here): SMILES in it is drawn
+    if (!fromClip && !got.own && what !== 'formats') void this.pastedSmiles(s, target);
   }
 
   /** Copy as SMILES: the structures in the selection, one per line. */
@@ -2507,6 +2561,13 @@ export class SheetMode {
     for (const [name, on] of [['edit-note', note?.kind === 'note'], ['show-note', note?.kind === 'note'], ['delete-note', !!note]] as const) {
       const b = this.ribbon.querySelector<HTMLButtonElement>(`[data-sh="${name}"]`);
       if (b) b.disabled = !on;
+    }
+    // Edit ▸ Spreadsheet ▸ Data Tools ▸ Remove Embedded Objects: off on a sheet with none, saying why
+    const oleOff = s.removeOleBlocked;
+    for (const m of document.querySelectorAll<HTMLButtonElement>('button[data-cmd="remove-embedded-objects"]')) {
+      m.dataset.tip ??= m.title;
+      m.disabled = oleOff !== null;
+      m.title = oleOff ?? m.dataset.tip;
     }
     for (const m of document.querySelectorAll('[role="menuitemcheckbox"][data-cmd="show-all-notes"]')) m.setAttribute('aria-checked', String(this.notes.showAll));
     for (const m of document.querySelectorAll('[role="menuitemcheckbox"][data-cmd="circle-invalid"]')) m.setAttribute('aria-checked', String(this.view.circleInvalid));

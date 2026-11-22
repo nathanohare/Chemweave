@@ -24,6 +24,9 @@ When the pointer turns into a pointing hand over a structure, it is a drawing yo
 
 - **Home** tab: font, size, color, bold (Ctrl+B), italic (Ctrl+I), underline (Ctrl+U), subscript (Ctrl+=), superscript (Ctrl+Shift+=), bigger and smaller (Ctrl+] and Ctrl+[).
 - **C₉H₈** sets the selection in formula style: numbers lowered, charges raised.
+- **Strikethrough** and **Small Caps** (Ctrl+Shift+K) are beside them. The ⬊ at the corner of the **Font** group has the rest: **Change Case**, **All Caps**, character spacing and kerning, and text effects (fill, outline, shadow).
+- **Clear All Formatting** puts the selected text and its paragraphs back to plain Normal text. Links, comments and formulas stay.
+- **Show/Hide ¶** (Ctrl+Shift+8) shows the paragraph marks, spaces and tabs, to see why text sits where it does. They show on screen only, never in print or in the saved file.
 - **Format Painter** (beside **Copy**) copies the formatting of the selected text, or of the paragraph the cursor is in, to the next text you click or drag over; double-click it to keep painting until Esc. See [Getting started](getting-started.md#format-painter-every-mode).
 - **Insert** tab ▸ **Symbol** types Greek letters, arrows, °, Å and other signs, found by name; see [Insert ▸ Symbol](getting-started.md#insert--symbol-every-mode).
 - **Highlight:** the **ab** button highlights the selected text; the arrow beside it picks the color.
@@ -36,6 +39,8 @@ When the pointer turns into a pointing hand over a structure, it is a drawing yo
 - Line spacing: the **Home** tab list, or Ctrl+1 (single), Ctrl+5 (1.5) and Ctrl+2 (double). **Line Spacing Options…** offers **Exactly** or **At least** a number of points.
 - Indents and space before and after: **Layout** tab ▸ **Paragraph** group. Lengths are in inches; type `cm`, `mm` or `pt` after a number to use those instead.
 - **Bullets** and **Numbering** on the **Home** tab make lists. Tab and Shift+Tab change the level.
+- The arrow beside **Bullets** opens the **Bullet Library**, to choose the bullet of the selected items. **Multilevel List** sets how each level of a numbered list is numbered (1. a. i., 1. 1.1. 1.1.1., I. A. 1., Step 1. a. i. and others).
+- **Tabs…** sets tab stops for the selected paragraphs: left, center, right or decimal, with a leader (dots, dashes or a line up to the stop) if you want one. With the ruler showing (**View** tab ▸ **Ruler**), a click on the ruler sets a stop, and the paragraph's indents can be dragged there.
 - The small ⬊ in the corner of a ribbon group opens all of that group's settings. Its pin button docks the box in the right-hand panel so it stays open while you work.
 - **Borders** (the ▦ ▾ button on the **Home** tab) puts lines above, below, beside or around the selected paragraphs, as Word's Borders menu. Choosing a side again removes it. **Borders and Shading…** sets the kind of line, its width and color, and a shading color; the shading button beside it shades paragraphs quickly. Paragraphs one after another with the same borders share one box.
 - **Sort** (A↓Z) puts the selected paragraphs in order (as text, numbers or dates, by the whole paragraph or by a field cut at tabs or commas), or, with the cursor in a table, the table's rows by a column. A heading row stays at the top; rows with cells merged down can't be sorted.
@@ -48,6 +53,7 @@ To change a style, open the ⬊ in the corner of **Styles** (or the **Format** p
 
 - **Match This Paragraph** makes the style look like the paragraph the cursor is in.
 - **Reset Style** puts the style back as it first was.
+- The **Styles pane** (Ctrl+Alt+Shift+S, or the last button of the Styles group) lists every paragraph and character style, with Heading 4 to 9 and your own. Apply, change and make new ones there.
 
 ## Themes and style sets
 
@@ -60,6 +66,16 @@ The **Design** tab changes the style of the whole document at once, as Word's Do
 - **Set as Default** makes the current theme, style set and spacing the start of every new document.
 
 Formatting you set by hand stays as it is. The theme and style set are saved in the Word file, and its styles are Word's own, so Word shows the same look.
+
+### Watermark, page color and page borders
+
+<!-- index: Watermark, Page Color, Page Borders -->
+
+The **Design** tab's **Page Background** group sets what is behind the text on every page:
+
+- **Watermark** writes words such as DRAFT or CONFIDENTIAL across every page behind the text, or words of your own. It is saved as Word's watermark.
+- **Page Color** colors the paper, on screen and in print (Word prints a page color only when it is set to). **No Color** goes back to white.
+- **Page Borders** draws a line around every page, measured from the edge of the paper or from the text.
 
 ## Structures and pictures in the text
 
@@ -146,6 +162,12 @@ While you are in a table, the **Table** tab offers:
 - **Shading** and **No Shading**;
 - alignment **Across** (Left, Center, Right, for the column) and **Down** (Top, Middle, Bottom, for the cell);
 - **Column width**, **Fit to Contents**, **Fit to Page** and **Even Columns**.
+- **Merge Cells** (joins the cells you dragged across), **Split Table** (a new table from this row down) and **Cell Margins…** (the room between a cell's edge and its text);
+- **Table Styles**: a gallery of ready-made looks, with check boxes for **Header Row**, **Total Row**, **Banded Rows**, **First Column**, **Last Column** and **Banded Columns**. They are saved as Word table styles;
+- **Borders**: pick the line, its weight and color, then **Borders ▾** puts it on the selected cells' edges, or **Border Painter** draws it on each edge you click or drag along (Esc stops). **View Gridlines** shows faint dotted lines where a table has no borders, on screen only;
+- **Convert to Text**, which turns the rows into paragraphs, with tabs, commas or another character between the cells.
+
+Going the other way, **Insert** tab ▸ **Text to Table** makes a table of the selected paragraphs: each paragraph becomes a row, cut into cells at tabs, commas or another character.
 
 The same commands are on the right-click menu. Esc picks the whole table, and Delete then removes it.
 
@@ -197,6 +219,12 @@ Add, delete or move captions and every number and reference follows.
 ## Compound numbers
 
 **References** tab ▸ **Compound Number** (Alt+Shift+N) puts a bold compound number in the text. Choose **A new compound** for the next number, or pick one already numbered to mention it again. Numbers follow the order compounds are first mentioned, so adding one earlier in the text renumbers the rest. Type a letter after a number for a series (2a, 2b).
+
+### Linking a manuscript to its SI project
+
+<!-- index: Linked SI, SI Compound, SI Reference, Check Against SI -->
+
+A manuscript can be linked to its [SI project](si-project.md#linking-a-manuscript-to-its-si) with **References** tab ▸ **Linked SI**. **SI Compound…** then puts in a compound's number from the SI, **SI Reference…** a label such as Table S1 or an SI page number, and **Check Against SI** lists compounds missing from the SI and yields, ee and dr that differ.
 
 ## References and bibliography
 
@@ -440,6 +468,8 @@ The **View** tab has Word's ways of looking at a document. The text is the same 
 **Page Movement** sets how the pages sit in Print Layout: **Vertical**, one under another, or **Side to Side**, two at a time in a row that the mouse wheel scrolls across. Under **Zoom**, **One Page** fits a whole page in the window, **Multiple Pages** puts two pages in each row, and **Page Width** fits the page across the window.
 
 **Split** (Ctrl+Alt+S) divides the window into two panes on the same document, one above the other, each scrolled and zoomed on its own. Drag the bar between them to move it. Double-click the bar, or click Split again, to go back to one pane. You can type in either pane.
+
+The **Show** group has two check boxes. **Ruler** puts a ruler above the page with the paragraph's indents and tab stops, to drag and click. **Navigation Pane** lists the headings beside the pages: click one to go to it, drag the headings into another order, and use its search box to list every place a word is found.
 
 **New Window** opens the document in a second tab, named as Word names windows: Report.docx:1 and Report.docx:2. Each tab keeps its own view and place, so one can be in Outline while the other shows the pages. Typing in either shows in both, and Save in either saves the one file. Closing one leaves the document open in the other.
 

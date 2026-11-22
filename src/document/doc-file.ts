@@ -338,8 +338,11 @@ export class DocFile {
   /** A header or footer typed into: plain text again if that is all it is; one left as it was (everything typed undone) as it was, with no step of Undo. */
   private endHf(b: Box, at: HfPlace): void {
     if (b.recorded && b.before && b.ed.t === b.start && this.ed.lastStep === b.step) {
+      // (what was typed and undone there can still be brought back by Redo, as in Word)
+      const ahead = b.ed.redoneText;
+      const t = ahead ? b.made(ahead as { runs: TextRun[]; paras: ParaStyle[] }) : null;
       this.ed.update(b.before, null);
-      this.ed.dropStep(b.step, () => true);
+      this.ed.dropStep(b.step, () => true, t || undefined);
       return;
     }
     if (!b.recorded) return;

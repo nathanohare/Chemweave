@@ -1,17 +1,23 @@
 // Takes the still pictures in docs/images/ for the README and the user guide.
-// Start the program first (npm run dev), then: node scripts/screenshots.mjs [address]
+// Start the program first (npm run dev), then: node scripts/screenshots.mjs [address] [scene ...]
 // Needs Playwright with Chromium (npm install --no-save playwright; npx playwright install chromium),
 // or set CHROMIUM to a Chromium program to use instead. scripts/animations.mjs makes the GIFs.
 
-import { open, shot, pointer, glide, look, addSmiles, atomAt, canvasBox, tool, drawScheme, select, fitOnSlide, contentClip } from './shot-lib.mjs';
+import { open, shot, pointer, glide, look, addSmiles, atomAt, canvasBox, tool, drawScheme, select, fitOnSlide, fitClear, contentClip } from './shot-lib.mjs';
 
-const url = process.argv[2] ?? 'http://localhost:5173/';
+// node scripts/screenshots.mjs [address] [scene ...]: with scene names (modes, ring-fills,
+// group-tooltip, customize) only those are taken
+const args = process.argv.slice(2);
+const url = args[0]?.includes('://') ? args.shift() : 'http://localhost:5173/';
+const want = (scene) => !args.length || args.includes(scene);
 
 // ---------------------------------------------------------------- the drawing, light and dark
-{
+if (want('modes')) {
   const { browser, page, problems } = await open(url);
   // the product selected, so the Analysis panel shows its formula and masses
   await drawScheme(page, { select: true });
+  // the Style panel floats over the right of the canvas: show the scheme in the room beside it
+  await fitClear(page);
   await shot(page, 'drawing');
 
   // the same page dark (screen only)
@@ -37,7 +43,7 @@ const url = process.argv[2] ?? 'http://localhost:5173/';
   // the side panel folded away, so the slide has the room
   await page.evaluate(() => window.__app.command('fold-side'));
   await page.waitForTimeout(400);
-  await drawScheme(page, { xs: [150, 420, 740], y: 360, fit: false });
+  await drawScheme(page, { xs: [150, 800, 1500], y: 360, fit: false, textFirst: true });
   await fitOnSlide(page);
   // the mouse resting on an atom with a drawing tool picked: the structures are real ones,
   // edited right on the slide with the same tools and hotkeys
@@ -152,10 +158,12 @@ const url = process.argv[2] ?? 'http://localhost:5173/';
   await shot(page, 'references');
   await page.keyboard.press('Escape');
 
-  // Design: the conference poster template, with the shape library open
+  // Design: a poster layout from the New Design window, with the shape library open
   await page.evaluate(() => window.__app.command('new-design'));
   await page.waitForTimeout(800);
-  await page.locator('dialog[open] button', { hasText: 'Conference poster' }).click();
+  await page.locator('dialog[open] .tw-cat', { hasText: 'Posters' }).click();
+  await page.waitForTimeout(600);
+  await page.locator('dialog[open] button', { hasText: 'Classic three columns' }).first().click();
   await page.waitForTimeout(1500);
   await page.evaluate(() => { window.__app.editor.clearSelection(); window.__app.editor.fit(); });
   await shot(page, 'design');
@@ -174,7 +182,7 @@ const url = process.argv[2] ?? 'http://localhost:5173/';
 }
 
 // ---------------------------------------------------------------- ring fills and highlights
-{
+if (want('ring-fills')) {
   const { browser, page, problems } = await open(url);
   // estrone: each ring filled a different way
   const est = await addSmiles(page, 'C[C@]12CC[C@H]3[C@@H](CCc4cc(O)ccc34)[C@@H]1CCC2=O', 230, 250);
@@ -218,7 +226,7 @@ const url = process.argv[2] ?? 'http://localhost:5173/';
 }
 
 // ---------------------------------------------------------------- group abbreviations
-{
+if (want('group-tooltip')) {
   const { browser, page, problems } = await open(url);
   const ids = await addSmiles(page, 'O=C1CC[C@@H](O)[C@H](C)C1', 300, 250);
   await look(page, 4.2, 300, 252);
@@ -246,10 +254,10 @@ const url = process.argv[2] ?? 'http://localhost:5173/';
 }
 
 // ---------------------------------------------------------------- made your own
-{
+if (want('customize')) {
   const { browser, page, problems } = await open(url);
   await drawScheme(page);
-  // toolboxes unlocked and moved: Structure docked along the top, Colours floating by the scheme
+  // toolboxes unlocked and moved: Structure and Colors dragged to new places
   await page.evaluate(() => { const a = window.__app; a.command('lock-toolboxes'); a.command('toolbox-structure'); a.command('toolbox-colours'); });
   await page.waitForTimeout(500);
   const c = await canvasBox(page);
@@ -258,7 +266,7 @@ const url = process.argv[2] ?? 'http://localhost:5173/';
   await page.mouse.move(h.x + 10, h.y + h.height / 2); await page.mouse.down();
   await page.mouse.move(c.x + c.width / 2, c.y + 6, { steps: 20 }); await page.mouse.up();
   await page.waitForTimeout(400);
-  h = await head('Colours');
+  h = await head('Colors');
   await page.mouse.move(h.x + 10, h.y + h.height / 2); await page.mouse.down();
   await page.mouse.move(c.x + 40, c.y + c.height - 150, { steps: 20 }); await page.mouse.up();
   await page.waitForTimeout(400);
@@ -268,15 +276,13 @@ const url = process.argv[2] ?? 'http://localhost:5173/';
   await page.evaluate(() => window.__app.command('dark-colours'));
   await page.waitForTimeout(400);
   await page.locator('dialog[open] select').first().selectOption('Slate');
-  await page.locator('dialog[open] button', { hasText: 'Use' }).click();
+  await page.locator('dialog[open] .sw-foot button', { hasText: 'Apply' }).click();
   await page.waitForTimeout(400);
-  // Edit > Hotkeys, finding the benzene ring's key
-  await page.evaluate(() => window.__app.command('hotkeys'));
-  await page.waitForTimeout(400);
-  await page.keyboard.type('ring');
-  await page.waitForTimeout(400);
-  await page.evaluate(() => { const d = document.querySelector('.hotkeys')?.closest('dialog'); if (d) { d.style.margin = '0'; d.style.left = 'auto'; d.style.right = '24px'; d.style.top = '120px'; d.style.maxHeight = '560px'; } });
-  await page.waitForTimeout(400);
+  // the Settings window closed again, so the page shows
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { window.__app.editor.clearSelection(); });
+  await fitClear(page);
   await shot(page, 'customize');
   if (problems.length) console.log('Errors on the page:', problems);
   await browser.close();

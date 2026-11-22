@@ -285,7 +285,8 @@ if (want('name-to-structure')) {
     await page.keyboard.type('(2S)-2-[4-(2-methylpropyl)phenyl]propanoic acid', { delay: 45 });
     await page.waitForTimeout(400);
     await press(page, 'Insert');
-    await page.waitForFunction(() => window.__app.doc.atoms.size > 0, null, { timeout: 60000 });
+    // (the whole structure: 15 atoms)
+    await page.waitForFunction(() => window.__app.doc.atoms.size >= 15, null, { timeout: 60000 });
     await page.waitForTimeout(700);
     await page.evaluate(() => { const a = window.__app; a.editor.fit(); });
     await page.waitForTimeout(400);
@@ -319,7 +320,10 @@ if (want('dark-mode')) {
       await glide(page, s.x + s.width / 2, s.y + s.height / 2, 12);
       await page.locator('dialog[open] select').first().selectOption(name);
       await page.waitForTimeout(500);
-      await press(page, 'Use');
+      // (the colors are a page of the Settings window now: Apply, then close it to see the page)
+      await press(page, 'Apply');
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Escape');
       await page.waitForTimeout(1300);
     }
     await glide(page, c.x + c.width * 0.5, c.y + c.height * 0.8, 15);

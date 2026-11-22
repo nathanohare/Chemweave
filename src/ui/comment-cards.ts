@@ -3,12 +3,14 @@
 // the page next to their words; slides list them in a pane beside the slide. Each change goes
 // back through `actions`, so it is one step of the file's Undo.
 
-import { initials, shortDate, type CommentThread } from '../document/comments';
+import { cleanNoteRuns, initials, noteRuns, shortDate, type CommentNote, type CommentThread, type NoteRun } from '../document/comments';
+import { RichInput } from './rich-input';
+import type { RunLook } from '../sheet/rich-text';
 
 export interface ThreadActions {
-  /** Change the comment's own text, or a reply's (by its place in the replies). */
-  edit(text: string, reply?: number): void;
-  reply(text: string): void;
+  /** Change the comment's own text, or a reply's (by its place in the replies), with its words' looks (null: none). */
+  edit(text: string, reply?: number, runs?: NoteRun[] | null): void;
+  reply(text: string, runs?: NoteRun[] | null): void;
   /** Take away a reply. */
   removeReply(i: number): void;
   resolve(done: boolean): void;
@@ -33,33 +35,84 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e;
 };
 
+/** A text box for a note: what it holds, and how to put it in the card. */
+interface NoteBox { el: HTMLElement; focus(): void }
+
+/** Pieces of text with looks as each character's look in the rich text box, and back. */
+const looksOf = (text: string, runs: NoteRun[] | null): RunLook[] => {
+  const out: RunLook[] = [];
+  for (const r of runs ?? [{ text }]) {
+    const l: RunLook = { ...(r.bold ? { bold: true } : {}), ...(r.italic ? { italic: true } : {}), ...(r.underline ? { underline: true } : {}), ...(r.strike ? { strike: true } : {}), ...(r.sub ? { pos: 'sub' as const } : r.sup ? { pos: 'sup' as const } : {}) };
+    for (let i = 0; i < r.text.length; i++) out.push(l);
+  }
+  return out;
+};
+const runsOf = (text: string, looks: RunLook[]): NoteRun[] | null =>
+  cleanNoteRuns([...text].map((c, i) => { const l = looks[i] ?? {}; return { text: c, bold: l.bold, italic: l.italic, underline: l.underline, strike: l.strike, sub: l.pos === 'sub', sup: l.pos === 'sup' }; }));
+
 /**
  * A text box for a note: Enter saves (Shift+Enter starts a new line), Escape stops. Escape keeps
  * what was typed into a new note or reply (as Word does) and takes back changes to an old one.
+ * With `rich` (a Word or PowerPoint comment), it is the rich text box the cells and Outline View
+ * use: Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+= and Ctrl+Shift+= set bold, italic, underline, sub- and
+ * superscript, and the looks go with the text.
  */
-function noteBox(value: string, placeholder: string, save: (text: string) => void, stop: () => void): HTMLTextAreaElement {
-  const ta = el('textarea', 'cmt-input');
-  ta.value = value;
-  ta.placeholder = placeholder;
-  ta.rows = Math.min(8, Math.max(2, value.split('\n').length));
-  ta.spellcheck = true;
+function noteBox(note: Pick<CommentNote, 'text' | 'runs'>, placeholder: string, save: (text: string, runs: NoteRun[] | null) => void, stop: () => void, rich: boolean): NoteBox {
+  const value = note.text;
+  let read: () => { text: string; runs: NoteRun[] | null };
+  let box: HTMLElement;
+  let focus: () => void;
+  if (rich) {
+    const ri = new RichInput();
+    ri.setText(value, looksOf(value, noteRuns(note)));
+    box = ri.el;
+    box.className = 'cmt-input cmt-rich';
+    box.dataset.placeholder = placeholder;
+    box.setAttribute('aria-label', placeholder);
+    box.spellcheck = true;
+    const marks = () => box.classList.toggle('empty', !ri.value);
+    marks();
+    box.addEventListener('input', marks);
+    read = () => {
+      const text = ri.value.replace(/\s+$/, '');
+      return { text, runs: runsOf(text, ri.charLooks.slice(0, text.length)) };
+    };
+    focus = () => { ri.focus(); ri.setSelectionRange(ri.value.length, ri.value.length); };
+    box.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (!e.shiftKey && /^[biu]$/.test(k)) { e.preventDefault(); ri.toggle(({ b: 'bold', i: 'italic', u: 'underline' } as const)[k as 'b' | 'i' | 'u']); }
+      else if (k === '=' || k === '+') { e.preventDefault(); ri.togglePos(e.shiftKey || k === '+' ? 'sup' : 'sub'); }
+    });
+  } else {
+    const ta = el('textarea', 'cmt-input');
+    ta.value = value;
+    ta.placeholder = placeholder;
+    ta.rows = Math.min(8, Math.max(2, value.split('\n').length));
+    ta.spellcheck = true;
+    ta.addEventListener('input', () => { ta.rows = Math.min(8, Math.max(2, ta.value.split('\n').length)); });
+    box = ta;
+    read = () => ({ text: ta.value.replace(/\s+$/, ''), runs: null });
+    focus = () => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); };
+  }
   let done = false;
   const finish = (keep: boolean) => {
     if (done) return;
     done = true;
-    if (keep) save(ta.value.replace(/\s+$/, ''));
+    if (keep) { const r = read(); save(r.text, r.runs); }
     else stop();
   };
-  ta.addEventListener('keydown', (e) => {
+  box.addEventListener('keydown', (e) => {
     e.stopPropagation();
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
-    else if (e.key === 'Escape') { e.preventDefault(); finish(!value && !!ta.value.trim()); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(!value && !!read().text.trim()); }
   });
-  ta.addEventListener('input', () => { ta.rows = Math.min(8, Math.max(2, ta.value.split('\n').length)); });
-  ta.addEventListener('blur', () => finish(true));
+  box.addEventListener('blur', () => finish(true));
+  // (the file keys, Ctrl+S, take what is typed first)
+  box.addEventListener('change', () => finish(true));
   // keys typed here are the comment's, not the page's
-  for (const ev of ['keyup', 'keypress', 'paste', 'copy', 'cut'] as const) ta.addEventListener(ev, (e) => e.stopPropagation());
-  return ta;
+  for (const ev of ['keyup', 'keypress', 'paste', 'copy', 'cut'] as const) box.addEventListener(ev, (e) => e.stopPropagation());
+  return { el: box, focus };
 }
 
 function header(author: string, date: string): HTMLElement {
@@ -73,9 +126,19 @@ function header(author: string, date: string): HTMLElement {
   return h;
 }
 
-function body(text: string): HTMLElement {
+/** A note's text, with its words' looks. */
+function body(n: Pick<CommentNote, 'text' | 'runs'>): HTMLElement {
   const p = el('div', 'cmt-text');
-  p.textContent = text;
+  const runs = noteRuns(n);
+  if (!runs) { p.textContent = n.text; return p; }
+  for (const r of runs) {
+    const s = el(r.sub ? 'sub' : r.sup ? 'sup' : 'span', undefined, r.text);
+    if (r.bold) s.style.fontWeight = 'bold';
+    if (r.italic) s.style.fontStyle = 'italic';
+    const line = [r.underline ? 'underline' : '', r.strike ? 'line-through' : ''].filter(Boolean).join(' ');
+    if (line) s.style.textDecoration = line;
+    p.append(s);
+  }
   return p;
 }
 
@@ -83,35 +146,36 @@ function body(text: string): HTMLElement {
  * The card for a comment. `editing` opens its text for typing (a new comment, or after Edit);
  * `active` marks the one whose words are shown.
  */
-export function threadCard(c: CommentThread, opts: { active: boolean; editing: boolean; actions: ThreadActions; label?: string }): HTMLElement {
+export function threadCard(c: CommentThread, opts: { active: boolean; editing: boolean; actions: ThreadActions; label?: string; /** Its notes keep their words' looks (Word's and PowerPoint's comments). */ rich?: boolean }): HTMLElement {
   const a = opts.actions;
+  const rich = !!opts.rich;
   const card = el('div', 'cmt-card' + (opts.active ? ' active' : '') + (c.done ? ' done' : ''));
   card.tabIndex = -1;
-  card.addEventListener('mousedown', (e) => { if (!(e.target as HTMLElement).closest('textarea, button')) a.focus(); });
+  card.addEventListener('mousedown', (e) => { if (!(e.target as HTMLElement).closest('textarea, button, .cmt-input')) a.focus(); });
 
   const first = el('div', 'cmt-note');
   first.append(header(c.author, c.date));
   if (opts.label) first.prepend(el('div', 'cmt-label', opts.label));
   if (opts.editing) {
-    const ta = noteBox(c.text, 'Type your comment', (t) => (t.trim() ? a.edit(t) : a.cancelNew ? a.cancelNew() : a.remove()), () => (!c.text.trim() ? (a.cancelNew ?? a.remove)() : a.edit(c.text)));
-    first.append(ta);
-    queueMicrotask(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
+    const ta = noteBox(c, 'Type your comment', (t, runs) => (t.trim() ? a.edit(t, undefined, runs) : a.cancelNew ? a.cancelNew() : a.remove()), () => (!c.text.trim() ? (a.cancelNew ?? a.remove)() : a.edit(c.text, undefined, noteRuns(c))), rich);
+    first.append(ta.el);
+    queueMicrotask(() => ta.focus());
   } else {
-    first.append(body(c.text));
+    first.append(body(c));
   }
   card.append(first);
   if (c.done) card.append(el('div', 'cmt-resolved', 'Resolved'));
 
   (c.replies ?? []).forEach((r, i) => {
     const n = el('div', 'cmt-note cmt-reply');
-    n.append(header(r.author, r.date), body(r.text));
+    n.append(header(r.author, r.date), body(r));
     const tools = el('div', 'cmt-tools');
     const edit = el('button', 'cmt-link', 'Edit');
     edit.type = 'button';
     edit.addEventListener('click', () => {
       const text = n.querySelector('.cmt-text')!;
-      const ta = noteBox(r.text, 'Reply', (t) => (t.trim() ? a.edit(t, i) : a.removeReply(i)), () => a.edit(r.text, i));
-      text.replaceWith(ta);
+      const ta = noteBox(r, 'Reply', (t, runs) => (t.trim() ? a.edit(t, i, runs) : a.removeReply(i)), () => a.edit(r.text, i, noteRuns(r)), rich);
+      text.replaceWith(ta.el);
       tools.remove();
       ta.focus();
     });
@@ -130,8 +194,8 @@ export function threadCard(c: CommentThread, opts: { active: boolean; editing: b
     reply.title = 'Answer this comment';
     reply.addEventListener('click', () => {
       bar.hidden = true;
-      const ta = noteBox('', 'Reply', (t) => { if (t.trim()) a.reply(t); else bar.hidden = false; }, () => { ta.remove(); bar.hidden = false; });
-      card.insertBefore(ta, bar);
+      const ta = noteBox({ text: '' }, 'Reply', (t, runs) => { if (t.trim()) a.reply(t, runs); else bar.hidden = false; }, () => { ta.el.remove(); bar.hidden = false; }, rich);
+      card.insertBefore(ta.el, bar);
       ta.focus();
     });
     const resolve = el('button', 'cmt-btn', c.done ? 'Reopen' : 'Resolve');
@@ -143,8 +207,8 @@ export function threadCard(c: CommentThread, opts: { active: boolean; editing: b
     edit.title = 'Change the comment’s text';
     edit.addEventListener('click', () => {
       const text = first.querySelector('.cmt-text')!;
-      const ta = noteBox(c.text, 'Type your comment', (t) => (t.trim() ? a.edit(t) : a.edit(c.text)), () => a.edit(c.text));
-      text.replaceWith(ta);
+      const ta = noteBox(c, 'Type your comment', (t, runs) => (t.trim() ? a.edit(t, undefined, runs) : a.edit(c.text, undefined, noteRuns(c))), () => a.edit(c.text, undefined, noteRuns(c)), rich);
+      text.replaceWith(ta.el);
       bar.hidden = true;
       ta.focus();
     });

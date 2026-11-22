@@ -198,8 +198,8 @@ describe('saving for Excel', () => {
       wb.sheets[1].setFrozen(0, 1);
     });
     const bytes = await writeXlsx(wb, pictures);
-    // (100 + 64) pixels across and 3 × 20 down, in twentieths of a point
-    expect(part(bytes, 'xl/worksheets/sheet1.xml')).toContain('<pane xSplit="2460" ySplit="900" topLeftCell="C4" activePane="bottomRight"/>');
+    // (100 + 64) pixels across and 3 × 22 down, in twentieths of a point
+    expect(part(bytes, 'xl/worksheets/sheet1.xml')).toContain('<pane xSplit="2460" ySplit="990" topLeftCell="C4" activePane="bottomRight"/>');
     expect(part(bytes, 'xl/worksheets/sheet2.xml')).toContain('<pane xSplit="1" topLeftCell="B1" activePane="topRight" state="frozen"/>');
     const { book } = await readXlsx(bytes);
     expect(book.sheets[0].split).toEqual({ rows: 3, cols: 2 });
@@ -389,7 +389,10 @@ describe('opening files made in Excel', () => {
       '<borders count="1"><border><left/><right/><top/><bottom/></border></borders>' +
       '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="10" fontId="1" fillId="2" borderId="0"><alignment horizontal="center" vertical="center"/></xf></cellXfs>';
     const { book } = await readXlsx(excelFile('<sheetData><row r="1"><c r="A1" s="1"><v>0.5</v></c></row></sheetData>', { styles, theme }));
-    expect(book.sheet.styleAt(0, 0)).toEqual({ bold: true, size: 14, color: '#112233', font: 'Arial', fill: '#' + applyTint('112233', 0.5).toLowerCase(), numFmt: '0.00%', align: 'center', valign: 'middle' });
+    // (the font's theme colour is kept for saving, G2-19)
+    const { excel, ...look } = book.sheet.styleAt(0, 0)!;
+    expect(look).toEqual({ bold: true, size: 14, color: '#112233', font: 'Arial', fill: '#' + applyTint('112233', 0.5).toLowerCase(), numFmt: '0.00%', align: 'center', valign: 'middle' });
+    expect(excel?.font?.xml).toContain('<color theme="4"/>');
   });
 
   it('says what it could not keep', async () => {

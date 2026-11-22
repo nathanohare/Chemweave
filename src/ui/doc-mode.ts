@@ -286,7 +286,7 @@ export class DocumentMode {
   private dragging:
     | { kind: 'text' }
     | { kind: 'box' }
-    | { kind: 'resize'; id: number; w0: number; h0?: number; scale0: number; x0: number; left?: boolean; top?: boolean; float?: Float }
+    | { kind: 'resize'; id: number; w0: number; h0?: number; scale0: number; x0: number; left?: boolean; top?: boolean; float?: Float; /** Set once the drag has made its undo step (the moves after it join that step). */ recorded?: boolean }
     | { kind: 'move'; id: number; from: { x: number; y: number }; float: Float; moved: boolean; others: [number, Float][] }
     | { kind: 'inline'; id: number; from: { x: number; y: number }; to: number | null }
     | { kind: 'paint'; done: Set<string> }
@@ -1040,19 +1040,22 @@ export class DocumentMode {
     const f = this.file;
     if (!f) return false;
     const has = (ed: { canUndo: boolean; canRedo: boolean }) => (redo ? ed.canRedo : ed.canUndo);
-    return has(this.ed) || (!!f.box?.cell && has(f.ed));
+    return has(this.ed) || (!!f.box && has(f.ed));
   }
 
-  /** Undo and Redo: in a table cell, its typing first, then the document's changes (rows added…). */
+  /**
+   * Undo and Redo: in a table cell, text box or note, its typing first, then the document's
+   * changes (rows added, the text box or note put in).
+   */
   private undo(redo: boolean): void {
     const f = this.file!;
     const b = f.box;
-    if (b?.cell && !(redo ? b.ed.canRedo : b.ed.canUndo)) {
+    if (b && !(redo ? b.ed.canRedo : b.ed.canUndo)) {
       const { id, cell } = b;
       f.endBox();
       if (redo) f.ed.redo(); else f.ed.undo();
       const o = f.t.objects[id];
-      if (o?.kind === 'table' && o.table.rows[cell.r]?.[cell.c] && !isCovered(o.table, cell.r, cell.c)) this.startCell(id, cell.r, cell.c);
+      if (cell && o?.kind === 'table' && o.table.rows[cell.r]?.[cell.c] && !isCovered(o.table, cell.r, cell.c)) this.startCell(id, cell.r, cell.c);
       else this.changed('selection');
       return;
     }
@@ -2022,13 +2025,20 @@ export class DocumentMode {
     const sel = ed.selected();
     const shown = fieldTexts(f.t);
     // a table on its own goes as cells (tab-separated and an HTML table), for a sheet, a slide, Excel and Word
+    // (a table's cells without the structures in them, which other programs get no text for)
+    const tableOf = (id: number | undefined) => {
+      const o = id === undefined ? undefined : f.t.objects[id];
+      return o?.kind === 'table' ? { ...o.table, rows: o.table.rows.map((row) => row.map((c) => ({ ...c, runs: c.runs.filter((r) => r.obj === undefined) }))) } : null;
+    };
     const lone = sel.runs.length === 1 && sel.runs[0].obj !== undefined ? f.t.objects[sel.runs[0].obj] : undefined;
-    const table = lone?.kind === 'table' ? { ...lone.table, rows: lone.table.rows.map((row) => row.map((c) => ({ ...c, runs: c.runs.filter((r) => r.obj === undefined) }))) } : null;
+    const table = lone ? tableOf(sel.runs[0].obj) : null;
     // fields show their text in other programs; figures are left out of plain text
     const plainRuns = sel.runs.map((r) => (r.obj !== undefined ? { ...r, obj: undefined, text: shown.get(r.obj) ?? '' } : r));
     const plain = table ? tableTsv(table) : richToPlain({ runs: plainRuns, paras: sel.paras });
     e.clipboardData.setData('text/plain', plain);
-    e.clipboardData.setData('text/html', table ? tableHtml(table) : richToHtml({ runs: plainRuns, paras: sel.paras }, { defaultSize: 11 }));
+    // tables among the text go to Word as tables
+    const htmlRuns = sel.runs.map((r, i) => (tableOf(r.obj) ? r : plainRuns[i]));
+    e.clipboardData.setData('text/html', table ? tableHtml(table) : richToHtml({ runs: htmlRuns, paras: sel.paras }, { defaultSize: 11, objectHtml: (r) => { const t = tableOf(r.obj); return t ? tableHtml(t) : null; } }));
     const objects: Record<number, DocObject> = {};
     // with the structures in any table's cells
     const add = (id: number) => {
@@ -3057,11 +3067,14 @@ export class DocumentMode {
         const k = w / d.w0;
         const next: DocObject = { ...o, scale: Math.abs(d.scale0 * k - 1) < 1e-6 ? undefined : Math.max(0.05, d.scale0 * k) };
         if (d.float) next.float = { ...d.float, x: d.float.x + (d.left ? d.w0 - w : 0), y: d.float.y + (d.top ? (d.h0 ?? 0) * (1 - k) : 0) };
-        f.ed.update({ ...f.t, objects: { ...f.t.objects, [d.id]: next } } as DocText, null);
+        // the first change of the drag makes its undo step; the rest join it
+        f.ed.update({ ...f.t, objects: { ...f.t.objects, [d.id]: next } } as DocText, d.recorded ? null : 'Resize');
+        d.recorded = true;
         return;
       }
-      if (o?.kind === 'textbox') this.setBoxWidth(d.id, Math.max(18, d.scale0 + (w - d.w0)), false);
-      else this.setScale(d.id, Math.max(0.05, d.scale0 * (w / d.w0)), false);
+      if (o?.kind === 'textbox') this.setBoxWidth(d.id, Math.max(18, d.scale0 + (w - d.w0)), !d.recorded);
+      else this.setScale(d.id, Math.max(0.05, d.scale0 * (w / d.w0)), !d.recorded);
+      d.recorded = true;
       return;
     }
     if (d.kind === 'move') {
@@ -3486,6 +3499,8 @@ export class DocumentMode {
     if (!o || (o.kind !== 'drawing' && o.kind !== 'picture' && o.kind !== 'textbox')) return;
     if (!fl && o.kind === 'textbox') return;
     if (fl && cellHolding(f.t, id)) { this.host.flash('A structure or picture in a table cell stays in its line.'); return; }
+    // already so (Wrap Text's choice it has): no step of Undo
+    if (JSON.stringify(floatOf(o) ?? null) === JSON.stringify(fl)) return;
     const next = { ...o, float: fl ?? undefined } as DocObject;
     f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: next } } as DocText, kind);
   }
@@ -4401,9 +4416,11 @@ export class DocumentMode {
   /** Ctrl+Enter: what follows the caret starts a new page. */
   private pageBreak(column = false): void {
     const ed = this.ed;
-    ed.enter(false);
-    const p = paraAt(ed.text, ed.focus);
-    ed.setParas(p, p, column ? { colBreak: true } : { pageBreak: true }, 'break');
+    ed.together(() => {
+      ed.enter(false);
+      const p = paraAt(ed.text, ed.focus);
+      ed.setParas(p, p, column ? { colBreak: true } : { pageBreak: true }, 'break');
+    });
   }
 
   private drawNew(): void {
@@ -5019,6 +5036,11 @@ export class DocumentMode {
     ], { ok: 'Insert', note: 'Captions number themselves in order, and references to them follow when they move.' });
     this.focus();
     if (!got || this.file !== f) return;
+    // the numbering, the words and the Caption style: one step of Undo
+    f.ed.together(() => this.putCaption(f, got));
+  }
+
+  private putCaption(f: DocFile, got: Record<string, string>): void {
     const ed = f.ed;
     const id = nextObjectId(f.t);
     ed.update({ ...f.t, objects: { ...f.t.objects, [id]: { kind: 'seq', name: got.name } } } as DocText, 'Insert caption');

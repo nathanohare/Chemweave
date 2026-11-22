@@ -14,6 +14,7 @@ import { tokenize } from '../chem/labels';
 import { idealGroups, sizeRanks, type NewmanGroup } from '../chem/newman';
 import { elementNumber } from '../chem/elements';
 import { OLD_RING_ARC, type EyeStyle, type NewmanLook } from './newman-prefs';
+import { keepLabels, readLabels } from './frame-labels';
 
 export { DEFAULT_NEWMAN_PREFS, NEWMAN_LOOK, OLD_RING_ARC, parseNewmanPrefs, type EyeStyle, type NewmanLook, type NewmanPrefs, type NewmanText, type RankLook, type RingArcLook } from './newman-prefs';
 
@@ -371,6 +372,7 @@ function drawSawhorse(doc: Doc, d: NewmanData, c: Vec): NewmanParts {
  */
 export function putNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
+  const was = readLabels(doc, old);
   if (old?.frame) {
     for (const x of old.frame.captions) doc.removeCaption(x);
     for (const x of old.frame.arrows) doc.removeArrow(x);
@@ -382,8 +384,10 @@ export function putNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec, id?: numb
   const frame: Frame = { atoms: parts.atoms ?? [], captions: parts.captions, arrows: parts.arrows, shapes: parts.shapes, padX: pad, padY: pad, fit: true };
   const b = frameBox(doc, frame, m) ?? { x1: c.x - 20, y1: c.y - 20, x2: c.x + 20, y2: c.y + 20 };
   const name = d.kind === 'newman' ? 'Newman projection' : 'Sawhorse projection';
-  if (old) { doc.updateShape(old.id, { ...b, frame, newman: d }); return old.id; }
-  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, newman: d, name }).id;
+  // (looks set on its labels by hand stay)
+  const madeLabels = keepLabels(doc, was, frame);
+  if (old) { doc.updateShape(old.id, { ...b, frame, newman: d, madeLabels }); return old.id; }
+  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, newman: d, name, madeLabels }).id;
 }
 
 /** Where a projection's front atom was drawn (the centre it is drawn round again). */

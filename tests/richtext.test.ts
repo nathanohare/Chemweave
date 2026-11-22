@@ -93,6 +93,53 @@ describe('formula style', () => {
     expect(show('[Fe(CN)6]3-')).toBe('[Fe(CN)_6]_3^-');
     expect(show('H+ and Cl- here')).toBe('H^+ and Cl^- here');
   });
+  // review F2b-R01: formula style keeps ChemDraw's rule, measured above (a number after a letter or
+  // a bracket goes down, a sign at the end goes up), also for a charge's own number. Text alone
+  // can't tell a count from a charge: azide N₃⁻ and triiodide I₃⁻ (counts) are written like N³⁻
+  // would be, fullerene anion C₆₀⁻ and dodecyl C₁₂H₂₅⁻ like sulfate SO₄²⁻. So none is guessed; a
+  // charge's number is put up by hand (superscript on those digits), as in ChemDraw.
+  it('lowers every number before a final sign, a count or a charge alike (review F2b-R01)', () => {
+    expect(show('N3-')).toBe('N_3^-');
+    expect(show('I3-')).toBe('I_3^-');
+    // (two hyphens in one text read as a name, as measured: Me-Al- below)
+    expect(show('I3- and I-')).toBe('I_3- and I-');
+    expect(show('C60-')).toBe('C_60^-');
+    expect(show('C12H25-')).toBe('C_12H_25^-');
+    expect(show('Fe3+/Fe2+')).toBe('Fe_3^+/Fe_2^+');
+    expect(show('Fe2+')).toBe('Fe_2^+');
+    expect(show('SO42-')).toBe('SO_42^-');
+    // a hydrate's dot stops a count, as a space does (CuSO₄·5H₂O)
+    expect(show('CuSO4·5H2O')).toBe('CuSO_4·5H_2O');
+    expect(show('Na2CO3⋅10H2O')).toBe('Na_2CO_3⋅10H_2O');
+  });
+  it('puts a radical ion\'s sign up after its dot, as before the hydrate rule (review F2c-R01)', () => {
+    expect(show('[M]•+')).toBe('[M]•^+');
+    expect(show('M•+')).toBe('M•^+');
+    expect(show('O2•-')).toBe('O_2•^-');
+    expect(show('C60•-')).toBe('C_60•^-');
+    expect(show('O2·-')).toBe('O_2·^-');
+    expect(show('O2⋅-')).toBe('O_2⋅^-');
+  });
+  it('reads each paragraph of a formula run over several on its own (review F2c-R02)', () => {
+    const runs = [{ text: 'Cl-\nBr-\nI-', formula: true }];
+    expect(rt.formulaRunParts(runs, 0)).toEqual([{ text: 'Cl', pos: 'base' }, { text: '-', pos: 'sup' }, { text: '\nBr', pos: 'base' }, { text: '-', pos: 'sup' }, { text: '\nI', pos: 'base' }, { text: '-', pos: 'sup' }]);
+  });
+  it('leaves a number set in superscript by hand up, with the sign after it (review F2b-R01)', () => {
+    const runs = [{ text: 'SO4', formula: true }, { text: '2', sup: true }, { text: '-', formula: true }];
+    expect(rt.formulaRunParts(runs, 0)).toEqual([{ text: 'SO', pos: 'base' }, { text: '4', pos: 'sub' }]);
+    expect(rt.formulaRunParts(runs, 2)).toEqual([{ text: '-', pos: 'sup' }]);
+  });
+  it('reads across the runs of one paragraph only, as Word, PowerPoint and copied text do (review F2b-R01)', () => {
+    // two hyphens in an earlier paragraph don't make Cl- a name
+    const runs = [{ text: 'Red-Al, then Me-Al\n' }, { text: 'Cl-', formula: true }];
+    expect(rt.formulaRunParts(runs, 1)).toEqual([{ text: 'Cl', pos: 'base' }, { text: '-', pos: 'sup' }]);
+    // a + later in the same paragraph still puts the - up (CO2-Na+), in another run too
+    const salt = [{ text: 'CH3CO2-Na', formula: true }, { text: '+', formula: true }];
+    expect(rt.formulaRunParts(salt, 0).map((p) => p.pos === 'sup' ? `^${p.text}` : p.pos === 'sub' ? `_${p.text}` : p.text).join('')).toBe('CH_3CO_2^-Na');
+    expect(rt.formulaPartsIn(salt, salt[1])).toEqual([{ text: '+', pos: 'sup' }]);
+    // a run not among the runs given is read alone
+    expect(rt.formulaPartsIn(undefined, { text: 'NH4+', formula: true })).toEqual([{ text: 'NH', pos: 'base' }, { text: '4', pos: 'sub' }, { text: '+', pos: 'sup' }]);
+  });
   // from ChemDraw's own drawing of 4,682 test strings
   it('follows what ChemDraw measured for signs', () => {
     expect(show('Red-Al')).toBe('Red-Al');

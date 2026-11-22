@@ -8,7 +8,7 @@
 // an arrow's kind of head (one or two electrons) or a shape's kind; in a sheet, the cells' formats.
 
 import * as rt from './richtext';
-import type { Arrow, Atom, Bond, Caption, Doc, ParaStyle, Shape, TextRun } from './model';
+import { isDataFrame, type Arrow, type Atom, type Bond, type Caption, type Doc, type ParaStyle, type Shape, type TextRun } from './model';
 import type { Sheet, CellBlock } from './sheet/workbook';
 import type { Range } from './sheet/refs';
 import { wordAt } from './text/layout';
@@ -90,7 +90,7 @@ const PICTURE_KEYS = ['look'] as const;
 
 /** Shapes whose outline and fill are their look (not tables, charts, equations, videos, or the invisible frames of diagrams). */
 const LOOK_KINDS = new Set<Shape['kind']>(['rect', 'oval', 'geo', 'ring', 'line', 'bracket', 'symbol']);
-const paintableShape = (s: Shape) => LOOK_KINDS.has(s.kind) && !s.energy && !s.diagram && !s.plate;
+const paintableShape = (s: Shape) => LOOK_KINDS.has(s.kind) && !isDataFrame(s);
 const plainPicture = (s: Shape) => s.kind === 'picture' && !s.chart && !s.math && !s.video && !s.zoom;
 
 /** The look taken from things on a drawing: one of each kind, so a mixed selection paints each kind from its own. */

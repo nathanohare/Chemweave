@@ -232,12 +232,14 @@ export class DocInsertUI {
     if (!f) return;
     this.host.stopBox();
     const ed = f.ed;
-    ed.enter(false);
-    let p = paraAt(ed.text, ed.focus);
-    ed.setParas(p, p, { pageBreak: true }, 'Blank Page');
-    ed.enter(false);
-    p = paraAt(ed.text, ed.focus);
-    ed.setParas(p, p, { pageBreak: true }, null);
+    ed.together(() => {
+      ed.enter(false);
+      let p = paraAt(ed.text, ed.focus);
+      ed.setParas(p, p, { pageBreak: true }, 'Blank Page');
+      ed.enter(false);
+      p = paraAt(ed.text, ed.focus);
+      ed.setParas(p, p, { pageBreak: true }, null);
+    });
     this.host.focus();
   }
 
@@ -274,6 +276,11 @@ export class DocInsertUI {
     ], { ok: 'Insert', note: 'The cross-reference updates automatically when its target changes or moves. Saved as a Word cross-reference.' });
     this.host.focus();
     if (!got || this.f !== f) return;
+    // the hidden bookmark and the field: one step of Undo
+    f.ed.together(() => this.putCrossReference(f, got, at, text));
+  }
+
+  private putCrossReference(f: DocFile, got: Record<string, string>, at: Map<number, number>, text: string): void {
     const [kind, key] = [got.target.slice(0, 1), got.target.slice(2)];
     if (kind === 'c' && got.what === 'text') { this.host.insertObject({ kind: 'ref', target: Number(key) }, 'Insert cross-reference'); return; }
     // the place gets a hidden bookmark (as Word's _Ref ones) for the field to find it by

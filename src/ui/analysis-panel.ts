@@ -101,7 +101,11 @@ export function electronsHtml(counts: MetalCount[]): string {
     const kind = (r: MetalCount['ligands'][number]) => r.mm ? 'M–M' : [r.l ? 'L' + (r.l > 1 ? sub(r.l) : '') : '', r.x ? 'X' + (r.x > 1 ? sub(r.x) : '') : '', r.z ? 'Z' : ''].join('');
     const rows = c.ligands.map((r) => `<tr><td>${ligandHtml(r.name)}${plural(r.count)}</td><td>${kind(r)}</td><td>${r.neutral * r.count}</td><td>${r.ionic * r.count}</td></tr>`);
     const closed = c.electrons === 18 ? ' (a closed shell)' : '';
-    return `<p class="ec-head"><b>${esc(c.symbol)}(${roman(c.oxidation)})</b>, d${sup(c.dn)}, <b>${c.electrons} electrons</b>${closed} · ${esc(c.classification)}</p>
+    // (with a Z ligand, Green's valence number and dⁿ differ from the oxidation state's: both are shown, each named)
+    const green = c.green
+      ? `<p class="ec-green" title="Green's covalent bond classification counts each Z ligand as taking two of the metal's electrons (M. L. H. Green, J. Organomet. Chem. 1995, 500, 127; M. L. H. Green and G. Parkin, J. Chem. Educ. 2014, 91, 807). The oxidation state above leaves a Z ligand's bond out (IUPAC, Pure Appl. Chem. 2016, 88, 831).">Green's CBC: valence number ${c.green.vn}, d${sup(c.green.dn)}</p>`
+      : '';
+    return `<p class="ec-head"><b>${esc(c.symbol)}(${roman(c.oxidation)})</b>, d${sup(c.dn)}, <b>${c.electrons} electrons</b>${closed} · ${esc(c.classification)}</p>${green}
       <table class="ec-table">
         <tr><th>Ligand</th><th>Class</th><th title="Neutral (covalent) counting: the metal atom's own electrons, one from each X, two from each L">Neutral</th><th title="Ionic counting: the metal ion's d electrons, two from each X⁻ and each L">Ionic</th></tr>
         <tr><td>${esc(c.symbol)}</td><td></td><td>${c.group}</td><td>d${sup(c.dn)}: ${c.dn}</td></tr>

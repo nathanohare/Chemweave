@@ -37,7 +37,7 @@ const cut = (t: string | undefined, n = 90): string | null => (t ? (t.length > n
 export const PKA_TABLE: KbTable = {
   id: 'pka-water',
   title: 'pKa in Water',
-  about: 'Measured pKa values in water, as the Hazardous Substances Data Bank records them (for amines this is usually the pKa of the protonated base). DMSO pKa tables wait on permission from their authors.',
+  about: 'Measured pKa values in water, as the Hazardous Substances Data Bank records them (for amines this is usually the pKa of the protonated base).',
   columns: [
     { key: 'name', label: 'Compound' },
     { key: 'pka', label: 'pKa (as recorded)', prose: true },

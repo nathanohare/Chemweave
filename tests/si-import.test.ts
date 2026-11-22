@@ -106,3 +106,54 @@ describe('Import SI: reading and recognising (parity with SI Assistant)', () => 
     });
   }
 });
+
+describe('Import SI: M from a dimer adduct (G4-09)', () => {
+  // eugenol, C10H12O2: monoisotopic mass 164.08373 (PubChem CID 3314). [2M+Na]⁺ = 2 × 164.083730
+  // + Na 22.989769 − e⁻ 0.000549 = 351.15668 and [2M+H]⁺ = 2 × 164.083730 + H 1.007825 − e⁻
+  // 0.000549 = 329.17474 (Na and H masses: NIST atomic masses; e⁻: CODATA 2018)
+  it('halves what is left of [2M+Na]⁺ and [2M+H]⁺ after the adduct, with or without a calculated value', () => {
+    expect(I.mFormula('C20H24NaO4', '[2M+Na]+', '351.1567')).toBe('C10H12O2');
+    expect(I.mFormula('C20H24NaO4', '[2M+Na]+', '')).toBe('C10H12O2');
+    expect(I.mFormula('C20H25O4', '[2M+H]+', '329.1747')).toBe('C10H12O2');
+    // a formula that can't be two M (odd counts left): not taken as the ion's
+    expect(I.mFormula('C21H24NaO4', '[2M+Na]+', '')).toBe('C21H24NaO4');
+    // a single M is unchanged
+    expect(I.mFormula('C10H13O2', '[M+H]+', '165.0910')).toBe('C10H12O2');
+  });
+});
+
+describe('Import SI from Word: underline, character styles, raised text, styles based on others (G2-20)', () => {
+  it('reads them into the runs', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const styles = `<?xml version="1.0"?><w:styles ${W}>` +
+      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Base"><w:name w:val="Base"/><w:rPr><w:i/></w:rPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Derived"><w:name w:val="Derived"/><w:basedOn w:val="Base"/></w:style>' +
+      '<w:style w:type="character" w:styleId="Emphasis"><w:name w:val="Emphasis"/><w:rPr><w:b/></w:rPr></w:style></w:styles>';
+    const body = '<w:p><w:r><w:t xml:space="preserve">plain </w:t></w:r><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>under</w:t></w:r>' +
+      '<w:r><w:rPr><w:rStyle w:val="Emphasis"/></w:rPr><w:t xml:space="preserve"> strong</w:t></w:r><w:r><w:rPr><w:position w:val="6"/></w:rPr><w:t>up</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:pStyle w:val="Derived"/></w:pPr><w:r><w:t>slanted</w:t></w:r></w:p>';
+    const u8 = (s: string) => new Uint8Array(strToU8(s));
+    const bytes = zipSync({ 'word/document.xml': u8(`<?xml version="1.0"?><w:document ${W}><w:body>${body}</w:body></w:document>`), 'word/styles.xml': u8(styles) });
+    const r = Rd.readSiDocx('made.docx', bytes);
+    expect(r.error).toBeFalsy();
+    const runs = r.paras.map((p) => runsJ(p.runs));
+    expect(runs[0]).toEqual([['plain ', false, false, 'normal', false], ['under', false, false, 'normal', true], [' strong', true, false, 'normal', false], ['up', false, false, 'super', false]]);
+    expect(runs[1]).toEqual([['slanted', false, true, 'normal', false]]);
+  });
+
+  it('leaves out a link\'s own underline and a baseline nudge (review F2-R13)', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const styles = `<?xml version="1.0"?><w:styles ${W}>` +
+      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' +
+      '<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr></w:style></w:styles>';
+    const body = '<w:p><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t xml:space="preserve">doi.org/x </w:t></w:r><w:r><w:rPr><w:position w:val="2"/></w:rPr><w:t xml:space="preserve">nudged </w:t></w:r>' +
+      '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:u w:val="single"/></w:rPr><w:t>own</w:t></w:r></w:p>';
+    const u8 = (s: string) => new Uint8Array(strToU8(s));
+    const bytes = zipSync({ 'word/document.xml': u8(`<?xml version="1.0"?><w:document ${W}><w:body>${body}</w:body></w:document>`), 'word/styles.xml': u8(styles) });
+    const runs = runsJ(Rd.readSiDocx('made.docx', bytes).paras[0].runs);
+    expect(runs).toEqual([['doi.org/x nudged ', false, false, 'normal', false], ['own', false, false, 'normal', true]]);
+  });
+});

@@ -14,6 +14,7 @@ import { drawMo, MO_PRESETS, type MoSpec } from './mo';
 import { crystalSvg, type CrystalSpec } from './xray';
 import { dataUrl } from '../render/images';
 import { isInkId } from './geo';
+import { keepLabels, readLabels } from './frame-labels';
 
 /** A TLC plate, a gel, or a molecular orbital diagram (design/mo.ts), which is kept and redrawn the same way. */
 export type PlateKind = 'tlc' | 'gel' | 'mo' | 'crystal';
@@ -393,6 +394,7 @@ export function plateFromBox(b: Rect, d: PlateData, L: number): { at: Vec; w: nu
 export function putPlate(doc: Doc, m: Measure, d: PlateData, at: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
   if (d.kind === 'crystal') return putCrystal(doc, d, at, old);
+  const was = readLabels(doc, old);
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
     const f = old.frame;
@@ -411,8 +413,10 @@ export function putPlate(doc: Doc, m: Measure, d: PlateData, at: Vec, id?: numbe
   const r = (v: number) => Math.round(v * 100) / 100;
   const plate: PlateData = { ...d, margins: { l: r(at.x - b.x1), t: r(at.y - b.y1), r: r(b.x2 - at.x - d.w), b: r(b.y2 - at.y - d.h) } };
   const name = d.kind === 'tlc' ? 'TLC plate' : d.kind === 'gel' ? 'Gel' : 'MO diagram';
-  if (old) { doc.updateShape(old.id, { ...b, frame, plate }); return old.id; }
-  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, plate, name }).id;
+  // (looks set on its labels by hand stay)
+  const madeLabels = keepLabels(doc, was, frame);
+  if (old) { doc.updateShape(old.id, { ...b, frame, plate, madeLabels }); return old.id; }
+  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, plate, name, madeLabels }).id;
 }
 
 /** A crystal structure as an SVG data URL, `w` × `h` points. */

@@ -19,9 +19,68 @@ export interface CommentNote {
    * From a Word file: the note's paragraphs as Word wrote them (with their formatting), written
    * back while `text` is still what they said (`text` here), with the addresses of the links in
    * them (`links`, which the paragraphs' w:hyperlink r:id="link:0"... stand for); its lasting id
-   * (w16cid:durableId); and the initials Word shows on it (w:initials).
+   * (w16cid:durableId); and the initials Word shows on it (w:initials). `texts`: each paragraph's
+   * own text, so that when the note is changed here the paragraphs still as they were are written
+   * as Word wrote them, and only the changed ones afresh; `runs`: its words' looks as Word had
+   * them, so that a look changed here counts as a change.
    */
-  word?: { paras?: string[]; text?: string; links?: string[]; id?: string; initials?: string };
+  word?: { paras?: string[]; text?: string; texts?: string[]; runs?: NoteRun[]; links?: string[]; id?: string; initials?: string };
+  /**
+   * Its words' looks (bold, italic, underline, strikethrough, sub- and superscript), as pieces of
+   * its text, while they say what `text` says: set on its card here, or read from a Word comment
+   * or a PowerPoint 365 one.
+   */
+  runs?: NoteRun[];
+}
+
+/** A piece of a note's text with its look. */
+export interface NoteRun { text: string; bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; sub?: boolean; sup?: boolean }
+
+const NOTE_LOOKS = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup'] as const;
+
+/** A note's pieces with their looks, or null when it has none (or they no longer say what its text says). */
+export function noteRuns(n: Pick<CommentNote, 'text' | 'runs'>): NoteRun[] | null {
+  return n.runs?.length && n.runs.map((r) => r.text).join('') === n.text ? n.runs : null;
+}
+
+/** Pieces with only the looks a note keeps, those next to each other with the same look joined, and null when none has a look. */
+export function cleanNoteRuns(runs: NoteRun[]): NoteRun[] | null {
+  const out: NoteRun[] = [];
+  for (const r of runs) {
+    if (!r.text) continue;
+    const c: NoteRun = { text: r.text };
+    for (const k of NOTE_LOOKS) if (r[k]) c[k] = true;
+    if (c.sub && c.sup) delete c.sup;
+    const last = out[out.length - 1];
+    if (last && NOTE_LOOKS.every((k) => !!last[k] === !!c[k])) last.text += c.text;
+    else out.push(c);
+  }
+  return out.some((r) => NOTE_LOOKS.some((k) => r[k])) ? out : null;
+}
+
+/**
+ * A note with new text and its words' looks, as set on its card: the note itself when neither
+ * changed (so that nothing is made an undo step). Looks taken off are kept as an empty list (its
+ * looks are known: none), and a note that had none and was given none is left without.
+ */
+export function withNoteRuns<T extends CommentNote>(n: T, text: string, runs?: NoteRun[] | null): T {
+  const got = runs ? cleanNoteRuns(runs) : null;
+  const r = got && got.map((x) => x.text).join('') === text ? got : null;
+  if (n.text === text && JSON.stringify(noteRuns(n)) === JSON.stringify(r)) return n;
+  const { runs: had, ...rest } = n;
+  return { ...rest, text, ...(r ? { runs: r } : had !== undefined ? { runs: [] } : {}) } as T;
+}
+
+/** The pieces of a note's text from `from` to `to` (a line of it). */
+export function sliceNoteRuns(runs: NoteRun[], from: number, to: number): NoteRun[] {
+  const out: NoteRun[] = [];
+  let at = 0;
+  for (const r of runs) {
+    const a = Math.max(from, at), b = Math.min(to, at + r.text.length);
+    if (b > a) out.push({ ...r, text: r.text.slice(a - at, b - at) });
+    at += r.text.length;
+  }
+  return out;
 }
 
 /** A comment: its first note, the replies under it, and whether it has been resolved. */
