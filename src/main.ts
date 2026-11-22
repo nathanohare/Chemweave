@@ -6,6 +6,8 @@
 import { pctToSlider, sliderToPct } from './ui/zoom-slider';
 import { infoTipsOnOpen } from './ui/info-tip';
 import './commands/menus';
+// every mode's Font group, the same controls in the same order (G5-26), before anything looks for them
+import './ui/font-groups-install';
 import { newDocDesign, setNewDocDesign } from './document/themes';
 import { fieldEnv } from './document/fields';
 import type { QuickPart } from './document/quick-parts';

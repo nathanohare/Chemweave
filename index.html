@@ -894,27 +894,7 @@
         </div>
         <div class="rb-label">Clipboard</div>
       </div>
-      <div class="rb-group">
-        <div class="rb-row">
-          <div class="rb-col">
-            <div class="rb-pair">
-              <input id="sh-font" class="rb-text rb-font" list="ci-fonts" spellcheck="false" aria-label="Font" title="Font of the selected cells (type any installed font). Cells with no font of their own are in the theme's body font" />
-              <select id="sh-size" title="Font size" aria-label="Font size">
-                <option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option>
-              </select>
-            </div>
-            <div class="rb-pair">
-              <button class="rb-sq" data-sh="cell-bold" aria-pressed="false" title="Bold"><b>B</b></button>
-              <button class="rb-sq" data-sh="cell-italic" aria-pressed="false" title="Italic"><i>I</i></button>
-              <button class="rb-sq" data-sh="cell-underline" aria-pressed="false" title="Underline"><u>U</u></button>
-              <button class="rb-sq" data-sh="borders" title="Borders">▦</button>
-              <button class="rb-sq rb-colour" data-sh="fill-colour" title="Fill color"><span>▨</span><span class="sw"></span></button>
-              <button class="rb-sq rb-colour" data-sh="text-colour" title="Text color"><span>A</span><span class="sw"></span></button>
-            </div>
-          </div>
-        </div>
-        <div class="rb-label">Font</div>
-      </div>
+      <div data-font-group="sheet"></div>
       <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
@@ -1524,38 +1504,7 @@
         <div class="rb-label">Clipboard</div>
       </div>
       <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Formatting saved under a name (fill, line, shadow, effects, text): click one to apply it to the selection">Format Favorites</div></div>
-      <div class="rb-group">
-        <div class="rb-row">
-          <div class="rb-col">
-            <div class="rb-pair">
-              <input id="doc-font" class="rb-text rb-font" list="ci-fonts" spellcheck="false" aria-label="Font" title="Font (type any installed font)" />
-              <input id="doc-size" class="rb-text rb-num" list="doc-size-list" spellcheck="false" aria-label="Font size" title="Font size in points" />
-              <datalist id="doc-size-list"><option>8</option><option>9</option><option>10</option><option>10.5</option><option>11</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>36</option><option>48</option><option>72</option></datalist>
-              <button class="rb-sq" data-doc="font-bigger" title="Bigger text">A<sup>+</sup></button>
-              <button class="rb-sq" data-doc="font-smaller" title="Smaller text">A<sup>−</sup></button>
-              <button class="rb-sq" data-doc="show-marks" aria-pressed="false" title="Show/Hide ¶ (Ctrl+Shift+8): show paragraph marks, spaces and tabs. They show on screen only, never in print or a saved file">¶</button>
-            </div>
-            <div class="rb-pair">
-              <button class="rb-sq" data-doc="doc-bold" aria-pressed="false" title="Bold"><b>B</b></button>
-              <button class="rb-sq" data-doc="doc-italic" aria-pressed="false" title="Italic"><i>I</i></button>
-              <button class="rb-sq" data-doc="doc-underline" aria-pressed="false" title="Underline"><u>U</u></button>
-              <button class="rb-sq" data-doc="doc-sub" aria-pressed="false" title="Subscript">x<sub>2</sub></button>
-              <button class="rb-sq" data-doc="doc-sup" aria-pressed="false" title="Superscript">x<sup>2</sup></button>
-              <button class="rb-sq" data-doc="doc-formula" aria-pressed="false" title="Formula style: numbers lowered (CH₂Cl₂), charges raised">C₉H₈</button>
-              <button class="rb-sq" data-doc="doc-strike" aria-pressed="false" title="Strikethrough: a line through the selected text"><s>abc</s></button>
-              <button class="rb-sq" data-doc="doc-small-caps" aria-pressed="false" title="Small Caps (Ctrl+Shift+K): lower-case letters as smaller capitals">A<small>BC</small></button>
-              <label class="rb-sq rb-colour" title="Text color"><span>A</span><input id="doc-colour" type="color" aria-label="Text color" /></label>
-              <span class="rb-split">
-                <button class="rb-sq rb-hl" data-doc="doc-highlight" aria-pressed="false" title="Highlight the selected text in the color under the letters (click again to remove it)"><span class="hl-ab">ab</span><span id="doc-hl-bar" class="hl-bar"></span></button>
-                <button class="rb-sq rb-drop" data-doc="doc-highlight-menu" title="Highlight colors">▾</button>
-              </span>
-              <button class="rb-sq" data-doc="clear-formatting" title="Clear All Formatting: the selected text and its paragraphs go back to plain Normal text (links, comments and formulas stay)">A<span class="rb-eraser">⌫</span></button>
-            </div>
-          </div>
-        </div>
-        <div class="rb-label">Font</div>
-        <button class="rb-launch" data-doc="font-box" title="Font settings: Change Case, All Caps, character spacing and kerning, and text effects (fill, outline, shadow)">⬊</button>
-      </div>
+      <div data-font-group="document"></div>
       <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
@@ -2349,35 +2298,7 @@
         </div>
         <div class="rb-label">Keyframes</div>
       </div>
-      <div class="rb-group" data-sl-text>
-        <div class="rb-row">
-          <div class="rb-col rb-fontcol">
-            <div class="rb-pair">
-              <input data-tx="font" class="rb-text rb-font" list="ci-fonts" spellcheck="false" aria-label="Font" title="Font of the selected text, or of each selected text box (type any installed font)" />
-              <input data-tx="size" class="rb-text rb-num" list="sl-size-list" spellcheck="false" aria-label="Font size" title="Font size in points" />
-              <datalist id="sl-size-list"><option>8</option><option>9</option><option>10</option><option>10.5</option><option>11</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>32</option><option>36</option><option>40</option><option>44</option><option>48</option><option>54</option><option>60</option><option>66</option><option>72</option><option>80</option><option>88</option><option>96</option></datalist>
-              <button class="rb-sq" data-sl-fmt="grow" title="Increase font size">A<sup>+</sup></button>
-              <button class="rb-sq" data-sl-fmt="shrink" title="Decrease font size">A<sup>−</sup></button>
-              <button class="rb-sq" data-sl-fmt="clear" title="Clear All Formatting: back to plain text in the box's own font and size">A<sub>⌫</sub></button>
-              <label class="rb-sq rb-colour" title="Text color"><span>A</span><input data-tx="colour" type="color" aria-label="Text color" /></label>
-            </div>
-            <div class="rb-pair">
-              <button class="rb-sq" data-sl-fmt="bold" aria-pressed="false" title="Bold (Ctrl+B)"><b>B</b></button>
-              <button class="rb-sq" data-sl-fmt="italic" aria-pressed="false" title="Italic (Ctrl+I)"><i>I</i></button>
-              <button class="rb-sq" data-sl-fmt="underline" aria-pressed="false" title="Underline (Ctrl+U)"><u>U</u></button>
-              <button class="rb-sq" data-sl-fmt="sub" aria-pressed="false" title="Subscript (Ctrl+=)">x<sub>2</sub></button>
-              <button class="rb-sq" data-sl-fmt="sup" aria-pressed="false" title="Superscript (Ctrl+Shift+=)">x<sup>2</sup></button>
-              <button class="rb-sq" data-sl-fmt="formula" aria-pressed="false" title="Formula style: numbers lowered (CH₂Cl₂), charges raised">C₉H₈</button>
-              <button class="rb-sq" data-sl-fmt="strike" aria-pressed="false" title="Strikethrough"><s>abc</s></button>
-              <select data-tx="spacing" title="Character spacing" aria-label="Character spacing">
-                <option value="-3">Very Tight</option><option value="-1.5">Tight</option><option value="0">Normal</option><option value="3">Loose</option><option value="6">Very Loose</option><option value="more">More Spacing…</option><option value="" hidden>Other</option>
-              </select>
-            </div>
-          </div>
-        </div>
-        <div class="rb-label">Font</div>
-        <button class="rb-launch" data-tx="font-box" title="Font settings: Change Case (Sentence case., lowercase, UPPERCASE, Capitalize Each Word, tOGGLE cASE)">⬊</button>
-      </div>
+      <div data-font-group="slides"></div>
       <div class="rb-group" data-sl-text>
         <div class="rb-row">
           <div class="rb-col">

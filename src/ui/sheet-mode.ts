@@ -69,6 +69,7 @@ import { SHEET_PAPERS, type PaperName } from '../sheet/page-setup';
 import { defaultPaper } from '../print-layout';
 import { dataTableRef } from '../sheet/what-if';
 import { paintCanRun } from './can-run';
+import { stepSize } from '../text/format';
 
 /** The header of each Hammett column (σm and σp show their m and p as italic subscripts). */
 const HAMMETT_HEADS: Record<HammettColumn, string> = { group: 'Group', sigma: 'σ', F: 'F', R: 'R', sm: 'σm', sp: 'σp' };
@@ -495,13 +496,16 @@ export class SheetMode {
       sel.blur();
       this.view.focus();
     });
-    rb.querySelector<HTMLSelectElement>('#sh-size')!.addEventListener('change', (e) => {
-      const sel = e.target as HTMLSelectElement;
-      const n = Number(sel.value);
+    // the size box: any size can be typed, as in every mode's Font group (G5-26)
+    const sizeBox = rb.querySelector<HTMLInputElement>('#sh-size')!;
+    sizeBox.addEventListener('change', () => {
+      const n = Number(sizeBox.value);
+      if (!(n >= 1 && n <= 409)) { this.showRibbonState(); return; }
       this.style('Font size', { size: n === 11 ? undefined : n });
-      sel.blur();
+      sizeBox.blur();
       this.view.focus();
     });
+    sizeBox.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') sizeBox.dispatchEvent(new Event('change')); });
     const font = rb.querySelector<HTMLInputElement>('#sh-font')!;
     font.addEventListener('change', () => { this.look.setFont(font.value); });
     font.addEventListener('keydown', (e) => {
@@ -679,12 +683,22 @@ export class SheetMode {
     const paper = name.startsWith('sheet-paper-') ? name.slice('sheet-paper-'.length) : '';
     if (paper && paper in SHEET_PAPERS) { this.page.set('Paper size', { paper: paper as PaperName }); return true; }
     // while typing in a cell, Bold, Italic and Underline are for the selected text (issue #503)
-    const typing = name === 'cell-bold' ? 'bold' : name === 'cell-italic' ? 'italic' : name === 'cell-underline' ? 'underline' : null;
+    const typing = name === 'cell-bold' ? 'bold' : name === 'cell-italic' ? 'italic' : name === 'cell-underline' ? 'underline' : name === 'cell-strike' ? 'strike' : null;
     if (typing && v.styleTyping(typing)) { this.showRibbonState(); return true; }
     switch (name) {
       case 'cell-bold': this.style('Bold', { bold: !a.bold || undefined }); break;
       case 'cell-italic': this.style('Italic', { italic: !a.italic || undefined }); break;
       case 'cell-underline': this.style('Underline', { underline: !a.underline || undefined }); break;
+      // the rest of the shared Font group (G5-26): strikethrough, subscript and superscript on the
+      // whole text of the cells, and a size step up or down
+      case 'cell-strike': this.style('Strikethrough', { strike: !a.strike || undefined }); break;
+      case 'cell-sub': this.style('Subscript', { pos: a.pos === 'sub' ? undefined : 'sub' }); break;
+      case 'cell-sup': this.style('Superscript', { pos: a.pos === 'sup' ? undefined : 'sup' }); break;
+      case 'font-bigger': case 'font-smaller': {
+        const n = stepSize(a.size ?? 11, name === 'font-bigger' ? 1 : -1);
+        this.style('Font size', { size: n === 11 ? undefined : n });
+        break;
+      }
       case 'align-left': case 'align-center': case 'align-right': {
         const al = name.slice(6) as 'left' | 'center' | 'right';
         this.style('Align', { align: a.align === al ? undefined : al });
@@ -2481,6 +2495,9 @@ export class SheetMode {
     press('cell-bold', this.view.typingHas('bold') ?? !!st.bold);
     press('cell-italic', this.view.typingHas('italic') ?? !!st.italic);
     press('cell-underline', this.view.typingHas('underline') ?? !!st.underline);
+    press('cell-strike', this.view.typingHas('strike') ?? !!st.strike);
+    press('cell-sub', st.pos === 'sub');
+    press('cell-sup', st.pos === 'sup');
     press('align-left', st.align === 'left');
     press('align-center', st.align === 'center');
     press('align-right', st.align === 'right');
@@ -2555,10 +2572,8 @@ export class SheetMode {
       opt.text = describeFormat(code);
     } else fmt.querySelector<HTMLOptionElement>('option[value=custom]')!.text = 'Other…';
     fmt.value = opt.value;
-    const size = this.ribbon.querySelector<HTMLSelectElement>('#sh-size')!;
-    const want = String(st.size ?? 11);
-    if (![...size.options].some((o) => o.value === want)) size.add(new Option(want, want));
-    size.value = want;
+    const size = this.ribbon.querySelector<HTMLInputElement>('#sh-size')!;
+    if (document.activeElement !== size) size.value = String(st.size ?? 11);
     const sw = (sel: string, colour: string | undefined, fallback: string) => {
       const el = this.ribbon.querySelector<HTMLElement>(sel);
       if (el) el.style.background = colour ?? fallback;

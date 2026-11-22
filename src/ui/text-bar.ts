@@ -9,6 +9,7 @@
 import type { Justify } from '../model';
 import * as rt from '../richtext';
 import type { TextFormat } from '../text/format';
+import { FONT_LOOK, FONT_SIZE_LIST } from './font-group';
 
 /** Sizes offered in the size box. */
 export const TEXT_SIZES = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72];
@@ -174,18 +175,12 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
     ops.resized?.();
   };
 
-  let g = group();
-  button(g, 'bold', '<b>B</b>', 'Bold (Ctrl+B)', () => run({ kind: 'toggle', key: 'bold' }));
-  button(g, 'italic', '<i>I</i>', 'Italic (Ctrl+I)', () => run({ kind: 'toggle', key: 'italic' }));
-  button(g, 'underline', '<u>U</u>', 'Underline (Ctrl+U)', () => run({ kind: 'toggle', key: 'underline' }));
-  g = group();
-  button(g, 'sub', 'x<sub>2</sub>', 'Subscript (Ctrl+=)', () => run({ kind: 'toggle', key: 'sub' }));
-  button(g, 'sup', 'x<sup>2</sup>', 'Superscript (Ctrl+Shift+=)', () => run({ kind: 'toggle', key: 'sup' }));
-  button(g, 'formula', 'C₉H₈', 'Formula style: numbers lowered (CH₂Cl₂), charges raised', () => run({ kind: 'toggle', key: 'formula' }));
-  button(g, 'stereo', '(<i>R</i>)', 'Stereodescriptors in italics: (2R,3S)-, (E)-, cis-, tert-, n-Bu, p- (again: back to upright)', () => run({ kind: 'stereo' }));
-
+  // the Font group's controls, in the order and with the pictures every mode has (font-group.ts, G5-26):
+  // Font, Size, A⁺, A⁻, Clear Formatting; then B, I, U, abc, x₂, x², C₉H₈, Text Color; then (R)
+  const keys: Partial<Record<keyof typeof FONT_LOOK, string>> = { sub: ' (Ctrl+=)', sup: ' (Ctrl+Shift+=)' };
+  const fontButton = (g: HTMLElement, id: keyof typeof FONT_LOOK, on: () => void) => button(g, id, FONT_LOOK[id].html, FONT_LOOK[id].title + (keys[id] ?? ''), on);
   if (rows) into = rows[0];
-  g = group();
+  let g = group();
   const font = d.createElement('input');
   font.type = 'text';
   font.className = 'cb-font font-box';
@@ -202,16 +197,52 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   });
   g.appendChild(font);
   inputs.font = font;
-  number(g, 'size', 'Text size (points)', { min: 1, max: 400, step: 0.5, list: TEXT_SIZES, cls: 'cb-size' }, (v) => { if (v) run({ kind: 'style', patch: { size: v } }); });
+  // the size box as every mode has it: any size typed, or one from the list
+  const size = d.createElement('input');
+  size.type = 'text';
+  size.className = 'cb-size';
+  size.title = 'Font size in points';
+  size.setAttribute('aria-label', 'Font size');
+  size.setAttribute('list', FONT_SIZE_LIST);
+  size.spellcheck = false;
+  const setSize = () => { const v = Number(size.value); if (v >= 1 && v <= 400) run({ kind: 'style', patch: { size: v } }); else refresh(); };
+  size.addEventListener('change', setSize);
+  size.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); setSize(); after(); }
+    if (e.key === 'Escape') { e.preventDefault(); after(); }
+  });
+  g.appendChild(size);
+  inputs.size = size;
+  g = group();
+  fontButton(g, 'grow', () => run({ kind: 'grow', by: 1 }));
+  fontButton(g, 'shrink', () => run({ kind: 'grow', by: -1 }));
+  fontButton(g, 'clear', () => run({ kind: 'clear' }));
+
+  if (rows) into = rows[1];
+  g = group();
+  fontButton(g, 'bold', () => run({ kind: 'toggle', key: 'bold' }));
+  fontButton(g, 'italic', () => run({ kind: 'toggle', key: 'italic' }));
+  fontButton(g, 'underline', () => run({ kind: 'toggle', key: 'underline' }));
+  fontButton(g, 'strike', () => run({ kind: 'toggle', key: 'strike' }));
+  g = group();
+  fontButton(g, 'sub', () => run({ kind: 'toggle', key: 'sub' }));
+  fontButton(g, 'sup', () => run({ kind: 'toggle', key: 'sup' }));
+  fontButton(g, 'formula', () => run({ kind: 'toggle', key: 'formula' }));
+  // Text Color: an A over a bar of the color, as in every mode's Font group
+  const colorBox = d.createElement('label');
+  colorBox.className = 'rb-sq rb-colour cb-colour';
+  colorBox.title = FONT_LOOK.color.title;
+  colorBox.innerHTML = FONT_LOOK.color.html;
   const color = d.createElement('input');
   color.type = 'color';
-  color.className = 'cb-color';
-  color.title = 'Text color';
-  color.setAttribute('aria-label', 'Text color');
+  color.setAttribute('aria-label', FONT_LOOK.color.title);
   color.addEventListener('change', () => { run({ kind: 'style', patch: { color: color.value.toLowerCase() === '#000000' ? undefined : color.value } }); after(); });
-  // (ribbon: at the end of the bottom row, after the style buttons)
-  (rows ? rows[1].lastElementChild! : g).appendChild(color);
+  colorBox.appendChild(color);
+  g.appendChild(colorBox);
   inputs.color = color;
+  // (what only the Canvas has, at the end)
+  button(g, 'stereo', '(<i>R</i>)', 'Stereodescriptors in italics: (2R,3S)-, (E)-, cis-, tert-, n-Bu, p- (again: back to upright)', () => run({ kind: 'stereo' }));
 
   if (prows) into = prows[1];
   g = group();
@@ -292,7 +323,7 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   function refresh(): void {
     const s = ops.state();
     const st = s?.style ?? {};
-    for (const k of ['bold', 'italic', 'underline', 'sub', 'sup', 'formula'] as const) press(k, !!st[k]);
+    for (const k of ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'formula'] as const) press(k, !!st[k]);
     press('link', !!s?.link);
     for (const j of ['left', 'center', 'right', 'justify'] as const) press(j, !!s && s.align === j);
     press('bullet', s?.list === 'bullet');

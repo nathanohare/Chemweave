@@ -47,6 +47,10 @@ export interface CellStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  /** A line through the text (Strikethrough in the Font group). */
+  strike?: boolean;
+  /** The whole text lowered or raised (Subscript, Superscript in the Font group). */
+  pos?: 'sub' | 'sup';
   /** Text colour, "#rrggbb". */
   color?: string;
   /** Fill colour, "#rrggbb". */

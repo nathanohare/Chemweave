@@ -1864,6 +1864,10 @@ export class SheetView {
     // part of the text bold, italic… (typed text only, shown as typed)
     const runs = typeof v === 'string' ? runsOf(s.cell(r, c)) : undefined;
     let looks = runs && runs.map((x) => x.text).join('') === text ? looksOf(text, runs) : undefined;
+    // the whole cell struck through, lowered or raised (the Font group, G5-26): drawn as runs, which
+    // take those from the cell's look
+    const wholeLook = !!(style?.strike || style?.pos);
+    if (!looks && wholeLook) looks = looksOf(text, undefined);
     const align = style?.align ?? shown.align;
     const font = this.font(style);
     ctx.font = font;
@@ -1900,8 +1904,8 @@ export class SheetView {
     if (typeof v === 'number' && tw > w - 2 * pad) {
       const general = !style?.numFmt || /^general$/i.test(style.numFmt);
       text = (general ? generalFitting(v, (t) => widthOf(t) <= w - 2 * pad) : null) ?? '#'.repeat(Math.max(1, Math.floor((w - 2 * pad) / Math.max(1, this.textWidth('#', font)))));
+      looks = wholeLook ? looksOf(text, undefined) : undefined;
       tw = widthOf(text);
-      looks = undefined;
     }
     let clipW = w;
     // text too long for its cell runs on over empty cells beside it (as in Excel)

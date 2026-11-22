@@ -1870,7 +1870,12 @@ body.slides-mode #canvas-ribbon, body.design-mode #canvas-ribbon, body.sheet-mod
 .canvas-ribbon .cr-font .cb-btn { min-width: 24px; height: 23px; padding: 0 4px; font-size: var(--fs-md); }
 .canvas-ribbon .cr-font .cb-font { width: 132px; height: 23px; }
 .canvas-ribbon .cr-font .cb-size { width: 50px; height: 23px; }
-.canvas-ribbon .cr-font .cb-color { width: 26px; height: 21px; margin-left: 2px; }
+/* Text Color in the Canvas Font group and the Text Formatting toolbox: the A over a color bar of every mode (G5-26) */
+label.cb-colour { position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 5px; border: 1px solid transparent; border-radius: var(--r-control); cursor: pointer; font-size: var(--fs-sm); line-height: 1; }
+label.cb-colour:hover { border-color: var(--line); background: var(--accent-soft); }
+label.cb-colour input { display: block; width: 16px; height: 5px; padding: 0; border: 0; cursor: pointer; }
+label.cb-colour input::-webkit-color-swatch-wrapper { padding: 0; }
+label.cb-colour input::-webkit-color-swatch { border: 0; }
 /* the Paragraph group's symbols and spacing panels: drop-downs under their buttons, over the drawing */
 .cb-pop { position: fixed; z-index: 110; width: max-content; max-width: min(420px, calc(100vw - 8px)); padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); box-shadow: var(--sh-float, 0 4px 14px rgb(0 0 0 / 0.18)); }
 .caption-spacing.cb-pop { grid-template-columns: 1fr; width: 220px; }

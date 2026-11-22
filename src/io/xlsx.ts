@@ -418,10 +418,14 @@ class Styles {
 
   /** The font, fill and border numbers for a look. */
   private parts(s: CellStyle): { font: number; fill: number; border: number } {
-    const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign]);
+    // struck through, lowered or raised: from the Font group (strike, pos), or kept from the file
+    const strikeOf = (l: CellStyle) => !!(l.strike || l.excel?.strike);
+    const vertOf = (l: CellStyle) => (l.pos === 'sub' ? 'subscript' : l.pos === 'sup' ? 'superscript' : l.excel?.vertAlign);
+    const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, strikeOf(l), vertOf(l)]);
+    const va = vertOf(s);
     const font = fontLook(s) !== fontLook(this.normal)
-      ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${s.excel?.strike ? '<strike/>' : ''}${s.underline ? '<u/>' : ''}` +
-        `${s.excel?.vertAlign ? `<vertAlign val="${xmlAttr(s.excel.vertAlign)}"/>` : ''}<sz val="${s.size ?? 11}"/>` +
+      ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${strikeOf(s) ? '<strike/>' : ''}${s.underline ? '<u/>' : ''}` +
+        `${va ? `<vertAlign val="${xmlAttr(va)}"/>` : ''}<sz val="${s.size ?? 11}"/>` +
         `${s.color ? `<color rgb="FF${hex6(s.color)}"/>` : '<color theme="1"/>'}<name val="${xml(s.font ?? this.minor)}"/><family val="2"/>${s.font ? '' : '<scheme val="minor"/>'}</font>`)
       : 0;
     // a patterned fill as it was, while it still shows its color
@@ -484,7 +488,7 @@ function namedStyleKey(name: string, builtinId: number | undefined): string {
 
 /** What makes two cell looks the same style in the file (an empty look is style 0). */
 function xfKey(s: CellStyle): string {
-  return JSON.stringify([s.bold, s.italic, s.underline, s.color, s.fill, s.font, s.size, s.align, s.valign, s.wrap, s.numFmt, s.borders, s.indent, s.rotate, s.cellStyle, s.excel]);
+  return JSON.stringify([s.bold, s.italic, s.underline, s.strike, s.pos, s.color, s.fill, s.font, s.size, s.align, s.valign, s.wrap, s.numFmt, s.borders, s.indent, s.rotate, s.cellStyle, s.excel]);
 }
 
 function borderName(b: BorderStyle): string {
@@ -1200,9 +1204,11 @@ function readStyles(doc: Document | null, theme: string[], faces: { minor: strin
     const face = faceOf(f) || baseFace;
     // the theme's body font is no font of the cell's own
     if (face.toLowerCase() !== faces.minor.toLowerCase()) st.font = face;
-    // raised, lowered or struck through: not shown here, written back
+    // raised, lowered or struck through: shown, and changed by the Font group's buttons (G5-26)
     const va = val(f, 'vertAlign');
-    if (va === 'superscript' || va === 'subscript' || on(f, 'strike')) st.excel = { ...(va === 'superscript' || va === 'subscript' ? { vertAlign: va } : {}), ...(on(f, 'strike') ? { strike: true as const } : {}) };
+    if (va === 'superscript') st.pos = 'sup';
+    if (va === 'subscript') st.pos = 'sub';
+    if (on(f, 'strike')) st.strike = true;
     return st;
   });
   const fills: (string | undefined)[] = kids(kid(root, 'fills'), 'fill').map((f) => {
