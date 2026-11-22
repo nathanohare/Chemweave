@@ -1645,6 +1645,13 @@ export class Doc {
     return this.maxBondLen;
   }
   private tx: UndoEntry | null = null;
+  /**
+   * When each object first came into the drawing (by kind, then id), so an undo or redo that puts
+   * back an object deleted keeps the drawing's order (the order files are written in, and text,
+   * arrows and structures are drawn in) as it was.
+   */
+  private born: Partial<Record<Kind, Map<number, number>>> = {};
+  private births = 0;
   private undoStack: UndoEntry[] = [];
   private redoStack: UndoEntry[] = [];
 
@@ -1693,6 +1700,9 @@ export class Doc {
     this.tx = null;
     if (tx.before.size === 0) return;
     for (const key of tx.before.keys()) tx.after.set(key, this.snapshot(key));
+    // a command that touched things but changed none of them (Remove Highlight with none) makes
+    // no step, so Undo never seems to do nothing (stops at the first difference: usually the first)
+    if (unchanged(tx)) return;
     this.undoStack.push(tx);
     if (this.undoStack.length > 500) this.undoStack.shift();
     this.redoStack.length = 0;
@@ -1813,11 +1823,23 @@ export class Doc {
   private apply(states: Map<string, Entity | null>): void {
     // Bonds removed first and atoms restored first, so adjacency stays consistent.
     const keys = [...states.keys()].sort((a, b) => order(a) - order(b));
+    const back = new Set<Kind>();
     for (const key of keys) {
       const kind = key[0] as Kind;
       const id = Number(key.slice(1));
       const st = states.get(key) ?? null;
+      if (st && kind !== 'y' && !this.mapOf(kind).has(id)) back.add(kind);
       this.rawSet(kind, id, st ? clone(st) : null);
+    }
+    // objects put back go back to their places in the drawing's order (not to its end)
+    for (const kind of back) {
+      const m = this.mapOf(kind), born = this.born[kind];
+      if (!born) continue;
+      const all = [...m.entries()];
+      const at = (id: number) => born.get(id) ?? Infinity;
+      all.sort((p, q) => at(p[0]) - at(q[0]));
+      m.clear();
+      for (const [id, e] of all) m.set(id, e);
     }
     this.version++;
     function order(k: string): number {
@@ -1966,6 +1988,10 @@ export class Doc {
       const m = this.mapOf(kind);
       if (e) m.set(id, e);
       else m.delete(id);
+    }
+    if (e) {
+      const born = (this.born[kind] ??= new Map());
+      if (!born.has(id)) born.set(id, ++this.births);
     }
     if (id >= this.nextId) this.nextId = id + 1;
   }
@@ -2308,11 +2334,12 @@ export class Doc {
   swap(other: Doc): void {
     if (this.tx || other.tx) throw new Error('Cannot swap documents in the middle of an edit');
     const fields = ['style', 'background', 'page', 'guides', 'source', 'textStyles', 'atoms', 'bonds', 'captions', 'arrows', 'shapes', 'adj', 'centresOf',
-      'grid', 'atomCell', 'maxBondLen', 'bondLenStale', 'bondLenShrunk', 'undoStack', 'redoStack'] as const;
+      'grid', 'atomCell', 'maxBondLen', 'bondLenStale', 'bondLenShrunk', 'undoStack', 'redoStack', 'born'] as const;
     const a = this as unknown as Record<string, unknown>, b = other as unknown as Record<string, unknown>;
     for (const f of fields) { const t = a[f]; a[f] = b[f]; b[f] = t; }
     // ids stay unique across both, so things moved between them never clash
     this.nextId = other.nextId = Math.max(this.nextId, other.nextId);
+    this.births = other.births = Math.max(this.births, other.births);
     for (const d of [this, other]) {
       d.allDirty = true;
       d.dirtyAtoms.clear(); d.dirtyBonds.clear(); d.dirtyRects.length = 0; d.dirtyCaptions.length = 0;
@@ -2503,4 +2530,14 @@ export class Doc {
     if (x1 === Infinity) return null;
     return { x1, y1, x2, y2 };
   }
+}
+
+/** Whether a finished step leaves everything it touched as it was. */
+function unchanged(tx: UndoEntry): boolean {
+  for (const [key, was] of tx.before) {
+    const now = tx.after.get(key) ?? null;
+    if (was === now) continue;
+    if (!was || !now || JSON.stringify(was) !== JSON.stringify(now)) return false;
+  }
+  return true;
 }

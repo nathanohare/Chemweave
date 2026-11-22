@@ -232,12 +232,14 @@ export class DocInsertUI {
     if (!f) return;
     this.host.stopBox();
     const ed = f.ed;
-    ed.enter(false);
-    let p = paraAt(ed.text, ed.focus);
-    ed.setParas(p, p, { pageBreak: true }, 'Blank Page');
-    ed.enter(false);
-    p = paraAt(ed.text, ed.focus);
-    ed.setParas(p, p, { pageBreak: true }, null);
+    ed.together(() => {
+      ed.enter(false);
+      let p = paraAt(ed.text, ed.focus);
+      ed.setParas(p, p, { pageBreak: true }, 'Blank Page');
+      ed.enter(false);
+      p = paraAt(ed.text, ed.focus);
+      ed.setParas(p, p, { pageBreak: true }, null);
+    });
     this.host.focus();
   }
 

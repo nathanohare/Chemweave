@@ -2,8 +2,9 @@
 // layout on the left to see it on the slide; drag its placeholders to move them, drag a corner to
 // size them, or type their place in per cent. Add title, text and subtitle placeholders, rename a
 // layout, give it the title slide's colours, make new layouts (or copies), delete the ones made
-// here, and put a built-in layout back as it came. Slides with a changed layout follow it when
-// the window is closed with Apply; Undo puts everything back.
+// here, and put a built-in layout back as it came. Ctrl+Z and Ctrl+Y undo and redo each change
+// while the window is open. Slides with a changed layout follow it when the window is closed
+// with Apply; Undo afterwards puts everything back in one step.
 
 import { foldIntoInfo } from './info-tip';
 import { Doc, type Placeholder } from '../model';
@@ -37,6 +38,32 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
     let sel = Math.max(0, layouts.findIndex((l) => l.id === input.current));
     let box = -1;
 
+    // Undo and Redo inside the window: the layouts (and which layout and placeholder were picked)
+    // before each change
+    type Step = { layouts: LayoutDef[]; sel: number; box: number };
+    const past: Step[] = [], future: Step[] = [];
+    const now = (): Step => ({ layouts: layouts.map(copyLayout), sel, box });
+    /** Note the layouts as they are, before a change. */
+    const remember = (): void => {
+      past.push(now());
+      if (past.length > 200) past.shift();
+      future.length = 0;
+    };
+    /** Take back the step noted last when the change turned out to change nothing (a click on a placeholder). */
+    const forgetIfSame = (): void => {
+      const top = past[past.length - 1];
+      if (top && JSON.stringify(top.layouts) === JSON.stringify(layouts)) past.pop();
+    };
+    const travel = (from: Step[], to: Step[]): void => {
+      const st = from.pop();
+      if (!st) return;
+      to.push(now());
+      layouts = st.layouts;
+      sel = Math.min(st.sel, layouts.length - 1);
+      box = st.box;
+      render();
+    };
+
     const d = document.createElement('dialog');
     d.className = 'layout-editor';
     const form = document.createElement('form');
@@ -45,7 +72,7 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
     h.textContent = 'Slide Layouts';
     const note = document.createElement('p');
     note.className = 'muted';
-    note.textContent = 'Drag a placeholder to move it and its corner to size it. Slides with a layout follow it when you apply; text already typed is kept.';
+    note.textContent = 'Drag a placeholder to move it and its corner to size it. Ctrl+Z undoes a change. Slides with a layout follow it when you apply; text already typed is kept.';
     foldIntoInfo(note, h);
     form.append(h, note);
 
@@ -71,11 +98,13 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
       return b;
     };
     const newBtn = btn('New Layout', 'A new layout with a title and a text box', () => {
+      remember();
       const id = newLayoutId(layouts);
       layouts.push({ id, name: uniqueName('Custom Layout'), boxes: builtinLayout('title-content').boxes });
       sel = layouts.length - 1; box = -1; render();
     });
     const dupBtn = btn('Duplicate', 'A copy of this layout, to change', () => {
+      remember();
       const l = layouts[sel];
       layouts.push({ ...copyLayout(l), id: newLayoutId(layouts), name: uniqueName(`${l.name} copy`) });
       sel = layouts.length - 1; box = -1; render();
@@ -83,12 +112,14 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
     const delBtn = btn('Delete', 'Delete this layout (only layouts made here)', () => {
       const l = layouts[sel];
       if (isBuiltinLayout(l.id)) return;
+      remember();
       layouts.splice(sel, 1);
       sel = Math.min(sel, layouts.length - 1); box = -1; render();
     });
     const resetBtn = btn('Reset', 'Put this built-in layout back as it came', () => {
       const l = layouts[sel];
       if (!isBuiltinLayout(l.id)) return;
+      remember();
       layouts[sel] = builtinLayout(l.id);
       box = -1; render();
     });
@@ -113,14 +144,22 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
     lookLabel.append(look, ' Title slide colors and background');
     lookLabel.title = 'Slides with this layout use the title slide colors (Slide Master ▸ Title slides) and hide the slide number unless title slides show it';
     top.append(nameLabel, lookLabel);
+    // a name typed is one step (the box's own undo works while typing in it)
+    let named: Step | null = null;
+    name.addEventListener('focus', () => { named = now(); });
     name.addEventListener('input', () => { layouts[sel].name = name.value; paintList(); });
-    look.addEventListener('change', () => { layouts[sel].titleLook = look.checked; paintStage(); paintList(); });
+    name.addEventListener('change', () => {
+      if (named && JSON.stringify(named.layouts) !== JSON.stringify(layouts)) { past.push(named); future.length = 0; }
+      named = now();
+    });
+    look.addEventListener('change', () => { remember(); layouts[sel].titleLook = look.checked; paintStage(); paintList(); });
 
     const tools = document.createElement('div');
     tools.className = 'le-tools';
     const add = (ph: Placeholder) => btn(`+ ${PH_NAME[ph]}`, `Put a ${PH_NAME[ph].toLowerCase()} placeholder on this layout`, () => {
       const l = layouts[sel];
       if (ph === 'title' && l.boxes.some((b) => b.ph === 'title')) { flashNote('A layout has one title.'); return; }
+      remember();
       const nb: PlaceholderBox = ph === 'title'
         ? { ph, x: 0.05, y: 0.05, w: 0.9, h: 0.14, justify: 'left' }
         : { ph, x: 0.1 + 0.03 * (l.boxes.length % 5), y: 0.3 + 0.03 * (l.boxes.length % 5), w: 0.4, h: ph === 'subtitle' ? 0.12 : 0.4, justify: ph === 'subtitle' ? 'center' : 'left' };
@@ -134,7 +173,7 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
     for (const [v, l] of [['left', 'Left'], ['center', 'Center'], ['right', 'Right']]) align.add(new Option(l, v));
     align.addEventListener('change', () => {
       const b = layouts[sel].boxes[box];
-      if (b) { b.justify = align.value as PlaceholderBox['justify']; paintStage(); }
+      if (b) { remember(); b.justify = align.value as PlaceholderBox['justify']; paintStage(); }
     });
     const pos: Record<'x' | 'y' | 'w' | 'h', HTMLInputElement> = {} as never;
     const posBox = document.createElement('span');
@@ -150,8 +189,10 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
         const b = layouts[sel].boxes[box];
         const v = parseFloat(i.value);
         if (!b || !Number.isFinite(v)) return;
+        remember();
         b[k] = clamp(tidy(v / 100), k === 'w' || k === 'h' ? 0.02 : 0, 1);
         b.x = clamp(b.x, 0, 1 - b.w); b.y = clamp(b.y, 0, 1 - b.h);
+        forgetIfSame();
         showBox(); paintStage();
       });
       const lab = document.createElement('label');
@@ -307,6 +348,7 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
       e.preventDefault();
       e.stopPropagation();
       box = i;
+      remember();
       const b = layouts[sel].boxes[i];
       const start = { ...b }, x0 = e.clientX, y0 = e.clientY;
       const el = e.currentTarget as HTMLElement;
@@ -331,6 +373,8 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
       const up = () => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
+        // a click that moved nothing is no step
+        forgetIfSame();
         paintStage();
         paintList();
       };
@@ -341,6 +385,7 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
     function removeBox(): void {
       const l = layouts[sel];
       if (!l.boxes[box]) return;
+      remember();
       l.boxes.splice(box, 1);
       box = -1;
       paintStage();
@@ -357,9 +402,25 @@ export function editLayouts(input: LayoutEditorInput): Promise<LayoutDef[] | nul
       const v = mv[e.key];
       if (!v) return;
       e.preventDefault();
+      remember();
       b.x = clamp(tidy(b.x + v[0]), 0, 1 - b.w);
       b.y = clamp(tidy(b.y + v[1]), 0, 1 - b.h);
+      forgetIfSame();
       paintStage();
+    });
+
+    // Ctrl+Z (Cmd+Z on a Mac) and Ctrl+Y or Ctrl+Shift+Z: undo and redo the window's changes
+    // (in the name box and the place boxes, the box's own typing undo comes first)
+    d.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      const redo = k === 'y' || (k === 'z' && e.shiftKey);
+      if (k !== 'z' && k !== 'y') return;
+      const t = e.target as HTMLElement | null;
+      if (t instanceof HTMLInputElement && (t.type === 'text' || t.type === 'number')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      travel(redo ? future : past, redo ? past : future);
     });
 
     let finished = false;
