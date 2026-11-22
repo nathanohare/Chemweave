@@ -290,6 +290,28 @@ export function unpackFormats(block: Uint8Array): [string, Uint8Array][] {
 
 /** The last drawing copied, for pasting back where the clipboard cannot hold it (web pages). */
 let lastCopy: string | null = null;
+/**
+ * The last drawing copied as it is held here (audit G1-11): pasting our own copy back into this
+ * window takes this rather than reading the CDXML again, so nothing the file cannot hold (a
+ * caption's strikethrough, a shape's transparency, a picture's look) is lost on the way.
+ */
+let lastPart: Doc | null = null;
+
+/**
+ * Our own drawing on the clipboard: when it is the copy made here last, that drawing itself (a
+ * fresh copy of it, so it can be pasted again), else the drawing read from its CDXML (a copy made
+ * in another window or an earlier session).
+ */
+export function ownDrawing(cdxml: string): Doc {
+  if (lastPart && lastCopy !== null && cdxml === lastCopy) {
+    const d = new Doc();
+    d.style = { ...lastPart.style };
+    d.background = lastPart.background;
+    d.restoreContents(lastPart.contents());
+    return d;
+  }
+  return readCdxml(cdxml).doc;
+}
 /** A table copied here as tab-separated text, to know it again when it is pasted back (web pages). */
 let lastTableText: string | null = null;
 
@@ -334,6 +356,7 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
   const own = writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText, own: true });
   const cdxml = hasPictures(part) ? writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText }) : own;
   lastCopy = own;
+  lastPart = part;
   const what = sel ? 'Copied' : 'Copied the whole drawing';
   // a table on its own also goes out as cells, so Word and Excel paste a table they can edit
   // (Paste Special still offers the picture)
@@ -451,6 +474,7 @@ export function drawingSvg(doc: Doc, sel: Selection | null): string | null {
  */
 export function forgetCopy(): void {
   lastCopy = null;
+  lastPart = null;
   lastTableText = null;
   lastPictureSize = null;
 }
@@ -523,7 +547,7 @@ export function pictureDrawing(bytes: Uint8Array, mime: string): Doc | null {
   const cdxml = drawingInEmf(bytes);
   if (!cdxml) return null;
   try {
-    return readCdxml(cdxml).doc;
+    return ownDrawing(cdxml);
   } catch {
     return null;
   }
@@ -550,7 +574,7 @@ export function chemdrawObjectDrawing(object: Uint8Array): Doc | null {
 function picturePasted(bytes: Uint8Array, mime: string): Pasted {
   const inside = pictureDrawing(bytes, mime);
   if (inside) return { kind: 'drawing', doc: inside };
-  if (isOwnPicture(bytes, mime)) return { kind: 'drawing', doc: readCdxml(lastCopy!).doc };
+  if (isOwnPicture(bytes, mime)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   return { kind: 'picture', mime, bytes };
 }
 
@@ -593,7 +617,7 @@ export function looksLikeCdxml(text: string): boolean {
 
 /** Text from the clipboard (with its HTML, for its bold, italics and so on, when it came with some). */
 function fromText(text: string, html?: string | null): Pasted {
-  if (looksLikeCdxml(text)) return { kind: 'drawing', doc: readCdxml(text).doc };
+  if (looksLikeCdxml(text)) return { kind: 'drawing', doc: ownDrawing(text) };
   return html ? { kind: 'text', text: text.trim(), html } : { kind: 'text', text: text.trim() };
 }
 
@@ -613,7 +637,7 @@ export async function readNativeClipboard(): Promise<Pasted> {
   const drawing = await nativeFirst([OWN_FORMAT, 'Embed Source', CDX_FORMAT]);
   if (drawing) {
     const [name, data] = drawing;
-    return { kind: 'drawing', doc: readCdxml(name === CDX_FORMAT ? cdxToCdxml(data) : new TextDecoder().decode(data)).doc };
+    return { kind: 'drawing', doc: name === CDX_FORMAT ? readCdxml(cdxToCdxml(data)).doc : ownDrawing(new TextDecoder().decode(data)) };
   }
   // a ChemDraw object copied in PowerPoint or Word: no ChemDraw data of its own on the clipboard,
   // but the object (a compound file) holds ChemDraw's drawing; its picture is only the fallback
@@ -652,20 +676,20 @@ export async function readNativeClipboard(): Promise<Pasted> {
 export async function readPasteEvent(e: ClipboardEvent): Promise<Pasted> {
   const text = e.clipboardData?.getData('text/plain') ?? '';
   if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
-  if (ownTable(text)) return { kind: 'drawing', doc: readCdxml(lastCopy!).doc };
+  if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   const table = pastedTable(e.clipboardData?.getData('text/html'), text);
   if (table) return { kind: 'table', rows: table };
   const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith('image/'));
   if (file) return picturePasted(new Uint8Array(await file.arrayBuffer()), file.type);
   if (text.trim()) return fromText(text, e.clipboardData?.getData('text/html'));
-  return lastCopy ? { kind: 'drawing', doc: readCdxml(lastCopy).doc } : { kind: 'nothing' };
+  return lastCopy ? { kind: 'drawing', doc: ownDrawing(lastCopy) } : { kind: 'nothing' };
 }
 
 /** For the Paste menu item in a browser, which gets no paste event. */
 export async function readWebClipboard(): Promise<Pasted> {
   const text = await navigator.clipboard.readText().catch(() => '');
   if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
-  if (ownTable(text)) return { kind: 'drawing', doc: readCdxml(lastCopy!).doc };
+  if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   // a picture (when the browser lets the page see it)
   const items = await navigator.clipboard.read?.().catch(() => []) ?? [];
   // our drawing, where the browser kept a format of our own
@@ -681,7 +705,7 @@ export async function readWebClipboard(): Promise<Pasted> {
     if (type) return picturePasted(new Uint8Array(await (await it.getType(type)).arrayBuffer()), type);
   }
   if (text.trim()) return fromText(text, html);
-  return lastCopy ? { kind: 'drawing', doc: readCdxml(lastCopy).doc } : { kind: 'nothing' };
+  return lastCopy ? { kind: 'drawing', doc: ownDrawing(lastCopy) } : { kind: 'nothing' };
 }
 
 /** The clipboard's plain text, ignoring any drawing on it (Paste SMILES). */

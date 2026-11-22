@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { Doc } from '../src/model';
 import type { Selection } from '../src/editor/editor';
-import { extractDrawing, insertDrawing, packFormats, unpackFormats, isEmpty, copyDrawing, forgetCopy, readPasteEvent } from '../src/io/clipboard';
+import { extractDrawing, insertDrawing, packFormats, unpackFormats, isEmpty, copyDrawing, forgetCopy, readPasteEvent, ownDrawing } from '../src/io/clipboard';
 import { rgbaToDib } from '../src/render/picture';
 import { readCdxml } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
@@ -208,5 +208,36 @@ describe('the last drawing copied, for a paste that finds nothing else', () => {
     expect((await readPasteEvent(emptyPaste())).kind).toBe('drawing');
     forgetCopy();
     expect((await readPasteEvent(emptyPaste())).kind).toBe('nothing');
+  });
+});
+
+describe('our own drawing pasted back into this window (G1-11)', () => {
+  it('is the drawing as it was held, not as CDXML could carry it', async () => {
+    const proto = HTMLCanvasElement.prototype as unknown as { getContext: unknown };
+    const real = proto.getContext;
+    const ctx: unknown = new Proxy({}, { get: (_, k) => (k === 'measureText' ? (t: string) => ({ width: t.length * 5, actualBoundingBoxAscent: 7, actualBoundingBoxDescent: 2 }) : () => ctx), set: () => true });
+    proto.getContext = () => ctx;
+    const { doc, ids } = sample();
+    // things the CDXML copy does not carry: a struck-through run and a see-through box
+    doc.captions.get(ids.caption)!.runs[1].strike = true;
+    doc.shapes.get(ids.box)!.transparency = 0.5;
+    try {
+      await copyDrawing(doc, null).catch(() => '');
+    } finally {
+      proto.getContext = real;
+    }
+    const emptyPaste = () => ({ clipboardData: { getData: () => '', files: [] } }) as unknown as ClipboardEvent;
+    const got = await readPasteEvent(emptyPaste());
+    expect(got.kind).toBe('drawing');
+    const pasted = (got as { doc: Doc }).doc;
+    expect(pasted.captions.get(ids.caption)?.runs[1].strike).toBe(true);
+    expect(pasted.shapes.get(ids.box)?.transparency).toBe(0.5);
+    // each paste is a copy of its own: changing one leaves the next alone
+    pasted.shapes.get(ids.box)!.transparency = 0.1;
+    expect((((await readPasteEvent(emptyPaste())) as { doc: Doc }).doc).shapes.get(ids.box)?.transparency).toBe(0.5);
+    // CDXML from somewhere else is read as CDXML
+    const other = writeCdxml(sample().doc, { name: 'x.cdxml' });
+    expect(ownDrawing(other).captions.size).toBe(1);
+    forgetCopy();
   });
 });
