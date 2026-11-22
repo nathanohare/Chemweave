@@ -157,6 +157,26 @@ describe('tables in PowerPoint files', () => {
     expect(back.warnings).toEqual([]);
   });
 
+  it('keeps cells with no alignment of their own left aligned, PowerPoint\'s default (G2-04)', async () => {
+    const bytes = await save(sample());
+    const cell = (t: string, algn = '') => `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p>${algn ? `<a:pPr algn="${algn}"/>` : ''}<a:r><a:rPr lang="en-US" sz="1800"/><a:t>${t}</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>`;
+    const frame = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="Table 8"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>` +
+      `<p:xfrm><a:off x="1270000" y="1270000"/><a:ext cx="3657600" cy="1112520"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">` +
+      `<a:tbl><a:tblPr firstRow="1"><a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId></a:tblPr><a:tblGrid><a:gridCol w="1219200"/><a:gridCol w="1219200"/><a:gridCol w="1219200"/></a:tblGrid>` +
+      `<a:tr h="370840">${cell('Substrate')}${cell('Time')}${cell('Yield', 'ctr')}</a:tr>` +
+      `<a:tr h="370840">${cell('1a')}${cell('2 h')}${cell('82', 'ctr')}</a:tr>` +
+      `<a:tr h="370840">${cell('1b')}${cell('3 h', 'r')}${cell('91', 'ctr')}</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+    const xml = slideXml(bytes).replace(/<p:graphicFrame>.*<\/p:graphicFrame>/s, frame).replace(/<p:sp>.*?<\/p:sp>/gs, '');
+    const { table } = tableOf(withSlide(bytes, xml));
+    expect(table.align).toEqual(['left', 'left', 'center']);
+    expect(table.rows[2][1].align).toBe('right');
+    expect(table.rows[1][1].align).toBeUndefined();
+    // and saved so again
+    const again = slideXml(await save(table));
+    const algns = [...again.matchAll(/<a:tc[ >][\s\S]*?<a:pPr algn="(\w+)"/g)].map((x) => x[1]);
+    expect(algns).toEqual(['l', 'l', 'ctr', 'l', 'l', 'ctr', 'l', 'r', 'ctr']);
+  });
+
   it('keeps a table style, cell colours and cells merged down', async () => {
     const t: TableData = {
       cols: [60, 60, 60],

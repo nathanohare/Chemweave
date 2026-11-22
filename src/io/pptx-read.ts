@@ -196,6 +196,22 @@ function colorIn(el: Element | null, theme: Theme, clrMap: Record<string, string
 }
 
 /** A styled table read back: cell fills and text colours that only repeat its style are dropped. */
+/**
+ * Each column's alignment, from its cells' (the one most of its cells with text have), with each
+ * cell's own only where it differs; null when the columns are as a table here has them by default
+ * (the first left, the others centred). Changes the cells.
+ */
+function columnAligns(rows: TableCell[][], m: number): Justify[] | null {
+  const out: Justify[] = [];
+  for (let c = 0; c < m; c++) {
+    const n = new Map<Justify, number>();
+    for (const row of rows) { const x = row[c]; if (x?.align && x.runs.some((r) => r.text.trim())) n.set(x.align, (n.get(x.align) ?? 0) + 1); }
+    out.push([...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? (c === 0 ? 'left' : 'center'));
+  }
+  for (const row of rows) row.forEach((x, c) => { if (x.align === out[c]) delete x.align; });
+  return out.every((j, c) => j === (c === 0 ? 'left' : 'center')) ? null : out;
+}
+
 function unstyle(t: TableData): TableData {
   if (!slideCellLook(t, 0, 0)) return t;
   const rows = t.rows.map((row, r) => row.map((cell, c) => {
@@ -2103,7 +2119,10 @@ class Reader {
         const fill = this.color(kid(tcPr, 'solidFill'));
         if (fill) cell.fill = fill;
         if (cap?.paras) cell.paras = cap.paras;
-        if (cap && kid(kid(tc, 'txBody'), 'p', 'pPr')?.getAttribute('algn')) cell.align = cap.justify;
+        // (a cell with no algn is left aligned, PowerPoint's default, ECMA-376 part 1, 21.1.2.2.7;
+        // which columns that makes is worked out below)
+        if (cap) cell.align = cap.justify;
+        else if (kid(tc, 'txBody')) cell.align = 'left';
         const span = Number(tc.getAttribute('gridSpan') ?? 1);
         if (span > 1) cell.span = Math.min(span, m - c);
         row.push(cell);
@@ -2112,6 +2131,7 @@ class Reader {
       borders.push(bs);
     }
     if (!rows.length) return;
+    const colAlign = columnAligns(rows, m);
     rows.forEach((row, r) => row.forEach((c) => { if (c.rowSpan !== undefined) { if (c.rowSpan > rows.length - r) c.rowSpan = rows.length - r; if (c.rowSpan < 2) delete c.rowSpan; } }));
     // the size most of the text is in becomes the table's
     const sizes = new Map<number, number>();
@@ -2123,6 +2143,7 @@ class Reader {
     const flag = (k: string) => pr?.getAttribute(k) === '1' || pr?.getAttribute(k) === 'true';
     const head = flag('firstRow') ? 1 : 0;
     let read: TableData = { cols, rows: plainRows, head, lines: 'acs' };
+    if (colAlign) read.align = colAlign;
     if (size !== undefined) read.size = size;
     const ours = PPT_STYLE_IDS[style];
     if (ours) {
