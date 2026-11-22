@@ -124,4 +124,24 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
     const out = unzipSync(await writeXlsx(again.book, pictures));
     expect(Object.keys(out).filter((n) => n.startsWith('xl/embeddings/')).length).toBe(1);
   });
+
+  it('moves the object with its cells when rows and columns are inserted or deleted, as Excel does', async () => {
+    const { book: wb } = await readXlsx(book(false));
+    const sh = wb.sheets[0];
+    expect(sh.ole![0].at).toEqual([2, 1, 4, 6]);
+    wb.edit('insert', () => sh.insertRows(0, 2));
+    wb.edit('delete', () => sh.deleteCols(0, 1));
+    expect(sh.ole![0].at).toEqual([1, 3, 3, 8]);
+    const out = unzipSync(await writeXlsx(wb, pictures));
+    const sheet = strFromU8(out['xl/worksheets/sheet1.xml']);
+    const pr = parse(sheet).getElementsByTagNameNS(MAIN, 'objectPr')[0];
+    const num = (side: string, n: string) => pr.getElementsByTagNameNS(MAIN, side)[0].getElementsByTagNameNS(XDR, n)[0].textContent;
+    expect([num('from', 'col'), num('from', 'row'), num('to', 'col'), num('to', 'row')]).toEqual(['1', '3', '3', '8']);
+    const vml = Object.entries(out).find(([n]) => /vmlDrawing\d+\.vml$/.test(n))!;
+    expect(strFromU8(vml[1])).toContain('<x:Anchor>1, 0, 3, 0, 3, 0, 8, 0</x:Anchor>');
+    expect(strFromU8(out['xl/drawings/drawing1.xml'])).toMatch(/<xdr:from><xdr:col>1<\/xdr:col><xdr:colOff>0<\/xdr:colOff><xdr:row>3<\/xdr:row>/);
+    // and back again with Undo
+    wb.undo(); wb.undo();
+    expect(sh.ole![0].at).toEqual([2, 1, 4, 6]);
+  });
 });

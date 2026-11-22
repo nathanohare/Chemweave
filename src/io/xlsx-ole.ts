@@ -44,7 +44,42 @@ export interface KeptSheetOle {
   vml?: { shape: string; shapeType: string; parts: KeptOlePart[] };
   /** The hidden twin in the DrawingML drawing (an mc:AlternateContent), with the shape id as @@spid@@. */
   drawing?: string;
+  /**
+   * The cells it is placed over (from column, from row, to column, to row, from 0), written in its
+   * anchors as @@fc@@, @@fr@@, @@tc@@ and @@tr@@: moved here as rows and columns are inserted or
+   * deleted, as Excel moves an object set to move with its cells.
+   */
+  at?: [number, number, number, number];
 }
+
+/** The anchor's cells in each kept text turned into @@fc@@, @@fr@@, @@tc@@, @@tr@@ (null: not all found). */
+function placeholders(texts: (string | undefined)[], at: [number, number, number, number]): (string | undefined)[] | null {
+  const names = ['fc', 'fr', 'tc', 'tr'];
+  let ok = true;
+  const out = texts.map((t) => {
+    if (t === undefined) return t;
+    // DrawingML anchors (xdr:from / xdr:to with col and row, 20.5.2.15)
+    let s = t.replace(/(<((?:\w+:)?)(from|to)\b[^>]*>)([\s\S]*?)(<\/\2\3>)/g, (all, open: string, p: string, which: string, inner: string, close: string) => {
+      const k = which === 'from' ? 0 : 2;
+      const got = inner.replace(/(<((?:\w+:)?)col\b[^>]*>)(\d+)(<\/\2col>)/, (m, o: string, q: string, v: string, c: string) => (Number(v) === at[k] ? `${o}@@${names[k]}@@${c}` : m))
+        .replace(/(<((?:\w+:)?)row\b[^>]*>)(\d+)(<\/\2row>)/, (m, o: string, q: string, v: string, c: string) => (Number(v) === at[k + 1] ? `${o}@@${names[k + 1]}@@${c}` : m));
+      return `${open}${got}${close}`;
+    });
+    // VML's x:Anchor: from column, offset, from row, offset, to column, offset, to row, offset
+    s = s.replace(/<x:Anchor>([^<]*)<\/x:Anchor>/, (all, v: string) => {
+      const n = v.split(',').map((x) => x.trim());
+      if (n.length !== 8 || +n[0] !== at[0] || +n[2] !== at[1] || +n[4] !== at[2] || +n[6] !== at[3]) { ok = false; return all; }
+      return `<x:Anchor>@@fc@@, ${n[1]}, @@fr@@, ${n[3]}, @@tc@@, ${n[5]}, @@tr@@, ${n[7]}</x:Anchor>`;
+    });
+    return s;
+  });
+  return ok ? out : null;
+}
+
+/** Kept text with its anchor's cells put in. */
+const anchored = (t: string, at: [number, number, number, number] | undefined) =>
+  at ? t.replace(/@@(fc|fr|tc|tr)@@/g, (_, k: string) => String(at[['fc', 'fr', 'tc', 'tr'].indexOf(k)])) : t;
+
 
 const extOf = (path: string) => /\.([^./]+)$/.exec(path)?.[1]?.toLowerCase() ?? 'bin';
 
@@ -144,6 +179,19 @@ export function readSheetOle(pkg: PackageReader, path: string, ws: Element, vmlP
         break;
       }
     }
+    // the cells it is over, from its anchor (x14 objectPr, else the twin's, else VML's)
+    const a = /<(?:\w+:)?from\b[^>]*>[\s\S]*?<(?:\w+:)?col\b[^>]*>(\d+)<[\s\S]*?<(?:\w+:)?row\b[^>]*>(\d+)<[\s\S]*?<(?:\w+:)?to\b[^>]*>[\s\S]*?<(?:\w+:)?col\b[^>]*>(\d+)<[\s\S]*?<(?:\w+:)?row\b[^>]*>(\d+)</.exec(kept.xml + (kept.drawing ?? ''));
+    const v = kept.vml && /<x:Anchor>([^<]*)<\/x:Anchor>/.exec(kept.vml.shape)?.[1].split(',').map((x) => Number(x.trim()));
+    const at: [number, number, number, number] | null = a ? [+a[1], +a[2], +a[3], +a[4]] : v && v.length === 8 ? [v[0], v[2], v[4], v[6]] : null;
+    if (at) {
+      const done = placeholders([kept.xml, kept.vml?.shape, kept.drawing], at);
+      if (done) {
+        kept.xml = done[0]!;
+        if (kept.vml) kept.vml.shape = done[1]!;
+        if (kept.drawing) kept.drawing = done[2];
+        kept.at = at;
+      }
+    }
     out.push(kept);
   }
   return out;
@@ -203,14 +251,14 @@ export function writeSheetOle(pkg: Package, objects: KeptSheetOle[], sheetPath: 
   objects.forEach((o, i) => {
     const spid = String(firstShapeId + i);
     const ids = o.parts.map((p) => partOf(sheetPath, p));
-    items.push(o.xml.replace(/@@p(\d+)@@/g, (_, n: string) => ids[Number(n)]).replace(/@@spid@@/g, spid));
+    items.push(anchored(o.xml, o.at).replace(/@@p(\d+)@@/g, (_, n: string) => ids[Number(n)]).replace(/@@spid@@/g, spid));
     if (o.vml) {
       const vids = o.vml.parts.map((p) => partOf(vmlPath, p));
-      shapes.push(o.vml.shape.replace(/@@v(\d+)@@/g, (_, n: string) => vids[Number(n)]).replace(/@@spid@@/g, spid));
+      shapes.push(anchored(o.vml.shape, o.at).replace(/@@v(\d+)@@/g, (_, n: string) => vids[Number(n)]).replace(/@@spid@@/g, spid));
       const typeId = /\btype="#([^"]+)"/.exec(o.vml.shape)?.[1];
       if (typeId && !types.has(typeId)) types.set(typeId, o.vml.shapeType || (typeId === '_x0000_t75' ? PICTURE_FRAME : ''));
     }
-    if (o.drawing) anchors.push(o.drawing.replace(/@@spid@@/g, spid));
+    if (o.drawing) anchors.push(anchored(o.drawing, o.at).replace(/@@spid@@/g, spid));
   });
   return { oleObjects: items.length ? `<oleObjects>${items.join('')}</oleObjects>` : '', vmlShapes: shapes.join(''), vmlTypes: [...types.values()].join(''), anchors };
 }

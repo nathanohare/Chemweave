@@ -10,6 +10,7 @@
 import type { KeptParts, KeptTree } from '../io/kept-parts';
 import type { ExcelSheetKept, ExcelBookKept } from '../io/xlsx-view';
 import type { KeptSheetOle } from '../io/xlsx-ole';
+import { shiftOle } from './ole-anchor';
 import type { Contents } from '../model';
 import type { DocStyle } from '../style';
 import { ACS_1996 } from '../style';
@@ -317,8 +318,8 @@ function patchStyleWith(s: CellStyle | undefined, patch: Partial<CellStyle>): Ce
 
 type MapField = 'cells' | 'colWidths' | 'rowHeights' | 'fittedRows' | 'colDefs' | 'colStyles' | 'hiddenRows' | 'hiddenCols' | 'notes' | 'rowLevels' | 'colLevels';
 type ValueField = 'merges' | 'filter' | 'frozen' | 'split' | 'name' | 'condFormats' | 'tables' | 'charts' | 'dashboard' | 'validations' | 'objects' | 'pageSetup' | 'dataTables' | 'pivots'
-  | 'sparklines' | 'viewOpts' | 'outline';
-const VALUE_FIELDS = new Set<string>(['merges', 'filter', 'frozen', 'split', 'name', 'condFormats', 'tables', 'charts', 'dashboard', 'validations', 'objects', 'pageSetup', 'dataTables', 'pivots', 'sparklines', 'viewOpts', 'outline']);
+  | 'sparklines' | 'viewOpts' | 'outline' | 'ole';
+const VALUE_FIELDS = new Set<string>(['merges', 'filter', 'frozen', 'split', 'name', 'condFormats', 'tables', 'charts', 'dashboard', 'validations', 'objects', 'pageSetup', 'dataTables', 'pivots', 'sparklines', 'viewOpts', 'outline', 'ole']);
 
 interface Change {
   sheet: Sheet | null; // null: the workbook's list of sheets, its names, theme or custom views
@@ -1082,6 +1083,11 @@ export class Sheet {
         return n === i ? o : { ...o, at: axis === 'row' ? { ...o.at, row: n } : { ...o.at, col: n } };
       });
       if (os.some((o, i) => o !== this.objects[i])) this.setObjects(os);
+    }
+    // objects embedded by Excel (kept, not shown) move with their cells (G2-01)
+    if (this.ole?.length) {
+      const os = this.ole.map((o) => shiftOle(o, axis, at, count));
+      if (os.some((o, i) => o !== this.ole![i])) this.assign('ole', os);
     }
     if (this.dataTables.length) {
       const ts = this.dataTables.map((t) => ({ ...t, ref: moveRange(t.ref)! })).filter((t) => t.ref);
