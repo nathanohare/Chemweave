@@ -1236,6 +1236,7 @@ window.addEventListener('paste', (e) => {
 });
 
 async function pasteFrom(read: () => Pasted | Promise<Pasted>): Promise<void> {
+  const here = sameDrawing('The paste');
   let got: Pasted;
   try {
     got = await read();
@@ -1243,6 +1244,7 @@ async function pasteFrom(read: () => Pasted | Promise<Pasted>): Promise<void> {
     flash('Could not paste: ' + String(err));
     return;
   }
+  if (here.left()) return;
   // a Smart Scheme's dashed species box selected: what is pasted becomes that species
   const holder = editor.selectedHolder();
   if (holder !== null) { await pasteIntoSpeciesBox(holder, got); return; }
@@ -1362,7 +1364,9 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
   const c = pastePoint();
   if (isRxn(text) || isReactionSmiles(text)) return pasteReaction(text.trim(), c);
   let mb: string | null = text.includes('M  END') ? text : null;
-  if (!mb && !/\s/.test(text)) mb = await chem.smilesToMol(text);
+  const here = sameDrawing('The pasted structure');
+  if (!mb && !/\s/.test(text)) mb = await chem.smilesToMol(text).catch((e: unknown) => { flash(e instanceof Error ? e.message : String(e), 8000); return null; });
+  if (here.left()) return true;
   if (!mb) { if (!quiet) flash('Paste a SMILES string or a molfile.'); return false; }
   try {
     let ids: number[] = [];
@@ -1385,7 +1389,9 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
  * italics, sub- and superscripts and colours from the HTML that came with it.
  */
 async function pasteText(text: string, html?: string): Promise<void> {
+  const here = sameDrawing('The pasted text');
   if (looksLikeChemistry(text) && await pasteChemistry(text, true)) return;
+  if (here.left()) return;
   const rich = html ? htmlToRich(html) : null;
   // (the drawing's caption font and size, as typed text gets)
   const runs = (rich?.runs ?? [{ text } as TextRun]).map(({ size: _s, font: _f, obj: _o, ...r }: TextRun) => r).filter((r) => r.text);
@@ -1622,9 +1628,10 @@ async function insertOrbital(quick: boolean): Promise<void> {
   const atoms = [...editor.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && !a.multi);
   if (quick && !atoms.length) { flash('Select the atoms of the π system first (drag around them, or Shift-click each).'); return; }
   let v: Record<string, string> = { ...orbitalChoice, kind: 'p', angle: 'Auto' };
+  const here = sameDrawing('The orbital');
   if (!quick) {
     const got = await ask('Orbital', orbitalFields(orbitalChoice), { ok: 'Insert', preview: { title: 'Preview', draw: (vals) => orbitalPreview(orbitalSpec(vals, atoms[0]), atoms[0]) }, note: atoms.length ? `One on each of the ${atoms.length} selected atom${atoms.length > 1 ? 's' : ''}; the lobes stay with the atoms. Double-click one later to change it.` : 'Select atoms first to put one on each; otherwise it goes in the middle of the view. Double-click one later to change it.' });
-    if (!got) return;
+    if (!got || here.left()) return;
     Object.assign(orbitalChoice, got);
     v = got;
   }
@@ -1725,9 +1732,11 @@ async function insertChart(): Promise<void> {
   const fit = deck ? Math.min(slides ? 2 : 1, (deck.size.w * 0.7) / 360, (deck.size.h * 0.7) / 216) : 1;
   const box = newChartBox('column', 360 * fit, 216 * fit);
   if (slides) box.chart.fontSize = 18;
+  const here = sameDrawing('The chart');
   const got = await editChart(box, true, flash);
   if (!got || got === 'delete') return;
   const { w, h } = (await import('./ui/chart-editor')).chartPoints(got.chart);
+  if (here.left()) return;
   const c = pasteCentre();
   let made: Shape | null = null;
   doc.edit('Insert chart', () => {
@@ -1743,10 +1752,12 @@ async function editChartShape(id: number): Promise<void> {
   const s = doc.shapes.get(id);
   if (!s?.chart) return;
   const x = Math.min(s.x1, s.x2), y = Math.min(s.y1, s.y2);
+  const here = sameDrawing('The chart change', 'applied');
   const got = await editChart(sizedBox(s.chart, Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1)), false, flash);
-  if (!got || !doc.shapes.get(id)?.chart) return;
+  if (!got || here.left() || !doc.shapes.get(id)?.chart) return;
   if (got === 'delete') { doc.edit('Delete chart', () => doc.removeShape(id)); editor.changed(); return; }
   const { w, h } = (await import('./ui/chart-editor')).chartPoints(got.chart);
+  if (here.left()) return;
   doc.edit('Change chart', () => doc.updateShape(id, { chart: got, src: chartBoxPng(got, w, h), px: { w: got.chart.w, h: got.chart.h }, x1: x, y1: y, x2: x + w, y2: y + h, crop: undefined }));
   editor.changed();
 }
@@ -1757,8 +1768,9 @@ async function editMediaShape(id: number): Promise<void> {
   finishTyping();
   const s = doc.shapes.get(id);
   if (!s?.video) return;
+  const here = sameDrawing('The playback change', 'applied');
   const got = await editMedia(s.video);
-  if (!got || !doc.shapes.get(id)?.video) return;
+  if (!got || here.left() || !doc.shapes.get(id)?.video) return;
   doc.edit(s.video.audio ? 'Audio playback' : 'Video playback', () => doc.updateShape(id, { video: got }));
   editor.changed();
 }
@@ -1767,6 +1779,7 @@ editor.onMedia = (id) => void editMediaShape(id);
 /** Insert > Slides > Video or Audio: a file put on the slide, starting when clicked and playing once, as in PowerPoint. */
 async function insertMedia(audio: boolean): Promise<void> {
   const exts = Object.keys(audio ? AUDIO_TYPES : VIDEO_TYPES);
+  const here = sameDrawing(audio ? 'The sound' : 'The video');
   let f;
   try {
     f = await openBytesDialog(audio ? 'Sounds' : 'Videos', [], exts);
@@ -1792,6 +1805,7 @@ async function insertMedia(audio: boolean): Promise<void> {
   // a video this system can't play still looks like a video (not a loudspeaker)
   if (!type.audio && !playable) px = { w: 640, h: 360 };
   if (!poster) poster = type.audio ? speakerPng() : filmPng(px.w, px.h);
+  if (here.left()) return;
   finishTyping();
   const deck = deckNow();
   const room = deck ? { w: deck.size.w * 0.6, h: deck.size.h * 0.6 } : { w: (renderer.width * 0.6) / renderer.view.scale, h: (renderer.height * 0.6) / renderer.view.scale };
@@ -1822,10 +1836,11 @@ async function insertZoom(summary: boolean): Promise<void> {
   if (!d || ws.active.mode !== 'slides') { flash('Zooms go on slides: use File ▸ New ▸ Presentation, or open a PowerPoint file.'); return; }
   finishTyping();
   refreshZooms(d);
+  const here = sameDrawing(summary ? 'The Summary Zoom' : 'The zoom');
   const pick = await pickReuseSlides('', d, false, summary
     ? { title: 'Summary Zoom', note: 'Click the first slide of each part of your talk (Shift+click picks a run). A new slide goes in before the first of them, with a zoom for each part: in the show, a click on one plays its part and comes back.', verb: (n) => (n ? `Insert Summary Zoom (${n} part${n === 1 ? '' : 's'})` : 'Insert Summary Zoom') }
     : { title: 'Slide Zoom', note: 'Click the slides to zoom to (Shift+click picks a run). In the show, a click on a zoom zooms into its slide; turn on Return to Zoom in the panel to come back afterward.', verb: (n) => (n > 1 ? `Insert ${n} Zooms` : 'Insert Zoom') });
-  if (!pick?.indices.length) return;
+  if (!pick?.indices.length || here.left()) return;
   if (summary) {
     const parts = summaryParts(pick.indices, d.slides.length);
     const ids = parts.map((p) => ({ first: d.slides[p.first].id, last: d.slides[p.last].id }));
@@ -1898,12 +1913,13 @@ async function actionSettings(): Promise<void> {
   const jumps = [...Object.entries(SHOW_JUMPS), ...Object.entries(SHOW_TOOLS)].map(([value, label]) => ({ value, label }));
   const regions = (d.slides[d.index].canvas?.keys ?? []).map((k, n) => ({ value: `#key=${k.id}`, label: `Zoom to ${k.title?.trim() || `view ${n + 1}`}` }));
   const kind = !cur ? 'none' : cur in SHOW_JUMPS || cur in SHOW_TOOLS || keyOfLink(cur) !== null || slideOfLink(cur) !== null ? 'place' : 'url';
+  const here = sameDrawing('The action', 'applied');
   const got = await ask('Action Settings', [
     { name: 'kind', label: 'On a click', value: kind, options: [{ value: 'none', label: 'Nothing' }, { value: 'place', label: 'Go to a slide' }, { value: 'url', label: 'Open a web page or file' }] },
     { name: 'place', label: 'Slide', value: kind === 'place' ? cur : '#next', options: [...jumps, ...regions, ...slides] },
     { name: 'url', label: 'Web page or file', value: kind === 'url' ? cur : '', placeholder: 'https://… or a file path' },
   ], { ok: 'OK', note: 'What happens when this is clicked in the slide show. Saved as PowerPoint\'s own action.' });
-  if (!got) return;
+  if (!got || here.left()) return;
   const link = got.kind === 'place' ? got.place : got.kind === 'url' ? normalizeLink(got.url) ?? '' : '';
   doc.edit('Action settings', () => { for (const s of shapes) doc.updateShape(s.id, { link: link || undefined }); });
   editor.changed();
@@ -1948,8 +1964,9 @@ async function insertLink(): Promise<void> {
   const old = linkSpans(first.runs)[0]?.link;
   const text = caps.length === 1 ? plainText(first.runs) : '';
   const p = slidePlaces();
+  const here = sameDrawing('The link');
   const got = await askLink({ text: caps.length === 1 && !text.includes('\n') ? text : null, link: old, places: p?.places, placeTitle: p?.title });
-  if (!got) return;
+  if (!got || here.left()) return;
   doc.edit('remove' in got ? 'Remove Link' : old ? 'Edit Link' : 'Insert Link', () => {
     for (const c of caps) {
       const n = plainText(c.runs).length;
@@ -2030,8 +2047,9 @@ async function insertEquation(): Promise<void> {
   finishTyping();
   const m = deck.master;
   const font = m.bodyFont;
+  const here = sameDrawing('The equation');
   const got = await askEquation({ tex: '', font, ok: 'Insert', app: 'PowerPoint' });
-  if (!got || deckNow() !== deck) return;
+  if (!got || deckNow() !== deck || here.left()) return;
   const math: ShapeMath = { tex: got.tex, size: m.bodySize, color: slideColours(m, deck.current?.layout ?? 'blank').textColor, font };
   const { w, h } = shapeMathSize(math, measureText);
   const c = pasteCentre();
@@ -2049,9 +2067,11 @@ async function editEquationShape(id: number): Promise<void> {
   const s = doc.shapes.get(id);
   if (!s?.math) return;
   const k = shapeMathScale(s.math, s.x2 - s.x1, s.y2 - s.y1, measureText);
+  const here = sameDrawing('The equation change', 'applied');
   const got = await askEquation({ tex: s.math.tex, font: s.math.font ?? 'Arial', ok: 'Apply', app: 'PowerPoint' });
+  if (!got || here.left()) return;
   const now = doc.shapes.get(id);
-  if (!got || !now?.math || got.tex === now.math.tex) return;
+  if (!now?.math || got.tex === now.math.tex) return;
   const math = { ...now.math, tex: got.tex };
   const { w, h } = shapeMathSize(math, measureText);
   const x = Math.min(now.x1, now.x2), y = Math.min(now.y1, now.y2);
@@ -2735,11 +2755,13 @@ async function structureToName(): Promise<void> {
   if (!chem.ready) { flash('The chemistry engine is still loading. Try again in a moment.'); return; }
   const todo: { frag: Set<number>; smiles: string; molblock: string }[] = [];
   let unreadable = '';
+  const here = sameDrawing('The name');
   for (const f of frags) {
     const ex = toMolfile(doc, f, '');
     if (ex.generic.length) { unreadable = 'A structure with R groups or labels that can\'t be read has no name. Replace them with atoms first.'; continue; }
-    const smiles = await chem.molToSmiles(ex.molblock);
-    if (!smiles) { unreadable = 'That structure can\'t be read (check valences).'; continue; }
+    const smiles = await chem.molToSmiles(ex.molblock).catch((e: unknown) => { unreadable = e instanceof Error ? e.message : String(e); return ''; });
+    if (here.left()) return;
+    if (!smiles) { unreadable ||= 'That structure can\'t be read (check valences).'; continue; }
     todo.push({ frag: f, smiles, molblock: ex.molblock });
   }
   if (!todo.length) { flash(unreadable || 'Select a structure to name.'); return; }
@@ -2751,6 +2773,7 @@ async function structureToName(): Promise<void> {
     flash((e as Error).message);
     return;
   }
+  if (here.left()) return;
   scheduleAnalysis(true);
   const found = todo.flatMap((t, i) => { const s = states[i]; return s.kind === 'found' && [...t.frag].every((id) => doc.atoms.has(id)) ? [{ ...t, name: s.name }] : []; });
   const none = states.find((s): s is Extract<NameState, { kind: 'none' }> => s.kind === 'none');
@@ -3035,7 +3058,9 @@ async function applyAssistantAction(a: AssistantAction): Promise<string> {
     return 'Added the text as a text box.';
   }
   if (!chem.ready) return 'The chemistry engine is still loading. Try again in a moment.';
+  const here = sameDrawing('The structure');
   const mb = await chem.smilesToMol(a.smiles).catch(() => null);
+  if (here.left()) return 'Another drawing is showing now, so the structure was not drawn.';
   if (!mb) return `The proposed structure (${a.smiles}) doesn't read as a valid structure, so it wasn't drawn.`;
   if (mode === 'document' || mode === 'sheet') {
     await copyText(a.smiles, 'Copied the structure as SMILES: paste it into a drawing, a cell or the document.');
@@ -3157,7 +3182,9 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
   else {
     const p = splitReactionSmiles(text);
     const read = async (xs: string[]) => { const out: string[] = []; for (const x of xs) { const mb = await chem.smilesToMol(x); if (!mb) return null; out.push(mb); } return out; };
-    const r = await read(p.reactants), a = await read(p.agents), q = await read(p.products);
+    const here = sameDrawing('The reaction');
+    const r = await read(p.reactants).catch(() => null), a = await read(p.agents).catch(() => null), q = await read(p.products).catch(() => null);
+    if (here.left()) return true;
     mols = r && a && q ? { reactants: r, agents: a, products: q } : null;
   }
   if (!mols) { flash('This reaction could not be read (each species must be valid SMILES, or the RXN file V2000).', 6000); return false; }
@@ -3458,7 +3485,9 @@ async function addTiedText(role: 'label' | 'caption'): Promise<void> {
   if (!frags.length) { flash('Select a structure first.'); return; }
   const m = editor.measure();
   // copies already labelled keep their ID
+  const here = sameDrawing(role === 'label' ? 'The ID label' : 'The caption');
   const keys = role === 'label' && numbering.same ? await structureKeys() : new Map<number, string>();
+  if (here.left()) return;
   const known = new Map<string, string>();
   if (keys.size) {
     for (const c of doc.captions.values()) {
@@ -3777,6 +3806,7 @@ async function expandText(caps: Caption[], full = false): Promise<number[]> {
   const m = editor.measure();
   const drawn: { id: number; mb?: string; lig?: Template; x: number; y: number }[] = [];
   const failed: string[] = [];
+  const here = sameDrawing('The expanded structure');
   for (const c of caps) {
     const b = m.captionBox(c);
     const at = { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
@@ -3785,6 +3815,7 @@ async function expandText(caps: Caption[], full = false): Promise<number[]> {
     if (!chem.ready) { failed.push(plainText(c.runs).trim()); continue; }
     const sp = captionSpecies(doc, c, m);
     const mb = sp ? await chem.smilesToMol(speciesSmiles(sp)).catch(() => null) : null;
+    if (here.left()) return [];
     if (mb) drawn.push({ id: c.id, mb, ...at });
     else failed.push(plainText(c.runs).trim());
   }
@@ -3882,6 +3913,7 @@ const mapChoice: Record<string, string> = { numbers: 'true', colours: 'false', b
 async function mapAtomsCommand(): Promise<void> {
   finishTyping();
   const arrow = pickedReactionArrow();
+  const here = sameDrawing('The atom map');
   const got = await ask('Map Atoms', [
     ...(arrow !== undefined ? [{ name: 'which', label: 'Map', value: 'step', options: [{ value: 'step', label: 'The selected reaction step' }, { value: 'all', label: 'Every step in the drawing' }] }] : []),
     { name: 'numbers', label: 'Show the map numbers beside the atoms', type: 'checkbox', value: mapChoice.numbers },
@@ -3889,7 +3921,7 @@ async function mapAtomsCommand(): Promise<void> {
     { name: 'colours', label: 'Color each atom and where it goes the same', type: 'checkbox', value: mapChoice.colours },
     { name: 'bonds', label: 'Mark bonds made (green) and broken (red)', type: 'checkbox', value: mapChoice.bonds },
   ], { ok: 'Map', note: 'Atoms are paired the way Animate Reaction pairs them. To change a pair, pair it by hand in Animate Reaction and map again. Map numbers go into copied reaction SMILES and RXN files.' });
-  if (!got) return;
+  if (!got || here.left()) return;
   Object.assign(mapChoice, { numbers: got.numbers, colours: got.colours, bonds: got.bonds });
   if (MAP_LOOKS.some((l) => l.value === got.look) && got.look !== docMapLook(doc.style).look) {
     setMapLook(got.look as MapLook);
@@ -3897,6 +3929,7 @@ async function mapAtomsCommand(): Promise<void> {
     if (got.look === 'custom') await mapFormatCommand(false);
   }
   const { mapAtoms, applyAtomMap } = await import('./morph/atom-map');
+  if (here.left()) return;
   const res = mapAtoms(doc, renderer, { arrow: got.which === 'step' ? arrow : undefined, measure: editor.measure() });
   if (!res.steps) { flash('No reaction step to map: draw the starting materials, a reaction arrow and the products.', 6000); return; }
   let kept = { keptNumbers: 0, keptColours: 0 };
@@ -3943,7 +3976,9 @@ async function mapFormatCommand(switchLook = true): Promise<void> {
 /** Chemistry > Reactions and Schemes > Clear Atom Map: on the selected structures, or everywhere. */
 async function clearAtomMapCommand(): Promise<void> {
   finishTyping();
+  const here = sameDrawing('Clearing the atom map', 'done');
   const { clearAtomMap } = await import('./morph/atom-map');
+  if (here.left()) return;
   const scope = editor.sel.atoms.size ? new Set([...editor.sel.atoms].flatMap((id) => [...doc.fragmentOf(id)])) : undefined;
   if (![...(scope ?? doc.atoms.keys())].some((id) => doc.atoms.get(id)?.mapNo)) { flash('Nothing here has an atom map.'); return; }
   doc.edit('Clear Atom Map', () => { clearAtomMap(doc, scope); });
@@ -3951,8 +3986,10 @@ async function clearAtomMapCommand(): Promise<void> {
 }
 const nameDialog = new NameDialog(async (name) => {
   // a SMILES string (or molfile) is drawn as it is; anything else is read as a name
-  const mb = chem.ready ? await molfileOrSmiles(name, (s) => chem.smilesToMol(s)) : null;
+  const here = sameDrawing('The structure');
+  const mb = chem.ready ? await molfileOrSmiles(name, (s) => chem.smilesToMol(s)).catch(() => null) : null;
   const got = mb ? { mb, attach: [], warnings: [] } : await nameToMolfile(name);
+  if (here.left()) return null;
   if ('error' in got) return got;
   const c = pasteCentre();
   try {
@@ -3997,9 +4034,12 @@ async function nameToStructure(): Promise<void> {
   if (!namesReady) flash('Starting the name reader (only the first time)…');
   const found: { cap: Caption; mb: string; attach: number[] }[] = [];
   const problems: { name: string; why: string }[] = [], notes: string[] = [];
+  // (the name reader may load first, or PubChem be asked: up to 10 s, while another tab can come up)
+  const here = sameDrawing(caps.length > 1 ? 'The structures' : 'The structure');
   for (const cap of caps) {
     const name = captionName(cap.runs.map((r) => r.text).join(''));
     const got = await nameToMolfile(name);
+    if (here.left()) return;
     if ('error' in got) problems.push({ name, why: got.error });
     else { found.push({ cap, mb: got.mb, attach: got.attach }); notes.push(...got.warnings); }
   }
@@ -4148,6 +4188,26 @@ function align(how: Align): void {
     storeSettings();
     flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Arrange ▸ Match Focal Points.', 9000);
   }
+}
+
+/**
+ * The drawing an async command started on (standing rule R5: async work carries its target).
+ * `doc` is one object whose contents are swapped when another tab, slide or Draw window shows, so
+ * a command that awaits the chemistry engine, the namer, the network or a dialog checks
+ * `here.left()` after each await and stops when another drawing is showing: its result never lands
+ * in the wrong drawing, and the user is told once. `what` names the result ("The structure"), and
+ * `done` what would have happened to it ("added", "applied").
+ */
+function sameDrawing(what = 'The result', done = 'added'): { left: () => boolean } {
+  const key = doc.contentsKey;
+  let told = false;
+  return {
+    left: () => {
+      if (doc.contentsKey === key) return false;
+      if (!told) { told = true; flash(`${what} was not ${done}: another drawing is showing now. Go back to it and try again.`, 6000); }
+      return true;
+    },
+  };
 }
 
 let flashTimer = 0;
@@ -5760,7 +5820,9 @@ async function matchFocalPoints(): Promise<void> {
   const others = frags.filter((f) => f !== ref);
   const refEx = toMolfile(doc, ref);
   const exs = others.map((f) => toMolfile(doc, f));
+  const here = sameDrawing('Matching the focal points', 'done');
   const pairs = await chem.common(refEx.molblock, exs.map((e) => e.molblock)).catch(() => null);
+  if (here.left()) return;
   if (!pairs) { flash('Could not compare the structures.'); return; }
   const refIndex = new Map<number, number>();
   refEx.map.forEach((id, i) => { if (id !== undefined) refIndex.set(id, i); });
@@ -6849,6 +6911,7 @@ async function insertReference(): Promise<void> {
   if (docActive() || sheetActive()) { void openReferences(); return; }
   finishTyping();
   const groups = (): RefGroup[] => refHolders().map((h) => ({ name: h.name, refs: h.refs(), style: h.citeStyle() }));
+  const here = sameDrawing('The reference');
   const got = await chooseRefsToInsert(groups(), async () => {
     const asked = await ask('Reference by DOI', [{ name: 'doi', label: 'DOI', value: '' }], { ok: 'Look Up', note: 'Paste a DOI (10.1021/om100106e) or a doi.org link. The details are filled in from Crossref, which needs the internet.' });
     if (!asked?.doi.trim()) return null;
@@ -6856,7 +6919,7 @@ async function insertReference(): Promise<void> {
     try { found = await fetchDoi(asked.doi); } catch (e) { flash(e instanceof Error ? e.message : String(e), 8000); return null; }
     return editReference(found, 'Check the Reference', citeFormatOf(preferredCiteStyle().style, preferredCiteStyle().options), (x) => fetchDoi(x));
   }, async () => { await referencesWindow.open(); return groups(); });
-  if (!got) return;
+  if (!got || here.left()) return;
   const f = citeFormatOf(got.style, got.style === preferredCiteStyle().style ? preferredCiteStyle().options : undefined);
   const runs = referenceRuns(got.refs, got.form, f, got.numbered);
   const size = doc.style.captionSize;
@@ -7069,8 +7132,9 @@ async function formatPicture(): Promise<void> {
   const pics = [...editor.sel.shapes].map((id) => doc.shapes.get(id)).filter((x): x is Shape => x?.kind === 'picture' && !!x.src && !x.chart && !x.math && !x.video);
   if (!pics.length) { flash('Select a picture first.'); return; }
   const p = pics[0];
+  const here = sameDrawing('The picture format', 'applied');
   const got = await pictureFormat({ src: p.src!, fx: p.fx, crop: p.crop, w: Math.abs(p.x2 - p.x1), h: Math.abs(p.y2 - p.y1), count: pics.length });
-  if (!got) return;
+  if (!got || here.left()) return;
   doc.edit('Picture format', () => {
     for (const x of pics) doc.updateShape(x.id, { fx: got.fx && structuredClone(got.fx) });
     if (got.crop) {
@@ -7085,6 +7149,7 @@ async function formatPicture(): Promise<void> {
 
 /** Picture > Remove white: near-white pixels become see-through (the picture becomes a PNG). */
 async function removeWhite(ids: number[]): Promise<void> {
+  const here = sameDrawing('Removing the white background', 'done');
   const v = await ask('Remove White Background', [
     { name: 'which', label: 'Remove', value: 'edges', options: [
       { value: 'edges', label: 'White joined to the edges (keeps white inside the picture)' },
@@ -7113,7 +7178,7 @@ async function removeWhite(ids: number[]): Promise<void> {
       return;
     }
   }
-  if (!done.length) return;
+  if (!done.length || here.left()) return;
   doc.edit('Remove white', () => { for (const d of done) doc.updateShape(d.id, { src: d.src }); });
   editor.requestScene();
 }
@@ -9456,16 +9521,18 @@ async function drawingAltText(): Promise<boolean> {
   const pics = [...editor.sel.shapes].map((id) => doc.shapes.get(id)).filter((x): x is Shape => x?.kind === 'picture');
   if (pics.length === 1) {
     const p = pics[0];
+    const here = sameDrawing('The alt text', 'saved');
     const got = await askAltText(p.chart ? 'chart' : p.math ? 'equation' : p.video ? (p.video.audio ? 'sound' : 'video') : 'picture', p.alt);
-    if (got === null || !doc.shapes.has(p.id)) return false;
+    if (got === null || here.left() || !doc.shapes.has(p.id)) return false;
     doc.edit('Alt text', () => doc.updateShape(p.id, { alt: got || undefined }));
     return true;
   }
   const atom = [...editor.sel.atoms].find((id) => doc.atoms.has(id));
   if (pics.length === 0 && atom !== undefined) {
     const frag = [...doc.fragmentOf(atom)].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a);
+    const here = sameDrawing('The alt text', 'saved');
     const got = await askAltText('structure', structureAlt(frag), 'Screen readers read this instead of the structure; Word and PowerPoint keep it as alt text. If empty, the structure is described by its SMILES.');
-    if (got === null || !doc.atoms.has(atom)) return false;
+    if (got === null || here.left() || !doc.atoms.has(atom)) return false;
     setStructureAlt(doc, atom, got);
     return true;
   }
@@ -9758,12 +9825,13 @@ async function shapeEffect(cmd: string): Promise<boolean> {
   finishTyping();
   if (cmd === 'shape-fx:glow:options') {
     const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: 0.4 };
+    const here = sameDrawing('The glow', 'applied');
     const v = await ask('Glow', [
       { name: 'color', label: 'Color', value: g.color, type: 'color' },
       { name: 'size', label: 'Size (pt)', value: String(g.size), type: 'number' },
       { name: 'clear', label: 'Transparency (%)', value: String(Math.round(g.transparency * 100)), type: 'number' },
     ], { ok: 'Apply' });
-    if (!v) return false;
+    if (!v || here.left()) return false;
     const size = Math.max(0, Math.min(150, Number(v.size) || 0));
     const glow = size > 0 ? { color: v.color, size, transparency: Math.max(0, Math.min(1, (Number(v.clear) || 0) / 100)) } : undefined;
     doc.edit('Glow', () => { for (const s of shapes) doc.updateShape(s.id, { glow }); });
@@ -9780,8 +9848,9 @@ async function shapeEffect(cmd: string): Promise<boolean> {
 async function shapePictureFill(): Promise<void> {
   const shapes = pickedGeo();
   if (!shapes.length) { flash('Select a shape first (Insert ▸ Shapes).'); return; }
+  const here = sameDrawing('The picture fill', 'applied');
   const p = await pickPicture();
-  if (!p) return;
+  if (!p || here.left()) return;
   if (!/^image\/(png|jpeg|gif)$/.test(p.mime)) { flash('A shape can be filled with a PNG, JPEG or GIF picture.'); return; }
   finishTyping();
   const picFill = { src: dataUrl(p.bytes, p.mime), px: imageSize(p.bytes, p.mime) ?? { w: 100, h: 100 } };
@@ -12549,8 +12618,10 @@ async function fragmentAt(p: { x: number; y: number }, q: { x: number; y: number
   ex.map.forEach((id, i) => { if (id >= 0) index.set(id, i); });
   const cuts = bonds.map((b) => [index.get(b.a1), index.get(b.a2)] as [number | undefined, number | undefined])
     .filter((c): c is [number, number] => c[0] !== undefined && c[1] !== undefined);
-  const res = await chem.fragments(ex.molblock, cuts).catch((e) => ({ error: String(e) }));
-  if ('error' in res) { flash(res.error); return; }
+  const here = sameDrawing('The fragments');
+  const res = await chem.fragments(ex.molblock, cuts).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+  if (here.left()) return;
+  if ('error' in res) { flash(res.error, 8000); return; }
   const size = doc.style.captionSize;
   const font = doc.style.captionFont;
   const pieces = res.map((r) => {
@@ -12902,9 +12973,11 @@ async function attachDescriptors(frags = chosenStructures()): Promise<void> {
   if (!frags.length) { flash('Select a structure first.'); return; }
   if (!chem.ready) { flash('The chemistry engine is still loading. Try again in a moment.'); return; }
   const made: number[] = [];
+  const here = sameDrawing('The formula and masses');
   const weighed = await Promise.all(frags.map((f) => weigh(f)));
   const show = newDescriptors();
   const names = show.includes('name') ? await Promise.all(frags.map((f, i) => descriptorName(f, weighed[i]))) : [];
+  if (here.left()) return;
   doc.edit('Attach descriptors', () => {
     frags.forEach((f, i) => {
       const r = weighed[i];
@@ -13111,6 +13184,7 @@ async function setStereoGroup(): Promise<void> {
   }
   const first = centres[0].enhStereo;
   const free = (t: 'and' | 'or') => { let n = 1; while (used[t].has(n)) n++; return n; };
+  const here = sameDrawing('The stereo group', 'set');
   const got = await ask('Stereo group', [
     { name: 'type', label: 'Group', value: first?.type ?? 'and', options: [
       { value: 'abs', label: 'abs: configuration known as drawn' },
@@ -13120,7 +13194,7 @@ async function setStereoGroup(): Promise<void> {
     ] },
     { name: 'group', label: 'Number', value: String(first && first.type !== 'abs' ? first.group ?? 1 : free(first?.type === 'or' ? 'or' : 'and')), type: 'number' },
   ], { ok: 'Set', note: `${centres.length} stereocenter${centres.length === 1 ? '' : 's'}. Centers with the same group and number change together: &1 centers are a racemic pair, or1 centers are one unknown enantiomer.` });
-  if (!got) return;
+  if (!got || here.left()) return;
   const type = got.type as 'abs' | 'and' | 'or' | 'none';
   const group = Math.max(1, Math.round(Number(got.group) || 1));
   doc.edit('Stereo group', () => {
@@ -13139,10 +13213,11 @@ async function setRepeatGroup(): Promise<void> {
   // the label goes on the closing bracket (lips pointing back to the left), as ChemDraw puts it
   const closing = br.find((s) => lipDirection(s).x < -0.5) ?? br[br.length - 1];
   const now = br.find((s) => s.repeat)?.repeat ?? 'n';
+  const here = sameDrawing('The bracket label', 'set');
   const got = await ask('Polymer or repeat brackets', [{ name: 'text', label: 'Label', value: now }], {
     ok: 'Set', note: 'Type n (or another letter) for a polymer repeat unit, or a number for a repeated group. Leave empty to remove the label. The atoms inside the brackets form the unit.',
   });
-  if (!got) return;
+  if (!got || here.left()) return;
   const text = got.text.trim();
   doc.edit('Repeat brackets', () => {
     for (const s of br) if (s.repeat && s.id !== closing.id) doc.updateShape(s.id, { repeat: undefined });
@@ -13219,13 +13294,14 @@ async function setChiralFlag(): Promise<void> {
   const box = { x1: Math.min(...atoms.map((a) => a.x)), y1: Math.min(...atoms.map((a) => a.y)), x2: Math.max(...atoms.map((a) => a.x)), y2: Math.max(...atoms.map((a) => a.y)) };
   const L = doc.style.bondLength;
   const near = [...doc.shapes.values()].find((s) => s.kind === 'symbol' && s.symbol && CHIRAL_FLAGS[s.symbol] && s.x1 < box.x2 + L && s.x2 > box.x1 - L && s.y1 < box.y2 + 2 * L && s.y2 > box.y1 - L);
+  const here = sameDrawing('The chiral flag', 'set');
   const got = await ask('Chiral flag', [{ name: 'flag', label: 'Flag', value: near?.symbol ?? 'Absolute', options: [
     { value: 'Absolute', label: 'Abs: the structure is one enantiomer, as drawn' },
     { value: 'Relative', label: 'Rel: relative configuration only' },
     { value: 'Racemic', label: 'Rac: a racemic mixture' },
     { value: 'none', label: 'None (remove the flag)' },
   ] }], { ok: 'Set' });
-  if (!got) return;
+  if (!got || here.left()) return;
   doc.edit('Chiral flag', () => {
     if (near) doc.removeShape(near.id);
     if (got.flag === 'none') return;
@@ -15578,6 +15654,7 @@ const PASTE_MARGIN = 18;
 async function keepPasteInside(): Promise<void> {
   const p = gridPage();
   if (!p || !editor.hasSelection()) return;
+  const here = sameDrawing('The paste', 'moved inside the page');
   const walls = wallRect(p), box = editor.selBox();
   if (!box) return;
   // a paste is kept a little way in from a fixed edge, not right against it
@@ -15597,6 +15674,7 @@ async function keepPasteInside(): Promise<void> {
     how = got?.how === 'wrap' ? 'wrap' : 'pages';
     if (got?.remember === 'true') setPageLook({ ...pageLook, pasteAtWall: how });
   }
+  if (here.left()) return;
   const sel = editor.sel;
   doc.amend('Paste', () => {
     const pieces = units(doc, sel, editor.measure());

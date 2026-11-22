@@ -1929,6 +1929,8 @@ export class SiMode {
     if (!(await SiMode.pubchemOk())) return;
     this.host.flash('Looking the structure up in PubChem…', 10000);
     const got = await lookupName(facts.inchikey ?? '', facts.pieces.length || 1);
+    // (the lookup takes up to 10 s: the name is for the structure it was asked for, in this project)
+    if (!this.sameStructure(p, c, mol!)) { this.host.flash('The structure changed (or another project is showing) while PubChem was asked, so its name was not used. Look it up again.', 8000); return; }
     if (got.status === 'error' || got.status === 'not_found') { await ask('Name from PubChem', [], { ok: 'OK', noCancel: true, note: got.message }); return; }
     const v = valuesOf(c).name;
     const now = v && typeof v === 'object' && !Array.isArray(v) ? String((v as Json).text ?? '') : '';
@@ -1939,8 +1941,14 @@ export class SiMode {
       const go = await askChoice('Name from PubChem', `Replace the name “${now}” with PubChem’s name “${got.name}”?`, [{ value: 'no', label: 'Keep Mine' }, { value: 'yes', label: 'Replace', primary: true }], 'no');
       if (go !== 'yes') return;
     }
+    if (!this.sameStructure(p, c, mol!)) { this.host.flash('The structure changed (or another project is showing) meanwhile, so PubChem’s name was not used. Look it up again.', 8000); return; }
     await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: got.name, from_pubchem: { cid: got.cid, name: got.name, stereo: got.status === 'found' } }));
     this.host.flash(got.message, 6000);
+  }
+
+  /** Whether a compound in a project still has the structure (molfile) some slow work started from, in the project showing. */
+  private sameStructure(p: SiProject, c: SiCompound, mol: string): boolean {
+    return this.project === p && p.compounds.includes(c) && this.kept(p).mols.get(c.id) === mol;
   }
 
   private static pubchemAsked = false;
@@ -1970,7 +1978,11 @@ export class SiMode {
     }
     let named = 0, why = '';
     for (const c of todo) {
-      const got = await this.host.nameStructure(await p.readStructure(c)).catch((e: unknown) => ({ ok: false as const, message: e instanceof Error ? e.message : String(e) }));
+      const mol = await p.readStructure(c).catch(() => '');
+      const got = await this.host.nameStructure(mol).catch((e: unknown) => ({ ok: false as const, message: e instanceof Error ? e.message : String(e) }));
+      if (this.project !== p) { this.host.flash('Another project is showing now, so Structure to Name stopped. Run it again.', 6000); return; }
+      // (a structure redrawn while it was named keeps its own name: the new name was for the old drawing)
+      if (!p.compounds.includes(c) || (await p.readStructure(c).catch(() => '')) !== mol) { why = 'The structure changed while it was being named, so the name was not used.'; continue; }
       if (!got.ok) { why = got.message; continue; }
       const v = valuesOf(c).name;
       await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: capitalizeName(got.name) }));

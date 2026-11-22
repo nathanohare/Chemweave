@@ -2330,6 +2330,13 @@ export class Doc {
   }
 
   /**
+   * Which drawing this document holds now: the same object until swap() brings another one in (and
+   * again once it comes back), so work that waits (the chemistry engine, a dialog, the network) can
+   * check it still has the drawing it started on.
+   */
+  get contentsKey(): object { return this.atoms; }
+
+  /**
    * Exchange everything drawn, with its style, file and undo history, with another document. A
    * slide deck keeps each slide in a document of its own and swaps the one being edited into
    * this one, so the editor, the checks and the chemistry engine always work on this document.
