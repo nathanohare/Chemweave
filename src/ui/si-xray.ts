@@ -66,7 +66,7 @@ export class SiXrayPage {
     const p = this.host.project;
     const fig = el('div', 'si-card');
     const h = el('h3', 'si-sub', 'X-ray structure');
-    addInfo(h, 'The structure as it prints, with its figure caption. Crystal Structure ▸ Edit Structure (or double-click it) turns it, changes its style, labels and what is shown; Choose CIF uses another file (the one it replaces goes to the Trash).');
+    addInfo(h, 'The structure as it prints, with its figure caption. Crystal Structure ▸ Edit Structure (or double-click it) rotates it, changes its style, labels and what is shown; Choose CIF uses another file (the one it replaces goes to the Trash).');
     fig.append(h);
     this.el.append(fig);
     // the file, the structure in it, the compound it shows

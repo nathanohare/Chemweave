@@ -259,7 +259,7 @@ export class AssistantBar {
   /** No AI model linked yet. */
   private setup(): void {
     const d = h('div', 'ai-it ai-setup');
-    d.append(h('p', '', 'The Assistant uses your own AI model: Claude, ChatGPT or Gemini with your API key, or a local model (Ollama or LM Studio) so nothing leaves this computer.'));
+    d.append(h('p', '', 'The Assistant uses an AI model you link: Claude, ChatGPT or Gemini with your API key, or a local model (Ollama or LM Studio) so nothing leaves this computer.'));
     d.append(button('Link an AI Model…', () => void this.host.openSettings().then(() => this.refresh()), 'primary'));
     this.msgs.prepend(d);
   }

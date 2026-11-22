@@ -48,7 +48,7 @@ export function askKeyViews(o: KeyViewsOptions): Promise<KeyViewsResult | null> 
     form.method = 'dialog';
     form.innerHTML = `<h2>3-D Rotation: Key Views</h2>
       <p class="muted small">Drag to rotate the structure (Shift+drag rotates in the page plane; arrow keys rotate 15°), then click <b>Add Key View</b>. In the slide show, each click rotates to the next view.</p>
-      <canvas class="kv-canvas" tabindex="0" role="img" aria-label="The structure: drag to turn it"></canvas>
+      <canvas class="kv-canvas" tabindex="0" role="img" aria-label="The structure: drag to rotate it"></canvas>
       <p class="kv-tools"><button type="button" data-act="add" class="primary-soft">+ Add Key View</button>
         <button type="button" data-act="update" disabled title="Replace the selected key view with the current view">Update View</button>
         <button type="button" data-act="home" title="Back to the structure as drawn on the slide">As Drawn</button>
@@ -96,7 +96,7 @@ export function askKeyViews(o: KeyViewsOptions): Promise<KeyViewsResult | null> 
         strip.append(item);
         requestAnimationFrame(() => paint(thumb, turner, v, L));
       });
-      if (!views.length) strip.append(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'No key views yet: turn the structure and Add Key View.' }));
+      if (!views.length) strip.append(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'No key views yet: rotate the structure and Add Key View.' }));
       $<HTMLButtonElement>('[data-act=update]').disabled = picked === null;
     };
     /** Turn smoothly from a to b in the preview. */

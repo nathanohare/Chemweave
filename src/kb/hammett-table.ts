@@ -40,7 +40,7 @@ function rowOf(x: Hammett): Record<string, Cell> {
 export const HAMMETT_TABLE: KbTable = {
   id: 'hammett',
   title: 'Hammett Constants',
-  about: 'Hammett σm, σp, σp⁺ and σp⁻, and the field (F) and resonance (R) parameters (Swain–Lupton, as modified by Hansch, Leo and Taft; σp ≈ F + R), of substituents on a benzene ring: every group in Tables I and V of Hansch, Leo and Taft (Chem. Rev. 1991), the most used ones first. Search by group (NO2, OMe), name or structure, or filter by the atom it is attached through. Values in brackets are ones the paper marks as less certain. Each row names the original paper each value was measured in.',
+  about: 'Hammett σm, σp, σp⁺ and σp⁻, and the field (F) and resonance (R) parameters (Swain–Lupton, as modified by Hansch, Leo and Taft; σp ≈ F + R), of substituents on a benzene ring: every group in Tables I and V of Hansch, Leo and Taft (Chem. Rev. 1991), the most used ones first. Search by group (NO₂, OMe), name or structure, or filter by the atom it is attached through. Values in brackets are ones the paper marks as less certain. Each row names the original paper each value was measured in.',
   columns: [
     { key: 'pic', label: 'Structure', picture: true },
     { key: 'group', label: 'Group' },

@@ -3,6 +3,8 @@
 // the buttons on the ribbon showing, and the drawing tools, with their keys; then the pages of
 // Settings and the sections of the User Guide.
 
+import { plainScripts } from '../text/plain-scripts';
+
 export interface CommandItem {
   /** Unique, e.g. "cmd:save" or "tool:bond-wedge". */
   id: string;
@@ -24,7 +26,8 @@ const COMMON = new Set(['cmd:new', 'cmd:open', 'cmd:save', 'cmd:save-as', 'cmd:p
   'cmd:select-all', 'cmd:find', 'cmd:clean-up', 'cmd:name-to-structure', 'cmd:export-picture', 'cmd:export-pdf', 'cmd:insert-picture',
   'cmd:insert-table', 'cmd:check-structure', 'cmd:new-slide', 'cmd:hotkeys', 'cmd:preferences']);
 
-const words = (s: string) => s.toLowerCase().replace(/[…'’]/g, '').split(/[^a-z0-9α-ω+#]+/).filter(Boolean);
+/** The words of a name or a search, with subscripts as plain digits (ch3 finds CH₃). */
+const words = (s: string) => plainScripts(s.toLowerCase()).replace(/[…'’]/g, '').split(/[^a-z0-9α-ω+#]+/).filter(Boolean);
 /** British spellings typed into the search find the commands, which are spelt the American way. */
 const US: [RegExp, string][] = [[/colour/g, 'color'], [/centre/g, 'center'], [/^grey/, 'gray'], [/^anticlockwise$/, 'counterclockwise'], [/(behavi|favo|neighb)our/, '$1or'],
   [/^(analy|recogni|organi|customi|optimi|normali|minimi|maximi|summari|visuali|categori|randomi)s(e|ed|es|ing|ation)$/, '$1z$2'], [/^(label|cancel|model)led$/, '$1ed'], [/^maths$/, 'math']];
@@ -94,7 +97,7 @@ export function formerNames(label: string): string {
 export function matchScore(item: Pick<CommandItem, 'label' | 'place' | 'more'> & { id?: string }, query: string): number | null {
   const q = words(query).map(american);
   if (!q.length) return 0;
-  const name = words(item.label), joined = item.label.toLowerCase();
+  const name = words(item.label), joined = plainScripts(item.label.toLowerCase());
   const other = [...words(item.place), ...words(item.more ?? ''), ...words(formerNames(item.label))];
   let score = 0;
   for (const w of q) {
@@ -104,7 +107,7 @@ export function matchScore(item: Pick<CommandItem, 'label' | 'place' | 'more'> &
     else if (other.some((n) => n.startsWith(w))) score += 1;
     else return null;
   }
-  const typed = query.trim().toLowerCase().replace(/[…'’]/g, '');
+  const typed = plainScripts(query.trim().toLowerCase()).replace(/[…'’]/g, '');
   if (joined.replace(/[…'’]/g, '') === typed) score += 10;
   else if (joined.startsWith(typed)) score += 4;
   // the everyday commands before the rarer ones that share a word ("Copy" before "Copy as InChI")

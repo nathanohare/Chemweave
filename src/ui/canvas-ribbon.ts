@@ -126,7 +126,12 @@ export class CanvasRibbon {
     this.el.setAttribute('aria-label', 'Canvas');
     this.tabRow = document.createElement('div');
     this.tabRow.className = 'rb-tabs';
-    this.tabRow.setAttribute('role', 'tablist');
+    // the tabs in a tablist of their own: the warnings, the gear and ▴ beside them are not tabs
+    const tabList = document.createElement('div');
+    tabList.className = 'rb-tablist';
+    tabList.setAttribute('role', 'tablist');
+    tabList.setAttribute('aria-label', 'Ribbon tabs');
+    this.tabRow.append(tabList);
     this.tabEnd = document.createElement('div');
     this.tabEnd.className = 'cr-tab-end';
     this.bodyEnd = document.createElement('div');
@@ -139,7 +144,7 @@ export class CanvasRibbon {
       b.textContent = tab.title;
       b.setAttribute('aria-selected', String(tab.id === 'home'));
       b.addEventListener('click', () => this.pick(tab.id));
-      this.tabRow.append(b);
+      tabList.append(b);
       this.tabs.set(tab.id, b);
       this.panels.set(tab.id, this.panel(tab));
     }

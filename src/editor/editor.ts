@@ -4635,15 +4635,15 @@ export class Editor {
     d.persp = t;
     const doc = this.doc;
     const host = real ? this.perspectiveHost : null;
-    if (real && !host) this.onNotice('3-D shapes can\'t be built here; turning the structure flat instead.');
+    if (real && !host) this.onNotice('3-D shapes can\'t be built here; rotating the structure as a flat drawing instead.');
     void prepareTurn(doc, structures, real, host ?? (real ? null : this.perspectiveHost)).then((prep) => {
       if (this.drag !== d || this.doc !== doc) {
         // let go before the shape was ready: it is kept, so the next drag turns it at once
-        if (real && !prep.notes.length && t.told) this.onNotice('The 3-D shape is ready: drag the structure to turn it.');
+        if (real && !prep.notes.length && t.told) this.onNotice('The 3-D shape is ready: drag the structure to rotate it.');
         return;
       }
       t.ready = prep;
-      if (prep.notes.length) this.onNotice(`${prep.notes[0]} Turning it flat instead.`, 7000);
+      if (prep.notes.length) this.onNotice(`${prep.notes[0]} Rotating it as a flat drawing instead.`, 7000);
       if (d.moved) this.turnTo(d);
     });
   }
@@ -4748,7 +4748,7 @@ export class Editor {
     const doc = this.doc;
     const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
     if (this.doc !== doc) return true;
-    if (prep.notes.length) this.onNotice(`${prep.notes[0]} Turning it flat instead.`, 7000);
+    if (prep.notes.length) this.onNotice(`${prep.notes[0]} Rotating it as a flat drawing instead.`, 7000);
     const R: M3 = anglesTurn(x, y, z);
     let left = 0;
     doc.edit(real ? '3-D Rotation' : 'Rotate in Perspective', () => {
@@ -6132,7 +6132,7 @@ export class Editor {
   setMethylStyle(style: MethylStyle, ids: Iterable<number> = this.sel.atoms): number {
     this.options.methylStyle = style;
     let n = 0;
-    this.doc.edit(`Terminal Methyls as ${style}`, () => { n = setMethylStyle(this.doc, ids, style); });
+    this.doc.edit(`Terminal Methyls as ${style === 'CH3' ? 'CH₃' : style}`, () => { n = setMethylStyle(this.doc, ids, style); });
     if (n) this.changed();
     return n;
   }

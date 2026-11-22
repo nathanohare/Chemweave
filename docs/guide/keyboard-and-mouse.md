@@ -57,13 +57,13 @@ If several atoms are selected and you point at one of them, a label key labels t
 | `5` | Hashed wedge (plus Me on an end atom) |
 | `6` | Cyclohexyl, or a spiro ring on a ring atom |
 | `7` | Cyclopentyl, or a spiro ring on a ring atom |
-| `u` | Cyclobutyl, or a spiro ring on a CH2 |
-| `v` | Cyclopropyl, or a spiro ring on a CH2 |
-| `8` | =CH2 (then `1` for E, `0` for Z) |
+| `u` | Cyclobutyl, or a spiro ring on a CH₂ |
+| `v` | Cyclopropyl, or a spiro ring on a CH₂ |
+| `8` | =CH₂ (then `1` for E, `0` for Z) |
 | `9` | Two methyls (iPr, gem-dimethyl) |
-| Shift+K | t-Bu (on a CH2 in a chain: a wedged and a plain methyl) |
+| Shift+K | t-Bu (on a CH₂ in a chain: a wedged and a plain methyl) |
 | `j` / Shift+J | On a metal: η⁵-Cp / η⁶-benzene |
-| `k` | Sulfonyl (SO2) |
+| `k` | Sulfonyl (SO₂) |
 | `z` | Alkyne |
 | `+` / `-` | Charge +1 / −1 |
 | `'` | Show or hide the atom number |
@@ -365,7 +365,7 @@ The pointer changes to show what a click or drag will do.
 | Eraser | Eraser tool | Click something to remove it. |
 | Two-headed arrows | Over a resize handle | Drag to resize, in the direction shown. |
 | Four-headed arrow | Over the end of an arrow or line | Drag to move that end anywhere. |
-| Curved arrow | Over the round handle above the selection | Drag to turn the selection. |
+| Curved arrow | Over the round handle above the selection | Drag to rotate the selection. |
 | I-beam | Text tool, or over text being typed | Click to type. |
 
 In **Presentation** and **Design** tabs, the select tool keeps the usual arrow pointer over empty space, as in PowerPoint, and shows a four-headed arrow over things you can move. Over a text box it shows an I-beam, and one click there starts typing.

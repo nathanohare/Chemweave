@@ -851,7 +851,7 @@ export class StylePanel {
     this.number('Rotation (°)', round(now, 10), 1, -360, 360, (v) => this.edit('Rotate', () => {
       const rot = normDegrees(v);
       for (const x of turning) this.doc.updateShape(x.id, { rot: Math.abs(rot) < 1e-9 ? undefined : rot });
-    }), 'Turns it about its middle, clockwise, as PowerPoint’s Rotation box. Drag the round handle above a selection to turn it by hand.');
+    }), 'Rotates it about its middle, clockwise, as PowerPoint’s Rotation box. Drag the round handle above a selection to rotate it by hand.');
   }
 
   private pictureControls(pics: Shape[]): void {
@@ -1169,8 +1169,8 @@ export class StylePanel {
       this.check('Update when the structure changes', !desc[0].attach!.keepText, (v) => setA(v ? 'Update descriptors' : 'Keep descriptor text', (x) => (x.role === 'descriptors' ? { keepText: v ? undefined : true, sig: v ? undefined : x.sig } : {})),
         'Turn off to keep the text as it is, for instance after typing over it by hand.');
     }
-    button('Reset to Default Look', 'Give it the ID label or caption look and place set in File ▸ Drawing Style', () =>
-      this.edit('Reset to Default Look', () => { for (const x of tied) this.doc.updateCaption(x.id, lookPatch(this.doc, x, attachedAtoms(this.doc, x.attach!))); }));
+    button('Reset to Default Style', 'Give it the ID label or caption style and position set in File ▸ Drawing Style', () =>
+      this.edit('Reset to Default Style', () => { for (const x of tied) this.doc.updateCaption(x.id, lookPatch(this.doc, x, attachedAtoms(this.doc, x.attach!))); }));
     button('Unpin from Structure', 'Leave the caption where it is as ordinary text: it no longer follows the structure', () =>
       this.edit('Unpin Caption', () => { for (const x of tied) this.doc.updateCaption(x.id, { attach: undefined }); }));
     if (loose.length && this.tie) button('Tie the others too', 'Tie the selected captions that are loose to the structure nearest each', () => this.tie?.(loose.map((x) => x.id)));
@@ -1204,7 +1204,7 @@ export class StylePanel {
     }
     this.heading('Atom');
     this.text('Label', a.label ?? '', a.z === 6 ? 'carbon (no label)' : 'automatic', (v) => this.edit('Label', () => this.applyLabel(a.id, v)),
-      'Type a label (O, NH2, OTBS, CO2Et…); leave empty for a plain carbon.');
+      'Type a label (O, NH₂, OTBS, CO₂Et…); leave empty for a plain carbon.');
     this.number('Charge', a.charge, 1, -8, 8, (v) => set('Charge', { charge: v }));
     this.color('Color', a.color, (v) => set('Atom color', { color: v }));
     this.color('Highlight', a.highlight, (v) => { set(v ? 'Highlight' : 'Remove highlight', { highlight: v }); if (v) this.highlightUsed(v); }, 'None');
@@ -1308,7 +1308,7 @@ export class StylePanel {
       this.check('Center on double bonds', st.centre, (v) => set(v ? 'Center highlight on double bonds' : 'Highlight on the bonds', { centre: v }),
         'Center the highlight between a double bond\'s two lines, and in rings between the ring and its inner double-bond lines (Chemistry ▸ Highlight and Fill ▸ Center Highlight on Double Bonds).');
       this.check('Grow around atom labels', st.fit, (v) => set(v ? 'Highlight around labels' : 'Highlight not around labels', { fit: v }),
-        'Make the highlight under a labeled atom (Me, OTBS, CO2Et) big enough to hold its whole label.');
+        'Make the highlight under a labeled atom (Me, OTBS, CO₂Et) big enough to hold its whole label.');
     });
 
     const fillName = HL_FILLS.find(([v]) => v === st.fill)![1].split(' (')[0];

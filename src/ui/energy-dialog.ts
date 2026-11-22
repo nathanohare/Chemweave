@@ -411,7 +411,7 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
     const fillPreset = () => {
       const p = ENERGY_PRESETS.find((x) => x.id === presetSel.value) ?? ENERGY_PRESETS[0];
       // what the starting point is, behind the "i" by its label (and on the list itself)
-      const blurb = p.blurb + ' The numbers are only examples: type your own.';
+      const blurb = p.blurb + ' The numbers are only examples: type over them.';
       const i = $<HTMLElement>('.energy-blurb');
       i.title = blurb;
       i.setAttribute('aria-label', blurb);

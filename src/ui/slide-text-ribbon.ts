@@ -65,6 +65,8 @@ export class SlideTextRibbon {
   private cols: HTMLSelectElement;
   private fit: HTMLSelectElement;
   private fontBox: FontBox | null = null;
+  /** The controls marked unavailable here while no text is selected (and only those are unmarked again). */
+  private idleOff = new WeakSet<HTMLElement>();
 
   constructor(private root: HTMLElement, private hooks: SlideTextHooks) {
     const q = <T extends HTMLElement>(s: string) => root.querySelector<T>(s)!;
@@ -182,6 +184,14 @@ export class SlideTextRibbon {
     this.fit.value = box?.fit ?? 'grow';
     // a placeholder's AutoFit is the slide master's
     this.fit.disabled = !!box?.ph;
-    for (const g of this.root.querySelectorAll<HTMLElement>('[data-sl-text]')) g.classList.toggle('rb-idle', !look);
+    for (const g of this.root.querySelectorAll<HTMLElement>('[data-sl-text]')) {
+      g.classList.toggle('rb-idle', !look);
+      // greyed out with no text to act on, as the screen says (a click still says why): screen readers
+      // hear them as unavailable too. Only what this sets is taken off again.
+      for (const c of g.querySelectorAll<HTMLElement>('button, select, input')) {
+        if (!look && !c.hasAttribute('aria-disabled')) { c.setAttribute('aria-disabled', 'true'); this.idleOff.add(c); }
+        else if (look && this.idleOff.has(c)) { c.removeAttribute('aria-disabled'); this.idleOff.delete(c); }
+      }
+    }
   }
 }

@@ -169,7 +169,7 @@ export class AnimationUI {
     const EMPH_TIPS: Record<string, string> = {
       pulse: 'the selected objects swell a little and back, to draw the eye',
       grow: 'the selected objects grow (or shrink) and stay that size; set the size in Effect Options',
-      spin: 'the selected objects turn around; set how far in Effect Options',
+      spin: 'the selected objects rotate; set how far in Effect Options',
       transparency: 'the selected objects become see-through and stay so; set how much in Effect Options',
       colour: 'a shape\'s fill or text color changes (structures and pictures are recolored entirely); choose the color in Effect Options. PowerPoint can\'t recolor structures or pictures',
       turn3d: 'a structure turns smoothly in 3-D to each key view you set, one view per click (Key Views… in Effect Options). PowerPoint shows it still',
@@ -578,7 +578,7 @@ export class AnimationUI {
     const amount = this.$<HTMLInputElement>('#an-amount'), unit = this.$<HTMLElement>('#an-amount-unit'), amountBox = this.$<HTMLElement>('#an-amount-box');
     const colour = this.$<HTMLInputElement>('#an-colour'), colourBox = this.$<HTMLElement>('#an-colour-box');
     const amt = a?.effect === 'grow' ? { v: Math.round((a.scale ?? EMPH_DEFAULTS.scale) * 100), u: '% size', tip: 'The size it grows or shrinks to: 150 is half as big again, 50 half the size' }
-      : a?.effect === 'spin' ? { v: a.turn ?? EMPH_DEFAULTS.turn, u: '°', tip: 'How far it turns, in degrees (negative turns counterclockwise)' }
+      : a?.effect === 'spin' ? { v: a.turn ?? EMPH_DEFAULTS.turn, u: '°', tip: 'How far it rotates, in degrees (negative rotates counterclockwise)' }
         : a?.effect === 'transparency' ? { v: Math.round((a.opacity ?? EMPH_DEFAULTS.opacity) * 100), u: '% transparent', tip: 'Transparency it ends at: 0 solid, 100 gone' } : null;
     amountBox.style.display = amt ? '' : 'none';
     if (amt) {
@@ -691,7 +691,7 @@ export class AnimationUI {
     const chosen = selectedParts(parts, this.hooks.selection()).filter((p) => p.kind === 'drawing' && p.sel.atoms.size);
     const part = chosen[0] ?? (pa?.effect === 'turn3d' ? partOf(parts, pa.target) : undefined);
     if (!part || part.kind !== 'drawing' || !part.sel.atoms.size || !this.hooks.keyViews) {
-      this.hooks.flash('Select a structure on the slide first: 3-D Rotation turns structures.');
+      this.hooks.flash('Select a structure on the slide first: 3-D Rotation rotates structures.');
       return;
     }
     const mine = (a: Anim) => a.effect === 'turn3d' && partOf(parts, a.target) === part;

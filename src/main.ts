@@ -2451,7 +2451,7 @@ async function withBondRotamers(m: Model3d, molblock: string, fi: number, bi: nu
   const nb = neighbours(m);
   const a = nb[fi].find((n) => n.atom !== bi)?.atom, d = nb[bi].find((n) => n.atom !== fi)?.atom;
   if (a === undefined || d === undefined || m.conformers.some((c) => c.energy === null)) return m;
-  progress('Turning the bond to its other rotamers…');
+  progress('Rotating the bond to its other rotamers…');
   const extra = await model3d.rotamers(molblock, m.conformers.slice(0, 3).map((c) => c.xyz), [a, fi, bi, d]).catch(() => []);
   return { ...m, conformers: mergeConformers(m.atoms, m.conformers, extra) };
 }
@@ -5614,7 +5614,8 @@ function setSlideView(v: 'normal' | 'outline' | 'sorter' | 'notes'): void {
   showSlideState();
   for (const b of document.querySelectorAll<HTMLElement>('[data-cmd="view-outline"], [data-cmd="view-notes-page"]')) {
     const on = b.dataset.cmd === 'view-outline' ? outlineView.shown : notesView.shown;
-    if (b.getAttribute('role') !== 'menuitem') b.setAttribute('aria-pressed', String(on));
+    // the ribbon's buttons (the Document's View menu has an Outline radio item of its own, not this one's)
+    if (!b.hasAttribute('role')) b.setAttribute('aria-pressed', String(on));
   }
   if (v === 'normal') overlay.focus();
 }
@@ -6097,6 +6098,16 @@ const TAB_ICONS: Record<Tab['mode'], [string, string]> = {
   si: [tabSvg('<path d="M4 2.5h6l2.5 2.5v8.5h-8.5z"/><text x="8.2" y="11.6" font-size="5.4" font-weight="700" text-anchor="middle" stroke="none" fill="currentColor">SI</text>'), 'SI Project'],
 };
 
+/**
+ * The keys on the tab showing. A document or sheet takes them on the next frame as it shows: they
+ * come back to the tab then, so Delete closes it and the arrows go on along the tabs.
+ */
+function keepTabFocus(): void {
+  const back = () => $('#tabs').querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+  back();
+  requestAnimationFrame(() => { if (!document.activeElement?.closest('#tabs, dialog, .context-menu')) back(); });
+}
+
 function renderTabs(): void {
   refreshHistory();
   fitRibbons();
@@ -6107,6 +6118,7 @@ function renderTabs(): void {
     el.setAttribute('aria-selected', String(t === ws.active));
     // the keys reach the tab showing; the arrow keys go along to the others
     el.tabIndex = t === ws.active ? 0 : -1;
+    el.setAttribute('aria-keyshortcuts', 'Delete');
     el.addEventListener('keydown', (e) => {
       if (e.target !== el) return;
       const i = ws.tabs.indexOf(t);
@@ -6115,24 +6127,29 @@ function renderTabs(): void {
         e.preventDefault();
         const n = ws.tabs[(to + ws.tabs.length) % ws.tabs.length];
         if (n !== ws.active) ws.activate(n);
-        $('#tabs').querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
-      } else if (e.key === 'Delete') { e.preventDefault(); void ws.close(t); }
+        keepTabFocus();
+      } else if (e.key === 'Delete') {
+        e.preventDefault();
+        // the keys stay on the tabs, now on the one showing, so the next Delete or arrow goes on
+        void ws.close(t).then(() => { if (!ws.tabs.includes(t)) keepTabFocus(); });
+      }
     });
     // the file's name first: a tab squeezed to its icon shows it only here
     el.title = `${ws.label(t)} (${TAB_ICONS[t.mode][1]})` + (t.ref.kind === 'path' ? `\n${t.ref.path}` : '') + (t.dirty ? '\nNot saved' : '')
       + (t.savedAt ? `\n${t.savedHow === 'autosaved' ? 'AutoSaved' : 'Saved'} ${new Date(t.savedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : '')
-      + (keeper.autoSaveWanted(t) && ws.canAutoSave(t) ? ' (AutoSave on)' : '');
+      + (keeper.autoSaveWanted(t) && ws.canAutoSave(t) ? ' (AutoSave on)' : '') + '\nPress Delete to close it';
     const icon = document.createElement('span');
     icon.className = 'tab-icon';
     icon.innerHTML = TAB_ICONS[t.mode][0];
     const name = document.createElement('span');
     name.className = 'tab-name';
     name.textContent = ws.label(t);
-    const close = document.createElement('button');
+    // the × is for the mouse: a control inside a tab can't be reached in the tab order, so the
+    // keyboard closes the tab with Delete (or Ctrl+W), as aria-keyshortcuts tells screen readers
+    const close = document.createElement('span');
     close.className = 'tab-close';
-    close.type = 'button';
     close.title = 'Close';
-    close.setAttribute('aria-label', `Close ${t.name}`);
+    close.setAttribute('aria-hidden', 'true');
     close.textContent = '×';
     close.addEventListener('click', (e) => { e.stopPropagation(); void ws.close(t); });
     el.addEventListener('click', () => { if (!tabDragged) ws.activate(t); });
@@ -6152,6 +6169,9 @@ function renderTabs(): void {
 // and one + button for a new file of any kind stay pinned at the right.
 const tabStrip = document.createElement('div');
 tabStrip.className = 'tab-strip';
+// the tabs alone are the tablist: the arrows, the list and + beside them are not tabs
+tabStrip.setAttribute('role', 'tablist');
+tabStrip.setAttribute('aria-label', 'Open files');
 const tabButton = (cls: string, text: string, title: string) => {
   const b = document.createElement('button');
   b.type = 'button';
@@ -12184,7 +12204,7 @@ async function personalPreferences(): Promise<void> {
       options: [{ value: 'esc', label: 'Esc (Enter starts a new line), as in ChemDraw' }, { value: 'enter', label: `Enter (${alt} starts a new line)` }],
       help: 'Everywhere you draw: Canvas, structures in documents and spreadsheets, and text boxes on slides. Ctrl+Enter always finishes, and Shift+Enter always breaks the line.' },
     { name: 'alkylLook', label: 'AutoFormat alkyl isomer prefixes', value: alkylPrefs.look, options: ALKYL_LOOK_CHOICES, short: true, inline: (v) => alkylSwatch(parseAlkylLook(v)),
-      help: 'How n-, i-, s- and t- are written on Pr and Bu in labels and text (OtBu, N(iPr)2, nBu, P(t-Bu)2). New labels follow it when you finish typing; you\'ll be asked about existing ones. A dash is never added or removed where it would read as an element (PtBu3).' },
+      help: 'How n-, i-, s- and t- are written on Pr and Bu in labels and text (OtBu, N(iPr)₂, nBu, P(t-Bu)₂). New labels follow it when you finish typing; you\'ll be asked about existing ones. A dash is never added or removed where it would read as an element (PtBu₃).' },
     { name: 'warnLook', label: 'Mark problems on the drawing with', value: renderer.warnLook, short: true, inline: (v) => problemSwatch((WARN_LOOKS as readonly string[]).includes(v) ? v as WarnLook : 'box', doc.style), options: [
       { value: 'box', label: 'A thin red box' }, { value: 'soft', label: 'A soft red disc' }, { value: 'circle', label: 'A red circle' },
       { value: 'dashed', label: 'A dashed red circle' }, { value: 'corners', label: 'Red corner marks' }],
@@ -13386,7 +13406,7 @@ async function runAnalysis(force: boolean): Promise<void> {
   analysisKey = key;
   const panel = $('#analysis-body');
   if (!frags.length) {
-    panel.innerHTML = '<p class="muted" title="Or select text read as chemistry, such as BF4⁻ or DMAP, or draw a structure.">Select a structure to see its formula and masses.</p>';
+    panel.innerHTML = '<p class="muted" title="Or select text read as chemistry, such as BF₄⁻ or DMAP, or draw a structure.">Select a structure to see its formula and masses.</p>';
     analysisBox.set(null);
     $('#si-section').hidden = true;
     return;
@@ -14708,7 +14728,7 @@ async function saveFavorite(replacing?: FormatFavorite): Promise<void> {
   let name = replacing?.name;
   if (!name) {
     const got = await ask('Save Format as Favorite', [{ name: 'name', label: 'Name', value: freshFavoriteName(favorites), placeholder: 'for example Key intermediate box' }], {
-      ok: 'Save', note: `Keeps ${favoriteSummary(look) || 'the look'} of what is selected. Click it under Format Favorites on the Home tab (or Format ▸ Favorites ▸ Format Favorites…) to apply that formatting to the selection, in any drawing, slide, design, document or sheet.`,
+      ok: 'Save', note: `Keeps ${favoriteSummary(look) || 'the formatting'} of what is selected. Click it under Format Favorites on the Home tab (or Format ▸ Favorites ▸ Format Favorites…) to apply that formatting to the selection, in any drawing, slide, design, document or sheet.`,
     });
     name = got?.name.trim();
     if (!name) return;

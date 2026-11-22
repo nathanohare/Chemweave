@@ -76,3 +76,14 @@ describe('former names of the Blank items (review of F5, R15)', () => {
     expect(find('text')).toEqual(['Blank Document']);
   });
 });
+
+describe('names written with subscripts', () => {
+  const methyls = { id: 'cmd:terminal-methyls', label: 'Terminal Methyls as CH₃', place: 'Structure menu' };
+  it('finds them by the plain text typed on a keyboard, and by the subscripts too', () => {
+    expect(matchScore(methyls, 'ch3')).not.toBeNull();
+    expect(matchScore(methyls, 'CH₃')).not.toBeNull();
+    expect(matchScore(methyls, 'methyls as ch3')).toBeGreaterThan(matchScore(methyls, 'methyls')!);
+    expect(searchCommands([...items, methyls], 'ch3').map((i) => i.id)).toEqual(['cmd:terminal-methyls']);
+    expect(matchScore({ id: 'x', label: 'Show NH₄⁺ Charges', place: '' }, 'nh4+')).not.toBeNull();
+  });
+});

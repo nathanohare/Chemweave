@@ -72,7 +72,7 @@ export const WHY = {
   unhighlight: 'Select the atoms and bonds to take the highlight off.',
   highlighted: 'Select highlighted atoms and bonds first.',
   fillRings: 'Select the rings to fill (or the whole structure) first.',
-  expand: 'Select a label to expand: an abbreviation (OMe, Boc, CO2Et), a ligand (BINAP, dppf), or a ligand on a metal (PPh3, dppe, Cp*).',
+  expand: 'Select a label to expand: an abbreviation (OMe, Boc, CO₂Et), a ligand (BINAP, dppf), or a ligand on a metal (PPh₃, dppe, Cp*).',
   structure: 'Select a structure first.',
   name: 'Select a structure to name.',
   library: 'Select one or more structures in the drawing first.',

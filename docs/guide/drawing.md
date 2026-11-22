@@ -354,7 +354,7 @@ To start a reaction quickly, select a structure and press Ctrl+→ (or Ctrl+←,
 - **Add Caption**: an empty caption under the structure, ready to type.
 - **Attach Descriptors (Formula, Mass)**: the formula and masses under the structure. They follow it when you move it and update when you change it. Select them to choose the side and gap, which values are shown (formula, exact mass, MW, m/z, elemental analysis, HRMS) and the ion, or clear **Update when the structure changes** to keep text you typed yourself.
 
-These follow the structure when it moves. Several stack up: ID label first, then caption, then descriptors. New ones take the look and place set for ID labels and for linked captions in **File ▸ Drawing Style**. Select one to change it in the Style panel: **Kind** makes it an ID label or a caption, **Sits** and **Gap** move it, and **Alignment** above or below the structure also lines it up there (Center puts it in the middle, or under the structure's focal point if it has one; Left and Right line up its edge with the structure's). **Reset to Default Look** gives it the drawing style's look and place again.
+These follow the structure when it moves. Several stack up: ID label first, then caption, then descriptors. New ones take the look and place set for ID labels and for linked captions in **File ▸ Drawing Style**. Select one to change it in the Style panel: **Kind** makes it an ID label or a caption, **Sits** and **Gap** move it, and **Alignment** above or below the structure also lines it up there (Center puts it in the middle, or under the structure's focal point if it has one; Left and Right line up its edge with the structure's). **Reset to Default Style** gives it the drawing style's formatting and position again.
 
 ### Stereochemistry
 
@@ -605,7 +605,7 @@ The orbital commands are under **Chemistry ▸ Orbitals**. Select atoms and choo
 
 Choose **Insert ▸ Lab Figures ▸ Crystal Structure (CIF)…**, or drop a .cif file on the page. Open the CIF file from your X-ray structure and it is shown as thermal ellipsoids (ORTEP, at 30, 50, 70 or 90% probability, with or without principal ellipses) or ball-and-stick. The molecule is completed by the crystal's symmetry, so one sitting on an inversion center is drawn whole.
 
-Drag to turn it, Shift+drag (or the right button) to turn it in the page, use the wheel to magnify, and drag a label to move it; **Best** looks along its thinnest direction, and **Along a/b/c** down a cell axis. Hydrogen atoms, color and labels can be switched off, and the **Shown** list hides a molecule or a disorder part. The **Crystal data** tab lists the formula, cell, space group, R factors and the rest, and **Copy Table** copies it for Word or Excel. **Place on Page** draws it as ovals, lines and text; double-click it to turn it again or change how it is drawn. The viewer is the one from Chem SI Assistant.
+Drag to rotate it, Shift+drag (or the right button) to rotate it in the plane of the page, use the wheel to magnify, and drag a label to move it; **Best** looks along its thinnest direction, and **Along a/b/c** down a cell axis. Hydrogen atoms, color and labels can be switched off, and the **Shown** list hides a molecule or a disorder part. The **Crystal data** tab lists the formula, cell, space group, R factors and the rest, and **Copy Table** copies it for Word or Excel. **Place on Page** draws it as ovals, lines and text; double-click it to turn it again or change how it is drawn. The viewer is the one from Chem SI Assistant.
 
 ### Transition state brackets and reaction roles
 
@@ -674,7 +674,7 @@ Rest the mouse on an abbreviation or condensed label (OTBS, NHBoc, CO2Me, CH2OH)
 - **Start from** picks a built-in style: **ACS Document 1996** (every ACS journal), **RSC**, **Nature journals**, **Thieme (Synthesis, Synlett)**, **Wiley (Angewandte, Chemistry Europe)**, **Elsevier (Tetrahedron and others)**, or **Slides (ACS 1996 × 2)**. The line under it says where the numbers come from. Wiley and Elsevier publish only the text size and font, so their bonds are ACS 1996 scaled to 7 pt text; the note under the style says so.
 - Every number can be typed over. With **Change widths and font sizes with it** checked, changing the bond length scales the rest in proportion.
 - **Save** (beside the name) keeps your settings as one of your custom styles, under that name, in every mode. **Delete** removes one of your own.
-- When there are structures already, choose **Redraw the structures already there in the new style** or **Keep their look; only new structures use it**.
+- When there are structures already, choose **Redraw the structures already there in the new style** or **Keep their formatting; only new structures use it**.
 - Check **Use this style for new canvases** to make every new canvas start in it.
 
 Press **Apply**. One Undo puts everything back.
