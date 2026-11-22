@@ -11,6 +11,7 @@ import { stereoAnchor, stereoSense } from './stereo';
 import { aromaticAsSingle, kekuleDoubles } from './aromatic';
 import { flatStandIn } from './ring-views';
 import { readSpecies } from './species';
+import { flagsByAtom, type ChiralFlag } from './chiral-flag';
 import { cleanUp } from './cleanup';
 import { molProgramLine } from './molfile-header';
 
@@ -128,14 +129,17 @@ function crossingBonds(g: MSgroup, bonds: MBond[]): number[] {
  * number; bonds with CFG= (1 up, 2 either, 3 down) and types 9 (coordination) and 10 (hydrogen);
  * superatom S-groups (SUP with ATOMS=, XBONDS= and LABEL=); enhanced stereo as the collections
  * MDLV30/STEABS, MDLV30/STERACn (and) and MDLV30/STERELn (or); the chiral flag in COUNTS. A label
- * kept as an alias is the atom's type, quoted when it has spaces. Lines longer than 80 characters
+ * kept as an alias is a "*" atom in a one-atom SUP group with the label (quoted when it has spaces). Lines longer than 80 characters
  * go on to the next with "-".
  */
 export function v3000Ctab(atoms: MAtom[], bonds: MBond[], extra: CtabExtra = {}): string[] {
   const n = (v: number) => (Math.abs(v) < 5e-5 ? 0 : v).toFixed(4);
   const q = (t: string) => (/[\s"()=]/.test(t) || t === '' ? `"${t.replace(/"/g, '""')}"` : t);
-  const type = (a: MAtom) => q(a.alias ?? a.sym);
-  const sgroups = (extra.sgroups ?? []).filter((g) => g.atoms.length && g.label);
+  // a label kept as an alias is a "*" atom with a one-atom superatom group holding the label (so no
+  // program reads Ar, aryl, as argon; review F1-R06)
+  const type = (a: MAtom) => q(a.alias ? '*' : a.sym);
+  const sgroups = [...(extra.sgroups ?? []).filter((g) => g.atoms.length && g.label),
+    ...atoms.flatMap((a, i) => (a.alias ? [{ atoms: [i], label: a.alias }] : []))];
   const out = ['BEGIN CTAB', `COUNTS ${atoms.length} ${bonds.length} ${sgroups.length} 0 ${extra.chiral ? 1 : 0}`, 'BEGIN ATOM'];
   atoms.forEach((a, i) => out.push([i + 1, type(a), n(a.x), n(a.y), n(0), a.map ?? 0,
     ...(a.charge ? [`CHG=${a.charge}`] : []), ...(a.rad ? [`RAD=${a.rad}`] : []), ...(a.val !== undefined ? [`VAL=${a.val || -1}`] : []), ...(a.iso ? [`MASS=${a.iso}`] : []),
@@ -185,7 +189,7 @@ const i3 = (v: number) => String(v).padStart(3);
  * A whole V2000 molfile, from BIOVIA's CTfile Formats (2020), V2000 section: the counts line (with
  * the chiral flag), the atom block (valence in vvv, map number in mmm), the bond block, A alias
  * lines, then the properties block: M  CHG, ISO, RAD, RGP (R-group numbers on R# atoms) and the
- * superatom S-groups (M  STY … SUP, SLB, SAL, SBL, SMT), and M  END. Coordination and hydrogen
+ * superatom S-groups (M  STY … SUP, SAL, SBL, SMT), and M  END. Coordination and hydrogen
  * bonds (types 9 and 10) and enhanced stereo are V3000 only; see needsV3000.
  */
 export function v2000Molfile(head: string[], atoms: MAtom[], bonds: MBond[], extra: CtabExtra = {}): string {
@@ -505,12 +509,35 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
 
   hydrogensLast(atoms, bonds, map, inLabel, genericAt, sgroups);
   const head = [name.slice(0, 80), molProgramLine(), ''];
-  // The chiral flag (BIOVIA CTfile: 1 = the wedges show the absolute configuration): set for a file
-  // with a wedged centre not in an and/or group, or a centre marked absolute, since a drawn wedge
-  // here means the configuration drawn (see the laptop check on how ChemDraw shows it).
-  const chiral = files && (atoms.some((t) => t.enh?.type === 'abs') || bonds.some((b) => (b.stereo === 1 || b.stereo === 6) && !(atoms[b.a].enh && atoms[b.a].enh!.type !== 'abs')));
+  // The chiral flag (BIOVIA CTfile: 1 = the wedges show the absolute configuration, 0 = only the
+  // relative one; review F1-R02): 1 only where the drawing says so, by an Abs chiral flag beside the
+  // structure (Chemistry > Chiral Flag; one read from a file comes back as that flag) or a centre
+  // marked abs. Wedges alone, a Rac flag or a Rel flag give 0. In V3000 a Rac or Rel structure's
+  // wedged centres also go in an and (Rac) or or (Rel) group of their own, which says which it is.
+  const flagOf = files ? flagsByAtom(doc, ids) : new Map<number, { flag: ChiralFlag; frag: number }>();
+  const flags = new Set([...flagOf.values()].map((f) => f.flag));
+  const hasAbs = files && (flags.has('Absolute') || atoms.some((t) => t.enh?.type === 'abs'));
+  const racRel = flags.has('Racemic') || flags.has('Relative');
+  // (V2000's counts line has three columns for each count: more than 999 atoms or bonds, the
+  // engine's molfile included, go as V3000)
+  const big = atoms.length > 999 || bonds.length > 999 ? 'more than 999 atoms or bonds' : null;
+  const because = opts.v3000 ? null : (files ? needsV3000(atoms, bonds) : null) ?? big;
+  const v3 = !!(opts.v3000 || because);
+  if (files && v3 && racRel) {
+    const next = { and: 0, or: 0 };
+    for (const t of atoms) if (t.enh && t.enh.type !== 'abs') next[t.enh.type] = Math.max(next[t.enh.type], t.enh.group ?? 1);
+    const groupOf = new Map<number, EnhancedStereo>();
+    for (const b of bonds) {
+      if (b.stereo !== 1 && b.stereo !== 6) continue;
+      const f = map[b.a] >= 0 ? flagOf.get(map[b.a]) : undefined;
+      if (!f || f.flag === 'Absolute' || atoms[b.a].enh) continue;
+      const type = f.flag === 'Racemic' ? 'and' : 'or';
+      if (!groupOf.has(f.frag)) groupOf.set(f.frag, { type, group: ++next[type] });
+      atoms[b.a] = { ...atoms[b.a], enh: groupOf.get(f.frag)! };
+    }
+  }
+  const chiral = hasAbs && (v3 || !racRel);
   const extra = files ? { sgroups, chiral } : {};
-  const because = files && !opts.v3000 ? needsV3000(atoms, bonds) : null;
   const out = { map, unknownLabels: unknown, inLabel, generic: genericAt, sgroups, ...(because ? { v3000Because: because } : {}) };
   if (opts.v3000 || because) return { molblock: v3000Molfile(head, atoms, bonds, extra), ...out };
   return { molblock: v2000Molfile(head, atoms, bonds, extra), ...out };

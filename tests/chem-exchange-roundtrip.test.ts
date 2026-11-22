@@ -194,20 +194,22 @@ M  END
     expect(m.atoms.map((a) => a.enh)).toEqual([undefined, { type: 'or', group: 2 }, { type: 'abs' }, undefined]);
   });
 
-  it('sets the chiral flag for a wedged centre that is in no and/or group, and not otherwise', () => {
+  it('sets the chiral flag only where the drawing marks the configuration as absolute (review F1-R02)', () => {
     const w = new Doc();
     w.bulk(() => { const a = w.addAtom(0, 0); const b = w.addAtom(L, 0, 8); const c = w.addAtom(-L, 0); w.addBond(a.id, b.id, 1, 'wedge'); w.addBond(a.id, c.id); });
-    expect(writeMolFile(w).text.split('\n')[3]).toMatch(/^ {2}3 {2}2 {2}0 {2}0 {2}1 /);
+    // a wedge alone: the relative configuration (BIOVIA CTfile: chiral flag 0)
+    expect(writeMolFile(w).text.split('\n')[3]).toMatch(/^ {2}3 {2}2 {2}0 {2}0 {2}0 /);
     const flat = new Doc();
     flat.bulk(() => { const a = flat.addAtom(0, 0); const b = flat.addAtom(L, 0, 8); flat.addBond(a.id, b.id); });
     expect(writeMolFile(flat).text.split('\n')[3]).toMatch(/^ {2}2 {2}1 {2}0 {2}0 {2}0 /);
   });
 
-  it('names the program as Chemweave in the header line, with the dimension code in columns 21–22 (G1-24)', () => {
+  it('names the program in the header line\'s eight columns, the date columns blank and the dimension code in columns 21–22 (G1-24, review F1-R07)', () => {
     const r = new Doc();
     r.bulk(() => { r.addAtom(0, 0); });
     const line = writeMolFile(r).text.split('\n')[1];
-    expect(line.slice(2, 11)).toBe('Chemweave');
+    expect(line.slice(2, 10)).toBe('Chemweav');
+    expect(line.slice(10, 20)).toBe(' '.repeat(10));
     expect(line.slice(20, 22)).toBe('2D');
     expect(toMolfile(r, r.atoms.keys()).molblock.split('\n')[1]).toBe(line);
   });
