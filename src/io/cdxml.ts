@@ -1723,10 +1723,14 @@ export const FRAME_TAG = 'Chem Illustrator frame';
 /** The data a frame keeps for the drawing round which it sits, drawn again by the matching Edit command. */
 export const FRAME_DATA = ['plate', 'energy', 'newman', 'torsion', 'diagram', 'smart'] as const;
 
-/** Keys of a frame's data that hold settings, never a text it drew (see takeFrameTexts). */
-const FRAME_SETTING_KEYS = new Set(['kind', 'look', 'unit', 'style', 'layout', 'source', 'place', 'insets', 'accent', 'colours', 'color', 'colour', 'barrierColor', 'eye', 'fmt', 'key', 'structures', 'link', 'mark', 'labelBack', 'shape', 'fill', 'line', 'dash',
-  // (an MO level's column and where its lines start, and other placings; review F1b-R14)
-  'column', 'from', 'to', 'side', 'align', 'anchor', 'position', 'mode', 'type', 'font']);
+/**
+ * The keys of a frame's data that hold a text it draws (see takeFrameTexts): a lane's or a
+ * level's label, a path's or a species' name, a plate's note, a diagram's outline, a level of
+ * theory, an MO diagram's titles, an energy diagram's axis titles. Every other field is a setting
+ * ("solid", "tlc", an MO level's column "left"), which is never changed for a text that happens
+ * to equal it (review F1-R11, F1b-R14).
+ */
+const FRAME_TEXT_KEYS = new Set(['label', 'name', 'note', 'text', 'theory', 'titles', 'xTitle', 'yTitle']);
 
 /**
  * The texts a frame's drawing shows, in a fixed order: its captions, then the texts inside its
@@ -1763,7 +1767,9 @@ function remark(v: string, from: string, to: string): string {
   while (q < from.length - p && q < to.length - p && from[from.length - 1 - q] === to[to.length - 1 - q]) q++;
   const mid = to.slice(p, to.length - q);
   // the changed letters, or (when letters were only added) the place after the letter before them
-  const start = p < from.length - q ? at[p] : p > 0 ? at[p - 1] + 1 : 0;
+  let start = p < from.length - q ? at[p] : p > 0 ? at[p - 1] + 1 : 0;
+  // (letters added after a sub- or superscript go after it: Li₂ → Li₂+ is Li_{2}+)
+  if (p >= from.length - q) while (v[start] === '}') start++;
   const end = p < from.length - q ? at[from.length - q - 1] + 1 : start;
   return v.slice(0, start) + mid + v.slice(end);
 }
@@ -1801,10 +1807,9 @@ export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
   const hits = new Set<string>();
   // energies shown with the diagram's decimal places
   const digits = s.energy?.digits ?? 1;
-  // only in the fields that hold texts: a setting that happens to equal the old text (a lane label
-  // "solid", a kind "tlc") is left alone (review F1-R11); a diagram's outline takes it line by line
+  // only in the fields that hold texts (FRAME_TEXT_KEYS): a setting that happens to equal the old
+  // text (a lane look "solid", a kind "tlc") is left alone; a diagram's outline takes it line by line
   const swap = (v: unknown, key = ''): unknown => {
-    if (FRAME_SETTING_KEYS.has(key)) return v;
     if (typeof v === 'number' && key === 'g' && s.energy) {
       for (const [from, t] of to) {
         const a = asNumber(from), b = asNumber(t);
@@ -1812,13 +1817,15 @@ export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
       }
       return v;
     }
+    if (typeof v === 'string' && !FRAME_TEXT_KEYS.has(key)) return v;
     if (typeof v === 'string' && to.has(v)) { hits.add(v); return to.get(v); }
     if (typeof v === 'string' && v !== shown(v) && to.has(shown(v))) { hits.add(shown(v)); return remark(v, shown(v), to.get(shown(v))!); }
     if (typeof v === 'string' && v.includes('\n')) {
       const lines = v.split('\n').map((l) => { const m = /^(\s*)(.*)$/.exec(l)!; const k = to.has(m[2]) ? m[2] : to.has(shown(m[2])) ? shown(m[2]) : null; if (k === null) return l; hits.add(k); return m[1] + (k === m[2] ? to.get(k) : remark(m[2], k, to.get(k)!)); });
       return lines.join('\n');
     }
-    if (Array.isArray(v)) return v.map((x) => swap(x, key === 'points' || key === 'paths' || key === 'lanes' ? '' : key));
+    // (a list's items are what its key says: an MO diagram's titles are texts, its levels hold them)
+    if (Array.isArray(v)) return v.map((x) => swap(x, key));
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x, k)]));
     return v;
   };

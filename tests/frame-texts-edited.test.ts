@@ -76,6 +76,22 @@ describe('an MO label with sub- and superscripts changed in ChemDraw (review F1b
     expect(labels).toContain('σ^{*}_{2s}');
     expect(got.stats.notes ?? []).toEqual([]);
   });
+  it('adds letters typed after a subscript after it', () => {
+    const got = readCdxml(write(li2()).replace(/(face="32">2<\/s>)/, '$1<s font="3" size="10" color="0" face="0">+</s>')).doc;
+    expect(frameOf(got, 'plate').plate!.mo!.titles).toEqual(['Li', 'Li_{2}+', 'Li']);
+  });
+  it('changes a title but never a level\'s column that reads the same (review F1b-R14)', () => {
+    const d = new Doc();
+    const p = newPlate('mo', d.style.bondLength);
+    const spec = structuredClone(MO_PRESETS.find((m) => m.id === 'li2')!.spec);
+    p.mo = { ...spec, titles: ['left', 'Li_{2}', 'right'], labelBack: 'white' };
+    d.edit('MO', () => { putPlate(d, POINTS, p, { x: 0, y: 0 }); });
+    const xml = write(d);
+    expect(xml.match(/>left</g)).toHaveLength(1);
+    const mo = frameOf(readCdxml(xml.replace(/>left</, '>Na<')).doc, 'plate').plate!.mo!;
+    expect(mo.titles).toEqual(['Na', 'Li_{2}', 'right']);
+    expect(mo.levels.map((l) => l.column)).toEqual(spec.levels.map((l) => l.column));
+  });
   it('is called an MO diagram in the note', () => {
     expect(frameName(frameOf(li2(), 'plate'))).toBe('an MO diagram');
   });
