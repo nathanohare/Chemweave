@@ -10295,7 +10295,11 @@ const COMMANDS: Record<string, () => unknown> = {
   about: () => void appVersion().then((v) => ask('About Chemweave', [], {
     noCancel: true,
     note: `${STAGE_NOTE} Version ${v === 'web' ? 'for the browser' : v} (${STAGE.toLowerCase()}). Free software under the GNU General Public License, version 3: `
-      + 'see the license and the source on GitHub (github.com/nathanohare/Chemweave). ChemDraw is a trademark of Revvity Signals Software, Inc. '
+      + 'see the license and the source on GitHub (github.com/nathanohare/Chemweave). '
+      + 'It includes open-source software and data, each credited with its license in THIRD-PARTY-NOTICES.md there. '
+      + 'Contains information from nmrshiftdb2 (www.nmrshiftdb.org), which is made available here under the nmrshiftdb2 Database License; '
+      + 'contains data from NMRexp (CC BY 4.0), DOI 10.5281/zenodo.17296666. '
+      + 'ChemDraw is a trademark of Revvity Signals Software, Inc. '
       + 'Microsoft, Word, Excel, PowerPoint and Office are trademarks of the Microsoft group of companies. '
       + 'Chemweave was formerly called Chem Illustrator, and is not made by, connected with or endorsed by Revvity or Microsoft.',
   })),
