@@ -204,7 +204,7 @@ export function readNotes(comments: Document | null, shown: Set<number>, threade
       // its text element as it is, to write back while the note is unchanged (it keeps the runs' looks)
       const el = kid(c, 'text');
       // (without the namespace each piece is given on its own: the comments part has it already)
-      const xl = el ? { xml: Array.from(el.childNodes).map((n) => new XMLSerializer().serializeToString(n).split(` xmlns="${MAIN}"`).join('')).join(''), text, author } : undefined;
+      const xl = el ? { xml: Array.from(el.childNodes).map((n) => new XMLSerializer().serializeToString(n).replace(/<[^>]+>/g, (tag) => tag.split(` xmlns="${MAIN}"`).join(''))).join(''), text, author } : undefined;
       out.set(key, { kind: 'note', author, date: '', text, ...(shown.has(key) ? { shown: true } : {}), ...(author && !authorLine ? { noAuthorLine: true as const } : {}), ...(xl ? { xl } : {}) });
     }
   }

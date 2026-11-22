@@ -213,6 +213,14 @@ Dried over Na</t></r><r><rPr><vertAlign val="subscript"/><sz val="9"/><rFont val
     expect(back.author).toBe('Nate');
   });
 
+  it('words in a note that look like the namespace stay as they are (only tags lose it)', () => {
+    const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+    const x = `<comments xmlns="${NS}"><authors><author>Nate</author></authors><commentList><comment ref="A1" authorId="0"><text><r><rPr><b/></rPr><t>see xmlns="${NS}"</t></r></text></comment></commentList></comments>`;
+    const n = readNotes(parse(x), new Set(), null, null).values().next().value!;
+    expect(n.xl?.xml).toContain(`<t>see xmlns="${NS}"</t>`);
+    expect(n.xl?.xml.startsWith('<r>')).toBe(true);
+  });
+
   it('a note changed here is saved as typed (its old formatting no longer fits the words)', async () => {
     const xml = await roundTrip((n) => ({ ...n, text: 'Dried over MgSO4' }));
     expect(xml).not.toContain('vertAlign');
