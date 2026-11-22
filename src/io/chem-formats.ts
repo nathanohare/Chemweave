@@ -26,7 +26,8 @@
 
 import { Doc, keepOnPage, shiftDrawing, type Arrow, type BondDisplay, type EnhancedStereo, type StepRoles } from '../model';
 import type { DocStyle } from '../style';
-import { elementNumber, SYMBOLS } from '../chem/elements';
+import { elementNumber, hasImplicitH, implicitHydrogens, SYMBOLS } from '../chem/elements';
+import { statedHLabel } from '../chem/hydrogen-count';
 import { molProgramLine, needsV3000, toMolfile, v2000Molfile, v3000Ctab, v3000Molfile, type CtabExtra, type MAtom, type MBond, type MSgroup } from '../chem/molfile';
 import { plainMeasure, reactionSteps, schemeItems, itemFinder } from '../chem/reaction';
 import { placeSpecies, readSpecies } from '../chem/species';
@@ -55,6 +56,11 @@ export interface FAtom {
    * written whatever it spells: Ts is tosyl, Ac acetyl and Ar aryl here, not tennessine, actinium or argon.
    */
   label?: boolean;
+  /**
+   * Hydrogens the file states, not counting hydrogen atoms drawn: from a molfile's valence (V2000
+   * vvv, V3000 VAL=) or CML's hydrogenCount. Undefined when the file leaves them to the valence rule.
+   */
+  hCount?: number;
 }
 export type FStereo = 'wedge' | 'hash' | 'wavy';
 export interface FBond {
@@ -129,6 +135,23 @@ export function chemFormatOf(name: string, text: string): ChemFormat | null {
 
 const RADICAL_OF = (rad: number | undefined) => rad === 1 ? 'singlet' as const : rad === 2 ? 'doublet' as const : rad === 3 ? 'triplet' as const : undefined;
 
+/** The bond orders at atom i that count toward its valence (not hydrogen, dative or partial bonds). */
+function bondSum(bonds: FBond[], i: number): number {
+  return bonds.reduce((t, b) => t + (b.hbond || b.dative || b.order < 1 || (b.a !== i && b.b !== i) ? 0 : b.order), 0);
+}
+
+/** Hydrogens stated by molfile valences (V2000 vvv, V3000 VAL=): the valence less the bonds; 0 for "none" (V2000 15, V3000 -1, kept here as 0). */
+function hFromValence(atoms: FAtom[], bonds: FBond[], vals: Map<number, number>): void {
+  for (const [i, v] of vals) if (atoms[i]) atoms[i].hCount = v <= 0 ? 0 : Math.max(0, v - Math.ceil(bondSum(bonds, i) - 1e-6));
+}
+
+/** The label that shows the hydrogens a file states for atom i (OH, CH, N), or null when the valence rule gives the same number. */
+function statedLabel(m: FMol, i: number, z: number | undefined): string | null {
+  const a = m.atoms[i];
+  if (a.hCount === undefined || a.label || z === undefined) return null;
+  return statedHLabel(z, a.hCount, bondSum(m.bonds, i), a.charge ?? 0, RADICAL_OF(a.rad));
+}
+
 /**
  * The molecule of a molfile (V2000 or V3000), or null when it can't be read. Abbreviations
  * (superatom S-groups) come back as one atom with the label, unless `keepSup` (for writing a
@@ -146,6 +169,7 @@ function molAt(lines: string[], start: number, keepSup = false): { mol: FMol; en
   const na = parseInt(counts.slice(0, 3), 10), nb = parseInt(counts.slice(3, 6), 10);
   if (!Number.isFinite(na) || !Number.isFinite(nb) || na < 0) return null;
   const atoms: FAtom[] = [];
+  const vals = new Map<number, number>();
   for (let i = 0; i < na; i++) {
     const l = lines[start + 4 + i];
     if (l === undefined) return null;
@@ -156,6 +180,9 @@ function molAt(lines: string[], start: number, keepSup = false): { mol: FMol; en
     if (ccc === 4) a.rad = 2;
     const map = parseInt(l.slice(60, 63), 10);
     if (map > 0) a.map = map;
+    // vvv, the valence: 1–14, or 15 for none
+    const vvv = parseInt(l.slice(48, 51), 10);
+    if (vvv > 0 && vvv <= 15) vals.set(i, vvv === 15 ? 0 : vvv);
     atoms.push(a);
   }
   const bonds: FBond[] = [];
@@ -222,6 +249,7 @@ function molAt(lines: string[], start: number, keepSup = false): { mol: FMol; en
     }
   }
   const chiral = parseInt(counts.slice(12, 15), 10) === 1;
+  hFromValence(atoms, bonds, vals);
   const mol: FMol = { atoms, bonds, ...(lines[start]?.trim() ? { name: lines[start].trim() } : {}), ...(chiral ? { chiral } : {}) };
   for (const a of atoms) fixHydrogenIsotopes(a);
   return { mol: keepSup ? withSup(mol, [...sup.values()]) : contract(mol, [...sup.values()]), end: i };
@@ -280,6 +308,7 @@ function v3000At(lines: string[], from: number, name?: string, keepSup = false):
   const bonds: FBond[] = [];
   const index = new Map<string, number>();
   const sup: SupGroup[] = [];
+  const vals = new Map<number, number>();
   const listOf = (v: string | undefined) => (v ? v.replace(/[()]/g, '').trim().split(/\s+/).slice(1) : []).map((id) => index.get(id) ?? -1).filter((k) => k >= 0);
   let block = '';
   let chiral = false;
@@ -309,6 +338,9 @@ function v3000At(lines: string[], from: number, name?: string, keepSup = false):
       if (mass > 0) a.iso = mass;
       if (rad > 0) a.rad = rad;
       if (map > 0) a.map = map;
+      // VAL=: the valence, -1 for none
+      const val = parseInt(v3Field(rest, 'VAL') ?? '', 10);
+      if (val === -1 || val > 0) vals.set(atoms.length, Math.max(0, val));
       const rg = v3Field(rest, 'RGROUPS');
       if (s === 'R#' && rg) { const n = /\(\d+\s+(\d+)/.exec(rg)?.[1]; a.sym = n ? 'R' + n : 'R'; }
       fixHydrogenIsotopes(a);
@@ -324,6 +356,7 @@ function v3000At(lines: string[], from: number, name?: string, keepSup = false):
       sup.push({ atoms: listOf(v3Field(w.slice(3), 'ATOMS')), label: v3Field(w.slice(3), 'LABEL') ?? '', ...(v3Field(w.slice(3), 'ESTATE') === 'E' ? { expanded: true } : {}) });
     }
   }
+  hFromValence(atoms, bonds, vals);
   const mol: FMol = { atoms, bonds, ...(name ? { name } : {}), ...(chiral ? { chiral } : {}) };
   return { mol: keepSup ? withSup(mol, sup) : contract(mol, sup), end: end + 1 };
 }
@@ -477,6 +510,7 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
   const groupTitle = new Map<string, { title: string; el: Element }>();
   for (const s of kids(m, 'molecule')) if (s.getAttribute('role') === 'SuperatomSgroup') groupTitle.set(s.getAttribute('id') ?? '', { title: s.getAttribute('title') ?? '', el: s });
   const contracted = new Set<string>();
+  const hTotal = new Map<number, number>();
   const addAtoms = (owner: Element) => {
     for (const arr of kids(owner, 'atomArray')) {
       const list = kids(arr, 'atom');
@@ -508,6 +542,9 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
         const sg = /^(abs|and|or)(\d*)$/i.exec(r.mrvStereoGroup ?? '');
         if (sg) a.enh = sg[1].toLowerCase() === 'abs' ? { type: 'abs' } : { type: sg[1].toLowerCase() as 'and' | 'or', group: parseInt(sg[2], 10) || 1 };
         fixHydrogenIsotopes(a);
+        // CML's hydrogenCount: every hydrogen on the atom, drawn ones included (taken off below)
+        const hc = parseInt(r.hydrogenCount ?? '', 10);
+        if (hc >= 0) hTotal.set(atoms.length, hc);
         index.set(id, atoms.length);
         byId?.set(id, a);
         atoms.push(a);
@@ -544,6 +581,10 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
   // a superatom group shown expanded that names the parent's atoms (atomRefs) is put back as its label
   const expanded = mrv ? kids(m, 'molecule').filter((s) => s.getAttribute('role') === 'SuperatomSgroup' && s.getAttribute('atomRefs') && s.getAttribute('title'))
     .map((s) => ({ atoms: (s.getAttribute('atomRefs') ?? '').trim().split(/\s+/).map((r) => index.get(r) ?? -1).filter((k) => k >= 0), label: s.getAttribute('title')! })) : [];
+  for (const [i, n] of hTotal) {
+    const drawn = bonds.filter((b) => (b.a === i && atoms[b.b].sym === 'H') || (b.b === i && atoms[b.a].sym === 'H')).length;
+    atoms[i].hCount = Math.max(0, n - drawn);
+  }
   const mol: FMol = { atoms, bonds, ...(m.getAttribute('title') ? { name: m.getAttribute('title')! } : {}) };
   return expanded.length ? contract(mol, expanded) : mol;
 }
@@ -848,11 +889,12 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
     for (const mol of scene.mols) {
       const m = mol.sup?.length ? contract({ ...mol, atoms: mol.atoms.map((a) => ({ ...a })) }, mol.sup) : mol;
       const ids: number[] = [];
-      for (const a of m.atoms) {
+      for (const [i, a] of m.atoms.entries()) {
         const z = a.label ? undefined : elementNumber(a.sym);
         const p = P(a.x, a.y);
         const radical = RADICAL_OF(a.rad);
-        const label = z === undefined ? (a.sym === 'R#' ? 'R' : a.sym) : null;
+        // (an element with the hydrogens the file states, where the valence rule gives another number: OH, CH)
+        const label = z === undefined ? (a.sym === 'R#' ? 'R' : a.sym) : statedLabel(m, i, z);
         const atom = doc.addAtom(p.x, p.y, z ?? 6, {
           charge: a.charge ?? 0, label, ...(a.iso ? { isotope: a.iso } : {}), ...(radical ? { radical } : {}),
           ...(a.map ? { mapNo: a.map, atomNumber: String(a.map), showNumber: true } : {}),
@@ -935,11 +977,11 @@ export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number): 
   const n = Math.max(1, m.atoms.length);
   const mx = m.atoms.reduce((t, a) => t + a.x, 0) / n, my = m.atoms.reduce((t, a) => t + a.y, 0) / n;
   const ids: number[] = [];
-  for (const a of m.atoms) {
+  for (const [i, a] of m.atoms.entries()) {
     const z = a.label ? undefined : elementNumber(a.sym);
     const radical = RADICAL_OF(a.rad);
     const atom = doc.addAtom(cx + (a.x - mx) * k, cy - (a.y - my) * k, z ?? 6, {
-      charge: a.charge ?? 0, label: z === undefined ? (a.sym === 'R#' ? 'R' : a.sym) : null, ...(a.iso ? { isotope: a.iso } : {}), ...(radical ? { radical } : {}),
+      charge: a.charge ?? 0, label: z === undefined ? (a.sym === 'R#' ? 'R' : a.sym) : statedLabel(m, i, z), ...(a.iso ? { isotope: a.iso } : {}), ...(radical ? { radical } : {}),
       // a mapped reaction's atom-atom numbers are shown beside the atoms
       ...(a.map ? { mapNo: a.map, atomNumber: String(a.map), showNumber: true } : {}),
       ...(a.enh ? { enhStereo: { ...a.enh } } : {}),
@@ -1176,9 +1218,18 @@ function cmlMoleculeXml(m: FMol, id: string, first: number, indent: string, mrv:
     const el = z !== undefined ? a.sym : r || a.sym === 'R' ? 'R' : mrv ? 'R' : 'Du';
     // (a label kept as an alias: Marvin's mrvAlias; in CML the atom's label)
     const label = z === undefined && !r && a.sym !== 'R' && a.sym !== '*' && !mrv ? `<label value="${att(a.sym)}"/>` : '';
-    const enh = a.enh && mrv ? (a.enh.type === 'abs' ? 'abs' : `${a.enh.type}${a.enh.group ?? 1}`) : '';
+    // enhanced stereo as ChemAxon's mrvStereoGroup (abs, and1, or2), in plain CML too: CML has no mark of its own
+    const enh = a.enh ? (a.enh.type === 'abs' ? 'abs' : `${a.enh.type}${a.enh.group ?? 1}`) : '';
+    // CML's hydrogenCount (plain CML; Marvin works its own out): the hydrogens on an element, drawn ones included
+    // (left out next to an aromatic bond, where the count depends on the ring: pyrrole's NH)
+    const aromatic = m.bonds.some((b) => (b.a === i || b.b === i) && b.order === 1.5);
+    const hc = !mrv && z !== undefined && z !== 1 && hasImplicitH(z) && (a.hCount !== undefined || !aromatic)
+      ? (a.hCount ?? implicitHydrogens(z, bondSum(m.bonds, i), a.charge ?? 0, a.rad === 2 ? 1 : a.rad ? 2 : 0))
+        + m.bonds.filter((b) => (b.a === i && m.atoms[b.b].sym === 'H') || (b.b === i && m.atoms[b.a].sym === 'H')).length
+      : undefined;
     const more = [
       a.charge ? ` formalCharge="${a.charge}"` : '',
+      hc !== undefined ? ` hydrogenCount="${hc}"` : '',
       a.iso ? ` isotope${mrv ? '' : 'Number'}="${a.iso}"` : '',
       a.rad ? ` ${mrv ? 'radical' : 'spinMultiplicity'}="${mrv ? (a.rad === 2 ? 'monovalent' : a.rad === 1 ? 'divalent1' : 'divalent3') : a.rad === 2 ? 2 : a.rad === 1 ? 1 : 3}"` : '',
       r ? ` rgroupRef="${r[1]}"` : '',
