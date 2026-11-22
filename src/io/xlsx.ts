@@ -833,8 +833,9 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
           made.push(structureOle(cellName(r, c), prog, chemdrawObject(asObject.cdx, prog, { emf: asObject.emf, w: asObject.w, h: asObject.h }, [[OLE_CELL_STREAM, new TextEncoder().encode(cellName(r, c))]]), { bytes: asObject.emf, ext: 'emf', type: 'image/x-emf' },
             { col: f.i, colOff: f.off, row: fr.i, rowOff: fr.off }, { col: t.i, colOff: t.off, row: tr.i, rowOff: tr.off }, { w: ow * 0.75, h: oh * 0.75 }));
           if (entry) entry.cdx = bytesHash(asObject.cdx);
-        } else if (cell?.structure && !s.ole?.some((o) => /^ChemDraw/i.test(o.progId) && o.at?.[0] === c && o.at?.[1] === r)) {
-          // the structure's picture, over the cell (or merged block); not under an object kept there (review F2-R05)
+        } else if (cell?.structure && !s.ole?.some((o) => o.over && o.at?.[0] === c && o.at?.[1] === r)) {
+          // the structure's picture, over the cell (or merged block); not under its own object kept
+          // there, changed in ChemDraw from Excel (review F2-R05, F2b-R06)
           const m = s.mergeAt(r, c);
           const r2 = m?.r2 ?? r, c2 = m?.c2 ?? c;
           const x = cols.start(c), y = rows.start(r);
@@ -1630,6 +1631,8 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   const lostOle: string[] = [];
   /** Structures changed in ChemDraw from Excel that can't be read here, kept as the objects they are. */
   const keptOver = new Set<KeptSheetOle>();
+  /** Copies made in Excel of a structure's ChemDraw object saved here (each structure is saved once, at its cell). */
+  let ownCopies = 0;
   book.build(() => {
     sheetEls.forEach((el, si) => {
       const s = book.sheets[si];
@@ -1998,6 +2001,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       const commentsPath = relOf(NOTES_REL.comments), vmlPath = relOf(NOTES_REL.vml), threadedPath = relOf(NOTES_REL.threaded);
       leftOut.sheet(pkg, path!, ws, vmlPath ? pkg.text(vmlPath) : null, (t) => keptQueries.has(t));
       // embedded objects (a ChemDraw structure pasted into Excel, an embedded Word file): kept to save back
+      const ownSeen = new Set<string>();
       const ole = readSheetOle(pkg, path!, ws, vmlPath ?? null, dr, lostOle).filter((o) => {
         // a structure saved here as a ChemDraw object: known by the cell named in its own data (which
         // Excel keeps), else by its VML shape's name, else by its ChemDraw data being one saved here,
@@ -2012,10 +2016,16 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
         const same = print !== null && (mc ? print === mc.cdx : ms.cells.some((x) => x.cdx === print));
         const over = chemdraw && o.at && s.cell(o.at[1], o.at[0])?.structure;
         if (!mc && !same && !over) return true;
-        if (same) return false;
+        if (same) {
+          // (a copy of it made in Excel carries the same cell and data: left out, and said)
+          const key = ref ?? `${print}@${o.at?.join(',') ?? ''}`;
+          if (ownSeen.has(key)) ownCopies++;
+          ownSeen.add(key);
+          return false;
+        }
         // changed in ChemDraw from Excel: the cell's structure as ChemDraw saved it, where it can be read
         const contents = cdx && o.at ? (() => { try { return _deps?.readChemdraw?.(cdx, book.drawingStyle) ?? null; } catch { return null; } })() : null;
-        if (!contents || !o.at || !contents.atoms.length) { keptOver.add(o); return true; }
+        if (!contents || !o.at || !contents.atoms.length) { keptOver.add(o); o.over = true; return true; }
         const [c, r] = o.at;
         s.setCell(r, c, { structure: makeStructure(contents), style: s.cell(r, c)?.style });
         restored.changed++;
@@ -2105,6 +2115,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   if (oleSaid) warnings.push(oleSaid);
   const keptOverStructures = keptOver.size;
   if (keptOverStructures) warnings.push(`${keptOverStructures} structure${keptOverStructures > 1 ? 's were' : ' was'} changed in ChemDraw from Excel in a way that can't be read here: ${keptOverStructures > 1 ? 'they are' : 'it is'} kept as ChemDraw object${keptOverStructures > 1 ? 's' : ''} for Excel, over ${keptOverStructures > 1 ? 'their cells' : 'its cell'}, and the cell's own picture isn't saved under ${keptOverStructures > 1 ? 'them' : 'it'}.`);
+  if (ownCopies) notKept.add(`${ownCopies} cop${ownCopies > 1 ? 'ies' : 'y'} made in Excel of structures' ChemDraw objects (each structure is saved once, at its cell)`);
   if (lostOle.length) notKept.add(`${lostOle.length} embedded object${lostOle.length > 1 ? 's' : ''} whose data isn't in the file (linked objects)`);
   if (notKept.size) warnings.push(`Not shown here, and left out if you save over this file: ${[...notKept].join(', ')}.`);
   return { book, warnings };

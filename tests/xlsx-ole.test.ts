@@ -232,6 +232,20 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
       expect(drawing ? strFromU8(drawing[1]) : '').not.toContain('name="Structure B2"');
     });
 
+    it('says so when a copy of its own object made in Excel is left out (review F2b-R06)', async () => {
+      const out = await saved();
+      const sheet = strFromU8(out['xl/worksheets/sheet1.xml']);
+      // (Excel's copy: the same object's data, under a shape of its own)
+      const block = /<oleObjects>([\s\S]*?)<\/oleObjects>/.exec(sheet)![1];
+      out['xl/worksheets/sheet1.xml'] = strToU8(sheet.replace(block, block + block.replace(/shapeId="(\d+)"/g, (_, n: string) => `shapeId="${Number(n) + 1}"`)));
+      const { book: wb, warnings } = await readXlsx(zipSync(out), { readChemdraw: () => mol('X') });
+      expect(wb.sheets[0].ole ?? []).toHaveLength(0);
+      expect(warnings.join(' ')).toMatch(/left out if you save over this file: 1 copy made in Excel of structures' ChemDraw objects \(each structure is saved once, at its cell\)/);
+      // one alone: nothing said
+      const one = await readXlsx(zipSync(await saved()), { readChemdraw: () => mol('X') });
+      expect(one.warnings.join(' ')).not.toMatch(/cop(y|ies) made in Excel/);
+    });
+
     it('writes the object\'s picture once, for the sheet and its VML shape (review F2-R10)', async () => {
       const out = await saved();
       expect(Object.keys(out).filter((n) => /^xl\/media\/image_ole\d+\.emf$/.test(n))).toHaveLength(1);
@@ -249,6 +263,16 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml');
     const { warnings } = await readXlsx(pkg.build());
     expect(warnings.join(' ')).toMatch(/left out if you save over this file: .*1 embedded object whose data isn't in the file/);
+  });
+
+  it('saves a structure\'s picture under another program\'s ChemDraw object at its cell (review F2b-R06)', async () => {
+    // the sheet's ChemDraw object (not one saved here) sits over C2; a structure typed into C2 here
+    const { book: wb } = await readXlsx(book(false));
+    wb.sheets[0].setCell(1, 2, { structure: makeStructure({ atoms: [{ id: 1, x: 0, y: 0, z: 6, charge: 0, isotope: 0, label: 'CCO' } as never], bonds: [], captions: [], arrows: [], shapes: [] }) });
+    const out = unzipSync(await writeXlsx(wb, { ...pictures, picture: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]) }));
+    const drawing = Object.entries(out).filter(([n]) => /drawings\/drawing\d+\.xml$/.test(n)).map(([, b]) => strFromU8(b)).join('');
+    expect(drawing).toContain('name="Structure C2"');
+    expect(strFromU8(out['xl/worksheets/sheet1.xml']).match(/<oleObject /g)).toHaveLength(2);
   });
 
   it('removes the kept objects with Remove Embedded Objects, and Undo brings them back (review F2-R11)', async () => {

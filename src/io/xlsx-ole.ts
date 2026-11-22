@@ -36,6 +36,8 @@ export interface KeptOlePart {
 export interface KeptSheetOle {
   /** The program it belongs to (ChemDraw.Document.6.0, Word.Document.12…). */
   progId: string;
+  /** A structure's object changed in ChemDraw from Excel that can't be read here: kept over its cell, whose own picture isn't saved under it (F2b-R06). */
+  over?: boolean;
   /** The <oleObject> or the mc:AlternateContent holding it, with every relationship id written as @@p{n}@@ and the shape id as @@spid@@. */
   xml: string;
   /** The parts @@p{n}@@ stand for. */
