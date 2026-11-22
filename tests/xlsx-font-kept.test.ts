@@ -78,5 +78,9 @@ describe('Excel fonts kept (G2-19)', () => {
     const styles = strFromU8(out['xl/styles.xml']), strings = strFromU8(out['xl/sharedStrings.xml']);
     expect(styles).not.toMatch(/<color theme="4"/);
     expect(strings).not.toMatch(/<color theme="5"/);
+    // the colours fixed as the cells show them (the Office theme's accent 1, 4472C4, darkened by the
+    // tint, and its accent 2, ED7D31), the rest of each font as the file had it (review F2b-R07)
+    expect(styles).toContain('<font><b/><outline/><shadow/><sz val="12"/><color rgb="FF2F5597"/><name val="Times New Roman"/><family val="1"/><charset val="0"/></font>');
+    expect(strings).toContain('<r><rPr><rFont val="MS Mincho"/><charset val="128"/><family val="3"/><sz val="11"/><color rgb="FFED7D31"/></rPr><t>収率</t></r>');
   });
 });

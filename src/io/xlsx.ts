@@ -430,8 +430,9 @@ class Styles {
   private parts(s: CellStyle): { font: number; fill: number; border: number } {
     // a font as the file had it (an outline, a shadow, its family and character set, a theme
     // colour), while the cell's font looks as it did
-    // (one linked to the theme's colours or fonts only while the theme written is the one read: review F2-R03)
-    const keptFont = s.excel?.font && s.excel.font.key === fontLook(s) && (this.themeLinks || !THEME_LINK.test(s.excel.font.xml)) ? s.excel.font.xml : null;
+    // (its links to the theme's colours or heading font only while the theme written is the one read,
+    // else fixed as the cell shows them, the rest of the font kept: review F2-R03, F2b-R07)
+    const keptFont = s.excel?.font && s.excel.font.key === fontLook(s) ? (this.themeLinks ? s.excel.font.xml : unthemed(s.excel.font.xml, s.color, s.font)) : null;
     const font = keptFont ? this.index(this.fonts, keptFont) : fontLook(s) !== fontLook(this.normal)
       ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${s.excel?.strike ? '<strike/>' : ''}${s.underline ? uXml(s.excel?.u) : ''}` +
         `${s.excel?.vertAlign ? `<vertAlign val="${xmlAttr(s.excel.vertAlign)}"/>` : ''}<sz val="${s.size ?? 11}"/>` +
@@ -559,7 +560,7 @@ class Strings {
     if (r.xr) {
       try {
         const k = JSON.parse(r.xr) as { x: string; k: string };
-        if (k.k === runShown(style, r) && (this.themeLinks || !THEME_LINK.test(k.x))) return k.x;
+        if (k.k === runShown(style, r)) { if (this.themeLinks) return k.x; const l = lookOver(style, r); return unthemed(k.x, l.color, l.font); }
       } catch { /* written from its look */ }
     }
     return this.runLook(lookOver(style, r));
@@ -1234,12 +1235,26 @@ function runShown(style: CellStyle | undefined, r: TextRun): string {
 const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign, l.underline ? l.excel?.u : undefined]);
 
 /**
+ * A kept font (or run look) with its links to a theme other than the one written made fixed, the
+ * rest as the file had it (outline, shadow, family, character set: review F2b-R07): a theme colour
+ * other than the text's as the colour it shows here (`color`; none: the text's), and the heading
+ * font (18.8.35 scheme major) as its name (`font`). The body font's link stays, as the cell follows
+ * the theme's body font here too, and the text's colour (theme 1) follows the theme written.
+ */
+function unthemed(x: string, color: string | undefined, font: string | undefined): string {
+  let out = x.replace(/<color\b[^>]*\btheme="(?!1")[^>]*\/>/g, color ? `<color rgb="FF${hex6(color)}"/>` : '<color theme="1"/>');
+  if (/<scheme val="major"\/>/.test(out)) {
+    out = out.replace(/<scheme val="major"\/>/g, '');
+    if (font) out = out.replace(/<(name|rFont) val="[^"]*"\/>/, (_, tag: string) => `<${tag} val="${xmlAttr(font)}"/>`);
+  }
+  return out;
+}
+
+/**
  * Whether a font as written here (fontXml) has more than a font made from its look would: an
  * outline or shadow (18.8.22), condensed or extended, a character set, a family other than
  * Swiss, or a theme colour other than the text's.
  */
-/** A font's link to the theme: a theme colour other than the text's own, or a theme font (18.8.35 scheme). */
-const THEME_LINK = /<color\b[^>]*\btheme="(?!1")|<scheme\b/;
 const fontHasMore = (x: string) => /<(outline|shadow|condense|extend|charset)\b|<family val="(?!2")|<color theme="(?!1"\/>)/.test(x);
 
 /** A font's or run's underline (18.4.13): single unless another of Excel's kinds is given. */
