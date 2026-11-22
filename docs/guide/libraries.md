@@ -41,3 +41,7 @@ When you save or open a file, the library notes which of its compounds are in th
 Each find says the file, where in it (the drawing, slide 3, figure 2, `Sheet1!B4`), the number under the structure if it has one, and whether it is the same structure or contains it. Double-click a find (or pick it and click **Open**) to open the file at that spot with the structure selected.
 
 Files read once aren't read again until they change, so searching the same folder a second time is quick. That index is kept on this computer only. Up to 20,000 files are searched at a time; pick a smaller folder for more.
+
+---
+
+Next: [Getting started](getting-started.md) · [Canvas](drawing.md) · [Keyboard and mouse](keyboard-and-mouse.md) · [Presentation](slides.md) · [Document](documents.md) · [Spreadsheet](sheets.md) · [Design](design.md) · [Files and sharing](files-and-sharing.md) · [Feedback](feedback.md)

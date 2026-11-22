@@ -7,7 +7,9 @@
 //
 // docs/ stays the one place the guide is written. The wiki is a copy laid out for browsing: a
 // sidebar, the long Canvas page split into shorter pages, a short "On this page" list on long
-// pages, and an A to Z list of every topic. Links between guide pages are pointed at the matching
+// pages, previous and next links at the foot of every page, and an A to Z list of every topic.
+// A line `<!-- index: Smart Scheme, catalytic cycle -->` under a heading in docs/ adds those words
+// to the A to Z list, pointing at that heading (the comment itself shows nowhere). Links between guide pages are pointed at the matching
 // wiki page and heading, pictures at the files in docs/images on the main branch, and links to
 // other files in the repository at those files on GitHub. Each page ends with a link to the file
 // it came from, because edits made on the wiki itself are replaced the next time it is built
@@ -117,15 +119,39 @@ function lines(md) {
   return out;
 }
 
-/** The headings of some lines: level, text and their id on a page made of exactly these lines. */
+/** A line that only adds words to the A to Z list: `<!-- index: one, two -->`. */
+const INDEX_WORDS = /^\s*<!--\s*index:\s*(.*?)\s*-->\s*$/i;
+
+/**
+ * The headings of some lines: level, text and their id on a page made of exactly these lines.
+ * `words` are the extra A to Z entries given by `<!-- index: ... -->` lines under the heading.
+ */
 function headings(ls) {
   const seen = new Map();
   const out = [];
   ls.forEach((l, i) => {
-    const m = !l.code && /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(l.text);
-    if (m) out.push({ line: i, level: m[1].length, text: headingText(m[2]), id: slug(m[2], seen) });
+    if (l.code) return;
+    const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(l.text);
+    if (m) { out.push({ line: i, level: m[1].length, text: headingText(m[2]), id: slug(m[2], seen), words: [] }); return; }
+    const w = INDEX_WORDS.exec(l.text);
+    if (w && out.length) out[out.length - 1].words.push(...w[1].split(',').map((x) => x.trim()).filter(Boolean));
   });
   return out;
+}
+
+/**
+ * A docs page ends with a rule and a line "Next: [page] · [page] ...", for readers on GitHub and
+ * in the app. The wiki has its sidebar and its own previous / next links, so that ending is left
+ * out here (on a split page it would otherwise land on the last sub-page only).
+ */
+function dropNextLine(body) {
+  let end = body.length;
+  while (end && body[end - 1].text.trim() === '') end--;
+  if (!end || body[end - 1].code || !/^Next:\s/.test(body[end - 1].text)) return body;
+  end--;
+  while (end && body[end - 1].text.trim() === '') end--;
+  if (end && /^(-{3,}|\*{3,}|_{3,})\s*$/.test(body[end - 1].text)) end--;
+  return body.slice(0, end);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -147,7 +173,7 @@ export function buildWiki(root = ROOT, pages = PAGES) {
     const hs = headings(ls);
     // the page title is the wiki page's name, so the file's own # title is left out
     const h1 = hs.find((h) => h.level === 1);
-    const body = ls.map((l, i) => ({ ...l, srcLine: i })).filter((l, i) => !(h1 && i === h1.line));
+    const body = dropNextLine(ls.map((l, i) => ({ ...l, srcLine: i })).filter((l, i) => !(h1 && i === h1.line)));
     if (!p.split) { out.push({ ...p, lines: body }); continue; }
 
     const h2s = hs.filter((h) => h.level === 2);
@@ -199,12 +225,35 @@ export function buildWiki(root = ROOT, pages = PAGES) {
     }
   }
 
+  // "see Orbitals below" stops being true when the section it means went to another page.
+  for (const page of out) {
+    if (!page.parent) continue;
+    const elsewhere = new Map(); // heading text (lower case) -> the sibling page it is on
+    for (const sib of page.parent.children) {
+      if (sib === page) continue;
+      for (const h of sib.headings) elsewhere.set(h.text.toLowerCase(), sib);
+    }
+    const here = new Set(page.headings.map((h) => h.text.toLowerCase()));
+    for (const l of page.lines) {
+      if (l.code) continue;
+      for (const m of l.text.matchAll(/\bsee (?:the )?([^.;:()\[\]]{2,60}?) (below|above)\b/gi)) {
+        const name = headingText(m[1]).toLowerCase();
+        if (elsewhere.has(name) && !here.has(name)) {
+          warnings.push(`${page.src} (${page.name}): "${m[0]}" but "${m[1]}" is on the page ${elsewhere.get(name).name}: make it a link instead`);
+        }
+      }
+    }
+  }
+
   // 3. Write each page, its links pointed at wiki pages, pictures and files on GitHub.
   const files = {};
+  const order = out.filter((p) => p.name !== 'Home'); // reading order: the sidebar's, sub-pages after their page
   for (const page of out) {
     const fix = (url) => fixLink(url, page.src, target, root, warnings, page.name);
-    const text = page.lines.map((l) => (l.code ? l.text : fixLine(l.text, fix)));
-    files[page.name] = finishPage(page, text);
+    // one entry for each line of the page (an index-words line is null: it is left out once the headings are placed)
+    const text = page.lines.map((l) => (l.code ? l.text : INDEX_WORDS.test(l.text) ? null : fixLine(l.text, fix)));
+    const k = order.indexOf(page);
+    files[page.name] = finishPage(page, text, k > 0 ? order[k - 1] : null, k >= 0 ? order[k + 1] ?? null : order[0] ?? null);
   }
   files[INDEX_PAGE.name] = indexPage(out);
   files._Sidebar = sidebar(out);
@@ -246,19 +295,39 @@ function fixLink(url, src, target, root, warnings, pageName) {
   return (dir ? TREE : BLOB) + file + (anchor ? `#${anchor}` : '');
 }
 
-/** "On this page" list, previous / next links for split pages, and the line saying where the page comes from. */
-function finishPage(page, text) {
+/**
+ * "On this page" list, the previous and next pages in reading order (`prev`, `next`), and the line
+ * saying where the page comes from. `text` has one entry for each line of the page (null: left out).
+ */
+function finishPage(page, text, prev, next) {
   const hs = page.headings;
   const h2 = hs.filter((h) => h.level === 2);
   const h3 = hs.filter((h) => h.level === 3);
-  const list = h2.length >= 4 ? h2 : h2.length <= 2 && h3.length >= 4 ? h3 : null;
+  const link = (h) => `[${h.text}](#${h.id})`;
+  let toc = null;
+  if (page.name !== 'Home') {
+    if (h2.length >= 4) {
+      toc = [`**On this page:** ${h2.map(link).join(' · ')}`];
+    } else if (h2.length + h3.length >= 4) {
+      if (h2.length <= 1) {
+        toc = [`**On this page:** ${h3.map(link).join(' · ')}`];
+      } else { // a few main sections with sub-sections: a line for each main section
+        toc = ['**On this page**', ''];
+        h2.forEach((h, k) => {
+          const end = k + 1 < h2.length ? h2[k + 1].line : Infinity;
+          const subs = h3.filter((x) => x.line > h.line && x.line < end);
+          toc.push(`- ${link(h)}${subs.length ? `: ${subs.map(link).join(' · ')}` : ''}`);
+        });
+      }
+    }
+  }
   let body = [...text];
-  if (list && page.name !== 'Home') {
-    const toc = `**On this page:** ${list.map((h) => `[${h.text}](#${h.id})`).join(' · ')}`;
+  if (toc) {
     // after the opening paragraphs, just before the first heading
     const at = Math.max(0, text.findIndex((t, i) => hs.some((h) => h.line === i)));
-    body = [...text.slice(0, at), toc, '', ...text.slice(at)];
+    body = [...text.slice(0, at), ...toc, '', ...text.slice(at)];
   }
+  body = body.filter((t) => t !== null);
   if (page.children?.length) {
     body.push('', '## Pages in this section', '');
     for (const c of page.children) {
@@ -268,15 +337,13 @@ function finishPage(page, text) {
       body.push(`- **[${c.label}](${c.name})**${links ? `: ${links}` : ''}`);
     }
   }
-  if (page.parent) {
-    const sib = page.parent.children;
-    const k = sib.indexOf(page);
-    const prev = k > 0 ? sib[k - 1] : page.parent;
-    const next = sib[k + 1];
-    const nav = [`← [${prev === page.parent ? page.parent.label : prev.label}](${prev.name})`, `[${page.parent.label}](${page.parent.name})`];
-    if (next) nav.push(`[${next.label}](${next.name}) →`);
-    body = [nav.join(' · '), '', ...body, '', nav.join(' · ')];
-  }
+  // previous page · the page this one is part of · next page
+  const nav = [];
+  if (prev) nav.push(`← [${prev.label}](${prev.name})`);
+  if (page.parent && page.parent !== prev) nav.push(`[${page.parent.label}](${page.parent.name})`);
+  if (next) nav.push(`[${next.label}](${next.name}) →`);
+  const navLine = nav.join(' · ');
+  if (navLine) body = page.parent ? [navLine, '', ...body, '', navLine] : [...body, '', navLine];
   while (body.length && body[0].trim() === '') body.shift();
   while (body.length && body[body.length - 1].trim() === '') body.pop();
   body.push('', '---', '', `<sub>This page is made from [${page.src}](${BLOB}${page.src}) in the repository. To change it, edit that file: the wiki is rebuilt from it after each update, which replaces edits made here.</sub>`, '');
@@ -296,15 +363,40 @@ function sidebar(out) {
   return s.join('\n');
 }
 
-/** Every ## and ### heading in the guide, sorted A to Z ("The" and "A" at the start not counted). */
+/**
+ * How a topic is written in the A to Z list: a first word in small letters gets a capital
+ * ("toolbox" → "Toolbox"), while one with capitals of its own (iPad, macOS, pKa) is left as it is.
+ */
+export function indexText(key) {
+  const first = key.split(/[\s-]/)[0];
+  return first.length > 1 && /^\p{Ll}+$/u.test(first) ? key[0].toUpperCase() + key.slice(1) : key;
+}
+
+/**
+ * Every ##, ### and #### heading in the guide, and the words given under a heading with
+ * `<!-- index: ... -->`, sorted A to Z ("The" and "A" at the start not counted). Beside each is
+ * its page, and for a sub-heading the section it is in, so that a short heading ("Labels") says
+ * what it is about.
+ */
 function indexPage(out) {
   const entries = [];
+  const seen = new Set();
   for (const p of out) {
     if (p.name === 'Home' || p.name === 'For-Developers') continue;
+    const page = p.parent ? `${p.parent.label}: ${p.label}` : p.label;
+    let section = null;
     for (const h of p.headings) {
-      if (h.level < 2 || h.level > 3 || h.text === 'Pages in this section') continue;
-      const key = h.text.replace(/^(the|a|an)\s+/i, '');
-      entries.push({ key, text: key[0].toUpperCase() + key.slice(1), link: `${p.name}#${h.id}`, where: p.parent ? `${p.parent.label}: ${p.label}` : p.label });
+      if (h.level < 2 || h.level > 4 || h.text === 'Pages in this section') continue;
+      if (h.level === 2) section = h.text;
+      const inSection = h.level > 2 && section && !page.toLowerCase().endsWith(section.toLowerCase().replace(/^(the|a|an)\s+/, ''));
+      const where = inSection ? `${page} › ${section}` : page;
+      const link = `${p.name}#${h.id}`;
+      for (const [n, t] of [h.text, ...h.words].entries()) {
+        const key = t.replace(/^(the|a|an)\s+/i, '');
+        if (seen.has(`${key.toLowerCase()}|${link}`)) continue;
+        seen.add(`${key.toLowerCase()}|${link}`);
+        entries.push({ key, text: n === 0 ? indexText(key) : key, link, where });
+      }
     }
   }
   entries.sort((a, b) => a.key.localeCompare(b.key, 'en', { sensitivity: 'base', numeric: true }) || a.where.localeCompare(b.where));
@@ -316,7 +408,7 @@ function indexPage(out) {
     for (const e of entries.filter((x) => letterOf(x) === l)) s.push(`- [${e.text}](${e.link}) <sub>${e.where}</sub>`);
     s.push('');
   }
-  s.push('---', '', `<sub>Made from the headings of the pages in docs/ in the repository.</sub>`, '');
+  s.push('---', '', `<sub>Made from the headings of the pages in docs/ in the repository, and the index words written under them.</sub>`, '');
   return s.join('\n');
 }
 

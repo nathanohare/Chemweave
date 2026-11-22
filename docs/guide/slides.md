@@ -343,6 +343,8 @@ Undo works for every change. Comments are saved in the .pptx as PowerPoint comme
 
 ## Giving the show
 
+<!-- index: Slide show -->
+
 | To do this | Press |
 |---|---|
 | Start from the first slide | F5, or **Slide Show** tab ▸ **From Beginning** |
@@ -363,6 +365,8 @@ Each click plays the next animation, then moves on to the next slide with its tr
 On a canvas slide you can leave the route to look around: drag to pan and scroll to zoom anywhere on the canvas (up to twelve times closer, or out to the whole canvas). While you look around, the map of the whole canvas shows in the corner with where you are. Click the map to move the view there. Picking a canvas slide from every slide (G) opens it ready to look around. Esc, a click or the next key glides back to where the show was, and the show goes on from there. The controls in the top right corner (they fade until you move the mouse) zoom, take you back, show the map and show every slide.
 
 ### Presenter View
+
+<!-- index: Speaker notes -->
 
 **View ▸ Presentation ▸ Slide Show ▸ Presenter View**, **Slide Show** tab ▸ **Presenter View**, or Alt+F5.
 
