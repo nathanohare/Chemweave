@@ -372,6 +372,10 @@ export function floatOf(o: DocObject | undefined): Float | undefined {
  * Make Editable: the picture a structure was made from (a picture of a structure pasted from
  * another program), kept with it so the two can be compared and the picture put back.
  */
+export type FromPictureRead = { box?: { x: number; y: number; w: number; h: number } } & (
+  | { graph: { symbols: string[]; coords: [number, number][]; edges: number[][]; confidence: number }; frame: { x: number; y: number; w: number; h: number } }
+  | { molblock: string });
+
 export interface FromPicture {
   /** The picture as it was: its object whole (size, place on the page, look, cropping). */
   picture: Extract<DocObject, { kind: 'picture' }>;
@@ -381,8 +385,13 @@ export interface FromPicture {
   style: 'match' | 'default';
   /** How the picture was drawn, as measured (points): kept to say so, and to change style without reading it again. */
   look?: { bondLength: number; lineWidth: number | null; labelSize: number | null; preset?: string };
-  /** What the reader read: its atoms and their places in the picture (the reader on this computer), or a molfile (an AI model). */
-  read?: { graph: { symbols: string[]; coords: [number, number][]; edges: number[][]; confidence: number }; frame: { x: number; y: number; w: number; h: number }; px: { w: number; h: number } } | { molblock: string };
+  /**
+   * What the reader read, one entry for each structure: the whole picture (no `box`), or each
+   * drawing of a scheme read on its own (`box`, in the pixels read). Its atoms and their places
+   * (the reader on this computer), or a molfile (an AI model). `px` is the size of the pixels read.
+   */
+  parts?: FromPictureRead[];
+  px?: { w: number; h: number };
 }
 
 export interface Embedded {

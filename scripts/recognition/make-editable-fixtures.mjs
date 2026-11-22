@@ -47,3 +47,57 @@ for (const c of CASES) {
   await page.close();
 }
 await browser.close();
+
+// A picture of a scheme: two structures, an arrow with conditions over and under it, and compound
+// numbers. Truth for each structure (its atoms in the picture), and the text that should be left.
+const SCHEME = { name: 'scheme-150dpi', rxn: 'CC(=O)N[C@@H](Cc1ccc(O)cc1)C(=O)OC>>CC(=O)N[C@@H](Cc1ccc(O)cc1)C(=O)O', dpi: 150 };
+{
+  const browser2 = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+  const page = await browser2.newPage({ viewport: { width: 1200, height: 800 } });
+  await page.goto('http://localhost:5173/');
+  await page.waitForFunction(() => window.__app?.chem?.ready, null, { timeout: 60000 });
+  const got = await page.evaluate(async (c) => {
+    const a = window.__app;
+    await a.pasteChemistry(c.rxn);
+    const ar = [...a.doc.arrows.values()][0];
+    const mid = (ar.tail.x + ar.head.x) / 2, y = ar.tail.y;
+    const runs = (text, more = {}) => [{ text, size: 10, font: 'Arial', ...more }];
+    a.doc.edit('Scheme', () => {
+      a.doc.addCaption({ x: mid, y: y - 5, runs: runs('LiOH'), justify: 'center' });
+      a.doc.addCaption({ x: mid, y: y + 13, runs: runs('THF, 23 °C'), justify: 'center' });
+    });
+    // the two structures (atoms joined by bonds)
+    const atoms = [...a.doc.atoms.values()];
+    const group = new Map(atoms.map((x) => [x.id, x.id]));
+    const find = (i) => (group.get(i) === i ? i : find(group.get(i)));
+    for (const b of a.doc.bonds.values()) group.set(find(b.a1), find(b.a2));
+    const sets = [...new Set(atoms.map((x) => find(x.id)))].map((r) => atoms.filter((x) => find(x.id) === r));
+    sets.sort((s, t) => Math.min(...s.map((x) => x.x)) - Math.min(...t.map((x) => x.x)));
+    a.doc.edit('Numbers', () => {
+      sets.forEach((s, i) => {
+        const xs = s.map((x) => x.x), ys = s.map((x) => x.y);
+        a.doc.addCaption({ x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 22, runs: runs(String(i + 1), { bold: true }), justify: 'center' });
+      });
+    });
+    const p = a.picture(c.dpi);
+    const k = p.dpi / 72;
+    const SYM = { 6: 'C', 7: 'N', 8: 'O' };
+    const structures = sets.map((s) => {
+      const index = new Map(s.map((x, i) => [x.id, i]));
+      const edges = s.map(() => s.map(() => 0));
+      for (const b of a.doc.bonds.values()) {
+        if (!index.has(b.a1)) continue;
+        const i = index.get(b.a1), j = index.get(b.a2);
+        const t = b.display === 'wedge' ? 5 : b.display === 'hashWedge' ? 6 : b.order;
+        edges[i][j] = t; edges[j][i] = t;
+      }
+      return { symbols: s.map((x) => SYM[x.z] ?? 'C'), truth: s.map((x) => [Math.round((x.x - p.box.x1) * k * 100) / 100, Math.round((x.y - p.box.y1) * k * 100) / 100]), edges };
+    });
+    return { png: p.url, dpi: p.dpi, style: { ...a.doc.style }, structures, arrow: { x1: (ar.tail.x - p.box.x1) * k, x2: (ar.head.x - p.box.x1) * k, y: (y - p.box.y1) * k } };
+  }, SCHEME);
+  writeFileSync(`${out}${SCHEME.name}.png`, Buffer.from(got.png.split(',')[1], 'base64'));
+  const { png, ...rest } = got;
+  writeFileSync(`${out}${SCHEME.name}.json`, JSON.stringify(rest));
+  console.log(SCHEME.name, got.dpi);
+  await browser2.close();
+}

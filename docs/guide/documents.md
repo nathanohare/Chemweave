@@ -77,6 +77,18 @@ Click a structure or picture to pick it (a structure shows just its four corner 
 
 For a picture, **Picture Format** (**Insert** tab, the panel, or right-click) changes its brightness, contrast and sharpness, recolors it (grayscale, sepia, washout, black and white, two colors), makes a color or the whole picture see-through, removes its background, and crops it to a shape or to proportions (1:1, 4:3, 16:9…). It works as in [Presentation: Picture Format](slides.md#picture-format), and is saved as Word's own picture settings.
 
+### Making a picture of a structure editable
+
+A structure pasted as a picture (from ChemDraw as a picture, or from a paper) can be turned into a structure you can edit. Click the picture, then **Make Editable**. The command is at the top of the chemistry bar on the left, on the **Picture Format** tab that shows while a picture is picked, and in the right-click menu. It uses the same reader as Canvas's **Import Structures from Picture**: the reader on your computer in the desktop app (downloaded once), or the AI model linked in Settings.
+
+- **Match Original Style** draws the structure to look like the picture. The bond length, line width and label size are measured from the picture and kept on the structure itself. If they match a journal style at some size, that style's exact numbers are used. Labels use the document's label font.
+- **Use Default Style** draws it in the document's drawing style, so it matches your other structures.
+- The **▾** beside the button picks the style, and the button uses the style you picked last. To change the style afterwards, use the **▾** menu or right-click ▸ **Original Picture**. The picture is not read again.
+- **Compare with Original** shows the picture in red over the structure, so anything read wrongly stands out in red. It opens by itself when the reader was unsure or the chemistry checks find something odd.
+- **Revert to Picture** puts the picture back as it was, with the same size, place and wrapping. Make Editable and Revert to Picture are each one step to undo.
+- A picture of a whole scheme has each structure read on its own. The reader only reads structures, so the arrows, reagents, conditions and compound numbers are kept as a picture behind the structures, in the same place. You can redraw them later.
+- The original picture is saved with the structure in Word files, so Compare and Revert still work after you reopen the document. In Word, and when the structure is copied to Canvas or saved as CDXML, it is an ordinary structure.
+
 ### Wrapping and text boxes
 
 Pick a structure, picture or text box, then use **Layout** tab ▸ **Wrap Text** (or the right-click menu):

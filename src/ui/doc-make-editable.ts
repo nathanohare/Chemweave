@@ -1,15 +1,16 @@
 // Make Editable (Document mode): a picked picture of a structure (pasted from ChemDraw as a
 // picture, or from a paper) read and turned into a structure in its place, drawn to match the
 // picture or in the document's style. The picture is kept with the structure (FromPicture), to
-// compare with, to change style without reading again, and to go back to.
+// compare with, to change style without reading again, and to go back to. A picture of a scheme
+// has each structure read on its own; its arrows and text stay as a picture behind them.
 
-import type { DocObject, FromPicture } from '../document/document';
+import type { DocObject, FromPictureRead } from '../document/document';
 import type { DocStyle } from '../style';
 import { STYLE_PRESETS } from '../drawing-styles';
 import type { ReadResult } from '../recognise/reader';
 import type { Pixels } from '../recognise/picture';
-import type { ReadGraph } from '../recognise/molscribe';
-import { editableFromGraph, editableFromMolfile, readFrame, type Editable, type StyleChoice } from '../recognise/editable';
+import { editableFromParts, readFrame, type Editable, type PartRead, type StyleChoice } from '../recognise/editable';
+import { partPixels, schemeParts } from '../recognise/leftover';
 import { fromDataUrl } from '../render/images';
 import { decodePicture } from './import-structures';
 
@@ -47,54 +48,86 @@ export async function pictureForReading(o: Picture): Promise<{ p: Pixels; ptPerP
   return { p, ptPerPx: (o.w * (o.scale ?? 1)) / p.width };
 }
 
-/** The structure for a reading, in the style chosen. */
-export function editableOf(read: NonNullable<FromPicture['read']>, p: Pixels, ptPerPx: number, choice: StyleChoice, ds: DocStyle): Editable {
-  if ('molblock' in read) return editableFromMolfile(read.molblock, p, ptPerPx, choice, ds, STYLE_PRESETS);
-  const g: ReadGraph = { smiles: '', ...read.graph, atomScores: read.graph.symbols.map(() => 1) };
-  return editableFromGraph(g, p, read.frame, ptPerPx, choice, ds, STYLE_PRESETS);
+/** The readings kept, as the structure maker takes them. */
+function partReads(parts: FromPictureRead[]): PartRead[] {
+  return parts.map((r) => ('molblock' in r ? r : { ...r, graph: { smiles: '', ...r.graph, atomScores: r.graph.symbols.map(() => 1) } }));
+}
+
+/** The structures for the readings, in the style chosen (with what wasn't read behind them). */
+export function editableOf(parts: FromPictureRead[], p: Pixels, ptPerPx: number, choice: StyleChoice, ds: DocStyle): Editable {
+  return editableFromParts(partReads(parts), p, ptPerPx, choice, ds, STYLE_PRESETS);
 }
 
 /** The structure in the picture's place: where it floats, its frame and shadow, its alt text, and the picture kept. */
-export function drawingFor(pic: Picture, e: Editable, choice: StyleChoice, read: FromPicture['read']): Drawing {
+export function drawingFor(pic: Picture, e: Editable, choice: StyleChoice, parts: FromPictureRead[], px: { w: number; h: number }): Drawing {
   return {
     kind: 'drawing', contents: e.contents,
     ...(pic.float ? { float: structuredClone(pic.float) } : {}),
     ...(pic.look ? { look: structuredClone(pic.look) } : {}),
     ...(pic.alt ? { alt: pic.alt } : {}),
-    fromPicture: { picture: pic, at: e.at, style: choice, look: e.look, ...(read ? { read } : {}) },
+    fromPicture: { picture: pic, at: e.at, style: choice, look: e.look, parts, px },
   };
 }
 
 export interface Made { drawing: Drawing; problems: string[] }
 
-/** Read the picture and make it a structure; null (with a message) when it can't be. */
+/**
+ * How far apart two strokes may be and still be one drawing, in the picture's pixels: about 5
+ * points as it is shown (as for a PDF page), the space a scheme leaves between a structure and its arrow.
+ */
+export const partGap = (ptPerPx: number): number => Math.max(2, Math.min(60, Math.round(5 / ptPerPx)));
+
+/**
+ * Whether a drawing of a scheme read as a structure: conditions read come out as atoms with no
+ * bonds (THF, LiOH as [THF].[LiOH]), and a reading the reader is far from sure of isn't taken.
+ * What isn't is left in the picture behind.
+ */
+export function isStructure(g: { symbols: string[]; edges: number[][]; confidence: number }): boolean {
+  return g.symbols.length >= 2 && g.confidence >= 0.2 && g.edges.some((row) => row.some((t) => t > 0));
+}
+
+/** Read the picture and make it a structure (each structure, for a scheme); null (with a message) when it can't be. */
 export async function makeEditable(host: MakeEditableHost, pic: Picture, choice: StyleChoice, ds: DocStyle): Promise<Made | null> {
   const shown = await pictureForReading(pic);
   if (!shown) { host.flash('This picture can\'t be read (its format isn\'t one the structure reader can open).', 6000); return null; }
-  const got = await host.read(shown.p);
-  if (!got) return null;
-  const r = got.result;
-  let read: FromPicture['read'];
-  if (r.kind === 'graph') {
-    if (!r.graph.symbols.length) { host.flash('No structure was found in the picture.', 6000); return null; }
-    read = { graph: { symbols: r.graph.symbols, coords: r.graph.coords, edges: r.graph.edges, confidence: r.graph.confidence }, frame: readFrame(shown.p), px: { w: shown.p.width, h: shown.p.height } };
-  } else {
-    if (!got.molblock) { host.flash(r.smiles ? `The AI model's answer (${r.smiles}) isn't a structure the chemistry engine can read.` : 'No structure was found in the picture.', 8000); return null; }
-    read = { molblock: got.molblock };
+  const boxes = schemeParts(shown.p, partGap(shown.ptPerPx));
+  const parts: FromPictureRead[] = [];
+  const problems: string[] = [];
+  let aiAnswer: string | null = null;
+  for (const box of boxes ?? [null]) {
+    const sub = box ? partPixels(shown.p, box) : shown.p;
+    const got = await host.read(sub);
+    if (!got) return null;
+    const r = got.result;
+    let read: FromPictureRead;
+    if (r.kind === 'graph') {
+      if (!r.graph.symbols.length || (box && !isStructure(r.graph))) continue;
+      read = { ...(box ? { box } : {}), graph: { symbols: r.graph.symbols, coords: r.graph.coords, edges: r.graph.edges, confidence: r.graph.confidence }, frame: readFrame(sub) };
+    } else {
+      if (!got.molblock) { if (r.smiles) aiAnswer = r.smiles; continue; }
+      read = { ...(box ? { box } : {}), molblock: got.molblock };
+    }
+    parts.push(read);
+    const why = await host.check(r);
+    problems.push(...(boxes && boxes.length > 1 ? why.map((w) => `Structure ${parts.length}: ${w}`) : why));
   }
-  const e = editableOf(read, shown.p, shown.ptPerPx, choice, ds);
-  const problems = [...e.problems, ...await host.check(r)];
-  return { drawing: drawingFor(pic, e, choice, read), problems };
+  if (!parts.length) {
+    host.flash(aiAnswer ? `The AI model's answer (${aiAnswer}) isn't a structure the chemistry engine can read.` : 'No structure was found in the picture.', 8000);
+    return null;
+  }
+  const px = { w: shown.p.width, h: shown.p.height };
+  const e = editableOf(parts, shown.p, shown.ptPerPx, choice, ds);
+  return { drawing: drawingFor(pic, e, choice, parts, px), problems: [...e.problems, ...problems] };
 }
 
 /** The same structure in the other style, from the picture kept (nothing is read again); null when it can't be redone. */
 export async function restyle(d: Drawing, choice: StyleChoice, ds: DocStyle): Promise<Drawing | null> {
   const fp = d.fromPicture;
-  if (!fp?.read) return null;
+  if (!fp?.parts?.length) return null;
   const shown = await pictureForReading(fp.picture);
   if (!shown) return null;
-  const e = editableOf(fp.read, shown.p, shown.ptPerPx, choice, ds);
-  return { ...drawingFor(fp.picture, e, choice, fp.read), ...(d.float ? { float: structuredClone(d.float) } : {}), ...(d.look ? { look: d.look } : {}), ...(d.alt ? { alt: d.alt } : {}) };
+  const e = editableOf(fp.parts, shown.p, shown.ptPerPx, choice, ds);
+  return { ...drawingFor(fp.picture, e, choice, fp.parts, { w: shown.p.width, h: shown.p.height }), ...(d.float ? { float: structuredClone(d.float) } : {}), ...(d.look ? { look: d.look } : {}), ...(d.alt ? { alt: d.alt } : {}) };
 }
 
 /** The picture back as it was before Make Editable. */

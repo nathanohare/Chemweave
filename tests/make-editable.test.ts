@@ -6,7 +6,9 @@ import { readPng } from './png-pixels';
 import type { ReadGraph } from '../src/recognise/molscribe';
 import { readBonds, parseSymbol } from '../src/recognise/to-drawing';
 import { bondLengthPx, labelSizePx, lineWidthPx, refineAtoms, strokeWidthPx, type MeasureBond } from '../src/recognise/measure';
-import { editableFromGraph, readFrame, snapLook } from '../src/recognise/editable';
+import { editableFromGraph, editableFromParts, readFrame, snapLook, type PartRead } from '../src/recognise/editable';
+import { partPixels, schemeParts } from '../src/recognise/leftover';
+import { isStructure, partGap } from '../src/ui/doc-make-editable';
 import { ACS_1996 } from '../src/style';
 import { STYLE_PRESETS } from '../src/drawing-styles';
 import { structureDoc } from '../src/sheet/structure-doc';
@@ -113,7 +115,7 @@ describe('Make Editable: saving', () => {
     const e = editableFromGraph(g, p, frame, 1 / k, 'match', ACS_1996, STYLE_PRESETS);
     const bytes = readFileSync(join(DIR, 'heavy-150dpi.png'));
     const picture = { kind: 'picture' as const, src: `data:image/png;base64,${bytes.toString('base64')}`, w: p.width / k, h: p.height / k, px: { w: p.width, h: p.height } };
-    const fromPicture: FromPicture = { picture, at: e.at, style: 'match', look: e.look, read: { graph: { symbols: g.symbols, coords: g.coords, edges: g.edges, confidence: g.confidence }, frame, px: { w: p.width, h: p.height } } };
+    const fromPicture: FromPicture = { picture, at: e.at, style: 'match', look: e.look, parts: [{ graph: { symbols: g.symbols, coords: g.coords, edges: g.edges, confidence: g.confidence }, frame }], px: { w: p.width, h: p.height } };
     return { e, fromPicture };
   };
 
@@ -145,5 +147,98 @@ describe('Make Editable: saving', () => {
     const own = [...back.bonds.values()].map((b) => bondWidths(back.style, b).bondLength);
     for (const l of own) expect(l).toBeCloseTo(e.look.bondLength, 0);
     expect(back.atoms.size).toBe(e.contents.atoms.length);
+  });
+});
+
+describe('Make Editable: a picture of a scheme', () => {
+  interface Scheme { dpi: number; structures: { symbols: string[]; truth: [number, number][]; edges: number[][] }[]; arrow: { x1: number; x2: number; y: number } }
+  const p = readPng(new Uint8Array(readFileSync(join(DIR, 'scheme-150dpi.png'))));
+  const f = JSON.parse(readFileSync(join(DIR, 'scheme-150dpi.json'), 'utf8')) as Scheme;
+  const k = f.dpi / 72;
+  const boxes = schemeParts(p, partGap(1 / k));
+  // what the reader would read in each drawing found: the structure inside it, on its 64-step grid
+  const reads = (): PartRead[] => (boxes ?? []).flatMap((box) => {
+    const s = f.structures.find((st) => st.truth.every(([x, y]) => x > box.x && x < box.x + box.w && y > box.y && y < box.y + box.h));
+    if (!s) return [];
+    const sub = partPixels(p, box);
+    const frame = readFrame(sub);
+    const q = (v: number) => Math.round(v * 63) / 63;
+    const graph: ReadGraph = { smiles: '', symbols: s.symbols, edges: s.edges, atomScores: s.symbols.map(() => 1), confidence: 0.9,
+      coords: s.truth.map(([x, y]) => [q((x - box.x - frame.x) / frame.w), q((y - box.y - frame.y) / frame.h)]) };
+    return [{ box, graph, frame }];
+  });
+
+  it('finds each structure as a drawing of its own', () => {
+    expect(boxes).not.toBeNull();
+    expect(reads()).toHaveLength(2);
+  });
+
+  it('puts each structure where it is in the picture', () => {
+    const e = editableFromParts(reads(), p, 1 / k, 'match', ACS_1996, STYLE_PRESETS);
+    const truth = f.structures.flatMap((s) => s.truth);
+    expect(e.contents.atoms).toHaveLength(truth.length);
+    const at = e.contents.atoms.map((a) => [a.x * k, a.y * k] as [number, number]);
+    const off = Math.max(...at.map(([x, y]) => Math.min(...truth.map(([tx, ty]) => Math.hypot(x - tx, y - ty)))));
+    expect(off).toBeLessThan(2);
+    expect(e.look.preset).toBe('ACS Document 1996');
+  });
+
+  it('keeps the arrow, conditions and compound numbers as a picture behind, and rubs out the structures', () => {
+    const e = editableFromParts(reads(), p, 1 / k, 'match', ACS_1996, STYLE_PRESETS);
+    const rest = e.rest!;
+    expect(rest).not.toBeNull();
+    const pic = e.contents.shapes.find((s) => s.kind === 'picture');
+    expect(pic?.src?.startsWith('data:image/png;base64,')).toBe(true);
+    expect(pic!.x2 - pic!.x1).toBeCloseTo(p.width / k, 3);
+    const darkAt = (q: typeof p, x: number, y: number) => {
+      const i = (Math.round(y) * q.width + Math.round(x)) * 4;
+      return q.data[i + 3] / 255 * (1 - (q.data[i] + q.data[i + 1] + q.data[i + 2]) / 765);
+    };
+    // the arrow's line is kept
+    let arrow = 0;
+    for (let x = f.arrow.x1 + 4; x < f.arrow.x2 - 12; x++) for (let dy = -2; dy <= 2; dy++) arrow = Math.max(arrow, darkAt(rest, x, f.arrow.y + dy));
+    expect(arrow).toBeGreaterThan(0.5);
+    // nothing is left on the structures' bonds
+    let worst = 0;
+    for (const s of f.structures) {
+      s.edges.forEach((row, i) => row.forEach((t, j) => {
+        if (j <= i || !t) return;
+        const [ax, ay] = s.truth[i], [bx, by] = s.truth[j];
+        for (let u = 0.3; u <= 0.7; u += 0.05) worst = Math.max(worst, darkAt(rest, ax + (bx - ax) * u, ay + (by - ay) * u));
+      }));
+    }
+    expect(worst).toBeLessThan(0.1);
+    // and the compound numbers (under each structure) are still there
+    for (const s of f.structures) {
+      const xs = s.truth.map((t) => t[0]), ys = s.truth.map((t) => t[1]);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2, y0 = Math.max(...ys) + 8 * k;
+      let ink = 0;
+      for (let y = y0; y < Math.min(p.height - 1, y0 + 20 * k); y++) for (let x = cx - 6 * k; x < cx + 6 * k; x++) ink += darkAt(rest, x, y);
+      expect(ink).toBeGreaterThan(20);
+    }
+  });
+
+  it('makes every structure the same size in the document style', () => {
+    const e = editableFromParts(reads(), p, 1 / k, 'default', ACS_1996, STYLE_PRESETS);
+    const atoms = new Map(e.contents.atoms.map((a) => [a.id, a]));
+    const lens = e.contents.bonds.map((b) => { const a = atoms.get(b.a1)!, c = atoms.get(b.a2)!; return Math.hypot(a.x - c.x, a.y - c.y); }).sort((x, y) => x - y);
+    expect(lens[Math.floor(lens.length / 2)]).toBeCloseTo(ACS_1996.bondLength, 0);
+    expect(e.contents.bonds.every((b) => b.s === undefined)).toBe(true);
+  });
+
+  it('leaves conditions read as atoms with no bonds in the picture', () => {
+    expect(isStructure({ symbols: ['[THF]', '[LiOH]', '[3H]'], edges: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], confidence: 0.61 })).toBe(false);
+    expect(isStructure({ symbols: ['C', 'O'], edges: [[0, 1], [1, 0]], confidence: 0.9 })).toBe(true);
+  });
+
+  it('reads a picture of one structure whole, with nothing kept behind', () => {
+    const one = readPng(new Uint8Array(readFileSync(join(DIR, 'acs-300dpi.png'))));
+    expect(schemeParts(one, partGap(72 / 300))).toBeNull();
+    const { p: q, g, frame } = load('acs-300dpi');
+    const e = editableFromParts([{ graph: g, frame }], q, 72 / 300, 'match', ACS_1996, STYLE_PRESETS);
+    const same = editableFromGraph(g, q, frame, 72 / 300, 'match', ACS_1996, STYLE_PRESETS);
+    expect(e.contents.atoms.map((a) => [a.x, a.y])).toEqual(same.contents.atoms.map((a) => [a.x, a.y]));
+    expect(e.rest).toBeNull();
+    expect(e.contents.shapes).toHaveLength(0);
   });
 });

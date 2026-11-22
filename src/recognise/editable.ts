@@ -11,6 +11,7 @@ import { addMolfile } from '../chem/molfile';
 import type { ReadGraph } from './molscribe';
 import { inkBox, type Pixels } from './picture';
 import { addReadAt, parseSymbol, readBonds } from './to-drawing';
+import { leftover, leftoverPng, partPixels, type StructureInk } from './leftover';
 import { bondLengthPx, labelSizePx, lineWidthPx, refineAtoms, strokeWidthPx, type MeasureBond } from './measure';
 
 export type StyleChoice = 'match' | 'default';
@@ -76,15 +77,16 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  * The structure's own settings for the look measured, over the document's style `ds` (as ChemDraw
  * keeps them on each bond and atom of a structure drawn at other settings).
  */
-export function applyLook(doc: Doc, look: PictureLook, ds: DocStyle): void {
+export function applyLook(doc: Doc, look: PictureLook, ds: DocStyle, only?: Set<number>): void {
   const k = look.bondLength / ds.bondLength;
   const lw = look.lineWidth ?? ds.lineWidth * k;
   const s = r2(lw / ds.lineWidth);
   const atomS = r2((look.labelSize ?? ds.labelSize * k) / ds.labelSize);
   for (const b of doc.bonds.values()) {
+    if (only && !only.has(b.a1)) continue;
     doc.updateBond(b.id, { s, boldWidth: r2(ds.boldWidth * k), hashSpacing: r2(ds.hashSpacing * k), marginWidth: r2(ds.marginWidth * k), bondLength: r2(look.bondLength) });
   }
-  for (const a of doc.atoms.values()) doc.updateAtom(a.id, { s: atomS });
+  for (const a of doc.atoms.values()) if (!only || only.has(a.id)) doc.updateAtom(a.id, { s: atomS });
 }
 
 /** Points per pixel of `p` as the picture is shown (`shownW` points wide). */
@@ -95,6 +97,23 @@ export const pointsPerPixel = (p: Pixels, shownW: number): number => shownW / p.
  * picture as read, shown `ptPerPx` points to the pixel; `ds` the document's drawing style.
  */
 export function editableFromGraph(g: ReadGraph, p: Pixels, frame: ReadFrame, ptPerPx: number, choice: StyleChoice, ds: DocStyle, presets: StylePreset[]): Editable {
+  const m = measureGraph(g, p, frame, ptPerPx, presets);
+  // the drawing's points: the picture's, or made the document's bond length
+  const k = choice === 'match' ? ptPerPx : ds.bondLength / m.bondPx;
+  const doc = new Doc();
+  doc.style = { ...ds };
+  let problems: string[] = [];
+  doc.edit('Make Editable', () => {
+    problems = addReadAt(doc, g, m.px.map(([x, y]) => [x * k, y * k])).problems;
+    if (choice === 'match') applyLook(doc, m.look, ds);
+  });
+  return { contents: doc.contents(), at: { x: 0, y: 0, w: p.width * k, h: p.height * k }, look: m.look, problems };
+}
+
+/** A reading measured in its picture: the atoms moved onto their lines, and how it was drawn. */
+interface Measured { px: [number, number][]; bonds: MeasureBond[]; labelled: boolean[]; bondPx: number; lwPx: number | null; look: PictureLook }
+
+function measureGraph(g: ReadGraph, p: Pixels, frame: ReadFrame, ptPerPx: number, presets: StylePreset[]): Measured {
   const bonds: MeasureBond[] = readBonds(g).map(({ a, b, order, display }) => ({ a, b, order, display }));
   const labelled = g.symbols.map((sym) => { const a = parseSymbol(sym); return a.z === undefined || a.z !== 6 || a.charge !== 0 || !!a.isotope; });
   const rough = g.coords.map(([x, y]) => [frame.x + x * frame.w, frame.y + y * frame.h] as [number, number]);
@@ -105,17 +124,7 @@ export function editableFromGraph(g: ReadGraph, p: Pixels, frame: ReadFrame, ptP
   const lwPx = lineWidthPx(p, px, bonds);
   const labPx = labelSizePx(p, px, labelled, bondPx);
   const measured: PictureLook = { bondLength: bondPx * ptPerPx, lineWidth: lwPx === null ? null : lwPx * ptPerPx, labelSize: labPx === null ? null : labPx * ptPerPx };
-  const look = snapLook(measured, presets);
-  // the drawing's points: the picture's, or made the document's bond length
-  const k = choice === 'match' ? ptPerPx : ds.bondLength / bondPx;
-  const doc = new Doc();
-  doc.style = { ...ds };
-  let problems: string[] = [];
-  doc.edit('Make Editable', () => {
-    problems = addReadAt(doc, g, px.map(([x, y]) => [x * k, y * k])).problems;
-    if (choice === 'match') applyLook(doc, look, ds);
-  });
-  return { contents: doc.contents(), at: { x: 0, y: 0, w: p.width * k, h: p.height * k }, look, problems };
+  return { px, bonds, labelled, bondPx, lwPx, look: snapLook(measured, presets) };
 }
 
 /**
@@ -147,4 +156,66 @@ export function editableFromMolfile(molblock: string, p: Pixels, ptPerPx: number
   const pk = choice === 'match' ? ptPerPx : ptPerPx / scale;
   const at = { x: cx - (ink.x + ink.w / 2) * pk, y: cy - (ink.y + ink.h / 2) * pk, w: p.width * pk, h: p.height * pk };
   return { contents: doc.contents(), at, look, problems: [] };
+}
+
+/**
+ * What the reader read in one part of the picture: `box` (the picture's pixels, with PART_PAD of
+ * margin) where the part is, or none for the whole picture; then its atoms on the reader's grid
+ * (`frame`, in the part's pixels), or an AI model's molfile.
+ */
+export type PartRead = { box?: ReadFrame } & ({ graph: ReadGraph; frame: ReadFrame } | { molblock: string });
+
+export interface EditableParts extends Editable {
+  /** What wasn't read (arrows, conditions, compound numbers), in the picture's pixels; null when nothing is left. */
+  rest: Pixels | null;
+}
+
+/**
+ * Each structure read in a picture (one read whole, or each drawing of a scheme read on its own),
+ * made one drawing in the style chosen, every structure where it was in the picture; for Use
+ * Default Style all are made the same size, the document's bond length for their middle one. What
+ * the reader didn't read is kept as a picture behind them, in its place (`rest`, and a picture in
+ * the drawing).
+ */
+export function editableFromParts(parts: PartRead[], p: Pixels, ptPerPx: number, choice: StyleChoice, ds: DocStyle, presets: StylePreset[]): EditableParts {
+  const pieces = parts.map((part) => {
+    const box = part.box ?? { x: 0, y: 0, w: p.width, h: p.height };
+    const sub = part.box ? partPixels(p, part.box) : p;
+    if ('graph' in part) return { box, graph: part.graph, m: measureGraph(part.graph, sub, part.frame, ptPerPx, presets) };
+    return { box, e: editableFromMolfile(part.molblock, sub, ptPerPx, choice, ds, presets) };
+  });
+  const sizes = pieces.map((pc) => ('m' in pc ? pc.m!.bondPx : pc.e!.look.bondLength / ptPerPx)).sort((a, b) => a - b);
+  const K = choice === 'match' || !sizes.length ? ptPerPx : ds.bondLength / sizes[Math.floor((sizes.length - 1) / 2)];
+  const doc = new Doc();
+  doc.style = { ...ds };
+  const problems: string[] = [];
+  const inks: StructureInk[] = [], whole: ReadFrame[] = [];
+  let look: PictureLook | null = null, most = -1;
+  let rest: Pixels | null = null;
+  doc.edit('Make Editable', () => {
+    for (const pc of pieces) {
+      const { box } = pc;
+      if ('m' in pc) {
+        const m = pc.m!;
+        const placed = addReadAt(doc, pc.graph!, m.px.map(([x, y]) => [(x + box.x) * K, (y + box.y) * K]));
+        problems.push(...placed.problems);
+        if (choice === 'match') applyLook(doc, m.look, ds, new Set(placed.ids));
+        inks.push({ atoms: m.px.map(([x, y]) => [x + box.x, y + box.y]), bonds: m.bonds, labelled: m.labelled, bondPx: m.bondPx, lineWidthPx: m.lwPx });
+        if (m.px.length > most) { most = m.px.length; look = m.look; }
+      } else {
+        // an AI model's structure has no places in the picture: its middle goes on the part's
+        const e = pc.e!;
+        const dx = (box.x + box.w / 2) * K - (e.at.x + e.at.w / 2), dy = (box.y + box.h / 2) * K - (e.at.y + e.at.h / 2);
+        const ids = new Map<number, number>();
+        for (const a of e.contents.atoms) { const { id, x, y, z, ...more } = a; ids.set(id, doc.addAtom(x + dx, y + dy, z, more).id); }
+        for (const b of e.contents.bonds) { const { id: _id, a1, a2, order, display, ...more } = b; doc.addBond(ids.get(a1)!, ids.get(a2)!, order, display, more); }
+        problems.push(...e.problems);
+        whole.push(box);
+        if (e.contents.atoms.length > most) { most = e.contents.atoms.length; look = e.look; }
+      }
+    }
+    rest = leftover(p, inks, whole);
+    if (rest) doc.addShape({ kind: 'picture', x1: 0, y1: 0, x2: p.width * K, y2: p.height * K, src: leftoverPng(rest), px: { w: p.width, h: p.height }, alt: 'The rest of the original picture (arrows and text)' });
+  });
+  return { contents: doc.contents(), at: { x: 0, y: 0, w: p.width * K, h: p.height * K }, look: look ?? { bondLength: ds.bondLength, lineWidth: null, labelSize: null }, problems, rest };
 }
