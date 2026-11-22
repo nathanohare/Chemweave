@@ -64,3 +64,15 @@ describe('former names', () => {
     expect(searchCommands(items, 'nickname').map((i) => i.id)).toEqual(['cmd:define-nickname']);
   });
 });
+
+describe('former names of the Blank items (review of F5, R15)', () => {
+  const blanks = ['Canvas', 'Document', 'Presentation', 'Spreadsheet', 'Design'].map((m) => ({ id: `cmd:new-${m.toLowerCase()}`, label: `Blank ${m}`, place: 'File ▸ New' }));
+  const find = (q: string) => searchCommands(blanks, q).map((i) => i.label);
+  it('each old word finds only its own item', () => {
+    expect(find('posters')).toEqual(['Blank Design']);
+    expect(find('slideshow')).toEqual(['Blank Presentation']);
+    expect(find('dashboards')).toEqual(['Blank Spreadsheet']);
+    expect(find('chemistry')).toEqual(['Blank Canvas']);
+    expect(find('text')).toEqual(['Blank Document']);
+  });
+});

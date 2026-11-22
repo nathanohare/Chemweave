@@ -2,7 +2,7 @@
 // starts, which shows a small notice in the corner if there is one, and File > Check for Updates…,
 // which always says what it found. Installing asks first when some tabs aren't saved.
 
-import { appVersion, findRelease, notesSince, publishedReleases, shortNotes, worthOffering, RELEASES_PAGE, type Release, type UpdateChannel } from '../updates';
+import { appVersion, findRelease, notesSince, newestNotes, publishedReleases, shortNotes, worthOffering, RELEASES_PAGE, type Release, type UpdateChannel } from '../updates';
 import { ask } from './ask';
 
 export interface UpdateHost {
@@ -114,7 +114,7 @@ export class UpdateUI {
   async whatsNew(): Promise<void> {
     const now = await appVersion();
     let found: { version: string; notes: string }[] = [];
-    if (now !== 'web') try { found = notesSince(await publishedReleases(), '0', now); } catch { /* offline: the page says it */ }
+    if (now !== 'web') try { found = newestNotes(await publishedReleases(), now); } catch { /* offline: the page says it */ }
     if (!found.length) { this.host.openPage(RELEASES_PAGE); return; }
     document.getElementById('status-whats-new')?.remove();
     this.showWhatsNew(found, now);
