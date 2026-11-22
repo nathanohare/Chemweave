@@ -15,7 +15,7 @@ import { compileSi, objectLabelSets, type SiPreviewTarget } from '../si/compile-
 import type { DocView } from './doc-view';
 import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
-import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
+import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, PRIVATE_DIR, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
 import { ALL_FIELDS, NUCLEI, SPECTRUM_TYPES, fieldDef, learnedChoices, nucleusLabel, partText, CORE_FIELDS, LIBRARY_FIELDS, type FieldDef, type Part, type FieldEntry } from '../si/fields';
 import { CITE, MENTION, parseMarkup, type Paragraph } from '../si/markup';
@@ -226,6 +226,7 @@ const RIBBON = `
       </div>
       <div class="rb-col">
         <button data-si="add-files" data-ic="insert-object" title="Add other files (PDFs or pictures) to the compound picked">Files…</button>
+        <button data-si="add-stored" title="Store files with the compound picked (raw NMR data, .mnova files, HRMS spectra, photos…), kept in its private folder and never printed">Stored Files…</button>
         <button data-si="add-field" title="Add a field (melting point, Rf, IR, optical rotation…, or one of your own) to the compound picked, or to the section picked's list of fields">Field…</button>
         <button data-si="new-gp" title="A new general procedure in the Data section picked (or the picked compound's): its text prints once at the start of the section, and its compounds get its sentence">General Procedure</button>
       </div>
@@ -456,7 +457,7 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="home">
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="new-compound" data-ic="compound" title="A new compound page in the Data section picked, after the compound picked (Ctrl+Shift+N)"><span class="rb-icon">⬡</span>New Compound</button>
-      <button class="rb-big" data-si="new-section" data-ic="section" title="A new section: a Data section holds compounds; a Custom section holds text (and sub-sections)"><span class="rb-icon">▤</span>New Section</button>
+      <button class="rb-big" data-si="new-section" data-ic="section" title="A new section: a Data section holds compounds; a Custom section holds text (and sub-sections); an Attachment section a PDF or picture; an X-ray structure a crystal structure from its CIF"><span class="rb-icon">▤</span>New Section</button>
       <div class="rb-col">
         <button data-si="delete" data-ic="delete" title="Move the compound, scheme page or section picked to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
         <button data-si="rename" title="Rename the section or scheme page picked (F2 in the tree)">Rename</button>
@@ -2366,7 +2367,6 @@ export class SiMode {
       if (got) await this.act(() => p.setFlag(c, def.key, true, got.comment.trim()));
     });
     row.append(lab, body, flag);
-    const values = valuesOf(c);
     if (def.kind === 'parts') this.partsEditor(body, c, def);
     if (def.key === 'hrms') this.hrmsExtra(body, c);
     else if (def.kind === 'richtext' || def.kind === 'notes') {
@@ -2375,13 +2375,7 @@ export class SiMode {
     } else if (def.kind === 'nmr') this.nmrEditor(body, c);
     else if (def.kind === 'citations') this.citationsEditor(body, c);
     else if (def.kind === 'attachments') this.attachmentsEditor(body, c, def);
-    else if (def.kind === 'private') {
-      const list = Array.isArray(values[def.key]) ? (values[def.key] as Json[]) : [];
-      const chips = el('div', 'si-chips');
-      for (const it of list) chips.append(el('span', 'si-chip', partText(it.file) || partText(it.name) || 'file'));
-      if (!list.length) chips.append(el('span', 'muted', 'None yet.'));
-      body.append(chips);
-    }
+    else if (def.kind === 'private') body.append(this.storedBox(c));
     const warn = el('div', 'si-fwarn');
     warn.dataset.key = def.key;
     warn.hidden = true;
@@ -2898,6 +2892,76 @@ export class SiMode {
       void this.addReports(c, files);
     });
     return box;
+  }
+
+  /** Store additional files and folders: each stored file with its note; drag files here, or Ctrl+V files copied in File Explorer or Finder. */
+  private storedBox(c: SiCompound): HTMLElement {
+    const p = this.project!;
+    const box = el('div', 'si-reports si-stored');
+    box.tabIndex = 0;
+    box.title = 'Drag files here, or click here and press Ctrl+V to paste files copied in File Explorer or Finder';
+    const v = valuesOf(c).private_files;
+    const items = (Array.isArray(v) ? v : []).filter((i): i is Json => !!i && typeof i === 'object' && !Array.isArray(i));
+    if (!items.length) box.append(el('div', 'muted si-reports-empty', 'None yet: Insert ▸ Stored Files…, or drag files here.'));
+    for (const it of items) {
+      const file = partText(it.file);
+      const row = el('div', 'si-report');
+      const name = el('span', 'si-report-name', it.kind === 'folder' ? `${file}/` : file);
+      name.title = it.kind === 'folder' ? `Folder: ${file}` : file;
+      void p.folder.exists(`${c.folder}/${PRIVATE_DIR}/${file}`).then((there) => { if (!there) { name.textContent = `⚠ ${file} (missing)`; name.classList.add('si-bad'); } }, () => {});
+      const note = el('input');
+      note.value = partText(it.note);
+      note.placeholder = 'Note';
+      note.setAttribute('aria-label', `Note for ${file}`);
+      note.disabled = p.readOnly;
+      this.bind(note, () => void this.act(() => p.setPrivateNote(c, file, note.value.trim()), false, c));
+      const rm = el('button', 'si-x', '✕');
+      rm.type = 'button';
+      rm.title = 'Remove (moves it to the project Trash)';
+      rm.disabled = p.readOnly;
+      rm.addEventListener('click', () => void this.act(() => p.removePrivateItem(c, file)));
+      row.append(name, note, rm);
+      box.append(row);
+    }
+    box.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); box.classList.add('si-drop'); } });
+    box.addEventListener('dragleave', () => box.classList.remove('si-drop'));
+    box.addEventListener('drop', (e) => {
+      box.classList.remove('si-drop');
+      const files = [...(e.dataTransfer?.files ?? [])];
+      if (!files.length) return;
+      e.preventDefault();
+      void this.addStored(c, files);
+    });
+    box.addEventListener('paste', (e) => {
+      if ((e.target as HTMLElement).closest('input, select, textarea')) return;
+      const files = [...(e.clipboardData?.files ?? [])];
+      if (!files.length) return;
+      e.preventDefault();
+      void this.addStored(c, files);
+    });
+    return box;
+  }
+
+  /** Copy files into the compound's private/ folder and list them under Store additional files and folders (never printed). */
+  private async addStored(c: SiCompound, files: (File | { name: string; bytes: Uint8Array })[]): Promise<void> {
+    const p = this.project!;
+    if (p.readOnly) { this.host.flash('This project is open read-only.'); return; }
+    const sizeOf = (f: File | { name: string; bytes: Uint8Array }): number => (f instanceof File ? f.size : f.bytes.length);
+    const tooLarge = files.filter((f) => sizeOf(f) > SiMode.MAX_REPORT_COPY_BYTES);
+    if (tooLarge.length) this.host.flash(`${tooLarge.map((f) => `${f.name} (${(sizeOf(f) / 1e9).toFixed(1)} GB)`).join(', ')}: too large to copy into the project, so not added.`, 10000);
+    const todo = files.filter((f) => sizeOf(f) <= SiMode.MAX_REPORT_COPY_BYTES);
+    if (!todo.length) return;
+    const failed: string[] = [];
+    await this.act(async () => {
+      if (!fieldKeys(c).includes('private_files')) await p.addField(c, { key: 'private_files' });
+      // (one file at a time, so that only one is in memory)
+      for (const f of todo) {
+        let bytes: Uint8Array;
+        try { bytes = f instanceof File ? new Uint8Array(await f.arrayBuffer()) : f.bytes; } catch (e) { failed.push(`${f.name} (${e instanceof Error ? e.message : String(e)})`); continue; }
+        await p.addPrivateFile(c, f.name, bytes);
+      }
+    });
+    if (failed.length) this.host.flash(`Could not read ${failed.join(', ')}, so it was not added. Check that the file is on this computer (not online-only) and not open in another program, then add it again.`, 10000);
   }
 
   /** Copy report files into the compound's hrms folder and list them; Found is filled from them when it is empty. */
@@ -4097,7 +4161,7 @@ export class SiMode {
         while (top?.parentId) top = p.section(top.parentId);
         const canNest = !!s && s.type === 'text' && p.depth(s) < MAX_SECTION_DEPTH;
         const fields: Parameters<typeof ask>[1] = [
-          { name: 'type', label: 'Kind', value: 'data', options: [{ value: 'data', label: 'Data section (compounds)' }, { value: 'text', label: 'Custom section (text)' }, { value: 'file', label: 'Attachment section (a PDF or picture)' }] },
+          { name: 'type', label: 'Kind', value: 'data', options: [{ value: 'data', label: 'Data section (compounds)' }, { value: 'text', label: 'Custom section (text)' }, { value: 'file', label: 'Attachment section (a PDF or picture)' }, { value: 'xray', label: 'X-ray structure (a crystal structure from its CIF)' }] },
           { name: 'name', label: 'Name', value: '', placeholder: 'e.g. Synthesis and Characterization' },
         ];
         if (canNest) fields.push({ name: 'where', label: 'Where', value: 'after', options: [{ value: 'after', label: `After “${top!.name}”` }, { value: 'inside', label: `Inside “${s!.name}” (a sub-section)` }] });
@@ -4105,7 +4169,12 @@ export class SiMode {
         if (!got || !got.name.trim()) return;
         const inside = canNest && got.where === 'inside';
         const at = inside ? undefined : top ? p.top.indexOf(top) + 1 : undefined;
-        await this.act(async () => { const made = await p.addSection(got.type as 'data' | 'text' | 'file', got.name.trim(), at, inside ? s!.id : null); this.pick = { kind: 'section', id: made.id }; });
+        await this.act(async () => {
+          const made = await p.addSection(got.type as 'data' | 'text' | 'file' | 'xray', got.name.trim(), at, inside ? s!.id : null);
+          // (an X-ray structure made with a compound picked shows that compound)
+          if (made.type === 'xray' && c) { made.data.compound = c.id; await p.saveSection(made); }
+          this.pick = { kind: 'section', id: made.id };
+        });
         return;
       }
       case 'delete': await this.deletePicked(); return;
@@ -4207,6 +4276,13 @@ export class SiMode {
         if (!c) { this.host.flash('Pick a compound, or a Data section to change its list of fields.'); return; }
         const got = await this.chooseField(fieldKeys(c));
         if (got) await this.act(() => p.addField(c, got));
+        return;
+      }
+      case 'add-stored': {
+        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (p.readOnly) { this.host.flash('This project is open read-only.'); return; }
+        const files = await this.host.pickFiles('Files to store', []);
+        if (files.length) await this.addStored(c, files);
         return;
       }
       case 'add-spectra':

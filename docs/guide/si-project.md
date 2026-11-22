@@ -65,6 +65,7 @@ Pick a Data section and click **Home ▸ New Compound** (Ctrl+Shift+N). A compou
 - **Spectra.** **Insert ▸ Spectra** adds PDFs or pictures, and **Paste Spectrum** takes one copied in Mnova. Give each its type (¹H NMR, ¹³C NMR, HPLC/SFC, IR and so on).
 - **References (known compound).** **Home ▸ Cite from My Library…** cites references from [your reference library](libraries.md).
 - **Notes** are private and never print.
+- **Store additional files and folders** keeps files with the compound that never print, such as .mnova files, raw data and photos. **Insert ▸ Stored Files…** adds them, or drag files onto the field (or click it and press Ctrl+V to paste files copied in File Explorer or Finder). Copies go in the compound's `private` folder. Give each a note if you like; ✕ moves it to the project's Trash.
 
 The flag button beside a field marks it for checking, with a comment. Flags are counted on the status bar and the Dashboard.
 
@@ -96,7 +97,7 @@ Under the Spectra section, each compound has a spectra page of its own. Pick a s
 
 ## X-ray structures and attachments
 
-An X-ray structure page shows the structure from its CIF file as it prints, with a caption and a table of crystal data. **Crystal Structure ▸ Edit Structure** (or a double-click) turns it and changes its style and labels; **Choose CIF** uses another file. Type over a value in the crystal data table to change it, or untick a row to leave it out.
+To add one, use **Home ▸ New Section** and choose **X-ray structure**, then **Choose CIF**. With a compound picked, the new structure shows that compound, so its ID is in the captions. An X-ray structure page shows the structure from its CIF file as it prints, with a caption and a table of crystal data. **Crystal Structure ▸ Edit Structure** (or a double-click) turns it and changes its style and labels; **Choose CIF** uses another file. Type over a value in the crystal data table to change it, or untick a row to leave it out.
 
 On an Attachment section's page, **Attachment ▸ Choose File** picks the PDF or picture, or drop a file on the preview.
 

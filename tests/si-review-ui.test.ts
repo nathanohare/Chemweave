@@ -487,3 +487,54 @@ describe('a Custom section’s text and its figures', () => {
     expect(document.activeElement).toBe(card);
   });
 });
+
+describe('Store additional files and folders', () => {
+  it('a file dropped on the field is stored and listed with a note box; Insert ▸ Stored Files… picks any file', async () => {
+    const { p, f } = await openProject();
+    const c = p.compounds.find((x) => !x.schemeId)!;
+    await p.addField(c, { key: 'private_files' });
+    const picked: string[][] = [];
+    const mode = makeMode({ pickFiles: async (_l: string, exts: string[]) => { picked.push(exts); return [{ name: 'photo.jpg', bytes: new Uint8Array([9]) }]; } });
+    const tab = tabOf(p);
+    tab.sheetState = { pick: { kind: 'compound', id: c.id } };
+    show(mode, tab);
+    await tick(80);
+    const box = (): HTMLElement => document.querySelector<HTMLElement>('.si-page .si-stored')!;
+    expect(box().textContent).toContain('None yet');
+    const drop = new Event('drop', { bubbles: true, cancelable: true });
+    const file = new File([new Uint8Array([1, 2])], 'H1.mnova');
+    // (jsdom's File has no arrayBuffer)
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => new Uint8Array([1, 2]).buffer });
+    Object.defineProperty(drop, 'dataTransfer', { value: { files: [file], types: ['Files'] } });
+    box().dispatchEvent(drop);
+    await tick(150);
+    expect(f.files.has(`${c.folder}/private/H1.mnova`)).toBe(true);
+    expect(box().querySelector('.si-report-name')!.textContent).toBe('H1.mnova');
+    const note = box().querySelector<HTMLInputElement>('.si-report input')!;
+    note.value = 'processed';
+    note.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick(150);
+    expect(compoundJson(f, c)).toContain('"note": "processed"');
+    document.querySelector<HTMLButtonElement>('[data-si="add-stored"]')!.click();
+    await tick(150);
+    expect(picked).toEqual([[]]);
+    expect(f.files.has(`${c.folder}/private/photo.jpg`)).toBe(true);
+  });
+});
+
+describe('New Section ▸ X-ray structure', () => {
+  it('makes an X-ray structure section as SI Assistant does, and its page opens without a CIF', async () => {
+    const { p, f } = await openProject();
+    const s = await p.addSection('xray', 'X-ray Crystal Structure');
+    expect(JSON.parse(new TextDecoder().decode(f.files.get(`${s.folder}/section.json`)!))).toMatchObject({ type: 'xray', name: 'X-ray Crystal Structure', file: null, block: '', view: {}, compound: '', anchored: false, caption: '', table: true, table_caption: '', table_values: {}, table_hidden: [] });
+    const mode = makeMode();
+    const tab = tabOf(p);
+    tab.sheetState = { pick: { kind: 'section', id: s.id } };
+    show(mode, tab);
+    await tick(80);
+    expect(document.querySelector('.si-page')!.textContent).toContain('X-ray structure');
+    expect(document.querySelector('.si-page')!.textContent).not.toMatch(/could not|can.t be read/i);
+    // and it is offered in the New Section window
+    expect(readFileSync(join(__dirname, '..', 'src', 'ui', 'si-mode.ts'), 'utf8')).toMatch(/value: 'xray', label: 'X-ray structure/);
+  });
+});
