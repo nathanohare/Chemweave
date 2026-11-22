@@ -532,7 +532,7 @@ class Strings {
         }
       }
       const merged = runsFrom(text, looks) ?? [{ text }];
-      this.list.push(`<si>${merged.map((r) => `<r>${this.runLook(lookOver(style, r))}${t(r.text)}</r>`).join('')}</si>`);
+      this.list.push(`<si>${merged.map((r) => `<r>${this.runXml(style, r)}${t(r.text)}</r>`).join('')}</si>`);
     } else {
       // a lowered or raised piece with its cell's whole look as well: Excel fills a run's missing
       // font and size with its own defaults (11 pt), not the cell's
@@ -542,6 +542,17 @@ class Strings {
     }
     this.byKey.set(key, this.list.length - 1);
     return this.list.length - 1;
+  }
+
+  /** A run's rPr: as the file had it while the run still looks so, else from its look. */
+  private runXml(style: CellStyle | undefined, r: TextRun): string {
+    if (r.xr) {
+      try {
+        const k = JSON.parse(r.xr) as { x: string; k: string };
+        if (k.k === runShown(style, r)) return k.x;
+      } catch { /* written from its look */ }
+    }
+    return this.runLook(lookOver(style, r));
   }
 
   private runLook(l: ReturnType<typeof lookOver<CellStyle>>): string {
@@ -1170,6 +1181,21 @@ const BORDER_STYLES: Record<string, BorderStyle> = {
   dashDot: 'dashed', mediumDashDot: 'dashed', dashDotDot: 'dotted', mediumDashDotDot: 'dashed', slantDashDot: 'dashed', dotted: 'dotted',
 };
 
+/** A shared string run's rPr children (CT_RPrElt, 18.4.7), in Excel's order. */
+const RPR_PARTS = new Set(['rFont', 'charset', 'family', 'b', 'i', 'strike', 'outline', 'shadow', 'condense', 'extend', 'color', 'sz', 'u', 'vertAlign', 'scheme']);
+
+/** An element with its known children and their values only, as written again here. */
+function partsXml(el: Element, known: Set<string>): string {
+  return `<${el.localName}>${Array.from(el.children).filter((k) => known.has(k.localName)).map((k) =>
+    `<${k.localName}${Array.from(k.attributes).filter((a) => !a.prefix && /^(val|rgb|theme|indexed|tint|auto)$/.test(a.name)).map((a) => ` ${a.name}="${xmlAttr(a.value)}"`).join('')}/>`).join('')}</${el.localName}>`;
+}
+
+/** What a run shows over its cell, to tell whether its rPr as read still goes with it. */
+function runShown(style: CellStyle | undefined, r: TextRun): string {
+  const l = lookOver(style, { ...r, xr: undefined });
+  return JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.underline ? l.ukind ?? l.excel?.u : undefined, !!l.strike, l.color, l.pos, l.font, l.size]);
+}
+
 /** What a cell's font looks like here, to tell whether a font kept from the file still goes with it. */
 const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign, l.underline ? l.excel?.u : undefined]);
 
@@ -1189,10 +1215,7 @@ const uXml = (kind: string | undefined) => (kind && EXCEL_U.has(kind) ? `<u val=
 const FONT_PARTS = new Set(['b', 'i', 'strike', 'condense', 'extend', 'outline', 'shadow', 'u', 'vertAlign', 'sz', 'color', 'name', 'family', 'charset', 'scheme']);
 
 /** A font element as written again here (its known parts and their values only). */
-function fontXml(f: Element): string {
-  return `<font>${Array.from(f.children).filter((k) => FONT_PARTS.has(k.localName)).map((k) =>
-    `<${k.localName}${Array.from(k.attributes).filter((a) => !a.prefix && /^(val|rgb|theme|indexed|tint|auto)$/.test(a.name)).map((a) => ` ${a.name}="${xmlAttr(a.value)}"`).join('')}/>`).join('')}</font>`;
-}
+const fontXml = (f: Element): string => partsXml(f, FONT_PARTS);
 
 /**
  * The cell formats of a file (cellXfs), as cell styles: fonts as they show (a cell in the theme's
@@ -1365,7 +1388,7 @@ export const excelEscape = (s: string) => s.replace(/_(?=x[0-9A-Fa-f]{4}_)/g, '_
 /** A run of a shared string as the file has it: its whole look, or none (the cell's). */
 interface FileRun {
   text: string;
-  look?: { bold: boolean; italic: boolean; underline: boolean; ukind?: string; strike: boolean; color?: string; pos?: 'sub' | 'sup'; size?: number; font?: string; minor: boolean };
+  look?: { raw?: string; bold: boolean; italic: boolean; underline: boolean; ukind?: string; strike: boolean; color?: string; pos?: 'sub' | 'sup'; size?: number; font?: string; minor: boolean };
 }
 
 /** A shared string's text, whether some of it is lowered or raised (chemistry), and its runs. */
@@ -1387,6 +1410,7 @@ function stringItem(si: Element, theme: string[] = []): { text: string; chem: bo
     runs.push({
       text: part,
       look: {
+        ...(fontHasMore(partsXml(pr, RPR_PARTS)) ? { raw: partsXml(pr, RPR_PARTS) } : {}),
         bold: on(kid(pr, 'b')), italic: on(kid(pr, 'i')), underline: on(kid(pr, 'u')), strike: on(kid(pr, 'strike')),
         ...(on(kid(pr, 'u')) && (kid(pr, 'u')?.getAttribute('val') ?? 'single') !== 'single' ? { ukind: kid(pr, 'u')!.getAttribute('val')! } : {}),
         color: readColour(kid(pr, 'color'), theme),
@@ -1412,7 +1436,7 @@ function cellRuns(runs: FileRun[] | undefined, style: CellStyle | undefined, min
     if (!l) return { text: r.text };
     const font = l.font && !l.minor && l.font !== (style?.font ?? minorFont) ? l.font : undefined;
     const color = l.color && l.color !== (style?.color ?? '#000000') ? l.color : undefined;
-    return {
+    const run: TextRun = {
       text: r.text,
       ...(l.bold !== !!style?.bold ? { bold: l.bold } : {}),
       ...(l.italic !== !!style?.italic ? { italic: l.italic } : {}),
@@ -1425,6 +1449,9 @@ function cellRuns(runs: FileRun[] | undefined, style: CellStyle | undefined, min
       ...(l.size !== undefined && l.size !== size ? { size: l.size } : {}),
       ...(font ? { font } : {}),
     };
+    // its rPr as the file had it, with the look it shows (G2-09, G2-19)
+    if (l.raw) run.xr = JSON.stringify({ x: l.raw, k: runShown(style, run) });
+    return run;
   });
   return runsFrom(out.map((r) => r.text).join(''), out.flatMap((r) => Array.from({ length: r.text.length }, () => r)));
 }

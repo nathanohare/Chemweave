@@ -33,7 +33,7 @@ function book(): Uint8Array {
     '</styleSheet>', 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml');
   pkg.add('xl/sharedStrings.xml', `<sst xmlns="${MAIN}" count="3" uniqueCount="3"><si><t>Total</t></si><si><t>Yield</t></si>` +
     '<si><r><rPr><sz val="11"/><color theme="1"/><rFont val="Calibri"/><family val="2"/><scheme val="minor"/></rPr><t xml:space="preserve">net </t></r>' +
-    '<r><rPr><u val="doubleAccounting"/><sz val="11"/><color theme="1"/><rFont val="Calibri"/><family val="2"/><scheme val="minor"/></rPr><t>sum</t></r></si></sst>',
+    '<r><rPr><rFont val="MS Mincho"/><charset val="128"/><family val="3"/><sz val="11"/><color theme="5"/></rPr><t>収率</t></r></si></sst>',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml');
   pkg.add('xl/worksheets/sheet1.xml', `<worksheet xmlns="${MAIN}"><sheetData><row r="1">` +
     '<c r="A1" s="1" t="s"><v>0</v></c><c r="B1" s="2" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c></row></sheetData></worksheet>',
@@ -42,6 +42,18 @@ function book(): Uint8Array {
 }
 
 describe('Excel fonts kept (G2-19)', () => {
+  it('keeps a run\'s character set, family and theme colour while the run is unchanged (and G2-09)', async () => {
+    const { book: wb } = await readXlsx(book());
+    const strings = strFromU8(unzipSync(await writeXlsx(wb, pictures))['xl/sharedStrings.xml']);
+    expect(strings).toContain('<r><rPr><rFont val="MS Mincho"/><charset val="128"/><family val="3"/><sz val="11"/><color theme="5"/></rPr><t>収率</t></r>');
+    // made bold here: written from its look
+    const c = wb.sheets[0].cell(0, 2)!;
+    c.runs = c.runs!.map((r) => (r.text === '収率' ? { ...r, bold: true } : r));
+    const again = strFromU8(unzipSync(await writeXlsx(wb, pictures))['xl/sharedStrings.xml']);
+    expect(again).not.toContain('<charset val="128"/>');
+    expect(again).toMatch(/<b\/>[^]*?MS Mincho[^]*?収率/);
+  });
+
   it('keeps outline, shadow, family, character set and theme colour while the font is unchanged', async () => {
     const { book: wb } = await readXlsx(book());
     const styles = strFromU8(unzipSync(await writeXlsx(wb, pictures))['xl/styles.xml']);

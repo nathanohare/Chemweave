@@ -24,6 +24,12 @@ export interface RunLook {
   font?: string;
   /** Font size in points. */
   size?: number;
+  /**
+   * The run's formatting as an Excel file had it, when it had more than is shown here (a theme
+   * colour, a character set, an outline...): JSON of the rPr and the look it went with, written
+   * back while the run still looks so (io/xlsx.ts).
+   */
+  xr?: string;
 }
 
 export interface TextRun extends RunLook {
@@ -33,7 +39,7 @@ export interface TextRun extends RunLook {
 /** The looks a selection can be given while typing, with a key. */
 export type ToggleLook = 'bold' | 'italic' | 'underline' | 'strike';
 
-const KEYS: (keyof RunLook)[] = ['bold', 'italic', 'underline', 'ukind', 'strike', 'color', 'pos', 'font', 'size'];
+const KEYS: (keyof RunLook)[] = ['bold', 'italic', 'underline', 'ukind', 'strike', 'color', 'pos', 'font', 'size', 'xr'];
 
 /** A look without its unset parts. */
 export function cleanLook(l: RunLook | undefined): RunLook {
