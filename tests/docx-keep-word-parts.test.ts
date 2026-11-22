@@ -238,6 +238,20 @@ describe('Word theme colours and fonts are kept (G2-09)', () => {
     expect(h1x).toContain('w:themeShade="BF"');
     expect(h1x).toContain('w:asciiTheme="majorHAnsi"');
   });
+
+  it('writes fixed colours and fonts once Design gives the document another theme here (review F2-R03)', async () => {
+    const body = '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Results</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:rPr><w:color w:val="ED7D31" w:themeColor="accent2"/></w:rPr><w:t>orange</w:t></w:r><w:r><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"/></w:rPr><w:t>display</w:t></w:r></w:p>';
+    const { doc } = await readDocx(wordFile({ styles: theme, body, fonts: ['Calibri Light', 'Calibri'] }));
+    doc.design = { colors: 'Navy', fonts: 'Journal' };
+    const out = unzipSync(await writeDocx(doc, deps));
+    const xml = strFromU8(out['word/document.xml']), styles = strFromU8(out['word/styles.xml']);
+    expect(xml).not.toMatch(/w:themeColor=|w:asciiTheme=/);
+    expect(styles).not.toMatch(/w:themeColor=|w:asciiTheme=/);
+    // the colour and font shown here, as fixed values
+    expect(xml).toContain('<w:color w:val="ED7D31"/>');
+    expect(xml).toMatch(/<w:rFonts w:ascii="Calibri Light"/);
+  });
 });
 
 describe('Word paragraph settings shown another way are written back as Word had them (G2-11)', () => {

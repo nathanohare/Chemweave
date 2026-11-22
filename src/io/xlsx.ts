@@ -340,7 +340,7 @@ class Styles {
    * `normal` is the look of style 0 (the workbook's Normal style, when it isn't the plain look
    * here), with its font as the file had it in `kept`.
    */
-  constructor(private theme: WorkbookTheme | null = null, private normal: CellStyle = {}, kept: ExcelStyles = {}) {
+  constructor(private theme: WorkbookTheme | null = null, private normal: CellStyle = {}, kept: ExcelStyles = {}, private themeLinks = true) {
     this.minor = themeOf(theme).minor;
     this.ownCodes = new Set(kept.numFmts);
     this.normalName = kept.normalName ?? 'Normal';
@@ -430,7 +430,8 @@ class Styles {
   private parts(s: CellStyle): { font: number; fill: number; border: number } {
     // a font as the file had it (an outline, a shadow, its family and character set, a theme
     // colour), while the cell's font looks as it did
-    const keptFont = s.excel?.font && s.excel.font.key === fontLook(s) ? s.excel.font.xml : null;
+    // (one linked to the theme's colours or fonts only while the theme written is the one read: review F2-R03)
+    const keptFont = s.excel?.font && s.excel.font.key === fontLook(s) && (this.themeLinks || !THEME_LINK.test(s.excel.font.xml)) ? s.excel.font.xml : null;
     const font = keptFont ? this.index(this.fonts, keptFont) : fontLook(s) !== fontLook(this.normal)
       ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${s.excel?.strike ? '<strike/>' : ''}${s.underline ? uXml(s.excel?.u) : ''}` +
         `${s.excel?.vertAlign ? `<vertAlign val="${xmlAttr(s.excel.vertAlign)}"/>` : ''}<sz val="${s.size ?? 11}"/>` +
@@ -518,7 +519,7 @@ class Strings {
   private byKey = new Map<string, number>();
   count = 0;
 
-  constructor(private minor = 'Calibri') {}
+  constructor(private minor = 'Calibri', private themeLinks = true) {}
 
   /** A text's number; `runs` (part of it bold…) over the cell's look `style`. */
   index(text: string, chem: boolean, runs?: TextRun[], style?: CellStyle): number {
@@ -558,7 +559,7 @@ class Strings {
     if (r.xr) {
       try {
         const k = JSON.parse(r.xr) as { x: string; k: string };
-        if (k.k === runShown(style, r)) return k.x;
+        if (k.k === runShown(style, r) && (this.themeLinks || !THEME_LINK.test(k.x))) return k.x;
       } catch { /* written from its look */ }
     }
     return this.runLook(lookOver(style, r));
@@ -615,8 +616,10 @@ export async function writeXlsx(book: Workbook, deps: XlsxPictures, opts: { macr
 async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean }): Promise<Uint8Array> {
   const pkg = new Package();
   const vba = opts.macros ? book.macros : null;
-  const styles = new Styles(book.theme, book.normalStyle, book.excelStyles);
-  const strings = new Strings(themeOf(book.theme).minor);
+  // theme links in fonts kept from the file hold while the theme written is the file's (or, with none, Excel's own still)
+  const themeLinks = book.kept?.theme ? book.kept.theme.look === JSON.stringify(book.theme) : !book.theme;
+  const styles = new Styles(book.theme, book.normalStyle, book.excelStyles, themeLinks);
+  const strings = new Strings(themeOf(book.theme).minor, themeLinks);
   const model: Model = { app: 'Chem Illustrator', version: 1, drawingStyle: book.drawingStyle, sheets: [], autoChem: book.autoChem, ...(book.customViews.length ? { customViews: book.customViews } : {}), ...(book.queries.length ? { queries: book.queries } : {}) };
   const sheetEntries: string[] = [];
   const filterNames: string[] = [];
@@ -1234,6 +1237,8 @@ const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.und
  * outline or shadow (18.8.22), condensed or extended, a character set, a family other than
  * Swiss, or a theme colour other than the text's.
  */
+/** A font's link to the theme: a theme colour other than the text's own, or a theme font (18.8.35 scheme). */
+const THEME_LINK = /<color\b[^>]*\btheme="(?!1")|<scheme\b/;
 const fontHasMore = (x: string) => /<(outline|shadow|condense|extend|charset)\b|<family val="(?!2")|<color theme="(?!1"\/>)/.test(x);
 
 /** A font's or run's underline (18.4.13): single unless another of Excel's kinds is given. */

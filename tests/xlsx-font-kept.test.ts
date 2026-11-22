@@ -70,4 +70,13 @@ describe('Excel fonts kept (G2-19)', () => {
     expect(styles).not.toContain('<outline/>');
     expect(styles).toMatch(/<font><b\/><i\/>[^]*?<name val="Times New Roman"\/>/);
   });
+
+  it('writes fixed colours once the workbook is given another theme here (review F2-R03)', async () => {
+    const { book: wb } = await readXlsx(book());
+    wb.theme = { name: 'Mine', colors: ['#000000', '#ffffff', '#1f3864', '#e7e6e6', '#8b1a1a', '#2e75b6', '#a5a5a5', '#ffc000', '#5b9bd5', '#70ad47', '#0563c1', '#954f72'], major: 'Times New Roman', minor: 'Times New Roman' };
+    const out = unzipSync(await writeXlsx(wb, pictures));
+    const styles = strFromU8(out['xl/styles.xml']), strings = strFromU8(out['xl/sharedStrings.xml']);
+    expect(styles).not.toMatch(/<color theme="4"/);
+    expect(strings).not.toMatch(/<color theme="5"/);
+  });
 });

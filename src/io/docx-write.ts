@@ -913,9 +913,9 @@ class DocxWriter {
     const name = `${BIB_MARK}${id}`;
     const pPr = `<w:pPr><w:spacing w:before="0" w:after="0"/><w:ind w:left="${twips(hang)}" w:hanging="${twips(hang)}"/><w:jc w:val="left"/></w:pPr>`;
     // (a manager's entries kept from Word may also be underlined, raised, lowered or linked)
-    const paras = entries.map((e) => run(runProps({ ...base, text: '' }, st, {}), `${e.label}\t`) +
+    const paras = entries.map((e) => run(this.runProps({ ...base, text: '' }, st, {}), `${e.label}\t`) +
       this.linkedRuns('word/document.xml', e.pieces.map((p): TextRun => ({ ...rt.cleanStyle({ ...base, italic: p.italic, bold: p.bold, underline: p.underline, sup: p.sup, sub: p.sub, link: p.link }), text: p.text })),
-        (r) => run(runProps(r, st, {}), r.text)));
+        (r) => run(this.runProps(r, st, {}), r.text)));
     if (!paras.length) paras.push('');
     const app = t.citeManager;
     if (app && app !== 'mendeley-cite') {
@@ -1056,7 +1056,7 @@ class DocxWriter {
           const cite = (r: TextRun) => { const c = r.obj !== undefined ? t.objects[r.obj] : undefined; return c?.kind === 'cite' ? c : null; };
           const body = this.linkedRuns(`word/${tag}s.xml`, (runsOf[i] ?? []).filter((r) => r.obj === undefined || cite(r)), (r) => {
             const c = cite(r);
-            return c ? this.citeXml(c, runProps(r, st, { cs: this.charStyleOf(r) }), this.shown.get(r.obj!) ?? '') : this.tracked(r.rev, this.textRuns(r, st));
+            return c ? this.citeXml(c, this.runProps(r, st, { cs: this.charStyleOf(r) }), this.shown.get(r.obj!) ?? '') : this.tracked(r.rev, this.textRuns(r, st));
           });
           return { para: `<w:p><w:pPr>${pPr.join('')}</w:pPr>${mark}${body}</w:p>`, body };
         });
@@ -1077,9 +1077,9 @@ class DocxWriter {
   private textRuns(r: TextRun, st: NamedStyle): string {
     if (!r.text) return '';
     if (r.formula && !r.sub && !r.sup) {
-      return rt.formulaParts(r.text).map((part) => run(runProps(r, st, { formula: true, pos: part.pos }) + this.fmtChange(r, st), part.text)).join('');
+      return rt.formulaParts(r.text).map((part) => run(this.runProps(r, st, { formula: true, pos: part.pos }) + this.fmtChange(r, st), part.text)).join('');
     }
-    return run(runProps(r, st, { cs: this.charStyleOf(r) }) + this.fmtChange(r, st), r.text);
+    return run(this.runProps(r, st, { cs: this.charStyleOf(r) }) + this.fmtChange(r, st), r.text);
   }
 
   /** A tracked formatting change on a run (Word's w:rPrChange, last in its w:rPr): who, when, and its look before. */
@@ -1087,7 +1087,7 @@ class DocxWriter {
     const f = parseFmt(r.fmt);
     if (!f) return '';
     const old = { ...f.old, text: '' } as TextRun;
-    const before = old.formula && !old.sub && !old.sup ? runProps(old, st, { formula: true }) : runProps(old, st, { cs: this.charStyleOf(old) });
+    const before = old.formula && !old.sub && !old.sup ? this.runProps(old, st, { formula: true }) : this.runProps(old, st, { cs: this.charStyleOf(old) });
     return `<w:rPrChange w:id="${this.revId++}" w:author="${xml(f.author || 'Author')}"${f.date ? ` w:date="${xml(f.date)}"` : ''}><w:rPr>${before}</w:rPr></w:rPrChange>`;
   }
 
@@ -1113,14 +1113,14 @@ class DocxWriter {
     const id = r.obj!;
     const o = this.t.objects[id];
     if (!o) return '';
-    const rPr = runProps(r, st, { cs: this.charStyleOf(r) });
+    const rPr = this.runProps(r, st, { cs: this.charStyleOf(r) });
     const shown = this.shown.get(id) ?? '';
     if (o.kind === 'seq') {
       const name = /\s/.test(o.name) ? `"${o.name}"` : o.name;
       return field(rPr, ` SEQ ${xml(name)} \\* ARABIC \\* CHARFORMAT `, shown);
     }
     // hidden text kept from a Word file, as it was; a field kept from Word with the result it showed (none: no result)
-    if (o.kind === 'field' && o.code === 'hidden') return run(runProps(r, st, { cs: this.charStyleOf(r), vanish: true }), o.text ?? '');
+    if (o.kind === 'field' && o.code === 'hidden') return run(this.runProps(r, st, { cs: this.charStyleOf(r), vanish: true }), o.text ?? '');
     if (o.kind === 'field' && o.code === 'word' && !shown) return markField(fieldInstr(o), rPr);
     if (o.kind === 'field') return field(rPr, xml(fieldInstr(o)), shown);
     if (o.kind === 'ref') {
@@ -1134,7 +1134,7 @@ class DocxWriter {
     if (o.kind === 'note') {
       const n = this.noteIds.get(id);
       const tag = o.end ? 'endnote' : 'footnote';
-      return n === undefined ? '' : `<w:r><w:rPr><w:rStyle w:val="${o.end ? 'EndnoteReference' : 'FootnoteReference'}"/>${runProps({ ...r, sup: undefined }, st, {})}</w:rPr><w:${tag}Reference w:id="${n}"/></w:r>`;
+      return n === undefined ? '' : `<w:r><w:rPr><w:rStyle w:val="${o.end ? 'EndnoteReference' : 'FootnoteReference'}"/>${this.runProps({ ...r, sup: undefined }, st, {})}</w:rPr><w:${tag}Reference w:id="${n}"/></w:r>`;
     }
     if (o.kind === 'form') return formField(o, rPr, this.formNames, this.bookmarkId++);
     if (o.kind === 'bib' || o.kind === 'toc' || o.kind === 'tof' || o.kind === 'index' || o.kind === 'toa' || o.kind === 'math') return '';
@@ -1403,6 +1403,14 @@ class DocxWriter {
   }
 
   private oleCount = 0;
+  /**
+   * Whether the theme written is the one read (not one made from a Design choice here): only then do
+   * runs and styles keep their links to its colours and fonts (review F2-R03).
+   */
+  private get themeKept(): boolean { return !wordTheme(this.t.design); }
+  private runProps(r: TextRun, st: NamedStyle, x: Parameters<typeof runProps>[2]): string {
+    return runProps(r, st, { ...x, themes: this.themeKept });
+  }
   /** The next VML shape number for a picture group's fallback. */
   private vmlNo = 8193;
   private oleTypes = new Set<string>();
@@ -1792,7 +1800,7 @@ class DocxWriter {
     const ids = Object.keys(t.styles);
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {
       const s = t.styles[id];
-      if (s) out.push(styleXml(s, ids, builtIn));
+      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept));
     }
     // the contents' lines (Word's own "toc 1" to "toc 3", which Update Field uses)
     if (Object.values(t.objects).some((o) => o.kind === 'toc')) {
@@ -1816,7 +1824,7 @@ class DocxWriter {
       const ns = noteStyle(t);
       for (const [sid, nm] of [['FootnoteText', 'footnote text'], ['EndnoteText', 'endnote text']]) {
         if (t.styles[sid]) continue;
-        out.push(styleXml({ ...ns, id: sid, name: nm }, ids).replace(' w:customStyle="1"', ''));
+        out.push(styleXml({ ...ns, id: sid, name: nm }, ids, wordBuiltInName, this.themeKept).replace(' w:customStyle="1"', ''));
       }
       for (const [sid, nm] of [['FootnoteReference', 'footnote reference'], ['EndnoteReference', 'endnote reference']]) {
         out.push(`<w:style w:type="character" w:styleId="${sid}"><w:name w:val="${nm}"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>`);
@@ -1832,7 +1840,7 @@ class DocxWriter {
     }
     out.push(`<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/><w:unhideWhenUsed/></w:style>`);
     // the character styles (Emphasis, Strong, Compound Number and the person's own)
-    for (const cs of Object.values(this.charStyles)) out.push(charStyleXml(cs, builtIn));
+    for (const cs of Object.values(this.charStyles)) out.push(charStyleXml(cs, builtIn, this.themeKept));
     // formulas look like any other text in Word: the style only marks them, so they stay formulas when opened here
     out.push(`<w:style w:type="character" w:customStyle="1" w:styleId="${FORMULA_STYLE}"><w:name w:val="Chemical Formula"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="1"/></w:style>`);
     // the table styles the tables use, as Word's own (so Word draws them as they are drawn here)
@@ -2010,7 +2018,7 @@ export function highlightName(color: string): string | null {
  * A run's formatting where it differs from its paragraph's style (and its character style, when
  * it is in one: Word then gives it that style, so changing the style in Word changes it too).
  */
-function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'base' | 'sub' | 'sup'; cs?: CharStyle; vanish?: boolean }): string {
+function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'base' | 'sub' | 'sup'; cs?: CharStyle; vanish?: boolean; themes?: boolean }): string {
   const out: string[] = [];
   // (a run has one character style in Word: a formula's mark wins)
   const cs = x.formula ? undefined : x.cs;
@@ -2018,7 +2026,7 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   else if (cs) out.push(`<w:rStyle w:val="${xml(cs.id)}"/>`);
   if (cs) st = { ...st, font: cs.font ?? st.font, size: cs.size ?? st.size, bold: cs.bold ?? st.bold, italic: cs.italic ?? st.italic, color: cs.color ?? st.color };
   const font = r.font ?? st.font;
-  const th = themeOf(r.wrx);
+  const th = x.themes === false ? undefined : themeOf(r.wrx);
   if (font !== st.font) out.push(fontsXml(font, th));
   if (!!r.bold !== st.bold) out.push(r.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>');
   if (!!r.italic !== st.italic) out.push(r.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>');
@@ -2304,12 +2312,12 @@ function keptStyleXml(k: { xml: string }, numIds: ReadonlyMap<string, string>): 
 }
 
 /** A character style: only what it sets. */
-function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = wordBuiltInName): string {
+function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = wordBuiltInName, themes = true): string {
   const own = WORD_CHAR[s.id];
   // (Word's own by its name too: Book Title, Subtle Reference...)
   const word = own ? null : builtIn(s.name);
   const rPr: string[] = [];
-  const th = themeOf(s.wth);
+  const th = themes ? themeOf(s.wth) : undefined;
   if (s.font) rPr.push(fontsXml(s.font, th));
   if (s.bold !== undefined) rPr.push(s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>');
   if (s.italic !== undefined) rPr.push(s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>');
@@ -2324,7 +2332,7 @@ function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = w
 }
 
 /** A named style, with all its settings written out. */
-function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName): string {
+function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true): string {
   const id = s.id;
   // a style with one of Word's built-in names (header, No Spacing, toc 1...) is Word's own: not marked custom
   const word = WORD_NAMES[id] ?? builtIn(s.name);
@@ -2342,7 +2350,7 @@ function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => strin
   pPr.push(`<w:ind w:left="${twips(s.indent)}" ${s.firstLine < 0 ? `w:hanging="${twips(-s.firstLine)}"` : `w:firstLine="${twips(s.firstLine)}"`}/>`);
   pPr.push(`<w:jc w:val="${JC[s.align]}"/>`);
   if (s.outline) pPr.push(`<w:outlineLvl w:val="${s.outline - 1}"/>`);
-  const th = themeOf(s.wth);
+  const th = themes ? themeOf(s.wth) : undefined;
   const rPr = `${fontsXml(s.font, th)}${s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>'}${s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>'}` +
     `${colorXml(s.color, th)}<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`;
   return `${head}<w:pPr>${pPr.join('')}</w:pPr><w:rPr>${rPr}</w:rPr></w:style>`;
