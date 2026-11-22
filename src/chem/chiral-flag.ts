@@ -101,10 +101,10 @@ export function structureFlag(doc: Doc, atomIds: Iterable<number>): Shape | unde
   return flagOwners(doc).get(Math.min(...doc.fragmentOf(first)));
 }
 
-/** Each atom's structure's chiral flag (atoms of a structure without one are left out), with the structure's lowest atom id. */
-export function flagsByAtom(doc: Doc, atomIds: Iterable<number>): Map<number, { flag: ChiralFlag; frag: number }> {
+/** Each atom's structure's chiral flag (atoms of a structure without one are left out), with the structure's lowest atom id; `known`: flagOwners already worked out. */
+export function flagsByAtom(doc: Doc, atomIds: Iterable<number>, known?: Map<number, Shape>): Map<number, { flag: ChiralFlag; frag: number }> {
   const out = new Map<number, { flag: ChiralFlag; frag: number }>();
-  const owners = flagOwners(doc);
+  const owners = known ?? flagOwners(doc);
   if (!owners.size) return out;
   const done = new Set<number>();
   for (const id of atomIds) {

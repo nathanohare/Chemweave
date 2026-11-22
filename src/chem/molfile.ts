@@ -3,7 +3,7 @@
 // formula, mass and stereo come out right; "R"-type labels become dummy atoms.
 
 import { attachCode } from './attach-codes';
-import { Doc, isMetalAtom, outsideValence, radicalElectrons, type EnhancedStereo } from '../model';
+import { Doc, isMetalAtom, outsideValence, radicalElectrons, type EnhancedStereo, type Shape } from '../model';
 import { metalCarbonyl } from './hapto';
 import { SYMBOLS, elementNumber, hasImplicitH, implicitHydrogens, isMetal, valenceOfBonds } from './elements';
 import { CARBONYL_LIGAND, isCarbonylLabel, kekulize, labelDonates, labelGraph, MiniGraph } from './labels';
@@ -38,6 +38,8 @@ export interface MolExport {
 }
 
 export interface MolfileOptions {
+  /** Each structure's chiral flag, worked out once for a file of many records (chiral-flag.ts flagOwners; review F1c-R12). */
+  flagOwners?: Map<number, Shape>;
   /**
    * For working out R/S and E/Z: R groups, attachment points and labels that can't be read
    * become a very heavy stand-in atom (see stereoTags for how it is ranked), and
@@ -547,7 +549,7 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
   // structure (Chemistry > Chiral Flag; one read from a file comes back as that flag) or a centre
   // marked abs. Wedges alone, a Rac flag or a Rel flag give 0. In V3000 a Rac or Rel structure's
   // wedged centres also go in an and (Rac) or or (Rel) group of their own, which says which it is.
-  const flagOf = files ? flagsByAtom(doc, ids) : new Map<number, { flag: ChiralFlag; frag: number }>();
+  const flagOf = files ? flagsByAtom(doc, ids, opts.flagOwners) : new Map<number, { flag: ChiralFlag; frag: number }>();
   const flags = new Set([...flagOf.values()].map((f) => f.flag));
   const hasAbs = files && (flags.has('Absolute') || atoms.some((t) => t.enh?.type === 'abs'));
   const racRel = flags.has('Racemic') || flags.has('Relative');

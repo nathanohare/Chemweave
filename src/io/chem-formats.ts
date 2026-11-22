@@ -34,7 +34,7 @@ import { placeSpecies, readSpecies } from '../chem/species';
 import { labelGraph, type MiniGraph } from '../chem/labels';
 import { plainText } from '../richtext';
 import { arialWidth } from '../text-metrics';
-import { addChiralFlag } from '../chem/chiral-flag';
+import { addChiralFlag, flagOwners } from '../chem/chiral-flag';
 
 // ---------------------------------------------------------------- the plain scene
 
@@ -1136,12 +1136,14 @@ export function docToScene(doc: Doc): { scene: FScene; unknown: string[]; step: 
     put([...step.roles.above, ...step.roles.below], 'agent');
     put(step.roles.products, 'product');
   }
+  // (each structure's chiral flag, worked out once for the whole file; review F1c-R12)
+  const owners = flagOwners(doc);
   for (const it of items) {
     if (!it.atoms.length) continue;
     // (atom-atom map numbers go too, so a mapped reaction stays mapped in RXN, Marvin and Ketcher
     // files; written as V3000, which holds everything a file can, and read back with the
     // abbreviations' atoms kept, for the writers to mark)
-    const ex = toMolfile(doc, it.atoms, '', { maps: true, files: true, v3000: true });
+    const ex = toMolfile(doc, it.atoms, '', { maps: true, files: true, v3000: true, flagOwners: owners });
     for (const u of ex.unknownLabels) unknown.add(u);
     const mol = readMolfile(ex.molblock, { keepSup: true });
     if (!mol || !mol.atoms.length) continue;

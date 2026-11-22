@@ -12,7 +12,9 @@ import { createRequire } from 'node:module';
 import { addMolfile, readScene, sceneToDoc, chemFormatOf, writeMolFile, writeSdfFile, writeMrvFile } from '../src/io/chem-formats';
 import { toMolfile } from '../src/chem/molfile';
 import { addChiralFlag, structureFlag, type ChiralFlag } from '../src/chem/chiral-flag';
-import { Doc } from '../src/model';
+import { Doc, type Shape } from '../src/model';
+import { readCdxml } from '../src/io/cdxml';
+import { writeCdxml } from '../src/io/cdxml-write';
 import { ACS_1996 } from '../src/style';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,3 +123,66 @@ describe('the V3000 save note (F1c-R08)', () => {
     expect(writeMolFile(d).notes).toEqual(['written as V3000, since V2000 can\'t hold a Rac or Rel chiral flag']);
   });
 });
+
+describe('a chiral flag stuck to nothing, moved or orphaned (F1c-R07)', () => {
+  const flagShape = (d: Doc) => [...d.shapes.values()].find((x) => x.symbol)!;
+  const move = (d: Doc, s: Shape, dx: number, dy: number) => d.edit('Move', () => { d.updateShape(s.id, { x1: s.x1 + dx, x2: s.x2 + dx, y1: s.y1 + dy, y2: s.y2 + dy }); });
+  it('dragged beside another structure, it becomes that structure\'s and goes where it goes', () => {
+    const d = newDoc();
+    const left = alanineAt(d, 0, 0, 'Absolute');
+    const right = alanineAt(d, 6 * L, 0);
+    move(d, flagShape(d), 6 * L, 0);
+    expect(flagShape(d).pin?.ref[0] !== undefined && right.includes(flagShape(d).pin!.ref[0])).toBe(true);
+    d.edit('Move', () => { d.moveAtoms(right, 0, 3 * L); });
+    expect(structureFlag(d, right)?.symbol).toBe('Absolute');
+    expect(structureFlag(d, left)).toBeUndefined();
+    expect(flagOf(toMolfile(d, right, '', { files: true }).molblock)).toBe('1');
+    expect(flagOf(toMolfile(d, left, '', { files: true }).molblock)).toBe('0');
+  });
+  it('goes with its structure when the whole of it is deleted, so an unflagged neighbour stays 0', () => {
+    const d = newDoc();
+    const a = alanineAt(d, 0, 0, 'Absolute');
+    const b = alanineAt(d, 3.2 * L, 0);
+    d.edit('Delete', () => { for (const id of a) d.removeAtom(id); });
+    expect([...d.shapes.values()].filter((x) => x.symbol)).toEqual([]);
+    expect(flagOf(toMolfile(d, b, '', { files: true }).molblock)).toBe('0');
+  });
+  it('stays with what is left of its structure when its own atom is deleted', () => {
+    const d = newDoc();
+    const a = alanineAt(d, 0, 0, 'Absolute');
+    alanineAt(d, 3.2 * L, 0);
+    const held = flagShape(d).pin!.ref[0];
+    d.edit('Delete', () => { d.removeAtom(held); });
+    const rest = a.filter((id) => d.atoms.has(id));
+    expect(rest.includes(flagShape(d).pin!.ref[0])).toBe(true);
+  });
+  it('a flag outside any fragment in a CDXML file is stuck to its structure on opening', () => {
+    const d = newDoc();
+    const a = alanineAt(d, 0, 0, 'Absolute');
+    d.edit('Loose', () => { d.updateShape(flagShape(d).id, { pin: undefined }); });
+    const back = readCdxml(writeCdxml(d, { name: 'x.cdxml' })).doc;
+    const f = [...back.shapes.values()].find((x) => x.symbol)!;
+    expect(f.pin?.on).toBe('atom');
+    expect(structureFlag(back, back.fragmentOf(f.pin!.ref[0]))?.symbol).toBe('Absolute');
+    expect(back.fragmentOf(f.pin!.ref[0]).size).toBe(a.length);
+  });
+});
+
+describe('an SD file of many flagged structures (F1c-R12)', () => {
+  it('works each structure\'s flag out once for the file, not once a record', () => {
+    const d = newDoc();
+    for (let i = 0; i < 300; i++) alanineAt(d, (i % 20) * 5 * L, Math.floor(i / 20) * 5 * L, 'Absolute');
+    writeMolFile(d); writeSdfFile(d);
+    let t = performance.now();
+    const mol = writeMolFile(d).text;
+    const one = performance.now() - t;
+    t = performance.now();
+    const sd = writeSdfFile(d).text;
+    const many = performance.now() - t;
+    expect(flagOf(mol)).toBe('1');
+    expect(sd.split('$$$$\n').filter((r) => r.trim()).map(flagOf).every((f) => f === '1')).toBe(true);
+    // (measured in the review: 0.47 s against 0.05 s, growing with the square of the count)
+    expect(many).toBeLessThan(Math.max(4 * one, 200));
+  }, 60_000);
+});
+

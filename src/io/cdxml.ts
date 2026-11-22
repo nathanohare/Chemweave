@@ -23,7 +23,7 @@ import { ringBonds, ringsThroughBond } from '../chem/aromatic';
 import { DEG } from '../geom';
 import { chordLocal, ellipseArcPoints, headBend, swapHalf } from '../objects';
 import { pinSymbols } from '../chem/pins';
-import { stickFlag } from '../chem/chiral-flag';
+import { flagOwners, stickFlag } from '../chem/chiral-flag';
 import { kids, descendants, withoutDoctype } from './xml';
 import { styleFromFace, isSymbolFont, fromSymbolFont, symbolOnlyByChoice, plainByChoice } from '../richtext';
 import { dataUrl, fromDataUrl, imageSize } from '../render/images';
@@ -1471,6 +1471,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
       const atoms = kids(frag).filter((k) => k.nodeName === 'n').map((k) => atomOfNode.get(k.getAttribute('id') ?? '')).filter((x): x is number => x !== undefined);
       if (s && atoms.length) stickFlag(doc, s, atoms);
     }
+    // a flag outside any fragment (a file saved before flags were kept in theirs) is the nearest
+    // structure's without one, and is stuck to it so it goes where that structure goes (review F1c-R07)
+    for (const [first, s] of flagOwners(doc)) if (!s.pin) stickFlag(doc, s, doc.fragmentOf(first));
     // lone pairs, radical dots and circled charges go with their atoms
     pinSymbols(doc);
     fillFrameMembers(doc);
