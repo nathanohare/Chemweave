@@ -4,6 +4,7 @@
 // spelling check knows chemistry words. The panel on the right shows the paragraph's formatting,
 // its style, the page and the figure picked, every value of which can be typed in.
 
+import { installFontGroups } from './font-group';
 import { applyFormat } from '../text/format';
 import { showContextMenu, type MenuItem } from './context-menu';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
@@ -340,6 +341,8 @@ export class DocumentMode {
   private readonly closeMenuOutside = (e: Event) => { if (this.menu && !this.menu.contains(e.target as Node)) this.closeMenu(); };
 
   constructor(private host: DocModeHost) {
+    // the shared Font group in the ribbon (done once for the page; main.ts usually has already)
+    installFontGroups();
     const $ = <T extends HTMLElement>(s: string) => document.querySelector(s) as T;
     const docHost = $<HTMLDivElement>('#doc-host');
     this.view = new DocView(docHost);

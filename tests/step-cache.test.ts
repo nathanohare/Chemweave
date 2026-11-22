@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { Doc } from '../src/model';
 import { plainMeasure } from '../src/chem/reaction';
 import { StepCache } from '../src/chem/step-cache';
+import { menuAsksLazily } from '../src/ui/can-run';
 
 const src = (f: string) => readFileSync(join(__dirname, '..', f), 'utf8');
 const L = 14.4;
@@ -52,8 +53,11 @@ describe('StepCache (G5-28)', () => {
     const main = src('src/main.ts');
     expect(main).toContain('const { m, items, steps } = stepCache.get(doc, () => editor.measure());');
     expect(main).toContain('if (lazy && !stepCache.fresh(doc)) return null;');
-    expect(main).toContain("'cmd', (c) => whyCannotRun(c, true));");
     expect(main).toContain("paintCanRun(sub.querySelectorAll<HTMLButtonElement>(':scope > button[data-cmd]'), 'cmd', (c) => whyCannotRun(c));");
     expect(main).toContain("paintCanRun(shown, 'cmd', (c) => whyDrawingCannotRun(c, true));");
+  });
+  it('a menu opening asks lazily in drawing, slides and design, and in full in a sheet (F5b-R05)', () => {
+    for (const mode of ['drawing', 'slides', 'design', 'document']) expect(menuAsksLazily(mode)).toBe(true);
+    expect(menuAsksLazily('sheet')).toBe(false);
   });
 });

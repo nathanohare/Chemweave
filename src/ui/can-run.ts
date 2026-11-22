@@ -7,6 +7,16 @@
 // reach it in a menu) and a screen reader reads its reason; choosing it shows the reason instead
 // of running it (each mode's command runner asks the same check first; review of F5, R03).
 
+/**
+ * Does a menu opening in this mode ask its checks lazily (a costly answer given only when already
+ * known)? Drawing, slides and design: yes, the reaction steps are worked out when a submenu opens or
+ * the pointer rests on the button. A sheet asks in full: its costliest check (Property Columns) takes
+ * about 20 ms on 20,000 rows (review F5b-R05).
+ */
+export function menuAsksLazily(mode: string): boolean {
+  return mode !== 'sheet';
+}
+
 /** A reason the command cannot run now, null when it can, undefined when it has no check. */
 export type WhyNot = (cmd: string) => string | null | undefined;
 

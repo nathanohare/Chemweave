@@ -46,7 +46,7 @@ import { pubchemHtml, pubchemRuns, type PubChemState } from './ui/pubchem-panel'
 import { paragraphPages } from './document/doc-file';
 import { reviewAuthor, setReviewAuthor } from './document/revisions';
 import { NMR_SOLVENTS, NmrPanel, solventLabel } from './ui/nmr-panel';
-import { paintCanRun, clearCanRun, cantRun } from './ui/can-run';
+import { paintCanRun, clearCanRun, cantRun, menuAsksLazily } from './ui/can-run';
 import { whyNot, WHY, NEEDS, type Picked } from './editor/can-run';
 import { StepCache } from './chem/step-cache';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
@@ -10810,8 +10810,7 @@ function showMenu(m: Menu | null, focus = true): void {
   if (!m) return;
   refreshHistory();
   // commands that cannot run now are greyed, with the reason in the tooltip (S15, S85)
-  // (a sheet's checks are asked in full: the costliest, Property Columns, takes about 20 ms on 20,000 rows; F5b-R05)
-  const lazy = menuMode() !== 'sheet';
+  const lazy = menuAsksLazily(menuMode());
   paintCanRun([...m.list.querySelectorAll<HTMLButtonElement>('button[data-cmd]')].filter((b) => !b.closest('[data-mode-hid]')), 'cmd', (c) => whyCannotRun(c, lazy));
   m.list.style.setProperty('--menu-top', `${m.btn.getBoundingClientRect().bottom}px`);
   fitMenu(m.list);

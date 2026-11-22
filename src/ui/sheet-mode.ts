@@ -73,7 +73,7 @@ import { SHEET_PAPERS, type PaperName } from '../sheet/page-setup';
 import { defaultPaper } from '../print-layout';
 import { paintCanRun } from './can-run';
 import { SheetCanRun, SHEET_REASONS, structureColumns, CAN_RUN_CHECKS } from '../sheet/can-run';
-import { typedSize } from './font-group';
+import { typedSize, installFontGroups } from './font-group';
 import { stepSize } from '../text/format';
 
 /** The header of each Hammett column (σm and σp show their m and p as italic subscripts). */
@@ -182,6 +182,8 @@ export class SheetMode {
   readonly canRun = new SheetCanRun();
 
   constructor(private host: SheetModeHost, chem: SheetChem) {
+    // the shared Font group in the ribbon (done once for the page; main.ts usually has already)
+    installFontGroups();
     this.chem = chem;
     this.pictures = new StructurePictures(() => this.book?.drawingStyle ?? ({} as DocStyle));
     const $ = <T extends HTMLElement>(s: string) => document.querySelector(s) as T;
