@@ -77,4 +77,16 @@ describe('names in the Energy Diagram window', () => {
     expect(pts[2]).toMatchObject({ label: 'CH3OH' });
     expect(pts[2].rich).toBeUndefined();
   });
+
+  it('Enter in a name presses Insert, as in the window\'s other boxes (F3-R07)', async () => {
+    const got = askEnergy(data(), { w: 300, h: 180 });
+    await tick();
+    const d = [...document.querySelectorAll<HTMLDialogElement>('dialog.energy-dialog')].pop()!;
+    const name = d.querySelector<HTMLElement>('.energy-table tbody [data-l]')!;
+    name.focus();
+    name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    const out = await Promise.race([got, new Promise<'open'>((r) => setTimeout(() => r('open'), 50))]);
+    expect(out).not.toBe('open');
+    expect(out && out !== 'open' && out.paths[0].points[0].label).toBe('3a');
+  });
 });

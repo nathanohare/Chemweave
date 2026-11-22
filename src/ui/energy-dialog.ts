@@ -134,7 +134,9 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
     const changed = () => form.dispatchEvent(new Event('input'));
     /** A name's field: its words as drawn (bold, italic, positions), with formulas' digits dropping as typed. */
     const nameField = (text: string, rich: LabelPart[] | undefined, label: string, placeholder = '') => {
-      const f: RichField = new RichField(labelParts(text, rich), { label, placeholder, looks: true, chem: () => true, done: () => changed(), onState: (x) => { if (x === active) showState(); changed(); } });
+      const f: RichField = new RichField(labelParts(text, rich), { label, placeholder, looks: true, chem: () => true, done: () => changed(), onState: (x) => { if (x === active) showState(); changed(); },
+        // Enter in a name presses Insert (Redraw), as it does in the window's other boxes
+        keys: (e) => { if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return false; changed(); form.requestSubmit(); return true; } });
       f.el.classList.add('mo-rich', 'energy-rich');
       f.el.addEventListener('focus', () => { active = f; showState(); });
       f.el.addEventListener('blur', () => setTimeout(showState));
