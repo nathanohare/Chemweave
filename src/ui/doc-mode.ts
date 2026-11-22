@@ -3585,6 +3585,7 @@ export class DocumentMode {
     if (cmd.startsWith('style-id:')) { style(cmd.slice(9)); this.focus(); return true; }
     const bd = /^border-(bottom|top|left|right|none|all|outside|inside|horizontal)$/.exec(cmd);
     if (bd) { this.paragraphs.border(bd[1] as BorderChoice); return true; }
+    if (cmd === 'para-border-last') { this.paragraphs.border(this.paragraphs.last); return true; }
     const cover = /^cover-(.+)$/.exec(cmd);
     if (cover) { void this.inserts.cover(cover[1]); return true; }
     const design = /^design-(theme|fonts|colors|styleset|spacing)-(.+)$/.exec(cmd);
@@ -3607,6 +3608,8 @@ export class DocumentMode {
       case 'style-caption': style('Caption'); break;
       case 'style-h4': case 'style-h5': case 'style-h6': case 'style-h7': case 'style-h8': case 'style-h9': style(`Heading${cmd.slice(7)}`); break;
       case 'styles-pane': this.stylesPane.toggle(this.ribbon.querySelector<HTMLElement>('[data-doc="styles-pane"]')); return true;
+      // the Styles group's corner button opens the Styles pane, as Word's does (not the Style box)
+      case 'styles-launcher': this.stylesPane.toggle(this.ribbon.querySelector<HTMLElement>('[data-doc="styles-launcher"]')); return true;
       case 'doc-strike': ed.toggle('strike'); break;
       case 'doc-small-caps': ed.toggle('smallCaps'); break;
       case 'doc-all-caps': ed.toggle('allCaps'); break;
