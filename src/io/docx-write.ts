@@ -849,7 +849,7 @@ class DocxWriter {
       if (move?.before) out.push(move.before);
       if (move?.after) moveEnds.push(move.after);
       out.push(this.cmtBefore(r));
-      if (r.obj === undefined) { out.push(this.tracked(r.rev, this.textRuns(r, st), r), this.cmtAfter(r), ...moveEnds.splice(0)); continue; }
+      if (r.obj === undefined) { out.push(this.tracked(r.rev, this.textRuns(r, st, runs), r), this.cmtAfter(r), ...moveEnds.splice(0)); continue; }
       const o = this.t.objects[r.obj];
       if (o?.kind === 'math') {
         const m = `<m:oMath>${toOmml(o.tex)}</m:oMath>`;
@@ -1056,7 +1056,7 @@ class DocxWriter {
           const cite = (r: TextRun) => { const c = r.obj !== undefined ? t.objects[r.obj] : undefined; return c?.kind === 'cite' ? c : null; };
           const body = this.linkedRuns(`word/${tag}s.xml`, (runsOf[i] ?? []).filter((r) => r.obj === undefined || cite(r)), (r) => {
             const c = cite(r);
-            return c ? this.citeXml(c, this.runProps(r, st, { cs: this.charStyleOf(r) }), this.shown.get(r.obj!) ?? '') : this.tracked(r.rev, this.textRuns(r, st));
+            return c ? this.citeXml(c, this.runProps(r, st, { cs: this.charStyleOf(r) }), this.shown.get(r.obj!) ?? '') : this.tracked(r.rev, this.textRuns(r, st, runsOf[i]));
           });
           return { para: `<w:p><w:pPr>${pPr.join('')}</w:pPr>${mark}${body}</w:p>`, body };
         });
@@ -1073,11 +1073,11 @@ class DocxWriter {
     return settings;
   }
 
-  /** Runs of text, a formula's parts each with its own position. */
-  private textRuns(r: TextRun, st: NamedStyle): string {
+  /** Runs of text, a formula's parts each with its own position (read across `para`, the runs of its paragraph). */
+  private textRuns(r: TextRun, st: NamedStyle, para?: readonly TextRun[]): string {
     if (!r.text) return '';
     if (r.formula && !r.sub && !r.sup) {
-      return rt.formulaParts(r.text).map((part) => run(this.runProps(r, st, { formula: true, pos: part.pos }) + this.fmtChange(r, st), part.text)).join('');
+      return rt.formulaPartsIn(para, r).map((part) => run(this.runProps(r, st, { formula: true, pos: part.pos }) + this.fmtChange(r, st), part.text)).join('');
     }
     return run(this.runProps(r, st, { cs: this.charStyleOf(r) }) + this.fmtChange(r, st), r.text);
   }
@@ -1548,7 +1548,7 @@ class DocxWriter {
       const ps = fitParas(paras, n);
       return splitParagraphs(runs).map((rs, i) => {
         const ppr = `<w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="0" w:firstLine="0"/><w:jc w:val="${JC[ps[i]?.align ?? jc]}"/></w:pPr>`;
-        return `<w:p>${ppr}${rs.map((r) => tableRun(r, font, size * k)).join('')}</w:p>`;
+        return `<w:p>${ppr}${rs.map((r) => tableRun(r, font, size * k, rs)).join('')}</w:p>`;
       }).join('') || `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:p>`;
     };
     const rows: string[] = [];
@@ -2139,8 +2139,8 @@ function shortNumbers(_key: string, v: unknown): unknown {
   return typeof v === 'number' && Number.isFinite(v) && !Number.isInteger(v) ? Number(v.toPrecision(9)) : v;
 }
 
-/** A table cell's run: its font and size always given (tables are set in the drawing's font). */
-function tableRun(r: TextRun, font: string, size: number): string {
+/** A table cell's run: its font and size always given (tables are set in the drawing's font); `para` its paragraph's runs. */
+function tableRun(r: TextRun, font: string, size: number, para?: readonly TextRun[]): string {
   const parts: string[] = [fontsXml(r.font ?? font)];
   if (r.bold) parts.push('<w:b/><w:bCs/>');
   if (r.italic) parts.push('<w:i/><w:iCs/>');
@@ -2150,7 +2150,7 @@ function tableRun(r: TextRun, font: string, size: number): string {
   parts.push(`<w:sz w:val="${half(s)}"/><w:szCs w:val="${half(s)}"/>`);
   if (r.underline) parts.push(underlineXml(r));
   if (r.formula && !r.sub && !r.sup) {
-    return rt.formulaParts(r.text).map((p) => run(`<w:rStyle w:val="${FORMULA_STYLE}"/>${parts.join('')}${p.pos !== 'base' ? `<w:vertAlign w:val="${p.pos === 'sub' ? 'subscript' : 'superscript'}"/>` : ''}`, p.text)).join('');
+    return rt.formulaPartsIn(para, r).map((p) => run(`<w:rStyle w:val="${FORMULA_STYLE}"/>${parts.join('')}${p.pos !== 'base' ? `<w:vertAlign w:val="${p.pos === 'sub' ? 'subscript' : 'superscript'}"/>` : ''}`, p.text)).join('');
   }
   if (r.sub || r.sup) parts.push(`<w:vertAlign w:val="${r.sub ? 'subscript' : 'superscript'}"/>`);
   return run(parts.join(''), r.text);
@@ -2395,7 +2395,7 @@ function shapeParagraphs(runs: TextRun[], paras: ParaStyle[] | undefined, align:
     const lvl = p.level ?? 0;
     const ind = p.list ? `<w:ind w:left="${twips(12 + 12 * lvl)}" w:hanging="${twips(9)}"/>` : '';
     const bullet = p.list ? tableRun({ text: '• ', size: rs[0]?.size, color: rs[0]?.color }, font, size) : '';
-    return `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>${ind}<w:jc w:val="${jc}"/></w:pPr>${bullet}${rs.filter((r) => r.text).map((r) => tableRun(r, font, size)).join('')}</w:p>`;
+    return `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>${ind}<w:jc w:val="${jc}"/></w:pPr>${bullet}${rs.filter((r) => r.text).map((r) => tableRun(r, font, size, rs)).join('')}</w:p>`;
   }).join('') || '<w:p/>';
 }
 

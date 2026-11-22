@@ -18,7 +18,7 @@ import { blipEffectsXml, pictureGeomXml } from './picture-xml';
 import { turnAbout, type Rect, type Vec } from '../geom';
 import { layoutText, ASCENT, FONT_STACK, PPT_SINGLE, type Measure } from '../text/layout';
 import { fitParas, listInfo, autoNumLabel, splitParagraphs } from '../text/paragraphs';
-import { formulaParts, plainText } from '../richtext';
+import { formulaPartsIn, plainText } from '../richtext';
 import { officeTarget, slideOfLink } from '../links';
 import { arrowPoints, shapeBox, boxOf, shapeOrder, elbowRoute } from '../objects';
 import { geoDef, textArea, type GeoStep } from '../design/geo';
@@ -393,9 +393,9 @@ function fieldId(): string {
 export type ColourXml = (color: string | undefined, inner?: string) => string;
 export const srgbXml: ColourXml = (color, inner = '') => `<a:srgbClr val="${hex6(color)}"${inner ? `>${inner}</a:srgbClr>` : '/>'}`;
 
-function runXml(r: TextRun, explicit: { size: number; font: string } | null, hlink?: LinkXml, clr: ColourXml = srgbXml): string {
+function runXml(r: TextRun, explicit: { size: number; font: string } | null, hlink?: LinkXml, clr: ColourXml = srgbXml, para?: readonly TextRun[]): string {
   const click = r.link && hlink ? hlink(r.link) : '';
-  const parts = r.formula && !r.sub && !r.sup ? formulaParts(r.text) : [{ text: r.text, pos: r.sub ? 'sub' : r.sup ? 'sup' : 'base' }];
+  const parts = r.formula && !r.sub && !r.sup ? formulaPartsIn(para, r) : [{ text: r.text, pos: r.sub ? 'sub' : r.sup ? 'sup' : 'base' }];
   // what the file had that isn't read here, while the looks it goes with are unchanged (pptx-keep.ts)
   const kept = runKept(r);
   const now = keptNow(r, kept);
@@ -525,7 +525,7 @@ export function paragraphsXml(c: Caption, explicit: { size: number; font: string
       at('indent', kept.indent);
     }
     if (kept?.a) attrs.push(kept.a.trim());
-    const body = runs.map((r) => runXml(r, explicit, hlink, clr)).join('');
+    const body = runs.map((r) => runXml(r, explicit, hlink, clr, runs)).join('');
     const end = `<a:endParaRPr ${lang}${explicit ? ` sz="${Math.round(em * 100)}"` : ''} dirty="0"/>`;
     return `<a:p><a:pPr ${attrs.join(' ')}>${inner}</a:pPr>${body}${end}</a:p>`;
   }).join('');

@@ -33,32 +33,34 @@ describe('a table copied to Word or Excel (G2-02)', () => {
   it('writes formula runs as chemistry, as the drawing shows them: a leading coefficient stays on the line, a charge is raised', () => {
     const p = parts(tableHtml(table([[{ runs: [{ text: '2H2O', formula: true }] }, { runs: [{ text: 'SO42-', formula: true }] }]])));
     expect(p.text.replace(/\s/g, '')).toBe('2H2OSO42-');
-    // H₂O's 2 is lowered, the coefficient isn't; sulfate is SO₄²⁻: its 4 lowered, its 2- raised
-    expect(p.sub).toEqual(['2', '4']);
-    expect(p.sup).toEqual(['2-']);
+    // H₂O's 2 is lowered, the coefficient isn't; in sulfate the 42 goes down and the sign up, as
+    // ChemDraw's formula style does (review F2b-R01: a charge's own number is raised by hand)
+    expect(p.sub).toEqual(['2', '42']);
+    expect(p.sup).toEqual(['-']);
   });
 
-  it('raises a charge\'s digit with its sign (review F2-R04): written out, from the sources in the header', () => {
-    // the ions' usual formulas, their charge a right superscript after the counts (IUPAC Red Book
-    // 2005, as cited in the header): sulfate SO₄²⁻ (PubChem CID 1117), phosphate PO₄³⁻, carbonate
-    // CO₃²⁻, dichromate Cr₂O₇²⁻, iron(III) Fe³⁺, ammonium NH₄⁺, permanganate MnO₄⁻,
-    // hexacyanidoferrate(III) [Fe(CN)₆]³⁻, and the hydrate CuSO₄·5H₂O with its 5 on the line
-    const html = (t: string) => {
-      const doc = new DOMParser().parseFromString(`<div>${tableHtml(table([[{ runs: [{ text: t, formula: true }] }]]))}</div>`, 'text/html');
+  it('writes formula style as the drawing does, ChemDraw\'s rule, and a charge number set up by hand (review F2-R04, F2b-R01)', () => {
+    // ChemDraw's measured rule (tests/richtext.test.ts): numbers after a letter or bracket go
+    // down, a final sign goes up; text can't tell a count from a charge (azide N₃⁻, sulfate SO₄²⁻)
+    const html = (runs: TextRun[]) => {
+      const doc = new DOMParser().parseFromString(`<div>${tableHtml(table([[{ runs }]]))}</div>`, 'text/html');
       let out = '';
       const walk = (n: Node) => { for (const c of [...n.childNodes]) { if (c.nodeType === 3) out += c.textContent; else { const tag = (c as Element).tagName; if (tag === 'SUB') out += `_{${c.textContent}}`; else if (tag === 'SUP') out += `^{${c.textContent}}`; else walk(c); } } };
       walk(doc.body);
       return out.trim();
     };
-    expect(html('SO42-')).toBe('SO_{4}^{2-}');
-    expect(html('PO43-')).toBe('PO_{4}^{3-}');
-    expect(html('CO32-')).toBe('CO_{3}^{2-}');
-    expect(html('Cr2O72-')).toBe('Cr_{2}O_{7}^{2-}');
-    expect(html('Fe3+')).toBe('Fe^{3+}');
-    expect(html('NH4+')).toBe('NH_{4}^{+}');
-    expect(html('MnO4-')).toBe('MnO_{4}^{-}');
-    expect(html('[Fe(CN)6]3-')).toBe('[Fe(CN)_{6}]^{3-}');
-    expect(html('CuSO4·5H2O')).toBe('CuSO_{4}·5H_{2}O');
+    const f = (text: string): TextRun[] => [{ text, formula: true }];
+    expect(html(f('N3-'))).toBe('N_{3}^{-}');
+    expect(html(f('C60-'))).toBe('C_{60}^{-}');
+    expect(html(f('Fe3+'))).toBe('Fe_{3}^{+}');
+    expect(html(f('NH4+'))).toBe('NH_{4}^{+}');
+    expect(html(f('MnO4-'))).toBe('MnO_{4}^{-}');
+    expect(html(f('[Fe(CN)6]3-'))).toBe('[Fe(CN)_{6}]_{3}^{-}');
+    expect(html(f('CuSO4·5H2O'))).toBe('CuSO_{4}·5H_{2}O');
+    // sulfate SO₄²⁻ (PubChem CID 1117) with its 2 set in superscript by hand
+    expect(html([{ text: 'SO4', formula: true }, { text: '2', sup: true }, { text: '-', formula: true }])).toBe('SO_{4}^{2}^{-}');
+    // read across runs as the drawing does: the + later on puts the - up (sodium acetate)
+    expect(html([{ text: 'CH3CO2-Na', formula: true }, { text: '+', formula: true }])).toBe('CH_{3}CO_{2}^{-}Na^{+}');
   });
 
   it('keeps fill, merges down, strikethrough, highlight, size and paragraphs in a cell', () => {

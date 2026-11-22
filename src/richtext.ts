@@ -216,14 +216,13 @@ const FORMULA_NO_MARK = /[\s(\[{,.:;·⋅•]/;
  * - Numbers go down unless they follow what FORMULA_NO_MARK lists or a sign (CH3, Pd(PPh3)4, not 80 °C or 1,4).
  * - A range of counts goes down whole (C8-12), unless it reads as a charge: a one-digit end no
  *   more than the last digit before it (C2-1).
- * - A sign goes up with the numbers after it (K+, TfO-, a-1), unless it follows what
+ * - A sign goes up with the numbers after it (K+, TfO-, Fe2+, a-1), unless it follows what
  *   FORMULA_NO_MARK lists or is the start of the text. Before a letter it stays on the line, as a
  *   hyphen does (Red-Al), but a - goes up there when a + comes later in the text (CO2-Na+).
  * - Two or more hyphens are names, not charges, and none goes up (Me-Al-).
- * - The digit just before a sign that ends the formula is the charge's, and goes up with it, where
- *   it follows other digits (SO42- is SO₄²⁻, PO43- PO₄³⁻, Hg22+ Hg₂²⁺), a bracket ([Fe(CN)6]3- is
- *   [Fe(CN)₆]³⁻), or one element symbol alone (Fe3+ is Fe³⁺, Ca2+ Ca²⁺); after a formula of more
- *   than one element it is a count (NH4+ is NH₄⁺, MnO4- MnO₄⁻), as charges of 1 are written with no 1.
+ * - A charge's own number is lowered with the counts (Fe3+ is Fe₃⁺, SO42- SO₄₂⁻), as ChemDraw does:
+ *   text alone can't tell a count from a charge (N3- is azide N₃⁻, C60- is C₆₀⁻). To raise it, set
+ *   those digits in superscript by hand (a run's own sub or sup is kept as it is).
  * - An R group's number goes up when Settings ▸ Drawing says so (R¹, CO₂R¹; not the 2 of NR2).
  * `before` and `after` are the rest of the text, in other runs: ChemDraw reads across them.
  */
@@ -240,15 +239,6 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
   }
   let hyphens = 0;
   for (let i = 0; i < whole.length; i++) if (whole[i] === '-' && !counts.has(i)) hyphens++;
-  // a charge's own digit before a sign ending the formula (the comment above)
-  const charge = new Set<number>();
-  for (const m of whole.matchAll(/(\d+)([+-])(?=$|[\s,.;:)\]}])/g)) {
-    const at = m.index, d = m[1], prev = whole[at - 1];
-    if (prev === undefined || FORMULA_NO_MARK.test(prev) || prev === '+' || prev === '-' || counts.has(at)) continue;
-    let from = at;
-    while (from > 0 && !FORMULA_NO_MARK.test(whole[from - 1])) from--;
-    if (d.length > 1 || prev === ']' || /^[A-Z][a-z]?$/.test(whole.slice(from, at))) charge.add(at + d.length - 1);
-  }
   const lastPlus = whole.lastIndexOf('+');
   let raised = false;
   for (let i = 0; i < whole.length; i++) {
@@ -259,7 +249,7 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
       raised = prev !== undefined && !FORMULA_NO_MARK.test(prev) && (c === '+' ? !letter : hyphens < 2 && (!letter || lastPlus > i));
       if (raised) pos[i] = 'sup';
     } else if (c >= '0' && c <= '9') {
-      if (raised || charge.has(i)) pos[i] = 'sup';
+      if (raised) pos[i] = 'sup';
       else if (prev >= '0' && prev <= '9' ? pos[i - 1] === 'sub' : prev !== undefined && !FORMULA_NO_MARK.test(prev) && prev !== '+' && prev !== '-') pos[i] = 'sub';
     } else raised = false;
   }
@@ -274,12 +264,28 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
   return out;
 }
 
-/** Formula style for one of a text's runs: the parts it shows, reading across the runs around it. */
+/**
+ * Formula style for one of a text's runs: the parts it shows, reading across the runs around it
+ * in its own paragraph. Every place that shows or writes formula text goes through here (the
+ * drawing, Documents, Word, PowerPoint, RTF, ODT, copied HTML), so all of them agree; a writer
+ * that has a paragraph's runs gets the same answer as the editor that has the whole text.
+ */
 export function formulaRunParts(runs: readonly TextRun[], k: number): Part[] {
   let before = '', after = '';
   for (let i = 0; i < k; i++) before += runs[i].text;
   for (let i = k + 1; i < runs.length; i++) after += runs[i].text;
-  return formulaParts(runs[k].text, before, after);
+  const text = runs[k].text;
+  // from the start of the run's paragraph to its end (a run holding a paragraph end is read whole)
+  before = before.slice(before.lastIndexOf('\n') + 1);
+  const end = after.indexOf('\n');
+  if (end >= 0) after = after.slice(0, end);
+  return formulaParts(text, before, after);
+}
+
+/** formulaRunParts for run `r` among `runs` (its paragraph's, or more); r alone when it isn't among them. */
+export function formulaPartsIn(runs: readonly TextRun[] | undefined, r: TextRun): Part[] {
+  const k = runs ? runs.indexOf(r) : -1;
+  return k >= 0 ? formulaRunParts(runs!, k) : formulaParts(r.text);
 }
 
 // ------------------------------------------------------------------ the Symbol font
