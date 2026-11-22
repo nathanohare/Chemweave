@@ -36,7 +36,10 @@ let shared: { host: HTMLDivElement; view: SheetView } | null = null;
 
 /** One grid, off screen, that draws each template in turn. */
 function offscreenView(): { host: HTMLDivElement; view: SheetView } {
-  if (shared) return shared;
+  if (shared) {
+    if (!shared.host.isConnected) document.body.append(shared.host);
+    return shared;
+  }
   const host = document.createElement('div');
   host.className = 'ft-sheet-offscreen';
   host.setAttribute('aria-hidden', 'true');
@@ -93,5 +96,8 @@ export function sheetPicture(wb: Workbook): HTMLCanvasElement {
   out.getContext('2d')?.drawImage(src, 0, 0);
   out.className = 'ft-real-sheet';
   view.show(null);
+  // out of the page between pictures, its big canvas let go (drawn at full size again next time)
+  src.width = src.height = 0;
+  host.remove();
   return out;
 }
