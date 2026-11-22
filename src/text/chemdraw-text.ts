@@ -7,7 +7,7 @@
 // Links (Insert > Link) go in the same tag, ChemDraw having none: they show there as their text.
 
 import type { ParaStyle, TextRun } from '../model';
-import { applyStyle, normalizeRuns, plainText, replaceRange, styleOf } from '../richtext';
+import { applyStyle, normalizeRuns, plainText, replaceRange, styleOf, symbolFontShown } from '../richtext';
 import { linkSpans } from '../links';
 import { fitParas, listMarkers, paraCount, paraRange, splitParagraphs, storedParas } from './paragraphs';
 
@@ -33,10 +33,11 @@ export interface TextTag {
  */
 export const LOOK_FIELDS = ['strike', 'dstrike', 'spacing', 'outline', 'outlineW', 'shadow', 'noFill', 'noKern', 'transparency', 'symbolFont'] as const;
 
-/** The looks of a run that go in the tag, or null. */
+/** The looks of a run that go in the tag, or null (not which font a sign is in when ChemDraw's fonts say so). */
 function lookOf(r: TextRun): Partial<TextRun> | null {
   const o: Record<string, unknown> = {};
   for (const k of LOOK_FIELDS) if (r[k] !== undefined && (k === 'symbolFont' || r[k] !== false)) o[k] = r[k];
+  if (r.symbolFont !== undefined && symbolFontShown(r.text, r.symbolFont)) delete o.symbolFont;
   return Object.keys(o).length ? o as Partial<TextRun> : null;
 }
 

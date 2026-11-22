@@ -342,6 +342,13 @@ export const symbolOnlyByChoice = (text: string): boolean => [...text].some((ch)
 
 /** Does text read from an ordinary font hold a sign that would otherwise be saved in the Symbol font (−)? */
 export const plainByChoice = (text: string): boolean => [...text].some((ch) => !plainFontChar(ch) && TO_SYMBOL.has(ch));
+/**
+ * Whether a run's symbolFont is what reading it back from ChemDraw works out anyway (cdxml.ts
+ * captionOf): a run written all in the Symbol font with a sign Arial has too, or written in an
+ * ordinary font with a sign Arial lacks. Only other runs need it kept in a tag.
+ */
+export const symbolFontShown = (text: string, symbolFont: boolean): boolean =>
+  symbolFont ? [...text].every((ch) => TO_SYMBOL.has(ch)) && symbolOnlyByChoice(text) : plainByChoice(text);
 
 /** Can this character be saved for ChemDraw (directly, or through the Symbol font)? */
 export const savableChar = (ch: string): boolean => plainFontChar(ch) || TO_SYMBOL.has(ch);

@@ -154,4 +154,15 @@ describe('run looks ChemDraw\'s text has no place for (R3)', () => {
     const wide = runs.find((r) => r.text.includes('wide'));
     expect([wide?.spacing, wide?.shadow]).toEqual([2, true]);
   });
+  it('leave out which font a sign is in when ChemDraw\'s fonts say so already', () => {
+    // a Greek letter in ChemDraw's Symbol font, and an α typed in Arial
+    const file = '<?xml version="1.0" encoding="UTF-8" ?><CDXML><fonttable><font id="3" name="Arial"/><font id="23" name="Symbol"/></fonttable><page id="1"><t id="5" p="100 100">'
+      + '<s font="23" size="10" face="0">a</s><s font="3" size="10" face="0">-helix, </s><s font="3" size="10" face="0">α in Arial</s></t></page></CDXML>';
+    const { doc } = readCdxml(file);
+    expect([...doc.captions.values()][0].runs.find((r) => r.text.includes('Arial'))?.symbolFont).toBe(false);
+    doc.source = null;
+    const xml = writeCdxml(doc, { name: 't.cdxml' });
+    expect(xml).not.toContain('Chem Illustrator text');
+    expect([...readCdxml(xml).doc.captions.values()][0].runs.find((r) => r.text.includes('Arial'))?.symbolFont).toBe(false);
+  });
 });
