@@ -333,26 +333,64 @@ export function nativeDrawingText(part: Doc): string {
 }
 
 /**
- * The drawing in a NATIVE_FORMAT text, or null when it isn't one or is damaged (the paste then
- * reads the CDXML beside it). Settings this version doesn't know are kept on the objects as they are.
+ * The drawing in a NATIVE_FORMAT text, or null when it isn't one, is damaged, or comes from a
+ * later version of this program (review F1b-R05). The rule for versions: `v` is the layout's
+ * version; a later program that changes the layout raises it, and a program that doesn't know
+ * that version pastes the CDXML written beside it instead (which is why CDXML is still written).
+ * The data is checked before it is taken: every atom, caption, arrow and shape must have its
+ * place as numbers, every bond its two atoms and order, every caption its runs of text, so a
+ * paste can never leave a drawing that can't be saved. Anything wrong, and the CDXML is pasted.
+ * Settings this version doesn't know are kept on the objects as they are.
  */
 export function nativeDrawing(text: string): Doc | null {
   try {
     const j = JSON.parse(text) as { app?: unknown; v?: unknown; style?: unknown; background?: unknown; contents?: Record<string, unknown> };
-    if (j?.app !== 'Chemweave' || typeof j.v !== 'number' || !j.contents || typeof j.contents !== 'object') return null;
-    const list = (k: string) => (Array.isArray(j.contents![k]) ? (j.contents![k] as unknown[]) : []).filter((x): x is { id: number } & Record<string, unknown> => !!x && typeof x === 'object' && typeof (x as { id?: unknown }).id === 'number');
-    const atoms = list('atoms');
+    if (j?.app !== 'Chemweave' || !Number.isInteger(j.v) || (j.v as number) < 1 || (j.v as number) > NATIVE_VERSION) return null;
+    if (!j.contents || typeof j.contents !== 'object') return null;
+    type Obj = Record<string, unknown>;
+    const fin = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
+    const pt = (v: unknown) => !!v && typeof v === 'object' && fin((v as Obj).x) && fin((v as Obj).y);
+    const list = (k: string, ok: (o: Obj) => boolean): Obj[] | null => {
+      const v = j.contents![k];
+      if (v === undefined) return [];
+      if (!Array.isArray(v)) return null;
+      return v.every((o) => !!o && typeof o === 'object' && fin((o as Obj).id) && ok(o as Obj)) ? (v as Obj[]) : null;
+    };
+    const atoms = list('atoms', (a) => fin(a.x) && fin(a.y) && fin(a.z) && (a.label === null || a.label === undefined || typeof a.label === 'string') && (a.charge === undefined || fin(a.charge)));
+    const bonds = list('bonds', (b) => fin(b.a1) && fin(b.a2) && fin(b.order));
+    const captions = list('captions', (c) => fin(c.x) && fin(c.y) && Array.isArray(c.runs) && (c.runs as unknown[]).every((r) => !!r && typeof r === 'object' && typeof (r as Obj).text === 'string'));
+    const arrows = list('arrows', (r) => pt(r.tail) && pt(r.head));
+    const shapes = list('shapes', (s) => fin(s.x1) && fin(s.y1) && fin(s.x2) && fin(s.y2) && typeof s.kind === 'string');
+    if (!atoms || !bonds || !captions || !arrows || !shapes) return null;
+    if (!atoms.length && !captions.length && !arrows.length && !shapes.length) return null;
     const have = new Set(atoms.map((a) => a.id));
     // (a bond to an atom that isn't there is left out)
-    const bonds = list('bonds').filter((b) => have.has(b.a1 as number) && have.has(b.a2 as number));
+    const joined = bonds.filter((b) => have.has(b.a1) && have.has(b.a2));
     const d = new Doc();
-    if (j.style && typeof j.style === 'object') d.style = { ...d.style, ...(j.style as object) };
+    // (style settings only where they have the type this version expects)
+    if (j.style && typeof j.style === 'object') {
+      const base = d.style as unknown as Obj;
+      for (const [k, v] of Object.entries(j.style as Obj)) if (k in base ? typeof v === typeof base[k] && (typeof v !== 'number' || Number.isFinite(v)) : true) base[k] = v;
+    }
     if (typeof j.background === 'string') d.background = j.background;
-    d.restoreContents({ atoms, bonds, captions: list('captions'), arrows: list('arrows'), shapes: list('shapes') } as unknown as Contents);
+    d.restoreContents({ atoms, bonds: joined, captions, arrows, shapes } as unknown as Contents);
     return d;
   } catch {
     return null;
   }
+}
+
+/**
+ * The drawing on the Windows clipboard, our own whole first: when that is missing, damaged or from
+ * a later version, our CDXML, then ChemDraw's CDX (review F1b-R06). Null when there is none.
+ * `more` adds formats to try after ours (Word's "Embed Source" for the canvas paste).
+ */
+export async function nativeClipboardDrawing(more: string[] = []): Promise<Doc | null> {
+  const whole = await nativeFirst([NATIVE_FORMAT]);
+  const fromWhole = whole ? nativeDrawing(new TextDecoder().decode(whole[1]).replace(/\0+$/, '')) : null;
+  if (fromWhole) return fromWhole;
+  const drawing = await nativeFirst([OWN_FORMAT, ...more, CDX_FORMAT]);
+  return drawing ? clipboardDrawing(...drawing) : null;
 }
 
 /** The drawing in one of the DRAWING_FORMATS (as nativeFirst hands it over), or null when it can't be read. */
@@ -761,15 +799,9 @@ export async function nativeFirst(names: string[]): Promise<[string, Uint8Array]
  */
 export async function readNativeClipboard(): Promise<Pasted> {
   // our drawing whole first (a copy from another window or session loses nothing), then as CDXML
-  const whole = await nativeFirst([NATIVE_FORMAT]);
-  const fromWhole = whole ? nativeDrawing(new TextDecoder().decode(whole[1]).replace(/\0+$/, '')) : null;
-  if (fromWhole) return { kind: 'drawing', doc: fromWhole };
   // ("Embed Source" is a drawing from here copied back out of Word: the app reads only its own objects)
-  const drawing = await nativeFirst([OWN_FORMAT, 'Embed Source', CDX_FORMAT]);
-  if (drawing) {
-    const [name, data] = drawing;
-    return { kind: 'drawing', doc: name === CDX_FORMAT ? readCdxml(cdxToCdxml(data)).doc : ownDrawing(new TextDecoder().decode(data)) };
-  }
+  const drawing = await nativeClipboardDrawing(['Embed Source']);
+  if (drawing) return { kind: 'drawing', doc: drawing };
   // a ChemDraw object copied in PowerPoint or Word: no ChemDraw data of its own on the clipboard,
   // but the object (a compound file) holds ChemDraw's drawing; its picture is only the fallback
   const object = await nativeFirst(['Embedded Object']).catch(() => null);
