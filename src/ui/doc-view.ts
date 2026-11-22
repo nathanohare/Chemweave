@@ -13,7 +13,7 @@ import { turnOf } from '../document/arrange';
 import { boxTextTop, drawChangeBars, turnAbout, drawDocTable, drawHeaderFooter, drawHfBodies, drawLineNumbers, drawNoteRules, drawPageLook, traceGeo } from '../document/doc-paint';
 import { BOX_PAD, SHADOWS, emptyContents, lookOf, type DocText } from '../document/document';
 import { BREAK_NAMES } from '../document/sections';
-import { drawLayout } from '../text/draw';
+import { drawLayout, drawMarks } from '../text/draw';
 import { drawMath } from '../document/math';
 import { selectionRects } from '../text/layout';
 import { imageFor, onImageReady } from '../render/images';
@@ -96,6 +96,8 @@ export class DocView {
   live: { id: number; fade: boolean; paint(ctx: CanvasRenderingContext2D, o: PlacedObject): void } | null = null;
   /** Table > View Gridlines: faint lines on every table edge with no border (else only in tables with none). */
   gridlines = false;
+  /** Home > Show/Hide ¶: spaces, tabs and paragraph ends drawn as marks (on screen only). */
+  showMarks = false;
   /** Pages side by side in one row, scrolled across (View > Side to Side, and Read Mode). */
   sideways = false;
   /** Read Mode: only these pages are drawn (the two being read), or all. */
@@ -487,6 +489,7 @@ export class DocView {
       // figures behind the text first, then the text, then the rest
       for (const o of lay.objects) if (o.page === p.index && o.wrap === 'behind') this.object(ctx, t, o, lay);
       drawLayout(ctx, lay.text, 0, 0, p.first, p.end);
+      if (this.showMarks) drawMarks(ctx, lay.text, 0, 0, p.first, p.end);
       drawNoteRules(ctx, lay, p.index);
       drawParaBorders(ctx, lay.frames, p.index);
       // tables, then the figures (some of them in table cells)
@@ -495,7 +498,7 @@ export class DocView {
       for (const o of tabs) {
         const obj = t.objects[o.id];
         const tb = lay.tables.get(o.id);
-        if (obj?.kind === 'table' && tb) drawDocTable(ctx, obj.table, tb, p.index, { color: '#9fb4d8', px: 1 / k, always: this.gridlines }, t.tableStyles);
+        if (obj?.kind === 'table' && tb) drawDocTable(ctx, obj.table, tb, p.index, { color: '#9fb4d8', px: 1 / k, always: this.gridlines }, t.tableStyles, this.showMarks);
       }
       for (const o of lay.objects) if (o.page === p.index && o.wrap !== 'behind' && t.objects[o.id]?.kind !== 'table') this.object(ctx, t, o, lay);
       const px = 1 / k;
@@ -767,6 +770,7 @@ export class DocView {
         ctx.rect(o.x, o.y, o.w, o.h);
         ctx.clip();
         drawLayout(ctx, bl, o.x + BOX_PAD.x, boxTextTop(obj, o, bl));
+        if (this.showMarks) drawMarks(ctx, bl, o.x + BOX_PAD.x, boxTextTop(obj, o, bl));
         ctx.restore();
       }
     } else if (obj.kind === 'math') {

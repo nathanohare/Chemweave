@@ -155,6 +155,14 @@ const PICS: Record<string, (v: string) => string> = {
   },
 };
 
+/**
+ * Pictures a mode draws itself (Insert > Cover Page's pages, laid out by the document's own code):
+ * registered by the mode when it loads, so this module needs none of that code.
+ */
+export function registerGalleryPics(name: string, pic: (v: string) => string): void {
+  PICS[name] = pic;
+}
+
 function themeTile(font: string, c: { heading: string; accents: string[] }): string {
   return `<span class="gal-theme"><span class="gal-aa" style="font-family:'${esc(font)}',serif;color:${c.heading}">Aa</span>` +
     svg(54, 6, c.accents.map((a, i) => `<rect x="${i * 9}" y="0" width="8" height="6" rx="1" fill="${a}"/>`).join('')) + '</span>';
@@ -203,8 +211,8 @@ export function buildSelectGalleries(root: ParentNode = document): void {
     menu.hidden = true;
     if (box.dataset.gal) menu.dataset.gal = box.dataset.gal;
     box.append(btn, menu);
-    const pic = PICS[box.dataset.pic ?? ''];
-    menu.addEventListener('rb-fly-open', () => fill(menu, sel, pic));
+    // (looked up as it opens: a mode registers its own pictures when it loads)
+    menu.addEventListener('rb-fly-open', () => fill(menu, sel, PICS[box.dataset.pic ?? '']));
     menu.addEventListener('click', (e) => {
       const it = (e.target as HTMLElement).closest<HTMLButtonElement>('.gal-it');
       if (!it || it.disabled) return;
