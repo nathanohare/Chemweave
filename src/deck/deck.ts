@@ -1778,7 +1778,7 @@ export class Deck {
     const restyle = !sameStyle(before.drawing, after.drawing);
     // layout items: unlocked deck-wide, every slide has its own copies (locked again, the copies go)
     const ownBefore = slides.map((s) => !!s.ownItems);
-    const ownAfter = slides.map((s, i) => (after.itemsUnlocked ? ownBefore[i] || hasItems(after, laysAfter[i]) : before.itemsUnlocked ? false : ownBefore[i]));
+    const ownAfter = slides.map((_, i) => (after.itemsUnlocked ? ownBefore[i] || hasItems(after, laysAfter[i]) : before.itemsUnlocked ? false : ownBefore[i]));
     const changed = slides.map((_, i) => i).filter((i) => restyle || laysBefore[i] !== laysAfter[i] || ownBefore[i] !== ownAfter[i] || look(before, laysBefore[i]) !== look(after, laysAfter[i]));
     const use = (m: Master, lays: LayoutId[], own: boolean[]) => {
       this.master = m;
