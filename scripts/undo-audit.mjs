@@ -170,6 +170,7 @@ try {
         await page.mouse.click(c0.x, c0.y);
         const a = await probe();
         const c = await where(id, fx, fy);
+        if (!c) continue;
         await page.mouse.move(c.x, c.y);
         await page.mouse.down();
         for (let k = 1; k <= 5; k++) await page.mouse.move(c.x + 8 * k, c.y + 6 * k);
