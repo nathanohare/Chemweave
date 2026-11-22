@@ -44,6 +44,7 @@ import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDism
 import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY, chooseMatch, foundIsFromReport, updateFound, vendorRawKind, type Match, type ReportData } from '../si/ms-reports';
 import { readReportFile } from '../si/report-files';
 import { adductDisplay, sameFormula, speciesLabel, ChemError, unreadableFacts, type MolFacts, type Peak } from '../si/chem';
+import { ENGINE_SKIPPED } from '../chem/client';
 import { addInfo } from './info-tip';
 import { computeLabels, type SiLabels } from '../si/labels';
 import { projectWarnings, type ProjectWarning } from '../si/project-warnings';
@@ -1089,7 +1090,10 @@ export class SiMode {
     if (got) { todo.forEach((m, i) => this.facts.set(m, got[i] ?? null)); return; }
     for (const m of todo) {
       const one = await this.host.siFacts([m]).then((r) => r[0] ?? null, (e: unknown) => e instanceof Error ? e : new Error(String(e)));
-      if (one instanceof Error) {
+      if (one instanceof Error && one.message === ENGINE_SKIPPED) {
+        // (a structure that broke the engine is left out for the session: not asked again)
+        this.facts.set(m, unreadableFacts(`No formula or masses: ${one.message}`));
+      } else if (one instanceof Error) {
         this.facts.set(m, unreadableFacts(`No formula or masses for now: ${one.message.replace(/\.?$/, '.')} The checks that need the structure are run again once the chemistry engine is ready.`));
         this.factsFailed.add(m);
       } else this.facts.set(m, one);
@@ -1106,8 +1110,9 @@ export class SiMode {
     for (const m of this.factsFailed) this.facts.delete(m);
     const had = this.factsFailed.size > 0;
     this.factsFailed.clear();
-    if (!this.project) return;
-    if (had) this.warnings.clear();
+    // (nothing failed, as at an ordinary start-up: no redraw, which could take the focus from a field)
+    if (!this.project || !had) return;
+    this.warnings.clear();
     this.shownKey = '';
     this.refresh();
   }
