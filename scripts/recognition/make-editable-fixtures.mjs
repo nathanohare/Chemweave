@@ -62,9 +62,16 @@ const SCHEME = { name: 'scheme-150dpi', rxn: 'CC(=O)N[C@@H](Cc1ccc(O)cc1)C(=O)OC
     const ar = [...a.doc.arrows.values()][0];
     const mid = (ar.tail.x + ar.head.x) / 2, y = ar.tail.y;
     const runs = (text, more = {}) => [{ text, size: 10, font: 'Arial', ...more }];
+    // a centred caption's x is the left of its line, so measure it and put its middle at cx
+    const centred = (cx, cy, r) => {
+      const c = a.doc.addCaption({ x: cx, y: cy, runs: r, justify: 'center' });
+      const b = a.renderer.captionBox(c);
+      a.doc.removeCaption(c.id);
+      a.doc.addCaption({ x: cx - (b.x2 - b.x1) / 2, y: cy, runs: r, justify: 'center' });
+    };
     a.doc.edit('Scheme', () => {
-      a.doc.addCaption({ x: mid, y: y - 5, runs: runs('LiOH'), justify: 'center' });
-      a.doc.addCaption({ x: mid, y: y + 13, runs: runs('THF, 23 °C'), justify: 'center' });
+      centred(mid, y - 5, runs('LiOH'));
+      centred(mid, y + 13, runs('THF, 23 °C'));
     });
     // the two structures (atoms joined by bonds)
     const atoms = [...a.doc.atoms.values()];
@@ -76,7 +83,7 @@ const SCHEME = { name: 'scheme-150dpi', rxn: 'CC(=O)N[C@@H](Cc1ccc(O)cc1)C(=O)OC
     a.doc.edit('Numbers', () => {
       sets.forEach((s, i) => {
         const xs = s.map((x) => x.x), ys = s.map((x) => x.y);
-        a.doc.addCaption({ x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 22, runs: runs(String(i + 1), { bold: true }), justify: 'center' });
+        centred((Math.min(...xs) + Math.max(...xs)) / 2, Math.max(...ys) + 22, runs(String(i + 1), { bold: true }));
       });
     });
     const p = a.picture(c.dpi);
