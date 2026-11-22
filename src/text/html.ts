@@ -34,6 +34,19 @@ export interface RunHtmlOpts {
  * capitals, character spacing and raised or lowered text (as Word's own HTML writes them:
  * position:relative with mso-text-raise), then sub- or superscript and a link.
  */
+/**
+ * The CSS line style for an underline kind, by Word's names (ECMA-376 part 1, 17.18.99) or Excel's
+ * (18.18.85); solid for those CSS has no drawing of (thick, words...).
+ */
+function underlineStyle(kind: string | undefined): 'solid' | 'double' | 'wavy' | 'dotted' | 'dashed' {
+  if (!kind) return 'solid';
+  if (/^double/i.test(kind)) return 'double';
+  if (/^wav/i.test(kind)) return 'wavy';
+  if (/^(dotted|dottedHeavy)$/i.test(kind)) return 'dotted';
+  if (/dash/i.test(kind)) return 'dashed';
+  return 'solid';
+}
+
 function runSpan(r: TextRun, t: string, pos: rt.Part['pos'], opts: RunHtmlOpts): string {
   const css: string[] = [];
   const font = r.font ? `'${r.font}'` : opts.font === null ? null : opts.font ?? 'Arial';
@@ -43,15 +56,25 @@ function runSpan(r: TextRun, t: string, pos: rt.Part['pos'], opts: RunHtmlOpts):
   // (false: plain inside bold or italic text round it, as a word left plain in a bold spreadsheet cell)
   if (r.bold !== undefined) css.push(`font-weight:${r.bold ? 'bold' : 'normal'}`);
   if (r.italic !== undefined) css.push(`font-style:${r.italic ? 'italic' : 'normal'}`);
-  const lines = [...(r.underline ? ['underline'] : []), ...(r.strike ? ['line-through'] : [])];
+  // the underline's and strikethrough's kinds: one element's lines share one style in CSS, so
+  // two lines of different kinds go on two spans (the strikethrough's on the inner one)
+  const uStyle = r.underline ? underlineStyle(r.ukind) : 'solid', sStyle = r.strike && r.dstrike ? 'double' : 'solid';
+  const apart = !!r.underline && !!r.strike && (uStyle !== sStyle || !!r.ucolor);
+  const lines = [...(r.underline ? ['underline'] : []), ...(r.strike && !apart ? ['line-through'] : [])];
   if (lines.length) css.push(`text-decoration:${lines.join(' ')}`);
+  const style = r.underline ? uStyle : sStyle;
+  if (lines.length && style !== 'solid') css.push(`text-decoration-style:${style}`);
+  // (Word's own HTML names a double underline so)
+  if (r.underline && uStyle === 'double') css.push('text-underline:double');
+  if (r.underline && r.ucolor) css.push(`text-decoration-color:${r.ucolor}`);
   if (r.color) css.push(`color:${r.color}`);
   if (r.highlight) css.push(`background:${r.highlight}`);
   if (r.smallCaps) css.push('font-variant:small-caps');
   if (r.allCaps) css.push('text-transform:uppercase');
   if (r.spacing) css.push(`letter-spacing:${fmt(r.spacing)}pt`);
   if (r.raise) css.push(`position:relative;top:${fmt(-r.raise)}pt;mso-text-raise:${fmt(r.raise)}pt`);
-  const body = esc(t).replace(/ {2}/g, ' &nbsp;').replace(/\n/g, '<br>');
+  let body = esc(t).replace(/ {2}/g, ' &nbsp;').replace(/\n/g, '<br>');
+  if (apart) body = `<span style="text-decoration:line-through${sStyle !== 'solid' ? `;text-decoration-style:${sStyle}` : ''}">${body}</span>`;
   const inner = css.length ? `<span style="${css.join(';')}">${body}</span>` : body;
   const shown = pos === 'sub' ? `<sub>${inner}</sub>` : pos === 'sup' ? `<sup>${inner}</sup>` : inner;
   // a link other programs can follow (places in this file mean nothing there)

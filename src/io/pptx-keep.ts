@@ -2,8 +2,7 @@
 // while the looks it goes with are unchanged here (audit G2-03, G2-06 to G2-08, G2-21, G2-22).
 //
 // A run (a:rPr, ECMA-376 part 1, 21.1.2.3.9) keeps: attributes not read here (altLang, noProof,
-// normalizeH, bmk...); a kern size; a baseline other than the usual sub- and superscript; the
-// underline and strikethrough kinds (u="dbl", strike="dblStrike"); a fill that isn't one colour
+// normalizeH, bmk...); a kern size; a baseline other than the usual sub- and superscript; a fill that isn't one colour
 // (a gradient); its effects (glow, a shadow of its own); the underline's own line and fill; a
 // theme font (+mj-lt) and the East Asian, complex script and symbol fonts; rtl and extLst; and a
 // link with no colour or underline of its own, which follows the theme's link colour.
@@ -20,8 +19,6 @@ export interface RunKept {
   a?: string;
   kern?: string;
   bl?: number;
-  u?: string;
-  st?: string;
   fill?: string;
   fx?: string;
   ul?: string;
@@ -59,9 +56,6 @@ export function readRunKept(rPr: Element | null): RunKept | null {
   if (kern && kern !== '0') k.kern = kern;
   const bl = Number(rPr.getAttribute('baseline') ?? 0);
   if (bl && bl !== -25000 && bl !== 30000) k.bl = bl;
-  const u = rPr.getAttribute('u');
-  if (u && u !== 'none' && u !== 'sng') k.u = u;
-  if (rPr.getAttribute('strike') === 'dblStrike') k.st = 'dblStrike';
   let hasFill = false;
   for (const ch of kids(rPr)) {
     const n = ch.localName;
@@ -101,8 +95,6 @@ export function keptNow(r: TextRun, k: RunKept | null) {
   const colourSame = !!k && sameColour(r.color, k.c) && !!r.noFill === !!k.nf && (r.transparency ?? null) === (k.tr ?? null);
   return {
     kern: !!k?.kern && !r.noKern ? k.kern : undefined,
-    u: r.underline && k?.u ? k.u : undefined,
-    strike: r.strike && k?.st ? k.st : undefined,
     fill: colourSame && k?.fill ? k.fill : undefined,
     fx: k?.fx !== undefined && !!r.shadow === !!k.sh ? k.fx : undefined,
     ul: r.underline && k?.ul ? k.ul : '',
@@ -112,6 +104,27 @@ export function keptNow(r: TextRun, k: RunKept | null) {
     baseline: (sub: boolean, sup: boolean) => (k?.bl !== undefined && ((k.bl < 0 && sub) || (k.bl > 0 && sup)) && (k.p === (sub ? -1 : 1)) ? k.bl : undefined),
   };
 }
+
+// ---------------------------------------------------------------- underline kinds
+
+/**
+ * PowerPoint's underline kinds (ST_TextUnderlineType, 20.1.10.82) by Word's names for them
+ * (ST_Underline, 17.18.99), which runs keep (TextRun.ukind), so a double underline stays one
+ * when text goes between documents and slides.
+ */
+const PPT_U: Record<string, string> = {
+  words: 'words', double: 'dbl', thick: 'heavy', dotted: 'dotted', dottedHeavy: 'dottedHeavy', dash: 'dash', dashedHeavy: 'dashHeavy',
+  dashLong: 'dashLong', dashLongHeavy: 'dashLongHeavy', dotDash: 'dotDash', dashDotHeavy: 'dotDashHeavy', dotDotDash: 'dotDotDash',
+  dashDotDotHeavy: 'dotDotDashHeavy', wave: 'wavy', wavyHeavy: 'wavyHeavy', wavyDouble: 'wavyDbl',
+  // (Excel's, from text pasted from a sheet)
+  doubleAccounting: 'dbl',
+};
+const WORD_U = Object.fromEntries(Object.entries(PPT_U).filter(([w]) => w !== 'doubleAccounting').map(([w, p]) => [p, w]));
+
+/** A run's underline kind by Word's name, from PowerPoint's (undefined: a single line). */
+export const wordUnderline = (u: string): string | undefined => WORD_U[u];
+/** PowerPoint's u for a run's underline kind. */
+export const pptUnderline = (kind: string | undefined): string => (kind && PPT_U[kind]) || 'sng';
 
 // ---------------------------------------------------------------- paragraphs
 

@@ -30,7 +30,12 @@ export function cellTextHtml(text: string, st: CellStyle | undefined, runs: Text
     if ((look.color ?? '') !== (st?.color ?? '')) r.color = look.color ?? '#000000';
     if (look.font && look.font !== st?.font) r.font = look.font;
     if (look.size && look.size !== st?.size) r.size = look.size;
-    if (look.underline) r.underline = true;
+    if (look.underline) {
+      r.underline = true;
+      // its kind (double, accounting...), the piece's own or the cell's
+      const kind = look.ukind ?? st?.excel?.u;
+      if (kind && kind !== 'single') r.ukind = kind;
+    }
     if (look.strike || st?.excel?.strike) r.strike = true;
     if (pos === 'sub') r.sub = true;
     else if (pos === 'sup') r.sup = true;

@@ -51,7 +51,7 @@ import { gluePoint, arrowPoints, boxOf as pointsBox } from '../objects';
 import { stackAsRead, type StackItem } from '../editor/stacking';
 import { roughBox } from '../deck/split-slide';
 import { readEffects } from './pptx-effects';
-import { readRunKept, finishRunKept, readParaKept, finishParaKept, keptFrame } from './pptx-keep';
+import { readRunKept, finishRunKept, readParaKept, finishParaKept, keptFrame, wordUnderline } from './pptx-keep';
 import { readViewProps, readSlideGuides } from '../deck/guides';
 import { readMasterHF } from '../deck/notes-pages';
 import { readShowPr, readCustShows } from '../deck/show-setup';
@@ -2711,10 +2711,11 @@ class Reader {
         if (get('b') === '1' || get('b') === 'true') r.bold = true;
         if (get('i') === '1' || get('i') === 'true') r.italic = true;
         const u = get('u');
-        if (u && u !== 'none') r.underline = true;
-        // (a double line through as a single one)
+        // the underline's kind by Word's name for it, and a double line through (21.1.2.3.9)
+        if (u && u !== 'none') { r.underline = true; const kind = wordUnderline(u); if (kind) r.ukind = kind; }
         const strike = get('strike');
         if (strike && strike !== 'noStrike') r.strike = true;
+        if (strike === 'dblStrike') r.dstrike = true;
         const cap = get('cap');
         if (cap === 'all') r.allCaps = true;
         else if (cap === 'small') r.smallCaps = true;

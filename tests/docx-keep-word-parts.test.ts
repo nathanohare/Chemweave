@@ -106,3 +106,18 @@ describe('Word styles are kept (G2-12)', () => {
     expect(names).toContain('Light List');
   });
 });
+
+describe('Word underline kinds and double strikethrough (G2-07)', () => {
+  it('keeps a double, wavy or coloured underline and a double strikethrough', async () => {
+    const r = (rPr: string, t: string) => `<w:r><w:rPr>${rPr}</w:rPr><w:t>${t}</w:t></w:r>`;
+    const body = `<w:p>${r('<w:u w:val="double" w:color="FF0000"/>', 'dbl')}${r('<w:u w:val="wave"/>', 'wave')}${r('<w:u w:val="single"/>', 'plain')}${r('<w:dstrike/>', 'gone')}${r('<w:strike/>', 'struck')}</w:p>`;
+    const xml = (await roundTrip({ body }))['word/document.xml'];
+    const rPrOf = (t: string) => new RegExp(`<w:rPr>((?:(?!<w:rPr>)[\\s\\S])*?)</w:rPr><w:t[^>]*>${t}</w:t>`).exec(xml)?.[1] ?? '';
+    expect(rPrOf('dbl')).toContain('<w:u w:val="double" w:color="FF0000"/>');
+    expect(rPrOf('wave')).toContain('<w:u w:val="wave"/>');
+    expect(rPrOf('plain')).toContain('<w:u w:val="single"/>');
+    expect(rPrOf('gone')).toContain('<w:dstrike/>');
+    expect(rPrOf('gone')).not.toContain('<w:strike');
+    expect(rPrOf('struck')).toContain('<w:strike/>');
+  });
+});

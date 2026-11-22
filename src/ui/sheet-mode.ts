@@ -2044,6 +2044,9 @@ export class SheetMode {
     // (a line on the cell would run under every piece of rich text: its pieces carry their own)
     const lines = rich === null ? [...(st?.underline ? ['underline'] : []), ...(st?.excel?.strike ? ['line-through'] : [])] : [];
     if (lines.length) css.push(`text-decoration:${lines.join(' ')}`);
+    // a double or accounting underline: as CSS draws one, and as Excel's own HTML names it
+    const uKind = st?.underline ? st.excel?.u : undefined;
+    if (rich === null && uKind) css.push(`text-decoration-style:${/^double/.test(uKind) ? 'double' : 'solid'};text-underline-style:${uKind === 'singleAccounting' ? 'single-accounting' : uKind === 'doubleAccounting' ? 'double-accounting' : 'double'}`);
     if (st?.color) css.push(`color:${st.color}`);
     if (st?.fill) css.push(`background:${st.fill}`);
     if (st?.align) css.push(`text-align:${st.align}`);

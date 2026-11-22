@@ -1760,7 +1760,7 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   // capitals and strikethrough (on, or off where the character style has them)
   if (!!r.allCaps !== !!cs?.allCaps) out.push(r.allCaps ? '<w:caps/>' : '<w:caps w:val="0"/>');
   if (!!r.smallCaps !== !!cs?.smallCaps) out.push(r.smallCaps ? '<w:smallCaps/>' : '<w:smallCaps w:val="0"/>');
-  if (!!r.strike !== !!cs?.strike) out.push(r.strike ? '<w:strike/>' : '<w:strike w:val="0"/>');
+  if (!!r.strike !== !!cs?.strike || (r.strike && r.dstrike)) out.push(r.strike ? strikeXml(r) : '<w:strike w:val="0"/>');
   if (r.noProof) out.push('<w:noProof/>');
   if (x.vanish) out.push('<w:vanish/>');
   // raised or lowered from the line, in half-points
@@ -1774,7 +1774,7 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   if (size !== st.size) out.push(`<w:sz w:val="${half(size)}"/><w:szCs w:val="${half(size)}"/>`);
   const hl = r.highlight ? highlightName(r.highlight) : null;
   if (hl) out.push(`<w:highlight w:val="${hl}"/>`);
-  if (!!r.underline !== !!cs?.underline) out.push(r.underline ? '<w:u w:val="single"/>' : '<w:u w:val="none"/>');
+  if (!!r.underline !== !!cs?.underline || (r.underline && (r.ukind || r.ucolor))) out.push(r.underline ? underlineXml(r) : '<w:u w:val="none"/>');
   // any other colour behind the text goes as shading
   if (r.highlight && !hl) out.push(`<w:shd w:val="clear" w:color="auto" w:fill="${hex6(r.highlight)}"/>`);
   const pos = x.pos ?? (r.sub ? 'sub' : r.sup ? 'sup' : 'base');
@@ -1783,6 +1783,17 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   out.push(textEffects(r, color));
   return out.join('');
 }
+
+/** A run's underline: its kind (single when not given) and its own colour (17.3.2.40). */
+function underlineXml(r: TextRun): string {
+  const kind = r.ukind && /^[A-Za-z]+$/.test(r.ukind) ? EXCEL_U[r.ukind] ?? r.ukind : 'single';
+  return `<w:u w:val="${kind}"${r.ucolor ? ` w:color="${hex6(r.ucolor)}"` : ''}/>`;
+}
+/** Excel's underline kinds Word has no name for (text pasted from a sheet): the plain ones. */
+const EXCEL_U: Record<string, string> = { singleAccounting: 'single', doubleAccounting: 'double' };
+
+/** A run's strikethrough, single or double (17.3.2.37, 17.3.2.9). */
+const strikeXml = (r: TextRun) => (r.dstrike ? '<w:dstrike/>' : '<w:strike/>');
 
 /**
  * The Font box's text effects as Word 2010's own (w14, last in a run's properties, in Word's
@@ -1828,10 +1839,11 @@ function tableRun(r: TextRun, font: string, size: number): string {
   const parts: string[] = [fontsXml(r.font ?? font)];
   if (r.bold) parts.push('<w:b/><w:bCs/>');
   if (r.italic) parts.push('<w:i/><w:iCs/>');
+  if (r.strike) parts.push(strikeXml(r));
   if (r.color) parts.push(`<w:color w:val="${hex6(r.color)}"/>`);
   const s = r.size ?? size;
   parts.push(`<w:sz w:val="${half(s)}"/><w:szCs w:val="${half(s)}"/>`);
-  if (r.underline) parts.push('<w:u w:val="single"/>');
+  if (r.underline) parts.push(underlineXml(r));
   if (r.formula && !r.sub && !r.sup) {
     return rt.formulaParts(r.text).map((p) => run(`<w:rStyle w:val="${FORMULA_STYLE}"/>${parts.join('')}${p.pos !== 'base' ? `<w:vertAlign w:val="${p.pos === 'sub' ? 'subscript' : 'superscript'}"/>` : ''}`, p.text)).join('');
   }

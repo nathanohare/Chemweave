@@ -403,6 +403,17 @@ export interface TextRun {
    */
   wfx?: string;
   /**
+   * The underline's kind, by the name the file gave it, while `underline` is on: Word's (double,
+   * wave, dotted, thick, words..., ECMA-376 part 1, 17.18.99) in documents, Excel's (double,
+   * singleAccounting, doubleAccounting, 18.18.85) on sheets. Drawn as a single line where this
+   * program has no drawing of its own for it. Absent: a single line.
+   */
+  ukind?: string;
+  /** Documents: the underline's own colour (Word's w:u w:color), when not the text's. */
+  ucolor?: string;
+  /** Double strikethrough (Word's w:dstrike, 17.3.2.9), while `strike` is on. */
+  dstrike?: boolean;
+  /**
    * Slides: PowerPoint's run formatting this program doesn't model (a gradient fill, glow, a
    * double underline, a theme or East Asian font...), as the file had it (JSON, io/pptx-keep.ts),
    * written back while the looks it goes with are unchanged.

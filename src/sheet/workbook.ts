@@ -96,6 +96,8 @@ export interface ExcelLook {
   /** The cell's font raised or lowered (superscript, subscript), or struck through. */
   vertAlign?: string;
   strike?: true;
+  /** The underline's kind while the cell is underlined: double, singleAccounting or doubleAccounting (18.18.85), shown as a single line. */
+  u?: string;
 }
 
 /** Parts of an Excel file's styles kept to save back with it (see xlsx.ts). */

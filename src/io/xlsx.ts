@@ -419,9 +419,9 @@ class Styles {
 
   /** The font, fill and border numbers for a look. */
   private parts(s: CellStyle): { font: number; fill: number; border: number } {
-    const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign]);
+    const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign, l.underline ? l.excel?.u : undefined]);
     const font = fontLook(s) !== fontLook(this.normal)
-      ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${s.excel?.strike ? '<strike/>' : ''}${s.underline ? '<u/>' : ''}` +
+      ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${s.excel?.strike ? '<strike/>' : ''}${s.underline ? uXml(s.excel?.u) : ''}` +
         `${s.excel?.vertAlign ? `<vertAlign val="${xmlAttr(s.excel.vertAlign)}"/>` : ''}<sz val="${s.size ?? 11}"/>` +
         `${s.color ? `<color rgb="FF${hex6(s.color)}"/>` : '<color theme="1"/>'}<name val="${xml(s.font ?? this.minor)}"/><family val="2"/>${s.font ? '' : '<scheme val="minor"/>'}</font>`)
       : 0;
@@ -543,7 +543,7 @@ class Strings {
   }
 
   private runLook(l: ReturnType<typeof lookOver<CellStyle>>): string {
-    return `<rPr>${l.bold ? '<b/>' : ''}${l.italic ? '<i/>' : ''}${l.strike ? '<strike/>' : ''}${l.underline ? '<u/>' : ''}` +
+    return `<rPr>${l.bold ? '<b/>' : ''}${l.italic ? '<i/>' : ''}${l.strike ? '<strike/>' : ''}${l.underline ? uXml(l.ukind ?? l.excel?.u) : ''}` +
       `${l.pos ? `<vertAlign val="${l.pos === 'sub' ? 'subscript' : 'superscript'}"/>` : ''}<sz val="${l.size ?? 11}"/>` +
       `${l.color ? `<color rgb="FF${hex6(l.color)}"/>` : '<color theme="1"/>'}<rFont val="${xmlAttr(l.font ?? this.minor)}"/><family val="2"/>${l.font ? '' : '<scheme val="minor"/>'}</rPr>`;
   }
@@ -1168,6 +1168,11 @@ const BORDER_STYLES: Record<string, BorderStyle> = {
   dashDot: 'dashed', mediumDashDot: 'dashed', dashDotDot: 'dotted', mediumDashDotDot: 'dashed', slantDashDot: 'dashed', dotted: 'dotted',
 };
 
+/** A font's or run's underline (18.4.13): single unless another of Excel's kinds is given. */
+const EXCEL_U = new Set(['double', 'singleAccounting', 'doubleAccounting']);
+// (Word's double kinds, from text pasted from a document, as Excel's double)
+const uXml = (kind: string | undefined) => (kind && EXCEL_U.has(kind) ? `<u val="${kind}"/>` : kind && /^(wavyDouble)$/.test(kind) ? '<u val="double"/>' : '<u/>');
+
 /** The parts of a font Excel writes, kept from the Normal style's (font 0) to write it back. */
 const FONT_PARTS = new Set(['b', 'i', 'strike', 'condense', 'extend', 'outline', 'shadow', 'u', 'vertAlign', 'sz', 'color', 'name', 'family', 'charset', 'scheme']);
 
@@ -1206,6 +1211,8 @@ function readStyles(doc: Document | null, theme: string[], faces: { minor: strin
     if (on(f, 'i')) st.italic = true;
     if (on(f, 'u')) st.underline = true;
     const sz = Number(val(f, 'sz') ?? baseSize);
+    // the underline's kind (18.8.53 / 18.18.85; single is the val's default)
+    const uKind = st.underline ? val(f, 'u') : null;
     if (sz !== 11 && sz > 0) st.size = sz;
     const color = readColour(kid(f, 'color'), theme);
     if (color && color !== '#000000') st.color = color;
@@ -1215,6 +1222,7 @@ function readStyles(doc: Document | null, theme: string[], faces: { minor: strin
     // raised, lowered or struck through: not shown here, written back
     const va = val(f, 'vertAlign');
     if (va === 'superscript' || va === 'subscript' || on(f, 'strike')) st.excel = { ...(va === 'superscript' || va === 'subscript' ? { vertAlign: va } : {}), ...(on(f, 'strike') ? { strike: true as const } : {}) };
+    if (uKind && uKind !== 'single') st.excel = { ...st.excel, u: uKind };
     return st;
   });
   const fills: (string | undefined)[] = kids(kid(root, 'fills'), 'fill').map((f) => {
@@ -1343,7 +1351,7 @@ export const excelEscape = (s: string) => s.replace(/_(?=x[0-9A-Fa-f]{4}_)/g, '_
 /** A run of a shared string as the file has it: its whole look, or none (the cell's). */
 interface FileRun {
   text: string;
-  look?: { bold: boolean; italic: boolean; underline: boolean; strike: boolean; color?: string; pos?: 'sub' | 'sup'; size?: number; font?: string; minor: boolean };
+  look?: { bold: boolean; italic: boolean; underline: boolean; ukind?: string; strike: boolean; color?: string; pos?: 'sub' | 'sup'; size?: number; font?: string; minor: boolean };
 }
 
 /** A shared string's text, whether some of it is lowered or raised (chemistry), and its runs. */
@@ -1366,6 +1374,7 @@ function stringItem(si: Element, theme: string[] = []): { text: string; chem: bo
       text: part,
       look: {
         bold: on(kid(pr, 'b')), italic: on(kid(pr, 'i')), underline: on(kid(pr, 'u')), strike: on(kid(pr, 'strike')),
+        ...(on(kid(pr, 'u')) && (kid(pr, 'u')?.getAttribute('val') ?? 'single') !== 'single' ? { ukind: kid(pr, 'u')!.getAttribute('val')! } : {}),
         color: readColour(kid(pr, 'color'), theme),
         pos: va === 'subscript' ? 'sub' : va === 'superscript' ? 'sup' : undefined,
         size: sz ? Number(sz) : undefined,
@@ -1394,6 +1403,8 @@ function cellRuns(runs: FileRun[] | undefined, style: CellStyle | undefined, min
       ...(l.bold !== !!style?.bold ? { bold: l.bold } : {}),
       ...(l.italic !== !!style?.italic ? { italic: l.italic } : {}),
       ...(l.underline !== !!style?.underline ? { underline: l.underline } : {}),
+      // (a kind other than the cell's, 'single' over a cell underlined another way)
+      ...(l.underline && (l.ukind ?? '') !== ((style?.underline && style.excel?.u) || '') ? { underline: true, ukind: l.ukind ?? 'single' } : {}),
       ...(l.strike ? { strike: true } : {}),
       ...(color ? { color } : {}),
       ...(l.pos ? { pos: l.pos } : {}),

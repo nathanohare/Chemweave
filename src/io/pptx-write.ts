@@ -366,7 +366,7 @@ export const MIME_EXT: Record<string, string> = {
 // ---------------------------------------------------------------- what goes where
 
 import { splitSlide, arialMeasure, roughBox, type SlideParts } from '../deck/split-slide';
-import { runKept, keptNow, paraKept, frameNow } from './pptx-keep';
+import { runKept, keptNow, paraKept, frameNow, pptUnderline } from './pptx-keep';
 import { stackItems, usesStacking, type StackItem } from '../editor/stacking';
 import { stepsTag } from './step-tag';
 export { splitSlide, slideDiagrams, arialMeasure, type SlideParts, type SlideDiagram } from '../deck/split-slide';
@@ -407,8 +407,8 @@ function runXml(r: TextRun, explicit: { size: number; font: string } | null, hli
     if (r.bold !== undefined) attrs.push(`b="${r.bold ? 1 : 0}"`);
     if (r.italic !== undefined) attrs.push(`i="${r.italic ? 1 : 0}"`);
     // (a link that follows the theme has no underline of its own; the underline's and the line's kinds: 21.1.10.82, 21.1.10.79)
-    if (r.underline && !(click && now.plainLink)) attrs.push(`u="${now.u ?? 'sng'}"`);
-    if (r.strike) attrs.push(`strike="${now.strike ?? 'sngStrike'}"`);
+    if (r.underline && !(click && now.plainLink)) attrs.push(`u="${pptUnderline(r.ukind)}"`);
+    if (r.strike) attrs.push(`strike="${r.dstrike ? 'dblStrike' : 'sngStrike'}"`);
     if (r.allCaps) attrs.push('cap="all"');
     else if (r.smallCaps) attrs.push('cap="small"');
     if (r.spacing) attrs.push(`spc="${Math.round(r.spacing * 100)}"`);

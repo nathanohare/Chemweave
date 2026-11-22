@@ -14,6 +14,8 @@ export interface RunLook {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  /** The underline's kind, by Excel's name (double, singleAccounting, doubleAccounting; 'single' over a cell underlined otherwise). */
+  ukind?: string;
   strike?: boolean;
   /** Text colour, "#rrggbb". */
   color?: string;
@@ -31,7 +33,7 @@ export interface TextRun extends RunLook {
 /** The looks a selection can be given while typing, with a key. */
 export type ToggleLook = 'bold' | 'italic' | 'underline' | 'strike';
 
-const KEYS: (keyof RunLook)[] = ['bold', 'italic', 'underline', 'strike', 'color', 'pos', 'font', 'size'];
+const KEYS: (keyof RunLook)[] = ['bold', 'italic', 'underline', 'ukind', 'strike', 'color', 'pos', 'font', 'size'];
 
 /** A look without its unset parts. */
 export function cleanLook(l: RunLook | undefined): RunLook {
@@ -55,8 +57,8 @@ export function sameLook(a: RunLook | undefined, b: RunLook | undefined): boolea
 const plain = (l: RunLook | undefined) => !l || KEYS.every((k) => unset(l[k]) === undefined);
 
 /** A run's look over its cell's: what shows (bold where either says so, unless the run says not). */
-export function lookOver<T extends { bold?: boolean; italic?: boolean; underline?: boolean; color?: string; font?: string; size?: number }>(cell: T | undefined, run: RunLook | undefined): T & { strike?: boolean; pos?: 'sub' | 'sup' } {
-  const out = { ...(cell ?? {}) } as T & { strike?: boolean; pos?: 'sub' | 'sup' };
+export function lookOver<T extends { bold?: boolean; italic?: boolean; underline?: boolean; color?: string; font?: string; size?: number }>(cell: T | undefined, run: RunLook | undefined): T & { strike?: boolean; pos?: 'sub' | 'sup'; ukind?: string } {
+  const out = { ...(cell ?? {}) } as T & { strike?: boolean; pos?: 'sub' | 'sup'; ukind?: string };
   if (!run) return out;
   for (const k of KEYS) {
     const v = unset(run[k]);
@@ -76,7 +78,7 @@ export function lookPieces<T extends { bold?: boolean; italic?: boolean; underli
   const out: { text: string; look: ReturnType<typeof lookOver<T>>; key: string }[] = [];
   for (let i = 0; i < text.length; i++) {
     const look = lookOver<T>({ ...style, ...(chem[i]?.italic ? { italic: true } : {}), ...(chem[i]?.pos ? { pos: chem[i].pos } : {}) } as T, looks[i]);
-    const key = JSON.stringify([look.bold, look.italic, look.underline, look.strike, look.color, look.pos, look.font, look.size]);
+    const key = JSON.stringify([look.bold, look.italic, look.underline, look.ukind, look.strike, look.color, look.pos, look.font, look.size]);
     const last = out[out.length - 1];
     if (last && last.key === key) last.text += text[i];
     else out.push({ text: text[i], look, key });

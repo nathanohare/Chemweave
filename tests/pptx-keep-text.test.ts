@@ -123,6 +123,17 @@ describe('PowerPoint runs (G2-07, G2-08, G2-21, G2-22)', () => {
     expect(theme).toContain('noProof="1"');
     expect(theme).toContain('kern="1200"');
     expect(rPrOf(xml, 'raised')).toContain('baseline="14000"');
+    // (read by Word's names, so the kinds go to documents too)
+    const back = readPptx(deck(textBox(rich))).slides[0].contents.captions![0].runs.find((r) => r.text === 'dbl')!;
+    expect(back).toMatchObject({ underline: true, ukind: 'double', strike: true, dstrike: true });
+  });
+
+  it('writes an underline kind and double strikethrough from a document as PowerPoint names them', async () => {
+    const xml = await save(deck(textBox(`<a:p>${run('plain', '<a:rPr lang="en-US" sz="1800" dirty="0"/>')}</a:p>`)), (cs) => {
+      cs[0].runs = cs[0].runs.map((r) => ({ ...r, underline: true, ukind: 'wave', strike: true, dstrike: true }));
+    });
+    expect(rPrOf(xml, 'plain')).toContain('u="wavy"');
+    expect(rPrOf(xml, 'plain')).toContain('strike="dblStrike"');
   });
 
   it('leaves a link with no colour of its own to follow the theme\'s link colour', async () => {

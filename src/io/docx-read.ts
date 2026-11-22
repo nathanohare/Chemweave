@@ -148,7 +148,7 @@ const WARN = {
 
 type Pos = 'base' | 'sub' | 'sup';
 /** Text formatting as a file gives it (only what it gives). `color` null is "automatic". */
-interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
+interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; ukind?: string; ucolor?: string; dstrike?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
 /** Paragraph formatting as a file gives it, in points. */
 interface PProps {
   align?: Justify; before?: number; after?: number; line?: { v: number; rule: string };
@@ -487,7 +487,15 @@ class DocxReader {
         }
         case 'b': out.bold = this.on(c); break;
         case 'i': out.italic = this.on(c); break;
-        case 'u': out.underline = this.a(c) !== 'none'; break;
+        case 'u': {
+          // the underline's kind and colour (17.3.2.40; single and none are the model's own)
+          const v = this.a(c) ?? 'single';
+          out.underline = v !== 'none';
+          out.ukind = v !== 'none' && v !== 'single' ? v : undefined;
+          const uc = this.a(c, 'color');
+          out.ucolor = uc && /^[0-9a-f]{6}$/i.test(uc) ? `#${uc.toLowerCase()}` : undefined;
+          break;
+        }
         case 'sz': { const v = parseFloat(this.a(c) ?? ''); if (v > 0) out.size = v / 2; break; }
         case 'color': {
           const v = this.a(c) ?? 'auto';
@@ -515,7 +523,9 @@ class DocxReader {
           if (out.highlight === undefined || out.highlight === null) out.highlight = /^[0-9a-f]{6}$/i.test(v) && this.a(c) !== 'nil' ? `#${v.toLowerCase()}` : null;
           break;
         }
-        case 'strike': case 'dstrike': out.strike = this.on(c); break;
+        // (one of the two is on at a time, 17.3.2.9: the later one read wins)
+        case 'strike': out.strike = this.on(c); out.dstrike = undefined; break;
+        case 'dstrike': out.strike = this.on(c); out.dstrike = out.strike || undefined; break;
         case 'smallCaps': out.smallCaps = this.on(c); break;
         case 'caps': out.allCaps = this.on(c); break;
         // character spacing (twentieths of a point) and kerning taken off
@@ -1553,7 +1563,8 @@ class DocxReader {
     const formula = !!r.formula;
     return rt.cleanStyle({
       font: r.font ?? WORD_FONT, size: r.size ?? WORD_SIZE, bold: r.bold, italic: r.italic, underline: r.underline,
-      strike: r.strike, smallCaps: r.smallCaps, allCaps: r.allCaps, cstyle: r.cstyle,
+      ukind: r.underline ? r.ukind : undefined, ucolor: r.underline ? r.ucolor : undefined,
+      strike: r.strike, dstrike: r.strike ? r.dstrike : undefined, smallCaps: r.smallCaps, allCaps: r.allCaps, cstyle: r.cstyle,
       spacing: r.spacing, noKern: noKernOf(r), noFill: r.noFill, transparency: r.transparency, outline: r.outline, outlineW: r.outlineW, shadow: r.shadow, wfx: r.wfx,
       lang: r.lang && r.lang.toLowerCase() !== (this.docDefaults.r.lang ?? 'en-US').toLowerCase() ? r.lang : undefined, noProof: r.noProof, raise: r.raise || undefined,
       color: r.color ?? undefined, highlight: r.highlight ?? undefined, formula: formula || undefined,
