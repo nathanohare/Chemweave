@@ -14,7 +14,7 @@ import type { KeptOle, KeptPicture } from '../io/ole-kept';
 import type { SlideView } from './guides';
 import type { HandoutSetup, NotesPageSetup } from './notes-pages';
 import { copyPinned, type PinnedComment } from '../document/comments';
-import { Doc, Caption, Placeholder, TextBase, ParaStyle, Contents, Shape, applyBase } from '../model';
+import { Doc, sameData, Caption, Placeholder, TextBase, ParaStyle, Contents, Shape, applyBase } from '../model';
 import { DocStyle, ACS_1996, scaleOwnWidths } from '../style';
 import { applyStyle, type RestyleHow } from '../drawing-styles';
 import { freshGroups } from '../editor/groups';
@@ -1107,6 +1107,14 @@ export class Deck {
     this.attached = true;
     this.host.onCommit = () => this.noteSlideEdit();
     this.host.onAmend = () => { this.edits++; if (this.view) this.syncView(); this.onChange(); };
+    // a step taken back as if never made goes from the deck's history too
+    this.host.onDrop = () => {
+      const last = this.undoList[this.undoList.length - 1];
+      if (last?.kind === 'slide' && last.slide === this.current) this.undoList.pop();
+      this.edits++;
+      if (this.view) this.syncView();
+      this.onChange();
+    };
   }
 
   /** Take the current slide out of the app's document (another tab is shown). */
@@ -1115,6 +1123,7 @@ export class Deck {
     this.onLeave();
     this.host.onCommit = null;
     this.host.onAmend = null;
+    this.host.onDrop = null;
     this.host.swap(this.current.doc);
     this.attached = false;
   }
@@ -1766,11 +1775,12 @@ export class Deck {
    */
   applyMaster(next: Master, label = 'Edit slide master'): void {
     const before = this.master;
-    // built-in layouts left as they come are not kept as edits
-    const own = (next.layouts ?? []).filter((l) => !isBuiltinLayout(l.id) || JSON.stringify(l) !== JSON.stringify(builtinLayout(l.id))).map(copyLayout);
+    // built-in layouts left as they come are not kept as edits (however their fields were set in
+    // order: one read back from Slide Master view's page is the same layout)
+    const own = (next.layouts ?? []).filter((l) => !isBuiltinLayout(l.id) || !sameData(l, builtinLayout(l.id))).map(copyLayout);
     const after: Master = { ...next, layouts: own };
     if (!own.length) delete after.layouts;
-    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    if (sameData(before, after)) return;
     const slides = this.slides.slice();
     const laysBefore = slides.map((s) => s.layout);
     const laysAfter = slides.map((s) => (hasLayout(after, s.layout) ? s.layout : 'title-content'));

@@ -1675,6 +1675,8 @@ export class Doc {
   onCommit: (() => void) | null = null;
   /** Called when amend() adds to the last step instead of making a new one. */
   onAmend: (() => void) | null = null;
+  /** Called when the newest step is taken back as if never made (dropStep), for a listener counting steps. */
+  onDrop: (() => void) | null = null;
   /**
    * Called as an undoable change finishes, with what it changed (and how those things were
    * before); changes made here join the same undo step (frames follow what they surround).
@@ -1852,6 +1854,18 @@ export class Doc {
       // no new step: a listener counting steps (Slides' undo across slides) must not count one
       this.onAmend?.();
     }
+  }
+
+  /**
+   * Take back `step`, the newest step, as if it had never been made, with nothing to redo (a text
+   * box Add Caption made, left empty). False, with nothing changed, when it is not the newest.
+   */
+  dropStep(step: object | undefined): boolean {
+    if (this.tx || !step || this.topStep !== step) return false;
+    const e = this.undoStack.pop()!;
+    this.apply(e.before);
+    this.onDrop?.();
+    return true;
   }
 
   /** The things the last undo or redo put back (keys such as "a12"), for selecting them. */
@@ -2628,6 +2642,20 @@ export class Doc {
 }
 
 /** Whether a finished step leaves everything it touched as it was. */
+/**
+ * The same data, whatever order their fields were set in (a run's { text, bold } and { bold, text }),
+ * a field set to undefined counting as left out.
+ */
+export function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === (b as unknown[]).length && a.every((x, i) => sameData(x, (b as unknown[])[i]));
+  const ka = Object.keys(a).filter((k) => (a as Record<string, unknown>)[k] !== undefined);
+  const kb = Object.keys(b).filter((k) => (b as Record<string, unknown>)[k] !== undefined);
+  return ka.length === kb.length && ka.every((k) => sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
 function unchanged(tx: UndoEntry): boolean {
   for (const [key, was] of tx.before) {
     const now = tx.after.get(key) ?? null;

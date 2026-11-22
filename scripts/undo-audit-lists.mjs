@@ -54,43 +54,7 @@ export function sliceOf(cmd, n = CI_SLICES) {
  * The audit fails only on a problem not listed here, and says which of these no longer happen so
  * they can be taken off. Each is a bug to fix; take its line off when it is fixed.
  */
-export const KNOWN_UNDO_PROBLEMS = [
-  // Add Caption puts the text in, then a second step lays it out
-  'Canvas: add-caption took 2 undos (one is expected)',
-  'Presentation: add-caption took 2 undos (one is expected)',
-  'Design: add-caption took 2 undos (one is expected)',
-  // Add ID Label: the label, then the number filled in when the chemistry engine answers
-  'Presentation: add-id-label took 2 undos (one is expected)',
-  // the layout and master editors change the deck's master directly, outside the undo history
-  'Presentation: edit-layouts changed the file without an undo step',
-  'Presentation: edit-layout changed the file without an undo step',
-  'Presentation: slide-master changed the file without an undo step',
-  // Document: Header/Footer editing (Insert ▸ Header, Edit Header, Go to Header/Footer) puts an empty
-  // header or footer in, and Undo leaves it (with the header still being edited): check by hand
-  'Document, floating picture picked: footer-edit: Undo did not put the file back',
-  'Document, floating picture picked: header-edit: Undo did not put the file back',
-  'Document, floating picture picked: hf-goto-footer: Undo did not put the file back',
-  'Document, floating picture picked: hf-goto-header: Undo did not put the file back',
-  'Document, floating picture picked: hf-goto: Undo did not put the file back',
-  'Document, picture in line picked: footer-edit: Undo did not put the file back',
-  'Document, picture in line picked: header-edit: Undo did not put the file back',
-  'Document, picture in line picked: hf-goto-footer: Undo did not put the file back',
-  'Document, picture in line picked: hf-goto-header: Undo did not put the file back',
-  'Document, picture in line picked: hf-goto: Undo did not put the file back',
-  'Document, text picked: footer-edit: Undo did not put the file back',
-  'Document, text picked: header-edit: Undo did not put the file back',
-  'Document, text picked: hf-goto-footer: Undo did not put the file back',
-  'Document, text picked: hf-goto-header: Undo did not put the file back',
-  'Document, text picked: hf-goto: Undo did not put the file back',
-  // Document: a section break (Insert ▸ Break ▸ Section Break) is two undo steps (found once the
-  // audit ran Insert menu commands too)
-  'Document, floating picture picked: breaks-continuous took 2 undos (one is expected)',
-  'Document, floating picture picked: breaks-nextPage took 2 undos (one is expected)',
-  'Document, picture in line picked: breaks-continuous took 2 undos (one is expected)',
-  'Document, picture in line picked: breaks-nextPage took 2 undos (one is expected)',
-  'Document, text picked: breaks-continuous took 2 undos (one is expected)',
-  'Document, text picked: breaks-nextPage took 2 undos (one is expected)',
-];
+export const KNOWN_UNDO_PROBLEMS = [];
 
 /** Where each kind of tab's commands are registered (main.ts records, the modes' own run()). */
 const RECORDS = {

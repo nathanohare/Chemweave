@@ -153,6 +153,37 @@ describe('Document: commands that were not one undo step', () => {
     expect(steps(f2)).toBe(0);
   }, 60000);
 
+  // (found by the undo audit, R7: the opening, then the step before, both taken back by one Ctrl+Z)
+  for (const cmd of ['header-edit', 'footer-edit', 'hf-goto-header', 'hf-goto-footer']) {
+    it(`${cmd}, nothing typed: one Ctrl+Z puts the document back, Ctrl+Y opens it again`, async () => {
+      const { dm, f } = await fresh();
+      f.ed.setCaret(30);
+      f.ed.update({ ...f.t, paras: f.t.paras.map((p, i) => (i === 0 ? { ...p, align: 'center' as const } : p)) }, 'Center');
+      const before = state(f);
+      dm.run(cmd);
+      expect(f.box?.hf).toBeTruthy();
+      const opened = state(f);
+      dm.run('undo');
+      expect(f.box).toBeNull();
+      expect(state(f)).toBe(before);
+      dm.run('redo');
+      expect(state(f)).toBe(opened);
+      expect(f.box?.hf).toBeTruthy();
+    }, 60000);
+  }
+
+  for (const cmd of ['breaks-nextPage', 'breaks-continuous']) {
+    it(`${cmd}: one Ctrl+Z`, async () => {
+      const { dm, f } = await fresh();
+      f.ed.setCaret(30);
+      const before = state(f);
+      dm.run(cmd);
+      expect(state(f)).not.toBe(before);
+      dm.run('undo');
+      expect(state(f)).toBe(before);
+    }, 60000);
+  }
+
   it('a command that changes nothing makes no undo step', async () => {
     const { dm, f } = await fresh();
     f.ed.setCaret(30);
