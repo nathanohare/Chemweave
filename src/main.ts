@@ -66,7 +66,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blankCycle, type CycleLook } from './chem/cycles';
 import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
-  nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, OWN_FORMAT, CDX_FORMAT, setWordObjects, embeddedPicture, packFormats } from './io/clipboard';
+  nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, OWN_FORMAT, CDX_FORMAT, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
 import { writeCdxml } from './io/cdxml-write';
 import { WORKSPACE, folderOf } from './io/workspace-file';
@@ -394,6 +394,8 @@ function applyModeColours(mode: Parameters<typeof applyModeColoursOnly>[0], c: M
   editor.requestScene();
 }
 const chem = new ChemClient(document.baseURI);
+// a copy carries its structures' SMILES as text too, once the chemistry engine is there
+setSmilesMaker((molblock) => (chem.ready ? chem.molToSmiles(molblock).catch(() => null) : Promise.resolve(null)));
 const checks = new StructureChecks(doc);
 renderer.checks = checks;
 // R/S and E/Z for every structure, worked out in the background after each change

@@ -34,6 +34,8 @@ import type { Item } from '../render/vector';
 import { itemsToEmf, withDrawing, drawingInEmf, type EmfBox } from '../render/emf';
 import { imageSize, fromDataUrl } from '../render/images';
 import { cxSmiles, isReactionSmiles } from '../chem/reaction-io';
+import { toMolfile } from '../chem/molfile';
+import { writeMolFile } from './chem-formats';
 
 /** Our own clipboard format: the drawing as CDXML text. */
 export const OWN_FORMAT = 'Chem Illustrator CDXML';
@@ -312,6 +314,49 @@ export function ownDrawing(cdxml: string): Doc {
   }
   return readCdxml(cdxml).doc;
 }
+/**
+ * Makes a structure's SMILES from its molfile: set by the app once the chemistry engine is there,
+ * so a copy also carries the structure as text, as ChemDraw's does (audit G1-20).
+ */
+let smilesMaker: ((molblock: string) => Promise<string | null>) | null = null;
+export function setSmilesMaker(f: ((molblock: string) => Promise<string | null>) | null): void {
+  smilesMaker = f;
+}
+/** The SMILES put on the clipboard with the last drawing copied, to know it again when it is pasted back. */
+let lastText: string | null = null;
+
+/** The structures' SMILES in a drawing, or null (no structures, generic labels, no engine yet). */
+async function structureSmiles(part: Doc): Promise<string | null> {
+  if (!smilesMaker || !part.atoms.size) return null;
+  try {
+    const ex = toMolfile(part, part.atoms.keys(), '');
+    return ex.generic.length ? null : (await smilesMaker(ex.molblock))?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ChemDraw's MDLCT clipboard format: a molfile with each line as a byte giving its length and
+ * then its characters, no line ends (MDL's clipboard form of a CTfile). Null when the drawing has
+ * no structures.
+ */
+export function mdlctOf(part: Doc): Uint8Array | null {
+  if (!part.atoms.size) return null;
+  try {
+    const lines = writeMolFile(part).text.replace(/\r/g, '').split('\n');
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const out: number[] = [];
+    for (const l of lines) {
+      const bytes = [...l.slice(0, 255)].map((c) => (c.charCodeAt(0) < 128 ? c.charCodeAt(0) : 63));
+      out.push(bytes.length, ...bytes);
+    }
+    return new Uint8Array(out);
+  } catch {
+    return null;
+  }
+}
+
 /** A table copied here as tab-separated text, to know it again when it is pasted back (web pages). */
 let lastTableText: string | null = null;
 
@@ -357,6 +402,7 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
   const cdxml = hasPictures(part) ? writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText, cdx: true }) : own;
   lastCopy = own;
   lastPart = part;
+  lastText = null;
   const what = sel ? 'Copied' : 'Copied the whole drawing';
   // a table on its own also goes out as cells, so Word and Excel paste a table they can edit
   // (Paste Special still offers the picture)
@@ -367,6 +413,15 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
     const { canvas, dpi } = pictureCanvas(part, pic);
     const enc = new TextEncoder();
     const emf = withDrawing(pictureEmf(pic), own);
+    // the structures as text too, for an ELN, a search box or a text editor (after the pictures,
+    // so Word and PowerPoint still paste the picture)
+    const smiles = table ? null : await structureSmiles(part);
+    const mdlct = table ? null : mdlctOf(part);
+    lastText = smiles;
+    const text: [string, Uint8Array][] = [
+      ...(mdlct ? [['MDLCT', mdlct]] as [string, Uint8Array][] : []),
+      ...(smiles ? [['SMILES', enc.encode(smiles)], ['CF_UNICODETEXT', enc.encode(smiles)]] as [string, Uint8Array][] : []),
+    ];
     // Word, PowerPoint and Excel paste an object they can send back here to edit (a table stays cells)
     const object: [string, Uint8Array][] = wordObjects && !table ? [['Embed Source', enc.encode(own)], ['Object Descriptor', objectSize(emf)]] : [];
     const block = packFormats([
@@ -376,6 +431,7 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
       ...(table ? [['HTML Format', cfHtml(tableHtml(table))], ['CF_UNICODETEXT', enc.encode(tsv!)]] as [string, Uint8Array][] : []),
       ['CF_ENHMETAFILE', emf],
       ['CF_DIB', canvasDib(canvas, dpi)],
+      ...text,
     ]);
     await invoke('clipboard_write', block);
     return table ? `${what}. Paste into Word or Excel for a table, or into PowerPoint for a picture.`
@@ -397,7 +453,19 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
       formats['text/plain'] = new Blob([tsv!], { type: 'text/plain' });
     }
     if (webFormatOk()) formats[WEB_FORMAT] = new Blob([own], { type: WEB_FORMAT.slice(4) });
-    await navigator.clipboard.write([new ClipboardItem(formats)]);
+    // the structures' SMILES as text (as ChemDraw's copy has), worked out while the clipboard waits
+    if (!table && smilesMaker && part.atoms.size) {
+      formats['text/plain'] = structureSmiles(part).then((sm) => { lastText = sm; return new Blob([sm ?? ''], { type: 'text/plain' }); });
+    }
+    try {
+      await navigator.clipboard.write([new ClipboardItem(formats)]);
+    } catch (err) {
+      // (a browser that won't take text worked out later still gets the picture)
+      if (!formats['text/plain'] || table) throw err;
+      delete formats['text/plain'];
+      lastText = null;
+      await navigator.clipboard.write([new ClipboardItem(formats)]);
+    }
   } catch {
     return `${what} for pasting here. This browser would not take the picture.`;
   }
@@ -475,6 +543,7 @@ export function drawingSvg(doc: Doc, sel: Selection | null): string | null {
 export function forgetCopy(): void {
   lastCopy = null;
   lastPart = null;
+  lastText = null;
   lastTableText = null;
   lastPictureSize = null;
 }
@@ -511,6 +580,8 @@ export async function copyImage(src: string): Promise<string> {
 
 /** Is this the table last copied here (so the copy with its title and column widths can be pasted)? */
 const ownTable = (text: string) => !!lastCopy && lastTableText !== null && text.replace(/\r\n/g, '\n').trim() === lastTableText.replace(/\r\n/g, '\n').trim();
+/** Is this the SMILES put on the clipboard with the last drawing copied here (so the drawing itself is pasted)? */
+const ownSmiles = (text: string) => !!lastCopy && !!lastText && text.trim() === lastText;
 
 const hasPictures = (d: Doc) => [...d.shapes.values()].some((s) => s.kind === 'picture');
 
@@ -675,6 +746,7 @@ export async function readNativeClipboard(): Promise<Pasted> {
  */
 export async function readPasteEvent(e: ClipboardEvent): Promise<Pasted> {
   const text = e.clipboardData?.getData('text/plain') ?? '';
+  if (ownSmiles(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
   if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   const table = pastedTable(e.clipboardData?.getData('text/html'), text);
@@ -688,6 +760,7 @@ export async function readPasteEvent(e: ClipboardEvent): Promise<Pasted> {
 /** For the Paste menu item in a browser, which gets no paste event. */
 export async function readWebClipboard(): Promise<Pasted> {
   const text = await navigator.clipboard.readText().catch(() => '');
+  if (ownSmiles(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
   if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   // a picture (when the browser lets the page see it)

@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { Doc } from '../src/model';
 import type { Selection } from '../src/editor/editor';
-import { extractDrawing, insertDrawing, packFormats, unpackFormats, isEmpty, copyDrawing, forgetCopy, readPasteEvent, ownDrawing } from '../src/io/clipboard';
+import { extractDrawing, insertDrawing, packFormats, unpackFormats, isEmpty, copyDrawing, forgetCopy, readPasteEvent, ownDrawing, mdlctOf, setSmilesMaker } from '../src/io/clipboard';
 import { rgbaToDib } from '../src/render/picture';
 import { readCdxml } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
@@ -239,5 +239,57 @@ describe('our own drawing pasted back into this window (G1-11)', () => {
     const other = writeCdxml(sample().doc, { name: 'x.cdxml' });
     expect(ownDrawing(other).captions.size).toBe(1);
     forgetCopy();
+  });
+});
+
+describe('the structures as text on the clipboard (G1-20)', () => {
+  it('go as MDLCT: the molfile with each line as a length byte and its characters', () => {
+    const { doc } = sample();
+    const bytes = mdlctOf(doc)!;
+    // read the lines back
+    const lines: string[] = [];
+    for (let i = 0; i < bytes.length; i += 1 + bytes[i]) lines.push(String.fromCharCode(...bytes.subarray(i + 1, i + 1 + bytes[i])));
+    expect(lines.at(-1)).toBe('M  END');
+    expect(lines[1].slice(2, 11)).toBe('Chemweave');
+    expect(mdlctOf(new Doc())).toBeNull();
+  });
+
+  it('as SMILES, pasted back here, bring the drawing itself rather than a structure from the SMILES', async () => {
+    const written: Record<string, unknown>[] = [];
+    const nav = navigator as unknown as { clipboard?: unknown };
+    const realClip = nav.clipboard;
+    const g = globalThis as unknown as { ClipboardItem?: unknown };
+    const realItem = g.ClipboardItem;
+    g.ClipboardItem = class { constructor(public items: Record<string, unknown>) { written.push(items); } };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write: async () => {} } });
+    const proto = HTMLCanvasElement.prototype as unknown as { getContext: unknown; toBlob: unknown };
+    const real = proto.getContext;
+    const ctx: unknown = new Proxy({}, { get: (_, k) => (k === 'measureText' ? (t: string) => ({ width: t.length * 5, actualBoundingBoxAscent: 7, actualBoundingBoxDescent: 2 }) : () => ctx), set: () => true });
+    proto.getContext = () => ctx;
+    const gp = globalThis as unknown as { Path2D?: unknown };
+    const realPath = gp.Path2D;
+    gp.Path2D ??= class { constructor() { return new Proxy(this, { get: () => () => {} }); } };
+    // (a stand-in engine: any SMILES will do, the test only checks it is recognised)
+    setSmilesMaker(async () => 'COc1ccccc1.CC[O-]');
+    try {
+      const { doc } = sample();
+      const msg = await copyDrawing(doc, null).catch((e) => String(e));
+      expect(msg).toMatch(/^Copied/);
+      const text = written.at(-1)?.['text/plain'] as Promise<Blob> | undefined;
+      expect(text).toBeDefined();
+      const blob = await text!;
+      expect(await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsText(blob); })).toBe('COc1ccccc1.CC[O-]');
+      const paste = { clipboardData: { getData: (t: string) => (t === 'text/plain' ? 'COc1ccccc1.CC[O-]' : ''), files: [] } } as unknown as ClipboardEvent;
+      const got = await readPasteEvent(paste);
+      expect(got.kind).toBe('drawing');
+      expect((got as { doc: Doc }).doc.captions.size).toBe(doc.captions.size);
+    } finally {
+      setSmilesMaker(null);
+      proto.getContext = real;
+      gp.Path2D = realPath;
+      g.ClipboardItem = realItem;
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: realClip });
+      forgetCopy();
+    }
   });
 });
