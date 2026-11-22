@@ -14,6 +14,7 @@ import { readCdxml } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
 import { Doc } from '../src/model';
 import { summarize, differences } from './cdxml-compare';
+import { realFilesMissing } from './real-files';
 
 const hex = (s: string) => Uint8Array.from(s.replace(/\s+/g, '').match(/../g)!.map((h) => parseInt(h, 16)));
 const toHex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0').toUpperCase()).join(' ');
@@ -273,6 +274,7 @@ describe('a drawing through CDX', () => {
 
   const dir = process.env.CHEM_TEST_FILES ?? '';
   const files = dir && existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.cdxml')) : [];
+  realFilesMissing('cdx', !files.length, 'CHEM_TEST_FILES');
   for (const f of files) {
     it(`${f} comes back the same`, { timeout: 60000 }, () => {
       const text = readFileSync(join(dir, f), 'utf8');

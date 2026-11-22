@@ -21,8 +21,9 @@ export async function open(url = 'http://localhost:5173/', { width = 1440, heigh
   await page.addInitScript(() => { try { if (!sessionStorage.getItem('shots')) { localStorage.clear(); sessionStorage.setItem('shots', '1'); } } catch { /* none */ } });
   await page.goto(url);
   await page.waitForFunction(() => window.__app?.chem?.ready, null, { timeout: 60000 });
-  // no first-run welcome card over the page
-  await page.evaluate(() => document.getElementById('welcome')?.remove());
+  // no first-run welcome card or start view over the page (hidden, not removed: the app looks for
+  // the card again a moment after it starts, and reports an error if it has gone)
+  await page.addStyleTag({ content: '#welcome, #start-view { display: none !important; }' });
   // the navigator map (on by default) only where a picture is about getting round a drawing
   if (!navigator) await page.evaluate(() => window.__app.command('navigator'));
   return { browser, page, problems };
@@ -122,8 +123,8 @@ export async function record(page, name, act, { clip, width = 900, fps = 12, hol
  * drawn the way a person would: structures and arrows, the text typed above and below each arrow
  * (the arrows fit it), then Clean Up Reaction and Number Compounds.
  */
-export async function drawScheme(page, { select = false, xs = [140, 400, 700], y = 260, fit = true } = {}) {
-  await page.evaluate(async ([select, xs, y, fit]) => {
+export async function drawScheme(page, { select = false, xs = [140, 400, 700], y = 260, fit = true, textFirst = false } = {}) {
+  await page.evaluate(async ([select, xs, y, fit, textFirst]) => {
     const a = window.__app, doc = a.doc;
     // roomier spacing than the defaults, set as Scheme > Scheme Settings would
     const sl = await import('/src/chem/scheme-layout.ts');
@@ -139,7 +140,9 @@ export async function drawScheme(page, { select = false, xs = [140, 400, 700], y
         ids.push(doc.addArrow({ tail: { x: x1, y }, head: { x: x2, y }, headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: 10, headWidth: 3 }).id);
       }
     });
-    a.command('clean-up-reaction');
+    // (on a slide the text is large: an arrow growing to fit it would push its product onto the
+    // next arrow, so there the text goes on widely spaced arrows first and one clean-up follows)
+    if (!textFirst) a.command('clean-up-reaction');
     const e = a.editor;
     e.setArrowSideText(ids[0], 'above', 'PhB(OH)2, Pd(PPh3)4');
     e.setArrowSideText(ids[0], 'below', 'K2CO3, dioxane/H2O\n90 °C, 92%');
@@ -150,7 +153,7 @@ export async function drawScheme(page, { select = false, xs = [140, 400, 700], y
     e.clearSelection();
     if (fit) e.fit();
     if (select) e.selectThese({ atoms: new Set(last), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() });
-  }, [select, xs, y, fit]);
+  }, [select, xs, y, fit, textFirst]);
 }
 
 /** Select these atoms (and the bonds between them), captions, arrows and shapes. */
@@ -172,6 +175,30 @@ export async function look(page, scale, cx, cy) {
     a.editor.requestScene();
   }, [scale, cx, cy]);
   await page.waitForTimeout(100);
+}
+
+/**
+ * Show the whole drawing in the part of the canvas no floating toolbox covers (the Style panel
+ * floats over the right of the canvas once something is selected), so nothing is hidden under one.
+ */
+export async function fitClear(page, margin = 36) {
+  await page.evaluate((margin) => {
+    const a = window.__app, r = a.renderer, b = a.doc.bounds();
+    const ov = document.querySelector('#overlay').getBoundingClientRect();
+    let left = ov.left, right = ov.right;
+    for (const t of document.querySelectorAll('.toolbox.floating')) {
+      const box = t.getBoundingClientRect();
+      if (!box.width || box.bottom < ov.top || box.top > ov.bottom) continue;
+      if (box.left > ov.left + ov.width / 2) right = Math.min(right, box.left); else left = Math.max(left, box.right);
+    }
+    const w = right - left - 2 * margin, h = ov.height - 2 * margin;
+    const scale = Math.min(r.view.scale, w / (b.x2 - b.x1), h / (b.y2 - b.y1));
+    r.view.scale = scale;
+    r.view.ox = left - ov.left + margin + (w - (b.x2 - b.x1) * scale) / 2 - b.x1 * scale;
+    r.view.oy = margin + (h - (b.y2 - b.y1) * scale) / 2 - b.y1 * scale;
+    a.editor.requestScene();
+  }, margin);
+  await page.waitForTimeout(200);
 }
 
 /** The canvas area on screen (CSS pixels). */

@@ -115,6 +115,8 @@ export const solventOf = (text: string): string => findSolvent(text)?.name ?? ''
 
 /** The peak list: everything after "δ" (or after the "(400 MHz, CDCl3)" header). */
 export function dataPart(text: string): string {
+  // (square-bracketed notes, such as "[MISSING: 13C NMR peak list]", are never peaks)
+  text = text.replace(/\[[^\]]*\]/g, ' ');
   const d = text.indexOf('δ');
   if (d >= 0) return text.slice(d + 1);
   const m = /^[^()]*NMR\s*\([^)]*\)\s*:?/.exec(text);
@@ -127,7 +129,8 @@ const NUMBER = '[−-]?\\d+(?:\\.\\d+)?';
 export function peaks(text: string): Peak[] {
   const data = dataPart(text);
   const out: Peak[] = [];
-  const pattern = new RegExp(`(${NUMBER})(?:\\s*[–—-]\\s*(${NUMBER}))?\\s*`, 'g');
+  // (a number run into letters or other digits, as in "13C" or "400MHz", is not a shift)
+  const pattern = new RegExp(`(?<![\\w.])(${NUMBER})(?:\\s*[–—-]\\s*(${NUMBER}))?(?!\\w|\\.\\d)\\s*`, 'g');
   let pos = 0;
   for (;;) {
     pattern.lastIndex = pos;

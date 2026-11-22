@@ -179,7 +179,22 @@ export class TextEditing {
 
   // ------------------------------------------------------------------ changing the text
 
+  /** While set (inside together()): the steps made join one, the first one made. */
+  private joined: { done: boolean } | null = null;
+
+  /** Make the changes `fn` makes one step of Undo (a command made of several edits, such as Enter then a page break). */
+  together(fn: () => void): void {
+    if (this.joined) { fn(); return; }
+    this.joined = { done: false };
+    try { fn(); } finally { this.joined = null; }
+  }
+
   private snapshot(kind: string, at: number): void {
+    if (this.joined) {
+      if (this.joined.done) return;
+      this.joined.done = true;
+      this.lastKind = { kind: '', time: 0, at: -1 };
+    }
     const now = this.now();
     const l = this.lastKind;
     // a burst of typing in one place undoes in one step
@@ -189,7 +204,14 @@ export class TextEditing {
       return;
     }
     this.lastKind = { kind, time: now, at };
-    this.undoStack.push({ t: this.t, anchor: this.anchor, focus: this.focus });
+    this.pushStep({ t: this.t, anchor: this.anchor, focus: this.focus });
+  }
+
+  /** A step of Undo made by a command that changed nothing, made after all if a change follows it. */
+  private held: Snap | null = null;
+
+  private pushStep(st: Snap): void {
+    this.undoStack.push(st);
     if (this.undoStack.length > 300) this.undoStack.shift();
     this.redoStack.length = 0;
   }
@@ -197,7 +219,15 @@ export class TextEditing {
   /** Make a change (kind null: part of the change before, as while dragging, so no new undo step). */
   private commit(kind: string | null, t: RichText, anchor: number, focus = anchor): void {
     if (this.guard && !this.guard(this.t, t)) { this.refused(); return; }
-    if (kind !== null) this.snapshot(kind, focus);
+    if (kind !== null) {
+      // a command that changes nothing (Decrease Indent at no indent, a look already set) makes no
+      // step of Undo, so Undo never seems to do nothing; a change it goes on to make (kind null)
+      // still gets a step of its own (it is not added to the step before, which is another command's)
+      if (sameText(this.t, t)) this.held = { t: this.t, anchor: this.anchor, focus: this.focus };
+      else { this.held = null; this.snapshot(kind, focus); }
+    } else if (this.held) {
+      if (!sameText(this.t, t)) { this.pushStep(this.held); this.held = null; }
+    }
     this.t = t;
     this.anchor = anchor;
     this.focus = focus;
@@ -427,7 +457,10 @@ export class TextEditing {
     let a = this.start, b = this.end;
     if (a === b) [a, b] = wordAt(this.text, a);
     if (a === b) return;
-    this.commit('case', { ...this.t, runs: rt.changeCase(this.t.runs, a, b, mode) }, this.anchor, this.focus);
+    const runs = rt.changeCase(this.t.runs, a, b, mode);
+    // nothing to change (no letters, or already in that case): no step of Undo
+    if (rt.plainText(runs) === this.text) return;
+    this.commit('case', { ...this.t, runs }, this.anchor, this.focus);
   }
 
   /** Clear Formatting: the selection back to plain text (or what is typed next, with nothing selected). */
@@ -698,6 +731,7 @@ export class TextEditing {
   get redoneText(): RichText | undefined { return this.redoStack[0]?.t; }
 
   private restore(from: Snap[], to: Snap[]): void {
+    this.held = null;
     const s = from.pop();
     if (!s) return;
     if (this.guard && !this.guard(this.t, s.t)) { from.push(s); this.refused(); return; }
@@ -768,4 +802,33 @@ export function wordEnd(text: string, at: number): number {
 /** Start of the next word (Ctrl+Right), as on Windows. */
 export function nextWord(text: string, at: number): number {
   return wordEnd(text, at);
+}
+
+/**
+ * Whether a changed text is the same as it was: only its paragraph styles, objects or settings
+ * made afresh with the same values (the runs themselves are compared as they are, not by value:
+ * comparing them would cost time on every key press in a long document).
+ */
+export function sameText(a: RichText, b: RichText): boolean {
+  if (a === b) return true;
+  if (a.runs !== b.runs) return false;
+  const x = a as unknown as Record<string, unknown>, y = b as unknown as Record<string, unknown>;
+  for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) {
+    const u = x[k], v = y[k];
+    if (u === v) continue;
+    if (k === 'runs') return false;
+    if (k === 'paras' && Array.isArray(u) && Array.isArray(v)) {
+      if (u.length !== v.length) return false;
+      for (let i = 0; i < u.length; i++) if (u[i] !== v[i] && JSON.stringify(u[i]) !== JSON.stringify(v[i])) return false;
+      continue;
+    }
+    if (k === 'objects' && u && v && typeof u === 'object' && typeof v === 'object') {
+      const p = u as Record<string, unknown>, q = v as Record<string, unknown>;
+      const pk = Object.keys(p);
+      if (pk.length !== Object.keys(q).length || pk.some((id) => p[id] !== q[id])) return false;
+      continue;
+    }
+    if (JSON.stringify(u) !== JSON.stringify(v)) return false;
+  }
+  return true;
 }

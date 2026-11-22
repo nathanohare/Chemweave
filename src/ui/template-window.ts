@@ -15,6 +15,12 @@ export interface TemplateCard {
   detail?: string;
   /** Longer words, shown when the pointer rests on the card. */
   tip?: string;
+  /** What the template is for, in two lines under its name (the whole of it in the card's tip). */
+  about?: string;
+  /** A small icon (SVG markup) in place of the picture, beside the name and the whole description. */
+  icon?: string;
+  /** A larger picture shown beside the card while the pointer rests on it (the template's top rows, explained), its description under it. */
+  zoom?(): HTMLElement | null | Promise<HTMLElement | null>;
   /** Draw the card's picture into `host`; called when the card first scrolls into view. */
   preview(host: HTMLElement): void | Promise<void>;
   pick(): void | Promise<void>;
@@ -121,6 +127,7 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     removeEventListener('resize', place);
     io?.disconnect();
     workSeen?.disconnect();
+    hideZoom();
     if (root instanceof HTMLDialogElement && root.open) root.close();
     root.remove();
     if (current === win) current = null;
@@ -174,16 +181,67 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     }, { root: grid, rootMargin: '120px' })
     : null;
 
+  // a card's larger picture, beside it while the pointer rests on it
+  let zoomEl: HTMLElement | null = null;
+  let zoomTimer = 0;
+  function hideZoom(): void {
+    clearTimeout(zoomTimer);
+    zoomEl?.remove();
+    zoomEl = null;
+  }
+  const showZoom = (card: HTMLElement, c: TemplateCard) => {
+    hideZoom();
+    const asked = zoomTimer = window.setTimeout(async () => {
+      if (!isOpen || !card.isConnected) return;
+      let pic: HTMLElement | null = null;
+      try { pic = (await c.zoom?.()) ?? null; } catch { pic = null; }
+      // still resting on the same card
+      if (!pic || asked !== zoomTimer || !isOpen || !card.isConnected || !card.matches(':hover')) return;
+      const pop = document.createElement('div');
+      pop.className = `tw-zoom tw-${o.mode}`;
+      pop.setAttribute('role', 'tooltip');
+      pop.append(pic);
+      const about = c.about ?? c.tip;
+      if (about) {
+        const d = document.createElement('div');
+        d.className = 'tw-zoom-about';
+        d.textContent = about;
+        pop.append(d);
+      }
+      document.body.append(pop);
+      // fit the window: shrunk if wider than the room there is, beside the card where it fits
+      const pad = 12, room = innerWidth - 2 * pad;
+      const w = pop.offsetWidth, h = pop.offsetHeight;
+      const k = Math.min(1, room / w, (innerHeight - 2 * pad) / h);
+      if (k < 1) pic.style.zoom = String(k);
+      // the description wraps at the picture's width (or a readable width under a narrow one)
+      const text = pop.querySelector<HTMLElement>('.tw-zoom-about');
+      if (text) text.style.maxWidth = `${Math.max(360, Math.round(pic.getBoundingClientRect().width))}px`;
+      const pw = pop.offsetWidth, ph = pop.offsetHeight;
+      const r = card.getBoundingClientRect();
+      let left = r.right + 8;
+      if (left + pw > innerWidth - pad) left = r.left - 8 - pw;
+      if (left < pad) left = Math.max(pad, Math.min(innerWidth - pad - pw, r.left + r.width / 2 - pw / 2));
+      let top = r.top;
+      if (left === r.right + 8 || left === r.left - 8 - pw) top = Math.min(Math.max(pad, r.top), innerHeight - pad - ph);
+      else top = r.bottom + 8 + ph < innerHeight - pad ? r.bottom + 8 : Math.max(pad, r.top - 8 - ph);
+      Object.assign(pop.style, { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` });
+      zoomEl = pop;
+    }, 450);
+  };
+  grid.addEventListener('scroll', hideZoom);
+
   const makeCard = (c: TemplateCard): HTMLButtonElement => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'tw-card';
+    b.className = c.icon ? 'tw-card tw-card-icon' : 'tw-card';
     b.dataset.id = c.id;
     if (c.tip) b.title = c.tip;
     const pic = document.createElement('span') as HTMLElement & { draw?: () => void };
-    pic.className = 'tw-thumb';
+    pic.className = c.icon ? 'tw-icon' : 'tw-thumb';
     pic.setAttribute('aria-hidden', 'true');
-    pic.draw = () => { try { void c.preview(pic); } catch { /* the card stays plain */ } };
+    if (c.icon) pic.innerHTML = c.icon;
+    else pic.draw = () => { try { void c.preview(pic); } catch { /* the card stays plain */ } };
     const name = document.createElement('strong');
     name.textContent = c.name;
     b.append(pic, name);
@@ -192,6 +250,17 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
       d.className = 'tw-detail';
       d.textContent = c.detail;
       b.append(d);
+    }
+    if (c.about) {
+      const d = document.createElement('span');
+      d.className = 'tw-about';
+      d.textContent = c.about;
+      b.append(d);
+    }
+    if (c.zoom) {
+      b.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'touch') showZoom(b, c); });
+      b.addEventListener('pointerleave', hideZoom);
+      b.addEventListener('pointerdown', hideZoom);
     }
     b.addEventListener('click', async () => {
       if (!isOpen) return;
@@ -208,7 +277,7 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
       const j = i + (e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -perRow : perRow);
       cards[Math.min(cards.length - 1, Math.max(0, j))]?.focus();
     });
-    if (io) io.observe(pic); else pic.draw();
+    if (pic.draw) { if (io) io.observe(pic); else pic.draw(); }
     return b;
   };
 

@@ -2,7 +2,7 @@
 
 This page covers installing Chemweave, finding your way around the window, opening your first ChemDraw file, saving, and the Settings window.
 
-Chemweave is free. It draws structures the way ChemDraw does (the same keyboard shortcuts, the same ACS Document 1996 look) and opens and saves ChemDraw's `.cdxml` and `.cdx` files. Besides the chemistry **Canvas**, it has four more modes, each in its own tab: **Presentation** (Slideshow), **Spreadsheet** (Tables, Charts, and Dashboards), **Document** (Text document) and **Design** (Posters, Graphical abstracts, Figures).
+Chemweave is free. It draws structures the way ChemDraw does (the same keyboard shortcuts, the same ACS Document 1996 look) and opens and saves ChemDraw's `.cdxml` and `.cdx` files. Besides the chemistry **Canvas**, it has four more modes, each in its own tab: **Presentation** (Slideshow), **Spreadsheet** (Tables, Charts, and Dashboards), **Document** (Text document) and **Design** (Posters, Graphical abstracts, Figures). The desktop app also has **[SI Project](si-project.md)** tabs for putting together a paper's Supporting Information.
 
 A note on keys: this guide writes Ctrl, as on Windows and Linux. On a Mac, use Cmd wherever it says Ctrl, and Option wherever it says Alt.
 
@@ -13,10 +13,12 @@ Download the newest installer from the **Releases** page of the project on GitHu
 ### Windows
 
 1. Download the file ending in `x64-setup.exe` and run it.
-2. Windows may say **"Windows protected your PC"**. This is Windows SmartScreen: it warns about any program that has not been signed with a paid Windows certificate. Click **More info**, then **Run anyway**.
+2. Your browser or Windows may warn you first. Chemweave's installers are signed, but Microsoft also warns about any file that not many people have downloaded yet, and each new release starts out that way.
+   - **Microsoft Edge** may say the file **"isn't commonly downloaded"**. In the Downloads list, point at the file, click **…** (More actions) and choose **Keep**; then **Show more** and **Keep anyway**.
+   - Windows may say **"Windows protected your PC"** when the installer starts. Click **More info**, check that the publisher shown is the Chemweave developer's name rather than "Unknown publisher", then click **Run anyway**.
 3. Follow the installer. A newer installer can be run over an older version; you don't need to remove the old one first.
 
-The installer puts the app in your own user folder, so it doesn't need administrator rights. On a computer managed by an IT department, their rules may still block programs that aren't signed; if so, ask them, since neither the installer nor the portable copy below gets around those rules.
+The installer puts the app in your own user folder, so it doesn't need administrator rights. On a computer managed by an IT department, their rules may still block programs they haven't approved; if so, ask them, since neither the installer nor the portable copy below gets around those rules.
 
 ### Windows, without installing (portable copy)
 
@@ -24,7 +26,7 @@ A portable copy runs from a flash drive or any folder, with nothing installed, a
 
 1. Download the file ending in `x64-portable.zip`.
 2. Right-click it, choose **Extract All…**, and put the **Chemweave** folder wherever you want it: a flash drive, Documents, the desktop.
-3. Open the folder and double-click **Chemweave.exe**. The first time, SmartScreen may warn as described above.
+3. Open the folder and double-click **Chemweave.exe**. The first time, Windows may warn as described above.
 
 The **Chemweave Data** folder next to the app is what makes it portable: your keyboard shortcuts, preferences, styles, templates and recent files are saved there instead of on the computer, so the copy behaves the same on every computer you plug it into. Keep the two together, and copy both to move your copy. **Help ▸ Keyboard Shortcuts and Tips** shows "(portable)" after the version number.
 
@@ -87,7 +89,7 @@ Chemweave is in **beta**: it is still being built, new features arrive often, an
 
 ### The menu bar
 
-Along the top are the menus: **File**, **Edit**, **View**, **Insert**, **Format**, **Chemistry** and **Help**. Each menu shows the commands for the tab type you are in; a command for another kind of tab is left out (Insert ▸ Chart shows in a spreadsheet, not in a canvas). Presentations, spreadsheets, documents and designs also have a ribbon of buttons under the menu bar, like Word, Excel and PowerPoint.
+Along the top are the menus: **File**, **Edit**, **View**, **Insert**, **Format**, **Chemistry** and **Help**. Each menu shows the commands for the tab type you are in; a command for another kind of tab is left out (Insert ▸ Chart shows in a spreadsheet, not in a canvas). Under the menu bar every kind of tab has a ribbon of buttons, like Word, Excel and PowerPoint (see [The ribbon](#the-ribbon)).
 
 **Help** has this **User Guide** built in (it works without an internet connection), the keyboard shortcuts, and short notes on each part of Chemweave. **F1** (**Help ▸ Help on This Tool or Mode**) opens the guide at the part about the tool or kind of tab in use: with the ring tool, for example, it opens at Rings.
 
@@ -117,17 +119,30 @@ New files are called **Canvas 1**, **Presentation 1**, **Spreadsheet 1** and so 
 
 The same commands are in the **File** menu (**New Canvas**, and **Presentation**, **Spreadsheet**, **Document** and **Design…** under **File ▸ New**). To change the tab colors, use **View ▸ Window and Colors ▸ Mode Colors…**.
 
+### The ribbon
+
+<!-- index: Ribbon, Ribbon tabs -->
+
+The ribbon is the band of buttons under the menu bar. Its tabs run along its top, and each kind of file has its own: a canvas has **Home**, **Insert**, **Chemistry**, **Arrange** and **View**. The buttons are in named groups, and the bigger commands carry their names; rest the mouse on any other button to see its name.
+
+In a canvas, the **Home** tab starts as a spreadsheet's does, with **Clipboard** (Paste, Cut, Copy, Format Painter), **Font** and **Paragraph**. Then come the chemistry groups: **Format Favorites**, **Schemes**, **Diagrams**, **Mechanism**, **Insert**, **NMR** (where NMR prediction is offered) and **Look Up**. Two boxes on the canvas ribbon report on the drawing:
+
+- **Warnings**, at the right end of the row of tabs, says **No problems** or counts the possible problems in the structures, such as a carbon with five bonds. Click it for the list (see [Warnings](drawing.md#warnings)).
+- **Analysis**, at the right end of the buttons, shows the formula and masses of the selected structure. Click it for everything else (see [The Analysis panel](drawing.md#the-analysis-panel)).
+
+**Ctrl+F1**, or a double-click on a ribbon tab, folds the ribbon to its row of tabs and opens it again. [The Canvas ribbon](drawing.md#the-canvas-ribbon) has more on the canvas's tabs, and the pages on [Presentation](slides.md), [Spreadsheet](sheets.md), [Document](documents.md) and [Design](design.md) describe theirs. To choose the ribbon's tabs, groups and buttons yourself, see [Customize the Ribbon](#customize-the-ribbon).
+
 ### The toolbox on the left
 
 In a canvas, the drawing tools run down the left side: select, eraser, bonds, then text, arrows, mechanism symbols, brackets, shapes and mass fragmentation, then rings and templates. A button with a small arrow in its corner holds a set of related tools: click the corner, click the button a second time, or right-click it to see them all. Rest the mouse on any button to see its name and shortcut key. [Canvas](drawing.md) explains each tool.
 
 ### The side panel on the right
 
-The panel on the right changes with what you are doing. In a canvas it has:
+The **Side Panel** changes with what you are doing. To start with it floats at the top right of the drawing, as a single row when nothing is selected, and opens when you select something. It is a toolbox like the others, so it can be docked at an edge of the window instead (see [Toolboxes](drawing.md#toolboxes)).
 
-- **Style**: the style of whatever is selected (line widths, colors, fonts, fills, and the settings of a single atom or bond).
-- **Warnings**: possible problems in the structures, such as a carbon with five bonds (see [Canvas](drawing.md#warnings)).
-- **Analysis**: formula, masses and more for the selected structure (see [Canvas](drawing.md#the-analysis-panel)).
+- **Style** is its main section: the style of whatever is selected (line widths, colors, fonts, fills, and the settings of a single atom or bond).
+- In a canvas, **Warnings** and **Analysis** are on [the ribbon](#the-ribbon), so the panel keeps to Style.
+- In a presentation or a design they are sections of the side panel, turned on with the **Warnings** and **Analysis** boxes on the ribbon's **View** tab (presentations) or **Page** tab (designs). Other sections, such as Animation and Comments beside a slide, show when they are in use.
 
 The panel's header is one row: its sections as tabs, the padlock and the **×**. With one section showing, the header names it and what is selected ("Style: 2 Captions"); with nothing selected the panel is just that row. When several sections are showing (Style, Animation and Comments beside a slide, say), click a tab to switch between them. Tabs with no room are listed under **»**.
 

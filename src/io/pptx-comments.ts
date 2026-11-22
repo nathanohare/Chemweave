@@ -4,9 +4,11 @@
 // comments in a part of its own, pinned to a point. Replies use PowerPoint 2013's threading, and
 // the Resolved mark (which that kind of comment has no place for) goes in an extension of ours
 // that other programs pass over. Files from PowerPoint 365, whose newer comments are kept
-// elsewhere (ppt/comments/modernComment_*.xml), are read too.
+// elsewhere (ppt/comments/modernComment_*.xml), are read too, with their words' looks. That kind
+// of comment's text is plain, so a note's looks (bold, italic, sub- and superscripts set on its
+// card) go in an extension of ours too: PowerPoint shows the words, and they open here with them.
 
-import { initials, type CommentNote, type PinnedComment } from '../document/comments';
+import { cleanNoteRuns, initials, noteRuns, type CommentNote, type NoteRun, type PinnedComment } from '../document/comments';
 import { kid, kids, xml } from './ooxml';
 
 const HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
@@ -17,6 +19,8 @@ const THREADING = '{C676402C-5697-4E1C-873F-D02D1690AC5C}';
 /** Ours, marking a resolved comment. */
 const DONE_EXT = '{4F3C2A7E-1D5B-4C8E-9A61-3B0E7D2F5C14}';
 const CI_NS = 'urn:chem-illustrator:slides';
+/** Ours, a note's words' looks (its text in pieces, as JSON). */
+const LOOKS_EXT = '{8B2E6D41-5C7A-4F09-B3D8-2A9E1C47F6B5}';
 
 export const COMMENT_CT = {
   authors: 'application/vnd.openxmlformats-officedocument.presentationml.commentAuthors+xml',
@@ -59,7 +63,9 @@ export function writeSlideComments(slides: (PinnedComment[] | undefined)[]): { a
       const note = (n: CommentNote, ext: string) => {
         const a = author(n.author);
         const idx = ++a.last;
-        cms.push(`<p:cm authorId="${a.id}" dt="${pptDate(n.date)}" idx="${idx}">${pos}<p:text>${xml(n.text)}</p:text>${ext ? `<p:extLst>${ext}</p:extLst>` : ''}</p:cm>`);
+        const runs = noteRuns(n);
+        const all = ext + (runs ? `<p:ext uri="${LOOKS_EXT}"><ci:looks xmlns:ci="${CI_NS}">${xml(JSON.stringify(runs))}</ci:looks></p:ext>` : '');
+        cms.push(`<p:cm authorId="${a.id}" dt="${pptDate(n.date)}" idx="${idx}">${pos}<p:text>${xml(n.text)}</p:text>${all ? `<p:extLst>${all}</p:extLst>` : ''}</p:cm>`);
         return { authorId: a.id, idx };
       };
       const done = c.done ? `<p:ext uri="${DONE_EXT}"><ci:done xmlns:ci="${CI_NS}"/></p:ext>` : '';
@@ -108,7 +114,9 @@ export function readLegacyComments(doc: Document | null, authors: Map<string, st
     const ext = kids(kid(cm, 'extLst'), 'ext');
     const threading = ext.map((e) => kid(e, 'threadingInfo')).find(Boolean);
     const bias = Number(threading?.getAttribute('timeZoneBias') ?? 0) || 0;
-    const note: CommentNote = { author: authors.get(aid) ?? '', date: isoDate(cm.getAttribute('dt'), bias), text: kid(cm, 'text')?.textContent ?? '' };
+    const text = kid(cm, 'text')?.textContent ?? '';
+    const runs = looksOf(ext.find((e) => e.getAttribute('uri') === LOOKS_EXT), text);
+    const note: CommentNote = { author: authors.get(aid) ?? '', date: isoDate(cm.getAttribute('dt'), bias), text, ...(runs ? { runs } : {}) };
     const parent = threading ? kid(threading, 'parentCm') : null;
     const up = parent ? byKey.get(`${parent.getAttribute('authorId')} ${parent.getAttribute('idx')}`) : undefined;
     if (up) { (up.replies ??= []).push(note); continue; }
@@ -119,6 +127,40 @@ export function readLegacyComments(doc: Document | null, authors: Map<string, st
     out.push(c);
   }
   return out;
+}
+
+/** A note's looks from our extension, while they say what its text says. */
+function looksOf(ext: Element | undefined, text: string): NoteRun[] | null {
+  const raw = ext ? kid(ext, 'looks')?.textContent : null;
+  if (!raw) return null;
+  try {
+    const got = JSON.parse(raw) as unknown;
+    if (!Array.isArray(got) || !got.every((r) => r && typeof r === 'object' && typeof (r as NoteRun).text === 'string')) return null;
+    const runs = cleanNoteRuns(got as NoteRun[]);
+    return runs && runs.map((r) => r.text).join('') === text ? runs : null;
+  } catch { return null; }
+}
+
+/** PowerPoint 365's comment text in pieces with their looks (a:rPr b, i, u, strike, baseline), or null when it has none. */
+function bodyRuns(el: Element | null): NoteRun[] | null {
+  const out: NoteRun[] = [];
+  kids(kid(el, 'txBody'), 'p').forEach((p, i) => {
+    if (i) out.push({ text: '\n' });
+    for (const r of kids(p, 'r')) {
+      const pr = kid(r, 'rPr');
+      const at = (n: string) => pr?.getAttribute(n);
+      const base = Number(at('baseline') ?? 0);
+      out.push({ text: kid(r, 't')?.textContent ?? '', bold: at('b') === '1' || at('b') === 'true', italic: at('i') === '1' || at('i') === 'true', underline: !!at('u') && at('u') !== 'none', strike: !!at('strike') && at('strike') !== 'noStrike', sub: base < 0, sup: base > 0 });
+    }
+  });
+  return cleanNoteRuns(out);
+}
+
+/** A note read from PowerPoint 365, with its looks while its pieces say what its text says. */
+function modernNote(el: Element, authors: Map<string, string>, created: string | null): CommentNote {
+  const text = bodyText(el);
+  const runs = bodyRuns(el);
+  return { author: authors.get(el.getAttribute('authorId') ?? '') ?? '', date: isoDate(created), text, ...(runs && runs.map((r) => r.text).join('') === text ? { runs } : {}) };
 }
 
 /** The plain text of PowerPoint 365's comment text (its paragraphs on lines of their own). */
@@ -135,8 +177,8 @@ export function readModernComments(doc: Document | null, authors: Map<string, st
     const pos = kid(cm, 'pos');
     // (positions there are in EMUs, 12700 to a point)
     const at = pos ? { x: Number(pos.getAttribute('x') ?? 0) / 12700 || 0, y: Number(pos.getAttribute('y') ?? 0) / 12700 || 0 } : { x: 6, y: 6 + 24 * i };
-    const replies = kids(kid(cm, 'replyLst'), 'reply').map((r) => ({ author: authors.get(r.getAttribute('authorId') ?? '') ?? '', date: isoDate(r.getAttribute('created')), text: bodyText(r) }));
-    const c: PinnedComment = { id: id++, ...at, author: authors.get(cm.getAttribute('authorId') ?? '') ?? '', date: isoDate(cm.getAttribute('created')), text: bodyText(cm) };
+    const replies = kids(kid(cm, 'replyLst'), 'reply').map((r) => modernNote(r, authors, r.getAttribute('created')));
+    const c: PinnedComment = { id: id++, ...at, ...modernNote(cm, authors, cm.getAttribute('created')) };
     if (replies.length) c.replies = replies;
     if (cm.getAttribute('status') === 'resolved') c.done = true;
     return c;

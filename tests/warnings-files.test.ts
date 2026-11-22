@@ -14,6 +14,7 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readCdxml } from '../src/io/cdxml';
 import { StructureChecks } from '../src/chem/warnings';
+import { realFilesMissing } from './real-files';
 
 /** Labels we read on purpose that ChemDraw says it can't interpret. */
 const WE_READ = new Set(['(3,4)-MDP']);
@@ -21,7 +22,7 @@ const WE_READ = new Set(['(3,4)-MDP']);
 const dir = process.env.CHEM_TEST_FILES ?? '';
 const files = dir && existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.cdxml')) : [];
 
-describe.skipIf(!files.length)('warnings match ChemDraw on real files', { timeout: 120000 }, () => {
+describe.skipIf(realFilesMissing('warnings-files', !files.length, 'CHEM_TEST_FILES'))('warnings match ChemDraw on real files', { timeout: 120000 }, () => {
   it('flags what ChemDraw flags, and little else', () => {
     let both = 0, onlyChemDraw = 0;
     const onlyUs: string[] = [];

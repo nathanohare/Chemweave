@@ -2,8 +2,8 @@
 // subtitle), as an outline. Reading a slide into it and writing an edited outline back; a
 // line's level is how far in it is (tabs at its start in the outline's text).
 
-import type { Caption, Doc, ParaStyle } from '../model';
-import { retextRuns, styleOf } from '../richtext';
+import type { Caption, Doc, ParaStyle, TextRun } from '../model';
+import { normalizeRuns, plainText, retextRuns, styleOf } from '../richtext';
 
 export interface OutlineLine { text: string; level: number }
 export interface SlideOutline {
@@ -39,33 +39,89 @@ export function parseOutline(text: string): OutlineLine[] {
   });
 }
 
+/** The looks Outline View shows and sets on characters (Ctrl+B, Ctrl+I, Ctrl+U), as PowerPoint's outline does. */
+export interface OutlineLook { bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; sub?: boolean; sup?: boolean }
+const LOOK_KEYS = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup'] as const;
+
+/** Each character's look in some runs. */
+function charLooks(runs: TextRun[]): OutlineLook[] {
+  const out: OutlineLook[] = [];
+  for (const r of runs) {
+    const l: OutlineLook = {};
+    for (const k of LOOK_KEYS) if (r[k]) l[k] = true;
+    for (let i = 0; i < r.text.length; i++) out.push(l);
+  }
+  return out;
+}
+
+/** The look of each character of a slide's title, and of each body line (as slideOutline gives them). */
+export function outlineLooks(doc: Doc): { title: OutlineLook[] | null; body: OutlineLook[][] | null } {
+  const t = titleOf(doc), b = bodyOf(doc);
+  let body: OutlineLook[][] | null = null;
+  if (b) {
+    const all = charLooks(b.runs);
+    let at = 0;
+    body = plain(b).split('\n').map((line) => { const l = all.slice(at, at + line.length); at += line.length + 1; return l; });
+    if (body.length === 1 && !body[0].length) body = [];
+  }
+  return { title: t ? charLooks(t.runs) : null, body };
+}
+
+/** Runs with these looks on their characters (the rest of each character's look as it is). */
+function withLooks(runs: TextRun[], looks: (OutlineLook | undefined)[]): TextRun[] {
+  const text = plainText(runs);
+  const out: TextRun[] = [];
+  let at = 0;
+  for (const r of runs) {
+    for (let i = 0; i < r.text.length; i++, at++) {
+      const l = looks[at];
+      const c: TextRun = { ...r, text: text[at] };
+      if (l) for (const k of LOOK_KEYS) { if (l[k]) c[k] = true; else delete c[k]; }
+      // (a character is lowered or raised, never both)
+      if (c.sub && c.sup) delete c.sup;
+      if ((c.sub || c.sup) && c.formula) delete c.formula;
+      out.push(c);
+    }
+  }
+  return normalizeRuns(out);
+}
+
+const sameRuns = (a: TextRun[], b: TextRun[]) => JSON.stringify(normalizeRuns(a)) === JSON.stringify(normalizeRuns(b));
+
 /**
  * Write a title and body lines into a slide's placeholders (inside an edit of `doc`). Only what
  * changed is written, so a placeholder's own formatting stays when its text did not change.
- * Returns whether anything changed.
+ * `looks` (from Outline View) gives each character's bold, italic, underline and position, by
+ * the title's characters and by each body line's. Returns whether anything changed.
  */
-export function applyOutline(doc: Doc, title: string | null, body: OutlineLine[] | null): boolean {
+export function applyOutline(doc: Doc, title: string | null, body: OutlineLine[] | null, looks?: { title?: OutlineLook[]; body?: OutlineLook[][] }): boolean {
   const was = slideOutline(doc);
   let changed = false;
   const t = titleOf(doc);
-  if (t && title !== null && title !== was.title) {
+  if (t && title !== null) {
     // (the characters that stayed keep their own look: an italic word in a title stays italic)
-    doc.updateCaption(t.id, { runs: title ? retextRuns(t.runs, title, t.runs[0] ? styleOf(t.runs[0]) : {}) : [] });
-    changed = true;
+    let runs = title !== was.title ? (title ? retextRuns(t.runs, title, t.runs[0] ? styleOf(t.runs[0]) : {}) : []) : t.runs;
+    if (looks?.title) runs = withLooks(runs, looks.title);
+    if (!sameRuns(runs, t.runs)) { doc.updateCaption(t.id, { runs }); changed = true; }
   }
   const b = bodyOf(doc);
-  if (b && body !== null && outlineText(body) !== outlineText(was.body ?? [])) {
+  if (b && body !== null) {
     const style = b.runs[0] ? { ...b.runs[0] } : {};
     const text = body.map((l) => l.text).join('\n');
-    // each line keeps its old paragraph's look (a bullet, for body text), at its new level
-    const paras: ParaStyle[] = body.map((l, i) => {
-      const old = b.paras?.[i] ?? b.paras?.[b.paras.length - 1] ?? (b.ph === 'body' ? { list: 'bullet' as const } : {});
-      const p: ParaStyle = { ...old };
-      if (l.level) p.level = l.level; else delete p.level;
-      return p;
-    });
-    doc.updateCaption(b.id, { runs: text ? (b.runs.length ? retextRuns(b.runs, text, style) : [{ ...style, text }]) : [], paras: paras.length ? paras : b.ph === 'body' ? [{ list: 'bullet' }] : undefined });
-    changed = true;
+    const retexted = outlineText(body) !== outlineText(was.body ?? []);
+    let runs = !retexted ? b.runs : text ? (b.runs.length ? retextRuns(b.runs, text, style) : [{ ...style, text }]) : [];
+    if (looks?.body) runs = withLooks(runs, looks.body.flatMap((l, i) => [...l, ...(i < looks.body!.length - 1 ? [undefined] : [])]));
+    if (retexted) {
+      // each line keeps its old paragraph's look (a bullet, for body text), at its new level
+      const paras: ParaStyle[] = body.map((l, i) => {
+        const old = b.paras?.[i] ?? b.paras?.[b.paras.length - 1] ?? (b.ph === 'body' ? { list: 'bullet' as const } : {});
+        const p: ParaStyle = { ...old };
+        if (l.level) p.level = l.level; else delete p.level;
+        return p;
+      });
+      doc.updateCaption(b.id, { runs, paras: paras.length ? paras : b.ph === 'body' ? [{ list: 'bullet' }] : undefined });
+      changed = true;
+    } else if (!sameRuns(runs, b.runs)) { doc.updateCaption(b.id, { runs }); changed = true; }
   }
   return changed;
 }

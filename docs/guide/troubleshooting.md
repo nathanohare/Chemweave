@@ -4,7 +4,7 @@ This page covers the problems people meet most often: Chemweave won't install or
 
 ## Installing and starting
 
-**"Windows protected your PC".** This is SmartScreen, which warns about programs that aren't signed with a paid Windows certificate. Click **More info**, then **Run anyway**. An IT department's rules can still block Chemweave; if so, ask them.
+**The download "isn't commonly downloaded", or "Windows protected your PC".** Chemweave's installers are signed. Microsoft still warns about any file that few people have downloaded yet, which is true of every new release for a while. In Microsoft Edge, click **…** beside the download, then **Keep**, **Show more** and **Keep anyway**. If Windows then says "Windows protected your PC", click **More info**, check the publisher is not "Unknown publisher", then **Run anyway**. An IT department's rules can still block Chemweave; if so, ask them.
 
 **Nothing happens when the app starts (Windows).** The app needs Microsoft's WebView2 Runtime. Windows 10 and 11 normally have it, but some managed computers remove it. Install the "Evergreen Standalone Installer" from Microsoft's WebView2 page, then start the app again.
 

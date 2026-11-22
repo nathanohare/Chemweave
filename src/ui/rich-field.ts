@@ -30,6 +30,11 @@ export interface RichFieldOptions {
   looks?: boolean;
   /** A key pressed in the field, before the field takes it: true when it was dealt with. */
   keys?(e: KeyboardEvent, f: RichField): boolean;
+  /**
+   * Undo (redo false) or Redo with nothing typed in the field to take back or bring again: the
+   * drawing's own, as a document's text box hands Ctrl+Z to the document once its own typing is undone.
+   */
+  history?(redo: boolean): void;
 }
 
 /** Where each character of `text` goes with chemical interpretation on. */
@@ -72,6 +77,8 @@ export class RichField {
     el.addEventListener('keydown', (e) => this.onKey(e));
     el.addEventListener('focus', () => { document.addEventListener('selectionchange', this.onSel); this.onSel(); });
     el.addEventListener('blur', () => { document.removeEventListener('selectionchange', this.onSel); this.pending = null; this.commit(); });
+    // (the app's file keys, Ctrl+S, finish what is typed first)
+    el.addEventListener('change', () => this.commit());
     // pasted text comes in as plain text (through beforeinput)
     el.addEventListener('drop', (e) => e.preventDefault());
   }
@@ -291,15 +298,22 @@ export class RichField {
       case 'deleteSoftLineForward': case 'deleteHardLineForward': e.preventDefault(); this.remove(a, a === b ? len : b); return;
       case 'deleteByCut': case 'deleteContent': case 'deleteByDrag': e.preventDefault(); this.remove(a, b); return;
       case 'insertParagraph': case 'insertLineBreak': e.preventDefault(); return;
-      case 'historyUndo': e.preventDefault(); this.back(); return;
+      case 'historyUndo': e.preventDefault(); this.undoKey(false); return;
       case 'formatSubscript': e.preventDefault(); this.toggle('sub'); return;
       case 'formatSuperscript': e.preventDefault(); this.toggle('sup'); return;
       case 'formatBold': e.preventDefault(); this.toggleLook('bold'); return;
       case 'formatItalic': e.preventDefault(); this.toggleLook('italic'); return;
       case 'formatUnderline': e.preventDefault(); this.toggleLook('underline'); return;
-      case 'historyRedo': e.preventDefault(); return;
+      case 'historyRedo': e.preventDefault(); this.undoKey(true); return;
       default: setTimeout(() => this.resync());
     }
+  }
+
+  /** Ctrl+Z or Ctrl+Y: the field's own typing first, then the drawing's. */
+  private undoKey(redo: boolean): void {
+    if (!redo && this.undo.length) { this.back(); return; }
+    // (typed and not finished: the field has no Redo of its own, and the drawing's would lose it)
+    if (!this.unfinished()) this.o.history?.(redo);
   }
 
   private back(): void {
@@ -336,7 +350,7 @@ export class RichField {
     if (e.key === 'Enter') { e.preventDefault(); this.el.blur(); return; }
     if (e.key === 'Escape') { e.preventDefault(); this.undo = []; this.load(this.wasParts); this.render(null); this.el.blur(); return; }
     if (mod && !e.altKey && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.toggle(e.shiftKey || e.key === '+' ? 'sup' : 'sub'); return; }
-    if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); this.back(); return; }
+    if (mod && !e.altKey && (e.key.toLowerCase() === 'z' || (!e.shiftKey && e.key.toLowerCase() === 'y'))) { e.preventDefault(); this.undoKey(e.shiftKey || e.key.toLowerCase() === 'y'); return; }
     // Ctrl+B, Ctrl+I, Ctrl+U on the selected characters, or on what is typed next
     if (mod && !e.altKey && !e.shiftKey && this.o.looks && /^[biu]$/i.test(e.key)) { e.preventDefault(); this.toggleLook(({ b: 'bold', i: 'italic', u: 'underline' } as const)[e.key.toLowerCase() as 'b' | 'i' | 'u']); }
   }
@@ -368,6 +382,8 @@ export class RichField {
     if (k === this.was) return;
     this.was = k;
     this.wasParts = this.parts();
+    // finished: it is the drawing's now, and Ctrl+Z takes it back there
+    this.undo = [];
     this.o.done(this.parts());
   }
 

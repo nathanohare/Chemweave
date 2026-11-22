@@ -42,6 +42,8 @@ export interface NamedStyle {
   bold: boolean;
   italic: boolean;
   color?: string;
+  /** Word's theme colour and font for the style, as its file had them (JSON, io/docx-read.ts), written back while `color` and `font` are what they gave. */
+  wth?: string;
   align: Justify;
   /** Space above and below, in points. */
   spaceBefore: number;
@@ -81,6 +83,8 @@ export interface CharStyle {
   allCaps?: boolean;
   strike?: boolean;
   custom?: boolean;
+  /** Word's theme colour and font for the style (see NamedStyle.wth). */
+  wth?: string;
 }
 
 /** A watermark (Design > Watermark): words across every page, behind the text, as Word's text watermarks. */

@@ -18,6 +18,9 @@ import { readFileSync } from 'node:fs';
 import { crossingBonds, crossingGaps, crossingGapsCached } from '../src/chem/crossing';
 import { join } from 'node:path';
 import { CHEMDRAW_DIR, noChemDraw } from './chemdraw-private';
+import { realFilesMissing } from './real-files';
+
+realFilesMissing('chemdraw-copy', noChemDraw, 'CHEMDRAW_FIXTURES');
 
 const parse = (t: string) => new DOMParser().parseFromString(t.replace(/<!DOCTYPE[^>]*>/i, ''), 'application/xml').documentElement;
 const all = (e: Element, name: string) => Array.from(e.getElementsByTagName(name));

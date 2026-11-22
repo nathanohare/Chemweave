@@ -215,6 +215,26 @@ export function deckNumbers(d: DeckRefs | undefined, slides: SlideLike[], all = 
   return out;
 }
 
+/**
+ * Each reference's number on slide `i`, as its lines number them (1, 2… on the slide, or the
+ * number through the presentation), for citations in its text; empty when the lines aren't numbered.
+ */
+export function slideCiteNumbers(d: DeckRefs | undefined, slides: SlideLike[], i: number): Map<string, number> {
+  const s = slides[i];
+  const out = new Map<string, number>();
+  if (!s?.refs?.length || !d?.list.length) return out;
+  const look = refLook(d, s.refLook);
+  if (look.numbering === 'none') return out;
+  const known = new Set(d.list.map((r) => r.id));
+  const nums = look.numbering === 'deck' ? deckNumbers(d, slides) : null;
+  for (const id of s.refs) {
+    if (!known.has(id)) continue;
+    const n = nums ? nums.get(id) : out.size + 1;
+    if (n !== undefined) out.set(id, n);
+  }
+  return out;
+}
+
 /** The lines slide `i` shows, or null when it shows none. */
 export function slideRefBlock(d: DeckRefs | undefined, slides: SlideLike[], i: number): RefBlock | null {
   const s = slides[i];
