@@ -199,7 +199,7 @@ import { htmlToRich } from './text/html';
 import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
-import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX } from './settings';
+import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
 import { TypingDialog } from './ui/typing-dialog';
@@ -11707,8 +11707,7 @@ function convertDeckChemdraw(deck: Deck): void {
 }
 
 /** Settings ▸ General: how structures are saved in Word and PowerPoint files. */
-const STRUCTURES_AS = [{ value: 'pictures', label: 'Pictures (SVG and PNG)' }, { value: 'chemdraw', label: 'ChemDraw objects' }];
-const STRUCTURES_AS_HELP = 'ChemDraw objects open in ChemDraw when double-clicked in Word, PowerPoint or Excel (they show as pictures on computers without ChemDraw). Pictures (SVG and PNG) look the same in every program. Chemweave opens both as editable drawings. ChemDraw objects already in a file stay as they are.';
+const STRUCTURES_AS_HELP = 'ChemDraw objects open in ChemDraw when double-clicked in Word, PowerPoint or Excel (they show as pictures on computers without ChemDraw). Pictures (SVG and PNG; PNG in Excel) look the same in every program. Chemweave opens both as editable drawings. ChemDraw objects already in a file stay as they are.';
 
 /** Settings ▸ General: selecting, groups, linked text, and your name on tracked changes. */
 async function generalPreferences(): Promise<void> {
@@ -11723,9 +11722,9 @@ async function generalPreferences(): Promise<void> {
       help: 'When a bond becomes triple (or an allene carbon gets its second double bond), move the smaller side so the sp carbon\'s bonds are linear. Off: atoms stay put. New bonds are always drawn linear.' },
     { name: 'convertChemDraw', label: 'Redraw ChemDraw objects in Word files as they open', type: 'checkbox', value: String(!!docRead.convertChemDraw),
       help: 'Off: they keep the formatting they had in Word and become drawings when you edit one. On: each is redrawn here in the document\'s drawing style.' },
-    { name: 'docxStructures', label: 'Save structures in Word files as', value: officeStructures.docx, options: STRUCTURES_AS, help: STRUCTURES_AS_HELP },
-    { name: 'pptxStructures', label: 'Save structures in PowerPoint files as', value: officeStructures.pptx, options: STRUCTURES_AS, help: STRUCTURES_AS_HELP },
-    { name: 'xlsxStructures', label: 'Save structures in Excel files as', value: officeStructures.xlsx, options: STRUCTURES_AS, help: STRUCTURES_AS_HELP },
+    { name: 'docxStructures', label: 'Save structures in Word files as', value: officeStructures.docx, options: structuresAsOptions('docx'), help: STRUCTURES_AS_HELP },
+    { name: 'pptxStructures', label: 'Save structures in PowerPoint files as', value: officeStructures.pptx, options: structuresAsOptions('pptx'), help: STRUCTURES_AS_HELP },
+    { name: 'xlsxStructures', label: 'Save structures in Excel files as', value: officeStructures.xlsx, options: structuresAsOptions('xlsx'), help: STRUCTURES_AS_HELP },
     { name: 'reviewer', label: 'User name for tracked changes', value: reviewAuthor() },
     { name: 'startView', label: 'Show the Start screen when Chemweave opens', type: 'checkbox', value: String(startView) },
   ], { ok: 'Save', actions: {

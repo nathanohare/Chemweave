@@ -42,6 +42,14 @@ import { DEFAULT_CURSOR_AIDS, parseCursorAids, type CursorAidPrefs } from './edi
 /** Structures in Word and PowerPoint files: pictures (SVG and PNG), or ChemDraw objects. */
 export type StructuresAs = 'pictures' | 'chemdraw';
 
+/**
+ * The choices for Settings ▸ General ▸ Save structures in … files as, for each kind of file: Word
+ * and PowerPoint get a picture as SVG with a PNG beside it, Excel a PNG only.
+ */
+export function structuresAsOptions(kind: 'docx' | 'pptx' | 'xlsx'): { value: StructuresAs; label: string }[] {
+  return [{ value: 'pictures', label: kind === 'xlsx' ? 'Pictures (PNG)' : 'Pictures (SVG and PNG)' }, { value: 'chemdraw', label: 'ChemDraw objects' }];
+}
+
 export interface Settings {
   /** Changes to ChemDraw's default keys. */
   hotkeys: KeyOverrides;

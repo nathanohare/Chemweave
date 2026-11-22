@@ -18,7 +18,7 @@ import { writePptx, type PptxOptions } from '../src/io/pptx-write';
 import { PackageReader, NS, bytesHash } from '../src/io/ooxml';
 import { boxOf } from '../src/objects';
 import { defaultMaster } from '../src/deck/deck';
-import { parseSettings } from '../src/settings';
+import { parseSettings, structuresAsOptions } from '../src/settings';
 
 // ---------------------------------------------------------------- Word
 
@@ -197,6 +197,11 @@ describe('structures in PowerPoint files saved as ChemDraw objects', () => {
 });
 
 describe('the setting', () => {
+  it('offers Excel pictures as PNG, which is what Excel files get (review F2-R09)', () => {
+    expect(structuresAsOptions('xlsx').map((o) => o.label)).toEqual(['Pictures (PNG)', 'ChemDraw objects']);
+    expect(structuresAsOptions('docx')[0].label).toBe('Pictures (SVG and PNG)');
+    expect(structuresAsOptions('pptx')[0].label).toBe('Pictures (SVG and PNG)');
+  });
   it('is pictures for each unless chosen, and reads back per file type', () => {
     expect(parseSettings(null).officeStructures).toEqual({ docx: 'pictures', pptx: 'pictures', xlsx: 'pictures' });
     expect(parseSettings(JSON.stringify({ officeStructures: { docx: 'chemdraw', pptx: 'nonsense', xlsx: 'chemdraw' } })).officeStructures).toEqual({ docx: 'chemdraw', pptx: 'pictures', xlsx: 'chemdraw' });
