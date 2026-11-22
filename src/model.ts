@@ -1170,7 +1170,16 @@ export interface Shape {
    * paste into. `runs` is the text label it had, so it can go back to that.
    */
   holder?: { runs?: TextRun[] };
+  /**
+   * A frame drawn from data (energy diagram, plate, Newman, torsion chart, diagram): its labels
+   * as last drawn, so looks set on them by hand afterwards are told from the drawing's own and
+   * kept when it is drawn again (design/frame-labels.ts).
+   */
+  madeLabels?: MadeLabel[];
 }
+
+/** A label as a frame drawn from data made it: its words and their runs. */
+export interface MadeLabel { text: string; runs: TextRun[] }
 
 /**
  * Can this shape be turned to any angle (Slides and Design, and an orbital's lobes anywhere),

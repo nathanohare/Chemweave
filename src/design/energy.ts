@@ -16,6 +16,7 @@ import { bestRotation, crystalPlacer, defaultView, drawCrystal, WIRE_LONE_RADIUS
 import { COVALENT, mvec, type M3, type V3 } from '../chem/crystal';
 import { hydrogensOn, qmBonds, type QmBond } from '../chem/qm-bonds';
 import type { QmAtom } from '../chem/qm-output';
+import { keepLabels, readLabels } from './frame-labels';
 
 /** A species at one column: its name and energy (null: this pathway has nothing in that column). */
 export interface EnergyPoint {
@@ -542,6 +543,7 @@ export function plotFromBox(b: Rect, d: EnergyData, L: number): { at: Vec; w: nu
  */
 export function putEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
+  const was = readLabels(doc, old);
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
     const f = old.frame;
@@ -573,8 +575,10 @@ export function putEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec, id?: num
   // its background and border, as the window asks
   const lk = d.look ?? {};
   const back = { filled: !!lk.background, ...(lk.background ? { fillColor: lk.background } : {}), lineWidth: lk.border ? lk.borderWidth ?? doc.style.lineWidth : 0, color: lk.border ?? '#000000' };
-  if (old) { doc.updateShape(old.id, { ...b, frame, energy, ...back }); return old.id; }
-  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, ...back, frame, energy, name: 'Energy diagram' }).id;
+  // (looks set on its labels by hand stay)
+  const madeLabels = keepLabels(doc, was, frame);
+  if (old) { doc.updateShape(old.id, { ...b, frame, energy, ...back, madeLabels }); return old.id; }
+  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, ...back, frame, energy, name: 'Energy diagram', madeLabels }).id;
 }
 
 /** The energy diagram a thing belongs to (its frame's id), if any. */
