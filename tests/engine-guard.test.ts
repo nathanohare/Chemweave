@@ -6,7 +6,7 @@
 // and k fused six-membered rings in a row (perhydro-polyacene, 4k+2 carbons) C(4k+2)H(6k+6).
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
-import { DEEP_LIMIT, TOO_DEEP, longestPathBound, molfileGraph, smilesGraph, tooDeep } from '../src/chem/engine-guard';
+import { DEEP_LIMIT, TOO_DEEP, hasMacrocycle, longestPathBound, molfileGraph, smilesGraph, tooDeep } from '../src/chem/engine-guard';
 import { respond, engineWorks } from '../src/worker/chem-respond';
 import type { ChemResponse } from '../src/worker/chem-worker';
 import { molFacts } from '../src/si/chem';
@@ -120,4 +120,34 @@ describe('the worker on very big structures', () => {
     expect(ask({ type: 'props', id: 6, mols: [chain(700), 'CCO'] })).toMatchObject({ results: [{ error: TOO_DEEP }, { formula: 'C2H6O' }] });
     stillWorks();
   });
+});
+
+describe('2-D layouts for Clean Up (review F4-R04)', () => {
+  it('finds a macrocycle by its smallest ring, not by the size of a ring system', () => {
+    // CoordGen measured: a 34-atom ring 3.4 s, a 40-atom ring over 60 s; cyclosporin (a 33-atom
+    // ring), β-cyclodextrin, C60 and a 10-ring acene under half a second
+    const ringSmiles = (n: number) => `C1${'C'.repeat(n - 2)}C1`;
+    expect(hasMacrocycle(smilesGraph(ringSmiles(40)))).toBe(true);
+    expect(hasMacrocycle(smilesGraph(ringSmiles(36)))).toBe(false);
+    expect(hasMacrocycle(smilesGraph('C'.repeat(300)))).toBe(false);
+    expect(hasMacrocycle(molfileGraph(acene(20))!)).toBe(false);
+    expect(hasMacrocycle(smilesGraph('c12c3c4c5c1c1c6c7c2c2c8c3c3c9c4c4c%10c5c5c1c1c6c6c%11c7c2c2c7c8c3c3c8c9c4c4c9c%10c5c5c1c1c6c6c%11c2c2c7c3c3c8c4c4c9c5c1c1c6c2c3c41'))).toBe(false);
+    // a 30-atom ring fused to a benzene: the big ring's own bonds have no smaller way round
+    expect(hasMacrocycle(smilesGraph(`c1ccc2c(c1)CCCCCCCCCCCCCCCCCCCCCCCCCCCC2`))).toBe(false);
+    expect(hasMacrocycle(smilesGraph(`c1ccc2c(c1)${'C'.repeat(40)}2`))).toBe(true);
+  });
+  it('gives no layouts for a long chain (which breaks the engine) and the classic one only for a big ring', () => {
+    // a 900-atom chain broke set_new_coords ("memory access out of bounds")
+    expect(ask({ type: 'layouts', id: 20, molblock: chain(900) })).toEqual({ type: 'layouts', id: 20, coords: [] });
+    stillWorks();
+    // a 60-atom ring: CoordGen would run for minutes; the classic layout comes back at once
+    const t0 = performance.now();
+    const r = ask({ type: 'layouts', id: 21, molblock: ring(60) });
+    expect(r.type === 'layouts' && r.coords.length).toBe(1);
+    expect(performance.now() - t0).toBeLessThan(10000);
+    // a small structure still gets both
+    const both = ask({ type: 'layouts', id: 22, molblock: RDKit.get_mol('c1ccccc1CCO').get_molblock() });
+    expect(both.type === 'layouts' && both.coords.length).toBe(2);
+    stillWorks();
+  }, 30000);
 });

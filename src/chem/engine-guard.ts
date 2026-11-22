@@ -5,8 +5,15 @@
 // polymer or PEG drawn in full, a long macrocycle, a big fused ring sheet) runs out of stack:
 // measured with the RDKit_minimal.wasm Chemweave ships, a chain or ring of about 620 atoms, or a
 // 640-atom ladder of fused rings, kills the module ("memory access out of bounds", or a hang), and
-// every later request then fails. Reading a molfile, formulas, masses, InChI, pieces, R/S and 2-D
-// layouts do not walk that way and were fine up to 3,000 atoms.
+// every later request then fails (the facts the SI tab works out fail from about 590). The 2-D
+// layout (set_new_coords) breaks the same way on a 900-atom chain. Reading a molfile, formulas,
+// masses and R/S were fine up to 3,000 atoms; InChI and splitting into pieces hang on big fused
+// ring systems.
+//
+// Separately, CoordGen's layout (set_new_coords(true)) takes minutes or never ends on a ring of
+// about 40 atoms or more (a 34-atom ring 3.4 s, 40 atoms over 60 s; cyclosporin's 33-atom ring,
+// β-cyclodextrin and C60 well under a second), so it is skipped when a structure has one
+// (`hasMacrocycle`).
 //
 // So before a SMILES call the worker asks `tooDeep`: an upper bound on the longest walk is worked
 // out from the structure's graph, and anything over DEEP_LIMIT skips the SMILES-based work (with
@@ -17,7 +24,74 @@
 export const DEEP_LIMIT = 500;
 
 /** What is said instead of an answer the guard held back. */
-export const TOO_DEEP = `This structure has more than ${DEEP_LIMIT} atoms in one chain or ring system, which is more than the chemistry engine can handle, so this can’t be calculated for it. Draw a long chain as its repeat unit in polymer brackets instead.`;
+export const TOO_DEEP = `This structure has more than ${DEEP_LIMIT} atoms in a row (through chains and rings), which is more than the chemistry engine can handle, so this can’t be calculated for it. Draw a long chain as its repeat unit in polymer brackets instead.`;
+
+/** The largest ring CoordGen lays out in good time (see above). */
+export const COORDGEN_RING_LIMIT = 36;
+
+/**
+ * Whether some bond's smallest ring has more than `limit` atoms (a macrocycle that isn't made of
+ * small fused rings): for each bond, the shortest way round from one end to the other without it.
+ */
+export function hasMacrocycle(g: Graph, limit = COORDGEN_RING_LIMIT): boolean {
+  const { n } = g;
+  if (n <= limit) return false;
+  const adj: number[][] = Array.from({ length: n }, () => []);
+  for (const [a, b] of g.edges) {
+    if (a === b || a < 0 || b < 0 || a >= n || b >= n) continue;
+    adj[a].push(b);
+    adj[b].push(a);
+  }
+  const dist = new Int32Array(n);
+  for (const [a, b] of g.edges) {
+    if (a === b || a < 0 || b < 0 || a >= n || b >= n) continue;
+    // breadth first from a to b, not using the bond a–b, no further than `limit` steps
+    dist.fill(-1);
+    dist[a] = 0;
+    let frontier = [a], found = -1;
+    while (frontier.length && found < 0) {
+      const next: number[] = [];
+      for (const v of frontier) {
+        if (dist[v] >= limit) continue;
+        for (const w of adj[v]) {
+          if ((v === a && w === b) || dist[w] >= 0) continue;
+          dist[w] = dist[v] + 1;
+          if (w === b) { found = dist[w]; break; }
+          next.push(w);
+        }
+        if (found >= 0) break;
+      }
+      frontier = next;
+    }
+    if (found >= 0) continue; // a ring of found + 1 atoms, small enough
+    // no way round within the limit: a chain bond (no ring at all), or a ring bigger than it
+    if (connectedWithout(adj, a, b)) return true;
+  }
+  return false;
+}
+
+/** Whether a and b are still joined once the bond a–b is left out. */
+function connectedWithout(adj: number[][], a: number, b: number): boolean {
+  const seen = new Uint8Array(adj.length);
+  seen[a] = 1;
+  const todo = [a];
+  while (todo.length) {
+    const v = todo.pop()!;
+    for (const w of adj[v]) {
+      if ((v === a && w === b) || seen[w]) continue;
+      if (w === b) return true;
+      seen[w] = 1;
+      todo.push(w);
+    }
+  }
+  return false;
+}
+
+/** A molfile or SMILES string's graph (null when it can't be read). */
+export function graphOf(input: string): Graph | null {
+  const molfile = /\n/.test(input) && /M {2}END|V[23]000/.test(input);
+  return molfile ? molfileGraph(input) : smilesGraph(input);
+}
 
 /** A structure's atoms (0…n−1) and bonds, enough to bound the engine's walk. */
 export interface Graph { n: number; edges: [number, number][] }
@@ -172,7 +246,7 @@ export function tooDeep(input: string): boolean {
   const molfile = /\n/.test(input) && /M {2}END|V[23]000/.test(input);
   // (quick ways out: a structure with no more atoms than the limit can't have a longer run)
   if (!molfile && input.length <= DEEP_LIMIT) return false;
-  const g = molfile ? molfileGraph(input) : smilesGraph(input);
+  const g = graphOf(input);
   if (!g || g.n <= DEEP_LIMIT) return false;
   return longestPathBound(g) > DEEP_LIMIT;
 }

@@ -9,7 +9,7 @@ import { molProps, substructureMatches, structureLibrary, libraryMatches, panelP
 import { namerGraph } from '../chem/namer-graph';
 import { hammettSites } from '../chem/hammett-match';
 import { molFacts, unreadableFacts } from '../si/chem';
-import { tooDeep, TOO_DEEP } from '../chem/engine-guard';
+import { graphOf, hasMacrocycle, tooDeep, TOO_DEEP } from '../chem/engine-guard';
 import type { ChemRequest, ChemResponse, FragmentResult } from './chem-worker';
 
 /** Sets of structures kept for substructure searches, by name (see substructureIn). */
@@ -102,9 +102,14 @@ export function respond(RDKit: any, m: Exclude<ChemRequest, { type: 'init' }>, b
   } else if (m.type === 'layouts') {
     // the engine's own 2-D layouts (its classic one and CoordGen's), for Clean Up to start from
     const coords: [number, number][][] = [];
+    // (none for a long run of atoms, which breaks the engine; no CoordGen with a big ring, which it
+    // can take minutes over: Clean Up manages without either)
+    if (deep(m.molblock)) return { type: 'layouts', id: m.id, coords };
+    const g = graphOf(m.molblock);
+    const ways = g && hasMacrocycle(g) ? [false] : [false, true];
     const mol = RDKit.get_mol(m.molblock, JSON.stringify({ sanitize: false, removeHs: false }));
     if (mol && mol.is_valid()) {
-      for (const coordGen of [false, true]) {
+      for (const coordGen of ways) {
         try {
           mol.set_new_coords(coordGen);
           const lines = mol.get_molblock().split(/\r?\n/);
