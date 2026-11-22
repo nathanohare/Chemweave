@@ -13,7 +13,8 @@ export const REPO_URL = 'https://github.com/nathanohare/Chemweave';
 export const RELAY_URL: string = (import.meta.env?.VITE_FEEDBACK_RELAY as string | undefined) ?? 'https://chemweave-feedback.npo0001.workers.dev';
 /** Where Email… addresses the message; empty leaves the To line for the person to fill in. */
 export const FEEDBACK_EMAIL = '';
-export const GUIDE_URL = `${REPO_URL}/blob/main/docs/README.md`;
+/** The user guide on the web: the GitHub wiki, built from docs/ (scripts/build-wiki.mjs). */
+export const GUIDE_URL = `${REPO_URL}/wiki`;
 
 export type FeedbackKind = 'idea' | 'problem' | 'comment';
 
