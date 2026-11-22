@@ -110,10 +110,58 @@ describe('Gaussian energies beyond SCF', () => {
     const bd = readQmOutput(log('#p bd(t)/cc-pvtz', []), 'h2o.log')!;
     expect(bd.missing).toBe('BD');
     expect(bd.energyFrom).toBeUndefined();
-    // a route not recognised, but a correlated energy in the log
-    const odd = readQmOutput(log('#p xmethod/cc-pvtz', [' CCSD(T)= -0.76332141577D+02']), 'h2o.log')!;
+    // a route not recognised, and a correlated energy in the log that doesn't say whose it is
+    const odd = readQmOutput(log('#p xmethod/cc-pvtz', [' DE(Corr)= -0.27D+00 E(CORR)=     -76.320000000']), 'h2o.log')!;
     expect(odd.missing).toBe('XMETHOD');
+    expect(odd.scf).toBeCloseTo(-76.0107465, 7);
     // plain DFT: nothing to say
     expect(readQmOutput(log('#p b3lyp/6-31g(d)', []), 'h2o.log')!.missing).toBeUndefined();
+  });
+
+  // review F1b-R09: the other ways the Gaussian 16 User's Reference allows (CCSD=T, the option
+  // written with "="; MP4=SDQ) and the open-shell forms UCCSD, ROCCSD, UQCISD of the CCSD and
+  // QCISD keyword pages
+  for (const route of ['#p ccsd=t/cc-pvtz', '#p CCSD = T/cc-pVTZ', '#p uccsd(t)/cc-pvtz', '#p roccsd(t)/cc-pvtz', '#p UCCSD(T,FC)/cc-pVTZ', '#p uccsd=t/cc-pvtz']) {
+    it(`reads the CCSD(T) energy for "${route}"`, () => {
+      const r = readQmOutput(log(route, triples), 'oh.log')!;
+      expect(r.scf).toBeCloseTo(-76.332141577, 9);
+      expect(r.energyFrom).toBe('CCSD(T)');
+      expect(r.missing).toBeUndefined();
+    });
+  }
+  it('reads UCCSD as CCSD and UQCISD(T) as QCISD(T)', () => {
+    const c = readQmOutput(log('#p uccsd/cc-pvtz', [' DE(Corr)= -0.27D+00 E(CORR)=     -76.320000000']), 'oh.log')!;
+    expect(c.energyFrom).toBe('CCSD');
+    expect(c.scf).toBeCloseTo(-76.32, 6);
+    const q = readQmOutput(log('#p uqcisd(t)/cc-pvtz', [' QCISD(T)= -0.76331000000D+02']), 'oh.log')!;
+    expect(q.energyFrom).toBe('QCISD(T)');
+    expect(q.scf).toBeCloseTo(-76.331, 6);
+  });
+  it('reads MP4=SDQ, MP4=(SDQ) and MP4=DQ from their own lines, not as MP4(SDTQ)', () => {
+    const body = [' UMP4(DQ)=  -0.76290000000D+02', ' UMP4(SDQ)= -0.76295000000D+02', ' UMP4(SDTQ)= -0.76299000000D+02'];
+    const sdq = readQmOutput(log('#p mp4=sdq/cc-pvtz', body), 'h2o.log')!;
+    expect(sdq.energyFrom).toBe('MP4(SDQ)');
+    expect(sdq.scf).toBeCloseTo(-76.295, 6);
+    expect(readQmOutput(log('#p mp4=(sdq)/cc-pvtz', body), 'h2o.log')!.scf).toBeCloseTo(-76.295, 6);
+    expect(readQmOutput(log('#p mp4=dq/cc-pvtz', body), 'h2o.log')!.scf).toBeCloseTo(-76.29, 6);
+    expect(readQmOutput(log('#p mp4/cc-pvtz', body), 'h2o.log')!.scf).toBeCloseTo(-76.299, 6);
+  });
+  it('reads a CCSD(T) or QCISD(T) line the route doesn\'t name, rather than only noting it', () => {
+    const r = readQmOutput(log('#p xmethod/cc-pvtz', [' CCSD(T)= -0.76332141577D+02']), 'h2o.log')!;
+    expect(r.scf).toBeCloseTo(-76.332141577, 9);
+    expect(r.energyFrom).toBe('CCSD(T)');
+    expect(r.missing).toBeUndefined();
+    const q = readQmOutput(log('#p xmethod/cc-pvtz', [' QCISD(T)= -0.76331000000D+02']), 'h2o.log')!;
+    expect(q.energyFrom).toBe('QCISD(T)');
+  });
+  // review F1b-R15: only the method is looked at, not every word of the route (made-up routes)
+  it('says nothing for a DFT job whose route has a word that names another method elsewhere', () => {
+    for (const route of ['#p opt b3lyp/6-31g(d) bd', '#p b3lyp/6-31g(d) opt w1 cid', '#p opt iop(3/124=40) m062x/def2tzvp g1']) {
+      const r = readQmOutput(log(route, []), 'h2o.log')!;
+      expect(r.missing, route).toBeUndefined();
+      expect(r.scf).toBeCloseTo(-76.0107465, 7);
+    }
+    // and the method itself is still noted
+    expect(readQmOutput(log('#p opt cisd/6-31g(d)', []), 'h2o.log')!.missing).toBe('CISD');
   });
 });

@@ -75,19 +75,23 @@ const lastAt = (text: string, key: string, re: RegExp): RegExpExecArray | null =
  */
 const E = '(-?\\d+\\.\\d+(?:[DE][+-]?\\d+)?)';
 const line = (key: string) => new RegExp(`${key.replace(/[()]/g, '\\$&')}\\s*${E}`);
-// (a method with options: ccsd(t,full), CCSD(T,FC), ccsd=(t,maxcyc=100), qcisd(t,full), mp4(sdq);
-// the (T) is the option t among the others; review F1-R03)
-const withT = (m: string) => new RegExp(`\\b${m}(?:-t\\b|\\s*=?\\s*\\([^)]*\\bt\\b)`, 'i');
+// (a method with options: ccsd(t,full), CCSD(T,FC), ccsd=(t,maxcyc=100), ccsd=t, qcisd(t,full),
+// mp4(sdq), mp4=sdq; the (T) is the option t among the others; with the open-shell forms UCCSD and
+// ROCCSD; review F1-R03, F1b-R09)
+const SHELL = '(?:r|u|ro)?';
+const withT = (m: string) => new RegExp(`\\b${SHELL}${m}(?:-t\\b|\\s*=\\s*t\\b|\\s*=?\\s*\\([^)]*\\bt\\b)`, 'i');
+const plain = (m: string) => new RegExp(`\\b${SHELL}${m}\\b`, 'i');
+const mp4 = (opt: string) => new RegExp(`\\b${SHELL}mp4\\s*(?:=\\s*\\(?|\\()\\s*${opt}\\b`, 'i');
 const POST_SCF: { route: RegExp; name: string; key: string; re: RegExp }[] = [
   { route: /\boniom\b/i, name: 'ONIOM extrapolated', key: 'ONIOM: extrapolated energy', re: new RegExp(`ONIOM: extrapolated energy\\s*=\\s*${E}`) },
   { route: withT('ccsd'), name: 'CCSD(T)', key: 'CCSD(T)=', re: line('CCSD(T)=') },
   { route: withT('qcisd'), name: 'QCISD(T)', key: 'QCISD(T)=', re: line('QCISD(T)=') },
-  { route: /\bccsd\b/i, name: 'CCSD', key: 'E(CORR)=', re: new RegExp(`E\\(CORR\\)=\\s*${E}`, 'i') },
-  { route: /\bqcisd\b/i, name: 'QCISD', key: 'E(CORR)=', re: new RegExp(`E\\(CORR\\)=\\s*${E}`, 'i') },
-  { route: /\bmp4\s*=?\s*\(\s*sdq\b/i, name: 'MP4(SDQ)', key: 'UMP4(SDQ)=', re: line('UMP4(SDQ)=') },
-  { route: /\bmp4\s*=?\s*\(\s*dq\b/i, name: 'MP4(DQ)', key: 'UMP4(DQ)=', re: line('UMP4(DQ)=') },
-  { route: /\bmp4/i, name: 'MP4', key: 'UMP4(SDTQ)=', re: line('UMP4(SDTQ)=') },
-  { route: /\bmp3\b/i, name: 'MP3', key: 'EUMP3=', re: line('EUMP3=') },
+  { route: plain('ccsd'), name: 'CCSD', key: 'E(CORR)=', re: new RegExp(`E\\(CORR\\)=\\s*${E}`, 'i') },
+  { route: plain('qcisd'), name: 'QCISD', key: 'E(CORR)=', re: new RegExp(`E\\(CORR\\)=\\s*${E}`, 'i') },
+  { route: mp4('sdq'), name: 'MP4(SDQ)', key: 'UMP4(SDQ)=', re: line('UMP4(SDQ)=') },
+  { route: mp4('dq'), name: 'MP4(DQ)', key: 'UMP4(DQ)=', re: line('UMP4(DQ)=') },
+  { route: new RegExp(`\\b${SHELL}mp4`, 'i'), name: 'MP4', key: 'UMP4(SDTQ)=', re: line('UMP4(SDTQ)=') },
+  { route: plain('mp3'), name: 'MP3', key: 'EUMP3=', re: line('EUMP3=') },
   { route: /\b[ru]?o?mp2\b/i, name: 'MP2', key: 'EUMP2 =', re: line('EUMP2 =') },
   // a double hybrid's SCF energy leaves out its MP2-like part: "E2(B2PLYP) = … E(B2PLYP) = …"
   { route: /\b(b2plyp|mpw2plyp|b2gpplyp|dsdpbep86|pbe0dh|pbeqidh)/i, name: 'double hybrid', key: 'E2(', re: new RegExp(`E2\\([^)]*\\)\\s*=\\s*-?\\d+\\.\\d+(?:[DE][+-]?\\d+)?\\s+E\\([^)]*\\)\\s*=\\s*${E}`) },
@@ -110,7 +114,12 @@ function readGaussian(text: string, name: string): QmResult {
   let enthalpy = num(lastAt(text, 'Sum of electronic and thermal Enthalpies=', /Sum of electronic and thermal Enthalpies=\s*(-?\d+\.\d+)/));
   const routeLine = gaussianRoute(text);
   let energyFrom: string | undefined, missing: string | undefined;
-  const comp = COMPOSITE.exec(routeLine.replace(/^#\w?\s*/, ''));
+  // the method: the word before the basis set's "/" (IOp(…/…) aside), or the whole route when there
+  // is none, as for G4 or CBS-QB3; only it is looked at, so a word elsewhere in the route (a G1, a
+  // W1, a BD) sets nothing off (review F1b-R15)
+  const route = routeLine.replace(/^#\w?\s*/, '');
+  const method = route.split(/\s+/).find((w) => w.includes('/') && !/^iop\b/i.test(w))?.split('/')[0] ?? route;
+  const comp = COMPOSITE.exec(method);
   if (comp) {
     // the composite's own energies; its frequency job's free energy is at the lower level
     const label = comp[1].toLowerCase() === 'cbs-4m' ? 'CBS-4' : comp[1].toUpperCase();
@@ -130,9 +139,14 @@ function readGaussian(text: string, name: string): QmResult {
       else missing = p.name;
     } else {
       // a method not read here: say so (never the SCF energy as if it were the method's)
-      const other = OTHER_CORR.exec(routeLine.replace(/^#\w?\s*/, ''));
-      if (other) missing = other[1].toUpperCase();
-      else if (CORR_LINE.test(text)) missing = (/(\S+)\//.exec(routeLine.replace(/^#\w?\s*/, ''))?.[1] ?? 'post-SCF').toUpperCase();
+      const other = OTHER_CORR.exec(method);
+      // a route this reader doesn't know, but a log that names its answer: the CCSD(T) or QCISD(T) line
+      // (QCISD(T) first: its line holds "CCSD(T)=")
+      const named = other ? undefined : [POST_SCF[2], POST_SCF[1]].find((x) => text.includes(x.key));
+      const e = named ? fortran(lastAt(text, named.key, named.re)) : null;
+      if (named && e !== null) { scf = e; energyFrom = named.name; }
+      else if (other) missing = other[1].toUpperCase();
+      else if (CORR_LINE.test(text)) missing = (/(\S+)\//.exec(route)?.[1] ?? 'post-SCF').toUpperCase();
     }
   }
   // the last frequency job: the negative frequencies it lists
