@@ -60,7 +60,7 @@ A cyclohexane (or any six-membered ring of single bonds, such as a tetrahydropyr
 - **Shift+Tab** flips the chair: axial and equatorial swap.
 - **\\** goes straight between the flat drawing and the chair, from any shape, keeping the stereochemistry.
 - The same commands are on the right-click menu under **Ring Shape**.
-- A structure selected with Tab (Edit ▸ Select Next Structure) isn't changed: Tab goes on to the next one.
+- A structure selected with Tab (Select Next Structure) isn't changed: Tab goes on to the next one.
 - A ring fused or bridged to another keeps its shape.
 
 A chair or boat drawn without wedges still has its stereochemistry read from its shape, so it keeps it when saved and opened again.
@@ -541,7 +541,7 @@ In a cycle, the main arrows run along one smooth loop through every species: dra
 
 #### The Smart Scheme pane
 
-The pane is compact: the layouts are the small pictures in its title row. Its pin button docks it as a toolbox at the right (or drag its title to any edge of the drawing, or anywhere to leave it floating as a toolbox), where it stays and lists whichever Smart Scheme is selected; the pin again restores it beside the scheme, and so does hiding its toolbox (View ▸ Toolboxes ▸ Smart Scheme).
+The pane is compact: the layouts are the small pictures in its title row. Its pin button docks it as a toolbox at the right (or drag its title to any edge of the drawing, or anywhere to leave it floating as a toolbox), where it stays and lists whichever Smart Scheme is selected; the pin again restores it beside the scheme, and so does hiding its toolbox (View ▸ Toolboxes ▸ Toolbox: Smart Schemes).
 
 The pane's rows show the text as it looks on the page, subscripts and superscripts included; the bar above them works on the row you are typing in: **X₂** subscript (Ctrl+=), **X²** superscript (Ctrl+Shift+=), **Chem** for chemical interpretation (numbers in formulas drop as you type; turn it off to keep the text exactly as typed), **‡ ′ ° •**, **Ω** for Greek letters, arrows and other symbols, and the gear for **Scheme Format**: this scheme's own font, the size of its species typed as text and of its conditions, its arrows (line width, head, head length, shortest arrow) and its spacing (arrow to species, arrow to text). Changes show at once and can be undone; a box left empty follows the drawing style (its value shows grayed in it), and **Use Drawing Style** clears them all. Species and conditions added later take the same look, and the style is kept in the file.
 
@@ -815,7 +815,7 @@ Two readers can read pictures:
 
 ## References as text
 
-**Insert ▸ Formatted Reference…** puts references on the canvas as formatted text: check them in any open document or presentation (or look one up with **By DOI…**), pick the citation style, write them in full or short (journal, year, volume, page), and number them if you like. The text is ordinary text afterwards. **Insert ▸ Reference Manager…** shows the references of every open file.
+**Insert ▸ References ▸ Formatted Reference…** puts references on the canvas as formatted text: check them in any open document or presentation (or look one up with **By DOI…**), pick the citation style, write them in full or short (journal, year, volume, page), and number them if you like. The text is ordinary text afterwards. **Insert ▸ Reference Manager…** shows the references of every open file.
 
 ## Colors and palettes
 

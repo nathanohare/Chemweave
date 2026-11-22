@@ -211,7 +211,7 @@ export const COMMAND_NAMES: Record<string, string> = {
   'hide-rows': 'Hide Rows', 'unhide-rows': 'Show Hidden Rows', 'hide-cols': 'Hide Columns', 'unhide-cols': 'Show Hidden Columns',
   'sort-up': 'Sort Smallest to Largest', 'sort-down': 'Sort Largest to Smallest', filter: 'Filter (on or off)',
   'filter-structure': 'Filter by a Substructure…', 'freeze-header': 'Freeze Header Row',
-  'property-column': 'Insert Property Column…', 'isotope-pattern': 'Isotope Pattern…', 'structure-from-name': 'Structure from Name or SMILES…',
+  'property-column': 'Property Columns…', 'isotope-pattern': 'Isotope Pattern…', 'structure-from-name': 'Structure from Name or SMILES…',
   'draw-structure': 'Structure in Cell', 'reset-calculated': 'Reset to Calculated',
   'merge-cells': 'Merge and Center',
   'new-note': 'New Note or Edit Note', 'edit-note': 'Change the cell\'s note', 'delete-note': 'Delete Notes and Comments',

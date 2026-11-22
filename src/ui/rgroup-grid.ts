@@ -1,4 +1,4 @@
-// Chemistry ▸ R-Group Table's compounds (retrospective audit G5-10): a small grid, one row per
+// Chemistry ▸ Polymers and R-Groups ▸ R-Group Table…'s compounds (retrospective audit G5-10): a small grid, one row per
 // compound and one column per R group, with an optional number of its own, in place of typed
 // lines. Cells pasted from Excel (tabs and new lines) fill the grid from the cell pasted into.
 

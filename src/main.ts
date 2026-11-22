@@ -1825,7 +1825,7 @@ async function insertMedia(audio: boolean): Promise<void> {
  */
 async function insertZoom(summary: boolean): Promise<void> {
   const d = deckNow();
-  if (!d || ws.active.mode !== 'slides') { flash('Zooms go on slides: use File ▸ New ▸ Presentation, or open a PowerPoint file.'); return; }
+  if (!d || ws.active.mode !== 'slides') { flash('Zooms go on slides: use File ▸ New ▸ Blank presentation, or open a PowerPoint file.'); return; }
   finishTyping();
   refreshZooms(d);
   const pick = await pickReuseSlides('', d, false, summary
@@ -2108,7 +2108,7 @@ async function turn3dDialog(): Promise<void> {
   if (r) lastTurn3dShape = r.shape;
 }
 
-/** Depth shading on or off (Format ▸ Depth Shading): structures in 3-D fade from black in front to grey behind. */
+/** Depth shading on or off (Format ▸ Rotate and Flip ▸ Depth Shading): structures in 3-D fade from black in front to grey behind. */
 function toggleDepthShading(): void {
   depthShadePrefs.on = !depthShadePrefs.on;
   depthShadingChanged();
@@ -5379,7 +5379,7 @@ async function newDesign(): Promise<void> {
 
 async function designSize(): Promise<void> {
   const d = deckNow();
-  if (!d || ws.active.mode !== 'design') { flash('Page Size is for designs: use File ▸ New ▸ New Design.'); return; }
+  if (!d || ws.active.mode !== 'design') { flash('Page Size is for designs: use File ▸ New ▸ Blank design.'); return; }
   finishTyping();
   const size = await pickDesignSize('Page size', d.size);
   if (size && deckNow() === d) {
@@ -5452,7 +5452,7 @@ const sorterList = new SlideList(sorterEl, { ...slideListHooks, open: (i) => { g
 /** Slide Sorter on or off (Normal view). */
 function setSorter(on: boolean): void {
   const d = deckNow();
-  if (on && (!d || ws.active.mode !== 'slides')) { flash('Slide Sorter is for slides: use File ▸ New ▸ Presentation, or open a PowerPoint file.'); return; }
+  if (on && (!d || ws.active.mode !== 'slides')) { flash('Slide Sorter is for slides: use File ▸ New ▸ Blank presentation, or open a PowerPoint file.'); return; }
   if (on === sorterOn) { if (on) sorterList.focus(); return; }
   finishTyping();
   sorterOn = on;
@@ -5491,7 +5491,7 @@ function slideViewNow(): 'normal' | 'outline' | 'sorter' | 'notes' {
 /** Change the slides' view (Normal, Outline, Slide Sorter or Notes Page). */
 function setSlideView(v: 'normal' | 'outline' | 'sorter' | 'notes'): void {
   const d = deckNow();
-  if (v !== 'normal' && (!d || ws.active.mode !== 'slides')) { flash('That view is for slides: use File ▸ New ▸ Presentation, or open a PowerPoint file.'); return; }
+  if (v !== 'normal' && (!d || ws.active.mode !== 'slides')) { flash('That view is for slides: use File ▸ New ▸ Blank presentation, or open a PowerPoint file.'); return; }
   finishTyping();
   if (v !== 'sorter' && sorterOn) setSorter(false);
   if (v !== 'notes' && notesView.shown) { notesView.show(false); $('#notes-pane').classList.remove('np-hidden'); editor.paused = false; }
@@ -5631,7 +5631,7 @@ function copySlides(ix: number[], cut: boolean): void {
 function pasteSlides(keep?: boolean): void {
   const d = deckNow();
   if (!d || ws.active.mode !== 'slides') return;
-  if (!slideClip) { flash('Copy slides first: pick them in the slide list and press Ctrl+C (or Edit ▸ Presentation ▸ Copy Slides).'); return; }
+  if (!slideClip) { flash('Copy slides first: pick them in the slide list and press Ctrl+C (or Edit ▸ Slides ▸ Copy Slides).'); return; }
   finishTyping();
   const src = slideClip;
   const after = pickedSlides().at(-1) ?? d.index;
@@ -5644,7 +5644,7 @@ function pasteSlides(keep?: boolean): void {
     label: 'Keep source formatting',
     run: () => {
       // put them in again their own way, in place of the ones just pasted (if nothing has changed since)
-      if (deckNow() !== d || d.edits !== edits) { flash('Use Edit ▸ Presentation ▸ Paste Slides (Keep Source Formatting) to paste them with their own formatting.'); return; }
+      if (deckNow() !== d || d.edits !== edits) { flash('Use Edit ▸ Slides ▸ Paste Slides (Keep Source Formatting) to paste them with their own formatting.'); return; }
       d.undo();
       d.pasteSlides(src, true, after);
       flash(`Pasted ${what} with their own formatting.`);
@@ -5701,7 +5701,7 @@ function goSlide(i: number): void {
 
 function newSlide(layout?: LayoutId): void {
   const d = deckNow();
-  if (!d) { flash('Slides are for presentations: use File ▸ New ▸ Presentation, or open a PowerPoint file.'); return; }
+  if (!d) { flash('Slides are for presentations: use File ▸ New ▸ Blank presentation, or open a PowerPoint file.'); return; }
   finishTyping();
   d.addSlide(layout);
 }
@@ -6456,7 +6456,7 @@ async function numberedForLibrary(): Promise<StructureIn[] | string> {
   else if (t.book) return 'Add Numbered works on drawings, slides and documents: in a spreadsheet, pick a cell and use Add Selected.';
   else docs.push(ws.docOf(t));
   for (const d of docs) out.push(...await structuresFor(d, partsOf(d).filter((p) => p.label)));
-  return out.length ? out : 'No structure in this file has a compound number under it (Chemistry ▸ Number Compounds adds them).';
+  return out.length ? out : 'No structure in this file has a compound number under it (Chemistry ▸ Labels and Numbers ▸ Number Compounds… adds them).';
 }
 
 /** A library compound as a drawing in `style`, with its number under it. */
@@ -7367,7 +7367,7 @@ async function offerStyleSheet(tab: Tab, style: DocStyle): Promise<void> {
  */
 function slideMaster(): void {
   const d = deckNow();
-  if (!d?.current || ws.active.mode !== 'slides') { flash('The slide master is for slides: use File ▸ New ▸ Presentation, or open a PowerPoint file.'); return; }
+  if (!d?.current || ws.active.mode !== 'slides') { flash('The slide master is for slides: use File ▸ New ▸ Blank presentation, or open a PowerPoint file.'); return; }
   finishTyping();
   if (slideViewNow() !== 'normal') setSlideView('normal');
   if (!d.inMasterView) d.openMasterView();
@@ -7729,7 +7729,7 @@ function stepPreview(sdoc: Doc, pieces: StepPiece[], v: Record<string, string>):
 
 function present(fromHere: boolean, notes = false, how: { custom?: number; windowed?: boolean; rehearse?: boolean; record?: boolean } = {}): void {
   const d = deckNow();
-  if (!d) { flash('Present shows slides: use File ▸ New ▸ Presentation, or open a PowerPoint file.'); return; }
+  if (!d) { flash('Present shows slides: use File ▸ New ▸ Blank presentation, or open a PowerPoint file.'); return; }
   if (shows?.presenter.running || shows?.presenterView.running) return;
   finishTyping();
   // Set Up Show: the slides it plays, how it goes on, and the rest
@@ -9814,7 +9814,7 @@ function command(name: string): boolean {
     if (!ANY_TAB.has(name) && !DOC_ANY.has(name)) return false;
   }
   if (ws.active.mode === 'design' && (SLIDE_ONLY.has(name) || name.startsWith('layout-'))) {
-    flash('A design is one page: use Page Size and Background on the Design ribbon. For several pages, use File ▸ New ▸ Presentation.');
+    flash('A design is one page: use Page Size and Background on the Design ribbon. For several pages, use File ▸ New ▸ Blank presentation.');
     return true;
   }
   // Slide Master view: slide commands apply to the slides, so the view closes first (its changes kept)
@@ -10008,7 +10008,7 @@ const COMMANDS: Record<string, () => unknown> = {
     const anchor = b && b.offsetParent ? b : document.querySelector<HTMLElement>('#ribbon .rb-tabs')!;
     shapeMenu.show(anchor, 'Click an icon, then click or drag on the slide. Change its color in the Style panel.', (id) => { finishTyping(); editor.setTool(`geo:${id}`); }, 'icons');
   },
-  'design-shapes': () => { if (ws.active.mode === 'design') { lib.showTab('shapes'); lib.focusSearch(); } else flash('Shapes are in Design mode: use File ▸ New ▸ Design.'); },
+  'design-shapes': () => { if (ws.active.mode === 'design') { lib.showTab('shapes'); lib.focusSearch(); } else flash('Shapes are in Design mode: use File ▸ New ▸ Blank design.'); },
   'design-icons': () => { if (ws.active.mode === 'design') { lib.showTab('icons'); lib.focusSearch(); } else flash('Icons are in Design, Presentation and Document modes.'); },
   // the Insert menu's Shapes and Icons, in whichever mode is showing (Documents have their own)
   'insert-shapes': () => (ws.active.mode === 'design' ? COMMANDS['design-shapes']() : ws.active.mode === 'slides' ? COMMANDS['slide-shapes']() : flash('Shapes go on slides, designs and documents.')),
@@ -14565,7 +14565,7 @@ async function saveFavorite(replacing?: FormatFavorite): Promise<void> {
   let name = replacing?.name;
   if (!name) {
     const got = await ask('Save Format as Favorite', [{ name: 'name', label: 'Name', value: freshFavoriteName(favorites), placeholder: 'for example Key intermediate box' }], {
-      ok: 'Save', note: `Keeps ${favoriteSummary(look) || 'the look'} of what is selected. Click it under Format Favorites on the Home tab (or Edit ▸ Format Favorites…) to apply that formatting to the selection, in any drawing, slide, design, document or sheet.`,
+      ok: 'Save', note: `Keeps ${favoriteSummary(look) || 'the look'} of what is selected. Click it under Format Favorites on the Home tab (or Format ▸ Favorites ▸ Format Favorites…) to apply that formatting to the selection, in any drawing, slide, design, document or sheet.`,
     });
     name = got?.name.trim();
     if (!name) return;
@@ -14623,7 +14623,7 @@ function favoriteMenu(f: FormatFavorite, at: HTMLElement): void {
   ]);
 }
 
-/** Edit ▸ Format Favorites…: the favorites as a menu, to give one to the selection (and save another). */
+/** Format ▸ Favorites ▸ Format Favorites…: the favorites as a menu, to give one to the selection (and save another). */
 function favoritesMenu(): void {
   const host = document.querySelector<HTMLElement>('[data-favorites-gallery]:not([hidden])');
   const r = host && host.offsetParent ? host.getBoundingClientRect() : { left: innerWidth / 2 - 100, bottom: 120 };
@@ -15003,7 +15003,7 @@ let smartDockBody: HTMLElement | null = null;
 const guidesToolboxHooks: GuidesToolboxHooks = {
   get: () => editor.doc.guides,
   set: (g) => {
-    if (ws.active.mode !== 'drawing') { flash('Guides are for canvases: slides and designs have their own (View ▸ Guides).'); return; }
+    if (ws.active.mode !== 'drawing') { flash('Guides are for canvases: slides and designs have their own (View ▸ Slide Views ▸ Guides).'); return; }
     editor.doc.guides = g;
     editor.onGuides();
     editor.requestOverlay();
