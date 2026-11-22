@@ -20,6 +20,8 @@ import { builtInNicknames } from '../src/chem/labels';
 import { SPECIES_ENTRIES } from '../src/chem/species-list';
 import { Doc } from '../src/model';
 import { ACS_1996 } from '../src/style';
+import { readCdxml } from '../src/io/cdxml';
+import { writeCdxml } from '../src/io/cdxml-write';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RDKit: any;
@@ -102,3 +104,46 @@ describe('D and T (review F1c-R02)', () => {
     expect(failures(bonded, ['D', 'T'])).toEqual([]);
   });
 });
+
+// review F1d-R02: a label whose charge is on the atom (the charge tool's PPh3 then +; every charged
+// label of several atoms after a CDXML save and reopen). Values: methyltriphenylphosphonium and
+// tetramethylammonium (PubChem CID 6380) cations, acetate (CID 175), methanesulfonate and chloride
+// (CID 312) anions, as RDKit writes their SMILES.
+describe('labels with their charge on the atom (review F1d-R02)', () => {
+  const cases: [string, number, boolean, string][] = [
+    ['PPh3', 1, true, 'C[P+](c1ccccc1)(c1ccccc1)c1ccccc1'],
+    ['NMe3', 1, true, 'C[N+](C)(C)C'],
+    ['CO2', -1, true, 'CC(=O)[O-]'],
+    ['SO3', -1, true, 'CS(=O)(=O)[O-]'],
+    ['AcO', -1, false, 'CC(=O)[O-]'],
+    ['Cl', -1, false, '[Cl-]'],
+  ];
+  const make = (label: string, charge: number, bonded: boolean) => {
+    const d = new Doc();
+    d.style = { ...ACS_1996 };
+    d.bulk(() => {
+      const x = d.addAtom(L, 0, 6, { label, charge });
+      if (bonded) d.addBond(d.addAtom(0, 0).id, x.id);
+    });
+    return d;
+  };
+  const charged = (d: Doc) => [...d.atoms.values()].filter((a) => a.label).map((a) => `${a.label} ${a.charge}`);
+  for (const [label, charge, bonded, smiles] of cases) {
+    it(`${bonded ? 'Me–' : ''}${label} ${charge > 0 ? '+' : '−'} keeps its charge through every format${bonded ? ', and through CDXML first' : ''}`, () => {
+      const d = make(label, charge, bonded);
+      expect(smilesOf(d)).toBe(smiles);
+      // (a label on its own comes back from CDXML as text, or as the element, as ChemDraw's own
+      // loose labels are read, so only a bonded label goes through CDXML first)
+      const viaCdxml = readCdxml(writeCdxml(d, { name: 'x.cdxml' })).doc;
+      viaCdxml.style = { ...ACS_1996 };
+      for (const start of bonded ? [d, viaCdxml] : [d]) {
+        for (const [name, text] of files(start)) {
+          const b = back(name, text);
+          expect(charged(b), name).toEqual([`${label} ${charge}`]);
+          expect(smilesOf(b), name).toBe(smiles);
+        }
+      }
+    });
+  }
+});
+

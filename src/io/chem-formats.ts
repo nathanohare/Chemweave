@@ -446,7 +446,10 @@ function contract(mol: FMol, groups: SupGroup[], ours = false): FMol {
     if (!ours && !sameAtoms(g.label, g.atoms.map((k) => mol.atoms[k]?.sym ?? ''), crossing.reduce((t, b) => t + Math.round(b.order), 0))) continue;
     const head = crossing.length ? [...heads][0] : g.atoms[0];
     const was = mol.atoms[head];
-    mol.atoms[head] = { sym: g.label, x: was.x, y: was.y, label: true, ...(was.map ? { map: was.map } : {}), ...(was.enh ? { enh: was.enh } : {}) };
+    // the group's charge less what the label's text says (PPh3 with +, CO2 with −; review F1d-R02)
+    const own = (labelAsWritten(g.label, crossing.reduce((t, b) => t + Math.round(b.order), 0))?.atoms ?? []).reduce((t, a) => t + (a.charge ?? 0), 0);
+    const charge = g.atoms.reduce((t, k) => t + (mol.atoms[k]?.charge ?? 0), 0) - own;
+    mol.atoms[head] = { sym: g.label, x: was.x, y: was.y, label: true, ...(charge ? { charge } : {}), ...(was.map ? { map: was.map } : {}), ...(was.enh ? { enh: was.enh } : {}) };
     for (const k of g.atoms) if (k !== head) drop.add(k);
   }
   if (!drop.size) return mol;
@@ -457,6 +460,13 @@ function contract(mol: FMol, groups: SupGroup[], ours = false): FMol {
   return { ...mol, atoms, bonds };
 }
 
+/** A label's atoms as the molfile writer expands it (see sameAtoms), or null when it can't be read. */
+function labelAsWritten(label: string, ext: number): MiniGraph | null {
+  let g: MiniGraph | null = null;
+  if (!ext) { const sp = readSpecies(label, { fragments: true }); if (sp && !sp.expected && !sp.graph.atoms.some((a) => a.dummy)) g = sp.graph; }
+  return g ?? labelGraph(label, ext) ?? (ext ? null : labelGraph(label, 1));
+}
+
 /**
  * Whether a label stands here for these atoms (by their elements, hydrogens left aside): as an
  * abbreviation or condensed formula bonded `ext` times, or, bonded to nothing, as a formula.
@@ -464,9 +474,7 @@ function contract(mol: FMol, groups: SupGroup[], ours = false): FMol {
 function sameAtoms(label: string, syms: string[], ext: number): boolean {
   // the way the molfile writer expands a label (toMolfile): on its own, as a text box read as
   // chemistry reads it (a reagent name, DCM, LDA); bonded, as an abbreviation or condensed formula
-  let g: MiniGraph | null = null;
-  if (!ext) { const sp = readSpecies(label, { fragments: true }); if (sp && !sp.expected && !sp.graph.atoms.some((a) => a.dummy)) g = sp.graph; }
-  g ??= labelGraph(label, ext) ?? (ext ? null : labelGraph(label, 1));
+  const g = labelAsWritten(label, ext);
   if (!g) return false;
   // an undefined part of a label (the R of OR, NR2, CO2R) is written as a "*" atom; hydrogens are left aside
   const key = (zs: number[]) => zs.filter((z) => z !== 1).sort((p, q) => p - q).join(',');
@@ -563,6 +571,7 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
   const groupTitle = new Map<string, { title: string; el: Element }>();
   for (const s of kids(m, 'molecule')) if (s.getAttribute('role') === 'SuperatomSgroup') groupTitle.set(s.getAttribute('id') ?? '', { title: s.getAttribute('title') ?? '', el: s });
   const contracted = new Set<string>();
+  const groupOf = new Map<number, string>();
   const hTotal = new Map<number, number>();
   const addAtoms = (owner: Element) => {
     for (const arr of kids(owner, 'atomArray')) {
@@ -578,6 +587,7 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
           sym = groupTitle.get(r.sgroupRef)!.title || 'R';
           label = sym !== 'R';
           contracted.add(r.sgroupRef);
+          if (label) groupOf.set(atoms.length, r.sgroupRef);
         } else if (sym === 'R' && r.rgroupRef && r.rgroupRef !== '0') sym = 'R' + r.rgroupRef;
         else if (sym === 'Du' || sym === 'R') sym = sym === 'Du' ? '*' : 'R';
         // a label kept as an alias: Marvin's mrvAlias, or a CML atom's label
@@ -626,6 +636,18 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
   };
   addAtoms(m);
   addBonds(m);
+  // a contracted group's label keeps the group's charge, less what its text says (review F1d-R02)
+  for (const [i, ref] of groupOf) {
+    const el = groupTitle.get(ref)!.el;
+    const charges = kids(el, 'atomArray').flatMap((arr) => {
+      const list = kids(arr, 'atom');
+      return list.length ? list.map((a) => a.getAttribute('formalCharge') ?? '') : arrayRows(arr).map((r) => r.formalCharge ?? '');
+    });
+    const net = charges.reduce((t, c) => t + (parseInt(c, 10) || 0), 0);
+    const ext = bonds.reduce((t, b) => t + (b.a === i || b.b === i ? Math.round(b.order) : 0), 0);
+    const own = (labelAsWritten(atoms[i].sym, ext)?.atoms ?? []).reduce((t, a) => t + (a.charge ?? 0), 0);
+    if (net - own) atoms[i].charge = (atoms[i].charge ?? 0) + net - own;
+  }
   // expanded superatom groups and other sub-groups keep their atoms in a molecule of their own
   for (const s of kids(m, 'molecule')) {
     const id = s.getAttribute('id') ?? '';

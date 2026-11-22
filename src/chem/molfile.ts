@@ -495,13 +495,28 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       laid = layOutGroup(g, x, y, near.length && len > 1e-6 ? { x: (x - mx) / len, y: (y - my) / len } : { x: 1, y: 0 });
       if (asGroup(g, a.label!, a.z)) sgroups.push({ atoms: g.atoms.map((_, k) => base + k), label: a.label! });
     }
+    // the label's own charge (the charge tool's, or one kept from a CDXML file: PPh3 +, CO2 −) goes on
+    // its first atom, unless the charge is negative and that atom has no hydrogen to give up for it:
+    // then on the group's first O, S or N that would carry one (CO2 − is the carboxylate's O⁻, not C⁻;
+    // SO3 − the sulfonate's; review F1d-R02)
+    const q = a.charge + (charged.get(id) ?? 0);
+    let qAt = 0;
+    if (q < 0 && g.atoms.length > 1) {
+      const used = g.atoms.map(() => 0);
+      for (const gb of g.bonds) { const o = gb.order === 1.5 ? 1.5 : gb.order; used[gb.a] += o; used[gb.b] += o; }
+      used[0] += valenceOfBonds((doc.adj.get(id) ?? []).map((bid) => doc.bonds.get(bid)!).filter((b) => !outsideValence(b)).map((b) => b.order));
+      if (implicitHydrogens(g.atoms[0].z, Math.ceil(used[0]), 0) <= 0) {
+        const k = g.atoms.findIndex((ga, i) => i > 0 && (ga.z === 8 || ga.z === 16 || ga.z === 7) && !ga.charge && implicitHydrogens(ga.z, Math.ceil(used[i]), 0) > 0);
+        if (k > 0) qAt = k;
+      }
+    }
     g.atoms.forEach((ga, k) => {
       // (for the engine, spread expanded atoms a little so no two share a position)
       const ang = (k * 2.4);
       const r = k === 0 ? 0 : 0.35 + 0.05 * k;
       const sym = ga.dummy ? generic : SYMBOLS[ga.z] || generic;
       if (sym === generic) genericAt.push([atoms.length, `${a.label}/${k}`]);
-      atoms.push({ sym, x: laid ? laid[k].x : x + r * Math.cos(ang), y: laid ? laid[k].y : y + r * Math.sin(ang), charge: ga.charge + (k === 0 ? a.charge + (charged.get(id) ?? 0) : 0), iso: ga.iso ?? 0, ...(k === 0 && opts.maps && a.mapNo ? { map: a.mapNo } : {}) });
+      atoms.push({ sym, x: laid ? laid[k].x : x + r * Math.cos(ang), y: laid ? laid[k].y : y + r * Math.sin(ang), charge: ga.charge + (k === qAt ? q : 0), iso: ga.iso ?? 0, ...(k === 0 && opts.maps && a.mapNo ? { map: a.mapNo } : {}) });
       map.push(k === 0 ? id : -1);
       if (g!.atoms.length > 1) inLabel.push(base + k);
     });
