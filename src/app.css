@@ -3119,7 +3119,7 @@ dialog.settings-window { max-width: none; }
 /* on Dark Gray's gray ribbon the red is deepened to 5.5:1 (4.7:1 on the hover fill; #c62828 is 3.9:1),
    and a greyed Clear All Formatting greys its eraser with it (review of F5, R12) */
 :root[data-gray] .ribbon .rb-eraser, :root[data-gray] .doc-ribbon .rb-eraser { color: #9e1b1b; }
-button:disabled .rb-eraser, button[data-cant-run] .rb-eraser, fieldset:disabled .rb-eraser { color: inherit; }
+button:disabled .rb-eraser, button[data-cant-run] .rb-eraser, fieldset:disabled .rb-eraser, .rb-group.rb-idle .rb-eraser { color: inherit; }
 .ribbon button.rb-style.rb-styles-more { width: auto; min-width: 62px; align-items: center; }
 .ribbon button.rb-style.rb-styles-more > .rb-lead { color: var(--muted); }
 /* the ruler above the pages (View > Ruler): margins grey, indent markers and tab stops to drag */
