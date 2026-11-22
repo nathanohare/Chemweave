@@ -249,7 +249,7 @@ import { PeriodicTable } from './ui/periodic-table';
 import type { SheetMode, ClipboardCells } from './ui/sheet-mode';
 import type { DocumentMode, DocPaste } from './ui/doc-mode';
 import { askReviewName } from './ui/review-name';
-import { docBoxPrefs, docRulerPrefs, formulaBarPrefs, parseDocPins } from './ui/mode-prefs';
+import { docBoxPrefs, docPagePrefs, docRulerPrefs, formulaBarPrefs, parseDocPins } from './ui/mode-prefs';
 import { setScreenMeasure, figures } from './document/doc-file';
 import type { DocxDeps } from './io/docx-write';
 import type { DocxReadDeps } from './io/docx-read';
@@ -9031,6 +9031,7 @@ setTimeout(() => {
 }, 2500);
 docBoxPrefs.changed = () => storeSettings();
 docRulerPrefs.changed = () => storeSettings();
+docPagePrefs.changed = () => storeSettings();
 formulaBarPrefs.changed = () => storeSettings();
 // documents measure fonts they have no published widths for on the screen
 setScreenMeasure(measureText);
@@ -11611,6 +11612,11 @@ async function personalPreferences(): Promise<void> {
     { name: 'focalDefault', label: 'Structures without their own focal point line up by', value: focalPrefs.dflt, short: true, options: [
       { value: 'box', label: 'The middle of the structure' }, { value: 'ring', label: 'The middle of its largest ring' }],
       help: 'Largest ring: the biggest ring, nearest the middle if there are several. A structure with no ring always uses its middle.' },
+    { name: 'docPagesHeading', label: 'Document Pages', type: 'heading', value: '' },
+    { name: 'cropMarks', label: 'Show crop marks', type: 'checkbox', value: String(docPagePrefs.cropMarks),
+      help: 'Marks at the corners of the text on each page of a document, showing where the margins are.' },
+    { name: 'whiteSpace', label: 'Show white space between pages in Print Layout view', type: 'checkbox', value: String(docPagePrefs.whiteSpace),
+      help: 'Off, each page\'s top and bottom margins (with its header and footer) are hidden, the pages joined by a line. Double-clicking between pages does the same.' },
     { name: 'iconsHeading', label: 'Icons', type: 'heading', value: '' },
     { name: 'iconSet', label: 'Icon set', value: iconSet(), short: true, options: [
       { value: 'new', label: 'New: one style in every mode' },
@@ -11624,6 +11630,9 @@ async function personalPreferences(): Promise<void> {
   chemText.saltGroups = r.saltGroups === 'true';
   templatesOnNew = { document: r.tplDocument === 'true', sheet: r.tplSheet === 'true', slides: r.tplSlides === 'true' };
   setIconSet(r.iconSet === 'classic' ? 'classic' : 'new');
+  docPagePrefs.cropMarks = r.cropMarks === 'true';
+  docPagePrefs.whiteSpace = r.whiteSpace === 'true';
+  docMode?.applyPagePrefs();
   Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
   editor.focalLook = focalPrefs.look;
   setFocalDefault(focalPrefs.dflt);
@@ -11810,6 +11819,8 @@ function currentSettings(): Settings {
     pageLook: { ...pageLook },
     docPins: [...docBoxPrefs.pinned],
     docRuler: docRulerPrefs.shown,
+    docCropMarks: docPagePrefs.cropMarks,
+    docWhiteSpace: docPagePrefs.whiteSpace,
     sheetFormulaBar: formulaBarPrefs.shown,
     slideRuler: slideLook.ruler,
     slidePanes: { ...chemPanes },
@@ -12082,6 +12093,9 @@ function applySettings(s: Settings): void {
   Object.assign(guidesOn, s.guides);
   docBoxPrefs.pinned = parseDocPins(s.docPins);
   docRulerPrefs.shown = !!s.docRuler;
+  docPagePrefs.cropMarks = !!s.docCropMarks;
+  docPagePrefs.whiteSpace = s.docWhiteSpace !== false;
+  docMode?.applyPagePrefs();
   formulaBarPrefs.shown = s.sheetFormulaBar !== false;
   sheetMode?.showFormulaBar();
   slideLook.ruler = !!s.slideRuler;
@@ -15085,7 +15099,7 @@ addLookToggle(canvasRibbon.el, { simple: () => ribbonLook === 'simple', toggle: 
 // (in the order of the list: the pages of a group together, under its heading)
 const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'general', group: 'General', title: 'General', words: 'backup back up copy move settings file new computer install reinstall export import groups selecting click outline linked text above below ask whole page tracked changes reviewer name start view recent files chemdraw objects ole word powerpoint docx pptx save structures pictures svg png compatibility', open: generalPreferences },
-  { id: 'preferences', group: 'General', title: 'Preferences', words: 'focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
+  { id: 'preferences', group: 'General', title: 'Preferences', words: 'crop marks white space between pages margins focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
   { id: 'hotkeys', group: 'General', title: 'Keyboard Shortcuts', words: 'keys keyboard shortcuts import export reset', open: () => hotkeysDialog.open() },
   { id: 'typing', group: 'General', title: 'Typing and Spelling', words: 'typing spelling dictionary autocorrect replacements chemistry formulas subscripts', open: () => typingDialog.open() },
   { id: 'autosave', group: 'General', title: 'AutoSave and Recovery', words: 'autosave recovery versions backup copies shared folders onedrive', open: () => keeper.optionsCommand() },

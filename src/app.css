@@ -3473,8 +3473,6 @@ dialog.show-setup { width: min(94vw, 600px); }
 .custom-views .cv-list { width: 100%; min-width: 260px; font: inherit; }
 
 /* Header and footer: a first or even page's left, centre and right text in one row */
-.dp-three { display: flex; gap: 3px; min-width: 0; }
-.dp-three .dp-input { flex: 1 1 0; min-width: 0; }
 .dp-note[hidden] { display: none; }
 
 /* Document mode: the Selection Pane (Arrange) */

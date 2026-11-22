@@ -17,7 +17,7 @@ import { withStack, layoutText, type Glyphs, type InlineBox, type LaidLine, type
 import { fitParas, laidParas, listMarkers, paraCount, paragraphMarks, splitParagraphs } from '../text/paragraphs';
 import { isCovered, rowSpanOf, spanOf } from '../table';
 import * as rt from '../richtext';
-import { drawingOwnSize, nestedTables, BOX_PAD, LINE_NUMBER_GAP, OBJECT_CHAR, columnsOf, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, styleOf, numberStyle, FORM_SHADE, type DocObject, type DocText, type HeaderFooter, type NamedStyle, type PageSetup, type WrapKind } from './document';
+import { drawingOwnSize, nestedTables, BOX_PAD, LINE_NUMBER_GAP, OBJECT_CHAR, columnsOf, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, styleOf, numberStyle, FORM_SHADE, type DocObject, type DocText, type HeaderFooter, type HfKey, type NamedStyle, type PageSetup, type WrapKind } from './document';
 import { pageNumText, samePaper, sectionOfParas, sectionsOf } from './sections';
 import { bibliography, type BibEntry } from './references';
 import { emptyTof, tocEntries, tocLevelStyle, tocLines, tofEntries, type TocEntry } from './toc';
@@ -91,6 +91,11 @@ export interface PageBox {
 /** A page's header or footer with more than plain text, laid out where it goes on the page. */
 export interface PlacedHf {
   page: number;
+  /** Header or footer, and which of the section's (the first page's, even pages' or the usual one). */
+  kind: 'header' | 'footer';
+  key: HfKey;
+  /** All of it as one text (its paragraphs one after another, a table as its one character), to type into on the page. */
+  whole: TextLayout;
   /** Its paragraphs' text (in the document's coordinates). */
   texts: TextLayout[];
   /** Its tables, each with its rows placed on this page. */
@@ -1085,7 +1090,11 @@ export class DocLayouter {
         });
         const x0 = pg.x + pg.setup.left;
         let y = kind === 'header' ? pg.top + pg.setup.header : pg.top + pg.h - pg.setup.footer - h;
-        const placed: PlacedHf = { page: pg.index, texts: [], tables: [], objects: [] };
+        const placed: PlacedHf = { page: pg.index, kind, key, whole: { lines: [], boxWidth: W, box: { x1: x0, y1: y, x2: x0 + W, y2: y }, length: rt.plainText(body.runs).length, measure: this.deps.measure }, texts: [], tables: [], objects: [] };
+        // where each paragraph starts in the whole text
+        const starts: number[] = [];
+        runsOf.reduce((at, runs) => { starts.push(at); return at + rt.plainText(runs).length + 1; }, 0);
+        let p = 0;
         const picsIn = (lay: TextLayout, dx: number, dy: number) => {
           for (const l of lay.lines) for (const g of l.pieces) {
             const s = g.obj !== undefined ? sizes.get(g.obj) : undefined;
@@ -1097,6 +1106,8 @@ export class DocLayouter {
           if ('lay' in part) {
             const moved = movedLayout(part.lay, x0, y - part.lay.box.y1);
             placed.texts.push(moved);
+            for (const l of moved.lines) placed.whole.lines.push(shiftLine(l, 0, 0, starts[p], p));
+            p++;
             picsIn(part.lay, x0, y - part.lay.box.y1);
             y += part.lay.box.y2 - part.lay.box.y1;
             continue;
@@ -1107,6 +1118,11 @@ export class DocLayouter {
           const rows = tb.hs.map((_rh, r) => { const at = { page: pg.index, x: tx, y: y + sum(tb.hs.slice(0, r)) }; return at; });
           const box: TableBox = { ...tb, rows };
           placed.tables.push({ id: part.id, tb: box });
+          // the table as its one character: the caret goes before or after it
+          const th = sum(tb.hs);
+          placed.whole.lines.push({ para: p, start: starts[p], end: starts[p] + 1, y: y + th, ascent: th, descent: 0, size: N.size, left: x0, room: W, x: tx, width: tw, last: true,
+            pieces: [{ text: OBJECT_CHAR, start: starts[p], x: tx, w: tw, dy: 0, size: N.size, family: withStack(N.font), style: '', obj: part.id }] });
+          p++;
           tb.cells.forEach((row, r) => row.forEach((cl, c) => {
             if (!cl) return;
             const m = tb.pads[r][c];
@@ -1114,6 +1130,7 @@ export class DocLayouter {
           }));
           y += sum(tb.hs);
         }
+        placed.whole.box.y2 = y;
         out.push(placed);
       }
     }

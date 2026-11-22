@@ -16,3 +16,6 @@ export const docRulerPrefs: { shown: boolean; changed?: () => void } = { shown: 
 
 /** View > Formula Bar in sheets. */
 export const formulaBarPrefs: { shown: boolean; changed?: () => void } = { shown: true };
+
+/** Document pages (Settings ▸ Preferences): crop marks at the text's corners, and the white space between pages (a double-click between pages hides or shows it). */
+export const docPagePrefs: { cropMarks: boolean; whiteSpace: boolean; changed?: () => void } = { cropMarks: false, whiteSpace: true };
