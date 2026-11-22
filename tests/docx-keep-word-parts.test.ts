@@ -90,6 +90,17 @@ describe('Word styles are kept (G2-12)', () => {
     expect(styleEls(xml).find((e) => nameOf(e) === 'TA_Author')!.getAttributeNS(W_NS, 'customStyle')).toBe('1');
   });
 
+  it('takes Word\'s built-in names from the file\'s own latent styles too (17.7.4.5), not only from the list here', async () => {
+    const own = '<w:latentStyles w:defLockedState="0" w:count="2"><w:lsdException w:name="Normal" w:qFormat="1"/><w:lsdException w:name="Smart Link Error" w:uiPriority="99"/></w:latentStyles>' +
+      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' +
+      '<w:style w:type="paragraph" w:customStyle="1" w:styleId="SmartLinkError"><w:name w:val="Smart Link Error"/><w:basedOn w:val="Normal"/><w:rPr><w:color w:val="FF0000"/></w:rPr></w:style>' +
+      '<w:style w:type="paragraph" w:customStyle="1" w:styleId="Mine"><w:name w:val="My Own"/><w:basedOn w:val="Normal"/><w:rPr><w:i/></w:rPr></w:style>';
+    const body = '<w:p><w:pPr><w:pStyle w:val="SmartLinkError"/></w:pPr><w:r><w:t>A</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Mine"/></w:pPr><w:r><w:t>B</w:t></w:r></w:p>';
+    const xml = (await roundTrip({ styles: own, body }))['word/styles.xml'];
+    expect(styleEls(xml).find((e) => nameOf(e) === 'Smart Link Error')!.hasAttributeNS(W_NS, 'customStyle')).toBe(false);
+    expect(styleEls(xml).find((e) => nameOf(e) === 'My Own')!.getAttributeNS(W_NS, 'customStyle')).toBe('1');
+  });
+
   it('keeps the Header style on a header\'s paragraph, its own tab stops cleared', async () => {
     const out = await roundTrip({ styles, body: '<w:p><w:r><w:t>Text</w:t></w:r></w:p>', header: '<w:p><w:pPr><w:pStyle w:val="Header"/></w:pPr><w:r><w:t>Running head</w:t></w:r></w:p>' });
     const hdr = Object.entries(out).find(([n]) => /^word\/header\d*\.xml$/.test(n))![1];
