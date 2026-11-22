@@ -120,6 +120,29 @@ function labelBand(items: { lines: string[] }[], p: PeakLabels, h: number): numb
   return Math.max(...items.map((x) => x.lines.length)) * lh + 6;
 }
 
+/** The sample Settings ▸ NMR Prediction draws its preview with: ethyl acetate in CDCl₃, δ 4.12 (q,
+ *  J = 7.1 Hz, 2H, OCH₂), 2.05 (s, 3H, COCH₃), 1.26 (t, J = 7.1 Hz, 3H, CH₂CH₃) (Fulmer et al.,
+ *  Organometallics 2010, 29, 2176, Table 1), as first-order lines at `sf` MHz. With `measured`, the
+ *  same list again as a pasted report, so the comparison layout shows. */
+export function sampleSpectrumData(sf: number, measured: boolean): SpectrumData {
+  const groups: PredictedSpectrum['groups'] = [
+    { atoms: [0], shift: 4.12, n: 2, mult: 'q', j: [7.1] },
+    { atoms: [1], shift: 2.05, n: 3, mult: 's', j: [] },
+    { atoms: [2], shift: 1.26, n: 3, mult: 't', j: [7.1] },
+  ];
+  const split: Record<string, number> = { s: 0, d: 1, t: 2, q: 3 };
+  const hz: number[] = [], int: number[] = [], width: number[] = [];
+  for (const g of groups) {
+    const k = split[g.mult] ?? 0, j = g.j[0] ?? 0;
+    for (let m = 0, b = 1; m <= k; b = (b * (k - m)) / (m + 1), m++) { hz.push(g.shift * sf + (m - k / 2) * j); int.push((g.n * b) / 2 ** k); width.push(0.9); }
+  }
+  const spec: PredictedSpectrum = { sf, groups, lines: { hz: Float64Array.from(hz), intensity: Float64Array.from(int), width: Float64Array.from(width), sf } };
+  return {
+    nuc: '1H', spec, groupRows: [0, 1, 2], rowLabels: ['OCH₂', 'COCH₃', 'CH₂CH₃'],
+    ...(measured ? { measured: { spec, links: groups.map((g) => ({ m: g.shift, p: g.shift, sev: 'ok' as const })), marks: [] } } : {}),
+  };
+}
+
 /** The spectrum as SVG (theme colors from CSS variables). Peaks carry data-row for hovering. With
  *  overlay and measured data: the measured list above, the prediction mirrored below. */
 export function spectrumSvg(d: SpectrumData, o: DrawOpts & { overlay?: boolean }): string {

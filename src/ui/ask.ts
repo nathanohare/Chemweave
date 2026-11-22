@@ -29,6 +29,8 @@ export interface Field {
   short?: boolean;
   /** A drop-down list of its own on the same row, after the label (a checkbox's units, say); its value comes back under its own name. */
   beside?: { name: string; value: string; options: { value: string; label: string }[]; label: string };
+  /** A text box's Insert drop-down: picking an item types its `text` at the caret (Insert Page Number and the like). */
+  inserts?: { label: string; items: { text: string; label: string }[] };
 }
 
 /** A bigger picture of what the settings will look like, beside them (the Settings window's right-hand pane), drawn again as anything changes. */
@@ -36,6 +38,8 @@ export interface AskPreview {
   title: string;
   /** Under the fields, rather than in the Settings window's right-hand pane. */
   below?: boolean;
+  /** A wider right-hand pane, for a preview that is wider than tall (a reaction scheme). */
+  wide?: boolean;
   /** `focus` names the field being hovered or typed in (a preview can show what it sets). */
   draw: (values: Record<string, string>, focus?: string) => Node;
 }
@@ -144,6 +148,27 @@ export function ask(title: string, fields: Field[], opts: { ok?: string; note?: 
         u.textContent = f.unit;
         row.append(u);
       }
+      if (f.inserts && input instanceof HTMLInputElement) {
+        const box = input, sel = document.createElement('select');
+        sel.className = 'ask-inserts';
+        sel.setAttribute('aria-label', `${f.inserts.label} in ${f.label}`);
+        sel.title = `${f.inserts.label}: types it where the cursor is`;
+        sel.add(new Option(`${f.inserts.label} ▾`, '', true, true));
+        sel.options[0].disabled = true;
+        for (const it of f.inserts.items) sel.add(new Option(it.label, it.text));
+        sel.addEventListener('change', (e) => {
+          e.stopPropagation();
+          const t = sel.value;
+          sel.selectedIndex = 0;
+          if (!t) return;
+          const at = box.selectionStart ?? box.value.length, to = box.selectionEnd ?? at;
+          box.setRangeText(t, at, to, 'end');
+          box.focus();
+          box.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        sel.addEventListener('input', (e) => e.stopPropagation());
+        row.append(sel);
+      }
       if (f.beside) {
         const sel = document.createElement('select');
         sel.className = 'ask-beside';
@@ -238,7 +263,7 @@ export function ask(title: string, fields: Field[], opts: { ok?: string; note?: 
     // the pictures of the choices, drawn now and again as anything changes
     let big: HTMLElement | null = null;
     if (opts.preview) {
-      big = opts.preview.below ? null : previewSlot(opts.preview.title);
+      big = opts.preview.below ? null : previewSlot(opts.preview.title, opts.preview.wide);
       if (!big && opts.preview.below) {
         // a heading and the picture after the last field
         const h = document.createElement('h3');

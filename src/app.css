@@ -295,6 +295,34 @@ html:not(.touch-ui) .toolbox.upright:not(.collapsed) > .tb-head > .tb-grip { let
 .toolbox.vertical .tb-body:has(> .tb-cmd) { flex-direction: row; flex-wrap: wrap; width: 66px; align-items: flex-start; }
 .toolbox.vertical .tb-body:has(> .tb-cmd:not(.tb-icon)) { width: 150px; }
 .toolbox.vertical .tb-cmd:not(.tb-icon) { flex-basis: 100%; }
+/* G5-16: Settings ▸ Toolboxes and Ribbon's preview */
+.tbp { display: flex; flex-direction: column; gap: 4px; }
+.tbp-cap { font-size: var(--fs-sm); color: var(--muted); margin-top: 6px; }
+.tbp-ribbon { border: 1px solid var(--line); border-radius: var(--r-control); background: var(--bg); overflow: hidden; }
+.tbp-tabs { display: flex; gap: 10px; padding: 3px 8px; font-size: 11px; color: var(--muted); }
+.tbp-tabs > span:first-child { color: var(--text); border-bottom: 2px solid var(--accent); }
+.tbp-panel { display: flex; gap: 0; padding: 4px; background: var(--panel); }
+.tbp-gwrap { display: flex; flex-direction: column; align-items: center; padding: 0 6px; border-right: 1px solid var(--line); }
+.tbp-gwrap:last-child { border-right: 0; }
+.tbp-group { display: flex; align-items: center; gap: 3px; }
+.tbp-rows { display: flex; flex-direction: column; gap: 2px; }
+.tbp-row { display: flex; gap: 2px; }
+.tbp-btn, .tbp-big { display: grid; place-items: center; width: 20px; height: 20px; }
+.tbp-big { width: 30px; height: 42px; }
+.tbp .tbp-big > svg { width: 24px; height: 24px; }
+.tbp .tbp-btn > svg { width: 14px; height: 14px; }
+.tbp-name { font-size: 10px; color: var(--muted); margin-top: 2px; }
+/* (the program's icons, not pictures: none of the preview pane's picture frame) */
+.sw-aside .tbp svg { display: inline-block; border: 0; border-radius: 0; background: none; }
+.tbp-blank { width: 12px; height: 12px; border-radius: 2px; background: var(--line); }
+.tbp-tools { display: grid; grid-template-columns: repeat(2, 34px); gap: 2px; width: max-content; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); }
+.tbp-tool { display: grid; place-items: center; width: 34px; height: 32px; border-radius: var(--r-control); box-sizing: border-box; }
+.tbp .tbp-tool > svg { width: 20px; height: 20px; }
+.tbp-cells-grid, .tbp-cells-both { gap: 0; padding: 0; }
+.tbp-cells-grid > .tbp-tool, .tbp-cells-both > .tbp-tool { border-radius: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.tbp-cells-grid > .tbp-tool:nth-child(2n), .tbp-cells-both > .tbp-tool:nth-child(2n) { border-right: 0; }
+.tbp-cells-grid > .tbp-tool:nth-last-child(-n + 2), .tbp-cells-both > .tbp-tool:nth-last-child(-n + 2) { border-bottom: 0; }
+.tbp-cells-raised > .tbp-tool, .tbp-cells-both > .tbp-tool { border: 1px solid var(--line); background: linear-gradient(var(--panel), color-mix(in srgb, var(--bg) 70%, var(--panel))); box-shadow: 0 1px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.5); }
 /* a toolbox's buttons on its grid (Customize Toolboxes): each in its cell, empty cells kept, thin lines between groups of rows */
 .tb-cells { display: grid; gap: 1px; align-items: center; justify-items: center; }
 .tb-cells > .tb-gap { width: 34px; height: 32px; }
@@ -1381,7 +1409,10 @@ dialog.master-dialog > form > .muted { margin: 2px 0 6px; max-width: 60ch; }
 .md-toggle[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft, var(--panel)); position: relative; }
 .md-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .md-controls input[type='text'] { flex: 1 1 12em; min-width: 0; font: inherit; padding: 3px 6px; }
-.md-controls select { font: inherit; }
+.md-controls select { font: inherit; max-width: 100%; }
+/* G5-31: in a narrow Settings pane the side-by-side ID label and caption columns take the room the
+   short row names leave, so "Same as captions" shows in full */
+@media (max-width: 1200px) { .sw-pane .md-tied { grid-template-columns: minmax(min-content, 5.5em) minmax(0, 1fr) minmax(0, 1fr); } }
 .md-num { width: 6em; font: inherit; padding: 3px 6px; }
 .md-controls input[type='color'] { width: 44px; height: 26px; padding: 0 2px; }
 .md-logo { max-width: 96px; max-height: 48px; border: 1px solid var(--line); background: #fff; }
@@ -3018,6 +3049,9 @@ dialog.settings-window { max-width: none; }
 .sw-aside { flex: 0 0 260px; overflow: auto; padding: 12px 14px; border-left: 1px solid var(--line); background: var(--panel, var(--bg)); }
 .sw-aside[hidden] { display: none; }
 .sw-aside.wide { flex-basis: 380px; }
+/* G5-15, G5-30: a preview drawn wider than the pane (a scheme with its magnifier, Drawing Style at 1024 px) shrinks to fit it */
+.sw-aside .sw-preview canvas { max-width: 100%; height: auto !important; }
+@media (max-width: 1200px) { .sw-aside.wide { flex-basis: 300px; } }
 .sw-aside h3 { margin: 0 0 8px; font-size: var(--fs-sm, 0.85em); font-weight: 600; color: var(--muted, inherit); text-transform: uppercase; letter-spacing: 0.04em; }
 .sw-aside canvas, .sw-aside svg { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--r-control); background: #fff; }
 /* Apply and Set as Default, the same on every page */
@@ -4653,6 +4687,11 @@ details.nmr .nmr-mode { font: inherit; font-size: var(--fs-xs); padding: 0 2px; 
 .nmr-popout { position: absolute; top: 0; right: 0; min-height: 0; padding: 0 5px; line-height: 16px; font-size: var(--fs-xs); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); color: var(--text); }
 .nmr-popout:hover { border-color: var(--accent); color: var(--accent); }
 .nmr-spec .sp-bg { fill: var(--panel); }
+/* G5-11: Settings ▸ NMR Prediction's preview */
+.nmr-set-preview { display: flex; flex-direction: column; gap: 10px; }
+.nmr-set-preview figure { margin: 0; }
+.nmr-set-preview figure > svg { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--r-control); }
+.nmr-set-preview figcaption { font-size: var(--fs-sm); color: var(--muted); margin-top: 3px; }
 .nmr-spec .sp-line { fill: none; stroke: var(--text); stroke-width: 1; }
 .nmr-spec .sp-hot { fill: none; stroke: var(--accent); stroke-width: 1.8; }
 .nmr-spec .sp-lab { font-size: 10px; fill: var(--text); }
@@ -5098,13 +5137,16 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 :where(dialog, .welcome-card, .tool-window) :where(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range'], [type='file'], [type='button'], [type='submit']), textarea) { border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); padding: 3px 6px; }
 :where(dialog, .welcome-card, .tool-window) :where(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range'], [type='file']), textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
 /* U7: on a Settings page each field is as wide as what it holds, and its unit follows it */
-.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) { display: grid; grid-template-columns: 21em max-content max-content 1fr; margin: 0; }
+/* G5-30: the name column gives way first, and a field never runs past the pane at 1024 px */
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) { display: grid; grid-template-columns: minmax(9em, 21em) minmax(0, max-content) max-content 1fr; margin: 0; }
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > .ask-name { max-width: none; }
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']) { justify-self: start; width: 22em; max-width: 100%; }
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select { justify-self: start; }
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > input[type='number'] { width: 6em; }
-.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select { width: auto; min-width: 9em; max-width: 26em; }
-.sw-pane dialog.keep-options .ask-row:not(.ask-check) { grid-template-columns: 21em max-content 1fr; }
+/* G5-31: a number box whose blank means something ("Automatic", "Same as above") is wide enough to say so */
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > input[type='number'][placeholder]:not([placeholder='']) { width: 9.5em; }
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select { width: auto; min-width: min(9em, 100%); max-width: min(26em, 100%); }
+.sw-pane dialog.keep-options .ask-row:not(.ask-check) { grid-template-columns: minmax(9em, 21em) minmax(0, max-content) 1fr; }
 /* U24: Settings ▸ Drawing Style: the scrolling list runs down to the footer */
 .sw-pane > dialog.style-dialog.embedded { height: 100%; box-sizing: border-box; }
 .sw-pane > dialog.style-dialog.embedded > form { height: 100%; display: flex; flex-direction: column; }
@@ -5227,10 +5269,13 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-xray .si-num { width: 5em; }
 /* Project Settings ▸ Headings and Labels: how they will read; ▸ Page: a page with its header and footer */
 .si-heading-example { margin: 0; font-size: 13px; }
-.si-page-example { width: 340px; height: 150px; border: 1px solid var(--line, #ccc); background: #fff; color: #222; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 14px; box-sizing: border-box; font-size: 9px; }
+.si-page-example { width: 100%; max-width: 340px; aspect-ratio: 210 / 297; height: auto; border: 1px solid var(--line, #ccc); background: #fff; color: #222; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 14px; box-sizing: border-box; font-size: 9px; }
 .si-page-example > .si-page-header, .si-page-example > .si-page-footer { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; min-height: 12px; }
 .si-page-example span:nth-child(2) { text-align: center; }
 .si-page-example span:nth-child(3) { text-align: right; }
+/* G5-37: the Insert drop-down beside a header or footer box */
+.ask-row > select.ask-inserts, .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select.ask-inserts { grid-column: 3; grid-row: 1; width: 7.5em; min-width: 0; max-width: none; margin-left: 6px; }
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide):has(> select.ask-inserts) > input:not([type='checkbox']) { width: 14em; }
 .si-page-body { flex: 1; margin: 8px 0; background: repeating-linear-gradient(#fff 0 6px, #e6e6e6 6px 8px); }
 /* A compound's spectra page: its spectra listed, the one picked drawn as it prints, its settings */
 .si-spectra-body { display: flex; gap: 12px; align-items: flex-start; }

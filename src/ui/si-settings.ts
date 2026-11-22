@@ -89,7 +89,7 @@ async function headings(p: SiProject, host: SiSettingsHost): Promise<void> {
   };
   const got = await ask('Headings', fields, {
     ok: 'Save',
-    preview: { title: 'Headings will read', below: true, draw: (v) => { const d = document.createElement('p'); d.className = 'si-heading-example'; d.textContent = headingExample(shown(v)); return d; } },
+    preview: { title: 'Headings will read', draw: (v) => { const d = document.createElement('p'); d.className = 'si-heading-example'; d.textContent = headingExample(shown(v)); return d; } },
   });
   if (!got || p.readOnly) return;
   await host.save(() => storeHeadingFormat(s, got.preset, formatOf(got)));
@@ -98,9 +98,11 @@ async function headings(p: SiProject, host: SiSettingsHost): Promise<void> {
 async function pageSetup(p: SiProject, host: SiSettingsHost): Promise<void> {
   const s = p.settings;
   const v = pageSettings(s);
-  const zone = (which: 'header' | 'footer', i: number): Field => ({ name: `${which}${i}`, label: ['Left', 'Center', 'Right'][i], value: (which === 'header' ? v.header : v.footer)[i], placeholder: i === 1 && which === 'footer' ? '{page}' : '' });
+  // (G5-37: the fields go in from an Insert drop-down, as Word's Insert Page Number; they can still be typed)
+  const inserts = { label: 'Insert', items: [{ text: '{page}', label: 'Page Number' }, { text: '{pages}', label: 'Number of Pages' }, { text: '{title}', label: 'Title' }, { text: '{authors}', label: 'Authors' }, { text: '{date}', label: 'Date' }] };
+  const zone = (which: 'header' | 'footer', i: number): Field => ({ name: `${which}${i}`, label: ['Left', 'Center', 'Right'][i], value: (which === 'header' ? v.header : v.footer)[i], placeholder: i === 1 && which === 'footer' ? '{page}' : '', inserts });
   const fields: Field[] = [
-    { name: 'h1', label: 'Header', value: '', type: 'heading', help: 'Type text, and any of {page} (the page number), {pages} (how many pages), {title}, {authors} and {date}.' },
+    { name: 'h1', label: 'Header', value: '', type: 'heading', help: 'Type text, and pick from Insert to add the page number, the number of pages, the title, the authors or the date (they show as {page}, {pages}, {title}, {authors} and {date}).' },
     zone('header', 0), zone('header', 1), zone('header', 2),
     { name: 'h2', label: 'Footer', value: '', type: 'heading', help: 'The journal style’s own puts the page number in the center (Wiley: on the right); a footer left as the style’s keeps following the style.' },
     zone('footer', 0), zone('footer', 1), zone('footer', 2),
@@ -135,7 +137,7 @@ async function pageSetup(p: SiProject, host: SiSettingsHost): Promise<void> {
     page.append(line('header'), body, line('footer'));
     return page;
   };
-  const got = await ask('Page', fields, { ok: 'Save', preview: { title: 'Page 2 will read', below: true, draw: preview } });
+  const got = await ask('Page', fields, { ok: 'Save', preview: { title: 'Page 2 will read', draw: preview } });
   if (!got || p.readOnly) return;
   const size = Number(got.size);
   await host.save(() => storePageSettings(s, {
@@ -179,7 +181,7 @@ async function labels(p: SiProject, host: SiSettingsHost): Promise<void> {
     d.textContent = LABEL_KINDS.map((k) => { const style = v[`${k}-style`]; const n = style === 'I' ? 'II' : style === 'i' ? 'ii' : style === 'a' ? 'b' : '2'; return `${(v[`${k}-word`] ?? '').trim()} ${(v[`${k}-prefix`] ?? '').trim()}${n}`.trim(); }).join(' · ');
     return d;
   };
-  const got = await ask('Labels', fields, { ok: 'Save', note: 'Figures, tables and schemes are numbered in the order they print. Any one label can still be typed over where it is.', preview: { title: 'The second of each will read', below: true, draw: example } });
+  const got = await ask('Labels', fields, { ok: 'Save', note: 'Figures, tables and schemes are numbered in the order they print. Any one label can still be typed over where it is.', preview: { title: 'The second of each will read', draw: example } });
   if (!got || p.readOnly) return;
   await host.save(() => {
     // only what differs from the defaults, as SI Assistant stores it

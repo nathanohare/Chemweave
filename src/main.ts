@@ -44,8 +44,9 @@ import { pubchemHtml, pubchemRuns, type PubChemState } from './ui/pubchem-panel'
 import { paragraphPages } from './document/doc-file';
 import { reviewAuthor, setReviewAuthor } from './document/revisions';
 import { NMR_SOLVENTS, NmrPanel, solventLabel } from './ui/nmr-panel';
-import { compareMode, nmrQuality, nmrSpectrumMhz, setCompareMode, setNmrQuality, setNmrSpectrumMhz } from './ui/nmr-spectrum';
-import { nmrAutoPredict, nmrRange, peakLabels, setNmrAutoPredict, setNmrRange, setPeakLabels } from './ui/nmr-settings';
+import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
+import { compareMode, nmrQuality, nmrSpectrumMhz, sampleSpectrumData, setCompareMode, setNmrQuality, setNmrSpectrumMhz, spectrumSvg, type CompareMode } from './ui/nmr-spectrum';
+import { nmrAutoPredict, nmrRange, peakLabels, setNmrAutoPredict, setNmrRange, setPeakLabels, type PeakLabels } from './ui/nmr-settings';
 import { analysisPrefs, setAnalysisPrefs, onAnalysisPrefs, parseAnalysisPrefs, calcOf, nextCalcId, type AnalysisPrefs } from './chem/analysis-prefs';
 import { newCalc } from './chem/bench';
 import { dragRow } from './ui/row-drag';
@@ -285,7 +286,7 @@ import type { SheetFileDeps } from './io/sheet-files';
 import { fromEmbedSource, setInstalledChemdrawProg, type Embedded } from './io/ole-object';
 import { objectPicture, type ObjectPicture } from './render/object-picture';
 import { ACS_1996, BOND_END_CHOICES, bondEndPrefs, DocStyle, docMapLook, MAP_LOOKS, mapLookPrefs, type MapBoxStyle, type MapLook } from './style';
-import { DEFAULT_DEPTH_SHADE, depthShadePrefs } from './render/depth-shade';
+import { DEFAULT_DEPTH_SHADE, depthShadePrefs, type DepthShade } from './render/depth-shade';
 import { emptyTable, tableFromCells } from './table';
 import type { ArrowKind, TableData } from './model';
 import { checkDrawing, checkDocument, checkWorkbook, repeatedTitles, structureAlt, setStructureAlt, type Issue, type IssuePlace } from './accessibility';
@@ -2109,24 +2110,58 @@ function toggleDepthShading(): void {
   flash(depthShadePrefs.on ? 'Depth shading on: structures turned in 3-D fade from front to back.' : 'Depth shading off.');
 }
 
+/** The Depth Shading window's boxes as settings (what is blank or out of range stays as `was`). */
+function readDepthForm(r: Record<string, string>, was: DepthShade): DepthShade {
+  const pct = Number(r.thinTo);
+  return {
+    on: r.on === 'true', near: r.near || was.near, far: r.far || was.far, curve: r.curve === 'eased' ? 'eased' : 'linear',
+    thin: r.thin === 'true', thinTo: r.thinTo?.trim() && isFinite(pct) ? Math.max(10, Math.min(100, pct)) / 100 : was.thinTo,
+  };
+}
+
+/** Depth Shading's preview (G5-12): a cyclohexane chair seen from above and in front, shaded as the
+ *  boxes say (shown shaded even while "Shade structures" is off, so the colors can be set first). */
+function depthShadeSample(look: DepthShade): HTMLCanvasElement {
+  const x = new Doc();
+  x.style = { ...doc.style };
+  const L = x.style.bondLength || 14.4, k = L / 1.54, tilt = (75 * Math.PI) / 180;
+  // chair: ring atoms 1.456 Å from the axis, alternately 0.25 Å above and below the mean plane (C–C 1.54 Å);
+  // equatorial bonds point outward and tip about 19° the other way
+  const at = (X: number, Y: number, Z: number) => ({ x: X * k, y: (Y * Math.cos(tilt) - Z * Math.sin(tilt)) * k, depth: (Y * Math.sin(tilt) + Z * Math.cos(tilt)) * k });
+  x.edit('Preview', () => {
+    const ring = [0, 1, 2, 3, 4, 5].map((i) => { const t = (i * Math.PI) / 3; const p = at(1.456 * Math.cos(t), 1.456 * Math.sin(t), i % 2 ? 0.25 : -0.25); return x.addAtom(p.x, p.y, 6, { depth: p.depth }); });
+    ring.forEach((a, i) => x.addBond(a.id, ring[(i + 1) % 6].id, 1));
+    // an equatorial methyl on the front carbon and one on the back
+    for (const i of [1, 4]) { const t = (i * Math.PI) / 3; const p = at(2.91 * Math.cos(t), 2.91 * Math.sin(t), i % 2 ? -0.25 : 0.25); x.addBond(ring[i].id, x.addAtom(p.x, p.y, 6, { depth: p.depth }).id, 1); }
+  });
+  const canvas = document.createElement('canvas');
+  canvas.className = 'hl-sample';
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'Preview of depth shading on a cyclohexane chair');
+  canvas.style.width = '220px';
+  canvas.style.height = '140px';
+  requestAnimationFrame(() => {
+    const keep = { ...depthShadePrefs };
+    Object.assign(depthShadePrefs, look, { on: true });
+    try { paintDocFitted(x, canvas, 4); } finally { Object.assign(depthShadePrefs, keep); }
+  });
+  return canvas;
+}
+
 /** Depth Shading Settings…: the colours in front and behind, how the fade goes, and whether lines thin with depth. */
 async function depthShadingDialog(): Promise<void> {
   const s = depthShadePrefs;
   const r = await ask('Depth Shading', [
     { name: 'on', label: 'Shade structures drawn in 3-D by depth', type: 'checkbox', value: String(s.on),
-      help: 'Structures turned with the Perspective tools, placed from the 3-D Model window, or drawn from conformer templates. Each is shaded over its own depth.' },
+      help: `Structures turned with the Perspective tools, placed from the 3-D Model window, or drawn from conformer templates. Each is shaded over its own depth. Default: black in front fading evenly to ${DEFAULT_DEPTH_SHADE.far} gray behind, line widths unchanged. Copied and exported pictures keep the shading.` },
     { name: 'near', label: 'Nearest color', type: 'color', value: s.near },
     { name: 'far', label: 'Farthest color', type: 'color', value: s.far },
     { name: 'curve', label: 'Fade', value: s.curve, options: [{ value: 'linear', label: 'Even (linear)' }, { value: 'eased', label: 'Eased (slow at front and back)' }] },
     { name: 'thin', label: 'Thin the lines with depth too', type: 'checkbox', value: String(s.thin) },
     { name: 'thinTo', label: 'Line width at the back', type: 'number', unit: '% of the usual', value: String(Math.round(s.thinTo * 100)) },
-  ], { ok: 'Apply', note: `Default: black in front fading evenly to ${DEFAULT_DEPTH_SHADE.far} gray behind, line widths unchanged. Copied and exported pictures keep the shading.` });
+  ], { ok: 'Apply', preview: { title: 'Preview', draw: (v) => depthShadeSample(readDepthForm(v, s)) } });
   if (!r) return;
-  const pct = Number(r.thinTo);
-  Object.assign(depthShadePrefs, {
-    on: r.on === 'true', near: r.near || s.near, far: r.far || s.far, curve: r.curve === 'eased' ? 'eased' : 'linear',
-    thin: r.thin === 'true', thinTo: isFinite(pct) ? Math.max(10, Math.min(100, pct)) / 100 : s.thinTo,
-  });
+  Object.assign(depthShadePrefs, readDepthForm(r, s));
   depthShadingChanged();
   storeSettings();
 }
@@ -3405,7 +3440,7 @@ async function schemeSettings(): Promise<void> {
     { name: 'roleReach', label: 'Starting materials and products: up to this far past the arrow', value: p.roleReach ? String(p.roleReach) : '', type: 'number', unit: 'bonds', placeholder: '3', min: 0.2, max: 20 },
     { name: 'roleLane', label: 'Starting materials and products: up to this far off its line', value: p.roleLane ? String(p.roleLane) : '', type: 'number', unit: 'bonds', placeholder: '1', min: 0.2, max: 20 },
   ], { ok: 'Save', note: 'Default spacing for text beside arrows, used by Clean Up Reaction and Arrange Scheme. A drawing style\'s own values (Drawing Style ▸ Reaction arrows) take priority. Leave a distance blank to scale with bond length. Existing schemes update when next cleaned up.',
-    preview: { title: 'Preview', below: true, draw: (v, focus) => schemePreview(doc.style, schemeFrom(v), undefined, focus) } });
+    preview: { title: 'Preview', wide: true, draw: (v, focus) => schemePreview(doc.style, schemeFrom(v), 352, focus) } });
   if (!got) return;
   setSchemePrefs(schemeFrom(got));
   storeSettings();
@@ -11809,7 +11844,10 @@ async function toolboxPreferences(): Promise<void> {
     { name: 'cells', label: 'Button cells', value: toolCells, options: [{ value: 'off', label: 'None' }, { value: 'grid', label: 'Grid lines' }, { value: 'raised', label: 'Raised buttons' }, { value: 'both', label: 'Grid lines and raised buttons' }],
       help: 'Gives each toolbox button a cell of its own, so the buttons are easier to tell apart and to hit.' },
     { name: 'tips', label: 'Detailed tooltips', type: 'checkbox', value: String(toolTip.enabled) },
-  ], { ok: 'Save' });
+  ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => toolboxPreview(v.look === 'simple' ? 'simple' : 'classic', (['grid', 'raised', 'both'].includes(v.cells) ? v.cells : 'off') as ToolCells, {
+    ribbon: [...document.querySelectorAll('.canvas-ribbon > .rb-panel svg.ci-ic')].slice(0, 12),
+    tools: [...document.querySelectorAll('.toolbox .tool > svg')].slice(0, 8),
+  }) } });
   if (!r) return;
   setToolCells((['grid', 'raised', 'both'].includes(r.cells) ? r.cells : 'off') as Settings['toolCells']);
   setRibbonLook(r.look === 'simple' ? 'simple' : 'classic');
@@ -11828,15 +11866,32 @@ function setWarnLook(look: Settings['warnLook']): void {
 }
 
 /** Settings ▸ NMR Prediction (desktop app only). */
+/** Settings ▸ NMR Prediction's preview (G5-11): a sample ¹H spectrum labeled as the boxes say, at the
+ *  chosen frequency, and the same list as a pasted report in the chosen comparison layout. */
+function nmrSettingsPreview(v: Record<string, string>, was: PeakLabels): HTMLElement {
+  const size = Number(v.plSize);
+  const pl: PeakLabels = { label: v.plLabel === 'true', shift: v.plShift === 'true', mult: v.plMult === 'true', count: v.plCount === 'true', j: v.plJ === 'true', hover: v.plHover === 'true',
+    size: size >= 6 && size <= 24 ? size : was.size, place: v.plPlace === 'top' || v.plPlace === 'upright' ? v.plPlace : 'above' };
+  const sf = Number(v.mhz) > 0 ? Number(v.mhz) : 400;
+  const compare: CompareMode = v.compare === 'stacked' || v.compare === 'overlay' ? v.compare : 'inverted';
+  const box = document.createElement('div');
+  box.className = 'nmr-set-preview';
+  const pic = (title: string, svg: string) => { const f = document.createElement('figure'); const c = document.createElement('figcaption'); c.textContent = title; f.innerHTML = svg; f.append(c); f.setAttribute('aria-label', title); return f; };
+  box.append(
+    pic('Peak labels (ethyl acetate)', spectrumSvg(sampleSpectrumData(sf, false), { w: 240, h: 170, hi: 4.6, lo: 0.8, labels: true, hotRow: null, peakLabels: pl })),
+    pic('A pasted report against the prediction', spectrumSvg(sampleSpectrumData(sf, true), { w: 240, h: 150, hi: 4.6, lo: 0.8, labels: false, hotRow: null, overlay: true, compare })),
+  );
+  return box;
+}
+
 async function nmrSettings(): Promise<void> {
   const r1 = nmrRange('1H'), r13 = nmrRange('13C'), pk = peakLabels();
   const r = await ask('NMR Prediction', [
     { name: 'auto', label: 'Predict NMR as soon as a structure is selected', type: 'checkbox', value: String(nmrAutoPredict()),
       help: 'Off: the Analysis panel\'s NMR section stays closed until you open it or click Predict NMR, so selecting stays fast. On: it predicts on every selection while the section is open.' },
     { name: 'quality', label: 'Predict spectra with', value: nmrQuality(), options: [
-      { value: 'fast', label: 'Fast: first-order multiplets' }, { value: 'balanced', label: 'Balanced: exact simulation of up to 8 coupled protons' },
-      { value: 'accurate', label: 'Accurate: 3-D conformers, up to 10 coupled protons' }],
-      help: 'Accurate also predicts both shifts of diastereotopic CH2 protons and couplings from the 3-D shape; it takes a few seconds per structure. The Spectrum window\'s dropdown changes the same setting.' },
+      { value: 'fast', label: 'Fast' }, { value: 'balanced', label: 'Balanced' }, { value: 'accurate', label: 'Accurate' }],
+      help: 'Fast: first-order multiplets. Balanced: exact simulation of up to 8 coupled protons. Accurate: 3-D conformers and up to 10 coupled protons; it also predicts both shifts of diastereotopic CH₂ protons and couplings from the 3-D shape, and takes a few seconds per structure. The Spectrum window\'s dropdown changes the same setting.' },
     { name: 'solvent', label: 'Solvent', value: nmrPanel.solvent, options: NMR_SOLVENTS.map((x) => ({ value: x, label: solventLabel(x) })) },
     { name: 'mhz', label: 'Spectrometer frequency', value: String(nmrSpectrumMhz()), options: [300, 400, 500, 600, 800].map((m) => ({ value: String(m), label: `${m} MHz` })) },
     { name: 'h1lo', label: '¹H spectrum from', type: 'number', value: String(r1.lo), unit: 'ppm',
@@ -11846,8 +11901,8 @@ async function nmrSettings(): Promise<void> {
       help: 'The spectrum is drawn over this range (−5 to 200 ppm unless you change it) and widens automatically when a peak falls outside it.' },
     { name: 'c13hi', label: '¹³C spectrum to', type: 'number', value: String(r13.hi), unit: 'ppm' },
     { name: 'compare', label: 'Show a pasted report against the prediction', value: compareMode(), options: [
-      { value: 'inverted', label: 'Inverted: measured above, predicted mirrored below' }, { value: 'stacked', label: 'Stacked: one above the other, both upright' }, { value: 'overlay', label: 'Overlay: both on one baseline' }],
-      help: 'How Check Data in the Spectrum window compares them. Its Inverted, Stacked and Overlay buttons change the same setting.' },
+      { value: 'inverted', label: 'Inverted' }, { value: 'stacked', label: 'Stacked' }, { value: 'overlay', label: 'Overlay' }],
+      help: 'How Check Data in the Spectrum window compares them. Inverted: measured above, predicted mirrored below. Stacked: one above the other, both upright. Overlay: both on one baseline. Its Inverted, Stacked and Overlay buttons change the same setting.' },
     { name: 'plLabel', label: 'Peak labels: atoms', type: 'checkbox', value: String(pk.label),
       help: 'What the Spectrum window (and its pictures) writes over each predicted peak. Atoms are named as in the list\'s Atoms column.' },
     { name: 'plShift', label: 'Peak labels: chemical shift (a range for m)', type: 'checkbox', value: String(pk.shift) },
@@ -11857,8 +11912,9 @@ async function nmrSettings(): Promise<void> {
     { name: 'plHover', label: 'Peak labels: first part only (hover for the rest)', type: 'checkbox', value: String(pk.hover) },
     { name: 'plSize', label: 'Peak label size', type: 'number', value: String(pk.size), unit: 'px' },
     { name: 'plPlace', label: 'Peak label position', value: pk.place, options: [
-      { value: 'above', label: 'Above each peak, one part per line' }, { value: 'top', label: 'Along the top on one line, with a line down to the peak' }, { value: 'upright', label: 'Upright over each peak' }] },
-  ], { ok: 'Save' });
+      { value: 'above', label: 'Above each peak' }, { value: 'top', label: 'Along the top' }, { value: 'upright', label: 'Upright' }],
+      help: 'Above each peak: one part per line. Along the top: on one line, with a line down to the peak. Upright: turned to read upward, over each peak.' },
+  ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => nmrSettingsPreview(v, pk) } });
   if (!r) return;
   setNmrAutoPredict(r.auto === 'true');
   if (r.compare === 'inverted' || r.compare === 'stacked' || r.compare === 'overlay') setCompareMode(r.compare);
