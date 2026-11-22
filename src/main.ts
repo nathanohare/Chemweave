@@ -394,6 +394,8 @@ function applyModeColours(mode: Parameters<typeof applyModeColoursOnly>[0], c: M
   editor.requestScene();
 }
 const chem = new ChemClient(document.baseURI);
+// (the engine stopped on a structure or hung, and was restarted: say so where the user looks)
+chem.onRestart = (message) => flash(message, 8000);
 const checks = new StructureChecks(doc);
 renderer.checks = checks;
 // R/S and E/Z for every structure, worked out in the background after each change
@@ -16075,6 +16077,8 @@ editor.onSmartAdded = (frame, cap) => smartPane.focusCaption(frame, cap);
 editor.onChange = () => { welcomeWatch?.(); showToolStatus(); ($('#go-sel') as HTMLButtonElement).disabled = !editor.hasSelection(); showRibbonContext(); smartPane.refresh(); buildHint.refresh(); if (ws.active.mode === 'slides' || ws.active.mode === 'design') { textRibbonNow()?.refresh(); showContextTabs(); masterPanel?.refresh(); } textToolbox?.refresh(); canvasFont?.refresh(); animUi?.selectionChanged(); updateStereo(); scheduleAnalysis(); updatePanels(); ws.noteChange(); stylePanel.refresh(); void refreshDescriptors(); scheduleLabelCheck(); };
 chem.onReady = () => {
   (window as any).__chemReadyMs = performance.now() - startMs;
+  // (an SI project's checks read before the engine was ready, or while it restarted, are read again)
+  siMode?.engineReady();
   sheetChem.flush();
   updatePanels();
   updateStereo();
