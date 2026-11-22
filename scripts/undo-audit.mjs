@@ -51,14 +51,15 @@ try {
     await new Promise((r) => setTimeout(r, 200));
   }
   browser = await launch();
-  const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
-  page.on('dialog', (d) => d.dismiss());
-  await page.goto(URL);
-  await page.waitForFunction(() => window.__app?.chem?.ready, null, { timeout: 60000 });
-  await page.locator('#welcome-close').click({ timeout: 2000 }).catch(() => {});
+  let page = null;
   // each part starts in a fresh page (what one part left on, such as a tool or a view, doesn't carry over)
+  // (a new browser profile each time: settings a command changed, such as a view, are gone too)
+  let context = null;
   const restart = async () => {
-    await page.evaluate(() => { try { localStorage.clear(); } catch { /* none */ } });
+    await context?.close();
+    context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    page = await context.newPage();
+    page.on('dialog', (d) => d.dismiss());
     await page.goto(URL);
     await page.waitForFunction(() => window.__app?.chem?.ready, null, { timeout: 60000 });
     await page.locator('#welcome-close').click({ timeout: 2000 }).catch(() => {});
@@ -158,6 +159,7 @@ try {
     await sweep('Document, picture in line picked', cmds, probe, reset, () => pickObject(false));
 
     // moving and sizing pictures with the mouse
+    await restart();
     await reset();
     const ids = await page.evaluate(() => {
       const f = window.__app.docMode.file;
