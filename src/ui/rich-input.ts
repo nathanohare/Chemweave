@@ -38,7 +38,10 @@ export class RichInput {
       const t = e.dataTransfer?.getData('text/plain');
       if (t) this.insert(t.replace(/\r\n?/g, '\n'));
     });
-    document.addEventListener('selectionchange', () => this.keepSelection());
+    // (only while the box has the focus: boxes made and dropped, as Outline View's are, leave nothing behind)
+    const onSel = () => this.keepSelection();
+    el.addEventListener('focus', () => document.addEventListener('selectionchange', onSel));
+    el.addEventListener('blur', () => document.removeEventListener('selectionchange', onSel));
   }
 
   // ---------------------------------------------------------------- the textarea's ways
