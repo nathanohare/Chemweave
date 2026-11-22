@@ -10,10 +10,23 @@
 //
 // CDXML attributes with no known CDX property (chemical-property captions, sequence settings
 // and so on) are left out of CDX; nothing that changes how the drawing looks depends on them.
+// CDX properties not known here (ChemDraw 25's ChemProp label templates, reaction numbering and
+// sequence settings…) are kept as they are (audit G1-08): read into an attribute of ours holding
+// their bytes (CDX_KEEP), and written back from it, so a CDX file opened and saved as CDX keeps them.
+// A CDXML file leaves these attributes out (withoutCdxOnly): they mean nothing to ChemDraw there.
 
 import { withoutDoctype } from './xml';
 
 // ---------------------------------------------------------------- objects
+
+/** The attribute of ours that keeps a CDX property not known here: its tag (4 hex digits) after this, its bytes as hex. */
+export const CDX_KEEP = 'ChemIllustratorCdx';
+const KEEP_RE = new RegExp(`^${CDX_KEEP}([0-9A-F]{4})$`);
+
+/** CDXML text without the CDX properties kept for CDX (see CDX_KEEP). */
+export function withoutCdxOnly(text: string): string {
+  return text.includes(CDX_KEEP) ? text.replace(new RegExp(` ${CDX_KEEP}[0-9A-F]{4}="[0-9A-F]*"`, 'g'), '') : text;
+}
 
 const OBJECTS: Record<string, number> = {
   page: 0x8001, group: 0x8002, fragment: 0x8003, n: 0x8004, b: 0x8005, t: 0x8006, graphic: 0x8007,
@@ -512,6 +525,13 @@ function fontStyle(font: string | null, face: string | null, size: string | null
 function writeAttributes(out: Bytes, e: Element, skip: Set<string> = new Set()): void {
   for (const a of Array.from(e.attributes)) {
     if (a.name === 'id' || skip.has(a.name)) continue;
+    const kept = KEEP_RE.exec(a.name);
+    if (kept && /^(?:[0-9A-F]{2})*$/.test(a.value)) {
+      const bytes = new Uint8Array(a.value.length >> 1);
+      for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(a.value.slice(2 * i, 2 * i + 2), 16);
+      writeProp(out, parseInt(kept[1], 16), bytes);
+      continue;
+    }
     const p = P[a.name];
     if (!p) continue;
     let v = a.value;
@@ -804,7 +824,13 @@ function readObject(r: Reader, name: string, id: number): Node {
       continue;
     }
     const known = BY_TAG.get(tag);
-    if (!known) continue;
+    if (!known) {
+      // kept as it is, to be written back to CDX (G1-08)
+      let hex = '';
+      for (const x of d) hex += (x < 16 ? '0' : '') + x.toString(16);
+      node.attrs.push([CDX_KEEP + tag.toString(16).toUpperCase().padStart(4, '0'), hex.toUpperCase()]);
+      continue;
+    }
     let prop = known[1];
     if (known[0] === 'Value' && name === 'objecttag') {
       const type = node.attrs.find(([k]) => k === 'TagType')?.[1];

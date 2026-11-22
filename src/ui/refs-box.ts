@@ -88,7 +88,7 @@ export class RefsBox {
     h.className = 'rfb-title';
     h.textContent = this.mode === 'cite' ? 'Insert Citation' : 'References on This Slide';
     h.append(infoIcon(this.mode === 'cite'
-      ? 'Pick the reference to cite: its number goes in the text at the cursor, in the citation style, and the reference is ticked on the slide.'
+      ? 'Select the reference to cite: its number goes in the text at the cursor, in the citation style, and the reference is checked on the slide.'
       : 'Ticked references are listed in this box, in the citation style. Citations in the slide\'s text (Insert ▸ Citation) tick their references automatically.'));
     const style = document.createElement('select');
     style.className = 'rfb-style';

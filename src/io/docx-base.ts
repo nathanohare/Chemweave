@@ -11,7 +11,7 @@ import type { CiteStyle, Reference } from '../document/references';
 import type { CiteFormat } from '../document/cite-styles';
 import type { ChartBox } from '../sheet/chart-box';
 import type { CiteManager } from '../document/live-cites';
-import type { FigureFrame } from '../document/document';
+import type { FigureFrame, FromPicture } from '../document/document';
 
 export const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 export const WP_NS = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
@@ -157,7 +157,7 @@ export interface DocxModel {
    * saves) and `alt` (its alt text as written), tell it from a picture changed in Word (Change
    * Picture) or copied in from another of our files under the same name.
    */
-  drawings: Record<number, { contents: Contents; w: number; h: number; png?: string; svg?: string; alt?: string; /** A figure's area (Insert > Figure): the picture is of all of it. */ frame?: FigureFrame; /** Saved as a ChemDraw object: a fingerprint of the CDX in it, so the drawing here is used only while the object holds that (not after it was changed in ChemDraw). */ cdx?: string; /** From a ChemDraw object (its program name): saved as one whatever structures are saved as. */ ole?: string }>;
+  drawings: Record<number, { contents: Contents; w: number; h: number; png?: string; svg?: string; alt?: string; /** A figure's area (Insert > Figure): the picture is of all of it. */ frame?: FigureFrame; /** Saved as a ChemDraw object: a fingerprint of the CDX in it, so the drawing here is used only while the object holds that (not after it was changed in ChemDraw). */ cdx?: string; /** From a ChemDraw object (its program name): saved as one whatever structures are saved as. */ ole?: string; /** Made from a picture (Make Editable): the picture, to compare with and go back to. */ fromPicture?: FromPicture }>;
   /** Each shape's library outline (Insert > Shapes in a document), by its id ("Shape 3"): Word keeps those without a preset as custom shapes. */
   geos?: Record<number, string>;
   /**

@@ -81,7 +81,8 @@ describe('the toolbox: the same bar as above text being typed', () => {
     buildTextBar(bar, { format: () => true, type: () => true, link: () => {}, state: () => null, back: () => {} });
     const shape = (el: HTMLElement) => [...el.querySelectorAll('button, input')].map((b) => `${b.tagName}:${b.className}:${b.getAttribute('aria-label')}`);
     expect(shape(body)).toEqual(shape(bar));
-    expect(body.querySelectorAll('.cb-group').length).toBe(6);
+    // (Font: font and size, A⁺ A⁻ Clear, B I U abc, x₂ x² C₉H₈ color (R); Paragraph: three; G5-26)
+    expect(body.querySelectorAll('.cb-group').length).toBe(7);
     expect(body.querySelector('.caption-symbols')).not.toBeNull();
     expect(body.querySelector('.caption-spacing')).not.toBeNull();
     // a click in it keeps the text being typed open

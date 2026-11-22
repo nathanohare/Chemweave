@@ -84,13 +84,11 @@ export function setUpShow(setup: ShowSetup | undefined, shows: CustomShow[], sli
     const timed = radio('ss-adv', 'Using timings, if present', !s.manual, 'Each slide advances automatically after its time (Rehearse Timings, or Transitions ▸ After)');
     adv.append(manual.l, timed.l);
     grid.append(type, opt, which, adv);
-    const kioskNote = el('p', 'muted small', 'At a kiosk the show loops automatically, by the slides\' times; clicks only follow links and action buttons, and Esc ends it.');
     const sync = () => {
       const kiosk = types.get('kiosk')!.checked;
       loop.i.disabled = kiosk;
       if (kiosk) { loop.i.checked = true; timed.i.checked = true; }
       manual.i.disabled = kiosk;
-      kioskNote.hidden = !kiosk;
     };
     form.addEventListener('change', sync);
     sync();
@@ -99,7 +97,7 @@ export function setUpShow(setup: ShowSetup | undefined, shows: CustomShow[], sli
     const ok = el('button', 'primary', 'OK');
     ok.type = 'submit';
     buttons.append(cancel, ok);
-    form.append(grid, kioskNote, buttons);
+    form.append(grid, buttons);
     let finished = false;
     const done = (v: ShowSetup | null) => { if (finished) return; finished = true; if (d.open) d.close(); d.remove(); resolve(v); };
     form.addEventListener('submit', (e) => {
@@ -138,7 +136,7 @@ export function editCustomShows(shows: CustomShow[], slides: SlideName[]): Promi
     box.size = 8;
     const side = el('div', 'cs-side');
     const b = (text: string, title: string) => { const x = el('button', undefined, text); x.type = 'button'; x.title = title; side.append(x); return x; };
-    const add = b('New…', 'Make a custom show: name it and pick its slides');
+    const add = b('New…', 'Make a custom show: name it and choose its slides');
     const edit = b('Edit…', 'Change the custom show selected');
     const remove = b('Remove', 'Delete the custom show selected (the slides stay in the deck)');
     const copy = b('Copy', 'A copy of the custom show selected, to change');

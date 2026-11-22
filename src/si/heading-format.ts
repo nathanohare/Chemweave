@@ -30,7 +30,7 @@ export const HEADING_PRESETS: { id: string; label: string; si?: string; format: 
   { id: 'parens', label: '1) / a) / i)', format: { levels: ['1', 'a', 'i'], chain: false, end: ')', text: true } },
   { id: 'letters', label: 'A. / A.1. / A.1.1.', format: { levels: ['A', '1'], chain: true, end: '.', text: true } },
   { id: 'none', label: 'None', si: 'none', format: null },
-  { id: 'custom', label: 'My own…', format: null },
+  { id: 'custom', label: 'Custom…', format: null },
 ];
 
 const isObj = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);

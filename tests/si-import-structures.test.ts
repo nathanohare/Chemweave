@@ -62,7 +62,7 @@ describe('Import SI: structures from ChemDraw drawings in Word', () => {
     // by its label in the scheme (no picture: the drawing is a scheme)
     expect(smiles(by.get('5a')!.structure)).toBe('Oc1ccccc1');
     expect(by.get('5a')!.structure_picture).toBeNull();
-    expect(by.get('5a')!.structure_note).toContain('labelled “5a”');
+    expect(by.get('5a')!.structure_note).toContain('labeled “5a”');
     expect(smiles(by.get('5b')!.structure)).toBe('CO');
     // unlabelled, next to its own text, alone in its drawing
     expect(smiles(by.get('5c')!.structure)).toBe('Oc1ccccc1');

@@ -183,7 +183,7 @@ The **zoom box** at the right end of that line shows how big the drawing is show
 
 The first time you open the app, a small card on the empty page lists the tips most people need first: drawing bonds and rings, typing atom labels, pasting SMILES or names, Search and the right-click menu. Close it with **Start drawing**; it doesn't come back.
 
-After that, each time the app opens on an empty canvas, a smaller **start view** offers a new Presentation, Spreadsheet, Document or Design tab, a template, Open, and your recent files. Start drawing (or click **Start drawing**) and it goes. Clear **Show at start** to stop it, or turn it back on in **Edit ▸ Settings ▸ General**.
+After that, each time the app opens on an empty canvas, a smaller **start view** offers **Blank canvas**, **Blank document**, **Blank presentation**, **Blank spreadsheet** and **Blank design**, Open, and your recent files. Start drawing (or click **Blank canvas**) and it goes. Clear **Show at start** to stop it, or turn it back on in **Edit ▸ Settings ▸ General**.
 
 ### Search (Alt+Q)
 
@@ -211,8 +211,8 @@ What goes across is only the style, never the content or its meaning:
 
 A **Format Favorite** is a complete look kept under a name: fill (color, gradient or picture), pattern, see-through amount, shadow, outline and effects (glow, soft edges, bevel, reflection), with an arrow's line and heads, the color and highlight of a structure, and the text's font and color. Give it to anything with one click, like a custom color palette.
 
-- **Save one:** select something with the style you want, then right-click it ▸ **Save Format as Favorite…** (or **+** in the **Format Favorites** gallery on the **Home** tab, or **Edit ▸ Save Format as Favorite…**) and give it a name.
-- **Use one:** select what should take the style and click the favorite's card in the gallery, or right-click ▸ **Format Favorites** ▸ its name, or **Edit ▸ Format Favorites…**. It is one step to undo.
+- **Save one:** select something with the style you want, then right-click it ▸ **Save Format as Favorite…** (or **+** in the **Format Favorites** gallery on the **Home** tab, or **Format ▸ Favorites ▸ Save Format as Favorite…**) and give it a name.
+- **Use one:** select what should take the style and click the favorite's card in the gallery, or right-click ▸ **Format Favorites** ▸ its name, or **Format ▸ Favorites ▸ Format Favorites…**. It is one step to undo.
 - **Change one:** right-click its card for **Update to Match Selection**, **Rename…**, **Move Earlier** and **Delete**.
 
 Favorites are kept with your settings, not in a file, so the same ones are there in every canvas, presentation, design, document and spreadsheet (in a document, a favorite gives its text look). In a spreadsheet the gallery is on the **Home** tab beside **Styles**: a favorite gives the selected cells its fill, font, color, alignment and, when its outline has a color, thin borders of that color, or gives a selected shape or text box its fill, outline and font; **+** there saves the style of the selected cells or shape. The things you paint keep their formatting when saved, in every format.

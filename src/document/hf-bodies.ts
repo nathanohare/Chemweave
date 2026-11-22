@@ -205,7 +205,7 @@ export function bodyAsZones(body: HfBody, t: Pick<DocText, 'styles' | 'objects'>
   return out;
 }
 
-/** A ready-made header or footer (Header ▾ and Footer ▾): its left, centre and right text ({title} and {author} from File ▸ Properties) and where the page number goes (-1: none). */
+/** A ready-made header or footer (Header ▾ and Footer ▾): its left, centre and right text ({title} and {author} from Insert ▸ Quick Parts ▸ Document Properties…) and where the page number goes (-1: none). */
 export interface HfPreset { kind: 'header' | 'footer'; name: string; zones: [string, string, string]; number: number; prefix?: string }
 
 export const HF_PRESETS: HfPreset[] = [

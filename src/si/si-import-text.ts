@@ -290,8 +290,8 @@ function authorsOf(runs: Run[]): Author[] {
 
 // ---------------------------------------------------------------------- the sections
 
-const NOTE_TOC = 'The program makes its own table of contents, so this one is not imported.';
-const NOTE_SPECTRA = 'The program prints the spectra in its own Spectra section, so this section is not imported (tick it to import its text anyway).';
+const NOTE_TOC = 'Chemweave makes its own table of contents, so this one is not imported.';
+const NOTE_SPECTRA = 'Chemweave prints the spectra in its own Spectra section, so this section is not imported (check it to import its text anyway).';
 
 /** Fill in plan.cover, plan.sections and plan.references. */
 export function outline(plan: ImportPlan, bodySize: number): void {

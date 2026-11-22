@@ -140,7 +140,7 @@ export class SheetPage {
     const v = this.view, R = v.sel.range, { r, c } = v.sel.active;
     const wholeRows = R.c1 === 0 && R.c2 >= MAX_COLS - 1, wholeCols = R.r1 === 0 && R.r2 >= MAX_ROWS - 1;
     const row = wholeCols ? 0 : wholeRows ? R.r1 : r, col = wholeRows ? 0 : wholeCols ? R.c1 : c;
-    if (!row && !col) { this.host.flash('Pick a cell below or to the right of where the new page should start.'); return; }
+    if (!row && !col) { this.host.flash('Select a cell below or to the right of where the new page should start.'); return; }
     const ps = this.setup;
     this.set('Insert page break', { rowBreaks: row ? toggleBreak(ps?.rowBreaks, row, true) : ps?.rowBreaks, colBreaks: col ? toggleBreak(ps?.colBreaks, col, true) : ps?.colBreaks });
     this.view.showPageBreaks = true;
@@ -263,7 +263,7 @@ export class SheetPage {
     const words = (h: HeaderFooter | undefined, k: keyof HeaderFooter) => codesToWords(h?.[k] ?? '');
     const SUGGEST = ['&[Page]', 'Page &[Page]', 'Page &[Page] of &[Pages]', '&[Tab]', '&[File]', '&[Date]', '&[Time]', '&[Date] &[Time]', 'Confidential', 'Prepared by '];
     const part = (prefix: string, label: string, h: HeaderFooter | undefined): Field[] => (['left', 'center', 'right'] as const).map((k) => ({
-      name: `${prefix}-${k}`, label: `${label}: ${k === 'center' ? 'centre' : k}`, value: words(h, k), suggestions: SUGGEST,
+      name: `${prefix}-${k}`, label: `${label}: ${k}`, value: words(h, k), suggestions: SUGGEST,
     }));
     const got = await ask('Header and Footer', [
       ...part('h', 'Header', ps.header),

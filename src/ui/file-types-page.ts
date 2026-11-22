@@ -65,23 +65,15 @@ export async function fileTypesPage(host: FileTypesHost): Promise<void> {
   addInfo(figName, 'When a document\'s structures aren\'t figures yet (such as a Word file from ChemDraw), a bar above the pages offers Make Figures. Don\'t Ask for This File on the bar turns it off for that document. Make All Structures Figures… stays on the right-click menu.');
   figRow.append(figBox, figName);
   const saveFigures = () => { if (figBox.checked !== figWas) host.figures.set(figBox.checked); };
-  const note = (text: string) => {
-    const p = document.createElement('p');
-    p.className = 'muted';
-    p.textContent = text;
-    form.append(p);
-    return p;
-  };
   const buttons = document.createElement('p');
   buttons.className = 'ask-buttons';
   const done = () => { if (d.open) d.close(); d.remove(); };
 
   if (host.platform !== 'windows') {
-    subhead('File Types');
-    note(host.platform === 'web'
+    subhead('File Types', host.platform === 'web'
       ? 'In the web version, open files with File ▸ Open or drag them onto the window. The desktop app can open files directly.'
       : host.platform === 'mac'
-        ? 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files: right-click a file in Finder and choose Open With. To always open a file type here, choose File ▸ Get Info in Finder, pick Chemweave under Open with, and click Change All.'
+        ? 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files: right-click a file in Finder and choose Open With. To always open a file type here, choose File ▸ Get Info in Finder, choose Chemweave under Open with, and click Change All.'
         : 'Chemweave is offered for .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket, .cml, .docx, .pptx and .xlsx files in your file manager\'s Open With menu. Your desktop\'s settings (Default Applications) choose which program opens each file type.');
     subhead('Documents from Other Programs');
     form.append(figRow);

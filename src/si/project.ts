@@ -34,6 +34,8 @@ export const COMPOUNDS_DIR = 'compounds';
 export const COMPOUND_FILE = 'compound.json';
 export const SCHEME_FILE = 'scheme.json';
 export const STRUCTURE_FILE = 'structure.mol';
+/** A compound's stored files and folders (Store additional files and folders: never printed). */
+export const PRIVATE_DIR = 'private';
 export const NOTES_FILE = 'notes.txt';
 export const TEXT_CONTENT_FILE = 'content.txt';
 /** A new general procedure's compound sentence (SI Assistant's). */
@@ -728,9 +730,9 @@ export class SiProject {
   // ---------------------------------------------------------------- sections
 
   /** A new section at `index` among the top-level ones, or in the Custom section `parentId`. */
-  addSection(type: 'text' | 'data' | 'file', name: string, index?: number, parentId: string | null = null): Promise<SiSection> { return this.exclusive(() => this.addSectionNow(type, name, index, parentId)); }
+  addSection(type: 'text' | 'data' | 'file' | 'xray', name: string, index?: number, parentId: string | null = null): Promise<SiSection> { return this.exclusive(() => this.addSectionNow(type, name, index, parentId)); }
 
-  private async addSectionNow(type: 'text' | 'data' | 'file', name: string, index?: number, parentId: string | null = null): Promise<SiSection> {
+  private async addSectionNow(type: 'text' | 'data' | 'file' | 'xray', name: string, index?: number, parentId: string | null = null): Promise<SiSection> {
     this.checkWritable();
     const parent = parentId ? this.section(parentId) : null;
     if (parent && (parent.type !== 'text' || this.depth(parent) >= MAX_SECTION_DEPTH)) throw new SiProjectError(`A sub-section can only go in a Custom section, at most ${MAX_SECTION_DEPTH} levels deep.`);
@@ -739,6 +741,8 @@ export class SiProject {
     const data: Json = { id, type, name };
     if (type === 'file') Object.assign(data, { file: null, heading: '', caption: '' });
     if (type === 'data') Object.assign(data, { id_table: [], default_fields: cloneJson(DEFAULT_SECTION_FIELDS), compound_order: [] });
+    // (as SI Assistant makes one, SPEC §13v: the CIF in "file", the view, the compound it shows, the captions and the crystal data table)
+    if (type === 'xray') Object.assign(data, { file: null, block: '', view: {}, compound: '', anchored: false, caption: '', table: true, table_caption: '', table_values: {}, table_hidden: [] });
     const s: SiSection = { id, type, name, folder, data, items: [], children: [], parentId };
     await this.saveSection(s);
     if (type === 'text') { await this.folder.writeText(join(folder, TEXT_CONTENT_FILE), ''); }
@@ -1389,6 +1393,42 @@ export class SiProject {
       originals = stem !== file ? [`${stem}.cdxml`, `${stem}.emf`].filter((x) => x !== file && !used.has(x.toLowerCase())).map((x) => this.attachmentPath(c, def, x)) : [];
     }
     await this.moveToTrash([path, ...originals], 'compound_file', file, { compound_id: c.id, field_key: def.key, item: nameOf(path), item_values: cloneJson(item), compound_name: compoundName(c) });
+    (items as Json[]).splice((items as Json[]).indexOf(item), 1);
+    await this.saveCompound(c);
+  }
+
+  // ---- Store additional files and folders: in the compound's private/ folder, listed in private_files (never printed)
+
+  /** Copy a file into the compound's private/ folder and list it (as SI Assistant does: file, kind, note); gives the name used. */
+  async addPrivateFile(c: SiCompound, name: string, bytes: Uint8Array): Promise<string> {
+    const pick = await this.addAttachment(c, PRIVATE_DIR, name, bytes);
+    const values = valuesOf(c);
+    const items = Array.isArray(values.private_files) ? (values.private_files as Json[]) : (values.private_files = []) as Json[];
+    items.push({ file: pick, kind: 'file', note: '' });
+    await this.saveCompound(c);
+    return pick;
+  }
+
+  /** A stored file's (or folder's) note. */
+  async setPrivateNote(c: SiCompound, name: string, note: string): Promise<void> {
+    this.checkWritable();
+    const items = valuesOf(c).private_files;
+    const item = Array.isArray(items) ? (items as Json[]).find((i) => isObj(i) && i.file === name) : undefined;
+    if (!item || str(item.note) === note) return;
+    item.note = note;
+    await this.saveCompound(c);
+  }
+
+  /** Move a stored file or folder to the Trash and take it off the list. */
+  async removePrivateItem(c: SiCompound, name: string): Promise<void> {
+    this.checkWritable();
+    const items = valuesOf(c).private_files;
+    if (!Array.isArray(items)) return;
+    // (a plain name only: a hand-edited "../structure.mol" never leaves private/)
+    const item = (items as Json[]).find((i) => isObj(i) && i.file === name && /^[^/\\]+$/.test(name) && !/^\.\.?$/.test(name));
+    if (!item) return;
+    const path = join(c.folder, PRIVATE_DIR, name);
+    if (await this.folder.exists(path)) await this.moveToTrash([path], 'compound_file', name, { compound_id: c.id, field_key: 'private_files', item: name, item_values: cloneJson(item), compound_name: compoundName(c) });
     (items as Json[]).splice((items as Json[]).indexOf(item), 1);
     await this.saveCompound(c);
   }

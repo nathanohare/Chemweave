@@ -6,9 +6,9 @@ This page covers Spreadsheet mode: cells and formulas, structures in cells, the 
 
 ## Starting a spreadsheet
 
-Click **+** at the end of the tab strip and pick **Spreadsheet (Tables, Charts, and Dashboards)**, or choose **File ▸ New ▸ Spreadsheet**. While a spreadsheet is showing, Ctrl+N starts another one.
+Click **+** at the end of the tab strip and pick **Spreadsheet (Tables, Charts, and Dashboards)**, or choose **File ▸ New ▸ Blank spreadsheet**. While a spreadsheet is showing, Ctrl+N starts another one.
 
-**File ▸ New ▸ Spreadsheet** opens a blank workbook with a window of templates over it; click outside the window to keep the blank workbook, or pick one: **Reactions** (reaction table with the best entry found for you, substrate scope table, 24- and 96-well screening plates shaded by yield, kinetics time course with a chart, k and half-life), **Reagents and stock** (reagent sheet with the percent yield calculated, chemical inventory, stock solution calculator, gas cylinder and solvent still log), **Analysis** (HPLC/GC calibration curve, ee and er from HPLC peak areas, NMR yield with an internal standard, organolithium titration) and **Lab management** (order tracker, instrument booking, group duties schedule). Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
+**File ▸ New ▸ Blank spreadsheet** opens a blank workbook with a window of templates over it; click outside the window to keep the blank workbook, or pick one: **Reactions** (reaction table with the best entry found for you, substrate scope table, 24- and 96-well screening plates shaded by yield, kinetics time course with a chart, k and half-life), **Reagents and stock** (reagent sheet with the percent yield calculated, chemical inventory, stock solution calculator, gas cylinder and solvent still log), **Analysis** (HPLC/GC calibration curve, ee and er from HPLC peak areas, NMR yield with an internal standard, organolithium titration) and **Lab management** (order tracker, instrument booking, group duties schedule). Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
 
 Spreadsheets open from .xlsx, .xlsm, .xls and .ods files as well as text and SD files; see [File types](files-and-sharing.md#file-types).
 
@@ -38,7 +38,7 @@ When the pointer turns into a pointing hand over a cell, that cell holds a struc
 
 ### Property columns
 
-Click in your table and choose **Home** tab ▸ **Properties** (or **Insert ▸ Spreadsheet ▸ Insert Property Columns…**). Check the columns you want:
+Click in your table and choose **Home** tab ▸ **Properties** (or **Insert ▸ Property Columns…**). Check the columns you want:
 
 Formula, MW, Exact mass, HRMS m/z, cLogP, TPSA, H-bond donors, H-bond acceptors, Rotatable bonds, logS, pKa, pKaH, bp (est.), mp (est.), SMILES, InChIKey and **Duplicate of**. The last five before SMILES are estimates from the structure, not measured values.
 
@@ -48,7 +48,7 @@ Any calculated value can be typed over, for example with a measured mass. The ce
 
 ### Reagent tables
 
-**Home** tab ▸ **Reagent Table** (or **Insert ▸ Spreadsheet ▸ New Reagent Table**) adds a worksheet set up for a reaction. Type the limiting reagent's mmol, then for each reagent draw its structure (or type its SMILES or name into the **Structure** column, and it is drawn there) and its equivalents. MW, mmol and mass (mg) work themselves out; type a density (g/mL) or a concentration (M) and the volume (µL) appears. Any number can be typed over, for example the MW of a salt or hydrate, and the rest of the row follows.
+**Home** tab ▸ **Reagent Table** (or **Insert ▸ Tables ▸ New Reagent Table**) adds a worksheet set up for a reaction. Type the limiting reagent's mmol, then for each reagent draw its structure (or type its SMILES or name into the **Structure** column, and it is drawn there) and its equivalents. MW, mmol and mass (mg) work themselves out; type a density (g/mL) or a concentration (M) and the volume (µL) appears. Any number can be typed over, for example the MW of a salt or hydrate, and the rest of the row follows.
 
 ## Formulas
 
@@ -177,7 +177,7 @@ Notes and comments move with their cells when you sort, insert or delete rows, a
 
 ## Data validation
 
-**Home** tab ▸ **Validation…** (or **Format ▸ Spreadsheet ▸ Data Validation…**) sets what may be typed in the selected cells, as Excel's Data Validation does:
+**Home** tab ▸ **Validation…** (or **Format ▸ Data Validation…**) sets what may be typed in the selected cells, as Excel's Data Validation does:
 
 - **Settings:** allow a whole number, a decimal, a date or time, a text length (each between limits, or greater than, less than…), a **List**, or a **Custom** formula. A limit can be a number or a formula such as `=B1` or `=TODAY()`. A list is items separated by commas (`Pd(OAc)2, PdCl2, Pd(PPh3)4`) or a reference to cells that hold them (`=$H$2:$H$20`, or on another sheet, `=Reagents!$A$2:$A$40`).
 - **Input Message:** a title and message shown beside the cell while it is selected.
@@ -277,7 +277,7 @@ In the chart panel, each series of a scatter chart has **Sticks** (peaks drawn u
 To compare a measured HRMS isotope pattern with the calculated one:
 
 1. Put the compound in a cell: draw a structure, or type SMILES or a formula such as `C14H12BrNO`.
-2. With that cell selected, choose **Home** tab ▸ **Isotopes** (or **Insert ▸ Spreadsheet ▸ Isotope Pattern…**, or the right-click menu).
+2. With that cell selected, choose **Home** tab ▸ **Isotopes** (or **Insert ▸ Isotope Pattern…**, or the right-click menu).
 3. Fill in the window:
    - **Compound:** the cell you are on, or a formula typed in.
    - **Ion:** [M+H]+ to start; pick another or type any adduct ([M+Na]+, [M−H]−, [M+2H]2+…).

@@ -14,6 +14,7 @@ import { tokenize } from '../chem/labels';
 import { idealGroups, sizeRanks, type NewmanGroup } from '../chem/newman';
 import { elementNumber } from '../chem/elements';
 import { OLD_RING_ARC, type EyeStyle, type NewmanLook } from './newman-prefs';
+import { frameRedrawn } from './frame-redrawn';
 import { keepLabels, readLabels } from './frame-labels';
 
 export { DEFAULT_NEWMAN_PREFS, NEWMAN_LOOK, OLD_RING_ARC, parseNewmanPrefs, type EyeStyle, type NewmanLook, type NewmanPrefs, type NewmanText, type RankLook, type RingArcLook } from './newman-prefs';
@@ -372,6 +373,8 @@ function drawSawhorse(doc: Doc, d: NewmanData, c: Vec): NewmanParts {
  */
 export function putNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
+  // (a frame changed in another program is redrawn too, in this edit's undo step; review F1d-R01)
+  frameRedrawn(doc, old);
   const was = readLabels(doc, old);
   if (old?.frame) {
     for (const x of old.frame.captions) doc.removeCaption(x);
@@ -386,7 +389,7 @@ export function putNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec, id?: numb
   const name = d.kind === 'newman' ? 'Newman projection' : 'Sawhorse projection';
   // (looks set on its labels by hand stay)
   const madeLabels = keepLabels(doc, was, frame);
-  if (old) { doc.updateShape(old.id, { ...b, frame, newman: d, madeLabels }); return old.id; }
+  if (old) { doc.updateShape(old.id, { ...b, frame, newman: d, madeLabels, editedOutside: undefined }); return old.id; }
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, newman: d, name, madeLabels }).id;
 }
 

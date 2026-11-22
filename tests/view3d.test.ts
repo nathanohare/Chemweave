@@ -2,22 +2,28 @@
 // Views of a 3-D model that draw cleanly: from most angles a cage such as quinine's puts an atom
 // on top of another (or on a bond) once flattened, so Place on Page first turns the model the
 // least it takes to keep them apart, and Best View finds the cleanest view outright.
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { Resources } from 'openchemlib';
 import { Doc } from '../src/model';
-import { addMolfile, toMolfile } from '../src/chem/molfile';
+import { toMolfile } from '../src/chem/molfile';
+import { addMolfile } from '../src/io/chem-formats';
 import { buildModel, type Model3d } from '../src/chem/model3d-build';
 import { placeView } from '../src/chem/place3d';
 import { StructureChecks } from '../src/chem/warnings';
 import { skeleton, clutter, cleanerNearby, cleanestView, turn, axisTurn, ident, type P3 } from '../src/chem/view3d';
+
+// These build 3-D models with the engine. On their own they take seconds, but in a full
+// parallel run they can take minutes, so every test and hook here gets a generous time limit.
+const SLOW = 240_000;
+vi.setConfig({ testTimeout: SLOW, hookTimeout: SLOW });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RDKit: any;
 beforeAll(async () => {
   RDKit = await createRequire(import.meta.url)('@rdkit/rdkit')();
   Resources.registerFromNodejs();
-}, 30000);
+}, SLOW);
 
 const QUININE = 'COc1ccc2nccc([C@@H](O)[C@@H]3C[C@@H]4CCN3C[C@@H]4C=C)c2c1';
 
@@ -69,7 +75,7 @@ describe('quinine from any angle', () => {
     want = m.get_smiles();
     m.delete();
     model = buildModel(molblock, 2, 1)!;
-  }, 30000);
+  }, SLOW);
 
   it('is tangled from most angles, and a small turn (or the cleanest view) frees it', () => {
     const base = baseOf(model), sk = skeleton(model.atoms.map((a) => a.z), model.bonds, base);
@@ -109,7 +115,7 @@ describe('quinine from any angle', () => {
     }
     // as before, the window takes back a view whose wedges can't read right; most must
     expect(kept).toBeGreaterThanOrEqual(6);
-  }, 30000);
+  }, SLOW);
 
   it('turns the cleanest view in the page to lie like the drawing', () => {
     const base = baseOf(model), sk = skeleton(model.atoms.map((a) => a.z), model.bonds, base);

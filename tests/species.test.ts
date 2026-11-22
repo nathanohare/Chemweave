@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { Doc } from '../src/model';
 import { toMolfile } from '../src/chem/molfile';
 import { allSpecies, captionChemWarning, captionReading, captionSpecies, groupedIonFragments, groupedIons, placeSpecies, reagentSpecies, readSpecies, speciesFormula, speciesSmiles } from '../src/chem/species';
-import { addMolfile } from '../src/chem/molfile';
+import { addMolfile } from '../src/io/chem-formats';
 import { reactionSteps, schemeItems } from '../src/chem/reaction';
 import { plainMeasure } from '../src/chem/reaction';
 import { setSideText } from '../src/chem/arrow-text';

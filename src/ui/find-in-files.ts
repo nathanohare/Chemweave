@@ -113,7 +113,7 @@ export class FindInFilesWindow {
     d.append(
       el('div', { className: 'refs-head' }, withInfo(el('h2', { textContent: 'Find Structure in Files' }), `Searches a folder for a structure in ChemDraw drawings (CDXML, CDX), Word, PowerPoint and Excel files, and other chemistry files (MOL, SDF, RXN, MRV, KET, CML). Unchanged files aren't read again, so repeat searches are fast.`)),
       el('div', { className: 'ask-row refs-style' }, el('label', { textContent: 'Folder' }), this.folder,
-        button('Choose…', 'Pick the folder to search', () => void this.choose())),
+        button('Choose…', 'Choose the folder to search', () => void this.choose())),
       el('label', { className: 'ref-own' }, this.sub, el('span', { textContent: 'And the folders inside it' })),
       el('div', { className: 'ask-row refs-style' }, el('label', { textContent: 'Structure' }), this.query,
         button('Use Selected', 'Search for the structure selected in the drawing', () => void this.useSelected())),
@@ -208,7 +208,7 @@ export class FindInFilesWindow {
       const secs = ((Date.now() - t0) / 1000).toFixed(1);
       this.status.textContent = `${r.stopped ? 'Stopped. ' : ''}Found ${r.hits.length ? `${r.hits.length} structure${r.hits.length === 1 ? '' : 's'} in ${files} file${files === 1 ? '' : 's'}` : 'nothing'} (${listed.files.length} file${listed.files.length === 1 ? '' : 's'} searched, ${r.read} read, in ${secs} s).`
         + (r.failed.length ? ` ${r.failed.length} couldn't be read: ${r.failed.slice(0, 3).map((f) => fileOf(f.path)).join(', ')}${r.failed.length > 3 ? '…' : ''}.` : '')
-        + (listed.complete ? '' : ' (Only the first 20,000 files were searched: pick a smaller folder.)');
+        + (listed.complete ? '' : ' (Only the first 20,000 files were searched: choose a smaller folder.)');
       if (r.hits.length) this.picked = 0;
     } catch (e) {
       this.status.textContent = e instanceof Error ? e.message : String(e);

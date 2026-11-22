@@ -77,7 +77,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     const form = el('form');
     d.append(form);
     form.append(
-      el('h2', { textContent: 'Drawing style' }),
+      el('h2', { textContent: 'Drawing Style' }),
     );
 
     const grid = el('div', { className: 'md-grid' });

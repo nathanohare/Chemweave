@@ -129,7 +129,7 @@ export const LIBRARY_FIELDS: readonly FieldDef[] = [
     { key: 'phase', label: 'Stationary phase', kind: 'combo', choices: STATIONARY_PHASES, placeholder: 'SiO₂', learn: true },
     { key: 'eluent', label: 'Eluent', kind: 'combo', placeholder: '10% EtOAc/hexanes', learn: true, learnAlso: ['rf.eluent'] },
     text('sentence', 'Printed as', { placeholder: 'automatic' }),
-  ], filledParts: ['method'], description: 'Printed as a sentence at the end of the experimental procedure, e.g. “The crude product was purified by flash column chromatography (SiO₂, 10% EtOAc/hexanes).” Type in “Printed as” to print your own sentence instead.' },
+  ], filledParts: ['method'], description: 'Printed as a sentence at the end of the experimental procedure, e.g. “The crude product was purified by flash column chromatography (SiO₂, 10% EtOAc/hexanes).” Type in “Printed as” to print a custom sentence instead.' },
   { key: 'ir', label: 'IR', kind: 'parts', parts: [{ key: 'method', label: 'Method', kind: 'combo', choices: IR_METHODS, default: 'ATR' }, text('bands', 'Bands (cm⁻¹)', { placeholder: '2925, 1715, 1250' })], filledParts: ['bands'] },
   { key: 'rotation', label: 'Optical rotation [α]D', kind: 'parts', parts: [
     num('value', '[α]D', { placeholder: '+23.5' }), num('temperature', 'T', { placeholder: '20', suffix: '°C' }),

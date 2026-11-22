@@ -6,16 +6,16 @@ This page covers Presentation mode: building a deck, the slide master and templa
 
 ## Starting a deck
 
-Click **+** at the end of the tab strip and pick **Presentation (Slideshow)**, or choose **File ▸ New ▸ Presentation**. While a deck is showing, Ctrl+N starts another one. Each open file has its own tab: Ctrl+Tab moves between tabs and Ctrl+W closes one.
+Click **+** at the end of the tab strip and pick **Presentation (Slideshow)**, or choose **File ▸ New ▸ Blank presentation**. While a deck is showing, Ctrl+N starts another one. Each open file has its own tab: Ctrl+Tab moves between tabs and Ctrl+W closes one.
 
 The Presentation ribbon has PowerPoint's tabs: **Home** (slides, sections, font, paragraph), **Insert** (pictures, text boxes, tables, shapes), **Design & Transitions** (size, templates, slide master, layouts, drawing style, format background, and the transitions between slides), **Animations**, **Slide Show**, **Review** and **View** (Normal, Slide Sorter, Slide Master, Edit Layouts, Themes). The **Presentation** submenus of the **Edit**, **View**, **Insert** and **Format** menus hold the same commands.
 
 ## Slides and layouts
 
 - **New slide:** Ctrl+M, **Home** tab ▸ **New Slide**, or **+ New slide** under the slide list. The new slide goes after the current one.
-- **Layout:** pick one from **Layout** on the **Home** tab or **Format ▸ Presentation ▸ Slide Layout**: Title Slide, Title and Content, Two Content, Title Only, Blank, or a layout of your own (see [Layouts](#layouts)).
+- **Layout:** pick one from **Layout** on the **Home** tab or **Format ▸ Slide Layout**: Title Slide, Title and Content, Two Content, Title Only, Blank, or a layout of your own (see [Layouts](#layouts)).
 - **Text:** click "Click to add title" (or any placeholder) and type. Lists and the chemistry typing helpers work as in any text box, so CH2Cl2 gets its subscripts.
-- **Slide size:** **Design & Transitions** tab ▸ **Size**, or **Format ▸ Presentation ▸ Slide Size ▸ Widescreen (16:9)** / **Standard (4:3)** / **Custom Slide Size…** (see [Slide size](#slide-size)).
+- **Slide size:** **Design & Transitions** tab ▸ **Size**, or **Format ▸ Slide Size ▸ Widescreen (16:9)** / **Standard (4:3)** / **Custom Slide Size…** (see [Slide size](#slide-size)).
 - **Speaker notes:** type them in the box under the slide. A slide with notes shows a small mark in the slide list. **View** tab ▸ **Notes** (or **✎ Notes** in the status bar) hides or shows the box.
 - **Pane sizes:** drag the slide list's right edge to make it wider or narrower (the pictures grow with it), and drag the top edge of the notes box to make it taller or shorter. Double-click an edge for the usual size. The sizes are remembered.
 
@@ -29,14 +29,14 @@ The list down the left shows every slide.
 | Pick several | Ctrl+click or Shift+click |
 | Delete the selected slides | Delete, or **Home** tab ▸ **Delete** |
 | Duplicate the selected slides | Ctrl+D, or **Home** tab ▸ **Duplicate** |
-| Copy, cut or paste whole slides | Ctrl+C, Ctrl+X, Ctrl+V in the list, or **Edit ▸ Presentation ▸ Copy Slides** / **Paste Slides** |
+| Copy, cut or paste whole slides | Ctrl+C, Ctrl+X, Ctrl+V in the list, or **Edit ▸ Slides ▸ Copy Slides** / **Paste Slides** |
 | Hide a slide from the show | **Home** tab ▸ **Hide**, **Slide Show** tab ▸ **Hide Slide**, or right-click ▸ **Hide Slide** |
 | See every slide command | Right-click in the list |
 | Go to the next or previous slide | Page Down / Page Up |
 
 ### Sections
 
-Sections split a long deck into named parts, as in PowerPoint. Pick a slide and choose **Home** tab ▸ **Section ▾** ▸ **Add Section** (or right-click in the slide list ▸ **Add Section**, or **Format ▸ Presentation ▸ Sections**): a new section starts at that slide and you name it. The slides before the first section go in a **Default Section**.
+Sections split a long deck into named parts, as in PowerPoint. Pick a slide and choose **Home** tab ▸ **Section ▾** ▸ **Add Section** (or right-click in the slide list ▸ **Add Section**, or **Format ▸ Sections**): a new section starts at that slide and you name it. The slides before the first section go in a **Default Section**.
 
 - **Fold a section:** click the arrow on its heading. **View** tab ▸ **Collapse All** / **Expand All** fold or open them all. Folding is for the screen only.
 - **Move a section with all its slides:** drag its heading up or down, or right-click it ▸ **Move Section Up** / **Move Section Down**.
@@ -49,7 +49,7 @@ New slides go in the section of the slide before them. Sections are saved as Pow
 
 ### Slide Sorter
 
-**View** tab ▸ **Slide Sorter** (or **View ▸ Presentation ▸ Slide Sorter**) shows every slide in rows of larger pictures, under their section headings. Drag slides (or whole sections) to reorder them, pick several with Ctrl or Shift, and use the same keys and right-click commands as in the slide list. Double-click a slide, or press Enter, to open it in **Normal** view.
+**View** tab ▸ **Slide Sorter** (or **View ▸ Slide Sorter**) shows every slide in rows of larger pictures, under their section headings. Drag slides (or whole sections) to reorder them, pick several with Ctrl or Shift, and use the same keys and right-click commands as in the slide list. Double-click a slide, or press Enter, to open it in **Normal** view.
 
 ### Outline View, Notes Page and Reading View
 
@@ -76,11 +76,11 @@ The same group's **Notes** button shows or hides the speaker notes under the sli
 
 ### Copying slides between decks
 
-Pick slides in one deck's list and press Ctrl+C, then click in the list of another deck (or the same one) and press Ctrl+V: the copies go in after the slide selected. They take the style of the deck they go into, as PowerPoint's *Use Destination Theme* does. When that changes how they look, a **Keep source formatting** button appears for a few seconds to paste them again with their own background, fonts and colors; **Edit ▸ Presentation ▸ Paste Slides (Keep Source Formatting)** (or right-click ▸ **Paste (Keep Source Formatting)**) does that immediately. Structures drawn in another drawing style are redrawn in this deck's, or keep their formatting when you keep the source formatting. Slides from a deck of another size stay centered, with their titles and text boxes moved to this deck's places.
+Pick slides in one deck's list and press Ctrl+C, then click in the list of another deck (or the same one) and press Ctrl+V: the copies go in after the slide selected. They take the style of the deck they go into, as PowerPoint's *Use Destination Theme* does. When that changes how they look, a **Keep source formatting** button appears for a few seconds to paste them again with their own background, fonts and colors; **Edit ▸ Slides ▸ Paste Slides (Keep Source Formatting)** (or right-click ▸ **Paste (Keep Source Formatting)**) does that immediately. Structures drawn in another drawing style are redrawn in this deck's, or keep their formatting when you keep the source formatting. Slides from a deck of another size stay centered, with their titles and text boxes moved to this deck's places.
 
 ### Reusing slides from another file
 
-**Home** tab ▸ **Reuse…** (or **Insert ▸ Presentation ▸ Reuse Slides…**) opens a PowerPoint file and shows its slides. Click the ones you want (Shift+click picks a run of them), check **Keep source formatting** if they should keep their own formatting, and choose **Insert Slide** or **Insert All**. Double-click a slide to put just that one in.
+**Home** tab ▸ **Reuse…** (or **Insert ▸ Slides ▸ Reuse Slides…**) opens a PowerPoint file and shows its slides. Click the ones you want (Shift+click picks a run of them), check **Keep source formatting** if they should keep their own formatting, and choose **Insert Slide** or **Insert All**. Double-click a slide to put just that one in.
 
 ### Comparing two versions of a deck
 
@@ -92,7 +92,7 @@ Pick slides in one deck's list and press Ctrl+C, then click in the list of anoth
 
 ### Canvas slides
 
-A canvas slide has no edge. Draw a whole route across it once, then show it a step or two at a time, so a big intermediate never has to be redrawn on the next slide. **Home** tab ▸ **Canvas Slide** (or **Insert ▸ Presentation ▸ New Canvas Slide**) adds one after the slide you are on. A canvas slide can sit between normal slides, or a whole talk can be one canvas.
+A canvas slide has no edge. Draw a whole route across it once, then show it a step or two at a time, so a big intermediate never has to be redrawn on the next slide. **Home** tab ▸ **Canvas Slide** (or **Insert ▸ Slides ▸ New Canvas Slide**) adds one after the slide you are on. A canvas slide can sit between normal slides, or a whole talk can be one canvas.
 
 The slide show steps through the canvas's **keyframes**. A keyframe is a slide-shaped window on the canvas, drawn as a numbered outline; the one selected is orange.
 
@@ -146,7 +146,7 @@ Opened here again, the slides come back as the canvas slide. If they were change
 
 ## Slide backgrounds
 
-**Design & Transitions** tab ▸ **Format Background** (or **Format ▸ Presentation ▸ Format Background…**, or right-click an empty part of the slide) gives the slide a background of its own:
+**Design & Transitions** tab ▸ **Format Background** (or **Format ▸ Format Background…**, or right-click an empty part of the slide) gives the slide a background of its own:
 
 - **Solid color**, as see-through as you like (see-through backgrounds show white behind them).
 - **Gradient:** linear, radial or rectangular, in any direction or angle, with as many color stops as you want, each with its own place and transparency. **Preset** offers ten ready-made ones to start from.
@@ -161,11 +161,11 @@ Backgrounds are saved as PowerPoint's own, so PowerPoint (and LibreOffice) shows
 
 ## Design templates
 
-**Design & Transitions** tab ▸ **Templates…** (or **Format ▸ Presentation ▸ Slide Templates…**) offers 51 ready-made styles in seven groups: **Light**, **Dark title slide**, **Bright**, **Minimal**, **Bold**, **Classic** and **Chemistry**. Picking one changes the fonts, colors, background and the shapes behind every slide. Your text, structures and pictures stay where they are, and Undo puts the old look back.
+**Design & Transitions** tab ▸ **Templates…** (or **Format ▸ Slide Templates…**) offers 51 ready-made styles in seven groups: **Light**, **Dark title slide**, **Bright**, **Minimal**, **Bold**, **Classic** and **Chemistry**. Picking one changes the fonts, colors, background and the shapes behind every slide. Your text, structures and pictures stay where they are, and Undo puts the old look back.
 
 Check **Also start new presentations with the template I pick** to make it the starting look for new decks. You can change any part of a template afterwards with **Slide Master**.
 
-**File ▸ New ▸ Presentation** opens a new deck with a window of the same templates over it, plus two starter decks under **Teaching** (a **Lecture** and a **Problem session** with question and answer slides for worked mechanisms); click outside the window to keep the deck as it is. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
+**File ▸ New ▸ Blank presentation** opens a new deck with a window of the same templates over it, plus two starter decks under **Teaching** (a **Lecture** and a **Problem session** with question and answer slides for worked mechanisms); click outside the window to keep the deck as it is. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
 
 ### Themes of your own
 
@@ -175,7 +175,7 @@ Your themes appear under **Your themes** at the top of the window, ready to pick
 
 ## Slide size
 
-**Design & Transitions** tab ▸ **Size** ▸ **Custom Slide Size…** (or **Format ▸ Presentation ▸ Slide Size ▸ Custom Slide Size…**) sets any size: pick one of the usual ones (Widescreen, Standard, 16:10, Letter, A4, A3, B4, 35 mm slides, Overhead, Banner, posters) or type the width and height in inches or centimeters, from 1 to 56 inches, and turn it to portrait. Choose how what is on the slides fits the new size:
+**Design & Transitions** tab ▸ **Size** ▸ **Custom Slide Size…** (or **Format ▸ Slide Size ▸ Custom Slide Size…**) sets any size: pick one of the usual ones (Widescreen, Standard, 16:10, Letter, A4, A3, B4, 35 mm slides, Overhead, Banner, posters) or type the width and height in inches or centimeters, from 1 to 56 inches, and turn it to portrait. Choose how what is on the slides fits the new size:
 
 - **Ensure Fit** makes everything as big as fits on the new slide.
 - **Maximize** makes it as big as the slide allows, which can run off the edges.
@@ -279,7 +279,7 @@ Double-click a chart (or right-click ▸ **Edit Chart…**) to change it. Draggi
 A presentation keeps its own reference list, saved inside its PowerPoint file, as a Word document keeps its list.
 
 1. **Insert ▸ Reference Manager…** (or the **Reference Manager** button on the Insert tab) opens the references of every open file, each file in its own group, the one showing first. Add references to the presentation with **Add by DOI…**, **Add by Hand…**, **Import BibTeX / RIS…** or **Paste BibTeX / RIS…**, or copy them from another open file: pick them and choose the presentation in **Copy to…**, drag them onto the presentation's name, or press Ctrl+C and then Ctrl+V on its group. Each file keeps its own copy; a reference a file has already (the same DOI, or the same title and year) isn't added twice.
-2. **Insert ▸ Presentation ▸ References on Slide** checks which references a slide shows. The app writes the lines at the bottom of the slide, above the slide number and footer, and keeps them up to date when a reference is edited, as it does with slide numbers and footers. Pick several slides in the slide list first to tick the same references on all of them. The slide's right-click menu has it too.
+2. **Insert ▸ References ▸ References on Slide…** checks which references a slide shows. The app writes the lines at the bottom of the slide, above the slide number and footer, and keeps them up to date when a reference is edited, as it does with slide numbers and footers. Pick several slides in the slide list first to tick the same references on all of them. The slide's right-click menu has it too.
 3. In the same window choose how the lines look:
    - **Write each as**: journal, year, volume and first page (*Organometallics* **2010**, *29*, 2176.), the first author in front of that, or the full reference. The italics and bold follow the citation style selected in the Reference Manager (ACS until you pick another).
    - **Numbers**: none, 1, 2, 3 on each slide, or numbered through the presentation so they match the References slide.
@@ -287,11 +287,11 @@ A presentation keeps its own reference list, saved inside its PowerPoint file, a
    - **Apply** gives the slides selected this style; **Apply to All** uses it on every slide.
 4. **A References box on the layout** (Slide Master view ▸ **Insert Placeholder ▸ References**) is where slides with that layout list their references, in place of the corner. On a slide, click the box to open its tick list: tick the references it shows, find more in the presentation or your library (they join the presentation when ticked), pick the citation style, or **Add from Library…**, **Add with Zotero…** and **Look…**.
 5. **Insert ▸ References ▾ ▸ Citation** while typing on a slide puts a reference's number in the text at the cursor, in the citation style (raised for ACS), and ticks the reference on the slide ("cited in text" in the tick list). The numbers follow the slide's lines and change when the references or their order change; the lines get numbers if they had none.
-6. **Insert ▸ Presentation ▸ References Slide** adds a slide at the end, titled References, listing the references shown on the slides in the order they first appear (or every reference in the presentation), in full. It keeps itself up to date.
+6. **Insert ▸ References ▸ References Slide…** adds a slide at the end, titled References, listing the references shown on the slides in the order they first appear (or every reference in the presentation), in full. It keeps itself up to date.
 
 In PowerPoint the lines and the References slide's list are ordinary text boxes, so the slides look the same. When the file comes back here they are made again from the references. Slides copied into another presentation bring the references they show with them.
 
-To put a reference anywhere on a slide as text you can edit, use **Insert ▸ Formatted Reference…**.
+To put a reference anywhere on a slide as text you can edit, use **Insert ▸ References ▸ Formatted Reference…**.
 
 ### Citing with Zotero
 
@@ -357,13 +357,13 @@ A highlight can animate on its own, like a shape in PowerPoint, so it can fade i
 
 ### The Animation pane
 
-**Animations** tab ▸ **Animation Pane** (or **View ▸ Presentation ▸ Animation Pane**) lists the slide's animations in the right-hand panel. The numbers are clicks, and small numbered tags beside the objects on the slide show which click brings each one in.
+**Animations** tab ▸ **Animation Pane** (or **View ▸ Animation Pane**) lists the slide's animations in the right-hand panel. The numbers are clicks, and small numbered tags beside the objects on the slide show which click brings each one in.
 
 - Click a row to select its object.
 - Drag rows, or use ▲ and ▼, to change the order.
 - × removes an animation.
 
-**Preview** on the Animations tab (or **View ▸ Presentation ▸ Slide Show ▸ Preview Slide**) plays the slide's transition and animations. Undo and redo work for every change.
+**Preview** on the Animations tab (or **View ▸ Slide Show ▸ Preview Slide**) plays the slide's transition and animations. Undo and redo work for every change.
 
 ## Comments
 
@@ -427,7 +427,7 @@ The bar also picks the pen's color. When the show ends you are asked whether to 
 
 <!-- index: Speaker notes -->
 
-**View ▸ Presentation ▸ Slide Show ▸ Presenter View**, **Slide Show** tab ▸ **Presenter View**, or Alt+F5.
+**View ▸ Slide Show ▸ Presenter View**, **Slide Show** tab ▸ **Presenter View**, or Alt+F5.
 
 With a second screen or projector set to extend the desktop, the slides fill the second screen. Your own screen shows:
 
@@ -446,7 +446,7 @@ With only one screen, the audience's slides open in a window of their own. Drag 
 
 When the show ends, a window lists each slide's time (🎙 marks the ones with narration) and asks whether to keep them. Kept times make the show go on automatically; kept narration goes on each slide as a sound that plays as the slide comes in, and PowerPoint plays it too. Clear **Keep the narration too** to keep only the times. Each slide's time shows on its picture in the slide list.
 
-- **Rehearse from This Slide** and **Record from This Slide…** (**View ▸ Presentation ▸ Slide Show**, or the **Clear** button's menu) start at the slide showing; the slides before it keep what they had.
+- **Rehearse from This Slide** and **Record from This Slide…** (**View ▸ Slide Show**, or the **Clear** button's menu) start at the slide showing; the slides before it keep what they had.
 - **Clear** takes the timing or the narration off the slides selected, or off every slide. Clearing narration leaves the times.
 - **Set Up Show** can play the show without narration or without timings, without clearing them.
 

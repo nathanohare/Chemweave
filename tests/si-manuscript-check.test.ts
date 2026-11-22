@@ -21,7 +21,9 @@ import { listTrash, restoreFromTrash } from '../src/si/trash';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RDKit: any;
 const DIR = join(__dirname, 'fixtures', 'manuscript');
-const expected = JSON.parse(readFileSync(join(DIR, 'expected.json'), 'utf8'));
+// (SI Assistant's output, with its one British spelling in a message given in American, as the UI
+// writes it (G5-09); fingerprints stay SI Assistant's)
+const expected = JSON.parse(readFileSync(join(DIR, 'expected.json'), 'utf8').replace(/a labelled structure/g, 'a labeled structure'));
 const bytesOf = (name: string): Uint8Array => new Uint8Array(readFileSync(join(DIR, 'files', name)));
 const FOOTNOTE_B = 'Reaction run for 48 h at 60 °C.';
 const FOOTNOTE_C = 'Using 10 mol% catalyst in toluene.';

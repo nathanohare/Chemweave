@@ -1,6 +1,6 @@
 // Home ▸ Trash in the SI Project tab: the project's Trash (its trash/ folder, shared with Chem SI
 // Assistant), newest first: what each item was, where it came from, when and by whom it was
-// deleted. Restore puts the item picked back; Delete removes it for good; Empty Trash deletes
+// deleted. Restore puts the selected item back; Delete removes it for good; Empty Trash deletes
 // everything (both ask first). Items Chemweave can't put back say so, and SI Assistant restores them.
 
 import { showDialog } from './dialog-host';
@@ -52,10 +52,10 @@ export async function openTrash(p: SiProject, changed: (message: string) => void
     if (primary) b.className = 'primary';
     return b;
   };
-  const empty = button('Empty Trash', 'Delete everything in the Trash for good (it asks first)');
-  const del = button('Delete', 'Delete the item picked for good (it asks first)');
+  const empty = button('Empty Trash', 'Delete everything in the Trash permanently (it asks first)');
+  const del = button('Delete', 'Delete the selected item permanently (it asks first)');
   const close = button('Close', '');
-  const restore = button('Restore', 'Put the item picked back where it was', true);
+  const restore = button('Restore', 'Restore the selected item to where it was', true);
   buttons.append(empty, del, close, restore);
   form.append(h, list, say, buttons);
   d.append(form);
@@ -132,12 +132,12 @@ export async function openTrash(p: SiProject, changed: (message: string) => void
     void busy(async () => {
       await deleteFromTrash(p, e.id);
       say.textContent = `Deleted “${e.name}”.`;
-    }, 'Delete from Trash', async () => (await askChoice('Delete from Trash', `Delete “${e.name}” for good? Edit ▸ Undo brings it back while this step is still in the Undo history and the project is open; after that it can’t be restored, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep')) === 'delete');
+    }, 'Delete from Trash', async () => (await askChoice('Delete from Trash', `Delete “${e.name}” permanently? Edit ▸ Undo brings it back while this step is still in the Undo history and the project is open; after that it can’t be restored, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep')) === 'delete');
   });
   empty.addEventListener('click', () => void busy(async () => {
     await emptyTrash(p);
     say.textContent = 'The Trash was emptied.';
-  }, 'Empty Trash', async () => (await askChoice('Empty Trash', `Delete all ${entries.length} item${entries.length === 1 ? '' : 's'} in the Trash for good? Edit ▸ Undo brings them back while this step is still in the Undo history and the project is open; after that they can’t be restored, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'empty', label: 'Empty Trash', primary: true }], 'keep')) === 'empty'));
+  }, 'Empty Trash', async () => (await askChoice('Empty Trash', `Delete all ${entries.length} item${entries.length === 1 ? '' : 's'} in the Trash permanently? Edit ▸ Undo brings them back while this step is still in the Undo history and the project is open; after that they can’t be restored, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'empty', label: 'Empty Trash', primary: true }], 'keep')) === 'empty'));
   close.addEventListener('click', () => d.close());
   list.addEventListener('keydown', (ev) => {
     if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown' && ev.key !== 'Enter') return;

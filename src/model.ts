@@ -1194,6 +1194,12 @@ export interface Shape {
    * shrinks and moves as they change). Moving or resizing the frame by hand stops it following.
    */
   frame?: Frame;
+  /**
+   * A frame's drawing whose texts were changed in another program (ChemDraw) in a way its settings
+   * can't follow: shown as that program left it, the settings kept; an edit that redraws it from
+   * the settings goes ahead in its own undo step and clears this (G1-13, review F1d-R01).
+   */
+  editedOutside?: boolean;
   /** An energy diagram's numbers and look, kept on the invisible frame round its drawing (design/energy.ts). */
   energy?: EnergyData;
   /** A Newman or sawhorse projection's groups, look and the bond it shows, kept on the invisible frame round it (design/newman.ts). */

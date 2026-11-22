@@ -16,6 +16,32 @@ export function isReactionSmiles(text: string): boolean {
   return parts.length === 3 && (parts[0] !== '' || parts[2] !== '') && parts.every((p) => /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]*$/.test(p));
 }
 
+const SMILES_CHARS = /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/;
+
+/**
+ * A ChemAxon Extended SMILES (CXSMILES): a SMILES, a space, then extras between bars (enhanced
+ * stereo a:, &1:, o1:; coordinates (…); atom labels $…$; radicals ^1:…; S-groups Sg:…). Null for
+ * anything else. From ChemAxon's "ChemAxon Extended SMILES and SMARTS" documentation.
+ */
+export function cxSmiles(text: string): { smiles: string; extras: string } | null {
+  const m = /^(\S+)\s+\|(.*)\|$/.exec(text.trim());
+  return m && SMILES_CHARS.test(m[1]) && !m[1].includes('>') ? { smiles: m[1], extras: m[2] } : null;
+}
+
+/**
+ * The CXSMILES extras a drawing has no place for, by name: polymer and other S-groups (Sg, SgD,
+ * SgH), link nodes (LN), and atom values and lists that are query features (LO, $_AV:). Enhanced
+ * stereo, coordinates, atom labels (R1, aliases), radicals and coordination bonds are kept.
+ */
+export function cxSmilesLeftOut(extras: string): string[] {
+  const out: string[] = [];
+  if (/(^|,)Sg[DH]?:/.test(extras)) out.push('S-groups (polymer brackets, data)');
+  if (/(^|,)LN:/.test(extras)) out.push('link nodes');
+  if (/(^|,)LO:/.test(extras)) out.push('ligand orders');
+  if (/\$_AV:/.test(extras)) out.push('atom values');
+  return out;
+}
+
 /** The species of a reaction SMILES. CXSMILES extensions (|…|) are dropped. */
 export function splitReactionSmiles(text: string): ReactionParts<string> {
   const t = text.trim().replace(/\s+\|.*\|$/, '');
@@ -38,7 +64,8 @@ const i3 = (n: number) => String(n).padStart(3, ' ');
 export function rxnBlock(parts: ReactionParts<string>, name = ''): string {
   const counts = `${i3(parts.reactants.length)}${i3(parts.products.length)}${parts.agents.length ? i3(parts.agents.length) : ''}`;
   const mol = (m: string) => `$MOL\n${m.endsWith('\n') ? m : m + '\n'}`;
-  return `$RXN\n${name}\n  Chemweave\n\n${counts}\n` + [...parts.reactants, ...parts.products, ...parts.agents].map(mol).join('');
+  // (line 3: six columns of initials, then the program name in nine; BIOVIA CTfile Formats, RXN header)
+  return `$RXN\n${name}\n      Chemweave\n\n${counts}\n` + [...parts.reactants, ...parts.products, ...parts.agents].map(mol).join('');
 }
 
 /** The molfiles of an RXN file (V2000), or null when it can't be read. */

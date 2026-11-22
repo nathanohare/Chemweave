@@ -6,9 +6,9 @@ This page covers Document mode: writing and formatting text, putting structures,
 
 ## Starting a document
 
-Click **+** at the end of the tab strip and choose **Document (Text document)**, or choose **File ▸ New ▸ Document**. While a document is showing, Ctrl+N starts another one.
+Click **+** at the end of the tab strip and choose **Document (Text document)**, or choose **File ▸ New ▸ Blank document**. While a document is showing, Ctrl+N starts another one.
 
-**File ▸ New ▸ Document** opens a blank document with a window of templates over it; click outside the window to keep the blank page, or pick one of our own templates: **Lab and notebook** (lab report, notebook entry, weekly progress report, group meeting minutes), **Papers and SI** (Supporting Information, cover letter to the editor, response to reviewers), **Theses** (thesis chapter, front matter, prospectus), **Grants and fellowships** (research proposal, specific aims page, fellowship personal statement, research statement), **Safety** (SOP, hazard and risk assessment, waste and quench procedure), **Teaching** (lab handout, problem set, exam with answer key) and **Career** (academic CV, cover letter). Text in [brackets] says what goes there; type over it. The headings are in the Heading styles, so the Navigation pane and Table of Contents pick them up. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
+**File ▸ New ▸ Blank document** opens a blank document with a window of templates over it; click outside the window to keep the blank page, or pick one of our own templates: **Lab and notebook** (lab report, notebook entry, weekly progress report, group meeting minutes), **Papers and SI** (Supporting Information, cover letter to the editor, response to reviewers), **Theses** (thesis chapter, front matter, prospectus), **Grants and fellowships** (research proposal, specific aims page, fellowship personal statement, research statement), **Safety** (SOP, hazard and risk assessment, waste and quench procedure), **Teaching** (lab handout, problem set, exam with answer key) and **Career** (academic CV, cover letter). Text in [brackets] says what goes there; type over it. The headings are in the Heading styles, so the Navigation pane and Table of Contents pick them up. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
 
 The ribbon has Word's tabs: **Home**, **Insert**, **Design**, **Layout**, **References**, **Review** and **View**, plus a **Table** tab that appears while the cursor is in a table. Text flows on to the next page automatically. The status bar at the bottom shows the page and word count; Ctrl+mouse wheel or the − and + buttons zoom, and **Page Width** fits the page to the window.
 
@@ -93,6 +93,29 @@ Click a structure or picture to pick it (a structure shows just its four corner 
 
 For a picture, **Picture Format** (**Insert** tab, the panel, or right-click) changes its brightness, contrast and sharpness, recolors it (grayscale, sepia, washout, black and white, two colors), makes a color or the whole picture see-through, removes its background, and crops it to a shape or to proportions (1:1, 4:3, 16:9…). It works as in [Presentation: Picture Format](slides.md#picture-format), and is saved as Word's own picture settings.
 
+### Making a picture of a structure editable
+
+A structure pasted as a picture (from ChemDraw as a picture, or from a paper) can be turned into a structure you can edit. Click the picture, then **Make Editable**. The command is at the top of the chemistry bar on the left and on the **Picture Format** tab that shows while a picture is picked. Right-click ▸ **Make Editable…** opens a window instead (see below). It uses the same reader as Canvas's **Import Structures from Picture**: the reader on your computer in the desktop app (downloaded once), or the AI model linked in Settings.
+
+- **Match Original Style** draws the structure to look like the picture. The bond length, line width and label size are measured from the picture and kept on the structure itself. If they match a journal style at some size, that style's exact numbers are used. Labels use the document's label font.
+- **Use Default Style** draws it in the document's drawing style, so it matches your other structures.
+- The **▾** beside the button picks the style, and the button uses the style you picked last. **▾** ▸ **Compare…** (and right-click ▸ **Make Editable…**) reads the picture first and shows a window with the picture and the structure side by side and how sure the reader was. Switch the style there to see the difference, clear **Keep original picture** if you don't want it kept, then press **Make Editable** or **Cancel**. To change the style afterwards, use the **▾** menu or right-click ▸ **Original Picture**. The picture is not read again.
+- **Compare with Original** opens a card beside the structure. It shows the picture and the structure side by side at the same size, with who read it and how sure the reader was. From the card you can **Revert to Picture**, **Edit Structure** (the drawing tools), or **Keep** the structure. The card opens by itself when the reader was unsure or the chemistry checks find something odd.
+- **Revert to Picture** puts the picture back as it was, with the same size, place and wrapping. Make Editable and Revert to Picture are each one step to undo.
+- A picture of a whole scheme is made editable as a whole. Each structure is read on its own, straight arrows (with solid, open or half heads, and equilibrium arrows) become arrows, and reagents, conditions and compound numbers become text you can edit, with the numbers in formulas such as CH2Cl2 subscripted. The text is read on your computer by Tesseract, which comes with the app, so nothing is sent anywhere. Anything it can't read with confidence (curved or dashed arrows, faint or unusual text, other drawings) stays as a picture behind, in the same place, so nothing is lost.
+- The original picture is saved with the structure in Word files, so Compare and Revert still work after you reopen the document. In Word, and when the structure is copied to Canvas or saved as CDXML, it is an ordinary structure.
+
+### Drawing over a picture: Convert to Figure
+
+When the reader can't read a picture well (a crowded drawing in perspective, say), draw the structure yourself over it. Click the picture, then **Convert to Figure** (beside Make Editable on the chemistry bar and the **Picture Format** tab, or right-click ▸ **Convert to Figure…**). When Make Editable was unsure, its Compare card offers **Convert to Figure…** too.
+
+- A window asks which drawing style to draw in: **Original picture's style** (its bond length, line width and label size measured from the picture, each one changeable) or **Document style**. One sample structure is drawn in each at the same scale, so you can check what was measured. If the reader isn't set up, only the line width is measured. The bond length then starts at the document's, for you to change.
+- The picture is replaced by an empty figure of exactly its size, in its place, with the same wrapping, frame and alt text, so nothing on the page moves. The figure opens for drawing.
+- While you draw, the **original picture** sits beside the page in the comment column, at the size it had on the page. It shares the column with review comments: they move round each other so none covers another.
+- **Trace** (on the picture's card, or right-click ▸ **Original Picture** ▸ **Trace**) shows the picture faintly on the figure, exactly where it was, under what you draw. Clicks go through it. With Trace on, the card sets how strongly it shows (**Opacity**) and its **Tint**: the picture's own colors, gray (the start), blue or red. It shows only while the figure is being drawn in, and it is never printed or saved as part of the drawing.
+- **Review** ▸ **Original Pictures ▾** shows these pictures for every figure (**Show All**), only for the figure being drawn in (**Show When Editing**, the start), or none (**Hide All**). This works for structures made with Make Editable too.
+- What you draw keeps the picture's look when you chose its style. ▾ or right-click ▸ **Original Picture** switches between the two styles afterwards, and **Revert to Picture** puts the picture back. The picture, and how Trace was set, are saved with the figure in Word files.
+
 ### Wrapping and text boxes
 
 Pick a structure, picture or text box, then use **Layout** tab ▸ **Wrap Text** (or the right-click menu):
@@ -170,7 +193,7 @@ For a substrate-scope or screening table, put the cursor in a cell and use **Ins
 
 ## Objects from other programs
 
-**Insert** tab ▸ **Object** (or **Insert ▸ Document ▸ Object…**) puts another program's file in the document whole, as Word's Insert Object does: an Excel workbook, a PDF, a Word file or a presentation, or any other file. It shows what it holds where it can (a workbook's cells as Excel shows them, a PDF's first page, a picture), or an icon with the file's name: check **Display as icon** for that. Right-click it to switch between the two.
+**Insert** tab ▸ **Object** (or **Insert ▸ Object…**) puts another program's file in the document whole, as Word's Insert Object does: an Excel workbook, a PDF, a Word file or a presentation, or any other file. It shows what it holds where it can (a workbook's cells as Excel shows them, a PDF's first page, a picture), or an icon with the file's name: check **Display as icon** for that. Right-click it to switch between the two.
 
 Double-click the object (or right-click ▸ **Open Object**) to open the file in its own program. Each time you save it there, the document takes the changes and a new picture of them, so a table of results can be kept up to date in Excel. This needs the desktop app; in a browser the file is downloaded instead.
 
@@ -282,7 +305,7 @@ In the Header and Footer settings (the ⬊ in the corner of the group, or **Head
 
 ### Sections
 
-A section break starts a new section, which can have its own paper size, orientation, margins, columns, header and footer, page numbering and line numbers. Choose one from **Layout** ▸ **Breaks** (or **Section Break (Next Page)** and **Section Break (Continuous)** under **Insert ▸ Document**):
+A section break starts a new section, which can have its own paper size, orientation, margins, columns, header and footer, page numbering and line numbers. Choose one from **Layout** ▸ **Breaks** (or **Section Break (Next Page)** and **Section Break (Continuous)** under **Insert ▸ Breaks**):
 
 - **Next Page**: the new section starts on a new page. Use it for a landscape page with a wide table, or to number the front matter i, ii, iii and the text 1, 2, 3.
 - **Continuous**: the new section starts on the same page. Use it for a title and abstract across the page with two columns of text under them. Columns before a continuous break are evened up, as in Word.
@@ -301,24 +324,24 @@ To remove a section break, put the cursor at the start of the paragraph after it
 
 ## Table of contents
 
-Give your headings **Heading 1**, **2** or **3**, put the cursor where the contents should go, and choose **References** tab ▸ **Table of Contents** (also **Insert ▸ Document ▸ Tables and Indexes ▸ Table of Contents…**). Pick how many heading levels to show.
+Give your headings **Heading 1**, **2** or **3**, put the cursor where the contents should go, and choose **References** tab ▸ **Table of Contents** (also **Insert ▸ Tables and Indexes ▸ Table of Contents…**). Pick how many heading levels to show.
 
 The contents keep themselves up to date: page numbers change as text moves, and renamed headings change as you type. There is no Update button. Double-click the contents to change the number of levels. With S1, S2 page numbering, the contents use the same numbers. Contents from a Word file keep the font and style Word gave their lines; to use the TOC 1 to 3 styles instead (as Word does after Update Table), double-click the contents and set **Entries look** to **TOC 1 to 3 styles**.
 
 ## Table of figures
 
-**References** tab ▸ **Table of Figures** (also **Insert ▸ Document ▸ Tables and Indexes ▸ Table of Figures…**) lists the captions made with Insert Caption, each with its page number after a line of dots. Choose Figure, Scheme, Table or Chart captions, or all of them. Like the contents, it keeps itself up to date; double-click it to list other captions. In Word it is Word's own table of figures.
+**References** tab ▸ **Table of Figures** (also **Insert ▸ Tables and Indexes ▸ Table of Figures…**) lists the captions made with Insert Caption, each with its page number after a line of dots. Choose Figure, Scheme, Table or Chart captions, or all of them. Like the contents, it keeps itself up to date; double-click it to list other captions. In Word it is Word's own table of figures.
 
 ## Index
 
-1. Select a word or phrase (or just click in a word) and choose **References** tab ▸ **Mark Entry** (Alt+Shift+X, also **Insert ▸ Document ▸ Tables and Indexes ▸ Mark Index Entry…**).
+1. Select a word or phrase (or just click in a word) and choose **References** tab ▸ **Mark Entry** (Alt+Shift+X, also **Insert ▸ Tables and Indexes ▸ Mark Index Entry…**).
 2. Check the **Main entry**, and type a **Subentry** to list it under the main one (Aldol reaction ▸ asymmetric).
 3. Leave **Current page** for its page number (in bold or italic if you check them), or choose **Cross-reference** and type "See Enolates" to send readers elsewhere instead.
 4. Check **Mark All** to mark every paragraph where the text comes up, once each, as Word does.
 
 Each entry is kept on its paragraph, so it moves with the text. Open Mark Entry in a marked paragraph to see its entries, and check **Take this paragraph's entries off** to remove them.
 
-**References** tab ▸ **Insert Index** (also **Insert ▸ Document ▸ Tables and Indexes ▸ Index…**) puts an Index heading and the index after the cursor's paragraph: the entries A to Z, ignoring case and accents, with the subentries indented under them and each page once. It is set in two columns unless you choose another number (it gets a section of its own, with continuous section breaks before and after, as Word does). **Right align page numbers** puts them at the right after dots, and **A letter over each letter's entries** adds A, B, C headings. Like the contents, it keeps itself up to date; double-click it to change it. In Word, entries are Word's XE fields and the index is Word's own INDEX field.
+**References** tab ▸ **Insert Index** (also **Insert ▸ Tables and Indexes ▸ Index…**) puts an Index heading and the index after the cursor's paragraph: the entries A to Z, ignoring case and accents, with the subentries indented under them and each page once. It is set in two columns unless you choose another number (it gets a section of its own, with continuous section breaks before and after, as Word does). **Right align page numbers** puts them at the right after dots, and **A letter over each letter's entries** adds A, B, C headings. Like the contents, it keeps itself up to date; double-click it to change it. In Word, entries are Word's XE fields and the index is Word's own INDEX field.
 
 ## Table of authorities
 
@@ -345,7 +368,7 @@ For legal writing (cases, statutes, rules and other authorities), as Word does i
 - Links show blue and underlined. **Ctrl+click** a link to follow it; pointing at one shows where it goes. In Reading view a plain click follows it.
 - Right-click a link for **Edit Link…**, **Open Link**, **Copy Link** and **Remove Link**. Ctrl+K on a link edits it.
 - Web addresses, `doi:10.…` and email addresses become links as you type them, once a space or a new line ends them. Ctrl+Z straight after keeps one as plain text. **Edit ▸ Typing and Spelling…** turns this off, and can make a plain click follow links in drawings, slides and sheets.
-- **Insert ▸ Document ▸ Bookmark…** (Ctrl+Shift+F5) names the paragraph the cursor is in, so links can go to it; the same window goes to or deletes bookmarks. A link to a heading keeps finding the heading after its words change.
+- **Insert ▸ Bookmark…** (Ctrl+Shift+F5) names the paragraph the cursor is in, so links can go to it; the same window goes to or deletes bookmarks. A link to a heading keeps finding the heading after its words change.
 - Word files keep links and bookmarks as Word's own, both ways, including links in footnotes. Copying text to Word or a web page carries its web links with it.
 
 ## Tracked changes
@@ -450,7 +473,7 @@ The **Show** group has two check boxes. **Ruler** puts a ruler above the page wi
 
 **New Window** opens the document in a second tab, named as Word names windows: Report.docx:1 and Report.docx:2. Each tab keeps its own view and place, so one can be in Outline while the other shows the pages. Typing in either shows in both, and Save in either saves the one file. Closing one leaves the document open in the other.
 
-Saving, printing and PDFs always use the pages of Print Layout, whatever view is showing. These views are also under **View ▸ Document ▸ Document Views** in the menu bar.
+Saving, printing and PDFs always use the pages of Print Layout, whatever view is showing. These views are also under **View ▸ Document Views** in the menu bar.
 
 ## Saving as Word, RTF, OpenDocument and PDF
 

@@ -156,7 +156,8 @@ function exchangeFile(doc: Doc, type: FileType, name: string, v3000 = false): { 
     : type === MRV ? writeMrvFile(doc) : type === KET ? writeKetFile(doc) : type === CML ? writeCmlFile(doc) : writeChemDoodleJson(doc);
   const kept = type === MOL || type === SDF ? 'structures only' : type === RXN ? 'the first reaction step only' : type === CDJSON ? 'structures and arrows only' : 'structures, straight arrows and text only';
   const unknown = got.unknown.length ? `; labels kept as text, not read as chemistry: ${got.unknown.join(', ')}` : '';
-  return { data: got.text, type, note: ` (${kept}: save as .cdxml to keep everything${unknown})` };
+  const notes = (got.notes ?? []).map((n) => `; ${n}`).join('');
+  return { data: got.text, type, note: ` (${kept}: save as .cdxml to keep everything${unknown}${notes})` };
 }
 
 /** Tabs already told, this session, how their structures look in Office (said once, not on every save). */
@@ -635,7 +636,9 @@ export class Workspace {
     t.seen = this.host.version;
     if (spare) this.drop(spare);
     const sk = Object.entries(stats.skipped).map(([k, v]) => `${v} ${k}`).join(', ');
-    this.hooks.flash(`Opened ${name}: ${stats.atoms} atoms, ${stats.bonds} bonds, ${stats.captions} captions, ${stats.arrows} arrows${sk ? `. Not shown yet: ${sk}` : ''}`);
+    // (and what was kept as ChemDraw drew it, G1-13)
+    const notes = (stats.notes ?? []).map((n) => ` ${n}`).join('');
+    this.hooks.flash(`Opened ${name}: ${stats.atoms} atoms, ${stats.bonds} bonds, ${stats.captions} captions, ${stats.arrows} arrows${sk ? `. Not shown yet: ${sk}` : ''}.${notes}`);
     return true;
   }
 
@@ -859,7 +862,7 @@ export class Workspace {
     keepOnPage(this.docOf(tab));
     const exchange = CHEM_EXCHANGE.find((t) => t.extension === ext);
     if (exchange) return exchangeFile(this.docOf(tab), exchange, name, tab.v3000);
-    const text = atFirstPage(this.docOf(tab), () => writeCdxml(this.docOf(tab), { name, textMeasure: this.hooks.measure }));
+    const text = atFirstPage(this.docOf(tab), () => writeCdxml(this.docOf(tab), { name, textMeasure: this.hooks.measure, cdx: ext === 'cdx' }));
     return ext === 'cdx' ? { data: cdxmlToCdx(text), type: CDX, note: '' } : { data: text, type: CDXML, note: '' };
   }
 

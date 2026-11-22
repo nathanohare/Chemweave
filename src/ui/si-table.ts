@@ -50,7 +50,7 @@ export class SiTableEditor {
     const h = el('h3', 'si-sub');
     h.append(this.title);
     this.title.textContent = title;
-    addInfo(h, 'The table as it prints, with its caption on the line under it in the text. Click a cell to type in it; Shift+click another to pick a block. The Table Layout tab on the ribbon adds rows and columns, merges cells and puts pictures in them. Ctrl+V in a cell pastes cells from Excel or Word, or a picture or ChemDraw drawing into the cell.');
+    addInfo(h, 'The table as it prints, with its caption on the line under it in the text. Click a cell to type in it; Shift+click another to select a block. The Table Layout tab on the ribbon adds rows and columns, merges cells and puts pictures in them. Ctrl+V in a cell pastes cells from Excel or Word, or a picture or ChemDraw drawing into the cell.');
     this.el.append(h);
   }
 
@@ -123,7 +123,7 @@ export class SiTableEditor {
       case 'del-rows': return this.change(() => { for (let i = r.rows - 1; i >= 0; i--) deleteRow(this.t!, r.r + i); });
       case 'del-cols': return this.change(() => { for (let i = r.cols - 1; i >= 0; i--) deleteColumn(this.t!, r.c + i); });
       case 'merge':
-        if (r.rows * r.cols < 2) { this.host.flash('Shift+click a second cell to pick the cells to merge.'); return; }
+        if (r.rows * r.cols < 2) { this.host.flash('Shift+click a second cell to select the cells to merge.'); return; }
         return this.change(() => merge(this.t!, r));
       case 'split': return this.change(() => split(this.t!, r.r, r.c));
       case 'align-left': case 'align-center': case 'align-right': return this.align(cmd.slice(6) as Align);

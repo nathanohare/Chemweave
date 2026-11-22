@@ -257,7 +257,7 @@ export class KnowledgeBaseWindow {
     d.addEventListener('scroll', hidePop, { capture: true, passive: true });
     d.addEventListener('wheel', hidePop, { passive: true });
     window.addEventListener('blur', hidePop);
-    this.search = el('input', { type: 'search', placeholder: 'Name, CAS, SMILES or a shift (2.17)', title: 'Search every table by name, CAS number, any word, or a chemical shift (2.17 finds peaks within 0.05 ppm in 1H, 0.5 in 13C). A SMILES finds that compound, then every compound containing it', value: query });
+    this.search = el('input', { type: 'search', placeholder: 'Name, CAS, SMILES or a shift (2.17)', title: 'Search every table by name, CAS number, any word, or a chemical shift (2.17 finds peaks within 0.05 ppm in ¹H, 0.5 in ¹³C). A SMILES finds that compound, then every compound containing it', value: query });
     this.search.setAttribute('aria-label', 'Search the Knowledge Base');
     // a single letter matches most of every table (~110 ms): wait a moment for the next key first
     let wait = 0;
@@ -1092,7 +1092,7 @@ export class KnowledgeBaseWindow {
   private async importTable(): Promise<void> {
     const how = await ask('Import Table', [
       { name: 'title', label: 'Name', value: '', placeholder: 'NMR impurities (my copy)' },
-      { name: 'paste', label: 'Or paste the table', value: '', type: 'textarea', placeholder: 'Tab- or comma-separated; first line is the header', help: 'Leave this empty to pick a CSV or tab-separated file. Columns named 1H or 13C (ppm) are searched as chemical shifts.' },
+      { name: 'paste', label: 'Or paste the table', value: '', type: 'textarea', placeholder: 'Tab- or comma-separated; first line is the header', help: 'Leave this empty to choose a CSV or tab-separated file. Columns named 1H or 13C (ppm) are searched as chemical shifts.' },
     ], { ok: 'Import', note: 'A custom table, kept on this computer only and never shared with Chemweave. The first line names the columns.' });
     if (!how) return;
     let text = how.paste.trim(), name = how.title.trim();

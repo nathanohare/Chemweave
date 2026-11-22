@@ -2,7 +2,7 @@
 // from a Word or PDF SI (si/si-import*.ts) before anything is written (si/si-import-apply.ts).
 // Every value can be changed and every item left out; a compound's text that was not recognized
 // is shown and goes to its private Notes. On the left the list (general procedures, compounds,
-// sections, cover page, references), on the right the page of the item picked, below how the
+// sections, cover page, references), on the right the page of the selected item, below how the
 // compounds print and where they go.
 
 import { ALL_FIELDS, SPECTRUM_TYPES, nucleusLabel, type FieldDef } from '../si/fields';
@@ -25,7 +25,7 @@ export interface SiImportDialogHost {
   dataSections: { id: string; name: string }[] | null;
   /** A new project can be made to import into (the desktop app). */
   canMakeProject: boolean;
-  /** After a heading's level changes and the sections are worked out again (a PDF's figures are cut out again). */
+  /** After a heading's level changes and the sections are calculated again (a PDF's figures are cut out again). */
   afterOutline?: (plan: ImportPlan) => Promise<void>;
 }
 
@@ -141,7 +141,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
     form.method = 'dialog';
     const nC = plan.compounds.length, nG = plan.gps.length;
     const h = el('h2', '', `Import SI: ${read.file_name}`);
-    addInfo(h, 'Check what was read, change anything read wrongly, and untick what you don’t want, then import. Nothing is written until you click Import, and the import is one step of Edit ▸ Undo.');
+    addInfo(h, 'Check what was read, change anything read wrongly, and uncheck what you don’t want, then import. Nothing is written until you click Import, and the import is one step of Edit ▸ Undo.');
     const intro = el('p', 'si-imp-intro', `Found ${nC} compound${nC === 1 ? '' : 's'} and ${nG} general procedure${nG === 1 ? '' : 's'}.`);
     const notes = [...read.notes, ...plan.warnings];
     const other = (plan.sections as ImportedSection[]).filter((s) => s.kind !== 'data' && s.kind !== 'references');
@@ -161,7 +161,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
     tree.setAttribute('role', 'tree');
     tree.setAttribute('aria-label', 'What was found');
     const pane = el('div', 'si-imp-page');
-    pane.append(el('p', 'muted', 'Pick a general procedure, a compound or a section to see what was read.'));
+    pane.append(el('p', 'muted', 'Select a general procedure, a compound or a section to see what was read.'));
     const pages = new Map<HTMLElement, () => HTMLElement>();
     const built = new Map<HTMLElement, HTMLElement>();
     let current: HTMLElement | null = null;
@@ -301,7 +301,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
     function unmatchedPage(): HTMLElement {
       const f = el('div', 'si-imp-form');
       const left = spectraOf(null);
-      f.append(el('p', 'muted', left.length ? 'No compound could be told for these spectra. Pick each one’s compound to import it; one left “not matched” is not imported.' : 'Every spectrum has its compound (shown on the compound’s page).'));
+      f.append(el('p', 'muted', left.length ? 'No compound could be told for these spectra. Choose each one’s compound to import it; one left “not matched” is not imported.' : 'Every spectrum has its compound (shown on the compound’s page).'));
       for (const s of left) spectrumRow(f, s);
       return f;
     }
@@ -476,7 +476,8 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
 
     function referencesPage(refs: ImportedReference[]): HTMLElement {
       const f = el('div', 'si-imp-form');
-      const h3 = el('p', 'muted', 'Each reference as read (hover over a row for the entry as printed). Numbered citations in the imported text are linked to them; one the project has already (same DOI) is not added again.');
+      const h3 = el('h3', 'si-imp-title', 'References');
+      addInfo(h3, 'Each reference as read (hover over a row for the entry as printed). Numbered citations in the imported text are linked to them; one the project has already (same DOI) is not added again.');
       const table = el('table', 'si-imp-table si-imp-refs');
       const draw = (): void => {
         table.replaceChildren();
@@ -538,7 +539,9 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
 
     function sectionsPage(): HTMLElement {
       const f = el('div', 'si-imp-form');
-      f.append(el('p', 'muted', 'The SI’s text outside its compounds becomes these sections, in this order. Untick what you don’t want and change names here. If a heading was read at the wrong level (or isn’t a heading), change it below: the sections are worked out again.'));
+      const head = el('h3', 'si-imp-title', 'Sections');
+      addInfo(head, 'The SI’s text outside its compounds becomes these sections, in this order. Uncheck what you don’t want and change names here. If a heading was read at the wrong level (or isn’t a heading), change it below: the sections are calculated again.');
+      f.append(head);
       const made = el('div', 'si-imp-made');
       const byKey = new Map((plan.sections as ImportedSection[]).map((s) => [s.key, s]));
       const depth = (s: ImportedSection): number => { let n = 0; for (let p = byKey.get(s.parent); p; p = byKey.get(p.parent)) n++; return n; };
@@ -581,14 +584,14 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
       return f;
     }
 
-    /** A heading's level changed: the sections are worked out again (names and ticks changed so far are kept). */
+    /** A heading's level changed: the sections are calculated again (names and ticks changed so far are kept). */
     let working: Promise<void> = Promise.resolve();
     let pendingLevels = 0;
     function setLevel(p: Para, level: number): Promise<void> {
       // One at a time, and no Import meanwhile: a PDF's figures are being cut out again.
       pendingLevels++;
       go.disabled = true;
-      go.title = 'The sections are being worked out again…';
+      go.title = 'The sections are being calculated again…';
       working = working.then(async () => {
         if (closed) return;
         plan.level_overrides.set(p, level);
@@ -682,7 +685,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
       const ids = kept.map((c) => c.cid);
       const missing = kept.filter((c) => !c.cid).map((c) => c.name || 'a compound');
       const doubled = [...new Set(ids.filter((i, k) => i && ids.indexOf(i) !== k))].sort();
-      const problems = [...(missing.length ? [`These compounds have no ID: ${missing.slice(0, 5).join(', ')}.`] : []), ...(doubled.length ? [`These IDs are used by more than one ticked compound: ${doubled.join(', ')}.`] : [])];
+      const problems = [...(missing.length ? [`These compounds have no ID: ${missing.slice(0, 5).join(', ')}.`] : []), ...(doubled.length ? [`These IDs are used by more than one checked compound: ${doubled.join(', ')}.`] : [])];
       if (problems.length) {
         const sure = await askChoice('Import Anyway?', `${problems.join(' ')} You can correct the IDs afterwards, in the section’s ID table.`, [{ value: 'go', label: 'Import Anyway', primary: true }, { value: 'no', label: 'Go Back' }], 'no');
         if (sure !== 'go') return;

@@ -570,7 +570,7 @@ export class Presenter {
     const into = btn('+', 'Zoom in (+, or scroll)', () => this.player?.zoomAt(1.25));
     const back = btn('⤺', 'Back to where the show was (Esc)', () => this.player?.lookBack());
     const map = btn('Map', 'The canvas\'s map in the corner (M)', () => this.toggleMap());
-    btn('▦', 'Every slide, to pick one (G)', () => this.openGrid());
+    btn('▦', 'Every slide, to choose one (G)', () => this.openGrid());
     root.append(el);
     this.corner = { el, zoom: [out, into, map], back, map };
     this.updateCorner();

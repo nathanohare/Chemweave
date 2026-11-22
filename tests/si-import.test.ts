@@ -14,7 +14,18 @@ import type { Run } from '../src/si/markup';
 const DIR = join(__dirname, 'fixtures', 'si-import');
 const expected = JSON.parse(readFileSync(join(DIR, 'expected.json'), 'utf8'));
 type Case = { fn: string; args: any[]; out: any };
-const cases: Case[] = expected.cases;
+/**
+ * SI Assistant's messages in Chemweave's UI wording (S26, S29, S70; retrospective audit G5-21):
+ * the recorded results keep SI Assistant's own words, and Chemweave's port writes "Chemweave",
+ * American spelling and "check", so the expected messages are reworded the same way here.
+ */
+const REWORD: [RegExp, string][] = [
+  [/The program makes its own/g, 'Chemweave makes its own'], [/The program prints the spectra/g, 'Chemweave prints the spectra'],
+  [/recognised/g, 'recognized'], [/labelled/g, 'labeled'], [/\(tick it to import/g, '(check it to import'], [/untick the ones/g, 'uncheck the ones'],
+];
+const reword = (v: any): any => (typeof v === 'string' ? REWORD.reduce((t, [re, to]) => t.replace(re, to), v)
+  : Array.isArray(v) ? v.map(reword) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, reword(x)])) : v);
+const cases: Case[] = expected.cases.map((c: Case) => ({ ...c, out: reword(c.out) }));
 const file = (name: string): Uint8Array => new Uint8Array(readFileSync(join(DIR, 'files', name)));
 
 type RunJ = [string, boolean, boolean, string, boolean];

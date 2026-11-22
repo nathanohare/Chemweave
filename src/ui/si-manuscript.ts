@@ -167,7 +167,7 @@ export class SiManuscriptPage {
       await this.add([{ name, bytes }], true);
     } else if (cmd === 'ms-remove') {
       const name = this.state.file;
-      if (!name || !this.names.includes(name)) { this.host.flash('Pick a file in the list first.'); return; }
+      if (!name || !this.names.includes(name)) { this.host.flash('Select a file in the list first.'); return; }
       await this.host.act(`Remove Manuscript File ${name}`, () => removeManuscriptFile(this.p, name));
       this.host.flash(`Moved ${name} to the Trash (Home ▸ Trash, or Undo, puts it back).`);
       this.state.file = '';
@@ -176,17 +176,17 @@ export class SiManuscriptPage {
       await this.check(true);
     } else if (cmd === 'ms-open') {
       const f = this.pickedFinding();
-      if (f) this.open(f); else this.host.flash('Pick a result first.');
+      if (f) this.open(f); else this.host.flash('Select a result first.');
     } else if (cmd === 'ms-dismiss') {
       const f = this.pickedFinding();
-      if (!f || f.status !== PROBLEM) { this.host.flash('Pick a result marked “⚠ Check” first.'); return; }
+      if (!f || f.status !== PROBLEM) { this.host.flash('Select a result marked “⚠ Check” first.'); return; }
       const got = await ask('Dismiss Result', [{ name: 'reason', label: 'Why is this OK? (optional, saved with the project)', value: '', placeholder: 'e.g. the yield was rounded in the paper' }], { ok: 'Dismiss', lines: [[f.message, '']] });
       if (!got) return;
       await this.host.act('Dismiss Result', () => dismissFinding(this.p, f, got.reason, this.p.lock?.user ?? ''));
       await this.check(false);
     } else if (cmd === 'ms-restore') {
       const f = this.pickedFinding();
-      if (!f || f.status !== DISMISSED) { this.host.flash('Pick a dismissed result first (Show Dismissed lists them).'); return; }
+      if (!f || f.status !== DISMISSED) { this.host.flash('Select a dismissed result first (Show Dismissed lists them).'); return; }
       await this.host.act('Restore Result', () => restoreFinding(this.p, f.key));
       await this.check(false);
     } else if (cmd === 'ms-filter') {

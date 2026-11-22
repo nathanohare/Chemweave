@@ -11,6 +11,7 @@
 // ignore it. No two commands share a drawing.
 
 import { TEXT_ICONS } from './icon-picks';
+import { SI_ICONS, SI_ICON_SAME } from './si-icons';
 
 export type IconHue = 'blue' | 'green' | 'red' | 'amber' | 'purple' | 'teal' | 'gray';
 
@@ -74,6 +75,12 @@ export const ICON_SET: Record<string, IconDef> = {
   'header-footer': { hue: 'blue', d: '<rect class="p" x="4.75" y="2.75" width="14.5" height="18.5" rx="2"/>' + '<path class="a" d="M7.75 6h8.5M7.75 18h8.5"/><path d="M7.75 10h8.5M7.75 13h5" stroke-opacity=".45"/>' },
   'slide-references': { hue: 'blue', d: slide(2.75, 4.75, 18.5, 14.5) + '<path d="M5.75 9h9M5.75 12h6"/><path class="a" d="M5.75 16.25h5M14.5 13.75l1.5-1v4.5"/>' },
   crop: { hue: 'gray', d: '<path d="M6.75 2.75v13.5a1 1 0 0 0 1 1h13.5"/><path class="a" d="M2.75 6.75h13.5a1 1 0 0 1 1 1v13.5"/>' },
+  // a picture of a ring, with a pencil: the picture made a structure to edit
+  'make-editable': { hue: 'teal', d: '<path class="p" d="M13.25 3.75h-9a1.5 1.5 0 0 0-1.5 1.5v10a1.5 1.5 0 0 0 1.5 1.5h5.5"/>' + hex(8.5, 10.25, 3.5, 'a') + '<path class="f a" d="M13.25 20.75l.75-3 6-6 2.25 2.25-6 6z"/><path d="M18.5 13.25l2.25 2.25"/>' },
+  // a dashed figure with a pencil: the picture replaced by an empty figure to draw in
+  'convert-to-figure': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="13.5" height="13.5" rx="1.5" stroke-dasharray="2.5 2"/><path class="f a" d="M13.25 20.75l.75-3 6-6 2.25 2.25-6 6z"/><path d="M18.5 13.25l2.25 2.25"/>' },
+  'trace-original': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="12" height="12" rx="1.5" stroke-dasharray="2 1.6"/><rect class="a" x="8.75" y="8.75" width="12" height="12" rx="1.5"/>' },
+  'original-pictures': { hue: 'blue', d: '<rect class="p" x="8.75" y="3.75" width="12.5" height="14.5" rx="1.5"/><path class="a" d="M11.25 14.25l2.75-3.25 2 2 1.5-1.5 2.25 2.75"/><path d="M2.75 9h3.5M2.75 13h3.5" stroke-dasharray="1.5 1.5"/>' },
   'picture-format': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="14" height="12.5" rx="2"/><path class="f a" d="M2.75 14l4-4.25 3.5 3.5 2-2 4.5 4.5"/><circle class="s" cx="17.5" cy="17.5" r="3.75"/><path class="k" d="M17.5 15.25v4.5M15.25 17.5h4.5"/>' },
   // ---------------------------------------------------------------- arrange
   'rotate-cw': { hue: 'gray', d: '<path d="M19.25 12a7.25 7.25 0 1 1-2.5-5.5"/><path class="a" d="M17.25 2.75v4h-4"/>' },
@@ -393,7 +400,29 @@ export function applyIconSet(root: ParentNode = document): void {
 /** A ribbon button's command, as TEXT_ICONS lists them ("sh:fn-cat:Text" for a function category, "#id" for a button known only by its id). */
 export function buttonKey(b: HTMLElement): string {
   const d = b.dataset;
-  return d.sh ? `sh:${d.sh}${d.cat ? ':' + d.cat : ''}` : d.doc ? 'doc:' + d.doc : d.tr ? 'tr:' + d.tr : d.an ? 'an:' + d.an : d.cmd ?? (b.id ? '#' + b.id : '');
+  return d.sh ? `sh:${d.sh}${d.cat ? ':' + d.cat : ''}` : d.doc ? 'doc:' + d.doc : d.tr ? 'tr:' + d.tr : d.an ? 'an:' + d.an : d.cmd ?? (siKey(b) || (b.id ? '#' + b.id : ''));
+}
+
+/** An SI ribbon button's key: "si:delete" for data-si, "si-scheme:add-step" for data-si-scheme, with
+ *  its data-arg after another colon when it has one ("si-scheme:align:left"). */
+function siKey(b: HTMLElement): string {
+  for (const [k, v] of Object.entries(b.dataset)) {
+    if (!/^si(?:[A-Z]|$)/.test(k) || v === undefined || k === 'siTab' || k === 'siPanel') continue;
+    const kind = k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+    return `${kind}:${v}${b.dataset.arg !== undefined ? ':' + b.dataset.arg : ''}`;
+  }
+  return '';
+}
+
+/** The picture markup of a TEXT_ICONS or SI drawing, or of an icon set name, for `key`. */
+function drawingFor(key: string): { d: string; hue?: IconHue } | undefined {
+  const own = TEXT_ICONS[key] ?? SI_ICONS[key];
+  if (own) return { d: own };
+  const same = SI_ICON_SAME[key];
+  if (!same) return undefined;
+  if (ICON_SET[same]) return ICON_SET[same];
+  const d = TEXT_ICONS[same] ?? SI_ICONS[same];
+  return d ? { d } : undefined;
 }
 
 /** A typed stand-in for a picture at the start of a button's name (⟳, ⚙, ☐, ▯▯, ◀, Σ). */
@@ -406,9 +435,12 @@ const STAND_IN = /^\s*(?:[^\p{L}\p{N}\s]+|Σ)\s*/u;
  */
 function addTextIcon(b: HTMLElement): void {
   if (b.dataset.textIc) return;
-  const d = TEXT_ICONS[buttonKey(b)];
-  if (!d || b.querySelector(':scope > svg, :scope > .rb-lead')) return;
-  const svg = (size: number) => `<svg class="ci-ic" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${d}</svg>`;
+  // (on the SI tab, a small button whose data-ic names a drawing of the set shows it too; G5-07)
+  const pic = drawingFor(buttonKey(b)) ?? (b.dataset.ic && ICON_SET[b.dataset.ic] && b.closest('.si-ribbon') && !b.dataset.siFmt ? ICON_SET[b.dataset.ic] : undefined);
+  // (an empty lead, kept for a picture, takes it: Shape Fill ▾, G5-35)
+  if (!pic || b.querySelector(':scope > svg, :scope > .rb-lead:not(:empty)')) return;
+  const d = pic.d;
+  const svg = (size: number) => `<svg class="ci-ic"${pic.hue ? ` data-hue="${pic.hue}"` : ''} viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${d}</svg>`;
   const big = b.querySelector<HTMLElement>(':scope > .rb-icon');
   if (big) {
     if (big.querySelector('svg')) return;
@@ -416,10 +448,10 @@ function addTextIcon(b: HTMLElement): void {
   } else {
     const words = [...b.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim());
     if (words) words.textContent = words.textContent!.replace(STAND_IN, '').replace(/\s*[▶◀]\s*$/, '');
-    const lead = document.createElement('span');
+    const lead = b.querySelector<HTMLElement>(':scope > .rb-lead') ?? document.createElement('span');
     lead.className = 'rb-lead';
     lead.innerHTML = svg(16);
-    b.prepend(lead);
+    if (!lead.isConnected) b.prepend(lead);
   }
   b.dataset.textIc = '1';
 }

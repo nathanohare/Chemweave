@@ -10,6 +10,7 @@
 
 import { FloatBox } from './float-box';
 import { SYMBOLS } from '../chem/elements';
+import { molProgramLine } from '../chem/molfile-header';
 import type { Model3d } from '../chem/model3d-build';
 import { hornFit, rotation } from '../morph/rotate';
 import { ident, mul, axisTurn, skeleton, cleanerNearby, cleanestView, type M3, type P3 } from '../chem/view3d';
@@ -82,7 +83,7 @@ export class Viewer3d {
   private showH = true;
   private labels = false;
   private spinning = false;
-  /** Depth shading: the back of the model fades (follows Format ▸ Depth Shading; its own box here). */
+  /** Depth shading: the back of the model fades (follows Format ▸ Rotate and Flip ▸ Depth Shading; its own box here). */
   private fog = depthShadePrefs.on;
   private fogBox: HTMLInputElement | null = null;
   private frame = 0;
@@ -138,7 +139,7 @@ export class Viewer3d {
     spin.title = 'Turn the model slowly around and around';
     spin.setAttribute('aria-pressed', 'false');
     spin.addEventListener('click', () => { this.spinning = !this.spinning; spin.setAttribute('aria-pressed', String(this.spinning)); if (this.spinning) this.tick(); });
-    const fog = check('Depth', 'Depth shading: the back of the model fades, as Format ▸ Depth Shading fades structures on the page', this.fog, (v) => (this.fog = v));
+    const fog = check('Depth', 'Depth shading: the back of the model fades, as Format ▸ Rotate and Flip ▸ Depth Shading fades structures on the page', this.fog, (v) => (this.fog = v));
     this.fogBox = fog.querySelector('input');
     bar.append(style, check('H', 'Show hydrogens', this.showH, (v) => (this.showH = v)), check('Labels', 'Show element symbols (not C or H)', this.labels, (v) => (this.labels = v)), fog, spin);
 
@@ -402,7 +403,7 @@ export class Viewer3d {
     const near = cleanerNearby(base, this.rot, sk, 45);
     if (!near) {
       this.rot = cleanestView(base, sk, this.drawn);
-      this.flash('From this angle atoms would land on top of each other, so the model was turned to its cleanest view first.');
+      this.flash('From this angle atoms would land on top of each other, so the model was rotated to its cleanest view first.');
     } else if (near.deg) {
       this.rot = near.rot;
       this.flash(`Turned the model ${near.deg}° first, so no atoms land on top of each other.`);
@@ -473,7 +474,7 @@ export class Viewer3d {
     });
   }
 
-  /** Draw again with the depth shading setting as it now is (Format ▸ Depth Shading changed). */
+  /** Draw again with the depth shading setting as it now is (Format ▸ Rotate and Flip ▸ Depth Shading changed). */
   redraw(): void {
     this.fog = depthShadePrefs.on;
     if (this.fogBox) this.fogBox.checked = this.fog;
@@ -846,7 +847,7 @@ export function molfile3d(m: Model3d, conf: number, name = ''): string {
   const xyz = m.conformers[conf].xyz;
   const f = (v: number) => v.toFixed(4).padStart(10);
   const i3 = (v: number) => String(v).padStart(3);
-  const lines = [name.slice(0, 80), '  Chemweave3D', '', `${i3(m.atoms.length)}${i3(m.bonds.length)}  0  0  0  0  0  0  0  0999 V2000`];
+  const lines = [name.slice(0, 80), molProgramLine('3D'), '', `${i3(m.atoms.length)}${i3(m.bonds.length)}  0  0  0  0  0  0  0  0999 V2000`];
   m.atoms.forEach((a, i) => {
     const sym = (SYMBOLS[a.z] ?? 'C').padEnd(3);
     // OpenChemLib's y runs down: turn it back to a right-handed frame

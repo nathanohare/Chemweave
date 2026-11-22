@@ -181,7 +181,7 @@ function fillDialog(d: HTMLDialogElement): void {
   const change = (next: Palette[]) => { setPalettes(next); redraw(); };
   d.replaceChildren();
   const h = document.createElement('h2');
-  h.textContent = 'My palettes';
+  h.textContent = 'Color Palettes';
   addInfo(h, 'Rows of colors shown in every color menu, in every mode. Click a color to change it; × removes it.');
   d.append(h);
 
@@ -298,7 +298,7 @@ function fillDialog(d: HTMLDialogElement): void {
   const full = palettes.length >= PALETTES_MAX;
   const newRow = document.createElement('button');
   newRow.type = 'button';
-  newRow.textContent = 'New palette';
+  newRow.textContent = 'New Palette';
   newRow.disabled = full;
   newRow.addEventListener('click', () => change([...palettes, { name: freshName(palettes), colors: [] }]));
   const preset = document.createElement('select');
@@ -312,7 +312,7 @@ function fillDialog(d: HTMLDialogElement): void {
   });
   const fromDrawing = document.createElement('button');
   fromDrawing.type = 'button';
-  fromDrawing.textContent = 'New palette from the drawing’s colors';
+  fromDrawing.textContent = 'New Palette from Drawing';
   fromDrawing.title = 'A row of every color used in the drawing you have open';
   fromDrawing.disabled = full;
   fromDrawing.addEventListener('click', () => {

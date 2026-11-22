@@ -214,7 +214,7 @@ describe('labels the drawing does not decide', () => {
     // (2R,4S)-pentane-2,3,4-triol: C3 is r or s
     const mol = RDKit.get_mol('C[C@@H](O)[C@H](O)[C@H](C)O');
     mol.set_new_coords();
-    const { addMolfile } = await import('../src/chem/molfile');
+    const { addMolfile } = await import('../src/io/chem-formats');
     const doc = new Doc();
     doc.bulk(() => addMolfile(doc, mol.get_molblock(), 100, 100));
     mol.delete();

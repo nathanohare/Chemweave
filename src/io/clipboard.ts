@@ -2,7 +2,9 @@
 //
 // A copy puts the selection on the clipboard in several forms, the most detailed first, so
 // each program takes the best one it understands:
-//   - our own CDXML text, so pasting back into Chemweave keeps everything;
+//   - the drawing whole, as this app holds it (JSON), so pasting into another window or a later
+//     session here keeps everything, even what CDXML has no place for (audit G1-11);
+//   - our own CDXML text, which older versions of this app read;
 //   - the same drawing as CDX, ChemDraw's format, for pasting into ChemDraw;
 //   - an EMF picture, which Word and PowerPoint paste as a sharp, scalable picture; the drawing
 //     rides inside it, so copying the picture back out of Word brings back the structure;
@@ -13,6 +15,7 @@
 // and the drawing itself is kept in memory: pasting that same picture back here gives the drawing.
 
 import { remapFrames, remapStep, type IdMaps } from './remap-refs';
+import { soundContents, soundStyle } from './clip-check';
 import { freshGroups } from '../editor/groups';
 import { frameMembers } from '../editor/frames';
 import { pastedTable, tableHtml, tableTsv, type PastedRows } from './table-clip';
@@ -33,12 +36,25 @@ import { emfToSvg } from '../render/emf-read';
 import type { Item } from '../render/vector';
 import { itemsToEmf, withDrawing, drawingInEmf, type EmfBox } from '../render/emf';
 import { imageSize, fromDataUrl } from '../render/images';
-import { isReactionSmiles } from '../chem/reaction-io';
+import { cxSmiles, isReactionSmiles } from '../chem/reaction-io';
+import { toMolfile } from '../chem/molfile';
+import { writeMolFile } from './chem-formats';
 
 /** Our own clipboard format: the drawing as CDXML text. */
 export const OWN_FORMAT = 'Chem Illustrator CDXML';
+/**
+ * Our drawing whole, as this app holds it (JSON: its style, page colour and every atom, bond,
+ * caption, arrow and shape with all their settings). Read before CDXML, so a copy pasted into
+ * another window or a later session loses nothing (audit G1-11). A registered Windows clipboard
+ * format; on the web, a format of the page's own where the browser takes one.
+ */
+export const NATIVE_FORMAT = 'Chemweave Drawing';
+export const WEB_NATIVE_FORMAT = 'web application/x-chemweave-drawing';
+const NATIVE_VERSION = 1;
 /** ChemDraw's clipboard format (a CDX file). */
 export const CDX_FORMAT = 'ChemDraw Interchange Format';
+/** The formats holding a drawing, best first: ours whole, ours as CDXML, ChemDraw's. */
+export const DRAWING_FORMATS = [NATIVE_FORMAT, OWN_FORMAT, CDX_FORMAT];
 /** Our drawing on a web page's clipboard, where the browser takes formats of the page's own (Chrome, Edge). */
 export const WEB_FORMAT = 'web application/x-chem-illustrator-cdxml';
 
@@ -209,7 +225,8 @@ export function insertDrawing(doc: Doc, src: Doc, center: Vec, label = 'Paste'):
       if (rest.ring) rest.ring = ring!.every((a) => a !== undefined) ? (ring as number[]) : undefined;
       if (rest.pin) {
         const ref = rest.pin.ref.map((x) => ids.get(x));
-        rest.pin = ref.every((x) => x !== undefined) ? { ...rest.pin, ref: ref as number[] } : undefined;
+        // (where it was put goes with it, so it isn't taken as moved by hand: review F1d-R03)
+        rest.pin = ref.every((x) => x !== undefined) ? { ...rest.pin, ref: ref as number[], ...(rest.pin.was ? { was: { x: rest.pin.was.x + dx, y: rest.pin.was.y + dy } } : {}) } : undefined;
       }
       if (rest.poly) rest.poly = rest.poly.map((p) => ({ x: p.x + dx, y: p.y + dy }));
       const ns = doc.addShape({ ...rest, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy });
@@ -225,7 +242,7 @@ export function insertDrawing(doc: Doc, src: Doc, center: Vec, label = 'Paste'):
         for (const end of ['tail', 'head'] as const) {
           const pin = rest.pin[end];
           const ref = pin?.ref.map((x) => ids.get(x));
-          if (pin && ref) { if (ref.every((x) => x !== undefined)) pin.ref = ref as number[]; else delete rest.pin[end]; }
+          if (pin && ref) { if (ref.every((x) => x !== undefined)) Object.assign(pin, { ref, ...(pin.was ? { was: { x: pin.was.x + dx, y: pin.was.y + dy } } : {}) }); else delete rest.pin[end]; }
         }
         if (!rest.pin.tail && !rest.pin.head) rest.pin = undefined;
       }
@@ -290,6 +307,167 @@ export function unpackFormats(block: Uint8Array): [string, Uint8Array][] {
 
 /** The last drawing copied, for pasting back where the clipboard cannot hold it (web pages). */
 let lastCopy: string | null = null;
+/**
+ * The last drawing copied as it is held here (audit G1-11): pasting our own copy back into this
+ * window takes this rather than reading the CDXML again, so nothing the file cannot hold (a
+ * caption's strikethrough, a shape's transparency, a picture's look) is lost on the way.
+ */
+let lastPart: Doc | null = null;
+
+/**
+ * Our own drawing on the clipboard: when it is the copy made here last, that drawing itself (a
+ * fresh copy of it, so it can be pasted again), else the drawing read from its CDXML (a copy made
+ * in another window or an earlier session).
+ */
+export function ownDrawing(cdxml: string): Doc {
+  if (lastPart && lastCopy !== null && cdxml === lastCopy) {
+    const d = new Doc();
+    d.style = { ...lastPart.style };
+    d.background = lastPart.background;
+    d.restoreContents(lastPart.contents());
+    return d;
+  }
+  return readCdxml(cdxml).doc;
+}
+/** A drawing as the NATIVE_FORMAT's text. */
+export function nativeDrawingText(part: Doc): string {
+  return JSON.stringify({ app: 'Chemweave', v: NATIVE_VERSION, style: part.style, background: part.background, contents: part.contents() });
+}
+
+/**
+ * The drawing in a NATIVE_FORMAT text, or null when it isn't one, is damaged, or comes from a
+ * later version of this program (review F1b-R05). The rule for versions: `v` is the layout's
+ * version; a later program that changes the layout raises it, and a program that doesn't know
+ * that version pastes the CDXML written beside it instead (which is why CDXML is still written).
+ * The data is checked before it is taken, field by field (clip-check.ts soundContents; review
+ * F1b-R05, F1c-R05, F1d-R03): anything unsound and the CDXML beside it is pasted instead.
+ * Settings this version doesn't know are kept on the objects as they are.
+ */
+export function nativeDrawing(text: string): Doc | null {
+  try {
+    const j = JSON.parse(text) as { app?: unknown; v?: unknown; style?: unknown; background?: unknown; contents?: Record<string, unknown> };
+    if (j?.app !== 'Chemweave' || !Number.isInteger(j.v) || (j.v as number) < 1 || (j.v as number) > NATIVE_VERSION) return null;
+    if (!j.contents || typeof j.contents !== 'object') return null;
+    const contents = soundContents(j.contents);
+    if (!contents) return null;
+    type Obj = Record<string, unknown>;
+    const d = new Doc();
+    // (style settings only where they have the type and range a fresh drawing's have)
+    if (j.style && typeof j.style === 'object' && !Array.isArray(j.style)) Object.assign(d.style, soundStyle(j.style as Obj, d.style as unknown as Obj));
+    if (typeof j.background === 'string') d.background = j.background;
+    d.restoreContents(contents);
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The drawing on the Windows clipboard, our own whole first: when that is missing, damaged or from
+ * a later version, our CDXML, then ChemDraw's CDX (review F1b-R06). Null when there is none.
+ * `more` adds formats to try after ours (Word's "Embed Source" for the canvas paste).
+ */
+export async function nativeClipboardDrawing(more: string[] = []): Promise<Doc | null> {
+  const whole = await nativeFirst([NATIVE_FORMAT]);
+  const fromWhole = whole ? nativeDrawing(new TextDecoder().decode(whole[1]).replace(/\0+$/, '')) : null;
+  const beside = async () => { const drawing = await nativeFirst([OWN_FORMAT, ...more, CDX_FORMAT]); return drawing ? clipboardDrawing(...drawing) : null; };
+  if (fromWhole) { setPasteFallback(fromWhole, beside); return fromWhole; }
+  return beside();
+}
+
+/** For a drawing read from our whole-drawing format: how to read the CDXML copied beside it. */
+const fallbacks = new WeakMap<Doc, () => Promise<Doc | null>>();
+/** Say how to get the CDXML drawing copied beside `d` (the whole-drawing format's), for pasteDrawing. */
+export function setPasteFallback(d: Doc, get: () => Promise<Doc | null>): void { fallbacks.set(d, get); }
+
+/**
+ * Paste drawing `src` into `doc` as one step (insertDrawing at `at()`, then `after` with what was
+ * pasted), with a safety
+ * net (review F1e-R01): if anything throws on the way, what was changed is undone and, for a
+ * drawing read from our whole-drawing format, the CDXML copied beside it is pasted instead
+ * (`prepare` fits it first), with a note. The error when nothing could be pasted.
+ */
+export async function pasteDrawing(doc: Doc, src: Doc, at: () => Vec, after?: (sel: Selection) => void, prepare?: (d: Doc) => void): Promise<{ sel: Selection; note?: string } | { error: string }> {
+  const put = (d: Doc): Selection => {
+    doc.begin('Paste');
+    try {
+      const sel = insertDrawing(doc, d, at());
+      after?.(sel);
+      doc.commit();
+      return sel;
+    } catch (err) {
+      doc.abandon();
+      throw err;
+    }
+  };
+  try {
+    return { sel: put(src) };
+  } catch (err) {
+    const alt = await fallbacks.get(src)?.().catch(() => null);
+    if (!alt || isEmpty(alt)) return { error: `Could not paste: ${err instanceof Error ? err.message : String(err)}` };
+    prepare?.(alt);
+    try {
+      return { sel: put(alt), note: 'Part of the copied drawing couldn\'t be read, so its CDXML copy was pasted instead.' };
+    } catch (err2) {
+      return { error: `Could not paste: ${err2 instanceof Error ? err2.message : String(err2)}` };
+    }
+  }
+}
+
+/** The drawing in one of the DRAWING_FORMATS (as nativeFirst hands it over), or null when it can't be read. */
+export function clipboardDrawing(name: string, data: Uint8Array): Doc | null {
+  const text = name === CDX_FORMAT ? '' : new TextDecoder().decode(data).replace(/\0+$/, '');
+  if (name === NATIVE_FORMAT) return nativeDrawing(text);
+  try {
+    return name === CDX_FORMAT ? readCdxml(cdxToCdxml(data)).doc : ownDrawing(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Makes a structure's SMILES from its molfile: set by the app once the chemistry engine is there,
+ * so a copy also carries the structure as text, as ChemDraw's does (audit G1-20).
+ */
+let smilesMaker: ((molblock: string) => Promise<string | null>) | null = null;
+export function setSmilesMaker(f: ((molblock: string) => Promise<string | null>) | null): void {
+  smilesMaker = f;
+}
+/** The SMILES put on the clipboard with the last drawing copied, to know it again when it is pasted back. */
+let lastText: string | null = null;
+
+/** The structures' SMILES in a drawing, or null (no structures, generic labels, no engine yet). */
+async function structureSmiles(part: Doc): Promise<string | null> {
+  if (!smilesMaker || !part.atoms.size) return null;
+  try {
+    const ex = toMolfile(part, part.atoms.keys(), '');
+    return ex.generic.length ? null : (await smilesMaker(ex.molblock))?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ChemDraw's MDLCT clipboard format: a molfile with each line as a byte giving its length and
+ * then its characters, no line ends (MDL's clipboard form of a CTfile). Null when the drawing has
+ * no structures.
+ */
+export function mdlctOf(part: Doc): Uint8Array | null {
+  if (!part.atoms.size) return null;
+  try {
+    const lines = writeMolFile(part).text.replace(/\r/g, '').split('\n');
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const out: number[] = [];
+    for (const l of lines) {
+      const bytes = [...l.slice(0, 255)].map((c) => (c.charCodeAt(0) < 128 ? c.charCodeAt(0) : 63));
+      out.push(bytes.length, ...bytes);
+    }
+    return new Uint8Array(out);
+  } catch {
+    return null;
+  }
+}
+
 /** A table copied here as tab-separated text, to know it again when it is pasted back (web pages). */
 let lastTableText: string | null = null;
 
@@ -332,8 +510,10 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
   if (!pic) return 'There is nothing to copy.';
   // our own copy keeps pictures in any format, and their cropping; ChemDraw's gets what it reads
   const own = writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText, own: true });
-  const cdxml = hasPictures(part) ? writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText }) : own;
+  const cdxml = hasPictures(part) ? writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText, cdx: true }) : own;
   lastCopy = own;
+  lastPart = part;
+  lastText = null;
   const what = sel ? 'Copied' : 'Copied the whole drawing';
   // a table on its own also goes out as cells, so Word and Excel paste a table they can edit
   // (Paste Special still offers the picture)
@@ -344,15 +524,26 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
     const { canvas, dpi } = pictureCanvas(part, pic);
     const enc = new TextEncoder();
     const emf = withDrawing(pictureEmf(pic), own);
+    // the structures as text too, for an ELN, a search box or a text editor (after the pictures,
+    // so Word and PowerPoint still paste the picture)
+    const smiles = table ? null : await structureSmiles(part);
+    const mdlct = table ? null : mdlctOf(part);
+    lastText = smiles;
+    const text: [string, Uint8Array][] = [
+      ...(mdlct ? [['MDLCT', mdlct]] as [string, Uint8Array][] : []),
+      ...(smiles ? [['SMILES', enc.encode(smiles)], ['CF_UNICODETEXT', enc.encode(smiles)]] as [string, Uint8Array][] : []),
+    ];
     // Word, PowerPoint and Excel paste an object they can send back here to edit (a table stays cells)
     const object: [string, Uint8Array][] = wordObjects && !table ? [['Embed Source', enc.encode(own)], ['Object Descriptor', objectSize(emf)]] : [];
     const block = packFormats([
+      [NATIVE_FORMAT, enc.encode(nativeDrawingText(part))],
       [OWN_FORMAT, enc.encode(own)],
       [CDX_FORMAT, cdxmlToCdx(cdxml)],
       ...object,
       ...(table ? [['HTML Format', cfHtml(tableHtml(table))], ['CF_UNICODETEXT', enc.encode(tsv!)]] as [string, Uint8Array][] : []),
       ['CF_ENHMETAFILE', emf],
       ['CF_DIB', canvasDib(canvas, dpi)],
+      ...text,
     ]);
     await invoke('clipboard_write', block);
     return table ? `${what}. Paste into Word or Excel for a table, or into PowerPoint for a picture.`
@@ -373,8 +564,23 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
       formats['text/html'] = new Blob([tableHtml(table)], { type: 'text/html' });
       formats['text/plain'] = new Blob([tsv!], { type: 'text/plain' });
     }
-    if (webFormatOk()) formats[WEB_FORMAT] = new Blob([own], { type: WEB_FORMAT.slice(4) });
-    await navigator.clipboard.write([new ClipboardItem(formats)]);
+    if (webFormatOk()) {
+      formats[WEB_NATIVE_FORMAT] = new Blob([nativeDrawingText(part)], { type: WEB_NATIVE_FORMAT.slice(4) });
+      formats[WEB_FORMAT] = new Blob([own], { type: WEB_FORMAT.slice(4) });
+    }
+    // the structures' SMILES as text (as ChemDraw's copy has), worked out while the clipboard waits
+    if (!table && smilesMaker && part.atoms.size) {
+      formats['text/plain'] = structureSmiles(part).then((sm) => { lastText = sm; return new Blob([sm ?? ''], { type: 'text/plain' }); });
+    }
+    try {
+      await navigator.clipboard.write([new ClipboardItem(formats)]);
+    } catch (err) {
+      // (a browser that won't take text worked out later still gets the picture)
+      if (!formats['text/plain'] || table) throw err;
+      delete formats['text/plain'];
+      lastText = null;
+      await navigator.clipboard.write([new ClipboardItem(formats)]);
+    }
   } catch {
     return `${what} for pasting here. This browser would not take the picture.`;
   }
@@ -451,6 +657,8 @@ export function drawingSvg(doc: Doc, sel: Selection | null): string | null {
  */
 export function forgetCopy(): void {
   lastCopy = null;
+  lastPart = null;
+  lastText = null;
   lastTableText = null;
   lastPictureSize = null;
 }
@@ -487,6 +695,8 @@ export async function copyImage(src: string): Promise<string> {
 
 /** Is this the table last copied here (so the copy with its title and column widths can be pasted)? */
 const ownTable = (text: string) => !!lastCopy && lastTableText !== null && text.replace(/\r\n/g, '\n').trim() === lastTableText.replace(/\r\n/g, '\n').trim();
+/** Is this the SMILES put on the clipboard with the last drawing copied here (so the drawing itself is pasted)? */
+const ownSmiles = (text: string) => !!lastCopy && !!lastText && text.trim() === lastText;
 
 const hasPictures = (d: Doc) => [...d.shapes.values()].some((s) => s.kind === 'picture');
 
@@ -523,7 +733,7 @@ export function pictureDrawing(bytes: Uint8Array, mime: string): Doc | null {
   const cdxml = drawingInEmf(bytes);
   if (!cdxml) return null;
   try {
-    return readCdxml(cdxml).doc;
+    return ownDrawing(cdxml);
   } catch {
     return null;
   }
@@ -550,7 +760,7 @@ export function chemdrawObjectDrawing(object: Uint8Array): Doc | null {
 function picturePasted(bytes: Uint8Array, mime: string): Pasted {
   const inside = pictureDrawing(bytes, mime);
   if (inside) return { kind: 'drawing', doc: inside };
-  if (isOwnPicture(bytes, mime)) return { kind: 'drawing', doc: readCdxml(lastCopy!).doc };
+  if (isOwnPicture(bytes, mime)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   return { kind: 'picture', mime, bytes };
 }
 
@@ -562,10 +772,10 @@ export type Pasted =
   | { kind: 'table'; rows: PastedRows }
   | { kind: 'nothing' };
 
-/** Text that could be a structure (a molfile, or one word that could be SMILES). */
+/** Text that could be a structure (a molfile, one word that could be SMILES, or a CXSMILES with its |…| extras). */
 export function looksLikeChemistry(text: string): boolean {
   const t = text.trim();
-  return t.includes('M  END') || isReactionSmiles(t) || (!!t && !/\s/.test(t) && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(t));
+  return t.includes('M  END') || isReactionSmiles(t) || !!cxSmiles(t) || (!!t && !/\s/.test(t) && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(t));
 }
 
 /** A Windows bitmap from the clipboard (no file header) as a .bmp file a web page can show. */
@@ -593,7 +803,7 @@ export function looksLikeCdxml(text: string): boolean {
 
 /** Text from the clipboard (with its HTML, for its bold, italics and so on, when it came with some). */
 function fromText(text: string, html?: string | null): Pasted {
-  if (looksLikeCdxml(text)) return { kind: 'drawing', doc: readCdxml(text).doc };
+  if (looksLikeCdxml(text)) return { kind: 'drawing', doc: ownDrawing(text) };
   return html ? { kind: 'text', text: text.trim(), html } : { kind: 'text', text: text.trim() };
 }
 
@@ -609,12 +819,10 @@ export async function nativeFirst(names: string[]): Promise<[string, Uint8Array]
  * MestReNova and Office copy, or a bitmap), then any other text.
  */
 export async function readNativeClipboard(): Promise<Pasted> {
+  // our drawing whole first (a copy from another window or session loses nothing), then as CDXML
   // ("Embed Source" is a drawing from here copied back out of Word: the app reads only its own objects)
-  const drawing = await nativeFirst([OWN_FORMAT, 'Embed Source', CDX_FORMAT]);
-  if (drawing) {
-    const [name, data] = drawing;
-    return { kind: 'drawing', doc: readCdxml(name === CDX_FORMAT ? cdxToCdxml(data) : new TextDecoder().decode(data)).doc };
-  }
+  const drawing = await nativeClipboardDrawing(['Embed Source']);
+  if (drawing) return { kind: 'drawing', doc: drawing };
   // a ChemDraw object copied in PowerPoint or Word: no ChemDraw data of its own on the clipboard,
   // but the object (a compound file) holds ChemDraw's drawing; its picture is only the fallback
   const object = await nativeFirst(['Embedded Object']).catch(() => null);
@@ -651,26 +859,35 @@ export async function readNativeClipboard(): Promise<Pasted> {
  */
 export async function readPasteEvent(e: ClipboardEvent): Promise<Pasted> {
   const text = e.clipboardData?.getData('text/plain') ?? '';
+  if (ownSmiles(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
-  if (ownTable(text)) return { kind: 'drawing', doc: readCdxml(lastCopy!).doc };
+  if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   const table = pastedTable(e.clipboardData?.getData('text/html'), text);
   if (table) return { kind: 'table', rows: table };
   const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith('image/'));
   if (file) return picturePasted(new Uint8Array(await file.arrayBuffer()), file.type);
   if (text.trim()) return fromText(text, e.clipboardData?.getData('text/html'));
-  return lastCopy ? { kind: 'drawing', doc: readCdxml(lastCopy).doc } : { kind: 'nothing' };
+  return lastCopy ? { kind: 'drawing', doc: ownDrawing(lastCopy) } : { kind: 'nothing' };
 }
 
 /** For the Paste menu item in a browser, which gets no paste event. */
 export async function readWebClipboard(): Promise<Pasted> {
   const text = await navigator.clipboard.readText().catch(() => '');
+  if (ownSmiles(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
-  if (ownTable(text)) return { kind: 'drawing', doc: readCdxml(lastCopy!).doc };
+  if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   // a picture (when the browser lets the page see it)
   const items = await navigator.clipboard.read?.().catch(() => []) ?? [];
-  // our drawing, where the browser kept a format of our own
+  // our drawing, where the browser kept a format of our own: whole first, then as CDXML
+  const whole = items.find((it) => it.types.includes(WEB_NATIVE_FORMAT));
+  const wholeText = whole ? await (await whole.getType(WEB_NATIVE_FORMAT)).text().catch(() => '') : '';
+  const fromWhole = wholeText ? nativeDrawing(wholeText) : null;
   const own = items.find((it) => it.types.includes(WEB_FORMAT));
   const ownText = own ? await (await own.getType(WEB_FORMAT)).text().catch(() => '') : '';
+  if (fromWhole) {
+    if (looksLikeCdxml(ownText)) setPasteFallback(fromWhole, async () => readCdxml(ownText).doc);
+    return { kind: 'drawing', doc: fromWhole };
+  }
   if (looksLikeCdxml(ownText)) return fromText(ownText);
   const htmlItem = items.find((it) => it.types.includes('text/html'));
   const html = htmlItem ? await (await htmlItem.getType('text/html')).text() : null;
@@ -681,7 +898,7 @@ export async function readWebClipboard(): Promise<Pasted> {
     if (type) return picturePasted(new Uint8Array(await (await it.getType(type)).arrayBuffer()), type);
   }
   if (text.trim()) return fromText(text, html);
-  return lastCopy ? { kind: 'drawing', doc: readCdxml(lastCopy).doc } : { kind: 'nothing' };
+  return lastCopy ? { kind: 'drawing', doc: ownDrawing(lastCopy) } : { kind: 'nothing' };
 }
 
 /** The clipboard's plain text, ignoring any drawing on it (Paste SMILES). */

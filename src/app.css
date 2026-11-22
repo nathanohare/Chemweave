@@ -176,6 +176,11 @@ header, .ribbon, .toolbox, .menu, .context-menu, #tabs, footer#status { -webkit-
 .menu button.has-sub[aria-expanded='true'] { background: var(--accent-soft); }
 .menu button:disabled { color: var(--muted); opacity: 0.55; cursor: default; }
 .menu button:disabled:hover { background: transparent; }
+/* a command that cannot run now (can-run.ts): greyed, but it still takes focus and shows its reason */
+button[data-cant-run] { color: var(--muted); opacity: 0.55; cursor: default; }
+/* a Font group's box or color picker that cannot be used looks greyed as its buttons do (SI: F5b-R08) */
+.rb-font-group input:disabled, .rb-font-group label:has(> input:disabled) { opacity: 0.55; cursor: default; }
+.menu button[data-cant-run]:hover, .ribbon button[data-cant-run]:hover, .toolbox button[data-cant-run]:hover { background: transparent; border-color: transparent; }
 /* the menu names keep one height in every mode, so the bar never jumps */
 header > .menu-wrap > button { height: 26px; padding: 0 8px; border-color: transparent; background: transparent; }
 header > .menu-wrap > button:hover, header > .menu-wrap > button[aria-expanded='true'] { border-color: var(--line); background: var(--accent-soft); }
@@ -295,6 +300,34 @@ html:not(.touch-ui) .toolbox.upright:not(.collapsed) > .tb-head > .tb-grip { let
 .toolbox.vertical .tb-body:has(> .tb-cmd) { flex-direction: row; flex-wrap: wrap; width: 66px; align-items: flex-start; }
 .toolbox.vertical .tb-body:has(> .tb-cmd:not(.tb-icon)) { width: 150px; }
 .toolbox.vertical .tb-cmd:not(.tb-icon) { flex-basis: 100%; }
+/* G5-16: Settings ▸ Toolboxes and Ribbon's preview */
+.tbp { display: flex; flex-direction: column; gap: 4px; }
+.tbp-cap { font-size: var(--fs-sm); color: var(--muted); margin-top: 6px; }
+.tbp-ribbon { border: 1px solid var(--line); border-radius: var(--r-control); background: var(--bg); overflow: hidden; }
+.tbp-tabs { display: flex; gap: 10px; padding: 3px 8px; font-size: 11px; color: var(--text); }
+.tbp-tabs > span:first-child { color: var(--text); border-bottom: 2px solid var(--accent); }
+.tbp-panel { display: flex; gap: 0; padding: 4px; background: var(--panel); }
+.tbp-gwrap { display: flex; flex-direction: column; align-items: center; padding: 0 6px; border-right: 1px solid var(--line); }
+.tbp-gwrap:last-child { border-right: 0; }
+.tbp-group { display: flex; align-items: center; gap: 3px; }
+.tbp-rows { display: flex; flex-direction: column; gap: 2px; }
+.tbp-row { display: flex; gap: 2px; }
+.tbp-btn, .tbp-big { display: grid; place-items: center; width: 20px; height: 20px; }
+.tbp-big { width: 30px; height: 42px; }
+.tbp .tbp-big > svg { width: 24px; height: 24px; }
+.tbp .tbp-btn > svg { width: 14px; height: 14px; }
+.tbp-name { font-size: 10px; color: var(--muted); margin-top: 2px; }
+/* (the program's icons, not pictures: none of the preview pane's picture frame) */
+.sw-aside .tbp svg { display: inline-block; border: 0; border-radius: 0; background: none; }
+.tbp-blank { width: 12px; height: 12px; border-radius: 2px; background: var(--line); }
+.tbp-tools { display: grid; grid-template-columns: repeat(2, 34px); gap: 2px; width: max-content; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); }
+.tbp-tool { display: grid; place-items: center; width: 34px; height: 32px; border-radius: var(--r-control); box-sizing: border-box; }
+.tbp .tbp-tool > svg { width: 20px; height: 20px; }
+.tbp-cells-grid, .tbp-cells-both { gap: 0; padding: 0; }
+.tbp-cells-grid > .tbp-tool, .tbp-cells-both > .tbp-tool { border-radius: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.tbp-cells-grid > .tbp-tool:nth-child(2n), .tbp-cells-both > .tbp-tool:nth-child(2n) { border-right: 0; }
+.tbp-cells-grid > .tbp-tool:nth-last-child(-n + 2), .tbp-cells-both > .tbp-tool:nth-last-child(-n + 2) { border-bottom: 0; }
+.tbp-cells-raised > .tbp-tool, .tbp-cells-both > .tbp-tool { border: 1px solid var(--line); background: linear-gradient(var(--panel), color-mix(in srgb, var(--bg) 70%, var(--panel))); box-shadow: 0 1px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.5); }
 /* a toolbox's buttons on its grid (Customize Toolboxes): each in its cell, empty cells kept, thin lines between groups of rows */
 .tb-cells { display: grid; gap: 1px; align-items: center; justify-items: center; }
 .tb-cells > .tb-gap { width: 34px; height: 32px; }
@@ -516,7 +549,7 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 /* the zoom slider, the percent and Fit: the same in every mode (UI audit U1) */
 .sb-zoom-set { display: inline-flex; align-items: center; gap: 2px; }
 .sb-zoom { display: inline-flex; align-items: center; gap: 1px; padding-left: 8px; border-left: 1px solid var(--line); }
-.sb-zoom button { width: 18px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font: 14px/1 var(--ui-font); }
+.sb-zoom button { width: 18px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--text); font: 14px/1 var(--ui-font); }
 .sb-zoom button:hover { color: var(--text); border-color: var(--line); }
 .sb-zoom input[type='range'] { -webkit-appearance: none; appearance: none; width: 96px; height: 16px; margin: 0 2px; padding: 0; background: transparent; cursor: pointer; }
 .sb-zoom input[type='range']::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: var(--muted); }
@@ -608,6 +641,7 @@ body.slides-mode #go-buttons { display: none; }
 .sv-new button:hover, .sv-new button:focus-visible { border-color: var(--m); box-shadow: inset 3px 0 0 var(--m); background: color-mix(in srgb, var(--m) 9%, var(--panel)); }
 .sv-new button small { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-icon { grid-row: span 2; display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-control); background: var(--m); color: #fff; }
+.sv-new .sv-mode-drawing { grid-column: 1 / -1; }
 .sv-new .sv-mode-slides { --m: var(--tab-slides); }
 .sv-new .sv-mode-sheet { --m: var(--tab-sheet); }
 .sv-new .sv-mode-document { --m: var(--tab-document); }
@@ -1099,6 +1133,9 @@ dialog.typing-dialog p { margin: 2px 0 6px; }
 /* scroll arrows, the list of open files and the + button: pinned at the right of the tabs */
 .tab-ctl { flex: none; width: 24px; height: 22px; margin: 0 0 2px; padding: 0; border-color: transparent; background: transparent; color: #5a6275; font-size: var(--fs-lg); line-height: 1; }
 .tab-ctl:hover:not(:disabled) { color: var(--text); border-color: var(--line); background: var(--panel); }
+/* on the dark band the light theme's #5a6275 is 2.1:1 (Dark Gray) and 2.9:1 (Dark): use the band's own muted */
+:root[data-gray] .tab-ctl:not(:hover), :root[data-theme='dark'] .tab-ctl:not(:hover) { color: var(--muted); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .tab-ctl:not(:hover) { color: var(--muted); } }
 .tab-ctl:disabled { opacity: 0.35; }
 .tab-add { font-size: var(--fs-xl); font-weight: 600; margin-left: 2px; }
 .tab {
@@ -1379,7 +1416,10 @@ dialog.master-dialog > form > .muted { margin: 2px 0 6px; max-width: 60ch; }
 .md-toggle[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft, var(--panel)); position: relative; }
 .md-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .md-controls input[type='text'] { flex: 1 1 12em; min-width: 0; font: inherit; padding: 3px 6px; }
-.md-controls select { font: inherit; }
+.md-controls select { font: inherit; max-width: 100%; }
+/* G5-31: in a narrow Settings pane the side-by-side ID label and caption columns take the room the
+   short row names leave, so "Same as captions" shows in full */
+@media (max-width: 1200px) { .sw-pane .md-tied { grid-template-columns: minmax(min-content, 5.5em) minmax(0, 1fr) minmax(0, 1fr); } }
 .md-num { width: 6em; font: inherit; padding: 3px 6px; }
 .md-controls input[type='color'] { width: 44px; height: 26px; padding: 0 2px; }
 .md-logo { max-width: 96px; max-height: 48px; border: 1px solid var(--line); background: #fff; }
@@ -1837,7 +1877,12 @@ body.slides-mode #canvas-ribbon, body.design-mode #canvas-ribbon, body.sheet-mod
 .canvas-ribbon .cr-font .cb-btn { min-width: 24px; height: 23px; padding: 0 4px; font-size: var(--fs-md); }
 .canvas-ribbon .cr-font .cb-font { width: 132px; height: 23px; }
 .canvas-ribbon .cr-font .cb-size { width: 50px; height: 23px; }
-.canvas-ribbon .cr-font .cb-color { width: 26px; height: 21px; margin-left: 2px; }
+/* Text Color in the Canvas Font group and the Text Formatting toolbox: the A over a color bar of every mode (G5-26) */
+label.cb-colour { position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 5px; border: 1px solid transparent; border-radius: var(--r-control); cursor: pointer; font-size: var(--fs-sm); line-height: 1; }
+label.cb-colour:hover { border-color: var(--line); background: var(--accent-soft); }
+label.cb-colour input { display: block; width: 16px; height: 5px; padding: 0; border: 0; cursor: pointer; }
+label.cb-colour input::-webkit-color-swatch-wrapper { padding: 0; }
+label.cb-colour input::-webkit-color-swatch { border: 0; }
 /* the Paragraph group's symbols and spacing panels: drop-downs under their buttons, over the drawing */
 .cb-pop { position: fixed; z-index: 110; width: max-content; max-width: min(420px, calc(100vw - 8px)); padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); box-shadow: var(--sh-float, 0 4px 14px rgb(0 0 0 / 0.18)); }
 .caption-spacing.cb-pop { grid-template-columns: 1fr; width: 220px; }
@@ -3040,6 +3085,9 @@ dialog.settings-window { max-width: none; }
 .sw-aside { flex: 0 0 260px; overflow: auto; padding: 12px 14px; border-left: 1px solid var(--line); background: var(--panel, var(--bg)); }
 .sw-aside[hidden] { display: none; }
 .sw-aside.wide { flex-basis: 380px; }
+/* G5-15, G5-30: a preview drawn wider than the pane (a scheme with its magnifier, Drawing Style at 1024 px) shrinks to fit it */
+.sw-aside .sw-preview canvas { max-width: 100%; height: auto !important; }
+@media (max-width: 1200px) { .sw-aside.wide { flex-basis: 300px; } }
 .sw-aside h3 { margin: 0 0 8px; font-size: var(--fs-sm, 0.85em); font-weight: 600; color: var(--muted, inherit); text-transform: uppercase; letter-spacing: 0.04em; }
 .sw-aside canvas, .sw-aside svg { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--r-control); background: #fff; }
 /* Apply and Set as Default, the same on every page */
@@ -3096,8 +3144,12 @@ dialog.settings-window { max-width: none; }
 .ribbon select.rb-mini.rb-drop { width: 15px; max-width: 15px; padding: 0; font-size: 9px; text-align: center; appearance: none; -webkit-appearance: none; border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer; }
 .ribbon select.rb-mini.rb-drop:hover { border-color: var(--line); }
 .rb-eraser { font-size: 9px; margin-left: 1px; color: var(--danger); }
+/* on Dark Gray's gray ribbon the red is deepened to 5.5:1 (4.7:1 on the hover fill; #c62828 is 3.9:1),
+   and a greyed Clear All Formatting greys its eraser with it (review of F5, R12) */
+:root[data-gray] .ribbon .rb-eraser, :root[data-gray] .doc-ribbon .rb-eraser { color: #9e1b1b; }
+button:disabled .rb-eraser, button[data-cant-run] .rb-eraser, fieldset:disabled .rb-eraser, .rb-group.rb-idle .rb-eraser { color: inherit; }
 .ribbon button.rb-style.rb-styles-more { width: auto; min-width: 62px; align-items: center; }
-.ribbon button.rb-style.rb-styles-more span { font: var(--fs-xl)/1 var(--ui-font); color: var(--muted); }
+.ribbon button.rb-style.rb-styles-more > .rb-lead { color: var(--muted); }
 /* the ruler above the pages (View > Ruler): margins grey, indent markers and tab stops to drag */
 #doc-ruler { position: relative; flex: none; height: 24px; background: var(--surround); border-bottom: 1px solid var(--line); user-select: none; touch-action: none; }
 #doc-ruler[hidden] { display: none; }
@@ -3377,7 +3429,7 @@ button.sym:hover, button.sym:focus-visible { border-color: var(--accent); backgr
 .rehearse-countdown { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; background: #0006; color: #fff; font: 700 160px / 1 var(--ui-font, system-ui), sans-serif; cursor: pointer; }
 @media (prefers-reduced-motion: no-preference) { .rehearse-countdown { transition: opacity 0.2s; } }
 /* Header and Footer, Set Up Show, Custom Shows */
-dialog.hf-dialog { width: min(94vw, 520px); }
+dialog.hf-dialog { width: min(94vw, 600px); }
 .hf-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line, #ccd); margin-bottom: 10px; }
 .hf-tabs button { border: 1px solid transparent; border-bottom: 0; background: transparent; padding: 4px 12px; border-radius: var(--r-control) var(--r-control) 0 0; }
 .hf-tabs button[aria-selected="true"] { border-color: var(--line, #ccd); background: var(--panel, #fff); font-weight: 600; }
@@ -3386,7 +3438,18 @@ dialog.hf-dialog { width: min(94vw, 520px); }
 .hf-check, .hf-radio { display: flex; align-items: center; gap: 4px; margin: 3px 0; }
 .hf-radio { margin-left: 22px; }
 .hf-radio input[type="text"] { flex: 1; min-width: 0; }
-.hf-note { margin-top: 8px; }
+.hf-page:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; align-items: start; }
+.hf-fields { min-width: 0; }
+/* the preview: a slide (16:9) or a notes page (portrait), with its marks at their places */
+.hf-preview { position: relative; width: 150px; border: 1px solid var(--line); border-radius: var(--r-control); background: #fff; color: #1d2330; font-size: 8px; line-height: 1.2; overflow: hidden; }
+.hf-slide { aspect-ratio: 16 / 9; }
+.hf-notes { aspect-ratio: 8.5 / 11; width: 110px; justify-self: center; }
+.hf-body { position: absolute; inset: 22% 10% 22%; background: repeating-linear-gradient(#e3e6ea 0 2px, transparent 2px 7px); }
+.hf-notes .hf-body { inset: 14% 12% 14%; }
+.hf-notes .hf-body::before { content: ''; display: block; height: 40%; margin-bottom: 8%; border: 1px solid #c8ccd3; background: #f4f5f7; }
+.hf-spot { position: absolute; max-width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; outline: 1px dashed #9aa3b5; outline-offset: 1px; }
+.hf-tl { top: 4%; left: 5%; } .hf-tr { top: 4%; right: 5%; }
+.hf-bl { bottom: 5%; left: 5%; } .hf-bc { bottom: 5%; left: 50%; transform: translateX(-50%); } .hf-br { bottom: 5%; right: 5%; }
 dialog.show-setup { width: min(94vw, 600px); }
 .ss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
 .ss-grid fieldset { border: 1px solid var(--line, #ccd); border-radius: var(--r-tab); padding: 4px 10px 8px; margin: 0; }
@@ -3677,6 +3740,10 @@ body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#str
 body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structure-fold { display: block; flex: none; align-self: center; width: 20px; height: 20px; margin-top: 4px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
 .structure-fold:hover { border-color: var(--line); color: var(--text); }
 body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#structure-start, .structure-more) { display: none; }
+/* Make Editable sits on the rail only while a picture is picked in a document */
+body:not(.doc-mode) .make-editable-btn, body.doc-mode:not(.doc-picture-picked) .make-editable-btn { display: none !important; }
+body:not(.doc-mode) .convert-figure-btn, body.doc-mode:not(.doc-picture-picked) .convert-figure-btn { display: none !important; }
+body:not(.doc-mode) .compare-original-btn, body.doc-mode:not(.doc-from-picture) .compare-original-btn { display: none !important; }
 body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structure-fold { margin-top: 2px; width: 14px; }
 /* Dark Gray: the button sits on the dark dock itself (toolboxes sit on light cards), so it takes the menu bar's colors */
 :root[data-gray]:not([data-shadows='off']) #dock-left > :is(#structure-start, .structure-more, .structure-fold) { --text: #eceef2; --line: #474b53; --accent-soft: #41464f; --accent: var(--mode-accent-dark, #4ea9bc); --muted: #aeb4c0; }
@@ -4030,6 +4097,8 @@ body:not(.slides-mode, .design-mode, .sheet-mode, .doc-mode) #side-content > :is
 #status-side { display: inline-grid; place-items: center; width: 26px; height: 22px; padding: 0; margin-left: 4px; border: 1px solid transparent; background: none; color: var(--muted); }
 #status-side:hover { color: var(--text); border-color: var(--line); }
 #status-side[aria-pressed='true'] { color: var(--accent); }
+#status-whats-new { height: 22px; padding: 0 8px; margin-left: 6px; border: 1px solid var(--line); border-radius: 4px; background: none; color: var(--text); font: inherit; font-size: 12px; white-space: nowrap; }
+#status-whats-new:hover { border-color: var(--accent); }
 #status-side[aria-pressed='false'] .sp-fill { opacity: 0; }
 /* a dock holding only the closed side panel takes no room */
 .dock:not(.drop):not(:has(> :not(.toolbox[data-id='details'].collapsed))) { display: none; }
@@ -4126,8 +4195,18 @@ body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
 /* the dark band takes each mode's dark-theme accent (as full Dark does: Canvas teal #4ea9bc), so the
    chosen ribbon tab's word, the file tabs' underline and the BETA badge read on it (4.5:1 and more) */
 :root[data-gray] header, :root[data-gray] footer, :root[data-gray] .rb-tabs { --bg: #23262b; --text: #eceef2; --muted: #b9bec8; --line: #474b53; --accent-soft: #41464f; --panel: #3a3e45; --accent: var(--mode-accent-dark, #4ea9bc); --on-accent: var(--mode-on-accent-dark, #14171c); color: var(--text); }
-:root[data-gray] .ribbon > .rb-panel, :root[data-gray] .doc-ribbon > .rb-panel { --panel: #d3d6db; --accent-soft: #c1c7d1; --line: #b3b8c0; }
-:root[data-gray] .dock, :root[data-gray] aside { --panel: #dfe1e5; --line: #c4c8cf; }
+/* --muted is a deeper gray on these gray panels: the light theme's #677084 is only 3.4:1 on #d3d6db;
+   #4f5768 keeps the same hue at 5.0:1 (4.6:1 on the hover fill) for group names, captions and ▾ */
+:root[data-gray] .ribbon > .rb-panel, :root[data-gray] .doc-ribbon > .rb-panel { --panel: #d3d6db; --accent-soft: #c1c7d1; --line: #b3b8c0; --muted: #4f5768; }
+:root[data-gray] .dock, :root[data-gray] aside { --panel: #dfe1e5; --line: #c4c8cf; --muted: #4f5768; }
+/* a pressed ribbon button keeps its accent fill and border; its words take the text color, since the
+   light-theme accent on the gray fill is under 3:1 (Presentation View ▸ Normal 2.7:1) */
+:root[data-gray] .ribbon button[aria-pressed='true'], :root[data-theme='dark'] .ribbon button[aria-pressed='true'] { color: var(--text); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .ribbon button[aria-pressed='true'] { color: var(--text); } }
+/* muted words on the darker gray fill (--bg #b4b8bf): keycaps, atomic numbers, slide numbers, the
+   add-sheet + (#677084 is 2.5:1 there; #434956 is 4.5:1) */
+:root[data-gray] :is(.kb-cap, .pt-cell small, .sh-tab-add, .sl-num) { color: #434956; }
+:root[data-gray] .sh-tab-add:hover, :root[data-gray] .sl-item.current .sl-num { color: var(--text); }
 
 /* ---- item 37: interface density (View > Window and Colours > Density). Compact is as the app comes;
    Standard and Large make the icons bigger and give the toolbox and ribbon buttons more room, rather
@@ -4657,6 +4736,11 @@ details.nmr .nmr-mode { font: inherit; font-size: var(--fs-xs); padding: 0 2px; 
 .nmr-popout { position: absolute; top: 0; right: 0; min-height: 0; padding: 0 5px; line-height: 16px; font-size: var(--fs-xs); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); color: var(--text); }
 .nmr-popout:hover { border-color: var(--accent); color: var(--accent); }
 .nmr-spec .sp-bg { fill: var(--panel); }
+/* G5-11: Settings ▸ NMR Prediction's preview */
+.nmr-set-preview { display: flex; flex-direction: column; gap: 10px; }
+.nmr-set-preview figure { margin: 0; }
+.nmr-set-preview figure > svg { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--r-control); }
+.nmr-set-preview figcaption { font-size: var(--fs-sm); color: var(--muted); margin-top: 3px; }
 .nmr-spec .sp-line { fill: none; stroke: var(--text); stroke-width: 1; }
 .nmr-spec .sp-hot { fill: none; stroke: var(--accent); stroke-width: 1.8; }
 .nmr-spec .sp-lab { font-size: 10px; fill: var(--text); }
@@ -4881,6 +4965,11 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-reports-empty { line-height: 20px; }
 .si-report { display: grid; grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) auto; gap: 8px; align-items: baseline; line-height: 20px; }
 .si-report-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+/* (one grid for every row, so the note boxes line up) */
+.si-stored { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; }
+.si-stored .si-report { display: contents; }
+.si-stored .si-reports-empty { grid-column: 1 / -1; }
+.si-stored .si-report input { height: 20px; padding: 0 4px; font-size: inherit; min-width: 0; }
 .si-report-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .si-reports-print { margin-top: 2px; }
 .si-reports-print select { width: auto; max-width: 100%; }
@@ -4961,6 +5050,7 @@ dialog.si-import h2 { margin: 0; }
 .si-imp-page { overflow-y: auto; padding: 8px 10px; min-width: 0; }
 .si-imp-form { display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; gap: 4px 8px; align-items: start; font-size: var(--fs-sm); }
 .si-imp-form > p, .si-imp-form > h3, .si-imp-form > table, .si-imp-form > .si-imp-made, .si-imp-form > .si-imp-bar { grid-column: 1 / -1; margin: 0; }
+.si-imp-form > h3.si-imp-title { font-size: var(--fs-md); font-weight: 600; }
 .si-imp-row { display: contents; }
 .si-imp-name { grid-column: 1; padding-top: 3px; color: var(--muted); max-width: 12em; }
 .si-imp-row > :nth-child(2) { grid-column: 2; }
@@ -5079,7 +5169,7 @@ dialog { max-height: calc(100vh - 32px); }
 dialog:not(.embedded) .ask-buttons { position: sticky; bottom: -12px; z-index: 3; margin: 10px -14px -12px; padding: 8px 14px 12px; background: var(--panel); }
 dialog:not(.embedded) .ask-form > .ask-buttons { margin-bottom: -12px; }
 /* Dark Gray: windows take the panels' light gray, as the ribbon and side panel do (their boxes stay white) */
-:root[data-gray] dialog, :root[data-gray] .tool-window, :root[data-gray] .template-window { --panel: #dfe1e5; --line: #bfc3ca; --accent-soft: #c9ced7; }
+:root[data-gray] dialog, :root[data-gray] .tool-window, :root[data-gray] .template-window { --panel: #dfe1e5; --line: #bfc3ca; --accent-soft: #c9ced7; --muted: #4f5768; }
 :root[data-gray] dialog :is(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range']), select, textarea) { background: #fff; color: #1d2128; }
 /* U11: every New window opens in the middle (New Design sat in the top-left corner), and the few
    cards of a document or spreadsheet category are drawn larger so the window isn't mostly empty */
@@ -5101,13 +5191,16 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 :where(dialog, .welcome-card, .tool-window) :where(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range'], [type='file'], [type='button'], [type='submit']), textarea) { border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); padding: 3px 6px; }
 :where(dialog, .welcome-card, .tool-window) :where(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range'], [type='file']), textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
 /* U7: on a Settings page each field is as wide as what it holds, and its unit follows it */
-.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) { display: grid; grid-template-columns: 21em max-content max-content 1fr; margin: 0; }
+/* G5-30: the name column gives way first, and a field never runs past the pane at 1024 px */
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) { display: grid; grid-template-columns: minmax(9em, 21em) minmax(0, max-content) max-content 1fr; margin: 0; }
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > .ask-name { max-width: none; }
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']) { justify-self: start; width: 22em; max-width: 100%; }
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select { justify-self: start; }
 .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > input[type='number'] { width: 6em; }
-.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select { width: auto; min-width: 9em; max-width: 26em; }
-.sw-pane dialog.keep-options .ask-row:not(.ask-check) { grid-template-columns: 21em max-content 1fr; }
+/* G5-31: a number box whose blank means something ("Automatic", "Same as above") is wide enough to say so */
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > input[type='number'][placeholder]:not([placeholder='']) { width: 9.5em; }
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select { width: auto; min-width: min(9em, 100%); max-width: min(26em, 100%); }
+.sw-pane dialog.keep-options .ask-row:not(.ask-check) { grid-template-columns: minmax(9em, 21em) minmax(0, max-content) 1fr; }
 /* U24: Settings ▸ Drawing Style: the scrolling list runs down to the footer */
 .sw-pane > dialog.style-dialog.embedded { height: 100%; box-sizing: border-box; }
 .sw-pane > dialog.style-dialog.embedded > form { height: 100%; display: flex; flex-direction: column; }
@@ -5230,10 +5323,13 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-xray .si-num { width: 5em; }
 /* Project Settings ▸ Headings and Labels: how they will read; ▸ Page: a page with its header and footer */
 .si-heading-example { margin: 0; font-size: 13px; }
-.si-page-example { width: 340px; height: 150px; border: 1px solid var(--line, #ccc); background: #fff; color: #222; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 14px; box-sizing: border-box; font-size: 9px; }
+.si-page-example { width: 100%; max-width: 340px; aspect-ratio: 210 / 297; height: auto; border: 1px solid var(--line, #ccc); background: #fff; color: #222; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 14px; box-sizing: border-box; font-size: 9px; }
 .si-page-example > .si-page-header, .si-page-example > .si-page-footer { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; min-height: 12px; }
 .si-page-example span:nth-child(2) { text-align: center; }
 .si-page-example span:nth-child(3) { text-align: right; }
+/* G5-37: the Insert drop-down beside a header or footer box */
+.ask-row > select.ask-inserts, .sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide) > select.ask-inserts { grid-column: 3; grid-row: 1; width: 7.5em; min-width: 0; max-width: none; margin-left: 6px; }
+.sw-pane .ask-form > .ask-row:not(.ask-check, .ask-wide):has(> select.ask-inserts) > input:not([type='checkbox']) { width: 14em; }
 .si-page-body { flex: 1; margin: 8px 0; background: repeating-linear-gradient(#fff 0 6px, #e6e6e6 6px 8px); }
 /* A compound's spectra page: its spectra listed, the one picked drawn as it prints, its settings */
 .si-spectra-body { display: flex; gap: 12px; align-items: flex-start; }
@@ -5405,6 +5501,57 @@ body.ss-dragging, body.ss-dragging * { cursor: grabbing !important; }
 html.touch-ui .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { height: 36px; }
 
 
+/* Compare with Original (Make Editable, Document mode): the picture and its structure side by side, beside the structure */
+.compare-card { position: fixed; z-index: 30; display: grid; gap: 6px; padding: 6px 8px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); font-size: 12px; max-width: calc(100vw - 16px); }
+.compare-card .cc-head { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.compare-card .cc-status { color: var(--muted); margin-left: 4px; overflow: hidden; text-overflow: ellipsis; }
+.compare-card .cc-panes { display: flex; gap: 6px; }
+.compare-card figure { margin: 0; display: grid; justify-items: center; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
+.compare-card figcaption { color: #5d6870; font-size: 11px; }
+.compare-card .cc-buttons { display: flex; justify-content: flex-end; gap: 6px; }
+.compare-card .cc-buttons button { padding: 2px 10px; }
+
+/* Make Editable window (Document mode): the structure as it will be made, before it goes in */
+.make-editable-dialog form { display: grid; gap: 8px; }
+.make-editable-dialog .me-preview { display: flex; align-items: center; justify-content: center; min-height: 150px; min-width: 320px; }
+.make-editable-dialog .cc-panes { display: flex; gap: 6px; }
+.make-editable-dialog figure { margin: 0; display: grid; justify-items: center; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
+.make-editable-dialog figcaption { color: #5d6870; font-size: 11px; }
+.make-editable-dialog .me-status { margin: 0; font-size: 12px; max-width: 480px; }
+.make-editable-dialog .me-status.warn { color: var(--warn, #9a5b00); }
+.make-editable-dialog .me-row { display: flex; align-items: center; gap: 6px; }
+.make-editable-dialog .me-row select { flex: 1; }
+.make-editable-dialog .me-check { display: flex; align-items: center; gap: 4px; }
+
+/* Convert to Figure window: the two drawing styles side by side on one sample, at one scale */
+.convert-figure-dialog form { display: grid; gap: 8px; }
+.convert-figure-dialog h2 { display: flex; align-items: center; gap: 6px; }
+.convert-figure-dialog .cf-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.convert-figure-dialog .cf-card { display: grid; align-content: start; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+.convert-figure-dialog .cf-card.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.convert-figure-dialog .cf-title { display: flex; align-items: center; gap: 4px; font-weight: 600; }
+.convert-figure-dialog .cf-preview { display: grid; place-items: center; min-height: 120px; background: #fff; border: 1px solid var(--line); border-radius: 3px; }
+.convert-figure-dialog .cf-values { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.convert-figure-dialog .cf-values input { width: 58px; padding: 1px 3px; }
+.convert-figure-dialog .cf-how { grid-column: 1 / -1; font-size: 11px; }
+.convert-figure-dialog .cf-card input[type=radio] { margin: 0; }
+
+/* The original picture beside a figure converted from it (in the comment column, over the drawing layer) */
+.op-note { position: fixed; z-index: 31; display: grid; gap: 5px; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid #3d7fc4; border-radius: var(--r-tab); padding: 6px 8px 8px; font: var(--fs-sm)/1.35 var(--ui-font); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.op-note[hidden] { display: none; }
+.op-note .op-head { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.op-note .op-gap { flex: 1; }
+.op-note .op-btn { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; }
+.op-note .op-btn svg { width: 14px; height: 14px; }
+.op-note .op-btn[aria-pressed="true"] { background: var(--accent-soft, #dce9f7); border-color: var(--accent); }
+.op-note .op-sq { width: 22px; justify-content: center; padding: 0; }
+.op-note .op-pic { display: block; background: #fff; border: 1px solid var(--line); }
+.op-note .op-row { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.op-note .op-row input[type=range] { flex: 1; min-width: 60px; }
+.op-note .op-pct { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
+.op-note .op-swatch { width: 16px; height: 16px; padding: 0; border: 1px solid var(--line); border-radius: 3px; }
+.op-note .op-swatch[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* The References box's tick list on a slide (refs-box.ts) */
 .refs-box { position: fixed; z-index: 70; width: 420px; max-width: calc(100vw - 16px); display: flex; flex-direction: column; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: 0 6px 18px rgb(0 0 0 / 0.18); font: var(--fs-sm) var(--ui-font); }
 .refs-box .rfb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
@@ -5424,3 +5571,27 @@ html.touch-ui .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { height: 3
 .refs-box .rfb-none { padding: 8px; color: var(--muted); }
 .refs-box .rfb-foot { display: flex; gap: 6px; padding: 6px 8px; border-top: 1px solid var(--line); }
 .refs-box .rfb-look { margin-left: auto; }
+/* G5-09: Document ▸ Paragraph ▸ Tabs…, as Word's Tabs window */
+dialog.tabs-dialog { width: min(94vw, 440px); }
+.tabs-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.tabs-left { display: flex; flex-direction: column; gap: 4px; }
+.tabs-pos { display: flex; flex-direction: column; gap: 3px; }
+.tabs-pos > input { width: 100%; box-sizing: border-box; }
+.tabs-list { width: 100%; min-height: 8em; font: inherit; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); }
+.tabs-right fieldset { border: 1px solid var(--line); border-radius: var(--r-control); margin: 0 0 8px; padding: 4px 10px 6px; }
+.tabs-right legend { padding: 0 4px; color: var(--muted); font-size: var(--fs-sm); }
+.tabs-right label { display: block; margin: 2px 0; }
+.tabs-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0; }
+.tabs-status { color: var(--muted); font-size: var(--fs-sm); }
+/* G5-10: Chemistry ▸ R-Group Table's compounds, one row each */
+.rg-grid-wrap { margin-top: 8px; }
+.rg-grid-title { margin: 6px 0 4px; font-size: var(--fs-md); }
+.rg-grid-scroll { max-height: 40vh; overflow: auto; }
+.rg-grid { border-collapse: collapse; }
+.rg-grid th { font-weight: 600; font-size: var(--fs-sm); color: var(--muted); text-align: left; padding: 0 4px 2px; }
+.rg-grid td { padding: 1px 2px; }
+.rg-grid td > input[type='text'] { width: 6.5em; box-sizing: border-box; }
+.rg-grid td:first-child > input[type='text'] { width: 4em; }
+/* G5-34: the SI tab's status bar ends with the zoom every mode has (it zooms the Live Preview) */
+#si-statusbar[hidden], body:not(.si-mode) #si-statusbar { display: none; }
+#si-statusbar.si-zoom-off { opacity: 0.5; }
