@@ -3,11 +3,11 @@
 // the slide show and PDF pages, so they all look the same.
 
 import { cssFamily, ASCENT } from '../text/layout';
-import { Doc } from '../model';
+import { Doc, type Contents } from '../model';
 import { Renderer, withMeasure, pictureMeasure, pictureCharWidth } from '../render/renderer';
 import { imageFor } from '../render/images';
 import { VectorContext, VecPath, Item } from '../render/vector';
-import { Master, SlideSize, LayoutId, type ArtLayer, decorFrames, showsNumber, showsFooter, showsDate, dateText, type SlideHF, slideColours, slideBackground, decorShapes, layoutFrames, placeRefs, type DecorShape } from './deck';
+import { Master, SlideSize, LayoutId, type ArtLayer, decorFrames, showsNumber, showsFooter, showsDate, dateText, type SlideHF, slideColours, slideBackground, decorShapes, layoutFrames, placeRefs, type DecorShape, layoutDef, textStyles, refsBoxRect } from './deck';
 import { lineGap, type RefBlock } from './slide-refs';
 import { backgroundColour, paintBackground, type Background } from './background';
 import type { Rect } from '../geom';
@@ -22,7 +22,7 @@ export const SURROUND = '#d5d8de';
  * master's shapes and logo are hidden on it. A canvas slide's page has the part of the canvas
  * shown (`view`, one of its keyframes) instead of the slide's own place.
  */
-export interface SlidePage { size: SlideSize; master: Master; layout: LayoutId; index: number; own?: Background; hideGraphics?: boolean; hf?: SlideHF; view?: Rect; canvas?: CanvasData; title?: string; /** Its reference lines, or the References slide's list. */ refs?: RefBlock }
+export interface SlidePage { size: SlideSize; master: Master; layout: LayoutId; index: number; own?: Background; hideGraphics?: boolean; hf?: SlideHF; view?: Rect; canvas?: CanvasData; title?: string; /** Its reference lines, or the References slide's list. */ refs?: RefBlock; /** Its layout items are its own (unlocked), on its drawing. */ ownItems?: boolean }
 
 // Drawing whole slides never draws on screen through the renderer's own canvases.
 const noCanvas = { getContext: () => null } as unknown as HTMLCanvasElement;
@@ -44,6 +44,30 @@ export function drawSlidePage(ctx: CanvasRenderingContext2D, p: SlidePage, surro
   }
   paintBackground(ctx, slideBackground(m, p.layout, p.own), size.w, size.h);
   drawScreen(ctx, p);
+  // on the screen being edited, an empty References placeholder shows where the lines will go
+  if (surround && !p.refs) drawRefsPrompt(ctx, p);
+}
+
+/** The prompt PowerPoint-style placeholders show while empty, for the layout's References placeholder. */
+export const REFS_PROMPT = 'Click to add references';
+
+function drawRefsPrompt(ctx: CanvasRenderingContext2D, p: SlidePage): void {
+  const box = refsBoxRect(p.master, p.layout, p.size);
+  if (!box) return;
+  const ink = slideColours(p.master, p.layout).footerColor;
+  const lw = Math.max(0.5, p.size.w / 1200);
+  ctx.save();
+  ctx.strokeStyle = ink;
+  ctx.globalAlpha = 0.6;
+  ctx.lineWidth = lw;
+  ctx.setLineDash([4 * lw, 3 * lw]);
+  ctx.strokeRect(box.x1, box.y1, box.x2 - box.x1, box.y2 - box.y1);
+  ctx.setLineDash([]);
+  ctx.fillStyle = ink;
+  const size = Math.min(12, (box.y2 - box.y1) * 0.6);
+  ctx.font = `${size}px ${cssFamily(p.master.bodyFont)}, Arial, sans-serif`;
+  ctx.fillText(REFS_PROMPT, box.x1 + 4, box.y1 + ASCENT * size + 2);
+  ctx.restore();
 }
 
 /**
@@ -54,6 +78,7 @@ export function drawScreen(ctx: CanvasRenderingContext2D, p: SlidePage): void {
   const { size, master: m } = p;
   const colours = slideColours(m, p.layout);
   if (!p.hideGraphics) drawArt(ctx, p);
+  if (!p.hideGraphics) drawItems(ctx, p);
   if (!p.hideGraphics) for (const sh of decorShapes(size, m, p.layout)) drawDecor(ctx, sh);
   const d = decorFrames(size, m);
   if (m.logo && d.logo && !p.hideGraphics) {
@@ -198,6 +223,29 @@ function drawArt(ctx: CanvasRenderingContext2D, p: SlidePage): void {
     if (Math.abs(kx - 1) > 1e-6 || Math.abs(ky - 1) > 1e-6) ctx.scale(kx, ky);
     r.drawDocument(ctx, doc);
     ctx.restore();
+  }
+}
+
+const itemDocs = new WeakMap<Contents, Doc>();
+
+/** What is drawn on the master and on the slide's layout (Slide Master view), behind the slide's own things. */
+function drawItems(ctx: CanvasRenderingContext2D, p: SlidePage): void {
+  if (p.ownItems) return;
+  const layer = layoutDef(p.master, p.layout).items;
+  for (const c of [p.master.items, layer]) {
+    if (!c) continue;
+    let doc = itemDocs.get(c);
+    if (!doc) {
+      doc = new Doc();
+      doc.style = { ...p.master.drawing };
+      doc.textStyles = textStyles(p.master, p.layout);
+      doc.restoreContents(c);
+      itemDocs.set(c, doc);
+    }
+    const r = new Renderer(noCanvas, noCanvas);
+    r.showWarnings = false;
+    if ('picture' in ctx) r.makePath = () => new VecPath() as unknown as Path2D;
+    r.drawDocument(ctx, doc);
   }
 }
 

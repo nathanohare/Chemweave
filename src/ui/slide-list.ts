@@ -16,6 +16,7 @@
 import { clockText } from '../deck/show-link';
 import type { Deck } from '../deck/deck';
 import { paintSlide } from '../deck/slide-view';
+import { MASTER_PAGE } from '../deck/master-view';
 
 export interface SlideListHooks {
   /** Edit slide i. */
@@ -132,6 +133,9 @@ export class SlideList {
   rebuild(): void {
     const deck = this.deck;
     if (!deck) { this.list.replaceChildren(); this.items = []; this.heads = []; return; }
+    const add = this.el.querySelector<HTMLButtonElement>('.sl-add');
+    if (add) add.textContent = deck.inMasterView ? '+ Insert Layout' : '+ New Slide';
+    this.list.setAttribute('aria-label', deck.inMasterView ? 'Slide Master and layouts' : this.grid ? 'Slide Sorter' : 'Slides');
     // keep picked slides that still exist, and always the one being edited
     this.picked = new Set([...this.picked].filter((i) => i < deck.slides.length));
     if (!this.picked.has(deck.index)) this.picked = new Set([deck.index]);
@@ -211,17 +215,32 @@ export class SlideList {
     const s = deck.slides[i];
     const item = document.createElement('div');
     item.className = s.hidden ? 'sl-item is-hidden' : 'sl-item';
-    item.draggable = true;
+    // Slide Master view: the master, with its layouts under it (each with how many slides use it)
+    const master = deck.inMasterView;
+    item.draggable = !master;
     item.setAttribute('role', 'option');
     item.dataset.i = String(i);
     const num = document.createElement('span');
     num.className = 'sl-num';
-    num.textContent = String(i + 1);
+    num.textContent = master ? (s.layout === MASTER_PAGE ? '1' : '') : String(i + 1);
+    if (master) {
+      const def = deck.pageLayout(i);
+      item.classList.add(def ? 'sl-layout' : 'sl-master');
+      item.title = def ? `${def.name} Layout: used by ${deck.layoutUses(def.id)} slide${deck.layoutUses(def.id) === 1 ? '' : 's'}` : 'Slide Master: every layout starts from it';
+      item.setAttribute('aria-label', def ? `${def.name} Layout` : 'Slide Master');
+      if (def) {
+        const n = document.createElement('span');
+        n.className = 'sl-uses';
+        n.textContent = String(deck.layoutUses(def.id));
+        item.append(n);
+      }
+    }
     if (s.hidden) num.title = 'Hidden: the slide show skips it (Hide Slide to show it again)';
     const canvas = document.createElement('canvas');
     canvas.className = 'sl-thumb';
-    const h = Math.round((this.thumbW * deck.size.h) / deck.size.w);
-    canvas.style.width = `${this.thumbW}px`;
+    const tw = this.wOf(i);
+    const h = Math.round((tw * deck.size.h) / deck.size.w);
+    canvas.style.width = `${tw}px`;
     canvas.style.height = `${h}px`;
     item.append(num, canvas);
     if (s.canvas && this.hooks.keyframe && !this.grid) {
@@ -323,6 +342,12 @@ export class SlideList {
     return list;
   }
 
+  /** Width of slide i's picture: a layout's is indented under the master in Slide Master view. */
+  private wOf(i: number): number {
+    const d = this.deck;
+    return d?.inMasterView && d.pageLayout(i) && !this.grid ? Math.max(48, this.thumbW - 16) : this.thumbW;
+  }
+
   /** Width of a keyframe's picture, in pixels. */
   private keyW(): number {
     return Math.max(48, Math.round(this.thumbW * 0.72));
@@ -363,11 +388,11 @@ export class SlideList {
     this.thumbW = w;
     const deck = this.deck;
     if (!deck) return;
-    const h = Math.round((w * deck.size.h) / deck.size.w);
-    for (const it of this.items) {
+    this.items.forEach((it, i) => {
       const c = it?.querySelector('canvas');
-      if (c) { c.style.width = `${w}px`; c.style.height = `${h}px`; }
-    }
+      const tw = this.wOf(i), h = Math.round((tw * deck.size.h) / deck.size.w);
+      if (c) { c.style.width = `${tw}px`; c.style.height = `${h}px`; }
+    });
     if (paint) this.refreshAll();
   }
 
@@ -389,8 +414,8 @@ export class SlideList {
     const item = this.items[i];
     if (!deck || !item || !deck.slides[i]) return;
     const canvas = item.querySelector('canvas')!;
-    const h = Math.round((this.thumbW * deck.size.h) / deck.size.w);
-    paintSlide(canvas, this.thumbW, h, window.devicePixelRatio || 1, deck.page(i), deck.docOf(i));
+    const tw = this.wOf(i), h = Math.round((tw * deck.size.h) / deck.size.w);
+    paintSlide(canvas, tw, h, window.devicePixelRatio || 1, deck.page(i), deck.docOf(i));
     const keys = this.keyLists.get(i);
     if (keys) {
       const w = this.keyW(), kh = Math.round((w * deck.size.h) / deck.size.w);

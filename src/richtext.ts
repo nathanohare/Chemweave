@@ -11,7 +11,7 @@ const LINK_COLOUR = '#0563c1';
 export type RunStyle = Omit<TextRun, 'text'>;
 export type Toggle = 'bold' | 'italic' | 'underline' | 'sub' | 'sup' | 'formula' | 'strike' | 'smallCaps' | 'allCaps';
 
-const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'lang', 'field', 'noProof', 'raise'] as const;
+const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'lang', 'field', 'noProof', 'raise', 'cite'] as const;
 /** Subscript, superscript and formula style change where characters sit, so only one applies. */
 const POSITION: Toggle[] = ['sub', 'sup', 'formula'];
 
@@ -135,6 +135,11 @@ export function typingStyle(runs: TextRun[], start: number, end: number, fallbac
   if (s.link !== undefined && end === start && (start >= text.length || charStyle(runs, start)?.link !== s.link)) {
     const { link: _l, ...rest } = s;
     s = rest.color?.toLowerCase() === LINK_COLOUR ? { ...rest, color: undefined, underline: undefined } : rest;
+  }
+  // typing next to a citation (slides) is ordinary text, not more of its number
+  if (s.cite !== undefined) {
+    const { cite: _c, sup: _s, ...rest } = s;
+    s = rest;
   }
   if (s.obj === undefined && s.rev === undefined && s.fmt === undefined) return cleanStyle(s);
   const { obj: _, rev: _r, fmt: _f, ...rest } = s;

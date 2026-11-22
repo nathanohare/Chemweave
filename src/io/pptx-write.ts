@@ -12,7 +12,7 @@
 
 import type { PinnedComment } from '../document/comments';
 import { COMMENT_CT, COMMENT_REL, writeSlideComments } from './pptx-comments';
-import { Doc, Caption, Shape, TextRun, ParaStyle, Arrow, applyBase, PICTURE_SHADOWS, type Pattern, type PictureFx, type PictureLook, type Media, type TableData, type Glue } from '../model';
+import { Doc, Caption, Shape, TextRun, type Contents, ParaStyle, Arrow, applyBase, PICTURE_SHADOWS, type Pattern, type PictureFx, type PictureLook, type Media, type TableData, type Glue } from '../model';
 import { bakedPart, tidyFx } from '../render/picture-fx';
 import { blipEffectsXml, pictureGeomXml } from './picture-xml';
 import { turnAbout, type Rect, type Vec } from '../geom';
@@ -32,7 +32,8 @@ import { extractDrawing } from './clipboard';
 import { contentsAlt, titleOverlaps, roughCaptionBox } from '../accessibility';
 import type { Selection } from '../editor/editor';
 import { Package, NS, REL, emu, xml, xmlAttr, hex6, MediaFiles, structureAltText, bytesHash } from './ooxml';
-import { SLIDE_SIZE_TYPES } from '../deck/deck';
+import { SLIDE_SIZE_TYPES, hasItems } from '../deck/deck';
+import { masterBoxes } from '../deck/master-view';
 import { notesParagraphs, type NotesLook } from '../deck/notes-look';
 import { appPropsXml, corePropsXml, writeKeptParts, type KeptParts } from './kept-parts';
 import { olePrint, picturePrint, svgWithDrawing, type KeptOle, type KeptPicture } from './ole-kept';
@@ -48,7 +49,7 @@ import { viewPropsXml, slideGuidesExt } from '../deck/guides';
 import { handoutMasterXml, notesMasterXml } from '../deck/notes-pages';
 import { showPrXml, custShowsXml } from '../deck/show-setup';
 import {
-  Master, SlideSize, LayoutId, type KeptRel, type NotesKept, layoutFrames, deckLayouts, layoutDef, titleLook, isBuiltinLayout, type LayoutDef, type SectionCount, decorFrames, showsNumber, showsFooter, showsDate, dateText, type SlideHF, type DeckSettings, textStyles, isEmptyText, slideColours, slideBackground, decorShapes, type DecorShape, placeRefs, type PlacedRefs,
+  Master, SlideSize, LayoutId, type KeptRel, type NotesKept, layoutFrames, deckLayouts, layoutDef, titleLook, isBuiltinLayout, type LayoutDef, type SectionCount, decorFrames, showsNumber, showsFooter, showsDate, dateText, type SlideHF, type DeckSettings, textStyles, isEmptyText, masterFmt, type PlaceholderFmt, slideColours, slideBackground, decorShapes, type DecorShape, placeRefs, type PlacedRefs,
 } from '../deck/deck';
 import { lineGap, slideRefBlock, slideRefsTag, type RefListSpec, type RefLook, type SlideZotero } from '../deck/slide-refs';
 import { sameBackground, type Background } from '../deck/background';
@@ -133,6 +134,8 @@ export const TAG = {
   slideRefs: 'CHEMILLUSTRATOR_SLIDE_REFS',
   /** The text box of a slide's reference lines, made from the references (read back from them, not from the box). */
   refLines: 'CHEMILLUSTRATOR_REF_LINES',
+  /** On a slide: its layout items are its own (Unlock Layout Items), on the slide; its layout is a copy without them. */
+  ownItems: 'CHEMILLUSTRATOR_OWN_ITEMS',
   /**
    * On a structure's picture: prints of the picture written (its SVG and its PNG, which PowerPoint
    * keeps as they are), so the drawing in CHEMILLUSTRATOR_CDXML is used only while PowerPoint still
@@ -286,7 +289,7 @@ export interface DeckData {
   size: SlideSize;
   master: Master;
   /** `id` is the slide's id in the deck, for links to it (#slide=id). */
-  slides: { id?: number; layout: LayoutId; doc: Doc; notes: string; notesKept?: NotesKept; notesLook?: NotesLook; transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; part?: CanvasPart; refs?: string[]; refLook?: Partial<RefLook>; refList?: RefListSpec; zotero?: SlideZotero }[];
+  slides: { id?: number; layout: LayoutId; doc: Doc; notes: string; notesKept?: NotesKept; notesLook?: NotesLook; transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; part?: CanvasPart; refs?: string[]; refLook?: Partial<RefLook>; refList?: RefListSpec; zotero?: SlideZotero; ownItems?: boolean }[];
   /** A design (Design mode): marked so it opens in Design mode again. */
   design?: boolean;
   /** The deck's sections, in order (none when left out). */
@@ -734,9 +737,14 @@ class Writer {
     // layouts first, so the master can list them
     const layoutRels: string[] = [];
     const layouts = deckLayouts(deck.master);
-    for (const [i, l] of layouts.entries()) {
+    // slides with their own copies of the layout items (Unlock Layout Items) use a copy of their
+    // layout without them, after the others (read back by the slides' layout tags, not as layouts)
+    const unlocked = layouts.filter((l) => deck.slides.some((s) => s.ownItems && s.layout === l.id && hasItems(deck.master, l.id)));
+    const variant = new Map<LayoutId, number>();
+    for (const [i, l] of [...layouts, ...unlocked].entries()) {
       const path = `ppt/slideLayouts/slideLayout${i + 1}.xml`;
-      pkg.add(path, await this.layout(path, l), CT.layout);
+      if (i >= layouts.length) variant.set(l.id, i);
+      pkg.add(path, await this.layout(path, l, i >= layouts.length), CT.layout);
       pkg.relate(path, REL.slideMaster, '../slideMasters/slideMaster1.xml');
       layoutRels.push(pkg.relate('ppt/slideMasters/slideMaster1.xml', REL.slideLayout, `../slideLayouts/slideLayout${i + 1}.xml`));
     }
@@ -766,7 +774,8 @@ class Writer {
       const path = `ppt/slides/slide${i + 1}.xml`;
       slideRels.push(pkg.relate(P, REL.slide, `slides/slide${i + 1}.xml`));
       const s = deck.slides[i];
-      pkg.relate(path, REL.slideLayout, `../slideLayouts/slideLayout${Math.max(0, layouts.findIndex((l) => l.id === s.layout)) + 1}.xml`);
+      const lay = (s.ownItems ? variant.get(s.layout) : undefined) ?? Math.max(0, layouts.findIndex((l) => l.id === s.layout));
+      pkg.relate(path, REL.slideLayout, `../slideLayouts/slideLayout${lay + 1}.xml`);
       pkg.add(path, await this.slide(path, i), CT.slide);
       const cm = cmts.slides[i];
       if (cm) {
@@ -830,11 +839,13 @@ class Writer {
   private async master(layoutRels: string[]): Promise<string> {
     const m = this.deck.master;
     const size = this.deck.size;
-    const frames = layoutFrames('title-content', size);
+    // the master's own title and text boxes (Slide Master view), Title and Content's as they come
+    const frames = masterBoxes(m).map((b) => ({ ph: b.ph, x: b.x * size.w, y: b.y * size.h, w: b.w * size.w, h: b.h * size.h, justify: b.justify }));
     const d = decorFrames(size, m);
     const P = 'ppt/slideMasters/slideMaster1.xml';
     const logo = m.logo && d.logo ? await this.picture(P, m.logo.src, d.logo, 'Logo', 90, null) : '';
     const tree = [
+      await this.items(P, m.items, 'title-content'),
       phShape(2, 'Title Placeholder 1', '<p:ph type="title"/>', frames[0], 'Click to edit Master title style', 'anchor="t"'),
       phShape(3, 'Text Placeholder 2', '<p:ph type="body" idx="1"/>', frames[1], 'Click to edit Master text styles', 'anchor="t"'),
       footerShape(4, 'Footer Placeholder 3', '<p:ph type="ftr" sz="quarter" idx="3"/>', d.footer, m, ''),
@@ -854,8 +865,10 @@ class Writer {
       `</p:sldMaster>`;
   }
 
-  private async layout(path: string, def: LayoutDef): Promise<string> {
-    const { id, name } = def;
+  /** A layout's part; `unlocked`: the copy for slides with their own layout items (none on it, nor the master's). */
+  private async layout(path: string, def: LayoutDef, unlocked = false): Promise<string> {
+    const { id } = def;
+    const name = unlocked ? `${def.name} (Unlocked Items)` : def.name;
     const size = this.deck.size;
     const m = this.deck.master;
     const frames = layoutFrames(id, size, m);
@@ -874,7 +887,13 @@ class Writer {
       const prompt = f.ph === 'title' ? 'Click to edit Master title style' : f.ph === 'subtitle' ? 'Click to edit Master subtitle style' : 'Click to edit Master text styles';
       const algn = f.justify === 'center' ? 'ctr' : 'l';
       // (a PowerPoint layout's own text styles for the placeholder, as it had them)
-      const lst = def.boxes[i]?.lst ?? (f.ph === 'subtitle'
+      // (its own look from Slide Master view, over the master's)
+      const look = def.fmt?.[f.ph];
+      const lst = look ? lvl1Xml({
+        ...(f.ph === 'subtitle' ? { algn: 'ctr', bullet: 'none' as const, size: m.subtitleSize } : f.ph === 'title' ? { algn } : {}),
+        ...(own ? { color: f.ph === 'title' ? c.titleColor : c.textColor } : {}),
+        ...look,
+      }) : def.boxes[i]?.lst ?? (f.ph === 'subtitle'
         ? `<a:lvl1pPr marL="0" indent="0" algn="ctr"><a:buNone/><a:defRPr sz="${Math.round(m.subtitleSize * 100)}">${fill(c.textColor)}</a:defRPr></a:lvl1pPr>`
         : f.ph === 'title' ? `<a:lvl1pPr algn="${algn}"><a:defRPr>${fill(c.titleColor)}</a:defRPr></a:lvl1pPr>` : '');
       return phShape(i + 2, `${f.ph === 'title' ? 'Title' : f.ph === 'subtitle' ? 'Subtitle' : def.boxes[i]?.pptType === 'body' ? 'Text Placeholder' : 'Content Placeholder'} ${i + 1}`, f.ph === 'title' ? phs.title! : phs.bodies[other++],
@@ -894,8 +913,32 @@ class Writer {
     const layer = m.art?.layouts?.[id];
     const art = layer?.xml.length ? this.artXml(path, layer, ((this.artIds.layouts ??= {})[id] = [])) : '';
     const map = layer?.clrMap ? `<a:overrideClrMapping ${Object.entries({ ...USUAL_CLRMAP, ...(m.art?.clrMap ?? {}), ...layer.clrMap }).map(([k, v]) => `${k}="${xmlAttr(v)}"`).join(' ')}/>` : '<a:masterClrMapping/>';
-    return `${HEAD}<p:sldLayout ${XMLNS} type="${layoutType(def)}" preserve="1"${layer?.hideMaster ? ' showMasterSp="0"' : ''}><p:cSld name="${xml(name)}">${bg}<p:spTree>${GROUP}${art}${shapes.join('')}</p:spTree></p:cSld>` +
+    // what is drawn on the layout itself, behind its placeholders (after the template's shapes)
+    const items = unlocked ? '' : await this.items(path, def.items, id);
+    shapes.splice(decor.length, 0, items);
+    // the unlocked copy hides the master's shapes (its items are on the slides), so it has the master's artwork and logo itself
+    let masterArt = '';
+    const hideMaster = !!layer?.hideMaster || (unlocked && !!m.items);
+    if (unlocked && m.items && !layer?.hideMaster) {
+      masterArt = m.art?.master ? this.artXml(path, m.art.master, []) : '';
+      if (m.logo && d.logo) shapes.push(await this.picture(path, m.logo.src, d.logo, 'Logo', 90, null));
+    }
+    return `${HEAD}<p:sldLayout ${XMLNS} type="${layoutType(def)}" preserve="1"${hideMaster ? ' showMasterSp="0"' : ''}><p:cSld name="${xml(name)}">${bg}<p:spTree>${GROUP}${masterArt}${art}${shapes.join('')}</p:spTree></p:cSld>` +
       `<p:clrMapOvr>${map}</p:clrMapOvr></p:sldLayout>`;
+  }
+
+  /**
+   * What is drawn on the master or a layout itself (Slide Master view) as PowerPoint shapes in its
+   * part, behind its placeholders: shapes, text and pictures as on a slide, structures as pictures.
+   * (Read back from the master's settings, so they are not taken for a template's artwork.)
+   */
+  private async items(path: string, items: Contents | undefined, layout: LayoutId): Promise<string> {
+    if (!items) return '';
+    const d = new Doc();
+    d.style = { ...this.deck.master.drawing };
+    d.textStyles = textStyles(this.deck.master, layout);
+    d.restoreContents(items);
+    return this.slide(path, -1, { doc: d, layout, firstId: 500 });
   }
 
   /** Which shapes on the master and layouts are the template's artwork (by the ids written), for reading the file back. */
@@ -975,16 +1018,17 @@ class Writer {
 
   // ---------------------------------------------------------------- slides
 
-  private async slide(path: string, index: number): Promise<string> {
-    const s = this.deck.slides[index];
+  private async slide(path: string, index: number, layer?: { doc: Doc; layout: LayoutId; firstId: number }): Promise<string> {
+    // (a master's or layout's items: its shapes alone, ids from firstId)
+    const s: DeckData['slides'][number] = layer ? { layout: layer.layout, doc: layer.doc, notes: '' } : this.deck.slides[index];
     const doc = s.doc;
     this.curPath = path;
     this.clr = this.themeColours(s.layout);
-    this.curPics = layoutPh(layoutDef(this.deck.master, s.layout)).pics;
+    this.curPics = layer ? [] : layoutPh(layoutDef(this.deck.master, s.layout)).pics;
     this.picsUsed = new Set();
     const parts = splitSlide(doc, this.measure);
     const out: string[] = [];
-    let id = 2;
+    let id = layer?.firstId ?? 2;
     // which PowerPoint shapes each object went into, for the animations
     const spids = new Map<string, number[]>();
     const mark = (sel: Partial<Selection>, ...ids: number[]) => {
@@ -1105,6 +1149,7 @@ class Writer {
       k = e;
     }
     out.splice(first, out.length - first, ...wrapped);
+    if (layer) return out.join('');
     // the layout's picture placeholders no picture is in, empty, as on PowerPoint's slides of that layout
     this.curPics.forEach((ph, k) => {
       if (this.picsUsed.has(k)) return;
@@ -1138,7 +1183,7 @@ class Writer {
     }
     const refTag = slideRefsTag(s);
     const stepTag = stepsTag(doc, drawings.map((d) => d.sel));
-    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims) } : {}), ...turnTag(s.anims, (a) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined)), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...part });
+    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.ownItems ? { [TAG.ownItems]: '1' } : {}), ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims) } : {}), ...turnTag(s.anims, (a) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined)), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...part });
     const bg = s.background ? await this.background(path, s.background) : '';
     return `${HEAD}<p:sld ${XMLNS}${s.hideGraphics ? ' showMasterSp="0"' : ''}${s.hidden ? ' show="0"' : ''}><p:cSld>${bg}<p:spTree>${GROUP}${out.join('')}</p:spTree><p:custDataLst><p:tags r:id="${tags}"/></p:custDataLst></p:cSld>` +
       `<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${transitionXml(s.transition)}${timingXml(expandParas(s.anims ?? [], (cid) => { const c = doc.captions.get(cid); return c ? plainText(c.runs).split('\n') : null; }), (a) => spids.get(targetKey(a.target)) ?? [], videos, (t) => spids.get(targetKey(t))?.[0])}` +
@@ -2095,22 +2140,51 @@ function footerShape(id: number, name: string, ph: string, r: Rect, m: Master, t
 
 /** The master's title style. */
 function titleLevel(m: Master): string {
-  return `<a:lvl1pPr algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1"><a:lnSpc><a:spcPct val="100000"/></a:lnSpc><a:spcBef><a:spcPct val="0"/></a:spcBef><a:buNone/>` +
-    `<a:defRPr sz="${Math.round(m.titleSize * 100)}" b="${m.titleBold ? 1 : 0}" kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.titleColor)}"/></a:solidFill><a:latin typeface="+mj-lt"/><a:ea typeface="+mj-ea"/><a:cs typeface="+mj-cs"/></a:defRPr></a:lvl1pPr>`;
+  const f = masterFmt(m, 'title');
+  return `<a:lvl1pPr algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1"><a:lnSpc><a:spcPct val="${Math.round((f.lineSpacing ?? 1) * 100000)}"/></a:lnSpc>${spacingXml(f.spaceBefore, f.spaceAfter, true)}${levelBulletXml(f.bullet ?? 'none', 0)}` +
+    `<a:defRPr sz="${Math.round(m.titleSize * 100)}" b="${m.titleBold ? 1 : 0}"${f.italic ? ' i="1"' : ''} kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.titleColor)}"/></a:solidFill><a:latin typeface="+mj-lt"/><a:ea typeface="+mj-ea"/><a:cs typeface="+mj-cs"/></a:defRPr></a:lvl1pPr>`;
 }
 
 /** The master's body text: bullets on every level, placed as on screen. */
 function bodyLevels(m: Master): string {
   const em = m.bodySize;
+  const f = masterFmt(m, 'body');
   const out: string[] = [];
-  const bullets = ['•', '–', '•', '–', '»'];
   for (let l = 0; l < 9; l++) {
     const markLeft = l * 1.6 * em, textLeft = markLeft + 1.1 * em;
+    // (the master's bullets and spacing, from Slide Master view; bullets on every level as they come)
     out.push(`<a:lvl${l + 1}pPr marL="${emu(textLeft)}" indent="${emu(markLeft - textLeft)}" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">` +
-      `<a:lnSpc><a:spcPct val="100000"/></a:lnSpc><a:spcBef><a:spcPts val="0"/></a:spcBef><a:buFont typeface="Arial"/><a:buChar char="${bullets[l % bullets.length]}"/>` +
-      `<a:defRPr sz="${Math.round(em * 100)}" kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.textColor)}"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:lvl${l + 1}pPr>`);
+      `<a:lnSpc><a:spcPct val="${Math.round((f.lineSpacing ?? 1) * 100000)}"/></a:lnSpc>${spacingXml(f.spaceBefore, f.spaceAfter, false)}${levelBulletXml(f.bullet ?? 'bullet', l)}` +
+      `<a:defRPr sz="${Math.round(em * 100)}"${f.italic ? ' i="1"' : ''} kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.textColor)}"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:lvl${l + 1}pPr>`);
   }
   return out.join('');
+}
+
+/** A paragraph's space before (always written, as PowerPoint's masters do) and after, in points. */
+function spacingXml(before = 0, after = 0, pct: boolean): string {
+  return `<a:spcBef>${pct && !before ? '<a:spcPct val="0"/>' : `<a:spcPts val="${Math.round(before * 100)}"/>`}</a:spcBef>${after ? `<a:spcAft><a:spcPts val="${Math.round(after * 100)}"/></a:spcAft>` : ''}`;
+}
+
+/** A level's bullet: none, a numbered list, or the bullet character for that level. */
+function levelBulletXml(b: 'bullet' | 'number' | 'none', level: number): string {
+  if (b === 'none') return '<a:buNone/>';
+  if (b === 'number') return '<a:buFont typeface="+mj-lt"/><a:buAutoNum type="arabicPeriod"/>';
+  return `<a:buFont typeface="Arial"/><a:buChar char="${['•', '–', '•', '–', '»'][level % 5]}"/>`;
+}
+
+/** A layout placeholder's first level as its own look (Slide Master view) sets it. */
+function lvl1Xml(f: PlaceholderFmt & { algn?: string; color?: string }): string {
+  const marL = f.bullet === 'none' ? ' marL="0" indent="0"' : '';
+  const rpr = [
+    f.size ? ` sz="${Math.round(f.size * 100)}"` : '', f.bold !== undefined ? ` b="${f.bold ? 1 : 0}"` : '', f.italic !== undefined ? ` i="${f.italic ? 1 : 0}"` : '',
+  ].join('');
+  const kids = (f.color ? `<a:solidFill><a:srgbClr val="${hex6(f.color)}"/></a:solidFill>` : '') + (f.font ? `<a:latin typeface="${xmlAttr(f.font)}"/>` : '');
+  return `<a:lvl1pPr${marL}${f.algn ? ` algn="${f.algn}"` : ''}>` +
+    (f.lineSpacing !== undefined ? `<a:lnSpc><a:spcPct val="${Math.round(f.lineSpacing * 100000)}"/></a:lnSpc>` : '') +
+    (f.spaceBefore !== undefined ? `<a:spcBef><a:spcPts val="${Math.round(f.spaceBefore * 100)}"/></a:spcBef>` : '') +
+    (f.spaceAfter !== undefined ? `<a:spcAft><a:spcPts val="${Math.round(f.spaceAfter * 100)}"/></a:spcAft>` : '') +
+    (f.bullet ? levelBulletXml(f.bullet, 0) : '') +
+    `<a:defRPr${rpr}>${kids}</a:defRPr></a:lvl1pPr>`;
 }
 
 /** Text that is not a title or placeholder (and the file's default). */

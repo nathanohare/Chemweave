@@ -22,7 +22,7 @@ import { ToolboxEditor, initials } from './ui/toolbox-editor';
 import { RibbonEditor } from './ui/ribbon-editor';
 import { readRibbons, applyRibbon, type RibbonInfo, type RibbonsPrefs } from './ui/ribbon-custom';
 import { editPalettes, getPalettes, onPalettes, setPalettes, useDrawingColours, usePaletteMenus } from './ui/palette-ui';
-import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, outsideValence, Contents, CHIRAL_FLAGS, PICTURE_STYLES, type PictureLook, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, type PageSetup, type PageWalls } from './model';
+import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, type Placeholder, outsideValence, Contents, CHIRAL_FLAGS, PICTURE_STYLES, type PictureLook, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, type PageSetup, type PageWalls } from './model';
 import { Renderer, measureText, forgetTextWidths, WARN_LOOKS, type WarnLook } from './render/renderer';
 import { Editor, TOOLS, ringsWereFilled, setMarkTint, type HighlightToggle, type Selection } from './editor/editor';
 import { LENGTH_UNITS, setAidTint } from './editor/cursor-aids';
@@ -77,7 +77,7 @@ import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytes
 import { writeTiff } from './render/tiff';
 import { itemsToEps } from './render/eps';
 import { Workspace, Tab } from './workspace';
-import { Deck, LayoutId, WIDE, STANDARD, Image as SlideImage, sizeName, SlideSize, slideBackground, slideColours, type SlideSource, contentArea, deckLayouts, type SizeFit } from './deck/deck';
+import { Deck, LayoutId, WIDE, STANDARD, Image as SlideImage, sizeName, SlideSize, slideBackground, slideColours, type SlideSource, contentArea, deckLayouts, type SizeFit, isBuiltinLayout, hasItems, refsBoxRect, placeholderRect, textStyles, frameFields } from './deck/deck';
 import { NOTE_BULLET, bulletEdits, notesCharLooks, notesLookOf, type NotesLook } from './deck/notes-look';
 import { RichInput } from './ui/rich-input';
 import type { TextFormat } from './text/format';
@@ -106,7 +106,9 @@ import { ReferencesDialog, editReference, type RefHolder } from './ui/references
 import { docHolder, deckHolder } from './ui/ref-holders';
 import { editSlideRefs } from './ui/slide-refs-dialog';
 import { chooseRefsToInsert, type RefGroup } from './ui/insert-ref-dialog';
-import { deckFormat, lookChanges, refLook, referenceRuns, slideRefBlock } from './deck/slide-refs';
+import { deckFormat, lookChanges, refLook, referenceRuns, slideCiteNumbers, slideRefBlock } from './deck/slide-refs';
+import { RefsBox } from './ui/refs-box';
+import { citeSuper, citeText } from './document/references';
 import { fetchDoi, type Reference } from './document/references';
 import { citeFormat as citeFormatOf, preferredStyle as preferredCiteStyle } from './document/cite-styles';
 import { defaultShow, showOrder } from './deck/show-setup';
@@ -130,6 +132,8 @@ import { EFFECTS, animName, newAnim, highlightParts } from './deck/animation';
 import { askKeyViews } from './ui/key-views';
 import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from './deck/templates';
 import { showContextMenu, setMenuKeys, topMenuEntry, type MenuItem } from './ui/context-menu';
+import { MasterPanel } from './ui/master-panel';
+import { PAGE_PROMPTS, refsCaption } from './deck/master-view';
 import { QuickBar } from './ui/quick-bar';
 import { SmartPane } from './ui/smart-pane';
 import { commandDef } from './commands/registry';
@@ -335,9 +339,7 @@ const askEquation = later(() => import('./ui/equation-dialog'), 'askEquation');
 const formatBackground = later(() => import('./ui/background-dialog'), 'formatBackground');
 const setUpShow = later(() => import('./ui/show-setup-dialog'), 'setUpShow');
 const editCustomShows = later(() => import('./ui/show-setup-dialog'), 'editCustomShows');
-const editMaster = later(() => import('./ui/master-dialog'), 'editMaster');
 const pickSlideTemplate = later(() => import('./ui/slide-templates'), 'pickSlideTemplate');
-const editLayouts = later(() => import('./ui/layout-editor'), 'editLayouts');
 const pickSlideSize = later(() => import('./ui/slide-size-dialog'), 'pickSlideSize');
 const pickTemplate = later(() => import('./ui/template-gallery'), 'pickTemplate');
 const askEnergy = later(() => import('./ui/energy-dialog'), 'askEnergy');
@@ -882,6 +884,8 @@ let designLib: DesignLibrary | null = null;
 const shapeMenu = new ShapeMenu();
 let layers: LayersPanel | null = null;
 let animUi: AnimationUI | null = null;
+/** Slide Master view's side panel (made when the view first opens). */
+let masterPanel: MasterPanel | null = null;
 let slideCmts: SlideComments | null = null;
 /** View > Ruler and Gridlines (kept in the settings); the rulers' units and where they count from. */
 const slideLook = { ruler: false, grid: false };
@@ -4468,6 +4472,7 @@ function enterTab(tab: Tab, opened: boolean): void {
   tickToolboxes();
   applyModeColours(tab.mode, modeColours);
   for (const el of document.querySelectorAll<HTMLElement>('.slides-only')) el.hidden = !slides;
+  showMasterView();
   canvasRibbon.show(!deck && !sheet && !words && !design && !siTab);
   fileChecksKey = '';
   placeProblemsBox();
@@ -4838,6 +4843,7 @@ function deckChanged(deck: Deck): void {
   }
   showSlideState();
   if (ws.active.mode === 'design') showDesignState();
+  if (deck.inMasterView || document.body.classList.contains('master-view')) showMasterView();
   ws.noteChange();
 }
 
@@ -4909,7 +4915,7 @@ function showLayoutMenus(deck: Deck): void {
     const edit = document.createElement('button');
     edit.setAttribute('role', 'menuitem');
     edit.dataset.cmd = 'edit-layouts';
-    edit.textContent = 'Edit Layouts…';
+    edit.textContent = 'Edit Layouts';
     sub.replaceChildren(...items, hr, edit);
   }
 }
@@ -5279,15 +5285,17 @@ host.addEventListener('drop', (e) => {
   overlay.focus();
 });
 
+/** Slide Master view is open on the deck showing: the slide list's pages are its master and layouts. */
+const masterViewNow = (): Deck | null => { const d = ws.active.mode === 'slides' ? deckNow() : null; return d?.inMasterView ? d : null; };
 const slideListHooks = {
   go: (i: number) => goSlide(i),
-  remove: (ix: number[]) => removeSlides(ix),
-  duplicate: (ix: number[]) => { const d = deckNow(); if (d) { finishTyping(); d.duplicate(ix); } },
-  add: () => newSlide(),
-  copy: (ix: number[]) => copySlides(ix, false),
-  cut: (ix: number[]) => copySlides(ix, true),
-  paste: () => pasteSlides(),
-  menu: (x: number, y: number) => showContextMenu(x, y, slideListMenu(), { run: (cmd) => void command(cmd), key: commandKey }),
+  remove: (ix: number[]) => (masterViewNow() ? void command('delete-layout') : removeSlides(ix)),
+  duplicate: (ix: number[]) => { const d = deckNow(); if (!d) return; finishTyping(); if (d.inMasterView) d.duplicateLayout(); else d.duplicate(ix); },
+  add: () => (masterViewNow() ? void command('insert-layout') : newSlide()),
+  copy: (ix: number[]) => { if (!masterViewNow()) copySlides(ix, false); },
+  cut: (ix: number[]) => { if (!masterViewNow()) copySlides(ix, true); },
+  paste: () => { if (!masterViewNow()) pasteSlides(); },
+  menu: (x: number, y: number) => showContextMenu(x, y, masterViewNow() ? MASTER_VIEW_MENU : slideListMenu(), { run: (cmd) => void command(cmd), key: commandKey }),
   sectionMenu: (x: number, y: number, id: number) => {
     showContextMenu(x, y, [...sectionItems(), null, { cmd: 'add-section' }], {
       run: (cmd) => { sectionPicked = id; void command(cmd); },
@@ -5411,6 +5419,7 @@ function slideListMenu(): MenuItem[] {
     { cmd: 'new-slide' }, { cmd: 'new-canvas-slide' }, { cmd: 'duplicate-slide' }, { cmd: 'delete-slide' },
     null,
     { label: 'Layout', items: deckLayouts(deckNow()?.master).map((l) => ({ cmd: `layout-${l.id}`, label: l.name })) },
+    ...layoutItemsMenu(),
     { cmd: 'format-background' },
     { cmd: 'slide-references', label: 'References on Slide…' },
     { cmd: 'hide-slide' },
@@ -6688,6 +6697,74 @@ async function slideReferences(): Promise<void> {
   }
 }
 
+/** The References box's tick list on a slide, and Insert ▸ Citation's list (ui/refs-box.ts). */
+const refsBox = new RefsBox({
+  state: () => {
+    const d = deckNow();
+    return { list: d?.references ?? [], ticked: d?.current?.refs ?? [], cited: d?.current ? d.citedOn() : new Set<string>(), style: d?.settings.refs?.style ?? preferredCiteStyle().style, format: deckFormat(d?.settings.refs) };
+  },
+  library: () => libraryRefs.refs(),
+  tick: (ref, on) => { const d = deckNow(); if (d?.current) d.tickRef(d.index, ref, on); },
+  cite: (ref) => citeHere(ref),
+  setStyle: (style) => { const d = deckNow(); if (d) { const cur = d.settings.refs ?? { list: [] }; const { options: _o, ...rest } = cur; void _o; d.setRefs({ ...rest, style }, 'Citation style'); } },
+  addFromLibrary: () => void referencesWindow.open(),
+  addWithZotero: () => void zoteroSlides('addEditCitation'),
+  look: () => void slideReferences(),
+});
+
+/** A box on the slide (slide points) in window pixels, for a popup beside it. */
+function slideBoxOnScreen(b: Rect): { left: number; top: number; bottom: number; width: number } {
+  const r = overlay.getBoundingClientRect(), v = renderer.view;
+  return { left: r.left + v.ox + b.x1 * v.scale, top: r.top + v.oy + b.y1 * v.scale, bottom: r.top + v.oy + b.y2 * v.scale, width: (b.x2 - b.x1) * v.scale };
+}
+
+/** The slide's References box clicked: its tick list opens on it (review round 2, finding 17). */
+// (watched on the way in, as the editor keeps its pointer events; looked at once it has picked)
+let refsDown: { x: number; y: number } | null = null;
+window.addEventListener('pointerdown', (e) => { refsDown = e.button === 0 && host.contains(e.target as Node) ? { x: e.clientX, y: e.clientY } : null; }, true);
+window.addEventListener('pointerup', (e) => {
+  const down = refsDown;
+  refsDown = null;
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
+  setTimeout(() => {
+    const d = deckNow();
+    const s = d?.current;
+    if (!d || !s || ws.active.mode !== 'slides' || masterViewNow() || slideViewNow() !== 'normal' || s.canvas || s.refList) return;
+    if (editor.tool.kind !== 'select' || editor.typingCaption) return;
+    const box = refsBoxRect(d.master, s.layout, d.size);
+    const sel = editor.sel;
+    if (!box || sel.atoms.size + sel.bonds.size + sel.captions.size + sel.arrows.size + sel.shapes.size) return;
+    const r = overlay.getBoundingClientRect(), v = renderer.view;
+    const x = (e.clientX - r.left - v.ox) / v.scale, y = (e.clientY - r.top - v.oy) / v.scale;
+    if (x < box.x1 || x > box.x2 || y < box.y1 || y > box.y2) return;
+    refsBox.open(slideBoxOnScreen(box), 'tick');
+  }, 0);
+}, true);
+
+/** Insert ▸ Citation: pick a reference for the text being typed on the slide. */
+function insertCitation(): void {
+  const d = deckNow();
+  if (!d?.current || ws.active.mode !== 'slides' || d.current.canvas) { flash('Citations go in a slide\'s text.'); return; }
+  const cap = editor.typingCaption;
+  if (!cap) { flash('Click in the text where the citation goes, then Insert ▸ Citation.', 6000); return; }
+  refsBox.open(slideBoxOnScreen(cap.box()), 'cite');
+}
+
+/** The citation picked goes in the text at the cursor, as its number on the slide, and the reference is ticked there. */
+function citeHere(ref: Reference): void {
+  const d = deckNow();
+  const cap = editor.typingCaption;
+  if (!d?.current || !cap) return;
+  const id = d.tickRef(d.index, ref, true, true);
+  const f = deckFormat(d.settings.refs);
+  const n = slideCiteNumbers(d.settings.refs, d.slides, d.index).get(id);
+  const ed = editor.typingCaption?.ed ?? cap.ed;
+  const { cite: _c, sup: _s, ...style } = ed.typingStyle();
+  void _c; void _s;
+  ed.replaceSelection([{ ...style, text: n !== undefined ? citeText([n], f) : '*', cite: id, ...(citeSuper(f) ? { sup: true } : {}) }], undefined, 'cite');
+  (editor.typingCaption ?? cap).focusText();
+}
+
 /** Each open presentation's id for Zotero. */
 const zoteroDeckIds = new WeakMap<Deck, string>();
 let zoteroDeckBusy = false;
@@ -7146,18 +7223,175 @@ async function offerStyleSheet(tab: Tab, style: DocStyle): Promise<void> {
   flash(`${st.name} is now one of your drawing styles${got.forNew === 'true' ? ', and new canvases will start in it' : ''}.`, 4000);
 }
 
-async function slideMaster(): Promise<void> {
+/**
+ * View > Slide Master (also Edit Layouts): the master and its layouts as pages in the slide list,
+ * edited with every slide tool, with the Slide Master tab first on the ribbon and the master's or
+ * picked placeholder's settings in the panel at the right. Close Master View puts the slides back.
+ */
+function slideMaster(): void {
   const d = deckNow();
-  if (!d) return;
+  if (!d?.current || ws.active.mode !== 'slides') { flash('The slide master is for slides: use File ▸ New ▸ Presentation, or open a PowerPoint file.'); return; }
   finishTyping();
-  const m = await editMaster(d.master, {
-    pickPicture: async (): Promise<SlideImage | null> => {
+  if (slideViewNow() !== 'normal') setSlideView('normal');
+  if (!d.inMasterView) d.openMasterView();
+  showMasterView(true);
+}
+
+function closeMasterView(): void {
+  const d = deckNow();
+  if (!d?.inMasterView) return;
+  finishTyping();
+  d.closeMasterView();
+  showMasterView();
+}
+
+/**
+ * Right-click ▸ Unlock Layout Items on This Slide: the picked slides get their own copies of the
+ * master's and layout's items (to move, change or delete there); Lock puts the layout's back.
+ */
+function slideItemsLock(locked: boolean): void {
+  const d = deckNow();
+  if (!d || ws.active.mode !== 'slides') return;
+  finishTyping();
+  const picked = pickedSlides();
+  const n = d.setOwnItems(picked.length ? picked : [d.index], !locked);
+  if (!n) flash(locked ? 'These slides\' layout items are already locked.' : 'These slides have no layout items to unlock (they come from Slide Master view).');
+  else flash(`${locked ? 'Locked' : 'Unlocked'} layout items on ${n === 1 ? 'the slide' : `${n} slides`}.`);
+}
+
+/** The slide's layout items commands for right-click menus: Edit Layout, and Unlock (or Lock) Layout Items on This Slide. */
+function layoutItemsMenu(): MenuItem[] {
+  const d = deckNow();
+  const s = d?.current;
+  if (!d || !s || s.canvas) return [];
+  return [
+    { cmd: 'edit-layout', label: 'Edit Layout' },
+    ...(hasItems(d.master, s.layout) ? [s.ownItems ? { cmd: 'lock-layout-items', label: 'Lock Layout Items on This Slide' } : { cmd: 'unlock-layout-items', label: 'Unlock Layout Items on This Slide' }] : []),
+  ];
+}
+
+/** What Slide Master view's right-click menu in the slide list has. */
+const MASTER_VIEW_MENU: MenuItem[] = [
+  { cmd: 'insert-layout', label: 'Insert Layout' }, { cmd: 'duplicate-layout', label: 'Duplicate Layout' }, { cmd: 'rename-layout', label: 'Rename Layout…' }, { cmd: 'delete-layout', label: 'Delete Layout' },
+  null, { cmd: 'close-master-view', label: 'Close Master View' },
+];
+
+/** The Slide Master tab, its side panel and its ticks show whether the view is open, and what page is being edited. */
+function showMasterView(opened = false): void {
+  const d = masterViewNow();
+  const on = !!d;
+  const was = document.body.classList.contains('master-view');
+  document.body.classList.toggle('master-view', on);
+  if (renderer.outlinePlaceholders !== on) { renderer.outlinePlaceholders = on; renderer.repaintAll(); }
+  // the side panel takes room from the slide: it fits again
+  if (was !== on) requestAnimationFrame(() => { resize(); editor.fit(); });
+  const tab = document.querySelector<HTMLElement>('#ribbon [data-sl-tab="master"]');
+  if (tab && tab.hidden === on) {
+    tab.hidden = !on;
+    if (on && opened) animUi?.showTab('master');
+    else if (!on && tab.getAttribute('aria-selected') === 'true') animUi?.showTab('home');
+  } else if (on && opened) animUi?.showTab('master');
+  masterPanel ??= new MasterPanel($('#master-panel'), {
+    deck: () => masterViewNow(),
+    doc: () => doc,
+    picked: () => [...editor.sel.captions].map((id) => doc.captions.get(id)).filter((c): c is Caption => !!c?.ph),
+    finishTyping,
+    pickPicture: async () => {
       const p = await pickPicture();
       return p ? { src: dataUrl(p.bytes, p.mime), px: imageSize(p.bytes, p.mime) ?? { w: 200, h: 200 } } : null;
     },
   });
-  // the deck may have gone (its tab closed) while the window was open
-  if (m && deckNow() === d) d.setMaster(m);
+  masterPanel.refresh();
+  if (!d) return;
+  const def = d.pageLayout();
+  const caps = [...doc.captions.values()];
+  const set = (cmd: string, checked: boolean, enabled: boolean) => {
+    for (const el of document.querySelectorAll<HTMLInputElement>(`#ribbon input[data-cmd="${cmd}"]`)) { el.checked = checked; el.disabled = !enabled; }
+  };
+  set('layout-has-title', caps.some((c) => c.ph === 'title'), !!def);
+  set('layout-has-refs', caps.some((c) => c.refsBox), !!def);
+  set('layout-title-look', !!def?.titleLook, !!def);
+  set('lock-items-deck', !d.master.itemsUnlocked, true);
+  for (const cmd of ['duplicate-layout', 'rename-layout', 'insert-placeholder']) for (const b of document.querySelectorAll<HTMLButtonElement>(`#ribbon button[data-cmd="${cmd}"]`)) b.disabled = !def;
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#ribbon button[data-cmd="delete-layout"]')) b.disabled = !def || isBuiltinLayout(def.id);
+}
+
+/** Insert Placeholder on a layout's page: a title (one at most), text or subtitle box, with PowerPoint's prompt. */
+function insertPlaceholder(ph: Placeholder): void {
+  const d = masterViewNow();
+  const def = d?.pageLayout();
+  if (!d || !def) { flash('Placeholders go on layouts: pick a layout under the slide master in the slide list.'); return; }
+  finishTyping();
+  const caps = [...doc.captions.values()].filter((c) => c.ph);
+  if (ph === 'title' && caps.some((c) => c.ph === 'title')) { flash('A layout has one title.'); return; }
+  const n = caps.length % 5;
+  const box = ph === 'title' ? { x: 0.05, y: 0.05, w: 0.9, h: 0.09 } : { x: 0.1 + 0.03 * n, y: 0.3 + 0.03 * n, w: 0.4, h: ph === 'subtitle' ? 0.12 : 0.4 };
+  const { w, h } = d.size;
+  const lines = PAGE_PROMPTS[ph];
+  const styles = doc.textStyles ?? textStyles(d.master, def.id, false);
+  let id = -1;
+  doc.edit(`Insert ${ph === 'title' ? 'Title' : ph === 'subtitle' ? 'Subtitle' : 'Text'} Placeholder`, () => {
+    id = doc.addCaption({
+      ...frameFields({ ph, x: box.x * w, y: box.y * h, w: box.w * w, h: box.h * h, justify: ph === 'subtitle' ? 'center' : 'left' }, { title: styles.title ?? {}, subtitle: styles.subtitle ?? {}, body: styles.body ?? {} }),
+      runs: [{ text: lines.join('\n') }],
+      paras: lines.map((_, k) => ({ ...(ph === 'body' ? { list: 'bullet' as const } : {}), ...(k ? { level: k } : {}) })),
+    }).id;
+  });
+  editor.selectThese({ captions: new Set([id]) } as never);
+}
+
+/**
+ * Insert Placeholder ▸ References on a layout's page: the box where slides with the layout show
+ * their reference lines (sample lines on the page; one at most). Its tick list opens on slides.
+ */
+function insertRefsPlaceholder(): void {
+  const d = masterViewNow();
+  const def = d?.pageLayout();
+  if (!d || !def) { flash('Placeholders go on layouts: pick a layout under the slide master in the slide list.'); return; }
+  finishTyping();
+  if ([...doc.captions.values()].some((c) => c.refsBox)) { flash('A layout has one References placeholder.'); return; }
+  let id = -1;
+  const box = { x: 0.05, y: 0.8, w: 0.6, h: 0.08 };
+  const top = box.y * d.size.h - 4;
+  const styles = doc.textStyles ?? textStyles(d.master, def.id, false);
+  doc.edit('Insert References Placeholder', () => {
+    // text boxes reaching down over it end above it, so the slides' text and lines don't overlap
+    for (const c of [...doc.captions.values()].filter((x) => x.ph)) {
+      const r = placeholderRect(c, styles[c.ph!]);
+      if (r.y1 < top && r.y2 > top && r.x1 < (box.x + box.w) * d.size.w && r.x2 > box.x * d.size.w && top - r.y1 > 40) doc.updateCaption(c.id, { boxH: top - r.y1 });
+    }
+    id = doc.addCaption(refsCaption(box, d.master, d.size)).id;
+  });
+  editor.selectThese({ captions: new Set([id]) } as never);
+}
+
+/** The References tick on the Slide Master tab: the layout's References placeholder goes, or comes. */
+function toggleLayoutRefs(): void {
+  const d = masterViewNow();
+  if (!d?.pageLayout()) return;
+  finishTyping();
+  const t = [...doc.captions.values()].find((c) => c.refsBox);
+  if (t) { doc.edit('Remove References Placeholder', () => doc.removeCaption(t.id)); editor.clearSelection(); }
+  else insertRefsPlaceholder();
+}
+
+/** The Title tick on the Slide Master tab: the layout's title goes, or comes back. */
+function toggleLayoutTitle(): void {
+  const d = masterViewNow();
+  if (!d?.pageLayout()) return;
+  finishTyping();
+  const t = [...doc.captions.values()].find((c) => c.ph === 'title');
+  if (t) { doc.edit('Remove Title', () => doc.removeCaption(t.id)); editor.clearSelection(); }
+  else insertPlaceholder('title');
+}
+
+async function renameLayout(): Promise<void> {
+  const d = masterViewNow();
+  const def = d?.pageLayout();
+  if (!d || !def) return;
+  finishTyping();
+  const got = await ask('Rename Layout', [{ name: 'name', label: 'Layout name', value: def.name }], { ok: 'Rename' });
+  if (got?.name.trim() && masterViewNow() === d) d.setLayoutMeta({ name: got.name.trim() }, 'Rename Layout');
 }
 
 /**
@@ -7192,7 +7426,7 @@ async function backgroundDialog(): Promise<void> {
   // the deck may have gone (its tab closed) while the window was open
   if (!got || deckNow() !== d) return;
   if (got.action === 'reset') d.setBackground(undefined, picked, got.hideGraphics);
-  else if (got.action === 'all' || design) d.setAllBackgrounds(got.bg, got.hideGraphics);
+  else if (got.action === 'all' || design || d.inMasterView) d.setAllBackgrounds(got.bg, got.hideGraphics);
   else d.setBackground(got.bg, picked, got.hideGraphics);
 }
 
@@ -7221,17 +7455,6 @@ async function slideTemplates(): Promise<void> {
     storeSettings();
     flash(`New presentations will start with ${t.name}. Pick Plain to go back.`);
   }
-}
-
-/** Slide Master > Edit Layouts: the deck's layouts and their placeholders. */
-async function editSlideLayouts(): Promise<void> {
-  const d = deckNow();
-  if (!d?.current || ws.active.mode !== 'slides') { flash('Layouts are for slides: use File ▸ New ▸ Presentation, or open a PowerPoint file.'); return; }
-  finishTyping();
-  const used = new Map<LayoutId, number>();
-  for (const s of d.slides) used.set(s.layout, (used.get(s.layout) ?? 0) + 1);
-  const got = await editLayouts({ master: d.master, size: d.size, current: d.current.layout, used });
-  if (got && deckNow() === d) d.setLayouts(got);
 }
 
 /** Design > Slide Size > Custom Slide Size: any size, with what is on the slides scaled to fit or kept as it is. */
@@ -9457,6 +9680,13 @@ function command(name: string): boolean {
     flash('A design is one page: use Page Size and Background on the Design ribbon. For several pages, use File ▸ New ▸ Presentation.');
     return true;
   }
+  // Slide Master view: slide commands apply to the slides, so the view closes first (its changes kept)
+  if (masterViewNow() && !MASTER_VIEW_OK.has(name)) {
+    if (name === 'new-slide' || name.startsWith('new-slide-layout-')) return command('insert-layout');
+    if (name === 'duplicate-slide') return command('duplicate-layout');
+    if (name === 'delete-slide') return command('delete-layout');
+    if (SLIDE_ONLY.has(name) || name.startsWith('layout-') || CLOSE_MASTER_FIRST.has(name)) closeMasterView();
+  }
   if (name.startsWith('shape-fx:')) { void shapeEffect(name); return true; }
   if (name.startsWith('page-edge:')) return togglePageEdge(name.slice('page-edge:'.length) as Side);
   if (name.startsWith('caption-chem:')) return setCaptionChem(name.slice('caption-chem:'.length) as 'auto' | 'on' | 'off');
@@ -9573,8 +9803,13 @@ function setPictureStyle(look: PictureLook | undefined): boolean {
   return true;
 }
 
+/** Slide commands that work on Slide Master view's pages as they are (the rest close it first). */
+const MASTER_VIEW_OK = new Set(['slide-master', 'edit-layouts', 'edit-layout', 'lock-items-deck', 'layout-has-refs', 'insert-placeholder-refs', 'view-slide-ruler', 'view-gridlines', 'view-guides', 'grid-settings', 'add-vertical-guide', 'add-horizontal-guide', 'layout-has-title', 'layout-title-look']);
+/** Commands that are about the deck's slides (the show, printing, PDF): Slide Master view closes first. */
+const CLOSE_MASTER_FIRST = new Set(['present', 'present-current', 'presenter-view', 'print', 'export-pdf', 'export-picture', 'view-normal', 'view-outline', 'view-notes-page', 'view-sorter', 'reading-view']);
+
 /** Slide commands that don't apply to a design's single page. */
-const SLIDE_ONLY = new Set(['references-slide', 'zotero-menu', 'zotero-cite', 'zotero-bib', 'zotero-refresh', 'zotero-prefs', 'zotero-unlink', 'compare-slides', 'section-menu', 'new-slide', 'new-canvas-slide', 'add-keyframe', 'keyframe-here', 'fit-keyframe', 'delete-keyframe', 'keyframe-title', 'keyframe-zone', 'canvas-background', 'canvas-heading', 'keyframe-spotlight', 'keyframe-unspot', 'keyframe-detour', 'canvas-show-options', 'duplicate-slide', 'delete-slide', 'cut-slides', 'copy-slides', 'paste-slides', 'paste-slides-keep', 'hide-slide', 'reuse-slides', 'size-wide', 'size-standard', 'size-custom', 'slide-master', 'slide-templates',
+const SLIDE_ONLY = new Set(['insert-citation', 'unlock-layout-items', 'lock-layout-items', 'edit-layout', 'lock-items-deck', 'references-slide', 'zotero-menu', 'zotero-cite', 'zotero-bib', 'zotero-refresh', 'zotero-prefs', 'zotero-unlink', 'compare-slides', 'section-menu', 'new-slide', 'new-canvas-slide', 'add-keyframe', 'keyframe-here', 'fit-keyframe', 'delete-keyframe', 'keyframe-title', 'keyframe-zone', 'canvas-background', 'canvas-heading', 'keyframe-spotlight', 'keyframe-unspot', 'keyframe-detour', 'canvas-show-options', 'duplicate-slide', 'delete-slide', 'cut-slides', 'copy-slides', 'paste-slides', 'paste-slides-keep', 'hide-slide', 'reuse-slides', 'size-wide', 'size-standard', 'size-custom', 'slide-master', 'slide-templates',
   'edit-layouts', 'view-sorter', 'add-section', 'rename-section', 'remove-section', 'remove-section-slides', 'remove-all-sections', 'section-up', 'section-down', 'collapse-sections', 'expand-sections',
   'slide-transitions', 'slide-animations', 'animation-pane', 'auto-animate-steps', 'preview-slide', 'remove-animation', 'insert-slide-zoom', 'insert-summary-zoom', 'action-settings', 'insert-action-button', 'insert-video', 'insert-audio',
   'reading-view', 'rehearse-timings', 'record-show', 'rehearse-here', 'record-show-here', 'clear-timings-slide', 'clear-timings-all', 'clear-narration-slide', 'clear-narration-all', 'clear-show-menu', 'set-up-show', 'custom-shows', 'custom-show-menu', 'use-timings', 'play-narrations', 'header-footer', 'insert-date-time', 'insert-slide-number', 'view-slide-ruler', 'view-gridlines', 'view-guides', 'grid-settings', 'add-vertical-guide', 'add-horizontal-guide', 'view-outline', 'view-notes-page', 'notes-master', 'handout-master']);
@@ -9733,7 +9968,23 @@ const COMMANDS: Record<string, () => unknown> = {
   'size-wide': () => setSlideSize(WIDE),
   'size-standard': () => setSlideSize(STANDARD),
   'size-custom': () => customSlideSize(),
-  'edit-layouts': () => editSlideLayouts(),
+  'edit-layouts': () => slideMaster(),
+  'close-master-view': () => closeMasterView(),
+  'insert-layout': () => { const d = masterViewNow(); if (!d) return false; finishTyping(); d.insertLayout(); return true; },
+  'duplicate-layout': () => { const d = masterViewNow(); if (!d) return false; finishTyping(); if (!d.pageLayout()) flash('Pick a layout to duplicate (under the slide master in the slide list).'); else d.duplicateLayout(); return true; },
+  'delete-layout': () => { const d = masterViewNow(); if (!d) return false; finishTyping(); if (!d.deleteLayout()) flash('Only layouts made in this deck can be deleted; the master and the five built-in layouts stay.'); return true; },
+  'rename-layout': () => void renameLayout(),
+  'insert-placeholder-title': () => insertPlaceholder('title'),
+  'insert-placeholder-body': () => insertPlaceholder('body'),
+  'insert-placeholder-subtitle': () => insertPlaceholder('subtitle'),
+  'layout-has-title': () => toggleLayoutTitle(),
+  'layout-has-refs': () => toggleLayoutRefs(),
+  'insert-placeholder-refs': () => insertRefsPlaceholder(),
+  'edit-layout': () => slideMaster(),
+  'unlock-layout-items': () => slideItemsLock(false),
+  'lock-layout-items': () => slideItemsLock(true),
+  'lock-items-deck': () => { const d = deckNow(); if (d) { finishTyping(); d.setItemsLocked(!!d.master.itemsUnlocked); showMasterView(); } },
+  'layout-title-look': () => { const d = masterViewNow(); const def = d?.pageLayout(); if (d && def) { finishTyping(); d.setLayoutMeta({ titleLook: !def.titleLook }, 'Title Slide Colors'); } },
   'shape-fill-menu': () => {
     const b = [...document.querySelectorAll<HTMLElement>('.ribbon [data-cmd="shape-fill-menu"]')].find((x) => x.offsetParent);
     const r = b?.getBoundingClientRect();
@@ -9824,6 +10075,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'zotero-unlink': () => void zoteroSlides('removeCodes'),
   'references-slide': () => void referencesSlide(),
   'insert-reference': () => void insertReference(),
+  'insert-citation': () => insertCitation(),
   'compound-library': () => void openCompoundLibrary(),
   'knowledge-base': () => openKnowledgeBase(),
   'ligand-library': () => openLigandLibrary(),
@@ -13612,7 +13864,7 @@ function drawingMenu(): MenuItem[] {
       { cmd: 'paste' }, { cmd: 'paste-smiles' }, { cmd: 'select-all' }, null,
       { cmd: 'undo' }, { cmd: 'redo' }, null,
       ...(ws.active.mode === 'slides' ? [{ cmd: 'new-comment', label: 'New Comment' }, { cmd: 'show-comments', label: 'Show Comments' }, null] : []),
-      ...(ws.active.mode === 'slides' || design ? [{ cmd: 'format-background', label: 'Format Background…' }, { cmd: 'slide-references', label: 'References on Slide…' }, null] : []),
+      ...(ws.active.mode === 'slides' || design ? [{ cmd: 'format-background', label: 'Format Background…' }, { cmd: 'slide-references', label: 'References on Slide…' }, ...(design || masterViewNow() ? [] : layoutItemsMenu()), null] : []),
       ...(ws.active.mode === 'slides' && deckNow()?.current?.canvas ? [{ label: 'Keyframes', items: keyframeMenu() }, null] : []),
       { label: 'Insert', items: [{ cmd: 'name-to-structure' }, { cmd: 'sequence-to-structure' }, { cmd: 'periodic-table' }, { cmd: 'insert-picture' }, { cmd: 'import-picture', label: 'Structure from Picture…' }, { cmd: 'text-box' }, { cmd: 'insert-reference', label: 'Reference…' }, { cmd: 'insert-symbol' }, ...(design ? [{ cmd: 'design-shapes', label: 'Shape…' }, { cmd: 'design-icons', label: 'Icon…' }, { cmd: 'connector-tool' }] : []), ...(ws.active.mode === 'slides' ? [{ cmd: 'slide-shapes', label: 'Shape…' }, { cmd: 'slide-icons', label: 'Icon…' }] : [])] },
       { label: 'Scheme', items: [{ cmd: 'smart-clean' }, { cmd: 'clean-up-reaction' }, { cmd: 'arrange-scheme' }, { cmd: 'number-compounds' }, { cmd: 'smart-scheme' }, { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }] },
@@ -15820,7 +16072,7 @@ const buildHint = new BuildHint({
 });
 editor.onOverlay = () => { smartPane.place(); buildHint.place(); };
 editor.onSmartAdded = (frame, cap) => smartPane.focusCaption(frame, cap);
-editor.onChange = () => { welcomeWatch?.(); showToolStatus(); ($('#go-sel') as HTMLButtonElement).disabled = !editor.hasSelection(); showRibbonContext(); smartPane.refresh(); buildHint.refresh(); if (ws.active.mode === 'slides' || ws.active.mode === 'design') { textRibbonNow()?.refresh(); showContextTabs(); } textToolbox?.refresh(); canvasFont?.refresh(); animUi?.selectionChanged(); updateStereo(); scheduleAnalysis(); updatePanels(); ws.noteChange(); stylePanel.refresh(); void refreshDescriptors(); scheduleLabelCheck(); };
+editor.onChange = () => { welcomeWatch?.(); showToolStatus(); ($('#go-sel') as HTMLButtonElement).disabled = !editor.hasSelection(); showRibbonContext(); smartPane.refresh(); buildHint.refresh(); if (ws.active.mode === 'slides' || ws.active.mode === 'design') { textRibbonNow()?.refresh(); showContextTabs(); masterPanel?.refresh(); } textToolbox?.refresh(); canvasFont?.refresh(); animUi?.selectionChanged(); updateStereo(); scheduleAnalysis(); updatePanels(); ws.noteChange(); stylePanel.refresh(); void refreshDescriptors(); scheduleLabelCheck(); };
 chem.onReady = () => {
   (window as any).__chemReadyMs = performance.now() - startMs;
   sheetChem.flush();
@@ -15889,7 +16141,7 @@ requestAnimationFrame(() => {
 
 // Hooks for the automated speed tests.
 (window as any).__app = { assistant: { items: assistantItems, apply: applyAssistantAction, markStep: markAssistantStep }, doc, editor, renderer, settingsWindow, toolboxes, chem, live, command, setRibbonLook, setPageLook, getPageLook: () => ({ ...pageLook }), addMolfile, keeper, cdxml: (name: string) => writeCdxml(doc, { name, textMeasure: measureText }), openText, picture: (dpi = 150) => { const p = recordPicture(doc, 0); if (!p) return null; const c = pictureCanvas(doc, p, dpi); return { url: c.canvas.toDataURL('image/png'), box: p.box, dpi: c.dpi }; }, stressTest, pasteChemistry, smiles: async (loose = false) => chem.molToSmiles(toMolfile(doc, doc.atoms.keys(), '', { species: allSpecies(doc, editor.measure()) }).molblock, loose), placePicture, sample: sampleMolecule, ws, slideList, get presenter() { return shows?.presenter; }, Doc, keymap, names, get sheetMode() { return sheetMode; }, sheetChem, get docMode() { return docMode; }, loadModes: () => Promise.all([loadSheetMode(), loadDocMode()]), docxBytes: async () => (await import('./io/docx-write')).writeDocx(docMode.file!.t, docFiles),
-  pptxBytes: async () => { const d = deckNow()!; const { writePptx } = await import('./io/pptx-write'); return writePptx({ size: d.size, master: d.master, slides: d.slides.map((s, i) => ({ id: s.id, layout: s.layout, doc: d.docOf(i), notes: s.notes, notesLook: s.notesLook, transition: s.transition, anims: s.anims, comments: s.comments, canvas: s.canvas })), oleKept: d.oleKept, picKept: d.picKept }, pptxOptions()); } };
+  pptxBytes: async () => { const d = deckNow()!; const { writePptx } = await import('./io/pptx-write'); return writePptx(d.outOfView(() => ({ size: d.size, master: d.master, slides: d.slides.map((s, i) => ({ id: s.id, layout: s.layout, doc: d.docOf(i), notes: s.notes, notesLook: s.notesLook, transition: s.transition, anims: s.anims, comments: s.comments, canvas: s.canvas })), oleKept: d.oleKept, picKept: d.picKept })), pptxOptions()); } };
 
 // ---------------------------------------------------------------- desktop self-test
 
