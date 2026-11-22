@@ -11591,7 +11591,7 @@ async function personalPreferences(): Promise<void> {
     { name: 'tplSheet', label: 'Show templates when creating new spreadsheets', type: 'checkbox', value: String(templatesOnNew.sheet) },
     { name: 'tplSlides', label: 'Show templates when creating new presentations', type: 'checkbox', value: String(templatesOnNew.slides) },
     { name: 'tplUnits', label: 'Units in spreadsheet templates', value: unitPrefs.place, short: true, options: [
-      { value: 'header', label: 'In the heading only: Temp (°C) over −78' }, { value: 'cell', label: 'In every cell: Temp over −78 °C' }],
+      { value: 'cell', label: 'In every cell: Temp over −78 °C' }, { value: 'header', label: 'In the heading only: Temp (°C) over −78' }],
       help: 'For the columns of new spreadsheets from a template, and Insert ▸ Reagent Table. Either way each cell holds just the number, so it sorts and works in formulas. Change any column later with Home ▸ Number.' },
     { name: 'counterions', label: 'Counterions Typed as Text', type: 'heading', value: '' },
     { name: 'ionCharges', label: 'Add their charges (BF₄ becomes BF₄⁻, NBu₄ becomes NBu₄⁺)', type: 'checkbox', value: String(chemText.ionCharges), inline: (v) => counterionSwatch(v === 'true', doc.style),
@@ -11615,7 +11615,7 @@ async function personalPreferences(): Promise<void> {
   chemText.ionCharges = r.ionCharges === 'true';
   chemText.saltGroups = r.saltGroups === 'true';
   templatesOnNew = { document: r.tplDocument === 'true', sheet: r.tplSheet === 'true', slides: r.tplSlides === 'true' };
-  unitPrefs.place = r.tplUnits === 'cell' ? 'cell' : 'header';
+  unitPrefs.place = r.tplUnits === 'header' ? 'header' : 'cell';
   setIconSet(r.iconSet === 'classic' ? 'classic' : 'new');
   Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
   editor.focalLook = focalPrefs.look;

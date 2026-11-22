@@ -11,7 +11,10 @@ import { itemsToSvg } from '../render/svg';
 import type { Workbook } from '../sheet/workbook';
 import { SheetView } from './sheet-view';
 
-/** A document's first page, as an SVG the size of the card's picture (its text in the page's own proportion). */
+/** How much of a document's first page a card shows, from the top (the rest is cut off so the text is larger). */
+export const DOC_SHOWN = 0.5;
+
+/** The top of a document's first page, as an SVG the width of the card's picture (its text in the page's own proportion). */
 export function docPage(t: DocText): HTMLElement {
   const box = document.createElement('div');
   box.className = 'ft-real-page';
@@ -20,12 +23,13 @@ export function docPage(t: DocText): HTMLElement {
   const p = pages[0];
   if (!p) return box;
   const x = p.origin?.x ?? 0, y = p.origin?.y ?? 0;
-  box.innerHTML = itemsToSvg(p.items, { x1: x, y1: y, x2: x + p.w, y2: y + p.h });
+  const h = p.h * DOC_SHOWN;
+  box.innerHTML = itemsToSvg(p.items, { x1: x, y1: y, x2: x + p.w, y2: y + h });
   const svg = box.firstElementChild as SVGSVGElement | null;
   // sized by the card (the viewBox keeps the page's shape); the text is drawn at the page's scale
   svg?.removeAttribute('width');
   svg?.removeAttribute('height');
-  box.style.aspectRatio = `${p.w} / ${p.h}`;
+  box.style.aspectRatio = `${p.w} / ${h}`;
   return box;
 }
 

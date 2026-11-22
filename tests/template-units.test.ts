@@ -35,12 +35,14 @@ describe('units in headings', () => {
     expect(unitColumnFormat('mg', 'header', 'General')).toBe('0.0;"−"0.0');
   });
 
-  it('shows the numbers chemists type without rounding them away', () => {
+  it('shows numbers with the unit and the places chosen for it', () => {
     expect(shown(unitColumnFormat('°C', 'cell'), -78)).toBe('−78 °C');
-    expect(shown(unitColumnFormat('h', 'cell'), 0.5)).toBe('0.5 h');
+    expect(shown(unitColumnFormat('h', 'cell'), 24)).toBe('24 h');
     expect(shown(unitColumnFormat('mol %', 'cell'), 2.5)).toBe('2.5 mol %');
     expect(shown(unitColumnFormat('equiv', 'header'), 1.05)).toBe('1.05');
-    expect(shown(unitColumnFormat('g/mL', 'header'), 0.789)).toBe('0.789');
+    expect(shown(unitColumnFormat('g/mL', 'header'), 0.79)).toBe('0.79');
+    expect(shown(unitColumnFormat('M', 'cell'), 0.1)).toBe('0.1 M');
+    expect(shown(unitColumnFormat('mL', 'cell'), 10)).toBe('10.0 mL');
     expect(shown(unitColumnFormat('%', 'cell'), 85)).toBe('85%');
   });
 });
@@ -106,7 +108,7 @@ describe('reagent table', () => {
       const sh = wb.sheets[0];
       wb.build(() => fillReagentTable(sh, units));
       // equiv, mmol, density and concentration typed in a new row far down
-      for (const [c, v, header, cell] of [[3, 1.2, '1.20', '1.20 equiv'], [6, 0.789, '0.789', '0.789 g/mL'], [7, 0.5, '0.50', '0.50 M'], [2, 245.3, '245.30', '245.30 g/mol']] as const) {
+      for (const [c, v, header, cell] of [[3, 1.2, '1.20', '1.20 equiv'], [6, 0.79, '0.79', '0.79 g/mL'], [7, 0.5, '0.5', '0.5 M'], [2, 245.3, '245.30', '245.30 g/mol']] as const) {
         expect(shown(sh.styleAt(40, c)?.numFmt, v)).toBe(units === 'cell' ? cell : header);
       }
       expect(sh.styleAt(0, 3)?.numFmt).toBeUndefined();

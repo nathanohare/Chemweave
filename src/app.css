@@ -2360,7 +2360,7 @@ dialog.cite-style-dialog h3 { margin: 10px 0 4px; font-size: var(--fs-md); }
 .tw-slides .tw-thumb .ft-page { height: 112px; width: 96px; }
 .tw-thumb .ft-sheet { width: 128px; }
 /* drawn from the template itself: the first page shrunk whole, or the first sheet as the grid draws it */
-.tw-thumb .ft-real-page { height: calc(100% - 10px); background: #fff; box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgb(0 0 0 / 0.18); }
+.tw-thumb .ft-real-page { width: calc(100% - 16px); max-height: calc(100% - 10px); background: #fff; box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgb(0 0 0 / 0.18); }
 .tw-thumb .ft-real-page > svg { display: block; width: 100%; height: 100%; }
 .ft-sheet-offscreen .sh-tabs { display: none; }
 .tw-thumb > .ft-real-sheet { max-width: calc(100% - 10px); max-height: calc(100% - 10px); background: #fff; box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgb(0 0 0 / 0.18); }

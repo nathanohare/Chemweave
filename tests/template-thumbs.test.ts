@@ -9,14 +9,14 @@ import { SHEET_TEMPLATES } from '../src/sheet/templates';
 import { docPage, usedWidth } from '../src/ui/template-thumbs';
 
 describe('template pictures', () => {
-  it("a document's picture is its first page, sized by the card in the page's shape", () => {
+  it("a document's picture is the top half of its first page, sized by the card", () => {
     const box = docPage(DOC_TEMPLATES[0].make());
     const svg = box.querySelector('svg')!;
     expect(svg).toBeTruthy();
     // (no fixed size: the card shrinks the whole page, text and all)
     expect(svg.getAttribute('width')).toBeNull();
     const [, , w, h] = svg.getAttribute('viewBox')!.split(' ').map(Number);
-    expect(h / w).toBeCloseTo(11 / 8.5, 1);
+    expect(h / w).toBeCloseTo(11 / 8.5 / 2, 1);
     expect(box.style.aspectRatio).toBeTruthy();
     expect(svg.innerHTML).toContain('<text');
   });

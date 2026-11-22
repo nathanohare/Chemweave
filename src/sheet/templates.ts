@@ -27,12 +27,12 @@ export interface SheetTemplate {
 }
 
 /** While a template is being made: where units go, and the columns given a unit's format once the template's own formats are in. */
-let place: UnitPlace = 'header';
+let place: UnitPlace = 'cell';
 let pending: { sh: Sheet; heading: string; col: number; r1: number; r2: number }[] = [];
 
 /** A template's maker, with each column with a unit given that unit's number format afterwards. */
 function withUnits(make: () => Workbook): (units?: UnitPlace) => Workbook {
-  return (units = 'header') => {
+  return (units = 'cell') => {
     place = units;
     pending = [];
     try {
@@ -41,7 +41,7 @@ function withUnits(make: () => Workbook): (units?: UnitPlace) => Workbook {
       wb.build(() => { for (const p of todo) formatUnitColumn(p.sh, p.heading, p.col, p.r1, p.r2, units); });
       return wb;
     } finally {
-      place = 'header';
+      place = 'cell';
       pending = [];
     }
   };
@@ -143,7 +143,7 @@ function substrateScope(): Workbook {
   const wb = new Workbook(['Scope']);
   wb.build(() => {
     const sh = wb.sheets[0];
-    heads(sh, 0, ['Entry', 'Substrate', 'MW (g/mol)', 'Product', 'Yield (%)', 'ee (%)', 'dr', 'Notebook', 'Notes'], [48, 150, 84, 150, 70, 60, 52, 90, 200], 0, 20);
+    heads(sh, 0, ['Entry', 'Substrate', 'MW (g/mol)', 'Product', 'Yield (%)', 'ee (%)', 'dr', 'Notebook', 'Notes'], [48, 150, 96, 150, 70, 60, 52, 90, 200], 0, 20);
     for (let r = 1; r <= 20; r++) {
       sh.setInput(r, 0, String(r));
       sh.setInput(r, 2, `=IF(B${r + 1}="","",MW(B${r + 1}))`);
@@ -245,7 +245,7 @@ function inventory(): Workbook {
   wb.build(() => {
     const sh = wb.sheets[0];
     const names = ['Name', 'Structure', 'MW (g/mol)', 'Amount', 'Unit', 'Location', 'Hazard class', 'Supplier', 'Catalog no.', 'Received', 'Opened', 'Owner', 'Notes'];
-    heads(sh, 0, names, [150, 120, 80, 64, 44, 100, 110, 100, 90, 80, 80, 80, 180], 0, 200);
+    heads(sh, 0, names, [150, 120, 96, 64, 44, 100, 110, 100, 90, 80, 80, 80, 180], 0, 200);
     for (let r = 1; r <= 200; r++) sh.setInput(r, 2, `=IF(B${r + 1}="","",MW(B${r + 1}))`);
     sh.patchStyle({ r1: 1, c1: 2, r2: 200, c2: 2 }, { numFmt: '0.00' });
     sh.patchStyle({ r1: 1, c1: 9, r2: 200, c2: 10 }, { numFmt: 'yyyy-mm-dd' });

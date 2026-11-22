@@ -13,29 +13,29 @@ import type { Sheet } from './workbook';
 export type UnitPlace = 'header' | 'cell';
 
 /** The choice in Settings ▸ Preferences (set by the program when settings load or change). */
-export const unitPrefs: { place: UnitPlace } = { place: 'header' };
+export const unitPrefs: { place: UnitPlace } = { place: 'cell' };
 
 /**
- * The units the templates' headings use, with the decimal places a column of them gets. Enough
- * places for the values usually typed (0.5 h, 2.5 mol %, 1.05 equiv, 0.789 g/mL) so none is
- * shown rounded; the value itself is always kept in full.
+ * The units the templates' headings use, with the decimal places a column of them gets (chosen
+ * by Nate, 2026-11-21: whole hours, one place for M and mL, two for g/mL). The value itself is
+ * always kept in full; only what shows is rounded, and Home ▸ Number adds places to any column.
  */
 export const UNIT_DECIMALS: Record<string, number> = {
   '°C': 0,
-  'h': 1,
+  'h': 0,
   'min': 0,
   'mol %': 1,
   'mol%': 1,
   'equiv': 2,
-  'M': 2,
+  'M': 1,
   'mM': 2,
   '%': 0,
   'g/mol': 2,
   'mg': 1,
   'g': 2,
   'mmol': 2,
-  'g/mL': 3,
-  'mL': 2,
+  'g/mL': 2,
+  'mL': 1,
   'µL': 0,
   'L': 1,
   'psi': 0,

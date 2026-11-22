@@ -9,15 +9,16 @@ import type { Sheet } from './workbook';
 import { formatUnitColumn, formatUnitWholeColumn, headingFor, type UnitPlace } from './template-units';
 
 export const REAGENT_HEADS = ['Reagent', 'Structure', 'MW (g/mol)', 'equiv', 'mmol', 'mass (mg)', 'density (g/mL)', 'conc. (M)', 'volume (µL)'];
-// wide enough for each heading in the sheet's bold 11 pt (MW (g/mol), density (g/mL))
-const WIDTHS = [140, 160, 96, 60, 70, 88, 112, 76, 96];
+// wide enough for each heading in the sheet's bold 11 pt (MW (g/mol), density (g/mL)) and for the
+// numbers with their units (245.30 g/mol, 1.00 equiv, 1.00 mmol)
+const WIDTHS = [140, 160, 110, 84, 84, 88, 112, 76, 96];
 
 /**
  * Lay out a reagent table on an empty sheet, with the limiting reagent (1 equiv, 1 mmol) in row 2.
  * Each column with a unit gets that unit's number format: the unit in its heading over plain
  * numbers ('header'), or in every cell ('cell'; see template-units).
  */
-export function fillReagentTable(sh: Sheet, units: UnitPlace = 'header'): void {
+export function fillReagentTable(sh: Sheet, units: UnitPlace = 'cell'): void {
   REAGENT_HEADS.forEach((h, c) => {
     sh.setInput(0, c, headingFor(h, units));
     sh.setColWidth(c, WIDTHS[c]);
