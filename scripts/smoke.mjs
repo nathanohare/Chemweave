@@ -2,9 +2,12 @@
 // the built app in Chromium and goes through what everyone does first. It fails on any error the
 // page reports, on a step that doesn't do what it should, and on a menu too tall for a laptop's
 // window (each menu must fit in one column at 1280 × 720, and every top menu and right-click menu
-// must fit a 1389 × 700 window without scrolling).
+// must fit a 1389 × 700 window without scrolling). Last, the accessibility check of
+// scripts/a11y-check.mjs (standing rule R10): axe and a keyboard-only walk in Light and Dark Gray,
+// failing on a problem not already in scripts/a11y-known.mjs.
 import { spawn } from 'node:child_process';
 import { launch } from '../bench/browser.mjs';
+import { a11yProblems, compareA11y } from './a11y-check.mjs';
 
 const PORT = 4179;
 const URL = `http://localhost:${PORT}/`;
@@ -305,6 +308,18 @@ try {
   await showTab('design');
   const page2 = await page.locator('#overlay').boundingBox();
   await rightClick('Design page right-click', page2.x + page2.width / 2, page2.y + page2.height / 2);
+
+  step('accessibility: axe and the keyboard alone, in Light and Dark Gray (scripts/a11y-check.mjs)');
+  // (in a fresh page, as `node scripts/a11y-check.mjs` runs it, so the lines match scripts/a11y-known.mjs)
+  const fresh1 = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  fresh1.on('pageerror', (e) => errors.push('page error: ' + e.message));
+  fresh1.on('dialog', (d) => d.dismiss());
+  await fresh1.goto(URL);
+  await fresh1.waitForFunction(() => window.__app?.chem?.ready, null, { timeout: 30000 });
+  await fresh1.locator('#welcome-close').click({ timeout: 2000 }).catch(() => {});
+  const { fresh, gone } = compareA11y(await a11yProblems(fresh1));
+  for (const p of fresh) fail(`accessibility (not in scripts/a11y-known.mjs): ${p}`);
+  if (gone.length) console.log(`  no longer happening (take them off scripts/a11y-known.mjs):\n    ${gone.join('\n    ')}`);
 
   for (const e of errors) fail(e);
 } catch (e) {

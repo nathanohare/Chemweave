@@ -4,10 +4,13 @@
 // a search box, and Back. F1 opens it at the part about the tool or mode in use.
 
 import { Marked } from 'marked';
+import { REPO_URL } from '../feedback';
 export { guideSpot } from './guide-spot';
 
-// the pages load the first time the guide opens; pictures are files beside the program
-const PAGES = import.meta.glob('../../docs/**/*.md', { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>;
+// the pages load the first time the guide opens; pictures are files beside the program. Only the
+// guide's own pages: contributor notes in docs/ (the UI style guide, code signing) stay out of the
+// program and its search.
+const PAGES = import.meta.glob(['../../docs/README.md', '../../docs/guide/*.md', '../../docs/developers.md'], { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>;
 const PICTURES = import.meta.glob('../../docs/images/*', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 
 const ROOT = '../../docs/';
@@ -122,6 +125,8 @@ export class GuideWindow {
       const to = resolveLink(this.page, href);
       if (!to) { this.openLink(href); return; }
       if (to.page.endsWith('.md') && this.texts.has(to.page)) void this.go(to.page, to.anchor);
+      // a contributor page that isn't built in (the UI style guide, code signing) opens on GitHub
+      else if (to.page.endsWith('.md')) this.openLink(`${REPO_URL}/blob/main/docs/${to.page}${to.anchor ? '#' + to.anchor : ''}`);
     });
     this.wireDrag(el.querySelector('.gw-head')!, el);
     document.body.append(el);

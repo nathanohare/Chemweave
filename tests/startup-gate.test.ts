@@ -41,3 +41,15 @@ describe('start-up check: an expected slowdown and a side that does not start (r
     expect(await startSide(null, 'head', 'u', 0, async () => ({ up: 500 }))).toEqual({ up: 500 });
   });
 });
+
+describe('start-up budget (standing rule R6)', () => {
+  it('fails a start-up over the absolute budget even when the base branch was as slow', async () => {
+    const { startupVerdict, STARTUP_BUDGET_MS } = await import('../bench/startup.mjs' as string);
+    const slow = STARTUP_BUDGET_MS + 200;
+    const v = startupVerdict(runs(slow), runs(slow));
+    expect(v.fail).toBe(true);
+    expect(v.text).toContain(`over the ${STARTUP_BUDGET_MS} ms budget`);
+    expect(startupVerdict(runs(slow), runs(slow), true).fail).toBe(false);
+    expect(startupVerdict(runs(STARTUP_BUDGET_MS - 10), runs(STARTUP_BUDGET_MS - 5)).fail).toBe(false);
+  });
+});

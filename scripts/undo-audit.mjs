@@ -14,36 +14,72 @@
 //                         a rectangle and some text
 //   drags                 drags from points all over and round each kind of object, in Canvas and
 //                         on a slide (moving, sizing, turning, bending: whatever the point does)
-//   all (the default)     all of the above
+//   all (the default)     all of the above (about 25 minutes)
+//   --only a,b,c          (with any part) runs only these commands
+//   ci [--slice k/N]      the quick sweep run on every pull request (about two minutes): one slice
+//                         of the commands in each kind of tab (Document with text selected), no
+//                         drags. The slice changes each day, so all commands are run within N days
+//                         (CI_SLICES in undo-audit-lists.mjs); a failure prints its slice, to run it
+//                         again. It first checks itself: a planted command that takes two undo
+//                         steps and one that makes no undo step must both be caught.
 //
-// Set CHROMIUM_PATH if Playwright's own Chromium is missing.
+// Set CHROMIUM_PATH if Playwright's own Chromium is missing; set UNDO_AUDIT_URL (such as
+// http://localhost:5173/ with `npx vite` running) to run it against an app already served, without a build.
+//
+// Which commands it runs, the ones it leaves out (each with its reason) and the problems already
+// known are in scripts/undo-audit-lists.mjs. It fails only on a problem not known there, and says
+// which known ones no longer happen.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { launch } from '../bench/browser.mjs';
+import { commandsFor, notUndoable, sliceOf, CI_SLICES, KNOWN_UNDO_PROBLEMS } from './undo-audit-lists.mjs';
 
-const part = process.argv[2] ?? 'all';
-const file = process.argv[3];
-const PARTS = ['document', 'sheet', 'canvas', 'slides', 'design', 'drags'];
+const args = process.argv.slice(2);
+const sliceArg = args.indexOf('--slice') >= 0 ? args.splice(args.indexOf('--slice'), 2)[1] : null;
+const onlyArg = args.indexOf('--only') >= 0 ? new Set(args.splice(args.indexOf('--only'), 2)[1].split(',')) : null;
+const part = args[0] ?? 'all';
+const file = args[1];
+const PARTS = ['document', 'sheet', 'canvas', 'slides', 'design', 'drags', 'ci'];
 if (part !== 'all' && !PARTS.includes(part)) {
-  console.log(`Usage: npm run undo-audit -- [${PARTS.join('|')}|all] [file.docx]`);
+  console.log(`Usage: npm run undo-audit -- [${PARTS.join('|')}|all] [file.docx]   or   npm run undo-audit -- ci [--slice k/N]`);
   process.exit(2);
 }
+const ci = part === 'ci';
+/** Whether a part runs: `ci` runs every part but drags, each on its slice of the commands. */
+const runs = (p) => part === 'all' || part === p || (ci && p !== 'drags');
+const [sliceK, sliceN] = sliceArg ? sliceArg.split('/').map(Number) : [Math.floor(Date.now() / 86400000) % CI_SLICES, CI_SLICES];
+const inSlice = (cmds) => (onlyArg ? cmds.filter((c) => onlyArg.has(c)) : ci ? cmds.filter((c) => sliceOf(c, sliceN) === sliceK) : cmds);
+if (ci) console.log(`Quick undo sweep: slice ${sliceK}/${sliceN} (run it again with: npm run undo-audit -- ci --slice ${sliceK}/${sliceN})`);
 const PORT = 4183;
-const URL = `http://localhost:${PORT}/`;
+// UNDO_AUDIT_URL runs it against an app already being served (such as `npx vite`) instead of the build
+const URL = process.env.UNDO_AUDIT_URL || `http://localhost:${PORT}/`;
 const problems = [];
 const report = (where, what) => { problems.push(`${where}: ${what}`); console.log(`  ${where}: ${what}`); };
+/** Each "where: command" that ran, so a known problem is called fixed only when its command ran. */
+const ran = new Set();
+/**
+ * Planted commands for the quick sweep's self-check (run in the page): one makes two undo steps,
+ * one changes the drawing without an undo step. The sweep must report both, exactly as below.
+ */
+const PLANTED = {
+  'planted-two-steps': () => { const d = window.__app.doc; d.edit('One', () => d.addAtom(20, 20)); d.edit('Two', () => d.addAtom(40, 20)); },
+  // (a step made and then dropped from the history: a change Undo can't reach, as a command that edits outside it makes)
+  'planted-no-undo': () => { const d = window.__app.doc; d.edit('Dropped', () => d.addAtom(60, 20)); d.undoStack.pop(); },
+};
+const PLANTED_EXPECTED = ['Canvas: planted-two-steps took 2 undos (one is expected)', 'Canvas: planted-no-undo changed the file without an undo step'];
 
-/** The `case` labels of a method in a source file (the commands it knows by name). */
-function casesOf(path, from, to) {
-  const src = fs.readFileSync(path, 'utf8');
-  const a = src.indexOf(from);
-  const body = src.slice(a, to ? src.indexOf(to, a) : src.indexOf('\n  }\n', a));
-  return [...body.matchAll(/case '([^']+)'/g)].map((m) => m[1]);
+
+/** A sample document: a heading, text, a list, a picture in line and a floating picture (run in the page). */
+function sampleDocument() {
+  const f = window.__app.docMode.file;
+  const PIC = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const obj = (id) => ({ text: '\ufffc', obj: id });
+  f.ed.update({ ...f.t, runs: [{ text: 'Synthesis of the ketone\nThe ketone was made as shown ' }, obj(901), { text: ' and purified.\nFirst item\nSecond item\n' }, obj(902), { text: ' Text beside a floating picture. ' + 'More words here. '.repeat(20) + '\nThe end.' }],
+    paras: [{ style: 'Heading1' }, {}, { list: 'bullet' }, { list: 'bullet' }, {}, {}],
+    objects: { ...f.t.objects, 901: { kind: 'picture', src: PIC, w: 60, h: 40 }, 902: { kind: 'picture', src: PIC, w: 120, h: 80, float: { wrap: 'square', x: 300, y: 0 } } } }, 'Sample');
 }
-/** Commands that leave the tab, open files or other programs, or only change what is shown. */
-const SKIP = /^(new|open|save|export|print|close|quit|exit|reload|revert|present|slide-show|show-|start-show|play|rehearse|record|help|about|feedback|support|update|check-updates|settings|preferences|import|batch|find-in-files|recent|sponsor|send|share|email|tour|guide|keyboard|hotkeys|dev|diagnostics|stress|window|tab-|next-tab$|prev-tab$|undo$|redo$|zoom|fullscreen|split|view-|insert-picture$|insert-object$|hf-picture$|compare-docs$|combine-docs$|sheet-print)/;
 
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
+const server = process.env.UNDO_AUDIT_URL ? null : spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 let browser;
 try {
   for (let i = 0; i < 100; i++) {
@@ -66,7 +102,7 @@ try {
   };
   // a new file can open on the template window: close it (the new file stays blank)
   const closeTemplates = () => page.locator('.tw-close').click({ timeout: 800 }).catch(() => {});
-  const run = (cmd) => Promise.race([page.evaluate((c) => window.__app.command(c), cmd).catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
+  const run = (cmd) => Promise.race([(PLANTED[cmd] ? page.evaluate(PLANTED[cmd]) : page.evaluate((c) => window.__app.command(c), cmd)).catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
   // windows and menus a command opened are closed unchanged
   const tidy = () => page.evaluate(() => {
     for (const d of document.querySelectorAll('dialog[open]')) d.close();
@@ -81,6 +117,7 @@ try {
     await reset();
     let changed = 0;
     for (const cmd of cmds) {
+      ran.add(`${where}: ${cmd}`);
       await pick();
       const a = await probe();
       await run(cmd);
@@ -117,6 +154,45 @@ try {
   // let no code be made from text there, so each one has its own copy of the loop)
 
   // ------------------------------------------------------------ Document
+  if (runs('document')) {
+    await restart();
+    const bytes = file ? [...fs.readFileSync(file)] : null;
+    const reset = async () => {
+      if (bytes) await page.evaluate(async (b) => window.__app.ws.openBytes(new Uint8Array(b), 'audit.docx'), bytes);
+      else await run('new-document');
+      await page.waitForFunction(() => window.__app.docMode?.file, null, { timeout: 60000 });
+      await closeTemplates();
+      if (!bytes) await page.evaluate(sampleDocument);
+      await page.waitForTimeout(500);
+    };
+    const probe = () => page.evaluate(() => {
+      const f = window.__app.docMode.file;
+      const s = JSON.stringify(f.t, (k, v) => (k === 'src' && typeof v === 'string' ? v.length + v.slice(-40) : v));
+      let h = 0;
+      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+      return { h, n: f.ed.undoStack.length };
+    });
+    const cmds = [...new Set([
+      ...await (async () => { await reset(); return page.evaluate(() => [...new Set([...document.querySelectorAll('[data-doc]')].map((e) => e.getAttribute('data-doc')))]); })(),
+      ...commandsFor('document'),
+    ])].filter((c) => !notUndoable(c));
+    const docCmds = inSlice(cmds);
+    const pickObject = (floating) => page.evaluate((floating) => {
+      const f = window.__app.docMode.file;
+      if (f.box) f.endBox();
+      const id = Object.keys(f.t.objects).map(Number).find((k) => f.t.objects[k].kind === 'picture' && !!f.t.objects[k].float === floating);
+      let at = 0;
+      for (const r of f.t.runs) { if (r.obj === id) break; at += r.text.length; }
+      if (id !== undefined) f.ed.select(at, at + 1);
+    }, floating);
+    await sweep('Document, text picked', docCmds, probe, reset, () => page.evaluate(() => { const f = window.__app.docMode.file; if (f.box) f.endBox(); f.ed.select(Math.min(30, f.ed.text.length), Math.min(70, f.ed.text.length)); }));
+    // (the quick sweep stops here: the other selections and the drags are for the full audit)
+    if (!ci) await sweep('Document, floating picture picked', docCmds, probe, reset, () => pickObject(true));
+    if (!ci) await sweep('Document, picture in line picked', docCmds, probe, reset, () => pickObject(false));
+  }
+
+  // ------------------------------------------------------------ Document drags
+  // moving and sizing pictures with the mouse
   if (part === 'all' || part === 'document') {
     await restart();
     const bytes = file ? [...fs.readFileSync(file)] : null;
@@ -128,14 +204,6 @@ try {
       if (!bytes) await page.evaluate(sampleDocument);
       await page.waitForTimeout(500);
     };
-    function sampleDocument() {
-      const f = window.__app.docMode.file;
-      const PIC = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
-      const obj = (id) => ({ text: '\ufffc', obj: id });
-      f.ed.update({ ...f.t, runs: [{ text: 'Synthesis of the ketone\nThe ketone was made as shown ' }, obj(901), { text: ' and purified.\nFirst item\nSecond item\n' }, obj(902), { text: ' Text beside a floating picture. ' + 'More words here. '.repeat(20) + '\nThe end.' }],
-        paras: [{ style: 'Heading1' }, {}, { list: 'bullet' }, { list: 'bullet' }, {}, {}],
-        objects: { ...f.t.objects, 901: { kind: 'picture', src: PIC, w: 60, h: 40 }, 902: { kind: 'picture', src: PIC, w: 120, h: 80, float: { wrap: 'square', x: 300, y: 0 } } } }, 'Sample');
-    }
     const probe = () => page.evaluate(() => {
       const f = window.__app.docMode.file;
       const s = JSON.stringify(f.t, (k, v) => (k === 'src' && typeof v === 'string' ? v.length + v.slice(-40) : v));
@@ -143,24 +211,6 @@ try {
       for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
       return { h, n: f.ed.undoStack.length };
     });
-    const cmds = [...new Set([
-      ...await (async () => { await reset(); return page.evaluate(() => [...new Set([...document.querySelectorAll('[data-doc]')].map((e) => e.getAttribute('data-doc')))]); })(),
-      ...casesOf('src/ui/doc-mode.ts', '  run(cmd: string): boolean {', '  /** The pinned settings boxes were read'),
-    ])].filter((c) => !SKIP.test(c));
-    const pickObject = (floating) => page.evaluate((floating) => {
-      const f = window.__app.docMode.file;
-      if (f.box) f.endBox();
-      const id = Object.keys(f.t.objects).map(Number).find((k) => f.t.objects[k].kind === 'picture' && !!f.t.objects[k].float === floating);
-      let at = 0;
-      for (const r of f.t.runs) { if (r.obj === id) break; at += r.text.length; }
-      if (id !== undefined) f.ed.select(at, at + 1);
-    }, floating);
-    await sweep('Document, text picked', cmds, probe, reset, () => page.evaluate(() => { const f = window.__app.docMode.file; if (f.box) f.endBox(); f.ed.select(Math.min(30, f.ed.text.length), Math.min(70, f.ed.text.length)); }));
-    await sweep('Document, floating picture picked', cmds, probe, reset, () => pickObject(true));
-    await sweep('Document, picture in line picked', cmds, probe, reset, () => pickObject(false));
-
-    // moving and sizing pictures with the mouse
-    await restart();
     await reset();
     const ids = await page.evaluate(() => {
       const f = window.__app.docMode.file;
@@ -206,7 +256,7 @@ try {
   }
 
   // ------------------------------------------------------------ Spreadsheet
-  if (part === 'all' || part === 'sheet') {
+  if (runs('sheet')) {
     await restart();
     const reset = async () => {
       await run('new-sheet');
@@ -246,9 +296,9 @@ try {
     await reset();
     const cmds = [...new Set([
       ...await page.evaluate(() => [...new Set([...document.querySelectorAll('[data-sh]')].map((e) => e.getAttribute('data-sh')))]),
-      ...casesOf('src/ui/sheet-mode.ts', '  run(name: string): boolean {'),
-    ])].filter((c) => !SKIP.test(c));
-    await sweep('Spreadsheet', cmds, probe, reset, () => page.evaluate(() => window.__app.sheetMode.view.select({ r1: 1, c1: 1, r2: 3, c2: 2 })));
+      ...commandsFor('sheet'),
+    ])].filter((c) => !notUndoable(c));
+    await sweep('Spreadsheet', inSlice(cmds), probe, reset, () => page.evaluate(() => window.__app.sheetMode.view.select({ r1: 1, c1: 1, r2: 3, c2: 2 })));
   }
 
   // ------------------------------------------------------------ Canvas, Presentation, Design
@@ -286,11 +336,10 @@ try {
     return { h, n };
   }, mode);
   for (const mode of ['canvas', 'slides', 'design']) {
-    if (part !== 'all' && part !== mode) continue;
+    if (!runs(mode)) continue;
     await restart();
-    const src = fs.readFileSync('src/main.ts', 'utf8');
-    const at = src.indexOf('const COMMANDS: Record<string, () => unknown> = {');
-    const cmds = [...src.slice(at, src.indexOf('\n};', at)).matchAll(/^ {2}'?([a-zA-Z0-9:._-]+)'?:/gm)].map((m) => m[1]).filter((c) => !SKIP.test(c));
+    // the quick sweep first checks that it catches problems: two planted commands, in Canvas only
+    const cmds = [...(ci && mode === 'canvas' ? Object.keys(PLANTED) : []), ...inSlice(commandsFor(mode))];
     await sweep({ canvas: 'Canvas', slides: 'Presentation', design: 'Design' }[mode], cmds, () => drawingProbe(mode), async () => { await drawSample(mode); }, async () => {
       await page.evaluate(() => { const ed = window.__app.editor; ed.setTool?.('select'); });
       await run('select-all');
@@ -345,7 +394,21 @@ try {
   }
 } finally {
   await browser?.close();
-  server.kill();
+  server?.kill();
 }
-console.log(problems.length ? `\n${problems.length} undo problems found.` : '\nNo undo problems found.');
-process.exit(problems.length ? 1 : 0);
+if (ci) {
+  const missed = PLANTED_EXPECTED.filter((p) => !problems.includes(p));
+  for (const p of PLANTED_EXPECTED) if (problems.includes(p)) problems.splice(problems.indexOf(p), 1);
+  if (missed.length) {
+    console.log(`\nThe sweep did not catch its planted problems, so it can't be trusted:\n  ${missed.join('\n  ')}`);
+    process.exit(1);
+  }
+  console.log('Self-check: both planted problems were caught.');
+}
+const fresh = problems.filter((p) => !KNOWN_UNDO_PROBLEMS.includes(p));
+// a known problem is gone only when its command ran in its place ("Canvas: add-caption") and it didn't happen
+const gone = KNOWN_UNDO_PROBLEMS.filter((p) => !problems.includes(p) && [...ran].some((w) => p.startsWith(`${w} `) || p.startsWith(`${w}:`)));
+if (gone.length) console.log(`\nNo longer happening (take them off KNOWN_UNDO_PROBLEMS in scripts/undo-audit-lists.mjs):\n  ${gone.join('\n  ')}`);
+if (fresh.length) console.log(`\n${fresh.length} new undo problem${fresh.length === 1 ? '' : 's'} (not in KNOWN_UNDO_PROBLEMS in scripts/undo-audit-lists.mjs):\n  ${fresh.join('\n  ')}`);
+console.log(`\n${problems.length} undo problems found, ${problems.length - fresh.length} of them already known.`);
+process.exit(fresh.length ? 1 : 0);

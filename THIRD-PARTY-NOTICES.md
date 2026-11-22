@@ -36,7 +36,7 @@ Chemweave is licensed under the GNU General Public License, version 3 or later (
 | Chemistry word lists from Chem SI Assistant by Nathan O'Hare (`public/dict/lab-words.txt`) | Spell check: lab terms, name reactions and other chemistry words | The project owner's own work |
 | Microsoft Edge WebView2 (part of Windows, not bundled) | Shows the app's window contents on Windows | Microsoft software licence, free to use |
 
-Used only to build and test, not shipped: TypeScript (Apache-2.0), Vite (MIT), Vitest (MIT), jsdom (MIT), Playwright (Apache-2.0), Tauri CLI (MIT or Apache-2.0). Rebuilding the OPSIN files (`opsin-js/`, rarely needed) also uses Java, Maven (Apache-2.0) and the TeaVM compiler (Apache-2.0).
+Used only to build and test, not shipped: TypeScript (Apache-2.0), Vite (MIT), Vitest (MIT), jsdom (MIT), Playwright (Apache-2.0), Tauri CLI (MIT or Apache-2.0), and axe-core 4.14.0 (Mozilla Public License 2.0, https://github.com/dequelabs/axe-core), which the accessibility check of the browser smoke test (`scripts/a11y-check.mjs`) loads into the page it tests; it is never bundled into the app. Rebuilding the OPSIN files (`opsin-js/`, rarely needed) also uses Java, Maven (Apache-2.0) and the TeaVM compiler (Apache-2.0).
 Remaking the font width tables (`scripts/font-widths.py`, rarely needed) uses Python and fontTools (MIT).
 
 `src/text-metrics.ts` holds the standard character widths of Helvetica/Arial, regular and bold (the widths in Adobe's freely distributed Helvetica font metrics), so saved files and copied pictures place text as ChemDraw does. No font files are included.
