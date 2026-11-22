@@ -11,11 +11,12 @@ import { join } from 'node:path';
 import { readCdxml } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
 import { summarize, differences, duplicateIds } from './cdxml-compare';
+import { realFilesMissing } from './real-files';
 
 const dir = process.env.CHEM_TEST_FILES ?? '';
 const files = dir && existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.cdxml')) : [];
 
-describe.skipIf(!files.length)('saving real ChemDraw files', { timeout: 120000 }, () => {
+describe.skipIf(realFilesMissing('cdxml-files', !files.length, 'CHEM_TEST_FILES'))('saving real ChemDraw files', { timeout: 120000 }, () => {
   for (const f of files) {
     const text = readFileSync(join(dir, f), 'utf8');
 

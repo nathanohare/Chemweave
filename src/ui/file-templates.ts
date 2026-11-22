@@ -8,8 +8,52 @@ import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from '../deck/temp
 import { STARTER_DECKS, type StarterDeck } from '../deck/starters';
 import type { Master, SlideSize } from '../deck/deck';
 import { keyOf } from '../sheet/refs';
+import { unitPrefs } from '../sheet/template-units';
+import { TEMPLATE_CALLOUTS, withSample } from '../sheet/template-samples';
 import { forgetTextWidths } from '../render/renderer';
 import type { TemplateCategory, TemplateCard } from './template-window';
+import { SHEET_TEMPLATE_ICONS } from './sheet-template-icons';
+import type { Contents } from '../model';
+import type { Workbook } from '../sheet/workbook';
+
+/** Draws a SMILES as a structure for the cards' pictures (set by the program once the chemistry engine can; null when it can't). */
+export const templateChem: { toStructure: ((smiles: string, wb: Workbook) => Promise<Contents | null>) | null } = { toStructure: null };
+
+/**
+ * A template with its example rows, the SMILES in its Structure columns drawn as structures
+ * (as they would be when typed in). Made once for each template and unit choice.
+ */
+const samples = new Map<string, Promise<Workbook>>();
+function sampleBook(t: SheetTemplate): Promise<Workbook> {
+  const key = `${t.id}|${unitPrefs.place}`;
+  let got = samples.get(key);
+  if (!got) {
+    got = (async () => {
+      const wb = withSample(t.id, t.make(unitPrefs.place));
+      const draw = templateChem.toStructure;
+      if (!draw) { samples.delete(key); return wb; }
+      const sh = wb.sheets[0];
+      const used = sh.usedRange();
+      if (!used) return wb;
+      const todo: { r: number; c: number; text: string }[] = [];
+      for (let c = 0; c <= used.c2; c++) {
+        const head = sh.cell(0, c)?.input ?? '';
+        if (!/^structures?$/i.test(head.trim())) continue;
+        for (let r = 1; r <= used.r2; r++) {
+          const text = sh.cell(r, c)?.input;
+          if (text) todo.push({ r, c, text });
+        }
+      }
+      const drawn = await Promise.all(todo.map(async (x) => ({ ...x, contents: await draw(x.text, wb).catch(() => null) })));
+      wb.build(() => { for (const d of drawn) if (d.contents) sh.setStructure(d.r, d.c, d.contents); });
+      // drawn again next time when some couldn't be (the chemistry engine still loading)
+      if (drawn.some((d) => !d.contents)) samples.delete(key);
+      return wb;
+    })();
+    samples.set(key, got);
+  }
+  return got;
+}
 
 /** A small page showing a document template's title and headings. */
 export function docPreview(t: DocTemplate): HTMLElement {
@@ -54,17 +98,43 @@ export function sheetPreview(t: SheetTemplate): HTMLElement {
   return grid;
 }
 
+/** The drawing code for the cards' pictures, once loaded. */
+let thumbs: typeof import('./template-thumbs') | null = null;
+
+/** Draw a card's picture with the real drawing code (loaded when first needed), falling back to the plain outline. */
+async function realPicture(host: HTMLElement, plain: () => HTMLElement, real: (m: typeof import('./template-thumbs')) => HTMLElement | Promise<HTMLElement>): Promise<void> {
+  try {
+    thumbs ??= await import('./template-thumbs');
+    if (!host.isConnected) return;
+    const pic = await real(thumbs);
+    if (!host.isConnected) return;
+    host.replaceChildren(pic);
+  } catch {
+    host.replaceChildren(plain());
+  }
+}
+
 const docCard = (t: DocTemplate, use: (t: DocTemplate) => void): TemplateCard => ({
   id: t.id, name: t.name, tip: t.blurb,
-  preview: (host) => { host.replaceChildren(docPreview(t)); },
+  // the top of the first page as it prints
+  preview: (host) => realPicture(host, () => docPreview(t), (m) => m.docPage(t.make())),
   pick: () => use(t),
 });
 
-const sheetCard = (t: SheetTemplate, use: (t: SheetTemplate) => void): TemplateCard => ({
-  id: t.id, name: t.name, tip: t.blurb,
-  preview: (host) => { host.replaceChildren(sheetPreview(t)); },
-  pick: () => use(t),
-});
+const sheetCard = (t: SheetTemplate, use: (t: SheetTemplate) => void): TemplateCard => {
+  const notes = TEMPLATE_CALLOUTS[t.id];
+  return {
+    // a small icon, the name and the whole description; the sheet itself shows on hover
+    id: t.id, name: t.name, about: t.blurb, icon: SHEET_TEMPLATE_ICONS[t.id],
+    preview: () => {},
+    // its top rows at full size with a few example rows, a comment box on each worked-out column or cell
+    zoom: async () => {
+      thumbs ??= await import('./template-thumbs');
+      return thumbs.sheetCallouts(await sampleBook(t), notes?.rows ?? 10, notes?.notes ?? [], notes?.head);
+    },
+    pick: () => use(t),
+  };
+};
 
 export function documentCategories(use: (t: DocTemplate) => void): TemplateCategory[] {
   return DOC_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => DOC_TEMPLATES.filter((t) => t.category === c.id).map((t) => docCard(t, use)) }));

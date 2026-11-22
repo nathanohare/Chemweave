@@ -38,7 +38,10 @@ export class RichInput {
       const t = e.dataTransfer?.getData('text/plain');
       if (t) this.insert(t.replace(/\r\n?/g, '\n'));
     });
-    document.addEventListener('selectionchange', () => this.keepSelection());
+    // (only while the box has the focus: boxes made and dropped, as Outline View's are, leave nothing behind)
+    const onSel = () => this.keepSelection();
+    el.addEventListener('focus', () => document.addEventListener('selectionchange', onSel));
+    el.addEventListener('blur', () => document.removeEventListener('selectionchange', onSel));
   }
 
   // ---------------------------------------------------------------- the textarea's ways
@@ -128,6 +131,22 @@ export class RichInput {
       return;
     }
     this.looks = toggleLooks(this.looks, start, end, key, base);
+    this.render();
+    this.place(start, end);
+  }
+
+  /** Subscript or superscript on or off: for the selected text, or for what is typed next. */
+  togglePos(pos: 'sub' | 'sup'): void {
+    this.keepSelection();
+    const { start, end } = this.sel;
+    const flip = (l: RunLook, on: boolean): RunLook => { const { pos: _, ...rest } = l; return on ? { ...rest, pos } : rest; };
+    if (start === end) {
+      const look = this.typing?.at === start ? this.typing.look : this.looks[start - 1] ?? this.looks[start] ?? {};
+      this.typing = { at: start, look: flip(look, look.pos !== pos) };
+      return;
+    }
+    const on = !this.looks.slice(start, end).every((l) => l.pos === pos);
+    this.looks = this.looks.map((l, i) => (i >= start && i < end ? flip(l, on) : l));
     this.render();
     this.place(start, end);
   }

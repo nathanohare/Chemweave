@@ -17,11 +17,14 @@ import { COVALENT, mvec, type M3, type V3 } from '../chem/crystal';
 import { hydrogensOn, qmBonds, type QmBond } from '../chem/qm-bonds';
 import type { QmAtom } from '../chem/qm-output';
 import { frameRedrawn } from './frame-redrawn';
+import { keepLabels, readLabels } from './frame-labels';
 
 /** A species at one column: its name and energy (null: this pathway has nothing in that column). */
 export interface EnergyPoint {
   label: string;
   g: number | null;
+  /** Its name as typed in the window with bold, italic or underline (or a position its words alone wouldn't give), while `label` still says the same words. */
+  rich?: LabelPart[];
   /** Read from a Gaussian or ORCA file: its energy in hartree (so the unit can change) and its last geometry (Å). */
   eh?: number;
   geom?: QmAtom[];
@@ -56,6 +59,33 @@ export interface GeomView {
   fade?: number;
 }
 
+/** A piece of a name: plain, lowered or raised, and bold, italic or underlined. */
+export interface LabelPart { text: string; sub?: boolean; sup?: boolean; bold?: boolean; italic?: boolean; underline?: boolean }
+
+const partsText = (parts: { text: string }[]) => parts.map((p) => p.text).join('');
+
+/** A name's pieces to draw: as typed with its looks while they say the same words as `text`, else read from `text` (_ and ^, and formulas). */
+export function labelParts(text: string, rich?: LabelPart[]): LabelPart[] {
+  const read = chemRuns(text);
+  return rich?.length && partsText(rich) === partsText(read) ? rich : read;
+}
+
+/**
+ * A name typed in the window as pieces: its text (as the drawing reads names: plain, or with _{ }
+ * and ^{ } where its positions aren't those its words give), and the pieces themselves when they
+ * hold more than that text says (bold, italic, underline, or a digit kept level).
+ */
+export function labelFromParts(parts: LabelPart[]): { label: string; rich?: LabelPart[] } {
+  const plain = partsText(parts);
+  const pos = (ps: LabelPart[]) => ps.flatMap((p) => [...p.text].map(() => (p.sub ? 'b' : p.sup ? 'p' : '-'))).join('');
+  const label = pos(chemRuns(plain)) === pos(parts) ? plain
+    : parts.map((p) => (p.sub || p.sup ? `${p.sub ? '_' : '^'}{${p.text}}` : p.text)).join('');
+  const looks = parts.some((p) => p.bold || p.italic || p.underline);
+  const same = pos(chemRuns(label)) === pos(parts) && partsText(chemRuns(label)) === plain;
+  const clean = parts.filter((p) => p.text).map((p) => ({ text: p.text, ...(p.sub ? { sub: true } : p.sup ? { sup: true } : {}), ...(p.bold ? { bold: true } : {}), ...(p.italic ? { italic: true } : {}), ...(p.underline ? { underline: true } : {}) }));
+  return looks || !same ? { label, rich: clean } : { label };
+}
+
 /** A bracket between two species on one pathway, marking the change from one to the other (ΔG‡ when it climbs to a transition state). */
 export interface EnergyBracket { path: number; from: number; to: number }
 
@@ -64,6 +94,8 @@ export type EnergyDash = 'solid' | 'dashed' | 'dotted';
 
 export interface EnergyPath {
   name: string;
+  /** Its name with bold, italic or underline set in the window (as a species' `rich`). */
+  nameRich?: LabelPart[];
   color: string;
   points: EnergyPoint[];
   /** Its joining lines (dashed between levels and solid along a curve when not given). */
@@ -224,9 +256,9 @@ export function drawEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec): Energy
   const x = (k: number) => at.x + (cols[k] ?? (k + 0.5) * (d.w / n));
   const sizeOf = { label: look.labelSize, value: look.valueSize, axis: look.axisSize } as const;
 
-  const caption = (text: string, target: Vec, anchor: 'above' | 'below' | 'left' | 'right' | 'centre', color?: string, extra: Partial<Caption> = {}, role: 'label' | 'value' | 'axis' = 'value'): Caption => {
+  const caption = (text: string, target: Vec, anchor: 'above' | 'below' | 'left' | 'right' | 'centre', color?: string, extra: Partial<Caption> = {}, role: 'label' | 'value' | 'axis' = 'value', rich?: LabelPart[]): Caption => {
     const size = sizeOf[role];
-    const runs = chemRuns(text).map((r) => ({
+    const runs = labelParts(text, rich).map((r) => ({
       ...r, ...(color && color !== '#000000' ? { color } : {}), ...(look.font ? { font: look.font } : {}), ...(size ? { size } : {}),
     }));
     const c = doc.addCaption({ x: 0, y: 0, runs, justify: 'left', ...extra });
@@ -282,8 +314,8 @@ export function drawEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec): Energy
       if (q.label && !labelled.has(key)) {
         labelled.add(key);
         const ink2 = pi && d.paths.length > 1 && !both ? color : undefined;
-        if (peak) caption(q.label, { x: x(k), y: top }, 'above', ink2, {}, 'label');
-        else caption(q.label, { x: x(k), y: bottom }, 'below', ink2, {}, 'label');
+        if (peak) caption(q.label, { x: x(k), y: top }, 'above', ink2, {}, 'label', q.rich);
+        else caption(q.label, { x: x(k), y: bottom }, 'below', ink2, {}, 'label', q.rich);
       }
     });
     // joined: dashed between the ends of the levels, or a smooth S from middle to middle (or
@@ -398,7 +430,7 @@ export function drawEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec): Energy
     let ky = at.y - 1.2 * L;
     for (const p of d.paths) {
       const x2 = at.x + d.w, x1 = x2 - 1.6 * L;
-      const k = caption(p.name || 'pathway', { x: x1 - gap, y: ky }, 'left', p.color, {}, 'label');
+      const k = caption(p.name || 'pathway', { x: x1 - gap, y: ky }, 'left', p.color, {}, 'label', p.name ? p.nameRich : undefined);
       // the key shows a pathway's line style where the pathways differ in it, else its level
       const styled = d.paths.some((o) => joinDash(d, o) !== joinDash(d, p));
       line(x1, ky, x2, ky, { ...(styled ? dashLook(joinDash(d, p)) : { bold: d.style === 'levels' }), ...(p.color !== '#000000' ? { color: p.color } : {}) });
@@ -545,6 +577,7 @@ export function putEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec, id?: num
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
   // (a frame changed in another program is redrawn too, in this edit's undo step; review F1d-R01)
   frameRedrawn(doc, old);
+  const was = readLabels(doc, old);
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
     const f = old.frame;
@@ -576,8 +609,10 @@ export function putEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec, id?: num
   // its background and border, as the window asks
   const lk = d.look ?? {};
   const back = { filled: !!lk.background, ...(lk.background ? { fillColor: lk.background } : {}), lineWidth: lk.border ? lk.borderWidth ?? doc.style.lineWidth : 0, color: lk.border ?? '#000000' };
-  if (old) { doc.updateShape(old.id, { ...b, frame, energy, ...back, editedOutside: undefined }); return old.id; }
-  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, ...back, frame, energy, name: 'Energy diagram' }).id;
+  // (looks set on its labels by hand stay)
+  const madeLabels = keepLabels(doc, was, frame);
+  if (old) { doc.updateShape(old.id, { ...b, frame, energy, ...back, madeLabels, editedOutside: undefined }); return old.id; }
+  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, ...back, frame, energy, name: 'Energy diagram', madeLabels }).id;
 }
 
 /** The energy diagram a thing belongs to (its frame's id), if any. */

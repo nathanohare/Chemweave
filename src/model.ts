@@ -402,6 +402,29 @@ export interface TextRun {
    * shadow, outline and fill only while they still match the run's own above.
    */
   wfx?: string;
+  /**
+   * The underline's kind, by the name the file gave it, while `underline` is on: Word's (double,
+   * wave, dotted, thick, words..., ECMA-376 part 1, 17.18.99) in documents, Excel's (double,
+   * singleAccounting, doubleAccounting, 18.18.85) on sheets. Drawn as a single line where this
+   * program has no drawing of its own for it. Absent: a single line.
+   */
+  ukind?: string;
+  /**
+   * Documents: Word's run properties this program doesn't model (emboss, imprint, a text border,
+   * character scale, an emphasis mark, right to left...), as the file had them (JSON, by their
+   * place in w:rPr: io/docx-read.ts KEPT_RPR), written back with the run.
+   */
+  wrx?: string;
+  /** Documents: the underline's own colour (Word's w:u w:color), when not the text's. */
+  ucolor?: string;
+  /** Double strikethrough (Word's w:dstrike, 17.3.2.9), while `strike` is on. */
+  dstrike?: boolean;
+  /**
+   * Slides: PowerPoint's run formatting this program doesn't model (a gradient fill, glow, a
+   * double underline, a theme or East Asian font...), as the file had it (JSON, io/pptx-keep.ts),
+   * written back while the looks it goes with are unchanged.
+   */
+  pfx?: string;
   /** Documents: not spell- or grammar-checked (Word's Do not check spelling or grammar: chemical names, citations). */
   noProof?: boolean;
   /** Documents: the text raised (less than 0: lowered) from the line by this many points, at its own size (Word's Font > Advanced > Position). */
@@ -481,6 +504,12 @@ export interface ParaStyle {
    * in the same paragraph as that one.
    */
   soft?: boolean;
+  /**
+   * Documents: Word's paragraph properties this program doesn't model (a text frame or drop cap,
+   * an outline level of its own, right to left, East Asian line breaking...), as the file had them
+   * (JSON, by their place in w:pPr: io/docx-read.ts KEPT_PPR), written back with the paragraph.
+   */
+  wpx?: string;
   /** This paragraph's own alignment, in place of the text box's. */
   align?: Justify;
   /** Extra space above and below the paragraph, in points. */
@@ -490,6 +519,12 @@ export interface ParaStyle {
   indent?: number;
   /** Documents: the named style (Normal when left out), for Heading 1 and the rest. */
   style?: string;
+  /**
+   * Slides: PowerPoint's paragraph settings this program doesn't model (right to left, font
+   * alignment, a bullet's colour and size, its margins as PowerPoint had them...), as the file had
+   * them (JSON, io/pptx-keep.ts), written back while the paragraph's own settings are unchanged.
+   */
+  ppx?: string;
   /** Documents: starts a new page. */
   pageBreak?: boolean;
   /** Documents set in columns: starts the next column. */
@@ -652,6 +687,12 @@ export interface Caption {
   fit?: 'shrink' | 'fixed';
   /** Text direction: the text runs down (rotated 90°) or up (270°). Its turn is in `rot`; this says it is the text's direction, for PowerPoint. */
   dir?: 'vert' | 'vert270';
+  /**
+   * Slides: a PowerPoint text box's frame as the file had it (JSON, io/pptx-keep.ts): its size and
+   * place, where its text sits in it (anchor, margins) and how it fits, written back (moved with the
+   * text) while the box's width, height, fit, direction and turn are unchanged here.
+   */
+  pbox?: string;
 }
 
 /**
@@ -1176,7 +1217,33 @@ export interface Shape {
    * paste into. `runs` is the text label it had, so it can go back to that.
    */
   holder?: { runs?: TextRun[] };
+  /**
+   * A frame drawn from data (energy diagram, plate, Newman, torsion chart, diagram): its labels
+   * as last drawn, so looks set on them by hand afterwards are told from the drawing's own and
+   * kept when it is drawn again (design/frame-labels.ts).
+   */
+  madeLabels?: MadeLabel[];
 }
+
+/** A label as a frame drawn from data made it: its words and their runs. */
+export interface MadeLabel { text: string; runs: TextRun[]; /** An atom's label (a sawhorse's group), not a caption's words. */ atom?: true }
+
+/**
+ * The kinds of drawing kept as data on an invisible frame round what it draws: an energy diagram,
+ * a SmartArt-style diagram, a TLC plate, gel or MO diagram, a Smart Scheme, a Newman or sawhorse
+ * projection, a torsion chart. Every place that treats such a frame apart from an ordinary
+ * rectangle (Format Painter, the Style panel, Action Settings) asks `isDataFrame`.
+ */
+export const DATA_FRAME_KINDS = ['energy', 'diagram', 'plate', 'smart', 'newman', 'torsion'] as const;
+export type DataFrameKind = (typeof DATA_FRAME_KINDS)[number];
+
+/** Which kind of drawing kept as data this shape is the frame of, or null for any other shape. */
+export function dataFrameKind(s: Pick<Shape, DataFrameKind>): DataFrameKind | null {
+  return DATA_FRAME_KINDS.find((k) => s[k] !== undefined) ?? null;
+}
+
+/** Is this shape the invisible frame of a drawing kept as data (its fill and outline aren't its own)? */
+export const isDataFrame = (s: Pick<Shape, DataFrameKind>): boolean => dataFrameKind(s) !== null;
 
 /**
  * Can this shape be turned to any angle (Slides and Design, and an orbital's lobes anywhere),
@@ -1510,8 +1577,11 @@ export function shiftDrawing(doc: Doc, dx: number, dy: number): void {
 
 export type Entity = Atom | Bond | Caption | Arrow | Shape;
 /** One letter per entity type: atom, bond, caption, arrow (r), shape. */
-/** What an undo step can hold: atoms, bonds, captions, arrows, shapes, and 'y' the drawing style. */
+/** What an undo step can hold: atoms, bonds, captions, arrows, shapes, and 'y' the drawing's settings (its style, and its page as entry PAGE_ENTRY). */
 export type Kind = 'a' | 'b' | 'c' | 'r' | 's' | 'y';
+/** The undo entry ('y' kind) that holds the drawing's page. */
+const PAGE_ENTRY = 1;
+const copyPage = (p: PageSetup | null): PageSetup | null => p && { ...p, ...(p.walls ? { walls: { ...p.walls } } : {}) };
 
 /**
  * The CDXML file a drawing was opened from. Saving rewrites only what changed and keeps
@@ -1861,7 +1931,7 @@ export class Doc {
   private snapshot(key: string): Entity | null {
     const kind = key[0] as Kind;
     const id = Number(key.slice(1));
-    if (kind === 'y') return clone(this.style) as unknown as Entity;
+    if (kind === 'y') return (id === PAGE_ENTRY ? { page: copyPage(this.page) } : clone(this.style)) as unknown as Entity;
     const e = this.mapOf(kind).get(id);
     return e ? clone(e) : null;
   }
@@ -1879,6 +1949,13 @@ export class Doc {
   setStyle(st: DocStyle): void {
     this.touch('y', 0);
     this.style = { ...st };
+    this.allDirty = true;
+  }
+
+  /** Change the page (File ▸ Page Setup, a page edge fixed or freed), as part of the edit going on. */
+  setPage(p: PageSetup | null): void {
+    this.touch('y', PAGE_ENTRY);
+    this.page = copyPage(p);
     this.allDirty = true;
   }
 
@@ -1937,7 +2014,8 @@ export class Doc {
 
   private rawSet(kind: Kind, id: number, e: Entity | null): void {
     if (kind === 'y') {
-      if (e) this.style = { ...(e as unknown as DocStyle) };
+      if (e && id === PAGE_ENTRY) this.page = copyPage((e as unknown as { page: PageSetup | null }).page);
+      else if (e) this.style = { ...(e as unknown as DocStyle) };
       this.allDirty = true;
       return;
     }
@@ -2334,6 +2412,13 @@ export class Doc {
     for (const w of this.watches) { w.all = true; w.ids.clear(); }
     this.version++;
   }
+
+  /**
+   * Which drawing this document holds now: the same object until swap() brings another one in (and
+   * again once it comes back), so work that waits (the chemistry engine, a dialog, the network) can
+   * check it still has the drawing it started on.
+   */
+  get contentsKey(): object { return this.atoms; }
 
   /**
    * Exchange everything drawn, with its style, file and undo history, with another document. A

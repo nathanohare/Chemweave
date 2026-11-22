@@ -15,6 +15,7 @@ import { profileAt, type Extremum, type Profile } from '../chem/torsion-profile'
 import { norm180, norm360, type NewmanGroup } from '../chem/newman';
 import { drawEyeMark, drawNewman, newmanTextSize, type NewmanLook } from './newman';
 import { frameRedrawn } from './frame-redrawn';
+import { keepLabels, readLabels } from './frame-labels';
 
 export type ConformerNames = 'textbook' | 'klyne' | 'none';
 
@@ -381,6 +382,7 @@ export function putTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec, id?: n
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
   // (a frame changed in another program is redrawn too, in this edit's undo step; review F1d-R01)
   frameRedrawn(doc, old);
+  const was = readLabels(doc, old);
   if (old?.frame) {
     for (const x of old.frame.captions) doc.removeCaption(x);
     for (const x of old.frame.arrows) doc.removeArrow(x);
@@ -391,6 +393,8 @@ export function putTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec, id?: n
   const pad = 0.3 * doc.style.bondLength;
   const frame: Frame = { atoms: parts.atoms ?? [], captions: parts.captions, arrows: parts.arrows, shapes: parts.shapes, padX: pad, padY: pad, fit: true };
   const b = frameBox(doc, frame, m) ?? { x1: at.x, y1: at.y, x2: at.x + d.w, y2: at.y + d.h };
-  if (old) { doc.updateShape(old.id, { ...b, frame, torsion: d, editedOutside: undefined }); return old.id; }
-  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, torsion: d, name: 'Torsional energy diagram' }).id;
+  // (looks set on its labels by hand stay)
+  const madeLabels = keepLabels(doc, was, frame);
+  if (old) { doc.updateShape(old.id, { ...b, frame, torsion: d, madeLabels, editedOutside: undefined }); return old.id; }
+  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, torsion: d, name: 'Torsional energy diagram', madeLabels }).id;
 }

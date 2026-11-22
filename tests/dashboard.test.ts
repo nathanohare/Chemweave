@@ -193,9 +193,9 @@ describe('saving to Excel', () => {
     // the headline number is a number in Excel, with the suffix in its format
     expect(sheet2).toMatch(/<c r="A2" s="\d+"><v>81<\/v><\/c>/);
     expect(strFromU8(f['xl/styles.xml'])).toContain('formatCode="0.0&quot; %&quot;"');
-    // the table tile (title in row 19, headings in 20): the slicer's rows, sorted largest first
+    // the table tile (title in row 17, headings in 18; rows 22 px tall): the slicer's rows, sorted largest first
     const at = (ref: string) => sheet2.match(new RegExp(`<c r="${ref}"[^>]*>(?:<f>[^<]*</f>)?<v>([^<]*)</v>`))?.[1];
-    expect([at('B21'), at('B22'), at('B23'), at('B24')]).toEqual(['90', '81', '72', undefined]);
+    expect([at('B19'), at('B20'), at('B21'), at('B22')]).toEqual(['90', '81', '72', undefined]);
     // the chart reads cells under itself holding what the tile shows (only Pd(OAc)2 rows)
     const part = strFromU8(f['xl/charts/chart1.xml']);
     expect(part).toMatch(/<c:f>Dashboard!\$[A-Z]+\$2:\$[A-Z]+\$4<\/c:f>/);

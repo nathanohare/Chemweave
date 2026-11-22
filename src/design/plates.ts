@@ -15,6 +15,7 @@ import { crystalSvg, type CrystalSpec } from './xray';
 import { dataUrl } from '../render/images';
 import { isInkId } from './geo';
 import { frameRedrawn } from './frame-redrawn';
+import { keepLabels, readLabels } from './frame-labels';
 
 /** A TLC plate, a gel, or a molecular orbital diagram (design/mo.ts), which is kept and redrawn the same way. */
 export type PlateKind = 'tlc' | 'gel' | 'mo' | 'crystal';
@@ -396,6 +397,7 @@ export function putPlate(doc: Doc, m: Measure, d: PlateData, at: Vec, id?: numbe
   // (a frame changed in another program is redrawn too, in this edit's undo step; review F1d-R01)
   frameRedrawn(doc, old);
   if (d.kind === 'crystal') return putCrystal(doc, d, at, old);
+  const was = readLabels(doc, old);
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
     const f = old.frame;
@@ -414,8 +416,10 @@ export function putPlate(doc: Doc, m: Measure, d: PlateData, at: Vec, id?: numbe
   const r = (v: number) => Math.round(v * 100) / 100;
   const plate: PlateData = { ...d, margins: { l: r(at.x - b.x1), t: r(at.y - b.y1), r: r(b.x2 - at.x - d.w), b: r(b.y2 - at.y - d.h) } };
   const name = d.kind === 'tlc' ? 'TLC plate' : d.kind === 'gel' ? 'Gel' : 'MO diagram';
-  if (old) { doc.updateShape(old.id, { ...b, frame, plate, editedOutside: undefined }); return old.id; }
-  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, plate, name }).id;
+  // (looks set on its labels by hand stay)
+  const madeLabels = keepLabels(doc, was, frame);
+  if (old) { doc.updateShape(old.id, { ...b, frame, plate, madeLabels, editedOutside: undefined }); return old.id; }
+  return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, plate, name, madeLabels }).id;
 }
 
 /** A crystal structure as an SVG data URL, `w` × `h` points. */

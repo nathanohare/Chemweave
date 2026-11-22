@@ -532,9 +532,9 @@ class RtfWriter {
   }
 
   /** A run's text (a formula's digits as subscripts), inside a group with its look. */
-  private run(r: TextRun): string {
+  private run(r: TextRun, para?: readonly TextRun[]): string {
     if (!r.text) return '';
-    if (r.formula && !r.sub && !r.sup) return rt.formulaParts(r.text).map((p) => this.run({ ...r, formula: undefined, sub: p.pos === 'sub' || undefined, sup: p.pos === 'sup' || undefined, text: p.text })).join('');
+    if (r.formula && !r.sub && !r.sup) return rt.formulaPartsIn(para, r).map((p) => this.run({ ...r, formula: undefined, sub: p.pos === 'sub' || undefined, sup: p.pos === 'sup' || undefined, text: p.text })).join('');
     const props = this.runProps(r);
     return `{${props}${props ? ' ' : ''}${rtfText(r.text)}}`;
   }
@@ -546,7 +546,7 @@ class RtfWriter {
     const shown = this.fields.get(id);
     if (shown !== undefined && o.kind !== 'note') return this.run({ ...r, obj: undefined, text: shown });
     if (o.kind === 'note') {
-      const inner = splitParagraphs(o.runs).map((rs) => rs.map((x) => (x.obj === undefined ? this.run(x) : '')).join('')).join('\\par ');
+      const inner = splitParagraphs(o.runs).map((rs) => rs.map((x) => (x.obj === undefined ? this.run(x, rs) : '')).join('')).join('\\par ');
       return `{${this.runProps({ ...r, sup: true, obj: undefined, text: '' })}\\chftn}{\\footnote${o.end ? '\\ftnalt' : ''}\\pard\\plain{\\super\\chftn} ${inner}}`;
     }
     if (o.kind === 'picture') return this.picture(o.src, o.w * (o.scale ?? 1), o.h * (o.scale ?? 1), o.px);
@@ -576,7 +576,7 @@ class RtfWriter {
 
   private async runs(rs: TextRun[]): Promise<string> {
     let out = '';
-    for (const r of rs) out += r.obj !== undefined ? await this.object(r) : this.run(r);
+    for (const r of rs) out += r.obj !== undefined ? await this.object(r) : this.run(r, rs);
     return out;
   }
 

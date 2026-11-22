@@ -300,7 +300,7 @@ describe('row heights', () => {
   it("keeps the sheet's default row height", async () => {
     const { book } = await readXlsx(excelFile('<sheetFormatPr defaultRowHeight="14.25"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>'));
     expect(part(await writeXlsx(book, pictures), 'xl/worksheets/sheet1.xml')).toContain('<sheetFormatPr defaultRowHeight="14.25"/>');
-    expect(part(await writeXlsx(new Workbook(), pictures), 'xl/worksheets/sheet1.xml')).toContain('<sheetFormatPr defaultRowHeight="15"/>');
+    expect(part(await writeXlsx(new Workbook(), pictures), 'xl/worksheets/sheet1.xml')).toContain('<sheetFormatPr defaultRowHeight="16.5" customHeight="1"/>');
   });
 
   it('writes a row grown to fit its wrapped text as one Excel fits again, and a row set by hand as set', async () => {

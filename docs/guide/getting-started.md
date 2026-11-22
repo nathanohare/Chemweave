@@ -2,7 +2,7 @@
 
 This page covers installing Chemweave, finding your way around the window, opening your first ChemDraw file, saving, and the Settings window.
 
-Chemweave is free. It draws structures the way ChemDraw does (the same keyboard shortcuts, the same ACS Document 1996 look) and opens and saves ChemDraw's `.cdxml` and `.cdx` files. Besides the chemistry **Canvas**, it has four more modes, each in its own tab: **Presentation** (Slideshow), **Spreadsheet** (Tables, Charts, and Dashboards), **Document** (Text document) and **Design** (Posters, Graphical abstracts, Figures).
+Chemweave is free. It draws structures the way ChemDraw does (the same keyboard shortcuts, the same ACS Document 1996 look) and opens and saves ChemDraw's `.cdxml` and `.cdx` files. Besides the chemistry **Canvas**, it has four more modes, each in its own tab: **Presentation** (Slideshow), **Spreadsheet** (Tables, Charts, and Dashboards), **Document** (Text document) and **Design** (Posters, Graphical abstracts, Figures). The desktop app also has **[SI Project](si-project.md)** tabs for putting together a paper's Supporting Information.
 
 A note on keys: this guide writes Ctrl, as on Windows and Linux. On a Mac, use Cmd wherever it says Ctrl, and Option wherever it says Alt.
 
@@ -13,10 +13,12 @@ Download the newest installer from the **Releases** page of the project on GitHu
 ### Windows
 
 1. Download the file ending in `x64-setup.exe` and run it.
-2. Windows may say **"Windows protected your PC"**. This is Windows SmartScreen: it warns about any program that has not been signed with a paid Windows certificate. Click **More info**, then **Run anyway**.
+2. Your browser or Windows may warn you first. Chemweave's installers are signed, but Microsoft also warns about any file that not many people have downloaded yet, and each new release starts out that way.
+   - **Microsoft Edge** may say the file **"isn't commonly downloaded"**. In the Downloads list, point at the file, click **…** (More actions) and choose **Keep**; then **Show more** and **Keep anyway**.
+   - Windows may say **"Windows protected your PC"** when the installer starts. Click **More info**, check that the publisher shown is the Chemweave developer's name rather than "Unknown publisher", then click **Run anyway**.
 3. Follow the installer. A newer installer can be run over an older version; you don't need to remove the old one first.
 
-The installer puts the app in your own user folder, so it doesn't need administrator rights. On a computer managed by an IT department, their rules may still block programs that aren't signed; if so, ask them, since neither the installer nor the portable copy below gets around those rules.
+The installer puts the app in your own user folder, so it doesn't need administrator rights. On a computer managed by an IT department, their rules may still block programs they haven't approved; if so, ask them, since neither the installer nor the portable copy below gets around those rules.
 
 ### Windows, without installing (portable copy)
 
@@ -24,7 +26,7 @@ A portable copy runs from a flash drive or any folder, with nothing installed, a
 
 1. Download the file ending in `x64-portable.zip`.
 2. Right-click it, choose **Extract All…**, and put the **Chemweave** folder wherever you want it: a flash drive, Documents, the desktop.
-3. Open the folder and double-click **Chemweave.exe**. The first time, SmartScreen may warn as described above.
+3. Open the folder and double-click **Chemweave.exe**. The first time, Windows may warn as described above.
 
 The **Chemweave Data** folder next to the app is what makes it portable: your keyboard shortcuts, preferences, styles, templates and recent files are saved there instead of on the computer, so the copy behaves the same on every computer you plug it into. Keep the two together, and copy both to move your copy. **Help ▸ Keyboard Shortcuts and Tips** shows "(portable)" after the version number.
 

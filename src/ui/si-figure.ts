@@ -40,7 +40,7 @@ export class SiFigureEditor {
     this.title.textContent = title;
     addInfo(h, 'The figure as it prints, about its printed size; its caption is the line under it in the text. Click it for the Figure tab on the ribbon: change the picture, draw it again, or set its width.');
     const lab = el('label', 'si-part');
-    this.labelBox.placeholder = 'Figure S1 (automatic)';
+    this.labelBox.placeholder = 'Automatic';
     this.labelBox.addEventListener('change', () => void this.save({ label: this.labelBox.value.trim() }));
     lab.append('Label', this.labelBox);
     lab.title = 'The figure’s label, typed over the automatic one (Figure S1, S2…)';
@@ -64,7 +64,11 @@ export class SiFigureEditor {
     return { file: typeof e.file === 'string' ? e.file : '', width: Math.max(0, Number(e.width ?? e.width_cm ?? 0) || 0) };
   }
 
-  setTitle(label: string): void { if (label) this.title.textContent = label; }
+  /** The figure's label as the compiled SI gives it; `auto`: the numbered one it gets without a typed label (the Label box's placeholder). */
+  setTitle(label: string, auto = ''): void {
+    if (label) this.title.textContent = label;
+    this.labelBox.placeholder = auto ? `${auto} (automatic)` : 'Automatic';
+  }
 
   /** Done when every save of this figure so far has been written. */
   settled(): Promise<void> {

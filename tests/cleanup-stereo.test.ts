@@ -12,6 +12,7 @@ import { toMolfile } from '../src/chem/molfile';
 import { addMolfile } from '../src/io/chem-formats';
 import { cleanUpWays } from '../src/chem/cleanup';
 import { dist } from '../src/geom';
+import { realFilesMissing } from './real-files';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RDKit: any;
@@ -92,7 +93,7 @@ describe('Clean Up Structure keeps the chemistry', () => {
 });
 
 const dir = process.env.CHEM_TEST_FILES ?? '';
-describe.skipIf(!dir || !existsSync(dir))('Clean Up Structure on real ChemDraw files', () => {
+describe.skipIf(realFilesMissing('cleanup-stereo', !dir || !existsSync(dir), 'CHEM_TEST_FILES'))('Clean Up Structure on real ChemDraw files', () => {
   const files = dir && existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.cdxml')) : [];
   for (const f of files) {
     it(f, () => {
