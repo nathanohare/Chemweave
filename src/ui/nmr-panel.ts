@@ -22,6 +22,16 @@ import { nmrAutoPredict } from './nmr-settings';
 import { autoRange, rowAt, spectrumSvg, SpectrumWindow, nmrQuality, type MeasuredOverlay, type SpectrumData } from './nmr-spectrum';
 
 export const NMR_SOLVENTS = ['CDCl3', 'DMSO-d6', 'CD3OD', 'C6D6', 'acetone-d6', 'CD2Cl2', 'CD3CN', 'D2O'] as const;
+export type NmrSolvent = (typeof NMR_SOLVENTS)[number];
+/** How each solvent is written on screen: its formula with real subscripts (the ids above stay as saved). */
+export const NMR_SOLVENT_LABEL: Record<NmrSolvent, string> = {
+  CDCl3: 'CDCl₃', 'DMSO-d6': 'DMSO-d₆', CD3OD: 'CD₃OD', C6D6: 'C₆D₆', 'acetone-d6': 'acetone-d₆', CD2Cl2: 'CD₂Cl₂', CD3CN: 'CD₃CN', D2O: 'D₂O',
+};
+/** A solvent's on-screen name (an unknown id is shown as it is). */
+export const solventLabel = (id: string): string => (NMR_SOLVENT_LABEL as Record<string, string>)[id] ?? id;
+const SUPS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+/** A nucleus as written on screen, its mass number raised: 1H → ¹H, 13C → ¹³C. */
+export const nucLabel = (n: string): string => n.replace(/^\d+/, (d) => [...d].map((c) => SUPS[Number(c)]).join(''));
 
 const isCheckNuc = (n: Nucleus): n is CheckNucleus => n === '1H' || n === '13C';
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
@@ -420,7 +430,7 @@ export class NmrPanel {
       d.open = nmrAutoPredict() && this.open;
       d.innerHTML = `<summary>NMR (predicted) <span class="info-icon" tabindex="0" role="img" title="Predicted by neural networks trained on measured shifts, blended with shifts of atoms in the same environment (NMRShiftDB2 and CC BY journal data). ± is the expected error. The chip counts measured atoms with a matching environment; ~ marks a less certain prediction; M marks this structure's own measured shift. Marker numbers on the drawing match the Atoms column." aria-label="About predicted NMR">i</span>
         <span class="nmr-nuc" role="group" aria-label="Nucleus"${this.report ? ' hidden' : ''}>${(['1H', '13C', '19F', '31P'] as const).map((n) => `<button type="button" data-nuc="${n}" aria-pressed="${n === this.nuc}"${n === '19F' || n === '31P' ? ' hidden' : ''}><sup>${n.slice(0, -1)}</sup>${n.slice(-1)}</button>`).join('')}</span>
-        <select class="nmr-solvent" title="Solvent">${NMR_SOLVENTS.map((s) => `<option value="${s}"${s === this.solvent ? ' selected' : ''}>${s}</option>`).join('')}</select></summary>
+        <select class="nmr-solvent" title="Solvent">${NMR_SOLVENTS.map((s) => `<option value="${s}"${s === this.solvent ? ' selected' : ''}>${solventLabel(s)}</option>`).join('')}</select></summary>
         <div class="nmr-body"><p class="muted small">Loading…</p></div>
         <div class="an-buttons"><button type="button" class="nmr-check" aria-pressed="false" title="Compare a measured peak list (pasted in SI format) with the prediction">Check Data</button><button type="button" class="nmr-copy" title="Copy the predicted 1H and 13C data in SI format">Copy as SI Text</button><button type="button" class="nmr-view" aria-pressed="${this.report}" title="Show the predicted 1H and 13C data in journal format">Peak Report</button><button type="button" class="nmr-marks" aria-pressed="${this.marks}" title="Show the predictions on the drawing">Show on Drawing</button>${this.host.saveSpectra ? '<button type="button" class="nmr-save" title="Keep the predicted peak report, and a pasted measured one, with this compound in the Compound Library">Save to Library</button>' : ''}<select class="nmr-mode" title="What Show on Drawing shows: shifts by each atom, atom numbers matching the list, or confidence dots (green: small expected error; amber: larger; red: large, or no similar measured atoms)">${(['shifts', 'numbers', 'confidence'] as const).map((m) => `<option value="${m}"${m === this.mode ? ' selected' : ''}>${{ shifts: 'Shifts', numbers: 'Atom Numbers', confidence: 'Confidence' }[m]}</option>`).join('')}</select></div>`;
       const buttons = [...frag.querySelectorAll(':scope > .an-buttons')].pop();
@@ -649,9 +659,9 @@ export class NmrPanel {
 
   /** What the paste box has: the lists read from the text. */
   private readNote(st: CheckState): string {
-    const text = parsePeakLists(st.text).map((l) => `${l.nuc} list · ${l.peaks.length} peak${l.peaks.length === 1 ? '' : 's'}${l.solvent ? ` · ${l.solvent}` : ''}`);
+    const text = parsePeakLists(st.text).map((l) => `${nucLabel(l.nuc)} list · ${l.peaks.length} peak${l.peaks.length === 1 ? '' : 's'}${l.solvent ? ` · ${solventLabel(l.solvent)}` : ''}`);
     const all = text;
-    return all.length ? all.join(', ') : st.text.trim() ? 'No peaks read yet' : 'Paste a 1H or 13C peak or multiplet report';
+    return all.length ? all.join(', ') : st.text.trim() ? 'No peaks read yet' : 'Paste a ¹H or ¹³C peak or multiplet report';
   }
 
   /** Reads the pasted lists and compares each with the prediction. */
@@ -675,7 +685,7 @@ export class NmrPanel {
       const solvent = list.solvent ?? this.solvent;
       const known = await knownPeaks(solvent, list.nuc, await this.host.importedTables?.().catch(() => null) ?? null);
       const res = checkData(list, rows, known);
-      const note = list.solvent && list.solvent.toLowerCase() !== this.solvent.toLowerCase() ? `The list is in ${list.solvent}; the prediction is for ${this.solvent}. Select ${list.solvent} above so they match.` : undefined;
+      const note = list.solvent && list.solvent.toLowerCase() !== this.solvent.toLowerCase() ? `The list is in ${solventLabel(list.solvent)}; the prediction is for ${solventLabel(this.solvent)}. Select ${solventLabel(list.solvent)} above so they match.` : undefined;
       st.results.set(list.nuc, { list, res, pred: rows, rowIdx, basis: s.rows, note });
     }
     st.editing = false;

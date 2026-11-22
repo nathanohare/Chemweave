@@ -433,9 +433,11 @@ class Styles {
     // (its links to the theme's colours or heading font only while the theme written is the one read,
     // else fixed as the cell shows them, the rest of the font kept: review F2-R03, F2b-R07)
     const keptFont = s.excel?.font && s.excel.font.key === fontLook(s) ? (this.themeLinks ? s.excel.font.xml : unthemed(s.excel.font.xml, s.color, s.font)) : null;
+    // struck through, lowered or raised: from the Font group (strike, pos), or kept from the file
+    const va = vertOf(s);
     const font = keptFont ? this.index(this.fonts, keptFont) : fontLook(s) !== fontLook(this.normal)
-      ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${s.excel?.strike ? '<strike/>' : ''}${s.underline ? uXml(s.excel?.u) : ''}` +
-        `${s.excel?.vertAlign ? `<vertAlign val="${xmlAttr(s.excel.vertAlign)}"/>` : ''}<sz val="${s.size ?? 11}"/>` +
+      ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${strikeOf(s) ? '<strike/>' : ''}${s.underline ? uXml(s.excel?.u) : ''}` +
+        `${va ? `<vertAlign val="${xmlAttr(va)}"/>` : ''}<sz val="${s.size ?? 11}"/>` +
         `${s.color ? `<color rgb="FF${hex6(s.color)}"/>` : '<color theme="1"/>'}<name val="${xml(s.font ?? this.minor)}"/><family val="2"/>${s.font ? '' : '<scheme val="minor"/>'}</font>`)
       : 0;
     // a patterned fill as it was, while it still shows its color
@@ -498,7 +500,7 @@ function namedStyleKey(name: string, builtinId: number | undefined): string {
 
 /** What makes two cell looks the same style in the file (an empty look is style 0). */
 function xfKey(s: CellStyle): string {
-  return JSON.stringify([s.bold, s.italic, s.underline, s.color, s.fill, s.font, s.size, s.align, s.valign, s.wrap, s.numFmt, s.borders, s.indent, s.rotate, s.cellStyle, s.excel]);
+  return JSON.stringify([s.bold, s.italic, s.underline, s.strike, s.pos, s.color, s.fill, s.font, s.size, s.align, s.valign, s.wrap, s.numFmt, s.borders, s.indent, s.rotate, s.cellStyle, s.excel]);
 }
 
 function borderName(b: BorderStyle): string {
@@ -1232,7 +1234,10 @@ function runShown(style: CellStyle | undefined, r: TextRun): string {
 }
 
 /** What a cell's font looks like here, to tell whether a font kept from the file still goes with it. */
-const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign, l.underline ? l.excel?.u : undefined]);
+const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, strikeOf(l), vertOf(l), l.underline ? l.excel?.u : undefined]);
+/** Struck through, lowered or raised: from the Font group (strike, pos; G5-26), or kept from the file. */
+function strikeOf(l: CellStyle): boolean { return !!(l.strike || l.excel?.strike); }
+function vertOf(l: CellStyle): string | undefined { return l.pos === 'sub' ? 'subscript' : l.pos === 'sup' ? 'superscript' : l.excel?.vertAlign; }
 
 /**
  * A kept font (or run look) with its links to a theme other than the one written made fixed, the
@@ -1305,9 +1310,11 @@ function readStyles(doc: Document | null, theme: string[], faces: { minor: strin
     const face = faceOf(f) || baseFace;
     // the theme's body font is no font of the cell's own
     if (face.toLowerCase() !== faces.minor.toLowerCase()) st.font = face;
-    // raised, lowered or struck through: not shown here, written back
+    // raised, lowered or struck through: shown, and changed by the Font group's buttons (G5-26)
     const va = val(f, 'vertAlign');
-    if (va === 'superscript' || va === 'subscript' || on(f, 'strike')) st.excel = { ...(va === 'superscript' || va === 'subscript' ? { vertAlign: va } : {}), ...(on(f, 'strike') ? { strike: true as const } : {}) };
+    if (va === 'superscript') st.pos = 'sup';
+    if (va === 'subscript') st.pos = 'sub';
+    if (on(f, 'strike')) st.strike = true;
     if (uKind && uKind !== 'single') st.excel = { ...st.excel, u: uKind };
     const written = fontXml(f);
     if (fontHasMore(written)) st.excel = { ...st.excel, font: { xml: written, key: fontLook(st) } };
@@ -1494,9 +1501,10 @@ function cellRuns(runs: FileRun[] | undefined, style: CellStyle | undefined, min
       ...(l.underline !== !!style?.underline ? { underline: l.underline } : {}),
       // (a kind other than the cell's, 'single' over a cell underlined another way)
       ...(l.underline && (l.ukind ?? '') !== ((style?.underline && style.excel?.u) || '') ? { underline: true, ukind: l.ukind ?? 'single' } : {}),
-      ...(l.strike ? { strike: true } : {}),
+      // (off as well as on: a word left plain in a struck-through or lowered cell; review of F5, R05)
+      ...(l.strike !== !!style?.strike ? { strike: l.strike } : {}),
       ...(color ? { color } : {}),
-      ...(l.pos ? { pos: l.pos } : {}),
+      ...((l.pos ?? 'base') !== (style?.pos ?? 'base') ? { pos: l.pos ?? 'base' } : {}),
       ...(l.size !== undefined && l.size !== size ? { size: l.size } : {}),
       ...(font ? { font } : {}),
     };
@@ -2119,11 +2127,11 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   } else if (richCells) notKept.add(`${richCells} ${what(richCells > 1).replace(/^a /, '')} placed in cells`);
   for (const item of leftOut.items()) notKept.add(item);
   if (foreignPictures) notKept.add(`${foreignPictures} picture${foreignPictures > 1 ? 's' : ''} or chart${foreignPictures > 1 ? 's' : ''}`);
-  if (unknownFormulas) warnings.push(`${unknownFormulas} formula${unknownFormulas > 1 ? 's use' : ' uses'} Excel functions this program can't work out yet.`);
+  if (unknownFormulas) warnings.push(`${unknownFormulas} formula${unknownFormulas > 1 ? 's use' : ' uses'} Excel functions Chemweave can't calculate yet.`);
   if (linkedFormulas) {
     const files = [...new Set(book.externalLinks.map(linkedFile).filter(Boolean))];
     warnings.push(`${linkedFormulas} formula${linkedFormulas > 1 ? 's read' : ' reads'} values from other workbooks${files.length ? ` (${files.join(', ')})` : ''}. ` +
-      `${linkedFormulas > 1 ? 'They are' : 'It is'} kept for Excel, which updates ${linkedFormulas > 1 ? 'them' : 'it'} from those files, but can't be worked out here.`);
+      `${linkedFormulas > 1 ? 'They are' : 'It is'} kept for Excel, which updates ${linkedFormulas > 1 ? 'them' : 'it'} from those files, but can't be calculated here.`);
   }
   if (restored.changed) warnings.push(`${restored.changed} structure or calculated cell${restored.changed > 1 ? 's were' : ' was'} changed in another program: ${restored.changed > 1 ? 'they show' : 'it shows'} what that program saved.`);
   const oleSaid = oleNote(oleObjects.filter((o) => !keptOver.has(o)));

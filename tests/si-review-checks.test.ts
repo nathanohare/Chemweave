@@ -164,7 +164,7 @@ describe('mentions of figures, tables and schemes, and warnings about the projec
       ['mention:procedure:t-deadbeef', 'e8eda30c5fa4', 'This text mentions a table that has been deleted (printed as “??”). Restore it from the Trash, or remove the mention.'],
       ['mention:procedure:f-deadbeef', 'b4e08581e842', 'This text mentions a figure that has been deleted (printed as “??”). Restore it from the Trash, or remove the mention.'],
       ['mention:procedure:c-deadbeef', '20e84f1b2344', 'This text mentions a compound that has been deleted (printed as “??”). Restore it from the Trash, or remove the mention.'],
-      ['mention:procedure:k-95c635ac', 'd1c676816053', 'This text mentions scheme “Acetylation of 1-(4-bromophenyl)ethan-1-ol”, which is printed without a label (printed as “??”). Tick “Label and caption” in the scheme\'s Layout…, or remove the mention.'],
+      ['mention:procedure:k-95c635ac', 'd1c676816053', 'This text mentions scheme “Acetylation of 1-(4-bromophenyl)ethan-1-ol”, which is printed without a label (printed as “??”). Check “Label and caption” in the scheme\'s Layout…, or remove the mention.'],
     ]);
     // (without the labels, only the compound is known to be gone)
     expect(allWarnings(p, c, p.idReport(), null).filter((w) => w.check === 'mention').map((w) => w.key)).toEqual(['mention:procedure:c-deadbeef']);

@@ -126,7 +126,7 @@ export function sectionDashboard(o: GridOptions, waiting: boolean): HTMLElement 
   const card = el('div', 'si-card si-dash-card');
   const head = el('div', 'si-card-head');
   const h = el('h3', 'si-sub', 'Dashboard');
-  addInfo(h, 'Every compound of the section and how far along its data is. ✔ filled · ○ empty · ✖ empty but required · — field not used · ⚑ flagged · ⚠ a warning. Click a cell to open the compound at that field. The Dashboard tab on the ribbon picks the columns, filters the rows and sets the colors; Chem SI Assistant shows the same choices.');
+  addInfo(h, 'Every compound of the section and how far along its data is. ✔ filled · ○ empty · ✖ empty but required · — field not used · ⚑ flagged · ⚠ a warning. Click a cell to open the compound at that field. The Dashboard tab on the ribbon chooses the columns, filters the rows and sets the colors; Chem SI Assistant shows the same choices.');
   head.append(h, el('span', 'muted si-dash-sum', summaryText(o.rows)));
   card.append(head, dashboardGrid(o));
   if (waiting) card.append(el('p', 'muted si-note', 'Still reading some structures…'));

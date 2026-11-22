@@ -62,25 +62,6 @@ export function rowNumbers(n: number, prefix: string): string[] {
   return Array.from({ length: n }, (_, i) => (p ? p + letter(i) : String(i + 1)));
 }
 
-/**
- * The rows typed in the R-Group Table window: one compound per line, its groups in the order of
- * the R labels, split by commas or tabs (so cells pasted from Excel work). A first line that
- * repeats the R labels is skipped. A group starting with "#" sets that row's compound number.
- */
-export function parseRows(text: string, labels: string[]): { number?: string; values: string[] }[] {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l);
-  const split = (l: string) => l.split(l.includes('\t') ? '\t' : ',').map((v) => v.trim());
-  const out: { number?: string; values: string[] }[] = [];
-  lines.forEach((l, i) => {
-    let cells = split(l);
-    if (i === 0 && cells.length === labels.length && cells.every((c, k) => c === labels[k])) return;
-    let number: string | undefined;
-    if (cells[0]?.startsWith('#')) { number = cells[0].slice(1).trim(); cells = cells.slice(1); }
-    out.push({ number, values: labels.map((_, k) => cells[k] ?? '') });
-  });
-  return out;
-}
-
 export interface RGroupColumns {
   formula: boolean;
   mw: boolean;

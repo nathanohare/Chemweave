@@ -217,7 +217,7 @@ export function restyleContents(c: Contents, old: DocStyle, next: DocStyle, how:
   const d = new Doc();
   d.style = { ...old };
   d.restoreContents(c);
-  d.edit('Drawing style', () => applyStyle(d, next, how));
+  d.edit('Drawing Style', () => applyStyle(d, next, how));
   return d.contents();
 }
 

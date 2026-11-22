@@ -317,7 +317,7 @@ export class SiSchemePage {
     this.host.chosen(this);
   }
 
-  /** What the picked box is: to grey out the Scheme tab's commands that don't apply. */
+  /** What the selected box is: to grey out the Scheme tab's commands that don't apply. */
   get state(): { box: boolean; step: boolean; linked: boolean; canLeft: boolean; canRight: boolean; stepLeft: boolean; stepRight: boolean; align: string } {
     const p = this.picked;
     const f = p?.kind === 'box' ? E.findBox(this.k, p.id) : null;

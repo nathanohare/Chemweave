@@ -82,7 +82,9 @@ try {
 
   step('every ribbon, on every tab, is the Spreadsheet\'s height');
   await page.evaluate(() => window.__app.ws.newDesign({ w: 720, h: 540 }));
-  await page.waitForTimeout(400);
+  // the SI tab too (retrospective audit G5-06), with a project kept in memory
+  await page.evaluate(() => window.__app.openMemorySi({ 'project.json': JSON.stringify({ title: 'Smoke test' }) }));
+  await page.waitForTimeout(1500);
   const heights = await page.evaluate(async () => {
     const ws = window.__app.ws, out = [];
     const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
@@ -107,7 +109,7 @@ try {
   });
   const sheetH = heights.find((x) => x.mode === 'sheet')?.h;
   console.log(`  ${heights.length} tabs in ${new Set(heights.map((x) => x.mode)).size} modes, ${sheetH} px`);
-  if (new Set(heights.map((x) => x.mode)).size < 5) fail('not every mode\'s ribbon was checked');
+  if (new Set(heights.map((x) => x.mode)).size < 6) fail('not every mode\'s ribbon (and the SI tab\'s) was checked');
   for (const x of heights) if (x.h !== sheetH) fail(`the ${x.mode} ribbon's ${x.tab} tab is ${x.h} px tall, not the Spreadsheet's ${sheetH} px`);
   step('going to a canvas slide, the Keyframes group fits in the Home ribbon: nothing runs off its right end');
   const over = await page.evaluate(async () => {

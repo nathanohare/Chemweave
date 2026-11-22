@@ -12,6 +12,7 @@ import { writeXlsx, readXlsx, type XlsxPictures } from '../src/io/xlsx';
 import { Package, REL } from '../src/io/ooxml';
 import { zipSync, strToU8 } from 'fflate';
 import { Workbook, makeStructure } from '../src/sheet/workbook';
+import { SheetCanRun } from '../src/sheet/can-run';
 import { chemdrawObject, oleCellTag } from '../src/io/ole-object';
 import type { Contents } from '../src/model';
 
@@ -73,7 +74,7 @@ const parse = (t: string) => new DOMParser().parseFromString(t, 'application/xml
 describe('objects embedded in an Excel sheet (G2-01)', () => {
   it('says so on opening, and does not call the twin shape a lost picture', async () => {
     const { warnings } = await readXlsx(book(false));
-    expect(warnings).toEqual(['This workbook has 1 embedded object (1 ChemDraw structure). It isn\'t shown here, and it is kept for Excel when you save, at the cells it was placed over (Edit ▸ Spreadsheet ▸ Data Tools ▸ Remove Embedded Objects removes it).']);
+    expect(warnings).toEqual(['This workbook has 1 embedded object (1 ChemDraw structure). It isn\'t shown here, and it is kept for Excel when you save, at the cells it was placed over (Edit ▸ Data Tools ▸ Remove Embedded Objects removes it).']);
   });
 
   for (const withNote of [false, true]) {
@@ -299,5 +300,18 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
     expect(sh.removeOleBlocked).toBeNull();
     // a new sheet never had any
     expect(new Workbook().sheets[0].removeOleBlocked).toBe('This sheet has no embedded objects');
+  });
+
+  it('greys Edit ▸ Data Tools ▸ Remove Embedded Objects through the menus\' can-run table, with its reason', async () => {
+    const { book: wb } = await readXlsx(book(false));
+    const sh = wb.sheets[0], can = new SheetCanRun();
+    const sel = { active: { r: 0, c: 0 }, range: { r1: 0, c1: 0, r2: 0, c2: 0 } };
+    expect(can.why(sh, sel, 'remove-embedded-objects', wb.edits)).toBeNull();
+    wb.edit('Remove Embedded Objects', () => { sh.removeOle(); });
+    expect(can.why(sh, sel, 'remove-embedded-objects', wb.edits)).toBe('This sheet has no embedded objects');
+    // asked lazily too (as the menu is painted), the same answer
+    expect(can.why(sh, sel, 'remove-embedded-objects', wb.edits, true)).toBe('This sheet has no embedded objects');
+    wb.undo();
+    expect(can.why(sh, sel, 'remove-embedded-objects', wb.edits)).toBeNull();
   });
 });

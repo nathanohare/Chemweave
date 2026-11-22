@@ -11,6 +11,7 @@
 // ignore it. No two commands share a drawing.
 
 import { TEXT_ICONS } from './icon-picks';
+import { SI_ICONS, SI_ICON_SAME } from './si-icons';
 
 export type IconHue = 'blue' | 'green' | 'red' | 'amber' | 'purple' | 'teal' | 'gray';
 
@@ -393,7 +394,29 @@ export function applyIconSet(root: ParentNode = document): void {
 /** A ribbon button's command, as TEXT_ICONS lists them ("sh:fn-cat:Text" for a function category, "#id" for a button known only by its id). */
 export function buttonKey(b: HTMLElement): string {
   const d = b.dataset;
-  return d.sh ? `sh:${d.sh}${d.cat ? ':' + d.cat : ''}` : d.doc ? 'doc:' + d.doc : d.tr ? 'tr:' + d.tr : d.an ? 'an:' + d.an : d.cmd ?? (b.id ? '#' + b.id : '');
+  return d.sh ? `sh:${d.sh}${d.cat ? ':' + d.cat : ''}` : d.doc ? 'doc:' + d.doc : d.tr ? 'tr:' + d.tr : d.an ? 'an:' + d.an : d.cmd ?? (siKey(b) || (b.id ? '#' + b.id : ''));
+}
+
+/** An SI ribbon button's key: "si:delete" for data-si, "si-scheme:add-step" for data-si-scheme, with
+ *  its data-arg after another colon when it has one ("si-scheme:align:left"). */
+function siKey(b: HTMLElement): string {
+  for (const [k, v] of Object.entries(b.dataset)) {
+    if (!/^si(?:[A-Z]|$)/.test(k) || v === undefined || k === 'siTab' || k === 'siPanel') continue;
+    const kind = k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+    return `${kind}:${v}${b.dataset.arg !== undefined ? ':' + b.dataset.arg : ''}`;
+  }
+  return '';
+}
+
+/** The picture markup of a TEXT_ICONS or SI drawing, or of an icon set name, for `key`. */
+function drawingFor(key: string): { d: string; hue?: IconHue } | undefined {
+  const own = TEXT_ICONS[key] ?? SI_ICONS[key];
+  if (own) return { d: own };
+  const same = SI_ICON_SAME[key];
+  if (!same) return undefined;
+  if (ICON_SET[same]) return ICON_SET[same];
+  const d = TEXT_ICONS[same] ?? SI_ICONS[same];
+  return d ? { d } : undefined;
 }
 
 /** A typed stand-in for a picture at the start of a button's name (⟳, ⚙, ☐, ▯▯, ◀, Σ). */
@@ -406,9 +429,12 @@ const STAND_IN = /^\s*(?:[^\p{L}\p{N}\s]+|Σ)\s*/u;
  */
 function addTextIcon(b: HTMLElement): void {
   if (b.dataset.textIc) return;
-  const d = TEXT_ICONS[buttonKey(b)];
-  if (!d || b.querySelector(':scope > svg, :scope > .rb-lead')) return;
-  const svg = (size: number) => `<svg class="ci-ic" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${d}</svg>`;
+  // (on the SI tab, a small button whose data-ic names a drawing of the set shows it too; G5-07)
+  const pic = drawingFor(buttonKey(b)) ?? (b.dataset.ic && ICON_SET[b.dataset.ic] && b.closest('.si-ribbon') && !b.dataset.siFmt ? ICON_SET[b.dataset.ic] : undefined);
+  // (an empty lead, kept for a picture, takes it: Shape Fill ▾, G5-35)
+  if (!pic || b.querySelector(':scope > svg, :scope > .rb-lead:not(:empty)')) return;
+  const d = pic.d;
+  const svg = (size: number) => `<svg class="ci-ic"${pic.hue ? ` data-hue="${pic.hue}"` : ''} viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${d}</svg>`;
   const big = b.querySelector<HTMLElement>(':scope > .rb-icon');
   if (big) {
     if (big.querySelector('svg')) return;
@@ -416,10 +442,10 @@ function addTextIcon(b: HTMLElement): void {
   } else {
     const words = [...b.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim());
     if (words) words.textContent = words.textContent!.replace(STAND_IN, '').replace(/\s*[▶◀]\s*$/, '');
-    const lead = document.createElement('span');
+    const lead = b.querySelector<HTMLElement>(':scope > .rb-lead') ?? document.createElement('span');
     lead.className = 'rb-lead';
     lead.innerHTML = svg(16);
-    b.prepend(lead);
+    if (!lead.isConnected) b.prepend(lead);
   }
   b.dataset.textIc = '1';
 }

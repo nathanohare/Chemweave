@@ -6,7 +6,7 @@ This page covers Design mode: single-page graphics such as TOC graphics, graphic
 
 ## Starting a design
 
-Click **+** at the end of the tab strip and pick **Design**, or choose **File ▸ New ▸ Design…**. The **New Design** window opens. Its list on the left has **Blank page** and eight kinds of ready-made layout, each with the number it holds; click one to see its layouts as small pictures, and click a picture to start from it.
+Click **+** at the end of the tab strip and pick **Design**, or choose **File ▸ New ▸ Blank design**. The **New Design** window opens. Its list on the left has **Blank page** and eight kinds of ready-made layout, each with the number it holds; click one to see its layouts as small pictures, and click a picture to start from it.
 
 A design is a single page. For several pages, use [Presentation](slides.md) instead.
 
@@ -79,7 +79,7 @@ To place a shape, click it and then click or drag on the page, or drag it straig
 
 ## Icons
 
-The library's **Icons** tab (or **Icons** on the ribbon, or **Insert ▸ Icons…**) has about 7,000 icons. The list under the search box picks a group; **Lab and science** comes first, with glassware, molecules and atoms, lab equipment, hazard and safety signs (biohazard, radioactive, toxic, flammable, electrical, warning) and medical icons. Typing in the search box looks through all the icons, by name and by other words for them (try "hazard", "rbf" or "pipette"); choose a group from the list first to search only that group.
+The library's **Icons** tab (or **Icons** on the ribbon, or **Insert ▸ Illustrations ▸ Icons…**) has about 7,000 icons. The list under the search box picks a group; **Lab and science** comes first, with glassware, molecules and atoms, lab equipment, hazard and safety signs (biohazard, radioactive, toxic, flammable, electrical, warning) and medical icons. Typing in the search box looks through all the icons, by name and by other words for them (try "hazard", "rbf" or "pipette"); choose a group from the list first to search only that group.
 
 An icon goes on the page like a shape (click it, then click or drag; or drag it onto the page) at one inch square. It is filled in one color with no outline: change the color, add an outline, a gradient or a shadow in the **Style** panel, and drag its corners to size it. Icons save to PowerPoint as shapes PowerPoint can recolor and resize, and come back here as the same icon. They are the Material Design Icons by Pictogrammers (Apache License 2.0); company and product logos are left out.
 
@@ -169,7 +169,7 @@ The **Layers** panel on the right lists the shapes, pictures and tables on the p
 
 ## References
 
-A design keeps a reference list, as a presentation does. **References** on the ribbon's **Insert** tab checks which ones the page shows at the bottom, written and formatted for you (journal, year, volume and page by default). Add references, or copy them from another open file, in **Insert ▸ Reference Manager…**. **Insert ▸ Formatted Reference…** puts a reference anywhere on the page as text.
+A design keeps a reference list, as a presentation does. **References** on the ribbon's **Insert** tab checks which ones the page shows at the bottom, written and formatted for you (journal, year, volume and page by default). Add references, or copy them from another open file, in **Insert ▸ Reference Manager…**. **Insert ▸ References ▸ Formatted Reference…** puts a reference anywhere on the page as text.
 
 ## Saving and exporting
 

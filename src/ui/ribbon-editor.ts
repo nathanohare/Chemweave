@@ -288,7 +288,7 @@ export class RibbonEditor {
     back.addEventListener('click', () => { this.group = null; this.draw(); });
     const own = this.group.startsWith('own:');
     const t = document.createElement('span');
-    t.textContent = own ? 'Your group: drag commands in from the left, about, or out to remove them' : 'Rename this group here. Its buttons are laid out by the app; for your own choice, make a New Group.';
+    t.textContent = own ? 'Your group: drag commands in from the left, about, or out to remove them' : 'Rename this group here. Its buttons are laid out by the app; for a custom choice, make a New Group.';
     crumb.append(back, t);
     gname.value = this.groupName(this.group);
     gdel.hidden = !own;
@@ -420,7 +420,7 @@ export class RibbonEditor {
       ghost: () => { const t = this.tile(key, -1, undefined, true); return t.querySelector('.tbe-ic')!; },
       stand: () => this.tile(key, -1, undefined, true),
       canStart: () => {
-        if (this.group && !this.group.startsWith('own:')) { this.say('A group of the ribbon’s keeps its own buttons: make a New Group for your own choice.'); return false; }
+        if (this.group && !this.group.startsWith('own:')) { this.say('A group of the ribbon’s keeps its own buttons: make a New Group for a custom choice.'); return false; }
         if (!this.group && !isGroupKey) { this.say('Commands go in a custom group: click New Group (or open one of yours), then drag them in.'); return false; }
         if (this.group && isGroupKey) { this.say('Go back to the tab (‹ at the top) to put a group there.'); return false; }
         return true;

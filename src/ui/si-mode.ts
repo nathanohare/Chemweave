@@ -1,18 +1,20 @@
 // The SI Project tab: a Supporting Information kept as Chem SI Assistant keeps it (a folder of
 // readable files, src/si/project.ts), worked on here. On the left, the project's sections with
-// their compounds; in the middle, the page picked: a compound's data, a Data section's ID
+// their compounds; in the middle, the selected page: a compound's data, a Data section's ID
 // table and fields, or a section's text. Every change is saved to the folder as it is made, so
 // there is nothing to Save, and the project opens in SI Assistant as it is.
 //
 // Structures are drawn with the drawing tools (Edit Structure); compounds go to and come from
 // the Compound Library; references come from My Library.
 
+import { fieldLabelNodes } from './field-label';
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
-import type { DocText } from '../document/document';
+import { defaultStyles, type DocText } from '../document/document';
 import { compileSi, objectLabelSets, type SiPreviewTarget } from '../si/compile-doc';
 import type { DocView } from './doc-view';
+import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
@@ -58,6 +60,9 @@ import { availableColumns, buildRows, chosenColumns, fieldLabel, filterOf, isCom
 import { dashboardGrid, projectSummaryCard, sectionDashboard, statusColorsBody, type GridOptions } from './si-dashboard';
 import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
 import { popupMenu } from './popup-menu';
+import { fontGroupHtml, siFontBoxes, SI_FONT_OFF, SI_FONT_REASON } from './font-group';
+import { paintCanRun } from './can-run';
+import { formulaStyleRange } from './si-formula';
 import { allBoxes } from '../si/scheme-edit';
 
 /** Said when a change was made on a page of before the project was read again (Undo, Reload): its objects are no longer the project's. */
@@ -185,7 +190,7 @@ const RIBBON = `
     <button role="tab" data-si-tab="home" aria-selected="true">Home</button>
     <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
     <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
-    <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is picked">Picture Format</button>
+    <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
     <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
     <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
     <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
@@ -210,24 +215,24 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Figures</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="new-scheme" data-ic="smart-scheme" title="A new scheme page in the Data section picked (after the compound picked): starting materials, steps with their conditions, and products that can be compounds with IDs and data pages"><span class="rb-icon">⇶</span>Scheme Page</button>
+      <button class="rb-big" data-si="new-scheme" data-ic="smart-scheme" title="A new scheme page in the selected Data section (after the selected compound): starting materials, steps with their conditions, and products that can be compounds with IDs and data pages"><span class="rb-icon">⇶</span>Scheme Page</button>
       <div class="rb-col">
-        <button data-si="to-scheme" title="Change the compound picked to a reaction scheme: a scheme page takes its place, with the compound (its data and ID kept) as the product of its first step">Change to Reaction Scheme…</button>
-        <button data-si="out-of-scheme" title="Move the compound picked off its scheme page, to right after the scheme page; the box that showed it keeps a copy of its structure">Move Out of Scheme</button>
-        <button data-si="into-scheme" title="Move the compound picked into a scheme page (listed after the compounds its boxes show; mark a box as it in the scheme to show it there)">Move Into Scheme…</button>
+        <button data-si="to-scheme" title="Change the selected compound to a reaction scheme: a scheme page takes its place, with the compound (its data and ID kept) as the product of its first step">Change to Reaction Scheme…</button>
+        <button data-si="out-of-scheme" title="Move the selected compound off its scheme page, to right after the scheme page; the box that showed it keeps a copy of its structure">Move Out of Scheme</button>
+        <button data-si="into-scheme" title="Move the selected compound into a scheme page (listed after the compounds its boxes show; mark a box as it in the scheme to show it there)">Move Into Scheme…</button>
       </div>
     </div><div class="rb-label">Schemes</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="add-spectra" data-ic="chart-line" title="Add spectra (PDFs or pictures) to the compound picked"><span class="rb-icon">⩘</span>Spectra</button>
+      <button class="rb-big" data-si="add-spectra" data-ic="chart-line" title="Add spectra (PDFs or pictures) to the selected compound"><span class="rb-icon">⩘</span>Spectra</button>
       <div class="rb-col">
-        <button data-si="paste-spectrum" data-ic="paste" title="Paste a spectrum copied in Mnova (or a copied picture or PDF) onto the compound picked; one click picks its type. Ctrl+V on the compound's Spectra field does the same">Paste Spectrum</button>
-        <button data-si="add-nmr-report" title="Another NMR peak report on the compound picked (another nucleus, or another solvent)">NMR Report</button>
-        <button data-si="add-hrms-report" title="Add the mass spectrometer's report files (PDF, CSV/TXT or Excel peak list, mzML, mzXML, MGF, JCAMP-DX, netCDF, a picture) to the compound picked: the found m/z is read from them">HRMS Report…</button>
+        <button data-si="paste-spectrum" data-ic="paste" title="Paste a spectrum copied in Mnova (or a copied picture or PDF) onto the selected compound; one click chooses its type. Ctrl+V on the compound's Spectra field does the same">Paste Spectrum</button>
+        <button data-si="add-nmr-report" title="Another NMR peak report on the selected compound (another nucleus, or another solvent)">NMR Report</button>
+        <button data-si="add-hrms-report" title="Add the mass spectrometer's report files (PDF, CSV/TXT or Excel peak list, mzML, mzXML, MGF, JCAMP-DX, netCDF, a picture) to the selected compound: the found m/z is read from them">HRMS Report…</button>
       </div>
       <div class="rb-col">
-        <button data-si="add-files" data-ic="insert-object" title="Add other files (PDFs or pictures) to the compound picked">Files…</button>
-        <button data-si="add-field" title="Add a field (melting point, Rf, IR, optical rotation…, or one of your own) to the compound picked, or to the section picked's list of fields">Field…</button>
-        <button data-si="new-gp" title="A new general procedure in the Data section picked (or the picked compound's): its text prints once at the start of the section, and its compounds get its sentence">General Procedure</button>
+        <button data-si="add-files" data-ic="insert-object" title="Add other files (PDFs or pictures) to the selected compound">Files…</button>
+        <button data-si="add-field" title="Add a field (melting point, Rf, IR, optical rotation…, or a custom one) to the selected compound, or to the selected section's list of fields">Field…</button>
+        <button data-si="new-gp" title="A new general procedure in the selected Data section (or the selected compound's): its text prints once at the start of the section, and its compounds get its sentence">General Procedure</button>
       </div>
     </div><div class="rb-label">Compound Data</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -260,7 +265,7 @@ const RIBBON = `
     </div><div class="rb-label">Rows and Columns</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si-tbl="merge" title="Merge Cells: join the selected cells (Shift+click picks a block) into one; their texts are joined and the first picture kept">Merge Cells</button>
+        <button data-si-tbl="merge" title="Merge Cells: join the selected cells (Shift+click selects a block) into one; their texts are joined and the first picture kept">Merge Cells</button>
         <button data-si-tbl="split" title="Split a merged cell back into single cells">Split Cells</button>
       </div>
       <div class="rb-col">
@@ -338,8 +343,8 @@ const RIBBON = `
     </div><div class="rb-label">Add</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si="ref-edit" title="Edit the reference picked (double-click it does the same): every value can be changed">Edit Reference…</button>
-        <button data-si="ref-delete" data-ic="delete" title="Take the reference picked off the list; its citations stay in the text with a warning">Delete Reference</button>
+        <button data-si="ref-edit" title="Edit the selected reference (double-click it does the same): every value can be changed">Edit Reference…</button>
+        <button data-si="ref-delete" data-ic="delete" title="Take the selected reference off the list; its citations stay in the text with a warning">Delete Reference</button>
       </div>
     </div><div class="rb-label">Reference</div></div>
   </div>
@@ -348,7 +353,7 @@ const RIBBON = `
       <button class="rb-big" data-si-ms="ms-add" data-ic="file-open" title="Add the manuscript (PDF or Word .docx) and its ChemDraw files (.cdxml) to the project’s manuscript folder; they are never printed"><span class="rb-icon">＋</span>Add Files…</button>
       <div class="rb-col">
         <button data-si-ms="ms-add-doc" title="Add a document open in Chemweave, saved into the manuscript folder as a Word file as it is now">Add Open Document…</button>
-        <button data-si-ms="ms-remove" data-ic="delete" title="Move the file picked to the project Trash (Home ▸ Trash, or Undo, puts it back)">Remove File</button>
+        <button data-si-ms="ms-remove" data-ic="delete" title="Move the selected file to the project Trash (Home ▸ Trash, or Undo, puts it back)">Remove File</button>
       </div>
     </div><div class="rb-label">Files</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -357,20 +362,20 @@ const RIBBON = `
         <label class="rb-field" title="Which results the list shows">Show <select data-si-ms="ms-filter">
           <option value="problems">Problems Only</option><option value="notes">Problems and Notes</option><option value="all">All Results</option>
         </select></label>
-        <button data-si-ms="ms-dismissed" aria-pressed="false" title="Also list the results you dismissed (pick one and click Restore to bring it back)">Show Dismissed</button>
+        <button data-si-ms="ms-dismissed" aria-pressed="false" title="Also list the results you dismissed (select one and click Restore to bring it back)">Show Dismissed</button>
       </div>
     </div><div class="rb-label">Check</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si-ms="ms-open" title="Open the compound of the result picked at the field concerned (double-click a result does the same)">Open Compound</button>
-        <button data-si-ms="ms-dismiss" title="Hide the result picked, with a reason: it comes back if the values it is about change">Dismiss…</button>
-        <button data-si-ms="ms-restore" title="Bring back the dismissed result picked">Restore</button>
+        <button data-si-ms="ms-open" title="Open the compound of the selected result at the field concerned (double-click a result does the same)">Open Compound</button>
+        <button data-si-ms="ms-dismiss" title="Hide the selected result, with a reason: it comes back if the values it is about change">Dismiss…</button>
+        <button data-si-ms="ms-restore" title="Bring back the selected dismissed result">Restore</button>
       </div>
     </div><div class="rb-label">Result</div></div>
   </div>
   <div class="rb-panel" data-si-panel="dash" hidden>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si-dash="columns" title="Pick the fields shown as columns (NMR and spectra count as one each)"><span class="rb-icon">▥</span>Columns…</button>
+      <button class="rb-big" data-si-dash="columns" title="Choose the fields shown as columns (NMR and spectra count as one each)"><span class="rb-icon">▥</span>Columns…</button>
       <div class="rb-col">
         <label class="rb-field" title="Which compounds the dashboard shows">Show <select data-si-dash="filter">
           <option value="all">All Compounds</option><option value="incomplete">Incomplete Only</option><option value="flagged">Flagged Only</option><option value="warnings">With Warnings Only</option>
@@ -382,15 +387,15 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si-dash="colors" title="The color of each kind of cell (filled, missing, flagged, a warning…), for this project">Status Colors…</button>
-        <button data-si-dash="refresh" title="Work out every compound's state and warnings again">Refresh</button>
+        <button data-si-dash="refresh" title="Calculate every compound's state and warnings again">Refresh</button>
       </div>
     </div><div class="rb-label">Dashboard</div></div>
   </div>
   <div class="rb-panel" data-si-panel="spectrum" hidden>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si-spectrum="up" data-ic="move-up" title="Print the picked spectrum file before the one before it">Move Up</button>
-        <button data-si-spectrum="down" data-ic="move-down" title="Print the picked spectrum file after the one after it">Move Down</button>
+        <button data-si-spectrum="up" data-ic="move-up" title="Print the selected spectrum file before the one before it">Move Up</button>
+        <button data-si-spectrum="down" data-ic="move-down" title="Print the selected spectrum file after the one after it">Move Down</button>
         <button data-si-spectrum="auto" title="Print this compound's spectra in the usual order again (¹H, ¹³C, ¹⁹F, other nuclei, 2D NMR, HPLC/SFC, IR, other)">Automatic Order</button>
       </div>
     </div><div class="rb-label">Order</div></div>
@@ -408,45 +413,45 @@ const RIBBON = `
   </div>
   <div class="rb-panel" data-si-panel="scheme" hidden>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si-scheme="draw" data-ic="structure" title="Draw the picked box's structure with the drawing tools (double-click a box does the same)"><span class="rb-icon">⌬</span>Draw Structure</button>
+      <button class="rb-big" data-si-scheme="draw" data-ic="structure" title="Draw the selected box's structure with the drawing tools (double-click a box does the same)"><span class="rb-icon">⌬</span>Draw Structure</button>
       <div class="rb-col">
-        <button data-si-scheme="paste" data-ic="paste" title="The copied structure (from ChemDraw or Chemweave) in the picked box">Paste Structure</button>
+        <button data-si-scheme="paste" data-ic="paste" title="The copied structure (from ChemDraw or Chemweave) in the selected box">Paste Structure</button>
       </div>
     </div><div class="rb-label">Structure</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si-scheme="add-start" title="A new starting material (after the one picked)">Add Starting Material</button>
-        <button data-si-scheme="add-product" title="A new product of the picked step (after the one picked)">Add Product</button>
-        <button data-si-scheme="add-step" title="A new step (an arrow with its conditions and a product) after the one picked">Add Step</button>
+        <button data-si-scheme="add-start" title="A new starting material (after the selected one)">Add Starting Material</button>
+        <button data-si-scheme="add-product" title="A new product of the selected step (after the selected one)">Add Product</button>
+        <button data-si-scheme="add-step" title="A new step (an arrow with its conditions and a product) after the selected one">Add Step</button>
       </div>
       <div class="rb-col">
-        <button data-si-scheme="move-left" title="Move the picked box left">Move Left</button>
-        <button data-si-scheme="move-right" title="Move the picked box right">Move Right</button>
-        <button data-si-scheme="step-left" title="Move the picked step (its arrow, conditions and products) before the step before it">Move Step Left</button>
+        <button data-si-scheme="move-left" title="Move the selected box left">Move Left</button>
+        <button data-si-scheme="move-right" title="Move the selected box right">Move Right</button>
+        <button data-si-scheme="step-left" title="Move the selected step (its arrow, conditions and products) before the step before it">Move Step Left</button>
       </div>
       <div class="rb-col">
-        <button data-si-scheme="remove" data-ic="delete" title="Take the picked box out of the scheme (its structure goes to the Trash)">Remove</button>
-        <button data-si-scheme="remove-step" title="Take the picked step out of the scheme: its arrow, conditions and products">Remove Step</button>
-        <button data-si-scheme="step-right" title="Move the picked step after the step after it">Move Step Right</button>
+        <button data-si-scheme="remove" data-ic="delete" title="Take the selected box out of the scheme (its structure goes to the Trash)">Remove</button>
+        <button data-si-scheme="remove-step" title="Take the selected step out of the scheme: its arrow, conditions and products">Remove Step</button>
+        <button data-si-scheme="step-right" title="Move the selected step after the step after it">Move Step Right</button>
       </div>
     </div><div class="rb-label">Boxes and Steps</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si-scheme="mark-compound" data-ic="si-compound" title="Mark as Compound: the picked box gets a compound page (an ID from the ID table, and data) showing its structure"><span class="rb-icon">◈</span>Mark as Compound</button>
+      <button class="rb-big" data-si-scheme="mark-compound" data-ic="si-compound" title="Mark as Compound: the selected box gets a compound page (an ID from the ID table, and data) showing its structure"><span class="rb-icon">◈</span>Mark as Compound</button>
       <div class="rb-col">
-        <button data-si-scheme="show-compound" data-ic="link" title="The picked box shows one of this scheme page's compounds">Show Compound…</button>
-        <button data-si-scheme="open-compound" title="Open the compound page the picked box shows">Open Compound</button>
-        <button data-si-scheme="unlink" title="The picked box stops showing its compound (the compound page stays; the box keeps a copy of the structure)">Unlink</button>
+        <button data-si-scheme="show-compound" data-ic="link" title="The selected box shows one of this scheme page's compounds">Show Compound…</button>
+        <button data-si-scheme="open-compound" title="Open the compound page the selected box shows">Open Compound</button>
+        <button data-si-scheme="unlink" title="The selected box stops showing its compound (the compound page stays; the box keeps a copy of the structure)">Unlink</button>
       </div>
     </div><div class="rb-label">Compound</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si-scheme="insert-structure" data-ic="structure" title="Draw a structure to put in the conditions you are typing in (or the picked step's conditions above the arrow); it prints at the Layout's size for structures in the conditions"><span class="rb-icon">⌬</span>Insert Structure</button>
+      <button class="rb-big" data-si-scheme="insert-structure" data-ic="structure" title="Draw a structure to put in the conditions you are typing in (or the selected step's conditions above the arrow); it prints at the Layout's size for structures in the conditions"><span class="rb-icon">⌬</span>Insert Structure</button>
       <div class="rb-col rb-tight">
         <div class="rb-row">
-          <button class="rb-icon-btn" data-si-scheme="align" data-arg="left" data-ic="align-left" title="Align the conditions picked left" aria-label="Align Left">⇤</button>
-          <button class="rb-icon-btn" data-si-scheme="align" data-arg="center" data-ic="align-hcenter" title="Center the conditions picked" aria-label="Center">↔</button>
-          <button class="rb-icon-btn" data-si-scheme="align" data-arg="right" data-ic="align-right" title="Align the conditions picked right" aria-label="Align Right">⇥</button>
+          <button class="rb-icon-btn" data-si-scheme="align" data-arg="left" data-ic="align-left" title="Align the selected conditions left" aria-label="Align Left">⇤</button>
+          <button class="rb-icon-btn" data-si-scheme="align" data-arg="center" data-ic="align-hcenter" title="Center the selected conditions" aria-label="Center">↔</button>
+          <button class="rb-icon-btn" data-si-scheme="align" data-arg="right" data-ic="align-right" title="Align the selected conditions right" aria-label="Align Right">⇥</button>
         </div>
-        <button data-si-scheme="align" data-arg="" title="The conditions picked follow the scheme's Layout">As in Layout</button>
+        <button data-si-scheme="align" data-arg="" title="The selected conditions follow the scheme's Layout">As in Layout</button>
       </div>
     </div><div class="rb-label">Conditions</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -455,53 +460,44 @@ const RIBBON = `
   </div>
   <div class="rb-panel" data-si-panel="home">
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="new-compound" data-ic="compound" title="A new compound page in the Data section picked, after the compound picked (Ctrl+Shift+N)"><span class="rb-icon">⬡</span>New Compound</button>
+      <button class="rb-big" data-si="new-compound" data-ic="compound" title="A new compound page in the selected Data section, after the selected compound (Ctrl+Shift+N)"><span class="rb-icon">⬡</span>New Compound</button>
       <button class="rb-big" data-si="new-section" data-ic="section" title="A new section: a Data section holds compounds; a Custom section holds text (and sub-sections)"><span class="rb-icon">▤</span>New Section</button>
       <div class="rb-col">
-        <button data-si="delete" data-ic="delete" title="Move the compound, scheme page or section picked to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
-        <button data-si="rename" title="Rename the section or scheme page picked (F2 in the tree)">Rename</button>
-        <button data-si="duplicate" title="Copies of the compound or scheme page picked, with the fields you choose (never its spectra, files, manual ID or flags): to start analogs">Duplicate…</button>
+        <button data-si="delete" data-ic="delete" title="Move the selected compound, scheme page or section to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
         <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it. Shared with Chem SI Assistant">Trash…</button>
       </div>
       <div class="rb-col">
-        <button data-si="move-up" title="Move the compound or section picked up (Alt+↑): compound IDs follow the order. Rows can also be dragged in the tree">▲ Move Up</button>
-        <button data-si="move-down" title="Move the compound or section picked down (Alt+↓)">▼ Move Down</button>
-        <button data-si="move-to" title="Move the compound picked to another Data section or into or out of a scheme page, or the section picked into or out of a Custom section">Move To…</button>
+        <button data-si="rename" title="Rename the selected section or scheme page (F2 in the tree)">Rename</button>
+        <button data-si="duplicate" title="Copies of the selected compound or scheme page, with the fields you choose (never its spectra, files, manual ID or flags): to start analogs">Duplicate…</button>
+      </div>
+      <div class="rb-col">
+        <button data-si="move-up" title="Move the selected compound or section up (Alt+↑): compound IDs follow the order. Rows can also be dragged in the tree">▲ Move Up</button>
+        <button data-si="move-down" title="Move the selected compound or section down (Alt+↓)">▼ Move Down</button>
+        <button data-si="move-to" title="Move the selected compound to another Data section or into or out of a scheme page, or the selected section into or out of a Custom section">Move To…</button>
       </div>
     </div><div class="rb-label">Project</div></div>
+    ${fontGroupHtml('si')}
     <div class="rb-group"><div class="rb-row">
-      <div class="rb-col">
-        <div class="rb-pair">
-          <button class="rb-sq" data-si-fmt="bold" title="Bold (Ctrl+B)"><b>B</b></button>
-          <button class="rb-sq" data-si-fmt="italic" title="Italic (Ctrl+I)"><i>I</i></button>
-          <button class="rb-sq" data-si-fmt="underline" title="Underline (Ctrl+U)"><u>U</u></button>
-        </div>
-        <div class="rb-pair">
-          <button class="rb-sq" data-si-fmt="subscript" title="Subscript (Ctrl+=)">x<sub>2</sub></button>
-          <button class="rb-sq" data-si-fmt="superscript" title="Superscript (Ctrl+Shift+=)">x<sup>2</sup></button>
-          <button class="rb-sq" data-si="symbol" title="Symbol: type °, Å, ±, Greek letters, arrows… where you are typing">Ω</button>
-        </div>
-      </div>
-    </div><div class="rb-label">Font</div></div>
-    <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="id-table" data-ic="compound-number" title="The ID table of the Data section picked: compound IDs follow the compounds' order"><span class="rb-icon">#</span>ID Table</button>
+      <button class="rb-big" data-si="id-table" data-ic="compound-number" title="The ID table of the selected Data section: compound IDs follow the compounds' order"><span class="rb-icon">#</span>ID Table</button>
       <div class="rb-col">
         <button data-si="fill-pattern" title="Fill the ID table from a pattern: 3a, 3b, 3c… or S1, S2, S3…">Fill from Pattern…</button>
         <button data-si="pages-for-ids" title="A blank compound page for each ID in the table that has none yet">Add Pages for IDs</button>
-        <button data-si="manual-id" title="Give the compound picked an ID of its own (it still uses up its row of the table)">Manual ID…</button>
+        <button data-si="manual-id" title="Give the selected compound an ID of its own (it still uses up its row of the table)">Manual ID…</button>
       </div>
     </div><div class="rb-label">Compound IDs</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="edit-structure" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
       <div class="rb-col">
         <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
-        <button data-si="from-library" title="A new compound page with a compound from your Compound Library (its structure and name)">From Compound Library…</button>
-        <button data-si="to-library" title="Keep the structures of this section's compounds in your Compound Library, with their SI IDs and this project as where they appear">Add to Compound Library</button>
         <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
       </div>
       <div class="rb-col">
-        <button data-si="name-pubchem" title="Name from PubChem: look the compound picked up in PubChem (by its InChIKey, which is all that is sent, and only when you click) and fill in its IUPAC name, which stays editable. Needs the internet; finds only compounds already in PubChem">Name from PubChem</button>
-        <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the compound picked (or of every compound of the Data section picked that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
+        <button data-si="from-library" title="A new compound page with a compound from your Compound Library (its structure and name)">From Compound Library…</button>
+        <button data-si="to-library" title="Keep the structures of this section's compounds in your Compound Library, with their SI IDs and this project as where they appear">Add to Compound Library</button>
+      </div>
+      <div class="rb-col">
+        <button data-si="name-pubchem" title="Name from PubChem: look the selected compound up in PubChem (by its InChIKey, which is all that is sent, and only when you click) and fill in its IUPAC name, which stays editable. Needs the internet; finds only compounds already in PubChem">Name from PubChem</button>
+        <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the selected compound (or of every compound of the selected Data section that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
       </div>
     </div><div class="rb-label">Library</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -511,7 +507,7 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data, laid out as Chem SI Assistant lays it out. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
       <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
-      <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the page picked as it prints, beside it, updated about a second after each change. Spectra are left out (Compile shows them), and page numbers are placeholders"><span class="rb-icon">◧</span>Live Preview</button>
+      <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the selected page as it prints, beside it, updated about a second after each change. Spectra are left out (Compile shows them), and page numbers are placeholders"><span class="rb-icon">◧</span>Live Preview</button>
     </div><div class="rb-label">Compile</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
@@ -603,6 +599,17 @@ export class SiMode {
     this.ribbon.setAttribute('aria-label', 'SI Project');
     this.ribbon.hidden = true;
     this.ribbon.innerHTML = RIBBON;
+    // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
+    paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? SI_FONT_REASON : null));
+    siFontBoxes(this.ribbon, defaultStyles().Normal);
+    // Bold, Italic… show whether the text being typed has them
+    document.addEventListener('selectionchange', () => {
+      if (this.ribbon.hidden || !this.typing || document.activeElement !== this.typing) return;
+      for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]')) {
+        const c = b.dataset.siFmt!;
+        if (['bold', 'italic', 'underline', 'subscript', 'superscript'].includes(c)) b.setAttribute('aria-pressed', String(document.queryCommandState(c)));
+      }
+    });
     this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(this.liveOn));
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
@@ -614,6 +621,7 @@ export class SiMode {
       if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
       if (fmt) { this.format(fmt.dataset.siFmt!); return; }
+      if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
       if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
       const sp = t.closest<HTMLElement>('[data-si-spectrum]');
@@ -854,8 +862,30 @@ export class SiMode {
 
   /** Bold, italic, underline, subscript or superscript on the text being typed (the ribbon's Font buttons). */
   private format(cmd: string): void {
+    if (SI_FONT_OFF.includes(cmd)) { this.host.flash(SI_FONT_REASON, 6000); return; }
     if (!this.restoreTyping()) { this.host.flash('Click in a text box first (a procedure, a report, a section’s text or a table’s cell).'); return; }
+    if (cmd === 'clear') { document.execCommand('removeFormat'); return; }
+    if (cmd === 'formula') { this.formulaStyle(); return; }
     document.execCommand(cmd);
+  }
+
+  /** Formula style on the selected text: numbers lowered (CH₂Cl₂), charges raised (PF₆⁻), as the other modes do. */
+  private formulaStyle(): void {
+    const sel = getSelection();
+    if (!sel?.rangeCount || sel.isCollapsed) { this.host.flash('Select the formula first (CH2Cl2, PF6-), then Formula style.'); return; }
+    // (a mention, citation or structure in the selection is left as it is: plain text only)
+    if (sel.getRangeAt(0).cloneContents().querySelector(':not(b, i, u, sub, sup, strong, em, span:not([class]), br)')) {
+      this.host.flash('Select plain text only: Formula style leaves compound mentions and citations as they are.');
+      return;
+    }
+    // only the numbers and charges are wrapped, where they are: bold, italic and underline round them stay (F5b-R04)
+    const copy = document.createElement('div');
+    copy.append(sel.getRangeAt(0).cloneContents());
+    const all = document.createRange();
+    all.selectNodeContents(copy);
+    if (!formulaStyleRange(all)) { this.host.flash('Nothing to change: the selection has no numbers or charges to lower or raise.'); return; }
+    // (put back as typing is, so Ctrl+Z takes it back)
+    document.execCommand('insertHTML', false, copy.innerHTML);
   }
 
   /** Put the typing back where it was in the last SI text box (false when there is none). */
@@ -870,7 +900,7 @@ export class SiMode {
 
   /** Type text (a symbol) where the person was typing; false when no SI text box was being typed in. */
   insertText(text: string): boolean {
-    if (!this.restoreTyping()) { this.host.flash('Click in a text box first, then pick the symbol.'); return false; }
+    if (!this.restoreTyping()) { this.host.flash('Click in a text box first, then choose the symbol.'); return false; }
     document.execCommand('insertText', false, text);
     return true;
   }
@@ -889,6 +919,7 @@ export class SiMode {
     if (this.tab && this.tab !== tab) void this.commitAll();
     this.tab = tab && tab.si ? tab : null;
     this.pane.hidden = this.ribbon.hidden = !this.tab;
+    this.showZoom(!!this.tab);
     if (!this.tab) return;
     this.use(this.tab.si!);
     this.shownKey = '';
@@ -1013,7 +1044,7 @@ export class SiMode {
       this.dashRedraw?.();
       if (this.pick.kind === 'warnings') { this.shownKey = JSON.stringify(this.pick); this.renderPage(); }
     } catch (e) {
-      console.warn('SI project warnings could not be worked out', e);
+      console.warn('SI project warnings could not be calculated', e);
     } finally {
       k.busy = false;
       if (k.stale && this.project === p) this.projectChecksSoon(p);
@@ -1557,7 +1588,7 @@ export class SiMode {
     const p = this.project!;
     const card = el('div', 'si-card');
     const h = el('h2', 'si-title', p.title);
-    addInfo(h, 'An SI project is a folder Chem SI Assistant reads and writes too: changes made here are saved to its files at once, and open there as they are. Pick a section or a compound on the left.');
+    addInfo(h, 'An SI project is a folder Chem SI Assistant reads and writes too: changes made here are saved to its files at once, and open there as they are. Select a section or a compound on the left.');
     card.append(h);
     const rows: [string, string][] = [
       ['Folder', p.folder.where],
@@ -1749,7 +1780,7 @@ export class SiMode {
     const gps = p.generalProcedures(s);
     const card = el('div', 'si-card');
     const h = el('h3', 'si-sub', 'General procedures');
-    addInfo(h, 'Printed once at the start of the section, each under its heading “Name: Title” (in the contents). A compound picks one in its Experimental procedure field and gets its compound sentence there: {GP}, {scale}, {yield}, {product} and {purification} fill themselves in; any other {placeholder} (such as {starting material}) gets a box to type in on the compound. Insert ▸ General Procedure adds one; a deleted one goes to the Trash.');
+    addInfo(h, 'Printed once at the start of the section, each under its heading “Name: Title” (in the contents). A compound chooses one in its Experimental procedure field and gets its compound sentence there: {GP}, {scale}, {yield}, {product} and {purification} fill themselves in; any other {placeholder} (such as {starting material}) gets a box to type in on the compound. Insert ▸ General Procedure adds one; a deleted one goes to the Trash.');
     card.append(h);
     if (!gps.length) card.append(el('p', 'muted si-note', 'None yet: Insert ▸ General Procedure adds one.'));
     gps.forEach((gp, i) => {
@@ -1782,7 +1813,7 @@ export class SiMode {
       rm.type = 'button';
       rm.title = 'Delete the general procedure (to the Trash; compounds using it keep the choice, with a warning)';
       rm.addEventListener('click', () => void (async () => {
-        const msg = users.length ? `${users.length} compound${users.length === 1 ? ' uses' : 's use'} it (${users.map((c) => this.idOf(c)).join(', ')}); they keep the choice and get a warning until you pick another.` : 'It goes to the project’s Trash, where Chem SI Assistant can restore it.';
+        const msg = users.length ? `${users.length} compound${users.length === 1 ? ' uses' : 's use'} it (${users.map((c) => this.idOf(c)).join(', ')}); they keep the choice and get a warning until you choose another.` : 'It goes to the project’s Trash, where Chem SI Assistant can restore it.';
         const go = await askChoice(`Delete ${partText(gp.name) || 'General Procedure'}`, msg, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
         if (go === 'go') await this.act(() => p.deleteGeneralProcedure(id));
       })());
@@ -1970,7 +2001,7 @@ export class SiMode {
   /** Ribbon ▸ Name from PubChem: the compound's IUPAC name from PubChem (SI Assistant's "Look up name (PubChem)"). */
   private async nameFromPubChem(c: SiCompound | null): Promise<void> {
     const p = this.project!;
-    if (!c) { this.host.flash('Pick a compound first: its name is looked up by its structure.'); return; }
+    if (!c) { this.host.flash('Select a compound first: its name is looked up by its structure.'); return; }
     if (!p.hasStructure(c)) { this.host.flash('Add a structure first: the name is looked up by the structure.'); return; }
     await this.readFacts(p);
     const mol = this.mols.get(c.id);
@@ -2007,7 +2038,7 @@ export class SiMode {
     let skip = false;
     try { skip = localStorage.getItem('si.pubchem.skipNote') === '1'; } catch { /* (no storage) */ }
     if (skip || SiMode.pubchemAsked) return true;
-    const go = await askChoice('Name from PubChem', 'To look up the name, the structure’s InChIKey (a short code worked out from the structure) is sent to PubChem, a public database of the US National Institutes of Health. Nothing else is sent. PubChem only knows compounds that are already public: look up an unpublished compound only if you are happy for its InChIKey to be sent.', [
+    const go = await askChoice('Name from PubChem', 'To look up the name, the structure’s InChIKey (a short code calculated from the structure) is sent to PubChem, a public database of the US National Institutes of Health. Nothing else is sent. PubChem only knows compounds that are already public: look up an unpublished compound only if you are happy for its InChIKey to be sent.', [
       { value: 'cancel', label: 'Cancel' },
       { value: 'always', label: 'Look Up, Don’t Ask Again' },
       { value: 'go', label: 'Look Up', primary: true },
@@ -2021,7 +2052,7 @@ export class SiMode {
   private async structureToName(list: SiCompound[]): Promise<void> {
     const p = this.project!;
     const todo = list.filter((c) => p.hasStructure(c));
-    if (!todo.length) { this.host.flash(list.length ? 'Draw the compound’s structure first.' : 'Pick a compound, or a Data section with unnamed compounds.'); return; }
+    if (!todo.length) { this.host.flash(list.length ? 'Draw the compound’s structure first.' : 'Select a compound, or a Data section with unnamed compounds.'); return; }
     if (todo.length === 1 && compoundName(todo[0])) {
       const go = await askChoice('Structure to Name', `Replace the name “${compoundName(todo[0])}” with the structure’s IUPAC name?`, [{ value: 'go', label: 'Replace Name', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
       if (go !== 'go') return;
@@ -2224,7 +2255,7 @@ export class SiMode {
     const p = this.project!;
     const card = el('div', 'si-card');
     const h = el('h3', 'si-sub', 'Fields of new compounds');
-    addInfo(h, 'The fields a new compound page of this section gets, in this order. Required fields count towards a page being complete. Insert ▸ Field… adds one; Home ▸ Apply Section Fields gives them to the compounds already there.');
+    addInfo(h, 'The fields a new compound page of this section gets, in this order. Required fields count toward a page being complete. Insert ▸ Field… adds one; Home ▸ Apply Section Fields gives them to the compounds already there.');
     card.append(h);
     const entries = defaultFieldsOf(s);
     const list = el('div', 'si-fieldlist');
@@ -2249,7 +2280,7 @@ export class SiMode {
       rm.title = 'Take off the list';
       rm.addEventListener('click', () => void this.act(() => p.setDefaultFields(s.id, entries.filter((_, j) => j !== i))));
       const lab = el('label', 'si-fieldname');
-      lab.append(req, document.createTextNode(def?.label ?? e.key));
+      lab.append(req, ...fieldLabelNodes(def?.label ?? e.key));
       r.append(lab, up, rm);
       list.append(r);
     });
@@ -2349,7 +2380,7 @@ export class SiMode {
     const row = el('div', 'si-field');
     row.dataset.key = def.key;
     const lab = el('div', 'si-flabel');
-    lab.textContent = def.label.replace(/ \(private, never printed\)$/, '');
+    lab.append(...fieldLabelNodes(def.label.replace(/ \(private, never printed\)$/, '')));
     if (required) lab.append(el('span', 'si-req', '*'));
     if (def.description) addInfo(lab, def.description);
     const body = el('div', 'si-fbody');
@@ -2564,7 +2595,7 @@ export class SiMode {
       cell.hidden = !auto?.choices;
       if (auto?.choices && auto.automatic) {
         const opts = [new Option(`Automatic (${auto.automatic[1]})`, ''), ...auto.choices.map(([k, label]) => new Option(label, k))];
-        opts[0].title = 'The largest piece that is not a common counter-ion (halide, BF4⁻, PF6⁻, OTf⁻, NTf2⁻, TFA⁻, BArF⁻, Na⁺, K⁺, NBu4⁺…); the largest piece if all are.';
+        opts[0].title = 'The largest piece that is not a common counter-ion (halide, BF₄⁻, PF₆⁻, OTf⁻, NTf₂⁻, TFA⁻, BArF⁻, Na⁺, K⁺, NBu₄⁺…); the largest piece if all are.';
         sel.replaceChildren(...opts);
         sel.value = auto.key;
       }
@@ -2576,7 +2607,7 @@ export class SiMode {
     }
     calc.classList.remove('bad');
     calc.title = '';
-    if (waiting) { calc.textContent = 'Working out the expected m/z…'; return; }
+    if (waiting) { calc.textContent = 'Calculating the expected m/z…'; return; }
     let sp;
     try { sp = hrmsSpecies(facts, value); } catch (e) { calc.textContent = e instanceof ChemError ? e.message : String(e); calc.classList.add('bad'); return; }
     if (!sp) {
@@ -2648,18 +2679,47 @@ export class SiMode {
       b.addEventListener('click', f);
       return b;
     };
-    const zoomBy = (k: number): void => { const v = this.live.view; if (v) { v.setZoom(Math.max(0.2, Math.min(3, v.zoom * k))); v.redraw(); } };
+    // (its zoom is the status bar's, at the right end as in every mode: G5-34)
     head.append(title, state, el('span', 'si-live-gap'),
-      btn('−', 'Zoom out', () => zoomBy(1 / 1.2)), btn('+', 'Zoom in', () => zoomBy(1.2)),
-      btn('↔', 'Fit width', () => { this.live.view?.fitWidth(); this.live.view?.redraw(); }),
       btn('▸', 'Hide the live preview (Ctrl+Shift+L)', () => this.setLive(false)));
-    addInfo(head, 'The page picked, laid out as it prints in the SI, about a second after each change. Spectra are left out (Compile shows them), and page numbers are placeholders: Compile gives the real ones.');
+    addInfo(head, 'The selected page, laid out as it prints in the SI, about a second after each change. Spectra are left out (Compile shows them), and page numbers are placeholders: Compile gives the real ones.');
     const host = el('div', 'si-live-host');
     const empty = el('div', 'si-live-empty muted');
     wrap.append(strip, grip, head, host, empty);
     wrap.classList.toggle('off', !this.liveOn);
     this.pane.classList.toggle('si-live-off', !this.liveOn);
     return { el: wrap, host, state, empty, view: null, shown: '' };
+  }
+
+  private zoomBar: StatusZoom | null = null;
+  /** DocView's 100% (its ACTUAL; doc-view itself loads only with the preview). */
+  private static readonly ACTUAL = 96 / 72;
+
+  /** The status bar's zoom slider, percent and Page Width at its right end, as in the other
+   *  modes (G5-34): they zoom the Live Preview, and are dimmed while it is hidden. */
+  private showZoom(on: boolean): void {
+    if (!this.zoomBar) {
+      const side = document.querySelector('#status-side');
+      if (!side || !on) return;
+      this.zoomBar = statusZoom({
+        get: () => ((this.live.view?.zoom ?? SiMode.ACTUAL) / SiMode.ACTUAL) * 100,
+        set: (pct) => { const v = this.live.view; if (v) { v.setZoom((pct / 100) * SiMode.ACTUAL); v.redraw(); } },
+        fit: { label: 'Page Width', icon: FIT_WIDTH_ICON, run: () => { this.live.view?.fitWidth(); this.live.view?.redraw(); } },
+        refocus: () => { /* (the typing stays where it was) */ },
+        min: 20, max: 300,
+      });
+      this.zoomBar.el.id = 'si-statusbar';
+      this.zoomBar.el.classList.add('si-only');
+      side.before(this.zoomBar.el);
+    }
+    this.zoomBar.el.hidden = !on;
+    const live = on && this.liveOn && !!this.live.view;
+    this.zoomBar.el.classList.toggle('si-zoom-off', !live);
+    for (const b of this.zoomBar.el.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input')) {
+      b.disabled = !live;
+      b.title = live ? b.getAttribute('aria-label') ?? '' : 'Zoom: show the Live Preview to zoom it (Ctrl+Shift+L)';
+    }
+    if (live) this.zoomBar.show();
   }
 
   /** Show or fold the live preview (remembered on this computer). */
@@ -2670,9 +2730,10 @@ export class SiMode {
     this.pane.classList.toggle('si-live-off', !on);
     this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(on));
     if (on) { this.live.shown = ''; this.liveSoon(0); }
+    this.showZoom(!!this.tab);
   }
 
-  /** What the live preview shows for the page picked; null for a page it doesn't show (a Data section's overview, the lists). */
+  /** What the live preview shows for the selected page; null for a page it doesn't show (a Data section's overview, the lists). */
   private liveTarget(): SiPreviewTarget | null {
     const p = this.project!;
     const pick = this.pick;
@@ -2708,7 +2769,7 @@ export class SiMode {
       L.shown = '';
       L.host.hidden = true;
       L.empty.hidden = false;
-      L.empty.textContent = this.pick.kind === 'section' ? 'A Data section’s page has no live preview: pick one of its compounds, or Compile to see it all.' : 'This page has no live preview.';
+      L.empty.textContent = this.pick.kind === 'section' ? 'A Data section’s page has no live preview: select one of its compounds, or Compile to see it all.' : 'This page has no live preview.';
       L.state.textContent = '';
       return;
     }
@@ -2763,6 +2824,7 @@ export class SiMode {
     else { v.fitWidth(); v.scroller.scrollTop = 0; }
     v.redraw();
     L.shown = key;
+    this.showZoom(!!this.tab);
   }
 
   // ---------------------------------------------------------------- HRMS report files (§13n.3)
@@ -2949,7 +3011,7 @@ export class SiMode {
       if (fin && document.activeElement !== fin) fin.value = partText(value.found);
       const tol = hrmsTolerance(p.settings);
       let text = '';
-      if (foundIsFromReport(value)) text = `Found m/z from the report ${String((value[FOUND_FROM_KEY] as Json).file)}; type over it to use your own value.`;
+      if (foundIsFromReport(value)) text = `Found m/z from the report ${String((value[FOUND_FROM_KEY] as Json).file)}; type over it to use a different value.`;
       else if (!m) text = `No m/z within ±${tol} ppm of the expected ion was found in the report files.`;
       else {
         const found = parseNumber(partText(value.found));
@@ -3074,7 +3136,7 @@ export class SiMode {
       const all = availableColumns(t.scope);
       const chosen = new Set(chosenColumns(t.scope));
       const got = await ask('Columns', all.map((k) => ({ name: k, label: fieldLabel(t.scope, k), value: String(chosen.has(k)), type: 'checkbox' as const })), {
-        ok: 'Show Columns', note: 'The fields shown as columns, besides the structure, ID and name. A field added later shows unless it is unticked here.',
+        ok: 'Show Columns', note: 'The fields shown as columns, besides the structure, ID and name. A field added later shows unless it is unchecked here.',
       });
       if (!got) return;
       const keep = all.filter((k) => got[k] === 'true');
@@ -3518,7 +3580,7 @@ export class SiMode {
     }
   }
 
-  /** Home ▸ Delete (Delete in the tree): the compound, scheme page or section picked goes to the project's Trash, after asking. */
+  /** Home ▸ Delete (Delete in the tree): the selected compound, scheme page or section goes to the project's Trash, after asking. */
   private async deletePicked(): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
@@ -3565,14 +3627,14 @@ export class SiMode {
       });
       return;
     }
-    this.host.flash('Pick a compound, scheme page or section to delete.');
+    this.host.flash('Select a compound, scheme page or section to delete.');
   }
 
-  /** Home ▸ Duplicate: copies of the compound or scheme page picked, with the fields chosen. */
+  /** Home ▸ Duplicate: copies of the selected compound or scheme page, with the fields chosen. */
   private async duplicate(): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
-    if (pick.kind !== 'compound' && pick.kind !== 'scheme') { this.host.flash('Pick a compound or scheme page to duplicate.'); return; }
+    if (pick.kind !== 'compound' && pick.kind !== 'scheme') { this.host.flash('Select a compound or scheme page to duplicate.'); return; }
     const c = pick.kind === 'compound' ? p.compound(pick.id) : null;
     const k = pick.kind === 'scheme' ? p.scheme(pick.id) : null;
     const sources = c ? [c] : k!.children;
@@ -3585,7 +3647,7 @@ export class SiMode {
     const got = await ask(`Duplicate ${c ? 'Compound' : 'Scheme Page'}`, [
       { name: 'copies', label: 'Number of copies', value: '1', type: 'number', min: 1, max: MAX_COPIES },
       { name: 'place', label: 'Where the copies go', value: 'end', options: [{ value: 'end', label: 'At the end of the section (nothing is renumbered)' }, { value: 'after', label: c?.schemeId ? 'Right after the scheme page (later IDs move up)' : 'Right after the original (later IDs move up)' }] },
-      ...(fields.size ? [{ name: '_h', label: 'Copy the contents of these fields', value: '', type: 'heading' as const, help: 'Copies get the same fields; the ones not ticked start empty.' }] : []),
+      ...(fields.size ? [{ name: '_h', label: 'Copy the contents of these fields', value: '', type: 'heading' as const, help: 'Copies get the same fields; the ones not checked start empty.' }] : []),
       ...[...fields.values()].map((d) => ({ name: `f:${d.key}`, label: d.label, value: 'true', type: 'checkbox' as const })),
     ], { ok: 'Duplicate', note: `Copies of ${what}${k ? ' with its drawing and its compounds' : ''}.${never.size ? ` Never copied: ${[...never.values()].join(', ')}, the manual ID and flags (they belong to the original).` : ' Never copied: attached files, the manual ID and flags.'}` });
     if (!got) return;
@@ -3599,12 +3661,12 @@ export class SiMode {
     });
   }
 
-  /** Home ▸ Rename (F2 in the tree): the section or scheme page picked. */
+  /** Home ▸ Rename (F2 in the tree): the selected section or scheme page. */
   private async renamePicked(): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
     if (pick.kind === 'compound') { this.host.flash('A compound’s name is its Name field, on its page.'); return; }
-    if (pick.kind !== 'section' && pick.kind !== 'scheme') { this.host.flash('Pick a section or scheme page to rename.'); return; }
+    if (pick.kind !== 'section' && pick.kind !== 'scheme') { this.host.flash('Select a section or scheme page to rename.'); return; }
     const k = pick.kind === 'scheme' ? p.scheme(pick.id) : null;
     const sec = pick.kind === 'section' ? p.section(pick.id) : null;
     const now = k ? String(k.data.name || '') : sec!.name;
@@ -3628,12 +3690,12 @@ export class SiMode {
     this.pick = { kind: 'compound', id: c.id };
   }
 
-  /** Insert ▸ Change to Reaction Scheme…: the compound picked becomes the product of a new scheme page in its place. */
+  /** Insert ▸ Change to Reaction Scheme…: the selected compound becomes the product of a new scheme page in its place. */
   private async toScheme(): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
     const c = pick.kind === 'compound' ? p.compound(pick.id) : null;
-    if (!c) { this.host.flash('Pick a compound page to change to a reaction scheme.'); return; }
+    if (!c) { this.host.flash('Select a compound page to change to a reaction scheme.'); return; }
     if (c.schemeId) { this.host.flash('This compound is already on a scheme page.'); return; }
     const go = await askChoice('Change to Reaction Scheme', `Make a scheme page for ${this.idOf(c)} ${compoundName(c) || 'this compound'}? The compound becomes the product of the scheme's first step (its data and ID are kept). You can then draw the scheme and add the other compounds in it.`, [{ value: 'no', label: 'Cancel' }, { value: 'yes', label: 'Change', primary: true }], 'no');
     if (go !== 'yes') return;
@@ -3644,7 +3706,7 @@ export class SiMode {
   private async moveTo(onlySchemes = false): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
-    if (onlySchemes && pick.kind !== 'compound') { this.host.flash('Pick a compound to move into a scheme page.'); return; }
+    if (onlySchemes && pick.kind !== 'compound') { this.host.flash('Select a compound to move into a scheme page.'); return; }
     if (pick.kind === 'compound' || pick.kind === 'scheme') {
       const item = pick.kind === 'compound' ? p.compound(pick.id) : p.scheme(pick.id);
       const options: { value: string; label: string }[] = [];
@@ -3674,7 +3736,7 @@ export class SiMode {
       await this.act(() => p.moveSection(sec.id, list.length, got.to || null));
       return;
     }
-    this.host.flash('Pick a compound, scheme page or section to move.');
+    this.host.flash('Select a compound, scheme page or section to move.');
   }
 
   /** A tree row's right-click menu, F2 and Delete keys, and dragging it to another place. */
@@ -4042,14 +4104,14 @@ export class SiMode {
       if (data) return data;
       const only = p.dataSections;
       if (only.length === 1) return only[0];
-      this.host.flash(only.length ? 'Pick a Data section (or a compound in one) first.' : 'Make a Data section first: New Section ▸ Data section.');
+      this.host.flash(only.length ? 'Select a Data section (or a compound in one) first.' : 'Make a Data section first: New Section ▸ Data section.');
       return null;
     };
     switch (cmd) {
       case 'new-table': {
         let sec = s;
         while (sec && sec.type !== 'text' && sec.parentId) sec = p.section(sec.parentId);
-        if (sec?.type !== 'text') { this.host.flash('Pick a Custom section (one with text) for the table.'); return; }
+        if (sec?.type !== 'text') { this.host.flash('Select a Custom section (one with text) for the table.'); return; }
         await this.newTable(sec);
         return;
       }
@@ -4059,7 +4121,7 @@ export class SiMode {
       case 'new-figure-compound': {
         let sec = s;
         while (sec && sec.type !== 'text' && sec.parentId) sec = p.section(sec.parentId);
-        if (sec?.type !== 'text') { this.host.flash('Pick a Custom section (one with text) for the figure.'); return; }
+        if (sec?.type !== 'text') { this.host.flash('Select a Custom section (one with text) for the figure.'); return; }
         await this.newFigure(sec, cmd === 'new-figure' ? 'picture' : (cmd.slice(11) as 'draw' | 'paste' | 'compound'));
         return;
       }
@@ -4092,7 +4154,7 @@ export class SiMode {
         return;
       }
       case 'new-section': {
-        // inside the Custom section picked (a sub-section), or after the section picked
+        // inside the Custom section picked (a sub-section), or after the selected section
         let top = s;
         while (top?.parentId) top = p.section(top.parentId);
         const canNest = !!s && s.type === 'text' && p.depth(s) < MAX_SECTION_DEPTH;
@@ -4113,7 +4175,7 @@ export class SiMode {
       case 'move-to': await this.moveTo(); return;
       case 'into-scheme': await this.moveTo(true); return;
       case 'out-of-scheme': {
-        if (!c?.schemeId) { this.host.flash('Pick a compound of a scheme page.'); return; }
+        if (!c?.schemeId) { this.host.flash('Select a compound of a scheme page.'); return; }
         await this.act(() => this.moveOutOfScheme(c.id));
         return;
       }
@@ -4177,13 +4239,13 @@ export class SiMode {
         return;
       }
       case 'manual-id': {
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         const got = await ask('Compound ID', [{ name: 'id', label: 'Manual ID', value: idOverride(c), placeholder: 'empty: the ID from the section’s table' }], { ok: 'Set ID', note: 'A Manual ID replaces the compound’s ID, but it still uses up its row of the ID table, so the compounds after it keep theirs.' });
         if (got) await this.act(() => p.setIdOverride(c, got.id));
         return;
       }
       case 'edit-structure':
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         this.editStructure(c);
         return;
       case 'from-library': await this.fromLibrary(needData()); return;
@@ -4197,28 +4259,28 @@ export class SiMode {
       case 'name-pubchem': await this.nameFromPubChem(c); return;
       case 'structure-to-name': await this.structureToName(c ? [c] : data ? compoundsOf(data).filter((x) => !compoundName(x)) : []); return;
       case 'add-field': {
-        // the compound picked gets the field; a Data section picked gets it on its list of fields
+        // the selected compound gets the field; a Data section picked gets it on its list of fields
         if (!c && data && this.pick.kind === 'section') {
           const entries = defaultFieldsOf(data);
           const got = await this.chooseField(entries.map((e) => e.key));
           if (got) await this.act(() => p.setDefaultFields(data.id, [...entries, { ...got, required: false }]));
           return;
         }
-        if (!c) { this.host.flash('Pick a compound, or a Data section to change its list of fields.'); return; }
+        if (!c) { this.host.flash('Select a compound, or a Data section to change its list of fields.'); return; }
         const got = await this.chooseField(fieldKeys(c));
         if (got) await this.act(() => p.addField(c, got));
         return;
       }
       case 'add-spectra':
       case 'add-files': {
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         const key = cmd === 'add-spectra' ? 'spectra' : 'files';
         if (!fieldKeys(c).includes(key)) await p.addField(c, { key });
         await this.addFiles(c, ALL_FIELDS.get(key)!);
         return;
       }
       case 'add-hrms-report': {
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         const files = await this.host.pickFiles('HRMS reports', REPORT_EXTS);
         if (files.length) await this.addReports(c, files);
         return;
@@ -4227,15 +4289,15 @@ export class SiMode {
         this.setLive(!this.liveOn);
         return;
       case 'paste-spectrum':
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         await this.pasteSpectrum(c);
         return;
       case 'paste-structure':
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         await this.pasteStructure(c);
         return;
       case 'add-nmr-report': {
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         const reports = (Array.isArray(valuesOf(c).nmr) ? valuesOf(c).nmr : []) as Json[];
         const used = new Set(reports.map((r) => partText(r.nucleus)));
         const nucleus = (['1H', '13C', '19F', '31P'] as const).find((n) => !used.has(n)) ?? '1H';
@@ -4295,11 +4357,11 @@ export class SiMode {
   /** Pick one of the library's fields (or make one), leaving out those the page has. */
   private async chooseField(have: string[]): Promise<FieldEntry | null> {
     const options = [...CORE_FIELDS, ...LIBRARY_FIELDS].filter((f) => !have.includes(f.key) && f.kind !== 'structure').map((f) => ({ value: f.key, label: f.label }));
-    options.push({ value: '+custom', label: 'A field of my own…' });
+    options.push({ value: '+custom', label: 'A custom field…' });
     const got = await ask('Add Field', [{ name: 'key', label: 'Field', value: options[0]?.value ?? '+custom', options }], { ok: 'Add' });
     if (!got) return null;
     if (got.key !== '+custom') return { key: got.key };
-    const own = await ask('A Field of My Own', [
+    const own = await ask('Custom Field', [
       { name: 'label', label: 'Name', value: '', placeholder: 'e.g. Purity' },
       { name: 'type', label: 'Kind', value: 'short_text', options: [{ value: 'short_text', label: 'Short text' }, { value: 'long_text', label: 'Long text' }, { value: 'number_unit', label: 'Number with unit' }, { value: 'file', label: 'File(s)' }] },
     ], { ok: 'Add' });

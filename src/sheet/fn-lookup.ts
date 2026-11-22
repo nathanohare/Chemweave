@@ -233,5 +233,5 @@ export function chooseIndex(v: Value, count: number): number | CellError {
   const n = toNumber(v);
   if (isError(n)) return n;
   const i = whole(n);
-  return i < 1 || i > count ? ERR.value(`CHOOSE picks from 1 to ${count}`) : i;
+  return i < 1 || i > count ? ERR.value(`CHOOSE takes a number from 1 to ${count}`) : i;
 }

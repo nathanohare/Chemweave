@@ -5,6 +5,7 @@
 
 import { DATE_FORMATS, dateText, defaultNotesHF, showsDate, showsFooter, showsNumber, type DateFormat, type LayoutId, type Master, type SlideHF } from '../deck/deck';
 import { showDialog } from './dialog-host';
+import { addInfo } from './info-tip';
 
 export interface HeaderFooterResult {
   master: Master;
@@ -24,6 +25,7 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
     d.append(form);
     const h = document.createElement('h2');
     h.textContent = 'Header and Footer';
+    addInfo(h, `Apply changes ${picked > 1 ? `the ${picked} selected slides` : 'the slide being edited'}; Apply to All changes every slide. Notes and Handouts sets printed notes pages and handouts (File ▸ Print), and PowerPoint's notes and handout masters.`);
     const tabs = document.createElement('div');
     tabs.className = 'hf-tabs';
     tabs.setAttribute('role', 'tablist');
@@ -92,14 +94,12 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
     const footRow = el('div', 'hf-block');
     footRow.append(foot.l, footText);
     const offTitle = check('Don\'t show on title slide', !m.numberTitleSlides, 'Title Slide layouts show none of the three');
-    const preview = el('p', 'muted small hf-note');
-    const note = () => {
-      const bits = [sd.on.checked ? 'date' : '', num.i.checked ? 'number' : '', foot.i.checked && footText.value.trim() ? 'footer' : ''].filter(Boolean);
-      preview.textContent = `${bits.length ? `Slides show the ${bits.join(', ')}` : 'Slides show none of these'}${sd.on.checked ? ` (${sd.fixed() || dateText({ dateFormat: sd.format() })})` : ''}. Apply changes the ${picked > 1 ? `${picked} slides picked` : 'slide being edited'}; Apply to All changes every slide.`;
-    };
-    form.addEventListener('input', note);
-    form.addEventListener('change', note);
-    pages.slide.append(sd.box, num.l, footRow, offTitle.l, preview);
+    // a preview of where each goes, as PowerPoint shows one: a slide with the date bottom left,
+    // the footer in the middle and the number bottom right
+    const slidePic = previewBox('hf-preview hf-slide', 'Where they go on a slide');
+    const fields = el('div', 'hf-fields');
+    fields.append(sd.box, num.l, footRow, offTitle.l);
+    pages.slide.append(fields, slidePic.box);
 
     // ---- notes pages and handouts
     const n0 = m.notesHF ?? defaultNotesHF();
@@ -115,9 +115,27 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
     nfootText.addEventListener('input', () => { if (nfootText.value.trim()) nfoot.i.checked = true; });
     const nfootRow = el('div', 'hf-block');
     nfootRow.append(nfoot.l, nfootText);
-    const nnote = el('p', 'muted small hf-note');
-    nnote.textContent = 'For printed notes pages and handouts (File ▸ Print), and PowerPoint\'s notes and handout masters.';
-    pages.notes.append(nd.box, hdrRow, page.l, nfootRow, nnote);
+    const notesPic = previewBox('hf-preview hf-notes', 'Where they go on a notes page');
+    const nfields = el('div', 'hf-fields');
+    nfields.append(nd.box, hdrRow, page.l, nfootRow);
+    pages.notes.append(nfields, notesPic.box);
+    pages.slide.classList.add('hf-page');
+    pages.notes.classList.add('hf-page');
+    const note = () => {
+      slidePic.set({
+        bl: sd.on.checked ? sd.fixed() || dateText({ dateFormat: sd.format() }) : '',
+        bc: foot.i.checked ? footText.value.trim() : '',
+        br: num.i.checked ? '1' : '',
+      });
+      notesPic.set({
+        tl: hdr.i.checked ? hdrText.value.trim() : '',
+        tr: nd.on.checked ? nd.fixed() || dateText({ dateFormat: nd.format() }) : '',
+        bl: nfoot.i.checked ? nfootText.value.trim() : '',
+        br: page.i.checked ? '1' : '',
+      });
+    };
+    form.addEventListener('input', note);
+    form.addEventListener('change', note);
 
     const buttons = el('p', 'ask-buttons');
     const cancel = el('button');
@@ -168,6 +186,37 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
     d.addEventListener('close', () => done(null));
     showDialog(d);
   });
+}
+
+type Spot = 'tl' | 'tr' | 'bl' | 'bc' | 'br';
+
+/** A small page (a slide, or a notes page) with the header, footer, date and number at their places; empty places show nothing. */
+export function previewBox(className: string, label: string): { box: HTMLElement; set(spots: Partial<Record<Spot, string>>): void } {
+  const box = document.createElement('div');
+  box.className = className;
+  box.setAttribute('role', 'img');
+  box.setAttribute('aria-label', label);
+  const body = document.createElement('div');
+  body.className = 'hf-body';
+  box.append(body);
+  const spots = new Map<Spot, HTMLElement>();
+  for (const k of ['tl', 'tr', 'bl', 'bc', 'br'] as const) {
+    const s = document.createElement('span');
+    s.className = `hf-spot hf-${k}`;
+    spots.set(k, s);
+    box.append(s);
+  }
+  return {
+    box,
+    set(v) {
+      for (const [k, s] of spots) {
+        const t = v[k] ?? '';
+        s.textContent = t;
+        s.hidden = !t;
+      }
+      box.setAttribute('aria-label', `${label}: ${Object.entries(v).filter(([, t]) => t).map(([k, t]) => `${({ tl: 'top left', tr: 'top right', bl: 'bottom left', bc: 'bottom middle', br: 'bottom right' } as Record<string, string>)[k]} ${t}`).join(', ') || 'none'}`);
+    },
+  };
 }
 
 /** Today in a date field's form, as the list shows it. */

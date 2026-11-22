@@ -71,6 +71,10 @@ import type { SparkKind } from '../sheet/sparklines';
 import { themeOf } from '../sheet/themes';
 import { SHEET_PAPERS, type PaperName } from '../sheet/page-setup';
 import { defaultPaper } from '../print-layout';
+import { paintCanRun } from './can-run';
+import { SheetCanRun, SHEET_REASONS, structureColumns, CAN_RUN_CHECKS } from '../sheet/can-run';
+import { typedSize } from './font-group';
+import { stepSize } from '../text/format';
 
 /** The header of each Hammett column (σm and σp show their m and p as italic subscripts). */
 const HAMMETT_HEADS: Record<HammettColumn, string> = { group: 'Group', sigma: 'σ', F: 'F', R: 'R', sm: 'σm', sp: 'σp' };
@@ -174,6 +178,8 @@ export class SheetMode {
   private dashShown: Sheet | null = null;
   /** The last cells copied here: pasting the same text back uses these (formulas, structures and formats kept). */
   private clip: { text: string; block: CellBlock; sheet: Sheet; range: Range; cut: boolean } | null = null;
+  /** Why commands cannot run here, the costly answers kept until the sheet or selection changes. */
+  readonly canRun = new SheetCanRun();
 
   constructor(private host: SheetModeHost, chem: SheetChem) {
     this.chem = chem;
@@ -184,6 +190,11 @@ export class SheetMode {
     this.panel = $('#cell-body');
     this.panelTitle = $('#cell-name');
     this.ribbon = $('#sheet-ribbon');
+    // the pointer resting on a ribbon button: a check that needs the whole table is made now (G5-28)
+    this.ribbon.addEventListener('pointerover', (e) => {
+      const b = (e.target as Element).closest<HTMLButtonElement>('button[data-sh]');
+      if (b?.dataset.sh === 'property-column') paintCanRun([b], 'sh', (n) => this.cannotRun(n));
+    });
     this.view = new SheetView($('#sheet-host'), {
       structureBox: (s) => this.pictures.box(s),
       structureBitmap: (s, scale) => this.pictures.bitmap(s, Math.abs(scale), scale < 0),
@@ -497,13 +508,23 @@ export class SheetMode {
       sel.blur();
       this.view.focus();
     });
-    rb.querySelector<HTMLSelectElement>('#sh-size')!.addEventListener('change', (e) => {
-      const sel = e.target as HTMLSelectElement;
-      const n = Number(sel.value);
+    // the size box: any size can be typed, as in every mode's Font group (G5-26)
+    const sizeBox = rb.querySelector<HTMLInputElement>('#sh-size')!;
+    sizeBox.addEventListener('change', () => {
+      const n = typedSize(sizeBox.value, 1, 409);
+      if (typeof n === 'string') {
+        // the real size goes back in the box, and the warning says what it takes (review of F5, R09)
+        const { r, c } = this.view.sel.active;
+        sizeBox.value = String(this.view.sheet?.styleAt(r, c)?.size ?? 11);
+        this.host.flash(n, 5000);
+        sizeBox.select();
+        return;
+      }
       this.style('Font size', { size: n === 11 ? undefined : n });
-      sel.blur();
+      sizeBox.blur();
       this.view.focus();
     });
+    sizeBox.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') sizeBox.dispatchEvent(new Event('change')); });
     const font = rb.querySelector<HTMLInputElement>('#sh-font')!;
     font.addEventListener('change', () => { this.look.setFont(font.value); });
     font.addEventListener('keydown', (e) => {
@@ -651,6 +672,17 @@ export class SheetMode {
     this.statusZoom.show();
   }
 
+  /**
+   * Why a sheet command cannot run now (S15, S85; G5-28): the reason it would show in a toast,
+   * null when it can, undefined when it has no check. The menus and the ribbon grey it out with
+   * the reason in the tooltip.
+   */
+  cannotRun(name: string, lazy = false): string | null | undefined {
+    const s = this.view.sheet;
+    if (!s || !this.book) return CAN_RUN_CHECKS.has(name) ? null : undefined;
+    return this.canRun.why(s, this.view.sel, name, this.book.edits, lazy);
+  }
+
   /** Sheet commands (from the ribbon, the menus and keys). False when the name isn't one. */
   run(name: string): boolean {
     const v = this.view;
@@ -660,12 +692,22 @@ export class SheetMode {
     const paper = name.startsWith('sheet-paper-') ? name.slice('sheet-paper-'.length) : '';
     if (paper && paper in SHEET_PAPERS) { this.page.set('Paper size', { paper: paper as PaperName }); return true; }
     // while typing in a cell, Bold, Italic and Underline are for the selected text (issue #503)
-    const typing = name === 'cell-bold' ? 'bold' : name === 'cell-italic' ? 'italic' : name === 'cell-underline' ? 'underline' : null;
+    const typing = name === 'cell-bold' ? 'bold' : name === 'cell-italic' ? 'italic' : name === 'cell-underline' ? 'underline' : name === 'cell-strike' ? 'strike' : null;
     if (typing && v.styleTyping(typing)) { this.showRibbonState(); return true; }
     switch (name) {
       case 'cell-bold': this.style('Bold', { bold: !a.bold || undefined }); break;
       case 'cell-italic': this.style('Italic', { italic: !a.italic || undefined }); break;
       case 'cell-underline': this.style('Underline', { underline: !a.underline || undefined }); break;
+      // the rest of the shared Font group (G5-26): strikethrough, subscript and superscript on the
+      // whole text of the cells, and a size step up or down
+      case 'cell-strike': this.style('Strikethrough', { strike: !a.strike || undefined }); break;
+      case 'cell-sub': this.style('Subscript', { pos: a.pos === 'sub' ? undefined : 'sub' }); break;
+      case 'cell-sup': this.style('Superscript', { pos: a.pos === 'sup' ? undefined : 'sup' }); break;
+      case 'font-bigger': case 'font-smaller': {
+        const n = stepSize(a.size ?? 11, name === 'font-bigger' ? 1 : -1);
+        this.style('Font size', { size: n === 11 ? undefined : n });
+        break;
+      }
       case 'align-left': case 'align-center': case 'align-right': {
         const al = name.slice(6) as 'left' | 'center' | 'right';
         this.style('Align', { align: a.align === al ? undefined : al });
@@ -1624,7 +1666,7 @@ export class SheetMode {
       return;
     }
     const { r, c } = v.sel.active;
-    const ans = await ask('Structure from name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS RN', value: '' }], {
+    const ans = await ask('Structure from Name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS RN', value: '' }], {
       ok: 'Draw', note: `Draws the structure in ${cellName(r, c)}. Names are read on this computer (OPSIN): systematic names and many common ones such as caffeine. CAS RNs (50-78-2) are looked up on PubChem.`,
     });
     const text = ans?.text.trim();
@@ -1742,7 +1784,7 @@ export class SheetMode {
     if (!s) return;
     const { r, c } = v.sel.active;
     const here = s.cell(r, c)?.structure || (typeof s.value(r, c) === 'string' && s.value(r, c) !== '') ? cellName(r, c) : '';
-    const got = await ask('Isotope pattern', [
+    const got = await ask('Isotope Pattern', [
       { name: 'source', label: 'Compound', value: here, placeholder: 'B2, or a formula such as C10H12N2O' },
       { name: 'ion', label: 'Ion', value: '[M+H]+', suggestions: COMMON_ADDUCTS },
       { name: 'min', label: 'Minimum peak abundance', value: '0.5', type: 'number', unit: '% of the tallest' },
@@ -1806,26 +1848,6 @@ export class SheetMode {
     this.host.flash(found ? 'Type the m/z and heights you measured into the Found columns; the chart and the ppm errors follow.' : 'The ion can be changed in its cell; the peaks follow.', 8000);
   }
 
-  /** Columns holding structures or SMILES in the table around the active cell (for the property window). */
-  private structureColumns(s: Sheet, R: Range): { col: number; label: string }[] {
-    const out: { col: number; label: string }[] = [];
-    for (let c = R.c1; c <= R.c2; c++) {
-      let structures = 0, smiles = 0;
-      for (let r = R.r1; r <= Math.min(R.r2, R.r1 + 200); r++) {
-        if (s.cell(r, c)?.structure) structures++;
-        else {
-          const v = s.values.get(keyOf(r, c));
-          if (typeof v === 'string' && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(v) && /[a-z]|[A-Z].*[A-Z0-9(=]/.test(v) && v.length > 1) smiles++;
-        }
-      }
-      if (structures || smiles > 1) {
-        const head = s.values.get(keyOf(R.r1, c));
-        out.push({ col: c, label: `Column ${colName(c)}${typeof head === 'string' && head ? ` (${head})` : ''}${structures ? '' : ' — SMILES'}` });
-      }
-    }
-    return out;
-  }
-
   /** Chemistry > Insert Property Column…: pick properties to work out from a column of structures. */
   private async propertyColumns(choice?: PropertyAnswer): Promise<void> {
     const v = this.view;
@@ -1833,9 +1855,9 @@ export class SheetMode {
     const { r, c } = v.sel.active;
     const region = s.currentRegion(r, c);
     if (!choice) {
-      const cols = this.structureColumns(s, region);
+      const cols = structureColumns(s, region);
       if (!cols.length) {
-        this.host.flash('Click in a table with a column of structures (or SMILES) first. To start one, draw a structure in a cell (Chemistry ▸ Structure).', 8000);
+        this.host.flash(SHEET_REASONS['property-column'], 8000);
         return;
       }
       const got = await askProperties({ columns: cols, col: cols.some((x) => x.col === c) ? c : cols[0].col, hammett: this.hammettSetup(s, region) });
@@ -1874,7 +1896,7 @@ export class SheetMode {
         const n = sts.length, none = n - once - several, name = refLabel(ref).replace(/^\S+ /, '').toLowerCase();
         let note = once === n ? (n === 1 ? 'Found in the structure.' : `Found once in each of the ${n} structures.`)
           : once || several ? `Found once in ${once} of the ${n} structures${none ? `; ${none} ${none === 1 ? 'has' : 'have'} none and will show #N/A` : ''}${several ? `; ${several} ${several === 1 ? 'has' : 'have'} more than one and will show #N/A` : ''}.`
-          : `None of the structures has a ${name} attachment point yet: right-click a ring carbon and pick Attachment Point.`;
+          : `None of the structures has a ${name} attachment point yet: right-click a ring carbon and choose Attachment Point.`;
         if (once + several && !onRing) note += ' It must sit on a benzene ring carbon, with nothing between it and the ring.';
         const fit = onRing && this.pictures.fitted(onRing, w, h);
         const m = fit && refMarks(fit.doc, ref);
@@ -2500,6 +2522,8 @@ export class SheetMode {
     const st = s.styleAt(r, c) ?? {};
     // (some buttons are on two tabs, as in Excel: Filter on Home and on Data)
     this.showStatusBar();
+    // commands that cannot run here are greyed, with the reason in the tooltip (S15, S85)
+    paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('button[data-sh]'), 'sh', (n) => this.cannotRun(n, true));
     const press = (name: string, on: boolean) => {
       for (const b of document.querySelectorAll(`#sheet-ribbon [data-sh="${name}"], #sheet-statusbar [data-sh="${name}"]`)) {
         if (b instanceof HTMLInputElement) b.checked = on;
@@ -2510,6 +2534,9 @@ export class SheetMode {
     press('cell-bold', this.view.typingHas('bold') ?? !!st.bold);
     press('cell-italic', this.view.typingHas('italic') ?? !!st.italic);
     press('cell-underline', this.view.typingHas('underline') ?? !!st.underline);
+    press('cell-strike', this.view.typingHas('strike') ?? !!st.strike);
+    press('cell-sub', st.pos === 'sub');
+    press('cell-sup', st.pos === 'sup');
     press('align-left', st.align === 'left');
     press('align-center', st.align === 'center');
     press('align-right', st.align === 'right');
@@ -2562,13 +2589,7 @@ export class SheetMode {
       const b = this.ribbon.querySelector<HTMLButtonElement>(`[data-sh="${name}"]`);
       if (b) b.disabled = !on;
     }
-    // Edit ▸ Spreadsheet ▸ Data Tools ▸ Remove Embedded Objects: off on a sheet with none, saying why
-    const oleOff = s.removeOleBlocked;
-    for (const m of document.querySelectorAll<HTMLButtonElement>('button[data-cmd="remove-embedded-objects"]')) {
-      m.dataset.tip ??= m.title;
-      m.disabled = oleOff !== null;
-      m.title = oleOff ?? m.dataset.tip;
-    }
+    // (Edit ▸ Data Tools ▸ Remove Embedded Objects is greyed, saying why, by the can-run table as its menu opens)
     for (const m of document.querySelectorAll('[role="menuitemcheckbox"][data-cmd="show-all-notes"]')) m.setAttribute('aria-checked', String(this.notes.showAll));
     for (const m of document.querySelectorAll('[role="menuitemcheckbox"][data-cmd="circle-invalid"]')) m.setAttribute('aria-checked', String(this.view.circleInvalid));
     for (const m of document.querySelectorAll('[role="menuitemcheckbox"][data-cmd="show-page-breaks"]')) m.setAttribute('aria-checked', String(this.view.showPageBreaks));
@@ -2591,10 +2612,8 @@ export class SheetMode {
       opt.text = describeFormat(code);
     } else fmt.querySelector<HTMLOptionElement>('option[value=custom]')!.text = 'Other…';
     fmt.value = opt.value;
-    const size = this.ribbon.querySelector<HTMLSelectElement>('#sh-size')!;
-    const want = String(st.size ?? 11);
-    if (![...size.options].some((o) => o.value === want)) size.add(new Option(want, want));
-    size.value = want;
+    const size = this.ribbon.querySelector<HTMLInputElement>('#sh-size')!;
+    if (document.activeElement !== size) size.value = String(st.size ?? 11);
     const sw = (sel: string, colour: string | undefined, fallback: string) => {
       const el = this.ribbon.querySelector<HTMLElement>(sel);
       if (el) el.style.background = colour ?? fallback;
@@ -2723,7 +2742,7 @@ export class SheetMode {
       const f = s.formulas.get(k);
       const problem = f ? wb.formulaProblem(f) : null;
       const e = v as CellError;
-      parts.push(para(`${e.code === '#BUSY!' ? 'Being worked out…' : `${e.code}: ${problem ?? e.detail}`}`, e.code === '#BUSY!' ? 'muted' : 'cp-error'));
+      parts.push(para(`${e.code === '#BUSY!' ? 'Calculating…' : `${e.code}: ${problem ?? e.detail}`}`, e.code === '#BUSY!' ? 'muted' : 'cp-error'));
     } else if (v !== undefined && v !== null && (cell?.input?.startsWith('=') || def)) {
       parts.push(para(`Value: ${plainText(v)}`, 'cp-value'));
     }
@@ -2766,7 +2785,7 @@ export class SheetMode {
     const box = document.createElement('div');
     const got = this.chem.structure(st);
     if (isError(got)) {
-      box.append(Object.assign(document.createElement('p'), { textContent: (got as CellError).code === '#BUSY!' ? 'Working out its properties…' : (got as CellError).detail, className: 'muted' }));
+      box.append(Object.assign(document.createElement('p'), { textContent: (got as CellError).code === '#BUSY!' ? 'Calculating its properties…' : (got as CellError).detail, className: 'muted' }));
       return box;
     }
     const m = got as MolProps;

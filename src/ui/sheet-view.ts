@@ -1872,6 +1872,10 @@ export class SheetView {
     // part of the text bold, italic… (typed text only, shown as typed)
     const runs = typeof v === 'string' ? runsOf(s.cell(r, c)) : undefined;
     let looks = runs && runs.map((x) => x.text).join('') === text ? looksOf(text, runs) : undefined;
+    // the whole cell struck through, lowered or raised (the Font group, G5-26): drawn as runs, which
+    // take those from the cell's look
+    const wholeLook = !!(style?.strike || style?.pos);
+    if (!looks && wholeLook) looks = looksOf(text, undefined);
     const align = style?.align ?? shown.align;
     const font = this.font(style);
     ctx.font = font;
@@ -1908,8 +1912,8 @@ export class SheetView {
     if (typeof v === 'number' && tw > w - 2 * pad) {
       const general = !style?.numFmt || /^general$/i.test(style.numFmt);
       text = (general ? generalFitting(v, (t) => widthOf(t) <= w - 2 * pad) : null) ?? '#'.repeat(Math.max(1, Math.floor((w - 2 * pad) / Math.max(1, this.textWidth('#', font)))));
+      looks = wholeLook ? looksOf(text, undefined) : undefined;
       tw = widthOf(text);
-      looks = undefined;
     }
     let clipW = w;
     // text too long for its cell runs on over empty cells beside it (as in Excel)
@@ -3209,7 +3213,7 @@ export class SheetView {
       const overDrop = this.overDrop(x, y);
       if (overDrop) this.scroller.style.cursor = 'pointer';
       // a note's card says what a tip would (and the drop-down's button what it is)
-      const tip = overDrop ? 'Pick from the list (Alt+Down)' : h.where === 'cell' && !this.sheet?.noteAt(h.r, h.c) ? this.tipFor(h.r, h.c) : '';
+      const tip = overDrop ? 'Choose from the list (Alt+Down)' : h.where === 'cell' && !this.sheet?.noteAt(h.r, h.c) ? this.tipFor(h.r, h.c) : '';
       if (tip !== this.hoverTip) { this.hoverTip = tip; this.scroller.title = tip; }
       return;
     }

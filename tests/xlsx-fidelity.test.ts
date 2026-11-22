@@ -168,7 +168,7 @@ describe('links to other workbooks', () => {
     const { book, warnings } = await readXlsx(file());
     expect(book.externalLinks.map((l) => l.path)).toEqual(['xl/externalLinks/externalLink1.xml', 'xl/externalLinks/externalLink2.xml']);
     expect(book.sheet.cell(0, 0)?.input).toBe('=[1]Uses!$A$1');
-    expect(warnings).toContain('3 formulas read values from other workbooks (Inventory 2026.xlsx, Yields.xlsx). They are kept for Excel, which updates them from those files, but can\'t be worked out here.');
+    expect(warnings).toContain('3 formulas read values from other workbooks (Inventory 2026.xlsx, Yields.xlsx). They are kept for Excel, which updates them from those files, but can\'t be calculated here.');
     expect(warnings.join(' ')).not.toMatch(/functions this program can't work out/);
   });
 

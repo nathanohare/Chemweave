@@ -5,7 +5,7 @@
 // Papers print compound IDs with their yields, ee/er and dr under the structures of a scope
 // scheme ("3a" and, on the line below, "92%, 95% ee"; or "3a, 92%, 95% ee" on one line), in
 // scope tables (Entry / Product / Yield / ee columns) and in the body text. This turns text with
-// positions (from a PDF, a Word file or a ChemDraw file, see ms-read.ts) into labelled values,
+// positions (from a PDF, a Word file or a ChemDraw file, see ms-read.ts) into labeled values,
 // and reads the reaction conditions (times, temperatures, equivalents…) of a footnote to check
 // them against the SI.
 //
@@ -85,7 +85,7 @@ export function splitFootnotes(text: string): [string, string[]] {
   return [clean, notes];
 }
 
-/** A record of labelled values (and, for a label, its IDs and text). */
+/** A record of labeled values (and, for a label, its IDs and text). */
 export interface Rec {
   ids: string[];
   text: string;

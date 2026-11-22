@@ -2199,7 +2199,7 @@ class Reader {
     const def = kids(this.r.xml(this.r.relOfType(this.r.relOfType('', REL.officeDocument) ?? '', REL.tableStyles) ?? '')?.documentElement ?? null, 'tblStyle')
       .find((e) => e.getAttribute('styleId') === id);
     if (!def) {
-      this.warnings.add('A table\'s PowerPoint style wasn\'t in the file, so its colors were left out (pick a style in the Style panel).');
+      this.warnings.add('A table\'s PowerPoint style wasn\'t in the file, so its colors were left out (choose a style in the Style panel).');
       return { table: t };
     }
     const n = t.rows.length, m = t.cols.length;

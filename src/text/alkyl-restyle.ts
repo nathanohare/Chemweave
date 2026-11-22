@@ -43,7 +43,7 @@ export function restyleAlkyl(doc: Doc, look: AlkylLook, apply: boolean): { label
     if (runs) texts.push([c.id, runs]);
   }
   if (apply && (labels.length || texts.length)) {
-    doc.edit('Alkyl Group Look', () => {
+    doc.edit('Alkyl Group Style', () => {
       for (const [id, r] of labels) doc.updateAtom(id, { label: r.label, labelMarks: r.marks });
       for (const [id, runs] of texts) doc.updateCaption(id, { runs });
     });

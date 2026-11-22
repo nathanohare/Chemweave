@@ -91,7 +91,7 @@ export class SiXrayPage {
     fig.append(row);
     if (!file) { fig.append(el('p', 'muted si-note', 'No CIF file yet: Crystal Structure ▸ Choose CIF on the ribbon.')); return; }
     const pic = el('div', 'si-xray-pic');
-    pic.title = 'Double-click to turn it or change its look (Crystal Structure ▸ Edit Structure)';
+    pic.title = 'Double-click to rotate it or change its style (Crystal Structure ▸ Edit Structure)';
     pic.addEventListener('dblclick', () => void this.command('edit'));
     fig.append(pic);
     const capRow = el('div', 'si-xray-caprow');
@@ -99,7 +99,7 @@ export class SiXrayPage {
     auto.type = 'checkbox';
     const autoLab = el('label', 'si-part');
     autoLab.append(auto, 'Automatic caption');
-    autoLab.title = 'Made from how it is drawn and the CCDC number; untick to type your own (it starts from the automatic one)';
+    autoLab.title = 'Made from how it is drawn and the CCDC number; uncheck to type a custom one (it starts from the automatic one)';
     capRow.append(autoLab);
     fig.append(capRow);
     const capBox = el('div');
@@ -148,7 +148,7 @@ export class SiXrayPage {
     // the crystal data table
     const tc = el('div', 'si-card');
     const th = el('h3', 'si-sub', 'Crystal data table');
-    addInfo(th, 'Printed under the figure with its own label (Table S…). Type over a value to change it (shown in bold; empty it to go back to the CIF’s); untick a row to leave it out. A row with no value is not printed.');
+    addInfo(th, 'Printed under the figure with its own label (Table S…). Type over a value to change it (shown in bold; empty it to go back to the CIF’s); uncheck a row to leave it out. A row with no value is not printed.');
     tc.append(th);
     const opts = el('div', 'si-parts');
     const print = el('input');

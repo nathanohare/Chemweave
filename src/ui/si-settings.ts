@@ -14,6 +14,7 @@ import { siDrawingStyle, storeSiDrawingStyle } from '../si/drawing-style';
 import { projectLayout, setProjectLayout } from '../si/scheme-edit';
 import { readSchemeLayout, schemeLayoutFields } from './si-scheme';
 import { askChoice } from './ask';
+import { addInfo } from './info-tip';
 import { DEFAULT_TOLERANCES, SOLVENT_NAMES, defaultImpurityTable, impurityRowFrom, impurityTolerances, projectImpurityTable, storeImpurityTable, storeImpurityTolerances, type ImpurityRow } from '../si/nmr';
 import { DICTIONARY_FILE } from '../si/dictionary';
 
@@ -73,7 +74,7 @@ async function headings(p: SiProject, host: SiSettingsHost): Promise<void> {
   const counts = Object.entries(COUNT_NAMES).map(([value, label]) => ({ value, label }));
   const fields: Field[] = [
     { name: 'preset', label: 'Heading numbers', value: preset, options: HEADING_PRESETS.map((x) => ({ value: x.id, label: x.label })), help: 'How the compiled SI numbers its headings. As the journal style does: Wiley 1., 1.1.; RSC 1, 1.1; ACS none. Compound titles and general procedures are never numbered. SI Assistant shows the nearest of its own (outline or 1.1.1) for a format it doesn’t have.' },
-    { name: 'h1', label: 'My own format', value: '', type: 'heading', help: 'Used when Heading numbers is “My own…”. The last level’s count is used for any deeper level.' },
+    { name: 'h1', label: 'Custom format', value: '', type: 'heading', help: 'Used when Heading numbers is “Custom…”. The last level’s count is used for any deeper level.' },
     ...[0, 1, 2, 3].map((i): Field => ({ name: `l${i}`, label: `Level ${i + 1}`, value: level(i), options: counts })),
     { name: 'chain', label: 'Show the numbers of the headings above (1.2.3)', value: String(own.chain), type: 'checkbox', help: 'On: 1.2.3 (or A.1.2). Off: only the heading’s own number, as in an outline.' },
     { name: 'end', label: 'After the number', value: own.end in ENDS ? own.end : '.', options: Object.entries(ENDS).map(([value, label]) => ({ value, label })) },
@@ -88,7 +89,7 @@ async function headings(p: SiProject, host: SiSettingsHost): Promise<void> {
   };
   const got = await ask('Headings', fields, {
     ok: 'Save',
-    preview: { title: 'Headings will read', below: true, draw: (v) => { const d = document.createElement('p'); d.className = 'si-heading-example'; d.textContent = headingExample(shown(v)); return d; } },
+    preview: { title: 'Headings will read', draw: (v) => { const d = document.createElement('p'); d.className = 'si-heading-example'; d.textContent = headingExample(shown(v)); return d; } },
   });
   if (!got || p.readOnly) return;
   await host.save(() => storeHeadingFormat(s, got.preset, formatOf(got)));
@@ -97,9 +98,11 @@ async function headings(p: SiProject, host: SiSettingsHost): Promise<void> {
 async function pageSetup(p: SiProject, host: SiSettingsHost): Promise<void> {
   const s = p.settings;
   const v = pageSettings(s);
-  const zone = (which: 'header' | 'footer', i: number): Field => ({ name: `${which}${i}`, label: ['Left', 'Center', 'Right'][i], value: (which === 'header' ? v.header : v.footer)[i], placeholder: i === 1 && which === 'footer' ? '{page}' : '' });
+  // (G5-37: the fields go in from an Insert drop-down, as Word's Insert Page Number; they can still be typed)
+  const inserts = { label: 'Insert', items: [{ text: '{page}', label: 'Page Number' }, { text: '{pages}', label: 'Number of Pages' }, { text: '{title}', label: 'Title' }, { text: '{authors}', label: 'Authors' }, { text: '{date}', label: 'Date' }] };
+  const zone = (which: 'header' | 'footer', i: number): Field => ({ name: `${which}${i}`, label: ['Left', 'Center', 'Right'][i], value: (which === 'header' ? v.header : v.footer)[i], placeholder: i === 1 && which === 'footer' ? '{page}' : '', inserts });
   const fields: Field[] = [
-    { name: 'h1', label: 'Header', value: '', type: 'heading', help: 'Type text, and any of {page} (the page number), {pages} (how many pages), {title}, {authors} and {date}.' },
+    { name: 'h1', label: 'Header', value: '', type: 'heading', help: 'Type text, and choose from Insert to add the page number, the number of pages, the title, the authors or the date (they show as {page}, {pages}, {title}, {authors} and {date}).' },
     zone('header', 0), zone('header', 1), zone('header', 2),
     { name: 'h2', label: 'Footer', value: '', type: 'heading', help: 'The journal style’s own puts the page number in the center (Wiley: on the right); a footer left as the style’s keeps following the style.' },
     zone('footer', 0), zone('footer', 1), zone('footer', 2),
@@ -134,7 +137,7 @@ async function pageSetup(p: SiProject, host: SiSettingsHost): Promise<void> {
     page.append(line('header'), body, line('footer'));
     return page;
   };
-  const got = await ask('Page', fields, { ok: 'Save', preview: { title: 'Page 2 will read', below: true, draw: preview } });
+  const got = await ask('Page', fields, { ok: 'Save', preview: { title: 'Page 2 will read', draw: preview } });
   if (!got || p.readOnly) return;
   const size = Number(got.size);
   await host.save(() => storePageSettings(s, {
@@ -178,7 +181,7 @@ async function labels(p: SiProject, host: SiSettingsHost): Promise<void> {
     d.textContent = LABEL_KINDS.map((k) => { const style = v[`${k}-style`]; const n = style === 'I' ? 'II' : style === 'i' ? 'ii' : style === 'a' ? 'b' : '2'; return `${(v[`${k}-word`] ?? '').trim()} ${(v[`${k}-prefix`] ?? '').trim()}${n}`.trim(); }).join(' · ');
     return d;
   };
-  const got = await ask('Labels', fields, { ok: 'Save', note: 'Figures, tables and schemes are numbered in the order they print. Any one label can still be typed over where it is.', preview: { title: 'The second of each will read', below: true, draw: example } });
+  const got = await ask('Labels', fields, { ok: 'Save', note: 'Figures, tables and schemes are numbered in the order they print. Any one label can still be typed over where it is.', preview: { title: 'The second of each will read', draw: example } });
   if (!got || p.readOnly) return;
   await host.save(() => {
     // only what differs from the defaults, as SI Assistant stores it
@@ -234,16 +237,18 @@ async function impurities(p: SiProject, host: SiSettingsHost): Promise<void> {
   const table = document.createElement('table');
   table.className = 'si-imp-table';
   const head = table.createTHead().insertRow();
-  for (const h of ['Use', 'Solvent', 'Nucleus', 'δ (ppm)', 'What it is', '']) head.appendChild(document.createElement('th')).textContent = h;
+  for (const h of ['Use', 'Solvent', 'Nucleus', 'δ (ppm)', 'What it is', '']) {
+    const th = head.appendChild(document.createElement('th'));
+    th.textContent = h;
+    if (h === 'Solvent') addInfo(th, 'Solvents are recognized however the NMR report writes them (CD₃OD, MeOD or methanol-d₄; DMSO-d₆ or (CD₃)₂SO; CDCl₃ or chloroform-d).');
+    if (h === 'δ (ppm)') addInfo(th, 'Rows without a number in δ are left out.');
+  }
   const tbody = table.createTBody();
   wrap.append(table);
   const solvents = document.createElement('datalist');
   solvents.id = `si-imp-solvents-${Math.random().toString(36).slice(2, 8)}`;
   for (const name of Object.keys(SOLVENT_NAMES)) solvents.append(new Option(name));
-  const note = document.createElement('p');
-  note.className = 'muted small';
-  note.textContent = 'Rows without a number in δ are left out. Solvents are recognized however the NMR report writes them (CD3OD, MeOD or methanol-d4; DMSO-d6 or (CD3)2SO; CDCl3 or chloroform-d).';
-  body.append(bar, wrap, solvents, note);
+  body.append(bar, wrap, solvents);
 
   const row = (r: Partial<ImpurityRow>): void => {
     const tr = tbody.insertRow();

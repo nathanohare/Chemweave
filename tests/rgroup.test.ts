@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createRequire } from 'node:module';
 import { Doc } from '../src/model';
-import { rGroupsOf, substituted, rowNumbers, parseRows, rGroupCells } from '../src/chem/rgroup';
+import { rGroupsOf, substituted, rowNumbers, rGroupCells } from '../src/chem/rgroup';
 import { formulaFromJson } from '../src/chem/formula';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,15 +55,6 @@ describe('R-group tables', () => {
     expect(rowNumbers(3, '2')).toEqual(['2a', '2b', '2c']);
     expect(rowNumbers(28, '5').slice(25)).toEqual(['5z', '5aa', '5ab']);
     expect(rowNumbers(2, '')).toEqual(['1', '2']);
-  });
-
-  it('reads typed or pasted rows', () => {
-    const rows = parseRows('R1, R2\nMe, H\n#7, Ph\nOMe\tCF3\n\n', ['R1', 'R2']);
-    expect(rows).toEqual([
-      { number: undefined, values: ['Me', 'H'] },
-      { number: '7', values: ['Ph', ''] },
-      { number: undefined, values: ['OMe', 'CF3'] },
-    ]);
   });
 
   it('builds the table cells, with ? where a mass couldn\'t be worked out', () => {

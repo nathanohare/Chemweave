@@ -142,7 +142,7 @@ export function analysisSettingsPage(host: AnalysisSettingsHost): Promise<void> 
       if (run.italic) t = `<i>${t}</i>`;
       return t;
     }).join('') : '<span class="muted">Select a structure to see its descriptors here.</span>';
-    const body = `<div class="as-paper"><div class="as-cap">${html || '<span class="muted">(nothing ticked)</span>'}</div></div>`;
+    const body = `<div class="as-paper"><div class="as-cap">${html || '<span class="muted">(nothing checked)</span>'}</div></div>`;
     if (slot) slot.innerHTML = body;
     else {
       let own = form.querySelector<HTMLElement>('.as-own-preview');

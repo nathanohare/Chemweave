@@ -404,7 +404,7 @@ export class SmartPane {
     this.el.append(this.formatBar(btn, gear));
     if (data.free) {
       // laid out by hand: said behind the "i" (marked), not on a line of its own
-      const why = read.chain ? 'Laid out by hand. Pick a layout to lay it out again.' : 'This scheme branches, so it keeps the layout it has. You can still retype its species and conditions.';
+      const why = read.chain ? 'Laid out by hand. Choose a layout to lay it out again.' : 'This scheme branches, so it keeps the layout it has. You can still retype its species and conditions.';
       info.title = `${why}\n\n${info.title}`;
       info.setAttribute('aria-label', info.title);
       info.classList.add('marked');

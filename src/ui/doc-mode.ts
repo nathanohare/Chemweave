@@ -9,7 +9,6 @@ import { showContextMenu, type MenuItem } from './context-menu';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { Doc, type Contents, type ParaStyle, type Shape, type TabStop, type TextRun } from '../model';
 
-type TabStopKind = TabStop['kind'];
 import { geoDef, geoShapeStyle } from '../design/geo';
 import type { DocStyle } from '../style';
 import type { Tab } from '../workspace';
@@ -34,6 +33,7 @@ import {
   type DocViewKind, type OutlineOp, type OutlineState, type ScreenView,
 } from '../document/doc-views';
 import { DocPanel, parseLength, showLength, type DocBoxKey } from './doc-panel';
+import { editTabStops } from './tabs-dialog';
 import { FontBox } from './font-box';
 import { WORD_HIGHLIGHTS } from '../io/docx-base';
 import { DocFind } from './doc-find';
@@ -1689,7 +1689,7 @@ export class DocumentMode {
         null,
         command('Split Table', 'table-split-table', 'A new table from this row down'),
         command('Convert to Text…', 'table-to-text', 'The table\'s rows back into paragraphs'),
-        command('Select Table', 'table-select', 'Pick the whole table (to copy, cut or delete it)'),
+        command('Select Table', 'table-select', 'Select the whole table (to copy, cut or delete it)'),
       );
       items.push({ label: 'Table', items: t });
       line();
@@ -5357,29 +5357,12 @@ export class DocumentMode {
     this.setPageLook({ pageBorder: { style, width: Math.max(0.25, Math.min(6, Number(got.width) || 0.5)), color: got.color || '#000000', from: got.from === 'text' ? 'text' : 'page', space } }, 'Page Borders');
   }
 
-  /** Paragraph > Tabs: the tab stops of the paragraphs picked, typed in (as the ruler sets them). */
+  /** Paragraph > Tabs: the tab stops of the selected paragraphs, in Word's Tabs window (G5-09). */
   private async tabsDialog(): Promise<void> {
     const f = this.file!;
-    const cur = this.ed.currentPara().tabs ?? [];
-    const KIND: Record<string, TabStopKind> = { left: 'left', l: 'left', centre: 'center', center: 'center', c: 'center', right: 'right', r: 'right', decimal: 'decimal', d: 'decimal' };
-    const LEAD: Record<string, 'dot' | 'hyphen' | 'underscore'> = { dot: 'dot', dots: 'dot', '.': 'dot', hyphen: 'hyphen', dash: 'hyphen', '-': 'hyphen', line: 'underscore', underscore: 'underscore', _: 'underscore' };
-    const shown = cur.map((t) => `${showLength(t.pos, 'in')} in ${t.kind === 'center' ? 'centre' : t.kind}${t.leader ? ` ${t.leader === 'underscore' ? 'line' : t.leader}` : ''}`).join('\n');
-    const got = await ask('Tabs', [
-      { name: 'tabs', label: 'Tab stops, one per line', value: shown, type: 'textarea', placeholder: '1 in left\n3.25 in decimal\n6.5 in right dot' },
-    ], { ok: 'OK', note: 'One tab stop per line: position (inches unless you add cm, mm or pt), alignment (left, center, right, decimal), then leader (dot, hyphen, line). After the last stop, tabs fall every 0.5 in. You can also click the ruler.' });
+    const tabs = await editTabStops(this.ed.currentPara().tabs ?? []);
     this.focus();
-    if (!got || this.file !== f) return;
-    const tabs: TabStop[] = [];
-    for (const line of got.tabs.split('\n')) {
-      const m = /^\s*(-?[\d.]+\s*(?:in|inch|inches|"|cm|mm|pt)?)\s*(\w+)?\s*(\S+)?\s*$/i.exec(line);
-      if (!m) continue;
-      const pos = parseLength(m[1], 'in');
-      if (pos === null || pos <= 0) continue;
-      const kind = KIND[(m[2] ?? 'left').toLowerCase()] ?? 'left';
-      const leader = m[3] ? LEAD[m[3].toLowerCase()] : undefined;
-      tabs.push(leader ? { pos, kind, leader } : { pos, kind });
-    }
-    tabs.sort((a, b) => a.pos - b.pos);
+    if (!tabs || this.file !== f) return;
     this.ed.setSelectedParas({ tabs: tabs.length ? tabs : undefined }, 'tabs');
   }
 

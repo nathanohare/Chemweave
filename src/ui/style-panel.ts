@@ -426,7 +426,7 @@ export class StylePanel {
         const tip = side === 'results'
           ? 'The line under the text below the arrow, for yield, ee or dr. It has its own font, size, alignment and gap in Drawing Style.'
           : `Text ${side} the arrow.`;
-        this.row(label, box, `${tip} Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting. A numbered list of steps lines up on the left unless you pick an alignment.`);
+        this.row(label, box, `${tip} Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting. A numbered list of steps lines up on the left unless you choose an alignment.`);
       }
     }
     const names: [Role, string, string][] = [
@@ -868,7 +868,7 @@ export class StylePanel {
       this.check('Return to Zoom', !!p.zoom?.back, (v) => set('Return to Zoom', (x) => ({ zoom: { ...x.zoom, back: v || undefined } })), 'After its slide (or its part of a Summary Zoom), the show comes back to this slide');
     } else if (pics.length === 1 && p.video) {
       const v = p.video;
-      const how = `${v.start === 'click' ? 'Starts when clicked' : 'Starts by itself'}${v.once ? '' : ', loops'}${v.trimStart || v.trimEnd ? ', trimmed' : ''}`;
+      const how = `${v.start === 'click' ? 'Starts when clicked' : 'Starts automatically'}${v.once ? '' : ', loops'}${v.trimStart || v.trimEnd ? ', trimmed' : ''}`;
       this.note(v.audio ? `Sound. ${how}. It plays in the slide show and in PowerPoint.` : `Video${p.px ? `, ${p.px.w} × ${p.px.h} pixels` : ''}. ${how}. It plays in the slide show and in PowerPoint.`);
       const buttons = document.createElement('div');
       buttons.className = 'style-buttons';
@@ -1454,7 +1454,7 @@ export class StylePanel {
     const kind = focalKind(this.doc, frag);
     const names = { atom: 'Atom', bond: 'Bond', ring: 'Ring' } as const;
     const sel = document.createElement('select');
-    const opts: [string, string][] = [...(kind ? [['own', names[kind]] as [string, string]] : []), ['box', 'Center of box'], ['pick', 'Pick atom, bond or ring…']];
+    const opts: [string, string][] = [...(kind ? [['own', names[kind]] as [string, string]] : []), ['box', 'Center of box'], ['pick', 'Click an atom, bond or ring…']];
     for (const [v, text] of opts) {
       const o = document.createElement('option');
       o.value = v;
@@ -1541,7 +1541,7 @@ export class StylePanel {
       const a = centres[0], b = dbls[0];
       const l = a ? a.stereoLabel : b.stereoLabel;
       const auto = a ? info?.atom(a.id) : info?.bond(b.id);
-      this.text('Label text', l?.manual ? l.text : '', auto ? `(${auto}), worked out` : 'worked out', (v) => this.edit('Stereo label text', () => setStereoText(this.doc, a ? 'a' : 'b', a ? a.id : b.id, v, arialWidth)),
+      this.text('Label text', l?.manual ? l.text : '', auto ? `(${auto}), calculated` : 'calculated', (v) => this.edit('Stereo label text', () => setStereoText(this.doc, a ? 'a' : 'b', a ? a.id : b.id, v, arialWidth)),
         'Type a custom label (for example (R*) or rel-(S)); leave empty to show the calculated one.');
     }
   }

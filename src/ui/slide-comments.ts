@@ -49,6 +49,9 @@ export function freeSpot(at: { x: number; y: number }, others: readonly { x: num
   return p;
 }
 
+const PICK_COMMENT = 'Click a comment’s marker or card first.';
+const NO_COMMENTS = 'There are no comments on this slide.';
+
 export class SlideComments {
   /** Review > Show Comments: the markers and the pane. */
   shown = false;
@@ -265,9 +268,19 @@ export class SlideComments {
     this.show(true);
   }
 
+  /** Why Resolve or Delete Comment cannot run now (no comment looked at), or null (G5-28). */
+  whyNoComment(): string | null {
+    return this.active !== null && this.comments().some((c) => c.id === this.active) ? null : PICK_COMMENT;
+  }
+
+  /** Why Delete All Comments cannot run now, or null. */
+  whyNoComments(): string | null {
+    return this.comments().length ? null : NO_COMMENTS;
+  }
+
   /** Delete a comment (the one looked at, when none is named). */
   remove(id = this.active): void {
-    if (id === null || !this.comments().some((c) => c.id === id)) { this.hooks.flash('Click a comment’s marker or card first.'); return; }
+    if (id === null || !this.comments().some((c) => c.id === id)) { this.hooks.flash(PICK_COMMENT); return; }
     if (this.active === id) this.active = null;
     this.change(this.comments().filter((c) => c.id !== id), 'Delete comment');
     this.update();
@@ -275,7 +288,7 @@ export class SlideComments {
 
   /** Delete every comment on this slide. */
   removeAll(): void {
-    if (!this.comments().length) { this.hooks.flash('There are no comments on this slide.'); return; }
+    if (!this.comments().length) { this.hooks.flash(NO_COMMENTS); return; }
     this.active = null;
     this.change([], 'Delete all comments');
     this.update();
@@ -284,7 +297,7 @@ export class SlideComments {
   /** Mark the comment looked at as resolved (or open again). */
   toggleResolved(): void {
     const c = this.comments().find((x) => x.id === this.active);
-    if (!c) { this.hooks.flash('Click a comment’s marker or card first.'); return; }
+    if (!c) { this.hooks.flash(PICK_COMMENT); return; }
     this.actions(c.id).resolve(!c.done);
   }
 

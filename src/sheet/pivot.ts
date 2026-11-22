@@ -199,7 +199,7 @@ export function layoutPivot(pt: PivotTable, src: PivotSource): PivotReport | str
   // no fields yet: Excel's placeholder, until fields are picked
   if (!pt.rows.length && !pt.cols.length && !pt.values.length && !pt.filters.length) {
     return {
-      cells: [[pt.name, null, null], ['Pick fields in the', null, null], ['PivotTable Fields window', null, null]],
+      cells: [[pt.name, null, null], ['Choose fields in the', null, null], ['PivotTable Fields window', null, null]],
       styles: [{ r1: 0, c1: 0, r2: 2, c2: 2, style: { fill: '#f2f2f2', color: '#595959' } }, { r1: 0, c1: 0, r2: 0, c2: 2, style: { bold: true } }],
       body: { row: 3, col: 0, rows: 0, cols: 0 }, rowLines: [], colLines: [], filterRows: 0, headRows: 0, labelCols: 1,
     };
