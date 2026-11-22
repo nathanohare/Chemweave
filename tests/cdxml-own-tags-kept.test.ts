@@ -164,7 +164,7 @@ describe('a TLC lane label changed in ChemDraw (G1-13)', () => {
     // ChemDraw's texts are all still there, as it shows them
     const texts = [...got.doc.captions.values()].map((c) => c.runs.map((r) => r.text).join(''));
     expect(texts).toEqual(expect.arrayContaining(['1a', 'co', 'rxn', '0.35', '0.30']));
-    expect(got.stats.notes).toEqual(['The texts of a TLC plate were changed in another program in a way its settings can\'t follow. It is shown as that program left it. Editing it redraws it from its settings, and you will be asked first.']);
+    expect(got.stats.notes).toEqual(['The texts of a TLC plate were changed in another program in a way its settings can\'t follow. It is shown as that program left it. An edit that redraws it from its settings replaces those changes; Undo brings them back.']);
     // and nothing is said when it is read as written
     expect(readCdxml(xml).stats.notes ?? []).toEqual([]);
   });

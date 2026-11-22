@@ -1862,14 +1862,14 @@ export function frameName(s: Shape): string {
 
 /**
  * A frame's drawing whose texts were changed in ChemDraw in a way its data can't follow (G1-13,
- * review F1b-R07): both are kept. ChemDraw's drawing stays as it is, and the data stays for the
- * Edit command, which first asks whether to redraw from it (replacing what was changed in
- * ChemDraw). Returns the note for the user.
+ * review F1b-R07): both are kept. ChemDraw's drawing stays as it is until an edit draws it again
+ * from the data, in that edit's undo step (review F1d-R01; see design/frame-redrawn.ts). Returns
+ * the note for the user.
  */
 export function markEditedOutside(doc: Doc, s: Shape): string {
   doc.updateShape(s.id, { editedOutside: true });
   const name = frameName(s);
-  return `The texts of ${name} were changed in another program in a way its settings can't follow. It is shown as that program left it. Editing it redraws it from its settings, and you will be asked first.`;
+  return `The texts of ${name} were changed in another program in a way its settings can't follow. It is shown as that program left it. An edit that redraws it from its settings replaces those changes; Undo brings them back.`;
 }
 /** A part of an orbital drawn here that ChemDraw keeps as an oval (an s orbital, a dz²'s ring): how the orbital was asked for (Shape.orb as JSON). */
 export const ORBITAL_TAG = 'Chem Illustrator orbital';

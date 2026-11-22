@@ -33,7 +33,7 @@ import { askGridLayout, type GridPick } from './ui/grid-picker';
 import { groupSelection, selectedGroups } from './editor/groups';
 import { chemistrySelection, loneStructure, repeatsOnAll } from './editor/lone-pick';
 import { readCdxml, ReadStats, frameName } from './io/cdxml';
-import { onRedrawHeld, heldRedraws, redrawHeld, dropHeld, withRedrawAsync } from './design/frame-guard';
+import { onFrameRedrawn } from './design/frame-redrawn';
 import { readCml } from './io/cml';
 import { ChemClient } from './chem/client';
 import type { FragmentResult } from './worker/chem-worker';
@@ -1460,51 +1460,14 @@ function paintEnergyPreview(d: EnergyData, canvas: HTMLCanvasElement): void {
   drawDrawing(ctx, tmp);
 }
 
-/** Insert ▸ Energy Diagram…, or the selected diagram's numbers to change (`id`, its frame). */
-/**
- * Whether to redraw a frame's drawing from its settings although its texts were changed in another
- * program in a way the settings can't follow (Shape.editedOutside, review F1b-R07, F1c-R04): the
- * user is told that redrawing replaces those changes, and chooses.
- */
-async function askRedraw(s: Shape): Promise<boolean> {
-  const got = await askChoice('Redraw from Its Settings?', `The texts of ${frameName(s)} were changed in another program. Redrawing it from its settings replaces those changes.`, [{ value: 'redraw', label: 'Redraw', primary: true }, { value: 'cancel', label: 'Cancel' }], 'cancel');
-  return got === 'redraw';
-}
-
-/**
- * An Edit command on frame `id`: when the frame is marked, asked first (before its window opens);
- * agreed to, the frame may be redrawn while the command runs (frame-guard.ts withRedrawAsync).
- */
-async function asFrameEdit(id: number | null | undefined, run: () => Promise<void>): Promise<void> {
-  const s = id === null || id === undefined ? undefined : doc.shapes.get(id);
-  if (!s?.editedOutside) { await run(); return; }
-  if (await askRedraw(s)) await withRedrawAsync(s.id, run);
-}
-
-// every other redraw of a marked frame (a resize, a spot dragged, a look changed…) is held by the
-// put… functions and asked about here, once, when the change is over (review F1c-R04)
-let askingRedraw = false;
-onRedrawHeld(async () => {
-  if (askingRedraw) return;
-  askingRedraw = true;
-  // (the change that would have redrawn it: undone if the user says no, so a resized frame doesn't
-  // keep a box its drawing no longer fills)
-  const step = doc.topStep;
-  let undone = false;
-  try {
-    for (let ids = heldRedraws(); ids.length; ids = heldRedraws()) {
-      const id = ids[0];
-      const s = doc.shapes.get(id);
-      if (s && await askRedraw(s)) { doc.edit(`Redraw ${s.name ?? 'Frame'}`, () => { redrawHeld(id); }); continue; }
-      dropHeld(id);
-      if (!undone && step && doc.topStep === step) { editor.undo(); undone = true; }
-      if (s) flash(`${frameName(s).replace(/^./, (c) => c.toUpperCase())} was left as the other program drew it${undone ? ', and the change was undone' : ''}.`);
-    }
-  } finally { askingRedraw = false; }
+// a frame changed in another program is redrawn by any edit that needs it (the edit goes ahead, in
+// its own undo step): said so once, with how to get the other program's drawing back (review F1d-R01)
+onFrameRedrawn((_d, s) => {
+  queueMicrotask(() => flash(`${frameName(s).replace(/^an? /, '').replace(/^./, (c) => c.toUpperCase())} redrawn here. Undo brings back the drawing from the other program.`));
 });
 
-async function energyDiagram(id: number | null): Promise<void> { await asFrameEdit(id, () => energyDiagramNow(id)); }
-async function energyDiagramNow(id: number | null): Promise<void> {
+/** Insert ▸ Energy Diagram…, or the selected diagram's numbers to change (`id`, its frame). */
+async function energyDiagram(id: number | null): Promise<void> {
   finishTyping();
   const L = doc.style.bondLength;
   const now = id !== null ? doc.shapes.get(id)?.energy ?? null : null;
@@ -1579,8 +1542,7 @@ function paintPlatePreview(d: PlateData, canvas: HTMLCanvasElement): void {
 }
 
 /** Insert ▸ Lab Figures ▸ TLC Plate… or Gel…, or the selected plate's lanes to change (`id`, its frame). */
-async function plateFigure(kind: PlateKind | null, id: number | null, file?: { name: string; text: string }): Promise<void> { await asFrameEdit(id, () => plateFigureNow(kind, id, file)); }
-async function plateFigureNow(kind: PlateKind | null, id: number | null, file?: { name: string; text: string }): Promise<void> {
+async function plateFigure(kind: PlateKind | null, id: number | null, file?: { name: string; text: string }): Promise<void> {
   finishTyping();
   const now = id !== null ? doc.shapes.get(id)?.plate ?? null : null;
   const k = now?.kind ?? kind ?? 'tlc';
@@ -1748,8 +1710,7 @@ function diagramSvg(d: DiagramData): string {
 }
 
 /** Insert ▸ Diagram…, or the selected diagram's text and look to change (`id`, its frame). */
-async function smartDiagram(id: number | null): Promise<void> { await asFrameEdit(id, () => smartDiagramNow(id)); }
-async function smartDiagramNow(id: number | null): Promise<void> {
+async function smartDiagram(id: number | null): Promise<void> {
   finishTyping();
   const now = id !== null ? doc.shapes.get(id)?.diagram ?? null : null;
   const got = await askDiagram(now, { drawing: doc, preview: diagramSvg, scale: deckNow() ? 1 : 0.7 });
@@ -2484,8 +2445,7 @@ function paintNewmanPreview(d: NewmanData, canvas: HTMLCanvasElement, eye?: stri
  * Chemistry ▸ Newman Projection… (right-click a single bond, or the Newman tool): the bond seen
  * end on, from `frontId`'s end; or projection `editId` (its frame) to change.
  */
-async function newmanProjection(bondId: number | null, frontId: number | null, editId?: number, chartFirst = false): Promise<void> { await asFrameEdit(editId, () => newmanProjectionNow(bondId, frontId, editId, chartFirst)); }
-async function newmanProjectionNow(bondId: number | null, frontId: number | null, editId?: number, chartFirst = false): Promise<void> {
+async function newmanProjection(bondId: number | null, frontId: number | null, editId?: number, chartFirst = false): Promise<void> {
   finishTyping();
   const old = editId !== undefined ? doc.shapes.get(editId)?.newman : undefined;
   let front: number, back: number;
@@ -2665,8 +2625,7 @@ editor.onNewmanEdit = (frame) => void newmanProjection(null, null, frame);
 editor.onTorsionEdit = (frame) => void editTorsion(frame);
 
 /** A torsional energy chart's look: its projections, names, units, barriers and sawhorse (the scan stays as it was). */
-async function editTorsion(id: number): Promise<void> { await asFrameEdit(id, () => editTorsionNow(id)); }
-async function editTorsionNow(id: number): Promise<void> {
+async function editTorsion(id: number): Promise<void> {
   finishTyping();
   const d = doc.shapes.get(id)?.torsion;
   if (!d) return;

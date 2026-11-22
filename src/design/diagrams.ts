@@ -25,7 +25,7 @@ import { gluePoint, shapeBox } from '../objects';
 import { HEX_CELL, geoDef, sectorBox, sectorId, sliceId, textArea } from './geo';
 import { findIcons, isIconId, ICON_PREFIX } from './icons';
 import { axisMarks, parseTaskLine, placeOnAxis, type TimeSpan } from './timescale';
-import { mayRedraw } from './frame-guard';
+import { frameRedrawn } from './frame-redrawn';
 
 // ---------------------------------------------------------------- the data
 
@@ -1099,8 +1099,8 @@ export function diagramParts(d: DiagramData): { shapes: Omit<Shape, 'id'>[]; lin
  */
 export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
-  // (a frame changed in another program is redrawn only once the user agrees; review F1c-R04)
-  if (old && !mayRedraw(old, () => putDiagram(doc, m, d, at, id))) return old.id;
+  // (a frame changed in another program is redrawn too, in this edit's undo step; review F1d-R01)
+  frameRedrawn(doc, old);
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
     const f = old.frame;

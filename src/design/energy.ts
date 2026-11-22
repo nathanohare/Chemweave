@@ -16,7 +16,7 @@ import { bestRotation, crystalPlacer, defaultView, drawCrystal, WIRE_LONE_RADIUS
 import { COVALENT, mvec, type M3, type V3 } from '../chem/crystal';
 import { hydrogensOn, qmBonds, type QmBond } from '../chem/qm-bonds';
 import type { QmAtom } from '../chem/qm-output';
-import { mayRedraw } from './frame-guard';
+import { frameRedrawn } from './frame-redrawn';
 
 /** A species at one column: its name and energy (null: this pathway has nothing in that column). */
 export interface EnergyPoint {
@@ -543,8 +543,8 @@ export function plotFromBox(b: Rect, d: EnergyData, L: number): { at: Vec; w: nu
  */
 export function putEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
-  // (a frame changed in another program is redrawn only once the user agrees; review F1c-R04)
-  if (old && !mayRedraw(old, () => putEnergy(doc, m, d, at, id))) return old.id;
+  // (a frame changed in another program is redrawn too, in this edit's undo step; review F1d-R01)
+  frameRedrawn(doc, old);
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
     const f = old.frame;

@@ -1155,8 +1155,8 @@ export interface Shape {
   frame?: Frame;
   /**
    * A frame's drawing whose texts were changed in another program (ChemDraw) in a way its settings
-   * can't follow: shown as that program left it, the settings kept; its Edit command asks before
-   * redrawing from the settings (G1-13).
+   * can't follow: shown as that program left it, the settings kept; an edit that redraws it from
+   * the settings goes ahead in its own undo step and clears this (G1-13, review F1d-R01).
    */
   editedOutside?: boolean;
   /** An energy diagram's numbers and look, kept on the invisible frame round its drawing (design/energy.ts). */

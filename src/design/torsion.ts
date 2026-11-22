@@ -14,7 +14,7 @@ import { frameBox } from '../editor/frames';
 import { profileAt, type Extremum, type Profile } from '../chem/torsion-profile';
 import { norm180, norm360, type NewmanGroup } from '../chem/newman';
 import { drawEyeMark, drawNewman, newmanTextSize, type NewmanLook } from './newman';
-import { mayRedraw } from './frame-guard';
+import { frameRedrawn } from './frame-redrawn';
 
 export type ConformerNames = 'textbook' | 'klyne' | 'none';
 
@@ -379,8 +379,8 @@ export function torsionCsv(d: Pick<TorsionData, 'points' | 'unit' | 'profile'>):
 /** Draw a diagram in a frame of its own, or the one in frame `id` again. Returns the frame's id. Call inside an edit. */
 export function putTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
-  // (a frame changed in another program is redrawn only once the user agrees; review F1c-R04)
-  if (old && !mayRedraw(old, () => putTorsion(doc, m, d, at, id))) return old.id;
+  // (a frame changed in another program is redrawn too, in this edit's undo step; review F1d-R01)
+  frameRedrawn(doc, old);
   if (old?.frame) {
     for (const x of old.frame.captions) doc.removeCaption(x);
     for (const x of old.frame.arrows) doc.removeArrow(x);
