@@ -63,7 +63,7 @@ jobs:
   speed:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: See whether the pull request changes code
         id: changed
@@ -106,3 +106,20 @@ jobs:
           done
       - if: steps.changed.outputs.code == 'true'
         run: node head/scripts/bench-gate.mjs base1.json,base2.json head1.json,head2.json
+      # start-up: both versions built and served, then started in turns in a real browser
+      # (scripts/startup-gate.mjs fails when this pull request's app takes 25% and 100 ms longer to be up)
+      - if: steps.changed.outputs.code == 'true'
+        run: (cd head && npx vite build > /dev/null) && (cd base && npx vite build > /dev/null)
+      - if: steps.changed.outputs.code == 'true'
+        run: cd head && npx playwright install --with-deps --only-shell chromium
+      - if: steps.changed.outputs.code == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          (cd base && npx vite preview --port 4174 --strictPort > /dev/null 2>&1 &)
+          (cd head && npx vite preview --port 4173 --strictPort > /dev/null 2>&1 &)
+          for p in 4173 4174; do timeout 60 bash -c "until curl -sf http://localhost:$p/ > /dev/null; do sleep 1; done" || { echo "The $([ $p = 4174 ] && echo "base branch's" || echo "pull request's") built app did not start on port $p."; exit 1; }; done
+          # an expected slowdown passes with the label "slower start-up expected" (read now, so a re-run sees a label added later)
+          if gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.labels[].name' | grep -qx 'slower start-up expected'; then export STARTUP_SLOWER_OK=true; fi
+          cd head && node scripts/startup-gate.mjs http://localhost:4174/ http://localhost:4173/
