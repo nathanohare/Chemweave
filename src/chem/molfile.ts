@@ -14,6 +14,7 @@ import { readSpecies } from './species';
 import { flagsByAtom, type ChiralFlag } from './chiral-flag';
 import { cleanUp } from './cleanup';
 import { molProgramLine } from './molfile-header';
+import { labelHydrogens } from './hydrogen-count';
 
 export { molProgramLine };
 
@@ -251,6 +252,15 @@ export function v2000Molfile(head: string[], atoms: MAtom[], bonds: MBond[], ext
   return lines.join('\n') + '\n';
 }
 
+/**
+ * Whether a label is written to a file as a superatom group, so it comes back as the label: any
+ * label of several atoms, and a one-atom label that is more than its atom's element with
+ * hydrogens (Me, DCM's Cl… but not N, OH or NH2 on N, which read back as the element; review F1b-R02).
+ */
+function asGroup(g: MiniGraph, label: string, z: number | undefined): boolean {
+  return g.atoms.length > 1 || (g.atoms.length === 1 && (z === undefined || labelHydrogens(label, z) === null || g.atoms[0].z !== z));
+}
+
 /** Group 13 elements (B, Al, Ga, In, Tl), which the chemistry engine gives no fourth bond as a dative one. */
 const ATE = new Set([5, 13, 31, 49, 81]);
 
@@ -416,7 +426,7 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
     for (const b of kb) { used[b.a] += b.order === 1.5 ? 1.5 : b.order; used[b.b] += b.order === 1.5 ? 1.5 : b.order; }
     // (for a file, laid out at bond length; for the engine, spread a little so no two share a position)
     const laid = files ? layOutGroup(g, x0, y0, { x: 1, y: 0 }) : null;
-    if (files && label && owner >= 0 && g.atoms.length > 1) sgroups.push({ atoms: g.atoms.map((_, k) => base + k), label });
+    if (files && label && owner >= 0 && asGroup(g, label, doc.atoms.get(owner)?.z)) sgroups.push({ atoms: g.atoms.map((_, k) => base + k), label });
     g.atoms.forEach((ga, k) => {
       const missing = ga.hCount !== undefined && hasImplicitH(ga.z) ? implicitHydrogens(ga.z, used[k], ga.charge) - ga.hCount : 0;
       const ang = k * 2.4, r = k === 0 ? 0 : 0.35 + 0.05 * k;
@@ -476,7 +486,7 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       const mx = near.reduce((t, p) => t + (p.x - first.x) / L, 0) / (near.length || 1), my = near.reduce((t, p) => t - (p.y - first.y) / L, 0) / (near.length || 1);
       const len = Math.hypot(x - mx, y - my);
       laid = layOutGroup(g, x, y, near.length && len > 1e-6 ? { x: (x - mx) / len, y: (y - my) / len } : { x: 1, y: 0 });
-      if (g.atoms.length > 1) sgroups.push({ atoms: g.atoms.map((_, k) => base + k), label: a.label! });
+      if (asGroup(g, a.label!, a.z)) sgroups.push({ atoms: g.atoms.map((_, k) => base + k), label: a.label! });
     }
     g.atoms.forEach((ga, k) => {
       // (for the engine, spread expanded atoms a little so no two share a position)
@@ -539,7 +549,10 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
   // (V2000's counts line has three columns for each count: more than 999 atoms or bonds, the
   // engine's molfile included, go as V3000)
   const big = atoms.length > 999 || bonds.length > 999 ? 'more than 999 atoms or bonds' : null;
-  const because = opts.v3000 ? null : (files ? needsV3000(atoms, bonds) : null) ?? big;
+  // (a Rac or Rel flag on wedged centres: V2000 can say only 0, the same as no flag; V3000's
+  // and/or groups say which, review F1b-R13)
+  const flagGroups = files && racRel && bonds.some((b) => (b.stereo === 1 || b.stereo === 6) && map[b.a] >= 0 && flagOf.get(map[b.a])?.flag !== 'Absolute' && !!flagOf.get(map[b.a])) ? 'a Rac or Rel chiral flag' : null;
+  const because = opts.v3000 ? null : (files ? needsV3000(atoms, bonds) ?? flagGroups : null) ?? big;
   const v3 = !!(opts.v3000 || because);
   if (files && v3 && racRel) {
     const next = { and: 0, or: 0 };

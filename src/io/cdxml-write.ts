@@ -1849,7 +1849,9 @@ class CdxmlWriter {
       // a radical's dot names its radical atom, as ChemDraw's does
       const radical = !owner && s.kind === 'symbol' && s.symbol === 'Electron' ? this.radicalOwner(s) : null;
       if (radical) g.appendChild(this.el('represent', { attribute: 'Radical', object: this.nodeId(radical.id) }));
-      const host = owner || radical ? this.fragOfAtom.get((owner ?? radical)!.id) ?? null : s.kind === 'symbol' ? this.nearestFragment(s) : null;
+      // (a chiral flag stuck to its structure goes in that structure's fragment, as ChemDraw keeps it)
+      const flagHome = s.kind === 'symbol' && CHIRAL_FLAGS[s.symbol ?? ''] && s.pin?.on === 'atom' ? this.fragOfAtom.get(s.pin.ref[0]) ?? null : null;
+      const host = owner || radical ? this.fragOfAtom.get((owner ?? radical)!.id) ?? null : flagHome ?? (s.kind === 'symbol' ? this.nearestFragment(s) : null);
       (host ?? this.page).appendChild(g);
     }
     this.changed = true;

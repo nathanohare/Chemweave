@@ -6,7 +6,7 @@
 // drag, so they move with the pointer). Moving one by hand keeps the new place if it is still on
 // what it was stuck to, and frees it if it was taken away.
 
-import type { Arrow, Doc, Entity, Pin, Shape } from '../model';
+import { CHIRAL_FLAGS, type Arrow, type Doc, type Entity, type Pin, type Shape } from '../model';
 import type { Vec } from '../geom';
 import { add, dist, dot, len, mul, normDegrees, perp, sub } from '../geom';
 
@@ -15,6 +15,8 @@ const REACH = 0.9;
 /** A charge sign may sit further off its atom (in the middle of its ring, as on tropylium). */
 const CHARGE_REACH = 1.6;
 const CHARGES = new Set(['CirclePlus', 'CircleMinus', 'Plus', 'Minus']);
+/** A chiral flag sits a bond length or so below its structure, and may be moved further by hand and stay its flag. */
+const FLAG_REACH = 3;
 const EPS = 1e-3;
 
 interface Frame { o: Vec; u: Vec; v: Vec; s: number; hand: number }
@@ -237,7 +239,14 @@ export function followPins(doc: Doc, before?: ReadonlyMap<string, Entity | null>
   for (const s of doc.shapes.values()) {
     if (!s.pin) continue;
     const c = { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
-    const o = settle(doc, s.pin, c, CHARGES.has(s.symbol ?? '') ? CHARGE_REACH : REACH, shapeAxis(s));
+    const flag = s.kind === 'symbol' && !!CHIRAL_FLAGS[s.symbol ?? ''];
+    const o = settle(doc, s.pin, c, flag ? FLAG_REACH : CHARGES.has(s.symbol ?? '') ? CHARGE_REACH : REACH, flag ? null : shapeAxis(s));
+    // (a chiral flag moved by hand is stuck again to its one atom, so it never turns round it)
+    if (flag && o.pin && o.pin !== s.pin && o.pin.ref.length > 1) {
+      const a = doc.atoms.get(o.pin.ref[0])!;
+      const p = o.at ?? c;
+      o.pin = { on: 'atom', ref: [a.id], at: { x: p.x - a.x, y: p.y - a.y }, hand: 1, was: { x: p.x, y: p.y } };
+    }
     if (o.pin === s.pin) continue;
     const patch: Partial<Shape> = { pin: o.pin };
     if (o.at) {

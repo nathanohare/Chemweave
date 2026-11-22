@@ -23,6 +23,7 @@ import { ringBonds, ringsThroughBond } from '../chem/aromatic';
 import { DEG } from '../geom';
 import { chordLocal, ellipseArcPoints, headBend, swapHalf } from '../objects';
 import { pinSymbols } from '../chem/pins';
+import { stickFlag } from '../chem/chiral-flag';
 import { kids, descendants, withoutDoctype } from './xml';
 import { styleFromFace, isSymbolFont, fromSymbolFont, symbolOnlyByChoice, plainByChoice } from '../richtext';
 import { dataUrl, fromDataUrl, imageSize } from '../render/images';
@@ -114,6 +115,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
   const skip = (what: string) => { stats.skipped[what] = (stats.skipped[what] ?? 0) + 1; };
   /** Frames' drawings with the texts they drew as written (see takeFrameTexts). */
   const frameTexts = new Map<number, string[]>();
+  /** Chiral flags kept inside a structure's fragment, as ChemDraw keeps them: the flag and the fragment. */
+  const flagHomes: [number, Element][] = [];
 
   // Document style.
   const st: DocStyle = { ...doc.style, name: 'From file' };
@@ -1128,6 +1131,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
           const r = tb.length >= 4 ? { x1: tb[0], y1: tb[1], x2: tb[2], y2: tb[3] } : { x1: Math.min(bb[0], bb[2]), y1: bb[1] - 11, x2: Math.max(bb[0], bb[2]), y2: bb[1] };
           const pad = 2;
           add({ ...base, kind: 'symbol', symbol: sym, x1: r.x1 - pad, y1: r.y1 - pad, x2: r.x2 + pad, y2: r.y2 + pad });
+          // inside a structure's fragment: that structure's flag (stuck to it once its atoms are in)
+          if (g.parentElement?.nodeName === 'fragment') flagHomes.push([base.id, g.parentElement]);
         } else if (sym === 'LonePair' || sym === 'LonePairBar' || sym === 'RadicalCation' || sym === 'RadicalAnion') {
           // two points: a lone pair's ends, or a radical ion's dot and then the middle of its sign
           add({ ...base, kind: 'symbol', symbol: sym, x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
@@ -1460,6 +1465,12 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
       }
     }
     attachRingFills(doc);
+    // a chiral flag goes with the structure whose fragment it was in (review F1b-R01)
+    for (const [id, frag] of flagHomes) {
+      const s = doc.shapes.get(id);
+      const atoms = kids(frag).filter((k) => k.nodeName === 'n').map((k) => atomOfNode.get(k.getAttribute('id') ?? '')).filter((x): x is number => x !== undefined);
+      if (s && atoms.length) stickFlag(doc, s, atoms);
+    }
     // lone pairs, radical dots and circled charges go with their atoms
     pinSymbols(doc);
     fillFrameMembers(doc);
