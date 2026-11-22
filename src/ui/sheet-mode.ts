@@ -67,6 +67,8 @@ import type { SparkKind } from '../sheet/sparklines';
 import { themeOf } from '../sheet/themes';
 import { SHEET_PAPERS, type PaperName } from '../sheet/page-setup';
 import { defaultPaper } from '../print-layout';
+import { dataTableRef } from '../sheet/what-if';
+import { paintCanRun } from './can-run';
 
 /** The header of each Hammett column (σm and σp show their m and p as italic subscripts). */
 const HAMMETT_HEADS: Record<HammettColumn, string> = { group: 'Group', sigma: 'σ', F: 'F', R: 'R', sm: 'σm', sp: 'σp' };
@@ -645,6 +647,27 @@ export class SheetMode {
       this.view.onZoom = () => this.statusZoom?.show();
     }
     this.statusZoom.show();
+  }
+
+  /**
+   * Why a sheet command cannot run now (S15, S85; G5-28): the reason it would show in a toast,
+   * null when it can, undefined when it has no check. The menus and the ribbon grey it out with
+   * the reason in the tooltip.
+   */
+  cannotRun(name: string): string | null | undefined {
+    const v = this.view;
+    const s = v.sheet;
+    const check = ['remove-duplicates', 'custom-sort', 'text-to-columns', 'property-column', 'data-table'];
+    if (!check.includes(name)) return undefined;
+    if (!s || s.dashboard) return null;
+    switch (name) {
+      case 'remove-duplicates': return this.tableAt() ? null : 'Click in a table (or select it) to remove its duplicate rows.';
+      case 'custom-sort': return this.tableAt() ? null : 'Click in a table (or select its rows) to sort it.';
+      case 'text-to-columns': { const R = s.clip(v.sel.range) ?? v.sel.range; return R.c1 === R.c2 ? null : 'Select one column of text to split (Text to Columns works on one column at a time).'; }
+      case 'property-column': { const { r, c } = v.sel.active; return this.structureColumns(s, s.currentRegion(r, c)).length ? null : 'Click in a table with a column of structures (or SMILES) first. To start one, draw a structure in a cell (Chemistry ▸ Structure).'; }
+      case 'data-table': { const ref = dataTableRef(v.sel.range); return typeof ref === 'string' ? ref : null; }
+    }
+    return undefined;
   }
 
   /** Sheet commands (from the ribbon, the menus and keys). False when the name isn't one. */
@@ -2446,6 +2469,8 @@ export class SheetMode {
     const st = s.styleAt(r, c) ?? {};
     // (some buttons are on two tabs, as in Excel: Filter on Home and on Data)
     this.showStatusBar();
+    // commands that cannot run here are greyed, with the reason in the tooltip (S15, S85)
+    paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('button[data-sh]'), 'sh', (n) => this.cannotRun(n));
     const press = (name: string, on: boolean) => {
       for (const b of document.querySelectorAll(`#sheet-ribbon [data-sh="${name}"], #sheet-statusbar [data-sh="${name}"]`)) {
         if (b instanceof HTMLInputElement) b.checked = on;

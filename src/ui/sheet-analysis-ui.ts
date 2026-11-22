@@ -607,10 +607,13 @@ export class SheetAnalysis {
 
   /** Data > What-If Analysis menu. */
   whatIfMenu(x: number, y: number): void {
-    popupMenu(x, y, [
+    // Data Table is greyed, with the reason as its tooltip, until a table is selected (S15, S85)
+    const ref = dataTableRef(this.view.sel.range);
+    const m = popupMenu(x, y, [
       ['Goal Seek…', () => this.goalSeekWindow()],
-      ['Data Table…', () => this.dataTableWindow()],
+      ['Data Table…', () => this.dataTableWindow(), typeof ref !== 'string'],
     ]);
+    if (typeof ref === 'string') m.querySelectorAll('button')[1].title = ref;
   }
 
   /** Goal Seek: find the value of one cell that makes a formula give a target. */

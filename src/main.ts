@@ -44,6 +44,7 @@ import { pubchemHtml, pubchemRuns, type PubChemState } from './ui/pubchem-panel'
 import { paragraphPages } from './document/doc-file';
 import { reviewAuthor, setReviewAuthor } from './document/revisions';
 import { NMR_SOLVENTS, NmrPanel, solventLabel } from './ui/nmr-panel';
+import { paintCanRun, clearCanRun } from './ui/can-run';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
 import { compareMode, nmrQuality, nmrSpectrumMhz, sampleSpectrumData, setCompareMode, setNmrQuality, setNmrSpectrumMhz, spectrumSvg, type CompareMode } from './ui/nmr-spectrum';
 import { nmrAutoPredict, nmrRange, peakLabels, setNmrAutoPredict, setNmrRange, setPeakLabels, type PeakLabels } from './ui/nmr-settings';
@@ -826,7 +827,7 @@ const analysisBox = new AnalysisBox($('#analysis-section'));
 const warningsBox = new WarningsBox($('#warnings-section'));
 canvasRibbon.bodyEnd.append(analysisBox.el);
 canvasRibbon.tabEnd.append(warningsBox.button);
-canvasRibbon.el.addEventListener('cr-tab', () => fitRibbons());
+canvasRibbon.el.addEventListener('cr-tab', () => { fitRibbons(); refreshCanRun(); });
 
 // (the Canvas ribbon's tabs stay put; what is selected brings out its context toolbox)
 const showRibbonContext = () => { contextBoxes.follow(); };
@@ -2937,17 +2938,60 @@ interface StepSpecies {
  * The step of the selected reaction arrow, or of the only one in the drawing; null (and a note
  * said) when there is none to choose.
  */
-function pickedStep(what: string): { step: ReturnType<typeof reactionSteps>[number]; items: ReturnType<typeof schemeItems>; m: ReturnType<typeof editor.measure> } | null {
+type PickedStep = { step: ReturnType<typeof reactionSteps>[number]; items: ReturnType<typeof schemeItems>; m: ReturnType<typeof editor.measure> };
+/** The reaction step of the selected arrow (or the only one), or why there is none. */
+function findStep(what: string): PickedStep | string {
   const m = editor.measure();
   const items = schemeItems(doc, m);
   const steps = reactionSteps(doc, items);
   const picked = steps.filter((s) => editor.sel.arrows.has(s.arrow.id));
   const step = picked[0] ?? (steps.length === 1 ? steps[0] : null);
-  if (!step) {
-    flash(steps.length ? `Select the arrow of the step to ${what}.` : 'No reaction step found: draw the starting materials, an arrow and the products.', 6000);
-    return null;
-  }
+  if (!step) return steps.length ? `Select the arrow of the step to ${what}.` : 'No reaction step found: draw the starting materials, an arrow and the products.';
   return { step, items, m };
+}
+function pickedStep(what: string): PickedStep | null {
+  const got = findStep(what);
+  if (typeof got === 'string') { flash(got, 6000); return null; }
+  return got;
+}
+
+/**
+ * Why a drawing command cannot run now (S15, S85; G5-28): the reason it would otherwise show in a
+ * toast, null when it can run, undefined when it has no check. The menus and the ribbon grey the
+ * command out with this reason in its tooltip.
+ */
+function whyDrawingCannotRun(cmd: string): string | null | undefined {
+  const root = () => { const r = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited; return r !== null && doc.atoms.has(r) ? r : null; };
+  switch (cmd) {
+    case 'contract-label': { const g = selectedGroup(doc, editor.sel.atoms); return 'error' in g ? g.error : null; }
+    case 'arrange-grid': return editor.gridCount() < 2 ? 'Select two or more structures or objects to put in a grid.' : null;
+    case 'stoichiometry-table': case 'check-balance': {
+      if (!doc.arrows.size) return 'No reaction step found: draw the starting materials, an arrow and the products.';
+      const got = findStep(cmd === 'check-balance' ? 'check' : 'make the table for');
+      return typeof got === 'string' ? got : null;
+    }
+    case 'rgroup-table': {
+      const r = root();
+      if (r === null) return 'Select a structure with R groups (R1, R2, X…) first.';
+      return rGroupsOf(doc, [...doc.fragmentOf(r)]).length ? null : 'This structure has no R groups. Type R1, R2… (or R, X, Ar) as atom labels where the groups go.';
+    }
+    case 'chiral-flag': return root() === null ? 'Select a structure first.' : null;
+    case 'animate-step': return pickedReactionArrow() === undefined ? 'Select a reaction arrow first, or use Animate Reaction for the whole scheme.' : null;
+    case 'turn-3d': return editor.sel.atoms.size ? null : 'Select a structure to rotate in 3-D.';
+    case 'scale': return editor.hasSelection() ? null : 'Select something to scale.';
+    case 'action-settings': {
+      const ok = !!deckNow() && [...editor.sel.shapes].some((id) => { const s = doc.shapes.get(id); return !!s && s.kind === 'geo' && !s.diagram && !s.energy; });
+      return ok ? null : 'Select an action button or a shape on a slide first (Insert ▸ Shapes ▸ Action buttons).';
+    }
+    default: return undefined;
+  }
+}
+/** Why a command cannot run in the mode now (the sheet answers for its own); undefined: no check. */
+function whyCannotRun(cmd: string): string | null | undefined {
+  const mode = menuMode();
+  if (mode === 'sheet') return sheetMode?.cannotRun(cmd);
+  if (mode === 'drawing' || mode === 'slides' || mode === 'design') return whyDrawingCannotRun(cmd);
+  return undefined;
 }
 
 /**
@@ -5860,6 +5904,22 @@ function historyStep(redo: boolean): string | null {
  * (Undo Add Ring), on the toolbar and in the Edit menu. Checked after each click and key press.
  */
 let historyQueued = false;
+/** The ribbon buttons on show (Canvas, Presentation and Design) greyed when their command cannot
+ *  run now, with the reason in the tooltip (S15, S85; G5-28). Once a frame at most. */
+let canRunQueued = false;
+function refreshCanRun(): void {
+  if (canRunQueued) return;
+  canRunQueued = true;
+  requestAnimationFrame(() => {
+    canRunQueued = false;
+    const mode = menuMode();
+    if (mode !== 'drawing' && mode !== 'slides' && mode !== 'design') return;
+    const shown = [...document.querySelectorAll<HTMLButtonElement>('#canvas-ribbon button[data-cmd], #ribbon button[data-cmd]')].filter((b) => b.getClientRects().length > 0);
+    paintCanRun(shown, 'cmd', whyDrawingCannotRun);
+  });
+}
+for (const ev of ['pointerup', 'keyup'] as const) document.addEventListener(ev, refreshCanRun, true);
+
 function refreshHistory(): void {
   if (historyQueued) return;
   historyQueued = true;
@@ -10594,6 +10654,8 @@ function showMenu(m: Menu | null, focus = true): void {
   }
   if (!m) return;
   refreshHistory();
+  // commands that cannot run now are greyed, with the reason in the tooltip (S15, S85)
+  paintCanRun([...m.list.querySelectorAll<HTMLButtonElement>('button[data-cmd]')].filter((b) => !b.closest('[data-mode-hid]')), 'cmd', whyCannotRun);
   m.list.style.setProperty('--menu-top', `${m.btn.getBoundingClientRect().bottom}px`);
   fitMenu(m.list);
   if (focus) menuItems(m.list)[0]?.focus();
@@ -10787,6 +10849,8 @@ function menuMode(): string { return drawingOnTop() ? 'drawing' : ws.active.mode
  */
 function tickMenuModes(): void {
   const mode = menuMode();
+  // (a command greyed for the last mode is given back; showMenu greys it again if it still cannot run)
+  clearCanRun(document.querySelector('header')!);
   // what belongs to another mode is left out of the menus (marked, so what is hidden for other reasons stays hidden)
   for (const el of document.querySelectorAll<HTMLElement>('header .menu > button, header .menu > .submenu, header .menu.sub > button')) {
     const modes = el.dataset.modes ?? el.closest<HTMLElement>('[data-item-modes]')?.dataset.itemModes;
@@ -16179,7 +16243,7 @@ const buildHint = new BuildHint({
 });
 editor.onOverlay = () => { smartPane.place(); buildHint.place(); };
 editor.onSmartAdded = (frame, cap) => smartPane.focusCaption(frame, cap);
-editor.onChange = () => { welcomeWatch?.(); showToolStatus(); ($('#go-sel') as HTMLButtonElement).disabled = !editor.hasSelection(); showRibbonContext(); smartPane.refresh(); buildHint.refresh(); if (ws.active.mode === 'slides' || ws.active.mode === 'design') { textRibbonNow()?.refresh(); showContextTabs(); masterPanel?.refresh(); } textToolbox?.refresh(); canvasFont?.refresh(); animUi?.selectionChanged(); updateStereo(); scheduleAnalysis(); updatePanels(); ws.noteChange(); stylePanel.refresh(); void refreshDescriptors(); scheduleLabelCheck(); };
+editor.onChange = () => { refreshCanRun(); welcomeWatch?.(); showToolStatus(); ($('#go-sel') as HTMLButtonElement).disabled = !editor.hasSelection(); showRibbonContext(); smartPane.refresh(); buildHint.refresh(); if (ws.active.mode === 'slides' || ws.active.mode === 'design') { textRibbonNow()?.refresh(); showContextTabs(); masterPanel?.refresh(); } textToolbox?.refresh(); canvasFont?.refresh(); animUi?.selectionChanged(); updateStereo(); scheduleAnalysis(); updatePanels(); ws.noteChange(); stylePanel.refresh(); void refreshDescriptors(); scheduleLabelCheck(); };
 chem.onReady = () => {
   (window as any).__chemReadyMs = performance.now() - startMs;
   sheetChem.flush();
