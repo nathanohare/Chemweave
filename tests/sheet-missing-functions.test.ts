@@ -67,7 +67,7 @@ describe('opening an Excel file', () => {
 
   it('warns about a function this program lacks, prefixed or not', async () => {
     const { warnings } = await open(['=FACT(5)', '=GCD(12,8)+1', '=SUM(1,NOSUCHFN(2))']);
-    expect(warnings).toEqual(['2 formulas use Excel functions this program can\'t work out yet.']);
+    expect(warnings).toEqual(['2 formulas use Excel functions Chemweave can\'t calculate yet.']);
   });
 
   it('does not warn about functions it knows, LAMBDA names, LET names or sheet names that look like calls', async () => {
