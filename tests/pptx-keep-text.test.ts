@@ -173,6 +173,17 @@ describe('PowerPoint text box frames (G2-05)', () => {
     expect(off(parasOf(xml, 'Centred').sp)).toEqual([914400 + 10 * E, 500000 + 20 * E, 4000000, 1500000]);
   });
 
+  it('keeps the anchor and margins of a box resized here, its extent changed by as much', async () => {
+    const xml = await save(deck(anchored), (cs) => { cs[0].wrap = cs[0].wrap! + 50; if (cs[0].boxH !== undefined) cs[0].boxH += 30; });
+    const { sp } = parasOf(xml, 'Centred');
+    const [x, y, w, h] = off(sp);
+    expect([x, y]).toEqual([914400, 500000]);
+    expect(w).toBe(4000000 + 50 * E);
+    expect(h).toBe(1500000 + 30 * E);
+    expect(sp).toContain('anchor="ctr"');
+    expect(sp).toContain('lIns="91440"');
+  });
+
   it('keeps a vertical box\'s size', async () => {
     const vertical = textBox(`<a:p>${run('Down')}</a:p>`, '<a:bodyPr vert="vert270" wrap="square" rtlCol="0"/>', [5000000, 500000, 800000, 3000000]);
     const { sp } = parasOf(await save(deck(vertical)), 'Down');

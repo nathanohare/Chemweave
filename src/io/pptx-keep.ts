@@ -211,14 +211,28 @@ const near = (a: number | null | undefined, b: number | null | undefined) => (a 
 
 /**
  * The frame kept for a text box, moved as far as its text was moved here (in EMU, `emu` turning
- * points into them), while its width, height, fit, direction and turn are as read; else null.
+ * points into them), while its fit, direction and turn are as read; else null. A box made wider
+ * or taller here keeps its anchor, margins and AutoFit, as resizing it in PowerPoint does, its
+ * extent changed by as much (`autoH`: the text's height here, in points, for a box that grows
+ * with its text).
  */
-export function frameNow(c: Caption, emu: (pt: number) => number): { xfrm: string; bodyPr: string; dx: number; dy: number } | null {
+export function frameNow(c: Caption, emu: (pt: number) => number, autoH?: number): { xfrm: string; bodyPr: string; dx: number; dy: number } | null {
   if (!c.pbox || c.ph) return null;
   let k: FrameKept;
   try { k = JSON.parse(c.pbox) as FrameKept; } catch { return null; }
-  if (!near(c.wrap, k.wrap) || !near(c.boxH, k.boxH) || (c.fit ?? null) !== k.fit || (c.dir ?? null) !== k.dir || !near(c.rot, k.rot)) return null;
+  if ((c.fit ?? null) !== k.fit || (c.dir ?? null) !== k.dir || !near(c.rot, k.rot)) return null;
   const dx = c.x - k.x, dy = c.y - k.y;
-  const xfrm = k.xf.replace(/<a:off x="(-?\d+)" y="(-?\d+)"/, (_, x: string, y: string) => `<a:off x="${Number(x) + emu(dx)}" y="${Number(y) + emu(dy)}"`);
+  let xfrm = k.xf.replace(/<a:off x="(-?\d+)" y="(-?\d+)"/, (_, x: string, y: string) => `<a:off x="${Number(x) + emu(dx)}" y="${Number(y) + emu(dy)}"`);
+  if (!near(c.wrap, k.wrap) || !near(c.boxH, k.boxH)) {
+    // (a box that didn't wrap, or now doesn't: made afresh)
+    if (k.wrap === null || c.wrap === undefined) return null;
+    const ins = (n: string, d: number) => Number(new RegExp(` ${n}="(\\d+)"`).exec(k.bp)?.[1] ?? d);
+    xfrm = xfrm.replace(/<a:ext cx="(\d+)" cy="(\d+)"/, (_, cx: string, cy: string) => {
+      const w = Math.max(1, Number(cx) + emu(c.wrap! - k.wrap!));
+      const h = k.boxH !== null && c.boxH !== undefined ? Number(cy) + emu(c.boxH - k.boxH)
+        : autoH !== undefined && /<a:spAutoFit\/>/.test(k.bp) ? emu(autoH) + ins('tIns', 45720) + ins('bIns', 45720) : Number(cy);
+      return `<a:ext cx="${w}" cy="${Math.max(1, h)}"`;
+    });
+  }
   return { xfrm, bodyPr: k.bp, dx, dy };
 }
