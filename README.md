@@ -99,7 +99,7 @@ Every keyboard shortcut can be changed (**Edit ▸ Keyboard Shortcuts…**), and
 
 ## Presentations, spreadsheets, documents and designs
 
-Chemweave has five modes: **Canvas** (Chemistry), **Presentation** (Slideshow), **Spreadsheet** (Tables, Charts, and Dashboards), **Document** (Text document) and **Design** (Posters, Graphical abstracts, Figures). Document, Spreadsheet and Presentation modes save .docx, .xlsx and .pptx files that open in Microsoft Word, Excel and PowerPoint, and add what those programs can't do for a chemist.
+Chemweave has five modes, plus an **SI Project** tab for putting together a paper's Supporting Information: **Canvas** (Chemistry), **Presentation** (Slideshow), **Spreadsheet** (Tables, Charts, and Dashboards), **Document** (Text document) and **Design** (Posters, Graphical abstracts, Figures). Document, Spreadsheet and Presentation modes save .docx, .xlsx and .pptx files that open in Microsoft Word, Excel and PowerPoint, and add what those programs can't do for a chemist.
 
 | Presentation | Spreadsheet |
 |---|---|
