@@ -199,7 +199,7 @@ import { htmlToRich } from './text/html';
 import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
-import { fieldFileCommand, isTypingField } from './editor/field-keys';
+import { fieldKeyHandler, isTypingField } from './editor/field-keys';
 import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
@@ -5649,17 +5649,7 @@ function formatNotes(f: TextFormat): boolean {
 }
 /** Commands whose keys work while typing speaker notes. */
 // the file's own keys (Save, Open, Print…) from any text box, what is typed going in first (editor/field-keys.ts)
-window.addEventListener('keydown', (e) => {
-  if (e.defaultPrevented || !(e.ctrlKey || e.metaKey)) return;
-  const name = fieldFileCommand(e.target, chordOf(e), (c) => keymap.lookup('command', c));
-  if (!name) return;
-  e.preventDefault();
-  e.stopPropagation();
-  // a box that takes its text when changed or left (Outline View, a Smart Scheme row) takes it now
-  (e.target as HTMLElement).dispatchEvent(new Event('change', { bubbles: true }));
-  flushNotes();
-  void command(name);
-}, true);
+window.addEventListener('keydown', fieldKeyHandler({ lookup: (ctx, c) => keymap.lookup(ctx, c), slides: () => editor.slideKeys, flush: () => flushNotes(), run: (name) => void command(name) }), true);
 
 notesBox.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;

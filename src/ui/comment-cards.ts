@@ -108,6 +108,8 @@ function noteBox(note: Pick<CommentNote, 'text' | 'runs'>, placeholder: string, 
     else if (e.key === 'Escape') { e.preventDefault(); finish(!value && !!read().text.trim()); }
   });
   box.addEventListener('blur', () => finish(true));
+  // (the file keys, Ctrl+S, take what is typed first)
+  box.addEventListener('change', () => finish(true));
   // keys typed here are the comment's, not the page's
   for (const ev of ['keyup', 'keypress', 'paste', 'copy', 'cut'] as const) box.addEventListener(ev, (e) => e.stopPropagation());
   return { el: box, focus };
