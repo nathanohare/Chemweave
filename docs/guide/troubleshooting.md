@@ -24,13 +24,13 @@ Settings (keyboard shortcuts, your abbreviations and templates, styles, palettes
 
 **Keeping a copy.** **Edit ▸ Settings File ▸ Export Settings…** saves every setting in one file, to keep or to set up another computer. **Import Settings…** reads it back.
 
-**A damaged settings file.** Each time the settings read whole, Chemweave keeps a copy beside them (`settings.bak`). If `settings.json` is ever damaged (a power cut while saving, a sync conflict), Chemweave moves it aside as `settings.damaged-….json`, puts the last good copy back, and says so. Nothing is lost except changes made since that copy.
+**A damaged settings file.** Each time the settings read whole, Chemweave keeps a copy beside them (`settings.bak`). If `settings.json` is ever damaged (a power outage while saving, a sync conflict), Chemweave moves it aside as `settings.damaged-….json`, puts the last good copy back, and says so. Nothing is lost except changes made since that copy.
 
 **Starting again from the defaults.** Export your settings first if you might want them back. Then close the app and delete (or rename) `settings.json` in the folder above. The next start uses the defaults.
 
 ## Work that seems lost
 
-- **The app closed without saving** (a crash, a power cut, Windows restarting for updates): the next start offers your unsaved work back. To look again later, use **File ▸ Versions and Recovery ▸ Recover Unsaved Work…**.
+- **The app closed without saving** (a crash, a power outage, Windows restarting for updates): the next start offers your unsaved work back. To look again later, use **File ▸ Versions and Recovery ▸ Recover Unsaved Work…**.
 - **You saved over something you wanted:** **File ▸ Versions and Recovery ▸ Version History…** lists earlier versions kept each time the file was saved; open one as a copy, or restore it.
 - **A file isn't where it was:** **File ▸ Open Recent** names the folder each recent file was in (in the web version, Chrome and Edge only). A file moved or renamed since is taken off the list.
 

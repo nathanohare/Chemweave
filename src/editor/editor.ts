@@ -2536,7 +2536,7 @@ export class Editor {
     return [...out];
   }
 
-  /** Chemistry > Structure > Kekulé Form for η Ligand: the picked η³–η⁸ ligands drawn with their double bonds, or delocalized again. */
+  /** Right-click > Structure > Kekulé Form for η Ligand: the picked η³–η⁸ ligands drawn with their double bonds, or delocalized again. */
   toggleHaptoKekule(contextBond: number | null = null): string {
     const ids = this.haptoCentresPicked(contextBond);
     if (!ids.length) return 'Select an η ligand\'s ring or allyl, its hapto bond, or the metal.';
