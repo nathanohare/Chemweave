@@ -168,16 +168,41 @@ const iterOf = (el: Element, ns: string, local: string): Element[] => [...(is(el
 const wAttr = (el: Element, local: string): string | null => el.getAttributeNS(W, local);
 const on = (el: Element | null): boolean => !!el && [null, '1', 'true', 'on'].includes(wAttr(el, 'val'));
 
-type Styles = Map<string, [number, boolean]>;
+/** Bold, italic, underline and raised or lowered, as a style or a run sets them (unset: not said). */
+interface Look { bold?: boolean; italic?: boolean; underline?: boolean; valign?: VAlign }
 
-/** {style ID: [heading level or 0, bold]} from word/styles.xml. */
+/** The styles of word/styles.xml: each one's heading level (0 for none) and look, its basedOn chain followed. */
+interface Styles { level: Map<string, number>; look: Map<string, Look>; defaultPara: string }
+
+/** What a w:rPr sets (17.3.2.28): b, i, u, vertAlign, and w:position as raised or lowered. */
+function lookOf(rpr: Element | null): Look {
+  const out: Look = {};
+  if (!rpr) return out;
+  const b = find(rpr, W, 'b'), i = find(rpr, W, 'i'), u = find(rpr, W, 'u');
+  if (b) out.bold = on(b);
+  if (i) out.italic = on(i);
+  if (u) out.underline = (wAttr(u, 'val') ?? 'single') !== 'none';
+  const v = find(rpr, W, 'vertAlign'), pos = find(rpr, W, 'position');
+  if (v) out.valign = ({ superscript: 'super', subscript: 'sub' } as Record<string, VAlign>)[wAttr(v, 'val') ?? ''] ?? 'normal';
+  else if (pos) { const n = Number(wAttr(pos, 'val') ?? 0); out.valign = n > 0 ? 'super' : n < 0 ? 'sub' : 'normal'; }
+  return out;
+}
+
+const over = (a: Look, b: Look): Look => {
+  const out = { ...a };
+  for (const [k, v] of Object.entries(b)) if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+  return out;
+};
+
+/** The styles of word/styles.xml: heading levels, and each style's look over those it is based on. */
 function styleInfo(z: Record<string, Uint8Array>): Styles {
-  const out: Styles = new Map();
+  const out: Styles = { level: new Map(), look: new Map(), defaultPara: '' };
   let root: Element;
   try {
     if (!z['word/styles.xml']) return out;
     root = parseXml(new TextDecoder().decode(z['word/styles.xml'])).documentElement;
   } catch { return out; }
+  const own = new Map<string, { look: Look; base: string }>();
   for (const st of iterOf(root, W, 'style')) {
     const sid = wAttr(st, 'styleId') ?? '';
     const nameEl = find(st, W, 'name');
@@ -186,22 +211,30 @@ function styleInfo(z: Record<string, Uint8Array>): Styles {
     const m = /^heading\s*(\d)/.exec(name);
     if (m) level = Number(m[1]);
     else if (name === 'title') level = 1;
-    const rpr = find(st, W, 'rPr');
-    out.set(sid, [level, !!rpr && on(find(rpr, W, 'b'))]);
+    out.level.set(sid, level);
+    const based = find(st, W, 'basedOn');
+    own.set(sid, { look: lookOf(find(st, W, 'rPr')), base: based ? wAttr(based, 'val') ?? '' : '' });
+    if (wAttr(st, 'type') === 'paragraph' && ['1', 'true', 'on'].includes(wAttr(st, 'default') ?? '')) out.defaultPara = sid;
   }
+  const resolve = (id: string, seen: Set<string>): Look => {
+    const hit = out.look.get(id);
+    if (hit) return hit;
+    const s = own.get(id);
+    if (!s || seen.has(id)) return {};
+    seen.add(id);
+    const look = over(s.base ? resolve(s.base, seen) : {}, s.look);
+    out.look.set(id, look);
+    return look;
+  };
+  for (const id of own.keys()) resolve(id, new Set());
   return out;
 }
 
-function runFormat(rpr: Element | null, styleBold: boolean): [boolean, boolean, VAlign] {
-  let bold = styleBold, italic = false, valign: VAlign = 'normal';
-  if (rpr) {
-    const b = find(rpr, W, 'b');
-    if (b) bold = on(b);
-    italic = on(find(rpr, W, 'i'));
-    const v = find(rpr, W, 'vertAlign');
-    if (v) valign = ({ superscript: 'super', subscript: 'sub' } as Record<string, VAlign>)[wAttr(v, 'val') ?? ''] ?? 'normal';
-  }
-  return [bold, italic, valign];
+/** A run's look: its paragraph style's, its character style's, then its own. */
+function runFormat(rpr: Element | null, para: Look, styles: Styles): [boolean, boolean, VAlign, boolean] {
+  const rs = rpr ? find(rpr, W, 'rStyle') : null;
+  const l = over(over(para, rs ? styles.look.get(wAttr(rs, 'val') ?? '') ?? {} : {}), lookOf(rpr));
+  return [!!l.bold, !!l.italic, l.valign ?? 'normal', !!l.underline];
 }
 
 /** A file of the .docx named by a relationship's target (relative to word/). */
@@ -298,10 +331,12 @@ const SKIP = new Set(['del', 'moveFrom', 'pPr', 'rPr', 'fldChar', 'instrText', '
 /** A w:p as one or more [runs, heading level]: split at its line and page breaks. */
 function docxParagraph(p: Element, styles: Styles): [Run[], number][] {
   const ppr = find(p, W, 'pPr');
-  let level = 0, styleBold = false;
+  let level = 0;
+  const ps = ppr ? find(ppr, W, 'pStyle') : null;
+  const pid = ps ? wAttr(ps, 'val') ?? '' : styles.defaultPara;
+  const para = styles.look.get(pid) ?? {};
   if (ppr) {
-    const ps = find(ppr, W, 'pStyle');
-    if (ps) [level, styleBold] = styles.get(wAttr(ps, 'val') ?? '') ?? [0, false];
+    if (ps) level = styles.level.get(pid) ?? 0;
     const ol = find(ppr, W, 'outlineLvl');
     if (ol && !level) {
       const v = wAttr(ol, 'val') || '9';
@@ -310,7 +345,7 @@ function docxParagraph(p: Element, styles: Styles): [Run[], number][] {
   }
   const pieces: Run[][] = [[]];
   const run = (r: Element): void => {
-    const [bold, italic, valign] = runFormat(find(r, W, 'rPr'), styleBold);
+    const [bold, italic, valign, underline] = runFormat(find(r, W, 'rPr'), para, styles);
     for (const child of kids(r)) {
       if (child.namespaceURI !== W) continue;
       let text: string;
@@ -327,7 +362,7 @@ function docxParagraph(p: Element, styles: Styles): [Run[], number][] {
         }
         default: continue;
       }
-      if (text) pieces[pieces.length - 1].push(R(text, bold, italic, valign));
+      if (text) pieces[pieces.length - 1].push(R(text, bold, italic, valign, underline));
     }
   };
   const walk = (el: Element): void => {

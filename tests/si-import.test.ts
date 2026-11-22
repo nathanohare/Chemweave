@@ -106,3 +106,25 @@ describe('Import SI: reading and recognising (parity with SI Assistant)', () => 
     });
   }
 });
+
+describe('Import SI from Word: underline, character styles, raised text, styles based on others (G2-20)', () => {
+  it('reads them into the runs', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const styles = `<?xml version="1.0"?><w:styles ${W}>` +
+      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Base"><w:name w:val="Base"/><w:rPr><w:i/></w:rPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Derived"><w:name w:val="Derived"/><w:basedOn w:val="Base"/></w:style>' +
+      '<w:style w:type="character" w:styleId="Emphasis"><w:name w:val="Emphasis"/><w:rPr><w:b/></w:rPr></w:style></w:styles>';
+    const body = '<w:p><w:r><w:t xml:space="preserve">plain </w:t></w:r><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>under</w:t></w:r>' +
+      '<w:r><w:rPr><w:rStyle w:val="Emphasis"/></w:rPr><w:t xml:space="preserve"> strong</w:t></w:r><w:r><w:rPr><w:position w:val="6"/></w:rPr><w:t>up</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:pStyle w:val="Derived"/></w:pPr><w:r><w:t>slanted</w:t></w:r></w:p>';
+    const u8 = (s: string) => new Uint8Array(strToU8(s));
+    const bytes = zipSync({ 'word/document.xml': u8(`<?xml version="1.0"?><w:document ${W}><w:body>${body}</w:body></w:document>`), 'word/styles.xml': u8(styles) });
+    const r = Rd.readSiDocx('made.docx', bytes);
+    expect(r.error).toBeFalsy();
+    const runs = r.paras.map((p) => runsJ(p.runs));
+    expect(runs[0]).toEqual([['plain ', false, false, 'normal', false], ['under', false, false, 'normal', true], [' strong', true, false, 'normal', false], ['up', false, false, 'super', false]]);
+    expect(runs[1]).toEqual([['slanted', false, true, 'normal', false]]);
+  });
+});
