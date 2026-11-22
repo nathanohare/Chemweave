@@ -50,6 +50,16 @@ describe('Tabs window', () => {
     ok();
     expect(await got).toEqual([{ pos: 28.35, kind: 'center', leader: 'dot' }, { pos: 100, kind: 'left' }]);
   });
+  it('two stops shown with the same text: OK unchanged with the second picked keeps both as they were (F5b-R07)', async () => {
+    // 28.08 pt (0.39 in typed) and 28.35 pt (1 cm) both show as 0.39 in
+    const before = [{ pos: 28.08, kind: 'left' as const }, { pos: 28.35, kind: 'right' as const, leader: 'dot' as const }];
+    const got = editTabStops(before);
+    const list = q<HTMLSelectElement>('.tabs-list');
+    list.value = '1';
+    list.dispatchEvent(new Event('change'));
+    ok();
+    expect(await got).toEqual(before);
+  });
   it('sets, changes, clears and sorts stops; OK sets what is typed', async () => {
     const got = editTabStops([{ pos: 216, kind: 'right', leader: 'dot' }]);
     type('1');

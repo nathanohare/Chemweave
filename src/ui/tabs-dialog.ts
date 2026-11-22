@@ -98,7 +98,9 @@ export function editTabStops(current: readonly TabStop[]): Promise<TabStop[] | n
       // the stop shown in the box (or one shown with the same text) keeps its own position: the box
       // shows it rounded to 0.01 in, and reading that back would move it (a 1 cm stop is 28.35 pt,
       // shown as 0.39 in = 28.08 pt), so an unchanged OK changed the tabs (review of F5, R02)
-      const same = stops.find((t) => showLength(t.pos, 'in') === showLength(at, 'in'));
+      // (the stop picked in the list first, when two are shown with the same text; F5b-R07)
+      const shownAs = (t: TabStop | undefined) => !!t && showLength(t.pos, 'in') === showLength(at, 'in');
+      const same = shownAs(stops[picked]) ? stops[picked] : stops.find(shownAs);
       const stop: TabStop = { pos: same ? same.pos : at, kind, ...(leader ? { leader } : {}) };
       stops = stops.filter((t) => t !== same);
       stops.push(stop);
