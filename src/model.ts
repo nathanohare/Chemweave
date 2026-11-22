@@ -1179,7 +1179,7 @@ export interface Shape {
 }
 
 /** A label as a frame drawn from data made it: its words and their runs. */
-export interface MadeLabel { text: string; runs: TextRun[] }
+export interface MadeLabel { text: string; runs: TextRun[]; /** An atom's label (a sawhorse's group), not a caption's words. */ atom?: true }
 
 /**
  * The kinds of drawing kept as data on an invisible frame round what it draws: an energy diagram,

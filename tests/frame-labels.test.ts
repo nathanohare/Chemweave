@@ -178,6 +178,43 @@ describe('Newman projections', () => {
   });
 });
 
+describe('sawhorse projections', () => {
+  // (the groups are the atoms of a structure: their labels keep the looks set on them)
+  const g = (atom: number, angle: number, label: string): NewmanGroup => ({ atom, angle, label, size: label === 'H' ? 0 : 1 });
+  const d: NewmanData = { kind: 'sawhorse', front: [g(1, 0, 'Ph'), g(2, 120, 'H'), g(3, 240, 'H')], back: [g(4, 60, 'OMe'), g(5, 180, 'H'), g(6, 300, 'H')], turn: 0, conformer: 0, source: 'angle', look: structuredClone(NEWMAN_LOOK) };
+  const atomWith = (doc: Doc, frame: number, label: string) => doc.shapes.get(frame)!.frame!.atoms.map((a) => doc.atoms.get(a)!).find((a) => a.label === label)!;
+
+  it('a group label made italic and red stays so when the sawhorse is turned', () => {
+    const doc = new Doc();
+    const m = plainMeasure(doc);
+    let id = 0;
+    doc.edit('Sawhorse', () => { id = putNewman(doc, m, d, { x: 300, y: 300 }); });
+    const ph = atomWith(doc, id, 'Ph');
+    expect(ph).toBeDefined();
+    doc.edit('Look', () => doc.updateAtom(ph.id, { labelMarks: '/*', color: '#c00000' }));
+    doc.edit('Turn', () => { putNewman(doc, m, { ...d, turn: 60 }, { x: 300, y: 300 }, id); });
+    const now = atomWith(doc, id, 'Ph');
+    expect(now.id).not.toBe(ph.id); // drawn again
+    expect(now.labelMarks).toBe('/*');
+    expect(now.color).toBe('#c00000');
+    expect(atomWith(doc, id, 'OMe').labelMarks).toBeUndefined();
+    // and once more (the looks are the hand's, not the drawing's)
+    doc.edit('Turn', () => { putNewman(doc, m, { ...d, turn: 120 }, { x: 300, y: 300 }, id); });
+    expect(atomWith(doc, id, 'Ph').labelMarks).toBe('/*');
+  });
+
+  it('a group label made bold in part keeps it, and its plain part stays plain', () => {
+    const doc = new Doc();
+    const m = plainMeasure(doc);
+    let id = 0;
+    doc.edit('Sawhorse', () => { id = putNewman(doc, m, d, { x: 300, y: 300 }); });
+    const ome = atomWith(doc, id, 'OMe');
+    doc.edit('Bold', () => doc.updateAtom(ome.id, { labelMarks: 'B..' }));
+    doc.edit('Turn', () => { putNewman(doc, m, { ...d, turn: 60 }, { x: 300, y: 300 }, id); });
+    expect(atomWith(doc, id, 'OMe').labelMarks).toBe('B..');
+  });
+});
+
 describe('SmartArt-style diagrams', () => {
   const put = (text: string) => {
     const doc = new Doc();

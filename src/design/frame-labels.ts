@@ -9,9 +9,11 @@
 // from that is one set by hand. A label typed into on the drawing (new words, so not in that list)
 // is compared with the label drawn again instead, leaving out text size (which follows the
 // frame's size). A frame drawn before the list was kept carries only bold, italic, underline and
-// strikethrough set on its labels.
+// strikethrough set on its labels. The labels of atoms in a frame (a sawhorse's groups) are taken
+// as text too: their per-character marks (bold, italic, underline, raised, lowered), colour and font.
 
-import type { Doc, Frame, MadeLabel, Shape, TextRun } from '../model';
+import type { Atom, Doc, Frame, MadeLabel, Shape, TextRun } from '../model';
+import { anyMarks, readMark, writeMark } from '../chem/label-marks';
 import { normalizeRuns, plainText, styleOf, type RunStyle } from '../richtext';
 
 /** The looks a hand can set on a label's characters (not what the text is, or where it links). */
@@ -22,25 +24,50 @@ const SWITCHES: Look[] = ['bold', 'italic', 'underline', 'strike'];
 const POSITION: Look[] = ['sub', 'sup', 'formula'];
 
 /** A label on the frame before it is drawn again. */
-interface OldLabel { text: string; runs: TextRun[] }
+interface OldLabel { text: string; runs: TextRun[]; atom?: boolean }
 
 /** What a frame's labels were before it is drawn again. */
 export interface OldLabels { labels: OldLabel[]; made: MadeLabel[] | undefined }
 
 const labelOfShape = (s: Shape | undefined): TextRun[] | null => (s?.text?.runs.length ? s.text.runs : null);
 
-/** The frame's labels, in order: its captions, then the words of its shapes. */
-function labelsOf(doc: Doc, f: Pick<Frame, 'captions' | 'shapes'>): { kind: 'c' | 's'; id: number; runs: TextRun[] }[] {
-  const out: { kind: 'c' | 's'; id: number; runs: TextRun[] }[] = [];
+/** An atom's label as runs: each character's marks, and the atom's colour, font and bold. */
+function atomRuns(a: Atom | undefined): TextRun[] | null {
+  if (!a?.label) return null;
+  const out: TextRun[] = [...a.label].map((c, i) => {
+    const m = readMark(a.labelMarks?.[i]);
+    return {
+      text: c, ...(m.bold || (a.face ?? 0) & 1 ? { bold: true } : {}), ...(m.italic ? { italic: true } : {}), ...(m.underline ? { underline: true } : {}),
+      ...(m.pos === 'down' ? { sub: true } : m.pos === 'up' ? { sup: true } : {}), ...(a.color ? { color: a.color } : {}), ...(a.font ? { font: a.font } : {}),
+    };
+  });
+  return normalizeRuns(out);
+}
+
+/** An atom's look from runs of its label (as atomRuns gives them): its marks, and a colour or font all its characters have. */
+function atomPatch(a: Atom, runs: TextRun[]): Partial<Atom> {
+  const ch = perChar(runs);
+  const bold = !!((a.face ?? 0) & 1);
+  const marks = ch.map((st) => writeMark({ pos: st.sub ? 'down' : st.sup ? 'up' : 'auto', italic: !!st.italic, bold: !!st.bold && !bold, underline: !!st.underline })).join('');
+  const one = <K extends 'color' | 'font'>(k: K) => { const v = ch[0]?.[k]; return ch.every((st) => st[k] === v) ? v : a[k]; };
+  return { labelMarks: anyMarks(marks) ? marks : undefined, color: one('color') as string | undefined, font: one('font') as string | undefined };
+}
+
+type Label = { kind: 'c' | 's' | 'a'; id: number; runs: TextRun[] };
+
+/** The frame's labels, in order: its captions, then the words of its shapes, then its atoms' labels. */
+function labelsOf(doc: Doc, f: Pick<Frame, 'captions' | 'shapes'> & { atoms?: number[] }): Label[] {
+  const out: Label[] = [];
   for (const id of f.captions) { const c = doc.captions.get(id); if (c?.runs.length) out.push({ kind: 'c', id, runs: c.runs }); }
   for (const id of f.shapes) { const runs = labelOfShape(doc.shapes.get(id)); if (runs) out.push({ kind: 's', id, runs }); }
+  for (const id of f.atoms ?? []) { const runs = atomRuns(doc.atoms.get(id)); if (runs) out.push({ kind: 'a', id, runs }); }
   return out;
 }
 
 /** Read a frame's labels before what it holds is taken away to be drawn again. */
 export function readLabels(doc: Doc, frame: Shape | undefined): OldLabels {
   if (!frame?.frame) return { labels: [], made: frame?.madeLabels };
-  return { labels: labelsOf(doc, frame.frame).map((l) => ({ text: plainText(l.runs), runs: l.runs })), made: frame.madeLabels };
+  return { labels: labelsOf(doc, frame.frame).map((l) => ({ text: plainText(l.runs), runs: l.runs, ...(l.kind === 'a' ? { atom: true } : {}) })), made: frame.madeLabels };
 }
 
 /** Each character's style. */
@@ -97,20 +124,22 @@ export function withLooks(runs: TextRun[], hand: (Partial<RunStyle> | null)[]): 
  * After a frame was drawn again: looks set by hand on its old labels go onto the new labels with
  * the same words. Returns its labels as drawn (before the looks went on), to keep on the frame.
  */
-export function keepLabels(doc: Doc, was: OldLabels, frame: Pick<Frame, 'captions' | 'shapes'>): MadeLabel[] {
+export function keepLabels(doc: Doc, was: OldLabels, frame: Pick<Frame, 'captions' | 'shapes'> & { atoms?: number[] }): MadeLabel[] {
   const now = labelsOf(doc, frame);
-  const made: MadeLabel[] = now.map((l) => ({ text: plainText(l.runs), runs: l.runs.map((r) => ({ ...r })) }));
+  const made: MadeLabel[] = now.map((l) => ({ text: plainText(l.runs), runs: l.runs.map((r) => ({ ...r })), ...(l.kind === 'a' ? { atom: true as const } : {}) }));
   if (!was.labels.length) return made;
   const usedOld = new Set<number>(), usedMade = new Set<number>();
   for (let i = 0; i < now.length; i++) {
     const text = made[i].text;
-    const k = was.labels.findIndex((l, j) => !usedOld.has(j) && l.text === text);
+    const atom = now[i].kind === 'a';
+    // (an atom's label goes to an atom's, a caption's words to a caption's)
+    const k = was.labels.findIndex((l, j) => !usedOld.has(j) && l.text === text && !!l.atom === atom);
     if (k < 0) continue;
     usedOld.add(k);
     const old = was.labels[k];
     let hand: (Partial<RunStyle> | null)[];
     if (was.made) {
-      const m = was.made.findIndex((x, j) => !usedMade.has(j) && x.text === text);
+      const m = was.made.findIndex((x, j) => !usedMade.has(j) && x.text === text && !!x.atom === atom);
       if (m >= 0) { usedMade.add(m); hand = handLooks(old.runs, was.made[m].runs); }
       // typed on the drawing (not words the frame drew): compared with the words drawn now, apart
       // from text size, which follows the frame's size
@@ -120,7 +149,8 @@ export function keepLabels(doc: Doc, was: OldLabels, frame: Pick<Frame, 'caption
     const runs = withLooks(now[i].runs, hand);
     if (runs === now[i].runs) continue;
     const l = now[i];
-    if (l.kind === 'c') doc.updateCaption(l.id, { runs });
+    if (l.kind === 'a') doc.updateAtom(l.id, atomPatch(doc.atoms.get(l.id)!, runs));
+    else if (l.kind === 'c') doc.updateCaption(l.id, { runs });
     else { const s = doc.shapes.get(l.id)!; doc.updateShape(l.id, { text: { ...s.text!, runs } }); }
   }
   return made;
