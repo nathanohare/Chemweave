@@ -250,7 +250,7 @@ describe('the settings file', () => {
       cursorAids: { angle: false, length: true, hints: false, units: 'mm' as const, look: 'solid' as const },
       haptoDelocalized: false,
       kbColumns: { pka: { order: ['name', 'pic', 'pka'], widths: { refs: 240 } } },
-      appTheme: 'dark' as const, density: 'large' as const, shadows: 'strong' as const, iconLook: 'kind' as const, iconSet: 'classic' as const, shapeInk: 'accent' as const, oneColumnTools: true, startView: false, enterFinishesText: true, offerFigures: false, templatesOnNew: { document: false, sheet: true, slides: false }, lastVersion: '0.1.90',
+      appTheme: 'dark' as const, density: 'large' as const, shadows: 'strong' as const, iconLook: 'kind' as const, iconSet: 'classic' as const, shapeInk: 'accent' as const, oneColumnTools: true, startView: false, enterFinishesText: true, offerFigures: false, templatesOnNew: { document: false, sheet: true, slides: false }, sheetTemplateUnits: 'cell' as const, lastVersion: '0.1.90',
     };
     const text = settingsText(s);
     expect(text).toContain('"app": "Chem Illustrator"');
