@@ -42,6 +42,14 @@ import { DEFAULT_CURSOR_AIDS, parseCursorAids, type CursorAidPrefs } from './edi
 /** Structures in Word and PowerPoint files: pictures (SVG and PNG), or ChemDraw objects. */
 export type StructuresAs = 'pictures' | 'chemdraw';
 
+/**
+ * The choices for Settings ▸ General ▸ Save structures in … files as, for each kind of file: Word
+ * and PowerPoint get a picture as SVG with a PNG beside it, Excel a PNG only.
+ */
+export function structuresAsOptions(kind: 'docx' | 'pptx' | 'xlsx'): { value: StructuresAs; label: string }[] {
+  return [{ value: 'pictures', label: kind === 'xlsx' ? 'Pictures (PNG)' : 'Pictures (SVG and PNG)' }, { value: 'chemdraw', label: 'ChemDraw objects' }];
+}
+
 export interface Settings {
   /** Changes to ChemDraw's default keys. */
   hotkeys: KeyOverrides;
@@ -256,7 +264,7 @@ export interface Settings {
    * (SVG and PNG) or as ChemDraw objects, which open in ChemDraw from Word or PowerPoint. Either way
    * our own drawing goes with them.
    */
-  officeStructures: { docx: StructuresAs; pptx: StructuresAs };
+  officeStructures: { docx: StructuresAs; pptx: StructuresAs; xlsx: StructuresAs };
   /** New bonds, rings and chains on a structure take that structure's own bond length, line widths and colours (off: the drawing style's). */
   matchStructure: boolean;
   /** Straighten an alkyne or allene carbon left bent when a bond to it becomes triple or cumulated. */
@@ -320,7 +328,7 @@ export const DEFAULT_SETTINGS: Settings = {
   docCropMarks: false,
   docWhiteSpace: true,
   sheetFormulaBar: true,
-  updateCheck: true, updateChannel: 'latest', pubchemNames: true, convertChemDraw: false, officeStructures: { docx: 'pictures', pptx: 'pictures' }, matchStructure: true, fileTypesOffered: false, wordObjectsOffered: false, reviewName: '', skipVersion: null, lastVersion: null, recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], docDesign: null,
+  updateCheck: true, updateChannel: 'latest', pubchemNames: true, convertChemDraw: false, officeStructures: { docx: 'pictures', pptx: 'pictures', xlsx: 'pictures' }, matchStructure: true, fileTypesOffered: false, wordObjectsOffered: false, reviewName: '', skipVersion: null, lastVersion: null, recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], docDesign: null,
   slideRuler: false,
   slidePanes: { warnings: false, analysis: false },
   slideGrid: false,
@@ -374,7 +382,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   if (r.officeStructures && typeof r.officeStructures === 'object') {
     const o = r.officeStructures as Record<string, unknown>;
     const as = (v: unknown): StructuresAs => (v === 'chemdraw' ? 'chemdraw' : 'pictures');
-    s.officeStructures = { docx: as(o.docx), pptx: as(o.pptx) };
+    s.officeStructures = { docx: as(o.docx), pptx: as(o.pptx), xlsx: as(o.xlsx) };
   }
   if (r.titleBar === 'app' || r.titleBar === 'system') s.titleBar = r.titleBar;
   if (typeof r.uiScale === 'number') s.uiScale = clampUiScale(r.uiScale);

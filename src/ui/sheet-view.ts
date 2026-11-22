@@ -12,7 +12,7 @@ import { Range, MAX_ROWS, MAX_COLS, colName, rangeName, normRange, inRange, keyO
 import { formatValue, generalFitting } from '../sheet/numfmt';
 import { readTyped, isError, CellError, maxOf, minOf } from '../sheet/values';
 import { chemPieces, showsChem } from '../sheet/cell-text';
-import { type RunLook, type TextRun, type ToggleLook, looksOf, lookOver, runsOf, runsForInput, looksForInput, sameRuns } from '../sheet/rich-text';
+import { type RunLook, type TextRun, type ToggleLook, looksOf, lookPieces, runsOf, runsForInput, looksForInput, sameRuns } from '../sheet/rich-text';
 import { RichInput } from './rich-input';
 
 /** Keys that format the selected text while typing in a cell. */
@@ -1997,31 +1997,16 @@ export class SheetView {
     return w;
   }
 
-  /** Text in pieces of one look each: its chemistry (C9H8O4) and its runs' looks (a bold word) over the cell's. */
-  private richPieces(text: string, style: CellStyle | undefined, looks: RunLook[]): { text: string; look: ReturnType<typeof lookOver<CellStyle>> }[] {
-    const chem: { pos?: 'sub' | 'sup'; italic?: boolean }[] = [];
-    if (style?.chem) for (const p of chemPieces(text)) for (let i = 0; i < p.text.length; i++) chem.push({ ...(p.pos !== 'base' ? { pos: p.pos } : {}), ...(p.italic ? { italic: true } : {}) });
-    const out: { text: string; look: ReturnType<typeof lookOver<CellStyle>>; key: string }[] = [];
-    for (let i = 0; i < text.length; i++) {
-      const look = lookOver({ ...style, ...(chem[i]?.italic ? { italic: true } : {}), ...(chem[i]?.pos ? { pos: chem[i].pos } : {}) }, looks[i]);
-      const key = JSON.stringify([look.bold, look.italic, look.underline, look.strike, look.color, look.pos, look.font, look.size]);
-      const last = out[out.length - 1];
-      if (last && last.key === key) last.text += text[i];
-      else out.push({ text: text[i], look, key });
-    }
-    return out;
-  }
-
   private richWidth(text: string, style: CellStyle | undefined, looks: RunLook[]): number {
     let w = 0;
-    for (const p of this.richPieces(text, style, looks)) w += this.textWidth(p.text, this.font(p.look, this.zoom, p.look.pos ?? 'base'));
+    for (const p of lookPieces(text, style, looks)) w += this.textWidth(p.text, this.font(p.look, this.zoom, p.look.pos ?? 'base'));
     return w;
   }
 
   private drawLine(text: string, style: CellStyle | undefined, x: number, w: number, pad: number, baseline: number, align: string, looks?: RunLook[]): void {
     const ctx = this.ctx;
     if (looks && looks.length === text.length) {
-      const pieces = this.richPieces(text, style, looks);
+      const pieces = lookPieces(text, style, looks);
       const tw = this.richWidth(text, style, looks);
       let tx = align === 'right' ? x + w - pad - tw : align === 'center' ? x + (w - tw) / 2 : x + pad;
       const ink = ctx.fillStyle;

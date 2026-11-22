@@ -18,7 +18,7 @@ import { blipEffectsXml, pictureGeomXml } from './picture-xml';
 import { turnAbout, type Rect, type Vec } from '../geom';
 import { layoutText, ASCENT, FONT_STACK, PPT_SINGLE, type Measure } from '../text/layout';
 import { fitParas, listInfo, autoNumLabel, splitParagraphs } from '../text/paragraphs';
-import { formulaParts, plainText } from '../richtext';
+import { formulaPartsIn, plainText } from '../richtext';
 import { officeTarget, slideOfLink } from '../links';
 import { arrowPoints, shapeBox, boxOf, shapeOrder, elbowRoute } from '../objects';
 import { geoDef, textArea, type GeoStep } from '../design/geo';
@@ -31,7 +31,7 @@ import { chemdrawProg, chemdrawInObject, chemdrawObject, chemdrawObjectName, OLE
 import { extractDrawing } from './clipboard';
 import { contentsAlt, titleOverlaps, roughCaptionBox } from '../accessibility';
 import type { Selection } from '../editor/editor';
-import { Package, NS, REL, emu, xml, xmlAttr, hex6, MediaFiles, structureAltText, bytesHash } from './ooxml';
+import { Package, NS, REL, emu, fromEmu, xml, xmlAttr, hex6, MediaFiles, structureAltText, bytesHash } from './ooxml';
 import { SLIDE_SIZE_TYPES, hasItems } from '../deck/deck';
 import { masterBoxes } from '../deck/master-view';
 import { notesParagraphs, type NotesLook } from '../deck/notes-look';
@@ -366,6 +366,7 @@ export const MIME_EXT: Record<string, string> = {
 // ---------------------------------------------------------------- what goes where
 
 import { splitSlide, arialMeasure, roughBox, type SlideParts } from '../deck/split-slide';
+import { runKept, keptNow, paraKept, frameNow, pptUnderline } from './pptx-keep';
 import { stackItems, usesStacking, type StackItem } from '../editor/stacking';
 import { stepsTag } from './step-tag';
 export { splitSlide, slideDiagrams, arialMeasure, type SlideParts, type SlideDiagram } from '../deck/split-slide';
@@ -392,9 +393,12 @@ function fieldId(): string {
 export type ColourXml = (color: string | undefined, inner?: string) => string;
 export const srgbXml: ColourXml = (color, inner = '') => `<a:srgbClr val="${hex6(color)}"${inner ? `>${inner}</a:srgbClr>` : '/>'}`;
 
-function runXml(r: TextRun, explicit: { size: number; font: string } | null, hlink?: LinkXml, clr: ColourXml = srgbXml): string {
+function runXml(r: TextRun, explicit: { size: number; font: string } | null, hlink?: LinkXml, clr: ColourXml = srgbXml, para?: readonly TextRun[]): string {
   const click = r.link && hlink ? hlink(r.link) : '';
-  const parts = r.formula && !r.sub && !r.sup ? formulaParts(r.text) : [{ text: r.text, pos: r.sub ? 'sub' : r.sup ? 'sup' : 'base' }];
+  const parts = r.formula && !r.sub && !r.sup ? formulaPartsIn(para, r) : [{ text: r.text, pos: r.sub ? 'sub' : r.sup ? 'sup' : 'base' }];
+  // what the file had that isn't read here, while the looks it goes with are unchanged (pptx-keep.ts)
+  const kept = runKept(r);
+  const now = keptNow(r, kept);
   return parts.map((p) => {
     const size = r.size ?? explicit?.size;
     const font = r.font ?? explicit?.font;
@@ -402,24 +406,30 @@ function runXml(r: TextRun, explicit: { size: number; font: string } | null, hli
     if (size) attrs.push(`sz="${Math.round(size * 100)}"`);
     if (r.bold !== undefined) attrs.push(`b="${r.bold ? 1 : 0}"`);
     if (r.italic !== undefined) attrs.push(`i="${r.italic ? 1 : 0}"`);
-    if (r.underline) attrs.push('u="sng"');
-    if (r.strike) attrs.push('strike="sngStrike"');
+    // (a link that follows the theme has no underline of its own; the underline's and the line's kinds: 21.1.10.82, 21.1.10.79)
+    if (r.underline && !(click && now.plainLink)) attrs.push(`u="${pptUnderline(r.ukind)}"`);
+    if (r.strike) attrs.push(`strike="${r.dstrike ? 'dblStrike' : 'sngStrike'}"`);
     if (r.allCaps) attrs.push('cap="all"');
     else if (r.smallCaps) attrs.push('cap="small"');
     if (r.spacing) attrs.push(`spc="${Math.round(r.spacing * 100)}"`);
     if (r.noKern) attrs.push('kern="0"');
-    if (p.pos === 'sub') attrs.push('baseline="-25000"');
+    else if (now.kern) attrs.push(`kern="${now.kern}"`);
+    const bl = p.pos === 'base' ? undefined : now.baseline(p.pos === 'sub', p.pos === 'sup');
+    if (bl !== undefined && !r.formula) attrs.push(`baseline="${bl}"`);
+    else if (p.pos === 'sub') attrs.push('baseline="-25000"');
     else if (p.pos === 'sup') attrs.push('baseline="30000"');
     attrs.push('dirty="0"');
     const color = r.color ?? (explicit || r.transparency ? '#000000' : undefined);
     const alpha = r.transparency ? `<a:alpha val="${Math.round((1 - r.transparency) * 100000)}"/>` : '';
-    const fill = r.noFill ? '<a:noFill/>' : color ? `<a:solidFill>${clr(color, alpha)}</a:solidFill>` : '';
+    const fill = click && now.plainLink ? '' : now.fill ?? (r.noFill ? '<a:noFill/>' : color ? `<a:solidFill>${clr(color, alpha)}</a:solidFill>` : '');
     // the Font box's text effects: an outline round the letters (a:ln comes first) and a shadow
     const ln = r.outline ? `<a:ln w="${Math.round((r.outlineW ?? 0.75) * 12700)}"><a:solidFill>${clr(r.outline)}</a:solidFill></a:ln>` : '';
-    const shadow = r.shadow ? '<a:effectLst><a:outerShdw blurRad="38100" dist="38100" dir="2700000" algn="tl" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst>' : '';
-    const latin = font ? `<a:latin typeface="${xml(font)}"/><a:cs typeface="${xml(font)}"/>` : '';
+    const shadow = now.fx ?? (r.shadow ? '<a:effectLst><a:outerShdw blurRad="38100" dist="38100" dir="2700000" algn="tl" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst>' : '');
+    // fonts in their order (21.1.2.3.9): Latin (a theme font as the file named it), East Asian, complex script (the file's own, or none), symbol
+    const cs = kept?.cs !== undefined ? kept.cs : font ? `<a:cs typeface="${xml(font)}"/>` : '';
+    const latin = `${now.latin ?? (font ? `<a:latin typeface="${xml(font)}"/>` : '')}${kept?.ea ?? ''}${cs}${kept?.sym ?? ''}`;
     const highlight = r.highlight ? `<a:highlight><a:srgbClr val="${hex6(r.highlight)}"/></a:highlight>` : '';
-    const rPr = `<a:rPr ${attrs.join(' ')}>${ln}${fill}${shadow}${highlight}${latin}${ownColour(click, color)}</a:rPr>`;
+    const rPr = `<a:rPr ${attrs.join(' ')}${kept?.a ?? ''}>${ln}${fill}${shadow}${highlight}${now.ul}${latin}${click && now.plainLink ? click : ownColour(click, color)}${kept?.end ?? ''}</a:rPr>`;
     // a slide number or date: PowerPoint's field, which it fills in
     if (r.field && /^(slidenum|datetime\d*)$/.test(r.field)) return `<a:fld id="${fieldId()}" type="${r.field}">${rPr}<a:t>${xml(p.text)}</a:t></a:fld>`;
     return `<a:r>${rPr}<a:t>${xml(p.text)}</a:t></a:r>`;
@@ -468,13 +478,20 @@ export function paragraphsXml(c: Caption, explicit: { size: number; font: string
     const em = runs[0]?.size ?? explicit?.size ?? defaultSize;
     const attrs: string[] = [];
     const align = ps.align ?? c.justify;
-    attrs.push(`algn="${align === 'center' ? 'ctr' : align === 'right' ? 'r' : align === 'justify' ? 'just' : 'l'}"`);
+    // what the file had that isn't read here (pptx-keep.ts); its margins and level while the paragraph is unchanged
+    const { k: kept, same } = paraKept(ps, c.justify);
+    attrs.push(`algn="${align === 'center' ? 'ctr' : align === 'right' ? 'r' : align === 'justify' ? (kept?.dist ? 'dist' : 'just') : 'l'}"`);
     let inner = '';
-    if (c.lineHeight) inner += `<a:lnSpc><a:spcPts val="${Math.round(c.lineHeight * 100)}"/></a:lnSpc>`;
+    // line spacing: the paragraph's own, else the box's (21.1.2.2.5)
+    if (ps.linePt) inner += `<a:lnSpc><a:spcPts val="${Math.round(ps.linePt * 100)}"/></a:lnSpc>`;
+    else if (ps.line) inner += `<a:lnSpc><a:spcPct val="${Math.round(ps.line * 100000)}"/></a:lnSpc>`;
+    else if (c.lineHeight) inner += `<a:lnSpc><a:spcPts val="${Math.round(c.lineHeight * 100)}"/></a:lnSpc>`;
     else if (c.lineSpacing && c.lineSpacing !== 1) inner += `<a:lnSpc><a:spcPct val="${Math.round(c.lineSpacing * 100000)}"/></a:lnSpc>`;
     if (ps.spaceBefore) inner += `<a:spcBef><a:spcPts val="${Math.round(ps.spaceBefore * 100)}"/></a:spcBef>`;
     if (ps.spaceAfter) inner += `<a:spcAft><a:spcPts val="${Math.round(ps.spaceAfter * 100)}"/></a:spcAft>`;
     const indent = ps.indent ?? 0;
+    // (the bullet's colour and size come before its font and character; tab stops after: 21.1.2.2.7)
+    if (ps.list && !ps.cont && kept?.bu && same) inner += kept.bu;
     if (ps.list) {
       // the same places as on screen: the marker one step in per level, the text after it
       const level = Math.max(0, Math.min(8, ps.level ?? 0));
@@ -497,9 +514,18 @@ export function paragraphsXml(c: Caption, explicit: { size: number; font: string
       }
     } else {
       attrs.push(`marL="${emu(indent)}"`, 'indent="0"');
+      if (same && kept?.lvl) attrs.push(`lvl="${kept.lvl}"`);
       inner += '<a:buNone/>';
     }
-    const body = runs.map((r) => runXml(r, explicit, hlink, clr)).join('');
+    if (ps.tabs?.length) inner += `<a:tabLst>${ps.tabs.map((t) => `<a:tab pos="${emu(t.pos)}" algn="${t.kind === 'center' ? 'ctr' : t.kind === 'right' ? 'r' : t.kind === 'decimal' ? 'dec' : 'l'}"/>`).join('')}</a:tabLst>`;
+    // the margins PowerPoint had, while the paragraph's list, level and indent are as read
+    if (same && kept?.marL !== undefined) {
+      const at = (name: string, v: string | undefined) => { const j = attrs.findIndex((a) => a.startsWith(`${name}=`)); if (v !== undefined && j >= 0) attrs[j] = `${name}="${v}"`; };
+      at('marL', kept.marL);
+      at('indent', kept.indent);
+    }
+    if (kept?.a) attrs.push(kept.a.trim());
+    const body = runs.map((r) => runXml(r, explicit, hlink, clr, runs)).join('');
     const end = `<a:endParaRPr ${lang}${explicit ? ` sz="${Math.round(em * 100)}"` : ''} dirty="0"/>`;
     return `<a:p><a:pPr ${attrs.join(' ')}>${inner}</a:pPr>${body}${end}</a:p>`;
   }).join('');
@@ -1628,10 +1654,23 @@ class Writer {
     const grown = (lay.box.y2 - (lay.lines[0]?.y ?? 0)) + PPT_ASCENT * firstSize + 0.1 * firstSize;
     const height = c.ph && c.boxH ? Math.max(c.boxH, lay.box.y2 - lay.box.y1) : c.fit && c.boxH ? Math.max(c.boxH, c.fit === 'shrink' ? 0 : grown) : grown;
     let box = { x1: c.x, y1: top, x2: c.x + Math.max(width, 1), y2: top + height };
+    // a PowerPoint text box: its own frame (size, anchor, margins), moved with its text and resized as it was here
+    const frame = frameNow(c, emu, {
+      h: grown, w: lay.boxWidth, top,
+      // (for a box the file says doesn't wrap, the text on one line per paragraph, as PowerPoint lays it out)
+      free: () => {
+        const one = layoutText({ ...c, wrap: undefined, single: PPT_SINGLE }, doc.style.captionSize, this.measure);
+        return { h: (one.box.y2 - (one.lines[0]?.y ?? 0)) + PPT_ASCENT * firstSize + 0.1 * firstSize, w: one.boxWidth };
+      },
+    });
+    if (frame) {
+      const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(frame.xfrm);
+      if (off) { const [x, y, w, h] = off.slice(1).map((v) => fromEmu(v)); box = { x1: x, y1: y, x2: x + w, y2: y + h }; }
+    }
     // where the text starts in its box; turned text: the box moved so that PowerPoint, turning it
     // about its middle, puts the text where it is here (turned about where it starts)
     const o = [+(c.x - box.x1).toFixed(3), +(c.y - box.y1).toFixed(3)];
-    if (c.rot) {
+    if (c.rot && !frame) {
       const mid = { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
       const to = turnAbout(mid, c, c.rot);
       box = { x1: box.x1 + to.x - mid.x, y1: box.y1 + to.y - mid.y, x2: box.x2 + to.x - mid.x, y2: box.y2 + to.y - mid.y };
@@ -1646,7 +1685,7 @@ class Writer {
       : '<a:spAutoFit/>';
     const cols = c.cols && c.cols > 1 && c.wrap !== undefined ? ` numCol="${Math.round(c.cols)}"${c.colGap ? ` spcCol="${emu(c.colGap)}"` : ''}` : '';
     const vert = c.dir ? ` vert="${c.dir}"` : '';
-    const bodyPr = `<a:bodyPr wrap="${wrap}"${vert} lIns="0" tIns="0" rIns="0" bIns="0"${cols} rtlCol="0" anchor="t">${fit}</a:bodyPr>`;
+    const bodyPr = frame?.bodyPr ?? `<a:bodyPr wrap="${wrap}"${vert} lIns="0" tIns="0" rIns="0" bIns="0"${cols} rtlCol="0" anchor="t">${fit}</a:bodyPr>`;
     // the caption's exact settings, used when it comes back unchanged from PowerPoint
     const plain = c.runs.map((r) => r.text).join('');
     const at = [box.x1, box.y1, box.x2 - box.x1, box.y2 - box.y1].map((v) => +v.toFixed(2));
@@ -1671,7 +1710,7 @@ class Writer {
     const quarter = c.dir === 'vert' ? 90 : c.dir === 'vert270' ? -90 : 0;
     const shape = quarter ? swapBox(box) : box;
     const rot = rotAttr((c.rot ?? 0) - quarter);
-    return `<p:sp>${nvSp}<p:spPr>${xfrm(shape, rot)}${geom}</p:spPr>${txBody}</p:sp>`;
+    return `<p:sp>${nvSp}<p:spPr>${frame?.xfrm ?? xfrm(shape, rot)}${geom}</p:spPr>${txBody}</p:sp>`;
   }
 
   /**
@@ -1707,6 +1746,7 @@ class Writer {
     const algnOf = (j: string) => (j === 'center' ? 'ctr' : j === 'right' ? 'r' : j === 'justify' ? 'just' : 'l');
     // each cell's lines: the table style's (with their colours), or the rules in the drawing's colour
     const styled = !!slideCellLook(t, 0, 0);
+    const known = styled && Object.values(PPT_STYLE_IDS).includes(t.style ?? '');
     const linesAt = (r: number, c: number): Partial<Record<Side, CellLine>> => {
       const o = coveringCell(t, r, c);
       if (styled) return slideCellLook(t, o.r, o.c)!.lines;
@@ -1737,8 +1777,10 @@ class Writer {
         }
         const cell = t.rows[r][c] ?? { runs: [] };
         const span = spanOf(t, r, c), down = rowSpanOf(t, r, c);
-        // the style's text colour and bold are written on the runs, as PowerPoint shows them
-        const runs = styledRuns(cell.runs, look);
+        // the style's text colour and bold: left to a style PowerPoint knows by its id, so the text
+        // follows a style picked there as PowerPoint's own tables do (audit G2-04); written on the
+        // runs only under "No Style, No Grid"
+        const runs = known ? cell.runs : styledRuns(cell.runs, look);
         const body = runs.some((x) => x.text)
           ? paragraphsXml({ id: 0, x: 0, y: 0, runs, paras: cell.paras, justify: align }, { size, font }, size, this.measure, this.hlink)
           : empty(algnOf(align));

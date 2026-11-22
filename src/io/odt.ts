@@ -437,7 +437,7 @@ class OdtWriter {
     for (const r of rs) {
       if (r.obj !== undefined) { out += await this.object(r); continue; }
       if (!r.text) continue;
-      if (r.formula && !r.sub && !r.sup) { for (const part of rt.formulaParts(r.text)) out += this.span({ ...r, formula: undefined, sub: part.pos === 'sub' || undefined, sup: part.pos === 'sup' || undefined, text: part.text }); continue; }
+      if (r.formula && !r.sub && !r.sup) { for (const part of rt.formulaPartsIn(rs, r)) out += this.span({ ...r, formula: undefined, sub: part.pos === 'sub' || undefined, sup: part.pos === 'sup' || undefined, text: part.text }); continue; }
       out += this.span(r);
     }
     return out;
