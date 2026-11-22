@@ -4544,7 +4544,8 @@ export class DocumentMode {
     if (!canMakeEditable(o)) { this.host.flash(o.kind === 'drawing' ? 'This is already a structure you can edit.' : 'Click a picture of a structure first.'); return; }
     const reader = this.host.structureReader;
     if (!reader) { this.host.flash('Reading structures needs the app.'); return; }
-    const made = await makeEditablePicture(reader, o, choice, f.t.drawingStyle);
+    // (a reader that fails says so, rather than leaving the command silently undone)
+    const made = await makeEditablePicture(reader, o, choice, f.t.drawingStyle).catch(() => { this.host.flash('This picture couldn\'t be read.'); return null; });
     this.focus();
     // the document or the picture changed while it was read: leave it as it is now
     if (!made || this.file !== f || f.t.objects[id] !== o) return;
@@ -4578,7 +4579,7 @@ export class DocumentMode {
     if (!reader) { this.host.flash('Reading structures needs the app.'); return; }
     const ds = f.t.drawingStyle;
     openMakeEditableWindow({
-      reading: readPicture(reader, o, ds).then((r) => (r ? (choice: StyleChoice) => madeFrom(o, r, choice, ds) : null)),
+      reading: readPicture(reader, o, ds).then((r) => (r ? (choice: StyleChoice) => madeFrom(o, r, choice, ds) : null), () => null),
       style: ds,
       initial: lastEditStyle(),
       apply: (made, keep, choice) => {
