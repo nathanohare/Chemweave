@@ -127,11 +127,18 @@ function differences(kind: string, a: Uint8Array, b: Uint8Array): string[] {
     return out;
   }
   const sa = normalise(kind, '', new TextDecoder().decode(a)), sb = normalise(kind, '', new TextDecoder().decode(b));
-  if (isText(a) || isText(b)) return sa === sb ? [] : [firstDifference(sa, sb)];
+  if (isText(a) || isText(b)) return sa === sb ? [] : lineDifferences(sa, sb);
   return a.length === b.length && a.every((x, i) => x === b[i]) ? [] : [`bytes differ (${a.length} and ${b.length} bytes)`];
 }
 
 const isText = (b: Uint8Array) => !b.subarray(0, 512).some((x) => x === 0);
+
+/** Each line that differs (when both have as many lines), else where the texts first differ. */
+function lineDifferences(a: string, b: string): string[] {
+  const la = a.split('\n'), lb = b.split('\n');
+  if (la.length !== lb.length) return [firstDifference(a, b)];
+  return la.flatMap((x, i) => (x === lb[i] ? [] : [`line ${i + 1}: ${JSON.stringify(x.slice(0, 120))} then ${JSON.stringify(lb[i].slice(0, 120))}`]));
+}
 
 /** Where two texts first differ, with a little of each around it. */
 function firstDifference(a: string, b: string): string {
@@ -161,6 +168,29 @@ function drawing(): Doc {
     doc.addCaption({ x: 90, y: 160, runs: chemRuns('CH2Cl2, 25 °C'), justify: 'left' });
     doc.addArrow({ headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: 6, headWidth: 1.5, tail: { x: 200, y: 100 }, head: { x: 260, y: 100 } });
     doc.addShape({ kind: 'rect', x1: 80, y1: 60, x2: 300, y2: 180 });
+  });
+  return doc;
+}
+
+/**
+ * The same drawing with no abbreviation label: the ammonium written out as N⁺ and three methyl
+ * carbons, so exchange formats (which have no labels) compare exactly. Label expansion is its own case.
+ */
+function plainDrawing(): Doc {
+  const doc = new Doc();
+  doc.edit('Draw', () => {
+    const L = doc.style.bondLength;
+    const a = doc.addAtom(100, 100).id;
+    const b = doc.addAtom(100 + L * 0.866, 100 - L / 2).id;
+    const c = doc.addAtom(100 + L * 1.732, 100).id;
+    const o = doc.addAtom(100 + L * 0.866, 100 - L * 1.5, 8).id;
+    const n = doc.addAtom(100 + L * 2.598, 100 - L / 2, 7, { charge: 1 }).id;
+    const m1 = doc.addAtom(100 + L * 3.464, 100).id, m2 = doc.addAtom(100 + L * 2.598, 100 - L * 1.5).id, m3 = doc.addAtom(100 + L * 3.464, 100 - L).id;
+    doc.addBond(a, b);
+    doc.addBond(b, c);
+    doc.addBond(b, o, 2);
+    doc.addBond(c, n, 1, 'wedge');
+    doc.addBond(n, m1); doc.addBond(n, m2); doc.addBond(n, m3);
   });
   return doc;
 }
@@ -239,12 +269,14 @@ function documentText(): DocText {
 const FILES: { name: string; make: () => Promise<Uint8Array> }[] = [
   { name: 'Scheme.cdxml', make: () => drawingFile('Scheme.cdxml') },
   { name: 'Scheme.cdx', make: () => drawingFile('Scheme.cdx') },
-  { name: 'Scheme.mol', make: () => drawingFile('Scheme.mol') },
+  { name: 'Scheme.mol', make: () => drawingFile('Scheme.mol', plainDrawing) },
   { name: 'Scheme.rxn', make: () => drawingFile('Scheme.rxn', reaction) },
-  { name: 'Scheme.mrv', make: () => drawingFile('Scheme.mrv') },
-  { name: 'Scheme.ket', make: () => drawingFile('Scheme.ket') },
-  { name: 'Scheme.cml', make: () => drawingFile('Scheme.cml') },
-  { name: 'Scheme.json', make: () => drawingFile('Scheme.json') },
+  { name: 'Scheme.mrv', make: () => drawingFile('Scheme.mrv', plainDrawing) },
+  { name: 'Scheme.ket', make: () => drawingFile('Scheme.ket', plainDrawing) },
+  { name: 'Scheme.cml', make: () => drawingFile('Scheme.cml', plainDrawing) },
+  { name: 'Scheme.json', make: () => drawingFile('Scheme.json', plainDrawing) },
+  // (an abbreviation label, NMe3, written out as atoms by a format with no labels)
+  { name: 'Labels.mol', make: () => drawingFile('Labels.mol') },
   { name: 'Talk.pptx', make: () => slidesFile() },
   { name: 'Poster.pptx', make: () => slidesFile(true) },
   { name: 'Reagents.xlsx', make: () => tabFile('Reagents.xlsx') },
@@ -256,22 +288,19 @@ const FILES: { name: string; make: () => Promise<Uint8Array> }[] = [
 ];
 
 /**
- * Formats whose unchanged save differs today (found when this test was added, 2026-11-22), with
- * what differs. Each is a bug to fix; the test fails when one starts to match, so its line goes.
+ * Formats whose unchanged save differs today (found when this test was added, 2026-11-22). Each
+ * entry says why and gives a pattern that every difference line must match, so any other change in
+ * the same file still fails. Each is a bug to fix; the test fails when the file starts to match, so
+ * its entry goes.
  */
-const KNOWN_DIFFERENT: Record<string, string> = {
-  // Exchange formats: the first save writes the NMe₃ label as atoms; opened, those are ordinary
-  // atoms, so the second save lists the bonds in drawing order and places the methyls where the
-  // file had them rather than where the label's layout puts them (about 0.05 Å apart).
-  'Scheme.mol': 'bonds come back in another order (the NMe₃ label\'s bonds first, then the rest)',
-  'Scheme.mrv': 'bonds come back in another order, and the NMe₃ methyls move by about 0.05',
-  'Scheme.cml': 'bonds come back in another order (the NMe₃ label\'s bonds first, then the rest)',
-  'Scheme.ket': 'bonds come back in another order (the NMe₃ label\'s bonds first, then the rest)',
-  'Scheme.json': 'bonds come back in another order (the NMe₃ label\'s bonds first, then the rest)',
-  'Scheme.rxn': 'the product moves closer to the starting material (from 13.9 to 7.1 Å along, measured from the first atom)',
-  'Reagents.sdf': "the cell's structure is rebuilt from the drawing, so its coordinates move by about 0.1 Å (audit gap G1-07, being fixed in phase F1)",
-  'Talk.pptx': 'the slide drawing\'s CDXML gains CaptionLineHeight="variable" on its caption',
-  'Poster.pptx': 'the design\'s CDXML gains CaptionLineHeight="variable" on its caption',
+const KNOWN_DIFFERENT: Record<string, { why: string; each: RegExp }> = {
+  // The label case: the first save writes the NMe₃ label as atoms; opened, those are ordinary
+  // atoms, so the second save lists the bonds in drawing order (the label's bonds come first).
+  'Labels.mol': { why: "bonds come back in another order (the NMe₃ label's bonds first, then the rest)", each: /^line 1[3-9]: "\s+\d+\s+\d+\s+\d\s+\d" then "\s+\d+\s+\d+\s+\d\s+\d"$/ },
+  'Scheme.rxn': { why: 'the product moves closer to the starting material (from 13.9 to 7.1 Å along, measured from the first atom)', each: /^line 2[2-4]: "1[3-5]\.\d 0\.\d {4}0\.0000 [CO] .*" then "[78]\.\d 0\.\d {4}0\.0000 [CO] .*"$/ },
+  'Reagents.sdf': { why: "the cell's structure is rebuilt from the drawing when it is saved, so one coordinate moves by 0.1 Å", each: /^line 7: "1\.8 0\.0 {4}0\.0000 O .*" then "1\.7 0\.0 {4}0\.0000 O .*"$/ },
+  'Talk.pptx': { why: 'the slide drawing\'s CDXML gains CaptionLineHeight="variable" on its caption', each: /^ppt\/tags\/tag\d+\.xml: first difference at character \d+: .* then .*&quot; CaptionLineHeight=&quot;variable&quot;&gt;.*$/ },
+  'Poster.pptx': { why: 'the design\'s CDXML gains CaptionLineHeight="variable" on its caption', each: /^ppt\/tags\/tag\d+\.xml: first difference at character \d+: .* then .*&quot; CaptionLineHeight=&quot;variable&quot;&gt;.*$/ },
 };
 
 describe('open, save unchanged, compare (R2)', () => {
@@ -280,8 +309,11 @@ describe('open, save unchanged, compare (R2)', () => {
       const first = await f.make();
       const second = await openAndSave(first, f.name);
       const diff = differences(f.name, first, second);
-      if (KNOWN_DIFFERENT[f.name]) {
+      const known = KNOWN_DIFFERENT[f.name];
+      if (known) {
         expect(diff.length, `${f.name} now saves unchanged: delete it from KNOWN_DIFFERENT`).toBeGreaterThan(0);
+        const other = diff.filter((d) => !known.each.test(d));
+        expect(other.join('\n'), `${f.name} changed in a way other than the known one (${known.why})`).toBe('');
         return;
       }
       expect(diff.join('\n'), `${f.name} changed on an unchanged save: fix the writer or reader, or (only for a difference that is not a change) add a normalisation with the reason`).toBe('');
