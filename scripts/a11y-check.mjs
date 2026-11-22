@@ -17,8 +17,15 @@ const AXE = fileURLToPath(new URL('../node_modules/axe-core/axe.min.js', import.
 const LOOKS = [['Light', 'theme-light'], ['Dark Gray', 'theme-darkgray']];
 const MODES = [['Canvas', 'drawing', 'new'], ['Spreadsheet', 'sheet', 'new-sheet'], ['Document', 'document', 'new-document'], ['Presentation', 'slides', 'new-slides'], ['Design', 'design', 'new-design']];
 
-/** One line per problem, the same each run: the rule, the look for colour contrast, the element. */
-const axeLine = (look, v, node) => `axe ${v.id}${v.id === 'color-contrast' ? ` (${look})` : ''}: ${node.target.join(' ').slice(0, 160)}`;
+/**
+ * One line per problem, the same each run: the rule, the look for colour contrast, the element. The
+ * element's selector is kept to what doesn't change with the window's width or what was clicked
+ * last (no :nth-child, no classes for a ribbon group folded or a button pressed), so many elements
+ * of one kind (the labels of the ribbon's groups) make one line.
+ */
+const STATE = /\.(rb-folded|rb-compact|rb-idle|active|open|selected|on|checked|hover|focus|shown|hidden|pressed|current)(?=[.:\[\s>]|$)/g;
+export const selectorKey = (target) => target.join(' ').replace(/:nth-(child|of-type)\(\d+\)/g, '').replace(STATE, '').replace(/\s+/g, ' ').slice(0, 160);
+const axeLine = (look, v, node) => `axe ${v.id}${v.id === 'color-contrast' ? ` (${look})` : ''}: ${selectorKey(node.target)}`;
 
 /** Every accessibility problem on `page` (the app already started): a sorted list of lines. */
 export async function a11yProblems(page, log = () => {}) {
