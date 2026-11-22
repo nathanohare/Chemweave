@@ -1301,6 +1301,18 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
           const bb = pts(ch.getAttribute('BoundingBox'));
           if (bb.length === 4) {
             const pic = pictureOf(ch);
+            // the picture's other settings, and whether ChemDraw still holds the picture written
+            // for its chart, equation or crystal structure (else the picture ChemDraw has wins)
+            let extra: Partial<Shape> = {};
+            let trusted = true;
+            try {
+              const tag = kids(ch).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PICTURE_TAG)?.getAttribute('Value');
+              const got = tag ? JSON.parse(tag) as Record<string, unknown> : null;
+              if (got) {
+                trusted = sameSeen(got.seen, pictureSeen(ch));
+                for (const k of PICTURE_TAG_FIELDS) if (got[k] !== undefined) (extra as Record<string, unknown>)[k] = got[k];
+              }
+            } catch { extra = {}; }
             let chart: ChartBox | undefined;
             try {
               const tag = kids(ch).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === CHART_TAG)?.getAttribute('Value');
@@ -1325,6 +1337,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
               const got = tag ? JSON.parse(tag) as PlateData : undefined;
               if (got?.kind === 'crystal' && got.crystal && Array.isArray(got.crystal.atoms)) plate = got;
             } catch { plate = undefined; }
+            if (!trusted) { chart = undefined; math = undefined; plate = undefined; }
             // a crystal structure is drawn again from its data (sharper than ChemDraw's copy of the picture)
             if (plate?.crystal && pic) { pic.src = crystalSrc(plate.crystal, bb[2] - bb[0], bb[3] - bb[1]); pic.px = { w: Math.round(bb[2] - bb[0]), h: Math.round(bb[3] - bb[1]) }; pic.crop = null; }
             // where ChemDraw draws it among the other objects, and turned as ChemDraw turns it (BoundingBox is the unturned frame)
@@ -1332,7 +1345,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
             const ang = (Number(ch.getAttribute('RotationAngle') ?? NaN) / 65536) % 360;
             const rot = Number.isFinite(ang) && Math.abs(ang) > 1e-3 ? +(ang > 180 ? ang - 360 : ang < -180 ? ang + 360 : ang).toFixed(3) : 0;
             const sh = pic
-              ? doc.addShape({ id: idFor(ch), kind: 'picture', z, ...(rot ? { rot } : {}), x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3], src: pic.src, px: pic.px, ...(pic.crop ? { crop: pic.crop } : {}), ...(chart ? { chart } : {}), ...(math ? { math } : {}), ...(fx ? { fx } : {}), ...(alt ? { alt } : {}), ...(plate ? { plate: { ...plate, w: bb[2] - bb[0], h: bb[3] - bb[1] } } : {}) })
+              ? doc.addShape({ id: idFor(ch), kind: 'picture', z, ...(rot ? { rot } : {}), x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3], src: pic.src, px: pic.px, ...(pic.crop ? { crop: pic.crop } : {}), ...(chart ? { chart } : {}), ...(math ? { math } : {}), ...(fx ? { fx } : {}), ...(alt ? { alt } : {}), ...(plate ? { plate: { ...plate, w: bb[2] - bb[0], h: bb[3] - bb[1] } } : {}), ...extra })
               // only pictures this program can't show: mark where they sit, and keep them as they are
               : doc.addShape({ id: idFor(ch), kind: 'rect', x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3], dashed: true, color: '#9aa4b2', picture: true });
             from('s', sh.id, ch);
@@ -1570,6 +1583,9 @@ function readSteps(all: Element[], refs: () => Map<Element, string>, doc: Doc): 
       roles.inside = inside;
       roles.below = roles.below.filter((x) => !inside.includes(x));
     }
+    // roles chosen by hand (G1-15)
+    const own = kids(st).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === STEP_TAG)?.getAttribute('Value');
+    try { if (own && JSON.parse(own).manual === true) roles.manual = true; } catch { /* not ours to read */ }
     r.step = roles;
   }
   // ChemDraw's atom-atom map (pairs of a reactant atom and its product atom), when the file has
@@ -1651,6 +1667,10 @@ export function orbitalTag(json: string | null | undefined): OrbitalTag | undefi
 }
 /** The tag on a reaction step listing the captions written inside a catalytic cycle (its step names). */
 export const INSIDE_TAG = 'Chem Illustrator inside';
+/** A reaction step's own settings, as JSON: {"manual":true} when its roles were chosen by hand. */
+export const STEP_TAG = 'Chem Illustrator step';
+/** This program's tags on a reaction step, which files keep on the step's arrow (see lowerOwnTags). */
+const STEP_TAGS = [INSIDE_TAG, STEP_TAG];
 /** The gradient and pattern settings kept in a fill tag, checked. */
 export function fillExtras(v: Partial<Shape>): Partial<Shape> {
   const out: Partial<Shape> = {};
@@ -1884,11 +1904,11 @@ export function hoistOwnTags(root: Element): void {
   for (const st of descendants(page)) {
     if (st.nodeName !== 'step') continue;
     byId ??= idMap(root);
-    for (const a of stepArrows(st, byId)) {
-      const tag = ownTagOf(a, INSIDE_TAG);
+    for (const a of stepArrows(st, byId)) for (const name of STEP_TAGS) {
+      const tag = ownTagOf(a, name);
       if (!tag) continue;
       a.removeChild(tag);
-      if (!ownTagOf(st, INSIDE_TAG)) st.appendChild(tag);
+      if (!ownTagOf(st, name)) st.appendChild(tag);
     }
   }
 }
@@ -1906,11 +1926,11 @@ export function lowerOwnTags(root: Element): void {
   let byId: Map<string, Element> | null = null;
   for (const st of descendants(page)) {
     if (st.nodeName !== 'step') continue;
-    const tag = ownTagOf(st, INSIDE_TAG);
-    if (!tag) continue;
+    const tags = STEP_TAGS.map((name) => ownTagOf(st, name)).filter((t): t is Element => !!t);
+    if (!tags.length) continue;
     byId ??= idMap(root);
     const arrow = stepArrows(st, byId).find((a) => a.nodeName === 'arrow' || (a.nodeName === 'graphic' && ok(a)));
-    if (arrow) arrow.appendChild(tag);
+    if (arrow) for (const tag of tags) arrow.appendChild(tag);
   }
 }
 
@@ -1924,6 +1944,45 @@ export const CHART_TAG = 'Chem Illustrator chart';
 export const MATH_TAG = 'Chem Illustrator equation';
 /** A picture's Picture Format settings (brightness, recolouring, background removed, shape…), which ChemDraw doesn't have. */
 export const PICTURE_FX_TAG = 'Chem Illustrator picture format';
+/**
+ * A picture's other settings, as JSON: its frame look, see-through amount, name, hidden, locked
+ * and link (audit G1-10), and `seen`, what the picture held as written (see pictureSeen), so a
+ * chart, equation or crystal structure is drawn again from its tag only while ChemDraw still holds
+ * the picture written for it (G1-14).
+ */
+export const PICTURE_TAG = 'Chem Illustrator picture';
+/** The settings of a picture kept in PICTURE_TAG. */
+export const PICTURE_TAG_FIELDS = ['look', 'transparency', 'name', 'hidden', 'locked', 'link'] as const;
+
+/**
+ * What a picture element holds: a hash (32-bit FNV-1a of its hex digits, in capitals) of the first
+ * picture in it, and that picture's size in pixels. ChemDraw may write a picture's bytes afresh
+ * when it saves (a laptop check), so a picture of the same pixel size counts as the same.
+ */
+export function pictureSeen(el: Element): { hash: string; px?: { w: number; h: number } } | null {
+  for (const [name, mime] of [['PNG', 'image/png'], ['JPEG', 'image/jpeg'], ['GIF', 'image/gif'], ['BMP', 'image/bmp'], ['EnhancedMetafile', ''], ['WindowsMetafile', ''], ['CompressedEnhancedMetafile', ''], ['CompressedWindowsMetafile', '']]) {
+    const hex = el.getAttribute(name);
+    if (!hex) continue;
+    let h = 0x811c9dc5;
+    for (let i = 0; i < hex.length; i++) { h ^= hex.charCodeAt(i) & ~0x20; h = Math.imul(h, 0x01000193); }
+    const hash = (h >>> 0).toString(16).padStart(8, '0');
+    if (!mime) return { hash };
+    const bytes = new Uint8Array(hex.length >> 1);
+    for (let i = 0, j = 0; i < bytes.length; i++, j += 2) bytes[i] = (HEX[hex.charCodeAt(j)] << 4) | HEX[hex.charCodeAt(j + 1)];
+    const px = imageSize(bytes, mime);
+    return px ? { hash, px } : { hash };
+  }
+  return null;
+}
+
+/** Whether a picture still holds what was written for it (no `seen` in older files: trusted). */
+export function sameSeen(was: unknown, now: ReturnType<typeof pictureSeen>): boolean {
+  const w = was as { hash?: unknown; px?: { w?: unknown; h?: unknown } } | undefined;
+  if (!w || typeof w.hash !== 'string') return true;
+  if (!now) return false;
+  if (w.hash === now.hash) return true;
+  return !!w.px && !!now.px && w.px.w === now.px.w && w.px.h === now.px.h;
+}
 /** Alt text written for a structure (on one of its atoms) or a picture, which ChemDraw doesn't have. */
 export const ALT_TAG = 'Chem Illustrator alt text';
 /** A picture that is a lab figure (a crystal structure): its data, so it opens in its window again. */

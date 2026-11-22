@@ -25,7 +25,7 @@ import { atomStereoText, bondStereoText, StereoPlacer, PlacedLabel } from '../ch
 import { dataUrl, fromDataUrl, rasterPng } from '../render/images';
 import { itemsToEmf } from '../render/emf';
 import { crystalItems } from '../design/xray';
-import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, BRACKET_PAIR_TAG, PIN_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
+import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, BRACKET_PAIR_TAG, PIN_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
 import { stackItems, usesStacking } from '../editor/stacking';
 import { frameTag } from '../editor/frames';
 import { tableContents } from '../editor/table-figs';
@@ -2184,7 +2184,15 @@ class CdxmlWriter {
       }
       png ||= emf;
     } else png = exact = ['PNG', 'JPEG', 'GIF', 'BMP', 'EnhancedMetafile', 'WindowsMetafile', 'CompressedEnhancedMetafile', 'CompressedWindowsMetafile'].some((k) => e.hasAttribute(k));
-    for (const c of kids(e)) if (c.nodeName === 'objecttag' && [CHART_TAG, MATH_TAG, PICTURE_FX_TAG, ALT_TAG, PLATE_TAG].includes(c.getAttribute('Name') ?? '')) e.removeChild(c);
+    for (const c of kids(e)) if (c.nodeName === 'objecttag' && [CHART_TAG, MATH_TAG, PICTURE_FX_TAG, ALT_TAG, PLATE_TAG, PICTURE_TAG].includes(c.getAttribute('Name') ?? '')) e.removeChild(c);
+    // its frame look, see-through amount, name, hidden, locked and link, and what picture was
+    // written (G1-10, G1-14)
+    const settings: Record<string, unknown> = {};
+    for (const k of PICTURE_TAG_FIELDS) if (s[k] !== undefined && s[k] !== false) settings[k] = s[k];
+    if (Object.keys(settings).length || s.chart || s.math || s.plate) {
+      const seen = pictureSeen(e);
+      e.appendChild(this.el('objecttag', { TagType: 'String', Name: PICTURE_TAG, Value: JSON.stringify(seen ? { ...settings, seen } : settings), Visible: 'no' }));
+    }
     if (s.plate) e.appendChild(this.el('objecttag', { TagType: 'String', Name: PLATE_TAG, Value: JSON.stringify(s.plate), Visible: 'no' }));
     if (s.alt) e.appendChild(this.el('objecttag', { TagType: 'String', Name: ALT_TAG, Value: s.alt, Visible: 'no' }));
     if (s.fx) e.appendChild(this.el('objecttag', { TagType: 'String', Name: PICTURE_FX_TAG, Value: JSON.stringify(s.fx), Visible: 'no' }));
@@ -2491,12 +2499,15 @@ class CdxmlWriter {
       this.changed = true;
     }
     this.fillAtomMap(st, roles);
-    const inside = ids(roles.inside);
-    const tag = kids(st).find((c) => c.nodeName === 'objecttag' && c.getAttribute('Name') === INSIDE_TAG);
-    if ((tag?.getAttribute('Value') ?? '') === inside) return;
-    if (tag) st.removeChild(tag);
-    if (inside) st.appendChild(this.el('objecttag', { TagType: 'String', Name: INSIDE_TAG, Value: inside, Visible: 'no' }));
-    this.changed = true;
+    // a cycle's step names, and roles chosen by hand (audit G1-15: Clean Up Reaction keeps them)
+    const own: [string, string][] = [[INSIDE_TAG, ids(roles.inside)], [STEP_TAG, roles.manual ? JSON.stringify({ manual: true }) : '']];
+    for (const [name, value] of own) {
+      const tag = kids(st).find((c) => c.nodeName === 'objecttag' && c.getAttribute('Name') === name);
+      if ((tag?.getAttribute('Value') ?? '') === value) continue;
+      if (tag) st.removeChild(tag);
+      if (value) st.appendChild(this.el('objecttag', { TagType: 'String', Name: name, Value: value, Visible: 'no' }));
+      this.changed = true;
+    }
   }
 
   /**
