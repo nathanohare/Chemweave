@@ -14,6 +14,7 @@ import type { DocStyle } from '../style';
 import type { DocText } from '../document/document';
 import { compileSi, objectLabels, type SiPreviewTarget } from '../si/compile-doc';
 import type { DocView } from './doc-view';
+import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
@@ -459,9 +460,11 @@ const RIBBON = `
       <button class="rb-big" data-si="new-section" data-ic="section" title="A new section: a Data section holds compounds; a Custom section holds text (and sub-sections)"><span class="rb-icon">▤</span>New Section</button>
       <div class="rb-col">
         <button data-si="delete" data-ic="delete" title="Move the selected compound, scheme page or section to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
+        <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it. Shared with Chem SI Assistant">Trash…</button>
+      </div>
+      <div class="rb-col">
         <button data-si="rename" title="Rename the selected section or scheme page (F2 in the tree)">Rename</button>
         <button data-si="duplicate" title="Copies of the selected compound or scheme page, with the fields you choose (never its spectra, files, manual ID or flags): to start analogs">Duplicate…</button>
-        <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it. Shared with Chem SI Assistant">Trash…</button>
       </div>
       <div class="rb-col">
         <button data-si="move-up" title="Move the selected compound or section up (Alt+↑): compound IDs follow the order. Rows can also be dragged in the tree">▲ Move Up</button>
@@ -495,9 +498,11 @@ const RIBBON = `
       <button class="rb-big" data-si="edit-structure" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
       <div class="rb-col">
         <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
+        <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
+      </div>
+      <div class="rb-col">
         <button data-si="from-library" title="A new compound page with a compound from your Compound Library (its structure and name)">From Compound Library…</button>
         <button data-si="to-library" title="Keep the structures of this section's compounds in your Compound Library, with their SI IDs and this project as where they appear">Add to Compound Library</button>
-        <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
       </div>
       <div class="rb-col">
         <button data-si="name-pubchem" title="Name from PubChem: look the selected compound up in PubChem (by its InChIKey, which is all that is sent, and only when you click) and fill in its IUPAC name, which stays editable. Needs the internet; finds only compounds already in PubChem">Name from PubChem</button>
@@ -887,6 +892,7 @@ export class SiMode {
     if (this.tab && this.tab !== tab) void this.commitAll();
     this.tab = tab && tab.si ? tab : null;
     this.pane.hidden = this.ribbon.hidden = !this.tab;
+    this.showZoom(!!this.tab);
     if (!this.tab) return;
     this.use(this.tab.si!);
     this.shownKey = '';
@@ -2552,10 +2558,8 @@ export class SiMode {
       b.addEventListener('click', f);
       return b;
     };
-    const zoomBy = (k: number): void => { const v = this.live.view; if (v) { v.setZoom(Math.max(0.2, Math.min(3, v.zoom * k))); v.redraw(); } };
+    // (its zoom is the status bar's, at the right end as in every mode: G5-34)
     head.append(title, state, el('span', 'si-live-gap'),
-      btn('−', 'Zoom out', () => zoomBy(1 / 1.2)), btn('+', 'Zoom in', () => zoomBy(1.2)),
-      btn('↔', 'Fit width', () => { this.live.view?.fitWidth(); this.live.view?.redraw(); }),
       btn('▸', 'Hide the live preview (Ctrl+Shift+L)', () => this.setLive(false)));
     addInfo(head, 'The selected page, laid out as it prints in the SI, about a second after each change. Spectra are left out (Compile shows them), and page numbers are placeholders: Compile gives the real ones.');
     const host = el('div', 'si-live-host');
@@ -2566,6 +2570,37 @@ export class SiMode {
     return { el: wrap, host, state, empty, view: null, shown: '' };
   }
 
+  private zoomBar: StatusZoom | null = null;
+  /** DocView's 100% (its ACTUAL; doc-view itself loads only with the preview). */
+  private static readonly ACTUAL = 96 / 72;
+
+  /** The status bar's zoom slider, percent and Page Width at its right end, as in the other
+   *  modes (G5-34): they zoom the Live Preview, and are dimmed while it is hidden. */
+  private showZoom(on: boolean): void {
+    if (!this.zoomBar) {
+      const side = document.querySelector('#status-side');
+      if (!side || !on) return;
+      this.zoomBar = statusZoom({
+        get: () => ((this.live.view?.zoom ?? SiMode.ACTUAL) / SiMode.ACTUAL) * 100,
+        set: (pct) => { const v = this.live.view; if (v) { v.setZoom((pct / 100) * SiMode.ACTUAL); v.redraw(); } },
+        fit: { label: 'Page Width', icon: FIT_WIDTH_ICON, run: () => { this.live.view?.fitWidth(); this.live.view?.redraw(); } },
+        refocus: () => { /* (the typing stays where it was) */ },
+        min: 20, max: 300,
+      });
+      this.zoomBar.el.id = 'si-statusbar';
+      this.zoomBar.el.classList.add('si-only');
+      side.before(this.zoomBar.el);
+    }
+    this.zoomBar.el.hidden = !on;
+    const live = on && this.liveOn && !!this.live.view;
+    this.zoomBar.el.classList.toggle('si-zoom-off', !live);
+    for (const b of this.zoomBar.el.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input')) {
+      b.disabled = !live;
+      b.title = live ? b.getAttribute('aria-label') ?? '' : 'Zoom: show the Live Preview to zoom it (Ctrl+Shift+L)';
+    }
+    if (live) this.zoomBar.show();
+  }
+
   /** Show or fold the live preview (remembered on this computer). */
   private setLive(on: boolean): void {
     this.liveOn = on;
@@ -2574,6 +2609,7 @@ export class SiMode {
     this.pane.classList.toggle('si-live-off', !on);
     this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(on));
     if (on) { this.live.shown = ''; this.liveSoon(0); }
+    this.showZoom(!!this.tab);
   }
 
   /** What the live preview shows for the selected page; null for a page it doesn't show (a Data section's overview, the lists). */
@@ -2670,6 +2706,7 @@ export class SiMode {
     else { v.fitWidth(); v.scroller.scrollTop = 0; }
     v.redraw();
     L.shown = key;
+    this.showZoom(!!this.tab);
   }
 
   // ---------------------------------------------------------------- HRMS report files (§13n.3)

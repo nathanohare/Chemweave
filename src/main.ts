@@ -9049,21 +9049,21 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
   return project;
 }
 
-// (development only: open an SI project kept in memory, for trying the tab in a browser without files)
-if (import.meta.env.DEV) {
-  (window as unknown as { openMemorySi?: (files: Record<string, string>) => Promise<void> }).openMemorySi = async (files) => {
-    const [{ SiProject }, { MemoryFolder }] = await Promise.all([import('./si/project'), import('./si/folder')]);
-    const folder = new MemoryFolder('Example SI (in memory)');
-    // (a file given as "base64:…" is binary: a spectrum's PDF or a picture)
-    for (const [k, v] of Object.entries(files)) {
-      if (v.startsWith('base64:')) folder.files.set(k, Uint8Array.from(atob(v.slice(7)), (ch) => ch.charCodeAt(0)));
-      else await folder.writeText(k, v);
-    }
-    const project = await SiProject.open(siJournal(folder));
-    await loadSiMode();
-    ws.openSi(project);
-  };
+/** Open an SI project kept in memory: for trying the tab in a browser without files (development),
+ *  and for the smoke test's ribbon-height check (window.__app.openMemorySi). */
+async function openMemorySi(files: Record<string, string>): Promise<void> {
+  const [{ SiProject }, { MemoryFolder }] = await Promise.all([import('./si/project'), import('./si/folder')]);
+  const folder = new MemoryFolder('Example SI (in memory)');
+  // (a file given as "base64:…" is binary: a spectrum's PDF or a picture)
+  for (const [k, v] of Object.entries(files)) {
+    if (v.startsWith('base64:')) folder.files.set(k, Uint8Array.from(atob(v.slice(7)), (ch) => ch.charCodeAt(0)));
+    else await folder.writeText(k, v);
+  }
+  const project = await SiProject.open(siJournal(folder));
+  await loadSiMode();
+  ws.openSi(project);
 }
+if (import.meta.env.DEV) (window as unknown as { openMemorySi?: typeof openMemorySi }).openMemorySi = openMemorySi;
 
 // ---------------------------------------------------------------- manuscripts linked to their SI (phase 4)
 // A document linked to an SI project (References ▸ Linked SI) reads the SI compiled: its
@@ -16247,7 +16247,7 @@ requestAnimationFrame(() => {
 });
 
 // Hooks for the automated speed tests.
-(window as any).__app = { assistant: { items: assistantItems, apply: applyAssistantAction, markStep: markAssistantStep }, doc, editor, renderer, settingsWindow, toolboxes, chem, live, command, setRibbonLook, setPageLook, getPageLook: () => ({ ...pageLook }), addMolfile, keeper, cdxml: (name: string) => writeCdxml(doc, { name, textMeasure: measureText }), openText, picture: (dpi = 150) => { const p = recordPicture(doc, 0); if (!p) return null; const c = pictureCanvas(doc, p, dpi); return { url: c.canvas.toDataURL('image/png'), box: p.box, dpi: c.dpi }; }, stressTest, pasteChemistry, smiles: async (loose = false) => chem.molToSmiles(toMolfile(doc, doc.atoms.keys(), '', { species: allSpecies(doc, editor.measure()) }).molblock, loose), placePicture, sample: sampleMolecule, ws, slideList, get presenter() { return shows?.presenter; }, Doc, keymap, names, get sheetMode() { return sheetMode; }, sheetChem, get docMode() { return docMode; }, loadModes: () => Promise.all([loadSheetMode(), loadDocMode()]), docxBytes: async () => (await import('./io/docx-write')).writeDocx(docMode.file!.t, docFiles),
+(window as any).__app = { openMemorySi, assistant: { items: assistantItems, apply: applyAssistantAction, markStep: markAssistantStep }, doc, editor, renderer, settingsWindow, toolboxes, chem, live, command, setRibbonLook, setPageLook, getPageLook: () => ({ ...pageLook }), addMolfile, keeper, cdxml: (name: string) => writeCdxml(doc, { name, textMeasure: measureText }), openText, picture: (dpi = 150) => { const p = recordPicture(doc, 0); if (!p) return null; const c = pictureCanvas(doc, p, dpi); return { url: c.canvas.toDataURL('image/png'), box: p.box, dpi: c.dpi }; }, stressTest, pasteChemistry, smiles: async (loose = false) => chem.molToSmiles(toMolfile(doc, doc.atoms.keys(), '', { species: allSpecies(doc, editor.measure()) }).molblock, loose), placePicture, sample: sampleMolecule, ws, slideList, get presenter() { return shows?.presenter; }, Doc, keymap, names, get sheetMode() { return sheetMode; }, sheetChem, get docMode() { return docMode; }, loadModes: () => Promise.all([loadSheetMode(), loadDocMode()]), docxBytes: async () => (await import('./io/docx-write')).writeDocx(docMode.file!.t, docFiles),
   pptxBytes: async () => { const d = deckNow()!; const { writePptx } = await import('./io/pptx-write'); return writePptx(d.outOfView(() => ({ size: d.size, master: d.master, slides: d.slides.map((s, i) => ({ id: s.id, layout: s.layout, doc: d.docOf(i), notes: s.notes, notesLook: s.notesLook, transition: s.transition, anims: s.anims, comments: s.comments, canvas: s.canvas })), oleKept: d.oleKept, picKept: d.picKept })), pptxOptions()); } };
 
 // ---------------------------------------------------------------- desktop self-test
