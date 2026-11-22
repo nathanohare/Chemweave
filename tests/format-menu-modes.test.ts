@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Format and Chemistry menus per mode (retrospective audit G5-27, S85): Document and Spreadsheet
 // get their own Format and Chemistry commands as plain items (no "Spreadsheet" submenu), and each
 // item names a command the mode runs.
@@ -26,6 +27,19 @@ describe('Format menu per mode (G5-27)', () => {
     const doc = src('src/ui/doc-mode.ts'), sheet = src('src/ui/sheet-mode.ts');
     for (const c of items(fmt, 'document')) expect(doc, c).toContain(`'${c}'`);
     for (const c of items(fmt, 'sheet')) expect(sheet, c).toContain(`'${c}'`);
+  });
+});
+
+describe('no submenu named after a mode (S85; review of F5, R11)', () => {
+  it('Edit, View and Format give each mode\'s commands straight in the menu, marked with their mode', () => {
+    const page = new DOMParser().parseFromString(html, 'text/html');
+    const heads = [...page.querySelectorAll('header .submenu > button.has-sub')].map((b) => b.textContent!.trim());
+    for (const m of ['Canvas', 'Presentation', 'Spreadsheet', 'Document', 'Design']) expect(heads, m).not.toContain(m);
+    const where = (cmd: string) => page.querySelector<HTMLElement>(`header .menu:not(.sub) > [data-cmd="${cmd}"]`);
+    for (const [cmd, mode] of [['delete-slide', 'slides'], ['go-to', 'sheet'], ['freeze-header', 'sheet'], ['view-normal', 'slides'], ['canvas-background', 'slides']]) {
+      expect(where(cmd), cmd).not.toBeNull();
+      expect(where(cmd)!.dataset.modes, cmd).toBe(mode);
+    }
   });
 });
 

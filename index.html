@@ -190,19 +190,16 @@
     <button data-modes="sheet document" role="menuitem" data-cmd="find">Find…</button>
     <button data-modes="sheet document" role="menuitem" data-cmd="replace">Replace…</button>
     <hr />
-    <div class="submenu" data-modes="slides">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Presentation</button>
-    <div class="menu sub" role="menu" hidden>
+    <!-- Presentation commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
+    <hr />
     <button data-modes="slides" role="menuitem" data-cmd="delete-slide">Delete Slide</button>
     <button data-modes="slides" role="menuitem" data-cmd="cut-slides" title="Cut the selected slides to paste into this or another presentation">Cut Slides</button>
     <button data-modes="slides" role="menuitem" data-cmd="copy-slides" title="Copy the selected slides to paste into this or another presentation (Ctrl+C in the slide list)">Copy Slides</button>
     <button data-modes="slides" role="menuitem" data-cmd="paste-slides" title="Paste copied slides after the selected slide, using this presentation's theme (Ctrl+V in the slide list)">Paste Slides</button>
     <button data-modes="slides" role="menuitem" data-cmd="paste-slides-keep" title="Paste the slides copied, each keeping its own background, fonts and colors">Paste Slides (Keep Source Formatting)</button>
-    </div>
-    </div>
-    <div class="submenu" data-modes="sheet">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Spreadsheet</button>
-    <div class="menu sub" role="menu" hidden>
+    <hr />
+    <!-- Spreadsheet commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
+    <hr />
     <button data-modes="sheet" role="menuitem" data-cmd="delete-cells">Delete Rows or Columns</button>
     <button data-modes="sheet" role="menuitem" data-cmd="go-to">Go To…</button>
     <button data-modes="sheet" role="menuitem" data-cmd="go-to-special">Go To Special…</button>
@@ -259,8 +256,7 @@
     <button role="menuitem" data-cmd="compound" title="Look up the selected names on PubChem and convert them to compounds">Data Type: Compound</button>
     </div>
     </div>
-    </div>
-    </div>
+    <hr />
     <hr />
     <button role="menuitem" data-cmd="command-search" title="Find any command by typing part of its name">Search Commands…</button>
     <button role="menuitem" data-cmd="assistant" title="Ask your AI model about the page, for a structure, a scheme check or writing help (opt-in: nothing is sent until you turn it on)">Assistant…</button>
@@ -311,9 +307,8 @@
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="dark-page" title="Reading Mode: the page dark on screen only; files, printing, copying and exports are not changed"><span>Reading Mode</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="split-view" title="A canvas beside the document, spreadsheet, presentation or design, so you can draw and write without switching tabs"><span>Split View: Canvas Beside</span></button>
     <hr />
-    <div class="submenu" data-modes="document">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Document</button>
-    <div class="menu sub" role="menu" hidden>
+    <!-- Document commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
+    <hr />
     <div class="submenu" data-modes="document">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Document Views</button>
     <div class="menu sub" role="menu" hidden>
@@ -330,11 +325,9 @@
     </div>
     <button data-modes="document" role="menuitemcheckbox" aria-checked="false" data-cmd="view-split" title="Two panes on the document, one above the other, each scrolled on its own"><span>Split Window</span></button>
     <button data-modes="document" role="menuitem" data-cmd="doc-new-window" title="The document in another tab too, with its own view and place">New Window</button>
-    </div>
-    </div>
-    <div class="submenu" data-modes="sheet">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Spreadsheet</button>
-    <div class="menu sub" role="menu" hidden>
+    <hr />
+    <!-- Spreadsheet commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
+    <hr />
     <button data-modes="sheet" role="menuitem" data-cmd="freeze-header">Freeze Header Row</button>
     <div class="submenu" data-modes="sheet">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Freeze Panes</button>
@@ -347,11 +340,9 @@
     </div>
     <button data-modes="sheet" role="menuitemcheckbox" aria-checked="false" data-cmd="split-window"><span>Split</span></button>
     <button data-modes="sheet" role="menuitemcheckbox" aria-checked="false" data-cmd="show-all-notes"><span>Show All Notes</span></button>
-    </div>
-    </div>
-    <div class="submenu" data-modes="slides">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Presentation</button>
-    <div class="menu sub" role="menu" hidden>
+    <hr />
+    <!-- Presentation commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
+    <hr />
     <button data-modes="slides" role="menuitemradio" aria-checked="true" data-cmd="view-normal" title="The slide list beside the slide you are working on"><span>Normal</span></button>
     <button data-modes="slides" role="menuitemradio" aria-checked="false" data-cmd="view-sorter" title="Every slide in rows of larger pictures, by section: drag to reorder, double-click one to open it"><span>Slide Sorter</span></button>
     <button data-modes="slides" role="menuitemcheckbox" aria-checked="false" data-cmd="animation-pane"><span>Animation Pane</span></button>
@@ -398,8 +389,7 @@
     </div>
     </div>
     </div>
-    </div>
-    </div>
+    <hr />
     <hr />
     <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Toolboxes</button>
@@ -593,9 +583,8 @@
     <button data-modes="drawing slides design" role="menuitem" data-cmd="link-text" title="Link the selected text to the selected structure (or the nearest), so it moves with it">Link Text to Structure</button>
     <button data-modes="drawing slides design" role="menuitem" data-cmd="unlink-text" title="Leave the selected text where it is, no longer following its structure">Unlink Text</button>
     <hr />
-    <div class="submenu" data-modes="slides">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Presentation</button>
-    <div class="menu sub" role="menu" hidden>
+    <!-- Presentation commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
+    <hr />
     <div class="submenu" data-modes="slides">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Slide Layout</button>
     <div id="layout-menu" class="menu sub" role="menu" hidden>
@@ -637,12 +626,11 @@
     </div>
     <hr />
     <button data-modes="slides" role="menuitem" data-cmd="format-background" title="This slide's background (or every slide's): a color, gradient, picture or pattern">Format Background…</button>
-    <button class="keyframes-only" role="menuitem" data-cmd="canvas-background" title="A canvas slide's endless background: a gradient along the route, a faint pattern, parallax">Canvas Background…</button>
+    <button data-modes="slides" class="keyframes-only" role="menuitem" data-cmd="canvas-background" title="A canvas slide's endless background: a gradient along the route, a faint pattern, parallax">Canvas Background…</button>
     <button data-modes="slides" role="menuitemcheckbox" aria-checked="false" data-cmd="hide-slide" title="Skip the selected slides in the show (they stay in the file). Click again to show them"><span>Hide Slide</span></button>
     <button data-modes="slides" role="menuitem" data-cmd="slide-transitions">Transitions…</button>
     <button data-modes="slides" role="menuitem" data-cmd="slide-animations">Animations…</button>
-    </div>
-    </div>
+    <hr />
     <button data-modes="sheet" role="menuitem" data-cmd="new-rule">New Conditional Formatting Rule…</button>
     <button data-modes="sheet" role="menuitem" data-cmd="manage-rules">Manage Conditional Formatting…</button>
     <button data-modes="sheet" role="menuitem" data-cmd="data-validation">Data Validation…</button>

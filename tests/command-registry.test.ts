@@ -26,10 +26,24 @@ describe('command list', () => {
     const pic = menu.querySelector<HTMLButtonElement>('[data-cmd="insert-picture"]')!;
     expect(pic.getAttribute('role')).toBe('menuitem');
     expect(pic.dataset.modes).toBe('drawing slides design document');
-    const doc = [...menu.querySelectorAll<HTMLElement>(':scope > .submenu')].find((s) => s.querySelector(':scope > button')?.textContent === 'Document')!;
-    expect(doc.dataset.modes).toBe('document');
-    expect(doc.querySelector<HTMLElement>(':scope > .menu.sub')!.hidden).toBe(true);
-    expect(doc.querySelector('[data-cmd="insert-toc"]')).not.toBeNull();
+    // each mode's commands sit straight in the menu, marked with their mode, not in a submenu named after it (S85, R11)
+    const heads = [...menu.querySelectorAll('.submenu > button')].map((b) => b.textContent);
+    for (const m of ['Canvas', 'Presentation', 'Spreadsheet', 'Document', 'Design']) expect(heads).not.toContain(m);
+    for (const [cmd, mode] of [['new-slide', 'slides'], ['insert-sheet', 'sheet'], ['insert-caption', 'document'], ['add-keyframe', 'slides']]) {
+      const b = menu.querySelector<HTMLElement>(`:scope > [data-cmd="${cmd}"]`)!;
+      expect(b, cmd).not.toBeNull();
+      expect(b.dataset.modes, cmd).toBe(mode);
+    }
+    const toc = [...menu.querySelectorAll<HTMLElement>(':scope > .submenu')].find((s) => s.querySelector(':scope > button')?.textContent === 'Tables and Indexes')!;
+    expect(toc.dataset.modes).toBe('document');
+    expect(toc.querySelector<HTMLElement>(':scope > .menu.sub')!.hidden).toBe(true);
+    expect(toc.querySelector('[data-cmd="insert-toc"]')).not.toBeNull();
+    // every item straight in the menu says which tabs it works in, or works in all of them
+    for (const el of menu.querySelectorAll<HTMLElement>(':scope > .submenu, :scope > button')) {
+      const id = el.dataset.cmd;
+      if (id && !commandDef(id)?.modes) continue;
+      expect(el.dataset.modes, id ?? el.textContent ?? '').toBeTruthy();
+    }
     expect(menu.querySelectorAll('[data-cmd]').length).toBe(commandDefs().length);
     expect(menu.querySelector('.keyframes-only[data-cmd="add-keyframe"]')).not.toBeNull();
   });
