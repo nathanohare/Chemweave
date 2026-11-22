@@ -852,7 +852,7 @@ export class StylePanel {
       this.check('Return to Zoom', !!p.zoom?.back, (v) => set('Return to Zoom', (x) => ({ zoom: { ...x.zoom, back: v || undefined } })), 'After its slide (or its part of a Summary Zoom), the show comes back to this slide');
     } else if (pics.length === 1 && p.video) {
       const v = p.video;
-      const how = `${v.start === 'click' ? 'Starts when clicked' : 'Starts by itself'}${v.once ? '' : ', loops'}${v.trimStart || v.trimEnd ? ', trimmed' : ''}`;
+      const how = `${v.start === 'click' ? 'Starts when clicked' : 'Starts automatically'}${v.once ? '' : ', loops'}${v.trimStart || v.trimEnd ? ', trimmed' : ''}`;
       this.note(v.audio ? `Sound. ${how}. It plays in the slide show and in PowerPoint.` : `Video${p.px ? `, ${p.px.w} × ${p.px.h} pixels` : ''}. ${how}. It plays in the slide show and in PowerPoint.`);
       const buttons = document.createElement('div');
       buttons.className = 'style-buttons';
@@ -1525,7 +1525,7 @@ export class StylePanel {
       const a = centres[0], b = dbls[0];
       const l = a ? a.stereoLabel : b.stereoLabel;
       const auto = a ? info?.atom(a.id) : info?.bond(b.id);
-      this.text('Label text', l?.manual ? l.text : '', auto ? `(${auto}), worked out` : 'worked out', (v) => this.edit('Stereo label text', () => setStereoText(this.doc, a ? 'a' : 'b', a ? a.id : b.id, v, arialWidth)),
+      this.text('Label text', l?.manual ? l.text : '', auto ? `(${auto}), calculated` : 'calculated', (v) => this.edit('Stereo label text', () => setStereoText(this.doc, a ? 'a' : 'b', a ? a.id : b.id, v, arialWidth)),
         'Type a custom label (for example (R*) or rel-(S)); leave empty to show the calculated one.');
     }
   }

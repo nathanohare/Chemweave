@@ -56,7 +56,7 @@ export class HotkeysDialog {
         <span class="hk-buttons">
           <button type="button" data-act="export" title="Save your keys to a file, to back them up or use them on another computer">Export…</button>
           <button type="button" data-act="import" title="Use keys saved with Export">Import…</button>
-          <button type="button" data-act="reset-all">Change hotkeys to ChemDraw™ defaults</button>
+          <button type="button" data-act="reset-all">Reset All to ChemDraw-Style Defaults</button>
           <button type="button" data-act="close" class="primary">Close</button>
         </span>
       </div>`;
@@ -210,7 +210,7 @@ export class HotkeysDialog {
       b.className = 'link';
       b.dataset.act = 'reset';
       b.textContent = DEFAULT_KEYS[ctx] && Object.values(DEFAULT_KEYS[ctx]).includes(action) ? 'Reset' : 'Remove';
-      b.title = b.textContent === 'Reset' ? "Restore ChemDraw's shortcuts for this action" : 'Remove the shortcuts you added';
+      b.title = b.textContent === 'Reset' ? 'Restore the default (ChemDraw-style) keyboard shortcuts for this action' : 'Remove the shortcuts you added';
       reset.append(b);
     }
     return tr;
@@ -272,7 +272,7 @@ export class HotkeysDialog {
       this.say(`${displayChord(chord, this.opts.mac)} no longer does “${actionName(action)}”.`);
     } else if (btn.dataset.act === 'reset') {
       keymap.resetAction(ctx, action);
-      this.say(`“${actionName(action)}” has ChemDraw’s keys again.`);
+      this.say(`“${actionName(action)}” has its default (ChemDraw-style) keys again.`);
     }
   }
 
@@ -339,14 +339,14 @@ export class HotkeysDialog {
       clearTimeout(this.resetTimer);
       this.resetTimer = window.setTimeout(() => {
         this.resetAllBtn.classList.remove('confirm');
-        this.resetAllBtn.textContent = "Reset All to ChemDraw Defaults";
+        this.resetAllBtn.textContent = 'Reset All to ChemDraw-Style Defaults';
       }, 4000);
       return;
     }
     clearTimeout(this.resetTimer);
     this.resetAllBtn.classList.remove('confirm');
-    this.resetAllBtn.textContent = "Reset All to ChemDraw Defaults";
+    this.resetAllBtn.textContent = 'Reset All to ChemDraw-Style Defaults';
     keymap.resetAll();
-    this.say('Every key is back to ChemDraw’s. (Export first next time if you want to keep a copy of yours.)');
+    this.say('Every key is back to its ChemDraw-style default. (Export first next time if you want to keep a copy of yours.)');
   }
 }

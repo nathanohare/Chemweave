@@ -9,7 +9,7 @@
 // - symmetry-distinct carbons (≈ ¹³C signals) and ¹H counts (with NH/OH/SH apart).
 //
 // Masses and abundances: Chemweave's isotope table (chem/analysis.ts: NIST, masses from the 2016
-// Atomic Mass Evaluation) for the natural isotopes; labelled isotopes ([14C], T, [18F]…) and
+// Atomic Mass Evaluation) for the natural isotopes; labeled isotopes ([14C], T, [18F]…) and
 // elements with none in nature (Tc, Pm…) from isotope-masses.ts (NIST SRD 144, as SI Assistant
 // has them through RDKit); the electron mass is CODATA 2018 (chem/hrms.ts).
 
@@ -20,7 +20,7 @@ import { isotopeMassOf, mostCommonIsotope } from './isotope-masses';
 
 export class ChemError extends Error {}
 
-/** Element counts: "C", "H", "D", "T", or "13C" style keys ("<mass number><symbol>") for labelled isotopes. */
+/** Element counts: "C", "H", "D", "T", or "13C" style keys ("<mass number><symbol>") for labeled isotopes. */
 export type Counts = Map<string, number>;
 
 const isoKey = (sym: string, iso: number): string => (iso ? `${iso}${sym}` : sym);
@@ -161,7 +161,7 @@ function isotopeKey(sym: string, massNumber: number): string {
 }
 
 /** Counts for a formula with isotopes in brackets, e.g. "C5[13C]H6Br". */
-function labelledFormula(text: string): Counts {
+function labeledFormula(text: string): Counts {
   const counts: Counts = new Map();
   const re = /\[(\d+)([A-Z][a-z]?)\](\d*)/g;
   for (const m of text.matchAll(re)) {
@@ -218,7 +218,7 @@ export function parseMFormulaAndCharge(text: string): [Counts, number] {
   cleaned = stripEnd(cleaned.replace(/ /g, ''), RADICAL);
   if (!cleaned) throw new ChemError('The formula is empty.');
   try {
-    return [labelledFormula(cleaned), charge];
+    return [labeledFormula(cleaned), charge];
   } catch (e) {
     if (e instanceof ChemError && /[+\-−–⁺⁻()^]/.test(text ?? '')) throw new ChemError(`${e.message} ${CHARGE_HINT}`);
     throw e;
@@ -272,7 +272,7 @@ export function parseAdduct(label: string): Adduct {
       }
       return `[${superToPlain(mass)}${sym}]`;
     });
-    for (const [k, c] of labelledFormula(formula)) delta.set(k, (delta.get(k) ?? 0) + n * c);
+    for (const [k, c] of labeledFormula(formula)) delta.set(k, (delta.get(k) ?? 0) + n * c);
   }
   const z = (m[3] ? Number(m[3]) : 1) * (m[4] === '+' ? 1 : -1);
   if (z === 0) throw new ChemError(`“${label}”: the ion's charge can't be 0. Use e.g. [M+H]+, [M-H]- or [M+2H]2+.`);
@@ -309,7 +309,7 @@ export interface Peak {
   mz: number;
   /** % of the most intense peak. */
   abundance: number;
-  /** Isotopes other than the most common labelled, e.g. C6H6[81Br]. */
+  /** Isotopes other than the most common labeled, e.g. C6H6[81Br]. */
   formula: string;
   /** Made only of the most common isotopes. */
   mono: boolean;

@@ -3970,7 +3970,7 @@ export class Editor {
     const doc = this.doc, m = this.fullMeasure();
     const ids = [...doc.shapes.values()].filter((s) => s.newman).map((s) => s.id);
     if (!ids.length) return;
-    doc.edit('Newman Projection Look', () => {
+    doc.edit('Newman Projection Style', () => {
       for (const id of ids) {
         const s = doc.shapes.get(id)!;
         const c = newmanCentre(doc, s);
@@ -3986,7 +3986,7 @@ export class Editor {
     const c = s?.newman ? newmanCentre(doc, s) : null;
     if (!s?.newman || !c) return;
     const d = { ...s.newman, look: { ...structuredClone(s.newman.look), ...patch } };
-    doc.edit('Newman Projection Look', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
+    doc.edit('Newman Projection Style', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
     this.changed();
   }
 
@@ -5054,7 +5054,7 @@ export class Editor {
     const bonds = [...this.sel.bonds].map((id) => doc.bonds.get(id)).filter((b): b is Bond => !!b && lit(b));
     if (!atoms.length && !bonds.length) return false;
     const hl = style && tidyStyle(style);
-    doc.edit('Highlight look', () => {
+    doc.edit('Highlight Style', () => {
       for (const a of atoms) doc.updateAtom(a.id, { highlight: colour ?? a.highlight, hl });
       for (const b of bonds) doc.updateBond(b.id, { highlight: colour ?? b.highlight, hl });
     });
@@ -6767,7 +6767,7 @@ export class Editor {
     };
     if (act === 'select') { this.selectOnly({ kind: 'bond', id }); return true; }
     if (act === 'properties') { this.selectOnly({ kind: 'bond', id }); this.onProperties(); return true; }
-    doc.edit('Bond hotkey', () => {
+    doc.edit('Bond Hotkey', () => {
       if (act === 'delete') { this.removeBondAndOrphans(id); return; }
       if (act === 'wedge' || act === 'hash-wedge') {
         const disp: BondDisplay = act === 'wedge' ? 'wedge' : 'hashWedge';

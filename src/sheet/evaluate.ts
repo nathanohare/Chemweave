@@ -406,7 +406,7 @@ const FUNCTIONS: Record<string, FnDef> = {
     min: 1, max: 1,
     fn: num1((x) => {
       const n = Math.trunc(x);
-      if (n < 0 || n > 170) return ERR.num('FACT works out 0 to 170');
+      if (n < 0 || n > 170) return ERR.num('FACT accepts 0 to 170');
       let f = 1;
       for (let i = 2; i <= n; i++) f *= i;
       return f;

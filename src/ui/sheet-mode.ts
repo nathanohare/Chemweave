@@ -1613,7 +1613,7 @@ export class SheetMode {
       return;
     }
     const { r, c } = v.sel.active;
-    const ans = await ask('Structure from name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS RN', value: '' }], {
+    const ans = await ask('Structure from Name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS RN', value: '' }], {
       ok: 'Draw', note: `Draws the structure in ${cellName(r, c)}. Names are read on this computer (OPSIN): systematic names and many common ones such as caffeine. CAS RNs (50-78-2) are looked up on PubChem.`,
     });
     const text = ans?.text.trim();
@@ -1701,7 +1701,7 @@ export class SheetMode {
     if (!s) return;
     const { r, c } = v.sel.active;
     const here = s.cell(r, c)?.structure || (typeof s.value(r, c) === 'string' && s.value(r, c) !== '') ? cellName(r, c) : '';
-    const got = await ask('Isotope pattern', [
+    const got = await ask('Isotope Pattern', [
       { name: 'source', label: 'Compound', value: here, placeholder: 'B2, or a formula such as C10H12N2O' },
       { name: 'ion', label: 'Ion', value: '[M+H]+', suggestions: COMMON_ADDUCTS },
       { name: 'min', label: 'Minimum peak abundance', value: '0.5', type: 'number', unit: '% of the tallest' },
@@ -2662,7 +2662,7 @@ export class SheetMode {
       const f = s.formulas.get(k);
       const problem = f ? wb.formulaProblem(f) : null;
       const e = v as CellError;
-      parts.push(para(`${e.code === '#BUSY!' ? 'Being worked out…' : `${e.code}: ${problem ?? e.detail}`}`, e.code === '#BUSY!' ? 'muted' : 'cp-error'));
+      parts.push(para(`${e.code === '#BUSY!' ? 'Calculating…' : `${e.code}: ${problem ?? e.detail}`}`, e.code === '#BUSY!' ? 'muted' : 'cp-error'));
     } else if (v !== undefined && v !== null && (cell?.input?.startsWith('=') || def)) {
       parts.push(para(`Value: ${plainText(v)}`, 'cp-value'));
     }
@@ -2705,7 +2705,7 @@ export class SheetMode {
     const box = document.createElement('div');
     const got = this.chem.structure(st);
     if (isError(got)) {
-      box.append(Object.assign(document.createElement('p'), { textContent: (got as CellError).code === '#BUSY!' ? 'Working out its properties…' : (got as CellError).detail, className: 'muted' }));
+      box.append(Object.assign(document.createElement('p'), { textContent: (got as CellError).code === '#BUSY!' ? 'Calculating its properties…' : (got as CellError).detail, className: 'muted' }));
       return box;
     }
     const m = got as MolProps;

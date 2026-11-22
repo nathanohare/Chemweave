@@ -257,7 +257,7 @@ export class KnowledgeBaseWindow {
     d.addEventListener('scroll', hidePop, { capture: true, passive: true });
     d.addEventListener('wheel', hidePop, { passive: true });
     window.addEventListener('blur', hidePop);
-    this.search = el('input', { type: 'search', placeholder: 'Name, CAS, SMILES or a shift (2.17)', title: 'Search every table by name, CAS number, any word, or a chemical shift (2.17 finds peaks within 0.05 ppm in 1H, 0.5 in 13C). A SMILES finds that compound, then every compound containing it', value: query });
+    this.search = el('input', { type: 'search', placeholder: 'Name, CAS, SMILES or a shift (2.17)', title: 'Search every table by name, CAS number, any word, or a chemical shift (2.17 finds peaks within 0.05 ppm in ¹H, 0.5 in ¹³C). A SMILES finds that compound, then every compound containing it', value: query });
     this.search.setAttribute('aria-label', 'Search the Knowledge Base');
     // a single letter matches most of every table (~110 ms): wait a moment for the next key first
     let wait = 0;

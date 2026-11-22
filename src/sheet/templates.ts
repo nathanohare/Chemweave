@@ -122,7 +122,7 @@ function substrateScope(): Workbook {
     sh.patchStyle({ r1: 22, c1: 0, r2: 23, c2: 0 }, { bold: true });
     sh.patchStyle({ r1: 22, c1: 4, r2: 22, c2: 5 }, { numFmt: '0', bold: true, align: 'center' });
     sh.patchStyle({ r1: 23, c1: 4, r2: 23, c2: 4 }, { align: 'center' });
-    sh.setInput(25, 0, 'Draw or type each substrate\'s SMILES in column B; its MW is worked out in C.');
+    sh.setInput(25, 0, 'Draw or type each substrate\'s SMILES in column B; its MW is calculated in C.');
     sh.patchStyle({ r1: 25, c1: 0, r2: 25, c2: 0 }, { italic: true, color: '#595959' });
     sh.frozen = { rows: 1, cols: 1 };
   });
@@ -449,7 +449,7 @@ function rota(): Workbook {
 
 export const SHEET_TEMPLATES: SheetTemplate[] = [
   { id: 'reaction-table', category: 'reactions', name: 'Reaction table', blurb: 'Optimization entries: catalyst, loading, solvent, temperature, time, conversion, yield, ee and dr, with the best entry found for you.', make: reactionTable },
-  { id: 'substrate-scope', category: 'reactions', name: 'Substrate scope table', blurb: 'One row per substrate: structure, MW worked out, product, yield, ee and dr, with the averages below.', make: substrateScope },
+  { id: 'substrate-scope', category: 'reactions', name: 'Substrate scope table', blurb: 'One row per substrate: structure, calculated MW, product, yield, ee and dr, with the averages below.', make: substrateScope },
   { id: 'plate-24', category: 'reactions', name: '24-well screening plate', blurb: 'A 4 × 6 plate map of conditions and a matching grid of yields shaded from low to high.', make: () => plate(4, 6) },
   { id: 'plate-96', category: 'reactions', name: '96-well screening plate', blurb: 'An 8 × 12 plate map of conditions and a matching grid of yields shaded from low to high.', make: () => plate(8, 12) },
   { id: 'kinetics', category: 'reactions', name: 'Kinetics time course', blurb: 'Time, concentration and ln[A], a chart of the time course, and the first-order rate constant and half-life.', make: kinetics },
@@ -457,11 +457,11 @@ export const SHEET_TEMPLATES: SheetTemplate[] = [
   { id: 'inventory', category: 'stock', name: 'Chemical inventory', blurb: 'Structure, MW, amount, location, hazard class, supplier, and dates received and opened, with a filter.', make: inventory },
   { id: 'stock-solution', category: 'stock', name: 'Stock solution calculator', blurb: 'The mass to weigh for a concentration and volume, the volume of a neat liquid, or a stock to dilute.', make: stockSolution },
   { id: 'solvent-log', category: 'stock', name: 'Gas cylinder and solvent still log', blurb: 'Cylinders: gauge pressure and changes. Stills and solvent systems: refills, regeneration and water checks.', make: solventLog },
-  { id: 'calibration', category: 'analysis', name: 'HPLC/GC calibration curve', blurb: 'Standards against peak area, the fitted line with R², and unknowns worked out from it.', make: calibration },
+  { id: 'calibration', category: 'analysis', name: 'HPLC/GC calibration curve', blurb: 'Standards against peak area, the fitted line with R², and unknowns calculated from it.', make: calibration },
   { id: 'ee-areas', category: 'analysis', name: 'ee and er from HPLC peak areas', blurb: 'The two enantiomers\' peak areas give er, ee and the major enantiomer for each sample.', make: eeFromAreas },
   { id: 'nmr-yield', category: 'analysis', name: 'NMR yield with an internal standard', blurb: 'From the standard\'s mass and protons and the integrals: the product in mmol and the yield.', make: nmrYield },
   { id: 'titration', category: 'analysis', name: 'Titration (organolithium)', blurb: 'Titrant mass and reagent volume at the endpoint for each run, and the average molarity.', make: titration },
   { id: 'orders', category: 'lab', name: 'Order tracker', blurb: 'What was ordered, from whom, price, account, and status from requested to received.', make: orders },
   { id: 'booking', category: 'lab', name: 'Instrument booking', blurb: 'A week of hourly slots for one instrument, to write your name in.', make: booking },
-  { id: 'rota', category: 'lab', name: 'Group duties schedule', blurb: 'Weekly duties (solvent system, waste, glassware, NMR tubes) with this week picked out.', make: rota },
+  { id: 'rota', category: 'lab', name: 'Group duties schedule', blurb: 'Weekly duties (solvent system, waste, glassware, NMR tubes) with this week highlighted.', make: rota },
 ];

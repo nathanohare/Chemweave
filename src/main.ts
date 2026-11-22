@@ -43,7 +43,7 @@ import { casHtml, casRuns, type CasState } from './ui/cas-panel';
 import { pubchemHtml, pubchemRuns, type PubChemState } from './ui/pubchem-panel';
 import { paragraphPages } from './document/doc-file';
 import { reviewAuthor, setReviewAuthor } from './document/revisions';
-import { NMR_SOLVENTS, NmrPanel } from './ui/nmr-panel';
+import { NMR_SOLVENTS, NmrPanel, solventLabel } from './ui/nmr-panel';
 import { compareMode, nmrQuality, nmrSpectrumMhz, setCompareMode, setNmrQuality, setNmrSpectrumMhz } from './ui/nmr-spectrum';
 import { nmrAutoPredict, nmrRange, peakLabels, setNmrAutoPredict, setNmrRange, setPeakLabels } from './ui/nmr-settings';
 import { analysisPrefs, setAnalysisPrefs, onAnalysisPrefs, parseAnalysisPrefs, calcOf, nextCalcId, type AnalysisPrefs } from './chem/analysis-prefs';
@@ -3386,7 +3386,7 @@ async function schemeSettings(): Promise<void> {
   const aligns = [{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }, { value: 'right', label: 'Right' }];
   /** A distance box, kept from 0 to its limit. */
   const dist = (name: SchemeDistance, label: string, placeholder: string): Field => ({ name, label, value: pt(p[name] ?? null), type: 'number', unit: 'pt', placeholder, min: 0, max: SCHEME_LIMITS[name] });
-  const got = await ask('Scheme Settings', [
+  const got = await ask('Schemes', [
     dist('structGap', 'Gap between arrow and structures', auto(SPACING.gap)),
     dist('plusGap', 'Space either side of +', auto(SPACING.plus)),
     { name: 'helpers', label: 'Show text guides on reaction arrows', value: String(p.helpers), type: 'checkbox' },
@@ -6338,7 +6338,7 @@ function compoundDrawing(c: LibCompound, style: DocStyle, withLabel: boolean): D
 /** What Insert in the Compound Library puts a compound into. */
 function compoundInsertsInto(): string | null {
   if (docActive()) return 'the document, at the cursor';
-  if (sheetActive()) return 'the cell picked';
+  if (sheetActive()) return 'the selected cell';
   if (cellEdit) return null;
   return deckNow() ? (ws.active.mode === 'design' ? 'the design' : 'the slide') : 'the drawing';
 }
@@ -7185,7 +7185,7 @@ async function drawingStyleDialog(): Promise<void> {
     const objects = { ...t.objects };
     for (const [k, o] of Object.entries(objects)) if (o.kind === 'drawing') objects[Number(k)] = { ...o, contents: restyleContents(o.contents, old, next, got.how) };
     const changed: DocText = { ...t, objects, drawingStyle: { ...next } };
-    file.ed.update(changed, 'Drawing style');
+    file.ed.update(changed, 'Drawing Style');
     docMode?.fontsChanged();
   } else {
     doc.edit(`Drawing style: ${next.name}`, () => applyStyle(doc, next, got.how));
@@ -8966,7 +8966,7 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
   let opening = '';
   try {
     if (create) {
-      const got = await ask('New SI Project', [{ name: 'title', label: 'Title', value: '', placeholder: 'e.g. NaBH4 Reduction SI' }], { ok: 'Make Project', note: 'The project is a new folder, named after it, inside the folder you picked. Chem SI Assistant opens it too.' });
+      const got = await ask('New SI Project', [{ name: 'title', label: 'Title', value: '', placeholder: 'e.g. NaBH4 Reduction SI' }], { ok: 'Make Project', note: 'The project is a new folder, named after it, inside the folder you chose. Chem SI Assistant opens it too.' });
       if (!got?.title.trim()) return null;
       const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
       path = path.replace(/[\\/]+$/, '') + sep + safeFilename(got.title.trim());
@@ -11183,11 +11183,61 @@ function applyHighlightLook(look: HighlightLookPreset): void {
 /** Chemistry > Highlight and Fill > Highlight Look…: pick a look for the selection. */
 async function chooseHighlightLook(): Promise<void> {
   const looks = allLooks();
-  const got = await ask('Highlight look', [
-    { name: 'look', label: 'Style', value: '0', options: looks.map((l, i) => ({ value: String(i), label: i >= BUILT_IN_LOOKS.length ? `${l.name} (yours)` : l.name })) },
-  ], { ok: 'Use', note: 'The ready-made styles keep the highlight\'s color; custom styles have their color too. Save the style of a highlight you have set up with Chemistry ▸ Highlight and Fill ▸ Save Highlight Style.' });
+  const got = await ask('Highlight Style', [
+    { name: 'look', label: 'Style', value: '0', options: looks.map((l, i) => ({ value: String(i), label: i >= BUILT_IN_LOOKS.length ? `${l.name} (custom)` : l.name })),
+      help: 'The ready-made styles keep the highlight\'s color; custom styles have their color too. Save the style of a highlight you have set up with Chemistry ▸ Highlight and Fill ▸ Save Highlight Style.' },
+  ], { ok: 'Apply', preview: { title: 'Preview', draw: (v) => { const l = looks[Number(v.look)] ?? looks[0]; return highlightSample(l.colour ?? highlightColour, l.style); } } });
   const look = got && looks[Number(got.look)];
   if (look) applyHighlightLook(look);
+}
+
+/** A small structure (a benzene ring and a short chain) with a highlight in `colour` and `style`, for the Highlight Style window's preview. */
+function highlightSample(colour: string, style: HighlightStyle): HTMLCanvasElement {
+  const x = new Doc();
+  x.style = { ...doc.style };
+  const L = x.style.bondLength || 14.4;
+  x.edit('Preview', () => {
+    const ring = [0, 1, 2, 3, 4, 5].map((i) => { const t = -Math.PI / 2 + (i * Math.PI) / 3; return x.addAtom(Math.cos(t) * L, Math.sin(t) * L); });
+    ring.forEach((a, i) => x.addBond(a.id, ring[(i + 1) % 6].id, i % 2 ? 1 : 2));
+    const c1 = x.addAtom(ring[1].x + L * Math.cos(-Math.PI / 6), ring[1].y + L * Math.sin(-Math.PI / 6));
+    const c2 = x.addAtom(c1.x + L, c1.y);
+    const o = x.addAtom(c2.x + L * Math.cos(-Math.PI / 3), c2.y + L * Math.sin(-Math.PI / 3));
+    x.updateAtom(o.id, { label: 'O' });
+    x.addBond(ring[1].id, c1.id, 1);
+    x.addBond(c1.id, c2.id, 1);
+    x.addBond(c2.id, o.id, 2);
+    // the highlight: the ring's top-right half and the chain
+    for (const a of [ring[0], ring[1], ring[2], c1, c2, o]) x.updateAtom(a.id, { highlight: colour, hl: style });
+    for (const b of x.bonds.values()) {
+      const ids = [b.a1, b.a2];
+      if (ids.every((id) => [ring[0].id, ring[1].id, ring[2].id, c1.id, c2.id, o.id].includes(id))) x.updateBond(b.id, { highlight: colour, hl: style });
+    }
+  });
+  const canvas = document.createElement('canvas');
+  canvas.className = 'hl-sample';
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'Preview of the highlight style');
+  canvas.style.width = '220px';
+  canvas.style.height = '140px';
+  requestAnimationFrame(() => paintDocFitted(x, canvas, 2.4));
+  return canvas;
+}
+
+/** Draw `d` fitted (with a margin, never larger than `most`×) into `canvas` on white, for a window's preview. */
+function paintDocFitted(d: Doc, canvas: HTMLCanvasElement, most = 3): void {
+  const box = d.bounds();
+  const w = canvas.clientWidth || 220, h = canvas.clientHeight || 140, dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !box) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const bw = Math.max(1, box.x2 - box.x1), bh = Math.max(1, box.y2 - box.y1), pad = 14;
+  const k = Math.min((w - 2 * pad) / bw, (h - 2 * pad) / bh, most);
+  ctx.setTransform(k * dpr, 0, 0, k * dpr, (w / 2 - (box.x1 + bw / 2) * k) * dpr, (h / 2 - (box.y1 + bh / 2) * k) * dpr);
+  drawDrawing(ctx, d);
 }
 
 /** The colour and look of the first highlighted atom or bond selected. */
@@ -11201,7 +11251,7 @@ function selectedHighlight(): { colour: string; style: HighlightStyle } | null {
 async function saveHighlightLook(): Promise<void> {
   const h = selectedHighlight();
   if (!h) { flash('Select a highlight that looks the way you want first.'); return; }
-  const got = await ask('Save highlight style', [
+  const got = await ask('Save Highlight Style', [
     { name: 'name', label: 'Name', value: '', placeholder: 'for example Reacting bonds' },
     { name: 'colour', label: 'Keep its color too', value: 'true', type: 'checkbox' },
   ], { ok: 'Save', note: 'It is offered in Chemistry ▸ Highlight and Fill ▸ Highlight Style, in the Style panel and in the Highlight toolbox, in every drawing.' });
@@ -11217,7 +11267,7 @@ async function saveHighlightLook(): Promise<void> {
 /** Chemistry > Highlight and Fill > Delete Highlight Look…: forget one of your own looks. */
 async function deleteHighlightLook(): Promise<void> {
   if (!ownLooks.length) { flash('You have no saved highlight styles yet (Chemistry ▸ Highlight and Fill ▸ Save Highlight Style).'); return; }
-  const got = await ask('Delete highlight style', [{ name: 'look', label: 'Style', value: ownLooks[0].name, options: ownLooks.map((l) => ({ value: l.name, label: l.name })) }], { ok: 'Delete' });
+  const got = await ask('Delete Highlight Style', [{ name: 'look', label: 'Style', value: ownLooks[0].name, options: ownLooks.map((l) => ({ value: l.name, label: l.name })) }], { ok: 'Delete' });
   if (!got) return;
   ownLooks = ownLooks.filter((l) => l.name !== got.look);
   storeSettings();
@@ -11789,14 +11839,14 @@ async function nmrSettings(): Promise<void> {
       { value: 'fast', label: 'Fast: first-order multiplets' }, { value: 'balanced', label: 'Balanced: exact simulation of up to 8 coupled protons' },
       { value: 'accurate', label: 'Accurate: 3-D conformers, up to 10 coupled protons' }],
       help: 'Accurate also predicts both shifts of diastereotopic CH2 protons and couplings from the 3-D shape; it takes a few seconds per structure. The Spectrum window\'s dropdown changes the same setting.' },
-    { name: 'solvent', label: 'Solvent', value: nmrPanel.solvent, options: NMR_SOLVENTS.map((x) => ({ value: x, label: x })) },
+    { name: 'solvent', label: 'Solvent', value: nmrPanel.solvent, options: NMR_SOLVENTS.map((x) => ({ value: x, label: solventLabel(x) })) },
     { name: 'mhz', label: 'Spectrometer frequency', value: String(nmrSpectrumMhz()), options: [300, 400, 500, 600, 800].map((m) => ({ value: String(m), label: `${m} MHz` })) },
-    { name: 'h1lo', label: '1H spectrum from', type: 'number', value: String(r1.lo), unit: 'ppm',
+    { name: 'h1lo', label: '¹H spectrum from', type: 'number', value: String(r1.lo), unit: 'ppm',
       help: 'The spectrum is drawn over this range (−0.5 to 10 ppm unless you change it) and widens automatically when a peak falls outside it.' },
-    { name: 'h1hi', label: '1H spectrum to', type: 'number', value: String(r1.hi), unit: 'ppm' },
-    { name: 'c13lo', label: '13C spectrum from', type: 'number', value: String(r13.lo), unit: 'ppm',
+    { name: 'h1hi', label: '¹H spectrum to', type: 'number', value: String(r1.hi), unit: 'ppm' },
+    { name: 'c13lo', label: '¹³C spectrum from', type: 'number', value: String(r13.lo), unit: 'ppm',
       help: 'The spectrum is drawn over this range (−5 to 200 ppm unless you change it) and widens automatically when a peak falls outside it.' },
-    { name: 'c13hi', label: '13C spectrum to', type: 'number', value: String(r13.hi), unit: 'ppm' },
+    { name: 'c13hi', label: '¹³C spectrum to', type: 'number', value: String(r13.hi), unit: 'ppm' },
     { name: 'compare', label: 'Show a pasted report against the prediction', value: compareMode(), options: [
       { value: 'inverted', label: 'Inverted: measured above, predicted mirrored below' }, { value: 'stacked', label: 'Stacked: one above the other, both upright' }, { value: 'overlay', label: 'Overlay: both on one baseline' }],
       help: 'How Check Data in the Spectrum window compares them. Its Inverted, Stacked and Overlay buttons change the same setting.' },
@@ -12194,7 +12244,7 @@ const hotkeysDialog = new HotkeysDialog({
     set: (v) => { editor.options.stickyHotspot = v; storeSettings(); },
   },
   exportKeys: async () => {
-    const target = await saveFileDialog('Chemweave hotkeys.json', KEYMAP_FILE).catch((e) => { hotkeysDialog.say(String(e)); return null; });
+    const target = await saveFileDialog('Chemweave keyboard shortcuts.json', KEYMAP_FILE).catch((e) => { hotkeysDialog.say(String(e)); return null; });
     if (!target) return;
     const text = JSON.stringify({ app: 'Chem Illustrator', kind: 'hotkeys', version: 1, hotkeys: keymap.overrides() }, null, 2) + '\n';
     await writeFile(target.ref, target.name, text, KEYMAP_FILE).then(
@@ -12744,7 +12794,7 @@ function nmrMenu(): void {
 function nmrSolventMenu(): void {
   const b = document.querySelector<HTMLElement>('#canvas-ribbon [data-cmd="nmr-solvent"]');
   const r = b?.getBoundingClientRect() ?? new DOMRect(200, 120, 0, 0);
-  popupMenu(r.left, r.bottom + 2, NMR_SOLVENTS.map((x) => [`${x === nmrPanel.solvent ? '✓ ' : ''}${x}`, () => nmrRibbon({ solvent: x })] as [string, () => void]));
+  popupMenu(r.left, r.bottom + 2, NMR_SOLVENTS.map((x) => [`${x === nmrPanel.solvent ? '✓ ' : ''}${solventLabel(x)}`, () => nmrRibbon({ solvent: x })] as [string, () => void]));
 }
 
 /** Chemistry > Look Up > Find CAS RN (and the right-click menu): the structure picked, its CAS RN shown in the Analysis panel. */
@@ -14136,7 +14186,7 @@ function showDark(on: boolean): void {
 async function darkColours(): Promise<void> {
   const all = (): DarkPalette[] => [...DARK_PALETTES, ...dark.own];
   const cur = darkPaletteNamed(dark.palette, dark.own);
-  const got = await ask('Reading Mode colors', [
+  const got = await ask('Reading Mode', [
     { name: 'palette', label: 'Palette', value: cur.name, options: [...all().map((p) => ({ value: p.name, label: dark.own.includes(p) ? `${p.name} (yours)` : p.name }))] },
     { name: 'paper', label: 'Paper shows as', value: cur.paper, type: 'color' },
     { name: 'ink', label: 'Black ink shows as', value: cur.ink, type: 'color' },
@@ -14607,7 +14657,7 @@ function looksList(vertical: boolean): HTMLElement {
 
 /** The toolboxes' names, as they come. */
 const BOX_TITLES: Record<string, string> = {
-  main: 'Drawing Tools', structure: 'Structure', arrange: 'Object', templates: 'Templates', colours: 'Colors', highlight: 'Highlight', text: 'Text Formatting', guides: 'Guides', custom: 'My Toolbox', smart: 'Smart Scheme', details: 'Side Panel',
+  main: 'Drawing Tools', structure: 'Structure', arrange: 'Object', templates: 'Templates', colours: 'Colors', highlight: 'Highlight', text: 'Text Formatting', guides: 'Guides', custom: 'My Toolbox', smart: 'Smart Scheme Species', details: 'Side Panel',
   schemes: 'Smart Schemes', diagrams: 'Diagrams', tables: 'Tables and Charts', biopolymers: 'Biopolymers', perspective: 'Perspective and 3-D',
 };
 /** What the toolboxes of buttons come with ("cmd:", "tool:", "pal:", "w:looks", "sep"). */
@@ -14627,7 +14677,7 @@ const BOX_ITEMS: Record<string, readonly string[]> = {
 /** Short names on toolbox buttons for commands with no icon. */
 const SHORT_LABEL: Record<string, string> = {
   'smooth-highlight': 'Smooth', 'centre-highlight': 'Center', 'soft-highlight': 'Soft', 'outline-highlight': 'Outline only',
-  'shadow-highlight': 'Shadow', 'glow-highlight': 'Glow', 'save-highlight-look': 'Save look…',
+  'shadow-highlight': 'Shadow', 'glow-highlight': 'Glow', 'save-highlight-look': 'Save Style…',
 };
 
 /** The tools a fly-out palette comes with. */

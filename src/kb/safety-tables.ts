@@ -98,7 +98,7 @@ export const REAGENT_SAFETY: KbTable = {
   about: 'Bench hazard tier (1 extraordinary, 2 high, 3 standard, 4 low; Not rated when no open source has data) from measured numbers and the harmonized EU classification, with the numbers behind it. Several thousand compounds; one that isn\'t here can be rated live from PubChem. A guide only: read the SDS and follow your institution\'s rules.',
   columns: [
     { key: 'name', label: 'Compound' },
-    { key: 'tier', label: 'Tier', filter: true, narrow: true, numeric: true, info: 'Bench hazard tier, worked out by Chemweave from open data: NIOSH IDLH, LD50 and LC50 values, the harmonized EU hazard statements and named cases (HF, cyanides, phosgene…). 1 extraordinary, 2 high, 3 standard handling, 4 low. Not rated: no open data. It says how careful to be at the bench, not how green a compound is, and it is not a legal classification: read the SDS. The Why column gives the reasons.' },
+    { key: 'tier', label: 'Tier', filter: true, narrow: true, numeric: true, info: 'Bench hazard tier, calculated by Chemweave from open data: NIOSH IDLH, LD50 and LC50 values, the harmonized EU hazard statements and named cases (HF, cyanides, phosgene…). 1 extraordinary, 2 high, 3 standard handling, 4 low. Not rated: no open data. It says how careful to be at the bench, not how green a compound is, and it is not a legal classification: read the SDS. The Why column gives the reasons.' },
     { key: 'why', label: 'Why' },
     { key: 'idlh', label: 'IDLH', numeric: true },
     { key: 'oral', label: 'LD50 oral' },

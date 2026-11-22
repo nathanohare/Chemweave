@@ -7,7 +7,7 @@
 // si-import-apply.ts writes what the user keeps.
 //
 // Everything is best effort, and nothing is dropped: a compound's text that is neither its
-// procedure nor a recognised value is kept as `unrecognised` (stored in its private Notes), and
+// procedure nor a recognized value is kept as `unrecognised` (stored in its private Notes), and
 // text outside the compounds and procedures is kept as `other`. Values are kept as printed
 // (significant figures, dashes) so that the SI prints them as before; only spacing is evened out.
 
@@ -567,7 +567,7 @@ export function isData(text: string): boolean {
   return covered > 0.6 * body.length;
 }
 
-/** Sort one data paragraph's values into the compound's fields (as printed); what is not recognised goes into `into.unrecognised`. */
+/** Sort one data paragraph's values into the compound's fields (as printed); what is not recognized goes into `into.unrecognised`. */
 export function parseData(textIn: string, into: ImportedCompound): void {
   const values = into.values;
   // (spaces a PDF puts inside parentheses: "7.47 ( d, J = 8.5 Hz, 2H )")
@@ -708,9 +708,9 @@ export function dataStart(text: string): number {
     const own = itemSpans(t).slice(0, 1);
     if (own.length && own[0][1] === 0) return true;
     // (a label may come first: "Both rotamers are described together: ¹H NMR …")
-    const unlabelled = sub(LABEL_START, '', t);
-    const first = itemSpans(unlabelled).slice(0, 1);
-    return !!(match(STATE, unlabelled) || (first.length && first[0][1] <= 3));
+    const unlabeled = sub(LABEL_START, '', t);
+    const first = itemSpans(unlabeled).slice(0, 1);
+    return !!(match(STATE, unlabeled) || (first.length && first[0][1] <= 3));
   };
   if (startsWithData(text)) return 0;      // (the whole paragraph is data)
   for (const m of finditer(SENTENCE_START, text)) {
@@ -786,7 +786,7 @@ export function parseCompound(cid: string, name: string, paras: Para[]): Importe
       if (Object.keys(c.values).length !== before) c.warnings.push(WARN_TWICE);
     }
   }
-  if ('hrms' in c.values && (c.values.hrms.found === undefined || c.values.hrms.found === null)) c.warnings.push('HRMS: no found m/z was recognised.');
+  if ('hrms' in c.values && (c.values.hrms.found === undefined || c.values.hrms.found === null)) c.warnings.push('HRMS: no found m/z was recognized.');
   return c;
 }
 
@@ -945,24 +945,24 @@ export function analyse(paras: Para[]): ImportPlan {
     }
   }
   plan.objects = allObjects;
-  nameUnlabelledGps(plan);
+  nameUnlabeledGps(plan);
   linkGeneralProcedures(plan);
   for (const c of plan.compounds) purificationFromText(c);
   plan.body_size = bodySize;
   outline(plan, bodySize);
   if (!plan.compounds.length) {
-    plan.warnings.push('No compounds were recognised. Compound headings are expected as a name followed by the ID in parentheses, e.g. “1-Phenylethan-1-ol (2a).”');
+    plan.warnings.push('No compounds were recognized. Compound headings are expected as a name followed by the ID in parentheses, e.g. “1-Phenylethan-1-ol (2a).”');
   }
   return plan;
 }
 
-function nameUnlabelledGps(plan: ImportPlan): void {
-  const unlabelled = plan.gps.filter((g) => !g.label);
-  if (plan.gps.length > 1 && unlabelled.length) {
+function nameUnlabeledGps(plan: ImportPlan): void {
+  const unlabeled = plan.gps.filter((g) => !g.label);
+  if (plan.gps.length > 1 && unlabeled.length) {
     const used = new Set(plan.gps.filter((g) => g.label).map((g) => g.label));
     // (A–Z, then 1, 2, 3…, as a new general procedure is named in a project)
-    const marks = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', ...Array.from({ length: unlabelled.length }, (_x, i) => String(i + 1))].filter((ch) => !used.has(ch));
-    unlabelled.forEach((g, i) => { g.label = marks[i]; g.name = `General Procedure ${g.label}`; });
+    const marks = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', ...Array.from({ length: unlabeled.length }, (_x, i) => String(i + 1))].filter((ch) => !used.has(ch));
+    unlabeled.forEach((g, i) => { g.label = marks[i]; g.name = `General Procedure ${g.label}`; });
   }
 }
 

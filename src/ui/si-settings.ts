@@ -73,7 +73,7 @@ async function headings(p: SiProject, host: SiSettingsHost): Promise<void> {
   const counts = Object.entries(COUNT_NAMES).map(([value, label]) => ({ value, label }));
   const fields: Field[] = [
     { name: 'preset', label: 'Heading numbers', value: preset, options: HEADING_PRESETS.map((x) => ({ value: x.id, label: x.label })), help: 'How the compiled SI numbers its headings. As the journal style does: Wiley 1., 1.1.; RSC 1, 1.1; ACS none. Compound titles and general procedures are never numbered. SI Assistant shows the nearest of its own (outline or 1.1.1) for a format it doesn’t have.' },
-    { name: 'h1', label: 'My own format', value: '', type: 'heading', help: 'Used when Heading numbers is “My own…”. The last level’s count is used for any deeper level.' },
+    { name: 'h1', label: 'Custom format', value: '', type: 'heading', help: 'Used when Heading numbers is “Custom…”. The last level’s count is used for any deeper level.' },
     ...[0, 1, 2, 3].map((i): Field => ({ name: `l${i}`, label: `Level ${i + 1}`, value: level(i), options: counts })),
     { name: 'chain', label: 'Show the numbers of the headings above (1.2.3)', value: String(own.chain), type: 'checkbox', help: 'On: 1.2.3 (or A.1.2). Off: only the heading’s own number, as in an outline.' },
     { name: 'end', label: 'After the number', value: own.end in ENDS ? own.end : '.', options: Object.entries(ENDS).map(([value, label]) => ({ value, label })) },

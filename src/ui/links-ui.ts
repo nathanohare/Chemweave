@@ -63,7 +63,7 @@ export async function followLink(link: string): Promise<void> {
     if (host.openHere && await host.openHere(path).catch(() => false)) return;
     if (!isTauri()) { window.open(/^file:/i.test(link) ? link : `file:///${path.replace(/\\/g, '/')}`, '_blank', 'noopener'); return; }
     // a file could be a program: the person says yes first, as Word asks
-    if (!window.confirm(`Open ${path}?\n\nIt opens in the program your computer uses for it. Only open files you trust.`)) return;
+    if (!window.confirm(`Open ${path}?\n\nIt opens in your computer's default app for this file type. Only open files you trust.`)) return;
     try {
       const { openPath } = await import('@tauri-apps/plugin-opener');
       await openPath(path);

@@ -1,11 +1,11 @@
-// Isotope masses for labelled atoms ([13C], [14C], T, [18F], [125I]…) and the most common
+// Isotope masses for labeled atoms ([13C], [14C], T, [18F], [125I]…) and the most common
 // isotope of each element, including those with no natural abundance (Tc, Pm, Po, Ra…).
 //
 // Source: NIST Standard Reference Database 144, "Atomic Weights and Isotopic Compositions for
 // All Elements" (J. S. Coursey, D. J. Schwab, J. J. Tsai and R. A. Dragoset, NIST, Gaithersburg,
 // MD), as RDKit's periodic table carries them (mass numbers within 20 of the most common
 // isotope) — the same values Chem SI Assistant uses (core/chem.py reads them from RDKit), so
-// both programs give a labelled compound the same masses. Made with RDKit 2026.09.2.
+// both programs give a labeled compound the same masses. Made with RDKit 2026.09.2.
 //
 // Each line: symbol, the most common isotope's mass number, then "mass number:mass" pairs.
 

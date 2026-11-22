@@ -99,7 +99,7 @@ export class ToolboxEditor {
           <div class="tbe-name">
             <label>Name <input type="text" maxlength="60" /></label>
             <label class="check"><input type="checkbox" data-act="shown" /> Shown</label>
-            <button type="button" data-act="newfly" title="A new fly-out of your own in this toolbox: one button that opens a set of tools and commands. To turn a button into a fly-out, point at it and click the corner mark (or press F on it)">New Fly-out</button>
+            <button type="button" data-act="newfly" title="A new custom fly-out in this toolbox: one button that opens a set of tools and commands. To turn a button into a fly-out, point at it and click the corner mark (or press F on it)">New Fly-out</button>
           </div>
           <div class="tbe-crumb" hidden></div>
           <div class="tbe-size">
@@ -380,7 +380,7 @@ export class ToolboxEditor {
     if (!editable) {
       note.textContent = this.box === 'details'
         ? 'The side panel shows the Style, Warnings and Analysis boxes (Format in documents, Cell in sheets). You can rename it, and move it in the list.'
-        : 'The app lays this toolbox out itself. You can rename it, show or hide it, move it in the list, or delete it. To choose your own buttons, make a New toolbox.';
+        : 'The app lays this toolbox out itself. You can rename it, show or hide it, move it in the list, or delete it. To choose custom buttons, make a New toolbox.';
       return;
     }
     const g = this.grid();
