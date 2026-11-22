@@ -4,7 +4,7 @@
 // Anything the drawing tools set automatically can be changed here by hand.
 
 import { addInfo, setInfo } from './info-tip';
-import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, type PictureLook, type StepRoles, type ArrowTextSide, type ArrowKind, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
+import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, isDataFrame, type PictureLook, type StepRoles, type ArrowTextSide, type ArrowKind, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
 import { fullStyle, tidyStyle } from '../render/highlight';
 import type { HighlightLookPreset } from './highlight-looks';
 
@@ -137,6 +137,8 @@ export class StylePanel {
   frames: { add(): void; fit(shapeId: number): void } | null = null;
   /** Draws a Newman or sawhorse projection again with part of its look changed, and opens its window. */
   newman: { look(shapeId: number, patch: Partial<NonNullable<Shape['newman']>['look']>): void; edit(shapeId: number): void } | null = null;
+  /** Opens a torsion chart's window. */
+  torsion: { edit(shapeId: number): void } | null = null;
   /** A highlight colour was chosen (the app remembers it for Chemistry > Highlight and Fill > Highlight). */
   highlightUsed: (colour: string) => void = () => {};
   /** The look last chosen for highlights (new highlights take it). */
@@ -235,11 +237,12 @@ export class StylePanel {
     if (several) this.structureControls(selAtoms, selBonds);
     if (arrows.length) this.arrowControls(arrows);
     // an energy diagram is a frame drawn from its numbers: its own section, not a rectangle's
-    const diagram = all.length === 1 && (all[0].energy || all[0].diagram || all[0].plate || all[0].smart || all[0].newman) ? all[0] : undefined;
+    const diagram = all.length === 1 && isDataFrame(all[0]) ? all[0] : undefined;
     if (diagram?.energy) this.energyControls(diagram);
     else if (diagram?.plate) this.plateControls(diagram);
     else if (diagram?.newman) this.newmanControls(diagram);
     else if (diagram?.diagram) this.diagramControls(diagram);
+    else if (diagram?.torsion) this.torsionControls(diagram);
     else if (diagram?.smart) {
       // how its list works is behind the "i" by the list's title; here, its layout
       this.heading('Smart Scheme');
@@ -652,6 +655,19 @@ export class StylePanel {
     b.type = 'button';
     b.textContent = 'Edit Projection…';
     b.addEventListener('click', () => this.newman?.edit(sh.id));
+    row.append(b);
+    this.body.append(row);
+  }
+
+  /** A torsion chart: its look is set in its window (the frame round it has none of its own). */
+  private torsionControls(sh: Shape): void {
+    this.heading('Torsional Energy Diagram');
+    const row = document.createElement('div');
+    row.className = 'style-buttons';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = 'Edit Torsion Chart…';
+    b.addEventListener('click', () => this.torsion?.edit(sh.id));
     row.append(b);
     this.body.append(row);
   }

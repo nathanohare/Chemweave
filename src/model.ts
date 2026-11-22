@@ -1182,6 +1182,23 @@ export interface Shape {
 export interface MadeLabel { text: string; runs: TextRun[] }
 
 /**
+ * The kinds of drawing kept as data on an invisible frame round what it draws: an energy diagram,
+ * a SmartArt-style diagram, a TLC plate, gel or MO diagram, a Smart Scheme, a Newman or sawhorse
+ * projection, a torsion chart. Every place that treats such a frame apart from an ordinary
+ * rectangle (Format Painter, the Style panel, Action Settings) asks `isDataFrame`.
+ */
+export const DATA_FRAME_KINDS = ['energy', 'diagram', 'plate', 'smart', 'newman', 'torsion'] as const;
+export type DataFrameKind = (typeof DATA_FRAME_KINDS)[number];
+
+/** Which kind of drawing kept as data this shape is the frame of, or null for any other shape. */
+export function dataFrameKind(s: Pick<Shape, DataFrameKind>): DataFrameKind | null {
+  return DATA_FRAME_KINDS.find((k) => s[k] !== undefined) ?? null;
+}
+
+/** Is this shape the invisible frame of a drawing kept as data (its fill and outline aren't its own)? */
+export const isDataFrame = (s: Pick<Shape, DataFrameKind>): boolean => dataFrameKind(s) !== null;
+
+/**
  * Can this shape be turned to any angle (Slides and Design, and an orbital's lobes anywhere),
  * keeping its box and turning it as a whole? (An orbital's lobe stuck to its atom turns too.)
  */
