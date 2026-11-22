@@ -151,17 +151,20 @@ describe('a TLC lane label changed in ChemDraw (G1-13)', () => {
     expect(lanes(got.doc)).toEqual(['1a', 'co', '2b']);
     expect(got.stats.notes ?? []).toEqual([]);
   });
-  it('keeps ChemDraw\'s drawing as plain objects, with a note, when the changes can\'t be matched to the lanes', () => {
+  it('keeps both ChemDraw\'s drawing and the plate, marked, with a note, when the changes can\'t be matched to the lanes', () => {
     // a lane label, and one of the two Rf values 0.30: the plate writes its Rf values from each
     // lane's marks ("0.55, 0.30"), so which spot's 0.30 it was can't be told
     const xml = writeCdxml(plate(), { name: 't.cdxml' });
     const edited = xml.replace(/>SM</, '>1a<').replace(/>0\.30</, '>0.35<');
     const got = readCdxml(edited);
-    expect([...got.doc.shapes.values()].some((s) => s.plate)).toBe(false);
+    // the plate's settings are kept as they were, marked as changed in another program (review F1b-R07)
+    const s = [...got.doc.shapes.values()].find((x) => x.plate);
+    expect(s?.plate?.lanes.map((l) => l.label)).toEqual(['SM', 'co', 'rxn']);
+    expect(s?.editedOutside).toBe(true);
     // ChemDraw's texts are all still there, as it shows them
     const texts = [...got.doc.captions.values()].map((c) => c.runs.map((r) => r.text).join(''));
     expect(texts).toEqual(expect.arrayContaining(['1a', 'co', 'rxn', '0.35', '0.30']));
-    expect(got.stats.notes).toEqual([expect.stringMatching(/TLC plate .* plain objects/)]);
+    expect(got.stats.notes).toEqual(['The texts of a TLC plate were changed in another program in a way its settings can\'t follow. It is shown as that program left it. Editing it redraws it from its settings, and you will be asked first.']);
     // and nothing is said when it is read as written
     expect(readCdxml(xml).stats.notes ?? []).toEqual([]);
   });

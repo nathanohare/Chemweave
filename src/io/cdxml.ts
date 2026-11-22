@@ -1475,11 +1475,11 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     pinSymbols(doc);
     fillFrameMembers(doc);
     // a frame's drawing whose texts were changed in ChemDraw: its data takes the new texts (G1-13);
-    // where they can't be matched to it, ChemDraw's drawing is kept as plain objects, with a note
+    // where they can't be matched to it, both are kept and the frame is marked, with a note
     for (const [id, was] of frameTexts) {
       const s = doc.shapes.get(id);
       if (!s || takeFrameTexts(doc, s, was)) continue;
-      (stats.notes ??= []).push(plainFrame(doc, s));
+      (stats.notes ??= []).push(markEditedOutside(doc, s));
     }
     // Newman projections find their bonds and viewing marks again by where they are drawn
     relinkNewman(doc);
@@ -1724,19 +1724,65 @@ export const FRAME_TAG = 'Chem Illustrator frame';
 export const FRAME_DATA = ['plate', 'energy', 'newman', 'torsion', 'diagram', 'smart'] as const;
 
 /** Keys of a frame's data that hold settings, never a text it drew (see takeFrameTexts). */
-const FRAME_SETTING_KEYS = new Set(['kind', 'look', 'unit', 'style', 'layout', 'source', 'place', 'insets', 'accent', 'colours', 'color', 'colour', 'barrierColor', 'eye', 'fmt', 'key', 'structures', 'link', 'mark', 'labelBack', 'shape', 'fill', 'line', 'dash']);
+const FRAME_SETTING_KEYS = new Set(['kind', 'look', 'unit', 'style', 'layout', 'source', 'place', 'insets', 'accent', 'colours', 'color', 'colour', 'barrierColor', 'eye', 'fmt', 'key', 'structures', 'link', 'mark', 'labelBack', 'shape', 'fill', 'line', 'dash',
+  // (an MO level's column and where its lines start, and other placings; review F1b-R14)
+  'column', 'from', 'to', 'side', 'align', 'anchor', 'position', 'mode', 'type', 'font']);
+
+/**
+ * The texts a frame's drawing shows, in a fixed order: its captions, then the texts inside its
+ * shapes (a diagram's boxes; review F1b-R08), each by id. Written into the file, and compared
+ * with the file's texts on opening.
+ */
+export function frameTexts(doc: Doc, s: Shape): string[] {
+  const f = s.frame;
+  if (!f) return [];
+  const caps = [...f.captions].sort((a, b) => a - b).map((id) => doc.captions.get(id)?.runs.map((r) => r.text).join('')).filter((t): t is string => t !== undefined);
+  const inShapes = [...f.shapes].sort((a, b) => a - b).map((id) => doc.shapes.get(id)?.text?.runs.map((r) => r.text).join('')).filter((t): t is string => t !== undefined);
+  return [...caps, ...inShapes];
+}
+
+/** A text without this program's sub- and superscript marks (σ_{1s} is shown as σ1s). */
+const shown = (t: string) => t.replace(/[_^]\{([^}]*)\}/g, '$1');
+/**
+ * A marked-up text (σ_{2s}) whose shown form `from` (σ2s) became `to` in ChemDraw (σ2p): just the
+ * changed letters are replaced, inside the marks they were in (σ_{2p}), so the sub- and
+ * superscripts stay.
+ */
+function remark(v: string, from: string, to: string): string {
+  // where each shown letter is in the marked-up text
+  const at: number[] = [];
+  for (let i = 0; i < v.length; i++) {
+    if (/[_^]/.test(v[i]) && v[i + 1] === '{') { i++; continue; }
+    if (v[i] === '}') continue;
+    at.push(i);
+  }
+  if (at.length !== from.length) return to;
+  let p = 0;
+  while (p < from.length && p < to.length && from[p] === to[p]) p++;
+  let q = 0;
+  while (q < from.length - p && q < to.length - p && from[from.length - 1 - q] === to[to.length - 1 - q]) q++;
+  const mid = to.slice(p, to.length - q);
+  // the changed letters, or (when letters were only added) the place after the letter before them
+  const start = p < from.length - q ? at[p] : p > 0 ? at[p - 1] + 1 : 0;
+  const end = p < from.length - q ? at[from.length - q - 1] + 1 : start;
+  return v.slice(0, start) + mid + v.slice(end);
+}
+/** A number as a caption shows it (minus signs as hyphens), for matching an energy typed over in ChemDraw. */
+const asNumber = (t: string): number | null => { const v = Number(t.trim().replace(/[−–]/g, '-')); return t.trim() && Number.isFinite(v) ? v : null; };
 
 /**
  * A frame's drawing whose texts were changed in ChemDraw (G1-13): `was` the texts as written,
- * the frame's captions as they are now. Each changed text is taken into the frame's data wherever
- * the data held the old one, so the next Edit command draws it as ChemDraw shows it. Several texts
- * can change at once, paired by their places (the frame's captions keep the order written).
- * Returns true when the data now matches ChemDraw's texts (or nothing changed), false when the
- * changes can't be matched one to one (a text added or removed, an old text written twice, texts
- * swapped round, or a text the data doesn't hold word for word): the data is then left untouched.
+ * frameTexts as they are now. Each changed text is taken into the frame's data wherever the data
+ * held the old one, so the next Edit command draws it as ChemDraw shows it: a text field (a lane
+ * label, a species name, a line of a diagram's outline, an MO label with its sub- and
+ * superscripts), or an energy typed over as a number. Several texts can change at once, paired by
+ * their places. Returns true when the data now matches ChemDraw's texts (or nothing changed),
+ * false when the changes can't be matched one to one (a text added or removed, an old text
+ * written twice, texts that turn into each other, or a text the data doesn't hold): the data is
+ * then left untouched (see markEditedOutside).
  */
 export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
-  const now = (s.frame?.captions ?? []).map((id) => doc.captions.get(id)?.runs.map((r) => r.text).join('') ?? '');
+  const now = frameTexts(doc, s);
   const left = [...now];
   const removed: string[] = [];
   for (const t of was) { const i = left.indexOf(t); if (i >= 0) left.splice(i, 1); else removed.push(t); }
@@ -1753,16 +1799,26 @@ export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
   if (olds.size !== pairs.length || pairs.some(([from]) => was.filter((t) => t === from).length !== 1) || pairs.some(([, to]) => olds.has(to))) return false;
   const to = new Map(pairs);
   const hits = new Set<string>();
+  // energies shown with the diagram's decimal places
+  const digits = s.energy?.digits ?? 1;
   // only in the fields that hold texts: a setting that happens to equal the old text (a lane label
   // "solid", a kind "tlc") is left alone (review F1-R11); a diagram's outline takes it line by line
   const swap = (v: unknown, key = ''): unknown => {
     if (FRAME_SETTING_KEYS.has(key)) return v;
+    if (typeof v === 'number' && key === 'g' && s.energy) {
+      for (const [from, t] of to) {
+        const a = asNumber(from), b = asNumber(t);
+        if (a !== null && b !== null && Math.abs(v - a) < 0.5 * 10 ** -digits && v.toFixed(digits) === a.toFixed(digits)) { hits.add(from); return b; }
+      }
+      return v;
+    }
     if (typeof v === 'string' && to.has(v)) { hits.add(v); return to.get(v); }
+    if (typeof v === 'string' && v !== shown(v) && to.has(shown(v))) { hits.add(shown(v)); return remark(v, shown(v), to.get(shown(v))!); }
     if (typeof v === 'string' && v.includes('\n')) {
-      const lines = v.split('\n').map((l) => { const m = /^(\s*)(.*)$/.exec(l)!; if (!to.has(m[2])) return l; hits.add(m[2]); return m[1] + to.get(m[2]); });
+      const lines = v.split('\n').map((l) => { const m = /^(\s*)(.*)$/.exec(l)!; const k = to.has(m[2]) ? m[2] : to.has(shown(m[2])) ? shown(m[2]) : null; if (k === null) return l; hits.add(k); return m[1] + (k === m[2] ? to.get(k) : remark(m[2], k, to.get(k)!)); });
       return lines.join('\n');
     }
-    if (Array.isArray(v)) return v.map((x) => swap(x));
+    if (Array.isArray(v)) return v.map((x) => swap(x, key === 'points' || key === 'paths' || key === 'lanes' ? '' : key));
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x, k)]));
     return v;
   };
@@ -1774,23 +1830,26 @@ export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
   return true;
 }
 
-/** What each kind of frame data draws, for the note when it is let go. */
-const FRAME_NAMES: Record<(typeof FRAME_DATA)[number], string> = { plate: 'plate', energy: 'energy diagram', newman: 'Newman projection', torsion: 'torsion chart', diagram: 'diagram', smart: 'diagram' };
+/** What each kind of frame data draws, with its article, for the note. */
+const FRAME_NAMES: Record<(typeof FRAME_DATA)[number], string> = { plate: 'a plate', energy: 'an energy diagram', newman: 'a Newman projection', torsion: 'a torsion chart', diagram: 'a diagram', smart: 'a diagram' };
+const PLATE_NAMES: Record<string, string> = { tlc: 'a TLC plate', gel: 'a gel', mo: 'an MO diagram', crystal: 'a crystal structure' };
+
+/** A frame drawing's name with its article ("an energy diagram", "a TLC plate"). */
+export function frameName(s: Shape): string {
+  const k = FRAME_DATA.find((key) => s[key]);
+  return k === 'plate' ? PLATE_NAMES[s.plate?.kind ?? ''] ?? 'a plate' : k ? FRAME_NAMES[k] : 'a drawing';
+}
 
 /**
- * A frame's drawing whose texts were changed in ChemDraw in a way its data can't follow (G1-13):
- * the data is let go, so the drawing stays as ChemDraw has it, plain objects that can be edited
- * one by one, rather than being drawn again from the old data by the next Edit command. Returns
- * the note for the user.
+ * A frame's drawing whose texts were changed in ChemDraw in a way its data can't follow (G1-13,
+ * review F1b-R07): both are kept. ChemDraw's drawing stays as it is, and the data stays for the
+ * Edit command, which first asks whether to redraw from it (replacing what was changed in
+ * ChemDraw). Returns the note for the user.
  */
-export function plainFrame(doc: Doc, s: Shape): string {
-  const k = FRAME_DATA.find((key) => s[key]);
-  const plate: Record<string, string> = { tlc: 'TLC plate', gel: 'gel', mo: 'MO diagram', crystal: 'crystal structure' };
-  const name = k === 'plate' ? plate[s.plate?.kind ?? ''] ?? 'plate' : k ? FRAME_NAMES[k] : 'drawing';
-  const patch: Partial<Shape> = {};
-  for (const key of FRAME_DATA) if (s[key]) (patch as Record<string, unknown>)[key] = undefined;
-  doc.updateShape(s.id, patch);
-  return `The texts of a ${name} were changed outside this app in a way that can't be matched to its settings, so it is kept as it was drawn there: plain objects you can edit one by one. Its Edit command no longer redraws it.`;
+export function markEditedOutside(doc: Doc, s: Shape): string {
+  doc.updateShape(s.id, { editedOutside: true });
+  const name = frameName(s);
+  return `The texts of ${name} were changed in another program in a way its settings can't follow. It is shown as that program left it. Editing it redraws it from its settings, and you will be asked first.`;
 }
 /** A part of an orbital drawn here that ChemDraw keeps as an oval (an s orbital, a dz²'s ring): how the orbital was asked for (Shape.orb as JSON). */
 export const ORBITAL_TAG = 'Chem Illustrator orbital';

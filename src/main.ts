@@ -32,7 +32,7 @@ import { defaultColumns } from './editor/grid-arrange';
 import { askGridLayout, type GridPick } from './ui/grid-picker';
 import { groupSelection, selectedGroups } from './editor/groups';
 import { chemistrySelection, loneStructure, repeatsOnAll } from './editor/lone-pick';
-import { readCdxml, ReadStats } from './io/cdxml';
+import { readCdxml, ReadStats, frameName } from './io/cdxml';
 import { readCml } from './io/cml';
 import { ChemClient } from './chem/client';
 import type { FragmentResult } from './worker/chem-worker';
@@ -1460,8 +1460,22 @@ function paintEnergyPreview(d: EnergyData, canvas: HTMLCanvasElement): void {
 }
 
 /** Insert ▸ Energy Diagram…, or the selected diagram's numbers to change (`id`, its frame). */
+/**
+ * Before an Edit command redraws a frame's drawing from its settings: when its texts were changed
+ * in another program in a way the settings can't follow (Shape.editedOutside, review F1b-R07),
+ * say that redrawing replaces those changes and let the user choose. True to go on. (Redrawing
+ * clears the mark: see putPlate, putEnergy, putDiagram, putNewman and the torsion chart's.)
+ */
+async function redrawOk(id: number | null | undefined): Promise<boolean> {
+  const s = id === null || id === undefined ? undefined : doc.shapes.get(id);
+  if (!s?.editedOutside) return true;
+  const got = await askChoice('Redraw from Its Settings?', `The texts of ${frameName(s)} were changed in another program. Editing it redraws it from its settings, which replaces those changes.`, [{ value: 'redraw', label: 'Redraw', primary: true }, { value: 'cancel', label: 'Cancel' }], 'cancel');
+  return got === 'redraw';
+}
+
 async function energyDiagram(id: number | null): Promise<void> {
   finishTyping();
+  if (!(await redrawOk(id))) return;
   const L = doc.style.bondLength;
   const now = id !== null ? doc.shapes.get(id)?.energy ?? null : null;
   const got = await askEnergy(now, { w: Math.round(18 * L), h: Math.round(12 * L) }, paintEnergyPreview, async (mb) => (await chem.layouts(mb))[0] ?? null, energyStructureHooks);
@@ -1537,6 +1551,7 @@ function paintPlatePreview(d: PlateData, canvas: HTMLCanvasElement): void {
 /** Insert ▸ Lab Figures ▸ TLC Plate… or Gel…, or the selected plate's lanes to change (`id`, its frame). */
 async function plateFigure(kind: PlateKind | null, id: number | null, file?: { name: string; text: string }): Promise<void> {
   finishTyping();
+  if (!(await redrawOk(id))) return;
   const now = id !== null ? doc.shapes.get(id)?.plate ?? null : null;
   const k = now?.kind ?? kind ?? 'tlc';
   const got = k === 'mo' ? await askMo(now, doc.style, paintPlatePreview, (d, w) => editor.moRoom(d, w))
@@ -1705,6 +1720,7 @@ function diagramSvg(d: DiagramData): string {
 /** Insert ▸ Diagram…, or the selected diagram's text and look to change (`id`, its frame). */
 async function smartDiagram(id: number | null): Promise<void> {
   finishTyping();
+  if (!(await redrawOk(id))) return;
   const now = id !== null ? doc.shapes.get(id)?.diagram ?? null : null;
   const got = await askDiagram(now, { drawing: doc, preview: diagramSvg, scale: deckNow() ? 1 : 0.7 });
   if (got) editor.putDiagramAt(got, pasteCentre(), now ? id! : undefined, deckNow()?.size);
@@ -2440,6 +2456,7 @@ function paintNewmanPreview(d: NewmanData, canvas: HTMLCanvasElement, eye?: stri
  */
 async function newmanProjection(bondId: number | null, frontId: number | null, editId?: number, chartFirst = false): Promise<void> {
   finishTyping();
+  if (!(await redrawOk(editId))) return;
   const old = editId !== undefined ? doc.shapes.get(editId)?.newman : undefined;
   let front: number, back: number;
   if (old) {
@@ -2620,6 +2637,7 @@ editor.onTorsionEdit = (frame) => void editTorsion(frame);
 /** A torsional energy chart's look: its projections, names, units, barriers and sawhorse (the scan stays as it was). */
 async function editTorsion(id: number): Promise<void> {
   finishTyping();
+  if (!(await redrawOk(id))) return;
   const d = doc.shapes.get(id)?.torsion;
   if (!d) return;
   const r = await ask('Edit Torsional Energy Chart', [

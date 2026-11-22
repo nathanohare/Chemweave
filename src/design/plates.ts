@@ -411,7 +411,7 @@ export function putPlate(doc: Doc, m: Measure, d: PlateData, at: Vec, id?: numbe
   const r = (v: number) => Math.round(v * 100) / 100;
   const plate: PlateData = { ...d, margins: { l: r(at.x - b.x1), t: r(at.y - b.y1), r: r(b.x2 - at.x - d.w), b: r(b.y2 - at.y - d.h) } };
   const name = d.kind === 'tlc' ? 'TLC plate' : d.kind === 'gel' ? 'Gel' : 'MO diagram';
-  if (old) { doc.updateShape(old.id, { ...b, frame, plate }); return old.id; }
+  if (old) { doc.updateShape(old.id, { ...b, frame, plate, editedOutside: undefined }); return old.id; }
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, plate, name }).id;
 }
 
@@ -429,7 +429,7 @@ export function crystalSrc(c: CrystalSpec, w: number, h: number): string {
 function putCrystal(doc: Doc, d: PlateData, at: Vec, old: Shape | undefined): number {
   const plate: PlateData = { ...d, margins: { l: 0, t: 0, r: 0, b: 0 } };
   const look = { x1: at.x, y1: at.y, x2: at.x + d.w, y2: at.y + d.h, src: d.crystal ? crystalSrc(d.crystal, d.w, d.h) : '', px: { w: Math.round(d.w), h: Math.round(d.h) }, plate };
-  if (old?.kind === 'picture') { doc.updateShape(old.id, look); return old.id; }
+  if (old?.kind === 'picture') { doc.updateShape(old.id, { ...look, editedOutside: undefined }); return old.id; }
   if (old?.frame) {
     const f = old.frame;
     for (const c of f.captions) doc.removeCaption(c);

@@ -573,7 +573,7 @@ export function putEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec, id?: num
   // its background and border, as the window asks
   const lk = d.look ?? {};
   const back = { filled: !!lk.background, ...(lk.background ? { fillColor: lk.background } : {}), lineWidth: lk.border ? lk.borderWidth ?? doc.style.lineWidth : 0, color: lk.border ?? '#000000' };
-  if (old) { doc.updateShape(old.id, { ...b, frame, energy, ...back }); return old.id; }
+  if (old) { doc.updateShape(old.id, { ...b, frame, energy, ...back, editedOutside: undefined }); return old.id; }
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, ...back, frame, energy, name: 'Energy diagram' }).id;
 }
 

@@ -382,7 +382,7 @@ export function putNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec, id?: numb
   const frame: Frame = { atoms: parts.atoms ?? [], captions: parts.captions, arrows: parts.arrows, shapes: parts.shapes, padX: pad, padY: pad, fit: true };
   const b = frameBox(doc, frame, m) ?? { x1: c.x - 20, y1: c.y - 20, x2: c.x + 20, y2: c.y + 20 };
   const name = d.kind === 'newman' ? 'Newman projection' : 'Sawhorse projection';
-  if (old) { doc.updateShape(old.id, { ...b, frame, newman: d }); return old.id; }
+  if (old) { doc.updateShape(old.id, { ...b, frame, newman: d, editedOutside: undefined }); return old.id; }
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, newman: d, name }).id;
 }
 

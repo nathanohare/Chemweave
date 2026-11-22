@@ -1120,7 +1120,7 @@ export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: n
   const b = frameBox(doc, { ...frame, atoms: [] }, m) ?? R(at.x, at.y, d.w, d.h);
   const r = (v: number) => Math.round(v * 100) / 100;
   const diagram: DiagramData = { ...d, w: r(b.x2 - b.x1), h: r(b.y2 - b.y1) };
-  if (old) { doc.updateShape(old.id, { ...b, frame, diagram }); return old.id; }
+  if (old) { doc.updateShape(old.id, { ...b, frame, diagram, editedOutside: undefined }); return old.id; }
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, diagram, name: 'Diagram' }).id;
 }
 

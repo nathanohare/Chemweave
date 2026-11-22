@@ -388,6 +388,6 @@ export function putTorsion(doc: Doc, m: Measure, d: TorsionData, at: Vec, id?: n
   const pad = 0.3 * doc.style.bondLength;
   const frame: Frame = { atoms: parts.atoms ?? [], captions: parts.captions, arrows: parts.arrows, shapes: parts.shapes, padX: pad, padY: pad, fit: true };
   const b = frameBox(doc, frame, m) ?? { x1: at.x, y1: at.y, x2: at.x + d.w, y2: at.y + d.h };
-  if (old) { doc.updateShape(old.id, { ...b, frame, torsion: d }); return old.id; }
+  if (old) { doc.updateShape(old.id, { ...b, frame, torsion: d, editedOutside: undefined }); return old.id; }
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, torsion: d, name: 'Torsional energy diagram' }).id;
 }
