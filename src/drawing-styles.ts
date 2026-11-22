@@ -132,6 +132,8 @@ export function cleanStyle(raw: unknown): DocStyle | null {
   if (typeof r.labelFont === 'string' && r.labelFont.trim()) out.labelFont = r.labelFont.trim();
   if (typeof r.captionFont === 'string' && r.captionFont.trim()) out.captionFont = r.captionFont.trim();
   if (typeof r.captionFace === 'number') out.captionFace = r.captionFace;
+  // the atom labels' face bits (1 bold, 96 formula), as read from a ChemDraw file's LabelFace
+  if (typeof r.labelFace === 'number' && Number.isFinite(r.labelFace)) out.labelFace = r.labelFace;
   if (typeof r.arrowTextSize === 'number' && Number.isFinite(r.arrowTextSize) && r.arrowTextSize > 0) out.arrowTextSize = r.arrowTextSize;
   if (typeof r.arrowTextFont === 'string' && r.arrowTextFont.trim()) out.arrowTextFont = r.arrowTextFont.trim();
   if (typeof r.resultsTextSize === 'number' && Number.isFinite(r.resultsTextSize) && r.resultsTextSize > 0) out.resultsTextSize = r.resultsTextSize;
