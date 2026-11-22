@@ -17,7 +17,7 @@ import type { CellBorders, Contents, Justify, ParaStyle, PictureFx, TableData, T
 import { bakedPart } from '../render/picture-fx';
 import { blipEffectsXml, imgPropsXml, pictureGeomXml } from './picture-xml';
 import { DEFAULT_MARGINS, builtInStyle } from '../document/table-styles';
-import { borderXml, bordersXml, lookXml as tableLookXml, marginsXml, rowHeightXml, tableFloatXml, tableStyleXml, tableWidthXml } from './docx-table-styles';
+import { PLAIN_LOOK, borderXml, bordersXml, lookXml as tableLookXml, marginsXml, rowHeightXml, tableFloatXml, tableStyleXml, tableWidthXml } from './docx-table-styles';
 import { BORDER_SPACE, cleanBorders } from '../document/para-borders';
 import { fieldInstr } from '../document/fields';
 import type { DocStyle } from '../style';
@@ -762,6 +762,9 @@ class DocxWriter {
       // a numbered list's own Word list (so it counts from 1), else the one its kind shares
       const id = kept ?? String((ps.list === 'number' && listNum > 0 && this.numKeys[listNum - 1] === key ? listNum : this.sharedNum(key)) + this.keptNumCount);
       pPr.push(`<w:numPr><w:ilvl w:val="${Math.max(0, Math.min(8, ps.level ?? 0))}"/><w:numId w:val="${id}"/></w:numPr>`);
+    } else if (ps.list && ps.cont) {
+      // carrying on the item above (Shift+Enter): Word's "no numbering" (list 0), on the item's level (read back by docx-read.ts)
+      pPr.push(`<w:numPr><w:ilvl w:val="${Math.max(0, Math.min(8, ps.level ?? 0))}"/><w:numId w:val="0"/></w:numPr>`);
     }
     if (ps.noLineNumbers) pPr.push('<w:suppressLineNumbers/>');
     pPr.push(paraBorderXml(ps));
@@ -1603,7 +1606,8 @@ class DocxWriter {
     const tblPr = `<w:tblPr>${styled ? `<w:tblStyle w:val="${tab.style}"/>` : ''}${tableFloatXml(tab.float)}${tableWidthXml(tab)}<w:jc w:val="${align === 'right' ? 'right' : align === 'center' ? 'center' : 'left'}"/>` +
       `${tab.indent ? `<w:tblInd w:w="${twips(tab.indent)}" w:type="dxa"/>` : ''}${styled ? '' : `<w:tblBorders>${borders}</w:tblBorders>`}${tab.autofit ? '' : '<w:tblLayout w:type="fixed"/>'}` +
       marginsXml('tblCellMar', tab.pad ?? DEFAULT_MARGINS) +
-      `${styled ? tableLookXml(tab) : '<w:tblLook w:val="0600" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/>'}</w:tblPr>`;
+      // (its Table Style Options, kept with a table that has no style for when it gets one)
+      `${styled || tab.look ? tableLookXml(tab) : PLAIN_LOOK}</w:tblPr>`;
     const gridXml = `<w:tblGrid>${tab.cols.map((w) => `<w:gridCol w:w="${twips(w)}"/>`).join('')}</w:tblGrid>`;
     const rows: string[] = [];
     for (let r = 0; r < tab.rows.length; r++) {
@@ -1673,7 +1677,10 @@ class DocxWriter {
         cells.push(`<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${paras.join('')}</w:tc>`);
       }
       // its height, and whether it repeats at the top of each page as a heading row
-      const trPr = rowHeightXml(tab.rowH?.[r]) + (r < tab.head && !tab.noRepeat ? '<w:tblHeader/>' : '');
+      // (a heading row that doesn't repeat, in a table whose style or rule under the headings
+      // doesn't show it: Repeat Header Rows written off, so it is still read as a heading row)
+      const offHead = !styled && tab.lines !== 'acs';
+      const trPr = rowHeightXml(tab.rowH?.[r]) + (r < tab.head ? (!tab.noRepeat ? '<w:tblHeader/>' : offHead ? '<w:tblHeader w:val="0"/>' : '') : '');
       rows.push(`<w:tr>${trPr ? `<w:trPr>${trPr}</w:trPr>` : ''}${cells.join('')}</w:tr>`);
     }
     return `<w:tbl>${tblPr}${gridXml}${rows.join('')}</w:tbl>`;

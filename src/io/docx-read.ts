@@ -1616,6 +1616,16 @@ class DocxReader {
         if (b !== BULLETS[ilvl % BULLETS.length] && BULLET_LIBRARY.includes(b)) bullet = b;
       }
     }
+    // a paragraph that carries on the list item above (Shift+Enter), as written here: Word's "no
+    // numbering" (list 0) on a level, with no first-line indent, straight after a list item
+    let cont = false;
+    const dn = kid(pPr, 'numPr'), prev = this.out[this.out.length - 1];
+    if (!list && dn && this.a(kid(dn, 'numId')) === '0' && kid(dn, 'ilvl') && this.a(kid(pPr, 'ind'), 'firstLine') === '0' && prev && !prev.table && prev.ps.list) {
+      list = prev.ps.list;
+      scheme = prev.ps.scheme;
+      bullet = prev.ps.bullet;
+      cont = true;
+    }
     const firstSize = ctx.pieces[0].runs.find((r) => r.obj === undefined)?.size ?? size;
     let indent = Math.max(0, p.left ?? 0);
     if (list) indent = Math.max(0, indent - listIndent({ list, level: ilvl }, firstSize).left);
@@ -1657,6 +1667,7 @@ class DocxReader {
       } else {
         if (pc.pageBreak || carried) q.pageBreak = true;
         if (pc.colBreak) q.colBreak = true;
+        if (cont) q.cont = true;
         if (this.pendingMarks.length) { q.marks = this.pendingMarks; this.pendingMarks = []; }
       }
       if (pc.xe) q.xe = pc.xe;
@@ -1665,7 +1676,7 @@ class DocxReader {
       q = cleanPara(q);
       // the paragraph mark inserted or deleted while Word tracked changes (on the last piece: the real mark)
       const mr = i === ctx.pieces.length - 1 ? markRevOf : undefined;
-      const num = i === 0 && list && numId ? { id: numId, abs: this.nums.get(numId) ?? '', ilvl } : undefined;
+      const num = i === 0 && list && !cont && numId ? { id: numId, abs: this.nums.get(numId) ?? '', ilvl } : undefined;
       const indEl = num ? kid(pPr, 'ind') : null;
       this.out.push({ ps: q, runs: pc.runs, mark: markStyle, style: ours, contextual: !!p.contextual, bib, ...(mr ? { markRev: mr } : {}), ...(num ? { num, ind: indEl ? elementXml(indEl).replaceAll(` xmlns:w="${W_NS}"`, '') : '' } : {}) });
     });
@@ -2900,12 +2911,8 @@ class DocxReader {
         });
       }
     }
-    // each column lines up the way most of its cells do
-    table.align = cols.map((_, ci) => {
-      const count = new Map<Justify, number>();
-      for (const row of table.rows) { const a = row[ci]?.align; if (a && row[ci].runs.length) count.set(a, (count.get(a) ?? 0) + 1); }
-      return [...count.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? 'left';
-    });
+    // each column lines up the way most of its cells do (columnAlign)
+    table.align = cols.map((_, ci) => columnAlign(table.rows, ci));
     table.rows.forEach((row) => row.forEach((c, ci) => { if (c.align === table.align![ci]) delete c.align; }));
 
     // our own table: as it was made here, while its text is the same
@@ -3015,7 +3022,8 @@ class DocxReader {
     let cols = kids(kid(tbl, 'tblGrid'), 'gridCol').map((g) => this.tw(g, 'w') ?? 0);
     type Cell = { cell: TableCell; span: number; borders: Element | null; vm: 'restart' | 'continue' | null };
     const grid: Cell[][] = [];
-    let head = 0, counting = true;
+    // heading rows: Repeat Header Rows on, or off as this program writes heading rows that don't repeat
+    let head = 0, counting = true, repeat = false;
     // a Word table style that shades or picks out parts: drawn in it here too
     const style = this.a(kid(tblPr, 'tblStyle'));
     const styleId = style ? this.tableStyleOf(style) : null;
@@ -3031,7 +3039,8 @@ class DocxReader {
       for (const tr of rows) {
         const trPr = kid(tr, 'trPr');
         heights.push(readRowHeight(trPr, this.a.bind(this)));
-        if (counting && kid(trPr, 'tblHeader') && this.on(kid(trPr, 'tblHeader'))) head++;
+        const th = kid(trPr, 'tblHeader');
+        if (counting && th) { head++; if (this.on(th)) repeat = true; }
         else counting = false;
         const row: Cell[] = [];
         const before = gridCount(this.a(kid(trPr, 'gridBefore')), 0);
@@ -3102,21 +3111,24 @@ class DocxReader {
     if (b.size) cellV = cellH = false;
     table.lines = b.get('insideV') || cellV ? 'grid' : b.get('top') || b.get('bottom') || b.get('insideH') || cellH ? 'acs' : 'none';
     table.head = head || (table.lines === 'acs' && underRow >= 0 && underRow < 3 ? underRow + 1 : 0);
-    // each column lines up the way most of its cells do
-    table.align = cols.map((_, ci) => {
-      const count = new Map<Justify, number>();
-      for (const row of table.rows) { const a = row[ci]?.align; if (a && row[ci].runs.length) count.set(a, (count.get(a) ?? 0) + 1); }
-      return [...count.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? 'left';
-    });
-    table.rows.forEach((row) => row.forEach((c, ci) => { if (c.align === table.align![ci] || (!c.runs.length && c.align)) delete c.align; }));
+    // each column lines up the way most of its cells do (columnAlign)
+    // (a Word cell lined up on the left has no alignment of its own here: it counts as on the left, and keeps that in a column that isn't)
+    table.align = cols.map((_, ci) => columnAlign(table.rows, ci, 'left'));
+    table.rows.forEach((row) => row.forEach((c, ci) => {
+      if (c.runs.length && !c.align && table.align![ci] !== 'left') c.align = 'left';
+      if (c.align === table.align![ci] || (!c.runs.length && c.align)) delete c.align;
+    }));
+    const look = readTableLook(kid(tblPr, 'tblLook'), this.a.bind(this));
     if (styleId) {
       table.style = styleId;
-      const look = readTableLook(kid(tblPr, 'tblLook'), this.a.bind(this));
       if (look) table.look = look;
       if ((look?.header ?? true) && !table.head && !linesOnly) table.head = 1;
+    } else if (look && Object.values(look).some(Boolean)) {
+      // a table with no style keeps its Table Style Options for when it gets one (all off: none of its own)
+      table.look = look;
     }
     // heading rows that only look like headings (no Repeat Header Rows in Word): not repeated when saved either
-    if (!head && table.head) table.noRepeat = true;
+    if ((!head || !repeat) && table.head) table.noRepeat = true;
     if (heights.some(Boolean)) table.rowH = heights;
     // where Word places it and how wide, kept for saving: floating, its width, its indent and AutoFit
     const float = readTableFloat(tblPr, this.a.bind(this));
@@ -3847,4 +3859,16 @@ function effectBeyond(anchor: Element, look: FigureLook | undefined): Float['eff
   const side = (k: string, i: number) => round(Math.max(0, fromEmu(e.getAttribute(k) ?? '0') - own[i]));
   const fx = { l: side('l', 0), t: side('t', 1), r: side('r', 2), b: side('b', 3) };
   return fx.l > 0.05 || fx.t > 0.05 || fx.r > 0.05 || fx.b > 0.05 ? fx : null;
+}
+
+/**
+ * The way most of a column's cells with text are lined up; on the left, as a new column is, when
+ * that ties. `unset`: how a cell with no alignment of its own is lined up, when it counts.
+ */
+function columnAlign(rows: TableCell[][], ci: number, unset?: Justify): Justify {
+  const count = new Map<Justify, number>();
+  for (const row of rows) { const a = row[ci]?.align ?? unset; if (a && row[ci].runs.length) count.set(a, (count.get(a) ?? 0) + 1); }
+  const most = Math.max(0, ...count.values());
+  if (!most || (count.get('left') ?? 0) === most) return 'left';
+  return [...count.entries()].find(([, n]) => n === most)![0];
 }
