@@ -2,6 +2,7 @@
 // style guide (S26, S29, S70) replaced must not come back in UI text. It reads every string in
 // src (TypeScript string literals and templates, found with the TypeScript parser, so code
 // names such as `picked` or `ticked` are not counted) and the text and tooltips of index.html.
+// src/io is read too: its warnings are shown when a file opens (review of F5, R06).
 // Ruler "ticks" (the Guides toolbox) and other programs ("the program that made it") are fine;
 // those few are listed below. Command search keeps the old words on purpose (FORMER_NAMES).
 import { describe, it, expect } from 'vitest';
@@ -16,7 +17,7 @@ interface Str { file: string; line: number; text: string }
 function walk(dir: string, out: string[]): void {
   for (const n of readdirSync(dir)) {
     const p = join(dir, n);
-    if (statSync(p).isDirectory()) { if (!/vendor|[\\/]io$/.test(p)) walk(p, out); } else if (/\.ts$/.test(n) && !/\.d\.ts$/.test(n)) out.push(p);
+    if (statSync(p).isDirectory()) { if (!/vendor/.test(p)) walk(p, out); } else if (/\.ts$/.test(n) && !/\.d\.ts$/.test(n)) out.push(p);
   }
 }
 
@@ -56,7 +57,10 @@ const BANNED: [RegExp, string][] = [
   [/\b[Tt]he program (makes|prints|does|keeps)|\bby the program\b/, 'Chemweave (S70)'],
   [/\b(labelled|recognised|analysed|centred|towards)\b/i, 'American spelling (S29)'],
   [/\bfor good\b/i, 'permanently'],
-  [/\bmy own\b/i, 'custom (S70)'],
+  [/\bmy own\b|\(your own ±\)/i, 'custom (S70)'],
+  [/\b(?:the|its|their) plain look\b|\bnumber format and look\b|\band look of\b/i, 'style or formatting, not look (S70)'],
+  [/\bturned (with|to read|to match)\b|\bEach is turned\b|\bNothing to turn\b/, 'rotate, not turn (S26)'],
+  [/\bpick from Insert\b/i, 'choose (S26; Pick From Drop-down List is Excel\'s own name)'],
 ];
 
 /** Strings that may keep a word: other programs, ruler ticks, typed syntax and search aliases. */

@@ -449,8 +449,8 @@ export function readXls(bytes: Uint8Array): { book: Workbook; warnings: string[]
     }
     if (defined.length) book.setNames(defined);
   });
-  if (!biff8) warnings.push('This is an Excel 5 or 95 workbook: its formulas open as the values they last worked out.');
-  else if (unreadFormulas) warnings.push(`${unreadFormulas} formula${unreadFormulas > 1 ? 's' : ''} could not be read and ${unreadFormulas > 1 ? 'show' : 'shows'} the value Excel last worked out.`);
+  if (!biff8) warnings.push('This is an Excel 5 or 95 workbook: its formulas open as their last calculated values.');
+  else if (unreadFormulas) warnings.push(`${unreadFormulas} formula${unreadFormulas > 1 ? 's' : ''} could not be read and ${unreadFormulas > 1 ? 'show' : 'shows'} the value Excel last calculated.`);
   if (otherSheets) warnings.push(`${otherSheets} chart or macro sheet${otherSheets > 1 ? 's were' : ' was'} left out.`);
   warnings.push('Old .xls files open here but save as .xlsx (charts, pictures and macros in the .xls are not kept).');
   return { book, warnings };

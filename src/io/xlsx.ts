@@ -1972,11 +1972,11 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   } else if (richCells) notKept.add(`${richCells} ${what(richCells > 1).replace(/^a /, '')} placed in cells`);
   for (const item of leftOut.items()) notKept.add(item);
   if (foreignPictures) notKept.add(`${foreignPictures} picture${foreignPictures > 1 ? 's' : ''} or chart${foreignPictures > 1 ? 's' : ''}`);
-  if (unknownFormulas) warnings.push(`${unknownFormulas} formula${unknownFormulas > 1 ? 's use' : ' uses'} Excel functions this program can't work out yet.`);
+  if (unknownFormulas) warnings.push(`${unknownFormulas} formula${unknownFormulas > 1 ? 's use' : ' uses'} Excel functions Chemweave can't calculate yet.`);
   if (linkedFormulas) {
     const files = [...new Set(book.externalLinks.map(linkedFile).filter(Boolean))];
     warnings.push(`${linkedFormulas} formula${linkedFormulas > 1 ? 's read' : ' reads'} values from other workbooks${files.length ? ` (${files.join(', ')})` : ''}. ` +
-      `${linkedFormulas > 1 ? 'They are' : 'It is'} kept for Excel, which updates ${linkedFormulas > 1 ? 'them' : 'it'} from those files, but can't be worked out here.`);
+      `${linkedFormulas > 1 ? 'They are' : 'It is'} kept for Excel, which updates ${linkedFormulas > 1 ? 'them' : 'it'} from those files, but can't be calculated here.`);
   }
   if (restored.changed) warnings.push(`${restored.changed} structure or calculated cell${restored.changed > 1 ? 's were' : ' was'} changed in another program: ${restored.changed > 1 ? 'they show' : 'it shows'} what that program saved.`);
   if (notKept.size) warnings.push(`Not shown here, and left out if you save over this file: ${[...notKept].join(', ')}.`);

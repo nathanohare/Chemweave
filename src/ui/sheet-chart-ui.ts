@@ -177,7 +177,7 @@ export class SheetCharts {
       [`${now?.kind === 'stdev' ? '✓ ' : ''}Standard Deviation`, () => all({ kind: 'stdev', value: 1 })],
       [`${now?.kind === 'percent' ? '✓ ' : ''}5%`, () => all({ kind: 'percent', value: 5 })],
       [`${now?.kind === 'fixed' ? '✓ ' : ''}Fixed Amount…`, () => void this.fixedErrors()],
-      [`${now?.kind === 'cells' ? '✓ ' : ''}From Cells (your own ±)…`, () => void this.cellErrors()],
+      [`${now?.kind === 'cells' ? '✓ ' : ''}Custom (From Cells)…`, () => void this.cellErrors()],
     ]);
   }
 

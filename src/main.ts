@@ -2159,7 +2159,7 @@ async function depthShadingDialog(): Promise<void> {
   const s = depthShadePrefs;
   const r = await ask('Depth Shading', [
     { name: 'on', label: 'Shade structures drawn in 3-D by depth', type: 'checkbox', value: String(s.on),
-      help: `Structures turned with the Perspective tools, placed from the 3-D Model window, or drawn from conformer templates. Each is shaded over its own depth. Default: black in front fading evenly to ${DEFAULT_DEPTH_SHADE.far} gray behind, line widths unchanged. Copied and exported pictures keep the shading.` },
+      help: `Structures rotated with the Perspective tools, placed from the 3-D Model window, or drawn from conformer templates. Each is shaded over its own depth. Default: black in front fading evenly to ${DEFAULT_DEPTH_SHADE.far} gray behind, line widths unchanged. Copied and exported pictures keep the shading.` },
     { name: 'near', label: 'Nearest color', type: 'color', value: s.near },
     { name: 'far', label: 'Farthest color', type: 'color', value: s.far },
     { name: 'curve', label: 'Fade', value: s.curve, options: [{ value: 'linear', label: 'Even (linear)' }, { value: 'eased', label: 'Eased (slow at front and back)' }] },
@@ -12026,7 +12026,7 @@ async function nmrSettings(): Promise<void> {
     { name: 'plSize', label: 'Peak label size', type: 'number', value: String(pk.size), unit: 'px' },
     { name: 'plPlace', label: 'Peak label position', value: pk.place, options: [
       { value: 'above', label: 'Above each peak' }, { value: 'top', label: 'Along the top' }, { value: 'upright', label: 'Upright' }],
-      help: 'Above each peak: one part per line. Along the top: on one line, with a line down to the peak. Upright: turned to read upward, over each peak.' },
+      help: 'Above each peak: one part per line. Along the top: on one line, with a line down to the peak. Upright: rotated to read upward, over each peak.' },
   ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => nmrSettingsPreview(v, pk) } });
   if (!r) return;
   setNmrAutoPredict(r.auto === 'true');

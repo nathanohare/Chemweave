@@ -101,7 +101,7 @@ const MODES: Record<FontMode, ModeFont> = {
       size: { attr: 'id', value: 'sh-size' },
       grow: { attr: 'data-sh', value: 'font-bigger' },
       shrink: { attr: 'data-sh', value: 'font-smaller' },
-      clear: { attr: 'data-sh', value: 'clear-formats', tip: 'Clear All Formatting: the selected cells go back to the plain look (their contents stay)' },
+      clear: { attr: 'data-sh', value: 'clear-formats', tip: 'Clear All Formatting: the selected cells lose their formatting (their contents stay)' },
       bold: { attr: 'data-sh', value: 'cell-bold' },
       italic: { attr: 'data-sh', value: 'cell-italic' },
       underline: { attr: 'data-sh', value: 'cell-underline' },
@@ -115,7 +115,7 @@ const MODES: Record<FontMode, ModeFont> = {
       '',
       '<button class="rb-sq" data-sh="borders" title="Borders">▦</button><button class="rb-sq rb-colour" data-sh="fill-colour" title="Fill Color"><span>▨</span><span class="sw"></span></button>',
     ],
-    launcher: { attr: 'data-sh', value: 'format-cells', tip: 'Format Cells (Ctrl+1): the number format and look of the selected cells, in the side panel' },
+    launcher: { attr: 'data-sh', value: 'format-cells', tip: 'Format Cells (Ctrl+1): the number format, alignment, font, border and fill of the selected cells, in the side panel' },
   },
 };
 

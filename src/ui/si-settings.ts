@@ -102,7 +102,7 @@ async function pageSetup(p: SiProject, host: SiSettingsHost): Promise<void> {
   const inserts = { label: 'Insert', items: [{ text: '{page}', label: 'Page Number' }, { text: '{pages}', label: 'Number of Pages' }, { text: '{title}', label: 'Title' }, { text: '{authors}', label: 'Authors' }, { text: '{date}', label: 'Date' }] };
   const zone = (which: 'header' | 'footer', i: number): Field => ({ name: `${which}${i}`, label: ['Left', 'Center', 'Right'][i], value: (which === 'header' ? v.header : v.footer)[i], placeholder: i === 1 && which === 'footer' ? '{page}' : '', inserts });
   const fields: Field[] = [
-    { name: 'h1', label: 'Header', value: '', type: 'heading', help: 'Type text, and pick from Insert to add the page number, the number of pages, the title, the authors or the date (they show as {page}, {pages}, {title}, {authors} and {date}).' },
+    { name: 'h1', label: 'Header', value: '', type: 'heading', help: 'Type text, and choose from Insert to add the page number, the number of pages, the title, the authors or the date (they show as {page}, {pages}, {title}, {authors} and {date}).' },
     zone('header', 0), zone('header', 1), zone('header', 2),
     { name: 'h2', label: 'Footer', value: '', type: 'heading', help: 'The journal style’s own puts the page number in the center (Wiley: on the right); a footer left as the style’s keeps following the style.' },
     zone('footer', 0), zone('footer', 1), zone('footer', 2),
