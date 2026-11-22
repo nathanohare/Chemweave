@@ -138,7 +138,7 @@ export function richToHtml(text: ClipText, opts: { justify?: Justify; defaultSiz
     const level = p.level ?? 0;
     const kind = p.list === 'bullet' ? 'ul' : 'ol';
     if (p.cont && open.length && open[open.length - 1][1] === level) {
-      html += `<p style="${style}">${paraHtml(runs)}</p>`;
+      html += objectBlocks(runs, style) ?? `<p style="${style}">${paraHtml(runs)}</p>`;
       return;
     }
     // close deeper lists, and a list of another kind at this level
@@ -150,7 +150,8 @@ export function richToHtml(text: ClipText, opts: { justify?: Justify; defaultSiz
       html += `<${kind}${type} style="margin-top:0;margin-bottom:0">`;
       open.push([kind, level]);
     }
-    html += `<li><p style="${style}">${paraHtml(runs)}</p>`;
+    // (a table in a list item goes in the item, after its text: review F2-R07)
+    html += `<li>${objectBlocks(runs, style) ?? `<p style="${style}">${paraHtml(runs)}</p>`}`;
   });
   closeTo(0);
   // (an object written as a block is not in our own copy, as before: the document pastes its objects from its own clipboard)

@@ -98,6 +98,18 @@ describe('copied text for Word and PowerPoint (G2-16)', () => {
 });
 
 describe('Document text with a table among it (G2-18)', () => {
+  it('writes a table in a list item as a table in the item, never the object character (review F2-R07)', () => {
+    const t = table([[{ runs: [{ text: 'Entry' }] }, { runs: [{ text: 'Yield' }] }]]);
+    const runs: TextRun[] = [{ text: 'First\nSee ' }, { text: '\uFFFC', obj: 7 }, { text: '\nLast' }];
+    const html = richToHtml({ runs, paras: [{ list: 'bullet' }, { list: 'bullet' }, { list: 'bullet' }] }, { objectHtml: (r) => (r.obj === 7 ? tableHtml(t) : null) });
+    expect(html).not.toContain('\uFFFC');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const items = [...doc.querySelectorAll('li')];
+    expect(items).toHaveLength(3);
+    expect(items[1].querySelector('table')?.textContent).toContain('Entry');
+    expect(items[1].querySelector('p')?.textContent).toBe('See ');
+  });
+
   it('writes the table as a table between the paragraphs', () => {
     const t = table([[{ runs: [{ text: 'Entry' }] }, { runs: [{ text: 'K2CO3', formula: true }] }]]);
     const runs: TextRun[] = [{ text: 'Before\n' }, { text: '￼', obj: 7 }, { text: '\nAfter' }];
