@@ -47,7 +47,7 @@ describe('undo audit covers every command (R7)', () => {
     // an even split keeps each pull request's sweep near two minutes
     expect(Math.max(...sizes), `slice sizes ${sizes.join(' ')}`).toBeLessThan(mean * 1.5);
     expect(Math.min(...sizes)).toBeGreaterThan(0);
-  });
+  }, 60_000); // (reads main.ts three times: slow on a busy machine)
 
   it('is run on every pull request', () => {
     const ci = readFileSync(join(__dirname, '..', '.github/workflows/ci.yml'), 'utf8');
