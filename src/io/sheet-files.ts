@@ -6,13 +6,13 @@
 
 import { Doc, Contents } from '../model';
 import type { DocStyle } from '../style';
-import { addMolfile } from '../chem/molfile';
-import { readMolfile, sceneToDoc } from './chem-formats';
+import { addMolfile, writeMolFile } from './chem-formats';
 import { Workbook, Sheet } from '../sheet/workbook';
+import { molProgramLine } from '../chem/molfile-header';
 import { keyOf, fixSheetName } from '../sheet/refs';
 import { isError, CellError } from '../sheet/values';
 import { parseDelimited, toDelimited } from '../sheet/csv';
-import { structureMolfile } from '../sheet/structure-doc';
+import { structureDoc, structurePrint } from '../sheet/structure-doc';
 import { writeXlsx, readXlsx, XlsxPictures } from './xlsx';
 import { readXls, isXls } from './xls';
 import { readOds, isOds } from './ods';
@@ -163,7 +163,8 @@ export function readSdf(text: string, sheetName: string, style?: DocStyle): { bo
     recs.forEach((rec, i) => {
       const r = i + 1;
       const contents = molblockContents(rec.molblock, st);
-      if (contents) { if (contents.atoms.length) s.setStructure(r, 0, contents); }
+      // (the record itself is kept with the drawing, to be written back while it is unchanged)
+      if (contents) { if (contents.atoms.length) s.setStructure(r, 0, contents, { molblock: rec.molblock, print: structurePrint(contents) }); }
       else failed++;
       let c = 1;
       if (named) { if (rec.title) s.setInput(r, c, rec.title); c++; }
@@ -180,18 +181,8 @@ export function readSdf(text: string, sheetName: string, style?: DocStyle): { bo
   return { book: wb, warnings };
 }
 
-/** A molfile drawn in a style (null when it can't be read). */
+/** A molfile (V2000 or V3000) drawn in a style, through the same reader as File > Open (null when it can't be read). */
 export function molblockContents(molblock: string, style: DocStyle): Contents | null {
-  // a V3000 molfile (as this app writes SD files of big structures, or of files opened as V3000) through the reader that knows both
-  if ((molblock.split(/\r?\n/, 4)[3] ?? '').includes('V3000')) {
-    const m = readMolfile(molblock);
-    if (!m) return null;
-    try {
-      return sceneToDoc({ mols: [m], arrows: [], pluses: [], texts: [], unit: 1.5 }, style).doc.contents();
-    } catch {
-      return null;
-    }
-  }
   const d = new Doc();
   d.style = { ...style };
   try {
@@ -232,8 +223,11 @@ export function sdfText(s: Sheet, style: DocStyle): string {
     const st = s.cell(r, col)?.structure;
     const data = names.map(([c, h]) => [h, cellText(s, r, c)] as const).filter(([, v]) => v !== '');
     if (!st && !data.length) continue;
-    let mb = st ? structureMolfile(st.contents, style).molblock : null;
-    if (!mb) mb = '\n  Chemweave\n\n  0  0  0  0  0  0  0  0  0  0999 V2000\nM  END';
+    // a record read from an SD file goes back as it was while its drawing is unchanged; any other
+    // is written as a file molfile (labels kept as aliases, abbreviations as superatom groups)
+    let mb = st?.source && structurePrint(st.contents) === st.source.print ? st.source.molblock
+      : st?.contents.atoms.length ? writeMolFile(structureDoc(st.contents, style)).text.replace(/\n$/, '') : null;
+    if (!mb) mb = `\n${molProgramLine()}\n\n  0  0  0  0  0  0  0  0  0  0999 V2000\nM  END`;
     const lines = mb.replace(/\r\n?/g, '\n').split('\n');
     lines[0] = titleCol !== undefined ? cellText(s, r, titleCol).replace(/\n/g, ' ').slice(0, 80) : '';
     out.push(lines.join('\n'));

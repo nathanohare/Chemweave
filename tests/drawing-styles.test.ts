@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { Doc } from '../src/model';
-import { ACS_1996 } from '../src/style';
+import { ACS_1996, DEFAULT_MAP_BOX, type DocStyle } from '../src/style';
 import { STYLE_PRESETS, presetNamed, sameLook, cleanStyle, applyStyle, restyleContents, scaleStyle, parseOwnStyles, parseModeStyles, styleNamed } from '../src/drawing-styles';
 
 const RSC = presetNamed('RSC')!.style;
@@ -177,5 +177,22 @@ describe('a workbook\'s structure cells', () => {
     expect([wb.sheet.cell(0, 0)!.structure, wb.sheet.cell(1, 0)!.structure]).toEqual(before);
     // the next undo is the insertion, not the style
     expect(wb.undoLabel).toBe('Insert');
+  });
+});
+
+describe('a saved drawing style keeps every setting (audit G1-23)', () => {
+  it('keeps every DocStyle field through cleanStyle, the labels\' bold face among them', () => {
+    // one sample value per field; mapLook and mapBox belong to the drawing, not to a style (applyStyle keeps the drawing's own)
+    const full: Required<DocStyle> = {
+      ...ACS_1996, name: 'Full', labelFace: 1, captionFace: 1, arrowTextSize: 9, arrowTextFont: 'Times New Roman', resultsTextSize: 8, resultsTextFont: 'Calibri',
+      arrowWidth: 1, arrowHeadLength: 7, arrowHeadWidth: 2, scheme: { structGap: 4, textAlign: 'left', listLeft: true, fit: false },
+      idLook: { bold: true, size: 11 }, tiedLook: { italic: true }, mapLook: 'tint', mapBox: DEFAULT_MAP_BOX,
+    };
+    const back = cleanStyle(JSON.parse(JSON.stringify(full)))!;
+    const DRAWING_ONLY = new Set(['mapLook', 'mapBox']);
+    for (const k of Object.keys(full) as (keyof DocStyle)[]) {
+      if (DRAWING_ONLY.has(k)) continue;
+      expect(back[k], k).toEqual(full[k]);
+    }
   });
 });

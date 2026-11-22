@@ -23,6 +23,7 @@ import { ringBonds, ringsThroughBond } from '../chem/aromatic';
 import { DEG } from '../geom';
 import { chordLocal, ellipseArcPoints, headBend, swapHalf } from '../objects';
 import { pinSymbols } from '../chem/pins';
+import { flagOwners, stickFlag } from '../chem/chiral-flag';
 import { kids, descendants, withoutDoctype } from './xml';
 import { styleFromFace, isSymbolFont, fromSymbolFont, symbolOnlyByChoice, plainByChoice } from '../richtext';
 import { dataUrl, fromDataUrl, imageSize } from '../render/images';
@@ -46,6 +47,8 @@ export interface ReadStats {
   arrows: number;
   shapes: number;
   skipped: Record<string, number>;
+  /** Things to tell the user on opening (a frame's drawing kept as plain objects, G1-13). */
+  notes?: string[];
   parseMs: number;
   buildMs: number;
 }
@@ -88,6 +91,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
   const refOf = () => (refMap ??= new Map([...ord].map(([key, o]) => [all[o], key])));
   const morphTags: [number, string][] = [];
   const pinTags: [number, string][] = [];
+  /** Connectors' glue and bends, from their tags (set once the shapes are read). */
+  const glueTags: [number, string][] = [];
   /** Auto-Animate Steps' pieces, from each thing's hidden tag (set on the things once the file is read). */
   const pieces: [Kind, number, number][] = [];
   /** Bracket pairs' shared numbers, by shape id. */
@@ -108,6 +113,10 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
   };
   const stats: ReadStats = { atoms: 0, bonds: 0, captions: 0, arrows: 0, shapes: 0, skipped: {}, parseMs: t1 - t0, buildMs: 0 };
   const skip = (what: string) => { stats.skipped[what] = (stats.skipped[what] ?? 0) + 1; };
+  /** Frames' drawings with the texts they drew as written (see takeFrameTexts). */
+  const frameTexts = new Map<number, string[]>();
+  /** Chiral flags kept inside a structure's fragment, as ChemDraw keeps them: the flag and the fragment. */
+  const flagHomes: [number, Element][] = [];
 
   // Document style.
   const st: DocStyle = { ...doc.style, name: 'From file' };
@@ -867,6 +876,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     if (mt) morphTags.push([arrow.id, mt.getAttribute('Value') ?? '']);
     const pt = kids(a).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PIN_TAG);
     if (pt) pinTags.push([arrow.id, pt.getAttribute('Value') ?? '']);
+    const gt = kids(a).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === GLUE_TAG);
+    if (gt) glueTags.push([arrow.id, gt.getAttribute('Value') ?? '']);
     stats.arrows++;
   };
 
@@ -946,6 +957,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     from('r', arrow.id, c);
     const pt = kids(c).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PIN_TAG);
     if (pt) pinTags.push([arrow.id, pt.getAttribute('Value') ?? '']);
+    const gt = kids(c).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === GLUE_TAG);
+    if (gt) glueTags.push([arrow.id, gt.getAttribute('Value') ?? '']);
     stats.arrows++;
   };
 
@@ -1118,6 +1131,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
           const r = tb.length >= 4 ? { x1: tb[0], y1: tb[1], x2: tb[2], y2: tb[3] } : { x1: Math.min(bb[0], bb[2]), y1: bb[1] - 11, x2: Math.max(bb[0], bb[2]), y2: bb[1] };
           const pad = 2;
           add({ ...base, kind: 'symbol', symbol: sym, x1: r.x1 - pad, y1: r.y1 - pad, x2: r.x2 + pad, y2: r.y2 + pad });
+          // inside a structure's fragment: that structure's flag (stuck to it once its atoms are in)
+          if (g.parentElement?.nodeName === 'fragment') flagHomes.push([base.id, g.parentElement]);
         } else if (sym === 'LonePair' || sym === 'LonePairBar' || sym === 'RadicalCation' || sym === 'RadicalAnion') {
           // two points: a lone pair's ends, or a radical ion's dot and then the middle of its sign
           add({ ...base, kind: 'symbol', symbol: sym, x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
@@ -1254,7 +1269,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
             const bb = pts(ch.getAttribute('BoundingBox'));
             // what we wrote natively beside it: moved in ChemDraw (every point by the same offset) moves
             // the shape; reshaped there, ChemDraw's own curves are read instead
-            const seen = (saved as { seen?: { curve?: unknown } } | null)?.seen;
+            const seen = (saved as { seen?: { curve?: unknown; text?: unknown; texts?: unknown } } | null)?.seen;
             let shift: { dx: number; dy: number } | null = null;
             if (saved) delete (saved as { seen?: unknown }).seen;
             if (saved && typeof seen?.curve === 'string') {
@@ -1268,9 +1283,19 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
                 else saved = null;
               } else saved = null;
             }
+            // the text inside it changed in ChemDraw: ChemDraw's text, with its formatting (G1-12)
+            if (saved && saved.kind === 'geo' && typeof seen?.text === 'string') {
+              const t = kids(ch).find((k) => k.nodeName === 't');
+              if ((t?.textContent ?? '') !== seen.text) {
+                const runs = t ? captionOf(t)?.runs : undefined;
+                if (runs?.length) saved.text = { runs };
+                else delete saved.text;
+              }
+            }
             if (saved && (saved.kind === 'geo' || (saved.kind === 'ring' && Array.isArray(saved.poly))) && [saved.x1, saved.y1, saved.x2, saved.y2].every((v) => typeof v === 'number')) {
               // a ring fill finds its ring again by where the atoms are (atom ids change between files)
               const sh = doc.addShape({ ...(saved as Omit<Shape, 'id'>), ...(saved.kind === 'ring' ? { ring: undefined } : {}), id: idFor(ch) });
+              if (Array.isArray(seen?.texts) && seen.texts.every((t) => typeof t === 'string')) frameTexts.set(sh.id, seen.texts as string[]);
               // moved in ChemDraw: the group's box says where it is now
               const was = ch.getAttribute(GEO_BOX_ATTR) ?? savedBox;
               const wb = pts(was);
@@ -1301,6 +1326,18 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
           const bb = pts(ch.getAttribute('BoundingBox'));
           if (bb.length === 4) {
             const pic = pictureOf(ch);
+            // the picture's other settings, and whether ChemDraw still holds the picture written
+            // for its chart, equation or crystal structure (else the picture ChemDraw has wins)
+            let extra: Partial<Shape> = {};
+            let trusted = true;
+            try {
+              const tag = kids(ch).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PICTURE_TAG)?.getAttribute('Value');
+              const got = tag ? JSON.parse(tag) as Record<string, unknown> : null;
+              if (got) {
+                trusted = sameSeen(got.seen, pictureSeen(ch));
+                extra = pictureSettings(got);
+              }
+            } catch { extra = {}; }
             let chart: ChartBox | undefined;
             try {
               const tag = kids(ch).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === CHART_TAG)?.getAttribute('Value');
@@ -1325,6 +1362,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
               const got = tag ? JSON.parse(tag) as PlateData : undefined;
               if (got?.kind === 'crystal' && got.crystal && Array.isArray(got.crystal.atoms)) plate = got;
             } catch { plate = undefined; }
+            if (!trusted) { chart = undefined; math = undefined; plate = undefined; }
             // a crystal structure is drawn again from its data (sharper than ChemDraw's copy of the picture)
             if (plate?.crystal && pic) { pic.src = crystalSrc(plate.crystal, bb[2] - bb[0], bb[3] - bb[1]); pic.px = { w: Math.round(bb[2] - bb[0]), h: Math.round(bb[3] - bb[1]) }; pic.crop = null; }
             // where ChemDraw draws it among the other objects, and turned as ChemDraw turns it (BoundingBox is the unturned frame)
@@ -1332,7 +1370,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
             const ang = (Number(ch.getAttribute('RotationAngle') ?? NaN) / 65536) % 360;
             const rot = Number.isFinite(ang) && Math.abs(ang) > 1e-3 ? +(ang > 180 ? ang - 360 : ang < -180 ? ang + 360 : ang).toFixed(3) : 0;
             const sh = pic
-              ? doc.addShape({ id: idFor(ch), kind: 'picture', z, ...(rot ? { rot } : {}), x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3], src: pic.src, px: pic.px, ...(pic.crop ? { crop: pic.crop } : {}), ...(chart ? { chart } : {}), ...(math ? { math } : {}), ...(fx ? { fx } : {}), ...(alt ? { alt } : {}), ...(plate ? { plate: { ...plate, w: bb[2] - bb[0], h: bb[3] - bb[1] } } : {}) })
+              ? doc.addShape({ id: idFor(ch), kind: 'picture', z, ...(rot ? { rot } : {}), x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3], src: pic.src, px: pic.px, ...(pic.crop ? { crop: pic.crop } : {}), ...(chart ? { chart } : {}), ...(math ? { math } : {}), ...(fx ? { fx } : {}), ...(alt ? { alt } : {}), ...(plate ? { plate: { ...plate, w: bb[2] - bb[0], h: bb[3] - bb[1] } } : {}), ...extra })
               // only pictures this program can't show: mark where they sit, and keep them as they are
               : doc.addShape({ id: idFor(ch), kind: 'rect', x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3], dashed: true, color: '#9aa4b2', picture: true });
             from('s', sh.id, ch);
@@ -1396,6 +1434,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     readSteps(all, refOf, doc);
     if (morphTags.length) readMorphTags(morphTags, refOf(), doc);
     if (pinTags.length) readPinTags(pinTags, refOf(), doc);
+    if (glueTags.length) readGlueTags(glueTags, refOf(), doc);
     readRepeats();
     for (const el of keepLater) keepXml(el);
     for (const c of pendingCircles) if (!ringOfCircle(doc, c)) c.oval();
@@ -1426,9 +1465,25 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
       }
     }
     attachRingFills(doc);
+    // a chiral flag goes with the structure whose fragment it was in (review F1b-R01)
+    for (const [id, frag] of flagHomes) {
+      const s = doc.shapes.get(id);
+      const atoms = kids(frag).filter((k) => k.nodeName === 'n').map((k) => atomOfNode.get(k.getAttribute('id') ?? '')).filter((x): x is number => x !== undefined);
+      if (s && atoms.length) stickFlag(doc, s, atoms);
+    }
+    // a flag outside any fragment (a file saved before flags were kept in theirs) is the nearest
+    // structure's without one, and is stuck to it so it goes where that structure goes (review F1c-R07)
+    for (const [first, s] of flagOwners(doc)) if (!s.pin) stickFlag(doc, s, doc.fragmentOf(first));
     // lone pairs, radical dots and circled charges go with their atoms
     pinSymbols(doc);
     fillFrameMembers(doc);
+    // a frame's drawing whose texts were changed in ChemDraw: its data takes the new texts (G1-13);
+    // where they can't be matched to it, both are kept and the frame is marked, with a note
+    for (const [id, was] of frameTexts) {
+      const s = doc.shapes.get(id);
+      if (!s || takeFrameTexts(doc, s, was)) continue;
+      (stats.notes ??= []).push(markEditedOutside(doc, s));
+    }
     // Newman projections find their bonds and viewing marks again by where they are drawn
     relinkNewman(doc);
     fillAttachments(doc, undefined, new Map([...attachNodes].map(([id, h]) => [id, { atom: h.node === undefined ? undefined : atomOfNode.get(h.node), box: h.box }])));
@@ -1496,6 +1551,34 @@ function readMorphTags(tags: [number, string][], refOf: Map<Element, string>, do
 }
 
 /** Pins on arrows' ends, with the file's node ids turned back into atoms (a pin naming an atom that is gone is dropped). */
+/**
+ * Connectors' glue and bends (G1-09): each end stuck to its shape's connection point again, and an
+ * elbow connector drawn with its right-angled bends (worked out from its ends, as when drawn),
+ * while its ends are where they were written. A connector moved or reshaped in ChemDraw stays as
+ * ChemDraw has it.
+ */
+function readGlueTags(tags: [number, string][], refOf: Map<Element, string>, doc: Doc): void {
+  const shapeOf = new Map<string, number>();
+  for (const [el, ref] of refOf) if (ref[0] === 's') shapeOf.set(el.getAttribute('id') ?? '', Number(ref.slice(1)));
+  for (const [id, json] of tags) {
+    const r = doc.arrows.get(id);
+    if (!r) continue;
+    try {
+      const v = JSON.parse(json) as { from?: { shape: unknown; port: unknown }; to?: { shape: unknown; port: unknown }; elbow?: unknown; seen?: { tail?: unknown; head?: unknown } };
+      const near = (p: unknown, q: { x: number; y: number }) => Array.isArray(p) && Math.abs(p[0] - q.x) < 0.05 && Math.abs(p[1] - q.y) < 0.05;
+      if (!near(v.seen?.tail, r.tail) || !near(v.seen?.head, r.head)) continue;
+      const glue = (g: typeof v.from) => {
+        const shape = g ? shapeOf.get(String(g.shape)) : undefined;
+        return shape !== undefined && typeof g?.port === 'number' && doc.shapes.has(shape) ? { shape, port: g.port } : undefined;
+      };
+      const from = glue(v.from), to = glue(v.to);
+      if (from) r.from = from;
+      if (to) r.to = to;
+      if (v.elbow === true) { r.elbow = true; delete r.bez; }
+    } catch { /* not a connector's */ }
+  }
+}
+
 function readPinTags(tags: [number, string][], refOf: Map<Element, string>, doc: Doc): void {
   if (!tags.length) return;
   const atomOf = new Map<string, number>();
@@ -1570,6 +1653,9 @@ function readSteps(all: Element[], refs: () => Map<Element, string>, doc: Doc): 
       roles.inside = inside;
       roles.below = roles.below.filter((x) => !inside.includes(x));
     }
+    // roles chosen by hand (G1-15)
+    const own = kids(st).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === STEP_TAG)?.getAttribute('Value');
+    try { if (own && JSON.parse(own).manual === true) roles.manual = true; } catch { /* not ours to read */ }
     r.step = roles;
   }
   // ChemDraw's atom-atom map (pairs of a reactant atom and its product atom), when the file has
@@ -1637,6 +1723,154 @@ export const CIRCLE_TAG = 'ci-aromatic-circle';
 export const FILL_TAG = 'Chem Illustrator fill';
 /** A frame's gap and whether it follows what it surrounds (editor/frames.ts). */
 export const FRAME_TAG = 'Chem Illustrator frame';
+/** The data a frame keeps for the drawing round which it sits, drawn again by the matching Edit command. */
+export const FRAME_DATA = ['plate', 'energy', 'newman', 'torsion', 'diagram', 'smart'] as const;
+
+/**
+ * The keys of a frame's data that hold a text it draws (see takeFrameTexts): a lane's or a
+ * level's label, a path's or a species' name, a plate's note, a diagram's outline, a level of
+ * theory, an MO diagram's titles, an energy diagram's axis titles. Every other field is a setting
+ * ("solid", "tlc", an MO level's column "left"), which is never changed for a text that happens
+ * to equal it (review F1-R11, F1b-R14).
+ */
+const FRAME_TEXT_KEYS = new Set(['label', 'name', 'note', 'text', 'theory', 'titles', 'xTitle', 'yTitle']);
+
+/**
+ * The texts a frame's drawing shows, in a fixed order: its captions, then the texts inside its
+ * shapes (a diagram's boxes; review F1b-R08), each by id. Written into the file, and compared
+ * with the file's texts on opening.
+ */
+export function frameTexts(doc: Doc, s: Shape): string[] {
+  const f = s.frame;
+  if (!f) return [];
+  const caps = [...f.captions].sort((a, b) => a - b).map((id) => doc.captions.get(id)?.runs.map((r) => r.text).join('')).filter((t): t is string => t !== undefined);
+  const inShapes = [...f.shapes].sort((a, b) => a - b).map((id) => doc.shapes.get(id)?.text?.runs.map((r) => r.text).join('')).filter((t): t is string => t !== undefined);
+  return [...caps, ...inShapes];
+}
+
+/** A text without this program's sub- and superscript marks (σ_{1s} is shown as σ1s). */
+const shown = (t: string) => t.replace(/[_^]\{([^}]*)\}/g, '$1');
+/**
+ * A marked-up text (σ_{2s}) whose shown form `from` (σ2s) became `to` in ChemDraw (σ2p): just the
+ * changed letters are replaced, inside the marks they were in (σ_{2p}), so the sub- and
+ * superscripts stay.
+ */
+function remark(v: string, from: string, to: string): string {
+  // where each shown letter is in the marked-up text
+  const at: number[] = [];
+  for (let i = 0; i < v.length; i++) {
+    if (/[_^]/.test(v[i]) && v[i + 1] === '{') { i++; continue; }
+    if (v[i] === '}') continue;
+    at.push(i);
+  }
+  if (at.length !== from.length) return to;
+  let p = 0;
+  while (p < from.length && p < to.length && from[p] === to[p]) p++;
+  let q = 0;
+  while (q < from.length - p && q < to.length - p && from[from.length - 1 - q] === to[to.length - 1 - q]) q++;
+  const mid = to.slice(p, to.length - q);
+  // the changed letters, or (when letters were only added) the place after the letter before them
+  let start = p < from.length - q ? at[p] : p > 0 ? at[p - 1] + 1 : 0;
+  // (letters added after a sub- or superscript go after it: Li₂ → Li₂+ is Li_{2}+)
+  if (p >= from.length - q) while (v[start] === '}') start++;
+  const end = p < from.length - q ? at[from.length - q - 1] + 1 : start;
+  return v.slice(0, start) + mid + v.slice(end);
+}
+/** A number as a caption shows it (minus signs as hyphens), for matching an energy typed over in ChemDraw. */
+// (digits with a sign and decimal point only: not 0x10 or 1e3, which Number() would read; review F1c-R09)
+const asNumber = (t: string): number | null => { const u = t.trim().replace(/[−–]/g, '-'); return /^[+-]?\d+(?:\.\d+)?$/.test(u) ? Number(u) : null; };
+
+/**
+ * A frame's drawing whose texts were changed in ChemDraw (G1-13): `was` the texts as written,
+ * frameTexts as they are now. Each changed text is taken into the frame's data wherever the data
+ * held the old one, so the next Edit command draws it as ChemDraw shows it: a text field (a lane
+ * label, a species name, a line of a diagram's outline, an MO label with its sub- and
+ * superscripts), or an energy typed over as a number. Several texts can change at once, paired by
+ * their places. Returns true when the data now matches ChemDraw's texts (or nothing changed),
+ * false when the changes can't be matched one to one (a text added or removed, an old text
+ * written twice, texts that turn into each other, or a text the data doesn't hold): the data is
+ * then left untouched (see markEditedOutside).
+ */
+export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
+  const now = frameTexts(doc, s);
+  const left = [...now];
+  const removed: string[] = [];
+  for (const t of was) { const i = left.indexOf(t); if (i >= 0) left.splice(i, 1); else removed.push(t); }
+  // the same texts in other places (Left and Right swapped round): not something the settings can
+  // follow, so the frame is marked rather than drawn the old way round (review F1c-R09)
+  if (!removed.length) return was.length !== now.length || was.every((t, i) => t === now[i]);
+  const sorted = (v: string[]) => JSON.stringify([...v].sort());
+  let pairs: [string, string][];
+  if (removed.length === 1 && left.length === 1) pairs = [[removed[0], left[0]]];
+  else if (was.length === now.length) {
+    pairs = was.flatMap((t, i): [string, string][] => (t === now[i] ? [] : [[t, now[i]]]));
+    // the changed places must be just the texts that went and the ones that came
+    if (sorted(pairs.map((p) => p[0])) !== sorted(removed) || sorted(pairs.map((p) => p[1])) !== sorted(left)) return false;
+  } else return false;
+  const olds = new Set(pairs.map((p) => p[0]));
+  if (olds.size !== pairs.length || pairs.some(([from]) => was.filter((t) => t === from).length !== 1) || pairs.some(([, to]) => olds.has(to))) return false;
+  const to = new Map(pairs);
+  const hits = new Set<string>();
+  // energies shown with the diagram's decimal places
+  const digits = s.energy?.digits ?? 1;
+  // only in the fields that hold texts (FRAME_TEXT_KEYS): a setting that happens to equal the old
+  // text (a lane look "solid", a kind "tlc") is left alone; a diagram's outline takes it line by line
+  const swap = (v: unknown, key = ''): unknown => {
+    if (typeof v === 'number' && key === 'g' && s.energy) {
+      for (const [from, t] of to) {
+        const a = asNumber(from), b = asNumber(t);
+        if (a !== null && b !== null && Math.abs(v - a) < 0.5 * 10 ** -digits && v.toFixed(digits) === a.toFixed(digits)) { hits.add(from); return b; }
+      }
+      return v;
+    }
+    if (typeof v === 'string' && !FRAME_TEXT_KEYS.has(key)) return v;
+    if (typeof v === 'string' && to.has(v)) { hits.add(v); return to.get(v); }
+    if (typeof v === 'string' && v !== shown(v) && to.has(shown(v))) { hits.add(shown(v)); return remark(v, shown(v), to.get(shown(v))!); }
+    if (typeof v === 'string' && v.includes('\n')) {
+      const lines = v.split('\n').map((l) => { const m = /^(\s*)(.*)$/.exec(l)!; const k = to.has(m[2]) ? m[2] : to.has(shown(m[2])) ? shown(m[2]) : null; if (k === null) return l; hits.add(k); return m[1] + (k === m[2] ? to.get(k) : remark(m[2], k, to.get(k)!)); });
+      return lines.join('\n');
+    }
+    // (a list's items are what its key says: an MO diagram's titles are texts, its levels hold them)
+    if (Array.isArray(v)) return v.map((x) => swap(x, key));
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x, k)]));
+    return v;
+  };
+  const patch: Partial<Shape> = {};
+  for (const k of FRAME_DATA) if (s[k]) (patch as Record<string, unknown>)[k] = swap(s[k]);
+  // an MO diagram's molecular orbitals name the atomic orbitals they come from (`from`): renamed with them
+  const mo = patch.plate?.mo;
+  if (mo && s.plate?.mo) {
+    const renamed = new Map<string, string>();
+    s.plate.mo.levels.forEach((l, i) => { const now = mo.levels[i]?.label; if (now !== undefined && now !== l.label) renamed.set(shown(l.label), shown(now)); });
+    if (renamed.size) patch.plate = { ...patch.plate!, mo: { ...mo, levels: mo.levels.map((l) => (l.from ? { ...l, from: l.from.split(/,\s*/).map((x) => renamed.get(shown(x)) ?? x).join(', ') } : l)) } };
+  }
+  // every changed text must be one the data holds, or none is taken
+  if (hits.size !== pairs.length) return false;
+  doc.updateShape(s.id, patch);
+  return true;
+}
+
+/** What each kind of frame data draws, with its article, for the note. */
+const FRAME_NAMES: Record<(typeof FRAME_DATA)[number], string> = { plate: 'a plate', energy: 'an energy diagram', newman: 'a Newman projection', torsion: 'a torsion chart', diagram: 'a diagram', smart: 'a diagram' };
+const PLATE_NAMES: Record<string, string> = { tlc: 'a TLC plate', gel: 'a gel', mo: 'an MO diagram', crystal: 'a crystal structure' };
+
+/** A frame drawing's name with its article ("an energy diagram", "a TLC plate"). */
+export function frameName(s: Shape): string {
+  const k = FRAME_DATA.find((key) => s[key]);
+  return k === 'plate' ? PLATE_NAMES[s.plate?.kind ?? ''] ?? 'a plate' : k ? FRAME_NAMES[k] : 'a drawing';
+}
+
+/**
+ * A frame's drawing whose texts were changed in ChemDraw in a way its data can't follow (G1-13,
+ * review F1b-R07): both are kept. ChemDraw's drawing stays as it is until an edit draws it again
+ * from the data, in that edit's undo step (review F1d-R01; see design/frame-redrawn.ts). Returns
+ * the note for the user.
+ */
+export function markEditedOutside(doc: Doc, s: Shape): string {
+  doc.updateShape(s.id, { editedOutside: true });
+  const name = frameName(s);
+  return `The texts of ${name} were changed in another program in a way its settings can't follow. It is shown as that program left it. An edit that redraws it from its settings replaces those changes; Undo brings them back.`;
+}
 /** A part of an orbital drawn here that ChemDraw keeps as an oval (an s orbital, a dz²'s ring): how the orbital was asked for (Shape.orb as JSON). */
 export const ORBITAL_TAG = 'Chem Illustrator orbital';
 
@@ -1651,6 +1885,10 @@ export function orbitalTag(json: string | null | undefined): OrbitalTag | undefi
 }
 /** The tag on a reaction step listing the captions written inside a catalytic cycle (its step names). */
 export const INSIDE_TAG = 'Chem Illustrator inside';
+/** A reaction step's own settings, as JSON: {"manual":true} when its roles were chosen by hand. */
+export const STEP_TAG = 'Chem Illustrator step';
+/** This program's tags on a reaction step, which files keep on the step's arrow (see lowerOwnTags). */
+const STEP_TAGS = [INSIDE_TAG, STEP_TAG];
 /** The gradient and pattern settings kept in a fill tag, checked. */
 export function fillExtras(v: Partial<Shape>): Partial<Shape> {
   const out: Partial<Shape> = {};
@@ -1742,6 +1980,8 @@ export const PIECE_TAG = 'Chem Illustrator piece';
 export const BRACKET_PAIR_TAG = 'Chem Illustrator bracket pair';
 /** An electron-pushing arrow's pins (what its ends are stuck to: Pin as JSON without `was`, atoms by node id). */
 export const PIN_TAG = 'Chem Illustrator pin';
+/** A connector's glue and bends, as JSON: {from, to: {shape: element id, port}, elbow, seen: {tail, head}}. */
+export const GLUE_TAG = 'Chem Illustrator connector';
 /** An S-shaped arrow saved as a ChemDraw curve: its heads as they are here (JSON). */
 export const CURVE_ARROW_TAG = 'Chem Illustrator arrow';
 /** An arrow's own settings for its text (Arrow.textLook): how each side lines up, and its text guides. */
@@ -1884,11 +2124,11 @@ export function hoistOwnTags(root: Element): void {
   for (const st of descendants(page)) {
     if (st.nodeName !== 'step') continue;
     byId ??= idMap(root);
-    for (const a of stepArrows(st, byId)) {
-      const tag = ownTagOf(a, INSIDE_TAG);
+    for (const a of stepArrows(st, byId)) for (const name of STEP_TAGS) {
+      const tag = ownTagOf(a, name);
       if (!tag) continue;
       a.removeChild(tag);
-      if (!ownTagOf(st, INSIDE_TAG)) st.appendChild(tag);
+      if (!ownTagOf(st, name)) st.appendChild(tag);
     }
   }
 }
@@ -1906,11 +2146,11 @@ export function lowerOwnTags(root: Element): void {
   let byId: Map<string, Element> | null = null;
   for (const st of descendants(page)) {
     if (st.nodeName !== 'step') continue;
-    const tag = ownTagOf(st, INSIDE_TAG);
-    if (!tag) continue;
+    const tags = STEP_TAGS.map((name) => ownTagOf(st, name)).filter((t): t is Element => !!t);
+    if (!tags.length) continue;
     byId ??= idMap(root);
     const arrow = stepArrows(st, byId).find((a) => a.nodeName === 'arrow' || (a.nodeName === 'graphic' && ok(a)));
-    if (arrow) arrow.appendChild(tag);
+    if (arrow) for (const tag of tags) arrow.appendChild(tag);
   }
 }
 
@@ -1924,6 +2164,66 @@ export const CHART_TAG = 'Chem Illustrator chart';
 export const MATH_TAG = 'Chem Illustrator equation';
 /** A picture's Picture Format settings (brightness, recolouring, background removed, shape…), which ChemDraw doesn't have. */
 export const PICTURE_FX_TAG = 'Chem Illustrator picture format';
+/**
+ * A picture's other settings, as JSON: its frame look, see-through amount, name, hidden, locked
+ * and link (audit G1-10), and `seen`, what the picture held as written (see pictureSeen), so a
+ * chart, equation or crystal structure is drawn again from its tag only while ChemDraw still holds
+ * the picture written for it (G1-14).
+ */
+export const PICTURE_TAG = 'Chem Illustrator picture';
+/** The settings of a picture kept in PICTURE_TAG. */
+export const PICTURE_TAG_FIELDS = ['look', 'transparency', 'name', 'hidden', 'locked', 'link'] as const;
+
+/**
+ * What a picture element holds: a hash (32-bit FNV-1a of its hex digits, in capitals) of the first
+ * picture in it, and that picture's size in pixels. ChemDraw may write a picture's bytes afresh
+ * when it saves (a laptop check), so a picture of the same pixel size counts as the same.
+ */
+export function pictureSeen(el: Element): { hash: string; px?: { w: number; h: number } } | null {
+  for (const [name, mime] of [['PNG', 'image/png'], ['JPEG', 'image/jpeg'], ['GIF', 'image/gif'], ['BMP', 'image/bmp'], ['EnhancedMetafile', ''], ['WindowsMetafile', ''], ['CompressedEnhancedMetafile', ''], ['CompressedWindowsMetafile', '']]) {
+    const hex = el.getAttribute(name);
+    if (!hex) continue;
+    let h = 0x811c9dc5;
+    for (let i = 0; i < hex.length; i++) { h ^= hex.charCodeAt(i) & ~0x20; h = Math.imul(h, 0x01000193); }
+    const hash = (h >>> 0).toString(16).padStart(8, '0');
+    if (!mime) return { hash };
+    const bytes = new Uint8Array(hex.length >> 1);
+    for (let i = 0, j = 0; i < bytes.length; i++, j += 2) bytes[i] = (HEX[hex.charCodeAt(j)] << 4) | HEX[hex.charCodeAt(j + 1)];
+    const px = imageSize(bytes, mime);
+    return px ? { hash, px } : { hash };
+  }
+  return null;
+}
+
+/** A picture's settings from its tag, each only with the type it has here (a damaged or hand-edited file can't put a wrong one on the shape; review F1-R12). */
+export function pictureSettings(v: Record<string, unknown>): Partial<Shape> {
+  const out: Partial<Shape> = {};
+  const n = (x: unknown) => typeof x === 'number' && Number.isFinite(x);
+  const lk = v.look as Record<string, unknown> | undefined;
+  if (lk && typeof lk === 'object' && !Array.isArray(lk)) {
+    const look: NonNullable<Shape['look']> = {};
+    if (n(lk.line) && (lk.line as number) >= 0) look.line = lk.line as number;
+    if (typeof lk.lineColor === 'string') look.lineColor = lk.lineColor;
+    if (n(lk.round)) look.round = Math.max(0, Math.min(0.5, lk.round as number));
+    if (lk.shadow === 'soft' || lk.shadow === 'hard') look.shadow = lk.shadow;
+    if (Object.keys(look).length) out.look = look;
+  }
+  if (n(v.transparency)) out.transparency = Math.max(0, Math.min(1, v.transparency as number));
+  if (typeof v.name === 'string') out.name = v.name;
+  if (typeof v.hidden === 'boolean') out.hidden = v.hidden;
+  if (typeof v.locked === 'boolean') out.locked = v.locked;
+  if (typeof v.link === 'string') out.link = v.link;
+  return out;
+}
+
+/** Whether a picture still holds what was written for it (no `seen` in older files: trusted). */
+export function sameSeen(was: unknown, now: ReturnType<typeof pictureSeen>): boolean {
+  const w = was as { hash?: unknown; px?: { w?: unknown; h?: unknown } } | undefined;
+  if (!w || typeof w.hash !== 'string') return true;
+  if (!now) return false;
+  if (w.hash === now.hash) return true;
+  return !!w.px && !!now.px && w.px.w === now.px.w && w.px.h === now.px.h;
+}
 /** Alt text written for a structure (on one of its atoms) or a picture, which ChemDraw doesn't have. */
 export const ALT_TAG = 'Chem Illustrator alt text';
 /** A picture that is a lab figure (a crystal structure): its data, so it opens in its window again. */

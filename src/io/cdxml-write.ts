@@ -12,8 +12,9 @@ import { interpretArrow, isReactionArrow, linkRows, isStep, plainMeasure, rolesO
 import { SYMBOLS } from '../chem/elements';
 import { labelBonds, labelSpec, layoutLabel, labelDir, labelGraph, tokenize, isGenericLabel, Measure, MiniGraph, kekulize, labelLook, labelPieces } from '../chem/labels';
 import { Vec, DEG, arcCenter, norm, sub, Rect, turnedCorners } from '../geom';
-import { arrowEllipse, bezPoints, boxOf, shapeTurn } from '../objects';
+import { arrowEllipse, bezPoints, boxOf, elbowRoute, shapeTurn } from '../objects';
 import { kids, descendants, wellFormed, withoutDoctype } from './xml';
+import { withoutCdxOnly } from './cdx';
 import { arialWidth } from '../text-metrics';
 import { toSymbolPieces, isSymbolFont, faceFromStyle } from '../richtext';
 import { readMark } from '../chem/label-marks';
@@ -25,7 +26,7 @@ import { atomStereoText, bondStereoText, StereoPlacer, PlacedLabel } from '../ch
 import { dataUrl, fromDataUrl, rasterPng } from '../render/images';
 import { itemsToEmf } from '../render/emf';
 import { crystalItems } from '../design/xray';
-import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, BRACKET_PAIR_TAG, PIN_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
+import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, FRAME_DATA, frameTexts, BRACKET_PAIR_TAG, PIN_TAG, GLUE_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
 import { stackItems, usesStacking } from '../editor/stacking';
 import { frameTag } from '../editor/frames';
 import { tableContents } from '../editor/table-figs';
@@ -79,6 +80,8 @@ export interface WriteOptions {
    * or null. By default the browser's copy of it (render/images.ts rasterPng).
    */
   raster?: (src: string, w: number, h: number) => string | null;
+  /** The CDXML goes on to CDX: CDX properties kept from a CDX file stay in it (see cdx.ts CDX_KEEP). */
+  cdx?: boolean;
 }
 
 const NEW_PROLOG = '<?xml version="1.0" encoding="UTF-8" ?>\n<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >\n';
@@ -130,7 +133,9 @@ export function chemDrawCurves(steps: GeoStep[]): { points: Vec[]; closed: boole
 }
 
 export function writeCdxml(doc: Doc, opts: WriteOptions = {}): string {
-  return new CdxmlWriter(doc, opts).write();
+  const text = new CdxmlWriter(doc, opts).write();
+  // (the CDX properties kept from a CDX file go on to CDX and our own clipboard only)
+  return opts.cdx || opts.own ? text : withoutCdxOnly(text);
 }
 
 class CdxmlWriter {
@@ -1569,7 +1574,7 @@ class CdxmlWriter {
     const legacy = this.source('r', r.id, ['graphic']);
     if (legacy) {
       if (o && sameExcept(r, o, ['step', 'reagentFor', 'pin', 'textLook', 'kind']) && this.ownValue(r) === this.ownValue(o)) return;
-      if (r.bez?.length) { this.writeCurveArrow(r, legacy, null); return; }
+      if (r.bez?.length || r.elbow) { this.writeCurveArrow(r, legacy, null); return; }
       const a = this.el('arrow', { id: legacy.getAttribute('id') ?? r.id });
       this.fillArrow(a, r);
       this.writeMorph(a, r);
@@ -1582,7 +1587,8 @@ class CdxmlWriter {
     // ChemDraw's arc along an ellipse stays its arc arrow while its shape is the one read
     if (e?.nodeName === 'arrow' && o?.bez?.length && e.hasAttribute('AngularSize') && deepEqual(r.bez, o.bez) && this.writeEllipseArrow(e, r, o)) return;
     // an S-shaped arrow is a ChemDraw curve (and one made back into an arc, an arrow again)
-    if (r.bez?.length || e?.nodeName === 'curve') { this.writeCurveArrow(r, e, o); return; }
+    // (and an elbow connector, which ChemDraw gets as a curve along its bends)
+    if (r.bez?.length || r.elbow || e?.nodeName === 'curve') { this.writeCurveArrow(r, e, o); return; }
     if (e && o) {
       if (!deepEqual(r.morph, o.morph)) { this.writeMorph(e, r); this.changed = true; }
       if (this.ownValue(r) !== this.ownValue(o)) { this.writePin(e, r); this.changed = true; }
@@ -1655,8 +1661,8 @@ class CdxmlWriter {
     if (e && o && sameExcept(r, o, ['step', 'reagentFor', 'morph', 'pin', 'textLook', 'kind']) && this.ownValue(r) === this.ownValue(o)) return;
     // still the arc of an ellipse ChemDraw drew (moved, turned or scaled whole): its arc arrow again,
     // whose head and line ChemDraw draws its own way, not a curve
-    const ell = arrowEllipse(r);
-    const pts = ell ? null : bezPoints(r);
+    const ell = r.elbow ? null : arrowEllipse(r);
+    const pts = ell ? null : r.elbow ? elbowBez(r) : bezPoints(r);
     const el = this.el(pts ? 'curve' : 'arrow', { id: (e?.nodeName === 'graphic' && e.getAttribute('id')) || r.id });
     if (ell) {
       this.fillArrow(el, { ...r, sweep: 0, bez: undefined });
@@ -1718,8 +1724,27 @@ class CdxmlWriter {
     for (const c of kids(e)) if (c.nodeName === 'objecttag' && (c.getAttribute('Name') === PIN_TAG || c.getAttribute('Name') === ARROW_LOOK_TAG)) e.removeChild(c);
     const v = this.pinValue(r);
     if (v) e.appendChild(this.el('objecttag', { TagType: 'String', Name: PIN_TAG, Value: v, Visible: 'no' }));
+    for (const c of kids(e)) if (c.nodeName === 'objecttag' && c.getAttribute('Name') === GLUE_TAG) e.removeChild(c);
+    const glue = this.glueValue(r);
+    if (glue) e.appendChild(this.el('objecttag', { TagType: 'String', Name: GLUE_TAG, Value: glue, Visible: 'no' }));
     const look = this.lookValue(r);
     if (look) e.appendChild(this.el('objecttag', { TagType: 'String', Name: ARROW_LOOK_TAG, Value: look, Visible: 'no' }));
+  }
+
+  /**
+   * A connector's glue and bends as saved (audit G1-09): the shapes its ends are stuck to (by
+   * their ids in this file) and connection points, whether it bends at right angles, and its ends
+   * as written (moved in ChemDraw, the connector is read as ChemDraw has it). '' for none.
+   */
+  private glueValue(r: Arrow): string {
+    const end = (g: Arrow['from']) => {
+      const id = g && this.stepRef(`s${g.shape}`);
+      return id && g ? { shape: id, port: g.port } : undefined;
+    };
+    const from = end(r.from), to = end(r.to);
+    if (!from && !to && !r.elbow) return '';
+    const p = (v: Vec) => [+v.x.toFixed(2), +v.y.toFixed(2)];
+    return JSON.stringify({ ...(from ? { from } : {}), ...(to ? { to } : {}), ...(r.elbow ? { elbow: true } : {}), seen: { tail: p(r.tail), head: p(r.head) } });
   }
 
   /** An arrow's own text settings and its kind chosen by hand, as its tag saves them ('' for none). */
@@ -1729,7 +1754,7 @@ class CdxmlWriter {
 
   /** An arrow's pins and own text settings as saved: to see whether either changed. */
   private ownValue(r: Arrow): string {
-    return this.pinValue(r) + '|' + this.lookValue(r);
+    return this.pinValue(r) + '|' + this.lookValue(r) + '|' + this.glueValue(r);
   }
 
   /** The step's animation settings, with atoms named by their nodes' ids in this file. */
@@ -1824,7 +1849,9 @@ class CdxmlWriter {
       // a radical's dot names its radical atom, as ChemDraw's does
       const radical = !owner && s.kind === 'symbol' && s.symbol === 'Electron' ? this.radicalOwner(s) : null;
       if (radical) g.appendChild(this.el('represent', { attribute: 'Radical', object: this.nodeId(radical.id) }));
-      const host = owner || radical ? this.fragOfAtom.get((owner ?? radical)!.id) ?? null : s.kind === 'symbol' ? this.nearestFragment(s) : null;
+      // (a chiral flag stuck to its structure goes in that structure's fragment, as ChemDraw keeps it)
+      const flagHome = s.kind === 'symbol' && CHIRAL_FLAGS[s.symbol ?? ''] && s.pin?.on === 'atom' ? this.fragOfAtom.get(s.pin.ref[0]) ?? null : null;
+      const host = owner || radical ? this.fragOfAtom.get((owner ?? radical)!.id) ?? null : flagHome ?? (s.kind === 'symbol' ? this.nearestFragment(s) : null);
       (host ?? this.page).appendChild(g);
     }
     this.changed = true;
@@ -1998,9 +2025,14 @@ class CdxmlWriter {
     // (with the first curve's points as written: ChemDraw keeps them as they are unless the shape is
     // moved or changed there, when the curves are read instead)
     const first = kids(g).find((k) => k.nodeName === 'curve')?.getAttribute('CurvePoints');
+    // (and the text written inside it, as plain text: changed in ChemDraw, ChemDraw's text is read; audit G1-12)
+    const written = kids(g).find((k) => k.nodeName === 't')?.textContent ?? '';
+    // a frame's drawing (a TLC plate, an energy diagram…): the texts it drew, to see on opening
+    // which one was changed in ChemDraw (G1-13)
+    const texts = s.frame && FRAME_DATA.some((k) => s[k]) ? frameTexts(this.doc, s) : null;
     // (a turned shape's group goes round its turned corners)
     const gb = turn ? boxOf(turnedCorners(b, mid, turn)) : b;
-    g.appendChild(this.el('objecttag', { TagType: 'String', Name: GEO_TAG, Value: JSON.stringify({ ...look, savedBox: box(gb), ...(first ? { seen: { curve: first } } : {}) }), Visible: 'no' }));
+    g.appendChild(this.el('objecttag', { TagType: 'String', Name: GEO_TAG, Value: JSON.stringify({ ...look, savedBox: box(gb), ...(first || written || texts ? { seen: { ...(first ? { curve: first } : {}), ...(written ? { text: written } : {}), ...(texts ? { texts } : {}) } } : {}) }), Visible: 'no' }));
     this.set(g, 'BoundingBox', box(gb));
     g.removeAttribute(GEO_BOX_ATTR);
     this.changed = true;
@@ -2184,7 +2216,15 @@ class CdxmlWriter {
       }
       png ||= emf;
     } else png = exact = ['PNG', 'JPEG', 'GIF', 'BMP', 'EnhancedMetafile', 'WindowsMetafile', 'CompressedEnhancedMetafile', 'CompressedWindowsMetafile'].some((k) => e.hasAttribute(k));
-    for (const c of kids(e)) if (c.nodeName === 'objecttag' && [CHART_TAG, MATH_TAG, PICTURE_FX_TAG, ALT_TAG, PLATE_TAG].includes(c.getAttribute('Name') ?? '')) e.removeChild(c);
+    for (const c of kids(e)) if (c.nodeName === 'objecttag' && [CHART_TAG, MATH_TAG, PICTURE_FX_TAG, ALT_TAG, PLATE_TAG, PICTURE_TAG].includes(c.getAttribute('Name') ?? '')) e.removeChild(c);
+    // its frame look, see-through amount, name, hidden, locked and link, and what picture was
+    // written (G1-10, G1-14)
+    const settings: Record<string, unknown> = {};
+    for (const k of PICTURE_TAG_FIELDS) if (s[k] !== undefined && s[k] !== false) settings[k] = s[k];
+    if (Object.keys(settings).length || s.chart || s.math || s.plate) {
+      const seen = pictureSeen(e);
+      e.appendChild(this.el('objecttag', { TagType: 'String', Name: PICTURE_TAG, Value: JSON.stringify(seen ? { ...settings, seen } : settings), Visible: 'no' }));
+    }
     if (s.plate) e.appendChild(this.el('objecttag', { TagType: 'String', Name: PLATE_TAG, Value: JSON.stringify(s.plate), Visible: 'no' }));
     if (s.alt) e.appendChild(this.el('objecttag', { TagType: 'String', Name: ALT_TAG, Value: s.alt, Visible: 'no' }));
     if (s.fx) e.appendChild(this.el('objecttag', { TagType: 'String', Name: PICTURE_FX_TAG, Value: JSON.stringify(s.fx), Visible: 'no' }));
@@ -2491,12 +2531,15 @@ class CdxmlWriter {
       this.changed = true;
     }
     this.fillAtomMap(st, roles);
-    const inside = ids(roles.inside);
-    const tag = kids(st).find((c) => c.nodeName === 'objecttag' && c.getAttribute('Name') === INSIDE_TAG);
-    if ((tag?.getAttribute('Value') ?? '') === inside) return;
-    if (tag) st.removeChild(tag);
-    if (inside) st.appendChild(this.el('objecttag', { TagType: 'String', Name: INSIDE_TAG, Value: inside, Visible: 'no' }));
-    this.changed = true;
+    // a cycle's step names, and roles chosen by hand (audit G1-15: Clean Up Reaction keeps them)
+    const own: [string, string][] = [[INSIDE_TAG, ids(roles.inside)], [STEP_TAG, roles.manual ? JSON.stringify({ manual: true }) : '']];
+    for (const [name, value] of own) {
+      const tag = kids(st).find((c) => c.nodeName === 'objecttag' && c.getAttribute('Name') === name);
+      if ((tag?.getAttribute('Value') ?? '') === value) continue;
+      if (tag) st.removeChild(tag);
+      if (value) st.appendChild(this.el('objecttag', { TagType: 'String', Name: name, Value: value, Visible: 'no' }));
+      this.changed = true;
+    }
   }
 
   /**
@@ -2964,4 +3007,13 @@ function turnedBox(r: Rect, at: Vec, deg: number): Rect {
     x: at.x + (x - at.x) * cos - (y - at.y) * sin, y: at.y + (x - at.x) * sin + (y - at.y) * cos,
   }));
   return { x1: Math.min(...ps.map((p) => p.x)), y1: Math.min(...ps.map((p) => p.y)), x2: Math.max(...ps.map((p) => p.x)), y2: Math.max(...ps.map((p) => p.y)) };
+}
+
+/** An elbow connector's bends as a Bézier path of straight pieces (each handle on its own point), for ChemDraw. */
+function elbowBez(r: Arrow): Vec[] | null {
+  const route = elbowRoute(r);
+  if (route.length < 2) return null;
+  const out: Vec[] = [route[0]];
+  for (let i = 1; i < route.length; i++) out.push(route[i - 1], route[i], route[i]);
+  return out;
 }

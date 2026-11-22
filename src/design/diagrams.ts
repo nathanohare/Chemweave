@@ -25,6 +25,7 @@ import { gluePoint, shapeBox } from '../objects';
 import { HEX_CELL, geoDef, sectorBox, sectorId, sliceId, textArea } from './geo';
 import { findIcons, isIconId, ICON_PREFIX } from './icons';
 import { axisMarks, parseTaskLine, placeOnAxis, type TimeSpan } from './timescale';
+import { frameRedrawn } from './frame-redrawn';
 import { keepLabels, readLabels } from './frame-labels';
 
 // ---------------------------------------------------------------- the data
@@ -1099,6 +1100,8 @@ export function diagramParts(d: DiagramData): { shapes: Omit<Shape, 'id'>[]; lin
  */
 export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
+  // (a frame changed in another program is redrawn too, in this edit's undo step; review F1d-R01)
+  frameRedrawn(doc, old);
   const was = readLabels(doc, old);
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
@@ -1124,7 +1127,7 @@ export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: n
   const diagram: DiagramData = { ...d, w: r(b.x2 - b.x1), h: r(b.y2 - b.y1) };
   // (looks set on its items' words by hand, or typed into them, stay)
   const madeLabels = keepLabels(doc, was, frame);
-  if (old) { doc.updateShape(old.id, { ...b, frame, diagram, madeLabels }); return old.id; }
+  if (old) { doc.updateShape(old.id, { ...b, frame, diagram, madeLabels, editedOutside: undefined }); return old.id; }
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, diagram, name: 'Diagram', madeLabels }).id;
 }
 

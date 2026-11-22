@@ -4,6 +4,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { formulaFromJson } from '../chem/formula';
+import { smilesMolblock } from '../chem/smiles-molfile';
 import { stereoTags } from '../chem/stereo';
 import { molProps, substructureMatches, structureLibrary, libraryMatches, panelProps, massFragments, type PanelProps, type StructureLibrary } from '../chem/props';
 import { namerGraph } from '../chem/namer-graph';
@@ -93,12 +94,7 @@ export function respond(RDKit: any, m: Exclude<ChemRequest, { type: 'init' }>, b
     return { type: 'stereo', id: m.id, results, ms: performance.now() - t0 };
   } else if (m.type === 'smilesToMol') {
     if (deep(m.smiles)) return { type: 'error', id: m.id, message: TOO_DEEP };
-    const mol = RDKit.get_mol(m.smiles);
-    if (!mol || !mol.is_valid()) { mol?.delete?.(); return { type: 'smilesToMol', id: m.id, molblock: null }; }
-    mol.set_new_coords(true);
-    const mb = mol.get_molblock();
-    mol.delete();
-    return { type: 'smilesToMol', id: m.id, molblock: mb };
+    return { type: 'smilesToMol', id: m.id, molblock: smilesMolblock(RDKit, m.smiles) };
   } else if (m.type === 'layouts') {
     // the engine's own 2-D layouts (its classic one and CoordGen's), for Clean Up to start from
     const coords: [number, number][][] = [];
