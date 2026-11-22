@@ -4,7 +4,7 @@
 // reply, resolve, edit and delete. Every change is a step of the deck's Undo.
 
 import type { Deck } from '../deck/deck';
-import { initials, type PinnedComment } from '../document/comments';
+import { initials, withNoteRuns, type NoteRun, type PinnedComment } from '../document/comments';
 import { reviewAuthor, revisionDate } from '../document/revisions';
 import { authorColour, threadCard, type ThreadActions } from './comment-cards';
 import type { View } from '../render/renderer';
@@ -48,6 +48,9 @@ export function freeSpot(at: { x: number; y: number }, others: readonly { x: num
   }
   return p;
 }
+
+const PICK_COMMENT = 'Click a comment’s marker or card first.';
+const NO_COMMENTS = 'There are no comments on this slide.';
 
 export class SlideComments {
   /** Review > Show Comments: the markers and the pane. */
@@ -116,7 +119,10 @@ export class SlideComments {
   }
 
   private patch(id: number, fn: (c: PinnedComment) => PinnedComment, label: string): void {
-    this.change(this.comments().map((c) => (c.id === id ? fn(c) : c)), label);
+    let changed = false;
+    const list = this.comments().map((c) => { if (c.id !== id) return c; const n = fn(c); changed ||= n !== c; return n; });
+    // (nothing changed, as an Edit left as it was: no step)
+    if (changed) this.change(list, label);
   }
 
   // ---------------------------------------------------------------- showing
@@ -141,7 +147,7 @@ export class SlideComments {
     if (key !== this.key) {
       this.key = key;
       this.list.replaceChildren(...list.map((c, i) => {
-        const card = threadCard(c, { active: c.id === this.active, editing: c.id === this.editing, actions: this.actions(c.id), label: `Comment ${i + 1}` });
+        const card = threadCard(c, { active: c.id === this.active, editing: c.id === this.editing, actions: this.actions(c.id), label: `Comment ${i + 1}`, rich: true });
         return card;
       }));
       this.empty.hidden = list.length > 0;
@@ -207,31 +213,34 @@ export class SlideComments {
   // ---------------------------------------------------------------- changes
 
   private actions(id: number): ThreadActions {
-    const note = (text: string) => ({ author: reviewAuthor() || 'Author', date: revisionDate(), text });
+    const note = (text: string, runs?: NoteRun[] | null) => withNoteRuns({ author: reviewAuthor() || 'Author', date: revisionDate(), text }, text, runs);
     return {
-      edit: (text, reply) => {
+      edit: (text, reply, runs) => {
         this.editing = null;
         const d = this.draft;
         if (d && d.c.id === id) {
           this.draft = null;
-          this.hooks.deck()?.setComments([...(this.hooks.deck()?.current?.comments ?? []), { ...d.c, text }], 'New comment');
+          this.hooks.deck()?.setComments([...(this.hooks.deck()?.current?.comments ?? []), withNoteRuns(d.c, text, runs)], 'New comment');
           this.update();
           this.hooks.focus();
           return;
         }
         this.patch(id, (c) => {
-          if (reply === undefined) return { ...c, text };
+          if (reply === undefined) return withNoteRuns(c, text, runs);
+          const was = c.replies?.[reply];
+          const now = was && withNoteRuns(was, text, runs);
+          if (!was || now === was) return c;
           const replies = [...(c.replies ?? [])];
-          if (replies[reply]) replies[reply] = { ...replies[reply], text };
+          replies[reply] = now!;
           return { ...c, replies };
         }, 'Edit comment');
         this.update();
         this.hooks.focus();
       },
-      reply: async (text) => {
+      reply: async (text, runs) => {
         if (!reviewAuthor() && !(await this.hooks.askName())) return;
         this.active = id;
-        this.patch(id, (c) => ({ ...c, replies: [...(c.replies ?? []), note(text)] }), 'Reply to comment');
+        this.patch(id, (c) => ({ ...c, replies: [...(c.replies ?? []), note(text, runs)] }), 'Reply to comment');
         this.update();
       },
       removeReply: (i) => { this.patch(id, (c) => { const replies = (c.replies ?? []).filter((_, k) => k !== i); const { replies: _, ...rest } = c; return replies.length ? { ...rest, replies } : rest; }, 'Delete reply'); this.update(); },
@@ -259,9 +268,19 @@ export class SlideComments {
     this.show(true);
   }
 
+  /** Why Resolve or Delete Comment cannot run now (no comment looked at), or null (G5-28). */
+  whyNoComment(): string | null {
+    return this.active !== null && this.comments().some((c) => c.id === this.active) ? null : PICK_COMMENT;
+  }
+
+  /** Why Delete All Comments cannot run now, or null. */
+  whyNoComments(): string | null {
+    return this.comments().length ? null : NO_COMMENTS;
+  }
+
   /** Delete a comment (the one looked at, when none is named). */
   remove(id = this.active): void {
-    if (id === null || !this.comments().some((c) => c.id === id)) { this.hooks.flash('Click a comment’s marker or card first.'); return; }
+    if (id === null || !this.comments().some((c) => c.id === id)) { this.hooks.flash(PICK_COMMENT); return; }
     if (this.active === id) this.active = null;
     this.change(this.comments().filter((c) => c.id !== id), 'Delete comment');
     this.update();
@@ -269,7 +288,7 @@ export class SlideComments {
 
   /** Delete every comment on this slide. */
   removeAll(): void {
-    if (!this.comments().length) { this.hooks.flash('There are no comments on this slide.'); return; }
+    if (!this.comments().length) { this.hooks.flash(NO_COMMENTS); return; }
     this.active = null;
     this.change([], 'Delete all comments');
     this.update();
@@ -278,7 +297,7 @@ export class SlideComments {
   /** Mark the comment looked at as resolved (or open again). */
   toggleResolved(): void {
     const c = this.comments().find((x) => x.id === this.active);
-    if (!c) { this.hooks.flash('Click a comment’s marker or card first.'); return; }
+    if (!c) { this.hooks.flash(PICK_COMMENT); return; }
     this.actions(c.id).resolve(!c.done);
   }
 

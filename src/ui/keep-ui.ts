@@ -141,8 +141,8 @@ export function recoverDialog(sessions: Session[], atStart: boolean): Promise<Re
   return new Promise((resolve) => {
     const { d, form, buttons } = dialog('keep-recover', 'Recover Unsaved Work');
     form.append(para(atStart
-      ? 'Chemweave closed before these were saved. These are the copies made last; pick the ones to reopen. Reopened files aren’t saved until you save them.'
-      : 'Copies of unsaved work left when Chemweave closed unexpectedly. Pick the ones to reopen.'));
+      ? 'Chemweave closed before these were saved. These are the copies made last; select the ones to reopen. Reopened files aren’t saved until you save them.'
+      : 'Copies of unsaved work left when Chemweave closed unexpectedly. Select the ones to reopen.'));
     const list = document.createElement('div');
     list.className = 'keep-list';
     const boxes: { input: HTMLInputElement; session: Session; tab: CopiedTab }[] = [];

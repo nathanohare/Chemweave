@@ -27,6 +27,24 @@ To keep the project free of other people's rights:
   version 3 (list new ones in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)).
 - No CAS Registry Numbers in bundled data; key compounds by PubChem CID instead.
 
+## Screens and wording
+
+Changes to what people see follow the [UI style guide](docs/ui-style.md): standard Office command
+names, American spelling, Title Case for commands, formulas with real subscripts and charges.
+
+## Chemistry test values
+
+A test's expected chemistry answer (a mass, a formula, a shift, a name, a hazard, a ranking) comes
+from a cited published source (a paper, a handbook, PubChem, NIST, IUPAC) or from Nate's reference
+molecules, with the reference in a comment beside it. Never take it from running the code being
+tested, and never from the CHEM21 solvent guide. See "Rules for changes" in
+[docs/developers.md](docs/developers.md#rules-for-changes).
+
+## Pull requests
+
+Fill in the [pull request template](.github/pull_request_template.md), and keep the places listed
+under [Places that must stay in step](docs/developers.md#places-that-must-stay-in-step) in step.
+
 ## Building and testing
 
 See [docs/developers.md](docs/developers.md).

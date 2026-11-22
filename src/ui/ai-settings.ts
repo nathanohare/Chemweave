@@ -4,7 +4,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { ask } from './ask';
 import { PROVIDERS, localOnlyBlock, aiKeyRemembered, aiModel, aiModels, aiAsk, aiName, hasAiKey, rememberAiKey, setAiKey, type AiPrefs, type AiProvider } from '../ai/link';
 
-const NOTE = 'Optional. Link an AI model with your own API key to use it where the app offers "Use AI model", such as reading hand-drawn structures, and for the Assistant. '
+const NOTE = 'Optional. Link an AI model with your API key to use it where the app offers "Use AI model", such as reading hand-drawn structures, and for the Assistant. '
   + 'Nothing is sent anywhere until you link one; after that, only what you choose to send (such as the picture being read) goes to that service, '
   + 'and it is billed to your account there. The key is never in exported settings. '
   + (isTauri() ? 'It is kept on this computer only.'

@@ -7,6 +7,8 @@ import { parseSettings, settingsText, DEFAULT_SETTINGS } from '../src/settings';
 
 const WHITE = '#ffffff';
 const DARK_PANEL = '#252a32';
+/** The light theme's chrome (app.css --chrome). */
+const CHROME = '#e9ebef';
 
 describe('mode colours', () => {
   it('measures contrast the standard way', () => {
@@ -14,17 +16,21 @@ describe('mode colours', () => {
     expect(contrast(WHITE, WHITE)).toBeCloseTo(1, 5);
     expect(contrast('#2f6fdf', WHITE)).toBeCloseTo(4.71, 1);
   });
-  it('keeps the drawing blue as it was', () => {
+  it('keeps a colour as it is where it reads, and darkens it only as far as the chrome needs', () => {
+    expect(modePalette('#2647a8').accent).toBe('#2647a8'); // the documents' blue reads on the chrome already
     const p = modePalette('#2f6fdf');
-    expect(p.accent).toBe('#2f6fdf'); // already readable on white
+    expect(p.accent).toBe('#2b66cd'); // readable on white (4.7:1), not on the chrome (#e9ebef, 3.9:1): a little darker
     expect(p.soft).toBe('#e2ebfb'); // was #e3ecfc
     expect(p.accentDark).toBe('#819ecf'); // muted for the dark theme (was #7babff)
     expect(modePalette('#0e7c93').accentDark).toBe('#4ea9bc'); // Canvas teal, Nate's pick (was #3fdeff)
   });
   it('makes every colour readable, however pale or dark it is chosen', () => {
-    for (const c of ['#c8572a', '#ffd800', '#00ff66', '#ffffff', '#000000', '#1e8a50', '#7f3fbf']) {
+    for (const c of ['#c8572a', '#ffd800', '#00ff66', '#ffffff', '#000000', '#1e8a50', '#7f3fbf', ...Object.values(DEFAULT_MODE_COLOURS).filter((v) => v.startsWith('#'))]) {
       const p = modePalette(c);
       expect(contrast(p.accent, WHITE)).toBeGreaterThanOrEqual(4.5);
+      // the chosen ribbon tab's word on the chrome, and a pressed button's words on its pale fill (WCAG AA)
+      expect(contrast(p.accent, CHROME), c).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(p.accent, p.soft), c).toBeGreaterThanOrEqual(4.5);
       expect(contrast(p.accentDark, DARK_PANEL)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(WHITE, p.bar)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(WHITE, p.barDark)).toBeGreaterThanOrEqual(4.5);
@@ -34,7 +40,8 @@ describe('mode colours', () => {
     const p = modePalette('#c8572a');
     expect(contrast('#c8572a', WHITE)).toBeLessThan(4.5);
     expect(p.accent).not.toBe('#c8572a');
-    expect(contrast(p.accent, WHITE)).toBeLessThan(5);
+    expect(contrast(p.accent, WHITE)).toBeLessThan(6);
+    expect(contrast(p.accent, CHROME)).toBeLessThan(5);
   });
   it('uses the drawing colour everywhere when switched off', () => {
     expect(modeColour('slides', DEFAULT_MODE_COLOURS)).toBe('#c8572a');

@@ -5,7 +5,7 @@
 
 import type { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
-import { commentSpan, markComment, nextCommentId, placedComments, unmarkComment, type CommentThread } from '../document/comments';
+import { commentSpan, markComment, nextCommentId, placedComments, unmarkComment, withNoteRuns, type CommentThread } from '../document/comments';
 import { reviewAuthor, revisionDate } from '../document/revisions';
 import { plainText } from '../richtext';
 import { stackCards, threadCard, type ThreadActions } from './comment-cards';
@@ -23,6 +23,14 @@ export interface DocCommentsHost {
 /** The column's width in pixels (room kept beside the pages while comments show). */
 const COLUMN = 280;
 
+/**
+ * Another card sharing the comment column (the original picture beside a figure converted from
+ * it): where it wants to be (a point down the pages, in the document's points), its element (kept
+ * on the page by its owner, fixed above the drawing layer) and its width in pixels. The comments
+ * and these make room for each other, so none covers another.
+ */
+export interface ColumnCard { el: HTMLElement; y: number; width: number }
+
 export class DocComments {
   /** Review > Show Comments. */
   shown = true;
@@ -33,6 +41,8 @@ export class DocComments {
   private layer: HTMLDivElement;
   private built: { t: DocText; active: number | null; editing: number | null; shown: boolean } | null = null;
   private cards = new Map<number, HTMLElement>();
+  /** The other cards in the column (set by the original pictures beside figures). */
+  extras: () => ColumnCard[] = () => [];
 
   constructor(host: HTMLElement, private view: DocView, private h: DocCommentsHost) {
     this.layer = document.createElement('div');
@@ -73,7 +83,8 @@ export class DocComments {
   update(): void {
     const f = this.file;
     const list = f && this.shown ? this.placed() : [];
-    const gutter = list.length ? COLUMN : 0;
+    const extra = f ? this.extras() : [];
+    const gutter = list.length || extra.length ? Math.max(COLUMN, ...extra.map((e) => e.width + 24)) : 0;
     if (gutter !== this.view.gutter) {
       this.view.gutter = gutter;
       this.view.sizeSpace();
@@ -82,45 +93,49 @@ export class DocComments {
       this.view.redraw();
     }
     this.layer.hidden = !list.length;
-    if (!f || !list.length) { this.layer.replaceChildren(); this.cards.clear(); this.built = null; return; }
+    if (!f || !list.length) { this.layer.replaceChildren(); this.cards.clear(); this.built = null; if (extra.length) this.place([], extra); return; }
     const b = this.built;
     if (!b || b.t !== f.t || b.active !== this.active || b.editing !== this.editing || b.shown !== this.shown) {
       this.layer.replaceChildren();
       this.cards.clear();
       for (const p of list) {
-        const card = threadCard(p.c, { active: p.id === this.active, editing: p.id === this.editing, actions: this.actions(p.id) });
+        const card = threadCard(p.c, { active: p.id === this.active, editing: p.id === this.editing, actions: this.actions(p.id), rich: true });
         this.cards.set(p.id, card);
         this.layer.append(card);
       }
       this.built = { t: f.t, active: this.active, editing: this.editing, shown: this.shown };
     }
-    this.place(list);
+    this.place(list, extra);
   }
 
   /** Put each card beside its words: beside the page they are on, when pages sit side by side. */
-  place(list = this.placed()): void {
-    if (!this.cards.size) return;
+  place(list = this.placed(), extra = this.file ? this.extras() : []): void {
+    if (!this.cards.size && !extra.length) return;
     const host = this.layer.parentElement!.getBoundingClientRect();
     this.layer.style.left = '0';
     this.layer.style.width = `${host.width}px`;
     // the cards of each page's column, stacked so they don't cover each other
     type Column = { left: number; want: number[]; heights: number[]; cards: HTMLElement[]; active: number };
     const columns = new Map<number, Column>();
-    for (const p of list) {
-      const card = this.cards.get(p.id);
-      if (!card) continue;
-      const r = this.view.rangeRects(p.start, p.end)[0];
-      const y = r?.y1 ?? 0;
+    const add = (card: HTMLElement, y: number, active: boolean) => {
       const page = this.view.pageIndexAt(y);
       card.hidden = !this.view.pageShown(page);
-      if (card.hidden) continue;
+      if (card.hidden) return;
       let col = columns.get(page);
       if (!col) columns.set(page, col = { left: this.view.toScreen(this.view.pageWidth(), y).x + 14, want: [], heights: [], cards: [], active: -1 });
       col.want.push(this.view.toScreen(0, y).y);
       col.heights.push(card.offsetHeight);
-      if (p.id === this.active) col.active = col.cards.length;
+      if (active) col.active = col.cards.length;
       col.cards.push(card);
+    };
+    for (const p of list) {
+      const card = this.cards.get(p.id);
+      if (!card) continue;
+      const r = this.view.rangeRects(p.start, p.end)[0];
+      add(card, r?.y1 ?? 0, p.id === this.active);
     }
+    const extras = new Set<HTMLElement>();
+    for (const e of extra) { extras.add(e.el); add(e.el, e.y, false); }
     // pages one under another share one column
     const merged = new Map<number, Column>();
     for (const col of columns.values()) {
@@ -130,10 +145,19 @@ export class DocComments {
       if (col.active >= 0) m.active = m.cards.length + col.active;
       m.want.push(...col.want); m.heights.push(...col.heights); m.cards.push(...col.cards);
     }
+    // (each column in order down the page: comments in their words' order, the others among them)
     for (const col of merged.values()) {
-      const tops = stackCards(col.want, col.heights, col.active);
-      col.cards.forEach((c, i) => {
-        c.style.top = `${tops[i]}px`;
+      const order = col.want.map((_, i) => i).sort((a, b) => col.want[a] - col.want[b] || a - b);
+      const tops = stackCards(order.map((i) => col.want[i]), order.map((i) => col.heights[i]), Math.max(0, order.indexOf(col.active)));
+      order.forEach((i, k) => {
+        const c = col.cards[i];
+        if (extras.has(c)) {
+          // (fixed on the page, over the drawing layer: placed in the window's pixels)
+          c.style.top = `${host.top + tops[k]}px`;
+          c.style.left = `${host.left + col.left}px`;
+          return;
+        }
+        c.style.top = `${tops[k]}px`;
         c.style.left = `${col.left}px`;
         c.style.width = `${COLUMN - 24}px`;
       });
@@ -154,26 +178,32 @@ export class DocComments {
     const f = this.file;
     const c = f?.t.comments?.[id];
     if (!f || !c) return;
-    this.change(this.withComments(f.t, { ...f.t.comments, [id]: patch(c) }), kind);
+    const now = patch(c);
+    // (nothing changed: no step)
+    if (now === c) return;
+    this.change(this.withComments(f.t, { ...f.t.comments, [id]: now }), kind);
   }
 
   private actions(id: number): ThreadActions {
-    const note = (text: string) => ({ author: reviewAuthor() || 'Author', date: revisionDate(), text });
+    const note = (text: string, runs?: Parameters<typeof withNoteRuns>[2]) => withNoteRuns({ author: reviewAuthor() || 'Author', date: revisionDate(), text }, text, runs);
     return {
-      edit: (text, reply) => {
+      edit: (text, reply, runs) => {
         this.editing = null;
         this.setThread(id, (c) => {
-          if (reply === undefined) return c.text === text ? c : { ...c, text };
+          if (reply === undefined) return withNoteRuns(c, text, runs);
+          const was = c.replies?.[reply];
+          const now = was && withNoteRuns(was, text, runs);
+          if (!was || now === was) return c;
           const replies = [...(c.replies ?? [])];
-          if (replies[reply]) replies[reply] = { ...replies[reply], text };
+          replies[reply] = now!;
           return { ...c, replies };
         }, 'Edit comment');
         this.update();
         this.h.focus();
       },
-      reply: async (text) => {
+      reply: async (text, runs) => {
         if (!reviewAuthor() && !(await this.h.askName())) return;
-        this.setThread(id, (c) => ({ ...c, replies: [...(c.replies ?? []), note(text)] }), 'Reply to comment');
+        this.setThread(id, (c) => ({ ...c, replies: [...(c.replies ?? []), note(text, runs)] }), 'Reply to comment');
         this.active = id;
         this.update();
       },

@@ -370,6 +370,8 @@ export interface TextRun {
   spacing?: number;
   /** Slides: a PowerPoint field (slidenum, datetime1…) that PowerPoint fills in; this is the text it last showed. */
   field?: string;
+  /** Slides: a citation of one of the presentation's references (by id), its text the reference's number on the slide (Insert ▸ Citation). */
+  cite?: string;
   /**
    * The text's language (a tag such as de-DE), for spelling, when not US English: kept from
    * PowerPoint, and from Word (w:lang) where not the document's own language (DocText.lang).
@@ -400,6 +402,29 @@ export interface TextRun {
    * shadow, outline and fill only while they still match the run's own above.
    */
   wfx?: string;
+  /**
+   * The underline's kind, by the name the file gave it, while `underline` is on: Word's (double,
+   * wave, dotted, thick, words..., ECMA-376 part 1, 17.18.99) in documents, Excel's (double,
+   * singleAccounting, doubleAccounting, 18.18.85) on sheets. Drawn as a single line where this
+   * program has no drawing of its own for it. Absent: a single line.
+   */
+  ukind?: string;
+  /**
+   * Documents: Word's run properties this program doesn't model (emboss, imprint, a text border,
+   * character scale, an emphasis mark, right to left...), as the file had them (JSON, by their
+   * place in w:rPr: io/docx-read.ts KEPT_RPR), written back with the run.
+   */
+  wrx?: string;
+  /** Documents: the underline's own colour (Word's w:u w:color), when not the text's. */
+  ucolor?: string;
+  /** Double strikethrough (Word's w:dstrike, 17.3.2.9), while `strike` is on. */
+  dstrike?: boolean;
+  /**
+   * Slides: PowerPoint's run formatting this program doesn't model (a gradient fill, glow, a
+   * double underline, a theme or East Asian font...), as the file had it (JSON, io/pptx-keep.ts),
+   * written back while the looks it goes with are unchanged.
+   */
+  pfx?: string;
   /** Documents: not spell- or grammar-checked (Word's Do not check spelling or grammar: chemical names, citations). */
   noProof?: boolean;
   /** Documents: the text raised (less than 0: lowered) from the line by this many points, at its own size (Word's Font > Advanced > Position). */
@@ -479,6 +504,12 @@ export interface ParaStyle {
    * in the same paragraph as that one.
    */
   soft?: boolean;
+  /**
+   * Documents: Word's paragraph properties this program doesn't model (a text frame or drop cap,
+   * an outline level of its own, right to left, East Asian line breaking...), as the file had them
+   * (JSON, by their place in w:pPr: io/docx-read.ts KEPT_PPR), written back with the paragraph.
+   */
+  wpx?: string;
   /** This paragraph's own alignment, in place of the text box's. */
   align?: Justify;
   /** Extra space above and below the paragraph, in points. */
@@ -488,6 +519,12 @@ export interface ParaStyle {
   indent?: number;
   /** Documents: the named style (Normal when left out), for Heading 1 and the rest. */
   style?: string;
+  /**
+   * Slides: PowerPoint's paragraph settings this program doesn't model (right to left, font
+   * alignment, a bullet's colour and size, its margins as PowerPoint had them...), as the file had
+   * them (JSON, io/pptx-keep.ts), written back while the paragraph's own settings are unchanged.
+   */
+  ppx?: string;
   /** Documents: starts a new page. */
   pageBreak?: boolean;
   /** Documents set in columns: starts the next column. */
@@ -620,6 +657,8 @@ export interface Caption {
   ph?: Placeholder;
   /** Height of a placeholder's box, in points (its top is the top of the first line). */
   boxH?: number;
+  /** Slide Master view: a layout's References placeholder, shown with sample lines (where slides' reference lines go). */
+  refsBox?: boolean;
   /** Tied to a structure: it keeps its place beside it when the structure moves or changes. */
   attach?: Attachment;
   /** Don't warn about this compound label (shared with a different structure on purpose). */
@@ -648,6 +687,12 @@ export interface Caption {
   fit?: 'shrink' | 'fixed';
   /** Text direction: the text runs down (rotated 90°) or up (270°). Its turn is in `rot`; this says it is the text's direction, for PowerPoint. */
   dir?: 'vert' | 'vert270';
+  /**
+   * Slides: a PowerPoint text box's frame as the file had it (JSON, io/pptx-keep.ts): its size and
+   * place, where its text sits in it (anchor, margins) and how it fits, written back (moved with the
+   * text) while the box's width, height, fit, direction and turn are unchanged here.
+   */
+  pbox?: string;
 }
 
 /**
@@ -1149,6 +1194,12 @@ export interface Shape {
    * shrinks and moves as they change). Moving or resizing the frame by hand stops it following.
    */
   frame?: Frame;
+  /**
+   * A frame's drawing whose texts were changed in another program (ChemDraw) in a way its settings
+   * can't follow: shown as that program left it, the settings kept; an edit that redraws it from
+   * the settings goes ahead in its own undo step and clears this (G1-13, review F1d-R01).
+   */
+  editedOutside?: boolean;
   /** An energy diagram's numbers and look, kept on the invisible frame round its drawing (design/energy.ts). */
   energy?: EnergyData;
   /** A Newman or sawhorse projection's groups, look and the bond it shows, kept on the invisible frame round it (design/newman.ts). */
@@ -1166,7 +1217,33 @@ export interface Shape {
    * paste into. `runs` is the text label it had, so it can go back to that.
    */
   holder?: { runs?: TextRun[] };
+  /**
+   * A frame drawn from data (energy diagram, plate, Newman, torsion chart, diagram): its labels
+   * as last drawn, so looks set on them by hand afterwards are told from the drawing's own and
+   * kept when it is drawn again (design/frame-labels.ts).
+   */
+  madeLabels?: MadeLabel[];
 }
+
+/** A label as a frame drawn from data made it: its words and their runs. */
+export interface MadeLabel { text: string; runs: TextRun[]; /** An atom's label (a sawhorse's group), not a caption's words. */ atom?: true }
+
+/**
+ * The kinds of drawing kept as data on an invisible frame round what it draws: an energy diagram,
+ * a SmartArt-style diagram, a TLC plate, gel or MO diagram, a Smart Scheme, a Newman or sawhorse
+ * projection, a torsion chart. Every place that treats such a frame apart from an ordinary
+ * rectangle (Format Painter, the Style panel, Action Settings) asks `isDataFrame`.
+ */
+export const DATA_FRAME_KINDS = ['energy', 'diagram', 'plate', 'smart', 'newman', 'torsion'] as const;
+export type DataFrameKind = (typeof DATA_FRAME_KINDS)[number];
+
+/** Which kind of drawing kept as data this shape is the frame of, or null for any other shape. */
+export function dataFrameKind(s: Pick<Shape, DataFrameKind>): DataFrameKind | null {
+  return DATA_FRAME_KINDS.find((k) => s[k] !== undefined) ?? null;
+}
+
+/** Is this shape the invisible frame of a drawing kept as data (its fill and outline aren't its own)? */
+export const isDataFrame = (s: Pick<Shape, DataFrameKind>): boolean => dataFrameKind(s) !== null;
 
 /**
  * Can this shape be turned to any angle (Slides and Design, and an orbital's lobes anywhere),
@@ -1500,8 +1577,11 @@ export function shiftDrawing(doc: Doc, dx: number, dy: number): void {
 
 export type Entity = Atom | Bond | Caption | Arrow | Shape;
 /** One letter per entity type: atom, bond, caption, arrow (r), shape. */
-/** What an undo step can hold: atoms, bonds, captions, arrows, shapes, and 'y' the drawing style. */
+/** What an undo step can hold: atoms, bonds, captions, arrows, shapes, and 'y' the drawing's settings (its style, and its page as entry PAGE_ENTRY). */
 export type Kind = 'a' | 'b' | 'c' | 'r' | 's' | 'y';
+/** The undo entry ('y' kind) that holds the drawing's page. */
+const PAGE_ENTRY = 1;
+const copyPage = (p: PageSetup | null): PageSetup | null => p && { ...p, ...(p.walls ? { walls: { ...p.walls } } : {}) };
 
 /**
  * The CDXML file a drawing was opened from. Saving rewrites only what changed and keeps
@@ -1595,6 +1675,8 @@ export class Doc {
   onCommit: (() => void) | null = null;
   /** Called when amend() adds to the last step instead of making a new one. */
   onAmend: (() => void) | null = null;
+  /** Called when the newest step is taken back as if never made (dropStep), for a listener counting steps. */
+  onDrop: (() => void) | null = null;
   /**
    * Called as an undoable change finishes, with what it changed (and how those things were
    * before); changes made here join the same undo step (frames follow what they surround).
@@ -1645,6 +1727,13 @@ export class Doc {
     return this.maxBondLen;
   }
   private tx: UndoEntry | null = null;
+  /**
+   * When each object first came into the drawing (by kind, then id), so an undo or redo that puts
+   * back an object deleted keeps the drawing's order (the order files are written in, and text,
+   * arrows and structures are drawn in) as it was.
+   */
+  private born: Partial<Record<Kind, Map<number, number>>> = {};
+  private births = 0;
   private undoStack: UndoEntry[] = [];
   private redoStack: UndoEntry[] = [];
 
@@ -1693,6 +1782,9 @@ export class Doc {
     this.tx = null;
     if (tx.before.size === 0) return;
     for (const key of tx.before.keys()) tx.after.set(key, this.snapshot(key));
+    // a command that touched things but changed none of them (Remove Highlight with none) makes
+    // no step, so Undo never seems to do nothing (stops at the first difference: usually the first)
+    if (unchanged(tx)) return;
     this.undoStack.push(tx);
     if (this.undoStack.length > 500) this.undoStack.shift();
     this.redoStack.length = 0;
@@ -1764,6 +1856,18 @@ export class Doc {
     }
   }
 
+  /**
+   * Take back `step`, the newest step, as if it had never been made, with nothing to redo (a text
+   * box Add Caption made, left empty). False, with nothing changed, when it is not the newest.
+   */
+  dropStep(step: object | undefined): boolean {
+    if (this.tx || !step || this.topStep !== step) return false;
+    const e = this.undoStack.pop()!;
+    this.apply(e.before);
+    this.onDrop?.();
+    return true;
+  }
+
   /** The things the last undo or redo put back (keys such as "a12"), for selecting them. */
   lastApplied: string[] = [];
   /** The mark (see markStep) on the side of the step the last undo or redo went back to. */
@@ -1813,11 +1917,23 @@ export class Doc {
   private apply(states: Map<string, Entity | null>): void {
     // Bonds removed first and atoms restored first, so adjacency stays consistent.
     const keys = [...states.keys()].sort((a, b) => order(a) - order(b));
+    const back = new Set<Kind>();
     for (const key of keys) {
       const kind = key[0] as Kind;
       const id = Number(key.slice(1));
       const st = states.get(key) ?? null;
+      if (st && kind !== 'y' && !this.mapOf(kind).has(id)) back.add(kind);
       this.rawSet(kind, id, st ? clone(st) : null);
+    }
+    // objects put back go back to their places in the drawing's order (not to its end)
+    for (const kind of back) {
+      const m = this.mapOf(kind), born = this.born[kind];
+      if (!born) continue;
+      const all = [...m.entries()];
+      const at = (id: number) => born.get(id) ?? Infinity;
+      all.sort((p, q) => at(p[0]) - at(q[0]));
+      m.clear();
+      for (const [id, e] of all) m.set(id, e);
     }
     this.version++;
     function order(k: string): number {
@@ -1829,7 +1945,7 @@ export class Doc {
   private snapshot(key: string): Entity | null {
     const kind = key[0] as Kind;
     const id = Number(key.slice(1));
-    if (kind === 'y') return clone(this.style) as unknown as Entity;
+    if (kind === 'y') return (id === PAGE_ENTRY ? { page: copyPage(this.page) } : clone(this.style)) as unknown as Entity;
     const e = this.mapOf(kind).get(id);
     return e ? clone(e) : null;
   }
@@ -1847,6 +1963,13 @@ export class Doc {
   setStyle(st: DocStyle): void {
     this.touch('y', 0);
     this.style = { ...st };
+    this.allDirty = true;
+  }
+
+  /** Change the page (File ▸ Page Setup, a page edge fixed or freed), as part of the edit going on. */
+  setPage(p: PageSetup | null): void {
+    this.touch('y', PAGE_ENTRY);
+    this.page = copyPage(p);
     this.allDirty = true;
   }
 
@@ -1905,7 +2028,8 @@ export class Doc {
 
   private rawSet(kind: Kind, id: number, e: Entity | null): void {
     if (kind === 'y') {
-      if (e) this.style = { ...(e as unknown as DocStyle) };
+      if (e && id === PAGE_ENTRY) this.page = copyPage((e as unknown as { page: PageSetup | null }).page);
+      else if (e) this.style = { ...(e as unknown as DocStyle) };
       this.allDirty = true;
       return;
     }
@@ -1966,6 +2090,10 @@ export class Doc {
       const m = this.mapOf(kind);
       if (e) m.set(id, e);
       else m.delete(id);
+    }
+    if (e) {
+      const born = (this.born[kind] ??= new Map());
+      if (!born.has(id)) born.set(id, ++this.births);
     }
     if (id >= this.nextId) this.nextId = id + 1;
   }
@@ -2300,6 +2428,13 @@ export class Doc {
   }
 
   /**
+   * Which drawing this document holds now: the same object until swap() brings another one in (and
+   * again once it comes back), so work that waits (the chemistry engine, a dialog, the network) can
+   * check it still has the drawing it started on.
+   */
+  get contentsKey(): object { return this.atoms; }
+
+  /**
    * Exchange everything drawn, with its style, file and undo history, with another document. A
    * slide deck keeps each slide in a document of its own and swaps the one being edited into
    * this one, so the editor, the checks and the chemistry engine always work on this document.
@@ -2308,11 +2443,12 @@ export class Doc {
   swap(other: Doc): void {
     if (this.tx || other.tx) throw new Error('Cannot swap documents in the middle of an edit');
     const fields = ['style', 'background', 'page', 'guides', 'source', 'textStyles', 'atoms', 'bonds', 'captions', 'arrows', 'shapes', 'adj', 'centresOf',
-      'grid', 'atomCell', 'maxBondLen', 'bondLenStale', 'bondLenShrunk', 'undoStack', 'redoStack'] as const;
+      'grid', 'atomCell', 'maxBondLen', 'bondLenStale', 'bondLenShrunk', 'undoStack', 'redoStack', 'born'] as const;
     const a = this as unknown as Record<string, unknown>, b = other as unknown as Record<string, unknown>;
     for (const f of fields) { const t = a[f]; a[f] = b[f]; b[f] = t; }
     // ids stay unique across both, so things moved between them never clash
     this.nextId = other.nextId = Math.max(this.nextId, other.nextId);
+    this.births = other.births = Math.max(this.births, other.births);
     for (const d of [this, other]) {
       d.allDirty = true;
       d.dirtyAtoms.clear(); d.dirtyBonds.clear(); d.dirtyRects.length = 0; d.dirtyCaptions.length = 0;
@@ -2503,4 +2639,28 @@ export class Doc {
     if (x1 === Infinity) return null;
     return { x1, y1, x2, y2 };
   }
+}
+
+/** Whether a finished step leaves everything it touched as it was. */
+/**
+ * The same data, whatever order their fields were set in (a run's { text, bold } and { bold, text }),
+ * a field set to undefined counting as left out.
+ */
+export function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === (b as unknown[]).length && a.every((x, i) => sameData(x, (b as unknown[])[i]));
+  const ka = Object.keys(a).filter((k) => (a as Record<string, unknown>)[k] !== undefined);
+  const kb = Object.keys(b).filter((k) => (b as Record<string, unknown>)[k] !== undefined);
+  return ka.length === kb.length && ka.every((k) => sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
+function unchanged(tx: UndoEntry): boolean {
+  for (const [key, was] of tx.before) {
+    const now = tx.after.get(key) ?? null;
+    if (was === now) continue;
+    if (!was || !now || JSON.stringify(was) !== JSON.stringify(now)) return false;
+  }
+  return true;
 }

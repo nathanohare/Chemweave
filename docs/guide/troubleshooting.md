@@ -4,7 +4,7 @@ This page covers the problems people meet most often: Chemweave won't install or
 
 ## Installing and starting
 
-**"Windows protected your PC".** This is SmartScreen, which warns about programs that aren't signed with a paid Windows certificate. Click **More info**, then **Run anyway**. An IT department's rules can still block Chemweave; if so, ask them.
+**The download "isn't commonly downloaded", or "Windows protected your PC".** Chemweave's installers are signed. Microsoft still warns about any file that few people have downloaded yet, which is true of every new release for a while. In Microsoft Edge, click **…** beside the download, then **Keep**, **Show more** and **Keep anyway**. If Windows then says "Windows protected your PC", click **More info**, check the publisher is not "Unknown publisher", then **Run anyway**. An IT department's rules can still block Chemweave; if so, ask them.
 
 **Nothing happens when the app starts (Windows).** The app needs Microsoft's WebView2 Runtime. Windows 10 and 11 normally have it, but some managed computers remove it. Install the "Evergreen Standalone Installer" from Microsoft's WebView2 page, then start the app again.
 
@@ -24,13 +24,13 @@ Settings (keyboard shortcuts, your abbreviations and templates, styles, palettes
 
 **Keeping a copy.** **Edit ▸ Settings File ▸ Export Settings…** saves every setting in one file, to keep or to set up another computer. **Import Settings…** reads it back.
 
-**A damaged settings file.** Each time the settings read whole, Chemweave keeps a copy beside them (`settings.bak`). If `settings.json` is ever damaged (a power cut while saving, a sync conflict), Chemweave moves it aside as `settings.damaged-….json`, puts the last good copy back, and says so. Nothing is lost except changes made since that copy.
+**A damaged settings file.** Each time the settings read whole, Chemweave keeps a copy beside them (`settings.bak`). If `settings.json` is ever damaged (a power outage while saving, a sync conflict), Chemweave moves it aside as `settings.damaged-….json`, puts the last good copy back, and says so. Nothing is lost except changes made since that copy.
 
 **Starting again from the defaults.** Export your settings first if you might want them back. Then close the app and delete (or rename) `settings.json` in the folder above. The next start uses the defaults.
 
 ## Work that seems lost
 
-- **The app closed without saving** (a crash, a power cut, Windows restarting for updates): the next start offers your unsaved work back. To look again later, use **File ▸ Versions and Recovery ▸ Recover Unsaved Work…**.
+- **The app closed without saving** (a crash, a power outage, Windows restarting for updates): the next start offers your unsaved work back. To look again later, use **File ▸ Versions and Recovery ▸ Recover Unsaved Work…**.
 - **You saved over something you wanted:** **File ▸ Versions and Recovery ▸ Version History…** lists earlier versions kept each time the file was saved; open one as a copy, or restore it.
 - **A file isn't where it was:** **File ▸ Open Recent** names the folder each recent file was in (in the web version, Chrome and Edge only). A file moved or renamed since is taken off the list.
 

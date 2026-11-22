@@ -124,7 +124,7 @@ export function editReference(start: Reference, title: string, style: CiteStyle 
     const own = el('input', { type: 'checkbox', checked: start.typed !== undefined });
     const typed = el('textarea', { rows: 3, value: start.typed ?? '' });
     const reset = button('Reset to Automatic', 'Go back to the text generated from the boxes above', () => { own.checked = false; sync(); });
-    const ownRow = el('label', { className: 'ref-own' }, own, el('span', { textContent: 'Type my own text for this reference (it replaces the automatic text, in every style)' }));
+    const ownRow = el('label', { className: 'ref-own' }, own, el('span', { textContent: 'Type custom text for this reference (it replaces the automatic text, in every style)' }));
     form.append(preview, ownRow, typed, el('div', { className: 'ref-reset' }, reset));
     const value = (): Reference => {
       const r: Record<string, unknown> = { ...start };
@@ -588,7 +588,7 @@ export class ReferencesDialog {
         el('span', { className: 'refs-edit' },
           this.copyTo,
           button('Edit…', 'Change the reference selected (or double-click it)', () => void this.edit()),
-          button('Delete…', 'Delete the references picked', () => void this.remove()))),
+          button('Delete…', 'Delete the selected references', () => void this.remove()))),
     );
     d.addEventListener('close', () => { d.remove(); this.d = null; this.panels.clear(); this.closed?.(); this.closed = null; });
     addCloseX(d, d.querySelector<HTMLElement>('.refs-head')!);
@@ -753,7 +753,7 @@ export class ReferencesDialog {
 
   /** Paste references copied (Ctrl+V) into the file whose group is picked. */
   private paste(): void {
-    if (!copied.length) { this.host.flash('Copy references first (pick them and press Ctrl+C).'); return; }
+    if (!copied.length) { this.host.flash('Copy references first (select them and press Ctrl+C).'); return; }
     if (this.group) this.copyInto(this.group, copied);
   }
 
@@ -838,7 +838,7 @@ export class ReferencesDialog {
       found = await this.lookup(doi);
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);
-      const by = await ask('Could not look up the DOI', [], { ok: 'Enter Manually', note: `${why} Enter the reference by hand instead?` });
+      const by = await ask('Could Not Look Up the DOI', [], { ok: 'Enter Manually', note: `${why} Enter the reference by hand instead?` });
       if (by) await this.addByHand({ ...blankRef(), doi: normaliseDoi(doi) });
       return;
     }

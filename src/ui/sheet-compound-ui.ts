@@ -86,7 +86,7 @@ export class SheetCompounds {
     const s = this.view.sheet;
     if (!s || s.dashboard) return;
     const list = this.targets(onlyCards);
-    if (!list.length) { this.host.flash(onlyCards ? 'Pick cells holding compounds first.' : 'Pick cells with names (Aspirin, DMAP, THF), CAS numbers or drawn structures first.', 6000); return; }
+    if (!list.length) { this.host.flash(onlyCards ? 'Select cells holding compounds first.' : 'Select cells with names (Aspirin, DMAP, THF), CAS numbers or drawn structures first.', 6000); return; }
     this.busy = true;
     const found: { r: number; c: number; card: CompoundCard; shown: string }[] = [];
     const missed: string[] = [];

@@ -325,7 +325,7 @@ function largeJMessage(r: Json, large: nmr.Coupling[], fpAtoms: string[]): strin
   if (het.length) {
     const kinds = [...new Set(het.map((c) => hetero(c.which)))].map((a) => `H–${a}`).join(' and ');
     const one = het.length === 1;
-    parts.push(`${listed(het)} ${be(het)} ${limit}, which may be correct: ${one ? 'it is labelled as an' : 'they are labelled as'} ${kinds} coupling${one ? '' : 's'}, and these can be this large.`);
+    parts.push(`${listed(het)} ${be(het)} ${limit}, which may be correct: ${one ? 'it is labeled as an' : 'they are labeled as'} ${kinds} coupling${one ? '' : 's'}, and these can be this large.`);
   }
   return head + parts.join(' ');
 }
@@ -396,7 +396,13 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
       const label = r.label ? ` (${r.label})` : '';
       if (r.nucleus === '13C') {
         const n = nmr.carbonSignalCount(text);
-        if (n && n !== facts.uniqueCarbons) out.push(w('c13', 'nmr', `¹³C NMR${label} lists ${n} signals; the structure has ${facts.uniqueCarbons} symmetry-distinct carbons. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)`, `c13:${rid}`, later(text, smiles)));
+        // (from the count without stereochemistry, SI Assistant's, to the count with diastereotopic
+        // carbons told apart, which often overlap: any number in between is right)
+        const lo = facts.uniqueCarbons, hi = Math.max(lo, facts.uniqueCarbonsMax ?? lo);
+        if (n && (n < lo || n > hi)) {
+          const has = hi === lo ? `${lo} symmetry-distinct carbons` : `${lo} symmetry-distinct carbons, or ${hi} if its diastereotopic CH₃/CH₂ carbons each give their own signal`;
+          out.push(w('c13', 'nmr', `¹³C NMR${label} lists ${n} signal${n === 1 ? '' : 's'}; the structure has ${has}. (Approximate: C–F coupling, rotamers and overlapping signals can make these differ.)`, `c13:${rid}`, later(text, smiles)));
+        }
       }
       if (r.nucleus === '1H') {
         const total = nmr.protonCount(text);
@@ -541,7 +547,7 @@ export function allWarnings(project: SiProject, c: SiCompound, ids: IdReport, fa
       const pur = values.purification;
       const own = isObj(pur) ? pyStrOf(pur.sentence).trim() : '';
       if (keys.has('purification') && own && placeholders(sentence).map(gpKey).includes('purification')) {
-        out.push(w('gp', 'purification', `“${name || 'The general procedure'}” places {purification} itself, so the sentence typed in “Printed as” is not printed. To print your own wording, type it in the {purification} box under the general procedure (Experimental procedure field), or take {purification} out of the general procedure's sentence.`, 'gp:purification-sentence', later(own, sentence)));
+        out.push(w('gp', 'purification', `“${name || 'The general procedure'}” places {purification} itself, so the sentence typed in “Printed as” is not printed. To print custom wording, type it in the {purification} box under the general procedure (Experimental procedure field), or take {purification} out of the general procedure's sentence.`, 'gp:purification-sentence', later(own, sentence)));
       }
     }
   }
@@ -560,7 +566,7 @@ export function goneText(project: SiProject, id: string): string {
     const k = project.schemes.find((x) => x.id === id);
     if (k) {
       const name = typeof k.data.name === 'string' && k.data.name ? k.data.name : 'Scheme';
-      return `mentions scheme “${name}”, which is printed without a label (printed as “??”). Tick “Label and caption” in the scheme's Layout…, or remove the mention.`;
+      return `mentions scheme “${name}”, which is printed without a label (printed as “??”). Check “Label and caption” in the scheme's Layout…, or remove the mention.`;
     }
   }
   return `mentions ${A_KIND[mentionKind(id)]} that has been deleted (printed as “??”). Restore it from the Trash, or remove the mention.`;

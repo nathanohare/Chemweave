@@ -71,6 +71,8 @@ export interface SmartPaneHooks {
   /** Clean Up Cycle: the cycle's species onto one ellipse, its arrows along it. */
   cleanUpCycle(id: number): void;
   ungroup(id: number): void;
+  /** The drawing's Undo (redo false) or Redo, from a row with nothing typed of its own to take back. */
+  history?(redo: boolean): void;
 }
 
 export const SMART_LAYOUT_ICONS: Record<SmartLayout, string> = {
@@ -272,6 +274,14 @@ export class SmartPane {
   }
 
   /** Draw the rows again while one is being typed in, keeping the caret in that row (found by what it stands for). */
+  /** Undo or Redo from a row: the drawing's, then the rows as it now is, the caret back in the same row. */
+  private history(id: number, key: string, redo: boolean): void {
+    const what = this.rowOf.get(key);
+    this.hooks.history?.(redo);
+    if (this.hooks.selected() === id && this.hooks.doc().shapes.get(id)?.smart) this.caretTo(id, what);
+    else this.refresh();
+  }
+
   private redrawTyping(id: number): void {
     const key = this.activeKey, f = this.fields.get(key);
     const what = this.rowOf.get(key);
@@ -394,7 +404,7 @@ export class SmartPane {
     this.el.append(this.formatBar(btn, gear));
     if (data.free) {
       // laid out by hand: said behind the "i" (marked), not on a line of its own
-      const why = read.chain ? 'Laid out by hand. Pick a layout to lay it out again.' : 'This scheme branches, so it keeps the layout it has. You can still retype its species and conditions.';
+      const why = read.chain ? 'Laid out by hand. Choose a layout to lay it out again.' : 'This scheme branches, so it keeps the layout it has. You can still retype its species and conditions.';
       info.title = `${why}\n\n${info.title}`;
       info.setAttribute('aria-label', info.title);
       info.classList.add('marked');
@@ -447,7 +457,7 @@ export class SmartPane {
     list.className = 'sp-list';
     this.fields.clear();
     const field = (key: string, value: TextPart[], placeholder: string, label: string, done: (v: TextPart[]) => void): HTMLDivElement => {
-      const f = new RichField(value, { placeholder, label, chem: () => chemOn, looks: true, done, onState: (x) => { if (x === this.active) this.showState(); }, keys: (e, x) => this.rowKey(id, key, x, e) });
+      const f = new RichField(value, { placeholder, label, chem: () => chemOn, looks: true, done, onState: (x) => { if (x === this.active) this.showState(); }, keys: (e, x) => this.rowKey(id, key, x, e), history: (redo) => this.history(id, key, redo) });
       this.fields.set(key, f);
       f.el.dataset.key = key;
       f.el.addEventListener('focus', () => { this.active = f; this.activeKey = key; this.showState(); const sl = /^s(\d+)$/.exec(key); this.hooks.hot?.(id, sl ? Number(sl[1]) : null); });

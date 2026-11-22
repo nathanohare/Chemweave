@@ -44,8 +44,15 @@ export interface MetalCount {
   mm: number;
   /** The charge counted against this metal (the complex's charge, shared out between its metals). */
   charge: number;
+  /** The oxidation state (IUPAC 2016: a Z ligand takes none of the metal's electrons), and dⁿ from it. */
   oxidation: number;
   dn: number;
+  /**
+   * With Z ligands only: Green's valence number VN = x + 2z + q and dⁿ = m − VN (Green, J. Organomet.
+   * Chem. 1995, 500, 127; Green & Parkin, J. Chem. Educ. 2014, 91, 807), which differ from the
+   * oxidation state and its dⁿ; shown beside them, labelled as Green's.
+   */
+  green?: { vn: number; dn: number };
   electrons: number;
   ligands: LigandCount[];
   /** The covalent bond classification, ML₃X and so on (with its charge). */
@@ -304,6 +311,7 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
     const cls = `M${l ? 'L' + (l > 1 ? sub(l) : '') : ''}${x ? 'X' + (x > 1 ? sub(x) : '') : ''}${z ? 'Z' + (z > 1 ? sub(z) : '') : ''}`;
     out.push({
       metal: m, symbol, group, l, x, z, mm, charge: q, oxidation, dn: group - oxidation,
+      ...(z ? { green: { vn: oxidation + 2 * z, dn: group - oxidation - 2 * z } } : {}),
       electrons: group + 2 * l + x + mm - q, ligands: merged,
       classification: q ? `[${cls}]${sup(Math.abs(q) > 1 ? Math.abs(q) : '')}${q > 0 ? '⁺' : '⁻'}` : cls,
       notes: notes.get(m)!,

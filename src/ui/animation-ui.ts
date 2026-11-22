@@ -169,7 +169,7 @@ export class AnimationUI {
     const EMPH_TIPS: Record<string, string> = {
       pulse: 'the selected objects swell a little and back, to draw the eye',
       grow: 'the selected objects grow (or shrink) and stay that size; set the size in Effect Options',
-      spin: 'the selected objects turn around; set how far in Effect Options',
+      spin: 'the selected objects rotate; set how far in Effect Options',
       transparency: 'the selected objects become see-through and stay so; set how much in Effect Options',
       colour: 'a shape\'s fill or text color changes (structures and pictures are recolored entirely); choose the color in Effect Options. PowerPoint can\'t recolor structures or pictures',
       turn3d: 'a structure turns smoothly in 3-D to each key view you set, one view per click (Key Views… in Effect Options). PowerPoint shows it still',
@@ -373,7 +373,7 @@ export class AnimationUI {
   private drawPath(): void {
     const doc = this.hooks.doc();
     if (!selectedParts(slideParts(doc), this.hooks.selection()).length && this.picked === null) {
-      this.hooks.flash('Select an object on the slide first, then pick Custom Path and click out its path.');
+      this.hooks.flash('Select an object on the slide first, then choose Custom Path and click out its path.');
       this.refresh();
       return;
     }
@@ -426,7 +426,7 @@ export class AnimationUI {
       this.setAnims(anims, `${animName(anims[this.picked!])}`);
       return;
     }
-    if (!chosen.length) { this.hooks.flash('Select a picture, text box, shape or structure on the slide first, then pick a path.'); this.refresh(); return; }
+    if (!chosen.length) { this.hooks.flash('Select a picture, text box, shape or structure on the slide first, then choose a path.'); this.refresh(); return; }
     const added = chosen.map((p, k) => ({ ...newAnim(targetOf(p), effect), ...extra, ...(k ? { start: 'with' as const } : {}) }));
     anims = [...anims, ...added];
     this.picked = anims.length - added.length;
@@ -440,7 +440,7 @@ export class AnimationUI {
     if (!hl.length) { this.highlights.replaceChildren(); return; }
     const head = document.createElement('div');
     head.className = 'muted small';
-    head.textContent = 'Highlights (pick one, then an effect):';
+    head.textContent = 'Highlights (choose one, then an effect):';
     this.highlights.replaceChildren(head, ...hl.map((p) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -578,7 +578,7 @@ export class AnimationUI {
     const amount = this.$<HTMLInputElement>('#an-amount'), unit = this.$<HTMLElement>('#an-amount-unit'), amountBox = this.$<HTMLElement>('#an-amount-box');
     const colour = this.$<HTMLInputElement>('#an-colour'), colourBox = this.$<HTMLElement>('#an-colour-box');
     const amt = a?.effect === 'grow' ? { v: Math.round((a.scale ?? EMPH_DEFAULTS.scale) * 100), u: '% size', tip: 'The size it grows or shrinks to: 150 is half as big again, 50 half the size' }
-      : a?.effect === 'spin' ? { v: a.turn ?? EMPH_DEFAULTS.turn, u: '°', tip: 'How far it turns, in degrees (negative turns counterclockwise)' }
+      : a?.effect === 'spin' ? { v: a.turn ?? EMPH_DEFAULTS.turn, u: '°', tip: 'How far it rotates, in degrees (negative rotates counterclockwise)' }
         : a?.effect === 'transparency' ? { v: Math.round((a.opacity ?? EMPH_DEFAULTS.opacity) * 100), u: '% transparent', tip: 'Transparency it ends at: 0 solid, 100 gone' } : null;
     amountBox.style.display = amt ? '' : 'none';
     if (amt) {
@@ -669,7 +669,7 @@ export class AnimationUI {
       return;
     }
     if (!chosen.length) {
-      this.hooks.flash('Select a picture, text box, shape or structure on the slide first, then pick an effect.');
+      this.hooks.flash('Select a picture, text box, shape or structure on the slide first, then choose an effect.');
       return;
     }
     // several objects at once: the first on a click, the rest with it
@@ -691,7 +691,7 @@ export class AnimationUI {
     const chosen = selectedParts(parts, this.hooks.selection()).filter((p) => p.kind === 'drawing' && p.sel.atoms.size);
     const part = chosen[0] ?? (pa?.effect === 'turn3d' ? partOf(parts, pa.target) : undefined);
     if (!part || part.kind !== 'drawing' || !part.sel.atoms.size || !this.hooks.keyViews) {
-      this.hooks.flash('Select a structure on the slide first: 3-D Rotation turns structures.');
+      this.hooks.flash('Select a structure on the slide first: 3-D Rotation rotates structures.');
       return;
     }
     const mine = (a: Anim) => a.effect === 'turn3d' && partOf(parts, a.target) === part;
@@ -791,7 +791,7 @@ export class AnimationUI {
     if (!anims.length) {
       const p = document.createElement('p');
       p.className = 'muted';
-      p.textContent = 'No animations on this slide. Select something on the slide, then pick an effect in the Animations tab.';
+      p.textContent = 'No animations on this slide. Select something on the slide, then choose an effect in the Animations tab.';
       this.list.replaceChildren(p);
       return;
     }

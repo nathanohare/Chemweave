@@ -11,7 +11,7 @@ import type { Sheet } from '../sheet/workbook';
 import { Range, colName, parseCellRef } from '../sheet/refs';
 import {
   Chart, ChartKind, ChartAxis, Series, SeriesFit, ErrorBars, MarkerShape, CHART_NAMES, CHART_PALETTES, MARKERS,
-  chartFromRange, chartData, readRef, refText, isXY, hasLevels, comboAs, onSecondAxis, Bins, BoxOptions,
+  chartFromRange, chartData, readRef, refText, isXY, hasLevels, comboAs, onSecondAxis, Bins, BoxOptions, retitle,
 } from '../sheet/chart';
 import { CHEM_FITS, FIT_NAMES, FitKind, fitEquation, fitResults, isChemFit, isTemperatureFit, r2Text, fitNumber } from '../sheet/fit';
 import { histogram } from '../sheet/chart-stats';
@@ -177,7 +177,7 @@ export class SheetCharts {
       [`${now?.kind === 'stdev' ? '✓ ' : ''}Standard Deviation`, () => all({ kind: 'stdev', value: 1 })],
       [`${now?.kind === 'percent' ? '✓ ' : ''}5%`, () => all({ kind: 'percent', value: 5 })],
       [`${now?.kind === 'fixed' ? '✓ ' : ''}Fixed Amount…`, () => void this.fixedErrors()],
-      [`${now?.kind === 'cells' ? '✓ ' : ''}From Cells (your own ±)…`, () => void this.cellErrors()],
+      [`${now?.kind === 'cells' ? '✓ ' : ''}Custom (From Cells)…`, () => void this.cellErrors()],
     ]);
   }
 
@@ -225,8 +225,8 @@ export class SheetCharts {
     ], { ok: 'Apply', note: 'k_{obs} writes a subscript and s^{-1} a superscript; one character needs no braces (H_2O). Leave a box empty for no title.' });
     if (!got) return;
     this.patch((x) => clean({
-      ...x, title: got.title.trim() || undefined, x: clean({ ...x.x, title: got.x.trim() || undefined }), y: clean({ ...x.y, title: got.y.trim() || undefined }),
-      ...(got.y2 !== undefined ? { y2: clean({ ...x.y2, title: got.y2.trim() || undefined }) } : {}),
+      ...x, ...retitle(x, got.title), x: clean({ ...x.x, ...retitle(x.x, got.x) }), y: clean({ ...x.y, ...retitle(x.y, got.y) }),
+      ...(got.y2 !== undefined ? { y2: clean({ ...x.y2, ...retitle(x.y2 ?? {}, got.y2) }) } : {}),
     }), 'Chart titles');
   }
 
@@ -669,4 +669,3 @@ function colour(value: string, set: (v: string) => void): HTMLInputElement {
   i.addEventListener('change', () => set(i.value));
   return i;
 }
-

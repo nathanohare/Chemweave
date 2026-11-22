@@ -87,8 +87,8 @@ export function showSmartGallery(o: GalleryOptions): Promise<GalleryPick | null>
     // the ready-made cycles
     const ready = section('Ready-Made Cycles');
     addInfo(ready.firstElementChild, some
-      ? `Placed as a Smart Scheme to change into your own. The ${o.selected} selected structures stand for its first species.`
-      : 'Placed as a Smart Scheme to change into your own: retype or draw any species, and add or remove species, loops and off-cycle species from its list.');
+      ? `Placed as a Smart Scheme for you to change. The ${o.selected} selected structures stand for its first species.`
+      : 'Placed as a Smart Scheme for you to change: retype or draw any species, and add or remove species, loops and off-cycle species from its list.');
     const cards = document.createElement('div');
     cards.className = 'sg-cycles';
     const waiting: { p: CyclePreset; host: HTMLElement }[] = [];

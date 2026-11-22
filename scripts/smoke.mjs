@@ -2,9 +2,12 @@
 // the built app in Chromium and goes through what everyone does first. It fails on any error the
 // page reports, on a step that doesn't do what it should, and on a menu too tall for a laptop's
 // window (each menu must fit in one column at 1280 × 720, and every top menu and right-click menu
-// must fit a 1389 × 700 window without scrolling).
+// must fit a 1389 × 700 window without scrolling). Last, the accessibility check of
+// scripts/a11y-check.mjs (standing rule R10): axe and a keyboard-only walk in Light and Dark Gray,
+// failing on a problem not already in scripts/a11y-known.mjs.
 import { spawn } from 'node:child_process';
 import { launch } from '../bench/browser.mjs';
+import { a11yProblems, compareA11y } from './a11y-check.mjs';
 
 const PORT = 4179;
 const URL = `http://localhost:${PORT}/`;
@@ -82,7 +85,9 @@ try {
 
   step('every ribbon, on every tab, is the Spreadsheet\'s height');
   await page.evaluate(() => window.__app.ws.newDesign({ w: 720, h: 540 }));
-  await page.waitForTimeout(400);
+  // the SI tab too (retrospective audit G5-06), with a project kept in memory
+  await page.evaluate(() => window.__app.openMemorySi({ 'project.json': JSON.stringify({ title: 'Smoke test' }) }));
+  await page.waitForTimeout(1500);
   const heights = await page.evaluate(async () => {
     const ws = window.__app.ws, out = [];
     const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
@@ -107,7 +112,7 @@ try {
   });
   const sheetH = heights.find((x) => x.mode === 'sheet')?.h;
   console.log(`  ${heights.length} tabs in ${new Set(heights.map((x) => x.mode)).size} modes, ${sheetH} px`);
-  if (new Set(heights.map((x) => x.mode)).size < 5) fail('not every mode\'s ribbon was checked');
+  if (new Set(heights.map((x) => x.mode)).size < 6) fail('not every mode\'s ribbon (and the SI tab\'s) was checked');
   for (const x of heights) if (x.h !== sheetH) fail(`the ${x.mode} ribbon's ${x.tab} tab is ${x.h} px tall, not the Spreadsheet's ${sheetH} px`);
   step('going to a canvas slide, the Keyframes group fits in the Home ribbon: nothing runs off its right end');
   const over = await page.evaluate(async () => {
@@ -158,6 +163,8 @@ try {
       await frame();
       if (tab.mode === 'sheet' || tab.mode === 'document') continue;
       const box = document.querySelector('.toolbox[data-id="main"]'), body = box?.querySelector('.tb-body');
+      // the SI tab has no canvas (its structures open in a drawing window): no docked toolbox shows there
+      if (tab.mode === 'si') { out.push({ mode: 'si', siShown: !!box?.offsetParent }); continue; }
       const cells = box?.querySelector('.tb-cells');
       if (!cells || !box.offsetParent) { out.push({ mode: tab.mode, cols: 0 }); continue; }
       const b = box.getBoundingClientRect();
@@ -166,7 +173,9 @@ try {
     ws.activate(ws.tabs.find((t) => t.mode === 'drawing'));
     return out;
   });
+  if (!columns.some((x) => x.mode === 'si')) fail('the toolbox step did not visit the SI tab');
   for (const x of columns) {
+    if (x.mode === 'si') { if (x.siShown) fail('the SI tab shows the docked Drawing Tools toolbox, but it has no canvas to draw on'); continue; }
     if (x.cols !== 2) fail(`the Drawing Tools toolbox in a ${x.mode} tab is ${x.cols} columns wide, not two`);
     else if (x.bottom > x.h || x.page > x.h) fail(`the Drawing Tools toolbox in a ${x.mode} tab runs past the window's foot (${Math.round(x.bottom)} px of ${x.h})`);
   }
@@ -299,6 +308,18 @@ try {
   await showTab('design');
   const page2 = await page.locator('#overlay').boundingBox();
   await rightClick('Design page right-click', page2.x + page2.width / 2, page2.y + page2.height / 2);
+
+  step('accessibility: axe and the keyboard alone, in Light and Dark Gray (scripts/a11y-check.mjs)');
+  // (in a fresh page, as `node scripts/a11y-check.mjs` runs it, so the lines match scripts/a11y-known.mjs)
+  const fresh1 = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  fresh1.on('pageerror', (e) => errors.push('page error: ' + e.message));
+  fresh1.on('dialog', (d) => d.dismiss());
+  await fresh1.goto(URL);
+  await fresh1.waitForFunction(() => window.__app?.chem?.ready, null, { timeout: 30000 });
+  await fresh1.locator('#welcome-close').click({ timeout: 2000 }).catch(() => {});
+  const { fresh, gone } = compareA11y(await a11yProblems(fresh1));
+  for (const p of fresh) fail(`accessibility (not in scripts/a11y-known.mjs): ${p}`);
+  if (gone.length) console.log(`  no longer happening (take them off scripts/a11y-known.mjs):\n    ${gone.join('\n    ')}`);
 
   for (const e of errors) fail(e);
 } catch (e) {

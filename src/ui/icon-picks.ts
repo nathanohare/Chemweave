@@ -376,6 +376,10 @@ export const TEXT_ICONS: Record<string, string> = {
   "slide-templates": "<rect class=\"p\" x=\"2.75\" y=\"3.75\" width=\"18.5\" height=\"13\" rx=\"2\"/><path class=\"f a\" d=\"M2.75 12.75c5-4 10.5 2.5 18.5-2v4.25a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2z\"/><path d=\"M6 7.5h7\"/><circle class=\"s\" cx=\"17.5\" cy=\"7.5\" r=\"1.75\"/>",
   "tr:apply-all": "<rect class=\"f a\" x=\"2.75\" y=\"2.75\" width=\"7\" height=\"5\" rx=\"1\"/><rect class=\"p\" x=\"2.75\" y=\"9.5\" width=\"7\" height=\"5\" rx=\"1\"/><rect class=\"p\" x=\"2.75\" y=\"16.25\" width=\"7\" height=\"5\" rx=\"1\"/><path class=\"a\" d=\"M12 5.25h2.5a1 1 0 0 1 1 1v11.5a1 1 0 0 1-1 1H12M12 12h3.5\"/>",
   "zotero-menu": "<text class=\"a\" x=\"7.5\" y=\"9.5\" font-size=\"6.5\" font-weight=\"700\" text-anchor=\"middle\">[1]</text><path d=\"M13 7.5h8\"/><text class=\"a\" x=\"7.5\" y=\"18\" font-size=\"6.5\" font-weight=\"700\" text-anchor=\"middle\">[2]</text><path d=\"M13 16h6\"/>",
+  // the last words-only ribbon buttons (retrospective audit G5-35)
+  "sh:outline-settings": "<path d=\"M3.75 4.75v9.5h2.5\"/><path d=\"M8.75 6h11.5M8.75 10h11.5M8.75 14h6\"/><circle class=\"a\" cx=\"17.5\" cy=\"18\" r=\"2.25\"/><path class=\"a\" d=\"M17.5 14.75v1M17.5 20.25v1M14.25 18h1M19.75 18h1\"/>",
+  "sh:custom-views": "<rect class=\"p\" x=\"2.75\" y=\"3.75\" width=\"18.5\" height=\"16.5\" rx=\"1.5\"/><path d=\"M2.75 8.25h18.5M8.75 3.75v4.5\"/><path class=\"a\" d=\"M6 14.5s2.5-3.5 6-3.5 6 3.5 6 3.5-2.5 3.5-6 3.5-6-3.5-6-3.5z\"/><circle class=\"s\" cx=\"12\" cy=\"14.5\" r=\"1.25\"/>",
+  "doc:styles-pane": "<rect class=\"p\" x=\"11.75\" y=\"2.75\" width=\"9.5\" height=\"18.5\" rx=\"1.5\"/><path d=\"M14 7h5M14 11h5M14 15h5\"/><path class=\"a\" d=\"M2.75 17.25l3.5-10 3.5 10M4 13.75h4.5\"/>",
 };
 
 /** Pictures for ribbon groups folded to one button, by the group's name (they had none of their own). */

@@ -9,7 +9,12 @@ export interface QmResult {
   program: 'Gaussian' | 'ORCA';
   /** The name the job goes by (the file's name without its extension). */
   name: string;
-  /** Energies in hartree, where the output gives them. */
+  /**
+   * Energies in hartree, where the output gives them. `scf` is the electronic energy at the job's
+   * own level: the SCF energy for HF and DFT, the method's own final energy for post-HF methods
+   * (MP2, CCSD(T)…), double hybrids and ONIOM, and the 0 K energy of a composite method (CBS-QB3,
+   * G4…), whose free energy and enthalpy are its own too, not the lower-level frequency job's.
+   */
   scf: number | null;
   enthalpy: number | null;
   free: number | null;
@@ -20,6 +25,16 @@ export interface QmResult {
   atoms: QmAtom[];
   /** The job did not finish normally. */
   unfinished: boolean;
+  /** Where `scf` came from when it isn't the SCF energy (MP2, CCSD(T), CBS-QB3 (0 K), ONIOM extrapolated). */
+  energyFrom?: string;
+  /** The route asks for a post-HF, double-hybrid, composite or ONIOM energy that the output doesn't give, so `scf` is the SCF energy only. */
+  missing?: string;
+  /**
+   * Something the reader wants the user to know about where the numbers came from: a log of several
+   * jobs whose energy and thermal values come from different jobs, or an energy line the route
+   * doesn't name, not used (review F1c-R06).
+   */
+  note?: string;
 }
 
 /** Hartree in each unit the diagram offers. */
@@ -57,19 +72,221 @@ const lastAt = (text: string, key: string, re: RegExp): RegExpExecArray | null =
 
 // ---------------------------------------------------------------- Gaussian
 
+/**
+ * The final energies Gaussian prints for methods beyond SCF, as its output writes them (Gaussian 16
+ * User's Reference, and Foresman and Frisch, "Exploring Chemistry with Electronic Structure
+ * Methods", 3rd ed., 2015): the route keyword that asks for it, its name, and the line holding it.
+ * Fortran D exponents (-0.11531345437D+03) are read as E. Checked in this order, so a CCSD(T) job's
+ * MP2 step is not taken for its answer.
+ */
+const E = '(-?\\d+\\.\\d+(?:[DE][+-]?\\d+)?)';
+const line = (key: string) => new RegExp(`${key.replace(/[()]/g, '\\$&')}\\s*${E}`);
+// (a method with options: ccsd(t,full), CCSD(T,FC), ccsd=(t,maxcyc=100), ccsd=t, qcisd(t,full),
+// mp4(sdq), mp4=sdq; the (T) is the option t among the others; with the open-shell forms UCCSD and
+// ROCCSD; review F1-R03, F1b-R09)
+const SHELL = '(?:r|u|ro)?';
+const withT = (m: string) => new RegExp(`\\b${SHELL}${m}(?:-t\\b|\\s*=\\s*t\\b|\\s*=?\\s*\\([^)]*\\bt\\b)`, 'i');
+const plain = (m: string) => new RegExp(`\\b${SHELL}${m}\\b`, 'i');
+const mp4 = (opt: string) => new RegExp(`\\b${SHELL}mp4\\s*(?:=\\s*\\(?|\\()\\s*${opt}\\b`, 'i');
+const POST_SCF: { route: RegExp; name: string; key: string; re: RegExp }[] = [
+  { route: /\boniom\b/i, name: 'ONIOM extrapolated', key: 'ONIOM: extrapolated energy', re: new RegExp(`ONIOM: extrapolated energy\\s*=\\s*${E}`) },
+  { route: withT('ccsd'), name: 'CCSD(T)', key: 'CCSD(T)=', re: line('CCSD(T)=') },
+  { route: withT('qcisd'), name: 'QCISD(T)', key: 'QCISD(T)=', re: line('QCISD(T)=') },
+  { route: plain('ccsd'), name: 'CCSD', key: 'E(CORR)=', re: new RegExp(`E\\(CORR\\)=\\s*${E}`, 'i') },
+  { route: plain('qcisd'), name: 'QCISD', key: 'E(CORR)=', re: new RegExp(`E\\(CORR\\)=\\s*${E}`, 'i') },
+  { route: mp4('sdq'), name: 'MP4(SDQ)', key: 'UMP4(SDQ)=', re: line('UMP4(SDQ)=') },
+  { route: mp4('dq'), name: 'MP4(DQ)', key: 'UMP4(DQ)=', re: line('UMP4(DQ)=') },
+  { route: new RegExp(`\\b${SHELL}mp4`, 'i'), name: 'MP4', key: 'UMP4(SDTQ)=', re: line('UMP4(SDTQ)=') },
+  { route: plain('mp3'), name: 'MP3', key: 'EUMP3=', re: line('EUMP3=') },
+  { route: /\b[ru]?o?mp2\b/i, name: 'MP2', key: 'EUMP2 =', re: line('EUMP2 =') },
+  // a double hybrid's SCF energy leaves out its MP2-like part: "E2(B2PLYP) = … E(B2PLYP) = …"
+  { route: /\b(b2plyp|mpw2plyp|b2gpplyp|dsdpbep86|pbe0dh|pbeqidh)/i, name: 'double hybrid', key: 'E2(', re: new RegExp(`E2\\([^)]*\\)\\s*=\\s*-?\\d+\\.\\d+(?:[DE][+-]?\\d+)?\\s+E\\([^)]*\\)\\s*=\\s*${E}`) },
+];
+/**
+ * Methods whose energy is not the SCF energy and which are not read here (CISD, Brueckner doubles,
+ * EOM, SAC-CI, MP5, CCD, CEPA…), and lines a correlated method prints: with either and no method
+ * read above, the result says the method's energy was not read, rather than passing the SCF
+ * (HF reference) energy off as the answer.
+ */
+const OTHER_CORR = /\b(cisd|cid|bd|eom-?\w*|sac-ci|mp5|ccd|lccd|cepa\w*|dlpno\w*|lpno\w*|cbs-\w+|g[1-4]\w*|w1\w*|casmp2|caspt2|mrci)\b/i;
+const CORR_LINE = /E\(CORR\)=|EUMP2 =|EUMP3=|UMP4\(|CCSD\(T\)=|QCISD\(T\)=|ONIOM: extrapolated/i;
+/** Composite methods: "CBS-QB3 (0 K)=", "G4(0 K)=", and their own "Enthalpy=" and "Free Energy=". */
+const COMPOSITE = /\b((?:ro)?cbs-qb3|cbs-4m|cbs-apno|g4mp2|g4|g3mp2|g3b3|g3|g2mp2|g2|g1|w1u|w1bd|w1ro)\b/i;
+const fortran = (m: RegExpExecArray | null): number | null => (m ? Number(m[1].replace(/D/i, 'E')) : null);
+
+/**
+ * A route's words, split at spaces outside brackets (cisd(maxcyc=50, conver=8)/6-31g(d) is one word).
+ */
+function routeWords(route: string): string[] {
+  const out: string[] = [];
+  let depth = 0, cur = '';
+  for (const ch of route) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    if (/\s/.test(ch) && depth === 0) { if (cur) out.push(cur); cur = ''; } else cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+/**
+ * The method of a route: the word before the basis set's "/" (IOp(…/…) aside), or the whole route
+ * when there is none, as for G4 or CBS-QB3 (review F1b-R15, F1c-R10).
+ */
+function routeMethod(route: string): string {
+  const w = routeWords(route).find((x) => x.includes('/') && !/^iop\b/i.test(x));
+  return w ? w.slice(0, w.indexOf('/')) : route;
+}
+
+/** HF and density functionals (the usual Gaussian keywords): an SCF method, whose energy is the SCF energy. */
+const SCF_METHOD = /^(?:r|u|ro)?(?:hf|b3lyp|b3pw91|b3p86|blyp|bp86|pbe\w*|pw91\w*|m0\w*|m1\w*|mn1\w*|sogga\w*|wb97\w*|cam-b3lyp|lc-\w+|b97\w*|tpss\w*|revtpss|apfd|x3lyp|bmk|o3lyp|hse\w*|hcth\w*|svwn\w*|lsda|b1lyp|mpw\w*|scan|r2scan\w*|am1|pm[367]|dftb\w*|n12\w*)$/i;
+
+/**
+ * The jobs of a Gaussian log (--Link1-- jobs, each with its own route), at each route section;
+ * the steps Gaussian runs itself inside one job (opt then freq, a composite's steps) have GenChk
+ * in their route and stay with their job. A composite method's log is one job.
+ */
+function gaussianJobs(text: string): string[] {
+  const starts: number[] = [];
+  // each line that starts with "#" right under a line of dashes. Found from the "#" (rare in a log)
+  // with indexOf and checked back, because a pattern that starts at the dashes or at each line walks
+  // every line of a long optimization's geometry tables (43 MB: about 35 ms against a few)
+  let routeEnd = -1;
+  for (let hash = text.indexOf('#'); hash >= 0; hash = text.indexOf('#', hash + 1)) {
+    const lineAt = text.lastIndexOf('\n', hash - 1) + 1;
+    if (lineAt === 0 || !/^[ \t]*$/.test(text.slice(lineAt, hash))) continue;
+    const prev = text.lastIndexOf('\n', lineAt - 2) + 1;
+    if (!/^ ?-{5,}\r?$/.test(text.slice(prev, lineAt - 1))) continue;
+    const end = text.indexOf('\n', hash);
+    const route = text.slice(lineAt, end < 0 ? text.length : end);
+    const at = lineAt;
+    // a title that starts with "#" (it sits between dashes too): only the route's closing dashes and
+    // Gaussian's link list ("1/18=20,19=15/1,3;") come between the route and it (review F1d-R07)
+    if (routeEnd >= 0) {
+      const close = /\n ?-{5,}[^\n]*/g;
+      close.lastIndex = routeEnd;
+      const c = close.exec(text);
+      if (c && c.index < prev && text.slice(c.index + c[0].length, prev).split(/\r?\n/).every((l) => /^\s*$|^ ?-{5,}\s*$|^ ?\d+\/\S*;\s*$/.test(l))) continue;
+    }
+    routeEnd = at + route.length;
+    if (/\bGenChk\b/i.test(route)) continue;
+    starts.push(at);
+  }
+  if (starts.length < 2 || COMPOSITE.exec(routeMethod(gaussianRoute(text).replace(/^#\w?\s*/, '')))) return [text];
+  return starts.map((at, i) => text.slice(i ? at : 0, starts[i + 1] ?? text.length));
+}
+
+/**
+ * A Gaussian log: each job read on its own (gaussianJob). With several jobs (an optimization and
+ * frequencies, then a single point at a higher level), the energy is the last job's that has one,
+ * the enthalpy, free energy and imaginary frequencies the last frequency job's; when these are two
+ * jobs at different levels, the level reads "energy level//frequency level" and a note says which
+ * number came from which job (review F1c-R06). Nothing is taken from one job as if it were another's.
+ */
 function readGaussian(text: string, name: string): QmResult {
-  const scf = num(lastAt(text, 'SCF Done:', /SCF Done:\s+E\([^)]*\)\s*=\s*(-?\d+\.\d+)/));
-  const free = num(lastAt(text, 'Sum of electronic and thermal Free Energies=', /Sum of electronic and thermal Free Energies=\s*(-?\d+\.\d+)/));
-  const enthalpy = num(lastAt(text, 'Sum of electronic and thermal Enthalpies=', /Sum of electronic and thermal Enthalpies=\s*(-?\d+\.\d+)/));
+  const jobs = gaussianJobs(text);
+  if (jobs.length < 2) return readGaussianJob(text, name);
+  const parts = jobs.map((t) => readGaussianJob(t, name));
+  // the energy: the last job's at a correlated level (MP2, CCSD(T), a composite…) if there is one,
+  // else the last job's; never a higher level's dropped without a word (review F1d-R05)
+  const rank = (p: QmResult) => (p.scf === null ? -1 : p.energyFrom ? 1 : 0);
+  const top = Math.max(...parts.map(rank));
+  const eAt = parts.map((p) => rank(p) === top && top >= 0).lastIndexOf(true);
+  const tAt = parts.map((p) => p.free !== null || p.enthalpy !== null).lastIndexOf(true);
+  const e = parts[eAt >= 0 ? eAt : parts.length - 1];
+  const out: QmResult = { ...e, unfinished: !/Normal termination of Gaussian/.test(text.slice(-4000)) };
+  if (!out.atoms.length) out.atoms = [...parts].reverse().find((p) => p.atoms.length)?.atoms ?? [];
+  if (tAt >= 0 && tAt !== eAt) {
+    const t = parts[tAt];
+    out.enthalpy = t.enthalpy; out.free = t.free; out.imaginary = t.imaginary;
+    const what = e.energyFrom ?? 'electronic';
+    if (t.theory !== e.theory) {
+      out.theory = `${e.theory}//${t.theory}`;
+      out.note = `The ${what} energy is from job ${eAt + 1} of the log (${e.theory || 'its route'}); the enthalpy and free energy are from job ${tAt + 1} (${t.theory || 'its route'}).`;
+    }
+  }
+  // (another job's correlated energy, at another level, that isn't the one taken)
+  const level = (p: QmResult) => `${p.energyFrom ?? ''} ${p.theory}`;
+  const unused = parts.flatMap((p, i) => (i !== eAt && rank(p) === 1 && level(p) !== level(e) ? [`The log also has ${article(p.energyFrom!)} ${p.energyFrom} energy (${p.theory || 'its route'}) in job ${i + 1}: not used; the energy is job ${eAt + 1}'s.`] : []));
+  const lastE = parts.map((p) => p.scf !== null).lastIndexOf(true);
+  const later = top === 1 && lastE > eAt && !(tAt >= 0 && tAt !== eAt && parts[tAt].theory !== e.theory)
+    ? [`The ${e.energyFrom} energy is from job ${eAt + 1} of the log (${e.theory || 'its route'}), not from the last job (${parts[lastE].theory || 'its route'}).`] : [];
+  const notes = [out.note, ...later, ...unused, ...parts.filter((p) => p !== e).map((p) => p.note)].filter(Boolean);
+  if (notes.length) out.note = [...new Set(notes)].join(' ');
+  return out;
+}
+
+/**
+ * The QCISD(T) line if the text has one, else the CCSD(T) line if it has one (at the start of a line
+ * or after anything but a capital letter, so "CCSD(T)=" is not taken from inside "QCISD(T)="). One
+ * indexOf pass for the "SD(T)=" both end in: a regular expression that starts with an alternation
+ * searches a 43 MB log character by character, and twice.
+ */
+function tLine(text: string): (typeof POST_SCF)[number] | undefined {
+  let cc = false;
+  for (let i = text.indexOf('SD(T)='); i >= 0; i = text.indexOf('SD(T)=', i + 1)) {
+    if (text.startsWith('QCI', i - 3) && (i === 3 || !/[A-Z]/.test(text[i - 4]))) return POST_SCF[2];
+    if (text.startsWith('CC', i - 2) && (i === 2 || !/[A-Z]/.test(text[i - 3]))) cc = true;
+  }
+  return cc ? POST_SCF[1] : undefined;
+}
+
+/** "a" or "an" before a method's name read letter by letter (an MP2, an ONIOM, a CCSD(T), a G4). */
+const article = (name: string) => (/^[AEFHILMNORSX]/.test(name) ? 'an' : 'a');
+
+/** One Gaussian job (a whole log, or one --Link1-- job of it). */
+function readGaussianJob(text: string, name: string): QmResult {
+  let scf = num(lastAt(text, 'SCF Done:', /SCF Done:\s+E\([^)]*\)\s*=\s*(-?\d+\.\d+)/));
+  let free = num(lastAt(text, 'Sum of electronic and thermal Free Energies=', /Sum of electronic and thermal Free Energies=\s*(-?\d+\.\d+)/));
+  let enthalpy = num(lastAt(text, 'Sum of electronic and thermal Enthalpies=', /Sum of electronic and thermal Enthalpies=\s*(-?\d+\.\d+)/));
+  const routeLine = gaussianRoute(text);
+  let energyFrom: string | undefined, missing: string | undefined, note: string | undefined;
+  // only the route's method is looked at, so a word elsewhere in the route (a G1, a W1, a BD) sets nothing off
+  const route = routeLine.replace(/^#\w?\s*/, '');
+  const method = routeMethod(route);
+  const comp = COMPOSITE.exec(method);
+  if (comp) {
+    // the composite's own energies; its frequency job's free energy is at the lower level
+    const label = comp[1].toLowerCase() === 'cbs-4m' ? 'CBS-4' : comp[1].toUpperCase();
+    // (the open-shell ROCBS-QB3 prints its energies under either name)
+    const esc = /CBS-QB3$/.test(label) ? '(?:RO)?CBS-QB3' : label.replace(/[-()]/g, '\\$&');
+    const at = (key: string, re: RegExp) => { const i = text.lastIndexOf(key); return i < 0 ? null : fortran(re.exec(text.slice(Math.max(0, i - 40), i + 200))); };
+    const e0 = at('(0 K)=', new RegExp(`${esc}\\s*\\(0 K\\)=\\s*(-?\\d+\\.\\d+)`));
+    if (e0 !== null) {
+      scf = e0; energyFrom = `${label} (0 K)`;
+      enthalpy = at(' Enthalpy=', new RegExp(`${esc}\\s+Enthalpy=\\s*(-?\\d+\\.\\d+)`));
+      free = at(' Free Energy=', new RegExp(`${esc}\\s+Free Energy=\\s*(-?\\d+\\.\\d+)`));
+    } else missing = label;
+  } else {
+    const p = POST_SCF.find((x) => x.route.test(routeLine));
+    if (p) {
+      const e = fortran(lastAt(text, p.key, p.re));
+      if (e !== null) { scf = e; energyFrom = p.name === 'double hybrid' ? (/E\(([^)]*)\)\s*=/.exec(text.slice(text.lastIndexOf('E2(')))?.[1] ?? p.name) : p.name; }
+      else missing = p.name;
+    } else {
+      // a method not read here: say so (never the SCF energy as if it were the method's)
+      const other = OTHER_CORR.exec(method);
+      // a method this reader doesn't know, but a log that names its answer: the CCSD(T) or QCISD(T)
+      // line. Never for an HF or DFT job (its energy is the SCF energy): that line is another job's,
+      // and is noted, not used (review F1c-R06).
+      const scfJob = SCF_METHOD.test(method.replace(/\(.*$/, '').replace(/-d\w*$/i, ''));
+      const found = other ? undefined : tLine(text);
+      const e = found ? fortran(lastAt(text, found.key, found.re)) : null;
+      if (found && e !== null && !scfJob) { scf = e; energyFrom = found.name; }
+      else if (found && e !== null) note = `The log also has a ${found.name} energy that its route (${method}) doesn't ask for: not used.`;
+      else if (other) missing = other[1].toUpperCase();
+      else if (!scfJob && CORR_LINE.test(text)) missing = (method || 'post-SCF').toUpperCase();
+    }
+  }
   // the last frequency job: the negative frequencies it lists
   let imaginary: number | null = null;
   const freqAt = text.lastIndexOf('Harmonic frequencies');
   if (freqAt >= 0) imaginary = [...text.slice(freqAt).matchAll(/Frequencies --\s+([^\n]+)/g)].flatMap((m) => m[1].trim().split(/\s+/).map(Number)).filter((f) => f < 0).length;
-  const route = gaussianRoute(text);
   const atoms = gaussianGeometry(text);
   return {
     program: 'Gaussian', name, scf, enthalpy, free, imaginary,
-    theory: route ? gaussianTheory(route) : '', atoms, unfinished: !/Normal termination of Gaussian/.test(text.slice(-4000)),
+    theory: routeLine ? gaussianTheory(routeLine) : '', atoms, unfinished: !/Normal termination of Gaussian/.test(text.slice(-4000)),
+    ...(energyFrom ? { energyFrom } : {}), ...(missing ? { missing } : {}), ...(note ? { note } : {}),
   };
 }
 

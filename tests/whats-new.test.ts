@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compareVersions, notesSince } from '../src/updates';
+import { compareVersions, notesSince, newestNotes } from '../src/updates';
 
 describe("What's New", () => {
   it('orders versions by number, not as text', () => {
@@ -21,5 +21,13 @@ describe("What's New", () => {
       { version: '0.1.140', notes: 'Checkpoint: menus in one column' },
       { version: '0.1.139', notes: 'Lasso select' },
     ]);
+  });
+});
+
+describe("Help ▸ What's New (review of F5, R16)", () => {
+  it('shows the newest three versions up to this one, not every release', () => {
+    const rel = Array.from({ length: 12 }, (_, i) => ({ tag_name: `v0.1.${100 + i}`, body: `Change ${i}` }));
+    expect(newestNotes(rel, '0.1.110').map((r) => r.version)).toEqual(['0.1.110', '0.1.109', '0.1.108']);
+    expect(newestNotes(rel, '0.1.101', 5).map((r) => r.version)).toEqual(['0.1.101', '0.1.100']);
   });
 });

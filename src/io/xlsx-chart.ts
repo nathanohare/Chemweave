@@ -5,7 +5,7 @@
 
 import { xml, xmlAttr, hex6, kid, kids, type Package } from './ooxml';
 import type { Chart, ChartAxis, ChartKind, Series, SeriesData, SeriesFit, ErrorBars, MarkerShape, Bins, BoxOptions } from '../sheet/chart';
-import { seenChartId, isChartEx, hasLevels, comboAs, onSecondAxis } from '../sheet/chart';
+import { seenChartId, isChartEx, hasLevels, comboAs, onSecondAxis, titleMarkup, titleRunsOf, type TitleRun } from '../sheet/chart';
 import type { FitKind } from '../sheet/fit';
 import { textRuns } from '../render/chart-draw';
 
@@ -66,16 +66,30 @@ const ref = (t: string | undefined) => (t ?? '').replace(/^=/, '');
 const fill = (c: string) => `<a:solidFill><a:srgbClr val="${hex6(c)}"/></a:solidFill>`;
 const DASH: Record<string, string> = { dash: 'dash', dot: 'sysDot' };
 
-/** Text with k_{obs} and s^{-1} as runs set lower and higher (as Excel's own sub- and superscripts). */
-function richText(text: string, sizePt: number, bold = false): string {
-  const runs = textRuns(text).map((r) => {
-    const base = r.pos === 'sub' ? ' baseline="-25000"' : r.pos === 'sup' ? ' baseline="30000"' : '';
-    return `<a:r><a:rPr lang="en-US" sz="${Math.round(sizePt * 100)}" b="${bold ? 1 : 0}"${base}/><a:t>${xml(r.t)}</a:t></a:r>`;
-  }).join('');
-  return `<c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${Math.round(sizePt * 100)}" b="${bold ? 1 : 0}"/></a:pPr>${runs}</a:p></c:rich></c:tx>`;
+/**
+ * A title's paragraphs of runs (a:r), each with its look: k_{obs} and s^{-1} set lower and higher
+ * (as Excel's own sub- and superscripts), and the bold, italic and underlined text and the
+ * paragraphs of the title's own runs while it is still what they say (titleRunsOf).
+ */
+function titleParas(text: string, own: readonly TitleRun[] | undefined, sizePt: number, bold: boolean): string[] {
+  const rich = titleRunsOf(text, own);
+  const runs: TitleRun[] = rich ? [...rich] : textRuns(text).map((r) => ({ text: r.t, ...(r.pos === 'sub' ? { sub: true } : r.pos === 'sup' ? { sup: true } : {}) }));
+  const paras: string[] = [''];
+  for (const r of runs) {
+    if (r.text === '\n') { paras.push(''); continue; }
+    const base = r.sub ? ' baseline="-25000"' : r.sup ? ' baseline="30000"' : '';
+    paras[paras.length - 1] += `<a:r><a:rPr lang="en-US" sz="${Math.round(sizePt * 100)}" b="${(r.bold ?? bold) ? 1 : 0}"${r.italic ? ' i="1"' : ''}${r.underline ? ' u="sng"' : ''}${base}/><a:t>${xml(r.text)}</a:t></a:r>`;
+  }
+  return paras;
 }
 
-const titleXml = (text: string | undefined, sizePt: number, bold = false) => (text ? `<c:title>${richText(text, sizePt, bold)}<c:overlay val="0"/></c:title>` : '');
+/** Text with k_{obs} and s^{-1} as runs set lower and higher, and a file's own looks kept (titleParas). */
+function richText(text: string, sizePt: number, bold = false, own?: readonly TitleRun[]): string {
+  const def = `<a:pPr><a:defRPr sz="${Math.round(sizePt * 100)}" b="${bold ? 1 : 0}"/></a:pPr>`;
+  return `<c:tx><c:rich><a:bodyPr/><a:lstStyle/>${titleParas(text, own, sizePt, bold).map((p) => `<a:p>${def}${p}</a:p>`).join('')}</c:rich></c:tx>`;
+}
+
+const titleXml = (text: string | undefined, sizePt: number, bold = false, own?: readonly TitleRun[]) => (text ? `<c:title>${richText(text, sizePt, bold, own)}<c:overlay val="0"/></c:title>` : '');
 
 function numRef(f: string | undefined, values: number[]): string {
   const pts = values.map((x, i) => (Number.isFinite(x) ? `<c:pt idx="${i}"><c:v>${x}</c:v></c:pt>` : '')).join('');
@@ -132,7 +146,7 @@ function axisXml(kind: 'cat' | 'val', id: number, cross: number, pos: string, a:
   const scaling = `<c:scaling>${a.log ? v('logBase', 10) : ''}${v('orientation', a.reverse ? 'maxMin' : 'minMax')}${kind === 'val' && a.max !== undefined ? v('max', a.max) : ''}${kind === 'val' && a.min !== undefined ? v('min', a.min) : ''}</c:scaling>`;
   const gridXml = grid ? `<c:majorGridlines><c:spPr><a:ln w="9525">${fill('#d9d9d9')}</a:ln></c:spPr></c:majorGridlines>` : '';
   const fmt = `<c:numFmt formatCode="${xml(a.numFmt ?? 'General')}" sourceLinked="${a.numFmt ? 0 : 1}"/>`;
-  const common = `${v('axId', id)}${scaling}${v('delete', deleteIt)}${v('axPos', pos)}${gridXml}${titleXml(a.title, 10)}${fmt}` +
+  const common = `${v('axId', id)}${scaling}${v('delete', deleteIt)}${v('axPos', pos)}${gridXml}${titleXml(a.title, 10, false, a.titleRuns)}${fmt}` +
     `${v('majorTickMark', 'out')}${v('minorTickMark', 'none')}${v('tickLblPos', labelsLow ? 'low' : 'nextTo')}<c:spPr><a:ln w="9525">${fill('#bfbfbf')}</a:ln></c:spPr>${v('crossAx', cross)}${v('crosses', crosses)}`;
   if (kind === 'cat') return `<c:catAx>${common}${v('auto', true)}${v('lblAlgn', 'ctr')}${v('lblOffset', 100)}${v('noMultiLvlLbl', false)}</c:catAx>`;
   return `<c:valAx>${common}${crossBetween ? v('crossBetween', crossBetween) : ''}${a.step ? v('majorUnit', a.step) : ''}</c:valAx>`;
@@ -246,7 +260,7 @@ export function chartXml(c: Chart, data: SeriesData[]): string {
   const bg = c.background === 'none' ? '<a:noFill/>' : fill(c.background ?? '#ffffff');
   const border = c.border === false ? '<a:ln><a:noFill/></a:ln>' : `<a:ln w="9525">${fill('#d9d9d9')}</a:ln>`;
   return `<c:chartSpace xmlns:c="${C_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">${v('roundedCorners', false)}` +
-    `<c:chart>${titleXml(c.title, sizePt * 1.4)}${autoTitle === 'title' ? '<c:title><c:overlay val="0"/></c:title>' : ''}${v('autoTitleDeleted', !c.title && !autoTitle)}<c:plotArea><c:layout/>${plot}</c:plotArea>${legend}` +
+    `<c:chart>${titleXml(c.title, sizePt * 1.4, false, c.titleRuns)}${autoTitle === 'title' ? '<c:title><c:overlay val="0"/></c:title>' : ''}${v('autoTitleDeleted', !c.title && !autoTitle)}<c:plotArea><c:layout/>${plot}</c:plotArea>${legend}` +
     `${v('plotVisOnly', !c.showHidden)}${v('dispBlanksAs', 'gap')}</c:chart>` +
     `<c:spPr>${bg}${border}</c:spPr>` +
     `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${Math.round(sizePt * 100)}"><a:solidFill><a:srgbClr val="404040"/></a:solidFill>${c.font ? `<a:latin typeface="${xml(c.font)}"/>` : ''}</a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>` +
@@ -256,12 +270,9 @@ export function chartXml(c: Chart, data: SeriesData[]): string {
 // ---------------------------------------------------------------- Excel 2016's newer charts
 
 /** Text with sub- and superscripts, in a newer chart's own form. */
-function richEx(text: string, sizePt: number): string {
-  const runs = textRuns(text).map((r) => {
-    const base = r.pos === 'sub' ? ' baseline="-25000"' : r.pos === 'sup' ? ' baseline="30000"' : '';
-    return `<a:r><a:rPr lang="en-US" sz="${Math.round(sizePt * 100)}" b="0"${base}/><a:t>${xml(r.t)}</a:t></a:r>`;
-  }).join('');
-  return `<cx:tx><cx:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr algn="ctr"><a:defRPr sz="${Math.round(sizePt * 100)}" b="0"/></a:pPr>${runs}</a:p></cx:rich></cx:tx>`;
+function richEx(text: string, sizePt: number, own?: readonly TitleRun[]): string {
+  const def = `<a:pPr algn="ctr"><a:defRPr sz="${Math.round(sizePt * 100)}" b="0"/></a:pPr>`;
+  return `<cx:tx><cx:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="ctr" anchorCtr="1"/><a:lstStyle/>${titleParas(text, own, sizePt, false).map((p) => `<a:p>${def}${p}</a:p>`).join('')}</cx:rich></cx:tx>`;
 }
 
 const exNum = (x: number | undefined) => (x === undefined || !Number.isFinite(x) ? undefined : String(x));
@@ -297,18 +308,18 @@ export function chartExXml(c: Chart, data: SeriesData[]): string {
     return `<cx:series layoutId="${hist ? 'clusteredColumn' : 'boxWhisker'}" uniqueId="${uid}" formatIdx="${i}">${name}${sp}${labels}<cx:dataId val="${i}"/><cx:layoutPr>${layout}</cx:layoutPr></cx:series>`;
   }).join('');
   // the chart's title has a place; an axis title has none ([MS-ODRAWXML] CT_AxisTitle), and Office won't open one that does
-  const title = (t: string | undefined, size: number) => (t ? `<cx:title pos="t" align="ctr" overlay="0">${richEx(t, size)}</cx:title>` : '');
-  const axisTitle = (t: string | undefined) => (t ? `<cx:title>${richEx(t, 10)}</cx:title>` : '');
+  const title = (t: string | undefined, size: number, own?: TitleRun[]) => (t ? `<cx:title pos="t" align="ctr" overlay="0">${richEx(t, size, own)}</cx:title>` : '');
+  const axisTitle = (a: ChartAxis) => (a.title ? `<cx:title>${richEx(a.title, 10, a.titleRuns)}</cx:title>` : '');
   const gridEx = (on: boolean) => (on ? `<cx:majorGridlines><cx:spPr><a:ln w="9525">${fill('#d9d9d9')}</a:ln></cx:spPr></cx:majorGridlines>` : '');
   const numFmt = (a: ChartAxis) => (a.numFmt ? `<cx:numFmt formatCode="${xml(a.numFmt)}" sourceLinked="0"/>` : '');
-  const axes = `<cx:axis id="0"><cx:catScaling${hist ? ' gapWidth="0"' : ' gapWidth="1"'}/>${axisTitle(c.x.title)}${gridEx(!!c.x.grid)}<cx:tickLabels/></cx:axis>` +
-    `<cx:axis id="1"><cx:valScaling${exAttrs({ max: exNum(c.y.max), min: exNum(c.y.min), majorUnit: exNum(c.y.step) })}/>${axisTitle(c.y.title)}${gridEx(c.y.grid !== false)}<cx:tickLabels/>${numFmt(c.y)}</cx:axis>`;
+  const axes = `<cx:axis id="0"><cx:catScaling${hist ? ' gapWidth="0"' : ' gapWidth="1"'}/>${axisTitle(c.x)}${gridEx(!!c.x.grid)}<cx:tickLabels/></cx:axis>` +
+    `<cx:axis id="1"><cx:valScaling${exAttrs({ max: exNum(c.y.max), min: exNum(c.y.min), majorUnit: exNum(c.y.step) })}/>${axisTitle(c.y)}${gridEx(c.y.grid !== false)}<cx:tickLabels/>${numFmt(c.y)}</cx:axis>`;
   const legend = c.legend === 'none' ? '' : `<cx:legend pos="${c.legend === 'right' ? 'r' : c.legend === 'top' ? 't' : 'b'}" align="ctr" overlay="0"/>`;
   const bg = c.background === 'none' ? '<a:noFill/>' : fill(c.background ?? '#ffffff');
   const border = c.border === false ? '<a:ln><a:noFill/></a:ln>' : `<a:ln w="9525">${fill('#d9d9d9')}</a:ln>`;
   return `<cx:chartSpace xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:cx="${CX_NS}">` +
     `<cx:chartData>${blocks}</cx:chartData>` +
-    `<cx:chart>${title(c.title, sizePt * 1.4)}<cx:plotArea><cx:plotAreaRegion>${sers}</cx:plotAreaRegion>${axes}</cx:plotArea>${legend}</cx:chart>` +
+    `<cx:chart>${title(c.title, sizePt * 1.4, c.titleRuns)}<cx:plotArea><cx:plotAreaRegion>${sers}</cx:plotAreaRegion>${axes}</cx:plotArea>${legend}</cx:chart>` +
     `<cx:spPr>${bg}${border}</cx:spPr>` +
     `<cx:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${Math.round(sizePt * 100)}"><a:solidFill><a:srgbClr val="404040"/></a:solidFill>${c.font ? `<a:latin typeface="${xml(c.font)}"/>` : ''}</a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></cx:txPr>` +
     `</cx:chartSpace>`;
@@ -372,8 +383,7 @@ export function readChartExXml(doc: Document, at: Chart['at'], w: number, h: num
   if (!series.length) return null;
   for (const ax of kids(plot, 'axis')) {
     const a: ChartAxis = {};
-    const t = readTitle(kid(ax, 'title'));
-    if (t) a.title = t;
+    putTitle(a, readTitle(kid(ax, 'title')));
     a.grid = !!kid(ax, 'majorGridlines');
     const vs = kid(ax, 'valScaling');
     if (vs) {
@@ -389,8 +399,7 @@ export function readChartExXml(doc: Document, at: Chart['at'], w: number, h: num
   const legendEl = kid(ch, 'legend');
   const pos = legendEl?.getAttribute('pos');
   chart.legend = !legendEl ? 'none' : pos === 'b' ? 'bottom' : pos === 't' ? 'top' : 'right';
-  const title = readTitle(kid(ch, 'title'));
-  if (title) chart.title = title;
+  putTitle(chart, readTitle(kid(ch, 'title')));
   const chartSp = kid(root, 'spPr');
   if (kid(chartSp, 'noFill')) chart.background = 'none';
   seenChartId(id);
@@ -435,19 +444,44 @@ const numVal = (el: Element | null, name: string): number | undefined => {
 };
 const withEq = (f: string | null | undefined) => (f ? `=${f}` : undefined);
 
-/** The words of a title, with lowered and raised runs written back as _{…} and ^{…}. */
-function readTitle(t: Element | null): string | undefined {
+/**
+ * A title: its words, with lowered and raised runs written as _{…} and ^{…} (paragraphs and line
+ * breaks joined by a space), and its runs with their looks when it has more than that markup
+ * holds (bold, italic or underlined text, more than one line), so they are drawn and saved again.
+ */
+function readTitle(t: Element | null): { title?: string; runs?: TitleRun[] } {
   const rich = kid(t, 'tx', 'rich');
   if (rich) {
-    const out = kids(rich, 'p').map((p) => kids(p, 'r').map((r) => {
-      const text = kid(r, 't')?.textContent ?? '';
-      const base = Number(kid(r, 'rPr')?.getAttribute('baseline') ?? 0);
-      return base < 0 ? `_{${text}}` : base > 0 ? `^{${text}}` : text.replace(/([\\_^])/g, '\\$1');
-    }).join('')).join(' ');
-    return out || undefined;
+    const runs: TitleRun[] = [];
+    let more = false;
+    kids(rich, 'p').forEach((p, i) => {
+      if (i) { runs.push({ text: '\n' }); more = true; }
+      // a run's look is its own, or its paragraph's (a:pPr/a:defRPr)
+      const def = kid(p, 'pPr', 'defRPr');
+      for (const r of Array.from(p.children)) {
+        if (r.localName === 'br') { runs.push({ text: '\n' }); more = true; continue; }
+        if (r.localName !== 'r') continue;
+        const pr = kid(r, 'rPr');
+        const look = (a: string) => pr?.getAttribute(a) ?? def?.getAttribute(a) ?? null;
+        const on = (a: string) => look(a) === '1' || look(a) === 'true';
+        const u = look('u');
+        const base = Number(pr?.getAttribute('baseline') ?? 0);
+        const run: TitleRun = { text: kid(r, 't')?.textContent ?? '', ...(on('b') ? { bold: true } : {}), ...(on('i') ? { italic: true } : {}), ...(u && u !== 'none' ? { underline: true } : {}), ...(base < 0 ? { sub: true } : base > 0 ? { sup: true } : {}) };
+        if (run.bold || run.italic || run.underline) more = true;
+        if (run.text) runs.push(run);
+      }
+    });
+    const title = titleMarkup(runs);
+    return title.trim() ? { title, ...(more ? { runs } : {}) } : {};
   }
   const plain = kid(t, 'tx', 'txData', 'v')?.textContent;
-  return plain ? plain.replace(/([\\_^])/g, '\\$1') : undefined;
+  return plain ? { title: plain.replace(/([\\_^])/g, '\\$1') } : {};
+}
+
+/** Put a title read from a file on a chart or axis. */
+function putTitle(on: { title?: string; titleRuns?: TitleRun[] }, t: { title?: string; runs?: TitleRun[] }): void {
+  if (t.title) on.title = t.title;
+  if (t.title && t.runs) on.titleRuns = t.runs;
 }
 
 const colourIn = (sp: Element | null): string | undefined => {
@@ -469,8 +503,10 @@ function readAxis(ax: Element | null): ChartAxis {
   const sc = kid(ax, 'scaling');
   const fmt = kid(ax, 'numFmt');
   const code = fmt?.getAttribute('formatCode');
+  const t = readTitle(kid(ax, 'title'));
   const a: ChartAxis = {
-    title: readTitle(kid(ax, 'title')),
+    title: t.title,
+    titleRuns: t.title ? t.runs : undefined,
     min: numVal(sc, 'min'), max: numVal(sc, 'max'), step: numVal(ax, 'majorUnit'),
     log: kid(sc, 'logBase') ? true : undefined,
     reverse: val(sc, 'orientation') === 'maxMin' || undefined,
@@ -624,8 +660,8 @@ export function readChartXml(doc: Document, at: Chart['at'], w: number, h: numbe
   if (kind === 'scatter' || kind === 'line') chart.y.grid = chart.y.grid ?? false;
   if (y2Ax) chart.y2 = readAxis(y2Ax);
   if (kind === 'radar' && val(main, 'radarStyle') === 'filled') chart.filled = true;
-  const title = readTitle(kid(ch, 'title'));
-  if (title) chart.title = title;
+  putTitle(chart, readTitle(kid(ch, 'title')));
+  const title = chart.title;
   // Excel's automatic title: a title element with no text of its own, or none but not deleted (autoTitleDeleted 0)
   const deleted = kid(ch, 'autoTitleDeleted') ? bool(ch, 'autoTitleDeleted') : null;
   if (!title && deleted !== true && kid(ch, 'title')) chart.autoTitle = 'title';

@@ -53,7 +53,7 @@ async function chooseReader(host: ImportHost, preferAi: boolean): Promise<'here'
   if (canReadHere && await packReady()) return 'here';
   if (!canReadHere) {
     if (linked) return 'ai';
-    await ask('Import Structures', [], { noCancel: true, note: 'In the browser, structures are read by an AI model of your own: link one in Edit ▸ Settings ▸ AI Model. The desktop app can also read them on your computer, with nothing sent anywhere.' });
+    await ask('Import Structures', [], { noCancel: true, note: 'In the browser, structures are read by an AI model you link: set one up in Edit ▸ Settings ▸ AI Model. The desktop app can also read them on your computer, with nothing sent anywhere.' });
     return null;
   }
   const r = await ask('Import Structures', linked ? [{ name: 'how', label: 'Read with', value: 'here', options: [
@@ -144,7 +144,7 @@ async function review(host: ImportHost, how: 'here' | 'ai', found: FoundPicture[
 }
 
 async function noReader(): Promise<void> {
-  await ask('Import Structures', [], { noCancel: true, note: 'In the browser, structures are read by an AI model of your own: link one in Edit ▸ Settings ▸ AI Model. The desktop app can also read them on your computer, with nothing sent anywhere.' });
+  await ask('Import Structures', [], { noCancel: true, note: 'In the browser, structures are read by an AI model you link: set one up in Edit ▸ Settings ▸ AI Model. The desktop app can also read them on your computer, with nothing sent anywhere.' });
 }
 
 /** Whether anything here can read structures (asked before a PDF's pages are searched); says how to get one when not. */
@@ -279,5 +279,31 @@ export async function pdfDrawings(bytes: Uint8Array, pick: (pages: number) => Pr
     return { found, pages };
   } finally {
     void task.destroy();
+  }
+}
+
+/**
+ * Make Editable (Document mode): one picture of a structure read, by the reader on this computer
+ * when it is ready (nothing sent), else the AI model linked, else after asking to download the
+ * reader. Null when nothing can read it or the person stopped; an error is said in a message.
+ */
+/** Read a picture with the reader on this computer, only when it is set up already: no questions and no messages (null otherwise). */
+export async function readHereQuietly(p: Pixels): Promise<{ result: ReadResult; molblock: null } | null> {
+  if (!canReadHere || !(await packReady().catch(() => false))) return null;
+  try { return { result: await localReader.read(p), molblock: null }; } catch { return null; }
+}
+
+export async function readForEditing(host: ImportHost, p: Pixels): Promise<{ result: ReadResult; molblock: string | null } | null> {
+  if (!host.chem.ready) { host.flash('The chemistry engine is still loading. Try again in a moment.'); return null; }
+  const how = await chooseReader(host, false);
+  if (!how) return null;
+  host.flash(how === 'here' ? 'Reading the picture…' : `Reading the picture with ${aiName(host.ai()).split(',')[0]}…`, 60000);
+  try {
+    const result = how === 'here' ? await localReader.read(p) : await readWithAi(host.ai(), pixelsPng(p));
+    const molblock = result.kind === 'smiles' && result.smiles ? await host.chem.smilesToMol(result.smiles) : null;
+    return { result, molblock };
+  } catch (e) {
+    host.flash(`The picture could not be read: ${e instanceof Error ? e.message : String(e)}`, 8000);
+    return null;
   }
 }

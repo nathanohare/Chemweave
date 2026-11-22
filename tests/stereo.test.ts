@@ -214,7 +214,7 @@ describe('labels the drawing does not decide', () => {
     // (2R,4S)-pentane-2,3,4-triol: C3 is r or s
     const mol = RDKit.get_mol('C[C@@H](O)[C@H](O)[C@H](C)O');
     mol.set_new_coords();
-    const { addMolfile } = await import('../src/chem/molfile');
+    const { addMolfile } = await import('../src/io/chem-formats');
     const doc = new Doc();
     doc.bulk(() => addMolfile(doc, mol.get_molblock(), 100, 100));
     mol.delete();
@@ -512,5 +512,31 @@ describe('saving and opening stereo labels', () => {
     const out = writeCdxml(opened);
     expect(out).toContain('>(S)</s>');
     expect(out).toMatch(/AS="S"/);
+  });
+});
+
+describe('after the engine restarts (review F4-R06)', () => {
+  it('works out again the labels the engine failed on, and nothing else', async () => {
+    const doc = new Doc();
+    let c1 = 0;
+    doc.bulk(() => { c1 = centre(doc, 0, 0, FClBr, 'wedge'); });
+    const calls = { n: 0 };
+    const good = runner(calls);
+    let down = true;
+    const live = new LiveStereo(doc, async (jobs) => {
+      if (down) throw new Error('The chemistry engine stopped');
+      return good(jobs);
+    });
+    await live.update();
+    expect(live.atom(c1)).toBeUndefined(); // not worked out: nothing is claimed
+    await live.update();
+    expect(calls.n).toBe(0); // an ordinary update doesn't keep asking a stopped engine
+
+    down = false; // the engine is back
+    await live.retry();
+    expect(calls.n).toBe(1);
+    expect(live.atom(c1)).toBe('R');
+    await live.retry();
+    expect(calls.n).toBe(1); // nothing left to work out again
   });
 });

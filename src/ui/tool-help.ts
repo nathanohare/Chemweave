@@ -18,7 +18,7 @@ export interface ToolHelp {
 
 const BOND_STEPS = ['Click an atom or empty space', 'Drag to aim'];
 const BOND_KEYS: [string, string][] = [['Shortcuts', 'Change the atom or bond pointed at']];
-const BOND_DRAG: [string, string][] = [['Alt', 'Toggle angle snapping']];
+const BOND_DRAG: [string, string][] = [['Alt', 'Switch angle snapping on or off']];
 
 /** Help for tools named one by one; the rest go by their kind (below). */
 const BY_NAME: Record<string, ToolHelp> = {
@@ -26,10 +26,10 @@ const BY_NAME: Record<string, ToolHelp> = {
     what: 'Click or drag a box to select. Double-click selects a whole structure; Shift or Ctrl+click adds to the selection. Ctrl+drag copies; hold Shift while dragging to move straight. Delete removes.',
     steps: ['Click or drag a box to select'],
     keys: [['Double-click', 'Select molecule'], ['Shift+click', 'Add to selection'], ['Ctrl+drag', 'Copy']],
-    dragKeys: [['Shift', 'Constrain direction'], ['Alt', 'Toggle snapping']],
+    dragKeys: [['Shift', 'Constrain direction'], ['Alt', 'Move freely (no snapping)']],
   },
   lasso: {
-    what: 'Drag a loop around what to select, to pick pieces out of a crowded scheme. Then drag what is selected to move it.',
+    what: 'Drag a loop around what to select, to select a few pieces in a crowded scheme. Then drag what is selected to move it.',
     steps: ['Drag a loop around what to select'],
     keys: [['Shift', 'Add to selection'], ['Ctrl+drag', 'Copy']],
   },
@@ -46,8 +46,8 @@ const BY_NAME: Record<string, ToolHelp> = {
     steps: ['Drag from an atom or empty space', 'Let go at the length you want'],
     keys: [['Alt', 'Repeat last length']],
   },
-  text: { what: 'Click an atom to type a label (OMe, CO2Et, NHBoc…), or click empty space for a caption.', steps: ['Click an atom or empty space', 'Type; Esc to finish'], keys: [['Ctrl', 'Follow a link']] },
-  element: { what: 'Click atoms to change them to the element selected in the periodic table, or empty space to add one.', steps: ['Pick an element', 'Click atoms'], keys: [] },
+  text: { what: 'Click an atom to type a label (OMe, CO₂Et, NHBoc…), or click empty space for a caption.', steps: ['Click an atom or empty space', 'Type; Esc to finish'], keys: [['Ctrl', 'Follow a link']] },
+  element: { what: 'Click atoms to change them to the element selected in the periodic table, or empty space to add one.', steps: ['Choose an element', 'Click atoms'], keys: [] },
   'bond-hapto': {
     what: 'Drag from a metal to a ring (η⁵, η⁶) or a bond (η²), or the reverse. Click a ring or bond to add a new metal; or select an allyl or diene, then click the metal. Click a hapto bond to draw it to each atom.',
     steps: ['Drag from a metal to a ring or π-bond'],
@@ -88,17 +88,17 @@ export function toolHelp(name: string, t: Tool | undefined): ToolHelp {
           what: CURVE_WHAT,
           steps: ['Press where the electrons start', 'Drag to where they go'],
           keys: [['Ctrl', 'Freehand'], ['Shift', 'Branch from an arrow']],
-          dragKeys: [['Alt', 'Toggle snapping']],
+          dragKeys: [['Alt', 'Move freely (no snapping)']],
         };
       }
       return {
         what: 'Drag to draw an arrow (hold Alt or Space: any angle); click for a standard one. Drag the ends to move them, the middle to bend it.',
         steps: ['Click, or drag to draw'],
         keys: [['Shift', 'Branch from an arrow']],
-        dragKeys: [['Alt', 'Toggle angle snapping']],
+        dragKeys: [['Alt', 'Switch angle snapping on or off']],
       };
     case 'shape':
-      if (t.shape.kind === 'line') return { what: 'Drag to draw a line, in 15° steps. Drag its ends to move them.', steps: ['Drag to draw'], keys: [], dragKeys: [['Alt', 'Toggle angle snapping']] };
+      if (t.shape.kind === 'line') return { what: 'Drag to draw a line, in 15° steps. Drag its ends to move them.', steps: ['Drag to draw'], keys: [], dragKeys: [['Alt', 'Switch angle snapping on or off']] };
       return {
         what: 'Drag to draw. Drag the corner squares to resize; the Style panel changes dashes, fill, corners and shadow.',
         steps: [t.from === 'center' ? 'Drag out from the center' : 'Drag from a corner'],
@@ -128,7 +128,7 @@ export function toolHelp(name: string, t: Tool | undefined): ToolHelp {
         what: t.real
           ? 'Drag a structure to rotate its 3-D shape; wedges and bold bonds set which shape is meant.'
           : 'Drag a structure to tilt it in 3-D as a flat sheet.',
-        steps: ['Drag a structure to rotate it'],
+        steps: ['Drag a structure to rotate it', 'Or select it and drag a tilt handle to turn one way only'],
         keys: [],
         dragKeys: [['Shift', 'Snap to 15°']],
       };
@@ -152,7 +152,7 @@ export function arrowHandleHelp(r: Pick<Arrow, 'sweep' | 'bez' | 'equilibrium'> 
     return {
       name: 'Elliptical arrow selected',
       handles: ['Drag ends to reattach', 'Drag diamonds to stretch the ellipse'],
-      keys: [['Alt', 'Toggle snapping to a circle']],
+      keys: [['Alt', 'Free shape (no snapping to a circle)']],
     };
   }
   if (r.bez?.length) {
@@ -166,21 +166,21 @@ export function arrowHandleHelp(r: Pick<Arrow, 'sweep' | 'bez' | 'equilibrium'> 
     return {
       name: 'Curved arrow selected',
       handles: ['Drag ends to reattach', 'Drag middle dot to bend', 'Drag diamonds to stretch into an ellipse'],
-      keys: [['Alt', 'Toggle snapping']],
+      keys: [['Alt', 'Move freely (no snapping)']],
     };
   }
   return {
     name: 'Arrow selected',
     handles: ['Drag ends to move', 'Drag middle to bend'],
-    keys: [['Alt', 'Toggle angle snapping']],
+    keys: [['Alt', 'Switch angle snapping on or off']],
   };
 }
 
 /** The status bar's guide to a selected box, oval or line's handles. */
 export function shapeHandleHelp(line: boolean): { name: string; handles: string[]; keys: [string, string][] } {
   return line
-    ? { name: 'Line selected', handles: ['Drag ends to move'], keys: [['Alt', 'Toggle angle snapping']] }
-    : { name: 'Shape selected', handles: ['Drag squares to resize', 'Drag round handle to turn'], keys: [['Shift', 'Keep proportions; snap to 15°'], ['Ctrl', 'Resize from center']] };
+    ? { name: 'Line selected', handles: ['Drag ends to move'], keys: [['Alt', 'Switch angle snapping on or off']] }
+    : { name: 'Shape selected', handles: ['Drag squares to resize', 'Drag round handle to rotate'], keys: [['Shift', 'Keep proportions; snap to 15°'], ['Ctrl', 'Resize from center']] };
 }
 
 /** Every key a tool reads, before and during the drag, each once (for its tool tip). */

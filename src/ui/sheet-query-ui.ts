@@ -88,7 +88,7 @@ async function readFile(file: string, types: FileType[]): Promise<Uint8Array> {
   const name = file.replace(/^.*[\\/]/, '');
   const have = picked.get(name);
   if (have) return have;
-  const ok = await ask('Find the file', [], { ok: 'Choose…', note: `This query reads ${name}. A browser can't reopen files automatically: choose the file again.` });
+  const ok = await ask('Find the File', [], { ok: 'Choose…', note: `This query reads ${name}. A browser can't reopen files automatically: choose the file again.` });
   if (!ok) throw new Error(`${name} wasn't chosen.`);
   const got = await openBytesDialog('Data files', types);
   if (!got) throw new Error(`${name} wasn't chosen.`);
@@ -424,7 +424,7 @@ export class SheetQueries {
     tool('Use First Row as Headers', 'Promote Headers: the first row names the columns', () => addStep({ op: 'promoteHeaders' }));
     tool('Remove Columns', 'Remove the columns selected', () => { const c = need(); if (c) { addStep({ op: 'removeColumns', cols: c.slice() }); sel = []; render(); } });
     tool('Keep Only', 'Remove Other Columns: keep only the columns selected, in the order selected', () => { const c = need(); if (c) addStep({ op: 'keepColumns', cols: c.slice() }); });
-    tool('Rename…', 'Rename the column picked', async () => {
+    tool('Rename…', 'Rename the selected column', async () => {
       const c = need(); if (!c) return;
       const a = await ask('Rename Column', [{ name: 'to', label: 'New name', value: c[0] }]);
       if (a?.to.trim() && a.to.trim() !== c[0]) { addStep({ op: 'rename', from: c[0], to: a.to.trim() }); sel = [a.to.trim()]; render(); }

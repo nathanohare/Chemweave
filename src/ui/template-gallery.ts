@@ -23,9 +23,9 @@ export async function pickTemplate(): Promise<TemplatePick> {
   const win = showTemplateWindow({
     mode: 'design',
     title: 'New Design',
-    note: 'Pick a category on the left, then a blank page or a ready-made layout. Everything in a layout can be moved, retyped, recolored or deleted, and Page Size changes the page later.',
+    note: 'Select a category on the left, then a blank page or a ready-made layout. Everything in a layout can be moved, retyped, recolored or deleted, and Page Size changes the page later.',
     categories: [
-      { id: 'blank', name: 'Blank page', cards: () => blankCards(pick) },
+      { id: 'blank', name: 'Blank design', cards: () => blankCards(pick) },
       ...TEMPLATE_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => DESIGN_TEMPLATES.filter((t) => t.category === c.id).map((t) => templateCard(t, pick)) })),
     ],
     remember: 'newDesignCategory',

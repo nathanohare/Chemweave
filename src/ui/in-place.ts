@@ -5,6 +5,7 @@
 
 import type { Rect } from '../geom';
 import type { Contents } from '../model';
+import type { DocStyle } from '../style';
 
 /** The drawing's view on screen: pixels per drawing point, and where its point (0, 0) is. */
 export interface PlaceView { scale: number; ox: number; oy: number }
@@ -12,6 +13,8 @@ export interface PlaceView { scale: number; ox: number; oy: number }
 export interface InPlace {
   /** What it is (shown on the bar over the page). */
   title: string;
+  /** The drawing style to draw it in, where not the document's (a figure matching the picture it was made from). */
+  style?: DocStyle;
   /** Where the pages are on screen, in client pixels: the drawing layer covers them (not their scroll bars). */
   rect(): { left: number; top: number; width: number; height: number } | null;
   /** The drawing's view in pixels from the top left of `rect` (null once it can't be found). */

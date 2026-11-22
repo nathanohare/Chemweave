@@ -35,7 +35,8 @@ export interface DocInsertHost {
 const hasDate = (pic: string) => /[dMy]/.test(pic.replace(/'[^']*'/g, ''));
 
 /** The accent colours offered for cover pages. */
-const ACCENTS: [string, string][] = [['#1f4e79', 'Dark blue'], ['#2e75b6', 'Blue'], ['#0c7c59', 'Green'], ['#8b1e3f', 'Burgundy'], ['#404040', 'Charcoal'], ['#c55a11', 'Orange']];
+/** The colors a cover page can take (the first is the default, and the gallery's pictures'). */
+export const COVER_ACCENTS: [string, string][] = [['#1f4e79', 'Dark blue'], ['#2e75b6', 'Blue'], ['#0c7c59', 'Green'], ['#8b1e3f', 'Burgundy'], ['#404040', 'Charcoal'], ['#c55a11', 'Orange']];
 
 export class DocInsertUI {
   constructor(private host: DocInsertHost) {}
@@ -89,7 +90,7 @@ export class DocInsertUI {
     const code = got.code as FieldCode;
     if (code === 'ref' || code === 'pageref' || code === 'abovebelow') {
       const target = got.target.trim();
-      if (!target) { this.host.flash('Name the bookmark the field refers to (Insert ▸ Document ▸ Bookmark adds one).'); return; }
+      if (!target) { this.host.flash('Name the bookmark the field refers to (Insert ▸ Bookmark adds one).'); return; }
       this.insertField({ kind: 'field', code, target });
       return;
     }
@@ -188,17 +189,6 @@ export class DocInsertUI {
 
   // ---------------------------------------------------------------- pages
 
-  /** Insert > Cover Page: the designs, and taking the cover page out. */
-  coverMenu(x: number, y: number): void {
-    const f = this.f;
-    const has = !!f && !!coverParas(f.t);
-    popupMenu(x, y, [
-      ...COVER_PAGES.map((d) => [`${d.name}: ${d.help}`, () => void this.cover(d.id)] as [string, () => void]),
-      null,
-      ['Remove Current Cover Page', () => this.removeCover(), has],
-    ]);
-  }
-
   /** A cover page of a design put in front of the document, after asking for what goes on it. */
   async cover(id: string): Promise<void> {
     const f = this.f;
@@ -211,7 +201,7 @@ export class DocInsertUI {
       { name: 'subject', label: 'Subtitle', value: p.subject ?? '' },
       { name: 'author', label: 'Author', value: p.author ?? this.host.author() },
       { name: 'company', label: 'Institution or group', value: p.company ?? '' },
-      { name: 'accent', label: 'Color', value: ACCENTS[0][0], options: ACCENTS.map(([v, label]) => ({ value: v, label })) },
+      { name: 'accent', label: 'Color', value: COVER_ACCENTS[0][0], options: COVER_ACCENTS.map(([v, label]) => ({ value: v, label })) },
     ], { ok: 'Insert', note: 'These are the document\'s properties: the cover shows them as fields, so changing them (Quick Parts ▸ Document Properties…) changes the cover. The date is today\'s, kept up to date. The first page gets no page number.' });
     this.host.focus();
     if (!got || this.file() !== f) return;
@@ -242,12 +232,14 @@ export class DocInsertUI {
     if (!f) return;
     this.host.stopBox();
     const ed = f.ed;
-    ed.enter(false);
-    let p = paraAt(ed.text, ed.focus);
-    ed.setParas(p, p, { pageBreak: true }, 'Blank Page');
-    ed.enter(false);
-    p = paraAt(ed.text, ed.focus);
-    ed.setParas(p, p, { pageBreak: true }, null);
+    ed.together(() => {
+      ed.enter(false);
+      let p = paraAt(ed.text, ed.focus);
+      ed.setParas(p, p, { pageBreak: true }, 'Blank Page');
+      ed.enter(false);
+      p = paraAt(ed.text, ed.focus);
+      ed.setParas(p, p, { pageBreak: true }, null);
+    });
     this.host.focus();
   }
 
@@ -273,7 +265,7 @@ export class DocInsertUI {
     }
     for (const h of tocEntries(f.t, 9)) targets.push({ value: `h:${h.para}`, label: `Heading: ${short(h.text)}` });
     for (const b of bookmarksOf(f.t).filter((x) => !x.name.startsWith('_'))) targets.push({ value: `b:${b.name}`, label: `Bookmark: ${b.name}` });
-    if (!targets.length) { this.host.flash('There is nothing to refer to yet: add a caption (References ▸ Insert Caption), a heading or a bookmark (Insert ▸ Document ▸ Bookmark).', 7000); return; }
+    if (!targets.length) { this.host.flash('There is nothing to refer to yet: add a caption (References ▸ Insert Caption), a heading or a bookmark (Insert ▸ Bookmark).', 7000); return; }
     const got = await ask('Cross-reference', [
       { name: 'target', label: 'Refer to', value: targets[0].value, options: targets },
       { name: 'what', label: 'Insert reference to', value: 'text', options: [
@@ -284,6 +276,11 @@ export class DocInsertUI {
     ], { ok: 'Insert', note: 'The cross-reference updates automatically when its target changes or moves. Saved as a Word cross-reference.' });
     this.host.focus();
     if (!got || this.f !== f) return;
+    // the hidden bookmark and the field: one step of Undo
+    f.ed.together(() => this.putCrossReference(f, got, at, text));
+  }
+
+  private putCrossReference(f: DocFile, got: Record<string, string>, at: Map<number, number>, text: string): void {
     const [kind, key] = [got.target.slice(0, 1), got.target.slice(2)];
     if (kind === 'c' && got.what === 'text') { this.host.insertObject({ kind: 'ref', target: Number(key) }, 'Insert cross-reference'); return; }
     // the place gets a hidden bookmark (as Word's _Ref ones) for the field to find it by

@@ -8,6 +8,7 @@ import { listMarkers, editParas, paraAt, paraRange, fitParas, storedParas, numbe
 import { arialWidth } from '../src/text-metrics';
 import { readCdxml } from '../src/io/cdxml';
 import type { ParaStyle, TextRun } from '../src/model';
+import { realFilesMissing } from './real-files';
 
 const measure = (t: string, s: number, _f: string, style: string) => arialWidth(t, s, /bold/.test(style));
 const frame = (text: string, extra: Partial<TextFrame> = {}): TextFrame => ({ runs: [{ text }], justify: 'left', ...extra });
@@ -161,7 +162,7 @@ describe('caret and selection', () => {
 const dir = process.env.CHEM_TEST_FILES ?? '';
 const files = dir && existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.cdxml')) : [];
 
-describe.skipIf(!files.length)('wrapping like ChemDraw', () => {
+describe.skipIf(realFilesMissing('text-layout', !files.length, 'CHEM_TEST_FILES'))('wrapping like ChemDraw', () => {
   it('breaks wrapped captions where ChemDraw did', { timeout: 120000 }, () => {
     let same = 0, total = 0;
     const misses: string[] = [];

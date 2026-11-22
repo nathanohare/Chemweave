@@ -7,7 +7,7 @@ import { DEFAULT_CURSOR_AIDS, drawCursorAids, hintLines, modifierHints, readoutT
 import { Sketcher } from './sketch';
 import { installPenAndTouch } from './touch';
 import { labelAtoms, labelLookOf, setLabelFont, setLabelSize, toggleLabelBold } from './label-font';
-import { Doc, Atom, Bond, BondDisplay, PARTIAL, ELEMENT_WITH_H, Arrow, Shape, Caption, isMetalAtom, isWedge, applyBase, captionBase, stripBase, type StepRoles, type ArrowKind, type Justify, type TextRun, type HighlightStyle, type Entity } from '../model';
+import { Doc, sameData, Atom, Bond, BondDisplay, PARTIAL, ELEMENT_WITH_H, Arrow, Shape, Caption, isMetalAtom, isWedge, applyBase, captionBase, stripBase, type StepRoles, type ArrowKind, type Justify, type TextRun, type HighlightStyle, type Entity } from '../model';
 import { doubleBondGap, scaleOwnWidths } from '../style';
 import { CaptionEditor } from '../ui/caption-editor';
 import { followLink, linkTip } from '../ui/links-ui';
@@ -91,7 +91,7 @@ import { elementNumber, hasImplicitH, implicitHydrogens, SYMBOLS } from '../chem
 import { anyMarks, isMarkToggle, readMark, styleOfMark, toggleMarks, toggledMark, writeMark, type Mark, type MarkToggle } from '../chem/label-marks';
 import { tokenize, addNicknames, isBuiltInNickname, labelGraph, labelOverValent, labelPieces, labelLook, styleLabel, CAP, SUB_SCALE } from '../chem/labels';
 import {
-  Handle, type HandleId, arrowEllipseFrame, arrowHit, shapeHit, arrowHandles, shapeHandles, dragArrowHandle, dragShapeHandle, dragCropHandle, shapeBox, shapeMid, shapeTurn,
+  Handle, type HandleId, arrowEllipseFrame, arrowHit, shapeHit, arrowHandles, shapeHandles, textBoxHandles, dragArrowHandle, dragShapeHandle, dragCropHandle, shapeBox, shapeMid, shapeTurn,
   arrowPoints, bracketHalves, type BracketForm, bracketLip, unionRect,
   shapeOrder, portNear, shapePorts, isCurved, headBend, swapHalf, bezPoints,
 } from '../objects';
@@ -101,10 +101,11 @@ import { isEmptyText } from '../deck/deck';
 import { crossedBonds, lineAcross } from '../chem/fragments';
 import { imageFor } from '../render/images';
 import { gridOffsets, inferGrid, sharedAnchors, usualGap, withLabels, type GridHow } from './grid-arrange';
-import { BEND, BRUSH, ROTATE, handleCursor, pointerFor } from './cursors';
+import { BEND, BRUSH, ROTATE, handleCursor, turnedHandleCursor, pointerFor } from './cursors';
 import { flatten, prepareTurn, stillMeans, structuresOf, type PerspectiveHost, type Prepared } from './perspective';
 import { anglesTurn, dragTurn, DEG_PER_PX, IDENT as IDENT_TURN, type M3 } from '../chem/perspective';
 import type { TextEditing } from '../text/editing';
+import { WHY } from './can-run';
 
 export type Tool =
   /** `lasso`: drag round what to select, freehand, instead of a box. */
@@ -311,6 +312,10 @@ interface Drag {
   panOrigin?: { ox: number; oy: number };
   /** The arrow or shape handle being dragged. */
   handle?: Handle;
+  /** A text box being resized by a handle (Slides, Design): its frame and place when the drag began. */
+  capFrom?: { frame: Rect; x: number; y: number };
+  /** Pressed on a text box's border (Slides, Design): a drag moves it, a click selects it without typing. */
+  border?: boolean;
   /** Where the pointer has been (which way a curved arrow is drawn bending). */
   path?: Vec[];
   /** Rotating the selection: what it looked like before, the centre, and the angle so far. */
@@ -998,6 +1003,12 @@ export class Editor {
    * Shown when only a few arrows or shapes (and no structures) are selected.
    */
   handles(): Handle[] {
+    // text boxes in Slides and Design: round handles on the corners and edges, as in PowerPoint
+    const boxes = this.textBoxes();
+    if (boxes.length) return boxes.flatMap((id) => {
+      const c = this.doc.captions.get(id)!;
+      return textBoxHandles(id, this.textBoxFrame(id)!).map((h) => (c.rot ? { ...h, at: turnAbout(h.at, c, c.rot) } : h));
+    });
     const s = this.sel;
     const n = s.arrows.size + s.shapes.size;
     if (!n || n > 4 || s.atoms.size || s.bonds.size) return [];
@@ -1027,6 +1038,83 @@ export class Editor {
     if (left === right) return h;
     const off = mul(n, (left ? -1 : 1) * this.tol(9));
     return { ...h, at: add(h.at, off), off };
+  }
+
+  /**
+   * The text boxes that show PowerPoint's frame and handles (Slides and Design, with the selection
+   * tool): the one being typed in, else the text boxes selected on their own (up to four), turned
+   * ones too (their frame and handles turn with them).
+   */
+  textBoxes(): number[] {
+    if (!this.textFirst || this.layoutPreview) return [];
+    const ok = (id: number) => { const c = this.doc.captions.get(id); return !!c && !c.hidden; };
+    if (this.captionEd?.isOpen) return this.captionEdId !== null && ok(this.captionEdId) ? [this.captionEdId] : [];
+    if (this.tool.kind !== 'select') return [];
+    const s = this.sel;
+    if (!s.captions.size || s.captions.size > 4 || s.atoms.size || s.bonds.size || s.arrows.size || s.shapes.size) return [];
+    return [...s.captions].filter(ok);
+  }
+
+  /** A text box's frame as it shows now (the text being typed in included), in points. */
+  textBoxFrame(id: number): Rect | null {
+    const c = this.doc.captions.get(id);
+    if (!c) return null;
+    const f = this.r.captionFrame(c);
+    if (!this.captionEd?.isOpen || this.captionEdId !== id) return f;
+    // typing: the text as it is now, in the box the caption keeps (a placeholder's, or a fixed height)
+    const t = this.captionEd.box();
+    const r = { x1: Math.min(t.x1, c.ph ? f.x1 : t.x1), y1: Math.min(t.y1, c.ph ? f.y1 : t.y1), x2: Math.max(t.x2, c.ph || c.wrap !== undefined ? f.x2 : t.x2), y2: Math.max(t.y2, c.ph ? f.y2 : t.y2) };
+    if (!c.ph && c.fit && c.boxH) r.y2 = Math.max(t.y2, r.y1 + c.boxH);
+    return r;
+  }
+
+  /** The text box whose border is under a point (Slides and Design: a drag there moves the box). */
+  private textBorderAt(p: Vec): number | null {
+    if (!this.textFirst || this.tool.kind !== 'select') return null;
+    const out = this.tol(5), inside = this.tol(3);
+    for (const c of [...this.doc.captions.values()].reverse()) {
+      if (c.hidden) continue;
+      const f = this.textBoxFrame(c.id)!;
+      // (turned text: the point turned back, against the box's own sides)
+      const q = c.rot ? turnAbout(p, c, -c.rot) : p;
+      const near = q.x >= f.x1 - out && q.x <= f.x2 + out && q.y >= f.y1 - out && q.y <= f.y2 + out;
+      const deep = q.x > f.x1 + inside && q.x < f.x2 - inside && q.y > f.y1 + inside && q.y < f.y2 - inside;
+      if (near && !deep) return c.id;
+    }
+    return null;
+  }
+
+  /** A text box's handle dragged: its edges follow the pointer (no smaller than a little box). */
+  private resizeTextBox(d: Drag, p: Vec): void {
+    const h = d.handle!, s = d.capFrom!, doc = this.doc;
+    const c = doc.captions.get(h.id);
+    if (!c) return;
+    const f = { ...s.frame };
+    // a turned box: the pull measured along its own sides
+    const rot = c.rot ?? 0;
+    const pull = turnAbout(sub(p, d.start), { x: 0, y: 0 }, -rot);
+    const dx = pull.x, dy = pull.y, w = h.which;
+    const minW = 12, minH = Math.min(12, s.frame.y2 - s.frame.y1);
+    if (w.includes('w')) f.x1 = Math.min(s.frame.x1 + dx, s.frame.x2 - minW);
+    if (w.includes('e')) f.x2 = Math.max(s.frame.x2 + dx, s.frame.x1 + minW);
+    if (w.includes('n')) f.y1 = Math.min(s.frame.y1 + dy, s.frame.y2 - minH);
+    if (w.includes('s')) f.y2 = Math.max(s.frame.y2 + dy, s.frame.y1 + minH);
+    const across = w.includes('w') || w.includes('e'), down = w.includes('n') || w.includes('s');
+    const patch: Partial<Caption> = { x: s.x + f.x1 - s.frame.x1, y: s.y + f.y1 - s.frame.y1 };
+    if (across) patch.wrap = f.x2 - f.x1;
+    // a box made taller or shorter keeps that height (a text box that grew with its text no longer does)
+    if (down) { patch.boxH = f.y2 - f.y1; if (!c.ph && !c.fit) patch.fit = 'fixed'; }
+    doc.dirtyRects.push(this.r.captionBox(c));
+    doc.updateCaption(c.id, patch);
+    // text that only just got a width (or set centred) can lay out from another edge: keep the frame where it was dragged
+    const got = this.r.captionFrame(doc.captions.get(c.id)!);
+    const fx = across ? f.x1 - got.x1 : 0, fy = down ? f.y1 - got.y1 : 0;
+    const local = { x: patch.x! + fx, y: patch.y! + fy };
+    // a turned box turns about its text's start, which has moved: put that start where the box,
+    // turned about the old start, has it, so the edges not dragged stay where they were
+    const to = rot ? turnAbout(local, { x: s.x, y: s.y }, rot) : local;
+    if (Math.abs(to.x - patch.x!) > 1e-9 || Math.abs(to.y - patch.y!) > 1e-9) doc.updateCaption(c.id, to);
+    doc.dirtyRects.push(this.r.captionBox(doc.captions.get(c.id)!));
   }
 
   private handleAt(p: Vec): Handle | null {
@@ -1119,6 +1207,16 @@ export class Editor {
       const h = this.hitTestNow(this.docPoint(e));
       if (h?.kind === 'atom' || h?.kind === 'bond') this.relockAfter = true;
       else this.structuresLocked = true;
+    }
+    // a press on the handles or border of the text box being typed in (Slides, Design): typing
+    // ends and the box stays selected, for the press to resize or move it, as in PowerPoint
+    if (this.captionEd?.isOpen && e.button === 0 && this.textFirst && this.captionEdId !== null) {
+      const id = this.captionEdId, q = this.docPoint(e);
+      const onHandle = this.handleAt(q)?.kind === 'caption';
+      if (onHandle || this.textBorderAt(q) === id) {
+        this.closeCaption();
+        if (this.doc.captions.has(id)) { this.sel = emptySel(); this.sel.captions.add(id); }
+      }
     }
     // a press on the text being typed (or its width handle) goes to the text
     const cap = this.captionEd;
@@ -1214,6 +1312,15 @@ export class Editor {
       ...(e.pointerType === 'pen' ? { pen: true } : {}),
     };
     if (handle) this.drag.handle = handle;
+    if (handle?.kind === 'caption') {
+      const c = this.doc.captions.get(handle.id)!;
+      this.drag.capFrom = { frame: this.r.captionFrame(c), x: c.x, y: c.y };
+    }
+    // a text box's border (Slides, Design): a drag moves the box, a click picks it
+    if (!handle && !rotating && !tilt && e.button === 0 && !painting) {
+      const b = this.textBorderAt(p);
+      if (b !== null && (!hit || hit.kind === 'caption')) { this.drag.hit = { kind: 'caption', id: b }; this.drag.border = true; }
+    }
     if (tilt) this.startTilt(this.drag, tilt);
     // the selection tool on a guide (where nothing else is): the guide is dragged
     const gh = e.button === 0 && !handle && !rotating && !painting && !hit && this.tool.kind === 'select' ? this.guideUnder(p) : null;
@@ -1267,7 +1374,9 @@ export class Editor {
     }
     if (!d && this.focalPicking) { this.r.overlay.style.cursor = 'crosshair'; this.requestOverlay(); return; }
     if (!d) this.linkTitle(p);
-    if (!d && this.captionEd?.hit(p)) {
+    // (the handles and border of the text box being typed in come before its text, Slides and Design)
+    const onFrame = !d && !!this.captionEd?.isOpen && this.textFirst && (this.handleAt(p)?.kind === 'caption' || (this.captionEdId !== null && this.textBorderAt(p) === this.captionEdId));
+    if (!d && !onFrame && this.captionEd?.hit(p)) {
       this.r.overlay.style.cursor = this.captionEd.cursor(p);
       return;
     }
@@ -1277,6 +1386,8 @@ export class Editor {
       const tilt = onRotate ? null : this.tiltAt(p);
       const handle = onRotate || tilt ? null : this.handleAt(p);
       const h = handle || onRotate || tilt ? null : this.hitTest(p);
+      // a text box's border (Slides, Design): the four-way arrow, as in PowerPoint
+      this.overBorder = !handle && !onRotate && !tilt && (!h || h.kind === 'caption') && this.textBorderAt(p) !== null;
       if (!sameHit(h, this.hover)) { this.hover = h; }
       // the keyboard highlight gives way to the mouse once it moves (a finger doesn't hover, so
       // a touch leaves it); in ChemDraw's way, once the mouse rests on something new
@@ -1500,6 +1611,13 @@ export class Editor {
     }
     if (d.mode === 'handle') {
       const h = d.handle!;
+      if (h.kind === 'caption') {
+        this.resizeTextBox(d, p);
+        d.last = p;
+        this.requestScene(e.timeStamp);
+        this.requestOverlay(e.timeStamp);
+        return;
+      }
       if (h.kind === 'arrow') {
         const r = this.doc.arrows.get(h.id);
         if (r) {
@@ -1951,9 +2069,10 @@ export class Editor {
         // an empty title or text placeholder takes typing straight away, as in PowerPoint
         const c = h?.kind === 'caption' ? doc.captions.get(h.id) : undefined;
         const adding = d.shift || d.ctrl;
-        if (c?.ph && isEmptyText(c) && !adding) { this.sel = emptySel(); this.editCaption(c.id); return; }
+        // (a click on a text box's border picks the box instead, as in PowerPoint)
+        if (c?.ph && isEmptyText(c) && !adding && !d.border) { this.sel = emptySel(); this.editCaption(c.id); return; }
         // in Slides and Design a click in a text box puts the caret there, as in PowerPoint
-        if (c && this.textFirst && !adding) { this.sel = emptySel(); this.editCaption(c.id, this.clientPoint(p)); return; }
+        if (c && this.textFirst && !adding && !d.border) { this.sel = emptySel(); this.editCaption(c.id, this.clientPoint(p)); return; }
         // Shift+click or Ctrl+click adds to the selection, or takes out what is already in it
         const pick = h && this.groupFirst(h);
         if (!adding) this.sel = emptySel();
@@ -2354,7 +2473,7 @@ export class Editor {
     const sel = [...this.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && !a.multi && !a.attach);
     const metals = sel.filter((a) => isMetalAtom(a));
     const rest = sel.filter((a) => !isMetalAtom(a));
-    if (metals.length !== 1 || rest.length < 2) return 'Select one metal and the atoms of the ring or π-bond it is bonded to (two or more).';
+    if (metals.length !== 1 || rest.length < 2) return WHY.hapto;
     const m = metals[0];
     doc.edit('Add Hapto Bond', () => {
       for (const a of rest) { const b = doc.bondBetween(m.id, a.id); if (b) doc.removeBond(b.id); }
@@ -2388,7 +2507,7 @@ export class Editor {
     const ids = new Set<number>();
     for (const bid of this.sel.bonds) { const b = doc.bonds.get(bid); if (b && centreEnd(doc, b)) ids.add(bid); }
     for (const aid of this.sel.atoms) for (const bid of doc.adj.get(aid) ?? []) { const b = doc.bonds.get(bid)!; if (centreEnd(doc, b)) ids.add(bid); }
-    if (!ids.size) return 'Select a hapto (η) bond, or the metal it comes from.';
+    if (!ids.size) return WHY.splitHapto;
     let n = 0;
     doc.edit('Split Hapto Bond', () => { for (const id of ids) n += splitHapto(doc, id).length; });
     this.sel = emptySel();
@@ -2418,7 +2537,7 @@ export class Editor {
     return [...out];
   }
 
-  /** Chemistry > Structure > Kekulé Form for η Ligand: the picked η³–η⁸ ligands drawn with their double bonds, or delocalized again. */
+  /** Right-click > Structure > Kekulé Form for η Ligand: the picked η³–η⁸ ligands drawn with their double bonds, or delocalized again. */
   toggleHaptoKekule(contextBond: number | null = null): string {
     const ids = this.haptoCentresPicked(contextBond);
     if (!ids.length) return 'Select an η ligand\'s ring or allyl, its hapto bond, or the metal.';
@@ -3852,7 +3971,7 @@ export class Editor {
     const doc = this.doc, m = this.fullMeasure();
     const ids = [...doc.shapes.values()].filter((s) => s.newman).map((s) => s.id);
     if (!ids.length) return;
-    doc.edit('Newman Projection Look', () => {
+    doc.edit('Newman Projection Style', () => {
       for (const id of ids) {
         const s = doc.shapes.get(id)!;
         const c = newmanCentre(doc, s);
@@ -3868,7 +3987,7 @@ export class Editor {
     const c = s?.newman ? newmanCentre(doc, s) : null;
     if (!s?.newman || !c) return;
     const d = { ...s.newman, look: { ...structuredClone(s.newman.look), ...patch } };
-    doc.edit('Newman Projection Look', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
+    doc.edit('Newman Projection Style', () => { putNewman(doc, this.fullMeasure(), d, c, id); });
     this.changed();
   }
 
@@ -4516,15 +4635,15 @@ export class Editor {
     d.persp = t;
     const doc = this.doc;
     const host = real ? this.perspectiveHost : null;
-    if (real && !host) this.onNotice('3-D shapes can\'t be built here; turning the structure flat instead.');
+    if (real && !host) this.onNotice('3-D shapes can\'t be built here; rotating the structure as a flat drawing instead.');
     void prepareTurn(doc, structures, real, host ?? (real ? null : this.perspectiveHost)).then((prep) => {
       if (this.drag !== d || this.doc !== doc) {
         // let go before the shape was ready: it is kept, so the next drag turns it at once
-        if (real && !prep.notes.length && t.told) this.onNotice('The 3-D shape is ready: drag the structure to turn it.');
+        if (real && !prep.notes.length && t.told) this.onNotice('The 3-D shape is ready: drag the structure to rotate it.');
         return;
       }
       t.ready = prep;
-      if (prep.notes.length) this.onNotice(`${prep.notes[0]} Turning it flat instead.`, 7000);
+      if (prep.notes.length) this.onNotice(`${prep.notes[0]} Rotating it as a flat drawing instead.`, 7000);
       if (d.moved) this.turnTo(d);
     });
   }
@@ -4535,16 +4654,18 @@ export class Editor {
   }
 
   /**
-   * The selection box's tilt handles, for selected structures with the selection tool: either side
-   * of the rotate handle, clear of the captions and numbers under a structure. The left one tips
-   * the structures about the left–right axis (drag down or up); the right one swings them about the
-   * up–down axis (drag across). Both turn them as flat sheets.
+   * The selection box's tilt handles, only while a Perspective tool is in use and structures are
+   * selected: above the middle of the box, where the selection tool's rotate handle would be, clear
+   * of the captions and numbers under a structure. The left one tips the structures about the
+   * left–right axis (drag down or up); the right one swings them about the up–down axis (drag
+   * across). Never with the selection tool, so a plain selection shows only its own handles.
    */
   tiltHandles(): { x: Vec; y: Vec } | null {
-    const rh = this.sel.atoms.size < 2 ? null : this.rotateHandle();
-    if (!rh) return null;
-    const gap = this.tol(TILT_GAP);
-    return { x: { x: rh.x - gap, y: rh.y }, y: { x: rh.x + gap, y: rh.y } };
+    if (this.tool.kind !== 'perspective' || this.sel.atoms.size < 2 || !structuresOf(this.doc, this.sel.atoms).length) return null;
+    const b = this.selBox();
+    if (!b) return null;
+    const mid = (b.x1 + b.x2) / 2, y = b.y1 - this.tol(24), gap = this.tol(TILT_GAP);
+    return { x: { x: mid - gap, y }, y: { x: mid + gap, y } };
   }
 
   /** The tilt handle at a point, if any: 'x' tips (left of the rotate handle), 'y' swings (right of it). */
@@ -4559,10 +4680,12 @@ export class Editor {
   private startTilt(d: Drag, axis: 'x' | 'y'): void {
     const structures = structuresOf(this.doc, this.sel.atoms);
     if (!structures.length) return;
-    const t: PerspDrag = { real: false, axis, ready: null, begun: false, dx: 0, dy: 0, shift: false, unshown: 0, told: false };
+    // the 3-D Perspective tool's handles turn the real 3-D shape (flat when it can't be built)
+    const real = this.tool.kind === 'perspective' && this.tool.real && !!this.perspectiveHost;
+    const t: PerspDrag = { real, axis, ready: null, begun: false, dx: 0, dy: 0, shift: false, unshown: 0, told: false };
     d.persp = t;
     const doc = this.doc;
-    void prepareTurn(doc, structures, false, this.perspectiveHost).then((prep) => {
+    void prepareTurn(doc, structures, real, this.perspectiveHost).then((prep) => {
       if (this.drag !== d || this.doc !== doc) return;
       t.ready = prep;
       if (d.moved) this.turnTo(d);
@@ -4625,7 +4748,7 @@ export class Editor {
     const doc = this.doc;
     const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
     if (this.doc !== doc) return true;
-    if (prep.notes.length) this.onNotice(`${prep.notes[0]} Turning it flat instead.`, 7000);
+    if (prep.notes.length) this.onNotice(`${prep.notes[0]} Rotating it as a flat drawing instead.`, 7000);
     const R: M3 = anglesTurn(x, y, z);
     let left = 0;
     doc.edit(real ? '3-D Rotation' : 'Rotate in Perspective', () => {
@@ -4828,7 +4951,7 @@ export class Editor {
       const f = doc.shapes.get(id)?.frame;
       if (f) for (const b of frameMembers(doc, f).bonds) bonds.add(b);
     }
-    if (!bonds.size) return 'Select the rings to fill (or the whole structure) first.';
+    if (!bonds.size) return WHY.fillRings;
     let ids: number[] = [];
     doc.edit('Fill rings', () => { ids = fillRings(doc, bonds); });
     if (!ids.length) return 'No rings in the selection.';
@@ -4932,7 +5055,7 @@ export class Editor {
     const bonds = [...this.sel.bonds].map((id) => doc.bonds.get(id)).filter((b): b is Bond => !!b && lit(b));
     if (!atoms.length && !bonds.length) return false;
     const hl = style && tidyStyle(style);
-    doc.edit('Highlight look', () => {
+    doc.edit('Highlight Style', () => {
       for (const a of atoms) doc.updateAtom(a.id, { highlight: colour ?? a.highlight, hl });
       for (const b of bonds) doc.updateBond(b.id, { highlight: colour ?? b.highlight, hl });
     });
@@ -5122,8 +5245,23 @@ export class Editor {
     if (this.tool.kind !== 'select' || (!s.atoms.size && !s.arrows.size && !s.shapes.size && !s.captions.size)) return null;
     // one atom on its own turns round itself, which does nothing (its label stays level): no handle
     if (s.atoms.size === 1 && !s.arrows.size && !s.shapes.size && !s.captions.size) return null;
+    const tb = this.textBoxTop();
+    if (tb) return tb.handle;
     const b = this.selBox();
     return b ? { x: (b.x1 + b.x2) / 2, y: b.y1 - this.tol(24) } : null;
+  }
+
+  /**
+   * One text box selected on its own (Slides, Design): the middle of its top edge and its rotate
+   * handle above it, both turned with the box, as in PowerPoint.
+   */
+  private textBoxTop(): { top: Vec; handle: Vec } | null {
+    const ids = this.textBoxes();
+    if (ids.length !== 1 || this.captionEd?.isOpen || !this.sel.captions.has(ids[0])) return null;
+    const c = this.doc.captions.get(ids[0]), f = this.textBoxFrame(ids[0]);
+    if (!c || !f) return null;
+    const mid = (f.x1 + f.x2) / 2, rot = c.rot ?? 0;
+    return { top: turnAbout({ x: mid, y: f.y1 }, c, rot), handle: turnAbout({ x: mid, y: f.y1 - this.tol(24) }, c, rot) };
   }
 
   // ---------------------------------------------------------------- focal points
@@ -5994,7 +6132,7 @@ export class Editor {
   setMethylStyle(style: MethylStyle, ids: Iterable<number> = this.sel.atoms): number {
     this.options.methylStyle = style;
     let n = 0;
-    this.doc.edit(`Terminal Methyls as ${style}`, () => { n = setMethylStyle(this.doc, ids, style); });
+    this.doc.edit(`Terminal Methyls as ${style === 'CH3' ? 'CH₃' : style}`, () => { n = setMethylStyle(this.doc, ids, style); });
     if (n) this.changed();
     return n;
   }
@@ -6004,7 +6142,7 @@ export class Editor {
     const ids = [...this.sel.atoms];
     let r = { removed: 0, added: 0 };
     this.doc.edit('Explicit Hydrogens', () => { r = toggleExplicitHydrogens(this.doc, ids); });
-    if (!r.removed && !r.added) return ids.length ? 'These atoms have no hydrogens to draw.' : 'No H atoms to hide. Select atoms to draw their hydrogens as atoms.';
+    if (!r.removed && !r.added) return ids.length ? 'These atoms have no hydrogens to draw.' : WHY.hydrogens;
     this.sel = emptySel();
     this.changed();
     return r.removed ? `${r.removed} H atom${r.removed > 1 ? 's' : ''} hidden (those on wedges, charged or on heteroatoms are kept).` : r.added > 1 ? `${r.added} hydrogens drawn as atoms.` : '1 hydrogen drawn as an atom.';
@@ -6451,7 +6589,22 @@ export class Editor {
   }
 
   redo(): void {
-    if (this.doc.redo()) { if (!this.markedHot()) this.selectApplied(); this.afterUndo(); }
+    if (!this.doc.redo()) return;
+    const applied = this.doc.lastApplied;
+    if (!this.markedHot()) this.selectApplied();
+    this.afterUndo();
+    this.reopenRedone(applied);
+  }
+
+  /**
+   * After Redo: a text box it brought back empty (Add Caption, then Undo before anything was
+   * typed) is open for typing again, as Add Caption left it, rather than an empty box nobody sees;
+   * left empty again, it goes with its step as it would have then.
+   */
+  reopenRedone(applied: string[] = this.doc.lastApplied): void {
+    const id = applied.filter((k) => k[0] === 'c').map((k) => Number(k.slice(1)))
+      .find((c) => { const cap = this.doc.captions.get(c); return !!cap && !cap.ph && !plainText(cap.runs).trim(); });
+    if (id !== undefined && !this.captionEd?.isOpen) this.typeInto(id);
   }
 
   /** The highlight a step taken back or done again by a key had (see runAction), if it is still there. */
@@ -6630,7 +6783,7 @@ export class Editor {
     };
     if (act === 'select') { this.selectOnly({ kind: 'bond', id }); return true; }
     if (act === 'properties') { this.selectOnly({ kind: 'bond', id }); this.onProperties(); return true; }
-    doc.edit('Bond hotkey', () => {
+    doc.edit('Bond Hotkey', () => {
       if (act === 'delete') { this.removeBondAndOrphans(id); return; }
       if (act === 'wedge' || act === 'hash-wedge') {
         const disp: BondDisplay = act === 'wedge' ? 'wedge' : 'hashWedge';
@@ -7467,6 +7620,22 @@ export class Editor {
   /** Start typing into a caption (Add Caption, Add ID Label). */
   typeInto(id: number): void {
     this.editCaption(id);
+    // (made by the newest step: left empty, it goes with that step, as text never typed does)
+    if (this.captionEdId === id) this.freshCaption = { id, step: this.doc.topStep };
+  }
+
+  /** The caption typeInto opened, and the step that made it. */
+  private freshCaption: { id: number; step: object | undefined } | null = null;
+  /** Typing is being stopped for an Undo or Redo (finishTypingForUndo). */
+  private forUndo = false;
+
+  /**
+   * Stop typing before Undo or Redo: the text is finished, except that a text box Add Caption just
+   * made and left empty is left for the Undo, which takes it back with the step that made it.
+   */
+  finishTypingForUndo(): void {
+    this.forUndo = true;
+    try { this.closeCaption(); } finally { this.forUndo = false; }
   }
 
   private editCaption(id: number, client?: { x: number; y: number }): void {
@@ -7511,6 +7680,8 @@ export class Editor {
       defaultFont: base?.font ?? st.captionFont,
       redraw: () => this.requestOverlay(),
       enterFinishes: () => this.enterFinishesText(c?.ph ? 'other' : 'text'),
+      // a text box on a slide or design page shows its own frame and handles
+      framed: this.textFirst && !!c,
     };
     // (on a slide, lines spaced as PowerPoint spaces them, as they are drawn)
     const lines = this.r.slideLines();
@@ -7532,8 +7703,16 @@ export class Editor {
         const paras = cur.ph === 'body' ? [{ list: 'bullet' as const }] : undefined;
         if (cur.runs.length || JSON.stringify(cur.paras) !== JSON.stringify(paras)) doc.edit('Edit caption', () => doc.updateCaption(cur.id, { runs: [], paras }));
       } else if (cur) {
-        if (empty) doc.edit('Delete caption', () => doc.removeCaption(cur.id));
-        else if ((Object.keys(fields) as (keyof Caption)[]).some((k) => JSON.stringify(cur[k]) !== JSON.stringify(fields[k]))) {
+        const fresh = this.freshCaption?.id === cur.id ? this.freshCaption : null;
+        if (fresh) this.freshCaption = null;
+        if (empty) {
+          // a text box Add Caption just made, left empty: it goes with the step that made it (or,
+          // stopped for Undo, is left for the Undo to take back with that step, so Redo has it)
+          const unused = !!fresh && !plainText(cur.runs).trim() && doc.topStep === fresh.step;
+          if (!(unused && (this.forUndo || doc.dropStep(fresh!.step)))) doc.edit('Delete caption', () => doc.removeCaption(cur.id));
+        }
+        // (nothing typed: no step, though the editor hands the runs back with their fields in another order)
+        else if ((Object.keys(fields) as (keyof Caption)[]).some((k) => !sameData(cur[k], fields[k]))) {
           doc.edit('Edit caption', () => doc.updateCaption(cur.id, fields));
         }
       } else if (!empty) {
@@ -7680,6 +7859,8 @@ export class Editor {
 
   /** What the pointer was last over (to change the pointer when Ctrl is pressed or let go). */
   private lastHover: { onRotate: boolean; handle: Handle | null; h: Hit; tilt?: 'x' | 'y' | null } | null = null;
+  /** The pointer is on a text box's border (Slides, Design). */
+  private overBorder = false;
 
   /** Show the pointer that says what a click or drag will do where the mouse is. */
   private showPointer(ctrl: boolean): void {
@@ -7688,9 +7869,10 @@ export class Editor {
     if (this.painter) { this.r.overlay.style.cursor = BRUSH; return; }
     const { onRotate, handle, h } = o;
     if (o.tilt) { this.r.overlay.style.cursor = o.tilt === 'x' ? 'ns-resize' : 'ew-resize'; return; }
+    if (this.overBorder && !o.handle && !o.onRotate) { this.r.overlay.style.cursor = 'move'; return; }
     // a curved arrow tool over a selected S's line: a drag there reshapes it
     if (!onRotate && !handle && h?.kind === 'arrow' && this.curvedTool() && this.isSelected(h) && bezPoints(this.doc.arrows.get(h.id)!)) { this.r.overlay.style.cursor = BEND; return; }
-    this.r.overlay.style.cursor = onRotate ? ROTATE : handle ? handleCursor(handle.which) : pointerFor({
+    this.r.overlay.style.cursor = onRotate ? ROTATE : handle ? (handle.kind === 'caption' ? turnedHandleCursor(handle.which, this.doc.captions.get(handle.id)?.rot ?? 0) : handleCursor(handle.which)) : pointerFor({
       tool: this.tool.kind,
       over: !h ? null : h.kind === 'atom' || h.kind === 'bond' ? 'chem' : 'object',
       overSelection: !!h && this.isSelected(h),
@@ -8195,7 +8377,9 @@ export class Editor {
       ctx.fill(dots);
       ctx.lineWidth = px;
       const boxes = new Path2D();
-      for (const id of s.captions) { const c = doc.captions.get(id); if (c) boxes.addPath(this.captionOutline(c)); }
+      // (text boxes showing their own frame and handles, Slides and Design, have no tint, as in PowerPoint)
+      const framed = new Set(this.textBoxes());
+      for (const id of s.captions) { const c = doc.captions.get(id); if (c && !framed.has(id)) boxes.addPath(this.captionOutline(c)); }
       ctx.fill(boxes);
       // the arrows as one path, stroked once, so two that cross aren't darker where they do
       ctx.lineWidth = L * 0.15;
@@ -8325,6 +8509,24 @@ export class Editor {
       if (pen && pen.at.length >= 3) { ctx.beginPath(); ctx.arc(pen.at[0].x, pen.at[0].y, 5 * px, 0, Math.PI * 2); ctx.stroke(); }
       ctx.restore();
     }
+    // a text box's own frame (Slides, Design): dashed while it is typed in, solid while it is
+    // selected, as in PowerPoint (the typing has no box of its own inside it)
+    if (this.drag?.mode !== 'move') {
+      const typing = !!this.captionEd?.isOpen;
+      ctx.save();
+      ctx.lineWidth = px;
+      ctx.strokeStyle = PREVIEW;
+      if (typing) ctx.setLineDash([4 * px, 3 * px]);
+      for (const id of this.textBoxes()) {
+        const f = this.textBoxFrame(id), c = this.doc.captions.get(id);
+        if (!f || !c) continue;
+        ctx.beginPath();
+        turnedCorners(f, c, c.rot ?? 0).forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+        ctx.closePath();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
     // handles on selected arrows and shapes
     const handles = this.drag?.mode === 'move' ? [] : this.handles();
     if (handles.length) {
@@ -8390,6 +8592,8 @@ export class Editor {
         }
         if (hd.which === 'mid') ctx.arc(hd.at.x, hd.at.y, k * 1.1, 0, Math.PI * 2);
         else if (hd.which[0] === 'b' && (Number(hd.which.slice(1)) + 1) % 3 === 0) ctx.arc(hd.at.x, hd.at.y, k * 1.1, 0, Math.PI * 2);
+        // a text box's handles are round, as in PowerPoint
+        else if (hd.kind === 'caption') ctx.arc(hd.at.x, hd.at.y, k * 1.15, 0, Math.PI * 2);
         else if (hd.which[0] === 'b' || hd.which === 'ea' || hd.which === 'eb') { ctx.moveTo(hd.at.x, hd.at.y - k * 1.2); ctx.lineTo(hd.at.x + k * 1.2, hd.at.y); ctx.lineTo(hd.at.x, hd.at.y + k * 1.2); ctx.lineTo(hd.at.x - k * 1.2, hd.at.y); ctx.closePath(); }
         else ctx.rect(hd.at.x - k, hd.at.y - k, 2 * k, 2 * k);
         // the handle or join the arrow keys move is filled in
@@ -8441,15 +8645,22 @@ export class Editor {
       const b = this.selBox()!;
       ctx.lineWidth = px;
       ctx.strokeStyle = mk.box;
-      // no box round a bond, a straight run of bonds or a straight arrow: it would sit inside their highlight
-      if (!this.boxInsideHighlight(b)) {
+      // no box round a bond, a straight run of bonds or a straight arrow: it would sit inside their
+      // highlight; nor round text boxes showing their own frame (Slides, Design)
+      if (!this.boxInsideHighlight(b) && !this.textBoxes().length) {
         ctx.setLineDash([3 * px, 3 * px]);
         ctx.strokeRect(b.x1 - 2 * px, b.y1 - 2 * px, b.x2 - b.x1 + 4 * px, b.y2 - b.y1 + 4 * px);
         ctx.setLineDash([]);
       }
+      // the stem, from the top of the box (a text box's own top, turned with it) to the handle
+      const tb = this.textBoxTop();
+      const top = tb ? tb.top : { x: rh.x, y: b.y1 - 2 * px };
+      const u = norm(sub(top, rh));
+      // (a text box has a round handle on that spot: the stem stops at its edge, behind it)
+      const from = tb ? sub(top, mul(u, 3.5 * 1.15 * px)) : top;
       ctx.beginPath();
-      ctx.moveTo(rh.x, b.y1 - 2 * px);
-      ctx.lineTo(rh.x, rh.y + 4.5 * px);
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(rh.x + u.x * 4.5 * px, rh.y + u.y * 4.5 * px);
       ctx.stroke();
       ctx.beginPath();
       ctx.arc(rh.x, rh.y, 4.5 * px, 0, Math.PI * 2);
@@ -8457,13 +8668,23 @@ export class Editor {
       ctx.fill();
       ctx.strokeStyle = PREVIEW;
       ctx.stroke();
-      this.drawTiltHandles(ctx, px, b);
       const r = this.drag?.rot;
       if (r && this.drag!.moved) {
         ctx.font = `${12 * px}px system-ui, sans-serif`;
         ctx.fillStyle = PREVIEW;
         ctx.fillText(`${Math.round(r.angle / DEG)}°`, this.pointer.x + 10 * px, this.pointer.y - 10 * px);
       }
+    }
+    // a Perspective tool with structures selected: their box and its tilt handles (never with the
+    // selection tool, where a plain selection shows only its own handles)
+    if (!this.drag && !this.layoutPreview && this.tiltHandles()) {
+      const b = this.selBox()!;
+      ctx.lineWidth = px;
+      ctx.strokeStyle = mk.box;
+      ctx.setLineDash([3 * px, 3 * px]);
+      ctx.strokeRect(b.x1 - 2 * px, b.y1 - 2 * px, b.x2 - b.x1 + 4 * px, b.y2 - b.y1 + 4 * px);
+      ctx.setLineDash([]);
+      this.drawTiltHandles(ctx, px, b);
     }
     // while a tilt handle is dragged: the box, the handle, and how far it has turned
     const tp = this.drag?.persp;

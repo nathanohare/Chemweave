@@ -4,7 +4,7 @@
 // Anything the drawing tools set automatically can be changed here by hand.
 
 import { addInfo, setInfo } from './info-tip';
-import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, type PictureLook, type StepRoles, type ArrowTextSide, type ArrowKind, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
+import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, isDataFrame, type PictureLook, type StepRoles, type ArrowTextSide, type ArrowKind, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
 import { fullStyle, tidyStyle } from '../render/highlight';
 import type { HighlightLookPreset } from './highlight-looks';
 
@@ -137,6 +137,8 @@ export class StylePanel {
   frames: { add(): void; fit(shapeId: number): void } | null = null;
   /** Draws a Newman or sawhorse projection again with part of its look changed, and opens its window. */
   newman: { look(shapeId: number, patch: Partial<NonNullable<Shape['newman']>['look']>): void; edit(shapeId: number): void } | null = null;
+  /** Opens a torsion chart's window. */
+  torsion: { edit(shapeId: number): void } | null = null;
   /** A highlight colour was chosen (the app remembers it for Chemistry > Highlight and Fill > Highlight). */
   highlightUsed: (colour: string) => void = () => {};
   /** The look last chosen for highlights (new highlights take it). */
@@ -235,11 +237,12 @@ export class StylePanel {
     if (several) this.structureControls(selAtoms, selBonds);
     if (arrows.length) this.arrowControls(arrows);
     // an energy diagram is a frame drawn from its numbers: its own section, not a rectangle's
-    const diagram = all.length === 1 && (all[0].energy || all[0].diagram || all[0].plate || all[0].smart || all[0].newman) ? all[0] : undefined;
+    const diagram = all.length === 1 && isDataFrame(all[0]) ? all[0] : undefined;
     if (diagram?.energy) this.energyControls(diagram);
     else if (diagram?.plate) this.plateControls(diagram);
     else if (diagram?.newman) this.newmanControls(diagram);
     else if (diagram?.diagram) this.diagramControls(diagram);
+    else if (diagram?.torsion) this.torsionControls(diagram);
     else if (diagram?.smart) {
       // how its list works is behind the "i" by the list's title; here, its layout
       this.heading('Smart Scheme');
@@ -423,7 +426,7 @@ export class StylePanel {
         const tip = side === 'results'
           ? 'The line under the text below the arrow, for yield, ee or dr. It has its own font, size, alignment and gap in Drawing Style.'
           : `Text ${side} the arrow.`;
-        this.row(label, box, `${tip} Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting. A numbered list of steps lines up on the left unless you pick an alignment.`);
+        this.row(label, box, `${tip} Enter applies; Shift+Enter adds a line. Formulas are subscripted automatically (H2O, Pd(PPh3)4); select the text in the drawing for other formatting. A numbered list of steps lines up on the left unless you choose an alignment.`);
       }
     }
     const names: [Role, string, string][] = [
@@ -656,6 +659,19 @@ export class StylePanel {
     this.body.append(row);
   }
 
+  /** A torsion chart: its look is set in its window (the frame round it has none of its own). */
+  private torsionControls(sh: Shape): void {
+    this.heading('Torsional energy chart');
+    const row = document.createElement('div');
+    row.className = 'style-buttons';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = 'Edit Torsional Energy Chart…';
+    b.addEventListener('click', () => this.torsion?.edit(sh.id));
+    row.append(b);
+    this.body.append(row);
+  }
+
   private energyControls(sh: Shape): void {
     const d = sh.energy!;
     this.heading('Energy diagram');
@@ -835,7 +851,7 @@ export class StylePanel {
     this.number('Rotation (°)', round(now, 10), 1, -360, 360, (v) => this.edit('Rotate', () => {
       const rot = normDegrees(v);
       for (const x of turning) this.doc.updateShape(x.id, { rot: Math.abs(rot) < 1e-9 ? undefined : rot });
-    }), 'Turns it about its middle, clockwise, as PowerPoint’s Rotation box. Drag the round handle above a selection to turn it by hand.');
+    }), 'Rotates it about its middle, clockwise, as PowerPoint’s Rotation box. Drag the round handle above a selection to rotate it by hand.');
   }
 
   private pictureControls(pics: Shape[]): void {
@@ -852,7 +868,7 @@ export class StylePanel {
       this.check('Return to Zoom', !!p.zoom?.back, (v) => set('Return to Zoom', (x) => ({ zoom: { ...x.zoom, back: v || undefined } })), 'After its slide (or its part of a Summary Zoom), the show comes back to this slide');
     } else if (pics.length === 1 && p.video) {
       const v = p.video;
-      const how = `${v.start === 'click' ? 'Starts when clicked' : 'Starts by itself'}${v.once ? '' : ', loops'}${v.trimStart || v.trimEnd ? ', trimmed' : ''}`;
+      const how = `${v.start === 'click' ? 'Starts when clicked' : 'Starts automatically'}${v.once ? '' : ', loops'}${v.trimStart || v.trimEnd ? ', trimmed' : ''}`;
       this.note(v.audio ? `Sound. ${how}. It plays in the slide show and in PowerPoint.` : `Video${p.px ? `, ${p.px.w} × ${p.px.h} pixels` : ''}. ${how}. It plays in the slide show and in PowerPoint.`);
       const buttons = document.createElement('div');
       buttons.className = 'style-buttons';
@@ -1153,8 +1169,8 @@ export class StylePanel {
       this.check('Update when the structure changes', !desc[0].attach!.keepText, (v) => setA(v ? 'Update descriptors' : 'Keep descriptor text', (x) => (x.role === 'descriptors' ? { keepText: v ? undefined : true, sig: v ? undefined : x.sig } : {})),
         'Turn off to keep the text as it is, for instance after typing over it by hand.');
     }
-    button('Reset to Default Look', 'Give it the ID label or caption look and place set in File ▸ Drawing Style', () =>
-      this.edit('Reset to Default Look', () => { for (const x of tied) this.doc.updateCaption(x.id, lookPatch(this.doc, x, attachedAtoms(this.doc, x.attach!))); }));
+    button('Reset to Default Style', 'Give it the ID label or caption style and position set in File ▸ Drawing Style', () =>
+      this.edit('Reset to Default Style', () => { for (const x of tied) this.doc.updateCaption(x.id, lookPatch(this.doc, x, attachedAtoms(this.doc, x.attach!))); }));
     button('Unpin from Structure', 'Leave the caption where it is as ordinary text: it no longer follows the structure', () =>
       this.edit('Unpin Caption', () => { for (const x of tied) this.doc.updateCaption(x.id, { attach: undefined }); }));
     if (loose.length && this.tie) button('Tie the others too', 'Tie the selected captions that are loose to the structure nearest each', () => this.tie?.(loose.map((x) => x.id)));
@@ -1188,7 +1204,7 @@ export class StylePanel {
     }
     this.heading('Atom');
     this.text('Label', a.label ?? '', a.z === 6 ? 'carbon (no label)' : 'automatic', (v) => this.edit('Label', () => this.applyLabel(a.id, v)),
-      'Type a label (O, NH2, OTBS, CO2Et…); leave empty for a plain carbon.');
+      'Type a label (O, NH₂, OTBS, CO₂Et…); leave empty for a plain carbon.');
     this.number('Charge', a.charge, 1, -8, 8, (v) => set('Charge', { charge: v }));
     this.color('Color', a.color, (v) => set('Atom color', { color: v }));
     this.color('Highlight', a.highlight, (v) => { set(v ? 'Highlight' : 'Remove highlight', { highlight: v }); if (v) this.highlightUsed(v); }, 'None');
@@ -1292,7 +1308,7 @@ export class StylePanel {
       this.check('Center on double bonds', st.centre, (v) => set(v ? 'Center highlight on double bonds' : 'Highlight on the bonds', { centre: v }),
         'Center the highlight between a double bond\'s two lines, and in rings between the ring and its inner double-bond lines (Chemistry ▸ Highlight and Fill ▸ Center Highlight on Double Bonds).');
       this.check('Grow around atom labels', st.fit, (v) => set(v ? 'Highlight around labels' : 'Highlight not around labels', { fit: v }),
-        'Make the highlight under a labeled atom (Me, OTBS, CO2Et) big enough to hold its whole label.');
+        'Make the highlight under a labeled atom (Me, OTBS, CO₂Et) big enough to hold its whole label.');
     });
 
     const fillName = HL_FILLS.find(([v]) => v === st.fill)![1].split(' (')[0];
@@ -1438,7 +1454,7 @@ export class StylePanel {
     const kind = focalKind(this.doc, frag);
     const names = { atom: 'Atom', bond: 'Bond', ring: 'Ring' } as const;
     const sel = document.createElement('select');
-    const opts: [string, string][] = [...(kind ? [['own', names[kind]] as [string, string]] : []), ['box', 'Center of box'], ['pick', 'Pick atom, bond or ring…']];
+    const opts: [string, string][] = [...(kind ? [['own', names[kind]] as [string, string]] : []), ['box', 'Center of box'], ['pick', 'Click an atom, bond or ring…']];
     for (const [v, text] of opts) {
       const o = document.createElement('option');
       o.value = v;
@@ -1525,7 +1541,7 @@ export class StylePanel {
       const a = centres[0], b = dbls[0];
       const l = a ? a.stereoLabel : b.stereoLabel;
       const auto = a ? info?.atom(a.id) : info?.bond(b.id);
-      this.text('Label text', l?.manual ? l.text : '', auto ? `(${auto}), worked out` : 'worked out', (v) => this.edit('Stereo label text', () => setStereoText(this.doc, a ? 'a' : 'b', a ? a.id : b.id, v, arialWidth)),
+      this.text('Label text', l?.manual ? l.text : '', auto ? `(${auto}), calculated` : 'calculated', (v) => this.edit('Stereo label text', () => setStereoText(this.doc, a ? 'a' : 'b', a ? a.id : b.id, v, arialWidth)),
         'Type a custom label (for example (R*) or rel-(S)); leave empty to show the calculated one.');
     }
   }

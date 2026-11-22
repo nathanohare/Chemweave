@@ -134,7 +134,7 @@ export class DashboardUi {
     switch (kind) {
       case 'chart': {
         if (hasLevels(chartKind)) return this.addLevelChart(res, base, chartKind);
-        const got = await ask('Add Chart: what it shows', [
+        const got = await ask('Add Chart', [
           { name: 'kind', label: 'Type', value: chartKind, options: KINDS.map((k) => ({ value: k, label: CHART_NAMES[k] })) },
           { name: 'x', label: 'Horizontal axis (x or labels)', value: res.names[0], options: [{ value: '', label: '(1, 2, 3…)' }, ...cols] },
           { name: 'group', label: 'Rows with the same label', value: 'auto', options: [
@@ -187,7 +187,7 @@ export class DashboardUi {
         return;
       }
       case 'gallery': {
-        if (!structCol) this.host.flash('No column of drawn structures found; pick the column that holds them.', 6000);
+        if (!structCol) this.host.flash('No column of drawn structures found; select the column that holds them.', 6000);
         const got = await ask('Add Structure Gallery', [
           { name: 'col', label: 'Structures in', value: structCol ?? res.names[0], options: cols },
           { name: 'size', label: 'Card width', value: '140', type: 'number', unit: 'px' },
@@ -331,7 +331,7 @@ export class DashboardUi {
     };
     const res = 'source' in t ? resolveSource(this.wb, t.source) : null;
     const names: [string, string][] = (res?.names ?? []).map((n) => [n, n]);
-    if ('source' in t && t.kind !== 'kpi' && !res) out.push(note(`The data (${sourceName(t.source)}) isn't in this workbook any more: pick it again.`, 'cp-error'));
+    if ('source' in t && t.kind !== 'kpi' && !res) out.push(note(`The data (${sourceName(t.source)}) isn't in this workbook any more: choose it again.`, 'cp-error'));
 
     switch (t.kind) {
       case 'chart': {

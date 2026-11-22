@@ -126,17 +126,23 @@ export interface Placed { ids: number[]; problems: string[] }
 
 /** Add what was read to the drawing, centred at (cx, cy). */
 export function addRead(doc: Doc, g: ReadGraph, w: number, h: number, cx: number, cy: number): Placed {
-  const atoms = g.symbols.map(parseSymbol);
   const bonds = readBonds(g);
-  const problems: string[] = [];
-  if (!kekulize(atoms, bonds)) problems.push('An aromatic ring could not be given alternating double bonds; check its bonds.');
   const pts = layout(g, bonds, w, h, doc.style.bondLength);
   let mx = 0, my = 0;
   for (const [x, y] of pts) { mx += x; my += y; }
   mx /= Math.max(1, pts.length); my /= Math.max(1, pts.length);
+  return addReadAt(doc, g, pts.map(([x, y]) => [cx + x - mx, cy + y - my]));
+}
+
+/** Add what was read to the drawing with each atom at the point given (drawing points). */
+export function addReadAt(doc: Doc, g: ReadGraph, pts: [number, number][]): Placed {
+  const atoms = g.symbols.map(parseSymbol);
+  const bonds = readBonds(g);
+  const problems: string[] = [];
+  if (!kekulize(atoms, bonds)) problems.push('An aromatic ring could not be given alternating double bonds; check its bonds.');
   const ids: number[] = [];
   atoms.forEach((a, i) => {
-    const atom = doc.addAtom(cx + pts[i][0] - mx, cy + pts[i][1] - my, a.z ?? 6, {
+    const atom = doc.addAtom(pts[i][0], pts[i][1], a.z ?? 6, {
       charge: a.charge, label: a.z === undefined ? a.label ?? 'R' : null, ...(a.isotope ? { isotope: a.isotope } : {}),
     });
     ids.push(atom.id);

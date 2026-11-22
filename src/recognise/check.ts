@@ -4,7 +4,8 @@
 
 import { Doc } from '../model';
 import type { DocStyle } from '../style';
-import { addMolfile, toMolfile } from '../chem/molfile';
+import { toMolfile } from '../chem/molfile';
+import { addMolfile } from '../io/chem-formats';
 import { addRead } from './to-drawing';
 import type { ReadResult } from './reader';
 

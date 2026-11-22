@@ -575,7 +575,7 @@ export function layoutLabel(spec: LabelSpec, bondDirs: LabelBond[], size: number
   // Head token: its first character is centred on the atom.
   const sd = !!spec.supDigits, mk = spec.marks;
   const headPieces = tokenPieces(head, sd, mk);
-  const firstCharW = measure(head.text[0], size);
+  const firstCharW = measure(head.text[0] ?? '', size); // (an atom with no symbol: an empty label)
   const headX = -firstCharW / 2;
 
   if (dir === 'right' || dir === 'up' || dir === 'down') {

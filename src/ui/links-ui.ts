@@ -63,7 +63,7 @@ export async function followLink(link: string): Promise<void> {
     if (host.openHere && await host.openHere(path).catch(() => false)) return;
     if (!isTauri()) { window.open(/^file:/i.test(link) ? link : `file:///${path.replace(/\\/g, '/')}`, '_blank', 'noopener'); return; }
     // a file could be a program: the person says yes first, as Word asks
-    if (!window.confirm(`Open ${path}?\n\nIt opens in the program your computer uses for it. Only open files you trust.`)) return;
+    if (!window.confirm(`Open ${path}?\n\nIt opens in your computer's default app for this file type. Only open files you trust.`)) return;
     try {
       const { openPath } = await import('@tauri-apps/plugin-opener');
       await openPath(path);
@@ -287,7 +287,7 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
       e.preventDefault();
       const link = target();
       if (!link) {
-        note.textContent = kind === 'place' ? 'Pick a place for the link to go to.' : kind === 'file' ? 'Type or browse to the file the link opens.' : kind === 'mail' ? 'Type the email address.' : 'Type the address or DOI the link goes to.';
+        note.textContent = kind === 'place' ? 'Choose a place for the link to go to.' : kind === 'file' ? 'Type or browse to the file the link opens.' : kind === 'mail' ? 'Type the email address.' : 'Type the address or DOI the link goes to.';
         note.hidden = false;
         return;
       }

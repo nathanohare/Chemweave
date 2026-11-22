@@ -129,7 +129,7 @@ describe('the toolbox', () => {
     expect(body.querySelector('.gt-info')!.getAttribute('data-tip')).toContain('Drag a guide');
     // one checkbox, above the snap choices, turns snapping on and off
     const check = body.querySelector<HTMLElement>('.gt-check')!;
-    expect(check.textContent).toBe('Toggle object snapping');
+    expect(check.textContent).toBe('Snap to Objects');
     expect(check.compareDocumentPosition(body.querySelector('.gt-snap')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const box = check.querySelector('input')!;
     // on to start: the guides snap

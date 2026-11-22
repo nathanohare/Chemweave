@@ -34,6 +34,15 @@ npm run desktop          # opens the desktop app; it reloads as the code changes
 npm run desktop:build    # makes the installers in src-tauri/target/release/bundle/
 ```
 
+## Rules for changes
+
+Every change follows these, whoever writes it:
+
+- **Screens, menus and wording** follow the [UI style guide](ui-style.md) (rules S1 to S87). Read it before any UI work, and add Nate's new decisions to it in the same change. `tests/ui-text-lint.test.ts` checks the wording on every pull request.
+- **Chemistry answers come from outside the code** (standing rule R8). A test's expected chemistry value (a mass, a formula, a shift, a name, a hazard, a green-chemistry rank) comes from a cited published source (a paper, a handbook, PubChem, NIST, IUPAC) or from Nate's reference molecules, with the reference in a comment next to it. Never take it from running the code under test: a test that copies the program's own answer can only show that the answer didn't change, not that it is right. Never take solvent rankings or other data from the CHEM21 guide (its licence doesn't allow it); bundled data follows the same rule ([CONTRIBUTING](../CONTRIBUTING.md#what-not-to-contribute)).
+- **Places that must stay in step** (below): a change to one place on the list is made in every place beside it, or the pull request says why not.
+- **Every pull request** fills in the [pull request template](../.github/pull_request_template.md): the real-program check, edge cases, licenses, screenshots, the mockup picked, new controls, chemistry test values, what it replaces and the places kept in step.
+
 ## Checks
 
 ```
@@ -47,9 +56,58 @@ Every pull request runs all of these (the **Checks** workflow), plus a speed che
 
 To see whether real drawings survive a save and reopen, `npm run roundtrip -- <folder>` (after a build) opens every `.cdxml`, `.cdx`, `.mol` and `.sdf` file in the folder, saves it as CDXML, opens it again and lists any file whose atoms, bonds, text, arrows or structures changed. The files are read where they are and never copied.
 
+To check Undo everywhere, `npm run undo-audit` (after a build) runs every Document, Spreadsheet, Canvas, Presentation and Design command in the built app, and drags all over each kind of object, undoing and redoing each one and comparing the file with how it was. It lists anything that changed without an undo step, took more than one Ctrl+Z, or wasn't put back exactly. `npm run undo-audit -- document <file.docx>` runs the Document part on a Word file of your own (read where it is, never copied); `npm run undo-audit -- sheet` (or `canvas`, `slides`, `design`, `drags`) runs one part, and `--only cmd1,cmd2` runs only those commands. The full audit takes about 25 minutes, so every pull request runs a quick sweep instead (`npm run undo-audit -- ci`, about two minutes, in the build job): one sixteenth of the commands in each kind of tab, a different sixteenth each day, so every command is run within 16 days. It first checks that it still catches problems (a planted command that takes two undo steps and one that makes none must both be reported), and a failure prints its slice so you can run it again (`npm run undo-audit -- ci --slice 5/16`). Commands are left out only by name, each with its reason (`NOT_UNDOABLE` in `scripts/undo-audit-lists.mjs`). The unit tests `tests/undo-*.test.ts` check the same for Document mode's commands and drags and Edit Layouts on every pull request.
+
 To also check saving against your own ChemDraw files (they stay on your computer), point the tests at a folder of `.cdxml` files: in PowerShell `$env:CHEM_TEST_FILES="C:\path\to\folder"; npm test`. Any `.cdx` files saved by ChemDraw in that folder, or in a folder inside it, are also checked against the `.cdxml` file of the same name. Big files need more memory than Node gives by default: also set `$env:NODE_OPTIONS="--max-old-space-size=8192"`.
 
+### Checking against real files
+
+Standing rule R1: the writers are checked against files saved by the real ChemDraw, Word, PowerPoint and Excel. Those files can never be in the repository ([CONTRIBUTING](../CONTRIBUTING.md#what-not-to-contribute): nothing made by a commercial program), so `tests/corpus.test.ts` reads them from a folder on your own computer, named by `CHEMWEAVE_CORPUS`, and is skipped (with a message saying so) wherever that isn't set, the Checks workflow included. For every `.cdxml`, `.cdx`, `.pptx`, `.docx` and `.xlsx` file in the folder and the folders inside it, it checks that the file opens and every drawing in it draws; that saving it and opening it again keeps its atoms, bonds, text, arrows, shapes, slides, sheets and paragraphs; that a saved Office file still has every part of the original (unknown parts are kept, not dropped), and that every part Chemweave does not write itself (pictures, embedded objects, fonts, custom XML) comes back byte for byte; that a saved CDXML file still has every element and attribute name ChemDraw wrote (it prints the names now written fewer times, and fails on a name that is gone, unless `CDXML_MAY_DROP` lists it with a reason); and that a second save is the same as the first. The files are only read, never copied or changed. If the folder named does not exist, the suite says so instead of failing with a file error. `CHEM_TEST_FILES`, used by `tests/cdx.test.ts`, `tests/stereo-files.test.ts` and `tests/warnings-files.test.ts`, is a different setting: a folder of ChemDraw files whose chemistry (CDX reading, stereo labels, warnings) is compared with what ChemDraw shows. One folder can serve both; only `CHEMWEAVE_CORPUS` also takes Word, PowerPoint and Excel files.
+
+```
+# PowerShell
+$env:CHEMWEAVE_CORPUS="C:\Users\you\Chemweave corpus"; $env:NODE_OPTIONS="--max-old-space-size=8192"; npx vitest run tests/corpus.test.ts
+# macOS and Linux
+CHEMWEAVE_CORPUS=~/chemweave-corpus NODE_OPTIONS=--max-old-space-size=8192 npx vitest run tests/corpus.test.ts
+```
+
+A pull request that changes a writer, or drawing meant to match ChemDraw, says in its template whether this was run, and adds what to try to the laptop checks list.
+
+## Checks for the standing rules
+
+The standing rules (R1 to R16, from the November 2026 audit) are built into these checks. Each one says which file and string is wrong; problems that were already there when the check was added are in a known list next to it, so a check fails only on a new problem and says when a known one has gone (take it off the list then; never add a new problem to a list to make a check pass).
+
+| Rule | Check | Run it | Known problems |
+|---|---|---|---|
+| R1 | Real ChemDraw and Office files (local only) | see "Checking against real files" above | none |
+| R2 | Open, save unchanged, compare, for every format | `npx vitest run tests/open-save-compare.test.ts` | `KNOWN_DIFFERENT` in the test |
+| R3 | Every model field through CDXML, `.pptx`, `.docx` and `.xlsx` | `npx vitest run tests/field-round-trip.test.ts` | `CANT_CARRY` (can't be carried, with why) and `KNOWN_GAPS` in the test |
+| R4 | The list below names every object kind, kind of tab and text surface; rich text survives every format | `npx vitest run tests/parity.test.ts` | `KNOWN_GAPS` in the test |
+| R6 | Speed at real sizes, against the base branch and absolute budgets | on a pull request (the speed job); locally `npx vitest bench --run bench/core.bench.ts --outputJson a.json` then `node scripts/bench-gate.mjs a.json a.json`; start-up: `node scripts/startup-gate.mjs <base url> <head url>` | budgets: `BUDGETS` in `scripts/bench-gate.mjs`, `STARTUP_BUDGET_MS` in `bench/startup.mjs` |
+| R7 | Undo for every command | `npx vitest run tests/undo-every-command.test.ts` (commands are left out only by name with a reason, the slices cover every command, CI runs the quick sweep); the quick sweep: `npm run undo-audit -- ci` (CI's build job); the full sweep: `npm run build` then `npm run undo-audit -- canvas` (or `slides`, `design`, `sheet`, `document`, `drags`, `all`), or against `npx vite`: `UNDO_AUDIT_URL=http://localhost:5173/ node scripts/undo-audit.mjs canvas` | `KNOWN_UNDO_PROBLEMS` and `NOT_UNDOABLE` in `scripts/undo-audit-lists.mjs` |
+| R10 | axe on every kind of tab, menu and window in Light and Dark Gray, and on every ribbon tab and a right-click menu in Light; a keyboard-only walk | `npm run smoke` (after a build), or against `npx vite`: `A11Y_URL=http://localhost:5173/ node scripts/a11y-check.mjs` | `scripts/a11y-known.mjs` |
+| R11, R12 | The UI style guide; the wording lint | `npx vitest run tests/ui-text-lint.test.ts`, or `node scripts/lint-ui-text.mjs` (`--all` lists known problems too, `--prune` deletes the known ones that have been fixed; the test fails until they are gone). It reads every string with words in it, wherever it is in `src/` and `index.html` | `scripts/lint-ui-text-known.mjs`; `ALLOWED` in `scripts/lint-ui-text.mjs` |
+| R13 | Screenshots at three sizes and two looks | `node scripts/screenshot-matrix.mjs [screens]` with `npx vite` running (see Screenshots below) | none: for people to look at |
+| R5, R8, R9, R14 to R16 | The pull request template and review | — | — |
+
+`npm run typecheck:strict` runs before any of them is merged.
+
+## Places that must stay in step
+
+Standing rule R4. Each line is a group of places that do the same job for different things; a change to one is made to all of them, or the pull request says why not. `tests/parity.test.ts` checks that this list names every object kind, kind of tab and text surface in the code, and that rich text comes back on every text surface from every format. Add to the list when you add a group.
+
+- **Kinds of tab** (`Mode` in `src/workspace.ts`: `drawing`, `slides`, `design`, `sheet`, `document`, `si`). Each needs: opening and saving in `Workspace.openBytes` and `Workspace.encode` (`src/workspace.ts`); its menus and ribbons (`data-modes` in `index.html` and `modes` in `src/commands/registry.ts`); its commands (`COMMANDS`, `SHEET_COMMANDS`, `DOC_COMMANDS` in `src/main.ts`, or `run()` in `src/ui/sheet-mode.ts` and `src/ui/doc-mode.ts`); the undo audit (`scripts/undo-audit.mjs`); the smoke test (`scripts/smoke.mjs`), the accessibility check (`MODES` in `scripts/a11y-check.mjs`) and the screenshot matrix (`SCREENS` in `scripts/screenshot-matrix.mjs`).
+- **Object kinds**: atoms, bonds, `Caption`, `Arrow`, and each `Shape.kind` (`line`, `rect`, `oval`, `symbol`, `bracket`, `picture`, `table`, `geo`, `ring`). Each needs: the CDXML writer and reader (`writeCdxml` in `src/io/cdxml-write.ts`, `readCdxml` in `src/io/cdxml.ts`); the PowerPoint writer and reader (`src/io/pptx-write.ts`, `src/io/pptx-read.ts`); drawing (`recordPicture` in `src/render/picture.ts`); picking, moving and sizing (`src/editor/`); copying (`copyDrawing` in `src/io/clipboard.ts`); its right-click menu; and a sample in `tests/field-round-trip.test.ts`. Word and Excel keep drawings whole, as the drawing's contents.
+- **Text surfaces** (every place that holds rich text): `Caption.runs` (text on a drawing), `Shape.text` (text in a design shape), `TableCell.runs`, `TableData.title` and `TableData.notes` (tables), `Shape.holder` (a Smart Scheme box waiting for its structure), `MadeLabel.runs` (made when an atom label is drawn, never saved), a document's text (`DocText` in `src/document/`) and a spreadsheet cell's runs (`Cell.runs` in `src/sheet/workbook.ts`, which keeps subscript and superscript as `pos`: `src/sheet/rich-text.ts`). Each needs: the formatting commands (Bold, Italic, Subscript, Superscript, Formula, Font, Color), typing and editing (`src/ui/caption-editor.ts` and the modes' editors), Find and Replace, spelling, Format Painter (`src/format-painter.ts`) and every writer that saves it. Slide notes are plain text.
+- **Copy and paste**: the Canvas, slides and designs (`copy`, `paste`, `pasteFrom`, `pasteChemistry`, `pasteText`, `pasteTable` in `src/main.ts`; `copyDrawing`, `copySvg`, `copyImage` in `src/io/clipboard.ts`); slides themselves (`copy-slides`, `paste-slides` in `src/main.ts`); the Document (`DocMode.paste`, and the `copyDrawing` and `readPaste` hooks in `src/ui/doc-mode.ts`); the Spreadsheet (`SheetMode.copy`, `paste`, `pasteWith` in `src/ui/sheet-mode.ts`; `src/io/table-clip.ts`). What one tab copies (a drawing as CDXML and a picture, SMILES, cells as an HTML table, plain text) pastes in every other.
+- **Save paths**: the tab's own file (`Workspace.encode`); File ▸ Export (the `export-*` commands); keeping work safe and recovering it (`src/keep/`); Batch Convert (`src/io/batch-convert.ts`); workspace files (`src/io/workspace-file.ts`); printing and PDF (`src/io/pdf.ts`, `src/io/native-print.ts`). A new field reaches every one (`tests/field-round-trip.test.ts` and `tests/open-save-compare.test.ts` check the main ones).
+- **Right-click menus**: the Canvas, a slide and a design (the `contextmenu` handlers in `src/main.ts`); the slide list (`slideListMenu`), keyframes (`keyframeMenu`) and layouts (`layoutItemsMenu`) in `src/main.ts`; the Document (`src/ui/doc-mode.ts`); the Spreadsheet (`src/ui/sheet-mode.ts`); dashboards (`src/ui/dashboard-view.ts`). A ribbon command that acts on the picked object is in that object's right-click menu too, with the same name. The smoke test checks every right-click menu fits a laptop's window.
+
 The `bench/` scripts drive the app in a headless browser to measure speed. Start `npm run build` and `npm run preview` first, then for example `node bench/perf.mjs stress`. They need Playwright's Chromium once: `npx playwright install chromium`.
+
+## The wiki
+
+The repository's [wiki](https://github.com/nathanohare/Chemweave/wiki) is made from the user guide in `docs/`, so write and correct the guide there, never on the wiki: each merge into `main` that changes `docs/` rebuilds the wiki (the **Wiki** workflow, `.github/workflows/wiki.yml`) and replaces edits made on it. `scripts/build-wiki.mjs` lists the wiki's pages and splits the long Canvas page into shorter ones; when you add a `##` section to `docs/guide/drawing.md`, add its heading to one of the Canvas pages there (until then it stays on the main Canvas page). `node scripts/build-wiki.mjs --check` lists any link or picture in `docs/` that leads nowhere, and the unit tests check the same.
 
 ## Where things are
 
@@ -57,9 +115,12 @@ The `bench/` scripts drive the app in a headless browser to measure speed. Start
 |---|---|
 | `src/model.ts` | The drawing: atoms, bonds, text, arrows, shapes, undo and redo |
 | `src/render/` | Drawing to the screen (tiles, bond and label drawing), and pictures for other programs (EMF, SVG, PNG) |
-| `src/editor/` | Mouse tools and hotkeys; align, flip and rotate |
-| `src/ui/` | Tool bar, Style panel, the caption text box and template pictures |
-| `src/richtext.ts` | Styled caption text (bold, subscripts, Greek letters) |
+| `src/editor/` | Mouse tools and keyboard shortcuts; align, flip and rotate |
+| `src/ui/` | Everything on screen around the drawing: toolboxes, ribbons, the Style panel, dialogs and windows, and each mode's own screen (`sheet-mode.ts`, `si-mode.ts` and so on) |
+| `src/commands/` | The command list (`registry.ts`) that the Insert menu and Search are built from |
+| `index.html` | The other menus and the Presentation, Spreadsheet, Document and Design ribbons |
+| `src/ui/canvas-ribbon.ts` | The Canvas ribbon |
+| `src/richtext.ts`, `src/text/` | Styled text (bold, subscripts, Greek letters), text read as chemistry, font measuring |
 | `src/chem/` | Elements, labels, ring and chain geometry, templates, Clean Up Structure, molfile, formula |
 | `scripts/make-templates.mjs` | Makes the template shapes (`src/chem/templates.json`) with RDKit |
 | `src/io/cdxml.ts`, `cdxml-write.ts` | Reading and saving ChemDraw `.cdxml` files |
@@ -70,6 +131,16 @@ The `bench/` scripts drive the app in a headless browser to measure speed. Start
 | `src/design/`, `src/ui/design-panel.ts`, `layers-panel.ts`, `template-gallery.ts` | Design mode: the shape library, the icon library (`design/icons.ts`, data made by `scripts/build-icons.mjs` from `@mdi/svg`), ready-made layouts, the Layers panel |
 | `src/document/` | Document mode: the document, page layout, captions and fields, references and citations, find and replace, printing |
 | `src/io/docx-write.ts`, `docx-read.ts`, `cfb.ts` | Saving and opening Word files, and the ChemDraw objects embedded in them |
+| `src/deck/`, `src/io/pptx-read.ts`, `pptx-write.ts` | Presentation mode: slides, layouts, templates, animation and transitions, and PowerPoint files |
+| `src/sheet/`, `src/io/xlsx-*.ts` | Spreadsheet mode: the workbook, formulas and functions, chemistry functions, charts, templates, and Excel files |
+| `src/si/`, `src/ui/si-mode.ts`, `doc-si.ts` | SI Project: compounds, data, checks and the Supporting Information it builds |
+| `src/kb/` | The Knowledge Base tables and their data, each value with its source |
+| `src/library/` | Your own library of references and compounds, and **Find Structure in Files** |
+| `src/keep/` | AutoSave, recovery of unsaved work and version history |
+| `src/morph/` | Reaction animation (ported from cdxmorph, MIT) and its GIF and MP4 export |
+| `src/recognise/` | Reading structures from pictures and PDFs |
+| `src/ai/` | The Assistant: what a request would send, and the link to the person's own AI model |
+| `src/vendor/` | Third-party code kept in the repository (OPSIN, for name to structure) |
 | `src/worker/` | The RDKit chemistry engine, running in the background |
 | `src-tauri/` | The desktop app shell (Tauri), its settings and icons |
 | `tests/` | Unit tests |
@@ -79,6 +150,8 @@ The `bench/` scripts drive the app in a headless browser to measure speed. Start
 ## Screenshots
 
 The pictures in `docs/images/` are taken by `scripts/screenshots.mjs`, which drives the program in a browser and builds each scene (the scheme, the slides, the sheet, the document, the design, the ring fills, the hover tooltip, the moved toolboxes) from scratch. The animated GIFs are recorded by `scripts/animations.mjs`; both share their helpers in `scripts/shot-lib.mjs`. To take them again after the look changes, start the program (`npm run dev`), then run `node scripts/screenshots.mjs` and `node scripts/animations.mjs` (add names, such as `node scripts/animations.mjs frames spelling`, to record only some). They need Playwright (`npm install --no-save playwright` and `npx playwright install chromium`, or set `CHROMIUM` to a Chromium you already have), and the animations need `ffmpeg` on the path.
+
+For a pull request that changes what people see (standing rule R13), `node scripts/screenshot-matrix.mjs <screen>` takes the screen at 1024 × 700, 1366 × 768 and 1920 × 1080, in Light and Dark Gray, at twice the pixels, into a folder outside the repository (`chemweave-screenshots` in the computer's temporary folder, or `--out <folder>`) with a page, `index.html`, showing them side by side. Start the program first (`npx vite`, then add `--url http://localhost:5173/` if it is on another port). `--list` names the screens: each kind of tab, the File menu, Settings, and the rare states that are easy to forget (`empty`, `floating-toolbox`, `error`, `zoomed-in`). Attach the pictures of the changed screens to the pull request. It uses the same Chromium as the other checks (set `CHROMIUM_PATH` if Playwright's own is missing).
 
 ## What stays out of the repository
 

@@ -12,7 +12,7 @@ import { Range, MAX_ROWS, MAX_COLS, colName, rangeName, normRange, inRange, keyO
 import { formatValue, generalFitting } from '../sheet/numfmt';
 import { readTyped, isError, CellError, maxOf, minOf } from '../sheet/values';
 import { chemPieces, showsChem } from '../sheet/cell-text';
-import { type RunLook, type TextRun, type ToggleLook, looksOf, lookOver, runsOf, runsForInput, looksForInput, sameRuns } from '../sheet/rich-text';
+import { type RunLook, type TextRun, type ToggleLook, looksOf, lookPieces, runsOf, runsForInput, looksForInput, sameRuns } from '../sheet/rich-text';
 import { RichInput } from './rich-input';
 
 /** Keys that format the selected text while typing in a cell. */
@@ -210,6 +210,8 @@ export class SheetView {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private tabsEl: HTMLDivElement;
+  /** The sheet tabs themselves, the tablist (the + beside them is not a tab). */
+  private tabListEl: HTMLDivElement;
   private sels = new Map<Sheet, Selection>();
   private scrolls = new Map<Sheet, { x: number; y: number }>();
   private rows!: Axis;
@@ -235,6 +237,8 @@ export class SheetView {
   private objImages = new Map<string, HTMLImageElement>();
   /** Page Layout > Page Breaks: the lines where pages end, drawn on the grid. */
   showPageBreaks = false;
+  /** Draw the cells and charts only (a template's picture): no selection, pane lines, prompts or drop-down buttons. */
+  bare = false;
   private breakCache: { key: string; rows: Set<number>; cols: Set<number>; manualRows: Set<number>; manualCols: Set<number>; pages: PrintPage[]; innerRows: Set<number>; innerCols: Set<number> } | null = null;
   /** Shows a dashboard sheet in place of the grid. */
   readonly dash: DashboardView;
@@ -293,8 +297,10 @@ export class SheetView {
     this.scroller.append(this.canvas, this.spacer, this.noteLayer, this.input.el, this.promptBox);
     this.tabsEl = document.createElement('div');
     this.tabsEl.className = 'sh-tabs';
-    this.tabsEl.setAttribute('role', 'tablist');
-    this.tabsEl.setAttribute('aria-label', 'Sheets');
+    this.tabListEl = document.createElement('div');
+    this.tabListEl.className = 'sh-tab-list';
+    this.tabListEl.setAttribute('role', 'tablist');
+    this.tabListEl.setAttribute('aria-label', 'Sheets');
     root.append(this.scroller, this.tabsEl);
     this.measureCtx = document.createElement('canvas').getContext('2d')!;
     this.rows = new Axis(0, () => DEFAULT_ROW_H, DEFAULT_ROW_H);
@@ -683,6 +689,11 @@ export class SheetView {
     });
   }
 
+  /** The grid's canvas as last drawn (a template's picture is copied from it). */
+  get picture(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
   /** Draw now (tests and screenshots). */
   draw(): void {
     const s = this.sheet;
@@ -710,7 +721,7 @@ export class SheetView {
       ctx.rect(g.x, g.y, g.w, g.h);
       ctx.clip();
       this.drawRegion(g, budget);
-      this.drawSelection(g);
+      if (!this.bare) this.drawSelection(g);
       ctx.restore();
     }
     if (s.viewOpts?.layout === 'pageBreakPreview') for (const g of regions) this.drawBreakPreview(g);
@@ -718,6 +729,7 @@ export class SheetView {
     this.drawCharts(vw, vh);
     this.drawObjects(vw, vh);
     this.drawHeaders(regions);
+    if (this.bare) { this.host.drawn?.(); return; }
     const { FH, FW, SH, SW, x0, y0 } = this.frozen();
     ctx.strokeStyle = '#9aa3b5';
     ctx.lineWidth = 1;
@@ -1864,6 +1876,10 @@ export class SheetView {
     // part of the text bold, italic… (typed text only, shown as typed)
     const runs = typeof v === 'string' ? runsOf(s.cell(r, c)) : undefined;
     let looks = runs && runs.map((x) => x.text).join('') === text ? looksOf(text, runs) : undefined;
+    // the whole cell struck through, lowered or raised (the Font group, G5-26): drawn as runs, which
+    // take those from the cell's look
+    const wholeLook = !!(style?.strike || style?.pos);
+    if (!looks && wholeLook) looks = looksOf(text, undefined);
     const align = style?.align ?? shown.align;
     const font = this.font(style);
     ctx.font = font;
@@ -1900,8 +1916,8 @@ export class SheetView {
     if (typeof v === 'number' && tw > w - 2 * pad) {
       const general = !style?.numFmt || /^general$/i.test(style.numFmt);
       text = (general ? generalFitting(v, (t) => widthOf(t) <= w - 2 * pad) : null) ?? '#'.repeat(Math.max(1, Math.floor((w - 2 * pad) / Math.max(1, this.textWidth('#', font)))));
+      looks = wholeLook ? looksOf(text, undefined) : undefined;
       tw = widthOf(text);
-      looks = undefined;
     }
     let clipW = w;
     // text too long for its cell runs on over empty cells beside it (as in Excel)
@@ -1989,31 +2005,16 @@ export class SheetView {
     return w;
   }
 
-  /** Text in pieces of one look each: its chemistry (C9H8O4) and its runs' looks (a bold word) over the cell's. */
-  private richPieces(text: string, style: CellStyle | undefined, looks: RunLook[]): { text: string; look: ReturnType<typeof lookOver<CellStyle>> }[] {
-    const chem: { pos?: 'sub' | 'sup'; italic?: boolean }[] = [];
-    if (style?.chem) for (const p of chemPieces(text)) for (let i = 0; i < p.text.length; i++) chem.push({ ...(p.pos !== 'base' ? { pos: p.pos } : {}), ...(p.italic ? { italic: true } : {}) });
-    const out: { text: string; look: ReturnType<typeof lookOver<CellStyle>>; key: string }[] = [];
-    for (let i = 0; i < text.length; i++) {
-      const look = lookOver({ ...style, ...(chem[i]?.italic ? { italic: true } : {}), ...(chem[i]?.pos ? { pos: chem[i].pos } : {}) }, looks[i]);
-      const key = JSON.stringify([look.bold, look.italic, look.underline, look.strike, look.color, look.pos, look.font, look.size]);
-      const last = out[out.length - 1];
-      if (last && last.key === key) last.text += text[i];
-      else out.push({ text: text[i], look, key });
-    }
-    return out;
-  }
-
   private richWidth(text: string, style: CellStyle | undefined, looks: RunLook[]): number {
     let w = 0;
-    for (const p of this.richPieces(text, style, looks)) w += this.textWidth(p.text, this.font(p.look, this.zoom, p.look.pos ?? 'base'));
+    for (const p of lookPieces(text, style, looks)) w += this.textWidth(p.text, this.font(p.look, this.zoom, p.look.pos ?? 'base'));
     return w;
   }
 
   private drawLine(text: string, style: CellStyle | undefined, x: number, w: number, pad: number, baseline: number, align: string, looks?: RunLook[]): void {
     const ctx = this.ctx;
     if (looks && looks.length === text.length) {
-      const pieces = this.richPieces(text, style, looks);
+      const pieces = lookPieces(text, style, looks);
       const tw = this.richWidth(text, style, looks);
       let tx = align === 'right' ? x + w - pad - tw : align === 'center' ? x + (w - tw) / 2 : x + pad;
       const ink = ctx.fillStyle;
@@ -2380,7 +2381,8 @@ export class SheetView {
     add.textContent = '+';
     add.title = 'New sheet';
     add.addEventListener('click', () => this.addSheet());
-    this.tabsEl.replaceChildren(...items, add);
+    this.tabListEl.replaceChildren(...items);
+    this.tabsEl.replaceChildren(this.tabListEl, add);
   }
 
   addSheet(): void {
@@ -2409,7 +2411,7 @@ export class SheetView {
   renameSheet(i: number): void {
     const wb = this.wb;
     if (!wb) return;
-    const btn = this.tabsEl.children[i] as HTMLElement | undefined;
+    const btn = this.tabListEl.children[i] as HTMLElement | undefined;
     if (!btn) return;
     const s = wb.sheets[i];
     const box = document.createElement('input');
@@ -3216,7 +3218,7 @@ export class SheetView {
       const overDrop = this.overDrop(x, y);
       if (overDrop) this.scroller.style.cursor = 'pointer';
       // a note's card says what a tip would (and the drop-down's button what it is)
-      const tip = overDrop ? 'Pick from the list (Alt+Down)' : h.where === 'cell' && !this.sheet?.noteAt(h.r, h.c) ? this.tipFor(h.r, h.c) : '';
+      const tip = overDrop ? 'Choose from the list (Alt+Down)' : h.where === 'cell' && !this.sheet?.noteAt(h.r, h.c) ? this.tipFor(h.r, h.c) : '';
       if (tip !== this.hoverTip) { this.hoverTip = tip; this.scroller.title = tip; }
       return;
     }

@@ -1,20 +1,23 @@
 // Insert ▸ Energy Diagram… (and Edit Energy Diagram…): a table with a row for each species
 // along the reaction coordinate and a pair of columns (name, energy) for each pathway, then how
-// the diagram looks. Names take _ and ^ for sub- and superscripts (TS1^‡ or just TS1‡).
+// the diagram looks. Names are rich text, as in the MO Diagram window: digits of formulas drop as
+// typed, and the bar (or Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+= and Ctrl+Shift+=) makes words bold, italic,
+// underlined, sub- or superscript (a compound's bold number, 3a); _ and ^ still work when pasted.
 
 import { FONT_GROUPS } from '../fonts';
-import { bracketText, largestBarrier, ENERGY_DEFAULTS, ENERGY_PRESETS, PATH_COLOURS, type EnergyBracket, type EnergyDash, type EnergyData, type EnergyLook, type EnergyPath, type EnergyPoint, type GeomLook, type GeomView } from '../design/energy';
+import { bracketText, labelFromParts, labelParts, largestBarrier, ENERGY_DEFAULTS, ENERGY_PRESETS, PATH_COLOURS, type EnergyBracket, type EnergyDash, type EnergyData, type EnergyLook, type EnergyPath, type EnergyPoint, type LabelPart, type GeomLook, type GeomView } from '../design/energy';
 import { askGeomView } from './geom-view-dialog';
 import { HARTREE, pickEnergy, readQmOutput, speciesName, type QmAtom, type QmResult } from '../chem/qm-output';
 import { qmBonds, skeletonMolfile } from '../chem/qm-bonds';
 import type { Contents } from '../model';
 import { popupMenu } from './popup-menu';
+import { RichField } from './rich-field';
 
 /** How the last diagram looked, so a new one starts the same way. */
 let lastLook: Pick<EnergyData, 'style' | 'values' | 'digits' | 'axis' | 'barrier' | 'overall' | 'quantity' | 'unit'> = { ...ENERGY_DEFAULTS, quantity: 'ΔG', unit: 'kcal/mol' };
 
 /** A cell of the table: what is typed, and what came from a Gaussian or ORCA file. */
-interface Cell { label: string; g: string; eh?: number; geom?: QmAtom[]; ehs?: EnergyPoint['ehs']; flat?: EnergyPoint['flat']; drawn?: Contents; view?: GeomView }
+interface Cell { label: string; rich?: LabelPart[]; g: string; eh?: number; geom?: QmAtom[]; ehs?: EnergyPoint['ehs']; flat?: EnergyPoint['flat']; drawn?: Contents; view?: GeomView }
 
 /** Drawing a species' structure from the window: in the drawing area, from the clipboard, from a name or SMILES, and a small picture of one. */
 export interface EnergyStructureHooks {
@@ -71,6 +74,9 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
     form.innerHTML = `<h2>${editing ? 'Edit Energy Diagram' : 'Energy Diagram'} <span class="energy-info" tabindex="0" role="img" aria-label="${HELP}" title="${HELP}"><svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="7" cy="7" r="5.9"/><path d="M7 6.2v3.9" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="4.1" r=".85" fill="currentColor" stroke="none"/></svg></span></h2>
       <label class="ask-row"${editing ? ' hidden' : ''}><span>Start from <span class="energy-info energy-blurb" tabindex="0" role="img"><svg viewBox="0 0 14 14" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="7" cy="7" r="5.9"/><path d="M7 6.2v3.9" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="4.1" r=".85" fill="currentColor" stroke="none"/></svg></span></span><select name="preset"></select></label>
       <canvas class="energy-preview" aria-label="Preview of the diagram" role="img"></canvas>
+      <div class="mo-bar energy-bar" role="toolbar" aria-label="Name formatting">
+        <button type="button" class="mo-fmt" data-look="bold" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button><button type="button" class="mo-fmt" data-look="italic" title="Italic (Ctrl+I)" aria-label="Italic"><i>I</i></button><button type="button" class="mo-fmt" data-look="underline" title="Underline (Ctrl+U)" aria-label="Underline"><u>U</u></button><span class="mo-bar-gap"></span><button type="button" class="mo-fmt" data-fmt="sub" title="Subscript (Ctrl+=)" aria-label="Subscript">X<sub>2</sub></button><button type="button" class="mo-fmt" data-fmt="sup" title="Superscript (Ctrl+Shift+=)" aria-label="Superscript">X<sup>2</sup></button>
+      </div>
       <div class="energy-table-wrap"><table class="energy-table"><thead></thead><tbody></tbody></table></div>
       <p class="energy-rows"><button type="button" data-act="row" title="Another species along the reaction coordinate">+ Species</button>
         <button type="button" data-act="path" title="Another pathway drawn on the same diagram, in its own color">+ Pathway</button>
@@ -112,7 +118,43 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
       <p class="ask-buttons"><button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary">${editing ? 'Redraw' : 'Insert'}</button></p>`;
     const $ = <T extends Element>(q: string) => form.querySelector<T>(q)!;
     const table = $<HTMLTableElement>('.energy-table');
-    let paths: { name: string; color: string; dash?: EnergyDash }[] = [];
+    let paths: { name: string; nameRich?: LabelPart[]; color: string; dash?: EnergyDash }[] = [];
+    // ---- names: rich text fields (species and pathways); the bar works on the one being typed in
+    const fields = new WeakMap<Element, RichField>();
+    let active: RichField | null = null;
+    const bar = $<HTMLElement>('.energy-bar');
+    const typing = () => (active && document.activeElement === active.el ? active : null);
+    const showState = () => {
+      const r = typing();
+      for (const b of bar.querySelectorAll<HTMLButtonElement>('button')) b.disabled = !r;
+      for (const b of bar.querySelectorAll<HTMLButtonElement>('[data-look]')) b.setAttribute('aria-pressed', String(!!r?.hasLook(b.dataset.look as 'bold')));
+      for (const b of bar.querySelectorAll<HTMLButtonElement>('[data-fmt]')) b.setAttribute('aria-pressed', String(!!r?.state(b.dataset.fmt as 'sub')));
+    };
+    // (a field's change redraws the preview, as typing in the form does)
+    const changed = () => form.dispatchEvent(new Event('input'));
+    /** A name's field: its words as drawn (bold, italic, positions), with formulas' digits dropping as typed. */
+    const nameField = (text: string, rich: LabelPart[] | undefined, label: string, placeholder = '') => {
+      const f: RichField = new RichField(labelParts(text, rich), { label, placeholder, looks: true, chem: () => true, done: () => changed(), onState: (x) => { if (x === active) showState(); changed(); },
+        // Enter in a name presses Insert (Redraw), as it does in the window's other boxes
+        keys: (e) => { if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return false; changed(); form.requestSubmit(); return true; } });
+      f.el.classList.add('mo-rich', 'energy-rich');
+      f.el.addEventListener('focus', () => { active = f; showState(); });
+      f.el.addEventListener('blur', () => setTimeout(showState));
+      fields.set(f.el, f);
+      return f;
+    };
+    /** What a name's field holds: its text as the drawing reads it, and its looks (ends trimmed). */
+    const nameOf = (el: Element | null, was: { label: string; rich?: LabelPart[] }): { label: string; rich?: LabelPart[] } => {
+      const f = el ? fields.get(el) : undefined;
+      if (!f) return was;
+      const parts = f.parts().map((p) => ({ ...p }));
+      if (parts.length) { parts[0].text = parts[0].text.replace(/^\s+/, ''); parts[parts.length - 1].text = parts[parts.length - 1].text.replace(/\s+$/, ''); }
+      return labelFromParts(parts.filter((p) => p.text));
+    };
+    // pressing a button keeps the caret where it is
+    bar.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('button')) e.preventDefault(); });
+    for (const b of bar.querySelectorAll<HTMLButtonElement>('[data-look]')) b.addEventListener('click', () => { typing()?.toggleLook(b.dataset.look as 'bold' | 'italic' | 'underline'); showState(); changed(); });
+    for (const b of bar.querySelectorAll<HTMLButtonElement>('[data-fmt]')) b.addEventListener('click', () => { typing()?.toggle(b.dataset.fmt as 'sub' | 'sup'); showState(); changed(); });
     let brackets: EnergyBracket[] = editing?.brackets ? editing.brackets.map((b) => ({ ...b })) : [];
     let rows: Cell[][] = [];
     /** Each row's place along the reaction coordinate, as typed ('' to space it evenly). */
@@ -120,16 +162,20 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
 
     /** Read what is typed back into paths and rows (before the table is redrawn). */
     const read = () => {
-      paths = paths.map((p, j) => ({
-        name: table.querySelector<HTMLInputElement>(`thead input[data-p="${j}"]`)?.value ?? p.name,
+      paths = paths.map((p, j) => {
+        const n = nameOf(table.querySelector(`thead [data-p="${j}"]`), { label: p.name, rich: p.nameRich });
+        return {
+        name: n.label, ...(n.rich ? { nameRich: n.rich } : {}),
         color: table.querySelector<HTMLInputElement>(`thead input[data-c="${j}"]`)?.value ?? p.color,
         ...dashOf(table.querySelector<HTMLSelectElement>(`thead select[data-d="${j}"]`)?.value ?? p.dash ?? ''),
-      }));
+        };
+      });
       xs = [...table.tBodies[0].rows].map((tr) => tr.querySelector<HTMLInputElement>('input[data-x]')?.value ?? '');
       rows = [...table.tBodies[0].rows].map((tr, i) => paths.map((_, j) => {
         const gi = tr.querySelector<HTMLInputElement>(`input[data-g="${j}"]`);
         const was = rows[i]?.[j];
-        const cell: Cell = { label: tr.querySelector<HTMLInputElement>(`input[data-l="${j}"]`)?.value ?? '', g: gi?.value ?? '' };
+        const n = nameOf(tr.querySelector(`[data-l="${j}"]`), { label: was?.label ?? '', rich: was?.rich });
+        const cell: Cell = { label: n.label, ...(n.rich ? { rich: n.rich } : {}), g: gi?.value ?? '' };
         if (was?.geom) cell.geom = was.geom;
         if (was?.ehs) cell.ehs = was.ehs;
         if (was?.flat) cell.flat = was.flat;
@@ -240,9 +286,8 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
       paths.forEach((p, j) => {
         const th = document.createElement('th');
         th.colSpan = structure ? 3 : 2;
-        const name = Object.assign(document.createElement('input'), { value: p.name, placeholder: paths.length > 1 ? `pathway ${j + 1}` : 'pathway (optional)' });
+        const name = nameField(p.name, p.nameRich, `Pathway ${j + 1} name`, paths.length > 1 ? `pathway ${j + 1}` : 'pathway (optional)').el;
         name.dataset.p = String(j);
-        name.setAttribute('aria-label', `Pathway ${j + 1} name`);
         const col = Object.assign(document.createElement('input'), { type: 'color', value: p.color });
         col.dataset.c = String(j);
         col.setAttribute('aria-label', `Pathway ${j + 1} color`);
@@ -295,9 +340,8 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
           redraw();
         });
         paths.forEach((_, j) => {
-          const l = Object.assign(document.createElement('input'), { value: r[j]?.label ?? '' });
+          const l = nameField(r[j]?.label ?? '', r[j]?.rich, `Species ${i + 1}, pathway ${j + 1}`).el;
           l.dataset.l = String(j);
-          l.setAttribute('aria-label', `Species ${i + 1}, pathway ${j + 1}`);
           const g = Object.assign(document.createElement('input'), { value: r[j]?.g ?? '', inputMode: 'decimal' });
           g.dataset.g = String(j);
           g.dataset.v = g.value;
@@ -342,7 +386,7 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
         out.className = 'muted';
         const g = (k: number) => { const v = parseFloat((rows[k]?.[b.path]?.g ?? '').replace(/[−–]/g, '-')); return isFinite(v) ? v : null; };
         const a = g(b.from), z = g(b.to);
-        out.textContent = a === null || z === null || b.from === b.to ? 'pick two species with energies'
+        out.textContent = a === null || z === null || b.from === b.to ? 'select two species with energies'
           : bracketText({ quantity: $<HTMLSelectElement>('select[name=quantity]').value }, { label: name(b.from, b.path), g: a }, { label: name(b.to, b.path), g: z }, (v) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(Number($<HTMLInputElement>('input[name=digits]').value) || 0)).replace('^‡', '‡');
         const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Remove this bracket' });
         del.setAttribute('aria-label', `Take out bracket ${n + 1}`);
@@ -353,11 +397,11 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
     };
     let dragFrom: number | null = null;
     const load = (ps: EnergyPath[]) => {
-      paths = ps.map((p) => ({ name: p.name, color: p.color, ...(p.dash ? { dash: p.dash } : {}) }));
+      paths = ps.map((p) => ({ name: p.name, ...(p.nameRich ? { nameRich: p.nameRich } : {}), color: p.color, ...(p.dash ? { dash: p.dash } : {}) }));
       const n = Math.max(...ps.map((p) => p.points.length));
       rows = Array.from({ length: n }, (_, i) => ps.map((p): Cell => {
         const q = p.points[i];
-        return { label: q?.label ?? '', g: q?.g === null || q === undefined ? '' : String(q.g), ...(q?.eh !== undefined ? { eh: q.eh } : {}), ...(q?.geom ? { geom: q.geom } : {}), ...(q?.ehs ? { ehs: q.ehs } : {}), ...(q?.flat ? { flat: q.flat } : {}), ...(q?.drawn ? { drawn: q.drawn } : {}), ...(q?.view ? { view: q.view } : {}) };
+        return { label: q?.label ?? '', ...(q?.rich ? { rich: q.rich } : {}), g: q?.g === null || q === undefined ? '' : String(q.g), ...(q?.eh !== undefined ? { eh: q.eh } : {}), ...(q?.geom ? { geom: q.geom } : {}), ...(q?.ehs ? { ehs: q.ehs } : {}), ...(q?.flat ? { flat: q.flat } : {}), ...(q?.drawn ? { drawn: q.drawn } : {}), ...(q?.view ? { view: q.view } : {}) };
       }));
       draw();
     };
@@ -367,7 +411,7 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
     const fillPreset = () => {
       const p = ENERGY_PRESETS.find((x) => x.id === presetSel.value) ?? ENERGY_PRESETS[0];
       // what the starting point is, behind the "i" by its label (and on the list itself)
-      const blurb = p.blurb + ' The numbers are only examples: type your own.';
+      const blurb = p.blurb + ' The numbers are only examples: type over them.';
       const i = $<HTMLElement>('.energy-blurb');
       i.title = blurb;
       i.setAttribute('aria-label', blurb);
@@ -478,9 +522,9 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
       read();
       return {
         paths: paths.map((p, j) => ({
-          name: p.name.trim(), color: p.color, ...(p.dash ? { dash: p.dash } : {}),
+          name: p.name.trim(), ...(p.nameRich && p.name.trim() ? { nameRich: p.nameRich } : {}), color: p.color, ...(p.dash ? { dash: p.dash } : {}),
           points: rows.map((r) => ({
-            label: r[j].label.trim(), g: num(r[j].g), ...(r[j].eh !== undefined ? { eh: r[j].eh } : {}), ...(r[j].geom ? { geom: r[j].geom } : {}),
+            label: r[j].label.trim(), ...(r[j].rich && r[j].label.trim() ? { rich: r[j].rich } : {}), g: num(r[j].g), ...(r[j].eh !== undefined ? { eh: r[j].eh } : {}), ...(r[j].geom ? { geom: r[j].geom } : {}),
             ...(r[j].ehs ? { ehs: r[j].ehs } : {}), ...(r[j].flat ? { flat: r[j].flat } : {}), ...(r[j].drawn ? { drawn: r[j].drawn } : {}), ...(r[j].view && Object.keys(r[j].view!).length ? { view: r[j].view } : {}),
           })),
         })),
@@ -542,13 +586,14 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
     form.addEventListener('change', redraw);
     form.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button')) redraw(); });
     // ‡ goes on the species name last typed in
-    let lastName: HTMLInputElement | null = null;
-    table.addEventListener('focusin', (e) => { const t = e.target as HTMLInputElement; if (t.dataset?.l !== undefined) lastName = t; });
+    let lastName: HTMLElement | null = null;
+    table.addEventListener('focusin', (e) => { const t = e.target as HTMLElement; if (t.dataset?.l !== undefined) lastName = t; });
     form.querySelector('[data-act=ddagger]')!.addEventListener('click', () => {
-      const t = lastName && lastName.isConnected ? lastName : table.querySelector<HTMLInputElement>('input[data-l]');
-      if (!t) return;
-      if (!t.value.endsWith('‡')) t.value += '‡';
-      t.focus();
+      const t = lastName && lastName.isConnected ? lastName : table.querySelector<HTMLElement>('[data-l]');
+      const f = t ? fields.get(t) : undefined;
+      if (!f) return;
+      if (!f.text().endsWith('‡')) f.setParts([...f.parts(), { text: '‡' }]);
+      f.el.focus();
       redraw();
     });
     // energies from files: relative to the pathway's first file, in the unit chosen
@@ -611,6 +656,8 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
         odd.length ? `More than one imaginary frequency: ${odd.join(', ')}.` : '',
         theories.size > 1 ? `The files use different levels of theory (${[...theories].join('; ')}).` : '',
         got.some((r) => r.unfinished) ? `Did not finish normally: ${got.filter((r) => r.unfinished).map((r) => r.name).join(', ')}.` : '',
+        got.some((r) => r.missing) ? `The SCF energy is used for ${got.filter((r) => r.missing).map((r) => r.name).join(', ')}: no ${[...new Set(got.filter((r) => r.missing).map((r) => r.missing))].join(' or ')} energy could be read from it.` : '',
+        ...got.filter((r) => r.note).map((r) => `${r.name}: ${r.note}`),
         skipped.length ? `Not read: ${skipped.join(', ')}.` : '',
       ].filter(Boolean).join(' ');
       redraw();

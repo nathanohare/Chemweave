@@ -9,6 +9,8 @@
 
 import type { KeptParts, KeptTree } from '../io/kept-parts';
 import type { ExcelSheetKept, ExcelBookKept } from '../io/xlsx-view';
+import type { KeptSheetOle } from '../io/xlsx-ole';
+import { shiftOle } from './ole-anchor';
 import type { Contents } from '../model';
 import type { DocStyle } from '../style';
 import { ACS_1996 } from '../style';
@@ -47,6 +49,10 @@ export interface CellStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  /** A line through the text (Strikethrough in the Font group). */
+  strike?: boolean;
+  /** The whole text lowered or raised (Subscript, Superscript in the Font group). */
+  pos?: 'sub' | 'sup';
   /** Text colour, "#rrggbb". */
   color?: string;
   /** Fill colour, "#rrggbb". */
@@ -95,6 +101,14 @@ export interface ExcelLook {
   /** The cell's font raised or lowered (superscript, subscript), or struck through. */
   vertAlign?: string;
   strike?: true;
+  /** The underline's kind while the cell is underlined: double, singleAccounting or doubleAccounting (18.18.85), shown as a single line. */
+  u?: string;
+  /**
+   * The cell's font as the file had it, when it has more than is shown here (an outline, a shadow,
+   * a family or character set, a theme colour), with the look it had (`key`): written back while
+   * the cell's font still looks so.
+   */
+  font?: { xml: string; key: string };
 }
 
 /** Parts of an Excel file's styles kept to save back with it (see xlsx.ts). */
@@ -137,6 +151,13 @@ export interface Macros {
 export interface Structure {
   id: number;
   contents: Contents;
+  /**
+   * The molfile this drawing was read from (an SD file's record), with a fingerprint of the drawing
+   * as read (structurePrint): saving an SD file writes the record back unchanged while the drawing
+   * still matches, so 3-D coordinates, the header and anything not drawn (S-groups, query atoms)
+   * are kept. A drawing edited since is written afresh.
+   */
+  source?: { molblock: string; print: string };
 }
 
 export interface Cell {
@@ -260,8 +281,8 @@ export function valueInput(v: Value | CellError): string {
 
 let nextStructureId = 1;
 /** A new structure from a drawing. */
-export function makeStructure(contents: Contents): Structure {
-  return { id: nextStructureId++, contents };
+export function makeStructure(contents: Contents, source?: Structure['source']): Structure {
+  return { id: nextStructureId++, contents, ...(source ? { source } : {}) };
 }
 
 /** A cell with nothing in it and no formatting. */
@@ -308,8 +329,8 @@ function patchStyleWith(s: CellStyle | undefined, patch: Partial<CellStyle>): Ce
 
 type MapField = 'cells' | 'colWidths' | 'rowHeights' | 'fittedRows' | 'colDefs' | 'colStyles' | 'hiddenRows' | 'hiddenCols' | 'notes' | 'rowLevels' | 'colLevels';
 type ValueField = 'merges' | 'filter' | 'frozen' | 'split' | 'name' | 'condFormats' | 'tables' | 'charts' | 'dashboard' | 'validations' | 'objects' | 'pageSetup' | 'dataTables' | 'pivots'
-  | 'sparklines' | 'viewOpts' | 'outline';
-const VALUE_FIELDS = new Set<string>(['merges', 'filter', 'frozen', 'split', 'name', 'condFormats', 'tables', 'charts', 'dashboard', 'validations', 'objects', 'pageSetup', 'dataTables', 'pivots', 'sparklines', 'viewOpts', 'outline']);
+  | 'sparklines' | 'viewOpts' | 'outline' | 'ole';
+const VALUE_FIELDS = new Set<string>(['merges', 'filter', 'frozen', 'split', 'name', 'condFormats', 'tables', 'charts', 'dashboard', 'validations', 'objects', 'pageSetup', 'dataTables', 'pivots', 'sparklines', 'viewOpts', 'outline', 'ole']);
 
 interface Change {
   sheet: Sheet | null; // null: the workbook's list of sheets, its names, theme or custom views
@@ -340,6 +361,8 @@ export class Sheet {
   codeName?: string;
   /** What an Excel file said about the sheet that only Excel uses (protection, its tab's colour…), kept to save back. */
   excel?: ExcelSheetKept;
+  /** Objects embedded in the sheet in an Excel file (a ChemDraw structure pasted there), not shown here: kept to save back as they were. */
+  ole?: KeptSheetOle[];
   /**
    * The height in points an Excel file gave rows with none of their own (set by hand when `custom`),
    * saved back with it; `zero`: rows the file doesn't list are hidden (Excel's zeroHeight, for a sheet
@@ -556,28 +579,30 @@ export class Sheet {
    * reaching it, bounded by empty rows and columns.
    */
   currentRegion(row: number, col: number): Range {
-    let r: Range = { r1: row, c1: col, r2: row, c2: col };
+    const r: Range = { r1: row, c1: col, r2: row, c2: col };
     const filled = (rr: number, cc: number) => rr >= 0 && cc >= 0 && (this.values.has(keyOf(rr, cc)) || !!this.cell(rr, cc)?.structure);
+    // is anything filled on the line just outside one side (corners included)?
+    const touches = (side: Side): boolean => {
+      if (side === 'top' || side === 'bottom') {
+        const rr = side === 'top' ? r.r1 - 1 : r.r2 + 1;
+        if (rr < 0) return false;
+        for (let cc = r.c1 - 1; cc <= r.c2 + 1; cc++) if (filled(rr, cc)) return true;
+        return false;
+      }
+      const cc = side === 'left' ? r.c1 - 1 : r.c2 + 1;
+      if (cc < 0) return false;
+      for (let rr = r.r1 - 1; rr <= r.r2 + 1; rr++) if (filled(rr, cc)) return true;
+      return false;
+    };
+    // each side grows as far as it goes before the others are looked at: the same region as growing
+    // a line at a time all round (it only ever grows), without scanning the long sides once per row
+    // (a 20,000-row table took minutes; G5-28 review R01)
     for (let grew = true; grew; ) {
       grew = false;
-      const tryGrow = (side: Side) => {
-        const n = { ...r };
-        if (side === 'top') n.r1--; else if (side === 'bottom') n.r2++; else if (side === 'left') n.c1--; else n.c2++;
-        if (n.r1 < 0 || n.c1 < 0) return;
-        const line: [number, number][] = [];
-        if (side === 'top' || side === 'bottom') {
-          const rr = side === 'top' ? n.r1 : n.r2;
-          for (let cc = n.c1 - 1; cc <= n.c2 + 1; cc++) line.push([rr, cc]);
-        } else {
-          const cc = side === 'left' ? n.c1 : n.c2;
-          for (let rr = n.r1 - 1; rr <= n.r2 + 1; rr++) line.push([rr, cc]);
-        }
-        if (line.some(([a, b]) => filled(a, b))) {
-          r = n;
-          grew = true;
-        }
-      };
-      (['top', 'bottom', 'left', 'right'] as Side[]).forEach(tryGrow);
+      while (touches('bottom')) { r.r2++; grew = true; }
+      while (touches('top')) { r.r1--; grew = true; }
+      while (touches('right')) { r.c2++; grew = true; }
+      while (touches('left')) { r.c1--; grew = true; }
     }
     return r;
   }
@@ -590,6 +615,18 @@ export class Sheet {
     if (value === undefined) map.delete(key);
     else map.set(key, value);
     this.wb.record({ sheet: this, field, key: key as unknown as number, before, after: value });
+  }
+
+  /** Edit ▸ Data Tools ▸ Remove Embedded Objects: the objects kept from Excel go (with Undo); how many there were. */
+  removeOle(): number {
+    const n = this.ole?.length ?? 0;
+    if (n) this.assign('ole', undefined);
+    return n;
+  }
+
+  /** Why Remove Embedded Objects can't run on this sheet (its menu item off, this as its tooltip), or null when it can (review F2b-R04). */
+  get removeOleBlocked(): string | null {
+    return this.ole?.length ? null : 'This sheet has no embedded objects';
   }
 
   private assign<F extends ValueField>(field: F, value: Sheet[F]): void {
@@ -643,11 +680,11 @@ export class Sheet {
     else if (old?.compound) this.setCell(row, col, { ...old, compound: undefined });
   }
 
-  /** Put a drawing in a cell (null takes it out). */
-  setStructure(row: number, col: number, contents: Contents | null): void {
+  /** Put a drawing in a cell (null takes it out); `source` is the molfile it was read from, if any. */
+  setStructure(row: number, col: number, contents: Contents | null, source?: Structure['source']): void {
     const old = this.cell(row, col);
     const empty = !contents || !contents.atoms.length && !contents.captions.length && !contents.arrows.length && !contents.shapes.length;
-    this.setCell(row, col, { style: old ? old.style : this.colStyles.get(col), structure: empty ? undefined : makeStructure(contents!), link: old?.link });
+    this.setCell(row, col, { style: old ? old.style : this.colStyles.get(col), structure: empty ? undefined : makeStructure(contents!, source), link: old?.link });
   }
 
   /** Change some formatting of every cell in a range (whole columns change the column's formatting too). */
@@ -1072,6 +1109,11 @@ export class Sheet {
       });
       if (os.some((o, i) => o !== this.objects[i])) this.setObjects(os);
     }
+    // objects embedded by Excel (kept, not shown) move with their cells (G2-01)
+    if (this.ole?.length) {
+      const os = this.ole.map((o) => shiftOle(o, axis, at, count));
+      if (os.some((o, i) => o !== this.ole![i])) this.assign('ole', os);
+    }
     if (this.dataTables.length) {
       const ts = this.dataTables.map((t) => ({ ...t, ref: moveRange(t.ref)! })).filter((t) => t.ref);
       if (JSON.stringify(ts) !== JSON.stringify(this.dataTables)) this.setDataTables(ts);
@@ -1435,7 +1477,8 @@ export class Workbook {
     } finally {
       const { entry } = this.tx!;
       this.tx = null;
-      entry.changes = entry.changes.filter((c) => c.before !== c.after);
+      // (a change back to the same value, such as Unfreeze Panes with nothing frozen, is none)
+      entry.changes = entry.changes.filter((c) => !sameValue(c.before, c.after));
       if (entry.changes.length) {
         entry.after = after?.() ?? before;
         this.undoList.push(entry);
@@ -2533,4 +2576,16 @@ function caseOrder(a: string, b: string): number {
     if (la !== lb) return la ? -1 : 1;
   }
   return 0;
+}
+
+/** Whether a recorded change's value before and after are the same (by value; sheets themselves by identity). */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || a instanceof Map || b instanceof Map) return false;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    // (a list of sheets: each sheet points back at the workbook)
+    return false;
+  }
 }

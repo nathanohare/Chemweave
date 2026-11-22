@@ -26,6 +26,13 @@ export interface TableTag {
   cellAlign?: [number, number, string][];
   /** Room kept for structures in cells: row, column, width and height. */
   figs?: [number, number, number, number][];
+  /** Cells joined down: row, column and how many rows. */
+  rowSpans?: [number, number, number][];
+  /** Cells shaded: row, column and colour. */
+  fills?: [number, number, string][];
+  /** The table style (PowerPoint's, used on drawings too) and which parts it picks out. */
+  style?: string;
+  look?: TableData['look'];
 }
 
 export interface Borders { left: number; top: number; bottom: number; right: number }
@@ -113,6 +120,18 @@ export function applyTableTag(t: TableData, tag: TableTag | null, fromBorders: {
   }
   for (const [r, c, w, h] of tag.figs ?? []) {
     if (rows[r]?.[c] && w > 0 && h > 0) rows[r][c] = { ...rows[r][c], fig: { w, h } };
+  }
+  for (const [r, c, n] of Array.isArray(tag.rowSpans) ? tag.rowSpans : []) {
+    if (rows[r]?.[c] && typeof n === 'number' && n > 1 && r + n <= t.rows.length) rows[r][c] = { ...rows[r][c], rowSpan: Math.round(n) };
+  }
+  for (const [r, c, f] of Array.isArray(tag.fills) ? tag.fills : []) {
+    if (rows[r]?.[c] && typeof f === 'string' && f) rows[r][c] = { ...rows[r][c], fill: f };
+  }
+  if (typeof tag.style === 'string' && tag.style) out.style = tag.style;
+  if (tag.look && typeof tag.look === 'object') {
+    const look: NonNullable<TableData['look']> = {};
+    for (const [k, v] of Object.entries(tag.look)) if (typeof v === 'boolean') (look as Record<string, boolean>)[k] = v;
+    if (Object.keys(look).length) out.look = look;
   }
   out.rows = rows;
   return out;

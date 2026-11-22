@@ -57,6 +57,15 @@ export function handleCursor(which: HandleId): string {
   }
 }
 
+/** A resize handle's pointer on a box turned `deg` degrees clockwise: the two-way arrow nearest its turned direction. */
+export function turnedHandleCursor(which: HandleId, deg: number): string {
+  const ways: Partial<Record<HandleId, number>> = { e: 0, se: 45, s: 90, sw: 135, w: 180, nw: 225, n: 270, ne: 315 };
+  const a = ways[which];
+  if (a === undefined || !deg) return handleCursor(which);
+  const k = ((Math.round((a + deg) / 45) % 4) + 4) % 4;
+  return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][k];
+}
+
 /** What the drawing area shows when the pointer is still, by what is under it and the tool. */
 export interface PointerState {
   tool: string;

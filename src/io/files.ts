@@ -198,7 +198,8 @@ export async function openBytesDialog(label: string, types: FileType[], extra: s
 export async function openManyBytesDialog(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array; path?: string }[]> {
   if (desktop) {
     const { open } = await import('@tauri-apps/plugin-dialog');
-    const got = await open({ multiple: true, directory: false, filters: [{ name: label, extensions: exts }] });
+    // (no extensions: any file)
+    const got = await open({ multiple: true, directory: false, ...(exts.length ? { filters: [{ name: label, extensions: exts }] } : {}) });
     const paths = Array.isArray(got) ? got : typeof got === 'string' ? [got] : [];
     const out: { name: string; bytes: Uint8Array; path?: string }[] = [];
     for (const path of paths) out.push({ name: baseName(path), path, bytes: new Uint8Array(await invoke<ArrayBuffer>('read_binary_file', { path })) });
@@ -207,7 +208,7 @@ export async function openManyBytesDialog(label: string, exts: string[]): Promis
   let files: File[];
   if (pw.showOpenFilePicker) {
     try {
-      const handles = await pw.showOpenFilePicker({ multiple: true, types: [{ description: label, accept: { 'application/octet-stream': exts.map((e) => '.' + e) } }] });
+      const handles = await pw.showOpenFilePicker({ multiple: true, ...(exts.length ? { types: [{ description: label, accept: { 'application/octet-stream': exts.map((e) => '.' + e) } }] } : {}) });
       files = await Promise.all(handles.map((h) => h.getFile()));
     } catch (e) {
       if (isAbort(e)) return [];

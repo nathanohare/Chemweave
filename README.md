@@ -8,15 +8,15 @@ Chemweave draws structures and reaction schemes with the keyboard shortcuts Chem
 
 It is free and open source (GPL v3), and runs on Windows, macOS and Linux, with a test version for iPad.
 
-> **Beta.** Chemweave is under active development: new features arrive every few days and some things may not work as they should yet. Save often, and please [report anything that goes wrong](docs/guide/feedback.md). If you would rather update less often, choose **Stable** updates in **Edit ▸ Settings ▸ Online**: those versions are tried out on a real computer before they are offered.
+> **Beta.** Chemweave is under active development: new features arrive every few days and some things may not work as they should yet. Save often, and please [report anything that goes wrong](https://github.com/nathanohare/Chemweave/wiki/Feedback). If you would rather update less often, choose **Stable** updates in **Edit ▸ Settings ▸ Online**: those versions are tried out on a real computer before they are offered.
 
 ### [▶ Try it in your browser](https://nathanohare.github.io/Chemweave/) · [Download the desktop app](https://github.com/nathanohare/Chemweave/releases/latest)
 
 Nothing to install: the browser version opens immediately. The desktop app adds what a browser can't do: editing drawings inside Word and PowerPoint, AutoSave to your own folders, and automatic updates.
 
-**[User guide](docs/README.md)** · **[Send feedback](docs/guide/feedback.md)**
+**[User guide](https://github.com/nathanohare/Chemweave/wiki)** · **[Send feedback](https://github.com/nathanohare/Chemweave/wiki/Feedback)**
 
-![A two-step reaction scheme in Canvas mode (dark interface), with the Analysis panel showing the product's formula and masses](docs/images/drawing-dark-ui.png)
+![A two-step reaction scheme in Canvas mode (dark interface), with the Analysis box on the ribbon showing the product's formula and masses](docs/images/drawing-dark-ui.png)
 
 ## Smart reaction arrows
 
@@ -45,7 +45,7 @@ Draw an arrow between two structures and a **+** box appears above and below it.
 
 ## Colour that means something
 
-Fill rings with a colour, a gradient, hatching or dots (patterns can be see-through over a color), add a drop shadow, and pick out parts of a structure with round or straight highlights, soft-edged, with a shadow, or centered between a double bond's lines. Fills and highlights move with their atoms and come along when you copy a structure.
+Fill rings with a color, a gradient, hatching or dots (patterns can be see-through over a color), add a drop shadow, and pick out parts of a structure with round or straight highlights, soft-edged, with a shadow, or centered between a double bond's lines. Fills and highlights move with their atoms and come along when you copy a structure.
 
 ![Estrone with each ring filled differently (gradient, hatching, dots, solid), and a kinase inhibitor with its parts highlighted in round, diamond and square shapes](docs/images/ring-fills.png)
 
@@ -60,7 +60,7 @@ Fill rings with a colour, a gradient, hatching or dots (patterns can be see-thro
 
 | Abbreviations explained on hover | Name to Structure, offline |
 |---|---|
-| ![Resting the mouse on an OTBS label shows a tooltip with the group drawn out, its full name and formula](docs/images/group-tooltip.png) | ![Typing an IUPAC name into Name to Structure draws ibuprofen, and the side panel shows its formula, masses and stereochemistry](docs/images/name-to-structure.gif) |
+| ![Resting the mouse on an OTBS label shows a tooltip with the group drawn out, its full name and formula](docs/images/group-tooltip.png) | ![Typing an IUPAC name into Name to Structure draws ibuprofen, and the Analysis box shows its formula and masses](docs/images/name-to-structure.gif) |
 | Rest the mouse on OTBS, Boc, CO2Me or any other abbreviation to see what it stands for. | Type a systematic or common name and the structure is drawn. Names are read on your computer; others can be looked up on PubChem. |
 
 Select anything and the side panel shows its formula, exact mass, m/z for the ion you pick, elemental analysis, isotope pattern, cLogP and TPSA. R/S and E/Z come from the IUPAC 2013 rules, including axial chirality, and atoms with impossible valences get a red mark.
@@ -81,7 +81,7 @@ Text on canvases, slides and documents is spell-checked, and a second check catc
 
 The eye button shows the page dark on screen, with your structures in light ink. Files, printing and copies keep their white paper. Choose Graphite, Slate or Warm dark, or mix your own in **View ▸ Window and Colours ▸ Reading Mode Colours**.
 
-![Turning Reading Mode on, then switching its colours between palettes](docs/images/dark-mode.gif)
+![Turning Reading Mode on, then switching its colors between palettes](docs/images/dark-mode.gif)
 
 The interface itself follows your system's dark setting in every mode, as in the screenshots on this page.
 
@@ -95,11 +95,11 @@ Right-drag or middle-drag to pan, Ctrl+wheel to zoom in on the spot under the po
 
 Every keyboard shortcut can be changed (**Edit ▸ Keyboard Shortcuts…**), and the keyboard shortcuts can be exported and shared. Toolboxes unlock to dock on any edge or float anywhere, and **Customize Toolboxes** rearranges any of them (or new ones of your own) by dragging icons about, as on a phone's home screen. The Reading Mode colors, each mode's accent color, the scheme spacing, custom templates, nicknames and drawing styles are all settings, kept in one file you can export and import on another computer.
 
-![Toolboxes moved to new places, Reading Mode in Slate colors, and the Keyboard Shortcuts window open](docs/images/customize.png)
+![Toolboxes moved to new places around the drawing, with Reading Mode in its Slate colors](docs/images/customize.png)
 
 ## Presentations, spreadsheets, documents and designs
 
-Chemweave has five modes: **Canvas** (Chemistry), **Presentation** (Slideshow), **Spreadsheet** (Tables, Charts, and Dashboards), **Document** (Text document) and **Design** (Posters, Graphical abstracts, Figures). Document, Spreadsheet and Presentation modes save .docx, .xlsx and .pptx files that open in Microsoft Word, Excel and PowerPoint, and add what those programs can't do for a chemist.
+Chemweave has five modes, plus an **SI Project** tab for putting together a paper's Supporting Information: **Canvas** (Chemistry), **Presentation** (Slideshow), **Spreadsheet** (Tables, Charts, and Dashboards), **Document** (Text document) and **Design** (Posters, Graphical abstracts, Figures). Document, Spreadsheet and Presentation modes save .docx, .xlsx and .pptx files that open in Microsoft Word, Excel and PowerPoint, and add what those programs can't do for a chemist.
 
 | Presentation | Spreadsheet |
 |---|---|
@@ -108,7 +108,7 @@ Chemweave has five modes: **Canvas** (Chemistry), **Presentation** (Slideshow), 
 
 | Document | Design |
 |---|---|
-| ![Document mode with an experimental paragraph and a structure in the text](docs/images/document.png) | ![Design mode with the conference poster template and the shape library](docs/images/design.png) |
+| ![Document mode with an experimental paragraph and a structure in the text](docs/images/document.png) | ![Design mode with a three-column poster layout and the shape library](docs/images/design.png) |
 | Word's styles and keys, structures in the text, numbered captions, references, tracked changes, comments and equations. Saves as `.docx`. | Posters, TOC graphics and graphical abstracts at the journals' sizes, with templates and a shape library that includes flowcharts and lab glassware. |
 
 **Split View** puts a canvas beside a document, spreadsheet or presentation, so you can draw on one side and insert on the other.
@@ -132,26 +132,26 @@ Nothing is locked into a format of our own. Each mode saves the file type its pr
 | Document | `.docx` | `.docx` | Word |
 | Spreadsheet | `.xlsx`, `.csv`, `.sdf` | `.xlsx`, `.csv`, `.sdf` | Excel |
 
-In Word, PowerPoint and Excel your structures show as sharp pictures; open the file in Chemweave again and they are editable structures, even after Office has saved it. Drawings also export as PDF, PNG, SVG and Molfile. [Files and sharing](docs/guide/files-and-sharing.md) has the details.
+In Word, PowerPoint and Excel your structures show as sharp pictures; open the file in Chemweave again and they are editable structures, even after Office has saved it. Drawings also export as PDF, PNG, SVG and Molfile. [Files and sharing](https://github.com/nathanohare/Chemweave/wiki/Files-and-Sharing) has the details.
 
 ## Install
 
 Download the installer for your computer from the **[latest release](https://github.com/nathanohare/Chemweave/releases/latest)**:
 
-- **Windows**: the file ending in `x64-setup.exe`. Windows will warn that the installer isn't signed: click **More info**, then **Run anyway**. It installs for you alone, so it doesn't need administrator rights. To run it from a flash drive or a folder without installing anything, take `x64-portable.zip` instead and unzip it ([portable copy](docs/guide/getting-started.md#windows-without-installing-portable-copy)).
+- **Windows**: the file ending in `x64-setup.exe`. Windows will warn that the installer isn't signed: click **More info**, then **Run anyway**. It installs for you alone, so it doesn't need administrator rights. To run it from a flash drive or a folder without installing anything, take `x64-portable.zip` instead and unzip it ([portable copy](https://github.com/nathanohare/Chemweave/wiki/Getting-Started#windows-without-installing-portable-copy)).
 - **macOS** (Apple silicon or Intel, macOS 11 or newer): the file ending in `universal.dmg`. Open it and drag **Chemweave** into **Applications**. The app is signed and notarised by Apple, so it opens without a warning.
 - **Linux**: the `.AppImage` (any distribution), `.deb` (Ubuntu, Debian) or `.rpm` (Fedora).
-- **iPad**: the iPad app is in testing through Apple's TestFlight. Install the free **[TestFlight](https://apps.apple.com/app/testflight/id899247664)** app from the App Store, then open **[this invitation](https://testflight.apple.com/join/hMdcFJBH)** on the iPad and tap **Accept**, then **Install**. TestFlight offers each new test version as it comes out. Draw with an Apple Pencil or your finger; see [Pen and touch](docs/guide/keyboard-and-mouse.md#pen-and-touch-tablets).
+- **iPad**: the iPad app is in testing through Apple's TestFlight. Install the free **[TestFlight](https://apps.apple.com/app/testflight/id899247664)** app from the App Store, then open **[this invitation](https://testflight.apple.com/join/hMdcFJBH)** on the iPad and tap **Accept**, then **Install**. TestFlight offers each new test version as it comes out. Draw with an Apple Pencil or your finger; see [Pen and touch](https://github.com/nathanohare/Chemweave/wiki/Keyboard-and-Mouse#pen-and-touch-tablets).
 
-Once installed, Chemweave keeps itself up to date: it offers each new version when it starts. [Getting started](docs/guide/getting-started.md) has the details.
+Once installed, Chemweave keeps itself up to date: it offers each new version when it starts. [Getting started](https://github.com/nathanohare/Chemweave/wiki/Getting-Started) has the details.
 
 ## Learn it
 
-The **[user guide](docs/README.md)** covers each mode, every shortcut key, and the files it reads and writes. Inside Chemweave, **Help ▸ Keyboard Shortcuts and Tips** lists the most used keys, and the **Search** box at the top (Alt+Q) finds any command by name.
+The **[user guide](https://github.com/nathanohare/Chemweave/wiki)** covers each mode, every shortcut key, and the files it reads and writes. Inside Chemweave, **Help ▸ Keyboard Shortcuts and Tips** lists the most used keys, and the **Search** box at the top (Alt+Q) finds any command by name.
 
 ## Feedback
 
-Ideas, problems and questions are welcome. In Chemweave, use **Help ▸ Send Feedback**: it sends your report straight to the team, no account needed, and you choose whether it stays private or appears on the public [issues](https://github.com/nathanohare/Chemweave/issues) page. See [Feedback, problems and ideas](docs/guide/feedback.md).
+Ideas, problems and questions are welcome. In Chemweave, use **Help ▸ Send Feedback**: it sends your report straight to the team, no account needed, and you choose whether it stays private or appears on the public [issues](https://github.com/nathanohare/Chemweave/issues) page. See [Feedback, problems and ideas](https://github.com/nathanohare/Chemweave/wiki/Feedback).
 
 ## Support Chemweave
 
@@ -163,7 +163,7 @@ Chemweave is free and always will be. If it saves you time, you can help keep it
 
 ## For developers
 
-Chemweave is written in TypeScript and runs as a [Tauri](https://tauri.app) desktop app, with [RDKit](https://www.rdkit.org) for the chemistry. [For developers](docs/developers.md) explains how to run it from the source code, how releases are made, and where things are in the code; [TECH-DECISION.md](TECH-DECISION.md) explains why it is built this way.
+Chemweave is written in TypeScript and runs as a [Tauri](https://tauri.app) desktop app, with [RDKit](https://www.rdkit.org) for the chemistry. [For developers](https://github.com/nathanohare/Chemweave/wiki/For-Developers) explains how to run it from the source code, how releases are made, and where things are in the code; [TECH-DECISION.md](TECH-DECISION.md) explains why it is built this way.
 
 ## Licence
 

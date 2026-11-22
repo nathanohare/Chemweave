@@ -117,7 +117,7 @@ export function askProperties(opts: PropertyDialogOptions): Promise<PropertyAnsw
         ion.setAttribute('list', 'prop-adducts');
         ion.className = 'prop-adduct';
         ion.setAttribute('aria-label', 'Ion');
-        ion.title = 'The ion: [M+H]+, [M+Na]+, [M-H]-, [M+2H]2+, [2M+Na]+… (any adduct can be typed)';
+        ion.title = 'The ion: [M+H]⁺, [M+Na]⁺, [M−H]⁻, [M+2H]²⁺, [2M+Na]⁺… (any adduct can be typed, such as [M+H]+)';
         ion.addEventListener('input', () => { box.checked = true; });
         const dl = document.createElement('datalist');
         dl.id = 'prop-adducts';

@@ -12,13 +12,13 @@
 
 import type { PinnedComment } from '../document/comments';
 import { COMMENT_CT, COMMENT_REL, writeSlideComments } from './pptx-comments';
-import { Doc, Caption, Shape, TextRun, ParaStyle, Arrow, applyBase, PICTURE_SHADOWS, type Pattern, type PictureFx, type PictureLook, type Media, type TableData, type Glue } from '../model';
+import { Doc, Caption, Shape, TextRun, type Contents, ParaStyle, Arrow, applyBase, PICTURE_SHADOWS, type Pattern, type PictureFx, type PictureLook, type Media, type TableData, type Glue } from '../model';
 import { bakedPart, tidyFx } from '../render/picture-fx';
 import { blipEffectsXml, pictureGeomXml } from './picture-xml';
 import { turnAbout, type Rect, type Vec } from '../geom';
 import { layoutText, ASCENT, FONT_STACK, PPT_SINGLE, type Measure } from '../text/layout';
 import { fitParas, listInfo, autoNumLabel, splitParagraphs } from '../text/paragraphs';
-import { formulaParts, plainText } from '../richtext';
+import { formulaPartsIn, plainText } from '../richtext';
 import { officeTarget, slideOfLink } from '../links';
 import { arrowPoints, shapeBox, boxOf, shapeOrder, elbowRoute } from '../objects';
 import { geoDef, textArea, type GeoStep } from '../design/geo';
@@ -26,13 +26,15 @@ import { layoutTable, cellAlign, spanOf, rowSpanOf, coveringCell, tableText, NOT
 import { PPT_STYLE_IDS, lookOf, slideCellLook, styledRuns, type CellLine, type Side } from '../deck/table-styles';
 import { tableBorders } from './cdxml-table';
 import { writeCdxml } from './cdxml-write';
+import { REF_FIELDS, type RefKind } from './remap-refs';
 import { cdxmlToCdx } from './cdx';
 import { chemdrawProg, chemdrawInObject, chemdrawObject, chemdrawObjectName, OLE_REL, OLE_TYPE } from './ole-object';
 import { extractDrawing } from './clipboard';
 import { contentsAlt, titleOverlaps, roughCaptionBox } from '../accessibility';
 import type { Selection } from '../editor/editor';
-import { Package, NS, REL, emu, xml, xmlAttr, hex6, MediaFiles, structureAltText, bytesHash } from './ooxml';
-import { SLIDE_SIZE_TYPES } from '../deck/deck';
+import { Package, NS, REL, emu, fromEmu, xml, xmlAttr, hex6, MediaFiles, structureAltText, bytesHash } from './ooxml';
+import { SLIDE_SIZE_TYPES, hasItems } from '../deck/deck';
+import { masterBoxes } from '../deck/master-view';
 import { notesParagraphs, type NotesLook } from '../deck/notes-look';
 import { appPropsXml, corePropsXml, writeKeptParts, type KeptParts } from './kept-parts';
 import { olePrint, picturePrint, svgWithDrawing, type KeptOle, type KeptPicture } from './ole-kept';
@@ -48,7 +50,7 @@ import { viewPropsXml, slideGuidesExt } from '../deck/guides';
 import { handoutMasterXml, notesMasterXml } from '../deck/notes-pages';
 import { showPrXml, custShowsXml } from '../deck/show-setup';
 import {
-  Master, SlideSize, LayoutId, type KeptRel, type NotesKept, layoutFrames, deckLayouts, layoutDef, titleLook, isBuiltinLayout, type LayoutDef, type SectionCount, decorFrames, showsNumber, showsFooter, showsDate, dateText, type SlideHF, type DeckSettings, textStyles, isEmptyText, slideColours, slideBackground, decorShapes, type DecorShape, placeRefs, type PlacedRefs,
+  Master, SlideSize, LayoutId, type KeptRel, type NotesKept, layoutFrames, deckLayouts, layoutDef, titleLook, isBuiltinLayout, type LayoutDef, type SectionCount, decorFrames, showsNumber, showsFooter, showsDate, dateText, type SlideHF, type DeckSettings, textStyles, isEmptyText, masterFmt, type PlaceholderFmt, slideColours, slideBackground, decorShapes, type DecorShape, placeRefs, type PlacedRefs,
 } from '../deck/deck';
 import { lineGap, slideRefBlock, slideRefsTag, type RefListSpec, type RefLook, type SlideZotero } from '../deck/slide-refs';
 import { sameBackground, type Background } from '../deck/background';
@@ -89,6 +91,8 @@ export const TAG = {
   design: 'CHEMILLUSTRATOR_DESIGN',
   /** A design shape (Design mode): which shape and how it looks, used when it comes back. */
   geo: 'CHEMILLUSTRATOR_GEO',
+  /** A box, oval or line drawn here (not a design shape): the shape as it was, see plainShape. */
+  shape: 'CHEMILLUSTRATOR_SHAPE',
   /** A connector (an arrow stuck to design shapes, or bent square): the arrow as it was. */
   connector: 'CHEMILLUSTRATOR_CONNECTOR',
   /**
@@ -100,6 +104,8 @@ export const TAG = {
   zoom: 'CHEMILLUSTRATOR_ZOOM',
   /** A picture that is a lab figure (a crystal structure): its data, so it opens in its window again. */
   plate: 'CHEMILLUSTRATOR_PLATE',
+  /** A video's or sound's settings PowerPoint has no place for (its length, Rewind after Playing, a narration), and a video's sound settings. */
+  media: 'CHEMILLUSTRATOR_MEDIA',
   /** The slide's id here, so links kept in our own tags find their slide again. */
   slideId: 'CHEMILLUSTRATOR_SLIDE_ID',
   /** A SmartArt-style diagram (a group of shapes): its text and look, kept on the group. */
@@ -122,6 +128,12 @@ export const TAG = {
   /** Reaction steps whose roles name things in another picture (a scheme built step by step): see step-tag.ts. */
   steps: 'CHEMILLUSTRATOR_STEPS',
   /**
+   * What the slide's things name by id (a caption tied to a structure, a ring fill's atoms, a
+   * pin, a connector's ends, a frame's members…; remap-refs.ts REF_FIELDS), by the ids they had
+   * when saved, so they are joined up again across the slide's pictures, shapes and text.
+   */
+  links: 'CHEMILLUSTRATOR_LINKS',
+  /**
    * A slide made from a canvas slide's keyframe: which canvas, which of its slides, and a print of
    * what it held (to tell whether PowerPoint changed it). The first also has canvasKeep, the canvas itself.
    */
@@ -133,13 +145,21 @@ export const TAG = {
   slideRefs: 'CHEMILLUSTRATOR_SLIDE_REFS',
   /** The text box of a slide's reference lines, made from the references (read back from them, not from the box). */
   refLines: 'CHEMILLUSTRATOR_REF_LINES',
+  /** On a slide: its layout items are its own (Unlock Layout Items), on the slide; its layout is a copy without them. */
+  ownItems: 'CHEMILLUSTRATOR_OWN_ITEMS',
   /**
    * On a structure's picture: prints of the picture written (its SVG and its PNG, which PowerPoint
    * keeps as they are), so the drawing in CHEMILLUSTRATOR_CDXML is used only while PowerPoint still
    * shows that picture (not after Change Picture there).
    */
   picPrint: 'CHEMILLUSTRATOR_PIC_PRINT',
+  /** On a slide: its own Footer switch (Header & Footer > Apply) while the master has no footer text, so no footer placeholder can say it. */
+  slideFooter: 'CHEMILLUSTRATOR_SLIDE_FOOTER',
 };
+
+/** The names PowerPoint (and this program) give shapes on their own: "Picture 3", "TextBox 12" (not read as names given by hand). */
+export const PPT_NAME = /^(Picture|Rectangle|Oval|Line|TextBox|Text Box|Title|Text Placeholder|Content Placeholder|Subtitle|Table|Chart|Equation|Animation|Straight Connector|Straight Arrow Connector|Elbow Connector|Curved Arrow|Connector|Freeform|Group|Diagram|Structure|Highlight|Graphic|Object|Shape|Google Shape|Footer|Slide Number|Date|Rounded Rectangle|Ellipse|Isosceles Triangle|Right Arrow|Arrow)( Placeholder)? \d+$/i;
+
 
 /**
  * PowerPoint (365 for Windows) cuts a tag's value at this many characters when it saves, without
@@ -286,7 +306,7 @@ export interface DeckData {
   size: SlideSize;
   master: Master;
   /** `id` is the slide's id in the deck, for links to it (#slide=id). */
-  slides: { id?: number; layout: LayoutId; doc: Doc; notes: string; notesKept?: NotesKept; notesLook?: NotesLook; transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; part?: CanvasPart; refs?: string[]; refLook?: Partial<RefLook>; refList?: RefListSpec; zotero?: SlideZotero }[];
+  slides: { id?: number; layout: LayoutId; doc: Doc; notes: string; notesKept?: NotesKept; notesLook?: NotesLook; transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; part?: CanvasPart; refs?: string[]; refLook?: Partial<RefLook>; refList?: RefListSpec; zotero?: SlideZotero; ownItems?: boolean }[];
   /** A design (Design mode): marked so it opens in Design mode again. */
   design?: boolean;
   /** The deck's sections, in order (none when left out). */
@@ -363,6 +383,7 @@ export const MIME_EXT: Record<string, string> = {
 // ---------------------------------------------------------------- what goes where
 
 import { splitSlide, arialMeasure, roughBox, type SlideParts } from '../deck/split-slide';
+import { runKept, keptNow, paraKept, frameNow, pptUnderline } from './pptx-keep';
 import { stackItems, usesStacking, type StackItem } from '../editor/stacking';
 import { stepsTag } from './step-tag';
 export { splitSlide, slideDiagrams, arialMeasure, type SlideParts, type SlideDiagram } from '../deck/split-slide';
@@ -389,9 +410,12 @@ function fieldId(): string {
 export type ColourXml = (color: string | undefined, inner?: string) => string;
 export const srgbXml: ColourXml = (color, inner = '') => `<a:srgbClr val="${hex6(color)}"${inner ? `>${inner}</a:srgbClr>` : '/>'}`;
 
-function runXml(r: TextRun, explicit: { size: number; font: string } | null, hlink?: LinkXml, clr: ColourXml = srgbXml): string {
+function runXml(r: TextRun, explicit: { size: number; font: string } | null, hlink?: LinkXml, clr: ColourXml = srgbXml, para?: readonly TextRun[]): string {
   const click = r.link && hlink ? hlink(r.link) : '';
-  const parts = r.formula && !r.sub && !r.sup ? formulaParts(r.text) : [{ text: r.text, pos: r.sub ? 'sub' : r.sup ? 'sup' : 'base' }];
+  const parts = r.formula && !r.sub && !r.sup ? formulaPartsIn(para, r) : [{ text: r.text, pos: r.sub ? 'sub' : r.sup ? 'sup' : 'base' }];
+  // what the file had that isn't read here, while the looks it goes with are unchanged (pptx-keep.ts)
+  const kept = runKept(r);
+  const now = keptNow(r, kept);
   return parts.map((p) => {
     const size = r.size ?? explicit?.size;
     const font = r.font ?? explicit?.font;
@@ -399,24 +423,30 @@ function runXml(r: TextRun, explicit: { size: number; font: string } | null, hli
     if (size) attrs.push(`sz="${Math.round(size * 100)}"`);
     if (r.bold !== undefined) attrs.push(`b="${r.bold ? 1 : 0}"`);
     if (r.italic !== undefined) attrs.push(`i="${r.italic ? 1 : 0}"`);
-    if (r.underline) attrs.push('u="sng"');
-    if (r.strike) attrs.push('strike="sngStrike"');
+    // (a link that follows the theme has no underline of its own; the underline's and the line's kinds: 21.1.10.82, 21.1.10.79)
+    if (r.underline && !(click && now.plainLink)) attrs.push(`u="${pptUnderline(r.ukind)}"`);
+    if (r.strike) attrs.push(`strike="${r.dstrike ? 'dblStrike' : 'sngStrike'}"`);
     if (r.allCaps) attrs.push('cap="all"');
     else if (r.smallCaps) attrs.push('cap="small"');
     if (r.spacing) attrs.push(`spc="${Math.round(r.spacing * 100)}"`);
     if (r.noKern) attrs.push('kern="0"');
-    if (p.pos === 'sub') attrs.push('baseline="-25000"');
+    else if (now.kern) attrs.push(`kern="${now.kern}"`);
+    const bl = p.pos === 'base' ? undefined : now.baseline(p.pos === 'sub', p.pos === 'sup');
+    if (bl !== undefined && !r.formula) attrs.push(`baseline="${bl}"`);
+    else if (p.pos === 'sub') attrs.push('baseline="-25000"');
     else if (p.pos === 'sup') attrs.push('baseline="30000"');
     attrs.push('dirty="0"');
     const color = r.color ?? (explicit || r.transparency ? '#000000' : undefined);
     const alpha = r.transparency ? `<a:alpha val="${Math.round((1 - r.transparency) * 100000)}"/>` : '';
-    const fill = r.noFill ? '<a:noFill/>' : color ? `<a:solidFill>${clr(color, alpha)}</a:solidFill>` : '';
+    const fill = click && now.plainLink ? '' : now.fill ?? (r.noFill ? '<a:noFill/>' : color ? `<a:solidFill>${clr(color, alpha)}</a:solidFill>` : '');
     // the Font box's text effects: an outline round the letters (a:ln comes first) and a shadow
     const ln = r.outline ? `<a:ln w="${Math.round((r.outlineW ?? 0.75) * 12700)}"><a:solidFill>${clr(r.outline)}</a:solidFill></a:ln>` : '';
-    const shadow = r.shadow ? '<a:effectLst><a:outerShdw blurRad="38100" dist="38100" dir="2700000" algn="tl" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst>' : '';
-    const latin = font ? `<a:latin typeface="${xml(font)}"/><a:cs typeface="${xml(font)}"/>` : '';
+    const shadow = now.fx ?? (r.shadow ? '<a:effectLst><a:outerShdw blurRad="38100" dist="38100" dir="2700000" algn="tl" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst>' : '');
+    // fonts in their order (21.1.2.3.9): Latin (a theme font as the file named it), East Asian, complex script (the file's own, or none), symbol
+    const cs = kept?.cs !== undefined ? kept.cs : font ? `<a:cs typeface="${xml(font)}"/>` : '';
+    const latin = `${now.latin ?? (font ? `<a:latin typeface="${xml(font)}"/>` : '')}${kept?.ea ?? ''}${cs}${kept?.sym ?? ''}`;
     const highlight = r.highlight ? `<a:highlight><a:srgbClr val="${hex6(r.highlight)}"/></a:highlight>` : '';
-    const rPr = `<a:rPr ${attrs.join(' ')}>${ln}${fill}${shadow}${highlight}${latin}${ownColour(click, color)}</a:rPr>`;
+    const rPr = `<a:rPr ${attrs.join(' ')}${kept?.a ?? ''}>${ln}${fill}${shadow}${highlight}${now.ul}${latin}${click && now.plainLink ? click : ownColour(click, color)}${kept?.end ?? ''}</a:rPr>`;
     // a slide number or date: PowerPoint's field, which it fills in
     if (r.field && /^(slidenum|datetime\d*)$/.test(r.field)) return `<a:fld id="${fieldId()}" type="${r.field}">${rPr}<a:t>${xml(p.text)}</a:t></a:fld>`;
     return `<a:r>${rPr}<a:t>${xml(p.text)}</a:t></a:r>`;
@@ -465,13 +495,20 @@ export function paragraphsXml(c: Caption, explicit: { size: number; font: string
     const em = runs[0]?.size ?? explicit?.size ?? defaultSize;
     const attrs: string[] = [];
     const align = ps.align ?? c.justify;
-    attrs.push(`algn="${align === 'center' ? 'ctr' : align === 'right' ? 'r' : align === 'justify' ? 'just' : 'l'}"`);
+    // what the file had that isn't read here (pptx-keep.ts); its margins and level while the paragraph is unchanged
+    const { k: kept, same } = paraKept(ps, c.justify);
+    attrs.push(`algn="${align === 'center' ? 'ctr' : align === 'right' ? 'r' : align === 'justify' ? (kept?.dist ? 'dist' : 'just') : 'l'}"`);
     let inner = '';
-    if (c.lineHeight) inner += `<a:lnSpc><a:spcPts val="${Math.round(c.lineHeight * 100)}"/></a:lnSpc>`;
+    // line spacing: the paragraph's own, else the box's (21.1.2.2.5)
+    if (ps.linePt) inner += `<a:lnSpc><a:spcPts val="${Math.round(ps.linePt * 100)}"/></a:lnSpc>`;
+    else if (ps.line) inner += `<a:lnSpc><a:spcPct val="${Math.round(ps.line * 100000)}"/></a:lnSpc>`;
+    else if (c.lineHeight) inner += `<a:lnSpc><a:spcPts val="${Math.round(c.lineHeight * 100)}"/></a:lnSpc>`;
     else if (c.lineSpacing && c.lineSpacing !== 1) inner += `<a:lnSpc><a:spcPct val="${Math.round(c.lineSpacing * 100000)}"/></a:lnSpc>`;
     if (ps.spaceBefore) inner += `<a:spcBef><a:spcPts val="${Math.round(ps.spaceBefore * 100)}"/></a:spcBef>`;
     if (ps.spaceAfter) inner += `<a:spcAft><a:spcPts val="${Math.round(ps.spaceAfter * 100)}"/></a:spcAft>`;
     const indent = ps.indent ?? 0;
+    // (the bullet's colour and size come before its font and character; tab stops after: 21.1.2.2.7)
+    if (ps.list && !ps.cont && kept?.bu && same) inner += kept.bu;
     if (ps.list) {
       // the same places as on screen: the marker one step in per level, the text after it
       const level = Math.max(0, Math.min(8, ps.level ?? 0));
@@ -494,9 +531,18 @@ export function paragraphsXml(c: Caption, explicit: { size: number; font: string
       }
     } else {
       attrs.push(`marL="${emu(indent)}"`, 'indent="0"');
+      if (same && kept?.lvl) attrs.push(`lvl="${kept.lvl}"`);
       inner += '<a:buNone/>';
     }
-    const body = runs.map((r) => runXml(r, explicit, hlink, clr)).join('');
+    if (ps.tabs?.length) inner += `<a:tabLst>${ps.tabs.map((t) => `<a:tab pos="${emu(t.pos)}" algn="${t.kind === 'center' ? 'ctr' : t.kind === 'right' ? 'r' : t.kind === 'decimal' ? 'dec' : 'l'}"/>`).join('')}</a:tabLst>`;
+    // the margins PowerPoint had, while the paragraph's list, level and indent are as read
+    if (same && kept?.marL !== undefined) {
+      const at = (name: string, v: string | undefined) => { const j = attrs.findIndex((a) => a.startsWith(`${name}=`)); if (v !== undefined && j >= 0) attrs[j] = `${name}="${v}"`; };
+      at('marL', kept.marL);
+      at('indent', kept.indent);
+    }
+    if (kept?.a) attrs.push(kept.a.trim());
+    const body = runs.map((r) => runXml(r, explicit, hlink, clr, runs)).join('');
     const end = `<a:endParaRPr ${lang}${explicit ? ` sz="${Math.round(em * 100)}"` : ''} dirty="0"/>`;
     return `<a:p><a:pPr ${attrs.join(' ')}>${inner}</a:pPr>${body}${end}</a:p>`;
   }).join('');
@@ -734,9 +780,14 @@ class Writer {
     // layouts first, so the master can list them
     const layoutRels: string[] = [];
     const layouts = deckLayouts(deck.master);
-    for (const [i, l] of layouts.entries()) {
+    // slides with their own copies of the layout items (Unlock Layout Items) use a copy of their
+    // layout without them, after the others (read back by the slides' layout tags, not as layouts)
+    const unlocked = layouts.filter((l) => deck.slides.some((s) => s.ownItems && s.layout === l.id && hasItems(deck.master, l.id)));
+    const variant = new Map<LayoutId, number>();
+    for (const [i, l] of [...layouts, ...unlocked].entries()) {
       const path = `ppt/slideLayouts/slideLayout${i + 1}.xml`;
-      pkg.add(path, await this.layout(path, l), CT.layout);
+      if (i >= layouts.length) variant.set(l.id, i);
+      pkg.add(path, await this.layout(path, l, i >= layouts.length), CT.layout);
       pkg.relate(path, REL.slideMaster, '../slideMasters/slideMaster1.xml');
       layoutRels.push(pkg.relate('ppt/slideMasters/slideMaster1.xml', REL.slideLayout, `../slideLayouts/slideLayout${i + 1}.xml`));
     }
@@ -766,7 +817,8 @@ class Writer {
       const path = `ppt/slides/slide${i + 1}.xml`;
       slideRels.push(pkg.relate(P, REL.slide, `slides/slide${i + 1}.xml`));
       const s = deck.slides[i];
-      pkg.relate(path, REL.slideLayout, `../slideLayouts/slideLayout${Math.max(0, layouts.findIndex((l) => l.id === s.layout)) + 1}.xml`);
+      const lay = (s.ownItems ? variant.get(s.layout) : undefined) ?? Math.max(0, layouts.findIndex((l) => l.id === s.layout));
+      pkg.relate(path, REL.slideLayout, `../slideLayouts/slideLayout${lay + 1}.xml`);
       pkg.add(path, await this.slide(path, i), CT.slide);
       const cm = cmts.slides[i];
       if (cm) {
@@ -830,11 +882,13 @@ class Writer {
   private async master(layoutRels: string[]): Promise<string> {
     const m = this.deck.master;
     const size = this.deck.size;
-    const frames = layoutFrames('title-content', size);
+    // the master's own title and text boxes (Slide Master view), Title and Content's as they come
+    const frames = masterBoxes(m).map((b) => ({ ph: b.ph, x: b.x * size.w, y: b.y * size.h, w: b.w * size.w, h: b.h * size.h, justify: b.justify }));
     const d = decorFrames(size, m);
     const P = 'ppt/slideMasters/slideMaster1.xml';
     const logo = m.logo && d.logo ? await this.picture(P, m.logo.src, d.logo, 'Logo', 90, null) : '';
     const tree = [
+      await this.items(P, m.items, 'title-content'),
       phShape(2, 'Title Placeholder 1', '<p:ph type="title"/>', frames[0], 'Click to edit Master title style', 'anchor="t"'),
       phShape(3, 'Text Placeholder 2', '<p:ph type="body" idx="1"/>', frames[1], 'Click to edit Master text styles', 'anchor="t"'),
       footerShape(4, 'Footer Placeholder 3', '<p:ph type="ftr" sz="quarter" idx="3"/>', d.footer, m, ''),
@@ -854,8 +908,10 @@ class Writer {
       `</p:sldMaster>`;
   }
 
-  private async layout(path: string, def: LayoutDef): Promise<string> {
-    const { id, name } = def;
+  /** A layout's part; `unlocked`: the copy for slides with their own layout items (none on it, nor the master's). */
+  private async layout(path: string, def: LayoutDef, unlocked = false): Promise<string> {
+    const { id } = def;
+    const name = unlocked ? `${def.name} (Unlocked Items)` : def.name;
     const size = this.deck.size;
     const m = this.deck.master;
     const frames = layoutFrames(id, size, m);
@@ -874,7 +930,13 @@ class Writer {
       const prompt = f.ph === 'title' ? 'Click to edit Master title style' : f.ph === 'subtitle' ? 'Click to edit Master subtitle style' : 'Click to edit Master text styles';
       const algn = f.justify === 'center' ? 'ctr' : 'l';
       // (a PowerPoint layout's own text styles for the placeholder, as it had them)
-      const lst = def.boxes[i]?.lst ?? (f.ph === 'subtitle'
+      // (its own look from Slide Master view, over the master's)
+      const look = def.fmt?.[f.ph];
+      const lst = look ? lvl1Xml({
+        ...(f.ph === 'subtitle' ? { algn: 'ctr', bullet: 'none' as const, size: m.subtitleSize } : f.ph === 'title' ? { algn } : {}),
+        ...(own ? { color: f.ph === 'title' ? c.titleColor : c.textColor } : {}),
+        ...look,
+      }) : def.boxes[i]?.lst ?? (f.ph === 'subtitle'
         ? `<a:lvl1pPr marL="0" indent="0" algn="ctr"><a:buNone/><a:defRPr sz="${Math.round(m.subtitleSize * 100)}">${fill(c.textColor)}</a:defRPr></a:lvl1pPr>`
         : f.ph === 'title' ? `<a:lvl1pPr algn="${algn}"><a:defRPr>${fill(c.titleColor)}</a:defRPr></a:lvl1pPr>` : '');
       return phShape(i + 2, `${f.ph === 'title' ? 'Title' : f.ph === 'subtitle' ? 'Subtitle' : def.boxes[i]?.pptType === 'body' ? 'Text Placeholder' : 'Content Placeholder'} ${i + 1}`, f.ph === 'title' ? phs.title! : phs.bodies[other++],
@@ -894,8 +956,32 @@ class Writer {
     const layer = m.art?.layouts?.[id];
     const art = layer?.xml.length ? this.artXml(path, layer, ((this.artIds.layouts ??= {})[id] = [])) : '';
     const map = layer?.clrMap ? `<a:overrideClrMapping ${Object.entries({ ...USUAL_CLRMAP, ...(m.art?.clrMap ?? {}), ...layer.clrMap }).map(([k, v]) => `${k}="${xmlAttr(v)}"`).join(' ')}/>` : '<a:masterClrMapping/>';
-    return `${HEAD}<p:sldLayout ${XMLNS} type="${layoutType(def)}" preserve="1"${layer?.hideMaster ? ' showMasterSp="0"' : ''}><p:cSld name="${xml(name)}">${bg}<p:spTree>${GROUP}${art}${shapes.join('')}</p:spTree></p:cSld>` +
+    // what is drawn on the layout itself, behind its placeholders (after the template's shapes)
+    const items = unlocked ? '' : await this.items(path, def.items, id);
+    shapes.splice(decor.length, 0, items);
+    // the unlocked copy hides the master's shapes (its items are on the slides), so it has the master's artwork and logo itself
+    let masterArt = '';
+    const hideMaster = !!layer?.hideMaster || (unlocked && !!m.items);
+    if (unlocked && m.items && !layer?.hideMaster) {
+      masterArt = m.art?.master ? this.artXml(path, m.art.master, []) : '';
+      if (m.logo && d.logo) shapes.push(await this.picture(path, m.logo.src, d.logo, 'Logo', 90, null));
+    }
+    return `${HEAD}<p:sldLayout ${XMLNS} type="${layoutType(def)}" preserve="1"${hideMaster ? ' showMasterSp="0"' : ''}><p:cSld name="${xml(name)}">${bg}<p:spTree>${GROUP}${masterArt}${art}${shapes.join('')}</p:spTree></p:cSld>` +
       `<p:clrMapOvr>${map}</p:clrMapOvr></p:sldLayout>`;
+  }
+
+  /**
+   * What is drawn on the master or a layout itself (Slide Master view) as PowerPoint shapes in its
+   * part, behind its placeholders: shapes, text and pictures as on a slide, structures as pictures.
+   * (Read back from the master's settings, so they are not taken for a template's artwork.)
+   */
+  private async items(path: string, items: Contents | undefined, layout: LayoutId): Promise<string> {
+    if (!items) return '';
+    const d = new Doc();
+    d.style = { ...this.deck.master.drawing };
+    d.textStyles = textStyles(this.deck.master, layout);
+    d.restoreContents(items);
+    return this.slide(path, -1, { doc: d, layout, firstId: 500 });
   }
 
   /** Which shapes on the master and layouts are the template's artwork (by the ids written), for reading the file back. */
@@ -975,16 +1061,17 @@ class Writer {
 
   // ---------------------------------------------------------------- slides
 
-  private async slide(path: string, index: number): Promise<string> {
-    const s = this.deck.slides[index];
+  private async slide(path: string, index: number, layer?: { doc: Doc; layout: LayoutId; firstId: number }): Promise<string> {
+    // (a master's or layout's items: its shapes alone, ids from firstId)
+    const s: DeckData['slides'][number] = layer ? { layout: layer.layout, doc: layer.doc, notes: '' } : this.deck.slides[index];
     const doc = s.doc;
     this.curPath = path;
     this.clr = this.themeColours(s.layout);
-    this.curPics = layoutPh(layoutDef(this.deck.master, s.layout)).pics;
+    this.curPics = layer ? [] : layoutPh(layoutDef(this.deck.master, s.layout)).pics;
     this.picsUsed = new Set();
     const parts = splitSlide(doc, this.measure);
     const out: string[] = [];
-    let id = 2;
+    let id = layer?.firstId ?? 2;
     // which PowerPoint shapes each object went into, for the animations
     const spids = new Map<string, number[]>();
     const mark = (sel: Partial<Selection>, ...ids: number[]) => {
@@ -1042,7 +1129,7 @@ class Writer {
       mark({ shapes: new Set([p.id]) }, id);
       if (p.kind !== 'picture') {
         spOf.set(p.id, id);
-        out.push(p.kind === 'geo' ? this.geo(path, p, id++, doc, styles.body?.size ?? doc.style.captionSize) : shapeXml(p, id++, doc.style.lineWidth, this.clr));
+        out.push(p.kind === 'geo' ? this.geo(path, p, id++, doc, styles.body?.size ?? doc.style.captionSize) : this.plainShape(path, p, id++, doc.style.lineWidth));
         return;
       }
       const box = { x1: Math.min(p.x1, p.x2), y1: Math.min(p.y1, p.y2), x2: Math.max(p.x1, p.x2), y2: Math.max(p.y1, p.y2) };
@@ -1105,6 +1192,7 @@ class Writer {
       k = e;
     }
     out.splice(first, out.length - first, ...wrapped);
+    if (layer) return out.join('');
     // the layout's picture placeholders no picture is in, empty, as on PowerPoint's slides of that layout
     this.curPics.forEach((ph, k) => {
       if (this.picsUsed.has(k)) return;
@@ -1138,7 +1226,8 @@ class Writer {
     }
     const refTag = slideRefsTag(s);
     const stepTag = stepsTag(doc, drawings.map((d) => d.sel));
-    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims) } : {}), ...turnTag(s.anims, (a) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined)), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...part });
+    const linksTag = slideLinks(doc);
+    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.ownItems ? { [TAG.ownItems]: '1' } : {}), ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims) } : {}), ...turnTag(s.anims, (a) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined)), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...(linksTag ? { [TAG.links]: linksTag } : {}), ...(s.hf?.footer !== undefined && !m.footer.trim() ? { [TAG.slideFooter]: s.hf.footer ? '1' : '0' } : {}), ...part });
     const bg = s.background ? await this.background(path, s.background) : '';
     return `${HEAD}<p:sld ${XMLNS}${s.hideGraphics ? ' showMasterSp="0"' : ''}${s.hidden ? ' show="0"' : ''}><p:cSld>${bg}<p:spTree>${GROUP}${out.join('')}</p:spTree><p:custDataLst><p:tags r:id="${tags}"/></p:custDataLst></p:cSld>` +
       `<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${transitionXml(s.transition)}${timingXml(expandParas(s.anims ?? [], (cid) => { const c = doc.captions.get(cid); return c ? plainText(c.runs).split('\n') : null; }), (a) => spids.get(targetKey(a.target)) ?? [], videos, (t) => spids.get(targetKey(t))?.[0])}` +
@@ -1442,8 +1531,15 @@ class Writer {
     const fade = m.fadeIn || m.fadeOut ? `<p14:fade${m.fadeIn ? ` in="${ms(m.fadeIn)}"` : ''}${m.fadeOut ? ` out="${ms(m.fadeOut)}"` : ''}/>` : '';
     const p14 = trim || fade ? `<p14:media xmlns:p14="${NS_P14}" r:embed="${media}">${trim}${fade}</p14:media>` : `<p14:media xmlns:p14="${NS_P14}" r:embed="${media}"/>`;
     const name = m.audio ? `Audio ${id - 1}` : `Video ${id - 1}`;
+    // what PowerPoint has no place for: its length, Rewind after Playing, a narration, and the
+    // sound's settings (Play Across Slides, Hide During Show) on a video
+    const own: Partial<Media> = {
+      ...(m.length !== undefined ? { length: m.length } : {}), ...(m.rewind ? { rewind: true } : {}), ...(m.narration ? { narration: true } : {}),
+      ...(!m.audio && m.across ? { across: true } : {}), ...(!m.audio && m.hide ? { hide: true } : {}),
+    };
+    const tags = Object.keys(own).length ? `<p:custDataLst><p:tags r:id="${this.addTags(from, { [TAG.media]: JSON.stringify({ v: 1, ...own }) })}"/></p:custDataLst>` : '';
     return `<p:pic><p:nvPicPr><p:cNvPr id="${id}"${nameAttrs(s?.name?.trim() || name, s?.hidden)}><a:hlinkClick r:id="" action="ppaction://media"/></p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>` +
-      `<p:nvPr>${m.audio ? `<a:audioFile r:link="${link}"/>` : `<a:videoFile r:link="${link}"/>`}<p:extLst><p:ext uri="{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}">${p14}</p:ext></p:extLst></p:nvPr></p:nvPicPr>` +
+      `<p:nvPr>${m.audio ? `<a:audioFile r:link="${link}"/>` : `<a:videoFile r:link="${link}"/>`}${tags}<p:extLst><p:ext uri="{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}">${p14}</p:ext></p:extLst></p:nvPr></p:nvPicPr>` +
       `<p:blipFill><a:blip r:embed="${blip}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
       `<p:spPr>${xfrm(box, rotAttr(s?.rot))}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
   }
@@ -1480,6 +1576,23 @@ class Writer {
       `${spPr}${txBody}</p:sp>`;
   }
 
+  /**
+   * A box, oval or line as PowerPoint's shape, with a tag keeping what PowerPoint's shape has no
+   * place for (its group, drawing order, pattern fill, ChemDraw-style line widths and dashes, an
+   * orbital's look…) and a print of its look as written, to tell what PowerPoint changed.
+   */
+  private plainShape(path: string, s: Shape, id: number, lw: number): string {
+    const xmlText = shapeXml(s, id, lw, this.clr);
+    const { id: _, x1: _a, y1: _b, x2: _c, y2: _d, ...look } = s;
+    const spPr = fragment(/<p:spPr>[\s\S]*<\/p:spPr>/.exec(xmlText)?.[0] ?? '');
+    // (with prints of its look and outline as written, to tell what PowerPoint changed: native-print.ts;
+    // not its name and hidden, which PowerPoint's cNvPr has, unless the name is one like PowerPoint's own)
+    const { name, hidden: _h, ...rest } = look;
+    const keep = name !== undefined && PPT_NAME.test(name.trim()) ? { ...rest, name } : rest;
+    const tag = this.addTags(path, { [TAG.shape]: JSON.stringify({ v: 1, s: keep, sid: s.id, ...(spPr ? { pr: spPrPrint(spPr, 'look'), g: spPrPrint(spPr, 'geom') } : {}) }) });
+    return xmlText.replace('<p:nvPr/>', `<p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr>`);
+  }
+
   /** A shape's picture fill as PowerPoint's blipFill, the picture added to the file (null when it can't be read). */
   private picFillXml(path: string, f: NonNullable<Shape['picFill']>): string | null {
     const m = /^data:image\/(png|jpeg|jpg|gif);base64,(.*)$/i.exec(f.src);
@@ -1508,7 +1621,7 @@ class Writer {
     // with a print of its line as written, to tell whether PowerPoint changed it (native-print.ts)
     const lineXml = fragment(`<p:spPr>${geom}${ln}</p:spPr>`);
     const pr = lineXml ? spPrPrint(lineXml, 'look') : '';
-    const tag = this.addTags(path, { [TAG.connector]: JSON.stringify({ v: 1, a: keep, ...(pr ? { pr } : {}) }) });
+    const tag = this.addTags(path, { [TAG.connector]: JSON.stringify({ v: 1, a: keep, sid: r.id, ...(pr ? { pr } : {}) }) });
     const nvPr = `<p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr>`;
     // a curved arrow is a shape drawn along the curve (programs route a connector afresh, square),
     // and so is an elbow PowerPoint has no bent connector for: PowerPoint repairs a connector
@@ -1539,7 +1652,7 @@ class Writer {
     // saves the file): PowerPoint shows the worked-in picture and this program gets the original back
     let baked: Uint8Array | null = null;
     if (pic && bakedPart(fx) && this.opts.bakePicture) baked = await this.opts.bakePicture(pic).catch(() => null);
-    const tagFor = (orig?: { bytes: Uint8Array; mime: string }) => {
+    const tagFor = (orig?: { bytes: Uint8Array; mime: string }, shown?: Uint8Array) => {
       const t: Record<string, unknown> = {};
       if (fx?.bg?.tol !== undefined) t.tol = fx.bg.tol;
       if (orig) {
@@ -1547,6 +1660,11 @@ class Writer {
         // the picture the original belongs to (after Change Picture in PowerPoint it belongs to none)
         if (baked) t.print = bytesHash(baked);
         t.fx = { ...(fx?.bg ? { bg: fx.bg } : {}), ...(fx?.sharpen ? { sharpen: fx.sharpen } : {}) };
+      } else if (fx?.bg || fx?.sharpen) {
+        // not worked in (nothing here could draw it): the picture is the original, and the settings ride with it
+        // (beside a print of that picture: after Change Picture in PowerPoint they belong to none)
+        t.fx = { ...(fx.bg ? { bg: fx.bg } : {}), ...(fx.sharpen ? { sharpen: fx.sharpen } : {}) };
+        if (shown) t.print = bytesHash(shown);
       }
       // a crystal structure keeps its data, so it opens in its window again
       const plate = pic?.plate ? { [TAG.plate]: JSON.stringify(pic.plate) } : {};
@@ -1560,14 +1678,14 @@ class Writer {
         const blip = this.addMedia(from, baked, 'png');
         return picXml(id, name, blip, null, box, crop, tagFor({ bytes: png, mime: 'image/png' }), look, descr, fx, more);
       }
-      return picXml(id, name, this.addMedia(from, png, 'png'), this.addMedia(from, bytes, 'svg'), box, crop, tagFor(), look, descr, fx, more);
+      return picXml(id, name, this.addMedia(from, png, 'png'), this.addMedia(from, bytes, 'svg'), box, crop, tagFor(undefined, png), look, descr, fx, more);
     }
     if (baked) {
       const blip = this.addMedia(from, baked, 'png');
       return picXml(id, name, blip, null, box, crop, tagFor({ bytes, mime }), look, descr, fx, more);
     }
     const own = this.addMedia(from, bytes, ext);
-    return picXml(id, name, own, null, box, crop, tagFor(), look, descr, fx, more);
+    return picXml(id, name, own, null, box, crop, tagFor(undefined, bytes), look, descr, fx, more);
   }
 
   /** A title, text placeholder or text box. */
@@ -1583,10 +1701,23 @@ class Writer {
     const grown = (lay.box.y2 - (lay.lines[0]?.y ?? 0)) + PPT_ASCENT * firstSize + 0.1 * firstSize;
     const height = c.ph && c.boxH ? Math.max(c.boxH, lay.box.y2 - lay.box.y1) : c.fit && c.boxH ? Math.max(c.boxH, c.fit === 'shrink' ? 0 : grown) : grown;
     let box = { x1: c.x, y1: top, x2: c.x + Math.max(width, 1), y2: top + height };
+    // a PowerPoint text box: its own frame (size, anchor, margins), moved with its text and resized as it was here
+    const frame = frameNow(c, emu, {
+      h: grown, w: lay.boxWidth, top,
+      // (for a box the file says doesn't wrap, the text on one line per paragraph, as PowerPoint lays it out)
+      free: () => {
+        const one = layoutText({ ...c, wrap: undefined, single: PPT_SINGLE }, doc.style.captionSize, this.measure);
+        return { h: (one.box.y2 - (one.lines[0]?.y ?? 0)) + PPT_ASCENT * firstSize + 0.1 * firstSize, w: one.boxWidth };
+      },
+    });
+    if (frame) {
+      const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(frame.xfrm);
+      if (off) { const [x, y, w, h] = off.slice(1).map((v) => fromEmu(v)); box = { x1: x, y1: y, x2: x + w, y2: y + h }; }
+    }
     // where the text starts in its box; turned text: the box moved so that PowerPoint, turning it
     // about its middle, puts the text where it is here (turned about where it starts)
     const o = [+(c.x - box.x1).toFixed(3), +(c.y - box.y1).toFixed(3)];
-    if (c.rot) {
+    if (c.rot && !frame) {
       const mid = { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
       const to = turnAbout(mid, c, c.rot);
       box = { x1: box.x1 + to.x - mid.x, y1: box.y1 + to.y - mid.y, x2: box.x2 + to.x - mid.x, y2: box.y2 + to.y - mid.y };
@@ -1601,14 +1732,14 @@ class Writer {
       : '<a:spAutoFit/>';
     const cols = c.cols && c.cols > 1 && c.wrap !== undefined ? ` numCol="${Math.round(c.cols)}"${c.colGap ? ` spcCol="${emu(c.colGap)}"` : ''}` : '';
     const vert = c.dir ? ` vert="${c.dir}"` : '';
-    const bodyPr = `<a:bodyPr wrap="${wrap}"${vert} lIns="0" tIns="0" rIns="0" bIns="0"${cols} rtlCol="0" anchor="t">${fit}</a:bodyPr>`;
+    const bodyPr = frame?.bodyPr ?? `<a:bodyPr wrap="${wrap}"${vert} lIns="0" tIns="0" rIns="0" bIns="0"${cols} rtlCol="0" anchor="t">${fit}</a:bodyPr>`;
     // the caption's exact settings, used when it comes back unchanged from PowerPoint
     const plain = c.runs.map((r) => r.text).join('');
     const at = [box.x1, box.y1, box.x2 - box.x1, box.y2 - box.y1].map((v) => +v.toFixed(2));
     const txBody = `<p:txBody>${bodyPr}<a:lstStyle/>${body}</p:txBody>`;
     // and a print of the text as written (how each piece looks), to tell whether PowerPoint changed it (native-print.ts)
     const pr = textPrint(fragment(txBody));
-    const tag = this.addTags(path, { [TAG.text]: JSON.stringify({ c: { ...c, id: undefined }, plain, at, o, ...(pr ? { pr } : {}) }), ...more });
+    const tag = this.addTags(path, { [TAG.text]: JSON.stringify({ c: { ...c, id: undefined }, sid: c.id, plain, at, o, ...(pr ? { pr } : {}) }), ...more });
     let ph = '';
     if (c.ph) {
       const k = c.ph === 'title' ? 'title' : 'body';
@@ -1626,7 +1757,7 @@ class Writer {
     const quarter = c.dir === 'vert' ? 90 : c.dir === 'vert270' ? -90 : 0;
     const shape = quarter ? swapBox(box) : box;
     const rot = rotAttr((c.rot ?? 0) - quarter);
-    return `<p:sp>${nvSp}<p:spPr>${xfrm(shape, rot)}${geom}</p:spPr>${txBody}</p:sp>`;
+    return `<p:sp>${nvSp}<p:spPr>${frame?.xfrm ?? xfrm(shape, rot)}${geom}</p:spPr>${txBody}</p:sp>`;
   }
 
   /**
@@ -1662,6 +1793,7 @@ class Writer {
     const algnOf = (j: string) => (j === 'center' ? 'ctr' : j === 'right' ? 'r' : j === 'justify' ? 'just' : 'l');
     // each cell's lines: the table style's (with their colours), or the rules in the drawing's colour
     const styled = !!slideCellLook(t, 0, 0);
+    const known = styled && Object.values(PPT_STYLE_IDS).includes(t.style ?? '');
     const linesAt = (r: number, c: number): Partial<Record<Side, CellLine>> => {
       const o = coveringCell(t, r, c);
       if (styled) return slideCellLook(t, o.r, o.c)!.lines;
@@ -1692,8 +1824,10 @@ class Writer {
         }
         const cell = t.rows[r][c] ?? { runs: [] };
         const span = spanOf(t, r, c), down = rowSpanOf(t, r, c);
-        // the style's text colour and bold are written on the runs, as PowerPoint shows them
-        const runs = styledRuns(cell.runs, look);
+        // the style's text colour and bold: left to a style PowerPoint knows by its id, so the text
+        // follows a style picked there as PowerPoint's own tables do (audit G2-04); written on the
+        // runs only under "No Style, No Grid"
+        const runs = known ? cell.runs : styledRuns(cell.runs, look);
         const body = runs.some((x) => x.text)
           ? paragraphsXml({ id: 0, x: 0, y: 0, runs, paras: cell.paras, justify: align }, { size, font }, size, this.measure, this.hlink)
           : empty(algnOf(align));
@@ -2095,22 +2229,51 @@ function footerShape(id: number, name: string, ph: string, r: Rect, m: Master, t
 
 /** The master's title style. */
 function titleLevel(m: Master): string {
-  return `<a:lvl1pPr algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1"><a:lnSpc><a:spcPct val="100000"/></a:lnSpc><a:spcBef><a:spcPct val="0"/></a:spcBef><a:buNone/>` +
-    `<a:defRPr sz="${Math.round(m.titleSize * 100)}" b="${m.titleBold ? 1 : 0}" kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.titleColor)}"/></a:solidFill><a:latin typeface="+mj-lt"/><a:ea typeface="+mj-ea"/><a:cs typeface="+mj-cs"/></a:defRPr></a:lvl1pPr>`;
+  const f = masterFmt(m, 'title');
+  return `<a:lvl1pPr algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1"><a:lnSpc><a:spcPct val="${Math.round((f.lineSpacing ?? 1) * 100000)}"/></a:lnSpc>${spacingXml(f.spaceBefore, f.spaceAfter, true)}${levelBulletXml(f.bullet ?? 'none', 0)}` +
+    `<a:defRPr sz="${Math.round(m.titleSize * 100)}" b="${m.titleBold ? 1 : 0}"${f.italic ? ' i="1"' : ''} kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.titleColor)}"/></a:solidFill><a:latin typeface="+mj-lt"/><a:ea typeface="+mj-ea"/><a:cs typeface="+mj-cs"/></a:defRPr></a:lvl1pPr>`;
 }
 
 /** The master's body text: bullets on every level, placed as on screen. */
 function bodyLevels(m: Master): string {
   const em = m.bodySize;
+  const f = masterFmt(m, 'body');
   const out: string[] = [];
-  const bullets = ['•', '–', '•', '–', '»'];
   for (let l = 0; l < 9; l++) {
     const markLeft = l * 1.6 * em, textLeft = markLeft + 1.1 * em;
+    // (the master's bullets and spacing, from Slide Master view; bullets on every level as they come)
     out.push(`<a:lvl${l + 1}pPr marL="${emu(textLeft)}" indent="${emu(markLeft - textLeft)}" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">` +
-      `<a:lnSpc><a:spcPct val="100000"/></a:lnSpc><a:spcBef><a:spcPts val="0"/></a:spcBef><a:buFont typeface="Arial"/><a:buChar char="${bullets[l % bullets.length]}"/>` +
-      `<a:defRPr sz="${Math.round(em * 100)}" kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.textColor)}"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:lvl${l + 1}pPr>`);
+      `<a:lnSpc><a:spcPct val="${Math.round((f.lineSpacing ?? 1) * 100000)}"/></a:lnSpc>${spacingXml(f.spaceBefore, f.spaceAfter, false)}${levelBulletXml(f.bullet ?? 'bullet', l)}` +
+      `<a:defRPr sz="${Math.round(em * 100)}"${f.italic ? ' i="1"' : ''} kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.textColor)}"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:lvl${l + 1}pPr>`);
   }
   return out.join('');
+}
+
+/** A paragraph's space before (always written, as PowerPoint's masters do) and after, in points. */
+function spacingXml(before = 0, after = 0, pct: boolean): string {
+  return `<a:spcBef>${pct && !before ? '<a:spcPct val="0"/>' : `<a:spcPts val="${Math.round(before * 100)}"/>`}</a:spcBef>${after ? `<a:spcAft><a:spcPts val="${Math.round(after * 100)}"/></a:spcAft>` : ''}`;
+}
+
+/** A level's bullet: none, a numbered list, or the bullet character for that level. */
+function levelBulletXml(b: 'bullet' | 'number' | 'none', level: number): string {
+  if (b === 'none') return '<a:buNone/>';
+  if (b === 'number') return '<a:buFont typeface="+mj-lt"/><a:buAutoNum type="arabicPeriod"/>';
+  return `<a:buFont typeface="Arial"/><a:buChar char="${['•', '–', '•', '–', '»'][level % 5]}"/>`;
+}
+
+/** A layout placeholder's first level as its own look (Slide Master view) sets it. */
+function lvl1Xml(f: PlaceholderFmt & { algn?: string; color?: string }): string {
+  const marL = f.bullet === 'none' ? ' marL="0" indent="0"' : '';
+  const rpr = [
+    f.size ? ` sz="${Math.round(f.size * 100)}"` : '', f.bold !== undefined ? ` b="${f.bold ? 1 : 0}"` : '', f.italic !== undefined ? ` i="${f.italic ? 1 : 0}"` : '',
+  ].join('');
+  const kids = (f.color ? `<a:solidFill><a:srgbClr val="${hex6(f.color)}"/></a:solidFill>` : '') + (f.font ? `<a:latin typeface="${xmlAttr(f.font)}"/>` : '');
+  return `<a:lvl1pPr${marL}${f.algn ? ` algn="${f.algn}"` : ''}>` +
+    (f.lineSpacing !== undefined ? `<a:lnSpc><a:spcPct val="${Math.round(f.lineSpacing * 100000)}"/></a:lnSpc>` : '') +
+    (f.spaceBefore !== undefined ? `<a:spcBef><a:spcPts val="${Math.round(f.spaceBefore * 100)}"/></a:spcBef>` : '') +
+    (f.spaceAfter !== undefined ? `<a:spcAft><a:spcPts val="${Math.round(f.spaceAfter * 100)}"/></a:spcAft>` : '') +
+    (f.bullet ? levelBulletXml(f.bullet, 0) : '') +
+    `<a:defRPr${rpr}>${kids}</a:defRPr></a:lvl1pPr>`;
 }
 
 /** Text that is not a title or placeholder (and the file's default). */
@@ -2258,4 +2421,23 @@ export function turnTag(anims: Anim[] | undefined, saved: (a: Anim) => boolean =
   const live = (anims ?? []).filter(saved);
   const turns = [...mainAnims(live), ...[...triggerSeqs(live).values()].flatMap((g) => g.anims)].filter((a) => a.effect === 'turn3d');
   return turns.length ? { [TAG.turn3d]: JSON.stringify(turns.map((a) => a.view ?? null)) } : {};
+}
+
+/**
+ * The slide's references by id (TAG.links): each thing that names others, with what it names, by
+ * the ids things have on the slide as saved (a structure picture's drawing keeps them as its
+ * elements' ids; text, connectors and shapes in their tags as `sid`). Null when there are none.
+ */
+function slideLinks(doc: Doc): string | null {
+  const out: { k: RefKind; id: number; f: Record<string, unknown> }[] = [];
+  const things: [RefKind, Map<number, object>][] = [['a', doc.atoms], ['b', doc.bonds], ['c', doc.captions], ['r', doc.arrows], ['s', doc.shapes]];
+  for (const [k, m] of things) {
+    for (const o of m.values()) {
+      const x = o as Record<string, unknown> & { id: number };
+      const f: Record<string, unknown> = {};
+      for (const name of REF_FIELDS[k]) if (x[name] !== undefined) f[name] = x[name];
+      if (Object.keys(f).length) out.push({ k, id: x.id, f });
+    }
+  }
+  return out.length ? JSON.stringify(out) : null;
 }

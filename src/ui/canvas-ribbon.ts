@@ -126,7 +126,12 @@ export class CanvasRibbon {
     this.el.setAttribute('aria-label', 'Canvas');
     this.tabRow = document.createElement('div');
     this.tabRow.className = 'rb-tabs';
-    this.tabRow.setAttribute('role', 'tablist');
+    // the tabs in a tablist of their own: the warnings, the gear and ▴ beside them are not tabs
+    const tabList = document.createElement('div');
+    tabList.className = 'rb-tablist';
+    tabList.setAttribute('role', 'tablist');
+    tabList.setAttribute('aria-label', 'Ribbon tabs');
+    this.tabRow.append(tabList);
     this.tabEnd = document.createElement('div');
     this.tabEnd.className = 'cr-tab-end';
     this.bodyEnd = document.createElement('div');
@@ -139,7 +144,7 @@ export class CanvasRibbon {
       b.textContent = tab.title;
       b.setAttribute('aria-selected', String(tab.id === 'home'));
       b.addEventListener('click', () => this.pick(tab.id));
-      this.tabRow.append(b);
+      tabList.append(b);
       this.tabs.set(tab.id, b);
       this.panels.set(tab.id, this.panel(tab));
     }
@@ -194,6 +199,17 @@ export class CanvasRibbon {
       label.className = 'rb-label';
       label.textContent = g.name;
       group.append(row, label);
+      // the Font group's ⬊, as every mode's Font group has one (G5-26)
+      if (g.special === 'font') {
+        const launch = document.createElement('button');
+        launch.type = 'button';
+        launch.className = 'rb-launch';
+        launch.dataset.cmd = 'toolbox-text';
+        launch.title = 'Font settings: the Text Formatting toolbox, with character and line spacing, symbols and every text setting';
+        launch.setAttribute('aria-label', 'Font settings');
+        launch.textContent = '⬊';
+        group.append(launch);
+      }
       p.append(group);
     }
     if (text.font && text.paragraph) this.host.textGroups(text.font, text.paragraph);

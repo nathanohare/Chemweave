@@ -102,7 +102,7 @@ export class ToolWindow {
     const inp = el('input', 'ref-box');
     inp.value = value;
     inp.spellcheck = false;
-    inp.placeholder = 'Pick cells, or type $A$1:$B$9';
+    inp.placeholder = 'Select cells, or type $A$1:$B$9';
     inp.addEventListener('focus', () => { this.lastRef = inp; });
     this.row(label, inp, into);
     if (!this.lastRef) this.lastRef = inp;

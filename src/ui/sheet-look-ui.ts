@@ -131,7 +131,7 @@ export class SheetLook {
   }
 
   private async angleWindow(cur: number | undefined): Promise<void> {
-    const got = await ask('Text orientation', [
+    const got = await ask('Text Orientation', [
       { name: 'deg', label: 'Degrees', value: String(cur === 255 ? 0 : cur ?? 0), type: 'number', unit: '°', help: 'From −90 (turned down) to 90 (turned up); 0 is level.' },
       { name: 'stack', label: 'Stack the letters (one under another)', value: String(cur === 255), type: 'checkbox' },
     ]);

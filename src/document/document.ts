@@ -42,6 +42,8 @@ export interface NamedStyle {
   bold: boolean;
   italic: boolean;
   color?: string;
+  /** Word's theme colour and font for the style, as its file had them (JSON, io/docx-read.ts), written back while `color` and `font` are what they gave. */
+  wth?: string;
   align: Justify;
   /** Space above and below, in points. */
   spaceBefore: number;
@@ -81,6 +83,8 @@ export interface CharStyle {
   allCaps?: boolean;
   strike?: boolean;
   custom?: boolean;
+  /** Word's theme colour and font for the style (see NamedStyle.wth). */
+  wth?: string;
 }
 
 /** A watermark (Design > Watermark): words across every page, behind the text, as Word's text watermarks. */
@@ -368,6 +372,48 @@ export function floatOf(o: DocObject | undefined): Float | undefined {
  * Another program's file kept whole in the document, shown as its picture (Insert > Document > Object, or
  * an object in a Word file): double-clicking it opens the file in its program.
  */
+/**
+ * Make Editable: the picture a structure was made from (a picture of a structure pasted from
+ * another program), kept with it so the two can be compared and the picture put back.
+ */
+export type FromPictureRead = { box?: { x: number; y: number; w: number; h: number } } & (
+  | { graph: { symbols: string[]; coords: [number, number][]; edges: number[][]; confidence: number }; frame: { x: number; y: number; w: number; h: number } }
+  | { molblock: string });
+
+export interface FromPicture {
+  /** The picture as it was: its object whole (size, place on the page, look, cropping). */
+  picture: Extract<DocObject, { kind: 'picture' }>;
+  /** Where the whole picture lies in the structure's points (it is shown over the structure there to compare). */
+  at: { x: number; y: number; w: number; h: number };
+  /** Drawn to look like the picture, or in the document's style. */
+  style: 'match' | 'default';
+  /** How the picture was drawn, as measured (points): kept to say so, and to change style without reading it again. */
+  look?: { bondLength: number; lineWidth: number | null; labelSize: number | null; preset?: string };
+  /**
+   * What the reader read, one entry for each structure: the whole picture (no `box`), or each
+   * drawing of a scheme read on its own (`box`, in the pixels read). Its atoms and their places
+   * (the reader on this computer), or a molfile (an AI model). `px` is the size of the pixels read.
+   */
+  parts?: FromPictureRead[];
+  px?: { w: number; h: number };
+  /** The text read in the rest of the picture (a scheme's reagents, conditions, compound numbers): each line's words with their boxes and how sure (0 to 100), and its baseline, in the pixels read. */
+  texts?: { words: { t: string; box: [number, number, number, number]; c: number }[]; base: number }[];
+  /** Tracing: the picture shown faintly on the structure, where it was, while it is drawn (Convert to Figure, or a structure made editable). */
+  trace?: TraceLook;
+}
+
+/** How the picture is shown to trace over: on or off, how strongly (0 to 1), and in what color. */
+export interface TraceLook {
+  on: boolean;
+  opacity: number;
+  tint: TraceTint;
+}
+export type TraceTint = 'original' | 'gray' | 'blue' | 'red';
+/** Tracing as it starts: off, at 35% in gray. */
+export const TRACE_START: TraceLook = { on: false, opacity: 0.35, tint: 'gray' };
+/** Tracing as kept, or as it starts. */
+export const traceOf = (fp: FromPicture): TraceLook => ({ ...TRACE_START, ...fp.trace });
+
 export interface Embedded {
   /** The program's name for the kind of object, as Word records it (Excel.Sheet.12, Package). */
   prog: string;
@@ -388,7 +434,7 @@ export interface TocLook { font?: string; size?: number; bold?: boolean; italic?
 
 export type DocObject =
   /** A structure, scheme or table: a drawing, edited with the drawing tools. `scale` 1 is the drawing's own size. */
-  | { kind: 'drawing'; contents: Contents; scale?: number; look?: FigureLook; float?: Float; alt?: string; /** A figure: a set area of the page (in the drawing's points) its structures are drawn in, sized by it rather than by them, so drawing inside it never moves the text round it. Never drawn when printed. */ frame?: FigureFrame; /** Turned and flipped, as a picture (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean; /** A Chem4Word structure: its id in the file's CML part, and a fingerprint of the drawing as read (changed = the CML is written afresh). */ c4w?: { guid: string; sig: string }; /** Saved as a ChemDraw object, by this program name (ChemDraw.Document.6.0): one that came from a ChemDraw object stays one, to open in ChemDraw from Word. */ ole?: string; /** Cropping and color changes Word made to its picture: not shown here, saved back to Word while the structure is as read. */ wordLook?: WordLook }
+  | { kind: 'drawing'; contents: Contents; scale?: number; look?: FigureLook; float?: Float; alt?: string; /** A figure: a set area of the page (in the drawing's points) its structures are drawn in, sized by it rather than by them, so drawing inside it never moves the text round it. Never drawn when printed. */ frame?: FigureFrame; /** Turned and flipped, as a picture (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean; /** A Chem4Word structure: its id in the file's CML part, and a fingerprint of the drawing as read (changed = the CML is written afresh). */ c4w?: { guid: string; sig: string }; /** Saved as a ChemDraw object, by this program name (ChemDraw.Document.6.0): one that came from a ChemDraw object stays one, to open in ChemDraw from Word. */ ole?: string; /** Cropping and color changes Word made to its picture: not shown here, saved back to Word while the structure is as read. */ wordLook?: WordLook; /** Made from a picture (Make Editable): the picture, kept to compare with and to go back to. */ fromPicture?: FromPicture }
   /**
    * A picture: its own size is w × h points (`px` its pixels); `scale` 1 is that size. A chart
    * (Insert > Chart) is a picture with its chart and data: drawn from them, saved as Word's chart.

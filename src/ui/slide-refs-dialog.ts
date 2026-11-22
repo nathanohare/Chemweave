@@ -154,7 +154,7 @@ export function editSlideRefs(input: SlideRefsInput): Promise<SlideRefsResult | 
     form.addEventListener('input', showPreview);
     form.addEventListener('change', showPreview);
 
-    const note = el('p', 'muted small', `Checked items are for the ${input.picked > 1 ? `${input.picked} slides picked` : 'slide being edited'}. Apply sets this style on ${input.picked > 1 ? 'them' : 'it'}; Apply to All uses it on every slide. The References slide (Insert ▸ References Slide) lists all of them.`);
+    const note = el('p', 'muted small', `Checked items are for the ${input.picked > 1 ? `${input.picked} selected slides` : 'slide being edited'}. Apply sets this style on ${input.picked > 1 ? 'them' : 'it'}; Apply to All uses it on every slide. The References slide (Insert ▸ References Slide) lists all of them.`);
     const buttons = el('p', 'ask-buttons');
     const cancel = el('button', '', 'Cancel');
     cancel.type = 'button';

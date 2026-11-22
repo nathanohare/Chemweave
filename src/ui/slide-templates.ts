@@ -128,7 +128,7 @@ export function pickSlideTemplate(m: Master, size: SlideSize, defaultId: string 
 
     const opt = document.createElement('label');
     opt.className = 'st-option';
-    opt.append(forNew, document.createTextNode(' Also start new presentations with the template I pick'));
+    opt.append(forNew, document.createTextNode(' Also start new presentations with the template I choose'));
     const buttons = document.createElement('p');
     buttons.className = 'ask-buttons';
     const cancel = document.createElement('button');

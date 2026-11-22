@@ -8,11 +8,26 @@
 // Written from the CML schema (xml-cml.org: molecule, atomArray/atom with elementType, x2, y2,
 // formalCharge, isotopeNumber; bondArray/bond with atomRefs2, order, bondStereo) and Chem4Word's
 // published notes on its use of CML (CML.md in its Apache-licensed repository: the c4w
-// namespace, customXmlPartGuid, S/D/T/A bond orders and W/H/S stereo marks).
+// namespace, customXmlPartGuid, S/D/T/A bond orders and W/H/S stereo marks). Radicals go as the
+// CML schema's spinMultiplicity (2 a doublet, 3 a triplet; audit G1-18); bond looks CML has no mark
+// for (a hollow wedge, a hashed or dashed bond, a dative arrow…) ride in a c4w:display attribute of
+// ours, read back only while the bond's stereo mark is still the one written beside it.
+//
+// Hydrogens and enhanced stereo (audit G1-18). Chem4Word's own CML attributes (its ModelConstants:
+// elementType, formalCharge, isotopeNumber, spinMultiplicity, c4w:explicitH and
+// c4w:hydrogenPlacement, which only say whether and where hydrogens are shown) have no hydrogen
+// count and no stereo groups: Chem4Word works hydrogens out from valence and has no enhanced
+// stereo. So the hydrogen count goes as the CML schema's hydrogenCount (xml-cml.org: the total
+// number of hydrogens on the atom, drawn ones included), written for every element whose count
+// is known and read back as an element label (OH, CH) where it differs from the valence rule; and
+// enhanced stereo goes as ChemAxon's mrvStereoGroup (abs, and1, or2; Marvin Documents format, a
+// CML dialect), which Chem4Word passes over. Both last until Chem4Word itself saves the structure
+// again, as Chem4Word writes only the attributes it knows.
 
 import type { Atom, Bond, Contents } from '../model';
-import { PARTIAL } from '../model';
-import { elementNumber, SYMBOLS } from '../chem/elements';
+import { outsideValence, PARTIAL } from '../model';
+import { elementNumber, hasImplicitH, SYMBOLS } from '../chem/elements';
+import { labelHydrogens, ruleHydrogens, statedHLabel } from '../chem/hydrogen-count';
 import { bytesHash, xml } from './ooxml';
 
 export const CML_NS = 'http://www.xml-cml.org/schema';
@@ -70,6 +85,7 @@ export function readCml(text: string): Contents | null {
   const ids = new Map<string, number>();
   const idsIn = new Map<Element, Map<string, number>>();
   let next = 1;
+  const hTotal = new Map<number, number>();
   for (const a of all(root, 'atom')) {
     const x = Number(a.getAttribute('x2')), y = Number(a.getAttribute('y2'));
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
@@ -85,7 +101,11 @@ export function readCml(text: string): Contents | null {
       charge: Math.round(Number(a.getAttribute('formalCharge') ?? 0)) || 0,
       isotope: Math.round(Number(a.getAttribute('isotopeNumber') ?? 0)) || (type === 'D' ? 2 : type === 'T' ? 3 : 0),
       just: 'auto',
+      ...(SPIN_IN[a.getAttribute('spinMultiplicity') ?? ''] ? { radical: SPIN_IN[a.getAttribute('spinMultiplicity')!] } : {}),
+      ...(enhIn(a.getAttribute('mrvStereoGroup')) ? { enhStereo: enhIn(a.getAttribute('mrvStereoGroup'))! } : {}),
     });
+    const hc = parseInt(a.getAttribute('hydrogenCount') ?? '', 10);
+    if (z !== undefined && hc >= 0) hTotal.set(id, hc);
   }
   if (!atoms.length) return null;
   for (const b of all(root, 'bond')) {
@@ -96,10 +116,56 @@ export function readCml(text: string): Contents | null {
     const o = b.getAttribute('order') ?? 'S';
     const order = ORDERS[o] ?? (Number.isFinite(Number(o)) && Number(o) > 0 ? Math.min(4, Number(o)) : 1);
     const stereo = all(b, 'bondStereo')[0]?.textContent?.trim() ?? '';
-    const display: Bond['display'] = stereo === 'W' ? 'wedge' : stereo === 'H' ? 'hashWedge' : stereo === 'S' ? 'wavy' : stereo === 'Thick' ? 'bold' : order === PARTIAL ? 'dash' : 'solid';
+    let display: Bond['display'] = stereo === 'W' ? 'wedge' : stereo === 'H' ? 'hashWedge' : stereo === 'S' ? 'wavy' : stereo === 'Thick' ? 'bold' : order === PARTIAL ? 'dash' : 'solid';
+    // our own look for it, while its stereo mark is still the one written beside it
+    const own = b.getAttributeNS(C4W_NS, 'display') ?? b.getAttribute('c4w:display');
+    if (own && (DISPLAYS as readonly string[]).includes(own) && (STEREO_OUT[own as Bond['display']] ?? '') === stereo) display = own as Bond['display'];
     bonds.push({ id: next++, a1, a2, order, display, dpos: 'auto' });
   }
+  // an element with the hydrogens the file states, where the valence rule gives another number, is labelled with them (OH, CH)
+  for (const [id, n] of hTotal) {
+    const a = atoms.find((t) => t.id === id)!;
+    const { sum, drawn } = bondsAt(atoms, bonds, id);
+    const label = statedHLabel(a.z, n - drawn, sum, a.charge, a.radical);
+    if (label) a.label = label;
+  }
   return { atoms, bonds, captions: [], arrows: [], shapes: [] };
+}
+
+/** An atom's bond orders that count toward its valence (as the drawing counts them: not dative, hydrogen, ionic or partial bonds), its hydrogen atoms drawn, and whether it has an aromatic bond. */
+function bondsAt(atoms: Atom[], bonds: Bond[], id: number): { sum: number; drawn: number; aromatic: boolean } {
+  let sum = 0, drawn = 0, aromatic = false;
+  for (const b of bonds) {
+    if (b.a1 !== id && b.a2 !== id) continue;
+    const other = atoms.find((t) => t.id === (b.a1 === id ? b.a2 : b.a1));
+    if (other?.z === 1 && !other.label) drawn++;
+    if (b.order === 1.5) aromatic = true;
+    if (!outsideValence(b)) sum += b.order;
+  }
+  return { sum, drawn, aromatic };
+}
+
+/** Enhanced stereo from ChemAxon's mrvStereoGroup (abs, and1, or2). */
+function enhIn(v: string | null): Atom['enhStereo'] | undefined {
+  const m = /^(abs|and|or)(\d*)$/i.exec(v?.trim() ?? '');
+  if (!m) return undefined;
+  return m[1].toLowerCase() === 'abs' ? { type: 'abs' } : { type: m[1].toLowerCase() as 'and' | 'or', group: parseInt(m[2], 10) || 1 };
+}
+
+/** The hydrogens on an atom for CML's hydrogenCount (drawn ones included), or null when not known: a group label, or a count that depends on an aromatic ring. */
+function hydrogenCount(a: Atom, atoms: Atom[], bonds: Bond[]): number | null {
+  if (a.z === 1 || !hasImplicitH(a.z) || cmlElementType(a) !== (SYMBOLS[a.z] || 'C')) return null;
+  const { sum, drawn, aromatic } = bondsAt(atoms, bonds, a.id);
+  const label = a.label?.trim();
+  const rule = aromatic ? null : ruleHydrogens(a.z, sum, a.charge, a.radical);
+  // a label's count, where the rule gives the same or can't say (beside an aromatic bond); a bonded
+  // label that shows another number than the rule (a methyl N labelled "N") leaves the count out, as the
+  // .cml file and this program's molfile do: a reader trusts a stated count (review F1b-R12)
+  const fromLabel = label ? labelHydrogens(label, a.z) : null;
+  // (a label on its own, OH for the hydroxyl radical, is written as it reads: its count stands)
+  const alone = !bonds.some((b) => b.a1 === a.id || b.a2 === a.id);
+  const n = label ? (fromLabel !== null && (alone || rule === null || fromLabel === rule) ? fromLabel : null) : rule;
+  return n === null ? null : n + drawn;
 }
 
 /** Bonds' median length (for scaling between this app's points and Chem4Word's units). */
@@ -110,7 +176,12 @@ function medianBond(c: Contents): number {
 }
 
 const ORDER_OUT: [number, string][] = [[PARTIAL, 'partial01'], [1, 'S'], [1.5, 'A'], [2, 'D'], [3, 'T']];
-const STEREO_OUT: Partial<Record<Bond['display'], string>> = { wedge: 'W', hashWedge: 'H', wavy: 'S', bold: 'Thick' };
+const STEREO_OUT: Partial<Record<Bond['display'], string>> = { wedge: 'W', hashWedge: 'H', wavy: 'S', bold: 'Thick', hollowWedge: 'W', wavyWedge: 'S' };
+/** Bond looks this program draws (the ones a c4w:display attribute can name). */
+const DISPLAYS = ['solid', 'wedge', 'hashWedge', 'hash', 'bold', 'dash', 'wavy', 'dative', 'hollowWedge', 'wavyWedge', 'hydrogen', 'ionic'] as const satisfies readonly Bond['display'][];
+/** The CML schema's spinMultiplicity for a radical, and back (1, a singlet, is also every ordinary atom's: written, never read). */
+const SPIN_OUT: Record<NonNullable<Atom['radical']>, string> = { singlet: '1', doublet: '2', triplet: '3' };
+const SPIN_IN: Record<string, Atom['radical']> = { '2': 'doublet', '3': 'triplet' };
 
 /** An atom's CML elementType: its element, unless its label names a group (a label that is just the element with hydrogens, NH2 or OH, is the element). */
 function cmlElementType(a: Atom): string {
@@ -194,13 +265,21 @@ export function writeCml(c: Contents, guid: string, old?: string): string {
       const sym = cmlElementType(a);
       const charge = a.charge ? ` formalCharge="${a.charge}"` : '';
       const iso = a.isotope ? ` isotopeNumber="${a.isotope}"` : '';
-      return `<cml:atom id="${id}" elementType="${xml(sym)}" x2="${num(a.x)}" y2="${num(a.y)}"${charge}${iso}/>`;
+      const spin = a.radical ? ` spinMultiplicity="${SPIN_OUT[a.radical]}"` : '';
+      const n = hydrogenCount(a, c.atoms, c.bonds);
+      const hc = n !== null ? ` hydrogenCount="${n}"` : '';
+      const e = a.enhStereo;
+      const enh = e ? ` mrvStereoGroup="${e.type === 'abs' ? 'abs' : `${e.type}${e.group ?? 1}`}"` : '';
+      return `<cml:atom id="${id}" elementType="${xml(sym)}" x2="${num(a.x)}" y2="${num(a.y)}"${charge}${iso}${spin}${hc}${enh}/>`;
     });
     const bonds = c.bonds.filter((b) => inMol.has(b.a1) && inMol.has(b.a2));
     const bondXml = bonds.map((b, i) => {
       const order = ORDER_OUT.find(([v]) => Math.abs(v - b.order) < 1e-6)?.[1] ?? (b.order >= 3 ? 'T' : 'S');
       const stereo = STEREO_OUT[b.display];
-      return `<cml:bond id="m${m}.b${i + 1}" atomRefs2="${atomId.get(b.a1)} ${atomId.get(b.a2)}" order="${order}"${stereo ? `><cml:bondStereo>${stereo}</cml:bondStereo></cml:bond>` : '/>'}`;
+      // a look the stereo mark (or, for a partial bond, its order) doesn't say
+      const plain = stereo ? ({ W: 'wedge', H: 'hashWedge', S: 'wavy', Thick: 'bold' } as Record<string, string>)[stereo] : b.order === PARTIAL ? 'dash' : 'solid';
+      const own = b.display !== plain ? ` c4w:display="${b.display}"` : '';
+      return `<cml:bond id="m${m}.b${i + 1}" atomRefs2="${atomId.get(b.a1)} ${atomId.get(b.a2)}" order="${order}"${own}${stereo ? `><cml:bondStereo>${stereo}</cml:bondStereo></cml:bond>` : '/>'}`;
     });
     const sig = chemSig(atoms.map((a) => ({ key: atomId.get(a.id)!, type: cmlElementType(a), charge: a.charge || 0, iso: a.isotope || 0 })),
       bonds.map((b) => ({ a: atomId.get(b.a1)!, b: atomId.get(b.a2)!, order: ORDER_OUT.find(([v]) => Math.abs(v - b.order) < 1e-6)?.[1] ?? (b.order >= 3 ? 'T' : 'S'), stereo: STEREO_OUT[b.display] ?? '' })));

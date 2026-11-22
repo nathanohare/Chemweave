@@ -18,6 +18,23 @@ export function structureDoc(contents: Contents, style: DocStyle): Doc {
   return d;
 }
 
+/**
+ * A fingerprint of a cell's drawing: everything in it, places rounded to 0.01. The same drawing
+ * gives the same text; any change to its chemistry, layout or marks gives another.
+ */
+export function structurePrint(c: Contents): string {
+  // every field of every atom, bond, caption, arrow and shape (numbers to 0.01, keys in order), so
+  // no change the molfile writer would carry (a map number, an attachment, a chiral flag) can pass
+  // as "unchanged" and lose the edit (review F1-R05)
+  const tidy = (v: unknown): unknown => {
+    if (typeof v === 'number') return Math.round(v * 100) / 100;
+    if (Array.isArray(v)) return v.map(tidy);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.keys(v).sort().filter((k) => (v as Record<string, unknown>)[k] !== undefined).map((k) => [k, tidy((v as Record<string, unknown>)[k])]));
+    return v;
+  };
+  return JSON.stringify(tidy([c.atoms, c.bonds, c.captions, c.arrows, c.shapes]));
+}
+
 /** Nothing drawn at all. */
 export function isBlankDrawing(c: Contents): boolean {
   return !c.atoms.length && !c.captions.length && !c.arrows.length && !c.shapes.length;

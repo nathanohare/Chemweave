@@ -153,4 +153,13 @@ describe('abbreviations', () => {
     expect(abbr).toContain('LD₅₀');
     expect(div.textContent).toBe('LD₅₀ (rat, po)');
   });
+
+  it('writes the formulas in the hover text properly too (style guide S27)', () => {
+    const div = document.createElement('div');
+    div.append(explained('2.50 (quint)'));
+    const tip = div.querySelector('abbr')?.title ?? '';
+    expect(tip).toContain('CHD₂');
+    expect(tip).toContain('CD₃');
+    expect(tip).not.toMatch(/CD3|CHD2/);
+  });
 });

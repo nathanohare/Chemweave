@@ -2,17 +2,31 @@
 
 This page covers Design mode: single-page graphics such as TOC graphics, graphical abstracts, posters, flowcharts and workup schemes, and how to export them for a journal.
 
-![A conference poster template in Design mode](../images/design.png)
+![A poster layout (Classic three columns) open in Design mode](../images/design.png)
 
 ## Starting a design
 
-Click **+** at the end of the tab strip and pick **Design**, or choose **File ▸ New ▸ Design…**. A gallery opens with a **Blank page** and six ready-made layouts.
+Click **+** at the end of the tab strip and pick **Design**, or choose **File ▸ New ▸ Blank design**. The **New Design** window opens. Its list on the left has **Blank page** and eight kinds of ready-made layout, each with the number it holds; click one to see its layouts as small pictures, and click a picture to start from it.
 
 A design is a single page. For several pages, use [Presentation](slides.md) instead.
 
+## The Design ribbon
+
+<!-- index: Design ribbon -->
+
+The ribbon over the page has three tabs, and two more that show only while their kind of object is selected.
+
+| Tab | Groups |
+|---|---|
+| **Home** | **Clipboard**, **Shapes and Icons** (opens the library on the left), **Format Favorites**, **Shape Styles** (styles, **Effects** and **Fill**) and **Arrange** (rotate, flip, group, order, align, distribute and the Selection Pane) |
+| **Insert** | **Insert** (Text Box, Picture, Table, Chart, Diagram, Symbol and References), **Connect** (Connector and Elbow) and **Chemistry** (Smart Scheme and Energy Diagram) |
+| **Page** | **Page** (Page Size, Background, Grid and Guides), **Show** (Warnings and Analysis in the side panel) and **Share** (Export PDF, Export Picture and Check for Journal) |
+| **Shape Format** | Shows while a shape is selected: Shape Styles, Effects, Fill and Picture Fill |
+| **Picture Format** | Shows while a picture is selected: Crop, Picture Format and Alt Text |
+
 ## Page sizes
 
-Pick **Blank page** and choose a size. **Page Size** on the ribbon changes it later.
+Pick **Blank page** and choose a size; **Custom size…** there takes any size. **Page Size** on the ribbon's **Page** tab changes it later, and lists every size in the table below (the New Design window shows the ten most used).
 
 | Group | Sizes |
 |---|---|
@@ -25,18 +39,26 @@ You can also type a custom size in in, cm, mm, pt or px. Journals change their r
 
 Structures are drawn larger on bigger pages so they stay readable: at their normal size on journal graphics and paper, twice as large on slides and four times as large on posters.
 
-The ribbon's **Page** group also sets the **Background** color (**Format…** beside it gives the page a gradient, picture or pattern, as in Presentation mode), shows a **Grid** (on screen only, never saved or printed) with its spacing, and turns **Guides** on and off.
+The **Page** tab's **Page** group also sets the **Background** color (**Format…** beside it gives the page a gradient, picture or pattern, as in Presentation mode), shows a **Grid** (on screen only, never saved or printed) with its spacing, and turns **Guides** on and off.
 
 ## Ready-made layouts
 
-| Layout | What it gives you |
-|---|---|
-| **TOC graphic** | Starting material, arrow, product and a one-line message, at the ACS size |
-| **Graphical abstract** | Three panels: the challenge, your approach and the outcome, at the Elsevier size |
-| **Conference poster** | A title banner with room for logos, and three columns of sections (48 × 36 in) |
-| **Flowchart** | A reaction run as steps, with a decision and a loop back, joined by connectors |
-| **Workup scheme** | Glassware from reaction to pure product, with a label under each step |
-| **Timeline** | A project as five milestones on a line |
+<!-- index: Posters, Graphical abstracts, Templates for a design -->
+
+There are 113 layouts, in eight kinds:
+
+| Kind | How many | Examples |
+|---|---|---|
+| **Posters** | 30 | Classic three columns, Four columns, Two columns (portrait), Big takeaway, Total synthesis, Substrate scope, Research group overview |
+| **Graphical abstracts** | 20 | Challenge, approach, outcome; One reaction; Catalytic cycle; Scope at a glance; Enantioselective catalysis |
+| **TOC graphics** | 10 | TOC graphic, Product in the spotlight, Catalyst on the arrow, Before and after |
+| **Figures** | 10 | Two panels, Four panels, Scheme and table, Proposed mechanism, Stacked spectra |
+| **Flyers** | 20 | Seminar, Thesis defense, Join our lab, Journal club, Glovebox rules, Instrument sign-up sheet |
+| **Flowcharts** | 10 | Running a reaction, Choosing a purification, Troubleshooting a reaction, Risk assessment |
+| **Workup schemes** | 3 | Aqueous workup, Acid–base extraction, Recrystallization |
+| **Timelines** | 10 | Five milestones, PhD roadmap, Project plan (Gantt), Semester plan |
+
+Under each picture is the layout's name and the page it is laid out on (for example, "Poster 48 × 36 in, landscape"). Rest the mouse on one to read what it is for.
 
 Everything in a layout is ordinary shapes and text you can change. The dashed boxes show where your structures go.
 
@@ -57,7 +79,7 @@ To place a shape, click it and then click or drag on the page, or drag it straig
 
 ## Icons
 
-The library's **Icons** tab (or **Icons** on the ribbon, or **Insert ▸ Icons…**) has about 7,000 icons. The list under the search box picks a group; **Lab and science** comes first, with glassware, molecules and atoms, lab equipment, hazard and safety signs (biohazard, radioactive, toxic, flammable, electrical, warning) and medical icons. Typing in the search box looks through all the icons, by name and by other words for them (try "hazard", "rbf" or "pipette"); choose a group from the list first to search only that group.
+The library's **Icons** tab (or **Icons** on the ribbon, or **Insert ▸ Illustrations ▸ Icons…**) has about 7,000 icons. The list under the search box picks a group; **Lab and science** comes first, with glassware, molecules and atoms, lab equipment, hazard and safety signs (biohazard, radioactive, toxic, flammable, electrical, warning) and medical icons. Typing in the search box looks through all the icons, by name and by other words for them (try "hazard", "rbf" or "pipette"); choose a group from the list first to search only that group.
 
 An icon goes on the page like a shape (click it, then click or drag; or drag it onto the page) at one inch square. It is filled in one color with no outline: change the color, add an outline, a gradient or a shadow in the **Style** panel, and drag its corners to size it. Icons save to PowerPoint as shapes PowerPoint can recolor and resize, and come back here as the same icon. They are the Material Design Icons by Pictogrammers (Apache License 2.0); company and product logos are left out.
 
@@ -147,7 +169,7 @@ The **Layers** panel on the right lists the shapes, pictures and tables on the p
 
 ## References
 
-A design keeps a reference list, as a presentation does. **References** on the Design tab checks which ones the page shows at the bottom, written and formatted for you (journal, year, volume and page by default). Add references, or copy them from another open file, in **Insert ▸ Reference Manager…**. **Insert ▸ Formatted Reference…** puts a reference anywhere on the page as text.
+A design keeps a reference list, as a presentation does. **References** on the ribbon's **Insert** tab checks which ones the page shows at the bottom, written and formatted for you (journal, year, volume and page by default). Add references, or copy them from another open file, in **Insert ▸ Reference Manager…**. **Insert ▸ References ▸ Formatted Reference…** puts a reference anywhere on the page as text.
 
 ## Saving and exporting
 

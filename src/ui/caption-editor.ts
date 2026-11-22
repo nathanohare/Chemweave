@@ -48,6 +48,11 @@ export interface EditorHost {
    * Preferences). Otherwise Enter starts a new line and Esc finishes.
    */
   enterFinishes?(): boolean;
+  /**
+   * The text sits in a text box that shows its own frame and handles (Slides, Design, as in
+   * PowerPoint): no dashed box or width handle of the editor's own inside it.
+   */
+  framed?: boolean;
 }
 
 /** A finished caption: the text and where it now starts. */
@@ -201,7 +206,7 @@ export class CaptionEditor {
     p = this.local(p);
     const px = 1 / this.h.view.scale;
     const w = this.wrapHandle();
-    if (Math.abs(p.x - w.x) <= 6 * px && Math.abs(p.y - w.y) <= 8 * px) return 'wrap';
+    if (!this.h.framed && Math.abs(p.x - w.x) <= 6 * px && Math.abs(p.y - w.y) <= 8 * px) return 'wrap';
     const b = this.box();
     const pad = 4 * px;
     return p.x >= b.x1 - pad && p.x <= b.x2 + pad && p.y >= b.y1 - pad && p.y <= b.y2 + pad ? 'text' : null;
@@ -336,13 +341,15 @@ export class CaptionEditor {
     if (this.turn) { ctx.translate(x, y); ctx.rotate((this.turn * Math.PI) / 180); ctx.translate(-x, -y); }
     ctx.lineWidth = px;
     ctx.strokeStyle = FRAME;
-    ctx.setLineDash([3 * px, 2 * px]);
-    ctx.strokeRect(b.x1 - 2 * px, b.y1 - 2 * px, b.x2 - b.x1 + 4 * px, b.y2 - b.y1 + 4 * px);
-    ctx.setLineDash([]);
-    const w = this.wrapHandle();
-    ctx.fillStyle = this.ed.t.wrap !== undefined ? FRAME : '#fff';
-    ctx.fillRect(w.x - 2.5 * px, w.y - 5 * px, 5 * px, 10 * px);
-    ctx.strokeRect(w.x - 2.5 * px, w.y - 5 * px, 5 * px, 10 * px);
+    if (!this.h.framed) {
+      ctx.setLineDash([3 * px, 2 * px]);
+      ctx.strokeRect(b.x1 - 2 * px, b.y1 - 2 * px, b.x2 - b.x1 + 4 * px, b.y2 - b.y1 + 4 * px);
+      ctx.setLineDash([]);
+      const w = this.wrapHandle();
+      ctx.fillStyle = this.ed.t.wrap !== undefined ? FRAME : '#fff';
+      ctx.fillRect(w.x - 2.5 * px, w.y - 5 * px, 5 * px, 10 * px);
+      ctx.strokeRect(w.x - 2.5 * px, w.y - 5 * px, 5 * px, 10 * px);
+    }
     // selection under the text
     ctx.fillStyle = SELECTION;
     for (const r of this.ed.selectionRects()) ctx.fillRect(x + r.x1, y + r.y1, r.x2 - r.x1, r.y2 - r.y1);

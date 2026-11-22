@@ -11,7 +11,7 @@ const LINK_COLOUR = '#0563c1';
 export type RunStyle = Omit<TextRun, 'text'>;
 export type Toggle = 'bold' | 'italic' | 'underline' | 'sub' | 'sup' | 'formula' | 'strike' | 'smallCaps' | 'allCaps';
 
-const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'lang', 'field', 'noProof', 'raise'] as const;
+const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'pfx', 'ukind', 'ucolor', 'dstrike', 'wrx', 'lang', 'field', 'noProof', 'raise', 'cite', 'symbolFont'] as const;
 /** Subscript, superscript and formula style change where characters sit, so only one applies. */
 const POSITION: Toggle[] = ['sub', 'sup', 'formula'];
 
@@ -20,7 +20,8 @@ export function cleanStyle(s: RunStyle): RunStyle {
   const o: Record<string, unknown> = {};
   for (const k of KEYS) {
     const v = s[k];
-    if (v !== undefined && v !== false && v !== null) o[k] = v;
+    // (symbolFont false says something: a sign kept in an ordinary font)
+    if (v !== undefined && v !== null && (v !== false || k === 'symbolFont')) o[k] = v;
   }
   return o as RunStyle;
 }
@@ -136,6 +137,11 @@ export function typingStyle(runs: TextRun[], start: number, end: number, fallbac
     const { link: _l, ...rest } = s;
     s = rest.color?.toLowerCase() === LINK_COLOUR ? { ...rest, color: undefined, underline: undefined } : rest;
   }
+  // typing next to a citation (slides) is ordinary text, not more of its number
+  if (s.cite !== undefined) {
+    const { cite: _c, sup: _s, ...rest } = s;
+    s = rest;
+  }
   if (s.obj === undefined && s.rev === undefined && s.fmt === undefined) return cleanStyle(s);
   const { obj: _, rev: _r, fmt: _f, ...rest } = s;
   return cleanStyle(rest);
@@ -205,16 +211,21 @@ export type Part = { text: string; pos: 'base' | 'sub' | 'sup' };
 
 /** What a count or a charge can't follow in formula style: nothing, a space, an opening bracket or , . : ; */
 const FORMULA_NO_MARK = /[\s(\[{,.:;]/;
+/** What a count can't follow: those, and a hydrate's dot (CuSO4·5H2O). A sign after a dot still goes up: a radical ion's (O2•-, [M]•+). */
+const COUNT_NO_MARK = /[\s(\[{,.:;·⋅•]/;
 
 /**
  * How formula style shows a piece of text, as measured from ChemDraw:
- * - Numbers go down unless they follow what FORMULA_NO_MARK lists or a sign (CH3, Pd(PPh3)4, not 80 °C or 1,4).
+ * - Numbers go down unless they follow what COUNT_NO_MARK lists or a sign (CH3, Pd(PPh3)4, not 80 °C or 1,4).
  * - A range of counts goes down whole (C8-12), unless it reads as a charge: a one-digit end no
  *   more than the last digit before it (C2-1).
  * - A sign goes up with the numbers after it (K+, TfO-, Fe2+, a-1), unless it follows what
  *   FORMULA_NO_MARK lists or is the start of the text. Before a letter it stays on the line, as a
  *   hyphen does (Red-Al), but a - goes up there when a + comes later in the text (CO2-Na+).
  * - Two or more hyphens are names, not charges, and none goes up (Me-Al-).
+ * - A charge's own number is lowered with the counts (Fe3+ is Fe₃⁺, SO42- SO₄₂⁻), as ChemDraw does:
+ *   text alone can't tell a count from a charge (N3- is azide N₃⁻, C60- is C₆₀⁻). To raise it, set
+ *   those digits in superscript by hand (a run's own sub or sup is kept as it is).
  * - An R group's number goes up when Settings ▸ Drawing says so (R¹, CO₂R¹; not the 2 of NR2).
  * `before` and `after` are the rest of the text, in other runs: ChemDraw reads across them.
  */
@@ -224,7 +235,7 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
   const counts = new Set<number>();
   for (const m of whole.matchAll(/\d+(?:-\d+)+/g)) {
     const prev = whole[m.index - 1];
-    if (prev === undefined || FORMULA_NO_MARK.test(prev) || /[-+]/.test(prev)) continue;
+    if (prev === undefined || COUNT_NO_MARK.test(prev) || /[-+]/.test(prev)) continue;
     const [from, to] = m[0].split('-');
     if (to.length === 1 && Number(to) <= Number(from) % 10) continue;
     for (let k = 0; k < m[0].length; k++) { pos[m.index + k] = 'sub'; counts.add(m.index + k); }
@@ -242,7 +253,7 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
       if (raised) pos[i] = 'sup';
     } else if (c >= '0' && c <= '9') {
       if (raised) pos[i] = 'sup';
-      else if (prev >= '0' && prev <= '9' ? pos[i - 1] === 'sub' : prev !== undefined && !FORMULA_NO_MARK.test(prev) && prev !== '+' && prev !== '-') pos[i] = 'sub';
+      else if (prev >= '0' && prev <= '9' ? pos[i - 1] === 'sub' : prev !== undefined && !COUNT_NO_MARK.test(prev) && prev !== '+' && prev !== '-') pos[i] = 'sub';
     } else raised = false;
   }
   // R groups' numbers go up by Settings ▸ Drawing (CO₂R¹), not down as counts
@@ -256,12 +267,37 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
   return out;
 }
 
-/** Formula style for one of a text's runs: the parts it shows, reading across the runs around it. */
+/**
+ * Formula style for one of a text's runs: the parts it shows, reading across the runs around it
+ * in its own paragraph. Every place that shows or writes formula text goes through here (the
+ * drawing, Documents, Word, PowerPoint, RTF, ODT, copied HTML), so all of them agree; a writer
+ * that has a paragraph's runs gets the same answer as the editor that has the whole text.
+ */
 export function formulaRunParts(runs: readonly TextRun[], k: number): Part[] {
   let before = '', after = '';
   for (let i = 0; i < k; i++) before += runs[i].text;
   for (let i = k + 1; i < runs.length; i++) after += runs[i].text;
-  return formulaParts(runs[k].text, before, after);
+  const text = runs[k].text;
+  // from the start of the run's paragraph to its end
+  before = before.slice(before.lastIndexOf('\n') + 1);
+  const end = after.indexOf('\n');
+  if (end >= 0) after = after.slice(0, end);
+  if (!text.includes('\n')) return formulaParts(text, before, after);
+  // a run over several paragraphs (a caption set whole in formula style): each paragraph read on
+  // its own, as the writers read the run's pieces (review F2c-R02)
+  const pieces = text.split('\n'), out: Part[] = [];
+  const add = (p: Part) => { const last = out[out.length - 1]; if (last && last.pos === p.pos) last.text += p.text; else out.push({ ...p }); };
+  pieces.forEach((piece, i) => {
+    if (i > 0) add({ text: '\n', pos: 'base' });
+    for (const p of formulaParts(piece, i === 0 ? before : '', i === pieces.length - 1 ? after : '')) add(p);
+  });
+  return out;
+}
+
+/** formulaRunParts for run `r` among `runs` (its paragraph's, or more); r alone when it isn't among them. */
+export function formulaPartsIn(runs: readonly TextRun[] | undefined, r: TextRun): Part[] {
+  const k = runs ? runs.indexOf(r) : -1;
+  return k >= 0 ? formulaRunParts(runs!, k) : formulaParts(r.text);
 }
 
 // ------------------------------------------------------------------ the Symbol font
@@ -306,6 +342,13 @@ export const symbolOnlyByChoice = (text: string): boolean => [...text].some((ch)
 
 /** Does text read from an ordinary font hold a sign that would otherwise be saved in the Symbol font (−)? */
 export const plainByChoice = (text: string): boolean => [...text].some((ch) => !plainFontChar(ch) && TO_SYMBOL.has(ch));
+/**
+ * Whether a run's symbolFont is what reading it back from ChemDraw works out anyway (cdxml.ts
+ * captionOf): a run written all in the Symbol font with a sign Arial has too, or written in an
+ * ordinary font with a sign Arial lacks. Only other runs need it kept in a tag.
+ */
+export const symbolFontShown = (text: string, symbolFont: boolean): boolean =>
+  symbolFont ? [...text].every((ch) => TO_SYMBOL.has(ch)) && symbolOnlyByChoice(text) : plainByChoice(text);
 
 /** Can this character be saved for ChemDraw (directly, or through the Symbol font)? */
 export const savableChar = (ch: string): boolean => plainFontChar(ch) || TO_SYMBOL.has(ch);

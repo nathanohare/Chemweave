@@ -43,6 +43,8 @@ export function parseModeColours(raw: unknown): ModeColours {
 type RGB = [number, number, number];
 const WHITE: RGB = [255, 255, 255];
 const BLACK: RGB = [0, 0, 0];
+/** The light theme's chrome (app.css --chrome): the title bar, the ribbon's tabs and the status bar, where the chosen tab's word is in the accent. */
+const LIGHT_CHROME: RGB = [0xe9, 0xeb, 0xef];
 /** The window's panels and background in the dark theme (app.css). */
 const DARK_PANEL: RGB = [0x25, 0x2a, 0x32];
 const DARK_BG: RGB = [0x1b, 0x1e, 0x24];
@@ -90,7 +92,7 @@ function fromHsl(h: number, s: number, l: number): RGB {
 }
 
 export interface Palette {
-  /** Buttons, highlights and text in the accent colour, light theme (readable on white). */
+  /** Buttons, highlights and text in the accent colour, light theme (readable on white, the chrome and the pale fill). */
   accent: string;
   /** Pale background for hovered and chosen items, light theme. */
   soft: string;
@@ -116,7 +118,11 @@ function inkOn(bg: string): string {
 /** Everything the window needs from one chosen colour, in both themes, keeping text readable. */
 export function modePalette(colour: string): Palette {
   const c = rgb(HEX.test(colour) ? colour : DEFAULT_MODE_COLOURS.drawing);
-  const accent = until(c, BLACK, WHITE, 4.5);
+  const soft = mix(WHITE, c, 0.14);
+  // words in the accent read at 4.5:1 (WCAG AA) on white, on the chrome (the chosen ribbon tab) and on
+  // the accent's own pale fill (a pressed button): it is darkened against the darkest of the three
+  const darkest = [WHITE, LIGHT_CHROME, soft].reduce((a, b) => (luminance(b) < luminance(a) ? b : a));
+  const accent = until(c, BLACK, darkest, 4.5);
   const [h, s] = toHsl(c);
   // the dark theme's accent: the same hue, muted (saturation at most 0.45, so it does not glow against
   // the dark grays) and lightened until it reads at 5.2:1 on the panels (Canvas teal #0e7c93 gives #4ea9bc)
@@ -124,7 +130,7 @@ export function modePalette(colour: string): Palette {
   for (let L = 0.5; contrast(hex(accentDark), hex(DARK_PANEL)) < 5.2 && L < 1; L += 0.01) accentDark = fromHsl(h, Math.min(s, 0.45), L);
   return {
     accent: hex(accent),
-    soft: hex(mix(WHITE, c, 0.14)),
+    soft: hex(soft),
     accentDark: hex(accentDark),
     softDark: hex(mix(DARK_PANEL, c, 0.28)),
     bar: hex(until(c, BLACK, WHITE, 4.5)),
@@ -167,9 +173,9 @@ export class ModeColoursDialog {
   constructor(private opts: ModeColoursDialogOptions) {
     const d = (this.d = document.createElement('dialog'));
     d.className = 'mode-dialog';
-    d.setAttribute('aria-label', 'Mode colors');
+    d.setAttribute('aria-label', 'Mode Colors');
     d.innerHTML = `
-      <h2 data-info="Each file type has its own color, so you can see at a glance whether you are working on a canvas, a presentation, a spreadsheet, a document or a design.">Mode colors</h2>
+      <h2 data-info="Each file type has its own color, so you can see at a glance whether you are working on a canvas, a presentation, a spreadsheet, a document or a design.">Mode Colors</h2>
       <fieldset class="mc-styles">
         <legend>Use the color for</legend>
         <label class="hk-opt"><input type="radio" name="mc-style" value="accent" /><span>Buttons, highlights and tab icons (the window keeps its usual look)</span></label>

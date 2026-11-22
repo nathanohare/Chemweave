@@ -245,8 +245,8 @@ export async function wordSpectra(plan: ImportPlan, tools: StructureTools): Prom
     if (mols.length) (await tools.facts(mols)).forEach((f) => { for (const k of structureKeys(f ?? null)) drawnKeys.add(k); });
     const types = spectra.map((o) => typeOfEmf(o.picture!)[0]);
     const unambiguous = types.length === new Set(types).size;       // (at most one spectrum per nucleus)
-    const labelled = labels.size === 1 && unambiguous;
-    if (labelled) {
+    const labeled = labels.size === 1 && unambiguous;
+    if (labeled) {
       [cid, how] = [[...labels][0], 'by the ID under the structure next to it'];
     } else {
       const matches = new Set<string>();
@@ -264,7 +264,7 @@ export async function wordSpectra(plan: ImportPlan, tools: StructureTools): Prom
       const peaks = emfPeaks(o.picture!);
       const [byPeaks, score] = bestByPeaks(peaks, kind, plan.compounds);
       let head = headers.get(o) ?? null;
-      if (head && !head.sameGroup && cid && labelled && head.cid !== cid) head = null;   // (the ID in its own group beats a neighbor's header)
+      if (head && !head.sameGroup && cid && labeled && head.cid !== cid) head = null;   // (the ID in its own group beats a neighbor's header)
       if (head && !title) title = head.title;
       let ownCid: string, ownHow: string;
       if (byPeaks) {
@@ -348,7 +348,7 @@ function settle(spectra: ImportedSpectrum[]): void {
   for (const s of spectra) if (s.cid) count.set(`${s.cid}\n${s.type}`, (count.get(`${s.cid}\n${s.type}`) ?? 0) + 1);
   for (const s of spectra) {
     const n = s.cid ? count.get(`${s.cid}\n${s.type}`)! : 0;
-    if (n > 1) s.how += ` (${s.cid} has ${n} ${s.type} spectra: untick the ones you don't want)`;
+    if (n > 1) s.how += ` (${s.cid} has ${n} ${s.type} spectra: uncheck the ones you don't want)`;
   }
 }
 

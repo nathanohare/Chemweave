@@ -65,12 +65,12 @@ export class SheetValidation {
     const fromRule = rule?.kind === 'list' && !rule.noDropDown;
     const items = fromRule ? listItems(rule!, s, wb.validationHost(s)) : this.columnEntries(s, r, c);
     if (!items.length) {
-      this.host.flash(fromRule ? 'The list for this cell is empty: check its source in Data Validation.' : 'There is no text above or below this cell to pick from.');
+      this.host.flash(fromRule ? 'The list for this cell is empty: check its source in Data Validation.' : 'There is no text above or below this cell to choose from.');
       return;
     }
     const now = s.shownText(r, c);
     const m = popupMenu(at.x, at.y, items.map((t) => [t, () => {
-      this.host.edit('Pick from list', (sh) => sh.setInput(r, c, asInput(t)));
+      this.host.edit('Pick From Drop-down List', (sh) => sh.setInput(r, c, asInput(t)));
       this.host.view.focus();
     }] as [string, () => void]));
     m.classList.add('sh-drop');

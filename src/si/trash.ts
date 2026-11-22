@@ -14,7 +14,7 @@
 
 import { parsePyJson, dumpPyJson } from './pyjson';
 import { newId, safeFilename } from './ids';
-import { COMPOUND_FILE, COMPOUNDS_DIR, GP_DIR, SCHEME_FILE, SECTION_FILE, SECTIONS_DIR, SiProjectError, TRASH_DIR, compoundsOf, fieldsOf, valuesOf, type Json, type SiProject } from './project';
+import { COMPOUND_FILE, COMPOUNDS_DIR, GP_DIR, PRIVATE_DIR, SCHEME_FILE, SECTION_FILE, SECTIONS_DIR, SiProjectError, TRASH_DIR, compoundsOf, fieldKeys, fieldsOf, valuesOf, type Json, type SiProject } from './project';
 import { editorData, findStep, START, syncChildren } from './scheme-edit';
 import { fieldDef } from './fields';
 
@@ -255,6 +255,21 @@ const RESTORE: Record<string, Restore> = {
       const list = Array.isArray(value.reports) ? (value.reports as Json[]) : (value.reports = []) as Json[];
       const kept = isObj(e.info.item_values) ? { ...e.info.item_values } : {};
       list.push({ kind: 'file', ...kept, file: pick });
+      await p.saveCompound(c);
+      return `Restored ${pick} to “${str(e.info.compound_name) || 'the compound'}”.`;
+    }
+    if (key === 'private_files') {
+      // a stored file or folder: back into private/ and onto the field's list, with its note
+      let pick = item;
+      const dot = item.lastIndexOf('.');
+      const stem = dot > 0 ? item.slice(0, dot) : item, ext = dot > 0 ? item.slice(dot) : '';
+      for (let n = 2; await p.folder.exists(join(c.folder, PRIVATE_DIR, pick)); n++) pick = `${stem} (${n})${ext}`;
+      await p.folder.move(join(folder, item), join(c.folder, PRIVATE_DIR, pick));
+      const values = valuesOf(c);
+      if (!fieldKeys(c).includes('private_files')) await p.addField(c, { key: 'private_files' });
+      const list = Array.isArray(values.private_files) ? (values.private_files as Json[]) : (values.private_files = []) as Json[];
+      const kept = isObj(e.info.item_values) ? { ...e.info.item_values } : {};
+      list.push({ kind: 'file', note: '', ...kept, file: pick });
       await p.saveCompound(c);
       return `Restored ${pick} to “${str(e.info.compound_name) || 'the compound'}”.`;
     }
