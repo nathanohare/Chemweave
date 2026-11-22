@@ -1435,7 +1435,8 @@ export class Workbook {
     } finally {
       const { entry } = this.tx!;
       this.tx = null;
-      entry.changes = entry.changes.filter((c) => c.before !== c.after);
+      // (a change back to the same value, such as Unfreeze Panes with nothing frozen, is none)
+      entry.changes = entry.changes.filter((c) => !sameValue(c.before, c.after));
       if (entry.changes.length) {
         entry.after = after?.() ?? before;
         this.undoList.push(entry);
@@ -2533,4 +2534,16 @@ function caseOrder(a: string, b: string): number {
     if (la !== lb) return la ? -1 : 1;
   }
   return 0;
+}
+
+/** Whether a recorded change's value before and after are the same (by value; sheets themselves by identity). */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || a instanceof Map || b instanceof Map) return false;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    // (a list of sheets: each sheet points back at the workbook)
+    return false;
+  }
 }
