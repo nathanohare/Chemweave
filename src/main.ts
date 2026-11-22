@@ -15548,7 +15548,7 @@ function togglePageEdge(side: Side): boolean {
   if (!p.grow) { flash('The drawing has a fixed number of pages, so all edges are fixed. To allow growth, choose “Add pages as the drawing grows” in File ▸ Page Setup.', 7000); return false; }
   const w = wallsOf(p), on = w[side] === undefined;
   if (on && fixedCount(w) >= 3) { flash('At most three edges can be fixed, so the drawing always has room to grow. Free another edge first.', 6000); return false; }
-  p.walls = setWall(p, doc.bounds(), side, on);
+  doc.edit(on ? 'Fix Page Edge' : 'Free Page Edge', () => doc.setPage({ ...p, walls: setWall(p, doc.bounds(), side, on) }));
   ws.noteChange();
   editor.requestScene();
   flash(on ? `The ${SIDE_NAMES[side]} edge is fixed: nothing can go past it.` : `The ${SIDE_NAMES[side]} edge is free: pages are added that way as the drawing grows.`, 3500);
@@ -15820,10 +15820,15 @@ async function pageSetup(): Promise<void> {
       next.walls = w2;
     }
   }
-  doc.page = next;
+  // one step of Undo (the page, and the drawing moved back onto fixed pages)
+  let fits = true;
+  doc.edit('Page Setup', () => {
+    doc.setPage(next);
+    if (next && !next.grow) fits = keepOnPage(doc);
+  });
   ws.noteChange();
   if (got.dflt === 'true') { defaultPage = next && { ...next, ...(next.walls ? { walls: { ...next.walls } } : {}) }; storeSettings(); }
-  if (next && !next.grow && !keepOnPage(doc)) flash('The drawing is larger than its pages, so it can\'t all be kept on them. Choose more pages, a larger page, or add pages as it grows.', 7000);
+  if (!fits) flash('The drawing is larger than its pages, so it can\'t all be kept on them. Choose more pages, a larger page, or add pages as it grows.', 7000);
   editor.changed();
   renderer.repaintAll();
   editor.requestScene();

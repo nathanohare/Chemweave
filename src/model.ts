@@ -1530,8 +1530,11 @@ export function shiftDrawing(doc: Doc, dx: number, dy: number): void {
 
 export type Entity = Atom | Bond | Caption | Arrow | Shape;
 /** One letter per entity type: atom, bond, caption, arrow (r), shape. */
-/** What an undo step can hold: atoms, bonds, captions, arrows, shapes, and 'y' the drawing style. */
+/** What an undo step can hold: atoms, bonds, captions, arrows, shapes, and 'y' the drawing's settings (its style, and its page as entry PAGE_ENTRY). */
 export type Kind = 'a' | 'b' | 'c' | 'r' | 's' | 'y';
+/** The undo entry ('y' kind) that holds the drawing's page. */
+const PAGE_ENTRY = 1;
+const copyPage = (p: PageSetup | null): PageSetup | null => p && { ...p, ...(p.walls ? { walls: { ...p.walls } } : {}) };
 
 /**
  * The CDXML file a drawing was opened from. Saving rewrites only what changed and keeps
@@ -1881,7 +1884,7 @@ export class Doc {
   private snapshot(key: string): Entity | null {
     const kind = key[0] as Kind;
     const id = Number(key.slice(1));
-    if (kind === 'y') return clone(this.style) as unknown as Entity;
+    if (kind === 'y') return (id === PAGE_ENTRY ? { page: copyPage(this.page) } : clone(this.style)) as unknown as Entity;
     const e = this.mapOf(kind).get(id);
     return e ? clone(e) : null;
   }
@@ -1899,6 +1902,13 @@ export class Doc {
   setStyle(st: DocStyle): void {
     this.touch('y', 0);
     this.style = { ...st };
+    this.allDirty = true;
+  }
+
+  /** Change the page (File ▸ Page Setup, a page edge fixed or freed), as part of the edit going on. */
+  setPage(p: PageSetup | null): void {
+    this.touch('y', PAGE_ENTRY);
+    this.page = copyPage(p);
     this.allDirty = true;
   }
 
@@ -1957,7 +1967,8 @@ export class Doc {
 
   private rawSet(kind: Kind, id: number, e: Entity | null): void {
     if (kind === 'y') {
-      if (e) this.style = { ...(e as unknown as DocStyle) };
+      if (e && id === PAGE_ENTRY) this.page = copyPage((e as unknown as { page: PageSetup | null }).page);
+      else if (e) this.style = { ...(e as unknown as DocStyle) };
       this.allDirty = true;
       return;
     }
