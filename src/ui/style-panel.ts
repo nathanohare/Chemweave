@@ -661,12 +661,12 @@ export class StylePanel {
 
   /** A torsion chart: its look is set in its window (the frame round it has none of its own). */
   private torsionControls(sh: Shape): void {
-    this.heading('Torsional Energy Diagram');
+    this.heading('Torsional energy chart');
     const row = document.createElement('div');
     row.className = 'style-buttons';
     const b = document.createElement('button');
     b.type = 'button';
-    b.textContent = 'Edit Torsion Chart…';
+    b.textContent = 'Edit Torsional Energy Chart…';
     b.addEventListener('click', () => this.torsion?.edit(sh.id));
     row.append(b);
     this.body.append(row);

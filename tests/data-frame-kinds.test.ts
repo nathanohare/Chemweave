@@ -65,6 +65,20 @@ describe('frames of drawings kept as data', () => {
     }
   });
 
+  it('a torsion chart\'s section names it one way: Torsional energy chart, Edit Torsional Energy Chart… (F3-R08)', () => {
+    const doc = new Doc();
+    let frame = 0;
+    doc.edit('add', () => { frame = frameOf(doc, 'torsion').id; });
+    const section = document.createElement('section'), body = document.createElement('div');
+    // (the panel's title, where the first heading goes as "Style: …")
+    section.append(Object.assign(document.createElement('h2'), { textContent: 'Style' }));
+    new StylePanel(section, body, doc, () => ({ ...empty(), shapes: new Set([frame]) }), () => {}).refresh(true);
+    const text = section.textContent + ' ' + body.textContent;
+    expect(text).toContain('Torsional energy chart');
+    expect([...body.querySelectorAll('button')].map((b) => b.textContent)).toContain('Edit Torsional Energy Chart…');
+    expect(text).not.toMatch(/Torsional Energy Diagram|Edit Torsion Chart/);
+  });
+
   it('no place in the app lists the kinds by hand (they ask isDataFrame)', () => {
     // the three places the audit found listing only some kinds
     const painter = readFileSync('src/format-painter.ts', 'utf8');
