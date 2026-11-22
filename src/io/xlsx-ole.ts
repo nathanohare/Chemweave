@@ -59,10 +59,10 @@ function placeholders(texts: (string | undefined)[], at: [number, number, number
   const out = texts.map((t) => {
     if (t === undefined) return t;
     // DrawingML anchors (xdr:from / xdr:to with col and row, 20.5.2.15)
-    let s = t.replace(/(<((?:\w+:)?)(from|to)\b[^>]*>)([\s\S]*?)(<\/\2\3>)/g, (all, open: string, p: string, which: string, inner: string, close: string) => {
+    let s = t.replace(/(<((?:\w+:)?)(from|to)\b[^>]*>)([\s\S]*?)(<\/\2\3>)/g, (_all, open: string, _p: string, which: string, inner: string, close: string) => {
       const k = which === 'from' ? 0 : 2;
-      const got = inner.replace(/(<((?:\w+:)?)col\b[^>]*>)(\d+)(<\/\2col>)/, (m, o: string, q: string, v: string, c: string) => (Number(v) === at[k] ? `${o}@@${names[k]}@@${c}` : m))
-        .replace(/(<((?:\w+:)?)row\b[^>]*>)(\d+)(<\/\2row>)/, (m, o: string, q: string, v: string, c: string) => (Number(v) === at[k + 1] ? `${o}@@${names[k + 1]}@@${c}` : m));
+      const got = inner.replace(/(<((?:\w+:)?)col\b[^>]*>)(\d+)(<\/\2col>)/, (m, o: string, _q: string, v: string, c: string) => (Number(v) === at[k] ? `${o}@@${names[k]}@@${c}` : m))
+        .replace(/(<((?:\w+:)?)row\b[^>]*>)(\d+)(<\/\2row>)/, (m, o: string, _q: string, v: string, c: string) => (Number(v) === at[k + 1] ? `${o}@@${names[k + 1]}@@${c}` : m));
       return `${open}${got}${close}`;
     });
     // VML's x:Anchor: from column, offset, from row, offset, to column, offset, to row, offset
