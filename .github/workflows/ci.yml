@@ -18,7 +18,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # the unit tests, split in two halves that run side by side (each about 1.5 min instead of 3)
+  # the unit tests, split in two halves that run side by side (each about 1.5 min instead of 3).
+  # They include the UI text check (tests/ui-text-lint.test.ts, scripts/lint-ui-text.mjs), the
+  # field round trip through every format (tests/field-round-trip.test.ts), open-save-compare
+  # (tests/open-save-compare.test.ts) and Undo for every command (tests/undo-every-command.test.ts).
   tests:
     name: tests (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
