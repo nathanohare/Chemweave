@@ -66,7 +66,7 @@ import { keepFileValues, fileValues, type FileValue } from './xlsx-cached';
 import { readRichValues, writeRichParts, richMetadataXml, keepPointers, pointerOf, richValueKinds } from './xlsx-rich';
 import { LeftOut, connectionsKept, queryTableOf, CT_QUERY_TABLE, REL as KEPT_FEATURE_REL } from './xlsx-left-out';
 import { readSheetOle, writeSheetOle, oleVml, oleNote, structureOle, structureOleRef, type KeptSheetOle, type OleWriteState } from './xlsx-ole';
-import { chemdrawObject, chemdrawProg, chemdrawCdx } from './ole-object';
+import { chemdrawObject, chemdrawProg, chemdrawCdx, oleCellTag, OLE_CELL_STREAM } from './ole-object';
 export { applyTint };
 
 /** Pictures of structures for Excel (the app draws them; tests use stand-ins). */
@@ -830,11 +830,11 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
           const ox = x + (w - ow) / 2, oy = y + (h - oh) / 2;
           const f = cols.at(ox, c), fr = rows.at(oy, r), t = cols.at(ox + ow, c), tr = rows.at(oy + oh, r);
           const prog = chemdrawProg();
-          made.push(structureOle(cellName(r, c), prog, chemdrawObject(asObject.cdx, prog, { emf: asObject.emf, w: asObject.w, h: asObject.h }), { bytes: asObject.emf, ext: 'emf', type: 'image/x-emf' },
+          made.push(structureOle(cellName(r, c), prog, chemdrawObject(asObject.cdx, prog, { emf: asObject.emf, w: asObject.w, h: asObject.h }, [[OLE_CELL_STREAM, new TextEncoder().encode(cellName(r, c))]]), { bytes: asObject.emf, ext: 'emf', type: 'image/x-emf' },
             { col: f.i, colOff: f.off, row: fr.i, rowOff: fr.off }, { col: t.i, colOff: t.off, row: tr.i, rowOff: tr.off }, { w: ow * 0.75, h: oh * 0.75 }));
           if (entry) entry.cdx = bytesHash(asObject.cdx);
-        } else if (cell?.structure) {
-          // the structure's picture, over the cell (or merged block)
+        } else if (cell?.structure && !s.ole?.some((o) => /^ChemDraw/i.test(o.progId) && o.at?.[0] === c && o.at?.[1] === r)) {
+          // the structure's picture, over the cell (or merged block); not under an object kept there (review F2-R05)
           const m = s.mergeAt(r, c);
           const r2 = m?.r2 ?? r, c2 = m?.c2 ?? c;
           const x = cols.start(c), y = rows.start(r);
@@ -1626,6 +1626,10 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   let unvalued = 0;
   const restored = { structures: 0, changed: 0 };
   const oleObjects: KeptSheetOle[] = [];
+  /** Embedded objects that can't be kept (their data isn't in the file: linked objects), by program. */
+  const lostOle: string[] = [];
+  /** Structures changed in ChemDraw from Excel that can't be read here, kept as the objects they are. */
+  const keptOver = new Set<KeptSheetOle>();
   book.build(() => {
     sheetEls.forEach((el, si) => {
       const s = book.sheets[si];
@@ -1994,17 +1998,24 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       const commentsPath = relOf(NOTES_REL.comments), vmlPath = relOf(NOTES_REL.vml), threadedPath = relOf(NOTES_REL.threaded);
       leftOut.sheet(pkg, path!, ws, vmlPath ? pkg.text(vmlPath) : null, (t) => keptQueries.has(t));
       // embedded objects (a ChemDraw structure pasted into Excel, an embedded Word file): kept to save back
-      const ole = readSheetOle(pkg, path!, ws, vmlPath ?? null, dr).filter((o) => {
-        // a structure saved here as a ChemDraw object: the cell holds it again (restored above); one
-        // changed in ChemDraw from Excel becomes the cell's structure, or is kept as it is
-        const ref = structureOleRef(o);
-        const mc = ref ? ms?.cells.find((x) => x.cdx && cellName(x.r, x.c) === ref) : undefined;
-        if (!mc) return true;
+      const ole = readSheetOle(pkg, path!, ws, vmlPath ?? null, dr, lostOle).filter((o) => {
+        // a structure saved here as a ChemDraw object: known by the cell named in its own data (which
+        // Excel keeps), else by its VML shape's name, else by its ChemDraw data being one saved here,
+        // else (a ChemDraw object over a structure cell, in a workbook with structures saved as objects) by where it is
+        if (!ms || !ms.cells.some((x) => x.cdx)) return true;
         const bin = o.parts.find((p) => p.rel.endsWith('/oleObject') || p.rel.endsWith('/package'));
         const cdx = bin ? chemdrawCdx(bin.bytes) : null;
-        if (cdx && bytesHash(cdx) === mc.cdx) return false;
+        const print = cdx ? bytesHash(cdx) : null;
+        const ref = (bin ? oleCellTag(bin.bytes) : null) ?? structureOleRef(o);
+        const mc = ref ? ms.cells.find((x) => x.cdx && cellName(x.r, x.c) === ref) : undefined;
+        const chemdraw = /^ChemDraw/i.test(o.progId);
+        const same = print !== null && (mc ? print === mc.cdx : ms.cells.some((x) => x.cdx === print));
+        const over = chemdraw && o.at && s.cell(o.at[1], o.at[0])?.structure;
+        if (!mc && !same && !over) return true;
+        if (same) return false;
+        // changed in ChemDraw from Excel: the cell's structure as ChemDraw saved it, where it can be read
         const contents = cdx && o.at ? (() => { try { return _deps?.readChemdraw?.(cdx, book.drawingStyle) ?? null; } catch { return null; } })() : null;
-        if (!contents || !o.at || !contents.atoms.length) return true;
+        if (!contents || !o.at || !contents.atoms.length) { keptOver.add(o); return true; }
         const [c, r] = o.at;
         s.setCell(r, c, { structure: makeStructure(contents), style: s.cell(r, c)?.style });
         restored.changed++;
@@ -2090,8 +2101,11 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       `${linkedFormulas > 1 ? 'They are' : 'It is'} kept for Excel, which updates ${linkedFormulas > 1 ? 'them' : 'it'} from those files, but can't be worked out here.`);
   }
   if (restored.changed) warnings.push(`${restored.changed} structure or calculated cell${restored.changed > 1 ? 's were' : ' was'} changed in another program: ${restored.changed > 1 ? 'they show' : 'it shows'} what that program saved.`);
-  const oleSaid = oleNote(oleObjects);
+  const oleSaid = oleNote(oleObjects.filter((o) => !keptOver.has(o)));
   if (oleSaid) warnings.push(oleSaid);
+  const keptOverStructures = keptOver.size;
+  if (keptOverStructures) warnings.push(`${keptOverStructures} structure${keptOverStructures > 1 ? 's were' : ' was'} changed in ChemDraw from Excel in a way that can't be read here: ${keptOverStructures > 1 ? 'they are' : 'it is'} kept as ChemDraw object${keptOverStructures > 1 ? 's' : ''} for Excel, over ${keptOverStructures > 1 ? 'their cells' : 'its cell'}, and the cell's own picture isn't saved under ${keptOverStructures > 1 ? 'them' : 'it'}.`);
+  if (lostOle.length) notKept.add(`${lostOle.length} embedded object${lostOle.length > 1 ? 's' : ''} whose data isn't in the file (linked objects)`);
   if (notKept.size) warnings.push(`Not shown here, and left out if you save over this file: ${[...notKept].join(', ')}.`);
   return { book, warnings };
 }

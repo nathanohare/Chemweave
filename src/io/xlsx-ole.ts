@@ -15,7 +15,7 @@
 // All three are kept, with their relationship ids and shape ids written afresh on saving (the
 // writer numbers shapes after the notes' own boxes, which share the VML drawing).
 
-import { kid, kids, NS, type PackageReader, type Package } from './ooxml';
+import { kid, kids, NS, bytesHash, type PackageReader, type Package } from './ooxml';
 import { elementXml } from './kept-parts';
 
 const MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
@@ -105,7 +105,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * The embedded objects of a worksheet (`ws`, at `path`), with their VML shapes (`vmlPath`) and
  * Excel 2010's twin shapes in the DrawingML drawing (`drawing`).
  */
-export function readSheetOle(pkg: PackageReader, path: string, ws: Element, vmlPath: string | null, drawing: Document | null): KeptSheetOle[] {
+export function readSheetOle(pkg: PackageReader, path: string, ws: Element, vmlPath: string | null, drawing: Document | null, lost: string[] = []): KeptSheetOle[] {
   const list = kid(ws, 'oleObjects');
   if (!list) return [];
   const rels = pkg.rels(path);
@@ -114,7 +114,7 @@ export function readSheetOle(pkg: PackageReader, path: string, ws: Element, vmlP
   const out: KeptSheetOle[] = [];
   for (const item of kids(list)) {
     const ole = item.localName === 'oleObject' ? item : item.localName === 'AlternateContent' ? Array.from(item.getElementsByTagName('*')).find((x) => x.localName === 'oleObject') : undefined;
-    if (!ole) continue;
+    if (!ole) { lost.push(''); continue; }
     const shapeId = ole.getAttribute('shapeId') ?? '';
     const copy = item.cloneNode(true) as Element;
     if (item.localName === 'AlternateContent') declareRequired(copy, item);
@@ -137,7 +137,8 @@ export function readSheetOle(pkg: PackageReader, path: string, ws: Element, vmlP
         a.value = `@@p${n}@@`;
       }
     }
-    if (missing || !parts.length) continue;
+    // (one whose data isn't in the file, a linked object: said on opening, as it can't be kept: review F2-R08)
+    if (missing || !parts.length) { lost.push(ole.getAttribute('progId') ?? ''); continue; }
     const kept: KeptSheetOle = { progId: ole.getAttribute('progId') ?? '', xml: elementXml(copy), parts };
     // its VML shape, found by its shape id (the VML drawing is not always well-formed XML, so read as text)
     const spid = `_x0000_s${shapeId}`;
@@ -230,6 +231,8 @@ export interface OleWriteState {
   /** Numbers used for the parts written so far (oleObject1.bin, image3.emf…). */
   embedNo: number;
   mediaNo: number;
+  /** The pictures written so far, by type and print: written once and related from each part that shows them. */
+  media?: Map<string, string>;
 }
 
 /**
@@ -244,8 +247,14 @@ export function writeSheetOle(pkg: Package, objects: KeptSheetOle[], sheetPath: 
   const types = new Map<string, string>();
   const partOf = (from: string, p: KeptOlePart): string => {
     const media = /^(emf|wmf|png|jpe?g|gif|bmp|tiff?)$/.test(p.ext) || /\/image$/.test(p.rel);
-    const name = media ? `xl/media/image_ole${++state.mediaNo}.${p.ext}` : `xl/embeddings/oleObject${++state.embedNo}.${p.ext}`;
-    pkg.add(name, p.bytes, p.type ?? undefined);
+    // (a picture once, however many parts relate to it: the sheet's object and its VML shape share one, as in Excel's files)
+    const key = media ? `${p.ext}|${bytesHash(p.bytes)}` : '';
+    let name = media ? state.media?.get(key) : undefined;
+    if (!name) {
+      name = media ? `xl/media/image_ole${++state.mediaNo}.${p.ext}` : `xl/embeddings/oleObject${++state.embedNo}.${p.ext}`;
+      pkg.add(name, p.bytes, p.type ?? undefined);
+      if (media) (state.media ??= new Map()).set(key, name);
+    }
     return pkg.relate(from, p.rel, `../${name.slice(3)}`);
   };
   objects.forEach((o, i) => {

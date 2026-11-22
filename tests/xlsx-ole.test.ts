@@ -10,9 +10,9 @@ import { describe, it, expect } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { writeXlsx, readXlsx, type XlsxPictures } from '../src/io/xlsx';
 import { Package, REL } from '../src/io/ooxml';
-import { zipSync } from 'fflate';
+import { zipSync, strToU8 } from 'fflate';
 import { Workbook, makeStructure } from '../src/sheet/workbook';
-import { chemdrawObject } from '../src/io/ole-object';
+import { chemdrawObject, oleCellTag } from '../src/io/ole-object';
 import type { Contents } from '../src/model';
 
 const pictures: XlsxPictures = { box: () => ({ w: 60, h: 40 }), picture: async () => null };
@@ -193,5 +193,61 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
       const kept = await readXlsx(zipSync(out));
       expect(kept.book.sheets[0].ole).toHaveLength(1);
     });
+
+    // Excel saving the workbook again renames shapes; the object's own data it keeps (review F2-R05)
+    const renamed = (out: Record<string, Uint8Array>) => {
+      const vml = Object.keys(out).find((n) => /vmlDrawing\d+\.vml$/.test(n))!;
+      out[vml] = strToU8(strFromU8(out[vml]).replace(/Structure_x0020_B2/g, 'Object_x0020_1'));
+      return out;
+    };
+    const binOf = (out: Record<string, Uint8Array>) => Object.keys(out).find((n) => /^xl\/embeddings\/oleObject\d+\.bin$/.test(n))!;
+
+    it('knows its own object by the cell named in the object\'s data, after Excel renames its shape', async () => {
+      const out = renamed(await saved());
+      expect(oleCellTag(out[binOf(out)])).toBe('B2');
+      const { book: wb, warnings } = await readXlsx(zipSync(out), { readChemdraw: () => mol('X') });
+      expect(wb.sheets[0].ole ?? []).toHaveLength(0);
+      expect(warnings.join(' ')).not.toMatch(/embedded object/i);
+      expect(wb.sheets[0].cell(1, 1)?.structure?.contents.atoms[0]).toMatchObject({ label: 'CCO' });
+    });
+
+    it('knows it by its ChemDraw data when neither the name nor the cell is there', async () => {
+      const out = renamed(await saved());
+      out[binOf(out)] = chemdrawObject(cdxOf(1));
+      const { book: wb, warnings } = await readXlsx(zipSync(out));
+      expect(wb.sheets[0].ole ?? []).toHaveLength(0);
+      expect(warnings.join(' ')).not.toMatch(/embedded object/i);
+    });
+
+    it('keeps one changed in ChemDraw that can\'t be read, says so, and saves no picture under it', async () => {
+      const out = renamed(await saved());
+      out[binOf(out)] = chemdrawObject(cdxOf(3));
+      const { book: wb, warnings } = await readXlsx(zipSync(out));
+      expect(wb.sheets[0].ole).toHaveLength(1);
+      expect(warnings.join(' ')).toMatch(/changed in ChemDraw from Excel in a way that can't be read here/);
+      expect(warnings.join(' ')).not.toMatch(/This workbook has \d+ embedded object/);
+      const again = unzipSync(await writeXlsx(wb, asObjects));
+      expect(strFromU8(again['xl/worksheets/sheet1.xml']).match(/<oleObject /g)).toHaveLength(2);
+      const drawing = Object.entries(again).find(([n]) => /drawings\/drawing\d+\.xml$/.test(n));
+      expect(drawing ? strFromU8(drawing[1]) : '').not.toContain('name="Structure B2"');
+    });
+
+    it('writes the object\'s picture once, for the sheet and its VML shape (review F2-R10)', async () => {
+      const out = await saved();
+      expect(Object.keys(out).filter((n) => /^xl\/media\/image_ole\d+\.emf$/.test(n))).toHaveLength(1);
+    });
+  });
+
+  it('says on opening that an object whose data isn\'t in the file is left out (review F2-R08)', async () => {
+    const pkg = new Package();
+    pkg.relate('', REL.officeDocument, 'xl/workbook.xml');
+    const sid = pkg.relate('xl/workbook.xml', `${R}/worksheet`, 'worksheets/sheet1.xml');
+    pkg.add('xl/workbook.xml', `<workbook xmlns="${MAIN}" xmlns:r="${R}"><sheets><sheet name="Data" sheetId="1" r:id="${sid}"/></sheets></workbook>`,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml');
+    // Excel 2007's linked object: a link, no relationship to its data
+    pkg.add('xl/worksheets/sheet1.xml', `<worksheet xmlns="${MAIN}" xmlns:r="${R}"><sheetData/><oleObjects><oleObject progId="Word.Document.12" link="[1]!'!OLE_LINK1'" oleUpdate="OLEUPDATE_ONCALL" shapeId="1025"/></oleObjects></worksheet>`,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml');
+    const { warnings } = await readXlsx(pkg.build());
+    expect(warnings.join(' ')).toMatch(/left out if you save over this file: .*1 embedded object whose data isn't in the file/);
   });
 });
