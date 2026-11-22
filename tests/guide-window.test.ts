@@ -50,3 +50,13 @@ describe('guide sections for Search Commands', () => {
     expect(got.map((c) => c.id)).toEqual(['cmd:hotkeys', 'guide:x#hotkeys', 'set:keys']);
   });
 });
+
+describe('pages the guide holds', () => {
+  it('bundles only the guide, not contributor notes such as the UI style guide', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/ui/guide-window.ts', import.meta.url), 'utf8');
+    const glob = /const PAGES = import\.meta\.glob\((\[[^\]]*\])/.exec(src)?.[1] ?? '';
+    expect(glob).toContain('docs/guide/');
+    expect(glob).not.toMatch(/\*\*|ui-style|signing/);
+  });
+});
