@@ -86,8 +86,11 @@ export function isStructure(g: { symbols: string[]; edges: number[][]; confidenc
   return g.symbols.length >= 2 && g.confidence >= 0.2 && g.edges.some((row) => row.some((t) => t > 0));
 }
 
-/** Read the picture and make it a structure (each structure, for a scheme); null (with a message) when it can't be. */
-export async function makeEditable(host: MakeEditableHost, pic: Picture, choice: StyleChoice, ds: DocStyle): Promise<Made | null> {
+/** What was read in a picture: the pixels read and how big they are shown, each structure read, and why to look closely. */
+export interface Reading { p: Pixels; ptPerPx: number; parts: FromPictureRead[]; problems: string[] }
+
+/** Read the picture (each structure on its own, for a scheme); null (with a message) when it can't be. */
+export async function readPicture(host: MakeEditableHost, pic: Picture): Promise<Reading | null> {
   const shown = await pictureForReading(pic);
   if (!shown) { host.flash('This picture can\'t be read (its format isn\'t one the structure reader can open).', 6000); return null; }
   const boxes = schemeParts(shown.p, partGap(shown.ptPerPx));
@@ -115,9 +118,19 @@ export async function makeEditable(host: MakeEditableHost, pic: Picture, choice:
     host.flash(aiAnswer ? `The AI model's answer (${aiAnswer}) isn't a structure the chemistry engine can read.` : 'No structure was found in the picture.', 8000);
     return null;
   }
-  const px = { w: shown.p.width, h: shown.p.height };
-  const e = editableOf(parts, shown.p, shown.ptPerPx, choice, ds);
-  return { drawing: drawingFor(pic, e, choice, parts, px), problems: [...e.problems, ...problems] };
+  return { p: shown.p, ptPerPx: shown.ptPerPx, parts, problems };
+}
+
+/** The structure for what was read, in the style chosen (nothing is read again). */
+export function madeFrom(pic: Picture, r: Reading, choice: StyleChoice, ds: DocStyle): Made {
+  const e = editableOf(r.parts, r.p, r.ptPerPx, choice, ds);
+  return { drawing: drawingFor(pic, e, choice, r.parts, { w: r.p.width, h: r.p.height }), problems: [...e.problems, ...r.problems] };
+}
+
+/** Read the picture and make it a structure (each structure, for a scheme); null (with a message) when it can't be. */
+export async function makeEditable(host: MakeEditableHost, pic: Picture, choice: StyleChoice, ds: DocStyle): Promise<Made | null> {
+  const r = await readPicture(host, pic);
+  return r ? madeFrom(pic, r, choice, ds) : null;
 }
 
 /** The same structure in the other style, from the picture kept (nothing is read again); null when it can't be redone. */

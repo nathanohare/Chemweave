@@ -50,12 +50,7 @@ export class CompareCard {
       + 'Keep closes this; Compare with Original opens it again.'
       + (problems.length ? ` Why to check it: ${problems.join(' ')}` : '');
     head.append(title, infoIcon(about), status);
-    // both sides at one scale: the picture's area in the structure's points, fitted to a side
-    const s = Math.min(PANE_W / fp.at.w, PANE_H / fp.at.h, 3);
-    const w = Math.max(1, Math.round(fp.at.w * s)), h = Math.max(1, Math.round(fp.at.h * s));
-    const panes = document.createElement('div');
-    panes.className = 'cc-panes';
-    panes.append(this.pane('Original picture', w, h, (c) => drawPicture(c, fp)), this.pane('Editable structure', w, h, (c) => drawStructure(c, contents, style, fp, s)));
+    const panes = comparePanes(contents, fp, style);
     const buttons = document.createElement('div');
     buttons.className = 'cc-buttons';
     const button = (label: string, title: string, go: () => void, primary = false) => {
@@ -76,21 +71,6 @@ export class CompareCard {
     el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); this.close(); } });
     document.body.append(el);
     this.follow();
-  }
-
-  private pane(caption: string, w: number, h: number, draw: (c: HTMLCanvasElement) => void): HTMLElement {
-    const fig = document.createElement('figure');
-    const c = document.createElement('canvas');
-    const dpr = window.devicePixelRatio || 1;
-    c.width = Math.round(w * dpr);
-    c.height = Math.round(h * dpr);
-    c.style.width = `${w}px`;
-    c.style.height = `${h}px`;
-    draw(c);
-    const cap = document.createElement('figcaption');
-    cap.textContent = caption;
-    fig.append(c, cap);
-    return fig;
   }
 
   /** Beside the structure (right, else left, else under it), kept on screen; hidden while the structure isn't shown. */
@@ -120,6 +100,31 @@ export class CompareCard {
     this.el.remove();
     this.host.closed();
   }
+}
+
+/** The picture and the structure made from it side by side, at one scale (the picture's area in the structure's points, fitted to a side). */
+export function comparePanes(contents: Contents, fp: FromPicture, style: DocStyle): HTMLElement {
+  const s = Math.min(PANE_W / fp.at.w, PANE_H / fp.at.h, 3);
+  const w = Math.max(1, Math.round(fp.at.w * s)), h = Math.max(1, Math.round(fp.at.h * s));
+  const panes = document.createElement('div');
+  panes.className = 'cc-panes';
+  panes.append(pane('Original picture', w, h, (c) => drawPicture(c, fp)), pane('Editable structure', w, h, (c) => drawStructure(c, contents, style, fp, s)));
+  return panes;
+}
+
+function pane(caption: string, w: number, h: number, draw: (c: HTMLCanvasElement) => void): HTMLElement {
+  const fig = document.createElement('figure');
+  const c = document.createElement('canvas');
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(w * dpr);
+  c.height = Math.round(h * dpr);
+  c.style.width = `${w}px`;
+  c.style.height = `${h}px`;
+  draw(c);
+  const cap = document.createElement('figcaption');
+  cap.textContent = caption;
+  fig.append(c, cap);
+  return fig;
 }
 
 /** The picture as it was shown (its cropping taken off), filling the side. */
