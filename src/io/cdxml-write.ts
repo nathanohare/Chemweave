@@ -38,6 +38,7 @@ import { fillInk, mix, ringShadowGroups, ringShadowSize, shadowLook } from '../r
 import { shapeShadow } from '../render/highlight-fx';
 import { parseColor } from '../render/vector';
 import { layoutTable, cellAlign, isCovered, spanOf, partAt, NOTE_SCALE } from '../table';
+import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, type RefKind, type RefOut } from './cdxml-more';
 import { TABLE_TAG, TABLE_PART_TAG, tableBorders, type TableTag } from './cdxml-table';
 import { bondLayer, crossingBondsCached, listedNearMisses } from '../chem/crossing';
 import { repeatGroups, repeatCount, repeatLabelPlace } from '../chem/polymer';
@@ -205,6 +206,7 @@ class CdxmlWriter {
     this.writeSteps();
     this.writeGroups();
     this.writePieces();
+    this.writeMore();
     if (this.writeStack()) this.changed = true;
     this.raiseTableFigures();
     if (src) this.cleanUp();
@@ -1714,7 +1716,7 @@ class CdxmlWriter {
     const v: Record<string, unknown> = {};
     for (const end of ['tail', 'head'] as const) {
       const p = r.pin[end];
-      if (p) v[end] = { on: p.on, ref: p.ref.map((id) => this.nodeId(id)), at: [Math.round(p.at.x * 1e4) / 1e4, Math.round(p.at.y * 1e4) / 1e4], hand: p.hand, ...(p.len ? { len: Math.round(p.len * 1e4) / 1e4 } : {}) };
+      if (p) v[end] = { on: p.on, ref: p.ref.map((id) => this.nodeId(id)), at: [Math.round(p.at.x * 1e4) / 1e4, Math.round(p.at.y * 1e4) / 1e4], hand: p.hand, ...(p.len ? { len: Math.round(p.len * 1e4) / 1e4 } : {}), ...(p.dir ? { dir: [Math.round(p.dir.x * 1e4) / 1e4, Math.round(p.dir.y * 1e4) / 1e4] } : {}) };
     }
     return JSON.stringify(v);
   }
@@ -2110,14 +2112,22 @@ class CdxmlWriter {
     const spans: [number, number, number][] = [];
     const aligns: [number, number, string][] = [];
     const figs: [number, number, number, number][] = [];
+    const rowSpans: [number, number, number][] = [];
+    const fills: [number, number, string][] = [];
     t.rows.forEach((row, r) => row.forEach((cell, c) => {
       if ((cell.span ?? 1) > 1) spans.push([r, c, cell.span!]);
       if (cell.align) aligns.push([r, c, cell.align]);
       if (cell.fig) figs.push([r, c, cell.fig.w, cell.fig.h]);
+      if ((cell.rowSpan ?? 1) > 1) rowSpans.push([r, c, cell.rowSpan!]);
+      if (cell.fill) fills.push([r, c, cell.fill]);
     }));
     if (spans.length) tag.spans = spans;
     if (aligns.length) tag.cellAlign = aligns;
     if (figs.length) tag.figs = figs;
+    if (rowSpans.length) tag.rowSpans = rowSpans;
+    if (fills.length) tag.fills = fills;
+    if (t.style) tag.style = t.style;
+    if (t.look) tag.look = t.look;
     table.appendChild(this.el('objecttag', { TagType: 'String', Name: TABLE_TAG, Value: JSON.stringify(tag), Visible: 'no' }));
     if (!hasParts) return table;
     // the title and footnotes go with the table in a group, so they move together in ChemDraw too
@@ -2842,6 +2852,66 @@ class CdxmlWriter {
     for (const s of doc.shapes.values()) put('s', s.id, ['graphic', 'embeddedobject', 'table', 'group', 'curve'], s.piece);
     // the two halves of a bracket pair drawn with the bracket tool (a click on one selects both)
     for (const s of doc.shapes.values()) if (s.kind === 'bracket') put('s', s.id, ['graphic'], s.bracketPair, BRACKET_PAIR_TAG, 'bracketPair');
+  }
+
+  /**
+   * Each object's settings that ChemDraw has no place for, in one hidden tag on its element
+   * (cdxml-more.ts): an atom's depth and hand-set label marks, a bond's place among crossing
+   * bonds, a text box's columns, a bent arrow, a shape's name, frame members and pin. A tag that
+   * says what the element's tag says already is left as it is.
+   */
+  private writeMore(): void {
+    const doc = this.doc;
+    const ided = this.idedFinder();
+    const SHAPE_NAMES = ['graphic', 'embeddedobject', 'table', 'group', 'curve'];
+    const ARROW_NAMES = ['arrow', 'graphic', 'curve'];
+    const elOf = (kind: RefKind, id: number): Element | null => {
+      const names = kind === 'a' ? ['n'] : kind === 'b' ? ['b'] : kind === 'c' ? ['t'] : kind === 'r' ? ARROW_NAMES : SHAPE_NAMES;
+      const e = this.source(kind, id, names) ?? (kind === 'r' ? this.findArrow(id) : null) ?? ided(id, names);
+      return e && names.includes(e.nodeName) ? e : null;
+    };
+    const maps: Record<RefKind, Map<number, unknown>> = { a: doc.atoms, b: doc.bonds, c: doc.captions, r: doc.arrows, s: doc.shapes };
+    const ref: RefOut = (kind, id) => (maps[kind].has(id) ? elOf(kind, id)?.getAttribute('id') ?? null : null);
+    const stereoText = (e: Element) => {
+      const t = kids(e).find((c) => c.nodeName === 'objecttag' && c.getAttribute('Name') === 'stereo');
+      return t ? this.child(t, 't')?.textContent ?? null : null;
+    };
+    // what the reader takes from the element itself (cdxml.ts): a crossing bond's Z, and a justified text's width from its box
+    const fileZ = (e: Element): number | undefined => {
+      const frag = e.parentNode as Element | null;
+      const layered = !!frag && kids(frag).some((k) => k.nodeName === 'b' && k.hasAttribute('CrossingBonds'));
+      return layered && e.hasAttribute('Z') ? Number(e.getAttribute('Z')) : undefined;
+    };
+    const fileWidth = (e: Element): number | undefined => {
+      if (Number(e.getAttribute('WordWrapWidth')) > 0) return undefined;
+      const j = e.getAttribute('Justification') ?? e.getAttribute('CaptionJustification');
+      if (j !== 'Center' && j !== 'Right' && j !== 'Full') return undefined;
+      const bb = (e.getAttribute('BoundingBox') ?? '').trim().split(/\s+/).map(Number);
+      return bb.length === 4 && bb.every(Number.isFinite) ? Math.abs(bb[2] - bb[0]) : undefined;
+    };
+    const put = (e: Element | null, v: Record<string, unknown> | null) => {
+      if (!e) return;
+      const old = kids(e).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MORE_TAG);
+      const want = v ? JSON.stringify(v) : null;
+      if ((old?.getAttribute('Value') ?? null) === want) return;
+      if (old) e.removeChild(old);
+      if (want !== null) e.appendChild(this.el('objecttag', { TagType: 'String', Name: MORE_TAG, Value: want, Visible: 'no' }));
+      this.changed = true;
+    };
+    for (const a of doc.atoms.values()) {
+      const e = elOf('a', a.id);
+      if (e) put(e, atomMore(a, this.child(e, 't')?.textContent ?? null, stereoText(e)));
+    }
+    for (const b of doc.bonds.values()) {
+      const e = elOf('b', b.id);
+      if (e) put(e, bondMore(b, stereoText(e), fileZ(e)));
+    }
+    for (const c of doc.captions.values()) {
+      const e = elOf('c', c.id);
+      if (e) put(e, captionMore(c, fileWidth(e)));
+    }
+    for (const r of doc.arrows.values()) put(elOf('r', r.id), arrowMore(r, ref));
+    for (const s of doc.shapes.values()) put(elOf('s', s.id), shapeMore(s, ref));
   }
 
   private cleanUp(): void {

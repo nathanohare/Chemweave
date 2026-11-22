@@ -20,8 +20,38 @@ export interface TextTag {
   lineSpacing?: number;
   /** Links, as [start, end, link] in the text as saved. */
   links?: [number, number, string][];
+  /** Looks ChemDraw's text has no place for (LOOK_FIELDS), as [start, end, look] in the text as saved. */
+  looks?: [number, number, Partial<TextRun>][];
   /** Checksum of the text as saved, so a text edited elsewhere is recognised. */
   sum: string;
+}
+
+/**
+ * A run's looks that ChemDraw's text has no place for (it has bold, italic, underline, sizes,
+ * fonts and colours): strikethrough, character spacing and the Font box's text effects, and which
+ * font a sign was in. They ride in the tag, by where they are in the text.
+ */
+export const LOOK_FIELDS = ['strike', 'dstrike', 'spacing', 'outline', 'outlineW', 'shadow', 'noFill', 'noKern', 'transparency', 'symbolFont'] as const;
+
+/** The looks of a run that go in the tag, or null. */
+function lookOf(r: TextRun): Partial<TextRun> | null {
+  const o: Record<string, unknown> = {};
+  for (const k of LOOK_FIELDS) if (r[k] !== undefined && (k === 'symbolFont' || r[k] !== false)) o[k] = r[k];
+  return Object.keys(o).length ? o as Partial<TextRun> : null;
+}
+
+/** Each look checked against the type it has here (a damaged or hand-edited file can't put a wrong one on the text). */
+function tidyLook(v: unknown): Partial<TextRun> | null {
+  if (!v || typeof v !== 'object') return null;
+  const x = v as Record<string, unknown>, o: Partial<TextRun> = {};
+  const n = (k: string) => typeof x[k] === 'number' && Number.isFinite(x[k]);
+  for (const k of ['strike', 'dstrike', 'shadow', 'noFill', 'noKern'] as const) if (x[k] === true) o[k] = true;
+  if (typeof x.symbolFont === 'boolean') o.symbolFont = x.symbolFont;
+  if (n('spacing')) o.spacing = x.spacing as number;
+  if (typeof x.outline === 'string') o.outline = x.outline;
+  if (n('outlineW') && (x.outlineW as number) > 0) o.outlineW = x.outlineW as number;
+  if (n('transparency')) o.transparency = Math.max(0, Math.min(1, x.transparency as number));
+  return Object.keys(o).length ? o : null;
 }
 
 /** A short checksum of a text (FNV-1a, 32 bits). */
@@ -51,7 +81,8 @@ export function runsForChemDraw(c: { runs: TextRun[]; paras?: ParaStyle[]; lineS
   const stored = storedParas(paras);
   const spacing = c.lineSpacing && c.lineSpacing !== 1 ? c.lineSpacing : undefined;
   const linked = c.runs.some((r) => r.link);
-  if (!stored && !spacing && !linked) return { runs: c.runs, tag: null };
+  const looked = c.runs.some((r) => lookOf(r));
+  if (!stored && !spacing && !linked && !looked) return { runs: c.runs, tag: null };
   const markers = listMarkers(paras);
   const out: TextRun[] = [];
   splitParagraphs(c.runs).forEach((pr, i) => {
@@ -71,6 +102,14 @@ export function runsForChemDraw(c: { runs: TextRun[]; paras?: ParaStyle[]; lineS
   if (stored) tag.paras = stored;
   if (spacing) tag.lineSpacing = spacing;
   if (links.length) tag.links = links;
+  const looks: [number, number, Partial<TextRun>][] = [];
+  let at = 0;
+  for (const r of runs) {
+    const l = lookOf(r);
+    if (l) looks.push([at, at + r.text.length, l]);
+    at += r.text.length;
+  }
+  if (looks.length) tag.looks = looks;
   return { runs, tag };
 }
 
@@ -93,6 +132,10 @@ export function runsFromChemDraw(runs: TextRun[], tag: TextTag | null): { runs: 
   const markers = listMarkers(paras);
   let out = runs;
   for (const [a, b, link] of tag.links ?? []) if (typeof link === 'string' && a >= 0 && b > a && b <= text.length) out = applyStyle(out, a, b, { link });
+  for (const [a, b, look] of Array.isArray(tag.looks) ? tag.looks : []) {
+    const l = tidyLook(look);
+    if (l && typeof a === 'number' && typeof b === 'number' && a >= 0 && b > a && b <= text.length) out = applyStyle(out, a, b, l);
+  }
   for (let i = paras.length - 1; i >= 0; i--) {
     const prefix = markerPrefix(paras[i], markers[i]);
     if (!prefix) continue;

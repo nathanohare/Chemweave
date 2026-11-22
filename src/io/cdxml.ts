@@ -12,7 +12,7 @@ import { highlightStyleFromTag } from '../render/highlight';
 import { attachRingFills, ringGeometry, ringsIn } from '../chem/ring-fill';
 import { paperOf } from './cdxml-print';
 import { lipDirection } from '../chem/polymer';
-import { Doc, Atom, Bond, BondDisplay, TextRun, Arrow, Shape, Entity, Kind, StereoLabel, Caption, StepRoles, MorphStep, CHIRAL_FLAGS, PARTIAL, PAPER, type Pin, type ArrowTextLook, type ArrowKind, type OrbitalTag, type PictureFx, type ShapeMath, type HighlightStyle } from '../model';
+import { Doc, Atom, Bond, BondDisplay, TextRun, Arrow, Shape, Entity, Kind, StereoLabel, Caption, StepRoles, MorphStep, CHIRAL_FLAGS, PARTIAL, PAPER, type Pin, type ArrowTextLook, type ArrowKind, type OrbitalTag, type PictureFx, type ShapeMath, type Media, type HighlightStyle } from '../model';
 import { TEXT_TAG, parseTextTag, runsFromChemDraw } from '../text/chemdraw-text';
 import { readPageTag } from '../page-grid';
 import { DocStyle, MAP_LOOKS, mapBoxStyle, type MapLook } from '../style';
@@ -39,6 +39,7 @@ import { cleanTiedLook } from '../editor/tied-look';
 import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
+import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
 
 export interface ReadStats {
   atoms: number;
@@ -65,7 +66,11 @@ const num = (el: Element, name: string, def = 0): number => {
 
 const pts = (v: string | null): number[] => (v ? v.trim().split(/\s+/).map(Number) : []);
 
-export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
+/**
+ * Reads a CDXML file. `fileIds` says what each element id in the file became (so things a file
+ * names by those ids, such as a slide's own references kept beside its drawings, find them again).
+ */
+export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: Map<string, { kind: RefKind; id: number }> } {
   const t0 = performance.now();
   // ChemDraw writes a DOCTYPE pointing at a web address; drop it so nothing is fetched.
   const xml = new DOMParser().parseFromString(withoutDoctype(text), 'application/xml');
@@ -100,8 +105,17 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
   /** Atoms by their ids in the file, and what the file says about each tied caption (fillAttachments). */
   const atomOfNode = new Map<string, number>();
   const attachNodes = new Map<number, { node?: string; box?: { x1: number; y1: number; x2: number; y2: number } }>();
+  /** What each element id in the file became, and the objects with this program's settings tag (cdxml-more.ts). */
+  const byFileId = new Map<string, { kind: RefKind; id: number }>();
+  const moreTags: [RefKind, number, Element, string][] = [];
   const from = (kind: Kind, id: number, el: Element) => {
     if (kind === 'a') { const k = el.getAttribute('id'); if (k) atomOfNode.set(k, id); }
+    if (kind !== 'y') {
+      const k = el.getAttribute('id');
+      if (k && !byFileId.has(k)) byFileId.set(k, { kind, id });
+      const more = kids(el).find((t) => t.nodeName === 'objecttag' && t.getAttribute('Name') === MORE_TAG)?.getAttribute('Value');
+      if (more) moreTags.push([kind, id, el, more]);
+    }
     const o = ordOf.get(el);
     if (o !== undefined) ord.set(kind + id, o);
     const piece = Number(kids(el).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PIECE_TAG)?.getAttribute('Value'));
@@ -1191,40 +1205,55 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
 
   /** Polymer and repeat groups (ChemDraw's bracketedgroup), read once the brackets are in. */
   const pendingRepeats: Element[] = [];
+  const usageTag = (e: Element) => kids(e).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === 'bracketusage');
+  /** A repeat label on a bracket, with its own colour, weight and size as ChemDraw keeps them on its text. */
+  const labelBracket = (labelled: Shape, text: string, tagged: Element | undefined) => {
+    labelled.repeat = text;
+    const tag = tagged && usageTag(tagged);
+    const s0 = tag ? kids(kids(tag).find((k) => k.nodeName === 't') ?? tag).find((k) => k.nodeName === 's') : undefined;
+    if (s0) {
+      const look: NonNullable<Shape['repeatLook']> = {};
+      const lc = color(s0);
+      if (lc && lc !== (labelled.color ?? '#000000')) look.color = lc;
+      // (only what differs from how a label is drawn here: plain numbers, italic letters, 3/4 of the label size)
+      const face = num(s0, 'face', 0), size = num(s0, 'size', 0);
+      if ((face & 3) !== (/^\d+$/.test(text) ? 0 : 2)) look.face = face;
+      if (size > 0 && Math.abs(size - 0.75 * st.labelSize) > 0.01) look.size = size;
+      if (Object.keys(look).length) labelled.repeatLook = look;
+    }
+  };
   const readRepeats = () => {
-    if (!pendingRepeats.length) return;
-    const byXmlId = new Map<string, Element>();
-    for (const e of all) { const id = e.getAttribute('id'); if (id) byXmlId.set(id, e); }
-    for (const g of pendingRepeats) {
-      const usage = g.getAttribute('BracketUsage');
-      if (usage !== 'SRU' && usage !== 'MultipleGroup') { keepXml(g); continue; }
-      const text = usage === 'SRU' ? g.getAttribute('SRULabel') || 'n' : String(Math.round(num(g, 'RepeatCount', 2)));
-      const brackets: { e: Element; sh: Shape }[] = [];
-      for (const k of kids(g)) {
-        if (k.nodeName !== 'bracketattachment') continue;
-        const e = byXmlId.get(k.getAttribute('GraphicID') ?? '');
-        const ref = e ? refOf().get(e) : undefined;
-        const sh = ref && ref[0] === 's' ? doc.shapes.get(Number(ref.slice(1))) : undefined;
-        if (e && sh?.kind === 'bracket') brackets.push({ e, sh });
+    if (pendingRepeats.length) {
+      const byXmlId = new Map<string, Element>();
+      for (const e of all) { const id = e.getAttribute('id'); if (id) byXmlId.set(id, e); }
+      for (const g of pendingRepeats) {
+        const usage = g.getAttribute('BracketUsage');
+        if (usage !== 'SRU' && usage !== 'MultipleGroup') { keepXml(g); continue; }
+        const text = usage === 'SRU' ? g.getAttribute('SRULabel') || 'n' : String(Math.round(num(g, 'RepeatCount', 2)));
+        const brackets: { e: Element; sh: Shape }[] = [];
+        for (const k of kids(g)) {
+          if (k.nodeName !== 'bracketattachment') continue;
+          const e = byXmlId.get(k.getAttribute('GraphicID') ?? '');
+          const ref = e ? refOf().get(e) : undefined;
+          const sh = ref && ref[0] === 's' ? doc.shapes.get(Number(ref.slice(1))) : undefined;
+          if (e && sh?.kind === 'bracket') brackets.push({ e, sh });
+        }
+        if (!brackets.length) continue;
+        // the label goes where ChemDraw shows it: on the bracket holding the label text, else the closing one
+        const withText = brackets.find((b) => usageTag(b.e));
+        const labelled = (withText ?? brackets.find((b) => lipDirection(b.sh).x < -0.5) ?? brackets[brackets.length - 1]).sh;
+        labelBracket(labelled, text, withText?.e);
       }
-      if (!brackets.length) continue;
-      // the label goes where ChemDraw shows it: on the bracket holding the label text, else the closing one
-      const usageTag = (b: { e: Element }) => kids(b.e).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === 'bracketusage');
-      const withText = brackets.find((b) => usageTag(b));
-      const labelled = (withText ?? brackets.find((b) => lipDirection(b.sh).x < -0.5) ?? brackets[brackets.length - 1]).sh;
-      labelled.repeat = text;
-      // the label's own colour, weight and size, as ChemDraw keeps them on its text
-      const s0 = withText ? kids(kids(usageTag(withText)!).find((k) => k.nodeName === 't') ?? usageTag(withText)!).find((k) => k.nodeName === 's') : undefined;
-      if (s0) {
-        const look: NonNullable<Shape['repeatLook']> = {};
-        const lc = color(s0);
-        if (lc && lc !== (labelled.color ?? '#000000')) look.color = lc;
-        // (only what differs from how a label is drawn here: plain numbers, italic letters, 3/4 of the label size)
-        const face = num(s0, 'face', 0), size = num(s0, 'size', 0);
-        if ((face & 3) !== (/^\d+$/.test(text) ? 0 : 2)) look.face = face;
-        if (size > 0 && Math.abs(size - 0.75 * st.labelSize) > 0.01) look.size = size;
-        if (Object.keys(look).length) labelled.repeatLook = look;
-      }
+    }
+    // a bracket labelled on its own, round nothing (its repeat group has no atoms to name): the label
+    // as the bracket's own text says it
+    for (const [e, ref] of refOf()) {
+      if (ref[0] !== 's' || e.getAttribute('GraphicType') !== 'Bracket') continue;
+      const sh = doc.shapes.get(Number(ref.slice(1)));
+      const usage = e.getAttribute('BracketUsage');
+      if (!sh || sh.kind !== 'bracket' || sh.repeat !== undefined || (usage !== 'SRU' && usage !== 'MultipleGroup')) continue;
+      const text = (usageTag(e)?.textContent ?? '').trim();
+      if (text && (usage === 'SRU' || /^\d+$/.test(text))) labelBracket(sh, text, e);
     }
   };
 
@@ -1362,7 +1391,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
               const got = tag ? JSON.parse(tag) as PlateData : undefined;
               if (got?.kind === 'crystal' && got.crystal && Array.isArray(got.crystal.atoms)) plate = got;
             } catch { plate = undefined; }
-            if (!trusted) { chart = undefined; math = undefined; plate = undefined; }
+            // (a crop cuts the picture written; one ChemDraw replaced is shown whole)
+            if (!trusted) { chart = undefined; math = undefined; plate = undefined; delete extra.crop; }
+            if (plate?.crystal) delete extra.crop;
             // a crystal structure is drawn again from its data (sharper than ChemDraw's copy of the picture)
             if (plate?.crystal && pic) { pic.src = crystalSrc(plate.crystal, bb[2] - bb[0], bb[3] - bb[1]); pic.px = { w: Math.round(bb[2] - bb[0]), h: Math.round(bb[3] - bb[1]) }; pic.crop = null; }
             // where ChemDraw draws it among the other objects, and turned as ChemDraw turns it (BoundingBox is the unturned frame)
@@ -1464,6 +1495,18 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
         }
       }
     }
+    // this program's settings that ChemDraw has no place for, with what they name found again by id
+    const refIn: RefIn = (fileId) => byFileId.get(fileId);
+    for (const [kind, id, el, json] of moreTags) {
+      let v: Record<string, unknown>;
+      try { v = JSON.parse(json) as Record<string, unknown>; } catch { continue; }
+      if (!v || typeof v !== 'object') continue;
+      if (kind === 'a') { const a = doc.atoms.get(id); const t = kids(el).find((k) => k.nodeName === 't'); if (a) atomMoreIn(a, v, t ? t.textContent ?? '' : null, doc.degree(id) > 0); }
+      else if (kind === 'b') { const b = doc.bonds.get(id); if (b) bondMoreIn(b, v); }
+      else if (kind === 'c') { const c = doc.captions.get(id); if (c) captionMoreIn(c, v); }
+      else if (kind === 'r') { const r = doc.arrows.get(id); if (r) arrowMoreIn(r, v, refIn); }
+      else if (kind === 's') { const sh = doc.shapes.get(id); if (sh) shapeMoreIn(sh, v, refIn); }
+    }
     attachRingFills(doc);
     // a chiral flag goes with the structure whose fragment it was in (review F1b-R01)
     for (const [id, frag] of flagHomes) {
@@ -1502,7 +1545,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
   doc.source = { text, ord, orig, maxId, xml, loaded, page: JSON.stringify(doc.page ?? null) };
   doc.allDirty = true;
   stats.buildMs = performance.now() - t1;
-  return { doc, stats };
+  return { doc, stats, fileIds: byFileId };
 }
 
 /**
@@ -1587,14 +1630,14 @@ function readPinTags(tags: [number, string][], refOf: Map<Element, string>, doc:
     const r = doc.arrows.get(id);
     if (!r) continue;
     try {
-      const v = JSON.parse(json) as Record<'tail' | 'head', { on: Pin['on']; ref: string[]; at: [number, number]; hand: number; len?: number } | undefined>;
+      const v = JSON.parse(json) as Record<'tail' | 'head', { on: Pin['on']; ref: string[]; at: [number, number]; hand: number; len?: number; dir?: [number, number] } | undefined>;
       const pin: Arrow['pin'] = {};
       for (const end of ['tail', 'head'] as const) {
         const p = v[end];
         if (!p || !Array.isArray(p.ref) || !Array.isArray(p.at) || !p.at.slice(0, 2).every((n) => typeof n === 'number' && Number.isFinite(n))) continue;
         const ref = p.ref.map((k) => atomOf.get(String(k)));
         if (ref.some((x) => x === undefined) || !['atom', 'bond', 'gap'].includes(p.on)) continue;
-        pin[end] = { on: p.on, ref: ref as number[], at: { x: p.at[0], y: p.at[1] }, hand: p.hand < 0 ? -1 : 1, was: { ...r[end] }, ...(p.on === 'atom' && typeof p.len === 'number' && p.len > 0 ? { len: p.len } : {}) };
+        pin[end] = { on: p.on, ref: ref as number[], at: { x: p.at[0], y: p.at[1] }, hand: p.hand < 0 ? -1 : 1, was: { ...r[end] }, ...(p.on === 'atom' && typeof p.len === 'number' && p.len > 0 ? { len: p.len } : {}), ...(Array.isArray(p.dir) && p.dir.length === 2 && p.dir.every((n) => typeof n === 'number' && Number.isFinite(n)) ? { dir: { x: p.dir[0], y: p.dir[1] } } : {}) };
       }
       if (pin.tail || pin.head) r.pin = pin;
     } catch { /* not a pin */ }
@@ -2172,7 +2215,7 @@ export const PICTURE_FX_TAG = 'Chem Illustrator picture format';
  */
 export const PICTURE_TAG = 'Chem Illustrator picture';
 /** The settings of a picture kept in PICTURE_TAG. */
-export const PICTURE_TAG_FIELDS = ['look', 'transparency', 'name', 'hidden', 'locked', 'link'] as const;
+export const PICTURE_TAG_FIELDS = ['look', 'transparency', 'name', 'hidden', 'locked', 'link', 'crop', 'video'] as const;
 
 /**
  * What a picture element holds: a hash (32-bit FNV-1a of its hex digits, in capitals) of the first
@@ -2213,6 +2256,19 @@ export function pictureSettings(v: Record<string, unknown>): Partial<Shape> {
   if (typeof v.hidden === 'boolean') out.hidden = v.hidden;
   if (typeof v.locked === 'boolean') out.locked = v.locked;
   if (typeof v.link === 'string') out.link = v.link;
+  // the parts cut off (fractions of each side), and a video or sound it stands for (Insert ▸ Video)
+  const c = v.crop as Record<string, unknown> | undefined;
+  const frac = (x: unknown) => n(x) && (x as number) >= 0 && (x as number) < 1;
+  if (c && typeof c === 'object' && frac(c.l) && frac(c.t) && frac(c.r) && frac(c.b)) out.crop = { l: c.l as number, t: c.t as number, r: c.r as number, b: c.b as number };
+  const m = v.video as Record<string, unknown> | undefined;
+  if (m && typeof m === 'object' && typeof m.src === 'string' && m.src.startsWith('data:')) {
+    const media: Media = { src: m.src };
+    for (const k of ['once', 'audio', 'mute', 'rewind', 'hide', 'across', 'narration', 'full'] as const) if (m[k] === true) media[k] = true;
+    for (const k of ['trimStart', 'trimEnd', 'fadeIn', 'fadeOut', 'length'] as const) if (n(m[k]) && (m[k] as number) >= 0) media[k] = m[k] as number;
+    if (n(m.vol)) media.vol = Math.max(0, Math.min(1, m.vol as number));
+    if (m.start === 'auto' || m.start === 'click') media.start = m.start;
+    out.video = media;
+  }
   return out;
 }
 

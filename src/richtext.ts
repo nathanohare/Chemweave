@@ -11,7 +11,7 @@ const LINK_COLOUR = '#0563c1';
 export type RunStyle = Omit<TextRun, 'text'>;
 export type Toggle = 'bold' | 'italic' | 'underline' | 'sub' | 'sup' | 'formula' | 'strike' | 'smallCaps' | 'allCaps';
 
-const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'pfx', 'ukind', 'ucolor', 'dstrike', 'wrx', 'lang', 'field', 'noProof', 'raise', 'cite'] as const;
+const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'pfx', 'ukind', 'ucolor', 'dstrike', 'wrx', 'lang', 'field', 'noProof', 'raise', 'cite', 'symbolFont'] as const;
 /** Subscript, superscript and formula style change where characters sit, so only one applies. */
 const POSITION: Toggle[] = ['sub', 'sup', 'formula'];
 
@@ -20,7 +20,8 @@ export function cleanStyle(s: RunStyle): RunStyle {
   const o: Record<string, unknown> = {};
   for (const k of KEYS) {
     const v = s[k];
-    if (v !== undefined && v !== false && v !== null) o[k] = v;
+    // (symbolFont false says something: a sign kept in an ordinary font)
+    if (v !== undefined && v !== null && (v !== false || k === 'symbolFont')) o[k] = v;
   }
   return o as RunStyle;
 }
