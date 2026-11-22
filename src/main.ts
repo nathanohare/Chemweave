@@ -16173,6 +16173,8 @@ chem.onReady = () => {
   siMode?.engineReady();
   sheetChem.flush();
   updatePanels();
+  // (R/S and E/Z labels the engine failed on before it restarted are worked out again)
+  void live.retry();
   updateStereo();
   scheduleAnalysis(true);
   void refreshDescriptors();
