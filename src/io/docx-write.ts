@@ -242,8 +242,16 @@ class DocxWriter {
     return id;
   }
 
-  /** A kept set of levels' start values and restarts (w:start, w:lvlRestart), from its XML. */
+  private keptLevelsMemo = new Map<string, { start: number[]; restart: (number | undefined)[] }>();
+  /** A kept set of levels' start values and restarts (w:start, w:lvlRestart), from its XML (read once). */
   private keptLevels(abs: string): { start: number[]; restart: (number | undefined)[] } {
+    const known = this.keptLevelsMemo.get(abs);
+    if (known) return known;
+    const lv = this.readKeptLevels(abs);
+    this.keptLevelsMemo.set(abs, lv);
+    return lv;
+  }
+  private readKeptLevels(abs: string): { start: number[]; restart: (number | undefined)[] } {
     const x = this.t.kept?.numbering?.abs.find((a) => a.id === abs)?.xml ?? '';
     const start: number[] = [], restart: (number | undefined)[] = [];
     for (const m of x.matchAll(/<w:lvl\b[^>]*?w:ilvl="(\d+)"[^>]*>([\s\S]*?)<\/w:lvl>/g)) {
