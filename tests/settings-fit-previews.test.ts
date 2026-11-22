@@ -36,8 +36,8 @@ describe('Settings fit at 1024×700 (G5-30, G5-31)', () => {
 
 describe('NMR Prediction preview (G5-11)', () => {
   it('draws ethyl acetate as first-order multiplets, each summing to its number of H', () => {
-    // ethyl acetate in CDCl3: 4.12 (q, J = 7, 2H), 2.05 (s, 3H), 1.26 (t, J = 7, 3H)
-    // (Fulmer et al., Organometallics 2010, 29, 2176, Table 1)
+    // ethyl acetate in CDCl3: CH3CO 2.05 s; CH2 4.12 q, J = 7; CH3 1.26 t, J = 7 (Hz)
+    // (Fulmer, G. R. et al., Organometallics 2010, 29, 2176–2179, doi:10.1021/om100106e, Table 1)
     const d = sampleSpectrumData(400, false);
     const sp = d.spec!;
     expect(sp.groups.map((g) => [g.shift, g.mult, g.n])).toEqual([[4.12, 'q', 2], [2.05, 's', 3], [1.26, 't', 3]]);

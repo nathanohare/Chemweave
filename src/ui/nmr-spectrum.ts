@@ -121,9 +121,9 @@ function labelBand(items: { lines: string[] }[], p: PeakLabels, h: number): numb
 }
 
 /** The sample Settings ▸ NMR Prediction draws its preview with: ethyl acetate in CDCl₃, δ 4.12 (q,
- *  J = 7 Hz, 2H, OCH₂), 2.05 (s, 3H, COCH₃), 1.26 (t, J = 7 Hz, 3H, CH₂CH₃) (Fulmer et al.,
- *  Organometallics 2010, 29, 2176, Table 1, where the couplings read q, 7 and t, 7), as
- *  first-order lines at `sf` MHz. With `measured`, the
+ *  J = 7 Hz, 2H, OCH₂), 2.05 (s, 3H, COCH₃), 1.26 (t, J = 7 Hz, 3H, CH₂CH₃) (Fulmer, G. R. et al.,
+ *  Organometallics 2010, 29, 2176–2179, doi:10.1021/om100106e, Table 1: ethyl acetate in CDCl₃,
+ *  CH₃CO 2.05 s; CH₂ 4.12 q, J = 7; CH₃ 1.26 t, J = 7 Hz), as first-order lines at `sf` MHz. With `measured`, the
  *  same list again as a pasted report, so the comparison layout shows. */
 export function sampleSpectrumData(sf: number, measured: boolean): SpectrumData {
   const groups: PredictedSpectrum['groups'] = [
