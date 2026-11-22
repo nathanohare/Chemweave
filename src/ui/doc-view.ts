@@ -587,7 +587,7 @@ export class DocView {
       }
       if (clipped) ctx.restore();
     }
-    if (hiding) this.joins(ctx, lay, visible, at);
+    if (hiding) this.joins(ctx, visible, at);
     if (ov.hf && !endless) this.hfMarks(ctx, t, lay, visible, at, ov.hf);
     if (endless) {
       at(lay.pages[0]);
@@ -801,7 +801,7 @@ export class DocView {
    * Hidden white space: a grey line where one page's text ends and the next one's starts and,
    * with crop marks shown, a mark at each side of the text across it, the same above and below.
    */
-  private joins(ctx: CanvasRenderingContext2D, lay: DocLayout, visible: PageBox[], at: (p: PageBox) => void): void {
+  private joins(ctx: CanvasRenderingContext2D, visible: PageBox[], at: (p: PageBox) => void): void {
     const k = this.zoom;
     for (const p of visible) {
       if (p.index === 0) continue;
