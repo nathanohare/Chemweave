@@ -2113,7 +2113,7 @@ function toggleDepthShading(): void {
   depthShadePrefs.on = !depthShadePrefs.on;
   depthShadingChanged();
   storeSettings();
-  flash(depthShadePrefs.on ? 'Depth shading on: structures turned in 3-D fade from front to back.' : 'Depth shading off.');
+  flash(depthShadePrefs.on ? 'Depth shading on: structures rotated in 3-D fade from front to back.' : 'Depth shading off.');
 }
 
 /** The Depth Shading window's boxes as settings (what is blank or out of range stays as `was`). */
@@ -2483,7 +2483,7 @@ async function newmanProjection(bondId: number | null, frontId: number | null, e
   } else {
     const b = bondId !== null ? doc.bonds.get(bondId) : undefined;
     if (!b) { flash('Right-click a single bond (or click one with the Newman tool) to see its Newman projection.'); return; }
-    if (b.order !== 1) { flash('A Newman projection looks down a single bond: pick one that can turn.'); return; }
+    if (b.order !== 1) { flash('A Newman projection looks down a single bond: select one that can rotate.'); return; }
     front = frontId === b.a2 ? b.a2 : b.a1;
     back = front === b.a1 ? b.a2 : b.a1;
   }
@@ -5625,7 +5625,7 @@ function copySlides(ix: number[], cut: boolean): void {
 function pasteSlides(keep?: boolean): void {
   const d = deckNow();
   if (!d || ws.active.mode !== 'slides') return;
-  if (!slideClip) { flash('Copy slides first: pick them in the slide list and press Ctrl+C (or Edit ▸ Slides ▸ Copy Slides).'); return; }
+  if (!slideClip) { flash('Copy slides first: select them in the slide list and press Ctrl+C (or Edit ▸ Slides ▸ Copy Slides).'); return; }
   finishTyping();
   const src = slideClip;
   const after = pickedSlides().at(-1) ?? d.index;
@@ -7452,7 +7452,7 @@ function showMasterView(opened = false): void {
 function insertPlaceholder(ph: Placeholder): void {
   const d = masterViewNow();
   const def = d?.pageLayout();
-  if (!d || !def) { flash('Placeholders go on layouts: pick a layout under the slide master in the slide list.'); return; }
+  if (!d || !def) { flash('Placeholders go on layouts: select a layout under the slide master in the slide list.'); return; }
   finishTyping();
   const caps = [...doc.captions.values()].filter((c) => c.ph);
   if (ph === 'title' && caps.some((c) => c.ph === 'title')) { flash('A layout has one title.'); return; }
@@ -7479,7 +7479,7 @@ function insertPlaceholder(ph: Placeholder): void {
 function insertRefsPlaceholder(): void {
   const d = masterViewNow();
   const def = d?.pageLayout();
-  if (!d || !def) { flash('Placeholders go on layouts: pick a layout under the slide master in the slide list.'); return; }
+  if (!d || !def) { flash('Placeholders go on layouts: select a layout under the slide master in the slide list.'); return; }
   finishTyping();
   if ([...doc.captions.values()].some((c) => c.refsBox)) { flash('A layout has one References placeholder.'); return; }
   let id = -1;
@@ -7585,7 +7585,7 @@ async function slideTemplates(): Promise<void> {
   if (got.forNew) {
     slideTemplate = t.id;
     storeSettings();
-    flash(`New presentations will start with ${t.name}. Pick Plain to go back.`);
+    flash(`New presentations will start with ${t.name}. Choose Plain to go back.`);
   }
 }
 
@@ -10106,7 +10106,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'edit-layouts': () => slideMaster(),
   'close-master-view': () => closeMasterView(),
   'insert-layout': () => { const d = masterViewNow(); if (!d) return false; finishTyping(); d.insertLayout(); return true; },
-  'duplicate-layout': () => { const d = masterViewNow(); if (!d) return false; finishTyping(); if (!d.pageLayout()) flash('Pick a layout to duplicate (under the slide master in the slide list).'); else d.duplicateLayout(); return true; },
+  'duplicate-layout': () => { const d = masterViewNow(); if (!d) return false; finishTyping(); if (!d.pageLayout()) flash('Select a layout to duplicate (under the slide master in the slide list).'); else d.duplicateLayout(); return true; },
   'delete-layout': () => { const d = masterViewNow(); if (!d) return false; finishTyping(); if (!d.deleteLayout()) flash('Only layouts made in this deck can be deleted; the master and the five built-in layouts stay.'); return true; },
   'rename-layout': () => void renameLayout(),
   'insert-placeholder-title': () => insertPlaceholder('title'),
@@ -10428,7 +10428,7 @@ const COMMANDS: Record<string, () => unknown> = {
     if (!hit.length) { flash(WHY.selectHighlight); return; }
     const sel: Selection = { atoms: new Set(hit.flatMap((p) => [...p.sel.atoms])), bonds: new Set(hit.flatMap((p) => [...p.sel.bonds])), captions: new Set(), arrows: new Set(), shapes: new Set() };
     if (animUi) animUi.selectHighlight(sel); else editor.selectThese(sel);
-    if (ws.active.mode === 'slides') flash('Highlight selected: pick an effect in the Animations tab to animate it on its own.', 5000);
+    if (ws.active.mode === 'slides') flash('Highlight selected: choose an effect in the Animations tab to animate it on its own.', 5000);
   },
   'save-highlight-look': () => void saveHighlightLook(),
   'delete-highlight-look': () => void deleteHighlightLook(),
@@ -11117,7 +11117,7 @@ function toggleSplit(): void {
   if (ws.pane) paneEntered(true);
   else layoutSplit();
   mainResized();
-  flash(`${drawing.name} is beside the ${t.mode === 'document' ? 'document' : t.mode === 'sheet' ? 'sheet' : t.mode === 'design' ? 'design' : 'slides'}. Click a side to work on it; the bar above the drawing picks another drawing and puts structures in.`, 7000);
+  flash(`${drawing.name} is beside the ${t.mode === 'document' ? 'document' : t.mode === 'sheet' ? 'sheet' : t.mode === 'design' ? 'design' : 'slides'}. Click a side to work on it; the bar above the drawing chooses another drawing and puts structures in.`, 7000);
 }
 
 function closeSplit(): void {
@@ -14640,7 +14640,7 @@ function favoritesMenu(): void {
 function insertSymbol(ch: string): boolean {
   if (sheetActive()) {
     if (sheetMode.view.typeText(ch)) return true;
-    flash('Pick a cell to type the symbol into.');
+    flash('Select a cell to type the symbol into.');
     return false;
   }
   if (ws.active.mode === 'si') return siMode?.insertText(ch) ?? false;
@@ -15047,7 +15047,7 @@ if (textRows) {
     link: () => textToolboxHooks.link(),
     state: () => textToolboxHooks.look(),
     back: () => textToolboxHooks.back(),
-    nothing: () => flash('Click into some text, or pick a caption or text box, first.'),
+    nothing: () => flash('Click into some text, or select a caption or text box, first.'),
   }, { ribbon: { paragraph: textRows.paragraph } });
 }
 
@@ -16209,7 +16209,7 @@ const slideText = new SlideTextRibbon($('#ribbon'), {
   format: (f) => (document.activeElement === notesBox.el ? formatNotes(f) || true : editor.formatText(f)),
   look: () => editor.textLook(),
   refocus: () => editor.refocusText(),
-  nothing: () => flash('Click into some text, or pick a text box or a shape with text, first.'),
+  nothing: () => flash('Click into some text, or select a text box or a shape with text, first.'),
   box: (c) => editor.setTextBox(c),
   boxLook: () => editor.textBoxLook(),
 });
@@ -16217,7 +16217,7 @@ const designText = new SlideTextRibbon($('#design-ribbon'), {
   format: (f) => editor.formatText(f),
   look: () => editor.textLook(),
   refocus: () => editor.refocusText(),
-  nothing: () => flash('Click into some text, or pick a text box or a shape with text, first.'),
+  nothing: () => flash('Click into some text, or select a text box or a shape with text, first.'),
   box: (c) => editor.setTextBox(c),
   boxLook: () => editor.textBoxLook(),
 });

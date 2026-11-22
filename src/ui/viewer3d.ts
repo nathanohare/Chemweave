@@ -402,7 +402,7 @@ export class Viewer3d {
     const near = cleanerNearby(base, this.rot, sk, 45);
     if (!near) {
       this.rot = cleanestView(base, sk, this.drawn);
-      this.flash('From this angle atoms would land on top of each other, so the model was turned to its cleanest view first.');
+      this.flash('From this angle atoms would land on top of each other, so the model was rotated to its cleanest view first.');
     } else if (near.deg) {
       this.rot = near.rot;
       this.flash(`Turned the model ${near.deg}° first, so no atoms land on top of each other.`);

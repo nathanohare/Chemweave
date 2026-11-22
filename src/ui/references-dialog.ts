@@ -753,7 +753,7 @@ export class ReferencesDialog {
 
   /** Paste references copied (Ctrl+V) into the file whose group is picked. */
   private paste(): void {
-    if (!copied.length) { this.host.flash('Copy references first (pick them and press Ctrl+C).'); return; }
+    if (!copied.length) { this.host.flash('Copy references first (select them and press Ctrl+C).'); return; }
     if (this.group) this.copyInto(this.group, copied);
   }
 

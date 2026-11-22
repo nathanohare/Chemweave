@@ -41,7 +41,7 @@ export const INSERT_MENU: MenuEntry[] = [
     { id: 'new-canvas-slide', label: 'New Canvas Slide', modes: 'slides', title: 'A slide with no edge: draw a whole route across it, then add keyframes, the windows the slide show steps through' },
     { id: 'duplicate-slide', label: 'Duplicate Slide', modes: 'slides' },
     '-',
-    { id: 'reuse-slides', label: 'Reuse Slides…', modes: 'slides', title: 'Slides from another PowerPoint file: see them all, pick the ones you want' },
+    { id: 'reuse-slides', label: 'Reuse Slides…', modes: 'slides', title: 'Slides from another PowerPoint file: see them all, choose the ones you want' },
     { id: 'insert-slide-zoom', label: 'Slide Zoom…', modes: 'slides', title: 'Pictures of other slides that zoom into them in the slide show' },
     { id: 'insert-summary-zoom', label: 'Summary Zoom…', modes: 'slides', title: 'A slide of zooms, one for each part of the talk' },
     '-',

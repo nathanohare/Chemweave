@@ -12,7 +12,16 @@ import ts from 'typescript';
 
 const ROOT = join(__dirname, '..');
 
-interface Str { file: string; line: number; text: string }
+/** A string of UI text; `flash`: it is (part of) a message shown with flash(…), the toast. */
+interface Str { file: string; line: number; text: string; flash?: boolean }
+
+/** Is the node inside the arguments of a flash(…) call (flash, host.flash, this.host.flash)? */
+function inFlash(n: ts.Node): boolean {
+  for (let p = n.parent; p && !ts.isBlock(p) && !ts.isSourceFile(p); p = p.parent) {
+    if (ts.isCallExpression(p) && /(^|\.)flash$/.test(p.expression.getText())) return true;
+  }
+  return false;
+}
 
 function walk(dir: string, out: string[]): void {
   for (const n of readdirSync(dir)) {
@@ -34,7 +43,7 @@ function strings(): Str[] {
       else if (ts.isTemplateExpression(n)) t = n.head.text + n.templateSpans.map((s) => '${…}' + s.literal.text).join('');
       // UI text has words with spaces between them; imports and lone keys do not
       if (t !== null && /[A-Za-z]{2,}\s+[A-Za-z]/.test(t) && !ts.isImportDeclaration(n.parent)) {
-        out.push({ file: relative(ROOT, f), line: src.getLineAndCharacterOfPosition(n.getStart()).line + 1, text: t });
+        out.push({ file: relative(ROOT, f), line: src.getLineAndCharacterOfPosition(n.getStart()).line + 1, text: t, flash: inFlash(n) });
       }
       ts.forEachChild(n, visit);
     };
@@ -59,8 +68,14 @@ const BANNED: [RegExp, string][] = [
   [/\bfor good\b/i, 'permanently'],
   [/\bmy own\b|\(your own ±\)/i, 'custom (S70)'],
   [/\b(?:the|its|their) plain look\b|\bnumber format and look\b|\band look of\b/i, 'style or formatting, not look (S70)'],
-  [/\bturned (with|to read|to match)\b|\bEach is turned\b|\bNothing to turn\b/, 'rotate, not turn (S26)'],
+  [/\bturned (with|to read|to match|to its)\b|\bEach is turned\b|\bNothing to turn\b/, 'rotate, not turn (S26)'],
   [/\bpick from Insert\b/i, 'choose (S26; Pick From Drop-down List is Excel\'s own name)'],
+  [/\bturned in 3-D\b/, 'rotated in 3-D (S26)'],
+];
+
+/** Words the messages shown in a toast (flash) must not use (review of F5, F5b-R10). */
+const FLASH_BANNED: [RegExp, string][] = [
+  [/\bpick(s|ing)?\b/i, 'select or choose (S26)'],
 ];
 
 /** Strings that may keep a word: other programs, ruler ticks, typed syntax and search aliases. */
@@ -78,5 +93,12 @@ describe('UI wording lint', () => {
     const hits = all.filter((s) => re.test(s.text) && !ALLOWED.some(([f, ok]) => s.file.startsWith(f) && ok.test(s.text)))
       .map((s) => `${s.file}:${s.line} ${s.text.replace(/\s+/g, ' ').slice(0, 120)} → ${why}`);
     expect(hits).toEqual([]);
+  });
+  it.each(FLASH_BANNED.map(([re, why]) => [String(re), re, why] as const))('no toast says %s', (_name, re, why) => {
+    const hits = all.filter((s) => s.flash && re.test(s.text)).map((s) => `${s.file}:${s.line} ${s.text.replace(/\s+/g, ' ').slice(0, 120)} → ${why}`);
+    expect(hits).toEqual([]);
+  });
+  it('finds the toasts it reads', () => {
+    expect(all.some((s) => s.flash && s.file === 'src/main.ts')).toBe(true);
   });
 });

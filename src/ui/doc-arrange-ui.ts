@@ -147,7 +147,7 @@ export class DocArrangeUI {
     const ids = [...this.chosen].filter((id) => floatOf(f.t.objects[id]));
     if (ids.length < 2) {
       this.selectionPane(near);
-      this.host.flash('Pick two or more figures in the Selection Pane (Ctrl+click), then Group.', 6000);
+      this.host.flash('Select two or more figures in the Selection Pane (Ctrl+click), then Group.', 6000);
       return;
     }
     this.update(grouped(f.t, ids), 'Group');

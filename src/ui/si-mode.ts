@@ -1917,7 +1917,7 @@ export class SiMode {
   /** Ribbon ▸ Name from PubChem: the compound's IUPAC name from PubChem (SI Assistant's "Look up name (PubChem)"). */
   private async nameFromPubChem(c: SiCompound | null): Promise<void> {
     const p = this.project!;
-    if (!c) { this.host.flash('Pick a compound first: its name is looked up by its structure.'); return; }
+    if (!c) { this.host.flash('Select a compound first: its name is looked up by its structure.'); return; }
     if (!p.hasStructure(c)) { this.host.flash('Add a structure first: the name is looked up by the structure.'); return; }
     await this.readFacts(p);
     const mol = this.mols.get(c.id);
@@ -1960,7 +1960,7 @@ export class SiMode {
   private async structureToName(list: SiCompound[]): Promise<void> {
     const p = this.project!;
     const todo = list.filter((c) => p.hasStructure(c));
-    if (!todo.length) { this.host.flash(list.length ? 'Draw the compound’s structure first.' : 'Pick a compound, or a Data section with unnamed compounds.'); return; }
+    if (!todo.length) { this.host.flash(list.length ? 'Draw the compound’s structure first.' : 'Select a compound, or a Data section with unnamed compounds.'); return; }
     if (todo.length === 1 && compoundName(todo[0])) {
       const go = await askChoice('Structure to Name', `Replace the name “${compoundName(todo[0])}” with the structure’s IUPAC name?`, [{ value: 'go', label: 'Replace Name', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
       if (go !== 'go') return;
@@ -3533,14 +3533,14 @@ export class SiMode {
       });
       return;
     }
-    this.host.flash('Pick a compound, scheme page or section to delete.');
+    this.host.flash('Select a compound, scheme page or section to delete.');
   }
 
   /** Home ▸ Duplicate: copies of the selected compound or scheme page, with the fields chosen. */
   private async duplicate(): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
-    if (pick.kind !== 'compound' && pick.kind !== 'scheme') { this.host.flash('Pick a compound or scheme page to duplicate.'); return; }
+    if (pick.kind !== 'compound' && pick.kind !== 'scheme') { this.host.flash('Select a compound or scheme page to duplicate.'); return; }
     const c = pick.kind === 'compound' ? p.compound(pick.id) : null;
     const k = pick.kind === 'scheme' ? p.scheme(pick.id) : null;
     const sources = c ? [c] : k!.children;
@@ -3572,7 +3572,7 @@ export class SiMode {
     const p = this.project!;
     const pick = this.pick;
     if (pick.kind === 'compound') { this.host.flash('A compound’s name is its Name field, on its page.'); return; }
-    if (pick.kind !== 'section' && pick.kind !== 'scheme') { this.host.flash('Pick a section or scheme page to rename.'); return; }
+    if (pick.kind !== 'section' && pick.kind !== 'scheme') { this.host.flash('Select a section or scheme page to rename.'); return; }
     const k = pick.kind === 'scheme' ? p.scheme(pick.id) : null;
     const sec = pick.kind === 'section' ? p.section(pick.id) : null;
     const now = k ? String(k.data.name || '') : sec!.name;
@@ -3601,7 +3601,7 @@ export class SiMode {
     const p = this.project!;
     const pick = this.pick;
     const c = pick.kind === 'compound' ? p.compound(pick.id) : null;
-    if (!c) { this.host.flash('Pick a compound page to change to a reaction scheme.'); return; }
+    if (!c) { this.host.flash('Select a compound page to change to a reaction scheme.'); return; }
     if (c.schemeId) { this.host.flash('This compound is already on a scheme page.'); return; }
     const go = await askChoice('Change to Reaction Scheme', `Make a scheme page for ${this.idOf(c)} ${compoundName(c) || 'this compound'}? The compound becomes the product of the scheme's first step (its data and ID are kept). You can then draw the scheme and add the other compounds in it.`, [{ value: 'no', label: 'Cancel' }, { value: 'yes', label: 'Change', primary: true }], 'no');
     if (go !== 'yes') return;
@@ -3612,7 +3612,7 @@ export class SiMode {
   private async moveTo(onlySchemes = false): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
-    if (onlySchemes && pick.kind !== 'compound') { this.host.flash('Pick a compound to move into a scheme page.'); return; }
+    if (onlySchemes && pick.kind !== 'compound') { this.host.flash('Select a compound to move into a scheme page.'); return; }
     if (pick.kind === 'compound' || pick.kind === 'scheme') {
       const item = pick.kind === 'compound' ? p.compound(pick.id) : p.scheme(pick.id);
       const options: { value: string; label: string }[] = [];
@@ -3642,7 +3642,7 @@ export class SiMode {
       await this.act(() => p.moveSection(sec.id, list.length, got.to || null));
       return;
     }
-    this.host.flash('Pick a compound, scheme page or section to move.');
+    this.host.flash('Select a compound, scheme page or section to move.');
   }
 
   /** A tree row's right-click menu, F2 and Delete keys, and dragging it to another place. */
@@ -4010,14 +4010,14 @@ export class SiMode {
       if (data) return data;
       const only = p.dataSections;
       if (only.length === 1) return only[0];
-      this.host.flash(only.length ? 'Pick a Data section (or a compound in one) first.' : 'Make a Data section first: New Section ▸ Data section.');
+      this.host.flash(only.length ? 'Select a Data section (or a compound in one) first.' : 'Make a Data section first: New Section ▸ Data section.');
       return null;
     };
     switch (cmd) {
       case 'new-table': {
         let sec = s;
         while (sec && sec.type !== 'text' && sec.parentId) sec = p.section(sec.parentId);
-        if (sec?.type !== 'text') { this.host.flash('Pick a Custom section (one with text) for the table.'); return; }
+        if (sec?.type !== 'text') { this.host.flash('Select a Custom section (one with text) for the table.'); return; }
         await this.newTable(sec);
         return;
       }
@@ -4027,7 +4027,7 @@ export class SiMode {
       case 'new-figure-compound': {
         let sec = s;
         while (sec && sec.type !== 'text' && sec.parentId) sec = p.section(sec.parentId);
-        if (sec?.type !== 'text') { this.host.flash('Pick a Custom section (one with text) for the figure.'); return; }
+        if (sec?.type !== 'text') { this.host.flash('Select a Custom section (one with text) for the figure.'); return; }
         await this.newFigure(sec, cmd === 'new-figure' ? 'picture' : (cmd.slice(11) as 'draw' | 'paste' | 'compound'));
         return;
       }
@@ -4081,7 +4081,7 @@ export class SiMode {
       case 'move-to': await this.moveTo(); return;
       case 'into-scheme': await this.moveTo(true); return;
       case 'out-of-scheme': {
-        if (!c?.schemeId) { this.host.flash('Pick a compound of a scheme page.'); return; }
+        if (!c?.schemeId) { this.host.flash('Select a compound of a scheme page.'); return; }
         await this.act(() => this.moveOutOfScheme(c.id));
         return;
       }
@@ -4145,13 +4145,13 @@ export class SiMode {
         return;
       }
       case 'manual-id': {
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         const got = await ask('Compound ID', [{ name: 'id', label: 'Manual ID', value: idOverride(c), placeholder: 'empty: the ID from the section’s table' }], { ok: 'Set ID', note: 'A Manual ID replaces the compound’s ID, but it still uses up its row of the ID table, so the compounds after it keep theirs.' });
         if (got) await this.act(() => p.setIdOverride(c, got.id));
         return;
       }
       case 'edit-structure':
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         this.editStructure(c);
         return;
       case 'from-library': await this.fromLibrary(needData()); return;
@@ -4172,21 +4172,21 @@ export class SiMode {
           if (got) await this.act(() => p.setDefaultFields(data.id, [...entries, { ...got, required: false }]));
           return;
         }
-        if (!c) { this.host.flash('Pick a compound, or a Data section to change its list of fields.'); return; }
+        if (!c) { this.host.flash('Select a compound, or a Data section to change its list of fields.'); return; }
         const got = await this.chooseField(fieldKeys(c));
         if (got) await this.act(() => p.addField(c, got));
         return;
       }
       case 'add-spectra':
       case 'add-files': {
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         const key = cmd === 'add-spectra' ? 'spectra' : 'files';
         if (!fieldKeys(c).includes(key)) await p.addField(c, { key });
         await this.addFiles(c, ALL_FIELDS.get(key)!);
         return;
       }
       case 'add-hrms-report': {
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         const files = await this.host.pickFiles('HRMS reports', REPORT_EXTS);
         if (files.length) await this.addReports(c, files);
         return;
@@ -4195,15 +4195,15 @@ export class SiMode {
         this.setLive(!this.liveOn);
         return;
       case 'paste-spectrum':
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         await this.pasteSpectrum(c);
         return;
       case 'paste-structure':
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         await this.pasteStructure(c);
         return;
       case 'add-nmr-report': {
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         const reports = (Array.isArray(valuesOf(c).nmr) ? valuesOf(c).nmr : []) as Json[];
         const used = new Set(reports.map((r) => partText(r.nucleus)));
         const nucleus = (['1H', '13C', '19F', '31P'] as const).find((n) => !used.has(n)) ?? '1H';

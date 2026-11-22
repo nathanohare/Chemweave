@@ -187,7 +187,7 @@ export class DashboardUi {
         return;
       }
       case 'gallery': {
-        if (!structCol) this.host.flash('No column of drawn structures found; pick the column that holds them.', 6000);
+        if (!structCol) this.host.flash('No column of drawn structures found; select the column that holds them.', 6000);
         const got = await ask('Add Structure Gallery', [
           { name: 'col', label: 'Structures in', value: structCol ?? res.names[0], options: cols },
           { name: 'size', label: 'Card width', value: '140', type: 'number', unit: 'px' },
