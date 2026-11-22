@@ -14,6 +14,7 @@ import { tokenize } from '../chem/labels';
 import { idealGroups, sizeRanks, type NewmanGroup } from '../chem/newman';
 import { elementNumber } from '../chem/elements';
 import { OLD_RING_ARC, type EyeStyle, type NewmanLook } from './newman-prefs';
+import { mayRedraw } from './frame-guard';
 
 export { DEFAULT_NEWMAN_PREFS, NEWMAN_LOOK, OLD_RING_ARC, parseNewmanPrefs, type EyeStyle, type NewmanLook, type NewmanPrefs, type NewmanText, type RankLook, type RingArcLook } from './newman-prefs';
 
@@ -371,6 +372,8 @@ function drawSawhorse(doc: Doc, d: NewmanData, c: Vec): NewmanParts {
  */
 export function putNewman(doc: Doc, m: Measure, d: NewmanData, c: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
+  // (a frame changed in another program is redrawn only once the user agrees; review F1c-R04)
+  if (old && !mayRedraw(old, () => putNewman(doc, m, d, c, id))) return old.id;
   if (old?.frame) {
     for (const x of old.frame.captions) doc.removeCaption(x);
     for (const x of old.frame.arrows) doc.removeArrow(x);

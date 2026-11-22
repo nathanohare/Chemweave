@@ -15,7 +15,9 @@ import { Doc, type Shape } from '../src/model';
 import { readCdxml, frameName, markEditedOutside } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
 import { putPlate, newPlate } from '../src/design/plates';
-import { putEnergy, ENERGY_DEFAULTS, ENERGY_PRESETS, type EnergyData } from '../src/design/energy';
+import { putEnergy, refitEnergy, ENERGY_DEFAULTS, ENERGY_PRESETS, type EnergyData } from '../src/design/energy';
+import { onRedrawHeld, heldRedraws, redrawHeld, dropHeld, withRedraw } from '../src/design/frame-guard';
+import type { Entity } from '../src/model';
 import { newDiagram, putDiagram } from '../src/design/diagrams';
 import { MO_PRESETS } from '../src/design/mo';
 import { POINTS } from '../src/editor/arrange';
@@ -128,7 +130,54 @@ describe('redrawing a marked frame from its settings', () => {
     const again = readCdxml(write(got)).doc;
     const s = frameOf(again, 'plate');
     expect(s.editedOutside).toBe(true);
-    again.edit('Edit TLC Plate', () => { putPlate(again, POINTS, s.plate!, { x: s.x1, y: s.y1 }, s.id); });
+    // (redrawn as the Edit command does once the user agrees)
+    again.edit('Edit TLC Plate', () => { withRedraw(s.id, () => putPlate(again, POINTS, s.plate!, { x: s.x1, y: s.y1 }, s.id)); });
     expect(again.shapes.get(s.id)?.editedOutside).toBeUndefined();
+  });
+});
+
+describe('every redraw of a marked frame waits for the user (review F1c-R04)', () => {
+  const marked = () => {
+    for (const k of heldRedraws()) dropHeld(k);
+    const got = readCdxml(write(energy()).replace(/>Reaction coordinate</, '>Reaction progress<'));
+    const s = frameOf(got.doc, 'energy');
+    expect(s.editedOutside).toBe(true);
+    return { d: got.doc, id: s.id };
+  };
+  const captionTexts = (d: Doc) => [...d.captions.values()].map((c) => c.runs.map((r) => r.text).join(''));
+  it('a resize by its frame leaves ChemDraw\'s drawing and the mark, keeps the redraw, and says so once', async () => {
+    const { d, id } = marked();
+    const told: number[][] = [];
+    onRedrawHeld((ids) => told.push(ids));
+    try {
+      const old = { ...d.shapes.get(id)! };
+      d.edit('Resize', () => {
+        d.updateShape(id, { x2: old.x2 + 40, y2: old.y2 + 30 });
+        refitEnergy(d, new Map<string, Entity | null>([['s' + id, old as Entity]]), POINTS);
+      });
+      expect(captionTexts(d)).toContain('Reaction progress');
+      expect(d.shapes.get(id)!.editedOutside).toBe(true);
+      expect(heldRedraws()).toEqual([id]);
+      await Promise.resolve();
+      expect(told).toEqual([[id]]);
+      // the user agrees: drawn again from the settings, at the new size, and no longer marked
+      d.edit('Redraw', () => { expect(redrawHeld(id)).toBe(true); });
+      expect(captionTexts(d)).toContain('Reaction coordinate');
+      expect(captionTexts(d)).not.toContain('Reaction progress');
+      expect(d.shapes.get(id)!.editedOutside).toBeUndefined();
+      expect(heldRedraws()).toEqual([]);
+    } finally { onRedrawHeld(null); }
+  });
+  it('left as it is when the user says no; an agreed Edit redraws at once', () => {
+    const { d, id } = marked();
+    const s = d.shapes.get(id)!;
+    d.edit('Look', () => { putEnergy(d, POINTS, { ...s.energy!, values: false }, { x: 0, y: 0 }, id); });
+    dropHeld(id);
+    expect(heldRedraws()).toEqual([]);
+    expect(captionTexts(d)).toContain('Reaction progress');
+    expect(d.shapes.get(id)!.energy!.values).toBe(true);
+    d.edit('Edit', () => { withRedraw(id, () => putEnergy(d, POINTS, { ...s.energy!, values: false }, { x: 0, y: 0 }, id)); });
+    expect(d.shapes.get(id)!.energy!.values).toBe(false);
+    expect(d.shapes.get(id)!.editedOutside).toBeUndefined();
   });
 });

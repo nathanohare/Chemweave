@@ -14,6 +14,7 @@ import { drawMo, MO_PRESETS, type MoSpec } from './mo';
 import { crystalSvg, type CrystalSpec } from './xray';
 import { dataUrl } from '../render/images';
 import { isInkId } from './geo';
+import { mayRedraw } from './frame-guard';
 
 /** A TLC plate, a gel, or a molecular orbital diagram (design/mo.ts), which is kept and redrawn the same way. */
 export type PlateKind = 'tlc' | 'gel' | 'mo' | 'crystal';
@@ -392,6 +393,8 @@ export function plateFromBox(b: Rect, d: PlateData, L: number): { at: Vec; w: nu
  */
 export function putPlate(doc: Doc, m: Measure, d: PlateData, at: Vec, id?: number): number {
   const old = id !== undefined ? doc.shapes.get(id) : undefined;
+  // (a frame changed in another program is redrawn only once the user agrees; review F1c-R04)
+  if (old && !mayRedraw(old, () => putPlate(doc, m, d, at, id))) return old.id;
   if (d.kind === 'crystal') return putCrystal(doc, d, at, old);
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
