@@ -92,7 +92,7 @@ export function countsMass(counts: Counts): number {
   return m;
 }
 
-/** Hill order: C, then H (D, T), then the rest alphabetically; isotope labels in brackets: [13C]. */
+/** Hill order: C (then its labelled isotopes, [13C], [14C], by mass number), then H (D, T, then [nH]), then the rest alphabetically; isotope labels in brackets. */
 export function hillFormula(counts: Counts): string {
   const merged = new Map<string, number>();
   for (const [k, n] of counts) {
@@ -103,7 +103,10 @@ export function hillFormula(counts: Counts): string {
   }
   const bare = (k: string): string => k.replace(/^\[\d+|\]$/g, '');
   const hasC = [...merged.keys()].some((k) => bare(k) === 'C');
-  const order = (hasC ? ['C', '[13C]', 'H', 'D', 'T'] : []).filter((k) => merged.has(k));
+  // (every labelled carbon right after C, and labelled hydrogen after H, by mass number)
+  const massOf = (k: string): number => Number(/^\[(\d+)/.exec(k)?.[1] ?? 0);
+  const labelled = (sym: string): string[] => [...merged.keys()].filter((k) => k.startsWith('[') && bare(k) === sym).sort((a, b) => massOf(a) - massOf(b));
+  const order = (hasC ? ['C', ...labelled('C'), 'H', 'D', 'T', ...labelled('H')] : []).filter((k) => merged.has(k));
   const rest = [...merged.keys()].filter((k) => !order.includes(k)).sort((a, b) => cmp(bare(a), bare(b)) || cmp(a, b));
   return [...order, ...rest].map((k) => k + (merged.get(k)! > 1 ? merged.get(k) : '')).join('');
 }
@@ -174,6 +177,50 @@ function labelledFormula(text: string): Counts {
   return counts;
 }
 
+/**
+ * Counts for a typed formula with groups: a group in parentheses or brackets with its count after
+ * it (Fe(C5H5)2, Ca(OH)2, [Cu(NH3)4]SO4), and hydrate or solvate parts after a dot with their count
+ * before them (CuSO4·5H2O, C6H12O6·H2O, also with . or *). Isotope labels stay as they are ([13C]).
+ */
+function groupedFormula(text: string): Counts {
+  const out: Counts = new Map();
+  const addTo = (c: Counts, k: number): void => { for (const [key, n] of c) out.set(key, (out.get(key) ?? 0) + n * k); };
+  for (const part of text.split(/[·•.*](?=\d*[A-Z([])/)) {
+    const m = /^(\d*)(.*)$/.exec(part)!;
+    if (!m[2]) throw new ChemError(`“${text}” has an empty part after a dot.`);
+    addTo(groupBody(m[2], text), m[1] ? Number(m[1]) : 1);
+  }
+  return out;
+}
+
+/** One part of a grouped formula: groups in ( ) or [ ] (not an isotope label like [13C]) multiplied out. */
+function groupBody(t: string, whole: string): Counts {
+  const out: Counts = new Map();
+  let flat = '';
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    const opens = c === '(' || (c === '[' && /[A-Z([]/.test(t[i + 1] ?? ''));
+    if (!opens) {
+      if (c === ')' || c === ']') { if (c === ']' && flat.lastIndexOf('[') > flat.lastIndexOf(']')) { flat += c; continue; } throw new ChemError(`“${whole}” has a closing bracket without its opening one.`); }
+      flat += c;
+      continue;
+    }
+    const close = c === '(' ? ')' : ']';
+    let depth = 0, j = i;
+    for (; j < t.length; j++) {
+      if (t[j] === c) depth++;
+      else if (t[j] === close && --depth === 0) break;
+    }
+    if (j >= t.length) throw new ChemError(`“${whole}” has a bracket that isn't closed.`);
+    const digits = /^\d*/.exec(t.slice(j + 1))![0];
+    const inner = groupBody(t.slice(i + 1, j), whole);
+    for (const [k, n] of inner) out.set(k, (out.get(k) ?? 0) + n * (digits ? Number(digits) : 1));
+    i = j + digits.length;
+  }
+  if (flat) for (const [k, n] of labelledFormula(flat)) out.set(k, (out.get(k) ?? 0) + n);
+  return out;
+}
+
 const SIGNS = '+\\-−–⁺⁻';
 const DIGITS = `0-9${SUPER}`;
 const RADICAL = '•·.';
@@ -219,7 +266,8 @@ export function parseMFormulaAndCharge(text: string): [Counts, number] {
   cleaned = stripEnd(cleaned.replace(/ /g, ''), RADICAL);
   if (!cleaned) throw new ChemError('The formula is empty.');
   try {
-    return [labelledFormula(cleaned), charge];
+    // (a plain formula as before; one with groups or a hydrate dot multiplied out first)
+    return [/[()[\]·•.*]/.test(cleaned.replace(/\[\d+[A-Z][a-z]?\]/g, '')) ? groupedFormula(cleaned) : labelledFormula(cleaned), charge];
   } catch (e) {
     if (e instanceof ChemError && /[+\-−–⁺⁻()^]/.test(text ?? '')) throw new ChemError(`${e.message} ${CHARGE_HINT}`);
     throw e;

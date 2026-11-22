@@ -8,7 +8,7 @@ import { join, relative } from 'node:path';
 import { MemoryFolder } from '../src/si/folder';
 import { SiProject } from '../src/si/project';
 import { allWarnings, compoundHrms, isDismissed, monoisotopic } from '../src/si/checks';
-import { molFacts, isotopePattern, infoFromCounts, parseFormula, parseAdduct, ionMz, symmetryClasses } from '../src/si/chem';
+import { molFacts, isotopePattern, infoFromCounts, parseFormula, parseAdduct, ionMz, symmetryClasses, hillFormula, parseMFormulaAndCharge, ChemError } from '../src/si/chem';
 import { fp, pyF, pyG, pyRepr, pyStr, PyTuple, sortedFp } from '../src/si/pyrepr';
 import { carbonSignalCount, protonCount, couplings, impurityMatch, defaultImpurityTable } from '../src/si/nmr';
 
@@ -145,6 +145,36 @@ describe('masses', () => {
     expect(new Set(cls).size).toBe(n / 2);
     expect(cls[0]).toBe(cls[n - 1]);
     expect(performance.now() - t0).toBeLessThan(1500);
+  });
+});
+
+describe('formulas typed and written', () => {
+  it('writes every labelled carbon right after C and labelled hydrogen after H (G4-13)', () => {
+    // Hill order (CAS; IUPAC Red Book IR-4.4.2.1): C first, then H, then the rest alphabetically;
+    // labelled nuclides stay with their element. [13C]-acetone C2[13C]H6O; [14C]-toluene C6[14C]H8
+    expect(hillFormula(new Map([['C', 2], ['13C', 1], ['H', 6], ['O', 1]]))).toBe('C2[13C]H6O');
+    expect(hillFormula(new Map([['C', 6], ['14C', 1], ['H', 8]]))).toBe('C6[14C]H8');
+    expect(hillFormula(new Map([['C', 5], ['14C', 1], ['13C', 1], ['H', 7], ['D', 1], ['3H', 1], ['Br', 1]]))).toBe('C5[13C][14C]H7D[3H]Br');
+    // no carbon: all alphabetical
+    expect(hillFormula(new Map([['O', 1], ['H', 2]]))).toBe('H2O');
+  });
+  it('reads a hydrate dot and groups in brackets in a typed M formula (G4-14)', () => {
+    const f = (t: string): string => { const [c, q] = parseMFormulaAndCharge(t); return hillFormula(c) + (q ? ` ${q}` : ''); };
+    // PubChem molecular formulas: glucose monohydrate C6H14O7 (CID 22814120), copper(II) sulfate
+    // pentahydrate CuH10O9S (CID 24463), ferrocene C10H10Fe (CID 7611), calcium hydroxide CaH2O2
+    // (CID 6093208), tetraamminecopper sulfate CuH12N4O4S (CID 167053)
+    expect(f('C6H12O6·H2O')).toBe('C6H14O7');
+    expect(f('CuSO4·5H2O')).toBe('CuH10O9S');
+    expect(f('CuSO4.5H2O')).toBe('CuH10O9S');
+    expect(f('Fe(C5H5)2')).toBe('C10H10Fe');
+    expect(f('Ca(OH)2')).toBe('CaH2O2');
+    expect(f('[Cu(NH3)4]SO4')).toBe('CuH12N4O4S');
+    // with a charge and an isotope label
+    expect(f('[Fe(C5H5)2]+')).toBe('C10H10Fe 1');
+    expect(f('C5[13C]H6(OH)2')).toBe('C5[13C]H8O2');
+    // still refused, with the reason
+    expect(() => parseMFormulaAndCharge('Fe(C5H5')).toThrow(ChemError);
+    expect(() => parseMFormulaAndCharge('Fe)2')).toThrow(ChemError);
   });
 });
 
