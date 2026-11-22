@@ -216,5 +216,49 @@ describe('Gaussian energies beyond SCF', () => {
   it('notes a method with a space in its options', () => {
     expect(readQmOutput(log('#p cisd(maxcyc=50, conver=8)/6-31g(d)', []), 'h2o.log')!.missing).toBe('CISD');
   });
+  // review F1d-R05: a higher-level energy in a job that isn't the last is used, or noted
+  const job = (route: string, body: string[]) => [
+    ' ----------------------------------------------------------------------', ` ${route}`,
+    ' ----------------------------------------------------------------------', ...body,
+    ' Normal termination of Gaussian 16 at Mon Nov  2 06:10:00 2026.'].join('\n');
+  const optFreq = log('#p opt freq b3lyp/6-31g(d)', [' Sum of electronic and thermal Enthalpies=           -76.385000', ' Sum of electronic and thermal Free Energies=        -76.390000']);
+  const ccsdt = job('#p ccsd(t)/cc-pvtz geom=check guess=read', [' SCF Done:  E(RHF) =  -76.0570000     A.U. after    9 cycles', ' CCSD(T)= -0.76332141577D+02']);
+  it('B3LYP opt and freq, CCSD(T), then a B3LYP population job: the CCSD(T) energy, said where from', () => {
+    const r = readQmOutput([optFreq, ccsdt, job('#p b3lyp/6-31g(d) pop=nbo geom=check', [' SCF Done:  E(RB3LYP) =  -76.4089533     A.U. after    1 cycles'])].join('\n'), 'h2o.log')!;
+    expect(r.scf).toBeCloseTo(-76.332141577, 9);
+    expect(r.energyFrom).toBe('CCSD(T)');
+    expect(r.free).toBeCloseTo(-76.39, 6);
+    expect(r.theory).toBe('CCSD(T)/cc-pVTZ//B3LYP/6-31G(d)');
+    expect(r.note).toBe('The CCSD(T) energy is from job 2 of the log (CCSD(T)/cc-pVTZ); the enthalpy and free energy are from job 1 (B3LYP/6-31G(d)).');
+  });
+  it('CCSD(T) first, then B3LYP opt and freq: still the CCSD(T) energy', () => {
+    const r = readQmOutput([log('#p ccsd(t)/cc-pvtz', [' CCSD(T)= -0.76332141577D+02']), job('#p opt freq b3lyp/6-31g(d)', [' SCF Done:  E(RB3LYP) =  -76.4089533     A.U. after    1 cycles', ' Sum of electronic and thermal Free Energies=        -76.390000'])].join('\n'), 'h2o.log')!;
+    expect(r.scf).toBeCloseTo(-76.332141577, 9);
+    expect(r.note).toBe('The CCSD(T) energy is from job 1 of the log (CCSD(T)/cc-pVTZ); the enthalpy and free energy are from job 2 (B3LYP/6-31G(d)).');
+  });
+  it('CCSD(T) then MP2 last: the MP2 energy, and the note says the CCSD(T) one was not used', () => {
+    const r = readQmOutput([optFreq, ccsdt, job('#p mp2/aug-cc-pvtz geom=check', [' SCF Done:  E(RHF) =  -76.0600000     A.U. after    9 cycles', ' E2 =    -0.2645323017D+00 EUMP2 =    -0.76275278793D+02'])].join('\n'), 'h2o.log')!;
+    expect(r.scf).toBeCloseTo(-76.275278793, 9);
+    expect(r.energyFrom).toBe('MP2');
+    expect(r.note).toBe('The MP2 energy is from job 3 of the log (MP2/aug-cc-pVTZ); the enthalpy and free energy are from job 1 (B3LYP/6-31G(d)). The log also has a CCSD(T) energy (CCSD(T)/cc-pVTZ) in job 2: not used; the energy is job 3\'s.');
+  });
+  it('a CCSD(T) single point, then an SCF job at the same level for its orbitals: the CCSD(T) energy, said not the last job\'s', () => {
+    const r = readQmOutput([log('#p ccsd(t)/cc-pvtz', [' CCSD(T)= -0.76332141577D+02']), job('#p hf/cc-pvtz pop=full geom=check', [' SCF Done:  E(RHF) =  -76.0570000     A.U. after    1 cycles'])].join('\n'), 'h2o.log')!;
+    expect(r.scf).toBeCloseTo(-76.332141577, 9);
+    expect(r.note).toBe('The CCSD(T) energy is from job 1 of the log (CCSD(T)/cc-pVTZ), not from the last job (HF/cc-pVTZ).');
+  });
+  // review F1d-R07: a title starting with "#" is a title, not another job's route
+  it('a title that starts with "#" is not taken as a job', () => {
+    // (as Gaussian prints it: the route, its link list, then the title between dashes)
+    const text = [' Entering Gaussian System, Link 0=g16', ' ----------------------------------------------------------------------', ' #p opt freq b3lyp/6-31g(d)',
+      ' ----------------------------------------------------------------------', ' 1/18=20,19=15,26=3,38=1/1,3;', ' 2/9=110,12=2,17=6,18=5,40=1/2;', ' 99//99;',
+      ' ---------------------', ' #3 conformer of water', ' ---------------------', ' SCF Done:  E(RB3LYP) =  -76.0107465     A.U. after   10 cycles',
+      ' Sum of electronic and thermal Free Energies=        -76.390000', ' Normal termination of Gaussian 16 at Mon Nov  2 06:00:00 2026.'].join('\n');
+    const r = readQmOutput(text, 'h2o.log')!;
+    expect(r.theory).toBe('B3LYP/6-31G(d)');
+    expect(r.scf).toBeCloseTo(-76.0107465, 7);
+    expect(r.free).toBeCloseTo(-76.39, 6);
+    expect(r.note).toBeUndefined();
+  });
 });
 

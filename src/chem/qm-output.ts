@@ -149,8 +149,18 @@ const SCF_METHOD = /^(?:r|u|ro)?(?:hf|b3lyp|b3pw91|b3p86|blyp|bp86|pbe\w*|pw91\w
 function gaussianJobs(text: string): string[] {
   const starts: number[] = [];
   const re = /^ ?-{5,}\r?\n([ \t]*#[^\n]*)/gm;
+  let routeEnd = -1;
   for (let m = re.exec(text); m; m = re.exec(text)) {
     const at = m.index + m[0].length - m[1].length;
+    // a title that starts with "#" (it sits between dashes too): only the route's closing dashes and
+    // Gaussian's link list ("1/18=20,19=15/1,3;") come between the route and it (review F1d-R07)
+    if (routeEnd >= 0) {
+      const close = /\n ?-{5,}[^\n]*/g;
+      close.lastIndex = routeEnd;
+      const c = close.exec(text);
+      if (c && c.index < m.index && text.slice(c.index + c[0].length, m.index).split(/\r?\n/).every((l) => /^\s*$|^ ?-{5,}\s*$|^ ?\d+\/\S*;\s*$/.test(l))) continue;
+    }
+    routeEnd = at + m[1].length;
     if (/\bGenChk\b/i.test(m[1])) continue;
     starts.push(at);
   }
@@ -169,7 +179,11 @@ function readGaussian(text: string, name: string): QmResult {
   const jobs = gaussianJobs(text);
   if (jobs.length < 2) return readGaussianJob(text, name);
   const parts = jobs.map((t) => readGaussianJob(t, name));
-  const eAt = parts.map((p) => p.scf !== null).lastIndexOf(true);
+  // the energy: the last job's at a correlated level (MP2, CCSD(T), a composite…) if there is one,
+  // else the last job's; never a higher level's dropped without a word (review F1d-R05)
+  const rank = (p: QmResult) => (p.scf === null ? -1 : p.energyFrom ? 1 : 0);
+  const top = Math.max(...parts.map(rank));
+  const eAt = parts.map((p) => rank(p) === top && top >= 0).lastIndexOf(true);
   const tAt = parts.map((p) => p.free !== null || p.enthalpy !== null).lastIndexOf(true);
   const e = parts[eAt >= 0 ? eAt : parts.length - 1];
   const out: QmResult = { ...e, unfinished: !/Normal termination of Gaussian/.test(text.slice(-4000)) };
@@ -183,10 +197,19 @@ function readGaussian(text: string, name: string): QmResult {
       out.note = `The ${what} energy is from job ${eAt + 1} of the log (${e.theory || 'its route'}); the enthalpy and free energy are from job ${tAt + 1} (${t.theory || 'its route'}).`;
     }
   }
-  const notes = [out.note, ...parts.filter((p) => p !== e).map((p) => p.note)].filter(Boolean);
+  // (another job's correlated energy, at another level, that isn't the one taken)
+  const level = (p: QmResult) => `${p.energyFrom ?? ''} ${p.theory}`;
+  const unused = parts.flatMap((p, i) => (i !== eAt && rank(p) === 1 && level(p) !== level(e) ? [`The log also has ${article(p.energyFrom!)} ${p.energyFrom} energy (${p.theory || 'its route'}) in job ${i + 1}: not used; the energy is job ${eAt + 1}'s.`] : []));
+  const lastE = parts.map((p) => p.scf !== null).lastIndexOf(true);
+  const later = top === 1 && lastE > eAt && !(tAt >= 0 && tAt !== eAt && parts[tAt].theory !== e.theory)
+    ? [`The ${e.energyFrom} energy is from job ${eAt + 1} of the log (${e.theory || 'its route'}), not from the last job (${parts[lastE].theory || 'its route'}).`] : [];
+  const notes = [out.note, ...later, ...unused, ...parts.filter((p) => p !== e).map((p) => p.note)].filter(Boolean);
   if (notes.length) out.note = [...new Set(notes)].join(' ');
   return out;
 }
+
+/** "a" or "an" before a method's name read letter by letter (an MP2, an ONIOM, a CCSD(T), a G4). */
+const article = (name: string) => (/^[AEFHILMNORSX]/.test(name) ? 'an' : 'a');
 
 /** One Gaussian job (a whole log, or one --Link1-- job of it). */
 function readGaussianJob(text: string, name: string): QmResult {
