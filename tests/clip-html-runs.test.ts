@@ -14,7 +14,6 @@
 import { describe, it, expect } from 'vitest';
 import { tableHtml, parseHtmlTable } from '../src/io/table-clip';
 import { richToHtml } from '../src/text/html';
-import { formulaParts } from '../src/richtext';
 import { cellTextHtml } from '../src/sheet/cell-html';
 import type { TableData, TextRun } from '../src/model';
 
@@ -34,14 +33,32 @@ describe('a table copied to Word or Excel (G2-02)', () => {
   it('writes formula runs as chemistry, as the drawing shows them: a leading coefficient stays on the line, a charge is raised', () => {
     const p = parts(tableHtml(table([[{ runs: [{ text: '2H2O', formula: true }] }, { runs: [{ text: 'SO42-', formula: true }] }]])));
     expect(p.text.replace(/\s/g, '')).toBe('2H2OSO42-');
-    // H₂O's 2 is lowered, the coefficient isn't; sulfate's 4 is lowered and its charge raised
-    // (the digits next to the sign follow formula style's own rule, the same as the drawing's)
-    expect(p.sub[0]).toBe('2');
-    expect(p.sub[1].startsWith('4')).toBe(true);
-    expect(p.sup.join('')).toContain('-');
-    const drawn = formulaParts('SO42-');
-    expect(p.sub.slice(1)).toEqual(drawn.filter((x) => x.pos === 'sub').map((x) => x.text));
-    expect(p.sup).toEqual(drawn.filter((x) => x.pos === 'sup').map((x) => x.text));
+    // H₂O's 2 is lowered, the coefficient isn't; sulfate is SO₄²⁻: its 4 lowered, its 2- raised
+    expect(p.sub).toEqual(['2', '4']);
+    expect(p.sup).toEqual(['2-']);
+  });
+
+  it('raises a charge\'s digit with its sign (review F2-R04): written out, from the sources in the header', () => {
+    // the ions' usual formulas, their charge a right superscript after the counts (IUPAC Red Book
+    // 2005, as cited in the header): sulfate SO₄²⁻ (PubChem CID 1117), phosphate PO₄³⁻, carbonate
+    // CO₃²⁻, dichromate Cr₂O₇²⁻, iron(III) Fe³⁺, ammonium NH₄⁺, permanganate MnO₄⁻,
+    // hexacyanidoferrate(III) [Fe(CN)₆]³⁻, and the hydrate CuSO₄·5H₂O with its 5 on the line
+    const html = (t: string) => {
+      const doc = new DOMParser().parseFromString(`<div>${tableHtml(table([[{ runs: [{ text: t, formula: true }] }]]))}</div>`, 'text/html');
+      let out = '';
+      const walk = (n: Node) => { for (const c of [...n.childNodes]) { if (c.nodeType === 3) out += c.textContent; else { const tag = (c as Element).tagName; if (tag === 'SUB') out += `_{${c.textContent}}`; else if (tag === 'SUP') out += `^{${c.textContent}}`; else walk(c); } } };
+      walk(doc.body);
+      return out.trim();
+    };
+    expect(html('SO42-')).toBe('SO_{4}^{2-}');
+    expect(html('PO43-')).toBe('PO_{4}^{3-}');
+    expect(html('CO32-')).toBe('CO_{3}^{2-}');
+    expect(html('Cr2O72-')).toBe('Cr_{2}O_{7}^{2-}');
+    expect(html('Fe3+')).toBe('Fe^{3+}');
+    expect(html('NH4+')).toBe('NH_{4}^{+}');
+    expect(html('MnO4-')).toBe('MnO_{4}^{-}');
+    expect(html('[Fe(CN)6]3-')).toBe('[Fe(CN)_{6}]^{3-}');
+    expect(html('CuSO4·5H2O')).toBe('CuSO_{4}·5H_{2}O');
   });
 
   it('keeps fill, merges down, strikethrough, highlight, size and paragraphs in a cell', () => {

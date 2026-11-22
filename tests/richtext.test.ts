@@ -81,8 +81,9 @@ describe('formula style', () => {
   it('puts a + charge up and the atom counts before it down, as ChemDraw does', () => {
     expect(show('NH4+')).toBe('NH_4^+');
     expect(show('K+ salt')).toBe('K^+ salt');
-    // a charge's number has to be put up by hand
-    expect(show('Fe3+')).toBe('Fe_3^+');
+    // a charge's number after one element symbol goes up with it (agreed for the F2 review, R04;
+    // ChemDraw itself lowers it: Fe_3^+)
+    expect(show('Fe3+')).toBe('Fe^3+');
   });
   it('puts a - charge up too, as ChemDraw does', () => {
     expect(show('Cl-')).toBe('Cl^-');
@@ -90,7 +91,8 @@ describe('formula style', () => {
     expect(show('ClO4-')).toBe('ClO_4^-');
     expect(show('PhSO3-')).toBe('PhSO_3^-');
     expect(show('B(OR)3-')).toBe('B(OR)_3^-');
-    expect(show('[Fe(CN)6]3-')).toBe('[Fe(CN)_6]_3^-');
+    // (after a bracket too: the F2 review's rule, where ChemDraw lowers it)
+    expect(show('[Fe(CN)6]3-')).toBe('[Fe(CN)_6]^3-');
     expect(show('H+ and Cl- here')).toBe('H^+ and Cl^- here');
   });
   // from ChemDraw's own drawing of 4,682 test strings

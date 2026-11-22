@@ -208,18 +208,22 @@ export function faceFromStyle(r: RunStyle): number {
 
 export type Part = { text: string; pos: 'base' | 'sub' | 'sup' };
 
-/** What a count or a charge can't follow in formula style: nothing, a space, an opening bracket or , . : ; */
-const FORMULA_NO_MARK = /[\s(\[{,.:;]/;
+/** What a count or a charge can't follow in formula style: nothing, a space, an opening bracket, , . : ; or a hydrate's dot (CuSO4·5H2O). */
+const FORMULA_NO_MARK = /[\s(\[{,.:;·⋅•]/;
 
 /**
  * How formula style shows a piece of text, as measured from ChemDraw:
  * - Numbers go down unless they follow what FORMULA_NO_MARK lists or a sign (CH3, Pd(PPh3)4, not 80 °C or 1,4).
  * - A range of counts goes down whole (C8-12), unless it reads as a charge: a one-digit end no
  *   more than the last digit before it (C2-1).
- * - A sign goes up with the numbers after it (K+, TfO-, Fe2+, a-1), unless it follows what
+ * - A sign goes up with the numbers after it (K+, TfO-, a-1), unless it follows what
  *   FORMULA_NO_MARK lists or is the start of the text. Before a letter it stays on the line, as a
  *   hyphen does (Red-Al), but a - goes up there when a + comes later in the text (CO2-Na+).
  * - Two or more hyphens are names, not charges, and none goes up (Me-Al-).
+ * - The digit just before a sign that ends the formula is the charge's, and goes up with it, where
+ *   it follows other digits (SO42- is SO₄²⁻, PO43- PO₄³⁻, Hg22+ Hg₂²⁺), a bracket ([Fe(CN)6]3- is
+ *   [Fe(CN)₆]³⁻), or one element symbol alone (Fe3+ is Fe³⁺, Ca2+ Ca²⁺); after a formula of more
+ *   than one element it is a count (NH4+ is NH₄⁺, MnO4- MnO₄⁻), as charges of 1 are written with no 1.
  * - An R group's number goes up when Settings ▸ Drawing says so (R¹, CO₂R¹; not the 2 of NR2).
  * `before` and `after` are the rest of the text, in other runs: ChemDraw reads across them.
  */
@@ -236,6 +240,15 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
   }
   let hyphens = 0;
   for (let i = 0; i < whole.length; i++) if (whole[i] === '-' && !counts.has(i)) hyphens++;
+  // a charge's own digit before a sign ending the formula (the comment above)
+  const charge = new Set<number>();
+  for (const m of whole.matchAll(/(\d+)([+-])(?=$|[\s,.;:)\]}])/g)) {
+    const at = m.index, d = m[1], prev = whole[at - 1];
+    if (prev === undefined || FORMULA_NO_MARK.test(prev) || prev === '+' || prev === '-' || counts.has(at)) continue;
+    let from = at;
+    while (from > 0 && !FORMULA_NO_MARK.test(whole[from - 1])) from--;
+    if (d.length > 1 || prev === ']' || /^[A-Z][a-z]?$/.test(whole.slice(from, at))) charge.add(at + d.length - 1);
+  }
   const lastPlus = whole.lastIndexOf('+');
   let raised = false;
   for (let i = 0; i < whole.length; i++) {
@@ -246,7 +259,7 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
       raised = prev !== undefined && !FORMULA_NO_MARK.test(prev) && (c === '+' ? !letter : hyphens < 2 && (!letter || lastPlus > i));
       if (raised) pos[i] = 'sup';
     } else if (c >= '0' && c <= '9') {
-      if (raised) pos[i] = 'sup';
+      if (raised || charge.has(i)) pos[i] = 'sup';
       else if (prev >= '0' && prev <= '9' ? pos[i - 1] === 'sub' : prev !== undefined && !FORMULA_NO_MARK.test(prev) && prev !== '+' && prev !== '-') pos[i] = 'sub';
     } else raised = false;
   }
