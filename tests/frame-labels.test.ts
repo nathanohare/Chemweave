@@ -113,6 +113,21 @@ describe('energy diagrams', () => {
     back.edit('Edit', () => putEnergy(back, m, f2.energy!, { x: f2.x1 + f2.energy!.margins!.l, y: f2.y1 + f2.energy!.margins!.t }, f2.id));
     expect(lookAt(captionWith(back, f2.id, 'SM')).bold).toBe(true);
   });
+  it('a frame from a file saved before the labels as drawn were kept keeps a colour and a raised digit set by hand (F3-R05)', () => {
+    const { doc, m, frame } = put();
+    doc.edit('Look', () => {
+      const c = captionWith(doc, frame, 'SM');
+      doc.updateCaption(c.id, { runs: [{ ...c.runs[0], text: 'S', color: '#c00000' }, { ...c.runs[0], text: 'M', sup: true }] });
+      doc.updateShape(frame, { madeLabels: undefined });
+    });
+    expect(doc.shapes.get(frame)!.madeLabels).toBeUndefined();
+    const d = doc.shapes.get(frame)!.energy!;
+    doc.edit('Edit', () => putEnergy(doc, m, { ...d, w: 260 }, { x: 100, y: 100 }, frame));
+    const c = captionWith(doc, frame, 'SM');
+    expect(lookAt(c, 0).color).toBe('#c00000');
+    expect(lookAt(c, 1).sup).toBe(true);
+    expect(lookAt(captionWith(doc, frame, 'P')).color).not.toBe('#c00000');
+  });
 });
 
 describe('TLC plates', () => {

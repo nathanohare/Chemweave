@@ -8,9 +8,9 @@
 // heading), the frame keeps the labels as last drawn (`Shape.madeLabels`): a look that differs
 // from that is one set by hand. A label typed into on the drawing (new words, so not in that list)
 // is compared with the label drawn again instead, leaving out text size (which follows the
-// frame's size). A frame drawn before the list was kept carries only bold, italic, underline and
-// strikethrough set on its labels. The labels of atoms in a frame (a sawhorse's groups) are taken
-// as text too: their per-character marks (bold, italic, underline, raised, lowered), colour and font.
+// frame's size), as are the labels of a frame drawn before the list was kept. The labels of
+// atoms in a frame (a sawhorse's groups) are taken as text too: their per-character marks
+// (bold, italic, underline, raised, lowered), colour and font.
 
 import type { Atom, Doc, Frame, MadeLabel, Shape, TextRun } from '../model';
 import { anyMarks, readMark, writeMark } from '../chem/label-marks';
@@ -19,7 +19,6 @@ import { normalizeRuns, plainText, styleOf, type RunStyle } from '../richtext';
 /** The looks a hand can set on a label's characters (not what the text is, or where it links). */
 const LOOKS = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'smallCaps', 'allCaps', 'spacing', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow'] as const;
 type Look = (typeof LOOKS)[number];
-const SWITCHES: Look[] = ['bold', 'italic', 'underline', 'strike'];
 /** Where a character sits: one of these at most. */
 const POSITION: Look[] = ['sub', 'sup', 'formula'];
 
@@ -138,14 +137,12 @@ export function keepLabels(doc: Doc, was: OldLabels, frame: Pick<Frame, 'caption
     usedOld.add(k);
     const old = was.labels[k];
     let hand: (Partial<RunStyle> | null)[];
-    if (was.made) {
-      const m = was.made.findIndex((x, j) => !usedMade.has(j) && x.text === text && !!x.atom === atom);
-      if (m >= 0) { usedMade.add(m); hand = handLooks(old.runs, was.made[m].runs); }
-      // typed on the drawing (not words the frame drew): compared with the words drawn now, apart
-      // from text size, which follows the frame's size
-      // (a subscript the drawing puts in that the words typed haven't got stays)
-      else hand = merge(handLooks(old.runs, now[i].runs, LOOKS.filter((x) => x !== 'size' && !POSITION.includes(x))), handLooks(old.runs, now[i].runs, POSITION, true));
-    } else hand = handLooks(old.runs, now[i].runs, SWITCHES, true);
+    const m = was.made ? was.made.findIndex((x, j) => !usedMade.has(j) && x.text === text && !!x.atom === atom) : -1;
+    if (m >= 0) { usedMade.add(m); hand = handLooks(old.runs, was.made![m].runs); }
+    // typed on the drawing (not words the frame drew), or a frame from before the labels as drawn
+    // were kept: compared with the words drawn now, apart from text size, which follows the
+    // frame's size (a subscript the drawing puts in that the old words haven't got stays)
+    else hand = merge(handLooks(old.runs, now[i].runs, LOOKS.filter((x) => x !== 'size' && !POSITION.includes(x))), handLooks(old.runs, now[i].runs, POSITION, true));
     const runs = withLooks(now[i].runs, hand);
     if (runs === now[i].runs) continue;
     const l = now[i];
