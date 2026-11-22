@@ -175,6 +175,11 @@ describe('tables in PowerPoint files', () => {
     const again = slideXml(await save(table));
     const algns = [...again.matchAll(/<a:tc[ >][\s\S]*?<a:pPr algn="(\w+)"/g)].map((x) => x[1]);
     expect(algns).toEqual(['l', 'l', 'ctr', 'l', 'l', 'ctr', 'l', 'r', 'ctr']);
+    // the style's white bold heading text is left to the style, as PowerPoint's own tables have it
+    expect(table.style).toBe('pp-medium2-1');
+    const head = /<a:tc>[\s\S]*?Substrate<\/a:t>/.exec(again)![0];
+    expect(head).not.toContain('b="1"');
+    expect(head).not.toContain('FFFFFF');
   });
 
   it('keeps a table style, cell colours and cells merged down', async () => {

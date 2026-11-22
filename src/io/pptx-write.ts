@@ -1739,6 +1739,7 @@ class Writer {
     const algnOf = (j: string) => (j === 'center' ? 'ctr' : j === 'right' ? 'r' : j === 'justify' ? 'just' : 'l');
     // each cell's lines: the table style's (with their colours), or the rules in the drawing's colour
     const styled = !!slideCellLook(t, 0, 0);
+    const known = styled && Object.values(PPT_STYLE_IDS).includes(t.style ?? '');
     const linesAt = (r: number, c: number): Partial<Record<Side, CellLine>> => {
       const o = coveringCell(t, r, c);
       if (styled) return slideCellLook(t, o.r, o.c)!.lines;
@@ -1769,8 +1770,10 @@ class Writer {
         }
         const cell = t.rows[r][c] ?? { runs: [] };
         const span = spanOf(t, r, c), down = rowSpanOf(t, r, c);
-        // the style's text colour and bold are written on the runs, as PowerPoint shows them
-        const runs = styledRuns(cell.runs, look);
+        // the style's text colour and bold: left to a style PowerPoint knows by its id, so the text
+        // follows a style picked there as PowerPoint's own tables do (audit G2-04); written on the
+        // runs only under "No Style, No Grid"
+        const runs = known ? cell.runs : styledRuns(cell.runs, look);
         const body = runs.some((x) => x.text)
           ? paragraphsXml({ id: 0, x: 0, y: 0, runs, paras: cell.paras, justify: align }, { size, font }, size, this.measure, this.hlink)
           : empty(algnOf(align));
