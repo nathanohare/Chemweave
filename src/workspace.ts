@@ -636,7 +636,9 @@ export class Workspace {
     t.seen = this.host.version;
     if (spare) this.drop(spare);
     const sk = Object.entries(stats.skipped).map(([k, v]) => `${v} ${k}`).join(', ');
-    this.hooks.flash(`Opened ${name}: ${stats.atoms} atoms, ${stats.bonds} bonds, ${stats.captions} captions, ${stats.arrows} arrows${sk ? `. Not shown yet: ${sk}` : ''}`);
+    // (and what was kept as ChemDraw drew it, G1-13)
+    const notes = (stats.notes ?? []).map((n) => ` ${n}`).join('');
+    this.hooks.flash(`Opened ${name}: ${stats.atoms} atoms, ${stats.bonds} bonds, ${stats.captions} captions, ${stats.arrows} arrows${sk ? `. Not shown yet: ${sk}` : ''}.${notes}`);
     return true;
   }
 

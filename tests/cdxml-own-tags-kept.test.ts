@@ -145,6 +145,26 @@ describe('a TLC lane label changed in ChemDraw (G1-13)', () => {
   it('leaves the plate alone when nothing changed', () => {
     expect(lanes(viaCdxml(plate()))).toEqual(['SM', 'co', 'rxn']);
   });
+  it('takes several changed labels at once, each into its own lane', () => {
+    const edited = writeCdxml(plate(), { name: 't.cdxml' }).replace(/>SM</, '>1a<').replace(/>rxn</, '>2b<');
+    const got = readCdxml(edited);
+    expect(lanes(got.doc)).toEqual(['1a', 'co', '2b']);
+    expect(got.stats.notes ?? []).toEqual([]);
+  });
+  it('keeps ChemDraw\'s drawing as plain objects, with a note, when the changes can\'t be matched to the lanes', () => {
+    // a lane label, and one of the two Rf values 0.30: the plate writes its Rf values from each
+    // lane's marks ("0.55, 0.30"), so which spot's 0.30 it was can't be told
+    const xml = writeCdxml(plate(), { name: 't.cdxml' });
+    const edited = xml.replace(/>SM</, '>1a<').replace(/>0\.30</, '>0.35<');
+    const got = readCdxml(edited);
+    expect([...got.doc.shapes.values()].some((s) => s.plate)).toBe(false);
+    // ChemDraw's texts are all still there, as it shows them
+    const texts = [...got.doc.captions.values()].map((c) => c.runs.map((r) => r.text).join(''));
+    expect(texts).toEqual(expect.arrayContaining(['1a', 'co', 'rxn', '0.35', '0.30']));
+    expect(got.stats.notes).toEqual([expect.stringMatching(/TLC plate .* plain objects/)]);
+    // and nothing is said when it is read as written
+    expect(readCdxml(xml).stats.notes ?? []).toEqual([]);
+  });
 });
 
 describe('connectors (G1-09)', () => {
