@@ -2363,6 +2363,19 @@ dialog.cite-style-dialog h3 { margin: 10px 0 4px; font-size: var(--fs-md); }
 .tw-thumb .ft-real-page { width: calc(100% - 16px); max-height: calc(100% - 10px); background: #fff; box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgb(0 0 0 / 0.18); }
 .tw-thumb .ft-real-page > svg { display: block; width: 100%; height: 100%; }
 .ft-sheet-offscreen .sh-tabs { display: none; }
+/* a template's top rows at full size, beside its card while the pointer rests on it, each column explained */
+.tw-zoom { position: fixed; z-index: 1000; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: 0 6px 24px rgb(0 0 0 / 0.22); pointer-events: none; }
+.ft-callouts { position: relative; }
+.ft-callouts > canvas { position: absolute; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+.ft-callouts > svg { position: absolute; inset: 0; overflow: visible; }
+.ft-callouts line { stroke-width: 1.2; }
+.ft-callouts line.ft-input { stroke: #2f6fd6; }
+.ft-callouts line.ft-calc { stroke: var(--m, #1e8a4c); }
+.ft-note { position: absolute; box-sizing: border-box; padding: 1px 0 1px 5px; font-size: 11px; line-height: 13px; color: var(--text); border-left: 2px solid #2f6fd6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ft-note.ft-calc { border-left-color: var(--m, #1e8a4c); font-style: italic; }
+.ft-note.ft-above { height: 40px; display: flex; align-items: flex-end; }
+.ft-note.ft-side { white-space: nowrap; text-overflow: ellipsis; display: block; }
+.tw-about { color: var(--muted); font-size: var(--fs-xs); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; align-self: stretch; text-align: left; }
 .tw-thumb > .ft-real-sheet { max-width: calc(100% - 10px); max-height: calc(100% - 10px); background: #fff; box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgb(0 0 0 / 0.18); }
 
 /* File > New Design: the template gallery */

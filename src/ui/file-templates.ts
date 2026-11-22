@@ -9,6 +9,7 @@ import { STARTER_DECKS, type StarterDeck } from '../deck/starters';
 import type { Master, SlideSize } from '../deck/deck';
 import { keyOf } from '../sheet/refs';
 import { unitPrefs } from '../sheet/template-units';
+import { TEMPLATE_CALLOUTS, withSample } from '../sheet/template-samples';
 import { forgetTextWidths } from '../render/renderer';
 import type { TemplateCategory, TemplateCard } from './template-window';
 
@@ -55,12 +56,15 @@ export function sheetPreview(t: SheetTemplate): HTMLElement {
   return grid;
 }
 
+/** The drawing code for the cards' pictures, once loaded. */
+let thumbs: typeof import('./template-thumbs') | null = null;
+
 /** Draw a card's picture with the real drawing code (loaded when first needed), falling back to the plain outline. */
 async function realPicture(host: HTMLElement, plain: () => HTMLElement, real: (m: typeof import('./template-thumbs')) => HTMLElement): Promise<void> {
   try {
-    const m = await import('./template-thumbs');
+    thumbs ??= await import('./template-thumbs');
     if (!host.isConnected) return;
-    host.replaceChildren(real(m));
+    host.replaceChildren(real(thumbs));
   } catch {
     host.replaceChildren(plain());
   }
@@ -68,17 +72,23 @@ async function realPicture(host: HTMLElement, plain: () => HTMLElement, real: (m
 
 const docCard = (t: DocTemplate, use: (t: DocTemplate) => void): TemplateCard => ({
   id: t.id, name: t.name, tip: t.blurb,
-  // the first page as it prints, shrunk whole
+  // the top of the first page as it prints
   preview: (host) => realPicture(host, () => docPreview(t), (m) => m.docPage(t.make())),
   pick: () => use(t),
 });
 
-const sheetCard = (t: SheetTemplate, use: (t: SheetTemplate) => void): TemplateCard => ({
-  id: t.id, name: t.name, tip: t.blurb,
-  // the first sheet as the grid draws it
-  preview: (host) => realPicture(host, () => sheetPreview(t), (m) => m.sheetPicture(t.make(unitPrefs.place))),
-  pick: () => use(t),
-});
+const sheetCard = (t: SheetTemplate, use: (t: SheetTemplate) => void): TemplateCard => {
+  const notes = TEMPLATE_CALLOUTS[t.id];
+  return {
+    // (a card with an explained picture has no tooltip of its own: the picture is shown instead)
+    id: t.id, name: t.name, tip: notes ? undefined : t.blurb, about: t.blurb,
+    // the first sheet as the grid draws it, with a few example rows (in the picture only)
+    preview: (host) => realPicture(host, () => sheetPreview(t), (m) => m.sheetPicture(withSample(t.id, t.make(unitPrefs.place)))),
+    // its top rows at full size, each column explained
+    zoom: notes ? () => (thumbs ? thumbs.sheetCallouts(withSample(t.id, t.make(unitPrefs.place)), notes.rows, notes.notes) : null) : undefined,
+    pick: () => use(t),
+  };
+};
 
 export function documentCategories(use: (t: DocTemplate) => void): TemplateCategory[] {
   return DOC_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => DOC_TEMPLATES.filter((t) => t.category === c.id).map((t) => docCard(t, use)) }));
