@@ -5,7 +5,7 @@
 
 import type { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
-import { commentSpan, markComment, nextCommentId, noteRuns, placedComments, unmarkComment, withNoteRuns, type CommentThread } from '../document/comments';
+import { commentSpan, markComment, nextCommentId, placedComments, unmarkComment, withNoteRuns, type CommentThread } from '../document/comments';
 import { reviewAuthor, revisionDate } from '../document/revisions';
 import { plainText } from '../richtext';
 import { stackCards, threadCard, type ThreadActions } from './comment-cards';
@@ -154,7 +154,10 @@ export class DocComments {
     const f = this.file;
     const c = f?.t.comments?.[id];
     if (!f || !c) return;
-    this.change(this.withComments(f.t, { ...f.t.comments, [id]: patch(c) }), kind);
+    const now = patch(c);
+    // (nothing changed: no step)
+    if (now === c) return;
+    this.change(this.withComments(f.t, { ...f.t.comments, [id]: now }), kind);
   }
 
   private actions(id: number): ThreadActions {
@@ -163,9 +166,12 @@ export class DocComments {
       edit: (text, reply, runs) => {
         this.editing = null;
         this.setThread(id, (c) => {
-          if (reply === undefined) return c.text === text && JSON.stringify(noteRuns(c)) === JSON.stringify(runs ?? null) ? c : withNoteRuns(c, text, runs);
+          if (reply === undefined) return withNoteRuns(c, text, runs);
+          const was = c.replies?.[reply];
+          const now = was && withNoteRuns(was, text, runs);
+          if (!was || now === was) return c;
           const replies = [...(c.replies ?? [])];
-          if (replies[reply]) replies[reply] = withNoteRuns(replies[reply], text, runs);
+          replies[reply] = now!;
           return { ...c, replies };
         }, 'Edit comment');
         this.update();

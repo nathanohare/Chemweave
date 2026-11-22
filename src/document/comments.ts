@@ -58,10 +58,17 @@ export function cleanNoteRuns(runs: NoteRun[]): NoteRun[] | null {
   return out.some((r) => NOTE_LOOKS.some((k) => r[k])) ? out : null;
 }
 
-/** A note with new text and its words' looks, as set on its card (none: plain, kept as an empty list, so that its looks are known). */
+/**
+ * A note with new text and its words' looks, as set on its card: the note itself when neither
+ * changed (so that nothing is made an undo step). Looks taken off are kept as an empty list (its
+ * looks are known: none), and a note that had none and was given none is left without.
+ */
 export function withNoteRuns<T extends CommentNote>(n: T, text: string, runs?: NoteRun[] | null): T {
-  const r = runs ? cleanNoteRuns(runs) : null;
-  return { ...n, text, runs: r && r.map((x) => x.text).join('') === text ? r : [] };
+  const got = runs ? cleanNoteRuns(runs) : null;
+  const r = got && got.map((x) => x.text).join('') === text ? got : null;
+  if (n.text === text && JSON.stringify(noteRuns(n)) === JSON.stringify(r)) return n;
+  const { runs: had, ...rest } = n;
+  return { ...rest, text, ...(r ? { runs: r } : had !== undefined ? { runs: [] } : {}) } as T;
 }
 
 /** The pieces of a note's text from `from` to `to` (a line of it). */

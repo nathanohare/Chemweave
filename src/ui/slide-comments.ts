@@ -116,7 +116,10 @@ export class SlideComments {
   }
 
   private patch(id: number, fn: (c: PinnedComment) => PinnedComment, label: string): void {
-    this.change(this.comments().map((c) => (c.id === id ? fn(c) : c)), label);
+    let changed = false;
+    const list = this.comments().map((c) => { if (c.id !== id) return c; const n = fn(c); changed ||= n !== c; return n; });
+    // (nothing changed, as an Edit left as it was: no step)
+    if (changed) this.change(list, label);
   }
 
   // ---------------------------------------------------------------- showing
@@ -221,8 +224,11 @@ export class SlideComments {
         }
         this.patch(id, (c) => {
           if (reply === undefined) return withNoteRuns(c, text, runs);
+          const was = c.replies?.[reply];
+          const now = was && withNoteRuns(was, text, runs);
+          if (!was || now === was) return c;
           const replies = [...(c.replies ?? [])];
-          if (replies[reply]) replies[reply] = withNoteRuns(replies[reply], text, runs);
+          replies[reply] = now!;
           return { ...c, replies };
         }, 'Edit comment');
         this.update();

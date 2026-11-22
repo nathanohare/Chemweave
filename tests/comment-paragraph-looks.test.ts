@@ -12,6 +12,8 @@ import { commentPieces } from '../src/io/docx-write';
 import { withNoteRuns, type PinnedComment } from '../src/document/comments';
 import { threadCard, type ThreadActions } from '../src/ui/comment-cards';
 import { readLegacyComments, readModernComments, writeSlideComments } from '../src/io/pptx-comments';
+import { SlideComments } from '../src/ui/slide-comments';
+import type { Deck } from '../src/deck/deck';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
 const W14 = 'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"';
@@ -77,6 +79,16 @@ describe('a Word comment changed here', () => {
     expect(xml).toContain('<w:vertAlign w:val="subscript"/></w:rPr><w:t>f</w:t>');
     expect(xml.match(/<w:annotationRef\/>/g)).toHaveLength(1);
     expect(xml.indexOf('<w:annotationRef/>')).toBeLessThan(xml.indexOf('Use toluene'));
+  });
+
+  it('Word\'s first paragraph removed: the paragraph now first gets the comment mark (F3-R10)', async () => {
+    const xml = await changed('then dry it\nRf 0.3');
+    expect(xml.match(/<w:p /g)).toHaveLength(2);
+    expect(xml.match(/<w:annotationRef\/>/g)).toHaveLength(1);
+    expect(xml.indexOf('<w:annotationRef/>')).toBeLessThan(xml.indexOf('then dry it'));
+    // after the paragraph's properties, as Word puts it
+    expect(xml.indexOf('<w:annotationRef/>')).toBeGreaterThan(xml.indexOf('</w:pPr>'));
+    expect(xml).toContain('<w:vertAlign w:val="subscript"/></w:rPr><w:t>f</w:t>');
   });
 
   it('matches the paragraphs in order, whole lines only', () => {
@@ -169,5 +181,34 @@ describe('comment cards edit the words\' looks (G3-17)', () => {
     const got = readModernComments(new DOMParser().parseFromString(x, 'application/xml'), new Map([['{A}', 'Nate']]));
     expect(got[0].text).toBe('Yield of 3a Rf');
     expect(got[0].runs).toEqual([{ text: 'Yield of ' }, { text: '3a', bold: true }, { text: ' R', italic: true }, { text: 'f', italic: true, sub: true }]);
+  });
+});
+
+describe('a comment edited and left as it was makes no step (F3-R02)', () => {
+  it('the same note back when neither its words nor their looks changed', () => {
+    const plain = { author: 'Nate', date: '', text: 'hello' };
+    expect(withNoteRuns(plain, 'hello', null)).toBe(plain);
+    expect(withNoteRuns(plain, 'hello', [{ text: 'hello' }])).toBe(plain);
+    const bold = withNoteRuns(plain, 'hello', [{ text: 'hello', bold: true }]);
+    expect(bold).not.toBe(plain);
+    expect(withNoteRuns(bold, 'hello', [{ text: 'hello', bold: true }])).toBe(bold);
+    // bold taken off: its looks known (none)
+    expect(withNoteRuns(bold, 'hello', null).runs).toEqual([]);
+    // new words, none set: no looks added
+    expect(withNoteRuns(plain, 'hi', null)).toEqual({ author: 'Nate', date: '', text: 'hi' });
+  });
+
+  it('Edit then Escape on a slide comment (and a reply) from a plain PowerPoint file changes nothing', () => {
+    const c: PinnedComment = { id: 1, x: 0, y: 0, author: 'Nate', date: '', text: 'hello', replies: [{ author: 'Ana', date: '', text: 'ok' }] };
+    const steps: string[] = [];
+    const deck = { current: { id: 7, comments: [c] }, size: { w: 960, h: 540 }, setComments: (_: PinnedComment[], label: string) => { steps.push(label); } } as unknown as Deck;
+    const host = document.createElement('div');
+    const sc = new SlideComments(document.createElement('section'), host, { deck: () => deck, anchor: () => null, view: () => ({ ox: 0, oy: 0, scale: 1 }) as never, askName: async () => true, flash: () => undefined, focus: () => undefined, reveal: () => undefined });
+    const a = (sc as unknown as { actions(id: number): ThreadActions }).actions(1);
+    a.edit('hello', undefined, null);
+    a.edit('ok', 0, null);
+    expect(steps).toEqual([]);
+    a.edit('hello there', undefined, null);
+    expect(steps).toEqual(['Edit comment']);
   });
 });

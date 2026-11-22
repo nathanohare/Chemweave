@@ -552,7 +552,7 @@ class DocxWriter {
       const pieces = commentPieces(c);
       const ids = pieces.map(() => (para++).toString(16).toUpperCase());
       const ps = pieces.map((p, i) => (typeof p === 'number'
-        ? (i ? noAnnotationRef(c.word!.paras![p]) : c.word!.paras![p]).replace(/^<w:p\b/, `<w:p w14:paraId="${ids[i]}" w14:textId="77777777"`)
+        ? (i ? noAnnotationRef(c.word!.paras![p]) : withAnnotationRef(c.word!.paras![p])).replace(/^<w:p\b/, `<w:p w14:paraId="${ids[i]}" w14:textId="77777777"`)
           .replace(/ r:id="link:(\d+)"/g, (_, k: string) => ` r:id="${this.pkg.relate(part, REL.hyperlink, links[Number(k)] ?? '', true)}"`)
         : `<w:p w14:paraId="${ids[i]}" w14:textId="77777777">${i === 0 ? '<w:r><w:annotationRef/></w:r>' : ''}${commentLine(c, p.line, p.at)}</w:p>`));
       const last = ids[ids.length - 1];
@@ -1931,6 +1931,17 @@ function commentLine(c: CommentNote, line: string, at: number): string {
   if (!runs) return run('', line);
   return sliceNoteRuns(runs, at, at + line.length).map((r) =>
     run(`${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}${r.strike ? '<w:strike/>' : ''}${r.underline ? '<w:u w:val="single"/>' : ''}${r.sub ? '<w:vertAlign w:val="subscript"/>' : r.sup ? '<w:vertAlign w:val="superscript"/>' : ''}`, r.text)).join('');
+}
+
+/** The first paragraph of a comment with its comment mark (one of Word's later paragraphs, come first, has none). */
+function withAnnotationRef(p: string): string {
+  if (p.includes('<w:annotationRef/>')) return p;
+  const mark = '<w:r><w:annotationRef/></w:r>';
+  const at = p.indexOf('</w:pPr>');
+  if (at >= 0) return p.slice(0, at + 8) + mark + p.slice(at + 8);
+  const open = /^<w:p\b[^>]*?(\/?)>/.exec(p);
+  if (!open) return p;
+  return open[1] ? `${open[0].slice(0, -2)}>${mark}</w:p>` : open[0] + mark + p.slice(open[0].length);
 }
 
 /** A paragraph of a comment without its comment mark (w:annotationRef, which goes in the first only). */
