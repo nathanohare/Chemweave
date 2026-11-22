@@ -303,29 +303,49 @@ function hexagon(cx: number, cy: number, r: number): [number, number][] {
   });
 }
 
-/** Where a template's shapes go on a slide of this size and layout, in points. */
-/** Where a template's rule or tab sits on the title slide (halfway between the title and subtitle), and under the title on other slides, as fractions of the slide's height. */
-const TITLE_MID = 0.5, CONTENT_RULE = 0.14;
-
+/**
+ * Where a template's shapes go on a slide of this size and layout, in points.
+ *
+ * The title slide's own (bigger) shapes go only on layouts shaped like a title slide: ones with
+ * the title slide's colors, no text box, and the title (if any) lower than the top of the slide.
+ * Giving Title and Content or Title Only the title slide's colors changes their colors and
+ * background, not their shapes. Shapes that belong to the title (the band behind it, the rule or
+ * tab by it) follow the layout's title placeholder, wherever it has been moved; a layout without
+ * a title puts them where the built-in layout has its title.
+ */
 export function decorShapes(size: SlideSize, m: Master, layout: LayoutId): DecorShape[] {
   const { w, h } = size;
-  const title = titleLook(m, layout);
+  const def = layoutDef(m, layout);
+  const own = def.boxes.find((x) => x.ph === 'title');
+  const title = titleLook(m, layout) && !def.boxes.some((x) => x.ph === 'body') && (!own || own.y + own.h / 2 > 0.25);
+  const tb = own ?? builtinLayout(title ? 'title' : 'title-content').boxes[0];
+  // (fractions of the slide) the title's bottom edge; on a title slide the rule sits a little
+  // below it, halfway to the subtitle; elsewhere right under it
+  const under = tb.y + tb.h, mid = under + 0.02;
+  // a short rule under the title, `half` of the slide's width each side of its middle when the
+  // title is centered, else from the side the title's text starts at (at most the title's width)
+  const across = (half: number): [number, number] => {
+    const span = Math.min(2 * half, tb.w);
+    const x1 = tb.justify === 'right' ? tb.x + tb.w - span : tb.justify === 'center' ? tb.x + (tb.w - span) / 2 : tb.x;
+    return [x1 * w, (x1 + span) * w];
+  };
   const a = m.accent, b = m.accent2;
   switch (m.decor) {
     case 'top-bar':
       return title
         ? [{ kind: 'rect', x1: 0, y1: 0, x2: w, y2: 0.035 * h, color: a }, { kind: 'rect', x1: 0, y1: h - 0.035 * h, x2: w, y2: h, color: a }]
         : [{ kind: 'rect', x1: 0, y1: 0, x2: w, y2: 0.022 * h, color: a }];
-    case 'title-band':
-      return title
-        ? [{ kind: 'rect', x1: 0, y1: 0.345 * h, x2: w, y2: 0.49 * h, color: a }]
-        : [{ kind: 'rect', x1: 0, y1: 0, x2: w, y2: 0.15 * h, color: a }];
+    case 'title-band': {
+      // behind the title, running to the top edge when the title is near it
+      const top = tb.y - 0.042;
+      return [{ kind: 'rect', x1: 0, y1: top < 0.03 ? 0 : top * h, x2: w, y2: (under + 0.01) * h, color: a }];
+    }
     case 'left-strip':
       return [{ kind: 'rect', x1: 0, y1: 0, x2: (title ? 0.02 : 0.014) * w, y2: h, color: a }];
-    case 'title-rule':
-      return title
-        ? [{ kind: 'line', x1: 0.3 * w, y1: TITLE_MID * h, x2: 0.7 * w, y2: TITLE_MID * h, color: a, width: 2 }]
-        : [{ kind: 'line', x1: 0.05 * w, y1: CONTENT_RULE * h, x2: 0.95 * w, y2: CONTENT_RULE * h, color: a, width: 2 }];
+    case 'title-rule': {
+      if (title) { const [x1, x2] = across(0.2); return [{ kind: 'line', x1, y1: mid * h, x2, y2: mid * h, color: a, width: 2 }]; }
+      return [{ kind: 'line', x1: tb.x * w, y1: under * h, x2: (tb.x + tb.w) * w, y2: under * h, color: a, width: 2 }];
+    }
     case 'corner': {
       const k = (title ? 0.34 : 0.2) * h;
       return [
@@ -345,27 +365,33 @@ export function decorShapes(size: SlideSize, m: Master, layout: LayoutId): Decor
       const k = (title ? 0.02 : 0.01) * w;
       return [{ kind: 'rect', x1: 0, y1: 0, x2: k, y2: h, color: a }, { kind: 'rect', x1: w - k, y1: 0, x2: w, y2: h, color: b }];
     }
-    case 'double-rule':
-      return title
-        ? [{ kind: 'line', x1: 0.3 * w, y1: (TITLE_MID - 0.006) * h, x2: 0.7 * w, y2: (TITLE_MID - 0.006) * h, color: a, width: 2 },
-          { kind: 'line', x1: 0.38 * w, y1: (TITLE_MID + 0.006) * h, x2: 0.62 * w, y2: (TITLE_MID + 0.006) * h, color: b, width: 1 }]
-        : [{ kind: 'line', x1: 0.05 * w, y1: CONTENT_RULE * h, x2: 0.95 * w, y2: CONTENT_RULE * h, color: a, width: 2 },
-          { kind: 'line', x1: 0.05 * w, y1: (CONTENT_RULE + 0.012) * h, x2: 0.95 * w, y2: (CONTENT_RULE + 0.012) * h, color: b, width: 1 }];
+    case 'double-rule': {
+      if (title) {
+        const [l1, r1] = across(0.2), [l2, r2] = across(0.12);
+        return [{ kind: 'line', x1: l1, y1: (mid - 0.006) * h, x2: r1, y2: (mid - 0.006) * h, color: a, width: 2 },
+          { kind: 'line', x1: l2, y1: (mid + 0.006) * h, x2: r2, y2: (mid + 0.006) * h, color: b, width: 1 }];
+      }
+      const x1 = tb.x * w, x2 = (tb.x + tb.w) * w;
+      return [{ kind: 'line', x1, y1: under * h, x2, y2: under * h, color: a, width: 2 },
+        { kind: 'line', x1, y1: (under + 0.012) * h, x2, y2: (under + 0.012) * h, color: b, width: 1 }];
+    }
     case 'hairlines':
       return title
         ? [{ kind: 'line', x1: 0.2 * w, y1: 0.25 * h, x2: 0.8 * w, y2: 0.25 * h, color: a, width: 1.5 },
           { kind: 'line', x1: 0.2 * w, y1: 0.75 * h, x2: 0.8 * w, y2: 0.75 * h, color: a, width: 1.5 }]
         : [{ kind: 'line', x1: 0.05 * w, y1: 0.035 * h, x2: 0.95 * w, y2: 0.035 * h, color: a, width: 0.75 },
           { kind: 'line', x1: 0.05 * w, y1: 0.915 * h, x2: 0.95 * w, y2: 0.915 * h, color: b, width: 0.75 }];
-    case 'title-tab':
-      return title
-        ? [{ kind: 'rect', x1: 0.46 * w, y1: (TITLE_MID - 0.005) * h, x2: 0.54 * w, y2: (TITLE_MID + 0.005) * h, color: a }]
-        : [{ kind: 'rect', x1: 0.025 * w, y1: 0.055 * h, x2: 0.033 * w, y2: 0.118 * h, color: a }];
+    case 'title-tab': {
+      if (title) { const [x1, x2] = across(0.04); return [{ kind: 'rect', x1, y1: (mid - 0.005) * h, x2, y2: (mid + 0.005) * h, color: a }]; }
+      // a short upright tab just left of the title
+      const x1 = Math.max(0, tb.x - 0.025);
+      return [{ kind: 'rect', x1: x1 * w, y1: (tb.y + 0.005) * h, x2: (x1 + 0.008) * w, y2: Math.max(tb.y + 0.01, under - 0.022) * h, color: a }];
+    }
     case 'header-block':
       return title
         // (on the title slide a block at the top left over a rule along the top, so the title stays centered)
         ? [{ kind: 'rect', x1: 0, y1: 0, x2: 0.2 * w, y2: 0.1 * h, color: a }, { kind: 'rect', x1: 0.2 * w, y1: 0, x2: w, y2: 0.012 * h, color: b }]
-        : [{ kind: 'rect', x1: 0, y1: 0, x2: 0.03 * w, y2: CONTENT_RULE * h, color: a }, { kind: 'line', x1: 0.03 * w, y1: CONTENT_RULE * h, x2: w, y2: CONTENT_RULE * h, color: b, width: 1 }];
+        : [{ kind: 'rect', x1: 0, y1: 0, x2: 0.03 * w, y2: under * h, color: a }, { kind: 'line', x1: 0.03 * w, y1: under * h, x2: w, y2: under * h, color: b, width: 1 }];
     case 'two-tone-footer': {
       const y = (title ? 0.95 : 0.975) * h;
       return [{ kind: 'rect', x1: 0, y1: y, x2: 0.7 * w, y2: h, color: a }, { kind: 'rect', x1: 0.7 * w, y1: y, x2: w, y2: h, color: b }];
@@ -597,9 +623,9 @@ export interface Frame { ph: Placeholder; x: number; y: number; w: number; h: nu
  */
 const FRAMES: Record<BuiltinLayout, [Placeholder, number, number, number, number, Caption['justify']][]> = {
   // the title slide: a one-line title just above the middle of the slide, the subtitle as far below
-  // it, so a rule or tab at the middle (TITLE_MID) sits halfway between them
+  // it, so a rule or tab just under the title (see decorShapes) sits halfway between them
   title: [['title', 0.08, 0.387, 0.84, 0.093, 'center'], ['subtitle', 0.08, 0.556, 0.84, 0.16, 'center']],
-  // other slides: the text starts a short way under the title, below a rule at CONTENT_RULE
+  // other slides: the text starts a short way under the title, below a rule along the title's bottom
   'title-content': [['title', 0.05, 0.05, 0.9, 0.09, 'left'], ['body', 0.05, 0.17, 0.9, 0.73, 'left']],
   'two-content': [['title', 0.05, 0.05, 0.9, 0.09, 'left'], ['body', 0.05, 0.17, 0.44, 0.73, 'left'], ['body', 0.51, 0.17, 0.44, 0.73, 'left']],
   'title-only': [['title', 0.05, 0.05, 0.9, 0.09, 'left']],

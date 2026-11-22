@@ -133,7 +133,8 @@ export function hrmsSentence(p: SiProject, c: SiCompound, facts: MolFacts | null
   return endSentence(runs);
 }
 
-const FORMULA_PIECE = /^(\d+(?:\.\d+)?)?((?:\[\d+[A-Z][a-z]?\]|[A-Z][a-z]?|\d+)+)$/;
+// (one digit at a time inside the repeat: "\d+" there let a long run of digits split many ways, which is slow on a bad piece)
+const FORMULA_PIECE = /^(\d+(?:\.\d+)?)?((?:\[\d+[A-Z][a-z]?\]|[A-Z][a-z]?|\d)+)$/;
 
 /** A typed formula, maybe a solvate ("C12H15NO·0.25H2O"): only atom counts subscripted; anything else as typed. */
 export function typedFormulaRuns(t: string): Run[] {

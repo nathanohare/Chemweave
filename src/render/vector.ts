@@ -146,6 +146,8 @@ export class VecPath {
 }
 
 interface State {
+  /** Kerning off ('none', a text effect): letters placed with their own widths. */
+  kerning?: 'auto' | 'none';
   fillStyle: string;
   strokeStyle: string;
   lineWidth: number;
@@ -166,8 +168,11 @@ export type CharWidth = (ch: string, size: number, family: string, bold: boolean
 
 export class VectorContext {
   items: Item[] = [];
-  /** Text is placed with these widths (a document's fonts), else Arial's. */
-  constructor(private charWidth: CharWidth | null = null) {}
+  /**
+   * Text is placed with these widths (a document's fonts), else Arial's; `advances`, when it
+   * knows the font, gives each letter's share of a whole text with kerning (null when it doesn't).
+   */
+  constructor(private charWidth: CharWidth | null = null, private advances: ((text: string, size: number, family: string, bold: boolean, italic: boolean) => number[] | null) | null = null) {}
   private path = new VecPath();
   private st: State = { fillStyle: '#000', strokeStyle: '#000', lineWidth: 1, lineCap: 'butt', lineJoin: 'miter', font: '10px Arial', dash: [], m: null };
   private stack: State[] = [];
@@ -186,6 +191,8 @@ export class VectorContext {
   set lineJoin(v: CanvasLineJoin) { this.st.lineJoin = v; }
   get font(): string { return this.st.font; }
   set font(v: string) { this.st.font = v; }
+  get fontKerning(): 'auto' | 'none' { return this.st.kerning ?? 'auto'; }
+  set fontKerning(v: 'auto' | 'none') { this.st.kerning = v; }
 
   save(): void { this.stack.push({ ...this.st, dash: [...this.st.dash] }); }
   restore(): void { const s = this.stack.pop(); if (s) this.st = s; }
@@ -255,7 +262,7 @@ export class VectorContext {
   fillText(text: string, x: number, y: number): void {
     const f = parseFont(this.st.font);
     const cw = this.charWidth;
-    const widths = [...text].map((ch) => (cw ? cw(ch, f.size, f.family, f.bold, f.italic) : arialWidth(ch, f.size, f.bold)));
+    const widths = (this.st.kerning !== 'none' ? this.advances?.(text, f.size, f.family, f.bold, f.italic) : null) ?? [...text].map((ch) => (cw ? cw(ch, f.size, f.family, f.bold, f.italic) : arialWidth(ch, f.size, f.bold)));
     const m = this.st.m;
     const at = this.pt(x, y);
     // (a turn clockwise on the page is an angle anticlockwise taken away)

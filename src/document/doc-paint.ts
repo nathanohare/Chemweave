@@ -16,6 +16,7 @@ import type { BorderLine, TableData } from '../model';
 import { coveringCell, rowSpanOf, spanOf } from '../table';
 import { DEFAULT_MARGINS, hasLines, resolveTable, strokeOf, type TableStyleDef } from './table-styles';
 import { docMeasure } from './doc-file';
+import { fontKind, publishedAdvances } from '../text/font-measure';
 import { drawMath } from './math';
 import { fxSrc, hasFx, traceShape } from '../render/picture-fx';
 import { drawParaBorders, drawParaShading } from './para-borders';
@@ -211,8 +212,13 @@ export interface PrintPage { w: number; h: number; items: Item[]; origin: { x: n
 export function recordPages(t: DocText, lay: DocLayout, drawing: (c: Contents, style: DocStyle) => Picture | null): PrintPage[] {
   const width = (ch: string, size: number, family: string, bold: boolean, italic: boolean) =>
     docMeasure(ch, size, family, `${italic ? 'italic ' : ''}${bold ? 'bold' : ''}`);
+  // (Times New Roman, Arial and their stand-ins: letter by letter, kerned as laid out)
+  const advances = (text: string, size: number, family: string, bold: boolean, italic: boolean) => {
+    const kind = fontKind(family);
+    return kind ? publishedAdvances(text, size, kind, bold, italic) : null;
+  };
   return lay.pages.map((p) => {
-    const ctx = new VectorContext(width);
+    const ctx = new VectorContext(width, advances);
     const c = ctx as unknown as CanvasRenderingContext2D;
     drawPageLook(c, t, p);
     drawHeaderFooter(c, t, p);

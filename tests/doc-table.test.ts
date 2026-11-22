@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { writeDocx, readDocx, type DocxDeps } from '../src/io/docx';
 import { cellHolding, fieldTexts, flatRuns, nestedTables, newDocument, objectRun, paraFromStyle, pruneObjects, runStyleOf, type DocObject, type DocText } from '../src/document/document';
-import { CELL_PAD, DocLayouter, SINGLE_ROW } from '../src/document/doc-layout';
+import { CELL_PAD, DocLayouter, GRID_LINE, SINGLE_ROW } from '../src/document/doc-layout';
 import { canMerge, coveringCell, deleteRow, emptyTable, insertRow, isCovered, mergeDown, mergeRight, nextCell, rowSpanOf, spanOf, splitCell } from '../src/table';
 import * as rt from '../src/richtext';
 import type { TableData, TextRun } from '../src/model';
@@ -38,9 +38,10 @@ describe('laying out a table in the text', () => {
     const rows = lay.text.lines.filter((l) => l.block === 1);
     expect(rows).toHaveLength(2);
     const N = d.styles.Normal;
-    const h = SINGLE_ROW * N.size + 2 * CELL_PAD.y;
+    // as in Word, a row makes room for the line along its top (and the last row for the one along its bottom)
+    const h = SINGLE_ROW * N.size + 2 * CELL_PAD.y + GRID_LINE;
     expect(rows[0].above).toBeCloseTo(h);
-    expect(rows[1].y - rows[0].y).toBeCloseTo(h);
+    expect(rows[1].y - rows[0].y).toBeCloseTo(h + GRID_LINE);
     // the caret passes over the table as one character
     expect(rows[0].start).toBe(7);
     expect(rows[1].end).toBe(8);
@@ -62,7 +63,7 @@ describe('laying out a table in the text', () => {
     const t = grid([['x', 'aaaa bbbb cccc dddd eeee ffff']], [60, 60]);
     t.rows[0][0].valign = 'center';
     const tb = layouter().layout(doc(t)).tables.get(1)!;
-    const room = tb.hs[0] - 2 * CELL_PAD.y - (tb.cells[0][0]!.box.y2 - tb.cells[0][0]!.box.y1);
+    const room = tb.hs[0] - tb.pads[0][0].top - tb.pads[0][0].bottom - (tb.cells[0][0]!.box.y2 - tb.cells[0][0]!.box.y1);
     expect(tb.drop[0][0]).toBeCloseTo(room / 2);
     t.rows[0][0].valign = 'bottom';
     expect(layouter().layout(doc(t)).tables.get(1)!.drop[0][0]).toBeCloseTo(room);
@@ -247,11 +248,11 @@ describe('cells merged down a column', () => {
     let tb = layouter().layout(doc(t)).tables.get(1)!;
     expect(tb.cells[2][1]).toBeNull();
     const one = tb.hs[1];
-    expect(tb.hs[2]).toBeCloseTo(one);
+    expect(tb.hs[2]).toBeCloseTo(one + GRID_LINE); // the last row also makes room for the line along its bottom
     // a merged cell with four lines of text: its two rows make room for it
     t.rows[1][1] = { runs: text('a\nb\nc\nd'), rowSpan: 2, valign: 'bottom' };
     tb = layouter().layout(doc(t)).tables.get(1)!;
-    const need = tb.cells[1][1]!.box.y2 - tb.cells[1][1]!.box.y1 + 2 * CELL_PAD.y;
+    const need = tb.cells[1][1]!.box.y2 - tb.cells[1][1]!.box.y1 + tb.pads[1][1].top + tb.pads[1][1].bottom;
     expect(tb.hs[1] + tb.hs[2]).toBeCloseTo(need);
     expect(tb.hs[1]).toBeCloseTo(one);
   });

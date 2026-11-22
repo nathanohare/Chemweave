@@ -24,16 +24,18 @@ import { cleanBorders } from '../document/para-borders';
 import { ACS_1996, type DocStyle } from '../style';
 import * as rt from '../richtext';
 import { NS, PackageReader, REL, bytesHash, kid, kids, rAttr, fromEmu } from './ooxml';
+import { embeddable, obfuscate } from './font-embed';
 import { dataUrl, imageSize, pictureMime } from '../render/images';
 import { drawingInEmf } from '../render/emf';
-import { BULLETS, BULLET_LIBRARY, LIST_SCHEMES, cleanPara, listInfo } from '../text/paragraphs';
+import { BULLETS, BULLET_LIBRARY, LIST_SCHEMES, cleanPara, listInfo, ownSchemeId, type NumFormat } from '../text/paragraphs';
 import { SINGLE, type Measure } from '../text/layout';
 import { arialWidth } from '../text-metrics';
 import { documentMeasure } from '../text/font-measure';
+import { fontClass, hintFontClass, wordFontClass } from '../text/font-standins';
 import {
   OBJECT_CHAR, COMPOUND, compoundSeqs, defaultCharStyles, defaultHeaderFooter, defaultPage, defaultStyles,
   COL_GAP, FLOAT_GAP, columnsOf, contentsPrint, lookExtent, usedObjects,
-  type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
+  type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type TocLook, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
 } from '../document/document';
 import { parseFieldInstr, type DocProps } from '../document/fields';
 import { shownSize } from '../document/doc-layout';
@@ -60,6 +62,11 @@ import { cmlGuid, contentsSig } from './cml';
 import { GEOS, GEO_BY_ID } from '../design/geo';
 
 export interface DocxReadDeps {
+  /**
+   * A font face embedded in the file (TrueType, its embedding allowed), for showing the document
+   * where the font isn't installed.
+   */
+  embeddedFont?(family: string, bold: boolean, italic: boolean, data: Uint8Array): void;
   /** A ChemDraw drawing (CDX data) as a drawing in the document's style; null when it can't be read. */
   chemdraw?(cdx: Uint8Array, style: DocStyle): Contents | null;
   /**
@@ -141,7 +148,7 @@ const WARN = {
 
 type Pos = 'base' | 'sub' | 'sup';
 /** Text formatting as a file gives it (only what it gives). `color` null is "automatic". */
-interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; noKern?: boolean; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
+interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
 /** Paragraph formatting as a file gives it, in points. */
 interface PProps {
   align?: Justify; before?: number; after?: number; line?: { v: number; rule: string };
@@ -176,10 +183,10 @@ function finalTabs(p: PProps): TabStop[] | undefined {
 interface CellLook { p: PProps; r: RProps }
 interface WStyle { id: string; type: string; name: string; basedOn?: string; next?: string; isDefault: boolean; p: PProps; r: RProps; el: Element }
 /** A list level: its number format and text, its indents, its start value and the level after which it starts again (lvlRestart, 1-based; 0 never). */
-interface Level { fmt: string; text: string; p: PProps; start: number; restart?: number }
+interface Level { fmt: string; text: string; p: PProps; start: number; restart?: number; /** The number's own bold and italic (w:lvl/w:rPr). */ r?: { bold?: boolean; italic?: boolean } }
 interface Piece { runs: TextRun[]; pageBreak: boolean; soft: boolean; colBreak?: boolean; /** Index entries and marked citations in it (XE and TA fields). */ xe?: IndexMark[]; ta?: AuthorityMark[] }
 interface Ctx { base: RProps; pieces: Piece[]; cell: boolean }
-interface Field { instr: string; phase: 'instr' | 'result'; swallow: boolean; /** The field's own data (w:fldData, base64): EndNote's citations. */ data?: string; text: string; props: RProps; /** How its result's first text looks, which is what Word shows (EndNote sets superscript only there). */ shown?: RProps; done: boolean; ref?: { id: number; mark: string; text: string; above?: boolean; page?: boolean }; toc?: boolean; /** A form field's settings (w:ffData), and the form field made of it. */ ff?: Element; form?: number; /** A HYPERLINK field: the link open before it, put back at its end. */ before?: { link: string | undefined }; /** A manager's citation (its object) whose shown text is kept; a manager's bibliography (its object) whose entries are kept. */ cite?: number; bib?: number; /** Its separator (where its result starts). */ sep?: Element; /** Another field inside its instruction. */ inner?: boolean; /** A field kept as Word had it: the object made of it (its result is gathered into it). */ kept?: number }
+interface Field { instr: string; phase: 'instr' | 'result'; swallow: boolean; /** The field's own data (w:fldData, base64): EndNote's citations. */ data?: string; text: string; props: RProps; /** How its result's first text looks, which is what Word shows (EndNote sets superscript only there). */ shown?: RProps; done: boolean; ref?: { id: number; mark: string; text: string; above?: boolean; page?: boolean }; toc?: boolean; /** A table of contents (TOC \\o): its object, which takes the look of its lines as Word last wrote them. */ tocId?: number; /** A form field's settings (w:ffData), and the form field made of it. */ ff?: Element; form?: number; /** A HYPERLINK field: the link open before it, put back at its end. */ before?: { link: string | undefined }; /** A manager's citation (its object) whose shown text is kept; a manager's bibliography (its object) whose entries are kept. */ cite?: number; bib?: number; /** Its separator (where its result starts). */ sep?: Element; /** Another field inside its instruction. */ inner?: boolean; /** A field kept as Word had it: the object made of it (its result is gathered into it). */ kept?: number }
 interface OutPara { ps: ParaStyle; runs: TextRun[]; mark: rt.RunStyle; style: string; contextual: boolean; table?: boolean; bib?: string; markRev?: string; /** A list item: Word's list (numId), the levels it uses (abstractNumId) and its level. */ num?: { id: string; abs: string; ilvl: number } }
 
 /** Open a Word file. Throws only when the file is not a Word file at all. */
@@ -188,6 +195,14 @@ export async function readDocx(bytes: Uint8Array, deps: DocxReadDeps = {}): Prom
   const app = deps.keepBibliography ? reader.bibliographyApp() : null;
   if (app) reader.keepBib = await deps.keepBibliography!(app);
   return reader.read();
+}
+
+/**
+ * Word kerns letters only where kerning is set (w:kern) and the text is at least that size, so
+ * text without it is not kerned (TextRun.noKern).
+ */
+function noKernOf(r: RProps): true | undefined {
+  return !r.kern || (r.size ?? WORD_SIZE) < r.kern ? true : undefined;
 }
 
 /** An on/off attribute that is there and on. */
@@ -505,7 +520,7 @@ class DocxReader {
         case 'caps': out.allCaps = this.on(c); break;
         // character spacing (twentieths of a point) and kerning taken off
         case 'spacing': { const v = parseFloat(this.a(c) ?? ''); out.spacing = Number.isFinite(v) && v ? Math.round((v / 20) * 100) / 100 : undefined; break; }
-        case 'kern': out.noKern = this.a(c) === '0' || undefined; break;
+        case 'kern': { const v = Number(this.a(c) ?? 0); out.kern = Number.isFinite(v) && v > 0 ? v / 2 : 0; break; }
         // Word 2010's text effects (w14)
         case 'shadow': out.shadow = c.namespaceURI?.includes('2010') ? true : this.on(c) || undefined; break;
         case 'textOutline': {
@@ -540,6 +555,14 @@ class DocxReader {
     for (const c of kids(el)) {
       switch (c.localName) {
         case 'jc': { const j = JUSTIFY[this.a(c) ?? '']; if (j) out.align = j; break; }
+        case 'framePr': {
+          // a text frame set at the right or in the middle of the margins (a page number in a footer, as older Words made it): its paragraph is aligned there
+          if (c.getAttributeNS(this.W, 'dropCap') ?? c.getAttribute('w:dropCap')) break;
+          const x = c.getAttributeNS(this.W, 'xAlign') ?? c.getAttribute('w:xAlign');
+          const shown = x === 'right' || x === 'outside' ? 'right' as const : x === 'center' ? 'center' as const : null;
+          if (shown && !kid(el, 'jc')) out.align = shown;
+          break;
+        }
         case 'spacing': {
           const b = this.tw(c, 'before'), af = this.tw(c, 'after'), line = this.a(c, 'line');
           // "automatic" spacing (from web pages) is 14 pt
@@ -566,7 +589,7 @@ class DocxReader {
         case 'pageBreakBefore': out.pageBreak = this.on(c); break;
         case 'suppressLineNumbers': out.noLineNumbers = this.on(c); break;
         case 'suppressAutoHyphens': out.noHyphen = this.on(c); break;
-        case 'outlineLvl': { const v = Number(this.a(c)); if (v >= 0 && v < 9) out.outline = v + 1; break; }
+        case 'outlineLvl': { const v = Number(this.a(c)); if (v >= 0 && v <= 9) out.outline = v + 1; break; } // (9: body text, which a style can set over a heading's level: 10 here)
         case 'contextualSpacing': out.contextual = this.on(c); break;
         case 'pBdr': {
           const b: ParaBorders = {};
@@ -761,7 +784,10 @@ class DocxReader {
   private readLevel(l: Element): Level {
     const start = Number(this.a(kid(l, 'start')) ?? 0);
     const restart = kid(l, 'lvlRestart') ? Number(this.a(kid(l, 'lvlRestart'))) : NaN;
+    const rp = this.readRPr(kid(l, 'rPr'));
+    const r = { ...(rp.bold !== undefined ? { bold: rp.bold } : {}), ...(rp.italic !== undefined ? { italic: rp.italic } : {}) };
     return {
+      ...(Object.keys(r).length ? { r } : {}),
       fmt: this.a(kid(l, 'numFmt')) ?? 'decimal', text: this.a(kid(l, 'lvlText')) ?? '', p: this.readPPr(kid(l, 'pPr')),
       start: Number.isFinite(start) ? Math.round(start) : 0, ...(Number.isFinite(restart) ? { restart: Math.round(restart) } : {}),
     };
@@ -814,10 +840,46 @@ class DocxReader {
     }
   }
 
+  /**
+   * Word's font table: what kind each font is (roman, swiss, modern), so a font this computer
+   * doesn't have is drawn with a stand-in of the same kind, serif for serif, as Word does. The
+   * table itself (with any fonts embedded in the file) is kept and saved back.
+   */
+  private readFontTable(): void {
+    const path = this.pkg.relOfType(this.main, DOCX_REL.fontTable);
+    let root: Element | null | undefined = null;
+    try { root = path ? this.pkg.xml(path)?.documentElement : null; } catch { root = null; }
+    if (!root) return;
+    for (const f of Array.from(root.getElementsByTagNameNS(W_NS, 'font'))) {
+      const name = f.getAttributeNS(W_NS, 'name');
+      if (!name) continue;
+      const val = (tag: string) => f.getElementsByTagNameNS(W_NS, tag)[0]?.getAttributeNS(W_NS, 'val');
+      const alt = val('altName');
+      const cls = wordFontClass(val('family')) ?? (alt ? fontClass(alt) : null);
+      if (cls) hintFontClass(name, cls);
+      // fonts embedded in the file (obfuscated with their key, ECMA-376 part 1, 17.8.1)
+      if (!this.deps.embeddedFont || !path) continue;
+      for (const [tag, bold, italic] of [['embedRegular', false, false], ['embedBold', true, false], ['embedItalic', false, true], ['embedBoldItalic', true, true]] as const) {
+        const el = f.getElementsByTagNameNS(W_NS, tag)[0];
+        const id = el ? rAttr(el, 'id') : null;
+        const key = el?.getAttributeNS(W_NS, 'fontKey');
+        const part = id ? this.pkg.rels(path).get(id) : undefined;
+        const bytes = part && !part.external ? this.pkg.bytes(part.target) : null;
+        if (!bytes || !key || !/^\{?[0-9A-F]{8}(-?[0-9A-F]{4}){3}-?[0-9A-F]{12}\}?$/i.test(key)) continue;
+        try {
+          const ttf = obfuscate(bytes, key);
+          // (a font whose maker restricts embedding is left to the computer's own)
+          if (embeddable(ttf)) this.deps.embeddedFont(name, bold, italic, ttf);
+        } catch { /* a damaged font is skipped */ }
+      }
+    }
+  }
+
   /** Other programs' data, kept as it is; Chem4Word's structures by their id. */
   private readKept(): void {
     // (with Word's building blocks stored in the file, and its list of the people who commented)
-    this.kept = readKeptParts(this.pkg, { main: this.main, ours: (root) => root.namespaceURI === MODEL_NS, ownProp: (name) => /^ZOTERO_PREF_\d+$/.test(name), theme: true, trees: [GLOSSARY_REL, PEOPLE_REL] });
+    this.kept = readKeptParts(this.pkg, { main: this.main, ours: (root) => root.namespaceURI === MODEL_NS, ownProp: (name) => /^ZOTERO_PREF_\d+$/.test(name), theme: true, trees: [GLOSSARY_REL, PEOPLE_REL, DOCX_REL.fontTable] });
+    this.readFontTable();
     for (const x of this.kept?.xml ?? []) {
       const guid = cmlGuid(x.xml);
       if (guid) this.cml.set(guid, x.xml);
@@ -1164,6 +1226,8 @@ class DocxReader {
     if (choice && /(^|\s)wps(\s|$)/.test(choice.getAttribute('Requires') ?? '') && choice.getElementsByTagNameNS('*', 'wsp').length) return choice;
     // one of our diagrams as a group of shapes (Word puts an older shape in place of our picture when it saves)
     if (choice && /(^|\s)wpg(\s|$)/.test(choice.getAttribute('Requires') ?? '') && Array.from(choice.getElementsByTagNameNS('*', 'docPr')).some((d) => new RegExp(`^${DRAWING_NAME} \\d+$`).test(this.model?.floats?.[Number(d.getAttribute('id'))]?.was ?? d.getAttribute('name') ?? ''))) return choice;
+    // Word's own group of pictures: read from the group, where each picture is (the older shape keeps only the first well)
+    if (choice && /(^|\s)wpg(\s|$)/.test(choice.getAttribute('Requires') ?? '') && pictureGroup(choice)) return choice;
     // Word 2016's newer charts (histograms, box charts): their fallback is only a picture
     if (choice && /(^|\s)cx\d*(\s|$)/.test(choice.getAttribute('Requires') ?? '') && Array.from(choice.getElementsByTagNameNS('*', 'graphicData')).some((g) => /chartex/.test(g.getAttribute('uri') ?? ''))) return choice;
     return kid(el, 'Fallback') ?? choice;
@@ -1200,6 +1264,8 @@ class DocxReader {
       : kind === 'wrapNone' ? (yes(anchor.getAttribute('behindDoc')) ? 'behind' as const : 'front' as const)
       : 'square' as const;
     const fl: Float = { wrap, x: round(x - l), y: round(y - t) };
+    const fx = effectBeyond(anchor, look ?? undefined);
+    if (fx) fl.effect = fx;
     if (xFrom) fl.xFrom = xFrom;
     if (yFrom) fl.yFrom = yFrom;
     // the room kept from the text on each side (Word's own figures: 0.13 in at the sides, none above and below)
@@ -1275,9 +1341,45 @@ class DocxReader {
     return { style, p, direct, base, mark };
   }
 
+  /** The style of the paragraph being read. */
+  private paraStyleNow = '';
+
+  /**
+   * A line of a table of contents as Word last wrote it: the first text of each level gives how
+   * that level looks (Word writes its entries with their own formatting, which shows until the
+   * table is updated there).
+   */
+  private tocLook(text: string, r: RProps, para: RProps): void {
+    const f = [...this.fields].reverse().find((x) => x.tocId !== undefined);
+    // (Word's built-in "toc 1" to "toc 9", by its name, whatever the id in another language)
+    const name = this.wstyles.get(`paragraph:${this.paraStyleNow}`)?.name ?? this.paraStyleNow;
+    const level = Number(/^toc\s*([1-9])$/i.exec(name)?.[1] ?? /^toc\s*([1-9])$/i.exec(this.paraStyleNow)?.[1] ?? 0);
+    const o = f ? this.objects[f.tocId!] : undefined;
+    const seen = `${f?.tocId}:${level}`;
+    if (!level || o?.kind !== 'toc' || !text.trim() || r.hidden || this.tocSeen.has(seen)) return;
+    this.tocSeen.add(seen);
+    // only what the entry's own formatting changes from its style (none in contents saved here)
+    const own: TocLook = {};
+    if (r.font && r.font !== para.font) own.font = r.font;
+    if (r.size && r.size !== para.size) own.size = r.size;
+    if (!!r.bold !== !!para.bold) own.bold = !!r.bold;
+    if (!!r.italic !== !!para.italic) own.italic = !!r.italic;
+    if (!Object.keys(own).length) return;
+    const look = [...(o.look ?? [])];
+    while (look.length < level - 1) look.push(null);
+    look[level - 1] = own;
+    this.objects[f!.tocId!] = { ...o, look };
+  }
+
+  /** The levels of each table of contents whose look has been read. */
+  private tocSeen = new Set<string>();
+
   private paragraph(el: Element): void {
+    // (a page break the paragraph before ended with)
+    const carried = this.pageNext;
     const pPr = kid(el, 'pPr');
     const { style, p: own, direct, base, mark } = this.paraProps(pPr);
+    this.paraStyleNow = style;
     // a section ends with this paragraph: the next one starts a new page unless the section break says otherwise
     const sect = kid(pPr, 'sectPr');
     const ctx: Ctx = { base, pieces: [{ runs: [], pageBreak: false, soft: false }], cell: false };
@@ -1290,6 +1392,21 @@ class DocxReader {
     this.inline(kids(el), ctx);
     // the contents' own lines (and the paragraph its field ends in): left out
     const sectionBreak = () => { if (sect) this.breakNext = this.sectionAfter(sect); };
+    // a page break that ends the paragraph, with only its mark after it: Word (2013 on) keeps the
+    // mark on the break's page, so the next page starts with the next paragraph, not an empty line
+    const last = ctx.pieces[ctx.pieces.length - 1];
+    let popped = false;
+    if (ctx.pieces.length > 1 && last.pageBreak && !last.runs.length && !last.soft && !last.colBreak && !last.xe && !last.ta && !sect
+      && el.nextElementSibling?.localName === 'p' && this.compatMode() >= 15) {
+      ctx.pieces.pop();
+      popped = true;
+    }
+    // (and a paragraph that holds only a page break: its empty line stays on the page before)
+    else if (ctx.pieces.length === 1 && last.pageBreak && !last.runs.length && !last.soft && !last.colBreak && !last.xe && !last.ta && !sect
+      && el.nextElementSibling?.localName === 'p' && this.compatMode() >= 15) {
+      last.pageBreak = false;
+      popped = true;
+    }
     if (inToc && ctx.pieces.every((pc) => !pc.runs.length)) { sectionBreak(); return; }
     const bib = bibBefore ?? this.bibMet ?? undefined;
     const text = ctx.pieces.map((pc) => rt.plainText(pc.runs)).join('\n');
@@ -1339,6 +1456,13 @@ class DocxReader {
       tabs: finalTabs(p), scheme, bullet,
       border: cleanBorders(p.border), shade: p.shade && p.shade !== '#ffffff' ? p.shade : undefined,
     };
+    // the number as Word draws it: in the paragraph mark's bold and italic (its style's, unless the
+    // mark sets its own), then the list level's; kept where that isn't the style's
+    if (list === 'number' && level) {
+      const bold = level.r?.bold ?? !!mark.bold, italic = level.r?.italic ?? !!mark.italic;
+      const look = { ...(bold !== !!base.bold ? { bold } : {}), ...(italic !== !!base.italic ? { italic } : {}) };
+      if (Object.keys(look).length) ps.numLook = look;
+    }
     const markStyle = this.runStyle({ ...mark, cstyle: undefined });
     const mrEl = kid(kid(pPr, 'rPr'), 'ins') ?? kid(kid(pPr, 'rPr'), 'del');
     const markRevOf = mrEl ? revText({ kind: mrEl.localName === 'ins' ? 'ins' : 'del', author: this.a(mrEl, 'author') ?? '', date: this.a(mrEl, 'date') ?? '' }) : undefined;
@@ -1354,7 +1478,7 @@ class DocxReader {
           if (list) q.cont = true;
         }
       } else {
-        if (pc.pageBreak) q.pageBreak = true;
+        if (pc.pageBreak || carried) q.pageBreak = true;
         if (pc.colBreak) q.colBreak = true;
         if (this.pendingMarks.length) { q.marks = this.pendingMarks; this.pendingMarks = []; }
       }
@@ -1367,8 +1491,24 @@ class DocxReader {
       const num = i === 0 && list && numId ? { id: numId, abs: this.nums.get(numId) ?? '', ilvl } : undefined;
       this.out.push({ ps: q, runs: pc.runs, mark: markStyle, style: ours, contextual: !!p.contextual, bib, ...(mr ? { markRev: mr } : {}), ...(num ? { num } : {}) });
     });
+    this.pageNext = popped;
     sectionBreak();
   }
+
+  /** A page break the paragraph before ended with, which starts this one's page. */
+  private pageNext = false;
+
+  /** Word's compatibility mode (settings.xml): 15 for Word 2013 and later, 12 for files that don't say. */
+  private compatMode(): number {
+    if (this.compat === null) {
+      const path = this.pkg.relOfType(this.main, DOCX_REL.settings);
+      const set = path ? Array.from(this.pkg.xml(path)?.getElementsByTagNameNS('*', 'compatSetting') ?? []) : [];
+      const mode = set.find((c) => c.getAttributeNS(this.W, 'name') === 'compatibilityMode' || c.getAttribute('w:name') === 'compatibilityMode');
+      this.compat = Number(mode?.getAttributeNS(this.W, 'val') ?? mode?.getAttribute('w:val')) || 12;
+    }
+    return this.compat;
+  }
+  private compat: number | null = null;
 
   private takeBreak(): SectionBreak | undefined {
     const b = this.breakNext;
@@ -1395,7 +1535,7 @@ class DocxReader {
     return rt.cleanStyle({
       font: r.font ?? WORD_FONT, size: r.size ?? WORD_SIZE, bold: r.bold, italic: r.italic, underline: r.underline,
       strike: r.strike, smallCaps: r.smallCaps, allCaps: r.allCaps, cstyle: r.cstyle,
-      spacing: r.spacing, noKern: r.noKern, noFill: r.noFill, transparency: r.transparency, outline: r.outline, outlineW: r.outlineW, shadow: r.shadow, wfx: r.wfx,
+      spacing: r.spacing, noKern: noKernOf(r), noFill: r.noFill, transparency: r.transparency, outline: r.outline, outlineW: r.outlineW, shadow: r.shadow, wfx: r.wfx,
       lang: r.lang && r.lang.toLowerCase() !== (this.docDefaults.r.lang ?? 'en-US').toLowerCase() ? r.lang : undefined, noProof: r.noProof, raise: r.raise || undefined,
       color: r.color ?? undefined, highlight: r.highlight ?? undefined, formula: formula || undefined,
       sub: (!formula && r.pos === 'sub') || undefined, sup: (!formula && r.pos === 'sup') || undefined,
@@ -1425,7 +1565,7 @@ class DocxReader {
       props = { ...r, font: ctx.base.font };
     }
     if (!r.hidden && (top?.ref || top?.form !== undefined || top?.kept !== undefined) && top.phase === 'result') top.text += text;
-    if (this.swallowing()) return;
+    if (this.swallowing()) { this.tocLook(text, r, ctx.base); return; }
     // (hidden text in a manager's bibliography being gathered is left out, as before)
     if (r.hidden) { if (!this.capture) this.hiddenText(ctx, text, props); return; }
     const run: TextRun = { ...this.runStyle(props), ...(this.rev ? { rev: this.rev } : {}), ...(this.fmt ? { fmt: this.fmt } : {}), ...this.cmtMark(ctx), ...(this.link ? { link: this.link } : {}), ...this.ccMark(ctx), text };
@@ -1979,7 +2119,7 @@ class DocxReader {
     if (toc && !ctx.cell) {
       const depth = /\\o\s*"?\s*\d+\s*-\s*(\d+)/i.exec(toc[1]);
       const id = this.emitObject(ctx, { kind: 'toc', levels: Math.max(1, Math.min(3, depth ? Number(depth[1]) : 3)) }, f.props);
-      if (id !== null) { f.swallow = true; f.toc = true; }
+      if (id !== null) { f.swallow = true; f.toc = true; f.tocId = id; }
       return;
     }
     // an older Word's link: HYPERLINK "address" (or \l "bookmark"); the text it shows is the link's
@@ -2229,7 +2369,57 @@ class DocxReader {
       this.emitObject(ctx, { kind: 'drawing', contents, scale, ...(m.frame ? { frame: structuredClone(m.frame) } : {}), ...(look ? { look } : {}), ...(float ? { float } : {}), ...(contentsAlt(contents) ? {} : alt), ...turn, ...(m.ole ? { ole: m.ole } : {}), ...(m.fromPicture ? { fromPicture: structuredClone(m.fromPicture) } : {}), ...(wordLook ? { wordLook: { ...wordLook, print: contentsPrint(contents) } } : {}) }, r);
       return;
     }
+    // Word's own group of pictures (pictures kept together, such as a trace over its table): each picture where the group puts it
+    if (!pic && group) { this.wordGroup(group, box, shown, r, ctx); return; }
     if (!pic) { this.warn('shapes'); return; }
+    this.wordPicture(pic, name, alt, shown, r, ctx, look, float);
+  }
+
+  /**
+   * A group of pictures Word made (Group, or pasted as one), not one of ours: each picture is a
+   * figure of its own, placed where the group has it and grouped with the rest (as Arrange >
+   * Group does), so they move together. A group in the line becomes figures above and below the
+   * text at the paragraph. Shapes, text boxes and anything else in it are left out (and said so).
+   */
+  private wordGroup(group: Element, box: Element, shown: { w: number; h: number }, r: RProps, ctx: Ctx): void {
+    const base: Float = (box.localName === 'anchor' ? this.floatOf(box, null, shown.w) : null) ?? { wrap: 'topBottom', x: 0, y: 0, gapTop: 0, gapBottom: 0 };
+    // (each picture takes the group's place in the stack, not the group itself)
+    const at = this.stack.findIndex((e) => e.fl === base);
+    const rh = at >= 0 ? this.stack.splice(at, 1)[0].rh : null;
+    const g = this.newGroup();
+    const pics = groupPictures(group);
+    if (pics.skipped) this.warn('shapes');
+    const root = groupSpace(kid(group, 'grpSpPr', 'xfrm'));
+    // the group's own space to points on the page, at the size it is shown
+    const kx = root.ext.w > 0 ? shown.w / root.ext.w : 0, ky = root.ext.h > 0 ? shown.h / root.ext.h : 0;
+    for (const { pic, x, y, w, h } of pics.found) {
+      const size = { w: round(w * kx), h: round(h * ky) };
+      if (size.w <= 0 || size.h <= 0) continue;
+      // (each picture where the group puts it, its own border drawn round it; the group's effects,
+      // what of them its border doesn't take, kept clear of by the text)
+      const look = readLook(kid(pic, 'spPr'));
+      const [pl, pt] = lookExtent(look ?? undefined);
+      const fl: Float = { ...base, x: round(base.x + x * kx - pl), y: round(base.y + y * ky - pt), group: g };
+      delete fl.name;
+      delete fl.effect;
+      const fx = box.localName === 'anchor' ? effectBeyond(box, look ?? undefined) : null;
+      if (fx) fl.effect = fx;
+      if (rh !== null) this.stack.push({ fl, rh });
+      const pr = kid(pic, 'nvPicPr', 'cNvPr');
+      const descr = pr?.getAttribute('descr')?.trim() ?? '';
+      this.wordPicture(pic, pr?.getAttribute('name') ?? '', descr ? { alt: descr } : {}, size, r, ctx, look, fl);
+    }
+  }
+
+  /** A number for a new group of floating figures, not used by any group kept in the file. */
+  private newGroup(): number {
+    if (this.groups === null) this.groups = Math.max(0, ...Object.values(this.model?.floats ?? {}).map((f) => f.group ?? 0)) + 1;
+    return this.groups++;
+  }
+  private groups: number | null = null;
+
+  /** A picture (pic:pic) of Word's: its file, cropping, effects and turn. */
+  private wordPicture(pic: Element, name: string, alt: { alt?: string }, shown: { w: number; h: number }, r: RProps, ctx: Ctx, look: FigureLook | null, float: Float | null): void {
     const blip = kid(pic, 'blipFill', 'blip');
     const svg = blip ? Array.from(blip.getElementsByTagNameNS('*', 'svgBlip'))[0] : undefined;
     let target = this.relTarget(rAttr(svg, 'embed')) ?? this.relTarget(rAttr(blip, 'embed'));
@@ -2726,8 +2916,8 @@ class DocxReader {
     const indent = (this.a(ind, 'type') ?? 'dxa') === 'dxa' ? this.tw(ind, 'w') : undefined;
     if (indent && Math.abs(indent) >= 0.05) table.indent = round(indent);
     if (this.autofitOf(tblPr, style)) table.autofit = true;
-    // the cell margins, when not the standard ones
-    const mar = readMargins(kid(tblPr, 'tblCellMar'), this.a.bind(this));
+    // the cell margins, when not the standard ones: the table's own, else its style's (or Word's default table style's, Normal Table: none above and below)
+    const mar = { ...this.styleCellMargins(style), ...readMargins(kid(tblPr, 'tblCellMar'), this.a.bind(this)) };
     if (Object.keys(mar).length) {
       const pad = { ...DEFAULT_MARGINS, ...mar };
       if (Object.entries(pad).some(([k, v]) => Math.abs(v - DEFAULT_MARGINS[k as keyof typeof DEFAULT_MARGINS]) > 0.01)) table.pad = pad;
@@ -2846,6 +3036,17 @@ class DocxReader {
     return out;
   }
 
+  /** The cell margins a table style gives (with those of the styles it is based on), or Word's default table style's. */
+  private styleCellMargins(id: string | null | undefined): ReturnType<typeof readMargins> {
+    const list: WStyle[] = [];
+    const seen = new Set<string>();
+    for (let s = this.wstyles.get(`table:${id ?? this.defaultTable}`) ?? this.wstyles.get(`table:${this.defaultTable}`); s && !seen.has(s.id); s = s.basedOn ? this.wstyles.get(`table:${s.basedOn}`) : undefined) {
+      seen.add(s.id);
+      list.unshift(s);
+    }
+    return Object.assign({}, ...list.map((s) => readMargins(kid(kid(s.el, 'tblPr'), 'tblCellMar'), this.a.bind(this))));
+  }
+
   private styleTableBorders(id: string): Map<string, boolean> {
     const list: WStyle[] = [];
     const seen = new Set<string>();
@@ -2944,6 +3145,15 @@ class DocxReader {
       const id = Array.from(pict.getElementsByTagNameNS('*', 'shape')).map((e) => e.getAttribute('id') ?? '').join(' ');
       if (/PowerPlusWaterMarkObject|WordPictureWatermark/.test(id)) pict.parentNode?.removeChild(pict);
     }
+    // a framed paragraph (a page number in a frame, w:framePr) floats over the paragraph after it,
+    // taking no line of its own: it takes the place of that paragraph when that one is empty
+    for (const p of Array.from(root.getElementsByTagNameNS(this.W, 'p'))) {
+      const fr = kid(kid(p, 'pPr'), 'framePr');
+      const next = p.nextElementSibling;
+      if (!fr || this.a(fr, 'dropCap') || this.a(fr, 'vAnchor') === 'page' || next?.localName !== 'p' || next.namespaceURI !== this.W) continue;
+      if (next.getElementsByTagNameNS(this.W, 't').length || next.getElementsByTagNameNS(this.W, 'drawing').length || next.getElementsByTagNameNS(this.W, 'fldChar').length) continue;
+      next.parentNode?.removeChild(next);
+    }
     const fields = this.fields, cmt = this.cmtOpen, math = this.displayMath, part = this.part, link = this.link, marks = this.pendingMarks;
     this.fields = [];
     this.cmtOpen = new Set();
@@ -2970,9 +3180,29 @@ class DocxReader {
     let page: { zone: number; prefix: string } | null = null;
     let after = '';
     let lines = 0;
+    // blank paragraphs above the first text (they move it down the page)
+    let blankAbove = 0, texted = false;
+    // and, in a footer, below the last (they lift it up from the bottom of the page)
+    let blankBelow = 0;
+    // how the three places' text is shown: in Normal's font, at 10 pt at most (as saved here), or at Normal's size (as Word's header style has it)
+    const normal = this.paraProps(null).base;
+    const zoneLook = { font: normal.font ?? WORD_FONT, size: Math.min(10, normal.size ?? WORD_SIZE), normal: normal.size ?? WORD_SIZE };
     for (const p of Array.from(root.getElementsByTagNameNS(this.W, 'p'))) {
-      const { p: props } = this.paraProps(kid(p, 'pPr'));
+      const pPr = kid(p, 'pPr');
+      const { p: props } = this.paraProps(pPr);
       let zone = props.align === 'center' ? 1 : props.align === 'right' ? 2 : 0;
+      // tab stops other than the centre and right ones the three places use, or text that looks other than they show it
+      // (Normal's font and size, plain): kept as Word's paragraphs, where they show
+      if (kids(kid(pPr, 'tabs'), 'tab').some((t) => !['center', 'right'].includes(t.getAttributeNS(this.W, 'val') ?? t.getAttribute('w:val') ?? ''))) rich = true;
+      if (!rich) {
+        const { base } = this.paraProps(pPr);
+        for (const r of Array.from(p.getElementsByTagNameNS(this.W, 'r'))) {
+          if (!kid(r, 't')) continue;
+          const own = merge<RProps>(base, this.readRPr(kid(r, 'rPr')));
+          const size = own.size ?? WORD_SIZE;
+          if ((own.font ?? WORD_FONT) !== zoneLook.font || (Math.abs(size - zoneLook.size) > 0.25 && Math.abs(size - zoneLook.normal) > 0.25) || own.bold || own.italic || own.underline || (own.color && own.color !== '#000000') || own.highlight || (own.pos && own.pos !== 'base')) { rich = true; break; }
+        }
+      }
       const texts: [string, string, string] = ['', '', ''];
       const fields: { instr: string; result: boolean }[] = [];
       const add = (s: string) => {
@@ -3034,11 +3264,14 @@ class DocxReader {
         }
       };
       visit(p);
-      if (texts.some((t) => t.trim())) lines++;
+      const field = p.getElementsByTagNameNS(this.W, 'fldChar').length > 0 || p.getElementsByTagNameNS(this.W, 'fldSimple').length > 0;
+      if (texts.some((t) => t.trim())) { lines++; texted = true; blankBelow = 0; }
+      else if (!field) { if (texted) blankBelow++; else blankAbove++; }
+      else { texted = true; blankBelow = 0; }
       texts.forEach((t, i) => { const s = t.trim(); if (s) zones[i] = zones[i] ? `${zones[i]} ${s}` : s; });
     }
     // (text on more than one line is kept as it is, not run together on one)
-    if (lines > 1 || root.getElementsByTagNameNS(this.W, 'tbl').length) rich = true;
+    if (lines > 1 || root.getElementsByTagNameNS(this.W, 'tbl').length || (texted && blankAbove > 0) || (texted && blankBelow > 0 && root.localName === 'ftr')) rich = true;
     if (after.trim() && !rich) this.warn('pageText');
     return { zones, page, rich };
   }
@@ -3297,8 +3530,16 @@ function colourOf(v: string | null | undefined): string | null {
 function schemeFor(levels: Level[], ilvl: number): string | null {
   const same = (l: Level | undefined, i: number, s: (typeof LIST_SCHEMES)[number]) => !!l && l.fmt === s.levels[i].fmt && l.text === s.levels[i].text;
   const fits = LIST_SCHEMES.filter((s) => same(levels[ilvl], ilvl, s));
-  if (!fits.length) return null;
-  return (fits.find((s) => levels.every((l, i) => !l || l.fmt === 'bullet' || l.fmt === 'none' || i > 8 || same(l, i, s))) ?? fits[0]).id;
+  const whole = fits.find((s) => levels.every((l, i) => !l || l.fmt === 'bullet' || l.fmt === 'none' || i > 8 || same(l, i, s)));
+  if (whole) return whole.id;
+  // the list's own numbering (A. at the top, say): kept as Word has it, where each numbered level's format is one shown here
+  const formats = new Set<string>(LIST_SCHEMES[0].levels.map((l) => l.fmt).concat(['upperLetter', 'upperRoman']));
+  const lib = LIST_SCHEMES[0].levels;
+  if (levels[ilvl] && formats.has(levels[ilvl].fmt)) {
+    const own = ownSchemeId(lib.map((d, i) => { const l = levels[i]; return l && formats.has(l.fmt) ? { fmt: l.fmt as NumFormat, text: l.text } : d; }));
+    if (own) return own;
+  }
+  return fits[0]?.id ?? null;
 }
 
 /** The content controls the text still has (those round runs or paragraphs), for DocText.controls. */
@@ -3323,4 +3564,63 @@ function ownName(pr: Element | null, box: Element): string | null {
   if (ours.test(pr?.getAttribute('name') ?? '')) return null;
   const inner = kid(box, 'graphic', 'graphicData', 'pic', 'nvPicPr', 'cNvPr')?.getAttribute('name') ?? '';
   return ours.test(inner) ? inner : null;
+}
+
+/** A group's space (a:xfrm): where it is and how big in its parent's units, and its children's units. */
+function groupSpace(xf: Element | null): { off: { x: number; y: number }; ext: { w: number; h: number }; chOff: { x: number; y: number }; chExt: { w: number; h: number } } {
+  const n = (el: Element | null, k: string) => Number(el?.getAttribute(k) ?? 0) || 0;
+  const off = kid(xf, 'off'), ext = kid(xf, 'ext'), chOff = kid(xf, 'chOff'), chExt = kid(xf, 'chExt');
+  const e = { w: n(ext, 'cx'), h: n(ext, 'cy') };
+  return { off: { x: n(off, 'x'), y: n(off, 'y') }, ext: e, chOff: chOff ? { x: n(chOff, 'x'), y: n(chOff, 'y') } : { x: 0, y: 0 }, chExt: chExt ? { w: n(chExt, 'cx'), h: n(chExt, 'cy') } : e };
+}
+
+/**
+ * The pictures in a Word group (wpg:wgp), with groups inside it, each placed in the outer group's
+ * own units (EMU, from its top left). `skipped`: anything else was in it (shapes, text boxes).
+ */
+export function groupPictures(group: Element): { found: { pic: Element; x: number; y: number; w: number; h: number }[]; skipped: boolean } {
+  const found: { pic: Element; x: number; y: number; w: number; h: number }[] = [];
+  let skipped = false;
+  // a point in a group's children's units to the outer group's (an affine map per axis: v·k + d)
+  type Map1 = { kx: number; dx: number; ky: number; dy: number };
+  const walk = (g: Element, sp: ReturnType<typeof groupSpace>, outer: Map1, depth: number) => {
+    const kx = sp.chExt.w ? sp.ext.w / sp.chExt.w : 1, ky = sp.chExt.h ? sp.ext.h / sp.chExt.h : 1;
+    // children's units to this group's parent's, then on out
+    const m: Map1 = {
+      kx: kx * outer.kx, dx: (sp.off.x - sp.chOff.x * kx) * outer.kx + outer.dx,
+      ky: ky * outer.ky, dy: (sp.off.y - sp.chOff.y * ky) * outer.ky + outer.dy,
+    };
+    for (const c of kids(g)) {
+      const n = c.localName;
+      if (n === 'cNvPr' || n === 'cNvGrpSpPr' || n === 'grpSpPr' || n === 'nvGrpSpPr' || n === 'extLst') continue;
+      if (n === 'pic') {
+        const xf = kid(c, 'spPr', 'xfrm');
+        const off = kid(xf, 'off'), ext = kid(xf, 'ext');
+        const x = Number(off?.getAttribute('x') ?? 0) || 0, y = Number(off?.getAttribute('y') ?? 0) || 0;
+        const w = Number(ext?.getAttribute('cx') ?? 0) || 0, h = Number(ext?.getAttribute('cy') ?? 0) || 0;
+        found.push({ pic: c, x: x * m.kx + m.dx, y: y * m.ky + m.dy, w: w * m.kx, h: h * m.ky });
+      } else if (n === 'grpSp' && depth < 20) walk(c, groupSpace(kid(c, 'grpSpPr', 'xfrm')), m, depth + 1);
+      else skipped = true;
+    }
+  };
+  // (the outer group itself sits at 0,0 of the figure: its own off is where Word puts the figure)
+  const root = groupSpace(kid(group, 'grpSpPr', 'xfrm'));
+  walk(group, { ...root, off: { x: 0, y: 0 } }, { kx: 1, dx: 0, ky: 1, dy: 0 }, 0);
+  return { found, skipped };
+}
+
+/** Whether a choice of contents is a Word group of nothing but pictures (read from the group itself). */
+function pictureGroup(choice: Element): boolean {
+  const groups = Array.from(choice.getElementsByTagNameNS('*', 'wgp'));
+  return groups.length > 0 && groups.every((g) => { const got = groupPictures(g); return got.found.length > 0 && !got.skipped; });
+}
+
+/** The room Word's effects take round a figure (wp:effectExtent) beyond what its look here takes, in points; null when none. */
+function effectBeyond(anchor: Element, look: FigureLook | undefined): Float['effect'] | null {
+  const e = kid(anchor, 'effectExtent');
+  if (!e) return null;
+  const own = lookExtent(look);
+  const side = (k: string, i: number) => round(Math.max(0, fromEmu(e.getAttribute(k) ?? '0') - own[i]));
+  const fx = { l: side('l', 0), t: side('t', 1), r: side('r', 2), b: side('b', 3) };
+  return fx.l > 0.05 || fx.t > 0.05 || fx.r > 0.05 || fx.b > 0.05 ? fx : null;
 }

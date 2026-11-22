@@ -1575,7 +1575,10 @@
               <button class="rb-sq" data-doc="para-tabs" title="Set tab stops for the selected paragraphs (left, center, right or decimal, with leaders), or click the ruler (View ▸ Ruler)">Tabs…</button>
               <button class="rb-sq" data-doc="para-sort" title="Sort: put the selected paragraphs (or the rows of the table the cursor is in) in order, by text, number or date">A↓Z</button>
               <label class="rb-sq rb-colour" title="Shading: a background color behind the selected paragraphs (Borders and Shading removes it)"><span>▧</span><input id="doc-shading" type="color" value="#d9e2f3" aria-label="Paragraph shading" /></label>
-              <button class="rb-sq rb-drop" data-doc="para-borders" aria-haspopup="true" title="Borders: lines above, below or around the selected paragraphs; Borders and Shading for the line and the shading">▦ ▾</button>
+              <span class="rb-split">
+                <button class="rb-sq" data-doc="para-border-last" title="Borders: the last border chosen (Bottom Border at first) on the selected paragraphs; click again to take it off">▦</button>
+                <button class="rb-sq rb-drop" data-doc="para-borders" aria-haspopup="true" title="Borders: lines above, below or around the selected paragraphs; Borders and Shading for the line and the shading">▾</button>
+              </span>
             </div>
           </div>
         </div>
@@ -1593,7 +1596,7 @@
           <button class="rb-style rb-styles-more" data-doc="styles-pane" title="Styles pane (Ctrl+Alt+Shift+S): every paragraph and character style, Heading 4 to 9 and custom styles; apply, change, make new ones"><span>⋯</span>More Styles</button>
         </div>
         <div class="rb-label">Styles</div>
-        <button class="rb-launch" data-doc="box-style" title="Change how the style the cursor is in looks (font, size, spacing…); every paragraph in it follows">⬊</button>
+        <button class="rb-launch" data-doc="styles-launcher" title="Styles pane (Ctrl+Alt+Shift+S): every paragraph and character style; apply, change and make new ones">⬊</button>
       </div>
       <div class="rb-group">
         <div class="rb-row">

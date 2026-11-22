@@ -9,7 +9,7 @@ import {
 import { DocLayouter, pageLabel, shownSize, PAGE_GAP } from '../src/document/doc-layout';
 import { documentMeasure, fontKind, publishedWidth } from '../src/text/font-measure';
 import { arialWidth } from '../src/text-metrics';
-import { caretPos, offsetAt } from '../src/text/layout';
+import { NO_KERN, caretPos, offsetAt } from '../src/text/layout';
 import { TextEditing } from '../src/text/editing';
 import { paraFromStyle } from '../src/document/document';
 import type { ParaStyle, TextRun } from '../src/model';
@@ -51,10 +51,16 @@ describe('published font widths', () => {
     expect(publishedWidth('Hello', 12, 'serif', false, false)).toBeCloseTo((4550 / 2048) * 12, 6);
     expect(publishedWidth('Hello', 12, 'serif', true, false)!).toBeGreaterThan(publishedWidth('Hello', 12, 'serif', false, false)!);
   });
-  it('gives Arial the same widths the drawings use', () => {
+  it('gives Arial the same widths the drawings use (unkerned)', () => {
     for (const t of ['CH2Cl2 (10 mL)', 'Yield: 85%', 'The quick brown fox']) {
-      expect(measure(t, 10, 'Arial', '')).toBeCloseTo(arialWidth(t, 10), 1);
+      expect(measure(t, 10, 'Arial', NO_KERN)).toBeCloseTo(arialWidth(t, 10), 1);
     }
+  });
+  it('kerns letter pairs as Times New Roman and Arial do, unless kerning is off', () => {
+    // Liberation's (and Word's) Te: -143/2048 em, -0.84 pt at 12 pt
+    expect(measure('Te', 12, 'Times New Roman', '') - measure('Te', 12, 'Times New Roman', NO_KERN)).toBeCloseTo((-143 / 2048) * 12, 6);
+    expect(measure('AV', 10, 'Arial', '')).toBeLessThan(measure('AV', 10, 'Arial', NO_KERN));
+    expect(measure('iiii', 10, 'Courier New', '')).toBeCloseTo(measure('iiii', 10, 'Courier New', NO_KERN), 9);
   });
   it('measures Courier New as fixed width', () => {
     expect(measure('iiii', 10, 'Courier New', '')).toBeCloseTo(measure('WWWW', 10, 'Courier New', ''), 6);

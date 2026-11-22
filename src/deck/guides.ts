@@ -145,3 +145,30 @@ export function readViewProps(root: Element | null | undefined): SlideView | nul
   if (cx > 0) view.grid = +(cx / EMU).toFixed(4);
   return view;
 }
+
+type Area = { x1: number; y1: number; x2: number; y2: number };
+
+/**
+ * Where the gridlines go (View > Gridlines), `step` points apart, or every second (fourth…) one
+ * when they would be closer than 6 screen pixels at `scale`. On a slide (`area` null): inside it,
+ * none on its edges. On a canvas slide: every line in `area` (the part being painted), lined up
+ * with the slide's own grid, since a canvas has no edge.
+ */
+export function gridLines(size: SlideSize, step: number, scale: number, area: Area | null): { xs: number[]; ys: number[]; area: Area } {
+  let s = step > 0 ? step : 1;
+  while (s * scale < 6) s *= 2;
+  const a = area ?? { x1: 0, y1: 0, x2: size.w, y2: size.h };
+  const run = (lo: number, hi: number) => {
+    const out: number[] = [];
+    for (let v = area ? Math.ceil(lo / s - 1e-9) * s || 0 : s; v < hi - 1e-6; v += s) out.push(v);
+    return out;
+  };
+  return { xs: run(a.x1, a.x2), ys: run(a.y1, a.y2), area: a };
+}
+
+/** The part of the drawing a canvas being painted covers (a tile of the scene), in points, from its transform. */
+export function paintedArea(m: { a: number; d: number; e: number; f: number }, w: number, h: number): Area | null {
+  if (!m.a || !m.d) return null;
+  const xa = -m.e / m.a, xb = (w - m.e) / m.a, ya = -m.f / m.d, yb = (h - m.f) / m.d;
+  return { x1: Math.min(xa, xb), y1: Math.min(ya, yb), x2: Math.max(xa, xb), y2: Math.max(ya, yb) };
+}
