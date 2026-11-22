@@ -69,6 +69,7 @@ import { SHEET_PAPERS, type PaperName } from '../sheet/page-setup';
 import { defaultPaper } from '../print-layout';
 import { paintCanRun } from './can-run';
 import { SheetCanRun, SHEET_REASONS, structureColumns, CAN_RUN_CHECKS } from '../sheet/can-run';
+import { typedSize } from './font-group';
 import { stepSize } from '../text/format';
 
 /** The header of each Hammett column (σm and σp show their m and p as italic subscripts). */
@@ -506,8 +507,15 @@ export class SheetMode {
     // the size box: any size can be typed, as in every mode's Font group (G5-26)
     const sizeBox = rb.querySelector<HTMLInputElement>('#sh-size')!;
     sizeBox.addEventListener('change', () => {
-      const n = Number(sizeBox.value);
-      if (!(n >= 1 && n <= 409)) { this.showRibbonState(); return; }
+      const n = typedSize(sizeBox.value, 1, 409);
+      if (typeof n === 'string') {
+        // the real size goes back in the box, and the warning says what it takes (review of F5, R09)
+        const { r, c } = this.view.sel.active;
+        sizeBox.value = String(this.view.sheet?.styleAt(r, c)?.size ?? 11);
+        this.host.flash(n, 5000);
+        sizeBox.select();
+        return;
+      }
       this.style('Font size', { size: n === 11 ? undefined : n });
       sizeBox.blur();
       this.view.focus();

@@ -79,3 +79,13 @@ describe('Spreadsheet Font group (G5-26)', () => {
     expect(stepSize(72, 1)).toBe(80);
   });
 });
+
+describe('Spreadsheet size box (review R09)', () => {
+  it('takes 1 to 409 points, and says the range otherwise', async () => {
+    const { typedSize } = await import('../src/ui/font-group');
+    expect(typedSize('12', 1, 409)).toBe(12);
+    expect(typedSize('10.5 pt', 1, 409)).toBe(10.5);
+    expect(typedSize('409', 1, 409)).toBe(409);
+    for (const bad of ['500', 'abc', '', '0', '-3']) expect(typedSize(bad, 1, 409), bad).toBe('Type a font size from 1 to 409 points.');
+  });
+});

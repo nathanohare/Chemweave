@@ -36,6 +36,15 @@ export const FONT_LOOK: Record<Exclude<FontControl, 'font' | 'size'>, { html: st
 export const FONT_SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 72, 96];
 export const FONT_SIZE_LIST = 'font-size-list';
 
+/**
+ * A size typed in a Font group's size box: the number, or the warning to show when it is not one
+ * the mode takes (Excel takes 1 to 409 points). The box then shows the real size again.
+ */
+export function typedSize(text: string, min: number, max: number): number | string {
+  const n = Number(text.trim().replace(/\s*pt$/i, ''));
+  return text.trim() !== '' && n >= min && n <= max ? n : `Type a font size from ${min} to ${max} points.`;
+}
+
 /** How a mode runs a control: the attribute (and its value) its code looks for, and a mode's own tip. */
 interface Bind { attr: string; value?: string; tip?: string }
 interface ModeFont {
