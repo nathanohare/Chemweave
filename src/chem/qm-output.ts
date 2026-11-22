@@ -148,20 +148,28 @@ const SCF_METHOD = /^(?:r|u|ro)?(?:hf|b3lyp|b3pw91|b3p86|blyp|bp86|pbe\w*|pw91\w
  */
 function gaussianJobs(text: string): string[] {
   const starts: number[] = [];
-  const re = /^ ?-{5,}\r?\n([ \t]*#[^\n]*)/gm;
+  // each line that starts with "#" right under a line of dashes. Found from the "#" (rare in a log)
+  // with indexOf and checked back, because a pattern that starts at the dashes or at each line walks
+  // every line of a long optimization's geometry tables (43 MB: about 35 ms against a few)
   let routeEnd = -1;
-  for (let m = re.exec(text); m; m = re.exec(text)) {
-    const at = m.index + m[0].length - m[1].length;
+  for (let hash = text.indexOf('#'); hash >= 0; hash = text.indexOf('#', hash + 1)) {
+    const lineAt = text.lastIndexOf('\n', hash - 1) + 1;
+    if (lineAt === 0 || !/^[ \t]*$/.test(text.slice(lineAt, hash))) continue;
+    const prev = text.lastIndexOf('\n', lineAt - 2) + 1;
+    if (!/^ ?-{5,}\r?$/.test(text.slice(prev, lineAt - 1))) continue;
+    const end = text.indexOf('\n', hash);
+    const route = text.slice(lineAt, end < 0 ? text.length : end);
+    const at = lineAt;
     // a title that starts with "#" (it sits between dashes too): only the route's closing dashes and
     // Gaussian's link list ("1/18=20,19=15/1,3;") come between the route and it (review F1d-R07)
     if (routeEnd >= 0) {
       const close = /\n ?-{5,}[^\n]*/g;
       close.lastIndex = routeEnd;
       const c = close.exec(text);
-      if (c && c.index < m.index && text.slice(c.index + c[0].length, m.index).split(/\r?\n/).every((l) => /^\s*$|^ ?-{5,}\s*$|^ ?\d+\/\S*;\s*$/.test(l))) continue;
+      if (c && c.index < prev && text.slice(c.index + c[0].length, prev).split(/\r?\n/).every((l) => /^\s*$|^ ?-{5,}\s*$|^ ?\d+\/\S*;\s*$/.test(l))) continue;
     }
-    routeEnd = at + m[1].length;
-    if (/\bGenChk\b/i.test(m[1])) continue;
+    routeEnd = at + route.length;
+    if (/\bGenChk\b/i.test(route)) continue;
     starts.push(at);
   }
   if (starts.length < 2 || COMPOSITE.exec(routeMethod(gaussianRoute(text).replace(/^#\w?\s*/, '')))) return [text];
@@ -208,6 +216,21 @@ function readGaussian(text: string, name: string): QmResult {
   return out;
 }
 
+/**
+ * The QCISD(T) line if the text has one, else the CCSD(T) line if it has one (at the start of a line
+ * or after anything but a capital letter, so "CCSD(T)=" is not taken from inside "QCISD(T)="). One
+ * indexOf pass for the "SD(T)=" both end in: a regular expression that starts with an alternation
+ * searches a 43 MB log character by character, and twice.
+ */
+function tLine(text: string): (typeof POST_SCF)[number] | undefined {
+  let cc = false;
+  for (let i = text.indexOf('SD(T)='); i >= 0; i = text.indexOf('SD(T)=', i + 1)) {
+    if (text.startsWith('QCI', i - 3) && (i === 3 || !/[A-Z]/.test(text[i - 4]))) return POST_SCF[2];
+    if (text.startsWith('CC', i - 2) && (i === 2 || !/[A-Z]/.test(text[i - 3]))) cc = true;
+  }
+  return cc ? POST_SCF[1] : undefined;
+}
+
 /** "a" or "an" before a method's name read letter by letter (an MP2, an ONIOM, a CCSD(T), a G4). */
 const article = (name: string) => (/^[AEFHILMNORSX]/.test(name) ? 'an' : 'a');
 
@@ -247,12 +270,12 @@ function readGaussianJob(text: string, name: string): QmResult {
       // line. Never for an HF or DFT job (its energy is the SCF energy): that line is another job's,
       // and is noted, not used (review F1c-R06).
       const scfJob = SCF_METHOD.test(method.replace(/\(.*$/, '').replace(/-d\w*$/i, ''));
-      const found = other ? undefined : [POST_SCF[2], POST_SCF[1]].find((x) => new RegExp(`(?:^|[^A-Z])${x.key.replace(/[()]/g, '\\$&')}`, 'm').test(text));
+      const found = other ? undefined : tLine(text);
       const e = found ? fortran(lastAt(text, found.key, found.re)) : null;
       if (found && e !== null && !scfJob) { scf = e; energyFrom = found.name; }
       else if (found && e !== null) note = `The log also has a ${found.name} energy that its route (${method}) doesn't ask for: not used.`;
       else if (other) missing = other[1].toUpperCase();
-      else if (CORR_LINE.test(text) && !scfJob) missing = (method || 'post-SCF').toUpperCase();
+      else if (!scfJob && CORR_LINE.test(text)) missing = (method || 'post-SCF').toUpperCase();
     }
   }
   // the last frequency job: the negative frequencies it lists
