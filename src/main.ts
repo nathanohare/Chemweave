@@ -1487,12 +1487,18 @@ let askingRedraw = false;
 onRedrawHeld(async () => {
   if (askingRedraw) return;
   askingRedraw = true;
+  // (the change that would have redrawn it: undone if the user says no, so a resized frame doesn't
+  // keep a box its drawing no longer fills)
+  const step = doc.topStep;
+  let undone = false;
   try {
     for (let ids = heldRedraws(); ids.length; ids = heldRedraws()) {
       const id = ids[0];
       const s = doc.shapes.get(id);
-      if (s && await askRedraw(s)) doc.edit(`Redraw ${s.name ?? 'Frame'}`, () => { redrawHeld(id); });
-      else { dropHeld(id); if (s) flash(`${frameName(s).replace(/^./, (c) => c.toUpperCase())} was left as the other program drew it.`); }
+      if (s && await askRedraw(s)) { doc.edit(`Redraw ${s.name ?? 'Frame'}`, () => { redrawHeld(id); }); continue; }
+      dropHeld(id);
+      if (!undone && step && doc.topStep === step) { editor.undo(); undone = true; }
+      if (s) flash(`${frameName(s).replace(/^./, (c) => c.toUpperCase())} was left as the other program drew it${undone ? ', and the change was undone' : ''}.`);
     }
   } finally { askingRedraw = false; }
 });
