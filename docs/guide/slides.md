@@ -110,28 +110,16 @@ Opened here again, the slides come back as the canvas slide. If they were change
 
 ## The slide master
 
-**Design & Transitions** tab ▸ **Slide Master…** (or **Format ▸ Presentation ▸ Slide Master…**) sets the style of every slide at once:
+**View** tab ▸ **Slide Master** (or **Design & Transitions** tab ▸ **Slide Master**, **Edit Layouts**, or right-click a slide ▸ **Edit Layout**) opens Slide Master view, as in PowerPoint. The slide list shows the slide master first, then each layout under it with the number of slides that use it. Edit them as you edit slides, with every tool and the whole ribbon; the **Slide Master** tab comes first on the ribbon and the side panel on the right holds the master's and the layout's settings.
 
-- **Background:** color, the template's shapes and its accent colors.
-- **Title slides:** their own background and text colors, if you want them different.
-- **Titles** and **Text:** font, size, color and bold; a separate size for subtitles.
-- **Logo:** a picture in any corner, at the width you choose.
-- **Slide numbers and footer:** on or off, also on title slides if you like, with the footer's size and color.
-- **Structures:** the bond length structures are drawn at, and whether pasted structures are resized to it.
-
-Click **Apply to all slides**. Text you formatted by hand keeps its own formatting. Ctrl+Z puts the old settings back in one step.
-
+- **The master** sets the look of every layout: the title's and text's font, size, color, bold and italic (format the prompts on its page, or use the side panel), line spacing, bullets and the space before and after paragraphs, the background, the template's shapes and accent colors, the title slides' own colors, the logo, the slide numbers and footer, and the bond length structures are drawn at.
 ### Layouts
 
-**View** tab ▸ **Edit Layouts** (or **Design & Transitions** tab ▸ **Edit Layouts…**, or **Format ▸ Presentation ▸ Slide Layout ▸ Edit Layouts…**) shows the deck's layouts, as PowerPoint's Slide Master view does. Pick one on the left to see it on the slide.
+- **A layout** takes the master's look, unless you change it on the layout: then it keeps its own (gray values in the side panel are the master's; **↺** or **Reset Placeholder to Master** goes back to them). Moving a placeholder on the master moves the layouts' ones that were in the same place.
+- **Anything you draw** on the master or a layout (a bar, a logo, a structure, text) is on every slide that uses it, behind the slide's own things. On slides it is locked: it can't be picked or moved there. Right-click a slide ▸ **Unlock Layout Items on This Slide** makes copies the slide's own, to move, change or delete (**Lock Layout Items on This Slide** puts the layout's back). Untick **Lock Layout Items** on the Slide Master tab to unlock them on every slide, new ones too.
+- **Insert Placeholder ▾** adds a Text, Subtitle, Title or **References** box to a layout; the **Title** and **References** ticks add or remove them. **Insert Layout**, **Duplicate**, **Rename** and **Delete** manage layouts (the five built-in ones can be changed, not deleted; slides of a deleted layout get Title and Content).
 
-- **Move or size a placeholder:** drag it, or drag one of its corners. The arrow keys nudge the one selected (Shift for bigger steps); X, Y, W and H set its place and size in per cent of the slide.
-- **Add a placeholder:** **+ Title**, **+ Text** or **+ Subtitle**. A layout has one title. **Delete Placeholder** (or Delete) takes the one selected off.
-- **Align the text** in the placeholder selected: Left, Center or Right.
-- **Rename** a layout by typing in **Name**. **Title slide colors and background** gives slides with the layout the title slide's own colors (set in Slide Master).
-- **New Layout** makes a layout with a title and a text box; **Duplicate** copies the one selected, to change. **Delete** removes a layout you made (its slides get Title and Content). The five built-in layouts can be changed and **Reset**, not deleted.
-
-Click **Apply**: slides with a changed layout move their placeholders to its places, keeping their text. Undo puts it all back. Layouts are saved as PowerPoint's own (your layouts as its custom layouts, with their names), so they show in PowerPoint's Layout menu, and PowerPoint's custom layouts come in here. Slides pasted from another deck bring their own layouts with them.
+**Close Master View** puts the slides back. Slides take the changes: their placeholders move to the layout's places and take its look where they had the old one, and text you formatted by hand keeps its own formatting. One Ctrl+Z puts everything back. Layouts are saved as PowerPoint's own slide master and layouts, with their text styles and the things drawn on them, so they show in PowerPoint's Layout menu.
 
 ## Slide backgrounds
 
@@ -150,11 +138,11 @@ Backgrounds are saved as PowerPoint's own, so PowerPoint (and LibreOffice) shows
 
 ## Design templates
 
-**File ▸ New ▸ Presentation** opens a new deck with a window over it of the same themes, and two starter decks under **Teaching** (a **Lecture** and a **Problem session** with question and answer slides for worked mechanisms); click outside the window to keep the deck as it is. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
-
 **Design & Transitions** tab ▸ **Templates…** (or **Format ▸ Presentation ▸ Slide Templates…**) offers 51 ready-made styles in seven groups: **Light**, **Dark title slide**, **Bright**, **Minimal**, **Bold**, **Classic** and **Chemistry**. Picking one changes the fonts, colors, background and the shapes behind every slide. Your text, structures and pictures stay where they are, and Undo puts the old look back.
 
-Check **Also start new presentations with the template I pick** to make it the starting look for new decks. You can change any part of a template afterwards with **Slide Master…**.
+Check **Also start new presentations with the template I pick** to make it the starting look for new decks. You can change any part of a template afterwards with **Slide Master**.
+
+**File ▸ New ▸ Presentation** opens a new deck with a window of the same templates over it, plus two starter decks under **Teaching** (a **Lecture** and a **Problem session** with question and answer slides for worked mechanisms); click outside the window to keep the deck as it is. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
 
 ### Themes of your own
 
@@ -258,7 +246,9 @@ A presentation keeps its own reference list, saved inside its PowerPoint file, a
    - **Numbers**: none, 1, 2, 3 on each slide, or numbered through the presentation so they match the References slide.
    - **Place**: bottom left, center or right, or top right. **Size** and an **Custom color** (the footer's color otherwise). Lines that would take too much of the slide get smaller.
    - **Apply** gives the slides selected this style; **Apply to All** uses it on every slide.
-4. **Insert ▸ Presentation ▸ References Slide** adds a slide at the end, titled References, listing the references shown on the slides in the order they first appear (or every reference in the presentation), in full. It keeps itself up to date.
+4. **A References box on the layout** (Slide Master view ▸ **Insert Placeholder ▸ References**) is where slides with that layout list their references, in place of the corner. On a slide, click the box to open its tick list: tick the references it shows, find more in the presentation or your library (they join the presentation when ticked), pick the citation style, or **Add from Library…**, **Add with Zotero…** and **Look…**.
+5. **Insert ▸ References ▾ ▸ Citation** while typing on a slide puts a reference's number in the text at the cursor, in the citation style (raised for ACS), and ticks the reference on the slide ("cited in text" in the tick list). The numbers follow the slide's lines and change when the references or their order change; the lines get numbers if they had none.
+6. **Insert ▸ Presentation ▸ References Slide** adds a slide at the end, titled References, listing the references shown on the slides in the order they first appear (or every reference in the presentation), in full. It keeps itself up to date.
 
 In PowerPoint the lines and the References slide's list are ordinary text boxes, so the slides look the same. When the file comes back here they are made again from the references. Slides copied into another presentation bring the references they show with them.
 
@@ -266,7 +256,7 @@ To put a reference anywhere on a slide as text you can edit, use **Insert ▸ Fo
 
 ### Citing with Zotero
 
-In the desktop app, **Insert ▸ Zotero ▾** works with the Zotero app on your computer (Zotero 7 or later, running), as it does in documents.
+In the desktop app, **Insert** tab ▸ **Zotero ▾** works with the Zotero app on your computer (Zotero 7 or later, running), as it does in documents.
 
 - **Add/Edit Citation** opens Zotero's citation window for the slide showing. The items you pick become the references that slide shows, linked to your Zotero library, and its lines are written as **References on Slide** sets them. Run it again on the same slide to change them.
 - **Add/Edit Bibliography** adds a References slide at the end (or edits the one there), with Zotero writing the list in its citation style.
@@ -335,13 +325,15 @@ A highlight can animate on its own, like a shape in PowerPoint, so it can fade i
 **Review** tab ▸ **New Comment** (Ctrl+Alt+M, **Insert ▸ New Comment**, or right-click ▸ **New Comment**) pins a note to the slide, beside what is selected or in the slide's top corner. The **Comments** pane opens in the right-hand panel with a card to type in; press Enter to save it.
 
 - Each comment shows on the slide as a small marker with the writer's initials and its number. Drag a marker to move it; click it to see its card.
-- On a card: **Reply**, **Resolve** (grayed until deleted; **Reopen** brings it back), **Edit** and **Delete**.
+- On a card: **Reply**, **Resolve** (the card turns gray and stays until you delete it; **Reopen** brings it back), **Edit** and **Delete**.
 - **◀ Previous** and **Next ▶** step through every comment in the deck, going to each one's slide. **Delete All on Slide** clears the slide being edited.
 - **Show Comments** hides or shows the markers and the pane. Markers are only on screen: they are never shown in the slide show, in pictures or in print.
 
 Undo works for every change. Comments are saved in the .pptx as PowerPoint comments, with their replies, so PowerPoint, Keynote and Google Slides show them. Comments added in PowerPoint (old or new style) open here too.
 
 ## Giving the show
+
+<!-- index: Slide show -->
 
 | To do this | Press |
 |---|---|
@@ -363,6 +355,8 @@ Each click plays the next animation, then moves on to the next slide with its tr
 On a canvas slide you can leave the route to look around: drag to pan and scroll to zoom anywhere on the canvas (up to twelve times closer, or out to the whole canvas). While you look around, the map of the whole canvas shows in the corner with where you are. Click the map to move the view there. Picking a canvas slide from every slide (G) opens it ready to look around. Esc, a click or the next key glides back to where the show was, and the show goes on from there. The controls in the top right corner (they fade until you move the mouse) zoom, take you back, show the map and show every slide.
 
 ### Presenter View
+
+<!-- index: Speaker notes -->
 
 **View ▸ Presentation ▸ Slide Show ▸ Presenter View**, **Slide Show** tab ▸ **Presenter View**, or Alt+F5.
 
@@ -394,7 +388,7 @@ When the show ends, a window lists each slide's time (🎙 marks the ones with n
 - **Full page slides**, one to a page;
 - **Handouts** with 2, 3, 4, 6 or 9 slides a page. Three a page leaves lines beside each slide for notes.
 
-For handouts you can also pick the paper and **Frame the slides**. The printer and copies are selected next (in the system's Print window, or in the Windows app its own Print window), which can also save a PDF.
+For handouts you can also pick the paper and **Frame the slides**. You pick the printer and the number of copies next (in the system's Print window, or in the Windows app its own Print window), which can also save a PDF.
 
 ## Links
 

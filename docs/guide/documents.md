@@ -16,7 +16,7 @@ Text is laid out as Word lays it out, so a Word file breaks its lines and pages 
 
 ## The chemistry toolbox
 
-The drawing toolbox shows on the left in Document mode too. Pick a drawing tool there and the selected structure opens for editing with that tool; if no structure is selected, a new drawing starts at the cursor. Press **Done** above the drawing to restore it in the text.
+The drawing toolbox shows on the left in Document mode too. Pick a drawing tool there and the selected structure opens for editing with that tool; if no structure is selected, a new drawing starts at the cursor. Press **Done** above the drawing to put it back in the text.
 
 When the pointer turns into a pointing hand over a structure, it is a drawing you can open: double-click it (or pick it and use **Insert** tab ▸ **Edit Drawing**). It opens in place on its page: the drawing tools work right there, at the page's zoom (Ctrl+wheel zooms both together), and the rest of the page fades and stays as it is until you press **Done** (or Ctrl+Enter, or click the page away from the structure). **Cancel**, or Esc with nothing selected, leaves it as it was. A new structure (**Insert** tab ▸ **Structure**) is drawn the same way, in a dashed space at the cursor; Done with nothing drawn, or Cancel, leaves the document as it was. (In a table cell, a new structure is drawn in a window over the page.)
 
@@ -96,7 +96,7 @@ A floating item can be dragged anywhere and moves with the paragraph it is dropp
 
 On the **Layout** tab, **Arrange** (folded into one **Arrange ▾** button when the window is narrow):
 
-- **Position ▾** puts the figure selected at one of nine places on the page (top, middle or bottom; left, center or right) with **Square** wrapping. **In Line with Text** restores it in the line.
+- **Position ▾** puts the figure selected at one of nine places on the page (top, middle or bottom; left, center or right) with **Square** wrapping. **In Line with Text** puts it back in the line.
 - **Bring Forward ▾** and **Send Backward ▾** put one floating figure over or under another, a step at a time or to the front or back of all.
 - **Rotate ▾** turns a picture 90° right or left, flips it, or turns it by any angle (**More Rotation Options…**).
 - **Selection Pane** lists every floating figure, front first. Click a name to pick it, Ctrl+click to pick more, double-click to rename it. The eye hides a figure from its page (it stays in the document); **Show All** and **Hide All** do every one; ▲ and ▼ change the order.
@@ -148,7 +148,7 @@ For a substrate-scope or screening table, put the cursor in a cell and use **Ins
 
 ## Objects from other programs
 
-**Insert** ▸ **Object** puts another program's file in the document whole, as Word's Insert Object does: an Excel workbook, a PDF, a Word file or a presentation, or any other file. It shows what it holds where it can (a workbook's cells as Excel shows them, a PDF's first page, a picture), or an icon with the file's name: check **Display as icon** for that. Right-click it to switch between the two.
+**Insert** tab ▸ **Object** (or **Insert ▸ Document ▸ Object…**) puts another program's file in the document whole, as Word's Insert Object does: an Excel workbook, a PDF, a Word file or a presentation, or any other file. It shows what it holds where it can (a workbook's cells as Excel shows them, a PDF's first page, a picture), or an icon with the file's name: check **Display as icon** for that. Right-click it to switch between the two.
 
 Double-click the object (or right-click ▸ **Open Object**) to open the file in its own program. Each time you save it there, the document takes the changes and a new picture of them, so a table of results can be kept up to date in Excel. This needs the desktop app; in a browser the file is downloaded instead.
 
@@ -176,6 +176,8 @@ Add, delete or move captions and every number and reference follows.
 **References** tab ▸ **Compound Number** (Alt+Shift+N) puts a bold compound number in the text. Choose **A new compound** for the next number, or pick one already numbered to mention it again. Numbers follow the order compounds are first mentioned, so adding one earlier in the text renumbers the rest. Type a letter after a number for a series (2a, 2b).
 
 ## References and bibliography
+
+<!-- index: Citations, Bibliography -->
 
 1. **References** tab ▸ **Manage References…** holds the document's references. The window shows the references of every open document and presentation, each file in its own group, so you can copy references from one file to another (**Copy to…**, drag them onto a file's name, or Ctrl+C and Ctrl+V). Each file keeps its own copy. Add them with **Add by DOI…** (looked up on Crossref; needs the internet), **Add by Hand…**, **Import BibTeX / RIS…** or **Paste BibTeX / RIS…**. **Edit…** and **Delete…** change them.
 2. Put the cursor where a citation belongs and click **Insert Citation**. Citations are numbered in order of first citation.
@@ -239,7 +241,7 @@ On the **Layout** tab:
 - **Header…** and **Footer…** set the text at the top and bottom of every page. The ⬊ in the corner of the group sets where they sit, the first page number and whether the first page is numbered.
 - **Line Numbers**: numbers down the left margin, as journals ask for in manuscripts under review: **Continuous**, **Restart Each Page** or **Restart Each Section**. **Suppress for Current Paragraph** leaves the selected paragraphs out (a title, say). **Line Numbering Options…** sets the first number, shows only every 5th (or any nth) number, and sets how far they sit from the text.
 - **Hyphenation**: **Automatic** breaks long words at the ends of lines, with a hyphen, where English allows (US English patterns). **Don't Hyphenate This Paragraph** keeps the selected paragraphs whole. **Hyphenation Options…** sets the hyphenation zone (a word is broken only if leaving it whole would leave more room than this at the end of the line), a limit on hyphens in a row, and whether words in capitals are broken. Words with digits and formulas are never broken. Chemical names are also broken between their parts (Di-methoxy-phenyl-boronic), as Word does.
-- **Insert ▸ Cover Page** puts a first page in front: the title, subtitle, author, institution and date in one of five looks (Plain, Banded, Ruled, Lab Report, Supporting Information). They are fields, so they follow **Document Properties** (Insert ▸ Quick Parts). The cover page has no page number; **Remove Current Cover Page** on the same menu removes it. **Blank Page** puts an empty page at the cursor.
+- **Insert** tab ▸ **Cover Page** puts a first page in front: the title, subtitle, author, institution and date in one of five looks (Plain, Banded, Ruled, Lab Report, Supporting Information). They are fields, so they follow **Document Properties** (Insert ▸ Quick Parts). The cover page has no page number; **Remove Current Cover Page** on the same menu removes it. **Blank Page** puts an empty page at the cursor.
 
 ### Headers and footers on odd, even and first pages
 
@@ -252,7 +254,7 @@ In the Header and Footer settings (the ⬊ in the corner of the group, or **Head
 
 ### Sections
 
-A section break starts a new section, which can have its own paper size, orientation, margins, columns, header and footer, page numbering and line numbers. Choose one from **Layout** ▸ **Breaks** (or **Insert ▸ Document ▸ Section Break**):
+A section break starts a new section, which can have its own paper size, orientation, margins, columns, header and footer, page numbering and line numbers. Choose one from **Layout** ▸ **Breaks** (or **Section Break (Next Page)** and **Section Break (Continuous)** under **Insert ▸ Document**):
 
 - **Next Page**: the new section starts on a new page. Use it for a landscape page with a wide table, or to number the front matter i, ii, iii and the text 1, 2, 3.
 - **Continuous**: the new section starts on the same page. Use it for a title and abstract across the page with two columns of text under them. Columns before a continuous break are evened up, as in Word.
@@ -264,8 +266,8 @@ To remove a section break, put the cursor at the start of the paragraph after it
 
 ## Fields, dates and Quick Parts
 
-- **Insert ▸ Date & Time** (Alt+Shift+D) puts in today's date or the time in one of Word's formats, as text or as a field that updates.
-- **Insert ▸ Quick Parts** saves the selected text (an affiliation, a standard experimental paragraph) to use again in any document; Quick Parts are kept with your settings. The same menu inserts **Fields** (dates, the author, title, file name, page number, number of pages, a bookmark's text or page, or "above"/"below" it) and **Document Properties**, and sets the document's title, subject, author, company and keywords.
+- **Insert** tab ▸ **Date & Time** (Alt+Shift+D) puts in today's date or the time in one of Word's formats, as text or as a field that updates.
+- **Insert** tab ▸ **Quick Parts** saves the selected text (an affiliation, a standard experimental paragraph) to use again in any document; Quick Parts are kept with your settings. The same menu inserts **Fields** (dates, the author, title, file name, page number, number of pages, a bookmark's text or page, or "above"/"below" it) and **Document Properties**, and sets the document's title, subject, author, company and keywords.
 - **References ▸ Cross-reference** also points at headings and bookmarks: their text, their page, or "above"/"below".
 - Fields are saved as Word's own fields, so Word updates them too; Word's come back as fields.
 
@@ -398,7 +400,7 @@ The **Make it** buttons change how the replacement looks: formula, bold, italic,
 
 On the **Review** tab:
 
-- **Spelling & Grammar** (F7) goes through the document from the cursor: misspelled words, chemistry formatting slips (formulas without subscripts, solvents, units, ranges) and a few grammar slips (a word written twice, two spaces, a space before a comma or full stop, "a" or "an" before the wrong sound, a sentence starting with a small letter). For each: **Ignore Once**, **Ignore All**, **Add to Dictionary**, **Change** or **Change All**. Clear **Check grammar as well** to look at spelling only.
+- **Spelling & Grammar** (F7) goes through the document from the cursor: misspelled words, chemistry formatting slips (formulas without subscripts, solvents, units, ranges) and a few grammar slips (a word written twice, two spaces, a space before a comma or period, "a" or "an" before the wrong sound, a sentence starting with a lowercase letter). For each: **Ignore Once**, **Ignore All**, **Add to Dictionary**, **Change** or **Change All**. Clear **Check grammar as well** to look at spelling only.
 - **Thesaurus** (Shift+F7) gives words with the same meaning as the word at the cursor, and related words; click one to put it in. It looks the word up online (Datamuse), sending only that word.
 - **Word Count** (Ctrl+Shift+G) shows pages, words, characters with and without spaces, paragraphs and lines, of the document or the selection, with or without text boxes, footnotes and endnotes. The status bar shows the word count all the time.
 

@@ -1,10 +1,10 @@
 // The wiki is built from docs/ by scripts/build-wiki.mjs. These check the heading ids it works out
 // match GitHub's, and that every link on every page it makes leads to a page and heading that exist.
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { slug, headingText, buildWiki, PAGES } from '../scripts/build-wiki.mjs';
+import { slug, headingText, indexText, buildWiki, PAGES } from '../scripts/build-wiki.mjs';
 
 /** Ids of the headings in a page's Markdown, the way GitHub numbers them. */
 function ids(md: string): Set<string> {
@@ -67,6 +67,21 @@ describe('the wiki made from docs/', () => {
     expect(bad).toEqual([]);
   });
 
+  it("is where the README's links to the guide lead", () => {
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+    const wiki = 'https://github.com/nathanohare/Chemweave/wiki';
+    const links = [...readme.matchAll(/\]\((https:\/\/github\.com\/nathanohare\/Chemweave\/wiki[^)\s]*)\)/g)].map((m) => m[1]);
+    expect(links.length).toBeGreaterThan(5);
+    const bad = links.filter((url) => {
+      const [page, id] = url.slice(wiki.length).replace(/^\//, '').split('#');
+      const md = (files as Record<string, string>)[page || 'Home'];
+      return !md || (id !== undefined && !ids(md).has(id));
+    });
+    expect(bad).toEqual([]);
+    // the guide's own files are for the in-app guide and the wiki; the README sends people to the wiki
+    expect(readme).not.toMatch(/\]\(docs\/(README|guide\/|developers)/);
+  });
+
   it('points pictures at docs/images on GitHub', () => {
     expect(files.Home).toContain('https://raw.githubusercontent.com/nathanohare/Chemweave/main/docs/images/drawing.png');
     expect(Object.values(files).join('\n')).not.toMatch(/\]\(\.\.\/images\//);
@@ -93,6 +108,54 @@ describe('building from other files', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('lists a second main heading, links pages in reading order, and builds the A to Z list', () => {
+    const root = mkdtempSync(join(tmpdir(), 'wiki-test-'));
+    try {
+      mkdirSync(join(root, 'docs'));
+      writeFileSync(join(root, 'docs/a.md'), [
+        '# A', '', 'Opening.', '',
+        '## One', '', '<!-- index: Catalytic cycles, dark mode -->', '', 'See [Deep](#deep).', '', '### Sub one', '', '### Sub two', '', '### Sub three', '',
+        '## Two', '', 'more (see Deep below)', '',
+        '## Three', '', '### iPad', '', '#### Deep', '', 'text', '',
+        '---', '', 'Next: [B](b.md)', '',
+      ].join('\n'));
+      writeFileSync(join(root, 'docs/b.md'), '# B\n\n## Here\n\n---\n\nNext: [A](a.md)\n');
+      const pages = [
+        { name: 'A', src: 'docs/a.md', label: 'A', group: 'G', split: [{ name: 'A-First', label: 'First', sections: ['One', 'Two'] }, { name: 'A-Last', label: 'Last', sections: ['Three'] }] },
+        { name: 'B', src: 'docs/b.md', label: 'B', group: 'G' },
+      ];
+      const { files, warnings } = buildWiki(root, pages);
+      // both main headings of a page with few of them are in "On this page", each with its sub-headings
+      expect(files['A-First']).toContain('- [One](#one): [Sub one](#sub-one) · [Sub two](#sub-two) · [Sub three](#sub-three)');
+      expect(files['A-First']).toContain('- [Two](#two)');
+      // the first sub-page names its parent once; the last goes on to the next page
+      expect(files['A-First'].split('\n')[0]).toBe('← [A](A) · [Last](A-Last) →');
+      expect(files['A-Last'].split('\n')[0]).toBe('← [First](A-First) · [A](A) · [B](B) →');
+      expect(files.B).toContain('← [Last](A-Last)');
+      // the hand-written "Next:" ending of a docs page is left out, on every page
+      expect(Object.values(files).join('\n')).not.toContain('Next: ');
+      // "see ... below" that now means another page is reported
+      expect(warnings.filter((w: string) => w.includes('see Deep below'))).toHaveLength(1);
+      // the A to Z list: index words, #### headings, and names keep their own capitals
+      const index = files['All-Topics'];
+      expect(index).toContain('- [Catalytic cycles](A-First#one)');
+      expect(index).toContain('- [dark mode](A-First#one)');
+      expect(index).toContain('- [iPad](A-Last#ipad)');
+      expect(index).toContain('- [Deep](A-Last#deep) <sub>A: Last › Three</sub>');
+      expect(Object.values(files).join('\n')).not.toContain('<!-- index');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes topics with a capital unless the word has capitals of its own', () => {
+    expect(indexText('toolbox')).toBe('Toolbox');
+    expect(indexText('iPad')).toBe('iPad');
+    expect(indexText('macOS')).toBe('macOS');
+    expect(indexText('pKa in Water')).toBe('pKa in Water');
+    expect(indexText('3-D model')).toBe('3-D model');
   });
 
   it('lists the real guide pages', () => {

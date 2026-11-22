@@ -1091,6 +1091,7 @@ export class Renderer {
       if (r.x1 > vis.x2 || r.x2 < vis.x1 || r.y1 > vis.y2 || r.y2 < vis.y1) continue;
       if (c.ph && isEmptyText(c)) { if (this.screen) this.drawPrompt(ctx, c); continue; }
       this.drawCaption(ctx, c);
+      if ((c.ph || c.refsBox) && this.screen && this.outlinePlaceholders) this.drawPhBox(ctx, c);
       const mark = this.chemMarks?.(c);
       if (mark === 'warn' && checks) warns.push(r);
       else if (mark) this.drawChemMark(ctx, r);
@@ -2905,6 +2906,21 @@ export class Renderer {
     }
     this.capBoxes.set(c, r);
     return r;
+  }
+
+  /** Slide Master view: every placeholder's box is outlined on screen, as in PowerPoint. */
+  outlinePlaceholders = false;
+
+  private drawPhBox(ctx: CanvasRenderingContext2D, c: Caption): void {
+    const f = c.refsBox ? this.captionFrame(c) : placeholderRect(c, this.baseOf(c));
+    const lw = 1 / this.view.scale;
+    ctx.save();
+    if (c.rot) turnAt(ctx, c, c.rot);
+    ctx.strokeStyle = '#a3a9b3';
+    ctx.lineWidth = lw;
+    ctx.setLineDash([4 * lw, 3 * lw]);
+    ctx.strokeRect(f.x1, f.y1, f.x2 - f.x1, f.y2 - f.y1);
+    ctx.restore();
   }
 
   /** An empty placeholder on screen: a dashed box with a prompt in grey. */

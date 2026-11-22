@@ -597,7 +597,7 @@
     <button role="menuitemradio" aria-checked="false" data-cmd="layout-title-only"><span>Title Only</span></button>
     <button role="menuitemradio" aria-checked="false" data-cmd="layout-blank"><span>Blank</span></button>
     <hr />
-    <button role="menuitem" data-cmd="edit-layouts">Edit Layouts…</button>
+    <button role="menuitem" data-cmd="edit-layouts">Edit Layouts</button>
     </div>
     </div>
     <div class="submenu" data-modes="slides">
@@ -610,7 +610,7 @@
     </div>
     </div>
     <button data-modes="slides" role="menuitem" data-cmd="slide-templates">Slide Templates…</button>
-    <button data-modes="slides" role="menuitem" data-cmd="slide-master">Slide Master…</button>
+    <button data-modes="slides" role="menuitem" data-cmd="slide-master">Slide Master</button>
     <div class="submenu" data-modes="slides">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Sections</button>
     <div class="menu sub" role="menu" hidden>
@@ -1499,6 +1499,7 @@
       <button role="tab" data-doc-tab="review" aria-selected="false">Review</button>
       <button role="tab" data-doc-tab="view" aria-selected="false">View</button>
       <button role="tab" data-doc-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table</button>
+      <button role="tab" data-doc-tab="hf" aria-selected="false" class="rb-context" hidden title="Shown while you are typing in a header or footer">Header &amp; Footer</button>
     </div>
     <div class="rb-panel" data-doc-panel="home">
       <div class="rb-group">
@@ -1805,8 +1806,8 @@
               <option value="header-left">Top, left</option>
             </select></div>
           <div class="rb-col">
-            <button data-doc="header-edit" class="rb-labelled" title="Text at the top of every page in this section (left, center, right)"><span class="rb-lead"></span>Header…</button>
-            <button data-doc="footer-edit" class="rb-labelled" title="Text at the bottom of every page in this section (left, center, right)"><span class="rb-lead"></span>Footer…</button>
+            <button data-doc="hf-header" data-ic="header-edit" class="rb-labelled" aria-haspopup="true" title="Header: a ready-made header for this section, or edit or remove it (or double-click the top of a page)"><span class="rb-lead"></span>Header ▾</button>
+            <button data-doc="hf-footer" data-ic="footer-edit" class="rb-labelled" aria-haspopup="true" title="Footer: a ready-made footer for this section, or edit or remove it (or double-click the bottom of a page)"><span class="rb-lead"></span>Footer ▾</button>
             <button data-doc="page-number-format" class="rb-labelled" title="Page numbers as 1, 2, 3 or i, ii, iii, and where this section's numbering starts"><span class="rb-lead"></span>Number Format…</button>
           </div>
           <div class="rb-col">
@@ -2092,6 +2093,65 @@
         <div class="rb-label">Close</div>
       </div>
     </div>
+    <div class="rb-panel" data-doc-panel="hf" hidden>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="hf-header" data-ic="header-edit" aria-haspopup="true" title="Header: a ready-made header for this section, or edit or remove it"><span class="rb-icon"></span>Header ▾</button>
+          <button class="rb-big" data-doc="hf-footer" data-ic="footer-edit" aria-haspopup="true" title="Footer: a ready-made footer for this section, or edit or remove it"><span class="rb-icon"></span>Footer ▾</button>
+          <button class="rb-big" data-doc="hf-numbers" data-ic="page-numbers" aria-haspopup="true" title="Page Number: where the numbers go in this section, S1, S2…, their format, or one at the caret"><span class="rb-icon"></span>Page Number ▾</button>
+        </div>
+        <div class="rb-label">Header &amp; Footer</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="insert-date" title="Date and Time: today's date or the time, in a format you pick, as text or a field that keeps itself up to date"><span class="rb-icon"></span>Date &amp; Time</button>
+          <div class="rb-col">
+            <button class="rb-labelled" data-doc="hf-info" aria-haspopup="true" title="Document Info: the author, title, file name or number of pages, as a field that keeps itself up to date (File ▸ Properties)"><span class="rb-lead" data-ic-lead="quick-parts"></span>Document Info ▾</button>
+            <button class="rb-labelled" data-doc="quick-parts" aria-haspopup="true" title="Quick Parts: text you saved to use again, the document's properties and fields"><span class="rb-lead" data-ic-lead="quick-parts"></span>Quick Parts ▾</button>
+            <button class="rb-labelled" data-doc="insert-picture" title="A picture from a file (a logo or crest), at the caret"><span class="rb-lead" data-ic-lead="picture"></span>Pictures</button>
+          </div>
+        </div>
+        <div class="rb-label">Insert</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="hf-goto-header" data-ic="hf-goto-header" title="Go to Header: the header of this page"><span class="rb-icon"></span>Go to<br />Header</button>
+          <button class="rb-big" data-doc="hf-goto-footer" data-ic="hf-goto-footer" title="Go to Footer: the footer of this page"><span class="rb-icon"></span>Go to<br />Footer</button>
+          <div class="rb-col">
+            <button class="rb-labelled" data-doc="hf-prev" title="Previous: the header or footer before this one that is another (a first page's, or the section before's)"><span class="rb-lead" data-ic-lead="hf-previous"></span>Previous</button>
+            <button class="rb-labelled" data-doc="hf-next" title="Next: the next header or footer that is another (an even page's, or the next section's)"><span class="rb-lead" data-ic-lead="hf-next"></span>Next</button>
+            <button class="rb-labelled" data-doc="hf-link" aria-pressed="false" title="Link to Previous: this section shows the section before's header and footer (Same as Previous). Off, it has its own"><span class="rb-lead" data-ic-lead="link"></span>Link to Previous</button>
+          </div>
+        </div>
+        <div class="rb-label">Navigation</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <div class="rb-col">
+            <label class="rb-check" title="The first page of the section has its own header and footer (a title page's)"><input type="checkbox" id="doc-hf-first" /> Different First Page</label>
+            <label class="rb-check" title="Even pages have their own header and footer, and the page number on the other side (the outside edge of a bound thesis)"><input type="checkbox" id="doc-hf-oddeven" /> Different Odd &amp; Even Pages</label>
+            <label class="rb-check" title="The document's text, faded, while you edit headers and footers"><input type="checkbox" id="doc-hf-showtext" checked /> Show Document Text</label>
+          </div>
+        </div>
+        <div class="rb-label">Options</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <div class="rb-col">
+            <label class="rb-field" title="How far the header sits from the top of the page">Header from Top <input id="doc-hf-top" class="rb-text rb-num" spellcheck="false" /></label>
+            <label class="rb-field" title="How far the footer sits from the bottom of the page">Footer from Bottom <input id="doc-hf-bottom" class="rb-text rb-num" spellcheck="false" /></label>
+            <button class="rb-labelled" data-doc="hf-align-tab" title="Insert Alignment Tab: a tab that lines what follows up at the left, center or right of the header or footer"><span class="rb-lead" data-ic-lead="hf-align-tab"></span>Insert Alignment Tab</button>
+          </div>
+        </div>
+        <div class="rb-label">Position</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="hf-close" data-ic="hf-close" title="Close Header and Footer (Esc, or double-click the document's text): back to the document"><span class="rb-icon"></span>Close Header<br />and Footer</button>
+        </div>
+        <div class="rb-label">Close</div>
+      </div>
+    </div>
     <div class="rb-panel" data-doc-panel="table" hidden>
       <div class="rb-group">
         <div class="rb-row">
@@ -2214,6 +2274,7 @@
 
   <div id="ribbon" class="ribbon tabbed slides-only" role="toolbar" aria-label="Presentation" hidden>
     <div class="rb-tabs" role="tablist">
+      <button role="tab" data-sl-tab="master" aria-selected="false" class="rb-ctx-tab" hidden title="Shows while Slide Master view is open">Slide Master</button>
       <button role="tab" data-sl-tab="home" aria-selected="true">Home</button>
       <button role="tab" data-sl-tab="insert" aria-selected="false">Insert</button>
       <button role="tab" data-sl-tab="transitions" aria-selected="false" title="The slides' design (themes, slide size, background) and the transitions between them">Design &amp; Transitions</button>
@@ -2433,7 +2494,7 @@
           <div class="rb-fly">
             <button class="rb-big rb-fly-btn" data-ic="references-menu" title="References on selected slides, a References slide, and the Reference Manager"><span class="rb-icon"></span>References ▾</button>
             <div class="rb-fly-menu" role="menu" hidden>
-              <button data-cmd="slide-references" title="Choose which references appear at the bottom of the selected slides; they're formatted and placed automatically, like the footer"><span class="rb-icon">¹⁾</span>References on Slide</button><button data-cmd="references-slide" title="References Slide: a slide at the end listing the references shown on the slides, in full, kept up to date"><span class="rb-icon"></span>References Slide</button><button data-cmd="references" title="Manage references in every open file: add by DOI, manually or from BibTeX/RIS, and copy between files"><span class="rb-icon"></span>Reference Manager</button>
+              <button data-cmd="insert-citation" title="Insert Citation: the reference's number in the text at the cursor, in the citation style; the reference is ticked on the slide"><span class="rb-icon">¹</span>Citation</button><button data-cmd="slide-references" title="Choose which references appear at the bottom of the selected slides; they're formatted and placed automatically, like the footer"><span class="rb-icon">¹⁾</span>References on Slide</button><button data-cmd="references-slide" title="References Slide: a slide at the end listing the references shown on the slides, in full, kept up to date"><span class="rb-icon"></span>References Slide</button><button data-cmd="references" title="Manage references in every open file: add by DOI, manually or from BibTeX/RIS, and copy between files"><span class="rb-icon"></span>Reference Manager</button>
             </div>
           </div>
           <button class="rb-big" data-cmd="zotero-menu" aria-haspopup="true" title="Zotero (desktop app, Zotero running): Add/Edit Citation picks this slide's references; Add/Edit Bibliography builds the References slide; Refresh updates from your library"><span class="rb-icon">Z</span>Zotero ▾</button>
@@ -2453,6 +2514,55 @@
           <button class="rb-big" data-cmd="insert-action-button" title="Insert a preset action button (back, next, home, return, information…) and set its action, or add a back/home/next set"><span class="rb-icon">▶</span>Action Button…</button>
         </div>
         <div class="rb-label">Links</div>
+      </div>
+    </div>
+    <div class="rb-panel" data-sl-panel="master" hidden>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-cmd="insert-layout" title="Insert Layout: a new layout after this one, with a title and a text box"><span class="rb-icon">⊞</span>Insert Layout</button>
+          <div class="rb-col">
+            <button data-cmd="duplicate-layout" class="rb-labelled" title="Duplicate Layout: a copy of this layout, to change"><span class="rb-lead">⧉</span>Duplicate</button>
+            <button data-cmd="rename-layout" class="rb-labelled" title="Rename Layout: the name slides' Layout menus show"><span class="rb-lead">✎</span>Rename</button>
+            <button data-cmd="delete-layout" class="rb-labelled" title="Delete Layout: only layouts made in this deck (their slides get Title and Content)"><span class="rb-lead">✕</span>Delete</button>
+          </div>
+        </div>
+        <div class="rb-label">Edit Master</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <div class="rb-fly">
+            <button class="rb-big rb-fly-btn" data-cmd="insert-placeholder" title="Insert Placeholder: a box on this layout that slides with it fill in"><span class="rb-icon">▭</span>Insert Placeholder ▾</button>
+            <div class="rb-fly-menu" role="menu" hidden>
+              <button data-cmd="insert-placeholder-body" title="A text box: bulleted text, as the master's text styles"><span class="rb-icon">☰</span>Text</button><button data-cmd="insert-placeholder-subtitle" title="A subtitle box, centered"><span class="rb-icon">▬</span>Subtitle</button><button data-cmd="insert-placeholder-title" title="The layout's title (one at most)"><span class="rb-icon">T</span>Title</button><button data-cmd="insert-placeholder-refs" title="Where slides with this layout list their references (one at most): click it on a slide to tick the references it shows"><span class="rb-icon">¹⁾</span>References</button>
+            </div>
+          </div>
+          <div class="rb-col">
+            <label class="rb-field check" title="The layout has a title placeholder"><input type="checkbox" data-cmd="layout-has-title" /> Title</label>
+            <label class="rb-field check" title="The layout has a References placeholder: slides with it list their references there, picked from a tick list on the box"><input type="checkbox" data-cmd="layout-has-refs" /> References</label>
+            <label class="rb-field check" title="Slides with this layout have the title slides' own background and text colors (set on the slide master's page, in the side panel)"><input type="checkbox" data-cmd="layout-title-look" /> Title Slide Colors</label>
+          </div>
+        </div>
+        <div class="rb-label">Master Layout</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-cmd="format-background" title="Background Styles: the master's background, on every slide (a color, gradient, picture or pattern)"><span class="rb-icon">▨</span>Background</button>
+        </div>
+        <div class="rb-label">Background</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <div class="rb-col">
+            <label class="rb-field check" title="Lock Layout Items on Slides: what is drawn on the master and layouts can't be picked on slides (right-click a slide ▸ Unlock Layout Items on This Slide for one). Untick to give every slide its own copies, to move or change there."><input type="checkbox" data-cmd="lock-items-deck" /> Lock Layout Items</label>
+          </div>
+        </div>
+        <div class="rb-label">Slides</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-cmd="close-master-view" title="Close Master View: back to the slides, which now follow the master and layouts as changed (Undo puts them back)"><span class="rb-icon">✕</span>Close Master View</button>
+        </div>
+        <div class="rb-label">Close</div>
       </div>
     </div>
     <div class="rb-panel" data-sl-panel="format" hidden>
@@ -2590,8 +2700,7 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-cmd="slide-master" title="Fonts, colors, background, logo, slide numbers, footer and structure size for every slide"><span class="rb-icon">▤</span>Slide Master</button>
-          <button class="rb-big" data-cmd="edit-layouts" title="The deck's layouts: move and size their placeholders, add custom layouts, rename them"><span class="rb-icon">▥</span>Edit Layouts</button>
+          <button class="rb-big" data-cmd="slide-master" title="Slide Master view: the master and its layouts as pages, to edit their placeholders' looks and places, add layouts, and draw on them what every slide shows"><span class="rb-icon">▤</span>Slide Master</button>
           <button class="rb-big" data-cmd="slide-templates" title="Ready-made styles and custom themes: make, change or delete themes"><span class="rb-icon">◧</span>Themes</button>
           <div class="rb-col">
             <button data-cmd="notes-master" title="Set the layout of notes pages: orientation, slide image size, notes font, header, footer, date and page number">Notes Master…</button>
@@ -2663,11 +2772,11 @@
             </select></label>
             <div class="rb-pair">
               <button data-cmd="slide-templates" title="Ready-made styles for the whole deck: fonts, colors, background and shapes">Templates…</button>
-              <button data-cmd="slide-master" title="Fonts, colors, background, logo, slide numbers, footer and structure size for every slide">Slide Master…</button>
+              <button data-cmd="slide-master" title="Slide Master view: the master and its layouts as pages, to edit fonts, colors, placeholders, logo, numbers and footer for every slide">Slide Master</button>
               <button data-cmd="drawing-style" title="How structures are drawn on every slide: a journal's style or a custom one">Drawing Style…</button>
             </div>
             <div class="rb-pair">
-              <button data-cmd="edit-layouts" title="The deck's layouts: move and size their placeholders, add layouts of your own, rename them">Edit Layouts…</button>
+              <button data-cmd="edit-layouts" title="Slide Master view at this slide's layout: move and size its placeholders, add layouts of your own, rename them">Edit Layouts</button>
               <button data-cmd="size-custom" title="Any slide size, with what is on the slides scaled to fit or kept as it is">Custom Size…</button>
             </div>
           </div>
@@ -2992,6 +3101,7 @@
       <button id="structure-done" type="button" class="primary" title="Put the structure in place (Ctrl+Enter)">Done</button>
       <button id="structure-cancel" type="button" title="Leave it as it was">Cancel</button>
     </div>
+    <div id="master-panel" role="complementary" aria-label="Slide Master settings" hidden></div>
     <div id="canvas-host">
       <div id="slide-sorter" hidden></div>
       <canvas id="scene"></canvas>

@@ -39,7 +39,7 @@ On macOS and Linux, a folder named **Chemweave Data** next to the app (or the Ap
 Works on Apple silicon and Intel Macs, macOS 11 or newer.
 
 1. Download the file ending in `universal.dmg`, open it, and drag **Chemweave** into **Applications**.
-2. Open it from **Applications**. The app is signed with an Apple Developer ID and notarised by Apple, so macOS opens it immediately, with no warning.
+2. Open it from **Applications**. The app is signed with an Apple Developer ID and notarized by Apple, so macOS opens it immediately, with no warning.
 
 ### iPad
 
@@ -59,6 +59,8 @@ Three file types are offered:
 - **`.deb`** (Ubuntu, Debian) and **`.rpm`** (Fedora): install them like any other package. To update, download and install the newer one.
 
 ### Updates
+
+<!-- index: Stable and Latest updates -->
 
 A few seconds after it starts, the desktop app checks whether a newer version has been released. If there is one, a small message says which version is ready and what changed, and offers:
 
@@ -87,7 +89,7 @@ Chemweave is in **beta**: it is still being built, new features arrive often, an
 
 Along the top are the menus: **File**, **Edit**, **View**, **Insert**, **Format**, **Chemistry** and **Help**. Each menu shows the commands for the tab type you are in; a command for another kind of tab is left out (Insert ▸ Chart shows in a spreadsheet, not in a canvas). Presentations, spreadsheets, documents and designs also have a ribbon of buttons under the menu bar, like Word, Excel and PowerPoint.
 
-**Help** has this **User Guide** built in (it works without an internet connection), the keyboard shortcuts, and short notes on each part of Chemweave. **F1** opens the guide at the part about the tool or kind of tab in use: with the ring tool, for example, it opens at Rings.
+**Help** has this **User Guide** built in (it works without an internet connection), the keyboard shortcuts, and short notes on each part of Chemweave. **F1** (**Help ▸ Help on This Tool or Mode**) opens the guide at the part about the tool or kind of tab in use: with the ring tool, for example, it opens at Rings.
 
 To the right of the menus is the **quick bar** (like Office's Quick Access Toolbar), with buttons for **Save**, **Undo**, **Redo**, **Fit** (fit the whole drawing in the window), the **padlock** (locks or unlocks all the toolboxes at once so they can be moved; see [Canvas](drawing.md#toolboxes)) and the **eye** (Reading Mode). Undo and Redo are grayed out when there is nothing to take back, and resting the mouse on one names the step it would undo (**Undo Add Ring**). To choose its buttons:
 
@@ -101,7 +103,7 @@ The menus show each command's key beside it, so they are a good way to learn the
 
 ### Tabs
 
-Each open file has a tab in the menu bar, between the quick bar and Search, with its own icon and color for its kind (teal for canvases, orange for presentations, green for spreadsheets, dark blue for documents, purple for designs). The open file's tab and the chosen ribbon tab are underlined in that color. Ctrl+Tab and Ctrl+Shift+Tab move between tabs, and Ctrl+W closes one. When many files are open the tabs get narrower, then show only their icons; rest the mouse on one for its name. **View ▸ Window and Colors ▸ File Tabs in Menu Row** (clear it) puts the tabs back on a row of their own under the menu bar.
+Each open file has a tab in the menu bar, between the quick bar and Search, with its own icon and color for its kind (teal for canvases, orange for presentations, green for spreadsheets, dark blue for documents, purple for designs). The open file's tab and the chosen ribbon tab are underlined in that color. Ctrl+Tab and Ctrl+Shift+Tab move between tabs, and Ctrl+W closes one. When many files are open the tabs get narrower, then show only their icons; rest the mouse on one for its name. **View ▸ Window and Colors ▸ File Tabs in Menu Bar** (clear it) puts the tabs back on a row of their own under the menu bar.
 
 New files are called **Canvas 1**, **Presentation 1**, **Spreadsheet 1** and so on, until they are saved with a name of their own. When there are more tabs than fit, **‹** and **›** scroll them (as does the mouse wheel over the tabs), and **▾** lists every open file to pick one. **+** at the end starts something new:
 
@@ -133,9 +135,22 @@ The panel's header is one row: its sections as tabs, the padlock and the **×**.
 - **Reorder**: drag a tab sideways, or a stacked heading up or down. Drag a stacked heading back up to the header row to make it a tab again.
 - Each kind of tab (canvas, presentation, spreadsheet, document, design) keeps its own arrangement. **View ▸ Toolboxes ▸ Reset Toolboxes** puts it back.
 
-The **×** at the top of the panel closes it all the way to give the drawing more room (also **View ▸ Collapse Side Panel**). Each kind of tab remembers this on its own, so you can keep the panel folded in spreadsheets and open in canvases. In a window narrower than about 1,200 pixels the panel folds automatically so the drawing keeps its room, and opens again when the window is widened; **›** still opens it while the window is narrow.
+The **×** at the top of the panel closes it all the way to give the drawing more room (also **View ▸ Side Panel**). Each kind of tab remembers this on its own, so you can keep the panel folded in spreadsheets and open in canvases. In a window narrower than about 1,200 pixels the panel folds automatically so the drawing keeps its room, and opens again when the window is widened; **›** still opens it while the window is narrow.
 
 **View ▸ Focus View** (Ctrl+Shift+F1) hides the toolboxes, the side panel and the ribbon at once, to give the page the whole window on a laptop; the same key brings them back. In Presentation, Spreadsheet, Document and Design tabs, **View ▸ Toolboxes ▸ One Column Outside Canvas** shows the toolboxes docked at the side in one narrow column.
+
+### The look of the window
+
+**View ▸ Window and Colors** sets how the window itself looks. None of it changes your drawings or files.
+
+- **Theme**: Dark Gray (as the app comes), Light, Dark, or **Use System Setting**.
+- **Density**: how roomy the toolboxes and ribbons are, from **Compact** (no gap between buttons) through **Cozy** (as the app comes) and **Normal** to **Standard** and **Large**, which have bigger icons. **Interface Size** (desktop app) zooms the whole window instead.
+- **Shadows** under the menus and toolboxes: **Light**, **Strong** or **Off**.
+- **Icon Colors**: **Mode Color** draws icons gray with one part in the mode's color; **Color by Type** gives each kind of command its own color, as Office does. **Shapes in the Mode Color** colors the shapes in the Shapes menu too.
+- **Title Bar in Menu Bar** (desktop app) merges the title bar into the menu bar to save a row; drag an empty part of the menu bar to move the window.
+- **File Tabs in Menu Bar**, **Mode Colors…** and **Reading Mode Colors…** are described under [Tabs](#tabs) and [Reading Mode](drawing.md#reading-mode).
+
+Two more switches are in the **View** menu itself. **Detailed Tooltips** shows what a tool does and what Alt, Shift and Ctrl change when you rest the mouse on it; turn it off for a one-line tip. **Scroll Bars** shows or hides the bars along the bottom and right of the drawing.
 
 ### A small window
 
@@ -157,6 +172,8 @@ After that, each time the app opens on an empty canvas, a smaller **start view**
 
 ### Search (Alt+Q)
 
+<!-- index: Command search -->
+
 Click **Search** at the top, or press Alt+Q, and type a few letters of what you want to do: `wedge`, `number comp`, `bold`, `dark`. The list shows each matching menu command, ribbon button and drawing tool, where it lives and its key, then the matching pages of Settings and sections of this guide. Press Enter for the top match, or use the arrow keys to pick another. With nothing typed, the commands you used recently come first. **Edit ▸ Search Commands…** opens the same box.
 
 ### Format Painter (every mode)
@@ -177,7 +194,7 @@ What goes across is only the style, never the content or its meaning:
 
 ### Format Favorites (every mode)
 
-A **Format Favorite** is a complete look kept under a name: fill (color, gradient or picture), pattern, see-through amount, shadow, outline and effects (glow, soft edges, bevel, reflection), with an arrow's line and heads, the color and highlight of a structure, and the text's font and color. Give it to anything with one click, like a custom color palettes.
+A **Format Favorite** is a complete look kept under a name: fill (color, gradient or picture), pattern, see-through amount, shadow, outline and effects (glow, soft edges, bevel, reflection), with an arrow's line and heads, the color and highlight of a structure, and the text's font and color. Give it to anything with one click, like a custom color palette.
 
 - **Save one:** select something with the style you want, then right-click it ▸ **Save Format as Favorite…** (or **+** in the **Format Favorites** gallery on the **Home** tab, or **Edit ▸ Save Format as Favorite…**) and give it a name.
 - **Use one:** select what should take the style and click the favorite's card in the gallery, or right-click ▸ **Format Favorites** ▸ its name, or **Edit ▸ Format Favorites…**. It is one step to undo.
@@ -198,6 +215,8 @@ It types into the text you are editing: a document, a caption or text box, a sli
 
 ### The Assistant (every mode, Ctrl+/)
 
+<!-- index: AI model -->
+
 **Edit ▸ Assistant…** (Ctrl+/) opens a slim bar at the bottom of the page for asking an AI model of your own about what you are working on. It is there only once a model is linked in **Edit ▸ Settings ▸ AI Model** (Claude, ChatGPT or Gemini with your own API key, or a model on this computer, in Ollama or LM Studio, so that nothing leaves it), and it sends nothing until you turn it on.
 
 - **What it can do.** On a canvas, slide or design page: draw a structure you describe, change the selected one ("make this the methyl ester"), or check a scheme (balance, stereochemistry, missing reagents); a finding about a step has **Show step** to select its arrow. In a Document: write or rewrite text ("write the experimental for step 2"). In a Spreadsheet: answer questions about the selected cells.
@@ -208,6 +227,8 @@ It types into the text you are editing: a document, a caption or text box, a sli
 - **Open as Pane** makes the bar a taller pane down the right for a longer conversation, and **Float as Window** a window of its own that you move by its title and size from its corner; **Make Bar** restores it. The style you choose is kept (also in **Settings ▸ AI Model ▸ Assistant shows as**). Esc closes it. A conversation belongs to the tab it started in: switching tabs starts a new one.
 
 ## Opening your first ChemDraw file
+
+<!-- index: CDXML and CDX files -->
 
 1. Choose **File ▸ Open…** (Ctrl+O).
 2. Pick a `.cdxml` or `.cdx` file. It opens in a new tab.
@@ -239,21 +260,30 @@ Presentations, spreadsheets, documents and designs save in their own formats; se
 
 ## Edit ▸ Settings
 
-**Edit ▸ Settings…** (Ctrl+,) holds every setting in one window, with a list of pages on the left and a **Find a setting** box at the top. The menu items for a single page (**Keyboard Shortcuts…**, **Typing and Spelling…**, **Color Palettes…**, **Mode Colors…**, **Reading Mode Colors…**, **Drawing Style…**, **Scheme Settings…**, **AutoSave and Recovery Options…**) open the Settings window at that page. Each page has its own **Save** (or **Apply**) and **Cancel**; a line of help sits under each setting that needs one.
+<!-- index: Preferences, Export and Import Settings -->
+
+**Edit ▸ Settings…** (Ctrl+,) holds every setting in one window, with a list of pages on the left and a **Find a setting** box at the top. The menu items for a single page (**Keyboard Shortcuts…**, **Typing and Spelling…**, **Color Palettes…**, **Mode Colors…**, **Reading Mode Colors…**, **Drawing Style…**, **Scheme Settings…**, **AutoSave and Recovery Options…**) open the Settings window at that page. Every page ends in the same bar along the bottom of the window. **Apply** uses the page's settings now and keeps them. On **Drawing Style**, which is about the open file, **Apply** changes that file and **Set as Default** changes new files too. If you leave a page with changes you have not applied, the window asks whether to apply or discard them. A line of help sits under each setting that needs one.
 
 | Page | What it holds |
 |---|---|
-| **General** | The start view, what a click on a grouped thing selects, outlining the rest of a group, where linked text goes, asking before a command changes every structure on the page, and your name on tracked changes in documents. |
-| **Drawing** | Terminal methyls as Me or CH3; axial chirality as Ra / Sa or P / M (Ra is the same as M, and Sa as P); charges from the + and − keys as a plain sign or in a circle; bond ends; raised R-group numbers (R¹, CO₂R¹), in chemistry and, if you like, in regular text; η ligands; and, under **Mechanism Arrows**, arrows finding their own way around, Check Arrows and the gaps at an arrow's tail and head. |
-| **Preferences** | Finishing text with Esc or Enter; alkyl isomer prefixes (tBu, *t*Bu, t-Bu, ᵗBu); how problems are marked; under **Pointer While Drawing**, the angle, length and key hints beside the pointer; and under **Counterions Typed as Text**, adding their charges and grouping them as salts. |
-| **Drawing Style** | Bond length, line widths, fonts and journal styles (see [Canvas](drawing.md#drawing-styles)). |
+| **General** | The start view, what a click on a grouped thing selects, outlining the rest of a group, where linked text goes, asking before a command changes every structure on the page, how structures are saved in Word and PowerPoint files, your name on tracked changes in documents, and **Export Settings…** and **Import Settings…**. |
+| **Preferences** | Finishing text with Esc or Enter; alkyl isomer prefixes (tBu, *t*Bu, t-Bu, ᵗBu); how problems are marked; focal points; the templates window for new files; under **Pointer While Drawing**, the angle, length and key hints beside the pointer; and under **Counterions Typed as Text**, adding their charges and grouping them as salts. |
 | **Keyboard Shortcuts** | Every key, to change, import or export (see [Keyboard and mouse](keyboard-and-mouse.md)). |
 | **Typing and Spelling** | Chemistry typing (subscripts in formulas), spelling, your dictionary and replacements. |
-| **Color Palettes**, **Mode Colors**, **Reading Mode** | Your rows of colors, the color of each tab type, and Reading Mode's colors. |
-| **Schemes** | Gaps around arrows and + signs, text alignment above and below arrows and the Results line, and the text guides on reaction arrows. |
 | **AutoSave and Recovery** | AutoSave, how often unsaved work is copied for recovery, and how many versions are kept. |
-| **Apps and System** | Which file types Chemweave is offered for under **Open with** in Explorer, and a button to Windows' Default apps page (see [Files and sharing](files-and-sharing.md#opening-files-from-explorer-or-finder-desktop-app)); drawings in Word, PowerPoint and Excel opening here; and the offer to make structures figures when a document is opened. |
+| **Drawing** | Terminal methyls as Me or CH3; axial chirality as Ra / Sa or P / M (Ra is the same as M, and Sa as P); charges from the + and − keys as a plain sign or in a circle; bond ends; raised R-group numbers (R¹, CO₂R¹), in chemistry and, if you like, in regular text; η ligands; and, under **Mechanism Arrows**, arrows finding their own way around, Check Arrows and the gaps at an arrow's tail and head. |
+| **Drawing Style** | Bond length, line widths, fonts and journal styles (see [Canvas](drawing.md#drawing-styles)). |
+| **Schemes** | Gaps around arrows and + signs, text alignment above and below arrows and the Results line, and the text guides on reaction arrows. |
+| **Newman Projections** | How projections are drawn (Newman or sawhorse), which conformations a torsional energy chart pictures and how it names them (textbook or Klyne–Prelog), kcal/mol or kJ/mol, and barrier heights (see [Newman and sawhorse projections](drawing.md#newman-and-sawhorse-projections)). |
+| **Analysis** | Which rows the Analysis panel, the ribbon's Analysis box and attached descriptors show and in what order, the lab calculation rows (mass, volume, mmol, a solution's volume), significant figures and units (see [The Analysis panel](drawing.md#the-analysis-panel)). |
+| **NMR Prediction** (desktop app) | Predicting as soon as a structure is selected (off at first), the quality (Fast, Balanced or Accurate), solvent, spectrometer frequency, the ppm range of each spectrum, and how peaks are labeled (see [Predicted NMR](drawing.md#predicted-nmr)). |
+| **Toolboxes and Ribbon** | The Canvas ribbon as **Classic** (two rows of buttons) or **Simplified** (one row), the lines or raised look of button cells, and detailed tooltips. |
+| **Navigation** | The Document Map (corner, size, hiding it while the whole drawing is on screen), edge arrows, the dot grid, the tint beyond the drawing, and the Go to Selection button. |
+| **Page Grid** | Page boundaries (dashed, dotted or solid; thickness, color and strength), how empty pages and fixed edges are shown, and what happens when you paste beyond a fixed edge. |
+| **Color Palettes**, **Mode Colors**, **Reading Mode** | Your rows of colors, the color of each tab type, and Reading Mode's colors. |
 | **Online** | Looking up names on PubChem (sends the name typed to PubChem; clear it to keep everything on your computer) and the update check and whether to get Stable or Latest updates (desktop app only). |
+| **AI Model** | The AI model the Assistant uses, and its key or link (off until you set one; see [The Assistant](#the-assistant-every-mode-ctrl)). |
+| **Apps and System** | Which file types Chemweave is offered for under **Open with** in Explorer, and a button to Windows' Default apps page (see [Files and sharing](files-and-sharing.md#opening-files-from-explorer-or-finder-desktop-app)); drawings in Word, PowerPoint and Excel opening here; and the offer to make structures figures when a document is opened. |
 
 Your preferences, keyboard shortcuts, own templates, abbreviations, palettes and toolbox layout are kept in a small settings file, `settings.json`. **Edit ▸ Keyboard Shortcuts…** shows where it is on your computer.
 
@@ -266,7 +296,7 @@ Your preferences, keyboard shortcuts, own templates, abbreviations, palettes and
 - Click a group to rename it. **New Group** makes a group of your own: drag commands into it from the list on the left (every button of that ribbon, and every menu command), or click **+**.
 - **Undo** (Ctrl+Z) takes changes back one at a time; **Reset This Ribbon** puts a ribbon back as it came.
 
-To set up a new install or another computer the same way, use **Edit ▸ Settings File ▸ Export Settings…** to save every setting in one file (keyboard shortcuts, toolboxes and what is in them, preferences, your templates, abbreviations, drawing styles, color palettes, slide themes and highlight styles), then **Edit ▸ Settings File ▸ Import Settings…** on the other one. The same two buttons are on the **Import and Export** page of the Settings window. Recent files stay on each computer. A file saved from the Keyboard Shortcuts window's Export imports too, and changes only the keys.
+To set up a new install or another computer the same way, use **Edit ▸ Settings File ▸ Export Settings…** to save every setting in one file (keyboard shortcuts, toolboxes and what is in them, preferences, your templates, abbreviations, drawing styles, color palettes, slide themes and highlight styles), then **Edit ▸ Settings File ▸ Import Settings…** on the other one. The same two buttons are on the **General** page of the Settings window. Recent files stay on each computer. A file saved from the Keyboard Shortcuts window's Export imports too, and changes only the keys.
 
 ---
 

@@ -184,6 +184,8 @@ Presentations, spreadsheets and documents have their own keys (PowerPoint's, Exc
 
 ## Changing keyboard shortcuts
 
+<!-- index: Hotkeys -->
+
 Every key can be changed. Open **Edit ▸ Keyboard Shortcuts…**, or **Help ▸ Keyboard Shortcuts and Tips** and then **Show and change all keyboard shortcuts…**.
 
 The window lists every action, grouped as above (pointing at an atom, at a bond, at empty space, anywhere, in presentations, in spreadsheets, in documents, and typing text), with the keys that do each one.
@@ -237,6 +239,8 @@ Boxes, ovals, frames and pictures have square handles on their corners and sides
 - **Middle-drag** or **right-drag** pans the drawing.
 
 ## Pen and touch (tablets)
+
+<!-- index: Apple Pencil, Touch Mode, Touch screens -->
 
 On a tablet or touch screen (an iPad with Apple Pencil, a Surface pen), **View ▸ Window and Colors ▸ Touch Mode** makes the buttons, menus and toolboxes big enough for a fingertip. It is **Automatic** to start with: it comes on automatically on a touch screen, or the first time a pen or finger touches the window.
 

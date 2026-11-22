@@ -8,13 +8,13 @@ Chemweave draws structures and reaction schemes with the keyboard shortcuts Chem
 
 It is free and open source (GPL v3), and runs on Windows, macOS and Linux, with a test version for iPad.
 
-> **Beta.** Chemweave is under active development: new features arrive every few days and some things may not work as they should yet. Save often, and please [report anything that goes wrong](docs/guide/feedback.md). If you would rather update less often, choose **Stable** updates in **Edit ▸ Settings ▸ Online**: those versions are tried out on a real computer before they are offered.
+> **Beta.** Chemweave is under active development: new features arrive every few days and some things may not work as they should yet. Save often, and please [report anything that goes wrong](https://github.com/nathanohare/Chemweave/wiki/Feedback). If you would rather update less often, choose **Stable** updates in **Edit ▸ Settings ▸ Online**: those versions are tried out on a real computer before they are offered.
 
 ### [▶ Try it in your browser](https://nathanohare.github.io/Chemweave/) · [Download the desktop app](https://github.com/nathanohare/Chemweave/releases/latest)
 
 Nothing to install: the browser version opens immediately. The desktop app adds what a browser can't do: editing drawings inside Word and PowerPoint, AutoSave to your own folders, and automatic updates.
 
-**[User guide](docs/README.md)** · **[Send feedback](docs/guide/feedback.md)**
+**[User guide](https://github.com/nathanohare/Chemweave/wiki)** · **[Send feedback](https://github.com/nathanohare/Chemweave/wiki/Feedback)**
 
 ![A two-step reaction scheme in Canvas mode (dark interface), with the Analysis panel showing the product's formula and masses](docs/images/drawing-dark-ui.png)
 
@@ -132,26 +132,26 @@ Nothing is locked into a format of our own. Each mode saves the file type its pr
 | Document | `.docx` | `.docx` | Word |
 | Spreadsheet | `.xlsx`, `.csv`, `.sdf` | `.xlsx`, `.csv`, `.sdf` | Excel |
 
-In Word, PowerPoint and Excel your structures show as sharp pictures; open the file in Chemweave again and they are editable structures, even after Office has saved it. Drawings also export as PDF, PNG, SVG and Molfile. [Files and sharing](docs/guide/files-and-sharing.md) has the details.
+In Word, PowerPoint and Excel your structures show as sharp pictures; open the file in Chemweave again and they are editable structures, even after Office has saved it. Drawings also export as PDF, PNG, SVG and Molfile. [Files and sharing](https://github.com/nathanohare/Chemweave/wiki/Files-and-Sharing) has the details.
 
 ## Install
 
 Download the installer for your computer from the **[latest release](https://github.com/nathanohare/Chemweave/releases/latest)**:
 
-- **Windows**: the file ending in `x64-setup.exe`. Windows will warn that the installer isn't signed: click **More info**, then **Run anyway**. It installs for you alone, so it doesn't need administrator rights. To run it from a flash drive or a folder without installing anything, take `x64-portable.zip` instead and unzip it ([portable copy](docs/guide/getting-started.md#windows-without-installing-portable-copy)).
+- **Windows**: the file ending in `x64-setup.exe`. Windows will warn that the installer isn't signed: click **More info**, then **Run anyway**. It installs for you alone, so it doesn't need administrator rights. To run it from a flash drive or a folder without installing anything, take `x64-portable.zip` instead and unzip it ([portable copy](https://github.com/nathanohare/Chemweave/wiki/Getting-Started#windows-without-installing-portable-copy)).
 - **macOS** (Apple silicon or Intel, macOS 11 or newer): the file ending in `universal.dmg`. Open it and drag **Chemweave** into **Applications**. The app is signed and notarised by Apple, so it opens without a warning.
 - **Linux**: the `.AppImage` (any distribution), `.deb` (Ubuntu, Debian) or `.rpm` (Fedora).
-- **iPad**: the iPad app is in testing through Apple's TestFlight. Install the free **[TestFlight](https://apps.apple.com/app/testflight/id899247664)** app from the App Store, then open **[this invitation](https://testflight.apple.com/join/hMdcFJBH)** on the iPad and tap **Accept**, then **Install**. TestFlight offers each new test version as it comes out. Draw with an Apple Pencil or your finger; see [Pen and touch](docs/guide/keyboard-and-mouse.md#pen-and-touch-tablets).
+- **iPad**: the iPad app is in testing through Apple's TestFlight. Install the free **[TestFlight](https://apps.apple.com/app/testflight/id899247664)** app from the App Store, then open **[this invitation](https://testflight.apple.com/join/hMdcFJBH)** on the iPad and tap **Accept**, then **Install**. TestFlight offers each new test version as it comes out. Draw with an Apple Pencil or your finger; see [Pen and touch](https://github.com/nathanohare/Chemweave/wiki/Keyboard-and-Mouse#pen-and-touch-tablets).
 
-Once installed, Chemweave keeps itself up to date: it offers each new version when it starts. [Getting started](docs/guide/getting-started.md) has the details.
+Once installed, Chemweave keeps itself up to date: it offers each new version when it starts. [Getting started](https://github.com/nathanohare/Chemweave/wiki/Getting-Started) has the details.
 
 ## Learn it
 
-The **[user guide](docs/README.md)** covers each mode, every shortcut key, and the files it reads and writes. Inside Chemweave, **Help ▸ Keyboard Shortcuts and Tips** lists the most used keys, and the **Search** box at the top (Alt+Q) finds any command by name.
+The **[user guide](https://github.com/nathanohare/Chemweave/wiki)** covers each mode, every shortcut key, and the files it reads and writes. Inside Chemweave, **Help ▸ Keyboard Shortcuts and Tips** lists the most used keys, and the **Search** box at the top (Alt+Q) finds any command by name.
 
 ## Feedback
 
-Ideas, problems and questions are welcome. In Chemweave, use **Help ▸ Send Feedback**: it sends your report straight to the team, no account needed, and you choose whether it stays private or appears on the public [issues](https://github.com/nathanohare/Chemweave/issues) page. See [Feedback, problems and ideas](docs/guide/feedback.md).
+Ideas, problems and questions are welcome. In Chemweave, use **Help ▸ Send Feedback**: it sends your report straight to the team, no account needed, and you choose whether it stays private or appears on the public [issues](https://github.com/nathanohare/Chemweave/issues) page. See [Feedback, problems and ideas](https://github.com/nathanohare/Chemweave/wiki/Feedback).
 
 ## Support Chemweave
 
@@ -163,7 +163,7 @@ Chemweave is free and always will be. If it saves you time, you can help keep it
 
 ## For developers
 
-Chemweave is written in TypeScript and runs as a [Tauri](https://tauri.app) desktop app, with [RDKit](https://www.rdkit.org) for the chemistry. [For developers](docs/developers.md) explains how to run it from the source code, how releases are made, and where things are in the code; [TECH-DECISION.md](TECH-DECISION.md) explains why it is built this way.
+Chemweave is written in TypeScript and runs as a [Tauri](https://tauri.app) desktop app, with [RDKit](https://www.rdkit.org) for the chemistry. [For developers](https://github.com/nathanohare/Chemweave/wiki/For-Developers) explains how to run it from the source code, how releases are made, and where things are in the code; [TECH-DECISION.md](TECH-DECISION.md) explains why it is built this way.
 
 ## Licence
 

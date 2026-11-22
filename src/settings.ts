@@ -227,6 +227,9 @@ export interface Settings {
   docPins: string[];
   /** Document mode's ruler shown (View > Ruler). */
   docRuler: boolean;
+  /** Document pages: crop marks at the text's corners (Word's Show crop marks), and the white space between pages (shown unless hidden by a double-click between pages). */
+  docCropMarks: boolean;
+  docWhiteSpace: boolean;
   /** Sheet mode's formula bar shown (View > Formula Bar). */
   sheetFormulaBar: boolean;
   /** Slides' View > Ruler and Gridlines, and how the rulers measure. */
@@ -310,6 +313,8 @@ export const DEFAULT_SETTINGS: Settings = {
   pageLook: { ...DEFAULT_PAGE_LOOK },
   docPins: [],
   docRuler: false,
+  docCropMarks: false,
+  docWhiteSpace: true,
   sheetFormulaBar: true,
   updateCheck: true, updateChannel: 'latest', pubchemNames: true, convertChemDraw: false, officeStructures: { docx: 'pictures', pptx: 'pictures' }, matchStructure: true, fileTypesOffered: false, wordObjectsOffered: false, reviewName: '', skipVersion: null, lastVersion: null, recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], docDesign: null,
   slideRuler: false,
@@ -423,6 +428,8 @@ export function parseSettings(text: string | null | undefined): Settings {
     for (const k of ['slides', 'design'] as const) if (typeof g[k] === 'boolean') s.guides[k] = g[k] as boolean;
   }
   if (typeof r.docRuler === 'boolean') s.docRuler = r.docRuler;
+  if (typeof r.docCropMarks === 'boolean') s.docCropMarks = r.docCropMarks;
+  if (typeof r.docWhiteSpace === 'boolean') s.docWhiteSpace = r.docWhiteSpace;
   if (typeof r.sheetFormulaBar === 'boolean') s.sheetFormulaBar = r.sheetFormulaBar;
   if (typeof r.slideRuler === 'boolean') s.slideRuler = r.slideRuler;
   if (r.slidePanes && typeof r.slidePanes === 'object') { const sp = r.slidePanes as Record<string, unknown>; s.slidePanes = { warnings: sp.warnings === true, analysis: sp.analysis === true }; }

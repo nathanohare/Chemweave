@@ -11,8 +11,8 @@ import type { DocFile } from '../document/doc-file';
 import { figures } from '../document/doc-file';
 import { turnOf } from '../document/arrange';
 import { boxTextTop, drawChangeBars, turnAbout, drawDocTable, drawHeaderFooter, drawHfBodies, drawLineNumbers, drawNoteRules, drawPageLook, traceGeo } from '../document/doc-paint';
-import { BOX_PAD, SHADOWS, emptyContents, lookOf, type DocText } from '../document/document';
-import { BREAK_NAMES } from '../document/sections';
+import { BOX_PAD, SHADOWS, emptyContents, lookOf, styleOf, type DocText } from '../document/document';
+import { BREAK_NAMES, sectionsOf } from '../document/sections';
 import { drawLayout, drawMarks } from '../text/draw';
 import { drawMath } from '../document/math';
 import { selectionRects } from '../text/layout';
@@ -30,6 +30,8 @@ let surround = getComputedStyle(document.documentElement).getPropertyValue('--su
 addEventListener('surround-changed', (e) => { surround = (e as CustomEvent<string | null>).detail ?? SURROUND; });
 const SELECTION = 'rgba(40, 120, 255, 0.25)';
 const OBJECT_FRAME = '#2f6fdf';
+/** Header and footer editing's dashed lines and tags (Word's blue). */
+const HF_LINE = '#2b6cb0';
 /** A figure's area under the pointer: light grey, so its edges show. */
 const FIGURE_HOVER = 'rgba(60, 64, 72, 0.08)';
 /** 100%: a point of the page is a point on the screen (96 pixels to the inch). */
@@ -54,7 +56,34 @@ export interface Overlay {
   cells?: { id: number; r0: number; c0: number; r1: number; c1: number } | null;
   /** More stretches of text selected with the selection (Select Text with Similar Formatting). */
   also?: [number, number][];
+  /** A header or footer being typed into (Word's header and footer editing): the rest of the page faded, each page's header and footer marked, and the selection in it. */
+  hf?: HfOverlay | null;
 }
+
+/** Header and footer editing as the view shows it. */
+export interface HfOverlay {
+  page: number;
+  kind: 'header' | 'footer';
+  selection: Rect[];
+  /** Header & Footer > Show Document Text: the document's text faded (or hidden when off). */
+  showText: boolean;
+}
+
+/** The tags on the lines of each page's header and footer while they are edited: which one it is, and its section. */
+export function hfTag(p: PageBox, kind: 'header' | 'footer', sections: number): string {
+  const name = kind === 'header' ? 'Header' : 'Footer';
+  const which = p.hf.firstPage && p.starts ? 'First Page ' : p.hf.oddEven ? ((p.n ?? p.index + 1) % 2 === 0 ? 'Even Page ' : 'Odd Page ') : '';
+  return `${which}${name}${sections > 1 ? ` -Section ${p.section + 1}-` : ''}`;
+}
+
+/** Word's pointer for hiding the white space between pages (arrows pointing together) and showing it again (pointing apart). */
+const arrowsCursor = (together: boolean) => {
+  const a = together ? 'M12 10.5 6.5 4h11z M12 13.5 6.5 20h11z' : 'M12 2.5 6.5 9h11z M12 21.5 6.5 15h11z';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="${a}" fill="#111" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><path d="M3 12h18" stroke="#fff" stroke-width="3.5"/><path d="M3 12h18" stroke="#111" stroke-width="1.5"/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, row-resize`;
+};
+export const HIDE_SPACE_CURSOR = arrowsCursor(true);
+export const SHOW_SPACE_CURSOR = arrowsCursor(false);
 
 export class DocView {
   readonly canvas: HTMLCanvasElement;
@@ -107,6 +136,12 @@ export class DocView {
   private wheelSum = 0;
   /** Outline: where each paragraph's level mark was drawn (to fold a heading by clicking it). */
   private marks: { para: number; x: number; y: number }[] = [];
+  /** Hide white space (Word's double-click between pages): each page's top and bottom margins, with its header and footer, left out, the pages' text one under another with a line between. */
+  hideSpace = false;
+  /** Crop marks at the corners of each page's text (Word's Show crop marks). */
+  cropMarks = false;
+  /** Hidden white space: where each page's text starts in the scrolled area, in points (the last: where the last page's ends), with the layout it is for. */
+  private bands: { lay: DocLayout; y: number[] } | null = null;
 
   constructor(readonly host: HTMLElement) {
     this.canvas = document.createElement('canvas');
@@ -156,9 +191,25 @@ export class DocView {
     return continuous(this.kind);
   }
 
+  /** White space is hidden: pages one under another (Print Layout's Vertical). */
+  get hiding(): boolean {
+    return this.hideSpace && !this.endless && !this.sideways && this.perRow === 1;
+  }
+
+  /** Hidden white space: where each page's text starts in the scrolled area (and, last, where the last page's ends). */
+  private bandTops(lay: DocLayout): number[] {
+    if (this.bands?.lay !== lay) {
+      const y = [0];
+      for (const p of lay.pages) y.push(y[y.length - 1] + Math.max(0, p.h - p.setup.top - p.setup.bottom));
+      this.bands = { lay, y };
+    }
+    return this.bands.y;
+  }
+
   /** Where a page sits in the scrolled area, in points from the top left of the first (before zooming). */
   place(p: PageBox, lay: DocLayout): { x: number; y: number } {
     if (this.endless) return { x: 0, y: p.top };
+    if (this.hiding) return { x: 0, y: this.bandTops(lay)[p.index] - p.setup.top };
     const W = lay.pageW + this.gapX, H = lay.pageH + PAGE_GAP;
     if (this.sideways) return { x: p.index * W, y: 0 };
     if (this.perRow > 1) return { x: (p.index % this.perRow) * W, y: Math.floor(p.index / this.perRow) * H };
@@ -178,6 +229,7 @@ export class DocView {
     // (the last page's comments have the room sizeSpace keeps beside the pages)
     if (this.sideways) return { w: n * W - this.gapX, h: lay.pageH };
     if (this.perRow > 1) return { w: Math.min(this.perRow, n) * W - this.gapX, h: Math.ceil(n / this.perRow) * H - PAGE_GAP };
+    if (this.hiding) return { w: lay.pageW, h: this.bandTops(lay)[n] };
     return { w: lay.pageW, h: lay.pages[n - 1].top + lay.pageH };
   }
 
@@ -273,6 +325,13 @@ export class DocView {
     const vx = (clientX - r.left + this.scroller.scrollLeft - this.ox) / this.zoom;
     const vy = (clientY - r.top + this.scroller.scrollTop - this.oy) / this.zoom;
     const lay = this.layout;
+    if (lay && this.hiding) {
+      const y = this.bandTops(lay);
+      let i = 0;
+      while (i < lay.pages.length - 1 && y[i + 1] <= vy) i++;
+      const p = lay.pages[i];
+      return { x: vx, y: vy - (y[i] - p.setup.top) + p.top };
+    }
     if (!lay || this.endless || (!this.sideways && this.perRow === 1)) return { x: vx, y: vy };
     let best = lay.pages[0], dist = Infinity;
     for (const p of lay.pages) {
@@ -462,9 +521,20 @@ export class DocView {
       return x < this.w && x + lay.pageW * k > 0 && y < this.h && y + lay.pageH * k > 0 && this.pageShown(p.index);
     });
     ctx.fontKerning = 'none';
-    if (!endless) for (const p of visible) { at(p); this.paper(ctx, p, lay); }
+    const hiding = this.hiding;
+    // hidden white space: only the page's text area shows
+    const band = (p: PageBox) => {
+      if (!hiding) return false;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(p.x - 1, p.top + p.setup.top, p.w + 2, Math.max(0, p.h - p.setup.top - p.setup.bottom));
+      ctx.clip();
+      return true;
+    };
+    if (!endless) for (const p of visible) { at(p); const c = band(p); this.paper(ctx, p, lay); if (c) ctx.restore(); }
     for (const p of visible) {
       at(p);
+      const clipped = band(p);
       if (!endless) { drawHeaderFooter(ctx, t, p); drawHfBodies(ctx, t, lay, p.index, (o) => this.object(ctx, t, o, lay)); drawLineNumbers(ctx, lay, p.index, '#555'); drawChangeBars(ctx, lay, p.index); }
       drawParaShading(ctx, lay.frames, p.index);
       // the found text and the selection, under the text
@@ -515,7 +585,10 @@ export class DocView {
         ctx.lineWidth = 1.1 * px;
         for (const r of rectsOn(lay, p, s.start, s.end)) squiggle(ctx, r, px);
       }
+      if (clipped) ctx.restore();
     }
+    if (hiding) this.joins(ctx, visible, at);
+    if (ov.hf && !endless) this.hfMarks(ctx, t, lay, visible, at, ov.hf);
     if (endless) {
       at(lay.pages[0]);
       if (this.kind === 'draft') this.breaks(ctx, t, lay);
@@ -697,7 +770,7 @@ export class DocView {
     }
   }
 
-  /** A white page with its shadow, and faint corner marks where the text area starts and ends. */
+  /** A white page with its shadow, and faint corner marks where the text area starts and ends (crop marks, when shown). */
   private paper(ctx: CanvasRenderingContext2D, p: PageBox, _lay: DocLayout): void {
     const k = this.zoom;
     ctx.save();
@@ -711,6 +784,7 @@ export class DocView {
     if (this.file) drawPageLook(ctx, this.file.t, p);
     const pg = p.setup;
     const x1 = p.x + pg.left, x2 = p.x + p.w - pg.right, y1 = p.top + pg.top, y2 = p.top + p.h - pg.bottom;
+    if (!this.cropMarks || this.hiding) return;
     const m = 12;
     ctx.strokeStyle = '#c4c8cf';
     ctx.lineWidth = 0.8 / k;
@@ -721,6 +795,122 @@ export class DocView {
       ctx.lineTo(x, y + sy * m);
     }
     ctx.stroke();
+  }
+
+  /**
+   * Hidden white space: a grey line where one page's text ends and the next one's starts and,
+   * with crop marks shown, a mark at each side of the text across it, the same above and below.
+   */
+  private joins(ctx: CanvasRenderingContext2D, visible: PageBox[], at: (p: PageBox) => void): void {
+    const k = this.zoom;
+    for (const p of visible) {
+      if (p.index === 0) continue;
+      at(p);
+      const y = p.top + p.setup.top;
+      ctx.strokeStyle = '#8a8f98';
+      ctx.lineWidth = 1 / k;
+      ctx.beginPath();
+      ctx.moveTo(p.x, y);
+      ctx.lineTo(p.x + p.w, y);
+      ctx.stroke();
+      if (!this.cropMarks) continue;
+      const m = 12;
+      ctx.strokeStyle = '#c4c8cf';
+      ctx.lineWidth = 0.8 / k;
+      ctx.beginPath();
+      for (const x of [p.x + p.setup.left, p.x + p.w - p.setup.right]) { ctx.moveTo(x, y - m); ctx.lineTo(x, y + m); }
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * Header and footer editing, as in Word: each page's text faded (or hidden, with Show Document
+   * Text off), a dashed line under each header and over each footer with its name on a tag, and
+   * "Same as Previous" on those a section takes from the one before.
+   */
+  private hfMarks(ctx: CanvasRenderingContext2D, t: DocText, lay: DocLayout, visible: PageBox[], at: (p: PageBox) => void, hf: HfOverlay): void {
+    const k = this.zoom;
+    const secs = sectionsOf(t);
+    const size = Math.min(10, styleOf(t, undefined).size);
+    const accent = HF_LINE;
+    for (const p of visible) {
+      at(p);
+      const placed = (kind: 'header' | 'footer') => lay.hfs.find((h) => h.page === p.index && h.kind === kind)?.whole.box;
+      const hb = placed('header'), fb = placed('footer');
+      const yh = Math.max(hb ? hb.y2 : p.top + p.setup.header + size * 1.25, p.top + p.setup.header + size) + 3;
+      const yf = Math.min(fb ? fb.y1 : p.top + p.h - p.setup.footer - size * 1.2, p.top + p.h - p.setup.footer - size) - 3;
+      // the page's own text faded, or hidden
+      ctx.fillStyle = hf.showText ? 'rgba(255, 255, 255, 0.55)' : '#fff';
+      ctx.fillRect(p.x, yh, p.w, Math.max(0, yf - yh));
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1 / k;
+      ctx.setLineDash([3 / k, 2 / k]);
+      ctx.beginPath();
+      ctx.moveTo(p.x, yh); ctx.lineTo(p.x + p.w, yh);
+      ctx.moveTo(p.x, yf); ctx.lineTo(p.x + p.w, yf);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const linked = secs[p.section]?.linked;
+      ctx.font = `600 ${10.5 / k}px system-ui, sans-serif`;
+      ctx.textBaseline = 'middle';
+      const tag = (text: string, x: number, y: number, below: boolean, right = false) => {
+        const w = ctx.measureText(text).width + 12 / k, h = 17 / k;
+        const x1 = right ? x - w : x, y1 = below ? y : y - h;
+        ctx.fillStyle = accent;
+        ctx.fillRect(x1, y1, w, h);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(text, x1 + 6 / k, y1 + h / 2);
+      };
+      const left = p.x + p.setup.left - 2 / k, right = p.x + p.w - p.setup.right + 2 / k;
+      tag(hfTag(p, 'header', secs.length), left, yh, true);
+      tag(hfTag(p, 'footer', secs.length), left, yf, false);
+      if (linked) { tag('Same as Previous', right, yh, true, true); tag('Same as Previous', right, yf, false, true); }
+      if (p.index === hf.page && hf.selection.length) {
+        ctx.fillStyle = SELECTION;
+        for (const r of hf.selection) ctx.fillRect(r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1);
+      }
+    }
+  }
+
+  /**
+   * Header and footer editing: the header or footer of the page at a point (client
+   * coordinates), when it is in the page's top or bottom margin (above or below its text).
+   */
+  hfAt(clientX: number, clientY: number): { page: number; kind: 'header' | 'footer' } | null {
+    const lay = this.layout;
+    if (!lay || this.endless || this.hiding) return null;
+    const d = this.toDoc(clientX, clientY);
+    const p = this.pageAt(lay, d.y);
+    if (!p || d.x < p.x || d.x > p.x + p.w || d.y < p.top || d.y > p.top + p.h) return null;
+    if (d.y < p.top + p.setup.top) return { page: p.index, kind: 'header' };
+    if (d.y > p.top + p.h - p.setup.bottom) return { page: p.index, kind: 'footer' };
+    return null;
+  }
+
+  /**
+   * Hide white space: whether a point (client coordinates) is where a double-click hides the
+   * white space (in the grey between two pages, a little into either) or shows it again (on the
+   * line between pages' text), in Print Layout with pages one under another.
+   */
+  spaceAt(clientX: number, clientY: number): 'hide' | 'show' | null {
+    const lay = this.layout;
+    if (!lay || this.endless || this.sideways || this.perRow !== 1 || lay.pages.length < 2) return null;
+    const r = this.scroller.getBoundingClientRect();
+    const k = this.zoom;
+    const vx = (clientX - r.left + this.scroller.scrollLeft - this.ox) / k;
+    const vy = (clientY - r.top + this.scroller.scrollTop - this.oy) / k;
+    if (vx < 0 || vx > lay.pageW) return null;
+    const near = 4 / k;
+    if (this.hiding) {
+      const y = this.bandTops(lay);
+      for (let i = 1; i < lay.pages.length; i++) if (Math.abs(vy - y[i]) <= near) return 'show';
+      return null;
+    }
+    for (let i = 1; i < lay.pages.length; i++) {
+      const a = lay.pages[i - 1], b = lay.pages[i];
+      if (vy >= a.top + a.h - near && vy <= b.top + near) return 'hide';
+    }
+    return null;
   }
 
   private object(ctx: CanvasRenderingContext2D, t: DocText, o: PlacedObject, lay: DocLayout): void {

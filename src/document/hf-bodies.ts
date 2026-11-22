@@ -8,7 +8,7 @@
 import type { ParaStyle, TextRun } from '../model';
 import * as rt from '../richtext';
 import { fieldText, type FieldObj } from './fields';
-import type { DocObject, DocText, HeaderFooter, HfBody, HfKey, HfZones, NumberPlace } from './document';
+import { styleOf, type DocObject, type DocText, type HeaderFooter, type HfBody, type HfKey, type HfZones, type NumberPlace } from './document';
 
 export const HF_KEYS: HfKey[] = ['header', 'footer', 'firstHeader', 'firstFooter', 'evenHeader', 'evenFooter'];
 
@@ -107,4 +107,130 @@ export function insertInZone(body: HfBody, zone: number, run: TextRun): HfBody {
   let at = 0;
   for (let k = 0; k < zone; k++) at = text.indexOf('\t', at) + 1;
   return { ...body, runs: rt.normalizeRuns([...rt.sliceRuns(runs, 0, at), run, ...rt.sliceRuns(runs, at, text.length)]) };
+}
+
+/** The look of a plain header or footer's text: the Normal style's font, at most 10 pt (as drawHeaderFooter draws it). */
+export function plainLook(t: Pick<DocText, 'styles'>): rt.RunStyle {
+  const N = styleOf(t, undefined);
+  return { font: N.font, size: Math.min(10, N.size) };
+}
+
+/** Where a plain header or footer puts the page number (0 left, 1 centre, 2 right), or -1 when it shows none. */
+export function numberZone(hf: HeaderFooter, key: HfKey): number {
+  const kind = kindOf(key);
+  const numbers = numbersFor(hf, key);
+  if (numbers === 'none' || !numbers.startsWith(kind)) return -1;
+  // a first page of its own shows its number only when the first page is numbered
+  if (key.startsWith('first') && !hf.onFirst) return -1;
+  return ['left', 'center', 'right'].indexOf(numbers.split('-')[1]);
+}
+
+/**
+ * A plain header or footer as Word's paragraphs, to type into on the page: its left, centre and
+ * right text at the tab stops and its page number (a PAGE field `newField` makes) in its place.
+ */
+export function zonesAsBody(t: Pick<DocText, 'styles'>, hf: HeaderFooter, key: HfKey, textW: number, newField: () => number): HfBody {
+  return bodyFromZones(zonesFor(hf, key), numberZone(hf, key), hf.prefix ?? '', plainLook(t), textW, newField);
+}
+
+/**
+ * A header or footer typed into on the page, back as plain text (left, centre and right, and the
+ * page number's place) when that is all it is: one line in the plain look, at most two tabs, and
+ * at most one page number, at the end of its part after the page numbers' prefix. Null when it
+ * holds more (formatting, pictures, more lines) and stays as Word's paragraphs.
+ */
+export function bodyAsZones(body: HfBody, t: Pick<DocText, 'styles' | 'objects'>, hf: HeaderFooter, key: HfKey, textW: number): HeaderFooter | null {
+  const look = plainLook(t);
+  const text = rt.plainText(body.runs);
+  if (text.includes('\n')) return null;
+  // the paragraph as a plain one is: no spacing, a centre and a right tab stop
+  const plain = bodyFromZones(['', '', ''], -1, '', look, textW, () => 0).paras?.[0];
+  // (tabs without the plain header's tab stops line up elsewhere)
+  if (!body.paras?.length && text.includes('\t')) return null;
+  if (body.paras?.length) {
+    const { tabs, spaceBefore, spaceAfter, ...rest } = body.paras[0];
+    if (spaceBefore || spaceAfter || Object.values(rest).some((v) => v !== undefined)) return null;
+    if (JSON.stringify(tabs ?? []) !== JSON.stringify(plain?.tabs ?? [])) return null;
+  }
+  for (const r of body.runs) {
+    const { text: _x, obj: _o, ...style } = r;
+    if (JSON.stringify(Object.entries(style).filter(([, v]) => v !== undefined).sort()) !== JSON.stringify(Object.entries(look).sort())) return null;
+  }
+  const parts: string[] = ['', '', ''];
+  let zone = 0, field = -1;
+  for (const r of body.runs) {
+    if (r.obj !== undefined) {
+      const o = t.objects[r.obj];
+      if (o?.kind !== 'field' || o.code !== 'page' || field >= 0) return null;
+      field = zone;
+      continue;
+    }
+    for (const ch of r.text) {
+      if (ch === '\t') { zone++; if (zone > 2) return null; continue; }
+      // text after the page number in its part
+      if (field === zone) return null;
+      parts[zone] += ch;
+    }
+  }
+  const prefix = hf.prefix ?? '';
+  if (field >= 0) {
+    const p = parts[field];
+    if (!p.endsWith(prefix)) return null;
+    const before = p.slice(0, p.length - prefix.length);
+    // "Title S" + page: the part's own text, a space, then the prefix
+    if (before && !before.endsWith(' ')) return null;
+    parts[field] = before.replace(/ $/, '');
+  }
+  const kind = kindOf(key);
+  const zones = parts as [string, string, string];
+  const out: HeaderFooter = { ...hf };
+  if (key === kind) {
+    out[kind] = zones;
+    if (field !== numberZone(hf, key)) {
+      // the page number moved, came or went: only where the other part (header or footer) doesn't show it
+      if (field >= 0) {
+        if (hf.numbers !== 'none' && !hf.numbers.startsWith(kind)) return null;
+        out.numbers = `${kind}-${['left', 'center', 'right'][field]}` as NumberPlace;
+      } else out.numbers = 'none';
+    }
+  } else {
+    if (field !== numberZone(hf, key)) return null;
+    const set = key.startsWith('first') ? 'first' : 'even';
+    const z: HfZones = hf[set] ?? { header: ['', '', ''], footer: ['', '', ''] };
+    out[set] = { ...z, [kind]: zones };
+  }
+  const bodies = { ...hf.bodies };
+  delete bodies[key];
+  if (Object.keys(bodies).length) out.bodies = bodies; else delete out.bodies;
+  return out;
+}
+
+/** A ready-made header or footer (Header ▾ and Footer ▾): its left, centre and right text ({title} and {author} from File ▸ Properties) and where the page number goes (-1: none). */
+export interface HfPreset { kind: 'header' | 'footer'; name: string; zones: [string, string, string]; number: number; prefix?: string }
+
+export const HF_PRESETS: HfPreset[] = [
+  { kind: 'header', name: 'Blank', zones: ['', '', ''], number: -1 },
+  { kind: 'header', name: 'Three Columns', zones: ['[Type here]', '[Type here]', '[Type here]'], number: -1 },
+  { kind: 'header', name: 'Title and Author', zones: ['{title}', '', '{author}'], number: -1 },
+  { kind: 'header', name: 'Title and Page Number', zones: ['{title}', '', ''], number: 2 },
+  { kind: 'header', name: 'Supporting Information', zones: ['{author}', '', 'Supporting Information'], number: -1 },
+  { kind: 'footer', name: 'Blank', zones: ['', '', ''], number: -1 },
+  { kind: 'footer', name: 'Three Columns', zones: ['[Type here]', '[Type here]', '[Type here]'], number: -1 },
+  { kind: 'footer', name: 'Page Number', zones: ['', '', ''], number: 1, prefix: '' },
+  { kind: 'footer', name: 'Page Number, Right', zones: ['', '', ''], number: 2, prefix: '' },
+  { kind: 'footer', name: 'Supporting Information Pages (S1, S2…)', zones: ['', '', ''], number: 1, prefix: 'S' },
+];
+
+/** A small picture of a ready-made header or footer for its menu: a page's top or bottom, with grey bars where its text goes and the number in the accent color. */
+export function hfPresetPicture(pr: HfPreset): string {
+  const W = 46, H = 20, y = pr.kind === 'header' ? 5 : 14;
+  const bars = pr.zones.map((z, i) => {
+    const num = pr.number === i;
+    if (!z && !num) return '';
+    const w = num ? (pr.prefix ? 7 : 4) : z.startsWith('[') ? 9 : 11;
+    const x = i === 0 ? 5 : i === 1 ? W / 2 - w / 2 : W - 5 - w;
+    return `<rect x="${x}" y="${y - 1.25}" width="${w}" height="2.5" rx="1" fill="${num ? 'currentColor' : '#9aa0aa'}"/>`;
+  }).join('');
+  const page = pr.kind === 'header' ? `<path d="M1.5 ${H} V2.5 a1 1 0 0 1 1-1 H${W - 2.5} a1 1 0 0 1 1 1 V${H}" fill="#fff" stroke="#9aa0aa"/>` : `<path d="M1.5 0 V${H - 2.5} a1 1 0 0 0 1 1 H${W - 2.5} a1 1 0 0 0 1-1 V0" fill="#fff" stroke="#9aa0aa"/>`;
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${page}${bars}</svg>`;
 }

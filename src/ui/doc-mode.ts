@@ -28,7 +28,7 @@ import { afterTyping, typingPrefs, setTypingPrefs } from '../text/typing';
 import { findIssues, type CharLook, type Issue } from '../text/chemtext';
 import { loadSpeller, type Speller } from '../text/spelling';
 import { BULLET_LIBRARY, LIST_SCHEMES, fitParas, paraAt, paraCount, paraRange, splitParagraphs } from '../text/paragraphs';
-import { DocView, ACTUAL, type Overlay } from './doc-view';
+import { DocView, ACTUAL, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type Overlay } from './doc-view';
 import {
   PRINT_VIEW, VIEW_NAMES as VIEW_LABEL, changeLevel, withHeadings, continuous, foldHeadings, moveParas, newOutline, outlineLevel, shiftFolds, subtreeEnd, toggleFold,
   type DocViewKind, type OutlineOp, type OutlineState, type ScreenView,
@@ -83,7 +83,9 @@ import { PLACE_MARGIN, type InPlace } from './in-place';
 import { FigureOffer } from './doc-figure-offer';
 import { DocProofingUI } from './doc-proofing-ui';
 import { DEFAULT_ZONE } from '../text/hyphenate';
-import { bodyFromZones, insertInZone, numbersFor, zonesFor } from '../document/hf-bodies';
+import { HF_KEYS, HF_PRESETS, hfKeyFor, hfPresetPicture, insertInZone, kindOf, plainLook, zonesAsBody, type HfPreset } from '../document/hf-bodies';
+import type { FieldCode } from '../document/fields';
+import { docPagePrefs } from './mode-prefs';
 import { popupMenu } from './sheet-view';
 import type { BorderChoice } from '../document/para-borders';
 import { coverParas, type QuickPart } from '../document/quick-parts';
@@ -100,7 +102,7 @@ import {
   floatOf, lookExtent, lookOf, cellHolding, innerObjects, emptyContents,
   WATERMARKS, applyCharStyle, charStylesOf, clearCharStyle, clearFormatting, defaultPageBorder, defaultWatermark, deleteStyle, modifyCharStyle, newCharStyle, newParaStyle, withStyle,
   type CharStyle, type PageBorder, type Watermark,
-  type BreakKind, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type Float, type LineNumbers, type NoteFormat, type NumberPlace, type PageNumFormat, type PageSetup, type WrapKind,
+  type BreakKind, type DocObject, type DocText, type HeaderFooter, type HfZones, type Embedded, type FigureFrame, type FigureLook, type Float, type LineNumbers, type NoteFormat, type NumberPlace, type PageNumFormat, type PageSetup, type WrapKind,
 } from '../document/document';
 
 export interface DocModeHost {
@@ -1188,7 +1190,10 @@ export class DocumentMode {
     // text with similar formatting stays selected until the caret moves or the text changes another way
     if (this.similar && (this.similar.t !== f.t || f.ed.start !== this.similar.at[0] || f.ed.end !== this.similar.at[1])) this.similar = null;
     // the text box being typed into was taken away (Undo, Cut)
-    if (f.box) {
+    if (f.box?.hf) {
+      const at = f.box.hf;
+      if (!f.layout().pages[at.page] || sectionsOf(f.t).length <= at.section) f.endBox();
+    } else if (f.box) {
       const bo = f.t.objects[f.box.id];
       const cell = f.box.cell;
       const ok = cell ? bo?.kind === 'table' && !!bo.table.rows[cell.r]?.[cell.c] && !isCovered(bo.table, cell.r, cell.c) : bo?.kind === 'textbox' || bo?.kind === 'note';
@@ -1272,6 +1277,16 @@ export class DocumentMode {
   }
 
   private overlayNow(f: DocFile): Overlay {
+    if (f.box?.hf) {
+      // typing into a header or footer: its caret and selection, the page's text faded
+      const ed = f.box.ed;
+      const showCaret = this.caretOn && (ed.collapsed || ed.composing !== null) && document.activeElement === this.ta;
+      return {
+        selection: null, caret: showCaret ? ed.caret() : null, squiggles: [], picked: null, framed: null,
+        found: [],
+        hf: { page: f.box.hf.page, kind: f.box.hf.kind, selection: ed.collapsed || ed.composing ? [] : selectionRects(ed.layout(), ed.start, ed.end), showText: this.hfShowText },
+      };
+    }
     if (f.box) {
       // typing into a text box: its caret and selection
       const ed = f.box.ed;
@@ -1364,6 +1379,10 @@ export class DocumentMode {
     return {
       'para-borders': (x, y) => this.paragraphs.bordersMenu(x, y),
       'quick-parts': (x, y) => this.inserts.quickPartsMenu(x, y),
+      'hf-header': (x, y) => this.hfGallery('header', x, y),
+      'hf-footer': (x, y) => this.hfGallery('footer', x, y),
+      'hf-numbers': (x, y) => this.hfNumberMenu(x, y),
+      'hf-info': (x, y) => this.hfInfoMenu(x, y),
       'doc-select': (x, y) => this.selectMenu(x, y),
       'show-markup': (x, y) => this.showMarkupMenu(x, y),
       'arrange-position': (x, y) => this.arranging.positionMenu(x, y),
@@ -2116,6 +2135,9 @@ export class DocumentMode {
       if (this.reading) this.showReadPages();
     };
     v.onResize = () => { if (v === this.views[0]) this.fitSheet(); };
+    // Settings ▸ Preferences: crop marks and the white space between pages
+    v.cropMarks = docPagePrefs.cropMarks;
+    v.hideSpace = !docPagePrefs.whiteSpace;
     this.views.push(v);
   }
 
@@ -2610,7 +2632,26 @@ export class DocumentMode {
       const f = this.file;
       if (!f || this.reading) return;
       this.activate(v);
+      // between pages: hide the white space, or show it again (Word's double-click)
+      const space = this.view.spaceAt(e.clientX, e.clientY);
+      if (space) { e.preventDefault(); this.setHideSpace(space === 'hide', e.clientY); return; }
+      if (f.box?.hf) {
+        e.preventDefault();
+        // in a header or footer: the word was picked; in the document's text: back to it, the caret there
+        if (this.view.hfAt(e.clientX, e.clientY)) return;
+        this.stopBox();
+        const p = this.view.toDoc(e.clientX, e.clientY);
+        f.ed.setCaret(offsetAt(f.layout().text, p.x, p.y));
+        this.changed('selection');
+        this.updateRibbon();
+        return;
+      }
       const id = this.objectAt(e.clientX, e.clientY);
+      // the top or bottom margin of a page: its header or footer, to type into (as in Word)
+      if (id === null && !f.box) {
+        const at = this.view.hfAt(e.clientX, e.clientY);
+        if (at) { e.preventDefault(); this.startHf(at.page, at.kind, this.view.toDoc(e.clientX, e.clientY)); return; }
+      }
       if (id !== null && f.t.objects[id]?.kind === 'bib') { e.preventDefault(); void this.manageReferences(); return; }
       if (id !== null && f.t.objects[id]?.kind === 'toc') { e.preventDefault(); void this.tocOptions(id); return; }
       if (id !== null && f.t.objects[id]?.kind === 'tof') { e.preventDefault(); void this.tofOptions(id); return; }
@@ -2730,6 +2771,23 @@ export class DocumentMode {
     const now0 = performance.now();
     const c0 = this.clicks;
     const n = now0 - c0.time < DOUBLE_CLICK_MS && Math.hypot(e.clientX - c0.at.x, e.clientY - c0.at.y) < 4 ? c0.n + 1 : 1;
+    // between pages: a double-click there hides or shows the white space (nothing else happens)
+    if (!this.reading && this.view.spaceAt(e.clientX, e.clientY)) { Object.assign(c0, { n, time: now0, at: { x: e.clientX, y: e.clientY } }); return; }
+    // typing into a header or footer: clicks in any page's header or footer place the caret there; the document's text can't be changed meanwhile (double-click it to go back)
+    if (f.box?.hf && !this.reading) {
+      Object.assign(c0, { n, time: now0, at: { x: e.clientX, y: e.clientY } });
+      const at = this.view.hfAt(e.clientX, e.clientY);
+      if (!at) return;
+      if (at.page !== f.box.hf.page || at.kind !== f.box.hf.kind) this.startHf(at.page, at.kind);
+      const bed = f.box!.ed;
+      const o = offsetAt(bed.layout(), p.x, p.y);
+      if (n === 2) bed.selectWord(o);
+      else if (n >= 3) bed.selectParagraph(o);
+      else bed.setCaret(o, e.shiftKey);
+      this.dragging = { kind: 'box' };
+      s.setPointerCapture(e.pointerId);
+      return;
+    }
     // Outline: a heading's mark picks it with everything under it; a double-click folds or unfolds it
     const mark = this.view.markAt(e.clientX, e.clientY);
     if (mark !== null) {
@@ -2895,6 +2953,19 @@ export class DocumentMode {
       const p = this.view.toDoc(e.clientX, e.clientY);
       const o = id !== null ? f.t.objects[id] : undefined;
       if (this.figureOffer.previewing) { this.view.scroller.style.cursor = this.figureOffer.hover(p); return; }
+      const space = this.reading ? null : this.view.spaceAt(e.clientX, e.clientY);
+      if (space) {
+        this.view.scroller.style.cursor = space === 'hide' ? HIDE_SPACE_CURSOR : SHOW_SPACE_CURSOR;
+        const tip = space === 'hide' ? 'Double-click to hide white space' : 'Double-click to show white space';
+        if (this.view.scroller.title !== tip) this.view.scroller.title = tip;
+        return;
+      }
+      // typing into a header or footer: the document's text can't be typed into meanwhile
+      if (f.box?.hf) {
+        if (this.view.scroller.title) this.view.scroller.title = '';
+        this.view.scroller.style.cursor = this.view.hfAt(e.clientX, e.clientY) ? 'text' : 'default';
+        return;
+      }
       // a figure under the pointer shows its area in light grey
       const hover = o?.kind === 'drawing' && o.frame ? id : null;
       if (this.view.hover !== hover) { this.view.hover = hover; this.view.redraw(); }
@@ -3046,8 +3117,8 @@ export class DocumentMode {
   /** Put an object into the text at the caret (in place of the selection), and pick it. */
   insertObject(o: DocObject, kind = 'Insert', look: Partial<rt.RunStyle> = {}): number {
     const f = this.file!;
-    const b = f.box?.cell ? f.box : null;
-    if (b && (o.kind === 'table' || o.kind === 'textbox' || o.kind === 'bib' || o.kind === 'toc' || o.kind === 'tof' || o.kind === 'index' || o.kind === 'toa')) this.stopBox();
+    const b = f.box?.cell || f.box?.hf ? f.box : null;
+    if (b && (o.kind === 'table' || o.kind === 'textbox' || o.kind === 'bib' || o.kind === 'toc' || o.kind === 'tof' || o.kind === 'index' || o.kind === 'toa' || (b.hf && (o.kind === 'note' || o.kind === 'cite' || o.kind === 'math')))) this.stopBox();
     else if (b) {
       // into the table cell typed into: the object joins the document, its character the cell's text
       const id = nextObjectId(f.t);
@@ -3056,7 +3127,8 @@ export class DocumentMode {
       const at = bed.start;
       b.recorded = true;
       bed.replace(bed.start, bed.end, [objectRun(id, { ...bed.typingStyle(), ...look })], undefined, 'edit');
-      b.recorded = false;
+      // (a header's typing goes on in the same step)
+      if (!b.hf) b.recorded = false;
       if (o.kind === 'drawing' || o.kind === 'picture') bed.select(at, at + 1);
       return id;
     }
@@ -3703,7 +3775,7 @@ export class DocumentMode {
       case 'open-object': { const id = this.pickedObject(); const o = id !== null ? f.t.objects[id] : undefined; if (id === null || o?.kind !== 'picture' || !o.embed) { this.host.flash('Click an embedded object first (or double-click it).'); break; } void this.openEmbedded(id); break; }
       case 'insert-text-box': this.insertTextBox(); break;
       case 'wrap-inline': case 'wrap-square': case 'wrap-topBottom': case 'wrap-behind': case 'wrap-front': {
-        const id = this.pickedObject() ?? f.box?.id ?? null;
+        const id = this.pickedObject() ?? (f.box && !f.box.hf ? f.box.id : null);
         if (id === null) { this.host.flash('Click a structure, picture or text box first, then choose how text wraps around it.'); break; }
         this.setWrap(id, cmd.slice(5) as WrapKind | 'inline');
         break;
@@ -3817,10 +3889,26 @@ export class DocumentMode {
         this.panel.open('page', this.ribbonAnchor(cmd === 'paper-custom' ? '#doc-paper' : '#doc-margins'), cmd === 'paper-custom' ? 'pg-w' : 'pg-top');
         this.updateRibbon();
         return true;
-      case 'header-edit': this.panel.open('hf', null, 'hf-header0'); return true;
+      case 'header-edit': this.editHfHere('header'); return true;
+      case 'hf-close': this.closeHf(); return true;
+      case 'hf-goto': { const at = f.box?.hf; if (at) this.startHf(at.page, at.kind === 'header' ? 'footer' : 'header'); else this.editHfHere('header'); return true; }
+      case 'hf-goto-header': this.editHfHere('header'); return true;
+      case 'hf-goto-footer': this.editHfHere('footer'); return true;
+      case 'hf-prev': this.hfStep(-1); return true;
+      case 'hf-next': this.hfStep(1); return true;
+      case 'hf-link': this.hfLink(); return true;
+      case 'hf-align-tab': void this.hfAlignTab(); return true;
+      case 'hf-first': case 'hf-odd-even': {
+        const hf = this.section().hf;
+        const blank = (): HfZones => ({ header: ['', '', ''], footer: ['', '', ''] });
+        this.setSection({ hf: cmd === 'hf-first' ? { ...hf, firstPage: !hf.firstPage || undefined, first: hf.first ?? blank() } : { ...hf, oddEven: !hf.oddEven || undefined, even: hf.even ?? blank() } }, cmd === 'hf-first' ? 'Different First Page' : 'Different Odd & Even Pages');
+        this.updateRibbon();
+        return true;
+      }
+      case 'hf-show-text': this.hfShowText = !this.hfShowText; this.redraw(); this.updateRibbon(); return true;
       case 'hf-picture': void this.headerPicture(); return true;
       case 'hf-plain': this.headerPlain(); return true;
-      case 'footer-edit': this.panel.open('hf', null, 'hf-footer1'); return true;
+      case 'footer-edit': this.editHfHere('footer'); return true;
       case 'numbers-s': {
         const hf = this.section().hf;
         const s = hf.prefix === 'S';
@@ -3862,6 +3950,8 @@ export class DocumentMode {
     const f = this.file!;
     // the sections are worked out from the whole text: again only when the text changes
     if (this.sections?.t !== f.t) this.sections = { t: f.t, secs: sectionsOf(f.t) };
+    // typing into a header: its section
+    if (f.box?.hf) return this.sections.secs[f.box.hf.section] ?? this.sections.secs[0];
     return sectionAt(this.sections.secs, paraAt(f.ed.text, f.ed.focus));
   }
   private sections: { t: DocText; secs: Section[] } | null = null;
@@ -3869,7 +3959,216 @@ export class DocumentMode {
   /** Change the section the caret is in. */
   private setSection(patch: SectionPatch, label: string): void {
     const f = this.file!;
-    f.ed.update(changeSection(f.t, this.section().index, patch), label);
+    const index = this.section().index;
+    this.hfChange(() => f.ed.update(changeSection(f.t, index, patch), label));
+  }
+
+  // ---------------------------------------------------------------- headers and footers on the page
+
+  /** Header & Footer > Show Document Text: the document's text faded while headers are edited (hidden when off). */
+  private hfShowText = true;
+
+  /**
+   * Start typing into a page's header or footer on the page (Word's double-click on it): the
+   * caret where it was clicked, or at its end; the Header & Footer tab in front.
+   */
+  private startHf(page: number, kind: 'header' | 'footer', at?: { x: number; y: number }): boolean {
+    const f = this.file;
+    if (!f || this.reading) return false;
+    // (headers can't be seen with the white space hidden)
+    if (this.view.hideSpace) this.setHideSpace(false);
+    const was = !!f.box?.hf;
+    const ed = f.editHf(page, kind);
+    if (!ed) return false;
+    ed.onTyped = (typed) => afterTyping(ed, typed);
+    if (at) ed.setCaret(offsetAt(ed.layout(), at.x, at.y));
+    const lay = ed.layout();
+    if (lay.lines.length) this.view.reveal(lay.box);
+    this.changed('selection');
+    this.updateRibbon();
+    if (!was) this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="hf"]')?.click();
+    return true;
+  }
+
+  /** The header or footer of the page the caret is on (Insert > Header, Footer). */
+  private editHfHere(kind: 'header' | 'footer'): void {
+    const f = this.file;
+    if (!f) return;
+    if (continuous(f.view.kind)) this.setViewKind('print');
+    const page = f.box?.hf ? f.box.hf.page : this.view.pageIndexAt(f.ed.caret().y1);
+    this.startHf(page, kind);
+  }
+
+  /** Close Header and Footer: back to the document's text, its caret where it was. */
+  private closeHf(): void {
+    const f = this.file;
+    if (!f?.box?.hf) return;
+    this.stopBox();
+    this.changed('selection');
+    this.updateRibbon();
+  }
+
+  /**
+   * A change to the headers' settings while one is typed into (Different First Page, Link to
+   * Previous, the page numbers): the header is finished (plain text again if it is), the change
+   * made, and typing goes on in the same page's header or footer.
+   */
+  private hfChange(change: () => void): void {
+    const f = this.file!;
+    const at = f.box?.hf;
+    if (!at) { change(); return; }
+    f.endBox();
+    change();
+    this.startHf(Math.min(at.page, f.layout().pages.length - 1), at.kind);
+  }
+
+  /** Header & Footer > Previous, Next: the header or footer before or after this one that is another (another section's, or the first page's). */
+  private hfStep(dir: 1 | -1): void {
+    const f = this.file;
+    const at = f?.box?.hf;
+    if (!f || !at) return;
+    const pages = f.layout().pages;
+    const keyOf = (i: number) => { const pg = pages[i]; return `${pg.section}|${hfKeyFor(pg.hf, at.kind, !!pg.starts, pg.n ?? i + 1)}`; };
+    const here = keyOf(at.page);
+    for (let i = at.page + dir; i >= 0 && i < pages.length; i += dir) {
+      if (keyOf(i) !== here) { this.startHf(i, at.kind); return; }
+    }
+    this.host.flash(dir > 0 ? 'This is the last header or footer.' : 'This is the first header or footer.');
+  }
+
+  /** Header & Footer > Link to Previous: this section shows the one before's header and footer (or its own again). */
+  private hfLink(): void {
+    const f = this.file;
+    const at = f?.box?.hf;
+    if (!f || !at) return;
+    const pages = f.layout().pages;
+    const own = pages[at.page]?.section ?? 0;
+    if (own === 0) { this.host.flash('The first section has no section before it to link to.'); return; }
+    const sec = sectionsOf(f.t)[own];
+    this.hfChange(() => f.ed.update(changeSection(f.t, own, sec.linked ? { hf: sec.hf, linked: false } : { linked: true }), 'Link to Previous'));
+  }
+
+  /** Header ▾ and Footer ▾: ready-made headers and footers, and Edit and Remove. */
+  private hfGallery(kind: 'header' | 'footer', x: number, y: number): void {
+    const f = this.file;
+    if (!f) return;
+    const name = kind === 'header' ? 'Header' : 'Footer';
+    popupMenu(x, y, [
+      ...HF_PRESETS.filter((pr) => pr.kind === kind).map((pr): [string, () => void, boolean, string] => [pr.name, () => this.hfPreset(pr), true, hfPresetPicture(pr)]),
+      null,
+      [`Edit ${name}`, () => this.editHfHere(kind)],
+      [`Remove ${name}`, () => this.hfPreset({ kind, name: `Remove ${name}`, zones: ['', '', ''], number: -1 })],
+    ]);
+  }
+
+  /** A ready-made header or footer in this section's (every page's, and the first and even pages' of their own when they have them), then typed into. */
+  private hfPreset(pr: HfPreset): void {
+    const f = this.file;
+    if (!f) return;
+    const at = f.box?.hf;
+    const page = at ? at.page : this.view.pageIndexAt(f.ed.caret().y1);
+    if (at) f.endBox();
+    const secs = sectionsOf(f.t);
+    let index = f.layout().pages[page]?.section ?? 0;
+    while (index > 0 && secs[index].linked) index--;
+    const hf = secs[index].hf;
+    const kind = pr.kind;
+    const props = f.t.props ?? {};
+    const zones = pr.zones.map((z) => z.replace('{title}', props.title || '[Title]').replace('{author}', props.author || '[Author]')) as [string, string, string];
+    const next: HeaderFooter = { ...hf, [kind]: zones };
+    // the page number: put in its place, or taken out (from this part; the other keeps its own)
+    if (pr.number >= 0) { next.numbers = `${kind}-${['left', 'center', 'right'][pr.number]}` as NumberPlace; if (pr.prefix !== undefined) next.prefix = pr.prefix; }
+    else if (hf.numbers.startsWith(kind)) next.numbers = 'none';
+    if (next.first) next.first = { ...next.first, [kind]: ['', '', ''] };
+    if (next.even) next.even = { ...next.even, [kind]: [...zones].reverse() as [string, string, string] };
+    if (next.bodies) {
+      const bodies = { ...next.bodies };
+      for (const k of HF_KEYS) if (kindOf(k) === kind) delete bodies[k];
+      if (Object.keys(bodies).length) next.bodies = bodies; else delete next.bodies;
+    }
+    f.ed.update(changeSection(f.t, index, { hf: next }), pr.name.startsWith('Remove') ? pr.name : `${kind === 'header' ? 'Header' : 'Footer'}: ${pr.name}`);
+    if (!pr.name.startsWith('Remove') || at) this.startHf(Math.min(page, f.layout().pages.length - 1), at && pr.name.startsWith('Remove') ? at.kind : kind);
+  }
+
+  /** Header & Footer > Page Number ▾: where the number goes, its format, and S1, S2…. */
+  private hfNumberMenu(x: number, y: number): void {
+    const f = this.file;
+    if (!f) return;
+    const hf = this.section().hf;
+    const tick = (on: boolean, label: string) => `${on ? '✓' : '\u2003'} ${label}`;
+    const place = (v: NumberPlace) => this.setSection({ hf: { ...hf, numbers: v } }, 'Page numbers');
+    const at = (v: NumberPlace, label: string): [string, () => void] => [tick(hf.numbers === v, label), () => place(v)];
+    popupMenu(x, y, [
+      at('header-left', 'Top of Page, Left'), at('header-center', 'Top of Page, Center'), at('header-right', 'Top of Page, Right'),
+      at('footer-left', 'Bottom of Page, Left'), at('footer-center', 'Bottom of Page, Center'), at('footer-right', 'Bottom of Page, Right'),
+      null,
+      [tick(hf.prefix === 'S', 'S1, S2… (Supporting Information)'), () => this.run('numbers-s')],
+      ['Format Page Numbers…', () => this.run('page-number-format')],
+      [tick(false, 'Current Position'), () => this.hfField('page'), !!f.box?.hf],
+      null,
+      ['Remove Page Numbers', () => place('none'), hf.numbers !== 'none'],
+    ]);
+  }
+
+  /** Header & Footer > Document Info ▾: the author, title, file name… as fields that keep up to date. */
+  private hfInfoMenu(x: number, y: number): void {
+    const codes: [FieldCode, string][] = [['author', 'Author'], ['title', 'Document Title'], ['subject', 'Subject'], ['company', 'Company'], ['filename', 'File Name'], ['numpages', 'Number of Pages']];
+    popupMenu(x, y, codes.map(([code, label]): [string, () => void] => [label, () => this.hfField(code)]));
+  }
+
+  /** A field at the caret (in the header or footer typed into). */
+  private hfField(code: FieldCode): void {
+    this.insertObject({ kind: 'field', code }, 'Insert field');
+    this.focus();
+  }
+
+  /** Header & Footer > Insert Alignment Tab: a tab that lines what follows up at the left, centre or right of the header (adding the tab stop). */
+  private async hfAlignTab(): Promise<void> {
+    const f = this.file;
+    const b = f?.box;
+    if (!f || !b?.hf) return;
+    const got = await ask('Alignment Tab', [
+      { name: 'align', label: 'Alignment', value: 'right', options: [{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }, { value: 'right', label: 'Right' }] },
+      { name: 'leader', label: 'Leader', value: 'none', options: [{ value: 'none', label: 'None' }, { value: 'dot', label: '.......' }, { value: 'hyphen', label: '-------' }, { value: 'underscore', label: '______' }] },
+    ], { ok: 'Insert' });
+    this.focus();
+    if (!got || f.box !== b) return;
+    const sec = this.section();
+    const W = Math.max(36, sec.page.w - sec.page.left - sec.page.right);
+    const pos = got.align === 'left' ? 0 : got.align === 'center' ? W / 2 : W;
+    const ed = b.ed;
+    const p = paraAt(ed.text, ed.focus);
+    const ps = ed.t.paras[p] ?? {};
+    const tabs = (ps.tabs ?? []).filter((x) => Math.abs(x.pos - pos) > 0.5);
+    const leader = got.leader === 'none' ? undefined : got.leader as TabStop['leader'];
+    const stop: TabStop = { pos, kind: got.align === 'left' ? 'left' : got.align === 'center' ? 'center' : 'right', ...(leader ? { leader } : {}) };
+    const paras = [...ed.t.paras];
+    paras[p] = { ...ps, tabs: [...tabs, stop].sort((a, c) => a.pos - c.pos) };
+    ed.update({ ...ed.t, paras }, 'Alignment tab');
+    ed.type('\t');
+  }
+
+  /** Hide white space (a double-click between pages): the pages' top and bottom margins hidden, or shown again, keeping the text under the pointer where it is. */
+  private setHideSpace(hide: boolean, clientY?: number): void {
+    if (this.view.hideSpace === hide) return;
+    const v = this.view;
+    const r = v.scroller.getBoundingClientRect();
+    const y = clientY ?? r.top + v.scroller.clientHeight / 2;
+    const d = v.toDoc(r.left + v.scroller.clientWidth / 2, y);
+    for (const x of this.views) x.hideSpace = hide;
+    docPagePrefs.whiteSpace = !hide;
+    docPagePrefs.changed?.();
+    v.sizeSpace();
+    // the same text under the pointer
+    const s = v.toScreen(d.x, d.y);
+    v.scroller.scrollTop += s.y - (y - r.top);
+    for (const x of this.views) x.paint();
+    v.onMove();
+  }
+
+  /** Settings ▸ Preferences: crop marks, and white space between pages. */
+  applyPagePrefs(): void {
+    for (const x of this.views) { x.cropMarks = docPagePrefs.cropMarks; x.hideSpace = !docPagePrefs.whiteSpace; x.sizeSpace(); x.paint(); }
   }
 
   /** Layout tab: margins, paper, orientation, columns and page numbers (of the section the caret is in), breaks and line numbers. */
@@ -3955,14 +4254,11 @@ export class DocumentMode {
     let next = nextObjectId(f.t);
     const pid = next++;
     objects[pid] = { kind: 'picture', src: dataUrl(pic.bytes, pic.mime), w, h, px };
-    const N = styleOf(f.t, undefined);
-    const look: rt.RunStyle = { font: N.font, size: Math.min(10, N.size) };
+    const look = plainLook(f.t);
     let body = hf.bodies?.[key];
     if (!body) {
-      const numbers = numbersFor(hf, key);
-      const at = numbers !== 'none' && numbers.startsWith(kind) && (!key.startsWith('first') || hf.onFirst) ? ['left', 'center', 'right'].indexOf(numbers.split('-')[1]) : -1;
       const W = Math.max(36, sec.page.w - sec.page.left - sec.page.right);
-      body = bodyFromZones(zonesFor(hf, key), at, hf.prefix, look, W, () => { const id = next++; objects[id] = { kind: 'field', code: 'page' }; return id; });
+      body = zonesAsBody(f.t, hf, key, W, () => { const id = next++; objects[id] = { kind: 'field', code: 'page' }; return id; });
     }
     body = insertInZone(body, Number(got.zone) || 0, { ...look, obj: pid, text: OBJECT_CHAR });
     f.ed.update(changeSection({ ...f.t, objects }, sec.index, { hf: { ...hf, bodies: { ...hf.bodies, [key]: body } } }), 'Header picture');
@@ -5275,6 +5571,23 @@ export class DocumentMode {
     show.addEventListener('change', () => { this.run(show.value === '0' ? 'outline-all' : `outline-level-${show.value}`); this.focus(); });
     r.querySelector<HTMLInputElement>('#doc-outline-format')!.addEventListener('change', () => { this.run('outline-format'); this.focus(); });
     r.querySelector<HTMLInputElement>('#doc-outline-first')!.addEventListener('change', () => { this.run('outline-first'); this.focus(); });
+    // Header & Footer: its options and where the header and footer sit
+    r.querySelector<HTMLInputElement>('#doc-hf-first')!.addEventListener('change', () => { this.run('hf-first'); this.focus(); });
+    r.querySelector<HTMLInputElement>('#doc-hf-oddeven')!.addEventListener('change', () => { this.run('hf-odd-even'); this.focus(); });
+    r.querySelector<HTMLInputElement>('#doc-hf-showtext')!.addEventListener('change', () => { this.run('hf-show-text'); this.focus(); });
+    for (const [id, key] of [['#doc-hf-top', 'header'], ['#doc-hf-bottom', 'footer']] as const) {
+      const el = r.querySelector<HTMLInputElement>(id)!;
+      const apply = () => {
+        if (!this.file) return;
+        const n = parseLength(el.value, 'in');
+        const pg = this.section().page;
+        if (n === null || n < 0 || Math.abs(n - pg[key]) < 0.01) { this.updateRibbon(); return; }
+        this.setSection({ page: { ...pg, [key]: n } }, key === 'header' ? 'Header from Top' : 'Footer from Bottom');
+        this.updateRibbon();
+      };
+      el.addEventListener('change', apply);
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); this.focus(); } });
+    }
     // zoom and the views, under the pages; turning the pages in Read Mode
     for (const b of document.querySelectorAll<HTMLButtonElement>('#doc-statusbar [data-doc], #doc-readbar [data-doc]')) {
       b.addEventListener('mousedown', (e) => e.preventDefault());
@@ -5446,13 +5759,34 @@ export class DocumentMode {
     pick('#doc-para-spacing', des.spacing ?? 'default');
     press('restrict-editing', !!f.t.protect);
     press('show-comments', this.comments.shown);
-    const fig = this.pickedObject() ?? f.box?.id ?? null;
+    const fig = this.pickedObject() ?? (f.box && !f.box.hf ? f.box.id : null);
     const wrapSel = this.ribbon.querySelector<HTMLSelectElement>('#doc-wrap');
     if (wrapSel) {
       wrapSel.disabled = fig === null;
       pick('#doc-wrap', fig === null ? 'inline' : floatOf(f.t.objects[fig])?.wrap ?? 'inline');
       const inl = wrapSel.querySelector<HTMLOptionElement>('option[value="inline"]');
       if (inl) inl.disabled = fig !== null && f.t.objects[fig]?.kind === 'textbox';
+    }
+    // the Header & Footer tab shows while a header or footer is typed into
+    const hfTab = this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="hf"]');
+    if (hfTab) {
+      const on = !!f.box?.hf;
+      hfTab.hidden = !on;
+      if (!on && hfTab.getAttribute('aria-selected') === 'true') this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="home"]')?.click();
+      if (on) {
+        const hs = sec.hf;
+        const box = (id: string, v: boolean) => { const el = this.ribbon.querySelector<HTMLInputElement>(id); if (el) el.checked = v; };
+        box('#doc-hf-first', !!hs.firstPage);
+        box('#doc-hf-oddeven', !!hs.oddEven);
+        box('#doc-hf-showtext', this.hfShowText);
+        const own = f.layout().pages[f.box!.hf!.page]?.section ?? 0;
+        press('hf-link', own > 0 && !!sectionsOf(f.t)[own]?.linked);
+        for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-doc="hf-link"]')) b.disabled = own === 0;
+        for (const [id, v] of [['#doc-hf-top', pg.header], ['#doc-hf-bottom', pg.footer]] as const) {
+          const el = this.ribbon.querySelector<HTMLInputElement>(id);
+          if (el && el !== active) el.value = `${showLength(v, 'in')}"`;
+        }
+      }
     }
     // the Table tab shows while the caret is in a table (or a table is picked)
     const tg = this.tableTarget();

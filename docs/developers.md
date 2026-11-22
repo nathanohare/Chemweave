@@ -63,9 +63,12 @@ The repository's [wiki](https://github.com/nathanohare/Chemweave/wiki) is made f
 |---|---|
 | `src/model.ts` | The drawing: atoms, bonds, text, arrows, shapes, undo and redo |
 | `src/render/` | Drawing to the screen (tiles, bond and label drawing), and pictures for other programs (EMF, SVG, PNG) |
-| `src/editor/` | Mouse tools and hotkeys; align, flip and rotate |
-| `src/ui/` | Tool bar, Style panel, the caption text box and template pictures |
-| `src/richtext.ts` | Styled caption text (bold, subscripts, Greek letters) |
+| `src/editor/` | Mouse tools and keyboard shortcuts; align, flip and rotate |
+| `src/ui/` | Everything on screen around the drawing: toolboxes, ribbons, the Style panel, dialogs and windows, and each mode's own screen (`sheet-mode.ts`, `si-mode.ts` and so on) |
+| `src/commands/` | The command list (`registry.ts`) that the Insert menu and Search are built from |
+| `index.html` | The other menus and the Presentation, Spreadsheet, Document and Design ribbons |
+| `src/ui/canvas-ribbon.ts` | The Canvas ribbon |
+| `src/richtext.ts`, `src/text/` | Styled text (bold, subscripts, Greek letters), text read as chemistry, font measuring |
 | `src/chem/` | Elements, labels, ring and chain geometry, templates, Clean Up Structure, molfile, formula |
 | `scripts/make-templates.mjs` | Makes the template shapes (`src/chem/templates.json`) with RDKit |
 | `src/io/cdxml.ts`, `cdxml-write.ts` | Reading and saving ChemDraw `.cdxml` files |
@@ -76,6 +79,16 @@ The repository's [wiki](https://github.com/nathanohare/Chemweave/wiki) is made f
 | `src/design/`, `src/ui/design-panel.ts`, `layers-panel.ts`, `template-gallery.ts` | Design mode: the shape library, the icon library (`design/icons.ts`, data made by `scripts/build-icons.mjs` from `@mdi/svg`), ready-made layouts, the Layers panel |
 | `src/document/` | Document mode: the document, page layout, captions and fields, references and citations, find and replace, printing |
 | `src/io/docx-write.ts`, `docx-read.ts`, `cfb.ts` | Saving and opening Word files, and the ChemDraw objects embedded in them |
+| `src/deck/`, `src/io/pptx-read.ts`, `pptx-write.ts` | Presentation mode: slides, layouts, templates, animation and transitions, and PowerPoint files |
+| `src/sheet/`, `src/io/xlsx-*.ts` | Spreadsheet mode: the workbook, formulas and functions, chemistry functions, charts, templates, and Excel files |
+| `src/si/`, `src/ui/si-mode.ts`, `doc-si.ts` | SI Project: compounds, data, checks and the Supporting Information it builds |
+| `src/kb/` | The Knowledge Base tables and their data, each value with its source |
+| `src/library/` | Your own library of references and compounds, and **Find Structure in Files** |
+| `src/keep/` | AutoSave, recovery of unsaved work and version history |
+| `src/morph/` | Reaction animation (ported from cdxmorph, MIT) and its GIF and MP4 export |
+| `src/recognise/` | Reading structures from pictures and PDFs |
+| `src/ai/` | The Assistant: what a request would send, and the link to the person's own AI model |
+| `src/vendor/` | Third-party code kept in the repository (OPSIN, for name to structure) |
 | `src/worker/` | The RDKit chemistry engine, running in the background |
 | `src-tauri/` | The desktop app shell (Tauri), its settings and icons |
 | `tests/` | Unit tests |

@@ -430,7 +430,7 @@ function booking(): Workbook {
 
 /** Group duties week by week. */
 function rota(): Workbook {
-  const wb = new Workbook(['Rota']);
+  const wb = new Workbook(['Schedule']);
   wb.build(() => {
     const sh = wb.sheets[0];
     const duties = ['Solvent system', 'Waste', 'Glassware and oven', 'NMR tubes', 'Gas cylinders', 'Orders', 'Group meeting snacks'];
@@ -463,5 +463,5 @@ export const SHEET_TEMPLATES: SheetTemplate[] = [
   { id: 'titration', category: 'analysis', name: 'Titration (organolithium)', blurb: 'Titrant mass and reagent volume at the endpoint for each run, and the average molarity.', make: titration },
   { id: 'orders', category: 'lab', name: 'Order tracker', blurb: 'What was ordered, from whom, price, account, and status from requested to received.', make: orders },
   { id: 'booking', category: 'lab', name: 'Instrument booking', blurb: 'A week of hourly slots for one instrument, to write your name in.', make: booking },
-  { id: 'rota', category: 'lab', name: 'Group duties rota', blurb: 'Weekly duties (solvent system, waste, glassware, NMR tubes) with this week picked out.', make: rota },
+  { id: 'rota', category: 'lab', name: 'Group duties schedule', blurb: 'Weekly duties (solvent system, waste, glassware, NMR tubes) with this week picked out.', make: rota },
 ];

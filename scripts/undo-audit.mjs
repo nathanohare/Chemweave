@@ -84,7 +84,8 @@ try {
       await pick();
       const a = await probe();
       await run(cmd);
-      await page.waitForTimeout(60);
+      // (time for a command that waits on the chemistry engine, such as Add ID Label, to finish)
+      await page.waitForTimeout(250);
       await tidy();
       await page.waitForTimeout(40);
       const b = await probe();

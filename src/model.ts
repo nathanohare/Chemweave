@@ -370,6 +370,8 @@ export interface TextRun {
   spacing?: number;
   /** Slides: a PowerPoint field (slidenum, datetime1…) that PowerPoint fills in; this is the text it last showed. */
   field?: string;
+  /** Slides: a citation of one of the presentation's references (by id), its text the reference's number on the slide (Insert ▸ Citation). */
+  cite?: string;
   /**
    * The text's language (a tag such as de-DE), for spelling, when not US English: kept from
    * PowerPoint, and from Word (w:lang) where not the document's own language (DocText.lang).
@@ -620,6 +622,8 @@ export interface Caption {
   ph?: Placeholder;
   /** Height of a placeholder's box, in points (its top is the top of the first line). */
   boxH?: number;
+  /** Slide Master view: a layout's References placeholder, shown with sample lines (where slides' reference lines go). */
+  refsBox?: boolean;
   /** Tied to a structure: it keeps its place beside it when the structure moves or changes. */
   attach?: Attachment;
   /** Don't warn about this compound label (shared with a different structure on purpose). */

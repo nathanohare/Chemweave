@@ -8,11 +8,11 @@ This page covers Spreadsheet mode: cells and formulas, structures in cells, the 
 
 Click **+** at the end of the tab strip and pick **Spreadsheet (Tables, Charts, and Dashboards)**, or choose **File ▸ New ▸ Spreadsheet**. While a spreadsheet is showing, Ctrl+N starts another one.
 
-**File ▸ New ▸ Spreadsheet** opens a blank workbook with a window of templates over it; click outside the window to keep the blank workbook, or pick one: **Reactions** (reaction table with the best entry found for you, substrate scope table, 24- and 96-well screening plates shaded by yield, kinetics time course with a chart, k and half-life), **Reagents and stock** (reagent sheet with the percent yield calculated, chemical inventory, stock solution calculator, gas cylinder and solvent still log), **Analysis** (HPLC/GC calibration curve, ee and er from HPLC peak areas, NMR yield with an internal standard, organolithium titration) and **Lab management** (order tracker, instrument booking, group duties rota). Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
+**File ▸ New ▸ Spreadsheet** opens a blank workbook with a window of templates over it; click outside the window to keep the blank workbook, or pick one: **Reactions** (reaction table with the best entry found for you, substrate scope table, 24- and 96-well screening plates shaded by yield, kinetics time course with a chart, k and half-life), **Reagents and stock** (reagent sheet with the percent yield calculated, chemical inventory, stock solution calculator, gas cylinder and solvent still log), **Analysis** (HPLC/GC calibration curve, ee and er from HPLC peak areas, NMR yield with an internal standard, organolithium titration) and **Lab management** (order tracker, instrument booking, group duties schedule). Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
 
 Spreadsheets open from .xlsx, .xlsm, .xls and .ods files as well as text and SD files; see [File types](files-and-sharing.md#file-types).
 
-The ribbon has **Home**, **Insert**, **Page Layout**, **Formulas**, **Data**, **Review** and **View** tabs. **Table Design**, **Chart**, **PivotTable**, **Sparkline** and **Dashboard** tabs appear when you click in a table, a chart, a PivotTable, a sparkline or a dashboard. The **Sheet** submenus of the **Edit**, **View**, **Insert** and **Format** menus hold many of the same commands.
+The ribbon has **Home**, **Insert**, **Page Layout**, **Formulas**, **Data**, **Review** and **View** tabs. **Table Design**, **Chart**, **PivotTable**, **Sparkline** and **Dashboard** tabs appear when you click in a table, a chart, a PivotTable, a sparkline or a dashboard. The **Spreadsheet** submenus of the **Edit**, **View**, **Insert** and **Format** menus hold many of the same commands.
 
 ## Working with cells
 
@@ -40,7 +40,7 @@ When the pointer turns into a pointing hand over a cell, that cell holds a struc
 
 Click in your table and choose **Home** tab ▸ **Properties** (or **Insert ▸ Spreadsheet ▸ Insert Property Columns…**). Check the columns you want:
 
-Formula, MW, Exact mass, HRMS m/z, cLogP, TPSA, H-bond donors, H-bond acceptors, Rotatable bonds, SMILES, InChIKey and **Duplicate of**.
+Formula, MW, Exact mass, HRMS m/z, cLogP, TPSA, H-bond donors, H-bond acceptors, Rotatable bonds, logS, pKa, pKaH, bp (est.), mp (est.), SMILES, InChIKey and **Duplicate of**. The last five before SMILES are estimates from the structure, not measured values.
 
 Each column fills itself in for every row and updates when you change a structure. **Duplicate of** names the first other row with the same compound (same InChIKey), so a compound entered twice shows immediately.
 
@@ -56,12 +56,10 @@ Type `=` to start a formula. References with `$`, references to other sheets and
 
 Common functions include `SUM`, `AVERAGE`, `MIN`, `MAX`, `MEDIAN`, `STDEV`, `COUNT`, `COUNTA`, `ROUND`, `IF`, `IFERROR`, `AND`, `OR`, `CONCATENATE`, `LN`, `LOG10`, `EXP`, `SQRT`, and the line-fit functions `SLOPE`, `INTERCEPT`, `RSQ`, `STEYX` and `FORECAST`. These Excel functions work too, with the same results as Excel:
 
-- **Chemistry:** `SIGMA(group, position)` gives a Hammett substituent constant (Hansch, Leo and Taft, *Chem. Rev.* 1991, 91, 165): `=SIGMA("NO2","para")` is 0.78. Positions are `"para"`, `"meta"` and `"para-"` (σp⁻, for a lone pair or negative charge the group takes through the ring, as in phenol and anilinium acidities). Groups are written as formulas or abbreviations: NO2, CN, CF3, Cl, Br, OMe, NMe2, CO2Me, Me, H.
 - **Looking things up:** `VLOOKUP`, `HLOOKUP`, `XLOOKUP`, `INDEX`, `MATCH`, `XMATCH`, `CHOOSE`, `OFFSET`, `INDIRECT`, `ROWS`, `COLUMNS`.
 - **Conditions:** `SUMIF`, `SUMIFS`, `COUNTIF`, `COUNTIFS`, `AVERAGEIF`, `AVERAGEIFS`, `MAXIFS`, `MINIFS`, `IFS`, `SWITCH`, `IFNA`. Conditions are written as in Excel: `">5"`, `"<>done"`, `"Pd*"` (`*` and `?` are wildcards; `~*` is a real star).
 - **Text:** `LEFT`, `RIGHT`, `MID`, `FIND`, `SEARCH`, `SUBSTITUTE`, `REPLACE`, `TEXT`, `VALUE`, `CONCAT`, `TEXTJOIN`, `TEXTSPLIT`.
 - **Statistics:** `STDEV.S`, `STDEV.P`, `VAR.S`, `VAR.P` (and the older `VAR`, `VARP`, `STDEVP`), `T.TEST`, `T.INV`, `T.INV.2T`, `T.DIST` (with `.2T` and `.RT`), `CONFIDENCE.NORM`, `CONFIDENCE.T`, `NORM.DIST`, `NORM.INV`, `NORM.S.DIST`, `NORM.S.INV`, `LINEST`, `LOGEST`, `PERCENTILE` (`.INC`, `.EXC`), `QUARTILE` (`.INC`, `.EXC`), `RANK` (`.EQ`, `.AVG`), `LARGE`, `SMALL`.
-
 - **Dates and times:** `TODAY`, `NOW`, `DATE`, `TIME`, `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND`, `WEEKDAY`, `WEEKNUM`, `ISOWEEKNUM`, `DATEDIF`, `DAYS`, `EDATE`, `EOMONTH`, `NETWORKDAYS`, `WORKDAY` (and their `.INTL` forms), `DATEVALUE`, `TIMEVALUE`. Dates are numbered as in Excel, so they copy both ways. Typing `2026-10-22`, `10/22/2026`, `22-Oct-26` or `13:30` makes a date or time, and the column widens to show it.
 
 ### Arrays that spill
@@ -99,14 +97,26 @@ The first argument is a cell holding a structure, or SMILES in quotes.
 | `=HRMS(B2,"[M+Na]+")` | m/z of an ion ([M+H]+ if you give none) |
 | `=CLOGP(B2)`, `=TPSA(B2)` | cLogP and TPSA |
 | `=HBD(B2)`, `=HBA(B2)`, `=ROTB(B2)` | H-bond donors, acceptors, rotatable bonds |
+| `=LOGS(B2)` | Estimated water solubility, log mol/L (Delaney ESOL) |
+| `=PKA(B2)`, `=PKAH(B2)` | Estimated pKa of the most acidic proton, and of the conjugate acid of the most basic atom (Perrin–Dempsey–Serjeant rules) |
+| `=BP(B2)`, `=MP(B2)` | Estimated boiling and melting points, °C (Joback–Reid) |
 | `=SMILES(B2)`, `=INCHIKEY(B2)` | Canonical SMILES, standard InChIKey |
 | `=DUPLICATE(B2,B:B)` | Another row with the same compound, or blank |
 | `=ISOMZ(B2,"[M+H]+",2)` | m/z of the M+2 peak of that ion |
 | `=ISOABUND(B2,"[M+H]+",2)` | Height of that peak, as % of the tallest |
+| `=SIGMA("NO2","para")` | Hammett substituent constant of a group (0.78 here) |
+| `=HAMMETT(B2,"sigma","wavy")` | Hammett constants of the groups on a drawn aryl ring, added up (Σσ) |
+| `=FIELDVALUE(A2,"Density")` | A field of a compound cell's card (see [The Compound data type](#the-compound-data-type)) |
 
 For `ISOMZ` and `ISOABUND`, the compound can also be a formula in quotes (`"C9H8O4"`). The last number is the peak: 0 for M, 1 for M+1 and so on. Past the last peak they give a blank. A charged structure is its own ion, whatever adduct you give.
 
 You can combine them as usual: `=1000*D2/MW(B2)` turns mg into mmol.
+
+`SIGMA(group, position)` gives a Hammett substituent constant (Hansch, Leo and Taft, *Chem. Rev.* 1991, 91, 165): `=SIGMA("NO2","para")` is 0.78. Positions are `"para"`, `"meta"` and `"para-"` (σp⁻, for a lone pair or negative charge the group takes through the ring, as in phenol and anilinium acidities). Groups are written as formulas or abbreviations: NO2, CN, CF3, Cl, Br, OMe, NMe2, CO2Me, Me, H.
+
+`HAMMETT(structure, quantity, reference)` reads the groups off a drawn structure instead. The reference is the position they are counted from: `"wavy"` for a wavy bond on the ring carbon, `"star"`, or a diamond's number. The quantity is `"sigma"` (σm for meta groups, σp for para), `"sm"`, `"sp"`, `"sp+"`, `"sp-"`, `"F"`, `"R"` or `"group"`. Several groups add up. Ortho groups give #N/A, since Hammett σ has no ortho values, unless you add `"ortho=sp"`.
+
+`LOGS`, `PKA`, `PKAH`, `BP` and `MP` are estimates from the structure alone, for a first look. Where no rule covers the structure they give #N/A. For measured values, use the Compound data type or the Knowledge Base.
 
 ## Formatting
 
@@ -236,7 +246,7 @@ Select a block of cells and choose **Insert** tab ▸ **Scatter**, **Line**, **C
 - **Chemistry fits** (under **Fit Line**, after the line): **First-order decay** (y = y₀·e^(−kt), with k and t½; leave the intercept free or set y₀), **Second-order** (1/y = 1/y₀ + kt), **Arrhenius** (k against T: Eₐ in kJ/mol and A), **Eyring** (k against T: ΔH‡, ΔS‡ and ΔG‡ at 298 K) and **Hammett** (log(k/k₀) against σ: ρ, optionally through the origin). Each is fitted on its straight-line form (ln y against t, 1/y against t, ln k or ln(k/T) against 1/T) and drawn on your axes, with the results under the equation. For Arrhenius and Eyring, choose whether T is in kelvin or °C. Excel has no such trendlines, so a first-order fit is saved as Excel's exponential trendline and a Hammett fit as a straight line; the others keep Chemweave's picture of the chart.
 - **Copy as Picture** to paste the chart into Word, PowerPoint or a document or slide here; **Save as Picture…** for a PNG or SVG; **Delete Chart**.
 
-### Stick spectra
+### Combo, histogram, box, bubble and radar charts
 
 The Insert tab also has **Combo**, **Histogram**, **Box**, **Bubble** and **Radar**:
 
@@ -257,6 +267,9 @@ All five are saved as Excel's own chart types. Histograms and box charts use the
 - **Decomposition tree:** the total, then a bar for each category of the first level, filled to its share. Select the chart, then click a node to **expand** it: a new column splits it by the next level, with lines out to its parts. Click an expanded node again to close it, or click the total to close the whole tree.
 
 In the chart panel, each level's **Categories** can be changed or the level removed, and for a treemap or decomposition tree the panel shows how far it is drilled or expanded, with a button to go back to the whole. Excel has no Sankey chart or decomposition tree, and its treemaps can't be drilled into, so all three are saved for Excel as a bar chart of the same cells. Open the file here again and the chart comes back as it was, drilled or expanded as you left it.
+
+### Stick spectra
+
 In the chart panel, each series of a scatter chart has **Sticks** (peaks drawn up or down from zero, as in a mass spectrum) and **Show x (m/z)** to label each peak with its value. You can use these for any spectrum you put in a sheet.
 
 ## Isotope patterns
@@ -295,7 +308,7 @@ Each new tile asks which table or block of cells to read. For a gallery, the str
 - **Settings:** click a tile for its settings in the right-hand panel; click an empty spot, or **Dashboard Settings**, for the dashboard's columns, row height, gap and background.
 - **Slicers:** click more buttons to pick several, and click a selected one again to drop it. Several slicers apply together. The ✕ on a slicer, or **Clear Filters**, shows everything again.
 - **Clicking a chart:** click a bar, a pie slice, a Sankey node or band, or a treemap box, and every other tile fed by the same table shows only the rows it stands for, just as a slicer would. A band stands for the rows that run between its two nodes. The chart you clicked keeps what you selected and fades the rest. To show everything again, click the same part again or click the chart where it has no bars; **Clear Chart Filter** on the right-click menu and **Clear Filters** work too. The panel lists what each chart is filtering by.
-- **Treemaps and decomposition trees:** click a treemap box that has categories inside it to drill into it, and click a step of the trail above it to go back up. Click a decomposition tree node to expand it, and click it again to close it. Either way, the other tiles are filtered by the category you opened, as in PowerBI.
+- **Treemaps and decomposition trees:** click a treemap box that has categories inside it to drill into it, and click a step of the trail above it to go back up. Click a decomposition tree node to expand it, and click it again to close it. Either way, the other tiles are filtered by the category you opened, as in Power BI.
 
 ## Links
 
@@ -321,7 +334,7 @@ The **Page Layout** tab sets how a sheet prints, as in Excel: **Margins**, **Ori
 - They come back in the right cells after rows or columns were inserted, deleted or sorted in Excel. A structure whose SMILES was changed in Excel stays as Excel left it, with the SMILES showing.
 - Workbook settings and links made in Excel are kept on save: dates in workbooks that count from 1904 (an old Mac setting) show and save as they did in Excel, formulas that read other workbooks (`[1]Sheet1!A1`) keep their links for Excel to update, and array formulas entered with Ctrl+Shift+Enter keep filling their whole block.
 - **Save As** also writes a CSV file or an SD file (.sdf). These keep only the values of the sheet showing.
-- **File ▸ Open** reads .xlsx, .csv and SD files. An SD file gives one row per structure, with its data fields as columns.
+- **File ▸ Open** reads .xlsx, .xlsm, .xls and .ods workbooks, text files (.csv and tab-separated) and SD files (see [File types](files-and-sharing.md#file-types)). An SD file gives one row per structure, with its data fields as columns.
 - Copy cells here and paste into Excel to get the values, with SMILES for structures. Cells copied in Excel paste here.
 - **File ▸ Print…** (Ctrl+P) prints the whole sheet or the selected cells, portrait or landscape, with or without gridlines. Structures print as pictures.
 
