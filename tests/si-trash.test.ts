@@ -149,3 +149,31 @@ describe('the Trash', () => {
     expect(parsePyJson('[]')).toEqual([]);
   });
 });
+
+describe('stored files (Store additional files and folders)', () => {
+  it('stores a file in private/ as SI Assistant lists it, keeps its note, and comes back from the Trash', async () => {
+    const f = exampleFolder();
+    const p = await SiProject.open(f);
+    const c = p.compounds.find((x) => !x.schemeId)!;
+    const name = await p.addPrivateFile(c, '1H NMR.mnova', new Uint8Array([1, 2, 3]));
+    expect(name).toBe('1H NMR.mnova');
+    expect(await p.addPrivateFile(c, '1H NMR.mnova', new Uint8Array([4]))).toBe('1H NMR (2).mnova');
+    expect([...f.files.get(`${c.folder}/private/1H NMR.mnova`)!]).toEqual([1, 2, 3]);
+    await p.setPrivateNote(c, name, 'processed, CDCl3');
+    const read = parsePyJson(new TextDecoder().decode(f.files.get(`${c.folder}/compound.json`)!)) as Json;
+    expect((read.values as Json).private_files).toEqual([
+      { file: '1H NMR.mnova', kind: 'file', note: 'processed, CDCl3' },
+      { file: '1H NMR (2).mnova', kind: 'file', note: '' },
+    ]);
+    await p.removePrivateItem(c, name);
+    expect(f.files.has(`${c.folder}/private/1H NMR.mnova`)).toBe(false);
+    const entry = (await listTrash(p)).find((e) => e.info.field_key === 'private_files')!;
+    expect(await restoreFromTrash(p, entry.id)).toContain('Restored 1H NMR.mnova');
+    expect([...f.files.get(`${c.folder}/private/1H NMR.mnova`)!]).toEqual([1, 2, 3]);
+    const back = (await SiProject.open(f)).compounds.find((x) => x.id === c.id)!;
+    expect((back.data.values as Json).private_files).toContainEqual({ file: '1H NMR.mnova', kind: 'file', note: 'processed, CDCl3' });
+    // a hand-edited name never reaches outside private/
+    await p.removePrivateItem(c, '../structure.mol');
+    expect(f.files.has(`${c.folder}/structure.mol`)).toBe(true);
+  });
+});
