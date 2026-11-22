@@ -4233,6 +4233,16 @@ const sheetFiles: SheetFileDeps = {
     return new Uint8Array(await (await canvasPng(canvas)).arrayBuffer());
   },
   rowHeights: (s) => sheetMode?.view.autoHeights(s) ?? new Map(),
+  // structures as ChemDraw objects (Settings ▸ General): ChemDraw's data, and an EMF to show until opened
+  chemdraw: (s, style) => {
+    const d = structureDoc(s.contents, style);
+    const pic = recordPicture(d, FIGURE_MARGIN);
+    if (!pic) return null;
+    const cdx = cdxmlToCdx(writeCdxml(d, { name: 'Sheet structure.cdxml', textMeasure: measureText }));
+    return { cdx, emf: pictureEmf(pic), w: pic.box.x2 - pic.box.x1, h: pic.box.y2 - pic.box.y1 };
+  },
+  readChemdraw: (cdx, style) => docRead.chemdraw!(cdx, style),
+  get chemdrawObjects() { return officeStructures.xlsx === 'chemdraw'; },
 };
 
 /** Pictures of a document's drawings for Word files (300 dots to the inch, as for PowerPoint). */
@@ -4258,7 +4268,7 @@ const docFiles: DocxDeps = {
 };
 
 /** How structures are saved in Word and PowerPoint files (Settings ▸ General): pictures, or ChemDraw objects. */
-let officeStructures: Settings['officeStructures'] = { docx: 'pictures', pptx: 'pictures' };
+let officeStructures: Settings['officeStructures'] = { docx: 'pictures', pptx: 'pictures', xlsx: 'pictures' };
 
 /** Opening Word files: ChemDraw objects in them become structures, kept at the size they had. */
 const docRead: DocxReadDeps = {
@@ -11698,7 +11708,7 @@ function convertDeckChemdraw(deck: Deck): void {
 
 /** Settings ▸ General: how structures are saved in Word and PowerPoint files. */
 const STRUCTURES_AS = [{ value: 'pictures', label: 'Pictures (SVG and PNG)' }, { value: 'chemdraw', label: 'ChemDraw objects' }];
-const STRUCTURES_AS_HELP = 'ChemDraw objects open in ChemDraw when double-clicked in Word or PowerPoint (they show as pictures on computers without ChemDraw). Pictures (SVG and PNG) look the same in every program. Chemweave opens both as editable drawings. ChemDraw objects already in a file stay as they are.';
+const STRUCTURES_AS_HELP = 'ChemDraw objects open in ChemDraw when double-clicked in Word, PowerPoint or Excel (they show as pictures on computers without ChemDraw). Pictures (SVG and PNG) look the same in every program. Chemweave opens both as editable drawings. ChemDraw objects already in a file stay as they are.';
 
 /** Settings ▸ General: selecting, groups, linked text, and your name on tracked changes. */
 async function generalPreferences(): Promise<void> {
@@ -11715,6 +11725,7 @@ async function generalPreferences(): Promise<void> {
       help: 'Off: they keep the formatting they had in Word and become drawings when you edit one. On: each is redrawn here in the document\'s drawing style.' },
     { name: 'docxStructures', label: 'Save structures in Word files as', value: officeStructures.docx, options: STRUCTURES_AS, help: STRUCTURES_AS_HELP },
     { name: 'pptxStructures', label: 'Save structures in PowerPoint files as', value: officeStructures.pptx, options: STRUCTURES_AS, help: STRUCTURES_AS_HELP },
+    { name: 'xlsxStructures', label: 'Save structures in Excel files as', value: officeStructures.xlsx, options: STRUCTURES_AS, help: STRUCTURES_AS_HELP },
     { name: 'reviewer', label: 'User name for tracked changes', value: reviewAuthor() },
     { name: 'startView', label: 'Show the Start screen when Chemweave opens', type: 'checkbox', value: String(startView) },
   ], { ok: 'Save', actions: {
@@ -11728,7 +11739,7 @@ async function generalPreferences(): Promise<void> {
   linkLook = r.linkLook === 'keep' ? 'keep' : 'style';
   askWholeDrawing = r.ask === 'true';
   docRead.convertChemDraw = r.convertChemDraw === 'true';
-  officeStructures = { docx: r.docxStructures === 'chemdraw' ? 'chemdraw' : 'pictures', pptx: r.pptxStructures === 'chemdraw' ? 'chemdraw' : 'pictures' };
+  officeStructures = { docx: r.docxStructures === 'chemdraw' ? 'chemdraw' : 'pictures', pptx: r.pptxStructures === 'chemdraw' ? 'chemdraw' : 'pictures', xlsx: r.xlsxStructures === 'chemdraw' ? 'chemdraw' : 'pictures' };
   matchStructure.on = r.matchStructure === 'true';
   straightenLinear.on = r.straightenLinear === 'true';
   setReviewAuthor(r.reviewer ?? '');

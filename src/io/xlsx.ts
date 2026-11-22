@@ -16,13 +16,13 @@
 // xlsx-relocate.ts).
 
 import { MAX_CELL_TEXT } from './sheet-sniff';
-import { Package, PackageReader, xml, xmlAttr, hex6, REL, kids, kid, rAttr, PackageError } from './ooxml';
+import { Package, PackageReader, xml, xmlAttr, hex6, REL, kids, kid, rAttr, PackageError, bytesHash } from './ooxml';
 import { appPropsXml, corePropsXml, readKeptParts, writeKeptParts, readTree, writeTree, relativeTarget, type KeptTree } from './kept-parts';
 import { printOf } from './native-print';
 import { fromDataUrl } from '../render/images';
 import { GRID_NAME, gridOf, gridNameXml, readGridName, restoreSheet, moveFilter, STILL, type Grid } from './xlsx-relocate';
 import { officeTarget, linkFromTarget } from '../links';
-import { Workbook, Sheet, Structure, CellStyle, ColumnDef, Filter, Condition, CompareOp, Border, BorderStyle, Side } from '../sheet/workbook';
+import { Workbook, Sheet, Structure, makeStructure, CellStyle, ColumnDef, Filter, Condition, CompareOp, Border, BorderStyle, Side } from '../sheet/workbook';
 import { keyOf, rowOf, colOf, colName, cellName, parseRange, quoteSheet, Range, MAX_COLS, rangesOverlap, rangeName, inRange, MAX_ROWS, sheetNameProblem, fixSheetName } from '../sheet/refs';
 import { normalizeFormula, shiftFormula } from '../sheet/formula';
 import { callsName, fileFormula, legacyFormula, needsDynamic, readFileFormula } from '../sheet/array-formulas';
@@ -65,7 +65,8 @@ import { type Query, seenQueryId } from '../sheet/query';
 import { keepFileValues, fileValues, type FileValue } from './xlsx-cached';
 import { readRichValues, writeRichParts, richMetadataXml, keepPointers, pointerOf, richValueKinds } from './xlsx-rich';
 import { LeftOut, connectionsKept, queryTableOf, CT_QUERY_TABLE, REL as KEPT_FEATURE_REL } from './xlsx-left-out';
-import { readSheetOle, writeSheetOle, oleVml, oleNote, type KeptSheetOle, type OleWriteState } from './xlsx-ole';
+import { readSheetOle, writeSheetOle, oleVml, oleNote, structureOle, structureOleRef, type KeptSheetOle, type OleWriteState } from './xlsx-ole';
+import { chemdrawObject, chemdrawProg, chemdrawCdx } from './ole-object';
 export { applyTint };
 
 /** Pictures of structures for Excel (the app draws them; tests use stand-ins). */
@@ -79,6 +80,12 @@ export interface XlsxPictures {
   picture(s: Structure, style: DocStyle, cell: { w: number; h: number; fill?: string; align?: CellStyle['align']; valign?: CellStyle['valign'] }): Promise<Uint8Array | null>;
   /** Heights of rows that grow to fit wrapped text, in pixels (the grid measures the text). */
   rowHeights?(s: Sheet): Map<number, number>;
+  /** Structures saved as ChemDraw objects (Settings ▸ General), not pictures. */
+  chemdrawObjects?: boolean;
+  /** A structure as ChemDraw's data (CDX) and its picture as an EMF, with its size in points, for a ChemDraw object. */
+  chemdraw?(s: Structure, style: DocStyle): { cdx: Uint8Array; emf: Uint8Array; w: number; h: number } | null;
+  /** ChemDraw's data (CDX) as a structure, for one changed in ChemDraw from Excel. */
+  readChemdraw?(cdx: Uint8Array, style: DocStyle): Contents | null;
 }
 
 const HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
@@ -267,6 +274,8 @@ export interface ModelCell {
   computed?: true;
   /** Data > Data Types > Compound: the cell's card (Excel is given the compound's name). */
   compound?: CompoundCard;
+  /** A structure saved as a ChemDraw object: a print of its ChemDraw data, to tell whether it was changed in ChemDraw from Excel. */
+  cdx?: string;
 }
 
 export interface ModelSheet {
@@ -721,6 +730,8 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     }
 
     const anchors: string[] = [];
+    // structures saved as ChemDraw objects
+    const made: KeptSheetOle[] = [];
     const pictures: { png: Uint8Array; key: string; name: string }[] = [];
     const pictureFor = new Map<string, string>();
     const drawingPath = `xl/drawings/drawing${drawingNo + 1}.xml`;
@@ -801,8 +812,26 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
         if (vm !== undefined && !f && typeof v === 'string' && FILE_ERRORS.includes(v)) body = `<c r="${ref}"${sAttr} t="e"><v>${v}</v></c>`;
         if (body) cells.push(body);
 
-        // the structure's picture, over the cell (or merged block)
-        if (cell?.structure) {
+        // the structure as a ChemDraw object over the cell (Settings ▸ General ▸ Save structures in
+        // Excel files as), unless one Excel had there is kept (changed in ChemDraw from Excel)
+        const asObject = cell?.structure && deps.chemdrawObjects && deps.chemdraw && cell.structure.contents.atoms.length && !s.ole?.some((o) => o.at?.[0] === c && o.at?.[1] === r)
+          ? (() => { try { return deps.chemdraw!(cell.structure!, book.drawingStyle); } catch { return null; } })() : null;
+        if (asObject && cell?.structure) {
+          const m = s.mergeAt(r, c);
+          const r2 = m?.r2 ?? r, c2 = m?.c2 ?? c;
+          const x = cols.start(c), y = rows.start(r);
+          const w = cols.start(c2 + 1) - x, h = rows.start(r2 + 1) - y;
+          // the object at the structure's own shape, fitted in the cell (or merged block) and centred
+          const k = Math.min(1, (w - 2) / Math.max(1, asObject.w / 0.75), (h - 2) / Math.max(1, asObject.h / 0.75));
+          const ow = (asObject.w / 0.75) * k, oh = (asObject.h / 0.75) * k;
+          const ox = x + (w - ow) / 2, oy = y + (h - oh) / 2;
+          const f = cols.at(ox, c), fr = rows.at(oy, r), t = cols.at(ox + ow, c), tr = rows.at(oy + oh, r);
+          const prog = chemdrawProg();
+          made.push(structureOle(cellName(r, c), prog, chemdrawObject(asObject.cdx, prog, { emf: asObject.emf, w: asObject.w, h: asObject.h }), { bytes: asObject.emf, ext: 'emf', type: 'image/x-emf' },
+            { col: f.i, colOff: f.off, row: fr.i, rowOff: fr.off }, { col: t.i, colOff: t.off, row: tr.i, rowOff: tr.off }, { w: ow * 0.75, h: oh * 0.75 }));
+          if (entry) entry.cdx = bytesHash(asObject.cdx);
+        } else if (cell?.structure) {
+          // the structure's picture, over the cell (or merged block)
           const m = s.mergeAt(r, c);
           const r2 = m?.r2 ?? r, c2 = m?.c2 ?? c;
           const x = cols.start(c), y = rows.start(r);
@@ -970,7 +999,8 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     // from the file read, which share the notes' VML drawing (their shapes numbered after the notes')
     const notes = standIn ? null : notesParts(s, si + 1, persons);
     const vmlPath = `xl/drawings/vmlDrawing${vmlNo + 1}.vml`;
-    const ole = !standIn && own.ole?.length ? writeSheetOle(pkg, own.ole, path, vmlPath, (si + 1) * 1024 + 1 + (notes ? s.notes.size : 0), oleState) : null;
+    const objects = [...(own.ole ?? []), ...made];
+    const ole = !standIn && objects.length ? writeSheetOle(pkg, objects, path, vmlPath, (si + 1) * 1024 + 1 + (notes ? s.notes.size : 0), oleState) : null;
     if (ole) anchors.push(...ole.anchors);
     let drawingXml = '';
     const sheetRels = path;
@@ -1959,7 +1989,22 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       const commentsPath = relOf(NOTES_REL.comments), vmlPath = relOf(NOTES_REL.vml), threadedPath = relOf(NOTES_REL.threaded);
       leftOut.sheet(pkg, path!, ws, vmlPath ? pkg.text(vmlPath) : null, (t) => keptQueries.has(t));
       // embedded objects (a ChemDraw structure pasted into Excel, an embedded Word file): kept to save back
-      const ole = readSheetOle(pkg, path!, ws, vmlPath ?? null, dr);
+      const ole = readSheetOle(pkg, path!, ws, vmlPath ?? null, dr).filter((o) => {
+        // a structure saved here as a ChemDraw object: the cell holds it again (restored above); one
+        // changed in ChemDraw from Excel becomes the cell's structure, or is kept as it is
+        const ref = structureOleRef(o);
+        const mc = ref ? ms?.cells.find((x) => x.cdx && cellName(x.r, x.c) === ref) : undefined;
+        if (!mc) return true;
+        const bin = o.parts.find((p) => p.rel.endsWith('/oleObject') || p.rel.endsWith('/package'));
+        const cdx = bin ? chemdrawCdx(bin.bytes) : null;
+        if (cdx && bytesHash(cdx) === mc.cdx) return false;
+        const contents = cdx && o.at ? (() => { try { return _deps?.readChemdraw?.(cdx, book.drawingStyle) ?? null; } catch { return null; } })() : null;
+        if (!contents || !o.at || !contents.atoms.length) return true;
+        const [c, r] = o.at;
+        s.setCell(r, c, { structure: makeStructure(contents), style: s.cell(r, c)?.style });
+        restored.changed++;
+        return false;
+      });
       if (ole.length) { s.ole = ole; oleObjects.push(...ole); }
       if (commentsPath || threadedPath) {
         const notes = readNotes(commentsPath ? pkg.xml(commentsPath) : null, shownNotes(vmlPath ? pkg.text(vmlPath) : null), threadedPath ? pkg.xml(threadedPath) : null, personsDoc);

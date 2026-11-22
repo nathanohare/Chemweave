@@ -263,6 +263,39 @@ export function writeSheetOle(pkg: Package, objects: KeptSheetOle[], sheetPath: 
   return { oleObjects: items.length ? `<oleObjects>${items.join('')}</oleObjects>` : '', vmlShapes: shapes.join(''), vmlTypes: [...types.values()].join(''), anchors };
 }
 
+/** Where a structure saved as an object sits: its corner cells and the offsets into them, in pixels. */
+export interface OleAnchor { col: number; colOff: number; row: number; rowOff: number }
+
+/**
+ * A structure in a cell saved as a ChemDraw object (Settings ▸ General ▸ Save structures in Excel
+ * files as), written as Excel 2010 writes an embedded object (18.3.1.59 oleObject in an
+ * mc:AlternateContent with its x14 objectPr anchor, and the VML shape it names for Excel 2007).
+ * `ref` names the cell it was saved over (its VML shape is "Structure A2", as a picture would be).
+ */
+export function structureOle(ref: string, prog: string, bin: Uint8Array, preview: { bytes: Uint8Array; ext: string; type: string }, from: OleAnchor, to: OleAnchor, size: { w: number; h: number }): KeptSheetOle {
+  const p = (a: OleAnchor, fc: string, fr: string) => `<xdr:col>@@${fc}@@</xdr:col><xdr:colOff>${Math.round(a.colOff * 9525)}</xdr:colOff><xdr:row>@@${fr}@@</xdr:row><xdr:rowOff>${Math.round(a.rowOff * 9525)}</xdr:rowOff>`;
+  const progId = prog.replace(/[&"<]/g, '');
+  const xml = `<mc:AlternateContent xmlns:mc="${MC}"><mc:Choice xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" Requires="x14">` +
+    `<oleObject xmlns:r="${REL_NS}" progId="${progId}" shapeId="@@spid@@" r:id="@@p0@@"><objectPr defaultSize="0" autoPict="0" r:id="@@p1@@">` +
+    `<anchor xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" moveWithCells="1"><from>${p(from, 'fc', 'fr')}</from><to>${p(to, 'tc', 'tr')}</to></anchor>` +
+    `</objectPr></oleObject></mc:Choice><mc:Fallback><oleObject xmlns:r="${REL_NS}" progId="${progId}" shapeId="@@spid@@" r:id="@@p0@@"/></mc:Fallback></mc:AlternateContent>`;
+  const shape = `<v:shape id="Structure_x0020_${ref}" o:spid="_x0000_s@@spid@@" type="#_x0000_t75" style="position:absolute;margin-left:0;margin-top:0;width:${+size.w.toFixed(2)}pt;height:${+size.h.toFixed(2)}pt;z-index:1" filled="f" stroked="f">` +
+    `<v:imagedata o:relid="@@v0@@" o:title=""/><x:ClientData ObjectType="Pict"><x:SizeWithCells/>` +
+    `<x:Anchor>@@fc@@, ${Math.round(from.colOff)}, @@fr@@, ${Math.round(from.rowOff)}, @@tc@@, ${Math.round(to.colOff)}, @@tr@@, ${Math.round(to.rowOff)}</x:Anchor><x:CF>Pict</x:CF><x:AutoPict/></x:ClientData></v:shape>`;
+  const image = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+  const pic: KeptOlePart = { bytes: preview.bytes, ext: preview.ext, type: preview.type, rel: image };
+  return {
+    progId, xml, at: [from.col, from.row, to.col, to.row],
+    parts: [{ bytes: bin, ext: 'bin', type: 'application/vnd.openxmlformats-officedocument.oleObject', rel: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject' }, pic],
+    vml: { shape, shapeType: '', parts: [pic] },
+  };
+}
+
+/** The cell a structure saved here as an object was saved over ("A2" from its VML shape "Structure A2"); null for anyone else's object. */
+export function structureOleRef(o: KeptSheetOle): string | null {
+  return /\bid="Structure_x0020_([A-Z]{1,3}\d{1,7})"/.exec(o.vml?.shape ?? '')?.[1] ?? null;
+}
+
 /** A VML drawing of its own for a sheet's objects (one without notes), its shape ids in block `sheetNo` (o:idmap). */
 export function oleVml(sheetNo: number, types: string, shapes: string): string {
   return '<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">' +

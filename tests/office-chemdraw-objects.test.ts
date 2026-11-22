@@ -197,8 +197,8 @@ describe('structures in PowerPoint files saved as ChemDraw objects', () => {
 });
 
 describe('the setting', () => {
-  it('is pictures for both unless chosen, and reads back per file type', () => {
-    expect(parseSettings(null).officeStructures).toEqual({ docx: 'pictures', pptx: 'pictures' });
-    expect(parseSettings(JSON.stringify({ officeStructures: { docx: 'chemdraw', pptx: 'nonsense' } })).officeStructures).toEqual({ docx: 'chemdraw', pptx: 'pictures' });
+  it('is pictures for each unless chosen, and reads back per file type', () => {
+    expect(parseSettings(null).officeStructures).toEqual({ docx: 'pictures', pptx: 'pictures', xlsx: 'pictures' });
+    expect(parseSettings(JSON.stringify({ officeStructures: { docx: 'chemdraw', pptx: 'nonsense', xlsx: 'chemdraw' } })).officeStructures).toEqual({ docx: 'chemdraw', pptx: 'pictures', xlsx: 'chemdraw' });
   });
 });

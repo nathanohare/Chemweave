@@ -10,6 +10,10 @@ import { describe, it, expect } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { writeXlsx, readXlsx, type XlsxPictures } from '../src/io/xlsx';
 import { Package, REL } from '../src/io/ooxml';
+import { zipSync } from 'fflate';
+import { Workbook, makeStructure } from '../src/sheet/workbook';
+import { chemdrawObject } from '../src/io/ole-object';
+import type { Contents } from '../src/model';
 
 const pictures: XlsxPictures = { box: () => ({ w: 60, h: 40 }), picture: async () => null };
 const MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
@@ -143,5 +147,51 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
     // and back again with Undo
     wb.undo(); wb.undo();
     expect(sh.ole![0].at).toEqual([2, 1, 4, 6]);
+  });
+
+  describe('structures saved as ChemDraw objects (Settings ▸ General)', () => {
+    const CDX_HEAD = [0x56, 0x6a, 0x43, 0x44, 0x30, 0x31, 0x30, 0x30, 0x04, 0x03, 0x02, 0x01];
+    const cdxOf = (n: number) => new Uint8Array([...CDX_HEAD, n, n, n, n]);
+    const mol = (label: string): Contents => ({ atoms: [{ id: 1, x: 0, y: 0, z: 6, charge: 0, isotope: 0, label } as never], bonds: [], captions: [], arrows: [], shapes: [] });
+    const asObjects: XlsxPictures = { ...pictures, chemdrawObjects: true, chemdraw: () => ({ cdx: cdxOf(1), emf: EMF, w: 30, h: 20 }) };
+    async function saved(): Promise<Record<string, Uint8Array>> {
+      const wb = new Workbook();
+      wb.sheets[0].setCell(1, 1, { structure: makeStructure(mol('CCO')) });
+      return unzipSync(await writeXlsx(wb, asObjects));
+    }
+
+    it('writes an Excel ChemDraw object over the cell, with its VML shape and picture, instead of a picture', async () => {
+      const out = await saved();
+      const sheet = strFromU8(out['xl/worksheets/sheet1.xml']);
+      expect(sheet).toMatch(/<oleObject [^>]*progId="ChemDraw[^"]*" shapeId="\d+" r:id="rId\d+"><objectPr /);
+      const vml = Object.entries(out).find(([n]) => /vmlDrawing\d+\.vml$/.test(n))!;
+      expect(strFromU8(vml[1])).toContain('id="Structure_x0020_B2"');
+      expect(Object.keys(out).some((n) => /^xl\/embeddings\/oleObject\d+\.bin$/.test(n))).toBe(true);
+      const drawing = Object.entries(out).find(([n]) => /drawings\/drawing\d+\.xml$/.test(n));
+      expect(drawing ? strFromU8(drawing[1]) : '').not.toContain('name="Structure B2"');
+    });
+
+    it('opens as the cell\'s structure again, the object not kept twice', async () => {
+      const { book: wb, warnings } = await readXlsx(zipSync(await saved()), { readChemdraw: () => mol('X') });
+      const sh = wb.sheets[0];
+      expect(sh.ole ?? []).toHaveLength(0);
+      expect(sh.cell(1, 1)?.structure?.contents.atoms[0]).toMatchObject({ label: 'CCO' });
+      expect(warnings.join(' ')).not.toMatch(/changed in another program|embedded object/i);
+      // and saved again, one object
+      const again = strFromU8(unzipSync(await writeXlsx(wb, asObjects))['xl/worksheets/sheet1.xml']);
+      expect(again.match(/<oleObject /g)?.length).toBe(2);
+    });
+
+    it('takes a structure changed in ChemDraw from Excel, or keeps the object when it cannot be read', async () => {
+      const out = await saved();
+      const bin = Object.keys(out).find((n) => /^xl\/embeddings\/oleObject\d+\.bin$/.test(n))!;
+      out[bin] = chemdrawObject(cdxOf(2));
+      const read = await readXlsx(zipSync(out), { readChemdraw: () => mol('CCC') });
+      expect(read.book.sheets[0].cell(1, 1)?.structure?.contents.atoms[0]).toMatchObject({ label: 'CCC' });
+      expect(read.book.sheets[0].ole ?? []).toHaveLength(0);
+      expect(read.warnings.join(' ')).toMatch(/changed in another program/);
+      const kept = await readXlsx(zipSync(out));
+      expect(kept.book.sheets[0].ole).toHaveLength(1);
+    });
   });
 });
