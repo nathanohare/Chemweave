@@ -458,7 +458,8 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     borders: { v: { top: { style: 'single', w: 1, color: '#000000' } } },
     fig: { v: { w: 40, h: 30 } },
     pad: { v: { left: 4 } },
-    paras: { v: [{ align: 'center' }] },
+    // (not the alignment: a cell's paragraphs lined up one way are read as the cell lined up that way, TableCell.align)
+    paras: { v: [{ spaceBefore: 6 }] },
     runs: { v: [{ text: 'A', italic: true }] },
   },
   TableData: {
@@ -657,17 +658,9 @@ const KNOWN_GAPS: Partial<Record<Column, Record<string, string>>> = {
   pptx: {},
   'docx-drawing': {},
   'xlsx-drawing': {},
-  word: {
-    'ParaStyle.cont': "a list item that carries on the one above (Shift+Enter) comes back as an item of its own",
-    'TableCell.align': "a table cell's own alignment is lost",
-    'TableCell.paras': "a table cell's paragraph settings are lost",
-    'TableData.look': "the table style options (header row, banded rows…) are lost",
-    'TableData.noRepeat': "Repeat Header Rows off is lost",
-  },
+  word: {},
   excel: {},
-  'pptx-slide': {
-    'SlideHF.footer': "a slide's own Footer switch is lost (checked on a master with no footer text)",
-  },
+  'pptx-slide': {},
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -899,6 +892,9 @@ async function tripWord(items: Item[]): Promise<Back[]> {
       paras.push({ ...N }, { ...N });
       objects[1000 + i] = { kind: 'table', table: { ...structuredClone(TABLE), ...p } as never };
     } else {
+      // (a paragraph that carries on a list item has one above it, as it always has in a document)
+      const q = p as { cont?: boolean; list?: 'bullet' | 'number'; level?: number };
+      if (q.cont) { runs.push({ ...n, text: 'Item above' }, { ...n, text: '\n' }); paras.push({ ...N, list: q.list, level: q.level }); }
       runs.push({ ...n, text: `Sample text #${i}#` });
       paras.push({ ...N, ...p });
     }

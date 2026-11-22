@@ -933,6 +933,8 @@ class Reader {
     const own: SlideHF = {};
     if (has('sldNum') !== showsNumber(m, lay)) own.number = has('sldNum');
     if (m.footer.trim() && has('ftr') !== showsFooter(m, lay)) own.footer = has('ftr');
+    // (with no footer text, its own switch from its tag)
+    else if (!m.footer.trim() && /^[01]$/.test(tags[TAG.slideFooter] ?? '')) own.footer = tags[TAG.slideFooter] === '1';
     if (has('dt') !== showsDate(m, lay)) own.date = has('dt');
     const hf = Object.keys(own).length ? own : undefined;
     // a canvas slide saved here

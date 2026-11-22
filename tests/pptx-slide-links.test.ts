@@ -66,3 +66,14 @@ describe('a video\'s settings PowerPoint keeps nowhere of its own (R3)', () => {
     expect([v?.length, v?.rewind]).toEqual([12.5, true]);
   });
 });
+
+describe('a slide\'s own Footer switch on a master with no footer text (R3)', () => {
+  for (const footer of [true, false]) {
+    it(`comes back ${footer ? 'on' : 'off'}`, async () => {
+      const deck = Deck.design(new Doc(), { w: 720, h: 405 });
+      expect(deck.master.footer.trim()).toBe('');
+      const back = readPptx(await writePptx({ size: deck.size, master: deck.master, slides: [{ layout: 'blank', doc: new Doc(), notes: '', hf: { footer } }] }, opts));
+      expect(back.slides[0].hf?.footer).toBe(footer);
+    });
+  }
+});

@@ -153,6 +153,8 @@ export const TAG = {
    * shows that picture (not after Change Picture there).
    */
   picPrint: 'CHEMILLUSTRATOR_PIC_PRINT',
+  /** On a slide: its own Footer switch (Header & Footer > Apply) while the master has no footer text, so no footer placeholder can say it. */
+  slideFooter: 'CHEMILLUSTRATOR_SLIDE_FOOTER',
 };
 
 /**
@@ -1221,7 +1223,7 @@ class Writer {
     const refTag = slideRefsTag(s);
     const stepTag = stepsTag(doc, drawings.map((d) => d.sel));
     const linksTag = slideLinks(doc);
-    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.ownItems ? { [TAG.ownItems]: '1' } : {}), ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims) } : {}), ...turnTag(s.anims, (a) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined)), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...(linksTag ? { [TAG.links]: linksTag } : {}), ...part });
+    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.ownItems ? { [TAG.ownItems]: '1' } : {}), ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims) } : {}), ...turnTag(s.anims, (a) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined)), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...(linksTag ? { [TAG.links]: linksTag } : {}), ...(s.hf?.footer !== undefined && !m.footer.trim() ? { [TAG.slideFooter]: s.hf.footer ? '1' : '0' } : {}), ...part });
     const bg = s.background ? await this.background(path, s.background) : '';
     return `${HEAD}<p:sld ${XMLNS}${s.hideGraphics ? ' showMasterSp="0"' : ''}${s.hidden ? ' show="0"' : ''}><p:cSld>${bg}<p:spTree>${GROUP}${out.join('')}</p:spTree><p:custDataLst><p:tags r:id="${tags}"/></p:custDataLst></p:cSld>` +
       `<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${transitionXml(s.transition)}${timingXml(expandParas(s.anims ?? [], (cid) => { const c = doc.captions.get(cid); return c ? plainText(c.runs).split('\n') : null; }), (a) => spids.get(targetKey(a.target)) ?? [], videos, (t) => spids.get(targetKey(t))?.[0])}` +
