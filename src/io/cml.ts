@@ -8,7 +8,10 @@
 // Written from the CML schema (xml-cml.org: molecule, atomArray/atom with elementType, x2, y2,
 // formalCharge, isotopeNumber; bondArray/bond with atomRefs2, order, bondStereo) and Chem4Word's
 // published notes on its use of CML (CML.md in its Apache-licensed repository: the c4w
-// namespace, customXmlPartGuid, S/D/T/A bond orders and W/H/S stereo marks).
+// namespace, customXmlPartGuid, S/D/T/A bond orders and W/H/S stereo marks). Radicals go as the
+// CML schema's spinMultiplicity (2 a doublet, 3 a triplet; audit G1-18); bond looks CML has no mark
+// for (a hollow wedge, a hashed or dashed bond, a dative arrow…) ride in a c4w:display attribute of
+// ours, read back only while the bond's stereo mark is still the one written beside it.
 
 import type { Atom, Bond, Contents } from '../model';
 import { PARTIAL } from '../model';
@@ -85,6 +88,7 @@ export function readCml(text: string): Contents | null {
       charge: Math.round(Number(a.getAttribute('formalCharge') ?? 0)) || 0,
       isotope: Math.round(Number(a.getAttribute('isotopeNumber') ?? 0)) || (type === 'D' ? 2 : type === 'T' ? 3 : 0),
       just: 'auto',
+      ...(SPIN_IN[a.getAttribute('spinMultiplicity') ?? ''] ? { radical: SPIN_IN[a.getAttribute('spinMultiplicity')!] } : {}),
     });
   }
   if (!atoms.length) return null;
@@ -96,7 +100,10 @@ export function readCml(text: string): Contents | null {
     const o = b.getAttribute('order') ?? 'S';
     const order = ORDERS[o] ?? (Number.isFinite(Number(o)) && Number(o) > 0 ? Math.min(4, Number(o)) : 1);
     const stereo = all(b, 'bondStereo')[0]?.textContent?.trim() ?? '';
-    const display: Bond['display'] = stereo === 'W' ? 'wedge' : stereo === 'H' ? 'hashWedge' : stereo === 'S' ? 'wavy' : stereo === 'Thick' ? 'bold' : order === PARTIAL ? 'dash' : 'solid';
+    let display: Bond['display'] = stereo === 'W' ? 'wedge' : stereo === 'H' ? 'hashWedge' : stereo === 'S' ? 'wavy' : stereo === 'Thick' ? 'bold' : order === PARTIAL ? 'dash' : 'solid';
+    // our own look for it, while its stereo mark is still the one written beside it
+    const own = b.getAttributeNS(C4W_NS, 'display') ?? b.getAttribute('c4w:display');
+    if (own && (DISPLAYS as readonly string[]).includes(own) && (STEREO_OUT[own as Bond['display']] ?? '') === stereo) display = own as Bond['display'];
     bonds.push({ id: next++, a1, a2, order, display, dpos: 'auto' });
   }
   return { atoms, bonds, captions: [], arrows: [], shapes: [] };
@@ -110,7 +117,12 @@ function medianBond(c: Contents): number {
 }
 
 const ORDER_OUT: [number, string][] = [[PARTIAL, 'partial01'], [1, 'S'], [1.5, 'A'], [2, 'D'], [3, 'T']];
-const STEREO_OUT: Partial<Record<Bond['display'], string>> = { wedge: 'W', hashWedge: 'H', wavy: 'S', bold: 'Thick' };
+const STEREO_OUT: Partial<Record<Bond['display'], string>> = { wedge: 'W', hashWedge: 'H', wavy: 'S', bold: 'Thick', hollowWedge: 'W', wavyWedge: 'S' };
+/** Bond looks this program draws (the ones a c4w:display attribute can name). */
+const DISPLAYS = ['solid', 'wedge', 'hashWedge', 'hash', 'bold', 'dash', 'wavy', 'dative', 'hollowWedge', 'wavyWedge', 'hydrogen', 'ionic'] as const satisfies readonly Bond['display'][];
+/** The CML schema's spinMultiplicity for a radical, and back (1, a singlet, is also every ordinary atom's: written, never read). */
+const SPIN_OUT: Record<NonNullable<Atom['radical']>, string> = { singlet: '1', doublet: '2', triplet: '3' };
+const SPIN_IN: Record<string, Atom['radical']> = { '2': 'doublet', '3': 'triplet' };
 
 /** An atom's CML elementType: its element, unless its label names a group (a label that is just the element with hydrogens, NH2 or OH, is the element). */
 function cmlElementType(a: Atom): string {
@@ -194,13 +206,17 @@ export function writeCml(c: Contents, guid: string, old?: string): string {
       const sym = cmlElementType(a);
       const charge = a.charge ? ` formalCharge="${a.charge}"` : '';
       const iso = a.isotope ? ` isotopeNumber="${a.isotope}"` : '';
-      return `<cml:atom id="${id}" elementType="${xml(sym)}" x2="${num(a.x)}" y2="${num(a.y)}"${charge}${iso}/>`;
+      const spin = a.radical ? ` spinMultiplicity="${SPIN_OUT[a.radical]}"` : '';
+      return `<cml:atom id="${id}" elementType="${xml(sym)}" x2="${num(a.x)}" y2="${num(a.y)}"${charge}${iso}${spin}/>`;
     });
     const bonds = c.bonds.filter((b) => inMol.has(b.a1) && inMol.has(b.a2));
     const bondXml = bonds.map((b, i) => {
       const order = ORDER_OUT.find(([v]) => Math.abs(v - b.order) < 1e-6)?.[1] ?? (b.order >= 3 ? 'T' : 'S');
       const stereo = STEREO_OUT[b.display];
-      return `<cml:bond id="m${m}.b${i + 1}" atomRefs2="${atomId.get(b.a1)} ${atomId.get(b.a2)}" order="${order}"${stereo ? `><cml:bondStereo>${stereo}</cml:bondStereo></cml:bond>` : '/>'}`;
+      // a look the stereo mark (or, for a partial bond, its order) doesn't say
+      const plain = stereo ? ({ W: 'wedge', H: 'hashWedge', S: 'wavy', Thick: 'bold' } as Record<string, string>)[stereo] : b.order === PARTIAL ? 'dash' : 'solid';
+      const own = b.display !== plain ? ` c4w:display="${b.display}"` : '';
+      return `<cml:bond id="m${m}.b${i + 1}" atomRefs2="${atomId.get(b.a1)} ${atomId.get(b.a2)}" order="${order}"${own}${stereo ? `><cml:bondStereo>${stereo}</cml:bondStereo></cml:bond>` : '/>'}`;
     });
     const sig = chemSig(atoms.map((a) => ({ key: atomId.get(a.id)!, type: cmlElementType(a), charge: a.charge || 0, iso: a.isotope || 0 })),
       bonds.map((b) => ({ a: atomId.get(b.a1)!, b: atomId.get(b.a2)!, order: ORDER_OUT.find(([v]) => Math.abs(v - b.order) < 1e-6)?.[1] ?? (b.order >= 3 ? 'T' : 'S'), stereo: STEREO_OUT[b.display] ?? '' })));
