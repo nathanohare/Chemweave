@@ -91,7 +91,7 @@ import { elementNumber, hasImplicitH, implicitHydrogens, SYMBOLS } from '../chem
 import { anyMarks, isMarkToggle, readMark, styleOfMark, toggleMarks, toggledMark, writeMark, type Mark, type MarkToggle } from '../chem/label-marks';
 import { tokenize, addNicknames, isBuiltInNickname, labelGraph, labelOverValent, labelPieces, labelLook, styleLabel, CAP, SUB_SCALE } from '../chem/labels';
 import {
-  Handle, type HandleId, arrowEllipseFrame, arrowHit, shapeHit, arrowHandles, shapeHandles, dragArrowHandle, dragShapeHandle, dragCropHandle, shapeBox, shapeMid, shapeTurn,
+  Handle, type HandleId, arrowEllipseFrame, arrowHit, shapeHit, arrowHandles, shapeHandles, textBoxHandles, dragArrowHandle, dragShapeHandle, dragCropHandle, shapeBox, shapeMid, shapeTurn,
   arrowPoints, bracketHalves, type BracketForm, bracketLip, unionRect,
   shapeOrder, portNear, shapePorts, isCurved, headBend, swapHalf, bezPoints,
 } from '../objects';
@@ -311,6 +311,10 @@ interface Drag {
   panOrigin?: { ox: number; oy: number };
   /** The arrow or shape handle being dragged. */
   handle?: Handle;
+  /** A text box being resized by a handle (Slides, Design): its frame and place when the drag began. */
+  capFrom?: { frame: Rect; x: number; y: number };
+  /** Pressed on a text box's border (Slides, Design): a drag moves it, a click selects it without typing. */
+  border?: boolean;
   /** Where the pointer has been (which way a curved arrow is drawn bending). */
   path?: Vec[];
   /** Rotating the selection: what it looked like before, the centre, and the angle so far. */
@@ -998,6 +1002,9 @@ export class Editor {
    * Shown when only a few arrows or shapes (and no structures) are selected.
    */
   handles(): Handle[] {
+    // text boxes in Slides and Design: round handles on the corners and edges, as in PowerPoint
+    const boxes = this.textBoxes();
+    if (boxes.length) return boxes.flatMap((id) => textBoxHandles(id, this.textBoxFrame(id)!));
     const s = this.sel;
     const n = s.arrows.size + s.shapes.size;
     if (!n || n > 4 || s.atoms.size || s.bonds.size) return [];
@@ -1027,6 +1034,74 @@ export class Editor {
     if (left === right) return h;
     const off = mul(n, (left ? -1 : 1) * this.tol(9));
     return { ...h, at: add(h.at, off), off };
+  }
+
+  /**
+   * The text boxes that show PowerPoint's frame and handles (Slides and Design, with the selection
+   * tool): the one being typed in, else the text boxes selected on their own (up to four). Turned
+   * text keeps its plain selection box.
+   */
+  textBoxes(): number[] {
+    if (!this.textFirst || this.layoutPreview) return [];
+    const ok = (id: number) => { const c = this.doc.captions.get(id); return !!c && !c.rot && !c.hidden; };
+    if (this.captionEd?.isOpen) return this.captionEdId !== null && ok(this.captionEdId) ? [this.captionEdId] : [];
+    if (this.tool.kind !== 'select') return [];
+    const s = this.sel;
+    if (!s.captions.size || s.captions.size > 4 || s.atoms.size || s.bonds.size || s.arrows.size || s.shapes.size) return [];
+    return [...s.captions].filter(ok);
+  }
+
+  /** A text box's frame as it shows now (the text being typed in included), in points. */
+  textBoxFrame(id: number): Rect | null {
+    const c = this.doc.captions.get(id);
+    if (!c) return null;
+    const f = this.r.captionFrame(c);
+    if (!this.captionEd?.isOpen || this.captionEdId !== id) return f;
+    // typing: the text as it is now, in the box the caption keeps (a placeholder's, or a fixed height)
+    const t = this.captionEd.box();
+    const r = { x1: Math.min(t.x1, c.ph ? f.x1 : t.x1), y1: Math.min(t.y1, c.ph ? f.y1 : t.y1), x2: Math.max(t.x2, c.ph || c.wrap !== undefined ? f.x2 : t.x2), y2: Math.max(t.y2, c.ph ? f.y2 : t.y2) };
+    if (!c.ph && c.fit && c.boxH) r.y2 = Math.max(t.y2, r.y1 + c.boxH);
+    return r;
+  }
+
+  /** The text box whose border is under a point (Slides and Design: a drag there moves the box). */
+  private textBorderAt(p: Vec): number | null {
+    if (!this.textFirst || this.tool.kind !== 'select') return null;
+    const out = this.tol(5), inside = this.tol(3);
+    for (const c of [...this.doc.captions.values()].reverse()) {
+      if (c.hidden || c.rot) continue;
+      const f = this.textBoxFrame(c.id)!;
+      const near = p.x >= f.x1 - out && p.x <= f.x2 + out && p.y >= f.y1 - out && p.y <= f.y2 + out;
+      const deep = p.x > f.x1 + inside && p.x < f.x2 - inside && p.y > f.y1 + inside && p.y < f.y2 - inside;
+      if (near && !deep) return c.id;
+    }
+    return null;
+  }
+
+  /** A text box's handle dragged: its edges follow the pointer (no smaller than a little box). */
+  private resizeTextBox(d: Drag, p: Vec): void {
+    const h = d.handle!, s = d.capFrom!, doc = this.doc;
+    const c = doc.captions.get(h.id);
+    if (!c) return;
+    const f = { ...s.frame };
+    const dx = p.x - d.start.x, dy = p.y - d.start.y, w = h.which;
+    const minW = 12, minH = Math.min(12, s.frame.y2 - s.frame.y1);
+    if (w.includes('w')) f.x1 = Math.min(s.frame.x1 + dx, s.frame.x2 - minW);
+    if (w.includes('e')) f.x2 = Math.max(s.frame.x2 + dx, s.frame.x1 + minW);
+    if (w.includes('n')) f.y1 = Math.min(s.frame.y1 + dy, s.frame.y2 - minH);
+    if (w.includes('s')) f.y2 = Math.max(s.frame.y2 + dy, s.frame.y1 + minH);
+    const across = w.includes('w') || w.includes('e'), down = w.includes('n') || w.includes('s');
+    const patch: Partial<Caption> = { x: s.x + f.x1 - s.frame.x1, y: s.y + f.y1 - s.frame.y1 };
+    if (across) patch.wrap = f.x2 - f.x1;
+    // a box made taller or shorter keeps that height (a text box that grew with its text no longer does)
+    if (down) { patch.boxH = f.y2 - f.y1; if (!c.ph && !c.fit) patch.fit = 'fixed'; }
+    doc.dirtyRects.push(this.r.captionBox(c));
+    doc.updateCaption(c.id, patch);
+    // text that only just got a width (or set centred) can lay out from another edge: keep the frame where it was dragged
+    const got = this.r.captionFrame(doc.captions.get(c.id)!);
+    const fx = across ? f.x1 - got.x1 : 0, fy = down ? f.y1 - got.y1 : 0;
+    if (Math.abs(fx) > 1e-6 || Math.abs(fy) > 1e-6) doc.updateCaption(c.id, { x: patch.x! + fx, y: patch.y! + fy });
+    doc.dirtyRects.push(this.r.captionBox(doc.captions.get(c.id)!));
   }
 
   private handleAt(p: Vec): Handle | null {
@@ -1119,6 +1194,16 @@ export class Editor {
       const h = this.hitTestNow(this.docPoint(e));
       if (h?.kind === 'atom' || h?.kind === 'bond') this.relockAfter = true;
       else this.structuresLocked = true;
+    }
+    // a press on the handles or border of the text box being typed in (Slides, Design): typing
+    // ends and the box stays selected, for the press to resize or move it, as in PowerPoint
+    if (this.captionEd?.isOpen && e.button === 0 && this.textFirst && this.captionEdId !== null) {
+      const id = this.captionEdId, q = this.docPoint(e);
+      const onHandle = this.handleAt(q)?.kind === 'caption';
+      if (onHandle || this.textBorderAt(q) === id) {
+        this.closeCaption();
+        if (this.doc.captions.has(id)) { this.sel = emptySel(); this.sel.captions.add(id); }
+      }
     }
     // a press on the text being typed (or its width handle) goes to the text
     const cap = this.captionEd;
@@ -1214,6 +1299,15 @@ export class Editor {
       ...(e.pointerType === 'pen' ? { pen: true } : {}),
     };
     if (handle) this.drag.handle = handle;
+    if (handle?.kind === 'caption') {
+      const c = this.doc.captions.get(handle.id)!;
+      this.drag.capFrom = { frame: this.r.captionFrame(c), x: c.x, y: c.y };
+    }
+    // a text box's border (Slides, Design): a drag moves the box, a click picks it
+    if (!handle && !rotating && !tilt && e.button === 0 && !painting) {
+      const b = this.textBorderAt(p);
+      if (b !== null && (!hit || hit.kind === 'caption')) { this.drag.hit = { kind: 'caption', id: b }; this.drag.border = true; }
+    }
     if (tilt) this.startTilt(this.drag, tilt);
     // the selection tool on a guide (where nothing else is): the guide is dragged
     const gh = e.button === 0 && !handle && !rotating && !painting && !hit && this.tool.kind === 'select' ? this.guideUnder(p) : null;
@@ -1267,7 +1361,9 @@ export class Editor {
     }
     if (!d && this.focalPicking) { this.r.overlay.style.cursor = 'crosshair'; this.requestOverlay(); return; }
     if (!d) this.linkTitle(p);
-    if (!d && this.captionEd?.hit(p)) {
+    // (the handles and border of the text box being typed in come before its text, Slides and Design)
+    const onFrame = !d && !!this.captionEd?.isOpen && this.textFirst && (this.handleAt(p)?.kind === 'caption' || (this.captionEdId !== null && this.textBorderAt(p) === this.captionEdId));
+    if (!d && !onFrame && this.captionEd?.hit(p)) {
       this.r.overlay.style.cursor = this.captionEd.cursor(p);
       return;
     }
@@ -1277,6 +1373,8 @@ export class Editor {
       const tilt = onRotate ? null : this.tiltAt(p);
       const handle = onRotate || tilt ? null : this.handleAt(p);
       const h = handle || onRotate || tilt ? null : this.hitTest(p);
+      // a text box's border (Slides, Design): the four-way arrow, as in PowerPoint
+      this.overBorder = !handle && !onRotate && !tilt && (!h || h.kind === 'caption') && this.textBorderAt(p) !== null;
       if (!sameHit(h, this.hover)) { this.hover = h; }
       // the keyboard highlight gives way to the mouse once it moves (a finger doesn't hover, so
       // a touch leaves it); in ChemDraw's way, once the mouse rests on something new
@@ -1500,6 +1598,13 @@ export class Editor {
     }
     if (d.mode === 'handle') {
       const h = d.handle!;
+      if (h.kind === 'caption') {
+        this.resizeTextBox(d, p);
+        d.last = p;
+        this.requestScene(e.timeStamp);
+        this.requestOverlay(e.timeStamp);
+        return;
+      }
       if (h.kind === 'arrow') {
         const r = this.doc.arrows.get(h.id);
         if (r) {
@@ -1951,9 +2056,10 @@ export class Editor {
         // an empty title or text placeholder takes typing straight away, as in PowerPoint
         const c = h?.kind === 'caption' ? doc.captions.get(h.id) : undefined;
         const adding = d.shift || d.ctrl;
-        if (c?.ph && isEmptyText(c) && !adding) { this.sel = emptySel(); this.editCaption(c.id); return; }
+        // (a click on a text box's border picks the box instead, as in PowerPoint)
+        if (c?.ph && isEmptyText(c) && !adding && !d.border) { this.sel = emptySel(); this.editCaption(c.id); return; }
         // in Slides and Design a click in a text box puts the caret there, as in PowerPoint
-        if (c && this.textFirst && !adding) { this.sel = emptySel(); this.editCaption(c.id, this.clientPoint(p)); return; }
+        if (c && this.textFirst && !adding && !d.border) { this.sel = emptySel(); this.editCaption(c.id, this.clientPoint(p)); return; }
         // Shift+click or Ctrl+click adds to the selection, or takes out what is already in it
         const pick = h && this.groupFirst(h);
         if (!adding) this.sel = emptySel();
@@ -7515,6 +7621,8 @@ export class Editor {
       defaultFont: base?.font ?? st.captionFont,
       redraw: () => this.requestOverlay(),
       enterFinishes: () => this.enterFinishesText(c?.ph ? 'other' : 'text'),
+      // a text box on a slide or design page shows its own frame and handles (not turned text)
+      framed: this.textFirst && !!c && !c.rot,
     };
     // (on a slide, lines spaced as PowerPoint spaces them, as they are drawn)
     const lines = this.r.slideLines();
@@ -7684,6 +7792,8 @@ export class Editor {
 
   /** What the pointer was last over (to change the pointer when Ctrl is pressed or let go). */
   private lastHover: { onRotate: boolean; handle: Handle | null; h: Hit; tilt?: 'x' | 'y' | null } | null = null;
+  /** The pointer is on a text box's border (Slides, Design). */
+  private overBorder = false;
 
   /** Show the pointer that says what a click or drag will do where the mouse is. */
   private showPointer(ctrl: boolean): void {
@@ -7692,6 +7802,7 @@ export class Editor {
     if (this.painter) { this.r.overlay.style.cursor = BRUSH; return; }
     const { onRotate, handle, h } = o;
     if (o.tilt) { this.r.overlay.style.cursor = o.tilt === 'x' ? 'ns-resize' : 'ew-resize'; return; }
+    if (this.overBorder && !o.handle && !o.onRotate) { this.r.overlay.style.cursor = 'move'; return; }
     // a curved arrow tool over a selected S's line: a drag there reshapes it
     if (!onRotate && !handle && h?.kind === 'arrow' && this.curvedTool() && this.isSelected(h) && bezPoints(this.doc.arrows.get(h.id)!)) { this.r.overlay.style.cursor = BEND; return; }
     this.r.overlay.style.cursor = onRotate ? ROTATE : handle ? handleCursor(handle.which) : pointerFor({
@@ -8199,7 +8310,9 @@ export class Editor {
       ctx.fill(dots);
       ctx.lineWidth = px;
       const boxes = new Path2D();
-      for (const id of s.captions) { const c = doc.captions.get(id); if (c) boxes.addPath(this.captionOutline(c)); }
+      // (text boxes showing their own frame and handles, Slides and Design, have no tint, as in PowerPoint)
+      const framed = new Set(this.textBoxes());
+      for (const id of s.captions) { const c = doc.captions.get(id); if (c && !framed.has(id)) boxes.addPath(this.captionOutline(c)); }
       ctx.fill(boxes);
       // the arrows as one path, stroked once, so two that cross aren't darker where they do
       ctx.lineWidth = L * 0.15;
@@ -8329,6 +8442,20 @@ export class Editor {
       if (pen && pen.at.length >= 3) { ctx.beginPath(); ctx.arc(pen.at[0].x, pen.at[0].y, 5 * px, 0, Math.PI * 2); ctx.stroke(); }
       ctx.restore();
     }
+    // a text box's own frame (Slides, Design): dashed while it is typed in, solid while it is
+    // selected, as in PowerPoint (the typing has no box of its own inside it)
+    if (this.drag?.mode !== 'move') {
+      const typing = !!this.captionEd?.isOpen;
+      ctx.save();
+      ctx.lineWidth = px;
+      ctx.strokeStyle = PREVIEW;
+      if (typing) ctx.setLineDash([4 * px, 3 * px]);
+      for (const id of this.textBoxes()) {
+        const f = this.textBoxFrame(id);
+        if (f) ctx.strokeRect(f.x1, f.y1, f.x2 - f.x1, f.y2 - f.y1);
+      }
+      ctx.restore();
+    }
     // handles on selected arrows and shapes
     const handles = this.drag?.mode === 'move' ? [] : this.handles();
     if (handles.length) {
@@ -8394,6 +8521,8 @@ export class Editor {
         }
         if (hd.which === 'mid') ctx.arc(hd.at.x, hd.at.y, k * 1.1, 0, Math.PI * 2);
         else if (hd.which[0] === 'b' && (Number(hd.which.slice(1)) + 1) % 3 === 0) ctx.arc(hd.at.x, hd.at.y, k * 1.1, 0, Math.PI * 2);
+        // a text box's handles are round, as in PowerPoint
+        else if (hd.kind === 'caption') ctx.arc(hd.at.x, hd.at.y, k * 1.15, 0, Math.PI * 2);
         else if (hd.which[0] === 'b' || hd.which === 'ea' || hd.which === 'eb') { ctx.moveTo(hd.at.x, hd.at.y - k * 1.2); ctx.lineTo(hd.at.x + k * 1.2, hd.at.y); ctx.lineTo(hd.at.x, hd.at.y + k * 1.2); ctx.lineTo(hd.at.x - k * 1.2, hd.at.y); ctx.closePath(); }
         else ctx.rect(hd.at.x - k, hd.at.y - k, 2 * k, 2 * k);
         // the handle or join the arrow keys move is filled in
@@ -8445,8 +8574,9 @@ export class Editor {
       const b = this.selBox()!;
       ctx.lineWidth = px;
       ctx.strokeStyle = mk.box;
-      // no box round a bond, a straight run of bonds or a straight arrow: it would sit inside their highlight
-      if (!this.boxInsideHighlight(b)) {
+      // no box round a bond, a straight run of bonds or a straight arrow: it would sit inside their
+      // highlight; nor round text boxes showing their own frame (Slides, Design)
+      if (!this.boxInsideHighlight(b) && !this.textBoxes().length) {
         ctx.setLineDash([3 * px, 3 * px]);
         ctx.strokeRect(b.x1 - 2 * px, b.y1 - 2 * px, b.x2 - b.x1 + 4 * px, b.y2 - b.y1 + 4 * px);
         ctx.setLineDash([]);
