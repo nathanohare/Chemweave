@@ -82,3 +82,57 @@ describe('species list rows', () => {
     expect(got.length).toBe(0);
   });
 });
+
+describe('Undo and Redo in a row (G3-09)', () => {
+  const key = (f: RichField, k: string, shift = false) => f.el.dispatchEvent(new KeyboardEvent('keydown', { key: k, ctrlKey: true, shiftKey: shift, bubbles: true, cancelable: true }));
+  function withHistory(parts: TextPart[]) {
+    const calls: string[] = [];
+    const got: TextPart[][] = [];
+    const f = new RichField(parts, { placeholder: '', label: 'Species 1', chem: () => true, done: (p) => got.push(p), history: (redo) => calls.push(redo ? 'redo' : 'undo') });
+    document.body.append(f.el);
+    f.el.focus();
+    return { f, calls, got };
+  }
+
+  it('Ctrl+Z takes back what is typed in the row first, then hands Ctrl+Z to the drawing', () => {
+    const { f, calls } = withHistory([{ text: 'Pd' }]);
+    f.select(2);
+    type(f, 'X');
+    key(f, 'z');
+    expect(f.text()).toBe('Pd');
+    expect(calls).toEqual([]);
+    key(f, 'z');
+    expect(calls).toEqual(['undo']);
+  });
+
+  it('after Enter (the text gone to the drawing), Ctrl+Z and Ctrl+Y are the drawing\'s', () => {
+    const { f, calls, got } = withHistory([{ text: '' }]);
+    f.select(0);
+    type(f, 'Pd');
+    f.commit();
+    expect(got.length).toBe(1);
+    key(f, 'z');
+    key(f, 'y');
+    key(f, 'z', true);
+    expect(calls).toEqual(['undo', 'redo', 'redo']);
+    expect(f.text()).toBe('Pd');
+  });
+
+  it('typed and not finished, Ctrl+Y does nothing (the drawing\'s Redo would lose the typing)', () => {
+    const { f, calls } = withHistory([{ text: 'Pd' }]);
+    f.select(2);
+    type(f, 'X');
+    key(f, 'y');
+    expect(calls).toEqual([]);
+    expect(f.text()).toBe('PdX');
+  });
+
+  it('a change event (the app\'s Ctrl+S) finishes what is typed', () => {
+    const { f, got } = withHistory([{ text: 'Pd' }]);
+    f.select(2);
+    type(f, 'Cl');
+    f.el.dispatchEvent(new Event('change'));
+    expect(got.length).toBe(1);
+    expect(got[0].map((p) => p.text).join('')).toBe('PdCl');
+  });
+});

@@ -4700,6 +4700,11 @@ export class DocumentMode {
     ], { ok: 'Insert', note: 'Captions number themselves in order, and references to them follow when they move.' });
     this.focus();
     if (!got || this.file !== f) return;
+    // the numbering, the words and the Caption style: one step of Undo
+    f.ed.together(() => this.putCaption(f, got));
+  }
+
+  private putCaption(f: DocFile, got: Record<string, string>): void {
     const ed = f.ed;
     const id = nextObjectId(f.t);
     ed.update({ ...f.t, objects: { ...f.t.objects, [id]: { kind: 'seq', name: got.name } } } as DocText, 'Insert caption');

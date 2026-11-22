@@ -3,7 +3,7 @@
 // 100%; the caller scales the canvas. Titles take simple sub- and superscripts: k_{obs}, s^{−1}.
 
 import type { Chart, ChartAxis, CategoryPick, SeriesData, MarkerShape } from '../sheet/chart';
-import { niceTicks, logTicks, CHART_PALETTES, isXY, hasLevels, comboAs, onSecondAxis } from '../sheet/chart';
+import { niceTicks, logTicks, CHART_PALETTES, isXY, hasLevels, comboAs, onSecondAxis, titleRunsOf, type TitleRun } from '../sheet/chart';
 import { histogram, boxGroups } from '../sheet/chart-stats';
 import { bandAt, drawDecomp, drawSankey, drawTreemap, type Pen } from './level-charts';
 import { fitPoints, fitAt, fitEquation, fitResults, r2Text, Fit, FitKind } from '../sheet/fit';
@@ -109,14 +109,24 @@ export function textRuns(text: string): Run[] {
   return out;
 }
 
-interface TextOpts { size: number; bold?: boolean; color?: string; align?: 'left' | 'center' | 'right'; angle?: 0 | 90; family: string }
+interface TextOpts {
+  size: number; bold?: boolean; color?: string; align?: 'left' | 'center' | 'right'; angle?: 0 | 90; family: string;
+  /** A title's own runs, with bold and italic text (titleRunsOf): drawn in place of the markup's (lines joined by a space). */
+  rich?: readonly TitleRun[] | null;
+}
 
-const fontOf = (size: number, bold: boolean | undefined, family: string) => `${bold ? 'bold ' : ''}${size}px ${family}`;
+const fontOf = (size: number, bold: boolean | undefined, family: string, italic?: boolean) => `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size}px ${family}`;
+
+/** The pieces text is drawn in: its markup's, or a title's own runs with their looks. */
+function pieces(text: string, o: TextOpts): (Run & { b?: boolean; i?: boolean })[] {
+  if (!o.rich) return textRuns(text);
+  return o.rich.map((r) => (r.text === '\n' ? { t: ' ', pos: 'base' as const } : { t: r.text, pos: r.sub ? 'sub' as const : r.sup ? 'sup' as const : 'base' as const, b: r.bold, i: r.italic }));
+}
 
 function measure(ctx: Ctx, text: string, o: TextOpts): number {
   let w = 0;
-  for (const r of textRuns(text)) {
-    ctx.font = fontOf(r.pos === 'base' ? o.size : o.size * 0.7, o.bold, o.family);
+  for (const r of pieces(text, o)) {
+    ctx.font = fontOf(r.pos === 'base' ? o.size : o.size * 0.7, r.b ?? o.bold, o.family, r.i);
     w += ctx.measureText(r.t).width;
   }
   return w;
@@ -129,10 +139,10 @@ function text(ctx: Ctx, s: string, x: number, y: number, o: TextOpts): number {
   const start = o.align === 'center' ? -w / 2 : o.align === 'right' ? -w : 0;
   ctx.fillStyle = o.color ?? TEXT;
   let dx = start;
-  for (const r of textRuns(s)) {
+  for (const r of pieces(s, o)) {
     const size = r.pos === 'base' ? o.size : o.size * 0.7;
     const dy = r.pos === 'sub' ? o.size * 0.25 : r.pos === 'sup' ? -o.size * 0.38 : 0;
-    ctx.font = fontOf(size, o.bold, o.family);
+    ctx.font = fontOf(size, r.b ?? o.bold, o.family, r.i);
     if (o.angle === 90) {
       // the text frame turned a quarter anticlockwise: along the text is up the page
       if (ctx instanceof VectorContext) ctx.fillTextTurned(r.t, x + dy, y - dx, 90);
@@ -322,7 +332,7 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
 
   if (chart.title) {
     const ts = fs * 1.4;
-    text(ctx, chart.title, w / 2, top + ts * 0.9, opt(ts, { align: 'center' }));
+    text(ctx, chart.title, w / 2, top + ts * 0.9, opt(ts, { align: 'center', rich: titleRunsOf(chart.title, chart.titleRuns) }));
     top += ts * 1.3 + 4;
   }
 
@@ -809,9 +819,9 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
   }
 
   // axis titles
-  if (xTitle) text(ctx, xTitle, plot.x + plot.w / 2, h - pad - (chart.legend === 'bottom' && legend.length ? h - pad - bottom - tickFs * 1.4 - fs * 1.5 - 6 : 0) - fs * 0.3, opt(fs, { align: 'center' }));
-  if (yTitle) text(ctx, yTitle, pad + fs * 1.1, plot.y + plot.h / 2, opt(fs, { align: 'center', angle: 90 }));
-  if (y2Title) text(ctx, y2Title, y2TitleX, plot.y + plot.h / 2, opt(fs, { align: 'center', angle: 90 }));
+  if (xTitle) text(ctx, xTitle, plot.x + plot.w / 2, h - pad - (chart.legend === 'bottom' && legend.length ? h - pad - bottom - tickFs * 1.4 - fs * 1.5 - 6 : 0) - fs * 0.3, opt(fs, { align: 'center', rich: titleRunsOf(xTitle, chart.x.titleRuns) }));
+  if (yTitle) text(ctx, yTitle, pad + fs * 1.1, plot.y + plot.h / 2, opt(fs, { align: 'center', angle: 90, rich: titleRunsOf(yTitle, chart.y.titleRuns) }));
+  if (y2Title) text(ctx, y2Title, y2TitleX, plot.y + plot.h / 2, opt(fs, { align: 'center', angle: 90, rich: titleRunsOf(y2Title, chart.y2?.titleRuns) }));
 
   return { plot, fitLabels, fits, parts: clickable };
 }

@@ -918,6 +918,8 @@ dialog.energy-dialog { width: min(96vw, 680px); max-height: 92vh; }
 .energy-table td { padding: 1px 2px; }
 .energy-table td input { width: 8em; font: inherit; padding: 2px 4px; box-sizing: border-box; }
 .energy-table td input.energy-num { width: 5em; text-align: right; }
+.energy-table .energy-rich { display: inline-block; vertical-align: middle; width: 8em; font-size: inherit; }
+.energy-table th .energy-rich { width: 9em; font-weight: 400; }
 .energy-table .energy-grip { cursor: grab; color: var(--muted); padding: 0 2px; user-select: none; }
 .energy-table .energy-structure { width: 80px; height: 40px; padding: 1px; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid var(--line); border-radius: 2px; cursor: pointer; font: inherit; font-size: 0.85em; color: var(--muted); }
 .energy-table .energy-structure canvas { width: 72px; height: 36px; display: block; }
@@ -2847,6 +2849,9 @@ dialog.equation-dialog textarea { width: 100%; box-sizing: border-box; font: var
 .cmt-resolved { font-size: var(--fs-xs); color: var(--muted); font-style: italic; margin-top: 2px; }
 .cmt-input { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; resize: vertical; font: var(--fs-sm)/1.4 var(--ui-font); color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-control); padding: 4px 6px; }
 .cmt-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+/* a Word or PowerPoint comment's box: rich text, as tall as two to eight lines */
+.cmt-rich { position: relative; resize: none; white-space: pre-wrap; overflow-wrap: anywhere; min-height: calc(2 * 1.4em + 10px); max-height: calc(8 * 1.4em + 10px); overflow-y: auto; cursor: text; }
+.cmt-rich.empty::before { content: attr(data-placeholder); color: var(--muted); position: absolute; pointer-events: none; }
 .cmt-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .cmt-card:not(.active) .cmt-bar { display: none; }
 .cmt-btn { font: var(--fs-xs) var(--ui-font); padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); cursor: pointer; }
@@ -3531,10 +3536,13 @@ dialog.show-setup { width: min(94vw, 600px); }
 .ol-num::after { content: ' ▭'; font-weight: 400; }
 .ol-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ol-title, .ol-body { width: 100%; box-sizing: border-box; border: 1px solid transparent; background: transparent; color: var(--text); border-radius: var(--r-control); padding: 2px 4px; font: var(--fs-md) var(--ui-font, system-ui), sans-serif; }
-.ol-title { font-weight: 700; }
+/* (a title stands out by its size: its characters show their own bold, as Ctrl+B sets it) */
+.ol-title { font-size: var(--fs-lg); }
 .ol-body { resize: none; overflow: hidden; tab-size: 2.2em; line-height: 1.35; min-height: 1.6em; }
+.ol-title, .ol-body { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.6em; cursor: text; }
 .ol-title:focus, .ol-body:focus { border-color: var(--line); background: var(--panel); outline: none; }
-.ol-title:disabled, .ol-body:disabled { opacity: 0.55; }
+.ol-title.empty::before, .ol-body.empty::before { content: attr(data-placeholder); color: var(--muted); font-weight: 400; position: absolute; pointer-events: none; }
+.ol-title[aria-disabled="true"], .ol-body[aria-disabled="true"] { opacity: 0.55; cursor: default; }
 
 /* View > Notes Page: each slide's notes page, over the slide */
 .notes-pages { position: absolute; inset: 0; z-index: 5; overflow: auto; background: var(--surround, #d9dbe0); display: flex; flex-direction: column; align-items: center; padding: 10px 0 40px; }
