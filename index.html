@@ -528,6 +528,12 @@
     <div class="menu-wrap">
     <button id="btn-format" aria-haspopup="menu" aria-expanded="false" aria-controls="format-menu" aria-keyshortcuts="Alt+O">F<span class="mn">o</span>rmat</button>
     <div id="format-menu" class="menu" role="menu" hidden>
+    <button data-modes="document" role="menuitem" data-cmd="font-box" title="Font settings: Change Case, All Caps, character spacing and kerning, and text effects">Font…</button>
+    <button data-modes="document" role="menuitem" data-cmd="box-para" title="Indents, spacing before and after, line spacing, page breaks">Paragraph…</button>
+    <button data-modes="document" role="menuitem" data-cmd="para-tabs" title="The tab stops of the selected paragraphs">Tabs…</button>
+    <button data-modes="document" role="menuitem" data-cmd="borders-shading" title="Borders and shading of the selected paragraphs">Borders and Shading…</button>
+    <button data-modes="document" role="menuitem" data-cmd="styles-launcher" title="Styles pane (Ctrl+Alt+Shift+S): every paragraph and character style; apply, change and make new ones">Styles…</button>
+    <button data-modes="sheet" role="menuitem" data-cmd="format-cells" title="The selected cells' number format and look, in the side panel (Ctrl+1)">Format Cells…</button>
     <div class="submenu" data-modes="drawing slides design">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Align</button>
     <div class="menu sub" role="menu" hidden>
@@ -636,9 +642,6 @@
     <button data-modes="slides" role="menuitem" data-cmd="slide-animations">Animations…</button>
     </div>
     </div>
-    <div class="submenu" data-modes="sheet">
-    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Spreadsheet</button>
-    <div class="menu sub" role="menu" hidden>
     <button data-modes="sheet" role="menuitem" data-cmd="new-rule">New Conditional Formatting Rule…</button>
     <button data-modes="sheet" role="menuitem" data-cmd="manage-rules">Manage Conditional Formatting…</button>
     <button data-modes="sheet" role="menuitem" data-cmd="data-validation">Data Validation…</button>
@@ -648,11 +651,15 @@
     <button data-modes="sheet" role="menuitemcheckbox" aria-checked="false" data-cmd="show-page-breaks"><span>Show Page Breaks</span></button>
     </div>
     </div>
-    </div>
-    </div>
     <div class="menu-wrap">
     <button id="btn-chemistry" aria-haspopup="menu" aria-expanded="false" aria-controls="chemistry-menu" aria-keyshortcuts="Alt+C"><span class="mn">C</span>hemistry</button>
     <div id="chemistry-menu" class="menu" role="menu" data-item-modes="drawing slides design" hidden>
+    <button data-modes="document" role="menuitem" data-cmd="insert-structure" title="Draw a structure or scheme with the drawing tools; it goes in the text at the cursor">Insert Structure</button>
+    <button data-modes="document" role="menuitem" data-cmd="structure-from-name-doc" title="A structure from its name or SMILES, in the text at the cursor">Structure from Name or SMILES…</button>
+    <button data-modes="document" role="menuitem" data-cmd="compound-number" title="A bold compound number: a new compound gets the next number, and mentions of it follow when numbers change">Compound Number</button>
+    <button data-modes="sheet" role="menuitem" data-cmd="structure-from-name" title="Draw structures from names or SMILES: in the cell, or for each selected name">Structure from Name or SMILES…</button>
+    <button data-modes="sheet" role="menuitem" data-cmd="property-column" title="Columns that calculate formula, MW, exact mass, HRMS m/z, cLogP and more from each structure">Properties…</button>
+    <button data-modes="sheet" role="menuitem" data-cmd="reagent-table" title="A new sheet that calculates the amounts for a reaction: MW, mmol, mass and volume from each reagent's structure and equivalents">Reagent Table</button>
     <button role="menuitem" data-cmd="smart-clean" title="Clean up whatever is selected: a scheme, a catalytic cycle, mechanism arrows or structures">Smart Clean</button>
     <button role="menuitem" data-cmd="clean-up">Clean Up Structure</button>
     <button role="menuitem" data-cmd="clean-up-reaction">Clean Up Reaction</button>
