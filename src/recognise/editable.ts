@@ -7,7 +7,7 @@
 import { Doc, type Contents } from '../model';
 import type { DocStyle } from '../style';
 import type { StylePreset } from '../drawing-styles';
-import { addMolfile } from '../chem/molfile';
+import { addMolfile } from '../io/chem-formats';
 import type { ReadGraph } from './molscribe';
 import { inkBox, type Pixels } from './picture';
 import { addReadAt, parseSymbol, readBonds } from './to-drawing';
