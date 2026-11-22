@@ -232,6 +232,8 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si="add-files" data-ic="insert-object" title="Add other files (PDFs or pictures) to the selected compound">Files…</button>
         <button data-si="add-stored" title="Store files with the selected compound (raw NMR data, .mnova files, HRMS spectra, photos…), kept in its private folder and never printed">Stored Files…</button>
+      </div>
+      <div class="rb-col">
         <button data-si="add-field" title="Add a field (melting point, Rf, IR, optical rotation…, or a custom one) to the selected compound, or to the selected section's list of fields">Field…</button>
         <button data-si="new-gp" title="A new general procedure in the selected Data section (or the selected compound's): its text prints once at the start of the section, and its compounds get its sentence">General Procedure</button>
       </div>

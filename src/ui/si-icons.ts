@@ -47,6 +47,7 @@ export const SI_ICONS: Record<string, string> = {
   // Insert ▸ Compound Data
   'si:add-nmr-report': spectrumAxis + '<path class="a" d="M3.25 19.25h2.5l.75-6 .75 6h1.5l.6-9.5.6 9.5h1.3l.75-4 .75 4h3"/>' + plus(19, 6.25),
   'si:add-hrms-report': spectrumAxis + '<path class="a" d="M5.5 19.25V8.25M8.75 19.25v-6M12 19.25v-3.25M14.5 19.25v-1.75"/>' + plus(19, 6.25),
+  'si:add-stored': '<path class="p" d="M2.75 6.25a1.5 1.5 0 0 1 1.5-1.5h4.5l2 2h9a1.5 1.5 0 0 1 1.5 1.5v9.5a1.5 1.5 0 0 1-1.5 1.5h-15.5a1.5 1.5 0 0 1-1.5-1.5z"/><rect class="f a" x="9" y="12.25" width="6" height="4.75" rx="0.75"/><path class="a" d="M10.25 12.25v-1.5a1.75 1.75 0 0 1 3.5 0v1.5"/>',
   'si:add-field': '<path d="M3.75 7.25h6.5"/><rect class="p" x="3.75" y="10.25" width="13.5" height="6.5" rx="1.25"/><path d="M6.25 13.5h5"/>' + plus(19, 6.25),
   'si:new-gp': page + '<text class="a" x="11.75" y="12.5" font-size="6" font-weight="700" text-anchor="middle">GP</text><path d="M7.75 15.75h8.5M7.75 18.5h5.5"/>',
   'si:add-author': '<circle class="f a" cx="10" cy="8" r="3.75"/><path d="M3.25 20.25c.75-3.75 3.5-5.75 6.75-5.75 1.75 0 3.25.5 4.5 1.5"/>' + plus(18.5, 17),
