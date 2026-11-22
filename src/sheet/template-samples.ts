@@ -140,7 +140,7 @@ export const TEMPLATE_CALLOUTS: Record<string, { rows: number; head?: number; no
   'reagent-sheet': {
     rows: 6,
     notes: [
-      { col: 2, text: 'From the structure. Type over it to use your own.' },
+      { col: 2, text: 'From the structure. Type over it to use a different value.' },
       { col: 4, text: 'Type the limiting reagent\'s; the others are equiv × that.' },
       { col: 5, text: '= mmol × MW' },
       { col: 8, text: '= mass ÷ density, or mmol ÷ conc.' },

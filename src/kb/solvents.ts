@@ -147,7 +147,7 @@ const SOLVENTS: Record<string, { name: string; aka?: string; smiles: string; ich
   'tetrahydrofuran(THF)': { name: 'Tetrahydrofuran', aka: 'THF', smiles: 'C1CCOC1', ich: 'Tetrahydrofuran' },
   toluene: { name: 'Toluene', smiles: 'Cc1ccccc1', ich: 'Toluene' },
   water: { name: 'Water', smiles: 'O' },
-  'water, heavy': { name: 'Deuterium oxide', aka: 'heavy water, D2O', smiles: '[2H]O[2H]' },
+  'water, heavy': { name: 'Deuterium oxide', aka: 'heavy water, D₂O', smiles: '[2H]O[2H]' },
   'p-xylene': { name: 'p-Xylene', smiles: 'Cc1ccc(C)cc1', ich: 'o-Xylene' },
 };
 
@@ -201,7 +201,7 @@ export const SOLVENTS_TABLE: KbTable = {
     { key: 'eluant', label: 'Eluant ε°', numeric: true, info: `Eluant strength: Snyder's ε° on alumina: how strongly the solvent moves compounds down an alumina column. Higher elutes faster; on silica the values are lower but in much the same order. Source: Murov, Table 1, from ${REICHARDT}, p 495.` },
     { key: 'tlv', label: 'TLV (ppm)', numeric: true, info: `Threshold limit value (TLV) for exposure: the airborne concentration, in ppm, that workers may breathe day after day without harm (an 8-hour time-weighted average). Lower means more toxic by breathing. Source: Murov, Table 1, from ${REICHARDT}, pp 501–502; check your country's current limits.` },
     { key: 'vp', label: 'VP (hPa)', numeric: true, info: 'Vapor pressure (VP) at 20 °C, in hectopascals (1 hPa = 0.75 mmHg); values marked * are at 25 °C. Higher evaporates faster and fills the air sooner. Source: Murov, Table 1, from Reichardt and ChemIDplus.' },
-    { key: 'dipole', label: 'Dipole (D)', numeric: true, info: 'Dipole moment in debye (D). Zero for symmetric molecules (benzene, CCl4, hexane) even when their bonds are polar.' },
+    { key: 'dipole', label: 'Dipole (D)', numeric: true, info: 'Dipole moment in debye (D). Zero for symmetric molecules (benzene, CCl₄, hexane) even when their bonds are polar.' },
     { key: 'dielectric', label: 'ε', numeric: true, info: 'Dielectric constant (relative permittivity, ε): how well the solvent separates charges. Above about 15, ions and charged intermediates are well stabilized (polar solvents); below about 5, hardly at all.' },
     { key: 'viscosity', label: 'η (cP)', numeric: true, info: 'Viscosity (η) in centipoise (cP), the same number as millipascal-seconds (mPa·s). Water is 0.89 at 25 °C. Thicker solvents run slower through a column or a filter. Source: Murov, Table 1, except 1-hexanol: Murov prints 0.59 (the solubility figure repeated); 4.6 is the measured value at 25 °C (Cano-Gómez et al., J. Chem. Eng. Data 2015, 60, 1945, via NIST TRC ThermoML).' },
     { key: 'ich', label: 'ICH class', info: 'ICH Q3C(R8) residual-solvent class: how much of a solvent may be left in a medicine, set by its toxicity. Class 1: avoid (known or suspected carcinogens, environmental hazards). Class 2: limit (a ppm cap for each). Class 3: low toxic potential (up to 5,000 ppm). "No adequate data": listed, but no limit set. A safety limit for drug products, not a green-chemistry ranking. Source: ICH Q3C(R8), 2021.' },

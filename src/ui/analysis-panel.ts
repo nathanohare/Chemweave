@@ -469,10 +469,15 @@ export function analysisHtml(r: FragmentResult, i: number, adductText: string, e
   </div>`;
 }
 
+/** Joback groups as the Properties tooltip lists them ("5 × -CH₂- (ring)"): the table's keys, with real subscripts. */
+export function jobackGroupList(groups: Record<string, number>): string {
+  return Object.entries(groups).map(([g, n]) => `${n} × ${g.replace(/(?<=[A-Za-z])\d+/g, (d) => sub(Number(d)))}`).join(', ');
+}
+
 /** The Properties section: Crippen, Lipinski, Joback, ESOL and pKa estimates. */
 function propsHtml(r: FragmentResult, p: NonNullable<FragmentResult['props']>): string {
   const jb = p.joback;
-  const groups = Object.entries(jb.groups).map(([g, n]) => `${n} × ${g}`).join(', ');
+  const groups = jobackGroupList(jb.groups);
   const tip = `Joback–Reid group contributions (Chem. Eng. Commun. 1987, 57, 233). Rough: typical errors are 10–25 °C, more for large molecules.${groups ? ' Groups: ' + groups + '.' : ''}`;
   return `<details class="props"><summary>Properties</summary><table>
       <tr><th title="Wildman–Crippen logP">cLogP</th><td>${p.clogp.toFixed(2)}</td></tr>

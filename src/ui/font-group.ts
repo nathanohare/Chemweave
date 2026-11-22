@@ -25,18 +25,21 @@ export const FONT_ROWS: readonly (readonly FontControl[])[] = [
   ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'formula', 'color'],
 ];
 
-/** Each button's picture and tip, the same in every mode. */
+/**
+ * Each button's picture and tip, the same in every mode. A picture made of symbols (A⁺, x₂, C₉H₈) is
+ * an icon, not words: it is hidden from screen readers, which read the button's name instead.
+ */
 export const FONT_LOOK: Record<Exclude<FontControl, 'font' | 'size'>, { html: string; title: string }> = {
-  grow: { html: 'A<sup>+</sup>', title: 'Increase Font Size' },
-  shrink: { html: 'A<sup>−</sup>', title: 'Decrease Font Size' },
-  clear: { html: 'A<span class="rb-eraser">⌫</span>', title: 'Clear All Formatting' },
+  grow: { html: '<span aria-hidden="true">A<sup>+</sup></span>', title: 'Increase Font Size' },
+  shrink: { html: '<span aria-hidden="true">A<sup>−</sup></span>', title: 'Decrease Font Size' },
+  clear: { html: '<span aria-hidden="true">A<span class="rb-eraser">⌫</span></span>', title: 'Clear All Formatting' },
   bold: { html: '<b>B</b>', title: 'Bold (Ctrl+B)' },
   italic: { html: '<i>I</i>', title: 'Italic (Ctrl+I)' },
   underline: { html: '<u>U</u>', title: 'Underline (Ctrl+U)' },
   strike: { html: '<s>abc</s>', title: 'Strikethrough: a line through the text' },
-  sub: { html: 'x<sub>2</sub>', title: 'Subscript' },
-  sup: { html: 'x<sup>2</sup>', title: 'Superscript' },
-  formula: { html: 'C₉H₈', title: 'Formula style: numbers lowered (CH₂Cl₂), charges raised' },
+  sub: { html: '<span aria-hidden="true">x<sub>2</sub></span>', title: 'Subscript' },
+  sup: { html: '<span aria-hidden="true">x<sup>2</sup></span>', title: 'Superscript' },
+  formula: { html: '<span aria-hidden="true">C₉H₈</span>', title: 'Formula style: numbers lowered (CH₂Cl₂), charges raised' },
   color: { html: '<span>A</span>', title: 'Text Color' },
 };
 

@@ -278,7 +278,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     };
 
     // your own
-    grid.append(el('h3', { textContent: 'Your own styles' }));
+    grid.append(el('h3', { textContent: 'Custom styles' }));
     const name = el('input', { type: 'text', placeholder: 'e.g. My group meeting style' });
     const save = el('button', { type: 'button', textContent: 'Save', title: 'Save as My Style: keep these settings under this name, in every mode' });
     const del = el('button', { type: 'button', textContent: 'Delete', title: 'Delete this custom style' });

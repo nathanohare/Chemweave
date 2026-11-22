@@ -149,7 +149,7 @@ const subToPlain = (t: string): string => t.replace(/[₀-₉]/g, (c) => String(
 
 /** A simple formula like Na, NH4 or HCOO. */
 export function parseFormula(text: string): Counts {
-  if (!text || text.replace(/([A-Z][a-z]?)(\d*)/g, '')) throw new ChemError(`“${text}” is not a simple formula like Na, NH4 or HCOO.`);
+  if (!text || text.replace(/([A-Z][a-z]?)(\d*)/g, '')) throw new ChemError(`“${text}” is not a simple formula like “Na”, “NH4” or “HCOO”.`);
   const counts: Counts = new Map();
   for (const m of text.matchAll(/([A-Z][a-z]?)(\d*)/g)) {
     const sym = m[1];
@@ -243,7 +243,7 @@ const EXPLICIT_CHARGE = [
   new RegExp(`(?<n>)(?<signs>[${SIGNS}])(?<n2>[0-9]+)$`),
 ];
 const BRACKETED_ION = new RegExp(`^\\[(?<f>[A-Z].*)\\][${RADICAL}]?(?<n>[${DIGITS}]*)(?<signs>[${SIGNS}]+)(?<n2>[${DIGITS}]*)$`);
-const CHARGE_HINT = 'Write a charge at the end of the formula, as in C₁₀H₈N₂²⁺, C10H8N2++, C10H8N2 2+ or C6H6+•.';
+const CHARGE_HINT = 'Write a charge at the end of the formula, as in C₁₀H₈N₂²⁺, “C10H8N2++”, “C10H8N2 2+” or “C6H6+•”.';
 
 function chargeFrom(g: Record<string, string>, text: string): number {
   const signs = g.signs.replace(/[−–]/g, '-').replace(/⁺/g, '+').replace(/⁻/g, '-');
@@ -305,7 +305,7 @@ export function parseAdduct(label: string): Adduct {
   const close = text.lastIndexOf(']') + 1;
   text = text.slice(0, close) + superToPlain(text.slice(close));
   const m = ADDUCT.exec(text);
-  if (!m) throw new ChemError(`“${label}” is not an adduct I can read. Use the form [M+H]+, [M+Na]+, [M-H]-, [2M+Na]+, [M+H-H2O]+ or [M+2H]2+.`);
+  if (!m) throw new ChemError(`“${label}” is not an adduct I can read. Use the form “[M+H]+”, “[M+Na]+”, “[M-H]-”, “[2M+Na]+”, “[M+H-H2O]+” or “[M+2H]2+”.`);
   const mods = m[2];
   const pieces: RegExpExecArray[] = [];
   let pos = 0;
@@ -316,9 +316,9 @@ export function parseAdduct(label: string): Adduct {
     pieces.push(p);
     pos = p.index + p[0].length;
   }
-  if (pos !== mods.length) throw new ChemError(`In “${label}”, I can't read “${mods.slice(pos)}”. Use plain formulas such as +Na, +NH4 or -H2O.`);
+  if (pos !== mods.length) throw new ChemError(`In “${label}”, I can't read “${mods.slice(pos)}”. Use plain formulas such as “+Na”, “+NH4” or “-H2O”.`);
   const multimer = m[1] ? Number(m[1]) : 1;
-  if (multimer === 0) throw new ChemError(`“${label}”: the number of M can't be 0 (use [M+H]+ or [2M+Na]+).`);
+  if (multimer === 0) throw new ChemError(`“${label}”: the number of M can't be 0 (use “[M+H]+” or “[2M+Na]+”).`);
   const delta: Counts = new Map();
   for (const p of pieces) {
     const n = (p[2] ? Number(p[2]) : 1) * (p[1] === '+' ? 1 : -1);
@@ -326,14 +326,14 @@ export function parseAdduct(label: string): Adduct {
       try {
         isotopeKey(sym, Number(superToPlain(mass)));
       } catch {
-        throw new ChemError(`In “${label}”, “${all}” is not an isotope I know. A superscript number before an element is read as its mass number (as in ⁷Li); write a count as H2O or H₂O.`);
+        throw new ChemError(`In “${label}”, “${all}” is not an isotope I know. A superscript number before an element is read as its mass number (as in ⁷Li); write a count as “H2O” or “H₂O”.`);
       }
       return `[${superToPlain(mass)}${sym}]`;
     });
     for (const [k, c] of labeledFormula(formula)) delta.set(k, (delta.get(k) ?? 0) + n * c);
   }
   const z = (m[3] ? Number(m[3]) : 1) * (m[4] === '+' ? 1 : -1);
-  if (z === 0) throw new ChemError(`“${label}”: the ion's charge can't be 0. Use e.g. [M+H]+, [M-H]- or [M+2H]2+.`);
+  if (z === 0) throw new ChemError(`“${label}”: the ion's charge can't be 0. Use e.g. “[M+H]+”, “[M-H]-” or “[M+2H]2+”.`);
   return { label, multimer, delta, charge: z, radical: !!m[5] };
 }
 

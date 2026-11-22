@@ -210,6 +210,8 @@ export class SheetView {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private tabsEl: HTMLDivElement;
+  /** The sheet tabs themselves, the tablist (the + beside them is not a tab). */
+  private tabListEl: HTMLDivElement;
   private sels = new Map<Sheet, Selection>();
   private scrolls = new Map<Sheet, { x: number; y: number }>();
   private rows!: Axis;
@@ -295,8 +297,10 @@ export class SheetView {
     this.scroller.append(this.canvas, this.spacer, this.noteLayer, this.input.el, this.promptBox);
     this.tabsEl = document.createElement('div');
     this.tabsEl.className = 'sh-tabs';
-    this.tabsEl.setAttribute('role', 'tablist');
-    this.tabsEl.setAttribute('aria-label', 'Sheets');
+    this.tabListEl = document.createElement('div');
+    this.tabListEl.className = 'sh-tab-list';
+    this.tabListEl.setAttribute('role', 'tablist');
+    this.tabListEl.setAttribute('aria-label', 'Sheets');
     root.append(this.scroller, this.tabsEl);
     this.measureCtx = document.createElement('canvas').getContext('2d')!;
     this.rows = new Axis(0, () => DEFAULT_ROW_H, DEFAULT_ROW_H);
@@ -2377,7 +2381,8 @@ export class SheetView {
     add.textContent = '+';
     add.title = 'New sheet';
     add.addEventListener('click', () => this.addSheet());
-    this.tabsEl.replaceChildren(...items, add);
+    this.tabListEl.replaceChildren(...items);
+    this.tabsEl.replaceChildren(this.tabListEl, add);
   }
 
   addSheet(): void {
@@ -2406,7 +2411,7 @@ export class SheetView {
   renameSheet(i: number): void {
     const wb = this.wb;
     if (!wb) return;
-    const btn = this.tabsEl.children[i] as HTMLElement | undefined;
+    const btn = this.tabListEl.children[i] as HTMLElement | undefined;
     if (!btn) return;
     const s = wb.sheets[i];
     const box = document.createElement('input');

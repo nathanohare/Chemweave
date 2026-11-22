@@ -57,7 +57,7 @@ export const PROPERTIES: Record<string, PropertyDef> = {
   FORMULA: { label: 'Formula', help: 'Molecular formula (Hill order)', format: 'General', extra: 0, chem: true },
   MW: { label: 'MW', help: 'Molecular weight, g/mol (average masses)', format: '0.00', extra: 0 },
   EXACTMASS: { label: 'Exact mass', help: 'Monoisotopic mass', format: '0.0000', extra: 0 },
-  HRMS: { label: 'HRMS m/z', help: 'm/z of an ion, [M+H]+ unless you give another: HRMS(B2,"[M+Na]+")', format: '0.0000', extra: 1 },
+  HRMS: { label: 'HRMS m/z', help: 'm/z of an ion, [M+H]⁺ unless you give another: HRMS(B2,"[M+Na]+")', format: '0.0000', extra: 1 },
   CLOGP: { label: 'cLogP', help: 'Calculated logP (Wildman–Crippen)', format: '0.00', extra: 0 },
   TPSA: { label: 'TPSA', help: 'Topological polar surface area, Å² (Ertl)', format: '0.0', extra: 0 },
   HBD: { label: 'H-bond donors', help: 'OH and NH hydrogens (Lipinski)', format: '0', extra: 0 },
