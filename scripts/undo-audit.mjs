@@ -16,10 +16,16 @@
 //                         on a slide (moving, sizing, turning, bending: whatever the point does)
 //   all (the default)     all of the above
 //
-// Set CHROMIUM_PATH if Playwright's own Chromium is missing.
+// Set CHROMIUM_PATH if Playwright's own Chromium is missing; set UNDO_AUDIT_URL (such as
+// http://localhost:5173/ with `npx vite` running) to run it against an app already served, without a build.
+//
+// Which commands it runs, the ones it leaves out (each with its reason) and the problems already
+// known are in scripts/undo-audit-lists.mjs. It fails only on a problem not known there, and says
+// which known ones no longer happen.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { launch } from '../bench/browser.mjs';
+import { commandsFor, notUndoable, KNOWN_UNDO_PROBLEMS } from './undo-audit-lists.mjs';
 
 const part = process.argv[2] ?? 'all';
 const file = process.argv[3];
@@ -29,21 +35,13 @@ if (part !== 'all' && !PARTS.includes(part)) {
   process.exit(2);
 }
 const PORT = 4183;
-const URL = `http://localhost:${PORT}/`;
+// UNDO_AUDIT_URL runs it against an app already being served (such as `npx vite`) instead of the build
+const URL = process.env.UNDO_AUDIT_URL || `http://localhost:${PORT}/`;
 const problems = [];
 const report = (where, what) => { problems.push(`${where}: ${what}`); console.log(`  ${where}: ${what}`); };
 
-/** The `case` labels of a method in a source file (the commands it knows by name). */
-function casesOf(path, from, to) {
-  const src = fs.readFileSync(path, 'utf8');
-  const a = src.indexOf(from);
-  const body = src.slice(a, to ? src.indexOf(to, a) : src.indexOf('\n  }\n', a));
-  return [...body.matchAll(/case '([^']+)'/g)].map((m) => m[1]);
-}
-/** Commands that leave the tab, open files or other programs, or only change what is shown. */
-const SKIP = /^(new|open|save|export|print|close|quit|exit|reload|revert|present|slide-show|show-|start-show|play|rehearse|record|help|about|feedback|support|update|check-updates|settings|preferences|import|batch|find-in-files|recent|sponsor|send|share|email|tour|guide|keyboard|hotkeys|dev|diagnostics|stress|window|tab-|next-tab$|prev-tab$|undo$|redo$|zoom|fullscreen|split|view-|insert-picture$|insert-object$|hf-picture$|compare-docs$|combine-docs$|sheet-print)/;
 
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
+const server = process.env.UNDO_AUDIT_URL ? null : spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 let browser;
 try {
   for (let i = 0; i < 100; i++) {
@@ -145,8 +143,8 @@ try {
     });
     const cmds = [...new Set([
       ...await (async () => { await reset(); return page.evaluate(() => [...new Set([...document.querySelectorAll('[data-doc]')].map((e) => e.getAttribute('data-doc')))]); })(),
-      ...casesOf('src/ui/doc-mode.ts', '  run(cmd: string): boolean {', '  /** The pinned settings boxes were read'),
-    ])].filter((c) => !SKIP.test(c));
+      ...commandsFor('document'),
+    ])].filter((c) => !notUndoable(c));
     const pickObject = (floating) => page.evaluate((floating) => {
       const f = window.__app.docMode.file;
       if (f.box) f.endBox();
@@ -246,8 +244,8 @@ try {
     await reset();
     const cmds = [...new Set([
       ...await page.evaluate(() => [...new Set([...document.querySelectorAll('[data-sh]')].map((e) => e.getAttribute('data-sh')))]),
-      ...casesOf('src/ui/sheet-mode.ts', '  run(name: string): boolean {'),
-    ])].filter((c) => !SKIP.test(c));
+      ...commandsFor('sheet'),
+    ])].filter((c) => !notUndoable(c));
     await sweep('Spreadsheet', cmds, probe, reset, () => page.evaluate(() => window.__app.sheetMode.view.select({ r1: 1, c1: 1, r2: 3, c2: 2 })));
   }
 
@@ -288,9 +286,7 @@ try {
   for (const mode of ['canvas', 'slides', 'design']) {
     if (part !== 'all' && part !== mode) continue;
     await restart();
-    const src = fs.readFileSync('src/main.ts', 'utf8');
-    const at = src.indexOf('const COMMANDS: Record<string, () => unknown> = {');
-    const cmds = [...src.slice(at, src.indexOf('\n};', at)).matchAll(/^ {2}'?([a-zA-Z0-9:._-]+)'?:/gm)].map((m) => m[1]).filter((c) => !SKIP.test(c));
+    const cmds = commandsFor(mode);
     await sweep({ canvas: 'Canvas', slides: 'Presentation', design: 'Design' }[mode], cmds, () => drawingProbe(mode), async () => { await drawSample(mode); }, async () => {
       await page.evaluate(() => { const ed = window.__app.editor; ed.setTool?.('select'); });
       await run('select-all');
@@ -345,7 +341,12 @@ try {
   }
 } finally {
   await browser?.close();
-  server.kill();
+  server?.kill();
 }
-console.log(problems.length ? `\n${problems.length} undo problems found.` : '\nNo undo problems found.');
-process.exit(problems.length ? 1 : 0);
+const fresh = problems.filter((p) => !KNOWN_UNDO_PROBLEMS.includes(p));
+const ran = new Set(problems.map((p) => p.split(':')[0]));
+const gone = KNOWN_UNDO_PROBLEMS.filter((p) => !problems.includes(p) && [...ran].some((w) => p.startsWith(`${w}:`)));
+if (gone.length) console.log(`\nNo longer happening (take them off KNOWN_UNDO_PROBLEMS in scripts/undo-audit-lists.mjs):\n  ${gone.join('\n  ')}`);
+if (fresh.length) console.log(`\n${fresh.length} new undo problem${fresh.length === 1 ? '' : 's'} (not in KNOWN_UNDO_PROBLEMS in scripts/undo-audit-lists.mjs):\n  ${fresh.join('\n  ')}`);
+console.log(`\n${problems.length} undo problems found, ${problems.length - fresh.length} of them already known.`);
+process.exit(fresh.length ? 1 : 0);
