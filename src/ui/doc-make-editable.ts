@@ -5,12 +5,14 @@
 // has each structure read on its own, and its arrows and text made editable too (what can't be
 // read stays as a picture behind them).
 
-import type { DocObject, FromPictureRead } from '../document/document';
+import type { DocObject, FromPicture, FromPictureRead } from '../document/document';
+import type { Contents } from '../model';
 import type { DocStyle } from '../style';
 import { STYLE_PRESETS } from '../drawing-styles';
 import type { ReadResult } from '../recognise/reader';
 import type { Pixels } from '../recognise/picture';
-import { editableFromParts, readFrame, type Editable, type PartRead, type StyleChoice } from '../recognise/editable';
+import { editableFromParts, readFrame, type Editable, type PartRead, type PictureLook, type StyleChoice } from '../recognise/editable';
+import { strokeWidthPx } from '../recognise/measure';
 import { partPixels, schemeParts } from '../recognise/leftover';
 import { withoutFrames } from '../recognise/frames';
 import { findArrows, rubOut, type ReadLine } from '../recognise/scheme-extras';
@@ -23,6 +25,8 @@ type Drawing = Extract<DocObject, { kind: 'drawing' }>;
 export interface MakeEditableHost {
   /** Read a picture (the reader here or the AI model); null when it couldn't be. */
   read(p: Pixels): Promise<{ result: ReadResult; molblock: string | null } | null>;
+  /** Read a picture only to measure it: the reader on this computer when it is set up, with no questions or messages (null otherwise). */
+  readQuietly?(p: Pixels): Promise<{ result: ReadResult; molblock: string | null } | null>;
   /** Read the text in a picture (the rest of a scheme); missing where it can't be. */
   readText?(p: Pixels): Promise<ReadLine[]>;
   /** Why to look closely at what was read (the chemistry engine's checks); empty when nothing looks wrong. */
@@ -149,9 +153,9 @@ const UNSURE = 0.5;
 export interface Reading { p: Pixels; ptPerPx: number; parts: FromPictureRead[]; problems: string[]; texts?: ReadLine[] }
 
 /** Read the picture (each structure on its own, for a scheme); null (with a message) when it can't be. */
-export async function readPicture(host: MakeEditableHost, pic: Picture, ds: DocStyle): Promise<Reading | null> {
+export async function readPicture(host: MakeEditableHost, pic: Picture, ds: DocStyle, /** Only to measure its look: no messages, checks or text. */ quiet = false): Promise<Reading | null> {
   const shown = await pictureForReading(pic);
-  if (!shown) { host.flash('This picture can\'t be read (its format isn\'t one the structure reader can open).', 6000); return null; }
+  if (!shown) { if (!quiet) host.flash('This picture can\'t be read (its format isn\'t one the structure reader can open).', 6000); return null; }
   // the boxes round structures taken out first (editableFromParts takes them out the same way)
   // (and the arrows: an arrow reaching from one box to the next joins them into one part)
   const framed = withoutFrames(shown.p).p;
@@ -174,18 +178,18 @@ export async function readPicture(host: MakeEditableHost, pic: Picture, ds: DocS
       read = { ...(box ? { box } : {}), molblock: got.molblock };
     }
     parts.push(read);
-    const why = await host.check(r);
+    const why = quiet ? [] : await host.check(r);
     // the reader's own doubt (a drawing in 3D, overlapping rings, or not a structure at all)
     if (r.kind === 'graph' && r.graph.confidence < UNSURE) why.unshift(`The reader was only ${Math.round(r.graph.confidence * 100)}% sure of it.`);
     problems.push(...(boxes && boxes.length > 1 ? why.map((w) => `Structure ${parts.length}: ${w}`) : why));
   }
   if (!parts.length) {
-    host.flash(aiAnswer ? `The AI model's answer (${aiAnswer}) isn't a structure the chemistry engine can read.` : 'No structure was found in the picture.', 8000);
+    if (!quiet) host.flash(aiAnswer ? `The AI model's answer (${aiAnswer}) isn't a structure the chemistry engine can read.` : 'No structure was found in the picture.', 8000);
     return null;
   }
   // the rest of the picture (arrows are found from their shape when it is made): its text read
   let texts: ReadLine[] | undefined;
-  if (host.readText) {
+  if (host.readText && !quiet) {
     const rest = editableFromParts(partReads(parts), shown.p, shown.ptPerPx, 'match', ds, STYLE_PRESETS, []).rest;
     try {
       texts = rest ? await host.readText(rest) : [];
@@ -211,6 +215,11 @@ export async function makeEditable(host: MakeEditableHost, pic: Picture, choice:
 /** The same structure in the other style, from the picture kept (nothing is read again); null when it can't be redone. */
 export async function restyle(d: Drawing, choice: StyleChoice, ds: DocStyle): Promise<Drawing | null> {
   const fp = d.fromPicture;
+  // a figure drawn by hand: what is drawn in it takes the look (or the document's style)
+  if (fp && !fp.parts?.length) {
+    if (choice === 'match' && !fp.look) return null;
+    return { ...d, contents: withLook(d.contents, choice === 'match' ? fp.look! : null, ds, true), fromPicture: { ...fp, style: choice } };
+  }
   if (!fp?.parts?.length) return null;
   const shown = await pictureForReading(fp.picture);
   if (!shown) return null;
@@ -221,4 +230,98 @@ export async function restyle(d: Drawing, choice: StyleChoice, ds: DocStyle): Pr
 /** The picture back as it was before Make Editable. */
 export function pictureBack(d: Drawing): Picture | null {
   return d.fromPicture ? structuredClone(d.fromPicture.picture) : null;
+}
+
+// ------------------------------------------------------------------ Convert to Figure
+
+/**
+ * Convert to Figure: an empty figure `size` points (the picture's size on the page) in the
+ * picture's place, wrapped and framed as it was, the picture kept beside it to copy or trace.
+ * Its structures are drawn in the picture's look (`look`, measured) or the document's style.
+ */
+export function figureFor(pic: Picture, size: { w: number; h: number }, choice: StyleChoice, look: PictureLook | null): Drawing {
+  const w = Math.round(size.w * 100) / 100, h = Math.round(size.h * 100) / 100;
+  return {
+    kind: 'drawing', contents: { atoms: [], bonds: [], captions: [], arrows: [], shapes: [] },
+    frame: { x: 0, y: 0, w, h },
+    ...(pic.float ? { float: structuredClone(pic.float) } : {}),
+    ...(pic.look ? { look: structuredClone(pic.look) } : {}),
+    ...(pic.alt ? { alt: pic.alt } : {}),
+    fromPicture: { picture: pic, at: { x: 0, y: 0, w, h }, style: choice, ...(look ? { look } : {}) },
+  };
+}
+
+/** The picture a structure was made from, or a figure was converted from: the picture as it was. */
+export function keptPicture(o: DocObject | undefined): Picture | null {
+  if (canMakeEditable(o)) return o;
+  return o?.kind === 'drawing' && o.fromPicture ? o.fromPicture.picture : null;
+}
+
+/** A figure converted from a picture (drawn by hand), rather than a structure read from it. */
+export const isConvertedFigure = (o: DocObject | undefined): boolean => o?.kind === 'drawing' && !!o.fromPicture && !!o.frame && !o.fromPicture.parts?.length;
+
+/** The drawing style that draws in the picture's look (the document's, sized to the bond length measured). */
+export function styleForLook(ds: DocStyle, look: PictureLook): DocStyle {
+  const k = look.bondLength / ds.bondLength;
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  return {
+    ...ds,
+    bondLength: r2(look.bondLength),
+    lineWidth: r2(look.lineWidth ?? ds.lineWidth * k),
+    boldWidth: r2(ds.boldWidth * k),
+    hashSpacing: r2(ds.hashSpacing * k),
+    marginWidth: r2(ds.marginWidth * k),
+    labelSize: r2(look.labelSize ?? ds.labelSize * k),
+  };
+}
+
+/** The style a structure made from a picture is drawn in while it is edited: the picture's look when it matches it. */
+export function drawingStyleOf(fp: FromPicture | undefined, ds: DocStyle): DocStyle {
+  return fp?.style === 'match' && fp.look ? styleForLook(ds, fp.look) : ds;
+}
+
+const BOND_LOOK = ['s', 'boldWidth', 'hashSpacing', 'marginWidth', 'bondLength'] as const;
+
+/**
+ * The picture's look kept on each bond and atom drawn without one (as applyLook does for a
+ * structure read), so what was drawn in a matching figure keeps that look in the document and in
+ * CDXML. `all` puts it on every one (the style changed); null `look` takes it off (the document's style).
+ */
+export function withLook(c: Contents, look: PictureLook | null, ds: DocStyle, all = false): Contents {
+  if (!look) {
+    if (!all) return c;
+    return {
+      ...c,
+      bonds: c.bonds.map((b) => { const n = { ...b }; for (const k of BOND_LOOK) delete n[k]; return n; }),
+      atoms: c.atoms.map((a) => { const n = { ...a }; delete n.s; return n; }),
+    };
+  }
+  const st = styleForLook(ds, look);
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const bond = { s: r2(st.lineWidth / ds.lineWidth), boldWidth: st.boldWidth, hashSpacing: st.hashSpacing, marginWidth: st.marginWidth, bondLength: st.bondLength };
+  const atomS = r2(st.labelSize / ds.labelSize);
+  return {
+    ...c,
+    bonds: c.bonds.map((b) => (all || b.s === undefined ? { ...b, ...bond } : b)),
+    atoms: c.atoms.map((a) => (all || a.s === undefined ? { ...a, s: atomS } : a)),
+  };
+}
+
+/**
+ * How the picture is drawn, for a figure to match it: from what the reader reads in it (its bond
+ * length, line width and label size), else only its line width (the bond length is then the document's, to change by hand; no labels). Null when nothing could be measured.
+ */
+export async function measurePicture(host: MakeEditableHost | null, pic: Picture, ds: DocStyle): Promise<{ look: PictureLook; from: 'read' | 'lines' } | null> {
+  if (host?.readQuietly) {
+    const r = await readPicture({ ...host, read: host.readQuietly }, pic, ds, true).catch(() => null);
+    if (r?.parts.length) {
+      const e = editableOf(r.parts, r.p, r.ptPerPx, 'match', ds);
+      if (e.look.bondLength > 0) return { look: e.look, from: 'read' };
+    }
+  }
+  const shown = await pictureForReading(pic);
+  const px = shown && strokeWidthPx(shown.p);
+  if (!shown || !px) return null;
+  const lw = px * shown.ptPerPx;
+  return { look: { bondLength: ds.bondLength, lineWidth: Math.round(lw * 100) / 100, labelSize: null }, from: 'lines' };
 }

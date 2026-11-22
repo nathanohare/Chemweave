@@ -398,7 +398,21 @@ export interface FromPicture {
   px?: { w: number; h: number };
   /** The text read in the rest of the picture (a scheme's reagents, conditions, compound numbers): each line's words with their boxes and how sure (0 to 100), and its baseline, in the pixels read. */
   texts?: { words: { t: string; box: [number, number, number, number]; c: number }[]; base: number }[];
+  /** Tracing: the picture shown faintly on the structure, where it was, while it is drawn (Convert to Figure, or a structure made editable). */
+  trace?: TraceLook;
 }
+
+/** How the picture is shown to trace over: on or off, how strongly (0 to 1), and in what color. */
+export interface TraceLook {
+  on: boolean;
+  opacity: number;
+  tint: TraceTint;
+}
+export type TraceTint = 'original' | 'gray' | 'blue' | 'red';
+/** Tracing as it starts: off, at 35% in gray. */
+export const TRACE_START: TraceLook = { on: false, opacity: 0.35, tint: 'gray' };
+/** Tracing as kept, or as it starts. */
+export const traceOf = (fp: FromPicture): TraceLook => ({ ...TRACE_START, ...fp.trace });
 
 export interface Embedded {
   /** The program's name for the kind of object, as Word records it (Excel.Sheet.12, Package). */

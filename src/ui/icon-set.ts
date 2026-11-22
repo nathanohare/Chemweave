@@ -76,6 +76,10 @@ export const ICON_SET: Record<string, IconDef> = {
   crop: { hue: 'gray', d: '<path d="M6.75 2.75v13.5a1 1 0 0 0 1 1h13.5"/><path class="a" d="M2.75 6.75h13.5a1 1 0 0 1 1 1v13.5"/>' },
   // a picture of a ring, with a pencil: the picture made a structure to edit
   'make-editable': { hue: 'teal', d: '<path class="p" d="M13.25 3.75h-9a1.5 1.5 0 0 0-1.5 1.5v10a1.5 1.5 0 0 0 1.5 1.5h5.5"/>' + hex(8.5, 10.25, 3.5, 'a') + '<path class="f a" d="M13.25 20.75l.75-3 6-6 2.25 2.25-6 6z"/><path d="M18.5 13.25l2.25 2.25"/>' },
+  // a dashed figure with a pencil: the picture replaced by an empty figure to draw in
+  'convert-to-figure': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="13.5" height="13.5" rx="1.5" stroke-dasharray="2.5 2"/><path class="f a" d="M13.25 20.75l.75-3 6-6 2.25 2.25-6 6z"/><path d="M18.5 13.25l2.25 2.25"/>' },
+  'trace-original': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="12" height="12" rx="1.5" stroke-dasharray="2 1.6"/><rect class="a" x="8.75" y="8.75" width="12" height="12" rx="1.5"/>' },
+  'original-pictures': { hue: 'blue', d: '<rect class="p" x="8.75" y="3.75" width="12.5" height="14.5" rx="1.5"/><path class="a" d="M11.25 14.25l2.75-3.25 2 2 1.5-1.5 2.25 2.75"/><path d="M2.75 9h3.5M2.75 13h3.5" stroke-dasharray="1.5 1.5"/>' },
   'picture-format': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="14" height="12.5" rx="2"/><path class="f a" d="M2.75 14l4-4.25 3.5 3.5 2-2 4.5 4.5"/><circle class="s" cx="17.5" cy="17.5" r="3.75"/><path class="k" d="M17.5 15.25v4.5M15.25 17.5h4.5"/>' },
   // ---------------------------------------------------------------- arrange
   'rotate-cw': { hue: 'gray', d: '<path d="M19.25 12a7.25 7.25 0 1 1-2.5-5.5"/><path class="a" d="M17.25 2.75v4h-4"/>' },
