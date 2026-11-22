@@ -226,6 +226,19 @@ async function slidesFile(design = false): Promise<Uint8Array> {
   return bytesOf((await ws.encode(ws.active, 'Talk.pptx')).data);
 }
 
+/**
+ * A file as ChemDraw writes one, typed here by hand (never a file ChemDraw made: CONTRIBUTING):
+ * R-group labels in ChemDraw's own faces, R1 all in formula style and R with a raised 1, an OMe
+ * label, a text and two crossing bonds with ChemDraw's Z. Everything this program reads from it
+ * is what ChemDraw's attributes say, so saving it unchanged adds no settings tag (review F7b-R01).
+ */
+const CHEMDRAW_STYLE = `<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >
+<CDXML CreationProgram="ChemDraw 23.1.1.3" BoundingBox="40 40 200 120" LabelFont="3" LabelSize="10" LabelFace="96" CaptionFont="3" CaptionSize="10" BondLength="14.4"><fonttable>
+<font id="3" charset="iso-8859-1" name="Arial"/>
+</fonttable><page id="1" BoundingBox="0 0 540 720"><fragment id="2" BoundingBox="40 40 140 80"><n id="3" Z="1" p="50 50" NodeType="GenericNickname" GenericNickname="R1"><t id="4" p="46.4 53.6" LabelJustification="Left" LabelAlignment="Left"><s font="3" size="10" face="96">R1</s></t></n><n id="5" Z="2" p="62.47 57.2"/><n id="6" Z="3" p="74.94 50" NodeType="GenericNickname" GenericNickname="R1"><t id="7" p="71.34 53.6" LabelJustification="Left" LabelAlignment="Left"><s font="3" size="10" face="96">R</s><s font="3" size="10" face="64">1</s></t></n><n id="8" Z="4" p="62.47 71.6" NodeType="Fragment"><t id="9" p="58.87 75.2" LabelJustification="Left" LabelAlignment="Left"><s font="3" size="10" face="96">OMe</s></t></n><b id="10" Z="5" B="3" E="5"/><b id="11" Z="6" B="5" E="6"/><b id="12" Z="7" B="5" E="8"/></fragment><fragment id="13" BoundingBox="100 40 140 80"><n id="14" Z="8" p="100 60"/><n id="15" Z="9" p="140 60"/><n id="16" Z="10" p="120 40"/><n id="17" Z="11" p="120 80"/><b id="18" Z="13" B="14" E="15" CrossingBonds="19"/><b id="19" Z="12" B="16" E="17" CrossingBonds="18"/></fragment><t id="20" p="60 110" BoundingBox="60 101 120 112" Justification="Center"><s font="3" size="10" face="0">made up text</s></t></page></CDXML>
+`;
+
 /** A workbook or document saved by the app's own Save. */
 async function tabFile(name: string): Promise<Uint8Array> {
   const { ws } = workspace();
@@ -277,6 +290,8 @@ const FILES: { name: string; make: () => Promise<Uint8Array> }[] = [
   { name: 'Scheme.json', make: () => drawingFile('Scheme.json', plainDrawing) },
   // (an abbreviation label, NMe3, written out as atoms by a format with no labels)
   { name: 'Labels.mol', make: () => drawingFile('Labels.mol') },
+  // (not saved here first: as another program writes one, with R-group labels read from its own faces)
+  { name: 'RGroups.cdxml', make: async () => bytesOf(CHEMDRAW_STYLE) },
   { name: 'Talk.pptx', make: () => slidesFile() },
   { name: 'Poster.pptx', make: () => slidesFile(true) },
   { name: 'Reagents.xlsx', make: () => tabFile('Reagents.xlsx') },

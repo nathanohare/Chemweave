@@ -39,7 +39,7 @@ import { cleanTiedLook } from '../editor/tied-look';
 import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
-import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
+import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, labelSeen, captionAt, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
 
 export interface ReadStats {
   atoms: number;
@@ -439,11 +439,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
         let txt = runs.map((r) => r.text).join('');
         // a charge the label doesn't show (no sign, and no circled charge beside it) isn't shown
         if (atom.charge && !/[+−]|-d*$/.test(txt)) atom.hideCharge = true;
-        if (atom.charge) {
-          // the charge is part of the label text ("N+", "O2−"); it is drawn from the charge instead
-          const n = Math.abs(atom.charge);
-          txt = txt.replace(new RegExp(`${n > 1 ? n : ''}[${atom.charge > 0 ? '+' : '\\-−'}]$`), '');
-        }
+        // the charge is part of the label text ("N+", "O2−"); it is drawn from the charge instead
+        txt = withoutCharge(txt, atom.charge);
         // the label's inner fragment as ChemDraw has it (written back while the label is unchanged)
         const innerEl = kids(n).find((k) => k.nodeName === 'fragment');
         if (innerEl && type && typeof XMLSerializer !== 'undefined') {
@@ -1501,9 +1498,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       let v: Record<string, unknown>;
       try { v = JSON.parse(json) as Record<string, unknown>; } catch { continue; }
       if (!v || typeof v !== 'object') continue;
-      if (kind === 'a') { const a = doc.atoms.get(id); const t = kids(el).find((k) => k.nodeName === 't'); if (a) atomMoreIn(a, v, t ? t.textContent ?? '' : null, doc.degree(id) > 0); }
-      else if (kind === 'b') { const b = doc.bonds.get(id); if (b) bondMoreIn(b, v); }
-      else if (kind === 'c') { const c = doc.captions.get(id); if (c) captionMoreIn(c, v); }
+      if (kind === 'a') { const a = doc.atoms.get(id); const t = kids(el).find((k) => k.nodeName === 't'); if (a) atomMoreIn(a, v, t ? labelSeen(t) : null, doc.degree(id) > 0); }
+      else if (kind === 'b') { const b = doc.bonds.get(id); if (b) bondMoreIn(b, v, el.getAttribute('Z')); }
+      else if (kind === 'c') { const c = doc.captions.get(id); if (c) captionMoreIn(c, v, captionAt(el)); }
       else if (kind === 'r') { const r = doc.arrows.get(id); if (r) arrowMoreIn(r, v, refIn); }
       else if (kind === 's') { const sh = doc.shapes.get(id); if (sh) shapeMoreIn(sh, v, refIn); }
     }
@@ -2337,6 +2334,22 @@ function pictureOf(el: Element): { src: string; px: { w: number; h: number }; cr
  * How a label from a file raises its characters: R numbers written raised (or, for R1, R12…,
  * written on the line or lowered) and any other characters raised, lowered by hand.
  */
+/** A label's text without the charge written at its end ("N+", "O2−"), which is drawn from the charge. */
+function withoutCharge(text: string, charge: number | undefined): string {
+  if (!charge) return text;
+  const n = Math.abs(charge);
+  return text.replace(new RegExp(`${n > 1 ? n : ''}[${charge > 0 ? '+' : '\\-−'}]$`), '');
+}
+
+/**
+ * What the reader works out from a label's text element as written (raised digits, marks), for
+ * the writer to keep only what differs from it (cdxml-more.ts atomMore). `charge` is the node's.
+ */
+export function labelLookOfText(t: Element, charge: number | undefined): { supDigits?: boolean; marks?: string } {
+  const runs: TextRun[] = kids(t).filter((k) => k.nodeName === 's').map((k) => ({ text: k.textContent ?? '', ...styleFromFace(num(k, 'face', 0)) }));
+  return labelLookOf(runs, withoutCharge(runs.map((r) => r.text).join(''), charge));
+}
+
 export function labelLookOf(runs: TextRun[], text: string): { supDigits?: boolean; marks?: string } {
   const mixed = runs.some((r) => r.formula) && runs.some((r) => !r.formula && !r.sup && !r.sub);
   const out: { supDigits?: boolean; marks?: string } = {};

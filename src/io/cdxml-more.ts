@@ -2,9 +2,13 @@
 // field survives every file it can go into). They ride in one hidden object tag on the object's
 // own element (MORE_TAG), which ChemDraw keeps and passes over, as it does this program's other
 // tags (cdxml.ts). Things they name (a frame's atoms, a reagent arrow's step, a lone pair's atoms)
-// are named by their elements' ids in the file, and found again by those ids on reading. Settings
-// that belong to a label or a stereo label are kept with the text they were written for (`seen`),
-// so a label or descriptor changed in ChemDraw no longer takes them.
+// are named by their elements' ids in the file, and found again by those ids on reading.
+//
+// A tag holds only what ChemDraw's own attributes cannot say, and only when it differs from what
+// the reader works out from them (an untouched ChemDraw file saves unchanged). Where a value sits
+// beside something ChemDraw can change (a label's text and faces, a bond's Z, a text's
+// justification), the tag keeps a print of what it was written beside, and on reading the value
+// is used only while the file still shows that: a file changed in ChemDraw keeps ChemDraw's.
 
 import type { Arrow, Atom, Bond, Caption, Frame, MadeLabel, Pin, Shape, TextRun } from '../model';
 
@@ -41,22 +45,39 @@ export function pinIn(v: unknown, ref: RefIn): Pin | undefined {
   };
 }
 
-/** The tag's value for an atom (null when it needs none). `seen` is the label's text as written, `stereo` the stereo label's. */
-export function atomMore(a: Atom, seen: string | null, stereo: string | null): Record<string, unknown> | null {
+/** What the reader works out from a label's runs (cdxml.ts labelLookOf): raised digits and marks. */
+export type LabelLook = { supDigits?: boolean; marks?: string };
+
+/**
+ * The print of a label as written: its text and each run's face, so a digit raised or lowered in
+ * ChemDraw (the same text) no longer takes the settings kept for it.
+ */
+export function labelSeen(t: Element): string {
+  const runs = Array.from(t.childNodes).filter((k): k is Element => k.nodeType === 1 && (k as Element).nodeName === 's');
+  return `${runs.map((r) => r.textContent ?? '').join('')}|${runs.map((r) => r.getAttribute('face') ?? '0').join(',')}`;
+}
+
+/**
+ * The tag's value for an atom (null when it needs none). `seen` is the label's print as written
+ * (labelSeen), `look` what the reader will work out from its runs, `stereo` the stereo label's text.
+ * Marks and raised digits set on the atom are kept only where they differ from `look` (not set,
+ * the reader works them out from the runs as for any file).
+ */
+export function atomMore(a: Atom, seen: string | null, look: LabelLook, stereo: string | null): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
   if (a.depth !== undefined && num(a.depth)) v.depth = a.depth;
   if (seen !== null) {
     const l: Record<string, unknown> = {};
     if (a.asTyped && a.label) { l.asTyped = true; l.label = a.label; }
-    if (a.labelMarks !== undefined) l.marks = a.labelMarks;
-    if (a.supDigits !== undefined) l.supDigits = a.supDigits;
+    if (a.labelMarks !== undefined && a.labelMarks !== look.marks) l.marks = a.labelMarks;
+    if (a.supDigits !== undefined && a.supDigits !== look.supDigits) l.supDigits = a.supDigits;
     if (Object.keys(l).length) v.label = { ...l, seen };
   }
   if (a.stereoLabel?.manual && stereo !== null) v.stereo = { manual: true, ...(a.stereoLabel.fromFile ? { fromFile: true } : {}), seen: stereo };
   return Object.keys(v).length ? v : null;
 }
 
-/** Puts an atom's settings from its tag back. `seen` is the label's text in the file now, `bonded` whether it has bonds. */
+/** Puts an atom's settings from its tag back. `seen` is the label's print in the file now (labelSeen), `bonded` whether it has bonds. */
 export function atomMoreIn(a: Atom, v: Record<string, unknown>, seen: string | null, bonded: boolean): void {
   if (num(v.depth)) a.depth = v.depth;
   const l = v.label as Record<string, unknown> | undefined;
@@ -69,16 +90,21 @@ export function atomMoreIn(a: Atom, v: Record<string, unknown>, seen: string | n
   stereoIn(a, v.stereo);
 }
 
-/** The tag's value for a bond (null when it needs none). `fileZ` is the Z the reader takes from the element itself, if any. */
-export function bondMore(b: Bond, stereo: string | null, fileZ?: number): Record<string, unknown> | null {
+/**
+ * The tag's value for a bond (null when it needs none). `fileZ` is the Z the reader takes from the
+ * element itself, if any, and `zAt` the element's Z attribute as written: a place among crossing
+ * bonds is used again only while ChemDraw's Z is still that one (Send to Back in ChemDraw wins).
+ */
+export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefined, zAt: string | null): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
-  if (b.z !== undefined && num(b.z) && b.z !== fileZ) v.z = b.z;
+  if (b.z !== undefined && num(b.z) && b.z !== fileZ) { v.z = b.z; v.zAt = zAt; }
   if (b.stereoLabel?.manual && stereo !== null) v.stereo = { manual: true, ...(b.stereoLabel.fromFile ? { fromFile: true } : {}), seen: stereo };
   return Object.keys(v).length ? v : null;
 }
 
-export function bondMoreIn(b: Bond, v: Record<string, unknown>): void {
-  if (num(v.z)) b.z = v.z;
+/** Puts a bond's settings from its tag back. `zAt` is the element's Z attribute in the file now. */
+export function bondMoreIn(b: Bond, v: Record<string, unknown>, zAt: string | null): void {
+  if (num(v.z) && (v.zAt ?? null) === zAt) b.z = v.z;
   stereoIn(b, v.stereo);
 }
 
@@ -90,18 +116,28 @@ function stereoIn(o: Atom | Bond, s: unknown): void {
   o.stereoLabel = { ...rest, manual: true, ...(st.fromFile === true ? { fromFile: true } : {}) };
 }
 
-/** A caption's text box settings that ChemDraw's text has no place for. `fileWidth` is the width the reader takes from the element itself, if any. */
-export function captionMore(c: Caption, fileWidth?: number): Record<string, unknown> | null {
+/**
+ * A caption's text box settings that ChemDraw's text has no place for. `fileWidth` is the width the
+ * reader takes from the element itself, if any, and `at` the print of what lines the text up in
+ * ChemDraw (captionAt): a width is used again only while that is unchanged.
+ */
+export function captionMore(c: Caption, fileWidth: number | undefined, at: string): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
-  if (c.width !== undefined && num(c.width) && !(fileWidth !== undefined && Math.abs(c.width - fileWidth) < 0.005)) v.width = c.width;
+  if (c.width !== undefined && num(c.width) && !(fileWidth !== undefined && Math.abs(c.width - fileWidth) < 0.005)) { v.width = c.width; v.widthAt = at; }
   if (c.cols !== undefined && num(c.cols)) v.cols = c.cols;
   if (c.colGap !== undefined && num(c.colGap)) v.colGap = c.colGap;
   if (c.fit) v.fit = c.fit;
   return Object.keys(v).length ? v : null;
 }
 
-export function captionMoreIn(c: Caption, v: Record<string, unknown>): void {
-  if (num(v.width) && v.width > 0) c.width = v.width;
+/** What lines a text up in ChemDraw: its justification and wrap width. */
+export function captionAt(t: Element): string {
+  return `${t.getAttribute('Justification') ?? t.getAttribute('CaptionJustification') ?? ''}|${t.getAttribute('WordWrapWidth') ?? ''}`;
+}
+
+/** Puts a caption's settings from its tag back. `at` is captionAt of the element in the file now. */
+export function captionMoreIn(c: Caption, v: Record<string, unknown>, at: string): void {
+  if (num(v.width) && v.width > 0 && v.widthAt === at) c.width = v.width;
   if (num(v.cols) && v.cols >= 1) c.cols = Math.round(v.cols);
   if (num(v.colGap) && v.colGap >= 0) c.colGap = v.colGap;
   if (v.fit === 'shrink' || v.fit === 'fixed') c.fit = v.fit;

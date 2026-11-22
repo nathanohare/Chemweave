@@ -26,7 +26,7 @@ import { atomStereoText, bondStereoText, StereoPlacer, PlacedLabel } from '../ch
 import { dataUrl, fromDataUrl, rasterPng } from '../render/images';
 import { itemsToEmf } from '../render/emf';
 import { crystalItems } from '../design/xray';
-import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, FRAME_DATA, frameTexts, BRACKET_PAIR_TAG, PIN_TAG, GLUE_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
+import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, FRAME_DATA, frameTexts, BRACKET_PAIR_TAG, PIN_TAG, GLUE_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags, labelLookOfText } from './cdxml';
 import { stackItems, usesStacking } from '../editor/stacking';
 import { frameTag } from '../editor/frames';
 import { tableContents } from '../editor/table-figs';
@@ -38,7 +38,7 @@ import { fillInk, mix, ringShadowGroups, ringShadowSize, shadowLook } from '../r
 import { shapeShadow } from '../render/highlight-fx';
 import { parseColor } from '../render/vector';
 import { layoutTable, cellAlign, isCovered, spanOf, partAt, NOTE_SCALE } from '../table';
-import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, type RefKind, type RefOut } from './cdxml-more';
+import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, type RefKind, type RefOut } from './cdxml-more';
 import { TABLE_TAG, TABLE_PART_TAG, tableBorders, type TableTag } from './cdxml-table';
 import { bondLayer, crossingBondsCached, listedNearMisses } from '../chem/crossing';
 import { repeatGroups, repeatCount, repeatLabelPlace } from '../chem/polymer';
@@ -2878,10 +2878,14 @@ class CdxmlWriter {
       return t ? this.child(t, 't')?.textContent ?? null : null;
     };
     // what the reader takes from the element itself (cdxml.ts): a crossing bond's Z, and a justified text's width from its box
+    // (whether a fragment has crossing bonds is worked out once per fragment, and only for a bond with a place of its own)
+    const layered = new Map<Element, boolean>();
     const fileZ = (e: Element): number | undefined => {
       const frag = e.parentNode as Element | null;
-      const layered = !!frag && kids(frag).some((k) => k.nodeName === 'b' && k.hasAttribute('CrossingBonds'));
-      return layered && e.hasAttribute('Z') ? Number(e.getAttribute('Z')) : undefined;
+      if (!frag || !e.hasAttribute('Z')) return undefined;
+      let on = layered.get(frag);
+      if (on === undefined) layered.set(frag, (on = kids(frag).some((k) => k.nodeName === 'b' && k.hasAttribute('CrossingBonds'))));
+      return on ? Number(e.getAttribute('Z')) : undefined;
     };
     const fileWidth = (e: Element): number | undefined => {
       if (Number(e.getAttribute('WordWrapWidth')) > 0) return undefined;
@@ -2901,15 +2905,17 @@ class CdxmlWriter {
     };
     for (const a of doc.atoms.values()) {
       const e = elOf('a', a.id);
-      if (e) put(e, atomMore(a, this.child(e, 't')?.textContent ?? null, stereoText(e)));
+      if (!e) continue;
+      const t = this.child(e, 't');
+      put(e, atomMore(a, t ? labelSeen(t) : null, t ? labelLookOfText(t, Number(e.getAttribute('Charge')) || undefined) : {}, stereoText(e)));
     }
     for (const b of doc.bonds.values()) {
       const e = elOf('b', b.id);
-      if (e) put(e, bondMore(b, stereoText(e), fileZ(e)));
+      if (e) put(e, bondMore(b, stereoText(e), b.z !== undefined ? fileZ(e) : undefined, e.getAttribute('Z')));
     }
     for (const c of doc.captions.values()) {
       const e = elOf('c', c.id);
-      if (e) put(e, captionMore(c, fileWidth(e)));
+      if (e) put(e, captionMore(c, c.width !== undefined ? fileWidth(e) : undefined, captionAt(e)));
     }
     for (const r of doc.arrows.values()) put(elOf('r', r.id), arrowMore(r, ref));
     for (const s of doc.shapes.values()) put(elOf('s', s.id), shapeMore(s, ref));

@@ -86,6 +86,59 @@ describe('the settings tag (R3)', () => {
     expect([...back.atoms.values()].find((a) => a.x === 300)?.labelMarks).not.toBe('^==');
   });
 
+  // ChemDraw's own edits, made here on the saved XML the way ChemDraw writes them (review F7b-R03)
+  const edited = (change: (doc: Document) => void) => {
+    const doc = parse(writeCdxml(drawing(), { name: 't.cdxml' }));
+    change(doc);
+    return readCdxml(new XMLSerializer().serializeToString(doc)).doc;
+  };
+  const tagged = (doc: Document, name: string) => [...doc.getElementsByTagName(name)].filter((e) => [...e.children].some((k) => k.getAttribute('Name') === MORE_TAG));
+
+  it('lets ChemDraw\'s Z win over a kept place among crossing bonds once ChemDraw changed it', () => {
+    expect([...edited(() => {}).bonds.values()].map((b) => b.z)).toContain(4);
+    const back = edited((doc) => { const b = tagged(doc, 'b')[0]; b.setAttribute('Z', String(Number(b.getAttribute('Z') ?? 0) + 50)); });
+    expect([...back.bonds.values()].map((b) => b.z)).not.toContain(4);
+  });
+
+  it('lets ChemDraw\'s justification win over a kept text width once ChemDraw changed it', () => {
+    const back = edited((doc) => { const t = tagged(doc, 't')[0]; t.setAttribute('Justification', 'Center'); t.setAttribute('BoundingBox', '50 31 90 42'); });
+    const c = [...back.captions.values()][0];
+    expect(c.width).not.toBe(120);
+    expect([c.cols, c.colGap, c.fit]).toEqual([2, 9, 'shrink']);
+  });
+
+  it('lets ChemDraw\'s faces win over kept label marks and raised digits once ChemDraw changed them', () => {
+    const label = (doc: Document, text: string) => [...doc.getElementsByTagName('t')].find((t) => t.textContent === text)!;
+    // OMe with a raised O typed here (marks ^==): Me set in formula style in ChemDraw
+    const marks = edited((doc) => { label(doc, 'OMe').getElementsByTagName('s')[1].setAttribute('face', '96'); });
+    expect([...marks.atoms.values()].find((a) => a.x === 300)?.labelMarks).not.toBe('^==');
+    // R1 kept on the line here (supDigits false), its 1 made bold in ChemDraw, still raised
+    const raised = edited((doc) => { label(doc, 'R1').getElementsByTagName('s')[1].setAttribute('face', '65'); });
+    expect([...raised.atoms.values()].find((a) => a.x === 340)?.supDigits).toBe(true);
+  });
+
+  it('adds no tag for labels whose raised digits and marks ChemDraw\'s faces already say (review F7b-R01)', () => {
+    const file = '<?xml version="1.0" encoding="UTF-8" ?><CDXML LabelFont="3" LabelSize="10" LabelFace="96"><fonttable><font id="3" name="Arial"/></fonttable><page id="1"><fragment id="2">'
+      + '<n id="3" p="50 50" NodeType="GenericNickname" GenericNickname="R1"><t id="4" p="46 54"><s font="3" size="10" face="96">R1</s></t></n><n id="5" p="62 57"/>'
+      + '<n id="6" p="75 50" NodeType="GenericNickname" GenericNickname="R1"><t id="7" p="71 54"><s font="3" size="10" face="96">R</s><s font="3" size="10" face="64">1</s></t></n>'
+      + '<b id="8" B="3" E="5"/><b id="9" B="5" E="6"/></fragment></page></CDXML>';
+    const { doc } = readCdxml(file);
+    expect([...doc.atoms.values()].map((a) => a.supDigits).filter((x) => x !== undefined).sort()).toEqual([false, true]);
+    // saved unchanged (tests/open-save-compare.test.ts checks the whole file stays byte for byte the same)
+    expect(writeCdxml(doc, { name: 't.cdxml' })).not.toContain(MORE_TAG);
+  });
+
+  it('keeps a ChemDraw label in bold without formula style as face 1 (review F7b-R11)', () => {
+    const file = '<?xml version="1.0" encoding="UTF-8" ?><CDXML LabelFont="3" LabelSize="10" LabelFace="96"><fonttable><font id="3" name="Arial"/></fonttable><page id="1"><fragment id="2">'
+      + '<n id="3" p="50 50"/><n id="4" p="62 57" NodeType="Fragment"><t id="5" p="58 61"><s font="3" size="10" face="1">CH2Br</s></t></n><b id="6" B="3" E="4"/></fragment></page></CDXML>';
+    const { doc } = readCdxml(file);
+    const a = [...doc.atoms.values()].find((x) => x.label === 'CH2Br')!;
+    expect([a.face, a.fileLabel]).toEqual([1, true]);
+    doc.bulk(() => doc.updateAtom(a.id, { x: a.x + 10 }));
+    const t = [...parse(writeCdxml(doc, { name: 't.cdxml' })).getElementsByTagName('t')].find((e) => e.textContent === 'CH2Br')!;
+    expect([...t.getElementsByTagName('s')].map((x) => x.getAttribute('face'))).toEqual(['1']);
+  });
+
   it('leaves a damaged tag alone', () => {
     const xml = writeCdxml(drawing(), { name: 't.cdxml' }).replace(/(Name="Chem Illustrator settings" Value=")[^"]*"/g, '$1{not json"');
     expect(() => readCdxml(xml)).not.toThrow();
