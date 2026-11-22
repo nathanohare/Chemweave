@@ -243,15 +243,21 @@ describe('PowerPoint files', () => {
     expect(pic.src).toMatch(/^data:image\/png/);
   });
 
-  it('leave worked-in effects alone when the original is missing', async () => {
+  it('keep effects that could not be worked in with the picture, while it is still that picture', async () => {
     const host = new Doc();
     const d = Deck.blank(host);
     d.attach();
     host.edit('Picture', () => host.addShape({ kind: 'picture', x1: 100, y1: 100, x2: 300, y2: 200, src: DOT, px: { w: 1, h: 1 }, fx: { sharpen: 0.5, contrast: 0.1 } }));
-    // no way to work them in: the live ones are still saved
+    // no way to work them in: the live ones are saved as PowerPoint's, sharpening rides in the tag
+    // with the picture, which is the original (F7b, standing rule R3)
     const bytes = await writePptx({ size: d.size, master: d.master, slides: d.slides.map((s, i) => ({ layout: s.layout, doc: d.docOf(i), notes: s.notes })) }, { ...opts, bakePicture: undefined });
-    const pic = readPptx(bytes).slides[0].contents.shapes.find((s) => s.kind === 'picture')!;
-    expect(pic.fx).toEqual({ contrast: 0.1 });
+    expect(readPptx(bytes).slides[0].contents.shapes.find((s) => s.kind === 'picture')!.fx).toEqual({ contrast: 0.1, sharpen: 0.5 });
+    // Change Picture in PowerPoint (simulated: other bytes in the picture's part): only the live ones
+    const files = unzipSync(bytes);
+    const media = Object.keys(files).find((k) => k.startsWith('ppt/media/'))!;
+    files[media] = new Uint8Array([...files[media], 0]);
+    const changed = readPptx(zipSync(Object.fromEntries(Object.entries(files).map(([k, v]) => [k, new Uint8Array(v)])))).slides[0].contents.shapes.find((s) => s.kind === 'picture')!;
+    expect(changed.fx).toEqual({ contrast: 0.1 });
   });
 });
 

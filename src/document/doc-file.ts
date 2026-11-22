@@ -322,11 +322,11 @@ export class DocFile {
    * Redo brings back what the box could still redo. A header or footer goes back to plain text
    * when that is all it is.
    */
-  endBox(): void {
+  endBox(forUndo = false): void {
     const b = this.box;
     this.box = null;
     if (!b) return;
-    if (b.hf) { this.endHf(b, b.hf); return; }
+    if (b.hf) { this.endHf(b, b.hf, forUndo); return; }
     if (!b.recorded) return;
     const runs = this.t.runs;
     const ahead = b.ed.redoneText;
@@ -335,12 +335,16 @@ export class DocFile {
     this.ed.dropStep(b.step, (before) => b.ed.t === b.start && (before as DocText).runs === runs, t || undefined);
   }
 
-  /** A header or footer typed into: plain text again if that is all it is; one left as it was (everything typed undone) as it was, with no step of Undo. */
-  private endHf(b: Box, at: HfPlace): void {
+  /**
+   * A header or footer typed into: plain text again if that is all it is; one left as it was
+   * (everything typed undone) as it was, with no step of Undo. `forUndo`: stopped by Undo, a plain
+   * one never typed into is left to Redo as it was opened, so Redo opens it again.
+   */
+  private endHf(b: Box, at: HfPlace, forUndo = false): void {
     if (b.recorded && b.before && b.ed.t === b.start && this.ed.lastStep === b.step) {
       // (what was typed and undone there can still be brought back by Redo, as in Word)
       const ahead = b.ed.redoneText;
-      const t = ahead ? b.made(ahead as { runs: TextRun[]; paras: ParaStyle[] }) : null;
+      const t = ahead ? b.made(ahead as { runs: TextRun[]; paras: ParaStyle[] }) : forUndo ? this.t : null;
       this.ed.update(b.before, null);
       this.ed.dropStep(b.step, () => true, t || undefined);
       return;

@@ -11,7 +11,7 @@ const LINK_COLOUR = '#0563c1';
 export type RunStyle = Omit<TextRun, 'text'>;
 export type Toggle = 'bold' | 'italic' | 'underline' | 'sub' | 'sup' | 'formula' | 'strike' | 'smallCaps' | 'allCaps';
 
-const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'pfx', 'ukind', 'ucolor', 'dstrike', 'wrx', 'lang', 'field', 'noProof', 'raise', 'cite'] as const;
+const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'pfx', 'ukind', 'ucolor', 'dstrike', 'wrx', 'lang', 'field', 'noProof', 'raise', 'cite', 'symbolFont'] as const;
 /** Subscript, superscript and formula style change where characters sit, so only one applies. */
 const POSITION: Toggle[] = ['sub', 'sup', 'formula'];
 
@@ -20,7 +20,8 @@ export function cleanStyle(s: RunStyle): RunStyle {
   const o: Record<string, unknown> = {};
   for (const k of KEYS) {
     const v = s[k];
-    if (v !== undefined && v !== false && v !== null) o[k] = v;
+    // (symbolFont false says something: a sign kept in an ordinary font)
+    if (v !== undefined && v !== null && (v !== false || k === 'symbolFont')) o[k] = v;
   }
   return o as RunStyle;
 }
@@ -341,6 +342,13 @@ export const symbolOnlyByChoice = (text: string): boolean => [...text].some((ch)
 
 /** Does text read from an ordinary font hold a sign that would otherwise be saved in the Symbol font (−)? */
 export const plainByChoice = (text: string): boolean => [...text].some((ch) => !plainFontChar(ch) && TO_SYMBOL.has(ch));
+/**
+ * Whether a run's symbolFont is what reading it back from ChemDraw works out anyway (cdxml.ts
+ * captionOf): a run written all in the Symbol font with a sign Arial has too, or written in an
+ * ordinary font with a sign Arial lacks. Only other runs need it kept in a tag.
+ */
+export const symbolFontShown = (text: string, symbolFont: boolean): boolean =>
+  symbolFont ? [...text].every((ch) => TO_SYMBOL.has(ch)) && symbolOnlyByChoice(text) : plainByChoice(text);
 
 /** Can this character be saved for ChemDraw (directly, or through the Symbol font)? */
 export const savableChar = (ch: string): boolean => plainFontChar(ch) || TO_SYMBOL.has(ch);

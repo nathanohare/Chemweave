@@ -1050,12 +1050,31 @@ export class DocumentMode {
    * Undo and Redo: in a table cell, text box or note, its typing first, then the document's
    * changes (rows added, the text box or note put in).
    */
+  /** A header or footer whose opening Undo took back (nothing typed in it), for Redo to open again. */
+  private hfRedo: { page: number; kind: 'header' | 'footer'; step: object | undefined } | null = null;
+
   private undo(redo: boolean): void {
     const f = this.file!;
     const b = f.box;
+    // Redo after Undo closed a header or footer opened for typing: it is opened again
+    const again = redo && !b ? this.hfRedo : null;
+    this.hfRedo = null;
+    if (again && f.ed.nextRedo === again.step) {
+      f.ed.redo();
+      if (!this.startHf(again.page, again.kind)) this.changed('selection');
+      return;
+    }
     if (b && !(redo ? b.ed.canRedo : b.ed.canUndo)) {
       const { id, cell } = b;
-      f.endBox();
+      // a header or footer opened and never typed into: Undo takes back the opening, and only that
+      const untouched = !redo && b.hf && !b.ed.canRedo ? { page: b.hf.page, kind: b.hf.kind, top: f.ed.lastStep } : null;
+      f.endBox(!redo);
+      if (untouched && f.ed.lastStep !== untouched.top) {
+        this.hfRedo = { page: untouched.page, kind: untouched.kind, step: f.ed.nextRedo };
+        this.changed('selection');
+        this.updateRibbon();
+        return;
+      }
       if (redo) f.ed.redo(); else f.ed.undo();
       const o = f.t.objects[id];
       if (cell && o?.kind === 'table' && o.table.rows[cell.r]?.[cell.c] && !isCovered(o.table, cell.r, cell.c)) this.startCell(id, cell.r, cell.c);
@@ -4370,9 +4389,12 @@ export class DocumentMode {
   private sectionBreak(kind: BreakKind): void {
     const ed = this.ed;
     const s = this.section();
-    ed.enter(false);
-    const p = paraAt(ed.text, ed.focus);
-    ed.setParas(p, p, { section: newBreak(s, kind), pageBreak: undefined, colBreak: undefined }, 'break');
+    // (the new paragraph and its break: one step of Undo)
+    ed.together(() => {
+      ed.enter(false);
+      const p = paraAt(ed.text, ed.focus);
+      ed.setParas(p, p, { section: newBreak(s, kind), pageBreak: undefined, colBreak: undefined }, 'break');
+    });
     this.host.flash(`Section break (${BREAK_NAMES[kind]}): the text after it is section ${s.index + 2}, with its own page setup, header and footer, and page and line numbers.`);
   }
 
