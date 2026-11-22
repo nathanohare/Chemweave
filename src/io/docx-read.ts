@@ -149,7 +149,19 @@ const WARN = {
 
 type Pos = 'base' | 'sub' | 'sup';
 /** Text formatting as a file gives it (only what it gives). `color` null is "automatic". */
-interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; ukind?: string; ucolor?: string; dstrike?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
+/**
+ * Run properties not read here, by their place in w:rPr (CT_RPr, ECMA-376 part 1, 17.3.2.28): a
+ * after strike (17.3.2.23 outline, 17.3.2.31 shadow, emboss, imprint), b after noProof
+ * (snapToGrid), c after vanish (webHidden), d after spacing (17.3.2.43 w, character scale),
+ * e after u (effect, 17.3.2.4 bdr), f after shd (fitText), g after vertAlign (rtl, cs, 17.3.2.12
+ * em), h after lang (eastAsianLayout, specVanish). The legacy shadow is also shown as a shadow.
+ */
+const KEPT_RPR: Record<string, string> = {
+  outline: 'a', shadow: 'a', emboss: 'a', imprint: 'a', snapToGrid: 'b', webHidden: 'c', w: 'd', effect: 'e', bdr: 'e',
+  fitText: 'f', rtl: 'g', cs: 'g', em: 'g', eastAsianLayout: 'h', specVanish: 'h',
+};
+
+interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; /** Run properties not read here, as written (see TextRun.wrx). */ wrx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; ukind?: string; ucolor?: string; dstrike?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
 /** Paragraph formatting as a file gives it, in points. */
 interface PProps {
   align?: Justify; before?: number; after?: number; line?: { v: number; rule: string };
@@ -470,7 +482,15 @@ class DocxReader {
   private readRPr(el: Element | null, direct = true): RProps {
     const out: RProps = {};
     const fx: string[] = [];
+    const raw: Record<string, string> = {};
     for (const c of kids(el)) {
+      // Word's run properties not read here (emboss, a text border, character scale...), kept as
+      // written by their place among the others (TextRun.wrx)
+      const slot = c.namespaceURI === this.W ? KEPT_RPR[c.localName] : undefined;
+      if (direct && slot) {
+        raw[slot] = (raw[slot] ?? '') + elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
+        if (c.localName !== 'shadow') continue;
+      }
       // Word 2010's text effects (glow, reflection, 3-D...) set on the text itself, kept as Word
       // wrote them, with what is drawn here read from them (a style's, such as ligatures for
       // the whole document, aren't put on every run)
@@ -558,6 +578,7 @@ class DocxReader {
       out.wfx = fx.join('');
       Object.assign(out, w14Look(out.wfx));
     }
+    if (Object.keys(raw).length) out.wrx = JSON.stringify(raw);
     return out;
   }
 
@@ -1569,7 +1590,7 @@ class DocxReader {
       font: r.font ?? WORD_FONT, size: r.size ?? WORD_SIZE, bold: r.bold, italic: r.italic, underline: r.underline,
       ukind: r.underline ? r.ukind : undefined, ucolor: r.underline ? r.ucolor : undefined,
       strike: r.strike, dstrike: r.strike ? r.dstrike : undefined, smallCaps: r.smallCaps, allCaps: r.allCaps, cstyle: r.cstyle,
-      spacing: r.spacing, noKern: noKernOf(r), noFill: r.noFill, transparency: r.transparency, outline: r.outline, outlineW: r.outlineW, shadow: r.shadow, wfx: r.wfx,
+      spacing: r.spacing, noKern: noKernOf(r), noFill: r.noFill, transparency: r.transparency, outline: r.outline, outlineW: r.outlineW, shadow: r.shadow, wfx: r.wfx, wrx: r.wrx,
       lang: r.lang && r.lang.toLowerCase() !== (this.docDefaults.r.lang ?? 'en-US').toLowerCase() ? r.lang : undefined, noProof: r.noProof, raise: r.raise || undefined,
       color: r.color ?? undefined, highlight: r.highlight ?? undefined, formula: formula || undefined,
       sub: (!formula && r.pos === 'sub') || undefined, sup: (!formula && r.pos === 'sup') || undefined,

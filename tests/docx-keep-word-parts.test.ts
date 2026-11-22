@@ -154,3 +154,21 @@ describe('Word settings are kept (G2-15)', () => {
     expect(xml).toContain('<m:mathFont m:val="Cambria Math"/>');
   });
 });
+
+describe('Word run properties not modelled here are kept (G2-10)', () => {
+  it('keeps emboss, a text border, character scale, an emphasis mark and right to left, each in its place', async () => {
+    const body = '<w:p><w:r><w:rPr><w:b/><w:emboss/><w:color w:val="FF0000"/><w:w w:val="150"/><w:bdr w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:rtl/><w:em w:val="dot"/></w:rPr><w:t>odd</w:t></w:r>' +
+      '<w:r><w:rPr><w:shadow/></w:rPr><w:t>old</w:t></w:r></w:p>';
+    const xml = (await roundTrip({ body }))['word/document.xml'];
+    const rPr = /<w:rPr>((?:(?!<w:rPr>)[\s\S])*?)<\/w:rPr><w:t[^>]*>odd<\/w:t>/.exec(xml)![1];
+    const names = [...rPr.matchAll(/<w:(\w+)/g)].map((m) => m[1]);
+    for (const n of ['emboss', 'w', 'bdr', 'rtl', 'em']) expect(names).toContain(n);
+    // in CT_RPr's order (17.3.2.28)
+    const order = ['b', 'emboss', 'color', 'w', 'bdr', 'rtl', 'em'];
+    expect(names.filter((n) => order.includes(n) && n !== 'bCs')).toEqual(order);
+    // Word 97's shadow stays one, not Word 2010's
+    const old = /<w:rPr>((?:(?!<w:rPr>)[\s\S])*?)<\/w:rPr><w:t[^>]*>old<\/w:t>/.exec(xml)![1];
+    expect(old).toContain('<w:shadow/>');
+    expect(old).not.toContain('w14:shadow');
+  });
+});

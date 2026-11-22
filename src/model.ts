@@ -409,6 +409,12 @@ export interface TextRun {
    * program has no drawing of its own for it. Absent: a single line.
    */
   ukind?: string;
+  /**
+   * Documents: Word's run properties this program doesn't model (emboss, imprint, a text border,
+   * character scale, an emphasis mark, right to left...), as the file had them (JSON, by their
+   * place in w:rPr: io/docx-read.ts KEPT_RPR), written back with the run.
+   */
+  wrx?: string;
   /** Documents: the underline's own colour (Word's w:u w:color), when not the text's. */
   ucolor?: string;
   /** Double strikethrough (Word's w:dstrike, 17.3.2.9), while `strike` is on. */

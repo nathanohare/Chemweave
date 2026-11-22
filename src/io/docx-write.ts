@@ -1776,28 +1776,53 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   if (!!r.allCaps !== !!cs?.allCaps) out.push(r.allCaps ? '<w:caps/>' : '<w:caps w:val="0"/>');
   if (!!r.smallCaps !== !!cs?.smallCaps) out.push(r.smallCaps ? '<w:smallCaps/>' : '<w:smallCaps w:val="0"/>');
   if (!!r.strike !== !!cs?.strike || (r.strike && r.dstrike)) out.push(r.strike ? strikeXml(r) : '<w:strike w:val="0"/>');
+  // run properties not modelled here, each in its place (docx-read.ts KEPT_RPR)
+  const raw = keptRPr(r);
+  out.push(raw.a ?? '');
   if (r.noProof) out.push('<w:noProof/>');
+  out.push(raw.b ?? '');
   if (x.vanish) out.push('<w:vanish/>');
+  out.push(raw.c ?? '');
   // raised or lowered from the line, in half-points
   if (r.raise) out.push(`<w:position w:val="${Math.round(r.raise * 2)}"/>`);
   const color = r.color ?? st.color;
   if ((color ?? '') !== (st.color ?? '')) out.push(`<w:color w:val="${color ? hex6(color) : 'auto'}"/>`);
   // character spacing (twentieths of a point) and kerning taken off
   if (r.spacing) out.push(`<w:spacing w:val="${Math.round(r.spacing * 20)}"/>`);
+  out.push(raw.d ?? '');
   if (r.noKern) out.push('<w:kern w:val="0"/>');
   const size = r.size ?? st.size;
   if (size !== st.size) out.push(`<w:sz w:val="${half(size)}"/><w:szCs w:val="${half(size)}"/>`);
   const hl = r.highlight ? highlightName(r.highlight) : null;
   if (hl) out.push(`<w:highlight w:val="${hl}"/>`);
   if (!!r.underline !== !!cs?.underline || (r.underline && (r.ukind || r.ucolor))) out.push(r.underline ? underlineXml(r) : '<w:u w:val="none"/>');
+  out.push(raw.e ?? '');
   // any other colour behind the text goes as shading
   if (r.highlight && !hl) out.push(`<w:shd w:val="clear" w:color="auto" w:fill="${hex6(r.highlight)}"/>`);
+  out.push(raw.f ?? '');
   const pos = x.pos ?? (r.sub ? 'sub' : r.sup ? 'sup' : 'base');
   if (pos !== 'base') out.push(`<w:vertAlign w:val="${pos === 'sub' ? 'subscript' : 'superscript'}"/>`);
+  out.push(raw.g ?? '');
   if (r.lang) out.push(`<w:lang w:val="${xml(r.lang)}"/>`);
+  out.push(raw.h ?? '');
   out.push(textEffects(r, color));
   return out.join('');
 }
+
+/**
+ * A run's properties kept from Word, by their place (docx-read.ts KEPT_RPR): Word 97's shadow
+ * only while the run still has a shadow.
+ */
+function keptRPr(r: TextRun): Record<string, string> {
+  if (!r.wrx) return {};
+  let k: Record<string, string>;
+  try { k = JSON.parse(r.wrx) as Record<string, string>; } catch { return {}; }
+  if (!r.shadow && k.a) k.a = k.a.replace(/<w:shadow\b[^>]*\/>/g, '');
+  return k;
+}
+
+/** Word 97's shadow kept on a run: it stands for the shadow here, in place of Word 2010's. */
+const legacyShadow = (r: TextRun) => !!r.shadow && /<w:shadow\b(?![^>]*w:val="(0|false)")/.test(keptRPr(r).a ?? '');
 
 /** A run's underline: its kind (single when not given) and its own colour (17.3.2.40). */
 function underlineXml(r: TextRun): string {
@@ -1821,7 +1846,7 @@ function textEffects(r: TextRun, color: string | undefined): string {
   // fill while the run's own still say what they did), else made from the run's own
   const kept = w14Parts(r.wfx ?? ''), was = w14Look(r.wfx ?? '');
   const made: Partial<Record<(typeof W14_FX)[number], string>> = {};
-  if (r.shadow) made.shadow = `<w14:shadow${ns} w14:blurRad="38100" w14:dist="38100" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:srgbClr w14:val="000000"><w14:alpha w14:val="60000"/></w14:srgbClr></w14:shadow>`;
+  if (r.shadow && !legacyShadow(r)) made.shadow = `<w14:shadow${ns} w14:blurRad="38100" w14:dist="38100" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:srgbClr w14:val="000000"><w14:alpha w14:val="60000"/></w14:srgbClr></w14:shadow>`;
   if (r.outline) made.textOutline = `<w14:textOutline${ns} w14:w="${Math.round((r.outlineW ?? 0.75) * 12700)}" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:solidFill><w14:srgbClr w14:val="${hex6(r.outline)}"/></w14:solidFill><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline>`;
   // (w14's alpha is how see-through, not how solid)
   if (r.noFill) made.textFill = `<w14:textFill${ns}><w14:noFill/></w14:textFill>`;
