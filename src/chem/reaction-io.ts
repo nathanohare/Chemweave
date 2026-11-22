@@ -64,7 +64,8 @@ const i3 = (n: number) => String(n).padStart(3, ' ');
 export function rxnBlock(parts: ReactionParts<string>, name = ''): string {
   const counts = `${i3(parts.reactants.length)}${i3(parts.products.length)}${parts.agents.length ? i3(parts.agents.length) : ''}`;
   const mol = (m: string) => `$MOL\n${m.endsWith('\n') ? m : m + '\n'}`;
-  return `$RXN\n${name}\n  Chemweave\n\n${counts}\n` + [...parts.reactants, ...parts.products, ...parts.agents].map(mol).join('');
+  // (line 3: six columns of initials, then the program name in nine; BIOVIA CTfile Formats, RXN header)
+  return `$RXN\n${name}\n      Chemweave\n\n${counts}\n` + [...parts.reactants, ...parts.products, ...parts.agents].map(mol).join('');
 }
 
 /** The molfiles of an RXN file (V2000), or null when it can't be read. */

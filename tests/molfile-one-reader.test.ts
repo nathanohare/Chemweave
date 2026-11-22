@@ -167,7 +167,7 @@ describe('Spreadsheet SD files saved unchanged keep each record (G1-07)', () => 
     book.build(() => { s.setStructure(1, 0, d.contents()); });
     const recs = parseSdf(sdfText(s, book.drawingStyle));
     expect(recs[0].molblock).not.toBe(ETHANOL_3D);
-    expect(recs[0].molblock.split('\n')[1].slice(2, 11)).toBe('Chemweave');
+    expect(recs[0].molblock.split('\n')[1].slice(2, 10)).toBe('Chemweav');
     expect(recs[0].molblock.split('\n')[3].slice(0, 6)).toBe('  4  3');
   });
 

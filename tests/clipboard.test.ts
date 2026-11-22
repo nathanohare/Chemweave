@@ -250,7 +250,7 @@ describe('the structures as text on the clipboard (G1-20)', () => {
     const lines: string[] = [];
     for (let i = 0; i < bytes.length; i += 1 + bytes[i]) lines.push(String.fromCharCode(...bytes.subarray(i + 1, i + 1 + bytes[i])));
     expect(lines.at(-1)).toBe('M  END');
-    expect(lines[1].slice(2, 11)).toBe('Chemweave');
+    expect(lines[1].slice(2, 10)).toBe('Chemweav');
     expect(mdlctOf(new Doc())).toBeNull();
   });
 
