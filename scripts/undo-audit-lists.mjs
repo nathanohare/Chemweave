@@ -10,33 +10,49 @@ import fs from 'node:fs';
 import ts from 'typescript';
 
 /**
- * Commands the audit leaves out, each with its reason. Only commands that do not change the open
- * file belong here: ones that work with other files or programs, open a window that changes
- * nothing until its OK (that window's own edits are checked by its own tests), or change only what
- * is shown. Prefer an exact name (`$`) to a prefix, so a new command that edits is not hidden.
+ * Commands the audit leaves out, each by name with its reason. Only commands that do not change the
+ * open file belong here: ones that work with other files or programs, open a window that changes
+ * nothing until its OK (that window's own edits are checked by its own tests), or change only the
+ * window around the file (zoom, panes, interface size). Names only, never a pattern, so a new
+ * command is always run. View and Show commands are run: some of them are saved with the file
+ * (gridlines, headings, page view, a cell's note), so the audit checks them.
  */
 export const NOT_UNDOABLE = [
-  { match: /^(new|new-slides|new-design|new-sheet|new-document|new-from-template|new-si-project|open|open-si-project|open-workspace|close-tab|next-tab|prev-tab|tab-.*|window-.*|recent.*)$/, why: 'makes, opens or switches tabs: the file in the tab is not changed' },
-  { match: /^(save|save-as|save-template|save-workspace|save-workspace-as|revert|reload)$/, why: 'writes or reads the file on disk, not its contents' },
-  { match: /^(export-.*|print|print-preview|sheet-print.*|batch-convert|find-in-files|send|share|email)$/, why: 'writes another file or hands the file to another program' },
-  { match: /^(import-settings|export-settings|preferences|settings|save-format-favorite|save-highlight-look|hotkeys|keyboard.*)$/, why: 'changes the program’s settings, not the file' },
-  { match: /^(insert-picture|insert-object|hf-picture|import-picture|import-pdf|import-paste|compare-docs|combine-docs|open-object|open-link|open-inspector|open-log-folder)$/, why: 'asks for a file or opens another program first; what it then inserts is checked by the insert tests' },
-  { match: /^(present|present-current|presenter-view|slide-show.*|start-show.*|play.*|rehearse.*|record-show.*)$/, why: 'runs the slide show; the deck is not changed (timings it records are checked by tests/slide-show*.test.ts)' },
-  { match: /^(help.*|about|feedback|send-feedback|support.*|sponsor|update|check-updates|tour|guide)$/, why: 'help and the program’s own windows' },
-  { match: /^(dev-tools|diagnostics|stress-\d+)$/, why: 'developer tools: Stress Test replaces the drawing on purpose, to time it' },
-  { match: /^(undo|redo)$/, why: 'the audit uses these itself' },
-  { match: /^(zoom.*|fullscreen|split-view|split-window|view-.*|show-.*|close-master-view|ui-scale-.*)$/, why: 'changes only what is shown (zoom, panes, view, marks), never the file' },
+  { names: ['new', 'new-slides', 'new-design', 'new-sheet', 'new-document', 'new-from-template', 'new-si-project', 'open', 'open-si-project', 'open-workspace', 'close-tab', 'next-tab', 'prev-tab'], why: 'makes, opens or switches tabs: the file in the tab is not changed' },
+  { names: ['save', 'save-as', 'save-template', 'save-workspace', 'save-workspace-as'], why: 'writes the file on disk, not its contents' },
+  { names: ['export-pdf', 'export-picture', 'export-mol', 'print', 'print-preview', 'batch-convert'], why: 'writes another file or hands the file to another program' },
+  { names: ['import-settings', 'export-settings', 'preferences', 'save-format-favorite', 'save-highlight-look', 'hotkeys'], why: 'changes the program’s settings, not the file' },
+  { names: ['insert-picture', 'insert-object', 'hf-picture', 'import-picture', 'import-pdf', 'import-paste', 'compare-docs', 'combine-docs', 'open-object', 'open-link', 'open-inspector', 'open-log-folder'], why: 'asks for a file or opens another program first; what it then inserts is checked by the insert tests' },
+  { names: ['present', 'present-current', 'presenter-view', 'rehearse-timings', 'rehearse-here', 'record-show', 'record-show-here', 'play-narrations'], why: 'runs the slide show full screen; the deck is not changed (timings it records are checked by tests/slide-show*.test.ts)' },
+  { names: ['help', 'help-here', 'about', 'send-feedback', 'support-project', 'check-updates'], why: 'help and the program’s own windows' },
+  { names: ['dev-tools', 'stress-100', 'stress-500', 'stress-2000', 'stress-5000'], why: 'developer tools: Stress Test replaces the drawing on purpose, to time it' },
+  { names: ['undo', 'redo'], why: 'the audit uses these itself' },
+  { names: ['zoom-in', 'zoom-out', 'zoom-fit', 'zoom-selection', 'zoom-actual', 'split-view', 'split-window', 'close-master-view'], why: 'changes only the window around the file (zoom, split panes, leaving Slide Master view)' },
+  { names: ['ui-scale-in', 'ui-scale-out', 'ui-scale-reset', 'ui-scale-80', 'ui-scale-90', 'ui-scale-100', 'ui-scale-110', 'ui-scale-125', 'ui-scale-150'], why: 'View ▸ Interface Size: the size of the program’s own menus and buttons' },
 ];
 
 /** The reason a command is left out, or undefined when the audit runs it. */
 export function notUndoable(cmd) {
-  return NOT_UNDOABLE.find((e) => e.match.test(cmd))?.why;
+  return NOT_UNDOABLE.find((e) => e.names.includes(cmd))?.why;
+}
+
+/**
+ * The quick sweep run on every pull request (`npm run undo-audit -- ci`) runs one slice of the
+ * commands in each kind of tab, so it fits in about two minutes; the slices take turns by the day
+ * (or `--slice k/N`), so every command is run within CI_SLICES (16) days. A command's slice depends
+ * only on its name, so a failure can be run again with the slice it printed.
+ */
+export const CI_SLICES = 16;
+export function sliceOf(cmd, n = CI_SLICES) {
+  let h = 0;
+  for (let i = 0; i < cmd.length; i++) h = (h * 31 + cmd.charCodeAt(i)) >>> 0;
+  return h % n;
 }
 
 /**
  * Undo problems the audit has already found and that are not fixed yet: the exact line it prints.
  * The audit fails only on a problem not listed here, and says which of these no longer happen so
- * they can be taken off. Each is a known gap (see fix-F6 in the November 2026 audit).
+ * they can be taken off. Each is a bug to fix; take its line off when it is fixed.
  */
 export const KNOWN_UNDO_PROBLEMS = [
   // Add Caption puts the text in, then a second step lays it out
@@ -45,7 +61,7 @@ export const KNOWN_UNDO_PROBLEMS = [
   'Design: add-caption took 2 undos (one is expected)',
   // Add ID Label: the label, then the number filled in when the chemistry engine answers
   'Presentation: add-id-label took 2 undos (one is expected)',
-  // the layout and master editors change the deck's master directly (G7, Edit Layouts)
+  // the layout and master editors change the deck's master directly, outside the undo history
   'Presentation: edit-layouts changed the file without an undo step',
   'Presentation: edit-layout changed the file without an undo step',
   'Presentation: slide-master changed the file without an undo step',

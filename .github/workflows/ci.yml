@@ -22,8 +22,8 @@ jobs:
   # They include the UI text check (tests/ui-text-lint.test.ts, scripts/lint-ui-text.mjs), the
   # field round trip through every format (tests/field-round-trip.test.ts), open-save-compare
   # (tests/open-save-compare.test.ts), the places that must stay in step (tests/parity.test.ts)
-  # and every command covered by the undo audit (tests/undo-every-command.test.ts; the audit
-  # itself, scripts/undo-audit.mjs, takes too long for every pull request: docs/developers.md).
+  # and the undo audit's lists (tests/undo-every-command.test.ts; the audit itself runs as a quick
+  # sweep in the build job, and in full by hand: docs/developers.md).
   tests:
     name: tests (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
@@ -48,7 +48,7 @@ jobs:
   # scripts/a11y-known.mjs)
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -63,6 +63,10 @@ jobs:
       # Playwright's headless Chromium is all the smoke test needs (not the full browser)
       - run: npx playwright install --with-deps --only-shell chromium
       - run: npm run smoke
+      # the quick undo sweep (standing rule R7): one slice of the commands in each kind of tab, the
+      # slice changing each day; it first checks that it catches a planted two-step command and a
+      # planted missing undo. A failure prints its slice: `npm run undo-audit -- ci --slice k/16`.
+      - run: npm run undo-audit -- ci
 
   # the work behind each mode (bench/core.bench.ts), timed for this pull request and for the branch
   # it merges into on the same machine: fails when a measure gets more than 40% slower. Skipped
