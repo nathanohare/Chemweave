@@ -337,9 +337,13 @@ export function nativeDrawingText(part: Doc): string {
  * later version of this program (review F1b-R05). The rule for versions: `v` is the layout's
  * version; a later program that changes the layout raises it, and a program that doesn't know
  * that version pastes the CDXML written beside it instead (which is why CDXML is still written).
- * The data is checked before it is taken: every atom, caption, arrow and shape must have its
- * place as numbers, every bond its two atoms and order, every caption its runs of text, so a
- * paste can never leave a drawing that can't be saved. Anything wrong, and the CDXML is pasted.
+ * The data is checked before it is taken (review F1b-R05, F1c-R05): every atom, caption, arrow
+ * and shape must have its place as numbers within a million points of the origin (a drawing
+ * further out would take a save for ever), every bond its two atoms and order, every run of text
+ * its text (and a size, font and colour of the right type), a shape's text its runs, a frame its
+ * lists of members, a pin its list of objects and its offset; every number anywhere must be finite.
+ * Then it is pasted into a scratch drawing and saved as CDXML there: if either fails, the CDXML
+ * beside it is pasted instead, so a paste can never leave a drawing that can't be saved.
  * Settings this version doesn't know are kept on the objects as they are.
  */
 export function nativeDrawing(text: string): Doc | null {
@@ -349,18 +353,32 @@ export function nativeDrawing(text: string): Doc | null {
     if (!j.contents || typeof j.contents !== 'object') return null;
     type Obj = Record<string, unknown>;
     const fin = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
-    const pt = (v: unknown) => !!v && typeof v === 'object' && fin((v as Obj).x) && fin((v as Obj).y);
+    // (a place: a finite number no more than a million points from the origin)
+    const at = (v: unknown) => fin(v) && Math.abs(v as number) <= MAX_PLACE;
+    const pt = (v: unknown) => !!v && typeof v === 'object' && at((v as Obj).x) && at((v as Obj).y);
+    const obj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v);
+    const optional = (v: unknown, type: string) => v === undefined || v === null || typeof v === type;
+    const run = (r: unknown) => obj(r) && typeof r.text === 'string' && (r.size === undefined || (fin(r.size) && (r.size as number) > 0 && (r.size as number) < 1000)) && optional(r.font, 'string') && optional(r.color, 'string');
+    const runs = (v: unknown) => Array.isArray(v) && v.every(run);
+    const ids = (v: unknown) => Array.isArray(v) && v.every(fin);
+    const frame = (f: unknown) => f === undefined || (obj(f) && ['atoms', 'captions', 'arrows', 'shapes'].every((k) => f[k] === undefined || ids(f[k])));
+    const onePin = (p: unknown) => obj(p) && typeof p.on === 'string' && ids(p.ref) && (p.at === undefined || pt(p.at));
+    // (an arrow's pins are its tail's and head's)
+    const pin = (p: unknown) => p === undefined || onePin(p) || (obj(p) && p.on === undefined && Object.values(p).every((x) => x === undefined || onePin(x)));
+    // (every number anywhere finite: JSON's 1e400 reads as Infinity)
+    const allFinite = (v: unknown, depth = 0): boolean => depth > 40 ? false : typeof v === 'number' ? Number.isFinite(v) : Array.isArray(v) ? v.every((x) => allFinite(x, depth + 1)) : obj(v) ? Object.values(v).every((x) => allFinite(x, depth + 1)) : true;
+    if (!allFinite(j.contents)) return null;
     const list = (k: string, ok: (o: Obj) => boolean): Obj[] | null => {
       const v = j.contents![k];
       if (v === undefined) return [];
       if (!Array.isArray(v)) return null;
-      return v.every((o) => !!o && typeof o === 'object' && fin((o as Obj).id) && ok(o as Obj)) ? (v as Obj[]) : null;
+      return v.every((o) => obj(o) && fin(o.id) && pin(o.pin) && ok(o)) ? (v as Obj[]) : null;
     };
-    const atoms = list('atoms', (a) => fin(a.x) && fin(a.y) && fin(a.z) && (a.label === null || a.label === undefined || typeof a.label === 'string') && (a.charge === undefined || fin(a.charge)));
+    const atoms = list('atoms', (a) => at(a.x) && at(a.y) && fin(a.z) && (a.z as number) >= 0 && (a.z as number) < 200 && (a.label === null || a.label === undefined || typeof a.label === 'string') && (a.charge === undefined || fin(a.charge)));
     const bonds = list('bonds', (b) => fin(b.a1) && fin(b.a2) && fin(b.order));
-    const captions = list('captions', (c) => fin(c.x) && fin(c.y) && Array.isArray(c.runs) && (c.runs as unknown[]).every((r) => !!r && typeof r === 'object' && typeof (r as Obj).text === 'string'));
-    const arrows = list('arrows', (r) => pt(r.tail) && pt(r.head));
-    const shapes = list('shapes', (s) => fin(s.x1) && fin(s.y1) && fin(s.x2) && fin(s.y2) && typeof s.kind === 'string');
+    const captions = list('captions', (c) => at(c.x) && at(c.y) && runs(c.runs));
+    const arrows = list('arrows', (r) => pt(r.tail) && pt(r.head) && (r.bez === undefined || (Array.isArray(r.bez) && r.bez.every(pt))));
+    const shapes = list('shapes', (s) => at(s.x1) && at(s.y1) && at(s.x2) && at(s.y2) && typeof s.kind === 'string' && (s.text === undefined || s.text === null || (obj(s.text) && runs(s.text.runs))) && frame(s.frame));
     if (!atoms || !bonds || !captions || !arrows || !shapes) return null;
     if (!atoms.length && !captions.length && !arrows.length && !shapes.length) return null;
     const have = new Set(atoms.map((a) => a.id));
@@ -374,11 +392,18 @@ export function nativeDrawing(text: string): Doc | null {
     }
     if (typeof j.background === 'string') d.background = j.background;
     d.restoreContents({ atoms, bonds: joined, captions, arrows, shapes } as unknown as Contents);
+    // tried first: pasted into a scratch drawing and saved there as CDXML (a throw here, and the CDXML is pasted)
+    const trial = new Doc();
+    trial.style = { ...d.style };
+    insertDrawing(trial, d, { x: 0, y: 0 });
+    writeCdxml(trial, { name: 'paste.cdxml' });
     return d;
   } catch {
     return null;
   }
 }
+/** How far from the origin (in points) a pasted drawing's places may be: far beyond any page. */
+const MAX_PLACE = 1e6;
 
 /**
  * The drawing on the Windows clipboard, our own whole first: when that is missing, damaged or from

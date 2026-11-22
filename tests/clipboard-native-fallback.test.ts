@@ -22,6 +22,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { nativeDrawing, nativeDrawingText, nativeClipboardDrawing, NATIVE_FORMAT, OWN_FORMAT } from '../src/io/clipboard';
 import { writeCdxml } from '../src/io/cdxml-write';
 import { Doc } from '../src/model';
+import { putPlate, newPlate } from '../src/design/plates';
+import { POINTS } from '../src/editor/arrange';
+import { addChiralFlag } from '../src/chem/chiral-flag';
 
 function ethanol(): Doc {
   const d = new Doc();
@@ -81,5 +84,31 @@ describe('every paste falls back to the CDXML beside it (F1b-R06)', () => {
     expect([...(await nativeClipboardDrawing())!.captions.values()][0].runs[0].strike).toBe(true);
     board.clear();
     expect(await nativeClipboardDrawing()).toBeNull();
+  });
+});
+
+describe('nested parts and far places are checked too (F1c-R05)', () => {
+  const withShape = (shape: Record<string, unknown>) => edit((j) => { j.contents.shapes = [{ id: 97, kind: 'geo', geo: 'rect', x1: 0, y1: 0, x2: 20, y2: 10, ...shape }]; });
+  it('turns down what pasted or saved would throw or never finish', () => {
+    // a shape's text without its runs; a run's size as a word
+    expect(nativeDrawing(withShape({ text: { paras: [] } }))).toBeNull();
+    expect(nativeDrawing(edit((j) => { (j.contents.captions[0].runs as Record<string, unknown>[])[0].size = 'big'; }))).toBeNull();
+    // a frame that is not lists of members; a pin whose objects are not a list
+    expect(nativeDrawing(withShape({ frame: 5 }))).toBeNull();
+    expect(nativeDrawing(withShape({ frame: { atoms: 'all', captions: [], arrows: [], shapes: [] } }))).toBeNull();
+    expect(nativeDrawing(edit((j) => { j.contents.atoms[0].pin = { on: 'atom', ref: 3, at: { x: 0, y: 0 }, hand: 1 }; }))).toBeNull();
+    // an atom ten million points out (saving it would not finish), or a number too big to be one
+    expect(nativeDrawing(edit((j) => { j.contents.atoms[0].x = 10_000_000; }))).toBeNull();
+    expect(nativeDrawing(edit((j) => { j.contents.atoms[0].x = 1; }).replace('"x":1,', '"x":1e400,'))).toBeNull();
+  });
+  it('still takes a sound copy with a frame, a pinned flag and pinned arrows, and it saves', () => {
+    const d = ethanol();
+    d.edit('TLC', () => { putPlate(d, POINTS, newPlate('tlc', d.style.bondLength), { x: 100, y: 0 }); });
+    d.edit('Flag', () => { addChiralFlag(d, [...d.atoms.keys()].slice(0, 3), 'Absolute'); });
+    const got = nativeDrawing(nativeDrawingText(d))!;
+    expect(got).not.toBeNull();
+    expect([...got.shapes.values()].some((s) => s.plate && s.frame)).toBe(true);
+    expect([...got.shapes.values()].some((s) => s.symbol === 'Absolute' && s.pin?.on === 'atom')).toBe(true);
+    expect(() => writeCdxml(got, { name: 'x.cdxml' })).not.toThrow();
   });
 });
