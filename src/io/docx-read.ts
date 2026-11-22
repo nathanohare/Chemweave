@@ -174,6 +174,13 @@ const KEPT_PPR: Record<string, string> = {
   mirrorIndents: 'd', suppressOverlap: 'd', textDirection: 'e', textAlignment: 'e', textboxTightWrap: 'e', outlineLvl: 'e',
 };
 
+/** A paragraph's kept properties (ParaStyle.wpx) with more added. */
+function withKept(wpx: string | undefined, more: Record<string, string>): string {
+  let k: Record<string, string> = {};
+  try { k = wpx ? JSON.parse(wpx) as Record<string, string> : {}; } catch { k = {}; }
+  return JSON.stringify({ ...k, ...more });
+}
+
 /** Theme attributes of an element as written (` w:themeColor="accent1" w:themeShade="BF"`). */
 function themeAttrs(el: Element, ns: string, names: string[]): string {
   return names.map((n) => { const v = el.getAttributeNS(ns, n); return v === null ? '' : ` w:${n}="${v.replace(/[&"<]/g, (ch) => (ch === '&' ? '&amp;' : ch === '"' ? '&quot;' : '&lt;'))}"`; }).join('');
@@ -1421,8 +1428,29 @@ class DocxReader {
   private keptPPr(pPr: Element | null): string | undefined {
     const raw: Record<string, string> = {};
     for (const c of kids(pPr)) {
-      const slot = c.namespaceURI === this.W ? KEPT_PPR[c.localName] : undefined;
+      if (c.namespaceURI !== this.W) continue;
+      const slot = KEPT_PPR[c.localName];
       if (slot) raw[slot] = (raw[slot] ?? '') + elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
+      // what is shown here another way, kept to write back as Word had it:
+      switch (c.localName) {
+        // automatic spacing (17.3.1.33), shown as 14 pt
+        case 'spacing':
+          if (yes(this.a(c, 'beforeAutospacing'))) raw.asb = '1';
+          if (yes(this.a(c, 'afterAutospacing'))) raw.asa = '1';
+          break;
+        // an alignment shown as another (distribute as justified, 17.18.44)
+        case 'jc': { const v = this.a(c) ?? ''; if (v && !['left', 'start', 'center', 'right', 'end', 'both'].includes(v)) raw.jc = v; break; }
+        // bar tabs (17.3.1.37), which draw a line and aren't tab stops here
+        case 'tabs': { const bars = kids(c, 'tab').filter((t) => this.a(t) === 'bar').map((t) => elementXml(t).replace(/ xmlns:w="[^"]*"/g, '')).join(''); if (bars) raw.bar = bars; break; }
+        // each border's own distance from the text (17.3.1.24, in points)
+        case 'pBdr': {
+          const sp: Record<string, string> = {};
+          for (const side of kids(c)) { const v = this.a(side, 'space'); const n = side.localName === 'start' ? 'left' : side.localName === 'end' ? 'right' : side.localName; if (v !== null) sp[n] = v; }
+          if (Object.keys(sp).length) raw.bsp = JSON.stringify(sp);
+          break;
+        }
+        case 'contextualSpacing': if (this.on(c)) raw.ctx = '1'; break;
+      }
     }
     return Object.keys(raw).length ? JSON.stringify(raw) : undefined;
   }
@@ -3450,8 +3478,9 @@ class DocxReader {
     for (let i = 0; i + 1 < out.length; i++) {
       const a = out[i], b = out[i + 1];
       if (a.style !== b.style) continue;
-      if (a.contextual) a.ps = cleanPara({ ...a.ps, spaceAfter: 0 });
-      if (b.contextual) b.ps = cleanPara({ ...b.ps, spaceBefore: 0 });
+      // (shown so; the spacing as Word had it, and the setting, are written back: G2-11)
+      if (a.contextual) a.ps = cleanPara({ ...a.ps, spaceAfter: 0, wpx: withKept(a.ps.wpx, { ctx: '1', ctxA: String(a.ps.spaceAfter ?? 0) }) });
+      if (b.contextual) b.ps = cleanPara({ ...b.ps, spaceBefore: 0, wpx: withKept(b.ps.wpx, { ctx: '1', ctxB: String(b.ps.spaceBefore ?? 0) }) });
     }
     this.listNumbers(out);
     // the standard styles (the file's, or ours where it has none) and the others the text uses

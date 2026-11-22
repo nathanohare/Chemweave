@@ -654,13 +654,20 @@ class DocxWriter {
     }
     if (ps.noLineNumbers) pPr.push('<w:suppressLineNumbers/>');
     pPr.push(paraBorderXml(ps));
-    if (ps.tabs?.length) pPr.push(`<w:tabs>${ps.tabs.map((x) => `<w:tab w:val="${x.kind}"${x.leader ? ` w:leader="${x.leader}"` : ''} w:pos="${twips(x.pos)}"/>`).join('')}</w:tabs>`);
+    // (with the bar tabs Word had, which aren't tab stops here)
+    if (ps.tabs?.length || raw.bar) pPr.push(`<w:tabs>${raw.bar ?? ''}${(ps.tabs ?? []).map((x) => `<w:tab w:val="${x.kind}"${x.leader ? ` w:leader="${x.leader}"` : ''} w:pos="${twips(x.pos)}"/>`).join('')}</w:tabs>`);
     if (ps.noHyphen) pPr.push('<w:suppressAutoHyphens/>');
     pPr.push(raw.c ?? '');
     const sp: string[] = [];
-    const before = ps.spaceBefore ?? 0, after = ps.spaceAfter ?? 0, line = ps.line ?? 1;
-    if (before !== st.spaceBefore) sp.push(`w:before="${twips(before)}"`);
-    if (after !== st.spaceAfter) sp.push(`w:after="${twips(after)}"`);
+    // (the spacing Word had where "don't add space between paragraphs of the same style" shows
+    // it as none; automatic spacing, shown as 14 pt, as automatic)
+    const before = raw.ctxB !== undefined && !ps.spaceBefore ? Number(raw.ctxB) : ps.spaceBefore ?? 0;
+    const after = raw.ctxA !== undefined && !ps.spaceAfter ? Number(raw.ctxA) : ps.spaceAfter ?? 0;
+    const line = ps.line ?? 1;
+    if (raw.asb && before === 14) sp.push(`w:before="${twips(before)}" w:beforeAutospacing="1"`);
+    else if (before !== st.spaceBefore) sp.push(`w:before="${twips(before)}"`);
+    if (raw.asa && after === 14) sp.push(`w:after="${twips(after)}" w:afterAutospacing="1"`);
+    else if (after !== st.spaceAfter) sp.push(`w:after="${twips(after)}"`);
     if (ps.linePt && ps.linePt > 0) sp.push(`w:line="${twips(ps.linePt)}" w:lineRule="${ps.lineRule === 'exact' ? 'exact' : 'atLeast'}"`);
     else if (line !== st.line) sp.push(`w:line="${Math.round(240 * line)}" w:lineRule="auto"`);
     if (sp.length) pPr.push(`<w:spacing ${sp.join(' ')}/>`);
@@ -674,9 +681,12 @@ class DocxWriter {
       const first = ps.firstLine ?? 0;
       if (indent !== st.indent || first !== st.firstLine || right) pPr.push(`<w:ind w:left="${twips(indent)}"${right} ${first < 0 ? `w:hanging="${twips(-first)}"` : `w:firstLine="${twips(first)}"`}/>`);
     }
+    if (raw.ctx) pPr.push('<w:contextualSpacing/>');
     pPr.push(raw.d ?? '');
     const align = ps.align ?? 'left';
-    if (align !== st.align) pPr.push(`<w:jc w:val="${JC[align]}"/>`);
+    // (an alignment Word has that shows here as another, while it still does: distribute)
+    if (raw.jc && align === 'justify') pPr.push(`<w:jc w:val="${xml(raw.jc)}"/>`);
+    else if (align !== st.align) pPr.push(`<w:jc w:val="${JC[align]}"/>`);
     pPr.push(raw.e ?? '');
     // the paragraph mark itself inserted or deleted while tracking
     const mr = parseRev(index >= 0 ? this.markRev[index] : undefined);
@@ -1961,11 +1971,14 @@ function fieldStart(rPr: string, instr: string, data?: string): string {
 export function paraBorderXml(ps: ParaStyle): string {
   let out = '';
   const b = cleanBorders(ps.border);
+  let keptSpace: Record<string, string> = {};
+  try { keptSpace = JSON.parse(keptPPr(ps).bsp ?? '{}') as Record<string, string>; } catch { keptSpace = {}; }
   if (b) {
     const side = (name: 'top' | 'left' | 'bottom' | 'right' | 'between') => {
       const l = b[name];
       if (!l) return '';
-      const space = name === 'left' || name === 'right' ? BORDER_SPACE.x : BORDER_SPACE.y;
+      // (each side's own distance as Word had it, else the one used here)
+      const space = keptSpace[name] ?? (name === 'left' || name === 'right' ? BORDER_SPACE.x : BORDER_SPACE.y);
       return borderXml(name, l).replace('w:space="0"', `w:space="${space}"`);
     };
     out += `<w:pBdr>${side('top')}${side('left')}${side('bottom')}${side('right')}${side('between')}</w:pBdr>`;

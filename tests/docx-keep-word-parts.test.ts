@@ -227,3 +227,26 @@ describe('Word theme colours and fonts are kept (G2-09)', () => {
     expect(h1x).toContain('w:asciiTheme="majorHAnsi"');
   });
 });
+
+describe('Word paragraph settings shown another way are written back as Word had them (G2-11)', () => {
+  it('keeps contextual spacing, automatic spacing, distributed alignment, bar tabs and each border\'s distance', async () => {
+    const styles = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:spacing w:after="160"/></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/></w:style>';
+    const p = (pPr: string, t: string) => `<w:p><w:pPr>${pPr}</w:pPr><w:r><w:t>${t}</w:t></w:r></w:p>`;
+    const body = p('<w:pStyle w:val="ListParagraph"/><w:contextualSpacing/>', 'one') + p('<w:pStyle w:val="ListParagraph"/><w:contextualSpacing/>', 'two') +
+      p('<w:spacing w:before="100" w:beforeAutospacing="1"/>', 'auto') + p('<w:jc w:val="distribute"/>', 'spread') +
+      p('<w:tabs><w:tab w:val="bar" w:pos="1440"/><w:tab w:val="left" w:pos="2880"/></w:tabs>', 'bar') +
+      p('<w:pBdr><w:top w:val="single" w:sz="4" w:space="1" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="4" w:color="auto"/></w:pBdr>', 'boxed');
+    const xml = (await roundTrip({ styles, body }))['word/document.xml'];
+    const pPrOf = (t: string) => new RegExp(`<w:pPr>((?:(?!<w:pPr>)[\\s\\S])*?)</w:pPr><w:r>(?:(?!</w:p>)[\\s\\S])*?<w:t[^>]*>${t}</w:t>`).exec(xml)![1];
+    expect(pPrOf('one')).toContain('<w:contextualSpacing/>');
+    // the spacing after as the style has it, not made none
+    expect(pPrOf('one')).not.toMatch(/w:after="0"/);
+    expect(pPrOf('auto')).toContain('w:beforeAutospacing="1"');
+    expect(pPrOf('spread')).toContain('<w:jc w:val="distribute"/>');
+    expect(pPrOf('bar')).toContain('<w:tab w:val="bar" w:pos="1440"/>');
+    expect(pPrOf('bar')).toContain('w:pos="2880"');
+    expect(pPrOf('boxed')).toMatch(/<w:top [^>]*w:space="1"/);
+    expect(pPrOf('boxed')).toMatch(/<w:bottom [^>]*w:space="4"/);
+  });
+});
