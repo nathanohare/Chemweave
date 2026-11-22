@@ -3,6 +3,9 @@
 // null when it can, or undefined when it has no such check; this paints the menu items and
 // ribbon buttons from that answer. Only items it greyed itself are given back, so items greyed
 // for other reasons (Undo with nothing to undo, another mode's commands) are left alone.
+// A greyed item is marked aria-disabled, not disabled, so it still takes focus (the arrow keys
+// reach it in a menu) and a screen reader reads its reason; choosing it shows the reason instead
+// of running it (each mode's command runner asks the same check first; review of F5, R03).
 
 /** A reason the command cannot run now, null when it can, undefined when it has no check. */
 export type WhyNot = (cmd: string) => string | null | undefined;
@@ -22,7 +25,7 @@ export function paintCanRun(buttons: Iterable<HTMLButtonElement>, attr: string, 
       if (b.dataset[MARK] === undefined) b.dataset[KEEP] = b.getAttribute('title') ?? '';
       const tip = b.dataset[KEEP];
       b.dataset[MARK] = '';
-      b.disabled = true;
+      b.setAttribute('aria-disabled', 'true');
       b.title = tip ? `${reason}\n\n${tip}` : reason;
     } else if (b.dataset[MARK] !== undefined) {
       unpaint(b);
@@ -35,8 +38,13 @@ function unpaint(b: HTMLButtonElement): void {
   const tip = b.dataset[KEEP] ?? '';
   delete b.dataset[MARK];
   delete b.dataset[KEEP];
-  b.disabled = false;
+  b.removeAttribute('aria-disabled');
   if (tip) b.title = tip; else b.removeAttribute('title');
+}
+
+/** Whether paintCanRun has greyed this button. */
+export function cantRun(b: Element): boolean {
+  return b instanceof HTMLElement && b.dataset[MARK] !== undefined;
 }
 
 /** Give back every button under `root` that paintCanRun greyed (when the mode changes). */

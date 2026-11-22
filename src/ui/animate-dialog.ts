@@ -20,6 +20,7 @@ import { addInfo, infoIcon, withInfo } from './info-tip';
 import { encodeMp4, mp4Codec } from '../morph/mp4';
 import { saveFileDialog, openFileDialog, writeFile, showError, withExtension, type FileType } from '../io/files';
 import { zipSync } from 'fflate';
+import { WHY } from '../editor/can-run';
 
 export interface AnimateHooks {
   doc(): Doc;
@@ -119,7 +120,7 @@ export class AnimateDialog {
     if (this.plan.groups.length < 2) {
       this.hooks.flash(opts.arrow !== undefined
         ? 'This arrow needs a structure on each side to animate.'
-        : 'Draw at least two structures (with a reaction arrow or an equivalency sign between them) to animate.');
+        : WHY.animate);
       return;
     }
     this.morphs = this.plan.arrows.map((a) => (a !== null ? doc.arrows.get(a)?.morph : undefined));

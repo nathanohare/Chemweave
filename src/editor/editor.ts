@@ -105,6 +105,7 @@ import { BEND, BRUSH, ROTATE, handleCursor, turnedHandleCursor, pointerFor } fro
 import { flatten, prepareTurn, stillMeans, structuresOf, type PerspectiveHost, type Prepared } from './perspective';
 import { anglesTurn, dragTurn, DEG_PER_PX, IDENT as IDENT_TURN, type M3 } from '../chem/perspective';
 import type { TextEditing } from '../text/editing';
+import { WHY } from './can-run';
 
 export type Tool =
   /** `lasso`: drag round what to select, freehand, instead of a box. */
@@ -2472,7 +2473,7 @@ export class Editor {
     const sel = [...this.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && !a.multi && !a.attach);
     const metals = sel.filter((a) => isMetalAtom(a));
     const rest = sel.filter((a) => !isMetalAtom(a));
-    if (metals.length !== 1 || rest.length < 2) return 'Select one metal and the atoms of the ring or π-bond it is bonded to (two or more).';
+    if (metals.length !== 1 || rest.length < 2) return WHY.hapto;
     const m = metals[0];
     doc.edit('Add Hapto Bond', () => {
       for (const a of rest) { const b = doc.bondBetween(m.id, a.id); if (b) doc.removeBond(b.id); }
@@ -2506,7 +2507,7 @@ export class Editor {
     const ids = new Set<number>();
     for (const bid of this.sel.bonds) { const b = doc.bonds.get(bid); if (b && centreEnd(doc, b)) ids.add(bid); }
     for (const aid of this.sel.atoms) for (const bid of doc.adj.get(aid) ?? []) { const b = doc.bonds.get(bid)!; if (centreEnd(doc, b)) ids.add(bid); }
-    if (!ids.size) return 'Select a hapto (η) bond, or the metal it comes from.';
+    if (!ids.size) return WHY.splitHapto;
     let n = 0;
     doc.edit('Split Hapto Bond', () => { for (const id of ids) n += splitHapto(doc, id).length; });
     this.sel = emptySel();
@@ -4950,7 +4951,7 @@ export class Editor {
       const f = doc.shapes.get(id)?.frame;
       if (f) for (const b of frameMembers(doc, f).bonds) bonds.add(b);
     }
-    if (!bonds.size) return 'Select the rings to fill (or the whole structure) first.';
+    if (!bonds.size) return WHY.fillRings;
     let ids: number[] = [];
     doc.edit('Fill rings', () => { ids = fillRings(doc, bonds); });
     if (!ids.length) return 'No rings in the selection.';

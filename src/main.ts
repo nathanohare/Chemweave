@@ -47,6 +47,7 @@ import { paragraphPages } from './document/doc-file';
 import { reviewAuthor, setReviewAuthor } from './document/revisions';
 import { NMR_SOLVENTS, NmrPanel, solventLabel } from './ui/nmr-panel';
 import { paintCanRun, clearCanRun } from './ui/can-run';
+import { whyNot, WHY, NEEDS, type Picked } from './editor/can-run';
 import { StepCache } from './chem/step-cache';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
 import { compareMode, nmrQuality, nmrSpectrumMhz, sampleSpectrumData, setCompareMode, setNmrQuality, setNmrSpectrumMhz, spectrumSvg, type CompareMode } from './ui/nmr-spectrum';
@@ -1214,7 +1215,7 @@ function copy(): Promise<void> {
 }
 
 async function cut(): Promise<void> {
-  if (!editor.hasSelection()) { flash('Select something to cut.'); return; }
+  if (!editor.hasSelection()) { flash(WHY.cut); return; }
   let msg: string;
   try {
     msg = await copyDrawing(doc, editor.sel);
@@ -1625,7 +1626,7 @@ function orbitalFields(v: Record<string, string>): Field[] {
 async function insertOrbital(quick: boolean): Promise<void> {
   finishTyping();
   const atoms = [...editor.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && !a.multi);
-  if (quick && !atoms.length) { flash('Select the atoms of the π system first (drag around them, or Shift-click each).'); return; }
+  if (quick && !atoms.length) { flash(WHY.pOrbitals); return; }
   let v: Record<string, string> = { ...orbitalChoice, kind: 'p', angle: 'Auto' };
   if (!quick) {
     const got = await ask('Orbital', orbitalFields(orbitalChoice), { ok: 'Insert', preview: { title: 'Preview', draw: (vals) => orbitalPreview(orbitalSpec(vals, atoms[0]), atoms[0]) }, note: atoms.length ? `One on each of the ${atoms.length} selected atom${atoms.length > 1 ? 's' : ''}; the lobes stay with the atoms. Double-click one later to change it.` : 'Select atoms first to put one on each; otherwise it goes in the middle of the view. Double-click one later to change it.' });
@@ -1670,7 +1671,7 @@ function restyleOrbitals(list: Shape[][], patch: Partial<OrbitalSpec>, autoAngle
 async function editOrbital(): Promise<void> {
   finishTyping();
   const list = selectedOrbitals();
-  if (!list.length) { flash('Select an orbital first.'); return; }
+  if (!list.length) { flash(WHY.orbital); return; }
   const first = readOrbital(list[0]);
   if (!first) return;
   const atomId = orbitalAtom(doc, list[0]);
@@ -2091,7 +2092,7 @@ editor.perspectiveHost = {
 let lastTurn3dShape: Turn3dShape = 'flat';
 /** 3-D Rotation…: the selected structures turned by angles slid or typed in, shown live on the drawing. */
 async function turn3dDialog(): Promise<void> {
-  if (!editor.sel.atoms.size) { flash('Select a structure to rotate in 3-D.'); return; }
+  if (!editor.sel.atoms.size) { flash(WHY.rotate3d); return; }
   const r = await openTurn3d({
     prepare: (real) => editor.previewTurn(real),
     side: () => {
@@ -2770,7 +2771,7 @@ async function nameForPanel(smiles: string, molblock: string): Promise<void> {
  */
 async function structureToName(): Promise<void> {
   const frags = chosenStructures();
-  if (!frags.length) { flash('Select a structure to name.'); return; }
+  if (!frags.length) { flash(WHY.name); return; }
   if (!chem.ready) { flash('The chemistry engine is still loading. Try again in a moment.'); return; }
   const todo: { frag: Set<number>; smiles: string; molblock: string }[] = [];
   let unreadable = '';
@@ -2781,7 +2782,7 @@ async function structureToName(): Promise<void> {
     if (!smiles) { unreadable = 'That structure can\'t be read (check valences).'; continue; }
     todo.push({ frag: f, smiles, molblock: ex.molblock });
   }
-  if (!todo.length) { flash(unreadable || 'Select a structure to name.'); return; }
+  if (!todo.length) { flash(unreadable || WHY.name); return; }
   if (!namer.ready) flash('Loading the namer (first time only)…', 15000);
   let states: NameState[];
   try {
@@ -2949,7 +2950,7 @@ function findStep(what: string): PickedStep | string {
   const { m, items, steps } = stepCache.get(doc, () => editor.measure());
   const picked = steps.filter((s) => editor.sel.arrows.has(s.arrow.id));
   const step = picked[0] ?? (steps.length === 1 ? steps[0] : null);
-  if (!step) return steps.length ? `Select the arrow of the step to ${what}.` : 'No reaction step found: draw the starting materials, an arrow and the products.';
+  if (!step) return steps.length ? `Select the arrow of the step to ${what}.` : WHY.noStep;
   return { step, items, m };
 }
 function pickedStep(what: string): PickedStep | null {
@@ -2963,13 +2964,42 @@ function pickedStep(what: string): PickedStep | null {
  * toast, null when it can run, undefined when it has no check. The menus and the ribbon grey the
  * command out with this reason in its tooltip.
  */
+/** What is picked now, for the checks in editor/can-run.ts: each is worked out only when asked. */
+const picked: Picked = {
+  get any() { return editor.hasSelection(); },
+  get count() { const s = editor.sel; return s.atoms.size + s.bonds.size + s.captions.size + s.arrows.size + s.shapes.size; },
+  get atoms() { return editor.sel.atoms.size; },
+  get bonds() { return editor.sel.bonds.size; },
+  get captions() { return editor.sel.captions.size; },
+  get arrows() { return editor.sel.arrows.size; },
+  get structure() { const r = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited; return r !== null && doc.atoms.has(r); },
+  get curved() { return pickedCurved(); },
+  get geo() { return pickedGeo().length > 0; },
+  get pictures() { return [...editor.sel.shapes].filter((id) => doc.shapes.get(id)?.kind === 'picture').length; },
+  get plainPictures() { return [...editor.sel.shapes].map((id) => doc.shapes.get(id)).filter((x) => x?.kind === 'picture' && !!x.src && !x.chart && !x.math && !x.video).length; },
+  get brackets() { return [...editor.sel.shapes].some((id) => doc.shapes.get(id)?.kind === 'bracket'); },
+  get orbitals() { return selectedOrbitals().length > 0; },
+  get empty() { return !doc.atoms.size && !doc.captions.size && !doc.arrows.size && !doc.shapes.size; },
+  get drawnAtoms() { return doc.atoms.size; },
+  get drawnArrows() { return doc.arrows.size; },
+};
+
+/**
+ * Why a drawing command cannot run now (S15, S85; G5-28): the reason, null when it can, undefined
+ * when it has no check. The needs table (editor/can-run.ts) answers most; the ones here look at
+ * more than the selection. With `lazy`, a check that needs the whole drawing is answered only when
+ * already known (the command then shows as available, and running it says why not).
+ */
 function whyDrawingCannotRun(cmd: string, lazy = false): string | null | undefined {
-  const root = () => { const r = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited; return r !== null && doc.atoms.has(r) ? r : null; };
   switch (cmd) {
-    case 'contract-label': { const g = selectedGroup(doc, editor.sel.atoms); return 'error' in g ? g.error : null; }
-    case 'arrange-grid': return editor.gridCount() < 2 ? 'Select two or more structures or objects to put in a grid.' : null;
+    case 'contract-label': case 'define-nickname': { const g = selectedGroup(doc, editor.sel.atoms); return 'error' in g ? g.error : null; }
+    case 'arrange-row': case 'arrange-column': case 'arrange-grid': {
+      const quick = whyNot(cmd, picked);
+      if (quick || lazy) return quick;
+      return editor.gridCount() < 2 ? WHY[NEEDS[cmd][1]] : null;
+    }
     case 'stoichiometry-table': case 'check-balance': {
-      if (!doc.arrows.size) return 'No reaction step found: draw the starting materials, an arrow and the products.';
+      if (!doc.arrows.size) return WHY.noStep;
       // (until the steps of the drawing as it is now are known, it stays enabled: they are worked
       // out when its menu opens or the pointer rests on it, not on every change of a big drawing)
       if (lazy && !stepCache.fresh(doc)) return null;
@@ -2977,19 +3007,18 @@ function whyDrawingCannotRun(cmd: string, lazy = false): string | null | undefin
       return typeof got === 'string' ? got : null;
     }
     case 'rgroup-table': {
-      const r = root();
-      if (r === null) return 'Select a structure with R groups (R1, R2, X…) first.';
+      if (!picked.structure) return 'Select a structure with R groups (R1, R2, X…) first.';
+      const r = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited!;
       return rGroupsOf(doc, [...doc.fragmentOf(r)]).length ? null : 'This structure has no R groups. Type R1, R2… (or R, X, Ar) as atom labels where the groups go.';
     }
-    case 'chiral-flag': return root() === null ? 'Select a structure first.' : null;
+    case 'resolve-comment': case 'delete-comment': return ws.active.mode === 'slides' ? slideCmts?.whyNoComment() ?? null : undefined;
+    case 'delete-all-comments': return ws.active.mode === 'slides' ? slideCmts?.whyNoComments() ?? null : undefined;
     case 'animate-step': return pickedReactionArrow() === undefined ? 'Select a reaction arrow first, or use Animate Reaction for the whole scheme.' : null;
-    case 'turn-3d': return editor.sel.atoms.size ? null : 'Select a structure to rotate in 3-D.';
-    case 'scale': return editor.hasSelection() ? null : 'Select something to scale.';
     case 'action-settings': {
       const ok = !!deckNow() && [...editor.sel.shapes].some((id) => { const s = doc.shapes.get(id); return !!s && s.kind === 'geo' && !s.diagram && !s.energy; });
       return ok ? null : 'Select an action button or a shape on a slide first (Insert ▸ Shapes ▸ Action buttons).';
     }
-    default: return undefined;
+    default: return whyNot(cmd, picked);
   }
 }
 /** Why a command cannot run in the mode now (the sheet answers for its own); undefined: no check. */
@@ -3338,7 +3367,7 @@ const gridGap = () => lastGridGap ?? 1.5 * doc.style.bondLength;
 async function arrangeInGrid(): Promise<void> {
   finishTyping();
   const n = editor.gridCount();
-  if (n < 2) { flash('Select two or more structures or objects to put in a grid.'); return; }
+  if (n < 2) { flash(WHY.grid); return; }
   const start = { cols: defaultColumns(n), rowGap: lastGridGaps?.rowGap ?? gridGap(), colGap: lastGridGaps?.colGap ?? gridGap() };
   const preview = (p: GridPick) => {
     const { units: us, offsets } = editor.gridPlan({ kind: 'grid', cols: p.cols, gap: p.colGap, rowGap: p.rowGap, colGap: p.colGap });
@@ -3540,7 +3569,7 @@ async function numberCompounds(): Promise<void> {
  */
 async function addTiedText(role: 'label' | 'caption'): Promise<void> {
   const frags = chosenStructures();
-  if (!frags.length) { flash('Select a structure first.'); return; }
+  if (!frags.length) { flash(WHY.structure); return; }
   const m = editor.measure();
   // copies already labelled keep their ID
   const keys = role === 'label' && numbering.same ? await structureKeys() : new Map<number, string>();
@@ -3827,7 +3856,7 @@ async function expandLabel(full = false): Promise<void> {
     editor.selectThese({ atoms: new Set(made), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() });
     list = editor.expandableLabels();
     if (!list.length) return;
-  } else if (!list.length) { flash('Select a label to expand: an abbreviation (OMe, Boc, CO2Et), a ligand (BINAP, dppf), or a ligand on a metal (PPh3, dppe, Cp*).', 6000); return; }
+  } else if (!list.length) { flash(WHY.expand, 6000); return; }
   const failed: string[] = [];
   let n = 0;
   const all = new Set(made);
@@ -4119,7 +4148,7 @@ async function copySmiles(): Promise<void> {
     // most often an atom with too many bonds: say which, and offer the SMILES as drawn
     const ids = new Set(atoms);
     const bad = checks.list().find((w) => w.kind === 'atom' && ids.has(w.id));
-    if (!bad) { flash('There is no structure to copy.'); return; }
+    if (!bad) { flash(WHY.copySmiles); return; }
     editor.reveal('atom', bad.id);
     const loose = await chem.molToSmiles(molblock, true);
     if (!loose) { flash(`Not copied: ${bad.text.join(' ')}`, 8000); return; }
@@ -4157,20 +4186,20 @@ function copyMolfile(): Promise<void> {
 /** Copy the selection (or the whole drawing) as CDXML text, for pasting into a text editor or script. */
 function copyCdxmlText(): Promise<void> | void {
   const part = extractDrawing(doc, chemistrySelection(doc, editor.sel, editor.hasSelection()));
-  if (isEmpty(part)) { flash('There is nothing to copy.'); return; }
+  if (isEmpty(part)) { flash(WHY.copy); return; }
   return copyText(writeCdxml(part, { name: 'Clipboard.cdxml', textMeasure: measureText }), 'Copied as CDXML text.');
 }
 
 /** Copy the selection (or the whole drawing) as an SVG picture: structures, shapes, diagrams and pictures alike. */
 function copySvgOfSelection(): Promise<void> | void {
   const svg = drawingSvg(doc, editor.hasSelection() ? editor.sel : null);
-  if (!svg) { flash('There is nothing to copy.'); return; }
+  if (!svg) { flash(WHY.copy); return; }
   return copySvg(svg).then(flash, (err) => flash('Could not copy: ' + String(err)));
 }
 
 let lastTurn = { angle: '90', dir: 'cw' };
 async function rotateDialog(): Promise<void> {
-  if (!editor.hasSelection()) { flash('Select something to rotate.'); return; }
+  if (!editor.hasSelection()) { flash(WHY.rotate); return; }
   const r = await ask('Rotate', [
     { name: 'angle', label: 'Angle', value: lastTurn.angle, unit: 'degrees', type: 'number' },
     { name: 'dir', label: 'Direction', value: lastTurn.dir, options: [{ value: 'cw', label: 'Clockwise' }, { value: 'ccw', label: 'Counterclockwise' }] },
@@ -4183,7 +4212,7 @@ async function rotateDialog(): Promise<void> {
 }
 
 async function scaleDialog(): Promise<void> {
-  if (!editor.hasSelection()) { flash('Select something to scale.'); return; }
+  if (!editor.hasSelection()) { flash(WHY.scale); return; }
   const L = editor.selectionBondLength();
   const shown = L ? L.toFixed(1) : '';
   const r = await ask('Scale', [
@@ -4227,7 +4256,7 @@ function showDevTools(on: boolean): void {
 function align(how: Align): void {
   // once ever: structures that share a ring could line up on it
   const tip = (how === 'hcenter' || how === 'vcenter') && !focalPrefs.tipShown && editor.shareRingNoFocal();
-  if (!editor.align(how)) { flash('Select two or more structures, captions, arrows or shapes to line them up.'); return; }
+  if (!editor.align(how)) { flash(WHY.align); return; }
   if (tip) {
     focalPrefs.tipShown = true;
     storeSettings();
@@ -5868,7 +5897,7 @@ async function matchFocalPoints(): Promise<void> {
 
 /** After a flip: nothing selected, or a plain flip that made the mirror image of a structure with wedges. */
 function flipped(r: boolean | 'stereo'): void {
-  if (!r) flash('Select something to flip.');
+  if (!r) flash(WHY.flip);
   else if (r === 'stereo') flash('Flipped: the stereocenters are now inverted (the enantiomer). To keep the configuration, undo and use Flip, Preserve Stereochemistry.', 7000, { label: 'Undo', run: () => undo() });
 }
 
@@ -6407,7 +6436,7 @@ async function selectedForLibrary(): Promise<StructureIn[] | string> {
     return got.length ? got : 'The structure couldn\'t be read (check its valences).';
   }
   const frags = chosenStructures();
-  if (!frags.length) return 'Select one or more structures in the drawing first.';
+  if (!frags.length) return WHY.library;
   const atoms = new Set(frags.flatMap((f) => [...f]));
   const got = await structuresFor(doc, partsOf(doc, atoms));
   return got.length ? got : 'The structure couldn\'t be read (check its valences).';
@@ -7157,7 +7186,7 @@ async function readPictures(pics: { name: string; bytes: Uint8Array; mime: strin
 /** Insert > Picture Tools > Crop Picture: the selected picture's handles cut its edges off until Esc or a click elsewhere. */
 function cropPicture(): void {
   const pics = [...editor.sel.shapes].filter((id) => doc.shapes.get(id)?.kind === 'picture');
-  if (pics.length !== 1) { flash('Select one picture to crop.'); return; }
+  if (pics.length !== 1) { flash(WHY.cropOne); return; }
   editor.cropping = editor.cropping === pics[0] ? null : pics[0];
   editor.requestOverlay();
   stylePanel.refresh();
@@ -7170,7 +7199,7 @@ function cropPicture(): void {
  */
 async function formatPicture(): Promise<void> {
   const pics = [...editor.sel.shapes].map((id) => doc.shapes.get(id)).filter((x): x is Shape => x?.kind === 'picture' && !!x.src && !x.chart && !x.math && !x.video);
-  if (!pics.length) { flash('Select a picture first.'); return; }
+  if (!pics.length) { flash(WHY.picture); return; }
   const p = pics[0];
   const got = await pictureFormat({ src: p.src!, fx: p.fx, crop: p.crop, w: Math.abs(p.x2 - p.x1), h: Math.abs(p.y2 - p.y1), count: pics.length });
   if (!got) return;
@@ -7590,7 +7619,7 @@ async function autoAnimateSteps(): Promise<void> {
     ? { atoms: new Set(f.atoms), captions: new Set(f.captions), arrows: new Set(f.arrows), shapes: new Set(f.shapes) }
     : { atoms: new Set(s.atoms), captions: new Set(s.captions), arrows: new Set(s.arrows), shapes: new Set(s.shapes) };
   const pieces = stepPieces(sdoc, m, scope);
-  if (!pieces) { flash('Select a scheme with reaction arrows first (or nothing, to build every scheme on the slide).'); return; }
+  if (!pieces) { flash(WHY.autoAnimate); return; }
   const steps = Math.max(...pieces.map((p) => p.step));
   const canvas = !!slide.canvas;
   // a route built by hand (more than the one keyframe a canvas slide starts with) can be kept
@@ -9572,7 +9601,7 @@ async function drawingAltText(): Promise<boolean> {
     setStructureAlt(doc, atom, got);
     return true;
   }
-  flash(pics.length > 1 ? 'Select one picture at a time for Alt Text.' : 'Click a picture, chart or structure first, then Alt Text.');
+  flash(pics.length > 1 ? 'Select one picture at a time for Alt Text.' : WHY.altText);
   return false;
 }
 
@@ -9811,7 +9840,11 @@ function command(name: string): boolean {
   if (name.startsWith('layout-') && ws.active.mode === 'slides') { setLayout(name.slice('layout-'.length)); return true; }
   if (name.startsWith('new-slide-layout-') && ws.active.mode === 'slides') { newSlide(name.slice('new-slide-layout-'.length)); return true; }
   const run = COMMANDS[name];
-  return !!run && run() !== false;
+  if (!run) return false;
+  // a command that cannot run now says why (the reason its greyed menu item and button show)
+  const why = whyCannotRun(name);
+  if (why) { flash(why, 6000); return true; }
+  return run() !== false;
 }
 
 /** Where the last right-click menu on the page opened (a gallery picked from it opens there). */
@@ -9830,7 +9863,7 @@ function dropAnchor(cmd: string): HTMLElement {
 
 /** Shape Styles: the gallery of ready-made looks for the shapes picked, in the deck's colours. */
 function shapeStyles(at?: { left: number; bottom: number }): void {
-  if (!pickedGeo().length) { flash('Select a shape first (Insert ▸ Shapes).'); return; }
+  if (!pickedGeo().length) { flash(WHY.shape); return; }
   const m = deckNow()?.master;
   const colours = styleColours(m?.textColor ?? '#333333', m?.accent ?? '#2f6fb0', m?.accent2 ?? '#c0504d');
   showStyleGallery(at ?? dropAnchor('shape-styles'), colours, (look, c) => {
@@ -9849,7 +9882,7 @@ function shapeStyles(at?: { left: number; bottom: number }): void {
 
 /** Shape Effects: shadow, reflection, glow, soft edges and bevel, from a menu under the button (or at the pointer). */
 function shapeEffects(at?: { x: number; y: number }): void {
-  if (!pickedGeo().length) { flash('Select a shape first (Insert ▸ Shapes).'); return; }
+  if (!pickedGeo().length) { flash(WHY.shape); return; }
   const r = dropAnchor('shape-effects').getBoundingClientRect();
   showContextMenu(at?.x ?? r.left, at?.y ?? r.bottom, effectsMenu(), { run: (cmd) => void command(cmd), key: () => undefined });
 }
@@ -9857,7 +9890,7 @@ function shapeEffects(at?: { x: number; y: number }): void {
 /** One of the Shape Effects menu's choices, for every shape picked. */
 async function shapeEffect(cmd: string): Promise<boolean> {
   const shapes = pickedGeo();
-  if (!shapes.length) { flash('Select a shape first (Insert ▸ Shapes).'); return false; }
+  if (!shapes.length) { flash(WHY.shape); return false; }
   finishTyping();
   if (cmd === 'shape-fx:glow:options') {
     const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: 0.4 };
@@ -9882,7 +9915,7 @@ async function shapeEffect(cmd: string): Promise<boolean> {
 /** Shape Fill > Picture: a picture from a file fills the shapes picked, stretched to each. */
 async function shapePictureFill(): Promise<void> {
   const shapes = pickedGeo();
-  if (!shapes.length) { flash('Select a shape first (Insert ▸ Shapes).'); return; }
+  if (!shapes.length) { flash(WHY.shape); return; }
   const p = await pickPicture();
   if (!p) return;
   if (!/^image\/(png|jpeg|gif)$/.test(p.mime)) { flash('A shape can be filled with a PNG, JPEG or GIF picture.'); return; }
@@ -9903,7 +9936,7 @@ function shapeNoPictureFill(): void {
 /** Picture Style (right-click on a picture): a ready-made frame, corners and shadow for the pictures picked. */
 function setPictureStyle(look: PictureLook | undefined): boolean {
   const pics = [...editor.sel.shapes].map((id) => doc.shapes.get(id)).filter((x): x is Shape => x?.kind === 'picture');
-  if (!pics.length) { flash('Select a picture first.'); return false; }
+  if (!pics.length) { flash(WHY.picture); return false; }
   doc.edit('Picture style', () => { for (const p of pics) doc.updateShape(p.id, { look: look && { ...look } }); });
   return true;
 }
@@ -9933,8 +9966,7 @@ function restack(how: 'front' | 'back' | 'forward' | 'backward'): void {
   // one undo step for both
   const [objects, bonds] = editor.doc.edit(label, () => [editor.setObjectLayer(how), editor.setBondLayer(how)] as const);
   if (objects || bonds === true) return;
-  const verb = { front: 'bring to the front', back: 'send to the back', forward: 'bring forward', backward: 'send backward' }[how];
-  flash(bonds === 'none' ? 'That bond doesn\'t cross another bond. Where bonds cross, the one behind has a gap.' : `Select the objects or bonds to ${verb}.`);
+  flash(bonds === 'none' ? 'That bond doesn\'t cross another bond. Where bonds cross, the one behind has a gap.' : WHY[how]);
 }
 
 const COMMANDS: Record<string, () => unknown> = {
@@ -10220,28 +10252,28 @@ const COMMANDS: Record<string, () => unknown> = {
   'align-vcenter': () => align('vcenter'),
   'align-bottom': () => align('bottom'),
   // (equal gaps, or equal focal point spacing: the choice on the Distribute buttons' menu)
-  'distribute-h': () => editor.distribute('h', focalPrefs.distribute) || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
-  'distribute-v': () => editor.distribute('v', focalPrefs.distribute) || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
-  'distribute-h-gaps': () => editor.distribute('h', 'gaps') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
-  'distribute-v-gaps': () => editor.distribute('v', 'gaps') || flash('Select three or more structures, captions, arrows or shapes to space them evenly.'),
-  'distribute-h-focal': () => editor.distribute('h', 'focal') || flash('Select three or more structures, captions, arrows or shapes to space their focal points evenly.'),
-  'distribute-v-focal': () => editor.distribute('v', 'focal') || flash('Select three or more structures, captions, arrows or shapes to space their focal points evenly.'),
+  'distribute-h': () => editor.distribute('h', focalPrefs.distribute) || flash(WHY.distribute),
+  'distribute-v': () => editor.distribute('v', focalPrefs.distribute) || flash(WHY.distribute),
+  'distribute-h-gaps': () => editor.distribute('h', 'gaps') || flash(WHY.distribute),
+  'distribute-v-gaps': () => editor.distribute('v', 'gaps') || flash(WHY.distribute),
+  'distribute-h-focal': () => editor.distribute('h', 'focal') || flash(WHY.distributeFocal),
+  'distribute-v-focal': () => editor.distribute('v', 'focal') || flash(WHY.distributeFocal),
   // with no atom, bond or ring picked, the next click on the drawing names the spot
   'set-focal-point': () => editor.setFocalPoint() || startFocalPick(),
   'pick-focal-point': () => startFocalPick(),
   'match-focal-points': () => void matchFocalPoints(),
   'reset-focal-point': () => editor.resetFocalPoint() || flash('None of the selected structures has a focal point of its own.'),
   'show-focal-points': () => showFocalPoints(!editor.showFocal),
-  'arrange-row': () => editor.arrangeGrid({ kind: 'row', gap: gridGap() }) || flash('Select two or more structures or objects to put in a row (or they already are, evenly spaced).'),
-  'arrange-column': () => editor.arrangeGrid({ kind: 'column', gap: gridGap() }) || flash('Select two or more structures or objects to put in a column (or they already are, evenly spaced).'),
+  'arrange-row': () => editor.arrangeGrid({ kind: 'row', gap: gridGap() }) || flash(WHY.row),
+  'arrange-column': () => editor.arrangeGrid({ kind: 'column', gap: gridGap() }) || flash(WHY.column),
   'arrange-grid': () => void arrangeInGrid(),
   'flip-h': () => flipped(editor.flip('h')),
   'flip-v': () => flipped(editor.flip('v')),
   'flip-h-keep': () => flipped(editor.flip('h', true)),
   'flip-v-keep': () => flipped(editor.flip('v', true)),
-  'rotate-cw': () => editor.rotateBy(90) || flash('Select something to rotate.'),
-  'rotate-ccw': () => editor.rotateBy(-90) || flash('Select something to rotate.'),
-  'rotate-180': () => editor.rotateBy(180) || flash('Select something to rotate.'),
+  'rotate-cw': () => editor.rotateBy(90) || flash(WHY.rotate),
+  'rotate-ccw': () => editor.rotateBy(-90) || flash(WHY.rotate),
+  'rotate-180': () => editor.rotateBy(180) || flash(WHY.rotate),
   // Alt+arrows turn the selection (and must never reach the browser, where Alt+← goes back)
   'turn-ccw-1': () => { editor.rotateBy(-1); },
   'turn-cw-1': () => { editor.rotateBy(1); },
@@ -10253,7 +10285,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'reaction-left': () => reactionStep('left'),
   'reaction-down': () => reactionStep('down'),
   'reaction-up': () => reactionStep('up'),
-  join: () => editor.join() || flash('Select two atoms, or two bonds, to join them into one.'),
+  join: () => editor.join() || flash(WHY.join),
   'fixed-length': () => toggleOption('fixedLength'),
   'fixed-angles': () => toggleOption('fixedAngles'),
   'dev-tools': () => { showDevTools(!devTools); storeSettings(); },
@@ -10306,7 +10338,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'zoom-in': () => editor.zoomBy(1.25),
   'zoom-out': () => editor.zoomBy(0.8),
   'zoom-fit': () => editor.fit(),
-  'zoom-selection': () => { if (!editor.goToSelection()) flash('Select something first, then Go to Selection brings it into view.'); },
+  'zoom-selection': () => { if (!editor.goToSelection()) flash(WHY.goTo); },
   navigator: () => setOrient({ ...orientPrefs, navigator: !orientPrefs.navigator }),
   'edge-arrows': () => setOrient({ ...orientPrefs, edgeArrows: !orientPrefs.edgeArrows }),
   'dot-grid': () => setOrient({ ...orientPrefs, dotGrid: !orientPrefs.dotGrid }),
@@ -10369,7 +10401,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'import-settings': () => void importSettingsFile(),
   'reset-toolboxes': () => { toolboxes.reset(); flash('Toolboxes reset: Drawing Tools docked at the left, the others hidden, all open and locked.', 6000); },
   'lock-toolboxes': () => { toolboxes.setLocked(!toolboxState.locked); flash(toolboxState.locked ? 'Toolboxes locked.' : 'Toolboxes unlocked: drag one by its title to an edge of the drawing to dock it, or anywhere else to float.', 6000); },
-  'add-frame': () => editor.addFrame() || flash('Select what to frame: structures, text, arrows or shapes.'),
+  'add-frame': () => editor.addFrame() || flash(WHY.frame),
   'fill-rings': () => {
     const msg = editor.fillRings();
     flash(msg, 6000);
@@ -10381,8 +10413,8 @@ const COMMANDS: Record<string, () => unknown> = {
     const r = editor.ringShadow();
     flash(!r ? 'Select filled rings (or their structure) first: Fill Rings fills them.' : r === 'on' ? 'Ring fills have a drop shadow. Change its size in the Style panel.' : 'Ring fill shadows off.', 5000);
   },
-  'highlight': () => editor.highlight(highlightColour, highlightStyle) ? flash('Highlighted. Change the color with Highlight in the Style panel.', 5000) : flash('Select the atoms and bonds to highlight.'),
-  'remove-highlight': () => editor.highlight(undefined) || flash('Select the atoms and bonds to take the highlight off.'),
+  'highlight': () => editor.highlight(highlightColour, highlightStyle) ? flash('Highlighted. Change the color with Highlight in the Style panel.', 5000) : flash(WHY.highlight),
+  'remove-highlight': () => editor.highlight(undefined) || flash(WHY.unhighlight),
   'smooth-highlight': () => toggleHighlight('smooth', 'Round highlights smoothed: one even band, with no disc at each atom. Straight highlights are always one band.', 'Round highlights back to a disc at each atom.'),
   'centre-highlight': () => toggleHighlight('centre', 'Highlight centered between the lines of the double bonds (and inside rings drawn with their double bonds inside).', 'Highlight back on the bonds.'),
   'soft-highlight': () => toggleHighlight('soft', 'Soft edges on. Choose how much fades, and which way, under Soft edges in the Style panel.', 'Sharp edges.'),
@@ -10409,20 +10441,20 @@ const COMMANDS: Record<string, () => unknown> = {
   'arrow-kind-plain': () => setKindOfArrows('plain'),
   'clean-up-options': () => void cleanUpChoices(),
   'clean-up-arrow': () => {
-    if (!pickedCurved()) { flash('Select one or more curved (mechanism) arrows first.'); return; }
+    if (!pickedCurved()) { flash(WHY.curved); return; }
     const n = editor.cleanUpArrows();
     flash(n ? `Tidied ${n} arrow${n === 1 ? '' : 's'}.` : 'The arrows are already as tidy as they can be.');
   },
   'arrow-s-shape': () => {
-    if (!pickedCurved()) { flash('Select one or more curved (mechanism) arrows first.'); return; }
+    if (!pickedCurved()) { flash(WHY.curved); return; }
     if (!editor.setArrowS(true)) flash('The selected arrows are S-shaped already.');
   },
   'arrow-single-curve': () => {
-    if (!pickedCurved()) { flash('Select one or more curved (mechanism) arrows first.'); return; }
+    if (!pickedCurved()) { flash(WHY.curved); return; }
     if (!editor.setArrowS(false)) flash('The selected arrows are single curves already.');
   },
   'arrow-add-bend': () => {
-    if (!pickedCurved()) { flash('Select one curved (mechanism) arrow first.'); return; }
+    if (!pickedCurved()) { flash(WHY.curvedOne); return; }
     if (!editor.addBendHere()) flash('Right-click the arrow\'s line where the bend should go (or double-click it).');
   },
   'arrow-remove-bend': () => {
@@ -10431,15 +10463,15 @@ const COMMANDS: Record<string, () => unknown> = {
   },
   'arrow-smooth-join': () => { const j = editor.pickedJoin(); if (!j || !editor.setJoinKind(j.id, j.join, 'smooth')) flash('Right-click a round join handle on a selected arrow first.'); },
   'arrow-symmetric-join': () => { const j = editor.pickedJoin(); if (!j || !editor.setJoinKind(j.id, j.join, 'symmetric')) flash('Right-click a round join handle on a selected arrow first.'); },
-  'arrow-shape-u': () => { if (!pickedCurved()) flash('Select one or more curved (mechanism) arrows first.'); else if (!editor.setArrowShape('u')) flash('The selected arrows are U-turns already.'); },
-  'arrow-shape-loop': () => { if (!pickedCurved()) flash('Select one or more curved (mechanism) arrows first.'); else if (!editor.setArrowShape('loop')) flash('The selected arrows are loops already.'); },
-  'arrow-reverse': () => { if (!editor.reverseArrows()) flash('Select one or more curved (mechanism) arrows first.'); },
-  'arrow-smooth-path': () => { if (!pickedCurved()) flash('Select one or more curved (mechanism) arrows first.'); else if (!editor.tidyPaths('smooth')) flash('The selected arrows have no sharp corners.'); },
-  'arrow-simplify-path': () => { if (!pickedCurved()) flash('Select one or more curved (mechanism) arrows first.'); else if (!editor.tidyPaths('simplify')) flash('The selected arrows can\'t be drawn with fewer bends.'); },
-  'flip-arrow-bend': () => { if (!editor.flipArrowBend()) flash('Select one or more curved (mechanism) arrows first.'); },
+  'arrow-shape-u': () => { if (!pickedCurved()) flash(WHY.curved); else if (!editor.setArrowShape('u')) flash('The selected arrows are U-turns already.'); },
+  'arrow-shape-loop': () => { if (!pickedCurved()) flash(WHY.curved); else if (!editor.setArrowShape('loop')) flash('The selected arrows are loops already.'); },
+  'arrow-reverse': () => { if (!editor.reverseArrows()) flash(WHY.curved); },
+  'arrow-smooth-path': () => { if (!pickedCurved()) flash(WHY.curved); else if (!editor.tidyPaths('smooth')) flash('The selected arrows have no sharp corners.'); },
+  'arrow-simplify-path': () => { if (!pickedCurved()) flash(WHY.curved); else if (!editor.tidyPaths('simplify')) flash('The selected arrows can\'t be drawn with fewer bends.'); },
+  'flip-arrow-bend': () => { if (!editor.flipArrowBend()) flash(WHY.curved); },
   'homolysis-arrows': () => {
     const n = editor.sel.bonds.size;
-    if (!n) flash('Select the bond that breaks first (click it with the selection tool).');
+    if (!n) flash(WHY.homolysis);
     else if (n > 4) flash('Select just the bond (or bonds) that break: click one with the selection tool, Shift+click for more.', 5000);
     else editor.addHomolysisArrows();
   },
@@ -10455,7 +10487,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'check-arrows': () => checkArrows(),
   'attach-arrow': () => {
     const n = editor.attachArrows();
-    flash(n ? `${n === 1 ? 'It follows' : `${n} things follow`} the structure now.` : 'Select curved arrows whose ends sit on atoms, bonds or lone pairs (or lone pairs and charges) first.');
+    flash(n ? `${n === 1 ? 'It follows' : `${n} things follow`} the structure now.` : WHY.attach);
   },
   'detach-arrow': () => {
     const n = editor.detachSelection();
@@ -10463,8 +10495,8 @@ const COMMANDS: Record<string, () => unknown> = {
   },
   'orient-like': async () => {
     const n = await orientLikeFirst();
-    if (n === null) flash('Select two or more structures. Each is turned to match the first one (top left), keeping its configuration.', 6000);
-    else if (n === 0) flash('Nothing to turn: the structures already match the first one, or share too little with it.');
+    if (n === null) flash(WHY.orient, 6000);
+    else if (n === 0) flash('Nothing to rotate: the structures already match the first one, or share too little with it.');
   },
   'clean-up-reaction-orient': async () => {
     await orientLikeFirst(true);
@@ -10479,7 +10511,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'stoichiometry-table': () => void stoichiometryTable(),
   'check-balance': () => void checkStepBalance(),
   'lab-calculator': () => labCalculator(),
-  'ts-brackets': () => { if (!editor.tsBrackets()) flash('Select the transition state first (draw it with partial bonds: P over a bond).'); },
+  'ts-brackets': () => { if (!editor.tsBrackets()) flash(WHY.ts); },
   'energy-diagram': () => void energyDiagram(null),
   'tlc-plate': () => void plateFigure('tlc', null),
   'mo-diagram': () => void plateFigure('mo', null),
@@ -10534,19 +10566,19 @@ const COMMANDS: Record<string, () => unknown> = {
   'edit-newman': () => { const id = editor.selectedNewman(); if (id === null) flash('Select a Newman projection first.'); else void newmanProjection(null, null, id); },
   'unlink-newman': () => { const id = editor.selectedNewman(); if (id !== null) { editor.unlinkNewman(id); flash('Unlinked: the projection stays as it is when the structure changes.'); } },
   'turn-3d': () => void turn3dDialog(),
-  'flatten-3d': () => editor.flattenSelection() || flash('Select a structure to flatten.'),
+  'flatten-3d': () => editor.flattenSelection() || flash(WHY.flatten),
   'depth-shading': () => toggleDepthShading(),
   'depth-shading-settings': () => void depthShadingDialog(),
   'structure-to-name': () => void structureToName(),
   'add-id-label': () => void addTiedText('label'),
   'lock-structures': () => toggleStructureLock(),
   'add-caption': () => void addTiedText('caption'),
-  'link-text': () => linkText() || flash('Select the text to link (and the structure to link it to; else it goes to the nearest).'),
-  'unlink-text': () => unlinkText() || flash('Select linked text, or a structure with text linked to it.'),
-  group: () => editor.group() || flash('Select two or more things to group: structures, text, arrows or shapes.'),
-  ungroup: () => editor.ungroupSmart() || editor.ungroup() || flash('Select a group to take apart.'),
+  'link-text': () => linkText() || flash(WHY.link),
+  'unlink-text': () => unlinkText() || flash(WHY.unlink),
+  group: () => editor.group() || flash(WHY.group),
+  ungroup: () => editor.ungroupSmart() || editor.ungroup() || flash(WHY.ungroup),
   'smart-scheme': () => void smartGallery(),
-  'convert-smart-scheme': () => editor.convertToSmart() || flash(editor.selectedSmart() !== null ? 'That is a Smart Scheme already.' : 'Select a reaction scheme (structures and the arrows between them) to make into a Smart Scheme.'),
+  'convert-smart-scheme': () => editor.convertToSmart() || flash(editor.selectedSmart() !== null ? 'That is a Smart Scheme already.' : WHY.smart),
   'ungroup-smart-scheme': () => editor.ungroupSmart() || flash('Select a Smart Scheme first.'),
   'smart-add-loop': () => smartPane.ask('loop', editor.smartPicked()) || flash('Select a catalytic cycle first (a Smart Scheme in the Cycle layout).'),
   'smart-add-branch': () => smartPane.ask('branch', editor.smartPicked()) || flash('Select a catalytic cycle first (a Smart Scheme in the Cycle layout).'),
@@ -11275,7 +11307,7 @@ let ownLooks: HighlightLookPreset[] = [];
 /** Turn a highlight setting on or off for the selected highlights; new highlights take the same look. */
 function toggleHighlight(key: HighlightToggle, on: string, off: string): void {
   const r = editor.toggleHighlight(key);
-  if (!r) { flash('Select highlighted atoms and bonds first.'); return; }
+  if (!r) { flash(WHY.highlighted); return; }
   const sel = [...editor.sel.atoms].map((id) => doc.atoms.get(id)?.hl).concat([...editor.sel.bonds].map((id) => doc.bonds.get(id)?.hl));
   highlightStyle = tidyStyle({ ...highlightStyle, ...(sel.find(Boolean) ?? {}) });
   flash(r === 'on' ? on : off, 6000);
@@ -12935,7 +12967,7 @@ function nmrSolventMenu(): void {
 /** Chemistry > Look Up > Find CAS RN (and the right-click menu): the structure picked, its CAS RN shown in the Analysis panel. */
 async function findCasChosen(): Promise<void> {
   const f = chosenStructures()[0];
-  if (!f) { flash('Select a structure first.'); return; }
+  if (!f) { flash(WHY.structure); return; }
   const r = await weigh(f);
   if (!r?.smiles) { flash('Couldn\'t read that structure to look it up.'); return; }
   showAnalysisList();
@@ -12967,7 +12999,7 @@ async function lookUpOnPubChem(smiles: string): Promise<void> {
 /** Chemistry > Look Up > Look Up on PubChem (and the right-click menu): the structure picked, shown in the Analysis panel. */
 async function lookUpChosen(): Promise<void> {
   const f = chosenStructures()[0];
-  if (!f) { flash('Select a structure first.'); return; }
+  if (!f) { flash(WHY.structure); return; }
   const r = await weigh(f);
   if (!r?.smiles) { flash('Couldn\'t read that structure to look it up.'); return; }
   showAnalysisList();
@@ -13082,7 +13114,7 @@ async function descriptorName(atoms: Set<number>, r: FragmentResult | null): Pro
  * panel chooses what they show and where they sit.
  */
 async function attachDescriptors(frags = chosenStructures()): Promise<void> {
-  if (!frags.length) { flash('Select a structure first.'); return; }
+  if (!frags.length) { flash(WHY.structure); return; }
   if (!chem.ready) { flash('The chemistry engine is still loading. Try again in a moment.'); return; }
   const made: number[] = [];
   const weighed = await Promise.all(frags.map((f) => weigh(f)));
@@ -13285,7 +13317,7 @@ async function runAnalysis(force: boolean): Promise<void> {
 async function setStereoGroup(): Promise<void> {
   const sel = [...editor.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a);
   const centres = sel.filter((a) => live.atom(a.id) || a.enhStereo);
-  if (!centres.length) { flash(sel.length ? 'None of the selected atoms is a stereocenter.' : 'Select the stereocenters to group first.'); return; }
+  if (!centres.length) { flash(sel.length ? 'None of the selected atoms is a stereocenter.' : WHY.stereoGroup); return; }
   // the next free group number in these structures, for each kind
   const used = { and: new Set<number>(), or: new Set<number>() };
   for (const a of centres) for (const id of doc.fragmentOf(a.id)) {
@@ -13318,7 +13350,7 @@ async function setStereoGroup(): Promise<void> {
  */
 async function setRepeatGroup(): Promise<void> {
   const br = [...editor.sel.shapes].map((id) => doc.shapes.get(id)).filter((s): s is Shape => s?.kind === 'bracket');
-  if (!br.length) { flash('Select the brackets first (draw them around the repeat unit with the bracket tool).'); return; }
+  if (!br.length) { flash(WHY.repeat); return; }
   // the label goes on the closing bracket (lips pointing back to the left), as ChemDraw puts it
   const closing = br.find((s) => lipDirection(s).x < -0.5) ?? br[br.length - 1];
   const now = br.find((s) => s.repeat)?.repeat ?? 'n';
@@ -13399,7 +13431,7 @@ async function rGroupTable(): Promise<void> {
  */
 async function setChiralFlag(): Promise<void> {
   const root = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited;
-  if (root === null || !doc.atoms.has(root)) { flash('Select a structure first.'); return; }
+  if (root === null || !doc.atoms.has(root)) { flash(WHY.structure); return; }
   const atoms = [...doc.fragmentOf(root)].map((id) => doc.atoms.get(id)!);
   const box = { x1: Math.min(...atoms.map((a) => a.x)), y1: Math.min(...atoms.map((a) => a.y)), x2: Math.max(...atoms.map((a) => a.x)), y2: Math.max(...atoms.map((a) => a.y)) };
   const L = doc.style.bondLength;
@@ -16326,7 +16358,7 @@ requestAnimationFrame(() => {
 });
 
 // Hooks for the automated speed tests.
-(window as any).__app = { openMemorySi, assistant: { items: assistantItems, apply: applyAssistantAction, markStep: markAssistantStep }, doc, editor, renderer, settingsWindow, toolboxes, chem, live, command, setRibbonLook, setPageLook, getPageLook: () => ({ ...pageLook }), addMolfile, keeper, cdxml: (name: string) => writeCdxml(doc, { name, textMeasure: measureText }), openText, picture: (dpi = 150) => { const p = recordPicture(doc, 0); if (!p) return null; const c = pictureCanvas(doc, p, dpi); return { url: c.canvas.toDataURL('image/png'), box: p.box, dpi: c.dpi }; }, stressTest, pasteChemistry, smiles: async (loose = false) => chem.molToSmiles(toMolfile(doc, doc.atoms.keys(), '', { species: allSpecies(doc, editor.measure()) }).molblock, loose), placePicture, sample: sampleMolecule, ws, slideList, get presenter() { return shows?.presenter; }, Doc, keymap, names, get sheetMode() { return sheetMode; }, sheetChem, get docMode() { return docMode; }, loadModes: () => Promise.all([loadSheetMode(), loadDocMode()]), docxBytes: async () => (await import('./io/docx-write')).writeDocx(docMode.file!.t, docFiles),
+(window as any).__app = { openMemorySi, whyCannotRun, assistant: { items: assistantItems, apply: applyAssistantAction, markStep: markAssistantStep }, doc, editor, renderer, settingsWindow, toolboxes, chem, live, command, setRibbonLook, setPageLook, getPageLook: () => ({ ...pageLook }), addMolfile, keeper, cdxml: (name: string) => writeCdxml(doc, { name, textMeasure: measureText }), openText, picture: (dpi = 150) => { const p = recordPicture(doc, 0); if (!p) return null; const c = pictureCanvas(doc, p, dpi); return { url: c.canvas.toDataURL('image/png'), box: p.box, dpi: c.dpi }; }, stressTest, pasteChemistry, smiles: async (loose = false) => chem.molToSmiles(toMolfile(doc, doc.atoms.keys(), '', { species: allSpecies(doc, editor.measure()) }).molblock, loose), placePicture, sample: sampleMolecule, ws, slideList, get presenter() { return shows?.presenter; }, Doc, keymap, names, get sheetMode() { return sheetMode; }, sheetChem, get docMode() { return docMode; }, loadModes: () => Promise.all([loadSheetMode(), loadDocMode()]), docxBytes: async () => (await import('./io/docx-write')).writeDocx(docMode.file!.t, docFiles),
   pptxBytes: async () => { const d = deckNow()!; const { writePptx } = await import('./io/pptx-write'); return writePptx(d.outOfView(() => ({ size: d.size, master: d.master, slides: d.slides.map((s, i) => ({ id: s.id, layout: s.layout, doc: d.docOf(i), notes: s.notes, notesLook: s.notesLook, transition: s.transition, anims: s.anims, comments: s.comments, canvas: s.canvas })), oleKept: d.oleKept, picKept: d.picKept })), pptxOptions()); } };
 
 // ---------------------------------------------------------------- desktop self-test
