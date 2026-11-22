@@ -2964,6 +2964,7 @@ function pickedStep(what: string): PickedStep | null {
  * toast, null when it can run, undefined when it has no check. The menus and the ribbon grey the
  * command out with this reason in its tooltip.
  */
+const NOT_CANVAS_SLIDE = 'Go to a canvas slide first (Home ▸ Canvas Slide adds one).';
 /** What is picked now, for the checks in editor/can-run.ts: each is worked out only when asked. */
 const picked: Picked = {
   get any() { return editor.hasSelection(); },
@@ -3011,6 +3012,7 @@ function whyDrawingCannotRun(cmd: string, lazy = false): string | null | undefin
       const r = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited!;
       return rGroupsOf(doc, [...doc.fragmentOf(r)]).length ? null : 'This structure has no R groups. Type R1, R2… (or R, X, Ar) as atom labels where the groups go.';
     }
+    case 'canvas-background': return deckNow()?.current?.canvas && ws.active.mode === 'slides' ? null : NOT_CANVAS_SLIDE;
     case 'resolve-comment': case 'delete-comment': return ws.active.mode === 'slides' ? slideCmts?.whyNoComment() ?? null : undefined;
     case 'delete-all-comments': return ws.active.mode === 'slides' ? slideCmts?.whyNoComments() ?? null : undefined;
     case 'animate-step': return pickedReactionArrow() === undefined ? 'Select a reaction arrow first, or use Animate Reaction for the whole scheme.' : null;
@@ -4921,7 +4923,8 @@ function showContextTabs(): void {
 function showCanvasState(): void {
   const on = !!deckNow()?.current?.canvas && ws.active.mode === 'slides';
   for (const el of document.querySelectorAll<HTMLElement>('.keyframes-only')) {
-    if (el instanceof HTMLButtonElement && el.getAttribute('role') === 'menuitem') el.disabled = !on;
+    // a menu item is greyed with the reason, as other commands are (review of F5, R11)
+    if (el instanceof HTMLButtonElement && el.getAttribute('role') === 'menuitem') paintCanRun([el], 'cmd', () => (on ? null : NOT_CANVAS_SLIDE));
     else el.hidden = !on;
   }
 }
@@ -16290,7 +16293,7 @@ const buildHint = new BuildHint({
 });
 editor.onOverlay = () => { smartPane.place(); buildHint.place(); };
 editor.onSmartAdded = (frame, cap) => smartPane.focusCaption(frame, cap);
-editor.onChange = () => { refreshCanRun(); welcomeWatch?.(); showToolStatus(); ($('#go-sel') as HTMLButtonElement).disabled = !editor.hasSelection(); showRibbonContext(); smartPane.refresh(); buildHint.refresh(); if (ws.active.mode === 'slides' || ws.active.mode === 'design') { textRibbonNow()?.refresh(); showContextTabs(); masterPanel?.refresh(); } textToolbox?.refresh(); canvasFont?.refresh(); animUi?.selectionChanged(); updateStereo(); scheduleAnalysis(); updatePanels(); ws.noteChange(); stylePanel.refresh(); void refreshDescriptors(); scheduleLabelCheck(); };
+editor.onChange = () => { welcomeWatch?.(); refreshCanRun(); showToolStatus(); ($('#go-sel') as HTMLButtonElement).disabled = !editor.hasSelection(); showRibbonContext(); smartPane.refresh(); buildHint.refresh(); if (ws.active.mode === 'slides' || ws.active.mode === 'design') { textRibbonNow()?.refresh(); showContextTabs(); masterPanel?.refresh(); } textToolbox?.refresh(); canvasFont?.refresh(); animUi?.selectionChanged(); updateStereo(); scheduleAnalysis(); updatePanels(); ws.noteChange(); stylePanel.refresh(); void refreshDescriptors(); scheduleLabelCheck(); };
 chem.onReady = () => {
   (window as any).__chemReadyMs = performance.now() - startMs;
   sheetChem.flush();
