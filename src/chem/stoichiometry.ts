@@ -1,8 +1,10 @@
 // Chemistry > Stoichiometry Table: the amounts for a reaction step, as a sheet to fill in at the
 // bench. Each starting material, reagent and product of the step is a row with its formula and
 // molecular weight; the equivalents and the amount of the first starting material are typed in,
-// and the millimoles, masses and (from a density) volumes follow by formulas, so the sheet works
-// the numbers out again as they are changed.
+// and the millimoles, masses and volumes follow by formulas, so the sheet works the numbers out
+// again as they are changed. A reagent less than pure (a purity or wt % typed in) is weighed out
+// as more mass; one bought as a solution (n-BuLi 2.5 M, a concentration typed in) is measured
+// by volume of the solution (mmol ÷ M), else a liquid's volume follows from its density.
 //
 // Under the table, green metrics follow from the same numbers once the isolated mass is typed
 // in: the yield, E-factor (Sheldon: waste per mass of product) and PMI (process mass intensity:
@@ -22,8 +24,8 @@ export interface StoichRow {
   mw?: number;
 }
 
-/** The column headings, in order (A to I). */
-export const STOICH_HEADINGS = ['Role', 'Compound', 'Formula', 'MW (g/mol)', 'Equiv', 'mmol', 'Mass (mg)', 'Density (g/mL)', 'Volume (µL)'];
+/** The column headings, in order (A to K). */
+export const STOICH_HEADINGS = ['Role', 'Compound', 'Formula', 'MW (g/mol)', 'Equiv', 'mmol', 'Mass (mg)', 'Purity (%)', 'Density (g/mL)', 'Conc. (M)', 'Volume (µL)'];
 
 /** Where the green metrics sit (sheet row indexes) under a table of this many species. */
 export function greenRows(n: number): { title: number; isolated: number; yield: number; eFactor: number; pmi: number; note: number } {
@@ -54,8 +56,10 @@ export function stoichiometryBook(rows: readonly StoichRow[], mmol = 1): Workboo
       sh.setInput(y, 3, r.mw.toFixed(2));
       if (y === refRow) { sh.setInput(y, 4, '1'); sh.setInput(y, 5, String(mmol)); }
       else { sh.setInput(y, 4, '1'); sh.setInput(y, 5, `=E${n}*$F$${refRow + 1}`); }
-      sh.setInput(y, 6, `=F${n}*D${n}`);
-      sh.setInput(y, 8, `=IF(H${n}="","",G${n}/H${n})`);
+      // mass weighed out: the compound's own mass over its purity (empty: pure)
+      sh.setInput(y, 6, `=IF(H${n}="",F${n}*D${n},F${n}*D${n}*100/H${n})`);
+      // volume: of the solution when a concentration is given (mmol ÷ mol/L = mL), else of the liquid from its density
+      sh.setInput(y, 10, `=IF(J${n}<>"",1000*F${n}/J${n},IF(I${n}="","",G${n}/I${n}))`);
     });
     // green metrics, from the first product
     const p = rows.findIndex((r) => r.role === 'Product' && r.mw);
@@ -76,8 +80,8 @@ export function stoichiometryBook(rows: readonly StoichRow[], mmol = 1): Workboo
     }
     sh.patchStyle({ r1: 1, c1: 3, r2: rows.length, c2: 3 }, { numFmt: '0.00' });
     sh.patchStyle({ r1: 1, c1: 5, r2: rows.length, c2: 6 }, { numFmt: '0.00' });
-    sh.patchStyle({ r1: 1, c1: 8, r2: rows.length, c2: 8 }, { numFmt: '0.0' });
-    [130, 200, 110, 90, 60, 70, 80, 100, 90].forEach((w, c) => sh.setColWidth(c, w));
+    sh.patchStyle({ r1: 1, c1: 10, r2: rows.length, c2: 10 }, { numFmt: '0.0' });
+    [130, 200, 110, 90, 60, 70, 80, 75, 100, 75, 90].forEach((w, c) => sh.setColWidth(c, w));
   });
   return wb;
 }

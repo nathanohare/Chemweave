@@ -3137,7 +3137,7 @@ async function stoichiometryTable(): Promise<void> {
   if (!rows.some((r) => r.mw)) { flash('None of this step could be read as a compound.', 6000); return; }
   finishTyping();
   ws.newSheet(stoichiometryBook(rows));
-  flash('Stoichiometry table: enter the equivalents, the mmol of the first starting material and any densities; the rest is calculated. Green metrics are below the table.', 8000);
+  flash('Stoichiometry table: enter the equivalents, the mmol of the first starting material, and any purities, densities or solution concentrations; the rest is calculated. Green metrics are below the table.', 8000);
 }
 
 /** Chemistry > Reactions and Schemes > Check Balance: the atoms on each side of the step's arrow. */
