@@ -52,6 +52,11 @@ export const COMMAND_ICONS: Record<string, string> = {
   'map-atoms': svg('<polygon points="6,5 9.5,7 9.5,11 6,13 2.5,11 2.5,7"/><polygon points="18,11 21.5,13 21.5,17 18,19 14.5,17 14.5,13"/><path d="M9.5 7Q15 5 18 11" stroke-dasharray="2 1.6"/><circle cx="9.5" cy="7" r="1.3" fill="currentColor"/><circle cx="18" cy="11" r="1.3" fill="currentColor"/>'),
   'animate-reaction': svg('<rect x="2.5" y="4.5" width="19" height="15" rx="2"/><polygon points="10,8.5 16,12 10,15.5" fill="currentColor"/>'),
   'make-editable': svg('<path d="M13 3.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1H10"/>' + hex(8.5, 9.5, 3.5) + '<path d="M13.2 20.8l.8-3.1 5.6-5.6 2.3 2.3-5.6 5.6z"/><path d="M18.3 13.4l2.3 2.3"/>'),
+  // a dashed figure with a pencil: the picture replaced by an empty figure to draw in
+  'convert-to-figure': svg('<rect x="3" y="4" width="13" height="13" rx="1" stroke-dasharray="2.5 2"/><path d="M13.2 20.8l.8-3.1 5.6-5.6 2.3 2.3-5.6 5.6z"/><path d="M18.3 13.4l2.3 2.3"/>'),
+  // a faint sheet under a sharp one: the picture shown faintly to trace over
+  'trace-original': svg('<rect x="2.5" y="3.5" width="12" height="12" rx="1" stroke-dasharray="2 1.6"/><rect x="8.5" y="8.5" width="12" height="12" rx="1"/>'),
+  'original-pictures': svg('<rect x="9" y="4" width="12" height="14" rx="1"/><path d="M11.5 14l2.5-3 2 2 1.5-1.5 2 2.5"/><path d="M3 9h3M3 13h3" stroke-dasharray="1.5 1.5"/>'),
   'compare-original': svg(hex(9, 12, 5) + '<polygon points="15,7 19.33,9.5 19.33,14.5 15,17 10.67,14.5 10.67,9.5" stroke-dasharray="2 1.6"/>'),
   'import-picture': svg('<rect x="2.5" y="4.5" width="11" height="9" rx="1"/><path d="M4 12l3-3 2 2 2-2 2 3" /><path d="M15 15l2.5 2.5L22 13" stroke-linecap="round"/>'),
   'sequence-to-structure': svg('<text x="12" y="10" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" font-family="ui-monospace,monospace">GAV</text><path d="M4 15l3 3 3-3 3 3 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>'),

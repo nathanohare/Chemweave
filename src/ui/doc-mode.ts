@@ -56,7 +56,10 @@ import { replaceInCells, runZotero, type ZoteroCommand, type ZoteroHost, type Zo
 import { choose } from './keep-ui';
 import { dataUrl, fromDataUrl, imageSize } from '../render/images';
 import { CompareCard } from './doc-compare-card';
-import { canMakeEditable, madeFrom, makeEditable as makeEditablePicture, pictureBack, readPicture, restyle, type Made, type MakeEditableHost } from './doc-make-editable';
+import { canMakeEditable, drawingStyleOf, figureFor, isConvertedFigure, keptPicture, madeFrom, makeEditable as makeEditablePicture, measurePicture, pictureBack, readPicture, restyle, withLook, type Made, type MakeEditableHost } from './doc-make-editable';
+import { openConvertFigureWindow } from './convert-figure-dialog';
+import { traceImage } from './trace';
+import { OriginalNotes } from './doc-original-notes';
 import { openMakeEditableWindow } from './make-editable-dialog';
 import type { StyleChoice } from '../recognise/editable';
 import { shownSize } from '../document/doc-layout';
@@ -103,7 +106,7 @@ import type { BorderLine, BorderSide, TableLook } from '../model';
 import { BREAK_NAMES, changeSection, newBreak, pageNumText, sectionAt, sectionsOf, type Section, type SectionPatch } from '../document/sections';
 import {
   type HfKey, A4, COMPOUND, INCH, LETTER, OBJECT_CHAR, CAPTION_NAMES, END_FORMAT, FOOT_FORMAT, captionRuns, noteLabel, noteStyle, nextObjectId, pastedObjects, objectRun, objectsInText, runStyleOf, setParaStyle, styleOf, fieldTexts, objectOffsets, inlineMove,
-  floatOf, lookExtent, lookOf, cellHolding, innerObjects, emptyContents,
+  floatOf, lookExtent, lookOf, cellHolding, innerObjects, emptyContents, traceOf, type TraceLook,
   WATERMARKS, applyCharStyle, charStylesOf, clearCharStyle, clearFormatting, defaultPageBorder, defaultWatermark, deleteStyle, modifyCharStyle, newCharStyle, newParaStyle, withStyle,
   type CharStyle, type PageBorder, type Watermark,
   type BreakKind, type DocObject, type DocText, type HeaderFooter, type HfZones, type Embedded, type FigureFrame, type FigureLook, type Float, type LineNumbers, type NoteFormat, type NumberPlace, type PageNumFormat, type PageSetup, type WrapKind,
@@ -339,6 +342,8 @@ export class DocumentMode {
   private clipPicture: { w: number; h: number } | null = null;
   /** Review > New Comment: comments beside the page. */
   readonly comments: DocComments;
+  /** The original pictures beside figures converted from them (in the comment column). */
+  readonly notes: OriginalNotes;
   /** View > Ruler: the paragraph's indents and tab stops above the pages. */
   private ruler: Ruler;
   /** Home > Styles > More Styles: every style, to apply, change and make. */
@@ -393,6 +398,17 @@ export class DocumentMode {
       flash: (msg, ms) => this.host.flash(msg, ms),
       askName: () => this.askReviewName(),
     });
+    this.notes = new OriginalNotes({
+      objects: () => this.file?.t.objects ?? null,
+      placeOf: (id) => this.placeOnPage(id),
+      drawingIn: () => this.inPlace?.id ?? null,
+      mode: () => this.originalPictures,
+      zoom: () => this.view.zoom,
+      showing: () => !!this.file && this.view.scroller.isConnected && this.view.scroller.offsetParent !== null,
+      setTrace: (id, patch) => this.setTrace(patch, id),
+      more: (id, x, y) => this.originalPictureMenu(id, x, y),
+    });
+    this.comments.extras = () => this.notes.cards();
     this.ruler = new Ruler($('#doc-ruler'), {
       geometry: () => this.rulerGeometry(),
       setParas: (patch, what) => { if (this.file && !this.file.box) this.ed.setSelectedParas(patch, what); },
@@ -1168,6 +1184,7 @@ export class DocumentMode {
     this.stopReading();
     t.document.listener = () => {};
     this.closeMenu();
+    this.notes.clear();
     this.finder.close(false);
   }
 
@@ -1394,6 +1411,7 @@ export class DocumentMode {
       'arrange-backward': (x, y) => this.arranging.orderMenu(x, y, false),
       'arrange-group': (x, y) => this.arranging.groupMenu(x, y, b),
       'make-editable-menu': (x, y) => this.makeEditableMenu(x, y),
+      'original-pictures-menu': (x, y) => this.originalPicturesMenu(x, y),
     };
   }
 
@@ -1646,14 +1664,20 @@ export class DocumentMode {
         else cmd('Open Object', 'open-object', `Open the ${objectKind(po.embed)} in its own program; save it there to change it here`);
         item(po.embed.icon ? 'Show Contents' : 'Display as Icon', () => void this.embeddedIcon(picked, !po.embed?.icon), po.embed.icon ? 'Show what the object holds instead of its icon' : 'Show an icon with the file\'s name instead of what it holds');
       }
-      if (canMakeEditable(po)) cmd('Make Editable…', 'make-editable-window', 'Read the structure in the picture, see it before it goes in, and choose its style');
+      if (canMakeEditable(po)) {
+        cmd('Make Editable…', 'make-editable-window', 'Read the structure in the picture, see it before it goes in, and choose its style');
+        cmd('Convert to Figure…', 'convert-to-figure', 'Replace the picture with an empty figure of its size, to draw the structure yourself with the picture beside it to copy or trace');
+      }
       if (po?.kind === 'drawing' && po.fromPicture) {
         const st = po.fromPicture.style;
+        const figure = isConvertedFigure(po);
         items.push({ label: 'Original Picture', items: [
           command('Match Original Style', 'make-editable-match', 'Draw it with the picture\'s bond length, line width and label size', st === 'match'),
           command('Use Default Style', 'make-editable-default', 'Draw it in the document\'s drawing style', st === 'default'),
           null,
-          command('Compare with Original', 'compare-original', 'Show the picture and the structure side by side, to see what was read wrong', this.compareCard?.id === picked),
+          ...(figure ? [] : [command('Compare with Original', 'compare-original', 'Show the picture and the structure side by side, to see what was read wrong', this.compareCard?.id === picked)]),
+          command('Trace', 'trace-original', 'Show the picture faintly on the structure, where it was, while you draw in it', traceOf(po.fromPicture).on),
+          ...(figure ? [] : [command('Convert to Figure…', 'convert-to-figure', 'Draw it yourself instead: an empty figure the picture\'s size, the picture beside it to copy or trace')]),
           command('Revert to Picture', 'revert-to-picture', 'Put the picture back as it was'),
         ] });
       }
@@ -3211,12 +3235,15 @@ export class DocumentMode {
     let grown: FigureFrame | null = null;
     const done = (c: Contents | null) => {
       this.inPlace = null;
+      this.comments.update();
       if (this.file === f) this.backToCell(spot);
       if (!c || this.file !== f) { this.focus(); return; }
       const cur = f.t.objects[id];
       if (cur?.kind !== 'drawing') return;
       if (f.box?.cell) f.box.recorded = false;
-      const next: DocObject = { ...cur, contents: c };
+      // drawn in a figure matching its picture: the picture's look kept on what was drawn
+      const fp = cur.fromPicture;
+      const next: DocObject = { ...cur, contents: fp?.style === 'match' && fp.look ? withLook(c, fp.look, f.t.drawingStyle) : c };
       // a figure grown to hold its structures: it grows round them, so on the page they stay where they were drawn
       if (grown && cur.frame) {
         const at = f.layout().objects.find((x) => x.id === id);
@@ -3228,12 +3255,12 @@ export class DocumentMode {
       this.focus();
     };
     const place = this.placeFor(id, (box) => { grown = box; });
-    if (place && this.host.editInPlace) { this.host.editInPlace(o.contents, place, done); return; }
+    if (place && this.host.editInPlace) { this.host.editInPlace(o.contents, place, done); this.comments.update(); return; }
     this.host.editDrawing(o.contents, 'Figure', done);
   }
 
   /** A structure being drawn in place on its page, and the pane it is in. */
-  private inPlace: { v: DocView; place: InPlace } | null = null;
+  private inPlace: { v: DocView; place: InPlace; id: number } | null = null;
 
   /**
    * Drawing a figure's structures in place on its page: how the drawing tools line up with it
@@ -3267,6 +3294,7 @@ export class DocumentMode {
     };
     const place: InPlace = {
       title: fr ? 'Figure' : fresh ? 'New Structure' : 'Structure',
+      style: o.fromPicture ? drawingStyleOf(o.fromPicture, style) : undefined,
       rect: () => {
         const el = v.scroller;
         if (!el.isConnected) return null;
@@ -3307,6 +3335,8 @@ export class DocumentMode {
               ctx.strokeRect(edge.x, edge.y, edge.w, edge.h);
               ctx.setLineDash([]);
             }
+            // tracing: the picture faintly where it was, under what is drawn
+            this.paintTrace(ctx, id, s * v.zoom, () => v.redraw());
             paint(ctx);
             ctx.restore();
           },
@@ -3337,7 +3367,7 @@ export class DocumentMode {
         if (need) grow(need);
       } : undefined,
     };
-    this.inPlace = { v, place };
+    this.inPlace = { v, place, id };
     return place;
   }
 
@@ -3801,6 +3831,8 @@ export class DocumentMode {
       case 'make-editable-window': this.makeEditableWindow(); break;
       case 'revert-to-picture': this.revertToPicture(); break;
       case 'compare-original': this.compareOriginal(); break;
+      case 'convert-to-figure': this.convertToFigure(); break;
+      case 'trace-original': this.setTrace({ on: !this.traceNow()?.on }); break;
       case 'insert-caption': void this.insertCaption(); break;
       case 'cross-reference': void this.crossReference(); break;
       case 'compound-number': void this.compoundNumber(); break;
@@ -4605,6 +4637,7 @@ export class DocumentMode {
       },
       revert: () => { if (this.file === f && f.t.objects[id] === o) { this.revertToPicture(); } },
       edit: () => { if (this.file === f && f.t.objects[id] === o) this.editFigure(id); },
+      convert: () => { if (this.file === f && f.t.objects[id] === o && this.pickedObject() === id) this.convertToFigure(); },
       closed: () => { if (this.compareCard === card) this.compareCard = null; this.focus(); },
     });
     this.compareCard = card;
@@ -4614,6 +4647,123 @@ export class DocumentMode {
     const c = this.compareCard;
     this.compareCard = null;
     c?.close();
+  }
+
+  /**
+   * Convert to Figure: the picked picture (or the picture a structure was made from) replaced by
+   * an empty figure of its size in its place, opened to draw in, the picture beside it to copy or
+   * trace. A window asks the style first: the picture's, measured from it, or the document's.
+   */
+  private convertToFigure(): void {
+    const f = this.file;
+    const id = this.pickedObject();
+    const o = id !== null ? f?.t.objects[id] : undefined;
+    const pic = keptPicture(o);
+    if (!f || id === null || !o || !pic) { this.host.flash('Click a picture first: Convert to Figure puts an empty figure of its size in its place, to draw in.'); return; }
+    if (isConvertedFigure(o)) { this.editFigure(id); return; }
+    const ds = f.t.drawingStyle;
+    // its size on the page: the picture's as shown (a structure made from it may be another size)
+    const at = f.layout().objects.find((x) => x.id === id);
+    const pg = f.t.page;
+    const size = o.kind === 'picture' && at ? { w: at.w, h: at.h } : shownSize({ w: pic.w, h: pic.h }, pic.scale ?? 1, pg.w - pg.left - pg.right);
+    const known = o.kind === 'drawing' && o.fromPicture?.look ? Promise.resolve({ look: o.fromPicture.look, from: 'read' as const }) : measurePicture(this.host.structureReader ?? null, pic, ds);
+    openConvertFigureWindow({
+      measuring: known,
+      style: ds,
+      initial: lastEditStyle(),
+      apply: (choice, look) => {
+        if (this.file !== f || f.t.objects[id] !== o) { this.host.flash('The picture changed while the window was open, so it was left as it is.'); return; }
+        setLastEditStyle(choice);
+        const fig = figureFor(pic, size, choice, look);
+        this.closeCompare();
+        f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: fig } } as DocText, 'Convert to Figure');
+        this.redraw();
+        this.editFigure(id);
+      },
+    });
+  }
+
+  /** The tracing settings of the structure being drawn in place, or else the one picked. */
+  private traceNow(): TraceLook | null {
+    const id = this.traceId();
+    const o = id !== null ? this.file?.t.objects[id] : undefined;
+    return o?.kind === 'drawing' && o.fromPicture ? traceOf(o.fromPicture) : null;
+  }
+
+  /** The structure whose picture is traced: the one drawn in place, or else the one picked. */
+  private traceId(): number | null {
+    const id = this.inPlace ? this.inPlace.id : this.pickedObject();
+    const o = id !== null ? this.file?.t.objects[id] : undefined;
+    return o?.kind === 'drawing' && o.fromPicture ? id : null;
+  }
+
+  /** Tracing turned on or off, or shown otherwise: kept with the structure (its own step of Undo). */
+  setTrace(patch: Partial<TraceLook>, which: number | null = null): void {
+    const f = this.file;
+    const id = which ?? this.traceId();
+    const o = id !== null ? f?.t.objects[id] : undefined;
+    if (!f || id === null || o?.kind !== 'drawing' || !o.fromPicture) { this.host.flash('Tracing is for a figure converted from a picture, or a structure made from one.'); return; }
+    const trace = { ...traceOf(o.fromPicture), ...patch };
+    f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: { ...o, fromPicture: { ...o.fromPicture, trace } } } } as DocText, trace.on !== traceOf(o.fromPicture).on ? (trace.on ? 'Trace On' : 'Trace Off') : 'Tracing look');
+    this.views.forEach((v) => v.redraw());
+    this.comments.update();
+    this.updateRibbon();
+  }
+
+  /** Where a structure is down the pages (the document's points), and page points to its drawing point; null when it isn't laid out. */
+  private placeOnPage(id: number): { y: number; pageK: number } | null {
+    const f = this.file;
+    const o = f?.t.objects[id];
+    const at = f?.layout().objects.find((x) => x.id === id);
+    if (!f || o?.kind !== 'drawing' || !at || at.w <= 0) return null;
+    const box = o.frame ? { x1: o.frame.x, x2: o.frame.x + o.frame.w } : figures.record(o.contents, f.t.drawingStyle).pic?.box;
+    if (!box || box.x2 <= box.x1) return null;
+    return { y: at.y, pageK: at.w / (box.x2 - box.x1) };
+  }
+
+  /** ⋯ on an original picture's card: Revert to Picture, and Review ▸ Original Pictures. */
+  private originalPictureMenu(id: number, x: number, y: number): void {
+    const tick = (on: boolean) => (on ? '✓' : '');
+    const set = (v: 'all' | 'editing' | 'none') => () => this.setOriginalPictures(v);
+    popupMenu(x, y, [
+      ['Revert to Picture', () => { if (this.inPlace) { this.host.flash('Press Done (or Cancel) first, then Revert to Picture.'); return; } const f = this.file; const at = f ? objectOffsets(f.t.runs).get(id) : undefined; if (!f || at === undefined) return; this.stopBox(); f.ed.select(at, at + 1); this.revertToPicture(); }, !this.inPlace, ''],
+      null,
+      ['Show All', set('all'), true, tick(this.originalPictures === 'all')],
+      ['Show When Editing', set('editing'), true, tick(this.originalPictures === 'editing')],
+      ['Hide All', set('none'), true, tick(this.originalPictures === 'none')],
+    ]);
+  }
+
+  private setOriginalPictures(v: 'all' | 'editing' | 'none'): void {
+    this.originalPictures = v;
+    try { localStorage.setItem(ORIGINAL_PICTURES_KEY, v); } catch { /* not kept */ }
+    this.views.forEach((w) => w.redraw());
+    this.comments.update();
+  }
+
+  /** The picture a structure is drawn from, faintly where it was, while it is drawn with Trace on (ctx in the drawing's points, `px` pixels to the point). */
+  private paintTrace(ctx: CanvasRenderingContext2D, id: number, px: number, again: () => void): void {
+    const o = this.file?.t.objects[id];
+    const fp = o?.kind === 'drawing' ? o.fromPicture : undefined;
+    if (!fp || this.originalPictures === 'none') return;
+    const look = traceOf(fp);
+    if (!look.on) return;
+    const k = px * (window.devicePixelRatio || 1);
+    const img = traceImage(fp.picture.src, fp.picture.crop, look, fp.at.w * k, fp.at.h * k, again);
+    if (img) ctx.drawImage(img, fp.at.x, fp.at.y, fp.at.w, fp.at.h);
+  }
+
+  /** Review > Original Pictures: the pictures kept with figures shown beside them always, only while the figure is drawn in, or never. */
+  originalPictures: 'all' | 'editing' | 'none' = savedOriginalPictures();
+
+  private originalPicturesMenu(x: number, y: number): void {
+    const tick = (on: boolean) => (on ? '✓' : '');
+    const set = (v: 'all' | 'editing' | 'none') => () => { this.setOriginalPictures(v); this.focus(); };
+    popupMenu(x, y, [
+      ['Show All', set('all'), true, tick(this.originalPictures === 'all')],
+      ['Show When Editing', set('editing'), true, tick(this.originalPictures === 'editing')],
+      ['Hide All', set('none'), true, tick(this.originalPictures === 'none')],
+    ]);
   }
 
   /** Revert to Picture: a structure made from a picture back to that picture, as it was. */
@@ -6110,4 +6260,10 @@ function lastEditStyle(): StyleChoice {
 
 function setLastEditStyle(c: StyleChoice): void {
   try { localStorage.setItem(EDIT_STYLE_KEY, c); } catch { /* not kept */ }
+}
+
+/** Review > Original Pictures, as last chosen (Show When Editing at first). */
+const ORIGINAL_PICTURES_KEY = 'chem-illustrator.originalPictures';
+function savedOriginalPictures(): 'all' | 'editing' | 'none' {
+  try { const v = localStorage.getItem(ORIGINAL_PICTURES_KEY); return v === 'all' || v === 'none' ? v : 'editing'; } catch { return 'editing'; }
 }

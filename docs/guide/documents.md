@@ -89,6 +89,17 @@ A structure pasted as a picture (from ChemDraw as a picture, or from a paper) ca
 - A picture of a whole scheme is made editable as a whole. Each structure is read on its own, straight arrows (with solid, open or half heads, and equilibrium arrows) become arrows, and reagents, conditions and compound numbers become text you can edit, with the numbers in formulas such as CH2Cl2 subscripted. The text is read on your computer by Tesseract, which comes with the app, so nothing is sent anywhere. Anything it can't read with confidence (curved or dashed arrows, faint or unusual text, other drawings) stays as a picture behind, in the same place, so nothing is lost.
 - The original picture is saved with the structure in Word files, so Compare and Revert still work after you reopen the document. In Word, and when the structure is copied to Canvas or saved as CDXML, it is an ordinary structure.
 
+### Drawing over a picture: Convert to Figure
+
+When the reader can't read a picture well (a crowded drawing in perspective, say), draw the structure yourself over it. Click the picture, then **Convert to Figure** (beside Make Editable on the chemistry bar and the **Picture Format** tab, or right-click ▸ **Convert to Figure…**). When Make Editable was unsure, its Compare card offers **Convert to Figure…** too.
+
+- A window asks which drawing style to draw in: **Original picture's style** (its bond length, line width and label size measured from the picture, each one changeable) or **Document style**. One sample structure is drawn in each at the same scale, so you can check what was measured. If the reader isn't set up, only the line width is measured. The bond length then starts at the document's, for you to change.
+- The picture is replaced by an empty figure of exactly its size, in its place, with the same wrapping, frame and alt text, so nothing on the page moves. The figure opens for drawing.
+- While you draw, the **original picture** sits beside the page in the comment column, at the size it had on the page. It shares the column with review comments: they move round each other so none covers another.
+- **Trace** (on the picture's card, or right-click ▸ **Original Picture** ▸ **Trace**) shows the picture faintly on the figure, exactly where it was, under what you draw. Clicks go through it. With Trace on, the card sets how strongly it shows (**Opacity**) and its **Tint**: the picture's own colors, gray (the start), blue or red. It shows only while the figure is being drawn in, and it is never printed or saved as part of the drawing.
+- **Review** ▸ **Original Pictures ▾** shows these pictures for every figure (**Show All**), only for the figure being drawn in (**Show When Editing**, the start), or none (**Hide All**). This works for structures made with Make Editable too.
+- What you draw keeps the picture's look when you chose its style. ▾ or right-click ▸ **Original Picture** switches between the two styles afterwards, and **Revert to Picture** puts the picture back. The picture, and how Trace was set, are saved with the figure in Word files.
+
 ### Wrapping and text boxes
 
 Pick a structure, picture or text box, then use **Layout** tab ▸ **Wrap Text** (or the right-click menu):

@@ -15,6 +15,8 @@ export interface CompareCardHost {
   where(): DOMRect | null;
   revert(): void;
   edit(): void;
+  /** Convert to Figure: draw it by hand instead (offered when it was read doubtfully). */
+  convert?(): void;
   /** The card closed (Keep, Escape, or closed from outside). */
   closed(): void;
 }
@@ -63,10 +65,13 @@ export class CompareCard {
       b.addEventListener('click', go);
       return b;
     };
+    // read doubtfully: drawing it by hand over the picture is offered first
+    const doubt = problems.length > 0 && !!this.host.convert;
     buttons.append(
       button('Revert to Picture', 'Put the picture back as it was', () => { this.close(); this.host.revert(); }),
+      ...(doubt ? [button('Convert to Figure…', 'Draw it yourself instead: an empty figure the picture\'s size in its place, with the picture beside it to copy or trace', () => { this.close(); this.host.convert?.(); }, true)] : []),
       button('Edit Structure', 'Open the structure in the drawing tools to fix it', () => { this.close(); this.host.edit(); }),
-      button('Keep', 'Keep the structure and close this', () => this.close(), true),
+      button('Keep', 'Keep the structure and close this', () => this.close(), !doubt),
     );
     el.append(head, panes, buttons);
     el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); this.close(); } });

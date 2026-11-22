@@ -314,7 +314,7 @@ import { cappedText, TEXT_CAP } from './ai/assistant';
 import type { AssistantBar } from './ui/assistant-bar';
 import { aiSettingsDialog } from './ui/ai-settings';
 import { freeSpace } from './editor/free-space';
-import { canReadStructures, importPictureFiles, importPdfDrawings, MOST_PAGES, pdfDrawings, readForEditing, type ImportHost } from './ui/import-structures';
+import { canReadStructures, importPictureFiles, importPdfDrawings, MOST_PAGES, pdfDrawings, readForEditing, readHereQuietly, type ImportHost } from './ui/import-structures';
 import { checkRead, placeRead } from './recognise/check';
 import { Diagnostics, catchErrors, errorReport, formatEntry, stamp, type LogEntry, type UnexpectedClose } from './diagnostics';
 import { keepStore, getText, putText } from './keep/store';
@@ -8436,7 +8436,7 @@ function loadDocMode(): Promise<DocumentMode> {
       changed: () => ws.noteChange(),
       offerFigures: () => offerFigures,
       editDrawing: (contents, title, done) => editCellStructure(contents, title, done, docStyle()),
-      editInPlace: (contents, p, done) => editCellStructure(contents, p.title, done, docStyle(), p),
+      editInPlace: (contents, p, done) => editCellStructure(contents, p.title, done, p.style ?? docStyle(), p),
       editDiagram: (contents) => documentDiagram(contents),
       copyDrawing: async (contents, style) => (await copyDrawing(structureDoc(contents, style), null)).replace(/^Copied the whole drawing/, 'Copied the structure'),
       copiedOther: () => forgetCopy(),
@@ -8446,6 +8446,7 @@ function loadDocMode(): Promise<DocumentMode> {
       pickPicture: () => pickPicture(),
       structureReader: {
         read: (p) => readForEditing(importHost, p),
+        readQuietly: (p) => readHereQuietly(p),
         check: async (r) => (await checkRead(r, docStyle(), chem)).problems,
         // the text reader comes with the app; loaded only when a scheme's text is read
         readText: async (p) => { flash('Reading the text in the picture…', 30000); return (await import('./recognise/text-reader')).readText(p); },
@@ -14277,6 +14278,14 @@ makeEditableBtn.innerHTML = `${commandIcon('make-editable') ?? ''}<span>Make<br>
 makeEditableBtn.title = 'Make Editable: read the structure in the picture and put an editable structure in its place (the picture is kept, to compare with or revert to). Right-click the picture for the style';
 makeEditableBtn.setAttribute('aria-label', 'Make Editable');
 makeEditableBtn.addEventListener('click', () => { if (ws.active.mode === 'document') docMode?.run('make-editable'); });
+// Convert to Figure beside it: an empty figure the picture's size, to draw in with the picture beside it
+const convertBtn = document.createElement('button');
+convertBtn.type = 'button';
+convertBtn.className = 'structure-more convert-figure-btn';
+convertBtn.innerHTML = `${commandIcon('convert-to-figure') ?? ''}<span>Convert to<br>Figure</span>`;
+convertBtn.title = 'Convert to Figure: replace the picture with an empty figure of the same size, to draw the structure in yourself, with the picture beside it to copy or trace';
+convertBtn.setAttribute('aria-label', 'Convert to Figure');
+convertBtn.addEventListener('click', () => { if (ws.active.mode === 'document') docMode?.run('convert-to-figure'); });
 // and Compare with Original while a structure made that way is picked
 const compareBtn = document.createElement('button');
 compareBtn.type = 'button';
@@ -14285,7 +14294,7 @@ compareBtn.innerHTML = `${commandIcon('compare-original') ?? ''}<span>Compare<br
 compareBtn.title = 'Compare with Original: the picture this structure was made from and the structure, side by side (click again to close). Right-click the structure to revert to the picture';
 compareBtn.setAttribute('aria-label', 'Compare with Original');
 compareBtn.addEventListener('click', () => { if (ws.active.mode === 'document') docMode?.run('compare-original'); });
-$('#dock-left').prepend(makeEditableBtn, compareBtn, structureStart, ...structureRail, railFold);
+$('#dock-left').prepend(makeEditableBtn, convertBtn, compareBtn, structureStart, ...structureRail, railFold);
 { let folded = false; try { folded = localStorage.getItem(RAIL_KEY) === '1'; } catch { /* not kept */ } foldRail(folded); }
 
 /**
