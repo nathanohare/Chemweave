@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
+import { listInfo } from '../src/text/paragraphs';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const W = `xmlns:w="${W_NS}"`;
@@ -313,6 +314,80 @@ describe('Word list definitions are kept while the lists are not changed here (G
     const out = unzipSync(await writeDocx(doc, deps));
     const xml = strFromU8(out['word/document.xml']);
     const third = /<w:numId w:val="(\d+)"\/>(?:(?!<\/w:p>)[\s\S])*?<w:t[^>]*>third<\/w:t>/.exec(xml)![1];
-    expect(Number(third)).toBeLessThan(1000);
+    // (the file's two lists are written as 1 and 2; lists made here come after them)
+    expect(Number(third)).toBeGreaterThan(2);
+    const nb = parse(strFromU8(out['word/numbering.xml']));
+    const absId = Array.from(nb.getElementsByTagNameNS(W_NS, 'num')).find((n) => n.getAttributeNS(W_NS, 'numId') === third)!.getElementsByTagNameNS(W_NS, 'abstractNumId')[0].getAttributeNS(W_NS, 'val');
+    const abs = Array.from(nb.getElementsByTagNameNS(W_NS, 'abstractNum')).find((a) => a.getAttributeNS(W_NS, 'abstractNumId') === absId)!;
+    expect(abs.getElementsByTagNameNS(W_NS, 'numFmt')[0].getAttributeNS(W_NS, 'val')).toBe('bullet');
+  });
+});
+
+describe('Kept Word lists number in Word as they are numbered here after an edit (review F2-R01, F2-R06)', () => {
+  const W15 = 'http://schemas.microsoft.com/office/word/2012/wordml';
+  const numbering = `<w:abstractNum w:abstractNumId="0" xmlns:w15="${W15}" w15:restartNumberingAfterBreak="0"><w:nsid w:val="0A0B0C0D"/><w:multiLevelType w:val="hybridMultilevel"/>` +
+    '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:rPr><w:sz w:val="18"/></w:rPr></w:lvl></w:abstractNum>' +
+    '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="0"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="5"/></w:lvlOverride></w:num>';
+  const item = (n: number, t: string) => `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${n}"/></w:numPr></w:pPr><w:r><w:t>${t}</w:t></w:r></w:p>`;
+  const plain = (t: string) => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`;
+  type Doc = Awaited<ReturnType<typeof readDocx>>['doc'];
+  /** The numbers shown, '' for a paragraph that isn't a numbered item. */
+  const shown = (d: Doc) => listInfo(d.paras).map((x, i) => (d.paras[i].list === 'number' ? x.marker : ''));
+  /** Saved and opened again: the numbers Word gives (the reader counts as Word does, §17.9). */
+  const reopened = async (d: Doc) => shown((await readDocx(await writeDocx(d, deps))).doc);
+  /** Every list in the saved file points at the file's own levels (the number's size kept). */
+  const allKept = async (d: Doc) => {
+    const out = unzipSync(await writeDocx(d, deps));
+    const ids = [...strFromU8(out['word/document.xml']).matchAll(/<w:numId w:val="(\d+)"\/>/g)].map((m) => m[1]);
+    const nb = parse(strFromU8(out['word/numbering.xml']));
+    const absOf = (id: string) => Array.from(nb.getElementsByTagNameNS(W_NS, 'num')).find((n) => n.getAttributeNS(W_NS, 'numId') === id)!.getElementsByTagNameNS(W_NS, 'abstractNumId')[0].getAttributeNS(W_NS, 'val');
+    return ids.every((id) => absOf(id) === '0');
+  };
+  /** The document without paragraph `k` (its text and its line end). */
+  const withoutPara = (d: Doc, k: number): Doc => {
+    const text = d.runs.map((r) => r.text).join('');
+    const lines = text.split('\n');
+    lines.splice(k, 1);
+    return { ...d, runs: [{ ...d.runs[0], text: lines.join('\n') }], paras: d.paras.filter((_, i) => i !== k) };
+  };
+
+  it('keeps the numbers right when a middle item is made plain', async () => {
+    const { doc } = await readDocx(wordFile({ numbering, body: item(1, 'a') + item(1, 'b') + item(1, 'c') + item(1, 'd') }));
+    doc.paras[1] = { ...doc.paras[1], list: undefined };
+    expect(shown(doc)).toEqual(['1.', '', '1.', '2.']);
+    expect(await reopened(doc)).toEqual(['1.', '', '1.', '2.']);
+    expect(await allKept(doc)).toBe(true);
+  });
+
+  it('keeps the numbers right when an item no longer carries on the list', async () => {
+    const { doc } = await readDocx(wordFile({ numbering, body: item(1, 'a') + item(1, 'b') + plain('note') + item(1, 'c') + item(1, 'd') }));
+    expect(shown(doc)).toEqual(['1.', '2.', '', '3.', '4.']);
+    expect(await reopened(doc)).toEqual(['1.', '2.', '', '3.', '4.']);
+    doc.paras[3] = { ...doc.paras[3], startAt: undefined };
+    expect(shown(doc)).toEqual(['1.', '2.', '', '1.', '2.']);
+    expect(await reopened(doc)).toEqual(['1.', '2.', '', '1.', '2.']);
+    expect(await allKept(doc)).toBe(true);
+  });
+
+  it('keeps the numbers right when the item that set a list\'s start is deleted', async () => {
+    const { doc } = await readDocx(wordFile({ numbering, body: item(1, 'a') + item(1, 'b') + plain('note') + item(2, 'e') + item(2, 'f') }));
+    expect(shown(doc)).toEqual(['1.', '2.', '', '5.', '6.']);
+    const cut = withoutPara(doc, 3);
+    expect(shown(cut)).toEqual(['1.', '2.', '', '1.']);
+    expect(await reopened(cut)).toEqual(['1.', '2.', '', '1.']);
+    expect(await allKept(cut)).toBe(true);
+  });
+
+  it('writes an unedited item\'s indent as Word had it, and a changed one as laid out here', async () => {
+    const body = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>a</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:ind w:left="1080" w:hanging="360"/></w:pPr><w:r><w:t>b</w:t></w:r></w:p>';
+    const { doc } = await readDocx(wordFile({ numbering, body }));
+    const pPrOf = (xml: string, t: string) => new RegExp(`<w:pPr>((?:(?!<w:pPr>)[\\s\\S])*?)</w:pPr><w:r>(?:(?!</w:p>)[\\s\\S])*?<w:t[^>]*>${t}</w:t>`).exec(xml)![1];
+    let xml = strFromU8(unzipSync(await writeDocx(doc, deps))['word/document.xml']);
+    expect(pPrOf(xml, 'a')).not.toContain('<w:ind ');
+    expect(pPrOf(xml, 'b')).toContain('<w:ind w:left="1080" w:hanging="360"/>');
+    doc.paras[0] = { ...doc.paras[0], indent: (doc.paras[0].indent ?? 0) + 36 };
+    xml = strFromU8(unzipSync(await writeDocx(doc, deps))['word/document.xml']);
+    expect(pPrOf(xml, 'a')).toContain('<w:ind ');
   });
 });

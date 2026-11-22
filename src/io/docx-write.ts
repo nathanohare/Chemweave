@@ -199,11 +199,26 @@ class DocxWriter {
   /** Word's lists (numbering.xml): the levels of each kind of list (abstractNum), and each list using them (num, by numId from 1). */
   private abstractNums = new Map<string, number>();
   /** Each list's levels (abs), whether it counts from 1 (restart), and a level it starts again at a number of its own (at). */
-  private nums: { abs: number; restart: boolean; at?: { level: number; value: number } }[] = [];
+  private nums: { abs: number; restart: boolean; at?: { level: number; value: number }; kept?: string }[] = [];
   /** Each list's kind (its key), by numId − 1. */
   private numKeys: string[] = [];
-  /** Word lists kept from the file read: their ids there to the ids written (see numbering()). */
+  /**
+   * Word lists kept from the file read: their ids there to the ids written (see numbering()). The
+   * file's lists are written first, under ids 1 on (their levels under 0 on), and those made here
+   * after them, so no id is used twice however many there are.
+   */
   private keptNumIds = new Map<string, string>();
+  /** The kept levels (abstractNum, its id in the file) each kept list uses, by the id it is written with. */
+  private keptAbsOf = new Map<string, string>();
+  /** For each kept list (its id in the file), the list its items carry on in: itself, or one made on its levels starting again (G2-13). */
+  private keptRun = new Map<string, string>();
+  /** Word's count at each level of each kept set of levels, as Word will number the items written so far (ECMA-376 part 1 §17.9). */
+  private wordCounts = new Map<string, { c: (number | undefined)[]; pend: (number | undefined)[] }>();
+  private wordUsed = new Set<string>();
+  /** The number shown here on the list item being written (a body paragraph's; unset elsewhere). */
+  private shownN: number | undefined;
+  private get keptNumCount(): number { return this.t.kept?.numbering?.nums.length ?? 0; }
+  private get keptAbsCount(): number { return this.t.kept?.numbering?.abs.length ?? 0; }
   /** The one list each kind of bulleted list (and each numbered list in table cells) shares. */
   private sharedNums = new Map<string, number>();
 
@@ -227,9 +242,86 @@ class DocxWriter {
     return id;
   }
 
+  /** A kept set of levels' start values and restarts (w:start, w:lvlRestart), from its XML. */
+  private keptLevels(abs: string): { start: number[]; restart: (number | undefined)[] } {
+    const x = this.t.kept?.numbering?.abs.find((a) => a.id === abs)?.xml ?? '';
+    const start: number[] = [], restart: (number | undefined)[] = [];
+    for (const m of x.matchAll(/<w:lvl\b[^>]*?w:ilvl="(\d+)"[^>]*>([\s\S]*?)<\/w:lvl>/g)) {
+      const i = Number(m[1]);
+      start[i] = Number(/<w:start w:val="(-?\d+)"/.exec(m[2])?.[1] ?? 0);
+      const r = /<w:lvlRestart w:val="(\d+)"/.exec(m[2]);
+      if (r) restart[i] = Number(r[1]);
+    }
+    return { start, restart };
+  }
+
+  /** The start overrides of a written list (w:lvlOverride/w:startOverride): a kept one's from its XML, one made here from its own. */
+  private startsOf(id: string): Map<number, number> {
+    const out = new Map<number, number>();
+    const n = Number(id);
+    if (n <= this.keptNumCount) {
+      const x = this.t.kept?.numbering?.nums[n - 1]?.xml ?? '';
+      for (const m of x.matchAll(/<w:lvlOverride w:ilvl="(\d+)"[^>]*>([\s\S]*?)<\/w:lvlOverride>/g)) {
+        const v = /<w:startOverride w:val="(-?\d+)"/.exec(m[2]);
+        if (v) out.set(Number(m[1]), Number(v[1]));
+      }
+    } else {
+      const e = this.nums[n - this.keptNumCount - 1];
+      if (e?.at) out.set(e.at.level, e.at.value);
+    }
+    return out;
+  }
+
+  /**
+   * The number Word gives the next item of written list `id` (on kept levels `abs`) at level `L`,
+   * counted as the file reader counts (docx-read.ts listNumbers); `commit` counts the item.
+   */
+  private wordNext(id: string, abs: string, L: number, commit: boolean): number {
+    const lv = this.keptLevels(abs);
+    const was = this.wordCounts.get(abs) ?? { c: [], pend: [] };
+    const st = commit ? was : { c: [...was.c], pend: [...was.pend] };
+    if (commit) this.wordCounts.set(abs, st);
+    if (!this.wordUsed.has(id)) {
+      for (const [l, v] of this.startsOf(id)) st.pend[l] = v;
+      if (commit) this.wordUsed.add(id);
+    }
+    if (st.pend[L] !== undefined) { st.c[L] = st.pend[L]; st.pend[L] = undefined; } else st.c[L] = st.c[L] === undefined ? lv.start[L] ?? 0 : st.c[L]! + 1;
+    for (let m = L + 1; m < 9; m++) {
+      const r = lv.restart[m];
+      const after = r === undefined || r > m ? m : r;
+      if (after > 0 && L < after) st.c[m] = undefined;
+    }
+    return st.c[L]!;
+  }
+
+  /**
+   * The Word list for an item of a list kept from the file (its id there), at level `L`: the list its
+   * items have been written in while Word's number for it is the one shown here, else a new list on
+   * the same kept levels that starts that level again at the shown number. Undefined: not a kept
+   * list item (or no number known), so it takes a list made here.
+   */
+  private keptListId(fileId: string, L: number, numbered: boolean): string | undefined {
+    const kept = this.keptNumIds.get(fileId);
+    if (!kept) return undefined;
+    const abs = this.keptAbsOf.get(kept)!;
+    if (!numbered) { this.wordNext(kept, abs, L, true); return kept; }
+    const shown = this.shownN;
+    if (shown === undefined) return undefined;
+    let id = this.keptRun.get(fileId) ?? kept;
+    if (this.wordNext(id, abs, L, false) !== shown) {
+      this.nums.push({ abs: -1, kept: abs, restart: false, at: { level: L, value: shown } });
+      this.numKeys.push('');
+      id = String(this.nums.length + this.keptNumCount);
+      this.keptRun.set(fileId, id);
+      this.keptAbsOf.set(id, abs);
+    }
+    this.wordNext(id, abs, L, true);
+    return id;
+  }
+
   constructor(private t: DocText, private deps: DocxDeps, private pages?: string[]) {
     // the file's own lists, under ids of their own past ours (their definitions are written back whole)
-    t.kept?.numbering?.nums.forEach((n, i) => this.keptNumIds.set(n.id, String(KEPT_NUM_BASE + i)));
+    t.kept?.numbering?.nums.forEach((n, i) => { this.keptNumIds.set(n.id, String(i + 1)); this.keptAbsOf.set(String(i + 1), n.abs); });
     this.shown = fieldTexts(t, pages ? (p) => pages[p] ?? '' : undefined, pages ? Math.max(1, ...pages.map((x) => Number(x) || 0)) : undefined);
     this.charStyles = charStylesOf(t);
     let foot = 0, end = 0;
@@ -442,6 +534,8 @@ class DocxWriter {
       else if (ps.list === 'number' && !ps.cont && ps.startAt !== undefined && lists[p].n === ps.startAt && listNum > 0 && this.numKeys[listNum - 1] === `n${ps.scheme ?? ''}`) {
         listNum = this.addNum(`n${ps.scheme ?? ''}`, false, { level: Math.max(0, Math.min(8, ps.level ?? 0)), value: ps.startAt });
       }
+      // the number shown here, which an item of a list kept from the file must get from Word too (G2-13)
+      this.shownN = ps.list === 'number' && !ps.cont ? lists[p]?.n : undefined;
       // a bibliography: its entries as paragraphs of their own, with any text round it in paragraphs before and after
       const isBib = (r: TextRun) => r.obj !== undefined && ['bib', 'toc', 'tof', 'index', 'toa'].includes(t.objects[r.obj]?.kind ?? '');
       if (runs.some(isBib)) {
@@ -475,6 +569,7 @@ class DocxWriter {
     if (left) { out.push(`<w:p>${left}</w:p>`); lastWasTable = false; }
     // Word ends the text with a paragraph
     if (lastWasTable || !out.length) out.push('<w:p/>');
+    this.shownN = undefined;
     return out.join('');
   }
 
@@ -648,12 +743,15 @@ class DocxWriter {
     // Word has no "start a new column" for a paragraph: a column break begins it
     const colBreak = ps.colBreak ? '<w:r><w:br w:type="column"/></w:r>' : '';
     const em = runs.find((r) => r.obj === undefined)?.size ?? st.size;
+    let kept: string | undefined;
     if (ps.list && !ps.cont) {
       const key = ps.list === 'bullet' ? `b${ps.bullet ?? ''}` : `n${ps.scheme ?? ''}`;
-      // the file's own list while the item's list is as it was read (its kind, number and number's look), G2-13
-      const kept = raw.num !== undefined && raw.nk === key && raw.na === String(ps.startAt ?? '') && raw.nl === JSON.stringify(ps.numLook ?? null) ? this.keptNumIds.get(raw.num) : undefined;
+      // the file's own list while the item's list is of the kind it was read as (and its number's look),
+      // decided along the run of items so Word numbers each as it is numbered here (G2-13)
+      const level = Math.max(0, Math.min(8, ps.level ?? 0));
+      kept = raw.num !== undefined && raw.nk === key && raw.nl === JSON.stringify(ps.numLook ?? null) ? this.keptListId(raw.num, level, ps.list === 'number') : undefined;
       // a numbered list's own Word list (so it counts from 1), else the one its kind shares
-      const id = kept ?? (ps.list === 'number' && listNum > 0 && this.numKeys[listNum - 1] === key ? listNum : this.sharedNum(key));
+      const id = kept ?? String((ps.list === 'number' && listNum > 0 && this.numKeys[listNum - 1] === key ? listNum : this.sharedNum(key)) + this.keptNumCount);
       pPr.push(`<w:numPr><w:ilvl w:val="${Math.max(0, Math.min(8, ps.level ?? 0))}"/><w:numId w:val="${id}"/></w:numPr>`);
     }
     if (ps.noLineNumbers) pPr.push('<w:suppressLineNumbers/>');
@@ -678,7 +776,10 @@ class DocxWriter {
     // indents: list items hang their bullet or number, as laid out here
     const indent = ps.indent ?? 0;
     const right = ps.indentRight ? ` w:right="${twips(ps.indentRight)}"` : '';
-    if (ps.list) {
+    if (kept && raw.ni === String(indent) && raw.nv === String(ps.level ?? 0) && raw.nr === String(ps.indentRight ?? 0)) {
+      // an item of a kept list, its indents as read: the paragraph's own w:ind as Word had it (none: the list level's)
+      pPr.push(raw.nd ?? '');
+    } else if (ps.list) {
       const { left, hang } = listIndent(ps, em);
       pPr.push(`<w:ind w:left="${twips(left)}"${right} ${ps.cont ? 'w:firstLine="0"' : `w:hanging="${twips(hang)}"`}/>`);
     } else {
@@ -1149,8 +1250,11 @@ class DocxWriter {
     const hRel = fl.xFrom === 'page' ? 'page' : 'margin', vRel = fl.yFrom === 'page' ? 'page' : fl.yFrom === 'margin' ? 'margin' : 'text';
     const wrap = fl.wrap === 'square' ? '<w10:wrap type="square"/>' : fl.wrap === 'topBottom' ? '<w10:wrap type="topAndBottom"/>' : '';
     const z = fl.wrap === 'behind' ? -251658240 + n : 251659264 + n;
-    const shapes = items.map((i) => `<v:shape id="Picture ${i.id}" o:spid="_x0000_s${2048 + n * 8 + items.indexOf(i)}" type="#_x0000_t75" style="position:absolute;left:${i.x - x0};top:${i.y - y0};width:${i.cx};height:${i.cy}"><v:imagedata r:id="${i.blip}" o:title=""/></v:shape>`).join('');
-    const vml = `<w:pict xmlns:v="${V_NS}" xmlns:o="${O_NS}" xmlns:w10="${W10_NS}">${T75}<v:group id="Group ${n}" o:spid="_x0000_s${2048 + n * 8 + 7}" style="position:absolute;margin-left:${pt(x0)}pt;margin-top:${pt(y0)}pt;width:${pt(W)}pt;height:${pt(H)}pt;z-index:${z};mso-position-horizontal-relative:${hRel};mso-position-vertical-relative:${vRel}" coordsize="${W},${H}">${shapes}${wrap}</v:group></w:pict>`;
+    // (shape ids from one count, clear of the watermark's 2049 on; the picture shape type once in each part, as Word writes it)
+    const type = this.oleTypes.has(main) ? '' : T75;
+    this.oleTypes.add(main);
+    const shapes = items.map((i) => `<v:shape id="Picture ${i.id}" o:spid="_x0000_s${this.vmlNo++}" type="#_x0000_t75" style="position:absolute;left:${i.x - x0};top:${i.y - y0};width:${i.cx};height:${i.cy}"><v:imagedata r:id="${i.blip}" o:title=""/></v:shape>`).join('');
+    const vml = `<w:pict xmlns:v="${V_NS}" xmlns:o="${O_NS}" xmlns:w10="${W10_NS}">${type}<v:group id="Group ${n}" o:spid="_x0000_s${this.vmlNo++}" style="position:absolute;margin-left:${pt(x0)}pt;margin-top:${pt(y0)}pt;width:${pt(W)}pt;height:${pt(H)}pt;z-index:${z};mso-position-horizontal-relative:${hRel};mso-position-vertical-relative:${vRel}" coordsize="${W},${H}">${shapes}${wrap}</v:group></w:pict>`;
     const r = rPr ? `<w:rPr>${rPr}</w:rPr>` : '';
     return `<w:r>${r}<mc:AlternateContent><mc:Choice Requires="wpg">${drawing}</mc:Choice><mc:Fallback>${vml}</mc:Fallback></mc:AlternateContent></w:r>`;
   }
@@ -1299,6 +1403,8 @@ class DocxWriter {
   }
 
   private oleCount = 0;
+  /** The next VML shape number for a picture group's fallback. */
+  private vmlNo = 8193;
   private oleTypes = new Set<string>();
 
   private async picture(main: string, id: number, o: DocObject, rPr: string): Promise<string> {
@@ -1770,14 +1876,15 @@ class DocxWriter {
     // the file's own lists (CT_Numbering, 17.9.16: every abstractNum before every num), their ids moved past ours;
     // Word 2013 and later's attributes in them (w15:restartNumberingAfterBreak, w16cid:durableId) ignorable for older Words
     const kept = this.t.kept?.numbering;
-    const keptAbs = new Map((kept?.abs ?? []).map((a, i) => [a.id, String(KEPT_NUM_BASE + i)]));
+    const keptAbs = new Map((kept?.abs ?? []).map((a, i) => [a.id, String(i)]));
+    const A = this.keptAbsCount, K = this.keptNumCount;
     const out = [HEAD, kept ? `<w:numbering xmlns:w="${W_NS}" xmlns:mc="${MC_NS}" xmlns:w14="${W14_NS}" xmlns:w15="${W15_NS}" xmlns:w16cid="${W16CID_NS}" xmlns:w16se="${W16SE_NS}" mc:Ignorable="w14 w15 w16cid w16se">` : `<w:numbering xmlns:w="${W_NS}">`];
-    for (const [key, abs] of this.abstractNums) out.push(`<w:abstractNum w:abstractNumId="${abs}"><w:multiLevelType w:val="${key === 'b' || key === 'n' ? 'hybridMultilevel' : 'multilevel'}"/>${lvls(key)}</w:abstractNum>`);
+    for (const [key, abs] of this.abstractNums) out.push(`<w:abstractNum w:abstractNumId="${abs + A}"><w:multiLevelType w:val="${key === 'b' || key === 'n' ? 'hybridMultilevel' : 'multilevel'}"/>${lvls(key)}</w:abstractNum>`);
     for (const a of kept?.abs ?? []) out.push(a.xml.replace(/(<w:abstractNum\b[^>]*?w:abstractNumId=")[^"]*"/, `$1${keptAbs.get(a.id)}"`));
     this.nums.forEach((n, k) => {
       const over = (i: number, v: number) => `<w:lvlOverride w:ilvl="${i}"><w:startOverride w:val="${v}"/></w:lvlOverride>`;
       const restart = n.restart ? Array.from({ length: 9 }, (_, i) => over(i, n.at?.level === i ? n.at.value : 1)).join('') : n.at ? over(n.at.level, n.at.value) : '';
-      out.push(`<w:num w:numId="${k + 1}"><w:abstractNumId w:val="${n.abs}"/>${restart}</w:num>`);
+      out.push(`<w:num w:numId="${k + 1 + K}"><w:abstractNumId w:val="${n.kept !== undefined ? keptAbs.get(n.kept) : n.abs + A}"/>${restart}</w:num>`);
     });
     for (const n of kept?.nums ?? []) {
       const abs = keptAbs.get(n.abs), id = this.keptNumIds.get(n.id);
@@ -2144,8 +2251,6 @@ function run(rPr: string, text: string): string {
 const V_NS = 'urn:schemas-microsoft-com:vml';
 /** Word 2015's symbol extensions namespace (w16se), which list definitions can use. */
 const W16SE_NS = 'http://schemas.microsoft.com/office/word/2015/wordml/symex';
-/** The first id given to the file's own lists (abstractNum and num) when written back, past the ones made here. */
-const KEPT_NUM_BASE = 1000;
 /** VML's picture frame shape type (number 75), which embedded objects' pictures use. */
 const T75 = '<v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o:preferrelative="t" path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f"><v:stroke joinstyle="miter"/><v:formulas>' +
   ['if lineDrawn pixelLineWidth 0', 'sum @0 1 0', 'sum 0 0 @1', 'prod @2 1 2', 'prod @3 21600 pixelWidth', 'prod @3 21600 pixelHeight', 'sum @0 0 1', 'prod @6 1 2', 'prod @7 21600 pixelWidth', 'sum @8 21600 0', 'prod @7 21600 pixelHeight', 'sum @10 21600 0']

@@ -79,4 +79,17 @@ describe('Word groups of pictures (G2-14)', () => {
     expect(out).not.toContain('<wpg:wgp>');
     expect(out.match(/<wp:anchor /g)).toHaveLength(2);
   });
+
+  it('gives every VML shape its own id and writes the picture shape type once (review F2-R12)', async () => {
+    // two groups, one of nine pictures
+    const nine = hplcGroup.replace(/(<\/wpg:grpSpPr>)[\s\S]*?(<\/wpg:wgp>)/, (_, a: string, b: string) => a + Array.from({ length: 9 }, (_x, k) => groupPic(40 + k, 1000 + k * 40 * EMU, 2000, 40 * EMU, 40 * EMU)).join('') + b)
+      .replace('name="Group 3"', 'name="Group 4"').replace('wp:docPr id="3"', 'wp:docPr id="4"');
+    const { doc } = await readDocx(wordFile(hplcGroup + nine));
+    const out = strFromU8(unzipSync(await writeDocx(doc, deps))['word/document.xml']);
+    expect(out.match(/<wpg:wgp>/g)).toHaveLength(2);
+    const ids = [...out.matchAll(/o:spid="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids.length).toBe(2 + 9 + 2);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(out.match(/<v:shapetype id="_x0000_t75"/g)).toHaveLength(1);
+  });
 });

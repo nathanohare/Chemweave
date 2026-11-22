@@ -224,7 +224,7 @@ interface Level { fmt: string; text: string; p: PProps; start: number; restart?:
 interface Piece { runs: TextRun[]; pageBreak: boolean; soft: boolean; colBreak?: boolean; /** Index entries and marked citations in it (XE and TA fields). */ xe?: IndexMark[]; ta?: AuthorityMark[] }
 interface Ctx { base: RProps; pieces: Piece[]; cell: boolean }
 interface Field { instr: string; phase: 'instr' | 'result'; swallow: boolean; /** The field's own data (w:fldData, base64): EndNote's citations. */ data?: string; text: string; props: RProps; /** How its result's first text looks, which is what Word shows (EndNote sets superscript only there). */ shown?: RProps; done: boolean; ref?: { id: number; mark: string; text: string; above?: boolean; page?: boolean }; toc?: boolean; /** A table of contents (TOC \\o): its object, which takes the look of its lines as Word last wrote them. */ tocId?: number; /** A form field's settings (w:ffData), and the form field made of it. */ ff?: Element; form?: number; /** A HYPERLINK field: the link open before it, put back at its end. */ before?: { link: string | undefined }; /** A manager's citation (its object) whose shown text is kept; a manager's bibliography (its object) whose entries are kept. */ cite?: number; bib?: number; /** Its separator (where its result starts). */ sep?: Element; /** Another field inside its instruction. */ inner?: boolean; /** A field kept as Word had it: the object made of it (its result is gathered into it). */ kept?: number }
-interface OutPara { ps: ParaStyle; runs: TextRun[]; mark: rt.RunStyle; style: string; contextual: boolean; table?: boolean; bib?: string; markRev?: string; /** A list item: Word's list (numId), the levels it uses (abstractNumId) and its level. */ num?: { id: string; abs: string; ilvl: number } }
+interface OutPara { ps: ParaStyle; runs: TextRun[]; mark: rt.RunStyle; style: string; contextual: boolean; table?: boolean; bib?: string; markRev?: string; /** A list item: Word's list (numId), the levels it uses (abstractNumId) and its level. */ num?: { id: string; abs: string; ilvl: number }; /** A list item's own w:ind as written (empty: none). */ ind?: string }
 
 /** Open a Word file. Throws only when the file is not a Word file at all. */
 export async function readDocx(bytes: Uint8Array, deps: DocxReadDeps = {}): Promise<{ doc: DocText; warnings: string[] }> {
@@ -1624,7 +1624,8 @@ class DocxReader {
       // the paragraph mark inserted or deleted while Word tracked changes (on the last piece: the real mark)
       const mr = i === ctx.pieces.length - 1 ? markRevOf : undefined;
       const num = i === 0 && list && numId ? { id: numId, abs: this.nums.get(numId) ?? '', ilvl } : undefined;
-      this.out.push({ ps: q, runs: pc.runs, mark: markStyle, style: ours, contextual: !!p.contextual, bib, ...(mr ? { markRev: mr } : {}), ...(num ? { num } : {}) });
+      const indEl = num ? kid(pPr, 'ind') : null;
+      this.out.push({ ps: q, runs: pc.runs, mark: markStyle, style: ours, contextual: !!p.contextual, bib, ...(mr ? { markRev: mr } : {}), ...(num ? { num, ind: indEl ? elementXml(indEl).replaceAll(` xmlns:w="${W_NS}"`, '') : '' } : {}) });
     });
     this.pageNext = popped;
     sectionBreak();
@@ -3488,12 +3489,12 @@ class DocxReader {
       if (b.contextual) b.ps = cleanPara({ ...b.ps, spaceBefore: 0, wpx: withKept(b.ps.wpx, { ctx: '1', ctxB: String(b.ps.spaceBefore ?? 0) }) });
     }
     this.listNumbers(out);
-    // each list item that uses a list kept from the file: which list, and the list here as read, to
-    // tell on saving whether it was changed (G2-13)
+    // each list item that uses a list kept from the file: which list, its kind and number's look as
+    // read, and its indents as read with the paragraph's own w:ind, to tell on saving what was changed (G2-13)
     for (const p of out) {
       if (!p.num || !p.ps.list || p.ps.cont || !this.keptNumbering.nums.some((n) => n.id === p.num!.id)) continue;
       const key = p.ps.list === 'bullet' ? `b${p.ps.bullet ?? ''}` : `n${p.ps.scheme ?? ''}`;
-      p.ps = { ...p.ps, wpx: withKept(p.ps.wpx, { num: p.num.id, nk: key, na: String(p.ps.startAt ?? ''), nl: JSON.stringify(p.ps.numLook ?? null) }) };
+      p.ps = { ...p.ps, wpx: withKept(p.ps.wpx, { num: p.num.id, nk: key, nl: JSON.stringify(p.ps.numLook ?? null), ni: String(p.ps.indent ?? 0), nv: String(p.ps.level ?? 0), nr: String(p.ps.indentRight ?? 0), nd: p.ind ?? '' }) };
     }
     if (this.keptNumbering.nums.length) this.kept = { ...this.kept, numbering: this.keptNumbering };
     // the standard styles (the file's, or ours where it has none) and the others the text uses
