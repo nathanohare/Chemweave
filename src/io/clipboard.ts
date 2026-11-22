@@ -15,7 +15,7 @@
 // and the drawing itself is kept in memory: pasting that same picture back here gives the drawing.
 
 import { remapFrames, remapStep, type IdMaps } from './remap-refs';
-import { soundContents } from './clip-check';
+import { soundContents, soundStyle } from './clip-check';
 import { freshGroups } from '../editor/groups';
 import { frameMembers } from '../editor/frames';
 import { pastedTable, tableHtml, tableTsv, type PastedRows } from './table-clip';
@@ -352,11 +352,8 @@ export function nativeDrawing(text: string): Doc | null {
     if (!contents) return null;
     type Obj = Record<string, unknown>;
     const d = new Doc();
-    // (style settings only where they have the type this version expects)
-    if (j.style && typeof j.style === 'object') {
-      const base = d.style as unknown as Obj;
-      for (const [k, v] of Object.entries(j.style as Obj)) if (k in base ? typeof v === typeof base[k] && (typeof v !== 'number' || Number.isFinite(v)) : true) base[k] = v;
-    }
+    // (style settings only where they have the type and range a fresh drawing's have)
+    if (j.style && typeof j.style === 'object' && !Array.isArray(j.style)) Object.assign(d.style, soundStyle(j.style as Obj, d.style as unknown as Obj));
     if (typeof j.background === 'string') d.background = j.background;
     d.restoreContents(contents);
     return d;
@@ -373,9 +370,48 @@ export function nativeDrawing(text: string): Doc | null {
 export async function nativeClipboardDrawing(more: string[] = []): Promise<Doc | null> {
   const whole = await nativeFirst([NATIVE_FORMAT]);
   const fromWhole = whole ? nativeDrawing(new TextDecoder().decode(whole[1]).replace(/\0+$/, '')) : null;
-  if (fromWhole) return fromWhole;
-  const drawing = await nativeFirst([OWN_FORMAT, ...more, CDX_FORMAT]);
-  return drawing ? clipboardDrawing(...drawing) : null;
+  const beside = async () => { const drawing = await nativeFirst([OWN_FORMAT, ...more, CDX_FORMAT]); return drawing ? clipboardDrawing(...drawing) : null; };
+  if (fromWhole) { setPasteFallback(fromWhole, beside); return fromWhole; }
+  return beside();
+}
+
+/** For a drawing read from our whole-drawing format: how to read the CDXML copied beside it. */
+const fallbacks = new WeakMap<Doc, () => Promise<Doc | null>>();
+/** Say how to get the CDXML drawing copied beside `d` (the whole-drawing format's), for pasteDrawing. */
+export function setPasteFallback(d: Doc, get: () => Promise<Doc | null>): void { fallbacks.set(d, get); }
+
+/**
+ * Paste drawing `src` into `doc` as one step (insertDrawing at `at()`, then `after` with what was
+ * pasted), with a safety
+ * net (review F1e-R01): if anything throws on the way, what was changed is undone and, for a
+ * drawing read from our whole-drawing format, the CDXML copied beside it is pasted instead
+ * (`prepare` fits it first), with a note. The error when nothing could be pasted.
+ */
+export async function pasteDrawing(doc: Doc, src: Doc, at: () => Vec, after?: (sel: Selection) => void, prepare?: (d: Doc) => void): Promise<{ sel: Selection; note?: string } | { error: string }> {
+  const put = (d: Doc): Selection => {
+    doc.begin('Paste');
+    try {
+      const sel = insertDrawing(doc, d, at());
+      after?.(sel);
+      doc.commit();
+      return sel;
+    } catch (err) {
+      doc.abandon();
+      throw err;
+    }
+  };
+  try {
+    return { sel: put(src) };
+  } catch (err) {
+    const alt = await fallbacks.get(src)?.().catch(() => null);
+    if (!alt || isEmpty(alt)) return { error: `Could not paste: ${err instanceof Error ? err.message : String(err)}` };
+    prepare?.(alt);
+    try {
+      return { sel: put(alt), note: 'Part of the copied drawing couldn\'t be read, so its CDXML copy was pasted instead.' };
+    } catch (err2) {
+      return { error: `Could not paste: ${err2 instanceof Error ? err2.message : String(err2)}` };
+    }
+  }
 }
 
 /** The drawing in one of the DRAWING_FORMATS (as nativeFirst hands it over), or null when it can't be read. */
@@ -846,9 +882,12 @@ export async function readWebClipboard(): Promise<Pasted> {
   const whole = items.find((it) => it.types.includes(WEB_NATIVE_FORMAT));
   const wholeText = whole ? await (await whole.getType(WEB_NATIVE_FORMAT)).text().catch(() => '') : '';
   const fromWhole = wholeText ? nativeDrawing(wholeText) : null;
-  if (fromWhole) return { kind: 'drawing', doc: fromWhole };
   const own = items.find((it) => it.types.includes(WEB_FORMAT));
   const ownText = own ? await (await own.getType(WEB_FORMAT)).text().catch(() => '') : '';
+  if (fromWhole) {
+    if (looksLikeCdxml(ownText)) setPasteFallback(fromWhole, async () => readCdxml(ownText).doc);
+    return { kind: 'drawing', doc: fromWhole };
+  }
   if (looksLikeCdxml(ownText)) return fromText(ownText);
   const htmlItem = items.find((it) => it.types.includes('text/html'));
   const html = htmlItem ? await (await htmlItem.getType('text/html')).text() : null;

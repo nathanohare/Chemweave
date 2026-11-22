@@ -19,8 +19,11 @@ vi.mock('@tauri-apps/api/core', () => ({
   },
 }));
 
-import { nativeDrawing, nativeDrawingText, nativeClipboardDrawing, insertDrawing, NATIVE_FORMAT, OWN_FORMAT } from '../src/io/clipboard';
+import { nativeDrawing, nativeDrawingText, nativeClipboardDrawing, insertDrawing, pasteDrawing, setPasteFallback, NATIVE_FORMAT, OWN_FORMAT } from '../src/io/clipboard';
+import { recordPicture, pictureSvg } from '../src/render/picture';
+import { emptyTable } from '../src/table';
 import { writeCdxml } from '../src/io/cdxml-write';
+import { readCdxml } from '../src/io/cdxml';
 import { Doc } from '../src/model';
 import { putPlate, newPlate } from '../src/design/plates';
 import { putEnergy, ENERGY_DEFAULTS, ENERGY_PRESETS, type EnergyData } from '../src/design/energy';
@@ -123,12 +126,25 @@ describe('the check is complete without a trial save, and quick (review F1d-R03)
     d.edit('TLC', () => { putPlate(d, POINTS, newPlate('tlc', d.style.bondLength), { x: 100, y: 0 }); });
     d.edit('E', () => { putEnergy(d, POINTS, { ...ENERGY_DEFAULTS, ...structuredClone(ENERGY_PRESETS[0].data), w: 200, h: 150 } as EnergyData, { x: 0, y: 200 }); });
     d.edit('Flag', () => { addChiralFlag(d, [...d.atoms.keys()].slice(0, 3), 'Absolute'); });
+    d.edit('Table', () => { d.addShape({ kind: 'table', x1: 300, y1: 0, x2: 400, y2: 40, table: emptyTable(2, 2, 10) } as never); });
+    d.edit('Look', () => {
+      const [c] = d.captions.keys();
+      d.updateCaption(c, { paras: [{ indent: 6, spaceAfter: 2 }] });
+      const [a] = d.atoms.keys();
+      d.updateAtom(a, { numberLabel: { dx: 3, dy: -3, size: 7 }, stereoLabel: { text: '(S)', dx: 4, dy: 4, size: 7 } });
+      const [r] = d.arrows.keys();
+      d.updateArrow(r, { step: { reactants: [], products: [], above: ['c1'], below: [] } });
+    });
     return d;
   };
+  /** Pasted, saved as CDXML and drawn as a picture (as copying it again does). */
   const pastesAndSaves = (got: Doc) => {
     const into = new Doc();
+    into.style = { ...got.style };
     insertDrawing(into, got, { x: 0, y: 0 });
     writeCdxml(into, { name: 'x.cdxml' });
+    const p = recordPicture(into);
+    if (p) pictureSvg(p);
   };
   it('turns down a value outside its list, two objects with one id, and a pin without its place', () => {
     expect(nativeDrawing(edit((j) => { j.contents.bonds[0].display = 'zigzag'; }))).toBeNull();
@@ -188,7 +204,8 @@ describe('the check is complete without a trial save, and quick (review F1d-R03)
     const paths: (string | number)[][] = [];
     const walk = (v: unknown, p: (string | number)[]) => { paths.push(p); if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, [...p, Array.isArray(v) ? Number(k) : k]); };
     walk(base.contents, []);
-    const wrong: unknown[] = ['x', 'zzz', -1, -5, 0, 0.5, 1e7, null, [], {}, true, [1, 2], { x: 1 }, 'leave out'];
+    // (the fifth review's kinds of wrong value too: a word for a number, a list of the wrong things, 1e300, 1e-12)
+    const wrong: unknown[] = ['x', 'zzz', -1, -5, 0, 0.5, 1e7, 1e300, 1e-12, null, [], {}, true, [1, 2], { x: 1 }, [{ indent: 'x', tabs: 5 }], { rows: 'x' }, { above: 5, below: 'x' }, 'leave out'];
     let taken = 0, refused = 0;
     const failed: string[] = [];
     for (let k = 0; k < 600; k++) {
@@ -214,5 +231,48 @@ describe('the check is complete without a trial save, and quick (review F1d-R03)
     // (both ways taken: most changes are harmless, many are not)
     expect(taken).toBeGreaterThan(50);
     expect(refused).toBeGreaterThan(50);
+  });
+});
+
+describe('the fifth review\'s cases, and the safety net (review F1e-R01)', () => {
+  const with_ = (f: (j: { style: Record<string, unknown>; contents: Record<string, Record<string, unknown>[]> }) => void) => edit(f as never);
+  it('turns down wrong inner parts without a rule of their own: step, paras, table, stereo and number labels', () => {
+    const arrow = { id: 90, tail: { x: 40, y: 0 }, head: { x: 90, y: 0 } };
+    expect(nativeDrawing(with_((j) => { j.contents.arrows = [{ ...arrow, step: { reactants: [], products: [], above: 5, below: 'x' } }]; }))).toBeNull();
+    expect(nativeDrawing(with_((j) => { j.contents.captions[0].paras = [{ indent: 'x', tabs: 5 }]; }))).toBeNull();
+    expect(nativeDrawing(with_((j) => { j.contents.shapes = [{ id: 97, kind: 'table', x1: 0, y1: 0, x2: 20, y2: 10, table: { rows: 'x' } }]; }))).toBeNull();
+    expect(nativeDrawing(with_((j) => { j.contents.atoms[0].stereoLabel = { text: '(R)', size: 7 }; }))).toBeNull();
+    expect(nativeDrawing(with_((j) => { j.contents.atoms[0].numberLabel = { dx: 'q', dy: 0, size: 7 }; }))).toBeNull();
+  });
+  it('turns down sizes out of range: a caption 1e300 wide, a dash spacing of 1e-12; a style size of 1e300 is left at the drawing\'s own', () => {
+    expect(nativeDrawing(with_((j) => { j.contents.captions[0].width = 1e300; }))).toBeNull();
+    expect(nativeDrawing(with_((j) => { j.contents.shapes = [{ id: 97, kind: 'rect', x1: 0, y1: 0, x2: 20, y2: 10, dashed: true, hashSpacing: 1e-12 }]; }))).toBeNull();
+    const fresh = new Doc().style.captionSize;
+    const got = nativeDrawing(with_((j) => { j.style.captionSize = 1e300; j.style.lineWidth = 0.6; }))!;
+    expect(got.style.captionSize).toBe(fresh);
+    expect(got.style.lineWidth).toBe(0.6);
+  });
+  it('a paste that still fails is undone and the CDXML beside it pasted instead, with a note', async () => {
+    const into = ethanol();
+    const before = [into.atoms.size, into.captions.size], top = into.topStep;
+    const src = nativeDrawing(nativeDrawingText(ethanol()))!;
+    setPasteFallback(src, async () => readCdxml(writeCdxml(ethanol(), { name: 'x.cdxml' })).doc);
+    let first = true;
+    // (the first try throws half way, after its atoms are in)
+    const got = await pasteDrawing(into, src, () => ({ x: 200, y: 0 }), () => { if (first) { first = false; throw new Error('broken'); } });
+    expect('sel' in got && got.note).toBe('Part of the copied drawing couldn\'t be read, so its CDXML copy was pasted instead.');
+    expect([into.atoms.size, into.captions.size]).toEqual([before[0] + 3, before[1] + 1]);
+    // one step, the CDXML copy's: one Undo gives the drawing as it was
+    into.undo();
+    expect([into.atoms.size, into.captions.size]).toEqual(before);
+    expect(into.topStep).toBe(top);
+  });
+  it('with nothing beside it, a failed paste leaves the drawing as it was and says why', async () => {
+    const into = ethanol();
+    const before = [into.atoms.size, into.bonds.size], top = into.topStep;
+    const got = await pasteDrawing(into, ethanol(), () => ({ x: 200, y: 0 }), () => { throw new Error('broken'); });
+    expect(got).toEqual({ error: 'Could not paste: broken' });
+    expect([into.atoms.size, into.bonds.size]).toEqual(before);
+    expect(into.topStep).toBe(top);
   });
 });

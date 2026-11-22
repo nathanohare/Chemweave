@@ -68,7 +68,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blankCycle, type CycleLook } from './chem/cycles';
 import { addChiralFlag, structureFlag, type ChiralFlag } from './chem/chiral-flag';
 import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
-  nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, nativeClipboardDrawing, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
+  nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, nativeClipboardDrawing, pasteDrawing, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
 import { writeCdxml } from './io/cdxml-write';
 import { WORKSPACE, folderOf } from './io/workspace-file';
@@ -1263,10 +1263,11 @@ async function pasteFrom(read: () => Pasted | Promise<Pasted>): Promise<void> {
       const k = Math.min(1, (0.95 * (area.x2 - area.x1)) / Math.max(1, b.x2 - b.x1), (0.95 * (area.y2 - area.y1)) / Math.max(1, b.y2 - b.y1));
       if (k < 0.999) fitPasted(got.doc, doc.style, L * k);
     }
-    doc.edit('Paste', () => {
-      editor.sel = insertDrawing(doc, got.doc, pastePoint());
-      editor.placeClear(placingPage());
-    });
+    // (anything that fails on the way is undone, and the CDXML copied beside it pasted instead: review F1e-R01)
+    const done = await pasteDrawing(doc, got.doc, pastePoint, (sel) => { editor.sel = sel; editor.placeClear(placingPage()); }, (alt) => fitPasted(alt, doc.style, deck?.master.fitPasted ? deck.master.drawing.bondLength : undefined));
+    if ('error' in done) { editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() }; editor.changed(); flash(done.error, 8000); return; }
+    editor.sel = done.sel;
+    if (done.note) flash(done.note, 8000);
     editor.changed();
     await keepPasteInside();
   } else if (got.kind === 'text') await pasteText(got.text, got.html);
