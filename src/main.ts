@@ -6010,8 +6010,10 @@ function undo(): void {
   if (sheetActive()) { sheetMode.undo(); return; }
   if (docActive()) { docMode.run('undo'); return; }
   const d = deckNow();
+  // typing stops first, so Undo never takes away the text being typed in under the typing
+  editor.finishTypingForUndo();
+  flushNotes();
   if (!d) { editor.undo(); return; }
-  finishTyping();
   if (d.undo()) editor.afterUndo();
   refreshHistory();
 }
@@ -6021,9 +6023,12 @@ function redo(): void {
   if (sheetActive()) { sheetMode.redo(); return; }
   if (docActive()) { docMode.run('redo'); return; }
   const d = deckNow();
+  // nothing to do again: typing carries on (stopped for nothing, a new text box left empty would stay in the file)
+  if (!(d ?? doc).canRedo()) return;
+  editor.finishTypingForUndo();
+  flushNotes();
   if (!d) { editor.redo(); return; }
-  finishTyping();
-  if (d.redo()) editor.afterUndo();
+  if (d.redo()) { editor.afterUndo(); editor.reopenRedone(); }
   refreshHistory();
 }
 
@@ -8602,7 +8607,7 @@ window.addEventListener('resize', () => { if (place) requestAnimationFrame(place
 // own box, which the drawing area is placed exactly over; the window has its own buttons, not the bar.
 let kbArea: (() => DOMRect | null) | null = null;
 /** The tab the drawing was lent from, as it was (unsaved or not), and the slide's edit hooks, set aside meanwhile. */
-let kbLent: { tab: Tab; dirty: boolean; changes: number; commit: Doc['onCommit']; amend: Doc['onAmend'] } | null = null;
+let kbLent: { tab: Tab; dirty: boolean; changes: number; commit: Doc['onCommit']; amend: Doc['onAmend']; drop: Doc['onDrop'] } | null = null;
 
 /** The drawing area over the Draw window's box. */
 function placeKbArea(): void {
@@ -8677,8 +8682,8 @@ function editCellStructure(contents: Contents | null, title: string, done: (c: C
     kbArea = area;
     // (the search structure is no change to the tab, nor a step in a slide's undo list)
     const t = ws.active;
-    kbLent = { tab: t, dirty: t.dirty, changes: t.changes, commit: doc.onCommit, amend: doc.onAmend };
-    doc.onCommit = doc.onAmend = null;
+    kbLent = { tab: t, dirty: t.dirty, changes: t.changes, commit: doc.onCommit, amend: doc.onAmend, drop: doc.onDrop };
+    doc.onCommit = doc.onAmend = doc.onDrop = null;
     document.body.classList.add('kb-drawing');
     placeKbArea();
   }
@@ -8741,6 +8746,7 @@ function finishCellStructure(keep: boolean): void {
     if (kbLent) {
       doc.onCommit = kbLent.commit;
       doc.onAmend = kbLent.amend;
+      doc.onDrop = kbLent.drop;
       ws.forgetLentChanges(kbLent.tab, kbLent);
       kbLent = null;
     }

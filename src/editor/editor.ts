@@ -7,7 +7,7 @@ import { DEFAULT_CURSOR_AIDS, drawCursorAids, hintLines, modifierHints, readoutT
 import { Sketcher } from './sketch';
 import { installPenAndTouch } from './touch';
 import { labelAtoms, labelLookOf, setLabelFont, setLabelSize, toggleLabelBold } from './label-font';
-import { Doc, Atom, Bond, BondDisplay, PARTIAL, ELEMENT_WITH_H, Arrow, Shape, Caption, isMetalAtom, isWedge, applyBase, captionBase, stripBase, type StepRoles, type ArrowKind, type Justify, type TextRun, type HighlightStyle, type Entity } from '../model';
+import { Doc, sameData, Atom, Bond, BondDisplay, PARTIAL, ELEMENT_WITH_H, Arrow, Shape, Caption, isMetalAtom, isWedge, applyBase, captionBase, stripBase, type StepRoles, type ArrowKind, type Justify, type TextRun, type HighlightStyle, type Entity } from '../model';
 import { doubleBondGap, scaleOwnWidths } from '../style';
 import { CaptionEditor } from '../ui/caption-editor';
 import { followLink, linkTip } from '../ui/links-ui';
@@ -6589,7 +6589,22 @@ export class Editor {
   }
 
   redo(): void {
-    if (this.doc.redo()) { if (!this.markedHot()) this.selectApplied(); this.afterUndo(); }
+    if (!this.doc.redo()) return;
+    const applied = this.doc.lastApplied;
+    if (!this.markedHot()) this.selectApplied();
+    this.afterUndo();
+    this.reopenRedone(applied);
+  }
+
+  /**
+   * After Redo: a text box it brought back empty (Add Caption, then Undo before anything was
+   * typed) is open for typing again, as Add Caption left it, rather than an empty box nobody sees;
+   * left empty again, it goes with its step as it would have then.
+   */
+  reopenRedone(applied: string[] = this.doc.lastApplied): void {
+    const id = applied.filter((k) => k[0] === 'c').map((k) => Number(k.slice(1)))
+      .find((c) => { const cap = this.doc.captions.get(c); return !!cap && !cap.ph && !plainText(cap.runs).trim(); });
+    if (id !== undefined && !this.captionEd?.isOpen) this.typeInto(id);
   }
 
   /** The highlight a step taken back or done again by a key had (see runAction), if it is still there. */
@@ -7605,6 +7620,22 @@ export class Editor {
   /** Start typing into a caption (Add Caption, Add ID Label). */
   typeInto(id: number): void {
     this.editCaption(id);
+    // (made by the newest step: left empty, it goes with that step, as text never typed does)
+    if (this.captionEdId === id) this.freshCaption = { id, step: this.doc.topStep };
+  }
+
+  /** The caption typeInto opened, and the step that made it. */
+  private freshCaption: { id: number; step: object | undefined } | null = null;
+  /** Typing is being stopped for an Undo or Redo (finishTypingForUndo). */
+  private forUndo = false;
+
+  /**
+   * Stop typing before Undo or Redo: the text is finished, except that a text box Add Caption just
+   * made and left empty is left for the Undo, which takes it back with the step that made it.
+   */
+  finishTypingForUndo(): void {
+    this.forUndo = true;
+    try { this.closeCaption(); } finally { this.forUndo = false; }
   }
 
   private editCaption(id: number, client?: { x: number; y: number }): void {
@@ -7672,8 +7703,16 @@ export class Editor {
         const paras = cur.ph === 'body' ? [{ list: 'bullet' as const }] : undefined;
         if (cur.runs.length || JSON.stringify(cur.paras) !== JSON.stringify(paras)) doc.edit('Edit caption', () => doc.updateCaption(cur.id, { runs: [], paras }));
       } else if (cur) {
-        if (empty) doc.edit('Delete caption', () => doc.removeCaption(cur.id));
-        else if ((Object.keys(fields) as (keyof Caption)[]).some((k) => JSON.stringify(cur[k]) !== JSON.stringify(fields[k]))) {
+        const fresh = this.freshCaption?.id === cur.id ? this.freshCaption : null;
+        if (fresh) this.freshCaption = null;
+        if (empty) {
+          // a text box Add Caption just made, left empty: it goes with the step that made it (or,
+          // stopped for Undo, is left for the Undo to take back with that step, so Redo has it)
+          const unused = !!fresh && !plainText(cur.runs).trim() && doc.topStep === fresh.step;
+          if (!(unused && (this.forUndo || doc.dropStep(fresh!.step)))) doc.edit('Delete caption', () => doc.removeCaption(cur.id));
+        }
+        // (nothing typed: no step, though the editor hands the runs back with their fields in another order)
+        else if ((Object.keys(fields) as (keyof Caption)[]).some((k) => !sameData(cur[k], fields[k]))) {
           doc.edit('Edit caption', () => doc.updateCaption(cur.id, fields));
         }
       } else if (!empty) {

@@ -12,6 +12,7 @@
 import { drawingInSvg, mergeDrawing, olePrint, picturePrint, type KeptOle, type KeptPicture } from './ole-kept';
 import type { Selection } from '../editor/arrange';
 import { fillFrameMembers } from '../editor/frames';
+import { remapField, REF_FIELDS, type RefKind } from './remap-refs';
 import { restoreSteps } from './step-tag';
 import { fromDataUrl } from '../render/images';
 import type { PinnedComment } from '../document/comments';
@@ -41,7 +42,7 @@ import { layoutText, caretPos, ASCENT, PPT_SINGLE } from '../text/layout';
 import { Master, SlideSize, LayoutId, type TemplateArt, type ArtLayer, type KeptRel, type KeptXmlPart, type NotesKept, defaultMaster, textStyles, slideDrawingStyle, slideBackground, slideColours, hasLayout, newLayoutId, deckLayouts, type LayoutDef, type PlaceholderBox, type PicturePlaceholder, type ThemeColor, type SectionCount, type DeckSettings, type SlideHF, type DateFormat, showsNumber, showsFooter, showsDate } from '../deck/deck';
 import { backgroundColour, isPlain, sameBackground, type Background } from '../deck/background';
 import { readFill, readOneFill, type FillContext } from './pptx-background';
-import { TAG, PPT_ASCENT, MIME_EXT, arialMeasure, NS_A14, NS_M, swapBox, tableLookKey, savedTableLook, joinTagPieces, tagLooksCut } from './pptx-write';
+import { TAG, PPT_NAME, PPT_ASCENT, MIME_EXT, arialMeasure, NS_A14, NS_M, swapBox, tableLookKey, savedTableLook, joinTagPieces, tagLooksCut } from './pptx-write';
 import { ommlToTex, toOmml } from '../document/math';
 import { shapeMathPicture, shapeMathSize } from '../deck/equation';
 import { GEOS } from '../design/geo';
@@ -788,6 +789,7 @@ class Reader {
     this.tableParts.clear();
     this.tableSeq.clear();
     this.geoIds.clear();
+    for (const m of Object.values(this.savedIds)) m.clear();
     this.placed = [];
     this.drawn = [];
     this.highlightPics = [];
@@ -875,6 +877,7 @@ class Reader {
     this.tables = [];
     this.tableParts.clear();
     this.geoIds.clear();
+    for (const m of Object.values(this.savedIds)) m.clear();
     const root = s.doc.documentElement;
     this.spidTargets = kids(root, 'timing').length ? new Map() : null;
     this.tableSpids.clear();
@@ -890,6 +893,8 @@ class Reader {
       // a scheme saved over several pictures (a Smart Scheme built step by step, each step a
       // picture): its steps are joined up again, and its frame finds what it surrounds
       if (tags[TAG.steps]) restoreSteps(doc, tags[TAG.steps]);
+      // what things name by id across the slide's pictures, shapes and text (a caption tied to a structure, a pin, a frame's members…)
+      if (tags[TAG.links]) restoreLinks(doc, tags[TAG.links], this.savedIds);
       fillFrameMembers(doc);
     });
     const id = (tags[TAG.layout] as LayoutId | undefined) ?? this.artLayout(layout, this.layoutId(layout, doc));
@@ -928,6 +933,10 @@ class Reader {
     const own: SlideHF = {};
     if (has('sldNum') !== showsNumber(m, lay)) own.number = has('sldNum');
     if (m.footer.trim() && has('ftr') !== showsFooter(m, lay)) own.footer = has('ftr');
+    // (with no footer text, its own switch from its tag, written beside no footer on the slide:
+    // a footer put on the slide in PowerPoint since is PowerPoint's)
+    else if (!m.footer.trim() && has('ftr')) own.footer = true;
+    else if (!m.footer.trim() && /^[01]$/.test(tags[TAG.slideFooter] ?? '')) own.footer = tags[TAG.slideFooter] === '1';
     if (has('dt') !== showsDate(m, lay)) own.date = has('dt');
     const hf = Object.keys(own).length ? own : undefined;
     // a canvas slide saved here
@@ -1345,7 +1354,7 @@ class Reader {
     const from = doc.idMark;
     const tags = this.tagsOf(s.path, kid(el, 'nvGraphicFramePr', 'nvPr'));
     if (tags[TAG.cdxml] && tags[TAG.oleCdx] === bytesHash(cdx)) {
-      if (!this.drawing(tags[TAG.cdxml], tags[TAG.box], box, doc)) return false;
+      if (!this.drawing(tags[TAG.cdxml], tags[TAG.box], box, doc, true)) return false;
       // one of ours saved as a ChemDraw object by the setting: a plain structure again
       if (tags[TAG.oleOwn] === '1') return true;
     } else {
@@ -1508,7 +1517,7 @@ class Reader {
       // (after Change Picture there, the new picture comes in); turned and flipped as PowerPoint shows it
       if (this.showsOurPicture(s.path, el, tags[TAG.picPrint])) {
         const mark = doc.idMark;
-        if (this.drawing(tags[TAG.cdxml], tags[TAG.box], box, doc)) {
+        if (this.drawing(tags[TAG.cdxml], tags[TAG.box], box, doc, true)) {
           poseNew(doc, mark, box);
           if (pictureStyled(el)) this.warnings.add('Cropping, recoloring, borders and effects PowerPoint put on structures were left off: they came in as structures.');
           else this.keepPicture(s.path, el, doc, mark, box);
@@ -1533,7 +1542,8 @@ class Reader {
     const img = this.image(s.path, el);
     if (!img) return;
     const look = this.pictureLook(kid(el, 'spPr'));
-    const video0 = this.videoOf(s.path, kid(el, 'nvPicPr', 'nvPr'));
+    const video1 = this.videoOf(s.path, kid(el, 'nvPicPr', 'nvPr'));
+    const video0 = video1 && tags[TAG.media] ? { ...video1, ...mediaFromTag(tags[TAG.media], !!video1.audio) } : video1;
     // recorded narration (Slide Show > Record), as we name it
     const video = video0?.audio && kid(el, 'nvPicPr', 'cNvPr')?.getAttribute('name') === NARRATION_NAME ? { ...video0, narration: true } : video0;
     const fx = this.pictureFx(s.path, el, img, tags[TAG.picture], tags[TAG.pictureOrig]);
@@ -1590,6 +1600,16 @@ class Reader {
         fx = { ...fx, ...(bg ? { bg: { ...(Array.isArray(bg.keep) ? { keep: bg.keep } : {}), ...(Array.isArray(bg.drop) ? { drop: bg.drop } : {}) } } : {}), ...(sharpen ? { sharpen } : {}) };
       }
     }
+    // settings that were not worked into the picture (it is the original itself)
+    let asIs = false;
+    if (!layer && t.orig === undefined && t.fx && typeof t.fx === 'object') {
+      const bg = t.fx.bg && typeof t.fx.bg === 'object' ? t.fx.bg as BackgroundRemoval : undefined;
+      const sharpen = typeof t.fx.sharpen === 'number' ? Math.max(-1, Math.min(1, t.fx.sharpen)) : undefined;
+      if (bg || sharpen) {
+        asIs = true;
+        fx = { ...fx, ...(bg ? { bg: { ...(Array.isArray(bg.keep) ? { keep: bg.keep } : {}), ...(Array.isArray(bg.drop) ? { drop: bg.drop } : {}) } } : {}), ...(sharpen ? { sharpen } : {}) };
+      }
+    }
     if (!fx) return undefined;
     // the original: in our tag (files saved since), or a picture beside it (older files; PowerPoint
     // drops it when it saves, and gives its id to some other part)
@@ -1607,7 +1627,7 @@ class Reader {
       img.src = dataUrl(bytes, mime);
       img.px = imageSize(bytes, mime) ?? img.px;
       img.mime = mime;
-    } else {
+    } else if (!asIs) {
       delete fx.sharpen;
       delete fx.bg;
     }
@@ -1635,7 +1655,8 @@ class Reader {
       this.warnings.add(audio ? 'Sounds other than MP3, M4A, WAV, AAC and OGG files inside the PowerPoint file came in as their icons.' : 'Videos other than MP4, MOV and WebM files inside the PowerPoint file came in as their first picture.');
       return undefined;
     }
-    const m: Media = { src: dataUrl(bytes, type.mime), ...(type.audio ? { audio: true } : {}), start: 'click', once: true };
+    // (a sound in a file of a video's type, an MP4 holding only sound, is a sound by PowerPoint's audioFile)
+    const m: Media = { src: dataUrl(bytes, type.mime), ...(type.audio || audio ? { audio: true } : {}), start: 'click', once: true };
     const P14 = 'http://schemas.microsoft.com/office/powerpoint/2010/main';
     const trim = media?.getElementsByTagNameNS(P14, 'trim')[0], fade = media?.getElementsByTagNameNS(P14, 'fade')[0];
     // times as MS-PPTX writes them (ST_UniversalTimeOffset): a number and a unit, milliseconds when there is none
@@ -1721,10 +1742,10 @@ class Reader {
   }
 
   /** A structure or scheme saved here: its drawing, moved and sized as the picture now is. */
-  private drawing(cdxml: string, boxTag: string | undefined, now: Rect, doc: Doc): boolean {
-    let src: Doc;
+  private drawing(cdxml: string, boxTag: string | undefined, now: Rect, doc: Doc, record = false): boolean {
+    let src: Doc, fileIds: Map<string, { kind: RefKind; id: number }>;
     try {
-      src = readCdxml(cdxml).doc;
+      ({ doc: src, fileIds } = readCdxml(cdxml));
     } catch {
       return false;
     }
@@ -1739,7 +1760,9 @@ class Reader {
       map = (p) => ({ x: nx + (p.x - cx) * k, y: ny + (p.y - cy) * k });
     }
     const from = doc.idMark;
-    mergeDrawing(doc, src, map);
+    const merged = mergeDrawing(doc, src, map);
+    // (a picture saved here from the slide: its elements have the ids its things had on the slide)
+    if (record) for (const [fid, { kind, id }] of fileIds) { const now = merged[kind].get(id); if (now !== undefined && /^\d+$/.test(fid)) this.saveId(kind, Number(fid), now); }
     this.drawn.push({ box: boxTag ?? '', map, from, to: doc.idMark });
     return true;
   }
@@ -1847,6 +1870,7 @@ class Reader {
       }
     }
     const hasText = !!this.plain(sp).trim();
+    if (!ph && !hasText && this.ourShape(s.path, sp, spPr, { x1: box.x1, y1: box.y1, x2: box.x2, y2: box.y2, ...turn(box) }, doc)) return;
     if (!ph) {
       const look = this.look(sp, spPr);
       if (look.fill || look.line) {
@@ -1864,8 +1888,7 @@ class Reader {
         if (!look.fill && look.width > 1.75 * doc.style.lineWidth) sh.bold = true;
         if (prst === 'roundRect') {
           sh.rounded = true;
-          const adj = kid(spPr, 'prstGeom', 'avLst', 'gd')?.getAttribute('fmla')?.match(/val\s+(-?\d+)/);
-          sh.radius = (Number(adj?.[1] ?? 16667) / 100000) * Math.min(box.x2 - box.x1, box.y2 - box.y1);
+          sh.radius = roundRadius(spPr, box);
         }
         doc.addShape(sh);
       }
@@ -1891,7 +1914,11 @@ class Reader {
       this.tableParts.set(String(part.key), got);
       return;
     }
-    if (c) doc.addCaption(c);
+    if (c) {
+      const made = doc.addCaption(c);
+      const sid = (() => { try { return tags[TAG.text] ? (JSON.parse(tags[TAG.text]) as { sid?: unknown }).sid : undefined; } catch { return undefined; } })();
+      if (typeof sid === 'number') this.saveId('c', sid, made.id);
+    }
   }
 
   /**
@@ -1900,6 +1927,19 @@ class Reader {
    */
   /** The design shapes read on this slide: their number when saved → their number now (for connectors). */
   private geoIds = new Map<number, number>();
+  /**
+   * What each thing saved here became on this slide, by kind: its id when saved (in its tag, or as
+   * its element's id in its picture's drawing) → its id now. The slide's references (TAG.links)
+   * are joined up again through it.
+   */
+  private savedIds: Record<RefKind, Map<number, number>> = { a: new Map(), b: new Map(), c: new Map(), r: new Map(), s: new Map() };
+  /**
+   * Notes what a thing saved here became. The first one read keeps it: a copy made in PowerPoint
+   * (Duplicate) carries the same tag, and is not what the slide's links name.
+   */
+  private saveId(kind: RefKind, sid: number, id: number): void {
+    if (!this.savedIds[kind].has(sid)) this.savedIds[kind].set(sid, id);
+  }
   /** Reading a zoom PowerPoint made: whether the show comes back from it (null: not a zoom). */
   private zoomBack: boolean | null = null;
   /** Reading a Summary Zoom PowerPoint made. */
@@ -1948,6 +1988,7 @@ class Reader {
     if (!arrow.from) delete arrow.from;
     if (!arrow.to) delete arrow.to;
     const r = doc.addArrow(arrow);
+    if (typeof (saved as { sid?: unknown }).sid === 'number') this.saveId('r', (saved as { sid: number }).sid, r.id);
     // stuck ends sit on their shapes' connection points
     const patch: Partial<Arrow> = {};
     const at = (g: NonNullable<Arrow['from']>) => { const sh = doc.shapes.get(g.shape); return sh ? gluePoint(sh, g.port) : null; };
@@ -2047,12 +2088,54 @@ class Reader {
         }
       }
       const made = doc.addShape(sh);
-      if (typeof sid === 'number') this.geoIds.set(sid, made.id);
+      if (typeof sid === 'number') { if (!this.geoIds.has(sid)) this.geoIds.set(sid, made.id); this.saveId('s', sid, made.id); }
       return true;
     }
     const sh = native();
     if (!sh) return false;
     doc.addShape(sh);
+    return true;
+  }
+
+  /**
+   * A box, oval or line saved here (pptx-write plainShape): as saved, where PowerPoint now has it,
+   * with PowerPoint's colours, fill and outline when its look was changed there. False when it is
+   * not one of ours (or is no longer a box, oval or line).
+   */
+  private ourShape(from: string, el: Element, spPr: Element | null, where: Pick<Shape, 'x1' | 'y1' | 'x2' | 'y2'> & { rot?: number }, doc: Doc): boolean {
+    const nv = kid(el, el.localName === 'cxnSp' ? 'nvCxnSpPr' : 'nvSpPr');
+    const tag = this.tagsOf(from, kid(nv, 'nvPr'))[TAG.shape];
+    if (!tag) return false;
+    let saved: { s?: Partial<Shape>; sid?: unknown; pr?: unknown; g?: unknown } | null;
+    try { saved = JSON.parse(tag); } catch { return false; }
+    const s = saved?.s;
+    if (!s || typeof s !== 'object' || (s.kind !== 'rect' && s.kind !== 'oval' && s.kind !== 'line')) return false;
+    if ((s.kind === 'line') !== (el.localName === 'cxnSp')) return false;
+    // (only fields a box, oval or line has, each of its type: a damaged tag puts nothing odd on it;
+    // what it names comes back through the slide's links, its name and hidden from PowerPoint's)
+    const sh = { ...plainShapeFields(s), kind: s.kind, x1: where.x1, y1: where.y1, x2: where.x2, y2: where.y2 } as Omit<Shape, 'id'>;
+    if (s.kind !== 'line') { if (where.rot) sh.rot = where.rot; else delete sh.rot; }
+    // its outline changed in PowerPoint (Change Shape, a rounded corner's handle): PowerPoint's kind and rounding
+    if (s.kind !== 'line' && typeof saved?.g === 'string' && saved.g !== spPrPrint(spPr, 'geom')) {
+      const prst = kid(spPr, 'prstGeom')?.getAttribute('prst') ?? 'rect';
+      sh.kind = prst === 'ellipse' ? 'oval' : 'rect';
+      delete sh.rounded; delete sh.radius;
+      if (prst === 'roundRect') { sh.rounded = true; sh.radius = roundRadius(spPr, where); }
+    }
+    // a name kept here (one that looks like PowerPoint's own) while PowerPoint's Selection Pane still shows it
+    if (typeof s.name === 'string' && s.name.trim() === (kid(nv, 'cNvPr')?.getAttribute('name') ?? '').trim()) sh.name = s.name;
+    // its colour, fill or outline changed in PowerPoint: PowerPoint's, the rest as saved
+    if (typeof saved?.pr === 'string' && saved.pr !== spPrPrint(spPr, 'look')) {
+      const look = this.look(el, spPr);
+      for (const k of PLAIN_LOOK_KEYS) delete (sh as Record<string, unknown>)[k];
+      sh.color = look.line ?? look.fill ?? '#000000';
+      if (look.fill && sh.kind !== 'line') { sh.filled = true; if (look.line && look.line.toLowerCase() !== look.fill.toLowerCase()) sh.fillColor = look.fill; else sh.color = look.fill; }
+      if (look.dashed) sh.dashed = true;
+      if (look.dotted) sh.dotted = true;
+      if (look.width > 1.75 * doc.style.lineWidth) sh.bold = true;
+    }
+    const made = doc.addShape(sh);
+    if (typeof saved?.sid === 'number') this.saveId('s', saved.sid, made.id);
     return true;
   }
 
@@ -2584,6 +2667,7 @@ class Reader {
       doc.addArrow(arrow);
       return;
     }
+    if (this.ourShape(this.curPath, el, spPr, { x1: a.x, y1: a.y, x2: b.x, y2: b.y }, doc)) return;
     const sh: Omit<Shape, 'id'> = { kind: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, ppt: true };
     if (look.line.toLowerCase() !== '#000000') sh.color = look.line;
     if (look.dashed) sh.dashed = true;
@@ -2999,9 +3083,6 @@ function joinCanvases(slides: PptxSlide[], parts: (PartRead | null)[], want: 'ca
   return { slides: out, place, edited, joined };
 }
 
-/** The names PowerPoint (and this program) give shapes on their own: "Picture 3", "TextBox 12". */
-const PPT_NAME = /^(Picture|Rectangle|Oval|Line|TextBox|Text Box|Title|Text Placeholder|Content Placeholder|Subtitle|Table|Chart|Equation|Animation|Straight Connector|Straight Arrow Connector|Elbow Connector|Curved Arrow|Connector|Freeform|Group|Diagram|Structure|Highlight|Graphic|Object|Shape|Google Shape|Footer|Slide Number|Date|Rounded Rectangle|Ellipse|Isosceles Triangle|Right Arrow|Arrow)( Placeholder)? \d+$/i;
-
 /** Files saved here: the shapes (by id) on the master and each layout that are the template's artwork, and whether the theme is the template's. */
 export interface ArtIds { theme?: boolean; master?: number[]; layouts?: Record<string, number[]> }
 
@@ -3161,4 +3242,88 @@ export function withTurns(anims: Anim[], tag: string): Anim[] {
     const { turn: _, ...rest } = a;
     return { ...rest, effect: 'turn3d', ...(Array.isArray(v) && v.length === 9 && v.every((x) => typeof x === 'number') ? { view: v as number[] } : {}) };
   });
+}
+
+/**
+ * A video's or sound's settings from our tag, each checked against the type it has here: its
+ * length, Rewind after Playing, a narration, and on a video the sound settings PowerPoint keeps
+ * only for sounds (on a sound, PowerPoint's own Play Across Slides and Hide During Show win).
+ */
+function mediaFromTag(tag: string, audio: boolean): Partial<Media> {
+  let v: Record<string, unknown>;
+  try { v = JSON.parse(tag) as Record<string, unknown>; } catch { return {}; }
+  if (!v || typeof v !== 'object') return {};
+  const out: Partial<Media> = {};
+  if (typeof v.length === 'number' && Number.isFinite(v.length) && v.length > 0) out.length = v.length;
+  if (v.rewind === true) out.rewind = true;
+  if (v.narration === true) out.narration = true;
+  if (!audio && v.across === true) out.across = true;
+  if (!audio && v.hide === true) out.hide = true;
+  return out;
+}
+
+/** A rounded rectangle's corner radius from PowerPoint's adjust value (a sixth of the short side by default). */
+function roundRadius(spPr: Element | null, box: Pick<Shape, 'x1' | 'y1' | 'x2' | 'y2'>): number {
+  const adj = kid(spPr, 'prstGeom', 'avLst', 'gd')?.getAttribute('fmla')?.match(/val\s+(-?\d+)/);
+  return (Number(adj?.[1] ?? 16667) / 100000) * Math.min(Math.abs(box.x2 - box.x1), Math.abs(box.y2 - box.y1));
+}
+
+/**
+ * The fields a box, oval or line saved here may bring back from its tag (pptx-write plainShape),
+ * with the type each must have. Not its place (where PowerPoint has it), its name and hidden
+ * (PowerPoint's Selection Pane: cNvPr), or what it names (REF_FIELDS: the slide's links).
+ */
+// (every field of Shape but those is listed, so a field added to Shape must be added here too)
+const PLAIN_SHAPE_FIELDS: { [K in Exclude<keyof Shape, 'id' | 'kind' | 'x1' | 'y1' | 'x2' | 'y2' | 'name' | 'hidden' | 'ring' | 'pin' | 'frame'>]-?: 'number' | 'string' | 'boolean' | 'object' } = {
+  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', stack: 'number', poly: 'object', geo: 'string', orbital: 'string', orb: 'object',
+  text: 'object', textAlign: 'string', textValign: 'string', lineWidth: 'number', transparency: 'number', rot: 'number', dashed: 'boolean',
+  hashSpacing: 'number', dotted: 'boolean', filled: 'boolean', fill: 'string', fill2: 'string', gradAngle: 'number', gradRadial: 'boolean',
+  pattern: 'string', patternColor: 'string', patternSize: 'number', patternTransparency: 'number', patternClear: 'boolean', fillColor: 'string',
+  fade: 'number', rounded: 'boolean', radius: 'number', shadow: 'boolean', shadowBetween: 'boolean', shadowSize: 'number', shadowColor: 'string',
+  shadowOpacity: 'number', shadowAngle: 'number', shadowBlur: 'number', glow: 'object', softEdge: 'number', bevel: 'object', reflection: 'object',
+  picFill: 'object', bold: 'boolean', symbol: 'string', bracket: 'string', pair: 'boolean', bracketPair: 'number', repeat: 'string', repeatLook: 'object',
+  picture: 'boolean', src: 'string', px: 'object', video: 'object', link: 'string', zoom: 'object', crop: 'object', phPic: 'number', look: 'object', fx: 'object',
+  color: 'string', z: 'number', alt: 'string', locked: 'boolean', table: 'object', chart: 'object', math: 'object', editedOutside: 'boolean', energy: 'object',
+  newman: 'object', torsion: 'object', plate: 'object', diagram: 'object', smart: 'object', holder: 'object', madeLabels: 'object', ole: 'object',
+};
+
+/** The tag's fields that a box, oval or line may have, each of the right type (others are left out). */
+function plainShapeFields(s: Record<string, unknown>): Partial<Shape> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(s)) {
+    const want = (PLAIN_SHAPE_FIELDS as Record<string, string | undefined>)[k];
+    if (!want || v === null || typeof v !== want || (want === 'number' && !Number.isFinite(v))) continue;
+    out[k] = v;
+  }
+  return out as Partial<Shape>;
+}
+
+/** A box's, oval's or line's look, as PowerPoint can change it (see ourShape). */
+const PLAIN_LOOK_KEYS = ['color', 'filled', 'fillColor', 'fill', 'fill2', 'gradAngle', 'gradRadial', 'dashed', 'dotted', 'bold', 'lineWidth', 'hashSpacing', 'shadow', 'shadowSize', 'pattern', 'patternColor', 'patternSize', 'patternTransparency', 'patternClear', 'transparency'] as const;
+
+/**
+ * The slide's references saved by id (pptx-write slideLinks), joined up again with what each
+ * saved thing became. What is no longer on the slide (deleted in PowerPoint) drops out of the
+ * reference; a reference naming only things that are gone is left off.
+ */
+function restoreLinks(doc: Doc, tag: string, saved: Record<RefKind, Map<number, number>>): void {
+  let list: unknown;
+  try { list = JSON.parse(tag); } catch { return; }
+  if (!Array.isArray(list)) return;
+  const idOf = (k: RefKind, id: number) => saved[k]?.get(id);
+  for (const e of list as { k?: unknown; id?: unknown; f?: unknown }[]) {
+    if (!e || typeof e !== 'object' || typeof e.id !== 'number' || typeof e.k !== 'string' || !(e.k in REF_FIELDS) || !e.f || typeof e.f !== 'object') continue;
+    const k = e.k as RefKind;
+    const id = idOf(k, e.id);
+    if (id === undefined) continue;
+    const patch: Record<string, unknown> = {};
+    for (const [f, v] of Object.entries(e.f as Record<string, unknown>)) {
+      if (!REF_FIELDS[k].includes(f)) continue;
+      // (what is gone, deleted in PowerPoint, drops out: a frame keeps the members still there)
+      const got = remapField(k, f, v, idOf, true) ?? remapField(k, f, v, idOf, false);
+      if (got !== undefined) patch[f] = got;
+    }
+    if (!Object.keys(patch).length) continue;
+    if (k === 'a') doc.updateAtom(id, patch); else if (k === 'b') doc.updateBond(id, patch); else if (k === 'c') doc.updateCaption(id, patch); else if (k === 'r') doc.updateArrow(id, patch); else doc.updateShape(id, patch);
+  }
 }

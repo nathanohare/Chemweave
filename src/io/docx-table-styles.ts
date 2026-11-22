@@ -34,6 +34,9 @@ export function marginsXml(wrap: string, m: Partial<CellMargins>): string {
 }
 
 /** The parts a table picks out, as Word's w:tblLook (both the attributes and the older bit mask). */
+/** The Table Style Options written for a table with no style and none of its own: every part off. */
+export const PLAIN_LOOK = '<w:tblLook w:val="0600" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/>';
+
 export function lookXml(t: TableData): string {
   const l = { ...DEFAULT_LOOK, ...t.look };
   const bits = (l.header ? 0x20 : 0) | (l.total ? 0x40 : 0) | (l.firstCol ? 0x80 : 0) | (l.lastCol ? 0x100 : 0) | (l.bandRows ? 0 : 0x200) | (l.bandCols ? 0 : 0x400);

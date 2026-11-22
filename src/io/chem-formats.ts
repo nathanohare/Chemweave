@@ -110,6 +110,8 @@ export interface FScene {
   yDown?: boolean;
   /** The file's usual bond length, for a file whose structures have no bonds to measure. */
   unit?: number;
+  /** A reaction with no arrow whose molecules stand where they were drawn (an RXN file written here): kept there when they stand in a row. */
+  keepPlaces?: boolean;
 }
 
 /** The kinds of chemistry file read here, by extension. */
@@ -543,7 +545,7 @@ export function readRxnFile(text: string): FScene | null {
     }
     if (k < nr + np) return null;
   }
-  return { mols, arrows: [], pluses: [], texts: [] };
+  return { mols, arrows: [], pluses: [], texts: [], ...(ours ? { keepPlaces: true } : {}) };
 }
 
 // ---------------------------------------------------------------- XML formats (MRV, CML)
@@ -946,6 +948,27 @@ function layOutReaction(scene: FScene, unit: number): void {
   row('product');
 }
 
+/**
+ * A reaction with no arrow whose molecules stand where they were drawn: the arrow (and + signs) put
+ * in the gaps, the molecules left where they are. False, with nothing changed, when the starting
+ * materials don't all stand left of the products with room for an arrow and its agents between.
+ */
+function arrowBetween(scene: FScene, unit: number): boolean {
+  const boxes = (role: FRole) => scene.mols.filter((m) => m.role === role && m.atoms.length).map(molBox).sort((a, b) => a.x1 - b.x1);
+  const r = boxes('reactant'), p = boxes('product'), a = boxes('agent');
+  if (!r.length || !p.length) return false;
+  const gap = unit * 1.2;
+  const tail = Math.max(...r.map((b) => b.x2)) + gap, head = Math.min(...p.map((b) => b.x1)) - gap;
+  if (head - tail < unit || a.some((b) => b.x1 < tail || b.x2 > head)) return false;
+  const all = [...r, ...p];
+  const y = (Math.min(...all.map((b) => b.y1)) + Math.max(...all.map((b) => b.y2))) / 2;
+  scene.arrows.push({ x1: tail, y1: y, x2: head, y2: y, kind: 'synthesis' });
+  for (const row of [r, p]) {
+    for (let i = 1; i < row.length; i++) if (row[i].x1 > row[i - 1].x2) scene.pluses.push({ x: (row[i - 1].x2 + row[i].x1) / 2, y });
+  }
+  return true;
+}
+
 const DISPLAY: Record<FStereo, BondDisplay> = { wedge: 'wedge', hash: 'hashWedge', wavy: 'wavy' };
 
 /** What sceneToDoc says about the file it drew. */
@@ -961,7 +984,7 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
   doc.page = page;
   const lengths = scene.mols.flatMap((m) => m.bonds.map((b) => Math.hypot(m.atoms[b.a].x - m.atoms[b.b].x, m.atoms[b.a].y - m.atoms[b.b].y))).filter((l) => l > 1e-6);
   const unit = median(lengths) || scene.unit || 1;
-  if (!scene.arrows.length && scene.mols.some((m) => m.role)) layOutReaction(scene, unit);
+  if (!scene.arrows.length && scene.mols.some((m) => m.role) && !(scene.keepPlaces && arrowBetween(scene, unit))) layOutReaction(scene, unit);
   const k = style.bondLength / unit, sy = scene.yDown ? k : -k;
   const P = (x: number, y: number) => ({ x: x * k, y: y * sy });
   const stats: SceneStats = { atoms: 0, bonds: 0, arrows: 0, texts: 0 };

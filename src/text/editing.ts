@@ -712,6 +712,8 @@ export class TextEditing {
 
   /** The last step of Undo, to know it again later (dropStep). */
   get lastStep(): object | undefined { return this.undoStack[this.undoStack.length - 1]; }
+  /** The step Redo would bring back next, to know it again later. */
+  get nextRedo(): object | undefined { return this.redoStack[this.redoStack.length - 1]; }
 
   /**
    * Take back the last step of Undo when it is `step` and changed nothing after all (`same`: the
