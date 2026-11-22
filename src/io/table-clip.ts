@@ -3,7 +3,8 @@
 // table copied from a drawing goes out the same two ways, so Excel and Word get its cells.
 
 import type { TableData, TextRun } from '../model';
-import { htmlToRich } from '../text/html';
+import { htmlToRich, runsHtml } from '../text/html';
+import { splitParagraphs } from '../text/paragraphs';
 import { parseDelimited, toDelimited } from '../sheet/csv';
 
 /** A pasted cell: its text (with bold, italic, subscripts and so on) and how many columns it spans. */
@@ -60,27 +61,20 @@ function plainRuns(runs: TextRun[]): TextRun[] {
   });
 }
 
-const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-/** A run as HTML (bold, italic, underline, sub- and superscripts, colour). */
-function runHtml(r: TextRun): string {
-  let h = esc(r.text).replace(/\n/g, '<br>');
-  if (r.formula && !r.sub && !r.sup) h = h.replace(/(\d+)/g, '<sub>$1</sub>');
-  if (r.sub) h = `<sub>${h}</sub>`;
-  if (r.sup) h = `<sup>${h}</sup>`;
-  if (r.underline) h = `<u>${h}</u>`;
-  if (r.italic) h = `<i>${h}</i>`;
-  if (r.bold) h = `<b>${h}</b>`;
-  if (r.color) h = `<span style="color:${r.color}">${h}</span>`;
-  return h;
-}
-
-/** A table as HTML, for Word and Excel: its title above, the cells, and its footnotes below. */
+/**
+ * A table as HTML, for Word and Excel: its title above, the cells, and its footnotes below. Runs
+ * go through the same writer as other copied text (text/html.ts runsHtml: every look, and formula
+ * runs with their digits lowered and charges raised); cells keep their fill, merges across and down,
+ * alignment (each paragraph's own) and the table's text size.
+ */
 export function tableHtml(t: TableData): string {
   const rule = '0.75pt solid #000';
+  const look = { font: null, defaultSize: t.size ?? null };
   const out: string[] = [];
-  if (t.title?.length) out.push(`<p>${t.title.map(runHtml).join('')}</p>`);
+  if (t.title?.length) out.push(`<p>${runsHtml(t.title, look)}</p>`);
   out.push('<table border="0" cellspacing="0" cellpadding="4" style="border-collapse:collapse">');
+  // cells a cell above is merged down over, by row and column
+  const below = new Set<string>();
   t.rows.forEach((row, r) => {
     const tds: string[] = [];
     let skip = 0;
@@ -88,19 +82,34 @@ export function tableHtml(t: TableData): string {
       if (skip > 0) { skip--; return; }
       const span = Math.max(1, Math.min(cell.span ?? 1, t.cols.length - c));
       skip = span - 1;
-      const css: string[] = [`text-align:${cell.align ?? t.align?.[c] ?? (c === 0 ? 'left' : 'center')}`];
+      if (below.has(`${r},${c}`)) return;
+      const down = Math.max(1, Math.min(cell.rowSpan ?? 1, t.rows.length - r));
+      for (let d = 1; d < down; d++) for (let k = 0; k < span; k++) below.add(`${r + d},${c + k}`);
+      const align = cell.align ?? t.align?.[c] ?? (c === 0 ? 'left' : 'center');
+      const css: string[] = [`text-align:${align}`];
       if (t.lines === 'grid') css.push(`border:${rule}`);
       else if (t.lines === 'acs') {
         if (r === 0) css.push(`border-top:${rule}`);
-        if (r === t.head - 1 || r === t.rows.length - 1) css.push(`border-bottom:${rule}`);
+        if (r + down - 1 === t.head - 1 || r + down - 1 === t.rows.length - 1) css.push(`border-bottom:${rule}`);
       }
+      if (cell.fill) css.push(`background:${cell.fill}`);
+      if (cell.valign) css.push(`vertical-align:${cell.valign === 'center' ? 'middle' : 'bottom'}`);
+      if (t.size) css.push(`font-size:${t.size}pt`);
+      // a cell of several paragraphs: one <p> each, with its own alignment
+      const paras = splitParagraphs(cell.runs.filter((x) => x.obj === undefined));
+      const body = paras.length > 1
+        ? paras.map((runs, i) => {
+          const a = cell.paras?.[i]?.align;
+          return `<p style="margin:0${a && a !== align ? `;text-align:${a}` : ''}">${runsHtml(runs, look) || '&nbsp;'}</p>`;
+        }).join('')
+        : runsHtml(paras[0] ?? [], look);
       const tag = r < t.head ? 'th' : 'td';
-      tds.push(`<${tag}${span > 1 ? ` colspan="${span}"` : ''} style="${css.join(';')};font-weight:normal">${cell.runs.map(runHtml).join('')}</${tag}>`);
+      tds.push(`<${tag}${span > 1 ? ` colspan="${span}"` : ''}${down > 1 ? ` rowspan="${down}"` : ''} style="${css.join(';')};font-weight:normal">${body}</${tag}>`);
     });
     out.push(`<tr>${tds.join('')}</tr>`);
   });
   out.push('</table>');
-  if (t.notes?.length) out.push(`<p style="font-size:smaller">${t.notes.map(runHtml).join('')}</p>`);
+  if (t.notes?.length) out.push(`<p style="font-size:smaller">${runsHtml(t.notes, look)}</p>`);
   return out.join('');
 }
 

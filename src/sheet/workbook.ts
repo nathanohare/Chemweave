@@ -9,6 +9,8 @@
 
 import type { KeptParts, KeptTree } from '../io/kept-parts';
 import type { ExcelSheetKept, ExcelBookKept } from '../io/xlsx-view';
+import type { KeptSheetOle } from '../io/xlsx-ole';
+import { shiftOle } from './ole-anchor';
 import type { Contents } from '../model';
 import type { DocStyle } from '../style';
 import { ACS_1996 } from '../style';
@@ -95,6 +97,14 @@ export interface ExcelLook {
   /** The cell's font raised or lowered (superscript, subscript), or struck through. */
   vertAlign?: string;
   strike?: true;
+  /** The underline's kind while the cell is underlined: double, singleAccounting or doubleAccounting (18.18.85), shown as a single line. */
+  u?: string;
+  /**
+   * The cell's font as the file had it, when it has more than is shown here (an outline, a shadow,
+   * a family or character set, a theme colour), with the look it had (`key`): written back while
+   * the cell's font still looks so.
+   */
+  font?: { xml: string; key: string };
 }
 
 /** Parts of an Excel file's styles kept to save back with it (see xlsx.ts). */
@@ -308,8 +318,8 @@ function patchStyleWith(s: CellStyle | undefined, patch: Partial<CellStyle>): Ce
 
 type MapField = 'cells' | 'colWidths' | 'rowHeights' | 'fittedRows' | 'colDefs' | 'colStyles' | 'hiddenRows' | 'hiddenCols' | 'notes' | 'rowLevels' | 'colLevels';
 type ValueField = 'merges' | 'filter' | 'frozen' | 'split' | 'name' | 'condFormats' | 'tables' | 'charts' | 'dashboard' | 'validations' | 'objects' | 'pageSetup' | 'dataTables' | 'pivots'
-  | 'sparklines' | 'viewOpts' | 'outline';
-const VALUE_FIELDS = new Set<string>(['merges', 'filter', 'frozen', 'split', 'name', 'condFormats', 'tables', 'charts', 'dashboard', 'validations', 'objects', 'pageSetup', 'dataTables', 'pivots', 'sparklines', 'viewOpts', 'outline']);
+  | 'sparklines' | 'viewOpts' | 'outline' | 'ole';
+const VALUE_FIELDS = new Set<string>(['merges', 'filter', 'frozen', 'split', 'name', 'condFormats', 'tables', 'charts', 'dashboard', 'validations', 'objects', 'pageSetup', 'dataTables', 'pivots', 'sparklines', 'viewOpts', 'outline', 'ole']);
 
 interface Change {
   sheet: Sheet | null; // null: the workbook's list of sheets, its names, theme or custom views
@@ -340,6 +350,8 @@ export class Sheet {
   codeName?: string;
   /** What an Excel file said about the sheet that only Excel uses (protection, its tab's colour…), kept to save back. */
   excel?: ExcelSheetKept;
+  /** Objects embedded in the sheet in an Excel file (a ChemDraw structure pasted there), not shown here: kept to save back as they were. */
+  ole?: KeptSheetOle[];
   /**
    * The height in points an Excel file gave rows with none of their own (set by hand when `custom`),
    * saved back with it; `zero`: rows the file doesn't list are hidden (Excel's zeroHeight, for a sheet
@@ -590,6 +602,18 @@ export class Sheet {
     if (value === undefined) map.delete(key);
     else map.set(key, value);
     this.wb.record({ sheet: this, field, key: key as unknown as number, before, after: value });
+  }
+
+  /** Edit ▸ Spreadsheet ▸ Data Tools ▸ Remove Embedded Objects: the objects kept from Excel go (with Undo); how many there were. */
+  removeOle(): number {
+    const n = this.ole?.length ?? 0;
+    if (n) this.assign('ole', undefined);
+    return n;
+  }
+
+  /** Why Remove Embedded Objects can't run on this sheet (its menu item off, this as its tooltip), or null when it can (review F2b-R04). */
+  get removeOleBlocked(): string | null {
+    return this.ole?.length ? null : 'This sheet has no embedded objects';
   }
 
   private assign<F extends ValueField>(field: F, value: Sheet[F]): void {
@@ -1071,6 +1095,11 @@ export class Sheet {
         return n === i ? o : { ...o, at: axis === 'row' ? { ...o.at, row: n } : { ...o.at, col: n } };
       });
       if (os.some((o, i) => o !== this.objects[i])) this.setObjects(os);
+    }
+    // objects embedded by Excel (kept, not shown) move with their cells (G2-01)
+    if (this.ole?.length) {
+      const os = this.ole.map((o) => shiftOle(o, axis, at, count));
+      if (os.some((o, i) => o !== this.ole![i])) this.assign('ole', os);
     }
     if (this.dataTables.length) {
       const ts = this.dataTables.map((t) => ({ ...t, ref: moveRange(t.ref)! })).filter((t) => t.ref);

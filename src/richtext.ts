@@ -11,7 +11,7 @@ const LINK_COLOUR = '#0563c1';
 export type RunStyle = Omit<TextRun, 'text'>;
 export type Toggle = 'bold' | 'italic' | 'underline' | 'sub' | 'sup' | 'formula' | 'strike' | 'smallCaps' | 'allCaps';
 
-const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'lang', 'field', 'noProof', 'raise', 'cite'] as const;
+const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'pfx', 'ukind', 'ucolor', 'dstrike', 'wrx', 'lang', 'field', 'noProof', 'raise', 'cite'] as const;
 /** Subscript, superscript and formula style change where characters sit, so only one applies. */
 const POSITION: Toggle[] = ['sub', 'sup', 'formula'];
 
@@ -208,8 +208,8 @@ export function faceFromStyle(r: RunStyle): number {
 
 export type Part = { text: string; pos: 'base' | 'sub' | 'sup' };
 
-/** What a count or a charge can't follow in formula style: nothing, a space, an opening bracket or , . : ; */
-const FORMULA_NO_MARK = /[\s(\[{,.:;]/;
+/** What a count or a charge can't follow in formula style: nothing, a space, an opening bracket, , . : ; or a hydrate's dot (CuSO4·5H2O). */
+const FORMULA_NO_MARK = /[\s(\[{,.:;·⋅•]/;
 
 /**
  * How formula style shows a piece of text, as measured from ChemDraw:
@@ -220,6 +220,9 @@ const FORMULA_NO_MARK = /[\s(\[{,.:;]/;
  *   FORMULA_NO_MARK lists or is the start of the text. Before a letter it stays on the line, as a
  *   hyphen does (Red-Al), but a - goes up there when a + comes later in the text (CO2-Na+).
  * - Two or more hyphens are names, not charges, and none goes up (Me-Al-).
+ * - A charge's own number is lowered with the counts (Fe3+ is Fe₃⁺, SO42- SO₄₂⁻), as ChemDraw does:
+ *   text alone can't tell a count from a charge (N3- is azide N₃⁻, C60- is C₆₀⁻). To raise it, set
+ *   those digits in superscript by hand (a run's own sub or sup is kept as it is).
  * - An R group's number goes up when Settings ▸ Drawing says so (R¹, CO₂R¹; not the 2 of NR2).
  * `before` and `after` are the rest of the text, in other runs: ChemDraw reads across them.
  */
@@ -261,12 +264,28 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
   return out;
 }
 
-/** Formula style for one of a text's runs: the parts it shows, reading across the runs around it. */
+/**
+ * Formula style for one of a text's runs: the parts it shows, reading across the runs around it
+ * in its own paragraph. Every place that shows or writes formula text goes through here (the
+ * drawing, Documents, Word, PowerPoint, RTF, ODT, copied HTML), so all of them agree; a writer
+ * that has a paragraph's runs gets the same answer as the editor that has the whole text.
+ */
 export function formulaRunParts(runs: readonly TextRun[], k: number): Part[] {
   let before = '', after = '';
   for (let i = 0; i < k; i++) before += runs[i].text;
   for (let i = k + 1; i < runs.length; i++) after += runs[i].text;
-  return formulaParts(runs[k].text, before, after);
+  const text = runs[k].text;
+  // from the start of the run's paragraph to its end (a run holding a paragraph end is read whole)
+  before = before.slice(before.lastIndexOf('\n') + 1);
+  const end = after.indexOf('\n');
+  if (end >= 0) after = after.slice(0, end);
+  return formulaParts(text, before, after);
+}
+
+/** formulaRunParts for run `r` among `runs` (its paragraph's, or more); r alone when it isn't among them. */
+export function formulaPartsIn(runs: readonly TextRun[] | undefined, r: TextRun): Part[] {
+  const k = runs ? runs.indexOf(r) : -1;
+  return k >= 0 ? formulaRunParts(runs!, k) : formulaParts(r.text);
 }
 
 // ------------------------------------------------------------------ the Symbol font

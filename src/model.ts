@@ -402,6 +402,29 @@ export interface TextRun {
    * shadow, outline and fill only while they still match the run's own above.
    */
   wfx?: string;
+  /**
+   * The underline's kind, by the name the file gave it, while `underline` is on: Word's (double,
+   * wave, dotted, thick, words..., ECMA-376 part 1, 17.18.99) in documents, Excel's (double,
+   * singleAccounting, doubleAccounting, 18.18.85) on sheets. Drawn as a single line where this
+   * program has no drawing of its own for it. Absent: a single line.
+   */
+  ukind?: string;
+  /**
+   * Documents: Word's run properties this program doesn't model (emboss, imprint, a text border,
+   * character scale, an emphasis mark, right to left...), as the file had them (JSON, by their
+   * place in w:rPr: io/docx-read.ts KEPT_RPR), written back with the run.
+   */
+  wrx?: string;
+  /** Documents: the underline's own colour (Word's w:u w:color), when not the text's. */
+  ucolor?: string;
+  /** Double strikethrough (Word's w:dstrike, 17.3.2.9), while `strike` is on. */
+  dstrike?: boolean;
+  /**
+   * Slides: PowerPoint's run formatting this program doesn't model (a gradient fill, glow, a
+   * double underline, a theme or East Asian font...), as the file had it (JSON, io/pptx-keep.ts),
+   * written back while the looks it goes with are unchanged.
+   */
+  pfx?: string;
   /** Documents: not spell- or grammar-checked (Word's Do not check spelling or grammar: chemical names, citations). */
   noProof?: boolean;
   /** Documents: the text raised (less than 0: lowered) from the line by this many points, at its own size (Word's Font > Advanced > Position). */
@@ -481,6 +504,12 @@ export interface ParaStyle {
    * in the same paragraph as that one.
    */
   soft?: boolean;
+  /**
+   * Documents: Word's paragraph properties this program doesn't model (a text frame or drop cap,
+   * an outline level of its own, right to left, East Asian line breaking...), as the file had them
+   * (JSON, by their place in w:pPr: io/docx-read.ts KEPT_PPR), written back with the paragraph.
+   */
+  wpx?: string;
   /** This paragraph's own alignment, in place of the text box's. */
   align?: Justify;
   /** Extra space above and below the paragraph, in points. */
@@ -490,6 +519,12 @@ export interface ParaStyle {
   indent?: number;
   /** Documents: the named style (Normal when left out), for Heading 1 and the rest. */
   style?: string;
+  /**
+   * Slides: PowerPoint's paragraph settings this program doesn't model (right to left, font
+   * alignment, a bullet's colour and size, its margins as PowerPoint had them...), as the file had
+   * them (JSON, io/pptx-keep.ts), written back while the paragraph's own settings are unchanged.
+   */
+  ppx?: string;
   /** Documents: starts a new page. */
   pageBreak?: boolean;
   /** Documents set in columns: starts the next column. */
@@ -652,6 +687,12 @@ export interface Caption {
   fit?: 'shrink' | 'fixed';
   /** Text direction: the text runs down (rotated 90°) or up (270°). Its turn is in `rot`; this says it is the text's direction, for PowerPoint. */
   dir?: 'vert' | 'vert270';
+  /**
+   * Slides: a PowerPoint text box's frame as the file had it (JSON, io/pptx-keep.ts): its size and
+   * place, where its text sits in it (anchor, margins) and how it fits, written back (moved with the
+   * text) while the box's width, height, fit, direction and turn are unchanged here.
+   */
+  pbox?: string;
 }
 
 /**

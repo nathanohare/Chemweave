@@ -13,6 +13,7 @@
 // typed into here, and a table of figures (a TOC field for captions) as one worked out here.
 
 import { COVER_MARK } from '../document/quick-parts';
+import { readKeptSettings } from './docx-settings';
 import type { AuthorityMark, CellBorders, Contents, IndexMark, Justify, ParaBorders, ParaStyle, PictureFx, RowHeight, TabStop, TableCell, TableData, TextRun } from '../model';
 import { parseIndex, parseTa, parseToa, parseXe } from '../document/index-toa';
 import { ALG_SIDS, type ProtectKind, type Protection } from '../document/protect';
@@ -148,7 +149,43 @@ const WARN = {
 
 type Pos = 'base' | 'sub' | 'sup';
 /** Text formatting as a file gives it (only what it gives). `color` null is "automatic". */
-interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
+/**
+ * Run properties not read here, by their place in w:rPr (CT_RPr, ECMA-376 part 1, 17.3.2.28): a
+ * after strike (17.3.2.23 outline, 17.3.2.31 shadow, emboss, imprint), b after noProof
+ * (snapToGrid), c after vanish (webHidden), d after spacing (17.3.2.43 w, character scale),
+ * e after u (effect, 17.3.2.4 bdr), f after shd (fitText), g after vertAlign (rtl, cs, 17.3.2.12
+ * em), h after lang (eastAsianLayout, specVanish). The legacy shadow is also shown as a shadow.
+ */
+const KEPT_RPR: Record<string, string> = {
+  outline: 'a', shadow: 'a', emboss: 'a', imprint: 'a', snapToGrid: 'b', webHidden: 'c', w: 'd', effect: 'e', bdr: 'e',
+  fitText: 'f', rtl: 'g', cs: 'g', em: 'g', eastAsianLayout: 'h', specVanish: 'h',
+};
+
+/**
+ * Paragraph properties not read here, by their place in w:pPr (CT_PPrBase, ECMA-376 part 1,
+ * 17.3.1.26): a after pageBreakBefore (17.3.1.11 framePr: a text frame or a drop cap), c before
+ * spacing (East Asian line breaking, 17.3.1.6 bidi, adjustRightInd, snapToGrid), d after ind
+ * (mirrorIndents, suppressOverlap), e after jc (textDirection, textAlignment, textboxTightWrap,
+ * 17.3.1.20 outlineLvl). The paragraph's own, written back with it (ParaStyle.wpx).
+ */
+const KEPT_PPR: Record<string, string> = {
+  framePr: 'a', kinsoku: 'c', wordWrap: 'c', overflowPunct: 'c', topLinePunct: 'c', autoSpaceDE: 'c', autoSpaceDN: 'c', bidi: 'c', adjustRightInd: 'c', snapToGrid: 'c',
+  mirrorIndents: 'd', suppressOverlap: 'd', textDirection: 'e', textAlignment: 'e', textboxTightWrap: 'e', outlineLvl: 'e',
+};
+
+/** A paragraph's kept properties (ParaStyle.wpx) with more added. */
+function withKept(wpx: string | undefined, more: Record<string, string>): string {
+  let k: Record<string, string> = {};
+  try { k = wpx ? JSON.parse(wpx) as Record<string, string> : {}; } catch { k = {}; }
+  return JSON.stringify({ ...k, ...more });
+}
+
+/** Theme attributes of an element as written (` w:themeColor="accent1" w:themeShade="BF"`). */
+function themeAttrs(el: Element, ns: string, names: string[]): string {
+  return names.map((n) => { const v = el.getAttributeNS(ns, n); return v === null ? '' : ` w:${n}="${v.replace(/[&"<]/g, (ch) => (ch === '&' ? '&amp;' : ch === '"' ? '&quot;' : '&lt;'))}"`; }).join('');
+}
+
+interface RProps { /** A theme colour's and a theme font's attributes as written, and the colour and font they gave. */ thc?: string; thcv?: string; thf?: string; thfv?: string; /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; /** Run properties not read here, as written (see TextRun.wrx). */ wrx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; ukind?: string; ucolor?: string; dstrike?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
 /** Paragraph formatting as a file gives it, in points. */
 interface PProps {
   align?: Justify; before?: number; after?: number; line?: { v: number; rule: string };
@@ -187,7 +224,9 @@ interface Level { fmt: string; text: string; p: PProps; start: number; restart?:
 interface Piece { runs: TextRun[]; pageBreak: boolean; soft: boolean; colBreak?: boolean; /** Index entries and marked citations in it (XE and TA fields). */ xe?: IndexMark[]; ta?: AuthorityMark[] }
 interface Ctx { base: RProps; pieces: Piece[]; cell: boolean }
 interface Field { instr: string; phase: 'instr' | 'result'; swallow: boolean; /** The field's own data (w:fldData, base64): EndNote's citations. */ data?: string; text: string; props: RProps; /** How its result's first text looks, which is what Word shows (EndNote sets superscript only there). */ shown?: RProps; done: boolean; ref?: { id: number; mark: string; text: string; above?: boolean; page?: boolean }; toc?: boolean; /** A table of contents (TOC \\o): its object, which takes the look of its lines as Word last wrote them. */ tocId?: number; /** A form field's settings (w:ffData), and the form field made of it. */ ff?: Element; form?: number; /** A HYPERLINK field: the link open before it, put back at its end. */ before?: { link: string | undefined }; /** A manager's citation (its object) whose shown text is kept; a manager's bibliography (its object) whose entries are kept. */ cite?: number; bib?: number; /** Its separator (where its result starts). */ sep?: Element; /** Another field inside its instruction. */ inner?: boolean; /** A field kept as Word had it: the object made of it (its result is gathered into it). */ kept?: number }
-interface OutPara { ps: ParaStyle; runs: TextRun[]; mark: rt.RunStyle; style: string; contextual: boolean; table?: boolean; bib?: string; markRev?: string; /** A list item: Word's list (numId), the levels it uses (abstractNumId) and its level. */ num?: { id: string; abs: string; ilvl: number } }
+/** A list item in a table cell: Word's list, and the cell paragraph it is (`idx` in `at.cell`'s paragraphs, the cell set once read). */
+interface CellNum { num: { id: string; abs: string; ilvl: number }; at: { cell?: TableCell }; idx: number }
+interface OutPara { ps: ParaStyle; runs: TextRun[]; mark: rt.RunStyle; style: string; contextual: boolean; table?: boolean; bib?: string; markRev?: string; /** A list item: Word's list (numId), the levels it uses (abstractNumId) and its level. */ num?: { id: string; abs: string; ilvl: number }; /** A list item's own w:ind as written (empty: none). */ ind?: string; /** A table's: the list items in its cells, in order, which Word counts with the rest (F2b-R05). */ cellNums?: CellNum[] }
 
 /** Open a Word file. Throws only when the file is not a Word file at all. */
 export async function readDocx(bytes: Uint8Array, deps: DocxReadDeps = {}): Promise<{ doc: DocText; warnings: string[] }> {
@@ -230,6 +269,8 @@ class DocxReader {
   private nums = new Map<string, string>();
   /** Each list's own changes to its levels (w:lvlOverride): numbers it starts again from, and levels it defines afresh. */
   private numOverrides = new Map<string, { starts: Map<number, number>; levels: Map<number, Level> }>();
+  /** The file's own list definitions (abstractNum, num), kept to write back for lists not changed here (audit G2-13). */
+  private keptNumbering: NonNullable<KeptParts['numbering']> = { abs: [], nums: [] };
   private model: DocxModel | null = null;
   private objects: Record<number, DocObject> = {};
   private nextId = 1;
@@ -469,7 +510,15 @@ class DocxReader {
   private readRPr(el: Element | null, direct = true): RProps {
     const out: RProps = {};
     const fx: string[] = [];
+    const raw: Record<string, string> = {};
     for (const c of kids(el)) {
+      // Word's run properties not read here (emboss, a text border, character scale...), kept as
+      // written by their place among the others (TextRun.wrx)
+      const slot = c.namespaceURI === this.W ? KEPT_RPR[c.localName] : undefined;
+      if (direct && slot) {
+        raw[slot] = (raw[slot] ?? '') + elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
+        if (c.localName !== 'shadow') continue;
+      }
       // Word 2010's text effects (glow, reflection, 3-D...) set on the text itself, kept as Word
       // wrote them, with what is drawn here read from them (a style's, such as ligatures for
       // the whole document, aren't put on every run)
@@ -483,15 +532,30 @@ class DocxReader {
           const f = th ? (/^major/.test(th) ? this.theme.major : this.theme.minor) : null;
           const font = f || this.a(c, 'ascii') || this.a(c, 'hAnsi');
           if (font) out.font = font;
+          // the theme's font named (17.3.2.26, 17.18.96), kept beside the font it gives
+          out.thf = th ? themeAttrs(c, this.W, ['asciiTheme', 'hAnsiTheme', 'eastAsiaTheme', 'cstheme']) : undefined;
+          out.thfv = th ? font || undefined : undefined;
           break;
         }
         case 'b': out.bold = this.on(c); break;
         case 'i': out.italic = this.on(c); break;
-        case 'u': out.underline = this.a(c) !== 'none'; break;
+        case 'u': {
+          // the underline's kind and colour (17.3.2.40; single and none are the model's own)
+          const v = this.a(c) ?? 'single';
+          out.underline = v !== 'none';
+          out.ukind = v !== 'none' && v !== 'single' ? v : undefined;
+          const uc = this.a(c, 'color');
+          out.ucolor = uc && /^[0-9a-f]{6}$/i.test(uc) ? `#${uc.toLowerCase()}` : undefined;
+          break;
+        }
         case 'sz': { const v = parseFloat(this.a(c) ?? ''); if (v > 0) out.size = v / 2; break; }
         case 'color': {
           const v = this.a(c) ?? 'auto';
           out.color = /^[0-9a-f]{6}$/i.test(v) ? `#${v.toLowerCase()}` : null;
+          // a theme colour (17.3.2.6), kept beside the colour Word wrote with it
+          const tc = this.a(c, 'themeColor');
+          out.thc = tc ? themeAttrs(c, this.W, ['themeColor', 'themeTint', 'themeShade']) : undefined;
+          out.thcv = tc ? out.color ?? undefined : undefined;
           break;
         }
         case 'vertAlign': { const v = this.a(c); out.pos = v === 'subscript' ? 'sub' : v === 'superscript' ? 'sup' : 'base'; break; }
@@ -513,9 +577,18 @@ class DocxReader {
           // shading behind the text: kept as a highlight unless a real highlight is set too
           const v = this.a(c, 'fill') ?? 'auto';
           if (out.highlight === undefined || out.highlight === null) out.highlight = /^[0-9a-f]{6}$/i.test(v) && this.a(c) !== 'nil' ? `#${v.toLowerCase()}` : null;
+          // a patterned or theme shading (17.3.2.32, 17.18.78): shown as its fill, written back as
+          // it was while that is the run's colour behind the text (TextRun.wrx 'shd')
+          const pattern = this.a(c) ?? 'clear';
+          if (direct && (!['clear', 'nil', 'solid'].includes(pattern) || c.getAttributeNS(this.W, 'themeFill') !== null || c.getAttributeNS(this.W, 'themeColor') !== null) && out.highlight) {
+            raw.shd = elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
+            raw.shdFill = out.highlight;
+          }
           break;
         }
-        case 'strike': case 'dstrike': out.strike = this.on(c); break;
+        // (one of the two is on at a time, 17.3.2.9: the later one read wins)
+        case 'strike': out.strike = this.on(c); out.dstrike = undefined; break;
+        case 'dstrike': out.strike = this.on(c); out.dstrike = out.strike || undefined; break;
         case 'smallCaps': out.smallCaps = this.on(c); break;
         case 'caps': out.allCaps = this.on(c); break;
         // character spacing (twentieths of a point) and kerning taken off
@@ -547,6 +620,10 @@ class DocxReader {
       out.wfx = fx.join('');
       Object.assign(out, w14Look(out.wfx));
     }
+    // (the run's own theme colour and font, with what they give)
+    if (direct && out.thc) { raw.thc = out.thc; raw.thcv = out.thcv ?? ''; }
+    if (direct && out.thf) { raw.thf = out.thf; raw.thfv = out.thfv ?? ''; }
+    if (Object.keys(raw).length) out.wrx = JSON.stringify(raw);
     return out;
   }
 
@@ -639,6 +716,8 @@ class DocxReader {
     const st = path ? this.pkg.xml(path) : null;
     const root = st?.documentElement;
     if (!root) return;
+    const latent = kid(root, 'latentStyles');
+    if (latent) this.latentXml = elementXml(latent).replaceAll(` xmlns:w="${W_NS}"`, '');
     const dd = kid(root, 'docDefaults');
     this.docDefaults = { r: this.readRPrPlain(kid(dd, 'rPrDefault', 'rPr')), p: this.readPPr(kid(dd, 'pPrDefault', 'pPr')) };
     for (const s of kids(root, 'style')) {
@@ -673,6 +752,23 @@ class DocxReader {
       this.idMap.set(ws.id, id);
       taken.add(id);
     }
+  }
+
+  /** The file's w:latentStyles, kept to write back. */
+  private latentXml: string | undefined;
+
+  /**
+   * The file's styles that aren't styles here, as Word had them, to write back: every one but the
+   * defaults (written afresh) and the paragraph styles read as styles here (`styles`, by our ids).
+   */
+  private keptStyles(styles: Record<string, unknown>): KeptParts['styles'] {
+    const out: NonNullable<KeptParts['styles']> = [];
+    for (const ws of this.wstyles.values()) {
+      if (ws.isDefault || !ws.id) continue;
+      if (ws.type === 'paragraph' && (ws.id === this.defaultPara || styles[this.idMap.get(ws.id) ?? ''])) continue;
+      out.push({ type: ws.type, id: ws.id, xml: elementXml(ws.el).replaceAll(` xmlns:w="${W_NS}"`, '') });
+    }
+    return out.length ? out : undefined;
   }
 
   /** Text formatting without character styles (for the styles themselves). */
@@ -722,6 +818,7 @@ class DocxReader {
       if (r.smallCaps) cs.smallCaps = true;
       if (r.allCaps) cs.allCaps = true;
       if (r.strike) cs.strike = true;
+      if (r.thc || r.thf) cs.wth = JSON.stringify({ ...(r.thc ? { c: r.thc, cv: r.thcv ?? '' } : {}), ...(r.thf ? { f: r.thf, fv: r.thfv ?? '' } : {}) });
       out[id] = cs;
     }
     return out;
@@ -756,10 +853,15 @@ class DocxReader {
       this.abstracts.set(id, levels);
       const link = this.a(kid(an, 'numStyleLink'));
       if (link) links.set(id, link);
+      // kept as the file has it (17.9.1 abstractNum), unless it names a numbering style or a picture bullet, which aren't kept with it;
+      // only one a word processor gave its id (w:nsid, 17.9.13): those written here have none, and are made again on saving
+      if (kid(an, 'nsid') && !kid(an, 'numStyleLink') && !kid(an, 'styleLink') && !an.getElementsByTagNameNS(W_NS, 'lvlPicBulletId').length) this.keptNumbering.abs.push({ id, xml: elementXml(an).replaceAll(` xmlns:w="${W_NS}"`, '') });
     }
     for (const n of kids(root, 'num')) {
       const numId = this.a(n, 'numId') ?? '';
       this.nums.set(numId, this.a(kid(n, 'abstractNumId')) ?? '');
+      const abs = this.a(kid(n, 'abstractNumId')) ?? '';
+      if (this.keptNumbering.abs.some((a) => a.id === abs)) this.keptNumbering.nums.push({ id: numId, abs, xml: elementXml(n).replaceAll(` xmlns:w="${W_NS}"`, '') });
       // a list's own start values (Restart Numbering, Set Numbering Value) and levels
       const starts = new Map<number, number>(), own = new Map<number, Level>();
       for (const o of kids(n, 'lvlOverride')) {
@@ -809,13 +911,22 @@ class DocxReader {
    * a level begins at its start value and starts again after a level above it is used (unless
    * its lvlRestart says otherwise). An item whose number here would differ keeps Word's as its own.
    */
+  /**
+   * A list item's paragraph, marked when it uses a list kept from the file: which list, its kind and
+   * number's look as read, and its indents as read with the paragraph's own w:ind, to tell on saving
+   * what was changed (G2-13). Others as they are.
+   */
+  private keptListMark(p: OutPara): ParaStyle {
+    if (!p.num || !p.ps.list || p.ps.cont || !this.keptNumbering.nums.some((n) => n.id === p.num!.id)) return p.ps;
+    const key = p.ps.list === 'bullet' ? `b${p.ps.bullet ?? ''}` : `n${p.ps.scheme ?? ''}`;
+    return { ...p.ps, wpx: withKept(p.ps.wpx, { num: p.num.id, nk: key, nl: JSON.stringify(p.ps.numLook ?? null), ni: String(p.ps.indent ?? 0), nv: String(p.ps.level ?? 0), nr: String(p.ps.indentRight ?? 0), nd: p.ind ?? '' }) };
+  }
+
   private listNumbers(out: OutPara[]): void {
-    if (!out.some((p) => p.num)) return;
+    if (!out.some((p) => p.num || p.cellNums?.length)) return;
     const counters = new Map<string, (number | undefined)[]>(), pending = new Map<string, (number | undefined)[]>();
     const used = new Set<string>();
-    const word = out.map((p) => {
-      const nm = p.num;
-      if (!nm) return undefined;
+    const count = (nm: { id: string; abs: string; ilvl: number }) => {
       const levels = this.levelsOf(nm.id) ?? [];
       const c = counters.get(nm.abs) ?? [], pend = pending.get(nm.abs) ?? [];
       counters.set(nm.abs, c);
@@ -829,7 +940,31 @@ class DocxReader {
         if (after > 0 && L < after) c[m] = undefined;
       }
       return c[L];
+    };
+    // (in document order: a table's cells' items before what comes after the table)
+    const inCells = new Map<TableCell, (number | undefined)[]>();
+    const word = out.map((p) => {
+      for (const e of p.cellNums ?? []) {
+        const n = count(e.num);
+        if (!e.at.cell) continue;
+        const w = inCells.get(e.at.cell) ?? [];
+        w[e.idx] = n;
+        inCells.set(e.at.cell, w);
+      }
+      return p.num ? count(p.num) : undefined;
     });
+    // each cell's items numbered as Word numbers them (a list carries on from cell to cell)
+    for (const [cell, w] of inCells) {
+      const ps = cell.paras;
+      if (!ps) continue;
+      for (let from = 0, k = 0; k < 200; k++) {
+        const info = listInfo(ps);
+        const i = ps.findIndex((q, j) => j >= from && q.list === 'number' && !q.cont && w[j] !== undefined && w[j]! >= 1 && info[j].n !== w[j]);
+        if (i < 0) break;
+        ps[i] = cleanPara({ ...ps[i], startAt: w[i] });
+        from = i + 1;
+      }
+    }
     // (each change carries on to the items after it, so the numbers are counted again after each)
     for (let from = 0, k = 0; k < 2000; k++) {
       const info = listInfo(out.map((p) => p.ps));
@@ -893,6 +1028,9 @@ class DocxReader {
     const idOf = (ns: string, re: RegExp) => { const v = settings?.getElementsByTagNameNS(ns, 'docId')[0]?.getAttributeNS(ns, 'val') ?? ''; return re.test(v) ? v.toUpperCase() : undefined; };
     const w14 = idOf(W14_NS, /^[0-9A-F]{8}$/i), w15 = idOf(W15_NS, /^\{[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}\}$/i);
     if (w14 || w15) this.kept = { ...this.kept, docIds: { ...(w14 ? { w14 } : {}), ...(w15 ? { w15 } : {}) } };
+    // and the settings this program doesn't set, to write back
+    const keptSettings = readKeptSettings(settings);
+    if (keptSettings) this.kept = { ...this.kept, settings: keptSettings };
   }
 
   /**
@@ -1307,7 +1445,7 @@ class DocxReader {
    * A text box's paragraphs, read as the document's are. `styled` keeps each paragraph's style
    * (a table cell's or text box's); `look` is what the table's style gives a cell's paragraphs.
    */
-  private boxText(content: Element, styled = false, look: CellLook | null = null): { runs: TextRun[]; paras: ParaStyle[] } {
+  private boxText(content: Element, styled = false, look: CellLook | null = null, cell = false): { runs: TextRun[]; paras: ParaStyle[]; nums: CellNum[] } {
     const out = this.out, brk = this.breakNext, was = this.cellLook;
     this.out = [];
     this.cellLook = look;
@@ -1321,11 +1459,49 @@ class DocxReader {
       runs.push(...p.runs);
     });
     if (!runs.length) runs.push({ ...(got[0]?.mark ?? {}), text: '' });
-    return { runs: rt.normalizeRuns(runs), paras: got.map((p) => { const q = cleanPara(p.ps); if (!styled) delete q.style; delete q.pageBreak; delete q.section; return q; }) };
+    // a table cell's list items, in order with those of tables in it, which Word counts with the
+    // lists round the table (F2b-R05); and each item of a list kept from the file marked as in the text
+    const at: CellNum['at'] = {}, nums: CellNum[] = [];
+    if (cell) got.forEach((p, i) => {
+      nums.push(...(p.cellNums ?? []));
+      if (p.num && p.ps.list && !p.ps.cont) { nums.push({ num: p.num, at, idx: i }); p.ps = this.keptListMark(p); }
+    });
+    return { runs: rt.normalizeRuns(runs), nums, paras: got.map((p) => { const q = cleanPara(p.ps); if (!styled) delete q.style; delete q.pageBreak; delete q.section; return q; }) };
   }
 
   /** What the style of the table whose cell is being read gives its paragraphs (null outside a cell). */
   private cellLook: CellLook | null = null;
+
+  /** A paragraph's own properties not read here, as written, by their place (KEPT_PPR; undefined: none). */
+  private keptPPr(pPr: Element | null): string | undefined {
+    const raw: Record<string, string> = {};
+    for (const c of kids(pPr)) {
+      if (c.namespaceURI !== this.W) continue;
+      const slot = KEPT_PPR[c.localName];
+      if (slot) raw[slot] = (raw[slot] ?? '') + elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
+      // what is shown here another way, kept to write back as Word had it:
+      switch (c.localName) {
+        // automatic spacing (17.3.1.33), shown as 14 pt
+        case 'spacing':
+          if (yes(this.a(c, 'beforeAutospacing'))) raw.asb = '1';
+          if (yes(this.a(c, 'afterAutospacing'))) raw.asa = '1';
+          break;
+        // an alignment shown as another (distribute as justified, 17.18.44)
+        case 'jc': { const v = this.a(c) ?? ''; if (v && !['left', 'start', 'center', 'right', 'end', 'both'].includes(v)) raw.jc = v; break; }
+        // bar tabs (17.3.1.37), which draw a line and aren't tab stops here
+        case 'tabs': { const bars = kids(c, 'tab').filter((t) => this.a(t) === 'bar').map((t) => elementXml(t).replace(/ xmlns:w="[^"]*"/g, '')).join(''); if (bars) raw.bar = bars; break; }
+        // each border's own distance from the text (17.3.1.24, in points)
+        case 'pBdr': {
+          const sp: Record<string, string> = {};
+          for (const side of kids(c)) { const v = this.a(side, 'space'); const n = side.localName === 'start' ? 'left' : side.localName === 'end' ? 'right' : side.localName; if (v !== null) sp[n] = v; }
+          if (Object.keys(sp).length) raw.bsp = JSON.stringify(sp);
+          break;
+        }
+        case 'contextualSpacing': if (this.on(c)) raw.ctx = '1'; break;
+      }
+    }
+    return Object.keys(raw).length ? JSON.stringify(raw) : undefined;
+  }
 
   /** A paragraph's own and its style's formatting. */
   private paraProps(pPr: Element | null): { style: string; p: PProps; direct: PProps; base: RProps; mark: RProps } {
@@ -1455,6 +1631,7 @@ class DocxReader {
       pageBreak: p.pageBreak, section: brk, list, level: list ? ilvl : undefined, noLineNumbers: p.noLineNumbers, noHyphen: p.noHyphen || undefined,
       tabs: finalTabs(p), scheme, bullet,
       border: cleanBorders(p.border), shade: p.shade && p.shade !== '#ffffff' ? p.shade : undefined,
+      wpx: this.keptPPr(pPr),
     };
     // the number as Word draws it: in the paragraph mark's bold and italic (its style's, unless the
     // mark sets its own), then the list level's; kept where that isn't the style's
@@ -1489,7 +1666,8 @@ class DocxReader {
       // the paragraph mark inserted or deleted while Word tracked changes (on the last piece: the real mark)
       const mr = i === ctx.pieces.length - 1 ? markRevOf : undefined;
       const num = i === 0 && list && numId ? { id: numId, abs: this.nums.get(numId) ?? '', ilvl } : undefined;
-      this.out.push({ ps: q, runs: pc.runs, mark: markStyle, style: ours, contextual: !!p.contextual, bib, ...(mr ? { markRev: mr } : {}), ...(num ? { num } : {}) });
+      const indEl = num ? kid(pPr, 'ind') : null;
+      this.out.push({ ps: q, runs: pc.runs, mark: markStyle, style: ours, contextual: !!p.contextual, bib, ...(mr ? { markRev: mr } : {}), ...(num ? { num, ind: indEl ? elementXml(indEl).replaceAll(` xmlns:w="${W_NS}"`, '') : '' } : {}) });
     });
     this.pageNext = popped;
     sectionBreak();
@@ -1534,8 +1712,9 @@ class DocxReader {
     const formula = !!r.formula;
     return rt.cleanStyle({
       font: r.font ?? WORD_FONT, size: r.size ?? WORD_SIZE, bold: r.bold, italic: r.italic, underline: r.underline,
-      strike: r.strike, smallCaps: r.smallCaps, allCaps: r.allCaps, cstyle: r.cstyle,
-      spacing: r.spacing, noKern: noKernOf(r), noFill: r.noFill, transparency: r.transparency, outline: r.outline, outlineW: r.outlineW, shadow: r.shadow, wfx: r.wfx,
+      ukind: r.underline ? r.ukind : undefined, ucolor: r.underline ? r.ucolor : undefined,
+      strike: r.strike, dstrike: r.strike ? r.dstrike : undefined, smallCaps: r.smallCaps, allCaps: r.allCaps, cstyle: r.cstyle,
+      spacing: r.spacing, noKern: noKernOf(r), noFill: r.noFill, transparency: r.transparency, outline: r.outline, outlineW: r.outlineW, shadow: r.shadow, wfx: r.wfx, wrx: r.wrx,
       lang: r.lang && r.lang.toLowerCase() !== (this.docDefaults.r.lang ?? 'en-US').toLowerCase() ? r.lang : undefined, noProof: r.noProof, raise: r.raise || undefined,
       color: r.color ?? undefined, highlight: r.highlight ?? undefined, formula: formula || undefined,
       sub: (!formula && r.pos === 'sub') || undefined, sup: (!formula && r.pos === 'sup') || undefined,
@@ -2414,6 +2593,7 @@ class DocxReader {
     const g = this.newGroup();
     const pics = groupPictures(group);
     if (pics.skipped) this.warn('shapes');
+    // (written back as one group while its pictures stay together in this paragraph: audit G2-14)
     const root = groupSpace(kid(group, 'grpSpPr', 'xfrm'));
     // the group's own space to points on the page, at the size it is shown
     const kx = root.ext.w > 0 ? shown.w / root.ext.w : 0, ky = root.ext.h > 0 ? shown.h / root.ext.h : 0;
@@ -2764,12 +2944,15 @@ class DocxReader {
     this.used.add(this.defaultPara);
     this.out.push({
       ps: cleanPara({ align: jc === 'left' ? undefined : jc, spaceBefore: np.before, spaceAfter: np.after, section: this.takeBreak() }),
-      runs: ctx.pieces[0].runs, mark: this.runStyle(normal), style: 'Normal', contextual: false, table: true,
+      runs: ctx.pieces[0].runs, mark: this.runStyle(normal), style: 'Normal', contextual: false, table: true, ...this.takeCellNums(),
     });
   }
 
   /** Inside a table cell being read (a table in it becomes a drawn table). */
   private inCell = false;
+  /** The list items in the cells of the table being read, in order (each table read starts its own). */
+  private cellNums: CellNum[] = [];
+  private takeCellNums(): Pick<OutPara, 'cellNums'> { return this.cellNums.length ? { cellNums: this.cellNums.splice(0) } : {}; }
   /** Word table styles the tables use that aren't built in here (or that Word changed), by id. */
   private tableStyles: Record<string, TableStyleDef> = {};
 
@@ -2824,6 +3007,9 @@ class DocxReader {
 
   /** A Word table as a table in the text: its cells read as text is (structures and pictures kept). */
   private textTable(tbl: Element): void {
+    // (the list items in its cells, apart from those of a table round it)
+    const outerNums = this.cellNums;
+    this.cellNums = [];
     const tblPr = kid(tbl, 'tblPr');
     const rows = kids(tbl, 'tr');
     let cols = kids(kid(tbl, 'tblGrid'), 'gridCol').map((g) => this.tw(g, 'w') ?? 0);
@@ -2968,8 +3154,9 @@ class DocxReader {
     this.used.add(this.defaultPara);
     this.out.push({
       ps: cleanPara({ align: jc === 'left' ? undefined : jc, spaceBefore: 0, spaceAfter: 0, section: this.takeBreak() }),
-      runs: ctx.pieces[0].runs, mark: this.runStyle(normal), style: 'Normal', contextual: false, table: true,
+      runs: ctx.pieces[0].runs, mark: this.runStyle(normal), style: 'Normal', contextual: false, table: true, ...this.takeCellNums(),
     });
+    this.cellNums = outerNums;
   }
 
   /**
@@ -2977,7 +3164,7 @@ class DocxReader {
    * pictures stay (in their line); text boxes and the like inside a cell are left out.
    */
   private textCell(tc: Element, look: CellLook | null = null): TableCell {
-    const { runs: read, paras } = this.boxText(tc, true, look);
+    const { runs: read, paras, nums } = this.boxText(tc, true, look, true);
     // comments on the cell's text go on the whole table (Ctx.cell is off here to keep the cell's
     // other content), so its runs keep no marks of their own: with both, Word was given the
     // comment's range twice and called the saved file unreadable (laptop bench wd-551)
@@ -3002,6 +3189,8 @@ class DocxReader {
     const ps = paras.map((p) => { const q = { ...p }; if ((q.align ?? 'left') === align) delete q.align; else q.align ??= 'left'; return q; });
     if (ps.some((p) => Object.keys(p).length)) cell.paras = ps;
     if (align !== 'left') cell.align = align;
+    for (const n of nums) n.at.cell ??= cell;
+    this.cellNums.push(...nums);
     return cell;
   }
 
@@ -3320,6 +3509,8 @@ class DocxReader {
       ...(p.keepLines ? { keepLines: true } : {}), ...(p.widow === false ? { noWidow: true } : {}),
       next: next && next !== ours ? next : ours === 'Normal' ? undefined : dflt?.next,
       outline: OUTLINE[ours] ?? (p.outline && p.outline <= 9 && ours !== 'Normal' ? p.outline : undefined),
+      // its theme colour and font, written back while it has the colour and font they gave
+      ...(r.thc || r.thf ? { wth: JSON.stringify({ ...(r.thc ? { c: r.thc, cv: r.thcv ?? '' } : {}), ...(r.thf ? { f: r.thf, fv: r.thfv ?? '' } : {}) }) } : {}),
     };
   }
 
@@ -3369,10 +3560,15 @@ class DocxReader {
     for (let i = 0; i + 1 < out.length; i++) {
       const a = out[i], b = out[i + 1];
       if (a.style !== b.style) continue;
-      if (a.contextual) a.ps = cleanPara({ ...a.ps, spaceAfter: 0 });
-      if (b.contextual) b.ps = cleanPara({ ...b.ps, spaceBefore: 0 });
+      // (shown so; the spacing as Word had it, and the setting, are written back: G2-11)
+      if (a.contextual) a.ps = cleanPara({ ...a.ps, spaceAfter: 0, wpx: withKept(a.ps.wpx, { ctx: '1', ctxA: String(a.ps.spaceAfter ?? 0) }) });
+      if (b.contextual) b.ps = cleanPara({ ...b.ps, spaceBefore: 0, wpx: withKept(b.ps.wpx, { ctx: '1', ctxB: String(b.ps.spaceBefore ?? 0) }) });
     }
     this.listNumbers(out);
+    // each list item that uses a list kept from the file: which list, its kind and number's look as
+    // read, and its indents as read with the paragraph's own w:ind, to tell on saving what was changed (G2-13)
+    for (const p of out) p.ps = this.keptListMark(p);
+    if (this.keptNumbering.nums.length) this.kept = { ...this.kept, numbering: this.keptNumbering };
     // the standard styles (the file's, or ours where it has none) and the others the text uses
     const styles = defaultStyles();
     for (const [wordId, ours] of this.idMap) if (BUILT_IN_IDS[ours] || this.used.has(wordId)) styles[ours] = this.named(wordId, ours);
@@ -3430,6 +3626,9 @@ class DocxReader {
       if (seqs.length === m.siNumbers.length) seqs.forEach((id, i) => linkSeq(id, m.siNumbers![i]));
       else this.warn('siLinks');
     }
+    // Word's styles that aren't styles here (a journal template's unused ones...), kept as they were
+    const wordStyles = this.keptStyles(styles);
+    if (wordStyles || this.latentXml) this.kept = { ...this.kept, ...(wordStyles ? { styles: wordStyles } : {}), ...(this.latentXml ? { latentStyles: this.latentXml } : {}) };
     return {
       runs: rt.normalizeRuns(runs),
       ...(comments ? { comments } : {}),
