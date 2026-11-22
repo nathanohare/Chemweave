@@ -74,6 +74,8 @@ export const ICON_SET: Record<string, IconDef> = {
   'header-footer': { hue: 'blue', d: '<rect class="p" x="4.75" y="2.75" width="14.5" height="18.5" rx="2"/>' + '<path class="a" d="M7.75 6h8.5M7.75 18h8.5"/><path d="M7.75 10h8.5M7.75 13h5" stroke-opacity=".45"/>' },
   'slide-references': { hue: 'blue', d: slide(2.75, 4.75, 18.5, 14.5) + '<path d="M5.75 9h9M5.75 12h6"/><path class="a" d="M5.75 16.25h5M14.5 13.75l1.5-1v4.5"/>' },
   crop: { hue: 'gray', d: '<path d="M6.75 2.75v13.5a1 1 0 0 0 1 1h13.5"/><path class="a" d="M2.75 6.75h13.5a1 1 0 0 1 1 1v13.5"/>' },
+  // a picture of a ring, with a pencil: the picture made a structure to edit
+  'make-editable': { hue: 'teal', d: '<path class="p" d="M13.25 3.75h-9a1.5 1.5 0 0 0-1.5 1.5v10a1.5 1.5 0 0 0 1.5 1.5h5.5"/>' + hex(8.5, 10.25, 3.5, 'a') + '<path class="f a" d="M13.25 20.75l.75-3 6-6 2.25 2.25-6 6z"/><path d="M18.5 13.25l2.25 2.25"/>' },
   'picture-format': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="14" height="12.5" rx="2"/><path class="f a" d="M2.75 14l4-4.25 3.5 3.5 2-2 4.5 4.5"/><circle class="s" cx="17.5" cy="17.5" r="3.75"/><path class="k" d="M17.5 15.25v4.5M15.25 17.5h4.5"/>' },
   // ---------------------------------------------------------------- arrange
   'rotate-cw': { hue: 'gray', d: '<path d="M19.25 12a7.25 7.25 0 1 1-2.5-5.5"/><path class="a" d="M17.25 2.75v4h-4"/>' },

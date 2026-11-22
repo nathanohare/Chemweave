@@ -2570,7 +2570,7 @@ class DocxReader {
       const xf = kid(pic ? kid(pic, 'spPr') : kid(group!, 'grpSpPr'), 'xfrm');
       const rot = (((Number(xf?.getAttribute('rot') ?? 0) / 60000 || 0) % 360) + 360) % 360;
       const turn = { ...(rot ? { rot: round(rot) } : {}), ...(yes(xf?.getAttribute('flipH') ?? null) ? { flipH: true } : {}), ...(yes(xf?.getAttribute('flipV') ?? null) ? { flipV: true } : {}) };
-      this.emitObject(ctx, { kind: 'drawing', contents, scale, ...(m.frame ? { frame: structuredClone(m.frame) } : {}), ...(look ? { look } : {}), ...(float ? { float } : {}), ...(contentsAlt(contents) ? {} : alt), ...turn, ...(m.ole ? { ole: m.ole } : {}), ...(wordLook ? { wordLook: { ...wordLook, print: contentsPrint(contents) } } : {}) }, r);
+      this.emitObject(ctx, { kind: 'drawing', contents, scale, ...(m.frame ? { frame: structuredClone(m.frame) } : {}), ...(look ? { look } : {}), ...(float ? { float } : {}), ...(contentsAlt(contents) ? {} : alt), ...turn, ...(m.ole ? { ole: m.ole } : {}), ...(m.fromPicture ? { fromPicture: structuredClone(m.fromPicture) } : {}), ...(wordLook ? { wordLook: { ...wordLook, print: contentsPrint(contents) } } : {}) }, r);
       return;
     }
     // Word's own group of pictures (pictures kept together, such as a trace over its table): each picture where the group puts it
@@ -2766,7 +2766,7 @@ class DocxReader {
     // alt text: a structure's own, not the description by SMILES written when it has none
     const descr = shape?.getAttribute('alt')?.trim() ?? '';
     const alt = descr && !/^Chemical structure( \(SMILES\): | or scheme$)/.test(descr) && !contentsAlt(contents) ? { alt: descr } : {};
-    return this.emitObject(ctx, { kind: 'drawing', contents, scale, ...(m.ole ? { ole: m.ole } : {}), ...alt }, r) !== null || ctx.cell;
+    return this.emitObject(ctx, { kind: 'drawing', contents, scale, ...(m.ole ? { ole: m.ole } : {}), ...(m.fromPicture ? { fromPicture: structuredClone(m.fromPicture) } : {}), ...alt }, r) !== null || ctx.cell;
   }
 
   private chemdraw(ole: Element, shown: { w: number; h: number }, r: RProps, ctx: Ctx): boolean {

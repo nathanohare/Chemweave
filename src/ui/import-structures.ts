@@ -281,3 +281,23 @@ export async function pdfDrawings(bytes: Uint8Array, pick: (pages: number) => Pr
     void task.destroy();
   }
 }
+
+/**
+ * Make Editable (Document mode): one picture of a structure read, by the reader on this computer
+ * when it is ready (nothing sent), else the AI model linked, else after asking to download the
+ * reader. Null when nothing can read it or the person stopped; an error is said in a message.
+ */
+export async function readForEditing(host: ImportHost, p: Pixels): Promise<{ result: ReadResult; molblock: string | null } | null> {
+  if (!host.chem.ready) { host.flash('The chemistry engine is still loading. Try again in a moment.'); return null; }
+  const how = await chooseReader(host, false);
+  if (!how) return null;
+  host.flash(how === 'here' ? 'Reading the picture…' : `Reading the picture with ${aiName(host.ai()).split(',')[0]}…`, 60000);
+  try {
+    const result = how === 'here' ? await localReader.read(p) : await readWithAi(host.ai(), pixelsPng(p));
+    const molblock = result.kind === 'smiles' && result.smiles ? await host.chem.smilesToMol(result.smiles) : null;
+    return { result, molblock };
+  } catch (e) {
+    host.flash(`The picture could not be read: ${e instanceof Error ? e.message : String(e)}`, 8000);
+    return null;
+  }
+}

@@ -3677,6 +3677,9 @@ body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#str
 body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structure-fold { display: block; flex: none; align-self: center; width: 20px; height: 20px; margin-top: 4px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
 .structure-fold:hover { border-color: var(--line); color: var(--text); }
 body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#structure-start, .structure-more) { display: none; }
+/* Make Editable sits on the rail only while a picture is picked in a document */
+body:not(.doc-mode) .make-editable-btn, body.doc-mode:not(.doc-picture-picked) .make-editable-btn { display: none !important; }
+body:not(.doc-mode) .compare-original-btn, body.doc-mode:not(.doc-from-picture) .compare-original-btn { display: none !important; }
 body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structure-fold { margin-top: 2px; width: 14px; }
 /* Dark Gray: the button sits on the dark dock itself (toolboxes sit on light cards), so it takes the menu bar's colors */
 :root[data-gray]:not([data-shadows='off']) #dock-left > :is(#structure-start, .structure-more, .structure-fold) { --text: #eceef2; --line: #474b53; --accent-soft: #41464f; --accent: var(--mode-accent-dark, #4ea9bc); --muted: #aeb4c0; }
@@ -5409,6 +5412,28 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 body.ss-dragging, body.ss-dragging * { cursor: grabbing !important; }
 html.touch-ui .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { height: 36px; }
 
+
+/* Compare with Original (Make Editable, Document mode): the picture and its structure side by side, beside the structure */
+.compare-card { position: fixed; z-index: 30; display: grid; gap: 6px; padding: 6px 8px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); font-size: 12px; max-width: calc(100vw - 16px); }
+.compare-card .cc-head { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.compare-card .cc-status { color: var(--muted); margin-left: 4px; overflow: hidden; text-overflow: ellipsis; }
+.compare-card .cc-panes { display: flex; gap: 6px; }
+.compare-card figure { margin: 0; display: grid; justify-items: center; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
+.compare-card figcaption { color: #5d6870; font-size: 11px; }
+.compare-card .cc-buttons { display: flex; justify-content: flex-end; gap: 6px; }
+.compare-card .cc-buttons button { padding: 2px 10px; }
+
+/* Make Editable window (Document mode): the structure as it will be made, before it goes in */
+.make-editable-dialog form { display: grid; gap: 8px; }
+.make-editable-dialog .me-preview { display: flex; align-items: center; justify-content: center; min-height: 150px; min-width: 320px; }
+.make-editable-dialog .cc-panes { display: flex; gap: 6px; }
+.make-editable-dialog figure { margin: 0; display: grid; justify-items: center; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
+.make-editable-dialog figcaption { color: #5d6870; font-size: 11px; }
+.make-editable-dialog .me-status { margin: 0; font-size: 12px; max-width: 480px; }
+.make-editable-dialog .me-status.warn { color: var(--warn, #9a5b00); }
+.make-editable-dialog .me-row { display: flex; align-items: center; gap: 6px; }
+.make-editable-dialog .me-row select { flex: 1; }
+.make-editable-dialog .me-check { display: flex; align-items: center; gap: 4px; }
 
 /* The References box's tick list on a slide (refs-box.ts) */
 .refs-box { position: fixed; z-index: 70; width: 420px; max-width: calc(100vw - 16px); display: flex; flex-direction: column; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: 0 6px 18px rgb(0 0 0 / 0.18); font: var(--fs-sm) var(--ui-font); }
