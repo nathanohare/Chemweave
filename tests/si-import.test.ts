@@ -106,3 +106,18 @@ describe('Import SI: reading and recognising (parity with SI Assistant)', () => 
     });
   }
 });
+
+describe('Import SI: M from a dimer adduct (G4-09)', () => {
+  // eugenol, C10H12O2: monoisotopic mass 164.08373 (PubChem CID 3314). [2M+Na]⁺ = 2 × 164.083730
+  // + Na 22.989769 − e⁻ 0.000549 = 351.15668 and [2M+H]⁺ = 2 × 164.083730 + H 1.007825 − e⁻
+  // 0.000549 = 329.17474 (Na and H masses: NIST atomic masses; e⁻: CODATA 2018)
+  it('halves what is left of [2M+Na]⁺ and [2M+H]⁺ after the adduct, with or without a calculated value', () => {
+    expect(I.mFormula('C20H24NaO4', '[2M+Na]+', '351.1567')).toBe('C10H12O2');
+    expect(I.mFormula('C20H24NaO4', '[2M+Na]+', '')).toBe('C10H12O2');
+    expect(I.mFormula('C20H25O4', '[2M+H]+', '329.1747')).toBe('C10H12O2');
+    // a formula that can't be two M (odd counts left): not taken as the ion's
+    expect(I.mFormula('C21H24NaO4', '[2M+Na]+', '')).toBe('C21H24NaO4');
+    // a single M is unchanged
+    expect(I.mFormula('C10H13O2', '[M+H]+', '165.0910')).toBe('C10H12O2');
+  });
+});
