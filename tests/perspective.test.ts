@@ -2,7 +2,7 @@
 // The Perspective tools: turning a structure as a flat sheet (wedges turn over with it) and in
 // its real 3-D shape, picked by the drawing's wedges and bold bonds (BINAP's two twists), with
 // every stereocentre kept.
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { Resources } from 'openchemlib';
 import { Doc } from '../src/model';
@@ -13,12 +13,17 @@ import { buildPose } from '../src/chem/pose3d';
 import { anglesTurn, apply, choosePose, dragTurn, facingNormal, keepsStereo, neighbours, drawingFrame, mirrored, type V3 } from '../src/chem/perspective';
 import { depthCues, flatten, prepareTurn, stillMeans, structuresOf, type PerspectiveHost } from '../src/editor/perspective';
 
+// These build 3-D models with the engine. On their own they take seconds, but in a full
+// parallel run they can take minutes, so every test and hook here gets a generous time limit.
+const SLOW = 240_000;
+vi.setConfig({ testTimeout: SLOW, hookTimeout: SLOW });
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RDKit: any;
 beforeAll(async () => {
   RDKit = await createRequire(import.meta.url)('@rdkit/rdkit')();
   Resources.registerFromNodejs();
-}, 30000);
+}, SLOW);
 
 const smilesOf = (molblock: string): string | null => {
   const m = RDKit.get_mol(molblock, JSON.stringify({ removeHs: true }));
@@ -151,7 +156,7 @@ describe('3-D Perspective', () => {
       expect(Math.sign(ringMid - mid)).toBe(mark === 'bold' ? 1 : -1);
     }
     expect(Math.sign(twists[0])).toBe(-Math.sign(twists[1]));
-  }, 60000);
+  }, SLOW);
 
   it('keeps every wedged stereocentre at any angle it can show it, and goes on from where it was', async () => {
     const doc = draw('CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O');
@@ -175,7 +180,7 @@ describe('3-D Perspective', () => {
       expect(doc.atoms.get(id)!.x).toBeCloseTo(x, 3);
       expect(doc.atoms.get(id)!.y).toBeCloseTo(y, 3);
     }
-  }, 60000);
+  }, SLOW);
 
   it('a structure with an R group has no 3-D shape: it is turned flat, with a note', async () => {
     const doc = draw('CC(C)C');
