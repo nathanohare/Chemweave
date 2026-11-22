@@ -79,4 +79,28 @@ describe('formula style agrees in every place it is shown or written (review F2b
       }).join(''));
     expect(shown).toEqual(EXPECTED);
   });
+
+  it('reads a formula run over several paragraphs paragraph by paragraph, on screen and in files (review F2c-R02)', async () => {
+    // a caption set whole in formula style: chloride, bromide and iodide on three lines, one run
+    const one: TextRun[] = [{ text: 'Cl-\nBr-\nI-', formula: true }];
+    const want = ['Cl^-', 'Br^-', 'I^-'];
+    expect(rt.formulaRunParts(one, 0).map((p) => mark(p.text, p.pos)).join('').split('\n')).toEqual(want);
+    const d = newDocument();
+    const n = runStyleOf(d.styles.Normal);
+    const t: DocText = { ...d, runs: [{ ...n, ...one[0] }], paras: [0, 1, 2].map(() => paraFromStyle(d.styles.Normal, {})) };
+    const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    const doc = new DOMParser().parseFromString(strFromU8(unzipSync(await writeDocx(t, deps))['word/document.xml']), 'application/xml');
+    const word = [...doc.getElementsByTagNameNS(W, 'body')[0].getElementsByTagNameNS(W, 'p')].map((p) =>
+      [...p.getElementsByTagNameNS(W, 'r')].map((r) => {
+        const va = r.getElementsByTagNameNS(W, 'vertAlign')[0]?.getAttributeNS(W, 'val');
+        return mark([...r.getElementsByTagNameNS(W, 't')].map((x) => x.textContent).join(''), va === 'superscript' ? 'sup' : va === 'subscript' ? 'sub' : null);
+      }).join('')).filter((x) => x);
+    expect(word).toEqual(want);
+    const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const ppt = new DOMParser().parseFromString(`<x xmlns:a="${A}">${paragraphsXml({ id: 1, x: 0, y: 0, runs: one, justify: 'left' }, null, 18, measure)}</x>`, 'application/xml');
+    expect([...ppt.getElementsByTagNameNS(A, 'p')].map((p) => [...p.getElementsByTagNameNS(A, 'r')].map((r) => {
+      const bl = Number(r.getElementsByTagNameNS(A, 'rPr')[0]?.getAttribute('baseline') ?? 0);
+      return mark(r.getElementsByTagNameNS(A, 't')[0].textContent ?? '', bl > 0 ? 'sup' : bl < 0 ? 'sub' : null);
+    }).join(''))).toEqual(want);
+  });
 });

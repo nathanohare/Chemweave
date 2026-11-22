@@ -110,6 +110,19 @@ describe('formula style', () => {
     expect(show('SO42-')).toBe('SO_42^-');
     // a hydrate's dot stops a count, as a space does (CuSO₄·5H₂O)
     expect(show('CuSO4·5H2O')).toBe('CuSO_4·5H_2O');
+    expect(show('Na2CO3⋅10H2O')).toBe('Na_2CO_3⋅10H_2O');
+  });
+  it('puts a radical ion\'s sign up after its dot, as before the hydrate rule (review F2c-R01)', () => {
+    expect(show('[M]•+')).toBe('[M]•^+');
+    expect(show('M•+')).toBe('M•^+');
+    expect(show('O2•-')).toBe('O_2•^-');
+    expect(show('C60•-')).toBe('C_60•^-');
+    expect(show('O2·-')).toBe('O_2·^-');
+    expect(show('O2⋅-')).toBe('O_2⋅^-');
+  });
+  it('reads each paragraph of a formula run over several on its own (review F2c-R02)', () => {
+    const runs = [{ text: 'Cl-\nBr-\nI-', formula: true }];
+    expect(rt.formulaRunParts(runs, 0)).toEqual([{ text: 'Cl', pos: 'base' }, { text: '-', pos: 'sup' }, { text: '\nBr', pos: 'base' }, { text: '-', pos: 'sup' }, { text: '\nI', pos: 'base' }, { text: '-', pos: 'sup' }]);
   });
   it('leaves a number set in superscript by hand up, with the sign after it (review F2b-R01)', () => {
     const runs = [{ text: 'SO4', formula: true }, { text: '2', sup: true }, { text: '-', formula: true }];

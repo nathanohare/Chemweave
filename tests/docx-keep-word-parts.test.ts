@@ -434,6 +434,22 @@ describe('Kept Word lists number in Word as they are numbered here after an edit
     expect(wordNumbers(unzipSync(await writeDocx(doc, deps)))).toEqual([['b', 2], ['c', 3], ['d', 4], ['e', 5]]);
   });
 
+  it('saves the start number of a cell item of a list not kept from the file (review F2c-R03)', async () => {
+    // a list with no w:nsid (not written by Word: not kept), starting at 5, in two cells and then
+    // only in cells; and a start number set here on a cell item
+    const loose = '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="5"/></w:lvlOverride></w:num>';
+    const cellsOnly = await readDocx(wordFile({ numbering: loose, body: cellsTable(item(1, 'a') + item(1, 'b'), item(1, 'c') + item(1, 'd')) }));
+    const out = unzipSync(await writeDocx(cellsOnly.doc, deps));
+    expect(wordNumbers(out).map(([t, n]) => `${t}${n}`)).toEqual(['a5', 'b6', 'c7', 'd8']);
+    const table = Object.values(cellsOnly.doc.objects).find((o) => o.kind === 'table');
+    if (table?.kind !== 'table') throw new Error('no table');
+    // set here: the second cell's list starts at 20
+    const cell = table.table.rows[0][1];
+    cell.paras = [{ ...cell.paras![0], startAt: 20 }, cell.paras![1]];
+    expect(wordNumbers(unzipSync(await writeDocx(cellsOnly.doc, deps))).map(([t, n]) => `${t}${n}`)).toEqual(['a5', 'b6', 'c20', 'd21']);
+  });
+
   it('numbers a kept item split round a table of contents once (review F2b-R08)', async () => {
     const { doc } = await readDocx(wordFile({ numbering, body: item(1, 'a') + item(1, 'b') }));
     const id = Math.max(0, ...Object.keys(doc.objects).map(Number)) + 1;

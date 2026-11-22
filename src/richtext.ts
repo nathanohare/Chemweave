@@ -208,12 +208,14 @@ export function faceFromStyle(r: RunStyle): number {
 
 export type Part = { text: string; pos: 'base' | 'sub' | 'sup' };
 
-/** What a count or a charge can't follow in formula style: nothing, a space, an opening bracket, , . : ; or a hydrate's dot (CuSO4·5H2O). */
-const FORMULA_NO_MARK = /[\s(\[{,.:;·⋅•]/;
+/** What a count or a charge can't follow in formula style: nothing, a space, an opening bracket or , . : ; */
+const FORMULA_NO_MARK = /[\s(\[{,.:;]/;
+/** What a count can't follow: those, and a hydrate's dot (CuSO4·5H2O). A sign after a dot still goes up: a radical ion's (O2•-, [M]•+). */
+const COUNT_NO_MARK = /[\s(\[{,.:;·⋅•]/;
 
 /**
  * How formula style shows a piece of text, as measured from ChemDraw:
- * - Numbers go down unless they follow what FORMULA_NO_MARK lists or a sign (CH3, Pd(PPh3)4, not 80 °C or 1,4).
+ * - Numbers go down unless they follow what COUNT_NO_MARK lists or a sign (CH3, Pd(PPh3)4, not 80 °C or 1,4).
  * - A range of counts goes down whole (C8-12), unless it reads as a charge: a one-digit end no
  *   more than the last digit before it (C2-1).
  * - A sign goes up with the numbers after it (K+, TfO-, Fe2+, a-1), unless it follows what
@@ -232,7 +234,7 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
   const counts = new Set<number>();
   for (const m of whole.matchAll(/\d+(?:-\d+)+/g)) {
     const prev = whole[m.index - 1];
-    if (prev === undefined || FORMULA_NO_MARK.test(prev) || /[-+]/.test(prev)) continue;
+    if (prev === undefined || COUNT_NO_MARK.test(prev) || /[-+]/.test(prev)) continue;
     const [from, to] = m[0].split('-');
     if (to.length === 1 && Number(to) <= Number(from) % 10) continue;
     for (let k = 0; k < m[0].length; k++) { pos[m.index + k] = 'sub'; counts.add(m.index + k); }
@@ -250,7 +252,7 @@ export function formulaParts(text: string, before = '', after = ''): Part[] {
       if (raised) pos[i] = 'sup';
     } else if (c >= '0' && c <= '9') {
       if (raised) pos[i] = 'sup';
-      else if (prev >= '0' && prev <= '9' ? pos[i - 1] === 'sub' : prev !== undefined && !FORMULA_NO_MARK.test(prev) && prev !== '+' && prev !== '-') pos[i] = 'sub';
+      else if (prev >= '0' && prev <= '9' ? pos[i - 1] === 'sub' : prev !== undefined && !COUNT_NO_MARK.test(prev) && prev !== '+' && prev !== '-') pos[i] = 'sub';
     } else raised = false;
   }
   // R groups' numbers go up by Settings ▸ Drawing (CO₂R¹), not down as counts
@@ -275,11 +277,20 @@ export function formulaRunParts(runs: readonly TextRun[], k: number): Part[] {
   for (let i = 0; i < k; i++) before += runs[i].text;
   for (let i = k + 1; i < runs.length; i++) after += runs[i].text;
   const text = runs[k].text;
-  // from the start of the run's paragraph to its end (a run holding a paragraph end is read whole)
+  // from the start of the run's paragraph to its end
   before = before.slice(before.lastIndexOf('\n') + 1);
   const end = after.indexOf('\n');
   if (end >= 0) after = after.slice(0, end);
-  return formulaParts(text, before, after);
+  if (!text.includes('\n')) return formulaParts(text, before, after);
+  // a run over several paragraphs (a caption set whole in formula style): each paragraph read on
+  // its own, as the writers read the run's pieces (review F2c-R02)
+  const pieces = text.split('\n'), out: Part[] = [];
+  const add = (p: Part) => { const last = out[out.length - 1]; if (last && last.pos === p.pos) last.text += p.text; else out.push({ ...p }); };
+  pieces.forEach((piece, i) => {
+    if (i > 0) add({ text: '\n', pos: 'base' });
+    for (const p of formulaParts(piece, i === 0 ? before : '', i === pieces.length - 1 ? after : '')) add(p);
+  });
+  return out;
 }
 
 /** formulaRunParts for run `r` among `runs` (its paragraph's, or more); r alone when it isn't among them. */
