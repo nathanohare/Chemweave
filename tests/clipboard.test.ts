@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { Doc } from '../src/model';
 import type { Selection } from '../src/editor/editor';
-import { extractDrawing, insertDrawing, packFormats, unpackFormats, isEmpty, copyDrawing, forgetCopy, readPasteEvent, ownDrawing, mdlctOf, setSmilesMaker } from '../src/io/clipboard';
+import { extractDrawing, insertDrawing, packFormats, unpackFormats, isEmpty, copyDrawing, forgetCopy, readPasteEvent, readWebClipboard, ownDrawing, mdlctOf, setSmilesMaker, nativeDrawing, nativeDrawingText, clipboardDrawing, NATIVE_FORMAT, OWN_FORMAT, WEB_NATIVE_FORMAT, DRAWING_FORMATS } from '../src/io/clipboard';
 import { rgbaToDib } from '../src/render/picture';
 import { readCdxml } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
@@ -239,6 +239,75 @@ describe('our own drawing pasted back into this window (G1-11)', () => {
     const other = writeCdxml(sample().doc, { name: 'x.cdxml' });
     expect(ownDrawing(other).captions.size).toBe(1);
     forgetCopy();
+  });
+});
+
+describe('our own drawing pasted into another window or a later session (G1-11)', () => {
+  const lossy = () => {
+    const { doc, ids } = sample();
+    // things CDXML does not carry: a struck-through run and a see-through box
+    doc.captions.get(ids.caption)!.runs[1].strike = true;
+    doc.shapes.get(ids.box)!.transparency = 0.5;
+    return { doc, ids };
+  };
+  it('goes on the clipboard whole, as JSON, and comes back whole, read before the CDXML', () => {
+    const { doc, ids } = lossy();
+    const text = nativeDrawingText(doc);
+    const back = nativeDrawing(text)!;
+    expect(back.captions.get(ids.caption)?.runs[1].strike).toBe(true);
+    expect(back.shapes.get(ids.box)?.transparency).toBe(0.5);
+    expect(back.atoms.size).toBe(doc.atoms.size);
+    expect(back.style.bondLength).toBe(doc.style.bondLength);
+    expect(DRAWING_FORMATS[0]).toBe(NATIVE_FORMAT);
+    expect(clipboardDrawing(NATIVE_FORMAT, new TextEncoder().encode(text + '\0'))?.shapes.get(ids.box)?.transparency).toBe(0.5);
+    // damaged or someone else's JSON is not taken (the paste reads the CDXML beside it)
+    expect(nativeDrawing(text.slice(0, -5))).toBeNull();
+    expect(nativeDrawing('{"app":"other","v":1,"contents":{}}')).toBeNull();
+    expect(clipboardDrawing(OWN_FORMAT, new TextEncoder().encode(writeCdxml(sample().doc, { name: 'x.cdxml' })))?.captions.size).toBe(1);
+    // a bond to an atom that isn't there is left out
+    const j = JSON.parse(text);
+    j.contents.bonds.push({ ...j.contents.bonds[0], id: 9999, a2: 123456 });
+    expect(nativeDrawing(JSON.stringify(j))!.bonds.size).toBe(doc.bonds.size);
+  });
+  it('on the web, a copy pasted after this window forgot it is still the drawing whole', async () => {
+    const written: Record<string, unknown>[] = [];
+    const nav = navigator as unknown as { clipboard?: unknown };
+    const realClip = nav.clipboard;
+    const g = globalThis as unknown as { ClipboardItem?: unknown };
+    const realItem = g.ClipboardItem;
+    g.ClipboardItem = class { static supports() { return true; } constructor(public items: Record<string, unknown>) { written.push(items); } };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write: async () => {} } });
+    const proto = HTMLCanvasElement.prototype as unknown as { getContext: unknown };
+    const real = proto.getContext;
+    const ctx: unknown = new Proxy({}, { get: (_, k) => (k === 'measureText' ? (t: string) => ({ width: t.length * 5, actualBoundingBoxAscent: 7, actualBoundingBoxDescent: 2 }) : () => ctx), set: () => true });
+    proto.getContext = () => ctx;
+    const gp = globalThis as unknown as { Path2D?: unknown };
+    const realPath = gp.Path2D;
+    gp.Path2D ??= class { constructor() { return new Proxy(this, { get: () => () => {} }); } };
+    try {
+      const { doc, ids } = lossy();
+      expect(await copyDrawing(doc, null)).toMatch(/^Copied/);
+      const blob = written.at(-1)?.[WEB_NATIVE_FORMAT] as Blob;
+      expect(blob).toBeDefined();
+      const json = await new Promise<string>((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result)); fr.readAsText(blob); });
+      // another window, or this one after a restart: nothing held in memory
+      forgetCopy();
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+        readText: async () => '',
+        read: async () => [{ types: [WEB_NATIVE_FORMAT, 'image/png'], getType: async () => ({ text: async () => json }) }],
+      } });
+      const got = await readWebClipboard();
+      expect(got.kind).toBe('drawing');
+      const pasted = (got as { doc: Doc }).doc;
+      expect(pasted.captions.get(ids.caption)?.runs[1].strike).toBe(true);
+      expect(pasted.shapes.get(ids.box)?.transparency).toBe(0.5);
+    } finally {
+      proto.getContext = real;
+      gp.Path2D = realPath;
+      g.ClipboardItem = realItem;
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: realClip });
+      forgetCopy();
+    }
   });
 });
 

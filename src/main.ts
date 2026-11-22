@@ -67,7 +67,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blankCycle, type CycleLook } from './chem/cycles';
 import { addChiralFlag, flagNear, type ChiralFlag } from './chem/chiral-flag';
 import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
-  nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, OWN_FORMAT, CDX_FORMAT, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
+  nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, DRAWING_FORMATS, clipboardDrawing, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
 import { writeCdxml } from './io/cdxml-write';
 import { WORKSPACE, folderOf } from './io/workspace-file';
@@ -8283,11 +8283,10 @@ async function readCells(e: ClipboardEvent | null): Promise<ClipboardCells> {
     const text = t ? dec(t[1]) : undefined;
     const own = await nativeFirst([CELLS_FORMAT]);
     if (own) return { own: dec(own[1]), text };
-    const drawing = await nativeFirst([OWN_FORMAT, CDX_FORMAT]);
-    if (drawing) {
-      const [name, data] = drawing;
-      return { drawing: drawingOf(readCdxml(name === CDX_FORMAT ? cdxToCdxml(data) : dec(data)).doc), text };
-    }
+    // (our drawing whole first, then as CDXML, then ChemDraw's; audit G1-11)
+    const drawing = await nativeFirst(DRAWING_FORMATS);
+    const got = drawing ? clipboardDrawing(...drawing) : null;
+    if (got) return { drawing: drawingOf(got), text };
     if (text && looksLikeCdxml(text)) return { drawing: drawingOf(readCdxml(text).doc) };
     if (text) return { text };
     return { picture: !!(await nativeFirst(['PNG', 'CF_ENHMETAFILE', 'CF_DIB'])) };
@@ -9297,11 +9296,9 @@ async function readDocPaste(e: ClipboardEvent | null): Promise<DocPaste> {
   const dec = (b: Uint8Array) => new TextDecoder().decode(b).replace(/\0+$/, '');
   const drawingOf = (d: Doc): Contents => { fitPasted(d, docStyle()); return d.contents(); };
   if (nativeClipboard) {
-    const drawing = await nativeFirst([OWN_FORMAT, CDX_FORMAT]);
-    if (drawing) {
-      const [name, data] = drawing;
-      return { drawing: drawingOf(readCdxml(name === CDX_FORMAT ? cdxToCdxml(data) : dec(data)).doc) };
-    }
+    const drawing = await nativeFirst(DRAWING_FORMATS);
+    const got = drawing ? clipboardDrawing(...drawing) : null;
+    if (got) return { drawing: drawingOf(got) };
     const t = await nativeFirst(['CF_UNICODETEXT']);
     const text = t ? dec(t[1]) : '';
     if (looksLikeCdxml(text)) return { drawing: drawingOf(readCdxml(text).doc) };

@@ -2,7 +2,9 @@
 //
 // A copy puts the selection on the clipboard in several forms, the most detailed first, so
 // each program takes the best one it understands:
-//   - our own CDXML text, so pasting back into Chemweave keeps everything;
+//   - the drawing whole, as this app holds it (JSON), so pasting into another window or a later
+//     session here keeps everything, even what CDXML has no place for (audit G1-11);
+//   - our own CDXML text, which older versions of this app read;
 //   - the same drawing as CDX, ChemDraw's format, for pasting into ChemDraw;
 //   - an EMF picture, which Word and PowerPoint paste as a sharp, scalable picture; the drawing
 //     rides inside it, so copying the picture back out of Word brings back the structure;
@@ -17,7 +19,7 @@ import { freshGroups } from '../editor/groups';
 import { frameMembers } from '../editor/frames';
 import { pastedTable, tableHtml, tableTsv, type PastedRows } from './table-clip';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { Doc, applyBase, type TableData } from '../model';
+import { Doc, applyBase, type Contents, type TableData } from '../model';
 import type { Vec } from '../geom';
 import type { Selection } from '../editor/editor';
 import { readCdxml } from './cdxml';
@@ -39,8 +41,19 @@ import { writeMolFile } from './chem-formats';
 
 /** Our own clipboard format: the drawing as CDXML text. */
 export const OWN_FORMAT = 'Chem Illustrator CDXML';
+/**
+ * Our drawing whole, as this app holds it (JSON: its style, page colour and every atom, bond,
+ * caption, arrow and shape with all their settings). Read before CDXML, so a copy pasted into
+ * another window or a later session loses nothing (audit G1-11). A registered Windows clipboard
+ * format; on the web, a format of the page's own where the browser takes one.
+ */
+export const NATIVE_FORMAT = 'Chemweave Drawing';
+export const WEB_NATIVE_FORMAT = 'web application/x-chemweave-drawing';
+const NATIVE_VERSION = 1;
 /** ChemDraw's clipboard format (a CDX file). */
 export const CDX_FORMAT = 'ChemDraw Interchange Format';
+/** The formats holding a drawing, best first: ours whole, ours as CDXML, ChemDraw's. */
+export const DRAWING_FORMATS = [NATIVE_FORMAT, OWN_FORMAT, CDX_FORMAT];
 /** Our drawing on a web page's clipboard, where the browser takes formats of the page's own (Chrome, Edge). */
 export const WEB_FORMAT = 'web application/x-chem-illustrator-cdxml';
 
@@ -314,6 +327,45 @@ export function ownDrawing(cdxml: string): Doc {
   }
   return readCdxml(cdxml).doc;
 }
+/** A drawing as the NATIVE_FORMAT's text. */
+export function nativeDrawingText(part: Doc): string {
+  return JSON.stringify({ app: 'Chemweave', v: NATIVE_VERSION, style: part.style, background: part.background, contents: part.contents() });
+}
+
+/**
+ * The drawing in a NATIVE_FORMAT text, or null when it isn't one or is damaged (the paste then
+ * reads the CDXML beside it). Settings this version doesn't know are kept on the objects as they are.
+ */
+export function nativeDrawing(text: string): Doc | null {
+  try {
+    const j = JSON.parse(text) as { app?: unknown; v?: unknown; style?: unknown; background?: unknown; contents?: Record<string, unknown> };
+    if (j?.app !== 'Chemweave' || typeof j.v !== 'number' || !j.contents || typeof j.contents !== 'object') return null;
+    const list = (k: string) => (Array.isArray(j.contents![k]) ? (j.contents![k] as unknown[]) : []).filter((x): x is { id: number } & Record<string, unknown> => !!x && typeof x === 'object' && typeof (x as { id?: unknown }).id === 'number');
+    const atoms = list('atoms');
+    const have = new Set(atoms.map((a) => a.id));
+    // (a bond to an atom that isn't there is left out)
+    const bonds = list('bonds').filter((b) => have.has(b.a1 as number) && have.has(b.a2 as number));
+    const d = new Doc();
+    if (j.style && typeof j.style === 'object') d.style = { ...d.style, ...(j.style as object) };
+    if (typeof j.background === 'string') d.background = j.background;
+    d.restoreContents({ atoms, bonds, captions: list('captions'), arrows: list('arrows'), shapes: list('shapes') } as unknown as Contents);
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+/** The drawing in one of the DRAWING_FORMATS (as nativeFirst hands it over), or null when it can't be read. */
+export function clipboardDrawing(name: string, data: Uint8Array): Doc | null {
+  const text = name === CDX_FORMAT ? '' : new TextDecoder().decode(data).replace(/\0+$/, '');
+  if (name === NATIVE_FORMAT) return nativeDrawing(text);
+  try {
+    return name === CDX_FORMAT ? readCdxml(cdxToCdxml(data)).doc : ownDrawing(text);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Makes a structure's SMILES from its molfile: set by the app once the chemistry engine is there,
  * so a copy also carries the structure as text, as ChemDraw's does (audit G1-20).
@@ -425,6 +477,7 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
     // Word, PowerPoint and Excel paste an object they can send back here to edit (a table stays cells)
     const object: [string, Uint8Array][] = wordObjects && !table ? [['Embed Source', enc.encode(own)], ['Object Descriptor', objectSize(emf)]] : [];
     const block = packFormats([
+      [NATIVE_FORMAT, enc.encode(nativeDrawingText(part))],
       [OWN_FORMAT, enc.encode(own)],
       [CDX_FORMAT, cdxmlToCdx(cdxml)],
       ...object,
@@ -452,7 +505,10 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
       formats['text/html'] = new Blob([tableHtml(table)], { type: 'text/html' });
       formats['text/plain'] = new Blob([tsv!], { type: 'text/plain' });
     }
-    if (webFormatOk()) formats[WEB_FORMAT] = new Blob([own], { type: WEB_FORMAT.slice(4) });
+    if (webFormatOk()) {
+      formats[WEB_NATIVE_FORMAT] = new Blob([nativeDrawingText(part)], { type: WEB_NATIVE_FORMAT.slice(4) });
+      formats[WEB_FORMAT] = new Blob([own], { type: WEB_FORMAT.slice(4) });
+    }
     // the structures' SMILES as text (as ChemDraw's copy has), worked out while the clipboard waits
     if (!table && smilesMaker && part.atoms.size) {
       formats['text/plain'] = structureSmiles(part).then((sm) => { lastText = sm; return new Blob([sm ?? ''], { type: 'text/plain' }); });
@@ -704,6 +760,10 @@ export async function nativeFirst(names: string[]): Promise<[string, Uint8Array]
  * MestReNova and Office copy, or a bitmap), then any other text.
  */
 export async function readNativeClipboard(): Promise<Pasted> {
+  // our drawing whole first (a copy from another window or session loses nothing), then as CDXML
+  const whole = await nativeFirst([NATIVE_FORMAT]);
+  const fromWhole = whole ? nativeDrawing(new TextDecoder().decode(whole[1]).replace(/\0+$/, '')) : null;
+  if (fromWhole) return { kind: 'drawing', doc: fromWhole };
   // ("Embed Source" is a drawing from here copied back out of Word: the app reads only its own objects)
   const drawing = await nativeFirst([OWN_FORMAT, 'Embed Source', CDX_FORMAT]);
   if (drawing) {
@@ -765,7 +825,11 @@ export async function readWebClipboard(): Promise<Pasted> {
   if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   // a picture (when the browser lets the page see it)
   const items = await navigator.clipboard.read?.().catch(() => []) ?? [];
-  // our drawing, where the browser kept a format of our own
+  // our drawing, where the browser kept a format of our own: whole first, then as CDXML
+  const whole = items.find((it) => it.types.includes(WEB_NATIVE_FORMAT));
+  const wholeText = whole ? await (await whole.getType(WEB_NATIVE_FORMAT)).text().catch(() => '') : '';
+  const fromWhole = wholeText ? nativeDrawing(wholeText) : null;
+  if (fromWhole) return { kind: 'drawing', doc: fromWhole };
   const own = items.find((it) => it.types.includes(WEB_FORMAT));
   const ownText = own ? await (await own.getType(WEB_FORMAT)).text().catch(() => '') : '';
   if (looksLikeCdxml(ownText)) return fromText(ownText);
