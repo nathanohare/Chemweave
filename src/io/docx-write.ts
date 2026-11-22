@@ -59,7 +59,7 @@ import { appPropsXml, corePropsXml, relativeTarget, writeKeptParts, writeTree, t
 import { settingsChildren } from './docx-settings';
 import { cmlGuid, contentsSig, writeCml } from './cml';
 import {
-  BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
+  BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, CONT_MARK, HEADS_MARK, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
 } from './docx-base';
 
 export interface DocxDeps {
@@ -753,6 +753,7 @@ class DocxWriter {
     const colBreak = ps.colBreak ? '<w:r><w:br w:type="column"/></w:r>' : '';
     const em = runs.find((r) => r.obj === undefined)?.size ?? st.size;
     let kept: string | undefined;
+    let contMark = '';
     if (ps.list && !ps.cont) {
       const key = ps.list === 'bullet' ? `b${ps.bullet ?? ''}` : `n${ps.scheme ?? ''}`;
       // the file's own list while the item's list is of the kind it was read as (and its number's look),
@@ -763,8 +764,10 @@ class DocxWriter {
       const id = kept ?? String((ps.list === 'number' && listNum > 0 && this.numKeys[listNum - 1] === key ? listNum : this.sharedNum(key)) + this.keptNumCount);
       pPr.push(`<w:numPr><w:ilvl w:val="${Math.max(0, Math.min(8, ps.level ?? 0))}"/><w:numId w:val="${id}"/></w:numPr>`);
     } else if (ps.list && ps.cont) {
-      // carrying on the item above (Shift+Enter): Word's "no numbering" (list 0), on the item's level (read back by docx-read.ts)
+      // carrying on the item above (Shift+Enter): Word's "no numbering" (list 0), on the item's level and
+      // indented to its text, with a hidden bookmark saying so beside that indent (CONT_MARK, read back by docx-read.ts)
       pPr.push(`<w:numPr><w:ilvl w:val="${Math.max(0, Math.min(8, ps.level ?? 0))}"/><w:numId w:val="0"/></w:numPr>`);
+      if (!bodyOnly) { const id = this.bookmarkId++; contMark = `<w:bookmarkStart w:id="${id}" w:name="${CONT_MARK}${twips(listIndent(ps, em).left)}_${id}"/><w:bookmarkEnd w:id="${id}"/>`; }
     }
     if (ps.noLineNumbers) pPr.push('<w:suppressLineNumbers/>');
     pPr.push(paraBorderXml(ps));
@@ -818,7 +821,7 @@ class DocxWriter {
     // number's bookmark is round just the number
     const isCompound = (id: number) => { const o = this.t.objects[id]; return o?.kind === 'seq' && o.name === COMPOUND; };
     const seqs = runs.filter((r) => r.obj !== undefined && this.bookmarks.has(r.obj) && !isCompound(r.obj)).map((r) => r.obj!);
-    const out: string[] = [];
+    const out: string[] = contMark ? [contMark] : [];
     // the end of a move's range, put after the run it ends with
     const moveEnds: string[] = [];
     let open: { id: number; seq: number } | null = null;
@@ -1674,13 +1677,16 @@ class DocxWriter {
         this.shownN = outer;
         // (Word's cells end with a paragraph, after any table in them)
         if (lastTable || !paras.length) paras.push('<w:p/>');
+        // heading rows that don't repeat, where neither a style nor a rule under them says they are
+        // heading rows: a hidden bookmark at the start of the first cell (HEADS_MARK, read back by docx-read.ts)
+        if (r === 0 && !cells.length && tab.head > 0 && tab.noRepeat && !styled && tab.lines !== 'acs') {
+          const id = this.bookmarkId++;
+          paras.unshift(`<w:bookmarkStart w:id="${id}" w:name="${HEADS_MARK}${tab.head}_${id}"/><w:bookmarkEnd w:id="${id}"/>`);
+        }
         cells.push(`<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${paras.join('')}</w:tc>`);
       }
       // its height, and whether it repeats at the top of each page as a heading row
-      // (a heading row that doesn't repeat, in a table whose style or rule under the headings
-      // doesn't show it: Repeat Header Rows written off, so it is still read as a heading row)
-      const offHead = !styled && tab.lines !== 'acs';
-      const trPr = rowHeightXml(tab.rowH?.[r]) + (r < tab.head ? (!tab.noRepeat ? '<w:tblHeader/>' : offHead ? '<w:tblHeader w:val="0"/>' : '') : '');
+      const trPr = rowHeightXml(tab.rowH?.[r]) + (r < tab.head && !tab.noRepeat ? '<w:tblHeader/>' : '');
       rows.push(`<w:tr>${trPr ? `<w:trPr>${trPr}</w:trPr>` : ''}${cells.join('')}</w:tr>`);
     }
     return `<w:tbl>${tblPr}${gridXml}${rows.join('')}</w:tbl>`;

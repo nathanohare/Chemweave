@@ -43,7 +43,7 @@ import { shownSize } from '../document/doc-layout';
 import { coveringCell, layoutTable } from '../table';
 import { chemdrawCdx, isChemDraw, readEmbedded } from './ole-object';
 import { cleanNoteRuns, cmtIds, cmtString, type CommentNote, type CommentThread, type NoteRun } from '../document/comments';
-import { BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, WORD_HIGHLIGHTS, DOCX_REL, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, fromWordDate, w14Look, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, TABLE_MARK, TABLE_NAME, W_NS, type DocxModel } from './docx-base';
+import { BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, OWN_MARK, WORD_HIGHLIGHTS, DOCX_REL, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, fromWordDate, w14Look, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, TABLE_MARK, TABLE_NAME, W_NS, type DocxModel } from './docx-base';
 import { wordTablePrint } from './native-print';
 import { citationNumbers, cleanRef, type Piece as BibPiece, type Reference } from '../document/references';
 import { bibFieldApp, placeRef, readCiteField, readMendeleyTag, styleFromCsl, zoteroStyleOf, MANAGERS, type CiteLive, type CiteManager, type ManagerCite } from '../document/live-cites';
@@ -1616,11 +1616,15 @@ class DocxReader {
         if (b !== BULLETS[ilvl % BULLETS.length] && BULLET_LIBRARY.includes(b)) bullet = b;
       }
     }
-    // a paragraph that carries on the list item above (Shift+Enter), as written here: Word's "no
-    // numbering" (list 0) on a level, with no first-line indent, straight after a list item
+    // a paragraph that carries on the list item above (Shift+Enter), as written here: our hidden
+    // bookmark (CONT_MARK) beside Word's "no numbering" (list 0, which is all it means for any
+    // other paragraph: ECMA-376 Part 1, 17.9.18) and the indent it was written with, straight
+    // after a list item. Its indent or numbering changed in Word since: a paragraph as Word has it.
     let cont = false;
-    const dn = kid(pPr, 'numPr'), prev = this.out[this.out.length - 1];
-    if (!list && dn && this.a(kid(dn, 'numId')) === '0' && kid(dn, 'ilvl') && this.a(kid(pPr, 'ind'), 'firstLine') === '0' && prev && !prev.table && prev.ps.list) {
+    const dn = kid(pPr, 'numPr'), prev = this.out[this.out.length - 1], ind = kid(pPr, 'ind');
+    const contAt = ownMark(this.a.bind(this), kids(el, 'bookmarkStart'), 'Cont');
+    if (!list && contAt !== null && dn && this.a(kid(dn, 'numId')) === '0' && kid(dn, 'ilvl') && (this.a(ind, 'left') ?? this.a(ind, 'start')) === contAt
+      && (this.a(ind, 'firstLine') ?? '0') === '0' && !this.a(ind, 'hanging') && prev && !prev.table && prev.ps.list) {
       list = prev.ps.list;
       scheme = prev.ps.scheme;
       bullet = prev.ps.bullet;
@@ -2421,6 +2425,8 @@ class DocxReader {
 
   private markStart(el: Element): void {
     const name = this.a(el, 'name');
+    // (this program's own marks, read where they are: paragraph, table)
+    if (name && OWN_MARK.test(name)) return;
     if (name && name !== '_GoBack') this.openMarks.set(this.a(el, 'id') ?? name, name);
     if (name) this.allMarks.add(name.toLowerCase());
     // a bookmark links can go to: kept on its paragraph (hidden ones only if a link uses them: see keepUsedMarks)
@@ -3023,7 +3029,7 @@ class DocxReader {
     type Cell = { cell: TableCell; span: number; borders: Element | null; vm: 'restart' | 'continue' | null };
     const grid: Cell[][] = [];
     // heading rows: Repeat Header Rows on, or off as this program writes heading rows that don't repeat
-    let head = 0, counting = true, repeat = false;
+    let head = 0, counting = true;
     // a Word table style that shades or picks out parts: drawn in it here too
     const style = this.a(kid(tblPr, 'tblStyle'));
     const styleId = style ? this.tableStyleOf(style) : null;
@@ -3039,8 +3045,9 @@ class DocxReader {
       for (const tr of rows) {
         const trPr = kid(tr, 'trPr');
         heights.push(readRowHeight(trPr, this.a.bind(this)));
+        // (Repeat Header Rows: a row with it off is not a heading row, ECMA-376 Part 1, 17.4.49)
         const th = kid(trPr, 'tblHeader');
-        if (counting && th) { head++; if (this.on(th)) repeat = true; }
+        if (counting && th && this.on(th)) head++;
         else counting = false;
         const row: Cell[] = [];
         const before = gridCount(this.a(kid(trPr, 'gridBefore')), 0);
@@ -3111,6 +3118,12 @@ class DocxReader {
     if (b.size) cellV = cellH = false;
     table.lines = b.get('insideV') || cellV ? 'grid' : b.get('top') || b.get('bottom') || b.get('insideH') || cellH ? 'acs' : 'none';
     table.head = head || (table.lines === 'acs' && underRow >= 0 && underRow < 3 ? underRow + 1 : 0);
+    // heading rows that don't repeat, saved here in a table with no style and no rule under them
+    // (HEADS_MARK in its first cell): while Word shows no heading rows of its own and nothing else
+    // says which (Repeat Header Rows set in Word, a style, a rule: those win)
+    const tc0 = rows[0] ? this.cellsOf(rows[0])[0] : undefined;
+    const heads = tc0 ? ownMark(this.a.bind(this), [...kids(tc0, 'bookmarkStart'), ...kids(kid(tc0, 'p'), 'bookmarkStart')], 'Heads') : null;
+    if (heads !== null && !head && !styleId && table.lines !== 'acs') table.head = Math.min(Number(heads), table.rows.length);
     // each column lines up the way most of its cells do (columnAlign)
     // (a Word cell lined up on the left has no alignment of its own here: it counts as on the left, and keeps that in a column that isn't)
     table.align = cols.map((_, ci) => columnAlign(table.rows, ci, 'left'));
@@ -3128,7 +3141,7 @@ class DocxReader {
       table.look = look;
     }
     // heading rows that only look like headings (no Repeat Header Rows in Word): not repeated when saved either
-    if ((!head || !repeat) && table.head) table.noRepeat = true;
+    if (!head && table.head) table.noRepeat = true;
     if (heights.some(Boolean)) table.rowH = heights;
     // where Word places it and how wide, kept for saving: floating, its width, its indent and AutoFit
     const float = readTableFloat(tblPr, this.a.bind(this));
@@ -3724,6 +3737,12 @@ function groupTexts(group: Element): Map<string, string> {
  * Bookmarks kept on paragraphs: those named by people, and Word's hidden ones (_Toc…, _Ref…)
  * only where a link here goes to them, so a document's every heading doesn't carry Word's own.
  */
+/** The number in one of this program's own bookmarks (OWN_MARK) of a kind among `marks`, or null. */
+function ownMark(a: (el: Element | null | undefined, name?: string) => string | null, marks: Element[], kind: 'Cont' | 'Heads'): string | null {
+  for (const b of marks) { const m = OWN_MARK.exec(a(b, 'name') ?? ''); if (m?.[1] === kind) return m[2]; }
+  return null;
+}
+
 function keepUsedMarks(t: DocText): void {
   if (!t.paras.some((p) => p?.marks)) return;
   const used = new Set<string>();

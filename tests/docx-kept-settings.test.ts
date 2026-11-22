@@ -2,13 +2,16 @@
 //
 // Document settings kept through Word that were lost before the field round-trip check (standing
 // rule R3) found them: a paragraph that carries on the list item above (Shift+Enter), written as
-// Word's "no numbering" (list 0) on the item's level; a table's Table Style Options while it has
-// no style; heading rows that don't repeat in a grid table (Repeat Header Rows written off); and a
-// cell lined up on its own in a column of two, which a tied vote no longer makes the column's.
-// Documents are built here in code.
+// Word's "no numbering" (list 0) on the item's level with a hidden bookmark saying so; a table's
+// Table Style Options while it has no style; heading rows that don't repeat in a grid table (a
+// hidden bookmark in its first cell); and a cell lined up on its own in a column of two, which a
+// tied vote no longer makes the column's. Word's own markup is read as ECMA-376 says for every
+// file: list 0 is no numbering, Repeat Header Rows off is not a heading row (review F7b-R05, R06),
+// and a change made in Word wins over the bookmarks. Documents are built here in code; Word's
+// edits are made on the saved XML the way Word writes them (simulated, not made in Word).
 
 import { describe, it, expect } from 'vitest';
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { newDocument, objectRun, paraFromStyle, runStyleOf, type DocText } from '../src/document/document';
 import * as rt from '../src/richtext';
@@ -18,6 +21,12 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const deps: DocxDeps = { async picture() { return { png: PNG, w: 10, h: 10 }; }, async svgToPng() { return PNG; } };
 const xmlOf = async (d: DocText) => strFromU8(unzipSync(await writeDocx(d, deps))['word/document.xml']);
 const trip = async (d: DocText) => (await readDocx(await writeDocx(d, deps))).doc;
+/** Saved, its document.xml changed by `edit`, and read back. */
+const tripEdited = async (d: DocText, edit: (xml: string) => string) => {
+  const files = unzipSync(await writeDocx(d, deps));
+  files['word/document.xml'] = strToU8(edit(strFromU8(files['word/document.xml'])));
+  return (await readDocx(zipSync(files))).doc;
+};
 
 function text(lines: [string, Partial<ParaStyle>][]): DocText {
   const d = newDocument();
@@ -46,6 +55,40 @@ describe('a paragraph carrying on a list item (R3)', () => {
   it('is not made of a paragraph that only has Word\'s "no numbering" with no list item above', async () => {
     const back = await trip(text([['Plain', {}], ['more', { list: 'bullet', cont: true }]]));
     expect(back.paras[1].list).toBeUndefined();
+  });
+});
+
+describe('Word\'s "no numbering" from Word or another program (review F7b-R05)', () => {
+  const item = (): DocText => text([['First item', { list: 'bullet' }], ['more about it', { list: 'bullet', cont: true }]]);
+  it('is a plain paragraph after Word took the bullet off and set it back to the margin', async () => {
+    const back = await tripEdited(item(), (x) => x.replace(/<w:ind w:left="\d+" w:firstLine="0"\/>/, '<w:ind w:left="0" w:firstLine="0"/>'));
+    expect([back.paras[1].list, back.paras[1].cont, back.paras[1].indent ?? 0]).toEqual([undefined, undefined, 0]);
+  });
+  it('is a plain paragraph without this program\'s bookmark, even indented to the item\'s text', async () => {
+    const back = await tripEdited(item(), (x) => x.replace(/<w:bookmarkStart w:id="\d+" w:name="_ChemCont[^"]*"\/><w:bookmarkEnd w:id="\d+"\/>/, ''));
+    expect([back.paras[1].list, back.paras[1].cont]).toEqual([undefined, undefined]);
+    expect(back.paras[1].indent).toBeGreaterThan(0);
+  });
+});
+
+describe('Repeat Header Rows from Word or another program (review F7b-R06)', () => {
+  const plain = { ...TABLE, rows: [...structuredClone(TABLE.rows), [{ runs: [{ text: '2' }] }, { runs: [{ text: '85' }] }]] };
+  it('off on every row: no heading rows', async () => {
+    const t = tableOf(await tripEdited(withTable(plain), (x) => x.replace(/<w:tr>/g, '<w:tr><w:trPr><w:tblHeader w:val="0"/></w:trPr>').replace(/<w:trPr><w:tblHeader w:val="0"\/><\/w:trPr><w:trPr>(<w:tblHeader\/>)?/g, '<w:trPr><w:tblHeader w:val="false"/>')));
+    expect([t.head, !!t.noRepeat]).toEqual([0, false]);
+  });
+  it('set in Word on rows saved here as heading rows that don\'t repeat: Word\'s', async () => {
+    const t = tableOf(await tripEdited(withTable({ ...plain, head: 1, noRepeat: true }), (x) => {
+      let k = 0;
+      return x.replace(/<w:tr>/g, (m) => (k++ < 2 ? '<w:tr><w:trPr><w:tblHeader/></w:trPr>' : m));
+    }));
+    expect([t.head, !!t.noRepeat]).toEqual([2, false]);
+  });
+  it('are not saved off: a bookmark keeps heading rows that don\'t repeat', async () => {
+    const xml = await xmlOf(withTable({ ...plain, head: 2, noRepeat: true }));
+    expect(xml).not.toContain('tblHeader');
+    expect(xml).toMatch(/w:name="_ChemHeads2_\d+"/);
+    expect(tableOf(await trip(withTable({ ...plain, head: 2, noRepeat: true }))).head).toBe(2);
   });
 });
 
