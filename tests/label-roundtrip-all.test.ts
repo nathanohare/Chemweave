@@ -108,13 +108,17 @@ describe('D and T (review F1c-R02)', () => {
 // review F1d-R02: a label whose charge is on the atom (the charge tool's PPh3 then +; every charged
 // label of several atoms after a CDXML save and reopen). Values: methyltriphenylphosphonium and
 // tetramethylammonium (PubChem CID 6380) cations, acetate (CID 175), methanesulfonate and chloride
-// (CID 312) anions, as RDKit writes their SMILES.
+// (CID 312) anions, as RDKit writes their SMILES. Review F1e-R02: methyltrihydroxyborate, the charge on
+// the four-bonded boron, as a borate is drawn (IUPAC, Nomenclature of Inorganic Chemistry, Red Book
+// 2005: tetrahydroxidoborate(1−), [B(OH)4]−), and trifluoro(methyl)borate likewise.
 describe('labels with their charge on the atom (review F1d-R02)', () => {
   const cases: [string, number, boolean, string][] = [
     ['PPh3', 1, true, 'C[P+](c1ccccc1)(c1ccccc1)c1ccccc1'],
     ['NMe3', 1, true, 'C[N+](C)(C)C'],
     ['CO2', -1, true, 'CC(=O)[O-]'],
     ['SO3', -1, true, 'CS(=O)(=O)[O-]'],
+    ['B(OH)3', -1, true, 'C[B-](O)(O)O'],
+    ['BF3', -1, true, 'C[B-](F)(F)F'],
     ['AcO', -1, false, 'CC(=O)[O-]'],
     ['Cl', -1, false, '[Cl-]'],
   ];

@@ -5,7 +5,7 @@
 import { attachCode } from './attach-codes';
 import { Doc, isMetalAtom, outsideValence, radicalElectrons, type EnhancedStereo, type Shape } from '../model';
 import { metalCarbonyl } from './hapto';
-import { SYMBOLS, elementNumber, hasImplicitH, implicitHydrogens, isMetal, valenceOfBonds } from './elements';
+import { SYMBOLS, elementNumber, hasImplicitH, implicitHydrogens, isMetal, maxValence, valenceOfBonds } from './elements';
 import { CARBONYL_LIGAND, isCarbonylLabel, kekulize, labelDonates, labelGraph, MiniGraph } from './labels';
 import { stereoAnchor, stereoSense } from './stereo';
 import { aromaticAsSingle, kekuleDoubles } from './aromatic';
@@ -496,7 +496,7 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       if (asGroup(g, a.label!, a.z)) sgroups.push({ atoms: g.atoms.map((_, k) => base + k), label: a.label! });
     }
     // the label's own charge (the charge tool's, or one kept from a CDXML file: PPh3 +, CO2 −) goes on
-    // its first atom, unless the charge is negative and that atom has no hydrogen to give up for it:
+    // its first atom, unless the charge is negative and that atom can't take it with its bonds:
     // then on the group's first O, S or N that would carry one (CO2 − is the carboxylate's O⁻, not C⁻;
     // SO3 − the sulfonate's; review F1d-R02)
     const q = a.charge + (charged.get(id) ?? 0);
@@ -505,7 +505,10 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       const used = g.atoms.map(() => 0);
       for (const gb of g.bonds) { const o = gb.order === 1.5 ? 1.5 : gb.order; used[gb.a] += o; used[gb.b] += o; }
       used[0] += valenceOfBonds((doc.adj.get(id) ?? []).map((bid) => doc.bonds.get(bid)!).filter((b) => !outsideValence(b)).map((b) => b.order));
-      if (implicitHydrogens(g.atoms[0].z, Math.ceil(used[0]), 0) <= 0) {
+      // (only when the charge would break that atom's valence: B of B(OH)3 − takes it with its four
+      // bonds, as a borate is drawn; review F1e-R02)
+      const most = maxValence(g.atoms[0].z, q);
+      if (implicitHydrogens(g.atoms[0].z, Math.ceil(used[0]), 0) <= 0 && most !== undefined && Math.ceil(used[0]) > most) {
         const k = g.atoms.findIndex((ga, i) => i > 0 && (ga.z === 8 || ga.z === 16 || ga.z === 7) && !ga.charge && implicitHydrogens(ga.z, Math.ceil(used[i]), 0) > 0);
         if (k > 0) qAt = k;
       }
