@@ -1762,7 +1762,7 @@ class Reader {
     const from = doc.idMark;
     const merged = mergeDrawing(doc, src, map);
     // (a picture saved here from the slide: its elements have the ids its things had on the slide)
-    if (record) for (const [fid, { kind, id }] of fileIds) { const now = merged[kind].get(id); if (now !== undefined && /^\d+$/.test(fid)) this.savedIds[kind].set(Number(fid), now); }
+    if (record) for (const [fid, { kind, id }] of fileIds) { const now = merged[kind].get(id); if (now !== undefined && /^\d+$/.test(fid)) this.saveId(kind, Number(fid), now); }
     this.drawn.push({ box: boxTag ?? '', map, from, to: doc.idMark });
     return true;
   }
@@ -1917,7 +1917,7 @@ class Reader {
     if (c) {
       const made = doc.addCaption(c);
       const sid = (() => { try { return tags[TAG.text] ? (JSON.parse(tags[TAG.text]) as { sid?: unknown }).sid : undefined; } catch { return undefined; } })();
-      if (typeof sid === 'number') this.savedIds.c.set(sid, made.id);
+      if (typeof sid === 'number') this.saveId('c', sid, made.id);
     }
   }
 
@@ -1933,6 +1933,13 @@ class Reader {
    * are joined up again through it.
    */
   private savedIds: Record<RefKind, Map<number, number>> = { a: new Map(), b: new Map(), c: new Map(), r: new Map(), s: new Map() };
+  /**
+   * Notes what a thing saved here became. The first one read keeps it: a copy made in PowerPoint
+   * (Duplicate) carries the same tag, and is not what the slide's links name.
+   */
+  private saveId(kind: RefKind, sid: number, id: number): void {
+    if (!this.savedIds[kind].has(sid)) this.savedIds[kind].set(sid, id);
+  }
   /** Reading a zoom PowerPoint made: whether the show comes back from it (null: not a zoom). */
   private zoomBack: boolean | null = null;
   /** Reading a Summary Zoom PowerPoint made. */
@@ -1981,7 +1988,7 @@ class Reader {
     if (!arrow.from) delete arrow.from;
     if (!arrow.to) delete arrow.to;
     const r = doc.addArrow(arrow);
-    if (typeof (saved as { sid?: unknown }).sid === 'number') this.savedIds.r.set((saved as { sid: number }).sid, r.id);
+    if (typeof (saved as { sid?: unknown }).sid === 'number') this.saveId('r', (saved as { sid: number }).sid, r.id);
     // stuck ends sit on their shapes' connection points
     const patch: Partial<Arrow> = {};
     const at = (g: NonNullable<Arrow['from']>) => { const sh = doc.shapes.get(g.shape); return sh ? gluePoint(sh, g.port) : null; };
@@ -2081,7 +2088,7 @@ class Reader {
         }
       }
       const made = doc.addShape(sh);
-      if (typeof sid === 'number') { this.geoIds.set(sid, made.id); this.savedIds.s.set(sid, made.id); }
+      if (typeof sid === 'number') { if (!this.geoIds.has(sid)) this.geoIds.set(sid, made.id); this.saveId('s', sid, made.id); }
       return true;
     }
     const sh = native();
@@ -2128,7 +2135,7 @@ class Reader {
       if (look.width > 1.75 * doc.style.lineWidth) sh.bold = true;
     }
     const made = doc.addShape(sh);
-    if (typeof saved?.sid === 'number') this.savedIds.s.set(saved.sid, made.id);
+    if (typeof saved?.sid === 'number') this.saveId('s', saved.sid, made.id);
     return true;
   }
 

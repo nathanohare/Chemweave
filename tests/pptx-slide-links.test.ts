@@ -91,6 +91,19 @@ describe('a frame whose member was deleted in PowerPoint (review F7b-R07)', () =
     expect(f2?.frame?.captions).toEqual([]);
     expect(f2?.frame?.shapes).toEqual([noText.shapes.find((s) => s.name === 'Member box')!.id]);
   });
+  it('keeps the original, not a copy made with Duplicate in PowerPoint (review F7b2-R04)', async () => {
+    const back = await trip(framed(), (p) => {
+      const k = 'ppt/slides/slide1.xml';
+      const sp = /<p:sp><p:nvSpPr><p:cNvPr id="\d+" name="Member box"[\s\S]*?<\/p:sp>/.exec(p[k])![0];
+      // the copy: PowerPoint gives it a new id and puts it on top, offset, with the same tags
+      const copy = sp.replace(/<p:cNvPr id="\d+"/, '<p:cNvPr id="999"').replace(/<a:off x="(\d+)" y="(\d+)"\/>/, (_m, x, y) => `<a:off x="${Number(x) + 254000}" y="${Number(y) + 254000}"/>`);
+      p[k] = p[k].replace('</p:spTree>', `${copy}</p:spTree>`);
+    });
+    const boxes = back.shapes.filter((s) => s.name === 'Member box');
+    expect(boxes).toHaveLength(2);
+    const original = boxes.reduce((m, s) => (s.x1 < m.x1 ? s : m));
+    expect(back.shapes.find((s) => s.frame)?.frame?.shapes).toEqual([original.id]);
+  });
 });
 
 describe('a box changed in PowerPoint (review F7b-R02)', () => {
