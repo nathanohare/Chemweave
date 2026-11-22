@@ -1276,7 +1276,15 @@ async function pasteIntoSpeciesBox(holder: number, got: Pasted): Promise<void> {
   let drawing: Doc | null = null;
   if (got.kind === 'drawing' && !isEmpty(got.doc) && got.doc.atoms.size) { fitPasted(got.doc, doc.style); drawing = got.doc; }
   else if (got.kind === 'text') {
-    const mb = chem.ready ? await molfileOrSmiles(got.text.trim(), (t) => chem.smilesToMol(t)) : null;
+    const here = sameDrawing('The structure');
+    // (an engine that stopped, or a structure too big for it, is said; the box is left as it was)
+    let told = false;
+    const mb = chem.ready ? await molfileOrSmiles(got.text.trim(), (t) => chem.smilesToMol(t).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/chemistry engine/.test(msg)) { told = true; flash(msg, 8000); }
+      return null;
+    })).catch(() => null) : null;
+    if (here.left() || told) return;
     const c = mb ? molContents(mb) : null;
     if (c) drawing = structureDoc(c, doc.style);
   }
@@ -1400,7 +1408,13 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
  */
 async function pasteText(text: string, html?: string): Promise<void> {
   const here = sameDrawing('The pasted text');
-  if (looksLikeChemistry(text) && await pasteChemistry(text, true)) return;
+  if (looksLikeChemistry(text)) {
+    if (chem.ready) { if (await pasteChemistry(text, true)) return; }
+    // (while the engine loads, a molfile or reaction waits to be pasted again; a word that might be
+    // SMILES becomes a text box at once, and the user is told how to get the structure)
+    else if (text.includes('M  END') || isRxn(text) || isReactionSmiles(text)) { flash('The chemistry engine is still loading. Paste again in a moment.'); return; }
+    else flash('Pasted as text: the chemistry engine is still loading. Paste again in a moment to get a structure.', 6000);
+  }
   if (here.left()) return;
   const rich = html ? htmlToRich(html) : null;
   // (the drawing's caption font and size, as typed text gets)
@@ -2231,7 +2245,8 @@ async function show3dModel(): Promise<void> {
       doc.edit('3-D Rotation', () => ({ unshown } = placeView(doc, ex.map, v.view)));
       editor.changed();
       // the drawing must still mean the same compound: a view where a wedge can't read right is taken back
-      const after = await chem.molToSmiles(toMolfile(doc, doc.fragmentOf(root), '').molblock);
+      // (an engine that stopped leaves the placed view as it is: nothing to compare it with)
+      const after = await chem.molToSmiles(toMolfile(doc, doc.fragmentOf(root), '').molblock).catch(() => null);
       if (unshown || (before && after && after !== before)) {
         editor.undo();
         flash('A stereocenter can\'t be drawn clearly from this angle (a bond points straight at you). Rotate the model slightly and place it again.', 7000);
