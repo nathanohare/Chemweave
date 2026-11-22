@@ -65,6 +65,7 @@ import { type Query, seenQueryId } from '../sheet/query';
 import { keepFileValues, fileValues, type FileValue } from './xlsx-cached';
 import { readRichValues, writeRichParts, richMetadataXml, keepPointers, pointerOf, richValueKinds } from './xlsx-rich';
 import { LeftOut, connectionsKept, queryTableOf, CT_QUERY_TABLE, REL as KEPT_FEATURE_REL } from './xlsx-left-out';
+import { readSheetOle, writeSheetOle, oleVml, oleNote, type KeptSheetOle, type OleWriteState } from './xlsx-ole';
 export { applyTint };
 
 /** Pictures of structures for Excel (the app draws them; tests use stand-ins). */
@@ -599,7 +600,9 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
   const filterNames: string[] = [];
   const printTitleNames: string[] = [];
   const gridNames: string[] = [];
-  let imageNo = 0, drawingNo = 0, tableNo = 0, chartNo = 0, notesNo = 0, pivotNo = 0;
+  let imageNo = 0, drawingNo = 0, tableNo = 0, chartNo = 0, notesNo = 0, pivotNo = 0, vmlNo = 0;
+  // embedded objects kept from the file read (their parts are numbered across the workbook)
+  const oleState: OleWriteState = { embedNo: 0, mediaNo: 0 };
   const pivotCaches: string[] = [];
   let anyDynamic = false;
   // the data connections kept from the file, and the query tables written that use them
@@ -950,6 +953,12 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       const end = cols.at(x + o.w, o.at.col), endR = rows.at(y + o.h, o.at.row);
       anchors.push(objectAnchorXml(o, { col: end.i, colOff: end.off, row: endR.i, rowOff: endR.off }, anchors.length + 2, { x, y }, pic));
     }
+    // notes and comments (a dashboard's stand-in has none), and objects embedded in the sheet kept
+    // from the file read, which share the notes' VML drawing (their shapes numbered after the notes')
+    const notes = standIn ? null : notesParts(s, si + 1, persons);
+    const vmlPath = `xl/drawings/vmlDrawing${vmlNo + 1}.vml`;
+    const ole = !standIn && own.ole?.length ? writeSheetOle(pkg, own.ole, path, vmlPath, (si + 1) * 1024 + 1 + (notes ? s.notes.size : 0), oleState) : null;
+    if (ole) anchors.push(...ole.anchors);
     let drawingXml = '';
     const sheetRels = path;
     if (anchors.length) {
@@ -959,8 +968,6 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       const rid = pkg.relate(sheetRels, RELS.drawing, `../drawings/drawing${drawingNo}.xml`);
       drawingXml = `<drawing r:id="${rid}"/>`;
     }
-    // notes and comments (a dashboard's stand-in has none)
-    const notes = standIn ? null : notesParts(s, si + 1, persons);
     if (notes) {
       notesNo++;
       pkg.add(`xl/comments${notesNo}.xml`, HEAD + notes.comments, NOTES_CT.comments);
@@ -969,9 +976,14 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
         pkg.add(`xl/threadedComments/threadedComment${notesNo}.xml`, HEAD + notes.threaded, NOTES_CT.threaded);
         pkg.relate(sheetRels, NOTES_REL.threaded, `../threadedComments/threadedComment${notesNo}.xml`);
       }
+    }
+    const vml = notes ? (ole?.vmlShapes ? notes.vml.replace(/<\/xml>$/, `${ole.vmlTypes}${ole.vmlShapes}</xml>`) : notes.vml)
+      : ole?.vmlShapes ? oleVml(si + 1, ole.vmlTypes, ole.vmlShapes) : null;
+    if (vml) {
+      vmlNo++;
       pkg.defaultType('vml', NOTES_CT.vml);
-      pkg.add(`xl/drawings/vmlDrawing${notesNo}.vml`, notes.vml);
-      const vid = pkg.relate(sheetRels, NOTES_REL.vml, `../drawings/vmlDrawing${notesNo}.vml`);
+      pkg.add(vmlPath, vml);
+      const vid = pkg.relate(sheetRels, NOTES_REL.vml, `../drawings/vmlDrawing${vmlNo}.vml`);
       drawingXml += `<legacyDrawing r:id="${vid}"/>`;
     }
     const dvXml = standIn ? '' : validationsXml(s.validations, (f) => excelFunctionNames(f, book.excelPrefixes), longList, book.date1904 ? DAYS_1900_TO_1904 : 0);
@@ -1003,7 +1015,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       `<sheetFormatPr defaultRowHeight="${own.fileRowHeight?.pt ?? 15}"${own.fileRowHeight?.custom ? ' customHeight="1"' : ''}${own.fileRowHeight?.zero ? ' zeroHeight="1"' : ''}${outlineLevelAttrs(s)}/>` +
       (colXml.length ? `<cols>${colXml.join('')}</cols>` : '') +
       `<sheetData>${rowXml.join('')}</sheetData>${sheetProtectionXml(own.excel)}${filterXml}${own.excel?.sortState ?? ''}${standIn ? '' : customSheetViewsXml(book, own)}${merges}${cfXml}${dvXml}${hyperlinks}` +
-      `${page.printOptions}${page.pageMargins}${page.pageSetup}${page.headerFooter}${page.breaks}${own.excel?.ignoredErrors ?? ''}${drawingXml}${tableParts}${sparkExt ? `<extLst>${sparkExt}</extLst>` : ''}</worksheet>`,
+      `${page.printOptions}${page.pageMargins}${page.pageSetup}${page.headerFooter}${page.breaks}${own.excel?.ignoredErrors ?? ''}${drawingXml}${ole?.oleObjects ?? ''}${tableParts}${sparkExt ? `<extLst>${sparkExt}</extLst>` : ''}</worksheet>`,
       CT.sheet);
     const rid = pkg.relate('xl/workbook.xml', RELS.worksheet, `worksheets/sheet${si + 1}.xml`);
     sheetEntries.push(`<sheet name="${xml(s.name)}" sheetId="${si + 1}" r:id="${rid}"/>`);
@@ -1526,6 +1538,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   /** Formulas the file saved no value for. */
   let unvalued = 0;
   const restored = { structures: 0, changed: 0 };
+  const oleObjects: KeptSheetOle[] = [];
   book.build(() => {
     sheetEls.forEach((el, si) => {
       const s = book.sheets[si];
@@ -1893,6 +1906,9 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       const relOf = (type: string) => sheetRelList.find((r) => r.type === type)?.target;
       const commentsPath = relOf(NOTES_REL.comments), vmlPath = relOf(NOTES_REL.vml), threadedPath = relOf(NOTES_REL.threaded);
       leftOut.sheet(pkg, path!, ws, vmlPath ? pkg.text(vmlPath) : null, (t) => keptQueries.has(t));
+      // embedded objects (a ChemDraw structure pasted into Excel, an embedded Word file): kept to save back
+      const ole = readSheetOle(pkg, path!, ws, vmlPath ?? null, dr);
+      if (ole.length) { s.ole = ole; oleObjects.push(...ole); }
       if (commentsPath || threadedPath) {
         const notes = readNotes(commentsPath ? pkg.xml(commentsPath) : null, shownNotes(vmlPath ? pkg.text(vmlPath) : null), threadedPath ? pkg.xml(threadedPath) : null, personsDoc);
         for (const [k, n] of notes) s.setNote(rowOf(k), colOf(k), n);
@@ -1972,6 +1988,8 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       `${linkedFormulas > 1 ? 'They are' : 'It is'} kept for Excel, which updates ${linkedFormulas > 1 ? 'them' : 'it'} from those files, but can't be worked out here.`);
   }
   if (restored.changed) warnings.push(`${restored.changed} structure or calculated cell${restored.changed > 1 ? 's were' : ' was'} changed in another program: ${restored.changed > 1 ? 'they show' : 'it shows'} what that program saved.`);
+  const oleSaid = oleNote(oleObjects);
+  if (oleSaid) warnings.push(oleSaid);
   if (notKept.size) warnings.push(`Not shown here, and left out if you save over this file: ${[...notKept].join(', ')}.`);
   return { book, warnings };
 }

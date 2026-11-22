@@ -9,6 +9,7 @@
 
 import type { KeptParts, KeptTree } from '../io/kept-parts';
 import type { ExcelSheetKept, ExcelBookKept } from '../io/xlsx-view';
+import type { KeptSheetOle } from '../io/xlsx-ole';
 import type { Contents } from '../model';
 import type { DocStyle } from '../style';
 import { ACS_1996 } from '../style';
@@ -340,6 +341,8 @@ export class Sheet {
   codeName?: string;
   /** What an Excel file said about the sheet that only Excel uses (protection, its tab's colour…), kept to save back. */
   excel?: ExcelSheetKept;
+  /** Objects embedded in the sheet in an Excel file (a ChemDraw structure pasted there), not shown here: kept to save back as they were. */
+  ole?: KeptSheetOle[];
   /**
    * The height in points an Excel file gave rows with none of their own (set by hand when `custom`),
    * saved back with it; `zero`: rows the file doesn't list are hidden (Excel's zeroHeight, for a sheet
