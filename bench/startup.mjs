@@ -35,9 +35,22 @@ export function startupSlower(base, head) {
 /** The pull request label that passes an expected slowdown (the check still prints the times). */
 export const SLOWER_OK_LABEL = 'slower start-up expected';
 
+/**
+ * The most the fastest start may take at all, whatever the base branch takes (standing rule R6), in
+ * ms. Set at about 2.8 times the 528 ms the Checks machines measured in November 2026 (G4-12), so a
+ * busy machine passes and a start-up that has crept up over many pull requests, each under the 25%
+ * step, still fails. Raise it only with the reason in the pull request.
+ */
+export const STARTUP_BUDGET_MS = 1500;
+
 /** { fail, text }: the start-up check's answer; `accepted` when the pull request carries SLOWER_OK_LABEL. */
 export function startupVerdict(base, head, accepted = false) {
   const was = Math.min(...base.map((o) => o.up)), now = Math.min(...head.map((o) => o.up));
+  if (now > STARTUP_BUDGET_MS) {
+    const over = `The app takes ${now} ms to start, over the ${STARTUP_BUDGET_MS} ms budget (bench/startup.mjs STARTUP_BUDGET_MS).`;
+    if (accepted) return { fail: false, text: `${over} Passed: the pull request has the label “${SLOWER_OK_LABEL}”.` };
+    return { fail: true, text: `${over} Make it start faster, or if that is expected, say why in the pull request, add the label “${SLOWER_OK_LABEL}” and run this check again.` };
+  }
   if (!startupSlower(base, head)) return { fail: false, text: 'Start-up did not get noticeably slower.' };
   const by = `The app takes ${now - was} ms (${Math.round((now / was - 1) * 100)}%) longer to start than on the base branch.`;
   if (accepted) return { fail: false, text: `${by} Passed: the pull request has the label “${SLOWER_OK_LABEL}”.` };

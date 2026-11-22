@@ -11,6 +11,8 @@ import { Doc } from '../src/model';
 import { readCdxml } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
 import { crossingGaps } from '../src/chem/crossing';
+import { cleanUpMoves, cleanUpOptions, looksTangled } from '../src/chem/cleanup';
+import { readQmOutput } from '../src/chem/qm-output';
 import { freeRing, placeRing } from '../src/chem/chemgeom';
 import { Workbook } from '../src/sheet/workbook';
 import { writeXlsx, readXlsx, type XlsxPictures } from '../src/io/xlsx';
@@ -198,4 +200,72 @@ describe('slides (100 slides)', () => {
   // (one warm-up run: under jsdom each open of the same file takes a little longer than the one before)
   bench('save .pptx', async () => { bytes = await writePptx(data(), opts); }, { iterations: 3, warmupIterations: 1 });
   bench('open .pptx', async () => { bytes ??= await writePptx(data(), opts); readPptx(bytes); }, { iterations: 3, warmupIterations: 1 });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The sizes that were slow before (standing rule R6): a drawing of 2,000 structures (the desktop
+// self-test's, which froze Clean Up for 9 s), a 600-atom molecule, and a 43 MB Gaussian log. Each
+// also has an absolute budget in scripts/bench-gate.mjs, so these can't creep up a little at a
+// time either.
+
+/** n separate structures (toluene-sized: a ring and a methyl), 40 to a row. */
+function structures(n: number): Doc {
+  const doc = new Doc();
+  doc.edit('structures', () => {
+    for (let i = 0; i < n; i++) {
+      const r = placeRing(doc, freeRing({ x: (i % 40) * 3 * L, y: Math.floor(i / 40) * 3 * L }, 6, L), {});
+      doc.addBond(r[0], doc.addAtom(doc.atoms.get(r[0])!.x, doc.atoms.get(r[0])!.y - L).id, 1);
+    }
+  });
+  return doc;
+}
+
+describe('big drawing (2,000 structures, 14,000 atoms)', () => {
+  const doc = structures(2000);
+  const text = writeCdxml(doc, { name: 'bench' });
+  const first = doc.atoms.keys().next().value!;
+  let k = 0;
+  bench('save CDXML (2,000 structures)', () => { writeCdxml(doc, { name: 'bench' }); }, { iterations: 3 });
+  bench('open CDXML (2,000 structures)', () => { readCdxml(text); }, { iterations: 3 });
+  bench('edit: move one atom (2,000 structures)', () => { doc.edit('Move', () => doc.updateAtom(first, { x: doc.atoms.get(first)!.x + (k++ % 2 ? 1 : -1) })); }, { iterations: 20 });
+  bench('Clean Up checks every structure (2,000 structures)', () => { for (const f of doc.fragments()) { looksTangled(doc, f); cleanUpOptions(doc, f); } }, { iterations: 3 });
+});
+
+/** One 600-atom molecule: a zigzag chain in rows of 30, its ends joined so it is one structure. */
+function bigMolecule(n = 600): Doc {
+  const doc = new Doc();
+  doc.edit('molecule', () => {
+    let prev: number | null = null;
+    for (let i = 0; i < n; i++) {
+      const row = Math.floor(i / 30), col = row % 2 ? 29 - (i % 30) : i % 30;
+      const a = doc.addAtom(100 + col * L * 0.87, 100 + row * L * 1.6 + (col % 2) * L * 0.5).id;
+      if (prev !== null) doc.addBond(prev, a, 1);
+      prev = a;
+    }
+  });
+  return doc;
+}
+
+describe('big molecule (600 atoms)', () => {
+  const doc = bigMolecule();
+  const text = writeCdxml(doc, { name: 'bench' });
+  bench('save CDXML (600-atom molecule)', () => { writeCdxml(doc, { name: 'bench' }); }, { iterations: 5 });
+  bench('open CDXML (600-atom molecule)', () => { readCdxml(text); }, { iterations: 5 });
+  bench('Clean Up (600-atom molecule)', () => { cleanUpMoves(doc, doc.fragments()); }, { iterations: 3, warmupIterations: 1 });
+});
+
+/** A long Gaussian optimization's log, about 43 MB (as tests/review-presentation-lows-2026-11-03.test.ts makes it). */
+function bigLog(): string {
+  const geom = (k: number) => ' Standard orientation:\n ---------------------------------------------------------------------\n Center     Atomic      Atomic             Coordinates (Angstroms)\n Number     Number       Type             X           Y           Z\n ---------------------------------------------------------------------\n' +
+    Array.from({ length: 80 }, (_, i) => `     ${i + 1}          6           0        ${(i * 0.1 + k * 1e-4).toFixed(6)}    0.100000    0.200000`).join('\n') + '\n ---------------------------------------------------------------------\n';
+  const step = (k: number) => geom(k) + ` SCF Done:  E(RB3LYP) =  -${(1000 + k * 1e-5).toFixed(9)}     A.U. after   12 cycles\n` + ' filler line of a long optimization output with forces and convergence tables\n'.repeat(60);
+  const parts = [' Entering Gaussian System, Link 0=g16\n #p opt freq b3lyp/6-31g(d)\n ----------\n'];
+  for (let k = 0; k < 4000; k++) parts.push(step(k));
+  parts.push(' Sum of electronic and thermal Free Energies=        -1000.123456\n Normal termination of Gaussian 16\n');
+  return parts.join('');
+}
+
+describe('Gaussian log (43 MB)', () => {
+  const log = bigLog();
+  bench('read a 43 MB Gaussian log', () => { readQmOutput(log, 'big.log'); }, { iterations: 3, warmupIterations: 1 });
 });
