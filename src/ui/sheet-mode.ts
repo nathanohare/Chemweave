@@ -2529,7 +2529,12 @@ export class SheetMode {
       if (b) b.disabled = !on;
     }
     // Edit ▸ Spreadsheet ▸ Data Tools ▸ Remove Embedded Objects: off on a sheet with none, saying why
-    for (const m of document.querySelectorAll<HTMLButtonElement>('button[data-cmd="remove-embedded-objects"]')) removeOleItem(m, s);
+    const oleOff = s.removeOleBlocked;
+    for (const m of document.querySelectorAll<HTMLButtonElement>('button[data-cmd="remove-embedded-objects"]')) {
+      m.dataset.tip ??= m.title;
+      m.disabled = oleOff !== null;
+      m.title = oleOff ?? m.dataset.tip;
+    }
     for (const m of document.querySelectorAll('[role="menuitemcheckbox"][data-cmd="show-all-notes"]')) m.setAttribute('aria-checked', String(this.notes.showAll));
     for (const m of document.querySelectorAll('[role="menuitemcheckbox"][data-cmd="circle-invalid"]')) m.setAttribute('aria-checked', String(this.view.circleInvalid));
     for (const m of document.querySelectorAll('[role="menuitemcheckbox"][data-cmd="show-page-breaks"]')) m.setAttribute('aria-checked', String(this.view.showPageBreaks));
@@ -2805,15 +2810,4 @@ function fromTuples(items: ([string, () => void, boolean?] | null)[]): MenuItem[
     const sub = it[0].endsWith(' ▸');
     return { label: sub ? it[0].slice(0, -2) : it[0], run: () => it[1](), disabled: it[2] === false, ...(sub ? { opens: true } : {}) };
   });
-}
-
-/**
- * The Remove Embedded Objects menu item for a sheet: on while the sheet has objects kept from
- * Excel, otherwise off with the reason as its tooltip (style guide S15, S85; review F2b-R04).
- */
-export function removeOleItem(item: HTMLButtonElement, sheet: Pick<Sheet, 'ole'>): void {
-  const n = sheet.ole?.length ?? 0;
-  item.dataset.tip ??= item.title;
-  item.disabled = !n;
-  item.title = n ? item.dataset.tip : 'This sheet has no embedded objects';
 }

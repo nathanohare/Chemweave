@@ -611,6 +611,11 @@ export class Sheet {
     return n;
   }
 
+  /** Why Remove Embedded Objects can't run on this sheet (its menu item off, this as its tooltip), or null when it can (review F2b-R04). */
+  get removeOleBlocked(): string | null {
+    return this.ole?.length ? null : 'This sheet has no embedded objects';
+  }
+
   private assign<F extends ValueField>(field: F, value: Sheet[F]): void {
     const before = this[field];
     if (before === value) return;

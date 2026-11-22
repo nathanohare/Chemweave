@@ -288,23 +288,16 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
     expect(sh.ole).toHaveLength(1);
   });
 
-  it('turns Remove Embedded Objects off on a sheet with none, the reason in its tooltip (review F2b-R04)', async () => {
-    const { removeOleItem } = await import('../src/ui/sheet-mode');
+  it('turns Remove Embedded Objects off on a sheet with none, saying why (review F2b-R04)', async () => {
     const { book: wb } = await readXlsx(book(false));
     const sh = wb.sheets[0];
-    const item = document.createElement('button');
-    item.title = 'Remove the objects kept from Excel on this sheet';
-    removeOleItem(item, sh);
-    expect([item.disabled, item.title]).toEqual([false, 'Remove the objects kept from Excel on this sheet']);
+    expect(sh.removeOleBlocked).toBeNull();
     wb.edit('Remove Embedded Objects', () => { sh.removeOle(); });
-    removeOleItem(item, sh);
-    expect([item.disabled, item.title]).toEqual([true, 'This sheet has no embedded objects']);
-    // after Undo, on again with its own tooltip
+    expect(sh.removeOleBlocked).toBe('This sheet has no embedded objects');
+    // after Undo, on again
     wb.undo();
-    removeOleItem(item, sh);
-    expect([item.disabled, item.title]).toEqual([false, 'Remove the objects kept from Excel on this sheet']);
+    expect(sh.removeOleBlocked).toBeNull();
     // a new sheet never had any
-    removeOleItem(item, new Workbook().sheets[0]);
-    expect(item.disabled).toBe(true);
+    expect(new Workbook().sheets[0].removeOleBlocked).toBe('This sheet has no embedded objects');
   });
 });
