@@ -1655,7 +1655,7 @@ class Writer {
     const height = c.ph && c.boxH ? Math.max(c.boxH, lay.box.y2 - lay.box.y1) : c.fit && c.boxH ? Math.max(c.boxH, c.fit === 'shrink' ? 0 : grown) : grown;
     let box = { x1: c.x, y1: top, x2: c.x + Math.max(width, 1), y2: top + height };
     // a PowerPoint text box: its own frame (size, anchor, margins), moved with its text and resized as it was here
-    const frame = frameNow(c, emu, grown);
+    const frame = frameNow(c, emu, { h: grown, w: lay.boxWidth, top });
     if (frame) {
       const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(frame.xfrm);
       if (off) { const [x, y, w, h] = off.slice(1).map((v) => fromEmu(v)); box = { x1: x, y1: y, x2: x + w, y2: y + h }; }

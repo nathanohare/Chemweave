@@ -197,13 +197,31 @@ interface FrameKept {
   fit: string | null;
   dir: string | null;
   rot: number | null;
+  /** The text as read (`textSig`), to tell when a box that grows with its text must be fitted to it again. */
+  t?: string;
+}
+
+/**
+ * What a text box's size depends on in its text: each stretch of characters with one size, font,
+ * weight, slant and raising (however the runs are split), and each paragraph's spacing.
+ */
+export function textSig(c: Pick<Caption, 'runs' | 'paras'>): string {
+  const parts: [string, ...unknown[]][] = [];
+  for (const r of c.runs) {
+    const look = [r.size ?? null, r.font ?? null, !!r.bold, !!r.italic, r.sub ? 1 : r.sup ? 2 : 0];
+    const last = parts[parts.length - 1];
+    if (last && JSON.stringify(last.slice(1)) === JSON.stringify(look)) last[0] += r.text;
+    else parts.push([r.text, ...look]);
+  }
+  const paras = (c.paras ?? []).map((p) => [p.line ?? null, p.linePt ?? null, p.spaceBefore ?? 0, p.spaceAfter ?? 0, p.indent ?? 0]);
+  return JSON.stringify([parts.filter((x) => x[0] !== ''), paras]);
 }
 
 /** A PowerPoint text box's frame, to write back while the box isn't resized here (null without one). */
 export function keptFrame(sp: Element, c: Omit<Caption, 'id'>): string | null {
   const xf = kid(kid(sp, 'spPr'), 'xfrm'), bp = kid(kid(sp, 'txBody'), 'bodyPr');
   if (!xf || !bp || !kid(xf, 'off') || !kid(xf, 'ext')) return null;
-  const k: FrameKept = { xf: xmlOf(xf), bp: xmlOf(bp), x: c.x, y: c.y, wrap: c.wrap ?? null, boxH: c.boxH ?? null, fit: c.fit ?? null, dir: c.dir ?? null, rot: c.rot ?? null };
+  const k: FrameKept = { xf: xmlOf(xf), bp: xmlOf(bp), x: c.x, y: c.y, wrap: c.wrap ?? null, boxH: c.boxH ?? null, fit: c.fit ?? null, dir: c.dir ?? null, rot: c.rot ?? null, t: textSig(c) };
   return JSON.stringify(k);
 }
 
@@ -213,10 +231,13 @@ const near = (a: number | null | undefined, b: number | null | undefined) => (a 
  * The frame kept for a text box, moved as far as its text was moved here (in EMU, `emu` turning
  * points into them), while its fit, direction and turn are as read; else null. A box made wider
  * or taller here keeps its anchor, margins and AutoFit, as resizing it in PowerPoint does, its
- * extent changed by as much (`autoH`: the text's height here, in points, for a box that grows
- * with its text).
+ * extent changed by as much. A box that grows with its text (spAutoFit, "Resize shape to fit
+ * text") whose text or its look was changed here is fitted to the text as laid out here, its top
+ * where the text starts here and, when it doesn't wrap, its width the text's (`fit`: the text's
+ * height, widest line and top, in points), as PowerPoint fits it when the text is typed there.
  */
-export function frameNow(c: Caption, emu: (pt: number) => number, autoH?: number): { xfrm: string; bodyPr: string; dx: number; dy: number } | null {
+export function frameNow(c: Caption, emu: (pt: number) => number, fit?: { h: number; w: number; top: number }): { xfrm: string; bodyPr: string; dx: number; dy: number } | null {
+  const autoH = fit?.h;
   if (!c.pbox || c.ph) return null;
   let k: FrameKept;
   try { k = JSON.parse(c.pbox) as FrameKept; } catch { return null; }
@@ -233,6 +254,12 @@ export function frameNow(c: Caption, emu: (pt: number) => number, autoH?: number
         : autoH !== undefined && /<a:spAutoFit\/>/.test(k.bp) ? emu(autoH) + ins('tIns', 45720) + ins('bIns', 45720) : Number(cy);
       return `<a:ext cx="${w}" cy="${Math.max(1, h)}"`;
     });
+  }
+  if (fit && /<a:spAutoFit\/>/.test(k.bp) && k.t !== undefined && k.t !== textSig(c)) {
+    const ins = (n: string, d: number) => Number(new RegExp(` ${n}="(\\d+)"`).exec(k.bp)?.[1] ?? d);
+    const tIns = ins('tIns', 45720), bIns = ins('bIns', 45720), lr = ins('lIns', 91440) + ins('rIns', 91440);
+    xfrm = xfrm.replace(/<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/, (_, x: string, _y: string, cx: string) =>
+      `<a:off x="${x}" y="${emu(fit.top) - tIns}"/><a:ext cx="${k.wrap === null ? Math.max(1, emu(fit.w) + lr) : cx}" cy="${Math.max(1, emu(fit.h) + tIns + bIns)}"`);
   }
   return { xfrm, bodyPr: k.bp, dx, dy };
 }

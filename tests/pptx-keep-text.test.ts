@@ -184,6 +184,27 @@ describe('PowerPoint text box frames (G2-05)', () => {
     expect(sp).toContain('lIns="91440"');
   });
 
+  it('fits a box that grows with its text to its text once the text is changed here, and leaves it as it was while not (review F2-R02)', async () => {
+    const auto = (t: string, wrap = 'square', w = 4000000) => textBox(`<a:p>${run(t)}</a:p>`, `<a:bodyPr wrap="${wrap}" lIns="91440" tIns="45720" rIns="91440" bIns="45720" rtlCol="0"><a:spAutoFit/></a:bodyPr>`, [914400, 500000, w, 369332]);
+    // untouched: the frame exactly as read
+    expect(off(parasOf(await save(deck(auto('Grows'))), 'Grows').sp)).toEqual([914400, 500000, 4000000, 369332]);
+    // eight lines: taller, from the top of the text
+    const longer = await save(deck(auto('Grows')), (cs) => { cs[0].runs = [{ ...cs[0].runs[0], text: 'Grows\n2\n3\n4\n5\n6\n7\n8' }]; });
+    const [x, y, w, h] = off(parasOf(longer, 'Grows').sp);
+    expect([x, w]).toEqual([914400, 4000000]);
+    expect(h).toBeGreaterThan(369332 * 6);
+    expect(Math.abs(y - 500000)).toBeLessThan(2 * E);
+    // made bigger: taller too
+    const bigger = await save(deck(auto('Grows')), (cs) => { cs[0].runs = cs[0].runs.map((r) => ({ ...r, size: 60 })); });
+    expect(off(parasOf(bigger, 'Grows').sp)[3]).toBeGreaterThan(369332 * 2.5);
+    // a box that doesn't wrap: as wide as its longer line
+    const wide = await save(deck(auto('Short', 'none', 900000)), (cs) => { cs[0].runs = [{ ...cs[0].runs[0], text: 'A much longer line of text than before' }]; });
+    expect(off(parasOf(wide, 'longer').sp)[2]).toBeGreaterThan(900000 * 3);
+    // (its anchor, margins and AutoFit as read)
+    expect(parasOf(wide, 'longer').sp).toContain('lIns="91440"');
+    expect(parasOf(wide, 'longer').sp).toContain('<a:spAutoFit/>');
+  });
+
   it('keeps a vertical box\'s size', async () => {
     const vertical = textBox(`<a:p>${run('Down')}</a:p>`, '<a:bodyPr vert="vert270" wrap="square" rtlCol="0"/>', [5000000, 500000, 800000, 3000000]);
     const { sp } = parasOf(await save(deck(vertical)), 'Down');
