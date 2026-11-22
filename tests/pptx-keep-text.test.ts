@@ -212,3 +212,54 @@ describe('PowerPoint text box frames (G2-05)', () => {
     expect(sp).toContain('vert="vert270"');
   });
 });
+
+describe('PowerPoint boxes that grow with their text, turned, vertical or not wrapping (review F2b-R02, F2b-R03)', () => {
+  /** A "resize to fit text" box: turned `rot` (60000ths of a degree), its text direction, wrap and alignment. */
+  const fitBox = (t: string, at: number[], { rot = 0, vert = '', wrap = 'square', algn = 'l' } = {}) =>
+    `<p:sp><p:nvSpPr><p:cNvPr id="${nextId++}" name="TextBox"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm${rot ? ` rot="${rot}"` : ''}><a:off x="${at[0]}" y="${at[1]}"/><a:ext cx="${at[2]}" cy="${at[3]}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>` +
+    `<p:txBody><a:bodyPr${vert ? ` vert="${vert}"` : ''} wrap="${wrap}" lIns="91440" tIns="45720" rIns="91440" bIns="45720" rtlCol="0"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr algn="${algn}"/>${run(t)}</a:p></p:txBody></p:sp>`;
+  const frame = (xml: string) => /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(parasOf(xml, 'txBox').sp)!.slice(1).map(Number);
+  const retype = (text: string) => (cs: Caption[]) => { cs[0].runs = [{ ...cs[0].runs[0], text }]; };
+  const AT = [3000000, 500000, 2000000, 369332];
+
+  it('places a turned box so that its text starts where it did, and never moves one left as read', async () => {
+    // a y-axis label turned 270°: retyped "AAA" as "AAB", the frame keeps its place (it moved about
+    // 5 cm down before); the corner where the text starts is at (3815334, 1684666) EMU both times
+    const label = deck(fitBox('AAA', AT, { rot: 16200000 }));
+    expect(frame(await save(label))).toEqual([3000000, 500000, 2000000, 369332]);
+    expect(frame(await save(label, retype('AAB')))).toEqual([3004501, 495500, 2000000, 378333]);
+    // three lines: taller in its own frame, growing away from where the text starts
+    expect(frame(await save(label, retype('AAA\nB\nC')))).toEqual([3278821, 221180, 2000000, 926973]);
+    // turned 90° (it went off the slide, y −1476497, before)
+    const down = deck(fitBox('AAA', AT, { rot: 5400000 }));
+    expect(frame(await save(down))).toEqual([3000000, 500000, 2000000, 369332]);
+    expect(frame(await save(down, retype('AAA\nB\nC')))).toEqual([2721180, 221180, 2000000, 926973]);
+    // turned 10°: the corner where the text starts stays at (3047259, 329157)
+    const tilted = deck(fitBox('AAA', AT, { rot: 600000 }));
+    expect(frame(await save(tilted))).toEqual([3000000, 500000, 2000000, 369332]);
+    expect(frame(await save(tilted, retype('AAA\nB\nC')))).toEqual([2951583, 495764, 2000000, 926973]);
+  });
+
+  it('grows a box of text running up across its lines, from the side the text starts on', async () => {
+    // vert270: lines stack left to right, so the frame gets wider from its left edge and keeps its
+    // height (the length its text runs along); before, it moved 4.6 cm down and took the stack as its height
+    const up = deck(fitBox('AAA', [3000000, 500000, 369332, 2000000], { vert: 'vert270' }));
+    expect(frame(await save(up))).toEqual([3000000, 500000, 369332, 2000000]);
+    const xml = await save(up, retype('AAA\nB\nC'));
+    expect(frame(xml)).toEqual([3000000, 500000, 926973, 2000000]);
+    expect(parasOf(xml, 'txBox').sp).toContain('vert="vert270"');
+  });
+
+  it('fits a box that does not wrap to its longer line, growing from its alignment side', async () => {
+    const at = [3000000, 500000, 700000, 369332];
+    const longer = retype('A much longer line');
+    // left: from its left edge; centred: both sides, its middle staying at x 3350000; right: leftward,
+    // its right edge staying at x 3700000. One line each (before, centred and right-aligned boxes
+    // kept their width and stacked the line, 700000 × 3121533)
+    expect(frame(await save(deck(fitBox('AAA', at, { wrap: 'none' })), longer))).toEqual([3000000, 500000, 2075917, 378333]);
+    expect(frame(await save(deck(fitBox('AAA', at, { wrap: 'none', algn: 'ctr' })), longer))).toEqual([2312042, 500000, 2075917, 378333]);
+    expect(frame(await save(deck(fitBox('AAA', at, { wrap: 'none', algn: 'r' })), longer))).toEqual([1624083, 500000, 2075917, 378333]);
+    // and as read while untouched
+    expect(frame(await save(deck(fitBox('AAA', at, { wrap: 'none', algn: 'ctr' }))))).toEqual(at);
+  });
+});

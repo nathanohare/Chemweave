@@ -11,6 +11,7 @@
 
 import { elementXml } from './kept-parts';
 import { kid, kids } from './ooxml';
+import { turnAbout } from '../geom';
 import type { Caption, ParaStyle, TextRun } from '../model';
 
 /** What a run kept (see TextRun.pfx). */
@@ -227,6 +228,9 @@ export function keptFrame(sp: Element, c: Omit<Caption, 'id'>): string | null {
 
 const near = (a: number | null | undefined, b: number | null | undefined) => (a ?? null) === null ? (b ?? null) === null : (b ?? null) !== null && Math.abs(a! - b!) < 0.01;
 
+/** A text box's size from its text, in points: the height of its lines, its widest line and where its first line's top is. */
+export type TextFit = { h: number; w: number; top: number; free?: () => { h: number; w: number } };
+
 /**
  * The frame kept for a text box, moved as far as its text was moved here (in EMU, `emu` turning
  * points into them), while its fit, direction and turn are as read; else null. A box made wider
@@ -234,32 +238,62 @@ const near = (a: number | null | undefined, b: number | null | undefined) => (a 
  * extent changed by as much. A box that grows with its text (spAutoFit, "Resize shape to fit
  * text") whose text or its look was changed here is fitted to the text as laid out here, its top
  * where the text starts here and, when it doesn't wrap, its width the text's (`fit`: the text's
- * height, widest line and top, in points), as PowerPoint fits it when the text is typed there.
+ * height, widest line and top, in points; `free` the same laid out on one line per paragraph, for
+ * a box the file says doesn't wrap), as PowerPoint fits it when the text is typed there; a box
+ * that doesn't wrap grows from its text's alignment side (centred: both sides, right: leftward).
+ * Turned boxes and text running up or down (review F2b-R02) are sized in the text's own frame (the
+ * file's the other way round for vertical text, as pptx-read reads it) and placed so that
+ * PowerPoint, turning the frame about its middle, puts the text's start where it is here: the
+ * writer's own step for turned text (turnAbout). A box whose size and text are as read is written
+ * exactly as read.
  */
-export function frameNow(c: Caption, emu: (pt: number) => number, fit?: { h: number; w: number; top: number }): { xfrm: string; bodyPr: string; dx: number; dy: number } | null {
-  const autoH = fit?.h;
+export function frameNow(c: Caption, emu: (pt: number) => number, fit?: TextFit): { xfrm: string; bodyPr: string; dx: number; dy: number } | null {
   if (!c.pbox || c.ph) return null;
   let k: FrameKept;
   try { k = JSON.parse(c.pbox) as FrameKept; } catch { return null; }
   if ((c.fit ?? null) !== k.fit || (c.dir ?? null) !== k.dir || !near(c.rot, k.rot)) return null;
   const dx = c.x - k.x, dy = c.y - k.y;
   let xfrm = k.xf.replace(/<a:off x="(-?\d+)" y="(-?\d+)"/, (_, x: string, y: string) => `<a:off x="${Number(x) + emu(dx)}" y="${Number(y) + emu(dy)}"`);
-  if (!near(c.wrap, k.wrap) || !near(c.boxH, k.boxH)) {
-    // (a box that didn't wrap, or now doesn't: made afresh)
-    if (k.wrap === null || c.wrap === undefined) return null;
-    const ins = (n: string, d: number) => Number(new RegExp(` ${n}="(\\d+)"`).exec(k.bp)?.[1] ?? d);
-    xfrm = xfrm.replace(/<a:ext cx="(\d+)" cy="(\d+)"/, (_, cx: string, cy: string) => {
-      const w = Math.max(1, Number(cx) + emu(c.wrap! - k.wrap!));
-      const h = k.boxH !== null && c.boxH !== undefined ? Number(cy) + emu(c.boxH - k.boxH)
-        : autoH !== undefined && /<a:spAutoFit\/>/.test(k.bp) ? emu(autoH) + ins('tIns', 45720) + ins('bIns', 45720) : Number(cy);
-      return `<a:ext cx="${w}" cy="${Math.max(1, h)}"`;
-    });
+  const resized = !near(c.wrap, k.wrap) || !near(c.boxH, k.boxH);
+  // (a box that didn't wrap, or now doesn't: made afresh)
+  if (resized && (k.wrap === null || c.wrap === undefined)) return null;
+  const autoFit = /<a:spAutoFit\/>/.test(k.bp);
+  const refit = !!fit && autoFit && k.t !== undefined && k.t !== textSig(c);
+  if (!resized && !refit) return { xfrm, bodyPr: k.bp, dx, dy };
+  const m = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(xfrm);
+  if (!m) return { xfrm, bodyPr: k.bp, dx, dy };
+  const [x, y, cx, cy] = m.slice(1).map(Number);
+  const ins = (n: string, d: number) => Number(new RegExp(` ${n}="(\\d+)"`).exec(k.bp)?.[1] ?? d);
+  const tIns = ins('tIns', 45720), bIns = ins('bIns', 45720), lr = ins('lIns', 91440) + ins('rIns', 91440);
+  // the text's frame: the file's, the other way round for vertical text, about the same middle
+  const vertical = !!c.dir, rot = c.rot ?? 0;
+  const w0 = vertical ? cy : cx, h0 = vertical ? cx : cy;
+  const mid = { x: x + cx / 2, y: y + cy / 2 };
+  const at = { x: emu(c.x), y: emu(c.y) };
+  // its corner in the text's own coordinates, where the text is laid out unturned at its start
+  // (PowerPoint turns the frame about its middle, this program the text about its start)
+  const back = turnAbout(mid, at, -rot);
+  let fx = mid.x - w0 / 2 + back.x - mid.x, fy = mid.y - h0 / 2 + back.y - mid.y;
+  let w1 = w0, h1 = h0;
+  if (resized) {
+    w1 = Math.max(1, w0 + emu(c.wrap! - k.wrap!));
+    h1 = k.boxH !== null && c.boxH !== undefined ? h0 + emu(c.boxH - k.boxH) : fit && autoFit ? emu(fit.h) + tIns + bIns : h0;
   }
-  if (fit && /<a:spAutoFit\/>/.test(k.bp) && k.t !== undefined && k.t !== textSig(c)) {
-    const ins = (n: string, d: number) => Number(new RegExp(` ${n}="(\\d+)"`).exec(k.bp)?.[1] ?? d);
-    const tIns = ins('tIns', 45720), bIns = ins('bIns', 45720), lr = ins('lIns', 91440) + ins('rIns', 91440);
-    xfrm = xfrm.replace(/<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/, (_, x: string, _y: string, cx: string) =>
-      `<a:off x="${x}" y="${emu(fit.top) - tIns}"/><a:ext cx="${k.wrap === null ? Math.max(1, emu(fit.w) + lr) : cx}" cy="${Math.max(1, emu(fit.h) + tIns + bIns)}"`);
+  if (refit) {
+    const none = /\bwrap="none"/.test(k.bp);
+    const size = none && fit!.free ? fit!.free() : fit!;
+    if (none || k.wrap === null) {
+      const w = Math.max(1, emu(size.w) + lr);
+      if (none) fx += c.justify === 'center' ? (w1 - w) / 2 : c.justify === 'right' ? w1 - w : 0;
+      w1 = w;
+    }
+    h1 = emu(size.h) + tIns + bIns;
+    fy = emu(fit!.top) - tIns;
   }
+  h1 = Math.max(1, h1);
+  // back to the file's frame: its middle where turning puts the text's frame's middle
+  const to = turnAbout({ x: fx + w1 / 2, y: fy + h1 / 2 }, at, rot);
+  const cx1 = Math.round(vertical ? h1 : w1), cy1 = Math.round(vertical ? w1 : h1);
+  xfrm = xfrm.replace(m[0], `<a:off x="${Math.round(to.x - cx1 / 2)}" y="${Math.round(to.y - cy1 / 2)}"/><a:ext cx="${cx1}" cy="${cy1}"`);
   return { xfrm, bodyPr: k.bp, dx, dy };
 }
