@@ -419,8 +419,10 @@ class Styles {
 
   /** The font, fill and border numbers for a look. */
   private parts(s: CellStyle): { font: number; fill: number; border: number } {
-    const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign, l.underline ? l.excel?.u : undefined]);
-    const font = fontLook(s) !== fontLook(this.normal)
+    // a font as the file had it (an outline, a shadow, its family and character set, a theme
+    // colour), while the cell's font looks as it did
+    const keptFont = s.excel?.font && s.excel.font.key === fontLook(s) ? s.excel.font.xml : null;
+    const font = keptFont ? this.index(this.fonts, keptFont) : fontLook(s) !== fontLook(this.normal)
       ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${s.excel?.strike ? '<strike/>' : ''}${s.underline ? uXml(s.excel?.u) : ''}` +
         `${s.excel?.vertAlign ? `<vertAlign val="${xmlAttr(s.excel.vertAlign)}"/>` : ''}<sz val="${s.size ?? 11}"/>` +
         `${s.color ? `<color rgb="FF${hex6(s.color)}"/>` : '<color theme="1"/>'}<name val="${xml(s.font ?? this.minor)}"/><family val="2"/>${s.font ? '' : '<scheme val="minor"/>'}</font>`)
@@ -1168,6 +1170,16 @@ const BORDER_STYLES: Record<string, BorderStyle> = {
   dashDot: 'dashed', mediumDashDot: 'dashed', dashDotDot: 'dotted', mediumDashDotDot: 'dashed', slantDashDot: 'dashed', dotted: 'dotted',
 };
 
+/** What a cell's font looks like here, to tell whether a font kept from the file still goes with it. */
+const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign, l.underline ? l.excel?.u : undefined]);
+
+/**
+ * Whether a font as written here (fontXml) has more than a font made from its look would: an
+ * outline or shadow (18.8.22), condensed or extended, a character set, a family other than
+ * Swiss, or a theme colour other than the text's.
+ */
+const fontHasMore = (x: string) => /<(outline|shadow|condense|extend|charset)\b|<family val="(?!2")|<color theme="(?!1"\/>)/.test(x);
+
 /** A font's or run's underline (18.4.13): single unless another of Excel's kinds is given. */
 const EXCEL_U = new Set(['double', 'singleAccounting', 'doubleAccounting']);
 // (Word's double kinds, from text pasted from a document, as Excel's double)
@@ -1223,6 +1235,8 @@ function readStyles(doc: Document | null, theme: string[], faces: { minor: strin
     const va = val(f, 'vertAlign');
     if (va === 'superscript' || va === 'subscript' || on(f, 'strike')) st.excel = { ...(va === 'superscript' || va === 'subscript' ? { vertAlign: va } : {}), ...(on(f, 'strike') ? { strike: true as const } : {}) };
     if (uKind && uKind !== 'single') st.excel = { ...st.excel, u: uKind };
+    const written = fontXml(f);
+    if (fontHasMore(written)) st.excel = { ...st.excel, font: { xml: written, key: fontLook(st) } };
     return st;
   });
   const fills: (string | undefined)[] = kids(kid(root, 'fills'), 'fill').map((f) => {

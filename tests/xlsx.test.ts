@@ -389,7 +389,10 @@ describe('opening files made in Excel', () => {
       '<borders count="1"><border><left/><right/><top/><bottom/></border></borders>' +
       '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="10" fontId="1" fillId="2" borderId="0"><alignment horizontal="center" vertical="center"/></xf></cellXfs>';
     const { book } = await readXlsx(excelFile('<sheetData><row r="1"><c r="A1" s="1"><v>0.5</v></c></row></sheetData>', { styles, theme }));
-    expect(book.sheet.styleAt(0, 0)).toEqual({ bold: true, size: 14, color: '#112233', font: 'Arial', fill: '#' + applyTint('112233', 0.5).toLowerCase(), numFmt: '0.00%', align: 'center', valign: 'middle' });
+    // (the font's theme colour is kept for saving, G2-19)
+    const { excel, ...look } = book.sheet.styleAt(0, 0)!;
+    expect(look).toEqual({ bold: true, size: 14, color: '#112233', font: 'Arial', fill: '#' + applyTint('112233', 0.5).toLowerCase(), numFmt: '0.00%', align: 'center', valign: 'middle' });
+    expect(excel?.font?.xml).toContain('<color theme="4"/>');
   });
 
   it('says what it could not keep', async () => {

@@ -98,6 +98,12 @@ export interface ExcelLook {
   strike?: true;
   /** The underline's kind while the cell is underlined: double, singleAccounting or doubleAccounting (18.18.85), shown as a single line. */
   u?: string;
+  /**
+   * The cell's font as the file had it, when it has more than is shown here (an outline, a shadow,
+   * a family or character set, a theme colour), with the look it had (`key`): written back while
+   * the cell's font still looks so.
+   */
+  font?: { xml: string; key: string };
 }
 
 /** Parts of an Excel file's styles kept to save back with it (see xlsx.ts). */
