@@ -1793,7 +1793,13 @@ body.ribbon-collapsed .ribbon.rb-peek > .rb-tabs [role='tab'][aria-selected='tru
 .rb-caption { font-size: var(--fs-xs); color: var(--muted); align-self: flex-start; }
 #doc-ribbon .rb-field input.rb-num { width: 46px; }
 /* Document mode: the highlighter button, and its colours */
+/* a small split button (Highlight, Bullets, Numbering, Borders): the command and its arrow side by
+   side, each lit across its own whole area when pointed at, one outline round both (review 2, item 2) */
 .rb-split { display: inline-flex; }
+.ribbon .rb-split:not(.rb-fly) { flex-direction: row; align-items: stretch; }
+.ribbon .rb-split:not(.rb-fly) > :first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.ribbon .rb-split:not(.rb-fly) > .rb-drop { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+.ribbon .rb-split:not(.rb-fly):hover > :is(button, select) { border-color: var(--line); }
 .ribbon button.rb-hl { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding-bottom: 2px; }
 .hl-ab { font-size: var(--fs-xs); line-height: 1; }
 .hl-bar { width: 14px; height: 4px; border-radius: 1px; background: #ffff00; border: 1px solid rgb(0 0 0 / 0.15); }
@@ -3103,7 +3109,7 @@ dialog.layout-editor form { margin: 0; }
 .le-stage-wrap { overflow: auto; }
 .le-stage { position: relative; outline: none; box-shadow: var(--page-shadow); background: #fff; }
 .le-canvas { position: absolute; left: 0; top: 0; display: block; }
-.le-ph { position: absolute; box-sizing: border-box; border: 1px dashed rgba(70, 80, 100, 0.7); cursor: move; overflow: hidden; padding: 3px 5px; color: rgba(60, 70, 90, 0.75); font: var(--fs-sm)/1.3 system-ui, sans-serif; user-select: none; }
+.le-ph { position: absolute; box-sizing: border-box; border: 1px dashed color-mix(in srgb, var(--ph-ink, #465064) 70%, transparent); cursor: move; overflow: hidden; padding: 3px 5px; color: color-mix(in srgb, var(--ph-ink, #3c465a) 80%, transparent); font: var(--fs-sm)/1.3 system-ui, sans-serif; user-select: none; }
 .le-ph.picked { border: 1.5px solid var(--accent); background: rgba(47, 111, 223, 0.06); }
 .le-ph-title { font-size: var(--fs-lg); font-weight: 600; }
 .le-handle { position: absolute; width: 9px; height: 9px; background: #fff; border: 1px solid var(--accent); display: none; }
@@ -3916,8 +3922,9 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .rb-fly-menu .rb-icon .ci-ic { width: 20px; height: 20px; }
 .rb-fly-menu hr { width: 100%; margin: 3px 0; border: 0; border-top: 1px solid var(--line); }
 .rb-fly-menu .rb-fly-head { padding: 4px 8px 2px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-/* a split button: the command on top, its arrow underneath, one outline when either is pointed at */
-.rb-split { flex-direction: column; }
+/* a large split button: the command on top, its arrow underneath, one outline when either is pointed at
+   (the small ones in Document's Font and Paragraph groups keep their arrow beside them, below) */
+.rb-fly.rb-split { flex-direction: column; }
 .rb-split > button.rb-big { padding-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .ribbon .rb-split > .rb-fly-btn { padding: 0 4px; line-height: 12px; font-size: 10px; min-width: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
 .rb-split:hover > button { border-color: var(--line); }
@@ -3953,6 +3960,8 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 /* Ribbon galleries in Word's style (select-gallery.ts): each choice with a small picture of it */
 .rb-gal-menu { min-width: 200px; max-height: 70vh; overflow-y: auto; }
 .rb-gal-menu .gal-items { display: flex; flex-direction: column; gap: 1px; }
+/* Insert > Cover Page: each design's first page, as a sheet of paper */
+.gal-cover { display: block; height: auto; border: 1px solid var(--line); background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
 .rb-gal-menu .gal-grid { display: grid; grid-template-columns: repeat(3, auto); gap: 4px; padding: 2px; }
 .ribbon .rb-gal-menu button.gal-it { display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 4px; border: 1px solid transparent; border-radius: var(--r-ctl, 3px); text-align: left; line-height: 1.25; }
 .ribbon .rb-gal-menu .gal-grid button.gal-it { flex-direction: column; gap: 3px; padding: 5px 6px; text-align: center; min-width: 76px; }
@@ -4075,7 +4084,9 @@ body:not(.slides-mode, .design-mode, .sheet-mode, .doc-mode) #side-content > :is
 header, footer { background: var(--chrome); }
 .ribbon.tabbed, .doc-ribbon { background: var(--chrome); border-bottom: 0; }
 body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
-.ribbon.tabbed > .rb-panel:not([hidden]), .doc-ribbon > .rb-panel:not([hidden]) { margin: 0 6px 5px; background: var(--rb-surface); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--rb-shadow); }
+/* (review round 2, item 24, Nate's pick A) the panel runs the window's full width and meets the page
+   directly: no band of the chrome tone under or beside it, only its shadow (kept above the page) */
+.ribbon.tabbed > .rb-panel:not([hidden]), .doc-ribbon > .rb-panel:not([hidden]) { position: relative; z-index: 2; margin: 0; background: var(--rb-surface); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; box-shadow: var(--rb-shadow); }
 .ribbon.tabbed > .rb-panel .rb-group, .doc-ribbon > .rb-panel .rb-group { background: transparent; }
 #formula-bar { background: var(--pane); }
 .dock, aside { background: var(--pane); }

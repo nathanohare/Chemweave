@@ -243,7 +243,7 @@ export const COMMAND_NAMES: Record<string, string> = {
   'doc-go-to': 'Go To…', 'doc-select': 'Select (menu)', 'select-similar': 'Select Text with Similar Formatting',
   'spelling-grammar': 'Spelling and Grammar…', 'thesaurus': 'Thesaurus…', 'word-count': 'Word Count…', 'insert-date': 'Date & Time…', 'insert-field': 'Insert a Field…',
   'doc-property': 'Insert a Document Property…', 'doc-properties': 'Document Properties (title, author…)…', 'quick-parts': 'Quick Parts (menu)', 'cover-page': 'Cover Page (menu)', 'blank-page': 'Insert a Blank Page', 'remove-cover': 'Remove the Cover Page',
-  'para-borders': 'Paragraph Borders (menu)', 'borders-shading': 'Borders and Shading…', 'shading-none': 'No Paragraph Shading', 'para-sort': 'Sort…',
+  'show-marks': 'Show/Hide ¶', 'para-borders': 'Paragraph Borders (menu)', 'para-border-last': 'Paragraph Borders (last used)', 'borders-shading': 'Borders and Shading…', 'shading-none': 'No Paragraph Shading', 'para-sort': 'Sort…',
   'insert-toc': 'Table of Contents…', 'insert-tof': 'Table of Figures…', 'mark-entry': 'Mark an Index Entry…', 'insert-index': 'Insert an Index…', 'mark-citation': 'Mark Citation…', 'insert-toa': 'Table of Authorities…', 'restrict-editing': 'Restrict Editing…', 'insert-form-text': 'Text Form Field…', 'insert-form-check': 'Check Box Form Field…', 'insert-form-drop': 'Drop-Down Form Field…', 'insert-footnote': 'Insert a Footnote', 'insert-link': 'Link…', 'remove-link': 'Remove the Link', 'open-link': 'Open the Link', 'insert-bookmark': 'Bookmark…', 'insert-endnote': 'Insert an Endnote', 'note-options': 'Footnote and Endnote Options…', 'insert-equation': 'Insert an Equation…', 'edit-equation': 'Change the Equation…', 'track-changes': 'Track Changes', 'accept-change': 'Accept the Change', 'reject-change': 'Reject the Change',
   'accept-all': 'Accept All Changes', 'reject-all': 'Reject All Changes', 'next-change': 'Next Change', 'prev-change': 'Previous Change', 'review-name': 'Your Name on Changes…', 'compare-docs': 'Compare Documents…', 'combine-docs': 'Combine…', 'new-comment': 'New Comment', 'delete-comment': 'Delete the Comment', 'delete-all-comments': 'Delete All Comments', 'resolve-comment': 'Resolve Comment', 'next-comment': 'Next Comment', 'prev-comment': 'Previous Comment', 'show-comments': 'Show Comments', 'compare-slides': 'Compare Presentations…', 'check-accessibility': 'Check Accessibility', 'rehearse-here': 'Rehearse from This Slide', 'record-show-here': 'Record from This Slide…', 'clear-timings-slide': 'Clear Timing on This Slide', 'clear-timings-all': 'Clear Timings on All Slides', 'clear-narration-slide': 'Clear Narration on This Slide', 'clear-narration-all': 'Clear Narration on All Slides', 'preflight': 'Check Figure for Journal…', 'alt-text': 'Alt Text…', 'new-from-template': 'New Document or Spreadsheet from a Template…',
   'view-print': 'Print Layout View', 'view-read': 'Read Mode', 'view-web': 'Web Layout View', 'view-outline': 'Outline View', 'view-draft': 'Draft View',
@@ -255,7 +255,7 @@ export const COMMAND_NAMES: Record<string, string> = {
   'outline-level-4': 'Show Levels 1 to 4 (outline)', 'outline-level-5': 'Show Levels 1 to 5 (outline)', 'outline-level-6': 'Show Levels 1 to 6 (outline)',
   'outline-level-7': 'Show Levels 1 to 7 (outline)', 'outline-level-8': 'Show Levels 1 to 8 (outline)', 'outline-level-9': 'Show Levels 1 to 9 (outline)',
   'doc-strike': 'Strikethrough', 'doc-small-caps': 'Small Capitals', 'doc-all-caps': 'All Capitals', 'change-case': 'Change Case',
-  'clear-char-formatting': 'Clear Text Formatting', 'clear-formatting': 'Clear All Formatting', 'styles-pane': 'Show the Styles Pane',
+  'clear-char-formatting': 'Clear Text Formatting', 'clear-formatting': 'Clear All Formatting', 'styles-pane': 'Show the Styles Pane', 'styles-launcher': 'Styles Pane (Styles group corner)',
   'style-h4': 'Heading 4 Style', 'style-h5': 'Heading 5 Style', 'style-h6': 'Heading 6 Style',
   'outline-first': 'Show First Line Only', 'outline-format': 'Show Text Formatting',
 };
@@ -409,7 +409,7 @@ export const DEFAULT_KEYS: Record<KeyContext, Record<string, string>> = {
     'Alt+Shift+6': 'outline-level-6', 'Alt+Shift+7': 'outline-level-7', 'Alt+Shift+8': 'outline-level-8', 'Alt+Shift+9': 'outline-level-9',
     'Ctrl+Shift+K': 'doc-small-caps', 'Ctrl+Shift+A': 'doc-all-caps', 'Shift+F3': 'change-case', 'Ctrl+Space': 'clear-char-formatting',
     'Ctrl+Alt+Shift+S': 'styles-pane', 'Ctrl+G': 'doc-go-to', F5: 'doc-go-to', F7: 'spelling-grammar', 'Shift+F7': 'thesaurus', 'Ctrl+Shift+G': 'word-count',
-    'Alt+Shift+D': 'insert-date',
+    'Alt+Shift+D': 'insert-date', 'Ctrl+Shift+8': 'show-marks',
   }),
   text: verbs('text', {
     'Ctrl+B': 'bold', 'Ctrl+I': 'italic', 'Ctrl+U': 'underline', 'Ctrl+=': 'sub', 'Ctrl+Shift+=': 'sup', 'Ctrl++': 'sup',

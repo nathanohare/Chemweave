@@ -1523,6 +1523,7 @@
               <datalist id="doc-size-list"><option>8</option><option>9</option><option>10</option><option>10.5</option><option>11</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>36</option><option>48</option><option>72</option></datalist>
               <button class="rb-sq" data-doc="font-bigger" title="Bigger text">A<sup>+</sup></button>
               <button class="rb-sq" data-doc="font-smaller" title="Smaller text">A<sup>−</sup></button>
+              <button class="rb-sq" data-doc="show-marks" aria-pressed="false" title="Show/Hide ¶ (Ctrl+Shift+8): show paragraph marks, spaces and tabs. They show on screen only, never in print or a saved file">¶</button>
             </div>
             <div class="rb-pair">
               <button class="rb-sq" data-doc="doc-bold" aria-pressed="false" title="Bold"><b>B</b></button>
@@ -1575,7 +1576,10 @@
               <button class="rb-sq" data-doc="para-tabs" title="Set tab stops for the selected paragraphs (left, center, right or decimal, with leaders), or click the ruler (View ▸ Ruler)">Tabs…</button>
               <button class="rb-sq" data-doc="para-sort" title="Sort: put the selected paragraphs (or the rows of the table the cursor is in) in order, by text, number or date">A↓Z</button>
               <label class="rb-sq rb-colour" title="Shading: a background color behind the selected paragraphs (Borders and Shading removes it)"><span>▧</span><input id="doc-shading" type="color" value="#d9e2f3" aria-label="Paragraph shading" /></label>
-              <button class="rb-sq rb-drop" data-doc="para-borders" aria-haspopup="true" title="Borders: lines above, below or around the selected paragraphs; Borders and Shading for the line and the shading">▦ ▾</button>
+              <span class="rb-split">
+                <button class="rb-sq" data-doc="para-border-last" title="Borders: the last border chosen (Bottom Border at first) on the selected paragraphs; click again to take it off">▦</button>
+                <button class="rb-sq rb-drop" data-doc="para-borders" aria-haspopup="true" title="Borders: lines above, below or around the selected paragraphs; Borders and Shading for the line and the shading">▾</button>
+              </span>
             </div>
           </div>
         </div>
@@ -1593,7 +1597,7 @@
           <button class="rb-style rb-styles-more" data-doc="styles-pane" title="Styles pane (Ctrl+Alt+Shift+S): every paragraph and character style, Heading 4 to 9 and custom styles; apply, change, make new ones"><span>⋯</span>More Styles</button>
         </div>
         <div class="rb-label">Styles</div>
-        <button class="rb-launch" data-doc="box-style" title="Change how the style the cursor is in looks (font, size, spacing…); every paragraph in it follows">⬊</button>
+        <button class="rb-launch" data-doc="styles-launcher" title="Styles pane (Ctrl+Alt+Shift+S): every paragraph and character style; apply, change and make new ones">⬊</button>
       </div>
       <div class="rb-group">
         <div class="rb-row">
@@ -1612,7 +1616,15 @@
     <div class="rb-panel" data-doc-panel="insert" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="cover-page" aria-haspopup="true" title="Cover Page: a first page with the document's title, subtitle, author, institution and date, in one of several styles"><span class="rb-icon">▤</span>Cover Page ▾</button>
+          <div class="rb-fly rb-selgal" data-name="Cover Page" data-ic="cover-page" data-pic="cover" data-gal="grid" title="Cover Page: a first page with the document's title, subtitle, author, institution and date, in one of several designs"><select id="doc-cover" data-doc-prefix="cover" aria-label="Cover Page">
+              <option value="" hidden></option>
+              <option value="plain" title="The title in the middle of the page, the author and date under it">Plain</option>
+              <option value="banded" title="The title in white on a band of the accent color">Banded</option>
+              <option value="ruled" title="The title between two heavy rules, to the left">Ruled</option>
+              <option value="report" title="A report's front page: what, who, where and when, down a line in the margin">Lab Report</option>
+              <option value="si" title="A journal's Supporting Information front page: the heading, the paper's title, its authors and institution">Supporting Information</option>
+              <option value="remove">Remove Current Cover Page</option>
+            </select></div>
           <button class="rb-big" data-doc="blank-page" title="Blank Page: an empty page at the cursor"><span class="rb-icon">▯</span>Blank Page</button>
           <button class="rb-big" data-doc="page-break" title="Start a new page here"><span class="rb-icon">⤓</span>Page Break</button>
         </div>

@@ -137,7 +137,7 @@ import { defaultHandout, handoutLayout, handoutPageSvg, notesPageSize, notesPage
 import { OutlineView } from './ui/outline-view';
 import { NotesPageView, editHandoutMaster, editNotesMaster } from './ui/notes-page-view';
 import { GuideTip, SlideRulers, drawGuides, gridAndGuides } from './ui/slide-guides';
-import { defaultView, guideNear, rulerText, snapMove, type RulerPrefs, type SlideView } from './deck/guides';
+import { defaultView, gridLines, guideNear, paintedArea, rulerText, snapMove, type RulerPrefs, type SlideView } from './deck/guides';
 import { effectPatch, effectsMenu, showStyleGallery, styleColours, stylePatch } from './ui/shape-styles';
 import { CommandSearch, uniqueCommands, type CommandItem } from './ui/command-search';
 import { fillTemplate, templateSize } from './design/templates';
@@ -4543,8 +4543,14 @@ const slidePage = {
     if (!d?.current) return;
     // (a canvas slide: its background as the keyframe picked sees it, and the screen's title and footer there)
     drawSlidePage(ctx, d.page(d.index, d.current.canvas ? canvasKeys.picked(d) : 0), darkSurround ?? SURROUND);
-    // a canvas slide: no edge, so no slide grid or guides; its keyframes instead
-    if (d.current.canvas && ws.active.mode === 'slides') { canvasKeys.draw(ctx, d, renderer.view.scale); slideCmts?.place(); return; }
+    // a canvas slide: no edge, so no guides; the grid (View > Gridlines) runs on across the whole
+    // canvas, lined up with the slide's, under its keyframes
+    if (d.current.canvas && ws.active.mode === 'slides') {
+      if (slideLook.grid) drawGrid(ctx, d.size, d.settings.view?.grid ?? defaultView(d.size).grid, true);
+      canvasKeys.draw(ctx, d, renderer.view.scale);
+      slideCmts?.place();
+      return;
+    }
     if (ws.active.mode === 'design' && designGrid.on) drawGrid(ctx, d.size, designGrid.step);
     if (ws.active.mode === 'slides') {
       const v = d.settings.view;
@@ -5154,7 +5160,10 @@ renderer.overlay.addEventListener('pointermove', (e) => {
 
 editor.moveSnap = (box, raw, tol) => {
   const d = deckNow();
-  return d && ws.active.mode === 'slides' && !d.current?.canvas ? snapMove(box, raw, d.settings.view ?? null, tol) : raw;
+  if (!d || ws.active.mode !== 'slides') return raw;
+  const v = d.settings.view ?? null;
+  // a canvas slide has the grid (Snap objects to grid) but no guides
+  return snapMove(box, raw, d.current?.canvas && v ? { ...v, showGuides: false } : v, tol);
 };
 
 /** The rulers show in Normal view of slides when View > Ruler is ticked. */
@@ -5210,18 +5219,21 @@ function addGuide(axis: 'x' | 'y'): void {
   editor.requestScene();
 }
 
-/** Light lines across the page to line things up by (on screen only). */
-function drawGrid(ctx: CanvasRenderingContext2D, size: SlideSize, step: number): void {
+/**
+ * Light lines across the page to line things up by (on screen only). `endless` (a canvas slide):
+ * across all of the part being painted, lined up with the slide's own grid, as a canvas has no edge.
+ */
+function drawGrid(ctx: CanvasRenderingContext2D, size: SlideSize, step: number, endless = false): void {
   const k = renderer.view.scale;
-  // too close together to see: every second (fourth…) line instead
-  let s = step;
-  while (s * k < 6) s *= 2;
+  const area = endless ? paintedArea(ctx.getTransform(), ctx.canvas.width, ctx.canvas.height) : null;
+  if (endless && !area) return;
+  const g = gridLines(size, step, k, area);
   ctx.save();
   ctx.lineWidth = 1 / k;
   ctx.strokeStyle = 'rgba(80, 110, 170, 0.22)';
   ctx.beginPath();
-  for (let x = s; x < size.w - 1e-6; x += s) { ctx.moveTo(x, 0); ctx.lineTo(x, size.h); }
-  for (let y = s; y < size.h - 1e-6; y += s) { ctx.moveTo(0, y); ctx.lineTo(size.w, y); }
+  for (const x of g.xs) { ctx.moveTo(x, g.area.y1); ctx.lineTo(x, g.area.y2); }
+  for (const y of g.ys) { ctx.moveTo(g.area.x1, y); ctx.lineTo(g.area.x2, y); }
   ctx.stroke();
   ctx.restore();
 }

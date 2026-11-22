@@ -29,6 +29,8 @@ import {
 } from './animation';
 
 const ease = (p: number) => 1 - (1 - p) ** 3;
+/** The longest a click on a canvas slide takes to play backwards (seconds): longer ones are sped up. */
+const BACK_MAX = 2;
 
 /** A part lifted off the slide to move on its own: its picture, where it goes, and (Turn in 3-D) what draws it turned. */
 interface Layer {
@@ -664,7 +666,7 @@ export class Player {
   private framesBy = new Map<string, SlideFrames>();
   /** A canvas the size of the show's, to fade a keyframe in on. */
   private scratch: HTMLCanvasElement | null = null;
-  private moving: { kind: 'transition'; from: HTMLCanvasElement | null; to?: HTMLCanvasElement; t: Transition; t0: number; morph?: MorphFrames | null; was?: number; zoom?: { rect: Rect; out: boolean } } | { kind: 'step'; t0: number } | { kind: 'trigger'; key: string; t0: number } | { kind: 'fly'; from: number; to: number; t0: number; dur: number } | null = null;
+  private moving: { kind: 'transition'; from: HTMLCanvasElement | null; to?: HTMLCanvasElement; t: Transition; t0: number; morph?: MorphFrames | null; was?: number; zoom?: { rect: Rect; out: boolean } } | { kind: 'step'; t0: number } | { kind: 'trigger'; key: string; t0: number } | { kind: 'fly'; from: number; to: number; t0: number; dur: number } | { kind: 'back'; t0: number; len: number; dur: number } | null = null;
   /** Clicks played so far of each of the slide's triggers (by the trigger's key). */
   private fired = new Map<string, { done: number }>();
   /** The slides the show plays, in order (a custom show, or a range of slides); every slide not hidden when null. */
@@ -1521,8 +1523,14 @@ export class Player {
     if (this.lookBack()) return;
     if (this.away !== null) { this.flyBack(); return; }
     if (this.done > 0 && !(this.done === 1 && this.current.steps[0]?.auto)) {
+      const st = this.current.steps[this.done - 1];
       this.done--;
-      this.paint();
+      // on a canvas slide the click's animations play backwards (the view glides back to where it
+      // was), quicker when the click took long; a normal slide goes back at once, as in PowerPoint
+      if (this.deck.slides[this.i]?.canvas && !this.noAnimation && st && st.length > 0) {
+        this.moving = { kind: 'back', t0: performance.now(), len: st.length, dur: Math.min(st.length, BACK_MAX) };
+        this.loop();
+      } else this.paint();
       this.onChange();
       return;
     }
@@ -1533,6 +1541,8 @@ export class Player {
   private finish(): void {
     const m = this.moving;
     this.moving = null;
+    // (going back: the click is already undone, so it ends where it was going)
+    if (m?.kind === 'back') { this.paint(); this.onChange(); return; }
     if (m?.kind === 'step') this.done = Math.min(this.current.stepCount, this.done + 1);
     else if (m?.kind === 'trigger') this.fired.set(m.key, { done: (this.fired.get(m.key)?.done ?? 0) + 1 });
     // the slide is in: its automatic animations still play
@@ -1608,6 +1618,22 @@ export class Player {
         return;
       }
       this.drawNow(ctx, -1, this.firedAt(now));
+      return;
+    }
+    if (m?.kind === 'back') {
+      // the click undone, played from its end to its start (sped up to last at most BACK_MAX)
+      const f = Math.min(1, (now - m.t0) / 1000 / Math.max(0.01, m.dur));
+      if (f >= 1) {
+        this.moving = null;
+        this.drawNow(ctx, -1, this.firedAt(now));
+        this.videos(true);
+        this.onChange();
+        this.onIdle();
+        return;
+      }
+      this.videos(false);
+      // (the view's glide eases in and out the same both ways, so time simply runs backwards)
+      this.drawNow(ctx, m.len * (1 - f), this.firedAt(now));
       return;
     }
     if (m?.kind === 'step') {

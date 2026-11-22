@@ -88,7 +88,10 @@ import type { FieldCode } from '../document/fields';
 import { docPagePrefs } from './mode-prefs';
 import { popupMenu } from './sheet-view';
 import type { BorderChoice } from '../document/para-borders';
-import type { QuickPart } from '../document/quick-parts';
+import { coverParas, type QuickPart } from '../document/quick-parts';
+import { registerGalleryPics } from './select-gallery';
+import { coverPic } from './cover-thumbs';
+import { COVER_ACCENTS } from './doc-insert-ui';
 import { GO_TO_KINDS, goToOffset, similarRanges, type GoToKind } from '../document/goto';
 import { DocIndexUI } from './doc-index-ui';
 import { lookOfTable } from '../document/table-styles';
@@ -453,6 +456,8 @@ export class DocumentMode {
       si: () => this.host.si?.() ?? null,
       picture: (link, key) => this.host.siPicture?.(link, key) ?? Promise.resolve(null),
     });
+    // Insert > Cover Page: each design's own first page in the gallery
+    registerGalleryPics('cover', (v) => coverPic(v, COVER_ACCENTS[0][0]));
     this.inserts = new DocInsertUI({
       file: () => this.file,
       ed: () => this.ed,
@@ -1375,7 +1380,6 @@ export class DocumentMode {
       'hf-footer': (x, y) => this.hfGallery('footer', x, y),
       'hf-numbers': (x, y) => this.hfNumberMenu(x, y),
       'hf-info': (x, y) => this.hfInfoMenu(x, y),
-      'cover-page': (x, y) => this.inserts.coverMenu(x, y),
       'doc-select': (x, y) => this.selectMenu(x, y),
       'show-markup': (x, y) => this.showMarkupMenu(x, y),
       'arrange-position': (x, y) => this.arranging.positionMenu(x, y),
@@ -3657,8 +3661,17 @@ export class DocumentMode {
     if (cmd.startsWith('style-id:')) { style(cmd.slice(9)); this.focus(); return true; }
     const bd = /^border-(bottom|top|left|right|none|all|outside|inside|horizontal)$/.exec(cmd);
     if (bd) { this.paragraphs.border(bd[1] as BorderChoice); return true; }
+    if (cmd === 'para-border-last') { this.paragraphs.border(this.paragraphs.last); return true; }
+    // Insert > Cover Page: its gallery (from Search Commands), a design from it, or Remove
+    if (cmd === 'cover-page') { this.ribbon.querySelector<HTMLElement>('#doc-cover')?.parentElement?.querySelector<HTMLButtonElement>(':scope > .rb-fly-btn')?.click(); return true; }
     const cover = /^cover-(.+)$/.exec(cmd);
-    if (cover) { void this.inserts.cover(cover[1]); return true; }
+    if (cover) {
+      // (the gallery's list holds no choice of its own: each pick is a command)
+      const sel = this.ribbon.querySelector<HTMLSelectElement>('#doc-cover');
+      if (sel) sel.value = '';
+      if (cover[1] === 'remove') this.inserts.removeCover(); else void this.inserts.cover(cover[1]);
+      return true;
+    }
     const design = /^design-(theme|fonts|colors|styleset|spacing)-(.+)$/.exec(cmd);
     if (design) { this.design(design[1], design[2]); this.focus(); return true; }
     const pick = /^(case|multilevel|bulletlib|watermark)-(.*)$/.exec(cmd);
@@ -3667,6 +3680,13 @@ export class DocumentMode {
     switch (cmd) {
       case 'text-to-table': void this.tables.textToTableDialog(); break;
       case 'nav-pane': this.nav.toggle(); this.updateRibbon(); break;
+      // Home > Show/Hide ¶: marks for spaces, tabs and paragraph ends, on screen only
+      case 'show-marks':
+        this.view.showMarks = !this.view.showMarks;
+        if (this.split) this.split.view.showMarks = this.view.showMarks;
+        this.updateRibbon();
+        this.redraw();
+        return true;
       case 'doc-align-left': align('left'); break;
       case 'doc-align-center': align('center'); break;
       case 'doc-align-right': align('right'); break;
@@ -3679,6 +3699,8 @@ export class DocumentMode {
       case 'style-caption': style('Caption'); break;
       case 'style-h4': case 'style-h5': case 'style-h6': case 'style-h7': case 'style-h8': case 'style-h9': style(`Heading${cmd.slice(7)}`); break;
       case 'styles-pane': this.stylesPane.toggle(this.ribbon.querySelector<HTMLElement>('[data-doc="styles-pane"]')); return true;
+      // the Styles group's corner button opens the Styles pane, as Word's does (not the Style box)
+      case 'styles-launcher': this.stylesPane.toggle(this.ribbon.querySelector<HTMLElement>('[data-doc="styles-launcher"]')); return true;
       case 'doc-strike': ed.toggle('strike'); break;
       case 'doc-small-caps': ed.toggle('smallCaps'); break;
       case 'doc-all-caps': ed.toggle('allCaps'); break;
@@ -5695,6 +5717,8 @@ export class DocumentMode {
     const margins = Object.entries({ normal: [1, 1], narrow: [0.5, 0.5], moderate: [1, 0.75], wide: [1, 2] })
       .find(([, [tb, lr]]) => near(pg.top, tb * INCH) && near(pg.bottom, tb * INCH) && near(pg.left, lr * INCH) && near(pg.right, lr * INCH));
     pick('#doc-margins', margins?.[0] ?? 'other');
+    const rmCover = this.ribbon.querySelector<HTMLOptionElement>('#doc-cover option[value="remove"]');
+    if (rmCover) rmCover.disabled = !this.file || !coverParas(this.file.t);
     const short = Math.min(pg.w, pg.h), long = Math.max(pg.w, pg.h);
     pick('#doc-paper', near(short, LETTER.w) && near(long, LETTER.h) ? 'letter' : near(short, A4.w) && near(long, A4.h) ? 'a4' : 'other');
     pick('#doc-orient', pg.w > pg.h ? 'landscape' : 'portrait');
@@ -5783,6 +5807,7 @@ export class DocumentMode {
     }
     press('table-painter', this.tables.painting);
     press('table-gridlines', this.view.gridlines);
+    press('show-marks', this.view.showMarks);
     press('nav-pane', this.nav.open);
     const pen = this.tables.pen;
     pick('#doc-pen-style', pen.style);
