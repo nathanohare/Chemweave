@@ -13,7 +13,7 @@ import type { Pixels } from '../recognise/picture';
 import { editableFromParts, readFrame, type Editable, type PartRead, type StyleChoice } from '../recognise/editable';
 import { partPixels, schemeParts } from '../recognise/leftover';
 import { withoutFrames } from '../recognise/frames';
-import type { ReadLine } from '../recognise/scheme-extras';
+import { findArrows, rubOut, type ReadLine } from '../recognise/scheme-extras';
 import { fromDataUrl, showableSrc } from '../render/images';
 import { decodePicture } from './import-structures';
 
@@ -153,7 +153,9 @@ export async function readPicture(host: MakeEditableHost, pic: Picture, ds: DocS
   const shown = await pictureForReading(pic);
   if (!shown) { host.flash('This picture can\'t be read (its format isn\'t one the structure reader can open).', 6000); return null; }
   // the boxes round structures taken out first (editableFromParts takes them out the same way)
-  const bare = withoutFrames(shown.p).p;
+  // (and the arrows: an arrow reaching from one box to the next joins them into one part)
+  const framed = withoutFrames(shown.p).p;
+  const bare = rubOut(framed, findArrows(framed, Math.max(12, 25 / shown.ptPerPx)).filter((a) => a.headStyle !== 'none' || a.tailStyle !== 'none').flatMap((a) => a.marks));
   const boxes = schemeParts(bare, partGap(shown.ptPerPx));
   const parts: FromPictureRead[] = [];
   const problems: string[] = [];

@@ -414,7 +414,7 @@ describe('Make Editable: boxes round structures, and formulas as the text reader
   it('puts formulas right: subscripts read as commas, Cl read as CI, O read as a nought', () => {
     const cases: [string, string][] = [
       ['CO,Me', 'CO2Me'], ['Et,0', 'Et2O'], ['H,0', 'H2O'], ['CH,Cl,', 'CH2Cl2'], ['LiBH,', 'LiBH4'], ['CICO,Et', 'ClCO2Et'],
-      ['HCI', 'HCl'], ['Ph;P,', 'Ph3P,'], ['Et,N', 'Et3N'], ['CrO;', 'CrO3'], ['(Boc),0', '(Boc)2O'],
+      ['HCI', 'HCl'], ['HCI/EtOH;', 'HCl/EtOH;'], ['Ph;P,', 'Ph3P,'], ['Et,N', 'Et3N'], ['CrO;', 'CrO3'], ['(Boc),0', '(Boc)2O'],
       // left alone
       ['THF,', 'THF,'], ['23,', '23,'], ['MeOH,', 'MeOH,'], ['LiHMDS;', 'LiHMDS;'], ['DMP', 'DMP'],
     ];

@@ -226,6 +226,9 @@ export function editableFromParts(parts: PartRead[], picture: Pixels, ptPerPx: n
       const { box } = pc;
       if ('m' in pc) {
         const m = pc.m!;
+        // a reading that doesn't fit its part (atoms far outside it) is not put in: the part stays as picture
+        const out = m.px.some(([x, y]) => x < -0.2 * box.w || x > 1.2 * box.w || y < -0.2 * box.h || y > 1.2 * box.h);
+        if (out) { problems.push('A structure was read at the wrong size and is kept as picture.'); continue; }
         const placed = addReadAt(doc, pc.graph!, m.px.map(([x, y]) => [(x + box.x) * K, (y + box.y) * K]));
         problems.push(...placed.problems);
         if (choice === 'match') applyLook(doc, m.look, ds, new Set(placed.ids));
@@ -274,8 +277,9 @@ export function editableFromParts(parts: PartRead[], picture: Pixels, ptPerPx: n
         if (text.length === 1 && !/[1-9]/.test(text)) return false;
         // a short label by a structure read (H, Boc, NH2 the reader missed): it stays with the picture
         const x1 = Math.min(...c.marks.map((m) => m.x1)), x2 = Math.max(...c.marks.map((m) => m.x2)), y1 = Math.min(...c.marks.map((m) => m.y1)), y2 = Math.max(...c.marks.map((m) => m.y2));
-        const near = atomsPx.some(([x, y]) => x > x1 - 0.9 * unit && x < x2 + 0.9 * unit && y > y1 - 0.9 * unit && y < y2 + 0.9 * unit);
-        return !(near && /^[A-Za-z0-9*+~-]{1,4}$/.test(text) && !/^\d+[a-z]?$/.test(text));
+        const near = atomsPx.some(([x, y]) => x > x1 - 0.6 * unit && x < x2 + 0.6 * unit && y > y1 - 0.6 * unit && y < y2 + 0.6 * unit);
+        // (a reagent's name under its structure, DBU or DDQ, is a caption)
+        return !(near && /^[A-Za-z0-9*+~-]{1,4}$/.test(text) && !/^\d+[a-z]?$/.test(text) && !/^[A-Z]{3,4}$/.test(text));
       });
       const labelPt = look?.labelSize ?? null;
       for (const c of caps) {

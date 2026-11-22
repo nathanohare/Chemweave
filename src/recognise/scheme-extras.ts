@@ -126,7 +126,7 @@ function stroke(p: Pixels, m: Mark, least: number): Shape | null {
 }
 
 /** The head at one end of a stroke (`end` +1 the far end, -1 the near): how far its barbs reach each side, how long it is, and how filled. */
-function headAt(p: Pixels, s: Shape, end: 1 | -1): { left: number; right: number; length: number; fill: number } | null {
+function headAt(p: Pixels, s: Shape, end: 1 | -1): { left: number; right: number; length: number; back: number; fill: number } | null {
   const W = p.width, L = s.t1 - s.t0 + 1;
   const tipT = end > 0 ? s.t1 : s.t0;
   const edge = s.span / 2 + 0.75;
@@ -166,7 +166,7 @@ function headAt(p: Pixels, s: Shape, end: 1 | -1): { left: number; right: number
     }
   }
   const fill = tried ? inside / tried : 1;
-  return { left: both || left >= right ? left : 0, right: both || right > left ? right : 0, length: Math.max(length, hw), fill };
+  return { left: both || left >= right ? left : 0, right: both || right > left ? right : 0, length: Math.max(length, hw), back: length, fill };
 }
 
 /**
@@ -179,6 +179,9 @@ export function findArrows(p: Pixels, least: number): FoundArrow[] {
     const s = stroke(p, m, least);
     if (!s) continue;
     const a = headAt(p, s, 1), b = headAt(p, s, -1);
+    // a bracket's end: a short bar straight across (an arrowhead's barbs sweep back along the line)
+    const serif = (h: typeof a) => !!h && h.back < 0.6 * Math.max(h.left, h.right) && !(h.left && h.right && Math.min(h.left, h.right) >= 0.5 * Math.max(h.left, h.right));
+    if (serif(a) || serif(b)) continue;
     const end = (t: number) => ({ x: s.cx + s.d.x * t + s.n.x * s.mid, y: s.cy + s.d.y * t + s.n.y * s.mid });
     // the head is at the far end (+1) unless only the near end has one
     const flip = !a && !!b;
@@ -249,9 +252,9 @@ export function captionsFrom(lines: ReadLine[], p: Pixels, marks: Mark[]): Found
   const pieces: Piece[] = [];
   for (const l of lines) {
     // a word the reader is less sure of is taken beside one it is sure of (a formula in a line of
-    // conditions); a lone A among conditions is heat (Δ), which it has no letter for
+    // conditions); an A on its own after a comma is heat (Δ), which it has no letter for
     const sureLine = l.words.some((w) => w.c >= 80 && /[A-Za-z0-9]{2}/.test(w.t));
-    const words = l.words.filter((w) => (w.c >= SURE_WORD || (sureLine && w.c >= 30)) && /[A-Za-z0-9]/.test(w.t)).map((w) => ({ ...w, t: /^A[,;]?$/.test(w.t) && l.words.length > 1 ? 'Δ' + w.t.slice(1) : chemWord(w.t) }));
+    const words = l.words.filter((w) => (w.c >= SURE_WORD || (sureLine && w.c >= 30)) && /[A-Za-z0-9]/.test(w.t)).map((w, i, all) => ({ ...w, t: /^A[,;]?$/.test(w.t) && /[,;]$/.test(all[i - 1]?.t ?? '') ? 'Δ' + w.t.slice(1) : chemWord(w.t) }));
     let cur: Piece | null = null;
     for (const w of words) {
       const [x1, y1, x2, y2] = w.box, h = y2 - y1 + 1;
@@ -320,7 +323,7 @@ export function chemWord(w: string): string {
     else out += c;
   }
   // l read as I: Cl (HCI, CICO2Et, TBDPSCI, NaCI); not CIP and the like
-  out = out.replace(/(^|[A-Z0-9(])CI(?=$|[A-Z0-9,)(])/g, '$1Cl');
+  out = out.replace(/(^|[A-Z0-9(])CI(?=$|[A-Z0-9,)(/;])/g, '$1Cl');
   // O read as a nought beside a subscript or element (H20 is H2O, Et20 is Et2O)
   out = out.replace(/([A-Za-z)]\d)0(?=$|[^0-9])/g, '$1O');
   return out;

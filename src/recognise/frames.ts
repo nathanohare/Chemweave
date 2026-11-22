@@ -35,13 +35,22 @@ export function findFrames(p: Pixels): FoundFrame[] {
     if (w < least || h < least) continue;
     const own = new Set(m.pixels);
     const mine = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && own.has(y * W + x);
-    // how thick each side is, through its middle (a shadow makes the right and bottom thicker)
-    const run = (x: number, y: number, dx: number, dy: number) => { let n = 0; while (n < 40 && mine(x + dx * n, y + dy * n)) n++; return n; };
+    // how thick each side is, through its middle (a shadow makes the right and bottom thicker,
+    // and may start lower down than the box, so the side is looked for in from the edge)
+    const side = (x: number, y: number, dx: number, dy: number, most: number) => {
+      let at = 0;
+      while (at < most && !mine(x + dx * at, y + dy * at)) at++;
+      let n = 0;
+      while (n < 60 && mine(x + dx * (at + n), y + dy * (at + n))) n++;
+      return { at, n };
+    };
     const cx = Math.round((m.x1 + m.x2) / 2), cy = Math.round((m.y1 + m.y2) / 2);
-    const tTop = run(cx, m.y1, 0, 1), tBottom = run(cx, m.y2, 0, -1), tLeft = run(m.x1, cy, 1, 0), tRight = run(m.x2, cy, -1, 0);
-    if (!tTop || !tBottom || !tLeft || !tRight) continue;
-    const lw = Math.min(tTop, tLeft, tBottom, tRight);
-    if (Math.max(tTop, tLeft, tBottom, tRight) > 5 * lw + 4 || lw > 0.08 * Math.min(w, h)) continue;
+    const inW = Math.round(w * 0.1), inH = Math.round(h * 0.1);
+    const T = side(cx, m.y1, 0, 1, inH), B = side(cx, m.y2, 0, -1, inH), Lf = side(m.x1, cy, 1, 0, inW), Rt = side(m.x2, cy, -1, 0, inW);
+    const tTop = T.at + T.n, tBottom = B.at + B.n, tLeft = Lf.at + Lf.n, tRight = Rt.at + Rt.n;
+    if (!T.n || !B.n || !Lf.n || !Rt.n) continue;
+    const lw = Math.min(T.n, Lf.n, B.n, Rt.n);
+    if (Math.max(tTop, tLeft, tBottom, tRight) > 6 * lw + 6 || lw > 0.08 * Math.min(w, h)) continue;
     // all of it on the sides (rounded corners may come in from them)
     const R = Math.round(Math.min(w, h) * 0.22);
     let onSides = 0;
