@@ -38,7 +38,7 @@ import { fillInk, mix, ringShadowGroups, ringShadowSize, shadowLook } from '../r
 import { shapeShadow } from '../render/highlight-fx';
 import { parseColor } from '../render/vector';
 import { layoutTable, cellAlign, isCovered, spanOf, partAt, NOTE_SCALE } from '../table';
-import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, type RefKind, type RefOut } from './cdxml-more';
+import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, zPrint, type RefKind, type RefOut } from './cdxml-more';
 import { TABLE_TAG, TABLE_PART_TAG, tableBorders, type TableTag } from './cdxml-table';
 import { bondLayer, crossingBondsCached, listedNearMisses } from '../chem/crossing';
 import { repeatGroups, repeatCount, repeatLabelPlace } from '../chem/polymer';
@@ -2862,6 +2862,8 @@ class CdxmlWriter {
    * says what the element's tag says already is left as it is.
    */
   private writeMore(): void {
+    // (nothing drawn changed since the file was read: the tags in it are the ones it was read with)
+    if (this.unchangedSinceRead()) return;
     const doc = this.doc;
     const ided = this.idedFinder();
     const SHAPE_NAMES = ['graphic', 'embeddedobject', 'table', 'group', 'curve'];
@@ -2873,9 +2875,16 @@ class CdxmlWriter {
     };
     const maps: Record<RefKind, Map<number, unknown>> = { a: doc.atoms, b: doc.bonds, c: doc.captions, r: doc.arrows, s: doc.shapes };
     const ref: RefOut = (kind, id) => (maps[kind].has(id) ? elOf(kind, id)?.getAttribute('id') ?? null : null);
-    const stereoText = (e: Element) => {
-      const t = kids(e).find((c) => c.nodeName === 'objecttag' && c.getAttribute('Name') === 'stereo');
-      return t ? this.child(t, 't')?.textContent ?? null : null;
+    // an element's stereo label text and its settings tag, found in one look through its children
+    const tagsOf = (e: Element): { stereo: string | null; old: Element | null } => {
+      let stereo: string | null = null, old: Element | null = null;
+      for (let k = e.firstElementChild; k; k = k.nextElementSibling) {
+        if (k.nodeName !== 'objecttag') continue;
+        const name = k.getAttribute('Name');
+        if (name === MORE_TAG) old = k;
+        else if (name === 'stereo') stereo = this.child(k, 't')?.textContent ?? null;
+      }
+      return { stereo, old };
     };
     // what the reader takes from the element itself (cdxml.ts): a crossing bond's Z, and a justified text's width from its box
     // (whether a fragment has crossing bonds is worked out once per fragment, and only for a bond with a place of its own)
@@ -2894,9 +2903,10 @@ class CdxmlWriter {
       const bb = (e.getAttribute('BoundingBox') ?? '').trim().split(/\s+/).map(Number);
       return bb.length === 4 && bb.every(Number.isFinite) ? Math.abs(bb[2] - bb[0]) : undefined;
     };
-    const put = (e: Element | null, v: Record<string, unknown> | null) => {
+    // a bond's order among the bonds it crosses as written (zPrint)
+    const zAt = (e: Element) => zPrint(e, (fid) => ided(Number(fid), ['b']));
+    const put = (e: Element | null, v: Record<string, unknown> | null, old = e ? tagsOf(e).old : null) => {
       if (!e) return;
-      const old = kids(e).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MORE_TAG);
       const want = v ? JSON.stringify(v) : null;
       if ((old?.getAttribute('Value') ?? null) === want) return;
       if (old) e.removeChild(old);
@@ -2906,12 +2916,14 @@ class CdxmlWriter {
     for (const a of doc.atoms.values()) {
       const e = elOf('a', a.id);
       if (!e) continue;
-      const t = this.child(e, 't');
-      put(e, atomMore(a, t ? labelSeen(t) : null, t ? labelLookOfText(t, Number(e.getAttribute('Charge')) || undefined) : {}, stereoText(e)));
+      const t = this.child(e, 't'), own = tagsOf(e);
+      put(e, atomMore(a, t ? labelSeen(t) : null, t ? labelLookOfText(t, Number(e.getAttribute('Charge')) || undefined) : {}, own.stereo), own.old);
     }
     for (const b of doc.bonds.values()) {
       const e = elOf('b', b.id);
-      if (e) put(e, bondMore(b, stereoText(e), b.z !== undefined ? fileZ(e) : undefined, e.getAttribute('Z')));
+      if (!e) continue;
+      const own = tagsOf(e), place = b.z !== undefined;
+      put(e, bondMore(b, own.stereo, place ? fileZ(e) : undefined, place ? zAt(e) : null), own.old);
     }
     for (const c of doc.captions.values()) {
       const e = elOf('c', c.id);

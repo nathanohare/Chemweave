@@ -91,9 +91,21 @@ export function atomMoreIn(a: Atom, v: Record<string, unknown>, seen: string | n
 }
 
 /**
+ * The print of the drawing order ChemDraw has where a bond crosses others: its Z and the Z of each
+ * bond it crosses (CrossingBonds, found by id with `bond`). A place among crossing bonds means
+ * something only beside the others' places, so Bring to Front or Send to Back in ChemDraw on any
+ * of them leaves ChemDraw's order for all of them.
+ */
+export function zPrint(e: Element, bond: (id: string) => Element | null): string {
+  const others = (e.getAttribute('CrossingBonds') ?? '').trim().split(/\s+/).filter(Boolean)
+    .map((id) => bond(id)?.getAttribute('Z') ?? '').sort();
+  return [e.getAttribute('Z') ?? '', ...others].join(' ');
+}
+
+/**
  * The tag's value for a bond (null when it needs none). `fileZ` is the Z the reader takes from the
- * element itself, if any, and `zAt` the element's Z attribute as written: a place among crossing
- * bonds is used again only while ChemDraw's Z is still that one (Send to Back in ChemDraw wins).
+ * element itself, if any, and `zAt` the print of its order among the bonds it crosses as written
+ * (zPrint): a place among crossing bonds is used again only while ChemDraw's order there is unchanged.
  */
 export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefined, zAt: string | null): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
@@ -102,7 +114,7 @@ export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefin
   return Object.keys(v).length ? v : null;
 }
 
-/** Puts a bond's settings from its tag back. `zAt` is the element's Z attribute in the file now. */
+/** Puts a bond's settings from its tag back. `zAt` is the print of its order in the file now (zPrint). */
 export function bondMoreIn(b: Bond, v: Record<string, unknown>, zAt: string | null): void {
   if (num(v.z) && (v.zAt ?? null) === zAt) b.z = v.z;
   stereoIn(b, v.stereo);
@@ -130,9 +142,11 @@ export function captionMore(c: Caption, fileWidth: number | undefined, at: strin
   return Object.keys(v).length ? v : null;
 }
 
-/** What lines a text up in ChemDraw: its justification and wrap width. */
+/** What lines a text up in ChemDraw: its justification (none is on the left) and wrap width (as a number). */
 export function captionAt(t: Element): string {
-  return `${t.getAttribute('Justification') ?? t.getAttribute('CaptionJustification') ?? ''}|${t.getAttribute('WordWrapWidth') ?? ''}`;
+  const j = t.getAttribute('Justification') ?? t.getAttribute('CaptionJustification') ?? 'Left';
+  const ww = Number(t.getAttribute('WordWrapWidth'));
+  return `${j}|${ww > 0 ? ww.toFixed(2) : ''}`;
 }
 
 /** Puts a caption's settings from its tag back. `at` is captionAt of the element in the file now. */

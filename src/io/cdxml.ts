@@ -39,7 +39,7 @@ import { cleanTiedLook } from '../editor/tied-look';
 import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
-import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, labelSeen, captionAt, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
+import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, labelSeen, captionAt, zPrint, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
 
 export interface ReadStats {
   atoms: number;
@@ -1494,12 +1494,16 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
     }
     // this program's settings that ChemDraw has no place for, with what they name found again by id
     const refIn: RefIn = (fileId) => byFileId.get(fileId);
+    // (the file's bonds by id, gathered the first time a kept place needs the ones it crosses)
+    let bondEls: Map<string, Element> | null = null;
+    const bondEl = (fid: string) => (bondEls ??= new Map(all.filter((e) => e.nodeName === 'b').map((e) => [e.getAttribute('id') ?? '', e]))).get(fid) ?? null;
+    const zNow = (b: Element) => zPrint(b, bondEl);
     for (const [kind, id, el, json] of moreTags) {
       let v: Record<string, unknown>;
       try { v = JSON.parse(json) as Record<string, unknown>; } catch { continue; }
       if (!v || typeof v !== 'object') continue;
       if (kind === 'a') { const a = doc.atoms.get(id); const t = kids(el).find((k) => k.nodeName === 't'); if (a) atomMoreIn(a, v, t ? labelSeen(t) : null, doc.degree(id) > 0); }
-      else if (kind === 'b') { const b = doc.bonds.get(id); if (b) bondMoreIn(b, v, el.getAttribute('Z')); }
+      else if (kind === 'b') { const b = doc.bonds.get(id); if (b) bondMoreIn(b, v, zNow(el)); }
       else if (kind === 'c') { const c = doc.captions.get(id); if (c) captionMoreIn(c, v, captionAt(el)); }
       else if (kind === 'r') { const r = doc.arrows.get(id); if (r) arrowMoreIn(r, v, refIn); }
       else if (kind === 's') { const sh = doc.shapes.get(id); if (sh) shapeMoreIn(sh, v, refIn); }

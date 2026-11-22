@@ -100,6 +100,39 @@ describe('the settings tag (R3)', () => {
     expect([...back.bonds.values()].map((b) => b.z)).not.toContain(4);
   });
 
+  it('lets ChemDraw\'s order win for every bond it crosses after Bring to Front on one (review F7b2-R01)', () => {
+    const d = new Doc();
+    d.bulk(() => {
+      const a = d.addAtom(0, 0), b = d.addAtom(40, 0), c = d.addAtom(20, -20), e = d.addAtom(20, 20);
+      d.addBond(a.id, b.id, 1, 'solid', { z: 9 });
+      d.addBond(c.id, e.id, 1, 'solid', { z: 3 });
+    });
+    const xml = parse(writeCdxml(d, { name: 't.cdxml' }));
+    const front = [...readCdxml(new XMLSerializer().serializeToString(xml)).doc.bonds.values()];
+    expect(front.map((b) => b.z)).toEqual([9, 3]);
+    // Bring to Front in ChemDraw on the lower bond: only its own Z changes, above the other's
+    const bonds = [...xml.getElementsByTagName('b')];
+    const top = Math.max(...bonds.map((b) => Number(b.getAttribute('Z'))));
+    bonds[1].setAttribute('Z', String(top + 1));
+    const [upper, lower] = [...readCdxml(new XMLSerializer().serializeToString(xml)).doc.bonds.values()];
+    expect(lower.z!).toBeGreaterThan(upper.z!);
+  });
+
+  it('keeps a text width when ChemDraw writes the same layout differently (review F7b2-R03)', () => {
+    const d = new Doc();
+    d.bulk(() => {
+      d.addCaption({ x: 0, y: 0, runs: [{ text: 'left text' }], justify: 'left', width: 120 });
+      d.addCaption({ x: 0, y: 80, runs: [{ text: 'wrapped text here' }], justify: 'left', wrap: 80, width: 100 });
+    });
+    const doc = parse(writeCdxml(d, { name: 't.cdxml' }));
+    const [t1, t2] = [...doc.getElementsByTagName('t')];
+    t1.setAttribute('Justification', 'Left');
+    expect(t2.getAttribute('WordWrapWidth')).toBe('80.00');
+    t2.setAttribute('WordWrapWidth', '80');
+    const back = [...readCdxml(new XMLSerializer().serializeToString(doc)).doc.captions.values()];
+    expect(back.map((c) => c.width)).toEqual([120, 100]);
+  });
+
   it('lets ChemDraw\'s justification win over a kept text width once ChemDraw changed it', () => {
     const back = edited((doc) => { const t = tagged(doc, 't')[0]; t.setAttribute('Justification', 'Center'); t.setAttribute('BoundingBox', '50 31 90 42'); });
     const c = [...back.captions.values()][0];
