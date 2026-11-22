@@ -176,6 +176,8 @@ Titles and text boxes always move to their layouts' places. Structures scale wit
 
 Click a placeholder or a text box to type in it. **Insert** tab ▸ **Text Box** makes a new one: click to type, or drag to make a box that wraps.
 
+As in PowerPoint, a text box shows its frame (dashed while you type, solid while it is selected) with round handles on its corners and edges. Drag a handle to size the box: the side handles set its width, the top and bottom ones its height (a box that grew with its text then keeps the height you give it). Point at the frame's edge for the four-way arrow, then drag to move the box, or click to select it without starting to type.
+
 The **Font** and **Paragraph** groups on the **Home** tab work as in PowerPoint. While you are typing they change the selected words (or what you type next); with a text box or a shape selected, they change all of its text at once.
 
 - **Font:** font, size, **A+** and **A−** (bigger and smaller in PowerPoint's steps), bold, italic, underline, subscript, superscript, formula style (CH₂Cl₂ with the numbers lowered) and color.
