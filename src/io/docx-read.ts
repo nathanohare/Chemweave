@@ -162,6 +162,18 @@ const KEPT_RPR: Record<string, string> = {
   fitText: 'f', rtl: 'g', cs: 'g', em: 'g', eastAsianLayout: 'h', specVanish: 'h',
 };
 
+/**
+ * Paragraph properties not read here, by their place in w:pPr (CT_PPrBase, ECMA-376 part 1,
+ * 17.3.1.26): a after pageBreakBefore (17.3.1.11 framePr: a text frame or a drop cap), c before
+ * spacing (East Asian line breaking, 17.3.1.6 bidi, adjustRightInd, snapToGrid), d after ind
+ * (mirrorIndents, suppressOverlap), e after jc (textDirection, textAlignment, textboxTightWrap,
+ * 17.3.1.20 outlineLvl). The paragraph's own, written back with it (ParaStyle.wpx).
+ */
+const KEPT_PPR: Record<string, string> = {
+  framePr: 'a', kinsoku: 'c', wordWrap: 'c', overflowPunct: 'c', topLinePunct: 'c', autoSpaceDE: 'c', autoSpaceDN: 'c', bidi: 'c', adjustRightInd: 'c', snapToGrid: 'c',
+  mirrorIndents: 'd', suppressOverlap: 'd', textDirection: 'e', textAlignment: 'e', textboxTightWrap: 'e', outlineLvl: 'e',
+};
+
 interface RProps { /** Word 2010's text effects as written (see TextRun.wfx). */ wfx?: string; /** Run properties not read here, as written (see TextRun.wrx). */ wrx?: string; lang?: string; noProof?: boolean; raise?: number; font?: string; size?: number; bold?: boolean; italic?: boolean; underline?: boolean; ukind?: string; ucolor?: string; dstrike?: boolean; color?: string | null; highlight?: string | null; pos?: Pos; hidden?: boolean; formula?: boolean; strike?: boolean; smallCaps?: boolean; allCaps?: boolean; cstyle?: string; spacing?: number; /** Word's kerning: letters kerned at this size (points) and larger, 0 for none (w:kern, in half points). */ kern?: number; noFill?: boolean; transparency?: number; outline?: string; outlineW?: number; shadow?: boolean }
 /** Paragraph formatting as a file gives it, in points. */
 interface PProps {
@@ -1382,6 +1394,16 @@ class DocxReader {
   /** What the style of the table whose cell is being read gives its paragraphs (null outside a cell). */
   private cellLook: CellLook | null = null;
 
+  /** A paragraph's own properties not read here, as written, by their place (KEPT_PPR; undefined: none). */
+  private keptPPr(pPr: Element | null): string | undefined {
+    const raw: Record<string, string> = {};
+    for (const c of kids(pPr)) {
+      const slot = c.namespaceURI === this.W ? KEPT_PPR[c.localName] : undefined;
+      if (slot) raw[slot] = (raw[slot] ?? '') + elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
+    }
+    return Object.keys(raw).length ? JSON.stringify(raw) : undefined;
+  }
+
   /** A paragraph's own and its style's formatting. */
   private paraProps(pPr: Element | null): { style: string; p: PProps; direct: PProps; base: RProps; mark: RProps } {
     const sid = this.a(kid(pPr, 'pStyle')) ?? this.defaultPara;
@@ -1510,6 +1532,7 @@ class DocxReader {
       pageBreak: p.pageBreak, section: brk, list, level: list ? ilvl : undefined, noLineNumbers: p.noLineNumbers, noHyphen: p.noHyphen || undefined,
       tabs: finalTabs(p), scheme, bullet,
       border: cleanBorders(p.border), shade: p.shade && p.shade !== '#ffffff' ? p.shade : undefined,
+      wpx: this.keptPPr(pPr),
     };
     // the number as Word draws it: in the paragraph mark's bold and italic (its style's, unless the
     // mark sets its own), then the list level's; kept where that isn't the style's

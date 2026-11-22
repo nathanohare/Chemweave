@@ -639,6 +639,9 @@ class DocxWriter {
     if (!!ps.keepNext !== st.keepNext) pPr.push(ps.keepNext ? '<w:keepNext/>' : '<w:keepNext w:val="0"/>');
     if (!!ps.keepLines !== !!st.keepLines) pPr.push(ps.keepLines ? '<w:keepLines/>' : '<w:keepLines w:val="0"/>');
     if (ps.pageBreak) pPr.push('<w:pageBreakBefore/>');
+    // paragraph properties not modelled here, each in its place (docx-read.ts KEPT_PPR)
+    const raw = keptPPr(ps);
+    pPr.push(raw.a ?? '');
     if (!!ps.noWidow !== !!st.noWidow) pPr.push(ps.noWidow ? '<w:widowControl w:val="0"/>' : '<w:widowControl/>');
     // Word has no "start a new column" for a paragraph: a column break begins it
     const colBreak = ps.colBreak ? '<w:r><w:br w:type="column"/></w:r>' : '';
@@ -653,6 +656,7 @@ class DocxWriter {
     pPr.push(paraBorderXml(ps));
     if (ps.tabs?.length) pPr.push(`<w:tabs>${ps.tabs.map((x) => `<w:tab w:val="${x.kind}"${x.leader ? ` w:leader="${x.leader}"` : ''} w:pos="${twips(x.pos)}"/>`).join('')}</w:tabs>`);
     if (ps.noHyphen) pPr.push('<w:suppressAutoHyphens/>');
+    pPr.push(raw.c ?? '');
     const sp: string[] = [];
     const before = ps.spaceBefore ?? 0, after = ps.spaceAfter ?? 0, line = ps.line ?? 1;
     if (before !== st.spaceBefore) sp.push(`w:before="${twips(before)}"`);
@@ -670,8 +674,10 @@ class DocxWriter {
       const first = ps.firstLine ?? 0;
       if (indent !== st.indent || first !== st.firstLine || right) pPr.push(`<w:ind w:left="${twips(indent)}"${right} ${first < 0 ? `w:hanging="${twips(-first)}"` : `w:firstLine="${twips(first)}"`}/>`);
     }
+    pPr.push(raw.d ?? '');
     const align = ps.align ?? 'left';
     if (align !== st.align) pPr.push(`<w:jc w:val="${JC[align]}"/>`);
+    pPr.push(raw.e ?? '');
     // the paragraph mark itself inserted or deleted while tracking
     const mr = parseRev(index >= 0 ? this.markRev[index] : undefined);
     // (and a list number's own bold or italic, which Word takes from the mark)
@@ -1816,6 +1822,12 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   out.push(raw.h ?? '');
   out.push(textEffects(r, color));
   return out.join('');
+}
+
+/** A paragraph's properties kept from Word, by their place (docx-read.ts KEPT_PPR). */
+function keptPPr(ps: ParaStyle): Record<string, string> {
+  if (!ps.wpx) return {};
+  try { return JSON.parse(ps.wpx) as Record<string, string>; } catch { return {}; }
 }
 
 /**

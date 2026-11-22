@@ -5,7 +5,7 @@
 
 import type { ParaStyle, TextRun } from '../model';
 
-const KEYS = ['list', 'level', 'cont', 'soft', 'align', 'spaceBefore', 'spaceAfter', 'indent', 'style', 'pageBreak', 'colBreak', 'firstLine', 'line', 'keepNext', 'keepLines', 'noWidow', 'indentRight', 'linePt', 'lineRule', 'section', 'noLineNumbers', 'noHyphen', 'marks', 'tabs', 'scheme', 'bullet', 'numType', 'startAt', 'numLook', 'border', 'shade', 'xe', 'ta', 'cc', 'ppx'] as const;
+const KEYS = ['list', 'level', 'cont', 'soft', 'align', 'spaceBefore', 'spaceAfter', 'indent', 'style', 'pageBreak', 'colBreak', 'firstLine', 'line', 'keepNext', 'keepLines', 'noWidow', 'indentRight', 'linePt', 'lineRule', 'section', 'noLineNumbers', 'noHyphen', 'marks', 'tabs', 'scheme', 'bullet', 'numType', 'startAt', 'numLook', 'border', 'shade', 'xe', 'ta', 'cc', 'ppx', 'wpx'] as const;
 
 /** A paragraph style with nothing unset or zero, so two styles compare simply. */
 export function cleanPara(p: ParaStyle | undefined): ParaStyle {

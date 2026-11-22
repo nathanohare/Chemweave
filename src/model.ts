@@ -504,6 +504,12 @@ export interface ParaStyle {
    * in the same paragraph as that one.
    */
   soft?: boolean;
+  /**
+   * Documents: Word's paragraph properties this program doesn't model (a text frame or drop cap,
+   * an outline level of its own, right to left, East Asian line breaking...), as the file had them
+   * (JSON, by their place in w:pPr: io/docx-read.ts KEPT_PPR), written back with the paragraph.
+   */
+  wpx?: string;
   /** This paragraph's own alignment, in place of the text box's. */
   align?: Justify;
   /** Extra space above and below the paragraph, in points. */

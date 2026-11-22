@@ -183,3 +183,19 @@ describe('East Asian fonts are not made Latin ones (G2-09)', () => {
     expect(xml).toContain('w:eastAsia="MS Mincho"');
   });
 });
+
+describe('Word paragraph properties not modelled here are kept (G2-11)', () => {
+  it('keeps a drop cap\'s frame, an outline level, right to left and mirrored indents, each in its place', async () => {
+    const body = '<w:p><w:pPr><w:keepNext/><w:framePr w:dropCap="drop" w:lines="3" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/><w:bidi/><w:spacing w:after="0"/><w:mirrorIndents/><w:jc w:val="center"/><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>T</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:t>he rest</w:t></w:r></w:p>';
+    const xml = (await roundTrip({ body }))['word/document.xml'];
+    const pPr = /<w:pPr>((?:(?!<w:pPr>)[\s\S])*?)<\/w:pPr><w:r>(?:(?!<\/w:p>)[\s\S])*?<w:t[^>]*>T<\/w:t>/.exec(xml)![1];
+    expect(pPr).toContain('<w:framePr w:dropCap="drop" w:lines="3" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/>');
+    const names = [...pPr.matchAll(/<w:(\w+)/g)].map((m) => m[1]);
+    // in CT_PPrBase's order (17.3.1.26)
+    const order = ['keepNext', 'framePr', 'bidi', 'spacing', 'mirrorIndents', 'jc', 'outlineLvl'];
+    expect(names.filter((n) => order.includes(n))).toEqual(order);
+    // the next paragraph has none of them
+    expect(/<w:p>(?:(?!<\/w:p>)[\s\S])*?he rest/.exec(xml)![0]).not.toContain('framePr');
+  });
+});
