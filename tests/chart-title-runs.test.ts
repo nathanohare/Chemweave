@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { Workbook } from '../src/sheet/workbook';
-import { chartFromRange, chartData, titleMarkup, titleRunsOf, type Chart } from '../src/sheet/chart';
+import { chartFromRange, chartData, retitle, titleMarkup, titleRunsOf, type Chart } from '../src/sheet/chart';
 import { readChartXml, chartXml } from '../src/io/xlsx-chart';
 import { drawChart } from '../src/render/chart-draw';
 
@@ -114,5 +114,18 @@ describe('chart titles with looks', () => {
     drawChart(ctx as unknown as CanvasRenderingContext2D, got, chartData(wb, wb.sheet, got), 400, 300);
     expect(fonts[texts.indexOf('k')]).toMatch(/^italic /);
     expect(fonts[texts.indexOf(' 3a')]).toMatch(/bold/);
+  });
+});
+
+describe('the Titles window keeps a title\'s looks only while its words are the same (F3-R06)', () => {
+  it('confirmed unchanged (spaces at the ends aside): the title and its looks as they were', () => {
+    const runs = [{ text: ' ' }, { text: 'k', italic: true }, { text: 'obs ' }];
+    expect(retitle({ title: ' kobs ', titleRuns: runs }, 'kobs')).toEqual({ title: ' kobs ', titleRuns: runs });
+    // retyped: plain, the old looks dropped (so typing the old words again later doesn't bring them back)
+    const edited = retitle({ title: ' kobs ', titleRuns: runs }, 'kobs (s^{-1})');
+    expect(edited).toEqual({ title: 'kobs (s^{-1})', titleRuns: undefined });
+    expect(retitle(edited, 'kobs')).toEqual({ title: 'kobs', titleRuns: undefined });
+    // emptied: no title
+    expect(retitle({ title: 'Decay' }, '  ')).toEqual({ title: undefined, titleRuns: undefined });
   });
 });

@@ -501,3 +501,12 @@ export function columnIsNumbers(sheet: Sheet, col: number, r1: number, r2: numbe
   }
   return any;
 }
+
+/**
+ * A title from the Titles window: as it was (with its looks from the file) when the words are
+ * the same, spaces at the ends aside; else the words typed, without the old looks.
+ */
+export function retitle(was: { title?: string; titleRuns?: TitleRun[] }, typed: string): { title?: string; titleRuns?: TitleRun[] } {
+  if (typed.trim() === (was.title ?? '').trim()) return { title: was.title, titleRuns: was.titleRuns };
+  return { title: typed.trim() || undefined, titleRuns: undefined };
+}
