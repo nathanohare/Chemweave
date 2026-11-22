@@ -1,16 +1,18 @@
 // UI audit 2026-11-16, U2 and U4: fly-outs of your own in Customize Toolboxes, the side panel
 // floating at the top right to start with, and Ctrl to float a toolbox at an edge.
 import { describe, expect, it } from 'vitest';
-import { defaultToolboxes, dropTarget, isOwnFlyout, parseToolboxes, withFlyoutTitle, withGrid, withNewFlyout, withoutFlyout } from '../src/ui/toolboxes';
+import { defaultToolboxes, dropTarget, sideFolded, withSideFolded, isOwnFlyout, parseToolboxes, withFlyoutTitle, withGrid, withNewFlyout, withoutFlyout } from '../src/ui/toolboxes';
 
 describe('the side panel floats at the top right to start with', () => {
   it('comes floating in the corner', () => {
     const d = defaultToolboxes().places.details;
     expect(d).toMatchObject({ shown: true, dock: 'float', corner: true });
   });
-  it('floats once for settings saved while it started docked, and stays docked if docked again', () => {
+  it('floats at the top right in new settings; saved settings keep it docked (S87)', () => {
+    expect(parseToolboxes(undefined).places.details).toMatchObject({ dock: 'float', corner: true });
     const old = parseToolboxes({ places: { details: { shown: true, dock: 'right', x: 900, y: 90 } } });
-    expect(old.places.details).toMatchObject({ dock: 'float', corner: true });
+    expect(old.places.details.dock).toBe('right');
+    expect(old.places.details.corner).toBeUndefined();
     const again = parseToolboxes({ sideFloats: true, places: { details: { shown: true, dock: 'right', x: 900, y: 90 } } });
     expect(again.places.details.dock).toBe('right');
     expect(again.places.details.corner).toBeUndefined();
@@ -20,6 +22,20 @@ describe('the side panel floats at the top right to start with', () => {
     expect(moved.places.details).toMatchObject({ dock: 'float', x: 40, y: 50 });
     expect(moved.places.details.corner).toBeUndefined();
     expect(parseToolboxes({ places: { details: { shown: true, dock: 'left', x: 0, y: 0 } } }).places.details.dock).toBe('left');
+  });
+});
+
+describe('the side panel open or closed per mode (S87)', () => {
+  it('starts open in Canvas and Design, closed in Document, Spreadsheet and Presentation', () => {
+    const d = defaultToolboxes();
+    expect(['drawing', 'design', 'document', 'sheet', 'slides'].map((m) => sideFolded(d, m))).toEqual([false, false, true, true, true]);
+  });
+  it('remembers each mode\'s choice, and a saved choice outranks the default', () => {
+    const st = withSideFolded(withSideFolded(defaultToolboxes(), 'document', false), 'drawing', true);
+    expect(sideFolded(st, 'document')).toBe(false);
+    expect(sideFolded(st, 'drawing')).toBe(true);
+    expect(sideFolded(st, 'design')).toBe(false);
+    expect(sideFolded(parseToolboxes({ sideByMode: { sheet: false } }), 'sheet')).toBe(false);
   });
 });
 
