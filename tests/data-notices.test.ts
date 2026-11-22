@@ -3,6 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { PKA_TABLE } from '../src/kb/property-tables';
+import { REAGENT_SAFETY } from '../src/kb/safety-tables';
 
 const root = join(__dirname, '..');
 const notices = readFileSync(join(root, 'THIRD-PARTY-NOTICES.md'), 'utf8');
@@ -35,5 +37,11 @@ describe('bundled data in THIRD-PARTY-NOTICES.md', () => {
     // NMRexp (CC BY 4.0) and the EU classification (CC BY 4.0)
     expect(bundled).toContain('Contains data from NMRexp (CC BY 4.0), DOI 10.5281/zenodo.17296666.');
     expect(bundled).toMatch(/© European Union, reused under CC BY 4\.0/);
+    // ECHA's credit line (its legal notice, section 5.1.1), in the notices and beside the data
+    // (review F4-R17); NMRexp's Zenodo record gives no version number, so none is claimed
+    expect(bundled).toContain('"Source: European Chemicals Agency, http://echa.europa.eu/"');
+    expect(REAGENT_SAFETY.sources?.map((x) => x.label)).toContain('Source: European Chemicals Agency, http://echa.europa.eu/');
+    expect(bundled).not.toMatch(/Zenodo, v2/);
+    expect(PKA_TABLE.about).not.toMatch(/wait on permission/);
   });
 });
