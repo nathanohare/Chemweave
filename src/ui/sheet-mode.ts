@@ -67,8 +67,8 @@ import type { SparkKind } from '../sheet/sparklines';
 import { themeOf } from '../sheet/themes';
 import { SHEET_PAPERS, type PaperName } from '../sheet/page-setup';
 import { defaultPaper } from '../print-layout';
-import { dataTableRef } from '../sheet/what-if';
 import { paintCanRun } from './can-run';
+import { SheetCanRun, SHEET_REASONS, structureColumns, CAN_RUN_CHECKS } from '../sheet/can-run';
 import { stepSize } from '../text/format';
 
 /** The header of each Hammett column (σm and σp show their m and p as italic subscripts). */
@@ -173,6 +173,8 @@ export class SheetMode {
   private dashShown: Sheet | null = null;
   /** The last cells copied here: pasting the same text back uses these (formulas, structures and formats kept). */
   private clip: { text: string; block: CellBlock; sheet: Sheet; range: Range; cut: boolean } | null = null;
+  /** Why commands cannot run here, the costly answers kept until the sheet or selection changes. */
+  readonly canRun = new SheetCanRun();
 
   constructor(private host: SheetModeHost, chem: SheetChem) {
     this.chem = chem;
@@ -183,6 +185,11 @@ export class SheetMode {
     this.panel = $('#cell-body');
     this.panelTitle = $('#cell-name');
     this.ribbon = $('#sheet-ribbon');
+    // the pointer resting on a ribbon button: a check that needs the whole table is made now (G5-28)
+    this.ribbon.addEventListener('pointerover', (e) => {
+      const b = (e.target as Element).closest<HTMLButtonElement>('button[data-sh]');
+      if (b?.dataset.sh === 'property-column') paintCanRun([b], 'sh', (n) => this.cannotRun(n));
+    });
     this.view = new SheetView($('#sheet-host'), {
       structureBox: (s) => this.pictures.box(s),
       structureBitmap: (s, scale) => this.pictures.bitmap(s, Math.abs(scale), scale < 0),
@@ -658,20 +665,10 @@ export class SheetMode {
    * null when it can, undefined when it has no check. The menus and the ribbon grey it out with
    * the reason in the tooltip.
    */
-  cannotRun(name: string): string | null | undefined {
-    const v = this.view;
-    const s = v.sheet;
-    const check = ['remove-duplicates', 'custom-sort', 'text-to-columns', 'property-column', 'data-table'];
-    if (!check.includes(name)) return undefined;
-    if (!s || s.dashboard) return null;
-    switch (name) {
-      case 'remove-duplicates': return this.tableAt() ? null : 'Click in a table (or select it) to remove its duplicate rows.';
-      case 'custom-sort': return this.tableAt() ? null : 'Click in a table (or select its rows) to sort it.';
-      case 'text-to-columns': { const R = s.clip(v.sel.range) ?? v.sel.range; return R.c1 === R.c2 ? null : 'Select one column of text to split (Text to Columns works on one column at a time).'; }
-      case 'property-column': { const { r, c } = v.sel.active; return this.structureColumns(s, s.currentRegion(r, c)).length ? null : 'Click in a table with a column of structures (or SMILES) first. To start one, draw a structure in a cell (Chemistry ▸ Structure).'; }
-      case 'data-table': { const ref = dataTableRef(v.sel.range); return typeof ref === 'string' ? ref : null; }
-    }
-    return undefined;
+  cannotRun(name: string, lazy = false): string | null | undefined {
+    const s = this.view.sheet;
+    if (!s || !this.book) return CAN_RUN_CHECKS.has(name) ? null : undefined;
+    return this.canRun.why(s, this.view.sel, name, this.book.edits, lazy);
   }
 
   /** Sheet commands (from the ribbon, the menus and keys). False when the name isn't one. */
@@ -1802,26 +1799,6 @@ export class SheetMode {
     this.host.flash(found ? 'Type the m/z and heights you measured into the Found columns; the chart and the ppm errors follow.' : 'The ion can be changed in its cell; the peaks follow.', 8000);
   }
 
-  /** Columns holding structures or SMILES in the table around the active cell (for the property window). */
-  private structureColumns(s: Sheet, R: Range): { col: number; label: string }[] {
-    const out: { col: number; label: string }[] = [];
-    for (let c = R.c1; c <= R.c2; c++) {
-      let structures = 0, smiles = 0;
-      for (let r = R.r1; r <= Math.min(R.r2, R.r1 + 200); r++) {
-        if (s.cell(r, c)?.structure) structures++;
-        else {
-          const v = s.values.get(keyOf(r, c));
-          if (typeof v === 'string' && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(v) && /[a-z]|[A-Z].*[A-Z0-9(=]/.test(v) && v.length > 1) smiles++;
-        }
-      }
-      if (structures || smiles > 1) {
-        const head = s.values.get(keyOf(R.r1, c));
-        out.push({ col: c, label: `Column ${colName(c)}${typeof head === 'string' && head ? ` (${head})` : ''}${structures ? '' : ' — SMILES'}` });
-      }
-    }
-    return out;
-  }
-
   /** Chemistry > Insert Property Column…: pick properties to work out from a column of structures. */
   private async propertyColumns(choice?: PropertyAnswer): Promise<void> {
     const v = this.view;
@@ -1829,9 +1806,9 @@ export class SheetMode {
     const { r, c } = v.sel.active;
     const region = s.currentRegion(r, c);
     if (!choice) {
-      const cols = this.structureColumns(s, region);
+      const cols = structureColumns(s, region);
       if (!cols.length) {
-        this.host.flash('Click in a table with a column of structures (or SMILES) first. To start one, draw a structure in a cell (Chemistry ▸ Structure).', 8000);
+        this.host.flash(SHEET_REASONS['property-column'], 8000);
         return;
       }
       const got = await askProperties({ columns: cols, col: cols.some((x) => x.col === c) ? c : cols[0].col, hammett: this.hammettSetup(s, region) });
@@ -2484,7 +2461,7 @@ export class SheetMode {
     // (some buttons are on two tabs, as in Excel: Filter on Home and on Data)
     this.showStatusBar();
     // commands that cannot run here are greyed, with the reason in the tooltip (S15, S85)
-    paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('button[data-sh]'), 'sh', (n) => this.cannotRun(n));
+    paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('button[data-sh]'), 'sh', (n) => this.cannotRun(n, true));
     const press = (name: string, on: boolean) => {
       for (const b of document.querySelectorAll(`#sheet-ribbon [data-sh="${name}"], #sheet-statusbar [data-sh="${name}"]`)) {
         if (b instanceof HTMLInputElement) b.checked = on;

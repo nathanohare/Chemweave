@@ -2995,7 +2995,7 @@ function whyDrawingCannotRun(cmd: string, lazy = false): string | null | undefin
 /** Why a command cannot run in the mode now (the sheet answers for its own); undefined: no check. */
 function whyCannotRun(cmd: string, lazy = false): string | null | undefined {
   const mode = menuMode();
-  if (mode === 'sheet') return sheetMode?.cannotRun(cmd);
+  if (mode === 'sheet') return sheetMode?.cannotRun(cmd, lazy);
   if (mode === 'drawing' || mode === 'slides' || mode === 'design') return whyDrawingCannotRun(cmd, lazy);
   return undefined;
 }

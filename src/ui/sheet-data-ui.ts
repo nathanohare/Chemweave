@@ -13,6 +13,7 @@ import {
   PasteSpecialOptions, PasteWhat, PasteOp, splitText, SplitOptions, textToColumns, removeDuplicates, applyAdvancedFilter, showAllRows,
 } from '../sheet/data-tools';
 import { flashFill } from '../sheet/flash-fill';
+import { SHEET_REASONS } from '../sheet/can-run';
 import { readTyped, maxOf } from '../sheet/values';
 
 export interface DataUiHost {
@@ -496,7 +497,7 @@ export class SheetData {
     if (!s || s.dashboard) return;
     v.commitEdit();
     let R = s.clip(v.sel.range) ?? v.sel.range;
-    if (R.c1 !== R.c2) { this.host.flash('Select one column of text to split (Text to Columns works on one column at a time).', 6000); return; }
+    if (R.c1 !== R.c2) { this.host.flash(SHEET_REASONS['text-to-columns'], 6000); return; }
     if (R.r1 === R.r2) {
       // one cell: the column of the table around it
       const t = s.currentRegion(R.r1, R.c1);
@@ -606,7 +607,7 @@ export class SheetData {
     if (!s || s.dashboard) return;
     v.commitEdit();
     const t = this.host.table();
-    if (!t) { this.host.flash('Click in a table (or select it) to remove its duplicate rows.'); return; }
+    if (!t) { this.host.flash(SHEET_REASONS['remove-duplicates']); return; }
     const all: Range = { ...t.data, r1: t.header ?? t.data.r1 };
     const w = windowOf('Remove Duplicates', 'sd-dups');
     const header = check('My data has headers', t.header !== null);
@@ -694,7 +695,7 @@ export class SheetData {
     if (!s || s.dashboard) return;
     v.commitEdit();
     const t = this.host.table();
-    if (!t) { this.host.flash('Click in a table (or select its rows) to sort it.'); return; }
+    if (!t) { this.host.flash(SHEET_REASONS['custom-sort']); return; }
     const all: Range = { ...t.data, r1: t.header ?? t.data.r1 };
     const w = windowOf('Sort', 'sd-sort');
     const header = check('My data has headers', t.header !== null);
