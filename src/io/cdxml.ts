@@ -108,6 +108,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
   };
   const stats: ReadStats = { atoms: 0, bonds: 0, captions: 0, arrows: 0, shapes: 0, skipped: {}, parseMs: t1 - t0, buildMs: 0 };
   const skip = (what: string) => { stats.skipped[what] = (stats.skipped[what] ?? 0) + 1; };
+  /** Frames' drawings with the texts they drew as written (see takeFrameTexts). */
+  const frameTexts = new Map<number, string[]>();
 
   // Document style.
   const st: DocStyle = { ...doc.style, name: 'From file' };
@@ -1254,7 +1256,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
             const bb = pts(ch.getAttribute('BoundingBox'));
             // what we wrote natively beside it: moved in ChemDraw (every point by the same offset) moves
             // the shape; reshaped there, ChemDraw's own curves are read instead
-            const seen = (saved as { seen?: { curve?: unknown } } | null)?.seen;
+            const seen = (saved as { seen?: { curve?: unknown; text?: unknown; texts?: unknown } } | null)?.seen;
             let shift: { dx: number; dy: number } | null = null;
             if (saved) delete (saved as { seen?: unknown }).seen;
             if (saved && typeof seen?.curve === 'string') {
@@ -1268,9 +1270,19 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
                 else saved = null;
               } else saved = null;
             }
+            // the text inside it changed in ChemDraw: ChemDraw's text, with its formatting (G1-12)
+            if (saved && saved.kind === 'geo' && typeof seen?.text === 'string') {
+              const t = kids(ch).find((k) => k.nodeName === 't');
+              if ((t?.textContent ?? '') !== seen.text) {
+                const runs = t ? captionOf(t)?.runs : undefined;
+                if (runs?.length) saved.text = { runs };
+                else delete saved.text;
+              }
+            }
             if (saved && (saved.kind === 'geo' || (saved.kind === 'ring' && Array.isArray(saved.poly))) && [saved.x1, saved.y1, saved.x2, saved.y2].every((v) => typeof v === 'number')) {
               // a ring fill finds its ring again by where the atoms are (atom ids change between files)
               const sh = doc.addShape({ ...(saved as Omit<Shape, 'id'>), ...(saved.kind === 'ring' ? { ring: undefined } : {}), id: idFor(ch) });
+              if (Array.isArray(seen?.texts) && seen.texts.every((t) => typeof t === 'string')) frameTexts.set(sh.id, seen.texts as string[]);
               // moved in ChemDraw: the group's box says where it is now
               const was = ch.getAttribute(GEO_BOX_ATTR) ?? savedBox;
               const wb = pts(was);
@@ -1442,6 +1454,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     // lone pairs, radical dots and circled charges go with their atoms
     pinSymbols(doc);
     fillFrameMembers(doc);
+    // a frame's drawing whose text was changed in ChemDraw: its data takes the new text (G1-13)
+    // (several texts changed at once stay as the data has them: Nate to decide on a warning)
+    for (const [id, was] of frameTexts) { const s = doc.shapes.get(id); if (s) takeFrameTexts(doc, s, was); }
     // Newman projections find their bonds and viewing marks again by where they are drawn
     relinkNewman(doc);
     fillAttachments(doc, undefined, new Map([...attachNodes].map(([id, h]) => [id, { atom: h.node === undefined ? undefined : atomOfNode.get(h.node), box: h.box }])));
@@ -1653,6 +1668,36 @@ export const CIRCLE_TAG = 'ci-aromatic-circle';
 export const FILL_TAG = 'Chem Illustrator fill';
 /** A frame's gap and whether it follows what it surrounds (editor/frames.ts). */
 export const FRAME_TAG = 'Chem Illustrator frame';
+/** The data a frame keeps for the drawing round which it sits, drawn again by the matching Edit command. */
+export const FRAME_DATA = ['plate', 'energy', 'newman', 'torsion', 'diagram', 'smart'] as const;
+
+/**
+ * A frame's drawing whose texts were changed in ChemDraw (G1-13): `was` the texts as written,
+ * the frame's captions as they are now. When exactly one text changed, the frame's data takes the
+ * new text wherever it held the old one, so the next Edit command draws it as ChemDraw shows it.
+ * Returns false when the change could not be taken into the data (several texts changed, or a
+ * text the data does not hold word for word).
+ */
+export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
+  const now = (s.frame?.captions ?? []).map((id) => doc.captions.get(id)?.runs.map((r) => r.text).join('') ?? '');
+  const left = [...now];
+  const removed: string[] = [];
+  for (const t of was) { const i = left.indexOf(t); if (i >= 0) left.splice(i, 1); else removed.push(t); }
+  if (!removed.length) return true;
+  if (removed.length !== 1 || left.length !== 1) return false;
+  const [from, to] = [removed[0], left[0]];
+  let hit = false;
+  const swap = (v: unknown): unknown => {
+    if (v === from) { hit = true; return to; }
+    if (Array.isArray(v)) return v.map(swap);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)]));
+    return v;
+  };
+  const patch: Partial<Shape> = {};
+  for (const k of FRAME_DATA) if (s[k]) (patch as Record<string, unknown>)[k] = swap(s[k]);
+  if (hit) doc.updateShape(s.id, patch);
+  return hit;
+}
 /** A part of an orbital drawn here that ChemDraw keeps as an oval (an s orbital, a dz²'s ring): how the orbital was asked for (Shape.orb as JSON). */
 export const ORBITAL_TAG = 'Chem Illustrator orbital';
 

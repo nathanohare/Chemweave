@@ -3,7 +3,8 @@
 // What only this program reads, kept in its own CDXML tags through save and reopen (and through
 // CDX, ChemDraw's binary form of the same file): a reaction step's hand-chosen roles (audit
 // G1-15), a picture's frame look, name and other settings (G1-10), and an equation picture
-// drawn again from its tag only while ChemDraw still holds the picture written for it (G1-14).
+// drawn again from its tag only while ChemDraw still holds the picture written for it (G1-14),
+// a design shape's text changed in ChemDraw (G1-12), and a TLC lane label changed there (G1-13).
 // Drawings are built here in code; the PNGs are a bare signature, header and end chunk written
 // by hand to the PNG specification (W3C, 2003), enough for their size to be read.
 
@@ -12,6 +13,8 @@ import { Doc } from '../src/model';
 import { readCdxml } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
 import { cdxmlToCdx, cdxToCdxml } from '../src/io/cdx';
+import { putPlate, newPlate } from '../src/design/plates';
+import { POINTS } from '../src/editor/arrange';
 
 const viaCdxml = (d: Doc) => readCdxml(writeCdxml(d, { name: 't.cdxml' })).doc;
 const viaCdx = (d: Doc) => readCdxml(cdxToCdxml(cdxmlToCdx(writeCdxml(d, { name: 't.cdxml' })))).doc;
@@ -100,5 +103,44 @@ describe('an equation picture changed in ChemDraw (G1-14)', () => {
     // the same 40 × 30 picture with another byte in its (unread) checksum
     const same = [...atob(png(40, 30).split(',')[1])].map((c, i) => (i === 29 ? 0x7f : c.charCodeAt(0)).toString(16).padStart(2, '0')).join('').toUpperCase();
     expect(reopen(xml.replace(/PNG="[0-9A-F]+"/, `PNG="${same}"`)).math).toEqual(math);
+  });
+});
+
+describe('the text in a design shape changed in ChemDraw (G1-12)', () => {
+  const shape = () => {
+    const d = new Doc();
+    d.bulk(() => { d.addShape({ kind: 'geo', geo: 'fcDecision', x1: 0, y1: 0, x2: 100, y2: 60, text: { runs: [{ text: 'Original' }] } } as never); });
+    return d;
+  };
+  const text = (d: Doc) => [...d.shapes.values()].find((x) => x.kind === 'geo')?.text?.runs.map((r) => r.text).join('');
+  it('stays as it was when ChemDraw left it alone', () => {
+    expect(text(viaCdxml(shape()))).toBe('Original');
+  });
+  it('is ChemDraw\'s text once it was changed there', () => {
+    const xml = writeCdxml(shape(), { name: 't.cdxml' });
+    const edited = xml.replace(/>Original</, '>EditedInChemDraw<');
+    expect(edited).not.toBe(xml);
+    const d = readCdxml(edited).doc;
+    expect(text(d)).toBe('EditedInChemDraw');
+    // read into the shape, not as a caption of its own
+    expect(d.captions.size).toBe(0);
+  });
+});
+
+describe('a TLC lane label changed in ChemDraw (G1-13)', () => {
+  const plate = () => {
+    const d = new Doc();
+    d.edit('TLC', () => { putPlate(d, POINTS, newPlate('tlc', d.style.bondLength), { x: 0, y: 0 }); });
+    return d;
+  };
+  const lanes = (d: Doc) => [...d.shapes.values()].find((s) => s.plate)?.plate?.lanes.map((l) => l.label);
+  it('is taken into the plate, so Edit TLC Plate draws it as ChemDraw shows it', () => {
+    const xml = writeCdxml(plate(), { name: 't.cdxml' });
+    const edited = xml.replace(/>rxn</, '>product<');
+    expect(edited).not.toBe(xml);
+    expect(lanes(readCdxml(edited).doc)).toEqual(['SM', 'co', 'product']);
+  });
+  it('leaves the plate alone when nothing changed', () => {
+    expect(lanes(viaCdxml(plate()))).toEqual(['SM', 'co', 'rxn']);
   });
 });

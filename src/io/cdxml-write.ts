@@ -25,7 +25,7 @@ import { atomStereoText, bondStereoText, StereoPlacer, PlacedLabel } from '../ch
 import { dataUrl, fromDataUrl, rasterPng } from '../render/images';
 import { itemsToEmf } from '../render/emf';
 import { crystalItems } from '../design/xray';
-import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, BRACKET_PAIR_TAG, PIN_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
+import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, FRAME_DATA, BRACKET_PAIR_TAG, PIN_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
 import { stackItems, usesStacking } from '../editor/stacking';
 import { frameTag } from '../editor/frames';
 import { tableContents } from '../editor/table-figs';
@@ -1998,9 +1998,14 @@ class CdxmlWriter {
     // (with the first curve's points as written: ChemDraw keeps them as they are unless the shape is
     // moved or changed there, when the curves are read instead)
     const first = kids(g).find((k) => k.nodeName === 'curve')?.getAttribute('CurvePoints');
+    // (and the text written inside it, as plain text: changed in ChemDraw, ChemDraw's text is read; audit G1-12)
+    const written = kids(g).find((k) => k.nodeName === 't')?.textContent ?? '';
+    // a frame's drawing (a TLC plate, an energy diagram…): the texts it drew, to see on opening
+    // which one was changed in ChemDraw (G1-13)
+    const texts = s.frame && FRAME_DATA.some((k) => s[k]) ? s.frame.captions.map((id) => this.doc.captions.get(id)?.runs.map((r) => r.text).join('')).filter((t): t is string => t !== undefined) : null;
     // (a turned shape's group goes round its turned corners)
     const gb = turn ? boxOf(turnedCorners(b, mid, turn)) : b;
-    g.appendChild(this.el('objecttag', { TagType: 'String', Name: GEO_TAG, Value: JSON.stringify({ ...look, savedBox: box(gb), ...(first ? { seen: { curve: first } } : {}) }), Visible: 'no' }));
+    g.appendChild(this.el('objecttag', { TagType: 'String', Name: GEO_TAG, Value: JSON.stringify({ ...look, savedBox: box(gb), ...(first || written || texts ? { seen: { ...(first ? { curve: first } : {}), ...(written ? { text: written } : {}), ...(texts ? { texts } : {}) } } : {}) }), Visible: 'no' }));
     this.set(g, 'BoundingBox', box(gb));
     g.removeAttribute(GEO_BOX_ATTR);
     this.changed = true;
