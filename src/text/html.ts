@@ -18,31 +18,83 @@ export interface ClipText {
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const fmt = (n: number) => String(Math.round(n * 100) / 100);
 
+/**
+ * How runs are written as HTML. `font` and `defaultSize` are for runs that set none (null: left
+ * out, for text whose box already says them, such as a spreadsheet cell's <td>); `objectHtml` gives
+ * the HTML of an object sitting in the text (a document's table), or null to leave it out.
+ */
+export interface RunHtmlOpts {
+  font?: string | null;
+  defaultSize?: number | null;
+}
+
+/**
+ * One piece of a run as an HTML span, carrying every look Word, PowerPoint and Excel read from
+ * pasted HTML: font, size, bold, italic, underline, strikethrough, colour, highlight, small and all
+ * capitals, character spacing and raised or lowered text (as Word's own HTML writes them:
+ * position:relative with mso-text-raise), then sub- or superscript and a link.
+ */
+function runSpan(r: TextRun, t: string, pos: rt.Part['pos'], opts: RunHtmlOpts): string {
+  const css: string[] = [];
+  const font = r.font ? `'${r.font}'` : opts.font === null ? null : opts.font ?? 'Arial';
+  if (font) css.push(`font-family:${font}`);
+  const size = r.size ?? (opts.defaultSize === null ? null : opts.defaultSize ?? 10);
+  if (size) css.push(`font-size:${fmt(size)}pt`);
+  // (false: plain inside bold or italic text round it, as a word left plain in a bold spreadsheet cell)
+  if (r.bold !== undefined) css.push(`font-weight:${r.bold ? 'bold' : 'normal'}`);
+  if (r.italic !== undefined) css.push(`font-style:${r.italic ? 'italic' : 'normal'}`);
+  const lines = [...(r.underline ? ['underline'] : []), ...(r.strike ? ['line-through'] : [])];
+  if (lines.length) css.push(`text-decoration:${lines.join(' ')}`);
+  if (r.color) css.push(`color:${r.color}`);
+  if (r.highlight) css.push(`background:${r.highlight}`);
+  if (r.smallCaps) css.push('font-variant:small-caps');
+  if (r.allCaps) css.push('text-transform:uppercase');
+  if (r.spacing) css.push(`letter-spacing:${fmt(r.spacing)}pt`);
+  if (r.raise) css.push(`position:relative;top:${fmt(-r.raise)}pt;mso-text-raise:${fmt(r.raise)}pt`);
+  const body = esc(t).replace(/ {2}/g, ' &nbsp;').replace(/\n/g, '<br>');
+  const inner = css.length ? `<span style="${css.join(';')}">${body}</span>` : body;
+  const shown = pos === 'sub' ? `<sub>${inner}</sub>` : pos === 'sup' ? `<sup>${inner}</sup>` : inner;
+  // a link other programs can follow (places in this file mean nothing there)
+  return r.link && !r.link.startsWith('#') ? `<a href="${esc(r.link)}">${shown}</a>` : shown;
+}
+
+/**
+ * Runs (one paragraph's, or a table cell's) as HTML. A run in formula style shows its digits
+ * lowered and its charges raised as the drawing does (rt.formulaRunParts, reading across the runs
+ * round it), so "2H2O" stays 2H₂O and "SO42-" SO₄²⁻.
+ */
+export function runsHtml(runs: readonly TextRun[], opts: RunHtmlOpts = {}): string {
+  let out = '';
+  for (const [k, r] of runs.entries()) {
+    if (r.formula && !r.sub && !r.sup) for (const p of rt.formulaRunParts(runs, k)) out += runSpan(r, p.text, p.pos, opts);
+    else out += runSpan(r, r.text, r.sub ? 'sub' : r.sup ? 'sup' : 'base', opts);
+  }
+  return out;
+}
+
 /** HTML for a styled text, for Word and other programs (and for pasting back here exactly). */
-export function richToHtml(text: ClipText, opts: { justify?: Justify; defaultSize?: number; font?: string } = {}): string {
+export function richToHtml(text: ClipText, opts: { justify?: Justify; defaultSize?: number; font?: string; objectHtml?: (r: TextRun) => string | null } = {}): string {
   const defaultSize = opts.defaultSize ?? 10;
   const n = paraCount(rt.plainText(text.runs));
   const paras = fitParas(text.paras, n);
   const markers = listMarkers(paras);
-  const span = (r: TextRun, t: string, pos: rt.Part['pos']): string => {
-    const css: string[] = [`font-family:${r.font ? `'${r.font}'` : opts.font ?? 'Arial'}`, `font-size:${fmt(r.size ?? defaultSize)}pt`];
-    if (r.bold) css.push('font-weight:bold');
-    if (r.italic) css.push('font-style:italic');
-    if (r.underline) css.push('text-decoration:underline');
-    if (r.color) css.push(`color:${r.color}`);
-    const body = esc(t).replace(/ {2}/g, ' &nbsp;');
-    const inner = `<span style="${css.join(';')}">${body}</span>`;
-    const shown = pos === 'sub' ? `<sub>${inner}</sub>` : pos === 'sup' ? `<sup>${inner}</sup>` : inner;
-    // a link other programs can follow (places in this file mean nothing there)
-    return r.link && !r.link.startsWith('#') ? `<a href="${esc(r.link)}">${shown}</a>` : shown;
-  };
-  const paraHtml = (runs: TextRun[]): string => {
-    let out = '';
-    for (const [k, r] of runs.entries()) {
-      if (r.formula && !r.sub && !r.sup) for (const p of rt.formulaRunParts(runs, k)) out += span(r, p.text, p.pos);
-      else out += span(r, r.text, r.sub ? 'sub' : r.sup ? 'sup' : 'base');
+  const look: RunHtmlOpts = { defaultSize, font: opts.font ?? 'Arial' };
+  const paraHtml = (runs: TextRun[]): string => runsHtml(runs, look) || '&nbsp;';
+  // an object in the text that goes as a block of its own (a document's table): the paragraph is
+  // split round it
+  const objectBlocks = (runs: TextRun[], style: string): string | null => {
+    if (!opts.objectHtml || !runs.some((r) => r.obj !== undefined)) return null;
+    let html = '', part: TextRun[] = [], any = false;
+    const flush = () => { if (part.some((r) => r.text)) html += `<p style="${style}">${paraHtml(part)}</p>`; part = []; };
+    for (const r of runs) {
+      const block = r.obj !== undefined ? opts.objectHtml(r) : null;
+      if (block === null) { part.push(r); continue; }
+      flush();
+      html += block;
+      any = true;
     }
-    return out || '&nbsp;';
+    flush();
+    return any ? html : null;
   };
   const blocks = splitParagraphs(text.runs);
   let html = '';
@@ -57,7 +109,7 @@ export function richToHtml(text: ClipText, opts: { justify?: Justify; defaultSiz
       ...(p.indent ? [`margin-left:${fmt(p.indent)}pt`] : [])].join(';');
     if (!p.list) {
       closeTo(0);
-      html += `<p style="${style}">${paraHtml(runs)}</p>`;
+      html += objectBlocks(runs, style) ?? `<p style="${style}">${paraHtml(runs)}</p>`;
       return;
     }
     const level = p.level ?? 0;
@@ -78,7 +130,9 @@ export function richToHtml(text: ClipText, opts: { justify?: Justify; defaultSiz
     html += `<li><p style="${style}">${paraHtml(runs)}</p>`;
   });
   closeTo(0);
-  const own = esc(JSON.stringify({ runs: text.runs, paras: fitParas(text.paras, n) }));
+  // (an object written as a block is not in our own copy, as before: the document pastes its objects from its own clipboard)
+  const ownRuns = opts.objectHtml ? text.runs.map((r) => (r.obj !== undefined && opts.objectHtml!(r) !== null ? { ...r, obj: undefined, text: '' } : r)) : text.runs;
+  const own = esc(JSON.stringify({ runs: ownRuns, paras: fitParas(text.paras, n) }));
   return `<div ${OWN_ATTR}="${own}">${html}</div>`;
 }
 

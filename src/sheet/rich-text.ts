@@ -4,6 +4,7 @@
 // a number's answer has one look throughout, as in Excel).
 
 import { readTyped } from './values';
+import { chemPieces } from './cell-text';
 
 /**
  * How a run differs from the rest of its cell: bold: true on a plain cell, or bold: false for
@@ -60,6 +61,25 @@ export function lookOver<T extends { bold?: boolean; italic?: boolean; underline
   for (const k of KEYS) {
     const v = unset(run[k]);
     if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Text in pieces of one look each, as the grid shows it: its chemistry (C9H8O4, when `style.chem`)
+ * and its runs' looks (a bold word, one per character in `looks`) over the cell's own. Shared by
+ * the grid and by copying cells as HTML, so a paste shows what the grid shows.
+ */
+export function lookPieces<T extends { bold?: boolean; italic?: boolean; underline?: boolean; color?: string; font?: string; size?: number; chem?: boolean }>(text: string, style: T | undefined, looks: RunLook[]): { text: string; look: ReturnType<typeof lookOver<T>> }[] {
+  const chem: { pos?: 'sub' | 'sup'; italic?: boolean }[] = [];
+  if (style?.chem) for (const p of chemPieces(text)) for (let i = 0; i < p.text.length; i++) chem.push({ ...(p.pos !== 'base' ? { pos: p.pos } : {}), ...(p.italic ? { italic: true } : {}) });
+  const out: { text: string; look: ReturnType<typeof lookOver<T>>; key: string }[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const look = lookOver<T>({ ...style, ...(chem[i]?.italic ? { italic: true } : {}), ...(chem[i]?.pos ? { pos: chem[i].pos } : {}) } as T, looks[i]);
+    const key = JSON.stringify([look.bold, look.italic, look.underline, look.strike, look.color, look.pos, look.font, look.size]);
+    const last = out[out.length - 1];
+    if (last && last.key === key) last.text += text[i];
+    else out.push({ text: text[i], look, key });
   }
   return out;
 }

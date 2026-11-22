@@ -1983,13 +1983,20 @@ export class DocumentMode {
     const sel = ed.selected();
     const shown = fieldTexts(f.t);
     // a table on its own goes as cells (tab-separated and an HTML table), for a sheet, a slide, Excel and Word
+    // (a table's cells without the structures in them, which other programs get no text for)
+    const tableOf = (id: number | undefined) => {
+      const o = id === undefined ? undefined : f.t.objects[id];
+      return o?.kind === 'table' ? { ...o.table, rows: o.table.rows.map((row) => row.map((c) => ({ ...c, runs: c.runs.filter((r) => r.obj === undefined) }))) } : null;
+    };
     const lone = sel.runs.length === 1 && sel.runs[0].obj !== undefined ? f.t.objects[sel.runs[0].obj] : undefined;
-    const table = lone?.kind === 'table' ? { ...lone.table, rows: lone.table.rows.map((row) => row.map((c) => ({ ...c, runs: c.runs.filter((r) => r.obj === undefined) }))) } : null;
+    const table = lone ? tableOf(sel.runs[0].obj) : null;
     // fields show their text in other programs; figures are left out of plain text
     const plainRuns = sel.runs.map((r) => (r.obj !== undefined ? { ...r, obj: undefined, text: shown.get(r.obj) ?? '' } : r));
     const plain = table ? tableTsv(table) : richToPlain({ runs: plainRuns, paras: sel.paras });
     e.clipboardData.setData('text/plain', plain);
-    e.clipboardData.setData('text/html', table ? tableHtml(table) : richToHtml({ runs: plainRuns, paras: sel.paras }, { defaultSize: 11 }));
+    // tables among the text go to Word as tables
+    const htmlRuns = sel.runs.map((r, i) => (tableOf(r.obj) ? r : plainRuns[i]));
+    e.clipboardData.setData('text/html', table ? tableHtml(table) : richToHtml({ runs: htmlRuns, paras: sel.paras }, { defaultSize: 11, objectHtml: (r) => { const t = tableOf(r.obj); return t ? tableHtml(t) : null; } }));
     const objects: Record<number, DocObject> = {};
     // with the structures in any table's cells
     const add = (id: number) => {
