@@ -118,14 +118,17 @@ function labelRules(settings: Json): Record<LabelKind, { word: string; prefix: s
 class Labels {
   private counters: Record<LabelKind, number> = { figure: 0, table: 0, scheme: 0 };
   readonly byId = new Map<string, string>();
+  /** The numbered label each object would get without a typed one ("Table S3"). */
+  readonly autoById = new Map<string, string>();
   readonly byPlace = new Map<string, string>();
   constructor(private rules: ReturnType<typeof labelRules>) {}
   add(kind: LabelKind, id: string, owner: string, index: number, custom: string): void {
     const rule = this.rules[kind];
     const n = ++this.counters[kind];
     const number = rule.prefix + formatNumber(n, rule.style);
-    const label = custom.trim() || (rule.word ? `${rule.word} ${number}` : number);
-    if (id && !this.byId.has(id)) this.byId.set(id, label);
+    const auto = rule.word ? `${rule.word} ${number}` : number;
+    const label = custom.trim() || auto;
+    if (id && !this.byId.has(id)) { this.byId.set(id, label); this.autoById.set(id, auto); }
     this.byPlace.set(`${owner}#${index}`, label);
   }
   at(owner: string, index: number): string { return this.byPlace.get(`${owner}#${index}`) ?? ''; }
@@ -1260,9 +1263,14 @@ async function leaveWords(p: SiProject): Promise<Set<string>> {
  * out), so it is quick.
  */
 export async function objectLabels(p: SiProject): Promise<Map<string, string>> {
+  return (await objectLabelSets(p)).labels;
+}
+
+/** Every table's, figure's and scheme's label (`labels`: as it prints, a typed one included; `auto`: the numbered one it gets without a typed one). */
+export async function objectLabelSets(p: SiProject): Promise<{ labels: Map<string, string>; auto: Map<string, string> }> {
   const c = new Compiler(p, { contentsOf: () => null, sizeOf: () => null, facts: async (m) => m.map(() => null) }, new Set());
   await c.prepare();
-  return c.labels.byId;
+  return { labels: c.labels.byId, auto: c.labels.autoById };
 }
 
 /** Compile an SI project into a document. */

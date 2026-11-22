@@ -8803,7 +8803,9 @@ function loadSiMode(): Promise<SiMode> {
         const st = await nameOf(smiles, mol);
         return st.kind === 'found' ? { ok: true, name: st.name } : { ok: false, message: st.kind === 'none' ? st.message : 'No name found.' };
       },
-      readClipboard: (e) => (e ? readPasteEvent(e) : nativeClipboard ? readNativeClipboard() : readWebClipboard()),
+      // (the desktop app on Windows reads the clipboard itself, even for a paste event: the event only
+      // holds a bitmap of a drawing from here or ChemDraw, where the clipboard has the drawing)
+      readClipboard: (e) => (nativeClipboard ? readNativeClipboard() : e ? readPasteEvent(e) : readWebClipboard()),
       library: async () => {
         const lib = await useLibrary();
         return { now: lib.now, change: (f) => lib.change(f) };

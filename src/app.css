@@ -5016,7 +5016,6 @@ dialog.si-import .ask-buttons { margin: 0; }
 .si-rich .si-h1, .si-rich .si-h2, .si-rich .si-h3 { font-weight: 700; }
 .si-rich .si-h1 { font-size: 1.2em; }
 .si-rich .si-object { color: var(--muted); font-style: italic; }
-.si-rich .si-object[data-table], .si-rich .si-object[data-figure] { cursor: pointer; }
 /* an SI table's editor (Custom sections): the grid as it prints (rules under the header and the table), label, footnotes */
 .si-table-card { display: flex; flex-direction: column; gap: 4px; }
 .si-label-input { width: 160px; }
