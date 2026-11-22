@@ -4,7 +4,8 @@
 // CDX, ChemDraw's binary form of the same file): a reaction step's hand-chosen roles (audit
 // G1-15), a picture's frame look, name and other settings (G1-10), and an equation picture
 // drawn again from its tag only while ChemDraw still holds the picture written for it (G1-14),
-// a design shape's text changed in ChemDraw (G1-12), and a TLC lane label changed there (G1-13).
+// a design shape's text changed in ChemDraw (G1-12), a TLC lane label changed there (G1-13),
+// and an org chart's elbow connectors stuck to their boxes (G1-09).
 // Drawings are built here in code; the PNGs are a bare signature, header and end chunk written
 // by hand to the PNG specification (W3C, 2003), enough for their size to be read.
 
@@ -15,6 +16,7 @@ import { writeCdxml } from '../src/io/cdxml-write';
 import { cdxmlToCdx, cdxToCdxml } from '../src/io/cdx';
 import { putPlate, newPlate } from '../src/design/plates';
 import { POINTS } from '../src/editor/arrange';
+import { newDiagram, putDiagram } from '../src/design/diagrams';
 
 const viaCdxml = (d: Doc) => readCdxml(writeCdxml(d, { name: 't.cdxml' })).doc;
 const viaCdx = (d: Doc) => readCdxml(cdxToCdxml(cdxmlToCdx(writeCdxml(d, { name: 't.cdxml' })))).doc;
@@ -142,5 +144,48 @@ describe('a TLC lane label changed in ChemDraw (G1-13)', () => {
   });
   it('leaves the plate alone when nothing changed', () => {
     expect(lanes(viaCdxml(plate()))).toEqual(['SM', 'co', 'rxn']);
+  });
+});
+
+describe('connectors (G1-09)', () => {
+  const org = () => {
+    const d = new Doc();
+    d.edit('d', () => putDiagram(d, POINTS, newDiagram('org', 'Boss\n\tLeft\n\tRight'), { x: 50, y: 40 }));
+    return d;
+  };
+  for (const [name, trip] of [['CDXML', viaCdxml], ['CDX', viaCdx]] as const) {
+    it(`stay elbow connectors stuck to their boxes through ${name}`, () => {
+      const before = org();
+      const lines = [...before.arrows.values()];
+      expect(lines.length).toBe(2);
+      expect(lines.every((r) => r.elbow && r.from && r.to)).toBe(true);
+      const back = trip(before);
+      const got = [...back.arrows.values()];
+      expect(got.length).toBe(2);
+      for (const r of got) {
+        expect(r.elbow).toBe(true);
+        expect(r.bez).toBeUndefined();
+        expect(back.shapes.has(r.from!.shape) && back.shapes.has(r.to!.shape)).toBe(true);
+      }
+      // stuck to the same connection points of the same boxes (by their text)
+      const words = (d: Doc, id: number) => d.shapes.get(id)?.text?.runs.map((x) => x.text).join('');
+      const ends = (d: Doc) => [...d.arrows.values()].map((r) => `${words(d, r.from!.shape)}:${r.from!.port}>${words(d, r.to!.shape)}:${r.to!.port}`).sort();
+      expect(ends(back)).toEqual(ends(before));
+    });
+  }
+  it('go to ChemDraw as curves along their bends', () => {
+    const xml = writeCdxml(org(), { name: 't.cdxml' });
+    const doc = new DOMParser().parseFromString(xml.replace(/<!DOCTYPE[^>]*>/, ''), 'application/xml');
+    const curves = [...doc.getElementsByTagName('curve')].filter((c) => [...c.children].some((k) => k.getAttribute('Name') === 'Chem Illustrator connector'));
+    expect(curves).toHaveLength(2);
+    // more than a straight line's four points: the corners are there
+    for (const c of curves) expect(c.getAttribute('CurvePoints')!.trim().split(/\s+/).length / 2).toBeGreaterThan(6);
+  });
+  it('moved in ChemDraw, stay as ChemDraw has them', () => {
+    const xml = writeCdxml(org(), { name: 't.cdxml' });
+    // move every connector's points 10 pt to the right
+    const moved = xml.replace(/(<curve[^>]*CurvePoints=")([^"]+)"/g, (_, a, p) => a + p.trim().split(/\s+/).map((v: string, i: number) => (i % 2 ? v : String(Number(v) + 10))).join(' ') + '"');
+    const back = readCdxml(moved).doc;
+    for (const r of back.arrows.values()) { expect(r.elbow).toBeUndefined(); expect(r.from).toBeUndefined(); }
   });
 });

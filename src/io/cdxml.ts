@@ -88,6 +88,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
   const refOf = () => (refMap ??= new Map([...ord].map(([key, o]) => [all[o], key])));
   const morphTags: [number, string][] = [];
   const pinTags: [number, string][] = [];
+  /** Connectors' glue and bends, from their tags (set once the shapes are read). */
+  const glueTags: [number, string][] = [];
   /** Auto-Animate Steps' pieces, from each thing's hidden tag (set on the things once the file is read). */
   const pieces: [Kind, number, number][] = [];
   /** Bracket pairs' shared numbers, by shape id. */
@@ -869,6 +871,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     if (mt) morphTags.push([arrow.id, mt.getAttribute('Value') ?? '']);
     const pt = kids(a).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PIN_TAG);
     if (pt) pinTags.push([arrow.id, pt.getAttribute('Value') ?? '']);
+    const gt = kids(a).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === GLUE_TAG);
+    if (gt) glueTags.push([arrow.id, gt.getAttribute('Value') ?? '']);
     stats.arrows++;
   };
 
@@ -948,6 +952,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     from('r', arrow.id, c);
     const pt = kids(c).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PIN_TAG);
     if (pt) pinTags.push([arrow.id, pt.getAttribute('Value') ?? '']);
+    const gt = kids(c).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === GLUE_TAG);
+    if (gt) glueTags.push([arrow.id, gt.getAttribute('Value') ?? '']);
     stats.arrows++;
   };
 
@@ -1421,6 +1427,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
     readSteps(all, refOf, doc);
     if (morphTags.length) readMorphTags(morphTags, refOf(), doc);
     if (pinTags.length) readPinTags(pinTags, refOf(), doc);
+    if (glueTags.length) readGlueTags(glueTags, refOf(), doc);
     readRepeats();
     for (const el of keepLater) keepXml(el);
     for (const c of pendingCircles) if (!ringOfCircle(doc, c)) c.oval();
@@ -1524,6 +1531,34 @@ function readMorphTags(tags: [number, string][], refOf: Map<Element, string>, do
 }
 
 /** Pins on arrows' ends, with the file's node ids turned back into atoms (a pin naming an atom that is gone is dropped). */
+/**
+ * Connectors' glue and bends (G1-09): each end stuck to its shape's connection point again, and an
+ * elbow connector drawn with its right-angled bends (worked out from its ends, as when drawn),
+ * while its ends are where they were written. A connector moved or reshaped in ChemDraw stays as
+ * ChemDraw has it.
+ */
+function readGlueTags(tags: [number, string][], refOf: Map<Element, string>, doc: Doc): void {
+  const shapeOf = new Map<string, number>();
+  for (const [el, ref] of refOf) if (ref[0] === 's') shapeOf.set(el.getAttribute('id') ?? '', Number(ref.slice(1)));
+  for (const [id, json] of tags) {
+    const r = doc.arrows.get(id);
+    if (!r) continue;
+    try {
+      const v = JSON.parse(json) as { from?: { shape: unknown; port: unknown }; to?: { shape: unknown; port: unknown }; elbow?: unknown; seen?: { tail?: unknown; head?: unknown } };
+      const near = (p: unknown, q: { x: number; y: number }) => Array.isArray(p) && Math.abs(p[0] - q.x) < 0.05 && Math.abs(p[1] - q.y) < 0.05;
+      if (!near(v.seen?.tail, r.tail) || !near(v.seen?.head, r.head)) continue;
+      const glue = (g: typeof v.from) => {
+        const shape = g ? shapeOf.get(String(g.shape)) : undefined;
+        return shape !== undefined && typeof g?.port === 'number' && doc.shapes.has(shape) ? { shape, port: g.port } : undefined;
+      };
+      const from = glue(v.from), to = glue(v.to);
+      if (from) r.from = from;
+      if (to) r.to = to;
+      if (v.elbow === true) { r.elbow = true; delete r.bez; }
+    } catch { /* not a connector's */ }
+  }
+}
+
 function readPinTags(tags: [number, string][], refOf: Map<Element, string>, doc: Doc): void {
   if (!tags.length) return;
   const atomOf = new Map<string, number>();
@@ -1807,6 +1842,8 @@ export const PIECE_TAG = 'Chem Illustrator piece';
 export const BRACKET_PAIR_TAG = 'Chem Illustrator bracket pair';
 /** An electron-pushing arrow's pins (what its ends are stuck to: Pin as JSON without `was`, atoms by node id). */
 export const PIN_TAG = 'Chem Illustrator pin';
+/** A connector's glue and bends, as JSON: {from, to: {shape: element id, port}, elbow, seen: {tail, head}}. */
+export const GLUE_TAG = 'Chem Illustrator connector';
 /** An S-shaped arrow saved as a ChemDraw curve: its heads as they are here (JSON). */
 export const CURVE_ARROW_TAG = 'Chem Illustrator arrow';
 /** An arrow's own settings for its text (Arrow.textLook): how each side lines up, and its text guides. */

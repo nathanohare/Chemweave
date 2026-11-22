@@ -12,7 +12,7 @@ import { interpretArrow, isReactionArrow, linkRows, isStep, plainMeasure, rolesO
 import { SYMBOLS } from '../chem/elements';
 import { labelBonds, labelSpec, layoutLabel, labelDir, labelGraph, tokenize, isGenericLabel, Measure, MiniGraph, kekulize, labelLook, labelPieces } from '../chem/labels';
 import { Vec, DEG, arcCenter, norm, sub, Rect, turnedCorners } from '../geom';
-import { arrowEllipse, bezPoints, boxOf, shapeTurn } from '../objects';
+import { arrowEllipse, bezPoints, boxOf, elbowRoute, shapeTurn } from '../objects';
 import { kids, descendants, wellFormed, withoutDoctype } from './xml';
 import { arialWidth } from '../text-metrics';
 import { toSymbolPieces, isSymbolFont, faceFromStyle } from '../richtext';
@@ -25,7 +25,7 @@ import { atomStereoText, bondStereoText, StereoPlacer, PlacedLabel } from '../ch
 import { dataUrl, fromDataUrl, rasterPng } from '../render/images';
 import { itemsToEmf } from '../render/emf';
 import { crystalItems } from '../design/xray';
-import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, FRAME_DATA, BRACKET_PAIR_TAG, PIN_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
+import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, FRAME_DATA, BRACKET_PAIR_TAG, PIN_TAG, GLUE_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags } from './cdxml';
 import { stackItems, usesStacking } from '../editor/stacking';
 import { frameTag } from '../editor/frames';
 import { tableContents } from '../editor/table-figs';
@@ -1569,7 +1569,7 @@ class CdxmlWriter {
     const legacy = this.source('r', r.id, ['graphic']);
     if (legacy) {
       if (o && sameExcept(r, o, ['step', 'reagentFor', 'pin', 'textLook', 'kind']) && this.ownValue(r) === this.ownValue(o)) return;
-      if (r.bez?.length) { this.writeCurveArrow(r, legacy, null); return; }
+      if (r.bez?.length || r.elbow) { this.writeCurveArrow(r, legacy, null); return; }
       const a = this.el('arrow', { id: legacy.getAttribute('id') ?? r.id });
       this.fillArrow(a, r);
       this.writeMorph(a, r);
@@ -1582,7 +1582,8 @@ class CdxmlWriter {
     // ChemDraw's arc along an ellipse stays its arc arrow while its shape is the one read
     if (e?.nodeName === 'arrow' && o?.bez?.length && e.hasAttribute('AngularSize') && deepEqual(r.bez, o.bez) && this.writeEllipseArrow(e, r, o)) return;
     // an S-shaped arrow is a ChemDraw curve (and one made back into an arc, an arrow again)
-    if (r.bez?.length || e?.nodeName === 'curve') { this.writeCurveArrow(r, e, o); return; }
+    // (and an elbow connector, which ChemDraw gets as a curve along its bends)
+    if (r.bez?.length || r.elbow || e?.nodeName === 'curve') { this.writeCurveArrow(r, e, o); return; }
     if (e && o) {
       if (!deepEqual(r.morph, o.morph)) { this.writeMorph(e, r); this.changed = true; }
       if (this.ownValue(r) !== this.ownValue(o)) { this.writePin(e, r); this.changed = true; }
@@ -1655,8 +1656,8 @@ class CdxmlWriter {
     if (e && o && sameExcept(r, o, ['step', 'reagentFor', 'morph', 'pin', 'textLook', 'kind']) && this.ownValue(r) === this.ownValue(o)) return;
     // still the arc of an ellipse ChemDraw drew (moved, turned or scaled whole): its arc arrow again,
     // whose head and line ChemDraw draws its own way, not a curve
-    const ell = arrowEllipse(r);
-    const pts = ell ? null : bezPoints(r);
+    const ell = r.elbow ? null : arrowEllipse(r);
+    const pts = ell ? null : r.elbow ? elbowBez(r) : bezPoints(r);
     const el = this.el(pts ? 'curve' : 'arrow', { id: (e?.nodeName === 'graphic' && e.getAttribute('id')) || r.id });
     if (ell) {
       this.fillArrow(el, { ...r, sweep: 0, bez: undefined });
@@ -1718,8 +1719,27 @@ class CdxmlWriter {
     for (const c of kids(e)) if (c.nodeName === 'objecttag' && (c.getAttribute('Name') === PIN_TAG || c.getAttribute('Name') === ARROW_LOOK_TAG)) e.removeChild(c);
     const v = this.pinValue(r);
     if (v) e.appendChild(this.el('objecttag', { TagType: 'String', Name: PIN_TAG, Value: v, Visible: 'no' }));
+    for (const c of kids(e)) if (c.nodeName === 'objecttag' && c.getAttribute('Name') === GLUE_TAG) e.removeChild(c);
+    const glue = this.glueValue(r);
+    if (glue) e.appendChild(this.el('objecttag', { TagType: 'String', Name: GLUE_TAG, Value: glue, Visible: 'no' }));
     const look = this.lookValue(r);
     if (look) e.appendChild(this.el('objecttag', { TagType: 'String', Name: ARROW_LOOK_TAG, Value: look, Visible: 'no' }));
+  }
+
+  /**
+   * A connector's glue and bends as saved (audit G1-09): the shapes its ends are stuck to (by
+   * their ids in this file) and connection points, whether it bends at right angles, and its ends
+   * as written (moved in ChemDraw, the connector is read as ChemDraw has it). '' for none.
+   */
+  private glueValue(r: Arrow): string {
+    const end = (g: Arrow['from']) => {
+      const id = g && this.stepRef(`s${g.shape}`);
+      return id && g ? { shape: id, port: g.port } : undefined;
+    };
+    const from = end(r.from), to = end(r.to);
+    if (!from && !to && !r.elbow) return '';
+    const p = (v: Vec) => [+v.x.toFixed(2), +v.y.toFixed(2)];
+    return JSON.stringify({ ...(from ? { from } : {}), ...(to ? { to } : {}), ...(r.elbow ? { elbow: true } : {}), seen: { tail: p(r.tail), head: p(r.head) } });
   }
 
   /** An arrow's own text settings and its kind chosen by hand, as its tag saves them ('' for none). */
@@ -1729,7 +1749,7 @@ class CdxmlWriter {
 
   /** An arrow's pins and own text settings as saved: to see whether either changed. */
   private ownValue(r: Arrow): string {
-    return this.pinValue(r) + '|' + this.lookValue(r);
+    return this.pinValue(r) + '|' + this.lookValue(r) + '|' + this.glueValue(r);
   }
 
   /** The step's animation settings, with atoms named by their nodes' ids in this file. */
@@ -2980,4 +3000,13 @@ function turnedBox(r: Rect, at: Vec, deg: number): Rect {
     x: at.x + (x - at.x) * cos - (y - at.y) * sin, y: at.y + (x - at.x) * sin + (y - at.y) * cos,
   }));
   return { x1: Math.min(...ps.map((p) => p.x)), y1: Math.min(...ps.map((p) => p.y)), x2: Math.max(...ps.map((p) => p.x)), y2: Math.max(...ps.map((p) => p.y)) };
+}
+
+/** An elbow connector's bends as a Bézier path of straight pieces (each handle on its own point), for ChemDraw. */
+function elbowBez(r: Arrow): Vec[] | null {
+  const route = elbowRoute(r);
+  if (route.length < 2) return null;
+  const out: Vec[] = [route[0]];
+  for (let i = 1; i < route.length; i++) out.push(route[i - 1], route[i], route[i]);
+  return out;
 }
