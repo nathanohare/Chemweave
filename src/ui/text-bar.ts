@@ -181,7 +181,7 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   g = group();
   button(g, 'sub', 'x<sub>2</sub>', 'Subscript (Ctrl+=)', () => run({ kind: 'toggle', key: 'sub' }));
   button(g, 'sup', 'x<sup>2</sup>', 'Superscript (Ctrl+Shift+=)', () => run({ kind: 'toggle', key: 'sup' }));
-  button(g, 'formula', 'CH<sub>3</sub>', 'Formula: numbers after letters go down, charges go up (CH2Cl2 → CH₂Cl₂)', () => run({ kind: 'toggle', key: 'formula' }));
+  button(g, 'formula', 'C₉H₈', 'Formula style: numbers lowered (CH₂Cl₂), charges raised', () => run({ kind: 'toggle', key: 'formula' }));
   button(g, 'stereo', '(<i>R</i>)', 'Stereodescriptors in italics: (2R,3S)-, (E)-, cis-, tert-, n-Bu, p- (again: back to upright)', () => run({ kind: 'stereo' }));
 
   if (rows) into = rows[0];
