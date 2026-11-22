@@ -4341,7 +4341,7 @@ export class SiMode {
         return;
       }
       case 'add-stored': {
-        if (!c) { this.host.flash('Pick a compound first.'); return; }
+        if (!c) { this.host.flash('Select a compound first.'); return; }
         if (p.readOnly) { this.host.flash('This project is open read-only.'); return; }
         const files = await this.host.pickFiles('Files to store', []);
         if (files.length) await this.addStored(c, files);
