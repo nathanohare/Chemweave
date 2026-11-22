@@ -267,6 +267,8 @@ class DocxReader {
   private nums = new Map<string, string>();
   /** Each list's own changes to its levels (w:lvlOverride): numbers it starts again from, and levels it defines afresh. */
   private numOverrides = new Map<string, { starts: Map<number, number>; levels: Map<number, Level> }>();
+  /** The file's own list definitions (abstractNum, num), kept to write back for lists not changed here (audit G2-13). */
+  private keptNumbering: NonNullable<KeptParts['numbering']> = { abs: [], nums: [] };
   private model: DocxModel | null = null;
   private objects: Record<number, DocObject> = {};
   private nextId = 1;
@@ -849,10 +851,15 @@ class DocxReader {
       this.abstracts.set(id, levels);
       const link = this.a(kid(an, 'numStyleLink'));
       if (link) links.set(id, link);
+      // kept as the file has it (17.9.1 abstractNum), unless it names a numbering style or a picture bullet, which aren't kept with it;
+      // only one a word processor gave its id (w:nsid, 17.9.13): those written here have none, and are made again on saving
+      if (kid(an, 'nsid') && !kid(an, 'numStyleLink') && !kid(an, 'styleLink') && !an.getElementsByTagNameNS(W_NS, 'lvlPicBulletId').length) this.keptNumbering.abs.push({ id, xml: elementXml(an).replaceAll(` xmlns:w="${W_NS}"`, '') });
     }
     for (const n of kids(root, 'num')) {
       const numId = this.a(n, 'numId') ?? '';
       this.nums.set(numId, this.a(kid(n, 'abstractNumId')) ?? '');
+      const abs = this.a(kid(n, 'abstractNumId')) ?? '';
+      if (this.keptNumbering.abs.some((a) => a.id === abs)) this.keptNumbering.nums.push({ id: numId, abs, xml: elementXml(n).replaceAll(` xmlns:w="${W_NS}"`, '') });
       // a list's own start values (Restart Numbering, Set Numbering Value) and levels
       const starts = new Map<number, number>(), own = new Map<number, Level>();
       for (const o of kids(n, 'lvlOverride')) {
@@ -3481,6 +3488,14 @@ class DocxReader {
       if (b.contextual) b.ps = cleanPara({ ...b.ps, spaceBefore: 0, wpx: withKept(b.ps.wpx, { ctx: '1', ctxB: String(b.ps.spaceBefore ?? 0) }) });
     }
     this.listNumbers(out);
+    // each list item that uses a list kept from the file: which list, and the list here as read, to
+    // tell on saving whether it was changed (G2-13)
+    for (const p of out) {
+      if (!p.num || !p.ps.list || p.ps.cont || !this.keptNumbering.nums.some((n) => n.id === p.num!.id)) continue;
+      const key = p.ps.list === 'bullet' ? `b${p.ps.bullet ?? ''}` : `n${p.ps.scheme ?? ''}`;
+      p.ps = { ...p.ps, wpx: withKept(p.ps.wpx, { num: p.num.id, nk: key, na: String(p.ps.startAt ?? ''), nl: JSON.stringify(p.ps.numLook ?? null) }) };
+    }
+    if (this.keptNumbering.nums.length) this.kept = { ...this.kept, numbering: this.keptNumbering };
     // the standard styles (the file's, or ours where it has none) and the others the text uses
     const styles = defaultStyles();
     for (const [wordId, ours] of this.idMap) if (BUILT_IN_IDS[ours] || this.used.has(wordId)) styles[ours] = this.named(wordId, ours);

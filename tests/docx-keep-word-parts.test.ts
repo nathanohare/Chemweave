@@ -250,3 +250,58 @@ describe('Word paragraph settings shown another way are written back as Word had
     expect(pPrOf('boxed')).toMatch(/<w:bottom [^>]*w:space="4"/);
   });
 });
+
+describe('Word list definitions are kept while the lists are not changed here (G2-13)', () => {
+  // as Word writes a list: the number's own size and underline, the tab after it, its ids (17.9)
+  const W15 = 'http://schemas.microsoft.com/office/word/2012/wordml';
+  const abs = (id: number, fmt: string, text: string) => `<w:abstractNum w:abstractNumId="${id}" xmlns:w15="${W15}" w15:restartNumberingAfterBreak="0"><w:nsid w:val="1A2B3C4${id}"/><w:multiLevelType w:val="hybridMultilevel"/><w:tmpl w:val="0409000F"/>` +
+    `<w:lvl w:ilvl="0" w:tplc="0409000F"><w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:lvlText w:val="${text}"/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="720"/></w:tabs><w:ind w:left="720" w:hanging="360"/></w:pPr><w:rPr><w:sz w:val="18"/><w:u w:val="single"/></w:rPr></w:lvl></w:abstractNum>`;
+  const numbering = abs(0, 'decimal', '%1.') + abs(1, 'lowerLetter', '(%1)') +
+    '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="1"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride></w:num>';
+  const item = (n: number, t: string) => `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${n}"/></w:numPr></w:pPr><w:r><w:t>${t}</w:t></w:r></w:p>`;
+  const body = item(1, 'first') + item(1, 'second') + item(2, 'third');
+
+  it('writes each of the file\'s lists back as it was, and its items keep using it', async () => {
+    const out = await roundTrip({ numbering, body });
+    const nb = out['word/numbering.xml'];
+    const doc = parse(nb);
+    expect(doc.getElementsByTagName('parsererror')).toHaveLength(0);
+    // both of the file's definitions, with their number formatting, tab, template codes and ids
+    expect(nb.match(/<w:nsid w:val="1A2B3C4[01]"\/>/g)).toHaveLength(2);
+    expect(nb.match(/<w:sz w:val="18"\/><w:u w:val="single"\/>/g)).toHaveLength(2);
+    expect(nb).toContain('<w:tab w:val="num" w:pos="720"/>');
+    expect(nb).toContain('w:tplc="0409000F"');
+    expect(nb).toContain('w15:restartNumberingAfterBreak="0"');
+    expect(nb).toMatch(/mc:Ignorable="[^"]*\bw15\b/);
+    // each item uses its own list again, under the id that list was written with
+    const numOf = (t: string) => new RegExp(`<w:numId w:val="(\\d+)"/>(?:(?!</w:p>)[\\s\\S])*?<w:t[^>]*>${t}</w:t>`).exec(out['word/document.xml'])?.[1];
+    const absOf = (numId: string) => Array.from(doc.getElementsByTagNameNS(W_NS, 'num')).find((n) => n.getAttributeNS(W_NS, 'numId') === numId)
+      ?.getElementsByTagNameNS(W_NS, 'abstractNumId')[0].getAttributeNS(W_NS, 'val');
+    const lvlText = (absId: string | null | undefined) => Array.from(doc.getElementsByTagNameNS(W_NS, 'abstractNum')).find((a) => a.getAttributeNS(W_NS, 'abstractNumId') === absId)
+      ?.getElementsByTagNameNS(W_NS, 'lvlText')[0].getAttributeNS(W_NS, 'val');
+    expect(numOf('first')).toBe(numOf('second'));
+    expect(lvlText(absOf(numOf('first')!))).toBe('%1.');
+    expect(lvlText(absOf(numOf('third')!))).toBe('(%1)');
+    // (ids unique across the part)
+    const ids = Array.from(doc.getElementsByTagNameNS(W_NS, 'num')).map((n) => n.getAttributeNS(W_NS, 'numId'));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('keeps them once, save after save', async () => {
+    const { doc } = await readDocx(wordFile({ numbering, body }));
+    const again = (await readDocx(await writeDocx(doc, deps))).doc;
+    const nb = strFromU8(unzipSync(await writeDocx(again, deps))['word/numbering.xml']);
+    expect(nb.match(/<w:nsid /g)).toHaveLength(2);
+  });
+
+  it('gives a list item changed here a list made here', async () => {
+    const { doc } = await readDocx(wordFile({ numbering, body }));
+    // the third item made a bulleted one
+    const i = doc.paras.findIndex((p) => p.list === 'number' && p.scheme !== undefined);
+    doc.paras[i] = { ...doc.paras[i], list: 'bullet', scheme: undefined };
+    const out = unzipSync(await writeDocx(doc, deps));
+    const xml = strFromU8(out['word/document.xml']);
+    const third = /<w:numId w:val="(\d+)"\/>(?:(?!<\/w:p>)[\s\S])*?<w:t[^>]*>third<\/w:t>/.exec(xml)![1];
+    expect(Number(third)).toBeLessThan(1000);
+  });
+});

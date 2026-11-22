@@ -94,6 +94,12 @@ export interface KeptParts {
    */
   styles?: { type: string; id: string; xml: string }[];
   latentStyles?: string;
+  /**
+   * Word's list definitions as the file had them (ECMA-376 part 1, 17.9.1 abstractNum and 17.9.15
+   * num, without the w namespace's declaration): written back for the lists not changed here, so
+   * their numbers keep their own font, size, tab and restart settings.
+   */
+  numbering?: { abs: { id: string; xml: string }[]; nums: { id: string; abs: string; xml: string }[] };
   trees?: KeptTree[];
   docProps?: KeptProps;
   /**

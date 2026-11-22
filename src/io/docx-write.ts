@@ -228,6 +228,8 @@ class DocxWriter {
   }
 
   constructor(private t: DocText, private deps: DocxDeps, private pages?: string[]) {
+    // the file's own lists, under ids of their own past ours (their definitions are written back whole)
+    t.kept?.numbering?.nums.forEach((n, i) => this.keptNumIds.set(n.id, String(KEPT_NUM_BASE + i)));
     this.shown = fieldTexts(t, pages ? (p) => pages[p] ?? '' : undefined, pages ? Math.max(1, ...pages.map((x) => Number(x) || 0)) : undefined);
     this.charStyles = charStylesOf(t);
     let foot = 0, end = 0;
@@ -648,8 +650,10 @@ class DocxWriter {
     const em = runs.find((r) => r.obj === undefined)?.size ?? st.size;
     if (ps.list && !ps.cont) {
       const key = ps.list === 'bullet' ? `b${ps.bullet ?? ''}` : `n${ps.scheme ?? ''}`;
+      // the file's own list while the item's list is as it was read (its kind, number and number's look), G2-13
+      const kept = raw.num !== undefined && raw.nk === key && raw.na === String(ps.startAt ?? '') && raw.nl === JSON.stringify(ps.numLook ?? null) ? this.keptNumIds.get(raw.num) : undefined;
       // a numbered list's own Word list (so it counts from 1), else the one its kind shares
-      const id = ps.list === 'number' && listNum > 0 && this.numKeys[listNum - 1] === key ? listNum : this.sharedNum(key);
+      const id = kept ?? (ps.list === 'number' && listNum > 0 && this.numKeys[listNum - 1] === key ? listNum : this.sharedNum(key));
       pPr.push(`<w:numPr><w:ilvl w:val="${Math.max(0, Math.min(8, ps.level ?? 0))}"/><w:numId w:val="${id}"/></w:numPr>`);
     }
     if (ps.noLineNumbers) pPr.push('<w:suppressLineNumbers/>');
@@ -1763,13 +1767,22 @@ class DocxWriter {
       return `<w:lvl w:ilvl="${i}"><w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:lvlText w:val="${xml(text)}"/><w:lvlJc w:val="left"/>` +
         `<w:pPr><w:ind w:left="${twips(left)}" w:hanging="${twips(hang)}"/></w:pPr><w:rPr>${fontsXml(font)}${bullet ? '<w:b w:val="0"/><w:i w:val="0"/>' : ''}</w:rPr></w:lvl>`;
     }).join('');
-    const out = [HEAD, `<w:numbering xmlns:w="${W_NS}">`];
+    // the file's own lists (CT_Numbering, 17.9.16: every abstractNum before every num), their ids moved past ours;
+    // Word 2013 and later's attributes in them (w15:restartNumberingAfterBreak, w16cid:durableId) ignorable for older Words
+    const kept = this.t.kept?.numbering;
+    const keptAbs = new Map((kept?.abs ?? []).map((a, i) => [a.id, String(KEPT_NUM_BASE + i)]));
+    const out = [HEAD, kept ? `<w:numbering xmlns:w="${W_NS}" xmlns:mc="${MC_NS}" xmlns:w14="${W14_NS}" xmlns:w15="${W15_NS}" xmlns:w16cid="${W16CID_NS}" xmlns:w16se="${W16SE_NS}" mc:Ignorable="w14 w15 w16cid w16se">` : `<w:numbering xmlns:w="${W_NS}">`];
     for (const [key, abs] of this.abstractNums) out.push(`<w:abstractNum w:abstractNumId="${abs}"><w:multiLevelType w:val="${key === 'b' || key === 'n' ? 'hybridMultilevel' : 'multilevel'}"/>${lvls(key)}</w:abstractNum>`);
+    for (const a of kept?.abs ?? []) out.push(a.xml.replace(/(<w:abstractNum\b[^>]*?w:abstractNumId=")[^"]*"/, `$1${keptAbs.get(a.id)}"`));
     this.nums.forEach((n, k) => {
       const over = (i: number, v: number) => `<w:lvlOverride w:ilvl="${i}"><w:startOverride w:val="${v}"/></w:lvlOverride>`;
       const restart = n.restart ? Array.from({ length: 9 }, (_, i) => over(i, n.at?.level === i ? n.at.value : 1)).join('') : n.at ? over(n.at.level, n.at.value) : '';
       out.push(`<w:num w:numId="${k + 1}"><w:abstractNumId w:val="${n.abs}"/>${restart}</w:num>`);
     });
+    for (const n of kept?.nums ?? []) {
+      const abs = keptAbs.get(n.abs), id = this.keptNumIds.get(n.id);
+      if (abs && id) out.push(n.xml.replace(/(<w:num\b[^>]*?w:numId=")[^"]*"/, `$1${id}"`).replace(/(<w:abstractNumId w:val=")[^"]*"/, `$1${abs}"`));
+    }
     out.push('</w:numbering>');
     return out.join('');
   }
@@ -2129,6 +2142,10 @@ function run(rPr: string, text: string): string {
 }
 
 const V_NS = 'urn:schemas-microsoft-com:vml';
+/** Word 2015's symbol extensions namespace (w16se), which list definitions can use. */
+const W16SE_NS = 'http://schemas.microsoft.com/office/word/2015/wordml/symex';
+/** The first id given to the file's own lists (abstractNum and num) when written back, past the ones made here. */
+const KEPT_NUM_BASE = 1000;
 /** VML's picture frame shape type (number 75), which embedded objects' pictures use. */
 const T75 = '<v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o:preferrelative="t" path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f"><v:stroke joinstyle="miter"/><v:formulas>' +
   ['if lineDrawn pixelLineWidth 0', 'sum @0 1 0', 'sum 0 0 @1', 'prod @2 1 2', 'prod @3 21600 pixelWidth', 'prod @3 21600 pixelHeight', 'sum @0 0 1', 'prod @6 1 2', 'prod @7 21600 pixelWidth', 'sum @8 21600 0', 'prod @7 21600 pixelHeight', 'sum @10 21600 0']
