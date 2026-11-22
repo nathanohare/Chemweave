@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FONT_ROWS, FONT_LOOK, fontGroupHtml, installFontGroups, FONT_SIZE_LIST, type FontMode } from '../src/ui/font-group';
 import { buildTextBar } from '../src/ui/text-bar';
+import { CanvasRibbon } from '../src/ui/canvas-ribbon';
 
 const src = (f: string) => readFileSync(join(__dirname, '..', f), 'utf8');
 const ORDER = ['Font', 'Font size', 'Increase Font Size', 'Decrease Font Size', 'Clear All Formatting', 'Bold', 'Italic', 'Underline', 'Strikethrough', 'Subscript', 'Superscript', 'Formula style', 'Text Color'];
@@ -50,9 +51,9 @@ describe('the shared Font group (G5-26)', () => {
     installFontGroups();
     expect(document.querySelectorAll('.rb-font-group')).toHaveLength(2);
     expect(document.querySelectorAll(`datalist#${FONT_SIZE_LIST}`)).toHaveLength(1);
-    const html = src('index.html');
-    for (const m of ['document', 'slides', 'sheet']) expect(html).toContain(`<div data-font-group="${m}"></div>`);
-    expect(html).not.toContain('id="doc-font"');
+    const page = new DOMParser().parseFromString(src('index.html'), 'text/html');
+    expect([...page.querySelectorAll('[data-font-group]')].map((e) => e.getAttribute('data-font-group')).sort()).toEqual(['document', 'sheet', 'slides']);
+    expect(page.getElementById('doc-font')).toBeNull();
     expect(src('src/main.ts').indexOf("import './ui/font-groups-install';")).toBeLessThan(src('src/main.ts').indexOf("import { fieldEnv }"));
   });
   it('the Canvas group has the same controls and order, then its own (R)', () => {
@@ -64,6 +65,13 @@ describe('the shared Font group (G5-26)', () => {
     const btns = [...bar.querySelectorAll('button')];
     expect(btns.at(-1)!.innerHTML).toBe('(<i>R</i>)');
     expect(bar.querySelector('label.rb-colour')!.firstElementChild!.outerHTML).toBe(FONT_LOOK.color.html);
-    expect(src('src/ui/canvas-ribbon.ts')).toContain("launch.dataset.cmd = 'toolbox-text';");
+    // the Canvas ribbon's Font group has the ⬊, and it opens the Text Formatting toolbox
+    const ran: string[] = [];
+    const place = document.createElement('div');
+    document.body.append(place);
+    const rb = new CanvasRibbon({ command: (c) => ran.push(c), pickTool: () => {}, hasTool: () => true, icon: () => undefined, textGroups: () => {}, pasteMenu: () => {} }, place);
+    const font = [...rb.el.querySelectorAll('.rb-group')].find((g) => g.querySelector('.rb-label')?.textContent === 'Font')!;
+    font.querySelector<HTMLButtonElement>('.rb-launch')!.click();
+    expect(ran).toEqual(['toolbox-text']);
   });
 });

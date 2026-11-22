@@ -302,7 +302,7 @@ html:not(.touch-ui) .toolbox.upright:not(.collapsed) > .tb-head > .tb-grip { let
 .tbp { display: flex; flex-direction: column; gap: 4px; }
 .tbp-cap { font-size: var(--fs-sm); color: var(--muted); margin-top: 6px; }
 .tbp-ribbon { border: 1px solid var(--line); border-radius: var(--r-control); background: var(--bg); overflow: hidden; }
-.tbp-tabs { display: flex; gap: 10px; padding: 3px 8px; font-size: 11px; color: var(--muted); }
+.tbp-tabs { display: flex; gap: 10px; padding: 3px 8px; font-size: 11px; color: var(--text); }
 .tbp-tabs > span:first-child { color: var(--text); border-bottom: 2px solid var(--accent); }
 .tbp-panel { display: flex; gap: 0; padding: 4px; background: var(--panel); }
 .tbp-gwrap { display: flex; flex-direction: column; align-items: center; padding: 0 6px; border-right: 1px solid var(--line); }
@@ -547,7 +547,7 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 /* the zoom slider, the percent and Fit: the same in every mode (UI audit U1) */
 .sb-zoom-set { display: inline-flex; align-items: center; gap: 2px; }
 .sb-zoom { display: inline-flex; align-items: center; gap: 1px; padding-left: 8px; border-left: 1px solid var(--line); }
-.sb-zoom button { width: 18px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font: 14px/1 var(--ui-font); }
+.sb-zoom button { width: 18px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--text); font: 14px/1 var(--ui-font); }
 .sb-zoom button:hover { color: var(--text); border-color: var(--line); }
 .sb-zoom input[type='range'] { -webkit-appearance: none; appearance: none; width: 96px; height: 16px; margin: 0 2px; padding: 0; background: transparent; cursor: pointer; }
 .sb-zoom input[type='range']::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: var(--muted); }

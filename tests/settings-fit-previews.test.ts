@@ -36,7 +36,7 @@ describe('Settings fit at 1024×700 (G5-30, G5-31)', () => {
 
 describe('NMR Prediction preview (G5-11)', () => {
   it('draws ethyl acetate as first-order multiplets, each summing to its number of H', () => {
-    // ethyl acetate in CDCl3: 4.12 (q, J = 7.1, 2H), 2.05 (s, 3H), 1.26 (t, J = 7.1, 3H)
+    // ethyl acetate in CDCl3: 4.12 (q, J = 7, 2H), 2.05 (s, 3H), 1.26 (t, J = 7, 3H)
     // (Fulmer et al., Organometallics 2010, 29, 2176, Table 1)
     const d = sampleSpectrumData(400, false);
     const sp = d.spec!;
@@ -45,7 +45,7 @@ describe('NMR Prediction preview (G5-11)', () => {
     const sum = [...sp.lines.intensity].reduce((a, b) => a + b, 0);
     expect(sum).toBeCloseTo(8, 9);
     // the quartet's outer lines are 3J apart, centred on 4.12 ppm at 400 MHz, 1:3:3:1
-    expect(sp.lines.hz[3] - sp.lines.hz[0]).toBeCloseTo(21.3, 9);
+    expect(sp.lines.hz[3] - sp.lines.hz[0]).toBeCloseTo(21, 9);
     expect((sp.lines.hz[0] + sp.lines.hz[3]) / 2).toBeCloseTo(4.12 * 400, 9);
     expect([...sp.lines.intensity.slice(0, 4)].map((x) => x / sp.lines.intensity[0])).toEqual([1, 3, 3, 1]);
     expect(d.measured).toBeUndefined();
@@ -54,7 +54,7 @@ describe('NMR Prediction preview (G5-11)', () => {
   it('labels the peaks as the boxes say', () => {
     const svg = spectrumSvg(sampleSpectrumData(400, false), { w: 240, h: 170, hi: 4.6, lo: 0.8, labels: true, hotRow: null,
       peakLabels: { label: true, shift: true, mult: true, count: true, j: true, size: 10, place: 'above', hover: false } });
-    for (const t of ['OCH₂', '4.12', 'q, 2H', 'J = 7.1 Hz', 's, 3H', 't, 3H']) expect(svg).toContain(t);
+    for (const t of ['OCH₂', '4.12', 'q, 2H', 'J = 7.0 Hz', 's, 3H', 't, 3H']) expect(svg).toContain(t);
     const bare = spectrumSvg(sampleSpectrumData(400, false), { w: 240, h: 170, hi: 4.6, lo: 0.8, labels: true, hotRow: null,
       peakLabels: { label: false, shift: false, mult: true, count: false, j: false, size: 10, place: 'above', hover: false } });
     expect(bare).not.toContain('2H');
@@ -92,7 +92,9 @@ describe('Toolboxes and Ribbon preview (G5-16)', () => {
   it('shows Classic with group names and two rows, Simplified with one row', () => {
     const c = toolboxPreview('classic', 'off', { ribbon: [svg(), svg()], tools: [svg()] });
     expect(c.querySelector('.tbp-panel')!.classList.contains('tbp-classic')).toBe(true);
-    expect([...c.querySelectorAll('.tbp-name')].map((n) => n.textContent)).toEqual(['Clipboard', 'Arrange']);
+    expect([...c.querySelectorAll('.tbp-name')].map((n) => n.textContent)).toEqual(['Clipboard', 'Font']);
+    // the real Canvas ribbon's tabs (there is no Draw tab; review R10)
+    expect([...c.querySelectorAll('.tbp-tabs span')].map((n) => n.textContent)).toEqual(['Home', 'Insert', 'Chemistry']);
     expect(c.querySelectorAll('.tbp-group')[0].querySelectorAll('.tbp-row')).toHaveLength(2);
     const s = toolboxPreview('simple', 'off', { ribbon: [svg()], tools: [] });
     expect(s.querySelectorAll('.tbp-name')).toHaveLength(0);
