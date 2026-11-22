@@ -88,8 +88,6 @@ export class DocView {
   }
   /** The figure the pointer is over: its area is shaded light grey, to show its edges (on screen only). */
   hover: number | null = null;
-  /** A structure made from a picture (Make Editable) shown with its original over it, in red, to compare. */
-  compare: number | null = null;
   /**
    * A structure being drawn in place on its page: `paint` draws it as it is being drawn (in the
    * page's points, `o` its place) instead of as the document has it, over the rest of the
@@ -810,20 +808,6 @@ export class DocView {
     } else if (obj.kind === 'drawing') {
       const bmp = figures.bitmap(obj.contents, t.drawingStyle, (o.w / Math.max(1, figures.size(obj.contents, t.drawingStyle).w)) * this.zoom * this.dpr, true);
       if (bmp) ctx.drawImage(bmp, o.x, o.y, o.w, o.h);
-      // Compare with Original: the picture it was made from, in red, where its atoms were
-      const fp = obj.fromPicture;
-      const pic = this.compare === o.id && fp ? figures.record(obj.contents, t.drawingStyle).pic : null;
-      const red = pic && fp ? redPicture(fp.picture.src) : null;
-      if (pic && fp && red) {
-        const b = pic.box, k = o.w / Math.max(1e-6, b.x2 - b.x1);
-        ctx.save();
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.globalAlpha = 0.85;
-        const c = fp.picture.crop ?? { l: 0, t: 0, r: 0, b: 0 };
-        ctx.drawImage(red, c.l * red.width, c.t * red.height, Math.max(1e-3, (1 - c.l - c.r) * red.width), Math.max(1e-3, (1 - c.t - c.b) * red.height),
-          o.x + (fp.at.x - b.x1) * k, o.y + (fp.at.y - b.y1) * k, fp.at.w * k, fp.at.h * k);
-        ctx.restore();
-      }
     } else if (obj.kind === 'picture' && obj.chart) {
       // a chart is drawn from its data, sharp at any zoom
       paintChartBox(ctx, obj.chart, o.x, o.y, o.w, o.h);
@@ -869,31 +853,3 @@ function squiggle(ctx: CanvasRenderingContext2D, r: Rect, px: number): void {
   ctx.stroke();
 }
 
-/** The red of Compare with Original: what is only in the picture shows in it. */
-const COMPARE_RED = [214, 48, 39];
-const reds = new Map<string, HTMLCanvasElement | null>();
-
-/** A picture as red ink on nothing (its paper see-through), for laying over a structure; null until the picture has loaded. */
-function redPicture(src: string): HTMLCanvasElement | null {
-  const had = reds.get(src);
-  if (had) return had;
-  const img = imageFor(src) as HTMLImageElement | null;
-  const w = img ? img.naturalWidth || img.width : 0, h = img ? img.naturalHeight || img.height : 0;
-  if (!img || !w || !h) return null;
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  const g = c.getContext('2d');
-  if (!g) return null;
-  g.drawImage(img, 0, 0);
-  const d = g.getImageData(0, 0, w, h);
-  for (let i = 0; i < d.data.length; i += 4) {
-    const ink = (1 - (0.299 * d.data[i] + 0.587 * d.data[i + 1] + 0.114 * d.data[i + 2]) / 255) * d.data[i + 3];
-    d.data[i] = COMPARE_RED[0]; d.data[i + 1] = COMPARE_RED[1]; d.data[i + 2] = COMPARE_RED[2]; d.data[i + 3] = ink;
-  }
-  g.putImageData(d, 0, 0);
-  // only a few pictures are compared in a session
-  if (reds.size > 8) reds.delete(reds.keys().next().value!);
-  reds.set(src, c);
-  return c;
-}

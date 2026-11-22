@@ -14266,7 +14266,7 @@ const compareBtn = document.createElement('button');
 compareBtn.type = 'button';
 compareBtn.className = 'structure-more compare-original-btn';
 compareBtn.innerHTML = `${commandIcon('compare-original') ?? ''}<span>Compare<br>Original</span>`;
-compareBtn.title = 'Compare with Original: the picture this structure was made from, in red over it (click again to hide). Right-click the structure to revert to the picture';
+compareBtn.title = 'Compare with Original: the picture this structure was made from and the structure, side by side (click again to close). Right-click the structure to revert to the picture';
 compareBtn.setAttribute('aria-label', 'Compare with Original');
 compareBtn.addEventListener('click', () => { if (ws.active.mode === 'document') docMode?.run('compare-original'); });
 $('#dock-left').prepend(makeEditableBtn, compareBtn, structureStart, ...structureRail, railFold);

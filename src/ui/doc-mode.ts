@@ -55,6 +55,7 @@ import { citeSuper, formatOf, type Reference } from '../document/references';
 import { replaceInCells, runZotero, type ZoteroCommand, type ZoteroHost, type ZoteroPost } from '../document/zotero-live';
 import { choose } from './keep-ui';
 import { dataUrl, fromDataUrl, imageSize } from '../render/images';
+import { CompareCard } from './doc-compare-card';
 import { canMakeEditable, makeEditable as makeEditablePicture, pictureBack, restyle, type MakeEditableHost } from './doc-make-editable';
 import type { StyleChoice } from '../recognise/editable';
 import { shownSize } from '../document/doc-layout';
@@ -1634,7 +1635,7 @@ export class DocumentMode {
           command('Match Original Style', 'make-editable-match', 'Draw it with the picture\'s bond length, line width and label size', st === 'match'),
           command('Use Default Style', 'make-editable-default', 'Draw it in the document\'s drawing style', st === 'default'),
           null,
-          command('Compare with Original', 'compare-original', 'Show the picture in red over the structure, to see what was read wrong', this.view.compare === picked),
+          command('Compare with Original', 'compare-original', 'Show the picture and the structure side by side, to see what was read wrong', this.compareCard?.id === picked),
           command('Revert to Picture', 'revert-to-picture', 'Put the picture back as it was'),
         ] });
       }
@@ -4188,8 +4189,9 @@ export class DocumentMode {
     // the document or the picture changed while it was read: leave it as it is now
     if (!made || this.file !== f || f.t.objects[id] !== o) return;
     f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: made.drawing } } as DocText, 'Make Editable');
-    // anything doubtful: the original shown over it straight away, to check
-    this.view.compare = made.problems.length ? id : null;
+    // anything doubtful: the original shown beside it straight away, to check
+    this.closeCompare();
+    if (made.problems.length) this.openCompare(id, made.problems);
     const look = made.drawing.fromPicture?.look;
     const how = choice === 'default' ? 'in the document\'s style' : look?.preset ? `in ${look.preset}` : `to match the picture (bonds ${look ? look.bondLength.toFixed(1) : '?'} pt)`;
     this.host.flash(made.problems.length ? `Made editable ${how}. Check it against the original: ${made.problems.join(' ')}` : `Made editable ${how}. Revert to Picture puts the picture back.`, made.problems.length ? 10000 : 5000);
@@ -4208,20 +4210,61 @@ export class DocumentMode {
       ['Match Original Style', go('make-editable-match'), true, tick(now === 'match')],
       ['Use Default Style', go('make-editable-default'), true, tick(now === 'default')],
       null,
-      ['Compare with Original', go('compare-original'), !!made, tick(!!made && this.view.compare === id)],
+      ['Compare with Original', go('compare-original'), !!made, tick(!!made && this.compareCard?.id === id)],
       ['Revert to Picture', go('revert-to-picture'), !!made, ''],
     ]);
   }
 
-  /** Compare with Original: the picture the picked structure was made from shown over it in red (again to hide it). */
+  /** Compare with Original: the picture the picked structure was made from and the structure, side by side in a card beside it (again to close it). */
   private compareOriginal(): void {
     const id = this.pickedObject();
     const o = id !== null ? this.file?.t.objects[id] : undefined;
     if (id === null || o?.kind !== 'drawing' || !o.fromPicture) { this.host.flash('Click a structure made from a picture first.'); return; }
-    this.view.compare = this.view.compare === id ? null : id;
-    if (this.view.compare !== null) this.host.flash('The original picture is shown in red over the structure: red shows what the structure is missing or has moved. Compare with Original again hides it.', 6000);
-    this.view.redraw();
-    this.focus();
+    if (this.compareCard?.id === id) this.closeCompare();
+    else this.openCompare(id, []);
+  }
+
+  /** The Compare with Original card open beside a structure, if any. */
+  private compareCard: CompareCard | null = null;
+
+  private openCompare(id: number, problems: string[]): void {
+    this.closeCompare();
+    const f = this.file;
+    const o = f?.t.objects[id];
+    if (!f || o?.kind !== 'drawing' || !o.fromPicture) return;
+    const card: CompareCard = new CompareCard(id, o.contents, o.fromPicture, f.t.drawingStyle, problems, {
+      where: () => {
+        if (this.file !== f || !this.view.scroller.isConnected || !this.view.scroller.offsetParent) return null;
+        if (f.t.objects[id] !== o) {
+          // changed (another style, undone): shown afresh, or gone with it
+          queueMicrotask(() => {
+            if (this.compareCard !== card) return;
+            const now = f.t.objects[id];
+            if (this.file === f && now?.kind === 'drawing' && now.fromPicture && this.pickedObject() === id) this.openCompare(id, problems);
+            else this.closeCompare();
+          });
+          return null;
+        }
+        const at = f.layout().objects.find((x) => x.id === id);
+        if (!at) return null;
+        const r = this.view.scroller.getBoundingClientRect();
+        const a = this.view.toScreen(at.x, at.y), b = this.view.toScreen(at.x + at.w, at.y + at.h);
+        const box = new DOMRect(r.left + a.x, r.top + a.y, b.x - a.x, b.y - a.y);
+        // scrolled out of the view
+        if (box.bottom < r.top || box.top > r.bottom || box.right < r.left || box.left > r.right) return null;
+        return box;
+      },
+      revert: () => { if (this.file === f && f.t.objects[id] === o) { this.revertToPicture(); } },
+      edit: () => { if (this.file === f && f.t.objects[id] === o) this.editFigure(id); },
+      closed: () => { if (this.compareCard === card) this.compareCard = null; this.focus(); },
+    });
+    this.compareCard = card;
+  }
+
+  private closeCompare(): void {
+    const c = this.compareCard;
+    this.compareCard = null;
+    c?.close();
   }
 
   /** Revert to Picture: a structure made from a picture back to that picture, as it was. */
@@ -5537,8 +5580,8 @@ export class DocumentMode {
     }
     document.body.classList.toggle('doc-picture-picked', canMakeEditable(pickedObj));
     document.body.classList.toggle('doc-from-picture', pickedObj?.kind === 'drawing' && !!pickedObj.fromPicture);
-    // the original shows over its structure while that structure is picked
-    if (this.view.compare !== null && this.view.compare !== pickedId) { this.view.compare = null; this.view.redraw(); }
+    // the card comparing with the original stays while its structure is picked, as it is
+    if (this.compareCard && (this.compareCard.id !== pickedId || this.file?.t.objects[this.compareCard.id]?.kind !== 'drawing')) this.closeCompare();
     const tabBtn = this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="table"]');
     if (tabBtn) {
       tabBtn.hidden = !tg && !this.keepTableTab;
