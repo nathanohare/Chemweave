@@ -76,7 +76,10 @@ describe('axial chirality', () => {
   it('labels a biaryl whichever Kekulé structure is drawn, and its mirror image the other way', () => {
     const { atoms, bonds } = biaryl();
     const l = label(atoms, bonds);
-    expect(l.length).toBe(1);
+    // By hand (IUPAC 2013 P-93.5.1.1: near groups rank before far ones, then by CIP): seen along
+    // the axis from ring 1, near C2 (O, C, C) is 1 at the top and C6 (C, C, H) 2 at the bottom; far
+    // C8 (C, C, C), wedged toward the viewer, is 3, on the right. 1 → 2 → 3 turns anticlockwise: Sa.
+    expect(l).toEqual(['Sa']);
     const other = bonds.map(([a, b, o, st]) => (a <= 12 && b <= 12 && !(a === 1 && b === 7) ? [a, b, o === 2 ? 1 : 2, st] : [a, b, o, st]) as B);
     expect(label(atoms, other)).toEqual(l);
     expect(label(atoms, flipWedges(bonds))).toEqual([l[0] === 'Ra' ? 'Sa' : 'Ra']);

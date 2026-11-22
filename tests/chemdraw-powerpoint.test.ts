@@ -24,6 +24,9 @@ import { boxOf } from '../src/objects';
 import { defaultMaster } from '../src/deck/deck';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { CHEMDRAW_DIR, noChemDraw } from './chemdraw-private';
+import { realFilesMissing } from './real-files';
+
+realFilesMissing('chemdraw-powerpoint', noChemDraw, 'CHEMDRAW_FIXTURES');
 
 const DIR = CHEMDRAW_DIR;
 const fixture = (name: string) => new Uint8Array(readFileSync(join(DIR, name)));
