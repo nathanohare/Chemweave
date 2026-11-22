@@ -172,3 +172,14 @@ describe('Word run properties not modelled here are kept (G2-10)', () => {
     expect(old).not.toContain('w14:shadow');
   });
 });
+
+describe('East Asian fonts are not made Latin ones (G2-09)', () => {
+  it('writes a Latin font without an East Asian font, and an East Asian font with one', async () => {
+    const body = '<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="SimSun" w:hAnsi="Arial"/></w:rPr><w:t>Yield 产率</w:t></w:r>' +
+      '<w:r><w:rPr><w:rFonts w:ascii="MS Mincho" w:eastAsia="MS Mincho" w:hAnsi="MS Mincho"/></w:rPr><w:t>収率</w:t></w:r></w:p>';
+    const xml = (await roundTrip({ body }))['word/document.xml'];
+    expect(xml).not.toContain('w:eastAsia="Arial"');
+    expect(xml).toContain('<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>');
+    expect(xml).toContain('w:eastAsia="MS Mincho"');
+  });
+});

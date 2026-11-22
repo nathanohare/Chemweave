@@ -1724,10 +1724,19 @@ export function listIndent(ps: ParaStyle, em: number): { left: number; hang: num
 
 const half = (pt: number): number => Math.max(2, Math.round(pt * 2));
 
+/**
+ * A font for a run or style (17.3.2.26 rFonts), as Word's Font box sets a Latin font: its
+ * ascii, hAnsi and complex script fonts. The East Asian font only for an East Asian font, so
+ * Chinese, Japanese or Korean text keeps the document's own (SimSun is not made Arial).
+ */
 function fontsXml(font: string): string {
   const f = xml(font);
-  return `<w:rFonts w:ascii="${f}" w:eastAsia="${f}" w:hAnsi="${f}" w:cs="${f}"/>`;
+  return `<w:rFonts w:ascii="${f}"${eastAsianFont(font) ? ` w:eastAsia="${f}"` : ''} w:hAnsi="${f}" w:cs="${f}"/>`;
 }
+
+/** An East Asian font, by its name (Windows' and macOS's Chinese, Japanese and Korean fonts, or a name in their scripts). */
+const eastAsianFont = (font: string) => /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(font) ||
+  /^(MS (P)?(Mincho|Gothic)|Meiryo|Yu (Gothic|Mincho)|(N)?SimSun|SimHei|SimKai|KaiTi|FangSong|DengXian|Microsoft (YaHei|JhengHei)|(P)?MingLiU|DFKai-SB|Malgun Gothic|Batang|Gulim|Dotum|Gungsuh|Hiragino .*|PingFang .*|Songti .*|Heiti .*|STSong|STHeiti|STKaiti|Apple ?SD Gothic Neo|AppleGothic|Noto (Sans|Serif) (CJK|JP|SC|TC|KR).*|Source Han .*)$/i.test(font.trim());
 
 /** The page's columns, as Word's section sets them. */
 export function colsXml(pg: PageSetup): string {
