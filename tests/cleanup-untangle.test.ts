@@ -4,7 +4,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createRequire } from 'node:module';
 import { Doc } from '../src/model';
-import { addMolfile, toMolfile } from '../src/chem/molfile';
+import { toMolfile } from '../src/chem/molfile';
+import { addMolfile } from '../src/io/chem-formats';
 import { cleanUpOptions, cleanUpWays, looksTangled, turnOption } from '../src/chem/cleanup';
 import { countCrossings, untangleSystem } from '../src/chem/untangle';
 import { Editor } from '../src/editor/editor';

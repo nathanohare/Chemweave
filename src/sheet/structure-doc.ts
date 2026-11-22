@@ -18,6 +18,20 @@ export function structureDoc(contents: Contents, style: DocStyle): Doc {
   return d;
 }
 
+/**
+ * A fingerprint of a cell's drawing: every atom's element, label, charge, isotope, radical,
+ * enhanced stereo and place, every bond's atoms, order and look. The same drawing gives the same
+ * text; any change to its chemistry or layout gives another.
+ */
+export function structurePrint(c: Contents): string {
+  const r = (v: number) => Math.round(v * 100) / 100;
+  return JSON.stringify([
+    c.atoms.map((a) => [a.id, a.z, a.label, a.charge, a.isotope, a.radical ?? '', a.enhStereo ? `${a.enhStereo.type}${a.enhStereo.group ?? ''}` : '', a.attach ?? '', r(a.x), r(a.y)]),
+    c.bonds.map((b) => [b.a1, b.a2, b.order, b.display]),
+    c.captions.length, c.arrows.length, c.shapes.length,
+  ]);
+}
+
 /** Nothing drawn at all. */
 export function isBlankDrawing(c: Contents): boolean {
   return !c.atoms.length && !c.captions.length && !c.arrows.length && !c.shapes.length;

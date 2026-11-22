@@ -3,7 +3,7 @@
 // formula, mass and stereo come out right; "R"-type labels become dummy atoms.
 
 import { attachCode } from './attach-codes';
-import { Doc, Atom, isMetalAtom, outsideValence, radicalElectrons, type EnhancedStereo } from '../model';
+import { Doc, isMetalAtom, outsideValence, radicalElectrons, type EnhancedStereo } from '../model';
 import { metalCarbonyl } from './hapto';
 import { SYMBOLS, elementNumber, hasImplicitH, implicitHydrogens, isMetal, valenceOfBonds } from './elements';
 import { CARBONYL_LIGAND, isCarbonylLabel, kekulize, labelDonates, labelGraph, MiniGraph } from './labels';
@@ -597,62 +597,4 @@ function hydrogensLast(atoms: MAtom[], bonds: MBond[], map: number[], inLabel: n
   for (let k = 0; k < inLabel.length; k++) inLabel[k] = to[inLabel[k]];
   for (const g of generic) g[0] = to[g[0]];
   for (const g of sgroups) g.atoms = g.atoms.map((k) => to[k]);
-}
-
-/** Add the atoms and bonds of a molfile to the document, centred at (cx, cy). Returns new atom ids. */
-export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number): number[] {
-  const lines = molblock.split(/\r?\n/);
-  const counts = lines[3] ?? '';
-  const na = parseInt(counts.slice(0, 3), 10), nb = parseInt(counts.slice(3, 6), 10);
-  if (!Number.isFinite(na) || counts.includes('V3000')) throw new Error('Only V2000 molfiles are supported so far.');
-  const raw: { x: number; y: number; sym: string; chg: number; iso: number; rad: number; map: number }[] = [];
-  for (let i = 0; i < na; i++) {
-    const l = lines[4 + i];
-    // (RDKit writes nan for a lone atom it has no layout for, such as [H+])
-    raw.push({ x: parseFloat(l.slice(0, 10)) || 0, y: parseFloat(l.slice(10, 20)) || 0, sym: l.slice(31, 34).trim(), chg: 0, iso: 0, rad: 0, map: parseInt(l.slice(60, 63), 10) || 0 });
-  }
-  // average bond length, to scale to the document's bond length
-  let sum = 0;
-  const bl: [number, number, number, number][] = [];
-  for (let i = 0; i < nb; i++) {
-    const l = lines[4 + na + i];
-    const a = parseInt(l.slice(0, 3), 10) - 1, b = parseInt(l.slice(3, 6), 10) - 1;
-    bl.push([a, b, parseInt(l.slice(6, 9), 10), parseInt(l.slice(9, 12), 10) || 0]);
-    sum += Math.hypot(raw[a].x - raw[b].x, raw[a].y - raw[b].y);
-  }
-  for (let i = 4 + na + nb; i < lines.length; i++) {
-    const l = lines[i];
-    // charges, isotopes (13C, D) and radicals, each as atom-value pairs
-    const field = l.startsWith('M  CHG') ? 'chg' : l.startsWith('M  ISO') ? 'iso' : l.startsWith('M  RAD') ? 'rad' : null;
-    if (field) {
-      const n = parseInt(l.slice(6, 9), 10);
-      for (let k = 0; k < n; k++) {
-        const idx = parseInt(l.slice(10 + k * 8, 13 + k * 8), 10) - 1;
-        const v = parseInt(l.slice(14 + k * 8, 17 + k * 8), 10);
-        if (raw[idx] && Number.isFinite(v)) raw[idx][field] = v;
-      }
-    }
-  }
-  const k = nb ? doc.style.bondLength / (sum / nb) : doc.style.bondLength;
-  let mx = 0, my = 0;
-  for (const r of raw) { mx += r.x; my += r.y; }
-  mx /= Math.max(1, na); my /= Math.max(1, na);
-  const ids: number[] = [];
-  const atoms: Atom[] = [];
-  for (const r of raw) {
-    const z = elementNumber(r.sym);
-    const radical = r.rad === 1 ? 'singlet' : r.rad === 2 ? 'doublet' : r.rad === 3 ? 'triplet' : undefined;
-    const a = doc.addAtom(cx + (r.x - mx) * k, cy - (r.y - my) * k, z ?? 6, {
-      charge: r.chg, label: z === undefined ? r.sym : null, ...(r.iso ? { isotope: r.iso } : {}), ...(radical ? { radical } : {}),
-      // a mapped reaction's atom-atom numbers are shown beside the atoms
-      ...(r.map > 0 ? { mapNo: r.map, atomNumber: String(r.map), showNumber: true } : {}),
-    });
-    ids.push(a.id);
-    atoms.push(a);
-  }
-  for (const [a, b, order, stereo] of bl) {
-    const display = stereo === 1 ? 'wedge' : stereo === 6 ? 'hashWedge' : stereo === 4 ? 'wavy' : 'solid';
-    doc.addBond(atoms[a].id, atoms[b].id, order === 4 ? 1.5 : order, display);
-  }
-  return ids;
 }

@@ -58,7 +58,7 @@ import { rGroupsOf, substituted, rowNumbers, parseRows, rGroupCells, type RowMas
 import type { Rect, Vec } from './geom';
 import { isCurved } from './objects';
 import { captionPlaces, fragmentRuns } from './chem/fragments';
-import { toMolfile, addMolfile } from './chem/molfile';
+import { toMolfile } from './chem/molfile';
 import { molfileOrSmiles } from './chem/text-molfile';
 import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeSign, chemicalCaptions, groupedIonFragments, groupedIons, placeSpecies, speciesSmiles, type PlacedSpecies } from './chem/species';
 import { bestFit, fitMove, fitMatters } from './chem/orient';
@@ -270,7 +270,7 @@ import type { SiView } from './si/manuscript';
 import { JournalFolder, journalOf } from './si/journal';
 import type { SiFolder as SiFolderT } from './si/folder';
 import type { SiAccess } from './ui/doc-si';
-import { readScene, sceneToDoc } from './io/chem-formats';
+import { addMolfile, readScene, sceneToDoc } from './io/chem-formats';
 import { cellName, colOf, rowOf } from './sheet/refs';
 import { checkDrawings, type PlacedDrawing } from './ui/mode-problems';
 import { StructurePictures } from './ui/structure-pictures';

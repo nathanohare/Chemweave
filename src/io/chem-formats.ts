@@ -874,6 +874,41 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
   return { doc, stats };
 }
 
+/**
+ * Add the atoms and bonds of a molfile (V2000 or V3000) to a drawing, centred at (cx, cy) and
+ * scaled to its bond length; returns the new atoms' ids in the molfile's order (an abbreviation's
+ * atoms, a superatom S-group, become its one labelled atom). Pasted molfiles, the chemistry
+ * engine's and Spreadsheet's SD records come in here, through the same reader as File > Open:
+ * aliases, R-group numbers, superatoms, the old charge column, dative and hydrogen bonds and
+ * enhanced stereo all read as they do there. Throws when the molfile can't be read.
+ */
+export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number): number[] {
+  const m = readMolfile(molblock);
+  if (!m) throw new Error('This molfile could not be read.');
+  // average bond length, to scale to the drawing's bond length
+  const lengths = m.bonds.map((b) => Math.hypot(m.atoms[b.a].x - m.atoms[b.b].x, m.atoms[b.a].y - m.atoms[b.b].y)).filter((l) => l > 1e-6);
+  const k = lengths.length ? doc.style.bondLength / (lengths.reduce((t, l) => t + l, 0) / lengths.length) : doc.style.bondLength;
+  const n = Math.max(1, m.atoms.length);
+  const mx = m.atoms.reduce((t, a) => t + a.x, 0) / n, my = m.atoms.reduce((t, a) => t + a.y, 0) / n;
+  const ids: number[] = [];
+  for (const a of m.atoms) {
+    const z = elementNumber(a.sym);
+    const radical = RADICAL_OF(a.rad);
+    const atom = doc.addAtom(cx + (a.x - mx) * k, cy - (a.y - my) * k, z ?? 6, {
+      charge: a.charge ?? 0, label: z === undefined ? (a.sym === 'R#' ? 'R' : a.sym) : null, ...(a.iso ? { isotope: a.iso } : {}), ...(radical ? { radical } : {}),
+      // a mapped reaction's atom-atom numbers are shown beside the atoms
+      ...(a.map ? { mapNo: a.map, atomNumber: String(a.map), showNumber: true } : {}),
+      ...(a.enh ? { enhStereo: { ...a.enh } } : {}),
+    });
+    ids.push(atom.id);
+  }
+  for (const b of m.bonds) {
+    if (ids[b.a] === undefined || ids[b.b] === undefined || b.a === b.b) continue;
+    doc.addBond(ids[b.a], ids[b.b], b.order, b.dative ? 'dative' : b.hbond ? 'hydrogen' : b.stereo ? DISPLAY[b.stereo] : 'solid');
+  }
+  return ids;
+}
+
 // ---------------------------------------------------------------- drawing → scene
 
 /** The drawing's structures, straight arrows, + signs and text, in bond-length units with y upwards. */

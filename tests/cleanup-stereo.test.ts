@@ -8,7 +8,8 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Doc } from '../src/model';
 import { readCdxml } from '../src/io/cdxml';
-import { addMolfile, toMolfile } from '../src/chem/molfile';
+import { toMolfile } from '../src/chem/molfile';
+import { addMolfile } from '../src/io/chem-formats';
 import { cleanUpWays } from '../src/chem/cleanup';
 import { dist } from '../src/geom';
 

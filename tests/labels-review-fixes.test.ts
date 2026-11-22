@@ -53,7 +53,7 @@ describe('labels', () => {
 
 describe('molfiles read in (pasted SMILES, names, PubChem)', () => {
   it('keep isotope labels and radicals', async () => {
-    const { addMolfile } = await import('../src/chem/molfile');
+    const { addMolfile } = await import('../src/io/chem-formats');
     const read = (smiles: string) => {
       const m = RDKit.get_mol(smiles);
       const mb = m.get_molblock();
