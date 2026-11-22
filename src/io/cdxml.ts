@@ -1328,7 +1328,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats } {
               const got = tag ? JSON.parse(tag) as Record<string, unknown> : null;
               if (got) {
                 trusted = sameSeen(got.seen, pictureSeen(ch));
-                for (const k of PICTURE_TAG_FIELDS) if (got[k] !== undefined) (extra as Record<string, unknown>)[k] = got[k];
+                extra = pictureSettings(got);
               }
             } catch { extra = {}; }
             let chart: ChartBox | undefined;
@@ -1713,6 +1713,9 @@ export const FRAME_DATA = ['plate', 'energy', 'newman', 'torsion', 'diagram', 's
  * Returns false when the change could not be taken into the data (several texts changed, or a
  * text the data does not hold word for word).
  */
+/** Keys of a frame's data that hold settings, never a text it drew (see takeFrameTexts). */
+const FRAME_SETTING_KEYS = new Set(['kind', 'look', 'unit', 'style', 'layout', 'source', 'place', 'insets', 'accent', 'colours', 'color', 'colour', 'barrierColor', 'eye', 'fmt', 'key', 'structures', 'link', 'mark', 'labelBack', 'shape', 'fill', 'line', 'dash']);
+
 export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
   const now = (s.frame?.captions ?? []).map((id) => doc.captions.get(id)?.runs.map((r) => r.text).join('') ?? '');
   const left = [...now];
@@ -1722,10 +1725,17 @@ export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
   if (removed.length !== 1 || left.length !== 1) return false;
   const [from, to] = [removed[0], left[0]];
   let hit = false;
-  const swap = (v: unknown): unknown => {
+  // only in the fields that hold texts: a setting that happens to equal the old text (a lane label
+  // "solid", a kind "tlc") is left alone (review F1-R11); a diagram's outline takes it line by line
+  const swap = (v: unknown, key = ''): unknown => {
+    if (FRAME_SETTING_KEYS.has(key)) return v;
     if (v === from) { hit = true; return to; }
-    if (Array.isArray(v)) return v.map(swap);
-    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)]));
+    if (typeof v === 'string' && v.includes('\n')) {
+      const lines = v.split('\n').map((l) => { const m = /^(\s*)(.*)$/.exec(l)!; if (m[2] !== from) return l; hit = true; return m[1] + to; });
+      return lines.join('\n');
+    }
+    if (Array.isArray(v)) return v.map((x) => swap(x));
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x, k)]));
     return v;
   };
   const patch: Partial<Shape> = {};
@@ -2055,6 +2065,27 @@ export function pictureSeen(el: Element): { hash: string; px?: { w: number; h: n
     return px ? { hash, px } : { hash };
   }
   return null;
+}
+
+/** A picture's settings from its tag, each only with the type it has here (a damaged or hand-edited file can't put a wrong one on the shape; review F1-R12). */
+export function pictureSettings(v: Record<string, unknown>): Partial<Shape> {
+  const out: Partial<Shape> = {};
+  const n = (x: unknown) => typeof x === 'number' && Number.isFinite(x);
+  const lk = v.look as Record<string, unknown> | undefined;
+  if (lk && typeof lk === 'object' && !Array.isArray(lk)) {
+    const look: NonNullable<Shape['look']> = {};
+    if (n(lk.line) && (lk.line as number) >= 0) look.line = lk.line as number;
+    if (typeof lk.lineColor === 'string') look.lineColor = lk.lineColor;
+    if (n(lk.round)) look.round = Math.max(0, Math.min(0.5, lk.round as number));
+    if (lk.shadow === 'soft' || lk.shadow === 'hard') look.shadow = lk.shadow;
+    if (Object.keys(look).length) out.look = look;
+  }
+  if (n(v.transparency)) out.transparency = Math.max(0, Math.min(1, v.transparency as number));
+  if (typeof v.name === 'string') out.name = v.name;
+  if (typeof v.hidden === 'boolean') out.hidden = v.hidden;
+  if (typeof v.locked === 'boolean') out.locked = v.locked;
+  if (typeof v.link === 'string') out.link = v.link;
+  return out;
 }
 
 /** Whether a picture still holds what was written for it (no `seen` in older files: trusted). */
