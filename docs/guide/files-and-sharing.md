@@ -40,6 +40,8 @@ To save structures as ChemDraw objects instead of pictures, so that double-click
 
 ### Alt text and the accessibility checker
 
+<!-- index: Accessibility -->
+
 **Alt Text…** (on the right-click menu, the **Review** tab in Presentations, Spreadsheets and Documents, and **Insert ▸ Alt Text…**) gives a picture, chart or structure a description for people using a screen reader. It is saved where Word, PowerPoint and Excel keep their own alt text, and in .cdxml files. A structure with no alt text of its own is described by its SMILES in Office files, as before.
 
 **File ▸ Check Accessibility** (or **Review** ▸ **Check Accessibility**) lists what makes the file harder to read: pictures, charts and structures with no alt text, text with too little contrast against its background (WCAG 2.2: 4.5:1, or 3:1 for large text), slides with no title or the same title as another, slide titles that a screen reader would not reach first, skipped heading levels, tables with no heading row, floating pictures, merged cells and unnamed sheets. Click an item to go to it; **Add Alt Text…** fixes a missing description there and then. **Check Again** looks again after changes.
@@ -82,6 +84,8 @@ Double-click a file, or right-click it and choose **Open with ▸ Chemweave**, a
 - **Linux**: Chemweave is in your file manager's **Open With** list for these files; your desktop's Default Applications settings choose the default.
 
 ## Copy and paste
+
+<!-- index: SMILES, Molfile, Copy as SVG -->
 
 **Edit ▸ Copy** (Ctrl+C) copies the selection, or the whole drawing when nothing is selected.
 

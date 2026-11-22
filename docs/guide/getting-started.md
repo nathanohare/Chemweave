@@ -60,6 +60,8 @@ Three file types are offered:
 
 ### Updates
 
+<!-- index: Stable and Latest updates -->
+
 A few seconds after it starts, the desktop app checks whether a newer version has been released. If there is one, a small message says which version is ready and what changed, and offers:
 
 - **Install and Restart**: downloads it, installs it and restarts the app. If any tab has unsaved changes, you are warned first so you can cancel and save.
@@ -170,6 +172,8 @@ After that, each time the app opens on an empty canvas, a smaller **start view**
 
 ### Search (Alt+Q)
 
+<!-- index: Command search -->
+
 Click **Search** at the top, or press Alt+Q, and type a few letters of what you want to do: `wedge`, `number comp`, `bold`, `dark`. The list shows each matching menu command, ribbon button and drawing tool, where it lives and its key, then the matching pages of Settings and sections of this guide. Press Enter for the top match, or use the arrow keys to pick another. With nothing typed, the commands you used recently come first. **Edit ▸ Search Commands…** opens the same box.
 
 ### Format Painter (every mode)
@@ -211,6 +215,8 @@ It types into the text you are editing: a document, a caption or text box, a sli
 
 ### The Assistant (every mode, Ctrl+/)
 
+<!-- index: AI model -->
+
 **Edit ▸ Assistant…** (Ctrl+/) opens a slim bar at the bottom of the page for asking an AI model of your own about what you are working on. It is there only once a model is linked in **Edit ▸ Settings ▸ AI Model** (Claude, ChatGPT or Gemini with your own API key, or a model on this computer, in Ollama or LM Studio, so that nothing leaves it), and it sends nothing until you turn it on.
 
 - **What it can do.** On a canvas, slide or design page: draw a structure you describe, change the selected one ("make this the methyl ester"), or check a scheme (balance, stereochemistry, missing reagents); a finding about a step has **Show step** to select its arrow. In a Document: write or rewrite text ("write the experimental for step 2"). In a Spreadsheet: answer questions about the selected cells.
@@ -221,6 +227,8 @@ It types into the text you are editing: a document, a caption or text box, a sli
 - **Open as Pane** makes the bar a taller pane down the right for a longer conversation, and **Float as Window** a window of its own that you move by its title and size from its corner; **Make Bar** restores it. The style you choose is kept (also in **Settings ▸ AI Model ▸ Assistant shows as**). Esc closes it. A conversation belongs to the tab it started in: switching tabs starts a new one.
 
 ## Opening your first ChemDraw file
+
+<!-- index: CDXML and CDX files -->
 
 1. Choose **File ▸ Open…** (Ctrl+O).
 2. Pick a `.cdxml` or `.cdx` file. It opens in a new tab.
@@ -251,6 +259,8 @@ Other ways to get a canvas out:
 Presentations, spreadsheets, documents and designs save in their own formats; see their pages. To save every open tab together, see **File ▸ Workspace ▸ Save Workspace** in [Files and sharing](files-and-sharing.md).
 
 ## Edit ▸ Settings
+
+<!-- index: Preferences, Export and Import Settings -->
 
 **Edit ▸ Settings…** (Ctrl+,) holds every setting in one window, with a list of pages on the left and a **Find a setting** box at the top. The menu items for a single page (**Keyboard Shortcuts…**, **Typing and Spelling…**, **Color Palettes…**, **Mode Colors…**, **Reading Mode Colors…**, **Drawing Style…**, **Scheme Settings…**, **AutoSave and Recovery Options…**) open the Settings window at that page. Every page ends in the same bar along the bottom of the window. **Apply** uses the page's settings now and keeps them. On **Drawing Style**, which is about the open file, **Apply** changes that file and **Set as Default** changes new files too. If you leave a page with changes you have not applied, the window asks whether to apply or discard them. A line of help sits under each setting that needs one.
 
