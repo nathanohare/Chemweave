@@ -1634,6 +1634,7 @@ export class DocumentMode {
           command('Match Original Style', 'make-editable-match', 'Draw it with the picture\'s bond length, line width and label size', st === 'match'),
           command('Use Default Style', 'make-editable-default', 'Draw it in the document\'s drawing style', st === 'default'),
           null,
+          command('Compare with Original', 'compare-original', 'Show the picture in red over the structure, to see what was read wrong', this.view.compare === picked),
           command('Revert to Picture', 'revert-to-picture', 'Put the picture back as it was'),
         ] });
       }
@@ -3708,6 +3709,7 @@ export class DocumentMode {
       case 'make-editable-match': void this.makeEditable('match'); break;
       case 'make-editable-default': void this.makeEditable('default'); break;
       case 'revert-to-picture': this.revertToPicture(); break;
+      case 'compare-original': this.compareOriginal(); break;
       case 'insert-caption': void this.insertCaption(); break;
       case 'cross-reference': void this.crossReference(); break;
       case 'compound-number': void this.compoundNumber(); break;
@@ -4183,6 +4185,8 @@ export class DocumentMode {
     // the document or the picture changed while it was read: leave it as it is now
     if (!made || this.file !== f || f.t.objects[id] !== o) return;
     f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: made.drawing } } as DocText, 'Make Editable');
+    // anything doubtful: the original shown over it straight away, to check
+    this.view.compare = made.problems.length ? id : null;
     const look = made.drawing.fromPicture?.look;
     const how = choice === 'default' ? 'in the document\'s style' : look?.preset ? `in ${look.preset}` : `to match the picture (bonds ${look ? look.bondLength.toFixed(1) : '?'} pt)`;
     this.host.flash(made.problems.length ? `Made editable ${how}. Check it against the original: ${made.problems.join(' ')}` : `Made editable ${how}. Revert to Picture puts the picture back.`, made.problems.length ? 10000 : 5000);
@@ -4201,8 +4205,20 @@ export class DocumentMode {
       ['Match Original Style', go('make-editable-match'), true, tick(now === 'match')],
       ['Use Default Style', go('make-editable-default'), true, tick(now === 'default')],
       null,
+      ['Compare with Original', go('compare-original'), !!made, tick(!!made && this.view.compare === id)],
       ['Revert to Picture', go('revert-to-picture'), !!made, ''],
     ]);
+  }
+
+  /** Compare with Original: the picture the picked structure was made from shown over it in red (again to hide it). */
+  private compareOriginal(): void {
+    const id = this.pickedObject();
+    const o = id !== null ? this.file?.t.objects[id] : undefined;
+    if (id === null || o?.kind !== 'drawing' || !o.fromPicture) { this.host.flash('Click a structure made from a picture first.'); return; }
+    this.view.compare = this.view.compare === id ? null : id;
+    if (this.view.compare !== null) this.host.flash('The original picture is shown in red over the structure: red shows what the structure is missing or has moved. Compare with Original again hides it.', 6000);
+    this.view.redraw();
+    this.focus();
   }
 
   /** Revert to Picture: a structure made from a picture back to that picture, as it was. */
@@ -5515,6 +5531,9 @@ export class DocumentMode {
       if (picTab.hidden && picTab.getAttribute('aria-selected') === 'true') this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="home"]')?.click();
     }
     document.body.classList.toggle('doc-picture-picked', canMakeEditable(pickedObj));
+    document.body.classList.toggle('doc-from-picture', pickedObj?.kind === 'drawing' && !!pickedObj.fromPicture);
+    // the original shows over its structure while that structure is picked
+    if (this.view.compare !== null && this.view.compare !== pickedId) { this.view.compare = null; this.view.redraw(); }
     const tabBtn = this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="table"]');
     if (tabBtn) {
       tabBtn.hidden = !tg && !this.keepTableTab;

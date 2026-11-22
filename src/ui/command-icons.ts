@@ -52,6 +52,7 @@ export const COMMAND_ICONS: Record<string, string> = {
   'map-atoms': svg('<polygon points="6,5 9.5,7 9.5,11 6,13 2.5,11 2.5,7"/><polygon points="18,11 21.5,13 21.5,17 18,19 14.5,17 14.5,13"/><path d="M9.5 7Q15 5 18 11" stroke-dasharray="2 1.6"/><circle cx="9.5" cy="7" r="1.3" fill="currentColor"/><circle cx="18" cy="11" r="1.3" fill="currentColor"/>'),
   'animate-reaction': svg('<rect x="2.5" y="4.5" width="19" height="15" rx="2"/><polygon points="10,8.5 16,12 10,15.5" fill="currentColor"/>'),
   'make-editable': svg('<path d="M13 3.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1H10"/>' + hex(8.5, 9.5, 3.5) + '<path d="M13.2 20.8l.8-3.1 5.6-5.6 2.3 2.3-5.6 5.6z"/><path d="M18.3 13.4l2.3 2.3"/>'),
+  'compare-original': svg(hex(9, 12, 5) + '<polygon points="15,7 19.33,9.5 19.33,14.5 15,17 10.67,14.5 10.67,9.5" stroke-dasharray="2 1.6"/>'),
   'import-picture': svg('<rect x="2.5" y="4.5" width="11" height="9" rx="1"/><path d="M4 12l3-3 2 2 2-2 2 3" /><path d="M15 15l2.5 2.5L22 13" stroke-linecap="round"/>'),
   'sequence-to-structure': svg('<text x="12" y="10" text-anchor="middle" font-size="7.5" font-weight="700" fill="currentColor" font-family="ui-monospace,monospace">GAV</text><path d="M4 15l3 3 3-3 3 3 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>'),
   'structure-to-name': svg('<polygon points="7,4 11,6.3 11,10.7 7,13 3,10.7 3,6.3"/><path d="M13 9h3l-1.5-1.5M16 9l-1.5 1.5" stroke-linecap="round"/><path d="M3 17h18M3 20.5h12" stroke-linecap="round"/>'),

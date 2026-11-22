@@ -14247,7 +14247,15 @@ makeEditableBtn.innerHTML = `${commandIcon('make-editable') ?? ''}<span>Make<br>
 makeEditableBtn.title = 'Make Editable: read the structure in the picture and put an editable structure in its place (the picture is kept, to compare with or revert to). Right-click the picture for the style';
 makeEditableBtn.setAttribute('aria-label', 'Make Editable');
 makeEditableBtn.addEventListener('click', () => { if (ws.active.mode === 'document') docMode?.run('make-editable'); });
-$('#dock-left').prepend(makeEditableBtn, structureStart, ...structureRail, railFold);
+// and Compare with Original while a structure made that way is picked
+const compareBtn = document.createElement('button');
+compareBtn.type = 'button';
+compareBtn.className = 'structure-more compare-original-btn';
+compareBtn.innerHTML = `${commandIcon('compare-original') ?? ''}<span>Compare<br>Original</span>`;
+compareBtn.title = 'Compare with Original: the picture this structure was made from, in red over it (click again to hide). Right-click the structure to revert to the picture';
+compareBtn.setAttribute('aria-label', 'Compare with Original');
+compareBtn.addEventListener('click', () => { if (ws.active.mode === 'document') docMode?.run('compare-original'); });
+$('#dock-left').prepend(makeEditableBtn, compareBtn, structureStart, ...structureRail, railFold);
 { let folded = false; try { folded = localStorage.getItem(RAIL_KEY) === '1'; } catch { /* not kept */ } foldRail(folded); }
 
 /**

@@ -3647,6 +3647,7 @@ body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structu
 body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#structure-start, .structure-more) { display: none; }
 /* Make Editable sits on the rail only while a picture is picked in a document */
 body:not(.doc-mode) .make-editable-btn, body.doc-mode:not(.doc-picture-picked) .make-editable-btn { display: none !important; }
+body:not(.doc-mode) .compare-original-btn, body.doc-mode:not(.doc-from-picture) .compare-original-btn { display: none !important; }
 body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structure-fold { margin-top: 2px; width: 14px; }
 /* Dark Gray: the button sits on the dark dock itself (toolboxes sit on light cards), so it takes the menu bar's colors */
 :root[data-gray]:not([data-shadows='off']) #dock-left > :is(#structure-start, .structure-more, .structure-fold) { --text: #eceef2; --line: #474b53; --accent-soft: #41464f; --accent: var(--mode-accent-dark, #4ea9bc); --muted: #aeb4c0; }
