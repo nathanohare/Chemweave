@@ -88,8 +88,30 @@ export interface Series {
   scheme?: string;
 }
 
+/**
+ * A piece of a chart's or axis's title with its look, as Excel and PowerPoint keep it (bold,
+ * italic, underline, lowered or raised); a run of just "\n" starts a new paragraph.
+ */
+export interface TitleRun { text: string; bold?: boolean; italic?: boolean; underline?: boolean; sub?: boolean; sup?: boolean }
+
+/** A title's runs as the one-line markup the title is edited as (k_{obs}; paragraphs joined by a space). */
+export function titleMarkup(runs: readonly TitleRun[]): string {
+  return runs.map((r) => (r.text === '\n' ? ' ' : r.sub ? `_{${r.text}}` : r.sup ? `^{${r.text}}` : r.text.replace(/([\\_^])/g, '\\$1'))).join('');
+}
+
+/**
+ * The runs a title is drawn and saved with: its own (`runs`, read from a file) while the title is
+ * still what they say; null once the title was changed here (it is then plain text with k_{obs}
+ * markup, as typed).
+ */
+export function titleRunsOf(title: string | undefined, runs: readonly TitleRun[] | undefined): readonly TitleRun[] | null {
+  return title && runs?.length && titleMarkup(runs) === title ? runs : null;
+}
+
 export interface ChartAxis {
   title?: string;
+  /** The title's looks as a file had them (see titleRunsOf). */
+  titleRuns?: TitleRun[];
   min?: number;
   max?: number;
   /** Gap between labelled ticks (unset: chosen to fit). */
@@ -105,6 +127,8 @@ export interface Chart {
   id: number;
   kind: ChartKind;
   title?: string;
+  /** The title's looks as a file had them: italic, bold, more than one paragraph (see titleRunsOf). */
+  titleRuns?: TitleRun[];
   /**
    * Excel's automatic title, made from the series' names ("Chart Title" for more than one), on as
    * an Excel file had it, for a chart with no title of its own: 'title' with its title element
