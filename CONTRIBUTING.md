@@ -27,6 +27,11 @@ To keep the project free of other people's rights:
   version 3 (list new ones in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)).
 - No CAS Registry Numbers in bundled data; key compounds by PubChem CID instead.
 
+## Screens and wording
+
+Changes to what people see follow the [UI style guide](docs/ui-style.md): standard Office command
+names, American spelling, Title Case for commands, formulas with real subscripts and charges.
+
 ## Building and testing
 
 See [docs/developers.md](docs/developers.md).

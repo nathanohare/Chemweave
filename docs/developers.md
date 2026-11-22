@@ -34,6 +34,12 @@ npm run desktop          # opens the desktop app; it reloads as the code changes
 npm run desktop:build    # makes the installers in src-tauri/target/release/bundle/
 ```
 
+## Rules for changes
+
+Every change follows these, whoever writes it:
+
+- **Screens, menus and wording** follow the [UI style guide](ui-style.md) (rules S1 to S87). Read it before any UI work, and add Nate's new decisions to it in the same change. `tests/ui-text-lint.test.ts` checks the wording on every pull request.
+
 ## Checks
 
 ```
