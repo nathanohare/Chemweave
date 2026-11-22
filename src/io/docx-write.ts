@@ -1808,12 +1808,13 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   if (r.noKern) out.push('<w:kern w:val="0"/>');
   const size = r.size ?? st.size;
   if (size !== st.size) out.push(`<w:sz w:val="${half(size)}"/><w:szCs w:val="${half(size)}"/>`);
-  const hl = r.highlight ? highlightName(r.highlight) : null;
+  const hl = r.highlight && !(raw.shd && raw.shdFill === r.highlight) ? highlightName(r.highlight) : null;
   if (hl) out.push(`<w:highlight w:val="${hl}"/>`);
   if (!!r.underline !== !!cs?.underline || (r.underline && (r.ukind || r.ucolor))) out.push(r.underline ? underlineXml(r) : '<w:u w:val="none"/>');
   out.push(raw.e ?? '');
-  // any other colour behind the text goes as shading
-  if (r.highlight && !hl) out.push(`<w:shd w:val="clear" w:color="auto" w:fill="${hex6(r.highlight)}"/>`);
+  // any other colour behind the text goes as shading (a patterned one as Word had it, while it
+  // is still the colour behind the text)
+  if (r.highlight && !hl) out.push(raw.shd && raw.shdFill === r.highlight ? raw.shd : `<w:shd w:val="clear" w:color="auto" w:fill="${hex6(r.highlight)}"/>`);
   out.push(raw.f ?? '');
   const pos = x.pos ?? (r.sub ? 'sub' : r.sup ? 'sup' : 'base');
   if (pos !== 'base') out.push(`<w:vertAlign w:val="${pos === 'sub' ? 'subscript' : 'superscript'}"/>`);

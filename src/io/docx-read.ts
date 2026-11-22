@@ -555,6 +555,13 @@ class DocxReader {
           // shading behind the text: kept as a highlight unless a real highlight is set too
           const v = this.a(c, 'fill') ?? 'auto';
           if (out.highlight === undefined || out.highlight === null) out.highlight = /^[0-9a-f]{6}$/i.test(v) && this.a(c) !== 'nil' ? `#${v.toLowerCase()}` : null;
+          // a patterned or theme shading (17.3.2.32, 17.18.78): shown as its fill, written back as
+          // it was while that is the run's colour behind the text (TextRun.wrx 'shd')
+          const pattern = this.a(c) ?? 'clear';
+          if (direct && (!['clear', 'nil', 'solid'].includes(pattern) || c.getAttributeNS(this.W, 'themeFill') !== null || c.getAttributeNS(this.W, 'themeColor') !== null) && out.highlight) {
+            raw.shd = elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
+            raw.shdFill = out.highlight;
+          }
           break;
         }
         // (one of the two is on at a time, 17.3.2.9: the later one read wins)

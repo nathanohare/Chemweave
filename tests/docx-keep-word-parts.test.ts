@@ -199,3 +199,12 @@ describe('Word paragraph properties not modelled here are kept (G2-11)', () => {
     expect(/<w:p>(?:(?!<\/w:p>)[\s\S])*?he rest/.exec(xml)![0]).not.toContain('framePr');
   });
 });
+
+describe('Word patterned shading is kept (G2-10)', () => {
+  it('writes a patterned shading back as it was, not as a plain fill', async () => {
+    const body = '<w:p><w:r><w:rPr><w:shd w:val="pct20" w:color="FF0000" w:fill="FFFF00"/></w:rPr><w:t>dotted</w:t></w:r></w:p>';
+    const xml = (await roundTrip({ body }))['word/document.xml'];
+    expect(xml).toContain('<w:shd w:val="pct20" w:color="FF0000" w:fill="FFFF00"/>');
+    expect(xml).not.toContain('<w:highlight');
+  });
+});
