@@ -164,4 +164,57 @@ describe('Gaussian energies beyond SCF', () => {
     // and the method itself is still noted
     expect(readQmOutput(log('#p opt cisd/6-31g(d)', []), 'h2o.log')!.missing).toBe('CISD');
   });
+
+  // review F1c-R06: the fallback never guesses
+  it('reads ROCBS-QB3 as the composite, not its CCSD(T) step', () => {
+    const r = readQmOutput(log('#p rocbs-qb3', [' CCSD(T)= -0.75600000000D+02', ' CBS-QB3 (0 K)=              -75.712000 CBS-QB3 Energy=              -75.709000',
+      ' CBS-QB3 Enthalpy=           -75.708000 CBS-QB3 Free Energy=        -75.731000']), 'oh.log')!;
+    expect(r.energyFrom).toBe('ROCBS-QB3 (0 K)');
+    expect(r.scf).toBeCloseTo(-75.712, 6);
+    expect(r.free).toBeCloseTo(-75.731, 6);
+  });
+  it('a DFT job with a CCSD(T) line in its log keeps its SCF energy and says why', () => {
+    const r = readQmOutput(log('#p opt freq b3lyp/6-31g(d)', [' Sum of electronic and thermal Free Energies=        -76.390000', ' CCSD(T)= -0.76332141577D+02']), 'h2o.log')!;
+    expect(r.scf).toBeCloseTo(-76.0107465, 7);
+    expect(r.energyFrom).toBeUndefined();
+    expect(r.note).toBe('The log also has a CCSD(T) energy that its route (b3lyp) doesn\'t ask for: not used.');
+  });
+  it('a log of two jobs (B3LYP opt and freq, then a CCSD(T) single point): each number from its own job, with a note', () => {
+    const text = [
+      log('#p opt freq b3lyp/6-31g(d)', [' Sum of electronic and thermal Enthalpies=           -76.385000', ' Sum of electronic and thermal Free Energies=        -76.390000']),
+      ' ----------------------------------------------------------------------',
+      ' #p ccsd(t)/cc-pvtz geom=check guess=read',
+      ' ----------------------------------------------------------------------',
+      ' SCF Done:  E(RHF) =  -76.0570000     A.U. after    9 cycles',
+      ' CCSD(T)= -0.76332141577D+02',
+      ' Normal termination of Gaussian 16 at Mon Nov  2 06:10:00 2026.',
+    ].join('\n');
+    const r = readQmOutput(text, 'h2o.log')!;
+    expect(r.scf).toBeCloseTo(-76.332141577, 9);
+    expect(r.energyFrom).toBe('CCSD(T)');
+    expect(r.free).toBeCloseTo(-76.39, 6);
+    expect(r.enthalpy).toBeCloseTo(-76.385, 6);
+    expect(r.theory).toBe(`${readQmOutput(log('#p ccsd(t)/cc-pvtz', []), 'x.log')!.theory}//${readQmOutput(log('#p opt freq b3lyp/6-31g(d)', []), 'x.log')!.theory}`);
+    expect(r.note).toMatch(/^The CCSD\(T\) energy is from job 2 of the log \(.+\); the enthalpy and free energy are from job 1 \(.+\)\.$/);
+  });
+  it('the steps Gaussian runs itself inside one job (GenChk) stay one job', () => {
+    const text = [
+      log('#p opt freq b3lyp/6-31g(d)', []),
+      ' ----------------------------------------------------------------------',
+      ' #P Geom=AllCheck Guess=TCheck SCRF=Check GenChk RB3LYP/6-31G(d) Freq',
+      ' ----------------------------------------------------------------------',
+      ' SCF Done:  E(RB3LYP) =  -76.4089533     A.U. after    1 cycles',
+      ' Sum of electronic and thermal Free Energies=        -76.390000',
+      ' Normal termination of Gaussian 16 at Mon Nov  2 06:10:00 2026.',
+    ].join('\n');
+    const r = readQmOutput(text, 'h2o.log')!;
+    expect(r.scf).toBeCloseTo(-76.4089533, 7);
+    expect(r.free).toBeCloseTo(-76.39, 6);
+    expect(r.note).toBeUndefined();
+  });
+  // review F1c-R10: a space inside the method's options
+  it('notes a method with a space in its options', () => {
+    expect(readQmOutput(log('#p cisd(maxcyc=50, conver=8)/6-31g(d)', []), 'h2o.log')!.missing).toBe('CISD');
+  });
 });
+
