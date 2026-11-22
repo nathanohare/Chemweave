@@ -56,6 +56,15 @@ try {
   await page.goto(URL);
   await page.waitForFunction(() => window.__app?.chem?.ready, null, { timeout: 60000 });
   await page.locator('#welcome-close').click({ timeout: 2000 }).catch(() => {});
+  // each part starts in a fresh page (what one part left on, such as a tool or a view, doesn't carry over)
+  const restart = async () => {
+    await page.evaluate(() => { try { localStorage.clear(); } catch { /* none */ } });
+    await page.goto(URL);
+    await page.waitForFunction(() => window.__app?.chem?.ready, null, { timeout: 60000 });
+    await page.locator('#welcome-close').click({ timeout: 2000 }).catch(() => {});
+  };
+  // a new file can open on the template window: close it (the new file stays blank)
+  const closeTemplates = () => page.locator('.tw-close').click({ timeout: 800 }).catch(() => {});
   const run = (cmd) => Promise.race([page.evaluate((c) => window.__app.command(c), cmd).catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
   // windows and menus a command opened are closed unchanged
   const tidy = () => page.evaluate(() => {
@@ -107,11 +116,13 @@ try {
 
   // ------------------------------------------------------------ Document
   if (part === 'all' || part === 'document') {
+    await restart();
     const bytes = file ? [...fs.readFileSync(file)] : null;
     const reset = async () => {
       if (bytes) await page.evaluate(async (b) => window.__app.ws.openBytes(new Uint8Array(b), 'audit.docx'), bytes);
       else await run('new-document');
       await page.waitForFunction(() => window.__app.docMode?.file, null, { timeout: 60000 });
+      await closeTemplates();
       if (!bytes) await page.evaluate(sampleDocument);
       await page.waitForTimeout(500);
     };
@@ -166,7 +177,7 @@ try {
     for (const id of ids) {
       for (const [name, fx, fy] of [['moved', 0.5, 0.5], ['sized by its bottom right corner', 1, 1], ['sized by its top left corner', 0, 0]]) {
         const c0 = await where(id, 0.5, 0.5);
-        if (!c0) continue;
+        if (!c0) { if (process.env.DEBUG) console.log('  not on the page:', id); continue; }
         await page.mouse.click(c0.x, c0.y);
         const a = await probe();
         const c = await where(id, fx, fy);
@@ -193,9 +204,11 @@ try {
 
   // ------------------------------------------------------------ Spreadsheet
   if (part === 'all' || part === 'sheet') {
+    await restart();
     const reset = async () => {
       await run('new-sheet');
       await page.waitForFunction(() => window.__app.sheetMode?.book, null, { timeout: 30000 });
+      await closeTemplates();
       await page.evaluate(() => {
         const wb = window.__app.sheetMode.book;
         wb.edit('Sample', () => {
@@ -240,6 +253,7 @@ try {
     await run(mode === 'canvas' ? 'new' : mode === 'slides' ? 'new-slides' : 'new-design');
     await page.waitForTimeout(600);
     await page.locator('#welcome-close').click({ timeout: 500 }).catch(() => {});
+    await closeTemplates();
     const ov = await page.locator('#overlay').boundingBox();
     const X = (x) => ov.x + x, Y = (y) => ov.y + y;
     const tool = (t) => page.evaluate((t) => window.__app.editor.setTool(t), t);
@@ -270,6 +284,7 @@ try {
   }, mode);
   for (const mode of ['canvas', 'slides', 'design']) {
     if (part !== 'all' && part !== mode) continue;
+    await restart();
     const src = fs.readFileSync('src/main.ts', 'utf8');
     const at = src.indexOf('const COMMANDS: Record<string, () => unknown> = {');
     const cmds = [...src.slice(at, src.indexOf('\n};', at)).matchAll(/^ {2}'?([a-zA-Z0-9:._-]+)'?:/gm)].map((m) => m[1]).filter((c) => !SKIP.test(c));
@@ -281,6 +296,7 @@ try {
 
   // ------------------------------------------------------------ drags all over each object
   if (part === 'all' || part === 'drags') {
+    await restart();
     for (const mode of ['canvas', 'slides']) {
       const { X, Y, dragp } = await drawSample(mode);
       const targets = await page.evaluate(() => {
