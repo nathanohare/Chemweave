@@ -3473,8 +3473,6 @@ dialog.show-setup { width: min(94vw, 600px); }
 .custom-views .cv-list { width: 100%; min-width: 260px; font: inherit; }
 
 /* Header and footer: a first or even page's left, centre and right text in one row */
-.dp-three { display: flex; gap: 3px; min-width: 0; }
-.dp-three .dp-input { flex: 1 1 0; min-width: 0; }
 .dp-note[hidden] { display: none; }
 
 /* Document mode: the Selection Pane (Arrange) */
@@ -3965,6 +3963,8 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 /* Ribbon galleries in Word's style (select-gallery.ts): each choice with a small picture of it */
 .rb-gal-menu { min-width: 200px; max-height: 70vh; overflow-y: auto; }
 .rb-gal-menu .gal-items { display: flex; flex-direction: column; gap: 1px; }
+/* Insert > Cover Page: each design's first page, as a sheet of paper */
+.gal-cover { display: block; height: auto; border: 1px solid var(--line); background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
 .rb-gal-menu .gal-grid { display: grid; grid-template-columns: repeat(3, auto); gap: 4px; padding: 2px; }
 .ribbon .rb-gal-menu button.gal-it { display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 4px; border: 1px solid transparent; border-radius: var(--r-ctl, 3px); text-align: left; line-height: 1.25; }
 .ribbon .rb-gal-menu .gal-grid button.gal-it { flex-direction: column; gap: 3px; padding: 5px 6px; text-align: center; min-width: 76px; }
@@ -4087,7 +4087,9 @@ body:not(.slides-mode, .design-mode, .sheet-mode, .doc-mode) #side-content > :is
 header, footer { background: var(--chrome); }
 .ribbon.tabbed, .doc-ribbon { background: var(--chrome); border-bottom: 0; }
 body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
-.ribbon.tabbed > .rb-panel:not([hidden]), .doc-ribbon > .rb-panel:not([hidden]) { margin: 0 6px 5px; background: var(--rb-surface); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--rb-shadow); }
+/* (review round 2, item 24, Nate's pick A) the panel runs the window's full width and meets the page
+   directly: no band of the chrome tone under or beside it, only its shadow (kept above the page) */
+.ribbon.tabbed > .rb-panel:not([hidden]), .doc-ribbon > .rb-panel:not([hidden]) { position: relative; z-index: 2; margin: 0; background: var(--rb-surface); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; box-shadow: var(--rb-shadow); }
 .ribbon.tabbed > .rb-panel .rb-group, .doc-ribbon > .rb-panel .rb-group { background: transparent; }
 #formula-bar { background: var(--pane); }
 .dock, aside { background: var(--pane); }

@@ -1500,6 +1500,7 @@
       <button role="tab" data-doc-tab="view" aria-selected="false">View</button>
       <button role="tab" data-doc-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table</button>
       <button role="tab" data-doc-tab="picture" aria-selected="false" class="rb-context" hidden title="Shown while a picture is picked">Picture Format</button>
+      <button role="tab" data-doc-tab="hf" aria-selected="false" class="rb-context" hidden title="Shown while you are typing in a header or footer">Header &amp; Footer</button>
     </div>
     <div class="rb-panel" data-doc-panel="home">
       <div class="rb-group">
@@ -1523,6 +1524,7 @@
               <datalist id="doc-size-list"><option>8</option><option>9</option><option>10</option><option>10.5</option><option>11</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>36</option><option>48</option><option>72</option></datalist>
               <button class="rb-sq" data-doc="font-bigger" title="Bigger text">A<sup>+</sup></button>
               <button class="rb-sq" data-doc="font-smaller" title="Smaller text">A<sup>−</sup></button>
+              <button class="rb-sq" data-doc="show-marks" aria-pressed="false" title="Show/Hide ¶ (Ctrl+Shift+8): show paragraph marks, spaces and tabs. They show on screen only, never in print or a saved file">¶</button>
             </div>
             <div class="rb-pair">
               <button class="rb-sq" data-doc="doc-bold" aria-pressed="false" title="Bold"><b>B</b></button>
@@ -1615,7 +1617,15 @@
     <div class="rb-panel" data-doc-panel="insert" hidden>
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="cover-page" aria-haspopup="true" title="Cover Page: a first page with the document's title, subtitle, author, institution and date, in one of several styles"><span class="rb-icon">▤</span>Cover Page ▾</button>
+          <div class="rb-fly rb-selgal" data-name="Cover Page" data-ic="cover-page" data-pic="cover" data-gal="grid" title="Cover Page: a first page with the document's title, subtitle, author, institution and date, in one of several designs"><select id="doc-cover" data-doc-prefix="cover" aria-label="Cover Page">
+              <option value="" hidden></option>
+              <option value="plain" title="The title in the middle of the page, the author and date under it">Plain</option>
+              <option value="banded" title="The title in white on a band of the accent color">Banded</option>
+              <option value="ruled" title="The title between two heavy rules, to the left">Ruled</option>
+              <option value="report" title="A report's front page: what, who, where and when, down a line in the margin">Lab Report</option>
+              <option value="si" title="A journal's Supporting Information front page: the heading, the paper's title, its authors and institution">Supporting Information</option>
+              <option value="remove">Remove Current Cover Page</option>
+            </select></div>
           <button class="rb-big" data-doc="blank-page" title="Blank Page: an empty page at the cursor"><span class="rb-icon">▯</span>Blank Page</button>
           <button class="rb-big" data-doc="page-break" title="Start a new page here"><span class="rb-icon">⤓</span>Page Break</button>
         </div>
@@ -1797,8 +1807,8 @@
               <option value="header-left">Top, left</option>
             </select></div>
           <div class="rb-col">
-            <button data-doc="header-edit" class="rb-labelled" title="Text at the top of every page in this section (left, center, right)"><span class="rb-lead"></span>Header…</button>
-            <button data-doc="footer-edit" class="rb-labelled" title="Text at the bottom of every page in this section (left, center, right)"><span class="rb-lead"></span>Footer…</button>
+            <button data-doc="hf-header" data-ic="header-edit" class="rb-labelled" aria-haspopup="true" title="Header: a ready-made header for this section, or edit or remove it (or double-click the top of a page)"><span class="rb-lead"></span>Header ▾</button>
+            <button data-doc="hf-footer" data-ic="footer-edit" class="rb-labelled" aria-haspopup="true" title="Footer: a ready-made footer for this section, or edit or remove it (or double-click the bottom of a page)"><span class="rb-lead"></span>Footer ▾</button>
             <button data-doc="page-number-format" class="rb-labelled" title="Page numbers as 1, 2, 3 or i, ii, iii, and where this section's numbering starts"><span class="rb-lead"></span>Number Format…</button>
           </div>
           <div class="rb-col">
@@ -2114,6 +2124,65 @@
           </div>
         </div>
         <div class="rb-label">Arrange</div>
+      </div>
+    </div>
+    <div class="rb-panel" data-doc-panel="hf" hidden>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="hf-header" data-ic="header-edit" aria-haspopup="true" title="Header: a ready-made header for this section, or edit or remove it"><span class="rb-icon"></span>Header ▾</button>
+          <button class="rb-big" data-doc="hf-footer" data-ic="footer-edit" aria-haspopup="true" title="Footer: a ready-made footer for this section, or edit or remove it"><span class="rb-icon"></span>Footer ▾</button>
+          <button class="rb-big" data-doc="hf-numbers" data-ic="page-numbers" aria-haspopup="true" title="Page Number: where the numbers go in this section, S1, S2…, their format, or one at the caret"><span class="rb-icon"></span>Page Number ▾</button>
+        </div>
+        <div class="rb-label">Header &amp; Footer</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="insert-date" title="Date and Time: today's date or the time, in a format you pick, as text or a field that keeps itself up to date"><span class="rb-icon"></span>Date &amp; Time</button>
+          <div class="rb-col">
+            <button class="rb-labelled" data-doc="hf-info" aria-haspopup="true" title="Document Info: the author, title, file name or number of pages, as a field that keeps itself up to date (File ▸ Properties)"><span class="rb-lead" data-ic-lead="quick-parts"></span>Document Info ▾</button>
+            <button class="rb-labelled" data-doc="quick-parts" aria-haspopup="true" title="Quick Parts: text you saved to use again, the document's properties and fields"><span class="rb-lead" data-ic-lead="quick-parts"></span>Quick Parts ▾</button>
+            <button class="rb-labelled" data-doc="insert-picture" title="A picture from a file (a logo or crest), at the caret"><span class="rb-lead" data-ic-lead="picture"></span>Pictures</button>
+          </div>
+        </div>
+        <div class="rb-label">Insert</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="hf-goto-header" data-ic="hf-goto-header" title="Go to Header: the header of this page"><span class="rb-icon"></span>Go to<br />Header</button>
+          <button class="rb-big" data-doc="hf-goto-footer" data-ic="hf-goto-footer" title="Go to Footer: the footer of this page"><span class="rb-icon"></span>Go to<br />Footer</button>
+          <div class="rb-col">
+            <button class="rb-labelled" data-doc="hf-prev" title="Previous: the header or footer before this one that is another (a first page's, or the section before's)"><span class="rb-lead" data-ic-lead="hf-previous"></span>Previous</button>
+            <button class="rb-labelled" data-doc="hf-next" title="Next: the next header or footer that is another (an even page's, or the next section's)"><span class="rb-lead" data-ic-lead="hf-next"></span>Next</button>
+            <button class="rb-labelled" data-doc="hf-link" aria-pressed="false" title="Link to Previous: this section shows the section before's header and footer (Same as Previous). Off, it has its own"><span class="rb-lead" data-ic-lead="link"></span>Link to Previous</button>
+          </div>
+        </div>
+        <div class="rb-label">Navigation</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <div class="rb-col">
+            <label class="rb-check" title="The first page of the section has its own header and footer (a title page's)"><input type="checkbox" id="doc-hf-first" /> Different First Page</label>
+            <label class="rb-check" title="Even pages have their own header and footer, and the page number on the other side (the outside edge of a bound thesis)"><input type="checkbox" id="doc-hf-oddeven" /> Different Odd &amp; Even Pages</label>
+            <label class="rb-check" title="The document's text, faded, while you edit headers and footers"><input type="checkbox" id="doc-hf-showtext" checked /> Show Document Text</label>
+          </div>
+        </div>
+        <div class="rb-label">Options</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <div class="rb-col">
+            <label class="rb-field" title="How far the header sits from the top of the page">Header from Top <input id="doc-hf-top" class="rb-text rb-num" spellcheck="false" /></label>
+            <label class="rb-field" title="How far the footer sits from the bottom of the page">Footer from Bottom <input id="doc-hf-bottom" class="rb-text rb-num" spellcheck="false" /></label>
+            <button class="rb-labelled" data-doc="hf-align-tab" title="Insert Alignment Tab: a tab that lines what follows up at the left, center or right of the header or footer"><span class="rb-lead" data-ic-lead="hf-align-tab"></span>Insert Alignment Tab</button>
+          </div>
+        </div>
+        <div class="rb-label">Position</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="hf-close" data-ic="hf-close" title="Close Header and Footer (Esc, or double-click the document's text): back to the document"><span class="rb-icon"></span>Close Header<br />and Footer</button>
+        </div>
+        <div class="rb-label">Close</div>
       </div>
     </div>
     <div class="rb-panel" data-doc-panel="table" hidden>

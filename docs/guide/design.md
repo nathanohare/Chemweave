@@ -29,6 +29,8 @@ The ribbon's **Page** group also sets the **Background** color (**Format…** be
 
 ## Ready-made layouts
 
+<!-- index: Posters, Graphical abstracts, Templates for a design -->
+
 | Layout | What it gives you |
 |---|---|
 | **TOC graphic** | Starting material, arrow, product and a one-line message, at the ACS size |

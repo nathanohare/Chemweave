@@ -150,11 +150,11 @@ Backgrounds are saved as PowerPoint's own, so PowerPoint (and LibreOffice) shows
 
 ## Design templates
 
-**File ▸ New ▸ Presentation** opens a new deck with a window over it of the same themes, and two starter decks under **Teaching** (a **Lecture** and a **Problem session** with question and answer slides for worked mechanisms); click outside the window to keep the deck as it is. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
-
 **Design & Transitions** tab ▸ **Templates…** (or **Format ▸ Presentation ▸ Slide Templates…**) offers 51 ready-made styles in seven groups: **Light**, **Dark title slide**, **Bright**, **Minimal**, **Bold**, **Classic** and **Chemistry**. Picking one changes the fonts, colors, background and the shapes behind every slide. Your text, structures and pictures stay where they are, and Undo puts the old look back.
 
 Check **Also start new presentations with the template I pick** to make it the starting look for new decks. You can change any part of a template afterwards with **Slide Master…**.
+
+**File ▸ New ▸ Presentation** opens a new deck with a window of the same templates over it, plus two starter decks under **Teaching** (a **Lecture** and a **Problem session** with question and answer slides for worked mechanisms); click outside the window to keep the deck as it is. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
 
 ### Themes of your own
 
@@ -175,6 +175,8 @@ Titles and text boxes always move to their layouts' places. Structures scale wit
 ## Text
 
 Click a placeholder or a text box to type in it. **Insert** tab ▸ **Text Box** makes a new one: click to type, or drag to make a box that wraps.
+
+As in PowerPoint, a text box shows its frame (dashed while you type, solid while it is selected) with round handles on its corners and edges. Drag a handle to size the box: the side handles set its width, the top and bottom ones its height (a box that grew with its text then keeps the height you give it). Point at the frame's edge for the four-way arrow, then drag to move the box, or click to select it without starting to type.
 
 The **Font** and **Paragraph** groups on the **Home** tab work as in PowerPoint. While you are typing they change the selected words (or what you type next); with a text box or a shape selected, they change all of its text at once.
 
@@ -264,7 +266,7 @@ To put a reference anywhere on a slide as text you can edit, use **Insert ▸ Fo
 
 ### Citing with Zotero
 
-In the desktop app, **Insert ▸ Zotero ▾** works with the Zotero app on your computer (Zotero 7 or later, running), as it does in documents.
+In the desktop app, **Insert** tab ▸ **Zotero ▾** works with the Zotero app on your computer (Zotero 7 or later, running), as it does in documents.
 
 - **Add/Edit Citation** opens Zotero's citation window for the slide showing. The items you pick become the references that slide shows, linked to your Zotero library, and its lines are written as **References on Slide** sets them. Run it again on the same slide to change them.
 - **Add/Edit Bibliography** adds a References slide at the end (or edits the one there), with Zotero writing the list in its citation style.
@@ -333,13 +335,15 @@ A highlight can animate on its own, like a shape in PowerPoint, so it can fade i
 **Review** tab ▸ **New Comment** (Ctrl+Alt+M, **Insert ▸ New Comment**, or right-click ▸ **New Comment**) pins a note to the slide, beside what is selected or in the slide's top corner. The **Comments** pane opens in the right-hand panel with a card to type in; press Enter to save it.
 
 - Each comment shows on the slide as a small marker with the writer's initials and its number. Drag a marker to move it; click it to see its card.
-- On a card: **Reply**, **Resolve** (grayed until deleted; **Reopen** brings it back), **Edit** and **Delete**.
+- On a card: **Reply**, **Resolve** (the card turns gray and stays until you delete it; **Reopen** brings it back), **Edit** and **Delete**.
 - **◀ Previous** and **Next ▶** step through every comment in the deck, going to each one's slide. **Delete All on Slide** clears the slide being edited.
 - **Show Comments** hides or shows the markers and the pane. Markers are only on screen: they are never shown in the slide show, in pictures or in print.
 
 Undo works for every change. Comments are saved in the .pptx as PowerPoint comments, with their replies, so PowerPoint, Keynote and Google Slides show them. Comments added in PowerPoint (old or new style) open here too.
 
 ## Giving the show
+
+<!-- index: Slide show -->
 
 | To do this | Press |
 |---|---|
@@ -361,6 +365,8 @@ Each click plays the next animation, then moves on to the next slide with its tr
 On a canvas slide you can leave the route to look around: drag to pan and scroll to zoom anywhere on the canvas (up to twelve times closer, or out to the whole canvas). While you look around, the map of the whole canvas shows in the corner with where you are. Click the map to move the view there. Picking a canvas slide from every slide (G) opens it ready to look around. Esc, a click or the next key glides back to where the show was, and the show goes on from there. The controls in the top right corner (they fade until you move the mouse) zoom, take you back, show the map and show every slide.
 
 ### Presenter View
+
+<!-- index: Speaker notes -->
 
 **View ▸ Presentation ▸ Slide Show ▸ Presenter View**, **Slide Show** tab ▸ **Presenter View**, or Alt+F5.
 
@@ -392,7 +398,7 @@ When the show ends, a window lists each slide's time (🎙 marks the ones with n
 - **Full page slides**, one to a page;
 - **Handouts** with 2, 3, 4, 6 or 9 slides a page. Three a page leaves lines beside each slide for notes.
 
-For handouts you can also pick the paper and **Frame the slides**. The printer and copies are selected next (in the system's Print window, or in the Windows app its own Print window), which can also save a PDF.
+For handouts you can also pick the paper and **Frame the slides**. You pick the printer and the number of copies next (in the system's Print window, or in the Windows app its own Print window), which can also save a PDF.
 
 ## Links
 

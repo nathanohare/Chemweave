@@ -525,49 +525,23 @@ export class DocPanel {
     this.check(s, 'hf-continue', 'Continue from previous section', (v) => this.changeSec('Page numbers', (x) => ({ restart: v ? undefined : x.restart ?? 1 })));
     this.row(s, 'First page number', this.input('hf-start', (v) => { const n = Math.round(Number(v)); if (Number.isFinite(n)) this.changeSec('Page numbers', () => ({ restart: n })); }));
     this.check(s, 'hf-first', 'Number the first page', (v) => hf((h) => ({ ...h, onFirst: v })), 'Leave off for a title page');
-    const zone = (part: 'header' | 'footer', i: number, label: string) =>
-      this.row(s, label, this.input(`hf-${part}${i}`, (v) => hf((h) => {
-        const three = [...h[part]] as [string, string, string];
-        three[i] = v;
-        return { ...h, [part]: three };
-      })), 'On every page; a page number placed here goes after this text');
-    zone('header', 0, 'Header, left');
-    zone('header', 1, 'Header, center');
-    zone('header', 2, 'Header, right');
-    zone('footer', 0, 'Footer, left');
-    zone('footer', 1, 'Footer, center');
-    zone('footer', 2, 'Footer, right');
     // a first page and even pages of their own (Word's Different First Page and Different Odd & Even Pages)
     const blank = (): HfZones => ({ header: ['', '', ''], footer: ['', '', ''] });
     this.check(s, 'hf-diffFirst', 'Different first page', (v) => hf((h) => ({ ...h, firstPage: v || undefined, first: h.first ?? blank() })),
-      'The first page of the section has its own header and footer (a title page\'s), set below; "Number the first page" puts the number on it');
+      'The first page of the section has its own header and footer (a title page\'s); "Number the first page" puts the number on it');
     this.check(s, 'hf-oddEven', 'Different odd and even pages', (v) => hf((h) => ({ ...h, oddEven: v || undefined, even: h.even ?? blank() })),
-      'Even pages have their own header and footer, set below, and the page number on the other side (the outside edge of a bound thesis)');
-    const three = (set: 'first' | 'even', part: 'header' | 'footer', label: string) => {
-      const box = document.createElement('span');
-      box.className = 'dp-three';
-      for (let i = 0; i < 3; i++) {
-        const el = this.input(`hf-${set}-${part}${i}`, (v) => hf((h) => {
-          const z = h[set] ?? blank();
-          const parts = [...z[part]] as [string, string, string];
-          parts[i] = v;
-          return { ...h, [set]: { ...z, [part]: parts } };
-        }), { placeholder: ['left', 'centre', 'right'][i] });
-        box.append(el);
-      }
-      this.row(s, label, box, 'Left, center and right');
-    };
-    three('first', 'header', 'First page header');
-    three('first', 'footer', 'First page footer');
-    three('even', 'header', 'Even page header');
-    three('even', 'footer', 'Even page footer');
+      'Even pages have their own header and footer, and the page number on the other side (the outside edge of a bound thesis)');
     const note = document.createElement('p');
     note.className = 'dp-note';
     note.dataset.key = 'hf-rich';
     s.append(note);
     this.buttons(s, [
+      ['Edit Header', 'Type into the header on the page (or double-click it)', () => this.host.run('header-edit')],
+      ['Edit Footer', 'Type into the footer on the page (or double-click it)', () => this.host.run('footer-edit')],
+    ]);
+    this.buttons(s, [
       ['Picture…', 'Put a picture (a logo or crest) in the header or footer', () => this.host.run('hf-picture')],
-      ['Plain Text', 'Take the pictures, tables and formatting out of this section\'s headers and footers: back to the text above', () => this.host.run('hf-plain')],
+      ['Plain Text', 'Take the pictures, tables and formatting out of this section\'s headers and footers: back to plain text', () => this.host.run('hf-plain')],
     ]);
   }
 
@@ -689,21 +663,14 @@ export class DocPanel {
     put('hf-prefix', hf.prefix);
     put('hf-start', String(sec.restart ?? 1));
     put('hf-first', hf.onFirst);
-    for (let i = 0; i < 3; i++) { put(`hf-header${i}`, hf.header[i]); put(`hf-footer${i}`, hf.footer[i]); }
     put('hf-diffFirst', !!hf.firstPage);
     put('hf-oddEven', !!hf.oddEven);
-    for (const set of ['first', 'even'] as const) for (const part of ['header', 'footer'] as const) {
-      const on = set === 'first' ? !!hf.firstPage : !!hf.oddEven;
-      for (let i = 0; i < 3; i++) put(`hf-${set}-${part}${i}`, hf[set]?.[part][i] ?? '');
-      const row = this.fields.get(`hf-${set}-${part}0`)?.closest('label');
-      if (row) row.style.display = on ? '' : 'none';
-    }
     const rich = Object.keys(hf.bodies ?? {});
     const note = this.sections.hf.querySelector<HTMLElement>('[data-key="hf-rich"]');
     if (note) {
       const names: Record<string, string> = { header: 'header', footer: 'footer', firstHeader: 'first page header', firstFooter: 'first page footer', evenHeader: 'even page header', evenFooter: 'even page footer' };
       note.hidden = !rich.length;
-      note.textContent = rich.length ? `The ${rich.map((k) => names[k] ?? k).join(', ')} ${rich.length > 1 ? 'have' : 'has'} pictures, tables or formatting (from Word, or a picture added here), shown and saved as is instead of the text above. Plain Text reverts to text.` : '';
+      note.textContent = rich.length ? `The ${rich.map((k) => names[k] ?? k).join(', ')} ${rich.length > 1 ? 'have' : 'has'} pictures, tables or formatting (from Word, or a picture added here), shown and saved as is. Plain Text reverts to text.` : '';
     }
   }
 }
