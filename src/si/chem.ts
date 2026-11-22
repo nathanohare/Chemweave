@@ -17,6 +17,7 @@ import { ISOTOPES } from '../chem/analysis';
 import { ELECTRON } from '../chem/hrms';
 import { elementNumber, SYMBOLS } from '../chem/elements';
 import { isotopeMassOf, mostCommonIsotope } from './isotope-masses';
+import { DEEP_LIMIT, longestPathBound } from '../chem/engine-guard';
 
 export class ChemError extends Error {}
 
@@ -504,7 +505,7 @@ function counterIonKeys(RDKit: any): Set<string> {
 
 interface JAtom { z: number; isotope: number; impHs: number; chg: number }
 
-function readJson(json: string): { atoms: JAtom[]; bonds: [number, number, number][] } {
+function readJson(json: string): { atoms: JAtom[]; bonds: [number, number, number][]; cip: Set<number> } {
   const j = JSON.parse(json);
   const da = j.defaults?.atom ?? {}, db = j.defaults?.bond ?? {};
   const mol = j.molecules[0];
@@ -512,7 +513,9 @@ function readJson(json: string): { atoms: JAtom[]; bonds: [number, number, numbe
   const aromatic = new Set<number>(ext.aromaticBonds ?? []);
   const atoms: JAtom[] = mol.atoms.map((a: any) => ({ z: a.z ?? da.z ?? 6, isotope: a.isotope ?? da.isotope ?? 0, impHs: a.impHs ?? da.impHs ?? 0, chg: a.chg ?? da.chg ?? 0 }));
   const bonds: [number, number, number][] = (mol.bonds ?? []).map((b: any, i: number) => [b.atoms[0], b.atoms[1], aromatic.has(i) ? 1.5 : b.bo ?? db.bo ?? 1]);
-  return { atoms, bonds };
+  // (the atoms RDKit labelled R or S, from the drawing's wedges)
+  const cip = new Set<number>((ext.cipCodes ?? []).map((c: [number, string]) => c[0]));
+  return { atoms, bonds, cip };
 }
 
 function countsOf(atoms: JAtom[]): Counts {
@@ -534,18 +537,98 @@ function infoOf(atoms: JAtom[], mw: number, smiles: string): MolInfo {
   };
 }
 
-/** Symmetry classes by refining (element, isotope, charge, degree, H) with the neighbours' classes and bond orders; stereo ignored. */
-export function symmetryClasses(atoms: JAtom[], bonds: [number, number, number][]): number[] {
-  const nb: [number, number][][] = atoms.map(() => []);
-  for (const [a, b, o] of bonds) { nb[a].push([b, o]); nb[b].push([a, o]); }
-  const relabel = (sigs: string[]): number[] => { const u = [...new Set(sigs)].sort(); return sigs.map((s) => u.indexOf(s)); };
-  let cls = relabel(atoms.map((a, i) => [a.z, a.isotope, a.chg, nb[i].length, a.impHs].join(',')));
+/** Sort signatures and number them: each atom's class (a Map, so a big structure is quick: G4-08). */
+function relabel(sigs: string[]): number[] {
+  const index = new Map([...new Set(sigs)].sort().map((x, i) => [x, i]));
+  return sigs.map((x) => index.get(x)!);
+}
+const classCount = (cls: number[]): number => new Set(cls).size;
+
+/** Refine classes with the neighbours' classes and bond orders until no class splits any more. */
+function refine(nb: [number, number][][], start: string[]): number[] {
+  let cls = relabel(start);
   for (;;) {
     const next = relabel(cls.map((c, i) => c + '|' + nb[i].map(([j, o]) => `${o}:${cls[j]}`).sort().join(';')));
-    if (new Set(next).size === new Set(cls).size) return next;
+    if (classCount(next) === classCount(cls)) return next;
     cls = next;
   }
 }
+
+/**
+ * Symmetry classes (≈ NMR-distinct atoms): (element, isotope, charge, degree, H) refined with the
+ * neighbours' classes and bond orders, and then diastereotopic atoms told apart.
+ *
+ * Two alike atoms on the same tetrahedral atom X whose other two ligands differ (the CH₃ pair of
+ * an isopropyl group on menthol's ring, camphor's gem-dimethyl pair, the C2/C6 pair of a
+ * cyclohexyl ring on a stereocentre) are diastereotopic when the structure has a stereocentre
+ * besides X: swapping either for a test group gives diastereomers, so they give two signals
+ * (Mislow & Raban, Top. Stereochem. 1967, 1, 1; Eliel & Wilen, Stereochemistry of Organic
+ * Compounds, 1994, ch. 8). Each pair is split and the classes refined again, so the atoms beyond
+ * them split too. A stereocentre is one RDKit gave R or S (`cip`, from wedges) or an atom with four
+ * different ligands whether drawn with wedges or not (a structure drawn flat is still chiral).
+ * Not caught: a pair on a mirror plane of a meso structure (it is enantiotopic, so one signal),
+ * which is counted as two.
+ */
+export function symmetryClasses(atoms: JAtom[], bonds: [number, number, number][], cip: Set<number> = new Set()): number[] {
+  const nb: [number, number][][] = atoms.map(() => []);
+  for (const [a, b, o] of bonds) { nb[a].push([b, o]); nb[b].push([a, o]); }
+  const start = atoms.map((a, i) => [a.z, a.isotope, a.chg, nb[i].length, a.impHs].join(','));
+  let cls = refine(nb, start);
+  // the structure's pieces (a stereocentre in a counter-ion doesn't make the cation's pairs differ)
+  const piece = new Int32Array(atoms.length).fill(-1);
+  atoms.forEach((_, s) => {
+    if (piece[s] >= 0) return;
+    const todo = [s];
+    piece[s] = s;
+    while (todo.length) { const v = todo.pop()!; for (const [w] of nb[v]) if (piece[w] < 0) { piece[w] = s; todo.push(w); } }
+  });
+  // (four ligands: the atoms bonded, and its hydrogens counted as one more kind)
+  const tetrahedral = (i: number): boolean => nb[i].length + atoms[i].impHs === 4 && atoms[i].impHs <= 1;
+  const stereocentre = (i: number): boolean => cip.has(i) || (tetrahedral(i) && new Set(nb[i].map(([j]) => cls[j])).size === nb[i].length);
+  // Every such pair found is split at once (one of each marked), then the classes refined again:
+  // pairs related by the structure's own symmetry stay alike (a C₂-symmetric structure's two
+  // isopropyl groups give two CH₃ signals, not four). Splits can make new pairs, so again until none.
+  for (let round = 0; round < 20; round++) {
+    const centre = atoms.map((_, i) => stereocentre(i));
+    const centresIn = new Map<number, number>();
+    centre.forEach((c, i) => { if (c) centresIn.set(piece[i], (centresIn.get(piece[i]) ?? 0) + 1); });
+    if (!centresIn.size) return cls;
+    const marked = new Set<number>();
+    for (let x = 0; x < atoms.length; x++) {
+      // (X must not be a stereocentre itself, and its piece must have one)
+      if (!tetrahedral(x) || centre[x] || !centresIn.get(piece[x])) continue;
+      // a pair alike, and the other two ligands different (one may be X's hydrogen)
+      const byClass = new Map<number, number[]>();
+      for (const [j] of nb[x]) byClass.set(cls[j], [...(byClass.get(cls[j]) ?? []), j]);
+      const pair = [...byClass.values()].find((l) => l.length === 2);
+      if (pair && byClass.size === nb[x].length - 1) marked.add(pair[1]);
+    }
+    if (!marked.size) return cls;
+    cls = refine(nb, cls.map((c, i) => `${c}${marked.has(i) ? ',d' : ''}`));
+  }
+  return cls;
+}
+
+/** The atoms of each piece (bonded together), in atom order. */
+function graphPieces(atoms: JAtom[], bonds: [number, number, number][]): number[][] {
+  const nb: number[][] = atoms.map(() => []);
+  for (const [a, b] of bonds) { nb[a].push(b); nb[b].push(a); }
+  const seen = new Uint8Array(atoms.length);
+  const out: number[][] = [];
+  atoms.forEach((_, s) => {
+    if (seen[s]) return;
+    const part: number[] = [];
+    const todo = [s];
+    seen[s] = 1;
+    while (todo.length) { const v = todo.pop()!; part.push(v); for (const w of nb[v]) if (!seen[w]) { seen[w] = 1; todo.push(w); } }
+    out.push(part.sort((x, y) => x - y));
+  });
+  return out;
+}
+
+/** Whether a structure (or piece) may have a run of atoms too long for the engine's SMILES writer (engine-guard.ts). */
+const tooDeepGraph = (atoms: JAtom[], bonds: [number, number, number][]): boolean =>
+  atoms.length > DEEP_LIMIT && longestPathBound({ n: atoms.length, edges: bonds.map(([a, b]) => [a, b]) }) > DEEP_LIMIT;
 
 /** What the checks need of a structure (a molfile), from RDKit; null when RDKit can't read it. */
 export function molFacts(RDKit: any, molblock: string): MolFacts | null {
@@ -553,7 +636,7 @@ export function molFacts(RDKit: any, molblock: string): MolFacts | null {
   const mol = RDKit.get_mol(molblock);
   if (!mol?.is_valid()) { mol?.delete?.(); return generic.length ? { info: null, generic, pieces: [], uniqueCarbons: 0, hTotal: 0, hExch: 0 } : null; }
   try {
-    const { atoms, bonds } = readJson(mol.get_json());
+    const { atoms, bonds, cip } = readJson(mol.get_json());
     const nb: number[][] = atoms.map(() => []);
     for (const [a, b] of bonds) { nb[a].push(b); nb[b].push(a); }
     let hTotal = 0, hExch = 0;
@@ -568,40 +651,52 @@ export function molFacts(RDKit: any, molblock: string): MolFacts | null {
         if (nos(a.z)) hExch += a.impHs;
       }
     });
-    const cls = symmetryClasses(atoms, bonds);
+    const cls = symmetryClasses(atoms, bonds, cip);
     const uniqueCarbons = new Set(atoms.flatMap((a, i) => (a.z === 6 ? [cls[i]] : []))).size;
     if (generic.length || atoms.some((a) => a.z === 0)) return { info: null, generic: generic.length ? generic : ['R'], pieces: [], uniqueCarbons, hTotal, hExch };
     const mw = JSON.parse(mol.get_descriptors()).amw as number;
     let info: MolInfo;
     try {
-      info = infoOf(atoms, mw, mol.get_smiles());
+      // (a run of atoms too long for the engine's SMILES writer: no SMILES, see engine-guard.ts)
+      info = infoOf(atoms, mw, tooDeepGraph(atoms, bonds) ? '' : mol.get_smiles());
     } catch (e) {
       if (!(e instanceof ChemError)) throw e;
       return { info: null, generic: [], pieces: [], uniqueCarbons, hTotal, hExch, error: `No formula or masses can be calculated for this structure: ${e.message} Type the M formula in the HRMS field (✎) if you need the calculated m/z.` };
     }
-    // the pieces (a salt's cation and anion), each once, the largest first
-    const keys = counterIonKeys(RDKit);
+    // the pieces (a salt's cation and anion), each once, the largest first; a structure with a run
+    // of atoms too long for the engine is split here from its graph, as RDKit's get_frags (and its
+    // SMILES) hang or break on it (a 600-atom fused ring system hangs get_frags: engine-guard.ts)
+    const deep = tooDeepGraph(atoms, bonds);
     const seen = new Map<string, { heavy: number; piece: Piece }>();
-    const frags = mol.get_frags();
-    try {
-      for (let k = 0; k < frags.molList.size(); k++) {
-        const f = frags.molList.at(k);
-        try {
-          const smi = f.get_smiles();
-          if (seen.has(smi)) continue;
-          const fj = readJson(f.get_json());
-          const fmw = JSON.parse(f.get_descriptors()).amw as number;
-          seen.set(smi, { heavy: fj.atoms.filter((a) => a.z > 1).length, piece: { smiles: smi, info: infoOf(fj.atoms, fmw, smi), counterIon: keys.has(f.get_smiles(PLAIN)) } });
-        } finally {
-          f.delete();
+    if (deep) {
+      graphPieces(atoms, bonds).forEach((part, k) => {
+        const sub = part.map((i) => atoms[i]);
+        seen.set(`#${k}`, { heavy: sub.filter((a) => a.z > 1).length, piece: { smiles: '', info: infoFromCounts(countsOf(sub), sub.reduce((t, a) => t + a.chg, 0)), counterIon: false } });
+      });
+    } else {
+      const keys = counterIonKeys(RDKit);
+      const frags = mol.get_frags();
+      try {
+        for (let k = 0; k < frags.molList.size(); k++) {
+          const f = frags.molList.at(k);
+          try {
+            const smi = f.get_smiles();
+            if (seen.has(smi)) continue;
+            const fj = readJson(f.get_json());
+            const fmw = JSON.parse(f.get_descriptors()).amw as number;
+            seen.set(smi, { heavy: fj.atoms.filter((a) => a.z > 1).length, piece: { smiles: smi, info: infoOf(fj.atoms, fmw, smi), counterIon: keys.has(f.get_smiles(PLAIN)) } });
+          } finally {
+            f.delete();
+          }
         }
+      } finally {
+        frags.molList.delete?.();
       }
-    } finally {
-      frags.molList.delete?.();
     }
     const pieces = [...seen.values()].map((x, i) => ({ ...x, i })).sort((a, b) => b.heavy - a.heavy || a.i - b.i).map((x) => x.piece);
     let inchikey = '';
-    try {
+    // (no InChI for a run of atoms that long: InChI hangs on a big fused ring system, and caps at 1,024 atoms anyway)
+    if (!deep) try {
       const inchi = mol.get_inchi();
       if (inchi) inchikey = RDKit.get_inchikey_for_inchi(inchi);
     } catch { inchikey = ''; }

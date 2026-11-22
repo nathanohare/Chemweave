@@ -1,5 +1,8 @@
-// Main-thread side of the chemistry worker: sends requests, matches replies, and keeps
-// only the latest analysis (older ones are dropped if the drawing changed meanwhile).
+// Main-thread side of the chemistry worker: sends requests and matches replies. Requests made
+// while the engine loads wait for it. A watchdog notices a worker that died or hung (and the
+// worker itself says when the engine broke on a request): what waits is then told so, the worker
+// is restarted, the user is told in the status bar (onRestart), and the request that broke it is
+// not sent again.
 
 import type { ChemRequest, ChemResponse, FragmentResult } from '../worker/chem-worker';
 import type { StereoTags } from './stereo';
@@ -9,61 +12,158 @@ import type { NamerGraph } from './namer-graph';
 import type { HammettResult } from './hammett-match';
 import type { MolFacts } from '../si/chem';
 
+/** How long the worker may be silent while a request waits before it is taken to have hung (long batches send `alive` meanwhile). */
+export const WATCHDOG_MS = 45000;
+/** Restarts allowed within RESTART_WINDOW_MS; after that the engine is left stopped (so a structure that keeps breaking it can't loop). */
+const MAX_RESTARTS = 3;
+const RESTART_WINDOW_MS = 5 * 60000;
+
+/** What a request still waiting is told when the engine stops (callers show it, or fall back as for any failure). */
+export const ENGINE_RESTARTED = 'The chemistry engine stopped and was restarted. Try again.';
+/** What a request that broke the engine before is told when it is asked again (it is not sent, so the engine keeps working). */
+export const ENGINE_SKIPPED = 'The chemistry engine stopped on this structure before, so it is not calculated again.';
+
+/** Something that can stand in for a Web Worker (tests give a fake one). */
+export interface WorkerLike {
+  postMessage(m: unknown): void;
+  terminate(): void;
+  onmessage: ((e: MessageEvent) => void) | null;
+  onerror: ((e: ErrorEvent) => void) | null;
+  onmessageerror: ((e: MessageEvent) => void) | null;
+}
+
+interface Pending { settle: (r: ChemResponse) => void; msg: ChemRequest }
+
 export class ChemClient {
   ready = false;
   loadMs = 0;
   version = '';
   error = '';
   onReady: () => void = () => {};
-  private worker: Worker | null = null;
+  /** Called when the engine stopped (a crash, a hang) and was restarted, or was left stopped: a short message for the status bar. */
+  onRestart: (message: string) => void = () => {};
+  private worker: WorkerLike | null = null;
   private nextId = 1;
-  private pending = new Map<number, (r: ChemResponse) => void>();
+  private pending = new Map<number, Pending>();
+  /** Requests made before the engine is ready: sent once it is (or failed if it never loads). */
+  private queued: { id: number; msg: ChemRequest }[] = [];
+  /** Requests that broke the engine (as text without their id): not sent again. */
+  private poisoned = new Set<string>();
+  private restarts: number[] = [];
+  private watchdog: ReturnType<typeof setTimeout> | null = null;
+  private js = '';
+  private wasm = '';
 
-  constructor(base: string) {
+  constructor(base: string, private makeWorker: () => WorkerLike = defaultWorker) {
+    this.js = new URL('RDKit_minimal.js', base).href;
+    this.wasm = new URL('RDKit_minimal.wasm', base).href;
+    this.start();
+  }
+
+  /** A new worker, loading the engine. */
+  private start(): void {
+    let w: WorkerLike;
     try {
-      // Vite's development server can only serve workers that use `import` as modules.
-      this.worker = import.meta.env.DEV
-        ? new Worker(new URL('../worker/chem-worker.ts', import.meta.url), { type: 'module' })
-        : new Worker(new URL('../worker/chem-worker.ts', import.meta.url));
+      w = this.makeWorker();
     } catch (e) {
       this.error = 'Background worker could not start: ' + String(e);
       return;
     }
-    this.worker.onmessage = (e: MessageEvent<ChemResponse>) => this.receive(e.data);
-    this.worker.onerror = (e) => { this.error = 'Chemistry engine failed to load: ' + (e.message || 'unknown error'); this.onReady(); };
-    const js = new URL('RDKit_minimal.js', base).href;
-    const wasm = new URL('RDKit_minimal.wasm', base).href;
-    this.send({ type: 'init', js, wasm });
+    this.worker = w;
+    w.onmessage = (e: MessageEvent) => { if (this.worker === w) this.receive(e.data as ChemResponse); };
+    w.onerror = (e: ErrorEvent) => {
+      if (this.worker !== w) return;
+      // (while loading: the engine can't load; once loaded: the worker died, so start a new one)
+      if (this.ready) { this.restart('stopped'); return; }
+      this.failLoad('Chemistry engine failed to load: ' + (e.message || 'unknown error'));
+    };
+    w.onmessageerror = () => { if (this.worker === w && this.ready) this.restart('stopped'); };
+    w.postMessage({ type: 'init', js: this.js, wasm: this.wasm } satisfies ChemRequest);
   }
 
-  private send(m: ChemRequest): void {
-    this.worker?.postMessage(m);
+  private failLoad(message: string): void {
+    this.error = message;
+    for (const q of this.queued.splice(0)) this.pending.get(q.id)?.settle({ type: 'error', id: q.id, message });
+    this.onReady();
   }
 
   private receive(m: ChemResponse): void {
     if (m.type === 'ready') {
       this.ready = true;
+      this.error = '';
       this.loadMs = m.ms;
       this.version = m.version;
+      for (const q of this.queued.splice(0)) this.worker?.postMessage(q.msg);
+      this.arm();
       this.onReady();
       return;
     }
+    if (m.type === 'alive') { this.arm(); return; }
     if (m.type === 'error' && m.id === undefined) {
-      this.error = m.message;
-      this.onReady();
+      this.failLoad(m.message);
       return;
     }
     const id = (m as { id?: number }).id;
     if (id === undefined) return;
-    const cb = this.pending.get(id);
-    if (cb) { this.pending.delete(id); cb(m); }
+    const p = this.pending.get(id);
+    if (m.type === 'error' && m.fatal) {
+      // the engine broke on this request: it is not sent again, and a new engine starts
+      if (p) this.poisoned.add(requestKey(p.msg));
+      this.restart('broke');
+      return;
+    }
+    if (p) { this.pending.delete(id); p.settle(m); }
+    this.arm();
+  }
+
+  /** (Re)start the watchdog: a request waiting with no word from the worker for WATCHDOG_MS means it hung. */
+  private arm(): void {
+    if (this.watchdog) clearTimeout(this.watchdog);
+    this.watchdog = null;
+    if (!this.ready || this.pending.size === this.queued.length) return;
+    this.watchdog = setTimeout(() => {
+      // (the worker answers in order, so the oldest request still waiting is the one it hung on)
+      const first = [...this.pending.values()].find((p) => !this.queued.some((q) => q.msg === p.msg));
+      if (first) this.poisoned.add(requestKey(first.msg));
+      this.restart('hung');
+    }, WATCHDOG_MS);
+  }
+
+  /** Stop the worker, fail what waits, and start a new one (unless it stopped too often lately). */
+  private restart(why: 'stopped' | 'broke' | 'hung'): void {
+    if (this.watchdog) clearTimeout(this.watchdog);
+    this.watchdog = null;
+    try { this.worker?.terminate(); } catch { /* (already gone) */ }
+    this.worker = null;
+    this.ready = false;
+    this.queued = [];
+    const waiting = [...this.pending.entries()];
+    this.pending.clear();
+    for (const [id, p] of waiting) p.settle({ type: 'error', id, message: ENGINE_RESTARTED });
+    const now = Date.now();
+    this.restarts = this.restarts.filter((t) => now - t < RESTART_WINDOW_MS);
+    const what = why === 'hung' ? 'stopped responding' : 'stopped';
+    if (this.restarts.length >= MAX_RESTARTS) {
+      this.error = `The chemistry engine ${what} again, so it was not restarted. Save your work and restart Chemweave to use it again.`;
+      this.onRestart(this.error);
+      this.onReady();
+      return;
+    }
+    this.restarts.push(now);
+    this.onRestart(`The chemistry engine ${what} and was restarted.`);
+    this.start();
   }
 
   private request<T extends ChemResponse>(build: (id: number) => ChemRequest): Promise<T> {
     const id = this.nextId++;
+    const msg = build(id);
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, (r) => (r.type === 'error' ? reject(new Error(r.message)) : resolve(r as T)));
-      this.send(build(id));
+      if (this.poisoned.size && this.poisoned.has(requestKey(msg))) { reject(new Error(ENGINE_SKIPPED)); return; }
+      // (an engine that couldn't load, or was left stopped: no answer will come)
+      if (this.error && !this.ready) { reject(new Error(this.error)); return; }
+      this.pending.set(id, { msg, settle: (r) => { this.pending.delete(id); if (r.type === 'error') reject(new Error(r.message)); else resolve(r as T); } });
+      if (this.ready) { this.worker?.postMessage(msg); if (!this.watchdog) this.arm(); }
+      else this.queued.push({ id, msg });
     });
   }
 
@@ -159,4 +259,17 @@ export class ChemClient {
     const r = await this.request<Extract<ChemResponse, { type: 'siFacts' }>>((id) => ({ type: 'siFacts', id, mols }));
     return r.results;
   }
+}
+
+function defaultWorker(): WorkerLike {
+  // Vite's development server can only serve workers that use `import` as modules.
+  return (import.meta.env.DEV
+    ? new Worker(new URL('../worker/chem-worker.ts', import.meta.url), { type: 'module' })
+    : new Worker(new URL('../worker/chem-worker.ts', import.meta.url))) as unknown as WorkerLike;
+}
+
+/** A request as text without its id, to know it again. */
+function requestKey(msg: ChemRequest): string {
+  const { id: _id, ...rest } = msg as ChemRequest & { id?: number };
+  return JSON.stringify(rest);
 }

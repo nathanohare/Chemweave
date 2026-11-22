@@ -1,15 +1,15 @@
 // Chemistry engine running off the main thread so drawing never waits for it.
-// Loads RDKit (WebAssembly) and answers requests: formula and masses, R/S and E/Z labels,
-// SMILES in and out, and the properties and substructure searches of Sheet mode.
+// Loads RDKit (WebAssembly) and answers requests (chem-respond.ts): formula and masses, R/S and
+// E/Z labels, SMILES in and out, and the properties and substructure searches of Sheet mode.
 
 /// <reference lib="webworker" />
-import { formulaFromJson } from '../chem/formula';
-import { stereoTags, StereoTags } from '../chem/stereo';
-import { molProps, substructureMatches, structureLibrary, libraryMatches, panelProps, massFragments, type PanelProps, type MassFragment, type StructureLibrary } from '../chem/props';
+import type { StereoTags } from '../chem/stereo';
+import type { PanelProps, MassFragment } from '../chem/props';
 import type { MolProps } from '../sheet/properties';
-import { namerGraph, type NamerGraph } from '../chem/namer-graph';
-import { hammettSites, type HammettResult } from '../chem/hammett-match';
-import { molFacts, unreadableFacts, type MolFacts } from '../si/chem';
+import type { NamerGraph } from '../chem/namer-graph';
+import type { HammettResult } from '../chem/hammett-match';
+import type { MolFacts } from '../si/chem';
+import { respond, engineWorks } from './chem-respond';
 type InitRDKit = (opts: { locateFile: () => string }) => Promise<any>;
 
 export type ChemRequest =
@@ -54,7 +54,10 @@ export interface FragmentResult {
 
 export type ChemResponse =
   | { type: 'ready'; ms: number; version: string }
-  | { type: 'error'; id?: number; message: string }
+  /** `fatal`: the engine broke while answering (its WebAssembly module no longer works): the worker must be restarted. */
+  | { type: 'error'; id?: number; message: string; fatal?: boolean }
+  /** Still working on a long request (so the client's watchdog doesn't take it for a hang). */
+  | { type: 'alive' }
   | { type: 'analyze'; id: number; results: FragmentResult[]; ms: number }
   | { type: 'stereo'; id: number; results: StereoTags[]; ms: number }
   | { type: 'smilesToMol'; id: number; molblock: string | null }
@@ -72,58 +75,7 @@ export type ChemResponse =
   | { type: 'siFacts'; id: number; results: (MolFacts | null)[] };
 
 let RDKit: any = null;
-/** Sets of structures kept for substructure searches, by name (see substructureIn). */
-const libraries = new Map<string, StructureLibrary>();
 const post = (m: ChemResponse) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(m);
-
-function analyzeOne(molblock: string): FragmentResult {
-  const mol = RDKit.get_mol(molblock);
-  if (!mol || !mol.is_valid()) {
-    mol?.delete?.();
-    return { formula: '', exact: 0, mw: 0, charge: 0, smiles: '', error: 'Could not read this structure (check valences).' };
-  }
-  try {
-    const { formula, charge } = formulaFromJson(mol.get_json());
-    const d = JSON.parse(mol.get_descriptors());
-    let props: PanelProps | undefined;
-    try {
-      props = panelProps(RDKit, mol);
-    } catch {
-      props = undefined;
-    }
-    return { formula, exact: d.exactmw, mw: d.amw, charge, smiles: mol.get_smiles(), props };
-  } finally {
-    mol.delete();
-  }
-}
-
-/**
- * The atoms two molecules share, by maximum common substructure (whole rings only, ring bonds
- * matching ring bonds, elements and bond orders alike), as pairs [ref atom, mol atom].
- */
-function commonPart(ref: string, other: string): [number, number][] | null {
-  const a = RDKit.get_mol(ref), b = RDKit.get_mol(other);
-  const list = new RDKit.MolList();
-  let q: any = null;
-  try {
-    if (!a?.is_valid() || !b?.is_valid()) return null;
-    list.append(a);
-    list.append(b);
-    const smarts: string = RDKit.get_mcs_as_smarts(list, JSON.stringify({ AtomCompare: 'Elements', BondCompare: 'Order', RingMatchesRingOnly: true, CompleteRingsOnly: true, Timeout: 2 }));
-    if (!smarts) return null;
-    q = RDKit.get_qmol(smarts);
-    if (!q?.is_valid()) return null;
-    const ma = JSON.parse(a.get_substruct_match(q)).atoms as number[] | undefined;
-    const mb = JSON.parse(b.get_substruct_match(q)).atoms as number[] | undefined;
-    if (!ma?.length || !mb || ma.length !== mb.length) return null;
-    return ma.map((x, i) => [x, mb[i]]);
-  } finally {
-    q?.delete?.();
-    list.delete?.();
-    a?.delete?.();
-    b?.delete?.();
-  }
-}
 
 // The built app runs this worker as a classic script, where importScripts loads RDKit.
 // The development server runs it as a module, where importScripts is not allowed, so
@@ -147,81 +99,38 @@ async function loadRDKitScript(url: string): Promise<InitRDKit> {
   }
 }
 
+/** For long batches: tell the client now and then that work goes on (see client.ts's watchdog). */
+let lastBeat = 0;
+function beat(): void {
+  const now = performance.now();
+  if (now - lastBeat > 1000) { lastBeat = now; post({ type: 'alive' }); }
+}
+
 self.onmessage = async (e: MessageEvent<ChemRequest>) => {
   const m = e.data;
-  try {
-    if (m.type === 'init') {
+  if (m.type === 'init') {
+    try {
       const t0 = performance.now();
       const initRDKitModule = await loadRDKitScript(m.js);
       RDKit = await initRDKitModule({ locateFile: () => m.wasm });
       post({ type: 'ready', ms: performance.now() - t0, version: RDKit.version() });
-      return;
+    } catch (err) {
+      post({ type: 'error', message: String(err) });
     }
-    if (!RDKit) { post({ type: 'error', id: 'id' in m ? m.id : undefined, message: 'Chemistry engine not loaded yet' }); return; }
-    if (m.type === 'analyze') {
-      const t0 = performance.now();
-      const results = m.mols.map((x) => analyzeOne(x.molblock));
-      post({ type: 'analyze', id: m.id, results, ms: performance.now() - t0 });
-    } else if (m.type === 'stereo') {
-      const t0 = performance.now();
-      const results = m.mols.map((x) => stereoTags(RDKit, x.molblock, x.skip, undefined, x.generic));
-      post({ type: 'stereo', id: m.id, results, ms: performance.now() - t0 });
-    } else if (m.type === 'smilesToMol') {
-      const mol = RDKit.get_mol(m.smiles);
-      if (!mol || !mol.is_valid()) { post({ type: 'smilesToMol', id: m.id, molblock: null }); return; }
-      mol.set_new_coords(true);
-      const mb = mol.get_molblock();
-      mol.delete();
-      post({ type: 'smilesToMol', id: m.id, molblock: mb });
-    } else if (m.type === 'layouts') {
-      // the engine's own 2-D layouts (its classic one and CoordGen's), for Clean Up to start from
-      const coords: [number, number][][] = [];
-      const mol = RDKit.get_mol(m.molblock, JSON.stringify({ sanitize: false, removeHs: false }));
-      if (mol && mol.is_valid()) {
-        for (const coordGen of [false, true]) {
-          try {
-            mol.set_new_coords(coordGen);
-            const lines = mol.get_molblock().split(/\r?\n/);
-            const n = parseInt(lines[3].slice(0, 3), 10);
-            coords.push(Array.from({ length: n }, (_, i) => [parseFloat(lines[4 + i].slice(0, 10)), -parseFloat(lines[4 + i].slice(10, 20))] as [number, number]));
-          } catch { /* that layout failed: use the other */ }
-        }
-      }
-      mol?.delete();
-      post({ type: 'layouts', id: m.id, coords });
-    } else if (m.type === 'molToSmiles') {
-      const mol = m.loose ? RDKit.get_mol(m.molblock, JSON.stringify({ sanitize: false })) : RDKit.get_mol(m.molblock);
-      const smiles = mol && mol.is_valid() ? mol.get_smiles() : null;
-      mol?.delete();
-      post({ type: 'molToSmiles', id: m.id, smiles });
-    } else if (m.type === 'namerGraph') {
-      const mol = RDKit.get_mol(m.molblock);
-      const ok = mol && mol.is_valid();
-      post({ type: 'namerGraph', id: m.id, graph: ok ? namerGraph(mol) : null, smiles: ok ? mol.get_smiles() : null });
-      mol?.delete();
-    } else if (m.type === 'canonical') {
-      const mol = RDKit.get_mol(m.smiles);
-      post({ type: 'canonical', id: m.id, smiles: mol && mol.is_valid() ? mol.get_smiles() : null });
-      mol?.delete();
-    } else if (m.type === 'props') {
-      post({ type: 'props', id: m.id, results: m.mols.map((x) => molProps(RDKit, x)) });
-    } else if (m.type === 'substructure') {
-      post({ type: 'substructure', id: m.id, ...substructureMatches(RDKit, m.query, m.mols) });
-    } else if (m.type === 'substructureIn') {
-      if (m.mols) { libraries.get(m.name)?.lib.delete?.(); libraries.set(m.name, structureLibrary(RDKit, m.mols)); }
-      const L = libraries.get(m.name);
-      post(L ? { type: 'substructureIn', id: m.id, ...libraryMatches(RDKit, L, m.query) } : { type: 'substructureIn', id: m.id, results: [], missing: true });
-    } else if (m.type === 'hammett') {
-      post({ type: 'hammett', id: m.id, results: m.mols.map((x) => hammettSites(RDKit, x, m.core)) });
-    } else if (m.type === 'fragments') {
-      post({ type: 'fragments', id: m.id, results: massFragments(RDKit, m.molblock, m.cuts) });
-    } else if (m.type === 'siFacts') {
-      // (no structure: null; one RDKit can't read: facts that say so, shown where its formula would be)
-      post({ type: 'siFacts', id: m.id, results: m.mols.map((x) => { if (!x.trim()) return null; try { return molFacts(RDKit, x) ?? unreadableFacts(); } catch { return unreadableFacts(); } }) });
-    } else if (m.type === 'common') {
-      post({ type: 'common', id: m.id, results: m.mols.map((x) => commonPart(m.ref, x)) });
-    }
-  } catch (err) {
-    post({ type: 'error', id: 'id' in m ? (m as { id: number }).id : undefined, message: String(err) });
+    return;
   }
+  const id = m.id;
+  if (!RDKit) { post({ type: 'error', id, message: 'Chemistry engine not loaded yet' }); return; }
+  lastBeat = performance.now();
+  // (the answer is held until the engine is known to still work: if it broke, the client is told
+  // so instead, and restarts the worker)
+  let answer: ChemResponse;
+  try {
+    answer = respond(RDKit, m, beat);
+  } catch (err) {
+    answer = { type: 'error', id, message: String(err), ...(err instanceof WebAssembly.RuntimeError ? { fatal: true } : {}) };
+  }
+  if (!(answer.type === 'error' && answer.fatal) && !engineWorks(RDKit)) answer = { type: 'error', id, message: 'The chemistry engine broke while working on this.', fatal: true };
+  post(answer);
 };
+

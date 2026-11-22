@@ -8,7 +8,7 @@ import { join, relative } from 'node:path';
 import { MemoryFolder } from '../src/si/folder';
 import { SiProject } from '../src/si/project';
 import { allWarnings, compoundHrms, isDismissed, monoisotopic } from '../src/si/checks';
-import { molFacts, isotopePattern, infoFromCounts, parseFormula, parseAdduct, ionMz } from '../src/si/chem';
+import { molFacts, isotopePattern, infoFromCounts, parseFormula, parseAdduct, ionMz, symmetryClasses } from '../src/si/chem';
 import { fp, pyF, pyG, pyRepr, pyStr, PyTuple, sortedFp } from '../src/si/pyrepr';
 import { carbonSignalCount, protonCount, couplings, impurityMatch, defaultImpurityTable } from '../src/si/nmr';
 
@@ -116,6 +116,35 @@ describe('masses', () => {
     const salt = molFacts(RDKit, RDKit.get_mol('c1cc[nH+]cc1.O=S(=O)([O-])C(F)(F)F').get_molblock())!;
     expect(salt.pieces.length).toBe(2);
     expect(salt.pieces.filter((x) => x.counterIon).length).toBe(1);
+  });
+  it('counts diastereotopic carbons apart, drawn with wedges or flat (G4-07)', () => {
+    const carbons = (smiles: string): number => molFacts(RDKit, RDKit.get_mol(smiles).get_molblock())!.uniqueCarbons;
+    // menthol: 10 ¹³C signals, the isopropyl CH₃ pair at 16.80 and 21.80 ppm (Härtner & Reinscheid,
+    // J. Mol. Struct. 2008, 872, 145; "the prochiral methyls could be differentiated")
+    expect(carbons('CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O')).toBe(10);
+    expect(carbons('CC(C)C1CCC(C)CC1O')).toBe(10);
+    // camphor: 10 ¹³C signals, the gem-dimethyl pair at 19.8 and 19.1 ppm (NMRShiftDB2 Problem of
+    // the Month 2013-05, C10H16O; Wenkert et al., J. Chem. Soc. D 1969, 1433)
+    expect(carbons('CC1(C)[C@@H]2CC[C@@]1(C)C(=O)C2')).toBe(10);
+    expect(carbons('CC1(C)C2CCC1(C)C(=O)C2')).toBe(10);
+    // no stereocentre: isobutanol's two CH₃ are enantiotopic, one signal (Mislow & Raban, Top.
+    // Stereochem. 1967, 1, 1), so 3 carbons; a phenyl ring's ortho pair stays one (it turns)
+    expect(carbons('CC(C)CO')).toBe(3);
+    expect(carbons('CC(O)c1ccccc1')).toBe(6);
+    // a meso and a C2-type structure: the halves alike (cis-1,2-dimethylcyclohexane: 4 signals)
+    expect(carbons('C[C@@H](O)[C@H](C)O')).toBe(2);
+    expect(carbons('C[C@@H]1CCCC[C@@H]1C')).toBe(4);
+  });
+  it('works the symmetry classes out quickly for a 1,200-atom chain (G4-08)', () => {
+    const n = 1200;
+    const atoms = Array.from({ length: n }, (_, i) => ({ z: 6, isotope: 0, chg: 0, impHs: i === 0 || i === n - 1 ? 3 : 2 }));
+    const bonds = Array.from({ length: n - 1 }, (_, i) => [i, i + 1, 1] as [number, number, number]);
+    const t0 = performance.now();
+    const cls = symmetryClasses(atoms, bonds);
+    // (was about 1.9 s; the classes pair each atom with its mirror atom from the other end)
+    expect(new Set(cls).size).toBe(n / 2);
+    expect(cls[0]).toBe(cls[n - 1]);
+    expect(performance.now() - t0).toBeLessThan(1500);
   });
 });
 
