@@ -1560,7 +1560,8 @@ class CdxmlWriter {
     // ChemDraw's variable spacing (lines as close as their ink lets them) is CaptionLineHeight
     // "variable" with no LineHeight; LineHeight "auto" is its looser single spacing
     const ink = !!c.inkLines && fixed === undefined;
-    this.set(t, 'LineHeight', fixed ? f2(fixed) : starts.length > 1 && !ink ? 'auto' : null);
+    // (on one line too: with no line height ChemDraw's text is read as variable, and a line added later would close up)
+    this.set(t, 'LineHeight', fixed ? f2(fixed) : !ink ? 'auto' : null);
     // ChemDraw 25 writes a set line height here too, and its CDX reader spaces lines by this one
     if (fixed) this.set(t, 'CaptionLineHeight', f2(fixed));
     else if (ink) this.set(t, 'CaptionLineHeight', 'variable');

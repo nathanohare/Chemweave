@@ -293,11 +293,7 @@ const FILES: { name: string; make: () => Promise<Uint8Array> }[] = [
  * the same file still fails. Each is a bug to fix; the test fails when the file starts to match, so
  * its entry goes.
  */
-const KNOWN_DIFFERENT: Record<string, { why: string; each: RegExp }> = {
-  'Scheme.rxn': { why: 'the product moves closer to the starting material (from 13.9 to 7.1 Å along, measured from the first atom)', each: /^line 2[2-4]: "1[3-5]\.\d 0\.\d {4}0\.0000 [CO] .*" then "[78]\.\d 0\.\d {4}0\.0000 [CO] .*"$/ },
-  'Talk.pptx': { why: 'the slide drawing\'s CDXML gains CaptionLineHeight="variable" on its caption', each: /^ppt\/tags\/tag\d+\.xml: first difference at character \d+: .* then .*&quot; CaptionLineHeight=&quot;variable&quot;&gt;.*$/ },
-  'Poster.pptx': { why: 'the design\'s CDXML gains CaptionLineHeight="variable" on its caption', each: /^ppt\/tags\/tag\d+\.xml: first difference at character \d+: .* then .*&quot; CaptionLineHeight=&quot;variable&quot;&gt;.*$/ },
-};
+const KNOWN_DIFFERENT: Record<string, { why: string; each: RegExp }> = {};
 
 describe('open, save unchanged, compare (R2)', () => {
   for (const f of FILES) {

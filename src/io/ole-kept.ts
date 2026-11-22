@@ -3,7 +3,7 @@
 // that aren't read here, and the picture is ChemDraw's own, so a drawing of it here could only
 // come close.
 
-import { Doc } from '../model';
+import { Doc, type Arrow, type Caption, type Shape } from '../model';
 import type { Vec } from '../geom';
 import { extractDrawing } from './clipboard';
 import { bytesHash } from './ooxml';
@@ -54,20 +54,33 @@ export function mergeDrawing(doc: Doc, src: Doc, map: (p: Vec) => Vec): MergedId
   }
   const caps = new Map<number, number>(), shapes = new Map<number, number>(), arrows = new Map<number, number>();
   const maps = { atoms: ids, captions: caps, shapes, arrows };
-  for (const c of src.captions.values()) {
-    const { id, ...rest } = structuredClone(c);
-    const p = map(c);
-    caps.set(id, doc.addCaption({ ...rest, x: p.x, y: p.y }).id);
+  // texts, shapes and arrows in the drawing's own order (by id), so the copies keep it: a drawing
+  // saved as CDXML (whose elements are numbered by their ids) and merged in again numbers alike
+  const rest3: ({ k: 'c'; o: Caption } | { k: 's'; o: Shape } | { k: 'r'; o: Arrow })[] = [
+    ...[...src.captions.values()].map((o) => ({ k: 'c' as const, o })),
+    ...[...src.shapes.values()].map((o) => ({ k: 's' as const, o })),
+    ...[...src.arrows.values()].map((o) => ({ k: 'r' as const, o })),
+  ].sort((x, y) => x.o.id - y.o.id);
+  for (const t of rest3) {
+    if (t.k === 'c') {
+      const { id, ...rest } = structuredClone(t.o);
+      const p = map(t.o);
+      caps.set(id, doc.addCaption({ ...rest, x: p.x, y: p.y }).id);
+    } else if (t.k === 's') {
+      const s = t.o;
+      const { id, ...rest } = structuredClone(s);
+      const a = map({ x: s.x1, y: s.y1 }), b = map({ x: s.x2, y: s.y2 });
+      shapes.set(id, doc.addShape({ ...rest, x1: a.x, y1: a.y, x2: b.x, y2: b.y }).id);
+    } else {
+      const r = t.o;
+      const { id, ...rest } = structuredClone(r);
+      arrows.set(id, doc.addArrow({ ...rest, tail: map(r.tail), head: map(r.head) }).id);
+    }
   }
-  for (const s of src.shapes.values()) {
-    const { id, ...rest } = structuredClone(s);
-    const a = map({ x: s.x1, y: s.y1 }), b = map({ x: s.x2, y: s.y2 });
-    shapes.set(id, doc.addShape({ ...rest, x1: a.x, y1: a.y, x2: b.x, y2: b.y }).id);
-  }
-  for (const r of src.arrows.values()) {
-    const { id, ...rest } = structuredClone(r);
-    if (rest.step) rest.step = remapStep(rest.step, maps);
-    arrows.set(id, doc.addArrow({ ...rest, tail: map(r.tail), head: map(r.head) }).id);
+  // (a step's texts and shapes may come after its arrow)
+  for (const id of arrows.values()) {
+    const step = doc.arrows.get(id)?.step;
+    if (step) doc.updateArrow(id, { step: remapStep(step, maps) });
   }
   remapFrames(doc, maps);
   // what the copies name by id (a ring fill's atoms, a pin, a tied caption…) names the copies
