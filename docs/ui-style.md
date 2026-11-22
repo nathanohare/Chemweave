@@ -30,9 +30,9 @@ These came first and every later rule builds on them.
 | S6 | The lock icon is always visible on every toolbox and on the side panel; no empty row above the commands. | Locking must always be one click away, without wasted height. |
 | S7 | Toolboxes pinned under the ribbon fuse with it (minimal dark padding); no gray strip under the ribbon. | They read as one control surface. |
 | S8 | The Quick Access Toolbar has a divider after its ▾ and minimal spacing between buttons. | Small screens. |
-| S9 | New canvases open at 100% with the top of the page in view. | People start drawing at the top, at real size. |
+| S9 | New canvases open at 100% with the top of the page in view (replaces Fit, which fitted the first page in the window). | People start drawing at the top, at real size. |
 | S10 | Canvas mode starts on the Select tool for new and opened tabs. | A stray click must not draw. |
-| S11 | No first-run pop-ups over the canvas. | They cover the work and are dismissed unread. |
+| S11 | No first-run pop-ups over the canvas (replaces the welcome card shown on first launch). | They cover the work and are dismissed unread. |
 | S12 | A template window appears over the new blank file, categories left and cards right; a click outside closes it; one shared window for every mode. | Office's New window, the same everywhere. |
 | S42 | Menus never break into columns. Long menus are regrouped into submenus, and a short window scrolls the menu. | Columns are hard to scan and jump around between window sizes. |
 | S43 | File tabs sit in the menu row by default (their own row is a setting); tabs collapse to icons with the name in a tooltip; the ribbon does not fold by itself on short windows unless turned on. The OS title bar is hidden and thin tabs are merged. | Height (UI rule 4). |
@@ -51,7 +51,7 @@ These came first and every later rule builds on them.
 | S56 | The Warnings button sits at the far right of the tab row; the warning mark default is the red square, with the soft disc as an option. | Always in the same place; the square reads as a warning. |
 | S57 | Speaker notes are one line by default; less padding left of the slide number; the New Slide button is centered. | Height. |
 | S58 | Developer readouts (Speed panel, stress test) stay under View ▸ Developer Tools, off by default, in one Developer menu rather than bar items. | Users never need them. |
-| S83 | Canvas ribbon: keep labels where there is room (U10) for now; the rest waits for the Canvas ribbon reorganization discussion. | Open question; don't rebuild it piecemeal. |
+| S83 | Canvas ribbon: keep labels where there is room for now; the rest waits for the Canvas ribbon reorganization discussion. | Open question; don't rebuild it piecemeal. |
 | S87 | Side Panel defaults: floating top right in Canvas and Design; closed by default in Document, Spreadsheet and Presentation; remembered per mode. | Office modes have their own panes; drawing modes use it all the time. |
 
 ## Controls and consistency
@@ -95,7 +95,7 @@ These came first and every later rule builds on them.
 | S27 | Subscript formulas and raise charges in all UI text (BF₄⁻, [M+H]⁺), Knowledge Base tables and headings included; minus signs (−), not hyphens, for negative values. | Chemists read flat formulas as typos. |
 | S28 | Tooltips describe the command; they do not say "click where it goes". | The tooltip is read before clicking. |
 | S29 | American spelling also in saved data shown in the UI (palette names from older versions). Proper names keep their own spelling; command search still accepts British words. | UI rule 2, applied to everything shown. |
-| S70 | Menu paths use ▸; "cursor" not "caret"; "style" or "formatting" not "look"; "calculate" not "work out"; Remove, Undo, Restore; "custom" not "your own"; "Chemweave" not "the program"; "X type"; Title Case for commands, buttons and window titles. | Standard, consistent wording (wording audit 2). |
+| S70 | Menu paths use ▸; "cursor" not "caret"; "style" or "formatting" not "look"; "calculate" not "work out"; Remove, Undo, Restore; "custom" not "your own"; "Chemweave" not "the program"; "X type"; Title Case for commands, buttons and window titles. | Standard, consistent wording. |
 | S71 | Standard names, with Nate's edits: Flip Horizontal (Left-Right), Flip Vertical (Top-Bottom), Preserve Stereochemistry, Chemical Abbreviation Tooltips, Pin to Nearest Structure; keep Depth Shading. | UI rule 1. |
 | S72 | Mode names are the short names (Canvas, Document, Presentation, Spreadsheet, Design) in tabs, ribbons and submenus, with no parentheses. In the New menu and the start and template view, items follow Office: "Blank canvas", "Blank document", "Blank presentation", "Blank spreadsheet", "Blank design". | Short names fit; Office's New wording is familiar. |
 | S73 | Warning tooltips are short, for example "C has 5 bonds (max 4)". | Read at a glance. |
@@ -108,7 +108,7 @@ These came first and every later rule builds on them.
 | S30 | Canvas teal throughout Canvas mode, including the typed-text frame, selection, hover and drawing marks, checkboxes and CSS fallbacks; dark-theme accents are muted (Canvas #4ea9bc). | UI rule 5. |
 | S31 | Selecting any part of a structure analyzes the whole structure; one carbon never reads CH₄. | Chemists mean the molecule. |
 | S32 | Dragging a bond's end atom keeps the bond length; Alt for any length; Shift for straight. | ChemDraw's behavior. |
-| S33 | A typed atom always becomes an atom (no checkbox; Undo keeps the text). | One predictable result; Undo for the exception. |
+| S33 | A typed atom always becomes an atom (no checkbox; Undo keeps the text) (replaces a setting that could turn this off). | One predictable result; Undo for the exception. |
 | S34 | Brackets drawn as a pair select together. | They are one object to the chemist. |
 | S35 | Visual polish: no notches at bond joins, a single selection tint, no dashed box round a straight arrow. | Clean drawing. |
 | S36 | Clean Up on an already tidy structure does nothing and says so. | It must never make a good drawing worse. |
@@ -121,8 +121,8 @@ These came first and every later rule builds on them.
 | S75 | Bond-line ends default to Slightly round, with Round, Half round and Square still selectable; centered double bonds meet the ring bond with no gap. | Matches print expectations. |
 | S76 | A key-set hotkey highlight holds only while the mouse is still and follows the pointer once it moves; ChemDraw's sticky way is an opt-in box. | Less surprise; ChemDraw users can opt in. |
 | S77 | The Canvas shows a page grid with fixed page edges; the hatched page edge grows with zoom; scrolling stops a thin band past the page edge (spare room right and down). | The page is the document. |
-| S78 | Newman projections: one wedge and one hashed wedge per carbon; eye style A and ring arc A; no rotated label text; text 2 pt under caption size; textbook angles by default; the front-on eye icon only on the tool button. | Textbook convention. |
-| S79 | Tilt handles show only while a Perspective tool is active. | They get in the way otherwise. |
+| S78 | Newman projections: one wedge and one hashed wedge per carbon; the viewing eye drawn with a pupil and the ring arc as a dashed gray line (both can be changed in Settings ▸ Newman Projections); no rotated label text; text 2 pt under caption size; textbook angles by default; the front-on eye icon only on the tool button. | Textbook convention. |
+| S79 | Tilt handles show only while a Perspective tool is active (replaces showing them beside the rotate handle all the time). | They get in the way otherwise. |
 | S80 | In a slide show, going back glides on canvas slides; normal slides go back instantly, as in PowerPoint. | PowerPoint's behavior for normal slides. |
 
 ## When a rule changes

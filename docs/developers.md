@@ -41,7 +41,7 @@ Every change follows these, whoever writes it:
 - **Screens, menus and wording** follow the [UI style guide](ui-style.md) (rules S1 to S87). Read it before any UI work, and add Nate's new decisions to it in the same change. `tests/ui-text-lint.test.ts` checks the wording on every pull request.
 - **Chemistry answers come from outside the code** (standing rule R8). A test's expected chemistry value (a mass, a formula, a shift, a name, a hazard, a green-chemistry rank) comes from a cited published source (a paper, a handbook, PubChem, NIST, IUPAC) or from Nate's reference molecules, with the reference in a comment next to it. Never take it from running the code under test: a test that copies the program's own answer can only show that the answer didn't change, not that it is right. Never take solvent rankings or other data from the CHEM21 guide (its licence doesn't allow it); bundled data follows the same rule ([CONTRIBUTING](../CONTRIBUTING.md#what-not-to-contribute)).
 - **Places that must stay in step** (below): a change to one place on the list is made in every place beside it, or the pull request says why not.
-- **Every pull request** fills in the [pull request template](../.github/pull_request_template.md): the real-program check, edge cases, licences, screenshots, the mockup picked, new controls, chemistry test values, what it replaces and the places kept in step.
+- **Every pull request** fills in the [pull request template](../.github/pull_request_template.md): the real-program check, edge cases, licenses, screenshots, the mockup picked, new controls, chemistry test values, what it replaces and the places kept in step.
 
 ## Checks
 

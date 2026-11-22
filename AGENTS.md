@@ -4,7 +4,7 @@ Chemweave is a chemistry drawing program with Office-style slides, documents and
 these before changing anything, and follow them as a person contributing would:
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): what may and may not go into the repository (nothing made by
-  ChemDraw, Word, PowerPoint, Excel or another commercial program; libraries only under licences
+  ChemDraw, Word, PowerPoint, Excel or another commercial program; libraries only under licenses
   compatible with GPL version 3, listed in THIRD-PARTY-NOTICES.md).
 - [docs/developers.md](docs/developers.md): how to build and test, the **Rules for changes**, the
   **Checks for the standing rules** (R1 to R16: what each checks and how to run it) and the

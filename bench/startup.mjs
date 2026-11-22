@@ -37,7 +37,7 @@ export const SLOWER_OK_LABEL = 'slower start-up expected';
 
 /**
  * The most the fastest start may take at all, whatever the base branch takes (standing rule R6), in
- * ms. Set at about 2.8 times the 528 ms the Checks machines measured in November 2026 (G4-12), so a
+ * ms. Set at about 2.8 times the 528 ms the Checks machines measured in November 2026, so a
  * busy machine passes and a start-up that has crept up over many pull requests, each under the 25%
  * step, still fails. Raise it only with the reason in the pull request.
  */
