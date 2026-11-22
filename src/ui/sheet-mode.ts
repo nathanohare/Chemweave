@@ -678,6 +678,13 @@ export class SheetMode {
       // on (as text is anyway, where it has formulas) or off for these cells
       case 'format-chem': this.style('Formula style', { chem: this.chemShown() ? false : true }); break;
       case 'merge-cells': this.mergeCells(); break;
+      // the objects kept from Excel (not shown here), for a sheet that shouldn't take them back (review F2-R11)
+      case 'remove-embedded-objects': {
+        const n = v.sheet.ole?.length ?? 0;
+        if (n) this.edit('Remove Embedded Objects', (s) => { s.removeOle(); });
+        this.host.flash(n ? `${n} embedded object${n > 1 ? 's' : ''} removed from this sheet.` : 'This sheet has no embedded objects.');
+        break;
+      }
       case 'format-general': this.style('Number format', { numFmt: undefined }); break;
       case 'format-number': this.style('Number format', { numFmt: FORMATS.number }); break;
       case 'format-percent': this.style('Number format', { numFmt: FORMATS.percent }); break;

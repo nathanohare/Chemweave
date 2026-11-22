@@ -73,7 +73,7 @@ const parse = (t: string) => new DOMParser().parseFromString(t, 'application/xml
 describe('objects embedded in an Excel sheet (G2-01)', () => {
   it('says so on opening, and does not call the twin shape a lost picture', async () => {
     const { warnings } = await readXlsx(book(false));
-    expect(warnings).toEqual(['This workbook has 1 embedded object (1 ChemDraw structure). It isn\'t shown here, and it is kept for Excel when you save, at the cells it was placed over.']);
+    expect(warnings).toEqual(['This workbook has 1 embedded object (1 ChemDraw structure). It isn\'t shown here, and it is kept for Excel when you save, at the cells it was placed over (Edit ▸ Data Tools ▸ Remove Embedded Objects removes it).']);
   });
 
   for (const withNote of [false, true]) {
@@ -249,5 +249,18 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml');
     const { warnings } = await readXlsx(pkg.build());
     expect(warnings.join(' ')).toMatch(/left out if you save over this file: .*1 embedded object whose data isn't in the file/);
+  });
+
+  it('removes the kept objects with Remove Embedded Objects, and Undo brings them back (review F2-R11)', async () => {
+    const { book: wb } = await readXlsx(book(false));
+    const sh = wb.sheets[0];
+    expect(sh.ole).toHaveLength(1);
+    let n = 0;
+    wb.edit('Remove Embedded Objects', () => { n = sh.removeOle(); });
+    expect(n).toBe(1);
+    expect(sh.ole ?? []).toHaveLength(0);
+    expect(strFromU8(unzipSync(await writeXlsx(wb, pictures))['xl/worksheets/sheet1.xml'])).not.toContain('<oleObject');
+    wb.undo();
+    expect(sh.ole).toHaveLength(1);
   });
 });
