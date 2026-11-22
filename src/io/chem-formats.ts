@@ -93,6 +93,11 @@ export interface FMol {
   sup?: { atoms: number[]; label: string }[];
   /** The molfile's chiral flag: the wedges show the absolute configuration. */
   chiral?: boolean;
+  /**
+   * Written here with the chiral flag 0: a structure whose wedged centres are in the absolute
+   * collection (STEABS) had an Abs flag, beside structures without one (review F1d-R04).
+   */
+  absAsFlags?: boolean;
 }
 export type FArrowKind = 'synthesis' | 'retro' | 'equilibrium' | 'resonance';
 export interface FScene {
@@ -388,7 +393,7 @@ function v3000At(lines: string[], from: number, name?: string, keepSup = false, 
     }
   }
   hFromValence(atoms, bonds, vals);
-  const mol: FMol = { atoms, bonds, ...(name ? { name } : {}), ...(chiral ? { chiral } : {}) };
+  const mol: FMol = { atoms, bonds, ...(name ? { name } : {}), ...(chiral ? { chiral } : {}), ...(ours && !chiral ? { absAsFlags: true } : {}) };
   return { mol: keepSup ? withSup(mol, sup) : contract(mol, sup, ours), end: end + 1 };
 }
 
@@ -1082,10 +1087,24 @@ export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number): 
  * the drawing's atoms for the file's.
  */
 function addAbsFlags(doc: Doc, m: FMol, ids: number[]): void {
-  if (!absFlag(m)) return;
   const part = m.atoms.map((_, i) => i);
   const top = (i: number): number => (part[i] === i ? i : (part[i] = top(part[i])));
   for (const b of m.bonds) part[top(b.a)] = top(b.b);
+  if (m.absAsFlags) {
+    // (written here, flag 0: a structure whose wedged centres not in an and or or group are all
+    // abs had an Abs flag, beside one without; it comes back as that flag; review F1d-R04)
+    const centres = new Map<number, number[]>();
+    for (const b of m.bonds) if (b.stereo === 'wedge' || b.stereo === 'hash') centres.set(top(b.a), [...(centres.get(top(b.a)) ?? []), b.a]);
+    for (const [p, list] of centres) {
+      const plain = list.filter((k) => !m.atoms[k]?.enh || m.atoms[k].enh!.type === 'abs');
+      if (!plain.length || plain.some((k) => m.atoms[k]?.enh?.type !== 'abs')) continue;
+      for (const k of plain) if (ids[k] !== undefined) doc.updateAtom(ids[k], { enhStereo: undefined });
+      const atoms = m.atoms.flatMap((_, i) => (top(i) === p && ids[i] !== undefined ? [ids[i]] : []));
+      if (atoms.length) addChiralFlag(doc, atoms, 'Absolute');
+    }
+    return;
+  }
+  if (!absFlag(m)) return;
   const wedged = new Set(m.bonds.filter((b) => (b.stereo === 'wedge' || b.stereo === 'hash') && !m.atoms[b.a]?.enh).map((b) => top(b.a)));
   for (const p of wedged) {
     const atoms = m.atoms.flatMap((_, i) => (top(i) === p && ids[i] !== undefined ? [ids[i]] : []));

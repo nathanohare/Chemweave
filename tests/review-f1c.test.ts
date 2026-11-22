@@ -25,6 +25,10 @@ const L = ACS_1996.bondLength;
 const newDoc = () => { const d = new Doc(); d.style = { ...ACS_1996 }; return d; };
 const open = (name: string, text: string) => sceneToDoc(readScene(chemFormatOf(name, text)!, text)!, ACS_1996).doc;
 const smiles = (mb: string) => { const m = RDKit.get_mol(mb); try { return m ? m.get_smiles() : ''; } finally { m?.delete(); } };
+/** RDKit's CXSMILES of a molfile, without its coordinates (wD: wedges; a:, o:, &: stereo groups). */
+const cxsmiles = (mb: string) => { const m = RDKit.get_mol(mb); try { return m ? m.get_cxsmiles().replace(/\|\([^)]*\),?/, '|') : ''; } finally { m?.delete(); } };
+/** Two L-alanines ((S)-alanine, PubChem CID 5950, as RDKit writes it), the first one's centre in the absolute group. */
+const ALANINES = 'C[C@H](N)C(=O)O.C[C@H](N)C(=O)O |wD:1.0,7.5,a:1|';
 const flagOf = (mol: string) => (mol.includes('V3000') ? /COUNTS \d+ \d+ \d+ \d+ (\d)/.exec(mol)![1] : mol.split('\n')[3].slice(12, 15).trim());
 
 /** (S)-alanine at (x, y), with a chiral flag if asked; its atom ids. */
@@ -97,22 +101,38 @@ describe('several structures in one molfile and its one chiral flag (F1c-R03)', 
     p.bulk(() => { addMolfile(p, mol, 0, 0); });
     expect(flagsLeftToRight(p)).toEqual(['Absolute', 'Absolute']);
   });
-  it('an Abs structure beside an unflagged wedged one: written as V3000 so the second stays relative, and each comes back as drawn', () => {
+  it('an Abs structure beside an unflagged wedged one: written as V3000, the Abs one\'s centre absolute, the other left as drawn, and each comes back as drawn (F1d-R04)', () => {
     const d = newDoc();
     const abs = alanineAt(d, 0, 0, 'Absolute');
     alanineAt(d, 5 * L, 0);
     const w = writeMolFile(d);
     expect(w.text).toMatch(/V3000/);
     expect(w.notes).toEqual(['written as V3000, since V2000 can\'t hold structures with and without an Abs chiral flag']);
-    expect(flagOf(w.text)).toBe('1');
-    // only the unflagged structure's centre (atom 7, the first of the second alanine) is in an or group
-    expect(w.text).toMatch(/MDLV30\/STEREL1 ATOMS=\(1 7\)/);
-    expect(w.text).not.toMatch(/STEREL1 ATOMS=\(\d+ 1\b/);
-    const back = open('a.mol', w.text);
-    expect(flagsLeftToRight(back)).toEqual(['Absolute', null]);
-    expect([...back.atoms.values()].filter((a) => a.enhStereo).map((a) => a.enhStereo)).toEqual([{ type: 'or', group: 1 }]);
+    // the file's flag 0; only the Abs structure's centre (atom 1) in the absolute collection, no or group
+    expect(flagOf(w.text)).toBe('0');
+    expect(w.text).toMatch(/MDLV30\/STEABS ATOMS=\(1 1\)/);
+    expect(w.text).not.toMatch(/STEREL|STERAC/);
+    // (RDKit: the first alanine's centre absolute, the second's plain: no "or1" on it)
+    expect(cxsmiles(w.text)).toBe(ALANINES);
+    for (let round = 0; round < 2; round++) {
+      const back = open('a.mol', round ? writeMolFile(open('a.mol', w.text)).text : w.text);
+      expect(flagsLeftToRight(back), `round ${round}`).toEqual(['Absolute', null]);
+      expect([...back.atoms.values()].filter((a) => a.enhStereo), `round ${round}`).toEqual([]);
+    }
     // the Abs structure alone is still plain V2000 with 1
     expect(flagOf(toMolfile(d, abs, '', { files: true }).molblock)).toBe('1');
+  });
+  it('an unflagged neighbour never gains an or group, beside one or two Abs structures, in any order (F1d-R04)', () => {
+    for (const order of [['Absolute', undefined, undefined], [undefined, 'Absolute', undefined], ['Absolute', undefined, 'Absolute']] as (ChiralFlag | undefined)[][]) {
+      const d = newDoc();
+      order.forEach((f, i) => alanineAt(d, i * 5 * L, 0, f));
+      const text = writeMolFile(d).text;
+      expect(text, String(order)).not.toMatch(/STEREL|STERAC/);
+      expect(cxsmiles(text), String(order)).not.toMatch(/o\d|&\d/);
+      const back = open('a.mol', text);
+      expect(flagsLeftToRight(back), String(order)).toEqual(order.map((f) => f ?? null));
+      expect([...back.atoms.values()].some((a) => a.enhStereo), String(order)).toBe(false);
+    }
   });
 });
 

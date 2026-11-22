@@ -575,19 +575,17 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
   // and/or groups say which, review F1b-R13)
   const flagGroups = files && racRel && bonds.some((b) => (b.stereo === 1 || b.stereo === 6) && map[b.a] >= 0 && flagOf.get(map[b.a])?.flag !== 'Absolute' && !!flagOf.get(map[b.a])) ? 'a Rac or Rel chiral flag' : null;
   // (Abs structures beside wedged ones with no flag in one file: V2000's one flag would make them
-  // all absolute; V3000 keeps the others relative, each in an or group; review F1c-R03)
+  // all absolute. V3000 says it without touching the others: the file's flag 0, and the Abs
+  // structures' wedged centres in the absolute collection (STEABS), which the reader turns back
+  // into their Abs flags; the others are written as they are drawn; review F1c-R03, F1d-R04)
   const unflagged = (k: number) => map[k] >= 0 && !flagOf.has(map[k]) && !atoms[k].enh;
   const mixedAbs = files && hasAbs && bonds.some((b) => (b.stereo === 1 || b.stereo === 6) && unflagged(b.a)) ? 'structures with and without an Abs chiral flag' : null;
   const because = opts.v3000 ? null : (files ? needsV3000(atoms, bonds) ?? flagGroups ?? mixedAbs : null) ?? big;
   const v3 = !!(opts.v3000 || because);
   if (files && v3 && mixedAbs) {
-    let next = Math.max(0, ...atoms.map((t) => (t.enh?.type === 'or' ? t.enh.group ?? 1 : 0)));
-    const groupOf = new Map<number, EnhancedStereo>();
     for (const b of bonds) {
-      if ((b.stereo !== 1 && b.stereo !== 6) || !unflagged(b.a)) continue;
-      const frag = Math.min(...doc.fragmentOf(map[b.a]));
-      if (!groupOf.has(frag)) groupOf.set(frag, { type: 'or', group: ++next });
-      atoms[b.a] = { ...atoms[b.a], enh: groupOf.get(frag)! };
+      if ((b.stereo !== 1 && b.stereo !== 6) || map[b.a] < 0 || atoms[b.a].enh || flagOf.get(map[b.a])?.flag !== 'Absolute') continue;
+      atoms[b.a] = { ...atoms[b.a], enh: { type: 'abs' } };
     }
   }
   if (files && v3 && racRel) {
@@ -603,7 +601,7 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       atoms[b.a] = { ...atoms[b.a], enh: groupOf.get(f.frag)! };
     }
   }
-  const chiral = hasAbs && (v3 || !racRel);
+  const chiral = hasAbs && (v3 || !racRel) && !(v3 && mixedAbs);
   const extra = files ? { sgroups, chiral } : {};
   const out = { map, unknownLabels: unknown, inLabel, generic: genericAt, sgroups, ...(because ? { v3000Because: because } : {}) };
   if (opts.v3000 || because) return { molblock: v3000Molfile(head, atoms, bonds, extra), ...out };
