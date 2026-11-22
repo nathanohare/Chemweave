@@ -151,6 +151,13 @@ export interface Macros {
 export interface Structure {
   id: number;
   contents: Contents;
+  /**
+   * The molfile this drawing was read from (an SD file's record), with a fingerprint of the drawing
+   * as read (structurePrint): saving an SD file writes the record back unchanged while the drawing
+   * still matches, so 3-D coordinates, the header and anything not drawn (S-groups, query atoms)
+   * are kept. A drawing edited since is written afresh.
+   */
+  source?: { molblock: string; print: string };
 }
 
 export interface Cell {
@@ -274,8 +281,8 @@ export function valueInput(v: Value | CellError): string {
 
 let nextStructureId = 1;
 /** A new structure from a drawing. */
-export function makeStructure(contents: Contents): Structure {
-  return { id: nextStructureId++, contents };
+export function makeStructure(contents: Contents, source?: Structure['source']): Structure {
+  return { id: nextStructureId++, contents, ...(source ? { source } : {}) };
 }
 
 /** A cell with nothing in it and no formatting. */
@@ -673,11 +680,11 @@ export class Sheet {
     else if (old?.compound) this.setCell(row, col, { ...old, compound: undefined });
   }
 
-  /** Put a drawing in a cell (null takes it out). */
-  setStructure(row: number, col: number, contents: Contents | null): void {
+  /** Put a drawing in a cell (null takes it out); `source` is the molfile it was read from, if any. */
+  setStructure(row: number, col: number, contents: Contents | null, source?: Structure['source']): void {
     const old = this.cell(row, col);
     const empty = !contents || !contents.atoms.length && !contents.captions.length && !contents.arrows.length && !contents.shapes.length;
-    this.setCell(row, col, { style: old ? old.style : this.colStyles.get(col), structure: empty ? undefined : makeStructure(contents!), link: old?.link });
+    this.setCell(row, col, { style: old ? old.style : this.colStyles.get(col), structure: empty ? undefined : makeStructure(contents!, source), link: old?.link });
   }
 
   /** Change some formatting of every cell in a range (whole columns change the column's formatting too). */

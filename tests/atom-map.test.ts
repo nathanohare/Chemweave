@@ -7,7 +7,8 @@ import { writeCdxml } from '../src/io/cdxml-write';
 import { Renderer, withMeasure } from '../src/render/renderer';
 import { arialWidth } from '../src/text-metrics';
 import { mapAtoms, applyAtomMap, clearAtomMap, mapColour, MADE_COLOUR, BROKEN_COLOUR } from '../src/morph/atom-map';
-import { toMolfile, addMolfile } from '../src/chem/molfile';
+import { toMolfile } from '../src/chem/molfile';
+import { addMolfile } from '../src/io/chem-formats';
 import { Doc } from '../src/model';
 import { readMapping } from '../src/morph/numbers';
 

@@ -297,6 +297,8 @@ describe('writing drawings in other programs\' formats', () => {
   it('writes V3000 molfiles, SD and RXN files when asked, and reads them back the same', () => {
     const d = draw(readScene('mol', ACETATE_V3000));
     const text = writeMolFile(d, 'acetate', { v3000: true }).text;
+    // (the last COUNTS number is the chiral flag: 0, as a wedge alone shows only the relative
+    // configuration; review F1-R02)
     expect(text).toMatch(/V3000\nM {2}V30 BEGIN CTAB\nM {2}V30 COUNTS \d+ \d+ 0 0 0/);
     expect(text).toMatch(/CHG=-1/);
     expect(text).toMatch(/CFG=[13]/);

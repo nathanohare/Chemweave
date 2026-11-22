@@ -24,7 +24,7 @@ import { ToolboxEditor, initials } from './ui/toolbox-editor';
 import { RibbonEditor } from './ui/ribbon-editor';
 import { readRibbons, applyRibbon, type RibbonInfo, type RibbonsPrefs } from './ui/ribbon-custom';
 import { editPalettes, getPalettes, onPalettes, setPalettes, useDrawingColours, usePaletteMenus } from './ui/palette-ui';
-import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, type Placeholder, outsideValence, Contents, CHIRAL_FLAGS, PICTURE_STYLES, type PictureLook, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, isDataFrame, type PageSetup, type PageWalls } from './model';
+import { Doc, Atom, Bond, type BondDisplay, type Arrow, PARTIAL, Caption, Shape, type TextRun, type Placeholder, outsideValence, Contents, PICTURE_STYLES, type PictureLook, type HighlightStyle, type ShapeMath, PAPER, keepOnPage, isDataFrame, type PageSetup, type PageWalls } from './model';
 import { Renderer, measureText, forgetTextWidths, WARN_LOOKS, type WarnLook } from './render/renderer';
 import { Editor, TOOLS, ringsWereFilled, setMarkTint, type HighlightToggle, type Selection } from './editor/editor';
 import { LENGTH_UNITS, setAidTint } from './editor/cursor-aids';
@@ -34,7 +34,8 @@ import { defaultColumns } from './editor/grid-arrange';
 import { askGridLayout, type GridPick } from './ui/grid-picker';
 import { groupSelection, selectedGroups } from './editor/groups';
 import { chemistrySelection, loneStructure, repeatsOnAll } from './editor/lone-pick';
-import { readCdxml, ReadStats } from './io/cdxml';
+import { readCdxml, ReadStats, frameName } from './io/cdxml';
+import { onFrameRedrawn } from './design/frame-redrawn';
 import { readCml } from './io/cml';
 import { ChemClient } from './chem/client';
 import type { FragmentResult } from './worker/chem-worker';
@@ -65,15 +66,16 @@ import { rGroupGrid, type RGroupRow } from './ui/rgroup-grid';
 import type { Rect, Vec } from './geom';
 import { isCurved } from './objects';
 import { captionPlaces, fragmentRuns } from './chem/fragments';
-import { toMolfile, addMolfile } from './chem/molfile';
+import { toMolfile } from './chem/molfile';
 import { molfileOrSmiles } from './chem/text-molfile';
 import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeSign, chemicalCaptions, groupedIonFragments, groupedIons, placeSpecies, speciesSmiles, type PlacedSpecies } from './chem/species';
 import { bestFit, fitMove, fitMatters } from './chem/orient';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blankCycle, type CycleLook } from './chem/cycles';
+import { addChiralFlag, structureFlag, type ChiralFlag } from './chem/chiral-flag';
 import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
-  nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, OWN_FORMAT, CDX_FORMAT, setWordObjects, embeddedPicture, packFormats } from './io/clipboard';
+  nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, nativeClipboardDrawing, pasteDrawing, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
 import { writeCdxml } from './io/cdxml-write';
 import { WORKSPACE, folderOf } from './io/workspace-file';
@@ -192,7 +194,7 @@ import { idText, labelClashes, parseIdStart, type IdStyle } from './chem/compoun
 import { arrowKind, schemeItems, isReactionArrow, reactionSteps, itemFinder, plainMeasure } from './chem/reaction';
 import { canShowGuides, guidesOn as arrowGuidesOn, plainReactionArrow } from './chem/arrow-text';
 import { stoichiometryBook, type StoichRow, type StoichRole } from './chem/stoichiometry';
-import { isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
+import { cxSmiles, cxSmilesLeftOut, isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
 import { showBalance } from './ui/balance-dialog';
 import { withoutCharge } from './chem/formula';
 import { ORBITAL_KINDS, ORBITAL_LOOKS, angleOfDir, openDirection, orbitalAtom, orbitalShapes, orbitalsAmong, putOrbital, readAngle, readOrbital, redrawOrbital, takenDirections, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from './chem/orbitals';
@@ -279,7 +281,7 @@ import type { SiView } from './si/manuscript';
 import { JournalFolder, journalOf } from './si/journal';
 import type { SiFolder as SiFolderT } from './si/folder';
 import type { SiAccess } from './ui/doc-si';
-import { readScene, sceneToDoc } from './io/chem-formats';
+import { addMolfile, readScene, sceneToDoc } from './io/chem-formats';
 import { cellName, colOf, rowOf } from './sheet/refs';
 import { checkDrawings, type PlacedDrawing } from './ui/mode-problems';
 import { StructurePictures } from './ui/structure-pictures';
@@ -405,6 +407,8 @@ function applyModeColours(mode: Parameters<typeof applyModeColoursOnly>[0], c: M
   editor.requestScene();
 }
 const chem = new ChemClient(document.baseURI);
+// a copy carries its structures' SMILES as text too, once the chemistry engine is there
+setSmilesMaker((molblock) => (chem.ready ? chem.molToSmiles(molblock).catch(() => null) : Promise.resolve(null)));
 // (the engine stopped on a structure or hung, and was restarted: say so where the user looks)
 chem.onRestart = (message) => flash(message, 8000);
 const checks = new StructureChecks(doc);
@@ -1267,10 +1271,11 @@ async function pasteFrom(read: () => Pasted | Promise<Pasted>): Promise<void> {
       const k = Math.min(1, (0.95 * (area.x2 - area.x1)) / Math.max(1, b.x2 - b.x1), (0.95 * (area.y2 - area.y1)) / Math.max(1, b.y2 - b.y1));
       if (k < 0.999) fitPasted(got.doc, doc.style, L * k);
     }
-    doc.edit('Paste', () => {
-      editor.sel = insertDrawing(doc, got.doc, pastePoint());
-      editor.placeClear(placingPage());
-    });
+    // (anything that fails on the way is undone, and the CDXML copied beside it pasted instead: review F1e-R01)
+    const done = await pasteDrawing(doc, got.doc, pastePoint, (sel) => { editor.sel = sel; editor.placeClear(placingPage()); }, (alt) => fitPasted(alt, doc.style, deck?.master.fitPasted ? deck.master.drawing.bondLength : undefined));
+    if ('error' in done) { editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() }; editor.changed(); flash(done.error, 8000); return; }
+    editor.sel = done.sel;
+    if (done.note) flash(done.note, 8000);
     editor.changed();
     await keepPasteInside();
   } else if (got.kind === 'text') await pasteText(got.text, got.html);
@@ -1381,11 +1386,13 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
   if (isRxn(text) || isReactionSmiles(text)) return pasteReaction(text.trim(), c);
   let mb: string | null = text.includes('M  END') ? text : null;
   const here = sameDrawing('The pasted structure');
+  // (a CXSMILES keeps its enhanced stereo, coordinates and labels; what a drawing can't hold is said)
+  const cx = mb ? null : cxSmiles(text);
   // (a structure the engine can't take, or an engine that stopped, is said even on a quiet paste, and
   // the text is not pasted instead; text that just isn't SMILES is left quietly for a text box)
   let told = false;
-  if (!mb && !/\s/.test(text)) {
-    mb = await chem.smilesToMol(text).catch((e: unknown) => {
+  if (!mb && (cx || !/\s/.test(text))) {
+    mb = await chem.smilesToMol(text.trim()).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : String(e);
       if (!quiet || /chemistry engine/.test(msg)) { told = true; flash(msg, 8000); }
       return null;
@@ -1394,6 +1401,8 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
   if (here.left()) return true;
   if (!mb && told) return true;
   if (!mb) { if (!quiet) flash('Paste a SMILES string or a molfile.'); return false; }
+  const leftOut = cx ? cxSmilesLeftOut(cx.extras) : [];
+  if (leftOut.length) flash(`Pasted the structure; its CXSMILES ${leftOut.join(', ')} are left out, as a drawing has no place for them.`, 6000);
   try {
     let ids: number[] = [];
     doc.edit('Paste', () => {
@@ -1491,6 +1500,12 @@ function paintEnergyPreview(d: EnergyData, canvas: HTMLCanvasElement): void {
   ctx.setTransform(k * dpr, 0, 0, k * dpr, (w / 2 - (box.x1 + bw / 2) * k) * dpr, (h / 2 - (box.y1 + bh / 2) * k) * dpr);
   drawDrawing(ctx, tmp);
 }
+
+// a frame changed in another program is redrawn by any edit that needs it (the edit goes ahead, in
+// its own undo step): said so once, with how to get the other program's drawing back (review F1d-R01)
+onFrameRedrawn((_d, s) => {
+  queueMicrotask(() => flash(`${frameName(s).replace(/^an? /, '').replace(/^./, (c) => c.toUpperCase())} redrawn here. Undo brings back the drawing from the other program.`));
+});
 
 /** Insert ▸ Energy Diagram…, or the selected diagram's numbers to change (`id`, its frame). */
 async function energyDiagram(id: number | null): Promise<void> {
@@ -4462,7 +4477,7 @@ const docFiles: DocxDeps = {
   fonts: bundledFaces,
   smiles: (contents, style) => drawingSmiles(structureDoc(contents, style)),
   // structures as ChemDraw objects (Settings ▸ General)
-  cdx: (contents, style) => cdxmlToCdx(writeCdxml(structureDoc(contents, style), { name: 'Document drawing.cdxml', textMeasure: measureText })),
+  cdx: (contents, style) => cdxmlToCdx(writeCdxml(structureDoc(contents, style), { name: 'Document drawing.cdxml', textMeasure: measureText, cdx: true })),
   get chemdrawObjects() { return officeStructures.docx === 'chemdraw'; },
 };
 
@@ -8508,11 +8523,9 @@ async function readCells(e: ClipboardEvent | null): Promise<ClipboardCells> {
     const text = t ? dec(t[1]) : undefined;
     const own = await nativeFirst([CELLS_FORMAT]);
     if (own) return { own: dec(own[1]), text };
-    const drawing = await nativeFirst([OWN_FORMAT, CDX_FORMAT]);
-    if (drawing) {
-      const [name, data] = drawing;
-      return { drawing: drawingOf(readCdxml(name === CDX_FORMAT ? cdxToCdxml(data) : dec(data)).doc), text };
-    }
+    // (our drawing whole first, then, when that can't be read, as CDXML, then ChemDraw's; G1-11, F1b-R06)
+    const got = await nativeClipboardDrawing();
+    if (got) return { drawing: drawingOf(got), text };
     if (text && looksLikeCdxml(text)) return { drawing: drawingOf(readCdxml(text).doc) };
     if (text) return { text };
     return { picture: !!(await nativeFirst(['PNG', 'CF_ENHMETAFILE', 'CF_DIB'])) };
@@ -9532,11 +9545,8 @@ async function readDocPaste(e: ClipboardEvent | null): Promise<DocPaste> {
   const dec = (b: Uint8Array) => new TextDecoder().decode(b).replace(/\0+$/, '');
   const drawingOf = (d: Doc): Contents => { fitPasted(d, docStyle()); return d.contents(); };
   if (nativeClipboard) {
-    const drawing = await nativeFirst([OWN_FORMAT, CDX_FORMAT]);
-    if (drawing) {
-      const [name, data] = drawing;
-      return { drawing: drawingOf(readCdxml(name === CDX_FORMAT ? cdxToCdxml(data) : dec(data)).doc) };
-    }
+    const got = await nativeClipboardDrawing();
+    if (got) return { drawing: drawingOf(got) };
     const t = await nativeFirst(['CF_UNICODETEXT']);
     const text = t ? dec(t[1]) : '';
     if (looksLikeCdxml(text)) return { drawing: drawingOf(readCdxml(text).doc) };
@@ -13572,9 +13582,7 @@ async function setChiralFlag(): Promise<void> {
   const root = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited;
   if (root === null || !doc.atoms.has(root)) { flash(WHY.structure); return; }
   const atoms = [...doc.fragmentOf(root)].map((id) => doc.atoms.get(id)!);
-  const box = { x1: Math.min(...atoms.map((a) => a.x)), y1: Math.min(...atoms.map((a) => a.y)), x2: Math.max(...atoms.map((a) => a.x)), y2: Math.max(...atoms.map((a) => a.y)) };
-  const L = doc.style.bondLength;
-  const near = [...doc.shapes.values()].find((s) => s.kind === 'symbol' && s.symbol && CHIRAL_FLAGS[s.symbol] && s.x1 < box.x2 + L && s.x2 > box.x1 - L && s.y1 < box.y2 + 2 * L && s.y2 > box.y1 - L);
+  const near = structureFlag(doc, atoms.map((a) => a.id));
   const here = sameDrawing('The chiral flag', 'set');
   const got = await ask('Chiral Flag', [{ name: 'flag', label: 'Flag', value: near?.symbol ?? 'Absolute', options: [
     { value: 'Absolute', label: 'Abs: the structure is one enantiomer, as drawn' },
@@ -13586,10 +13594,7 @@ async function setChiralFlag(): Promise<void> {
   doc.edit('Chiral Flag', () => {
     if (near) doc.removeShape(near.id);
     if (got.flag === 'none') return;
-    const size = doc.style.captionSize;
-    const w = measureText(CHIRAL_FLAGS[got.flag], size) + 4, h = size * 1.15 + 4;
-    const x2 = box.x2 + L * 0.3, y1 = box.y2 + L * 0.6;
-    doc.addShape({ kind: 'symbol', symbol: got.flag, x1: x2 - w, y1, x2, y2: y1 + h });
+    addChiralFlag(doc, atoms.map((a) => a.id), got.flag as ChiralFlag, (t, size) => measureText(t, size));
   });
   editor.changed();
 }

@@ -6,7 +6,7 @@
 // drag, so they move with the pointer). Moving one by hand keeps the new place if it is still on
 // what it was stuck to, and frees it if it was taken away.
 
-import type { Arrow, Doc, Entity, Pin, Shape } from '../model';
+import { CHIRAL_FLAGS, type Arrow, type Doc, type Entity, type Pin, type Shape } from '../model';
 import type { Vec } from '../geom';
 import { add, dist, dot, len, mul, normDegrees, perp, sub } from '../geom';
 
@@ -15,6 +15,8 @@ const REACH = 0.9;
 /** A charge sign may sit further off its atom (in the middle of its ring, as on tropylium). */
 const CHARGE_REACH = 1.6;
 const CHARGES = new Set(['CirclePlus', 'CircleMinus', 'Plus', 'Minus']);
+/** A chiral flag sits a bond length or so below its structure, and may be moved further by hand and stay its flag. */
+const FLAG_REACH = 3;
 const EPS = 1e-3;
 
 interface Frame { o: Vec; u: Vec; v: Vec; s: number; hand: number }
@@ -207,10 +209,17 @@ export function pinSymbols(doc: Doc): void {
  */
 export function followPins(doc: Doc, before?: ReadonlyMap<string, Entity | null>): void {
   if (before) for (const [key, was] of before) {
-    if (key[0] !== 's' || was) continue;
+    if (key[0] !== 's') continue;
     const s = doc.shapes.get(Number(key.slice(1)));
-    const p = s && !s.pin ? pinSymbol(doc, s) : undefined;
-    if (p) doc.updateShape(s!.id, { pin: p });
+    if (!s || s.pin) continue;
+    // a chiral flag stuck to nothing, put down or moved by hand beside a structure without one: it is that structure's (review F1c-R07)
+    if (isFlag(s) && (!was || dist(centreOf(s), centreOf(was as Shape)) > EPS)) {
+      const home = flagHome(doc, s, centreOf(s));
+      if (home !== undefined) doc.updateShape(s.id, { pin: atomPin(doc, home, centreOf(s)) });
+      continue;
+    }
+    const p = !was ? pinSymbol(doc, s) : undefined;
+    if (p) doc.updateShape(s.id, { pin: p });
   }
   if (!hasPins(doc)) return;
   for (const r of doc.arrows.values()) {
@@ -234,10 +243,35 @@ export function followPins(doc: Doc, before?: ReadonlyMap<string, Entity | null>
     if (flips && flips === pinned) Object.assign(patch, mirrorBend(r));
     doc.updateArrow(r.id, patch);
   }
+  const gone: number[] = [];
   for (const s of doc.shapes.values()) {
     if (!s.pin) continue;
     const c = { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
-    const o = settle(doc, s.pin, c, CHARGES.has(s.symbol ?? '') ? CHARGE_REACH : REACH, shapeAxis(s));
+    const flag = s.kind === 'symbol' && !!CHIRAL_FLAGS[s.symbol ?? ''];
+    if (flag && s.pin.on === 'atom') {
+      // a chiral flag (review F1c-R07): its atom deleted, it goes to what is left of its structure,
+      // or with the structure when all of it is gone; moved by hand, it is the structure's it is put
+      // beside (one without a flag of its own), or stuck to nothing
+      if (!doc.atoms.has(s.pin.ref[0])) {
+        const rest = before ? survivors(doc, s.pin.ref[0], before) : [];
+        if (before && !rest.length) { gone.push(s.id); continue; }
+        const home = rest.sort((p, q) => dist(doc.atoms.get(p)!, c) - dist(doc.atoms.get(q)!, c))[0];
+        doc.updateShape(s.id, { pin: home === undefined ? undefined : atomPin(doc, home, c) });
+        continue;
+      }
+      if (dist(c, s.pin.was) > EPS) {
+        const home = flagHome(doc, s, c);
+        doc.updateShape(s.id, { pin: home === undefined ? undefined : atomPin(doc, home, c) });
+        continue;
+      }
+    }
+    const o = settle(doc, s.pin, c, flag ? FLAG_REACH : CHARGES.has(s.symbol ?? '') ? CHARGE_REACH : REACH, flag ? null : shapeAxis(s));
+    // (a chiral flag moved by hand is stuck again to its one atom, so it never turns round it)
+    if (flag && o.pin && o.pin !== s.pin && o.pin.ref.length > 1) {
+      const a = doc.atoms.get(o.pin.ref[0])!;
+      const p = o.at ?? c;
+      o.pin = { on: 'atom', ref: [a.id], at: { x: p.x - a.x, y: p.y - a.y }, hand: 1, was: { x: p.x, y: p.y } };
+    }
     if (o.pin === s.pin) continue;
     const patch: Partial<Shape> = { pin: o.pin };
     if (o.at) {
@@ -248,6 +282,39 @@ export function followPins(doc: Doc, before?: ReadonlyMap<string, Entity | null>
     if (o.axis) Object.assign(patch, pointShape({ ...s, ...patch }, o.axis));
     doc.updateShape(s.id, patch);
   }
+  for (const id of gone) doc.removeShape(id);
+}
+
+const isFlag = (s: Shape) => s.kind === 'symbol' && !!CHIRAL_FLAGS[s.symbol ?? ''];
+const centreOf = (s: Pick<Shape, 'x1' | 'y1' | 'x2' | 'y2'>) => ({ x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 });
+/** A pin holding a chiral flag at `c` to one atom, without turning round it (as chiral-flag.ts flagPin). */
+const atomPin = (doc: Doc, id: number, c: Vec): Pin => { const a = doc.atoms.get(id)!; return { on: 'atom', ref: [id], at: { x: c.x - a.x, y: c.y - a.y }, hand: 1, was: { x: c.x, y: c.y } }; };
+
+/** The atom a chiral flag at `c` is stuck to: the nearest within reach whose structure has no other flag. */
+function flagHome(doc: Doc, s: Shape, c: Vec): number | undefined {
+  const reach = FLAG_REACH * doc.style.bondLength;
+  const owned = new Set<number>();
+  for (const o of doc.shapes.values()) if (o !== s && isFlag(o) && o.pin?.on === 'atom' && doc.atoms.has(o.pin.ref[0])) for (const k of doc.fragmentOf(o.pin.ref[0])) owned.add(k);
+  let best: number | undefined, bestD = Infinity;
+  for (const a of doc.atomsNear(c, reach)) { const d = dist(a, c); if (!a.multi && !owned.has(a.id) && d <= reach && d < bestD) { bestD = d; best = a.id; } }
+  return best;
+}
+
+/** What is left of the structure deleted atom `id` was in (its atoms still in the drawing), from the bonds the change took away. */
+function survivors(doc: Doc, id: number, before: ReadonlyMap<string, Entity | null>): number[] {
+  const out = new Set<number>(), seen = new Set<number>([id]), todo = [id];
+  const bondsWas = [...before].filter(([k, v]) => k[0] === 'b' && v).map(([, v]) => v as { a1: number; a2: number });
+  while (todo.length) {
+    const a = todo.pop()!;
+    const next = [...bondsWas.flatMap((b) => (b.a1 === a ? [b.a2] : b.a2 === a ? [b.a1] : [])),
+      ...(doc.atoms.has(a) ? (doc.adj.get(a) ?? []).map((bid) => { const b = doc.bonds.get(bid)!; return b.a1 === a ? b.a2 : b.a1; }) : [])];
+    for (const n of next) {
+      if (seen.has(n)) continue;
+      seen.add(n);
+      if (doc.atoms.has(n)) out.add(n); else todo.push(n);
+    }
+  }
+  return [...out];
 }
 
 /** Whether anything in the drawing is stuck to a structure (nothing to do otherwise). */

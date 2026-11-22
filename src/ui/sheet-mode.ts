@@ -2854,7 +2854,7 @@ const normalizeEol = (t: string) => t.replace(/\r\n/g, '\n').replace(/\n+$/, '')
 function reviveBlock(b: CellBlock): CellBlock {
   return {
     ...b,
-    cells: b.cells.map((row) => row.map((c) => (c ? { ...c, structure: c.structure ? makeStructure(c.structure.contents) : undefined } : undefined))),
+    cells: b.cells.map((row) => row.map((c) => (c ? { ...c, structure: c.structure ? makeStructure(c.structure.contents, c.structure.source) : undefined } : undefined))),
   };
 }
 

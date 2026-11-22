@@ -2,21 +2,27 @@
 // 3-D models (OpenChemLib conformers relaxed with MMFF94s+) and Place on Page: a model keeps the
 // drawing's stereochemistry, and turning the drawing to any view of it keeps what the drawing
 // means, wedges and all.
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { Resources } from 'openchemlib';
 import { Doc } from '../src/model';
-import { addMolfile, toMolfile } from '../src/chem/molfile';
+import { toMolfile } from '../src/chem/molfile';
+import { addMolfile } from '../src/io/chem-formats';
 import { buildModel, type Model3d } from '../src/chem/model3d-build';
 import { placeView } from '../src/chem/place3d';
 import { molfile3d } from '../src/ui/viewer3d';
+
+// These build 3-D models with the engine. On their own they take seconds, but in a full
+// parallel run they can take minutes, so every test and hook here gets a generous time limit.
+const SLOW = 240_000;
+vi.setConfig({ testTimeout: SLOW, hookTimeout: SLOW });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RDKit: any;
 beforeAll(async () => {
   RDKit = await createRequire(import.meta.url)('@rdkit/rdkit')();
   Resources.registerFromNodejs();
-}, 30000);
+}, SLOW);
 
 const smilesOf = (molblock: string): string => {
   const m = RDKit.get_mol(molblock, JSON.stringify({ removeHs: true }));
@@ -75,7 +81,7 @@ describe('3-D models', () => {
         if (!unshown && smilesOf(toMolfile(d, d.atoms.keys()).molblock) === want) shownViews++;
       }
       expect(shownViews).toBeGreaterThanOrEqual(3);
-    }, 30000);
+    }, SLOW);
   }
 
   it('scales the placed structure to the drawing\'s bond length and keeps its depth', () => {

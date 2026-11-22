@@ -119,7 +119,7 @@ export async function writeBatchItem(it: BatchItem, format: Exclude<BatchFormat,
   const d = it.doc;
   switch (format) {
     case 'cdxml': return writeCdxml(d);
-    case 'cdx': return cdxmlToCdx(writeCdxml(d));
+    case 'cdx': return cdxmlToCdx(writeCdxml(d, { cdx: true }));
     case 'mol': return d.atoms.size ? toMolfile(d, d.atoms.keys(), it.name, { species: allSpecies(d) }).molblock : null;
     case 'svg': { const p = recordPicture(d, 4); return p ? pictureSvg(p) : null; }
     case 'png': {
