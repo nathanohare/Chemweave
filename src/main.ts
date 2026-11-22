@@ -11357,7 +11357,7 @@ async function drawingPreferences(): Promise<void> {
     { name: 'supR', label: 'Superscript numbers after R in chemical text (R1 → R¹)', type: 'checkbox', value: String(labelPrefs.superscriptR) },
     { name: 'supRText', label: 'Also in plain text, as you type', type: 'checkbox', value: String(labelPrefs.plainText) },
     { name: 'haptoDeloc', label: 'Draw η³, η⁵ and η⁶ ligands as delocalized (a circle in the ring, an arc over an allyl)', type: 'checkbox', value: String(haptoLook.delocalized),
-      help: 'Only the style: the bonds stay as drawn for SMILES and saving. Chemistry ▸ Structure ▸ Kekulé Form for η Ligand switches one back.' },
+      help: 'Only the style: the bonds stay as drawn for SMILES and saving. Right-click ▸ Structure ▸ Kekulé Form for η Ligand switches one back.' },
     { name: 'mechanism', label: 'Mechanism Arrows', type: 'heading', value: '' },
     { name: 'reroute', label: 'Route mechanism arrows around structures in their path', type: 'checkbox', value: String(editor.options.rerouteArrows),
       help: 'Arrows you bent by hand stay as they are.' },

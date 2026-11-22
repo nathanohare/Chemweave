@@ -64,6 +64,7 @@ A figure wider than the column is shrunk by the journal, which makes its text an
 - **SMILES:** **Edit ▸ Copy As ▸ Copy as SMILES** (Ctrl+Alt+C) copies the selected structures as SMILES; **Edit ▸ Paste Special ▸ Paste SMILES** (Ctrl+Alt+P) draws them. A SMILES string pasted with Ctrl+V is drawn too.
 - **Molfile:** **File ▸ Export ▸ Export Molfile…** saves the selected structures (or all of them) as a .mol file; **Edit ▸ Copy As ▸ Copy as Molfile Text** copies them as text. A molfile pasted with Ctrl+V is drawn.
 - **CDXML text:** **Edit ▸ Copy As ▸ Copy as CDXML Text** copies the drawing as ChemDraw XML.
+- **SVG:** **Edit ▸ Copy As ▸ Copy as SVG** copies the selection (or the whole drawing) as an SVG picture, which stays sharp at any size in Word, PowerPoint, Inkscape and Illustrator. ChemDraw can't read SVG; use plain **Copy** for ChemDraw.
 - **Reactions:** **Edit ▸ Copy As ▸ Copy Reaction as SMILES** copies the selected reaction step (or the only one) as reaction SMILES (starting materials>reagents>products), and **Copy Reaction as RXN** as an MDL RXN file, for electronic notebooks and reaction databases. Paste either with Ctrl+V and the reaction is drawn: starting materials with + between them, the arrow with the reagents over it, and the products.
 - **Many files at once:** **File ▸ Export ▸ Batch Convert…** turns a set of CDXML, CDX, molfile, SD, SMILES, RXN, Marvin, Ketcher, CML and ChemDoodle files into CDXML, CDX, molfiles, SVG or PNG pictures, or one SMILES list. Each record of an SD file and each line of a SMILES file becomes a file of its own, named after its title. The desktop app saves them in a folder you pick or in one zip; the web version saves a zip.
 - **SD files (.sdf):** open in a spreadsheet with one row per structure and its data fields as columns.
@@ -76,7 +77,7 @@ A figure wider than the column is shrunk by the journal, which makes its text an
 
 Double-click a file, or right-click it and choose **Open with ▸ Chemweave**, and it opens in a new tab. A file opened while Chemweave is already running goes to the open window rather than starting a second copy.
 
-- **Windows**: the first time it starts, Chemweave adds itself to the **Open with** list of .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket and .cml files, for you only. **Edit ▸ Settings ▸ Apps and System** chooses which file types it is offered for, including .docx, .pptx and .xlsx. It never makes itself the program that opens a file on a double-click: Windows keeps that choice for you. **Choose Defaults in Windows Settings…** on that page opens Windows' Default apps page, where you can pick Chemweave for each file type. A portable copy leaves the computer's file types alone until you check them yourself. Uninstalling removes it the lists again.
+- **Windows**: the first time it starts, Chemweave adds itself to the **Open with** list of .cdxml, .cdx, .cds, .mol, .sdf, .rxn, .mrv, .ket and .cml files, for you only. **Edit ▸ Settings ▸ Apps and System** chooses which file types it is offered for, including .docx, .pptx and .xlsx. It never makes itself the program that opens a file on a double-click: Windows keeps that choice for you. **Choose Defaults in Windows Settings…** on that page opens Windows' Default apps page, where you can pick Chemweave for each file type. A portable copy leaves the computer's file types alone until you check them yourself. Uninstalling removes it from the lists again.
 - **macOS**: right-click a file and choose **Open With ▸ Chemweave**. To open a file type here every time, select one in Finder, choose **File ▸ Get Info**, pick Chemweave under **Open with** and click **Change All**.
 - **Linux**: Chemweave is in your file manager's **Open With** list for these files; your desktop's Default Applications settings choose the default.
 
@@ -142,7 +143,7 @@ Every kind of tab (canvases, presentations, spreadsheets, documents and designs)
 
 ### Recovery copies
 
-While you work, each tab with unsaved changes is copied every 2 minutes (choose 1 to 30 minutes, or never) to the app's own data folder. Closing the app normally deletes the copies. If it stops without closing (a crash, a power cut, Windows restarting for updates), the next start shows **Recover Unsaved Work**: check the files to reopen and click **Reopen**. Reopened files come back unsaved, under their own names; Save puts a file that had been saved back where it was. **Not Now** keeps the copies for later in **File ▸ Versions and Recovery ▸ Recover Unsaved Work…**, and they are deleted after 7 days (you can change this).
+While you work, each tab with unsaved changes is copied every 2 minutes (choose 1 to 30 minutes, or never) to the app's own data folder. Closing the app normally deletes the copies. If it stops without closing (a crash, a power outage, Windows restarting for updates), the next start shows **Recover Unsaved Work**: check the files to reopen and click **Reopen**. Reopened files come back unsaved, under their own names; Save puts a file that had been saved back where it was. **Not Now** keeps the copies for later in **File ▸ Versions and Recovery ▸ Recover Unsaved Work…**, and they are deleted after 7 days (you can change this).
 
 ### AutoSave
 
@@ -176,7 +177,7 @@ Recovery copies and versions are kept in a folder named `Kept` in the app's loca
 
 **File ▸ Open Recent** lists the last ten files and workspaces you opened or saved, newest first. Click one to open it. If it has been moved or deleted, a message says so and it comes off the list. **Clear Recent Files** empties the list.
 
-The web version keeps a recent list too in Chrome and Edge, which let a page open a file again automatically: the browser asks once for leave to open it. Other browsers (Firefox, Safari) don't allow this, so there the menu stays hidden.
+The web version keeps a recent list too in Chrome and Edge, which let a page open a file again automatically: the browser asks once for permission to open it. Other browsers (Firefox, Safari) don't allow this, so there the menu stays hidden.
 
 ## Printing
 

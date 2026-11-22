@@ -150,11 +150,11 @@ Backgrounds are saved as PowerPoint's own, so PowerPoint (and LibreOffice) shows
 
 ## Design templates
 
-**File ▸ New ▸ Presentation** opens a new deck with a window over it of the same themes, and two starter decks under **Teaching** (a **Lecture** and a **Problem session** with question and answer slides for worked mechanisms); click outside the window to keep the deck as it is. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
-
 **Design & Transitions** tab ▸ **Templates…** (or **Format ▸ Presentation ▸ Slide Templates…**) offers 51 ready-made styles in seven groups: **Light**, **Dark title slide**, **Bright**, **Minimal**, **Bold**, **Classic** and **Chemistry**. Picking one changes the fonts, colors, background and the shapes behind every slide. Your text, structures and pictures stay where they are, and Undo puts the old look back.
 
 Check **Also start new presentations with the template I pick** to make it the starting look for new decks. You can change any part of a template afterwards with **Slide Master…**.
+
+**File ▸ New ▸ Presentation** opens a new deck with a window of the same templates over it, plus two starter decks under **Teaching** (a **Lecture** and a **Problem session** with question and answer slides for worked mechanisms); click outside the window to keep the deck as it is. Turn the window off with the checkbox at its bottom, or in **Settings ▸ Preferences ▸ New Files**.
 
 ### Themes of your own
 
@@ -266,7 +266,7 @@ To put a reference anywhere on a slide as text you can edit, use **Insert ▸ Fo
 
 ### Citing with Zotero
 
-In the desktop app, **Insert ▸ Zotero ▾** works with the Zotero app on your computer (Zotero 7 or later, running), as it does in documents.
+In the desktop app, **Insert** tab ▸ **Zotero ▾** works with the Zotero app on your computer (Zotero 7 or later, running), as it does in documents.
 
 - **Add/Edit Citation** opens Zotero's citation window for the slide showing. The items you pick become the references that slide shows, linked to your Zotero library, and its lines are written as **References on Slide** sets them. Run it again on the same slide to change them.
 - **Add/Edit Bibliography** adds a References slide at the end (or edits the one there), with Zotero writing the list in its citation style.
@@ -335,7 +335,7 @@ A highlight can animate on its own, like a shape in PowerPoint, so it can fade i
 **Review** tab ▸ **New Comment** (Ctrl+Alt+M, **Insert ▸ New Comment**, or right-click ▸ **New Comment**) pins a note to the slide, beside what is selected or in the slide's top corner. The **Comments** pane opens in the right-hand panel with a card to type in; press Enter to save it.
 
 - Each comment shows on the slide as a small marker with the writer's initials and its number. Drag a marker to move it; click it to see its card.
-- On a card: **Reply**, **Resolve** (grayed until deleted; **Reopen** brings it back), **Edit** and **Delete**.
+- On a card: **Reply**, **Resolve** (the card turns gray and stays until you delete it; **Reopen** brings it back), **Edit** and **Delete**.
 - **◀ Previous** and **Next ▶** step through every comment in the deck, going to each one's slide. **Delete All on Slide** clears the slide being edited.
 - **Show Comments** hides or shows the markers and the pane. Markers are only on screen: they are never shown in the slide show, in pictures or in print.
 
@@ -394,7 +394,7 @@ When the show ends, a window lists each slide's time (🎙 marks the ones with n
 - **Full page slides**, one to a page;
 - **Handouts** with 2, 3, 4, 6 or 9 slides a page. Three a page leaves lines beside each slide for notes.
 
-For handouts you can also pick the paper and **Frame the slides**. The printer and copies are selected next (in the system's Print window, or in the Windows app its own Print window), which can also save a PDF.
+For handouts you can also pick the paper and **Frame the slides**. You pick the printer and the number of copies next (in the system's Print window, or in the Windows app its own Print window), which can also save a PDF.
 
 ## Links
 
