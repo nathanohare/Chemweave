@@ -8,7 +8,8 @@ import { readBonds, parseSymbol } from '../src/recognise/to-drawing';
 import { bondLengthPx, labelSizePx, lineWidthPx, refineAtoms, strokeWidthPx, type MeasureBond } from '../src/recognise/measure';
 import { editableFromGraph, editableFromParts, readFrame, snapLook, type PartRead } from '../src/recognise/editable';
 import { partPixels, schemeParts } from '../src/recognise/leftover';
-import { findArrows, isFormula, textLineBoxes, textRuns, type ReadLine } from '../src/recognise/scheme-extras';
+import { chemWord, findArrows, isFormula, textLineBoxes, textRuns, type ReadLine } from '../src/recognise/scheme-extras';
+import { findFrames, withoutFrames } from '../src/recognise/frames';
 import { isStructure, partGap } from '../src/ui/doc-make-editable';
 import { ACS_1996 } from '../src/style';
 import { STYLE_PRESETS } from '../src/drawing-styles';
@@ -358,5 +359,74 @@ describe('Make Editable: arrows of other kinds', () => {
     const a = findArrows(pic(200, 40, [[10, 20, 180, 20, 2]]), 20);
     expect(a.map((x) => [x.headStyle, x.tailStyle])).toEqual([['none', 'none']]);
     expect(findArrows(pic(60, 60, [[10, 10, 30, 50, 3], [30, 50, 50, 10, 3]]), 20)).toHaveLength(0);
+  });
+});
+
+describe('Make Editable: boxes round structures, and formulas as the text reader reads them', () => {
+  const blank = (w: number, h: number) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4).fill(255) });
+  const fill = (p: { width: number; data: Uint8ClampedArray }, x1: number, y1: number, x2: number, y2: number) => {
+    for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) p.data.set([0, 0, 0, 255], (y * p.width + x) * 4);
+  };
+  /** A box's four sides, `lw` thick, with `r` of each corner left out (rounded) and a shadow `s` thick on the right and bottom. */
+  const box = (p: ReturnType<typeof blank>, x1: number, y1: number, x2: number, y2: number, lw: number, r = 0, s = 0) => {
+    fill(p, x1 + r, y1, x2 - r, y1 + lw - 1);
+    fill(p, x1 + r, y2 - lw + 1 - s, x2 - r, y2);
+    fill(p, x1, y1 + r, x1 + lw - 1, y2 - r);
+    fill(p, x2 - lw + 1 - s, y1 + r, x2, y2 - r);
+    // a rounded corner's arc, roughly: a short diagonal
+    if (r) for (const [cx, cy, dx, dy] of [[x1, y1, 1, 1], [x2, y1, -1, 1], [x1, y2, 1, -1], [x2, y2, -1, -1]]) {
+      for (let i = 0; i <= r; i++) fill(p, Math.min(cx + dx * i, cx + dx * i), cy + dy * (r - i), cx + dx * i, cy + dy * (r - i));
+    }
+  };
+
+  it('finds a plain box and a rounded box with a shadow, and takes them out of the picture', () => {
+    const p = blank(400, 200);
+    box(p, 10, 10, 180, 180, 2);
+    box(p, 210, 10, 390, 180, 2, 10, 4);
+    // a structure-like mark inside each (not a box)
+    fill(p, 60, 80, 120, 81);
+    fill(p, 260, 80, 330, 81);
+    const f = findFrames(p).sort((a, b) => a.x1 - b.x1);
+    expect(f).toHaveLength(2);
+    expect(f[0].radius).toBe(0);
+    expect(f[0].shadow).toBe(false);
+    expect(f[0].lineWidth).toBe(2);
+    expect(f[0].x1).toBeCloseTo(11, 0);
+    expect(f[0].x2).toBeCloseTo(179, 0);
+    expect(f[1].radius).toBeGreaterThan(5);
+    expect(f[1].shadow).toBe(true);
+    // the box drawn without its shadow: the right side where the thin line is
+    expect(f[1].x2).toBeCloseTo(385, 0);
+    const out = withoutFrames(p).p;
+    const at = (x: number, y: number) => out.data[(y * 400 + x) * 4];
+    expect(at(11, 100)).toBe(255);
+    expect(at(90, 80)).toBe(0);
+  });
+
+  it('a structure is not a box', () => {
+    const p = blank(200, 200);
+    fill(p, 20, 20, 180, 21);
+    fill(p, 20, 20, 21, 180);
+    fill(p, 20, 179, 100, 180);
+    expect(findFrames(p)).toHaveLength(0);
+  });
+
+  it('puts formulas right: subscripts read as commas, Cl read as CI, O read as a nought', () => {
+    const cases: [string, string][] = [
+      ['CO,Me', 'CO2Me'], ['Et,0', 'Et2O'], ['H,0', 'H2O'], ['CH,Cl,', 'CH2Cl2'], ['LiBH,', 'LiBH4'], ['CICO,Et', 'ClCO2Et'],
+      ['HCI', 'HCl'], ['Ph;P,', 'Ph3P,'], ['Et,N', 'Et3N'], ['CrO;', 'CrO3'], ['(Boc),0', '(Boc)2O'],
+      // left alone
+      ['THF,', 'THF,'], ['23,', '23,'], ['MeOH,', 'MeOH,'], ['LiHMDS;', 'LiHMDS;'], ['DMP', 'DMP'],
+    ];
+    for (const [read, meant] of cases) expect(chemWord(read)).toBe(meant);
+  });
+
+  it('a word read as two or three atoms is not a structure', () => {
+    expect(isStructure({ symbols: ['H', 'B', 'H'], edges: [[0, 1, 0], [1, 0, 1], [0, 1, 0]], confidence: 0.56 })).toBe(false);
+    expect(isStructure({ symbols: ['H', 'B', 'H'], edges: [[0, 1, 0], [1, 0, 1], [0, 1, 0]], confidence: 0.56 }, true)).toBe(false);
+    // a whole picture the reader is unsure of is still taken (it is shown beside the original)
+    const ring = { symbols: ['C', 'C', 'C', 'C'], edges: [[0, 1, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1], [1, 0, 1, 0]], confidence: 0.06 };
+    expect(isStructure(ring)).toBe(false);
+    expect(isStructure(ring, true)).toBe(true);
   });
 });

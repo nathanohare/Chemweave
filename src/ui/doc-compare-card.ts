@@ -8,6 +8,7 @@ import type { DocStyle } from '../style';
 import type { FromPicture } from '../document/document';
 import { figures } from '../document/doc-file';
 import { infoIcon } from './info-tip';
+import { showableSrc } from '../render/images';
 
 export interface CompareCardHost {
   /** Where the structure is on screen (client pixels); null when it isn't shown. */
@@ -139,7 +140,8 @@ function drawPicture(c: HTMLCanvasElement, fp: FromPicture): void {
     g.fillRect(0, 0, c.width, c.height);
     g.drawImage(img, cr.l * iw, cr.t * ih, Math.max(1e-3, (1 - cr.l - cr.r) * iw), Math.max(1e-3, (1 - cr.t - cr.b) * ih), 0, 0, c.width, c.height);
   };
-  img.src = fp.picture.src;
+  const src = showableSrc(fp.picture.src);
+  if (src) img.src = src;
 }
 
 /** The structure where the picture lay over it (fp.at), at `s` CSS pixels to its point. */

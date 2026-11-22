@@ -248,7 +248,10 @@ export function captionsFrom(lines: ReadLine[], p: Pixels, marks: Mark[]): Found
   interface Piece { x1: number; y1: number; x2: number; y2: number; base: number; words: string[]; h: number }
   const pieces: Piece[] = [];
   for (const l of lines) {
-    const words = l.words.filter((w) => w.c >= SURE_WORD && w.t.trim());
+    // a word the reader is less sure of is taken beside one it is sure of (a formula in a line of
+    // conditions); a lone A among conditions is heat (Δ), which it has no letter for
+    const sureLine = l.words.some((w) => w.c >= 80 && /[A-Za-z0-9]{2}/.test(w.t));
+    const words = l.words.filter((w) => (w.c >= SURE_WORD || (sureLine && w.c >= 30)) && /[A-Za-z0-9]/.test(w.t)).map((w) => ({ ...w, t: /^A[,;]?$/.test(w.t) && l.words.length > 1 ? 'Δ' + w.t.slice(1) : chemWord(w.t) }));
     let cur: Piece | null = null;
     for (const w of words) {
       const [x1, y1, x2, y2] = w.box, h = y2 - y1 + 1;
@@ -289,6 +292,38 @@ export function captionsFrom(lines: ReadLine[], p: Pixels, marks: Mark[]): Found
     const size = cap / 0.72;
     return { x: x1, y: first.base, w: x2 - x1, lines: g.map((q) => q.words.join(' ')), size, bold: strokeW > 0.125 * size, center: g.length > 1, marks: inside };
   });
+}
+
+/**
+ * A word read as a chemist wrote it. The text reader knows English, not formulas: it reads a
+ * subscript as a comma (CO,Me, Et,O), chlorine's l as I (HCI, CICO,Et) and O beside a subscript as
+ * a nought (H,0), and sometimes a subscript 3 as a semicolon (Ph;P, CrO;). A comma inside a word, or ending a formula's group, is its subscript: 4 after BH
+ * and AlH, 3 for Ph3P, Et3N and CrO3, else 2 (the commonest; any of them can be typed over).
+ */
+export function chemWord(w: string): string {
+  if (!/[A-Za-z]/.test(w)) return w;
+  const sub = (before: string, after: string) => {
+    if (/(BH|AlH)$/.test(before)) return '4';
+    if ((/Ph$/.test(before) && /^P/.test(after)) || (/Et$/.test(before) && /^N/.test(after)) || /CrO$/.test(before) || /\((OMe|OEt)\)$/.test(before)) return '3';
+    return '2';
+  };
+  let out = '';
+  for (let i = 0; i < w.length; i++) {
+    const c = w[i], before = out, after = w.slice(i + 1);
+    // a comma between a letter (or bracket) and a capital, digit or bracket, with no space: a subscript
+    const inner = /[A-Za-z)\]]$/.test(before) && /^[A-Z0-9(]/.test(after);
+    // ...or ending a formula's group (LiBH, CH,Cl, (OMe), but not THF, or 23,)
+    // (a real comma may follow it: CH,Cl,, rt and Br,, Ph3P)
+    const last = (!after || after === ',') && /(BH|AlH|[a-z]?H\d*Cl|\((OMe|OEt)\)|^Br|^I|\dCO)$/.test(before) && /[A-Z]/.test(before);
+    if (c === ',' && (inner || last)) out += /\dCO$/.test(before) ? '3' : sub(before, after);
+    else if (c === ';' && (inner || /(O|Ph)$/.test(before))) out += sub(before, after);
+    else out += c;
+  }
+  // l read as I: Cl (HCI, CICO2Et, TBDPSCI, NaCI); not CIP and the like
+  out = out.replace(/(^|[A-Z0-9(])CI(?=$|[A-Z0-9,)(])/g, '$1Cl');
+  // O read as a nought beside a subscript or element (H20 is H2O, Et20 is Et2O)
+  out = out.replace(/([A-Za-z)]\d)0(?=$|[^0-9])/g, '$1O');
+  return out;
 }
 
 /**

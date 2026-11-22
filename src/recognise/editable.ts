@@ -12,7 +12,8 @@ import type { ReadGraph } from './molscribe';
 import { inkBox, type Pixels } from './picture';
 import { addReadAt, parseSymbol, readBonds } from './to-drawing';
 import { leftover, leftoverPng, partPixels, type StructureInk } from './leftover';
-import { captionsFrom, findArrows, marksOf, rubOut, textRuns, type ReadLine } from './scheme-extras';
+import { withoutFrames } from './frames';
+import { captionsFrom, findArrows, marksOf, rubOut, textRuns, type FoundText, type Mark, type ReadLine } from './scheme-extras';
 import { bondLengthPx, labelSizePx, lineWidthPx, refineAtoms, strokeWidthPx, type MeasureBond } from './measure';
 
 export type StyleChoice = 'match' | 'default';
@@ -178,7 +179,26 @@ export interface EditableParts extends Editable {
  * the reader didn't read is kept as a picture behind them, in its place (`rest`, and a picture in
  * the drawing).
  */
-export function editableFromParts(parts: PartRead[], p: Pixels, ptPerPx: number, choice: StyleChoice, ds: DocStyle, presets: StylePreset[], texts?: ReadLine[]): EditableParts {
+/** How far a point is from a segment. */
+function segDistance(x: number, y: number, [ax, ay]: [number, number], [bx, by]: [number, number]): number {
+  const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
+  const t = l ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l)) : 0;
+  return Math.hypot(x - ax - t * dx, y - ay - t * dy);
+}
+
+/** Whether a caption's text is beside lines (not letters) left in the picture: within half a letter of a mark much longer than one. */
+function touchesLines(c: FoundText, marks: Mark[]): boolean {
+  const own = new Set(c.marks);
+  const x1 = Math.min(...c.marks.map((m) => m.x1)), x2 = Math.max(...c.marks.map((m) => m.x2));
+  const y1 = Math.min(...c.marks.map((m) => m.y1)), y2 = Math.max(...c.marks.map((m) => m.y2));
+  const h = Math.max(4, y2 - y1 + 1) / Math.max(1, c.lines.length), pad = 0.5 * h;
+  return marks.some((m) => !own.has(m) && Math.max(m.x2 - m.x1, m.y2 - m.y1) > 1.6 * h
+    && m.x1 <= x2 + pad && m.x2 >= x1 - pad && m.y1 <= y2 + pad && m.y2 >= y1 - pad);
+}
+
+export function editableFromParts(parts: PartRead[], picture: Pixels, ptPerPx: number, choice: StyleChoice, ds: DocStyle, presets: StylePreset[], texts?: ReadLine[]): EditableParts {
+  // the boxes round structures: taken out before anything else (the parts were read without them)
+  const { p, frames } = withoutFrames(picture);
   const pieces = parts.map((part) => {
     const box = part.box ?? { x: 0, y: 0, w: p.width, h: p.height };
     const sub = part.box ? partPixels(p, part.box) : p;
@@ -194,6 +214,14 @@ export function editableFromParts(parts: PartRead[], p: Pixels, ptPerPx: number,
   let look: PictureLook | null = null, most = -1;
   let rest: Pixels | null = null;
   doc.edit('Make Editable', () => {
+    for (const f of frames) {
+      doc.addShape({
+        kind: 'rect', x1: r2(f.x1 * K), y1: r2(f.y1 * K), x2: r2(f.x2 * K), y2: r2(f.y2 * K),
+        ...(choice === 'match' ? { lineWidth: r2(f.lineWidth * K) } : {}),
+        ...(f.radius ? { rounded: true, ...(choice === 'match' ? { radius: r2(f.radius * K) } : {}) } : {}),
+        ...(f.shadow ? { shadow: true } : {}),
+      });
+    }
     for (const pc of pieces) {
       const { box } = pc;
       if ('m' in pc) {
@@ -222,7 +250,8 @@ export function editableFromParts(parts: PartRead[], p: Pixels, ptPerPx: number,
       const at = (v: { x: number; y: number }) => ({ x: v.x * K, y: v.y * K });
       const match = choice === 'match';
       const lw = ds.arrowWidth ?? ds.lineWidth;
-      const arrows = findArrows(rest, Math.max(12, unit * 0.9));
+      // (a line with no head is taken only when long: a short one is a bond left of a structure not read)
+      const arrows = findArrows(rest, Math.max(12, unit * 0.9)).filter((a) => a.headStyle !== 'none' || a.tailStyle !== 'none' || Math.hypot(a.head.x - a.tail.x, a.head.y - a.tail.y) > 3 * unit);
       for (const a of arrows) {
         doc.addArrow({
           tail: at(a.tail), head: at(a.head), headStyle: a.headStyle, tailStyle: a.tailStyle, headType: a.headType, line: 'solid', noGo: false, equilibrium: a.equilibrium, sweep: 0,
@@ -232,7 +261,22 @@ export function editableFromParts(parts: PartRead[], p: Pixels, ptPerPx: number,
         });
       }
       rest = rubOut(rest, arrows.flatMap((a) => a.marks));
-      const caps = captionsFrom(texts, rest, marksOf(rest));
+      const restMarks = marksOf(rest);
+      // text that touches lines left in the picture (the labels of a structure not read) stays with them
+      const atomsPx = inks.flatMap((k) => k.atoms);
+      const caps = captionsFrom(texts, rest, restMarks).filter((c) => {
+        if (!c.marks.length || touchesLines(c, restMarks)) return false;
+        const text = c.lines.join(' ');
+        // on a bond read (what is left of a hashed bond reads as 1s and Is)
+        const mx = (Math.min(...c.marks.map((m) => m.x1)) + Math.max(...c.marks.map((m) => m.x2))) / 2, my = (Math.min(...c.marks.map((m) => m.y1)) + Math.max(...c.marks.map((m) => m.y2))) / 2;
+        if (text.length <= 2 && inks.some((k) => k.bonds.some((b) => segDistance(mx, my, k.atoms[b.a], k.atoms[b.b]) < 0.3 * unit))) return false;
+        // one letter or sign alone (an atom's label, a stray mark): not a caption; a compound number is
+        if (text.length === 1 && !/[1-9]/.test(text)) return false;
+        // a short label by a structure read (H, Boc, NH2 the reader missed): it stays with the picture
+        const x1 = Math.min(...c.marks.map((m) => m.x1)), x2 = Math.max(...c.marks.map((m) => m.x2)), y1 = Math.min(...c.marks.map((m) => m.y1)), y2 = Math.max(...c.marks.map((m) => m.y2));
+        const near = atomsPx.some(([x, y]) => x > x1 - 0.9 * unit && x < x2 + 0.9 * unit && y > y1 - 0.9 * unit && y < y2 + 0.9 * unit);
+        return !(near && /^[A-Za-z0-9*+~-]{1,4}$/.test(text) && !/^\d+[a-z]?$/.test(text));
+      });
       const labelPt = look?.labelSize ?? null;
       for (const c of caps) {
         // the size it was written at: the structures' label size, or the document's text size for the look, when it is about that
