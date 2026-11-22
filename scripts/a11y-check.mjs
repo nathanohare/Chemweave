@@ -1,6 +1,7 @@
 // The accessibility check (standing rule R10), run by the browser smoke test on every pull request
 // and on its own: axe (axe-core, WCAG 2.0 and 2.1 A and AA rules) on each kind of tab, an open
-// menu and an open window, in the Light and Dark Gray looks; then a keyboard-only walk: the menu
+// menu and an open window, in the Light and Dark Gray looks, and on every ribbon tab and a
+// right-click menu in the Light look; then a keyboard-only walk: the menu
 // bar (F10, arrows, Esc), the toolbox (reached and used with Tab and Enter) and a window (focus goes
 // in, Tab stays in, Esc closes it and gives focus back).
 //
@@ -52,6 +53,26 @@ export async function a11yProblems(page, log = () => {}) {
     for (const [name, mode, make] of MODES) {
       await tabFor(mode, make);
       await runAxe(look, name);
+      // every other ribbon tab of this kind of tab (in the Light look only, to keep the run short)
+      if (look !== 'Light') continue;
+      const tabs = await page.evaluate(() => [...document.querySelectorAll('[role="tablist"] > [role="tab"]')]
+        .filter((b) => b.offsetParent && !b.hidden && b.getAttribute('aria-selected') !== 'true').map((b) => b.textContent.trim()));
+      for (const t of tabs) {
+        await page.evaluate((t) => [...document.querySelectorAll('[role="tablist"] > [role="tab"]')].find((b) => b.offsetParent && b.textContent.trim() === t)?.click(), t);
+        await page.waitForTimeout(150);
+        await runAxe(look, `${name}, ${t} ribbon tab`);
+      }
+      await page.evaluate(() => [...document.querySelectorAll('[role="tablist"] > [role="tab"]')].find((b) => b.offsetParent && !b.hidden)?.click());
+      if (mode === 'drawing') {
+        // a right-click menu, on the empty page
+        const box = await page.locator('#overlay').boundingBox();
+        if (box) {
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+          await page.waitForTimeout(200);
+          await runAxe(look, 'a right-click menu open');
+          await esc();
+        }
+      }
     }
     await tabFor('drawing', 'new');
     // an open menu, and an open window
