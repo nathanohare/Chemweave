@@ -49,14 +49,24 @@ describe('ChemClient', () => {
     expect(workers.length).toBe(2);
     expect(told).toEqual(['The chemistry engine stopped responding and was restarted.']);
     expect(chem.ready).toBe(false);
-    // the same request is not sent again; another one is, once the new engine is ready
-    await expect(chem.molToSmiles('big')).rejects.toThrow(ENGINE_SKIPPED);
+    // another request answers once the new engine is ready
     const small = chem.molToSmiles('small');
     workers[1].ready();
     const req = workers[1].last();
     expect(req.type).toBe('molToSmiles');
     workers[1].reply({ type: 'molToSmiles', id: req.id, smiles: 'CCO' });
     await expect(small).resolves.toBe('CCO');
+    // (a hang may not be the request's fault, so it is tried once more; hanging again, it is kept back)
+    const again = chem.molToSmiles('big');
+    expect(workers[1].last().type).toBe('molToSmiles');
+    const failedAgain = expect(again).rejects.toThrow(ENGINE_RESTARTED);
+    vi.advanceTimersByTime(WATCHDOG_MS + 1);
+    await failedAgain;
+    await expect(chem.molToSmiles('big')).rejects.toThrow(ENGINE_SKIPPED);
+    workers[2].ready();
+    const fine = chem.molToSmiles('small');
+    workers[2].reply({ type: 'molToSmiles', id: workers[2].last().id, smiles: 'CCO' });
+    await expect(fine).resolves.toBe('CCO');
   });
 
   it('a long request that says it is still working is not taken for a hang', async () => {

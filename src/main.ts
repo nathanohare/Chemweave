@@ -1365,8 +1365,18 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
   if (isRxn(text) || isReactionSmiles(text)) return pasteReaction(text.trim(), c);
   let mb: string | null = text.includes('M  END') ? text : null;
   const here = sameDrawing('The pasted structure');
-  if (!mb && !/\s/.test(text)) mb = await chem.smilesToMol(text).catch((e: unknown) => { flash(e instanceof Error ? e.message : String(e), 8000); return null; });
+  // (a structure the engine can't take, or an engine that stopped, is said even on a quiet paste, and
+  // the text is not pasted instead; text that just isn't SMILES is left quietly for a text box)
+  let told = false;
+  if (!mb && !/\s/.test(text)) {
+    mb = await chem.smilesToMol(text).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!quiet || /chemistry engine/.test(msg)) { told = true; flash(msg, 8000); }
+      return null;
+    });
+  }
   if (here.left()) return true;
+  if (!mb && told) return true;
   if (!mb) { if (!quiet) flash('Paste a SMILES string or a molfile.'); return false; }
   try {
     let ids: number[] = [];

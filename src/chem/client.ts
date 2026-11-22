@@ -49,6 +49,12 @@ export class ChemClient {
   private queued: { id: number; msg: ChemRequest }[] = [];
   /** Requests that broke the engine (as text without their id): not sent again. */
   private poisoned = new Set<string>();
+  /**
+   * Requests the engine went silent on once (a hang, or a worker that went away without a word):
+   * the culprit is less certain than a crash it reported, so such a request is only kept back
+   * when it happens again with it.
+   */
+  private suspects = new Set<string>();
   private restarts: number[] = [];
   private watchdog: ReturnType<typeof setTimeout> | null = null;
   private js = '';
@@ -124,7 +130,10 @@ export class ChemClient {
     this.watchdog = setTimeout(() => {
       // (the worker answers in order, so the oldest request still waiting is the one it hung on)
       const first = [...this.pending.values()].find((p) => !this.queued.some((q) => q.msg === p.msg));
-      if (first) this.poisoned.add(requestKey(first.msg));
+      if (first) {
+        const k = requestKey(first.msg);
+        if (this.suspects.has(k)) this.poisoned.add(k); else this.suspects.add(k);
+      }
       this.restart('hung');
     }, WATCHDOG_MS);
   }

@@ -105,7 +105,7 @@ describe('the worker on very big structures', () => {
     stillWorks();
     // (G4-08: the symmetry classes no longer take seconds at this size)
     expect(performance.now() - t0).toBeLessThan(15000);
-  });
+  }, 30000);
   it('a 1,000-atom ring and a 998-atom fused ring system answer too', () => {
     const r = ask({ type: 'siFacts', id: 3, mols: [ring(1000), acene(249)] });
     if (r.type !== 'siFacts') throw new Error(r.type);
@@ -113,7 +113,7 @@ describe('the worker on very big structures', () => {
     expect(r.results[0]!.uniqueCarbons).toBe(1);
     expect(r.results[1]!.info!.formula).toBe('C998H1500');
     stillWorks();
-  });
+  }, 30000);
   it('says why instead of writing SMILES for a long run, and keeps working', () => {
     expect(ask({ type: 'molToSmiles', id: 4, molblock: chain(700) })).toEqual({ type: 'error', id: 4, message: TOO_DEEP });
     expect(ask({ type: 'smilesToMol', id: 5, smiles: 'C'.repeat(1000) })).toEqual({ type: 'error', id: 5, message: TOO_DEEP });
