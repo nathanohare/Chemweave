@@ -6142,7 +6142,7 @@ export class Editor {
     const ids = [...this.sel.atoms];
     let r = { removed: 0, added: 0 };
     this.doc.edit('Explicit Hydrogens', () => { r = toggleExplicitHydrogens(this.doc, ids); });
-    if (!r.removed && !r.added) return ids.length ? 'These atoms have no hydrogens to draw.' : 'No H atoms to hide. Select atoms to draw their hydrogens as atoms.';
+    if (!r.removed && !r.added) return ids.length ? 'These atoms have no hydrogens to draw.' : WHY.hydrogens;
     this.sel = emptySel();
     this.changed();
     return r.removed ? `${r.removed} H atom${r.removed > 1 ? 's' : ''} hidden (those on wedges, charged or on heteroatoms are kept).` : r.added > 1 ? `${r.added} hydrogens drawn as atoms.` : '1 hydrogen drawn as an atom.';

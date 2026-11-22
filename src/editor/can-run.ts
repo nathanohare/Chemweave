@@ -32,6 +32,8 @@ export interface Picked {
   readonly drawnAtoms: number;
   /** Reaction (or other) arrows in the drawing. */
   readonly drawnArrows: number;
+  /** A canvas slide is being edited (the keyframe commands work only there). */
+  readonly canvasSlide: boolean;
 }
 
 /** The reasons, once each: the commands' own messages use these too. */
@@ -89,6 +91,21 @@ export const WHY = {
   animate: 'Draw at least two structures (with a reaction arrow or an equivalency sign between them) to animate.',
   shape: 'Select a shape first (Insert ▸ Shapes).',
   autoAnimate: 'Select a scheme with reaction arrows first (or nothing, to build every scheme on the slide).',
+  model3d: 'Select a structure to see in 3-D.',
+  focalReset: 'Select the structures whose own focal point should go first.',
+  focalMatch: 'Set a focal point on one structure, then select it with the others to give them the same one.',
+  bend: 'Right-click a round join handle on a selected arrow first (or double-click it).',
+  detach: 'Select the arrows, text or shapes that follow a structure first.',
+  checkArrows: 'There are no curved (mechanism) arrows on a structure to check.',
+  cleanUp: 'There is no structure to clean up.',
+  aromatic: 'No aromatic rings here: select a ring with alternating double bonds, or one drawn with a circle.',
+  stereo: 'No stereocenters or E/Z double bonds here.',
+  favorite: 'Select something with the style you want to keep (a shape, arrow, structure, picture or text) first.',
+  joinHandle: 'Right-click a round join handle on a selected arrow first.',
+  selectHighlight: 'Right-click a highlight (or select part of one) first.',
+  atomMap: 'Nothing here has an atom map.',
+  hydrogens: 'No H atoms to hide. Select atoms to draw their hydrogens as atoms.',
+  canvasSlide: 'Go to a canvas slide first (Insert ▸ Slides ▸ New Canvas Slide adds one).',
 } as const;
 export type Why = keyof typeof WHY;
 
@@ -166,6 +183,29 @@ export const NEEDS: Record<string, [Need, Why]> = {
   'animate-reaction': [(p) => p.drawnAtoms >= 2, 'animate'],
   'shape-styles': [geo, 'shape'], 'shape-effects': [geo, 'shape'], 'shape-picture-fill': [geo, 'shape'],
   'auto-animate-steps': [(p) => p.drawnArrows > 0, 'autoAnimate'],
+  // the twelve the re-check found still answering with a toast on an empty canvas (F5b-R03)
+  'find-cas': [structure, 'structure'],
+  'model-3d': [structure, 'model3d'],
+  'reset-focal-point': [atoms, 'focalReset'],
+  'match-focal-points': [(p) => p.atoms >= 2, 'focalMatch'],
+  'arrow-remove-bend': [(p) => p.arrows > 0, 'bend'],
+  'detach-arrow': [any, 'detach'],
+  'check-arrows': [(p) => p.drawnArrows > 0 && p.drawnAtoms > 0, 'checkArrows'],
+  'clean-up': [(p) => p.drawnAtoms > 0, 'cleanUp'],
+  'clean-up-reaction': [(p) => p.drawnArrows > 0, 'noStep'],
+  'aromatic-circles': [(p) => p.drawnAtoms > 0, 'aromatic'],
+  'stereo-labels': [(p) => p.drawnAtoms > 0, 'stereo'],
+  'save-format-favorite': [any, 'favorite'],
+  // and others of the same kind the sweep after it found
+  'smart-clean': [(p) => p.drawnAtoms > 0, 'cleanUp'],
+  'clean-up-reaction-orient': [(p) => p.drawnArrows > 0, 'noStep'],
+  'arrow-smooth-join': [(p) => p.arrows > 0, 'joinHandle'], 'arrow-symmetric-join': [(p) => p.arrows > 0, 'joinHandle'],
+  'select-highlight': [(p) => p.drawnAtoms > 0, 'selectHighlight'],
+  'clear-atom-map': [(p) => p.drawnAtoms > 0, 'atomMap'],
+  'explicit-h': [(p) => p.drawnAtoms > 0, 'hydrogens'],
+  // Insert ▸ Keyframes and Canvas Background: one reason for the menu, the ribbon and running them (F5b-R06)
+  ...Object.fromEntries(['add-keyframe', 'keyframe-here', 'fit-keyframe', 'delete-keyframe', 'keyframe-title', 'keyframe-zone', 'canvas-heading',
+    'keyframe-spotlight', 'keyframe-detour', 'canvas-show-options', 'canvas-background'].map((c): [string, [Need, Why]] => [c, [(p) => p.canvasSlide, 'canvasSlide']])),
 };
 
 /** Why `cmd` cannot run with `p` picked: its reason, null when it can, undefined when it has no check here. */

@@ -52,8 +52,8 @@ describe('paintCanRun', () => {
   });
 });
 
-const nothing: Picked = { any: false, count: 0, atoms: 0, bonds: 0, captions: 0, arrows: 0, structure: false, curved: false, geo: false, pictures: 0, plainPictures: 0, brackets: false, orbitals: false, empty: true, drawnAtoms: 0, drawnArrows: 0 };
-const plenty: Picked = { any: true, count: 12, atoms: 6, bonds: 4, captions: 1, arrows: 2, structure: true, curved: true, geo: true, pictures: 1, plainPictures: 1, brackets: true, orbitals: true, empty: false, drawnAtoms: 30, drawnArrows: 2 };
+const nothing: Picked = { any: false, count: 0, atoms: 0, bonds: 0, captions: 0, arrows: 0, structure: false, curved: false, geo: false, pictures: 0, plainPictures: 0, brackets: false, orbitals: false, empty: true, drawnAtoms: 0, drawnArrows: 0, canvasSlide: false };
+const plenty: Picked = { any: true, count: 12, atoms: 6, bonds: 4, captions: 1, arrows: 2, structure: true, curved: true, geo: true, pictures: 1, plainPictures: 1, brackets: true, orbitals: true, empty: false, drawnAtoms: 30, drawnArrows: 2, canvasSlide: true };
 
 describe('the drawing checks (G5-28, R03)', () => {
   it('on an empty drawing every listed command gives its reason, and with enough picked none does', () => {
@@ -68,6 +68,23 @@ describe('the drawing checks (G5-28, R03)', () => {
     for (const c of ['expand-label', 'group', 'ungroup', 'flip-h', 'flip-v', 'shape-front', 'shape-back', 'add-frame', 'rotate-cw', 'align-left', 'distribute-h', 'join', 'cut', 'zoom-selection', 'turn-3d', 'scale']) {
       expect(typeof whyNot(c, nothing), c).toBe('string');
     }
+  });
+  it('covers the twelve the re-check found still toasting on an empty canvas (F5b-R03)', () => {
+    for (const c of ['find-cas', 'model-3d', 'reset-focal-point', 'match-focal-points', 'arrow-remove-bend', 'detach-arrow', 'check-arrows', 'clean-up', 'clean-up-reaction', 'aromatic-circles', 'stereo-labels', 'save-format-favorite']) {
+      expect(typeof whyNot(c, nothing), c).toBe('string');
+    }
+    // Find CAS RN asks for a structure, as PubChem Lookup beside it does
+    expect(whyNot('find-cas', nothing)).toBe(WHY.structure);
+    expect(whyNot('find-cas', { ...nothing, structure: true })).toBeNull();
+    // Check Arrows needs curved arrows on a structure, not just arrows
+    expect(whyNot('check-arrows', { ...nothing, drawnArrows: 1 })).toBe(WHY.checkArrows);
+  });
+  it('gives one reason for the keyframe commands everywhere, with the real menu path (F5b-R06)', () => {
+    for (const c of ['add-keyframe', 'keyframe-title', 'canvas-show-options', 'canvas-background']) {
+      expect(whyNot(c, { ...plenty, canvasSlide: false }), c).toBe(WHY.canvasSlide);
+      expect(whyNot(c, { ...nothing, canvasSlide: true }), c).toBeNull();
+    }
+    expect(WHY.canvasSlide).toContain('Insert ▸ Slides ▸ New Canvas Slide');
   });
   it('counts what each command needs', () => {
     const one = { ...plenty, count: 1, atoms: 1, bonds: 0 };

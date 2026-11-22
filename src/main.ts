@@ -2225,7 +2225,7 @@ function conformerTools(molblock: string): ConformerTools {
 
 async function show3dModel(): Promise<void> {
   const root = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited;
-  if (root === null || !doc.atoms.has(root)) { flash('Select a structure to see in 3-D.'); return; }
+  if (root === null || !doc.atoms.has(root)) { flash(WHY.model3d); return; }
   const ids = [...doc.fragmentOf(root)];
   const ex = toMolfile(doc, ids, '');
   if (ex.generic.length) { flash('A structure with R groups or labels that can\'t be read has no 3-D shape. Replace them with atoms first.'); return; }
@@ -2959,12 +2959,6 @@ function pickedStep(what: string): PickedStep | null {
   return got;
 }
 
-/**
- * Why a drawing command cannot run now (S15, S85; G5-28): the reason it would otherwise show in a
- * toast, null when it can run, undefined when it has no check. The menus and the ribbon grey the
- * command out with this reason in its tooltip.
- */
-const NOT_CANVAS_SLIDE = 'Go to a canvas slide first (Home ▸ Canvas Slide adds one).';
 /** What is picked now, for the checks in editor/can-run.ts: each is worked out only when asked. */
 const picked: Picked = {
   get any() { return editor.hasSelection(); },
@@ -2983,6 +2977,7 @@ const picked: Picked = {
   get empty() { return !doc.atoms.size && !doc.captions.size && !doc.arrows.size && !doc.shapes.size; },
   get drawnAtoms() { return doc.atoms.size; },
   get drawnArrows() { return doc.arrows.size; },
+  get canvasSlide() { return !!deckNow()?.current?.canvas && ws.active.mode === 'slides'; },
 };
 
 /**
@@ -3012,7 +3007,6 @@ function whyDrawingCannotRun(cmd: string, lazy = false): string | null | undefin
       const r = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited!;
       return rGroupsOf(doc, [...doc.fragmentOf(r)]).length ? null : 'This structure has no R groups. Type R1, R2… (or R, X, Ar) as atom labels where the groups go.';
     }
-    case 'canvas-background': return deckNow()?.current?.canvas && ws.active.mode === 'slides' ? null : NOT_CANVAS_SLIDE;
     case 'resolve-comment': case 'delete-comment': return ws.active.mode === 'slides' ? slideCmts?.whyNoComment() ?? null : undefined;
     case 'delete-all-comments': return ws.active.mode === 'slides' ? slideCmts?.whyNoComments() ?? null : undefined;
     case 'animate-step': return pickedReactionArrow() === undefined ? 'Select a reaction arrow first, or use Animate Reaction for the whole scheme.' : null;
@@ -4061,7 +4055,7 @@ async function clearAtomMapCommand(): Promise<void> {
   finishTyping();
   const { clearAtomMap } = await import('./morph/atom-map');
   const scope = editor.sel.atoms.size ? new Set([...editor.sel.atoms].flatMap((id) => [...doc.fragmentOf(id)])) : undefined;
-  if (![...(scope ?? doc.atoms.keys())].some((id) => doc.atoms.get(id)?.mapNo)) { flash('Nothing here has an atom map.'); return; }
+  if (![...(scope ?? doc.atoms.keys())].some((id) => doc.atoms.get(id)?.mapNo)) { flash(WHY.atomMap); return; }
   doc.edit('Clear Atom Map', () => { clearAtomMap(doc, scope); });
   editor.changed();
 }
@@ -4703,7 +4697,7 @@ const canvasKeys = new CanvasKeys(renderer.overlay, {
 function canvasNow(): { d: Deck; c: NonNullable<Deck['slides'][number]['canvas']>; i: number } | null {
   const d = deckNow();
   const c = d?.current?.canvas;
-  if (!d || !c || ws.active.mode !== 'slides') { flash('Keyframes are on canvas slides: Insert ▸ Canvas Slide makes one.'); return null; }
+  if (!d || !c || ws.active.mode !== 'slides') { flash(WHY.canvasSlide); return null; }
   finishTyping();
   return { d, c, i: canvasKeys.picked(d) };
 }
@@ -4924,7 +4918,7 @@ function showCanvasState(): void {
   const on = !!deckNow()?.current?.canvas && ws.active.mode === 'slides';
   for (const el of document.querySelectorAll<HTMLElement>('.keyframes-only')) {
     // a menu item is greyed with the reason, as other commands are (review of F5, R11)
-    if (el instanceof HTMLButtonElement && el.getAttribute('role') === 'menuitem') paintCanRun([el], 'cmd', () => (on ? null : NOT_CANVAS_SLIDE));
+    if (el instanceof HTMLButtonElement && el.getAttribute('role') === 'menuitem') paintCanRun([el], 'cmd', () => (on ? null : WHY.canvasSlide));
     else el.hidden = !on;
   }
 }
@@ -5870,7 +5864,7 @@ async function matchFocalPoints(): Promise<void> {
   const picked = editor.sel.atoms;
   const frags = doc.fragments().filter((f) => [...f].some((id) => !doc.atoms.get(id)?.multi) && (!picked.size || [...f].some((id) => picked.has(id))));
   const own = frags.filter((f) => focalAtoms(doc, f).length);
-  if (frags.length < 2 || !own.length) { flash('Set a focal point on one structure, then select it with the others to give them the same one.', 6000); return; }
+  if (frags.length < 2 || !own.length) { flash(WHY.focalMatch, 6000); return; }
   const top = (f: Set<number>) => Math.min(...[...f].map((id) => doc.atoms.get(id)!.y));
   const left = (f: Set<number>) => Math.min(...[...f].map((id) => doc.atoms.get(id)!.x));
   const ref = own.reduce((p, q) => (top(q) < top(p) - doc.style.bondLength * 2 || (Math.abs(top(q) - top(p)) <= doc.style.bondLength * 2 && left(q) < left(p)) ? q : p));
@@ -5952,7 +5946,8 @@ function refreshCanRun(): void {
     canRunQueued = false;
     const mode = menuMode();
     if (mode !== 'drawing' && mode !== 'slides' && mode !== 'design') return;
-    const shown = [...document.querySelectorAll<HTMLButtonElement>('#canvas-ribbon button[data-cmd], #ribbon button[data-cmd]')].filter((b) => b.getClientRects().length > 0);
+    // the ribbons and the toolboxes' command buttons, from the one table (F5b-R03)
+    const shown = [...document.querySelectorAll<HTMLButtonElement>('#canvas-ribbon button[data-cmd], #ribbon button[data-cmd], .toolbox button[data-cmd]')].filter((b) => b.getClientRects().length > 0);
     paintCanRun(shown, 'cmd', (c) => whyDrawingCannotRun(c, true));
   });
 }
@@ -10430,7 +10425,7 @@ const COMMANDS: Record<string, () => unknown> = {
     const all: Selection = { atoms: new Set(doc.atoms.keys()), bonds: new Set(doc.bonds.keys()), captions: new Set(), arrows: new Set(), shapes: new Set() };
     const parts = highlightParts(doc, all);
     const hit = parts.filter((p) => (contextBond !== null && p.sel.bonds.has(contextBond)) || [...editor.sel.atoms].some((id) => p.sel.atoms.has(id)) || [...editor.sel.bonds].some((id) => p.sel.bonds.has(id)));
-    if (!hit.length) { flash('Right-click a highlight (or select part of one) first.'); return; }
+    if (!hit.length) { flash(WHY.selectHighlight); return; }
     const sel: Selection = { atoms: new Set(hit.flatMap((p) => [...p.sel.atoms])), bonds: new Set(hit.flatMap((p) => [...p.sel.bonds])), captions: new Set(), arrows: new Set(), shapes: new Set() };
     if (animUi) animUi.selectHighlight(sel); else editor.selectThese(sel);
     if (ws.active.mode === 'slides') flash('Highlight selected: pick an effect in the Animations tab to animate it on its own.', 5000);
@@ -10462,10 +10457,10 @@ const COMMANDS: Record<string, () => unknown> = {
   },
   'arrow-remove-bend': () => {
     const j = editor.pickedJoin();
-    if (!j || !editor.removeBend(j.id, j.join)) flash('Right-click a round join handle on a selected arrow first (or double-click it).');
+    if (!j || !editor.removeBend(j.id, j.join)) flash(WHY.bend);
   },
-  'arrow-smooth-join': () => { const j = editor.pickedJoin(); if (!j || !editor.setJoinKind(j.id, j.join, 'smooth')) flash('Right-click a round join handle on a selected arrow first.'); },
-  'arrow-symmetric-join': () => { const j = editor.pickedJoin(); if (!j || !editor.setJoinKind(j.id, j.join, 'symmetric')) flash('Right-click a round join handle on a selected arrow first.'); },
+  'arrow-smooth-join': () => { const j = editor.pickedJoin(); if (!j || !editor.setJoinKind(j.id, j.join, 'smooth')) flash(WHY.joinHandle); },
+  'arrow-symmetric-join': () => { const j = editor.pickedJoin(); if (!j || !editor.setJoinKind(j.id, j.join, 'symmetric')) flash(WHY.joinHandle); },
   'arrow-shape-u': () => { if (!pickedCurved()) flash(WHY.curved); else if (!editor.setArrowShape('u')) flash('The selected arrows are U-turns already.'); },
   'arrow-shape-loop': () => { if (!pickedCurved()) flash(WHY.curved); else if (!editor.setArrowShape('loop')) flash('The selected arrows are loops already.'); },
   'arrow-reverse': () => { if (!editor.reverseArrows()) flash(WHY.curved); },
@@ -10617,7 +10612,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'methyls-me': () => chooseMethylStyle('Me'),
   'explicit-h': () => flash(editor.toggleHydrogens(), 6000),
   'periodic-table': () => { editor.setTool('element'); periodicTable.open(); },
-  'aromatic-circles': () => flash(editor.toggleAromaticCircles() ?? 'No aromatic rings here: select a ring with alternating double bonds, or one drawn with a circle.', 5000),
+  'aromatic-circles': () => flash(editor.toggleAromaticCircles() ?? WHY.aromatic, 5000),
   'text-guides': () => {
     const ids = [...editor.sel.arrows].filter((id) => { const r = doc.arrows.get(id); return !!r && canShowGuides(r); });
     if (!ids.length) { flash('Select a straight arrow first.'); return; }
@@ -13471,7 +13466,7 @@ function toggleStereoLabels(): void {
   const labelled = [...atoms].filter((id) => live.atom(id)).map((id) => doc.atoms.get(id)!);
   const labelledB = [...bonds].filter((id) => live.bond(id)).map((id) => doc.bonds.get(id)!);
   if (!labelled.length && !labelledB.length) {
-    flash(chem.ready ? 'No stereocenters or E/Z double bonds here.' : 'The chemistry engine is still loading.');
+    flash(chem.ready ? WHY.stereo : 'The chemistry engine is still loading.');
     return;
   }
   const show = ![...labelled, ...labelledB].every((x) => x.showStereo || x.stereoLabel);
@@ -13665,7 +13660,7 @@ function checkArrows(): void {
   if (!editor.options.arrowProducts) { flash('Check Arrows is turned off in Edit ▸ Settings ▸ Drawing.'); return; }
   const list = editor.checkArrows();
   if (list === 'many') { flash('The arrows are on more than one step: select an arrow or the structure of the step to check.', 5000); return; }
-  if (list === 'none') { flash('There are no curved (mechanism) arrows on a structure to check.'); return; }
+  if (list === 'none') { flash(WHY.checkArrows); return; }
   if (!list.length) { flash('The arrows make sense: each starts at electrons that are there, and nothing ends up past an octet.', 5000); return; }
   arrowIssue = arrowIssue % list.length;
   const w = list[arrowIssue];
@@ -14559,7 +14554,7 @@ function selectionLook(): ObjectLook | null {
 async function saveFavorite(replacing?: FormatFavorite): Promise<void> {
   const look = selectionLook();
   if (!look) {
-    flash(sheetActive() ? 'Select the cells or the shape with the style you want to keep first.' : 'Select something with the style you want to keep (a shape, arrow, structure, picture or text) first.');
+    flash(sheetActive() ? 'Select the cells or the shape with the style you want to keep first.' : WHY.favorite);
     return;
   }
   let name = replacing?.name;
