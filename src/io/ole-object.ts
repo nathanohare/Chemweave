@@ -353,13 +353,32 @@ export function olePresStream(pic: ObjectPicture): Uint8Array {
  * A ChemDraw object holding a drawing (its CDX), as PowerPoint keeps one: double-clicked in
  * PowerPoint, it opens in ChemDraw. `pic` is its picture until then, as ChemDraw keeps it.
  */
-export function chemdrawObject(cdx: Uint8Array, prog = chemdrawProg(), pic?: ObjectPicture | null): Uint8Array {
+export function chemdrawObject(cdx: Uint8Array, prog = chemdrawProg(), pic?: ObjectPicture | null, more: [string, Uint8Array][] = []): Uint8Array {
   return writeCfb([
     ['\u0001CompObj', compObj(chemdrawObjectName(prog), prog, CHEMDRAW_CLASS, 'ChemDraw Interchange Format')],
     ['\u0001Ole', OLE_STREAM],
     ...(pic?.emf.length ? [['\u0002OlePres000', olePresStream(pic)] as [string, Uint8Array]] : []),
     ['CONTENTS', cdx],
+    ...more,
   ], CHEMDRAW_CLASS);
+}
+
+/**
+ * The stream naming the cell a structure saved here as an object was saved over, inside the object's
+ * own data: Excel keeps an object's data as it is when it saves the workbook again.
+ */
+export const OLE_CELL_STREAM = 'ChemweaveCell';
+
+/** The cell named in an object's data by OLE_CELL_STREAM ("B2"), or null. */
+export function oleCellTag(bin: Uint8Array): string | null {
+  try {
+    if (!isCfb(bin)) return null;
+    const t = cfbStreams(bin).get(OLE_CELL_STREAM);
+    const ref = t ? new TextDecoder().decode(t).trim() : '';
+    return /^[A-Z]{1,3}\d{1,7}$/.test(ref) ? ref : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The name PowerPoint shows for a ChemDraw object (its oleObj's name). */

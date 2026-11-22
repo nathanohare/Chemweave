@@ -16,13 +16,13 @@
 // xlsx-relocate.ts).
 
 import { MAX_CELL_TEXT } from './sheet-sniff';
-import { Package, PackageReader, xml, xmlAttr, hex6, REL, kids, kid, rAttr, PackageError } from './ooxml';
+import { Package, PackageReader, xml, xmlAttr, hex6, REL, kids, kid, rAttr, PackageError, bytesHash } from './ooxml';
 import { appPropsXml, corePropsXml, readKeptParts, writeKeptParts, readTree, writeTree, relativeTarget, type KeptTree } from './kept-parts';
 import { printOf } from './native-print';
 import { fromDataUrl } from '../render/images';
 import { GRID_NAME, gridOf, gridNameXml, readGridName, restoreSheet, moveFilter, STILL, type Grid } from './xlsx-relocate';
 import { officeTarget, linkFromTarget } from '../links';
-import { Workbook, Sheet, Structure, CellStyle, ColumnDef, Filter, Condition, CompareOp, Border, BorderStyle, Side } from '../sheet/workbook';
+import { Workbook, Sheet, Structure, makeStructure, CellStyle, ColumnDef, Filter, Condition, CompareOp, Border, BorderStyle, Side } from '../sheet/workbook';
 import { keyOf, rowOf, colOf, colName, cellName, parseRange, quoteSheet, Range, MAX_COLS, rangesOverlap, rangeName, inRange, MAX_ROWS, sheetNameProblem, fixSheetName } from '../sheet/refs';
 import { normalizeFormula, shiftFormula } from '../sheet/formula';
 import { callsName, fileFormula, legacyFormula, needsDynamic, readFileFormula } from '../sheet/array-formulas';
@@ -65,6 +65,8 @@ import { type Query, seenQueryId } from '../sheet/query';
 import { keepFileValues, fileValues, type FileValue } from './xlsx-cached';
 import { readRichValues, writeRichParts, richMetadataXml, keepPointers, pointerOf, richValueKinds } from './xlsx-rich';
 import { LeftOut, connectionsKept, queryTableOf, CT_QUERY_TABLE, REL as KEPT_FEATURE_REL } from './xlsx-left-out';
+import { readSheetOle, writeSheetOle, oleVml, oleNote, structureOle, structureOleRef, type KeptSheetOle, type OleWriteState } from './xlsx-ole';
+import { chemdrawObject, chemdrawProg, chemdrawCdx, oleCellTag, OLE_CELL_STREAM } from './ole-object';
 export { applyTint };
 
 /** Pictures of structures for Excel (the app draws them; tests use stand-ins). */
@@ -78,6 +80,12 @@ export interface XlsxPictures {
   picture(s: Structure, style: DocStyle, cell: { w: number; h: number; fill?: string; align?: CellStyle['align']; valign?: CellStyle['valign'] }): Promise<Uint8Array | null>;
   /** Heights of rows that grow to fit wrapped text, in pixels (the grid measures the text). */
   rowHeights?(s: Sheet): Map<number, number>;
+  /** Structures saved as ChemDraw objects (Settings ▸ General), not pictures. */
+  chemdrawObjects?: boolean;
+  /** A structure as ChemDraw's data (CDX) and its picture as an EMF, with its size in points, for a ChemDraw object. */
+  chemdraw?(s: Structure, style: DocStyle): { cdx: Uint8Array; emf: Uint8Array; w: number; h: number } | null;
+  /** ChemDraw's data (CDX) as a structure, for one changed in ChemDraw from Excel. */
+  readChemdraw?(cdx: Uint8Array, style: DocStyle): Contents | null;
 }
 
 const HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
@@ -266,6 +274,8 @@ export interface ModelCell {
   computed?: true;
   /** Data > Data Types > Compound: the cell's card (Excel is given the compound's name). */
   compound?: CompoundCard;
+  /** A structure saved as a ChemDraw object: a print of its ChemDraw data, to tell whether it was changed in ChemDraw from Excel. */
+  cdx?: string;
 }
 
 export interface ModelSheet {
@@ -330,7 +340,7 @@ class Styles {
    * `normal` is the look of style 0 (the workbook's Normal style, when it isn't the plain look
    * here), with its font as the file had it in `kept`.
    */
-  constructor(private theme: WorkbookTheme | null = null, private normal: CellStyle = {}, kept: ExcelStyles = {}) {
+  constructor(private theme: WorkbookTheme | null = null, private normal: CellStyle = {}, kept: ExcelStyles = {}, private themeLinks = true) {
     this.minor = themeOf(theme).minor;
     this.ownCodes = new Set(kept.numFmts);
     this.normalName = kept.normalName ?? 'Normal';
@@ -418,9 +428,13 @@ class Styles {
 
   /** The font, fill and border numbers for a look. */
   private parts(s: CellStyle): { font: number; fill: number; border: number } {
-    const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign]);
-    const font = fontLook(s) !== fontLook(this.normal)
-      ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${s.excel?.strike ? '<strike/>' : ''}${s.underline ? '<u/>' : ''}` +
+    // a font as the file had it (an outline, a shadow, its family and character set, a theme
+    // colour), while the cell's font looks as it did
+    // (its links to the theme's colours or heading font only while the theme written is the one read,
+    // else fixed as the cell shows them, the rest of the font kept: review F2-R03, F2b-R07)
+    const keptFont = s.excel?.font && s.excel.font.key === fontLook(s) ? (this.themeLinks ? s.excel.font.xml : unthemed(s.excel.font.xml, s.color, s.font)) : null;
+    const font = keptFont ? this.index(this.fonts, keptFont) : fontLook(s) !== fontLook(this.normal)
+      ? this.index(this.fonts, `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}${s.excel?.strike ? '<strike/>' : ''}${s.underline ? uXml(s.excel?.u) : ''}` +
         `${s.excel?.vertAlign ? `<vertAlign val="${xmlAttr(s.excel.vertAlign)}"/>` : ''}<sz val="${s.size ?? 11}"/>` +
         `${s.color ? `<color rgb="FF${hex6(s.color)}"/>` : '<color theme="1"/>'}<name val="${xml(s.font ?? this.minor)}"/><family val="2"/>${s.font ? '' : '<scheme val="minor"/>'}</font>`)
       : 0;
@@ -506,7 +520,7 @@ class Strings {
   private byKey = new Map<string, number>();
   count = 0;
 
-  constructor(private minor = 'Calibri') {}
+  constructor(private minor = 'Calibri', private themeLinks = true) {}
 
   /** A text's number; `runs` (part of it bold…) over the cell's look `style`. */
   index(text: string, chem: boolean, runs?: TextRun[], style?: CellStyle): number {
@@ -529,7 +543,7 @@ class Strings {
         }
       }
       const merged = runsFrom(text, looks) ?? [{ text }];
-      this.list.push(`<si>${merged.map((r) => `<r>${this.runLook(lookOver(style, r))}${t(r.text)}</r>`).join('')}</si>`);
+      this.list.push(`<si>${merged.map((r) => `<r>${this.runXml(style, r)}${t(r.text)}</r>`).join('')}</si>`);
     } else {
       // a lowered or raised piece with its cell's whole look as well: Excel fills a run's missing
       // font and size with its own defaults (11 pt), not the cell's
@@ -541,8 +555,19 @@ class Strings {
     return this.list.length - 1;
   }
 
+  /** A run's rPr: as the file had it while the run still looks so, else from its look. */
+  private runXml(style: CellStyle | undefined, r: TextRun): string {
+    if (r.xr) {
+      try {
+        const k = JSON.parse(r.xr) as { x: string; k: string };
+        if (k.k === runShown(style, r)) { if (this.themeLinks) return k.x; const l = lookOver(style, r); return unthemed(k.x, l.color, l.font); }
+      } catch { /* written from its look */ }
+    }
+    return this.runLook(lookOver(style, r));
+  }
+
   private runLook(l: ReturnType<typeof lookOver<CellStyle>>): string {
-    return `<rPr>${l.bold ? '<b/>' : ''}${l.italic ? '<i/>' : ''}${l.strike ? '<strike/>' : ''}${l.underline ? '<u/>' : ''}` +
+    return `<rPr>${l.bold ? '<b/>' : ''}${l.italic ? '<i/>' : ''}${l.strike ? '<strike/>' : ''}${l.underline ? uXml(l.ukind ?? l.excel?.u) : ''}` +
       `${l.pos ? `<vertAlign val="${l.pos === 'sub' ? 'subscript' : 'superscript'}"/>` : ''}<sz val="${l.size ?? 11}"/>` +
       `${l.color ? `<color rgb="FF${hex6(l.color)}"/>` : '<color theme="1"/>'}<rFont val="${xmlAttr(l.font ?? this.minor)}"/><family val="2"/>${l.font ? '' : '<scheme val="minor"/>'}</rPr>`;
   }
@@ -592,14 +617,18 @@ export async function writeXlsx(book: Workbook, deps: XlsxPictures, opts: { macr
 async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean }): Promise<Uint8Array> {
   const pkg = new Package();
   const vba = opts.macros ? book.macros : null;
-  const styles = new Styles(book.theme, book.normalStyle, book.excelStyles);
-  const strings = new Strings(themeOf(book.theme).minor);
+  // theme links in fonts kept from the file hold while the theme written is the file's (or, with none, Excel's own still)
+  const themeLinks = book.kept?.theme ? book.kept.theme.look === JSON.stringify(book.theme) : !book.theme;
+  const styles = new Styles(book.theme, book.normalStyle, book.excelStyles, themeLinks);
+  const strings = new Strings(themeOf(book.theme).minor, themeLinks);
   const model: Model = { app: 'Chem Illustrator', version: 1, drawingStyle: book.drawingStyle, sheets: [], autoChem: book.autoChem, ...(book.customViews.length ? { customViews: book.customViews } : {}), ...(book.queries.length ? { queries: book.queries } : {}) };
   const sheetEntries: string[] = [];
   const filterNames: string[] = [];
   const printTitleNames: string[] = [];
   const gridNames: string[] = [];
-  let imageNo = 0, drawingNo = 0, tableNo = 0, chartNo = 0, notesNo = 0, pivotNo = 0;
+  let imageNo = 0, drawingNo = 0, tableNo = 0, chartNo = 0, notesNo = 0, pivotNo = 0, vmlNo = 0;
+  // embedded objects kept from the file read (their parts are numbered across the workbook)
+  const oleState: OleWriteState = { embedNo: 0, mediaNo: 0 };
   const pivotCaches: string[] = [];
   let anyDynamic = false;
   // the data connections kept from the file, and the query tables written that use them
@@ -705,6 +734,8 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     }
 
     const anchors: string[] = [];
+    // structures saved as ChemDraw objects
+    const made: KeptSheetOle[] = [];
     const pictures: { png: Uint8Array; key: string; name: string }[] = [];
     const pictureFor = new Map<string, string>();
     const drawingPath = `xl/drawings/drawing${drawingNo + 1}.xml`;
@@ -785,8 +816,27 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
         if (vm !== undefined && !f && typeof v === 'string' && FILE_ERRORS.includes(v)) body = `<c r="${ref}"${sAttr} t="e"><v>${v}</v></c>`;
         if (body) cells.push(body);
 
-        // the structure's picture, over the cell (or merged block)
-        if (cell?.structure) {
+        // the structure as a ChemDraw object over the cell (Settings ▸ General ▸ Save structures in
+        // Excel files as), unless one Excel had there is kept (changed in ChemDraw from Excel)
+        const asObject = cell?.structure && deps.chemdrawObjects && deps.chemdraw && cell.structure.contents.atoms.length && !s.ole?.some((o) => o.at?.[0] === c && o.at?.[1] === r)
+          ? (() => { try { return deps.chemdraw!(cell.structure!, book.drawingStyle); } catch { return null; } })() : null;
+        if (asObject && cell?.structure) {
+          const m = s.mergeAt(r, c);
+          const r2 = m?.r2 ?? r, c2 = m?.c2 ?? c;
+          const x = cols.start(c), y = rows.start(r);
+          const w = cols.start(c2 + 1) - x, h = rows.start(r2 + 1) - y;
+          // the object at the structure's own shape, fitted in the cell (or merged block) and centred
+          const k = Math.min(1, (w - 2) / Math.max(1, asObject.w / 0.75), (h - 2) / Math.max(1, asObject.h / 0.75));
+          const ow = (asObject.w / 0.75) * k, oh = (asObject.h / 0.75) * k;
+          const ox = x + (w - ow) / 2, oy = y + (h - oh) / 2;
+          const f = cols.at(ox, c), fr = rows.at(oy, r), t = cols.at(ox + ow, c), tr = rows.at(oy + oh, r);
+          const prog = chemdrawProg();
+          made.push(structureOle(cellName(r, c), prog, chemdrawObject(asObject.cdx, prog, { emf: asObject.emf, w: asObject.w, h: asObject.h }, [[OLE_CELL_STREAM, new TextEncoder().encode(cellName(r, c))]]), { bytes: asObject.emf, ext: 'emf', type: 'image/x-emf' },
+            { col: f.i, colOff: f.off, row: fr.i, rowOff: fr.off }, { col: t.i, colOff: t.off, row: tr.i, rowOff: tr.off }, { w: ow * 0.75, h: oh * 0.75 }));
+          if (entry) entry.cdx = bytesHash(asObject.cdx);
+        } else if (cell?.structure && !s.ole?.some((o) => o.over && o.at?.[0] === c && o.at?.[1] === r)) {
+          // the structure's picture, over the cell (or merged block); not under its own object kept
+          // there, changed in ChemDraw from Excel (review F2-R05, F2b-R06)
           const m = s.mergeAt(r, c);
           const r2 = m?.r2 ?? r, c2 = m?.c2 ?? c;
           const x = cols.start(c), y = rows.start(r);
@@ -950,6 +1000,13 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       const end = cols.at(x + o.w, o.at.col), endR = rows.at(y + o.h, o.at.row);
       anchors.push(objectAnchorXml(o, { col: end.i, colOff: end.off, row: endR.i, rowOff: endR.off }, anchors.length + 2, { x, y }, pic));
     }
+    // notes and comments (a dashboard's stand-in has none), and objects embedded in the sheet kept
+    // from the file read, which share the notes' VML drawing (their shapes numbered after the notes')
+    const notes = standIn ? null : notesParts(s, si + 1, persons);
+    const vmlPath = `xl/drawings/vmlDrawing${vmlNo + 1}.vml`;
+    const objects = [...(own.ole ?? []), ...made];
+    const ole = !standIn && objects.length ? writeSheetOle(pkg, objects, path, vmlPath, (si + 1) * 1024 + 1 + (notes ? s.notes.size : 0), oleState) : null;
+    if (ole) anchors.push(...ole.anchors);
     let drawingXml = '';
     const sheetRels = path;
     if (anchors.length) {
@@ -959,8 +1016,6 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       const rid = pkg.relate(sheetRels, RELS.drawing, `../drawings/drawing${drawingNo}.xml`);
       drawingXml = `<drawing r:id="${rid}"/>`;
     }
-    // notes and comments (a dashboard's stand-in has none)
-    const notes = standIn ? null : notesParts(s, si + 1, persons);
     if (notes) {
       notesNo++;
       pkg.add(`xl/comments${notesNo}.xml`, HEAD + notes.comments, NOTES_CT.comments);
@@ -969,9 +1024,14 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
         pkg.add(`xl/threadedComments/threadedComment${notesNo}.xml`, HEAD + notes.threaded, NOTES_CT.threaded);
         pkg.relate(sheetRels, NOTES_REL.threaded, `../threadedComments/threadedComment${notesNo}.xml`);
       }
+    }
+    const vml = notes ? (ole?.vmlShapes ? notes.vml.replace(/<\/xml>$/, `${ole.vmlTypes}${ole.vmlShapes}</xml>`) : notes.vml)
+      : ole?.vmlShapes ? oleVml(si + 1, ole.vmlTypes, ole.vmlShapes) : null;
+    if (vml) {
+      vmlNo++;
       pkg.defaultType('vml', NOTES_CT.vml);
-      pkg.add(`xl/drawings/vmlDrawing${notesNo}.vml`, notes.vml);
-      const vid = pkg.relate(sheetRels, NOTES_REL.vml, `../drawings/vmlDrawing${notesNo}.vml`);
+      pkg.add(vmlPath, vml);
+      const vid = pkg.relate(sheetRels, NOTES_REL.vml, `../drawings/vmlDrawing${vmlNo}.vml`);
       drawingXml += `<legacyDrawing r:id="${vid}"/>`;
     }
     const dvXml = standIn ? '' : validationsXml(s.validations, (f) => excelFunctionNames(f, book.excelPrefixes), longList, book.date1904 ? DAYS_1900_TO_1904 : 0);
@@ -1003,7 +1063,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       `<sheetFormatPr defaultRowHeight="${own.fileRowHeight?.pt ?? ptFromPx(DEFAULT_ROW_H)}"${own.fileRowHeight ? (own.fileRowHeight.custom ? ' customHeight="1"' : '') : ' customHeight="1"'}${own.fileRowHeight?.zero ? ' zeroHeight="1"' : ''}${outlineLevelAttrs(s)}/>` +
       (colXml.length ? `<cols>${colXml.join('')}</cols>` : '') +
       `<sheetData>${rowXml.join('')}</sheetData>${sheetProtectionXml(own.excel)}${filterXml}${own.excel?.sortState ?? ''}${standIn ? '' : customSheetViewsXml(book, own)}${merges}${cfXml}${dvXml}${hyperlinks}` +
-      `${page.printOptions}${page.pageMargins}${page.pageSetup}${page.headerFooter}${page.breaks}${own.excel?.ignoredErrors ?? ''}${drawingXml}${tableParts}${sparkExt ? `<extLst>${sparkExt}</extLst>` : ''}</worksheet>`,
+      `${page.printOptions}${page.pageMargins}${page.pageSetup}${page.headerFooter}${page.breaks}${own.excel?.ignoredErrors ?? ''}${drawingXml}${ole?.oleObjects ?? ''}${tableParts}${sparkExt ? `<extLst>${sparkExt}</extLst>` : ''}</worksheet>`,
       CT.sheet);
     const rid = pkg.relate('xl/workbook.xml', RELS.worksheet, `worksheets/sheet${si + 1}.xml`);
     sheetEntries.push(`<sheet name="${xml(s.name)}" sheetId="${si + 1}" r:id="${rid}"/>`);
@@ -1156,14 +1216,57 @@ const BORDER_STYLES: Record<string, BorderStyle> = {
   dashDot: 'dashed', mediumDashDot: 'dashed', dashDotDot: 'dotted', mediumDashDotDot: 'dashed', slantDashDot: 'dashed', dotted: 'dotted',
 };
 
+/** A shared string run's rPr children (CT_RPrElt, 18.4.7), in Excel's order. */
+const RPR_PARTS = new Set(['rFont', 'charset', 'family', 'b', 'i', 'strike', 'outline', 'shadow', 'condense', 'extend', 'color', 'sz', 'u', 'vertAlign', 'scheme']);
+
+/** An element with its known children and their values only, as written again here. */
+function partsXml(el: Element, known: Set<string>): string {
+  return `<${el.localName}>${Array.from(el.children).filter((k) => known.has(k.localName)).map((k) =>
+    `<${k.localName}${Array.from(k.attributes).filter((a) => !a.prefix && /^(val|rgb|theme|indexed|tint|auto)$/.test(a.name)).map((a) => ` ${a.name}="${xmlAttr(a.value)}"`).join('')}/>`).join('')}</${el.localName}>`;
+}
+
+/** What a run shows over its cell, to tell whether its rPr as read still goes with it. */
+function runShown(style: CellStyle | undefined, r: TextRun): string {
+  const l = lookOver(style, { ...r, xr: undefined });
+  return JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.underline ? l.ukind ?? l.excel?.u : undefined, !!l.strike, l.color, l.pos, l.font, l.size]);
+}
+
+/** What a cell's font looks like here, to tell whether a font kept from the file still goes with it. */
+const fontLook = (l: CellStyle) => JSON.stringify([!!l.bold, !!l.italic, !!l.underline, l.color, l.font, l.size, l.excel?.strike, l.excel?.vertAlign, l.underline ? l.excel?.u : undefined]);
+
+/**
+ * A kept font (or run look) with its links to a theme other than the one written made fixed, the
+ * rest as the file had it (outline, shadow, family, character set: review F2b-R07): a theme colour
+ * other than the text's as the colour it shows here (`color`; none: the text's), and the heading
+ * font (18.8.35 scheme major) as its name (`font`). The body font's link stays, as the cell follows
+ * the theme's body font here too, and the text's colour (theme 1) follows the theme written.
+ */
+function unthemed(x: string, color: string | undefined, font: string | undefined): string {
+  let out = x.replace(/<color\b[^>]*\btheme="(?!1")[^>]*\/>/g, color ? `<color rgb="FF${hex6(color)}"/>` : '<color theme="1"/>');
+  if (/<scheme val="major"\/>/.test(out)) {
+    out = out.replace(/<scheme val="major"\/>/g, '');
+    if (font) out = out.replace(/<(name|rFont) val="[^"]*"\/>/, (_, tag: string) => `<${tag} val="${xmlAttr(font)}"/>`);
+  }
+  return out;
+}
+
+/**
+ * Whether a font as written here (fontXml) has more than a font made from its look would: an
+ * outline or shadow (18.8.22), condensed or extended, a character set, a family other than
+ * Swiss, or a theme colour other than the text's.
+ */
+const fontHasMore = (x: string) => /<(outline|shadow|condense|extend|charset)\b|<family val="(?!2")|<color theme="(?!1"\/>)/.test(x);
+
+/** A font's or run's underline (18.4.13): single unless another of Excel's kinds is given. */
+const EXCEL_U = new Set(['double', 'singleAccounting', 'doubleAccounting']);
+// (Word's double kinds, from text pasted from a document, as Excel's double)
+const uXml = (kind: string | undefined) => (kind && EXCEL_U.has(kind) ? `<u val="${kind}"/>` : kind && /^(wavyDouble)$/.test(kind) ? '<u val="double"/>' : '<u/>');
+
 /** The parts of a font Excel writes, kept from the Normal style's (font 0) to write it back. */
 const FONT_PARTS = new Set(['b', 'i', 'strike', 'condense', 'extend', 'outline', 'shadow', 'u', 'vertAlign', 'sz', 'color', 'name', 'family', 'charset', 'scheme']);
 
 /** A font element as written again here (its known parts and their values only). */
-function fontXml(f: Element): string {
-  return `<font>${Array.from(f.children).filter((k) => FONT_PARTS.has(k.localName)).map((k) =>
-    `<${k.localName}${Array.from(k.attributes).filter((a) => !a.prefix && /^(val|rgb|theme|indexed|tint|auto)$/.test(a.name)).map((a) => ` ${a.name}="${xmlAttr(a.value)}"`).join('')}/>`).join('')}</font>`;
-}
+const fontXml = (f: Element): string => partsXml(f, FONT_PARTS);
 
 /**
  * The cell formats of a file (cellXfs), as cell styles: fonts as they show (a cell in the theme's
@@ -1194,6 +1297,8 @@ function readStyles(doc: Document | null, theme: string[], faces: { minor: strin
     if (on(f, 'i')) st.italic = true;
     if (on(f, 'u')) st.underline = true;
     const sz = Number(val(f, 'sz') ?? baseSize);
+    // the underline's kind (18.8.53 / 18.18.85; single is the val's default)
+    const uKind = st.underline ? val(f, 'u') : null;
     if (sz !== 11 && sz > 0) st.size = sz;
     const color = readColour(kid(f, 'color'), theme);
     if (color && color !== '#000000') st.color = color;
@@ -1203,6 +1308,9 @@ function readStyles(doc: Document | null, theme: string[], faces: { minor: strin
     // raised, lowered or struck through: not shown here, written back
     const va = val(f, 'vertAlign');
     if (va === 'superscript' || va === 'subscript' || on(f, 'strike')) st.excel = { ...(va === 'superscript' || va === 'subscript' ? { vertAlign: va } : {}), ...(on(f, 'strike') ? { strike: true as const } : {}) };
+    if (uKind && uKind !== 'single') st.excel = { ...st.excel, u: uKind };
+    const written = fontXml(f);
+    if (fontHasMore(written)) st.excel = { ...st.excel, font: { xml: written, key: fontLook(st) } };
     return st;
   });
   const fills: (string | undefined)[] = kids(kid(root, 'fills'), 'fill').map((f) => {
@@ -1331,7 +1439,7 @@ export const excelEscape = (s: string) => s.replace(/_(?=x[0-9A-Fa-f]{4}_)/g, '_
 /** A run of a shared string as the file has it: its whole look, or none (the cell's). */
 interface FileRun {
   text: string;
-  look?: { bold: boolean; italic: boolean; underline: boolean; strike: boolean; color?: string; pos?: 'sub' | 'sup'; size?: number; font?: string; minor: boolean };
+  look?: { raw?: string; bold: boolean; italic: boolean; underline: boolean; ukind?: string; strike: boolean; color?: string; pos?: 'sub' | 'sup'; size?: number; font?: string; minor: boolean };
 }
 
 /** A shared string's text, whether some of it is lowered or raised (chemistry), and its runs. */
@@ -1353,7 +1461,9 @@ function stringItem(si: Element, theme: string[] = []): { text: string; chem: bo
     runs.push({
       text: part,
       look: {
+        ...(fontHasMore(partsXml(pr, RPR_PARTS)) ? { raw: partsXml(pr, RPR_PARTS) } : {}),
         bold: on(kid(pr, 'b')), italic: on(kid(pr, 'i')), underline: on(kid(pr, 'u')), strike: on(kid(pr, 'strike')),
+        ...(on(kid(pr, 'u')) && (kid(pr, 'u')?.getAttribute('val') ?? 'single') !== 'single' ? { ukind: kid(pr, 'u')!.getAttribute('val')! } : {}),
         color: readColour(kid(pr, 'color'), theme),
         pos: va === 'subscript' ? 'sub' : va === 'superscript' ? 'sup' : undefined,
         size: sz ? Number(sz) : undefined,
@@ -1377,17 +1487,22 @@ function cellRuns(runs: FileRun[] | undefined, style: CellStyle | undefined, min
     if (!l) return { text: r.text };
     const font = l.font && !l.minor && l.font !== (style?.font ?? minorFont) ? l.font : undefined;
     const color = l.color && l.color !== (style?.color ?? '#000000') ? l.color : undefined;
-    return {
+    const run: TextRun = {
       text: r.text,
       ...(l.bold !== !!style?.bold ? { bold: l.bold } : {}),
       ...(l.italic !== !!style?.italic ? { italic: l.italic } : {}),
       ...(l.underline !== !!style?.underline ? { underline: l.underline } : {}),
+      // (a kind other than the cell's, 'single' over a cell underlined another way)
+      ...(l.underline && (l.ukind ?? '') !== ((style?.underline && style.excel?.u) || '') ? { underline: true, ukind: l.ukind ?? 'single' } : {}),
       ...(l.strike ? { strike: true } : {}),
       ...(color ? { color } : {}),
       ...(l.pos ? { pos: l.pos } : {}),
       ...(l.size !== undefined && l.size !== size ? { size: l.size } : {}),
       ...(font ? { font } : {}),
     };
+    // its rPr as the file had it, with the look it shows (G2-09, G2-19)
+    if (l.raw) run.xr = JSON.stringify({ x: l.raw, k: runShown(style, run) });
+    return run;
   });
   return runsFrom(out.map((r) => r.text).join(''), out.flatMap((r) => Array.from({ length: r.text.length }, () => r)));
 }
@@ -1526,6 +1641,13 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   /** Formulas the file saved no value for. */
   let unvalued = 0;
   const restored = { structures: 0, changed: 0 };
+  const oleObjects: KeptSheetOle[] = [];
+  /** Embedded objects that can't be kept (their data isn't in the file: linked objects), by program. */
+  const lostOle: string[] = [];
+  /** Structures changed in ChemDraw from Excel that can't be read here, kept as the objects they are. */
+  const keptOver = new Set<KeptSheetOle>();
+  /** Copies made in Excel of a structure's ChemDraw object saved here (each structure is saved once, at its cell). */
+  let ownCopies = 0;
   book.build(() => {
     sheetEls.forEach((el, si) => {
       const s = book.sheets[si];
@@ -1893,6 +2015,38 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       const relOf = (type: string) => sheetRelList.find((r) => r.type === type)?.target;
       const commentsPath = relOf(NOTES_REL.comments), vmlPath = relOf(NOTES_REL.vml), threadedPath = relOf(NOTES_REL.threaded);
       leftOut.sheet(pkg, path!, ws, vmlPath ? pkg.text(vmlPath) : null, (t) => keptQueries.has(t));
+      // embedded objects (a ChemDraw structure pasted into Excel, an embedded Word file): kept to save back
+      const ownSeen = new Set<string>();
+      const ole = readSheetOle(pkg, path!, ws, vmlPath ?? null, dr, lostOle).filter((o) => {
+        // a structure saved here as a ChemDraw object: known by the cell named in its own data (which
+        // Excel keeps), else by its VML shape's name, else by its ChemDraw data being one saved here,
+        // else (a ChemDraw object over a structure cell, in a workbook with structures saved as objects) by where it is
+        if (!ms || !ms.cells.some((x) => x.cdx)) return true;
+        const bin = o.parts.find((p) => p.rel.endsWith('/oleObject') || p.rel.endsWith('/package'));
+        const cdx = bin ? chemdrawCdx(bin.bytes) : null;
+        const print = cdx ? bytesHash(cdx) : null;
+        const ref = (bin ? oleCellTag(bin.bytes) : null) ?? structureOleRef(o);
+        const mc = ref ? ms.cells.find((x) => x.cdx && cellName(x.r, x.c) === ref) : undefined;
+        const chemdraw = /^ChemDraw/i.test(o.progId);
+        const same = print !== null && (mc ? print === mc.cdx : ms.cells.some((x) => x.cdx === print));
+        const over = chemdraw && o.at && s.cell(o.at[1], o.at[0])?.structure;
+        if (!mc && !same && !over) return true;
+        if (same) {
+          // (a copy of it made in Excel carries the same cell and data: left out, and said)
+          const key = ref ?? `${print}@${o.at?.join(',') ?? ''}`;
+          if (ownSeen.has(key)) ownCopies++;
+          ownSeen.add(key);
+          return false;
+        }
+        // changed in ChemDraw from Excel: the cell's structure as ChemDraw saved it, where it can be read
+        const contents = cdx && o.at ? (() => { try { return _deps?.readChemdraw?.(cdx, book.drawingStyle) ?? null; } catch { return null; } })() : null;
+        if (!contents || !o.at || !contents.atoms.length) { keptOver.add(o); o.over = true; return true; }
+        const [c, r] = o.at;
+        s.setCell(r, c, { structure: makeStructure(contents), style: s.cell(r, c)?.style });
+        restored.changed++;
+        return false;
+      });
+      if (ole.length) { s.ole = ole; oleObjects.push(...ole); }
       if (commentsPath || threadedPath) {
         const notes = readNotes(commentsPath ? pkg.xml(commentsPath) : null, shownNotes(vmlPath ? pkg.text(vmlPath) : null), threadedPath ? pkg.xml(threadedPath) : null, personsDoc);
         for (const [k, n] of notes) s.setNote(rowOf(k), colOf(k), n);
@@ -1972,6 +2126,12 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       `${linkedFormulas > 1 ? 'They are' : 'It is'} kept for Excel, which updates ${linkedFormulas > 1 ? 'them' : 'it'} from those files, but can't be worked out here.`);
   }
   if (restored.changed) warnings.push(`${restored.changed} structure or calculated cell${restored.changed > 1 ? 's were' : ' was'} changed in another program: ${restored.changed > 1 ? 'they show' : 'it shows'} what that program saved.`);
+  const oleSaid = oleNote(oleObjects.filter((o) => !keptOver.has(o)));
+  if (oleSaid) warnings.push(oleSaid);
+  const keptOverStructures = keptOver.size;
+  if (keptOverStructures) warnings.push(`${keptOverStructures} structure${keptOverStructures > 1 ? 's were' : ' was'} changed in ChemDraw from Excel in a way that can't be read here: ${keptOverStructures > 1 ? 'they are' : 'it is'} kept as ChemDraw object${keptOverStructures > 1 ? 's' : ''} for Excel, over ${keptOverStructures > 1 ? 'their cells' : 'its cell'}, and the cell's own picture isn't saved under ${keptOverStructures > 1 ? 'them' : 'it'}.`);
+  if (ownCopies) notKept.add(`${ownCopies} cop${ownCopies > 1 ? 'ies' : 'y'} made in Excel of structures' ChemDraw objects (each structure is saved once, at its cell)`);
+  if (lostOle.length) notKept.add(`${lostOle.length} embedded object${lostOle.length > 1 ? 's' : ''} whose data isn't in the file (linked objects)`);
   if (notKept.size) warnings.push(`Not shown here, and left out if you save over this file: ${[...notKept].join(', ')}.`);
   return { book, warnings };
 }
