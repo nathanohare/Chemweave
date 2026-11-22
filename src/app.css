@@ -2064,6 +2064,7 @@ dialog.periodic-table { position: fixed; inset: 64px 16px auto auto; max-height:
 .iso-svg text { font-size: 9px; fill: var(--muted); }
 .iso-table td { padding: 1px 10px 1px 0; font-size: var(--fs-sm); }
 .ec-head { margin: 4px 0 2px; font-size: var(--fs-sm); }
+.ec-green { margin: 0 0 4px; font-size: var(--fs-xs); color: var(--muted); }
 .ec-table { font-size: var(--fs-sm); border-collapse: collapse; }
 .ec-table th { font-weight: 600; color: var(--muted); text-align: left; padding: 1px 10px 1px 0; }
 .ec-table td { padding: 1px 10px 1px 0; }

@@ -3,6 +3,7 @@
 // Electron counting (Analysis panel): L, X and Z ligands, oxidation state, dⁿ and the electron
 // count, for complexes drawn with ligand labels, with drawn ligands and through hapto bonds.
 
+import { electronsHtml } from '../src/ui/analysis-panel';
 import { describe, expect, it } from 'vitest';
 import { Doc } from '../src/model';
 import { countElectrons, roman } from '../src/chem/electrons';
@@ -40,6 +41,9 @@ describe('electron counting', () => {
     expect([c.l, c.x, c.oxidation, c.dn, c.electrons]).toEqual([3, 1, 1, 8, 16]);
     expect(c.classification).toBe('ML₃X');
     expect(c.ligands.find((r) => r.name === 'PPh3')!.count).toBe(3);
+    // (no Z ligand: Green's valence number is the oxidation state, so it isn't shown again)
+    expect(c.green).toBeUndefined();
+    expect(electronsHtml([c])).not.toContain("Green's CBC");
   });
 
   it('Pd(PPh3)4 is Pd(0), d10, 18 electrons', () => {
@@ -161,12 +165,18 @@ describe('electron counting', () => {
     const c = one(doc, pt);
     expect([c.l, c.z]).toEqual([1, 1]);
     expect(c.classification).toBe('MLZ');
-    // Green's covalent bond classification (Green, J. Organomet. Chem. 1995, 500, 127; Green &
-    // Parkin, J. Chem. Educ. 2014, 91, 807): VN = x + 2z, dⁿ = m − VN, electrons = m + 2l + x.
-    // Pt (m = 10), ML Z: VN = 2, d⁸, 10 + 2 = 12 electrons
-    expect([c.oxidation, c.dn, c.electrons]).toEqual([2, 8, 12]);
-    // and the ionic column adds up to the same count: d⁸ + 2 (NH₃) + 2 (the pair in the Pt→B bond)
+    // The oxidation state leaves the Z ligand's bond out: an acceptor bonded as a Lewis acid "does
+    // not obtain that bond's electrons" (Karen et al., Pure Appl. Chem. 2016, 88, 831, section 4.1),
+    // so Pt(0), d¹⁰. Green's covalent bond classification (Green, J. Organomet. Chem. 1995, 500, 127;
+    // Green & Parkin, J. Chem. Educ. 2014, 91, 807) gives VN = x + 2z = 2 and dⁿ = m − VN = d⁸,
+    // shown beside it. The electron count is the same either way: m + 2l + x = 10 + 2 = 12.
+    expect([c.oxidation, c.dn, c.electrons]).toEqual([0, 10, 12]);
+    expect(c.green).toEqual({ vn: 2, dn: 8 });
+    // the ionic column adds up to the count: d¹⁰ + 2 (NH₃) + 0 (the Z ligand)
     expect(c.dn + c.ligands.reduce((t, r) => t + r.ionic * r.count, 0)).toBe(c.electrons);
+    const html = electronsHtml([c]);
+    expect(html).toContain('Pt(0)');
+    expect(html).toContain("Green's CBC: valence number 2, d⁸");
   });
 
   it('writes oxidation states as Roman numerals', () => {
