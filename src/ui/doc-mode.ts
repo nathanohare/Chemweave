@@ -55,6 +55,8 @@ import { citeSuper, formatOf, type Reference } from '../document/references';
 import { replaceInCells, runZotero, type ZoteroCommand, type ZoteroHost, type ZoteroPost } from '../document/zotero-live';
 import { choose } from './keep-ui';
 import { dataUrl, fromDataUrl, imageSize } from '../render/images';
+import { canMakeEditable, makeEditable as makeEditablePicture, pictureBack, restyle, type MakeEditableHost } from './doc-make-editable';
+import type { StyleChoice } from '../recognise/editable';
 import { shownSize } from '../document/doc-layout';
 import { editChart, chartPoints } from './chart-editor';
 import { pictureFormat } from './picture-dialog';
@@ -134,6 +136,8 @@ export interface DocModeHost {
   toStructure(text: string, style: DocStyle): Promise<{ contents: Contents; notes: string[] } | { error: string }>;
   /** Choose a picture file. */
   pickPicture(): Promise<{ bytes: Uint8Array; mime: string; name: string } | null>;
+  /** Reading pictures of structures (Make Editable). */
+  structureReader?: MakeEditableHost;
   /** Choose any file, to put in as an object (Insert > Document > Object). */
   pickObjectFile?(): Promise<{ name: string; bytes: Uint8Array } | null>;
   /** The picture a file put in as an object shows: its contents where they can be shown, else its icon. */
@@ -1364,6 +1368,7 @@ export class DocumentMode {
       'arrange-forward': (x, y) => this.arranging.orderMenu(x, y, true),
       'arrange-backward': (x, y) => this.arranging.orderMenu(x, y, false),
       'arrange-group': (x, y) => this.arranging.groupMenu(x, y, b),
+      'make-editable-menu': (x, y) => this.makeEditableMenu(x, y),
     };
   }
 
@@ -1615,6 +1620,22 @@ export class DocumentMode {
         if (isChemDraw(po.embed)) cmd('Edit Drawing', 'open-object', 'Turn the ChemDraw object into a drawing here and edit it (it is kept as it came until then)');
         else cmd('Open Object', 'open-object', `Open the ${objectKind(po.embed)} in its own program; save it there to change it here`);
         item(po.embed.icon ? 'Show Contents' : 'Display as Icon', () => void this.embeddedIcon(picked, !po.embed?.icon), po.embed.icon ? 'Show what the object holds instead of its icon' : 'Show an icon with the file\'s name instead of what it holds');
+      }
+      if (canMakeEditable(po)) {
+        const was = lastEditStyle();
+        items.push({ label: 'Make Editable', items: [
+          command('Match Original Style', 'make-editable-match', 'Read the structure and draw it with the picture\'s bond length, line width and label size (the picture is kept)', was === 'match'),
+          command('Use Default Style', 'make-editable-default', 'Read the structure and draw it in the document\'s drawing style (the picture is kept)', was === 'default'),
+        ] });
+      }
+      if (po?.kind === 'drawing' && po.fromPicture) {
+        const st = po.fromPicture.style;
+        items.push({ label: 'Original Picture', items: [
+          command('Match Original Style', 'make-editable-match', 'Draw it with the picture\'s bond length, line width and label size', st === 'match'),
+          command('Use Default Style', 'make-editable-default', 'Draw it in the document\'s drawing style', st === 'default'),
+          null,
+          command('Revert to Picture', 'revert-to-picture', 'Put the picture back as it was'),
+        ] });
       }
       if (po?.kind === 'picture' && !po.chart && !po.embed) cmd('Picture Format…', 'picture-format', 'Brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to a shape or proportions');
       if (po?.kind === 'drawing' || po?.kind === 'picture') cmd('Alt Text…', 'alt-text', 'What it shows, for people who can\'t see it (screen readers); kept as its alt text in Word');
@@ -3683,6 +3704,10 @@ export class DocumentMode {
       case 'edit-chart': { const id = this.pickedObject(); const o = id !== null ? f.t.objects[id] : undefined; if (id === null || o?.kind !== 'picture' || !o.chart) { this.host.flash('Click a chart first (or double-click it).'); break; } void this.editChart(id); break; }
       case 'picture-format': { const id = this.pickedObject(); const o = id !== null ? f.t.objects[id] : undefined; if (id === null || o?.kind !== 'picture' || o.chart || o.embed) { this.host.flash(o?.kind === 'picture' && o.embed ? 'An embedded object shows its program\'s picture: change it by opening the object.' : 'Click a picture first.'); break; } void this.formatPicture(id); break; }
       case 'alt-text': void this.altText(); break;
+      case 'make-editable': void this.makeEditable(lastEditStyle()); break;
+      case 'make-editable-match': void this.makeEditable('match'); break;
+      case 'make-editable-default': void this.makeEditable('default'); break;
+      case 'revert-to-picture': this.revertToPicture(); break;
       case 'insert-caption': void this.insertCaption(); break;
       case 'cross-reference': void this.crossReference(); break;
       case 'compound-number': void this.compoundNumber(); break;
@@ -4128,6 +4153,67 @@ export class DocumentMode {
     if (this.file !== f) return;
     this.backToCell(spot);
     this.insertObject({ kind: 'picture', src: pic.src, w: pic.w, h: pic.h, ...(pic.px ? { px: pic.px } : {}), embed: embedFile(file.name, file.bytes, icon) }, 'Insert object');
+    this.focus();
+  }
+
+  /**
+   * Make Editable: the picked picture of a structure read and made a structure in its place,
+   * matching the picture's look or in the document's style (remembered for the button). With a
+   * structure made this way picked, the other style is drawn from the picture kept, unread.
+   */
+  private async makeEditable(choice: StyleChoice): Promise<void> {
+    const f = this.file;
+    const id = this.pickedObject();
+    const o = id !== null ? f?.t.objects[id] : undefined;
+    if (!f || id === null || !o) { this.host.flash('Click a picture of a structure first.'); return; }
+    setLastEditStyle(choice);
+    if (o.kind === 'drawing' && o.fromPicture) {
+      if (o.fromPicture.style === choice) return;
+      const next = await restyle(o, choice, f.t.drawingStyle);
+      if (!next || this.file !== f || f.t.objects[id] !== o) return;
+      f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: next } } as DocText, choice === 'match' ? 'Match Original Style' : 'Use Default Style');
+      this.focus();
+      return;
+    }
+    if (!canMakeEditable(o)) { this.host.flash(o.kind === 'drawing' ? 'This is already a structure you can edit.' : 'Click a picture of a structure first.'); return; }
+    const reader = this.host.structureReader;
+    if (!reader) { this.host.flash('Reading structures needs the app.'); return; }
+    const made = await makeEditablePicture(reader, o, choice, f.t.drawingStyle);
+    this.focus();
+    // the document or the picture changed while it was read: leave it as it is now
+    if (!made || this.file !== f || f.t.objects[id] !== o) return;
+    f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: made.drawing } } as DocText, 'Make Editable');
+    const look = made.drawing.fromPicture?.look;
+    const how = choice === 'default' ? 'in the document\'s style' : look?.preset ? `in ${look.preset}` : `to match the picture (bonds ${look ? look.bondLength.toFixed(1) : '?'} pt)`;
+    this.host.flash(made.problems.length ? `Made editable ${how}. Check it against the original: ${made.problems.join(' ')}` : `Made editable ${how}. Revert to Picture puts the picture back.`, made.problems.length ? 10000 : 5000);
+    this.redraw();
+  }
+
+  /** Make Editable ▾: the style the button uses (or the structure's, for one made already), and going back. */
+  private makeEditableMenu(x: number, y: number): void {
+    const id = this.pickedObject();
+    const o = id !== null ? this.file?.t.objects[id] : undefined;
+    const made = o?.kind === 'drawing' && o.fromPicture ? o.fromPicture : null;
+    const now = made ? made.style : lastEditStyle();
+    const tick = (on: boolean) => (on ? '✓' : '');
+    const go = (cmd: string) => () => { this.run(cmd); };
+    popupMenu(x, y, [
+      ['Match Original Style', go('make-editable-match'), true, tick(now === 'match')],
+      ['Use Default Style', go('make-editable-default'), true, tick(now === 'default')],
+      null,
+      ['Revert to Picture', go('revert-to-picture'), !!made, ''],
+    ]);
+  }
+
+  /** Revert to Picture: a structure made from a picture back to that picture, as it was. */
+  private revertToPicture(): void {
+    const f = this.file;
+    const id = this.pickedObject();
+    const o = id !== null ? f?.t.objects[id] : undefined;
+    if (!f || id === null || o?.kind !== 'drawing' || !o.fromPicture) { this.host.flash('Click a structure made from a picture first.'); return; }
+    const back = pictureBack(o);
+    if (!back) return;
+    f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: back } } as DocText, 'Revert to Picture');
     this.focus();
   }
 
@@ -5420,6 +5506,15 @@ export class DocumentMode {
     }
     // the Table tab shows while the caret is in a table (or a table is picked)
     const tg = this.tableTarget();
+    // Picture Format, while a picture is picked (as in Word); the chemistry bar's Make Editable with it
+    const pickedId = this.pickedObject();
+    const pickedObj = pickedId !== null ? f.t.objects[pickedId] : undefined;
+    const picTab = this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="picture"]');
+    if (picTab) {
+      picTab.hidden = !canMakeEditable(pickedObj);
+      if (picTab.hidden && picTab.getAttribute('aria-selected') === 'true') this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="home"]')?.click();
+    }
+    document.body.classList.toggle('doc-picture-picked', canMakeEditable(pickedObj));
     const tabBtn = this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="table"]');
     if (tabBtn) {
       tabBtn.hidden = !tg && !this.keepTableTab;
@@ -5547,4 +5642,15 @@ export function fitDocColumns(t: TableData, f: DocFile, textW: number): TableDat
   });
   const total = cols.reduce((a, b) => a + b, 0);
   return { ...t, cols: total > textW ? cols.map((w) => (w * textW) / total) : cols };
+}
+
+const EDIT_STYLE_KEY = 'chem-illustrator.makeEditable.style';
+
+/** The style Make Editable used last (Match Original Style the first time). */
+function lastEditStyle(): StyleChoice {
+  try { return localStorage.getItem(EDIT_STYLE_KEY) === 'default' ? 'default' : 'match'; } catch { return 'match'; }
+}
+
+function setLastEditStyle(c: StyleChoice): void {
+  try { localStorage.setItem(EDIT_STYLE_KEY, c); } catch { /* not kept */ }
 }

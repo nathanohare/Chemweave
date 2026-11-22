@@ -314,8 +314,8 @@ import { cappedText, TEXT_CAP } from './ai/assistant';
 import type { AssistantBar } from './ui/assistant-bar';
 import { aiSettingsDialog } from './ui/ai-settings';
 import { freeSpace } from './editor/free-space';
-import { canReadStructures, importPictureFiles, importPdfDrawings, MOST_PAGES, pdfDrawings, type ImportHost } from './ui/import-structures';
-import { placeRead } from './recognise/check';
+import { canReadStructures, importPictureFiles, importPdfDrawings, MOST_PAGES, pdfDrawings, readForEditing, type ImportHost } from './ui/import-structures';
+import { checkRead, placeRead } from './recognise/check';
 import { Diagnostics, catchErrors, errorReport, formatEntry, stamp, type LogEntry, type UnexpectedClose } from './diagnostics';
 import { keepStore, getText, putText } from './keep/store';
 import { Library, storePlace, folderPlace, readPlaceChoice, writePlaceChoice, LIBRARY_FILE } from './library/library-store';
@@ -8430,6 +8430,11 @@ function loadDocMode(): Promise<DocumentMode> {
       readPaste: (e) => readDocPaste(e),
       toStructure: (text, style) => textToStructure(text, style),
       pickPicture: () => pickPicture(),
+      structureReader: {
+        read: (p) => readForEditing(importHost, p),
+        check: async (r) => (await checkRead(r, docStyle(), chem)).problems,
+        flash,
+      },
       pickObjectFile: () => pickObjectFile(),
       objectPicture: (name, bytes, icon) => objectPictureOf(name, bytes, icon),
       openObjectFile: (file, changed) => openObjectFile(file, changed),
@@ -14234,7 +14239,15 @@ const foldRail = (on: boolean) => {
   dispatchEvent(new Event('resize'));
 };
 railFold.addEventListener('click', () => foldRail(!document.body.classList.contains('structure-rail-folded')));
-$('#dock-left').prepend(structureStart, ...structureRail, railFold);
+// Make Editable, at the top while a picture is picked in a document (the picture read and made a structure)
+const makeEditableBtn = document.createElement('button');
+makeEditableBtn.type = 'button';
+makeEditableBtn.className = 'structure-more make-editable-btn';
+makeEditableBtn.innerHTML = `${commandIcon('make-editable') ?? ''}<span>Make<br>Editable</span>`;
+makeEditableBtn.title = 'Make Editable: read the structure in the picture and put an editable structure in its place (the picture is kept, to compare with or revert to). Right-click the picture for the style';
+makeEditableBtn.setAttribute('aria-label', 'Make Editable');
+makeEditableBtn.addEventListener('click', () => { if (ws.active.mode === 'document') docMode?.run('make-editable'); });
+$('#dock-left').prepend(makeEditableBtn, structureStart, ...structureRail, railFold);
 { let folded = false; try { folded = localStorage.getItem(RAIL_KEY) === '1'; } catch { /* not kept */ } foldRail(folded); }
 
 /**
