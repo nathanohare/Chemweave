@@ -1,0 +1,214 @@
+// The accessibility check (standing rule R10), run by the browser smoke test on every pull request
+// and on its own: axe (axe-core, WCAG 2.0 and 2.1 A and AA rules) on each kind of tab, an open
+// menu and an open window, in the Light and Dark Gray looks, and on every ribbon tab and a
+// right-click menu in the Light look; then a keyboard-only walk: the menu
+// bar (F10, arrows, Esc), the toolbox (reached and used with Tab and Enter) and a window (focus goes
+// in, Tab stays in, Esc closes it and gives focus back).
+//
+// Problems found before this check existed are in scripts/a11y-known.mjs: it fails only on a new
+// one, and says which known ones no longer happen. On its own, against an app being served:
+//   A11Y_URL=http://localhost:5173/ node scripts/a11y-check.mjs            (npx vite running)
+//   A11Y_URL=… node scripts/a11y-check.mjs --write   rewrites scripts/a11y-known.mjs with what it finds now
+// (only after fixing what can be fixed: every line written there is a known gap).
+import fs from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { KNOWN_A11Y } from './a11y-known.mjs';
+
+const AXE = fileURLToPath(new URL('../node_modules/axe-core/axe.min.js', import.meta.url));
+const LOOKS = [['Light', 'theme-light'], ['Dark Gray', 'theme-darkgray']];
+const MODES = [['Canvas', 'drawing', 'new'], ['Spreadsheet', 'sheet', 'new-sheet'], ['Document', 'document', 'new-document'], ['Presentation', 'slides', 'new-slides'], ['Design', 'design', 'new-design']];
+
+/**
+ * One line per problem, the same each run: the rule, the look for colour contrast, the element. The
+ * element's selector is kept to what doesn't change with the window's width or what was clicked
+ * last (no :nth-child, no classes for a ribbon group folded or a button pressed), so many elements
+ * of one kind (the labels of the ribbon's groups) make one line.
+ */
+const STATE = /\.(rb-folded|rb-compact|rb-idle|active|open|selected|on|checked|hover|focus|shown|hidden|pressed|current)(?=[.:\[\s>]|$)/g;
+export const selectorKey = (target) => target.join(' ').replace(/:nth-(child|of-type)\(\d+\)/g, '').replace(STATE, '').replace(/\s+/g, ' ').slice(0, 160);
+const axeLine = (look, v, node) => `axe ${v.id}${v.id === 'color-contrast' ? ` (${look})` : ''}: ${selectorKey(node.target)}`;
+
+/** Every accessibility problem on `page` (the app already started): a sorted list of lines. */
+export async function a11yProblems(page, log = () => {}) {
+  const found = new Set();
+  if (!(await page.evaluate(() => !!window.axe))) await page.evaluate(fs.readFileSync(AXE, 'utf8'));
+  const runAxe = async (look, where) => {
+    const r = await page.evaluate(() => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] }));
+    let n = 0;
+    for (const v of r.violations) for (const node of v.nodes) { found.add(axeLine(look, v, node)); n++; }
+    log(`  axe, ${look}, ${where}: ${n} problem${n === 1 ? '' : 's'}`);
+  };
+  const cmd = (c) => page.evaluate((c) => window.__app.command(c), c);
+  const esc = async () => { await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await page.waitForTimeout(100); };
+  const tabFor = async (mode, make) => {
+    let t = await page.evaluate((mode) => window.__app.ws.tabs.findIndex((x) => x.mode === mode), mode);
+    if (t < 0) { await cmd(make); await page.waitForTimeout(600); await page.locator('.tw-close').click({ timeout: 800 }).catch(() => {}); }
+    else await page.evaluate((t) => window.__app.ws.activate(window.__app.ws.tabs[t]), t);
+    await page.waitForTimeout(400);
+  };
+
+  for (const [look, theme] of LOOKS) {
+    await cmd(theme);
+    await page.waitForTimeout(300);
+    for (const [name, mode, make] of MODES) {
+      await tabFor(mode, make);
+      await runAxe(look, name);
+      // every other ribbon tab of this kind of tab (in the Light look only, to keep the run short)
+      if (look !== 'Light') continue;
+      const tabs = await page.evaluate(() => [...document.querySelectorAll('[role="tablist"] > [role="tab"]')]
+        .filter((b) => b.offsetParent && !b.hidden && b.getAttribute('aria-selected') !== 'true').map((b) => b.textContent.trim()));
+      for (const t of tabs) {
+        await page.evaluate((t) => [...document.querySelectorAll('[role="tablist"] > [role="tab"]')].find((b) => b.offsetParent && b.textContent.trim() === t)?.click(), t);
+        await page.waitForTimeout(150);
+        await runAxe(look, `${name}, ${t} ribbon tab`);
+      }
+      await page.evaluate(() => [...document.querySelectorAll('[role="tablist"] > [role="tab"]')].find((b) => b.offsetParent && !b.hidden)?.click());
+      if (mode === 'drawing') {
+        // a right-click menu, on the empty page
+        const box = await page.locator('#overlay').boundingBox();
+        if (box) {
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+          await page.waitForTimeout(200);
+          await runAxe(look, 'a right-click menu open');
+          await esc();
+        }
+      }
+    }
+    await tabFor('drawing', 'new');
+    // an open menu, and an open window
+    const file = page.locator('header > .menu-wrap > button').first();
+    await file.click();
+    await page.waitForTimeout(200);
+    await runAxe(look, 'the File menu open');
+    await esc();
+    await cmd('preferences');
+    await page.waitForTimeout(400);
+    await runAxe(look, 'Settings open');
+    await esc();
+  }
+  await cmd('theme-light');
+
+  // ------------------------------------------------ the keyboard alone
+  const focused = () => page.evaluate(() => {
+    const a = document.activeElement;
+    if (!a || a === document.body) return null;
+    const s = getComputedStyle(a);
+    return {
+      tag: a.tagName.toLowerCase(), cls: a.className && typeof a.className === 'string' ? a.className : '', text: (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 40),
+      inHeader: !!a.closest('header'), inMenu: !!a.closest('[role="menu"]'), inToolbox: !!a.closest('.toolbox'), tool: a.getAttribute('data-tool'), inDialog: !!a.closest('dialog[open]'),
+      // a visible focus mark: an outline, or a ring drawn as a shadow
+      ring: (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || (s.boxShadow && s.boxShadow !== 'none'),
+    };
+  });
+  const what = (f) => (f ? `${f.tag}${f.text ? ` “${f.text}”` : ''}` : 'nothing');
+  const key = async (k, wait = 80) => { await page.keyboard.press(k); await page.waitForTimeout(wait); };
+  await tabFor('drawing', 'new');
+  await page.mouse.click(5, 300).catch(() => {});
+
+  // menus: F10 to the menu bar, Down opens, Down moves, Right goes to the next menu, Esc closes and stays on its button
+  await key('F10', 150);
+  let f = await focused();
+  if (!f?.inHeader) found.add(`keyboard: F10 does not go to the menu bar (focus is on ${what(f)})`);
+  else {
+    if (!f.ring) found.add(`keyboard: the menu bar’s ${what(f)} shows no focus mark`);
+    await key('ArrowDown', 200);
+    f = await focused();
+    if (!f?.inMenu) found.add(`keyboard: Down on a menu button does not open its menu (focus is on ${what(f)})`);
+    else {
+      const first = f.text;
+      await key('ArrowDown');
+      f = await focused();
+      if (!f?.inMenu || f.text === first) found.add('keyboard: Down in an open menu does not move to the next item');
+      else if (!f.ring) found.add(`keyboard: menu item ${what(f)} shows no focus mark`);
+      await key('ArrowRight', 200);
+      f = await focused();
+      if (!f?.inMenu && !f?.inHeader) found.add(`keyboard: Right in a menu does not go to the next menu (focus is on ${what(f)})`);
+      await key('Escape', 150);
+      f = await focused();
+      if (!f?.inHeader) found.add(`keyboard: Esc in a menu does not go back to its button (focus is on ${what(f)})`);
+    }
+  }
+  await esc();
+
+  // the toolbox: Tab reaches a tool, it shows where the focus is, and Enter picks it
+  await page.mouse.click(5, 300).catch(() => {});
+  let tool = null;
+  for (let i = 0; i < 400 && !tool; i++) {
+    await page.keyboard.press('Tab');
+    f = await focused();
+    if (f?.inToolbox && f.tool && f.tool !== 'select') tool = f;
+  }
+  if (!tool) found.add('keyboard: Tab never reaches a tool in the Drawing Tools toolbox');
+  else {
+    await page.waitForTimeout(50);
+    if (!(await focused())?.ring) found.add(`keyboard: toolbox button ${what(tool)} shows no focus mark`);
+    await key('Enter', 150);
+    const now = await page.evaluate(() => window.__app.editor.toolName);
+    if (now !== tool.tool) found.add(`keyboard: Enter on toolbox button ${tool.tool} does not pick the tool (the tool is ${now})`);
+  }
+  await page.evaluate(() => window.__app.editor.setTool('select'));
+
+  // a window: Settings, from the keyboard: focus goes in, Tab keeps it in, Esc closes it and gives focus back
+  await page.mouse.click(5, 300).catch(() => {});
+  await key('F10', 150);
+  const opener = await focused();
+  await cmd('preferences');
+  await page.waitForTimeout(400);
+  f = await focused();
+  if (!f?.inDialog) found.add(`keyboard: opening Settings does not put the focus in it (focus is on ${what(f)})`);
+  let left = null;
+  for (let i = 0; i < 60 && !left; i++) {
+    await page.keyboard.press('Tab');
+    f = await focused();
+    if (!f?.inDialog) left = f;
+  }
+  if (left !== null || (await page.evaluate(() => !document.querySelector('dialog[open]')))) found.add(`keyboard: Tab leaves the open Settings window (to ${what(left)})`);
+  // (Esc may first leave a list or a box being typed in, so twice at most)
+  const open = () => page.evaluate(() => !!document.querySelector('dialog[open]'));
+  await key('Escape', 250);
+  if (await open()) await key('Escape', 250);
+  if (await open()) found.add('keyboard: Esc (twice) does not close the Settings window');
+  else {
+    f = await focused();
+    if (!f && opener) found.add('keyboard: closing the Settings window leaves the focus nowhere (it should go back where it was)');
+  }
+  await esc();
+  return [...found].sort();
+}
+
+/** The problems not in KNOWN_A11Y, and the known ones that no longer happen. */
+export function compareA11y(found, known = KNOWN_A11Y) {
+  const k = new Set(known), f = new Set(found);
+  return { fresh: found.filter((x) => !k.has(x)), gone: known.filter((x) => !f.has(x)) };
+}
+
+// ------------------------------------------------ on its own
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  const { launch } = await import('../bench/browser.mjs');
+  const url = process.env.A11Y_URL || 'http://localhost:5173/';
+  const browser = await launch();
+  let code = 0;
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    page.on('dialog', (d) => d.dismiss());
+    await page.goto(url);
+    await page.waitForFunction(() => window.__app?.chem?.ready, null, { timeout: 60000 });
+    await page.locator('#welcome-close').click({ timeout: 2000 }).catch(() => {});
+    const found = await a11yProblems(page, console.log);
+    if (process.argv.includes('--write')) {
+      const file = fileURLToPath(new URL('./a11y-known.mjs', import.meta.url));
+      const src = fs.readFileSync(file, 'utf8');
+      const head = src.slice(0, src.indexOf('export const KNOWN_A11Y'));
+      fs.writeFileSync(file, `${head}export const KNOWN_A11Y = [\n${found.map((x) => `  ${JSON.stringify(x)},`).join('\n')}\n];\n`);
+      console.log(`Wrote ${found.length} known problems to scripts/a11y-known.mjs.`);
+    } else {
+      const { fresh, gone } = compareA11y(found);
+      if (gone.length) console.log(`\nNo longer happening (take them off scripts/a11y-known.mjs):\n  ${gone.join('\n  ')}`);
+      if (fresh.length) { console.log(`\n${fresh.length} new accessibility problem${fresh.length === 1 ? '' : 's'}:\n  ${fresh.join('\n  ')}`); code = 1; }
+      console.log(`\n${found.length} accessibility problems, ${found.length - fresh.length} of them already known.`);
+    }
+  } finally {
+    await browser.close();
+  }
+  process.exit(code);
+}
