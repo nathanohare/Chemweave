@@ -161,6 +161,12 @@ describe('electron counting', () => {
     const c = one(doc, pt);
     expect([c.l, c.z]).toEqual([1, 1]);
     expect(c.classification).toBe('MLZ');
+    // Green's covalent bond classification (Green, J. Organomet. Chem. 1995, 500, 127; Green &
+    // Parkin, J. Chem. Educ. 2014, 91, 807): VN = x + 2z, dⁿ = m − VN, electrons = m + 2l + x.
+    // Pt (m = 10), ML Z: VN = 2, d⁸, 10 + 2 = 12 electrons
+    expect([c.oxidation, c.dn, c.electrons]).toEqual([2, 8, 12]);
+    // and the ionic column adds up to the same count: d⁸ + 2 (NH₃) + 2 (the pair in the Pt→B bond)
+    expect(c.dn + c.ligands.reduce((t, r) => t + r.ionic * r.count, 0)).toBe(c.electrons);
   });
 
   it('writes oxidation states as Roman numerals', () => {

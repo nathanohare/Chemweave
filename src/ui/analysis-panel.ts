@@ -103,7 +103,7 @@ export function electronsHtml(counts: MetalCount[]): string {
     const closed = c.electrons === 18 ? ' (a closed shell)' : '';
     return `<p class="ec-head"><b>${esc(c.symbol)}(${roman(c.oxidation)})</b>, d${sup(c.dn)}, <b>${c.electrons} electrons</b>${closed} · ${esc(c.classification)}</p>
       <table class="ec-table">
-        <tr><th>Ligand</th><th>Class</th><th title="Neutral (covalent) counting: the metal atom's own electrons, one from each X, two from each L">Neutral</th><th title="Ionic counting: the metal ion's d electrons, two from each X⁻ and each L">Ionic</th></tr>
+        <tr><th>Ligand</th><th>Class</th><th title="Neutral (covalent) counting: the metal atom's own electrons, one from each X, two from each L">Neutral</th><th title="Ionic counting: the metal ion's d electrons, two from each X⁻ and each L, and the metal's pair in each bond to a Z">Ionic</th></tr>
         <tr><td>${esc(c.symbol)}</td><td></td><td>${c.group}</td><td>d${sup(c.dn)}: ${c.dn}</td></tr>
         ${rows.join('')}
         ${c.charge ? `<tr><td>Charge ${c.charge > 0 ? '+' : '−'}${Math.abs(c.charge)}</td><td></td><td>${c.charge > 0 ? '−' : '+'}${Math.abs(c.charge)}</td><td>in d${sup(c.dn)}</td></tr>` : ''}

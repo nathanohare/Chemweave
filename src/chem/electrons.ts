@@ -1,9 +1,14 @@
 // Electron counting for metal complexes (Analysis panel): each ligand sorted into L (gives two
 // electrons), X (shares one) or Z (takes two) as in Green's covalent bond classification
-// (J. Organomet. Chem. 1995, 500, 127), and from that the metal's oxidation state, its dⁿ count
-// and the complex's electron count (18 for a closed shell):
-//   oxidation state = x + q,  dⁿ = m − oxidation state,  electrons = m + 2l + x − q
-// where m is the metal's group number and q the complex's charge. The neutral (covalent) and
+// (M. L. H. Green, J. Organomet. Chem. 1995, 500, 127; Green & Parkin, J. Chem. Educ. 2014, 91,
+// 807), and from that the metal's valence (shown as its oxidation state), its dⁿ count and the
+// complex's electron count (18 for a closed shell):
+//   valence number VN = x + 2z + q,  dⁿ = m − VN,  electrons = m + 2l + x − q
+// where m is the metal's group number and q the complex's charge (a charge moves onto the
+// ligands in Green's "equivalent neutral class": a cation's L⁺ counts as X, an anion's X⁻ as L).
+// A Z ligand takes a pair of the metal's d electrons into its bond, so it raises the valence by
+// two and lowers dⁿ by two ("raises the valence of the metal center by two units", Green &
+// Parkin 2014); the pair still counts toward the electron count (2 in the ionic column). The neutral (covalent) and
 // ionic ways of counting give the same totals; they only split them differently (an X ligand is
 // one electron from a neutral radical, or two from an anion on an oxidised metal), so both are
 // shown for each ligand.
@@ -175,7 +180,8 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
   const rows = new Map<number, LigandCount[]>(metals.map((m) => [m, []]));
   const add = (metal: number, row: Omit<LigandCount, 'neutral' | 'ionic' | 'count' | 'mm'> & { mm?: number }) => {
     const e = electronsOf(row.l, row.x);
-    rows.get(metal)!.push({ mm: 0, ...row, neutral: e.neutral + (row.mm ?? 0), ionic: e.ionic + (row.mm ?? 0), count: 1 });
+    // (a Z ligand: none of its own in the neutral count; in the ionic count, the metal's pair now in its bond)
+    rows.get(metal)!.push({ mm: 0, ...row, neutral: e.neutral + (row.mm ?? 0), ionic: e.ionic + (row.mm ?? 0) + 2 * row.z, count: 1 });
   };
   const xSoFar = new Map<number, number>(metals.map((m) => [m, 0]));
   const notes = new Map<number, string[]>(metals.map((m) => [m, []]));
@@ -299,7 +305,8 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
     const z = merged.reduce((s, r) => s + r.z * r.count, 0);
     const mm = merged.reduce((s, r) => s + r.mm * r.count, 0);
     const q = share.get(m)!;
-    const oxidation = x + q;
+    // (Green's valence number: each Z takes two of the metal's electrons)
+    const oxidation = x + 2 * z + q;
     const symbol = a.label ? (metalLabelParts(a.label) ? SYMBOLS[metalLabelParts(a.label)!.z] : a.label) : SYMBOLS[a.z];
     const cls = `M${l ? 'L' + (l > 1 ? sub(l) : '') : ''}${x ? 'X' + (x > 1 ? sub(x) : '') : ''}${z ? 'Z' + (z > 1 ? sub(z) : '') : ''}`;
     out.push({
