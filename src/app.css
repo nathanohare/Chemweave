@@ -2829,6 +2829,9 @@ dialog.equation-dialog textarea { width: 100%; box-sizing: border-box; font: var
 .cmt-resolved { font-size: var(--fs-xs); color: var(--muted); font-style: italic; margin-top: 2px; }
 .cmt-input { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; resize: vertical; font: var(--fs-sm)/1.4 var(--ui-font); color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-control); padding: 4px 6px; }
 .cmt-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+/* a Word or PowerPoint comment's box: rich text, as tall as two to eight lines */
+.cmt-rich { position: relative; resize: none; white-space: pre-wrap; overflow-wrap: anywhere; min-height: calc(2 * 1.4em + 10px); max-height: calc(8 * 1.4em + 10px); overflow-y: auto; cursor: text; }
+.cmt-rich.empty::before { content: attr(data-placeholder); color: var(--muted); position: absolute; pointer-events: none; }
 .cmt-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .cmt-card:not(.active) .cmt-bar { display: none; }
 .cmt-btn { font: var(--fs-xs) var(--ui-font); padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); cursor: pointer; }

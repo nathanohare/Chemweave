@@ -4,7 +4,7 @@
 // reply, resolve, edit and delete. Every change is a step of the deck's Undo.
 
 import type { Deck } from '../deck/deck';
-import { initials, type PinnedComment } from '../document/comments';
+import { initials, withNoteRuns, type NoteRun, type PinnedComment } from '../document/comments';
 import { reviewAuthor, revisionDate } from '../document/revisions';
 import { authorColour, threadCard, type ThreadActions } from './comment-cards';
 import type { View } from '../render/renderer';
@@ -141,7 +141,7 @@ export class SlideComments {
     if (key !== this.key) {
       this.key = key;
       this.list.replaceChildren(...list.map((c, i) => {
-        const card = threadCard(c, { active: c.id === this.active, editing: c.id === this.editing, actions: this.actions(c.id), label: `Comment ${i + 1}` });
+        const card = threadCard(c, { active: c.id === this.active, editing: c.id === this.editing, actions: this.actions(c.id), label: `Comment ${i + 1}`, rich: true });
         return card;
       }));
       this.empty.hidden = list.length > 0;
@@ -207,31 +207,31 @@ export class SlideComments {
   // ---------------------------------------------------------------- changes
 
   private actions(id: number): ThreadActions {
-    const note = (text: string) => ({ author: reviewAuthor() || 'Author', date: revisionDate(), text });
+    const note = (text: string, runs?: NoteRun[] | null) => withNoteRuns({ author: reviewAuthor() || 'Author', date: revisionDate(), text }, text, runs);
     return {
-      edit: (text, reply) => {
+      edit: (text, reply, runs) => {
         this.editing = null;
         const d = this.draft;
         if (d && d.c.id === id) {
           this.draft = null;
-          this.hooks.deck()?.setComments([...(this.hooks.deck()?.current?.comments ?? []), { ...d.c, text }], 'New comment');
+          this.hooks.deck()?.setComments([...(this.hooks.deck()?.current?.comments ?? []), withNoteRuns(d.c, text, runs)], 'New comment');
           this.update();
           this.hooks.focus();
           return;
         }
         this.patch(id, (c) => {
-          if (reply === undefined) return { ...c, text };
+          if (reply === undefined) return withNoteRuns(c, text, runs);
           const replies = [...(c.replies ?? [])];
-          if (replies[reply]) replies[reply] = { ...replies[reply], text };
+          if (replies[reply]) replies[reply] = withNoteRuns(replies[reply], text, runs);
           return { ...c, replies };
         }, 'Edit comment');
         this.update();
         this.hooks.focus();
       },
-      reply: async (text) => {
+      reply: async (text, runs) => {
         if (!reviewAuthor() && !(await this.hooks.askName())) return;
         this.active = id;
-        this.patch(id, (c) => ({ ...c, replies: [...(c.replies ?? []), note(text)] }), 'Reply to comment');
+        this.patch(id, (c) => ({ ...c, replies: [...(c.replies ?? []), note(text, runs)] }), 'Reply to comment');
         this.update();
       },
       removeReply: (i) => { this.patch(id, (c) => { const replies = (c.replies ?? []).filter((_, k) => k !== i); const { replies: _, ...rest } = c; return replies.length ? { ...rest, replies } : rest; }, 'Delete reply'); this.update(); },

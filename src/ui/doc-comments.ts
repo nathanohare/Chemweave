@@ -5,7 +5,7 @@
 
 import type { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
-import { commentSpan, markComment, nextCommentId, placedComments, unmarkComment, type CommentThread } from '../document/comments';
+import { commentSpan, markComment, nextCommentId, noteRuns, placedComments, unmarkComment, withNoteRuns, type CommentThread } from '../document/comments';
 import { reviewAuthor, revisionDate } from '../document/revisions';
 import { plainText } from '../richtext';
 import { stackCards, threadCard, type ThreadActions } from './comment-cards';
@@ -88,7 +88,7 @@ export class DocComments {
       this.layer.replaceChildren();
       this.cards.clear();
       for (const p of list) {
-        const card = threadCard(p.c, { active: p.id === this.active, editing: p.id === this.editing, actions: this.actions(p.id) });
+        const card = threadCard(p.c, { active: p.id === this.active, editing: p.id === this.editing, actions: this.actions(p.id), rich: true });
         this.cards.set(p.id, card);
         this.layer.append(card);
       }
@@ -158,22 +158,22 @@ export class DocComments {
   }
 
   private actions(id: number): ThreadActions {
-    const note = (text: string) => ({ author: reviewAuthor() || 'Author', date: revisionDate(), text });
+    const note = (text: string, runs?: Parameters<typeof withNoteRuns>[2]) => withNoteRuns({ author: reviewAuthor() || 'Author', date: revisionDate(), text }, text, runs);
     return {
-      edit: (text, reply) => {
+      edit: (text, reply, runs) => {
         this.editing = null;
         this.setThread(id, (c) => {
-          if (reply === undefined) return c.text === text ? c : { ...c, text };
+          if (reply === undefined) return c.text === text && JSON.stringify(noteRuns(c)) === JSON.stringify(runs ?? null) ? c : withNoteRuns(c, text, runs);
           const replies = [...(c.replies ?? [])];
-          if (replies[reply]) replies[reply] = { ...replies[reply], text };
+          if (replies[reply]) replies[reply] = withNoteRuns(replies[reply], text, runs);
           return { ...c, replies };
         }, 'Edit comment');
         this.update();
         this.h.focus();
       },
-      reply: async (text) => {
+      reply: async (text, runs) => {
         if (!reviewAuthor() && !(await this.h.askName())) return;
-        this.setThread(id, (c) => ({ ...c, replies: [...(c.replies ?? []), note(text)] }), 'Reply to comment');
+        this.setThread(id, (c) => ({ ...c, replies: [...(c.replies ?? []), note(text, runs)] }), 'Reply to comment');
         this.active = id;
         this.update();
       },

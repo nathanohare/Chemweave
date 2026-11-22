@@ -43,7 +43,7 @@ import { INDEX_INDENT, authorities, indexInstr, indexItems, taInstr, toaInstr, t
 import { ALG_SIDS, type Protection } from '../document/protect';
 import { parseFmt, parseRev } from '../document/revisions';
 import { officeTarget } from '../links';
-import { cmtIds, initials, placedComments, type CommentNote, type CommentThread } from '../document/comments';
+import { cleanNoteRuns, cmtIds, initials, noteRuns, placedComments, sliceNoteRuns, type CommentNote, type CommentThread, type NoteRun } from '../document/comments';
 import { toOmml } from '../document/math';
 import { documentMeasure } from '../text/font-measure';
 import { arialWidth } from '../text-metrics';
@@ -554,7 +554,7 @@ class DocxWriter {
       const ps = pieces.map((p, i) => (typeof p === 'number'
         ? (i ? noAnnotationRef(c.word!.paras![p]) : c.word!.paras![p]).replace(/^<w:p\b/, `<w:p w14:paraId="${ids[i]}" w14:textId="77777777"`)
           .replace(/ r:id="link:(\d+)"/g, (_, k: string) => ` r:id="${this.pkg.relate(part, REL.hyperlink, links[Number(k)] ?? '', true)}"`)
-        : `<w:p w14:paraId="${ids[i]}" w14:textId="77777777">${i === 0 ? '<w:r><w:annotationRef/></w:r>' : ''}${run('', p.line)}</w:p>`));
+        : `<w:p w14:paraId="${ids[i]}" w14:textId="77777777">${i === 0 ? '<w:r><w:annotationRef/></w:r>' : ''}${commentLine(c, p.line, p.at)}</w:p>`));
       const last = ids[ids.length - 1];
       const date = c.date ? ` w:date="${xml(toWordDate(c.date))}"` : '';
       // (the initials the comment came with, else made from the name as Word makes them)
@@ -1887,32 +1887,50 @@ function formField(o: Extract<DocObject, { kind: 'form' }>, rPr: string, names: 
 /** A run of text (tabs as Word's tabs, optional hyphens as its soft hyphens). */
 /**
  * A comment's paragraphs to write: the number of one of the paragraphs Word wrote (kept as it
- * was), or a line of plain text. Unchanged, all of Word's; changed here, Word's for each paragraph
- * whose text is still there in its place, in order, and plain lines for the rest.
+ * was), or a line of text (from `at` in the comment's text) to write with its words' looks.
+ * Unchanged, all of Word's; changed here, Word's for each paragraph whose text and looks are still
+ * there in its place, in order, and the rest written afresh.
  */
-export function commentPieces(c: CommentNote): (number | { line: string })[] {
+export function commentPieces(c: CommentNote): (number | { line: string; at: number })[] {
   const w = c.word;
-  if (w?.paras?.length && w.text === c.text) return w.paras.map((_, i) => i);
-  const plain = () => c.text.split('\n').map((line) => ({ line }));
+  const t = c.text;
+  const mine = noteRuns(c), theirs = w?.runs ?? null;
+  // (looks are compared only where the note's are known: set on its card here, or read with it)
+  const known = c.runs !== undefined && (!c.runs.length || mine !== null);
+  const looks = (runs: NoteRun[] | null, text: string, from: number, to: number) => JSON.stringify(cleanNoteRuns(sliceNoteRuns(runs ?? [{ text }], from, to)));
+  const sameLooks = (a: number, b: number, wa: number, wb: number) => !known || looks(mine, t, a, b) === looks(theirs, wt, wa, wb);
+  const wt = w?.text ?? '';
+  if (w?.paras?.length && wt === t && sameLooks(0, t.length, 0, wt.length)) return w.paras.map((_, i) => i);
+  const plain = () => { let at = 0; return t.split('\n').map((line) => { const p = { line, at }; at += line.length + 1; return p; }); };
   if (!w?.paras?.length || w.texts?.length !== w.paras.length) return plain();
   const texts: string[] = w.texts;
-  const out: (number | { line: string })[] = [];
-  const t = c.text;
+  // where each of Word's paragraphs starts in the text Word's comment had
+  const starts: number[] = [];
+  texts.reduce((at, x) => { starts.push(at); return at + x.length + 1; }, 0);
+  const out: (number | { line: string; at: number })[] = [];
   let at = 0, next = 0;
   for (;;) {
-    // a paragraph of Word's (from those after the last one used) whose whole text comes next
+    // a paragraph of Word's (from those after the last one used) whose whole text comes next, with the same looks
     let k = -1;
     for (let j = next; j < texts.length && k < 0; j++) {
       const end = at + texts[j].length;
-      if (t.startsWith(texts[j], at) && (end === t.length || t[end] === '\n')) k = j;
+      if (t.startsWith(texts[j], at) && (end === t.length || t[end] === '\n') && sameLooks(at, end, starts[j], starts[j] + texts[j].length)) k = j;
     }
     let end: number;
     if (k >= 0) { out.push(k); next = k + 1; end = at + texts[k].length; }
-    else { const nl = t.indexOf('\n', at); end = nl < 0 ? t.length : nl; out.push({ line: t.slice(at, end) }); }
+    else { const nl = t.indexOf('\n', at); end = nl < 0 ? t.length : nl; out.push({ line: t.slice(at, end), at }); }
     if (end >= t.length) break;
     at = end + 1;
   }
   return out;
+}
+
+/** A line of a comment written afresh: its pieces, each with its look (bold, italic, strikethrough, underline, position). */
+function commentLine(c: CommentNote, line: string, at: number): string {
+  const runs = noteRuns(c);
+  if (!runs) return run('', line);
+  return sliceNoteRuns(runs, at, at + line.length).map((r) =>
+    run(`${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}${r.strike ? '<w:strike/>' : ''}${r.underline ? '<w:u w:val="single"/>' : ''}${r.sub ? '<w:vertAlign w:val="subscript"/>' : r.sup ? '<w:vertAlign w:val="superscript"/>' : ''}`, r.text)).join('');
 }
 
 /** A paragraph of a comment without its comment mark (w:annotationRef, which goes in the first only). */

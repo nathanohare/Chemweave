@@ -41,7 +41,7 @@ import { parseFieldInstr, type DocProps } from '../document/fields';
 import { shownSize } from '../document/doc-layout';
 import { coveringCell, layoutTable } from '../table';
 import { chemdrawCdx, isChemDraw, readEmbedded } from './ole-object';
-import { cmtIds, cmtString, type CommentNote, type CommentThread } from '../document/comments';
+import { cleanNoteRuns, cmtIds, cmtString, type CommentNote, type CommentThread, type NoteRun } from '../document/comments';
 import { BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, WORD_HIGHLIGHTS, DOCX_REL, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, fromWordDate, w14Look, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, TABLE_MARK, TABLE_NAME, W_NS, type DocxModel } from './docx-base';
 import { wordTablePrint } from './native-print';
 import { citationNumbers, cleanRef, type Piece as BibPiece, type Reference } from '../document/references';
@@ -1661,11 +1661,12 @@ class DocxReader {
       const text = texts.join('\n');
       const last = paras[paras.length - 1];
       const kept = this.commentParas(c, path!);
+      const runs = this.commentRuns(paras, text);
       // (the initials Word shows on it, as written: Word makes them only when the comment is made)
       const ini = this.a(c, 'initials');
       // (each paragraph's own text too, so the paragraphs left as they were keep their looks when another is changed)
-      const word = { ...(kept ? { paras: kept.paras, text, ...(texts.length === kept.paras.length ? { texts } : {}), ...(kept.links.length ? { links: kept.links } : {}) } : {}), ...(ini ? { initials: ini } : {}) };
-      notes.set(id, { author: this.a(c, 'author') ?? '', date: fromWordDate(this.a(c, 'date') ?? ''), text, para: last?.getAttributeNS(W14_NS, 'paraId') ?? '', ...(Object.keys(word).length ? { word } : {}) });
+      const word = { ...(kept ? { paras: kept.paras, text, ...(texts.length === kept.paras.length ? { texts } : {}), ...(runs ? { runs } : {}), ...(kept.links.length ? { links: kept.links } : {}) } : {}), ...(ini ? { initials: ini } : {}) };
+      notes.set(id, { author: this.a(c, 'author') ?? '', date: fromWordDate(this.a(c, 'date') ?? ''), text, para: last?.getAttributeNS(W14_NS, 'paraId') ?? '', ...(runs ? { runs } : {}), ...(Object.keys(word).length ? { word } : {}) });
     }
     // Word 365 keeps each comment's time in UTC too, by a lasting id found from its paragraph id
     const part = (rel: string) => { const at = this.pkg.relOfType(this.main, rel); return at ? this.pkg.xml(at)?.documentElement ?? null : null; };
@@ -1695,7 +1696,7 @@ class DocxReader {
     const replies = new Set<number>();
     for (const [id, n] of notes) {
       if (n.para && parent.has(n.para) && byPara.has(parent.get(n.para)!)) { replies.add(id); continue; }
-      comments[id] = { author: n.author, date: n.date, text: n.text, ...(n.word ? { word: n.word } : {}), ...(done.has(n.para) ? { done: true } : {}) };
+      comments[id] = { author: n.author, date: n.date, text: n.text, ...(n.runs ? { runs: n.runs } : {}), ...(n.word ? { word: n.word } : {}), ...(done.has(n.para) ? { done: true } : {}) };
     }
     for (const id of [...notes.keys()].sort((a, b) => a - b)) {
       if (!replies.has(id)) continue;
@@ -1704,9 +1705,31 @@ class DocxReader {
       let top = byPara.get(parent.get(n.para)!)!;
       for (let k = 0; replies.has(top) && k < 50; k++) top = byPara.get(parent.get(notes.get(top)!.para)!)!;
       const c = comments[top];
-      if (c) (c.replies ??= []).push({ author: n.author, date: n.date, text: n.text, ...(n.word ? { word: n.word } : {}) });
+      if (c) (c.replies ??= []).push({ author: n.author, date: n.date, text: n.text, ...(n.runs ? { runs: n.runs } : {}), ...(n.word ? { word: n.word } : {}) });
     }
     return { comments, replies };
+  }
+
+  /**
+   * A comment's words with their looks (bold, italic, underline, strikethrough, sub- and
+   * superscript), its paragraphs on lines of their own; null when none has a look (or the pieces
+   * don't say what its text says).
+   */
+  private commentRuns(paras: Element[], text: string): NoteRun[] | null {
+    const W = this.W;
+    const on = (e: Element | null) => !!e && !/^(0|false|off|none)$/.test(e.getAttributeNS(W, 'val') ?? '');
+    const out: NoteRun[] = [];
+    paras.forEach((p, i) => {
+      if (i) out.push({ text: '\n' });
+      for (const r of Array.from(p.getElementsByTagNameNS(W, 'r'))) {
+        const pr = kid(r, 'rPr');
+        const pos = kid(pr, 'vertAlign')?.getAttributeNS(W, 'val');
+        const look: Omit<NoteRun, 'text'> = { bold: on(kid(pr, 'b')), italic: on(kid(pr, 'i')), underline: on(kid(pr, 'u')), strike: on(kid(pr, 'strike')), sub: pos === 'subscript', sup: pos === 'superscript' };
+        const t = kids(r).map((e) => (e.localName === 't' ? e.textContent ?? '' : e.localName === 'tab' ? '\t' : e.localName === 'br' ? '\n' : '')).join('');
+        if (t) out.push({ ...look, text: t });
+      }
+    });
+    return out.map((r) => r.text).join('') === text ? cleanNoteRuns(out) : null;
   }
 
   /**

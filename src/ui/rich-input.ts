@@ -135,6 +135,22 @@ export class RichInput {
     this.place(start, end);
   }
 
+  /** Subscript or superscript on or off: for the selected text, or for what is typed next. */
+  togglePos(pos: 'sub' | 'sup'): void {
+    this.keepSelection();
+    const { start, end } = this.sel;
+    const flip = (l: RunLook, on: boolean): RunLook => { const { pos: _, ...rest } = l; return on ? { ...rest, pos } : rest; };
+    if (start === end) {
+      const look = this.typing?.at === start ? this.typing.look : this.looks[start - 1] ?? this.looks[start] ?? {};
+      this.typing = { at: start, look: flip(look, look.pos !== pos) };
+      return;
+    }
+    const on = !this.looks.slice(start, end).every((l) => l.pos === pos);
+    this.looks = this.looks.map((l, i) => (i >= start && i < end ? flip(l, on) : l));
+    this.render();
+    this.place(start, end);
+  }
+
   /** Whether the selected text (or what is typed next) has a look, as the ribbon shows it pressed. */
   has(key: ToggleLook, base = false): boolean {
     this.keepSelection();

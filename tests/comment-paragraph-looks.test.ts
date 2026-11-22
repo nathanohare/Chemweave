@@ -9,6 +9,9 @@ import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { commentPieces } from '../src/io/docx-write';
+import { withNoteRuns, type PinnedComment } from '../src/document/comments';
+import { threadCard, type ThreadActions } from '../src/ui/comment-cards';
+import { readLegacyComments, readModernComments, writeSlideComments } from '../src/io/pptx-comments';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
 const W14 = 'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"';
@@ -80,12 +83,91 @@ describe('a Word comment changed here', () => {
     const word = { paras: ['<w:p>a</w:p>', '<w:p>b</w:p>', '<w:p>c</w:p>'], texts: ['A', 'B', 'C'], text: 'A\nB\nC' };
     const c = (text: string) => commentPieces({ author: '', date: '', text, word });
     expect(c('A\nB\nC')).toEqual([0, 1, 2]);
-    expect(c('A\nnew\nC')).toEqual([0, { line: 'new' }, 2]);
+    expect(c('A\nnew\nC')).toEqual([0, { line: 'new', at: 2 }, 2]);
     expect(c('A\nC')).toEqual([0, 2]);
-    expect(c('AB\nC')).toEqual([{ line: 'AB' }, 2]);
-    expect(c('C\nA')).toEqual([2, { line: 'A' }]);
-    expect(c('')).toEqual([{ line: '' }]);
+    expect(c('AB\nC')).toEqual([{ line: 'AB', at: 0 }, 2]);
+    expect(c('C\nA')).toEqual([2, { line: 'A', at: 2 }]);
+    expect(c('')).toEqual([{ line: '', at: 0 }]);
     // (a file read before each paragraph's text was kept: plain, as before)
-    expect(commentPieces({ author: '', date: '', text: 'A\nB', word: { paras: word.paras, text: 'A\nB\nC' } })).toEqual([{ line: 'A' }, { line: 'B' }]);
+    expect(commentPieces({ author: '', date: '', text: 'A\nB', word: { paras: word.paras, text: 'A\nB\nC' } })).toEqual([{ line: 'A', at: 0 }, { line: 'B', at: 2 }]);
+  });
+});
+
+describe('comment cards edit the words\' looks (G3-17)', () => {
+  const actions = (): ThreadActions & { calls: unknown[][] } => {
+    const calls: unknown[][] = [];
+    return { calls, edit: (...a: unknown[]) => { calls.push(a); }, reply: () => undefined, removeReply: () => undefined, resolve: () => undefined, remove: () => undefined, focus: () => undefined } as ThreadActions & { calls: unknown[][] };
+  };
+
+  it('a Word comment\'s card shows its looks, and Ctrl+B in it saves them with the text', async () => {
+    const { doc } = await readDocx(wordFile());
+    const c = Object.values(doc.comments ?? {})[0];
+    expect(c.runs?.find((r) => r.text === 'CH')).toEqual({ text: 'CH', bold: true });
+    const a = actions();
+    const card = threadCard(c, { active: true, editing: true, actions: a, rich: true });
+    document.body.append(card);
+    const box = card.querySelector<HTMLElement>('.cmt-rich')!;
+    expect(box).not.toBeNull();
+    expect([...box.querySelectorAll('span')].find((x) => x.textContent === 'f')!.style.verticalAlign).toBe('sub');
+    // "then" (the start of the second line) selected, Ctrl+B, Enter
+    box.tabIndex = 0;
+    box.focus();
+    const spans = [...box.querySelectorAll('span')];
+    const line2 = spans.find((x) => x.textContent!.includes('then'))!.firstChild as Text;
+    const at = line2.data.indexOf('then');
+    getSelection()!.setBaseAndExtent(line2, at, line2, at + 4);
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true }));
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const [text, reply, runs] = a.calls[0] as [string, undefined, { text: string; bold?: boolean; sub?: boolean }[]];
+    expect(text).toBe(c.text);
+    expect(reply).toBeUndefined();
+    expect(runs.find((r) => r.text === 'then')).toEqual({ text: 'then', bold: true });
+    expect(runs.filter((r) => r.sub).map((r) => r.text)).toEqual(['2', '2', 'f']);
+    card.remove();
+
+    // saved: the changed paragraph is written afresh with its looks, the others as Word wrote them
+    const id = Number(Object.keys(doc.comments ?? {})[0]);
+    doc.comments![id] = withNoteRuns(c, text, runs);
+    const xml = strFromU8(unzipSync(await writeDocx(doc, deps))['word/comments.xml']);
+    expect(xml).toContain('<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">then</w:t></w:r>');
+    expect(xml).toContain('<w:r><w:rPr><w:i/><w:vertAlign w:val="subscript"/></w:rPr><w:t>f</w:t></w:r>');
+    expect(xml.match(/<w:annotationRef\/>/g)).toHaveLength(1);
+    const back = Object.values((await readDocx(await writeDocx(doc, deps))).doc.comments ?? {})[0];
+    expect(back.runs?.find((r) => r.text === 'then')).toEqual({ text: 'then', bold: true });
+  });
+
+  it('a changed line keeps its looks when written afresh (subscript typed in the card)', async () => {
+    const { doc } = await readDocx(wordFile());
+    const id = Number(Object.keys(doc.comments ?? {})[0]);
+    const c = doc.comments![id];
+    doc.comments![id] = withNoteRuns(c, 'Use CH2Cl2\nthen dry it over MgSO4\nRf 0.3', [
+      { text: 'Use ' }, { text: 'CH', bold: true }, { text: '2', bold: true, sub: true }, { text: 'Cl', bold: true }, { text: '2', bold: true, sub: true },
+      { text: '\nthen dry it over MgSO' }, { text: '4', sub: true }, { text: '\n' }, { text: 'R', italic: true }, { text: 'f', italic: true, sub: true }, { text: ' 0.3' },
+    ]);
+    const xml = strFromU8(unzipSync(await writeDocx(doc, deps))['word/comments.xml']);
+    expect(xml).toContain('<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t xml:space="preserve">4</w:t></w:r>');
+    expect(xml.match(/<w:p /g)).toHaveLength(3);
+  });
+
+  it('a slide comment\'s looks are kept through a PowerPoint file (in an extension; PowerPoint shows the words)', () => {
+    const c: PinnedComment = withNoteRuns({ id: 0, x: 10, y: 20, author: 'Nate', date: '2026-10-14T16:00:00.000Z', text: '' }, 'Use 3a', [{ text: 'Use ' }, { text: '3a', bold: true }]);
+    const out = writeSlideComments([[c]]);
+    expect(out.slides[0]).toContain('<p:text>Use 3a</p:text>');
+    const authors = new Map([['0', 'Nate']]);
+    const back = readLegacyComments(new DOMParser().parseFromString(out.slides[0]!, 'application/xml'), authors);
+    expect(back[0].text).toBe('Use 3a');
+    expect(back[0].runs).toEqual([{ text: 'Use ' }, { text: '3a', bold: true }]);
+    // text changed in PowerPoint: the looks no longer say it, and go
+    const edited = out.slides[0]!.replace('<p:text>Use 3a</p:text>', '<p:text>Use 3b</p:text>');
+    expect(readLegacyComments(new DOMParser().parseFromString(edited, 'application/xml'), authors)[0].runs).toBeUndefined();
+  });
+
+  it('reads a PowerPoint 365 comment\'s looks (a:rPr b, i, baseline)', () => {
+    // written by hand from the element names of PowerPoint's modern comments part (p188:cm, p188:txBody, a:p, a:r, a:rPr)
+    const x = '<p188:cmLst xmlns:p188="http://schemas.microsoft.com/office/powerpoint/2018/8/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+      + '<p188:cm id="{1}" authorId="{A}" created="2026-10-14T16:00:00.000"><p188:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="en-US"/><a:t>Yield of </a:t></a:r><a:r><a:rPr lang="en-US" b="1"/><a:t>3a</a:t></a:r><a:r><a:rPr lang="en-US" i="1"/><a:t> R</a:t></a:r><a:r><a:rPr lang="en-US" i="1" baseline="-25000"/><a:t>f</a:t></a:r></a:p></p188:txBody></p188:cm></p188:cmLst>';
+    const got = readModernComments(new DOMParser().parseFromString(x, 'application/xml'), new Map([['{A}', 'Nate']]));
+    expect(got[0].text).toBe('Yield of 3a Rf');
+    expect(got[0].runs).toEqual([{ text: 'Yield of ' }, { text: '3a', bold: true }, { text: ' R', italic: true }, { text: 'f', italic: true, sub: true }]);
   });
 });
