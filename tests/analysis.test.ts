@@ -112,6 +112,13 @@ describe('Joback estimates', () => {
     expect(a.cp).toBeCloseTo(7.52 + 0.26084 * T - 1.207e-4 * T * T + 1.546e-8 * T ** 3, 3);
   });
 
+  it('lists the groups in the Properties tooltip with real subscripts (style guide S27)', async () => {
+    const { jobackGroupList } = await import('../src/ui/analysis-panel');
+    // cyclohexanone: one ring C=O and five ring CH2 groups (Joback & Reid, Chem. Eng. Commun. 1987, 57, 233, Table 1 group names)
+    expect(jobackGroupList({ '>C=O (ring)': 1, '-CH2- (ring)': 5 })).toBe('1 × >C=O (ring), 5 × -CH₂- (ring)');
+    expect(jobackGroupList({ '-CH3': 1, '-NO2': 1 })).toBe('1 × -CH₃, 1 × -NO₂');
+  });
+
   it('knows esters, aldehydes, ketones, nitriles, nitro groups, amines and halides', () => {
     expect(joback(jsonOf('CC(=O)OC')).groups).toEqual({ '-CH3': 2, '-COO- (ester)': 1 });
     expect(joback(jsonOf('CC=O')).groups).toEqual({ '-CH3': 1, 'O=CH- (aldehyde)': 1 });

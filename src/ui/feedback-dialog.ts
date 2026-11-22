@@ -68,7 +68,7 @@ export class FeedbackDialog {
     note.className = 'muted';
     const relay = this.host.relay ?? RELAY_URL;
     note.textContent = relay
-      ? 'Ideas, problems and questions are all welcome. Send passes it straight to the Chemweave team; no account is needed. Or open it on GitHub with your own account, put it in an email, or copy it.'
+      ? 'Ideas, problems and questions are all welcome. Send passes it straight to the Chemweave team; no account is needed. Or open it on GitHub with your account, put it in an email, or copy it.'
       : 'Ideas, problems and questions are all welcome. Open on GitHub fills in a new issue on the project\'s page for you to check and submit (a free GitHub account is needed). No account? Copy Text, and send it to whoever looks after Chemweave in your lab.';
 
     const kinds = document.createElement('div');

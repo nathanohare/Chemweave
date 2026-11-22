@@ -55,8 +55,8 @@ const button = (label: string, title: string, on: () => void, primary = false): 
 /** Text with its abbreviations explained on hover (each one an <abbr> with its meaning as the tooltip). */
 export function explained(text: string, nuclei = false): DocumentFragment {
   const f = document.createDocumentFragment();
-  // formulas with real subscripts (CDCl₃), nuclei with superscripts (¹H): shown so, searched as typed
-  for (const p of explainPieces(text)) { const t = prettyChem(p.text, nuclei); f.append(p.tip ? el('abbr', { textContent: t, title: p.tip }) : withSigma(t)); }
+  // formulas with real subscripts (CDCl₃), nuclei with superscripts (¹H): shown so (tooltips too), searched as typed
+  for (const p of explainPieces(text)) { const t = prettyChem(p.text, nuclei); f.append(p.tip ? el('abbr', { textContent: t, title: prettyChem(p.tip) }) : withSigma(t)); }
   return f;
 }
 
@@ -663,7 +663,7 @@ export class KnowledgeBaseWindow {
     if (c.numeric || c.shift) th.classList.add('num');
     if (c.narrow) th.classList.add('narrow');
     // what the scale means: hover for the tip, a click pins it (and doesn't sort)
-    if (c.info) th.append(' ', infoIcon(c.info));
+    if (c.info) th.append(' ', infoIcon(prettyChem(c.info)));
     const sortable = !c.picture && c !== LOOK_UP;
     const sort = (down?: boolean) => {
       this.sort = down !== undefined ? { key: c.key, down } : this.sort?.key === c.key ? { key: c.key, down: !this.sort.down } : { key: c.key, down: false };
@@ -821,7 +821,7 @@ export class KnowledgeBaseWindow {
         this.showTable();
       });
       if (solvent) s.title = 'The solvent your NMR was taken in: impurity shifts change with it. Remembered for the other impurity tables';
-      return el('label', {}, el('span', { textContent: solvent ? 'NMR taken in' : c.label }), ...(c.hidden && c.info ? [infoIcon(c.info)] : []), s);
+      return el('label', {}, el('span', { textContent: solvent ? 'NMR taken in' : c.label }), ...(c.hidden && c.info ? [infoIcon(prettyChem(c.info))] : []), s);
     }));
     // a table in groups: fold or open every group at once
     if (t.group) {

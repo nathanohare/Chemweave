@@ -20,7 +20,7 @@ export function rGroupGrid(labels: readonly string[], start: readonly RGroupRow[
   const head = document.createElement('h3');
   head.className = 'rg-grid-title';
   head.textContent = 'Compounds';
-  addInfo(head, 'One row per compound. Type each group as you would label an atom (Me, Ph, OMe, CO2Et, Cl, H), or paste cells from Excel. No. gives a compound its own number; leave it empty to number them in order.');
+  addInfo(head, 'One row per compound. Type each group as you would label an atom (Me, Ph, OMe, CO₂Et, Cl, H), or paste cells from Excel. No. gives a compound its own number; leave it empty to number them in order.');
   const table = document.createElement('table');
   table.className = 'rg-grid';
   const hr = table.createTHead().insertRow();

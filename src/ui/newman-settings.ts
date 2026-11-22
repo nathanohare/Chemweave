@@ -67,7 +67,7 @@ export function newmanSettings(now: NewmanPrefs, preview: (look: NewmanLook, kin
       <label class="ask-row"><span>Names</span><select name="names"><option value="textbook">Textbook (gauche, eclipsed, anti)</option><option value="klyne">Klyne–Prelog (synclinal…)</option><option value="none">None</option></select></label>
       <label class="ask-row ask-check"><input name="barriers" type="checkbox" /><span>Barrier heights (dotted arrows)</span></label>
       <label class="ask-row"><span>Barrier color</span><input name="barrierColor" type="color" /></label>
-      ${count ? `<label class="ask-row ask-check"><input name="restyle" type="checkbox" /><span>Give the ${count === 1 ? 'projection' : `${count} projections`} in this drawing the new look too</span></label>` : ''}
+      ${count ? `<label class="ask-row ask-check"><input name="restyle" type="checkbox" /><span>Apply the new style to the ${count === 1 ? 'projection' : `${count} projections`} in this drawing too</span></label>` : ''}
       <p class="ask-buttons"><button type="button" data-act="reset">Reset</button> <button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary">Apply</button></p>`;
     const $ = <T extends Element>(q: string) => form.querySelector<T>(q)!;
     const canvas = $<HTMLCanvasElement>('.ns-preview');

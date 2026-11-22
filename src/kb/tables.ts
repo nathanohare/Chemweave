@@ -323,7 +323,7 @@ export function parseUserTable(text: string, title: string, id: string): KbTable
     return r;
   });
   for (const c of columns) if (!c.shift && rows.every((r) => r[c.key] === null || typeof r[c.key] === 'number')) c.numeric = true;
-  return { id, title, about: 'Your own table, kept on this computer.', columns, rows, sources: [{ label: 'Imported by you' }], personal: true };
+  return { id, title, about: 'A table you imported, kept on this computer.', columns, rows, sources: [{ label: 'Imported by you' }], personal: true };
 }
 
 /**

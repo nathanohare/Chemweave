@@ -61,7 +61,7 @@ export function askCrystal(editing: PlateData | null, L: number, opts: CrystalOp
       <div class="crystal-tabs" role="tablist"><button type="button" role="tab" data-tab="0" aria-selected="true">Structure</button><button type="button" role="tab" data-tab="1" aria-selected="false">Crystal data</button></div>
       <div class="crystal-page" role="tabpanel">
         <div class="crystal-main">
-          <canvas class="crystal-canvas" tabindex="0" role="img" aria-label="The structure. Drag to turn it, Shift+drag to turn it in the page, the wheel to magnify, drag a label to move it."></canvas>
+          <canvas class="crystal-canvas" tabindex="0" role="img" aria-label="The structure. Drag to rotate it, Shift+drag to rotate it in the plane of the page, the wheel to magnify, drag a label to move it."></canvas>
           <p class="muted small crystal-status" role="status"></p>
         </div>
         <div class="crystal-side">

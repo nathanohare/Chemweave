@@ -13,13 +13,13 @@ describe('the issue', () => {
     expect(i.body).toContain('**Problem (bug)**');
     expect(i.body).toContain('Pasting from ChemDraw turns wedges into hashes.');
     expect(i.body).toContain('**Steps to make it happen**\n\n1. Copy in ChemDraw\n2. Paste');
-    expect(i.body).toContain('- Version: Version 0.1.80\n- Computer: Windows 10 or 11\n- Mode: drawing');
+    expect(i.body).toContain('**About Chemweave**\n\n- Version: Version 0.1.80\n- Computer: Windows 10 or 11\n- Mode: drawing');
   });
   it('leaves out steps for an idea, and the program when it is not wanted', () => {
     const i = feedbackIssue({ kind: 'idea', title: 'NMR tables', details: 'A table maker for NMR data.', steps: 'ignored' });
     expect(i.title).toBe('[Feature] NMR tables');
     expect(i.body).not.toContain('Steps');
-    expect(i.body).not.toContain('About the program');
+    expect(i.body).not.toContain('About Chemweave');
   });
   it('takes a title from the details when none is typed', () => {
     expect(feedbackIssue({ kind: 'comment', title: '  ', details: 'Love the dark page.\nThanks!' }).title).toBe('[Feedback] Love the dark page.');

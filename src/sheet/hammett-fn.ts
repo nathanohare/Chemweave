@@ -19,7 +19,7 @@ export type HammettWhat = 'sigma' | 'sm' | 'sp' | 'spPlus' | 'spMinus' | 'F' | '
 
 /** The quantities HAMMETT gives, with their column headings and help. */
 export const HAMMETT_QUANTITIES: { what: HammettWhat; label: string; help: string }[] = [
-  { what: 'group', label: 'Group', help: 'The group at the marked position (OCH3, Cl…)' },
+  { what: 'group', label: 'Group', help: 'The group at the marked position (OCH₃, Cl…)' },
   { what: 'sigma', label: 'σ', help: 'σm for a meta group, σp for a para one' },
   { what: 'F', label: 'F', help: 'Field parameter F' },
   { what: 'R', label: 'R', help: 'Resonance parameter R' },

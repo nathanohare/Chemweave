@@ -42,7 +42,7 @@ export const CHEM_FUNCTIONS: Record<string, FnDef> = {
       const pos = omitted(args, 1) ? 'para' : textArg(args, 1);
       if (isError(pos)) return pos;
       const v = hammettSigma(g, pos);
-      return v ?? ERR.na(`No Hammett σ for ${g} (${pos}): try a group such as NO2, CN, Cl, OMe, NMe2 or CO2Me, and "para", "meta" or "para-"`);
+      return v ?? ERR.na(`No Hammett σ for ${g} (${pos}): try a group such as "NO2", "CN", "Cl", "OMe", "NMe2" or "CO2Me", and "para", "meta" or "para-"`);
     },
   },
 };

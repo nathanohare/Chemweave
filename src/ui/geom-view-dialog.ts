@@ -39,7 +39,7 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
     form.innerHTML = `<h2>Geometry View: <span class="gv-name"></span></h2>
       <div class="gv-looks" role="radiogroup" aria-label="Look"></div>
       <div class="gv-body">
-        <canvas class="gv-canvas" tabindex="0" aria-label="The geometry: drag to turn it, Shift+drag to turn it in the page, click an atom to fade or hide it"></canvas>
+        <canvas class="gv-canvas" tabindex="0" aria-label="The geometry: drag to rotate it, Shift+drag to rotate it in the plane of the page, click an atom to fade or hide it"></canvas>
         <div class="gv-side">
           <div class="gv-label">Click an atom to</div>
           <div class="gv-pick" role="radiogroup" aria-label="Click an atom to"></div>
@@ -60,7 +60,7 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
       </div>
       <p class="muted small gv-note"></p>
       <label class="gv-check"><input type="checkbox" name="all" /> Use this look and these hydrogens for every species</label>
-      <p class="ask-buttons"><button type="button" data-act="remove" class="gv-remove" title="Remove the file's geometry from this species (draw your own in the Structure column)">Remove Geometry</button><span class="gv-gap"></span><button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary">Apply</button></p>`;
+      <p class="ask-buttons"><button type="button" data-act="remove" class="gv-remove" title="Remove the file's geometry from this species (draw one in the Structure column instead)">Remove Geometry</button><span class="gv-gap"></span><button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary">Apply</button></p>`;
     const $ = <T extends Element>(q: string) => form.querySelector<T>(q)!;
     $('.gv-name').textContent = name;
     const canvas = $<HTMLCanvasElement>('.gv-canvas');

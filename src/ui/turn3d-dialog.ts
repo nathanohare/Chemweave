@@ -28,7 +28,7 @@ export interface Turn3dResult { x: number; y: number; z: number; shape: Turn3dSh
 const AXES = [
   { key: 'x', label: 'About X', help: 'Left–right axis. Positive tips the top toward you.' },
   { key: 'y', label: 'About Y', help: 'Up–down axis. Positive brings the left side toward you.' },
-  { key: 'z', label: 'About Z', help: 'Axis into the page. Positive turns clockwise.' },
+  { key: 'z', label: 'About Z', help: 'Axis into the page. Positive rotates clockwise.' },
 ] as const;
 type Axis = (typeof AXES)[number]['key'];
 
@@ -54,7 +54,7 @@ export function openTurn3d(host: Turn3dHost, shape: Turn3dShape): Promise<Turn3d
     form.className = 'turn3d-form';
     const h = document.createElement('h2');
     h.textContent = '3-D Rotation';
-    addInfo(h, 'Turns the selected structures from where they are now; the drawing shows the turn as you go. Shift+arrow keys on a slider move it 15° at a time. To turn by eye, drag with the Perspective tools.');
+    addInfo(h, 'Rotates the selected structures from where they are now; the drawing shows the rotation as you go. Shift+arrow keys on a slider move it 15° at a time. To rotate by eye, drag with the Perspective tools.');
     form.append(h);
 
     const angle: Record<Axis, number> = { x: 0, y: 0, z: 0 };

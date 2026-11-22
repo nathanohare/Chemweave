@@ -2451,7 +2451,7 @@ async function withBondRotamers(m: Model3d, molblock: string, fi: number, bi: nu
   const nb = neighbours(m);
   const a = nb[fi].find((n) => n.atom !== bi)?.atom, d = nb[bi].find((n) => n.atom !== fi)?.atom;
   if (a === undefined || d === undefined || m.conformers.some((c) => c.energy === null)) return m;
-  progress('Turning the bond to its other rotamers…');
+  progress('Rotating the bond to its other rotamers…');
   const extra = await model3d.rotamers(molblock, m.conformers.slice(0, 3).map((c) => c.xyz), [a, fi, bi, d]).catch(() => []);
   return { ...m, conformers: mergeConformers(m.atoms, m.conformers, extra) };
 }
@@ -12184,7 +12184,7 @@ async function personalPreferences(): Promise<void> {
       options: [{ value: 'esc', label: 'Esc (Enter starts a new line), as in ChemDraw' }, { value: 'enter', label: `Enter (${alt} starts a new line)` }],
       help: 'Everywhere you draw: Canvas, structures in documents and spreadsheets, and text boxes on slides. Ctrl+Enter always finishes, and Shift+Enter always breaks the line.' },
     { name: 'alkylLook', label: 'AutoFormat alkyl isomer prefixes', value: alkylPrefs.look, options: ALKYL_LOOK_CHOICES, short: true, inline: (v) => alkylSwatch(parseAlkylLook(v)),
-      help: 'How n-, i-, s- and t- are written on Pr and Bu in labels and text (OtBu, N(iPr)2, nBu, P(t-Bu)2). New labels follow it when you finish typing; you\'ll be asked about existing ones. A dash is never added or removed where it would read as an element (PtBu3).' },
+      help: 'How n-, i-, s- and t- are written on Pr and Bu in labels and text (OtBu, N(iPr)₂, nBu, P(t-Bu)₂). New labels follow it when you finish typing; you\'ll be asked about existing ones. A dash is never added or removed where it would read as an element (PtBu₃).' },
     { name: 'warnLook', label: 'Mark problems on the drawing with', value: renderer.warnLook, short: true, inline: (v) => problemSwatch((WARN_LOOKS as readonly string[]).includes(v) ? v as WarnLook : 'box', doc.style), options: [
       { value: 'box', label: 'A thin red box' }, { value: 'soft', label: 'A soft red disc' }, { value: 'circle', label: 'A red circle' },
       { value: 'dashed', label: 'A dashed red circle' }, { value: 'corners', label: 'Red corner marks' }],
@@ -13386,7 +13386,7 @@ async function runAnalysis(force: boolean): Promise<void> {
   analysisKey = key;
   const panel = $('#analysis-body');
   if (!frags.length) {
-    panel.innerHTML = '<p class="muted" title="Or select text read as chemistry, such as BF4⁻ or DMAP, or draw a structure.">Select a structure to see its formula and masses.</p>';
+    panel.innerHTML = '<p class="muted" title="Or select text read as chemistry, such as BF₄⁻ or DMAP, or draw a structure.">Select a structure to see its formula and masses.</p>';
     analysisBox.set(null);
     $('#si-section').hidden = true;
     return;
@@ -14708,7 +14708,7 @@ async function saveFavorite(replacing?: FormatFavorite): Promise<void> {
   let name = replacing?.name;
   if (!name) {
     const got = await ask('Save Format as Favorite', [{ name: 'name', label: 'Name', value: freshFavoriteName(favorites), placeholder: 'for example Key intermediate box' }], {
-      ok: 'Save', note: `Keeps ${favoriteSummary(look) || 'the look'} of what is selected. Click it under Format Favorites on the Home tab (or Format ▸ Favorites ▸ Format Favorites…) to apply that formatting to the selection, in any drawing, slide, design, document or sheet.`,
+      ok: 'Save', note: `Keeps ${favoriteSummary(look) || 'the formatting'} of what is selected. Click it under Format Favorites on the Home tab (or Format ▸ Favorites ▸ Format Favorites…) to apply that formatting to the selection, in any drawing, slide, design, document or sheet.`,
     });
     name = got?.name.trim();
     if (!name) return;
