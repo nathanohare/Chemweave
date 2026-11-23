@@ -1407,7 +1407,7 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
   try {
     let ids: number[] = [];
     doc.edit('Paste', () => {
-      ids = addMolfile(doc, mb!, c.x, c.y);
+      ids = addMolfile(doc, mb!, c.x, c.y, { fromFile: text.includes('M  END') });
       editor.sel = { atoms: new Set(ids), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() };
       editor.placeClear(placingPage());
     });
@@ -3331,7 +3331,8 @@ async function copyReaction(as: 'smiles' | 'rxn'): Promise<void> {
  */
 async function pasteReaction(text: string, c: { x: number; y: number }): Promise<boolean> {
   let mols: { reactants: string[]; agents: string[]; products: string[] } | null = null;
-  if (isRxn(text)) mols = parseRxn(text);
+  const rxnFile = isRxn(text);
+  if (rxnFile) mols = parseRxn(text);
   else {
     const p = splitReactionSmiles(text);
     const read = async (xs: string[]) => { const out: string[] = []; for (const x of xs) { const mb = await chem.smilesToMol(x); if (!mb) return null; out.push(mb); } return out; };
@@ -3351,7 +3352,7 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
     doc.edit('Paste reaction', () => {
       let x = 0;
       const place = (mb: string, at: number, y = 0) => {
-        const ids = addMolfile(doc, mb, 0, 0);
+        const ids = addMolfile(doc, mb, 0, 0, { fromFile: rxnFile });
         const b = boxOf(ids);
         doc.moveAtoms(ids, at - b.x1, y - (b.y1 + b.y2) / 2);
         made.push(...ids);
@@ -3372,7 +3373,7 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
       const tail = x;
       let ax = tail + gap * 0.5;
       for (const mb of mols!.agents) {
-        const ids = addMolfile(doc, mb, 0, 0);
+        const ids = addMolfile(doc, mb, 0, 0, { fromFile: rxnFile });
         const b = boxOf(ids);
         doc.moveAtoms(ids, ax - b.x1, -bl * 0.6 - b.y2);
         made.push(...ids);
@@ -12251,7 +12252,7 @@ async function personalPreferences(): Promise<void> {
     { name: 'stereoHeading', label: 'Stereochemistry', type: 'heading', value: '' },
     { name: 'unflagged', label: 'Wedges without a flag mean', value: chiralPrefs.unflagged, short: true, options: [
       { value: 'racemic', label: 'Racemic' }, { value: 'absolute', label: 'One enantiomer' }],
-      help: 'For saving MOL, SDF and RXN files, which hold this as the chiral flag. Racemic (as ChemDraw reads them): the flag is 0, the structure as drawn and its enantiomer. One enantiomer: the flag is 1, as if an Abs flag were drawn. A chiral flag drawn beside a structure (Chemistry ▸ Chiral Flag) always wins.' },
+      help: 'For opening and saving MOL, SDF and RXN files, which hold this as the chiral flag. Racemic (as ChemDraw reads them): a flag of 0 means the structure as drawn and its enantiomer, and wedges with no flag here are saved as 0. One enantiomer: wedges with no flag here are saved with the flag 1, and a file opened or pasted with the flag 0 gets a Rac flag so it stays racemic. A chiral flag drawn beside a structure (Chemistry ▸ Chiral Flag) always wins.' },
     { name: 'focalHeading', label: 'Focal Points', type: 'heading', value: '', help: 'A focal point is the spot on a structure that lines up with other structures when you align, distribute or arrange them (right-click an atom, bond or ring ▸ Set as Focal Point).' },
     { name: 'focalLook', label: 'Mark focal points with', value: focalPrefs.look, short: true, options: FOCAL_LOOKS.map((l) => ({ value: l.look, label: l.name })), inline: (v) => focalSwatch(v) },
     { name: 'focalDefault', label: 'Structures without their own focal point line up by', value: focalPrefs.dflt, short: true, options: [

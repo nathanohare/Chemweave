@@ -811,7 +811,7 @@ export function readKet(text: string): FScene | null {
     if (ref) {
       const m = j[ref] as { type?: string; atoms?: Record<string, unknown>[]; bonds?: Record<string, unknown>[]; sgroups?: Record<string, unknown>[] } | undefined;
       if (!m || m.type !== 'molecule') continue;
-      // (Ketcher's explicitValence: the atom's whole valence, as a molfile's; -1 none)
+      // (Ketcher's explicitValence: the atom's whole valence; -1 is "not set", 0 a valence of zero (review F8a-R09))
       const vals = new Map<number, number>();
       const atoms: FAtom[] = (m.atoms ?? []).map((a, i) => {
         const loc = (a.location as number[] | undefined) ?? [0, 0, 0];
@@ -825,7 +825,7 @@ export function readKet(text: string): FScene | null {
         if (typeof a.isotope === 'number' && a.isotope) f.iso = a.isotope;
         if (typeof a.radical === 'number' && a.radical) f.rad = a.radical;
         if (typeof a.mapping === 'number' && a.mapping) f.map = a.mapping;
-        if (typeof a.explicitValence === 'number' && a.explicitValence >= -1) vals.set(i, a.explicitValence);
+        if (typeof a.explicitValence === 'number' && a.explicitValence >= 0) vals.set(i, a.explicitValence);
         // Ketcher's enhanced stereo label: abs, &1 (and), or1
         const sl = /^(abs|&|and|or)(\d*)$/i.exec(typeof a.stereoLabel === 'string' ? a.stereoLabel : '');
         if (sl) f.enh = sl[1].toLowerCase() === 'abs' ? { type: 'abs' } : { type: sl[1].toLowerCase() === 'or' ? 'or' : 'and', group: parseInt(sl[2], 10) || 1 };
@@ -1127,9 +1127,12 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
  * atoms, a superatom S-group, become its one labelled atom). Pasted molfiles, the chemistry
  * engine's and Spreadsheet's SD records come in here, through the same reader as File > Open:
  * aliases, R-group numbers, superatoms, the old charge column, dative and hydrogen bonds and
- * enhanced stereo all read as they do there. Throws when the molfile can't be read.
+ * enhanced stereo all read as they do there. Throws when the molfile can't be read. `fromFile`:
+ * the molblock is a file's text someone pasted, not one the chemistry engine made from a SMILES or
+ * a name (whose chiral flag of 0 says nothing: review F8a-R04), so Preferences ▸ Wedges without a
+ * flag applies to it.
  */
-export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number): number[] {
+export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number, opts: { fromFile?: boolean } = {}): number[] {
   const m = readMolfile(molblock);
   if (!m) throw new Error('This molfile could not be read.');
   // average bond length, to scale to the drawing's bond length
@@ -1154,7 +1157,7 @@ export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number): 
     doc.addBond(ids[b.a], ids[b.b], b.order, b.dative ? 'dative' : b.hbond ? 'hydrogen' : b.stereo ? DISPLAY[b.stereo] : 'solid');
   }
   // a chiral flag of 1 comes in as an Abs flag beside each structure it applies to, so saving it again keeps it
-  addAbsFlags(doc, m, ids);
+  addAbsFlags(doc, m, ids, !!opts.fromFile);
   return ids;
 }
 
@@ -1163,9 +1166,9 @@ export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number): 
  * with a wedged centre not in a stereo group: the flag is the whole file's, so it says each of
  * them shows its absolute configuration (BIOVIA CTfile Formats 2020; review F1c-R03). A flag of 0
  * is drawn as a Rac flag only while Settings ▸ Preferences reads wedges alone as one enantiomer
- * (chiralPrefs). `ids` are the drawing's atoms for the file's.
+ * (chiralPrefs), and only for a file's text (`fromFile`). `ids` are the drawing's atoms for the file's.
  */
-function addAbsFlags(doc: Doc, m: FMol, ids: number[]): void {
+function addAbsFlags(doc: Doc, m: FMol, ids: number[], fromFile = true): void {
   const part = m.atoms.map((_, i) => i);
   const top = (i: number): number => (part[i] === i ? i : (part[i] = top(part[i])));
   for (const b of m.bonds) part[top(b.a)] = top(b.b);
@@ -1197,7 +1200,8 @@ function addAbsFlags(doc: Doc, m: FMol, ids: number[]): void {
   }
   // (a flag of 0 needs nothing while wedges alone mean racemic, the default; while Preferences reads
   // them as one enantiomer, each such structure gets a Rac flag, so it isn't saved as absolute)
-  const flag: ChiralFlag | null = absFlag(m) ? 'Absolute' : !m.chiral && chiralPrefs.unflagged === 'absolute' ? 'Racemic' : null;
+  // (only for a file's text: the chemistry engine writes 0 for every structure it makes, and a SMILES with @ is one enantiomer)
+  const flag: ChiralFlag | null = absFlag(m) ? 'Absolute' : fromFile && !m.chiral && chiralPrefs.unflagged === 'absolute' ? 'Racemic' : null;
   if (!flag) return;
   const wedged = new Set(m.bonds.filter((b) => (b.stereo === 'wedge' || b.stereo === 'hash') && !m.atoms[b.a]?.enh).map((b) => top(b.a)));
   for (const p of wedged) {
@@ -1590,8 +1594,8 @@ export function writeKetFile(doc: Doc): WrittenChem {
           label: z !== undefined ? a.sym : 'C', location: [+fx(a.x), +fx(a.y), 0],
           ...(z === undefined ? { alias: a.sym } : {}),
           ...(a.charge ? { charge: a.charge } : {}), ...(a.iso ? { isotope: a.iso } : {}), ...(a.rad ? { radical: a.rad } : {}), ...(a.map ? { mapping: a.map } : {}),
-          // (hydrogens the drawing states, as Ketcher's explicitValence: the atom's whole valence, -1 for none)
-          ...(a.hCount !== undefined && z !== undefined ? { explicitValence: (a.hCount + Math.round(bondSum(m.bonds, i))) || -1 } : {}),
+          // (hydrogens the drawing states, as Ketcher's explicitValence: the atom's whole valence, 0 for none; -1 would be "not set")
+          ...(a.hCount !== undefined && z !== undefined ? { explicitValence: a.hCount + Math.round(bondSum(m.bonds, i)) } : {}),
           ...(a.enh ? { stereoLabel: a.enh.type === 'abs' ? 'abs' : `${a.enh.type === 'and' ? '&' : 'or'}${a.enh.group ?? 1}` } : {}),
         };
       }),

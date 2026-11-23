@@ -89,8 +89,13 @@ describe('Preferences: wedges without a flag mean (F1 Needs Nate 10)', () => {
     expect(flagOf(writeMolFile(back).text)).toBe('0');
     // pasted the same
     const p = newDoc();
-    p.bulk(() => { addMolfile(p, zero, 0, 0); });
+    p.bulk(() => { addMolfile(p, zero, 0, 0, { fromFile: true }); });
     expect(flags(p)).toEqual(['Racemic']);
+    // a molblock the chemistry engine made (from a SMILES with @, a name, a look-up) says nothing
+    // with its flag of 0: no flag is added (review F8a-R04)
+    const e = newDoc();
+    e.bulk(() => { addMolfile(e, zero, 0, 0); });
+    expect(flags(e)).toEqual([]);
   });
   it('a reaction\'s structures follow the setting in an RXN file too', () => {
     chiralPrefs.unflagged = 'absolute';
@@ -198,6 +203,23 @@ describe('a bonded label read as written: "N" on a methyl (F1 Needs Nate 12)', (
     const v2 = writeMolFile(d).text;
     expect(v2.split('\n').find((l) => / N {3}/.test(l))!.slice(48, 51).trim()).toBe('0');
     expect(rd(v2, 'get_smiles')).toBe('CN');
+  });
+  it('a label with more hydrogens than the atom can hold (a neutral NH3 on a methyl) is left to the rule, so the engine still reads it (review F8a-R05)', () => {
+    const d = newDoc();
+    let n = 0;
+    d.bulk(() => { const c = d.addAtom(0, 0); const a = d.addAtom(L, 0, 7, { label: 'NH3' }); d.addBond(c.id, a.id); n = a.id; });
+    const v2 = writeMolFile(d).text;
+    expect(v2.split('\n').find((l) => / N {3}/.test(l))!.slice(48, 51).trim()).toBe('0');
+    // (methylamine, CH3NH2: the rule's count; PubChem CID 6329)
+    expect(rd(toMolfile(d, [...d.atoms.keys()]).molblock, 'get_smiles')).toBe('CN');
+    expect(atomWarnings(d, d.atoms.get(n)!).length).toBeGreaterThan(0);
+  });
+  it('a Ketcher file\'s explicitValence of -1 is "not set" and 0 a valence of zero (review F8a-R09)', () => {
+    const ket = (v: number) => JSON.stringify({ root: { nodes: [{ $ref: 'mol0' }] }, mol0: { type: 'molecule', atoms: [{ label: 'C', location: [0, 0, 0], explicitValence: v }, { label: 'N', location: [1, 0, 0], explicitValence: v }], bonds: [{ type: 1, atoms: [0, 1] }] } });
+    expect([...open('a.ket', ket(-1)).atoms.values()].map((a) => a.label ?? null)).toEqual([null, null]);
+    // a lone N with no bonds and valence 0 (Ketcher writes 0 for "no hydrogens" on an atom with nothing else)
+    const lone = JSON.stringify({ root: { nodes: [{ $ref: 'mol0' }] }, mol0: { type: 'molecule', atoms: [{ label: 'N', location: [0, 0, 0], explicitValence: 0 }] } });
+    expect([...open('b.ket', lone).atoms.values()].map((a) => a.label)).toEqual(['N']);
   });
   it('Check Structure warns about the N\'s unusual valence', () => {
     const { d, n } = methylN();

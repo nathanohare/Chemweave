@@ -271,8 +271,8 @@ function asGroup(g: MiniGraph, label: string, z: number | undefined): boolean {
 /**
  * The valence to write for a bonded atom labelled with its element and the hydrogens it shows (N,
  * NH, CH on a structure) when the valence rule would give it another number of hydrogens: its
- * bonds and those hydrogens. Undefined for any other label, for a count the rule already gives,
- * and beside a 1½ or partial bond, where the count depends on the ring.
+ * bonds and those hydrogens. Undefined for any other label, for a count the rule already gives
+ * or one above it, and beside a 1½ or partial bond, where the count depends on the ring.
  */
 export function shownValence(doc: Doc, id: number, label: string, z: number, charge: number, dative: Set<number> = new Set()): number | undefined {
   const shown = labelHydrogens(label, z);
@@ -281,7 +281,10 @@ export function shownValence(doc: Doc, id: number, label: string, z: number, cha
   if (!orders.length || orders.some((o) => o !== 1 && o !== 2 && o !== 3)) return undefined;
   const own = orders.reduce((t, o) => t + o, 0);
   const a = doc.atoms.get(id);
-  if (shown === ruleHydrogens(z, own, charge, a?.radical)) return undefined;
+  // (only fewer hydrogens than the rule: more, as on a neutral NH3 bonded to carbon, is a label
+  // that can't be right, which the chemistry engine would turn down whole; it is left to the rule,
+  // and Check Structure says so: review F8a-R05)
+  if (shown >= ruleHydrogens(z, own, charge, a?.radical)) return undefined;
   return own + shown;
 }
 
