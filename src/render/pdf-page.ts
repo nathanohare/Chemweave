@@ -195,6 +195,27 @@ export async function pictureContentBox(src: string): Promise<[number, number, n
   return contentBox(data, w, h);
 }
 
+/** Where a picture has ink, for placing a structure box on blank paper (auto placement): looked at no more than 1000 pixels a side. */
+export async function pictureInkMap(src: string): Promise<import('../si/spectra').InkMap | null> {
+  const { inkMapOf } = await import('../si/spectra');
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  const k = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+  canvas.width = canvas.height = 0;
+  return inkMapOf(data, w, h);
+}
+
 /** A PDF opened to draw its pages one at a time, each when it is needed (a long PDF shown on screen); close() frees it. */
 export interface PdfPageReader {
   count: number;

@@ -15,7 +15,7 @@ import { defaultStyles, type DocText } from '../document/document';
 import { compileSi, objectLabelSets, type SiPreviewTarget } from '../si/compile-doc';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
-import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
+import { defaultsJson, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, PRIVATE_DIR, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
@@ -755,6 +755,7 @@ export class SiMode {
       pictureOf: (m) => this.host.pictureOf(m),
       pdfPages: (b) => import('../render/pdf-page').then((m) => m.pdfPages(b)),
       contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+      inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
       act: (f) => this.act(f, false),
       chosen: (x) => { if (x === this.spectraPage) this.spectraShown(x); },
       openSection: () => this.go({ kind: 'section', id: sectionId }),
@@ -2128,10 +2129,8 @@ export class SiMode {
     const p = this.project!;
     const now = sectionDefaults(s);
     const save = (key: keyof SpectrumLayout, value: unknown): void => void this.act(async () => {
-      const next: Record<string, unknown> = {};
-      const cur = { ...sectionDefaults(s), [key]: value } as Record<string, unknown>;
-      for (const k of Object.keys(SPECTRA_DEFAULTS)) next[k] = cur[k];
-      s.data.defaults = next;
+      // (every setting, in SI Assistant's order and form, so either program reads the file the same)
+      s.data.defaults = defaultsJson({ ...sectionDefaults(s), [key]: value });
       await p.saveSection(s);
     }, false);
     const card = el('div', 'si-card');
@@ -2193,13 +2192,20 @@ export class SiMode {
     tick(pages, 'Frame', 'spectrum_frame', 'A frame round each spectrum.');
     const box = row('Structure and ID');
     tick(box, 'Show', 'struct_box', 'The compound’s structure and ID on a box over each spectrum (Org. Lett. asks for spectra labeled with both).');
-    choice(box, 'Position', 'corner', [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']], 'The corner of the spectrum the box goes in (a box dragged on its spectra page stays where it was put).');
+    choice(box, 'Place', 'struct_place', [['on', 'On the spectrum'], ['auto', 'On blank space'], ['above', 'Above the spectrum'], ['beside', 'Beside the spectrum']], 'On the spectrum: in the corner below. On blank space: over the spectrum where it covers only blank paper, as near that corner as it fits (above the spectrum when it fits nowhere). Above or beside: next to the spectrum, which is made smaller to leave it room. A box dragged on its spectra page stays where it was put.');
+    choice(box, 'Corner', 'corner', [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']], 'The corner of the spectrum the box goes in, or that On blank space starts from (a box dragged on its spectra page stays where it was put).');
+    tick(box, 'Shrink to fit', 'auto_shrink', 'On blank space only: when the structure doesn’t fit any blank space at its size, make it smaller step by step, down to the size beside.');
+    num(box, 'Down to', 'auto_min_scale', 25, 400, 100, 'On blank space only: the smallest the structure is made to fit.', '%');
     num(box, 'Structure size', 'struct_scale', 25, 400, 100, '100 % is the structure’s own size, no larger than 1.5 × 1.1 in.', '%');
     num(box, 'ID size', 'id_size', 0, 24, 1, 'The ID’s size in points; 0 is the text size.', 'pt');
     tick(box, 'Bold ID', 'id_bold', 'The ID in bold.');
     tick(box, 'Caption', 'caption', 'A caption under the structure, e.g. “¹H NMR (CDCl₃, 500 MHz)”, from the peak report (or the caption typed for the spectrum).');
     color(box, 'Background', 'struct_bg', 'The box’s background, so the structure reads over the spectrum.');
     tick(box, 'Frame', 'struct_frame', 'A frame round the box.');
+    const links = row('Links');
+    tick(links, 'Peak reports to spectra', 'nmr_links', 'In the PDF, Word file and compiled document, “¹H NMR” at the start of a peak report links to the page with the compound’s ¹H NMR spectrum (Ctrl+click in Chemweave and Word).');
+    tick(links, 'Spectra back to compounds', 'link_back', 'Each spectrum’s header line links back to the compound’s data. Works with the links above.');
+    choice(links, 'Look', 'link_style', [['plain', 'Like normal text'], ['blue', 'Blue'], ['blue_underline', 'Blue and underlined']], 'How the links look. The table of contents always links its lines to their sections.');
     const hrms = row('HRMS');
     tick(hrms, 'Print HRMS reports', 'hrms_reports', 'Each compound’s HRMS report files (PDFs, pictures and text files), after the spectra in a sub-section “HRMS reports”. A compound can say otherwise in its HRMS field.');
     // spectra with settings of their own
@@ -3945,6 +3951,7 @@ export class SiMode {
         contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (m) => this.host.siFacts(m),
         pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPages(b, most)),
         contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+        inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
       });
     } catch (e) {
       this.host.flash(`Could not compile the SI: ${e instanceof Error ? e.message : String(e)}`, 6000);

@@ -29,7 +29,7 @@ import { readReportFile } from './report-files';
 import type { MolFacts } from './chem';
 import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './format';
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
-import { attachmentDir, captionText, effective, nmrNucleus, idSizeOf, structureBoxAt, structureBoxSize, GUTTERS, headerParts, HEADER_PT, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
+import { attachmentDir, autoPlace, boxSpot, cropInk, roomBeside, PLACE_GAP, captionText, effective, nmrNucleus, idSizeOf, structureBoxAt, structureBoxSize, GUTTERS, headerParts, HEADER_PT, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type InkMap, type SpectrumLayout } from './spectra';
 import type { Float, PageSetup, SectionBreak } from '../document/document';
 import { xrayAutoCaption, xrayBlock, xrayCompound, xrayDrawing, xrayTableCaption, xrayTableRows } from './xray';
 import { crystalTable } from '../chem/crystal';
@@ -54,6 +54,8 @@ export interface CompileHost {
   pdfPages?(bytes: Uint8Array, most?: number): Promise<PagePicture[] | null>;
   /** Where the content of a picture is, for auto-crop (null: nothing to cut, or it can't be measured). */
   contentBox?(src: string): Promise<Crop | null>;
+  /** Where a picture has ink, for a structure box placed on blank paper (auto placement); without it, such a box goes above the spectrum. */
+  inkMap?(src: string): Promise<InkMap | null>;
 }
 
 /** A page of a PDF drawn as a picture: its data URL, its size in points and in pixels, and how many pages the PDF has. */
@@ -1015,15 +1017,34 @@ class Compiler {
       const nucleus = this.nmrLinks ? nmrNucleus(item, c) : null;
       if (nucleus && !this.placedMarks.has(spectrumMark(c.id, nucleus))) { this.placedMarks.add(spectrumMark(c.id, nucleus)); marks.push(spectrumMark(c.id, nucleus)); }
       const crop = eff.auto_crop && this.host.contentBox ? await this.host.contentBox(pic.src).catch(() => null) : null;
-      const shown = shownSize({ w: slot.w, h: Math.max(10, slot.h - headH) }, pic.h / pic.w, crop);
-      const px = sx + (slot.w - shown.w) / 2, py = sy + headH;
+      // the structure box: on the spectrum (its corner, where it was dragged, or blank paper for
+      // auto), or above or beside it with room of its own (SI Assistant's issue #1)
+      const parts = eff.struct_box ? await this.boxParts(c, item, eff) : null;
+      let use = eff;
+      let spot = parts ? boxSpot(eff) : 'on';
+      const room = { w: slot.w, h: Math.max(10, slot.h - headH) };
+      if (parts && eff.struct_place === 'auto' && (eff.x === undefined || eff.y === undefined)) {
+        const at = shownSize(room, pic.h / pic.w, crop);
+        const ink = this.host.inkMap ? await this.host.inkMap(pic.src).catch(() => null) : null;
+        const got = ink ? autoPlace(cropInk(ink, crop), at, (sc) => this.boxSize(parts, { ...eff, struct_scale: sc }), eff.struct_scale, eff.corner, eff.auto_shrink, eff.auto_min_scale) : null;
+        if (got) use = { ...eff, x: got.x, y: got.y, struct_scale: got.scale };
+        else spot = 'above';
+      }
+      const box = parts ? this.boxSize(parts, use) : { w: 0, h: 0 };
+      const shown = shownSize(roomBeside(room, spot, box), pic.h / pic.w, crop);
+      // the spectrum and a box beside it are centred together; a box above is centred over it
+      const groupW = spot === 'beside' ? shown.w + PLACE_GAP + box.w : shown.w;
+      const px = sx + (slot.w - groupW) / 2, py = sy + headH + (spot === 'above' ? box.h + PLACE_GAP : 0);
       floats.push({
         kind: 'picture', src: pic.src, w: round2(shown.w), h: round2(shown.h), ...(pic.px ? { px: pic.px } : {}),
         ...(crop ? { crop: { l: crop[0], t: crop[1], r: 1 - crop[2], b: 1 - crop[3] } } : {}),
         ...(eff.spectrum_frame ? { look: { frame: eff.spectrum_frame_width, frameColor: eff.spectrum_frame_color } } : {}),
         alt: headerParts(c, item, id, pageNo).join(''), float: this.at(px, py, z++, `Spectrum ${id}`),
       });
-      if (eff.struct_box) floats.push(...(await this.structureBox(c, item, eff, { x: px, y: py, w: shown.w, h: shown.h }, () => z++)));
+      if (parts) {
+        const boxAt = spot === 'above' ? { x: sx + (slot.w - box.w) / 2, y: sy + headH } : spot === 'beside' ? { x: px + shown.w + PLACE_GAP, y: py } : undefined;
+        floats.push(...(await this.structureBox(parts, use, { x: px, y: py, w: shown.w, h: shown.h }, () => z++, boxAt)));
+      }
     }
     // the anchor: an empty paragraph as tall as the page's body, so the next page starts after it
     for (const f of floats) this.b.object(f);
@@ -1035,18 +1056,29 @@ class Compiler {
     return { wrap: 'front', x: round2(x), y: round2(y), xFrom: 'margin', yFrom: 'para', gap: 0, z, name };
   }
 
-  /** The compound's structure, ID and caption on a box over a spectrum (in its corner, or where it was dragged). */
-  private async structureBox(c: SiCompound, item: Json, eff: SpectrumLayout, spec: { x: number; y: number; w: number; h: number }, z: () => number): Promise<DocObject[]> {
+  /** What goes on a spectrum's structure box: the compound's drawing (and its own size), its ID and the caption. */
+  private async boxParts(c: SiCompound, item: Json, eff: SpectrumLayout): Promise<BoxParts> {
     const mol = this.p.hasStructure(c) ? await this.p.readStructure(c) : '';
     const contents = mol ? this.host.contentsOf(mol) : null;
     const own = contents ? this.host.sizeOf(contents) : null;
-    const size = contents ? structureSize(own, eff.struct_scale) : { w: 0, h: 0 };
-    const id = displayId(this.report, c.id);
-    const idSize = idSizeOf(eff);
     const caption = eff.caption ? captionText(c, item) : '';
+    return { mol, contents, own, id: displayId(this.report, c.id), caption };
+  }
+
+  /** The box's size with the structure at `eff`'s size. */
+  private boxSize(b: BoxParts, eff: SpectrumLayout): { w: number; h: number } {
+    const size = b.contents ? structureSize(b.own, eff.struct_scale) : { w: 0, h: 0 };
+    return structureBoxSize(size, b.id, idSizeOf(eff), b.caption, eff.caption_size);
+  }
+
+  /** The compound's structure, ID and caption on a box over a spectrum (in its corner, where it was dragged or placed), or at `place` (above or beside it). */
+  private async structureBox(b: BoxParts, eff: SpectrumLayout, spec: { x: number; y: number; w: number; h: number }, z: () => number, place?: { x: number; y: number }): Promise<DocObject[]> {
+    const { mol, contents, own, id, caption } = b;
+    const size = contents ? structureSize(own, eff.struct_scale) : { w: 0, h: 0 };
+    const idSize = idSizeOf(eff);
     const capRuns = caption ? (this.helpers ? formatNmr([R(caption)], this.leave) : [R(caption)]) : [];
     const { w, h } = structureBoxSize(size, id, idSize, caption, eff.caption_size);
-    const { x: bx, y: by } = structureBoxAt(eff, spec, { w, h });
+    const { x: bx, y: by } = place ?? structureBoxAt(eff, spec, { w, h });
     // the box (its background and frame), the structure on it, and the ID and caption under the
     // structure: grouped, so they move together (Alt-drag moves one on its own)
     const group = ++this.groups;
@@ -1245,6 +1277,9 @@ export function coverSpacing(settings: Json): number {
 }
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+/** What a spectrum's structure box holds (see Compiler.boxParts). */
+interface BoxParts { mol: string; contents: Contents | null; own: { w: number; h: number } | null; id: string; caption: string }
 
 /** The room the Spectra section's heading takes at the top of its first page (points). */
 const HEADING_ROOM = 34;
