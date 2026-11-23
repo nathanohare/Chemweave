@@ -177,6 +177,8 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     showCarbon: { v: true },
     asTyped: { v: true, with: { label: 'NH2' }, alone: true },
     bare: { v: true, alone: true },
+    // (a ChemDraw label that gave no hydrogen count: its N is an amine's, as ChemDraw reads it)
+    hByRule: { v: true, with: { label: 'N', z: 7, fileLabel: true } },
     hideCharge: { v: true, with: { charge: 1, label: 'NMe3' } },
     supDigits: { v: false, with: { label: 'R1' } },
     labelMarks: { v: '^==', with: { label: 'OMe' } },

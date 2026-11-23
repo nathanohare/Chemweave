@@ -277,6 +277,9 @@ function asGroup(g: MiniGraph, label: string, z: number | undefined): boolean {
 export function shownValence(doc: Doc, id: number, label: string, z: number, charge: number, dative: Set<number> = new Set()): number | undefined {
   const shown = labelHydrogens(label, z);
   if (shown === null || !hasImplicitH(z) || z === 1) return undefined;
+  // (a ChemDraw file's label with no hydrogen count of its own: its hydrogens are the rule's, as ChemDraw reads it)
+  const self = doc.atoms.get(id);
+  if (self?.fileLabel && self.hByRule) return undefined;
   const orders = (doc.adj.get(id) ?? []).map((bid) => doc.bonds.get(bid)!).filter((b) => !outsideValence(b) && !dative.has(b.id)).map((b) => b.order);
   if (!orders.length || orders.some((o) => o !== 1 && o !== 2 && o !== 3)) return undefined;
   const own = orders.reduce((t, o) => t + o, 0);

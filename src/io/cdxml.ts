@@ -2,6 +2,7 @@
 // their formatting, arrows, and the common graphics (lines, boxes, circles, brackets,
 // charge symbols). Anything not understood yet is counted and skipped, never fatal.
 
+import { labelHydrogens } from '../chem/hydrogen-count';
 import { rNumberDigits } from '../chem/r-numbers';
 import { tint } from '../colours';
 import { pathId, freeformId } from '../design/geo';
@@ -1478,6 +1479,10 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       if (!implicitOk) {
         atom.label = text;
         atom.fileLabel = true;
+        // (no NumHydrogens: ChemDraw gives the atom the hydrogens its valence leaves room for, so a
+        // bare "N" on a carbon is an amine; CDX SDK, Node object, NumHydrogens: "the number of
+        // implicit hydrogens", worked out by ChemDraw when not given)
+        if (hShown === null && atom.z !== 6 && labelHydrogens(text, atom.z) !== null) atom.hByRule = true;
         // told to run left, ChemDraw draws the text as written (MeO, the O on the atom); this program
         // keeps a label from the atom out (OMe) and turns it to draw it
         if (atom.fixedDir && atom.just === 'left' && !atom.labelMarks) {

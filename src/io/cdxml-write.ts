@@ -1049,7 +1049,10 @@ class CdxmlWriter {
     if (heavy) {
       // e.g. "NH" typed as a label: an element with its hydrogens
       n.setAttribute('Element', String(g.atoms[0].z));
-      n.setAttribute('NumHydrogens', String(toks.filter((t) => t.text === 'H').reduce((s, t) => s + Math.max(1, t.count), 0)));
+      // (the hydrogens the label shows, so ChemDraw reads "N" as N with none, as this program does;
+      // left out for a ChemDraw label that gave none, whose hydrogens are the valence rule's)
+      if (a.fileLabel && a.hByRule) n.removeAttribute('NumHydrogens');
+      else n.setAttribute('NumHydrogens', String(toks.filter((t) => t.text === 'H').reduce((s, t) => s + Math.max(1, t.count), 0)));
       return;
     }
     n.removeAttribute('Element');

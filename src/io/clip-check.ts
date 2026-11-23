@@ -128,7 +128,7 @@ const common = { piece: 0, ole: { id: 0, prog: '' }, id: 0, grp: 0, grpPath: ids
 
 const atom = {
   ...common, x: 0, y: 0, z: (v: unknown) => num(v) && (v as number) >= 0 && (v as number) < 200, label: orNull(str), charge: 0, isotope: 0,
-  just: oneOf('auto', 'left', 'right'), fileLabel: true, color: '', s: 0, face: 0, font: '', marginWidth: 0, xyz: [0], depth: 0, group: '',
+  just: oneOf('auto', 'left', 'right'), fileLabel: true, hByRule: true, color: '', s: 0, face: 0, font: '', marginWidth: 0, xyz: [0], depth: 0, group: '',
   cdxInner: { label: '', type: '', nick: '', xml: '', x: 0, y: 0 }, alt: '', showCarbon: true, asTyped: true, bare: true, hideCharge: true,
   supDigits: true, labelMarks: '', centred: true, stacked: oneOf('up', 'down'), hDot: oneOf('dot', 'dash'), stackedLoose: true, fixedDir: true,
   showStereo: true, stereoLabel, ignoreWarnings: true, highlight: '', hl: highlight, radical: oneOf('singlet', 'doublet', 'triplet'), attach: '',
