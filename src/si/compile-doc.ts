@@ -41,6 +41,7 @@ import { inlineIds, inlineMol } from './scheme-edit';
 import { headerFooter } from './page-setup';
 import { siDrawingStyle } from './drawing-style';
 import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
+import { coverGaps, tocLists, type TocLists } from './front-layout';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -56,6 +57,8 @@ export interface CompileHost {
   contentBox?(src: string): Promise<Crop | null>;
   /** Where a picture has ink, for a structure box placed on blank paper (auto placement); without it, such a box goes above the spectrum. */
   inkMap?(src: string): Promise<InkMap | null>;
+  /** How far along the compile is (Compile's progress window): `done` of `total` compounds, then spectra. A rejection stops the compile. */
+  progress?(done: number, total: number, text: string): Promise<void>;
 }
 
 /** A page of a PDF drawn as a picture: its data URL, its size in points and in pixels, and how many pages the PDF has. */
@@ -83,7 +86,6 @@ const STRUCTURE_MAX = { w: 3.25 * PT, h: 2.6 * PT };
 const FIGURE_MAX_H = 7 * PT;
 const ATTACHMENT_MAX_H = 8 * PT;
 
-const TOC_DEPTHS = ['sections', 'subsections', 'procedures', 'compounds'];
 export const COVER_HEADINGS: Record<string, string> = { ACS: 'Supporting Information', Wiley: 'Supporting Information', RSC: 'Electronic Supplementary Information' };
 const LABEL_KINDS = ['figure', 'table', 'scheme'] as const;
 type LabelKind = (typeof LABEL_KINDS)[number];
@@ -202,7 +204,8 @@ class Compiler {
   private readonly styles: Record<string, NamedStyle>;
   private readonly report: IdReport;
   readonly labels: Labels;
-  private readonly rank: number;
+  /** The kinds of heading the table of contents lists (Table of contents ▸ Lists). */
+  private readonly lists: TocLists;
   private readonly excluded: Set<string>;
   private readonly leave: Leave;
   private readonly helpers: boolean;
@@ -217,9 +220,7 @@ class Compiler {
     this.styles = this.b.doc.styles;
     this.report = p.idReport();
     this.labels = new Labels(labelRules(p.settings));
-    const toc = dict(p.settings.toc);
-    const depth = typeof toc.depth === 'string' && TOC_DEPTHS.includes(toc.depth) ? toc.depth : p.settings.list_compounds_in_toc ? 'compounds' : 'procedures';
-    this.rank = TOC_DEPTHS.indexOf(depth) + 1;
+    this.lists = tocLists(p.settings);
     this.excluded = new Set(list(p.settings.export_excluded).map(String));
     this.leave = { words };
     this.helpers = p.settings.format_text !== false;
@@ -631,11 +632,10 @@ class Compiler {
     const s = this.p.settings;
     const cover = dict(s.cover);
     const heading = str(cover.heading).trim() || COVER_HEADINGS[str(s.journal_style)] || 'Supporting Information';
-    // Cover page ▸ Spacing: Normal (1), More (2) or Much more (3) times the gaps between the parts
-    const k = coverSpacing(s);
-    const gap = (pt: number): number => Math.round(pt * k * 10) / 10;
-    this.para([R(heading)], { align: 'center', spaceAfter: gap(14) }, 'Cover page', { size: 16, bold: true });
-    this.para(this.chemistry([R(str(s.title))]), { align: 'center', spaceAfter: gap(14) }, 'Cover page', { size: 14, bold: true });
+    // Cover page ▸ Spacing: the space above the heading and after each part, in points
+    const gap = coverGaps(s);
+    this.para([R(heading)], { align: 'center', spaceAfter: gap.heading, ...(gap.above ? { spaceBefore: gap.above } : {}) }, 'Cover page', { size: 16, bold: true });
+    this.para(this.chemistry([R(str(s.title))]), { align: 'center', spaceAfter: gap.title }, 'Cover page', { size: 14, bold: true });
     const authors = list(s.authors).map(dict);
     const names: Run[][] = authors.map((a) => {
       const marks = list(a.affiliations).map(String).join(',') + (a.corresponding ? '*' : '');
@@ -646,11 +646,11 @@ class Compiler {
       if (i) line.push(R(i === names.length - 1 ? (names.length > 2 ? ', and ' : ' and ') : ', '));
       line.push(...n);
     });
-    if (line.length) this.para(line, { align: 'center', spaceAfter: gap(8) }, 'Cover page');
+    if (line.length) this.para(line, { align: 'center', spaceAfter: gap.authors }, 'Cover page');
     const affs = list(s.affiliations).map(dict);
-    affs.forEach((a, i) => this.para([R(str(a.marker), { valign: 'super' }), R(str(a.text))], { align: 'center', spaceAfter: i === affs.length - 1 ? gap(6) : 0 }, 'Cover page', { size: 10 }));
+    affs.forEach((a, i) => this.para([R(str(a.marker), { valign: 'super' }), R(str(a.text))], { align: 'center', spaceAfter: i === affs.length - 1 ? gap.affiliations : 0 }, 'Cover page', { size: 10 }));
     const emails = authors.filter((a) => a.corresponding && str(a.email)).map((a) => str(a.email));
-    if (emails.length) this.para([R('*Email: ' + emails.join('; '))], { align: 'center', spaceAfter: gap(18) }, 'Cover page', { size: 10 });
+    if (emails.length) this.para([R('*Email: ' + emails.join('; '))], { align: 'center', spaceAfter: gap.emails }, 'Cover page', { size: 10 });
     const extra = this.texts.get('cover') ?? '';
     if (extra.trim()) await this.richText(extra, 'Cover page', null, 1, 0);
   }
@@ -661,7 +661,8 @@ class Compiler {
     const style = this.plainStyle('SITocHeading', 'Contents Heading', { size: 13, bold: true, align: 'left', spaceBefore: 0, spaceAfter: 10, keepNext: true });
     this.b.pendingBreak = true;
     if (title.trim()) this.para([R(title)], { style }, 'Table of contents');
-    this.b.object({ kind: 'toc', levels: 3 });
+    // (every level: what is listed is chosen heading by heading, Table of contents ▸ Lists)
+    this.b.object({ kind: 'toc', levels: 9 });
     this.b.endPara(this.full({}));
   }
 
@@ -670,13 +671,15 @@ class Compiler {
     if (!text.trim()) return false;
     const info = dict(this.p.settings.general_information);
     const title = info.heading === undefined ? 'General Information' : str(info.heading).trim();
-    if (title) this.para([R(this.numbered(1, true) + title)], { style: headingId(1) }, 'General Information');
-    await this.richText(text, title || 'General Information', await this.owner('general'), 1, this.rank >= 2 ? 2 : 0, true, true);
+    if (title) this.para([R(this.numbered(1, true) + title)], { style: this.headingStyle(1, this.lists.general) }, 'General Information');
+    await this.richText(text, title || 'General Information', await this.owner('general'), 1, this.lists.headings ? 2 : 0, true, true);
     return true;
   }
 
-  private sectionHeading(level: number, name: string, ps: ParaStyle = {}): void {
-    this.para([R(this.numbered(level) + name)], { style: this.headingStyle(level, level === 1 || this.rank >= 2), ...ps }, name);
+  /** A section's heading: in the contents when sections (a top one) or sub-sections are listed; the Spectra section's when spectra are. */
+  private sectionHeading(level: number, name: string, ps: ParaStyle = {}, spectra = false): void {
+    const listed = spectra ? this.lists.spectra : level === 1 ? this.lists.sections : this.lists.subsections;
+    this.para([R(this.numbered(level) + name)], { style: this.headingStyle(level, listed), ...ps }, name);
   }
 
   // ---------------------------------------------------------- heading numbers (Lauren's, rewritten)
@@ -713,7 +716,7 @@ class Compiler {
     }
     if (s.type === 'text') {
       this.sectionHeading(level, s.name);
-      await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.rank >= 2 ? level + 1 : 0, true, true);
+      await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.lists.headings ? level + 1 : 0, true, true);
     } else if (s.type === 'file') await this.fileSection(s, level);
     else if (s.type === 'xray') await this.xray(s, level, true); else if (s.type === 'data') await this.dataSection(s, level);
     for (const child of s.children) await this.section(child, level + 1);
@@ -734,7 +737,7 @@ class Compiler {
     for (const gp of this.p.generalProcedures(s)) {
       const name = str(gp.name).trim() || 'General Procedure';
       const title = str(gp.title).trim();
-      this.para(this.chemistry([R(name + (title ? `: ${title}` : ''))]), { style: this.headingStyle(level + 1, this.rank >= 3) }, `${s.name} ▸ ${name}`);
+      this.para(this.chemistry([R(name + (title ? `: ${title}` : ''))]), { style: this.headingStyle(level + 1, this.lists.procedures) }, `${s.name} ▸ ${name}`);
       const text = await this.p.readGpText(s, str(gp.id));
       if (!text.trim()) this.notes.push(`“${name}” in “${s.name}” has no text yet.`);
       await this.richText(text, `${s.name} ▸ ${name}`, null, level + 1, 0, false);
@@ -747,15 +750,20 @@ class Compiler {
     }
   }
 
+  /** Compounds set out so far, of how many (Compile's progress). */
+  private progressDone = 0;
+  private progressTotal = 0;
+
   private async compound(c: SiCompound, level: number, inScheme = false): Promise<void> {
     const id = displayId(this.report, c.id);
     const name = compoundName(c);
+    if (this.host.progress && !this.preview) await this.host.progress(++this.progressDone, this.progressTotal, `Compounds: ${Math.min(this.progressDone, this.progressTotal)} of ${this.progressTotal}`);
     const where = name ? `${id} (${name})` : id;
     const facts = this.facts.get(c.id) ?? null;
     const nuclei = this.nmrLinks ? new Set(spectrumItems(c).map(([, i]) => nmrNucleus(i, c))) : null;
     const nmrLink = nuclei ? (n: string): string | null => (nuclei.has(n) ? `#${spectrumMark(c.id, n)}` : null) : undefined;
     const block = compoundBlock(this.p, c, id, { facts, helpers: this.helpers, leave: this.leave, ...(nmrLink ? { nmrLink } : {}) });
-    this.para(block.title, { style: this.compoundStyle(level, this.rank >= 4), marks: [compoundBookmark(c.id)] }, where);
+    this.para(block.title, { style: this.compoundStyle(level, this.lists.compounds), marks: [compoundBookmark(c.id)] }, where);
     this.targets.push({ key: c.id, kind: 'compound', label: id, caption: name, mark: compoundBookmark(c.id) });
     if (!inScheme) await this.structure(c, where);
     if (!block.customText) {
@@ -946,10 +954,13 @@ class Compiler {
     const name = s?.name ?? 'Spectra';
     type Entry = { c: SiCompound; item: Json; page: PagePicture; pageNo: number; eff: SpectrumLayout };
     const entries: Entry[] = [];
+    const files = this.host.progress && !this.preview ? compounds.reduce((n, c) => n + spectrumItems(c).filter(([, i]) => partText(i.file)).length, 0) : 0;
+    let read = 0;
     for (const c of compounds) {
       for (const [key, item] of spectrumItems(c)) {
         const file = partText(item.file);
         if (!file) continue;
+        if (files) await this.host.progress!(read++, files, `Spectra: ${read} of ${files}`);
         const where = `${displayId(this.report, c.id)} ▸ ${key === 'spectra' ? 'Spectra' : 'Additional files'}`;
         const bytes = await this.p.folder.readBytes(joinPath(c.folder, attachmentDir(c, key), file));
         if (!bytes) { this.notes.push(`${where}: ${file} is no longer in the project; left out.`); continue; }
@@ -982,7 +993,7 @@ class Compiler {
       const page = this.landscape ? { ...this.b.doc.page, w: this.b.doc.page.h, h: this.b.doc.page.w } : this.b.doc.page;
       let top = 0;
       if (!headed) {
-        this.sectionHeading(level, name, { pageBreak: true });
+        this.sectionHeading(level, name, { pageBreak: true }, true);
         headed = true;
         top = HEADING_ROOM;
       } else if (pg !== pages[0] || !only) this.b.pendingBreak = true;
@@ -1112,8 +1123,8 @@ class Compiler {
       if (started) return false;
       started = true;
       this.orient('portrait');
-      if (withSection) this.sectionHeading(sectionLevel, sectionName, { pageBreak: true });
-      this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.rank >= 2), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
+      if (withSection) this.sectionHeading(sectionLevel, sectionName, { pageBreak: true }, true);
+      this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.lists.hrms), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
       return true;
     };
     const room = { w: TEXT_W, h: 7.4 * PT };
@@ -1197,7 +1208,7 @@ class Compiler {
 
   private references(): void {
     if (!this.cited) return;
-    this.para([R('References')], { style: headingId(1), pageBreak: true }, 'References');
+    this.para([R('References')], { style: this.headingStyle(1, this.lists.references), pageBreak: true }, 'References');
     this.b.object({ kind: 'bib' });
     this.b.endPara(this.full({}));
   }
@@ -1245,6 +1256,7 @@ class Compiler {
 
   async build(only?: SiPreviewTarget): Promise<DocText> {
     this.preview = !!only;
+    this.progressTotal = this.printedCompounds(only).length;
     await this.prepare(this.printedCompounds(only));
     if (only) await this.buildOnly(only);
     else await this.buildAll();
@@ -1279,12 +1291,7 @@ class Compiler {
 
 const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join('').trim();
 
-/** The cover page's spacing: Normal 1, More 2, Much more 3, or a number typed into project.json (0.5–6). */
-export const COVER_SPACINGS: Record<string, number> = { Normal: 1, More: 2, 'Much more': 3 };
-export function coverSpacing(settings: Json): number {
-  const v = Number(dict(settings.cover).spacing);
-  return Number.isFinite(v) && v > 0 ? Math.min(6, Math.max(0.5, v)) : 1;
-}
+export { coverSpacing } from './front-layout';
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
