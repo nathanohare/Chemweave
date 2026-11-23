@@ -13,7 +13,8 @@ import { readScene, sceneToDoc } from '../src/io/chem-formats';
 import { ACS_1996 } from '../src/style';
 import { plainText } from '../src/richtext';
 import { blockAt, compoundSrc, editableSrc, sourceAccess, spanAt } from '../src/si/source-map';
-import { applyToRaw, lineUp, markupSrc, printedOf } from '../src/si/preview-edit';
+import { applyToRaw, customSrc, lineUp, markupSrc, printedOf } from '../src/si/preview-edit';
+import { CUSTOM_TEXT_FILE, customAnchor, customTextJson } from '../src/si/custom-text';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RDKit: any;
@@ -136,5 +137,48 @@ describe('a change made in the printed text', () => {
     expect(next).toBe(stored.nmr[0].text.replace('(m, 4H)', '(m, 5H)'));
     await access.write(next!);
     expect(p.compounds.find((c) => c.id === A)!.data.values).toMatchObject({ nmr: [{ text: next }, { text: stored.nmr[1].text }] });
+  });
+});
+
+describe('text typed where no field is (custom text)', () => {
+  it('is put back after the field it follows, with what was between, on every compile', async () => {
+    const p = await SiProject.open(folder());
+    const first = await compile(p);
+    const text = plainText(first.doc.runs);
+    // typed after 2a's HRMS sentence and the space after it
+    const hrms = first.sources.filter((s) => s.src === compoundSrc(A, 'hrms')).pop()!;
+    const anchor = customAnchor(text, first.sources, first.blocks, hrms.end + 1);
+    expect(anchor).toEqual({ node: `compound:${A}`, after: compoundSrc(A, 'hrms'), gap: ' ' });
+    const typed = 'The ee was not determined. ';
+    await p.folder.writeText(CUSTOM_TEXT_FILE, customTextJson([{ id: 'k-1', ...anchor, text: typed }]));
+    const got = await compile(p);
+    const t = plainText(got.doc.runs);
+    expect(t).toContain(`found ${stored.hrms.found}. ${typed}${stored.references.text}`);
+    expect(got.custom).toEqual([{ id: 'k-1', start: t.indexOf(typed), end: t.indexOf(typed) + typed.length, anchored: true }]);
+    expect(spanAt(got.sources, t.indexOf(typed) + 3)?.src).toBe(customSrc('k-1'));
+    // the sources after it moved with the text
+    expect(textOf(got, compoundSrc(A, 'references', 'text'))).toBe(stored.references.text);
+  });
+
+  it('stays, flagged, when the page it was on is gone', async () => {
+    const p = await SiProject.open(folder());
+    await p.folder.writeText(CUSTOM_TEXT_FILE, customTextJson([{ id: 'k-2', node: 'compound:c-gone', after: '', gap: '', text: 'Orphan.' }]));
+    const got = await compile(p);
+    expect(plainText(got.doc.runs).endsWith('Orphan.')).toBe(true);
+    expect(got.custom[0].anchored).toBe(false);
+  });
+
+  it('starts a paragraph of its own when typed so', async () => {
+    const p = await SiProject.open(folder());
+    const first = await compile(p);
+    const paras = first.doc.paras.length;
+    // typed after the citations that end the compound's data (one object character)
+    const refs = first.sources.filter((s) => s.src === compoundSrc(A, 'references', 'text')).pop()!;
+    const anchor = customAnchor(plainText(first.doc.runs), first.sources, first.blocks, refs.end + 1);
+    expect(anchor.gap.length).toBe(1);
+    await p.folder.writeText(CUSTOM_TEXT_FILE, customTextJson([{ id: 'k-3', ...anchor, text: '\nA note of my own.' }]));
+    const got = await compile(p);
+    expect(got.doc.paras.length).toBe(paras + 1);
+    expect(plainText(got.doc.runs).split('\n')).toContain('A note of my own.');
   });
 });

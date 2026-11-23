@@ -43,6 +43,7 @@ import { siDrawingStyle } from './drawing-style';
 import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
 import { coverGaps, tocLists, type TocLists } from './front-layout';
 import { TITLE_SRC, frontSrc, gpSrc, sectionSrc, tag, type SourceBlock, type SourceSpan } from './source-map';
+import { placeCustomText, readCustomText, type PlacedCustom } from './custom-text';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -71,6 +72,8 @@ export interface CompiledSi {
   sources: SourceSpan[];
   /** Where each page of the project's tree (the front pages, a section, a scheme page, a compound) is in the document. */
   blocks: SourceBlock[];
+  /** Where the text typed in the Live Preview where no field is went (custom-text.ts). */
+  custom: PlacedCustom[];
   /** Things to know about the result (left out, missing, printed as "??"), in plain words. */
   notes: string[];
   /** What a manuscript can point at: each compound, table, figure and scheme, in the order printed. */
@@ -1444,6 +1447,11 @@ export type SiPreviewTarget = { kind: 'front' } | { kind: 'whole' } | { kind: 's
 export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget): Promise<CompiledSi> {
   const c = new Compiler(p, host, await leaveWords(p));
   const doc = await c.build(only);
-  return { doc, notes: [...new Set(c.notes)], targets: c.targets, sources: c.sources, blocks: c.blocks };
+  // the text typed in the Live Preview where no field is, back in its places (custom-text.ts)
+  const whole = !only || only.kind === 'whole';
+  const items = only?.kind === 'spectra' ? [] : (await readCustomText(p.folder)).filter((x) => whole || c.blocks.some((b) => b.node === x.node));
+  if (!items.length) return { doc, notes: [...new Set(c.notes)], targets: c.targets, sources: c.sources, blocks: c.blocks, custom: [] };
+  const put = placeCustomText(doc, c.sources, c.blocks, items);
+  return { doc: put.doc, notes: [...new Set(c.notes)], targets: c.targets, sources: put.sources, blocks: put.blocks, custom: put.placed };
 }
 
