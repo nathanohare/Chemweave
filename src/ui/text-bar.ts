@@ -9,7 +9,8 @@
 import type { Justify } from '../model';
 import * as rt from '../richtext';
 import type { TextFormat } from '../text/format';
-import { CHARGES_LOOK, FONT_LOOK, FONT_SIZE_LIST } from './font-group';
+import { FONT_LOOK, FONT_SIZE_LIST } from './font-group';
+import { chargeNote } from '../text/charge-digits';
 
 /** Sizes offered in the size box. */
 export const TEXT_SIZES = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72];
@@ -64,6 +65,8 @@ export interface TextBarOps {
   resized?(): void;
   /** Nothing to change (no text being typed or picked). */
   nothing?(): void;
+  /** Tell the person something in the status bar. */
+  say?(msg: string): void;
 }
 
 export interface TextBar {
@@ -107,7 +110,12 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   spacing.className = 'caption-spacing';
   spacing.hidden = true;
 
-  const run = (f: TextFormat) => { if (!ops.format(f)) ops.nothing?.(); };
+  const run = (f: TextFormat) => {
+    chargeNote.text = '';
+    const ok = ops.format(f);
+    // (an ion Raise Charge Digits left as typed, and why)
+    if (chargeNote.text) ops.say?.(chargeNote.text); else if (!ok) ops.nothing?.();
+  };
   const after = () => { refresh(); ops.back(); };
   // (ribbon: two rows in each group; which row each part goes in is said as it is made)
   const rib = opts.ribbon;
@@ -229,6 +237,7 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   fontButton(g, 'sub', () => run({ kind: 'toggle', key: 'sub' }));
   fontButton(g, 'sup', () => run({ kind: 'toggle', key: 'sup' }));
   fontButton(g, 'formula', () => run({ kind: 'toggle', key: 'formula' }));
+  fontButton(g, 'charges', () => run({ kind: 'charges' }));
   // Text Color: an A over a bar of the color, as in every mode's Font group
   const colorBox = d.createElement('label');
   colorBox.className = 'rb-sq rb-colour cb-colour';
@@ -243,7 +252,6 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   inputs.color = color;
   // (what only the Canvas has, at the end)
   button(g, 'stereo', '(<i>R</i>)', 'Stereodescriptors in italics: (2R,3S)-, (E)-, cis-, tert-, n-Bu, p- (again: back to upright)', () => run({ kind: 'stereo' }));
-  button(g, 'charges', CHARGES_LOOK.html, CHARGES_LOOK.title, () => run({ kind: 'charges' }));
 
   if (prows) into = prows[1];
   g = group();

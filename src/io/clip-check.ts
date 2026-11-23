@@ -194,6 +194,8 @@ function inner(o: Obj): boolean {
   if (obj(o.stereoLabel) && !needs(o.stereoLabel, ['text', 'dx', 'dy', 'size'])) return false;
   if (obj(o.numberLabel) && !needs(o.numberLabel, ['dx', 'dy', 'size'])) return false;
   if (obj(o.table) && !needs(o.table, ['cols', 'rows', 'head', 'lines'])) return false;
+  // (each cell its runs: a cell without them can't be drawn or saved)
+  if (obj(o.table) && Array.isArray(o.table.rows) && !o.table.rows.every((row) => !Array.isArray(row) || row.every((c) => !obj(c) || Array.isArray(c.runs)))) return false;
   if (obj(o.step) && !needs(o.step, ['reactants', 'products', 'above', 'below'])) return false;
   if (obj(o.attach) && !needs(o.attach, ['atoms'])) return false;
   return true;

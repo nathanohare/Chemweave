@@ -73,6 +73,7 @@ import { bestFit, fitMove, fitMatters } from './chem/orient';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blankCycle, type CycleLook } from './chem/cycles';
+import { chargeNote } from './text/charge-digits';
 import { addChiralFlag, chiralPrefs, structureFlag, type ChiralFlag } from './chem/chiral-flag';
 import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
   nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, nativeClipboardDrawing, pasteDrawing, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
@@ -10733,7 +10734,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'add-caption': () => void addTiedText('caption'),
   'link-text': () => linkText() || flash(WHY.link),
   // (the text being typed in, or the selected text boxes whole; one undo step)
-  'raise-charge-digits': () => { if (!editor.formatText({ kind: 'charges' })) flash(WHY.charges); },
+  'raise-charge-digits': () => { chargeNote.text = ''; const ok = editor.formatText({ kind: 'charges' }); if (chargeNote.text) flash(chargeNote.text, 6000); else if (!ok) flash(WHY.charges); },
   'unlink-text': () => unlinkText() || flash(WHY.unlink),
   group: () => editor.group() || flash(WHY.group),
   ungroup: () => editor.ungroupSmart() || editor.ungroup() || flash(WHY.ungroup),
@@ -15256,6 +15257,7 @@ if (textRows) {
     state: () => textToolboxHooks.look(),
     back: () => textToolboxHooks.back(),
     nothing: () => flash('Click into some text, or select a caption or text box, first.'),
+    say: (msg) => flash(msg, 6000),
   }, { ribbon: { paragraph: textRows.paragraph } });
 }
 
@@ -16425,6 +16427,7 @@ const slideText = new SlideTextRibbon($('#ribbon'), {
   look: () => editor.textLook(),
   refocus: () => editor.refocusText(),
   nothing: () => flash('Click into some text, or select a text box or a shape with text, first.'),
+  say: (msg) => flash(msg),
   box: (c) => editor.setTextBox(c),
   boxLook: () => editor.textBoxLook(),
 });
@@ -16433,6 +16436,7 @@ const designText = new SlideTextRibbon($('#design-ribbon'), {
   look: () => editor.textLook(),
   refocus: () => editor.refocusText(),
   nothing: () => flash('Click into some text, or select a text box or a shape with text, first.'),
+  say: (msg) => flash(msg),
   box: (c) => editor.setTextBox(c),
   boxLook: () => editor.textBoxLook(),
 });

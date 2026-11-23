@@ -3,7 +3,7 @@
 // charge is a right upper index, the number before the sign; Fe³⁺, SO₄²⁻, [Fe(CN)₆]⁴⁻, B₁₂H₁₂²⁻).
 
 import { describe, it, expect } from 'vitest';
-import { chargeDigitEdits } from '../src/text/charge-digits';
+import { chargeDigitEdits, chargeNote } from '../src/text/charge-digits';
 import { TextEditing } from '../src/text/editing';
 import { applyFormat, formatWhole } from '../src/text/format';
 import { formulaRunParts, type Part } from '../src/richtext';
@@ -41,6 +41,38 @@ describe('Raise Charge Digits', () => {
     expect(raise('Red-Al')).toBe('Red-Al');
     expect(chargeDigitEdits('pH 7-8', () => false)).toEqual([]);
     expect(chargeDigitEdits('2+', () => false)).toEqual([]);
+  });
+  // (review F8a-R03: a lone digit after a formula of two or more elements is its count, IUPAC Red Book IR-4.4.2.2)
+  it('leaves a count as a count: NH4+, BF4-, NO3- and the like keep their digit lowered', () => {
+    for (const ion of ['NH4+', 'BF4-', 'PF6-', 'NO3-', 'ClO4-', 'HSO4-', 'H2PO4-', 'MnO4-', 'AlH4-', 'NBu4+', 'CH3+']) {
+      expect(raise(ion), ion).toBe(shown([{ text: ion, formula: true }]));
+    }
+    expect(raise('NH4+ and Fe3+')).toBe(shown([{ text: 'NH4+ and ', formula: true }]) + 'Fe^3^+');
+  });
+  it('raises the last of two or more digits, and never a 0', () => {
+    expect(raise('Hg22+')).toBe('Hg_2^2^+');
+    expect(raise('S2O82-')).toBe('S_2O_8^2^-');
+    expect(raise('Fe(CN)63-')).toBe('Fe(CN)_6^3^-');
+    expect(chargeDigitEdits('C60-', () => false)).toEqual([]);
+    expect(raise('[Co(NH3)6]3+')).toBe('[Co(NH_3)_6]^3^+');
+    expect(raise('Ca2+')).toBe('Ca^2^+');
+    expect(raise('Al3+')).toBe('Al^3^+');
+  });
+  it('leaves a lone non-metal with one digit, which could be a count or the charge, and says why', () => {
+    // (N3- is nitride N³⁻ or azide N₃⁻; I3- triiodide I₃⁻; O2- oxide or superoxide)
+    for (const ion of ['N3-', 'I3-', 'O2-']) {
+      expect(chargeDigitEdits(ion, () => false), ion).toEqual([]);
+      expect(chargeNote.text).toContain(ion);
+    }
+    chargeDigitEdits('Fe3+', () => false);
+    expect(chargeNote.text).toBe('');
+  });
+  it('changes nothing with only a caret in the text (select the ions first)', () => {
+    const ed = new TextEditing({ runs: [{ text: 'Fe3+', formula: true }] }, {}, measure, 10);
+    ed.select(2, 2);
+    applyFormat(ed, { kind: 'charges' });
+    expect(shown(ed.t.runs)).toBe('Fe_3^+');
+    expect(chargeNote.text).toMatch(/^Select/);
   });
   it('in plain text raises the sign too', () => {
     const r = formatWhole({ runs: [{ text: 'Cu2+' }] }, { kind: 'charges' }, {}, 10, measure).runs;

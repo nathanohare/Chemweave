@@ -7,7 +7,7 @@ import type * as rt from '../richtext';
 import { TextEditing, type RichText } from './editing';
 import type { Measure } from './layout';
 import { stereoItalics } from './chemtext';
-import { chargeDigitEdits } from './charge-digits';
+import { chargeDigitEdits, chargeNote } from './charge-digits';
 
 export type TextFormat =
   | { kind: 'toggle'; key: rt.Toggle }
@@ -60,10 +60,11 @@ export function applyFormat(ed: TextEditing, f: TextFormat): void {
       break;
     }
     case 'charges': {
-      // the selection, or the whole text when nothing is selected; one undo step
+      // the selection only (a caret alone changes nothing: review F8a-R03); one undo step
       const a = Math.min(ed.anchor, ed.focus), b = Math.max(ed.anchor, ed.focus);
+      if (a === b) { chargeNote.text = 'Select the ions whose charges to raise first.'; break; }
       const looks = ed.looks();
-      ed.fix(chargeDigitEdits(ed.text, (i) => looks[i]?.pos === 'sup', a === b ? 0 : a, a === b ? ed.text.length : b));
+      ed.fix(chargeDigitEdits(ed.text, (i) => looks[i]?.pos === 'sup', a, b));
       break;
     }
   }

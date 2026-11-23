@@ -4,6 +4,7 @@
 // spelling check knows chemistry words. The panel on the right shows the paragraph's formatting,
 // its style, the page and the figure picked, every value of which can be typed in.
 
+import { chargeNote } from '../text/charge-digits';
 import { installFontGroups } from './font-group';
 import { applyFormat } from '../text/format';
 import { showContextMenu, type MenuItem } from './context-menu';
@@ -3827,7 +3828,7 @@ export class DocumentMode {
       case 'doc-sup': ed.toggle('sup'); break;
       case 'doc-formula': ed.toggle('formula'); break;
       case 'doc-stereo-italic': applyFormat(ed, { kind: 'stereo' }); break;
-      case 'doc-raise-charges': applyFormat(ed, { kind: 'charges' }); break;
+      case 'doc-raise-charges': chargeNote.text = ''; applyFormat(ed, { kind: 'charges' }); if (chargeNote.text) this.host.flash(chargeNote.text, 6000); break;
       case 'doc-highlight': {
         const on = ed.currentStyle().highlight;
         ed.setStyle({ highlight: on && on === this.highlighter ? undefined : this.highlighter });

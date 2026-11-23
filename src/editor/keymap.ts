@@ -206,7 +206,7 @@ export const COMMAND_NAMES: Record<string, string> = {
   'cell-bold': 'Bold (cells)', 'cell-italic': 'Italic (cells)', 'cell-underline': 'Underline (cells)',
   'fill-down': 'Fill Down', 'fill-right': 'Fill Right', autosum: 'AutoSum', find: 'Find…',
   'format-cells': 'Number Format', 'format-general': 'General Number Format', 'format-number': 'Number with 2 Decimal Places',
-  'format-percent': 'Percentage', 'format-scientific': 'Scientific Notation', 'format-chem': 'Formula Style',
+  'format-percent': 'Percentage', 'format-scientific': 'Scientific Notation', 'format-chem': 'Formula Style', 'cell-raise-charges': 'Raise Charge Digits',
   'insert-cells': 'Insert Rows or Columns', 'delete-cells': 'Delete Rows or Columns',
   'hide-rows': 'Hide Rows', 'unhide-rows': 'Show Hidden Rows', 'hide-cols': 'Hide Columns', 'unhide-cols': 'Show Hidden Columns',
   'sort-up': 'Sort Smallest to Largest', 'sort-down': 'Sort Largest to Smallest', filter: 'Filter (on or off)',
