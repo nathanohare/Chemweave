@@ -19,7 +19,7 @@ While a project is open, a lock in its folder tells Chem SI Assistant (and Chemw
 
 - **The list on the left** shows the project (its title, at the top), the **Dashboard**, every section with its compounds and scheme pages under it, and at the bottom **Manuscript Check**, **References** and **Warnings**. A check mark beside a compound means every required field is filled in. Click a row to open its page. Drag rows to reorder them, press **F2** to rename a section, and **Delete** to move a row to the project's Trash. Right-click a row for the same commands, and **Expand All** or **Collapse All**. The arrow beside a section or scheme page folds the rows under it (or double-click the row; the Left and Right keys fold and unfold the picked row). Drag the border between the list and the page to make the list wider or narrower; double-click the border to put it back.
 - **The page in the middle** is what you picked: a compound's data, a section's text, a scheme and so on.
-- **Live Preview**, on the right, shows the picked page as it will print, about a second after each change, wherever it is made (**Home ▸ Live Preview**, Ctrl+Shift+L). A section shows every page under it: a Data section its compounds and scheme pages. On a page with nothing to preview (the Dashboard, Warnings, References, Manuscript Check) it folds to its strip by itself so the page gets the width, and opens again on the next page it can show. Spectra are left out and page numbers are placeholders; compile to see the real thing.
+- **Live Preview**, on the right, shows the picked page as it will print, about a second after each change, wherever it is made (**Home ▸ Live Preview**, Ctrl+Shift+L). A section shows every page under it: a Data section its compounds and scheme pages, the Spectra section its first spectra, and a compound's spectra page all of that compound's spectra. On a page with nothing to preview (the Dashboard, Warnings, References, Manuscript Check) it folds to its strip by itself so the page gets the width, and opens again on the next page it can show. Page numbers are placeholders; compile to see the real thing.
 - **The ribbon** has **Home** and **Insert** tabs. Further tabs appear for what you are working on: **Table Layout**, **Picture Format**, **Scheme**, **Spectrum**, **Crystal Structure**, **Attachment**, **References**, **Manuscript Check** and **Dashboard**.
 
 ## The project's page
@@ -27,7 +27,7 @@ While a project is open, a lock in its folder tells Chem SI Assistant (and Chemw
 Click the title at the top of the list. This page holds everything that prints before the first section:
 
 - **Cover page**: the heading, title, authors with their affiliation letters and corresponding-author emails, the affiliations and an optional extra text. **+ Add Author** and **+ Add Affiliation** under the lists (or **Insert ▸ Author** and **Affiliation**) add rows. **Spacing** sets each gap in points: above the heading (to start it further down the page), and after the heading, the title, the author line, the last affiliation and the email line. Chem SI Assistant keeps one spacing for all of them, so it gets the nearest one.
-- **Table of contents**: its title and, under **Lists**, a check box for each kind of heading it lists: sections, sub-sections, headings in section text, General Information, general procedures, compounds, spectra, HRMS reports and references. Chem SI Assistant keeps one depth, so it gets the nearest one.
+- **Table of contents**: its title and, under **Lists**, a check box for each kind of heading it lists: sections, sub-sections, headings in section text, General Information, general procedures, compounds, spectra, HRMS reports and references. Chem SI Assistant keeps one depth, so it gets the nearest one. **Links ▸ Link to sections** makes each line of the contents a link to its heading in the PDF and the Word file (on by default).
 - **General Information**: materials, instruments and methods.
 
 ## Sections
@@ -61,7 +61,7 @@ Pick a Data section and click **Home ▸ New Compound** (Ctrl+Shift+N). A compou
 - **Experimental procedure.** Type the procedure, or choose one of the section's general procedures and fill in the boxes it asks for.
 - **Reaction scale, Yield, Physical state, Purification, Rf.** Small boxes with units. Purification and Rf remember the eluents you have typed.
 - **NMR peak reports.** Paste the peak report from your NMR software and pick the nucleus. **Insert ▸ NMR Report** adds another one.
-- **HRMS.** Choose the ionization and adduct and type the found m/z. Chemweave calculates the expected m/z from the structure and shows the difference in ppm. **Insert ▸ HRMS Report…** adds the instrument's report files; the found m/z is read from them when the Found box is empty, and a value you typed is never changed.
+- **HRMS.** Choose the ionization and adduct and type the found m/z. Chemweave calculates the expected m/z from the structure and shows the difference in ppm. For a salt measured as its charged piece, the ion prints as [M−Br]⁺ (the counter-ions taken off the whole salt), or as [M]⁺ if you choose that under **Project Settings ▸ Output ▸ HRMS ion for salts**; type in **Printed as** to print any other label. **Insert ▸ HRMS Report…** adds the instrument's report files; the found m/z is read from them when the Found box is empty, and a value you typed is never changed.
 - **Spectra.** **Insert ▸ Spectra** adds PDFs or pictures, and **Paste Spectrum** takes one copied in Mnova. Give each its type (¹H NMR, ¹³C NMR, HPLC/SFC, IR and so on).
 - **References (known compound).** **Home ▸ Cite from My Library…** cites references from [your reference library](libraries.md).
 - **Notes** are private and never print.
@@ -91,9 +91,11 @@ Each Data section has an **ID table**: row 1 is the first compound's ID, row 2 t
 
 ## Spectra pages
 
-The **Spectra** section's page sets how every spectrum prints: one, two or four to a page, portrait or landscape, with a header line, and with the compound's structure and ID in a corner.
+The **Spectra** section's page sets how every spectrum prints: one, two or four to a page, portrait or landscape, with a header line, and with the compound's structure and ID. **Place** puts the structure box on the spectrum in a corner, on blank space over the spectrum (above it when it fits nowhere, made smaller first if **Shrink to fit** is ticked), or above or beside the spectrum, which is made smaller to leave it room.
 
-Under the Spectra section, each compound has a spectra page of its own. Pick a spectrum to see it as it prints. Drag the structure box anywhere on the spectrum and resize it by its corners. A setting changed here applies to this spectrum only and is shown in bold; click the × beside it to follow the section again. The **Spectrum** tab changes the print order and says whether a setting is for one page or for every page of a PDF.
+**Links** sets which links the PDF and Word file get: **Peak reports to spectra** (“¹H NMR” at the start of a peak report goes to the compound's spectrum) and **Spectra back to compounds** (each spectrum's header line goes back to the compound's data). **Look** prints them like normal text, in a color, or in a color and underlined.
+
+Under the Spectra section, each compound has a spectra page of its own. Pick a spectrum to see it as it prints. Drag the structure box anywhere on the spectrum and resize it by its corners (a box above or beside the spectrum is resized only; choose another **Place** to drag it). A setting changed here applies to this spectrum only and is shown in bold; click the × beside it to follow the section again. The **Spectrum** tab changes the print order and says whether a setting is for one page or for every page of a PDF.
 
 ## X-ray structures and attachments
 

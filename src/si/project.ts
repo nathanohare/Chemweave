@@ -1287,11 +1287,17 @@ export class SiProject {
   }
 
   /** Change one part of a parts field ("yield" ▸ "percent") and save. */
-  async setPart(c: SiCompound, key: string, part: string, text: string): Promise<void> {
+  async setPart(c: SiCompound, key: string, part: string, text: string, before: readonly string[] = []): Promise<void> {
     this.checkWritable();
     this.checkThere(c, compoundName(c) || 'This compound');
     const values = valuesOf(c);
-    const v = isObj(values[key]) ? (values[key] as Json) : (values[key] = {});
+    let v = isObj(values[key]) ? (values[key] as Json) : (values[key] = {});
+    // (a new part goes before `before`'s keys, where SI Assistant writes it, so the files stay alike)
+    if (!(part in v) && before.some((b) => b in v)) {
+      const out: Json = {};
+      for (const [k, x] of Object.entries(v)) { if (before.includes(k) && !(part in out)) out[part] = text; out[k] = x; }
+      v = values[key] = out;
+    }
     v[part] = text;
     await this.setValue(c, key, v);
   }

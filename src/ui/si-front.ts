@@ -227,6 +227,15 @@ export class SiFrontPage {
     const lLab = el('span', 'si-front-lab si-front-top', 'Lists');
     addInfo(lLab, 'The headings the table of contents lists, each kind on its own. Headings in section text are the headings typed in Custom sections and General Information. Chem SI Assistant keeps one depth (sections, sub-sections, general procedures or compounds), so it gets the nearest one.');
     tg.append(lLab, lists);
+    const linkTick = el('input');
+    linkTick.type = 'checkbox';
+    linkTick.checked = tocSet.links !== false;
+    linkTick.addEventListener('change', () => { const t = { ...dict(this.s.toc) }; if (linkTick.checked) delete t.links; else t.links = false; this.s.toc = t; void this.save(); });
+    const linkLab = el('label', 'si-part');
+    linkLab.append(linkTick, 'Link to sections');
+    const lkLab = el('span', 'si-front-lab', 'Links');
+    addInfo(lkLab, 'Each line of the table of contents links to its heading, in Chemweave (Ctrl+click), the PDF and the Word file. Turn it off for plain lines.');
+    tg.append(lkLab, linkLab);
     toc.append(tg);
     this.el.append(toc);
 

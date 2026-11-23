@@ -56,6 +56,8 @@ export interface SpectrumLayout {
   caption_size: number;
   nmr_links: boolean;
   link_style: 'plain' | 'blue' | 'blue_underline';
+  /** The links' color for "blue" and "blue_underline" (Chemweave's; SI Assistant's blue is #0563c1). */
+  link_color: string;
   link_back: boolean;
   hrms_reports: boolean;
   /** A dragged box's centre, as fractions of the spectrum shown (a page's own settings only). */
@@ -74,10 +76,10 @@ export const DEFAULTS: SpectrumLayout = {
   struct_place: 'on', auto_shrink: false, auto_min_scale: 0.5, struct_frame: false, struct_frame_color: '#000000', struct_frame_width: 0.5, struct_bg: '#ffffff',
   id_size: 0, id_bold: true, struct_scale: 1, spectrum_frame: false, spectrum_frame_color: '#000000',
   spectrum_frame_width: 0.5, auto_crop: false, caption: false, caption_size: 9,
-  nmr_links: false, link_style: 'plain', link_back: false, hrms_reports: false,
+  nmr_links: false, link_style: 'plain', link_color: '#0563c1', link_back: false, hrms_reports: false,
 };
 /** Settings for the whole section, never one spectrum's (the links in the PDF, the HRMS reports). */
-const SECTION_ONLY = new Set(['nmr_links', 'link_style', 'link_back', 'hrms_reports']);
+const SECTION_ONLY = new Set(['nmr_links', 'link_style', 'link_color', 'link_back', 'hrms_reports']);
 const COLOUR = /^#[0-9a-fA-F]{6}$/;
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 /** A page's own place for its box (dragged) and for the ID and caption (Alt-dragged). */
@@ -137,7 +139,11 @@ export function sectionDefaults(section: SiSection | null, settings: Json = {}):
 export function defaultsJson(values: Partial<SpectrumLayout>): Json {
   const all = { ...DEFAULTS, ...clean(values) } as unknown as Json;
   const out: Json = {};
-  for (const k of Object.keys(DEFAULTS)) out[k] = all[k];
+  for (const k of Object.keys(DEFAULTS)) {
+    // (Chemweave's own setting, written only when it isn't the default, so the file is SI Assistant's otherwise)
+    if (k === 'link_color' && all[k] === DEFAULTS.link_color) continue;
+    out[k] = all[k];
+  }
   for (const k of FLOAT_KEYS) if (k in out) markFloat(out, k);
   return out;
 }

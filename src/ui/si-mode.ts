@@ -2249,7 +2249,7 @@ export class SiMode {
       cell.append(box, el('span', '', label));
       r.append(cell);
     };
-    const num = (r: HTMLElement, label: string, key: keyof SpectrumLayout, min: number, max: number, k: number, tip: string, suffix = ''): void => {
+    const num = (r: HTMLElement, label: string, key: keyof SpectrumLayout, min: number, max: number, k: number, tip: string, suffix = '', step = ''): void => {
       const cell = el('label', 'si-part');
       cell.title = tip;
       cell.append(el('span', 'si-plabel', label));
@@ -2257,6 +2257,7 @@ export class SiMode {
       box.type = 'number';
       box.min = String(min);
       box.max = String(max);
+      if (step) box.step = step;
       box.value = String(Math.round(Number(now[key]) * k * 100) / 100);
       this.bind(box, () => { const v = Number(box.value); if (Number.isFinite(v)) save(key, v / k); }, false);
       cell.append(box);
@@ -2280,6 +2281,10 @@ export class SiMode {
     tick(pages, 'Header line', 'header_line', 'The line above each spectrum, e.g. “2a — ¹H NMR (400 MHz, CDCl₃)”, from its peak report (or the header typed for it).');
     tick(pages, 'Auto-crop', 'auto_crop', 'Cut the white margins round each spectrum and scale it to fill its place (the axes are kept; only blank white is cut).');
     tick(pages, 'Frame', 'spectrum_frame', 'A frame round each spectrum.');
+    if (now.spectrum_frame) {
+      num(pages, 'Width', 'spectrum_frame_width', 0.1, 5, 1, 'The frame’s line width in points.', 'pt', '0.1');
+      color(pages, 'Color', 'spectrum_frame_color', 'The frame’s color.');
+    }
     const box = row('Structure and ID');
     tick(box, 'Show', 'struct_box', 'The compound’s structure and ID on a box over each spectrum (Org. Lett. asks for spectra labeled with both).');
     choice(box, 'Place', 'struct_place', [['on', 'On the spectrum'], ['auto', 'On blank space'], ['above', 'Above the spectrum'], ['beside', 'Beside the spectrum']], 'On the spectrum: in the corner below. On blank space: over the spectrum where it covers only blank paper, as near that corner as it fits (above the spectrum when it fits nowhere). Above or beside: next to the spectrum, which is made smaller to leave it room. A box dragged on its spectra page stays where it was put.');
@@ -2290,12 +2295,18 @@ export class SiMode {
     num(box, 'ID size', 'id_size', 0, 24, 1, 'The ID’s size in points; 0 is the text size.', 'pt');
     tick(box, 'Bold ID', 'id_bold', 'The ID in bold.');
     tick(box, 'Caption', 'caption', 'A caption under the structure, e.g. “¹H NMR (CDCl₃, 500 MHz)”, from the peak report (or the caption typed for the spectrum).');
+    if (now.caption) num(box, 'Caption size', 'caption_size', 5, 18, 1, 'The caption’s size in points.', 'pt', '0.5');
     color(box, 'Background', 'struct_bg', 'The box’s background, so the structure reads over the spectrum.');
     tick(box, 'Frame', 'struct_frame', 'A frame round the box.');
+    if (now.struct_frame) {
+      num(box, 'Width', 'struct_frame_width', 0.1, 5, 1, 'The box frame’s line width in points.', 'pt', '0.1');
+      color(box, 'Color', 'struct_frame_color', 'The box frame’s color.');
+    }
     const links = row('Links');
     tick(links, 'Peak reports to spectra', 'nmr_links', 'In the PDF, Word file and compiled document, “¹H NMR” at the start of a peak report links to the page with the compound’s ¹H NMR spectrum (Ctrl+click in Chemweave and Word).');
-    tick(links, 'Spectra back to compounds', 'link_back', 'Each spectrum’s header line links back to the compound’s data. Works with the links above.');
-    choice(links, 'Look', 'link_style', [['plain', 'Like normal text'], ['blue', 'Blue'], ['blue_underline', 'Blue and underlined']], 'How the links look. The table of contents always links its lines to their sections.');
+    tick(links, 'Spectra back to compounds', 'link_back', 'Each spectrum’s header line links back to the compound’s data.');
+    choice(links, 'Look', 'link_style', [['plain', 'Like normal text'], ['blue', 'Color'], ['blue_underline', 'Color and underline']], 'How these links look (the table of contents’ links keep its own look; Table of contents ▸ Link to sections, on the project’s page, turns them off). SI Assistant shows Color as blue.');
+    if (now.link_style !== 'plain') color(links, 'Color', 'link_color', 'The links’ color. SI Assistant prints them blue whatever is chosen here.');
     const hrms = row('HRMS');
     tick(hrms, 'Print HRMS reports', 'hrms_reports', 'Each compound’s HRMS report files (PDFs, pictures and text files), after the spectra in a sub-section “HRMS reports”. A compound can say otherwise in its HRMS field.');
     // spectra with settings of their own
@@ -2674,7 +2685,7 @@ export class SiMode {
     const printed = el('input');
     printed.value = partText(value()[ION_LABEL_KEY]);
     printed.setAttribute('aria-label', 'Printed as');
-    this.bind(printed, () => void this.act(async () => { await p.setPart(c, 'hrms', ION_LABEL_KEY, printed.value.trim()); }, false, c));
+    this.bind(printed, () => void this.act(async () => { await p.setPart(c, 'hrms', ION_LABEL_KEY, printed.value.trim(), ['reports', 'print_reports', 'found_from']); }, false, c));
     pcell.append(pname, printed);
     line.append(mIs, fcell, pcell);
     const calc = el('div', 'si-calc muted');
@@ -2939,7 +2950,7 @@ export class SiMode {
       L.shown = '';
       L.host.hidden = true;
       L.empty.hidden = false;
-      L.empty.textContent = this.pick.kind === 'section' ? 'The Spectra section has no live preview: Compile shows its pages.' : 'This page has no live preview.';
+      L.empty.textContent = 'This page has no live preview.';
       L.state.textContent = '';
       return;
     }
@@ -2963,7 +2974,7 @@ export class SiMode {
       const blank = !got.doc.runs.some((r) => r.text.trim()) && !Object.keys(got.doc.objects).length;
       L.host.hidden = blank;
       L.empty.hidden = !blank;
-      L.empty.textContent = blank ? 'Nothing to show yet.' : '';
+      L.empty.textContent = !blank ? '' : spectra ? 'No spectra yet: add them in each compound’s Spectra field.' : 'Nothing to show yet.';
       if (!blank) await this.liveShow({ ...got.doc, drawingStyle: { ...this.host.siStyle() } }, key);
       const n = got.notes.length;
       L.state.textContent = n ? `Up to date · ${n} note${n === 1 ? '' : 's'}` : 'Up to date';

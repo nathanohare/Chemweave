@@ -24,7 +24,7 @@ import { hfKeyFor, numbersFor, zonesFor } from './hf-bodies';
 import { turnOf } from './arrange';
 import type { PdfHeading, PdfLink } from '../io/pdf';
 import type { TextRun } from '../model';
-import { linkKind, linkSpans } from '../links';
+import { linkKind, linkSpans, type LinkSpan } from '../links';
 import { bookmarkPara } from './bookmarks';
 import { tocEntries } from './toc';
 
@@ -229,12 +229,21 @@ export function pdfTarget(t: DocText, lay: DocLayout, link: string): Pick<PdfLin
  * The links in laid-out text drawn at (ox, oy): one box for each stretch of a line with one link,
  * from the text's own links (`runs`) and from shown text that links (a contents line).
  */
-export function layoutLinks(lay: TextLayout, runs: TextRun[], ox: number, oy: number, from = 0, to = lay.lines.length): { x: number; y: number; w: number; h: number; link: string }[] {
-  const spans = linkSpans(runs);
+export function layoutLinks(lay: TextLayout, runs: TextRun[] | LinkSpan[], ox: number, oy: number, from = 0, to = lay.lines.length): { x: number; y: number; w: number; h: number; link: string }[] {
+  // (spans worked out once for a whole document's pages: pass them in place of its runs)
+  const spans = runs.length && 'end' in runs[0] && 'link' in runs[0] && !('text' in runs[0]) ? (runs as LinkSpan[]) : linkSpans(runs as TextRun[]);
   const out: { x: number; y: number; w: number; h: number; link: string }[] = [];
   const shown = lay.lines.slice(from, to).some((l) => l.pieces.some((g) => g.link));
   if (!spans.length && !shown) return out;
-  const linkOf = (at: number): string | undefined => spans.find((sp) => sp.start <= at && sp.end > at)?.link;
+  // (spans are in order and don't overlap: found by halving)
+  const linkOf = (at: number): string | undefined => {
+    let lo = 0, hi = spans.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1, sp = spans[mid];
+      if (sp.end <= at) lo = mid + 1; else if (sp.start > at) hi = mid - 1; else return sp.link;
+    }
+    return undefined;
+  };
   for (let i = from; i < to; i++) {
     const l = lay.lines[i];
     if (!l) break;
@@ -252,8 +261,8 @@ export function layoutLinks(lay: TextLayout, runs: TextRun[], ox: number, oy: nu
 }
 
 /** A page's links for its PDF: in the body's text and in its text boxes. */
-function pageLinks(t: DocText, lay: DocLayout, p: PageBox): PdfLink[] {
-  const found = layoutLinks(lay.text, t.runs, 0, 0, p.first, p.end);
+function pageLinks(t: DocText, lay: DocLayout, p: PageBox, spans: LinkSpan[]): PdfLink[] {
+  const found = layoutLinks(lay.text, spans, 0, 0, p.first, p.end);
   for (const o of lay.objects) {
     const obj = t.objects[o.id];
     if (o.page !== p.index || obj?.kind !== 'textbox') continue;
@@ -296,6 +305,7 @@ export function recordPages(t: DocText, lay: DocLayout, drawing: (c: Contents, s
     return kind ? publishedAdvances(text, size, kind, bold, italic) : null;
   };
   const heads = headingsByPage(t, lay);
+  const spans = linkSpans(t.runs);
   return lay.pages.map((p) => {
     const ctx = new VectorContext(width, advances);
     const c = ctx as unknown as CanvasRenderingContext2D;
@@ -367,7 +377,7 @@ export function recordPages(t: DocText, lay: DocLayout, drawing: (c: Contents, s
       if (!o) { drawLayout(c, lay.text, 0, 0, p.first, p.end); drawNoteRules(c, lay, p.index); drawParaBorders(c, lay.frames, p.index); continue; }
       drawObject(o);
     }
-    const links = pageLinks(t, lay, p);
+    const links = pageLinks(t, lay, p, spans);
     const outline = heads.get(p.index);
     return { w: p.w, h: p.h, items: ctx.items, origin: { x: p.x, y: p.top }, ...(links.length ? { links } : {}), ...(outline ? { outline } : {}) };
   });

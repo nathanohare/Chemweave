@@ -229,8 +229,10 @@ class Compiler {
     const spectra = p.sections.find((s) => s.type === 'spectra');
     const links = spectra ? sectionDefaults(spectra, p.settings) : null;
     this.nmrLinks = !!links?.nmr_links;
-    this.linkBack = this.nmrLinks && !!links?.link_back;
-    this.linkLook = links?.link_style === 'blue' ? { color: LINK_COLOUR } : links?.link_style === 'blue_underline' ? { color: LINK_COLOUR, underline: true } : {};
+    // (each kind on its own: Chemweave lets the header lines link back without the peak reports' links)
+    this.linkBack = !!links?.link_back;
+    const color = links?.link_color || LINK_COLOUR;
+    this.linkLook = links?.link_style === 'blue' ? { color } : links?.link_style === 'blue_underline' ? { color, underline: true } : {};
     this.knownRefs = new Set(p.references.map((r) => str(r.id)));
     // a section break waiting for the next paragraph (spectra pages turned landscape, and back)
     const end = this.b.endPara.bind(this.b);
@@ -662,7 +664,7 @@ class Compiler {
     this.b.pendingBreak = true;
     if (title.trim()) this.para([R(title)], { style }, 'Table of contents');
     // (every level: what is listed is chosen heading by heading, Table of contents ▸ Lists)
-    this.b.object({ kind: 'toc', levels: 9 });
+    this.b.object({ kind: 'toc', levels: 9, ...(toc.links === false ? { noLinks: true } : {}) });
     this.b.endPara(this.full({}));
   }
 
@@ -956,10 +958,14 @@ class Compiler {
     const entries: Entry[] = [];
     const files = this.host.progress && !this.preview ? compounds.reduce((n, c) => n + spectrumItems(c).filter(([, i]) => partText(i.file)).length, 0) : 0;
     let read = 0;
+    // (the live preview of the whole section: its first spectra only, each read and measured again at every change)
+    const cap = this.preview && !only ? PREVIEW_SPECTRA : Infinity;
+    let skipped = false;
     for (const c of compounds) {
       for (const [key, item] of spectrumItems(c)) {
         const file = partText(item.file);
         if (!file) continue;
+        if (entries.length >= cap) { skipped = true; continue; }
         if (files) await this.host.progress!(read++, files, `Spectra: ${read} of ${files}`);
         const where = `${displayId(this.report, c.id)} ▸ ${key === 'spectra' ? 'Spectra' : 'Additional files'}`;
         const bytes = await this.p.folder.readBytes(joinPath(c.folder, attachmentDir(c, key), file));
@@ -977,6 +983,7 @@ class Compiler {
         pages.forEach((page, i) => entries.push({ c, item, page, pageNo: i + 1, eff: effective(defaults, item, String(i + 1)) }));
       }
     }
+    if (skipped) this.notes.push(`${name}: the live preview shows the first ${entries.length} spectra; Compile prints them all.`);
     // pages: a spectrum that needs another layout (number to a page, orientation) starts a new page
     const pages: { orientation: SpectrumLayout['orientation']; per: number; slots: Entry[] }[] = [];
     for (const e of entries) {
@@ -1040,7 +1047,12 @@ class Compiler {
         const ink = this.host.inkMap ? await this.host.inkMap(pic.src).catch(() => null) : null;
         const got = ink ? autoPlace(cropInk(ink, crop), at, (sc) => this.boxSize(parts, { ...eff, struct_scale: sc }), eff.struct_scale, eff.corner, eff.auto_shrink, eff.auto_min_scale) : null;
         if (got) use = { ...eff, x: got.x, y: got.y, struct_scale: got.scale };
-        else spot = 'above';
+        else {
+          spot = 'above';
+          const where = `${id} ▸ Spectra ▸ ${partText(item.file) || 'a spectrum'}${pageNo > 1 ? `, page ${pageNo}` : ''}`;
+          this.notes.push(ink ? `${where}: the structure fits no blank space on the spectrum${eff.auto_shrink ? ' even made smaller' : ''}; it was put above the spectrum.`
+            : `${where}: the spectrum’s blank space could not be read; the structure was put above the spectrum.`);
+        }
       }
       const box = parts ? this.boxSize(parts, use) : { w: 0, h: 0 };
       const shown = shownSize(roomBeside(room, spot, box), pic.h / pic.w, crop);
@@ -1300,6 +1312,8 @@ interface BoxParts { mol: string; contents: Contents | null; own: { w: number; h
 
 /** The room the Spectra section's heading takes at the top of its first page (points). */
 const HEADING_ROOM = 34;
+/** The spectra the live preview of the whole Spectra section shows (Compile prints them all). */
+export const PREVIEW_SPECTRA = 12;
 
 /** What is said when a PDF can't be opened (SI Assistant's words). */
 const unreadablePdf = (name: string): string => `${name} could not be opened as a PDF (it may be damaged, password-protected or not really a PDF). Export it again and replace it on the compound page; left out.`;

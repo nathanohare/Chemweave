@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { writePdf } from '../src/io/pdf';
-import { writeDocx, type DocxDeps } from '../src/io/docx';
+import { writeDocx, readDocx, type DocxDeps } from '../src/io/docx';
 import { DocLayouter } from '../src/document/doc-layout';
 import { newDocument, objectRun, paraFromStyle, runStyleOf, type DocText } from '../src/document/document';
 import { tocEntries, tocMark, tocMarkPara } from '../src/document/toc';
@@ -18,6 +18,11 @@ import type { ParaStyle, TextRun } from '../src/model';
 const latin1 = (b: Uint8Array) => Array.from(b, (c) => String.fromCharCode(c)).join('');
 
 describe('PDF links and outline', () => {
+  it('writes a web address with characters outside ASCII, any plane, percent-encoded', async () => {
+    const pdf = latin1(await writePdf([{ w: 100, h: 100, items: [], links: [{ x: 0, y: 0, w: 10, h: 10, uri: 'https://example.org/é😀' }] }], { image: async () => null }));
+    expect(pdf).toContain('/URI (https://example.org/%C3%A9%F0%9F%98%80)');
+  });
+
   it('writes link annotations to a place in the file and to a web page, and the headings as an outline', async () => {
     const pdf = latin1(await writePdf([
       { w: 200, h: 100, items: [], links: [{ x: 10, y: 20, w: 50, h: 12, to: { page: 1, y: 30 } }, { x: 10, y: 40, w: 50, h: 12, uri: 'https://doi.org/10.1021/ol0000001' }], outline: [{ title: 'General Information', level: 1, y: 10 }] },
@@ -35,7 +40,8 @@ describe('PDF links and outline', () => {
     // the rectangle in PDF's coordinates (y up from the bottom): 10 68 60 80
     expect(pdf).toMatch(/\/Rect \[10 68 60 80\]/);
     expect(pdf).toMatch(/\/Outlines \d+ 0 R/);
-    expect(pdf).toContain('/PageMode /UseOutlines');
+    // (the outline is there for readers' bookmarks pane, which opens only when asked)
+    expect(pdf).not.toContain('/PageMode');
     expect(pdf).toContain('/Title (General Information)');
     // a nested heading, its parent closed (negative count)
     expect(pdf).toMatch(/\/Title \(Spectra\)[^]*?\/Count -1/);
@@ -80,6 +86,23 @@ describe('the table of contents links to its headings', () => {
       expect(body).toContain(`<w:hyperlink w:anchor="${tocMark(e.para)}" w:history="1">`);
       expect(body).toContain(`w:name="${tocMark(e.para)}"`);
     }
+  });
+
+  it('leaves the lines plain when the contents has no links, as Word’s TOC field without \\h', async () => {
+    const d = sample();
+    d.objects = { 1: { kind: 'toc', levels: 2, noLinks: true } };
+    const bytes = await writeDocx(d, deps);
+    const body = strFromU8(unzipSync(bytes)['word/document.xml']);
+    expect(body).toContain('TOC \\o "1-2" \\z \\u');
+    expect(body).not.toContain('<w:hyperlink w:anchor="_Toc');
+    expect(body).not.toContain('w:name="_Toc');
+    const back = await readDocx(bytes);
+    expect(Object.values(back.doc.objects).filter((o) => o.kind === 'toc')).toEqual([{ kind: 'toc', levels: 2, noLinks: true }]);
+    const lay = new DocLayouter({ measure, drawingSize: () => ({ w: 10, h: 10 }) }).layout(d);
+    expect(lay.text.lines.some((l) => l.pieces.some((g) => g.link))).toBe(false);
+    d.objects = { 1: { kind: 'toc', levels: 2 } };
+    const linked = new DocLayouter({ measure, drawingSize: () => ({ w: 10, h: 10 }) }).layout(d);
+    expect(linked.text.lines.some((l) => l.pieces.some((g) => g.link?.startsWith('#_Toc')))).toBe(true);
   });
 
   it('follows a line of the contents in the PDF to its heading', () => {

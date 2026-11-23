@@ -5376,6 +5376,7 @@ dialog.template-window.tw-modal { inset: 0; margin: auto; }
 .si-spectra-view { position: absolute; overflow: hidden; }
 .si-spectra-view img { position: absolute; max-width: none; user-select: none; }
 .si-spectra-box { position: absolute; cursor: move; touch-action: none; box-sizing: border-box; }
+.si-spectra-box.si-fixed { cursor: default; }
 .si-spectra-box:hover { box-shadow: 0 0 0 1px var(--accent); }
 .si-spectra-struct { position: absolute; pointer-events: none; }
 .si-spectra-struct svg { display: block; }

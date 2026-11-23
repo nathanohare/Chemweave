@@ -335,7 +335,7 @@ class DocxWriter {
     this.shown = fieldTexts(t, pages ? (p) => pages[p] ?? '' : undefined, pages ? Math.max(1, ...pages.map((x) => Number(x) || 0)) : undefined);
     this.charStyles = charStylesOf(t);
     for (const o of Object.values(t.objects)) {
-      if (o.kind === 'toc') for (const e of tocEntries(t, o.levels)) this.tocTargets.add(e.para);
+      if (o.kind === 'toc' && !o.noLinks) for (const e of tocEntries(t, o.levels)) this.tocTargets.add(e.para);
       if (o.kind === 'tof') for (const e of tofEntries(t, o.name, this.shown)) this.tocTargets.add(e.para);
     }
     let foot = 0, end = 0;
@@ -562,7 +562,7 @@ class DocxWriter {
           if (part.some((x) => x.text)) out.push(await partPara());
           part = [];
           const o = t.objects[r.obj!];
-          out.push(o?.kind === 'toc' ? this.contents(o.levels, ps, o.look) : o?.kind === 'tof' ? this.figureList(o.name, ps)
+          out.push(o?.kind === 'toc' ? this.contents(o.levels, ps, o.look, !o.noLinks) : o?.kind === 'tof' ? this.figureList(o.name, ps)
             : o?.kind === 'index' ? this.indexField(o, ps) : o?.kind === 'toa' ? this.toaField(o, ps) : this.bibliography(r.obj!, ps));
         }
         if (part.some((x) => x.text) || own.xe || own.ta) out.push(await partPara());
@@ -961,14 +961,14 @@ class DocxWriter {
    * written here, and works them out again with Update Field. Without page numbers from the
    * layout here, the field is marked for Word to update when the file is opened.
    */
-  private contents(levels: number, ps: ParaStyle, look?: (TocLook | null)[]): string {
+  private contents(levels: number, ps: ParaStyle, look?: (TocLook | null)[], links = true): string {
     const t = this.t;
     const entries = tocEntries(t, levels);
     const pages = this.pages;
     const st = styleOf(t, undefined);
     const textW = Math.max(36, t.page.w - t.page.left - t.page.right);
     const dirty = pages ? '' : ' w:dirty="true"';
-    const begin = `<w:r><w:fldChar w:fldCharType="begin"${dirty}/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-${levels}" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
+    const begin = `<w:r><w:fldChar w:fldCharType="begin"${dirty}/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-${levels}"${links ? ' \\h' : ''} \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
     const end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
     const line = ps.line && ps.line !== 1 ? ` w:line="${Math.round(240 * ps.line)}" w:lineRule="auto"` : '';
     const paras = entries.map((e, i) => {
@@ -978,7 +978,8 @@ class DocxWriter {
       const l = look?.[e.level - 1];
       const rPr = l ? `${l.font ? fontsXml(l.font) : ''}${l.bold !== undefined ? (l.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>') : ''}${l.italic !== undefined ? (l.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>') : ''}${l.size ? `<w:sz w:val="${Math.round(2 * l.size)}"/><w:szCs w:val="${Math.round(2 * l.size)}"/>` : ''}` : '';
       // (each line a link to its heading, as Word writes the contents with \h)
-      return `<w:p>${pPr}${i === 0 ? begin : ''}<w:hyperlink w:anchor="${tocMark(e.para)}" w:history="1">${run(rPr, e.num ? `${e.num}\t${e.text}` : e.text)}${run(rPr, `\t${pages?.[e.para] ?? ''}`)}</w:hyperlink>${i === entries.length - 1 ? end : ''}</w:p>`;
+      const shown = `${run(rPr, e.num ? `${e.num}\t${e.text}` : e.text)}${run(rPr, `\t${pages?.[e.para] ?? ''}`)}`;
+      return `<w:p>${pPr}${i === 0 ? begin : ''}${links ? `<w:hyperlink w:anchor="${tocMark(e.para)}" w:history="1">${shown}</w:hyperlink>` : shown}${i === entries.length - 1 ? end : ''}</w:p>`;
     });
     // no headings yet: the field with nothing in it, for Word to fill in
     if (!paras.length) paras.push(`<w:p>${begin}${end}</w:p>`);

@@ -50,19 +50,21 @@ describe('printedIonLabel', () => {
   it('follows the project setting and the compound’s typed label', () => {
     const f = facts(SALT);
     const value = { adduct: '[M]+' };
-    expect(printedIonLabel({}, f, value)).toBe('[M]+');
+    // (Chemweave's default is [M−Br]⁺ when it applies: Nate, 2026-11-23)
+    expect(printedIonLabel({}, f, value)).toBe('[M-Br]+');
     expect(printedIonLabel({ [SALT_LABEL_KEY]: 'piece' }, f, value)).toBe('[M]+');
     expect(printedIonLabel({ [SALT_LABEL_KEY]: 'whole' }, f, value)).toBe('[M-Br]+');
     expect(printedIonLabel({ [SALT_LABEL_KEY]: 'whole' }, facts('CCO'), { adduct: '[M+Na]+' })).toBe('[M+Na]+');
     expect(printedIonLabel({ [SALT_LABEL_KEY]: 'whole' }, f, { adduct: '[M+H]+' })).toBe('[M+H]+');
     const typed = { adduct: '[M]+', [ION_LABEL_KEY]: ' [M−Br]+ ' };
-    expect(printedIonLabel({}, f, typed)).toBe('[M−Br]+');
+    expect(printedIonLabel({ [SALT_LABEL_KEY]: 'piece' }, f, typed)).toBe('[M−Br]+');
     expect(printedIonLabel({ [SALT_LABEL_KEY]: 'whole' }, null, typed)).toBe('[M−Br]+');
   });
 
   it('reads an unknown setting as the default', () => {
-    expect(saltLabelStyle({ [SALT_LABEL_KEY]: 'odd' })).toBe('piece');
-    expect(saltLabelStyle(null)).toBe('piece');
+    expect(saltLabelStyle({ [SALT_LABEL_KEY]: 'odd' })).toBe('whole');
+    expect(saltLabelStyle(null)).toBe('whole');
+    expect(saltLabelStyle({ [SALT_LABEL_KEY]: 'piece' })).toBe('piece');
   });
 });
 

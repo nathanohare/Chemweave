@@ -63,8 +63,8 @@ async function output(p: SiProject, host: SiSettingsHost): Promise<void> {
     s.journal_style = got.style;
     const ppm = Number(got.ppm);
     if (Number.isFinite(ppm) && ppm > 0 && ppm !== Number(s.hrms_tolerance_ppm ?? 5)) s.hrms_tolerance_ppm = ppm;
-    // (the default isn't written into project.json, as SI Assistant)
-    if (got.salt === 'whole') s[SALT_LABEL_KEY] = 'whole'; else delete s[SALT_LABEL_KEY];
+    // (written either way: Chemweave's default is [M−Br]⁺, SI Assistant's [M]⁺)
+    s[SALT_LABEL_KEY] = got.salt === 'piece' ? 'piece' : 'whole';
     s.auto_nmr_31P = got.p31 === 'true';
     s.auto_nmr_11B = got.b11 === 'true';
   });

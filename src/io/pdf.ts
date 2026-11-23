@@ -252,7 +252,8 @@ function latin1(s: string): Uint8Array {
 
 /** A link's address as a PDF string: 7-bit ASCII (anything else percent-encoded, as URIs are written). */
 function uriString(uri: string): string {
-  const ascii = uri.replace(/[^\x20-\x7e]/g, (ch) => encodeURIComponent(ch));
+  // (u: a character outside the first plane is one character, not two halves encodeURIComponent can't take)
+  const ascii = uri.replace(/[^\x20-\x7e]/gu, (ch) => encodeURIComponent(ch));
   return pdfString([...ascii].map((ch) => ch.charCodeAt(0)));
 }
 
@@ -467,7 +468,7 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
   }
   o.put(`<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(' ')}] /Count ${kids.length} >>`, pagesId);
   const outline = outlineOf(o, pages, pageIds);
-  o.put(`<< /Type /Catalog /Pages ${pagesId} 0 R${outline ? ` /Outlines ${outline} 0 R /PageMode /UseOutlines` : ''} >>`, catalog);
+  o.put(`<< /Type /Catalog /Pages ${pagesId} 0 R${outline ? ` /Outlines ${outline} 0 R` : ''} >>`, catalog);
   const info = o.put(`<< /Producer (Chemweave)${opts.title ? ` /Title ${infoString(opts.title)}` : ''} >>`);
   return o.finish(catalog, info);
 }

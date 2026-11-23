@@ -10,7 +10,7 @@ import { join, relative } from 'node:path';
 import { MemoryFolder } from '../src/si/folder';
 import { SiProject, type Json } from '../src/si/project';
 import { molFacts } from '../src/si/chem';
-import { compileSi, compoundBookmark, spectrumMark, type CompileHost } from '../src/si/compile-doc';
+import { compileSi, compoundBookmark, PREVIEW_SPECTRA, spectrumMark, type CompileHost } from '../src/si/compile-doc';
 import { readScene, sceneToDoc } from '../src/io/chem-formats';
 import { ACS_1996 } from '../src/style';
 import { autoPlace, blankSpot, boxSpot, DEFAULTS, defaultsJson, PLACE_GAP, roomBeside, type InkMap, type SpectrumLayout } from '../src/si/spectra';
@@ -84,7 +84,9 @@ describe('every project has a Spectra section', () => {
 
   it('writes the defaults in SI Assistant’s order, its decimals as decimals', () => {
     const d = defaultsJson({ struct_scale: 1, per_page: 2 });
-    expect(Object.keys(d)).toEqual(Object.keys(DEFAULTS));
+    // (every key SI Assistant writes, in its order; Chemweave's link color only when one is chosen)
+    expect(Object.keys(d)).toEqual(Object.keys(DEFAULTS).filter((k) => k !== 'link_color'));
+    expect(Object.keys(defaultsJson({ link_color: '#c00000' }))).toContain('link_color');
     const text = dumpPyJson(d);
     expect(text).toContain('"struct_scale": 1.0');
     expect(text).toContain('"auto_min_scale": 0.5');
@@ -163,6 +165,11 @@ describe('placing the structure box', () => {
     const [p2] = spectraPics(o2);
     const [b2] = floats(o2, 'Structure box');
     expect(b2.float.y + b2.h).toBeLessThanOrEqual(p2.float!.y + 1e-6);
+    // (and says so, as it does when the spectrum can't be read)
+    expect(got.notes.join('\n')).not.toContain('above the spectrum');
+    expect(full.notes.some((n) => n.includes('fits no blank space') && n.includes('2a_1H.pdf'))).toBe(true);
+    const unread = await compileSi(await example({ struct_place: 'auto' }), host({ inkMap: async () => { throw new Error('no canvas'); } }));
+    expect(unread.notes.some((n) => n.includes('blank space could not be read'))).toBe(true);
   });
 });
 
@@ -187,11 +194,32 @@ describe('links between peak reports and spectra', () => {
     expect(gone.doc.runs.some((r) => r.link?.startsWith('#si_nmr'))).toBe(false);
   });
 
-  it('colors the links when asked', async () => {
+  it('colors the links when asked, in the color chosen', async () => {
     const { doc } = await compileSi(await example({ nmr_links: true, link_style: 'blue_underline' }), host());
     const run = doc.runs.find((r) => r.link === `#${spectrumMark('c-26c39a99', '1H')}`)!;
-    expect(run.color).toBeTruthy();
+    expect(run.color).toBe('#0563c1');
     expect(run.underline).toBeTruthy();
+    const red = await compileSi(await example({ nmr_links: true, link_style: 'blue', link_color: '#c00000' }), host());
+    const r2 = red.doc.runs.find((r) => r.link === `#${spectrumMark('c-26c39a99', '1H')}`)!;
+    expect(r2.color).toBe('#c00000');
+    expect(r2.underline).toBeFalsy();
+  });
+
+  it('links the spectra back to the compounds without the peak reports’ links', async () => {
+    const { doc } = await compileSi(await example({ nmr_links: false, link_back: true }), host());
+    expect(doc.runs.some((r) => r.link?.startsWith('#si_nmr'))).toBe(false);
+    const heads = floats(Object.values(doc.objects), 'Header');
+    expect(heads[0].runs.some((r) => r.link === `#${compoundBookmark('c-26c39a99')}`)).toBe(true);
+  });
+
+  it('turns the table of contents’ links off when asked', async () => {
+    const on = await compileSi(await example(), host());
+    expect(Object.values(on.doc.objects).find((o) => o.kind === 'toc')).toMatchObject({ kind: 'toc' });
+    expect(Object.values(on.doc.objects).find((o) => o.kind === 'toc')).not.toHaveProperty('noLinks');
+    const p = await example();
+    p.settings.toc = { ...(p.settings.toc as Json ?? {}), links: false };
+    const off = await compileSi(p, host());
+    expect(Object.values(off.doc.objects).find((o) => o.kind === 'toc')).toMatchObject({ noLinks: true });
   });
 });
 
@@ -209,5 +237,28 @@ describe('the live preview of spectra pages', () => {
     const { doc } = await compileSi(p, host(), { kind: 'section', id: s.id });
     expect(spectraPics(Object.values(doc.objects))).toHaveLength(2);
     expect(doc.runs.map((r) => r.text).join('')).toContain('Spectra');
+  });
+
+  it('shows only the first spectra of a long Spectra section, and says Compile prints them all', async () => {
+    const many = Array.from({ length: PREVIEW_SPECTRA }, () => page);
+    const p = await example();
+    const s = p.sections.find((x) => x.type === 'spectra')!;
+    const prev = await compileSi(p, host({ pdfPages: async () => many }), { kind: 'section', id: s.id });
+    expect(spectraPics(Object.values(prev.doc.objects))).toHaveLength(PREVIEW_SPECTRA);
+    expect(prev.notes.some((n) => n.includes(`first ${PREVIEW_SPECTRA} spectra; Compile prints them all`))).toBe(true);
+    const all = await compileSi(p, host({ pdfPages: async () => many }));
+    expect(spectraPics(Object.values(all.doc.objects))).toHaveLength(2 * PREVIEW_SPECTRA);
+  });
+});
+
+describe('the printed HRMS ion label in compound.json', () => {
+  it('goes before the report files and where the found m/z came from, as SI Assistant writes it', async () => {
+    const p = await example();
+    const c = p.compounds.find((x) => x.id === 'c-26c39a99')!;
+    await p.setValue(c, 'hrms', { ionization: 'ESI', adduct: '[M+Na]+', found: '145.0625', species: '', formula: '', reports: [], found_from: { file: 'a.txt', mz: 145.0625 } });
+    await p.setPart(c, 'hrms', 'ion_label', '[M−Br]+', ['reports', 'print_reports', 'found_from']);
+    expect(Object.keys(c.data.values && (c.data.values as Json).hrms as Json)).toEqual(['ionization', 'adduct', 'found', 'species', 'formula', 'ion_label', 'reports', 'found_from']);
+    await p.setPart(c, 'hrms', 'ion_label', '', ['reports', 'print_reports', 'found_from']);
+    expect(Object.keys((c.data.values as Json).hrms as Json)[5]).toBe('ion_label');
   });
 });

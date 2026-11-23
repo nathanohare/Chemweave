@@ -166,15 +166,17 @@ export function hrmsSpecies(facts: MolFacts | null, value: Json): HrmsSpecies | 
 
 /**
  * Project setting: how a salt's ion is labeled when M is its charged piece and the adduct is plain
- * [M]⁺/[M]⁻. "piece" (the default, not written to project.json) prints the adduct as it is ([M]⁺,
- * M = the cation); "whole" prints it for M = the whole salt with the other pieces taken off ([M−Br]⁺).
+ * [M]⁺/[M]⁻. "piece" prints the adduct as it is ([M]⁺, M = the cation); "whole" prints it for M =
+ * the whole salt with the other pieces taken off ([M−Br]⁺). Chemweave's default, when the project
+ * doesn't say, is "whole" (Nate, 2026-11-23); SI Assistant's is "piece", so Chemweave writes the
+ * choice into project.json whenever it is made.
  */
 export const SALT_LABEL_KEY = 'hrms_salt_ion_label';
 export type SaltLabel = 'piece' | 'whole';
 /** Per compound, in the HRMS field: the label printed instead (empty: automatic). */
 export const ION_LABEL_KEY = 'ion_label';
 
-export const saltLabelStyle = (settings: Json | null | undefined): SaltLabel => (settings?.[SALT_LABEL_KEY] === 'whole' ? 'whole' : 'piece');
+export const saltLabelStyle = (settings: Json | null | undefined): SaltLabel => (settings?.[SALT_LABEL_KEY] === 'piece' ? 'piece' : 'whole');
 
 /**
  * The ion written for M = the whole salt: "[M-Br]+" for a pyridinium bromide whose cation is M with
