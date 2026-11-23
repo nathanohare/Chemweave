@@ -48,9 +48,9 @@ describe('Paste ▾ choices', () => {
     expect(pasteChoices('slides', true).map((c) => c && [c.label, c.cmd, c.enabled])).toEqual([
       ['Use Destination Theme', 'paste-slides', true], ['Keep Source Formatting', 'paste-slides-keep', true], ['Keep Text Only', 'paste-text-only', true], null, ['Paste SMILES', 'paste-smiles', true],
     ]);
-    // with no slides copied, Use Destination Theme pastes what was copied onto the slide
+    // with no slides copied, the first choice is the plain Paste, named so (review F8b2-R02)
     const none = pasteChoices('slides', false);
-    expect(none[0]?.cmd).toBe('paste');
+    expect([none[0]?.label, none[0]?.cmd]).toEqual(['Paste', 'paste']);
     expect(none[1]?.enabled).toBe(false);
   });
 

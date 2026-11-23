@@ -834,7 +834,8 @@ function pasteOptions(r: DOMRect, mode: 'drawing' | 'slides' | 'design' = 'drawi
 }
 /** Keep Text Only: the clipboard's words as a text box, never a structure or picture (PowerPoint's and Word's paste option). */
 async function pasteTextOnly(): Promise<void> {
-  const text = await navigator.clipboard.readText().catch(() => '');
+  let text = '';
+  try { text = await readClipboardText(); } catch (err) { flash('Could not read the clipboard: ' + String(err)); return; }
   if (!text.trim()) { flash('There is no text on the clipboard to paste.'); return; }
   await pasteText(text.replace(/\r\n?/g, '\n'), undefined, true);
 }
