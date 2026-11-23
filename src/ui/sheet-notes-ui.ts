@@ -10,7 +10,9 @@ import type { CellNote } from '../sheet/notes';
 import { copyNote } from '../sheet/notes';
 import { keyOf, rowOf, colOf, cellName, inRange } from '../sheet/refs';
 import { reviewAuthor, revisionDate } from '../document/revisions';
-import { threadCard, type ThreadActions } from './comment-cards';
+import { body, looksOf, runsOf, threadCard, type ThreadActions } from './comment-cards';
+import { RichInput } from './rich-input';
+import { noteRuns, withNoteRuns } from '../document/comments';
 import type { SheetView } from './sheet-view';
 
 export interface NotesHost {
@@ -116,7 +118,7 @@ export class SheetNotes {
     if (!card) return;
     this.card = null;
     // a box being typed in saves as it loses the focus, before the card goes
-    const typing = card.el.querySelector<HTMLTextAreaElement>('textarea');
+    const typing = card.el.querySelector<HTMLElement>('textarea, .sh-note-rich');
     if (typing && document.activeElement === typing) typing.blur();
     card.el.remove();
     if (!keepDraft && this.draft) this.draft = null;
@@ -127,27 +129,39 @@ export class SheetNotes {
     const card = el('div', 'sh-note');
     if (n.author) card.append(el('div', 'sh-note-who', `${n.author}:`));
     if (!editing) {
-      const text = el('div', 'sh-note-text', n.text);
+      // its words with their looks (bold, italic, subscripts…), as Excel shows a note's rich text
+      const text = body(n);
+      text.className = 'sh-note-text';
       text.title = 'Click to change the note';
       text.addEventListener('click', () => { this.close(); this.open(s, r, c, true, undefined, true); });
       card.append(text);
       return card;
     }
-    const ta = el('textarea', 'sh-note-input');
-    ta.value = n.text;
-    ta.rows = Math.min(10, Math.max(4, n.text.split('\n').length + 1));
+    // a rich text box: Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+= and Ctrl+Shift+= set bold, italic, underline,
+    // sub- and superscript, saved as the note's rich text in Excel (F3 Needs Nate 5, F8b)
+    const ri = new RichInput();
+    ri.setText(n.text, looksOf(n.text, noteRuns(n)));
+    const ta = ri.el;
+    ta.className = 'sh-note-input sh-note-rich';
     ta.spellcheck = true;
-    ta.placeholder = 'Type your note';
+    ta.dataset.placeholder = 'Type your note';
+    ta.setAttribute('aria-label', 'Note');
+    // (a typing box takes the focus on its own; the tab stop keeps that true where contenteditable isn't known)
+    ta.tabIndex = 0;
+    const marks = () => ta.classList.toggle('empty', !ri.value);
+    marks();
+    ta.addEventListener('input', marks);
     let done = false;
     const finish = (keep: boolean) => {
       if (done) return;
       done = true;
-      const text = ta.value.replace(/\s+$/, '');
+      const text = ri.value.replace(/\s+$/, '');
+      const next = withNoteRuns(n, text, runsOf(text, ri.charLooks.slice(0, text.length)));
       const draft = this.draft && this.draft.note === n ? this.draft : null;
       if (draft) this.draft = null;
-      if (keep && text !== n.text) {
+      if (keep && next !== n) {
         if (draft && !text) { /* an empty new note isn't kept */ }
-        else this.host.edit(draft ? 'New note' : text ? 'Edit note' : 'Delete note', (sh) => sh.setNote(r, c, text ? { ...n, text } : undefined));
+        else this.host.edit(draft ? 'New note' : text ? 'Edit note' : 'Delete note', (sh) => sh.setNote(r, c, text ? next : undefined));
       }
       if (this.card?.el === card) this.close();
       this.view.focus();
@@ -155,12 +169,16 @@ export class SheetNotes {
     // in a note, Enter starts a new line (as in Excel); Escape or a click elsewhere finishes
     ta.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === 'Escape') { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(true); return; }
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (!e.shiftKey && /^[biu]$/.test(k)) { e.preventDefault(); ri.toggle(({ b: 'bold', i: 'italic', u: 'underline' } as const)[k as 'b' | 'i' | 'u']); }
+      else if (k === '=' || k === '+') { e.preventDefault(); ri.togglePos(e.shiftKey || k === '+' ? 'sup' : 'sub'); }
     });
     ta.addEventListener('blur', () => finish(true));
     for (const ev of ['keyup', 'keypress', 'paste', 'copy', 'cut'] as const) ta.addEventListener(ev, (e) => e.stopPropagation());
     card.append(ta);
-    queueMicrotask(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
+    queueMicrotask(() => { ri.focus(); ri.setSelectionRange(ri.value.length, ri.value.length); });
     return card;
   }
 
@@ -328,7 +346,9 @@ export class SheetNotes {
         const box = el('div', 'sh-note sh-note-shown');
         box.dataset.key = String(k);
         if (n.author) box.append(el('div', 'sh-note-who', `${n.author}:`));
-        box.append(el('div', 'sh-note-text', n.text));
+        const text = body(n);
+        text.className = 'sh-note-text';
+        box.append(text);
         box.title = 'Click to change the note';
         box.addEventListener('pointerdown', (e) => {
           e.stopPropagation();

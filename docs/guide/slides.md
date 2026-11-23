@@ -58,7 +58,7 @@ New slides go in the section of the slide before them. Sections are saved as Pow
 
 The **View** tab's **Presentation Views** group has three more views beside **Normal** and **Slide Sorter**:
 
-- **Outline View** shows the slides' titles and bullets as an outline you can type in. Tab and Shift+Tab change a line's level; a line moved all the way out starts a new slide.
+- **Outline View** shows the slides' titles (in bold, as PowerPoint shows them) and bullets as an outline you can type in. Tab and Shift+Tab change a line's level; a line moved all the way out starts a new slide.
 - **Notes Page** shows each slide on a page with its speaker notes under it, as they print, to read and type in.
 - **Reading View** plays the show inside the window from the slide you are on, with **Back** and **Next** under it. Esc comes back.
 

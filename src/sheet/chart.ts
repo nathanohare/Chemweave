@@ -502,6 +502,32 @@ export function columnIsNumbers(sheet: Sheet, col: number, r1: number, r2: numbe
   return any;
 }
 
+/** Is every piece of a title bold (or italic)? (A title made here as markup has none.) */
+export function titleIs(t: { title?: string; titleRuns?: TitleRun[] }, look: 'bold' | 'italic'): boolean {
+  const runs = titleRunsOf(t.title, t.titleRuns)?.filter((r) => r.text !== '\n' && r.text.trim());
+  return !!runs?.length && runs.every((r) => r[look]);
+}
+
+/**
+ * A title made bold or italic, or not, all through (the Chart Titles window's Bold and Italic, as
+ * Excel's Font for a title): its runs (its own, or read from its markup by `parse`) with the look
+ * set on each; the title's markup is then written from those runs, so the two stay in step. A
+ * title left as it was comes back unchanged.
+ */
+export function titleWithLook(t: { title?: string; titleRuns?: TitleRun[] }, look: { bold: boolean; italic: boolean }, parse: (markup: string) => TitleRun[]): { title?: string; titleRuns?: TitleRun[] } {
+  if (!t.title) return t;
+  if (titleIs(t, 'bold') === look.bold && titleIs(t, 'italic') === look.italic) return t;
+  const base = titleRunsOf(t.title, t.titleRuns) ?? parse(t.title);
+  const runs = base.map((r) => {
+    if (r.text === '\n') return r;
+    const { bold: _b, italic: _i, ...rest } = r;
+    return { ...rest, ...(look.bold ? { bold: true } : {}), ...(look.italic ? { italic: true } : {}) };
+  });
+  // nothing left that the markup can't say: plain markup again
+  if (!runs.some((r) => r.text === '\n' || r.bold || r.italic || r.underline)) return { title: titleMarkup(runs), titleRuns: undefined };
+  return { title: titleMarkup(runs), titleRuns: runs };
+}
+
 /**
  * A title from the Titles window: as it was (with its looks from the file) when the words are
  * the same, spaces at the ends aside; else the words typed, without the old looks.

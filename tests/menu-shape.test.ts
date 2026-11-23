@@ -61,8 +61,8 @@ describe('menu bar shape in every mode (F5b-R01)', () => {
         const ids: string[] = [];
         const walk = (list: Element) => { for (const c of shown(list, mode)) c.classList.contains('submenu') ? walk(c.querySelector(':scope > .menu')!) : c.dataset.cmd && ids.push(c.dataset.cmd); };
         walk(t.list);
-        // (Flash Fill is in Fill and in Data Tools, as in Excel; New Canvas is also File ▸ New ▸ Blank canvas)
-        const twice = ids.filter((id, i) => ids.indexOf(id) !== i && !['flash-fill', 'new'].includes(id));
+        // (Flash Fill is in Fill and in Data Tools, as in Excel)
+        const twice = ids.filter((id, i) => ids.indexOf(id) !== i && !['flash-fill'].includes(id));
         expect(twice, `${mode} ${t.name}`).toEqual([]);
       }
     });

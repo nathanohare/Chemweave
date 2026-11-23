@@ -82,6 +82,12 @@ export const ICON_SET: Record<string, IconDef> = {
   'trace-original': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="12" height="12" rx="1.5" stroke-dasharray="2 1.6"/><rect class="a" x="8.75" y="8.75" width="12" height="12" rx="1.5"/>' },
   'original-pictures': { hue: 'blue', d: '<rect class="p" x="8.75" y="3.75" width="12.5" height="14.5" rx="1.5"/><path class="a" d="M11.25 14.25l2.75-3.25 2 2 1.5-1.5 2.25 2.75"/><path d="M2.75 9h3.5M2.75 13h3.5" stroke-dasharray="1.5 1.5"/>' },
   'picture-format': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="14" height="12.5" rx="2"/><path class="f a" d="M2.75 14l4-4.25 3.5 3.5 2-2 4.5 4.5"/><circle class="s" cx="17.5" cy="17.5" r="3.75"/><path class="k" d="M17.5 15.25v4.5M15.25 17.5h4.5"/>' },
+  'picture-remove-bg': { hue: 'teal', d: '<rect class="p" x="2.75" y="3.75" width="18.5" height="16.5" rx="2"/><path d="M2.75 8.75h3M2.75 13.75h3M18.25 8.75h3M18.25 13.75h3"/><circle class="a" cx="12" cy="9.25" r="2.5"/><path class="f a" d="M7.25 20.25c0-3.5 2.25-6 4.75-6s4.75 2.5 4.75 6"/>' },
+  'picture-corrections': { hue: 'amber', d: '<circle class="f a" cx="12" cy="12" r="4.25"/><path d="M12 2.75v2.5M12 18.75v2.5M2.75 12h2.5M18.75 12h2.5M5.5 5.5l1.75 1.75M16.75 16.75l1.75 1.75M5.5 18.5l1.75-1.75M16.75 7.25l1.75-1.75"/>' },
+  'picture-color': { hue: 'purple', d: '<circle class="f a" cx="9" cy="9.25" r="5"/><circle class="p" cx="15" cy="9.25" r="5"/><circle class="s" cx="12" cy="15.25" r="4"/>' },
+  'picture-transparency': { hue: 'gray', d: '<rect class="p" x="3.75" y="3.75" width="16.5" height="16.5" rx="1.75"/><path class="s" d="M3.75 3.75h5.5v5.5h-5.5zM14.75 3.75h5.5v5.5h-5.5zM9.25 9.25h5.5v5.5h-5.5zM3.75 14.75h5.5v5.5h-5.5zM14.75 14.75h5.5v5.5h-5.5z"/>' },
+  'picture-crop': { hue: 'teal', d: '<path d="M6.75 2.75v14.5h14.5"/><path class="a" d="M2.75 6.75h14.5v14.5"/>' },
+  'picture-reset': { hue: 'gray', d: '<rect class="p" x="2.75" y="3.75" width="13" height="11" rx="1.75"/><path d="M2.75 12l3.5-3.5 3 3 2-2 4.5 4.25"/><path class="a" d="M14 20.25h3.5a3.25 3.25 0 0 0 0-6.5h-4M15.25 11.75l-1.75 2 1.75 2"/>' },
   // ---------------------------------------------------------------- arrange
   'rotate-cw': { hue: 'gray', d: '<path d="M19.25 12a7.25 7.25 0 1 1-2.5-5.5"/><path class="a" d="M17.25 2.75v4h-4"/>' },
   'rotate-ccw': { hue: 'gray', d: '<path d="M4.75 12a7.25 7.25 0 1 0 2.5-5.5"/><path class="a" d="M6.75 2.75v4h4"/>' },

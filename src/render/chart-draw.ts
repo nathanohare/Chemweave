@@ -3,7 +3,7 @@
 // 100%; the caller scales the canvas. Titles take simple sub- and superscripts: k_{obs}, s^{−1}.
 
 import type { Chart, ChartAxis, CategoryPick, SeriesData, MarkerShape } from '../sheet/chart';
-import { niceTicks, logTicks, CHART_PALETTES, isXY, hasLevels, comboAs, onSecondAxis, titleRunsOf, type TitleRun } from '../sheet/chart';
+import { niceTicks, logTicks, CHART_PALETTES, isXY, hasLevels, comboAs, onSecondAxis, titleRunsOf, titleMarkup, type TitleRun } from '../sheet/chart';
 import { histogram, boxGroups } from '../sheet/chart-stats';
 import { bandAt, drawDecomp, drawSankey, drawTreemap, type Pen } from './level-charts';
 import { fitPoints, fitAt, fitEquation, fitResults, r2Text, Fit, FitKind } from '../sheet/fit';
@@ -115,12 +115,26 @@ interface TextOpts {
   rich?: readonly TitleRun[] | null;
 }
 
+/** A title typed as markup (k_{obs}) as title runs. */
+export function markupRuns(markup: string): TitleRun[] {
+  return textRuns(markup).map((r) => ({ text: r.t, ...(r.pos === 'sub' ? { sub: true } : r.pos === 'sup' ? { sup: true } : {}) }));
+}
+
+/** A title's runs as its paragraphs (null for a title with no runs of its own). */
+export function titleLines(runs: readonly TitleRun[] | null): TitleRun[][] | null {
+  if (!runs) return null;
+  const out: TitleRun[][] = [[]];
+  for (const r of runs) if (r.text === '\n') out.push([]); else out[out.length - 1].push(r);
+  const kept = out.filter((l) => l.some((r) => r.text));
+  return kept.length ? kept : null;
+}
+
 const fontOf = (size: number, bold: boolean | undefined, family: string, italic?: boolean) => `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size}px ${family}`;
 
 /** The pieces text is drawn in: its markup's, or a title's own runs with their looks. */
-function pieces(text: string, o: TextOpts): (Run & { b?: boolean; i?: boolean })[] {
+function pieces(text: string, o: TextOpts): (Run & { b?: boolean; i?: boolean; u?: boolean })[] {
   if (!o.rich) return textRuns(text);
-  return o.rich.map((r) => (r.text === '\n' ? { t: ' ', pos: 'base' as const } : { t: r.text, pos: r.sub ? 'sub' as const : r.sup ? 'sup' as const : 'base' as const, b: r.bold, i: r.italic }));
+  return o.rich.map((r) => (r.text === '\n' ? { t: ' ', pos: 'base' as const } : { t: r.text, pos: r.sub ? 'sub' as const : r.sup ? 'sup' as const : 'base' as const, b: r.bold, i: r.italic, u: r.underline }));
 }
 
 function measure(ctx: Ctx, text: string, o: TextOpts): number {
@@ -154,7 +168,20 @@ function text(ctx: Ctx, s: string, x: number, y: number, o: TextOpts): number {
         ctx.restore();
       }
     } else ctx.fillText(r.t, x + dx, y + dy);
-    dx += ctx.measureText(r.t).width;
+    const rw = ctx.measureText(r.t).width;
+    if (r.u && rw > 0) {
+      // underlined (as Excel and PowerPoint draw a title's underline): a line under the baseline, in the text's color
+      const off = o.size * 0.12, lw = Math.max(0.6, o.size * 0.06);
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = o.color ?? TEXT;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      if (o.angle === 90) { ctx.moveTo(x + off, y - dx); ctx.lineTo(x + off, y - dx - rw); } else { ctx.moveTo(x + dx, y + off); ctx.lineTo(x + dx + rw, y + off); }
+      ctx.stroke();
+      ctx.restore();
+    }
+    dx += rw;
   }
   return w;
 }
@@ -332,8 +359,11 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
 
   if (chart.title) {
     const ts = fs * 1.4;
-    text(ctx, chart.title, w / 2, top + ts * 0.9, opt(ts, { align: 'center', rich: titleRunsOf(chart.title, chart.titleRuns) }));
-    top += ts * 1.3 + 4;
+    // each paragraph of the title on a line of its own, as Excel draws it
+    const lines = titleLines(titleRunsOf(chart.title, chart.titleRuns));
+    if (!lines) text(ctx, chart.title, w / 2, top + ts * 0.9, opt(ts, { align: 'center' }));
+    else lines.forEach((line, k) => text(ctx, titleMarkup(line), w / 2, top + ts * 0.9 + k * ts * 1.2, opt(ts, { align: 'center', rich: line })));
+    top += ts * 1.3 + 4 + ((lines?.length ?? 1) - 1) * ts * 1.2;
   }
 
   // legend
