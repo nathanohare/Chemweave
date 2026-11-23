@@ -59,13 +59,14 @@ export function labelSeen(t: Element): string {
 
 /**
  * The tag's value for an atom (null when it needs none). `seen` is the label's print as written
- * (labelSeen), `look` what the reader will work out from its runs, `stereo` the stereo label's text.
+ * (labelSeen), `look` what the reader will work out from its runs, `stereo` the stereo label's text,
+ * `packed` that its depth goes in its structure's tag instead (fragMore).
  * Marks and raised digits set on the atom are kept only where they differ from `look` (not set,
  * the reader works them out from the runs as for any file).
  */
-export function atomMore(a: Atom, seen: string | null, look: LabelLook, stereo: string | null): Record<string, unknown> | null {
+export function atomMore(a: Atom, seen: string | null, look: LabelLook, stereo: string | null, packed = false): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
-  if (a.depth !== undefined && num(a.depth)) v.depth = a.depth;
+  if (!packed && a.depth !== undefined && num(a.depth)) v.depth = a.depth;
   if (seen !== null) {
     const l: Record<string, unknown> = {};
     if (a.asTyped && a.label) { l.asTyped = true; l.label = a.label; }
@@ -107,9 +108,9 @@ export function zPrint(e: Element, bond: (id: string) => Element | null): string
  * element itself, if any, and `zAt` the print of its order among the bonds it crosses as written
  * (zPrint): a place among crossing bonds is used again only while ChemDraw's order there is unchanged.
  */
-export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefined, zAt: string | null): Record<string, unknown> | null {
+export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefined, zAt: string | null, packed = false): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
-  if (b.z !== undefined && num(b.z) && b.z !== fileZ) { v.z = b.z; v.zAt = zAt; }
+  if (!packed && b.z !== undefined && num(b.z) && b.z !== fileZ) { v.z = b.z; v.zAt = zAt; }
   if (b.stereoLabel?.manual && stereo !== null) v.stereo = { manual: true, ...(b.stereoLabel.fromFile ? { fromFile: true } : {}), seen: stereo };
   return Object.keys(v).length ? v : null;
 }
@@ -118,6 +119,56 @@ export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefin
 export function bondMoreIn(b: Bond, v: Record<string, unknown>, zAt: string | null): void {
   if (num(v.z) && (v.zAt ?? null) === zAt) b.z = v.z;
   stereoIn(b, v.stereo);
+}
+
+/**
+ * The print of a structure as written: its atoms' and bonds' ids and elements in order (as a short
+ * hash). Values kept for each of its atoms and bonds in one tag (fragMore) are used again only
+ * while ChemDraw has the same atoms and bonds in the same order: an atom added, deleted or
+ * renumbered there drops them all rather than put one on the wrong atom.
+ */
+export function fragPrint(f: Element): string {
+  let h = 0x811c9dc5;
+  const add = (t: string) => { for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } };
+  for (let k = f.firstElementChild; k; k = k.nextElementSibling) {
+    if (k.nodeName === 'n') add(`n${k.getAttribute('id') ?? ''}:${k.getAttribute('Element') ?? '6'}:${k.getAttribute('NodeType') ?? ''};`);
+    else if (k.nodeName === 'b') add(`b${k.getAttribute('id') ?? ''}:${k.getAttribute('B') ?? ''}:${k.getAttribute('E') ?? ''};`);
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+/** A bond's own place among crossing bonds to keep, and its print (zPrint), or null. */
+export type BondZ = { z: number; at: string | null } | null;
+
+/**
+ * One tag for a structure (its <fragment>) with the values every atom or bond of it may carry, in
+ * the order of its <n> and <b> children (null where one has none): 3-D depth for atoms, a place
+ * among crossing bonds for bonds (with each one's own print, zPrint). One tag per structure
+ * instead of one per atom and bond keeps a file of many 3-D structures small (F7b R09, Nate:
+ * fine as long as ChemDraw still draws the file the same; it passes over tags it doesn't know).
+ * `at` is the structure's print (fragPrint). Null when no atom or bond needs anything.
+ */
+export function fragMore(depths: (number | null)[], zs: BondZ[], at: string): Record<string, unknown> | null {
+  const v: Record<string, unknown> = {};
+  if (depths.some((x) => x !== null)) v.depth = depths;
+  if (zs.some((x) => x !== null)) { v.z = zs.map((x) => x?.z ?? null); v.zAt = zs.map((x) => x?.at ?? null); }
+  if (!Object.keys(v).length) return null;
+  v.at = at;
+  return v;
+}
+
+/**
+ * Puts a structure's values from its tag back (fragMore): `at` is fragPrint of the <fragment> in the
+ * file now, `atoms` and `bonds` what its <n> and <b> children became, in order, and `zNow` each
+ * bond element's order among crossing bonds now (zPrint).
+ */
+export function fragMoreIn(v: Record<string, unknown>, at: string, atoms: (Atom | undefined)[], bonds: { b: Bond | undefined; el: Element }[], zNow: (el: Element) => string): void {
+  if (v.at !== at) return;
+  if (Array.isArray(v.depth) && v.depth.length === atoms.length) v.depth.forEach((d, i) => { const a = atoms[i]; if (a && num(d)) a.depth = d; });
+  if (Array.isArray(v.z) && Array.isArray(v.zAt) && v.z.length === bonds.length && v.zAt.length === bonds.length) {
+    const zAt = v.zAt;
+    v.z.forEach((z, i) => { const { b, el } = bonds[i]; if (b && num(z) && (zAt[i] ?? null) === zNow(el)) b.z = z; });
+  }
 }
 
 /** A stereo label typed by hand stays typed by hand while ChemDraw shows the text it was given. */

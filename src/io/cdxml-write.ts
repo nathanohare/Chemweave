@@ -38,7 +38,7 @@ import { fillInk, mix, ringShadowGroups, ringShadowSize, shadowLook } from '../r
 import { shapeShadow } from '../render/highlight-fx';
 import { parseColor } from '../render/vector';
 import { layoutTable, cellAlign, isCovered, spanOf, partAt, NOTE_SCALE } from '../table';
-import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, textSeen, zPrint, type RefKind, type RefOut } from './cdxml-more';
+import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, textSeen, fragMore, fragPrint, type BondZ, zPrint, type RefKind, type RefOut } from './cdxml-more';
 import { TABLE_TAG, TABLE_PART_TAG, tableBorders, type TableTag } from './cdxml-table';
 import { bondLayer, crossingBondsCached, listedNearMisses } from '../chem/crossing';
 import { repeatGroups, repeatCount, repeatLabelPlace } from '../chem/polymer';
@@ -2857,8 +2857,9 @@ class CdxmlWriter {
 
   /**
    * Each object's settings that ChemDraw has no place for, in one hidden tag on its element
-   * (cdxml-more.ts): an atom's depth and hand-set label marks, a bond's place among crossing
-   * bonds, a text box's columns, a bent arrow, a shape's name, frame members and pin. A tag that
+   * (cdxml-more.ts): an atom's hand-set label marks, a text box's columns, highlight and language,
+   * a bent arrow, a shape's name, frame members and pin; a structure's 3-D depths and places among
+   * crossing bonds in one tag on its fragment (fragMore). A tag that
    * says what the element's tag says already is left as it is.
    */
   private writeMore(): void {
@@ -2913,17 +2914,36 @@ class CdxmlWriter {
       if (want !== null) e.appendChild(this.el('objecttag', { TagType: 'String', Name: MORE_TAG, Value: want, Visible: 'no' }));
       this.changed = true;
     };
+    // a structure's depths and bond places go in one tag on its <fragment> (fragMore), each atom's and bond's other settings on its own element
+    const frags = new Set<Element>();
+    const atomAt = new Map<Element, { depth?: number }>();
+    const bondAt = new Map<Element, BondZ>();
+    const fragOf = (e: Element): Element | null => { const f = e.parentNode as Element | null; return f && f.nodeName === 'fragment' ? f : null; };
     for (const a of doc.atoms.values()) {
       const e = elOf('a', a.id);
       if (!e) continue;
-      const t = this.child(e, 't'), own = tagsOf(e);
-      put(e, atomMore(a, t ? labelSeen(t) : null, t ? labelLookOfText(t, Number(e.getAttribute('Charge')) || undefined) : {}, own.stereo), own.old);
+      const t = this.child(e, 't'), own = tagsOf(e), f = fragOf(e);
+      if (f) { frags.add(f); atomAt.set(e, a); }
+      put(e, atomMore(a, t ? labelSeen(t) : null, t ? labelLookOfText(t, Number(e.getAttribute('Charge')) || undefined) : {}, own.stereo, !!f), own.old);
     }
     for (const b of doc.bonds.values()) {
       const e = elOf('b', b.id);
       if (!e) continue;
-      const own = tagsOf(e), place = b.z !== undefined;
-      put(e, bondMore(b, own.stereo, place ? fileZ(e) : undefined, place ? zAt(e) : null), own.old);
+      const own = tagsOf(e), place = b.z !== undefined, f = fragOf(e);
+      if (f) {
+        frags.add(f);
+        const z = place && Number.isFinite(b.z) && b.z !== fileZ(e) ? b.z : undefined;
+        bondAt.set(e, z !== undefined ? { z, at: zAt(e) } : null);
+      }
+      put(e, bondMore(b, own.stereo, place ? fileZ(e) : undefined, place ? zAt(e) : null, !!f), own.old);
+    }
+    for (const f of frags) {
+      const depths: (number | null)[] = [], zs: BondZ[] = [];
+      for (let k = f.firstElementChild; k; k = k.nextElementSibling) {
+        if (k.nodeName === 'n') { const d = atomAt.get(k)?.depth; depths.push(d !== undefined && Number.isFinite(d) ? d : null); }
+        else if (k.nodeName === 'b') zs.push(bondAt.get(k) ?? null);
+      }
+      put(f, fragMore(depths, zs, fragPrint(f)));
     }
     for (const c of doc.captions.values()) {
       const e = elOf('c', c.id);

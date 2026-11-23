@@ -39,7 +39,7 @@ import { cleanTiedLook } from '../editor/tied-look';
 import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
-import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, labelSeen, captionAt, textSeen, zPrint, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
+import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, labelSeen, captionAt, textSeen, fragPrint, fragMoreIn, zPrint, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
 
 export interface ReadStats {
   atoms: number;
@@ -1507,6 +1507,19 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       else if (kind === 'c') { const c = doc.captions.get(id); if (c) captionMoreIn(c, v, captionAt(el), textSeen(el)); }
       else if (kind === 'r') { const r = doc.arrows.get(id); if (r) arrowMoreIn(r, v, refIn); }
       else if (kind === 's') { const sh = doc.shapes.get(id); if (sh) shapeMoreIn(sh, v, refIn); }
+    }
+    // a structure's depths and bond places, in one tag on its <fragment> (cdxml-more.ts fragMore)
+    for (const f of all) {
+      if (f.nodeName !== 'fragment') continue;
+      const json = kids(f).find((t) => t.nodeName === 'objecttag' && t.getAttribute('Name') === MORE_TAG)?.getAttribute('Value');
+      if (!json) continue;
+      let v: Record<string, unknown>;
+      try { v = JSON.parse(json) as Record<string, unknown>; } catch { continue; }
+      if (!v || typeof v !== 'object') continue;
+      const ns = kids(f).filter((k) => k.nodeName === 'n'), bs = kids(f).filter((k) => k.nodeName === 'b');
+      const atomsIn = ns.map((n) => { const id = atomOfNode.get(n.getAttribute('id') ?? ''); return id === undefined ? undefined : doc.atoms.get(id); });
+      const bondsIn = bs.map((el) => { const r = byFileId.get(el.getAttribute('id') ?? ''); return { b: r?.kind === 'b' ? doc.bonds.get(r.id) : undefined, el }; });
+      fragMoreIn(v, fragPrint(f), atomsIn, bondsIn, zNow);
     }
     attachRingFills(doc);
     // a chiral flag goes with the structure whose fragment it was in (review F1b-R01)

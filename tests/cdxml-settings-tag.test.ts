@@ -65,7 +65,8 @@ describe('the settings tag (R3)', () => {
 
   it('rides on the object\'s own element, hidden', () => {
     const tags = [...parse(writeCdxml(drawing(), { name: 't.cdxml' })).getElementsByTagName('objecttag')].filter((t) => t.getAttribute('Name') === MORE_TAG);
-    expect(new Set(tags.map((t) => t.parentElement?.nodeName))).toEqual(new Set(['n', 'b', 't', 'arrow', 'graphic']));
+    // (a structure's depths and bond places in one tag on its fragment, F7b R09)
+    expect(new Set(tags.map((t) => t.parentElement?.nodeName))).toEqual(new Set(['fragment', 'n', 't', 'arrow', 'graphic']));
     expect(tags.every((t) => t.getAttribute('Visible') === 'no')).toBe(true);
   });
 
@@ -96,7 +97,11 @@ describe('the settings tag (R3)', () => {
 
   it('lets ChemDraw\'s Z win over a kept place among crossing bonds once ChemDraw changed it', () => {
     expect([...edited(() => {}).bonds.values()].map((b) => b.z)).toContain(4);
-    const back = edited((doc) => { const b = tagged(doc, 'b')[0]; b.setAttribute('Z', String(Number(b.getAttribute('Z') ?? 0) + 50)); });
+    const back = edited((doc) => {
+      const f = tagged(doc, 'fragment')[0];
+      const v = JSON.parse([...f.children].find((k) => k.getAttribute('Name') === MORE_TAG)!.getAttribute('Value')!) as { z: (number | null)[] };
+      const b = [...f.children].filter((k) => k.nodeName === 'b')[v.z.findIndex((z) => z !== null)];
+      b.setAttribute('Z', String(Number(b.getAttribute('Z') ?? 0) + 50)); });
     expect([...back.bonds.values()].map((b) => b.z)).not.toContain(4);
   });
 
