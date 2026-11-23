@@ -3022,6 +3022,8 @@ dialog.diagram-dialog { width: min(96vw, 1060px); max-height: 94vh; }
 .sh-note-shown { position: absolute; max-height: 140px; overflow: hidden; cursor: text; }
 .sh-note-who { font-weight: 700; }
 .sh-note-input { display: block; width: 100%; box-sizing: border-box; margin-top: 2px; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; resize: vertical; outline: none; }
+.sh-note-rich { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 5.6em; max-height: 14em; overflow-y: auto; cursor: text; }
+.sh-note-rich.empty::before { content: attr(data-placeholder); color: var(--muted); position: absolute; pointer-events: none; }
 .sh-note-card { position: fixed; z-index: 60; }
 .cmt-card.sh-note-card { width: 270px; max-height: min(420px, 70vh); overflow-y: auto; box-sizing: border-box; }
 .sh-prompt { position: absolute; z-index: 3; max-width: 240px; padding: 5px 8px; background: #ffffe1; color: #1a1a1a; border: 1px solid #8a8a6a; box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2); font: var(--fs-sm)/1.35 Tahoma, 'Segoe UI', Arial, sans-serif; white-space: pre-wrap; pointer-events: none; }

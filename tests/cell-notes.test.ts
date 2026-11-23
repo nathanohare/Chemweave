@@ -221,6 +221,35 @@ Dried over Na</t></r><r><rPr><vertAlign val="subscript"/><sz val="9"/><rFont val
     expect(n.xl?.xml.startsWith('<r>')).toBe(true);
   });
 
+  it('reads the note\'s looks as its runs (the author line left out)', () => {
+    const n = readNotes(parse(RICH), new Set(), null, null).values().next().value!;
+    expect(n.runs).toEqual([{ text: 'Dried over Na' }, { text: '2', sub: true }, { text: 'SO' }, { text: '4', sub: true }, { text: ' ' }, { text: 'in vacuo', italic: true }]);
+  });
+
+  it('a look changed here (a word made bold) is saved as Excel\'s rich note text (F3 Needs Nate 5, F8b)', async () => {
+    const xml = await roundTrip((n) => ({ ...n, runs: [{ text: 'Dried over ', bold: true }, ...n.runs!.slice(0).map((x, i) => (i === 0 ? { text: 'Na' } : x))] }));
+    // the author line stays bold, then the words with their own looks
+    expect(xml).toContain('<t>Nate:</t>');
+    expect(xml).toMatch(/<r><rPr><b\/><sz val="9"\/>[^]*?<t xml:space="preserve">\nDried over <\/t><\/r>/);
+    expect(xml).toContain('<vertAlign val="subscript"/>');
+    expect(xml).toContain('<i/>');
+    const back = readNotes(parse(xml), new Set(), null, null).values().next().value!;
+    expect(back.text).toBe('Dried over Na2SO4 in vacuo');
+    expect(back.runs?.[0]).toEqual({ text: 'Dried over ', bold: true });
+    expect(back.runs?.find((x) => x.text === '2')).toEqual({ text: '2', sub: true });
+  });
+
+  it('a note made here with a subscript and an underline is written with them', async () => {
+    const wb = new Workbook();
+    wb.edit('note', () => wb.sheet.setNote(0, 0, { ...note('CH2Cl2, dry'), runs: [{ text: 'CH' }, { text: '2', sub: true }, { text: 'Cl' }, { text: '2', sub: true }, { text: ', ' }, { text: 'dry', underline: true }] }));
+    const xml = strFromU8(unzipSync(await writeXlsx(wb, pictures))['xl/comments1.xml']);
+    expect(xml.match(/<vertAlign val="subscript"\/>/g)).toHaveLength(2);
+    expect(xml).toContain('<u/>');
+    const back = readNotes(parse(xml), new Set(), null, null).values().next().value!;
+    expect(back.text).toBe('CH2Cl2, dry');
+    expect(back.runs?.at(-1)).toEqual({ text: 'dry', underline: true });
+  });
+
   it('a note changed here is saved as typed (its old formatting no longer fits the words)', async () => {
     const xml = await roundTrip((n) => ({ ...n, text: 'Dried over MgSO4' }));
     expect(xml).not.toContain('vertAlign');
