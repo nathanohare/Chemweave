@@ -103,7 +103,11 @@ export interface FScene {
   yDown?: boolean;
   /** The file's usual bond length, for a file whose structures have no bonds to measure. */
   unit?: number;
-  /** A reaction with no arrow whose molecules stand where they were drawn (an RXN file written here): kept there when they stand in a row. */
+  /**
+   * A reaction with no arrow whose molecules stand where they were drawn (an RXN file, from any
+   * program): kept there, with an arrow put between them, unless the file gives no usable places
+   * (every atom at 0, 0, or molecules on top of one another); then laid out afresh.
+   */
   keepPlaces?: boolean;
 }
 
@@ -538,7 +542,9 @@ export function readRxnFile(text: string): FScene | null {
     }
     if (k < nr + np) return null;
   }
-  return { mols, arrows: [], pluses: [], texts: [], ...(ours ? { keepPlaces: true } : {}) };
+  // (every program's molecules are kept where they stand, as this program's are, unless the file
+  // gives them no usable places: Nate, 2026-11-23, F7b Needs Nate 1)
+  return { mols, arrows: [], pluses: [], texts: [], keepPlaces: true };
 }
 
 // ---------------------------------------------------------------- XML formats (MRV, CML)
@@ -973,6 +979,50 @@ function arrowBetween(scene: FScene, unit: number): boolean {
   return true;
 }
 
+/**
+ * Whether a reaction's molecules have places worth keeping: not every atom at 0, 0 (a file made
+ * from SMILES, with no drawing), and no two molecules on top of one another, nor a molecule's
+ * atoms all on one spot.
+ */
+function usablePlaces(scene: FScene): boolean {
+  const ms = scene.mols.filter((m) => m.atoms.length);
+  if (!ms.length || ms.every((m) => m.atoms.every((a) => Math.abs(a.x) < 1e-6 && Math.abs(a.y) < 1e-6))) return false;
+  if (ms.some((m) => m.atoms.length > 1 && m.atoms.every((a) => Math.abs(a.x - m.atoms[0].x) < 1e-6 && Math.abs(a.y - m.atoms[0].y) < 1e-6))) return false;
+  const boxes = ms.map(molBox);
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const p = boxes[i], q = boxes[j];
+      if (p.x1 <= q.x2 && q.x1 <= p.x2 && p.y1 <= q.y2 && q.y1 <= p.y2) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * A reaction whose molecules stand where they were drawn but not in a row (products above or
+ * left of the starting materials): the molecules left where they are and an arrow put from the
+ * starting materials towards the products. False, with nothing changed, when they are too close
+ * for one.
+ */
+function arrowAcross(scene: FScene, unit: number): boolean {
+  const union = (role: FRole) => {
+    const bs = scene.mols.filter((m) => m.role === role && m.atoms.length).map(molBox);
+    return bs.length ? { x1: Math.min(...bs.map((b) => b.x1)), y1: Math.min(...bs.map((b) => b.y1)), x2: Math.max(...bs.map((b) => b.x2)), y2: Math.max(...bs.map((b) => b.y2)) } : null;
+  };
+  const r = union('reactant'), p = union('product');
+  if (!r || !p) return false;
+  const rc = { x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2 }, pc = { x: (p.x1 + p.x2) / 2, y: (p.y1 + p.y2) / 2 };
+  const len = Math.hypot(pc.x - rc.x, pc.y - rc.y);
+  if (len < 1e-6) return false;
+  const d = { x: (pc.x - rc.x) / len, y: (pc.y - rc.y) / len };
+  const half = (b: { x1: number; y1: number; x2: number; y2: number }) => Math.abs(d.x) * (b.x2 - b.x1) / 2 + Math.abs(d.y) * (b.y2 - b.y1) / 2;
+  const gap = unit * 0.6;
+  const from = half(r) + gap, to = len - half(p) - gap;
+  if (to - from < unit) return false;
+  scene.arrows.push({ x1: rc.x + d.x * from, y1: rc.y + d.y * from, x2: rc.x + d.x * to, y2: rc.y + d.y * to, kind: 'synthesis' });
+  return true;
+}
+
 const DISPLAY: Record<FStereo, BondDisplay> = { wedge: 'wedge', hash: 'hashWedge', wavy: 'wavy' };
 
 /** What sceneToDoc says about the file it drew. */
@@ -988,7 +1038,8 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
   doc.page = page;
   const lengths = scene.mols.flatMap((m) => m.bonds.map((b) => Math.hypot(m.atoms[b.a].x - m.atoms[b.b].x, m.atoms[b.a].y - m.atoms[b.b].y))).filter((l) => l > 1e-6);
   const unit = median(lengths) || scene.unit || 1;
-  if (!scene.arrows.length && scene.mols.some((m) => m.role) && !(scene.keepPlaces && arrowBetween(scene, unit))) layOutReaction(scene, unit);
+  if (!scene.arrows.length && scene.mols.some((m) => m.role)
+    && !(scene.keepPlaces && usablePlaces(scene) && (arrowBetween(scene, unit) || arrowAcross(scene, unit)))) layOutReaction(scene, unit);
   const k = style.bondLength / unit, sy = scene.yDown ? k : -k;
   const P = (x: number, y: number) => ({ x: x * k, y: y * sy });
   const stats: SceneStats = { atoms: 0, bonds: 0, arrows: 0, texts: 0 };
