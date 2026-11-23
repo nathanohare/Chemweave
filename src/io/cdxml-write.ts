@@ -38,7 +38,7 @@ import { fillInk, mix, ringShadowGroups, ringShadowSize, shadowLook } from '../r
 import { shapeShadow } from '../render/highlight-fx';
 import { parseColor } from '../render/vector';
 import { layoutTable, cellAlign, isCovered, spanOf, partAt, NOTE_SCALE } from '../table';
-import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, zPrint, type RefKind, type RefOut } from './cdxml-more';
+import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, textSeen, zPrint, type RefKind, type RefOut } from './cdxml-more';
 import { TABLE_TAG, TABLE_PART_TAG, tableBorders, type TableTag } from './cdxml-table';
 import { bondLayer, crossingBondsCached, listedNearMisses } from '../chem/crossing';
 import { repeatGroups, repeatCount, repeatLabelPlace } from '../chem/polymer';
@@ -2927,7 +2927,7 @@ class CdxmlWriter {
     }
     for (const c of doc.captions.values()) {
       const e = elOf('c', c.id);
-      if (e) put(e, captionMore(c, c.width !== undefined ? fileWidth(e) : undefined, captionAt(e)));
+      if (e) put(e, captionMore(c, c.width !== undefined ? fileWidth(e) : undefined, captionAt(e), textSeen(e)));
     }
     for (const r of doc.arrows.values()) put(elOf('r', r.id), arrowMore(r, ref));
     for (const s of doc.shapes.values()) put(elOf('s', s.id), shapeMore(s, ref));

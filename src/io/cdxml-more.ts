@@ -133,8 +133,10 @@ function stereoIn(o: Atom | Bond, s: unknown): void {
  * reader takes from the element itself, if any, and `at` the print of what lines the text up in
  * ChemDraw (captionAt): a width is used again only while that is unchanged.
  */
-export function captionMore(c: Caption, fileWidth: number | undefined, at: string): Record<string, unknown> | null {
+export function captionMore(c: Caption, fileWidth: number | undefined, at: string, seen = ''): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
+  const marks = runMarks(c.runs);
+  if (marks.length) { v.marks = marks; v.marksAt = seen; }
   if (c.width !== undefined && num(c.width) && !(fileWidth !== undefined && Math.abs(c.width - fileWidth) < 0.005)) { v.width = c.width; v.widthAt = at; }
   if (c.cols !== undefined && num(c.cols)) v.cols = c.cols;
   if (c.colGap !== undefined && num(c.colGap)) v.colGap = c.colGap;
@@ -150,11 +152,72 @@ export function captionAt(t: Element): string {
 }
 
 /** Puts a caption's settings from its tag back. `at` is captionAt of the element in the file now. */
-export function captionMoreIn(c: Caption, v: Record<string, unknown>, at: string): void {
+export function captionMoreIn(c: Caption, v: Record<string, unknown>, at: string, seen = ''): void {
+  if (Array.isArray(v.marks) && v.marksAt === seen) c.runs = withMarks(c.runs, v.marks);
   if (num(v.width) && v.width > 0 && v.widthAt === at) c.width = v.width;
   if (num(v.cols) && v.cols >= 1) c.cols = Math.round(v.cols);
   if (num(v.colGap) && v.colGap >= 0) c.colGap = v.colGap;
   if (v.fit === 'shrink' || v.fit === 'fixed') c.fit = v.fit;
+}
+
+/**
+ * The print of a text as written: the characters of its runs (<s>) in order. A text's highlight
+ * and language (marks) are used again only while ChemDraw shows the same characters, so text
+ * edited or replaced there never gets them on the wrong letters (Nate, F8a item 8).
+ */
+export function textSeen(t: Element): string {
+  let s = '';
+  for (let k = t.firstElementChild; k; k = k.nextElementSibling) if (k.nodeName === 's') s += k.textContent ?? '';
+  return s;
+}
+
+/**
+ * A text's highlight and language, which ChemDraw's text style has no place for (its style is a
+ * font, size, face and colour only: CDX SDK, CDXString and Style): [from, to, highlight, lang] per
+ * stretch of characters that has either, by place in the text's runs.
+ */
+export function runMarks(runs: readonly TextRun[]): [number, number, string | null, string | null][] {
+  const out: [number, number, string | null, string | null][] = [];
+  let at = 0;
+  for (const r of runs) {
+    const n = r.text.length, hl = r.highlight ?? null, lang = r.lang ?? null;
+    if (n && (hl || lang)) {
+      const last = out[out.length - 1];
+      if (last && last[1] === at && last[2] === hl && last[3] === lang) last[1] = at + n;
+      else out.push([at, at + n, hl, lang]);
+    }
+    at += n;
+  }
+  return out;
+}
+
+/** The runs with the marks (runMarks) put back, split where a mark starts or ends; marks past the text's end are left out. */
+export function withMarks(runs: readonly TextRun[], marks: unknown[]): TextRun[] {
+  const total = runs.reduce((n, r) => n + r.text.length, 0);
+  const ok = marks.filter((m): m is [number, number, string | null, string | null] =>
+    Array.isArray(m) && Number.isInteger(m[0]) && Number.isInteger(m[1]) && m[0] >= 0 && m[1] > m[0] && m[1] <= total &&
+    (m[2] === null || (typeof m[2] === 'string' && /^#[0-9a-f]{6}$/i.test(m[2]))) && (m[3] === null || (typeof m[3] === 'string' && /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/.test(m[3]))));
+  if (!ok.length) return runs as TextRun[];
+  const cuts = new Set<number>();
+  for (const m of ok) { cuts.add(m[0]); cuts.add(m[1]); }
+  const out: TextRun[] = [];
+  let at = 0;
+  for (const r of runs) {
+    const end = at + r.text.length;
+    const inner = [...cuts].filter((x) => x > at && x < end).sort((a, b) => a - b);
+    let from = at;
+    for (const x of [...inner, end]) {
+      if (x > from || !r.text.length) {
+        const piece: TextRun = { ...r, text: r.text.slice(from - at, x - at) };
+        const m = ok.find((k) => k[0] <= from && k[1] >= x && x > from);
+        if (m) { if (m[2]) piece.highlight = m[2]; if (m[3]) piece.lang = m[3]; }
+        out.push(piece);
+      }
+      from = x;
+    }
+    at = end;
+  }
+  return out;
 }
 
 /** An arrow's settings: bent by hand, and the step a catalytic cycle's reagent arrow feeds (by its arrow's id in the file). */

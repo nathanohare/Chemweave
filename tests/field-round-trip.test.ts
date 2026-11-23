@@ -605,8 +605,6 @@ const CANT_CARRY: Partial<Record<Column, Record<string, string>>> = {
     'TextRun.cstyle': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.field': "a PowerPoint field (slide number, date): slides are saved as PowerPoint",
     'TextRun.fmt': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
-    'TextRun.highlight': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
-    'TextRun.lang': "ChemDraw text has no language; kept from Word and PowerPoint for spelling",
     'TextRun.noProof': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.raise': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.rev': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
