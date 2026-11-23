@@ -41,6 +41,7 @@ const FORMATS: Record<string, TextFormat> = {
   sub: { kind: 'toggle', key: 'sub' },
   sup: { kind: 'toggle', key: 'sup' },
   formula: { kind: 'toggle', key: 'formula' },
+  charges: { kind: 'charges' },
   strike: { kind: 'toggle', key: 'strike' },
   clear: { kind: 'clear' },
   bullets: { kind: 'list', list: 'bullet' },

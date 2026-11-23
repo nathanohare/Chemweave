@@ -10732,6 +10732,8 @@ const COMMANDS: Record<string, () => unknown> = {
   'lock-structures': () => toggleStructureLock(),
   'add-caption': () => void addTiedText('caption'),
   'link-text': () => linkText() || flash(WHY.link),
+  // (the text being typed in, or the selected text boxes whole; one undo step)
+  'raise-charge-digits': () => { if (!editor.formatText({ kind: 'charges' })) flash(WHY.charges); },
   'unlink-text': () => unlinkText() || flash(WHY.unlink),
   group: () => editor.group() || flash(WHY.group),
   ungroup: () => editor.ungroupSmart() || editor.ungroup() || flash(WHY.ungroup),
@@ -14318,7 +14320,7 @@ function drawingMenu(): MenuItem[] {
     ...(selectedOrbitals().length ? [{ cmd: 'edit-orbital' }, null] : []),
     ...(editor.selectedDiagram() !== null ? [{ cmd: 'edit-diagram' }, { cmd: 'diagram-to-shapes' }, null] : []),
     ...(s.captions.size ? [readAsMenu(), ...(texts && !atoms ? [{ cmd: 'expand-label', label: 'Expand Label' }, { cmd: 'expand-label-full', label: 'Expand Label Fully' }] : [])] : []),
-    ...(s.captions.size ? [{ cmd: 'link-text' }] : []),
+    ...(s.captions.size ? [{ cmd: 'raise-charge-digits' }, { cmd: 'link-text' }] : []),
     ...([...s.captions].some((id) => doc.captions.get(id)?.runs.some((r) => r.link))
       ? [{ cmd: 'open-link', label: 'Open Link' }, { cmd: 'insert-link', label: 'Edit Link…' }, { cmd: 'remove-link', label: 'Remove Link' }]
       : s.captions.size ? [{ cmd: 'insert-link', label: 'Link…' }] : []),
@@ -15225,7 +15227,7 @@ const DOC_LINES: Record<number, string> = { 1: 'line-single', 1.5: 'line-1-5', 2
 const textToolboxHooks: TextToolboxHooks = {
   format: (f) => {
     if (docActive()) {
-      const cmd = f.kind === 'stereo' ? 'doc-stereo-italic' : f.kind === 'toggle' ? DOC_TOGGLES[f.key] : f.kind === 'align' ? DOC_ALIGN[f.j] : f.kind === 'line' ? DOC_LINES[f.v] : undefined;
+      const cmd = f.kind === 'stereo' ? 'doc-stereo-italic' : f.kind === 'charges' ? 'doc-raise-charges' : f.kind === 'toggle' ? DOC_TOGGLES[f.key] : f.kind === 'align' ? DOC_ALIGN[f.j] : f.kind === 'line' ? DOC_LINES[f.v] : undefined;
       if (!cmd) { flash('In a document, the Home tab\'s Font and Paragraph groups set these.'); return true; }
       return docMode.run(cmd);
     }

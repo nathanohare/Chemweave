@@ -43,6 +43,10 @@ export const FONT_LOOK: Record<Exclude<FontControl, 'font' | 'size'>, { html: st
   color: { html: '<span>A</span>', title: 'Text Color' },
 };
 
+/** Raise Charge Digits (Canvas, Document and Presentation), beside Formula style: its picture and tip. */
+export const CHARGES_LOOK = { html: '<span aria-hidden="true">X<sup>2+</sup></span>', title: 'Raise Charge Digits: the digits before a final + or − go up with the sign (Fe₃⁺ → Fe³⁺, SO₄₂⁻ → SO₄²⁻)' };
+const chargesButton = (attr: string, value: string) => `<button class="rb-sq" ${attr}="${value}" title="${CHARGES_LOOK.title}" aria-label="Raise Charge Digits">${CHARGES_LOOK.html}</button>`;
+
 /** The sizes offered in every mode's size box (any size can be typed). */
 export const FONT_SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 72, 96];
 export const FONT_SIZE_LIST = 'font-size-list';
@@ -86,7 +90,8 @@ const MODES: Record<FontMode, ModeFont> = {
     },
     extra: [
       '<button class="rb-sq" data-doc="show-marks" aria-pressed="false" title="Show/Hide ¶ (Ctrl+Shift+8): show paragraph marks, spaces and tabs. They show on screen only, never in print or a saved file">¶</button>',
-      '<button class="rb-sq" data-doc="doc-small-caps" aria-pressed="false" title="Small Caps (Ctrl+Shift+K): lower-case letters as smaller capitals">A<small>BC</small></button>'
+      chargesButton('data-doc', 'doc-raise-charges')
+      + '<button class="rb-sq" data-doc="doc-small-caps" aria-pressed="false" title="Small Caps (Ctrl+Shift+K): lower-case letters as smaller capitals">A<small>BC</small></button>'
       + '<span class="rb-split"><button class="rb-sq rb-hl" data-doc="doc-highlight" aria-pressed="false" title="Highlight the selected text in the color under the letters (click again to remove it)"><span class="hl-ab">ab</span><span id="doc-hl-bar" class="hl-bar"></span></button>'
       + '<button class="rb-sq rb-drop" data-doc="doc-highlight-menu" title="Highlight colors">▾</button></span>',
     ],
@@ -111,7 +116,7 @@ const MODES: Record<FontMode, ModeFont> = {
     },
     extra: [
       '',
-      '<select data-tx="spacing" title="Character spacing" aria-label="Character spacing"><option value="-3">Very Tight</option><option value="-1.5">Tight</option><option value="0">Normal</option><option value="3">Loose</option><option value="6">Very Loose</option><option value="more">More Spacing…</option><option value="" hidden>Other</option></select>',
+      chargesButton('data-sl-fmt', 'charges') + '<select data-tx="spacing" title="Character spacing" aria-label="Character spacing"><option value="-3">Very Tight</option><option value="-1.5">Tight</option><option value="0">Normal</option><option value="3">Loose</option><option value="6">Very Loose</option><option value="more">More Spacing…</option><option value="" hidden>Other</option></select>',
     ],
     launcher: { attr: 'data-tx', value: 'font-box', tip: 'Font settings: Change Case (Sentence case., lowercase, UPPERCASE, Capitalize Each Word, tOGGLE cASE)' },
   },

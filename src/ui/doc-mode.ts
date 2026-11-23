@@ -210,7 +210,7 @@ const ignored = new Set<string>();
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /** Commands that, in a text box, work on its text (others leave the box first). */
-const BOX_COMMANDS = /^(format-painter$|(insert|remove|open)-link$|insert-symbol$|doc-(align-|justify|bold|italic|underline|sub|sup|formula|stereo-italic|highlight|bullets|numbering|indent|outdent)|line-|font-|select-all$|undo$|redo$|zoom-|copy$|cut$|paste$|box-|find$|replace$|wrap-)/;
+const BOX_COMMANDS = /^(format-painter$|(insert|remove|open)-link$|insert-symbol$|doc-(align-|justify|bold|italic|underline|sub|sup|formula|stereo-italic|raise-charges|highlight|bullets|numbering|indent|outdent)|line-|font-|select-all$|undo$|redo$|zoom-|copy$|cut$|paste$|box-|find$|replace$|wrap-)/;
 
 /** Commands that, in a table cell, work there too (others leave the cell first). */
 const CELL_COMMANDS = /^(table-|tbl-|insert-table$|insert-structure$|structure-from-name-doc$|name-to-structure$|insert-picture$|insert-object$|paste-object$|edit-figure$|compound-number$|cross-reference$|insert-citation$)/;
@@ -1765,6 +1765,7 @@ export class DocumentMode {
     // what you would want on text: its font, a link, a structure (UI audit U13)
     if (picked === null) {
       cmd('Font…', 'font-box', 'Font, size, style, color and effects');
+      if (!this.file?.ed.collapsed) cmd('Raise Charge Digits', 'doc-raise-charges', 'The digits before a final + or − go up with the sign (Fe₃⁺ → Fe³⁺, SO₄₂⁻ → SO₄²⁻)');
       if (!linkHere) cmd('Link…', 'insert-link', 'A link on the text chosen: a web address, a place in this document or an e-mail address');
       cmd('Insert Structure', 'insert-structure', 'Draw a structure or a scheme here');
       line();
@@ -3826,6 +3827,7 @@ export class DocumentMode {
       case 'doc-sup': ed.toggle('sup'); break;
       case 'doc-formula': ed.toggle('formula'); break;
       case 'doc-stereo-italic': applyFormat(ed, { kind: 'stereo' }); break;
+      case 'doc-raise-charges': applyFormat(ed, { kind: 'charges' }); break;
       case 'doc-highlight': {
         const on = ed.currentStyle().highlight;
         ed.setStyle({ highlight: on && on === this.highlighter ? undefined : this.highlighter });

@@ -9,7 +9,7 @@
 import type { Justify } from '../model';
 import * as rt from '../richtext';
 import type { TextFormat } from '../text/format';
-import { FONT_LOOK, FONT_SIZE_LIST } from './font-group';
+import { CHARGES_LOOK, FONT_LOOK, FONT_SIZE_LIST } from './font-group';
 
 /** Sizes offered in the size box. */
 export const TEXT_SIZES = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72];
@@ -243,6 +243,7 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   inputs.color = color;
   // (what only the Canvas has, at the end)
   button(g, 'stereo', '(<i>R</i>)', 'Stereodescriptors in italics: (2R,3S)-, (E)-, cis-, tert-, n-Bu, p- (again: back to upright)', () => run({ kind: 'stereo' }));
+  button(g, 'charges', CHARGES_LOOK.html, CHARGES_LOOK.title, () => run({ kind: 'charges' }));
 
   if (prows) into = prows[1];
   g = group();
