@@ -36,7 +36,9 @@ import { emfToSvg } from '../render/emf-read';
 import type { Item } from '../render/vector';
 import { itemsToEmf, withDrawing, drawingInEmf, type EmfBox } from '../render/emf';
 import { imageSize, fromDataUrl } from '../render/images';
-import { cxSmiles, isReactionSmiles } from '../chem/reaction-io';
+import { cxSmiles, isReactionSmiles, reactionSmiles } from '../chem/reaction-io';
+import { itemFinder, plainMeasure, reactionSteps, schemeItems } from '../chem/reaction';
+import { placeSpecies } from '../chem/species';
 import { toMolfile } from '../chem/molfile';
 import { writeMolFile } from './chem-formats';
 
@@ -436,10 +438,53 @@ export function setSmilesMaker(f: ((molblock: string) => Promise<string | null>)
 /** The SMILES put on the clipboard with the last drawing copied, to know it again when it is pasted back. */
 let lastText: string | null = null;
 
-/** The structures' SMILES in a drawing, or null (no structures, generic labels, no engine yet). */
+/**
+ * A copied reaction scheme's reaction SMILES (reactants>agents>products, as Edit ▸ Copy As ▸
+ * Reaction SMILES writes it; Daylight's reaction SMILES): one line for each step, or null when the
+ * copy has no step or a species can't be written (then the plain structures' SMILES go instead).
+ * Reagents written over or under the arrow (DMSO, Me₂SO) are read as the compounds they name;
+ * other conditions text is left out.
+ */
+export async function reactionSmilesOf(part: Doc): Promise<string | null> {
+  if (!smilesMaker) return null;
+  const m = plainMeasure(part);
+  const items = schemeItems(part, m);
+  const steps = reactionSteps(part, items);
+  if (!steps.length) return null;
+  const find = itemFinder(items);
+  const lines: string[] = [];
+  for (const step of steps) {
+    const side = async (refs: string[], reagent: boolean): Promise<string[] | null> => {
+      const out: string[] = [];
+      for (const ref of refs) {
+        const it = find(ref);
+        if (!it || it.plus) continue;
+        const cap = it.caption !== undefined ? part.captions.get(it.caption) : undefined;
+        const species = cap ? placeSpecies(part, [cap], m, reagent) : [];
+        if (!it.atoms.length && !species.length) continue;
+        const ex = toMolfile(part, new Set(it.atoms), '', { species });
+        if (ex.generic.length) return null;
+        const sm = (await smilesMaker!(ex.molblock).catch(() => null))?.trim();
+        if (!sm) return null;
+        out.push(sm);
+      }
+      return out;
+    };
+    const reactants = await side(step.roles.reactants, false);
+    const agents = await side([...step.roles.above, ...step.roles.below], true);
+    const products = await side(step.roles.products, false);
+    if (!reactants || !agents || !products || (!reactants.length && !products.length)) return null;
+    lines.push(reactionSmiles({ reactants, agents, products }));
+  }
+  return lines.join('\n');
+}
+
+/** The structures' SMILES in a drawing, or null (no structures, generic labels, no engine yet); a reaction scheme's reaction SMILES. */
 async function structureSmiles(part: Doc): Promise<string | null> {
   if (!smilesMaker || !part.atoms.size) return null;
   try {
+    const rxn = await reactionSmilesOf(part).catch(() => null);
+    if (rxn) return rxn;
     const ex = toMolfile(part, part.atoms.keys(), '');
     return ex.generic.length ? null : (await smilesMaker(ex.molblock))?.trim() || null;
   } catch {
