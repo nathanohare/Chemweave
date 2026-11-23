@@ -5080,12 +5080,14 @@ function slideSwitched(deck: Deck): void {
   editor.lastEdited = null;
   const canvas = !!deck.current?.canvas;
   if (canvas !== onCanvas) showRulers();
-  if (canvas || onCanvas) editor.fit();
+  // each slide opens fitted to the window, as in PowerPoint: not at the zoom and scroll the last one was left at
+  editor.fit();
   onCanvas = canvas;
   showCanvasState();
   showNotes(deck.current);
   renderer.repaintAll();
-  editor.requestScene();
+  // (the new slide shows whole on the next frame, not filling in a few squares at a time)
+  editor.requestWholeScene();
   editor.clearSelection();
   animUi?.slideChanged();
   slideCmts?.slideChanged();
@@ -11399,8 +11401,17 @@ applySplitWidth();
 // ---------------------------------------------------------------- Slides: the slide list's width and the speaker notes (drag their edges)
 
 const slidePanes = { width: 160, notes: true, notesH: 32 };
-/** The slide list's pictures fill its width, less the slide numbers and the scroll bar. */
-const thumbFor = (w: number) => Math.max(60, w - 36);
+/** The width of this system's scroll bar (0 where scroll bars float over the content, as on a Mac). */
+const SCROLLBAR_W = (() => {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;overflow:scroll;width:100px;height:100px';
+  document.body.append(probe);
+  const w = probe.offsetWidth - probe.clientWidth;
+  probe.remove();
+  return w;
+})();
+/** A slide picture's width in a slide list `w` wide: the list's padding and slide numbers, and room for its scroll bar (kept whether or not it shows), so the pictures never run under it. */
+const thumbFor = (w: number) => Math.max(60, w - 36 - SCROLLBAR_W);
 
 function applySlidePanes(): void {
   workEl.style.setProperty('--slide-pane-w', `${slidePanes.width}px`);

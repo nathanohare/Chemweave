@@ -559,6 +559,8 @@ export class Editor {
     return !!k && (k.kind === 'atom' ? this.doc.atoms.has(k.id) : k.kind === 'bond' && this.doc.bonds.has(k.id));
   }
   private needScene = true;
+  /** The next scene is painted whole in one frame (a slide just shown), not tile by tile over several. */
+  private wholeScene = false;
   private needOverlay = true;
   private frameQueued = false;
   private inputTs = 0;
@@ -737,6 +739,18 @@ export class Editor {
     this.queue(ts);
   }
 
+  /**
+   * Paint everything at once on the next frame: after another slide is shown, its tiles are all
+   * new, and painting them a few per frame shows the slide in pieces (a flicker of empty squares
+   * as they fill in). One longer frame shows it whole.
+   */
+  requestWholeScene(ts = performance.now()): void {
+    this.wholeScene = true;
+    this.needScene = true;
+    this.needOverlay = true;
+    this.queue(ts);
+  }
+
   requestOverlay(ts = performance.now()): void {
     this.needOverlay = true;
     this.queue(ts);
@@ -758,7 +772,8 @@ export class Editor {
     const t0 = performance.now(), dragging = !!this.drag;
     if (this.needScene) {
       this.keepByWalls();
-      this.r.renderScene(this.doc, full ? Infinity : 10);
+      this.r.renderScene(this.doc, full || this.wholeScene ? Infinity : 10);
+      this.wholeScene = false;
       this.needScene = this.r.incomplete;
     }
     if (this.needOverlay) {
