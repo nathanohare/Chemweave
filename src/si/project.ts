@@ -22,6 +22,10 @@ import { newId, safeFilename, slugify } from './ids';
 import { parseMarkup } from './markup';
 import { DEFAULT_NMR_NUCLEI, DEFAULT_SECTION_FIELDS, emptyValue, fieldDef, isFilled, partText, type FieldDef, type FieldEntry } from './fields';
 import { checkIds, type IdReport } from './compound-ids';
+import { NEW_PROJECT_PER_PAGE, defaultsJson, sectionDefaults, type SpectrumLayout } from './spectra';
+
+/** The Spectra section's name (SI Assistant's spectra.DEFAULT_NAME). */
+const SPECTRA_NAME = 'Spectra';
 
 /** The project.json format this reads and writes. A newer one opens read-only (it may hold what this would lose). */
 export const FORMAT_VERSION = 1;
@@ -213,6 +217,8 @@ export class SiProject {
     if (!title.trim()) throw new SiProjectError('Please give the project a name.');
     if (await folder.exists(PROJECT_FILE)) throw new SiProjectError(`There is an SI project in ${folder.where} already: open it instead.`);
     const settings = defaultSettings(title.trim());
+    // a new project prints two spectra on a page (as SI Assistant's): carried into the Spectra section when it is added
+    settings.spectra_per_page = NEW_PROJECT_PER_PAGE;
     const out: Json = { format_version: FORMAT_VERSION, saved_by_version: opts.programVersion ?? '', ...settings, section_tree: [] };
     copyFloats(settings, out);
     await folder.writeText(PROJECT_FILE, dumpPyJson(out));
@@ -750,6 +756,32 @@ export class SiProject {
     list.splice(index === undefined ? list.length : Math.max(0, Math.min(index, list.length)), 0, s);
     await this.saveSettings();
     return s;
+  }
+
+  /**
+   * The Spectra section (SI Assistant's ensure_spectra_section): every project has one, where the
+   * compounds' spectra print and their pages are set out. A project without one (made here, or
+   * before SI Assistant had it) gets it at the end of its tree when it is opened for editing, its
+   * settings started from the older ones in project.json ("spectra_per_page", "structure_corner",
+   * then taken out) and `extra` (Chemweave's own starting values). Null when the project is
+   * read-only or a section that couldn't be read may be it.
+   */
+  ensureSpectraSection(extra: Partial<SpectrumLayout> = {}): Promise<SiSection | null> {
+    return this.exclusive(async () => {
+      const have = this.sections.find((s) => s.type === 'spectra');
+      if (have || this.readOnly) return have ?? null;
+      if ([...this.skipped.values()].some((f) => f.split('/').length === 2 && f.startsWith(SECTIONS_DIR + '/'))) return null;
+      const id = newId('s');
+      const folder = join(SECTIONS_DIR, `${id}_${slugify(SPECTRA_NAME, SECTION_SLUG)}`);
+      const data: Json = { id, type: 'spectra', name: SPECTRA_NAME, defaults: defaultsJson({ ...sectionDefaults(null, this.settings), ...extra }) };
+      const s: SiSection = { id, type: 'spectra', name: SPECTRA_NAME, folder, data, items: [], children: [], parentId: null };
+      await this.saveSection(s);
+      this.top.push(s);
+      delete this.settings.spectra_per_page;
+      delete this.settings.structure_corner;
+      await this.saveSettings();
+      return s;
+    });
   }
 
   /** Rename a section (its folder keeps its first name: renaming folders upsets sync programs). */

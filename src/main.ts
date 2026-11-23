@@ -9104,6 +9104,9 @@ function loadSiMode(): Promise<SiMode> {
   return siModeLoading;
 }
 
+/** How a Spectra section Chemweave adds starts (beyond SI Assistant's defaults): the links from the peak reports to the spectra and back on. */
+const SPECTRA_START = { nmr_links: true, link_back: true } as const;
+
 /** File ▸ Open SI Project… (or File ▸ New ▸ SI Project…, `create`). */
 // ---------------------------------------------------------------- SI projects from the Canvas (layout C)
 
@@ -9277,6 +9280,8 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
     if (!project.readOnly) {
       const me = await invoke<{ user: string; host: string }>('who_am_i').catch(() => ({ user: '', host: '' }));
       await project.acquireLock(me.user || 'Chemweave', me.host);
+      // every project has a Spectra section, as SI Assistant adds it (a new project's links on)
+      await project.ensureSpectraSection(SPECTRA_START).catch((e: unknown) => flash(`The Spectra section could not be added, so the spectra print at the end of the SI as before (${e instanceof Error ? e.message : String(e)}).`, 8000));
       // (what an earlier session's Undo set aside, if it ended without closing the project)
       await journalOf(project.folder)?.clear().catch(() => {});
     }
@@ -9307,6 +9312,8 @@ async function openMemorySi(files: Record<string, string>): Promise<void> {
     else await folder.writeText(k, v);
   }
   const project = await SiProject.open(siJournal(folder));
+  await project.ensureSpectraSection(SPECTRA_START);
+  await journalOf(project.folder)?.clear().catch(() => {});
   await loadSiMode();
   ws.openSi(project);
 }

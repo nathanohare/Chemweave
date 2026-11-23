@@ -22,6 +22,11 @@ import { fxSrc, hasFx, traceShape } from '../render/picture-fx';
 import { drawParaBorders, drawParaShading } from './para-borders';
 import { hfKeyFor, numbersFor, zonesFor } from './hf-bodies';
 import { turnOf } from './arrange';
+import type { PdfHeading, PdfLink } from '../io/pdf';
+import type { TextRun } from '../model';
+import { linkKind, linkSpans } from '../links';
+import { bookmarkPara } from './bookmarks';
+import { tocEntries } from './toc';
 
 /** One piece of a header or footer line: its text, where it goes, and its font. */
 export interface HfPart { where: 'header' | 'footer'; align: 'left' | 'center' | 'right'; text: string; font: string; size: number; w: number }
@@ -201,8 +206,81 @@ export function drawNoteRules(ctx: CanvasRenderingContext2D, lay: DocLayout, pag
   for (const r of lay.noteRules) if (r.page === page) ctx.fillRect(r.x, r.y - 0.25, r.w, 0.5);
 }
 
-/** A page for a PDF: its size, and what is drawn on it with the page's top left corner at `origin`. */
-export interface PrintPage { w: number; h: number; items: Item[]; origin: { x: number; y: number } }
+/** A page for a PDF: its size, and what is drawn on it with the page's top left corner at `origin`; its links and the headings on it. */
+export interface PrintPage { w: number; h: number; items: Item[]; origin: { x: number; y: number }; links?: PdfLink[]; outline?: PdfHeading[] }
+
+/**
+ * Where a link in the document goes in its PDF: a place in it (a bookmark, a heading a contents
+ * line names) as its page and how far down it is, a web page or e-mail address as it is; null
+ * for a file on this computer (a PDF reader opening files is left out) or a place that's gone.
+ */
+export function pdfTarget(t: DocText, lay: DocLayout, link: string): Pick<PdfLink, 'uri' | 'to'> | null {
+  if (link.startsWith('#')) {
+    const para = bookmarkPara(t, link.slice(1));
+    const top = para >= 0 ? lay.paraTops[para] : undefined;
+    const page = top ? lay.pages[top.page] : undefined;
+    return top && page ? { to: { page: top.page, y: Math.max(0, top.y - page.top - 6) } } : null;
+  }
+  const kind = linkKind(link);
+  return kind === 'web' || kind === 'doi' || kind === 'mail' ? { uri: link } : null;
+}
+
+/**
+ * The links in laid-out text drawn at (ox, oy): one box for each stretch of a line with one link,
+ * from the text's own links (`runs`) and from shown text that links (a contents line).
+ */
+export function layoutLinks(lay: TextLayout, runs: TextRun[], ox: number, oy: number, from = 0, to = lay.lines.length): { x: number; y: number; w: number; h: number; link: string }[] {
+  const spans = linkSpans(runs);
+  const out: { x: number; y: number; w: number; h: number; link: string }[] = [];
+  const shown = lay.lines.slice(from, to).some((l) => l.pieces.some((g) => g.link));
+  if (!spans.length && !shown) return out;
+  const linkOf = (at: number): string | undefined => spans.find((sp) => sp.start <= at && sp.end > at)?.link;
+  for (let i = from; i < to; i++) {
+    const l = lay.lines[i];
+    if (!l) break;
+    let last: (typeof out)[number] | null = null;
+    for (const g of l.pieces) {
+      if (g.hidden || !g.w) continue;
+      const link = g.link ?? (g.decor || (g.obj !== undefined && g.shown === undefined) ? undefined : linkOf(g.start));
+      if (!link) { last = null; continue; }
+      const top = oy + l.y - l.ascent, h = l.ascent + l.descent;
+      if (last && last.link === link && Math.abs(last.x + last.w - (ox + g.x)) < 1) last.w = ox + g.x + g.w - last.x;
+      else { last = { x: ox + g.x, y: top, w: g.w, h, link }; out.push(last); }
+    }
+  }
+  return out;
+}
+
+/** A page's links for its PDF: in the body's text and in its text boxes. */
+function pageLinks(t: DocText, lay: DocLayout, p: PageBox): PdfLink[] {
+  const found = layoutLinks(lay.text, t.runs, 0, 0, p.first, p.end);
+  for (const o of lay.objects) {
+    const obj = t.objects[o.id];
+    if (o.page !== p.index || obj?.kind !== 'textbox') continue;
+    const bl = lay.boxes.get(o.id);
+    if (bl) found.push(...layoutLinks(bl, obj.runs, o.x + BOX_PAD.x, boxTextTop(obj, o, bl)));
+  }
+  const out: PdfLink[] = [];
+  for (const f of found) {
+    const go = pdfTarget(t, lay, f.link);
+    if (go) out.push({ x: f.x, y: f.y, w: f.w, h: f.h, ...go });
+  }
+  return out;
+}
+
+/** The headings (Heading 1 to 9) starting on each page, for the PDF's outline. */
+function headingsByPage(t: DocText, lay: DocLayout): Map<number, PdfHeading[]> {
+  const out = new Map<number, PdfHeading[]>();
+  for (const e of tocEntries(t, 9)) {
+    const top = lay.paraTops[e.para];
+    const page = top ? lay.pages[top.page] : undefined;
+    if (!top || !page) continue;
+    const list = out.get(top.page) ?? [];
+    list.push({ title: e.num ? `${e.num} ${e.text}` : e.text, level: e.level, y: Math.max(0, top.y - page.top - 6) });
+    out.set(top.page, list);
+  }
+  return out;
+}
 
 /**
  * Every page of a document as shapes and text. `drawing` records a structure or table (its
@@ -217,6 +295,7 @@ export function recordPages(t: DocText, lay: DocLayout, drawing: (c: Contents, s
     const kind = fontKind(family);
     return kind ? publishedAdvances(text, size, kind, bold, italic) : null;
   };
+  const heads = headingsByPage(t, lay);
   return lay.pages.map((p) => {
     const ctx = new VectorContext(width, advances);
     const c = ctx as unknown as CanvasRenderingContext2D;
@@ -288,7 +367,9 @@ export function recordPages(t: DocText, lay: DocLayout, drawing: (c: Contents, s
       if (!o) { drawLayout(c, lay.text, 0, 0, p.first, p.end); drawNoteRules(c, lay, p.index); drawParaBorders(c, lay.frames, p.index); continue; }
       drawObject(o);
     }
-    return { w: p.w, h: p.h, items: ctx.items, origin: { x: p.x, y: p.top } };
+    const links = pageLinks(t, lay, p);
+    const outline = heads.get(p.index);
+    return { w: p.w, h: p.h, items: ctx.items, origin: { x: p.x, y: p.top }, ...(links.length ? { links } : {}), ...(outline ? { outline } : {}) };
   });
 }
 

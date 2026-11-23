@@ -38,7 +38,7 @@ import { sectionsOf, type Section } from '../document/sections';
 import { bibliography, piecesText, type Reference } from '../document/references';
 import { preferredStyle } from '../document/cite-styles';
 import { bibInstr, newZoteroPrefs, splitPrefs, writeCite } from '../document/live-cites';
-import { TOC_INDENT, tocEntries, tofEntries } from '../document/toc';
+import { TOC_INDENT, tocEntries, tocMark, tofEntries } from '../document/toc';
 import { INDEX_INDENT, authorities, indexInstr, indexItems, taInstr, toaInstr, toaItems, xeInstr, type ListItem } from '../document/index-toa';
 import { ALG_SIDS, type Protection } from '../document/protect';
 import { parseFmt, parseRev } from '../document/revisions';
@@ -183,6 +183,8 @@ class DocxWriter {
   /** Form fields' names (each is a bookmark in Word, so each must differ). */
   private formNames = new Map<string, number>();
   private shown: Map<number, string>;
+  /** The headings and captions a contents or table of figures lists: each gets the hidden bookmark its line links to (tocMark). */
+  private tocTargets = new Set<number>();
   /** Bookmark names of the captions that references point to, by the caption's number field. */
   private bookmarks = new Map<number, string>();
   private model: DocxModel;
@@ -332,6 +334,10 @@ class DocxWriter {
     t.kept?.numbering?.nums.forEach((n, i) => { this.keptNumIds.set(n.id, String(i + 1)); this.keptAbsOf.set(String(i + 1), n.abs); });
     this.shown = fieldTexts(t, pages ? (p) => pages[p] ?? '' : undefined, pages ? Math.max(1, ...pages.map((x) => Number(x) || 0)) : undefined);
     this.charStyles = charStylesOf(t);
+    for (const o of Object.values(t.objects)) {
+      if (o.kind === 'toc') for (const e of tocEntries(t, o.levels)) this.tocTargets.add(e.para);
+      if (o.kind === 'tof') for (const e of tofEntries(t, o.name, this.shown)) this.tocTargets.add(e.para);
+    }
     let foot = 0, end = 0;
     for (const id of objectsInText(t.runs)) {
       const o = t.objects[id];
@@ -739,6 +745,8 @@ class DocxWriter {
 
   private async paragraph(main: string, ps: ParaStyle, runs: TextRun[], listNum: number, index = -1, sectXml = '', bodyOnly = false): Promise<string> {
     const t = this.t;
+    // a heading the contents lists: the bookmark its line links to, round it (as Word's _Toc ones)
+    if (index >= 0 && !bodyOnly && this.tocTargets.has(index) && !ps.marks?.includes(tocMark(index))) ps = { ...ps, marks: [...(ps.marks ?? []), tocMark(index)] };
     const st = styleOf(t, ps);
     const pPr: string[] = [];
     if (st.id !== 'Normal') pPr.push(`<w:pStyle w:val="${xml(st.id)}"/>`);
@@ -969,7 +977,8 @@ class DocxWriter {
       // (the look Word gave the entries, kept as their own formatting, as Word wrote them)
       const l = look?.[e.level - 1];
       const rPr = l ? `${l.font ? fontsXml(l.font) : ''}${l.bold !== undefined ? (l.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>') : ''}${l.italic !== undefined ? (l.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>') : ''}${l.size ? `<w:sz w:val="${Math.round(2 * l.size)}"/><w:szCs w:val="${Math.round(2 * l.size)}"/>` : ''}` : '';
-      return `<w:p>${pPr}${i === 0 ? begin : ''}${run(rPr, e.num ? `${e.num}\t${e.text}` : e.text)}${run(rPr, `\t${pages?.[e.para] ?? ''}`)}${i === entries.length - 1 ? end : ''}</w:p>`;
+      // (each line a link to its heading, as Word writes the contents with \h)
+      return `<w:p>${pPr}${i === 0 ? begin : ''}<w:hyperlink w:anchor="${tocMark(e.para)}" w:history="1">${run(rPr, e.num ? `${e.num}\t${e.text}` : e.text)}${run(rPr, `\t${pages?.[e.para] ?? ''}`)}</w:hyperlink>${i === entries.length - 1 ? end : ''}</w:p>`;
     });
     // no headings yet: the field with nothing in it, for Word to fill in
     if (!paras.length) paras.push(`<w:p>${begin}${end}</w:p>`);
@@ -993,7 +1002,7 @@ class DocxWriter {
     const line = ps.line && ps.line !== 1 ? ` w:line="${Math.round(240 * ps.line)}" w:lineRule="auto"` : '';
     const paras = entries.map((e, i) => {
       const pPr = `<w:pPr><w:pStyle w:val="TableofFigures"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="${twips(textW)}"/></w:tabs><w:spacing w:before="0" w:after="0"${line}/></w:pPr>`;
-      return `<w:p>${pPr}${i === 0 ? begin : ''}${run('', e.text)}${run('', `\t${pages?.[e.para] ?? ''}`)}${i === entries.length - 1 ? end : ''}</w:p>`;
+      return `<w:p>${pPr}${i === 0 ? begin : ''}<w:hyperlink w:anchor="${tocMark(e.para)}" w:history="1">${run('', e.text)}${run('', `\t${pages?.[e.para] ?? ''}`)}</w:hyperlink>${i === entries.length - 1 ? end : ''}</w:p>`;
     });
     if (!paras.length) paras.push(`<w:p>${begin}${end}</w:p>`);
     return paras.join('');

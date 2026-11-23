@@ -11,10 +11,22 @@ import { fieldKeys, valuesOf, type Json, type SiCompound, type SiSection } from 
 import { parseMarkup } from './markup';
 import { findSolvent } from './nmr';
 import { fieldDef } from './fields';
+import { markFloat } from './pyjson';
 
 export const PER_PAGE = [1, 2, 4] as const;
 export const CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
 export type Corner = (typeof CORNERS)[number];
+/**
+ * Where the structure box goes (SI Assistant's issue #1): over the spectrum in its corner (or
+ * where it was dragged), over it where it covers only blank paper (auto), or above or beside it,
+ * the spectrum made smaller to leave it room.
+ */
+export const PLACES = ['on', 'auto', 'above', 'beside'] as const;
+export type Place = (typeof PLACES)[number];
+/** A new project prints two spectra on a page (SI Assistant's NEW_PROJECT_PER_PAGE; DEFAULTS keeps one, so older projects print as they did). */
+export const NEW_PROJECT_PER_PAGE = 2;
+/** The settings that are decimals in SI Assistant's files (written 1.0, not 1, so its files stay as it writes them). */
+export const FLOAT_KEYS = ['auto_min_scale', 'struct_frame_width', 'id_size', 'struct_scale', 'spectrum_frame_width', 'caption_size', 'x', 'y'] as const;
 
 /** How spectra are set out. The defaults reproduce SI Assistant's: one per portrait page, the header line, the structure + ID on a white box top left. */
 export interface SpectrumLayout {
@@ -23,6 +35,10 @@ export interface SpectrumLayout {
   header_line: boolean;
   struct_box: boolean;
   corner: Corner;
+  struct_place: Place;
+  /** Auto placement: make the structure smaller to fit blank space, down to `auto_min_scale`. */
+  auto_shrink: boolean;
+  auto_min_scale: number;
   struct_frame: boolean;
   struct_frame_color: string;
   struct_frame_width: number;
@@ -55,7 +71,7 @@ export interface SpectrumLayout {
 
 export const DEFAULTS: SpectrumLayout = {
   per_page: 1, orientation: 'portrait', header_line: true, struct_box: true, corner: 'top-left',
-  struct_frame: false, struct_frame_color: '#000000', struct_frame_width: 0.5, struct_bg: '#ffffff',
+  struct_place: 'on', auto_shrink: false, auto_min_scale: 0.5, struct_frame: false, struct_frame_color: '#000000', struct_frame_width: 0.5, struct_bg: '#ffffff',
   id_size: 0, id_bold: true, struct_scale: 1, spectrum_frame: false, spectrum_frame_color: '#000000',
   spectrum_frame_width: 0.5, auto_crop: false, caption: false, caption_size: 9,
   nmr_links: false, link_style: 'plain', link_back: false, hrms_reports: false,
@@ -78,6 +94,8 @@ function cleanValue(key: string, value: unknown): unknown {
   if (key === 'per_page') return PER_PAGE.includes(Math.trunc(num) as 1) && Number.isInteger(num) ? num : undefined;
   if (key === 'orientation') return value === 'portrait' || value === 'landscape' ? value : undefined;
   if (key === 'corner') return CORNERS.includes(value as Corner) ? value : undefined;
+  if (key === 'struct_place') return PLACES.includes(value as Place) ? value : undefined;
+  if (key === 'auto_min_scale') return Number.isFinite(num) && typeof value !== 'boolean' ? clamp(num, 0.25, 4) : undefined;
   if (key === 'link_style') return value === 'plain' || value === 'blue' || value === 'blue_underline' ? value : undefined;
   if (typeof def === 'boolean') return typeof value === 'boolean' ? value : undefined;
   if (key.endsWith('_color') || key === 'struct_bg') return typeof value === 'string' && COLOUR.test(value) ? value.toLowerCase() : undefined;
@@ -109,6 +127,18 @@ export function sectionDefaults(section: SiSection | null, settings: Json = {}):
   const out = { ...DEFAULTS };
   if (!section) Object.assign(out, clean({ ...(settings.spectra_per_page !== undefined ? { per_page: settings.spectra_per_page } : {}), ...(settings.structure_corner !== undefined ? { corner: settings.structure_corner } : {}) }));
   else Object.assign(out, clean((section.data as Json).defaults));
+  return out;
+}
+
+/**
+ * The Spectra section's "defaults" as SI Assistant writes them: every setting, in its order, the
+ * decimals written as decimals (1.0), so a project saved by either program reads the same.
+ */
+export function defaultsJson(values: Partial<SpectrumLayout>): Json {
+  const all = { ...DEFAULTS, ...clean(values) } as unknown as Json;
+  const out: Json = {};
+  for (const k of Object.keys(DEFAULTS)) out[k] = all[k];
+  for (const k of FLOAT_KEYS) if (k in out) markFloat(out, k);
   return out;
 }
 

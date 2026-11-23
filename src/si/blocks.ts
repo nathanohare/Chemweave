@@ -37,6 +37,8 @@ export interface BlockOptions {
   /** Format chemistry in the text (the project's "format_text", on unless turned off). */
   helpers: boolean;
   leave?: Leave;
+  /** Where a peak report's "¹H NMR" links to: the compound's spectrum of that nucleus (`#` and its bookmark), or null. */
+  nmrLink?: (nucleus: string) => string | null;
 }
 
 const dict = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {});
@@ -62,6 +64,22 @@ function boldPrefix(runs: Run[], n: number): Run[] {
     if (left <= 0) out.push(r);
     else if (r.text.length <= left) { out.push(but(r, { bold: true })); left -= r.text.length; }
     else { out.push(but(r, { text: r.text.slice(0, left), bold: true }), but(r, { text: r.text.slice(left) })); left = 0; }
+  }
+  return out;
+}
+
+/** Characters `from` up to `to` linked to `link`. */
+function linkSpan(runs: Run[], from: number, to: number, link: string): Run[] {
+  const out: Run[] = [];
+  let at = 0;
+  for (const r of runs) {
+    const s0 = at, s1 = at + r.text.length;
+    at = s1;
+    const a = Math.max(from, s0), b = Math.min(to, s1);
+    if (b <= a) { out.push(r); continue; }
+    if (a > s0) out.push(but(r, { text: r.text.slice(0, a - s0) }));
+    out.push(but(r, { text: r.text.slice(a - s0, b - s0), link }));
+    if (b < s1) out.push(but(r, { text: r.text.slice(b - s0) }));
   }
   return out;
 }
@@ -93,9 +111,12 @@ export function nmrSentence(report: Json, o: BlockOptions): Run[] {
   const t = plain(runs);
   const m = NMR_HEADER.exec(t);
   const label = partText(report.label).trim();
+  const link = o.nmrLink?.(partText(report.nucleus) || '1H') ?? null;
   if (m) {
     const end = m[0].length;
     runs = boldPrefix(runs, end);
+    // (the "¹H NMR" goes to the spectrum; the white space before it doesn't)
+    if (link) runs = linkSpan(runs, /^\s*/.exec(t)![0].length, end, link);
     if (label) {
       const par = /^\s*\(([^)]*)\)/.exec(t.slice(end));
       runs = par ? insertAt(runs, end + par[0].length - 1, `, ${label}`) : insertAt(runs, end, ` (${label})`);
@@ -103,7 +124,7 @@ export function nmrSentence(report: Json, o: BlockOptions): Run[] {
   } else {
     const n = partText(report.nucleus) || '1H';
     const digits = /^\d*/.exec(n)![0];
-    const header = [...(digits ? [R(digits, { bold: true, valign: 'super' })] : []), R(n.slice(digits.length) + ' NMR', { bold: true })];
+    const header = [...(digits ? [R(digits, { bold: true, valign: 'super', link: link ?? undefined })] : []), R(n.slice(digits.length) + ' NMR', { bold: true, link: link ?? undefined })];
     runs = [...header, ...(label ? [R(` (${label})`)] : []), R(' '), ...runs];
   }
   return endSentence(runs);
