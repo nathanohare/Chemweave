@@ -98,4 +98,25 @@ describe('the looks are saved with the drawing', () => {
     expect(p?.noteRich).toEqual([{ text: 'hexanes', bold: true }]);
     expect([...back.shapes.values()].find((s) => s.diagram)?.diagram?.rich).toEqual({ 2: [{ text: 'Heat', bold: true }] });
   });
+
+  // review R03: and through a .pptx (the plate's own tag; the diagram's data through cleanDiagram)
+  it('keeps a plate\'s and a diagram\'s rich names through a .pptx', async () => {
+    const { writePptx } = await import('../src/io/pptx-write');
+    const { readPptx } = await import('../src/io/pptx-read');
+    const { Deck } = await import('../src/deck/deck');
+    const doc = new Doc();
+    const plate: PlateData = { ...newPlate('tlc', 14.4), lanes: [{ label: 'SM', marks: '0.5', labelRich: [{ text: 'SM', italic: true }] }], note: 'hexanes', noteRich: [{ text: 'hexanes', bold: true }] };
+    const diagram: DiagramData = { ...newDiagram('process', 'Mix\nHeat'), rich: { 2: [{ text: 'Heat', bold: true }] } };
+    doc.edit('Add', () => { putPlate(doc, POINTS, plate, { x: 0, y: 0 }); putDiagram(doc, POINTS, diagram, { x: 0, y: 300 }); });
+    const deck = Deck.blank(new Doc());
+    // (a 1 × 1 PNG for the plate's picture)
+    const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+    const bytes = await writePptx({ slides: [{ layout: 'blank', doc, notes: '' }], size: deck.size, master: deck.master }, { async picture() { return { bytes: png, mime: 'image/png' } as never; }, async svgToPng() { return png; } });
+    const shapes = readPptx(bytes).slides[0].contents.shapes;
+    const p = shapes.find((s) => s.plate)?.plate;
+    expect(p?.lanes[0].labelRich).toEqual([{ text: 'SM', italic: true }]);
+    expect(p?.noteRich).toEqual([{ text: 'hexanes', bold: true }]);
+    expect(shapes.find((s) => s.diagram)?.diagram?.rich).toEqual({ 2: [{ text: 'Heat', bold: true }] });
+  });
 });
+

@@ -1408,7 +1408,27 @@ export function cleanDiagram(v: unknown): DiagramData | null {
     ...(typeof o.size === 'number' && isFinite(o.size) && o.size > 0 ? { size: o.size } : {}),
     w: num(o.w, 400), h: num(o.h, 300),
     ...readSpaces(o.figs),
+    ...readRich(o.rich),
   };
+}
+
+/** The looks typed in the Diagram window, read from a file: numbered lines of pieces with text and on/off looks only. */
+function readRich(v: unknown): Pick<DiagramData, 'rich'> {
+  if (typeof v !== 'object' || v === null) return {};
+  const kept: NonNullable<DiagramData['rich']> = {};
+  for (const [line, parts] of Object.entries(v as Record<string, unknown>)) {
+    if (!/^\d+$/.test(line) || !Array.isArray(parts) || !parts.length) continue;
+    const ok: LabelPart[] = [];
+    for (const p of parts as unknown[]) {
+      if (!p || typeof p !== 'object' || typeof (p as LabelPart).text !== 'string') { ok.length = 0; break; }
+      const q = p as Record<string, unknown>;
+      const part: LabelPart = { text: q.text as string };
+      for (const k of ['sub', 'sup', 'bold', 'italic', 'underline'] as const) if (typeof q[k] === 'boolean') part[k] = q[k] as boolean;
+      ok.push(part);
+    }
+    if (ok.length) kept[line] = ok;
+  }
+  return Object.keys(kept).length ? { rich: kept } : {};
 }
 
 /** Structure spaces read from a file: numbered items with sensible sizes only. */
