@@ -17,6 +17,7 @@ import { ChemError, type MolFacts } from './chem';
 import { nameRuns } from './chem-names';
 import { R, but, chargeRuns, formatChemistry, formatNmr, formulaRuns, plain, type Leave } from './format';
 import { DEFAULT_GP_SENTENCE, autoValues, fillSentence, purificationSentence, usesPurification } from './procedures';
+import { compoundSrc, tag } from './source-map';
 
 export const SI_TEXT_KEY = 'si_text';
 const SKIP = new Set(['structure', 'name', 'notes', 'private_files', 'spectra', 'files', 'scale', SI_TEXT_KEY]);
@@ -103,9 +104,9 @@ function insertAt(runs: Run[], index: number, t: string): Run[] {
 const NMR_HEADER = /^\s*\d{1,3}\s*[A-Z][a-z]?(?:\s*\{\s*\d{1,3}\s*[A-Z][a-z]?\s*\})?\s*NMR/;
 
 /** One peak report as a sentence, starting with its bold "¹H NMR". */
-export function nmrSentence(report: Json, o: BlockOptions): Run[] {
+export function nmrSentence(report: Json, o: BlockOptions, src?: { text: string; field: string }): Run[] {
   const paras = parseMarkup(partText(report.text));
-  let runs = paras.flatMap((p) => [...p.runs, R(' ')]).slice(0, -1);
+  let runs = paras.flatMap((p) => [...(src ? tag(p.runs, src.text) : p.runs), R(' ')]).slice(0, -1);
   if (!plain(runs).trim()) return [];
   if (o.helpers) runs = formatNmr(runs, o.leave);
   const t = plain(runs);
@@ -127,7 +128,7 @@ export function nmrSentence(report: Json, o: BlockOptions): Run[] {
     const header = [...(digits ? [R(digits, { bold: true, valign: 'super', link: link ?? undefined })] : []), R(n.slice(digits.length) + ' NMR', { bold: true, link: link ?? undefined })];
     runs = [...header, ...(label ? [R(` (${label})`)] : []), R(' '), ...runs];
   }
-  return endSentence(runs);
+  return src ? tag(endSentence(runs), src.field) : endSentence(runs);
 }
 
 /** "HRMS (ESI) m/z: [M+Na]⁺ calcd for C₈H₁₀NaO 145.0624; found 145.0625." */
@@ -139,7 +140,8 @@ export function hrmsSentence(p: SiProject, c: SiCompound, facts: MolFacts | null
   const adduct = partText(value.adduct).trim() || '[M+H]+';
   // (the label printed may differ from the adduct, e.g. [M−Br]⁺ for a salt: SI Assistant SPEC §13f.3)
   const label = printedIonLabel(p.settings, facts, value);
-  let runs = [R('HRMS', { bold: true }), ...(ion ? [R(` (${ion})`)] : []), R(' '), R('m/z', { italic: true }), R(': '), ...chargeRuns(label)];
+  const at = (part: string): string => compoundSrc(c.id, 'hrms', part);
+  let runs = [R('HRMS', { bold: true }), ...(ion ? [R(' ('), R(ion, { src: at('ionization') }), R(')')] : []), R(' '), R('m/z', { italic: true }), R(': '), ...chargeRuns(label)];
   let result = null;
   try {
     const sp = hrmsSpecies(facts, value);
@@ -150,10 +152,10 @@ export function hrmsSentence(p: SiProject, c: SiCompound, facts: MolFacts | null
   if (result) {
     const peak = result.matched && !outOfTolerance(result) ? result.matched : monoisotopic(result);
     runs = [...runs, R(' calcd for '), ...formulaRuns(peak.formula), R(` ${peak.mz.toFixed(4)}`)];
-    if (found !== null) runs.push(R(`; found ${found.toFixed(4)}`));
-  } else if (found !== null) runs.push(R(` found ${found.toFixed(4)}`));
+    if (found !== null) runs.push(R('; found '), R(found.toFixed(4), { src: at('found') }));
+  } else if (found !== null) runs.push(R(' found '), R(found.toFixed(4), { src: at('found') }));
   else return [];
-  return endSentence(runs);
+  return tag(endSentence(runs), compoundSrc(c.id, 'hrms'));
 }
 
 // (one digit at a time inside the repeat: "\d+" there let a long run of digits split many ways, which is slow on a bad piece)
@@ -174,18 +176,25 @@ export function typedFormulaRuns(t: string): Run[] {
 }
 
 /** "99% ee. HPLC (Chiralpak ID, …): tR (major) = 12.3 min, tR (minor) = 14.8 min." */
-export function eeSentence(v: Record<string, string>, fmt: (runs: Run[]) => Run[] = (r) => r): Run[] {
+export function eeSentence(v: Record<string, string>, fmt: (runs: Run[]) => Run[] = (r) => r, srcOf: (part: string) => string | undefined = () => undefined): Run[] {
   const value = eeWithUnit(v.value ?? '');
   if (!value) return [];
-  const conditions = [v.column ?? '', v.eluent ?? '', v.flow ? `${v.flow} mL/min` : '', v.wavelength ? `${v.wavelength} nm` : ''].filter(Boolean).join(', ');
+  // (each typed value its own run, so the Live Preview knows which part it is)
+  const V = (part: string, text = v[part] ?? ''): Run => R(text, { src: srcOf(part) });
+  const valueRun = value.startsWith(v.value ?? '') && v.value ? [V('value'), R(value.slice((v.value ?? '').length))] : [R(value)];
+  const conditions: Run[][] = [];
+  if (v.column) conditions.push([V('column')]);
+  if (v.eluent) conditions.push([V('eluent')]);
+  if (v.flow) conditions.push([V('flow'), R(' mL/min')]);
+  if (v.wavelength) conditions.push([V('wavelength'), R(' nm')]);
   const times: Run[][] = [];
   for (const [which, k] of [['major', 't_major'], ['minor', 't_minor']]) {
-    if (v[k]) times.push([R('t', { italic: true }), R('R', { valign: 'sub' }), R(` (${which}) = ${v[k]} min`)]);
+    if (v[k]) times.push([R('t', { italic: true }), R('R', { valign: 'sub' }), R(` (${which}) = `), V(k), R(' min')]);
   }
   const method = v.method ?? '';
-  if (!conditions && !times.length) return endSentence([R(value + (method ? ` (${method})` : ''))]);
-  let runs = [...endSentence([R(value)]), R(' ' + (method || 'HPLC'))];
-  if (conditions) runs = [...runs, R(' ('), ...fmt([R(conditions)]), R(')')];
+  if (!conditions.length && !times.length) return endSentence([...valueRun, ...(method ? [R(' ('), V('method'), R(')')] : [])]);
+  let runs = [...endSentence(valueRun), R(' '), method ? V('method') : R('HPLC')];
+  if (conditions.length) runs = [...runs, R(' ('), ...fmt(conditions.flatMap((x, i) => (i ? [R(', '), ...x] : x))), R(')')];
   if (times.length) {
     runs.push(R(': '));
     times.forEach((t, i) => { if (i) runs.push(R(', ')); runs.push(...t); });
@@ -199,13 +208,17 @@ export function stateAndYield(c: SiCompound): Run[] {
   const state = keys.includes('physical_state') ? partText(valueOf(c, 'physical_state').text).trim() : '';
   const y = keys.includes('yield') ? valueOf(c, 'yield') : {};
   const [mass, unit, pct, note] = ['mass', 'mass_unit', 'percent', 'note'].map((k) => partText(y[k]).trim());
-  let amounts = [mass ? `${mass} ${unit}`.trim() : '', pct ? `${pct}%` : ''].filter(Boolean).join(', ');
-  if (note) amounts = pct ? `${amounts} ${note}` : [amounts, note].filter(Boolean).join(', ');
-  let t: string;
-  if (state) t = state[0].toUpperCase() + state.slice(1) + (amounts ? ` (${amounts})` : '');
-  else if (amounts) t = `Yield: ${amounts}`;
+  // (each typed value its own run, so the Live Preview knows which part it is)
+  const Y = (part: string, text: string): Run => R(text, { src: compoundSrc(c.id, 'yield', part) });
+  const join = (parts: Run[][], sep: string): Run[] => parts.filter((x) => x.length).flatMap((x, i) => (i ? [R(sep), ...x] : x));
+  const massRuns = mass ? (unit ? [Y('mass', mass), R(' '), Y('mass_unit', unit)] : [Y('mass', mass)]) : [];
+  let amounts = join([massRuns, pct ? [Y('percent', pct), R('%')] : []], ', ');
+  if (note) amounts = pct ? [...amounts, R(' '), Y('note', note)] : join([amounts, [Y('note', note)]], ', ');
+  let runs: Run[];
+  if (state) runs = [R(state[0].toUpperCase() + state.slice(1), { src: compoundSrc(c.id, 'physical_state', 'text') }), ...(amounts.length ? [R(' ('), ...amounts, R(')')] : [])];
+  else if (amounts.length) runs = [R('Yield: '), ...amounts];
   else return [];
-  return endSentence([R(t)]);
+  return endSentence(runs);
 }
 
 /** The chosen general procedure's compound sentence, filled in. */
@@ -213,7 +226,7 @@ export function gpSentence(p: SiProject, c: SiCompound, problems?: string[]): Ru
   const gp = p.compoundGp(c);
   if (!gp) return [];
   const choice = valueOf(c, 'procedure');
-  const runs = fillSentence(partText(gp.sentence) || DEFAULT_GP_SENTENCE, dict(choice.values), autoValues(c, gp), problems);
+  const runs = fillSentence(partText(gp.sentence) || DEFAULT_GP_SENTENCE, dict(choice.values), autoValues(c, gp), problems, (k) => compoundSrc(c.id, 'procedure', `values.${k}`));
   return runs.length ? endSentence(runs) : [];
 }
 
@@ -223,7 +236,7 @@ export function citationSentence(c: SiCompound, key = 'references'): Run[] {
   const ids = Array.isArray(value.refs) ? value.refs.filter((i): i is string => typeof i === 'string' && !!i) : [];
   const t = partText(value.text).trim();
   if (!ids.length && !t) return [];
-  let runs = t ? parseMarkup(t).flatMap((x) => x.runs) : [];
+  let runs = t ? tag(parseMarkup(t).flatMap((x) => x.runs), compoundSrc(c.id, key, 'text')) : [];
   if (runs.length) runs = endSentence(runs);
   if (ids.length) runs.push(R('', { ref: CITE + ids.join(',') }));
   return runs;
@@ -232,35 +245,39 @@ export function citationSentence(c: SiCompound, key = 'references'): Run[] {
 function partsSentence(c: SiCompound, def: FieldDef, o: BlockOptions): Run[] {
   const v: Record<string, string> = Object.fromEntries(Object.entries(valueOf(c, def.key)).map(([k, x]) => [k, partText(x).trim()]));
   const fmt = (runs: Run[]): Run[] => (o.helpers ? formatChemistry(runs, o.leave) : runs);
+  // (each typed value its own run, so the Live Preview knows which part it is: source-map.ts)
+  const srcOf = (part: string): string => compoundSrc(c.id, def.key, part);
+  const V = (part: string, text = v[part] ?? '', look: Parameters<typeof R>[1] = {}): Run => R(text, { ...look, src: srcOf(part) });
+  const joined = (parts: string[], sep: string): Run[] => parts.filter((k) => v[k]).flatMap((k, i) => (i ? [R(sep), V(k)] : [V(k)]));
   switch (def.key) {
     case 'rf': {
       if (!v.value) return [];
-      const extra = [v.eluent ?? '', v.visualization ?? ''].filter(Boolean).join('; ');
-      return endSentence([R('R', { italic: true }), R('f', { italic: true, valign: 'sub' }), R(` = ${v.value}`), ...fmt(extra ? [R(` (${extra})`)] : [])]);
+      const extra = joined(['eluent', 'visualization'], '; ');
+      return endSentence([R('R', { italic: true }), R('f', { italic: true, valign: 'sub' }), R(' = '), V('value'), ...fmt(extra.length ? [R(' ('), ...extra, R(')')] : [])]);
     }
     case 'mp': {
       if (!v.value) return [];
-      return endSentence([R('mp'), R(` ${dashRanges(v.value)} °C`), ...fmt(v.solvent ? [R(` (${v.solvent})`)] : [])]);
+      return endSentence([R('mp'), R(' '), V('value', dashRanges(v.value)), R(' °C'), ...fmt(v.solvent ? [R(' ('), V('solvent'), R(')')] : [])]);
     }
     case 'ir': {
       if (!v.bands) return [];
-      return endSentence([R('IR', { bold: true }), R((v.method ? ` (${v.method})` : '') + ' '), R('ν', { italic: true }), R('max', { valign: 'sub' }), R(` ${v.bands} cm`), R('−1', { valign: 'super' })]);
+      return endSentence([R('IR', { bold: true }), ...(v.method ? [R(' ('), V('method'), R(')')] : []), R(' '), R('ν', { italic: true }), R('max', { valign: 'sub' }), R(' '), V('bands'), R(' cm'), R('−1', { valign: 'super' })]);
     }
     case 'rotation': {
       if (!v.value) return [];
       let runs = [R('[α]'), R('D', { valign: 'sub' })];
-      if (v.temperature) runs.push(R(v.temperature, { valign: 'super' }));
-      runs.push(R(` ${v.value}`));
-      let inside = v.c ? [R('c', { italic: true }), R(` ${v.c}`)] : [];
-      if (v.solvent) inside = [...inside, ...(inside.length ? [R(', ')] : []), ...fmt([R(v.solvent)])];
+      if (v.temperature) runs.push(V('temperature', v.temperature, { valign: 'super' }));
+      runs.push(R(' '), V('value'));
+      let inside = v.c ? [R('c', { italic: true }), R(' '), V('c')] : [];
+      if (v.solvent) inside = [...inside, ...(inside.length ? [R(', ')] : []), ...fmt([V('solvent')])];
       if (inside.length) runs = [...runs, R(' ('), ...inside, R(')')];
       return endSentence(runs);
     }
-    case 'ee': return eeSentence(v, fmt);
+    case 'ee': return eeSentence(v, fmt, srcOf);
     case 'dr': {
       if (!v.value) return [];
-      let runs = [R(`d.r. = ${v.value}`)];
-      if (v.method) runs = [...runs, R(' (determined by '), ...(o.helpers ? formatNmr([R(v.method)], o.leave) : [R(v.method)]), R(')')];
+      let runs = [R('d.r. = '), V('value')];
+      if (v.method) runs = [...runs, R(' (determined by '), ...(o.helpers ? formatNmr([V('method')], o.leave) : [V('method')]), R(')')];
       return endSentence(runs);
     }
     case 'ea': {
@@ -268,18 +285,18 @@ function partsSentence(c: SiCompound, def: FieldDef, o: BlockOptions): Run[] {
       const runs = [R('Anal.')];
       if (v.calcd) {
         runs.push(R(' Calcd'));
-        if (v.formula) runs.push(R(' for '), ...typedFormulaRuns(v.formula));
+        if (v.formula) runs.push(R(' for '), ...tag(typedFormulaRuns(v.formula), srcOf('formula')));
         else if (o.facts?.info) runs.push(R(' for '), ...formulaRuns(o.facts.info.formula));
-        runs.push(R(`: ${v.calcd}` + (v.found ? '.' : '')));
+        runs.push(R(': '), V('calcd'), ...(v.found ? [R('.')] : []));
       }
-      if (v.found) runs.push(R(` Found: ${v.found}`));
+      if (v.found) runs.push(R(' Found: '), V('found'));
       return endSentence(runs);
     }
-    case 'xray': return v.ccdc ? endSentence([R(`CCDC ${v.ccdc}`)]) : [];
+    case 'xray': return v.ccdc ? endSentence([R('CCDC '), V('ccdc')]) : [];
   }
   if (def.custom) {
-    const t = [v.text ?? '', v.value ?? '', v.unit ?? ''].filter(Boolean).join(' ');
-    return t ? endSentence([R(`${def.label}: `), ...fmt([R(t)])]) : [];
+    const parts = joined(['text', 'value', 'unit'], ' ');
+    return parts.length ? endSentence([R(`${def.label}: `), ...fmt(parts)]) : [];
   }
   return [];
 }
@@ -287,8 +304,9 @@ function partsSentence(c: SiCompound, def: FieldDef, o: BlockOptions): Run[] {
 /** The title: "Name (2a)." in bold, or "Compound 2a." */
 export function compoundTitle(c: SiCompound, displayId: string): Run[] {
   const name = compoundName(c);
+  const own = compoundSrc(c.id, 'name');
   // the name with its conventional italics (N-, tert-, (E)-…, or as typed with *…*)
-  return name ? [...nameRuns(name, { bold: true }), R(` (${displayId}).`, { bold: true })] : [R(`Compound ${displayId}.`, { bold: true })];
+  return name ? [...tag(nameRuns(name, { bold: true }), compoundSrc(c.id, 'name', 'text')), R(` (${displayId}).`, { bold: true, src: own })] : [R(`Compound ${displayId}.`, { bold: true, src: own })];
 }
 
 /** The text the program writes for this compound: the procedure, then the data. */
@@ -298,6 +316,8 @@ export function generatedParagraphs(p: SiProject, c: SiCompound, o: BlockOptions
   let didState = false;
   const keys = fieldKeys(c);
   const chemistry = (runs: Run[]): Run[] => (o.helpers ? formatChemistry(runs, o.leave) : runs);
+  // (every run marked with the field it is from: source-map.ts)
+  const own = (key: string, runs: Run[]): Run[] => tag(runs, compoundSrc(c.id, key));
   // the Purification field's sentence ends the procedure, unless the GP's sentence places it
   let purification = purificationSentence(c);
   if (purification && usesPurification(p.compoundGp(c))) purification = '';
@@ -305,36 +325,42 @@ export function generatedParagraphs(p: SiProject, c: SiCompound, o: BlockOptions
   for (const def of fieldDefs(c)) {
     if (SKIP.has(def.key)) continue;
     if (def.key === 'purification') {
-      if (purification && !withProcedure) paragraphs.push({ runs: chemistry([R(purification)]) });
+      if (purification && !withProcedure) paragraphs.push({ runs: own('purification', chemistry([R(purification)])) });
       continue;
     }
     if (def.kind === 'richtext') {
-      const own = parseMarkup(p.compoundText(c, def.key)).filter((x) => x.runs.length);
+      const typed = parseMarkup(p.compoundText(c, def.key)).filter((x) => x.runs.length).map((x) => ({ ...x, runs: tag(x.runs, compoundSrc(c.id, def.key, '@text')) }));
       if (def.key === 'procedure') {
-        const sentence = gpSentence(p, c);
+        const sentence = own('procedure', gpSentence(p, c));
         if (sentence.length) {
-          const first = own.length ? own.shift()!.runs : [];
-          own.unshift({ runs: [...sentence, ...(first.length ? [R(' '), ...first] : [])] });
+          const first = typed.length ? typed.shift()!.runs : [];
+          typed.unshift({ runs: [...sentence, ...(first.length ? [R(' '), ...first] : [])] });
         }
         if (purification) {
-          const last = own.length ? own.pop()!.runs : [];
-          own.push({ runs: [...(last.length ? [...last, R(' ')] : []), R(purification)] });
+          const last = typed.length ? typed.pop()!.runs : [];
+          typed.push({ runs: [...(last.length ? [...last, R(' ')] : []), R(purification, { src: compoundSrc(c.id, 'purification') })] });
         }
       }
-      for (const x of own) paragraphs.push({ runs: chemistry(x.runs) });
+      for (const x of typed) paragraphs.push({ runs: chemistry(x.runs) });
       continue;
     }
-    if (def.kind === 'citations') { data = [...data, ...withSpace(citationSentence(c, def.key))]; continue; }
+    if (def.kind === 'citations') { data = [...data, ...withSpace(own(def.key, citationSentence(c, def.key)))]; continue; }
     if (def.key === 'physical_state' || def.key === 'yield') {
-      if (!didState) { data = [...data, ...withSpace(stateAndYield(c))]; didState = true; }
+      if (!didState) { data = [...data, ...withSpace(own('yield', stateAndYield(c)))]; didState = true; }
       continue;
     }
     if (def.kind === 'nmr') {
-      for (const report of itemsOf(c, 'nmr')) data = [...data, ...withSpace(nmrSentence(report, o))];
+      // (a report's place in the stored list is its path)
+      const all = valuesOf(c).nmr;
+      for (const report of itemsOf(c, 'nmr')) {
+        const i = Array.isArray(all) ? all.indexOf(report) : -1;
+        const field = compoundSrc(c.id, 'nmr');
+        data = [...data, ...withSpace(nmrSentence(report, o, { text: i >= 0 ? compoundSrc(c.id, 'nmr', `#${i}.text`) : field, field }))];
+      }
       continue;
     }
     if (def.key === 'hrms') { data = [...data, ...withSpace(hrmsSentence(p, c, o.facts))]; continue; }
-    if (def.kind === 'parts') data = [...data, ...withSpace(partsSentence(c, def, o))];
+    if (def.kind === 'parts') data = [...data, ...withSpace(own(def.key, partsSentence(c, def, o)))];
   }
   if (data.length) paragraphs.push({ runs: data[data.length - 1].text === ' ' ? data.slice(0, -1) : data });
   return paragraphs;
@@ -356,7 +382,7 @@ export function compoundBlock(p: SiProject, c: SiCompound, displayId: string, o:
   const title = compoundTitle(c, displayId);
   const custom = fieldKeys(c).includes(SI_TEXT_KEY) ? p.compoundText(c, SI_TEXT_KEY).trim() : '';
   const paragraphs = custom
-    ? parseMarkup(custom).filter((x) => x.runs.length).map((x) => ({ runs: x.runs, ...(x.heading ? { heading: x.heading } : {}) }))
+    ? parseMarkup(custom).filter((x) => x.runs.length).map((x) => ({ runs: tag(x.runs, compoundSrc(c.id, SI_TEXT_KEY, '@text')), ...(x.heading ? { heading: x.heading } : {}) }))
     : generatedParagraphs(p, c, o);
   return { title, paragraphs, figures: inlineFigures(c), customText: !!custom };
 }

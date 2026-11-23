@@ -42,6 +42,7 @@ import { headerFooter } from './page-setup';
 import { siDrawingStyle } from './drawing-style';
 import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
 import { coverGaps, tocLists, type TocLists } from './front-layout';
+import { TITLE_SRC, frontSrc, gpSrc, sectionSrc, tag, type SourceBlock, type SourceSpan } from './source-map';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -66,6 +67,10 @@ export interface PagePicture { src: string; w: number; h: number; px?: { w: numb
 
 export interface CompiledSi {
   doc: DocText;
+  /** Where each stretch of the document's text came from (source-map.ts), for the Live Preview. */
+  sources: SourceSpan[];
+  /** Where each page of the project's tree (the front pages, a section, a scheme page, a compound) is in the document. */
+  blocks: SourceBlock[];
   /** Things to know about the result (left out, missing, printed as "??"), in plain words. */
   notes: string[];
   /** What a manuscript can point at: each compound, table, figure and scheme, in the order printed. */
@@ -199,6 +204,8 @@ interface Owner { key: string; name: string; folder: string; figures: Json }
 
 class Compiler {
   readonly b = new DocBuilder();
+  readonly sources: SourceSpan[] = [];
+  readonly blocks: SourceBlock[] = [];
   readonly notes: string[] = [];
   readonly targets: SiTarget[] = [];
   private readonly styles: Record<string, NamedStyle>;
@@ -257,6 +264,8 @@ class Compiler {
   private spectraDone = false;
   /** Compiling one page for the live preview (PDFs show their first page). */
   private preview = false;
+  /** Compiling the whole SI for the live preview (every page of a PDF, as Compile prints it). */
+  private whole = false;
 
   /** Turn the pages that follow (a section break before the next paragraph), when they aren't already. */
   private orient(o: 'portrait' | 'landscape'): void {
@@ -404,7 +413,7 @@ class Compiler {
           text = '??';
           this.notes.push(`${where}: a mention points to a ${kind} that no longer exists (printed as “??”).`);
         }
-        out.push(R(text, { bold: kind === 'compound' || r.bold, italic: r.italic, underline: r.underline, valign: r.valign }));
+        out.push(R(text, { bold: kind === 'compound' || r.bold, italic: r.italic, underline: r.underline, valign: r.valign, src: r.src }));
       } else if (r.ref?.startsWith(CITE)) {
         const ids = citationsOf(r);
         const known = ids.filter((i) => this.knownRefs.has(i));
@@ -423,18 +432,39 @@ class Compiler {
   /** Runs written into the document in the paragraph's look. */
   private put(runs: Run[], look: RunStyle): void {
     for (const r of runs) {
-      const l: RunStyle = { ...look };
-      if (r.bold) l.bold = true;
-      if (r.italic) l.italic = true;
-      if (r.underline) l.underline = true;
-      if (r.valign === 'sub') l.sub = true;
-      if (r.valign === 'super') l.sup = true;
-      if (r.link) Object.assign(l, this.linkLook, { link: r.link });
-      if (r.ref?.startsWith(CITE)) {
-        this.b.object({ kind: 'cite', refs: citationsOf(r) }, { ...l, sup: this.citeSup || undefined, sub: undefined });
-        this.cited = true;
-      } else this.b.text(r.text, l);
+      const from = this.b.length;
+      this.putRun(r, look);
+      if (r.src && this.b.length > from) this.source(from, this.b.length, r.src);
     }
+  }
+
+  /** Text from `start` to `end` came from `src` (joined to the stretch before when that is the same source's and touches it). */
+  private source(start: number, end: number, src: string): void {
+    const last = this.sources[this.sources.length - 1];
+    if (last && last.src === src && last.end === start) last.end = end;
+    else this.sources.push({ start, end, src });
+  }
+
+  /** The text `f` puts in, as the page `node` of the project's tree. */
+  private async block<T>(node: string, f: () => Promise<T>): Promise<T> {
+    const start = this.b.length;
+    const out = await f();
+    if (this.b.length > start) this.blocks.push({ start, end: this.b.length, node });
+    return out;
+  }
+
+  private putRun(r: Run, look: RunStyle): void {
+    const l: RunStyle = { ...look };
+    if (r.bold) l.bold = true;
+    if (r.italic) l.italic = true;
+    if (r.underline) l.underline = true;
+    if (r.valign === 'sub') l.sub = true;
+    if (r.valign === 'super') l.sup = true;
+    if (r.link) Object.assign(l, this.linkLook, { link: r.link });
+    if (r.ref?.startsWith(CITE)) {
+      this.b.object({ kind: 'cite', refs: citationsOf(r) }, { ...l, sup: this.citeSup || undefined, sub: undefined });
+      this.cited = true;
+    } else this.b.text(r.text, l);
   }
 
   /** A paragraph: its runs (mentions resolved), in style `ps`, with `look` over the style's own. */
@@ -484,9 +514,10 @@ class Compiler {
   }
 
   /** A stored text: headings `offset` levels down (in the contents up to `listedLevels`), with its figures and tables. */
-  private async richText(text: string, where: string, owner: Owner | null, offset: number, listedLevels: number, keepAlign = true, numberHeadings = false): Promise<void> {
+  private async richText(text: string, where: string, owner: Owner | null, offset: number, listedLevels: number, keepAlign = true, numberHeadings = false, src = ''): Promise<void> {
     let index = 0;
-    for (const p of parseMarkup(text)) {
+    for (const p0 of parseMarkup(text)) {
+      const p = src ? { ...p0, runs: tag(p0.runs, src) } : p0;
       if (p.table || p.figure || p.image) {
         const label = owner ? this.labels.at(owner.key, index) : '';
         const key = p.table || p.figure || (owner ? `${owner.key}#${index}` : '');
@@ -553,7 +584,7 @@ class Compiler {
    * page only, and says so.
    */
   private async pdfPictures(bytes: Uint8Array, name: string, where: string, room: { w: number; h: number }, widthPt?: number, most?: number): Promise<Extract<DocObject, { kind: 'picture' }>[]> {
-    if (this.preview) most = 1;
+    if (this.preview && !this.whole) most = 1;
     const pages = this.host.pdfPages ? await this.host.pdfPages(bytes, most).catch(() => null) : null;
     if (!this.host.pdfPages) { this.notes.push(`${where}: ${name} is a PDF; PDFs are placed only in the desktop app and the web app (left out).`); return []; }
     if (!pages?.length) { this.notes.push(`${where}: ${unreadablePdf(name)}`); return []; }
@@ -637,7 +668,7 @@ class Compiler {
     // Cover page ▸ Spacing: the space above the heading and after each part, in points
     const gap = coverGaps(s);
     this.para([R(heading)], { align: 'center', spaceAfter: gap.heading, ...(gap.above ? { spaceBefore: gap.above } : {}) }, 'Cover page', { size: 16, bold: true });
-    this.para(this.chemistry([R(str(s.title))]), { align: 'center', spaceAfter: gap.title }, 'Cover page', { size: 14, bold: true });
+    this.para(this.chemistry([R(str(s.title), { src: TITLE_SRC })]), { align: 'center', spaceAfter: gap.title }, 'Cover page', { size: 14, bold: true });
     const authors = list(s.authors).map(dict);
     const names: Run[][] = authors.map((a) => {
       const marks = list(a.affiliations).map(String).join(',') + (a.corresponding ? '*' : '');
@@ -654,7 +685,7 @@ class Compiler {
     const emails = authors.filter((a) => a.corresponding && str(a.email)).map((a) => str(a.email));
     if (emails.length) this.para([R('*Email: ' + emails.join('; '))], { align: 'center', spaceAfter: gap.emails }, 'Cover page', { size: 10 });
     const extra = this.texts.get('cover') ?? '';
-    if (extra.trim()) await this.richText(extra, 'Cover page', null, 1, 0);
+    if (extra.trim()) await this.richText(extra, 'Cover page', null, 1, 0, true, false, frontSrc('cover'));
   }
 
   private toc(): void {
@@ -674,7 +705,7 @@ class Compiler {
     const info = dict(this.p.settings.general_information);
     const title = info.heading === undefined ? 'General Information' : str(info.heading).trim();
     if (title) this.para([R(this.numbered(1, true) + title)], { style: this.headingStyle(1, this.lists.general) }, 'General Information');
-    await this.richText(text, title || 'General Information', await this.owner('general'), 1, this.lists.headings ? 2 : 0, true, true);
+    await this.richText(text, title || 'General Information', await this.owner('general'), 1, this.lists.headings ? 2 : 0, true, true, frontSrc('general'));
     return true;
   }
 
@@ -709,6 +740,11 @@ class Compiler {
 
   private async section(s: SiSection, level: number): Promise<void> {
     if (this.excluded.has(s.id)) return;
+    if (s.type !== 'spectra') return this.block(`section:${s.id}`, () => this.sectionNow(s, level));
+    return this.sectionNow(s, level);
+  }
+
+  private async sectionNow(s: SiSection, level: number): Promise<void> {
     if (s.type === 'spectra') {
       if (this.excluded.has('spectra')) return;
       if (this.spectraDone) { this.notes.push(`“${s.name}”: a project has only one Spectra section; this one was left out.`); return; }
@@ -718,7 +754,7 @@ class Compiler {
     }
     if (s.type === 'text') {
       this.sectionHeading(level, s.name);
-      await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.lists.headings ? level + 1 : 0, true, true);
+      await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.lists.headings ? level + 1 : 0, true, true, sectionSrc(s.id));
     } else if (s.type === 'file') await this.fileSection(s, level);
     else if (s.type === 'xray') await this.xray(s, level, true); else if (s.type === 'data') await this.dataSection(s, level);
     for (const child of s.children) await this.section(child, level + 1);
@@ -742,12 +778,14 @@ class Compiler {
       this.para(this.chemistry([R(name + (title ? `: ${title}` : ''))]), { style: this.headingStyle(level + 1, this.lists.procedures) }, `${s.name} ▸ ${name}`);
       const text = await this.p.readGpText(s, str(gp.id));
       if (!text.trim()) this.notes.push(`“${name}” in “${s.name}” has no text yet.`);
-      await this.richText(text, `${s.name} ▸ ${name}`, null, level + 1, 0, false);
+      await this.richText(text, `${s.name} ▸ ${name}`, null, level + 1, 0, false, false, gpSrc(s.id, str(gp.id)));
     }
     for (const item of s.items) {
       if (item.kind === 'scheme') {
-        const drawn = await this.scheme(item, s);
-        for (const c of item.children) await this.compound(c, level + 1, drawn.has(c.id));
+        await this.block(`scheme:${item.id}`, async () => {
+          const drawn = await this.scheme(item, s);
+          for (const c of item.children) await this.compound(c, level + 1, drawn.has(c.id));
+        });
       } else await this.compound(item, level + 1);
     }
   }
@@ -757,6 +795,10 @@ class Compiler {
   private progressTotal = 0;
 
   private async compound(c: SiCompound, level: number, inScheme = false): Promise<void> {
+    return this.block(`compound:${c.id}`, () => this.compoundNow(c, level, inScheme));
+  }
+
+  private async compoundNow(c: SiCompound, level: number, inScheme: boolean): Promise<void> {
     const id = displayId(this.report, c.id);
     const name = compoundName(c);
     if (this.host.progress && !this.preview) await this.host.progress(++this.progressDone, this.progressTotal, `Compounds: ${Math.min(this.progressDone, this.progressTotal)} of ${this.progressTotal}`);
@@ -1230,7 +1272,13 @@ class Compiler {
   /** One page of the project alone (the live preview), without spectra or the references list; page numbers are placeholders. */
   private async buildOnly(only: SiPreviewTarget): Promise<void> {
     const p = this.p;
-    if (only.kind === 'front') {
+    if (only.kind === 'whole') {
+      // the whole SI but its Spectra section (the live preview shows that as a document of its own)
+      this.whole = true;
+      this.excluded.add('spectra');
+      this.spectraDone = true;
+      await this.buildAll();
+    } else if (only.kind === 'front') {
       if (this.included('cover')) await this.cover();
       if ((this.texts.get('general') ?? '').trim()) { if (this.included('cover')) this.b.pendingBreak = true; await this.general(); }
     } else if (only.kind === 'compound') {
@@ -1254,7 +1302,7 @@ class Compiler {
 
   /** The compounds the document (or the preview's page) prints. */
   private printedCompounds(only?: SiPreviewTarget): SiCompound[] {
-    if (!only) return this.includedCompounds(this.p.top);
+    if (!only || only.kind === 'whole') return this.includedCompounds(this.p.top);
     if (only.kind === 'compound') return this.p.compounds.filter((c) => c.id === only.id);
     if (only.kind === 'scheme') return this.p.schemes.find((k) => k.id === only.id)?.children ?? [];
     if (only.kind === 'spectra') return this.p.compounds.filter((c) => c.id === only.id);
@@ -1288,11 +1336,13 @@ class Compiler {
   }
 
   private async buildAll(): Promise<void> {
-    if (this.included('cover')) await this.cover();
-    if (this.included('toc')) this.toc();
     let started = false;
     const startPage = (): void => { if (!started && (this.included('cover') || this.included('toc'))) this.b.pendingBreak = true; started = true; };
-    if (this.included('general') && (this.texts.get('general') ?? '').trim()) { startPage(); await this.general(); }
+    await this.block('project', async () => {
+      if (this.included('cover')) await this.cover();
+      if (this.included('toc')) this.toc();
+      if (this.included('general') && (this.texts.get('general') ?? '').trim()) { startPage(); await this.general(); }
+    });
     for (const s of this.p.top) { if (!this.excluded.has(s.id)) startPage(); await this.section(s, 1); }
     // a project without a Spectra section (opened read-only, older) prints its spectra at the end
     if (!this.spectraDone && !this.excluded.has('spectra') && !this.p.sections.some((s) => s.type === 'spectra')) { this.spectraDone = true; await this.spectraSection(null, 1); }
@@ -1388,12 +1438,12 @@ export async function objectLabelSets(p: SiProject): Promise<{ labels: Map<strin
 /** Compile an SI project into a document. */
 /** What the live preview shows: the front matter (cover and General Information), a section, a scheme page or a compound. */
 /** What the live preview shows: the front pages, a section, a scheme page, a compound, or a compound's spectra pages ('spectra', by the compound's id). */
-export type SiPreviewTarget = { kind: 'front' } | { kind: 'section' | 'scheme' | 'compound' | 'spectra'; id: string };
+export type SiPreviewTarget = { kind: 'front' } | { kind: 'whole' } | { kind: 'section' | 'scheme' | 'compound' | 'spectra'; id: string };
 
 /** Compile the project (or, with `only`, one page of it for the live preview) into a document. */
 export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget): Promise<CompiledSi> {
   const c = new Compiler(p, host, await leaveWords(p));
   const doc = await c.build(only);
-  return { doc, notes: [...new Set(c.notes)], targets: c.targets };
+  return { doc, notes: [...new Set(c.notes)], targets: c.targets, sources: c.sources, blocks: c.blocks };
 }
 

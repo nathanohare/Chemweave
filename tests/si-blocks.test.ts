@@ -36,8 +36,8 @@ function folder(dir: string): MemoryFolder {
 type PyRun = [string, boolean, boolean, string, string, boolean];
 interface GoldenBlock { title: string; paragraphs: PyRun[][]; figures: [string, string][]; custom: boolean }
 
-/** Runs as SI Assistant writes them, joined where the format is the same (both sides). */
-const ours = (runs: Run[]): PyRun[] => mergeRuns(runs.filter((r) => r.text || r.ref)).map((r) => [r.text, !!r.bold, !!r.italic, r.valign ?? 'normal', r.ref ?? '', !!r.underline]);
+/** Runs as SI Assistant writes them, joined where the format is the same (both sides). Where a run came from (`src`, for the Live Preview) is not part of its format. */
+const ours = (runs: Run[]): PyRun[] => mergeRuns(runs.filter((r) => r.text || r.ref).map(({ src: _src, ...r }) => r)).map((r) => [r.text, !!r.bold, !!r.italic, r.valign ?? 'normal', r.ref ?? '', !!r.underline]);
 const theirs = (runs: PyRun[]): PyRun[] => ours(runs.map(([text, bold, italic, valign, ref, underline]) => ({ text, bold, italic, underline, valign: valign as Run['valign'], ref: ref || undefined })));
 
 async function compare(dir: string): Promise<void> {

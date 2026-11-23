@@ -9,7 +9,7 @@ import { DEUTERATED, DEUTERATED_PREFIX, NUCLEUS, allMatches, formulaMatches, ran
 const vOf = (r: Run): VAlign => r.valign ?? 'normal';
 
 /** A run with only the formatting that is set (as the stored format writes runs). */
-export function R(text: string, look: { bold?: boolean; italic?: boolean; underline?: boolean; valign?: VAlign; ref?: string; link?: string } = {}): Run {
+export function R(text: string, look: { bold?: boolean; italic?: boolean; underline?: boolean; valign?: VAlign; ref?: string; link?: string; src?: string } = {}): Run {
   const r: Run = { text };
   if (look.bold) r.bold = true;
   if (look.italic) r.italic = true;
@@ -17,14 +17,15 @@ export function R(text: string, look: { bold?: boolean; italic?: boolean; underl
   if (look.valign && look.valign !== 'normal') r.valign = look.valign;
   if (look.ref) r.ref = look.ref;
   if (look.link) r.link = look.link;
+  if (look.src) r.src = look.src;
   return r;
 }
 
-/** The same formatting (links never join). */
-export const sameFormat = (a: Run, b: Run): boolean => !a.ref && !b.ref && a.link === b.link && !!a.bold === !!b.bold && !!a.italic === !!b.italic && vOf(a) === vOf(b) && !!a.underline === !!b.underline;
+/** The same formatting (links never join, nor text from different places). */
+export const sameFormat = (a: Run, b: Run): boolean => !a.ref && !b.ref && a.link === b.link && a.src === b.src && !!a.bold === !!b.bold && !!a.italic === !!b.italic && vOf(a) === vOf(b) && !!a.underline === !!b.underline;
 
 /** A copy with some of it changed. */
-export const but = (r: Run, change: Partial<Run>): Run => R(change.text ?? r.text, { bold: change.bold ?? r.bold, italic: change.italic ?? r.italic, underline: change.underline ?? r.underline, valign: change.valign ?? r.valign, ref: change.ref ?? r.ref, link: change.link ?? r.link });
+export const but = (r: Run, change: Partial<Run>): Run => R(change.text ?? r.text, { bold: change.bold ?? r.bold, italic: change.italic ?? r.italic, underline: change.underline ?? r.underline, valign: change.valign ?? r.valign, ref: change.ref ?? r.ref, link: change.link ?? r.link, src: change.src ?? r.src });
 
 export const plain = (runs: readonly Run[]): string => runs.map((r) => r.text).join('');
 
@@ -44,11 +45,11 @@ function split(runs: readonly Run[], find: (text: string) => Found[], make: (m: 
   const out: Run[] = [];
   for (const run of runs) {
     if (vOf(run) !== 'normal' || run.ref) { out.push(run); continue; }
-    const keep = { bold: run.bold, italic: run.italic, underline: run.underline };
+    const keep = { bold: run.bold, italic: run.italic, underline: run.underline, src: run.src };
     let pos = 0;
     for (const m of find(run.text)) {
       if (m.start > pos) out.push(R(run.text.slice(pos, m.start), keep));
-      for (const piece of make(m)) out.push(R(piece.text, { bold: run.bold || piece.bold, italic: run.italic || piece.italic, valign: piece.valign, underline: run.underline || piece.underline }));
+      for (const piece of make(m)) out.push(R(piece.text, { bold: run.bold || piece.bold, italic: run.italic || piece.italic, valign: piece.valign, underline: run.underline || piece.underline, src: run.src }));
       pos = m.end;
     }
     if (pos < run.text.length) out.push(R(run.text.slice(pos), keep));
