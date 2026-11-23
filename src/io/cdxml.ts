@@ -2,6 +2,8 @@
 // their formatting, arrows, and the common graphics (lines, boxes, circles, brackets,
 // charge symbols). Anything not understood yet is counted and skipped, never fatal.
 
+import { labelHydrogens } from '../chem/hydrogen-count';
+import { rNumberDigits } from '../chem/r-numbers';
 import { tint } from '../colours';
 import { pathId, freeformId } from '../design/geo';
 import { parseGuides } from '../editor/guides';
@@ -39,7 +41,7 @@ import { cleanTiedLook } from '../editor/tied-look';
 import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
-import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, labelSeen, captionAt, zPrint, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
+import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, labelSeen, captionAt, textSeen, fragMoreIn, zPrint, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
 
 export interface ReadStats {
   atoms: number;
@@ -1477,6 +1479,14 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       if (!implicitOk) {
         atom.label = text;
         atom.fileLabel = true;
+        // (no NumHydrogens: the hydrogens are the valence's, so a bare "N" on a carbon is an amine.
+        // CDX SDK, Atom_NumHydrogens: "The number of (explicit) hydrogens in a labeled atom
+        // consisting of one heavy atom and (optionally) the symbol H (e.g., CH3)", and when it is
+        // missing, "The number of hydrogens is assumed to be the minimum value necessary to satisfy
+        // the valence requirements for the atom." Carbon too, as the SDK makes no exception: a "CH"
+        // from a writer that leaves NumHydrogens out is CH3 on one bond, as ChemDraw reads it;
+        // ChemDraw itself always writes NumHydrogens on such labels.)
+        if (hShown === null && labelHydrogens(text, atom.z) !== null) atom.hByRule = true;
         // told to run left, ChemDraw draws the text as written (MeO, the O on the atom); this program
         // keeps a label from the atom out (OMe) and turns it to draw it
         if (atom.fixedDir && atom.just === 'left' && !atom.labelMarks) {
@@ -1504,9 +1514,21 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       if (!v || typeof v !== 'object') continue;
       if (kind === 'a') { const a = doc.atoms.get(id); const t = kids(el).find((k) => k.nodeName === 't'); if (a) atomMoreIn(a, v, t ? labelSeen(t) : null, doc.degree(id) > 0); }
       else if (kind === 'b') { const b = doc.bonds.get(id); if (b) bondMoreIn(b, v, zNow(el)); }
-      else if (kind === 'c') { const c = doc.captions.get(id); if (c) captionMoreIn(c, v, captionAt(el)); }
+      else if (kind === 'c') { const c = doc.captions.get(id); if (c) captionMoreIn(c, v, captionAt(el), textSeen(el)); }
       else if (kind === 'r') { const r = doc.arrows.get(id); if (r) arrowMoreIn(r, v, refIn); }
       else if (kind === 's') { const sh = doc.shapes.get(id); if (sh) shapeMoreIn(sh, v, refIn); }
+    }
+    // a structure's depths and bond places, in one tag on its <fragment> (cdxml-more.ts fragMore)
+    for (const f of all) {
+      if (f.nodeName !== 'fragment') continue;
+      const json = kids(f).find((t) => t.nodeName === 'objecttag' && t.getAttribute('Name') === MORE_TAG)?.getAttribute('Value');
+      if (!json) continue;
+      let v: Record<string, unknown>;
+      try { v = JSON.parse(json) as Record<string, unknown>; } catch { continue; }
+      if (!v || typeof v !== 'object') continue;
+      const atomOf = (n: Element) => { const id = atomOfNode.get(n.getAttribute('id') ?? ''); return id === undefined ? undefined : doc.atoms.get(id); };
+      const bondOf = (el: Element) => { const r = byFileId.get(el.getAttribute('id') ?? ''); return r?.kind === 'b' ? doc.bonds.get(r.id) : undefined; };
+      fragMoreIn(v, f, atomOf, bondOf, zNow);
     }
     attachRingFills(doc);
     // a chiral flag goes with the structure whose fragment it was in (review F1b-R01)
@@ -2359,7 +2381,14 @@ export function labelLookOf(runs: TextRun[], text: string): { supDigits?: boolea
   const out: { supDigits?: boolean; marks?: string } = {};
   const raisedDigits = runs.length > 1 && runs[runs.length - 1].sup && /^\d+$/.test(runs[runs.length - 1].text);
   if (raisedDigits) out.supDigits = true;
-  else if (/^R\d+$/.test(text)) out.supDigits = false;
+  else {
+    // a label with R numbers none of which is raised (R1, OR1, CO2R1 written on the line): flat
+    // here too, whatever Preferences ▸ R numbers raised says (review F8a-R07)
+    const up: boolean[] = [];
+    for (const r of runs) for (const _ of r.text) up.push(!!r.sup);
+    const rd = rNumberDigits(text);
+    if (rd.length && !rd.some((i) => up[i])) out.supDigits = false;
+  }
   // bold and underline that only some of the label has (all of it is the label's own face)
   const someBold = runs.some((r) => r.bold) && (mixed || !runs.every((r) => r.bold));
   const someUnder = runs.some((r) => r.underline) && !runs.every((r) => r.underline);

@@ -101,8 +101,8 @@ describe('CML files (File > Save As .cml)', () => {
   });
 });
 
-// review F1b-R12: a methyl N the user labelled "N" (methylamine's N by the valence rule, as this
-// program's molfile writes it): neither CML writer states a count the label and the rule disagree on
+// A methyl N the user labelled "N": Nate (2026-11-23, F1 Needs Nate 12) reads it literally, an N with
+// no hydrogens, so both CML writers state hydrogenCount 0 (it was left out before, review F1b-R12)
 describe('a bonded label whose hydrogens differ from the rule', () => {
   const methylN = (label: string) => {
     const d = new Doc();
@@ -115,12 +115,12 @@ describe('a bonded label whose hydrogens differ from the rule', () => {
     bonds: [{ id: 3, a1: 1, a2: 2, order: 1, display: 'solid', dpos: 'auto' }],
     captions: [], arrows: [], shapes: [],
   } as unknown as Contents);
-  it('leaves the N\'s hydrogenCount out in both the .cml file and the Chem4Word part', () => {
+  it('states the N\'s hydrogenCount as 0 in both the .cml file and the Chem4Word part', () => {
     const file = writeCmlFile(methylN('N')).text;
     expect(file).toMatch(/elementType="C" hydrogenCount="3"/);
-    expect(file).not.toMatch(/elementType="N"[^>]*hydrogenCount/);
+    expect(file).toMatch(/elementType="N" hydrogenCount="0"/);
     const c4w = writeCml(contents('N'), 'g');
-    expect(hc(c4w)).toEqual([3]);
+    expect(hc(c4w)).toEqual([3, 0]);
   });
   it('states it where the label and the rule agree (NH2: 2)', () => {
     expect(hc(writeCmlFile(methylN('NH2')).text)).toEqual([3, 2]);

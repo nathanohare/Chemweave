@@ -8,7 +8,7 @@ import { labelPieces, labelLook, labelPrefs, markPieces } from '../src/chem/labe
 import { writeCdxml, labelRuns } from '../src/io/cdxml-write';
 import { readCdxml, labelLookOf } from '../src/io/cdxml';
 
-const shown = (label: string, supDigits = false, marks?: string) =>
+const shown = (label: string, supDigits?: boolean, marks?: string) =>
   labelPieces(label, supDigits, marks).map((p) => (p.sup ? `^${p.text}` : p.sub ? `_${p.text}` : p.text)).join('|');
 
 function labelled(label: string, extra = {}): { doc: Doc; id: number } {
@@ -24,10 +24,10 @@ describe('label marks', () => {
   });
 
   it('raises, lowers or keeps on the line the marked characters', () => {
-    expect(shown('CH2CO2R1', false, '...^^...')).toBe('C|H|_2|^C|^O|_2|R|^1');
-    expect(shown('CH2CO2R1', false, '...^^..=')).toBe('C|H|_2|^C|^O|_2|R|1');
-    expect(shown('CH2', false, '..=')).toBe('C|H|2');
-    expect(shown('Rx', false, '._')).toBe('R|_x');
+    expect(shown('CH2CO2R1', undefined, '...^^...')).toBe('C|H|_2|^C|^O|_2|R|^1');
+    expect(shown('CH2CO2R1', undefined, '...^^..=')).toBe('C|H|_2|^C|^O|_2|R|1');
+    expect(shown('CH2', undefined, '..=')).toBe('C|H|2');
+    expect(shown('Rx', undefined, '._')).toBe('R|_x');
   });
 
   it('joins neighbouring characters that sit the same way', () => {
@@ -35,7 +35,7 @@ describe('label marks', () => {
   });
 
   it('raises an R group\'s number wherever it is in the label by the setting, but not a count of R groups', () => {
-    const up = (label: string, supDigits = false) => labelPieces(label, supDigits).filter((p) => p.sup).map((p) => p.text);
+    const up = (label: string, supDigits?: boolean) => labelPieces(label, supDigits).filter((p) => p.sup).map((p) => p.text);
     expect(up('R1')).toEqual(['1']);
     expect(up('R12')).toEqual(['12']);
     expect(up('OR1')).toEqual(['1']);
@@ -45,9 +45,10 @@ describe('label marks', () => {
     expect(up('NR2')).toEqual([]);
     expect(up('PR3')).toEqual([]);
     expect(up('OR2')).toEqual(['2']);
-    // the setting wins over a file that wrote R1 on the line
+    // a file that wrote R1 on the line wins over the setting (F7b-R13; Nate, 2026-11-23)
     expect(labelLook({ label: 'R1', supDigits: false }).supDigits).toBe(false);
-    expect(up('R1', false)).toEqual(['1']);
+    expect(up('R1', false)).toEqual([]);
+    expect(labelLook({ label: 'R1' }).supDigits).toBeUndefined();
     labelPrefs.superscriptR = false;
     try {
       expect(up('R1')).toEqual([]);
@@ -58,15 +59,17 @@ describe('label marks', () => {
   });
 
   it('writes R numbers raised to CDXML when the label shows them so', () => {
-    expect(labelRuns('CO2R1', { supDigits: false })).toEqual([{ text: 'CO2R', formula: true }, { text: '1', sup: true }]);
+    expect(labelRuns('CO2R1', {})).toEqual([{ text: 'CO2R', formula: true }, { text: '1', sup: true }]);
+    // (a label's own "on the line" stays on the line)
+    expect(labelRuns('CO2R1', { supDigits: false })).toEqual([{ text: 'CO2R1', formula: true }]);
     labelPrefs.superscriptR = false;
-    try { expect(labelRuns('CO2R1', { supDigits: false })).toEqual([{ text: 'CO2R1', formula: true }]); } finally { labelPrefs.superscriptR = true; }
+    try { expect(labelRuns('CO2R1', {})).toEqual([{ text: 'CO2R1', formula: true }]); } finally { labelPrefs.superscriptR = true; }
   });
 });
 
 describe('label marks in CDXML', () => {
   it('writes marked characters as raised or lowered runs and reads them back', () => {
-    expect(labelRuns('CH2CO2R1', { supDigits: false, marks: '...^^...' })).toEqual([{ text: 'CH2', formula: true }, { text: 'CO', sup: true }, { text: '2R', formula: true }, { text: '1', sup: true }]);
+    expect(labelRuns('CH2CO2R1', { marks: '...^^...' })).toEqual([{ text: 'CH2', formula: true }, { text: 'CO', sup: true }, { text: '2R', formula: true }, { text: '1', sup: true }]);
     const { doc, id } = labelled('CH2CO2R1', { labelMarks: '...^^...' });
     const xml = writeCdxml(doc);
     expect(xml).toContain('face="64">CO</s>');

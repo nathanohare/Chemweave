@@ -38,6 +38,14 @@ describe('Gel window', () => {
     const out = await got;
     expect(out!.lanes).toEqual([{ label: 'M', marks: '10', ladder: true }, { label: '1', marks: '1.2 strong blue, 0.8', ladder: true }]);
   });
+  it('normalizes a band\'s words as TLC spots do: known ones to the menu\'s word, unknown ones dropped (F5 Needs Nate 13, Nate: keep)', async () => {
+    const editing = { kind: 'gel', lanes: [{ label: '1', marks: '1.2 dark fuzzy, 0.5 weak' }], look: 'etbr', w: 120, h: 100, rf: false, lines: false, labels: true, note: '', unit: 'kb', sizes: true } as PlateData;
+    const got = askPlate('gel', editing, 14.4);
+    expect(all<HTMLButtonElement>('.plate-desc').map((b) => b.textContent!.replace('▾', '').trim())).toEqual(['Strong', 'Faint']);
+    submit();
+    expect((await got)!.lanes).toEqual([{ label: '1', marks: '1.2 strong, 0.5 faint' }]);
+  });
+
   it('a Description menu has no Spot/Streak row for a band', async () => {
     const got = askPlate('gel', null, 14.4);
     q<HTMLButtonElement>('.plate-desc').click();
