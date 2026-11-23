@@ -17,6 +17,7 @@ import type { Rect, Vec } from '../geom';
 import type { Measure as TextMeasure } from '../text/layout';
 import { layoutText } from '../text/layout';
 import { chemRuns } from '../text/chemtext';
+import { labelParts, type LabelPart } from './energy';
 import { arialWidth } from '../text-metrics';
 import { tint } from '../colours';
 import { frameBox } from '../editor/frames';
@@ -51,6 +52,12 @@ export interface DiagramData {
   h: number;
   /** Space held in an item for a structure, by the item's line number (from 1): the structure's width and height in points. */
   figs?: { [line: string]: { w: number; h: number } };
+  /**
+   * Items typed with bold, italic or underline (or a digit kept level) in the window's rich boxes,
+   * by line number (from 1): the words' pieces. Used only while they still spell the line's words,
+   * so a line changed elsewhere (in a shape, or in PowerPoint) simply shows its own text.
+   */
+  rich?: { [line: string]: LabelPart[] };
 }
 
 export const DIAGRAM_CATEGORIES = ['List', 'Process', 'Timeline', 'Cycle', 'Hierarchy', 'Relationship', 'Matrix', 'Pyramid'] as const;
@@ -115,6 +122,8 @@ export const DIAGRAM_DEFAULTS: Omit<DiagramData, 'layout' | 'text' | 'w' | 'h'> 
 
 export interface DiagramItem {
   text: string;
+  /** Its words' pieces with their looks (DiagramData.rich), when they still spell `text`. */
+  parts?: LabelPart[];
   /** An icon chosen in square brackets in front ("icon:…"). */
   icon?: string;
   kids: DiagramItem[];
@@ -129,7 +138,7 @@ const BULLET = /^[•\-*–·▪◦]\s+/;
 const ICON = /^\[([a-z0-9-]+)\]\s*/i;
 
 /** A line's level (Tabs, or two spaces each) and its text without a bullet typed in front. */
-function lineParts(line: string): { level: number; text: string; icon?: string } {
+export function lineParts(line: string): { level: number; text: string; icon?: string } {
   const lead = LEAD.exec(line)![0];
   let level = 0;
   for (const ch of lead) level += ch === '\t' ? 1 : 0.5;
@@ -169,6 +178,18 @@ export function setItemText(text: string, n: number, words: string): string {
     const icon = ICON.exec(rest.replace(BULLET, ''))?.[0] ?? '';
     return lead + icon + words;
   }).join('\n');
+}
+
+/** The items with the pieces typed with looks for them (only those that still spell the item's words). */
+export function withRich(items: DiagramItem[], rich: DiagramData['rich']): DiagramItem[] {
+  if (!rich) return items;
+  const put = (it: DiagramItem): void => {
+    const r = rich[String(it.n)];
+    if (r?.length && labelParts(it.text, r) === r) it.parts = r;
+    it.kids.forEach(put);
+  };
+  items.forEach(put);
+  return items;
 }
 
 /** Item and every item below it, in order (the lines n…). */
@@ -272,7 +293,7 @@ function wordShapes(laid: DiagramLaid): Map<number, PartShape> {
 
 /** The shapes and lines of a diagram's layout, laid out in its box. */
 function layoutParts(d: DiagramData): DiagramLaid {
-  const items = parseOutline(d.text);
+  const items = withRich(parseOutline(d.text), d.rich);
   const w = Math.max(20, d.w), h = Math.max(20, d.h);
   const g = Math.max(3, 0.03 * Math.min(w, h));
   const box = d.rounded ? 'roundRect' : 'rect';
@@ -919,15 +940,16 @@ function textOf(p: PartShape, size: number, ink: string, head: number | null): {
   const runs: TextRun[] = [];
   const paras: ParaStyle[] = [];
   const lines = p.lines ?? [];
-  const put = (t: string, s: number, bold: boolean) => {
+  const put = (t: string, s: number, bold: boolean, parts?: LabelPart[]) => {
     if (runs.length) runs.push({ text: '\n', size: s, color: ink });
-    for (const r of chemRuns(t)) runs.push({ ...r, size: s, color: ink, ...(bold ? { bold: true } : {}) });
+    // (pieces only while they spell these words: a flowchart step's or a task's name is part of its line)
+    for (const r of parts && labelParts(t, parts) === parts ? parts : chemRuns(t)) runs.push({ ...r, size: s, color: ink, ...(bold ? { bold: true } : {}) });
   };
   const heading = p.head?.text;
-  if (heading) { put(heading, head ?? size, lines.length > 0); paras.push({}); }
+  if (heading) { put(heading, head ?? size, lines.length > 0, p.head?.parts); paras.push({}); }
   const base = Math.min(...lines.map((x) => x.depth));
   for (const it of lines) {
-    put(it.text, size, false);
+    put(it.text, size, false, it.parts);
     // lines under an item are bullets; in centred text on its own (a timeline's labels) just lines
     if (p.role === 'label' && p.align !== 'left') paras.push({});
     else paras.push({ list: 'bullet', align: 'left', ...(it.depth > base ? { level: it.depth - base } : {}) });

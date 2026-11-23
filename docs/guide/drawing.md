@@ -577,7 +577,7 @@ On a transition state the bonds being made and broken are dashed, and **Bond dis
 
 <!-- index: Gels, Rf values -->
 
-**Insert ▸ Lab Figures ▸ TLC Plate…** and **Gel…** draw a TLC plate or a gel from a table you fill in.
+**Insert ▸ Lab Figures ▸ TLC Plate…** and **Gel…** draw a TLC plate or a gel from a table you fill in. The lane names and the eluent (a gel's caption) show as they will be drawn, with formulas subscripted as you type; the bar above the table makes the text you are typing bold, italic, underlined, subscript or superscript, as in the Energy Diagram window.
 
 A TLC plate has a row for each spot under its lane's name: type its **Rf**, and pick how it looks from its **Description** menu (intensity faint, normal or strong; size small, normal or large; a spot or a streak; and the stain's color or another). **+ Spot** adds a spot to a lane. A TLC plate takes its colors from the stain you pick (a notebook sketch with circled spots, UV 254 nm, KMnO₄, p-anisaldehyde, CAM, PMA, vanillin, ninhydrin or iodine), and can show the Rf values, the start and solvent-front lines, the lane names and the eluent; **+ Co-spot lane** adds a lane with the spots of the two lanes before it. Drag a spot up or down its lane to change its Rf: it stays in its lane, between the start line (Rf 0) and the solvent front (Rf 1), and the Rf written beside it follows. Check **Lock spots** (in the window or the details panel) so spots can't be dragged; a drag on a locked plate's spot moves the whole plate.
 

@@ -5,6 +5,7 @@
 // that redraws as you go.
 
 import { addInfo, foldIntoInfo } from './info-tip';
+import { nameFields, type RichName } from './rich-names';
 import { GEL_LOOKS, LADDERS, LOCK_SPOTS_INFO, SPOT_COLORS, TLC_LOOKS, newPlate, spotColorHex, spotRows, spotSummary, spotText, type PlateData, type PlateKind, type PlateLane, type SpotRow } from '../design/plates';
 
 /** How the last plate and gel looked, so a new one starts the same way. */
@@ -31,7 +32,7 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
         : 'Each band\'s size, in the units under Sizes in. Bands run by size on a log scale. + Band adds one to the lane; check Marker for a lane of size markers (their sizes can be written beside the gel).'}</p>
       <label class="ask-row"><span>${tlc ? 'Stain' : 'Dye'}</span><select name="look">${looks}</select></label>
       ${tlc ? '' : '<label class="ask-row"><span>Sizes in</span><select name="unit"><option value="bp">bp</option><option value="kb">kb</option><option value="kDa">kDa</option></select></label>'}
-      <label class="ask-row"><span>${tlc ? 'Eluent' : 'Caption'}</span><input name="note" placeholder="${tlc ? '20% EtOAc/hexanes' : 'optional'}" /></label>
+      <div class="ask-row"><span id="plate-note-head">${tlc ? 'Eluent' : 'Caption'}</span><span class="plate-note-slot"></span></div>
       <label class="ask-row"><span>Size</span><span class="energy-pair"><input name="w" type="number" min="20" step="any" aria-label="Width" /> × <input name="h" type="number" min="20" step="any" aria-label="Height" /> pt</span></label>
       ${tlc ? '<label class="ask-row ask-check"><input name="rf" type="checkbox" /><span>Write the Rf values</span></label><label class="ask-row ask-check"><input name="lines" type="checkbox" /><span>Start and solvent-front lines</span></label>' : '<label class="ask-row ask-check"><input name="sizes" type="checkbox" /><span>Write the marker sizes</span></label>'}
       <label class="ask-row ask-check"><input name="labels" type="checkbox" /><span>Lane names</span></label>
@@ -41,12 +42,20 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
     foldIntoInfo($('.plate-help'), form.querySelectorAll('.plate-table th')[1]);
     if (tlc) addInfo($('.plate-lock'), LOCK_SPOTS_INFO);
     const body = $<HTMLTableElement>('.plate-table').tBodies[0];
+    // lane names and the eluent (caption) are rich text boxes, as the Energy Diagram window's names (F8b)
+    const names = nameFields(() => redraw());
+    $('.plate-preview').after(names.bar);
+    let note: RichName = { label: start.note, ...(start.noteRich ? { rich: start.noteRich } : {}) };
+    const noteField = names.field(note, tlc ? 'Eluent' : 'Caption', (n) => { note = n; });
+    noteField.el.dataset.placeholder = tlc ? '20% EtOAc/hexanes' : 'optional';
+    noteField.el.classList.add('plate-note');
+    $('.plate-note-slot').replaceWith(noteField.el);
 
     // the lanes as rows of spots or bands (kept as they change; `lanes` is made from them)
-    type Lane = { label: string; spots: SpotRow[]; ladder?: boolean };
-    const toRows = (ls: PlateLane[]): Lane[] => ls.map((l) => ({ label: l.label, spots: spotRows(l.marks), ...(l.ladder ? { ladder: true } : {}) }));
+    type Lane = { label: string; labelRich?: PlateLane['labelRich']; spots: SpotRow[]; ladder?: boolean };
+    const toRows = (ls: PlateLane[]): Lane[] => ls.map((l) => ({ label: l.label, ...(l.labelRich ? { labelRich: l.labelRich } : {}), spots: spotRows(l.marks), ...(l.ladder ? { ladder: true } : {}) }));
     let tl = toRows(lanes);
-    const read = () => { lanes = tl.map((l) => ({ label: l.label, marks: spotText(l.spots), ...(l.ladder ? { ladder: true } : {}) })); };
+    const read = () => { lanes = tl.map((l) => ({ label: l.label, ...(l.labelRich ? { labelRich: l.labelRich } : {}), marks: spotText(l.spots), ...(l.ladder ? { ladder: true } : {}) })); };
     const draw = () => { body.innerHTML = ''; drawSpots(); };
     const mark = tlc ? 'spot' : 'band';
     let menu: HTMLElement | null = null;
@@ -114,9 +123,11 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
         const nameCell = first.insertCell();
         nameCell.rowSpan = n + 1;
         nameCell.className = 'plate-lane';
-        const name = el('input', { value: lane.label, className: 'plate-name' });
-        name.setAttribute('aria-label', `Lane ${li + 1} name`);
-        name.addEventListener('input', () => { lane.label = name.value; });
+        const name = names.field({ label: lane.label, ...(lane.labelRich ? { rich: lane.labelRich } : {}) }, `Lane ${li + 1} name`, (n) => {
+          lane.label = n.label;
+          if (n.rich) lane.labelRich = n.rich; else delete lane.labelRich;
+        }).el;
+        name.classList.add('plate-name');
         const box = el('span', { className: 'plate-lane-box' });
         box.append(name, xButton('Delete lane', () => { if (tl.length > 1) tl.splice(li, 1); }));
         nameCell.append(box);
@@ -161,7 +172,6 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
     draw();
     $<HTMLSelectElement>('select[name=look]').value = start.look;
     if (!tlc) $<HTMLSelectElement>('select[name=unit]').value = start.unit;
-    $<HTMLInputElement>('input[name=note]').value = start.note;
     $<HTMLInputElement>('input[name=w]').value = String(Math.round(start.w));
     $<HTMLInputElement>('input[name=h]').value = String(Math.round(start.h));
     $<HTMLInputElement>('input[name=labels]').checked = start.labels;
@@ -173,8 +183,9 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
       tl.push({ label: String(tl.length + 1), spots: [] });
       read();
       draw();
-      const names = body.querySelectorAll<HTMLInputElement>('input.plate-name');
-      names[names.length - 1]?.select();
+      const boxes = body.querySelectorAll<HTMLElement>('.plate-name');
+      const last = boxes[boxes.length - 1];
+      if (last) { last.focus(); getSelection()?.selectAllChildren(last); }
     });
     form.querySelector('[data-act=co]')?.addEventListener('click', () => {
       // the co-spot of the last two lanes: every spot of both, once
@@ -216,7 +227,8 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
         lines: tlc ? $<HTMLInputElement>('input[name=lines]').checked : start.lines,
         labels: $<HTMLInputElement>('input[name=labels]').checked,
         ...(tlc && $<HTMLInputElement>('input[name=locked]').checked ? { locked: true } : {}),
-        note: $<HTMLInputElement>('input[name=note]').value,
+        note: note.label,
+        ...(note.rich ? { noteRich: note.rich } : {}),
         unit: tlc ? start.unit : ($<HTMLSelectElement>('select[name=unit]').value as PlateData['unit']),
         sizes: tlc ? start.sizes : $<HTMLInputElement>('input[name=sizes]').checked,
         ...(editing?.margins ? { margins: editing.margins } : {}),
