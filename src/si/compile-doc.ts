@@ -940,9 +940,9 @@ class Compiler {
    * its header line and the compound's structure + ID on a box over it; then the HRMS reports.
    * Everything on a spectra page floats at its place, so it can be moved and stays editable.
    */
-  private async spectraSection(s: SiSection | null, level: number): Promise<void> {
+  private async spectraSection(s: SiSection | null, level: number, only?: SiCompound[]): Promise<void> {
     const defaults = sectionDefaults(s, this.p.settings);
-    const compounds = this.includedCompounds(this.p.top);
+    const compounds = only ?? this.includedCompounds(this.p.top);
     const name = s?.name ?? 'Spectra';
     type Entry = { c: SiCompound; item: Json; page: PagePicture; pageNo: number; eff: SpectrumLayout };
     const entries: Entry[] = [];
@@ -975,7 +975,8 @@ class Compiler {
     }
     const hrms = this.excluded.has('hrms_reports') ? [] : compounds.filter((c) => printsReports(c, defaults));
     if (!pages.length && !hrms.length) return;
-    let headed = false;
+    // (one compound's pages alone, for the live preview: without the section's heading)
+    let headed = !!only;
     for (const pg of pages) {
       this.orient(pg.orientation);
       const page = this.landscape ? { ...this.b.doc.page, w: this.b.doc.page.h, h: this.b.doc.page.w } : this.b.doc.page;
@@ -984,7 +985,7 @@ class Compiler {
         this.sectionHeading(level, name, { pageBreak: true });
         headed = true;
         top = HEADING_ROOM;
-      } else this.b.pendingBreak = true;
+      } else if (pg !== pages[0] || !only) this.b.pendingBreak = true;
       await this.spectraPage(pg.slots, pg.per, page, top);
     }
     if (hrms.length) await this.hrmsReports(hrms, level + 1, name, !headed, level);
@@ -1216,10 +1217,15 @@ class Compiler {
       const k = p.schemes.find((x) => x.id === only.id);
       const s = k ? p.sections.find((x) => x.id === k.sectionId) : undefined;
       if (k && s) { const drawn = await this.scheme(k, s); for (const c of k.children) await this.compound(c, 2, drawn.has(c.id)); }
+    } else if (only.kind === 'spectra') {
+      // a compound's spectra pages, as they print in the Spectra section (without its heading)
+      const c = p.compounds.find((x) => x.id === only.id);
+      if (c) { this.spectraDone = true; await this.spectraSection(p.sections.find((x) => x.type === 'spectra') ?? null, 1, [c]); }
     } else {
       const s = p.sections.find((x) => x.id === only.id);
+      if (s?.type === 'spectra') { this.excluded.delete(s.id); this.excluded.delete('spectra'); this.spectraDone = true; await this.spectraSection(s, 1); }
       // (a section's spectra are left out: Compile shows them)
-      if (s && s.type !== 'spectra') { this.excluded.delete(s.id); this.spectraDone = true; await this.section(s, 1); }
+      else if (s) { this.excluded.delete(s.id); this.spectraDone = true; await this.section(s, 1); }
     }
   }
 
@@ -1228,8 +1234,10 @@ class Compiler {
     if (!only) return this.includedCompounds(this.p.top);
     if (only.kind === 'compound') return this.p.compounds.filter((c) => c.id === only.id);
     if (only.kind === 'scheme') return this.p.schemes.find((k) => k.id === only.id)?.children ?? [];
+    if (only.kind === 'spectra') return this.p.compounds.filter((c) => c.id === only.id);
     if (only.kind === 'section') {
       const s = this.p.sections.find((x) => x.id === only.id);
+      if (s?.type === 'spectra') return this.includedCompounds(this.p.top);
       return s ? [...(s.type === 'data' ? compoundsOf(s) : []), ...this.includedCompounds(s.children)] : [];
     }
     return [];
@@ -1356,7 +1364,8 @@ export async function objectLabelSets(p: SiProject): Promise<{ labels: Map<strin
 
 /** Compile an SI project into a document. */
 /** What the live preview shows: the front matter (cover and General Information), a section, a scheme page or a compound. */
-export type SiPreviewTarget = { kind: 'front' } | { kind: 'section' | 'scheme' | 'compound'; id: string };
+/** What the live preview shows: the front pages, a section, a scheme page, a compound, or a compound's spectra pages ('spectra', by the compound's id). */
+export type SiPreviewTarget = { kind: 'front' } | { kind: 'section' | 'scheme' | 'compound' | 'spectra'; id: string };
 
 /** Compile the project (or, with `only`, one page of it for the live preview) into a document. */
 export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget): Promise<CompiledSi> {

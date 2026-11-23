@@ -88,7 +88,7 @@ export async function pdfPages(bytes: Uint8Array, most?: number): Promise<PdfPag
 
 /** PDFs drawn lately (by their bytes): the live preview draws the same ones again after each change. */
 const drawnLately: { key: string; bytes: Uint8Array; most: number; pages: Promise<PdfPagePicture[] | null> }[] = [];
-const LATELY = 12;
+const LATELY = 40;
 
 /** As pdfPages, the last few PDFs drawn kept (for the live preview, which compiles often). */
 export function pdfPagesKept(bytes: Uint8Array, most = 1): Promise<PdfPagePicture[] | null> {

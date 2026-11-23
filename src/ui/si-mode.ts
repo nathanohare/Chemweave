@@ -156,6 +156,9 @@ interface Kept {
   timer: number;
 }
 
+/** The most pages of one spectrum file the live preview draws. */
+const SPECTRA_PREVIEW_PAGES = 20;
+
 type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'spectra'; id: string; section: string } | { kind: 'references' } | { kind: 'manuscript' } | { kind: 'warnings' } | { kind: 'dashboard' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
@@ -2767,8 +2770,9 @@ export class SiMode {
     if (pick.kind === 'project') return { kind: 'front' };
     if (pick.kind === 'section') {
       const s = p.sections.find((x) => x.id === pick.id);
-      return s && s.type !== 'data' && s.type !== 'spectra' ? { kind: 'section', id: s.id } : null;
+      return s && s.type !== 'data' ? { kind: 'section', id: s.id } : null;
     }
+    if (pick.kind === 'spectra') return p.compounds.some((c) => c.id === pick.id) ? { kind: 'spectra', id: pick.id } : null;
     return null;
   }
 
@@ -2801,10 +2805,14 @@ export class SiMode {
       // (the saves on their way land first: the preview reads the folder)
       await this.pendingOf(p);
       if (this.project !== p) return;
+      // (spectra pages show every page of a spectrum's PDF; elsewhere a PDF's first page will do)
+      const spectra = target.kind === 'spectra' || (target.kind === 'section' && p.sections.find((x) => x.id === target.id)?.type === 'spectra');
       const got = await compileSi(p, {
         contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (ms) => this.cachedFacts(ms),
-        // (a PDF's first page, kept for the next update: the preview compiles often)
-        pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPagesKept(b, most ?? 1)),
+        // (kept for the next update: the preview compiles often)
+        pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPagesKept(b, most ?? (spectra ? SPECTRA_PREVIEW_PAGES : 1))),
+        contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+        inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
       }, target);
       if (this.project !== p) return;
       const blank = !got.doc.runs.some((r) => r.text.trim()) && !Object.keys(got.doc.objects).length;
