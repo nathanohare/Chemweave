@@ -56,7 +56,7 @@ import { saveSnapshot } from '../si/snapshot';
 import { journalOf } from '../si/journal';
 import { lookupName, PUBCHEM_PAGE } from '../si/pubchem-name';
 import { PASTE_TYPE_LABELS, guessPastedType, keptLine, pastedStem } from '../si/spectrum-paste';
-import { availableColumns, buildRows, chosenColumns, fieldLabel, filterOf, isCompact, isSplit, projectScope, sectionScope, setView, statusColors, storeStatusColors, summarize, summaryText, type DashboardFacts, type Row, type Scope } from '../si/dashboard';
+import { FIXED_COLUMNS, availableColumns, buildRows, chosenColumns, columnWidths, fieldLabel, filterOf, hiddenFixed, isCompact, isSplit, movedColumns, projectScope, sectionScope, setView, statusColors, storeStatusColors, summarize, summaryText, type DashboardFacts, type FixedColumn, type Row, type Scope } from '../si/dashboard';
 import { dashboardGrid, projectSummaryCard, sectionDashboard, statusColorsBody, type GridOptions } from './si-dashboard';
 import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
 import { popupMenu } from './popup-menu';
@@ -102,7 +102,7 @@ export interface SiModeHost {
   /** A drawing's own size in points, in the SI drawing style. */
   sizeOf(c: Contents): { w: number; h: number } | null;
   /** The compiled SI, opened as a document named `name` (and, with `pdf`, saved as a PDF too). */
-  openCompiled(doc: DocText, name: string, pdf: boolean): Promise<void>;
+  openCompiled(doc: DocText, name: string, pdf: boolean, watch?: { hide(): void; show(): void; progress(done: number, total: number): Promise<void>; readonly cancelled: boolean }): Promise<void>;
   /** The SI project's drawing style now (its structures in the live preview). */
   siStyle(): DocStyle;
   /** Insert ▸ Symbol's window (it types into the SI text box last typed in). */
@@ -155,6 +155,9 @@ interface Kept {
   busy: boolean;
   timer: number;
 }
+
+const CHEVRON_OPEN = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CHEVRON_SHUT = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2 6.5 5 3.5 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 type Pick = { kind: 'project' } | { kind: 'section'; id: string } | { kind: 'compound'; id: string } | { kind: 'scheme'; id: string } | { kind: 'spectra'; id: string; section: string } | { kind: 'references' } | { kind: 'manuscript' } | { kind: 'warnings' } | { kind: 'dashboard' };
 
@@ -596,7 +599,7 @@ export class SiMode {
     this.tree.setAttribute('aria-label', 'Sections and compounds');
     this.page = el('div', 'si-page');
     this.live = this.livePane();
-    this.pane.append(this.tree, this.page, this.live.el);
+    this.pane.append(this.tree, this.page, this.live.el, this.treeGrip());
     work.append(this.pane);
     this.ribbon = el('div', 'ribbon tabbed si-ribbon si-only');
     this.ribbon.id = 'si-ribbon';
@@ -1491,24 +1494,52 @@ export class SiMode {
     const total = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0) + this.projectWarningsNow.length;
     row(1, svg('warn', 15), `Warnings (${total})`, { kind: 'warnings' }, { cls: total > 0 ? 'si-has-warn' : '', title: 'Every automatic warning in the project, by compound' });
 
+    // sections and scheme pages with rows under them fold (▸) and unfold (▾); the row picked is never hidden
+    const shut = this.collapsedOf(p);
+    const keyOf = (x: RowSpec): string => JSON.stringify(x.sel);
+    const kids = specs.map((x, i) => i > 0 && (x.sel.kind === 'section' || x.sel.kind === 'scheme') && (specs[i + 1]?.depth ?? 0) > x.depth);
+    const at = specs.findIndex((x) => keyOf(x) === pickKey);
+    for (let i = at - 1, d = specs[at]?.depth ?? 0; i > 0 && d > 1; i--) if (specs[i].depth < d) { d = specs[i].depth; if (shut.delete(keyOf(specs[i]))) this.saveCollapsed(); }
+    const shown: (RowSpec & { tw: '' | 'open' | 'shut' | 'leaf' })[] = [];
+    for (let i = 0, hideBelow = Infinity; i < specs.length; i++) {
+      const x = specs[i];
+      if (x.depth > hideBelow) continue;
+      hideBelow = Infinity;
+      const closed = kids[i] && shut.has(keyOf(x));
+      if (closed) hideBelow = x.depth;
+      shown.push({ ...x, tw: i === 0 ? '' : kids[i] ? (closed ? 'shut' : 'open') : 'leaf' });
+    }
+
     const mark = (r: HTMLElement): void => {
       const on = r.dataset.sel === pickKey;
       r.classList.toggle('on', on);
       r.setAttribute('aria-selected', String(on));
       r.tabIndex = on ? 0 : -1;
     };
-    const sig = JSON.stringify([p.readOnly, specs]);
-    if (this.treeFor === p && this.treeSig === sig && this.tree.childElementCount === specs.length) {
+    const sig = JSON.stringify([p.readOnly, shown]);
+    if (this.treeFor === p && this.treeSig === sig && this.tree.childElementCount === shown.length) {
       // nothing but the pick changed: the rows stay (and the keys stay on the row they were on)
       for (const r of this.tree.children) mark(r as HTMLElement);
       return;
     }
     const hadKeys = this.tree.contains(document.activeElement);
-    const rows = specs.map((x) => {
+    const rows = shown.map((x) => {
       const r = el('div', 'si-row');
       r.setAttribute('role', 'treeitem');
-      r.style.paddingLeft = `${6 + x.depth * 14}px`;
+      r.style.paddingLeft = `${x.depth ? 6 + (x.depth - 1) * 14 : 6}px`;
       r.innerHTML = x.icon;
+      if (x.tw) {
+        const tw = el('span', 'si-tw');
+        if (x.tw !== 'leaf') {
+          tw.innerHTML = x.tw === 'open' ? CHEVRON_OPEN : CHEVRON_SHUT;
+          tw.title = x.tw === 'open' ? 'Collapse' : 'Expand';
+          r.setAttribute('aria-expanded', String(x.tw === 'open'));
+          // (the arrow folds or unfolds the row without picking it, as in a file list)
+          tw.addEventListener('click', (e) => { e.stopPropagation(); this.fold(x.sel, x.tw === 'open'); });
+          r.addEventListener('dblclick', (e) => { if (!(e.target as HTMLElement).closest('.si-tw')) this.fold(x.sel, x.tw === 'open'); });
+        }
+        r.prepend(tw);
+      }
       const t = el('span', 'si-row-text');
       if (x.cid !== undefined) t.append(el('b', 'si-cid', x.cid), document.createTextNode(' ' + x.text)); else t.textContent = x.text;
       r.append(t);
@@ -1527,6 +1558,59 @@ export class SiMode {
     // (the row that had the keys was made again: they go to the row picked, so the next key still works)
     if (hadKeys) this.tree.querySelector<HTMLElement>('.si-row.on')?.focus({ preventScroll: true });
   }
+  /** Fold (or unfold) a section's or scheme page's row in the tree. */
+  private fold(sel: Pick, shut: boolean): void {
+    const p = this.project;
+    if (!p) return;
+    const set = this.collapsedOf(p);
+    const k = JSON.stringify(sel);
+    if (shut) set.add(k); else set.delete(k);
+    this.saveCollapsed();
+    this.renderTree();
+  }
+
+  /** Fold every section and scheme page (Collapse All), or unfold them all (Expand All). */
+  private foldAll(shut: boolean): void {
+    const p = this.project;
+    if (!p) return;
+    const set = this.collapsedOf(p);
+    set.clear();
+    if (shut) {
+      const add = (list: SiSection[]): void => {
+        for (const s of list) {
+          set.add(JSON.stringify({ kind: 'section', id: s.id }));
+          if (s.type === 'data') for (const it of s.items) if (it.kind === 'scheme') set.add(JSON.stringify({ kind: 'scheme', id: it.id }));
+          add(s.children);
+        }
+      };
+      add(p.top);
+    }
+    this.saveCollapsed();
+    this.renderTree();
+  }
+
+  /** The rows folded in each project's tree (by its folder), remembered on this computer. */
+  private collapsed: Map<string, Set<string>> | null = null;
+  private collapsedOf(p: SiProject): Set<string> {
+    if (!this.collapsed) {
+      this.collapsed = new Map();
+      try {
+        const saved = JSON.parse(localStorage.getItem('si.treeCollapsed') ?? '{}') as Record<string, unknown>;
+        for (const [k, v] of Object.entries(saved)) if (Array.isArray(v)) this.collapsed.set(k, new Set(v.filter((x): x is string => typeof x === 'string')));
+      } catch { /* (none kept) */ }
+    }
+    let set = this.collapsed.get(p.folder.where);
+    if (!set) { set = new Set(); this.collapsed.set(p.folder.where, set); }
+    return set;
+  }
+  private saveCollapsed(): void {
+    if (!this.collapsed) return;
+    try { localStorage.setItem('si.treeCollapsed', JSON.stringify(Object.fromEntries([...this.collapsed].filter(([, v]) => v.size).map(([k, v]) => [k, [...v]])))); } catch { /* (not kept) */ }
+  }
+
+  /** The page drawn last (the live preview opened by hand stays open only on it). */
+  private lastPick = '';
+
   /** The tree as last drawn: its project, and what its rows showed. */
   private treeFor: SiProject | null = null;
   private treeSig = '';
@@ -1534,6 +1618,8 @@ export class SiMode {
   // ---------------------------------------------------------------- pages
 
   private renderPage(): void {
+    const key0 = this.lastPick;
+    this.lastPick = JSON.stringify(this.pick);
     // (a contextual tab open before stays open when the page drawn again has it)
     const keep = this.ribbon.querySelector<HTMLElement>('[data-si-tab][aria-selected="true"]')?.dataset.siTab ?? '';
     void this.commitAll();
@@ -1585,6 +1671,8 @@ export class SiMode {
     if (keep && this.ribbon.querySelector<HTMLElement>(`[data-si-tab="${keep}"]`)?.hidden === false) this.showRibbonTab(keep);
     // (the Manuscript Check tab comes forward when its page is first shown: its commands are the page's only ones)
     if (this.pick.kind === 'manuscript' && this.lastPageKind !== 'manuscript') this.showRibbonTab('ms');
+    if (key0 !== JSON.stringify(this.pick)) this.liveAsked = false;
+    this.liveIdle();
     this.lastPageKind = this.pick.kind;
     void this.readLabels();
   }
@@ -2649,6 +2737,7 @@ export class SiMode {
     const strip = el('button', 'si-live-strip', 'Live Preview');
     strip.type = 'button';
     strip.title = 'Show the live preview (Ctrl+Shift+L)';
+    // (on a page with nothing to preview the strip opens it anyway, to say so)
     strip.addEventListener('click', () => this.setLive(true));
     const grip = el('div', 'si-live-grip');
     grip.title = 'Drag to change the preview’s width';
@@ -2689,6 +2778,36 @@ export class SiMode {
     return { el: wrap, host, state, empty, view: null, shown: '' };
   }
 
+  /** The border between the tree and the page: dragged to make the tree wider or narrower (remembered on this computer). */
+  private treeGrip(): HTMLElement {
+    const grip = el('div', 'si-tree-grip');
+    grip.title = 'Drag to change the width of the list';
+    grip.setAttribute('role', 'separator');
+    grip.setAttribute('aria-orientation', 'vertical');
+    grip.setAttribute('aria-label', 'Width of the list of sections and compounds');
+    const set = (w: number): void => { this.pane.style.setProperty('--si-tree-w', `${Math.round(Math.max(160, Math.min(640, w)))}px`); };
+    const keep = (): void => { try { localStorage.setItem('si.treeWidth', this.pane.style.getPropertyValue('--si-tree-w')); } catch { /* (not kept) */ } this.live.view?.resize(); };
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      grip.classList.add('on');
+      const left = this.pane.getBoundingClientRect().left;
+      const move = (ev: PointerEvent): void => set(ev.clientX - left);
+      const up = (): void => {
+        grip.classList.remove('on');
+        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+        keep();
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+    });
+    // (double-click: back to the standard width)
+    grip.addEventListener('dblclick', () => { this.pane.style.removeProperty('--si-tree-w'); try { localStorage.removeItem('si.treeWidth'); } catch { /* */ } this.live.view?.resize(); });
+    try { const w = localStorage.getItem('si.treeWidth'); if (w) this.pane.style.setProperty('--si-tree-w', w); } catch { /* (standard width) */ }
+    return grip;
+  }
+
   private zoomBar: StatusZoom | null = null;
   /** DocView's 100% (its ACTUAL; doc-view itself loads only with the preview). */
   private static readonly ACTUAL = 96 / 72;
@@ -2720,12 +2839,29 @@ export class SiMode {
     if (live) this.zoomBar.show();
   }
 
+  /** The live preview was opened by hand on a page it has nothing to show for (it stays open there). */
+  private liveAsked = false;
+
+  /**
+   * The preview folds to its strip by itself on a page it has nothing to show for (the Dashboard,
+   * the Warnings, the References…), so that page gets the width, and opens again on the next page
+   * it has; folding it by hand (▸, Ctrl+Shift+L) is what is remembered.
+   */
+  private liveIdle(): void {
+    const idle = this.liveOn && !!this.project && !this.liveAsked && !this.liveTarget();
+    const shut = !this.liveOn || idle;
+    this.live.el.classList.toggle('off', shut);
+    this.pane.classList.toggle('si-live-off', shut);
+  }
+
   /** Show or fold the live preview (remembered on this computer). */
   private setLive(on: boolean): void {
     this.liveOn = on;
     try { localStorage.setItem('si.livePreview', on ? 'on' : 'off'); } catch { /* (not kept) */ }
     this.live.el.classList.toggle('off', !on);
     this.pane.classList.toggle('si-live-off', !on);
+    // (shown by hand: it stays open on this page, even one it has nothing to show for)
+    this.liveAsked = on;
     this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(on));
     if (on) { this.live.shown = ''; this.liveSoon(0); }
     this.showZoom(!!this.tab);
@@ -2742,11 +2878,21 @@ export class SiMode {
     }
     if (pick.kind === 'scheme') return { kind: 'scheme', id: pick.id };
     if (pick.kind === 'project') return { kind: 'front' };
+    // (a section shows every page under it: a Data section its compounds and scheme pages, then its sub-sections)
     if (pick.kind === 'section') {
       const s = p.sections.find((x) => x.id === pick.id);
-      return s && s.type !== 'data' && s.type !== 'spectra' ? { kind: 'section', id: s.id } : null;
+      return s && s.type !== 'spectra' ? { kind: 'section', id: s.id } : null;
     }
     return null;
+  }
+
+  /**
+   * A change to a project's folder was written down (a step of Undo ended, or one was put back):
+   * the live preview follows it, whichever page or window made it (the front matter, a table, a
+   * figure, the Project Settings window, Undo and Redo).
+   */
+  folderChanged(folder: unknown): void {
+    if (this.project && this.project.folder === folder) this.liveSoon(300);
   }
 
   /** Update the live preview in `ms` (edits close together make one update). */
@@ -2767,7 +2913,7 @@ export class SiMode {
       L.shown = '';
       L.host.hidden = true;
       L.empty.hidden = false;
-      L.empty.textContent = this.pick.kind === 'section' ? 'A Data section’s page has no live preview: select one of its compounds, or Compile to see it all.' : 'This page has no live preview.';
+      L.empty.textContent = this.pick.kind === 'section' ? 'The Spectra section has no live preview: Compile shows its pages.' : 'This page has no live preview.';
       L.state.textContent = '';
       return;
     }
@@ -3135,7 +3281,61 @@ export class SiMode {
       project: p, scope, showSection, rows: buildRows(p, scope, this.dashFacts()), colors: statusColors(p.settings),
       picture: (c) => { const m = this.mols.get(c.id); return m ? this.host.pictureOf(m) : null; },
       open: (c, key) => this.openAt(c, key),
+      columns: p.readOnly ? undefined : {
+        resize: (key, px) => void this.dashChange((t) => {
+          const w = { ...columnWidths(t.scope) };
+          if (px === null) delete w[key]; else w[key] = px;
+          setView(t.holder, 'widths', w, t.viewKey);
+        }, false),
+        move: (key, before) => void this.dashChange((t) => setView(t.holder, 'columns', movedColumns(t.scope, key, before), t.viewKey)),
+        menu: (key, x, y) => this.columnsMenu(key, x, y),
+      },
     };
+  }
+
+  /** A change to the view of the dashboard shown (saved as one step of Undo); `redraw`: its grid is drawn again. */
+  private async dashChange(f: (t: NonNullable<ReturnType<SiMode['dashTarget']>>) => void, redraw = true): Promise<void> {
+    const t = this.dashTarget();
+    if (!t || this.project?.readOnly) return;
+    await this.act(async () => { f(t); await t.save(); }, false);
+    if (redraw) this.dashRedraw?.();
+    this.dashShown();
+  }
+
+  /** A dashboard header right-clicked: hide that column, show or hide each column, put the widths back. */
+  private columnsMenu(key: string, x: number, y: number): void {
+    const t = this.dashTarget();
+    if (!t) return;
+    const base = key.includes(':') ? key.slice(0, key.indexOf(':')) : key;
+    const all = availableColumns(t.scope);
+    const chosen = chosenColumns(t.scope);
+    const hidden = hiddenFixed(t.scope);
+    const fixed = (Object.keys(FIXED_COLUMNS) as FixedColumn[]).filter((k) => k !== 'section' || t.viewKey === 'project_dashboard');
+    const tick = '✓';
+    const showField = (k: string, on: boolean): void => void this.dashChange((tt) => {
+      setView(tt.holder, 'columns', on ? withColumn(chosenColumns(tt.scope), k, availableColumns(tt.scope)) : chosenColumns(tt.scope).filter((x) => x !== k), tt.viewKey);
+    });
+    const showFixed = (k: FixedColumn, on: boolean): void => void this.dashChange((tt) => {
+      const h = hiddenFixed(tt.scope);
+      if (on) h.delete(k); else h.add(k);
+      setView(tt.holder, 'hidden_columns', [...h], tt.viewKey);
+    });
+    const items: ([string, () => void, boolean?, string?] | null)[] = [];
+    const canHide = base !== 'id' && base !== 'name';
+    items.push(['Hide This Column', () => { if (fixed.includes(base as FixedColumn)) showFixed(base as FixedColumn, false); else showField(base, false); }, canHide], null);
+    const fixedItem = (k: FixedColumn): void => { if (fixed.includes(k)) items.push([FIXED_COLUMNS[k], () => showFixed(k, hidden.has(k)), true, hidden.has(k) ? '' : tick]); };
+    fixedItem('structure');
+    fixedItem('section');
+    for (const k of all) items.push([fieldLabel(t.scope, k), () => showField(k, !chosen.includes(k)), true, chosen.includes(k) ? tick : '']);
+    fixedItem('done');
+    items.push(null, ['Reset Column Widths', () => void this.dashChange((tt) => { const v = tt.holder[tt.viewKey]; if (v && typeof v === 'object') delete (v as Json).widths; }), Object.keys(columnWidths(t.scope)).length > 0]);
+    items.push(['Show All Columns', () => void this.dashChange((tt) => {
+      const avail = availableColumns(tt.scope);
+      setView(tt.holder, 'columns', avail.reduce((list, k) => withColumn(list, k, avail), chosenColumns(tt.scope)), tt.viewKey);
+      const v = tt.holder[tt.viewKey];
+      if (v && typeof v === 'object') delete (v as Json).hidden_columns;
+    }), chosen.length < all.length || hidden.size > 0]);
+    popupMenu(x, y, items);
   }
 
   private get waitingForFacts(): boolean {
@@ -3202,13 +3402,27 @@ export class SiMode {
     else if (cmd === 'compact') await change(() => setView(t.holder, 'compact', !isCompact(t.scope), t.viewKey));
     else if (cmd === 'columns') {
       const all = availableColumns(t.scope);
-      const chosen = new Set(chosenColumns(t.scope));
-      const got = await ask('Columns', all.map((k) => ({ name: k, label: fieldLabel(t.scope, k), value: String(chosen.has(k)), type: 'checkbox' as const })), {
-        ok: 'Show Columns', note: 'The fields shown as columns, besides the structure, ID and name. A field added later shows unless it is unchecked here.',
+      const chosen = chosenColumns(t.scope);
+      const hidden = hiddenFixed(t.scope);
+      const fixed = (Object.keys(FIXED_COLUMNS) as FixedColumn[]).filter((k) => k !== 'section' || t.viewKey === 'project_dashboard');
+      const box = (k: FixedColumn) => ({ name: `fixed:${k}`, label: FIXED_COLUMNS[k], value: String(!hidden.has(k)), type: 'checkbox' as const });
+      const got = await ask('Columns', [
+        ...fixed.filter((k) => k !== 'done').map(box),
+        ...all.map((k) => ({ name: k, label: fieldLabel(t.scope, k), value: String(chosen.includes(k)), type: 'checkbox' as const })),
+        box('done'),
+      ], {
+        ok: 'Show Columns', note: 'The columns shown besides the ID and name. On the dashboard, drag a header to move its column and its right border to change its width; right-click a header for this list.',
       });
       if (!got) return;
+      // (the order chosen is kept: fields shown again go back where the full list has them)
       const keep = all.filter((k) => got[k] === 'true');
-      await change(() => { if (keep.length === all.length) { const v = t.holder[t.viewKey]; if (v && typeof v === 'object') delete (v as Json).columns; } else setView(t.holder, 'columns', keep, t.viewKey); });
+      const ordered = keep.reduce((list, k) => withColumn(list, k, all), chosen.filter((k) => keep.includes(k)));
+      const hide = fixed.filter((k) => got[`fixed:${k}`] !== 'true');
+      await change(() => {
+        const v = t.holder[t.viewKey];
+        if (keep.length === all.length && ordered.every((k, i) => k === all[i])) { if (v && typeof v === 'object') delete (v as Json).columns; } else setView(t.holder, 'columns', ordered, t.viewKey);
+        if (hide.length) setView(t.holder, 'hidden_columns', hide, t.viewKey); else { const w = t.holder[t.viewKey]; if (w && typeof w === 'object') delete (w as Json).hidden_columns; }
+      });
     } else if (cmd === 'colors') {
       const body = statusColorsBody(statusColors(p.settings));
       const got = await ask('Status Colors', [], { ok: 'Use Colors', note: 'The color of each kind of dashboard cell, for this project (Chem SI Assistant uses the same). Cells are tinted lightly so their text stays readable.', body: body.el });
@@ -3640,6 +3854,26 @@ export class SiMode {
     // (in a text box or a list, Alt and the arrows are the box's own keys)
     if (inText) return;
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); void this.run(e.key === 'ArrowUp' ? 'move-up' : 'move-down'); return; }
+    // (Left folds the row picked, or goes to the row it is under; Right unfolds it, or goes to its first row)
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && this.tree.contains(e.target as Node)) {
+      const rows = [...this.tree.querySelectorAll<HTMLElement>('.si-row')];
+      const at = rows.findIndex((r) => r.classList.contains('on'));
+      const r = rows[at];
+      if (!r) return;
+      e.preventDefault();
+      const open = r.getAttribute('aria-expanded');
+      const sel = JSON.parse(r.dataset.sel!) as Pick;
+      const depth = (x: HTMLElement): number => parseFloat(x.style.paddingLeft) || 0;
+      if (e.key === 'ArrowLeft') {
+        if (open === 'true') { this.fold(sel, true); return; }
+        for (let i = at - 1; i >= 0; i--) if (depth(rows[i]) < depth(r)) { rows[i].click(); break; }
+      } else {
+        if (open === 'false') { this.fold(sel, false); return; }
+        if (open === 'true') rows[at + 1]?.click();
+      }
+      this.tree.querySelector<HTMLElement>('.si-row.on')?.focus();
+      return;
+    }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       const rows = [...this.tree.querySelectorAll<HTMLElement>('.si-row')];
       const at = rows.findIndex((r) => r.classList.contains('on'));
@@ -3877,6 +4111,7 @@ export class SiMode {
       else if (sel.kind === 'compound') items.push(['Change to Reaction Scheme…', run('to-scheme'), !ro]);
       items.push(null, ['Delete', run('delete'), !ro]);
     } else return;
+    items.push(null, ['Expand All', () => this.foldAll(false)], ['Collapse All', () => this.foldAll(true)]);
     items.push(null, ['Trash…', run('trash')]);
     popupMenu(x, y, items);
   }
@@ -3933,10 +4168,17 @@ export class SiMode {
   }
 
   /** Compile the project into a document (SI Assistant's layout), opened in a tab of its own; what was left out is said after. */
+  /** A compile is under way (a second one waits for it). */
+  private compiling = false;
+
   private async compile(pdf: boolean): Promise<void> {
     const p = this.project;
     if (!p) return;
-    this.host.flash('Compiling the SI…', 1500);
+    if (this.compiling) { this.host.flash('The SI is being compiled already.'); return; }
+    this.compiling = true;
+    // a window with how far along it is and Cancel: a large SI takes a while
+    const { compileProgress, CompileCancelled } = await import('./si-progress');
+    const bar = compileProgress(pdf ? 'Compile to PDF' : 'Compile', ['Reading the project…', 'Laying out the pages…', ...(pdf ? ['Writing the PDF…'] : [])]);
     let got;
     try {
       // (what is being typed, and every save on its way, is in the folder before it is read)
@@ -3945,12 +4187,33 @@ export class SiMode {
         contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (m) => this.host.siFacts(m),
         pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPages(b, most)),
         contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+        progress: (done, total, text) => bar.at(done, total, text),
       });
     } catch (e) {
+      bar.close();
+      this.compiling = false;
+      if (e instanceof CompileCancelled) { this.host.flash('Compile canceled: nothing was made.', 3000); return; }
       this.host.flash(`Could not compile the SI: ${e instanceof Error ? e.message : String(e)}`, 6000);
       return;
     }
-    await this.host.openCompiled(got.doc, `${p.title} SI`, pdf);
+    try {
+      // (laying the pages out can't be stopped part way)
+      bar.step(2);
+      bar.canCancel(false);
+      await bar.at(0, 0);
+      if (pdf) {
+        let writing = false;
+        await this.host.openCompiled(got.doc, `${p.title} SI`, true, {
+          hide: () => bar.hide(),
+          show: () => { bar.show(); if (!writing) { writing = true; bar.step(3); bar.canCancel(true); } },
+          progress: (done, total) => bar.at(done, total, `Writing the PDF: page ${Math.min(done + 1, total)} of ${total}`),
+          get cancelled() { return bar.cancelled; },
+        });
+      } else await this.host.openCompiled(got.doc, `${p.title} SI`, false);
+    } finally {
+      bar.close();
+      this.compiling = false;
+    }
     if (got.notes.length) {
       await ask('Compile Notes', [], { noCancel: true, ok: 'OK', note: `The SI was compiled. ${got.notes.length === 1 ? 'One thing' : `${got.notes.length} things`} to know:`, points: got.notes });
     }
@@ -4648,6 +4911,16 @@ function formulaNode(f: string): Node {
     if (/^\d+$/.test(part)) span.append(el('sub', '', part)); else span.append(document.createTextNode(part));
   }
   return span;
+}
+
+/** The fields shown with `k` shown too: just before the first field shown that comes after it in the full list (the order chosen is kept). */
+function withColumn(shown: string[], k: string, all: string[]): string[] {
+  if (shown.includes(k)) return shown;
+  const after = all.slice(all.indexOf(k) + 1);
+  const at = shown.findIndex((x) => after.includes(x));
+  const out = [...shown];
+  out.splice(at < 0 ? out.length : at, 0, k);
+  return out;
 }
 
 function shortRef(r: Json): string {

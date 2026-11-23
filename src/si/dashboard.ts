@@ -149,6 +149,36 @@ export function shownColumns(scope: Scope): string[] {
   return isSplit(scope) ? keys.flatMap((k) => splitKeys(scope, k)) : keys;
 }
 
+/**
+ * The grid's own columns besides the fields: the structure, the section (the project's grid)
+ * and how many required fields are done. Hidden ones are kept in the view as "hidden_columns"
+ * (Chemweave's: SI Assistant shows them all). ID and Name are always shown.
+ */
+export const FIXED_COLUMNS = { structure: 'Structure', section: 'Section', done: 'Done' } as const;
+export type FixedColumn = keyof typeof FIXED_COLUMNS;
+export function hiddenFixed(scope: Scope): Set<FixedColumn> {
+  const h = scope.view.hidden_columns;
+  return new Set(Array.isArray(h) ? h.filter((k): k is FixedColumn => typeof k === 'string' && k in FIXED_COLUMNS) : []);
+}
+
+/** Each column's width in pixels as set by dragging its border (Chemweave's "widths": SI Assistant sizes its own). */
+export function columnWidths(scope: Scope): Record<string, number> {
+  const w = scope.view.widths;
+  if (!isObj(w)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(w)) if (typeof v === 'number' && Number.isFinite(v) && v >= 24) out[k] = Math.min(1200, Math.round(v));
+  return out;
+}
+
+/** The fields chosen, with `key` moved to just before `before` (null: to the end). Keys are the fields' own (NMR and spectra count as one each). */
+export function movedColumns(scope: Scope, key: string, before: string | null): string[] {
+  const keys = chosenColumns(scope).filter((k) => k !== key);
+  if (!chosenColumns(scope).includes(key)) return chosenColumns(scope);
+  const at = before === null ? -1 : keys.indexOf(before);
+  keys.splice(at < 0 ? keys.length : at, 0, key);
+  return keys;
+}
+
 export function fieldLabel(scope: Scope, key: string): string {
   if (key.includes(':')) {
     const [base, sub] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];

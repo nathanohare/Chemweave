@@ -30,6 +30,8 @@ export interface PdfOptions {
   image(src: string): Promise<PdfImage | null>;
   /** The font files to keep inside the file for a face (left out: the reader's standard fonts). */
   fonts?: PdfFontSource;
+  /** How far along the writing is (before each page); a rejection stops it. */
+  progress?(done: number, total: number): Promise<void>;
 }
 
 // ---------------------------------------------------------------- text encodings
@@ -300,6 +302,7 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
 
   const kids: number[] = [];
   for (const page of pages) {
+    if (opts.progress) await opts.progress(kids.length, pages.length);
     const ops: string[] = [];
     const usedFonts = new Set<string>(), usedImages = new Set<number>(), usedStates = new Set<string>();
     // points from the top left, as recorded: flip the page's y axis
