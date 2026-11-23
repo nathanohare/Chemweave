@@ -1428,9 +1428,9 @@ export class DocumentMode {
     popupMenu(x, y, [
       ['Keep Source Formatting', () => void this.paste(null)],
       ['Keep Text Only (Ctrl+Shift+V)', () => { this.plainPaste = true; void this.paste(null); }],
-      ['Paste SMILES', () => { this.host.command('paste-smiles'); }],
       null,
       ['Paste as Object', () => { this.run('paste-object'); }, !!this.host.clipboardObject],
+      ['Paste SMILES', () => { this.host.command('paste-smiles'); }],
     ]);
   }
 
@@ -1517,7 +1517,7 @@ export class DocumentMode {
         null,
         ...CROP_ASPECTS.map(([name, a]): Item => [`Aspect Ratio ${name}`, () => void this.cropPicture(id, a)]),
         null,
-        ...PICTURE_SHAPES.slice(0, 4).map((p): Item => [mark((fx.shape ?? 'rect') === p.prst, `Crop to Shape: ${p.name}`), () => this.setPictureFx(id, { shape: p.prst === 'rect' ? undefined : p.prst })]),
+        ...PICTURE_SHAPES.slice(0, 4).map((p): Item => [mark((fx.shape ?? 'rect') === p.prst, `Crop to Shape: ${p.name.replace(/\b[a-z]/g, (ch) => ch.toUpperCase())}`), () => this.setPictureFx(id, { shape: p.prst === 'rect' ? undefined : p.prst })]),
         null,
         more('Crop Options…'),
       ];
@@ -2216,10 +2216,15 @@ export class DocumentMode {
     const text0 = e?.clipboardData?.getData('text/plain') ?? '';
     if (!own && this.clip && text0 && text0.replace(/\r\n?/g, '\n') === this.clip.text) own = this.clip;
     if (f.box && !f.box.cell) {
-      // into a text box: text only (figures go in the page's text)
-      const r = !plain && html ? htmlToRich(html) : null;
-      if (r) f.box.ed.replaceSelection(rt.normalizeRuns(r.runs.map((x) => ({ ...x, obj: undefined }))), r.paras.length > 1 ? r.paras : undefined);
-      else if (text0) f.box.ed.pastePlain(text0);
+      // into a text box: text only (figures go in the page's text); from Paste ▾, as the clipboard has it
+      const box = f.box;
+      const read = e ? null : await this.host.readPaste(null);
+      if (f.box !== box) return;
+      const h = plain ? '' : html || read?.html || '';
+      const t = text0 || read?.text || '';
+      const r = h ? htmlToRich(h) : null;
+      if (r) box.ed.replaceSelection(rt.normalizeRuns(r.runs.map((x) => ({ ...x, obj: undefined }))), r.paras.length > 1 ? r.paras : undefined);
+      else if (t) box.ed.pastePlain(t);
       return;
     }
     if (own && !plain) { this.pasteOwn(own); return; }
@@ -2229,13 +2234,14 @@ export class DocumentMode {
     const cp = this.clipPicture, gp = got.picture;
     const gs = gp && cp && !plain && this.clip ? imageSize(gp.bytes, gp.mime) : null;
     if (gs && gs.w === cp!.w && gs.h === cp!.h) { this.pasteOwn(this.clip!); this.caretAfterPaste(); return; }
-    if (got.drawing) {
+    // (Keep Text Only: a structure or picture copied with its text pastes as the text)
+    if (got.drawing && !plain) {
       // a pasted figure leaves the caret after it (as pasted text does), so typing doesn't replace it
       this.insertObject({ kind: 'drawing', contents: got.drawing }, 'Paste structure');
       this.caretAfterPaste();
       return;
     }
-    if (got.picture && !got.text && !got.html && !html) { this.dropPicture(got.picture.bytes, got.picture.mime); this.caretAfterPaste(); return; }
+    if (got.picture && !plain && !got.text && !got.html && !html) { this.dropPicture(got.picture.bytes, got.picture.mime); this.caretAfterPaste(); return; }
     const h = plain ? '' : html || got.html || '';
     // cells (from a sheet, a slide's table, Excel or Word) become a table in the text
     const cells = plain || f.box ? null : h ? (onlyTable(h) ? pastedTable(h, null) : null) : tsvTable(text0 || got.text || '');
@@ -3993,7 +3999,9 @@ export class DocumentMode {
       case 'insert-chart': void this.insertChart(); break;
       case 'edit-chart': { const id = this.pickedObject(); const o = id !== null ? f.t.objects[id] : undefined; if (id === null || o?.kind !== 'picture' || !o.chart) { this.host.flash('Click a chart first (or double-click it).'); break; } void this.editChart(id); break; }
       case 'pic-remove-bg': { const id = this.formatTarget(); if (id !== null) void this.formatPicture(id); break; }
-      case 'pic-reset': { const id = this.formatTarget(); if (id !== null) this.setPictureFx(id, { bright: undefined, contrast: undefined, sharpen: undefined, recolor: undefined, alpha: undefined, clear: undefined, bg: undefined, shape: undefined }, { crop: undefined }, 'Reset Picture'); break; }
+      // (as Word's Reset Picture: the looks go, the crop and size stay; taking the crop off and
+      // leaving the height would stretch a picture cropped to proportions)
+      case 'pic-reset': { const id = this.formatTarget(); if (id !== null) this.setPictureFx(id, { bright: undefined, contrast: undefined, sharpen: undefined, recolor: undefined, alpha: undefined, clear: undefined, bg: undefined, shape: undefined }, undefined, 'Reset Picture'); break; }
       case 'picture-format': { const id = this.pickedObject(); const o = id !== null ? f.t.objects[id] : undefined; if (id === null || o?.kind !== 'picture' || o.chart || o.embed) { this.host.flash(o?.kind === 'picture' && o.embed ? 'An embedded object shows its program\'s picture: change it by opening the object.' : 'Click a picture first.'); break; } void this.formatPicture(id); break; }
       case 'alt-text': void this.altText(); break;
       case 'make-editable': void this.makeEditable(lastEditStyle()); break;

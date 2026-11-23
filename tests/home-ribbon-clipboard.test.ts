@@ -40,3 +40,29 @@ describe('Home ▸ Clipboard and Format Favorites in every mode', () => {
     expect(g[g.indexOf('Format Favorites') - 1]).toBe('Paragraph');
   });
 });
+
+// review R04: Presentation's Paste ▾ offers PowerPoint's paste options, as far as they apply here
+describe('Paste ▾ choices', () => {
+  it('Presentation: Use Destination Theme, Keep Source Formatting (for copied slides), Keep Text Only, then Paste SMILES', async () => {
+    const { pasteChoices } = await import('../src/ui/paste-options');
+    expect(pasteChoices('slides', true).map((c) => c && [c.label, c.cmd, c.enabled])).toEqual([
+      ['Use Destination Theme', 'paste-slides', true], ['Keep Source Formatting', 'paste-slides-keep', true], ['Keep Text Only', 'paste-text-only', true], null, ['Paste SMILES', 'paste-smiles', true],
+    ]);
+    // with no slides copied, Use Destination Theme pastes what was copied onto the slide
+    const none = pasteChoices('slides', false);
+    expect(none[0]?.cmd).toBe('paste');
+    expect(none[1]?.enabled).toBe(false);
+  });
+
+  it('Canvas and Design: Paste, Keep Text Only, then Paste SMILES', async () => {
+    const { pasteChoices } = await import('../src/ui/paste-options');
+    for (const m of ['drawing', 'design'] as const) expect(pasteChoices(m).map((c) => c?.label ?? null)).toEqual(['Paste', 'Keep Text Only', null, 'Paste SMILES']);
+  });
+
+  it('Document: Paste SMILES after a separator, below Word\'s own options', () => {
+    const src = readFileSync(join(__dirname, '../src/ui/doc-mode.ts'), 'utf8');
+    const menu = src.slice(src.indexOf('private pasteMenu('), src.indexOf('private formatTarget('));
+    expect(menu.indexOf("'Keep Text Only")).toBeLessThan(menu.indexOf('null,'));
+    expect(menu.indexOf('null,')).toBeLessThan(menu.indexOf("'Paste SMILES'"));
+  });
+});

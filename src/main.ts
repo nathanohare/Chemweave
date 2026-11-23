@@ -149,6 +149,7 @@ import { SmartPane } from './ui/smart-pane';
 import { commandDef } from './commands/registry';
 import { defaultHandout, handoutLayout, handoutPageSvg, notesPageSize, notesPageSvg, type HandoutSetup } from './deck/notes-pages';
 import { OutlineView } from './ui/outline-view';
+import { pasteChoices } from './ui/paste-options';
 import { NotesPageView, editHandoutMaster, editNotesMaster } from './ui/notes-page-view';
 import { GuideTip, SlideRulers, drawGuides, gridAndGuides } from './ui/slide-guides';
 import { defaultView, gridLines, guideNear, paintedArea, rulerText, snapMove, type RulerPrefs, type SlideView } from './deck/guides';
@@ -827,11 +828,19 @@ if (!nmrHere) for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.n
 const focalPrefs: FocalPrefs = { ...DEFAULT_FOCAL_PREFS };
 
 /** Paste ▾ on the Canvas, Presentation and Design Home tabs: the paste options a drawing has. */
-function pasteOptions(r: DOMRect): void {
-  popupMenu(r.left, r.bottom + 2, [['Paste', () => command('paste')], ['Paste SMILES', () => command('paste-smiles')]]);
+/** Paste ▾ on the Canvas, Presentation and Design Home tabs: that kind of tab's paste options. */
+function pasteOptions(r: DOMRect, mode: 'drawing' | 'slides' | 'design' = 'drawing'): void {
+  popupMenu(r.left, r.bottom + 2, pasteChoices(mode, !!slideClip).map((c) => (c ? [c.label, () => (c.cmd === 'paste-text-only' ? void pasteTextOnly() : command(c.cmd)), c.enabled] : null)));
+}
+/** Keep Text Only: the clipboard's words as a text box, never a structure or picture (PowerPoint's and Word's paste option). */
+async function pasteTextOnly(): Promise<void> {
+  const text = await navigator.clipboard.readText().catch(() => '');
+  if (!text.trim()) { flash('There is no text on the clipboard to paste.'); return; }
+  await pasteText(text.replace(/\r\n?/g, '\n'), undefined, true);
 }
 // (the Presentation and Design ribbons' ▾ beside Paste)
-for (const b of document.querySelectorAll<HTMLButtonElement>('#ribbon [data-paste-menu], #design-ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect()));
+for (const b of document.querySelectorAll<HTMLButtonElement>('#ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect(), 'slides'));
+for (const b of document.querySelectorAll<HTMLButtonElement>('#design-ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect(), 'design'));
 
 const canvasRibbon = new CanvasRibbon({
   command: (cmd) => { command(cmd); },
@@ -1428,11 +1437,11 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
 /**
  * Pasted text on a drawing, slide or design: a SMILES string or a molfile becomes a structure;
  * other text (a Document's, Word's, a web page's) a text box in the middle, with its bold,
- * italics, sub- and superscripts and colours from the HTML that came with it.
+ * italics, sub- and superscripts and colours from the HTML that came with it. `plain` (Keep Text Only): always a text box.
  */
-async function pasteText(text: string, html?: string): Promise<void> {
+async function pasteText(text: string, html?: string, plain = false): Promise<void> {
   const here = sameDrawing('The pasted text');
-  if (looksLikeChemistry(text)) {
+  if (!plain && looksLikeChemistry(text)) {
     if (chem.ready) { if (await pasteChemistry(text, true)) return; }
     // (while the engine loads, a molfile or reaction waits to be pasted again; a word that might be
     // SMILES becomes a text box at once, and the user is told how to get the structure)
