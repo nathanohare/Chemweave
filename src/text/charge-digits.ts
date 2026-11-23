@@ -17,7 +17,9 @@
 // - one digit after a lone metal: the charge, a metal atom having no count in a simple ion
 //   (Fe3+ → Fe³⁺, Ca2+, Al3+, Cu2+);
 // - one digit after a lone non-metal: it can't tell (N3- is nitride N³⁻ or azide N₃⁻, O2- oxide
-//   O²⁻ or superoxide O₂⁻, I3- triiodide I₃⁻), so it leaves it and says why (chargeNote).
+//   O²⁻ or superoxide O₂⁻, I3- triiodide I₃⁻), so it leaves it and says why (chargeNote);
+// - one digit and a + after a metal and one O: it can't tell either (VO2+ is vanadyl VO²⁺ or
+//   dioxovanadium VO₂⁺, TiO2+), so the same (an anion such as MnO4- keeps its count).
 // Nothing else in the text changes. A sign counts as final when no letter or digit follows it
 // (Red-Al and the ranges of C8-12 are left alone).
 
@@ -56,6 +58,8 @@ export function chargeDigitEdits(text: string, isUp: (i: number) => boolean, fro
       const symbols = formula.match(/[A-Z][a-z]?/g) ?? [];
       if (!symbols.length || symbols.some((x) => elementNumber(x) === undefined && !/^(Me|Et|Pr|Bu|Ph|Ac|Bn|Bz|Ts|Ms|Tf|Cp|Py)$/.test(x))) continue;
       if (digits.length >= 2) n = 1;
+      // (a metal and one O with a lone digit and a + sign: an oxo cation, VO²⁺ or VO₂⁺, TiO²⁺ or TiO₂⁺)
+      else if (m[2] === '+' && symbols.length === 2 && formula === symbols.join('') && symbols[1] === 'O' && !NON_METALS.has(symbols[0])) { unsure.push(formula + digits + m[2]); continue; }
       else if (prev === ')' || symbols.length > 1 || formula !== symbols[0]) n = 0;
       else if (NON_METALS.has(formula)) { unsure.push(formula + digits + m[2]); continue; }
       else n = 1;

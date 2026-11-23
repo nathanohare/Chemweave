@@ -150,14 +150,20 @@ export function fragPrint(f: Element): string {
     + bs.map((b) => `${at.get(b.getAttribute('B') ?? '') ?? '?'}-${at.get(b.getAttribute('E') ?? '') ?? '?'}`).join(';'));
 }
 
-/** One atom's own print: its element and how many bonds of its structure end at it. */
-function atomPrint(n: Element, ends: Map<string, number>): string {
-  return `${n.getAttribute('Element') ?? '6'}:${ends.get(n.getAttribute('id') ?? '') ?? 0}`;
+/**
+ * One atom's own print: its element and the ids of the atoms bonded to it, sorted. An atom whose
+ * neighbours were renumbered, added or taken away no longer matches, so after ChemDraw both edits
+ * and renumbers a structure a value is dropped rather than put on another atom (review F8a2-R01).
+ */
+function atomPrint(n: Element, ends: Map<string, string[]>): string {
+  return `${n.getAttribute('Element') ?? '6'}:${[...(ends.get(n.getAttribute('id') ?? '') ?? [])].sort().join(',')}`;
 }
 
-function endsOf(bs: Element[]): Map<string, number> {
-  const ends = new Map<string, number>();
-  for (const b of bs) for (const k of [b.getAttribute('B'), b.getAttribute('E')]) if (k) ends.set(k, (ends.get(k) ?? 0) + 1);
+/** Each atom's bonded neighbours, by id. */
+function endsOf(bs: Element[]): Map<string, string[]> {
+  const ends = new Map<string, string[]>();
+  const add = (a: string, b: string) => { const l = ends.get(a); if (l) l.push(b); else ends.set(a, [b]); };
+  for (const b of bs) { const x = b.getAttribute('B'), y = b.getAttribute('E'); if (x && y) { add(x, y); add(y, x); } }
   return ends;
 }
 
@@ -170,7 +176,7 @@ export type BondZ = { z: number; at: string | null } | null;
  * structure instead of one per atom and bond keeps a file of many 3-D structures small (F7b R09,
  * Nate: fine as long as ChemDraw still draws the file the same; it passes over tags it doesn't know).
  * `depths` and `zs` are in the order of the fragment's <n> and <b> children (null where one has
- * none). Each value is kept with its element's id and its own print (element and bond count for an
+ * none). Each value is kept with its element's id and its own print (element and neighbours' ids for an
  * atom), and the whole with the structure's print (fragPrint), so on reading (fragMoreIn):
  * - while the structure's print holds, the values go back by place (ids renumbered, atoms moved);
  * - otherwise each goes back to the element with its id while that atom's own print holds, so an

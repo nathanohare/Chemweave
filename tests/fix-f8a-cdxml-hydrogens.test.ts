@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 //
-// F8a round 2: a label's hydrogens through CDXML. ChemDraw's node property NumHydrogens is "the
-// number of implicit hydrogens" on the atom; left out, ChemDraw works them out from the valence
-// (CDX SDK, chemapps.stolaf.edu/iupac/cdx/sdk/, Node object: NumHydrogens). So a bare "N" on a
+// F8a round 2: a label's hydrogens through CDXML. The CDX SDK (chemapps.stolaf.edu/iupac/cdx/sdk/,
+// Atom_NumHydrogens): "The number of (explicit) hydrogens in a labeled atom consisting of one heavy
+// atom and (optionally) the symbol H (e.g., CH3)"; when it is missing, "The number of hydrogens is
+// assumed to be the minimum value necessary to satisfy the valence requirements for the atom." So a bare "N" on a
 // carbon in a ChemDraw file is an amine, CH3NH2 (methylamine, PubChem CID 6329), while a label
 // typed "N" here (Nate, F1 Needs Nate 12) is written with NumHydrogens="0", so ChemDraw and this
 // program both read N with no hydrogens. The file is typed here in ChemDraw's layout.
@@ -23,6 +24,11 @@ describe('a label\'s hydrogens in CDXML', () => {
     const d = readCdxml(file('')).doc;
     expect([...d.atoms.values()].find((a) => a.z === 7)!.label).toBe('N');
     expect(nValence(d)).toBe('0');
+  });
+  it('a carbon "CH" with no NumHydrogens on one bond is a methyl, CH3, as the SDK says (review F8a2-R03)', () => {
+    const d = readCdxml(file('').replace('Element="7"', '').replace('>N<', '>CH<')).doc;
+    // (ethane, CH3CH3: PubChem CID 6324)
+    expect(toMolfile(d, [...d.atoms.keys()]).molblock.split('\n').filter((l) => / C {3}/.test(l)).map((l) => l.slice(48, 51).trim())).toEqual(['0', '0']);
   });
   it('a ChemDraw "N" with NumHydrogens="0" has none', () => {
     expect(nValence(readCdxml(file(' NumHydrogens="0"')).doc)).toBe('1');

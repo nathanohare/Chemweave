@@ -17,10 +17,10 @@ const parse = (xml: string) => new DOMParser().parseFromString(xml.replace(/<!DO
 const serial = (x: Document) => new XMLSerializer().serializeToString(x);
 const DEPTHS = [-7, 0.25, 7.5, -7, 0.25, 7.5];
 
-function ring(): Doc {
+function ring(ds: number[] = DEPTHS): Doc {
   const d = new Doc();
   d.bulk(() => {
-    const ids = DEPTHS.map((z, i) => { const a = d.addAtom(14.4 * Math.cos(i * Math.PI / 3), 14.4 * Math.sin(i * Math.PI / 3)); d.updateAtom(a.id, { depth: z }); return a.id; });
+    const ids = ds.map((z, i) => { const a = d.addAtom(14.4 * Math.cos(i * Math.PI / 3), 14.4 * Math.sin(i * Math.PI / 3)); d.updateAtom(a.id, { depth: z }); return a.id; });
     ids.forEach((id, i) => d.addBond(id, ids[(i + 1) % 6], 1, 'solid', i === 0 ? { z: 4 } : {}));
   });
   return d;
@@ -59,6 +59,24 @@ describe('one settings tag per structure', () => {
     const back = readCdxml(serial(x)).doc;
     expect(depths(back)).toEqual(DEPTHS);
     expect([...back.bonds.values()].map((b) => b.z ?? null)).toEqual([4, null, null, null, null, null]);
+  });
+
+  it('never puts a depth on another atom when ChemDraw both deleted an atom and renumbered the rest (review F8a2-R01)', () => {
+    const ds = [-7, 0.25, 7.5, -6, 1.25, 8.5];
+    const x = parse(writeCdxml(ring(ds), { name: 't.cdxml' }));
+    const gone = x.getElementsByTagName('n')[3];
+    for (const b of [...x.getElementsByTagName('b')]) if ([b.getAttribute('B'), b.getAttribute('E')].includes(gone.getAttribute('id'))) b.parentNode!.removeChild(b);
+    gone.parentNode!.removeChild(gone);
+    // every id renumbered in order from the same first id, as a program saving afresh would (so a
+    // later atom takes an earlier one's old id)
+    const all = [...x.getElementsByTagName('n'), ...x.getElementsByTagName('b')];
+    const first = Math.min(...all.map((e) => Number(e.getAttribute('id'))));
+    const ids = new Map(all.map((e, i) => [e.getAttribute('id')!, String(first + i)]));
+    for (const e of all) e.setAttribute('id', ids.get(e.getAttribute('id')!)!);
+    for (const b of x.getElementsByTagName('b')) for (const k of ['B', 'E']) b.setAttribute(k, ids.get(b.getAttribute(k)!)!);
+    const got = depths(readCdxml(serial(x)).doc);
+    const kept = [-7, 0.25, 7.5, 1.25, 8.5];
+    got.forEach((z, i) => { if (z !== null) expect(z, `atom ${i}`).toBe(kept[i]); });
   });
 
   it('drops only the changed atom\'s depth when ChemDraw changed its element', () => {

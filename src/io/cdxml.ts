@@ -1479,10 +1479,14 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       if (!implicitOk) {
         atom.label = text;
         atom.fileLabel = true;
-        // (no NumHydrogens: ChemDraw gives the atom the hydrogens its valence leaves room for, so a
-        // bare "N" on a carbon is an amine; CDX SDK, Node object, NumHydrogens: "the number of
-        // implicit hydrogens", worked out by ChemDraw when not given)
-        if (hShown === null && atom.z !== 6 && labelHydrogens(text, atom.z) !== null) atom.hByRule = true;
+        // (no NumHydrogens: the hydrogens are the valence's, so a bare "N" on a carbon is an amine.
+        // CDX SDK, Atom_NumHydrogens: "The number of (explicit) hydrogens in a labeled atom
+        // consisting of one heavy atom and (optionally) the symbol H (e.g., CH3)", and when it is
+        // missing, "The number of hydrogens is assumed to be the minimum value necessary to satisfy
+        // the valence requirements for the atom." Carbon too, as the SDK makes no exception: a "CH"
+        // from a writer that leaves NumHydrogens out is CH3 on one bond, as ChemDraw reads it;
+        // ChemDraw itself always writes NumHydrogens on such labels.)
+        if (hShown === null && labelHydrogens(text, atom.z) !== null) atom.hByRule = true;
         // told to run left, ChemDraw draws the text as written (MeO, the O on the atom); this program
         // keeps a label from the atom out (OMe) and turns it to draw it
         if (atom.fixedDir && atom.just === 'left' && !atom.labelMarks) {

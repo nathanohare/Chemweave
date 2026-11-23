@@ -59,8 +59,8 @@ describe('Raise Charge Digits', () => {
     expect(raise('Al3+')).toBe('Al^3^+');
   });
   it('leaves a lone non-metal with one digit, which could be a count or the charge, and says why', () => {
-    // (N3- is nitride N³⁻ or azide N₃⁻; I3- triiodide I₃⁻; O2- oxide or superoxide)
-    for (const ion of ['N3-', 'I3-', 'O2-']) {
+    // (N3- is nitride N³⁻ or azide N₃⁻; I3- triiodide I₃⁻; O2- oxide or superoxide; VO2+ vanadyl VO²⁺ or VO₂⁺)
+    for (const ion of ['N3-', 'I3-', 'O2-', 'VO2+', 'TiO2+']) {
       expect(chargeDigitEdits(ion, () => false), ion).toEqual([]);
       expect(chargeNote.text).toContain(ion);
     }
