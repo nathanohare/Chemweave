@@ -28,6 +28,20 @@ describe('an R digit ChemDraw wrote on the line', () => {
     expect(xml).toMatch(/face="96">R1<\/s>/);
     expect(xml).not.toContain(MORE_TAG);
   });
+  // (review F8a-R07: an R number inside a longer label, as ChemDraw writes OR1 and CO2R1 on the line)
+  const labelled = (text: string) => FLAT_R1.replace('NodeType="GenericNickname" GenericNickname="R1"', '').replace('face="96">R1<', `face="96">${text}<`);
+  for (const text of ['OR1', 'CO2R1']) {
+    it(`${text} on the line shows and saves on the line, with no settings tag`, () => {
+      const d = readCdxml(labelled(text)).doc;
+      const a = [...d.atoms.values()].find((x) => x.label === text)!;
+      expect(a.supDigits, text).toBe(false);
+      expect(labelPieces(text, labelLook(a).supDigits).filter((p) => p.sup)).toEqual([]);
+      const xml = writeCdxml(d);
+      expect(xml).not.toContain(MORE_TAG);
+      expect(readCdxml(xml).doc.atoms.size).toBe(2);
+      expect([...readCdxml(xml).doc.atoms.values()].find((x) => x.label === text)!.supDigits).toBe(false);
+    });
+  }
   it('a label drawn here (no choice of its own) still follows the setting, raised, with no tag', () => {
     const d = new Doc();
     d.bulk(() => { const a = d.addAtom(0, 0, 6, { label: 'R1' }), b = d.addAtom(14.4, 0); d.addBond(a.id, b.id); });

@@ -2,6 +2,7 @@
 // their formatting, arrows, and the common graphics (lines, boxes, circles, brackets,
 // charge symbols). Anything not understood yet is counted and skipped, never fatal.
 
+import { rNumberDigits } from '../chem/r-numbers';
 import { tint } from '../colours';
 import { pathId, freeformId } from '../design/geo';
 import { parseGuides } from '../editor/guides';
@@ -2371,7 +2372,14 @@ export function labelLookOf(runs: TextRun[], text: string): { supDigits?: boolea
   const out: { supDigits?: boolean; marks?: string } = {};
   const raisedDigits = runs.length > 1 && runs[runs.length - 1].sup && /^\d+$/.test(runs[runs.length - 1].text);
   if (raisedDigits) out.supDigits = true;
-  else if (/^R\d+$/.test(text)) out.supDigits = false;
+  else {
+    // a label with R numbers none of which is raised (R1, OR1, CO2R1 written on the line): flat
+    // here too, whatever Preferences ▸ R numbers raised says (review F8a-R07)
+    const up: boolean[] = [];
+    for (const r of runs) for (const _ of r.text) up.push(!!r.sup);
+    const rd = rNumberDigits(text);
+    if (rd.length && !rd.some((i) => up[i])) out.supDigits = false;
+  }
   // bold and underline that only some of the label has (all of it is the label's own face)
   const someBold = runs.some((r) => r.bold) && (mixed || !runs.every((r) => r.bold));
   const someUnder = runs.some((r) => r.underline) && !runs.every((r) => r.underline);
