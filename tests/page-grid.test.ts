@@ -241,6 +241,20 @@ describe('the page grid settings', () => {
   });
 });
 
+describe('fixed edges shown or not (Nate, 2026-11-23)', () => {
+  it('are hidden by default, the page boundaries still shown', () => {
+    expect(DEFAULT_PAGE_LOOK.edges).toBe(false);
+    expect(DEFAULT_PAGE_LOOK.grid).toBe(true);
+  });
+
+  it('are hidden for settings saved before the choice existed, and kept when chosen', () => {
+    // settings saved by an earlier version have every other field, but not this one
+    const { edges: _e, ...before } = DEFAULT_PAGE_LOOK;
+    expect(parsePageLook({ ...before, wallStyle: 'hatch' }).edges).toBe(false);
+    expect(parsePageLook({ ...before, edges: true }).edges).toBe(true);
+  });
+});
+
 describe('the hatching along fixed edges', () => {
   const view = box(-100, -100, 400, 300);
   it('runs on round a corner where two fixed edges meet, cut on the diagonal', () => {

@@ -28,6 +28,8 @@ export interface OrientPrefs {
   tintStrength: Strength;
   /** Fit and Go to Selection buttons in the status bar. */
   goButtons: boolean;
+  /** Presentation: the wheel past a slide's top or bottom edge goes to the slide before or after it, as in PowerPoint (off: it stops at the edge). */
+  slideScroll: boolean;
 }
 
 export const DEFAULT_ORIENT: OrientPrefs = {
@@ -36,6 +38,7 @@ export const DEFAULT_ORIENT: OrientPrefs = {
   dotGrid: false, gridSpacing: 'normal', gridStrength: 'light',
   tint: false, tintStrength: 'light',
   goButtons: true,
+  slideScroll: false,
 };
 
 const CHOICES: { [K in keyof OrientPrefs]?: readonly string[] } = {
