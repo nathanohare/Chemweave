@@ -11,11 +11,11 @@ import type { Sheet } from '../sheet/workbook';
 import { Range, colName, parseCellRef } from '../sheet/refs';
 import {
   Chart, ChartKind, ChartAxis, Series, SeriesFit, ErrorBars, MarkerShape, CHART_NAMES, CHART_PALETTES, MARKERS,
-  chartFromRange, chartData, readRef, refText, isXY, hasLevels, comboAs, onSecondAxis, Bins, BoxOptions, retitle,
+  chartFromRange, chartData, readRef, refText, isXY, hasLevels, comboAs, onSecondAxis, Bins, BoxOptions, retitle, titleIs, titleWithLook,
 } from '../sheet/chart';
 import { CHEM_FITS, FIT_NAMES, FitKind, fitEquation, fitResults, isChemFit, isTemperatureFit, r2Text, fitNumber } from '../sheet/fit';
 import { histogram } from '../sheet/chart-stats';
-import { chartCanvas, chartItems, chartFits } from '../render/chart-draw';
+import { chartCanvas, chartItems, chartFits, markupRuns } from '../render/chart-draw';
 import { itemsToSvg } from '../render/svg';
 import { copyPictureItems, copySvg } from '../io/clipboard';
 import { saveFileDialog, writeFile, PICTURE, SVG } from '../io/files';
@@ -219,13 +219,16 @@ export class SheetCharts {
     if (!c) return;
     const got = await ask('Chart Titles', [
       { name: 'title', label: 'Chart title', value: c.title ?? '' },
+      // (Excel's Font for the title: Bold and Italic on the whole title, F8b)
+      { name: 'titleBold', label: 'Chart title: Bold', value: String(titleIs(c, 'bold')), type: 'checkbox' },
+      { name: 'titleItalic', label: 'Chart title: Italic', value: String(titleIs(c, 'italic')), type: 'checkbox' },
       { name: 'x', label: c.kind === 'bar' ? 'Value axis (across)' : 'Horizontal axis', value: c.x.title ?? '' },
       { name: 'y', label: c.kind === 'bar' ? 'Category axis (down)' : 'Vertical axis', value: c.y.title ?? '' },
       ...(c.kind === 'combo' ? [{ name: 'y2', label: 'Second vertical axis (right)', value: c.y2?.title ?? '' }] : []),
     ], { ok: 'Apply', note: 'k_{obs} writes a subscript and s^{-1} a superscript; one character needs no braces (H_2O). Leave a box empty for no title.' });
     if (!got) return;
     this.patch((x) => clean({
-      ...x, ...retitle(x, got.title), x: clean({ ...x.x, ...retitle(x.x, got.x) }), y: clean({ ...x.y, ...retitle(x.y, got.y) }),
+      ...x, ...titleWithLook(retitle(x, got.title), { bold: got.titleBold === 'true', italic: got.titleItalic === 'true' }, markupRuns), x: clean({ ...x.x, ...retitle(x.x, got.x) }), y: clean({ ...x.y, ...retitle(x.y, got.y) }),
       ...(got.y2 !== undefined ? { y2: clean({ ...x.y2, ...retitle(x.y2 ?? {}, got.y2) }) } : {}),
     }), 'Chart titles');
   }
