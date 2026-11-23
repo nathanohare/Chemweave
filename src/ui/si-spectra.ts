@@ -359,7 +359,10 @@ export class SiSpectraPage {
       void this.host.contentBox(e.src).then((c) => { if (c) { e.crop = c; if (this.current === e) this.renderStage(); } }).catch(() => {});
     }
     const g = this.geometry(e, eff);
-    const k = Math.min(PT_PX, 520 / g.slot.h);
+    // (as large as fits the stage's width too: a landscape page is wider than the stage in a narrow window)
+    const pad = this.stage.isConnected ? parseFloat(getComputedStyle(this.stage).paddingLeft) + parseFloat(getComputedStyle(this.stage).paddingRight) : 0;
+    const room = this.stage.clientWidth - (pad || 0);
+    const k = Math.min(PT_PX, 520 / g.slot.h, room > 0 ? room / g.slot.w : Infinity);
     const paper = el('div', 'si-spectra-paper');
     paper.style.width = `${g.slot.w * k}px`;
     paper.style.height = `${g.slot.h * k}px`;

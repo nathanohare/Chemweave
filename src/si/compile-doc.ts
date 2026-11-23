@@ -1251,14 +1251,16 @@ class Compiler {
     const title = str(this.p.settings.title);
     const p = this.b.doc.page;
     const { hf, format } = this.pageLines(p.w - p.left - p.right);
-    return dropDeadLinks(this.b.finish({
+    // (the live preview keeps the links to pages it leaves out, so it shows them as they print)
+    const finish = this.preview ? (t: DocText): DocText => t : (t: DocText): DocText => dropDeadLinks(t, this.linkLook);
+    return finish(this.b.finish({
       styles: this.styles,
       hf,
       ...(format !== 'decimal' ? { numFormat: format } : {}),
       references: this.p.references.map(toReference),
       props: { title: title || this.p.title },
       noFigureOffer: true,
-    }), this.linkLook);
+    }));
   }
 
   private async buildAll(): Promise<void> {
