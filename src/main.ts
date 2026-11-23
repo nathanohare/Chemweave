@@ -826,13 +826,20 @@ if (!nmrHere) for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.n
 /** Focal point settings (Preferences, the Distribute menu's choice). */
 const focalPrefs: FocalPrefs = { ...DEFAULT_FOCAL_PREFS };
 
+/** Paste ▾ on the Canvas, Presentation and Design Home tabs: the paste options a drawing has. */
+function pasteOptions(r: DOMRect): void {
+  popupMenu(r.left, r.bottom + 2, [['Paste', () => command('paste')], ['Paste SMILES', () => command('paste-smiles')]]);
+}
+// (the Presentation and Design ribbons' ▾ beside Paste)
+for (const b of document.querySelectorAll<HTMLButtonElement>('#ribbon [data-paste-menu], #design-ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect()));
+
 const canvasRibbon = new CanvasRibbon({
   command: (cmd) => { command(cmd); },
   pickTool: (name) => pickTool(name),
   hasTool: (name) => name in TOOLS,
   icon: (it) => ('cmd' in it ? commandIcon(it.cmd) ?? RIBBON_ONLY_ICONS[it.cmd] ?? ICONS[it.cmd] : ICONS[it.tool]),
   textGroups: (font, paragraph) => { canvasTextRows = { font, paragraph }; },
-  pasteMenu: (r) => { popupMenu(r.left, r.bottom + 2, [['Paste', () => command('paste')], ['Paste SMILES', () => command('paste-smiles')]]); },
+  pasteMenu: (r) => pasteOptions(r),
   itemMenu: (cmd, r) => { if (cmd === 'distribute-h' || cmd === 'distribute-v') distributeMenu(r); },
 }, $('#sheet-ribbon'));
 refreshDistributeTips();

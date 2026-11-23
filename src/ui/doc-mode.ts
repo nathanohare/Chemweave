@@ -1419,6 +1419,17 @@ export class DocumentMode {
     if (!this.applySimilar('', patch)) this.ed.setStyle(patch);
   }
 
+  /** Home ▸ Paste ▾: Word's paste options that a document here has. */
+  private pasteMenu(x: number, y: number): void {
+    popupMenu(x, y, [
+      ['Keep Source Formatting', () => void this.paste(null)],
+      ['Keep Text Only (Ctrl+Shift+V)', () => { this.plainPaste = true; void this.paste(null); }],
+      ['Paste SMILES', () => { this.host.command('paste-smiles'); }],
+      null,
+      ['Paste as Object', () => { this.run('paste-object'); }, !!this.host.clipboardObject],
+    ]);
+  }
+
   /** The ribbon's menus that open under their buttons. */
   private ribbonMenus(b: HTMLElement): Record<string, (x: number, y: number) => void> {
     return {
@@ -1429,6 +1440,7 @@ export class DocumentMode {
       'hf-numbers': (x, y) => this.hfNumberMenu(x, y),
       'hf-info': (x, y) => this.hfInfoMenu(x, y),
       'doc-select': (x, y) => this.selectMenu(x, y),
+      'paste-menu': (x, y) => this.pasteMenu(x, y),
       'show-markup': (x, y) => this.showMarkupMenu(x, y),
       'arrange-position': (x, y) => this.arranging.positionMenu(x, y),
       'arrange-rotate': (x, y) => this.arranging.rotateMenu(x, y),

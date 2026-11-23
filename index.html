@@ -885,7 +885,7 @@
         <div class="rb-row">
           <div class="rb-col rb-paste">
             <button class="rb-big" data-sh="paste" title="Paste cells, a structure from ChemDraw, or a table from Excel"><span class="rb-icon">⎘</span>Paste</button>
-            <button class="rb-paste-more" data-sh="paste-menu" aria-label="Paste options" title="Paste Values, Formulas, Formatting, Transpose, or Paste Special… (Ctrl+Alt+V): operations, skip blanks, column widths">▾</button>
+            <button class="rb-paste-more" data-sh="paste-menu" aria-label="Paste options" aria-haspopup="menu" title="Paste options: Paste Values, Formulas, Formatting, Transpose, Paste SMILES, or Paste Special… (Ctrl+Alt+V): operations, skip blanks, column widths">▾</button>
           </div>
           <div class="rb-col">
             <button data-sh="cut" title="Cut (paste to move the cells)">Cut</button>
@@ -918,6 +918,7 @@
         </div>
         <div class="rb-label">Alignment</div>
       </div>
+      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Formatting saved under a name (fill, outline, font, color): click one to apply it to the selected cells or shape, in any mode">Format Favorites</div></div>
       <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
@@ -953,7 +954,6 @@
         </div>
         <div class="rb-label">Styles</div>
       </div>
-      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Formatting saved under a name (fill, outline, font, color): click one to apply it to the selected cells or shape, in any mode">Format Favorites</div></div>
   <div class="rb-group">
         <div class="rb-row">
           <div class="rb-col">
@@ -1498,7 +1498,10 @@
     <div class="rb-panel" data-doc-panel="home">
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-doc="paste" title="Paste text, a structure from ChemDraw, or a picture"><span class="rb-icon">⎘</span>Paste</button>
+          <div class="rb-col rb-paste">
+            <button class="rb-big" data-doc="paste" title="Paste text, a structure from ChemDraw, or a picture"><span class="rb-icon">⎘</span>Paste</button>
+            <button class="rb-paste-more" data-doc="paste-menu" aria-haspopup="menu" aria-label="Paste options" title="Paste options: Keep Source Formatting, Keep Text Only (Ctrl+Shift+V), Paste SMILES, or Paste as Object">▾</button>
+          </div>
           <div class="rb-col">
             <button data-doc="cut" title="Cut">Cut</button>
             <button data-doc="copy" title="Copy (a structure selected on its own copies as a drawing, for ChemDraw)">Copy</button>
@@ -1507,7 +1510,6 @@
         </div>
         <div class="rb-label">Clipboard</div>
       </div>
-      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Formatting saved under a name (fill, line, shadow, effects, text): click one to apply it to the selection">Format Favorites</div></div>
       <div data-font-group="document"></div>
       <div class="rb-group">
         <div class="rb-row">
@@ -1549,6 +1551,7 @@
         <div class="rb-label">Paragraph</div>
         <button class="rb-launch" data-doc="box-para" title="Paragraph settings: indents, spacing before and after, line spacing, page breaks">⬊</button>
       </div>
+      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Formatting saved under a name (fill, line, shadow, effects, text): click one to apply it to the selection">Format Favorites</div></div>
       <div class="rb-group">
         <div class="rb-row rb-styles">
           <button class="rb-style" data-doc="style-normal" aria-pressed="false" title="Normal text"><span>AaBbCc</span>Normal</button>
@@ -2287,7 +2290,10 @@
     <div class="rb-panel" data-sl-panel="home">
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-cmd="paste" title="Paste text, a structure from ChemDraw, or a picture"><span class="rb-icon">⎘</span>Paste</button>
+          <div class="rb-col rb-paste">
+            <button class="rb-big" data-cmd="paste" title="Paste text, a structure from ChemDraw, or a picture"><span class="rb-icon">⎘</span>Paste</button>
+            <button class="rb-paste-more" data-paste-menu aria-haspopup="menu" aria-label="Paste options" title="Paste options: Paste, or Paste SMILES (text on the clipboard read as structures)">▾</button>
+          </div>
           <div class="rb-col">
             <button data-cmd="cut" title="Cut (Ctrl+X)">Cut</button>
             <button data-cmd="copy" title="Copy (Ctrl+C): structures go as a drawing for ChemDraw, Word and PowerPoint">Copy</button>
@@ -2296,7 +2302,6 @@
         </div>
         <div class="rb-label">Clipboard</div>
       </div>
-      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Looks you keep under a name (fill, line, shadow, effects, text): click one to give it to the selection">Format Favorites</div></div>
       <div class="rb-group">
         <div class="rb-row">
           <div class="rb-fly rb-split">
@@ -2370,6 +2375,7 @@
         </div>
         <div class="rb-label">Paragraph</div>
       </div>
+      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Formatting saved under a name (fill, line, shadow, effects, text): click one to apply it to the selection">Format Favorites</div></div>
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-cmd="slide-shapes" aria-haspopup="true" title="Basic shapes, block arrows, flowchart shapes, callouts and lab glassware: choose one, then click or drag on the slide"><span class="rb-icon">◇</span>Shapes ▾</button>
@@ -2887,7 +2893,10 @@
     <div class="rb-panel" data-dz-panel="home">
       <div class="rb-group">
         <div class="rb-row">
-          <button class="rb-big" data-cmd="paste" title="Paste a structure, a picture or text"><span class="rb-icon">⎘</span>Paste</button>
+          <div class="rb-col rb-paste">
+            <button class="rb-big" data-cmd="paste" title="Paste a structure, a picture or text"><span class="rb-icon">⎘</span>Paste</button>
+            <button class="rb-paste-more" data-paste-menu aria-haspopup="menu" aria-label="Paste options" title="Paste options: Paste, or Paste SMILES (text on the clipboard read as structures)">▾</button>
+          </div>
           <div class="rb-col">
             <button data-cmd="cut" title="Cut (Ctrl+X)">Cut</button>
             <button data-cmd="copy" title="Copy (Ctrl+C): structures go as a drawing for ChemDraw, Word and PowerPoint">Copy</button>
@@ -2897,6 +2906,7 @@
         <div class="rb-label">Clipboard</div>
       </div>
       <div data-tx-slot hidden></div>
+      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Formatting saved under a name (fill, line, shadow, effects, text): click one to apply it to the selection">Format Favorites</div></div>
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-cmd="design-shapes" title="Find a shape in the library on the left"><span class="rb-icon">◇</span>Shapes</button>
@@ -2904,7 +2914,6 @@
         </div>
         <div class="rb-label">Shapes and Icons</div>
       </div>
-      <div class="rb-group"><div class="rb-row"><div class="rb-styles-host" data-favorites-gallery></div></div><div class="rb-label" title="Looks you keep under a name (fill, line, shadow, effects, text): click one to give it to the selection">Format Favorites</div></div>
       <div class="rb-group">
         <div class="rb-row">
           <button class="rb-big" data-cmd="shape-styles" aria-haspopup="dialog" title="Shape Styles: a ready-made fill, outline and effects for the selected shapes"><span class="rb-icon">◩</span>Shape Styles ▾</button>

@@ -1258,6 +1258,7 @@ export class SheetMode {
       ['Paste Formulas', () => void this.pasteWith({ what: 'formulas' })],
       ['Paste Formatting', () => void this.paste(null, 'formats')],
       ['Transpose', () => void this.pasteWith({ what: 'all', transpose: true })],
+      ['Paste SMILES', () => { this.host.command?.('paste-smiles'); }],
       null,
       ['Paste Special… (Ctrl+Alt+V)', () => this.run('paste-special')],
     ]);
