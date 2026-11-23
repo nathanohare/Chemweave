@@ -284,6 +284,17 @@ export class DocumentMode {
   private caretOn = true;
   private blink: ReturnType<typeof setInterval> | null = null;
   private clicks = { n: 0, time: 0, at: { x: 0, y: 0 } };
+  /**
+   * Above zero while a click picks something or a header is left: the caret moving then doesn't
+   * scroll the window (what was clicked is where it is on the screen; leaving a header keeps the
+   * page scrolled to), as in Word. Moving the caret with the keys or typing still brings it into view.
+   */
+  private holdView = 0;
+  /** Run `f` with the window kept where it is (see holdView). */
+  private stayPut<T>(f: () => T): T {
+    this.holdView++;
+    try { return f(); } finally { this.holdView--; }
+  }
   private dragging:
     | { kind: 'text' }
     | { kind: 'box' }
@@ -1095,6 +1106,13 @@ export class DocumentMode {
     const f = this.file;
     this.cellRange = null;
     if (!f?.box) return;
+    // leaving a header or footer: the window stays on the page scrolled to, not back at the text's caret
+    if (f.box.hf) { const b = f.box; this.stayPut(() => { if (f.box === b) this.stopBoxNow(f, pick); }); return; }
+    this.stopBoxNow(f, pick);
+  }
+
+  private stopBoxNow(f: DocFile, pick: boolean): void {
+    if (!f.box) return;
     const id = f.box.id;
     f.endBox();
     if (pick) {
@@ -1273,7 +1291,7 @@ export class DocumentMode {
 
   /** Keep the caret in view after it moves. */
   private revealCaret(): void {
-    if (!this.file || this.dragging?.kind === 'resize') return;
+    if (!this.file || this.dragging?.kind === 'resize' || this.holdView) return;
     const c = this.ed.caret();
     this.view.reveal({ x1: c.x, y1: c.y1, x2: c.x, y2: c.y2 });
   }
@@ -2684,7 +2702,8 @@ export class DocumentMode {
 
   private wirePointer(v: DocView): void {
     const s = v.scroller;
-    s.addEventListener('pointerdown', (e) => { if (e.button === 0) this.activate(v); this.pointerDown(e); });
+    // (what is clicked is on the screen already: picking it doesn't scroll the window)
+    s.addEventListener('pointerdown', (e) => { if (e.button === 0) this.activate(v); this.stayPut(() => this.pointerDown(e)); });
     s.addEventListener('pointermove', (e) => {
       // the mouse over the other pane: its own cursor (the pane being worked in stays the same)
       if (this.dragging || v === this.view) { this.pointerMove(e); return; }
@@ -2692,7 +2711,8 @@ export class DocumentMode {
       this.view = v;
       try { this.pointerMove(e); } finally { this.view = was; }
     });
-    s.addEventListener('pointerup', (e) => {
+    // (letting go puts what was dragged where the pointer is, on the screen: nothing scrolls)
+    s.addEventListener('pointerup', (e) => this.stayPut(() => {
       const d = this.dragging;
       this.dragging = null;
       try { s.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
@@ -2701,8 +2721,9 @@ export class DocumentMode {
       if (d?.kind === 'figure') { this.view.sketch = null; if (d.geo) this.placeShape(d.geo, rectOf(d.from, d.to)); else this.insertFigure(rectOf(d.from, d.to)); }
       if (d?.kind === 'inline') this.dropInline(d.id, d.to);
       if ((d?.kind === 'text' || d?.kind === 'box') && this.painter && this.file && !this.reading) this.painter(this.ed);
-    });
-    s.addEventListener('dblclick', (e) => {
+    }));
+    // (what is double-clicked is on the screen: nothing it does scrolls the window)
+    s.addEventListener('dblclick', (e) => this.stayPut(() => {
       const f = this.file;
       if (!f || this.reading) return;
       this.activate(v);
@@ -2771,7 +2792,7 @@ export class DocumentMode {
         }
       }
       word(f.ed, o);
-    });
+    }));
     s.addEventListener('contextmenu', (e) => {
       if (!this.file) return;
       this.activate(v);
@@ -4071,7 +4092,7 @@ export class DocumentMode {
     ed.onTyped = (typed) => afterTyping(ed, typed);
     if (at) ed.setCaret(offsetAt(ed.layout(), at.x, at.y));
     const lay = ed.layout();
-    if (lay.lines.length) this.view.reveal(lay.box);
+    if (lay.lines.length && !this.holdView) this.view.reveal(lay.box);
     this.changed('selection');
     this.updateRibbon();
     if (!was) this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="hf"]')?.click();

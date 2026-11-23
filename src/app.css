@@ -1331,6 +1331,8 @@ dialog.design-size { width: min(94vw, 500px); }
   gap: 10px;
   padding: 10px 8px 10px 6px;
   overflow-y: auto;
+  /* room for the scroll bar is kept whether or not it shows, so the pictures stay clear of it and don't change size (main.ts thumbFor) */
+  scrollbar-gutter: stable;
   min-height: 0;
   outline: none;
 }
