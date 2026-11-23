@@ -8136,7 +8136,10 @@ function slidePages(deck: Deck, i: number): { page: SlidePage; doc: Doc }[] {
 }
 
 /** File > Export > Export PDF: every slide as a page (a canvas slide's keyframes a page each), or the drawing on a page of its own size. */
-async function exportPdf(): Promise<void> {
+/** What watches a PDF being saved (SI Compile to PDF's progress window): hidden while the Save As window shows, told how far along the writing is. */
+interface PdfWatch { hide(): void; show(): void; progress(done: number, total: number): Promise<void>; readonly cancelled: boolean }
+
+async function exportPdf(watch?: PdfWatch): Promise<void> {
   const tab = ws.active, deck = tab.deck;
   let pages: PdfPage[];
   const docFile = docActive() ? tab.document : null;
@@ -8154,12 +8157,15 @@ async function exportPdf(): Promise<void> {
     const b = pic.box;
     pages = [{ w: b.x2 - b.x1, h: b.y2 - b.y1, items: pic.items, origin: { x: b.x1, y: b.y1 } }];
   }
+  watch?.hide();
   const target = await saveFileDialog(withExtension(tab.name, PDF.extension), PDF).catch(async (e) => { await showError(String(e)); return null; });
   if (!target) return;
+  watch?.show();
   try {
-    const bytes = await writePdf(pages, { title: tab.name.replace(/\.[^.]+$/, ''), image: pdfImage, fonts: pdfFonts });
+    const bytes = await writePdf(pages, { title: tab.name.replace(/\.[^.]+$/, ''), image: pdfImage, fonts: pdfFonts, ...(watch ? { progress: (d: number, t: number) => watch.progress(d, t) } : {}) });
     await writeFile(target.ref, target.name, bytes, PDF);
   } catch (e) {
+    if (watch?.cancelled) { flash(`${target.name} was not saved (canceled)`); return; }
     await showError(`Could not save ${target.name}: ${e instanceof Error ? e.message : String(e)}`);
     return;
   }
@@ -9086,12 +9092,12 @@ function loadSiMode(): Promise<SiMode> {
       sizeOf: (c) => figures.size(c, siStyleNow()),
       siStyle: () => siStyleNow(),
       openDocuments: () => ws.tabs.filter((t) => t.mode === 'document' && t.document && !t.windowOf).map((t) => ({ name: t.name, bytes: async () => (await import('./io/docx-write')).writeDocx(t.document!.t, docFiles, t.name) })),
-      openCompiled: async (doc, name, pdf) => {
+      openCompiled: async (doc, name, pdf, watch) => {
         ws.showDocument({ ...doc, drawingStyle: { ...siStyleNow() } }, name.replace(/[\\/:*?"<>|]/g, '-'));
         renderTabs();
         if (!pdf) return;
         await new Promise((r) => requestAnimationFrame(() => r(null)));
-        await exportPdf();
+        await exportPdf(watch);
       },
     });
     applyIconSet(document.querySelector('#si-ribbon') ?? document);
@@ -9223,7 +9229,7 @@ function siCardEl(c: SiCard): HTMLElement {
 /** An SI project's folder with the history Undo and Redo use (Edit ▸ Undo names the step). */
 function siJournal(folder: SiFolderT): JournalFolder {
   const j = new JournalFolder(folder);
-  j.onChange = refreshHistory;
+  j.onChange = () => { refreshHistory(); siMode?.folderChanged(j); };
   return j;
 }
 

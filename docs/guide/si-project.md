@@ -17,17 +17,17 @@ While a project is open, a lock in its folder tells Chem SI Assistant (and Chemw
 
 ## The window
 
-- **The list on the left** shows the project (its title, at the top), the **Dashboard**, every section with its compounds and scheme pages under it, and at the bottom **Manuscript Check**, **References** and **Warnings**. A check mark beside a compound means every required field is filled in. Click a row to open its page. Drag rows to reorder them, press **F2** to rename a section, and **Delete** to move a row to the project's Trash. Right-click a row for the same commands.
+- **The list on the left** shows the project (its title, at the top), the **Dashboard**, every section with its compounds and scheme pages under it, and at the bottom **Manuscript Check**, **References** and **Warnings**. A check mark beside a compound means every required field is filled in. Click a row to open its page. Drag rows to reorder them, press **F2** to rename a section, and **Delete** to move a row to the project's Trash. Right-click a row for the same commands, and **Expand All** or **Collapse All**. The arrow beside a section or scheme page folds the rows under it (or double-click the row; the Left and Right keys fold and unfold the picked row). Drag the border between the list and the page to make the list wider or narrower; double-click the border to put it back.
 - **The page in the middle** is what you picked: a compound's data, a section's text, a scheme and so on.
-- **Live Preview**, on the right, shows the picked page as it will print, about a second after each change (**Home ▸ Live Preview**, Ctrl+Shift+L). Spectra are left out and page numbers are placeholders; compile to see the real thing.
+- **Live Preview**, on the right, shows the picked page as it will print, about a second after each change, wherever it is made (**Home ▸ Live Preview**, Ctrl+Shift+L). A section shows every page under it: a Data section its compounds and scheme pages. On a page with nothing to preview (the Dashboard, Warnings, References, Manuscript Check) it folds to its strip by itself so the page gets the width, and opens again on the next page it can show. Spectra are left out and page numbers are placeholders; compile to see the real thing.
 - **The ribbon** has **Home** and **Insert** tabs. Further tabs appear for what you are working on: **Table Layout**, **Picture Format**, **Scheme**, **Spectrum**, **Crystal Structure**, **Attachment**, **References**, **Manuscript Check** and **Dashboard**.
 
 ## The project's page
 
 Click the title at the top of the list. This page holds everything that prints before the first section:
 
-- **Cover page**: the heading, title, authors with their affiliation letters and corresponding-author emails, the affiliations and an optional extra text. **Insert ▸ Author** and **Affiliation** add rows.
-- **Table of contents**: its title and how deep it lists (sections only, down to every compound).
+- **Cover page**: the heading, title, authors with their affiliation letters and corresponding-author emails, the affiliations and an optional extra text. **+ Add Author** and **+ Add Affiliation** under the lists (or **Insert ▸ Author** and **Affiliation**) add rows. **Spacing** sets each gap in points: above the heading (to start it further down the page), and after the heading, the title, the author line, the last affiliation and the email line. Chem SI Assistant keeps one spacing for all of them, so it gets the nearest one.
+- **Table of contents**: its title and, under **Lists**, a check box for each kind of heading it lists: sections, sub-sections, headings in section text, General Information, general procedures, compounds, spectra, HRMS reports and references. Chem SI Assistant keeps one depth, so it gets the nearest one.
 - **General Information**: materials, instruments and methods.
 
 ## Sections
@@ -108,7 +108,7 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 ## Checking your data
 
 - **Warnings.** Chemweave checks every compound as you work: for example, a found HRMS mass further from the calculated one than the project's tolerance, an NMR report with no matching spectrum attached, or a fluorine in the structure with no ¹⁹F data. Click **Warnings** in the list (or **Home ▸ Warnings**) to see them all by compound. Warnings never stop you from doing anything. Dismiss one that doesn't apply, with a reason; it comes back if the data it is about changes.
-- **Dashboard.** Shows how complete the project is: a table of every compound with one column per field, marked filled, empty, required but empty, flagged or with a warning. Click a cell to open the compound at that field. The **Dashboard** tab picks the columns and filters the rows.
+- **Dashboard.** Shows how complete the project is: a table of every compound with one column per field, marked filled, empty, required but empty, flagged or with a warning. Click a cell to open the compound at that field. Drag a header's right border to change its column's width (double-click it to put it back), drag a field's header to move its column, and right-click a header to show or hide columns. The **Dashboard** tab also picks the columns (**Columns…**) and filters the rows.
 - **Spelling** (**Home ▸ Spelling**, F7). Chemistry words, abbreviations such as MeOH and CDCl3, and systematic names count as spelled correctly.
 - **Manuscript Check.** Add the manuscript (PDF, Word, or a document open in Chemweave) and, best of all, its ChemDraw files saved as `.cdxml`. Chemweave compares them with the SI compound by compound: IDs, structures, yields, ee and dr, and names. Double-click a result to open the compound at the field concerned. The files are kept in the project's folder and never print; nothing is sent anywhere.
 
@@ -116,6 +116,7 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 
 - **Home ▸ Compile to Document** makes the Supporting Information as a Chemweave document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed.
 - **Home ▸ Compile to PDF** compiles it and saves a PDF.
+- While it compiles, a window shows how far along it is (compounds, spectra, then the pages and the PDF), with **Cancel**.
 
 **Home ▸ Project Settings…** holds the choices for the compiled SI:
 
