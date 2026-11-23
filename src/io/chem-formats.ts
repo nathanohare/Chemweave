@@ -961,7 +961,8 @@ function layOutReaction(scene: FScene, unit: number): void {
 /**
  * A reaction with no arrow whose molecules stand where they were drawn: the arrow (and + signs) put
  * in the gaps, the molecules left where they are. False, with nothing changed, when the starting
- * materials don't all stand left of the products with room for an arrow and its agents between.
+ * materials don't all stand left of the products with room for an arrow and its agents between,
+ * or they don't stand in a row (one well above another).
  */
 function arrowBetween(scene: FScene, unit: number): boolean {
   const boxes = (role: FRole) => scene.mols.filter((m) => m.role === role && m.atoms.length).map(molBox).sort((a, b) => a.x1 - b.x1);
@@ -972,6 +973,8 @@ function arrowBetween(scene: FScene, unit: number): boolean {
   if (head - tail < unit || a.some((b) => b.x1 < tail || b.x2 > head)) return false;
   const all = [...r, ...p];
   const y = (Math.min(...all.map((b) => b.y1)) + Math.max(...all.map((b) => b.y2))) / 2;
+  // (in a row: the arrow's line passes by each of them, or its step would lose them; else arrowAcross)
+  if (all.some((b) => y < b.y1 - unit || y > b.y2 + unit)) return false;
   scene.arrows.push({ x1: tail, y1: y, x2: head, y2: y, kind: 'synthesis' });
   for (const row of [r, p]) {
     for (let i = 1; i < row.length; i++) if (row[i].x1 > row[i - 1].x2) scene.pluses.push({ x: (row[i - 1].x2 + row[i].x1) / 2, y });

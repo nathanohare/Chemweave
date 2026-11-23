@@ -75,6 +75,20 @@ describe('a text\'s highlight and language in CDXML', () => {
     expect(writeCdxml(r.doc, { name: 't.cdxml' })).toBe(xml);
   });
 
+  it('writes a highlight named or written short as #rrggbb, and keeps Word\'s x-none and en_US (review F8a-R10)', () => {
+    const d = new Doc();
+    d.bulk(() => { d.addCaption({ x: 0, y: 0, runs: [{ text: 'a', highlight: 'yellow' }, { text: 'b', highlight: '#0f0', lang: 'x-none' }, { text: 'c', lang: 'en_US' }], justify: 'left' }); });
+    const back = [...readCdxml(writeCdxml(d, { name: 't.cdxml' })).doc.captions.values()][0].runs;
+    expect(back.map((r) => [r.text, r.highlight ?? null, r.lang ?? null])).toEqual([['a', '#ffff00', null], ['b', '#00ff00', 'x-none'], ['c', null, 'en_US']]);
+  });
+
+  it('keeps its place after a line break typed as \\r\\n', () => {
+    const d = new Doc();
+    d.bulk(() => { d.addCaption({ x: 0, y: 0, runs: [{ text: 'line one\r\nline ' }, { text: 'two', highlight: '#ffff00' }], justify: 'left' }); });
+    const back = [...readCdxml(writeCdxml(d, { name: 't.cdxml' })).doc.captions.values()][0].runs;
+    expect(back.filter((r) => r.highlight).map((r) => r.text)).toEqual(['two']);
+  });
+
   it('writes no tag for a text with neither', () => {
     const d = new Doc();
     d.bulk(() => { d.addCaption({ x: 0, y: 0, runs: [{ text: 'plain' }], justify: 'left' }); });

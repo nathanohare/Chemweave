@@ -235,7 +235,8 @@ function stereoIn(o: Atom | Bond, s: unknown): void {
 export function captionMore(c: Caption, fileWidth: number | undefined, at: string, seen = ''): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
   const marks = runMarks(c.runs);
-  if (marks.length) { v.marks = marks; v.marksAt = seen; }
+  // (the print of the text they sit on: a short hash and its length, not the text again: review F8a-R14)
+  if (marks.length) { v.marks = marks; v.marksAt = textPrint(seen); }
   if (c.width !== undefined && num(c.width) && !(fileWidth !== undefined && Math.abs(c.width - fileWidth) < 0.005)) { v.width = c.width; v.widthAt = at; }
   if (c.cols !== undefined && num(c.cols)) v.cols = c.cols;
   if (c.colGap !== undefined && num(c.colGap)) v.colGap = c.colGap;
@@ -252,7 +253,7 @@ export function captionAt(t: Element): string {
 
 /** Puts a caption's settings from its tag back. `at` is captionAt of the element in the file now. */
 export function captionMoreIn(c: Caption, v: Record<string, unknown>, at: string, seen = ''): void {
-  if (Array.isArray(v.marks) && v.marksAt === seen) c.runs = withMarks(c.runs, v.marks);
+  if (Array.isArray(v.marks) && v.marksAt === textPrint(seen)) c.runs = withMarks(c.runs, v.marks);
   if (num(v.width) && v.width > 0 && v.widthAt === at) c.width = v.width;
   if (num(v.cols) && v.cols >= 1) c.cols = Math.round(v.cols);
   if (num(v.colGap) && v.colGap >= 0) c.colGap = v.colGap;
@@ -264,10 +265,16 @@ export function captionMoreIn(c: Caption, v: Record<string, unknown>, at: string
  * and language (marks) are used again only while ChemDraw shows the same characters, so text
  * edited or replaced there never gets them on the wrong letters (Nate, F8a item 8).
  */
+/** A text's print as kept in the tag: a short hash of it and its length. */
+function textPrint(t: string): string {
+  return `${hash(t)}:${t.length}`;
+}
+
 export function textSeen(t: Element): string {
   let s = '';
   for (let k = t.firstElementChild; k; k = k.nextElementSibling) if (k.nodeName === 's') s += k.textContent ?? '';
-  return s;
+  // (as an XML reader gives it back: a line break is \n)
+  return s.replace(/\r\n?/g, '\n');
 }
 
 /**
@@ -279,7 +286,8 @@ export function runMarks(runs: readonly TextRun[]): [number, number, string | nu
   const out: [number, number, string | null, string | null][] = [];
   let at = 0;
   for (const r of runs) {
-    const n = r.text.length, hl = r.highlight ?? null, lang = r.lang ?? null;
+    // (places count the text as CDXML holds it: a line break is one character, \r\n or \n)
+    const n = r.text.replace(/\r\n?/g, '\n').length, hl = r.highlight ? hexColour(r.highlight) : null, lang = r.lang && LANG.test(r.lang) ? r.lang : null;
     if (n && (hl || lang)) {
       const last = out[out.length - 1];
       if (last && last[1] === at && last[2] === hl && last[3] === lang) last[1] = at + n;
@@ -290,12 +298,33 @@ export function runMarks(runs: readonly TextRun[]): [number, number, string | nu
   return out;
 }
 
+/** A language tag as Word and PowerPoint write them (en-US, de-DE, x-none, en_US). */
+const LANG = /^[A-Za-z]{1,8}([-_][A-Za-z0-9]{1,8})*$/;
+
+/** The colour names Word's highlighter and CSS use most, as #rrggbb. */
+const NAMED: Record<string, string> = {
+  yellow: '#ffff00', green: '#00ff00', lime: '#00ff00', cyan: '#00ffff', aqua: '#00ffff', magenta: '#ff00ff', fuchsia: '#ff00ff', blue: '#0000ff', red: '#ff0000',
+  darkblue: '#000080', navy: '#000080', darkcyan: '#008080', teal: '#008080', darkgreen: '#008000', darkmagenta: '#800080', purple: '#800080', darkred: '#800000', maroon: '#800000',
+  darkyellow: '#808000', olive: '#808000', gray: '#808080', grey: '#808080', darkgray: '#808080', lightgray: '#c0c0c0', silver: '#c0c0c0', black: '#000000', white: '#ffffff',
+};
+
+/** A colour as #rrggbb (from #rgb, #rrggbbaa, rgb(…) or a common name), or null when it isn't one. */
+function hexColour(c: string): string | null {
+  const t = c.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(t)) return t;
+  if (/^#[0-9a-f]{8}$/.test(t)) return t.slice(0, 7);
+  if (/^#[0-9a-f]{3}$/.test(t)) return '#' + [...t.slice(1)].map((x) => x + x).join('');
+  const rgb = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,[^)]*)?\)$/.exec(t);
+  if (rgb) return '#' + rgb.slice(1, 4).map((x) => Math.min(255, Number(x)).toString(16).padStart(2, '0')).join('');
+  return NAMED[t] ?? null;
+}
+
 /** The runs with the marks (runMarks) put back, split where a mark starts or ends; marks past the text's end are left out. */
 export function withMarks(runs: readonly TextRun[], marks: unknown[]): TextRun[] {
   const total = runs.reduce((n, r) => n + r.text.length, 0);
   const ok = marks.filter((m): m is [number, number, string | null, string | null] =>
     Array.isArray(m) && Number.isInteger(m[0]) && Number.isInteger(m[1]) && m[0] >= 0 && m[1] > m[0] && m[1] <= total &&
-    (m[2] === null || (typeof m[2] === 'string' && /^#[0-9a-f]{6}$/i.test(m[2]))) && (m[3] === null || (typeof m[3] === 'string' && /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/.test(m[3]))));
+    (m[2] === null || (typeof m[2] === 'string' && /^#[0-9a-f]{6}$/i.test(m[2]))) && (m[3] === null || (typeof m[3] === 'string' && LANG.test(m[3]))));
   if (!ok.length) return runs as TextRun[];
   const cuts = new Set<number>();
   for (const m of ok) { cuts.add(m[0]); cuts.add(m[1]); }

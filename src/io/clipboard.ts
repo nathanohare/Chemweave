@@ -37,8 +37,8 @@ import type { Item } from '../render/vector';
 import { itemsToEmf, withDrawing, drawingInEmf, type EmfBox } from '../render/emf';
 import { imageSize, fromDataUrl } from '../render/images';
 import { cxSmiles, isReactionSmiles, reactionSmiles } from '../chem/reaction-io';
-import { itemFinder, plainMeasure, reactionSteps, schemeItems } from '../chem/reaction';
-import { placeSpecies } from '../chem/species';
+import { plainMeasure, reactionSteps, schemeItems } from '../chem/reaction';
+import { stepMembers } from '../chem/species';
 import { toMolfile } from '../chem/molfile';
 import { writeMolFile } from './chem-formats';
 
@@ -451,30 +451,19 @@ export async function reactionSmilesOf(part: Doc): Promise<string | null> {
   const items = schemeItems(part, m);
   const steps = reactionSteps(part, items);
   if (!steps.length) return null;
-  const find = itemFinder(items);
   const lines: string[] = [];
   for (const step of steps) {
-    const side = async (refs: string[], reagent: boolean): Promise<string[] | null> => {
-      const out: string[] = [];
-      for (const ref of refs) {
-        const it = find(ref);
-        if (!it || it.plus) continue;
-        const cap = it.caption !== undefined ? part.captions.get(it.caption) : undefined;
-        const species = cap ? placeSpecies(part, [cap], m, reagent) : [];
-        if (!it.atoms.length && !species.length) continue;
-        const ex = toMolfile(part, new Set(it.atoms), '', { species });
-        if (ex.generic.length) return null;
-        const sm = (await smilesMaker!(ex.molblock).catch(() => null))?.trim();
-        if (!sm) return null;
-        out.push(sm);
-      }
-      return out;
-    };
-    const reactants = await side(step.roles.reactants, false);
-    const agents = await side([...step.roles.above, ...step.roles.below], true);
-    const products = await side(step.roles.products, false);
-    if (!reactants || !agents || !products || (!reactants.length && !products.length)) return null;
-    lines.push(reactionSmiles({ reactants, agents, products }));
+    const parts: Record<'reactants' | 'agents' | 'products', string[]> = { reactants: [], agents: [], products: [] };
+    for (const w of stepMembers(part, step.roles, items, m)) {
+      if (w.role === 'Conditions') continue;
+      const ex = toMolfile(part, new Set(w.atoms), '', { species: w.species });
+      if (ex.generic.length) return null;
+      const sm = (await smilesMaker!(ex.molblock).catch(() => null))?.trim();
+      if (!sm) return null;
+      parts[w.role === 'Starting material' ? 'reactants' : w.role === 'Reagent' ? 'agents' : 'products'].push(sm);
+    }
+    if (!parts.reactants.length && !parts.products.length) return null;
+    lines.push(reactionSmiles(parts));
   }
   return lines.join('\n');
 }

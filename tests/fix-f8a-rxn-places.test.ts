@@ -43,3 +43,13 @@ describe('RXN files from other programs', () => {
     expect(p.dx).toBeGreaterThan(1.5);
   });
 });
+
+describe('RXN files from other programs, laid out on a slant', () => {
+  it('keep the product above and to the right where it is, and the arrow\'s step finds both (review F8a-R11)', () => {
+    const d = open(rxn(mol(0, 0, 1), mol(8, 5, 2)));
+    const r = [...d.arrows.values()][0];
+    expect(r.step?.reactants).toHaveLength(1);
+    expect(r.step?.products).toHaveLength(1);
+    expect(placed(rxn(mol(0, 0, 1), mol(8, 5, 2)))).toEqual({ dx: 5.3, dy: -3.3, arrows: 1 }); // (8 and 5 units at a bond of 1.5)
+  });
+});

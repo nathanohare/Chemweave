@@ -68,7 +68,7 @@ import { isCurved } from './objects';
 import { captionPlaces, fragmentRuns } from './chem/fragments';
 import { toMolfile } from './chem/molfile';
 import { molfileOrSmiles } from './chem/text-molfile';
-import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeSign, chemicalCaptions, groupedIonFragments, groupedIons, placeSpecies, speciesSmiles, type PlacedSpecies } from './chem/species';
+import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeSign, chemicalCaptions, groupedIonFragments, groupedIons, placeSpecies, speciesSmiles, stepMembers, type PlacedSpecies } from './chem/species';
 import { bestFit, fitMove, fitMatters } from './chem/orient';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -192,7 +192,7 @@ import { selectedGroup } from './chem/group-smiles';
 import { templateIcon } from './ui/template-icons';
 import { StructureChecks } from './chem/warnings';
 import { idText, labelClashes, parseIdStart, type IdStyle } from './chem/compound-numbers';
-import { arrowKind, schemeItems, isReactionArrow, reactionSteps, itemFinder, plainMeasure } from './chem/reaction';
+import { arrowKind, schemeItems, isReactionArrow, reactionSteps, plainMeasure } from './chem/reaction';
 import { canShowGuides, guidesOn as arrowGuidesOn, plainReactionArrow } from './chem/arrow-text';
 import { stoichiometryBook, type StoichRow, type StoichRole } from './chem/stoichiometry';
 import { cxSmiles, cxSmilesLeftOut, isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
@@ -3098,30 +3098,16 @@ function whyCannotRun(cmd: string, lazy = false): string | null | undefined {
  */
 async function stepSpecies(got: NonNullable<ReturnType<typeof pickedStep>>, maps = false): Promise<StepSpecies[]> {
   const { step, items, m } = got;
-  const find = itemFinder(items);
-  const wanted: { role: StoichRole; ref: string }[] = [
-    ...step.roles.reactants.map((ref) => ({ role: 'Starting material' as const, ref })),
-    ...[...step.roles.above, ...step.roles.below].map((ref) => ({ role: 'Reagent' as const, ref })),
-    ...step.roles.products.map((ref) => ({ role: 'Product' as const, ref })),
-  ];
   const rows: StepSpecies[] = [];
   const mols: { molblock: string; map: number[] }[] = [];
   const at: number[] = [];
-  for (const w of wanted) {
-    const it = find(w.ref);
-    if (!it || it.plus) continue;
-    const cap = it.caption !== undefined ? doc.captions.get(it.caption) : undefined;
-    // (a reagent's text over or under the arrow is read as the compound it names: Me2SO is DMSO)
-    const species = cap ? placeSpecies(doc, [cap], m, w.role === 'Reagent') : [];
-    if (!it.atoms.length && !species.length) {
-      if (cap) rows.push({ role: 'Conditions', name: plainText(cap.runs).trim(), atoms: [] });
-      continue;
-    }
-    const name = cap ? plainText(cap.runs).trim() : '';
-    const ex = toMolfile(doc, new Set(it.atoms), name.replace(/\s+/g, ' ').slice(0, 80), { species, maps });
+  for (const w of stepMembers(doc, step.roles, items, m)) {
+    const name = w.cap ? plainText(w.cap.runs).trim() : '';
+    if (w.role === 'Conditions') { rows.push({ role: 'Conditions', name, atoms: [] }); continue; }
+    const ex = toMolfile(doc, new Set(w.atoms), name.replace(/\s+/g, ' ').slice(0, 80), { species: w.species, maps });
     at.push(rows.length);
     mols.push({ molblock: ex.molblock, map: ex.map });
-    rows.push({ role: w.role, name, atoms: it.atoms, molblock: ex.molblock });
+    rows.push({ role: w.role, name, atoms: w.atoms, molblock: ex.molblock });
   }
   const res = mols.length ? await chem.analyze(mols).catch(() => null) : null;
   at.forEach((r, i) => {

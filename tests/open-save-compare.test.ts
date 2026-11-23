@@ -73,8 +73,8 @@ const NORMALISE: { kind: RegExp; part?: RegExp; why: string; fix: (s: string) =>
     fix: (s) => s.replace(/-?\d+\.\d{9,}/g, (n) => String(Math.round(Number(n) * 1e6) / 1e6)),
   },
   {
-    kind: /\.rxn$/,
-    why: 'the header lines that name the program that saved the file (RXN line 3, each molfile\'s line 2) say who saved it, not what it holds',
+    kind: /^Other\.rxn$/,
+    why: 'an RXN file from another program: the header lines that name the program that saved it (RXN line 3, each molfile\'s line 2) say who saved it, not what it holds',
     fix: (s) => s.replace(/^(\$RXN[^\n]*\n[^\n]*\n)[^\n]*/m, '$1<program>').replace(/(\$MOL\n[^\n]*\n)[^\n]*/g, '$1<program>'),
   },
   {
@@ -214,13 +214,27 @@ function reaction(): Doc {
   return doc;
 }
 
+/** A reaction laid out as some other programs do: the product above and to the right, not in a row (as in fix-f8a-rxn-places). */
+function reactionAbove(): Doc {
+  const doc = new Doc();
+  doc.edit('Draw', () => {
+    const L = doc.style.bondLength;
+    const c1 = doc.addAtom(100, 100).id, c2 = doc.addAtom(100 + L * 0.866, 100 - L / 2).id, o1 = doc.addAtom(100 + L * 1.732, 100, 8).id;
+    doc.addBond(c1, c2); doc.addBond(c2, o1);
+    const d1 = doc.addAtom(220, 30).id, d2 = doc.addAtom(220 + L * 0.866, 30 - L / 2).id, o2 = doc.addAtom(220 + L * 1.732, 30, 8).id;
+    doc.addBond(d1, d2); doc.addBond(d2, o2, 2);
+    doc.addArrow({ headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: 6, headWidth: 1.5, tail: { x: 150, y: 90 }, head: { x: 210, y: 45 }, step: { reactants: [`a${c1}`], products: [`a${d1}`], above: [], below: [] } });
+  });
+  return doc;
+}
+
 /**
  * An RXN file as another program writes one: this program's own, with its header lines naming
  * another program (made up here, never a file another program made: CONTRIBUTING). Its
- * molecules stand where they were drawn, so they are kept there (F7b Needs Nate 1).
+ * molecules stand where they were drawn (the product above), so they are kept there (F7b Needs Nate 1).
  */
 async function otherRxn(): Promise<Uint8Array> {
-  const text = new TextDecoder().decode(await drawingFile('Other.rxn', reaction));
+  const text = new TextDecoder().decode(await drawingFile('Other.rxn', reactionAbove));
   return bytesOf(text.replace(/^(\$RXN[^\n]*\n[^\n]*\n)[^\n]*/m, '$1      OtherProg').replace(/(\$MOL\n[^\n]*\n)[^\n]*/g, '$1  OtherPrg11232622002D'));
 }
 
