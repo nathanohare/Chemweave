@@ -99,8 +99,9 @@ describe('the settings tag (R3)', () => {
     expect([...edited(() => {}).bonds.values()].map((b) => b.z)).toContain(4);
     const back = edited((doc) => {
       const f = tagged(doc, 'fragment')[0];
-      const v = JSON.parse([...f.children].find((k) => k.getAttribute('Name') === MORE_TAG)!.getAttribute('Value')!) as { z: (number | null)[] };
-      const b = [...f.children].filter((k) => k.nodeName === 'b')[v.z.findIndex((z) => z !== null)];
+      // (the tag's bond places: [place among the bonds, id, Z, print] each)
+      const v = JSON.parse([...f.children].find((k) => k.getAttribute('Name') === MORE_TAG)!.getAttribute('Value')!) as { z: [number, string, number, string][] };
+      const b = [...f.children].filter((k) => k.nodeName === 'b')[v.z[0][0]];
       b.setAttribute('Z', String(Number(b.getAttribute('Z') ?? 0) + 50)); });
     expect([...back.bonds.values()].map((b) => b.z)).not.toContain(4);
   });

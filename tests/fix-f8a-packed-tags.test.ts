@@ -3,7 +3,7 @@
 // F8a item 9 (F7b R09): a structure's 3-D depths and bond places ride in one settings tag on its
 // <fragment> (src/io/cdxml-more.ts fragMore) instead of one per atom and bond, with a print of the
 // structure's atoms and bonds: an atom added, deleted or renumbered in ChemDraw drops them rather
-// than put one on the wrong atom. Files with the older tag on each atom still read. Drawings are
+// than put one on the wrong atom; renumbered ids keep them all. Files with the older tag on each atom still read. Drawings are
 // built here in code.
 
 import { describe, it, expect } from 'vitest';
@@ -41,17 +41,39 @@ describe('one settings tag per structure', () => {
     }
   });
 
-  it('drops them all when ChemDraw deleted an atom (replayed on the saved file)', () => {
+  it('drops only the deleted atom\'s depth when ChemDraw deleted an atom (replayed on the saved file; review F8a-R06)', () => {
     const x = parse(writeCdxml(ring(), { name: 't.cdxml' }));
     const n = x.getElementsByTagName('n')[2];
+    for (const b of [...x.getElementsByTagName('b')]) if ([b.getAttribute('B'), b.getAttribute('E')].includes(n.getAttribute('id'))) b.parentNode!.removeChild(b);
     n.parentNode!.removeChild(n);
-    expect(depths(readCdxml(serial(x)).doc).every((z) => z === null)).toBe(true);
+    // (its neighbours have one bond fewer now, so their own prints changed too: theirs go as well)
+    expect(depths(readCdxml(serial(x)).doc)).toEqual([DEPTHS[0], null, null, DEPTHS[4], DEPTHS[5]]);
   });
 
-  it('drops them when ChemDraw renumbered the atoms', () => {
+  it('keeps every depth when ChemDraw renumbered the atoms and bonds', () => {
     const x = parse(writeCdxml(ring(), { name: 't.cdxml' }));
-    for (const n of x.getElementsByTagName('n')) n.setAttribute('id', String(Number(n.getAttribute('id')) + 1000));
-    expect(depths(readCdxml(serial(x)).doc).every((z) => z === null)).toBe(true);
+    const all = [...x.getElementsByTagName('n'), ...x.getElementsByTagName('b')];
+    const old = new Map(all.map((e) => [e.getAttribute('id')!, String(Number(e.getAttribute('id')) + 1000)]));
+    for (const e of all) e.setAttribute('id', old.get(e.getAttribute('id')!)!);
+    for (const b of x.getElementsByTagName('b')) for (const k of ['B', 'E']) b.setAttribute(k, old.get(b.getAttribute(k)!) ?? b.getAttribute(k)!);
+    const back = readCdxml(serial(x)).doc;
+    expect(depths(back)).toEqual(DEPTHS);
+    expect([...back.bonds.values()].map((b) => b.z ?? null)).toEqual([4, null, null, null, null, null]);
+  });
+
+  it('drops only the changed atom\'s depth when ChemDraw changed its element', () => {
+    const x = parse(writeCdxml(ring(), { name: 't.cdxml' }));
+    x.getElementsByTagName('n')[3].setAttribute('Element', '8');
+    expect(depths(readCdxml(serial(x)).doc)).toEqual([...DEPTHS.slice(0, 3), null, ...DEPTHS.slice(4)]);
+  });
+
+  it('keeps the depths when ChemDraw added an atom to the structure', () => {
+    const x = parse(writeCdxml(ring(), { name: 't.cdxml' }));
+    const f = x.getElementsByTagName('fragment')[0];
+    const n = x.createElement('n');
+    n.setAttribute('id', '9999'); n.setAttribute('p', '100 100');
+    f.insertBefore(n, f.firstElementChild);
+    expect(depths(readCdxml(serial(x)).doc).filter((z) => z !== null)).toEqual(DEPTHS);
   });
 
   it('still reads the older tag on each atom', () => {

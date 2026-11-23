@@ -38,7 +38,7 @@ import { fillInk, mix, ringShadowGroups, ringShadowSize, shadowLook } from '../r
 import { shapeShadow } from '../render/highlight-fx';
 import { parseColor } from '../render/vector';
 import { layoutTable, cellAlign, isCovered, spanOf, partAt, NOTE_SCALE } from '../table';
-import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, textSeen, fragMore, fragPrint, type BondZ, zPrint, type RefKind, type RefOut } from './cdxml-more';
+import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, textSeen, fragMore, type BondZ, zPrint, type RefKind, type RefOut } from './cdxml-more';
 import { TABLE_TAG, TABLE_PART_TAG, tableBorders, type TableTag } from './cdxml-table';
 import { bondLayer, crossingBondsCached, listedNearMisses } from '../chem/crossing';
 import { repeatGroups, repeatCount, repeatLabelPlace } from '../chem/polymer';
@@ -2943,7 +2943,7 @@ class CdxmlWriter {
         if (k.nodeName === 'n') { const d = atomAt.get(k)?.depth; depths.push(d !== undefined && Number.isFinite(d) ? d : null); }
         else if (k.nodeName === 'b') zs.push(bondAt.get(k) ?? null);
       }
-      put(f, fragMore(depths, zs, fragPrint(f)));
+      put(f, fragMore(f, depths, zs));
     }
     for (const c of doc.captions.values()) {
       const e = elOf('c', c.id);

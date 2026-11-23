@@ -121,53 +121,101 @@ export function bondMoreIn(b: Bond, v: Record<string, unknown>, zAt: string | nu
   stereoIn(b, v.stereo);
 }
 
+/** A structure's atoms (<n>) and bonds (<b>) in the order they stand in its <fragment>. */
+function fragParts(f: Element): { ns: Element[]; bs: Element[] } {
+  const ns: Element[] = [], bs: Element[] = [];
+  for (let k = f.firstElementChild; k; k = k.nextElementSibling) {
+    if (k.nodeName === 'n') ns.push(k);
+    else if (k.nodeName === 'b') bs.push(k);
+  }
+  return { ns, bs };
+}
+
+/** A short hash of a text (FNV-1a, 32 bits, as 8 hex digits). */
+function hash(t: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
+
 /**
- * The print of a structure as written: its atoms' and bonds' ids and elements in order (as a short
- * hash). Values kept for each of its atoms and bonds in one tag (fragMore) are used again only
- * while ChemDraw has the same atoms and bonds in the same order: an atom added, deleted or
- * renumbered there drops them all rather than put one on the wrong atom.
+ * The print of a structure as written, whatever its ids: each atom's element and kind in order, and
+ * each bond's ends by their places among the atoms. While it holds, the values kept for its atoms
+ * and bonds (fragMore) go back by place, even after ChemDraw gave everything new ids.
  */
 export function fragPrint(f: Element): string {
-  let h = 0x811c9dc5;
-  const add = (t: string) => { for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } };
-  for (let k = f.firstElementChild; k; k = k.nextElementSibling) {
-    if (k.nodeName === 'n') add(`n${k.getAttribute('id') ?? ''}:${k.getAttribute('Element') ?? '6'}:${k.getAttribute('NodeType') ?? ''};`);
-    else if (k.nodeName === 'b') add(`b${k.getAttribute('id') ?? ''}:${k.getAttribute('B') ?? ''}:${k.getAttribute('E') ?? ''};`);
-  }
-  return h.toString(16).padStart(8, '0');
+  const { ns, bs } = fragParts(f);
+  const at = new Map(ns.map((n, i) => [n.getAttribute('id') ?? '', i]));
+  return hash(ns.map((n) => `${n.getAttribute('Element') ?? '6'}:${n.getAttribute('NodeType') ?? ''}`).join(';') + '|'
+    + bs.map((b) => `${at.get(b.getAttribute('B') ?? '') ?? '?'}-${at.get(b.getAttribute('E') ?? '') ?? '?'}`).join(';'));
+}
+
+/** One atom's own print: its element and how many bonds of its structure end at it. */
+function atomPrint(n: Element, ends: Map<string, number>): string {
+  return `${n.getAttribute('Element') ?? '6'}:${ends.get(n.getAttribute('id') ?? '') ?? 0}`;
+}
+
+function endsOf(bs: Element[]): Map<string, number> {
+  const ends = new Map<string, number>();
+  for (const b of bs) for (const k of [b.getAttribute('B'), b.getAttribute('E')]) if (k) ends.set(k, (ends.get(k) ?? 0) + 1);
+  return ends;
 }
 
 /** A bond's own place among crossing bonds to keep, and its print (zPrint), or null. */
 export type BondZ = { z: number; at: string | null } | null;
 
 /**
- * One tag for a structure (its <fragment>) with the values every atom or bond of it may carry, in
- * the order of its <n> and <b> children (null where one has none): 3-D depth for atoms, a place
- * among crossing bonds for bonds (with each one's own print, zPrint). One tag per structure
- * instead of one per atom and bond keeps a file of many 3-D structures small (F7b R09, Nate:
- * fine as long as ChemDraw still draws the file the same; it passes over tags it doesn't know).
- * `at` is the structure's print (fragPrint). Null when no atom or bond needs anything.
+ * One tag for a structure (its <fragment>) with the values its atoms or bonds may carry: 3-D depth
+ * for atoms, a place among crossing bonds for bonds (with each one's own print, zPrint). One tag per
+ * structure instead of one per atom and bond keeps a file of many 3-D structures small (F7b R09,
+ * Nate: fine as long as ChemDraw still draws the file the same; it passes over tags it doesn't know).
+ * `depths` and `zs` are in the order of the fragment's <n> and <b> children (null where one has
+ * none). Each value is kept with its element's id and its own print (element and bond count for an
+ * atom), and the whole with the structure's print (fragPrint), so on reading (fragMoreIn):
+ * - while the structure's print holds, the values go back by place (ids renumbered, atoms moved);
+ * - otherwise each goes back to the element with its id while that atom's own print holds, so an
+ *   atom added, deleted or changed in ChemDraw drops only its own value (review F8a-R06).
+ * Null when no atom or bond needs anything.
  */
-export function fragMore(depths: (number | null)[], zs: BondZ[], at: string): Record<string, unknown> | null {
+export function fragMore(f: Element, depths: (number | null)[], zs: BondZ[]): Record<string, unknown> | null {
+  const { ns, bs } = fragParts(f);
+  const ends = endsOf(bs);
   const v: Record<string, unknown> = {};
-  if (depths.some((x) => x !== null)) v.depth = depths;
-  if (zs.some((x) => x !== null)) { v.z = zs.map((x) => x?.z ?? null); v.zAt = zs.map((x) => x?.at ?? null); }
+  const ad: [number, string, string, number][] = [];
+  depths.forEach((d, i) => { if (d !== null && ns[i]) ad.push([i, ns[i].getAttribute('id') ?? '', atomPrint(ns[i], ends), d]); });
+  const bz: [number, string, number, string | null][] = [];
+  zs.forEach((z, i) => { if (z && bs[i]) bz.push([i, bs[i].getAttribute('id') ?? '', z.z, z.at]); });
+  if (ad.length) v.depth = ad;
+  if (bz.length) v.z = bz;
   if (!Object.keys(v).length) return null;
-  v.at = at;
+  v.at = fragPrint(f);
   return v;
 }
 
 /**
- * Puts a structure's values from its tag back (fragMore): `at` is fragPrint of the <fragment> in the
- * file now, `atoms` and `bonds` what its <n> and <b> children became, in order, and `zNow` each
- * bond element's order among crossing bonds now (zPrint).
+ * Puts a structure's values from its tag back (fragMore). `f` is the <fragment> in the file now,
+ * `atomOf` and `bondOf` what an <n> or <b> element became, and `zNow` each bond element's order
+ * among crossing bonds now (zPrint).
  */
-export function fragMoreIn(v: Record<string, unknown>, at: string, atoms: (Atom | undefined)[], bonds: { b: Bond | undefined; el: Element }[], zNow: (el: Element) => string): void {
-  if (v.at !== at) return;
-  if (Array.isArray(v.depth) && v.depth.length === atoms.length) v.depth.forEach((d, i) => { const a = atoms[i]; if (a && num(d)) a.depth = d; });
-  if (Array.isArray(v.z) && Array.isArray(v.zAt) && v.z.length === bonds.length && v.zAt.length === bonds.length) {
-    const zAt = v.zAt;
-    v.z.forEach((z, i) => { const { b, el } = bonds[i]; if (b && num(z) && (zAt[i] ?? null) === zNow(el)) b.z = z; });
+export function fragMoreIn(v: Record<string, unknown>, f: Element, atomOf: (n: Element) => Atom | undefined, bondOf: (b: Element) => Bond | undefined, zNow: (el: Element) => string): void {
+  const { ns, bs } = fragParts(f);
+  const whole = v.at === fragPrint(f);
+  const ends = endsOf(bs);
+  const nById = new Map(ns.map((n) => [n.getAttribute('id') ?? '', n]));
+  const bById = new Map(bs.map((b) => [b.getAttribute('id') ?? '', b]));
+  if (Array.isArray(v.depth)) for (const e of v.depth) {
+    if (!Array.isArray(e) || !Number.isInteger(e[0]) || typeof e[1] !== 'string' || typeof e[2] !== 'string' || !num(e[3])) continue;
+    const n = whole ? ns[e[0]] : nById.get(e[1]);
+    if (!n || (!whole && atomPrint(n, ends) !== e[2])) continue;
+    const a = atomOf(n);
+    if (a) a.depth = e[3];
+  }
+  if (Array.isArray(v.z)) for (const e of v.z) {
+    if (!Array.isArray(e) || !Number.isInteger(e[0]) || typeof e[1] !== 'string' || !num(e[2])) continue;
+    const el = whole ? bs[e[0]] : bById.get(e[1]);
+    if (!el || (e[3] ?? null) !== zNow(el)) continue;
+    const b = bondOf(el);
+    if (b) b.z = e[2];
   }
 }
 
