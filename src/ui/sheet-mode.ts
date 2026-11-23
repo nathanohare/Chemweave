@@ -1258,6 +1258,7 @@ export class SheetMode {
       ['Paste Formulas', () => void this.pasteWith({ what: 'formulas' })],
       ['Paste Formatting', () => void this.paste(null, 'formats')],
       ['Transpose', () => void this.pasteWith({ what: 'all', transpose: true })],
+      ['Paste SMILES', () => { this.host.command?.('paste-smiles'); }],
       null,
       ['Paste Special… (Ctrl+Alt+V)', () => this.run('paste-special')],
     ]);
@@ -1787,7 +1788,7 @@ export class SheetMode {
     const { r, c } = v.sel.active;
     const here = s.cell(r, c)?.structure || (typeof s.value(r, c) === 'string' && s.value(r, c) !== '') ? cellName(r, c) : '';
     const got = await ask('Isotope Pattern', [
-      { name: 'source', label: 'Compound', value: here, placeholder: 'B2, or a formula such as C10H12N2O' },
+      { name: 'source', label: 'Compound', value: here, placeholder: 'Formula, such as C10H12N2O' },
       { name: 'ion', label: 'Ion', value: '[M+H]+', suggestions: COMMON_ADDUCTS },
       { name: 'min', label: 'Minimum peak abundance', value: '0.5', type: 'number', unit: '% of the tallest' },
       { name: 'found', label: 'Columns for the peaks found, with the error in ppm', value: 'true', type: 'checkbox' },

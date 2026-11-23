@@ -10,6 +10,7 @@ import type { Measure } from '../editor/arrange';
 import { frameBox, frameMembers } from '../editor/frames';
 import { shapeBox } from '../objects';
 import { chemRuns } from '../text/chemtext';
+import { labelParts, type LabelPart } from './energy';
 import { drawMo, MO_PRESETS, type MoSpec } from './mo';
 import { crystalSvg, type CrystalSpec } from './xray';
 import { dataUrl } from '../render/images';
@@ -27,6 +28,8 @@ export interface PlateLane {
   marks: string;
   /** A gel's size marker: its sizes are written beside the gel. */
   ladder?: boolean;
+  /** The name's pieces when they hold more than `label` says (bold, italic, underline), typed in the window's rich box. */
+  labelRich?: LabelPart[];
 }
 
 export interface PlateData {
@@ -47,6 +50,8 @@ export interface PlateData {
   locked?: boolean;
   /** A line under a TLC plate (the eluent: "20% EtOAc/hexanes") or under a gel. */
   note: string;
+  /** The note's pieces when they hold more than `note` says (bold, italic, underline). */
+  noteRich?: LabelPart[];
   /** Gel: what the sizes are in, and whether the marker's sizes are written beside it. */
   unit: 'bp' | 'kb' | 'kDa';
   sizes: boolean;
@@ -239,8 +244,9 @@ export function drawPlate(doc: Doc, m: Measure, d: PlateData, at: Vec): PlatePar
   const laneW = d.w / n;
   const x = (k: number) => at.x + (k + 0.5) * laneW;
   const gap = 0.3 * L;
-  const caption = (text: string, target: Vec, anchor: 'above' | 'below' | 'left' | 'right', extra: Partial<Caption> = {}, color?: string): Rect => {
-    const runs = chemRuns(text).map((r) => (color ? { ...r, color } : r));
+  const caption = (text: string, target: Vec, anchor: 'above' | 'below' | 'left' | 'right', extra: Partial<Caption> = {}, color?: string, rich?: LabelPart[]): Rect => {
+    // (a name typed with its looks in the window keeps them: its pieces, while they still spell its text)
+    const runs = (rich ? labelParts(text, rich) : chemRuns(text)).map((r) => (color ? { ...r, color } : r));
     const c = doc.addCaption({ x: 0, y: 0, runs, justify: 'left', chem: false, ...extra });
     const b = m.captionBox(c);
     const w = b.x2 - b.x1, h = b.y2 - b.y1;
@@ -281,10 +287,10 @@ export function drawPlate(doc: Doc, m: Measure, d: PlateData, at: Vec): PlatePar
     let bottom = at.y + d.h + gap * 0.6;
     if (d.labels) {
       let lowest = bottom;
-      d.lanes.forEach((lane, k) => { if (lane.label.trim()) lowest = Math.max(lowest, caption(lane.label.trim(), { x: x(k), y: bottom }, 'below').y2); });
+      d.lanes.forEach((lane, k) => { if (lane.label.trim()) lowest = Math.max(lowest, caption(lane.label.trim(), { x: x(k), y: bottom }, 'below', {}, undefined, lane.labelRich).y2); });
       bottom = lowest + gap * 0.4;
     }
-    if (d.note.trim()) caption(d.note.trim(), { x: at.x + d.w / 2, y: bottom }, 'below');
+    if (d.note.trim()) caption(d.note.trim(), { x: at.x + d.w / 2, y: bottom }, 'below', {}, undefined, d.noteRich);
     return out;
   }
 
@@ -327,8 +333,8 @@ export function drawPlate(doc: Doc, m: Measure, d: PlateData, at: Vec): PlatePar
       left -= widest;
     }
   }
-  if (d.labels) d.lanes.forEach((lane, k) => { if (lane.label.trim()) caption(lane.label.trim(), { x: x(k), y: at.y - gap * 0.4 }, 'above'); });
-  if (d.note.trim()) caption(d.note.trim(), { x: at.x + d.w / 2, y: at.y + d.h + gap * 0.6 }, 'below');
+  if (d.labels) d.lanes.forEach((lane, k) => { if (lane.label.trim()) caption(lane.label.trim(), { x: x(k), y: at.y - gap * 0.4 }, 'above', {}, undefined, lane.labelRich); });
+  if (d.note.trim()) caption(d.note.trim(), { x: at.x + d.w / 2, y: at.y + d.h + gap * 0.6 }, 'below', {}, undefined, d.noteRich);
   return out;
 }
 

@@ -4,7 +4,7 @@
 // a Resolved mark. Each cell holds one or the other, marked by a triangle in its top right corner
 // (red for a note, purple for a comment).
 
-import type { CommentThread } from '../document/comments';
+import type { CommentThread, NoteRun } from '../document/comments';
 
 export interface CellNote extends CommentThread {
   kind: 'note' | 'comment';
@@ -16,7 +16,7 @@ export interface CellNote extends CommentThread {
    * From an Excel file: the note's text element as the file had it (its runs, with their bold,
    * italic, subscripts and fonts), written back while the note still says `text` by `author`.
    */
-  xl?: { xml: string; text: string; author: string };
+  xl?: { xml: string; text: string; author: string; /** The looks read with it (null: none), so a look changed here counts as a change. */ runs?: NoteRun[] | null };
 }
 
 /** A note copied (for the undo history and pasting). */

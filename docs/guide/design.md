@@ -99,7 +99,7 @@ Insert a PNG or JPEG (a logo, say), select it, and click **Remove white…** in 
 
 ## Diagrams
 
-**Insert** ▸ **Diagram…** (a **Diagram** button on the Design, Presentation and Document ribbons) draws a diagram from lines of text, as PowerPoint's SmartArt does. Type one item per line; press <kbd>Tab</kbd> to move a line a level down (under the line above it) and <kbd>Shift+Tab</kbd> to move it back up. The picture on the right shows how it will look as you type.
+**Insert** ▸ **Diagram…** (a **Diagram** button on the Design, Presentation and Document ribbons) draws a diagram from lines of text, as PowerPoint's SmartArt does. Type one item in each box (<kbd>Enter</kbd> starts the next); press <kbd>Tab</kbd> to move an item a level down (under the one above it) and <kbd>Shift+Tab</kbd> to move it back up. The boxes show the text as it will be drawn: formulas are subscripted as you type, and the bar above them (or <kbd>Ctrl+B</kbd>, <kbd>Ctrl+I</kbd>, <kbd>Ctrl+U</kbd>, <kbd>Ctrl+=</kbd>, <kbd>Ctrl+Shift+=</kbd>) makes text bold, italic, underlined, subscript or superscript. The picture on the right shows how it will look as you type.
 
 The 26 layouts come in eight kinds:
 
