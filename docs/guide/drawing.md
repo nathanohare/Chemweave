@@ -367,7 +367,7 @@ R/S and E/Z are calculated for every structure as you draw.
 - Plain bold bonds count as wedges and plain hashed bonds as hashed wedges, as in ChemDraw. Where R or S would depend on what an R or Ar group is, no label is given.
 - **Axial chirality** (biaryls, allenes, alkylidenecycloalkanes) is labeled Ra or Sa by IUPAC rule P-93.5.1. Draw the groups on one end of the axis with a wedge and a hash (or one wedge) to show which way around it is. Without that, or when one end has two of the same group, no label is shown. **Edit ▸ Settings** writes them as P/M instead (Ra = M, Sa = P).
 - **Stereo Group (abs, &, or)…**: marks selected stereocenters as abs (known as drawn), &1 (a mixture of both forms) or or1 (one form, not known which).
-- **Chiral Flag (Abs, Rel, Rac)…**: puts the boxed flag under the selected structure, or removes it.
+- **Chiral Flag (Abs, Rel, Rac)…**: puts the boxed flag under the selected structure, or removes it. A structure with wedges and no flag is saved as racemic (chiral flag 0 in MOL, SDF and RXN files, as ChemDraw reads it); **Settings ▸ Preferences ▸ Stereochemistry** can make wedges alone mean one enantiomer instead. A flag drawn beside a structure always wins.
 
 ### Polymers and R-groups
 

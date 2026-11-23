@@ -73,7 +73,7 @@ import { bestFit, fitMove, fitMatters } from './chem/orient';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blankCycle, type CycleLook } from './chem/cycles';
-import { addChiralFlag, structureFlag, type ChiralFlag } from './chem/chiral-flag';
+import { addChiralFlag, chiralPrefs, structureFlag, type ChiralFlag } from './chem/chiral-flag';
 import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
   nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, nativeClipboardDrawing, pasteDrawing, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
@@ -12245,6 +12245,10 @@ async function personalPreferences(): Promise<void> {
       help: 'Off, a counterion typed without its charge is still read as that ion, and flagged until the charge is added.' },
     { name: 'saltGroups', label: 'Group each with the adjacent oppositely charged structure or ion, as one salt', type: 'checkbox', value: String(chemText.saltGroups), inline: (v) => saltSwatch(v === 'true', doc.style),
       help: 'Grouped, the two count as one salt: one formula and mass, and a SMILES with both parts.' },
+    { name: 'stereoHeading', label: 'Stereochemistry', type: 'heading', value: '' },
+    { name: 'unflagged', label: 'Wedges without a flag mean', value: chiralPrefs.unflagged, short: true, options: [
+      { value: 'racemic', label: 'Racemic' }, { value: 'absolute', label: 'One enantiomer' }],
+      help: 'For saving MOL, SDF and RXN files, which hold this as the chiral flag. Racemic (as ChemDraw reads them): the flag is 0, the structure as drawn and its enantiomer. One enantiomer: the flag is 1, as if an Abs flag were drawn. A chiral flag drawn beside a structure (Chemistry ▸ Chiral Flag) always wins.' },
     { name: 'focalHeading', label: 'Focal Points', type: 'heading', value: '', help: 'A focal point is the spot on a structure that lines up with other structures when you align, distribute or arrange them (right-click an atom, bond or ring ▸ Set as Focal Point).' },
     { name: 'focalLook', label: 'Mark focal points with', value: focalPrefs.look, short: true, options: FOCAL_LOOKS.map((l) => ({ value: l.look, label: l.name })), inline: (v) => focalSwatch(v) },
     { name: 'focalDefault', label: 'Structures without their own focal point line up by', value: focalPrefs.dflt, short: true, options: [
@@ -12266,6 +12270,7 @@ async function personalPreferences(): Promise<void> {
   setWarnLook(r.warnLook as Settings['warnLook']);
   chemText.ionCharges = r.ionCharges === 'true';
   chemText.saltGroups = r.saltGroups === 'true';
+  chiralPrefs.unflagged = r.unflagged === 'absolute' ? 'absolute' : 'racemic';
   templatesOnNew = { document: r.tplDocument === 'true', sheet: r.tplSheet === 'true', slides: r.tplSlides === 'true' };
   unitPrefs.place = r.tplUnits === 'header' || r.tplUnits === 'cell' ? r.tplUnits : 'both';
   smilesPrefs.draw = r.smilesCells === 'true';
@@ -12425,6 +12430,7 @@ function currentSettings(): Settings {
     axialStyle: axialStyle.helicity ? 'PM' : 'RaSa',
     circledCharges: editor.options.circledCharges,
     ionCharges: chemText.ionCharges,
+    unflaggedWedges: chiralPrefs.unflagged,
     saltGroups: chemText.saltGroups,
     groupClick: editor.options.groupClick,
     groupOutline: editor.options.groupOutline,
@@ -12672,6 +12678,7 @@ function applySettings(s: Settings): void {
   editor.options.circledCharges = s.circledCharges;
   chemText.ionCharges = s.ionCharges;
   chemText.saltGroups = s.saltGroups;
+  chiralPrefs.unflagged = s.unflaggedWedges;
   editor.options.groupClick = s.groupClick;
   editor.options.groupOutline = s.groupOutline;
   editor.options.rerouteArrows = s.rerouteArrows;
@@ -15771,7 +15778,7 @@ watchRibbons((on) => { ribbonChosen = on; storeSettings(); });
 // (in the order of the list: the pages of a group together, under its heading)
 const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'general', group: 'General', title: 'General', words: 'backup back up copy move settings file new computer install reinstall export import groups selecting click outline linked text above below ask whole page tracked changes reviewer name start view recent files chemdraw objects ole word powerpoint docx pptx save structures pictures svg png compatibility', open: generalPreferences },
-  { id: 'preferences', group: 'General', title: 'Preferences', words: 'crop marks white space between pages margins focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
+  { id: 'preferences', group: 'General', title: 'Preferences', words: 'crop marks white space between pages margins focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox stereochemistry stereo wedges wedge chiral flag racemic enantiomer absolute abs rac molfile mol sdf rxn', open: personalPreferences },
   { id: 'hotkeys', group: 'General', title: 'Keyboard Shortcuts', words: 'keys keyboard shortcuts import export reset', open: () => hotkeysDialog.open() },
   { id: 'typing', group: 'General', title: 'Typing and Spelling', words: 'typing spelling dictionary autocorrect replacements chemistry formulas subscripts', open: () => typingDialog.open() },
   { id: 'autosave', group: 'General', title: 'AutoSave and Recovery', words: 'autosave recovery versions backup copies shared folders onedrive', open: () => keeper.optionsCommand() },

@@ -27,14 +27,14 @@
 import { Doc, keepOnPage, shiftDrawing, type Arrow, type BondDisplay, type EnhancedStereo, type StepRoles } from '../model';
 import type { DocStyle } from '../style';
 import { elementNumber, hasImplicitH, implicitHydrogens, SYMBOLS } from '../chem/elements';
-import { labelHydrogens, ruleHydrogens, statedHLabel } from '../chem/hydrogen-count';
+import { statedHLabel } from '../chem/hydrogen-count';
 import { molProgramLine, needsV3000, toMolfile, v2000Molfile, v3000Ctab, v3000Molfile, type CtabExtra, type MAtom, type MBond, type MSgroup } from '../chem/molfile';
 import { plainMeasure, reactionSteps, schemeItems, itemFinder } from '../chem/reaction';
 import { placeSpecies, readSpecies } from '../chem/species';
 import { labelGraph, type MiniGraph } from '../chem/labels';
 import { plainText } from '../richtext';
 import { arialWidth } from '../text-metrics';
-import { addChiralFlag, flagOwners } from '../chem/chiral-flag';
+import { addChiralFlag, chiralPrefs, flagOwners, type ChiralFlag } from '../chem/chiral-flag';
 
 // ---------------------------------------------------------------- the plain scene
 
@@ -61,13 +61,6 @@ export interface FAtom {
    * vvv, V3000 VAL=) or CML's hydrogenCount. Undefined when the file leaves them to the valence rule.
    */
   hCount?: number;
-  /**
-   * The hydrogen count is not to be stated (CML's hydrogenCount left out): the atom's label in the
-   * drawing shows a number of hydrogens the valence rule doesn't give (a methyl N labelled "N"),
-   * which this program's own molfile leaves to the rule; a reader then works it out as for the
-   * molfile, rather than trusting a stated count that may be wrong (review F1b-R12).
-   */
-  hUnstated?: boolean;
 }
 export type FStereo = 'wedge' | 'hash' | 'wavy';
 export interface FBond {
@@ -580,6 +573,7 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
   const contracted = new Set<string>();
   const groupOf = new Map<number, string>();
   const hTotal = new Map<number, number>();
+  const vals = new Map<number, number>();
   const addAtoms = (owner: Element) => {
     for (const arr of kids(owner, 'atomArray')) {
       const list = kids(arr, 'atom');
@@ -617,6 +611,9 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
         // CML's hydrogenCount: every hydrogen on the atom, drawn ones included (taken off below)
         const hc = parseInt(r.hydrogenCount ?? '', 10);
         if (hc >= 0) hTotal.set(atoms.length, hc);
+        // Marvin's mrvValence: the atom's whole valence, as a molfile's (ChemAxon, Marvin Documents format)
+        const mv = parseInt(r.mrvValence ?? '', 10);
+        if (mv >= 0) vals.set(atoms.length, mv);
         index.set(id, atoms.length);
         byId?.set(id, a);
         atoms.push(a);
@@ -669,6 +666,7 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
     const drawn = bonds.filter((b) => (b.a === i && atoms[b.b].sym === 'H') || (b.b === i && atoms[b.a].sym === 'H')).length;
     atoms[i].hCount = Math.max(0, n - drawn);
   }
+  hFromValence(atoms, bonds, new Map([...vals].filter(([i]) => !hTotal.has(i))));
   const mol: FMol = { atoms, bonds, ...(m.getAttribute('title') ? { name: m.getAttribute('title')! } : {}) };
   return expanded.length ? contract(mol, expanded) : mol;
 }
@@ -807,7 +805,9 @@ export function readKet(text: string): FScene | null {
     if (ref) {
       const m = j[ref] as { type?: string; atoms?: Record<string, unknown>[]; bonds?: Record<string, unknown>[]; sgroups?: Record<string, unknown>[] } | undefined;
       if (!m || m.type !== 'molecule') continue;
-      const atoms: FAtom[] = (m.atoms ?? []).map((a) => {
+      // (Ketcher's explicitValence: the atom's whole valence, as a molfile's; -1 none)
+      const vals = new Map<number, number>();
+      const atoms: FAtom[] = (m.atoms ?? []).map((a, i) => {
         const loc = (a.location as number[] | undefined) ?? [0, 0, 0];
         let sym = (a.label as string | undefined) ?? 'C';
         if (a.type === 'rg-label') { const refs = (a.$refs as string[] | undefined) ?? []; sym = refs.length ? 'R' + refs[0].replace(/^rg-?/, '') : 'R'; }
@@ -819,6 +819,7 @@ export function readKet(text: string): FScene | null {
         if (typeof a.isotope === 'number' && a.isotope) f.iso = a.isotope;
         if (typeof a.radical === 'number' && a.radical) f.rad = a.radical;
         if (typeof a.mapping === 'number' && a.mapping) f.map = a.mapping;
+        if (typeof a.explicitValence === 'number' && a.explicitValence >= -1) vals.set(i, a.explicitValence);
         // Ketcher's enhanced stereo label: abs, &1 (and), or1
         const sl = /^(abs|&|and|or)(\d*)$/i.exec(typeof a.stereoLabel === 'string' ? a.stereoLabel : '');
         if (sl) f.enh = sl[1].toLowerCase() === 'abs' ? { type: 'abs' } : { type: sl[1].toLowerCase() === 'or' ? 'or' : 'and', group: parseInt(sl[2], 10) || 1 };
@@ -831,6 +832,7 @@ export function readKet(text: string): FScene | null {
         const f = bondOf(p, q, (b.type as number | undefined) ?? 1, (b.stereo as number | undefined) ?? 0, false);
         if (f && atoms[f.a] && atoms[f.b]) bonds.push(f);
       }
+      hFromValence(atoms, bonds, vals);
       // (Ketcher's expanded: true, a group shown with its atoms, keeps them)
       const sup = (m.sgroups ?? []).filter((s) => s.type === 'SUP').map((s) => ({ atoms: (s.atoms as number[] | undefined) ?? [], label: (s.name as string | undefined) ?? '', ...(s.expanded === true ? { expanded: true } : {}) }));
       scene.mols.push(contract({ atoms, bonds }, sup));
@@ -865,6 +867,8 @@ export function readChemDoodleJson(text: string): FScene | null {
       if (typeof a.m === 'number' && a.m > 0) f.iso = a.m;
       if (typeof a.r === 'number' && a.r) f.rad = a.r === 1 ? 2 : a.r === 2 ? 3 : undefined;
       if (!f.rad) delete f.rad;
+      // (h: the implicit hydrogen count, when stated; -1 or none leaves it to the rule)
+      if (typeof a.h === 'number' && a.h >= 0) f.hCount = a.h;
       fixHydrogenIsotopes(f);
       return f;
     });
@@ -1106,8 +1110,9 @@ export function addMolfile(doc: Doc, molblock: string, cx: number, cy: number): 
 /**
  * A molfile's chiral flag of 1 drawn as an Abs flag on each of its structures (connected parts)
  * with a wedged centre not in a stereo group: the flag is the whole file's, so it says each of
- * them shows its absolute configuration (BIOVIA CTfile Formats 2020; review F1c-R03). `ids` are
- * the drawing's atoms for the file's.
+ * them shows its absolute configuration (BIOVIA CTfile Formats 2020; review F1c-R03). A flag of 0
+ * is drawn as a Rac flag only while Settings ▸ Preferences reads wedges alone as one enantiomer
+ * (chiralPrefs). `ids` are the drawing's atoms for the file's.
  */
 function addAbsFlags(doc: Doc, m: FMol, ids: number[]): void {
   const part = m.atoms.map((_, i) => i);
@@ -1117,8 +1122,20 @@ function addAbsFlags(doc: Doc, m: FMol, ids: number[]): void {
     // (written here, flag 0: a structure whose wedged centres not in an and or or group are all
     // abs had an Abs flag, beside one without; it comes back as that flag; review F1d-R04)
     const centres = new Map<number, number[]>();
+    // (only beside an Abs structure, written as the absolute collection, is an and group one that the writer made)
+    const mixed = m.atoms.some((a) => a.enh?.type === 'abs');
     for (const b of m.bonds) if (b.stereo === 'wedge' || b.stereo === 'hash') centres.set(top(b.a), [...(centres.get(top(b.a)) ?? []), b.a]);
     for (const [p, list] of centres) {
+      // (an unflagged structure beside them, its wedged centres in an and group of their own, comes
+      // back unflagged; while Preferences reads wedges alone as one enantiomer, it keeps the group,
+      // which then says what the drawing would otherwise lose)
+      const and = list.map((k) => m.atoms[k]?.enh);
+      const g = and[0]?.type === 'and' ? and[0].group ?? 1 : null;
+      if (g !== null && mixed && chiralPrefs.unflagged === 'racemic' && and.every((e) => e?.type === 'and' && (e.group ?? 1) === g)
+        && m.atoms.every((a, i) => a.enh?.type !== 'and' || (a.enh.group ?? 1) !== g || top(i) === p)) {
+        for (const k of list) if (ids[k] !== undefined) doc.updateAtom(ids[k], { enhStereo: undefined });
+        continue;
+      }
       const plain = list.filter((k) => !m.atoms[k]?.enh || m.atoms[k].enh!.type === 'abs');
       if (!plain.length || plain.some((k) => m.atoms[k]?.enh?.type !== 'abs')) continue;
       for (const k of plain) if (ids[k] !== undefined) doc.updateAtom(ids[k], { enhStereo: undefined });
@@ -1127,11 +1144,14 @@ function addAbsFlags(doc: Doc, m: FMol, ids: number[]): void {
     }
     return;
   }
-  if (!absFlag(m)) return;
+  // (a flag of 0 needs nothing while wedges alone mean racemic, the default; while Preferences reads
+  // them as one enantiomer, each such structure gets a Rac flag, so it isn't saved as absolute)
+  const flag: ChiralFlag | null = absFlag(m) ? 'Absolute' : !m.chiral && chiralPrefs.unflagged === 'absolute' ? 'Racemic' : null;
+  if (!flag) return;
   const wedged = new Set(m.bonds.filter((b) => (b.stereo === 'wedge' || b.stereo === 'hash') && !m.atoms[b.a]?.enh).map((b) => top(b.a)));
   for (const p of wedged) {
     const atoms = m.atoms.flatMap((_, i) => (top(i) === p && ids[i] !== undefined ? [ids[i]] : []));
-    if (atoms.length) addChiralFlag(doc, atoms, 'Absolute');
+    if (atoms.length) addChiralFlag(doc, atoms, flag);
   }
 }
 
@@ -1147,22 +1167,6 @@ function absFlag(m: FMol): boolean {
 // ---------------------------------------------------------------- drawing → scene
 
 /** The drawing's structures, straight arrows, + signs and text, in bond-length units with y upwards. */
-/**
- * Is atom `id` bonded and labelled with its element and a number of hydrogens the valence rule
- * doesn't give it (a methyl N labelled "N")? The molfile writer leaves such an atom to the rule.
- * (A label on its own, as OH for the hydroxyl radical, is written as it reads, so its count stands.)
- */
-function labelDisagrees(doc: Doc, id: number): boolean {
-  const a = doc.atoms.get(id);
-  const label = a?.label?.trim();
-  if (!a || !label || !doc.adj.get(id)?.length) return false;
-  const n = labelHydrogens(label, a.z);
-  if (n === null) return false;
-  const orders = (doc.adj.get(id) ?? []).map((bid) => doc.bonds.get(bid)?.order ?? 0);
-  if (orders.some((o) => o !== 1 && o !== 2 && o !== 3)) return false;
-  return n !== ruleHydrogens(a.z, orders.reduce((t, o) => t + o, 0), a.charge ?? 0, a.radical);
-}
-
 export function docToScene(doc: Doc): { scene: FScene; unknown: string[]; step: boolean } {
   const scene: FScene = { mols: [], arrows: [], pluses: [], texts: [], unit: 1 };
   const unknown = new Set<string>();
@@ -1211,8 +1215,6 @@ export function docToScene(doc: Doc): { scene: FScene; unknown: string[]; step: 
     for (const u of ex.unknownLabels) unknown.add(u);
     const mol = readMolfile(ex.molblock, { keepSup: true });
     if (!mol || !mol.atoms.length) continue;
-    // an atom labelled with its element and a number of hydrogens the rule doesn't give: no count stated
-    if (mol.atoms.length === ex.map.length) ex.map.forEach((id, i) => { if (labelDisagrees(doc, id)) mol.atoms[i].hUnstated = true; });
     const role = roleOf.get(it.ref);
     scene.mols.push(role ? { ...mol, role } : mol);
   }
@@ -1252,8 +1254,10 @@ function ctabOf(mols: FMol[]): [MAtom[], MBond[], CtabExtra] {
       const z = a.label ? undefined : elementNumber(a.sym);
       const rg = z === undefined ? /^R(\d+)$/.exec(a.sym) : null;
       const sym = z !== undefined ? a.sym : rg ? 'R#' : '*';
+      // (hydrogens the drawing states, as the atom's valence: V2000 vvv, V3000 VAL=)
+      const val = a.hCount !== undefined && z !== undefined ? a.hCount + Math.round(bondSum(m.bonds, m.atoms.indexOf(a))) : undefined;
       atoms.push({
-        sym, x: a.x, y: a.y, charge: a.charge ?? 0, iso: a.iso ?? 0, rad: a.rad ?? 0, map: a.map ?? 0,
+        sym, x: a.x, y: a.y, charge: a.charge ?? 0, iso: a.iso ?? 0, rad: a.rad ?? 0, map: a.map ?? 0, ...(val !== undefined ? { val } : {}),
         ...(rg ? { rg: +rg[1] } : z === undefined && a.sym !== '*' ? { alias: a.sym } : {}), ...(a.enh ? { enh: a.enh } : {}),
       });
     }
@@ -1381,7 +1385,7 @@ function cmlMoleculeXml(m: FMol, id: string, first: number, indent: string, mrv:
     // CML's hydrogenCount (plain CML; Marvin works its own out): the hydrogens on an element, drawn ones included
     // (left out next to an aromatic bond, where the count depends on the ring: pyrrole's NH)
     const aromatic = m.bonds.some((b) => (b.a === i || b.b === i) && b.order === 1.5);
-    const hc = !mrv && !a.hUnstated && z !== undefined && z !== 1 && hasImplicitH(z) && (a.hCount !== undefined || !aromatic)
+    const hc = !mrv && z !== undefined && z !== 1 && hasImplicitH(z) && (a.hCount !== undefined || !aromatic)
       ? (a.hCount ?? implicitHydrogens(z, bondSum(m.bonds, i), a.charge ?? 0, a.rad === 2 ? 1 : a.rad ? 2 : 0))
         + m.bonds.filter((b) => (b.a === i && m.atoms[b.b].sym === 'H') || (b.b === i && m.atoms[b.a].sym === 'H')).length
       : undefined;
@@ -1392,6 +1396,8 @@ function cmlMoleculeXml(m: FMol, id: string, first: number, indent: string, mrv:
       a.rad ? ` ${mrv ? 'radical' : 'spinMultiplicity'}="${mrv ? (a.rad === 2 ? 'monovalent' : a.rad === 1 ? 'divalent1' : 'divalent3') : a.rad === 2 ? 2 : a.rad === 1 ? 1 : 3}"` : '',
       r ? ` rgroupRef="${r[1]}"` : '',
       a.map && mrv ? ` mrvMap="${a.map}"` : '',
+      // (hydrogens the drawing states, as Marvin's mrvValence: the atom's whole valence)
+      mrv && a.hCount !== undefined && z !== undefined ? ` mrvValence="${a.hCount + Math.round(bondSum(m.bonds, i))}"` : '',
       z === undefined && !r && a.sym !== 'R' && a.sym !== '*' && mrv ? ` mrvAlias="${att(a.sym)}"` : '',
       enh ? ` mrvStereoGroup="${enh}"` : '',
       attach,
@@ -1525,7 +1531,7 @@ export function writeKetFile(doc: Doc): WrittenChem {
     nodes.push({ $ref: key });
     out[key] = {
       type: 'molecule',
-      atoms: m.atoms.map((a) => {
+      atoms: m.atoms.map((a, i) => {
         const z = a.label ? undefined : elementNumber(a.sym);
         const r = /^R(\d+)$/.exec(a.sym);
         if (r) return { type: 'rg-label', location: [+fx(a.x), +fx(a.y), 0], $refs: [`rg-${r[1]}`] };
@@ -1533,6 +1539,8 @@ export function writeKetFile(doc: Doc): WrittenChem {
           label: z !== undefined ? a.sym : 'C', location: [+fx(a.x), +fx(a.y), 0],
           ...(z === undefined ? { alias: a.sym } : {}),
           ...(a.charge ? { charge: a.charge } : {}), ...(a.iso ? { isotope: a.iso } : {}), ...(a.rad ? { radical: a.rad } : {}), ...(a.map ? { mapping: a.map } : {}),
+          // (hydrogens the drawing states, as Ketcher's explicitValence: the atom's whole valence, -1 for none)
+          ...(a.hCount !== undefined && z !== undefined ? { explicitValence: (a.hCount + Math.round(bondSum(m.bonds, i))) || -1 } : {}),
           ...(a.enh ? { stereoLabel: a.enh.type === 'abs' ? 'abs' : `${a.enh.type === 'and' ? '&' : 'or'}${a.enh.group ?? 1}` } : {}),
         };
       }),
@@ -1564,7 +1572,8 @@ export function writeChemDoodleJson(doc: Doc): WrittenChem & { leftOut: number }
   const scene = scaled(got.scene, 20, true);
   const j = {
     m: scene.mols.map((m) => ({
-      a: m.atoms.map((a) => ({ x: +fx(a.x, 3), y: +fx(a.y, 3), ...(a.sym !== 'C' ? { l: a.sym } : {}), ...(a.charge ? { c: a.charge } : {}), ...(a.iso ? { m: a.iso } : {}), ...(a.rad === 2 ? { r: 1 } : a.rad ? { r: 2 } : {}) })),
+      // (h: hydrogens the drawing states, ChemDoodle's implicit hydrogen count override)
+      a: m.atoms.map((a) => ({ x: +fx(a.x, 3), y: +fx(a.y, 3), ...(a.sym !== 'C' ? { l: a.sym } : {}), ...(a.charge ? { c: a.charge } : {}), ...(a.iso ? { m: a.iso } : {}), ...(a.rad === 2 ? { r: 1 } : a.rad ? { r: 2 } : {}), ...(a.hCount !== undefined ? { h: a.hCount } : {}) })),
       b: m.bonds.map((b) => ({ b: b.a, e: b.b, ...(b.dative ? { o: 0 } : b.order !== 1 ? { o: b.order } : {}), ...(b.stereo ? { s: b.stereo === 'wedge' ? 'protruding' : b.stereo === 'hash' ? 'recessed' : 'ambiguous' } : {}) })),
     })),
     ...(scene.arrows.length ? { s: scene.arrows.map((r) => ({ t: 'Line', x1: +fx(r.x1, 3), y1: +fx(r.y1, 3), x2: +fx(r.x2, 3), y2: +fx(r.y2, 3), a: r.kind === 'retro' ? 'retrosynthetic' : r.kind === 'equilibrium' ? 'equilibrium' : r.kind === 'resonance' ? 'resonance' : 'synthetic' })) } : {}),

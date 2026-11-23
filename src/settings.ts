@@ -174,6 +174,8 @@ export interface Settings {
   circledCharges: boolean;
   /** A common counterion typed as text without its charge gets it (BF4 → BF4⁻) (Settings ▸ Preferences). */
   ionCharges: boolean;
+  /** What wedges on a structure with no chiral flag mean in saved files: racemic (chiral flag 0, ChemDraw's reading) or one enantiomer (1) (Settings ▸ Preferences; chiralPrefs). */
+  unflaggedWedges: 'racemic' | 'absolute';
   /** A counterion typed as text next to a cation (or the other way round) is grouped with it, as one salt (Settings ▸ Preferences). */
   saltGroups: boolean;
   /** A click on something grouped selects the whole group, or just that thing. */
@@ -318,7 +320,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkeys: {}, keepHotspotOnBond: true, stickyHotspot: false, fixedLength: true, fixedAngles: true, devTools: false, showRoles: true,
   chemTyping: true, stereoItalic: true, boldNumbers: false, autoLinks: true, linkCtrlClick: true, spellCheck: true, replacements: DEFAULT_TYPING.replacements, dictionary: [],
   modeColours: DEFAULT_MODE_COLOURS, nicknames: {}, templates: [], splitWidth: 0.38, slidePaneWidth: 160, notesHeight: 32, slideNotes: true, scrollBars: true, ribbonCollapsed: false, ribbonAutoFold: false, tabsInMenu: true, uiScale: 1, titleBar: typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent) ? 'system' : 'app', page: { name: 'letter', w: 540, h: 720, grow: true }, welcomed: false, textBar: 'docked', appTheme: 'darkgray', density: 'cozy', shadows: 'light', iconLook: 'mode', iconSet: 'new', shapeInk: 'neutral', oneColumnTools: false, toolCells: 'off', canvasRibbon: 'classic', startView: true, enterFinishesText: false, offerFigures: true, templatesOnNew: { document: true, sheet: true, slides: true }, sheetTemplateUnits: 'both', sheetSmilesStructures: true, groupTips: true, toolTips: true, touchMode: 'auto', penSketch: false,
-  citeStyle: DEFAULT_STYLE, citeOptions: {}, methylStyle: 'Me', axialStyle: 'RaSa', circledCharges: false, ionCharges: false, saltGroups: false, groupClick: 'group', groupOutline: true, rerouteArrows: true, arrowProducts: true, arrowStartGap: null, arrowEndGap: null, superscriptR: true, superscriptRText: false, alkylLook: 'typed', warnLook: 'box', bondEnds: DEFAULT_BOND_ENDS, mapLook: 'grey', mapBox: { ...DEFAULT_MAP_BOX }, depthShade: { ...DEFAULT_DEPTH_SHADE }, linkLook: 'style', slideTemplate: null, slideThemes: [], askWholeDrawing: true, palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null,
+  citeStyle: DEFAULT_STYLE, citeOptions: {}, methylStyle: 'Me', axialStyle: 'RaSa', circledCharges: false, ionCharges: false, unflaggedWedges: 'racemic', saltGroups: false, groupClick: 'group', groupOutline: true, rerouteArrows: true, arrowProducts: true, arrowStartGap: null, arrowEndGap: null, superscriptR: true, superscriptRText: false, alkylLook: 'typed', warnLook: 'box', bondEnds: DEFAULT_BOND_ENDS, mapLook: 'grey', mapBox: { ...DEFAULT_MAP_BOX }, depthShade: { ...DEFAULT_DEPTH_SHADE }, linkLook: 'style', slideTemplate: null, slideThemes: [], askWholeDrawing: true, palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null,
   myStyles: [], modeStyles: {}, darkPage: false, darkPalette: 'Graphite', darkPalettes: [],
   guides: { slides: true, design: true },
   orient: { ...DEFAULT_ORIENT },
@@ -457,6 +459,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   if (['box', 'soft', 'circle', 'dashed', 'corners'].includes(r.warnLook as string)) s.warnLook = r.warnLook as Settings['warnLook'];
   if (r.groupClick === 'group' || r.groupClick === 'item') s.groupClick = r.groupClick;
   if (r.axialStyle === 'RaSa' || r.axialStyle === 'PM') s.axialStyle = r.axialStyle;
+  if (r.unflaggedWedges === 'racemic' || r.unflaggedWedges === 'absolute') s.unflaggedWedges = r.unflaggedWedges;
   if (typeof r.slideTemplate === 'string' || r.slideTemplate === null) s.slideTemplate = r.slideTemplate as string | null;
   s.slideThemes = parseThemes(r.slideThemes);
   s.highlightLooks = parseLooks(r.highlightLooks);
