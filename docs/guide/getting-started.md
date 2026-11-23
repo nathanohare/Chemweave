@@ -232,7 +232,7 @@ It types into the text you are editing: a document, a caption or text box, a sli
 
 <!-- index: AI model -->
 
-**Edit ▸ Assistant…** (Ctrl+/) opens a slim bar at the bottom of the page for asking an AI model of your own about what you are working on. It is there only once a model is linked in **Edit ▸ Settings ▸ AI Model** (Claude, ChatGPT or Gemini with your own API key, or a model on this computer, in Ollama or LM Studio, so that nothing leaves it), and it sends nothing until you turn it on.
+**Edit ▸ Assistant…** (Ctrl+/) opens a slim bar at the bottom of the page for asking an AI model of your own about what you are working on. It is there only once a model is linked in **Edit ▸ Settings ▸ AI Model** (Claude, ChatGPT or Gemini with your API key, or a model on this computer, in Ollama or LM Studio, so that nothing leaves it), and it sends nothing until you turn it on.
 
 - **What it can do.** On a canvas, slide or design page: draw a structure you describe, change the selected one ("make this the methyl ester"), or check a scheme (balance, stereochemistry, missing reagents); a finding about a step has **Show step** to select its arrow. In a Document: write or rewrite text ("write the experimental for step 2"). In a Spreadsheet: answer questions about the selected cells.
 - **It only proposes.** Each change comes as a card with **Accept** and **Reject**. Nothing on the page changes until you accept, an accepted change is one step of Undo (the card has its own **Undo** too), and a proposed structure is read by RDKit before it is drawn. A structure proposed in a Document or a Spreadsheet is copied as SMILES for you to paste.

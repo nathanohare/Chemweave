@@ -296,7 +296,7 @@ const RIBBON = `
         <button data-si-tbl="remove-picture" title="Take the picture out of the selected cell (its file stays in images/)">Remove Picture</button>
       </div>
       <div class="rb-col">
-        <label class="rb-field" title="The picture's printed width (empty: its own size, never wider than the text)">Width <input type="number" class="rb-num" data-si-field="width" min="0" step="0.1" placeholder="own" /> cm</label>
+        <label class="rb-field" title="The picture's printed width (empty: its own size, never wider than the text)">Custom width <input type="number" class="rb-num" data-si-field="width" min="0" step="0.1" /> cm</label>
       </div>
     </div><div class="rb-label">Cell Picture</div></div>
   </div>
@@ -311,7 +311,7 @@ const RIBBON = `
     </div><div class="rb-label">Picture</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <label class="rb-field" title="The figure's printed width (empty: its own size, never wider than the text)">Width <input type="number" class="rb-num" data-si-field="fig-width" min="0" step="0.1" placeholder="own" /> cm</label>
+        <label class="rb-field" title="The figure's printed width (empty: its own size, never wider than the text)">Custom width <input type="number" class="rb-num" data-si-field="fig-width" min="0" step="0.1" /> cm</label>
       </div>
     </div><div class="rb-label">Size</div></div>
     <div class="rb-group"><div class="rb-row">
