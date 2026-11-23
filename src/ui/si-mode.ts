@@ -42,7 +42,7 @@ import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Refere
 import { newTable } from '../si/tables';
 import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
-import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDismissed, monoisotopic, outOfTolerance, parseNumber, ID_KEY, type SiWarning } from '../si/checks';
+import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDismissed, monoisotopic, outOfTolerance, parseNumber, ID_KEY, ION_LABEL_KEY, printedIonLabel, type SiWarning } from '../si/checks';
 import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY, chooseMatch, foundIsFromReport, updateFound, vendorRawKind, type Match, type ReportData } from '../si/ms-reports';
 import { readReportFile } from '../si/report-files';
 import { adductDisplay, sameFormula, speciesLabel, ChemError, unreadableFacts, type MolFacts, type Peak } from '../si/chem';
@@ -2577,7 +2577,16 @@ export class SiMode {
     formula.title = 'Type M’s formula to use instead of the structure’s (the adduct is still applied). Leave empty to use the structure.';
     this.bind(formula, () => void this.act(async () => { await p.setPart(c, 'hrms', 'formula', formula.value.trim()); if (await this.syncFound(c)) await p.saveCompound(c); }, false, c));
     fcell.append(formula);
-    line.append(mIs, fcell);
+    // the ion label printed in the SI, when it isn't the adduct (e.g. [M−Br]⁺ for a salt: SI Assistant SPEC §13f.3)
+    const pcell = el('label', 'si-part si-ion-label');
+    const pname = el('span', 'si-plabel', 'Printed as');
+    addInfo(pname, 'The ion as printed in the SI, such as [M−Br]⁺ for a bromide salt whose cation is M with the adduct [M]⁺. Empty: automatic, from Project Settings ▸ Output ▸ HRMS ion for salts. The calculated m/z doesn’t change.');
+    const printed = el('input');
+    printed.value = partText(value()[ION_LABEL_KEY]);
+    printed.setAttribute('aria-label', 'Printed as');
+    this.bind(printed, () => void this.act(async () => { await p.setPart(c, 'hrms', ION_LABEL_KEY, printed.value.trim()); }, false, c));
+    pcell.append(pname, printed);
+    line.append(mIs, fcell, pcell);
     const calc = el('div', 'si-calc muted');
     const note = el('div', 'si-found-note muted');
     note.hidden = true;
@@ -2603,11 +2612,17 @@ export class SiMode {
         sel.replaceChildren(...opts);
         sel.value = auto.key;
       }
-      const input = calc.parentElement?.querySelector<HTMLInputElement>('.si-hrms-m input');
+      const input = calc.parentElement?.querySelector<HTMLInputElement>('.si-hrms-m label:not(.si-ion-label) input');
       if (input) {
         input.placeholder = auto ? `auto: ${speciesLabel(auto.info)}` : 'e.g. C12H13NO';
         input.classList.toggle('si-manual', !!partText(value.formula).trim());
       }
+    }
+    const printed = calc.parentElement?.querySelector<HTMLInputElement>('.si-ion-label input');
+    if (printed) {
+      const auto = printedIonLabel(p.settings, facts, { ...value, [ION_LABEL_KEY]: '' });
+      printed.placeholder = `auto: ${adductDisplay(auto)}`;
+      printed.classList.toggle('si-manual', !!partText(value[ION_LABEL_KEY]).trim());
     }
     calc.classList.remove('bad');
     calc.title = '';
@@ -2636,6 +2651,8 @@ export class SiMode {
       const bad = outOfTolerance(r);
       calc.append(`; found ${r.found.toFixed(4)}${peak} · Δ `, el('span', bad ? 'si-bad' : 'si-good', bad ? `${ppm} (outside ±${r.tolerance} ppm)` : `${ppm} ✓`));
     }
+    const label = printedIonLabel(p.settings, facts, value);
+    if (label.trim() !== adduct.trim()) calc.append(`; printed as ${adductDisplay(label)}`);
     const shownPeaks = r.peaks.filter((x) => x.abundance >= 5).slice(0, 6);
     addInfo(calc, `Isotope pattern (m/z): ${shownPeaks.map((x) => `${x.mz.toFixed(4)} (${x.abundance.toFixed(1)}%)`).join(', ')}`);
   }

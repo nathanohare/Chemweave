@@ -162,6 +162,56 @@ export function hrmsSpecies(facts: MolFacts | null, value: Json): HrmsSpecies | 
   return { info: chosen[2], manual: false, choices, key, automatic };
 }
 
+// ---- how the ion is printed (SI Assistant SPEC §13f.3)
+
+/**
+ * Project setting: how a salt's ion is labeled when M is its charged piece and the adduct is plain
+ * [M]⁺/[M]⁻. "piece" (the default, not written to project.json) prints the adduct as it is ([M]⁺,
+ * M = the cation); "whole" prints it for M = the whole salt with the other pieces taken off ([M−Br]⁺).
+ */
+export const SALT_LABEL_KEY = 'hrms_salt_ion_label';
+export type SaltLabel = 'piece' | 'whole';
+/** Per compound, in the HRMS field: the label printed instead (empty: automatic). */
+export const ION_LABEL_KEY = 'ion_label';
+
+export const saltLabelStyle = (settings: Json | null | undefined): SaltLabel => (settings?.[SALT_LABEL_KEY] === 'whole' ? 'whole' : 'piece');
+
+/**
+ * The ion written for M = the whole salt: "[M-Br]+" for a pyridinium bromide whose cation is M with
+ * the adduct [M]+, "[M-2Br]2+" for a dibromide, "[M-Na]-" for a sodium carboxylate. Null when this
+ * doesn't apply: one piece, a typed M formula, the whole structure chosen as M, an adduct that adds
+ * or removes atoms, a charge other than the piece's, two copies of M, or pieces whose charges don't
+ * add up to a neutral salt (the adduct is printed as it is then). The m/z is the charged piece's
+ * either way.
+ */
+export function saltIonLabel(facts: MolFacts | null, value: Json, adduct: string): string | null {
+  if (!facts?.info || partText(value.formula).trim()) return null;
+  let sp: HrmsSpecies | null;
+  let a: chem.Adduct;
+  try { sp = hrmsSpecies(facts, value); a = chem.parseAdduct(adduct || '[M+H]+'); } catch (e) { if (e instanceof ChemError) return null; throw e; }
+  if (!sp?.choices || sp.manual) return null;
+  const key = sp.key || sp.automatic?.[0] || '';
+  if (!key.startsWith('frag:')) return null;
+  if ([...a.delta.values()].some((n) => n !== 0) || a.multimer !== 1 || a.radical || !sp.info.charge || a.charge !== sp.info.charge) return null;
+  const chosen = key.slice('frag:'.length);
+  const me = facts.pieces.find((x) => x.smiles === chosen);
+  if (!me || (me.copies ?? 1) !== 1) return null;   // (two copies of M: which one is the ion is not clear)
+  const others = facts.pieces.filter((x) => x !== me).sort((x, y) => (x.drawn ?? 0) - (y.drawn ?? 0));
+  if (!others.length || others.some((x) => !x.smiles)) return null;
+  if (others.reduce((t, x) => t + (x.copies ?? 1) * x.info.charge, 0) !== -sp.info.charge) return null;   // (not a neutral salt as drawn)
+  const terms = others.map((x) => { const n = x.copies ?? 1; return `-${n > 1 ? n : ''}${x.name ?? chem.hillFormula(x.info.counts)}`; });
+  const z = Math.abs(a.charge);
+  return `[M${terms.join('')}]${z > 1 ? z : ''}${a.charge > 0 ? '+' : '-'}`;
+}
+
+/** The ion label printed in the HRMS sentence: the compound's own typed label, else [M−X]⁺ for a salt when the project asks for it, else the adduct. */
+export function printedIonLabel(settings: Json | null | undefined, facts: MolFacts | null, value: Json): string {
+  const typed = partText(value[ION_LABEL_KEY]).trim();
+  if (typed) return typed;
+  const adduct = partText(value.adduct).trim() || '[M+H]+';
+  return saltLabelStyle(settings) === 'whole' ? saltIonLabel(facts, value, adduct) ?? adduct : adduct;
+}
+
 /** For an ion already charged as drawn: [M]+, [M]2+, [M]-… */
 export function suggestedAdduct(info: MolInfo): string | null {
   if (!info.charge) return null;

@@ -95,12 +95,17 @@ export function formulaRuns(formula: string): Run[] {
   return mergeRuns(out);
 }
 
-/** An adduct like "[M+H]+" or "[M]+." with the charge as superscript (the radical as •). */
+/**
+ * An adduct like "[M+H]+" or "[M]+." with the charge as superscript (the radical as •). Atom counts
+ * in the brackets are subscripted ([M+NH4]⁺ → NH₄, [M−BF4]⁺ → BF₄); a number of molecules or pieces
+ * is not ([2M+Na]⁺, [M+2H]²⁺, [M−2Br]²⁺), as SI Assistant's charge_runs.
+ */
 export function chargeRuns(display: string): Run[] {
   const m = /^(\[.*\])(\d*[+\-−][•·.]?)$/.exec(display.trim());
   if (!m) return [R(display)];
   const charge = m[2].replace(/-/g, '−').replace(/\./g, '•').replace(/·/g, '•');
-  return [R(m[1].replace(/-/g, '−')), R(charge, { valign: 'super' })];
+  const body = m[1].replace(/-/g, '−').split(/(?<=[A-Za-z)])(\d+)/).flatMap((part, i) => (part ? [i % 2 ? R(part, { valign: 'sub' }) : R(part)] : []));
+  return [...body, R(charge, { valign: 'super' })];
 }
 
 const SUB_CHARS = '₀₁₂₃₄₅₆₇₈₉₊₋';

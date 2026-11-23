@@ -12,7 +12,7 @@
 import { CITE, parseMarkup, type Paragraph, type Run } from './markup';
 import { eeWithUnit, fieldDef, partText, type FieldDef } from './fields';
 import { fieldKeys, fieldsOf, valuesOf, compoundName, type Json, type SiCompound, type SiProject } from './project';
-import { hrmsCalc, hrmsSpecies, hrmsTolerance, monoisotopic, outOfTolerance, parseNumber } from './checks';
+import { hrmsCalc, hrmsSpecies, hrmsTolerance, monoisotopic, outOfTolerance, parseNumber, printedIonLabel } from './checks';
 import { ChemError, type MolFacts } from './chem';
 import { nameRuns } from './chem-names';
 import { R, but, chargeRuns, formatChemistry, formatNmr, formulaRuns, plain, type Leave } from './format';
@@ -137,7 +137,9 @@ export function hrmsSentence(p: SiProject, c: SiCompound, facts: MolFacts | null
   const found = parseNumber(foundText);
   const ion = partText(value.ionization).trim();
   const adduct = partText(value.adduct).trim() || '[M+H]+';
-  let runs = [R('HRMS', { bold: true }), ...(ion ? [R(` (${ion})`)] : []), R(' '), R('m/z', { italic: true }), R(': '), ...chargeRuns(adduct)];
+  // (the label printed may differ from the adduct, e.g. [M−Br]⁺ for a salt: SI Assistant SPEC §13f.3)
+  const label = printedIonLabel(p.settings, facts, value);
+  let runs = [R('HRMS', { bold: true }), ...(ion ? [R(` (${ion})`)] : []), R(' '), R('m/z', { italic: true }), R(': '), ...chargeRuns(label)];
   let result = null;
   try {
     const sp = hrmsSpecies(facts, value);
