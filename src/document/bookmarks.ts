@@ -8,7 +8,7 @@ import * as rt from '../richtext';
 import { fitParas, paraCount } from '../text/paragraphs';
 import type { LinkPlace } from '../links';
 import type { DocText } from './document';
-import { tocEntries } from './toc';
+import { tocEntries, tocMarkPara } from './toc';
 
 /** Word's built-in bookmark for the start of the document. */
 export const TOP = '_top';
@@ -28,7 +28,11 @@ export function bookmarksOf(t: Pick<DocText, 'paras'>): Bookmark[] {
 export function bookmarkPara(t: Pick<DocText, 'paras'>, name: string): number {
   if (name.toLowerCase() === TOP) return 0;
   const low = name.toLowerCase();
-  return t.paras.findIndex((p) => p?.marks?.some((m) => m.toLowerCase() === low));
+  const at = t.paras.findIndex((p) => p?.marks?.some((m) => m.toLowerCase() === low));
+  if (at >= 0) return at;
+  // a contents line's link to its heading (made from the heading's paragraph, see tocMark)
+  const head = tocMarkPara(name);
+  return head >= 0 && head < t.paras.length ? head : -1;
 }
 
 /** The paragraphs with one bookmark more or fewer. */

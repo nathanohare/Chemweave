@@ -88,7 +88,7 @@ export async function pdfPages(bytes: Uint8Array, most?: number): Promise<PdfPag
 
 /** PDFs drawn lately (by their bytes): the live preview draws the same ones again after each change. */
 const drawnLately: { key: string; bytes: Uint8Array; most: number; pages: Promise<PdfPagePicture[] | null> }[] = [];
-const LATELY = 12;
+const LATELY = 40;
 
 /** As pdfPages, the last few PDFs drawn kept (for the live preview, which compiles often). */
 export function pdfPagesKept(bytes: Uint8Array, most = 1): Promise<PdfPagePicture[] | null> {
@@ -173,13 +173,11 @@ export async function pdfText(bytes: Uint8Array): Promise<string> {
   }
 }
 
-/** Where a picture's content is (auto-crop of a spectrum): left, top, right, bottom fractions; null for nothing to cut. */
-export async function pictureContentBox(src: string): Promise<[number, number, number, number] | null> {
-  const { contentBox } = await import('../si/spectra');
+/** A picture's pixels, drawn on white at no more than 1000 pixels a side (SI Assistant measures at 100 dpi). */
+async function picturePixels(src: string): Promise<{ data: Uint8ClampedArray; w: number; h: number } | null> {
   const img = new Image();
   img.src = src;
   await img.decode();
-  // measured at no more than 1000 pixels a side (SI Assistant measures at 100 dpi)
   const k = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
   const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
   const canvas = document.createElement('canvas');
@@ -192,7 +190,48 @@ export async function pictureContentBox(src: string): Promise<[number, number, n
   ctx.drawImage(img, 0, 0, w, h);
   const data = ctx.getImageData(0, 0, w, h).data;
   canvas.width = canvas.height = 0;   // (its memory freed now)
-  return contentBox(data, w, h);
+  return { data, w, h };
+}
+
+/**
+ * The pixels read once for a picture asked about twice in a row (its content box, then its ink
+ * map), and each answer kept for the pictures seen lately: every relayout of the live preview,
+ * and each spectrum shown again on its page, asks again.
+ */
+let lastPixels: { src: string; got: Promise<{ data: Uint8ClampedArray; w: number; h: number } | null> } | null = null;
+function pixelsOnce(src: string): Promise<{ data: Uint8ClampedArray; w: number; h: number } | null> {
+  if (lastPixels?.src !== src) lastPixels = { src, got: picturePixels(src) };
+  return lastPixels.got;
+}
+const KEPT_ANSWERS = 64;
+function kept<T>(memo: Map<string, Promise<T>>, src: string, work: () => Promise<T>): Promise<T> {
+  const hit = memo.get(src);
+  if (hit) { memo.delete(src); memo.set(src, hit); return hit; }   // (the most lately used last)
+  const got = work();
+  memo.set(src, got);
+  got.catch(() => memo.delete(src));   // (a failure is tried again next time)
+  while (memo.size > KEPT_ANSWERS) memo.delete(memo.keys().next().value as string);
+  return got;
+}
+const contentBoxes = new Map<string, Promise<[number, number, number, number] | null>>();
+const inkMaps = new Map<string, Promise<import('../si/spectra').InkMap | null>>();
+
+/** Where a picture's content is (auto-crop of a spectrum): left, top, right, bottom fractions; null for nothing to cut. */
+export function pictureContentBox(src: string): Promise<[number, number, number, number] | null> {
+  return kept(contentBoxes, src, async () => {
+    const { contentBox } = await import('../si/spectra');
+    const px = await pixelsOnce(src);
+    return px ? contentBox(px.data, px.w, px.h) : null;
+  });
+}
+
+/** Where a picture has ink, for placing a structure box on blank paper (auto placement): looked at no more than 1000 pixels a side. */
+export function pictureInkMap(src: string): Promise<import('../si/spectra').InkMap | null> {
+  return kept(inkMaps, src, async () => {
+    const { inkMapOf } = await import('../si/spectra');
+    const px = await pixelsOnce(src);
+    return px ? inkMapOf(px.data, px.w, px.h) : null;
+  });
 }
 
 /** A PDF opened to draw its pages one at a time, each when it is needed (a long PDF shown on screen); close() frees it. */

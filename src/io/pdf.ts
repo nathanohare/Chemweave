@@ -17,7 +17,17 @@ export interface PdfPage {
   items: Item[];
   /** Where the page's top left corner is in the items' coordinates (0, 0 when left out). */
   origin?: { x: number; y: number };
+  /** Places on the page a click follows (in the items' coordinates). */
+  links?: PdfLink[];
+  /** Headings that start on this page, for the file's bookmarks (its outline, as PDF readers list it). */
+  outline?: PdfHeading[];
 }
+
+/** A link on a page: a web page or e-mail address (`uri`), or a place in the file (`to`: a page, and points down from its top). */
+export interface PdfLink { x: number; y: number; w: number; h: number; uri?: string; to?: { page: number; y: number } }
+
+/** A heading for the file's outline: its text, its level (1 at the top), and where it is on its page (points down from the top). */
+export interface PdfHeading { title: string; level: number; y: number }
 
 /** A picture's pixels, ready for a PDF: a JPEG as it is, or red-green-blue bytes and an alpha channel. */
 export type PdfImage =
@@ -238,6 +248,71 @@ function latin1(s: string): Uint8Array {
   return b;
 }
 
+// ---------------------------------------------------------------- links and the outline
+
+/** A link's address as a PDF string: 7-bit ASCII (anything else percent-encoded, as URIs are written). */
+function uriString(uri: string): string {
+  // (u: a character outside the first plane is one character, not two halves encodeURIComponent can't take)
+  const ascii = uri.replace(/[^\x20-\x7e]/gu, (ch) => encodeURIComponent(ch));
+  return pdfString([...ascii].map((ch) => ch.charCodeAt(0)));
+}
+
+/** Where a place in the file is, as a destination: the page, scrolled to `y` points down from its top (ISO 32000-1 §12.3.2.2, /XYZ). */
+function destination(pages: PdfPage[], pageIds: number[], to: { page: number; y: number }): string | null {
+  const target = pages[to.page];
+  if (!target) return null;
+  return `[${pageIds[to.page]} 0 R /XYZ null ${num(Math.max(0, Math.min(target.h, target.h - to.y)))} null]`;
+}
+
+/** A page's links as link annotations (§12.5.6.5), with no border drawn: their numbers. */
+function linkAnnots(o: Objects, page: PdfPage, pages: PdfPage[], pageIds: number[]): number[] {
+  const out: number[] = [];
+  const ox = page.origin?.x ?? 0, oy = page.origin?.y ?? 0;
+  for (const l of page.links ?? []) {
+    if (!(l.w > 0) || !(l.h > 0)) continue;
+    let action: string | null = null;
+    if (l.to) { const d = destination(pages, pageIds, l.to); if (d) action = `/Dest ${d}`; }
+    else if (l.uri) action = `/A << /S /URI /URI ${uriString(l.uri)} >>`;
+    if (!action) continue;
+    const x1 = l.x - ox, x2 = x1 + l.w, y2 = page.h - (l.y - oy), y1 = y2 - l.h;
+    out.push(o.put(`<< /Type /Annot /Subtype /Link /Rect [${num(x1)} ${num(y1)} ${num(x2)} ${num(y2)}] /Border [0 0 0] ${action} >>`));
+  }
+  return out;
+}
+
+/** The file's outline (§12.3.3) from the pages' headings, nested by level: its number, or 0 when there are none. */
+function outlineOf(o: Objects, pages: PdfPage[], pageIds: number[]): number {
+  type Node = { title: string; level: number; dest: string; id: number; kids: Node[]; parent: Node | null };
+  const root: Node = { title: '', level: 0, dest: '', id: 0, kids: [], parent: null };
+  let last = root;
+  pages.forEach((p, i) => {
+    for (const h of p.outline ?? []) {
+      const dest = destination(pages, pageIds, { page: i, y: h.y });
+      if (!dest || !h.title.trim()) continue;
+      let parent = last;
+      while (parent !== root && parent.level >= h.level) parent = parent.parent!;
+      const node: Node = { title: h.title.trim(), level: h.level, dest, id: o.reserve(), kids: [], parent };
+      parent.kids.push(node);
+      last = node;
+    }
+  });
+  if (!root.kids.length) return 0;
+  root.id = o.reserve();
+  // (each heading's own headings start closed, so the outline opens as its top level)
+  const count = (n: Node): number => n.kids.reduce((a, k) => a + 1 + count(k), 0);
+  const write = (n: Node): void => {
+    n.kids.forEach((k, i) => {
+      const prev = n.kids[i - 1], next = n.kids[i + 1];
+      const kids = k.kids.length ? ` /First ${k.kids[0].id} 0 R /Last ${k.kids[k.kids.length - 1].id} 0 R /Count -${count(k)}` : '';
+      o.put(`<< /Title ${infoString(k.title)} /Parent ${n.id} 0 R${prev ? ` /Prev ${prev.id} 0 R` : ''}${next ? ` /Next ${next.id} 0 R` : ''}${kids} /Dest ${k.dest} >>`, k.id);
+      write(k);
+    });
+  };
+  write(root);
+  o.put(`<< /Type /Outlines /First ${root.kids[0].id} 0 R /Last ${root.kids[root.kids.length - 1].id} 0 R /Count ${root.kids.length} >>`, root.id);
+  return root.id;
+}
+
 /** A PDF file with these pages. */
 export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint8Array> {
   const o = new Objects();
@@ -301,7 +376,9 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
   };
 
   const kids: number[] = [];
-  for (const page of pages) {
+  // (each page's number known before it is written: a link can go to a later page)
+  const pageIds = pages.map(() => o.reserve());
+  for (const [pageNo, page] of pages.entries()) {
     if (opts.progress) await opts.progress(kids.length, pages.length);
     const ops: string[] = [];
     const usedFonts = new Set<string>(), usedImages = new Set<number>(), usedStates = new Set<string>();
@@ -376,7 +453,8 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
       usedImages.size ? `/XObject << ${[...usedImages].map((n) => `/I${n} ${n} 0 R`).join(' ')} >>` : '',
       usedStates.size ? `/ExtGState << ${[...usedStates].map((g) => `/${g} ${g.slice(1)} 0 R`).join(' ')} >>` : '',
     ].filter(Boolean).join(' ');
-    kids.push(o.put(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${num(page.w)} ${num(page.h)}] /Resources << ${res} >> /Contents ${content} 0 R >>`));
+    const annots = linkAnnots(o, page, pages, pageIds);
+    kids.push(o.put(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${num(page.w)} ${num(page.h)}] /Resources << ${res} >> /Contents ${content} 0 R${annots.length ? ` /Annots [${annots.map((n) => `${n} 0 R`).join(' ')}]` : ''} >>`, pageIds[pageNo]));
   }
   for (const e of kept) {
     if (!e.used.size) { o.put('null', e.id); continue; }
@@ -389,7 +467,8 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
     o.put(parts.type0, e.id);
   }
   o.put(`<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(' ')}] /Count ${kids.length} >>`, pagesId);
-  o.put(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`, catalog);
+  const outline = outlineOf(o, pages, pageIds);
+  o.put(`<< /Type /Catalog /Pages ${pagesId} 0 R${outline ? ` /Outlines ${outline} 0 R` : ''} >>`, catalog);
   const info = o.put(`<< /Producer (Chemweave)${opts.title ? ` /Title ${infoString(opts.title)}` : ''} >>`);
   return o.finish(catalog, info);
 }

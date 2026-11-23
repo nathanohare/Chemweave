@@ -151,6 +151,8 @@ export interface Glyphs {
   leader?: TabStop['leader'];
   /** Not drawn and no width: text a markup view hides (deleted text in Simple Markup). The caret still passes through it. */
   hidden?: boolean;
+  /** Where shown text that is not in the text links to (a contents line: its heading, as `#name`). Text's own links are on its runs. */
+  link?: string;
 }
 
 export interface LaidLine {

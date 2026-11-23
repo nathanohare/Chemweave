@@ -15,7 +15,7 @@ import { defaultStyles, type DocText } from '../document/document';
 import { compileSi, objectLabelSets, type SiPreviewTarget } from '../si/compile-doc';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
-import { DEFAULTS as SPECTRA_DEFAULTS, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
+import { defaultsJson, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
 import type { LibCompound, LibraryData, LibReference } from '../library/library';
 import { SiProject, SiProjectError, compoundName, compoundsOf, defaultFieldsOf, fieldKeys, fieldsOf, flagsOf, idOverride, idTableOf, valuesOf, MAX_SECTION_DEPTH, PRIVATE_DIR, TYPE_LABELS, type Json, type SiCompound, type SiScheme, type SiSection } from '../si/project';
 import { displayId, patternIds, cellKey, type IdReport } from '../si/compound-ids';
@@ -42,7 +42,7 @@ import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Refere
 import { newTable } from '../si/tables';
 import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
-import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDismissed, monoisotopic, outOfTolerance, parseNumber, ID_KEY, type SiWarning } from '../si/checks';
+import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDismissed, monoisotopic, outOfTolerance, parseNumber, ID_KEY, ION_LABEL_KEY, printedIonLabel, type SiWarning } from '../si/checks';
 import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY, chooseMatch, foundIsFromReport, updateFound, vendorRawKind, type Match, type ReportData } from '../si/ms-reports';
 import { readReportFile } from '../si/report-files';
 import { adductDisplay, sameFormula, speciesLabel, ChemError, unreadableFacts, type MolFacts, type Peak } from '../si/chem';
@@ -156,6 +156,8 @@ interface Kept {
   timer: number;
 }
 
+/** The most pages of one spectrum file the live preview draws. */
+const SPECTRA_PREVIEW_PAGES = 20;
 const CHEVRON_OPEN = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CHEVRON_SHUT = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2 6.5 5 3.5 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -758,6 +760,7 @@ export class SiMode {
       pictureOf: (m) => this.host.pictureOf(m),
       pdfPages: (b) => import('../render/pdf-page').then((m) => m.pdfPages(b)),
       contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+      inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
       act: (f) => this.act(f, false),
       chosen: (x) => { if (x === this.spectraPage) this.spectraShown(x); },
       openSection: () => this.go({ kind: 'section', id: sectionId }),
@@ -2216,10 +2219,8 @@ export class SiMode {
     const p = this.project!;
     const now = sectionDefaults(s);
     const save = (key: keyof SpectrumLayout, value: unknown): void => void this.act(async () => {
-      const next: Record<string, unknown> = {};
-      const cur = { ...sectionDefaults(s), [key]: value } as Record<string, unknown>;
-      for (const k of Object.keys(SPECTRA_DEFAULTS)) next[k] = cur[k];
-      s.data.defaults = next;
+      // (every setting, in SI Assistant's order and form, so either program reads the file the same)
+      s.data.defaults = defaultsJson({ ...sectionDefaults(s), [key]: value });
       await p.saveSection(s);
     }, false);
     const card = el('div', 'si-card');
@@ -2248,7 +2249,7 @@ export class SiMode {
       cell.append(box, el('span', '', label));
       r.append(cell);
     };
-    const num = (r: HTMLElement, label: string, key: keyof SpectrumLayout, min: number, max: number, k: number, tip: string, suffix = ''): void => {
+    const num = (r: HTMLElement, label: string, key: keyof SpectrumLayout, min: number, max: number, k: number, tip: string, suffix = '', step = ''): void => {
       const cell = el('label', 'si-part');
       cell.title = tip;
       cell.append(el('span', 'si-plabel', label));
@@ -2256,6 +2257,7 @@ export class SiMode {
       box.type = 'number';
       box.min = String(min);
       box.max = String(max);
+      if (step) box.step = step;
       box.value = String(Math.round(Number(now[key]) * k * 100) / 100);
       this.bind(box, () => { const v = Number(box.value); if (Number.isFinite(v)) save(key, v / k); }, false);
       cell.append(box);
@@ -2279,15 +2281,32 @@ export class SiMode {
     tick(pages, 'Header line', 'header_line', 'The line above each spectrum, e.g. “2a — ¹H NMR (400 MHz, CDCl₃)”, from its peak report (or the header typed for it).');
     tick(pages, 'Auto-crop', 'auto_crop', 'Cut the white margins round each spectrum and scale it to fill its place (the axes are kept; only blank white is cut).');
     tick(pages, 'Frame', 'spectrum_frame', 'A frame round each spectrum.');
+    if (now.spectrum_frame) {
+      num(pages, 'Width', 'spectrum_frame_width', 0.1, 5, 1, 'The frame’s line width in points.', 'pt', '0.1');
+      color(pages, 'Color', 'spectrum_frame_color', 'The frame’s color.');
+    }
     const box = row('Structure and ID');
     tick(box, 'Show', 'struct_box', 'The compound’s structure and ID on a box over each spectrum (Org. Lett. asks for spectra labeled with both).');
-    choice(box, 'Position', 'corner', [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']], 'The corner of the spectrum the box goes in (a box dragged on its spectra page stays where it was put).');
+    choice(box, 'Place', 'struct_place', [['on', 'On the spectrum'], ['auto', 'On blank space'], ['above', 'Above the spectrum'], ['beside', 'Beside the spectrum']], 'On the spectrum: in the corner below. On blank space: over the spectrum where it covers only blank paper, as near that corner as it fits (above the spectrum when it fits nowhere). Above or beside: next to the spectrum, which is made smaller to leave it room. A box dragged on its spectra page stays where it was put.');
+    choice(box, 'Corner', 'corner', [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']], 'The corner of the spectrum the box goes in, or that On blank space starts from (a box dragged on its spectra page stays where it was put).');
+    tick(box, 'Shrink to fit', 'auto_shrink', 'On blank space only: when the structure doesn’t fit any blank space at its size, make it smaller step by step, down to the size beside.');
+    num(box, 'Down to', 'auto_min_scale', 25, 400, 100, 'On blank space only: the smallest the structure is made to fit.', '%');
     num(box, 'Structure size', 'struct_scale', 25, 400, 100, '100 % is the structure’s own size, no larger than 1.5 × 1.1 in.', '%');
     num(box, 'ID size', 'id_size', 0, 24, 1, 'The ID’s size in points; 0 is the text size.', 'pt');
     tick(box, 'Bold ID', 'id_bold', 'The ID in bold.');
     tick(box, 'Caption', 'caption', 'A caption under the structure, e.g. “¹H NMR (CDCl₃, 500 MHz)”, from the peak report (or the caption typed for the spectrum).');
+    if (now.caption) num(box, 'Caption size', 'caption_size', 5, 18, 1, 'The caption’s size in points.', 'pt', '0.5');
     color(box, 'Background', 'struct_bg', 'The box’s background, so the structure reads over the spectrum.');
     tick(box, 'Frame', 'struct_frame', 'A frame round the box.');
+    if (now.struct_frame) {
+      num(box, 'Width', 'struct_frame_width', 0.1, 5, 1, 'The box frame’s line width in points.', 'pt', '0.1');
+      color(box, 'Color', 'struct_frame_color', 'The box frame’s color.');
+    }
+    const links = row('Links');
+    tick(links, 'Peak reports to spectra', 'nmr_links', 'In the PDF, Word file and compiled document, “¹H NMR” at the start of a peak report links to the page with the compound’s ¹H NMR spectrum (Ctrl+click in Chemweave and Word).');
+    tick(links, 'Spectra back to compounds', 'link_back', 'Each spectrum’s header line links back to the compound’s data.');
+    choice(links, 'Look', 'link_style', [['plain', 'Like normal text'], ['blue', 'Color'], ['blue_underline', 'Color and underline']], 'How these links look (the table of contents’ links keep its own look; Table of contents ▸ Link to sections, on the project’s page, turns them off). SI Assistant shows Color as blue.');
+    if (now.link_style !== 'plain') color(links, 'Color', 'link_color', 'The links’ color. SI Assistant prints them blue whatever is chosen here.');
     const hrms = row('HRMS');
     tick(hrms, 'Print HRMS reports', 'hrms_reports', 'Each compound’s HRMS report files (PDFs, pictures and text files), after the spectra in a sub-section “HRMS reports”. A compound can say otherwise in its HRMS field.');
     // spectra with settings of their own
@@ -2659,7 +2678,16 @@ export class SiMode {
     formula.title = 'Type M’s formula to use instead of the structure’s (the adduct is still applied). Leave empty to use the structure.';
     this.bind(formula, () => void this.act(async () => { await p.setPart(c, 'hrms', 'formula', formula.value.trim()); if (await this.syncFound(c)) await p.saveCompound(c); }, false, c));
     fcell.append(formula);
-    line.append(mIs, fcell);
+    // the ion label printed in the SI, when it isn't the adduct (e.g. [M−Br]⁺ for a salt: SI Assistant SPEC §13f.3)
+    const pcell = el('label', 'si-part si-ion-label');
+    const pname = el('span', 'si-plabel', 'Printed as');
+    addInfo(pname, 'The ion as printed in the SI, such as [M−Br]⁺ for a bromide salt whose cation is M with the adduct [M]⁺. Empty: automatic, from Project Settings ▸ Output ▸ HRMS ion for salts. The calculated m/z doesn’t change.');
+    const printed = el('input');
+    printed.value = partText(value()[ION_LABEL_KEY]);
+    printed.setAttribute('aria-label', 'Printed as');
+    this.bind(printed, () => void this.act(async () => { await p.setPart(c, 'hrms', ION_LABEL_KEY, printed.value.trim(), ['reports', 'print_reports', 'found_from']); }, false, c));
+    pcell.append(pname, printed);
+    line.append(mIs, fcell, pcell);
     const calc = el('div', 'si-calc muted');
     const note = el('div', 'si-found-note muted');
     note.hidden = true;
@@ -2685,11 +2713,17 @@ export class SiMode {
         sel.replaceChildren(...opts);
         sel.value = auto.key;
       }
-      const input = calc.parentElement?.querySelector<HTMLInputElement>('.si-hrms-m input');
+      const input = calc.parentElement?.querySelector<HTMLInputElement>('.si-hrms-m label:not(.si-ion-label) input');
       if (input) {
         input.placeholder = auto ? `auto: ${speciesLabel(auto.info)}` : 'e.g. C12H13NO';
         input.classList.toggle('si-manual', !!partText(value.formula).trim());
       }
+    }
+    const printed = calc.parentElement?.querySelector<HTMLInputElement>('.si-ion-label input');
+    if (printed) {
+      const auto = printedIonLabel(p.settings, facts, { ...value, [ION_LABEL_KEY]: '' });
+      printed.placeholder = `auto: ${adductDisplay(auto)}`;
+      printed.classList.toggle('si-manual', !!partText(value[ION_LABEL_KEY]).trim());
     }
     calc.classList.remove('bad');
     calc.title = '';
@@ -2718,6 +2752,8 @@ export class SiMode {
       const bad = outOfTolerance(r);
       calc.append(`; found ${r.found.toFixed(4)}${peak} · Δ `, el('span', bad ? 'si-bad' : 'si-good', bad ? `${ppm} (outside ±${r.tolerance} ppm)` : `${ppm} ✓`));
     }
+    const label = printedIonLabel(p.settings, facts, value);
+    if (label.trim() !== adduct.trim()) calc.append(`; printed as ${adductDisplay(label)}`);
     const shownPeaks = r.peaks.filter((x) => x.abundance >= 5).slice(0, 6);
     addInfo(calc, `Isotope pattern (m/z): ${shownPeaks.map((x) => `${x.mz.toFixed(4)} (${x.abundance.toFixed(1)}%)`).join(', ')}`);
   }
@@ -2881,8 +2917,9 @@ export class SiMode {
     // (a section shows every page under it: a Data section its compounds and scheme pages, then its sub-sections)
     if (pick.kind === 'section') {
       const s = p.sections.find((x) => x.id === pick.id);
-      return s && s.type !== 'spectra' ? { kind: 'section', id: s.id } : null;
+      return s ? { kind: 'section', id: s.id } : null;
     }
+    if (pick.kind === 'spectra') return p.compounds.some((c) => c.id === pick.id) ? { kind: 'spectra', id: pick.id } : null;
     return null;
   }
 
@@ -2913,7 +2950,7 @@ export class SiMode {
       L.shown = '';
       L.host.hidden = true;
       L.empty.hidden = false;
-      L.empty.textContent = this.pick.kind === 'section' ? 'The Spectra section has no live preview: Compile shows its pages.' : 'This page has no live preview.';
+      L.empty.textContent = 'This page has no live preview.';
       L.state.textContent = '';
       return;
     }
@@ -2924,16 +2961,20 @@ export class SiMode {
       // (the saves on their way land first: the preview reads the folder)
       await this.pendingOf(p);
       if (this.project !== p) return;
+      // (spectra pages show every page of a spectrum's PDF; elsewhere a PDF's first page will do)
+      const spectra = target.kind === 'spectra' || (target.kind === 'section' && p.sections.find((x) => x.id === target.id)?.type === 'spectra');
       const got = await compileSi(p, {
         contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (ms) => this.cachedFacts(ms),
-        // (a PDF's first page, kept for the next update: the preview compiles often)
-        pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPagesKept(b, most ?? 1)),
+        // (kept for the next update: the preview compiles often)
+        pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPagesKept(b, most ?? (spectra ? SPECTRA_PREVIEW_PAGES : 1))),
+        contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+        inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
       }, target);
       if (this.project !== p) return;
       const blank = !got.doc.runs.some((r) => r.text.trim()) && !Object.keys(got.doc.objects).length;
       L.host.hidden = blank;
       L.empty.hidden = !blank;
-      L.empty.textContent = blank ? 'Nothing to show yet.' : '';
+      L.empty.textContent = !blank ? '' : spectra ? 'No spectra yet: add them in each compound’s Spectra field.' : 'Nothing to show yet.';
       if (!blank) await this.liveShow({ ...got.doc, drawingStyle: { ...this.host.siStyle() } }, key);
       const n = got.notes.length;
       L.state.textContent = n ? `Up to date · ${n} note${n === 1 ? '' : 's'}` : 'Up to date';
@@ -4187,6 +4228,7 @@ export class SiMode {
         contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (m) => this.host.siFacts(m),
         pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPages(b, most)),
         contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+        inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
         progress: (done, total, text) => bar.at(done, total, text),
       });
     } catch (e) {

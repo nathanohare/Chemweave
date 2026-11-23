@@ -42,6 +42,18 @@ export function tocEntries(t: DocText, levels = 3): TocEntry[] {
   return out;
 }
 
+/**
+ * The hidden bookmark a contents line links to on its heading, as Word names its own (_Toc and a
+ * number): made from the heading's paragraph, so the same document always gets the same names.
+ * Word files get it as a bookmark round the heading; links and PDF files go to the heading.
+ */
+export const tocMark = (para: number): string => `_Toc${100000000 + para}`;
+/** The heading paragraph a contents bookmark made by tocMark names, or -1. */
+export function tocMarkPara(name: string): number {
+  const m = /^_Toc(1\d{8})$/i.exec(name);
+  return m ? Number(m[1]) - 100000000 : -1;
+}
+
 /** How far each level of the contents is indented (Word's 0.15 in a level). */
 export const TOC_INDENT = 11;
 
@@ -49,7 +61,7 @@ export const TOC_INDENT = 11;
  * The contents' lines, laid out `wrap` wide from the origin: each heading's text (wrapping short
  * of the page numbers), then dots and its page number at the right of its last line.
  */
-export function tocLines(entries: TocEntry[], pageOf: (para: number) => string, st: NamedStyle, line: number | undefined, wrap: number, measure: Measure, empty = EMPTY_TOC, spaced = true, levelStyle?: (level: number) => NamedStyle | undefined): LaidLine[] {
+export function tocLines(entries: TocEntry[], pageOf: (para: number) => string, st: NamedStyle, line: number | undefined, wrap: number, measure: Measure, empty = EMPTY_TOC, spaced = true, levelStyle?: (level: number) => NamedStyle | undefined, links = true): LaidLine[] {
   const base = { font: st.font, size: st.size };
   if (!entries.length) {
     return layoutText({ runs: [{ ...base, italic: true, color: '#8a8f98', text: empty }], paras: [{ line }], justify: 'left', wrap, boxes: true }, st.size, measure).lines;
@@ -100,6 +112,13 @@ export function tocLines(entries: TocEntry[], pageOf: (para: number) => string, 
     }
     l.pieces.push(piece(label, numX, w));
     l.width = wrap - l.x;
+  }
+  // each line goes to its heading (Ctrl+click, and links in PDF and Word files)
+  for (const l of links ? lines : []) {
+    const e = entries[l.para];
+    if (!e) continue;
+    const link = `#${tocMark(e.para)}`;
+    l.pieces = l.pieces.map((g) => ({ ...g, link }));
   }
   return lines;
 }

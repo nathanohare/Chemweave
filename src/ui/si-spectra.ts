@@ -15,7 +15,7 @@ import type { Json, SiCompound, SiProject, SiSection } from '../si/project';
 import type { Contents } from '../model';
 import {
   attachmentDir, captionText, clean, effective, headerParts, HEADER_PT, idSizeOf, POSITION_KEYS, SCALE_RANGE, sectionDefaults, shownSize, slotSize,
-  spectrumItems, structureBoxAt, structureBoxSize, structureSize, BOX_PAD, DEFAULTS, type Crop, type SpectrumLayout,
+  spectrumItems, structureBoxAt, structureBoxSize, structureSize, BOX_PAD, DEFAULTS, autoPlace, boxSpot, cropInk, roomBeside, PLACE_GAP, type Crop, type InkMap, type SpectrumLayout,
 } from '../si/spectra';
 import { dataUrl, imageSize, pictureMime } from '../render/images';
 import { addInfo } from './info-tip';
@@ -36,6 +36,8 @@ export interface SiSpectraHost {
   pdfPages(bytes: Uint8Array): Promise<{ src: string; w: number; h: number }[] | null>;
   /** The part of a picture that isn't blank margin (auto-crop). */
   contentBox(src: string): Promise<Crop | null>;
+  /** Where a picture has ink (a structure box placed on blank space). */
+  inkMap(src: string): Promise<InkMap | null>;
   /** Save a change (and say so when it can't be saved). */
   act(f: () => Promise<unknown>): Promise<void>;
   /** What can be done now changed (the Spectrum tab's buttons). */
@@ -44,7 +46,7 @@ export interface SiSpectraHost {
   openSection(): void;
 }
 
-interface Entry { key: string; item: Json; file: string; page: number; pages: number; src: string | null; aspect: number; crop: Crop | null; problem?: string }
+interface Entry { key: string; item: Json; file: string; page: number; pages: number; src: string | null; aspect: number; crop: Crop | null; problem?: string; /** where the spectrum has ink: null while it's read, false when it can't be */ ink?: InkMap | null | false }
 
 const PT_PX = 1.1;            // the preview: pixels to a point at 100 %
 const PAGE_BODY = { w: 6.5 * 72, h: 9 * 72 - 40 };
@@ -78,20 +80,28 @@ const same = (a: unknown, b: unknown): boolean => (typeof a === 'number' && type
 
 /** The settings that can be a spectrum's own, with how they are shown. */
 type Kind = 'tick' | 'choice' | 'num' | 'color';
-const SETTINGS: { key: keyof SpectrumLayout; label: string; kind: Kind; group: string; options?: [string, string][]; k?: number; min?: number; max?: number; unit?: string; tip: string }[] = [
+const SETTINGS: { key: keyof SpectrumLayout; label: string; kind: Kind; group: string; options?: [string, string][]; k?: number; min?: number; max?: number; step?: number; unit?: string; tip: string; when?: keyof SpectrumLayout }[] = [
   { key: 'per_page', label: 'Per page', kind: 'choice', group: 'Page', options: [['1', '1'], ['2', '2'], ['4', '4']], tip: 'Spectra on its page (a spectrum that needs another number starts a new page).' },
   { key: 'orientation', label: 'Orientation', kind: 'choice', group: 'Page', options: [['portrait', 'Portrait'], ['landscape', 'Landscape']], tip: 'Its page portrait or landscape.' },
   { key: 'header_line', label: 'Header line', kind: 'tick', group: 'Page', tip: 'The line above the spectrum.' },
   { key: 'auto_crop', label: 'Auto-crop', kind: 'tick', group: 'Page', tip: 'Cut the white margins round the spectrum and scale it to fill its place.' },
   { key: 'spectrum_frame', label: 'Frame', kind: 'tick', group: 'Page', tip: 'A frame round the spectrum.' },
+  { key: 'spectrum_frame_width', label: 'Width', kind: 'num', group: 'Page', k: 1, min: 0.1, max: 5, step: 0.1, unit: 'pt', tip: 'The frame’s line width in points.', when: 'spectrum_frame' },
+  { key: 'spectrum_frame_color', label: 'Color', kind: 'color', group: 'Page', tip: 'The frame’s color.', when: 'spectrum_frame' },
   { key: 'struct_box', label: 'Show', kind: 'tick', group: 'Structure and ID', tip: 'The compound’s structure and ID on a box over the spectrum.' },
+  { key: 'struct_place', label: 'Place', kind: 'choice', group: 'Structure and ID', options: [['on', 'On the spectrum'], ['auto', 'On blank space'], ['above', 'Above the spectrum'], ['beside', 'Beside the spectrum']], tip: 'On the spectrum: in its corner. On blank space: over the spectrum where it covers only blank paper, as near the corner as it fits (above the spectrum when it fits nowhere). Above or beside: next to the spectrum, which is made smaller to leave it room.' },
   { key: 'corner', label: 'Corner', kind: 'choice', group: 'Structure and ID', options: [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']], tip: 'The corner the box goes in, until it is dragged somewhere of its own.' },
   { key: 'struct_scale', label: 'Structure', kind: 'num', group: 'Structure and ID', k: 100, min: 25, max: 400, unit: '%', tip: '100 % is the structure’s own size, no larger than 1.5 × 1.1 in; the box’s corners resize it too.' },
+  { key: 'auto_shrink', label: 'Shrink to fit', kind: 'tick', group: 'Structure and ID', tip: 'On blank space only: when the structure doesn’t fit any blank space at its size, make it smaller step by step, down to the size beside.' },
+  { key: 'auto_min_scale', label: 'Down to', kind: 'num', group: 'Structure and ID', k: 100, min: 25, max: 400, unit: '%', tip: 'On blank space only: the smallest the structure is made to fit.' },
   { key: 'id_size', label: 'ID size', kind: 'num', group: 'Structure and ID', k: 1, min: 0, max: 24, unit: 'pt', tip: 'The ID’s size in points; 0 is the text size.' },
   { key: 'id_bold', label: 'Bold ID', kind: 'tick', group: 'Structure and ID', tip: 'The ID in bold.' },
   { key: 'caption', label: 'Caption', kind: 'tick', group: 'Structure and ID', tip: 'A caption under the structure, such as “¹H NMR (CDCl₃, 500 MHz)”.' },
+  { key: 'caption_size', label: 'Caption size', kind: 'num', group: 'Structure and ID', k: 1, min: 5, max: 18, step: 0.5, unit: 'pt', tip: 'The caption’s size in points.', when: 'caption' },
   { key: 'struct_bg', label: 'Background', kind: 'color', group: 'Structure and ID', tip: 'The box’s background, so the structure reads over the spectrum.' },
   { key: 'struct_frame', label: 'Box frame', kind: 'tick', group: 'Structure and ID', tip: 'A frame round the box.' },
+  { key: 'struct_frame_width', label: 'Width', kind: 'num', group: 'Structure and ID', k: 1, min: 0.1, max: 5, step: 0.1, unit: 'pt', tip: 'The box frame’s line width in points.', when: 'struct_frame' },
+  { key: 'struct_frame_color', label: 'Color', kind: 'color', group: 'Structure and ID', tip: 'The box frame’s color.', when: 'struct_frame' },
 ];
 
 export class SiSpectraPage {
@@ -214,7 +224,26 @@ export class SiSpectraPage {
   private async set(key: keyof SpectrumLayout, value: unknown): Promise<void> {
     const own = { ...this.own() };
     if (same((this.inherited() as unknown as Json)[key], value)) delete own[key]; else own[key] = value;
+    // (a place chosen takes the box from where it was dragged: on this page, or on every page of the file)
+    if (key === 'struct_place') {
+      for (const k of ['x', 'y']) delete own[k];
+      if (this.scope === 'file') this.dropDragged();
+    }
     await this.write(own);
+  }
+
+  /** Take the dragged place off every page of this spectrum's file (saved with the next write). */
+  private dropDragged(): void {
+    const item = this.current?.item;
+    if (!item || !isObj(item.pages)) return;
+    const pages: Json = {};
+    for (const [n, v] of Object.entries(item.pages)) {
+      if (!isObj(v)) { pages[n] = v; continue; }
+      const rest = { ...v };
+      delete rest.x; delete rest.y;
+      if (Object.keys(rest).length) pages[n] = rest;
+    }
+    if (Object.keys(pages).length) item.pages = pages; else delete item.pages;
   }
 
   /** Follow the section (and the file) again: one setting, or every one of this scope (with a dragged place). */
@@ -306,22 +335,42 @@ export class SiSpectraPage {
     });
   }
 
-  /** The spectrum's place on the page (points), the spectrum in it, and the box on it. */
-  private geometry(e: Entry, eff: SpectrumLayout) {
-    const landscape = eff.orientation === 'landscape';
+  /**
+   * The spectrum's place on the page (points), the spectrum in it, and the box on it or beside it,
+   * as the compiled SI sets them out (SI Assistant's issue #1: on, on blank space, above, beside).
+   * `eff` is the settings with an automatic place worked out.
+   */
+  private geometry(e: Entry, eff0: SpectrumLayout) {
+    const landscape = eff0.orientation === 'landscape';
     const body = landscape ? { w: PAGE_BODY.h + 40, h: PAGE_BODY.w } : PAGE_BODY;
-    const slot = slotSize(body.w, body.h, eff.per_page, landscape);
-    const headH = eff.header_line ? HEADER_PT * 1.25 + 2 * 3.6 + 3 : 0;
-    const crop = eff.auto_crop ? e.crop : null;
-    const shown = shownSize({ w: slot.w, h: Math.max(10, slot.h - headH) }, e.aspect, crop);
-    const spec = { x: (slot.w - shown.w) / 2, y: headH, w: shown.w, h: shown.h };
-    const size = structureSize(this.structure?.own ?? null, eff.struct_scale);
+    const slot = slotSize(body.w, body.h, eff0.per_page, landscape);
+    const headH = eff0.header_line ? HEADER_PT * 1.25 + 2 * 3.6 + 3 : 0;
+    const crop = eff0.auto_crop ? e.crop : null;
     const id = this.host.idOf(this.host.compound);
-    const idSize = idSizeOf(eff);
-    const caption = eff.caption ? captionText(this.host.compound, e.item) : '';
-    const box = structureBoxSize(size, id, idSize, caption, eff.caption_size);
-    const at = structureBoxAt(eff, spec, box);
-    return { slot, headH, spec, size, id, idSize, caption, box: { ...box, ...at }, crop };
+    const idSize = idSizeOf(eff0);
+    const caption = eff0.caption ? captionText(this.host.compound, e.item) : '';
+    const boxAt = (sc: number) => structureBoxSize(structureSize(this.structure?.own ?? null, sc), id, idSize, caption, eff0.caption_size);
+    const room = { w: slot.w, h: Math.max(10, slot.h - headH) };
+    let eff = eff0;
+    let spot = eff0.struct_box ? boxSpot(eff0) : 'on';
+    if (eff0.struct_box && eff0.struct_place === 'auto' && (eff0.x === undefined || eff0.y === undefined)) {
+      // (where the spectrum has ink: read once, then drawn again)
+      if (e.ink === undefined && e.src) {
+        e.ink = null;
+        void this.host.inkMap(e.src).catch(() => null).then((m) => { e.ink = m ?? false; if (this.current === e) this.renderStage(); });
+      }
+      const got = e.ink ? autoPlace(cropInk(e.ink, crop), shownSize(room, e.aspect, crop), boxAt, eff0.struct_scale, eff0.corner, eff0.auto_shrink, eff0.auto_min_scale) : null;
+      if (got) eff = { ...eff0, x: got.x, y: got.y, struct_scale: got.scale };
+      // (fits no blank space, or the spectrum couldn't be read: above it, as Compile puts it)
+      else if (e.ink !== null && e.ink !== undefined) spot = 'above';
+    }
+    const size = structureSize(this.structure?.own ?? null, eff.struct_scale);
+    const box = eff.struct_box ? boxAt(eff.struct_scale) : { w: 0, h: 0 };
+    const shown = shownSize(roomBeside(room, spot, box), e.aspect, crop);
+    const groupW = spot === 'beside' ? shown.w + PLACE_GAP + box.w : shown.w;
+    const spec = { x: (slot.w - groupW) / 2, y: headH + (spot === 'above' ? box.h + PLACE_GAP : 0), w: shown.w, h: shown.h };
+    const at = spot === 'above' ? { x: (slot.w - box.w) / 2, y: headH } : spot === 'beside' ? { x: spec.x + shown.w + PLACE_GAP, y: spec.y } : structureBoxAt(eff, spec, box);
+    return { slot, headH, spec, size, id, idSize, caption, box: { ...box, ...at }, crop, eff, spot };
   }
 
   private renderStage(): void {
@@ -335,7 +384,10 @@ export class SiSpectraPage {
       void this.host.contentBox(e.src).then((c) => { if (c) { e.crop = c; if (this.current === e) this.renderStage(); } }).catch(() => {});
     }
     const g = this.geometry(e, eff);
-    const k = Math.min(PT_PX, 520 / g.slot.h);
+    // (as large as fits the stage's width too: a landscape page is wider than the stage in a narrow window)
+    const pad = this.stage.isConnected ? parseFloat(getComputedStyle(this.stage).paddingLeft) + parseFloat(getComputedStyle(this.stage).paddingRight) : 0;
+    const room = this.stage.clientWidth - (pad || 0);
+    const k = Math.min(PT_PX, 520 / g.slot.h, room > 0 ? room / g.slot.w : Infinity);
     const paper = el('div', 'si-spectra-paper');
     paper.style.width = `${g.slot.w * k}px`;
     paper.style.height = `${g.slot.h * k}px`;
@@ -357,7 +409,7 @@ export class SiSpectraPage {
     Object.assign(img.style, { width: `${iw}px`, height: `${ih}px`, left: `${-l * iw}px`, top: `${-t * ih}px` });
     view.append(img);
     paper.append(view);
-    if (eff.struct_box) paper.append(this.boxEl(eff, g, k));
+    if (eff.struct_box) paper.append(this.boxEl(g.eff, g, k));
     this.stage.append(paper);
   }
 
@@ -368,7 +420,11 @@ export class SiSpectraPage {
     place(g.box.x, g.box.y, g.box.w, g.box.h);
     box.style.background = eff.struct_bg;
     if (eff.struct_frame) box.style.outline = `${Math.max(1, eff.struct_frame_width * k)}px solid ${eff.struct_frame_color}`;
-    box.title = 'Drag to move the structure, ID and caption together; Alt-drag the ID to move it on its own; drag a corner to resize';
+    // (above or beside the spectrum it has a place of its own: Place On the spectrum lets it be dragged)
+    const fixed = g.spot !== 'on';
+    box.classList.toggle('si-fixed', fixed);
+    box.title = fixed ? 'Drag a corner to resize; Alt-drag the ID to move it on its own. To drag the box anywhere, set Place to On the spectrum or On blank space'
+      : 'Drag to move the structure, ID and caption together; Alt-drag the ID to move it on its own; drag a corner to resize';
     const pic = el('div', 'si-spectra-struct');
     Object.assign(pic.style, { left: `${(g.box.w - g.size.w) / 2 * k}px`, top: `${BOX_PAD * k}px`, width: `${g.size.w * k}px`, height: `${g.size.h * k}px` });
     if (this.structure) pic.innerHTML = this.structure.svg.replace(/<svg([^>]*?)\swidth="[^"]*"/, '<svg$1').replace(/<svg([^>]*?)\sheight="[^"]*"/, '<svg$1').replace('<svg', '<svg width="100%" height="100%"');
@@ -389,10 +445,11 @@ export class SiSpectraPage {
     box.addEventListener('pointerdown', (ev) => {
       if (ev.button !== 0) return;
       ev.preventDefault();
-      box.setPointerCapture(ev.pointerId);
       const x0 = ev.clientX, y0 = ev.clientY;
       const corner = (ev.target as HTMLElement).dataset.corner;
       const labelOnly = !corner && ev.altKey && label.contains(ev.target as Node);
+      if (fixed && !corner && !labelOnly) return;
+      box.setPointerCapture(ev.pointerId);
       let moved = false;
       let result: Json = {};
       // resizing keeps the box's centre when it was dragged somewhere of its own, else its corner
@@ -420,7 +477,8 @@ export class SiSpectraPage {
           const cx = g.box.x + g.box.w / 2 + ddx, cy = g.box.y + g.box.h / 2 + ddy;
           const x = Math.round(Math.min(1, Math.max(0, (cx - g.spec.x) / g.spec.w)) * 10000) / 10000;
           const y = Math.round(Math.min(1, Math.max(0, (cy - g.spec.y) / g.spec.h)) * 10000) / 10000;
-          result = { x, y };
+          // (a box placed on blank space and made smaller there keeps that size where it's dropped)
+          result = g.eff.struct_scale !== this.effective().struct_scale ? { x, y, struct_scale: g.eff.struct_scale } : { x, y };
           place(g.spec.x + x * g.spec.w - g.box.w / 2, g.spec.y + y * g.spec.h - g.box.h / 2, g.box.w, g.box.h);
         }
       };
@@ -458,6 +516,8 @@ export class SiSpectraPage {
     addInfo(h, 'A setting in bold is this spectrum’s own; × makes it follow the Spectra section’s again. The Spectrum tab on the ribbon switches between this page and every page of a PDF, and puts everything back to the section’s.');
     this.settings.append(h);
     for (const s of SETTINGS) {
+      // (a frame's width and color, the caption's size: only while there is one, unless set for this spectrum)
+      if (s.when && !shown[s.when] && !(s.key in own)) continue;
       let row = groups.get(s.group);
       if (!row) { row = el('div', 'si-parts si-spectra-row'); row.append(el('span', 'si-spectra-group', s.group)); groups.set(s.group, row); this.settings.append(row); }
       const cell = el('label', 'si-part');
@@ -486,6 +546,7 @@ export class SiSpectraPage {
         box.type = 'number';
         box.min = String(s.min);
         box.max = String(s.max);
+        if (s.step) box.step = String(s.step);
         box.value = String(Math.round(Number(v) * s.k! * 100) / 100);
         box.addEventListener('change', () => { const n = Number(box.value); if (Number.isFinite(n)) void this.set(s.key, clean({ [s.key]: n / s.k! })[s.key] ?? DEFAULTS[s.key]); });
         input = box;

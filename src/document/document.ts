@@ -464,7 +464,7 @@ export type DocObject =
   /** The bibliography: the references cited, in citation order, in the citation style (a block of its own). */
   | { kind: 'bib'; /** Kept by Zotero, citing live through it: its field's code and entries. */ live?: BibLive }
   /** A table of contents: the headings down to `levels` (1 to 3) deep with their page numbers (a block of its own). */
-  | { kind: 'toc'; levels: number; /** From a Word file: how its entries looked there, level by level (index 0 for level 1), which wins over the TOC 1 to 3 styles until Word updates the table. */ look?: (TocLook | null)[] }
+  | { kind: 'toc'; levels: number; /** From a Word file: how its entries looked there, level by level (index 0 for level 1), which wins over the TOC 1 to 3 styles until Word updates the table. */ look?: (TocLook | null)[]; /** Its lines are not links to their headings (Word's TOC field without \\h). */ noLinks?: boolean }
   /**
    * A table of figures: the captions of one label (Figure, Scheme, Table, Chart), or of all of
    * them when `name` is '', with their page numbers (a block of its own, like the contents).

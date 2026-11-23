@@ -14,7 +14,7 @@ const floats = new WeakMap<object, Set<string>>();
  * so one set here is written the same way even when it is whole and the object holding it was made
  * anew. One a person typed whole into the file by hand ("hrms_tolerance_ppm": 5) stays whole until it changes.
  */
-const FLOAT_KEYS = new Set(['hrms_tolerance_ppm', 'id_size', 'struct_scale', 'caption_size', 'struct_frame_width', 'spectrum_frame_width']);
+const FLOAT_KEYS = new Set(['hrms_tolerance_ppm', 'id_size', 'struct_scale', 'auto_min_scale', 'caption_size', 'struct_frame_width', 'spectrum_frame_width']);
 
 /** Whole numbers kept as the file wrote them while they are unchanged: ones too large to hold exactly, and whole ones under a decimal's key. */
 const written = new WeakMap<object, Map<string, { v: number; text: string }>>();

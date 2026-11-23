@@ -2337,7 +2337,7 @@ class DocxReader {
     }
     if (toc && !ctx.cell) {
       const depth = /\\o\s*"?\s*\d+\s*-\s*(\d+)/i.exec(toc[1]);
-      const id = this.emitObject(ctx, { kind: 'toc', levels: Math.max(1, Math.min(3, depth ? Number(depth[1]) : 3)) }, f.props);
+      const id = this.emitObject(ctx, { kind: 'toc', levels: Math.max(1, Math.min(3, depth ? Number(depth[1]) : 3)), ...(/\\h\b/i.test(toc[1]) ? {} : { noLinks: true }) }, f.props);
       if (id !== null) { f.swallow = true; f.toc = true; f.tocId = id; }
       return;
     }

@@ -40,7 +40,7 @@ import { WORD_HIGHLIGHTS } from '../io/docx-base';
 import { DocFind } from './doc-find';
 import { askLink, followLink, linkTip } from './links-ui';
 import { DocSiPanel, DocSiUI, type SiAccess } from './doc-si';
-import { bookmarkName, linkAtPoint } from '../links';
+import { bookmarkName, linkAtPoint, shownLinkAt } from '../links';
 import { addBookmark, bookmarkPara, bookmarksOf, docPlaces, placeLink, placeName, removeBookmark } from '../document/bookmarks';
 import { DocComments } from './doc-comments';
 import { Ruler, docRulerPrefs, type RulerGeometry } from './ruler';
@@ -2622,7 +2622,8 @@ export class DocumentMode {
       const s = linkAtPoint(f.box.ed.layout(), f.box.ed.t.runs, p.x, p.y);
       if (s) return s.link;
     }
-    return linkAtPoint(f.layout().text, f.t.runs, p.x, p.y)?.link ?? null;
+    const lay = f.layout().text;
+    return linkAtPoint(lay, f.t.runs, p.x, p.y)?.link ?? shownLinkAt(lay, p.x, p.y);
   }
 
   /** Insert > Link (Ctrl+K): link the selection, change the link the caret is in, or type a new one. */

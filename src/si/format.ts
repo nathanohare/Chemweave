@@ -9,21 +9,22 @@ import { DEUTERATED, DEUTERATED_PREFIX, NUCLEUS, allMatches, formulaMatches, ran
 const vOf = (r: Run): VAlign => r.valign ?? 'normal';
 
 /** A run with only the formatting that is set (as the stored format writes runs). */
-export function R(text: string, look: { bold?: boolean; italic?: boolean; underline?: boolean; valign?: VAlign; ref?: string } = {}): Run {
+export function R(text: string, look: { bold?: boolean; italic?: boolean; underline?: boolean; valign?: VAlign; ref?: string; link?: string } = {}): Run {
   const r: Run = { text };
   if (look.bold) r.bold = true;
   if (look.italic) r.italic = true;
   if (look.underline) r.underline = true;
   if (look.valign && look.valign !== 'normal') r.valign = look.valign;
   if (look.ref) r.ref = look.ref;
+  if (look.link) r.link = look.link;
   return r;
 }
 
 /** The same formatting (links never join). */
-export const sameFormat = (a: Run, b: Run): boolean => !a.ref && !b.ref && !!a.bold === !!b.bold && !!a.italic === !!b.italic && vOf(a) === vOf(b) && !!a.underline === !!b.underline;
+export const sameFormat = (a: Run, b: Run): boolean => !a.ref && !b.ref && a.link === b.link && !!a.bold === !!b.bold && !!a.italic === !!b.italic && vOf(a) === vOf(b) && !!a.underline === !!b.underline;
 
 /** A copy with some of it changed. */
-export const but = (r: Run, change: Partial<Run>): Run => R(change.text ?? r.text, { bold: change.bold ?? r.bold, italic: change.italic ?? r.italic, underline: change.underline ?? r.underline, valign: change.valign ?? r.valign, ref: change.ref ?? r.ref });
+export const but = (r: Run, change: Partial<Run>): Run => R(change.text ?? r.text, { bold: change.bold ?? r.bold, italic: change.italic ?? r.italic, underline: change.underline ?? r.underline, valign: change.valign ?? r.valign, ref: change.ref ?? r.ref, link: change.link ?? r.link });
 
 export const plain = (runs: readonly Run[]): string => runs.map((r) => r.text).join('');
 
@@ -94,12 +95,17 @@ export function formulaRuns(formula: string): Run[] {
   return mergeRuns(out);
 }
 
-/** An adduct like "[M+H]+" or "[M]+." with the charge as superscript (the radical as •). */
+/**
+ * An adduct like "[M+H]+" or "[M]+." with the charge as superscript (the radical as •). Atom counts
+ * in the brackets are subscripted ([M+NH4]⁺ → NH₄, [M−BF4]⁺ → BF₄); a number of molecules or pieces
+ * is not ([2M+Na]⁺, [M+2H]²⁺, [M−2Br]²⁺), as SI Assistant's charge_runs.
+ */
 export function chargeRuns(display: string): Run[] {
   const m = /^(\[.*\])(\d*[+\-−][•·.]?)$/.exec(display.trim());
   if (!m) return [R(display)];
   const charge = m[2].replace(/-/g, '−').replace(/\./g, '•').replace(/·/g, '•');
-  return [R(m[1].replace(/-/g, '−')), R(charge, { valign: 'super' })];
+  const body = m[1].replace(/-/g, '−').split(/(?<=[A-Za-z)])(\d+)/).flatMap((part, i) => (part ? [i % 2 ? R(part, { valign: 'sub' }) : R(part)] : []));
+  return [...body, R(charge, { valign: 'super' })];
 }
 
 const SUB_CHARS = '₀₁₂₃₄₅₆₇₈₉₊₋';
