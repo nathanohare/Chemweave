@@ -3020,7 +3020,7 @@ function orderAttr(order: number): string | null {
  * A label's text as runs: formula style (ChemDraw lowers the counts itself), with R numbers
  * raised when the label shows them so and characters raised, lowered or kept on the line by hand.
  */
-export function labelRuns(text: string, look: { supDigits: boolean; marks?: string }): TextRun[] {
+export function labelRuns(text: string, look: { supDigits?: boolean; marks?: string }): TextRun[] {
   // the digits the label shows raised: R numbers (R¹, OR¹ by the setting) and, from a file, the rest
   const raised = new Set<number>();
   for (const p of labelPieces(text, look.supDigits)) if (p.sup && p.at !== undefined && /^\d+$/.test(p.text)) for (let i = 0; i < p.text.length; i++) raised.add(p.at + i);

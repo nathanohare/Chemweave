@@ -145,8 +145,17 @@ describe('the settings tag (R3)', () => {
     // OMe with a raised O typed here (marks ^==): Me set in formula style in ChemDraw
     const marks = edited((doc) => { label(doc, 'OMe').getElementsByTagName('s')[1].setAttribute('face', '96'); });
     expect([...marks.atoms.values()].find((a) => a.x === 300)?.labelMarks).not.toBe('^==');
-    // R1 kept on the line here (supDigits false), its 1 made bold in ChemDraw, still raised
-    const raised = edited((doc) => { label(doc, 'R1').getElementsByTagName('s')[1].setAttribute('face', '65'); });
+    // R1 kept on the line here (supDigits false) is written on the line, as ChemDraw shows it (F7b-R13):
+    // its 1 raised in ChemDraw reads raised
+    const raised = edited((doc) => {
+      const t = label(doc, 'R1'), s0 = t.getElementsByTagName('s')[0];
+      expect(t.getElementsByTagName('s').length).toBe(1);
+      s0.textContent = 'R';
+      const one = s0.cloneNode() as Element;
+      one.textContent = '1';
+      one.setAttribute('face', '64');
+      t.appendChild(one);
+    });
     expect([...raised.atoms.values()].find((a) => a.x === 340)?.supDigits).toBe(true);
   });
 

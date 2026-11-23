@@ -260,13 +260,19 @@ export interface Piece { text: string; sub?: boolean; sup?: boolean; italic?: bo
  */
 export type LabelMarks = string;
 
-function tokenPieces(t: Token, supDigits = false, marks?: LabelMarks): Piece[] {
+/**
+ * `supDigits`: the label's own choice for the numbers after R groups and abbreviations (R1, Ar2),
+ * true raised, false on the line, undefined by the setting (R numbers only). A label's own "on the
+ * line" wins over Settings ▸ Drawing, so R1 written flat in a ChemDraw file shows and saves flat
+ * (F7b-R13; Nate, 2026-11-23).
+ */
+function tokenPieces(t: Token, supDigits?: boolean, marks?: LabelMarks): Piece[] {
   // Numbers after R groups and abbreviations (R1, Ar2) can be superscripts; element counts are subscripts.
-  const up = supDigits && t.kind !== 'el';
+  const up = !!supDigits && t.kind !== 'el';
   const m = t.kind === 'generic' ? /^(.*?\D)(\d+)$/.exec(t.text) : null;
   const at = t.at;
   // (an R group's own number goes up by the setting, wherever it is in the label: OR¹, CO₂R¹)
-  const rUp = up || (!!t.rNum && rNumberPrefs.superscriptR);
+  const rUp = up || (!!t.rNum && supDigits !== false && rNumberPrefs.superscriptR);
   const p: Piece[] = m ? [{ text: m[1], at }, { text: m[2], sub: !rUp, sup: rUp, at: at === undefined ? undefined : at + m[1].length }] : [{ text: t.text, at }];
   if (t.count > 1 || t.explicit) p.push({ text: String(t.count), sub: !up, sup: up, at: t.countAt });
   if (t.charge) p.push({ text: t.charge.replace('-', '−'), sup: true, at: t.chargeAt });
@@ -362,14 +368,13 @@ export const labelPrefs = rNumberPrefs;
 
 
 /** How an atom's label raises its characters: R numbers (from the file, or by the preference) and marks set by hand. */
-export function labelLook(a: { label: string | null; supDigits?: boolean; labelMarks?: string; centred?: boolean; stacked?: 'up' | 'down'; stackedLoose?: boolean }): { supDigits: boolean; marks?: LabelMarks; centred?: boolean; stacked?: 'up' | 'down'; stackedLoose?: boolean } {
-  // (R numbers go up by the setting token by token; this is the label's own, from its file)
-  const supDigits = a.supDigits ?? false;
-  return { supDigits, ...(a.labelMarks && a.label ? { marks: a.labelMarks } : {}), ...(a.centred ? { centred: true } : {}), ...(a.stacked ? { stacked: a.stacked } : {}), ...(a.stacked && a.stackedLoose ? { stackedLoose: true } : {}) };
+export function labelLook(a: { label: string | null; supDigits?: boolean; labelMarks?: string; centred?: boolean; stacked?: 'up' | 'down'; stackedLoose?: boolean }): { supDigits?: boolean; marks?: LabelMarks; centred?: boolean; stacked?: 'up' | 'down'; stackedLoose?: boolean } {
+  // (R numbers go up by the setting token by token, unless the label's own, from its file, says otherwise)
+  return { ...(a.supDigits !== undefined ? { supDigits: a.supDigits } : {}), ...(a.labelMarks && a.label ? { marks: a.labelMarks } : {}), ...(a.centred ? { centred: true } : {}), ...(a.stacked ? { stacked: a.stacked } : {}), ...(a.stacked && a.stackedLoose ? { stackedLoose: true } : {}) };
 }
 
 /** The label's pieces in reading order, as `layoutLabel` shows them (for the typing box). */
-export function labelPieces(label: string, supDigits: boolean, marks?: LabelMarks): Piece[] {
+export function labelPieces(label: string, supDigits: boolean | undefined, marks?: LabelMarks): Piece[] {
   return tokenize(label).flatMap((t) => tokenPieces(t, supDigits, marks));
 }
 
@@ -379,7 +384,7 @@ export interface LabelSpec {
   /** Hydrogens shown on the label (automatic labels only). */
   hCount: number;
   charge: number;
-  /** Show numbers after R groups as superscripts (R¹), as in the file the label came from. */
+  /** Numbers after R groups raised (R¹: true) or on the line (false), as in the file the label came from; not set, R numbers follow Settings ▸ Drawing. */
   supDigits?: boolean;
   /** Characters raised or lowered by hand. */
   marks?: LabelMarks;
@@ -573,7 +578,7 @@ export function layoutLabel(spec: LabelSpec, bondDirs: LabelBond[], size: number
   };
 
   // Head token: its first character is centred on the atom.
-  const sd = !!spec.supDigits, mk = spec.marks;
+  const sd = spec.supDigits, mk = spec.marks;
   const headPieces = tokenPieces(head, sd, mk);
   const firstCharW = measure(head.text[0] ?? '', size); // (an atom with no symbol: an empty label)
   const headX = -firstCharW / 2;
