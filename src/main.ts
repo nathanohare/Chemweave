@@ -17,7 +17,7 @@ import './app.css';
 import type { MethylStyle } from './chem/hydrogens';
 import { STANDARD_COLOURS, usedColours } from './colours';
 import { ICONS } from './icons';
-import { Toolboxes, isOwnFlyout, lockIcon, sideFolded, commandButton, defaultToolboxes, menuCommands, boxIds, boxGrid, boxTitle, flyGrid, isEditable, withoutGoneItems, isOwnBox, overflowOf, CONTEXT_BOXES, type ContextBox, type Pickable, type ToolboxDef, type ToolboxState } from './ui/toolboxes';
+import { Toolboxes, isOwnFlyout, lockIcon, sideFolded, commandButton, defaultToolboxes, menuCommands, boxIds, boxGrid, boxTitle, flyGrid, isEditable, withoutGoneItems, isOwnBox, overflowOf, CONTEXT_BOXES, NOT_IN_TOOLBOX_MENU, type ContextBox, type Pickable, type ToolboxDef, type ToolboxState } from './ui/toolboxes';
 import { SideSections } from './ui/side-sections';
 import { gridItems, inBlock, oneColumn, shownGrid, wrapped, type Grid, type Shown } from './ui/toolbox-grid';
 import { ToolboxEditor, initials } from './ui/toolbox-editor';
@@ -15028,7 +15028,7 @@ function looksList(vertical: boolean): HTMLElement {
 
 /** The toolboxes' names, as they come. */
 const BOX_TITLES: Record<string, string> = {
-  main: 'Drawing Tools', structure: 'Structure', arrange: 'Object', templates: 'Templates', colours: 'Colors', highlight: 'Highlight', text: 'Text Formatting', guides: 'Guides', custom: 'My Toolbox', smart: 'Smart Scheme Species', details: 'Side Panel',
+  main: 'Drawing Tools', structure: 'Structure', arrange: 'Object', templates: 'Templates', colours: 'Colors', highlight: 'Highlight', text: 'Text Formatting', guides: 'Guides', custom: 'My Toolbox', smart: 'Smart Scheme Species Table', details: 'Side Panel',
   schemes: 'Smart Schemes', diagrams: 'Diagrams', tables: 'Tables and Charts', biopolymers: 'Biopolymers', perspective: 'Perspective and 3-D',
 };
 /** What the toolboxes of buttons come with ("cmd:", "tool:", "pal:", "w:looks", "sep"). */
@@ -15498,7 +15498,7 @@ function fillToolboxMenu(): void {
   const have = new Map([...menu.querySelectorAll<HTMLElement>(':scope > [data-cmd^="toolbox-"]')].map((b) => [b.dataset.cmd!.slice('toolbox-'.length), b]));
   let at = toolboxMenuTop;
   for (const id of boxIds(toolboxState)) {
-    if (id === 'details') continue;
+    if (NOT_IN_TOOLBOX_MENU.includes(id)) continue;
     let b = have.get(id);
     if (!b) {
       b = document.createElement('button');

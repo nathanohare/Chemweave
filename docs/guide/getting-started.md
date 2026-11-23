@@ -117,7 +117,7 @@ New files are called **Canvas 1**, **Presentation 1**, **Spreadsheet 1** and so 
 | **Document (Text document)** | A new document with pages, styles and references | Word |
 | **Design (Posters, Graphical abstracts, Figures)** | A TOC graphic, graphical abstract, poster or flowchart | a graphics program |
 
-The same commands are in the **File** menu (**New Canvas**, and **Presentation**, **Spreadsheet**, **Document** and **Design…** under **File ▸ New**). To change the tab colors, use **View ▸ Window and Colors ▸ Mode Colors…**.
+The same commands are in the **File** menu, under **File ▸ New** (**Blank canvas**, **Blank document**, **Blank presentation**, **Blank spreadsheet** and **Blank design**). To change the tab colors, use **View ▸ Window and Colors ▸ Mode Colors…**.
 
 ### The ribbon
 

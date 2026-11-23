@@ -160,7 +160,7 @@ export class SmartPane {
     // its title, to drag the docked list to another edge
     const head = document.createElement('div');
     head.className = 'sp-head';
-    const title = Object.assign(document.createElement('span'), { className: 'sp-title', textContent: 'Smart Scheme' });
+    const title = Object.assign(document.createElement('span'), { className: 'sp-title', textContent: 'Smart Scheme Species Table' });
     head.append(title);
     head.title = 'Drag to another edge of the drawing to dock this list there, or off the edge to float it';
     this.wireDrag(head);
@@ -173,7 +173,7 @@ export class SmartPane {
     this.el.className = 'smart-pane';
     this.el.hidden = true;
     this.el.setAttribute('role', 'region');
-    this.el.setAttribute('aria-label', 'Smart Scheme species');
+    this.el.setAttribute('aria-label', 'Smart Scheme Species Table');
     // keys typed here are the pane's, not the drawing's shortcuts
     this.el.addEventListener('keydown', (e) => e.stopPropagation());
     this.el.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -356,7 +356,7 @@ export class SmartPane {
     // (docked too: its toolbox's own title bar is hidden while locked, and this is the one to drag)
     const title = document.createElement('span');
     title.className = 'sp-title';
-    title.textContent = 'Smart Scheme';
+    title.textContent = 'Smart Scheme Species Table';
     head.append(title);
     head.title = this.host ? 'Drag to another edge of the drawing to dock this list there, or off the edge to float it' : 'Drag to an edge of the drawing to dock this list there, like a toolbox';
     this.wireDrag(head);

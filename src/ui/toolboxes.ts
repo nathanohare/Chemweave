@@ -142,6 +142,11 @@ export function withSideFolded(st: ToolboxState, mode: string, folded: boolean):
 export const TOOLBOX_IDS = ['main', 'structure', 'arrange', 'templates', 'colours', 'highlight', 'text', 'guides', 'custom', 'smart', 'schemes', 'diagrams', 'tables', 'biopolymers', 'perspective', 'details'] as const;
 export type ToolboxId = (typeof TOOLBOX_IDS)[number];
 /** The context toolboxes (see TOOLBOX_IDS). */
+/**
+ * Toolboxes left out of View ▸ Toolboxes: the Side Panel has its own command, and the Smart Scheme
+ * Species Table is contextual (it shows by itself beside a selected Smart Scheme; its pin docks it).
+ */
+export const NOT_IN_TOOLBOX_MENU: readonly string[] = ['details', 'smart'];
 export const CONTEXT_BOXES = ['schemes', 'diagrams', 'tables', 'biopolymers', 'perspective'] as const;
 export type ContextBox = (typeof CONTEXT_BOXES)[number];
 
