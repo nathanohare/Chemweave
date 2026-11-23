@@ -1610,7 +1610,6 @@
           <button class="rb-big" data-doc="insert-table" title="An ACS-style table"><span class="rb-icon">▦</span>Table</button>
           <button class="rb-big" data-doc="text-to-table" title="Convert Text to Table: the paragraphs selected become a table, each one a row, cut into cells at tabs, commas or another character"><span class="rb-icon">⇶</span>Text to Table</button>
           <button class="rb-big" data-doc="insert-picture" title="A picture from a file (or paste or drop one)"><span class="rb-icon">▣</span>Picture</button>
-          <button class="rb-big" data-doc="picture-format" title="Adjust the selected picture: brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to shape or aspect ratio. Saved as Word picture settings"><span class="rb-icon">◐</span>Picture Format</button>
           <button class="rb-big" data-doc="insert-chart" title="A chart with its own data, as in Word: type or paste the numbers, choose the chart type. Double-click it to change it"><span class="rb-icon">▥</span>Chart</button>
           <button class="rb-big" data-doc="insert-object" title="Embed another program's file (Excel workbook, PDF…) shown as its content or an icon. Double-click to edit it in its program; saved changes update here"><span class="rb-icon">⧈</span>Object</button>
           <button class="rb-big" data-doc="insert-text-box" title="A box of text on the page, with the page's text wrapping around it. Drag its edge to move it"><span class="rb-icon">▭</span>Text Box</button>
@@ -2073,13 +2072,24 @@
       </div>
       <div class="rb-group">
         <div class="rb-row">
+          <button class="rb-big" data-doc="pic-remove-bg" data-ic="picture-remove-bg" title="Remove Background: mark what to keep and what to take out of the selected picture, in the Picture Format window"><span class="rb-icon"></span>Remove Background</button>
+          <button class="rb-big" data-doc="pic-corrections" data-ic="picture-corrections" aria-haspopup="true" title="Corrections: make the selected picture brighter or darker, change its contrast, sharpen or soften it"><span class="rb-icon"></span>Corrections ▾</button>
           <div class="rb-col">
-            <button class="rb-labelled" data-doc="picture-format" data-ic="picture-format" title="Brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to a shape or proportions"><span class="rb-lead"></span>Picture Format…</button>
+            <button class="rb-labelled" data-doc="pic-color" data-ic="picture-color" aria-haspopup="true" title="Color: show the selected picture in grayscale, sepia, washed out or black and white"><span class="rb-lead"></span>Color ▾</button>
+            <button class="rb-labelled" data-doc="pic-transparency" data-ic="picture-transparency" aria-haspopup="true" title="Transparency: how much the selected picture lets show through"><span class="rb-lead"></span>Transparency ▾</button>
+            <button class="rb-labelled" data-doc="pic-reset" data-ic="picture-reset" title="Reset Picture: take off its corrections, color, transparency, background removal and crop (the picture itself was never changed)"><span class="rb-lead"></span>Reset Picture</button>
+          </div>
+        </div>
+        <div class="rb-label">Adjust</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <div class="rb-col">
             <button class="rb-labelled" data-doc="alt-text" title="What the picture shows, for people who can't see it (screen readers); kept as its alt text in Word"><span class="rb-lead"></span>Alt Text…</button>
             <button class="rb-labelled" data-doc="insert-caption" title="A numbered caption: Figure 1, Scheme 2, Table S1…"><span class="rb-lead"></span>Insert Caption…</button>
           </div>
         </div>
-        <div class="rb-label">Adjust</div>
+        <div class="rb-label">Accessibility</div>
       </div>
       <div class="rb-group">
         <div class="rb-row">
@@ -2091,6 +2101,12 @@
           </div>
         </div>
         <div class="rb-label">Arrange</div>
+      </div>
+      <div class="rb-group">
+        <div class="rb-row">
+          <button class="rb-big" data-doc="pic-crop" data-ic="picture-crop" aria-haspopup="true" title="Crop: cut the selected picture to proportions (square, 4:3, 16:9…) or to a shape, or show the whole picture again"><span class="rb-icon"></span>Crop ▾</button>
+        </div>
+        <div class="rb-label">Size</div>
       </div>
     </div>
     <div class="rb-panel" data-doc-panel="hf" hidden>
