@@ -208,6 +208,25 @@ describe('the typing box', () => {
     expect(b.canUndo).toBe(false);
   });
 
+  // review R01: Enter and Shift+Enter, where a box's owner lets them through (a note, a comment's
+  // Shift+Enter, an Outline View body), put a new line in at the caret, and the caret after it
+  for (const inputType of ['insertParagraph', 'insertLineBreak']) {
+    it(`${inputType} puts a new line in at the caret, keeping the looks, as one Undo step`, () => {
+      const b = box();
+      b.setText('abcd', [{ bold: true }, { bold: true }, {}, {}]);
+      b.setSelectionRange(2, 2);
+      const e = new InputEvent('beforeinput', { inputType, bubbles: true, cancelable: true });
+      b.el.dispatchEvent(e);
+      expect(e.defaultPrevented).toBe(true);
+      expect(b.value).toBe('ab\ncd');
+      expect(textOf(b.el)).toBe('ab\ncd');
+      expect([b.selectionStart, b.selectionEnd]).toEqual([3, 3]);
+      expect(b.runs?.[0]).toEqual({ text: 'ab\n', bold: true });
+      expect(b.step(false)).toBe(true);
+      expect(b.value).toBe('abcd');
+    });
+  }
+
   it('reads a new line the browser put in as a <br>', () => {
     const b = box();
     b.setText('ab');

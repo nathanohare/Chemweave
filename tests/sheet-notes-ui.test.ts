@@ -103,4 +103,47 @@ describe('formatting in a note (F3 Needs Nate 5, F8b)', () => {
     expect(sheet.noteAt(0, 0)?.text).toBe('dry ice');
     expect(sheet.noteAt(0, 0)?.runs).toEqual([{ text: 'dry', bold: true }, { text: ' ice' }]);
   });
+
+  // review R01: Enter in a note is a new line (as in Excel), kept when the note is saved
+  it('Enter in the note box starts a new line, and the note saves on several lines', async () => {
+    const { sheet, notes } = setUp();
+    await notes.newNote();
+    await Promise.resolve();
+    const box = typeInto('ab');
+    box.focus();
+    const enter = () => {
+      // (what a browser sends for Enter in a contenteditable box: keydown, then beforeinput)
+      box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      const e = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+      box.dispatchEvent(e);
+      expect(e.defaultPrevented).toBe(true);
+    };
+    // the caret at the end of the text, as after typing
+    const caretAtEnd = () => {
+      const spans = box.querySelectorAll('span');
+      const last = spans[spans.length - 1].firstChild as Text;
+      const r = document.createRange();
+      r.setStart(last, last.data.length);
+      document.getSelection()!.removeAllRanges();
+      document.getSelection()!.addRange(r);
+      return last;
+    };
+    const typeAtEnd = (t: string) => {
+      const last = caretAtEnd();
+      last.data += t;
+      const r = document.createRange();
+      r.setStart(last, last.data.length);
+      document.getSelection()!.removeAllRanges();
+      document.getSelection()!.addRange(r);
+      box.dispatchEvent(new Event('input'));
+    };
+    caretAtEnd();
+    enter();
+    typeAtEnd('cd');
+    enter();
+    typeAtEnd('ef');
+    box.blur();
+    expect(sheet.noteAt(0, 0)?.text).toBe('ab\ncd\nef');
+  });
 });
+

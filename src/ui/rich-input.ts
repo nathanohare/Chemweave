@@ -26,9 +26,16 @@ export class RichInput {
     el.setAttribute('aria-multiline', 'true');
     this.el = el;
     el.addEventListener('compositionstart', () => { this.composing = true; });
-    el.addEventListener('compositionend', () => { this.composing = false; this.read(); });
+    el.addEventListener('compositionend', () => { this.composing = false; this.read(); this.remember(); });
     // the browser's own Bold and Italic would put its markup in; Ctrl+B is the sheet's
     el.addEventListener('beforeinput', (e) => { if (e.inputType.startsWith('format')) e.preventDefault(); });
+    // Enter (or Shift+Enter) where the box's owner lets it through is a new line, put in here: the
+    // browser's own would add a <div> or <br> that the box, drawn again in its own markup, can lose
+    el.addEventListener('beforeinput', (e) => {
+      if (e.inputType !== 'insertParagraph' && e.inputType !== 'insertLineBreak') return;
+      e.preventDefault();
+      this.insert('\n');
+    });
     el.addEventListener('input', () => { this.read(); this.remember(); });
     // Ctrl+Z and Ctrl+Y take back and bring again what was typed or set in the box, as a
     // textarea's own Undo does. The browser's own Undo can't: the box is drawn again in its own
