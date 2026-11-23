@@ -5,7 +5,8 @@
 // and front/*.txt as SI Assistant keeps them.
 
 import type { Json, SiProject } from '../si/project';
-import { COVER_HEADINGS, COVER_SPACINGS, coverSpacing } from '../si/compile-doc';
+import { COVER_HEADINGS } from '../si/compile-doc';
+import { COVER_GAP_KEYS, COVER_GAP_LABELS, TOC_LIST_KEYS, TOC_LIST_LABELS, coverGaps, storeCoverGaps, storeTocLists, tocLists } from '../si/front-layout';
 import { SiRichBox } from './si-rich';
 import { addInfo } from './info-tip';
 
@@ -29,7 +30,6 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''):
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const dict = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {});
 const rows = (v: unknown): Json[] => (Array.isArray(v) ? v.filter((x): x is Json => !!x && typeof x === 'object' && !Array.isArray(x)) : []);
-const TOC_DEPTHS: [string, string][] = [['sections', 'Sections only'], ['subsections', 'Sections and sub-sections'], ['procedures', 'Sections, sub-sections and general procedures'], ['compounds', 'Sections, sub-sections, general procedures and every compound']];
 
 export class SiFrontPage {
   readonly el = el('div', 'si-front');
@@ -61,17 +61,55 @@ export class SiFrontPage {
     });
   }
 
-  /** A text box saved as you leave it. */
+  /** A text box saved as it is typed in (0.7 s after the last key, so the live preview follows it) and as you leave it. */
   private input(value: string, placeholder: string, label: string, save: (v: string) => void, cls = ''): HTMLInputElement {
     const i = el('input', cls);
     i.value = value;
     i.placeholder = placeholder;
     i.setAttribute('aria-label', label);
     let last = i.value;
-    const flush = (): void => { if (i.value === last) return; last = i.value; save(i.value.trim()); };
+    let timer = 0;
+    const flush = (): void => { clearTimeout(timer); timer = 0; if (i.value === last) return; last = i.value; save(i.value.trim()); };
+    i.addEventListener('input', () => { clearTimeout(timer); timer = window.setTimeout(flush, 700); });
     i.addEventListener('change', flush);
     this.flushers.push(flush);
     return i;
+  }
+
+  /** A number box (points) saved as it is typed in and as you leave it; an empty or unreadable box is put back. */
+  private number(value: number, label: string, save: (v: number) => void): HTMLInputElement {
+    const i = el('input', 'si-front-num');
+    i.type = 'number';
+    i.min = '0';
+    i.max = '400';
+    i.step = '1';
+    i.value = String(value);
+    i.setAttribute('aria-label', `${label} (points)`);
+    let last = i.value;
+    let timer = 0;
+    const flush = (): void => {
+      clearTimeout(timer);
+      timer = 0;
+      if (i.value === last) return;
+      const v = Number(i.value);
+      if (i.value.trim() === '' || !Number.isFinite(v) || v < 0) { i.value = last; return; }
+      last = i.value;
+      save(Math.min(400, v));
+    };
+    i.addEventListener('input', () => { clearTimeout(timer); timer = window.setTimeout(flush, 700); });
+    i.addEventListener('change', flush);
+    this.flushers.push(flush);
+    return i;
+  }
+
+  /** "+ Add Author" under a list (the same as Insert ▸ Author). */
+  private addButton(text: string, title: string, act: () => void): HTMLButtonElement {
+    const b = el('button', 'si-link si-front-add', `+ ${text}`);
+    b.type = 'button';
+    b.title = title;
+    b.disabled = this.p.readOnly;
+    b.addEventListener('click', act);
+    return b;
   }
 
   private mini(text: string, title: string, act: () => void, disabled = false): HTMLButtonElement {
@@ -100,22 +138,18 @@ export class SiFrontPage {
       void this.save();
     }));
     grid.append(el('span', 'si-front-lab', 'Title'), this.input(str(this.s.title), 'The title of the paper', 'Title', (v) => { this.s.title = v; void this.save().then(() => this.host.titleChanged()); }, 'si-front-title'));
-    const spacing = el('select');
-    for (const [l, v] of Object.entries(COVER_SPACINGS)) spacing.add(new Option(l, String(v)));
-    const k = coverSpacing(this.s);
-    if (!Object.values(COVER_SPACINGS).includes(k)) spacing.add(new Option(`${k}×`, String(k)));
-    spacing.value = String(k);
-    spacing.setAttribute('aria-label', 'Spacing');
-    spacing.addEventListener('change', () => {
-      const c = { ...dict(this.s.cover) };
-      const n = Number(spacing.value);
-      if (n === 1) delete c.spacing; else c.spacing = n;
-      if (Object.keys(c).length) this.s.cover = c; else delete this.s.cover;
-      void this.save();
-    });
-    const spLab = el('span', 'si-front-lab', 'Spacing');
-    spLab.title = 'The space between the heading, title, authors, affiliations and emails';
-    grid.append(spLab, spacing);
+    // the space above the heading and after each part, in points (SI Assistant gets the nearest single spacing)
+    const gaps = el('div', 'si-front-gaps');
+    const now = coverGaps(this.s);
+    for (const g of COVER_GAP_KEYS) {
+      const box = this.number(now[g], COVER_GAP_LABELS[g], (v) => { const all = coverGaps(this.s); all[g] = v; storeCoverGaps(this.s, all); void this.save(); });
+      const lab = el('label', 'si-front-gap');
+      lab.append(el('span', '', COVER_GAP_LABELS[g]), box, el('span', 'muted', 'pt'));
+      gaps.append(lab);
+    }
+    const spLab = el('span', 'si-front-lab si-front-top', 'Spacing');
+    addInfo(spLab, 'The space on the cover page, in points: above the heading (to start it further down the page), and after the heading, the title, the author line, the last affiliation and the email line. Chem SI Assistant keeps one spacing for all of them, so it gets the nearest one.');
+    grid.append(spLab, gaps);
     cover.append(grid);
 
     // authors
@@ -123,7 +157,6 @@ export class SiFrontPage {
     const aHead = el('div', 'si-front-head', 'Authors');
     cover.append(aHead);
     const aList = el('div', 'si-front-list');
-    if (!authors.length) aList.append(el('p', 'muted si-note', 'No authors yet: Insert ▸ Author.'));
     authors.forEach((a, i) => {
       const r = el('div', 'si-front-author');
       const name = this.input(str(a.name), 'Name', `Author ${i + 1}`, (v) => { a.name = v; void this.save(); }, 'si-front-name');
@@ -143,13 +176,12 @@ export class SiFrontPage {
       r.append(name, affs, corrLab, email, el('span', 'si-fill'), up, rm);
       aList.append(r);
     });
-    cover.append(aList);
+    cover.append(aList, this.addButton('Add Author', 'A new author at the end of the list (Insert ▸ Author)', () => this.add('author')));
 
     // affiliations
     const affs = rows(this.s.affiliations);
     cover.append(el('div', 'si-front-head', 'Affiliations'));
     const fList = el('div', 'si-front-list');
-    if (!affs.length) fList.append(el('p', 'muted si-note', 'No affiliations yet: Insert ▸ Affiliation.'));
     affs.forEach((f, i) => {
       const r = el('div', 'si-front-aff');
       const mark = this.input(str(f.marker), 'a', `Affiliation ${i + 1}'s letter`, (v) => { f.marker = v; void this.save(); }, 'si-front-mark');
@@ -159,7 +191,7 @@ export class SiFrontPage {
       r.append(mark, text, up, rm);
       fList.append(r);
     });
-    cover.append(fList);
+    cover.append(fList, this.addButton('Add Affiliation', 'A new affiliation at the end of the list, with the next letter (Insert ▸ Affiliation)', () => this.add('affiliation')));
 
     // the cover's extra text
     const extraHead = el('div', 'si-front-head', 'Extra text');
@@ -180,12 +212,30 @@ export class SiFrontPage {
     const tocSet = dict(this.s.toc);
     const setToc = (k: string, v: unknown): void => { this.s.toc = { ...dict(this.s.toc), [k]: v }; void this.save(); };
     tg.append(el('span', 'si-front-lab', 'Title'), this.input(typeof tocSet.title === 'string' ? tocSet.title : 'Table of Contents', 'No title', 'Contents title', (v) => setToc('title', v)));
-    const depth = el('select');
-    for (const [v, l] of TOC_DEPTHS) depth.add(new Option(l, v));
-    depth.value = TOC_DEPTHS.some(([v]) => v === tocSet.depth) ? str(tocSet.depth) : this.s.list_compounds_in_toc ? 'compounds' : 'procedures';
-    depth.setAttribute('aria-label', 'What it lists');
-    depth.addEventListener('change', () => setToc('depth', depth.value));
-    tg.append(el('span', 'si-front-lab', 'Lists'), depth);
+    // a switch for each kind of heading (SI Assistant gets the nearest of its depths)
+    const lists = el('div', 'si-front-lists');
+    const on = tocLists(this.s);
+    for (const k of TOC_LIST_KEYS) {
+      const c = el('input');
+      c.type = 'checkbox';
+      c.checked = on[k];
+      c.addEventListener('change', () => { const l = tocLists(this.s); l[k] = c.checked; storeTocLists(this.s, l); void this.save(); });
+      const lab = el('label', 'si-part');
+      lab.append(c, TOC_LIST_LABELS[k]);
+      lists.append(lab);
+    }
+    const lLab = el('span', 'si-front-lab si-front-top', 'Lists');
+    addInfo(lLab, 'The headings the table of contents lists, each kind on its own. Headings in section text are the headings typed in Custom sections and General Information. Chem SI Assistant keeps one depth (sections, sub-sections, general procedures or compounds), so it gets the nearest one.');
+    tg.append(lLab, lists);
+    const linkTick = el('input');
+    linkTick.type = 'checkbox';
+    linkTick.checked = tocSet.links !== false;
+    linkTick.addEventListener('change', () => { const t = { ...dict(this.s.toc) }; if (linkTick.checked) delete t.links; else t.links = false; this.s.toc = t; void this.save(); });
+    const linkLab = el('label', 'si-part');
+    linkLab.append(linkTick, 'Link to sections');
+    const lkLab = el('span', 'si-front-lab', 'Links');
+    addInfo(lkLab, 'Each line of the table of contents links to its heading, in Chemweave (Ctrl+click), the PDF and the Word file. Turn it off for plain lines.');
+    tg.append(lkLab, linkLab);
     toc.append(tg);
     this.el.append(toc);
 

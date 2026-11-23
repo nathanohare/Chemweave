@@ -3,7 +3,7 @@
 // page, its progress by section, the required data still missing and the warnings by kind above
 // a grid of every compound. A cell opens its compound at that field.
 
-import { CELL_ALPHA, STATE_ICONS, STATUS_KEYS, STATUS_NAMES, DEFAULT_STATUS_COLORS, FILTERS, cellIcons, cellStatus, cellTip, fieldLabel, filterOf, isCompact, percent, sectionPath, shownColumns, summaryText, type Cell, type ProjectSummary, type Row, type Scope, type Status } from '../si/dashboard';
+import { CELL_ALPHA, STATE_ICONS, STATUS_KEYS, STATUS_NAMES, DEFAULT_STATUS_COLORS, FILTERS, cellIcons, cellStatus, cellTip, columnWidths, fieldLabel, filterOf, hiddenFixed, isCompact, percent, sectionPath, shownColumns, summaryText, type Cell, type ProjectSummary, type Row, type Scope, type Status } from '../si/dashboard';
 import type { SiCompound, SiProject, SiSection } from '../si/project';
 import { addInfo } from './info-tip';
 
@@ -32,6 +32,122 @@ export interface GridOptions {
   picture(c: SiCompound): string | null;
   /** Open a compound at a field ('' for the top of its page). */
   open(c: SiCompound, key: string): void;
+  /** The columns can be changed (not for a read-only project): a border dragged, a field's header dragged, a header right-clicked. */
+  columns?: {
+    /** A column's border dragged to `px` wide (null: back to its own width). */
+    resize(key: string, px: number | null): void;
+    /** A field's column moved to just before another field's (null: to the end); keys are the fields' own. */
+    move(key: string, before: string | null): void;
+    /** A header right-clicked: the menu of columns to show. */
+    menu(key: string, x: number, y: number): void;
+  };
+}
+
+/** The field a grid column shows ("nmr:1H" is the NMR field's). */
+const baseKey = (k: string): string => (k.includes(':') ? k.slice(0, k.indexOf(':')) : k);
+
+/** A column's cells at this width (header and every row), or at their own width (null). */
+function setWidth(table: HTMLTableElement, index: number, px: number | null): void {
+  for (const tr of table.rows) {
+    const c = tr.cells[index] as HTMLElement | undefined;
+    if (!c) continue;
+    const v = px === null ? '' : `${px}px`;
+    c.style.width = v;
+    c.style.minWidth = v;
+    c.style.maxWidth = v;
+  }
+}
+
+/** Drag a header's right border to size its column; drag a field's header onto another to move it there. */
+function headerDrags(table: HTMLTableElement, o: NonNullable<GridOptions['columns']>): void {
+  const head = table.tHead!.rows[0];
+  const EDGE = 5;
+  const onEdge = (th: HTMLElement, x: number): boolean => th.getBoundingClientRect().right - x <= EDGE;
+  head.addEventListener('pointermove', (e) => {
+    const th = (e.target as HTMLElement).closest<HTMLElement>('th');
+    if (!th || e.buttons) return;
+    th.classList.toggle('si-dh-edge', onEdge(th, e.clientX));
+  });
+  head.addEventListener('pointerleave', () => { for (const th of head.cells) th.classList.remove('si-dh-edge'); });
+  head.addEventListener('dblclick', (e) => {
+    const th = (e.target as HTMLElement).closest<HTMLTableCellElement>('th');
+    // (a border double-clicked: the column goes back to its own width)
+    if (th && onEdge(th, e.clientX)) { setWidth(table, th.cellIndex, null); o.resize(th.dataset.col!, null); }
+  });
+  head.addEventListener('pointerdown', (e) => {
+    const th = (e.target as HTMLElement).closest<HTMLTableCellElement>('th');
+    if (!th || e.button !== 0) return;
+    const key = th.dataset.col!;
+    if (onEdge(th, e.clientX)) {
+      e.preventDefault();
+      th.setPointerCapture(e.pointerId);
+      const x0 = e.clientX, w0 = th.getBoundingClientRect().width;
+      let w = w0;
+      table.classList.add('si-dh-sizing');
+      const move = (ev: PointerEvent): void => { w = Math.max(28, Math.round(w0 + ev.clientX - x0)); setWidth(table, th.cellIndex, w); };
+      const up = (): void => {
+        th.removeEventListener('pointermove', move); th.removeEventListener('pointerup', up); th.removeEventListener('pointercancel', up);
+        table.classList.remove('si-dh-sizing');
+        if (w !== w0) o.resize(key, w);
+      };
+      th.addEventListener('pointermove', move);
+      th.addEventListener('pointerup', up);
+      th.addEventListener('pointercancel', up);
+      return;
+    }
+    if (!th.dataset.field) return;
+    // a field's header dragged: the column moves to where it is dropped (only once it has moved a little)
+    th.setPointerCapture(e.pointerId);
+    const x0 = e.clientX, y0 = e.clientY;
+    let ghost: HTMLElement | null = null;
+    let target: { th: HTMLElement | null; before: string | null } | null = null;
+    const fields = (): HTMLTableCellElement[] => [...head.cells].filter((c) => (c as HTMLElement).dataset.field);
+    const clear = (): void => { for (const c of head.cells) c.classList.remove('si-dh-before', 'si-dh-after'); };
+    const move = (ev: PointerEvent): void => {
+      if (!ghost) {
+        if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 6) return;
+        ghost = el('div', 'si-dh-ghost', th.textContent ?? '');
+        document.body.append(ghost);
+        th.classList.add('si-dh-moving');
+      }
+      ghost.style.left = `${ev.clientX + 8}px`;
+      ghost.style.top = `${ev.clientY + 8}px`;
+      clear();
+      const list = fields();
+      const over = list.find((c) => { const r = c.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX < r.right; });
+      if (!over) {
+        const last = list[list.length - 1];
+        target = last && ev.clientX >= last.getBoundingClientRect().right ? { th: last, before: null } : null;
+        if (target) last.classList.add('si-dh-after');
+        return;
+      }
+      const r = over.getBoundingClientRect();
+      const after = ev.clientX > r.left + r.width / 2;
+      const i = list.indexOf(over);
+      // (the field's own: a nucleus column of a split field moves its whole field)
+      const next = after ? list.slice(i + 1).find((c) => baseKey(c.dataset.col!) !== baseKey(over.dataset.col!)) : over;
+      target = { th: over, before: next ? baseKey(next.dataset.col!) : null };
+      over.classList.add(after ? 'si-dh-after' : 'si-dh-before');
+    };
+    const up = (): void => {
+      th.removeEventListener('pointermove', move); th.removeEventListener('pointerup', up); th.removeEventListener('pointercancel', up);
+      clear();
+      th.classList.remove('si-dh-moving');
+      if (!ghost) return;
+      ghost.remove();
+      const base = baseKey(key);
+      if (target && target.before !== base) o.move(base, target.before);
+    };
+    th.addEventListener('pointermove', move);
+    th.addEventListener('pointerup', up);
+    th.addEventListener('pointercancel', up);
+  });
+  head.addEventListener('contextmenu', (e) => {
+    const th = (e.target as HTMLElement).closest<HTMLElement>('th');
+    if (!th) return;
+    e.preventDefault();
+    o.menu(th.dataset.col!, e.clientX, e.clientY);
+  });
 }
 
 function paint(td: HTMLElement, status: Status, colors: Record<Status, string>): void {
@@ -48,16 +164,28 @@ export function dashboardGrid(o: GridOptions): HTMLElement {
   if (!rows.length) return el('p', 'muted si-note', `No compounds to show with “${FILTERS[filter]}”: Show ▸ All Compounds on the Dashboard tab shows them all.`);
   const compact = isCompact(o.scope);
   const columns = shownColumns(o.scope);
+  const hidden = hiddenFixed(o.scope);
+  const showPic = !compact && !hidden.has('structure');
+  const showSec = o.showSection && !hidden.has('section');
+  const showDone = !hidden.has('done');
+  const widths = columnWidths(o.scope);
   const wrap = el('div', 'si-dash-wrap');
-  const table = el('table', 'si-dash' + (compact ? ' compact' : ''));
+  const table = el('table', 'si-dash' + (compact ? ' compact' : '') + (o.columns ? ' si-dash-edit' : ''));
   const head = el('tr');
-  const th = (text: string, tip = ''): void => { const h = el('th', '', text); if (tip) h.title = tip; head.append(h); };
-  if (!compact) th('Structure');
-  th('ID');
-  th('Name');
-  if (o.showSection) th('Section');
-  for (const k of columns) th(fieldLabel(o.scope, k));
-  th('Done', 'Required fields filled in');
+  const th = (key: string, text: string, tip = '', field = false): void => {
+    const h = el('th', '', text);
+    h.dataset.col = key;
+    if (field) h.dataset.field = '1';
+    if (o.columns) tip = (tip ? tip + '\n' : '') + (field ? 'Drag to move this column; drag its right border to change its width. Right-click to choose the columns.' : 'Drag its right border to change its width. Right-click to choose the columns.');
+    if (tip) h.title = tip;
+    head.append(h);
+  };
+  if (showPic) th('structure', 'Structure');
+  th('id', 'ID');
+  th('name', 'Name');
+  if (showSec) th('section', 'Section');
+  for (const k of columns) th(k, fieldLabel(o.scope, k), '', true);
+  if (showDone) th('done', 'Done', 'Required fields filled in');
   table.append(el('thead'));
   table.tHead!.append(head);
   const body = el('tbody');
@@ -86,7 +214,7 @@ export function dashboardGrid(o: GridOptions): HTMLElement {
       td.dataset.key = key;
       return td;
     };
-    if (!compact) {
+    if (showPic) {
       const td = cellTd(r.cells.get('structure'), 'structure', 'si-dc-pic', false);
       const pic = o.picture(r.compound);
       if (pic) { td.replaceChildren(); td.insertAdjacentHTML('beforeend', pic); }
@@ -102,12 +230,12 @@ export function dashboardGrid(o: GridOptions): HTMLElement {
     name.replaceChildren(document.createTextNode(r.name || 'unnamed compound'));
     if (!r.name) name.classList.add('muted');
     tr.append(name);
-    if (o.showSection) tr.append(el('td', 'si-dc-sec', sectionOf(r.compound)));
+    if (showSec) tr.append(el('td', 'si-dc-sec', sectionOf(r.compound)));
     for (const k of columns) tr.append(cellTd(r.cells.get(k), k.includes(':') ? k.slice(0, k.indexOf(':')) : k));
     const done = el('td', 'si-dc-done', `${r.filled}/${r.total}`);
     done.title = r.missing.length ? `Still to fill in: ${r.missing.join(', ')}` : 'Every required field is filled in';
     if (!r.missing.length) paint(done, 'filled', o.colors);
-    tr.append(done);
+    if (showDone) tr.append(done);
     const go = (e: Event): void => {
       const td = (e.target as HTMLElement).closest<HTMLElement>('td[data-key]');
       if (td) o.open(r.compound, td.dataset.key!);
@@ -117,6 +245,8 @@ export function dashboardGrid(o: GridOptions): HTMLElement {
     body.append(tr);
   }
   table.append(body);
+  [...head.cells].forEach((h, i) => { const w = widths[(h as HTMLElement).dataset.col!]; if (w) setWidth(table, i, w); });
+  if (o.columns) headerDrags(table, o.columns);
   wrap.append(table);
   return wrap;
 }

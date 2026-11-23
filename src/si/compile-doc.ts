@@ -16,6 +16,8 @@ import { citeSuper, formatOf } from '../document/references';
 import type { Reference, RefType } from '../document/references';
 import type { Contents, Justify, ParaStyle, TableCell, TextRun } from '../model';
 import type { RunStyle } from '../richtext';
+import { LINK_COLOUR } from '../links';
+import { bookmarksOf } from '../document/bookmarks';
 import { dataUrl, imageSize, pictureMime } from '../render/images';
 import { CITE, MENTION, parseMarkup, citationsOf, type Paragraph, type Run } from './markup';
 import { fieldKeys, valuesOf, compoundName, compoundsOf, type Json, type SiCompound, type SiProject, type SiScheme, type SiSection } from './project';
@@ -27,7 +29,7 @@ import { readReportFile } from './report-files';
 import type { MolFacts } from './chem';
 import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './format';
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
-import { attachmentDir, captionText, effective, idSizeOf, structureBoxAt, structureBoxSize, GUTTERS, headerParts, HEADER_PT, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type SpectrumLayout } from './spectra';
+import { attachmentDir, autoPlace, boxSpot, cropInk, roomBeside, PLACE_GAP, captionText, effective, nmrNucleus, idSizeOf, structureBoxAt, structureBoxSize, GUTTERS, headerParts, HEADER_PT, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type InkMap, type SpectrumLayout } from './spectra';
 import type { Float, PageSetup, SectionBreak } from '../document/document';
 import { xrayAutoCaption, xrayBlock, xrayCompound, xrayDrawing, xrayTableCaption, xrayTableRows } from './xray';
 import { crystalTable } from '../chem/crystal';
@@ -39,6 +41,7 @@ import { inlineIds, inlineMol } from './scheme-edit';
 import { headerFooter } from './page-setup';
 import { siDrawingStyle } from './drawing-style';
 import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
+import { coverGaps, tocLists, type TocLists } from './front-layout';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -52,6 +55,10 @@ export interface CompileHost {
   pdfPages?(bytes: Uint8Array, most?: number): Promise<PagePicture[] | null>;
   /** Where the content of a picture is, for auto-crop (null: nothing to cut, or it can't be measured). */
   contentBox?(src: string): Promise<Crop | null>;
+  /** Where a picture has ink, for a structure box placed on blank paper (auto placement); without it, such a box goes above the spectrum. */
+  inkMap?(src: string): Promise<InkMap | null>;
+  /** How far along the compile is (Compile's progress window): `done` of `total` compounds, then spectra. A rejection stops the compile. */
+  progress?(done: number, total: number, text: string): Promise<void>;
 }
 
 /** A page of a PDF drawn as a picture: its data URL, its size in points and in pixels, and how many pages the PDF has. */
@@ -79,7 +86,6 @@ const STRUCTURE_MAX = { w: 3.25 * PT, h: 2.6 * PT };
 const FIGURE_MAX_H = 7 * PT;
 const ATTACHMENT_MAX_H = 8 * PT;
 
-const TOC_DEPTHS = ['sections', 'subsections', 'procedures', 'compounds'];
 export const COVER_HEADINGS: Record<string, string> = { ACS: 'Supporting Information', Wiley: 'Supporting Information', RSC: 'Electronic Supplementary Information' };
 const LABEL_KINDS = ['figure', 'table', 'scheme'] as const;
 type LabelKind = (typeof LABEL_KINDS)[number];
@@ -92,6 +98,9 @@ const joinPath = (...parts: string[]): string => parts.filter(Boolean).join('/')
 
 /** A bookmark name for a compound's block (letters, digits and _ as Word wants, starting with a letter). */
 export const compoundBookmark = (compoundId: string): string => siMark(compoundId);
+
+/** The bookmark a peak report's "¹H NMR" links to: on the page with the compound's first spectrum of that nucleus. */
+export const spectrumMark = (compoundId: string, nucleus: string): string => siMark(`nmr_${nucleus}_${compoundId}`);
 
 /** The bookmark on a compound's title or a caption in the compiled SI (si_ and its key, as Word wants names). */
 export const siMark = (key: string): string => `si_${key.replace(/[^A-Za-z0-9]/g, '_')}`.slice(0, 40);
@@ -195,7 +204,8 @@ class Compiler {
   private readonly styles: Record<string, NamedStyle>;
   private readonly report: IdReport;
   readonly labels: Labels;
-  private readonly rank: number;
+  /** The kinds of heading the table of contents lists (Table of contents ▸ Lists). */
+  private readonly lists: TocLists;
   private readonly excluded: Set<string>;
   private readonly leave: Leave;
   private readonly helpers: boolean;
@@ -210,12 +220,19 @@ class Compiler {
     this.styles = this.b.doc.styles;
     this.report = p.idReport();
     this.labels = new Labels(labelRules(p.settings));
-    const toc = dict(p.settings.toc);
-    const depth = typeof toc.depth === 'string' && TOC_DEPTHS.includes(toc.depth) ? toc.depth : p.settings.list_compounds_in_toc ? 'compounds' : 'procedures';
-    this.rank = TOC_DEPTHS.indexOf(depth) + 1;
+    this.lists = tocLists(p.settings);
     this.excluded = new Set(list(p.settings.export_excluded).map(String));
     this.leave = { words };
     this.helpers = p.settings.format_text !== false;
+    // links from the peak reports to the spectra and back (SPEC §13l.7): the Spectra section's
+    // settings (a project without one has none), in the look it asks for
+    const spectra = p.sections.find((s) => s.type === 'spectra');
+    const links = spectra ? sectionDefaults(spectra, p.settings) : null;
+    this.nmrLinks = !!links?.nmr_links;
+    // (each kind on its own: Chemweave lets the header lines link back without the peak reports' links)
+    this.linkBack = !!links?.link_back;
+    const color = links?.link_color || LINK_COLOUR;
+    this.linkLook = links?.link_style === 'blue' ? { color } : links?.link_style === 'blue_underline' ? { color, underline: true } : {};
     this.knownRefs = new Set(p.references.map((r) => str(r.id)));
     // a section break waiting for the next paragraph (spectra pages turned landscape, and back)
     const end = this.b.endPara.bind(this.b);
@@ -225,6 +242,13 @@ class Compiler {
       end(sec ? { ...ps, section: sec } : ps);
     };
   }
+
+  private nmrLinks = false;
+  /** The spectra's bookmarks put in so far (each only once). */
+  private placedMarks = new Set<string>();
+  private linkBack = false;
+  /** How the links look (Spectra section ▸ Link look): like the text, blue, or blue and underlined. */
+  private linkLook: RunStyle = {};
 
   private pendingSection: SectionBreak | null = null;
   /** Groups of floating figures made so far (each spectrum's structure box is one). */
@@ -405,6 +429,7 @@ class Compiler {
       if (r.underline) l.underline = true;
       if (r.valign === 'sub') l.sub = true;
       if (r.valign === 'super') l.sup = true;
+      if (r.link) Object.assign(l, this.linkLook, { link: r.link });
       if (r.ref?.startsWith(CITE)) {
         this.b.object({ kind: 'cite', refs: citationsOf(r) }, { ...l, sup: this.citeSup || undefined, sub: undefined });
         this.cited = true;
@@ -609,11 +634,10 @@ class Compiler {
     const s = this.p.settings;
     const cover = dict(s.cover);
     const heading = str(cover.heading).trim() || COVER_HEADINGS[str(s.journal_style)] || 'Supporting Information';
-    // Cover page ▸ Spacing: Normal (1), More (2) or Much more (3) times the gaps between the parts
-    const k = coverSpacing(s);
-    const gap = (pt: number): number => Math.round(pt * k * 10) / 10;
-    this.para([R(heading)], { align: 'center', spaceAfter: gap(14) }, 'Cover page', { size: 16, bold: true });
-    this.para(this.chemistry([R(str(s.title))]), { align: 'center', spaceAfter: gap(14) }, 'Cover page', { size: 14, bold: true });
+    // Cover page ▸ Spacing: the space above the heading and after each part, in points
+    const gap = coverGaps(s);
+    this.para([R(heading)], { align: 'center', spaceAfter: gap.heading, ...(gap.above ? { spaceBefore: gap.above } : {}) }, 'Cover page', { size: 16, bold: true });
+    this.para(this.chemistry([R(str(s.title))]), { align: 'center', spaceAfter: gap.title }, 'Cover page', { size: 14, bold: true });
     const authors = list(s.authors).map(dict);
     const names: Run[][] = authors.map((a) => {
       const marks = list(a.affiliations).map(String).join(',') + (a.corresponding ? '*' : '');
@@ -624,11 +648,11 @@ class Compiler {
       if (i) line.push(R(i === names.length - 1 ? (names.length > 2 ? ', and ' : ' and ') : ', '));
       line.push(...n);
     });
-    if (line.length) this.para(line, { align: 'center', spaceAfter: gap(8) }, 'Cover page');
+    if (line.length) this.para(line, { align: 'center', spaceAfter: gap.authors }, 'Cover page');
     const affs = list(s.affiliations).map(dict);
-    affs.forEach((a, i) => this.para([R(str(a.marker), { valign: 'super' }), R(str(a.text))], { align: 'center', spaceAfter: i === affs.length - 1 ? gap(6) : 0 }, 'Cover page', { size: 10 }));
+    affs.forEach((a, i) => this.para([R(str(a.marker), { valign: 'super' }), R(str(a.text))], { align: 'center', spaceAfter: i === affs.length - 1 ? gap.affiliations : 0 }, 'Cover page', { size: 10 }));
     const emails = authors.filter((a) => a.corresponding && str(a.email)).map((a) => str(a.email));
-    if (emails.length) this.para([R('*Email: ' + emails.join('; '))], { align: 'center', spaceAfter: gap(18) }, 'Cover page', { size: 10 });
+    if (emails.length) this.para([R('*Email: ' + emails.join('; '))], { align: 'center', spaceAfter: gap.emails }, 'Cover page', { size: 10 });
     const extra = this.texts.get('cover') ?? '';
     if (extra.trim()) await this.richText(extra, 'Cover page', null, 1, 0);
   }
@@ -639,7 +663,8 @@ class Compiler {
     const style = this.plainStyle('SITocHeading', 'Contents Heading', { size: 13, bold: true, align: 'left', spaceBefore: 0, spaceAfter: 10, keepNext: true });
     this.b.pendingBreak = true;
     if (title.trim()) this.para([R(title)], { style }, 'Table of contents');
-    this.b.object({ kind: 'toc', levels: 3 });
+    // (every level: what is listed is chosen heading by heading, Table of contents ▸ Lists)
+    this.b.object({ kind: 'toc', levels: 9, ...(toc.links === false ? { noLinks: true } : {}) });
     this.b.endPara(this.full({}));
   }
 
@@ -648,13 +673,15 @@ class Compiler {
     if (!text.trim()) return false;
     const info = dict(this.p.settings.general_information);
     const title = info.heading === undefined ? 'General Information' : str(info.heading).trim();
-    if (title) this.para([R(this.numbered(1, true) + title)], { style: headingId(1) }, 'General Information');
-    await this.richText(text, title || 'General Information', await this.owner('general'), 1, this.rank >= 2 ? 2 : 0, true, true);
+    if (title) this.para([R(this.numbered(1, true) + title)], { style: this.headingStyle(1, this.lists.general) }, 'General Information');
+    await this.richText(text, title || 'General Information', await this.owner('general'), 1, this.lists.headings ? 2 : 0, true, true);
     return true;
   }
 
-  private sectionHeading(level: number, name: string, ps: ParaStyle = {}): void {
-    this.para([R(this.numbered(level) + name)], { style: this.headingStyle(level, level === 1 || this.rank >= 2), ...ps }, name);
+  /** A section's heading: in the contents when sections (a top one) or sub-sections are listed; the Spectra section's when spectra are. */
+  private sectionHeading(level: number, name: string, ps: ParaStyle = {}, spectra = false): void {
+    const listed = spectra ? this.lists.spectra : level === 1 ? this.lists.sections : this.lists.subsections;
+    this.para([R(this.numbered(level) + name)], { style: this.headingStyle(level, listed), ...ps }, name);
   }
 
   // ---------------------------------------------------------- heading numbers (Lauren's, rewritten)
@@ -691,7 +718,7 @@ class Compiler {
     }
     if (s.type === 'text') {
       this.sectionHeading(level, s.name);
-      await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.rank >= 2 ? level + 1 : 0, true, true);
+      await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.lists.headings ? level + 1 : 0, true, true);
     } else if (s.type === 'file') await this.fileSection(s, level);
     else if (s.type === 'xray') await this.xray(s, level, true); else if (s.type === 'data') await this.dataSection(s, level);
     for (const child of s.children) await this.section(child, level + 1);
@@ -712,7 +739,7 @@ class Compiler {
     for (const gp of this.p.generalProcedures(s)) {
       const name = str(gp.name).trim() || 'General Procedure';
       const title = str(gp.title).trim();
-      this.para(this.chemistry([R(name + (title ? `: ${title}` : ''))]), { style: this.headingStyle(level + 1, this.rank >= 3) }, `${s.name} ▸ ${name}`);
+      this.para(this.chemistry([R(name + (title ? `: ${title}` : ''))]), { style: this.headingStyle(level + 1, this.lists.procedures) }, `${s.name} ▸ ${name}`);
       const text = await this.p.readGpText(s, str(gp.id));
       if (!text.trim()) this.notes.push(`“${name}” in “${s.name}” has no text yet.`);
       await this.richText(text, `${s.name} ▸ ${name}`, null, level + 1, 0, false);
@@ -725,13 +752,20 @@ class Compiler {
     }
   }
 
+  /** Compounds set out so far, of how many (Compile's progress). */
+  private progressDone = 0;
+  private progressTotal = 0;
+
   private async compound(c: SiCompound, level: number, inScheme = false): Promise<void> {
     const id = displayId(this.report, c.id);
     const name = compoundName(c);
+    if (this.host.progress && !this.preview) await this.host.progress(++this.progressDone, this.progressTotal, `Compounds: ${Math.min(this.progressDone, this.progressTotal)} of ${this.progressTotal}`);
     const where = name ? `${id} (${name})` : id;
     const facts = this.facts.get(c.id) ?? null;
-    const block = compoundBlock(this.p, c, id, { facts, helpers: this.helpers, leave: this.leave });
-    this.para(block.title, { style: this.compoundStyle(level, this.rank >= 4), marks: [compoundBookmark(c.id)] }, where);
+    const nuclei = this.nmrLinks ? new Set(spectrumItems(c).map(([, i]) => nmrNucleus(i, c))) : null;
+    const nmrLink = nuclei ? (n: string): string | null => (nuclei.has(n) ? `#${spectrumMark(c.id, n)}` : null) : undefined;
+    const block = compoundBlock(this.p, c, id, { facts, helpers: this.helpers, leave: this.leave, ...(nmrLink ? { nmrLink } : {}) });
+    this.para(block.title, { style: this.compoundStyle(level, this.lists.compounds), marks: [compoundBookmark(c.id)] }, where);
     this.targets.push({ key: c.id, kind: 'compound', label: id, caption: name, mark: compoundBookmark(c.id) });
     if (!inScheme) await this.structure(c, where);
     if (!block.customText) {
@@ -916,16 +950,23 @@ class Compiler {
    * its header line and the compound's structure + ID on a box over it; then the HRMS reports.
    * Everything on a spectra page floats at its place, so it can be moved and stays editable.
    */
-  private async spectraSection(s: SiSection | null, level: number): Promise<void> {
+  private async spectraSection(s: SiSection | null, level: number, only?: SiCompound[]): Promise<void> {
     const defaults = sectionDefaults(s, this.p.settings);
-    const compounds = this.includedCompounds(this.p.top);
+    const compounds = only ?? this.includedCompounds(this.p.top);
     const name = s?.name ?? 'Spectra';
     type Entry = { c: SiCompound; item: Json; page: PagePicture; pageNo: number; eff: SpectrumLayout };
     const entries: Entry[] = [];
+    const files = this.host.progress && !this.preview ? compounds.reduce((n, c) => n + spectrumItems(c).filter(([, i]) => partText(i.file)).length, 0) : 0;
+    let read = 0;
+    // (the live preview of the whole section: its first spectra only, each read and measured again at every change)
+    const cap = this.preview && !only ? PREVIEW_SPECTRA : Infinity;
+    let skipped = false;
     for (const c of compounds) {
       for (const [key, item] of spectrumItems(c)) {
         const file = partText(item.file);
         if (!file) continue;
+        if (entries.length >= cap) { skipped = true; continue; }
+        if (files) await this.host.progress!(read++, files, `Spectra: ${read} of ${files}`);
         const where = `${displayId(this.report, c.id)} ▸ ${key === 'spectra' ? 'Spectra' : 'Additional files'}`;
         const bytes = await this.p.folder.readBytes(joinPath(c.folder, attachmentDir(c, key), file));
         if (!bytes) { this.notes.push(`${where}: ${file} is no longer in the project; left out.`); continue; }
@@ -942,6 +983,7 @@ class Compiler {
         pages.forEach((page, i) => entries.push({ c, item, page, pageNo: i + 1, eff: effective(defaults, item, String(i + 1)) }));
       }
     }
+    if (skipped) this.notes.push(`${name}: the live preview shows the first ${entries.length} spectra; Compile prints them all.`);
     // pages: a spectrum that needs another layout (number to a page, orientation) starts a new page
     const pages: { orientation: SpectrumLayout['orientation']; per: number; slots: Entry[] }[] = [];
     for (const e of entries) {
@@ -951,16 +993,17 @@ class Compiler {
     }
     const hrms = this.excluded.has('hrms_reports') ? [] : compounds.filter((c) => printsReports(c, defaults));
     if (!pages.length && !hrms.length) return;
-    let headed = false;
+    // (one compound's pages alone, for the live preview: without the section's heading)
+    let headed = !!only;
     for (const pg of pages) {
       this.orient(pg.orientation);
       const page = this.landscape ? { ...this.b.doc.page, w: this.b.doc.page.h, h: this.b.doc.page.w } : this.b.doc.page;
       let top = 0;
       if (!headed) {
-        this.sectionHeading(level, name, { pageBreak: true });
+        this.sectionHeading(level, name, { pageBreak: true }, true);
         headed = true;
         top = HEADING_ROOM;
-      } else this.b.pendingBreak = true;
+      } else if (pg !== pages[0] || !only) this.b.pendingBreak = true;
       await this.spectraPage(pg.slots, pg.per, page, top);
     }
     if (hrms.length) await this.hrmsReports(hrms, level + 1, name, !headed, level);
@@ -974,6 +1017,7 @@ class Compiler {
     const slot = slotSize(bw, bh, per, this.landscape);
     const [cols] = per === 4 ? [2] : per === 2 && this.landscape ? [2] : [1];
     const floats: DocObject[] = [];
+    const marks: string[] = [];
     let z = 1;
     for (let i = 0; i < slots.length; i++) {
       const { c, item, page: pic, pageNo, eff } = slots[i];
@@ -982,24 +1026,53 @@ class Compiler {
       const id = displayId(this.report, c.id);
       let headH = 0;
       if (eff.header_line) {
-        const runs = this.helpers ? formatNmr(headerParts(c, item, id, pageNo).map((t) => R(t)), this.leave) : headerParts(c, item, id, pageNo).map((t) => R(t));
+        let runs = this.helpers ? formatNmr(headerParts(c, item, id, pageNo).map((t) => R(t)), this.leave) : headerParts(c, item, id, pageNo).map((t) => R(t));
+        // the header line goes back to the compound's data (SPEC §13l.7)
+        if (this.linkBack) runs = runs.map((r) => ({ ...r, link: `#${compoundBookmark(c.id)}` }));
         headH = HEADER_PT * 1.25 + 2 * 3.6 + 3;
-        floats.push({ kind: 'textbox', runs: textRuns(runs, { bold: true, size: HEADER_PT }), paras: [{ align: 'center' }], w: slot.w, float: this.at(sx, sy, z++, `Header ${id}`) });
+        floats.push({ kind: 'textbox', runs: textRuns(runs, { bold: true, size: HEADER_PT, ...(this.linkBack ? this.linkLook : {}) }), paras: [{ align: 'center' }], w: slot.w, float: this.at(sx, sy, z++, `Header ${id}`) });
       }
+      // the peak reports' "¹H NMR" go to the page with the compound's first spectrum of that nucleus
+      const nucleus = this.nmrLinks ? nmrNucleus(item, c) : null;
+      if (nucleus && !this.placedMarks.has(spectrumMark(c.id, nucleus))) { this.placedMarks.add(spectrumMark(c.id, nucleus)); marks.push(spectrumMark(c.id, nucleus)); }
       const crop = eff.auto_crop && this.host.contentBox ? await this.host.contentBox(pic.src).catch(() => null) : null;
-      const shown = shownSize({ w: slot.w, h: Math.max(10, slot.h - headH) }, pic.h / pic.w, crop);
-      const px = sx + (slot.w - shown.w) / 2, py = sy + headH;
+      // the structure box: on the spectrum (its corner, where it was dragged, or blank paper for
+      // auto), or above or beside it with room of its own (SI Assistant's issue #1)
+      const parts = eff.struct_box ? await this.boxParts(c, item, eff) : null;
+      let use = eff;
+      let spot = parts ? boxSpot(eff) : 'on';
+      const room = { w: slot.w, h: Math.max(10, slot.h - headH) };
+      if (parts && eff.struct_place === 'auto' && (eff.x === undefined || eff.y === undefined)) {
+        const at = shownSize(room, pic.h / pic.w, crop);
+        const ink = this.host.inkMap ? await this.host.inkMap(pic.src).catch(() => null) : null;
+        const got = ink ? autoPlace(cropInk(ink, crop), at, (sc) => this.boxSize(parts, { ...eff, struct_scale: sc }), eff.struct_scale, eff.corner, eff.auto_shrink, eff.auto_min_scale) : null;
+        if (got) use = { ...eff, x: got.x, y: got.y, struct_scale: got.scale };
+        else {
+          spot = 'above';
+          const where = `${id} ▸ Spectra ▸ ${partText(item.file) || 'a spectrum'}${pageNo > 1 ? `, page ${pageNo}` : ''}`;
+          this.notes.push(ink ? `${where}: the structure fits no blank space on the spectrum${eff.auto_shrink ? ' even made smaller' : ''}; it was put above the spectrum.`
+            : `${where}: the spectrum’s blank space could not be read; the structure was put above the spectrum.`);
+        }
+      }
+      const box = parts ? this.boxSize(parts, use) : { w: 0, h: 0 };
+      const shown = shownSize(roomBeside(room, spot, box), pic.h / pic.w, crop);
+      // the spectrum and a box beside it are centred together; a box above is centred over it
+      const groupW = spot === 'beside' ? shown.w + PLACE_GAP + box.w : shown.w;
+      const px = sx + (slot.w - groupW) / 2, py = sy + headH + (spot === 'above' ? box.h + PLACE_GAP : 0);
       floats.push({
         kind: 'picture', src: pic.src, w: round2(shown.w), h: round2(shown.h), ...(pic.px ? { px: pic.px } : {}),
         ...(crop ? { crop: { l: crop[0], t: crop[1], r: 1 - crop[2], b: 1 - crop[3] } } : {}),
         ...(eff.spectrum_frame ? { look: { frame: eff.spectrum_frame_width, frameColor: eff.spectrum_frame_color } } : {}),
         alt: headerParts(c, item, id, pageNo).join(''), float: this.at(px, py, z++, `Spectrum ${id}`),
       });
-      if (eff.struct_box) floats.push(...(await this.structureBox(c, item, eff, { x: px, y: py, w: shown.w, h: shown.h }, () => z++)));
+      if (parts) {
+        const boxAt = spot === 'above' ? { x: sx + (slot.w - box.w) / 2, y: sy + headH } : spot === 'beside' ? { x: px + shown.w + PLACE_GAP, y: py } : undefined;
+        floats.push(...(await this.structureBox(parts, use, { x: px, y: py, w: shown.w, h: shown.h }, () => z++, boxAt)));
+      }
     }
     // the anchor: an empty paragraph as tall as the page's body, so the next page starts after it
     for (const f of floats) this.b.object(f);
-    this.b.endPara(this.full({ spaceAfter: 0, spaceBefore: 0, linePt: Math.max(12, Math.floor(bh - 6)), lineRule: 'exact' }));
+    this.b.endPara(this.full({ spaceAfter: 0, spaceBefore: 0, linePt: Math.max(12, Math.floor(bh - 6)), lineRule: 'exact', ...(marks.length ? { marks } : {}) }));
   }
 
   /** A float at (x, y) from the margin and the anchor paragraph, in front of the text. */
@@ -1007,18 +1080,29 @@ class Compiler {
     return { wrap: 'front', x: round2(x), y: round2(y), xFrom: 'margin', yFrom: 'para', gap: 0, z, name };
   }
 
-  /** The compound's structure, ID and caption on a box over a spectrum (in its corner, or where it was dragged). */
-  private async structureBox(c: SiCompound, item: Json, eff: SpectrumLayout, spec: { x: number; y: number; w: number; h: number }, z: () => number): Promise<DocObject[]> {
+  /** What goes on a spectrum's structure box: the compound's drawing (and its own size), its ID and the caption. */
+  private async boxParts(c: SiCompound, item: Json, eff: SpectrumLayout): Promise<BoxParts> {
     const mol = this.p.hasStructure(c) ? await this.p.readStructure(c) : '';
     const contents = mol ? this.host.contentsOf(mol) : null;
     const own = contents ? this.host.sizeOf(contents) : null;
-    const size = contents ? structureSize(own, eff.struct_scale) : { w: 0, h: 0 };
-    const id = displayId(this.report, c.id);
-    const idSize = idSizeOf(eff);
     const caption = eff.caption ? captionText(c, item) : '';
+    return { mol, contents, own, id: displayId(this.report, c.id), caption };
+  }
+
+  /** The box's size with the structure at `eff`'s size. */
+  private boxSize(b: BoxParts, eff: SpectrumLayout): { w: number; h: number } {
+    const size = b.contents ? structureSize(b.own, eff.struct_scale) : { w: 0, h: 0 };
+    return structureBoxSize(size, b.id, idSizeOf(eff), b.caption, eff.caption_size);
+  }
+
+  /** The compound's structure, ID and caption on a box over a spectrum (in its corner, where it was dragged or placed), or at `place` (above or beside it). */
+  private async structureBox(b: BoxParts, eff: SpectrumLayout, spec: { x: number; y: number; w: number; h: number }, z: () => number, place?: { x: number; y: number }): Promise<DocObject[]> {
+    const { mol, contents, own, id, caption } = b;
+    const size = contents ? structureSize(own, eff.struct_scale) : { w: 0, h: 0 };
+    const idSize = idSizeOf(eff);
     const capRuns = caption ? (this.helpers ? formatNmr([R(caption)], this.leave) : [R(caption)]) : [];
     const { w, h } = structureBoxSize(size, id, idSize, caption, eff.caption_size);
-    const { x: bx, y: by } = structureBoxAt(eff, spec, { w, h });
+    const { x: bx, y: by } = place ?? structureBoxAt(eff, spec, { w, h });
     // the box (its background and frame), the structure on it, and the ID and caption under the
     // structure: grouped, so they move together (Alt-drag moves one on its own)
     const group = ++this.groups;
@@ -1051,8 +1135,8 @@ class Compiler {
       if (started) return false;
       started = true;
       this.orient('portrait');
-      if (withSection) this.sectionHeading(sectionLevel, sectionName, { pageBreak: true });
-      this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.rank >= 2), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
+      if (withSection) this.sectionHeading(sectionLevel, sectionName, { pageBreak: true }, true);
+      this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.lists.hrms), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
       return true;
     };
     const room = { w: TEXT_W, h: 7.4 * PT };
@@ -1136,7 +1220,7 @@ class Compiler {
 
   private references(): void {
     if (!this.cited) return;
-    this.para([R('References')], { style: headingId(1), pageBreak: true }, 'References');
+    this.para([R('References')], { style: this.headingStyle(1, this.lists.references), pageBreak: true }, 'References');
     this.b.object({ kind: 'bib' });
     this.b.endPara(this.full({}));
   }
@@ -1156,10 +1240,15 @@ class Compiler {
       const k = p.schemes.find((x) => x.id === only.id);
       const s = k ? p.sections.find((x) => x.id === k.sectionId) : undefined;
       if (k && s) { const drawn = await this.scheme(k, s); for (const c of k.children) await this.compound(c, 2, drawn.has(c.id)); }
+    } else if (only.kind === 'spectra') {
+      // a compound's spectra pages, as they print in the Spectra section (without its heading)
+      const c = p.compounds.find((x) => x.id === only.id);
+      if (c) { this.spectraDone = true; await this.spectraSection(p.sections.find((x) => x.type === 'spectra') ?? null, 1, [c]); }
     } else {
       const s = p.sections.find((x) => x.id === only.id);
+      if (s?.type === 'spectra') { this.excluded.delete(s.id); this.excluded.delete('spectra'); this.spectraDone = true; await this.spectraSection(s, 1); }
       // (a section's spectra are left out: Compile shows them)
-      if (s && s.type !== 'spectra') { this.excluded.delete(s.id); this.spectraDone = true; await this.section(s, 1); }
+      else if (s) { this.excluded.delete(s.id); this.spectraDone = true; await this.section(s, 1); }
     }
   }
 
@@ -1168,8 +1257,10 @@ class Compiler {
     if (!only) return this.includedCompounds(this.p.top);
     if (only.kind === 'compound') return this.p.compounds.filter((c) => c.id === only.id);
     if (only.kind === 'scheme') return this.p.schemes.find((k) => k.id === only.id)?.children ?? [];
+    if (only.kind === 'spectra') return this.p.compounds.filter((c) => c.id === only.id);
     if (only.kind === 'section') {
       const s = this.p.sections.find((x) => x.id === only.id);
+      if (s?.type === 'spectra') return this.includedCompounds(this.p.top);
       return s ? [...(s.type === 'data' ? compoundsOf(s) : []), ...this.includedCompounds(s.children)] : [];
     }
     return [];
@@ -1177,20 +1268,23 @@ class Compiler {
 
   async build(only?: SiPreviewTarget): Promise<DocText> {
     this.preview = !!only;
+    this.progressTotal = this.printedCompounds(only).length;
     await this.prepare(this.printedCompounds(only));
     if (only) await this.buildOnly(only);
     else await this.buildAll();
     const title = str(this.p.settings.title);
     const p = this.b.doc.page;
     const { hf, format } = this.pageLines(p.w - p.left - p.right);
-    return this.b.finish({
+    // (the live preview keeps the links to pages it leaves out, so it shows them as they print)
+    const finish = this.preview ? (t: DocText): DocText => t : (t: DocText): DocText => dropDeadLinks(t, this.linkLook);
+    return finish(this.b.finish({
       styles: this.styles,
       hf,
       ...(format !== 'decimal' ? { numFormat: format } : {}),
       references: this.p.references.map(toReference),
       props: { title: title || this.p.title },
       noFigureOffer: true,
-    });
+    }));
   }
 
   private async buildAll(): Promise<void> {
@@ -1209,17 +1303,17 @@ class Compiler {
 
 const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join('').trim();
 
-/** The cover page's spacing: Normal 1, More 2, Much more 3, or a number typed into project.json (0.5–6). */
-export const COVER_SPACINGS: Record<string, number> = { Normal: 1, More: 2, 'Much more': 3 };
-export function coverSpacing(settings: Json): number {
-  const v = Number(dict(settings.cover).spacing);
-  return Number.isFinite(v) && v > 0 ? Math.min(6, Math.max(0.5, v)) : 1;
-}
+export { coverSpacing } from './front-layout';
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
+/** What a spectrum's structure box holds (see Compiler.boxParts). */
+interface BoxParts { mol: string; contents: Contents | null; own: { w: number; h: number } | null; id: string; caption: string }
+
 /** The room the Spectra section's heading takes at the top of its first page (points). */
 const HEADING_ROOM = 34;
+/** The spectra the live preview of the whole Spectra section shows (Compile prints them all). */
+export const PREVIEW_SPECTRA = 12;
 
 /** What is said when a PDF can't be opened (SI Assistant's words). */
 const unreadablePdf = (name: string): string => `${name} could not be opened as a PDF (it may be damaged, password-protected or not really a PDF). Export it again and replace it on the compound page; left out.`;
@@ -1233,9 +1327,27 @@ function textRuns(runs: Run[], look: RunStyle): TextRun[] {
     if (r.underline) l.underline = true;
     if (r.valign === 'sub') l.sub = true;
     if (r.valign === 'super') l.sup = true;
+    if (r.link) l.link = r.link;
     for (const k of Object.keys(l) as (keyof TextRun)[]) if (l[k] === undefined) delete l[k];
     return l;
   });
+}
+
+/**
+ * Links to places the compiled SI doesn't have taken off (a compound's spectra left out of it, a
+ * compound not printed): the text stays, in the look of the text round it.
+ */
+function dropDeadLinks(t: DocText, look: RunStyle): DocText {
+  const marks = new Set(bookmarksOf(t).map((b) => b.name));
+  const fix = (runs: TextRun[]): TextRun[] => runs.map((r) => {
+    if (!r.link?.startsWith('#si_') || marks.has(r.link.slice(1))) return r;
+    const { link: _l, ...rest } = r;
+    if (look.color && rest.color === look.color) delete rest.color;
+    if (look.underline && rest.underline) delete rest.underline;
+    return rest;
+  });
+  const objects = Object.fromEntries(Object.entries(t.objects).map(([k, o]) => [k, o.kind === 'textbox' ? { ...o, runs: fix(o.runs) } : o]));
+  return { ...t, runs: fix(t.runs), objects };
 }
 
 const fieldsOfCompound = (c: SiCompound) => (Array.isArray(c.data.fields) ? (c.data.fields as Json[]) : []).map((e) => fieldDef(e)).filter((d): d is NonNullable<typeof d> => d !== null);
@@ -1275,7 +1387,8 @@ export async function objectLabelSets(p: SiProject): Promise<{ labels: Map<strin
 
 /** Compile an SI project into a document. */
 /** What the live preview shows: the front matter (cover and General Information), a section, a scheme page or a compound. */
-export type SiPreviewTarget = { kind: 'front' } | { kind: 'section' | 'scheme' | 'compound'; id: string };
+/** What the live preview shows: the front pages, a section, a scheme page, a compound, or a compound's spectra pages ('spectra', by the compound's id). */
+export type SiPreviewTarget = { kind: 'front' } | { kind: 'section' | 'scheme' | 'compound' | 'spectra'; id: string };
 
 /** Compile the project (or, with `only`, one page of it for the live preview) into a document. */
 export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget): Promise<CompiledSi> {

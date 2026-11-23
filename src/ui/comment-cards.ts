@@ -39,7 +39,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 interface NoteBox { el: HTMLElement; focus(): void }
 
 /** Pieces of text with looks as each character's look in the rich text box, and back. */
-const looksOf = (text: string, runs: NoteRun[] | null): RunLook[] => {
+export const looksOf = (text: string, runs: NoteRun[] | null): RunLook[] => {
   const out: RunLook[] = [];
   for (const r of runs ?? [{ text }]) {
     const l: RunLook = { ...(r.bold ? { bold: true } : {}), ...(r.italic ? { italic: true } : {}), ...(r.underline ? { underline: true } : {}), ...(r.strike ? { strike: true } : {}), ...(r.sub ? { pos: 'sub' as const } : r.sup ? { pos: 'sup' as const } : {}) };
@@ -47,7 +47,7 @@ const looksOf = (text: string, runs: NoteRun[] | null): RunLook[] => {
   }
   return out;
 };
-const runsOf = (text: string, looks: RunLook[]): NoteRun[] | null =>
+export const runsOf = (text: string, looks: RunLook[]): NoteRun[] | null =>
   cleanNoteRuns([...text].map((c, i) => { const l = looks[i] ?? {}; return { text: c, bold: l.bold, italic: l.italic, underline: l.underline, strike: l.strike, sub: l.pos === 'sub', sup: l.pos === 'sup' }; }));
 
 /**
@@ -127,7 +127,7 @@ function header(author: string, date: string): HTMLElement {
 }
 
 /** A note's text, with its words' looks. */
-function body(n: Pick<CommentNote, 'text' | 'runs'>): HTMLElement {
+export function body(n: Pick<CommentNote, 'text' | 'runs'>): HTMLElement {
   const p = el('div', 'cmt-text');
   const runs = noteRuns(n);
   if (!runs) { p.textContent = n.text; return p; }

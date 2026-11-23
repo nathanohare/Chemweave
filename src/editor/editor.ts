@@ -11,7 +11,7 @@ import { Doc, sameData, Atom, Bond, BondDisplay, PARTIAL, ELEMENT_WITH_H, Arrow,
 import { doubleBondGap, scaleOwnWidths } from '../style';
 import { CaptionEditor } from '../ui/caption-editor';
 import { followLink, linkTip } from '../ui/links-ui';
-import { stopAtEdge } from '../ui/scrollbars';
+import { keepInSlide, stopAtEdge, SlideFlip, type ScrollContent } from '../ui/scrollbars';
 
 /** Screen pixels of grey left showing past a fixed page edge when panned as far as it goes. */
 export const WALL_BAND = 14;
@@ -559,6 +559,8 @@ export class Editor {
     return !!k && (k.kind === 'atom' ? this.doc.atoms.has(k.id) : k.kind === 'bond' && this.doc.bonds.has(k.id));
   }
   private needScene = true;
+  /** The next scene is painted whole in one frame (a slide just shown), not tile by tile over several. */
+  private wholeScene = false;
   private needOverlay = true;
   private frameQueued = false;
   private inputTs = 0;
@@ -570,6 +572,9 @@ export class Editor {
   /** How long each paint took while a press was dragging (ms), and when it was. */
   dragFrames: { t: number; ms: number }[] = [];
   onChange: () => void = () => {};
+  /** The wheel went on past a slide's bottom (1) or top (-1) edge: go to the next or previous slide; true when it did (null: the wheel stops at the edge). */
+  onScrollPast: ((dir: 1 | -1) => boolean) | null = null;
+  private slideFlip = new SlideFlip();
   /** A right click on the drawing (not a right-button drag, which pans). */
   onContextMenu: (e: MouseEvent) => void = () => {};
   private pendingContext: MouseEvent | null = null;
@@ -737,6 +742,18 @@ export class Editor {
     this.queue(ts);
   }
 
+  /**
+   * Paint everything at once on the next frame: after another slide is shown, its tiles are all
+   * new, and painting them a few per frame shows the slide in pieces (a flicker of empty squares
+   * as they fill in). One longer frame shows it whole.
+   */
+  requestWholeScene(ts = performance.now()): void {
+    this.wholeScene = true;
+    this.needScene = true;
+    this.needOverlay = true;
+    this.queue(ts);
+  }
+
   requestOverlay(ts = performance.now()): void {
     this.needOverlay = true;
     this.queue(ts);
@@ -758,7 +775,10 @@ export class Editor {
     const t0 = performance.now(), dragging = !!this.drag;
     if (this.needScene) {
       this.keepByWalls();
-      this.r.renderScene(this.doc, full ? Infinity : 10);
+      // a slide: zooming or a smaller window never leaves it off center or past its edges
+      if (this.scrollArea) keepInSlide(this.r, this.scrollArea());
+      this.r.renderScene(this.doc, full || this.wholeScene ? Infinity : 10);
+      this.wholeScene = false;
       this.needScene = this.r.incomplete;
     }
     if (this.needOverlay) {
@@ -1932,7 +1952,16 @@ export class Editor {
       const from = { ox: this.r.view.ox, oy: this.r.view.oy };
       this.r.view.ox -= (e.shiftKey ? e.deltaY : e.deltaX) * k;
       this.r.view.oy -= (e.shiftKey ? 0 : e.deltaY) * k;
-      if (this.scrollArea) stopAtEdge(this.r, this.scrollArea(), from);
+      const area = this.scrollArea?.() ?? null;
+      if (area) stopAtEdge(this.r, area, from);
+      // a slide's top or bottom edge reached: on further, to the slide after or before (when set)
+      const dy = (e.shiftKey ? 0 : e.deltaY) * k;
+      if (area?.tight !== undefined && this.onScrollPast && dy) {
+        if (Math.abs(this.r.view.oy - from.oy) < 0.5) {
+          const dir = this.slideFlip.push(dy, e.timeStamp);
+          if (dir && this.onScrollPast(dir)) return;
+        } else this.slideFlip.reset();
+      }
     }
     this.requestScene(e.timeStamp);
   }
@@ -1957,7 +1986,7 @@ export class Editor {
   }
 
   /** What the wheel scrolls over: it stops at this (with half a screen of room) as the scroll bars do. */
-  scrollArea: (() => { x1: number; y1: number; x2: number; y2: number } | null) | null = null;
+  scrollArea: (() => ScrollContent | null) | null = null;
   /**
    * Panning and zooming stop with a thin band of grey past a fixed page edge (`WALL_BAND` screen
    * pixels), rather than half a window of it. Where the pages are narrower or shorter than the

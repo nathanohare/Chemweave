@@ -117,6 +117,37 @@ describe('Outline View with looks', () => {
     parent.remove();
   });
 
+  it('Enter in a body box starts a new line there (review R01)', () => {
+    const { d, doc } = deck();
+    const parent = document.createElement('div');
+    document.body.append(parent);
+    const view = new OutlineView(parent, { deck: () => d, go: () => undefined, focusSlide: () => undefined });
+    view.show(true);
+    const body = parent.querySelector<HTMLElement>('.ol-body')!;
+    body.tabIndex = 0;
+    body.focus();
+    const last = [...body.querySelectorAll('span')].at(-1)!.firstChild as Text;
+    const r = document.createRange();
+    r.setStart(last, last.data.length);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(r);
+    const e = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+    body.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    const end = [...body.querySelectorAll('span')].at(-1)!.firstChild as Text;
+    end.data += '\tAldol';
+    const r2 = document.createRange();
+    r2.setStart(end, end.data.length);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(r2);
+    body.dispatchEvent(new Event('input'));
+    body.dispatchEvent(new Event('change'));
+    expect(slideOutline(doc).body!.map((l) => l.text)).toEqual(['CH3OH', 'Boron', 'Aldol']);
+    body.blur();
+    view.show(false);
+    parent.remove();
+  });
+
   it('a slide made with Shift+Tab takes its words\' looks with it', () => {
     const { d } = deck();
     const parent = document.createElement('div');

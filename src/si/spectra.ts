@@ -11,10 +11,22 @@ import { fieldKeys, valuesOf, type Json, type SiCompound, type SiSection } from 
 import { parseMarkup } from './markup';
 import { findSolvent } from './nmr';
 import { fieldDef } from './fields';
+import { markFloat } from './pyjson';
 
 export const PER_PAGE = [1, 2, 4] as const;
 export const CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
 export type Corner = (typeof CORNERS)[number];
+/**
+ * Where the structure box goes (SI Assistant's issue #1): over the spectrum in its corner (or
+ * where it was dragged), over it where it covers only blank paper (auto), or above or beside it,
+ * the spectrum made smaller to leave it room.
+ */
+export const PLACES = ['on', 'auto', 'above', 'beside'] as const;
+export type Place = (typeof PLACES)[number];
+/** A new project prints two spectra on a page (SI Assistant's NEW_PROJECT_PER_PAGE; DEFAULTS keeps one, so older projects print as they did). */
+export const NEW_PROJECT_PER_PAGE = 2;
+/** The settings that are decimals in SI Assistant's files (written 1.0, not 1, so its files stay as it writes them). */
+export const FLOAT_KEYS = ['auto_min_scale', 'struct_frame_width', 'id_size', 'struct_scale', 'spectrum_frame_width', 'caption_size', 'x', 'y'] as const;
 
 /** How spectra are set out. The defaults reproduce SI Assistant's: one per portrait page, the header line, the structure + ID on a white box top left. */
 export interface SpectrumLayout {
@@ -23,6 +35,10 @@ export interface SpectrumLayout {
   header_line: boolean;
   struct_box: boolean;
   corner: Corner;
+  struct_place: Place;
+  /** Auto placement: make the structure smaller to fit blank space, down to `auto_min_scale`. */
+  auto_shrink: boolean;
+  auto_min_scale: number;
   struct_frame: boolean;
   struct_frame_color: string;
   struct_frame_width: number;
@@ -40,6 +56,8 @@ export interface SpectrumLayout {
   caption_size: number;
   nmr_links: boolean;
   link_style: 'plain' | 'blue' | 'blue_underline';
+  /** The links' color for "blue" and "blue_underline" (Chemweave's; SI Assistant's blue is #0563c1). */
+  link_color: string;
   link_back: boolean;
   hrms_reports: boolean;
   /** A dragged box's centre, as fractions of the spectrum shown (a page's own settings only). */
@@ -55,13 +73,13 @@ export interface SpectrumLayout {
 
 export const DEFAULTS: SpectrumLayout = {
   per_page: 1, orientation: 'portrait', header_line: true, struct_box: true, corner: 'top-left',
-  struct_frame: false, struct_frame_color: '#000000', struct_frame_width: 0.5, struct_bg: '#ffffff',
+  struct_place: 'on', auto_shrink: false, auto_min_scale: 0.5, struct_frame: false, struct_frame_color: '#000000', struct_frame_width: 0.5, struct_bg: '#ffffff',
   id_size: 0, id_bold: true, struct_scale: 1, spectrum_frame: false, spectrum_frame_color: '#000000',
   spectrum_frame_width: 0.5, auto_crop: false, caption: false, caption_size: 9,
-  nmr_links: false, link_style: 'plain', link_back: false, hrms_reports: false,
+  nmr_links: false, link_style: 'plain', link_color: '#0563c1', link_back: false, hrms_reports: false,
 };
 /** Settings for the whole section, never one spectrum's (the links in the PDF, the HRMS reports). */
-const SECTION_ONLY = new Set(['nmr_links', 'link_style', 'link_back', 'hrms_reports']);
+const SECTION_ONLY = new Set(['nmr_links', 'link_style', 'link_color', 'link_back', 'hrms_reports']);
 const COLOUR = /^#[0-9a-fA-F]{6}$/;
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 /** A page's own place for its box (dragged) and for the ID and caption (Alt-dragged). */
@@ -78,6 +96,8 @@ function cleanValue(key: string, value: unknown): unknown {
   if (key === 'per_page') return PER_PAGE.includes(Math.trunc(num) as 1) && Number.isInteger(num) ? num : undefined;
   if (key === 'orientation') return value === 'portrait' || value === 'landscape' ? value : undefined;
   if (key === 'corner') return CORNERS.includes(value as Corner) ? value : undefined;
+  if (key === 'struct_place') return PLACES.includes(value as Place) ? value : undefined;
+  if (key === 'auto_min_scale') return Number.isFinite(num) && typeof value !== 'boolean' ? clamp(num, 0.25, 4) : undefined;
   if (key === 'link_style') return value === 'plain' || value === 'blue' || value === 'blue_underline' ? value : undefined;
   if (typeof def === 'boolean') return typeof value === 'boolean' ? value : undefined;
   if (key.endsWith('_color') || key === 'struct_bg') return typeof value === 'string' && COLOUR.test(value) ? value.toLowerCase() : undefined;
@@ -109,6 +129,22 @@ export function sectionDefaults(section: SiSection | null, settings: Json = {}):
   const out = { ...DEFAULTS };
   if (!section) Object.assign(out, clean({ ...(settings.spectra_per_page !== undefined ? { per_page: settings.spectra_per_page } : {}), ...(settings.structure_corner !== undefined ? { corner: settings.structure_corner } : {}) }));
   else Object.assign(out, clean((section.data as Json).defaults));
+  return out;
+}
+
+/**
+ * The Spectra section's "defaults" as SI Assistant writes them: every setting, in its order, the
+ * decimals written as decimals (1.0), so a project saved by either program reads the same.
+ */
+export function defaultsJson(values: Partial<SpectrumLayout>): Json {
+  const all = { ...DEFAULTS, ...clean(values) } as unknown as Json;
+  const out: Json = {};
+  for (const k of Object.keys(DEFAULTS)) {
+    // (Chemweave's own setting, written only when it isn't the default, so the file is SI Assistant's otherwise)
+    if (k === 'link_color' && all[k] === DEFAULTS.link_color) continue;
+    out[k] = all[k];
+  }
+  for (const k of FLOAT_KEYS) if (k in out) markFloat(out, k);
   return out;
 }
 
@@ -279,6 +315,133 @@ export function structureBoxAt(eff: SpectrumLayout, spec: { x: number; y: number
     x: eff.corner.endsWith('right') ? spec.x + spec.w - CORNER_INSET - box.w : spec.x + CORNER_INSET,
     y: eff.corner.startsWith('bottom') ? spec.y + spec.h - CORNER_INSET - box.h : spec.y + CORNER_INSET,
   };
+}
+
+/** Between the header line, the structure box and the spectrum when the box is above or beside it (0.3 em of 11 pt). */
+export const PLACE_GAP = 0.3 * 11;
+
+/**
+ * Where a spectrum's structure box prints: "on" the spectrum (its corner, or where it was dragged
+ * or auto put it), or "above" or "beside" it. A dragged box is always on the spectrum.
+ */
+export function boxSpot(eff: SpectrumLayout): 'on' | 'above' | 'beside' {
+  if (!eff.struct_box || (eff.x !== undefined && eff.y !== undefined)) return 'on';
+  return eff.struct_place === 'above' || eff.struct_place === 'beside' ? eff.struct_place : 'on';
+}
+
+/** The room a spectrum has in its slot once a box above or beside it has its own (points). */
+export function roomBeside(room: { w: number; h: number }, spot: 'on' | 'above' | 'beside', box: { w: number; h: number }): { w: number; h: number } {
+  if (spot === 'above') return { w: room.w, h: Math.max(10, room.h - box.h - PLACE_GAP) };
+  if (spot === 'beside') return { w: Math.max(10, room.w - box.w - PLACE_GAP), h: room.h };
+  return room;
+}
+
+// ---------------------------------------------------------------- auto placement (SI Assistant's issue #1)
+// "auto" puts the box over the spectrum where it covers only blank paper. The page is looked at
+// small (INK_CELLS on its long side) and every cell with anything darker than near-white is ink;
+// the box (with a little clearance) must cover no ink cell. The place nearest the chosen corner
+// wins; with auto_shrink the structure is made smaller step by step (down to auto_min_scale)
+// until it fits. If nothing fits, the box goes above the spectrum instead (never over it).
+
+/** Which parts of a picture hold something: `rows` × `cols` cells, 1 where a cell has ink. */
+export interface InkMap { rows: number; cols: number; ink: Uint8Array }
+export const INK_CELLS = 240;
+/** Grey (0 black, 255 white) at or above this is blank paper. */
+export const INK_WHITE = 235;
+/** Blank space kept round the box (points). */
+const AUTO_CLEARANCE = 0.06 * IN;
+/** Each try makes the structure this much smaller. */
+const AUTO_SHRINK_STEP = 0.9;
+
+/** The ink map of a picture (`rgba`: 4 bytes a pixel; see-through pixels show the white page). A cell is ink if any pixel in it is darker than INK_WHITE, so thin lines are never lost. */
+export function inkMapOf(rgba: Uint8ClampedArray | Uint8Array, w: number, h: number, white = INK_WHITE, cells = INK_CELLS): InkMap {
+  if (!w || !h) return { rows: 0, cols: 0, ink: new Uint8Array(0) };
+  const k = Math.max(1, Math.ceil(Math.max(w, h) / cells));
+  const rows = Math.ceil(h / k), cols = Math.ceil(w / k);
+  const ink = new Uint8Array(rows * cols);
+  for (let y = 0; y < h; y++) {
+    const r = Math.floor(y / k);
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const a = rgba[i + 3] / 255;
+      const g = (0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2]) * a + 255 * (1 - a);
+      if (g < white) ink[r * cols + Math.floor(x / k)] = 1;
+    }
+  }
+  return { rows, cols, ink };
+}
+
+/** The part of a page's ink map that is shown (auto-crop). */
+export function cropInk(m: InkMap, crop: Crop | null): InkMap {
+  if (!crop) return m;
+  const [l, t, r, b] = crop;
+  const r0 = Math.floor(t * m.rows), r1 = Math.max(r0 + 1, Math.round(b * m.rows));
+  const c0 = Math.floor(l * m.cols), c1 = Math.max(c0 + 1, Math.round(r * m.cols));
+  const rows = Math.min(m.rows, r1) - r0, cols = Math.min(m.cols, c1) - c0;
+  if (rows <= 0 || cols <= 0) return { rows: 0, cols: 0, ink: new Uint8Array(0) };
+  const ink = new Uint8Array(rows * cols);
+  for (let y = 0; y < rows; y++) ink.set(m.ink.subarray((r0 + y) * m.cols + c0, (r0 + y) * m.cols + c0 + cols), y * cols);
+  return { rows, cols, ink };
+}
+
+/**
+ * Where a box (`box`: width and height as fractions of the map) covers no ink, with `clearance`
+ * of blank space round it, as the fractions of its centre: the place nearest to where `corner`
+ * would put it (`inset` in from the corner). Null if there is no such place.
+ */
+export function blankSpot(m: InkMap, box: [number, number], corner: Corner, clearance: [number, number] = [0, 0], inset: [number, number] = [0, 0]): [number, number] | null {
+  const { rows, cols } = m;
+  if (!rows || !cols) return null;
+  const needW = box[0] + 2 * clearance[0], needH = box[1] + 2 * clearance[1];
+  const bw = Math.ceil(needW * cols), bh = Math.ceil(needH * rows);
+  if (bw < 1 || bh < 1 || bw > cols || bh > rows) return null;
+  // ink counted over every box at once (sums of the cells above and left of each)
+  const W = cols + 1;
+  const total = new Int32Array((rows + 1) * W);
+  for (let y = 0; y < rows; y++) {
+    let line = 0;
+    for (let x = 0; x < cols; x++) { line += m.ink[y * cols + x]; total[(y + 1) * W + x + 1] = total[y * W + x + 1] + line; }
+  }
+  const tx = corner.endsWith('right') ? 1 - inset[0] - needW / 2 : inset[0] + needW / 2;
+  const ty = corner.startsWith('bottom') ? 1 - inset[1] - needH / 2 : inset[1] + needH / 2;
+  let best: [number, number] | null = null, bestD = Infinity;
+  for (let y = 0; y + bh <= rows; y++) {
+    for (let x = 0; x + bw <= cols; x++) {
+      const inked = total[(y + bh) * W + x + bw] - total[y * W + x + bw] - total[(y + bh) * W + x] + total[y * W + x];
+      if (inked) continue;
+      const cx = (x + bw / 2) / cols, cy = (y + bh / 2) / rows;
+      const d = (cx - tx) ** 2 + (cy - ty) ** 2;
+      if (d < bestD) { bestD = d; best = [cx, cy]; }
+    }
+  }
+  return best ? [Math.round(best[0] * 10000) / 10000, Math.round(best[1] * 10000) / 10000] : null;
+}
+
+/**
+ * Where the structure box covers only blank paper on a shown spectrum: its centre as fractions of
+ * the shown spectrum (as a dragged box's) and the structure size it fits at. `ink`: the shown
+ * part's ink map; `shown`: its printed size; `boxAt(scale)`: the box's printed size with the
+ * structure at that size. With `shrink`, smaller sizes are tried down to `minScale`. Null if it
+ * fits nowhere.
+ */
+export function autoPlace(ink: InkMap | null, shown: { w: number; h: number }, boxAt: (scale: number) => { w: number; h: number }, scale: number, corner: Corner, shrink = false, minScale = 0.5): { x: number; y: number; scale: number } | null {
+  if (!ink || !(shown.w > 0) || !(shown.h > 0)) return null;
+  const clearance: [number, number] = [AUTO_CLEARANCE / shown.w, AUTO_CLEARANCE / shown.h];
+  const inset: [number, number] = [Math.max(0, CORNER_INSET - AUTO_CLEARANCE) / shown.w, Math.max(0, CORNER_INSET - AUTO_CLEARANCE) / shown.h];
+  const sizes = [scale];
+  if (shrink) {
+    const floor = Math.min(scale, Math.max(SCALE_RANGE[0], minScale));
+    let s = scale;
+    while (s * AUTO_SHRINK_STEP > floor + 1e-9) { s *= AUTO_SHRINK_STEP; sizes.push(Math.round(s * 1000) / 1000); }
+    if (sizes[sizes.length - 1] > floor) sizes.push(Math.round(floor * 1000) / 1000);
+  }
+  for (const size of sizes) {
+    const b = boxAt(size);
+    if (!(b.w > 0) || !(b.h > 0)) return null;
+    const spot = blankSpot(ink, [b.w / shown.w, b.h / shown.h], corner, clearance, inset);
+    if (spot) return { x: spot[0], y: spot[1], scale: size };
+  }
+  return null;
 }
 
 /** The ID's size in points (0 in the settings: the text's, 11 pt). */

@@ -263,6 +263,17 @@ export function linkAtPoint(lay: TextLayout, runs: TextRun[], x: number, y: numb
   return null;
 }
 
+/** The link of shown text that is not in the text under a point (a contents line), or null. */
+export function shownLinkAt(lay: TextLayout, x: number, y: number): string | null {
+  for (const l of lay.lines) {
+    if (y < l.y - l.ascent || y > l.y + l.descent) continue;
+    // (a contents line: its heading's text, the dots and the page number all go there)
+    const linked = l.pieces.filter((g) => g.link);
+    if (linked.length && x >= Math.min(...linked.map((g) => g.x)) && x <= Math.max(...linked.map((g) => g.x + g.w))) return linked[0].link!;
+  }
+  return null;
+}
+
 /** Where a HYPERLINK formula links to, when its address is written in it (=HYPERLINK("https://…", "shown")). */
 export function linkOfFormula(input: string | undefined): string | null {
   const m = input ? /^=\s*HYPERLINK\s*\(\s*"((?:[^"]|"")*)"/i.exec(input) : null;

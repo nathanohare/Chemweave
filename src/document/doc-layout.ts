@@ -560,7 +560,7 @@ export class DocLayouter {
     const isBib = (r: { obj?: number }) => r.obj !== undefined && ['bib', 'toc', 'tof', 'index', 'toa'].includes(t.objects[r.obj]?.kind);
     const blockLines = (id: number, st: NamedStyle, ps: ParaStyle, wrap: number): LaidLine[] | null => {
       const o = t.objects[id];
-      if (o?.kind === 'toc') return tocLines(tocs.get(o.levels) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, undefined, true, (n) => tocLevelStyle(t, o, n));
+      if (o?.kind === 'toc') return tocLines(tocs.get(o.levels) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, undefined, true, (n) => tocLevelStyle(t, o, n), !o.noLinks);
       if (o?.kind === 'tof') return tocLines(tofs.get(o.name) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, emptyTof(o.name), false);
       if (o?.kind === 'index') return listLines(listOf(o), st, ps.line, wrap, this.deps.measure, EMPTY_INDEX, !!o.right);
       if (o?.kind === 'toa') return listLines(listOf(o), st, ps.line, wrap, this.deps.measure, emptyToa(o.cat), true);

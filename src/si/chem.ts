@@ -502,7 +502,17 @@ function logMostLikely(fr: number[], n: number): number {
 // ---------------------------------------------------------------- a structure's facts (RDKit)
 
 /** One piece of a structure (a cation, an anion…), the largest first. */
-export interface Piece { smiles: string; info: MolInfo; counterIon: boolean }
+export interface Piece {
+  smiles: string;
+  info: MolInfo;
+  counterIon: boolean;
+  /** How many copies are drawn (2 for the dibromide of a dication); missing: 1. */
+  copies?: number;
+  /** Where its first copy comes among the drawn pieces (0 first), for writing them in the order drawn. */
+  drawn?: number;
+  /** The usual name of a common counter-ion in an ion label ("Br", "BF4", "OTf", "Na"); missing: written as its formula. */
+  name?: string;
+}
 
 export interface MolFacts {
   /** Null for a structure with a generic atom (R, X, *): no formula or masses. */
@@ -553,8 +563,38 @@ export const COUNTER_ION_SMILES = [
   'c1ccc(cc1)[P+](c1ccccc1)(c1ccccc1)[N-][P+](c1ccccc1)(c1ccccc1)c1ccccc1',
 ];
 
+/**
+ * How a counter-ion is written in an ion label such as [M−Br]⁺ or [M−OTf]⁺ (SI Assistant SPEC
+ * §13f.3, the same list and names as its chem._COUNTER_ION_NAMES). Any other piece is written as its
+ * formula.
+ */
+export const COUNTER_ION_NAMES: Record<string, string> = {
+  '[F-]': 'F', '[Cl-]': 'Cl', '[Br-]': 'Br', '[I-]': 'I',
+  'F[B-](F)(F)F': 'BF4', 'F[P-](F)(F)(F)(F)F': 'PF6', 'F[Sb-](F)(F)(F)(F)F': 'SbF6',
+  'F[As-](F)(F)(F)(F)F': 'AsF6', '[O-]Cl(=O)(=O)=O': 'ClO4', '[O-][N+](=O)[O-]': 'NO3',
+  '[O-]S(=O)(=O)C(F)(F)F': 'OTf', 'O=S(=O)([N-]S(=O)(=O)C(F)(F)F)C(F)(F)F': 'NTf2',
+  'CS(=O)(=O)[O-]': 'OMs', 'Cc1ccc(S(=O)(=O)[O-])cc1': 'OTs',
+  '[O-]C(=O)C(F)(F)F': 'CF3CO2',
+  'FC(F)(F)c1cc(cc(c1)C(F)(F)F)[B-](c1cc(cc(c1)C(F)(F)F)C(F)(F)F)(c1cc(cc(c1)C(F)(F)F)C(F)(F)F)c1cc(cc(c1)C(F)(F)F)C(F)(F)F': 'BArF',
+  'c1ccc([B-](c2ccccc2)(c2ccccc2)c2ccccc2)cc1': 'BPh4',
+  '[Li+]': 'Li', '[Na+]': 'Na', '[K+]': 'K', '[Rb+]': 'Rb', '[Cs+]': 'Cs', '[NH4+]': 'NH4',
+};
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const PLAIN = JSON.stringify({ isomericSmiles: false });
+const nameKeys = new WeakMap<object, Map<string, string>>();
+function counterIonNames(RDKit: any): Map<string, string> {
+  let names = nameKeys.get(RDKit);
+  if (names) return names;
+  names = new Map();
+  for (const [smi, name] of Object.entries(COUNTER_ION_NAMES)) {
+    const m = RDKit.get_mol(smi);
+    if (m?.is_valid()) names.set(m.get_smiles(PLAIN), name);
+    m?.delete?.();
+  }
+  nameKeys.set(RDKit, names);
+  return names;
+}
 const counterKeys = new WeakMap<object, Set<string>>();
 function counterIonKeys(RDKit: any): Set<string> {
   let keys = counterKeys.get(RDKit);
@@ -741,20 +781,24 @@ export function molFacts(RDKit: any, molblock: string): MolFacts | null {
     if (deep) {
       graphPieces(atoms, bonds).forEach((part, k) => {
         const sub = part.map((i) => atoms[i]);
-        seen.set(`#${k}`, { heavy: sub.filter((a) => a.z > 1).length, piece: { smiles: '', info: infoFromCounts(countsOf(sub), sub.reduce((t, a) => t + a.chg, 0)), counterIon: false } });
+        seen.set(`#${k}`, { heavy: sub.filter((a) => a.z > 1).length, piece: { smiles: '', info: infoFromCounts(countsOf(sub), sub.reduce((t, a) => t + a.chg, 0)), counterIon: false, copies: 1, drawn: k } });
       });
     } else {
       const keys = counterIonKeys(RDKit);
+      const names = counterIonNames(RDKit);
       const frags = mol.get_frags();
       try {
         for (let k = 0; k < frags.molList.size(); k++) {
           const f = frags.molList.at(k);
           try {
             const smi = f.get_smiles();
-            if (seen.has(smi)) continue;
+            const had = seen.get(smi);
+            if (had) { had.piece.copies = (had.piece.copies ?? 1) + 1; continue; }
             const fj = readJson(f.get_json());
             const fmw = JSON.parse(f.get_descriptors()).amw as number;
-            seen.set(smi, { heavy: fj.atoms.filter((a) => a.z > 1).length, piece: { smiles: smi, info: infoOf(fj.atoms, fmw, smi), counterIon: keys.has(f.get_smiles(PLAIN)) } });
+            const plain = f.get_smiles(PLAIN);
+            const name = names.get(plain);
+            seen.set(smi, { heavy: fj.atoms.filter((a) => a.z > 1).length, piece: { smiles: smi, info: infoOf(fj.atoms, fmw, smi), counterIon: keys.has(plain), copies: 1, drawn: seen.size, ...(name ? { name } : {}) } });
           } finally {
             f.delete();
           }

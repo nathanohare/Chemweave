@@ -17,6 +17,7 @@ import { askChoice } from './ask';
 import { addInfo } from './info-tip';
 import { DEFAULT_TOLERANCES, SOLVENT_NAMES, defaultImpurityTable, impurityRowFrom, impurityTolerances, projectImpurityTable, storeImpurityTable, storeImpurityTolerances, type ImpurityRow } from '../si/nmr';
 import { DICTIONARY_FILE } from '../si/dictionary';
+import { SALT_LABEL_KEY, saltLabelStyle } from '../si/checks';
 
 export interface SiSettingsHost {
   /** Change the project's settings and save them (says so when it can't). */
@@ -35,7 +36,7 @@ const LABEL_STYLES: Record<string, string> = { '1': '1, 2, 3', I: 'I, II, III', 
 /** The window, for a project. */
 export function siSettingsWindow(p: SiProject, host: SiSettingsHost, page?: string): void {
   const pages: SettingsPage[] = [
-    { id: 'output', title: 'Output', words: 'journal style acs wiley rsc hrms tolerance ppm 31p 11b phosphorus boron nmr reports', open: () => output(p, host) },
+    { id: 'output', title: 'Output', words: 'journal style acs wiley rsc hrms tolerance ppm salt ion counter-ion adduct 31p 11b phosphorus boron nmr reports', open: () => output(p, host) },
     { id: 'headings', title: 'Headings', words: 'heading numbers outline decimal 1.1 roman letters numbering', open: () => headings(p, host) },
     { id: 'page', title: 'Page', words: 'header footer page numbers prefix roman cover title authors date', open: () => pageSetup(p, host) },
     { id: 'labels', title: 'Labels', words: 'figure table scheme label word prefix numbering fig.', open: () => labels(p, host) },
@@ -52,6 +53,7 @@ async function output(p: SiProject, host: SiSettingsHost): Promise<void> {
   const got = await ask('Output', [
     { name: 'style', label: 'Journal style', value: str(s.journal_style) || 'ACS', options: ['ACS', 'Wiley', 'RSC'].map((x) => ({ value: x, label: x })), help: 'Its paper size, heading numbers, page number place and figure word, unless set otherwise on the other pages.' },
     { name: 'ppm', label: 'HRMS tolerance', value: String(s.hrms_tolerance_ppm ?? 5), unit: 'ppm', type: 'number', min: 0.01, max: 1000, help: 'How far a found mass may be from the calculated one before it is flagged.' },
+    { name: 'salt', label: 'HRMS ion for salts', value: saltLabelStyle(s), options: [{ value: 'piece', label: '[M]⁺: M is the charged piece' }, { value: 'whole', label: '[M−Br]⁺: M is the whole salt' }], help: 'How the HRMS ion of a salt is printed when its charged piece is M and the adduct is [M]⁺ or [M]⁻: as [M]⁺, or for M = the whole salt with its counter-ions taken off, as [M−Br]⁺, [M−OTf]⁺, [M−2Br]²⁺ or [M−Na]⁻. The calculated m/z is the same either way. A compound’s Printed as box wins.' },
     { name: 'h1', label: 'NMR reports added for you', value: '', type: 'heading', help: '¹⁹F NMR reports are always added for compounds containing F.' },
     { name: 'p31', label: 'A ³¹P NMR report when the structure contains P', value: String(!!s.auto_nmr_31P), type: 'checkbox' },
     { name: 'b11', label: 'An ¹¹B NMR report when the structure contains B', value: String(!!s.auto_nmr_11B), type: 'checkbox' },
@@ -61,6 +63,8 @@ async function output(p: SiProject, host: SiSettingsHost): Promise<void> {
     s.journal_style = got.style;
     const ppm = Number(got.ppm);
     if (Number.isFinite(ppm) && ppm > 0 && ppm !== Number(s.hrms_tolerance_ppm ?? 5)) s.hrms_tolerance_ppm = ppm;
+    // (written either way: Chemweave's default is [M−Br]⁺, SI Assistant's [M]⁺)
+    s[SALT_LABEL_KEY] = got.salt === 'piece' ? 'piece' : 'whole';
     s.auto_nmr_31P = got.p31 === 'true';
     s.auto_nmr_11B = got.b11 === 'true';
   });

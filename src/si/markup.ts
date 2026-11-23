@@ -22,6 +22,8 @@ export interface Run {
   valign?: VAlign;
   /** A link instead of text: "c:<id>" (mention), "cite:<id>,<id>" (citations) or "struct:<id>". */
   ref?: string;
+  /** Compiling only: where the text links to in the compiled SI ("#si_…", a bookmark), as a document's links (links.ts). Never stored. */
+  link?: string;
 }
 
 export interface Paragraph {

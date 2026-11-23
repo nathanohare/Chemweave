@@ -9,9 +9,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { Workbook } from '../src/sheet/workbook';
-import { chartFromRange, chartData, retitle, titleMarkup, titleRunsOf, type Chart } from '../src/sheet/chart';
+import { chartFromRange, chartData, retitle, titleIs, titleMarkup, titleRunsOf, titleWithLook, type Chart } from '../src/sheet/chart';
 import { readChartXml, chartXml } from '../src/io/xlsx-chart';
-import { drawChart } from '../src/render/chart-draw';
+import { drawChart, markupRuns, titleLines } from '../src/render/chart-draw';
 
 const C = 'http://schemas.openxmlformats.org/drawingml/2006/chart', A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const parse = (s: string) => new DOMParser().parseFromString(s, 'application/xml');
@@ -127,5 +127,48 @@ describe('the Titles window keeps a title\'s looks only while its words are the 
     expect(retitle(edited, 'kobs')).toEqual({ title: 'kobs', titleRuns: undefined });
     // emptied: no title
     expect(retitle({ title: 'Decay' }, '  ')).toEqual({ title: undefined, titleRuns: undefined });
+  });
+});
+
+/** A canvas stand-in that keeps what is written where, and the lines stroked. */
+function recorder() {
+  const texts: { s: string; x: number; y: number; font: string }[] = [];
+  const lines: number[][] = [];
+  let at: number[] = [];
+  const ctx = new Proxy({} as Record<string, unknown>, {
+    get: (o, k) => (k === 'measureText' ? (s: string) => ({ width: s.length * 5 })
+      : k === 'fillText' ? (s: string, x: number, y: number) => { texts.push({ s, x, y, font: String(o.font) }); }
+      : k === 'moveTo' ? (x: number, y: number) => { at = [x, y]; }
+      : k === 'lineTo' ? (x: number, y: number) => { lines.push([...at, x, y]); at = [x, y]; }
+      : k in o ? o[k as string] : () => undefined),
+    set: (o, k, v) => { o[k as string] = v; return true; },
+  });
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, texts, lines };
+}
+
+describe('chart titles made here (F3 Needs Nate 4, F8b)', () => {
+  it('Bold and Italic in the Chart Titles window apply to the whole title, and come off again', () => {
+    const bold = titleWithLook({ title: 'k_{obs}' }, { bold: true, italic: false }, markupRuns);
+    expect(bold).toEqual({ title: 'k_{obs}', titleRuns: [{ text: 'k', bold: true }, { text: 'obs', sub: true, bold: true }] });
+    expect(titleIs(bold, 'bold')).toBe(true);
+    expect(titleIs(bold, 'italic')).toBe(false);
+    expect(titleWithLook(bold, { bold: false, italic: false }, markupRuns)).toEqual({ title: 'k_{obs}', titleRuns: undefined });
+    // left as it was: unchanged, a file's mixed looks kept
+    const mixed = { title: 'k 3a', titleRuns: [{ text: 'k', italic: true }, { text: ' 3a', bold: true }] };
+    expect(titleWithLook(mixed, { bold: false, italic: false }, markupRuns)).toBe(mixed);
+  });
+
+  it('draws an underlined title with a line under it, and a second paragraph on a line of its own', () => {
+    const { wb, c } = chart();
+    const title = { title: 'Decay (25 °C)', titleRuns: [{ text: 'Decay', underline: true }, { text: '\n' }, { text: '(25 °C)' }] };
+    expect(titleMarkup(title.titleRuns)).toBe(title.title);
+    expect(titleLines(title.titleRuns)).toHaveLength(2);
+    const r = recorder();
+    drawChart(r.ctx, { ...c, ...title }, chartData(wb, wb.sheet, c), 400, 300);
+    const first = r.texts.find((t) => t.s === 'Decay')!, second = r.texts.find((t) => t.s === '(25 °C)')!;
+    expect(second.y).toBeGreaterThan(first.y + 10);
+    expect(Math.abs(second.x + 7 * 5 / 2 - 200)).toBeLessThan(1);
+    // the underline: a level line under "Decay", as wide as it
+    expect(r.lines.some(([x1, y1, x2, y2]) => y1 === y2 && y1 > first.y && Math.abs(x1 - first.x) < 1e-6 && Math.abs(x2 - x1 - 25) < 1e-6)).toBe(true);
   });
 });

@@ -15,7 +15,7 @@ import { kid, kids, xml } from './ooxml';
 import type { Sheet } from '../sheet/workbook';
 import type { CellNote } from '../sheet/notes';
 import { noteText } from '../sheet/notes';
-import type { CommentNote } from '../document/comments';
+import { cleanNoteRuns, noteRuns, sliceNoteRuns, type CommentNote, type NoteRun } from '../document/comments';
 import { cellName, colOf, parseRange, rangeName, rowOf, Range, keyOf } from '../sheet/refs';
 import { Validation, ValidationKind, ValidationOp, AlertStyle, limitNumber, limitText, newValidation } from '../sheet/validation';
 
@@ -112,8 +112,14 @@ export function notesParts(s: Sheet, sheetNo: number, persons: Persons): { comme
     } else {
       // the author's name in bold first, as Excel starts a note, unless the note didn't have it
       // (a note from a file, unchanged: its text as the file had it, with its formatting)
-      const kept = n.xl && n.xl.text === n.text && n.xl.author === n.author ? n.xl.xml : null;
-      const head = kept !== null ? kept : n.author && !n.noAuthorLine ? `<r>${bold}${tText(n.author + ':')}</r><r>${plain}${tText('\n' + noteText(n))}</r>` : `<r>${plain}${tText(noteText(n))}</r>`;
+      const kept = n.xl && n.xl.text === n.text && n.xl.author === n.author && JSON.stringify(n.xl.runs ?? null) === JSON.stringify(noteRuns(n)) ? n.xl.xml : null;
+      // its words with their looks (bold, italic, underline, strikethrough, sub- and superscript), as Excel's rich note text
+      const words = (lead: string) => {
+        const runs = noteRuns(n);
+        if (!runs) return `<r>${plain}${tText(lead + noteText(n))}</r>`;
+        return runs.map((x, i) => `<r>${noteRPr(x)}${tText((i === 0 ? lead : '') + x.text)}</r>`).join('');
+      };
+      const head = kept !== null ? kept : n.author && !n.noAuthorLine ? `<r>${bold}${tText(n.author + ':')}</r>${words('\n')}` : words('');
       comments.push(`<comment ref="${ref}" authorId="${authorNo(n.author)}"><text>${head}</text></comment>`);
     }
     // the box, beside the cell, a little up (as Excel places a new note)
@@ -137,6 +143,27 @@ export function notesParts(s: Sheet, sheetNo: number, persons: Persons): { comme
 }
 
 // ---------------------------------------------------------------- reading notes and comments
+
+/**
+ * A run's properties in a note as Excel writes them (CT_RPrElt, ECMA-376 Part 1, 18.4.7: b, i,
+ * strike, u, vertAlign, then the note's own 9 pt Tahoma).
+ */
+export function noteRPr(r: NoteRun): string {
+  return `<rPr>${r.bold ? '<b/>' : ''}${r.italic ? '<i/>' : ''}${r.strike ? '<strike/>' : ''}${r.underline ? '<u/>' : ''}${r.sub ? '<vertAlign val="subscript"/>' : r.sup ? '<vertAlign val="superscript"/>' : ''}<sz val="9"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr>`;
+}
+
+/** A note's text element's runs with their looks (CT_RPrElt: b, i, u, strike, vertAlign; a val of 0 or false turns one off). */
+export function noteTextRuns(el: Element | null): NoteRun[] {
+  if (!el) return [];
+  const t = kid(el, 't');
+  if (t) return [{ text: (t.textContent ?? '').replace(/\r\n?/g, '\n') }];
+  return kids(el, 'r').map((r) => {
+    const pr = kid(r, 'rPr');
+    const on = (name: string) => { const e = pr && kid(pr, name); if (!e) return false; const v = e.getAttribute('val'); return name === 'u' ? v !== 'none' : v !== '0' && v !== 'false'; };
+    const va = pr && kid(pr, 'vertAlign')?.getAttribute('val');
+    return { text: (kid(r, 't')?.textContent ?? '').replace(/\r\n?/g, '\n'), ...(on('b') ? { bold: true } : {}), ...(on('i') ? { italic: true } : {}), ...(on('u') ? { underline: true } : {}), ...(on('strike') ? { strike: true } : {}), ...(va === 'subscript' ? { sub: true } : va === 'superscript' ? { sup: true } : {}) };
+  });
+}
 
 /** A comment's text (all its runs). */
 function richText(el: Element | null): string {
@@ -198,14 +225,18 @@ export function readNotes(comments: Document | null, shown: Set<number>, threade
       // a threaded comment's plain copy: the comment itself is read above
       if (out.has(key) || author.startsWith('tc=')) continue;
       let text = richText(kid(c, 'text')).replace(/\r\n?/g, '\n');
+      const all = noteTextRuns(kid(c, 'text'));
+      let from = 0;
       // Excel starts a note with its author's name in bold: that is the note's author, not its text
       const authorLine = !!author && text.startsWith(author + ':');
-      if (authorLine) text = text.slice(author.length + 1).replace(/^\n/, '');
+      if (authorLine) { from = author.length + 1 + (text[author.length + 1] === '\n' ? 1 : 0); text = text.slice(from); }
+      // its words' looks (bold, italic, subscripts…), while the runs spell the text
+      const runs = all.map((x) => x.text).join('').slice(from) === text ? cleanNoteRuns(sliceNoteRuns(all, from, from + text.length)) : null;
       // its text element as it is, to write back while the note is unchanged (it keeps the runs' looks)
       const el = kid(c, 'text');
       // (without the namespace each piece is given on its own: the comments part has it already)
-      const xl = el ? { xml: Array.from(el.childNodes).map((n) => new XMLSerializer().serializeToString(n).replace(/<[^>]+>/g, (tag) => tag.split(` xmlns="${MAIN}"`).join(''))).join(''), text, author } : undefined;
-      out.set(key, { kind: 'note', author, date: '', text, ...(shown.has(key) ? { shown: true } : {}), ...(author && !authorLine ? { noAuthorLine: true as const } : {}), ...(xl ? { xl } : {}) });
+      const xl = el ? { xml: Array.from(el.childNodes).map((n) => new XMLSerializer().serializeToString(n).replace(/<[^>]+>/g, (tag) => tag.split(` xmlns="${MAIN}"`).join(''))).join(''), text, author, runs } : undefined;
+      out.set(key, { kind: 'note', author, date: '', text, ...(runs ? { runs } : {}), ...(shown.has(key) ? { shown: true } : {}), ...(author && !authorLine ? { noAuthorLine: true as const } : {}), ...(xl ? { xl } : {}) });
     }
   }
   return out;

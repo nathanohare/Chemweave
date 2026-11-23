@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 // @ts-expect-error a plain JavaScript script
 import { manifest, installers, portableZip, newestTag } from '../scripts/release.mjs';
 import { unzipSync, strFromU8 } from 'fflate';
+import { readFileSync, readdirSync } from 'node:fs';
 
 describe('releases', () => {
   it('names every platform the updater asks for, with its signed installer', () => {
@@ -48,4 +49,15 @@ describe('releases', () => {
     expect(newestTag(['v0.2.0', 'v0.1.150', 'v1.0.0-beta', 'nightly'])).toBe('v0.2.0');
     expect(newestTag([])).toBe(null);
   });
+
+  // F8b item 11: the full undo sweep runs by hand before each release, and never in CI
+  it('the release steps run the full undo sweep first, by hand and not in a workflow', () => {
+    const dev = readFileSync(new URL('../docs/developers.md', import.meta.url), 'utf8');
+    const rel = dev.slice(dev.indexOf('## How releases are made'), dev.indexOf('## Rules for changes'));
+    expect(rel).toMatch(/\*\*Before each release\*\*[^\n]*`npm run build`, then `npm run undo-audit`/);
+    const flows = readdirSync(new URL('../.github/workflows/', import.meta.url)).map((f) => readFileSync(new URL(`../.github/workflows/${f}`, import.meta.url), 'utf8'));
+    // (CI keeps only the quick sweep)
+    for (const w of flows) for (const line of w.split('\n').filter((l) => l.includes('undo-audit'))) expect(line).toMatch(/undo-audit -- ci\b/);
+  });
 });
+

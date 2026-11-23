@@ -72,3 +72,11 @@ describe('navigator', () => {
     expect(seenRect({ ox: -100, oy: 50, scale: 2 }, 400, 300)).toEqual({ x1: 50, y1: -25, x2: 250, y2: 125 });
   });
 });
+
+describe('scroll between slides (Nate, 2026-11-23)', () => {
+  it('is off unless chosen, as for settings saved before it existed', () => {
+    expect(DEFAULT_ORIENT.slideScroll).toBe(false);
+    expect(parseOrient({ navigator: true }).slideScroll).toBe(false);
+    expect(parseOrient({ slideScroll: true }).slideScroll).toBe(true);
+  });
+});

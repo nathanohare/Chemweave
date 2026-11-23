@@ -297,7 +297,12 @@ export interface PageLook {
   outsideShade: Shade;
   /** A faint outline of the pages beyond the grid, where drawing will add pages. */
   ghost: boolean;
-  /** A fixed edge: a bold line with hatching on the outside ('hatch') or a bold line only. */
+  /**
+   * Show the fixed edges (off by default, Nate 2026-11-23: the page boundaries show where the
+   * pages are, and the band of room past a fixed edge stays either way).
+   */
+  edges: boolean;
+  /** A fixed edge, when shown: a bold line with hatching on the outside ('hatch') or a bold line only. */
   wallStyle: 'hatch' | 'line';
   /** The fixed edge's line width, in screen pixels at 100% zoom (it grows and shrinks with the zoom). */
   wallWidth: number;
@@ -322,7 +327,7 @@ export const DEFAULT_LINE_COLOUR = '#6b7a90';
 
 export const DEFAULT_PAGE_LOOK: PageLook = {
   grid: true, lineWidth: 1, lineStyle: 'dashed', lineColour: DEFAULT_LINE_COLOUR, lineOpacity: 0.55,
-  emptyShade: 'light', outsideShade: 'faint', ghost: true, wallStyle: 'hatch', pasteAtWall: 'ask',
+  emptyShade: 'light', outsideShade: 'faint', ghost: true, edges: false, wallStyle: 'hatch', pasteAtWall: 'ask',
   wallWidth: 2, hatchSpacing: 4, hatchLength: 5, hatchWidth: 0.75, hatchAngle: 45, hatchCorner: 'wrap',
 };
 

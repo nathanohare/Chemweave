@@ -15,6 +15,10 @@
 //     file> (gh release list --json tagName) and this one, the release to mark "latest". The
 //     updater reads releases/latest/download/latest.json, so "latest" must never go to an older
 //     build that happened to finish publishing last.
+//
+// Before each release, the full undo sweep (npm run build, then npm run undo-audit) is run by
+// hand and must report nothing: see "How releases are made" in docs/developers.md. (It takes
+// about 25 minutes, so it is not part of this workflow.)
 
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';

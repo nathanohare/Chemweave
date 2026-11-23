@@ -40,7 +40,7 @@ import { WORD_HIGHLIGHTS } from '../io/docx-base';
 import { DocFind } from './doc-find';
 import { askLink, followLink, linkTip } from './links-ui';
 import { DocSiPanel, DocSiUI, type SiAccess } from './doc-si';
-import { bookmarkName, linkAtPoint } from '../links';
+import { bookmarkName, linkAtPoint, shownLinkAt } from '../links';
 import { addBookmark, bookmarkPara, bookmarksOf, docPlaces, placeLink, placeName, removeBookmark } from '../document/bookmarks';
 import { DocComments } from './doc-comments';
 import { Ruler, docRulerPrefs, type RulerGeometry } from './ruler';
@@ -65,7 +65,11 @@ import { openMakeEditableWindow } from './make-editable-dialog';
 import type { StyleChoice } from '../recognise/editable';
 import { shownSize } from '../document/doc-layout';
 import { editChart, chartPoints } from './chart-editor';
-import { pictureFormat } from './picture-dialog';
+import { aspectCrop, pictureFormat } from './picture-dialog';
+import { loadImage } from '../render/images';
+import { PICTURE_SHAPES } from '../render/picture-fx';
+import { BRIGHTNESS_STEPS, CONTRAST_STEPS, CROP_ASPECTS, RECOLOR_PRESETS, SHARPEN_STEPS, TRANSPARENCY_STEPS, pct, withFx } from '../document/picture-presets';
+import type { PictureFx } from '../model';
 import { chemdrawCdx, embedFile, fileInside, isChemDraw, objectKind, withFile } from '../io/ole-object';
 import { showsContents, type ObjectPicture } from '../render/object-picture';
 import { newChartBox, sizedBox } from '../sheet/chart-box';
@@ -284,6 +288,17 @@ export class DocumentMode {
   private caretOn = true;
   private blink: ReturnType<typeof setInterval> | null = null;
   private clicks = { n: 0, time: 0, at: { x: 0, y: 0 } };
+  /**
+   * Above zero while a click picks something or a header is left: the caret moving then doesn't
+   * scroll the window (what was clicked is where it is on the screen; leaving a header keeps the
+   * page scrolled to), as in Word. Moving the caret with the keys or typing still brings it into view.
+   */
+  private holdView = 0;
+  /** Run `f` with the window kept where it is (see holdView). */
+  private stayPut<T>(f: () => T): T {
+    this.holdView++;
+    try { return f(); } finally { this.holdView--; }
+  }
   private dragging:
     | { kind: 'text' }
     | { kind: 'box' }
@@ -1095,6 +1110,13 @@ export class DocumentMode {
     const f = this.file;
     this.cellRange = null;
     if (!f?.box) return;
+    // leaving a header or footer: the window stays on the page scrolled to, not back at the text's caret
+    if (f.box.hf) { const b = f.box; this.stayPut(() => { if (f.box === b) this.stopBoxNow(f, pick); }); return; }
+    this.stopBoxNow(f, pick);
+  }
+
+  private stopBoxNow(f: DocFile, pick: boolean): void {
+    if (!f.box) return;
     const id = f.box.id;
     f.endBox();
     if (pick) {
@@ -1273,7 +1295,7 @@ export class DocumentMode {
 
   /** Keep the caret in view after it moves. */
   private revealCaret(): void {
-    if (!this.file || this.dragging?.kind === 'resize') return;
+    if (!this.file || this.dragging?.kind === 'resize' || this.holdView) return;
     const c = this.ed.caret();
     this.view.reveal({ x1: c.x, y1: c.y1, x2: c.x, y2: c.y2 });
   }
@@ -1419,6 +1441,108 @@ export class DocumentMode {
     if (!this.applySimilar('', patch)) this.ed.setStyle(patch);
   }
 
+  /** Home ▸ Paste ▾: Word's paste options that a document here has. */
+  private pasteMenu(x: number, y: number): void {
+    popupMenu(x, y, [
+      ['Keep Source Formatting', () => void this.paste(null)],
+      ['Keep Text Only (Ctrl+Shift+V)', () => { this.plainPaste = true; void this.paste(null); }],
+      null,
+      ['Paste as Object', () => { this.run('paste-object'); }, !!this.host.clipboardObject],
+      ['Paste SMILES', () => { this.host.command('paste-smiles'); }],
+    ]);
+  }
+
+  /** The picture selected that Picture Format works on (not a chart or an embedded object), or null with the reason said. */
+  private formatTarget(): number | null {
+    const f = this.file;
+    const id = this.pickedObject();
+    const o = id !== null && f ? f.t.objects[id] : undefined;
+    if (id === null || o?.kind !== 'picture' || o.chart || o.embed) {
+      this.host.flash(o?.kind === 'picture' && o.embed ? 'An embedded object shows its program\'s picture: change it by opening the object.' : 'Click a picture first.');
+      return null;
+    }
+    return id;
+  }
+
+  /** Change some of a picture's display settings and its crop: one step of Undo. */
+  setPictureFx(id: number, patch: Partial<PictureFx>, crop?: { crop: { l: number; t: number; r: number; b: number } | undefined; h?: number }, kind = 'Picture format'): void {
+    const f = this.file;
+    const cur = f?.t.objects[id];
+    if (!f || cur?.kind !== 'picture') return;
+    const next: DocObject = { ...cur, fx: withFx(cur.fx, patch) };
+    if (!next.fx) delete next.fx;
+    if (crop) {
+      const c = crop.crop;
+      if (c && (c.l || c.t || c.r || c.b)) next.crop = c; else delete next.crop;
+      if (crop.h !== undefined) next.h = crop.h;
+    }
+    if (JSON.stringify(next) === JSON.stringify(cur)) return;
+    if (f.box?.cell) f.box.recorded = false;
+    f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: next } } as DocText, kind);
+  }
+
+  /** Crop ▾: the largest centered part of the picture with these proportions (null: the whole picture), keeping its width. */
+  private async cropPicture(id: number, aspect: number | null): Promise<void> {
+    const f = this.file;
+    const o = f?.t.objects[id];
+    if (!f || o?.kind !== 'picture') return;
+    let img: HTMLImageElement;
+    try { img = await loadImage(o.src); } catch { this.host.flash('The picture could not be read to crop it.'); return; }
+    if (this.file !== f) return;
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    if (!(iw > 0 && ih > 0)) return;
+    const a = aspect ?? iw / ih;
+    this.setPictureFx(id, {}, { crop: aspect === null ? undefined : aspectCrop(iw, ih, a), h: Math.round((o.w / a) * 100) / 100 }, 'Crop');
+  }
+
+  /** Picture Format ▸ Corrections, Color, Transparency or Crop ▾, as Word has them. */
+  private pictureMenu(which: 'corrections' | 'color' | 'transparency' | 'crop', x: number, y: number): void {
+    const id = this.formatTarget();
+    if (id === null) return;
+    const o = this.file!.t.objects[id];
+    if (o?.kind !== 'picture') return;
+    const fx = o.fx ?? {};
+    const near = (a: number | undefined, b: number) => Math.abs((a ?? 0) - b) < 1e-3;
+    const mark = (on: boolean, label: string) => (on ? `✓ ${label}` : label);
+    const more = (label: string): [string, () => void] => [label, () => void this.formatPicture(id)];
+    type Item = [string, () => void, boolean?] | null;
+    let items: Item[];
+    if (which === 'corrections') {
+      items = [
+        ...SHARPEN_STEPS.map((v): Item => [mark(near(fx.sharpen, v), v < 0 ? `Soften: ${pct(-v).slice(1)}` : v > 0 ? `Sharpen: ${pct(v).slice(1)}` : 'Sharpen: 0%'), () => this.setPictureFx(id, { sharpen: v })]),
+        null,
+        ...BRIGHTNESS_STEPS.map((v): Item => [mark(near(fx.bright, v), `Brightness: ${pct(v)}`), () => this.setPictureFx(id, { bright: v })]),
+        null,
+        ...CONTRAST_STEPS.map((v): Item => [mark(near(fx.contrast, v), `Contrast: ${pct(v)}`), () => this.setPictureFx(id, { contrast: v })]),
+        null,
+        more('Picture Corrections Options…'),
+      ];
+    } else if (which === 'color') {
+      items = [
+        ...RECOLOR_PRESETS.map(([name, r]): Item => [mark((fx.recolor?.kind ?? '') === (r?.kind ?? ''), name), () => this.setPictureFx(id, { recolor: r })]),
+        null,
+        more('Picture Color Options…'),
+      ];
+    } else if (which === 'transparency') {
+      items = [
+        ...TRANSPARENCY_STEPS.map((v): Item => [mark(near(fx.alpha, v), `Transparency: ${pct(v).replace('+', '')}`), () => this.setPictureFx(id, { alpha: v })]),
+        null,
+        more('Picture Transparency Options…'),
+      ];
+    } else {
+      items = [
+        ['Whole Picture', () => void this.cropPicture(id, null)],
+        null,
+        ...CROP_ASPECTS.map(([name, a]): Item => [`Aspect Ratio ${name}`, () => void this.cropPicture(id, a)]),
+        null,
+        ...PICTURE_SHAPES.slice(0, 4).map((p): Item => [mark((fx.shape ?? 'rect') === p.prst, `Crop to Shape: ${p.name.replace(/\b[a-z]/g, (ch) => ch.toUpperCase())}`), () => this.setPictureFx(id, { shape: p.prst === 'rect' ? undefined : p.prst })]),
+        null,
+        more('Crop Options…'),
+      ];
+    }
+    popupMenu(x, y, items);
+  }
+
   /** The ribbon's menus that open under their buttons. */
   private ribbonMenus(b: HTMLElement): Record<string, (x: number, y: number) => void> {
     return {
@@ -1429,6 +1553,11 @@ export class DocumentMode {
       'hf-numbers': (x, y) => this.hfNumberMenu(x, y),
       'hf-info': (x, y) => this.hfInfoMenu(x, y),
       'doc-select': (x, y) => this.selectMenu(x, y),
+      'paste-menu': (x, y) => this.pasteMenu(x, y),
+      'pic-corrections': (x, y) => this.pictureMenu('corrections', x, y),
+      'pic-color': (x, y) => this.pictureMenu('color', x, y),
+      'pic-transparency': (x, y) => this.pictureMenu('transparency', x, y),
+      'pic-crop': (x, y) => this.pictureMenu('crop', x, y),
       'show-markup': (x, y) => this.showMarkupMenu(x, y),
       'arrange-position': (x, y) => this.arranging.positionMenu(x, y),
       'arrange-rotate': (x, y) => this.arranging.rotateMenu(x, y),
@@ -2105,10 +2234,15 @@ export class DocumentMode {
     const text0 = e?.clipboardData?.getData('text/plain') ?? '';
     if (!own && this.clip && text0 && text0.replace(/\r\n?/g, '\n') === this.clip.text) own = this.clip;
     if (f.box && !f.box.cell) {
-      // into a text box: text only (figures go in the page's text)
-      const r = !plain && html ? htmlToRich(html) : null;
-      if (r) f.box.ed.replaceSelection(rt.normalizeRuns(r.runs.map((x) => ({ ...x, obj: undefined }))), r.paras.length > 1 ? r.paras : undefined);
-      else if (text0) f.box.ed.pastePlain(text0);
+      // into a text box: text only (figures go in the page's text); from Paste ▾, as the clipboard has it
+      const box = f.box;
+      const read = e ? null : await this.host.readPaste(null);
+      if (f.box !== box) return;
+      const h = plain ? '' : html || read?.html || '';
+      const t = text0 || read?.text || '';
+      const r = h ? htmlToRich(h) : null;
+      if (r) box.ed.replaceSelection(rt.normalizeRuns(r.runs.map((x) => ({ ...x, obj: undefined }))), r.paras.length > 1 ? r.paras : undefined);
+      else if (t) box.ed.pastePlain(t);
       return;
     }
     if (own && !plain) { this.pasteOwn(own); return; }
@@ -2118,13 +2252,14 @@ export class DocumentMode {
     const cp = this.clipPicture, gp = got.picture;
     const gs = gp && cp && !plain && this.clip ? imageSize(gp.bytes, gp.mime) : null;
     if (gs && gs.w === cp!.w && gs.h === cp!.h) { this.pasteOwn(this.clip!); this.caretAfterPaste(); return; }
-    if (got.drawing) {
+    // (Keep Text Only: a structure or picture copied with its text pastes as the text)
+    if (got.drawing && !plain) {
       // a pasted figure leaves the caret after it (as pasted text does), so typing doesn't replace it
       this.insertObject({ kind: 'drawing', contents: got.drawing }, 'Paste structure');
       this.caretAfterPaste();
       return;
     }
-    if (got.picture && !got.text && !got.html && !html) { this.dropPicture(got.picture.bytes, got.picture.mime); this.caretAfterPaste(); return; }
+    if (got.picture && !plain && !got.text && !got.html && !html) { this.dropPicture(got.picture.bytes, got.picture.mime); this.caretAfterPaste(); return; }
     const h = plain ? '' : html || got.html || '';
     // cells (from a sheet, a slide's table, Excel or Word) become a table in the text
     const cells = plain || f.box ? null : h ? (onlyTable(h) ? pastedTable(h, null) : null) : tsvTable(text0 || got.text || '');
@@ -2188,6 +2323,7 @@ export class DocumentMode {
       b.recorded = true;
       b.ed.replace(b.ed.start, b.ed.end, runs, own.paras.length > 1 ? own.paras : undefined, 'edit');
       b.recorded = false;
+      this.cellAgain();
       return;
     }
     const ed = f.ed;
@@ -2604,7 +2740,8 @@ export class DocumentMode {
       const s = linkAtPoint(f.box.ed.layout(), f.box.ed.t.runs, p.x, p.y);
       if (s) return s.link;
     }
-    return linkAtPoint(f.layout().text, f.t.runs, p.x, p.y)?.link ?? null;
+    const lay = f.layout().text;
+    return linkAtPoint(lay, f.t.runs, p.x, p.y)?.link ?? shownLinkAt(lay, p.x, p.y);
   }
 
   /** Insert > Link (Ctrl+K): link the selection, change the link the caret is in, or type a new one. */
@@ -2683,7 +2820,8 @@ export class DocumentMode {
 
   private wirePointer(v: DocView): void {
     const s = v.scroller;
-    s.addEventListener('pointerdown', (e) => { if (e.button === 0) this.activate(v); this.pointerDown(e); });
+    // (what is clicked is on the screen already: picking it doesn't scroll the window)
+    s.addEventListener('pointerdown', (e) => { if (e.button === 0) this.activate(v); this.stayPut(() => this.pointerDown(e)); });
     s.addEventListener('pointermove', (e) => {
       // the mouse over the other pane: its own cursor (the pane being worked in stays the same)
       if (this.dragging || v === this.view) { this.pointerMove(e); return; }
@@ -2691,7 +2829,8 @@ export class DocumentMode {
       this.view = v;
       try { this.pointerMove(e); } finally { this.view = was; }
     });
-    s.addEventListener('pointerup', (e) => {
+    // (letting go puts what was dragged where the pointer is, on the screen: nothing scrolls)
+    s.addEventListener('pointerup', (e) => this.stayPut(() => {
       const d = this.dragging;
       this.dragging = null;
       try { s.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
@@ -2700,8 +2839,9 @@ export class DocumentMode {
       if (d?.kind === 'figure') { this.view.sketch = null; if (d.geo) this.placeShape(d.geo, rectOf(d.from, d.to)); else this.insertFigure(rectOf(d.from, d.to)); }
       if (d?.kind === 'inline') this.dropInline(d.id, d.to);
       if ((d?.kind === 'text' || d?.kind === 'box') && this.painter && this.file && !this.reading) this.painter(this.ed);
-    });
-    s.addEventListener('dblclick', (e) => {
+    }));
+    // (what is double-clicked is on the screen: nothing it does scrolls the window)
+    s.addEventListener('dblclick', (e) => this.stayPut(() => {
       const f = this.file;
       if (!f || this.reading) return;
       this.activate(v);
@@ -2770,7 +2910,7 @@ export class DocumentMode {
         }
       }
       word(f.ed, o);
-    });
+    }));
     s.addEventListener('contextmenu', (e) => {
       if (!this.file) return;
       this.activate(v);
@@ -3203,6 +3343,7 @@ export class DocumentMode {
       // (a header's typing goes on in the same step)
       if (!b.hf) b.recorded = false;
       if (o.kind === 'drawing' || o.kind === 'picture') bed.select(at, at + 1);
+      if (b.cell) this.cellAgain();
       return id;
     }
     const ed = f.ed;
@@ -3221,6 +3362,23 @@ export class DocumentMode {
       ed.select(at, at + 1);
     }
     return id;
+  }
+
+  /**
+   * After a change to the document made while typing in a table cell (a figure, field or
+   * cross-reference put in, a paste with figures): the cell's typing starts again from there, with
+   * the caret or selection where it was. The change is then one step of Undo, the document's,
+   * rather than a step of the cell's typing plus a step of the document's (F3 Needs Nate 8).
+   */
+  private cellAgain(): void {
+    const f = this.file;
+    const b = f?.box;
+    if (!f || !b?.cell) return;
+    const { id, cell } = b;
+    const { start, end } = b.ed;
+    f.endBox();
+    if (!this.startCell(id, cell.r, cell.c)) return;
+    f.box?.ed.select(start, end);
   }
 
   /** Split view's Insert: a drawing as a figure at the caret, with the caret after it so typing carries on. */
@@ -3862,6 +4020,10 @@ export class DocumentMode {
       case 'insert-table': void this.insertTable(); break;
       case 'insert-chart': void this.insertChart(); break;
       case 'edit-chart': { const id = this.pickedObject(); const o = id !== null ? f.t.objects[id] : undefined; if (id === null || o?.kind !== 'picture' || !o.chart) { this.host.flash('Click a chart first (or double-click it).'); break; } void this.editChart(id); break; }
+      case 'pic-remove-bg': { const id = this.formatTarget(); if (id !== null) void this.formatPicture(id); break; }
+      // (as Word's Reset Picture: the looks go, the crop and size stay; taking the crop off and
+      // leaving the height would stretch a picture cropped to proportions)
+      case 'pic-reset': { const id = this.formatTarget(); if (id !== null) this.setPictureFx(id, { bright: undefined, contrast: undefined, sharpen: undefined, recolor: undefined, alpha: undefined, clear: undefined, bg: undefined, shape: undefined }, undefined, 'Reset Picture'); break; }
       case 'picture-format': { const id = this.pickedObject(); const o = id !== null ? f.t.objects[id] : undefined; if (id === null || o?.kind !== 'picture' || o.chart || o.embed) { this.host.flash(o?.kind === 'picture' && o.embed ? 'An embedded object shows its program\'s picture: change it by opening the object.' : 'Click a picture first.'); break; } void this.formatPicture(id); break; }
       case 'alt-text': void this.altText(); break;
       case 'make-editable': void this.makeEditable(lastEditStyle()); break;
@@ -4070,7 +4232,7 @@ export class DocumentMode {
     ed.onTyped = (typed) => afterTyping(ed, typed);
     if (at) ed.setCaret(offsetAt(ed.layout(), at.x, at.y));
     const lay = ed.layout();
-    if (lay.lines.length) this.view.reveal(lay.box);
+    if (lay.lines.length && !this.holdView) this.view.reveal(lay.box);
     this.changed('selection');
     this.updateRibbon();
     if (!was) this.ribbon.querySelector<HTMLButtonElement>('[data-doc-tab="hf"]')?.click();
