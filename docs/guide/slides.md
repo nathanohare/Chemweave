@@ -17,6 +17,7 @@ The Presentation ribbon has PowerPoint's tabs: **Home** (slides, sections, font,
 - **Text:** click "Click to add title" (or any placeholder) and type. Lists and the chemistry typing helpers work as in any text box, so CH2Cl2 gets its subscripts.
 - **Slide size:** **Design & Transitions** tab ▸ **Size**, or **Format ▸ Slide Size ▸ Widescreen (16:9)** / **Standard (4:3)** / **Custom Slide Size…** (see [Slide size](#slide-size)).
 - **Speaker notes:** type them in the box under the slide. A slide with notes shows a small mark in the slide list. **View** tab ▸ **Notes** (or **✎ Notes** in the status bar) hides or shows the box.
+- **Moving around a slide:** each slide opens fitted to the window. Zoomed in, scrolling stops just past the slide's edges, and a slide that fits the window stays in its middle. To go on to the next slide by scrolling past the bottom of one (and back past the top), as in PowerPoint, turn on **Scroll between slides** in **Settings ▸ Navigation**.
 - **Pane sizes:** drag the slide list's right edge to make it wider or narrower (the pictures grow with it), and drag the top edge of the notes box to make it taller or shorter. Double-click an edge for the usual size. The sizes are remembered.
 
 ### The slide list

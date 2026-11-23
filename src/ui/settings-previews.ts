@@ -393,6 +393,8 @@ export function pageGridPreview(o: PageLook): HTMLElement {
     ctx.moveTo(x0 + pw, y0); ctx.lineTo(x0 + pw, y0 + 2 * ph);
     ctx.moveTo(x0, y0 + ph); ctx.lineTo(x0 + 2 * pw, y0 + ph);
     ctx.moveTo(x0 + 2 * pw, y0); ctx.lineTo(x0 + 2 * pw, y0 + 2 * ph); ctx.lineTo(x0, y0 + 2 * ph);
+    // (the left and top edges are fixed: with fixed edges hidden, their page boundary shows there instead)
+    if (!o.edges) { ctx.lineTo(x0, y0); ctx.lineTo(x0 + 2 * pw, y0); }
     ctx.stroke();
     ctx.restore();
     if (o.ghost) {
@@ -404,7 +406,8 @@ export function pageGridPreview(o: PageLook): HTMLElement {
       ctx.restore();
     }
   }
-  // fixed edges on the left and top
+  // fixed edges on the left and top (when shown)
+  if (!o.edges) return canvas;
   ctx.save();
   ctx.strokeStyle = '#3b4250';
   ctx.lineWidth = o.wallWidth;

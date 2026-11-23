@@ -109,7 +109,7 @@ import { whenIconsLoaded } from './design/icons';
 import { SlideTextRibbon } from './ui/slide-text-ribbon';
 import { CaptionEditor, setCaptionTint } from './ui/caption-editor';
 import { LayersPanel } from './ui/layers-panel';
-import { Scrollbars } from './ui/scrollbars';
+import { Scrollbars, type ScrollContent } from './ui/scrollbars';
 import type { Presenter, ShowOptions } from './ui/present';
 import { editHeaderFooter } from './ui/header-footer-dialog';
 import { ReferencesDialog, editReference, type RefHolder } from './ui/references-dialog';
@@ -15840,13 +15840,25 @@ stylePanel.tables = {
 
 let stereoSeen = -1;
 let outlineSeen = -1;
+/** How far past a slide's edges the view can be scrolled, in screen pixels. */
+const SLIDE_BAND = 16;
+// Scroll between slides (Settings ▸ Navigation): the wheel past a slide's top or bottom edge goes to the one before or after it
+editor.onScrollPast = (dir) => {
+  const d = deckNow();
+  if (!orientPrefs.slideScroll || !d || d.current?.canvas) return false;
+  const i = d.index + dir;
+  if (i < 0 || i >= d.slides.length) return false;
+  d.go(i);
+  return true;
+};
 // scroll bars over the drawing: they cover what is drawn (or the slide), and the part on screen
-const scrollArea = () => {
+const scrollArea = (): ScrollContent | null => {
   const d = ws.active.deck;
   // a canvas slide: its keyframes and whatever is drawn beyond them
   const c = d?.current?.canvas;
   if (d && c) return unionRect(keysBounds(c, d.size), doc.bounds());
-  if (d) return { x1: 0, y1: 0, x2: d.size.w, y2: d.size.h };
+  // a slide: scrolling stops a little past its edges, and it stays centered while it fits (as in PowerPoint)
+  if (d) return { x1: 0, y1: 0, x2: d.size.w, y2: d.size.h, tight: SLIDE_BAND };
   // with the page grid: the pages, and a page more on each side that can grow
   const p = gridPage(), bb = doc.bounds();
   return p ? scrollBox(p, pageExtent(p, bb), bb) : bb;
@@ -16058,6 +16070,8 @@ async function pageGridSettings(): Promise<void> {
     { name: 'emptyShade', label: 'Empty pages', value: o.emptyShade, options: shade },
     { name: 'outsideShade', label: 'The space around the pages', value: o.outsideShade, options: shade },
     { name: 'ghost', label: 'Outline the pages beyond, where drawing adds pages', type: 'checkbox', value: String(o.ghost) },
+    { name: 'edges', label: 'Show fixed edges', type: 'checkbox', value: String(o.edges),
+      help: 'A bold line where nothing can go past the page grid (set in File ▸ Page Setup or by right-clicking a page edge). Off or on, scrolling stops a little past a fixed edge.' },
     { name: 'wallStyle', label: 'Fixed edges', value: o.wallStyle, options: [{ value: 'hatch', label: 'Bold line, hatched on the outside' }, { value: 'line', label: 'Bold line' }] },
     { name: 'wallWidth', label: 'Fixed edge line', value: String(o.wallWidth), options: px([1.5, 2, 2.2, 2.5, 3, 4], o.wallWidth) },
     { name: 'hatchSpacing', label: 'Hatching: gap between strokes', value: String(o.hatchSpacing), options: px([4, 5, 6, 7, 8, 10, 12, 14], o.hatchSpacing) },
@@ -16073,7 +16087,7 @@ async function pageGridSettings(): Promise<void> {
     return {
     grid: r.grid === 'true', lineStyle: r.lineStyle as PageLook['lineStyle'], lineWidth: Number(r.lineWidth) || 1,
     lineColour: /^#[0-9a-f]{6}$/i.test(r.lineColour) ? r.lineColour : o.lineColour, lineOpacity: Number(r.lineOpacity) || o.lineOpacity,
-    emptyShade: r.emptyShade as PageLook['emptyShade'], outsideShade: r.outsideShade as PageLook['outsideShade'], ghost: r.ghost === 'true',
+    emptyShade: r.emptyShade as PageLook['emptyShade'], outsideShade: r.outsideShade as PageLook['outsideShade'], ghost: r.ghost === 'true', edges: r.edges === 'true',
     wallStyle: r.wallStyle === 'line' ? 'line' : 'hatch', pasteAtWall: r.pasteAtWall as PageLook['pasteAtWall'],
     wallWidth: Number(r.wallWidth) || o.wallWidth, hatchSpacing: Number(r.hatchSpacing) || o.hatchSpacing, hatchLength: Number(r.hatchLength) || o.hatchLength,
     hatchWidth: Number(r.hatchWidth) || o.hatchWidth, hatchAngle: Number(r.hatchAngle) || o.hatchAngle, hatchCorner: r.hatchCorner === 'mirror' ? 'mirror' : 'wrap',
@@ -16101,6 +16115,8 @@ async function navigationSettings(): Promise<void> {
     { name: 'tintStrength', label: 'Tint', value: o.tintStrength, options: strength },
     { name: 'goButtons', label: 'Go to Selection button in the status bar', type: 'checkbox', value: String(o.goButtons),
       help: 'F6 fits the drawing and Shift+F6 goes to the selection, with or without the buttons (Edit ▸ Keyboard Shortcuts changes the keys).' },
+    { name: 'slideScroll', label: 'Scroll between slides', type: 'checkbox', value: String(o.slideScroll),
+      help: 'Presentation: scrolling past the bottom or top of a slide goes to the next or previous slide, as in PowerPoint. Off: scrolling stops at the slide\'s edge.' },
   ], { ok: 'Save', preview: { title: 'Dots and tint', draw: (v) => navigationPreview({
     dotGrid: v.dotGrid === 'true', gridSpacing: v.gridSpacing as OrientPrefs['gridSpacing'], gridStrength: v.gridStrength as OrientPrefs['gridStrength'],
     tint: v.tint === 'true', tintStrength: v.tintStrength as OrientPrefs['tintStrength'] }, editor.dark) } });
@@ -16111,6 +16127,7 @@ async function navigationSettings(): Promise<void> {
     dotGrid: r.dotGrid === 'true', gridSpacing: r.gridSpacing as OrientPrefs['gridSpacing'], gridStrength: r.gridStrength as OrientPrefs['gridStrength'],
     tint: r.tint === 'true', tintStrength: r.tintStrength as OrientPrefs['tintStrength'],
     goButtons: r.goButtons === 'true',
+    slideScroll: r.slideScroll === 'true',
   });
 }
 

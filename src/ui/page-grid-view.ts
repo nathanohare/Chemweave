@@ -136,7 +136,8 @@ export function paintPages(ctx: CanvasRenderingContext2D, look: PageLook, r: Ori
     ctx.stroke();
   }
 
-  // fixed edges: a bold line, hatched on the side nothing can go
+  // fixed edges (when shown): a bold line, hatched on the side nothing can go
+  if (!look.edges) { ctx.restore(); return; }
   const ws = wallsOf(p);
   ctx.setLineDash([]);
   ctx.lineCap = 'butt';
