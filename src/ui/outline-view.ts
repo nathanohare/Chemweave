@@ -20,9 +20,6 @@ const lookOf = (l: RunLook | undefined): OutlineLook => ({
   ...(l?.strike ? { strike: true } : {}), ...(l?.pos === 'sub' ? { sub: true } : l?.pos === 'sup' ? { sup: true } : {}),
 });
 
-/** What a box held, for its Undo. */
-interface BoxState { text: string; looks: RunLook[]; at: number }
-
 /** A box of the outline: a slide's title or its body lines, with each character's look. */
 class OutlineBox extends RichInput {
   disabled = false;
@@ -34,70 +31,21 @@ class OutlineBox extends RichInput {
     this.disabled = off;
     if (off) { this.el.contentEditable = 'false'; this.el.setAttribute('aria-disabled', 'true'); }
     if (title) this.el.setAttribute('aria-multiline', 'false');
-    this.el.addEventListener('input', () => { this.marks(); this.record(); });
-    // Ctrl+Z and Ctrl+Y take back and bring again what was typed or set in the box, as a
-    // textarea's own Undo did (the browser's own would undo its markup, not the text)
-    this.el.addEventListener('keydown', (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-      const k = e.key.toLowerCase();
-      const redo = k === 'y' || (k === 'z' && e.shiftKey);
-      if ((k === 'z' || redo) && this.step(redo)) { e.preventDefault(); e.stopPropagation(); }
-    });
-    this.el.addEventListener('beforeinput', (e) => {
-      if ((e.inputType === 'historyUndo' || e.inputType === 'historyRedo') && this.step(e.inputType === 'historyRedo')) e.preventDefault();
-    });
+    // (Ctrl+Z and Ctrl+Y in the box are the box's own Undo, as every rich text box has)
+    this.el.addEventListener('input', () => this.marks());
   }
 
   /** Show text with its looks. */
   show(text: string, looks: (OutlineLook | undefined)[]): void {
     this.setText(text, Array.from({ length: text.length }, (_, i) => boxLook(looks[i])));
     this.marks();
-    this.past = [];
-    this.future = [];
-    this.last = this.snap();
-  }
-
-  // ---------------------------------------------------------------- the box's own Undo
-  private past: BoxState[] = [];
-  private future: BoxState[] = [];
-  private last: BoxState = { text: '', looks: [], at: 0 };
-  private lastAt = 0;
-  private snap(): BoxState { return { text: this.value, looks: this.charLooks.map((l) => ({ ...l })), at: this.selectionEnd }; }
-
-  /** After a change: what was before it is a step to take back (typing in quick succession is one step). */
-  private record(alone = false): void {
-    const now = this.snap();
-    if (now.text === this.last.text && JSON.stringify(now.looks) === JSON.stringify(this.last.looks)) return;
-    const t = Date.now();
-    if (alone || !this.past.length || t - this.lastAt > 800) this.past.push(this.last);
-    if (this.past.length > 200) this.past.shift();
-    // (a look set is a step of its own: what is typed after it is another)
-    this.lastAt = alone ? 0 : t;
-    this.future = [];
-    this.last = now;
-  }
-
-  /** Undo (or Redo) in the box: false when there is nothing to take back (or bring again). */
-  private step(redo: boolean): boolean {
-    const from = redo ? this.future : this.past, to = redo ? this.past : this.future;
-    const s = from.pop();
-    if (!s) return false;
-    to.push(this.snap());
-    this.setText(s.text, s.looks);
-    this.setSelectionRange(s.at, s.at);
-    this.last = this.snap();
-    this.lastAt = 0;
-    this.marks();
-    // (the outline takes the text as after any change)
-    this.el.dispatchEvent(new Event('input'));
-    return true;
   }
 
   /** Each character's look. */
   lookList(): OutlineLook[] { return this.charLooks.map(lookOf); }
 
   /** Bold, Italic, Underline from the keys, as one step of the box's Undo. */
-  toggleLook(key: ToggleLook): void { this.toggle(key); this.marks(); this.record(true); }
+  toggleLook(key: ToggleLook): void { this.toggle(key); this.marks(); }
 
   private marks(): void { this.el.classList.toggle('empty', !this.value); }
 }

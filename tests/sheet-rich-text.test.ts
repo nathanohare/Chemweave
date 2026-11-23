@@ -164,6 +164,50 @@ describe('the typing box', () => {
     expect(b.runs).toEqual([{ text: 'aZ', bold: true }, { text: 'b' }]);
   });
 
+  // F3 Needs Nate 9: the box is drawn again after every change, so the browser's own Undo can't
+  // take typing back; the box has its own, as the sheet's cell editor and a note's box use it
+  it('Ctrl+Z and Ctrl+Y in the box take back and bring again typing and a look, step by step', () => {
+    const b = box();
+    b.setText('Yield');
+    const key = (k: string, shift = false) => {
+      const e = new KeyboardEvent('keydown', { key: k, ctrlKey: true, shiftKey: shift, bubbles: true, cancelable: true });
+      b.el.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    // nothing typed yet: the keys go on (to the sheet), untouched
+    expect(key('z')).toBe(false);
+    (b.el.firstChild!.firstChild as Text).data = 'Yield 95%';
+    b.el.dispatchEvent(new Event('input'));
+    b.setSelectionRange(6, 9);
+    b.toggle('bold');
+    expect(b.runs).toEqual([{ text: 'Yield ' }, { text: '95%', bold: true }]);
+    // the look first, then the typing
+    expect(key('z')).toBe(true);
+    expect(b.value).toBe('Yield 95%');
+    expect(b.runs).toBeUndefined();
+    key('z');
+    expect(b.value).toBe('Yield');
+    expect(textOf(b.el)).toBe('Yield');
+    expect(b.canUndo).toBe(false);
+    key('y');
+    key('z', true);
+    expect(b.runs).toEqual([{ text: 'Yield ' }, { text: '95%', bold: true }]);
+    expect(b.canRedo).toBe(false);
+  });
+
+  it("never lets the browser's own Undo through, and a cell opened again starts its Undo afresh", () => {
+    const b = box();
+    b.setText('a');
+    b.value = 'ab';
+    const e = new InputEvent('beforeinput', { inputType: 'historyUndo', cancelable: true });
+    b.el.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(b.value).toBe('a');
+    b.value = 'ab';
+    b.setText('other cell');
+    expect(b.canUndo).toBe(false);
+  });
+
   it('reads a new line the browser put in as a <br>', () => {
     const b = box();
     b.setText('ab');

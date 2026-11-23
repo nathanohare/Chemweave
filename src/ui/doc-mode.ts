@@ -2299,6 +2299,7 @@ export class DocumentMode {
       b.recorded = true;
       b.ed.replace(b.ed.start, b.ed.end, runs, own.paras.length > 1 ? own.paras : undefined, 'edit');
       b.recorded = false;
+      this.cellAgain();
       return;
     }
     const ed = f.ed;
@@ -3314,6 +3315,7 @@ export class DocumentMode {
       // (a header's typing goes on in the same step)
       if (!b.hf) b.recorded = false;
       if (o.kind === 'drawing' || o.kind === 'picture') bed.select(at, at + 1);
+      if (b.cell) this.cellAgain();
       return id;
     }
     const ed = f.ed;
@@ -3332,6 +3334,23 @@ export class DocumentMode {
       ed.select(at, at + 1);
     }
     return id;
+  }
+
+  /**
+   * After a change to the document made while typing in a table cell (a figure, field or
+   * cross-reference put in, a paste with figures): the cell's typing starts again from there, with
+   * the caret or selection where it was. The change is then one step of Undo, the document's,
+   * rather than a step of the cell's typing plus a step of the document's (F3 Needs Nate 8).
+   */
+  private cellAgain(): void {
+    const f = this.file;
+    const b = f?.box;
+    if (!f || !b?.cell) return;
+    const { id, cell } = b;
+    const { start, end } = b.ed;
+    f.endBox();
+    if (!this.startCell(id, cell.r, cell.c)) return;
+    f.box?.ed.select(start, end);
   }
 
   /** Split view's Insert: a drawing as a figure at the caret, with the caret after it so typing carries on. */
