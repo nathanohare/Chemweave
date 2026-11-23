@@ -854,6 +854,21 @@ export async function readNativeClipboard(): Promise<Pasted> {
 }
 
 /**
+ * Whether a paste event's text is only a drawing's structure as SMILES, put on the clipboard
+ * beside the drawing itself: the SMILES of the last drawing copied here, or a one-word SMILES
+ * (or molfile) with a picture and no formatted text, as ChemDraw copies (a text box then takes
+ * the drawing, not the text).
+ */
+export function pasteHoldsDrawing(e: ClipboardEvent): boolean {
+  const text = e.clipboardData?.getData('text/plain') ?? '';
+  if (!text.trim()) return false;
+  if (ownSmiles(text)) return true;
+  const html = e.clipboardData?.getData('text/html') ?? '';
+  const picture = [...(e.clipboardData?.files ?? [])].some((f) => f.type.startsWith('image/')) || [...(e.clipboardData?.types ?? [])].includes('Files');
+  return !html.trim() && picture && looksLikeChemistry(text);
+}
+
+/**
  * What a browser paste event holds: a drawing or structure text, else a picture, else other
  * text, else the last drawing copied here.
  */

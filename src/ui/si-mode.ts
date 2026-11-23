@@ -91,6 +91,8 @@ export interface SiModeHost {
   contentsOfCdxml(text: string): Contents | null;
   /** What is on the clipboard: from a paste event, or read (a Paste button). */
   readClipboard(e?: ClipboardEvent): Promise<Pasted>;
+  /** Whether a paste event's text is only the SMILES of a drawing on the clipboard (a copy from here or ChemDraw). */
+  pasteHoldsDrawing?(e: ClipboardEvent): boolean;
   /** The library (loaded): what it holds now, and a change to it. */
   library(): Promise<{ now: LibraryData; change(f: (lib: LibraryData) => LibraryData): void }>;
   /** Files chosen to add (spectra, other files). */
@@ -1950,6 +1952,7 @@ export class SiMode {
         label: this.label, mentionable: this.mentionable,
         changed: (v) => void this.act(() => p.writeSectionText(s, v), false, undefined, () => box),
         pasteObject: (e, place) => void this.pasteFigure(s, e, place),
+        holdsObject: (e) => this.host.pasteHoldsDrawing?.(e) === true,
       }, true, 'Type the section’s text');
       this.boxes.push(box);
       t.append(box.el);
@@ -2063,6 +2066,8 @@ export class SiMode {
     try {
       const got = await reading;
       if (!got) return;
+      // (text after all, such as a SMILES with no drawing to be found: typed in as text, as a paste of text is)
+      if (got.kind === 'text') { document.execCommand('insertText', false, got.text); return; }
       rel = await pics.fromPasted(got);
       if (!rel && got.kind !== 'picture') this.host.flash('The clipboard has no picture or drawing. Copy a structure in ChemDraw or Chemweave, or a picture, first.');
     } catch (err) { this.host.flash(`The picture could not be added: ${err instanceof Error ? err.message : String(err)}`); return; }

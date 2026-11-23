@@ -74,7 +74,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blankCycle, type CycleLook } from './chem/cycles';
 import { addChiralFlag, structureFlag, type ChiralFlag } from './chem/chiral-flag';
-import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
+import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, pasteHoldsDrawing, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
   nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, nativeClipboardDrawing, pasteDrawing, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
 import { writeCdxml } from './io/cdxml-write';
@@ -6025,7 +6025,7 @@ function flipped(r: boolean | 'stereo'): void {
 
 /** Undo and Redo: in Slides mode the deck's history covers every slide and the slide list; a sheet has its own. */
 function undo(): void {
-  if (ws.active.mode === 'si') { void siMode?.undo(false).then(refreshHistory, () => {}); return; }
+  if (siActive()) { void siMode?.undo(false).then(refreshHistory, () => {}); return; }
   if (sheetActive()) { sheetMode.undo(); return; }
   if (docActive()) { docMode.run('undo'); return; }
   const d = deckNow();
@@ -6038,7 +6038,7 @@ function undo(): void {
 }
 
 function redo(): void {
-  if (ws.active.mode === 'si') { void siMode?.undo(true).then(refreshHistory, () => {}); return; }
+  if (siActive()) { void siMode?.undo(true).then(refreshHistory, () => {}); return; }
   if (sheetActive()) { sheetMode.redo(); return; }
   if (docActive()) { docMode.run('redo'); return; }
   const d = deckNow();
@@ -6053,7 +6053,7 @@ function redo(): void {
 
 /** The name of the step Undo (or Redo) would take back in the tab in front: null with nothing to take back, '' when it has no name. */
 function historyStep(redo: boolean): string | null {
-  if (ws.active.mode === 'si') return siMode?.history(redo) ?? null;
+  if (siActive()) return siMode?.history(redo) ?? null;
   if (sheetActive()) return sheetMode.history(redo);
   if (docActive()) return docMode.canUndo(redo) ? '' : null;
   const h = deckNow() ?? doc;
@@ -8929,6 +8929,11 @@ const SHEET_COMMANDS: Record<string, () => unknown> = {
 const DOC_HINT = 'Type on the page. Insert ▸ Structure adds a structure; double-click it to edit.';
 
 /** True when a document is showing (and no structure is being drawn for it). */
+/** The SI tab has the keys: not while a structure is drawn in the box over it (Undo then undoes the drawing). */
+function siActive(): boolean {
+  return ws.active.mode === 'si' && !drawingOnTop();
+}
+
 function docActive(): boolean {
   return ws.active.mode === 'document' && !!docMode && !drawingOnTop();
 }
@@ -9101,6 +9106,7 @@ function loadSiMode(): Promise<SiMode> {
       // (the desktop app on Windows reads the clipboard itself, even for a paste event: the event only
       // holds a bitmap of a drawing from here or ChemDraw, where the clipboard has the drawing)
       readClipboard: (e) => (nativeClipboard ? readNativeClipboard() : e ? readPasteEvent(e) : readWebClipboard()),
+      pasteHoldsDrawing: (e) => pasteHoldsDrawing(e),
       library: async () => {
         const lib = await useLibrary();
         return { now: lib.now, change: (f) => lib.change(f) };
@@ -14854,7 +14860,7 @@ function insertSymbol(ch: string): boolean {
     flash('Select a cell to type the symbol into.');
     return false;
   }
-  if (ws.active.mode === 'si') return siMode?.insertText(ch) ?? false;
+  if (siActive()) return siMode?.insertText(ch) ?? false;
   if (docActive()) {
     if (docMode.insertText(ch)) return true;
     flash('Symbols can\'t be typed in Read Mode: go back to Print Layout (View).');
