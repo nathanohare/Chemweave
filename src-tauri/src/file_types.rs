@@ -26,6 +26,7 @@ pub const TYPES: &[(&str, &str)] = &[
     ("docx", "Word document"),
     ("pptx", "PowerPoint presentation"),
     ("xlsx", "Excel workbook"),
+    ("chemsi", "Chemweave SI project"),
 ];
 
 /// Files to open, kept until the page asks for them (it may still be loading). Once it has
@@ -122,8 +123,12 @@ pub fn file_types_defaults() -> Result<(), String> {
 pub fn refresh() {
     #[cfg(windows)]
     {
-        let now = win::registered();
+        let mut now = win::registered();
         if !now.is_empty() {
+            // (SI project files are Chemweave's own: a copy that opens files from Explorer opens these too)
+            if !now.iter().any(|t| t == "chemsi") {
+                now.push("chemsi".to_string());
+            }
             let _ = win::set(&now);
         }
     }

@@ -194,6 +194,15 @@ export class SiProject {
     return run;
   }
 
+  /**
+   * The project file (.chemsi) it is saved in, when it is one (its folder is then a working copy
+   * of the file, packed back into it on Save: si/packed.ts); null for a project folder, or one
+   * not saved as a file yet.
+   */
+  file: string | null = null;
+  /** What the project is known by (linked documents, open tabs): its file, else its folder. */
+  get key(): string { return this.file ?? this.folder.where; }
+
   private constructor(readonly folder: SiFolder, programVersion: string) {
     this.programVersion = programVersion;
   }

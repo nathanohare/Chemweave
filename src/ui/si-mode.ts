@@ -108,6 +108,8 @@ export interface SiModeHost {
   pickFiles(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array }[]>;
   /** File ▸ New ▸ SI Project: a new project, opened in its tab (null: none made; absent: can't be made here). */
   newSiProject?: (() => Promise<SiProject | null>) | null;
+  /** Home ▸ Reload Project for a project file: open it again from the file. */
+  reloadFile?: ((p: SiProject) => Promise<void>) | null;
   /** What the checks need from structures (molfiles): formula, pieces, distinct carbons, H counts. */
   siFacts(mols: string[]): Promise<(MolFacts | null)[]>;
   /** A drawing's own size in points, in the SI drawing style. */
@@ -126,7 +128,7 @@ export interface SiModeHost {
   chooseDrawingStyle(current: DocStyle, note: string): Promise<DocStyle | null>;
   /** The documents open in Chemweave (for the manuscript check), each saved as .docx when asked. */
   openDocuments(): { name: string; bytes(): Promise<Uint8Array> }[];
-  /** Compile ▸ Save Word Snapshot (and Ctrl+S): the project's Word snapshot saved now (si/snapshot-docx.ts). */
+  /** Compile ▸ Save Word Snapshot: the project's Word snapshot saved now (si/snapshot-docx.ts). */
   saveSnapshotDocx?(p: SiProject): Promise<void>;
 }
 
@@ -367,13 +369,13 @@ const RIBBON = `
   </div>
   <div class="rb-panel" data-si-panel="attach" hidden>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si-attach="choose" data-ic="insert-object" title="Choose File: the PDF or picture printed as this section (a copy is kept in the project folder; the one it replaces goes to the Trash). A file can also be dropped on the preview"><span class="rb-icon">▤</span>Choose File</button>
+      <button class="rb-big" data-si-attach="choose" data-ic="insert-object" title="Choose File: the PDF or picture printed as this section (a copy is kept in the project; the one it replaces goes to the Trash). A file can also be dropped on the preview"><span class="rb-icon">▤</span>Choose File</button>
       <button class="rb-big" data-si-attach="remove" data-ic="delete" title="Remove File: the file goes to the project's Trash (Home ▸ Trash puts it back)"><span class="rb-icon">✕</span>Remove File</button>
     </div><div class="rb-label">File</div></div>
   </div>
   <div class="rb-panel" data-si-panel="xray" hidden>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si-xray="choose-cif" data-ic="insert-object" title="Choose CIF: the structure's CIF file (a copy is kept in the project folder; the one it replaces goes to the Trash)"><span class="rb-icon">▤</span>Choose CIF</button>
+      <button class="rb-big" data-si-xray="choose-cif" data-ic="insert-object" title="Choose CIF: the structure's CIF file (a copy is kept in the project; the one it replaces goes to the Trash)"><span class="rb-icon">▤</span>Choose CIF</button>
       <button class="rb-big" data-si-xray="edit" data-ic="structure" title="Edit Structure: rotate it, change its style (ORTEP, ball-and-stick…), its labels and what is shown, in the crystal structure window (double-click the structure does the same)"><span class="rb-icon">⌬</span>Edit Structure</button>
     </div><div class="rb-label">Structure</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -567,12 +569,12 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="apply-fields" title="Give every compound of the section the section's fields, in the section's order">Apply Section Fields</button>
-        <button data-si="reload" data-ic="refresh-all" title="Read the project folder again (after changes made in Chem SI Assistant or by a sync)">Reload Project</button>
+        <button data-si="reload" data-ic="refresh-all" title="Open the project file again as it was last saved (after a sync brought changes made elsewhere); changes not saved here are dropped, after asking">Reload Project</button>
       </div>
       <div class="rb-col">
         <button data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance">Project Settings…</button>
         <button data-si="snapshot" title="Save Snapshot: the whole project zipped into its snapshots folder, for milestones such as the submitted version (as Chem SI Assistant saves them)">Save Snapshot…</button>
-        <button data-si="save-snapshot-docx" title="Save Word Snapshot (Ctrl+S): the whole SI compiled and saved now as “(project title) (Snapshot).docx” in the project folder, a backup you can open in Word if the project can't be opened. It is also saved every 5 minutes while the project changes, and when the project closes">Save Word Snapshot</button>
+        <button data-si="save-snapshot-docx" title="Save Word Snapshot: the whole SI compiled and saved now as “(project title) (Snapshot).docx” beside the project file, a backup you can open in Word if the project can't be opened. It is also saved every 5 minutes while the project changes, and when the project closes">Save Word Snapshot</button>
       </div>
 
     </div><div class="rb-label">Manage</div></div>
@@ -1650,7 +1652,7 @@ export class SiMode {
       const done = cs.filter((c) => { const k = p.completion(c); return k.filled === k.total; }).length;
       lead = `${s.name}: ${done} of ${cs.length} compound${cs.length === 1 ? '' : 's'} complete`;
     }
-    const bits = [lead, `${flags} flag${flags === 1 ? '' : 's'}`, `${warns} warning${warns === 1 ? '' : 's'}`, p.readOnly ? 'Open read-only' : 'Every change is saved to the project folder'];
+    const bits = [lead, `${flags} flag${flags === 1 ? '' : 's'}`, `${warns} warning${warns === 1 ? '' : 's'}`, ...(p.readOnly ? ['Open read-only'] : [])];
     this.host.hint(bits.join(' · '));
   }
 
@@ -1837,8 +1839,8 @@ export class SiMode {
         for (const [k, v] of Object.entries(saved)) if (Array.isArray(v)) this.collapsed.set(k, new Set(v.filter((x): x is string => typeof x === 'string')));
       } catch { /* (none kept) */ }
     }
-    let set = this.collapsed.get(p.folder.where);
-    if (!set) { set = new Set(); this.collapsed.set(p.folder.where, set); }
+    let set = this.collapsed.get(p.key);
+    if (!set) { set = new Set(); this.collapsed.set(p.key, set); }
     return set;
   }
   private saveCollapsed(): void {
@@ -1920,10 +1922,10 @@ export class SiMode {
     const p = this.project!;
     const card = el('div', 'si-card');
     const h = el('h2', 'si-title', p.title);
-    addInfo(h, 'An SI project is a folder Chem SI Assistant reads and writes too: changes made here are saved to its files at once, and open there as they are. Select a section or a compound on the left.');
+    addInfo(h, 'An SI project is one file (.chemsi, a zip of the project’s folder): Save (Ctrl+S) or AutoSave keeps it up to date. Select a section or a compound on the left.');
     card.append(h);
     const rows: [string, string][] = [
-      ['Folder', p.folder.where],
+      ['File', p.file ?? 'Not saved yet'],
       ['Journal style', String(p.settings.journal_style ?? 'ACS')],
       ['Sections', String(p.sections.length)],
       ['Compounds', String(p.compounds.length)],
@@ -5239,6 +5241,8 @@ export class SiMode {
         return;
       case 'import-si': await this.importSi(); return;
       case 'reload':
+        // a project file: opened again from the file (its unsaved changes dropped, once the person agrees)
+        if (p.file !== null && this.host.reloadFile) { this.forgetStructure(); await this.host.reloadFile(p); return; }
         this.forgetStructure();
         await this.act(() => p.reload());
         this.host.changed();
@@ -5425,10 +5429,10 @@ export class SiMode {
     const { noteMentions } = await import('../library/library');
     let added = 0, known = 0;
     lib.change((d) => {
-      const got = addStructures(d, ins, p.folder.where);
+      const got = addStructures(d, ins, p.key);
       added = got.added.length;
       known = got.known.length;
-      return noteMentions(got.lib, p.folder.where, ins.map((x) => ({ smiles: x.smiles, ...(x.label ? { label: x.label } : {}) })));
+      return noteMentions(got.lib, p.key, ins.map((x) => ({ smiles: x.smiles, ...(x.label ? { label: x.label } : {}) })));
     });
     this.host.flash(`Compound Library: ${added} added${known ? `, ${known} already there` : ''}. Each lists this SI project as where it appears.`, 6000);
   }

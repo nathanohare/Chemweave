@@ -25,7 +25,7 @@ import { isXls, isOds, excelLimitNote } from './io/sheet-sniff';
 import { DOC_OPEN_ONLY, documentSaveNote, isOtherDocument } from './io/doc-sniff';
 import { adoptSaved } from './io/document-file';
 import {
-  FileRef, FileHandle, FileType, CDXML, CDX, CDS, MOL, RXN, MRV, KET, CML, CDJSON, CHEM_EXCHANGE, PPTX, SLIDES_OPEN_ONLY, XLSX, XLSM, SHEET_OPEN_ONLY, CSV, SDF, DOCX, RTF, ODT, TABLE_TEXT_EXTENSIONS, openBytesDialog, saveFileDialog, writeFile, canSaveInPlace, askSaveChanges,
+  FileRef, FileHandle, FileType, CDXML, CDX, CDS, MOL, RXN, MRV, KET, CML, CDJSON, CHEM_EXCHANGE, PPTX, SLIDES_OPEN_ONLY, XLSX, XLSM, SHEET_OPEN_ONLY, CSV, SDF, DOCX, RTF, ODT, CHEMSI, TABLE_TEXT_EXTENSIONS, openBytesDialog, saveFileDialog, writeFile, canSaveInPlace, askSaveChanges,
   showError, withExtension, extensionOf, baseName, readPath, pathExists, stampOf,
 } from './io/files';
 import type { FileStamp } from './keep/recovery';
@@ -135,6 +135,22 @@ export interface WorkspaceHooks {
   closing?(tab: Tab): void;
   /** A tab was closed. */
   dropped?(tab: Tab): void;
+  /**
+   * SI projects kept as one file (.chemsi): whether one has changes not saved to its file, and
+   * saving it (Save, AutoSave) or saving it elsewhere (Save As). Without these, an SI project
+   * is a folder that saves each change as it is made.
+   */
+  si?: {
+    dirty(tab: Tab): boolean;
+    save(tab: Tab, how: SaveHow): Promise<boolean>;
+    saveAs(tab: Tab): Promise<boolean>;
+    /** Open the SI project file at `path` (File ▸ Open, a file dropped or double-clicked). */
+    open(path: string): Promise<void>;
+    /** Write what is being typed in the project to its working copy (before asking whether to save it). */
+    flush(tab: Tab): Promise<void>;
+    /** The person chose not to save a project's changes as it closes (so they aren't offered for recovery). */
+    discarded(tab: Tab): void;
+  };
 }
 
 /** File types AutoSave leaves alone: they keep only the values of one sheet, so saving loses the rest. */
@@ -289,8 +305,8 @@ export class Workspace {
   noteChange(tab?: Tab): void {
     const t = tab ?? this.active;
     let dirty = t.dirty;
-    // an SI project saves each change to its folder as it is made
-    if (t.mode === 'si') dirty = false;
+    // an SI project file has changes not saved to it (a folder saves each change as it is made)
+    if (t.mode === 'si') dirty = this.hooks.si?.dirty(t) ?? false;
     else if (t.deck) dirty = t.deck.edits !== t.savedEdits;
     else if (t.mode === 'sheet') dirty = t.book!.edits !== this.mainOf(t).savedEdits;
     else if (t.mode === 'document') dirty = t.document!.edits !== this.mainOf(t).savedEdits;
@@ -507,7 +523,7 @@ export class Workspace {
   /** A document made here (Review > Compare's result) in a new tab, unsaved, named `name` (a .docx name not already open). */
   /** A tab for an SI project (a Chem SI Assistant folder), opened already. One open already shows instead. */
   openSi(project: SiProject): Tab {
-    const there = this.tabs.find((t) => t.si && t.si.folder.where === project.folder.where);
+    const there = this.tabs.find((t) => t.si && t.si.key === project.key);
     if (there) { this.activate(there); return there; }
     const t = this.makeTab('si', project.title);
     t.si = project;
@@ -537,7 +553,7 @@ export class Workspace {
   async open(): Promise<void> {
     let f;
     try {
-      f = await openBytesDialog('Canvases, presentations, spreadsheets and documents', [CDXML, CDX, CDS, PPTX, XLSX, XLSM, DOCX, RTF, ODT, CSV, SDF, MOL, RXN, MRV, KET, CML, CDJSON], ['sd', 'mdl', ...SLIDES_OPEN_ONLY, ...SHEET_OPEN_ONLY, ...DOC_OPEN_ONLY, ...TABLE_TEXT_EXTENSIONS]);
+      f = await openBytesDialog('Canvases, presentations, spreadsheets and documents', [CDXML, CDX, CDS, PPTX, XLSX, XLSM, DOCX, RTF, ODT, CSV, SDF, MOL, RXN, MRV, KET, CML, CDJSON, ...(this.hooks.si ? [CHEMSI] : [])], ['sd', 'mdl', ...SLIDES_OPEN_ONLY, ...SHEET_OPEN_ONLY, ...DOC_OPEN_ONLY, ...TABLE_TEXT_EXTENSIONS], this.hooks.si ? [CHEMSI.extension] : []);
     } catch (e) {
       await showError('Could not open the file: ' + String(e));
       return;
@@ -555,6 +571,12 @@ export class Workspace {
       return true;
     }
     const ext = extensionOf(file);
+    // an SI project file opens by where it is (it is unpacked into a working copy, not read here)
+    if (ext === CHEMSI.extension && this.hooks.si) {
+      if (ref.kind === 'path') { await this.hooks.si.open(ref.path); return true; }
+      this.hooks.flash('SI project files open in the desktop app.', 6000);
+      return false;
+    }
     if (ext === WORKSPACE.extension) {
       // a workspace lists files by where they are, so it needs its own place on disk
       if (ref.kind === 'path') await this.openWorkspace(new TextDecoder().decode(bytes), ref.path);
@@ -736,11 +758,14 @@ export class Workspace {
     // another window of a document: closing it closes nothing else (the document stays open in its other tabs)
     if (tab.windowOf) { this.drop(tab); return true; }
     if (this.handOver(tab)) { this.drop(tab); return true; }
+    // (what is being typed in an SI project is written first, so its unsaved mark is right)
+    if (tab.mode === 'si' && this.hooks.si) { await this.hooks.si.flush(tab); this.noteChange(tab); }
     if (tab.dirty) {
       if (tab !== this.active && tab !== this.pane) this.activate(tab);
       const answer = await askSaveChanges(tab.name);
       if (answer === 'cancel') return false;
       if (answer === 'save' && !(await this.save(tab))) return false;
+      if (answer === 'discard') this.hooks.si?.discarded(tab);
     }
     this.drop(tab);
     return true;
@@ -781,6 +806,7 @@ export class Workspace {
       const answer = await askSaveChanges(t.name);
       if (answer === 'cancel') return false;
       if (answer === 'save' && !(await this.save(t))) return false;
+      if (answer === 'discard') this.hooks.si?.discarded(t);
     }
     return true;
   }
@@ -799,7 +825,7 @@ export class Workspace {
 
   async save(tab: Tab = this.active, how: SaveHow = 'saved'): Promise<boolean> {
     // an SI project is saved as it changes
-    if (tab.mode === 'si') { if (how === 'saved') this.hooks.flash('An SI project saves every change to its folder as you make it.'); return true; }
+    if (tab.mode === 'si') return this.hooks.si ? this.hooks.si.save(tab, how) : true;
     // another window of a document saves the document's file
     tab = this.mainOf(tab);
     // a file of a kind this tab can't write (a drawing opened from an old file) goes through Save As
@@ -874,7 +900,7 @@ export class Workspace {
   }
 
   async saveAs(tab: Tab = this.active): Promise<boolean> {
-    if (tab.mode === 'si') { this.hooks.flash('An SI project is a folder: to copy it, copy the folder (Chem SI Assistant’s File ▸ Save Snapshot keeps a zipped copy).', 7000); return false; }
+    if (tab.mode === 'si') return this.hooks.si ? this.hooks.si.saveAs(tab) : false;
     tab = this.mainOf(tab);
     const types = SAVE_TYPES[tab.mode];
     const ext = extensionOf(tab.name);
