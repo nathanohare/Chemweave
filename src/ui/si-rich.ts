@@ -5,6 +5,7 @@
 // Ctrl+B, Ctrl+I and Ctrl+U as in Word; Ctrl+= subscript, Ctrl+Shift+= superscript; typing
 // "@" offers the project's compounds to mention.
 
+import { popupHost } from './popup-host';
 import { cleanPastedHtml, hasFormatting } from './si-paste-html';
 import { checkSpelling, formatTyped, spellingMenu } from './si-spell';
 import { WORD_ENDS } from '../text/chemtext';
@@ -358,7 +359,7 @@ export class SiRichBox {
     const r = sel.getRangeAt(0).getBoundingClientRect();
     menu.style.left = `${r.left}px`;
     menu.style.top = `${r.bottom + 4}px`;
-    document.body.append(menu);
+    popupHost().append(menu);
   }
 
   private closeMenu(): void {

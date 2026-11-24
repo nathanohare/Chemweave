@@ -9,6 +9,7 @@
 // and Gaussian/ORCA Input (files for a DFT calculation on the conformers found).
 
 import { FloatBox } from './float-box';
+import { popupHost } from './popup-host';
 import { SYMBOLS } from '../chem/elements';
 import { molProgramLine } from '../chem/molfile-header';
 import type { Model3d } from '../chem/model3d-build';
@@ -690,7 +691,7 @@ export class Viewer3d {
     item('Gaussian/ORCA Input…', () => void this.exportQm(), !!t && !!m);
     item('XYZ File, All Conformers…', () => void this.exportAll('xyz'), !!t && !!m);
     item('SD File, All Conformers…', () => void this.exportAll('sdf'), !!t && !!m);
-    document.body.append(menu);
+    popupHost().append(menu);
     const r = this.exportBtn.getBoundingClientRect(), mr = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(4, Math.min(r.right - mr.width, innerWidth - mr.width - 4))}px`;
     menu.style.top = `${r.bottom + mr.height + 4 < innerHeight ? r.bottom + 2 : Math.max(4, r.top - mr.height - 2)}px`;

@@ -179,6 +179,33 @@ export async function a11yProblems(page, log = () => {}) {
   }
   await page.evaluate(() => window.__app.editor.setTool('select'));
 
+  // a drop-down list in a window: a window opened with showModal() sits above the page, so a list added
+  // to the page is drawn under it and can't be clicked. For each window with typed boxes that have
+  // suggestions (the Orbital window's Pointing box, Settings), the last item of the list must be what
+  // is on top at its own center.
+  for (const [command, label] of [['orbital', 'Orbital'], ['preferences', 'Settings']]) {
+    await cmd(command);
+    await page.waitForTimeout(400);
+    const boxes = await page.evaluate(() => [...document.querySelectorAll('dialog[open] input.combo')].filter((i) => i.offsetParent).length);
+    for (let i = 0; i < Math.min(boxes, 3); i++) {
+      const res = await page.evaluate(async (i) => {
+        const input = [...document.querySelectorAll('dialog[open] input.combo')].filter((x) => x.offsetParent)[i];
+        input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 120));
+        const items = document.querySelectorAll('.combo-list .combo-item');
+        const last = items[items.length - 1];
+        if (!last) return 'no list';
+        const r = last.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return top && last.contains(top) ? 'ok' : 'covered';
+      }, i);
+      if (res === 'covered') found.add(`keyboard: a drop-down list in the ${label} window is under the window (its last item can't be clicked)`);
+      await key('Escape', 100);
+    }
+    await esc();
+    if (await page.evaluate(() => !!document.querySelector('dialog[open]'))) await esc();
+  }
+
   // a window: Settings, from the keyboard: focus goes in, Tab keeps it in, Esc closes it and gives focus back
   await page.mouse.click(5, 300).catch(() => {});
   await key('F10', 150);
