@@ -119,6 +119,8 @@ export interface SiModeHost {
   chooseDrawingStyle(current: DocStyle, note: string): Promise<DocStyle | null>;
   /** The documents open in Chemweave (for the manuscript check), each saved as .docx when asked. */
   openDocuments(): { name: string; bytes(): Promise<Uint8Array> }[];
+  /** Compile ▸ Save Word Snapshot (and Ctrl+S): the project's Word snapshot saved now (si/snapshot-docx.ts). */
+  saveSnapshotDocx?(p: SiProject): Promise<void>;
 }
 
 /** An SI compound as the Canvas shows it (its card in the Analysis panel). */
@@ -521,6 +523,7 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data, laid out as Chem SI Assistant lays it out. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
       <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
+      <button class="rb-big" data-si="save-snapshot-docx" title="Save Word Snapshot (Ctrl+S): the whole SI compiled and saved now as “(project title) (Snapshot).docx” in the project folder, a backup you can open in Word if the project can't be opened. It is also saved every 5 minutes while the project changes, and when the project closes"><span class="rb-icon">▣</span>Save Word Snapshot</button>
       <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the whole SI as it prints, beside the page, with the selected page in view; type in it to change the fields"><span class="rb-icon">◧</span>Live Preview</button>
     </div><div class="rb-label">Compile</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -1353,7 +1356,7 @@ export class SiMode {
   }
 
   /** Every save on its way to a project's folder (the shown page's editors' own too) has landed. */
-  private pendingOf(p: SiProject): Promise<void> {
+  pendingOf(p: SiProject): Promise<void> {
     const mine: Promise<unknown>[] = p === this.project ? [...this.tables.map((t) => t.settled()), ...this.figures.map((f) => f.settled()), ...(this.front ? [this.front.settled()] : [])] : [];
     return Promise.all([this.kept(p).queue, ...mine]).then(() => {}, () => {});
   }
@@ -4594,7 +4597,7 @@ export class SiMode {
   }
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
-  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview']);
+  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
@@ -4771,7 +4774,7 @@ export class SiMode {
       case 'to-scheme': await this.toScheme(); return;
       case 'duplicate': await this.duplicate(); return;
       case 'snapshot': {
-        const got = await ask('Save Snapshot', [{ name: 'label', label: 'Name', value: '', placeholder: 'e.g. submitted' }], { ok: 'Save Snapshot', note: 'The whole project is zipped into its snapshots folder, named with today’s date and time and this name. Snapshots and build files are left out.' });
+        const got = await ask('Save Snapshot', [{ name: 'label', label: 'Name', value: '', placeholder: 'e.g. submitted' }], { ok: 'Save Snapshot', note: 'The whole project is zipped into its snapshots folder, named with today’s date and time and this name. Snapshots, the Word snapshot and build files are left out.' });
         if (!got) return;
         this.host.flash('Saving the snapshot…', 1500);
         await this.act(async () => { const path = await saveSnapshot(p, got.label); this.host.flash(`Saved the snapshot ${path}.`, 5000); }, false);
@@ -4914,6 +4917,9 @@ export class SiMode {
         return;
       case 'spelling':
         if (!nextMisspelled(this.page)) this.host.flash(typingPrefs.spelling ? 'No misspelled words on this page.' : 'The spelling check is off (Edit ▸ Typing and Spelling).');
+        return;
+      case 'save-snapshot-docx':
+        if (this.host.saveSnapshotDocx) await this.host.saveSnapshotDocx(p);
         return;
       case 'compile-doc':
       case 'compile-pdf':

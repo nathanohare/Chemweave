@@ -27,6 +27,8 @@ export const SI_ICONS: Record<string, string> = {
   'si:move-down': '<rect class="p" x="2.75" y="3.75" width="11.5" height="7.5" rx="1.25"/><path d="M2.75 17.25h11.5"/><path class="a" d="M18.5 4.5v15M15.75 16.75l2.75 2.75 2.75-2.75"/>',
   'si:move-to': '<path class="p" d="M2.75 6.25a1.5 1.5 0 0 1 1.5-1.5h4.5l2 2h9a1.5 1.5 0 0 1 1.5 1.5v9.5a1.5 1.5 0 0 1-1.5 1.5h-15.5a1.5 1.5 0 0 1-1.5-1.5z"/>' + arrowR(7.5, 16.5, 13.25),
   'si:duplicate': hex(8.5, 9.25, 5.25) + hex(15.5, 14.75, 5.25, 'f a') + plus(19.5, 4.5),
+  // Compile ▸ Save Word Snapshot: the compiled SI's page, kept by the clock
+  'si:save-snapshot-docx': page + '<path d="M7.75 9.25h7M7.75 12.25h4.5"/><circle class="f a" cx="16.5" cy="16.75" r="4.5"/><path class="a" d="M16.5 14.25v2.5l1.75 1.25"/>',
   'si:snapshot': '<rect class="p" x="2.75" y="6.75" width="18.5" height="13" rx="2"/><path d="M8.25 6.75l1.5-2.5h4.5l1.5 2.5"/><circle class="a" cx="12" cy="13.25" r="3.5"/>',
   'si:project-settings': page + '<circle class="a" cx="12" cy="13.5" r="2.25"/><path class="a" d="M12 8.75v1.5M12 16.75v1.5M7.25 13.5h1.5M15.25 13.5h1.5M8.65 10.15l1.05 1.05M14.3 15.8l1.05 1.05M8.65 16.85l1.05-1.05M14.3 11.2l1.05-1.05"/>',
   'si:apply-fields': '<path d="M4 4.75h9M4 8.25h9M4 11.75h6"/><path class="a" d="M17.5 3.5v9M14.75 9.75l2.75 2.75 2.75-2.75"/><rect class="p" x="3.75" y="15.25" width="16.5" height="5.5" rx="1.25"/>',

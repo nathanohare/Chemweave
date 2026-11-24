@@ -119,6 +119,7 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 - **Home ▸ Compile to Document** makes the Supporting Information as a Chemweave document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed.
 - **Home ▸ Compile to PDF** compiles it and saves a PDF.
 - While it compiles, a window shows how far along it is (compounds, spectra, then the pages and the PDF), with **Cancel**.
+- **Home ▸ Save Word Snapshot** (or Ctrl+S) saves the whole compiled SI as *(project title) (Snapshot).docx* in the project folder, as a backup: if Chemweave or the project can't be opened, you can go on in Word. It is also saved every 5 minutes while the project changes, and when the project closes. It is never a step of Undo, and a copy you changed in Word is never replaced: rename it, and the next snapshot is saved beside it.
 
 **Home ▸ Project Settings…** holds the choices for the compiled SI:
 
@@ -153,6 +154,6 @@ In a Canvas, right-click a structure and choose **Add to SI Project** to add it 
 ## Trash and snapshots
 
 - **Home ▸ Trash…** lists what was deleted from the project, newest first, and puts items back. The Trash is a folder inside the project and is shared with Chem SI Assistant.
-- **Home ▸ Save Snapshot…** zips the whole project into its snapshots folder. Use it at milestones such as the submitted version.
+- **Home ▸ Save Snapshot…** zips the whole project into its snapshots folder. Use it at milestones such as the submitted version. The Word snapshot is left out of the zip (it is made again from the project).
 
 Next: [Getting started](getting-started.md) · [Canvas](drawing.md) · [Document](documents.md) · [Libraries](libraries.md) · [Files and sharing](files-and-sharing.md) · [Feedback](feedback.md)

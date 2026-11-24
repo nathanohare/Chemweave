@@ -280,6 +280,7 @@ import { siDrawingStyle } from './si/drawing-style';
 import type { SiView } from './si/manuscript';
 import { JournalFolder, journalOf } from './si/journal';
 import type { SiFolder as SiFolderT } from './si/folder';
+import type { SnapshotKeeper as SnapshotKeeperT } from './si/snapshot-docx';
 import type { SiAccess } from './ui/doc-si';
 import { addMolfile, readScene, sceneToDoc } from './io/chem-formats';
 import { cellName, colOf, rowOf } from './sheet/refs';
@@ -4571,7 +4572,8 @@ const ws: Workspace = new Workspace(doc, {
     keeper.dropped(tab);
     // an SI project: Chem SI Assistant can open it for editing again
     // (once what was being typed in it has been written: the history and the lock go after the last save)
-    if (tab.si) { const si = tab.si; void (async () => { await siMode?.saved(si).catch(() => {}); siMode?.closed(si); await closeSiProject(si); })(); }
+    // (and its Word snapshot saved, if it changed since the last one, while the lock is still held)
+    if (tab.si) { const si = tab.si; void (async () => { await siMode?.saved(si).catch(() => {}); await siSnapshots?.closing(si).catch(() => {}); siMode?.closed(si); await closeSiProject(si); })(); }
     // a drawing being edited for Word: Word hears that the editing is over
     const id = embeddedTabs.get(tab);
     if (id !== undefined) { embeddedTabs.delete(tab); void invoke('ole_close', { id }).catch(() => {}); }
@@ -9094,6 +9096,7 @@ function loadSiMode(): Promise<SiMode> {
       sizeOf: (c) => figures.size(c, siStyleNow()),
       siStyle: () => siStyleNow(),
       openDocuments: () => ws.tabs.filter((t) => t.mode === 'document' && t.document && !t.windowOf).map((t) => ({ name: t.name, bytes: async () => (await import('./io/docx-write')).writeDocx(t.document!.t, docFiles, t.name) })),
+      saveSnapshotDocx: async (p) => { await (await siSnapshotKeeper()).saveNow(p); },
       openCompiled: async (doc, name, pdf, watch) => {
         ws.showDocument({ ...doc, drawingStyle: { ...siStyleNow() } }, name.replace(/[\\/:*?"<>|]/g, '-'));
         renderTabs();
@@ -9114,6 +9117,35 @@ function loadSiMode(): Promise<SiMode> {
 
 /** How a Spectra section Chemweave adds starts (beyond SI Assistant's defaults): the links from the peak reports to the spectra and back on. */
 const SPECTRA_START = { nmr_links: true, link_back: true } as const;
+
+/**
+ * The Word snapshots of the open SI projects (si/snapshot-docx.ts): each project compiled as
+ * Compile to Document compiles it (in its own drawing style), saved as "<title> (Snapshot).docx"
+ * in its folder every few minutes while it changes, when it closes, and on Ctrl+S.
+ */
+let siSnapshots: SnapshotKeeperT | null = null;
+/** How long quitting waits for the SI projects' last Word snapshots (best effort: one not done by then is left). */
+const SI_QUIT_SNAPSHOT_MS = 30000;
+async function siSnapshotKeeper(): Promise<SnapshotKeeperT> {
+  if (siSnapshots) return siSnapshots;
+  const { SnapshotKeeper } = await import('./si/snapshot-docx');
+  siSnapshots ??= new SnapshotKeeper({
+    compileHost: (p) => ({
+      contentsOf: (mol) => { const scene = readScene('mol', mol); return scene ? sceneToDoc(scene, siStyleOf(p)).doc.contents() : null; },
+      sizeOf: (c) => figures.size(c, siStyleOf(p)),
+      facts: (mols) => chem.siFacts(mols),
+      pdfPages: (b, most) => import('./render/pdf-page').then((m) => m.pdfPages(b, most)),
+      contentBox: (src) => import('./render/pdf-page').then((m) => m.pictureContentBox(src)),
+    }),
+    docx: async (doc, p) => (await import('./io/docx-write')).writeDocx({ ...doc, drawingStyle: { ...siStyleOf(p) } }, docFiles, `${p.title} SI`),
+    // (a timer's snapshot leaves what is being typed alone: it is in the next one)
+    saved: (p, all) => (!siMode ? Promise.resolve() : all ? siMode.saved(p) : siMode.pendingOf(p)),
+    flash,
+    // (each spectrum PDF is drawn when nothing else is happening, so typing goes first; WebKit has no idle callback)
+    idle: () => new Promise<void>((r) => { if ('requestIdleCallback' in window) window.requestIdleCallback(() => r(), { timeout: 2000 }); else setTimeout(r, 50); }),
+  });
+  return siSnapshots;
+}
 
 /** File ▸ Open SI Project… (or File ▸ New ▸ SI Project…, `create`). */
 // ---------------------------------------------------------------- SI projects from the Canvas (layout C)
@@ -9234,7 +9266,13 @@ function siCardEl(c: SiCard): HTMLElement {
 /** An SI project's folder with the history Undo and Redo use (Edit ▸ Undo names the step). */
 function siJournal(folder: SiFolderT): JournalFolder {
   const j = new JournalFolder(folder);
-  j.onChange = () => { refreshHistory(); siMode?.folderChanged(j); };
+  j.onChange = () => {
+    refreshHistory();
+    siMode?.folderChanged(j);
+    // (its history changed: the project changed, so its Word snapshot is out of date)
+    const si = ws.tabs.find((t) => t.si?.folder === j)?.si;
+    if (si) siSnapshots?.changed(si);
+  };
   return j;
 }
 
@@ -9304,6 +9342,7 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
   project.onReadOnly = (message) => { void showError(message); siMode?.readOnlyNow(project); };
   await loadSiMode();
   ws.openSi(project);
+  void siSnapshotKeeper().then((k) => k.opened(project)).catch(() => {});
   siLinked.delete(project.folder.where);
   siChanged(project.folder.where);
   if (project.warnings.length) flash(`Opened with ${project.warnings.length} problem${project.warnings.length === 1 ? '' : 's'}: see the project's page.`, 6000);
@@ -10183,7 +10222,8 @@ const COMMANDS: Record<string, () => unknown> = {
   // (no longer in the menus: kept for buttons people put on their ribbon or quick bar)
   'new-from-template': () => { const k = sheetActive() ? 'sheet' : 'document'; finishTab(); if (k === 'sheet') ws.newSheet(); else ws.newDocument(); offerTemplates(k, true); },
   open: () => ws.open(),
-  save: () => { finishTab(); return ws.save(focusTab()); },
+  // (in an SI project, which saves every change as it is made, Save saves its Word snapshot)
+  save: () => { finishTab(); const t = focusTab(); return t.mode === 'si' && t.si ? siSnapshotKeeper().then((k) => k.saveNow(t.si!)) : ws.save(t); },
   'save-as': () => { finishTab(); return ws.saveAs(focusTab()); },
   autosave: () => { finishTab(); return keeper.toggleAutoSave(focusTab()); },
   'version-history': () => { finishTab(); return keeper.historyCommand(focusTab()); },
@@ -12884,7 +12924,13 @@ if (isTauri()) {
     await siSavedAll();
     if (!(await ws.closeAll())) e.preventDefault();
     // closing normally: the recovery copies and lock files aren't needed
-    else { await keeper.end(); await diagnostics.end(); await releaseSiProjects(); }
+    else {
+      await keeper.end();
+      await diagnostics.end();
+      // (each SI project's Word snapshot, if it changed: waited for a while, then the window goes anyway)
+      await siSnapshots?.closingAll(ws.tabs.flatMap((t) => (t.si ? [t.si] : [])), SI_QUIT_SNAPSHOT_MS).catch(() => {});
+      await releaseSiProjects();
+    }
   }).catch(() => {});
 } else {
   window.addEventListener('beforeunload', (e) => {
