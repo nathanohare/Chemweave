@@ -9,6 +9,7 @@
 
 import { chargeDigitEdits, chargeNote } from '../text/charge-digits';
 import { fieldLabelNodes } from './field-label';
+import { MentionTip } from './si-mention-tip';
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
@@ -600,6 +601,8 @@ export class SiMode {
   /** Dismissed warnings are listed too (with Restore). */
   private showDismissed = false;
 
+  private mentionTip: MentionTip;
+
   constructor(private host: SiModeHost) {
     const work = document.querySelector('#work')!;
     this.pane = el('div');
@@ -613,6 +616,17 @@ export class SiMode {
     this.live = this.livePane();
     this.pane.append(this.tree, this.page, this.live.el, this.treeGrip());
     work.append(this.pane);
+    // a compound's ID in the text shows its structure when the mouse rests on it
+    this.mentionTip = new MentionTip(this.pane, (id) => {
+      const p = this.project;
+      const c = p?.compounds.find((x) => x.id === id);
+      if (!p || !c) return null;
+      // (drawn when it shows, in the project's style as it is now, as the pages draw it)
+      const mol = this.mols.get(c.id);
+      const svg = mol ? this.host.pictureOf(mol) : null;
+      const note = svg ? undefined : p.hasStructure(c) && !mol ? 'Loading structure…' : 'No structure';
+      return { label: this.idOf(c), name: compoundName(c), svg, note };
+    });
     this.ribbon = el('div', 'ribbon tabbed si-ribbon si-only');
     this.ribbon.id = 'si-ribbon';
     this.ribbon.setAttribute('role', 'toolbar');
@@ -979,6 +993,7 @@ export class SiMode {
     if (this.tab && this.tab !== tab) void this.commitAll();
     this.tab = tab && tab.si ? tab : null;
     this.pane.hidden = this.ribbon.hidden = !this.tab;
+    this.mentionTip.hide();
     this.showZoom(!!this.tab);
     if (!this.tab) return;
     this.use(this.tab.si!);
@@ -1725,6 +1740,7 @@ export class SiMode {
     if (this.pick.kind === 'project') this.projectPage(out);
     this.dashShown();
     this.lockFields(out);
+    this.mentionTip.hide();
     this.page.replaceChildren(out);
     if (keep && this.ribbon.querySelector<HTMLElement>(`[data-si-tab="${keep}"]`)?.hidden === false) this.showRibbonTab(keep);
     // (the Manuscript Check tab comes forward when its page is first shown: its commands are the page's only ones)

@@ -5187,6 +5187,9 @@ dialog.si-import .ask-buttons { margin: 0; }
 .si-mention-menu button { display: flex; gap: 6px; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: var(--text); text-align: left; font-size: var(--fs-sm); cursor: pointer; }
 .si-mention-menu button b { color: var(--accent); }
 .si-mention-menu button.hot, .si-mention-menu button:hover { background: var(--accent-soft); }
+/* SI: a compound's structure on its ID in the text (the group tooltip's look, .label-tip) */
+.si-mention-tip-pic { background: #fff; }
+.si-mention-tip-pic svg { display: block; }
 
 /* picking from the Compound Library or My Library */
 dialog.si-pick { width: min(92vw, 480px); }
