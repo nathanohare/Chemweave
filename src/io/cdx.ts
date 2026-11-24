@@ -132,8 +132,6 @@ const P: Record<string, Prop> = {
   Radical: { tag: 0x0422, kind: 'enum8', values: { None: 0, Singlet: 1, Doublet: 2, Triplet: 3 } }, // Singlet seen in ChemDraw's files
   FreeSites: { tag: 0x0423, kind: 'u8' },
   ImplicitHydrogens: { tag: 0x0424, kind: 'implied' },
-  RingBondCount: { tag: 0x0425, kind: 'i8' },
-  UnsaturatedBonds: { tag: 0x0426, kind: 'i8' },
   RxnChange: { tag: 0x0427, kind: 'implied' },
   AbnormalValence: { tag: 0x0429, kind: 'implied' },
   NumHydrogens: { tag: 0x042b, kind: 'u16' },
@@ -324,8 +322,77 @@ const P: Record<string, Prop> = {
   ChemicalPropertyType: { tag: 0x0bb0, kind: 'u32', values: list('Unspecified', 'ChemicalName') },
   ChemicalPropertyDisplayID: { tag: 0x0bb1, kind: 'id' },
   ChemicalPropertyIsActive: { tag: 0x0bb2, kind: 'bool' },
+  // query and reaction settings of atoms and bonds, with their numbers, from the CDX specification
+  RingBondCount: { tag: 0x0425, kind: 'i8', values: { Unspecified: -1, NoRingBonds: 0, AsDrawn: 1, SimpleRing: 2, Fusion: 3, SpiroOrHigher: 4 } },
+  UnsaturatedBonds: { tag: 0x0426, kind: 'i8', values: list('Unspecified', 'MustBeAbsent', 'MustBePresent') },
+  RxnStereo: { tag: 0x0428, kind: 'i8', values: list('Unspecified', 'Inversion', 'Retention') },
+  Translation: { tag: 0x0438, kind: 'i8', values: list('Equal', 'Broad', 'Narrow', 'Any') },
+  IsotopicAbundance: { tag: 0x043f, kind: 'i8', values: list('Unspecified', 'Any', 'Natural', 'Enriched', 'Deficient', 'Nonnatural') },
+  Topology: { tag: 0x0606, kind: 'i8', values: list('Unspecified', 'Ring', 'Chain', 'RingOrChain') },
+  RxnParticipation: { tag: 0x0607, kind: 'i8', values: list('Unspecified', 'ReactionCenter', 'MakeOrBreak', 'ChangeType', 'MakeAndChange', 'NotReactionCenter', 'NoChange', 'Unmapped') },
+  // a node's or a fragment's formula (a fragment's has its own number; see writeAttributes)
+  Formula: { tag: 0x0404, kind: 'str' },
+  // spectra
+  XSpacing: { tag: 0x0a80, kind: 'f64' },
+  XLow: { tag: 0x0a81, kind: 'f64' },
+  XType: { tag: 0x0a82, kind: 'i16', values: list('Unknown', 'Wavenumbers', 'Microns', 'Hertz', 'MassUnits', 'PartsPerMillion', 'Other') },
+  YType: { tag: 0x0a83, kind: 'i16', values: list('Unknown', 'Absorbance', 'Transmittance', 'PercentTransmittance', 'Other', 'ArbitraryUnits') },
+  XAxisLabel: { tag: 0x0a84, kind: 'str' },
+  YAxisLabel: { tag: 0x0a85, kind: 'str' },
+  Class: { tag: 0x0a87, kind: 'i16', values: list('Unknown', 'Chromatogram', 'Infrared', 'UVVis', 'XRayDiffraction', 'MassSpectrum', 'NMR', 'Raman', 'Fluorescence', 'Atomic') },
+  YLow: { tag: 0x0a88, kind: 'f64' },
+  YScale: { tag: 0x0a89, kind: 'f64' },
+  // TLC plates and spots
+  OriginFraction: { tag: 0x0aa0, kind: 'f64' },
+  SolventFrontFraction: { tag: 0x0aa1, kind: 'f64' },
+  ShowOrigin: { tag: 0x0aa2, kind: 'bool' },
+  ShowSolventFront: { tag: 0x0aa3, kind: 'bool' },
+  ShowBorders: { tag: 0x0aa4, kind: 'bool' },
+  ShowSideTicks: { tag: 0x0aa5, kind: 'bool' },
+  Rf: { tag: 0x0ab0, kind: 'f64' },
+  Tail: { tag: 0x0ab1, kind: 'coord' },
+  ShowRf: { tag: 0x0ab2, kind: 'bool' },
+  // named alternative groups
+  TextFrame: { tag: 0x0b00, kind: 'rect' },
+  GroupFrame: { tag: 0x0b01, kind: 'rect' },
+  Valence: { tag: 0x0b02, kind: 'i16' },
+  // 3D query geometry and constraints
+  GeometricFeature: { tag: 0x0b80, kind: 'i8', values: list('Undefined', 'PointFromPointPointDistance', 'PointFromPointPointPercentage', 'PointFromPointNormalDistance', 'LineFromPoints', 'PlaneFromPoints', 'PlaneFromPointLine', 'CentroidFromPoints', 'NormalFromPointPlane') },
+  RelationValue: { tag: 0x0b81, kind: 'i8' },
+  ConstraintType: { tag: 0x0b83, kind: 'i8', values: list('Undefined', 'Distance', 'Angle', 'ExclusionSphere') },
+  ConstraintMin: { tag: 0x0b84, kind: 'f64' },
+  ConstraintMax: { tag: 0x0b85, kind: 'f64' },
+  IgnoreUnconnectedAtoms: { tag: 0x0b86, kind: 'implied' },
+  DihedralIsChiral: { tag: 0x0b87, kind: 'implied' },
+  PointIsDirected: { tag: 0x0b88, kind: 'implied' },
+  // object tags
+  Tracking: { tag: 0x0d03, kind: 'bool' },
+  Persistent: { tag: 0x0d04, kind: 'bool' },
+  // sequences and cross-references
+  SequenceIdentifier: { tag: 0x0e00, kind: 'str' },
+  CrossReferenceContainer: { tag: 0x0f00, kind: 'str' },
+  CrossReferenceDocument: { tag: 0x0f01, kind: 'str' },
+  CrossReferenceIdentifier: { tag: 0x0f02, kind: 'str' },
+  CrossReferenceSequence: { tag: 0x0f03, kind: 'str' },
+  // template grids, groups and page layouts
+  PaneHeight: { tag: 0x1000, kind: 'coord' },
+  NumRows: { tag: 0x1001, kind: 'i16' },
+  NumColumns: { tag: 0x1002, kind: 'i16' },
+  Integral: { tag: 0x1100, kind: 'bool' },
+  PageDefinition: { tag: 0x1ff1, kind: 'enum8', values: list('Undefined', 'Center', 'TL4', 'IDTerm', 'FlushLeft', 'FlushRight', 'Reaction1', 'Reaction2', 'MulticolumnTL4', 'MulticolumnNonTL4', 'UserDefined') },
 };
+/** A fragment's formula, under a number of its own (an atom's is P.Formula's). */
+const TAG_MOLE_FORMULA = 0x0503;
+/** A spectrum's Y values (its text in CDXML): FLOAT64s, one after another. */
+const TAG_SPECTRUM_DATA = 0x0a86;
+/**
+ * Properties an object of one kind keeps in its own units: a TLC spot's size and tail are CDX's
+ * integers (1/65536 pt) in CDXML too, as ChemDraw 25 writes them (Width="39321" for a 0.6 pt spot).
+ */
+const OWN_KIND: Record<string, Record<string, Kind>> = { tlcspot: { Width: 'i32', Height: 'i32', Tail: 'i32' } };
+const kindFor = (el: string, name: string, p: Prop): Prop => { const k = OWN_KIND[el]?.[name]; return k ? { ...p, kind: k } : p; };
 const BY_TAG = new Map(Object.entries(P).map(([name, p]) => [p.tag, [name, p] as const]));
+BY_TAG.set(TAG_MOLE_FORMULA, ['Formula', P.Formula]);
 
 const TAG_TEXT = 0x0700;
 // The same text in UTF-8, which ChemDraw 25 writes after the single-byte text (not in the
@@ -426,7 +493,7 @@ function encodeValue(p: Prop, v: string): Uint8Array | null {
   const int = (x: number) => Math.round(x);
   const named = p.values?.[v];
   switch (p.kind) {
-    case 'i8': case 'u8': if (!Number.isFinite(n[0])) return null; b.u8(int(n[0])); break;
+    case 'i8': case 'u8': if (named !== undefined) b.u8(named); else if (Number.isFinite(n[0])) b.u8(int(n[0])); else return null; break;
     case 'i16': case 'u16':
       if (named !== undefined) b.u16(named);
       else if (Number.isFinite(n[0])) b.u16(int(n[0]));
@@ -532,8 +599,9 @@ function writeAttributes(out: Bytes, e: Element, skip: Set<string> = new Set()):
       writeProp(out, parseInt(kept[1], 16), bytes);
       continue;
     }
-    const p = P[a.name];
-    if (!p) continue;
+    const p0 = P[a.name];
+    if (!p0) continue;
+    const p = kindFor(e.nodeName, a.name, p0);
     let v = a.value;
     if (a.name === 'LineStarts') continue; // written with the text, in CDX's character offsets
     if (a.name === 'Charge' && !Number.isFinite(Number(v))) continue;
@@ -541,7 +609,7 @@ function writeAttributes(out: Bytes, e: Element, skip: Set<string> = new Set()):
     const tagType = e.nodeName === 'objecttag' && a.name === 'Value' ? e.getAttribute('TagType') : null;
     const data = tagType === 'Double' || tagType === 'Long' ? encodeValue({ ...p, kind: tagType === 'Double' ? 'f64' : 'i32' }, v)
       : p.kind === 'str' && e.nodeName === 'objecttag' && a.name !== 'Value' ? encode1252(v) : encodeValue(p, v);
-    if (data) writeProp(out, p.tag, data);
+    if (data) writeProp(out, a.name === 'Formula' && e.nodeName === 'fragment' ? TAG_MOLE_FORMULA : p.tag, data);
   }
 }
 
@@ -588,6 +656,11 @@ function writeObject(out: Bytes, e: Element): void {
   if (['n', 'b', 't'].includes(e.nodeName) && (at('LabelFont') || at('LabelSize') || at('LabelFace'))) writeProp(out, TAG_LABELSTYLE, fontStyle(at('LabelFont'), at('LabelFace'), at('LabelSize'), null));
   if (['t', 'graphic', 'arrow'].includes(e.nodeName) && (at('CaptionFont') || at('CaptionSize') || at('CaptionFace'))) writeProp(out, TAG_CAPTIONSTYLE, fontStyle(at('CaptionFont'), at('CaptionFace'), at('CaptionSize'), null));
   if (e.nodeName === 't') writeText(out, e);
+  if (e.nodeName === 'spectrum') {
+    const ys = Array.from(e.childNodes).filter((c) => c.nodeType === 3).map((c) => c.textContent ?? '').join(' ');
+    const vals = nums(ys).filter(Number.isFinite);
+    if (vals.length) { const b = new Bytes(); for (const y of vals) b.f64(y); writeProp(out, TAG_SPECTRUM_DATA, b.done()); }
+  }
   for (const c of kids(e)) {
     if (c.nodeName === 'represent') {
       const p = P[c.getAttribute('attribute') ?? ''];
@@ -823,6 +896,11 @@ function readObject(r: Reader, name: string, id: number): Node {
       node.children.splice(node.children[0]?.name === 'colortable' ? 1 : 0, 0, table);
       continue;
     }
+    if (tag === TAG_SPECTRUM_DATA && name === 'spectrum') {
+      const v = new DataView(d.buffer, d.byteOffset, d.byteLength);
+      node.text = Array.from({ length: len >> 3 }, (_, i) => String(v.getFloat64(i * 8, true))).join(' ');
+      continue;
+    }
     const known = BY_TAG.get(tag);
     if (!known) {
       // kept as it is, to be written back to CDX (G1-08)
@@ -831,7 +909,7 @@ function readObject(r: Reader, name: string, id: number): Node {
       node.attrs.push([CDX_KEEP + tag.toString(16).toUpperCase().padStart(4, '0'), hex.toUpperCase()]);
       continue;
     }
-    let prop = known[1];
+    let prop = kindFor(name, known[0], known[1]);
     if (known[0] === 'Value' && name === 'objecttag') {
       const type = node.attrs.find(([k]) => k === 'TagType')?.[1];
       if (type === 'Double' || type === 'Long') prop = { ...prop, kind: type === 'Double' ? 'f64' : 'i32' };
@@ -876,9 +954,9 @@ const escAttr = (s: string) => esc(s).replace(/\n/g, '&#10;').replace(/\r/g, '&#
 function toXml(n: Node, out: string[]): void {
   out.push('<', n.name);
   for (const [k, v] of n.attrs) out.push(' ', k, '="', escAttr(v), '"');
-  if (!n.children.length && n.name !== 's') { out.push('/>'); return; }
+  if (!n.children.length && n.name !== 's' && n.text === undefined) { out.push('/>'); return; }
   out.push('>');
-  if (n.name === 's') out.push(esc(n.text ?? ''));
+  if (n.name === 's' || n.text !== undefined) out.push(esc(n.text ?? ''));
   for (const c of n.children) toXml(c, out);
   out.push('</', n.name, '>');
 }

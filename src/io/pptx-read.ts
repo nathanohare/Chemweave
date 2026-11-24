@@ -69,6 +69,7 @@ import { slidePrint, type CanvasKeep } from '../deck/canvas-export';
 import { textPrint, spPrPrint, slideTablePrint } from './native-print';
 import { applyStyle, sliceRuns } from '../richtext';
 import { cleanDeckRefs, cleanSlideRefs, type DeckRefs, type SlideRefs } from '../deck/slide-refs';
+import { minOf } from './min-max';
 
 /** PowerPoint's shapes that are shapes in the library, by PowerPoint's name. */
 const GEO_BY_PRST = new Map(GEOS.filter((g) => g.prst).map((g) => [g.prst!, g.id]));
@@ -1803,7 +1804,7 @@ class Reader {
       }
       return best;
     };
-    const rank = (it: StackItem) => Math.min(...it.ids.map(seqOf));
+    const rank = (it: StackItem) => minOf(it.ids.map(seqOf));
     const boxes = new Map<StackItem, Rect | null>();
     const box = (it: StackItem) => {
       if (!boxes.has(it)) boxes.set(it, roughBox(doc, it));
@@ -3284,7 +3285,7 @@ const PLAIN_SHAPE_FIELDS: { [K in Exclude<keyof Shape, 'id' | 'kind' | 'x1' | 'y
   picFill: 'object', bold: 'boolean', symbol: 'string', bracket: 'string', pair: 'boolean', bracketPair: 'number', repeat: 'string', repeatLook: 'object',
   picture: 'boolean', src: 'string', px: 'object', video: 'object', link: 'string', zoom: 'object', crop: 'object', phPic: 'number', look: 'object', fx: 'object',
   color: 'string', z: 'number', alt: 'string', locked: 'boolean', table: 'object', chart: 'object', math: 'object', editedOutside: 'boolean', energy: 'object',
-  newman: 'object', torsion: 'object', plate: 'object', diagram: 'object', smart: 'object', holder: 'object', madeLabels: 'object', ole: 'object',
+  newman: 'object', torsion: 'object', plate: 'object', diagram: 'object', smart: 'object', holder: 'object', madeLabels: 'object', ole: 'object', cdObject: 'object',
 };
 
 /** The tag's fields that a box, oval or line may have, each of the right type (others are left out). */

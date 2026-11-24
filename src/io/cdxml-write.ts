@@ -11,9 +11,10 @@ import { CdxmlSource, Doc, Atom, Bond, Caption, Arrow, Shape, TextRun, Entity, K
 import { interpretArrow, isReactionArrow, linkRows, isStep, plainMeasure, rolesOf, schemeItems, type Item } from '../chem/reaction';
 import { SYMBOLS } from '../chem/elements';
 import { labelBonds, labelSpec, layoutLabel, labelDir, labelGraph, tokenize, isGenericLabel, Measure, MiniGraph, kekulize, labelLook, labelPieces } from '../chem/labels';
-import { Vec, DEG, arcCenter, norm, sub, Rect, turnedCorners } from '../geom';
-import { arrowEllipse, bezPoints, boxOf, elbowRoute, shapeTurn } from '../objects';
+import { Vec, DEG, arcCenter, norm, sub, Rect, turnedCorners, turnAbout } from '../geom';
+import { arrowEllipse, bezPoints, boxOf, elbowRoute, shapeTurn, shapeMid } from '../objects';
 import { kids, descendants, wellFormed, withoutDoctype } from './xml';
+import { CD_OBJECTS, type CdObject } from './chemdraw-objects';
 import { withoutCdxOnly } from './cdx';
 import { arialWidth } from '../text-metrics';
 import { toSymbolPieces, isSymbolFont, faceFromStyle } from '../richtext';
@@ -46,6 +47,7 @@ import { ellipseAxes, isCircleRing, ringBonds, ringCircle, ringsThroughBond } fr
 import { newmanForFile } from '../design/newman';
 import { bondWidths, docMapLook, labelBold } from '../style';
 import { isMapNumber } from '../render/atom-marks';
+import { minOf, maxOf } from './min-max';
 
 /**
  * The drawing's map-number look as the page tag's JSON: saved when the drawing has a look of its
@@ -157,6 +159,8 @@ class CdxmlWriter {
   private fragOfAtom = new Map<number, Element>();
   /** Each table as written this time (its table, or the group holding its parts). */
   private tableEls = new Map<number, Element>();
+  /** The ids a table's cell pages gave their structures before it was written again. */
+  private cellFragIds = new Map<Element, string[]>();
   /** The element written for each bond. */
   private bondEls = new Map<number, Element>();
   /** Neighbours of each atom as read from the file. */
@@ -207,8 +211,9 @@ class CdxmlWriter {
     this.writeGroups();
     this.writePieces();
     this.writeMore();
-    if (this.writeStack()) this.changed = true;
+    // (structures go into their table cells first, so the page's order is worked out without them)
     this.raiseTableFigures();
+    if (this.writeStack()) this.changed = true;
     if (src) this.cleanUp();
 
     // the file name stored inside; an untouched file is not rewritten just for a rename
@@ -1383,12 +1388,15 @@ class CdxmlWriter {
       }
       for (const [f, ids] of byFrag) {
         const xs = ids.map((id) => this.doc.atoms.get(id)!.x), ys = ids.map((id) => this.doc.atoms.get(id)!.y);
-        const part = partAt(t, lay, { x: (Math.min(...xs) + Math.max(...xs)) / 2 - s.x1, y: (Math.min(...ys) + Math.max(...ys)) / 2 - s.y1 });
+        const part = partAt(t, lay, { x: (minOf(xs) + maxOf(xs)) / 2 - s.x1, y: (minOf(ys) + maxOf(ys)) / 2 - s.y1 });
         if (!part || typeof part === 'string') continue;
         const cell = cells[part.r * t.cols.length + part.c];
         if (!cell) continue;
         shift(f, -(s.x1 + lay.xs[part.c]), -(s.y1 + lay.ys[part.r]));
         cell.insertBefore(f, kids(cell).find((k) => k.nodeName === 'border') ?? null);
+        // (with the id it had there before, while no one else has taken it, so a second save is the same)
+        const was = this.cellFragIds.get(cell)?.shift();
+        if (was && was !== f.getAttribute('id') && !this.root.querySelector(`[id="${was}"]`)) f.setAttribute('id', was);
         this.changed = true;
       }
     }
@@ -1649,7 +1657,7 @@ class CdxmlWriter {
     const pts = bezPoints(r);
     if (pts) {
       const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y), pad = r.headWidth;
-      this.set(e, 'BoundingBox', box({ x1: Math.min(...xs) - pad, y1: Math.min(...ys) - pad, x2: Math.max(...xs) + pad, y2: Math.max(...ys) + pad }));
+      this.set(e, 'BoundingBox', box({ x1: minOf(xs) - pad, y1: minOf(ys) - pad, x2: maxOf(xs) + pad, y2: maxOf(ys) + pad }));
     }
     for (const g of this.legacyOf(e)) {
       g.setAttribute('BoundingBox', g.getAttribute('GraphicType') === 'Arc' ? `${pt(r.head)} ${pt(center)}` : `${pt(r.head)} ${pt(r.tail)}`);
@@ -1678,7 +1686,7 @@ class CdxmlWriter {
       this.set(el, 'AngularSize', f2(ell.angularSize).replace(/\.?0+$/, ''));
       const all = bezPoints(r) ?? [r.tail, r.head];
       const xs = all.map((p) => p.x), ys = all.map((p) => p.y), pad = r.headWidth;
-      this.set(el, 'BoundingBox', box({ x1: Math.min(...xs) - pad, y1: Math.min(...ys) - pad, x2: Math.max(...xs) + pad, y2: Math.max(...ys) + pad }));
+      this.set(el, 'BoundingBox', box({ x1: minOf(xs) - pad, y1: minOf(ys) - pad, x2: maxOf(xs) + pad, y2: maxOf(ys) + pad }));
       this.writeMorph(el, r);
     } else if (pts) {
       const n = (pts.length - 1) / 3;
@@ -1693,7 +1701,7 @@ class CdxmlWriter {
       const hs = Math.round((r.headLength / lw) * 100), aw = Math.round((r.headWidth / lw) * 100);
       const ht = r.headType === 'hollow' ? 'Hollow' : r.headType === 'angle' ? 'Angle' : 'Solid';
       for (const [k, v] of Object.entries({
-        BoundingBox: box({ x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) }),
+        BoundingBox: box({ x1: minOf(xs), y1: minOf(ys), x2: maxOf(xs), y2: maxOf(ys) }),
         color: this.colorAttr(r.color), LineWidth: r.lineWidth !== undefined ? f2(r.lineWidth) : null,
         CurvePoints: knots.map((p) => `${f2(p.x)} ${f2(p.y)}`).join(' '), CurveType: String(kinds),
         HeadSize: hs !== 1000 ? String(hs) : null, ArrowheadWidth: aw !== 250 ? String(aw) : null, ArrowheadType: ht !== 'Solid' ? ht : null,
@@ -1824,6 +1832,7 @@ class CdxmlWriter {
   }
 
   private writeShape(s: Shape): void {
+    if (s.cdObject && s.kind === 'picture') { this.writeCdObject(s, s.cdObject); return; }
     if (s.kind === 'table') { this.writeTable(s); return; }
     if (s.kind === 'ring' && this.writeRingArea(s)) return;
     if (s.kind === 'geo' && (isPathId(s.geo) || isPenId(s.geo)) && this.writePathCurve(s)) return;
@@ -1860,6 +1869,47 @@ class CdxmlWriter {
       const host = owner || radical ? this.fragOfAtom.get((owner ?? radical)!.id) ?? null : flagHome ?? (s.kind === 'symbol' ? this.nearestFragment(s) : null);
       (host ?? this.page).appendChild(g);
     }
+    this.changed = true;
+  }
+
+  /**
+   * A ChemDraw TLC plate or spectrum (chemdraw-objects.ts): the ChemDraw object itself, never its
+   * picture, so ChemDraw can still edit it. One read from this file stays where it is, moved or
+   * sized with its picture; a copy is the object as read, with new ids, put where its picture is.
+   * (Nothing else about the picture is written: its crop, look or turn are only shown here.)
+   */
+  private writeCdObject(s: Shape, cd: CdObject): void {
+    const e = this.source('s', s.id, CD_OBJECTS);
+    const o = this.orig<Shape>('s', s.id);
+    if (!(e && o) && !(Array.isArray(cd.box) && cd.box.length === 4 && typeof cd.xml === 'string')) return;
+    const [ox1, oy1, ox2, oy2] = e && o ? [o.x1, o.y1, o.x2, o.y2] : cd.box;
+    // a plate turned here is turned in the file too (its corners say how it lies); a spectrum can't be
+    const turn = cd.kind === 'tlcplate' ? (s.rot ?? 0) - (e && o ? o.rot ?? 0 : 0) : 0;
+    const stretch = boxMap({ x1: ox1, y1: oy1, x2: ox2, y2: oy2 }, s);
+    const mid = shapeMid(s);
+    const map = stretch && ((x: number, y: number): [number, number] => {
+      const [a, b] = stretch(x, y);
+      const q = turnAbout({ x: a, y: b }, mid, turn);
+      return [q.x, q.y];
+    });
+    if (e && o) {
+      if (o.x1 === s.x1 && o.y1 === s.y1 && o.x2 === s.x2 && o.y2 === s.y2 && !turn) return;
+      if (map) moveCdObject(e, map);
+      this.changed = true;
+      return;
+    }
+    let el: Element;
+    try {
+      const parsed = new DOMParser().parseFromString(cd.xml, 'application/xml').documentElement;
+      if (!CD_OBJECTS.includes(parsed.nodeName) || parsed.getElementsByTagName('parsererror').length) return;
+      el = this.x.importNode(parsed, true) as Element;
+    } catch {
+      return;
+    }
+    for (const k of [el, ...descendants(el)]) if (k.hasAttribute('id')) k.setAttribute('id', this.id());
+    el.setAttribute('id', String(s.id));
+    if (map) moveCdObject(el, map);
+    this.page.appendChild(el);
     this.changed = true;
   }
 
@@ -1978,7 +2028,7 @@ class CdxmlWriter {
         const kinds = (closed ? 1 : 0) | (type !== 'fill' && s.dashed ? 2 : 0) | (type !== 'fill' && width > 1.75 * lw ? 4 : 0) | (type === 'fill' ? 128 : 0);
         const xs = c.points.map((p) => p.x), ys = c.points.map((p) => p.y);
         g!.appendChild(this.el('curve', {
-          id: this.id(), BoundingBox: box({ x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) }),
+          id: this.id(), BoundingBox: box({ x1: minOf(xs), y1: minOf(ys), x2: maxOf(xs), y2: maxOf(ys) }),
           color: this.colorAttr(color), CurvePoints: c.points.map((p) => `${f2(p.x)} ${f2(p.y)}`).join(' '), CurveType: String(kinds),
           // ChemDraw 25 fills a curve by its FillType; the CurveType bit alone leaves it empty
           FillType: type === 'fill' ? 'Solid' : null,
@@ -2059,10 +2109,43 @@ class CdxmlWriter {
     // (a table holding structures is written again, so its cells hold them as they are now)
     if (e && o && sameExcept(s, o, []) && !tableContents(this.doc, s, (x) => layoutTable(x, this.doc.style.captionSize, measure)).length) return;
     const el = this.tableElement(s, t, e?.getAttribute('id') ?? String(s.id));
+    if (e) this.keepTableParts(e, el, !!o && sameExcept(s, o, []));
     this.tableEls.set(s.id, el);
     if (e?.parentNode) e.parentNode.replaceChild(el, e);
     else this.page.appendChild(el);
     this.changed = true;
+  }
+
+  /**
+   * A table written again keeps what it had where its cells are the same: each cell's page, text
+   * and border ids (so a second save is the same file), each border's line type and color, which
+   * this program has no place for, and, while the table itself is unchanged, each border's width.
+   */
+  private keepTableParts(was: Element, now: Element, same: boolean): void {
+    const tableIn = (e: Element) => (e.nodeName === 'table' ? e : descendants(e).find((k) => k.nodeName === 'table'));
+    const a = tableIn(was), b = tableIn(now);
+    if (!a || !b) return;
+    const pa = kids(a).filter((k) => k.nodeName === 'page'), pb = kids(b).filter((k) => k.nodeName === 'page');
+    if (pa.length !== pb.length) return;
+    pb.forEach((page, i) => {
+      const old = pa[i];
+      const keepId = (to: Element, from: Element | undefined) => { const id = from?.getAttribute('id'); if (id) to.setAttribute('id', id); };
+      keepId(page, old);
+      const frags = kids(old).filter((k) => k.nodeName === 'fragment').map((k) => k.getAttribute('id')).filter((x): x is string => !!x);
+      if (frags.length) this.cellFragIds.set(page, frags);
+      const ta = kids(old).filter((k) => k.nodeName === 't'), tb = kids(page).filter((k) => k.nodeName === 't');
+      tb.forEach((t, j) => keepId(t, ta[j]));
+      for (const bd of kids(page).filter((k) => k.nodeName === 'border')) {
+        const from = kids(old).find((k) => k.nodeName === 'border' && k.getAttribute('Side') === bd.getAttribute('Side'));
+        if (!from) continue;
+        keepId(bd, from);
+        for (const k of same ? ['LineType', 'color', 'LineWidth'] : ['LineType', 'color']) {
+          const v = from.getAttribute(k);
+          if (v !== null) bd.setAttribute(k, v);
+          else if (k === 'LineWidth') bd.removeAttribute(k);
+        }
+      }
+    });
   }
 
   private tableElement(s: Shape, t: NonNullable<Shape['table']>, outerId: string): Element {
@@ -2261,7 +2344,7 @@ class CdxmlWriter {
     const ch = (h: string) => [0, 2, 4].map((k) => parseInt(h.slice(k, k + 2), 16));
     const c = ch(ink), f = ch(fill);
     // how much white is mixed in, from the channel with the most room
-    const k = c.indexOf(Math.min(...c));
+    const k = c.indexOf(minOf(c));
     if (c[k] > 250) return null;
     const a = (f[k] - c[k]) / (255 - c[k]);
     if (a <= 0.001 || a >= 0.999) return null;
@@ -2523,7 +2606,7 @@ class CdxmlWriter {
     switch (ref[0]) {
       case 'a': return this.fragOfAtom.get(id)?.getAttribute('id') ?? null;
       case 'c': return this.doc.captions.has(id) ? this.source('c', id, ['t'])?.getAttribute('id') ?? String(id) : null;
-      case 's': return this.doc.shapes.has(id) ? this.source('s', id, ['graphic', 'embeddedobject', 'table', 'group', 'curve'])?.getAttribute('id') ?? String(id) : null;
+      case 's': return this.doc.shapes.has(id) ? this.source('s', id, SHAPE_ELEMENTS)?.getAttribute('id') ?? String(id) : null;
     }
     return null;
   }
@@ -2608,7 +2691,9 @@ class CdxmlWriter {
   /** The element written for a thing: a structure's fragment for an atom. */
   private elementOf(kind: Kind, id: number, ided: (id: number, names: string[]) => Element | null): Element | null {
     if (kind === 'a') return this.fragOfAtom.get(id) ?? null;
-    const names = kind === 'c' ? ['t'] : kind === 'r' ? ['arrow', 'graphic', 'curve'] : ['graphic', 'embeddedobject', 'table', 'group', 'curve'];
+    // (a table written again is the new element, not the one read)
+    if (kind === 's' && this.tableEls.has(id)) return this.tableEls.get(id)!;
+    const names = kind === 'c' ? ['t'] : kind === 'r' ? ['arrow', 'graphic', 'curve'] : SHAPE_ELEMENTS;
     return this.source(kind, id, names) ?? (kind === 'r' ? this.findArrow(id) : null) ?? ided(id, names);
   }
 
@@ -2663,7 +2748,8 @@ class CdxmlWriter {
           const bonds = ks.filter((k) => k.nodeName === 'b').map((k, j) => ({ k, j, z: Number(k.getAttribute('Z')) }));
           bonds.sort((x, y) => (isFinite(x.z) && isFinite(y.z) ? x.z - y.z : 0) || x.j - y.j);
           for (const { k } of bonds) setZ(k);
-          for (const k of ks) if (k.nodeName === 'n' || k.nodeName === 'graphic') setZ(k);
+          // (a mark that has a place of its own, such as an orbital drawn on it, keeps that)
+          for (const k of ks) if ((k.nodeName === 'n' || k.nodeName === 'graphic') && !done.has(k)) setZ(k);
         }
         let top: Element | null = e;
         while (top && top.parentNode !== this.page) top = top.parentElement;
@@ -2853,7 +2939,7 @@ class CdxmlWriter {
     for (const a of doc.atoms.values()) put('a', a.id, ['n'], a.piece);
     for (const c of doc.captions.values()) put('c', c.id, ['t'], c.piece);
     for (const r of doc.arrows.values()) put('r', r.id, ['arrow', 'graphic'], r.piece);
-    for (const s of doc.shapes.values()) put('s', s.id, ['graphic', 'embeddedobject', 'table', 'group', 'curve'], s.piece);
+    for (const s of doc.shapes.values()) put('s', s.id, SHAPE_ELEMENTS, s.piece);
     // the two halves of a bracket pair drawn with the bracket tool (a click on one selects both)
     for (const s of doc.shapes.values()) if (s.kind === 'bracket') put('s', s.id, ['graphic'], s.bracketPair, BRACKET_PAIR_TAG, 'bracketPair');
   }
@@ -2870,7 +2956,7 @@ class CdxmlWriter {
     if (this.unchangedSinceRead()) return;
     const doc = this.doc;
     const ided = this.idedFinder();
-    const SHAPE_NAMES = ['graphic', 'embeddedobject', 'table', 'group', 'curve'];
+    const SHAPE_NAMES = SHAPE_ELEMENTS;
     const ARROW_NAMES = ['arrow', 'graphic', 'curve'];
     const elOf = (kind: RefKind, id: number): Element | null => {
       const names = kind === 'a' ? ['n'] : kind === 'b' ? ['b'] : kind === 'c' ? ['t'] : kind === 'r' ? ARROW_NAMES : SHAPE_NAMES;
@@ -3087,6 +3173,45 @@ function shift(e: Element, dx: number, dy: number): void {
   for (const c of kids(e)) shift(c, dx, dy);
 }
 
+/** The elements a shape may have been read from (for its group, place in the stacking order, tags and steps). */
+const SHAPE_ELEMENTS = ['graphic', 'embeddedobject', 'table', 'group', 'curve', ...CD_OBJECTS];
+
+/** The points of a ChemDraw TLC plate or spectrum, and of what it holds (an Rf label's place). */
+const CD_POSITION_ATTRS = [...POSITION_ATTRS, 'TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
+
+/** Where a point in one box goes in another (a move, or a move and a stretch); null if either box is empty. */
+function boxMap(from: { x1: number; y1: number; x2: number; y2: number }, to: { x1: number; y1: number; x2: number; y2: number }): ((x: number, y: number) => [number, number]) | null {
+  const fw = from.x2 - from.x1, fh = from.y2 - from.y1;
+  if (!(Math.abs(fw) > 1e-9 && Math.abs(fh) > 1e-9) || ![to.x1, to.y1, to.x2, to.y2].every(Number.isFinite)) return null;
+  const sx = (to.x2 - to.x1) / fw, sy = (to.y2 - to.y1) / fh;
+  return (x, y) => [to.x1 + (x - from.x1) * sx, to.y1 + (y - from.y1) * sy];
+}
+
+/** Moves (and stretches) every point of a ChemDraw object and of what it holds; a box stays written smallest corner first. */
+function moveCdObject(e: Element, map: (x: number, y: number) => [number, number]): void {
+  for (const name of CD_POSITION_ATTRS) {
+    const v = e.getAttribute(name);
+    if (v === null) continue;
+    const n = nums(v);
+    if (name.endsWith('3D')) {
+      const out = n.map((x) => x);
+      for (let i = 0; i + 1 < n.length; i += 3) [out[i], out[i + 1]] = map(n[i], n[i + 1]);
+      e.setAttribute(name, out.map((x, i) => (i % 3 === 2 ? String(x) : f2(x))).join(' '));
+      continue;
+    }
+    const out: number[] = [];
+    for (let i = 0; i + 1 < n.length; i += 2) out.push(...map(n[i], n[i + 1]));
+    if (name === 'BoundingBox' && n.length === 4) {
+      // all four corners, so a turned plate's box still holds it
+      const cs = [map(n[0], n[1]), map(n[2], n[1]), map(n[2], n[3]), map(n[0], n[3])];
+      const [p, q, r, t] = cs;
+      out.splice(0, 4, Math.min(p[0], q[0], r[0], t[0]), Math.min(p[1], q[1], r[1], t[1]), Math.max(p[0], q[0], r[0], t[0]), Math.max(p[1], q[1], r[1], t[1]));
+    }
+    e.setAttribute(name, out.map(f2).join(' '));
+  }
+  for (const c of kids(e)) moveCdObject(c, map);
+}
+
 /** Are two entities equal, ignoring the listed fields? */
 /** Attributes that name other objects by id (in kept ChemDraw objects: BracketedObjectIDs, BasisObjects, GraphicID…). */
 export const REF_ATTR = /(ID|IDs|Objects)$/;
@@ -3118,7 +3243,7 @@ function turnedBox(r: Rect, at: Vec, deg: number): Rect {
   const ps = [[r.x1, r.y1], [r.x2, r.y1], [r.x2, r.y2], [r.x1, r.y2]].map(([x, y]) => ({
     x: at.x + (x - at.x) * cos - (y - at.y) * sin, y: at.y + (x - at.x) * sin + (y - at.y) * cos,
   }));
-  return { x1: Math.min(...ps.map((p) => p.x)), y1: Math.min(...ps.map((p) => p.y)), x2: Math.max(...ps.map((p) => p.x)), y2: Math.max(...ps.map((p) => p.y)) };
+  return { x1: minOf(ps.map((p) => p.x)), y1: minOf(ps.map((p) => p.y)), x2: maxOf(ps.map((p) => p.x)), y2: maxOf(ps.map((p) => p.y)) };
 }
 
 /** An elbow connector's bends as a Bézier path of straight pieces (each handle on its own point), for ChemDraw. */

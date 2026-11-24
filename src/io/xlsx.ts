@@ -67,6 +67,7 @@ import { readRichValues, writeRichParts, richMetadataXml, keepPointers, pointerO
 import { LeftOut, connectionsKept, queryTableOf, CT_QUERY_TABLE, REL as KEPT_FEATURE_REL } from './xlsx-left-out';
 import { readSheetOle, writeSheetOle, oleVml, oleNote, structureOle, structureOleRef, type KeptSheetOle, type OleWriteState } from './xlsx-ole';
 import { chemdrawObject, chemdrawProg, chemdrawCdx, oleCellTag, OLE_CELL_STREAM } from './ole-object';
+import { maxOf } from './min-max';
 export { applyTint };
 
 /** Pictures of structures for Excel (the app draws them; tests use stand-ins). */
@@ -1078,7 +1079,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     // (last, so the sheets' places in the list, which names and print areas go by, stay as they are)
     const n = book.sheets.length + 1;
     const rowXml: string[] = [];
-    for (let r = 0; r < Math.max(...lists.map((l) => l.items.length)); r++) {
+    for (let r = 0; r < maxOf(lists.map((l) => l.items.length)); r++) {
       const cells = lists.map((l, c) => (r < l.items.length ? `<c r="${cellName(r, c)}" t="s"><v>${strings.index(excelCellText(l.items[r]), false)}</v></c>` : '')).join('');
       rowXml.push(`<row r="${r + 1}">${cells}</row>`);
     }

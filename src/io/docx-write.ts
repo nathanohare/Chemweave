@@ -61,6 +61,7 @@ import { cmlGuid, contentsSig, writeCml } from './cml';
 import {
   BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, CONT_MARK, HEAD_MARK, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
 } from './docx-base';
+import { minOf, maxOf } from './min-max';
 
 export interface DocxDeps {
   /** A drawing's picture for Word: PNG bytes, an SVG Word shows instead when it can, and its own size in points. */
@@ -1270,8 +1271,8 @@ class DocxWriter {
       pic = pic.replace(/<pic:cNvPr id="0" name="([^"]*)"\/>/, (_, n: string) => `<pic:cNvPr id="${docPr[1]}" name="${n}"${docPr[2] !== undefined ? ` descr="${docPr[2]}"` : ''}/>`);
       items.push({ pic, blip: blip[1], id, x: emu(fl.x + l), y: emu(fl.y + t), cx: Number(ext[1]), cy: Number(ext[2]), e });
     }
-    const x0 = Math.min(...items.map((i) => i.x)), y0 = Math.min(...items.map((i) => i.y));
-    const W = Math.max(...items.map((i) => i.x + i.cx)) - x0, H = Math.max(...items.map((i) => i.y + i.cy)) - y0;
+    const x0 = minOf(items.map((i) => i.x)), y0 = minOf(items.map((i) => i.y));
+    const W = maxOf(items.map((i) => i.x + i.cx)) - x0, H = maxOf(items.map((i) => i.y + i.cy)) - y0;
     // the room the pictures' effects take beyond the group's frame
     const el = Math.max(0, ...items.map((i) => i.e[0] - (i.x - x0))), et = Math.max(0, ...items.map((i) => i.e[1] - (i.y - y0)));
     const er = Math.max(0, ...items.map((i) => i.x + i.cx + i.e[2] - (x0 + W))), eb = Math.max(0, ...items.map((i) => i.y + i.cy + i.e[3] - (y0 + H)));

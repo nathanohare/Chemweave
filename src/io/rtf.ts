@@ -11,6 +11,7 @@ import { fitParas, laidParas, paraCount, splitParagraphs } from '../text/paragra
 import { DocBuilder, fromCp1252, headingId, styleIdOf, toCp1252 } from './doc-build';
 import type { Contents } from '../model';
 import type { DocStyle } from '../style';
+import { maxOf } from './min-max';
 
 const TWIP = 20;
 const twip = (pt: number) => Math.round(pt * TWIP);
@@ -388,7 +389,7 @@ class RtfReader {
 
   private flushTable(): void {
     if (!this.rows.length) return;
-    const n = Math.max(...this.rows.map((r) => r.length), this.tableCols.length);
+    const n = Math.max(maxOf(this.rows.map((r) => r.length)), this.tableCols.length);
     const cols = Array.from({ length: n }, (_, i) => this.tableCols[i] ?? 72);
     const rows = this.rows.map((r) => Array.from({ length: n }, (_, i) => r[i] ?? { runs: [{ text: '' }] }));
     const table: TableData = { cols, rows, head: 0, lines: 'grid' };
