@@ -4,7 +4,7 @@
 // right-click menu in the Light look; then a keyboard-only walk: the menu
 // bar (F10, arrows, Esc), the toolbox (reached and used with Tab and Enter) and a window (focus goes
 // in, Tab stays in, Esc closes it and gives focus back); and that the drop-down list of a typed box in
-// the Orbital and Settings windows is on top of the window, not under it.
+// the Settings and Watermark windows is on top of the window, not under it.
 //
 // Problems found before this check existed are in scripts/a11y-known.mjs: it fails only on a new
 // one, and says which known ones no longer happen. On its own, against an app being served:
@@ -182,10 +182,12 @@ export async function a11yProblems(page, log = () => {}) {
 
   // a drop-down list in a window: a window opened with showModal() sits above the page, so a list added
   // to the page is drawn under it and can't be clicked. For each window with typed boxes that have
-  // suggestions (the Orbital window's Pointing box, Settings), the last item of the list must be what
-  // is on top at its own center.
-  // (the first typed box of each window: Orbital's Pointing box, and Settings' AI page's model box)
-  for (const [command, label, before] of [['orbital', 'Orbital', null], ['preferences', 'Settings', 'ai']]) {
+  // suggestions (Settings, a Document's Custom Watermark), the last item of the list must be what
+  // is on top at its own center. (The Orbital window's Pointing box, where this was first seen, is now a
+  // plain Rotation box with no list.)
+  // (the first typed box of each window: Settings' AI page's model box, and the Watermark window's Text box)
+  for (const [command, label, before, mode] of [['preferences', 'Settings', 'ai', null], ['watermark-custom', 'Watermark', null, ['document', 'new-document']]]) {
+    if (mode) await tabFor(mode[0], mode[1]);
     await cmd(command);
     await page.waitForSelector('dialog[open]', { timeout: 3000 }).catch(() => {});
     if (before) {
@@ -210,6 +212,7 @@ export async function a11yProblems(page, log = () => {}) {
     else if (res !== 'ok') found.add(`window: the ${label} window's drop-down list check found ${res} (the check can't run)`);
     await esc();
     if (await page.evaluate(() => !!document.querySelector('dialog[open]'))) await esc();
+    if (mode) await tabFor('drawing', 'new');
   }
 
   // a window: Settings, from the keyboard: focus goes in, Tab keeps it in, Esc closes it and gives focus back

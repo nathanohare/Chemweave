@@ -909,6 +909,9 @@ dialog.si-progress { width: min(92vw, 400px); }
 .ask-row.ask-check input { padding: 0; }
 .ask-row.ask-check.ask-has-beside { grid-template-columns: auto auto auto 1fr; }
 .ask-row .ask-beside { padding: 1px 4px; }
+.ask-row > .ask-colors { grid-column: 3; display: inline-flex; gap: 4px; }
+.ask-row > .ask-colors[hidden] { display: none; }
+.ask-colors > input[type='color'] { width: 28px; height: 24px; padding: 1px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); cursor: pointer; }
 .ask-form > .ask-row:not(.ask-check, .ask-wide) > select.ask-beside { grid-column: 3 / -1; }
 /* a subheading over a group of settings on a page; a short list with its picture beside it; a checkbox with its picture after its words */
 .ask-form > .ask-subhead { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid var(--line); font-size: var(--fs-sm, 0.85em); font-weight: 600; }

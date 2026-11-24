@@ -199,7 +199,7 @@ import { stoichiometryBook, type StoichRow, type StoichRole } from './chem/stoic
 import { cxSmiles, cxSmilesLeftOut, isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
 import { showBalance } from './ui/balance-dialog';
 import { withoutCharge } from './chem/formula';
-import { ORBITAL_KINDS, ORBITAL_LOOKS, angleOfDir, openDirection, orbitalAtom, orbitalShapes, orbitalsAmong, putOrbital, readAngle, readOrbital, redrawOrbital, takenDirections, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from './chem/orbitals';
+import { ORBITAL_KINDS, ORBITAL_LOOKS, angleOfDir, openDirection, orbitalAtom, orbitalShapes, orbitalsAmong, PHASE_COLOURS, putOrbital, readAngle, readOrbital, redrawOrbital, takenDirections, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from './chem/orbitals';
 import { BATCH_FORMATS, BATCH_INPUTS, readBatchFile, smilesLine, uniqueName, writeBatchItem, type BatchDeps, type BatchFormat } from './io/batch-convert';
 import { zipSync } from 'fflate';
 import { clampSchemeDistance, labelsOf, SCHEME_LIMITS, schemePrefs, setSchemePrefs, SPACING, type SchemeDistance, type SchemePrefs } from './chem/scheme-layout';
@@ -1644,8 +1644,8 @@ function crystalOptions(file?: { name: string; text: string }) {
 }
 
 /** How the last orbital was asked for, so the next starts the same way (and the single-lobe button's phases and size). */
-const orbitalChoice: Record<string, string> = { kind: 'p', look: 'shaded', size: '1.1', angle: 'Auto', flip: 'false' };
-editor.lobeLook = () => ({ look: (ORBITAL_LOOKS.some((k) => k.value === orbitalChoice.look) ? orbitalChoice.look : 'shaded') as OrbitalLook, size: orbitalSize(orbitalChoice.size), flip: orbitalChoice.flip === 'true' });
+const orbitalChoice: Record<string, string> = { kind: 'p', look: 'shaded', size: '1.1', angle: 'Auto', flip: 'false', c0: PHASE_COLOURS[0], c1: PHASE_COLOURS[1] };
+editor.lobeLook = () => ({ look: (ORBITAL_LOOKS.some((k) => k.value === orbitalChoice.look) ? orbitalChoice.look : 'shaded') as OrbitalLook, size: orbitalSize(orbitalChoice.size), flip: orbitalChoice.flip === 'true', ...phaseColours(orbitalChoice) });
 
 /** Which way an orbital on this atom points when left to choose: hybrids away from its bonds, a single lobe into the most open space, others up. */
 function orbitalAngle(kind: OrbitalKind, atom: Atom | undefined): number {
@@ -1660,11 +1660,20 @@ function orbitalAngle(kind: OrbitalKind, atom: Atom | undefined): number {
 /** A lobe length typed in bond lengths, kept to a sensible range. */
 const orbitalSize = (text: string | undefined): number => Math.max(0.2, Math.min(5, Number(text) || 1.1));
 
+/** The two phase colors picked in the Orbital window, when they aren't the usual blue and red. */
+/** A color as a color box gives it (#rrggbb, lower case), or `d` when it isn't one. */
+const boxHex = (t: string | undefined, d: string): string => (/^#[0-9a-f]{6}$/i.test(t ?? '') ? t!.toLowerCase() : d);
+
+function phaseColours(v: Record<string, string>): { colours?: [string, string] } {
+  const c: [string, string] = [boxHex(v.c0, PHASE_COLOURS[0]), boxHex(v.c1, PHASE_COLOURS[1])];
+  return c[0] === PHASE_COLOURS[0] && c[1] === PHASE_COLOURS[1] ? {} : { colours: c };
+}
+
 /** The Orbital window's settings as an orbital to draw, on `atom` (or pointing up off it). */
 function orbitalSpec(v: Record<string, string>, atom: Atom | undefined): OrbitalSpec {
   const kind = (ORBITAL_KINDS.some((k) => k.value === v.kind) ? v.kind : 'p') as OrbitalKind;
   const a = readAngle(v.angle);
-  return { kind, look: (ORBITAL_LOOKS.some((k) => k.value === v.look) ? v.look : 'shaded') as OrbitalLook, angle: a === 'auto' ? orbitalAngle(kind, atom) : a, size: orbitalSize(v.size) * doc.style.bondLength, ...(v.flip === 'true' ? { flip: true } : {}) };
+  return { kind, look: (ORBITAL_LOOKS.some((k) => k.value === v.look) ? v.look : 'shaded') as OrbitalLook, angle: a === 'auto' ? orbitalAngle(kind, atom) : a, size: orbitalSize(v.size) * doc.style.bondLength, ...(v.flip === 'true' ? { flip: true } : {}), ...phaseColours(v) };
 }
 
 /** A picture of an orbital as the window will draw it: on its atom with the atom's bonds, as it will look there. */
@@ -1692,8 +1701,8 @@ function orbitalPreview(spec: OrbitalSpec, atom: Atom | undefined, at?: Vec): No
 function orbitalFields(v: Record<string, string>): Field[] {
   return [
     { name: 'kind', label: 'Orbital', value: v.kind, options: ORBITAL_KINDS },
-    { name: 'look', label: 'Phases', value: v.look, options: ORBITAL_LOOKS },
-    { name: 'angle', label: 'Pointing', value: v.angle, unit: '°', suggestions: ['Auto', '0', '45', '90', '135', '180', '225', '270', '315'], help: 'Degrees clockwise from straight up. Auto points hybrids away from the bonds, a single lobe into the most open space, and the others straight up.' },
+    { name: 'look', label: 'Phases', value: v.look, options: ORBITAL_LOOKS, colors: { when: 'colour', items: [{ name: 'c0', value: v.c0 ?? PHASE_COLOURS[0], label: 'First phase color' }, { name: 'c1', value: v.c1 ?? PHASE_COLOURS[1], label: 'Second phase color' }] } },
+    { name: 'angle', label: 'Rotation', value: v.angle, unit: '°' },
     { name: 'size', label: 'Lobe length', value: v.size, type: 'number', unit: 'bond lengths' },
     { name: 'flip', label: 'Swap the phases', value: v.flip, type: 'checkbox' },
   ];
@@ -1728,7 +1737,7 @@ const selectedOrbitals = (): Shape[][] => orbitalsAmong(doc, editor.sel.shapes);
  * window): each keeps the settings not changed, its own angle and size among them, and stays
  * selected.
  */
-function restyleOrbitals(list: Shape[][], patch: Partial<OrbitalSpec>, autoAngle = false): void {
+function restyleOrbitals(list: Shape[][], patch: Partial<OrbitalSpec>, autoAngle = false, colour: [string?, string?] = []): void {
   const made: number[] = [];
   doc.edit(list.length > 1 ? 'Change Orbitals' : 'Change Orbital', () => {
     for (const parts of list) {
@@ -1736,6 +1745,8 @@ function restyleOrbitals(list: Shape[][], patch: Partial<OrbitalSpec>, autoAngle
       if (!now) continue;
       const spec: OrbitalSpec = { ...now.spec, ...patch };
       if (!spec.flip) delete spec.flip;
+      // a phase color changed: only that one, each orbital keeping its other color
+      if (colour[0] || colour[1]) { const c = spec.colours ?? PHASE_COLOURS; spec.colours = [colour[0] ?? c[0], colour[1] ?? c[1]]; }
       // Auto: each points its own way on its own atom
       if (autoAngle) { const at = orbitalAtom(doc, parts); spec.angle = orbitalAngle(spec.kind, at !== undefined ? doc.atoms.get(at) : undefined); }
       made.push(...redrawOrbital(doc, parts, spec));
@@ -1754,7 +1765,7 @@ async function editOrbital(): Promise<void> {
   if (!first) return;
   const atomId = orbitalAtom(doc, list[0]);
   const atom = atomId !== undefined ? doc.atoms.get(atomId) : undefined;
-  const was: Record<string, string> = { kind: first.spec.kind, look: first.spec.look, angle: String(Math.round(first.spec.angle * 10) / 10), size: String(Math.round((first.spec.size / doc.style.bondLength) * 100) / 100), flip: String(!!first.spec.flip) };
+  const was: Record<string, string> = { kind: first.spec.kind, look: first.spec.look, angle: String(Math.round(first.spec.angle * 10) / 10), size: String(Math.round((first.spec.size / doc.style.bondLength) * 100) / 100), flip: String(!!first.spec.flip), c0: boxHex(first.spec.colours?.[0], PHASE_COLOURS[0]), c1: boxHex(first.spec.colours?.[1], PHASE_COLOURS[1]) };
   const got = await ask(list.length > 1 ? `Edit ${list.length} Orbitals` : 'Edit Orbital', orbitalFields(was), {
     ok: 'Apply',
     preview: { title: 'Preview', draw: (vals) => orbitalPreview({ ...orbitalSpec(vals, atom), ...(vals.size === was.size ? { size: first.spec.size } : {}) }, atom, first.at) },
@@ -1766,11 +1777,12 @@ async function editOrbital(): Promise<void> {
   if (got.kind !== was.kind) patch.kind = got.kind as OrbitalKind;
   if (got.look !== was.look) patch.look = got.look as OrbitalLook;
   if (got.flip !== was.flip) patch.flip = got.flip === 'true';
+  const colour: [string?, string?] = [got.c0 !== was.c0 ? boxHex(got.c0, was.c0) : undefined, got.c1 !== was.c1 ? boxHex(got.c1, was.c1) : undefined];
   if (got.size !== was.size) patch.size = orbitalSize(got.size) * doc.style.bondLength;
   if (got.angle !== was.angle) { const a = readAngle(got.angle); if (a !== 'auto') patch.angle = a; }
-  orbitalChoice.look = got.look; orbitalChoice.flip = got.flip; orbitalChoice.size = got.size;
+  orbitalChoice.look = got.look; orbitalChoice.flip = got.flip; orbitalChoice.size = got.size; orbitalChoice.c0 = got.c0; orbitalChoice.c1 = got.c1;
   const auto = readAngle(got.angle) === 'auto';
-  if (Object.keys(patch).length || auto) restyleOrbitals(list, patch, auto);
+  if (Object.keys(patch).length || auto || colour[0] || colour[1]) restyleOrbitals(list, patch, auto, colour);
 }
 
 /** A diagram drawn as an SVG picture, for the diagram window's preview and its layout buttons. */
