@@ -207,7 +207,7 @@ Useful keys while typing:
 | Tab, Shift+Tab | Change the level of a list item |
 | Ctrl+Shift+V | Paste as plain text |
 
-Formula style writes CH3CO2H with its numbers lowered and raises a charge (NH4+, TfO-), as ChemDraw does. A hyphen in a name stays on the line (Red-Al). To raise a charge's number (Fe3+), select it and use superscript.
+Formula style writes CH3CO2H with its numbers lowered and raises a charge (NH4+, TfO-), as ChemDraw does. A hyphen in a name stays on the line (Red-Al). To raise a charge's number, select the ions and use **Raise Charge Digits** (the X²⁺ button beside Formula style in the Font group of every mode, and on the right-click menu of text): Fe₃⁺ becomes Fe³⁺ and SO₄₂⁻ becomes SO₄²⁻, while a count stays a count (NH₄⁺, BF₄⁻). Where the digit could be either (N3-: nitride or azide), it is left as typed and the status bar says so; select the digit and use Superscript.
 
 As you type, common chemistry is tidied for you: CH2Cl2 gets its subscripts, `0 oC` becomes 0 °C, `1H NMR` gets its superscript, and the letters of a stereodescriptor go italic as the name goes on ((*S*)-proline, (2*E*,4*Z*)-). Compound numbers can go bold as you type them, (**4**) or compound **4a**: check that in **Edit ▸ Typing and Spelling…** (it is off at first, so list items such as (1) stay plain). Press Ctrl+Z immediately to undo just that change. Misspelled words get a red underline and formatting slips (a hyphen in a range, a number run into its unit) a blue one; right-click for suggestions. **Edit ▸ Typing and Spelling…** turns these helpers off, adds your own replacements (`rxn` → reaction) and edits your dictionary.
 
@@ -367,7 +367,7 @@ R/S and E/Z are calculated for every structure as you draw.
 - Plain bold bonds count as wedges and plain hashed bonds as hashed wedges, as in ChemDraw. Where R or S would depend on what an R or Ar group is, no label is given.
 - **Axial chirality** (biaryls, allenes, alkylidenecycloalkanes) is labeled Ra or Sa by IUPAC rule P-93.5.1. Draw the groups on one end of the axis with a wedge and a hash (or one wedge) to show which way around it is. Without that, or when one end has two of the same group, no label is shown. **Edit ▸ Settings** writes them as P/M instead (Ra = M, Sa = P).
 - **Stereo Group (abs, &, or)…**: marks selected stereocenters as abs (known as drawn), &1 (a mixture of both forms) or or1 (one form, not known which).
-- **Chiral Flag (Abs, Rel, Rac)…**: puts the boxed flag under the selected structure, or removes it.
+- **Chiral Flag (Abs, Rel, Rac)…**: puts the boxed flag under the selected structure, or removes it. A structure with wedges and no flag is saved as racemic (chiral flag 0 in MOL, SDF and RXN files, as ChemDraw reads it); **Settings ▸ Preferences ▸ Stereochemistry** can make wedges alone mean one enantiomer instead. A flag drawn beside a structure always wins.
 
 ### Polymers and R-groups
 

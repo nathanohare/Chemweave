@@ -101,19 +101,24 @@ describe('several structures in one molfile and its one chiral flag (F1c-R03)', 
     p.bulk(() => { addMolfile(p, mol, 0, 0); });
     expect(flagsLeftToRight(p)).toEqual(['Absolute', 'Absolute']);
   });
-  it('an Abs structure beside an unflagged wedged one: written as V3000, the Abs one\'s centre absolute, the other left as drawn, and each comes back as drawn (F1d-R04)', () => {
+  // Nate, 2026-11-23 (F1 Needs Nate 13): the unflagged neighbour's wedged centres go in an and group
+  // of their own, as BIOVIA CTfile Formats 2026 (Stereochemistry) reads wedges without the chiral
+  // flag: "a mixture of the stereoisomer as drawn and its enantiomer"; Ketcher issue #56.
+  it('an Abs structure beside an unflagged wedged one: written as V3000, the Abs one\'s centre absolute, the other\'s in an and group, and each comes back as drawn (F1d-R04)', () => {
     const d = newDoc();
     const abs = alanineAt(d, 0, 0, 'Absolute');
     alanineAt(d, 5 * L, 0);
     const w = writeMolFile(d);
     expect(w.text).toMatch(/V3000/);
     expect(w.notes).toEqual(['written as V3000, since V2000 can\'t hold structures with and without an Abs chiral flag']);
-    // the file's flag 0; only the Abs structure's centre (atom 1) in the absolute collection, no or group
+    // the file's flag 0; the Abs structure's centre (atom 1) in the absolute collection, the other's
+    // (atom 7) in and group 1, no or group
     expect(flagOf(w.text)).toBe('0');
     expect(w.text).toMatch(/MDLV30\/STEABS ATOMS=\(1 1\)/);
-    expect(w.text).not.toMatch(/STEREL|STERAC/);
-    // (RDKit: the first alanine's centre absolute, the second's plain: no "or1" on it)
-    expect(cxsmiles(w.text)).toBe(ALANINES);
+    expect(w.text).toMatch(/MDLV30\/STERAC1 ATOMS=\(1 7\)/);
+    expect(w.text).not.toMatch(/STEREL/);
+    // (RDKit: the first alanine's centre absolute, the second's racemic, &1)
+    expect(cxsmiles(w.text)).toBe(ALANINES.replace('a:1|', 'a:1,&1:7|'));
     for (let round = 0; round < 2; round++) {
       const back = open('a.mol', round ? writeMolFile(open('a.mol', w.text)).text : w.text);
       expect(flagsLeftToRight(back), `round ${round}`).toEqual(['Absolute', null]);
@@ -122,13 +127,14 @@ describe('several structures in one molfile and its one chiral flag (F1c-R03)', 
     // the Abs structure alone is still plain V2000 with 1
     expect(flagOf(toMolfile(d, abs, '', { files: true }).molblock)).toBe('1');
   });
-  it('an unflagged neighbour never gains an or group, beside one or two Abs structures, in any order (F1d-R04)', () => {
+  it('an unflagged neighbour gains an and group of its own and never an or group, beside one or two Abs structures, in any order (F1d-R04)', () => {
     for (const order of [['Absolute', undefined, undefined], [undefined, 'Absolute', undefined], ['Absolute', undefined, 'Absolute']] as (ChiralFlag | undefined)[][]) {
       const d = newDoc();
       order.forEach((f, i) => alanineAt(d, i * 5 * L, 0, f));
       const text = writeMolFile(d).text;
-      expect(text, String(order)).not.toMatch(/STEREL|STERAC/);
-      expect(cxsmiles(text), String(order)).not.toMatch(/o\d|&\d/);
+      expect(text, String(order)).not.toMatch(/STEREL/);
+      expect(text.match(/STERAC\d/g), String(order)).toEqual(order.filter((f) => !f).map((_, i) => `STERAC${i + 1}`));
+      expect(cxsmiles(text), String(order)).not.toMatch(/o\d/);
       const back = open('a.mol', text);
       expect(flagsLeftToRight(back), String(order)).toEqual(order.map((f) => f ?? null));
       expect([...back.atoms.values()].some((a) => a.enhStereo), String(order)).toBe(false);

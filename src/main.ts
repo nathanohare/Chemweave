@@ -68,12 +68,13 @@ import { isCurved } from './objects';
 import { captionPlaces, fragmentRuns } from './chem/fragments';
 import { toMolfile } from './chem/molfile';
 import { molfileOrSmiles } from './chem/text-molfile';
-import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeSign, chemicalCaptions, groupedIonFragments, groupedIons, placeSpecies, speciesSmiles, type PlacedSpecies } from './chem/species';
+import { allSpecies, captionChemWarning, captionReading, captionSpecies, chargeSign, chemicalCaptions, groupedIonFragments, groupedIons, placeSpecies, speciesSmiles, stepMembers, type PlacedSpecies } from './chem/species';
 import { bestFit, fitMove, fitMatters } from './chem/orient';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blankCycle, type CycleLook } from './chem/cycles';
-import { addChiralFlag, structureFlag, type ChiralFlag } from './chem/chiral-flag';
+import { chargeNote } from './text/charge-digits';
+import { addChiralFlag, chiralPrefs, structureFlag, type ChiralFlag } from './chem/chiral-flag';
 import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
   nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, nativeClipboardDrawing, pasteDrawing, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
@@ -192,7 +193,7 @@ import { selectedGroup } from './chem/group-smiles';
 import { templateIcon } from './ui/template-icons';
 import { StructureChecks } from './chem/warnings';
 import { idText, labelClashes, parseIdStart, type IdStyle } from './chem/compound-numbers';
-import { arrowKind, schemeItems, isReactionArrow, reactionSteps, itemFinder, plainMeasure } from './chem/reaction';
+import { arrowKind, schemeItems, isReactionArrow, reactionSteps, plainMeasure } from './chem/reaction';
 import { canShowGuides, guidesOn as arrowGuidesOn, plainReactionArrow } from './chem/arrow-text';
 import { stoichiometryBook, type StoichRow, type StoichRole } from './chem/stoichiometry';
 import { cxSmiles, cxSmilesLeftOut, isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
@@ -1423,7 +1424,7 @@ async function pasteChemistry(text: string, quiet = false): Promise<boolean> {
   try {
     let ids: number[] = [];
     doc.edit('Paste', () => {
-      ids = addMolfile(doc, mb!, c.x, c.y);
+      ids = addMolfile(doc, mb!, c.x, c.y, { fromFile: text.includes('M  END') });
       editor.sel = { atoms: new Set(ids), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() };
       editor.placeClear(placingPage());
     });
@@ -3114,30 +3115,16 @@ function whyCannotRun(cmd: string, lazy = false): string | null | undefined {
  */
 async function stepSpecies(got: NonNullable<ReturnType<typeof pickedStep>>, maps = false): Promise<StepSpecies[]> {
   const { step, items, m } = got;
-  const find = itemFinder(items);
-  const wanted: { role: StoichRole; ref: string }[] = [
-    ...step.roles.reactants.map((ref) => ({ role: 'Starting material' as const, ref })),
-    ...[...step.roles.above, ...step.roles.below].map((ref) => ({ role: 'Reagent' as const, ref })),
-    ...step.roles.products.map((ref) => ({ role: 'Product' as const, ref })),
-  ];
   const rows: StepSpecies[] = [];
   const mols: { molblock: string; map: number[] }[] = [];
   const at: number[] = [];
-  for (const w of wanted) {
-    const it = find(w.ref);
-    if (!it || it.plus) continue;
-    const cap = it.caption !== undefined ? doc.captions.get(it.caption) : undefined;
-    // (a reagent's text over or under the arrow is read as the compound it names: Me2SO is DMSO)
-    const species = cap ? placeSpecies(doc, [cap], m, w.role === 'Reagent') : [];
-    if (!it.atoms.length && !species.length) {
-      if (cap) rows.push({ role: 'Conditions', name: plainText(cap.runs).trim(), atoms: [] });
-      continue;
-    }
-    const name = cap ? plainText(cap.runs).trim() : '';
-    const ex = toMolfile(doc, new Set(it.atoms), name.replace(/\s+/g, ' ').slice(0, 80), { species, maps });
+  for (const w of stepMembers(doc, step.roles, items, m)) {
+    const name = w.cap ? plainText(w.cap.runs).trim() : '';
+    if (w.role === 'Conditions') { rows.push({ role: 'Conditions', name, atoms: [] }); continue; }
+    const ex = toMolfile(doc, new Set(w.atoms), name.replace(/\s+/g, ' ').slice(0, 80), { species: w.species, maps });
     at.push(rows.length);
     mols.push({ molblock: ex.molblock, map: ex.map });
-    rows.push({ role: w.role, name, atoms: it.atoms, molblock: ex.molblock });
+    rows.push({ role: w.role, name, atoms: w.atoms, molblock: ex.molblock });
   }
   const res = mols.length ? await chem.analyze(mols).catch(() => null) : null;
   at.forEach((r, i) => {
@@ -3347,7 +3334,8 @@ async function copyReaction(as: 'smiles' | 'rxn'): Promise<void> {
  */
 async function pasteReaction(text: string, c: { x: number; y: number }): Promise<boolean> {
   let mols: { reactants: string[]; agents: string[]; products: string[] } | null = null;
-  if (isRxn(text)) mols = parseRxn(text);
+  const rxnFile = isRxn(text);
+  if (rxnFile) mols = parseRxn(text);
   else {
     const p = splitReactionSmiles(text);
     const read = async (xs: string[]) => { const out: string[] = []; for (const x of xs) { const mb = await chem.smilesToMol(x); if (!mb) return null; out.push(mb); } return out; };
@@ -3367,7 +3355,7 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
     doc.edit('Paste reaction', () => {
       let x = 0;
       const place = (mb: string, at: number, y = 0) => {
-        const ids = addMolfile(doc, mb, 0, 0);
+        const ids = addMolfile(doc, mb, 0, 0, { fromFile: rxnFile });
         const b = boxOf(ids);
         doc.moveAtoms(ids, at - b.x1, y - (b.y1 + b.y2) / 2);
         made.push(...ids);
@@ -3388,7 +3376,7 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
       const tail = x;
       let ax = tail + gap * 0.5;
       for (const mb of mols!.agents) {
-        const ids = addMolfile(doc, mb, 0, 0);
+        const ids = addMolfile(doc, mb, 0, 0, { fromFile: rxnFile });
         const b = boxOf(ids);
         doc.moveAtoms(ids, ax - b.x1, -bl * 0.6 - b.y2);
         made.push(...ids);
@@ -10759,6 +10747,8 @@ const COMMANDS: Record<string, () => unknown> = {
   'lock-structures': () => toggleStructureLock(),
   'add-caption': () => void addTiedText('caption'),
   'link-text': () => linkText() || flash(WHY.link),
+  // (the text being typed in, or the selected text boxes whole; one undo step)
+  'raise-charge-digits': () => { chargeNote.text = ''; const ok = editor.formatText({ kind: 'charges' }); if (chargeNote.text) flash(chargeNote.text, 6000); else if (!ok) flash(WHY.charges); },
   'unlink-text': () => unlinkText() || flash(WHY.unlink),
   group: () => editor.group() || flash(WHY.group),
   ungroup: () => editor.ungroupSmart() || editor.ungroup() || flash(WHY.ungroup),
@@ -12281,6 +12271,10 @@ async function personalPreferences(): Promise<void> {
       help: 'Off, a counterion typed without its charge is still read as that ion, and flagged until the charge is added.' },
     { name: 'saltGroups', label: 'Group each with the adjacent oppositely charged structure or ion, as one salt', type: 'checkbox', value: String(chemText.saltGroups), inline: (v) => saltSwatch(v === 'true', doc.style),
       help: 'Grouped, the two count as one salt: one formula and mass, and a SMILES with both parts.' },
+    { name: 'stereoHeading', label: 'Stereochemistry', type: 'heading', value: '' },
+    { name: 'unflagged', label: 'Wedges without a flag mean', value: chiralPrefs.unflagged, short: true, options: [
+      { value: 'racemic', label: 'Racemic' }, { value: 'absolute', label: 'One enantiomer' }],
+      help: 'For opening and saving MOL, SDF and RXN files, which hold this as the chiral flag. Racemic (as ChemDraw reads them): a flag of 0 means the structure as drawn and its enantiomer, and wedges with no flag here are saved as 0. One enantiomer: wedges with no flag here are saved with the flag 1, and a file opened or pasted with the flag 0 gets a Rac flag so it stays racemic. A chiral flag drawn beside a structure (Chemistry ▸ Stereo ▸ Chiral Flag) always wins.' },
     { name: 'focalHeading', label: 'Focal Points', type: 'heading', value: '', help: 'A focal point is the spot on a structure that lines up with other structures when you align, distribute or arrange them (right-click an atom, bond or ring ▸ Set as Focal Point).' },
     { name: 'focalLook', label: 'Mark focal points with', value: focalPrefs.look, short: true, options: FOCAL_LOOKS.map((l) => ({ value: l.look, label: l.name })), inline: (v) => focalSwatch(v) },
     { name: 'focalDefault', label: 'Structures without their own focal point line up by', value: focalPrefs.dflt, short: true, options: [
@@ -12302,6 +12296,7 @@ async function personalPreferences(): Promise<void> {
   setWarnLook(r.warnLook as Settings['warnLook']);
   chemText.ionCharges = r.ionCharges === 'true';
   chemText.saltGroups = r.saltGroups === 'true';
+  chiralPrefs.unflagged = r.unflagged === 'absolute' ? 'absolute' : 'racemic';
   templatesOnNew = { document: r.tplDocument === 'true', sheet: r.tplSheet === 'true', slides: r.tplSlides === 'true' };
   unitPrefs.place = r.tplUnits === 'header' || r.tplUnits === 'cell' ? r.tplUnits : 'both';
   smilesPrefs.draw = r.smilesCells === 'true';
@@ -12461,6 +12456,7 @@ function currentSettings(): Settings {
     axialStyle: axialStyle.helicity ? 'PM' : 'RaSa',
     circledCharges: editor.options.circledCharges,
     ionCharges: chemText.ionCharges,
+    unflaggedWedges: chiralPrefs.unflagged,
     saltGroups: chemText.saltGroups,
     groupClick: editor.options.groupClick,
     groupOutline: editor.options.groupOutline,
@@ -12708,6 +12704,7 @@ function applySettings(s: Settings): void {
   editor.options.circledCharges = s.circledCharges;
   chemText.ionCharges = s.ionCharges;
   chemText.saltGroups = s.saltGroups;
+  chiralPrefs.unflagged = s.unflaggedWedges;
   editor.options.groupClick = s.groupClick;
   editor.options.groupOutline = s.groupOutline;
   editor.options.rerouteArrows = s.rerouteArrows;
@@ -14347,7 +14344,7 @@ function drawingMenu(): MenuItem[] {
     ...(selectedOrbitals().length ? [{ cmd: 'edit-orbital' }, null] : []),
     ...(editor.selectedDiagram() !== null ? [{ cmd: 'edit-diagram' }, { cmd: 'diagram-to-shapes' }, null] : []),
     ...(s.captions.size ? [readAsMenu(), ...(texts && !atoms ? [{ cmd: 'expand-label', label: 'Expand Label' }, { cmd: 'expand-label-full', label: 'Expand Label Fully' }] : [])] : []),
-    ...(s.captions.size ? [{ cmd: 'link-text' }] : []),
+    ...(s.captions.size ? [{ cmd: 'raise-charge-digits' }, { cmd: 'link-text' }] : []),
     ...([...s.captions].some((id) => doc.captions.get(id)?.runs.some((r) => r.link))
       ? [{ cmd: 'open-link', label: 'Open Link' }, { cmd: 'insert-link', label: 'Edit Link…' }, { cmd: 'remove-link', label: 'Remove Link' }]
       : s.captions.size ? [{ cmd: 'insert-link', label: 'Link…' }] : []),
@@ -15254,7 +15251,7 @@ const DOC_LINES: Record<number, string> = { 1: 'line-single', 1.5: 'line-1-5', 2
 const textToolboxHooks: TextToolboxHooks = {
   format: (f) => {
     if (docActive()) {
-      const cmd = f.kind === 'stereo' ? 'doc-stereo-italic' : f.kind === 'toggle' ? DOC_TOGGLES[f.key] : f.kind === 'align' ? DOC_ALIGN[f.j] : f.kind === 'line' ? DOC_LINES[f.v] : undefined;
+      const cmd = f.kind === 'stereo' ? 'doc-stereo-italic' : f.kind === 'charges' ? 'doc-raise-charges' : f.kind === 'toggle' ? DOC_TOGGLES[f.key] : f.kind === 'align' ? DOC_ALIGN[f.j] : f.kind === 'line' ? DOC_LINES[f.v] : undefined;
       if (!cmd) { flash('In a document, the Home tab\'s Font and Paragraph groups set these.'); return true; }
       return docMode.run(cmd);
     }
@@ -15283,6 +15280,7 @@ if (textRows) {
     state: () => textToolboxHooks.look(),
     back: () => textToolboxHooks.back(),
     nothing: () => flash('Click into some text, or select a caption or text box, first.'),
+    say: (msg) => flash(msg, 6000),
   }, { ribbon: { paragraph: textRows.paragraph } });
 }
 
@@ -15807,7 +15805,7 @@ watchRibbons((on) => { ribbonChosen = on; storeSettings(); });
 // (in the order of the list: the pages of a group together, under its heading)
 const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'general', group: 'General', title: 'General', words: 'backup back up copy move settings file new computer install reinstall export import groups selecting click outline linked text above below ask whole page tracked changes reviewer name start view recent files chemdraw objects ole word powerpoint docx pptx save structures pictures svg png compatibility', open: generalPreferences },
-  { id: 'preferences', group: 'General', title: 'Preferences', words: 'crop marks white space between pages margins focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox', open: personalPreferences },
+  { id: 'preferences', group: 'General', title: 'Preferences', words: 'crop marks white space between pages margins focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox stereochemistry stereo wedges wedge chiral flag racemic enantiomer absolute abs rac molfile mol sdf rxn', open: personalPreferences },
   { id: 'hotkeys', group: 'General', title: 'Keyboard Shortcuts', words: 'keys keyboard shortcuts import export reset', open: () => hotkeysDialog.open() },
   { id: 'typing', group: 'General', title: 'Typing and Spelling', words: 'typing spelling dictionary autocorrect replacements chemistry formulas subscripts', open: () => typingDialog.open() },
   { id: 'autosave', group: 'General', title: 'AutoSave and Recovery', words: 'autosave recovery versions backup copies shared folders onedrive', open: () => keeper.optionsCommand() },
@@ -16469,6 +16467,7 @@ const slideText = new SlideTextRibbon($('#ribbon'), {
   look: () => editor.textLook(),
   refocus: () => editor.refocusText(),
   nothing: () => flash('Click into some text, or select a text box or a shape with text, first.'),
+  say: (msg) => flash(msg),
   box: (c) => editor.setTextBox(c),
   boxLook: () => editor.textBoxLook(),
 });
@@ -16477,6 +16476,7 @@ const designText = new SlideTextRibbon($('#design-ribbon'), {
   look: () => editor.textLook(),
   refocus: () => editor.refocusText(),
   nothing: () => flash('Click into some text, or select a text box or a shape with text, first.'),
+  say: (msg) => flash(msg),
   box: (c) => editor.setTextBox(c),
   boxLook: () => editor.textBoxLook(),
 });

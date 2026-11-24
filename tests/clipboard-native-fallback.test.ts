@@ -35,7 +35,7 @@ function ethanol(): Doc {
   d.bulk(() => {
     const c1 = d.addAtom(0, 0), c2 = d.addAtom(12.5, -7.2), o = d.addAtom(25, 0, 8);
     d.addBond(c1.id, c2.id); d.addBond(c2.id, o.id);
-    d.addCaption({ x: 0, y: 30, runs: [{ text: 'ethanol', lang: 'en-GB' }], justify: 'left' });
+    d.addCaption({ x: 0, y: 30, runs: [{ text: 'ethanol', lang: 'en-GB', noProof: true }], justify: 'left' });
   });
   return d;
 }
@@ -81,11 +81,13 @@ describe('every paste falls back to the CDXML beside it (F1b-R06)', () => {
     board.set(OWN_FORMAT, new TextEncoder().encode(cdxml));
     const got = await nativeClipboardDrawing();
     expect(got?.atoms.size).toBe(3);
-    // (read from CDXML: the language CDXML has no place for is gone (field-round-trip.test.ts CANT_CARRY), so this is the fallback)
-    expect([...got!.captions.values()][0].runs[0].lang).toBeUndefined();
+    // (read from CDXML: Do Not Check Spelling, which CDXML has no place for, is gone (field-round-trip.test.ts CANT_CARRY), so this is the fallback;
+    // the language now rides in CDXML's settings tag, F8a item 8)
+    expect([...got!.captions.values()][0].runs[0].noProof).toBeUndefined();
+    expect([...got!.captions.values()][0].runs[0].lang).toBe('en-GB');
     // and a sound copy is taken whole
     board.set(NATIVE_FORMAT, new TextEncoder().encode(nativeDrawingText(ethanol())));
-    expect([...(await nativeClipboardDrawing())!.captions.values()][0].runs[0].lang).toBe('en-GB');
+    expect([...(await nativeClipboardDrawing())!.captions.values()][0].runs[0].noProof).toBe(true);
     board.clear();
     expect(await nativeClipboardDrawing()).toBeNull();
   });

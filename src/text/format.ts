@@ -7,6 +7,7 @@ import type * as rt from '../richtext';
 import { TextEditing, type RichText } from './editing';
 import type { Measure } from './layout';
 import { stereoItalics } from './chemtext';
+import { chargeDigitEdits, chargeNote } from './charge-digits';
 
 export type TextFormat =
   | { kind: 'toggle'; key: rt.Toggle }
@@ -23,7 +24,9 @@ export type TextFormat =
   | { kind: 'case'; mode: rt.CaseMode }
   | { kind: 'clear' }
   /** Stereodescriptors and prefixes such as (2R,3S)-, (E)-, cis-, tert-, n- in italics (or back, if they all are). */
-  | { kind: 'stereo' };
+  | { kind: 'stereo' }
+  /** Raise Charge Digits: the digits before a final + or − go up with the sign (Fe₃⁺ → Fe³⁺, SO₄₂⁻ → SO₄²⁻; text/charge-digits.ts). */
+  | { kind: 'charges' };
 
 /** PowerPoint's steps for Increase and Decrease Font Size. */
 export const FONT_STEPS = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 66, 72, 80, 88, 96];
@@ -54,6 +57,14 @@ export function applyFormat(ed: TextEditing, f: TextFormat): void {
       const a = Math.min(ed.anchor, ed.focus), b = Math.max(ed.anchor, ed.focus);
       const looks = ed.looks();
       ed.fix(stereoItalics(ed.text, (i) => !!looks[i]?.italic, a === b ? 0 : a, a === b ? ed.text.length : b));
+      break;
+    }
+    case 'charges': {
+      // the selection only (a caret alone changes nothing: review F8a-R03); one undo step
+      const a = Math.min(ed.anchor, ed.focus), b = Math.max(ed.anchor, ed.focus);
+      if (a === b) { chargeNote.text = 'Select the ions whose charges to raise first.'; break; }
+      const looks = ed.looks();
+      ed.fix(chargeDigitEdits(ed.text, (i) => looks[i]?.pos === 'sup', a, b));
       break;
     }
   }

@@ -11,7 +11,7 @@ import { buildTextBar } from '../src/ui/text-bar';
 import { CanvasRibbon } from '../src/ui/canvas-ribbon';
 
 const src = (f: string) => readFileSync(join(__dirname, '..', f), 'utf8');
-const ORDER = ['Font', 'Font size', 'Increase Font Size', 'Decrease Font Size', 'Clear All Formatting', 'Bold', 'Italic', 'Underline', 'Strikethrough', 'Subscript', 'Superscript', 'Formula style', 'Text Color'];
+const ORDER = ['Font', 'Font size', 'Increase Font Size', 'Decrease Font Size', 'Clear All Formatting', 'Bold', 'Italic', 'Underline', 'Strikethrough', 'Subscript', 'Superscript', 'Formula style', 'Raise Charge Digits', 'Text Color'];
 
 /** The shared controls of a Font group, by name, in order (each mode's extras left out). */
 function shared(g: Element): string[] {
@@ -22,14 +22,14 @@ const group = (mode: FontMode) => { const t = document.createElement('template')
 
 describe('the shared Font group (G5-26)', () => {
   it('has the same controls in the same order in Document, Presentation and Spreadsheet', () => {
-    expect(FONT_ROWS.flat()).toHaveLength(13);
+    expect(FONT_ROWS.flat()).toHaveLength(14);
     for (const m of ['document', 'slides', 'sheet', 'si'] as const) {
       const g = group(m);
       expect(shared(g), m).toEqual(ORDER);
       expect(g.querySelector('.rb-label')!.textContent).toBe('Font');
       expect(g.querySelector('.rb-launch'), m).not.toBeNull();
       // the same pictures
-      for (const k of ['grow', 'shrink', 'clear', 'bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'formula'] as const) {
+      for (const k of ['grow', 'shrink', 'clear', 'bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'formula', 'charges'] as const) {
         const b = [...g.querySelectorAll('button')].find((x) => x.innerHTML === FONT_LOOK[k].html);
         expect(b, `${m} ${k}`).toBeTruthy();
       }
@@ -81,7 +81,7 @@ describe('the shared Font group (G5-26)', () => {
     expect(btns.at(-1)!.dataset.si).toBe('symbol');
     expect(btns.at(-1)!.textContent).toBe('Ω');
     expect(SI_FONT_OFF).toEqual(['font', 'size', 'grow', 'shrink', 'strike', 'color']);
-    for (const c of ['bold', 'italic', 'underline', 'subscript', 'superscript', 'clear', 'formula']) expect(g.querySelector(`[data-si-fmt="${c}"]`), c).not.toBeNull();
+    for (const c of ['bold', 'italic', 'underline', 'subscript', 'superscript', 'clear', 'formula', 'charges']) expect(g.querySelector(`[data-si-fmt="${c}"]`), c).not.toBeNull();
     expect(SI_FONT_REASON).toContain('journal style');
   });
 });

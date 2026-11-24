@@ -7,7 +7,7 @@
 // A box set to Chemical also reads a group or atom written on its own (OH, CH3, NO2, CO2H, Cl)
 // as the radical or atom it stands for, which a box left to read itself keeps as text.
 
-import type { Caption, Doc } from '../model';
+import type { Caption, Doc, StepRoles } from '../model';
 import { plainText } from '../richtext';
 import { elementNumber, hasImplicitH, implicitHydrogens } from './elements';
 import { graphSmiles } from './group-smiles';
@@ -15,7 +15,7 @@ import { groupFormula } from './label-tip';
 import { NICKNAMES, kekulize, labelGraph, labelOverValent, parseSmiles, tokenize, type MiniGraph } from './labels';
 import { SPECIES_BY_NAME, type SpeciesEntry, type SpeciesKind } from './species-list';
 import { arrowTexts } from './arrow-text';
-import { isReactionArrow, plainMeasure, schemeItems, type Item } from './reaction';
+import { isReactionArrow, itemFinder, plainMeasure, schemeItems, type Item } from './reaction';
 import type { Measure } from '../editor/arrange';
 
 export interface Species {
@@ -582,6 +582,34 @@ export function groupedIons(doc: Doc, atoms: Iterable<number>, m?: Measure): Cap
     if (c.grp === undefined || !groups.has(c.grp)) continue;
     const sp = captionSpecies(doc, c, m);
     if (sp && sp.charge) out.push(c);
+  }
+  return out;
+}
+
+/** What a reaction step is made of, by role: a structure or a named compound (with its caption), or conditions text. */
+export interface StepMember { role: 'Starting material' | 'Reagent' | 'Product' | 'Conditions'; atoms: number[]; cap?: Caption; species: PlacedSpecies[] }
+
+/**
+ * A reaction step's members in order (starting materials, reagents over and under the arrow,
+ * products), each as its atoms and the compounds its caption names (a reagent's text over or under
+ * the arrow is read as the compound it names: Me2SO is DMSO); text that names none is Conditions.
+ * Shared by Copy Reaction as SMILES and the clipboard's reaction SMILES, so the two agree.
+ */
+export function stepMembers(doc: Doc, roles: StepRoles, items: Item[], m: Measure = plainMeasure(doc)): StepMember[] {
+  const find = itemFinder(items);
+  const wanted: { role: StepMember['role']; ref: string }[] = [
+    ...roles.reactants.map((ref) => ({ role: 'Starting material' as const, ref })),
+    ...[...roles.above, ...roles.below].map((ref) => ({ role: 'Reagent' as const, ref })),
+    ...roles.products.map((ref) => ({ role: 'Product' as const, ref })),
+  ];
+  const out: StepMember[] = [];
+  for (const w of wanted) {
+    const it = find(w.ref);
+    if (!it || it.plus) continue;
+    const cap = it.caption !== undefined ? doc.captions.get(it.caption) : undefined;
+    const species = cap ? placeSpecies(doc, [cap], m, w.role === 'Reagent') : [];
+    if (!it.atoms.length && !species.length) { if (cap) out.push({ role: 'Conditions', atoms: [], cap, species }); continue; }
+    out.push({ role: w.role, atoms: it.atoms, ...(cap ? { cap } : {}), species });
   }
   return out;
 }
