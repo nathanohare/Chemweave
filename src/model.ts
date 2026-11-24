@@ -543,6 +543,11 @@ export interface ParaStyle {
   keepNext?: boolean;
   /** Documents: its lines kept together on one page (Word's Keep lines together). */
   keepLines?: boolean;
+  /**
+   * Documents: starts below any figure floating beside it, never next to one the text above
+   * wraps round (Word's text wrapping break with Clear: All, just before the paragraph).
+   */
+  clear?: boolean;
   /** Documents: a single first or last line may be left on a page by itself (Word's Widow/Orphan control off). */
   noWidow?: boolean;
   /** Documents: indent from the right margin, in points. */

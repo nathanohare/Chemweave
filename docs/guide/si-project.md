@@ -62,6 +62,7 @@ Tables, figures and schemes are numbered in the order they print.
 Pick a Data section and click **Home ▸ New Compound** (Ctrl+Shift+N). A compound's page has one field for each kind of data. The fields a new compound gets, and which of them are required, are set on the Data section's page under **Fields of new compounds**; **Insert ▸ Field…** adds others such as melting point, IR, optical rotation, enantiomeric excess, diastereomeric ratio, elemental analysis or one of your own.
 
 - **Structure.** **Home ▸ Edit Structure** opens the drawing tools. **Paste Structure** (or Ctrl+V on the structure picture) takes a structure copied from ChemDraw or Chemweave. The formula, molecular weight and exact mass under the ID are worked out from the structure.
+- **Where the structure prints.** In the compiled SI a compound's structure sits at the left with the procedure and data beside it, its top level with the first line under the compound's title. Click the structure in the Live Preview for the **Picture Format** tab (or right-click it): **Position** puts it in the line (centered in a paragraph of its own), at the left, center or right, beside or below the title; **Wrap Text** sets how the text goes around it (Square, Top and Bottom, Behind Text, In Front of Text). **Reset to Project Default** takes back the structure's own choice, and **Apply to All Structures** makes it the project's. **Project Settings ▸ Layout** sets it for every structure, with the space between the structure and the text. The next compound always starts below the structure; in the Word file this is a text wrapping break.
 - **Name.** Type it, or use **Home ▸ Structure to Name** (worked out on your computer) or **Name from PubChem** (looks the compound up online, and only when you click). Either way the name stays editable.
 - **Experimental procedure.** Type the procedure, or choose one of the section's general procedures and fill in the boxes it asks for.
 - **Reaction scale, Yield, Physical state, Purification, Rf.** Small boxes with units. Purification and Rf remember the eluents you have typed.
@@ -135,6 +136,7 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 | **Headings** | How headings are numbered |
 | **Page** | Header, footer and page numbers |
 | **Labels** | The words and numbering for figures, tables and schemes |
+| **Layout** | Where compound structures go and how the text wraps around them |
 | **Structures** | The drawing style of structures |
 | **Schemes** | The layout of every scheme |
 | **NMR Impurities** | The solvent and impurity peaks the NMR check knows |

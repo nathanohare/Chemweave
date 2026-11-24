@@ -32,7 +32,7 @@ export function positioned(fl: Float | undefined, place: PositionPlace, size: { 
   const x = col === 'left' ? 0 : col === 'center' ? (roomW - w) / 2 : roomW - w;
   const y = row === 'top' ? 0 : row === 'middle' ? (roomH - h) / 2 : roomH - h;
   const keep = fl && fl.wrap !== 'behind' && fl.wrap !== 'front' ? fl.wrap : 'square';
-  return { ...fl, wrap: keep, x, y, xFrom: 'margin', yFrom: 'margin' };
+  return { ...fl, wrap: keep, x, y, xFrom: 'margin', yFrom: 'margin', align: undefined };
 }
 
 export type Turn = 'right' | 'left' | 'flipH' | 'flipV';
@@ -115,6 +115,8 @@ export function withFloats(t: DocText, changes: [number, Partial<Float>][]): Doc
     const fl = floatOf(o);
     if (!o || !fl) continue;
     const next: Float = { ...fl, ...patch };
+    // (moved to a place of its own: no longer lined up in the margins)
+    if (patch.x !== undefined && !('align' in patch)) delete next.align;
     for (const k of Object.keys(next) as (keyof Float)[]) if (next[k] === undefined) delete next[k];
     objects[id] = { ...o, float: next } as DocObject;
   }

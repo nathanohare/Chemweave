@@ -122,7 +122,8 @@ describe('the spectra pages of the compiled SI', () => {
     const ids = objs.filter((o): o is Extract<DocObject, { kind: 'textbox' }> => o.kind === 'textbox' && !!o.float.name?.startsWith('Compound ID'));
     expect(ids[0].runs[0]).toMatchObject({ text: '2a', bold: true });
     // the structure, its natural size (3 × 1.1 in) fitted into 1.5 × 1.1 in, over the box
-    const drawings = objs.filter((o): o is Extract<DocObject, { kind: 'drawing' }> => o.kind === 'drawing' && !!o.float);
+    // (the spectra's structures: not the compounds' own, which float beside their text)
+    const drawings = objs.filter((o): o is Extract<DocObject, { kind: 'drawing' }> => o.kind === 'drawing' && !!o.float && !o.float.name?.startsWith('Compound structure'));
     expect(drawings).toHaveLength(3);
     expect(drawings[0].scale).toBe(0.5);
     expect(drawings[0].float!.x).toBeGreaterThan(boxes[0].float.x);

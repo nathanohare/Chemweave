@@ -14,7 +14,7 @@ import { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
 import * as rt from '../richtext';
 import type { TextRun } from '../model';
-import type { CompiledSi } from '../si/compile-doc';
+import type { CompiledSi, SiStructureRef } from '../si/compile-doc';
 import { blockAt, editableSrc, fieldOfSrc, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
@@ -45,11 +45,15 @@ export interface SiPreviewHost {
   undo(redo: boolean): void;
   /** Compile again (after a write that failed: the stored text is shown again). */
   refresh(): void;
+  /** A compound's structure picked in the preview (null: none now): its Picture Format tab shows. */
+  structureChosen(compound: string | null): void;
+  /** Right-click on a compound's structure (picked first): its menu at the pointer. */
+  structureMenu(compound: string, x: number, y: number): void;
 }
 
 /** What is being shown: the whole SI (which can be typed into), or the Spectra section's pages. */
 export interface ShownSi {
-  compiled: Pick<CompiledSi, 'doc' | 'sources' | 'blocks' | 'custom'>;
+  compiled: Pick<CompiledSi, 'doc' | 'sources' | 'blocks' | 'custom'> & { structures?: SiStructureRef[] };
   key: string;
   editable: boolean;
   /** Why it can't be typed into (said when someone tries). */
@@ -105,6 +109,9 @@ export class SiPreview {
   private caretOn = true;
   private blink = 0;
   private drag: { from: number } | null = null;
+  /** The compounds' structures in the text shown, and the compound whose structure is picked (it stays picked through a compile). */
+  private structures: SiStructureRef[] = [];
+  private pickedStructure: string | null = null;
   private downAt: { x: number; y: number; src: string | null } | null = null;
 
   constructor(readonly host: HTMLElement, private readonly api: SiPreviewHost) {
@@ -159,6 +166,9 @@ export class SiPreview {
     this.spans = s.compiled.sources.map((x) => ({ ...x }));
     this.blocks = s.compiled.blocks;
     this.custom = s.compiled.custom;
+    this.structures = s.compiled.structures ?? [];
+    // (a structure picked stays picked while it is still there)
+    if (this.pickedStructure && !this.structures.some((x) => x.compound === this.pickedStructure)) this.unpickStructure();
     this.written.clear();
     this.hovered = null;
     v.file = this.file;
@@ -275,11 +285,13 @@ export class SiPreview {
       });
     }
     const focused = this.focused;
-    const showCaret = !!ed && focused && this.caretOn && (ed.collapsed || ed.composing !== null);
+    const picked = this.pickedObj();
+    // (a structure picked: no caret beside it, only its handles)
+    const showCaret = !!ed && focused && this.caretOn && picked === null && (ed.collapsed || ed.composing !== null);
     return {
-      selection: ed && !ed.collapsed && !ed.composing ? [ed.start, ed.end] : null,
+      selection: ed && !ed.collapsed && !ed.composing && picked === null ? [ed.start, ed.end] : null,
       caret: showCaret ? ed!.caret() : null,
-      squiggles: [], picked: null, found: [], framed: null,
+      squiggles: [], picked, found: [], framed: null,
       marks,
     };
   }
@@ -480,7 +492,8 @@ export class SiPreview {
     scroller.addEventListener('pointermove', (e) => this.move(e));
     scroller.addEventListener('pointerup', (e) => this.up(e));
     scroller.addEventListener('pointerleave', () => { if (this.hovered) { this.hovered = null; this.api.hoverSource(null); v.redraw(); } scroller.style.cursor = ''; });
-    scroller.addEventListener('dblclick', (e) => { const at = this.offsetAt(e); if (at !== null) this.file?.ed.selectWord(at); });
+    scroller.addEventListener('dblclick', (e) => { if (this.structureUnder(e)) return; const at = this.offsetAt(e); if (at !== null) this.file?.ed.selectWord(at); });
+    scroller.addEventListener('contextmenu', (e) => this.contextMenu(e));
   }
 
   private startBlink(): void {
@@ -509,11 +522,78 @@ export class SiPreview {
     return null;
   }
 
+  // ---------------------------------------------------------------- structures
+
+  /** The object showing the picked structure (null: none picked). */
+  private pickedObj(): number | null {
+    return this.pickedStructure ? this.structures.find((x) => x.compound === this.pickedStructure)?.obj ?? null : null;
+  }
+
+  /** The compound whose structure is under a pointer (its box on the page), or null. */
+  private structureUnder(e: PointerEvent | MouseEvent): SiStructureRef | null {
+    if (!this.file || !this.structures.length) return null;
+    const p = this.view.toDoc(e.clientX, e.clientY);
+    const lay = this.file.layout();
+    // (front first: the last placed is drawn over the others)
+    for (const o of [...lay.objects].reverse()) {
+      if (p.x < o.x || p.x > o.x + o.w || p.y < o.y || p.y > o.y + o.h) continue;
+      const ref = this.structures.find((x) => x.obj === o.id);
+      if (ref) return ref;
+    }
+    return null;
+  }
+
+  /** Pick a compound's structure: its page chosen in the list, its handles shown, its Picture Format tab. */
+  private pickStructure(ref: SiStructureRef): void {
+    this.pickedStructure = ref.compound;
+    const at = this.objectOffset(ref.obj);
+    const b = at === null ? null : blockAt(this.blocks, at);
+    if (b && b.node !== this.focusNode) this.api.pick(b.node);
+    this.api.structureChosen(ref.compound);
+    this.view.redraw();
+  }
+
+  /** Let go of the structure picked (another figure was picked on the SI page). */
+  letGo(): void { this.unpickStructure(); }
+
+  private unpickStructure(): void {
+    if (!this.pickedStructure) return;
+    this.pickedStructure = null;
+    this.api.structureChosen(null);
+    this.view.redraw();
+  }
+
+  /** Where an object's character is in the text. */
+  private objectOffset(id: number): number | null {
+    let at = 0;
+    for (const r of this.file?.t.runs ?? []) { if (r.obj === id) return at; at += r.text.length; }
+    return null;
+  }
+
+  /** Right-click: on a structure, it is picked and its menu shows. */
+  private contextMenu(e: MouseEvent): void {
+    const ref = this.structureUnder(e);
+    if (!ref) return;
+    e.preventDefault();
+    this.ta.focus({ preventScroll: true });
+    this.pickStructure(ref);
+    this.api.structureMenu(ref.compound, e.clientX, e.clientY);
+  }
+
   private down(e: PointerEvent): void {
     if (e.button !== 0 || !this.file) return;
+    // a structure clicked: picked (no caret goes beside it)
+    const ref = this.structureUnder(e);
+    if (ref) {
+      e.preventDefault();
+      this.ta.focus({ preventScroll: true });
+      this.pickStructure(ref);
+      return;
+    }
     const at = this.offsetAt(e);
     if (at === null) return;
     e.preventDefault();
+    this.unpickStructure();
     this.ta.focus({ preventScroll: true });
     this.file.ed.setCaret(at, e.shiftKey);
     this.drag = { from: at };
@@ -531,7 +611,7 @@ export class SiPreview {
     const s = this.spanUnder(e);
     const same = (s?.src ?? null) === (this.hovered?.src ?? null);
     this.hovered = s;
-    this.view.scroller.style.cursor = s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s ? 'text' : '';
+    this.view.scroller.style.cursor = this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s ? 'text' : '';
     if (!same) { this.api.hoverSource(s && !isCustomSrc(s.src) ? s.src : null); this.view.redraw(); }
   }
 
@@ -558,8 +638,13 @@ export class SiPreview {
     const ctrl = e.ctrlKey || e.metaKey;
     const shift = e.shiftKey;
     const word = /mac/i.test(navigator.platform) ? e.altKey : e.ctrlKey;
+    // a structure picked: Escape lets it go; it can't be deleted or typed over here (its page has it)
+    if (this.pickedStructure && !ctrl && !e.altKey) {
+      if (e.key === 'Escape') return run(() => this.unpickStructure());
+      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash('A compound’s structure is changed on its page (Home ▸ Edit Structure); here you can change where it goes (Picture Format).'));
+    }
     const moves: Record<string, Parameters<typeof ed.move>[0]> = { ArrowLeft: word ? 'wordLeft' : 'left', ArrowRight: word ? 'wordRight' : 'right', ArrowUp: 'up', ArrowDown: 'down', Home: e.ctrlKey ? 'textStart' : 'lineStart', End: e.ctrlKey ? 'textEnd' : 'lineEnd' };
-    if (moves[e.key] && !e.altKey) return run(() => ed.move(moves[e.key], shift));
+    if (moves[e.key] && !e.altKey) return run(() => { this.unpickStructure(); ed.move(moves[e.key], shift); });
     if (!ctrl && !e.altKey) {
       switch (e.key) {
         case 'Enter': return run(() => ed.enter(shift));
@@ -587,6 +672,8 @@ export class SiPreview {
     const t = e.inputType;
     if (t === 'insertCompositionText') return;
     e.preventDefault();
+    // (nothing typed over a structure picked: click in the text to type)
+    if (this.pickedStructure) { this.api.flash('Click in the text to type there: a structure is selected.'); return; }
     if ((t === 'insertText' || t === 'insertReplacementText') && e.data) ed.type(e.data);
     else if (t === 'insertLineBreak' || t === 'insertParagraph') ed.enter(t === 'insertLineBreak');
     else if (t === 'deleteContentBackward') ed.backspace();

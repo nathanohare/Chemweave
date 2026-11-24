@@ -68,8 +68,9 @@ describe('compiling an SI project into a document', () => {
     // a compound: its bookmark, structure and the text SI Assistant writes
     const a = ps.findIndex((x) => x.text === '1-Phenylethan-1-ol (2a).');
     expect(ps[a].marks).toEqual([compoundBookmark('c-26c39a99')]);
-    expect(ps[a + 2].text).toBe('Prepared according to General Procedure A from acetophenone (1a, 60.1 mg, 0.50 mmol). The crude product was purified by flash column chromatography (SiO2, n-hexane/EtOAc 4:1).');
-    expect(ps[a + 3].text).toMatch(/^Colorless oil \(57\.4 mg, 94%\)\. Rf = 0\.23 .* calcd for C8H10NaO 145\.0624; found 145\.0625\. Spectral data matched those reported in the literature\.￼$/);
+    // (its structure floats from the first line under the title, at the left, the text beside it: placement.ts)
+    expect(ps[a + 1].text).toBe('￼Prepared according to General Procedure A from acetophenone (1a, 60.1 mg, 0.50 mmol). The crude product was purified by flash column chromatography (SiO2, n-hexane/EtOAc 4:1).');
+    expect(ps[a + 2].text).toMatch(/^Colorless oil \(57\.4 mg, 94%\)\. Rf = 0\.23 .* calcd for C8H10NaO 145\.0624; found 145\.0625\. Spectral data matched those reported in the literature\.￼$/);
     const drawings = Object.values(doc.objects).filter((o) => o.kind === 'drawing');
     // the compounds' structures, and the two schemes (whose compound 3 isn't drawn again)
     expect(drawings.length).toBe(8);

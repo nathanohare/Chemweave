@@ -862,6 +862,8 @@ export class DocLayouter {
       let hs = pl.map(heightOf);
       if (ps.pageBreak && (hasContent || col > 0)) newPage();
       else if (ps.colBreak && hasContent) nextColumn();
+      // a paragraph that clears the figures floating beside it starts below them
+      if (ps.clear && hasContent) for (const r of rects) if ((r.wrap === 'square' || r.wrap === 'topBottom') && r.y2 > cursor) cursor = r.y2;
       // space above a paragraph isn't kept at the top of a page, except on the first page
       const before = () => (hasContent || pageIdx === 0 ? ps.spaceBefore ?? 0 : 0) + (bRoom?.above[p] ?? 0);
       // a heading moves to the next page when the start of the paragraph after it won't fit beside it
@@ -899,7 +901,9 @@ export class DocLayouter {
           if (!fl || !s || fl.hidden) continue;
           const [el, et, er, eb] = extentOf(r.obj!);
           const bw = s.w + el + er, bh = s.h + et + eb;
-          let bx = (fl.xFrom === 'page' ? 0 : page.left) + fl.x;
+          // (lined up in the margins or on the page whatever its width, as Word's Alignment, else at x)
+          const roomX = fl.xFrom === 'page' ? page.w : page.w - page.left - page.right;
+          let bx = (fl.xFrom === 'page' ? 0 : page.left) + (fl.align === 'center' ? (roomX - bw) / 2 : fl.align === 'right' ? roomX - bw : fl.align === 'left' ? 0 : fl.x);
           let by = (fl.yFrom === 'page' ? 0 : fl.yFrom === 'margin' ? page.top : page.top + cursor) + fl.y;
           bx = Math.max(0, Math.min(bx, page.w - bw));
           by = Math.max(0, Math.min(by, page.h - bh));

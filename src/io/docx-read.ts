@@ -1384,9 +1384,11 @@ class DocxReader {
     const off = (el: Element | null) => { const o = kid(el, 'posOffset'); return o ? fromEmu(o.textContent ?? '0') : null; };
     const pg = this.page;
     let x = off(H);
+    let align: Float['align'];
     if (x === null) {
       // aligned rather than placed: left, centre or right of the margins (or the page)
       const a = kid(H, 'align')?.textContent ?? 'left';
+      if ((a === 'left' || a === 'center' || a === 'right') && (hFrom === 'margin' || hFrom === 'page' || hFrom === 'column')) align = a;
       const room = hFrom === 'page' ? pg.w : this.textW;
       x = a === 'center' ? (room - w) / 2 : a === 'right' || a === 'outside' ? room - w : 0;
     }
@@ -1402,6 +1404,7 @@ class DocxReader {
       : kind === 'wrapNone' ? (yes(anchor.getAttribute('behindDoc')) ? 'behind' as const : 'front' as const)
       : 'square' as const;
     const fl: Float = { wrap, x: round(x - l), y: round(y - t) };
+    if (align) fl.align = align;
     const fx = effectBeyond(anchor, look ?? undefined);
     if (fx) fl.effect = fx;
     if (xFrom) fl.xFrom = xFrom;
@@ -1550,7 +1553,12 @@ class DocxReader {
   /** The levels of each table of contents whose look has been read. */
   private tocSeen = new Set<string>();
 
+  /** A paragraph that only clears the figures floating beside it was met: the next paragraph starts below them (ParaStyle.clear). */
+  private clearNext = false;
+
   private paragraph(el: Element): void {
+    // a paragraph holding only Word's clearing break (as this program writes ParaStyle.clear, docx-write.ts CLEAR_PARA): the next one's `clear`
+    if (!this.capture && !this.cellLook && isClearPara(el)) { this.clearNext = true; return; }
     // (a page break the paragraph before ended with)
     const carried = this.pageNext;
     const pPr = kid(el, 'pPr');
@@ -1646,7 +1654,9 @@ class DocxReader {
       tabs: finalTabs(p), scheme, bullet,
       border: cleanBorders(p.border), shade: p.shade && p.shade !== '#ffffff' ? p.shade : undefined,
       wpx: this.keptPPr(pPr),
+      clear: this.clearNext || undefined,
     };
+    this.clearNext = false;
     // the number as Word draws it: in the paragraph mark's bold and italic (its style's, unless the
     // mark sets its own), then the list level's; kept where that isn't the style's
     if (list === 'number' && level) {
@@ -3901,4 +3911,26 @@ function columnAlign(rows: TableCell[][], ci: number, unset?: Justify): Justify 
   const most = Math.max(0, ...count.values());
   if (!most || (count.get('left') ?? 0) === most) return 'left';
   return [...count.entries()].find(([, n]) => n === most)![0];
+}
+
+/**
+ * Whether a paragraph holds nothing but one text wrapping break that clears the floating figures
+ * (w:br w:type="textWrapping" w:clear="all", "left" or "right"): how a following paragraph is
+ * made to start below them (ParaStyle.clear).
+ */
+export function isClearPara(p: Element): boolean {
+  let brs = 0;
+  for (const c of Array.from(p.children)) {
+    if (c.localName === 'pPr') continue;
+    if (c.localName !== 'r') return false;
+    for (const k of Array.from(c.children)) {
+      if (k.localName === 'rPr') continue;
+      if (k.localName !== 'br') return false;
+      const at = (n: string) => Array.from(k.attributes).find((a) => a.localName === n)?.value ?? null;
+      const type = at('type'), clear = at('clear');
+      if (type !== 'textWrapping' || !clear || clear === 'none') return false;
+      brs++;
+    }
+  }
+  return brs === 1;
 }
