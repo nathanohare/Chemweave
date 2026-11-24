@@ -1,3 +1,5 @@
+![Chemweave: chemical drawing, documents, slides, spreadsheets and a live SI builder, woven into one program](docs/images/chemweave-banner.png)
+
 # Chemweave
 
 *Formerly Chem Illustrator.*
