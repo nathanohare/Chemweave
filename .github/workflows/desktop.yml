@@ -117,9 +117,10 @@ jobs:
             echo "AZURE_TENANT_ID=$TENANT_ID"
           } >> "$GITHUB_ENV"
           # Tauri merges tauri.windows.conf.json into tauri.conf.json on Windows builds; %1 is
-          # the file to sign, and the description is the name Windows shows when the .msi asks
-          # for permission
-          node -e 'const [e, a, c] = process.argv.slice(1); require("fs").writeFileSync("src-tauri/tauri.windows.conf.json", JSON.stringify({ bundle: { windows: { signCommand: { cmd: "artifact-signing-cli", args: ["-e", e, "-a", a, "-c", c, "-d", "Chemweave", "%1"] } } } }, null, 2))' "$ENDPOINT" "$ACCOUNT" "$PROFILE"
+          # the file to sign. scripts/sign-windows.mjs runs artifact-signing-cli (description
+          # "Chemweave", the name Windows shows when the .msi asks for permission), tries again
+          # when Azure refuses a request, and logs the tool's own messages.
+          node -e 'const [s, e, a, c] = process.argv.slice(1); require("fs").writeFileSync("src-tauri/tauri.windows.conf.json", JSON.stringify({ bundle: { windows: { signCommand: { cmd: "node", args: [s, e, a, c, "%1"] } } } }, null, 2))' "$(cygpath -w "$PWD/scripts/sign-windows.mjs")" "$ENDPOINT" "$ACCOUNT" "$PROFILE"
           cat src-tauri/tauri.windows.conf.json
       - run: npm ci
       - name: Number this version
@@ -160,6 +161,10 @@ jobs:
           fi
       - name: Build the app and its installers
         run: npm run desktop:build -- ${{ matrix.args }}
+      - name: Show what the Windows signing tool said
+        if: failure() && matrix.platform == 'windows'
+        shell: bash
+        run: cat "$RUNNER_TEMP/signing.log" 2>/dev/null || echo "Nothing was signed."
       - name: Start the app and run its self-test
         if: matrix.platform == 'windows'
         shell: pwsh
