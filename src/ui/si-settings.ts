@@ -218,21 +218,23 @@ async function layout(p: SiProject, host: SiSettingsHost): Promise<void> {
     { name: 'h', label: 'Compound structures', value: '', type: 'heading', help: `Where each compound’s structure goes under its title and how its text wraps around it, in the Live Preview and the compiled SI. In Line with Text centers it on a line of its own. A structure’s own choice (Picture Format, or right-click it in the Live Preview) wins over these${own ? `; ${own === 1 ? '1 structure has' : `${own} structures have`} one` : ''}.` },
     { name: 'position', label: 'Position', value: now.position, short: true, options: POSITIONS.map((v) => ({ value: v, label: POSITION_NAMES[v] })) },
     { name: 'wrap', label: 'Wrap Text', value: now.wrap, short: true, options: WRAPS.map((v) => ({ value: v, label: WRAP_NAMES[v] })), help: 'How the text goes around a structure that isn’t in the line.' },
-    { name: 'top', label: 'Top level with', value: now.top, short: true, options: [{ value: 'below', label: 'The text below the title' }, { value: 'title', label: 'The title' }] },
+    { name: 'top', label: 'Start', value: now.top, short: true, options: [{ value: 'below', label: 'Below the Title' }, { value: 'title', label: 'Beside the Title' }], help: 'Below the Title: its top level with the first line under the compound’s title. Beside the Title: level with the title.' },
     { name: 'gap', label: 'Space to text', value: String(now.gap), type: 'number', min: 0, max: MAX_GAP, unit: 'cm', help: 'The room between a structure and the text beside it (half of it below).' },
-    { name: 'hf', label: 'Figures', value: '', type: 'heading', help: `Where each figure goes with its caption, in the Live Preview and the compiled SI. In Line with Text puts it on lines of its own, as before; another position floats it with its caption, the text beside it (Square) or above and below it (Top and Bottom, and always in the middle). A figure’s own choice (Picture Format) wins over these${ownF ? `; ${ownF === 1 ? '1 figure has' : `${ownF} figures have`} one` : ''}.` },
+    { name: 'hf', label: 'Figures', value: '', type: 'heading', help: `Where each figure of a text section goes with its caption, in the Live Preview and the compiled SI (a compound’s own figures and X-ray structures stay in the line). In Line with Text puts it on lines of its own, as before; another position floats it with its caption, the text beside it (Square) or above and below it (Top and Bottom, and always in the middle). A figure’s own choice (Picture Format) wins over these${ownF ? `; ${ownF === 1 ? '1 figure has' : `${ownF} figures have`} one` : ''}.` },
     { name: 'fposition', label: 'Position', value: fig.position, short: true, options: POSITIONS.map((v) => ({ value: v, label: POSITION_NAMES[v] })) },
     { name: 'fwrap', label: 'Wrap Text', value: fig.wrap, short: true, options: FIGURE_WRAPS.map((v) => ({ value: v, label: WRAP_NAMES[v] })) },
     { name: 'fgap', label: 'Space to text', value: String(fig.gap), type: 'number', min: 0, max: MAX_GAP, unit: 'cm', help: 'The room between a figure and the text beside it.' },
   ], { ok: 'Save' });
   if (!got || p.readOnly) return;
-  const gap = Number(got.gap), fgap = Number(got.fgap);
+  // (an empty box keeps the space as it was)
+  const num = (v: string, was: number) => (v.trim() === '' || !Number.isFinite(Number(v)) ? was : Number(v));
+  const gap = num(got.gap, now.gap), fgap = num(got.fgap, fig.gap);
   await host.save(() => {
     storeProjectPlacement(p.settings, {
       position: got.position as SiPosition, wrap: got.wrap as SiWrap, top: got.top === 'title' ? 'title' : 'below',
-      gap: Number.isFinite(gap) ? gap : now.gap,
+      gap,
     });
-    storeProjectPlacement(p.settings, { ...fig, position: got.fposition as SiPosition, wrap: got.fwrap as SiWrap, gap: Number.isFinite(fgap) ? fgap : fig.gap }, 'figures');
+    storeProjectPlacement(p.settings, { ...fig, position: got.fposition as SiPosition, wrap: got.fwrap as SiWrap, gap: fgap }, 'figures');
   });
 }
 

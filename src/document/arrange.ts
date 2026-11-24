@@ -35,6 +35,17 @@ export function positioned(fl: Float | undefined, place: PositionPlace, size: { 
   return { ...fl, wrap: keep, x, y, xFrom: 'margin', yFrom: 'margin', align: undefined };
 }
 
+/**
+ * A float lined up in the margins or on the page (Float.align) at the place that puts it, as an
+ * x of its own: to be moved from there by hand (a drag, the Layout panel's position).
+ */
+export function unaligned(fl: Float, w: number, page: PageSetup): Float {
+  if (!fl.align) return fl;
+  const room = fl.xFrom === 'page' ? page.w : page.w - page.left - page.right;
+  const x = fl.align === 'center' ? (room - w) / 2 : fl.align === 'right' ? room - w : 0;
+  return { ...fl, x: Math.round(x * 100) / 100, align: undefined };
+}
+
 export type Turn = 'right' | 'left' | 'flipH' | 'flipV';
 
 /** The figures Arrange > Rotate turns: pictures, and drawings (an icon, a shape, a structure as a whole). */

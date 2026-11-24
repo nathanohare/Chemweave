@@ -523,8 +523,6 @@ class DocxWriter {
       const runs = runsOf[p] ?? [];
       const ps = paras[p];
       blockTo(ps.cc);
-      // a paragraph that starts below the figures floating beside it: a 1-point paragraph before it holding Word's clearing break
-      if (ps.clear && p > 0) { out.push(CLEAR_PARA); lastWasTable = false; plain = null; }
       const ending = endsSection.get(p);
       const sectXml = ending ? await this.section(main, ending) : '';
       // a section ending with a table, contents or bibliography: an empty paragraph after it holds the section's properties
@@ -551,6 +549,9 @@ class DocxWriter {
         close();
         continue;
       }
+      // a paragraph that starts below the figures floating beside it: a 1-point paragraph before it
+      // holding Word's clearing break (docx-read.ts isClearPara; not before a table, which Word can't clear so)
+      if (ps.clear && p > 0) { out.push(CLEAR_PARA); lastWasTable = false; plain = null; }
       // numbered lists: a new Word list where our numbers start again
       if (ps.list === 'number' && lists[p].start) listNum = this.newList(`n${ps.scheme ?? ''}`, ps.startAt);
       // an item further in with its own number: the list carries on in a Word list of the same levels that starts that level again from it

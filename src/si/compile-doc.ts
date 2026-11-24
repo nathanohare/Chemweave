@@ -606,7 +606,7 @@ class Compiler {
    * figure placed out of the line (`figure`) floats in a frame, the frame given back for its
    * caption to be in; a PDF of more than one page stays in the line.
    */
-  private async pictureBlock(rel: string, room: { w: number; h: number }, where: string, widthPt?: number, align?: Justify, figure?: { place: Placement; key: string }): Promise<boolean | { frame?: ParaFramePlace }> {
+  private async pictureBlock(rel: string, room: { w: number; h: number }, where: string, widthPt?: number, align?: Justify, figure?: { place: Placement; key: string }, structure?: { key: string; compound: string }): Promise<boolean | { frame?: ParaFramePlace }> {
     const bytes = await this.p.folder.readBytes(rel);
     const name = rel.slice(rel.lastIndexOf('/') + 1);
     if (!bytes) { this.notes.push(`${where}: ${name} is no longer in the project; left out.`); return false; }
@@ -623,6 +623,7 @@ class Compiler {
       if (!pic) continue;
       const obj = this.b.object(pic);
       if (figure) this.structures.push({ obj, key: figureKey(figure.key) });
+      else if (structure) this.structures.push({ obj, ...structure });
       this.b.endPara(this.full({ align: frame ? 'center' : align ?? 'center', keepNext: true, spaceAfter: 4, ...(frame ? { frame } : {}) }, true));
     }
     return figure ? { frame } : true;
@@ -861,7 +862,8 @@ class Compiler {
     const nmrLink = nuclei ? (n: string): string | null => (nuclei.has(n) ? `#${spectrumMark(c.id, n)}` : null) : undefined;
     const block = compoundBlock(this.p, c, id, { facts, helpers: this.helpers, leave: this.leave, ...(nmrLink ? { nmrLink } : {}) });
     // the structure: in a paragraph of its own under the title, or floating from the title or the line below it (placement.ts)
-    const st = inScheme ? null : await this.structure(c, where);
+    const got = inScheme ? null : await this.structure(c, where);
+    const st = got && 'o' in got ? got : null;
     const placed = st && st.float ? st : null;
     if (placed?.top === 'title') this.pendingFloat = { o: placed.o, compound: c.id };
     this.para(block.title, { style: this.compoundStyle(level, this.lists.compounds), marks: [compoundBookmark(c.id)] }, where);
@@ -870,7 +872,7 @@ class Compiler {
     else if (st && !placed) {
       this.structures.push({ obj: this.b.object(st.o), key: structureKey(c.id), compound: c.id });
       this.b.endPara(this.full({ align: 'center', keepNext: true, spaceBefore: 2, spaceAfter: 8 }));
-    }
+    } else if (got && 'file' in got) await this.pictureBlock(got.file, STRUCTURE_MAX, where, undefined, undefined, undefined, { key: structureKey(c.id), compound: c.id });
     if (!block.customText) {
       const problems: string[] = [];
       gpSentence(this.p, c, problems);
@@ -1028,7 +1030,7 @@ class Compiler {
    * under the title (in the line), or, placed beside the text (placement.ts), to float from the
    * title or the line below it (`float`). Null when it has none.
    */
-  private async structure(c: SiCompound, where: string): Promise<{ o: DocObject; float: boolean; top: 'title' | 'below' } | null> {
+  private async structure(c: SiCompound, where: string): Promise<{ o: DocObject; float: boolean; top: 'title' | 'below' } | { file: string } | null> {
     const mol = this.p.hasStructure(c) ? await this.p.readStructure(c) : '';
     const contents = mol ? this.host.contentsOf(mol) : null;
     const pl = placementOf(this.p.settings, structureKey(c.id));
@@ -1040,6 +1042,8 @@ class Compiler {
       w = (size?.w ?? 0) * scale;
     } else {
       const picture = str(dict(valuesOf(c).structure).image_override);
+      // (a picture in the line prints as before, every page of a PDF; floating, its first page)
+      if (picture && pl.position === 'inline') return { file: joinPath(c.folder, picture) };
       if (picture) {
         const pic = await this.firstPicture(joinPath(c.folder, picture), STRUCTURE_MAX, where);
         if (pic) { o = pic; w = pic.w; }
@@ -1056,8 +1060,10 @@ class Compiler {
     const bytes = await this.p.folder.readBytes(rel);
     const name = rel.slice(rel.lastIndexOf('/') + 1);
     if (!bytes) { this.notes.push(`${where}: ${name} is no longer in the project; left out.`); return null; }
+    this.pdfPageCount = null;
     const pic = /\.pdf$/i.test(name) ? (await this.pdfPictures(bytes, name, where, room, undefined, 1))[0] ?? null : pictureObject(name, bytes, room);
-    if (!pic && !/\.pdf$/i.test(name)) this.notes.push(`${where}: ${name} could not be read as a picture; left out.`);
+    if (!pic && !/\.pdf$/i.test(name)) this.notes.push(`${where}: ${name} could not be read as a picture${/\.tiff?$/i.test(name) ? ' (TIFF pictures are not placed in the document yet)' : ''}; left out.`);
+    if (pic && (this.pdfPageCount ?? 1) > 1) this.notes.push(`${where}: ${name} has ${this.pdfPageCount} pages; only the first floats beside the text (In Line with Text prints them all).`);
     return pic;
   }
 

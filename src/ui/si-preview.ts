@@ -26,6 +26,9 @@ const CRIMSON_TINT = 'rgba(180, 35, 79, 0.16)';
 const LOCKED = '#5f6570';
 const CUSTOM = '#c27a00';
 
+/** Said when typing, pasting or cutting while a structure or figure is selected. */
+const PICKED_TYPING = 'Click in the text to type there: a structure or figure is selected.';
+
 export interface SiPreviewHost {
   flash(message: string, ms?: number): void;
   /** Choose a page of the list (text clicked in the preview). */
@@ -573,9 +576,11 @@ export class SiPreview {
     ta.addEventListener('compositionupdate', (e) => this.file?.ed.compositionUpdate(e.data ?? ''));
     ta.addEventListener('compositionend', (e) => { this.file?.ed.compositionEnd(e.data ?? ''); this.syncInput(); this.showWaiting(); });
     ta.addEventListener('copy', (e) => this.copy(e, false));
-    ta.addEventListener('cut', (e) => this.copy(e, true));
+    ta.addEventListener('cut', (e) => { if (this.pickedStructure) { e.preventDefault(); this.api.flash(PICKED_TYPING); return; } this.copy(e, true); });
     ta.addEventListener('paste', (e) => {
       e.preventDefault();
+      if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
+      this.offAnchor();
       const t = e.clipboardData?.getData('text/plain') ?? '';
       if (t) this.file?.ed.pastePlain(t);
     });
@@ -635,7 +640,7 @@ export class SiPreview {
    * The stretch whose characters are under a pointer (not just nearest to it). A paragraph's lines
    * count as meeting (the gaps between them shared out), so moving between them never loses it.
    */
-  private spanUnder(e: PointerEvent): SourceSpan | null {
+  private spanUnder(e: PointerEvent | MouseEvent): SourceSpan | null {
     const at = this.offsetAt(e);
     if (at === null) return null;
     const p = this.view.toDoc(e.clientX, e.clientY);
@@ -663,6 +668,8 @@ export class SiPreview {
     for (const o of [...lay.objects].reverse()) {
       if (p.x < o.x || p.x > o.x + o.w || p.y < o.y || p.y > o.y + o.h) continue;
       const ref = this.structures.find((x) => x.obj === o.id);
+      // (one behind the text: a click on the text over it goes to the text)
+      if (ref && o.wrap === 'behind' && this.spanUnder(e)) continue;
       if (ref) return ref;
     }
     return null;
@@ -676,6 +683,29 @@ export class SiPreview {
     if (b && b.node !== this.focusNode) this.api.pick(b.node);
     this.api.structureChosen(ref.key);
     this.view.redraw();
+  }
+
+  /**
+   * The caret off a floating structure's place at the start of a paragraph (that character is no
+   * field's: typing before it would be text of the preview's own), to just after it.
+   */
+  private offAnchor(): void {
+    const ed = this.file?.ed;
+    if (!ed || !ed.collapsed || !this.structures.length) return;
+    const at = ed.start;
+    if (at > 0 && ed.text[at - 1] !== '\n') return;
+    let i = 0;
+    for (const r of this.file!.t.runs) {
+      if (i === at) { if (r.obj !== undefined && this.structures.some((x) => x.obj === r.obj)) ed.setCaret(at + 1); return; }
+      i += r.text.length;
+      if (i > at) return;
+    }
+  }
+
+  /** Where the picked structure or figure is in the text (the caret goes on from there when it is let go by the arrows). */
+  private pickedAt(): number | null {
+    const id = this.pickedObj();
+    return id === null ? null : this.objectOffset(id);
   }
 
   /** Let go of the structure picked (another figure was picked on the SI page). */
@@ -772,16 +802,21 @@ export class SiPreview {
     const ctrl = e.ctrlKey || e.metaKey;
     const shift = e.shiftKey;
     const word = /mac/i.test(navigator.platform) ? e.altKey : e.ctrlKey;
-    // a structure picked: Escape lets it go; it can't be deleted or typed over here (its page has it)
-    if (this.pickedStructure && !ctrl && !e.altKey) {
-      if (e.key === 'Escape') return run(() => this.unpickStructure());
-      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash(this.pickedStructure?.startsWith('f:') ? 'A figure is changed or deleted on its page (click it there for Picture Format); here you can change where it goes (Picture Format).' : 'A compound’s structure is changed on its page (Home ▸ Edit Structure); here you can change where it goes (Picture Format).'));
-    }
     const moves: Record<string, Parameters<typeof ed.move>[0]> = { ArrowLeft: word ? 'wordLeft' : 'left', ArrowRight: word ? 'wordRight' : 'right', ArrowUp: 'up', ArrowDown: 'down', Home: e.ctrlKey ? 'textStart' : 'lineStart', End: e.ctrlKey ? 'textEnd' : 'lineEnd' };
+    // a structure or figure picked: Escape lets it go, the arrows go on from it; it can't be deleted
+    // or typed over here (its page has it), and nothing is typed, pasted or cut at the caret hidden meanwhile
+    if (this.pickedStructure && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (e.key === 'Escape' && !ctrl) return run(() => this.unpickStructure());
+      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash(this.pickedStructure?.startsWith('f:') ? 'A figure is changed or deleted on its page (click it there for Picture Format); here you can change where it goes (Picture Format).' : 'A compound’s structure is changed on its page (Home ▸ Edit Structure); here you can change where it goes (Picture Format).'));
+      if (e.key === 'Enter' || (ctrl && (k === 'v' || k === 'x'))) return run(() => this.api.flash(PICKED_TYPING));
+      if (moves[e.key]) return run(() => { const at = this.pickedAt(); this.unpickStructure(); if (at !== null) ed.setCaret(at); ed.move(moves[e.key], shift); });
+      if (ctrl && k === 'a') this.unpickStructure();
+    }
     if (moves[e.key] && !e.altKey) return run(() => { this.unpickStructure(); ed.move(moves[e.key], shift); });
     if (!ctrl && !e.altKey) {
       switch (e.key) {
-        case 'Enter': return run(() => ed.enter(shift));
+        case 'Enter': return run(() => { this.offAnchor(); ed.enter(shift); });
         case 'Backspace': return run(() => ed.backspace(false));
         case 'Delete': return run(() => ed.deleteForward(false));
         case 'Tab': return;
@@ -807,7 +842,8 @@ export class SiPreview {
     if (t === 'insertCompositionText') return;
     e.preventDefault();
     // (nothing typed over a structure picked: click in the text to type)
-    if (this.pickedStructure) { this.api.flash('Click in the text to type there: a structure is selected.'); return; }
+    if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
+    this.offAnchor();
     if ((t === 'insertText' || t === 'insertReplacementText') && e.data) ed.type(e.data);
     else if (t === 'insertLineBreak' || t === 'insertParagraph') ed.enter(t === 'insertLineBreak');
     else if (t === 'deleteContentBackward') ed.backspace();

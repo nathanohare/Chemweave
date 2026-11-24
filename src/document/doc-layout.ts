@@ -827,6 +827,8 @@ export class DocLayouter {
     let paraStart = 0;
     /** The frame being set (its top, and its left edge from the column's, and width), while its paragraphs are. */
     let frameAt: { top: number; x: number; w: number } | null = null;
+    /** A paragraph is in the frame of the one above it (Word: the same frame properties, and no clearing break between them). */
+    const inFrameAbove = (q: number): boolean => q > 0 && !paras[q].clear && sameFrame(paras[q - 1].frame, paras[q].frame);
     /** How far below a paragraph's top the figures floating from it (placed from the paragraph, text kept off them) reach; 0 for none, or when they can't fit on any page. */
     const floatsBelow = (p: number): number => {
       let most = 0;
@@ -871,13 +873,13 @@ export class DocLayouter {
       if (ps.pageBreak && (hasContent || col > 0)) newPage();
       else if (ps.colBreak && hasContent) nextColumn();
       // a paragraph that clears the figures floating beside it starts below them
-      if (ps.clear && hasContent) for (const r of rects) if ((r.wrap === 'square' || r.wrap === 'topBottom') && r.y2 > cursor) cursor = r.y2;
+      if (ps.clear && hasContent) for (const r of rects) if ((r.wrap === 'square' || r.wrap === 'topBottom') && r.y2 > cursor && r.x2 > colX[col] && r.x1 < colX[col] + textW) cursor = r.y2;
       // a frame (ps.frame, with the paragraphs after it in the same one) starts whole on a page,
       // below any figure it would run into, at the left, center or right of the column
       const fr = ps.frame;
-      if (fr && !sameFrame(paras[p - 1]?.frame, fr)) {
+      if (fr && !inFrameAbove(p)) {
         let end = p + 1;
-        while (end < n && sameFrame(paras[end].frame, fr)) end++;
+        while (end < n && inFrameAbove(end)) end++;
         let need = 0;
         for (let q = p; q < end; q++) need += (q > p || hasContent ? paras[q].spaceBefore ?? 0 : 0) + sum(laid[q].lines.map(heightOf)) + (paras[q].spaceAfter ?? 0);
         if (hasContent && cursor + need > room() + 0.01 && need <= textH) nextColumn();
@@ -989,7 +991,7 @@ export class DocLayouter {
       }
       cursor += (ps.spaceAfter ?? 0) + (bRoom?.below[p] ?? 0);
       // the frame's end: the text after it goes beside it (Square) or below it
-      if (fr && frameAt && !sameFrame(paras[p + 1]?.frame, fr)) {
+      if (fr && frameAt && !(p + 1 < n && inFrameAbove(p + 1))) {
         const g = Math.max(0, fr.gap);
         rects.push({ x1: colX[col] + frameAt.x - g, y1: frameAt.top, x2: colX[col] + frameAt.x + frameAt.w + g, y2: cursor, wrap: fr.wrap });
         if (fr.wrap === 'square') cursor = frameAt.top;

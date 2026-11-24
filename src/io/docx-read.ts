@@ -633,8 +633,6 @@ class DocxReader {
       switch (c.localName) {
         case 'jc': { const j = JUSTIFY[this.a(c) ?? '']; if (j) out.align = j; break; }
         case 'framePr': {
-          // (a frame of paragraphs read as one: ParaStyle.frame)
-          if (frameOf(c, (n) => this.a(c, n))) break;
           // a text frame set at the right or in the middle of the margins (a page number in a footer, as older Words made it): its paragraph is aligned there
           if (c.getAttributeNS(this.W, 'dropCap') ?? c.getAttribute('w:dropCap')) break;
           const x = c.getAttributeNS(this.W, 'xAlign') ?? c.getAttribute('w:xAlign');
@@ -1478,12 +1476,13 @@ class DocxReader {
   private cellLook: CellLook | null = null;
 
   /** A paragraph's own properties not read here, as written, by their place (KEPT_PPR; undefined: none). */
-  private keptPPr(pPr: Element | null): string | undefined {
+  private keptPPr(pPr: Element | null, framed = false): string | undefined {
     const raw: Record<string, string> = {};
     for (const c of kids(pPr)) {
       if (c.namespaceURI !== this.W) continue;
       const slot = KEPT_PPR[c.localName];
-      if (slot === 'a' && c.localName === 'framePr' && frameOf(c, (n) => this.a(c, n))) continue;
+      // (a frame read as ParaStyle.frame is written from it)
+      if (framed && c.localName === 'framePr') continue;
       if (slot) raw[slot] = (raw[slot] ?? '') + elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
       // what is shown here another way, kept to write back as Word had it:
       switch (c.localName) {
@@ -1645,6 +1644,9 @@ class DocxReader {
     let indent = Math.max(0, p.left ?? 0);
     if (list) indent = Math.max(0, indent - listIndent({ list, level: ilvl }, firstSize).left);
     const brk = this.takeBreak();
+    // a frame of paragraphs as this program writes them (ParaStyle.frame), in the body; others are kept as Word had them
+    const fr = kid(pPr, 'framePr');
+    const frame = !this.capture && !this.cellLook && inBody(el) ? frameOf(fr, (n) => this.a(fr, n)) : undefined;
     const ps: ParaStyle = {
       style: ours === 'Normal' ? undefined : ours,
       align: p.align && p.align !== 'left' ? p.align : this.displayMath && !p.align ? 'center' : undefined,
@@ -1656,9 +1658,9 @@ class DocxReader {
       pageBreak: p.pageBreak, section: brk, list, level: list ? ilvl : undefined, noLineNumbers: p.noLineNumbers, noHyphen: p.noHyphen || undefined,
       tabs: finalTabs(p), scheme, bullet,
       border: cleanBorders(p.border), shade: p.shade && p.shade !== '#ffffff' ? p.shade : undefined,
-      wpx: this.keptPPr(pPr),
+      wpx: this.keptPPr(pPr, !!frame),
       clear: this.clearNext || undefined,
-      frame: this.capture || this.cellLook ? undefined : frameOf(kid(pPr, 'framePr'), (n) => this.a(kid(pPr, 'framePr'), n)),
+      frame,
     };
     this.clearNext = false;
     // the number as Word draws it: in the paragraph mark's bold and italic (its style's, unless the
@@ -3922,21 +3924,28 @@ function columnAlign(rows: TableCell[][], ci: number, unset?: Justify): Justify 
  * (w:br w:type="textWrapping" w:clear="all", "left" or "right"): how a following paragraph is
  * made to start below them (ParaStyle.clear).
  */
+/** The attributes of a frame as docx-write.ts framePrXml writes it. */
+const FRAME_ATTRS = new Set(['w', 'hSpace', 'wrap', 'vAnchor', 'hAnchor', 'xAlign']);
+
+/** A paragraph in the document's body (or a content control there), not in a table, text box, note or header. */
+function inBody(p: Element): boolean {
+  const home = p.parentElement?.localName;
+  return home === 'body' || (home === 'sdtContent' && p.parentElement?.parentElement?.parentElement?.localName === 'body');
+}
+
 export function isClearPara(p: Element): boolean {
-  let brs = 0;
-  for (const c of Array.from(p.children)) {
-    if (c.localName === 'pPr') continue;
-    if (c.localName !== 'r') return false;
-    for (const k of Array.from(c.children)) {
-      if (k.localName === 'rPr') continue;
-      if (k.localName !== 'br') return false;
-      const at = (n: string) => Array.from(k.attributes).find((a) => a.localName === n)?.value ?? null;
-      const type = at('type'), clear = at('clear');
-      if (type !== 'textWrapping' || !clear || clear === 'none') return false;
-      brs++;
-    }
+  // (only the paragraph written for it, in the body, before a paragraph: any other is the file's own and stays)
+  const next = p.nextElementSibling;
+  if (!inBody(p) || next?.localName !== 'p') return false;
+  const at = (e: Element, n: string) => Array.from(e.attributes).find((x) => x.localName === n)?.value ?? null;
+  const kids = Array.from(p.children);
+  if (kids.length !== 2 || kids[0].localName !== 'pPr' || kids[1].localName !== 'r') return false;
+  for (const c of Array.from(kids[0].children)) {
+    if (!['keepNext', 'spacing', 'ind', 'jc', 'rPr'].includes(c.localName)) return false;
+    if (c.localName === 'spacing' && (at(c, 'line') !== '20' || at(c, 'lineRule') !== 'exact')) return false;
   }
-  return brs === 1;
+  const rk = Array.from(kids[1].children).filter((k) => k.localName !== 'rPr');
+  return rk.length === 1 && rk[0].localName === 'br' && at(rk[0], 'type') === 'textWrapping' && at(rk[0], 'clear') === 'all';
 }
 
 /**
@@ -3947,9 +3956,11 @@ export function isClearPara(p: Element): boolean {
  */
 export function frameOf(fr: Element | null | undefined, a: (name: string) => string | null): ParaStyle['frame'] {
   if (!fr) return undefined;
+  // (only the properties written for one: any other is the file's own frame)
+  if (!Array.from(fr.attributes).every((x) => x.name.startsWith('xmlns') || FRAME_ATTRS.has(x.localName))) return undefined;
   const w = parseFloat(a('w') ?? ''), wrap = a('wrap'), align = a('xAlign'), y = a('y');
   if (!(w > 0) || a('dropCap') || a('h') || a('yAlign') || (y && parseFloat(y) !== 0) || a('x')) return undefined;
-  if (a('vAnchor') !== 'text' || (a('hAnchor') !== 'margin' && a('hAnchor') !== 'text')) return undefined;
+  if (a('vAnchor') !== 'text' || a('hAnchor') !== 'margin') return undefined;
   if (wrap !== 'around' && wrap !== 'notBeside') return undefined;
   if (align !== 'left' && align !== 'center' && align !== 'right') return undefined;
   const gap = parseFloat(a('hSpace') ?? '0');

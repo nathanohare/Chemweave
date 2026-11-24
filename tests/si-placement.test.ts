@@ -32,6 +32,7 @@ import {
   storeOwnPlacement, storeProjectPlacement, structureKey,
 } from '../src/si/placement';
 import { framePrXml } from '../src/io/docx-write';
+import { unaligned } from '../src/document/arrange';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RDKit: any;
@@ -357,5 +358,65 @@ describe('figures with their captions', () => {
     expect(back.map((x) => x.ps.frame)).toEqual([frame, frame, undefined]);
     // (no copy of Word's frame kept beside it, to be written twice)
     expect(back[0].ps.wpx ?? '').not.toContain('framePr');
+  });
+});
+
+describe('review fixes', () => {
+  const N0 = () => { const d = newDocument(); return { d, n: runStyleOf(d.styles.Normal), N: paraFromStyle(d.styles.Normal, {}) }; };
+  /** A Word document.xml body around `body`. */
+  const wordWith = async (body: string): Promise<DocText> => {
+    const { d, n, N } = N0();
+    const bytes = await writeDocx({ ...d, runs: [{ ...n, text: 'x' }], paras: [N] }, deps);
+    const files = unzipSync(bytes);
+    const xml = strFromU8(files['word/document.xml']).replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${body}$1`);
+    const { zipSync, strToU8 } = await import('fflate');
+    return (await readDocx(zipSync({ ...files, 'word/document.xml': strToU8(xml) }), deps)).doc;
+  };
+
+  it('keeps a clearing break of the file\'s own (styled, Clear: Left) as its own paragraph', async () => {
+    const t = await wordWith('<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:br w:type="textWrapping" w:clear="left"/></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p>');
+    // (read as any paragraph with a line break in it is: the paragraph stays, with its style)
+    expect(plainText(t.runs)).toBe('one\n\n\ntwo');
+    expect(t.paras.map((x) => x.style ?? '')).toEqual(['', 'Heading1', 'Heading1', '']);
+    expect(t.paras.some((x) => x.clear)).toBe(false);
+  });
+
+  it('keeps the clearing paragraph as one when nothing follows it, or in a table cell', async () => {
+    const last = await wordWith(`<w:p><w:r><w:t>one</w:t></w:r></w:p>${CLEAR_PARA}`);
+    // (kept as the paragraph it is, its line break in it)
+    expect(plainText(last.runs).startsWith('one\n')).toBe(true);
+    expect(last.paras.length).toBe(3);
+    const cell = await wordWith(`<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc>${CLEAR_PARA}<w:p><w:r><w:t>in</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>after</w:t></w:r></w:p>`);
+    expect(cell.paras.some((x) => x.clear)).toBe(false);
+  });
+
+  it('keeps a frame of the file\'s own (with a distance above and below) as Word had it', async () => {
+    const fr = '<w:framePr w:w="3000" w:hSpace="120" w:vSpace="120" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:xAlign="right"/>';
+    const t = await wordWith(`<w:p><w:pPr>${fr}</w:pPr><w:r><w:t>framed</w:t></w:r></w:p><w:p><w:r><w:t>after</w:t></w:r></w:p>`);
+    const ps = paragraphs(t);
+    expect(ps[0].ps.frame).toBeUndefined();
+    expect((JSON.parse(ps[0].ps.wpx ?? '{}') as { a?: string }).a).toContain('w:vSpace="120"');
+  });
+
+  it('starts a new frame at a paragraph that clears the one above, though the frames are alike', () => {
+    const { d, n, N } = N0();
+    const frame = { w: 150, align: 'left' as const, wrap: 'square' as const, gap: 6 };
+    const runs = rt.normalizeRuns([objectRun(1, n), { ...n, text: '\nCaption one\n' }, objectRun(2, n), { ...n, text: '\nCaption two\n' + WORDS.repeat(6) }]);
+    const pic = (): DocObject => ({ kind: 'picture', src: DOT, w: 140, h: 72, px: { w: 1, h: 1 } });
+    const t: DocText = { ...d, runs, paras: [{ ...N, frame }, { ...N, frame }, { ...N, frame, clear: true }, { ...N, frame }, N], objects: { 1: pic(), 2: pic() } };
+    const lay = layouter().layout(t);
+    const text = plainText(t.runs);
+    const p2 = lay.objects.find((o) => o.id === 2)!;
+    const first = lay.text.lines.find((l) => l.start <= text.indexOf(WORDS) && text.indexOf(WORDS) <= l.end)!;
+    // the text after them goes beside the second figure, not from the first one's top
+    expect(first.y).toBeGreaterThan(p2.y);
+    expect(first.x).toBeGreaterThan(t.page.left + 150);
+  });
+
+  it('moves a float lined up in the margins from where that put it', () => {
+    const page = newDocument().page;
+    const room = page.w - page.left - page.right;
+    expect(unaligned({ wrap: 'square', x: 0, y: 5, align: 'right' }, 100, page)).toEqual({ wrap: 'square', x: Math.round((room - 100) * 100) / 100, y: 5, align: undefined });
+    expect(unaligned({ wrap: 'square', x: 7, y: 5 }, 100, page).x).toBe(7);
   });
 });

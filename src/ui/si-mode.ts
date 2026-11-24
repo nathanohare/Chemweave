@@ -214,7 +214,7 @@ const RIBBON = `
       <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
       <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
       <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
-      <button role="tab" data-si-tab="place" aria-selected="false" class="rb-context" hidden title="Shown while a compound's structure is selected in the Live Preview">Picture Format</button>
+      <button role="tab" data-si-tab="place" aria-selected="false" class="rb-context" hidden title="Shown while a compound's structure or a figure is selected in the Live Preview">Picture Format</button>
       <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
       <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
       <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
@@ -948,11 +948,11 @@ export class SiMode {
     this.ribbon.querySelector<HTMLElement>('[data-si-place-all]')!.textContent = kind === 'figures' ? 'Apply to All Figures' : 'Apply to All Structures';
   }
 
-  private placeCommand(cmd: string, from: HTMLElement): void {
+  private placeCommand(cmd: string, from: HTMLElement | null): void {
     const key = this.placedStructure, p = this.project;
     if (!key || !p) return;
     if (cmd === 'edit') { const c = p.compounds.find((x) => structureKey(x.id) === key); if (c) this.editStructure(c); return; }
-    if (cmd === 'position') { const r = from.getBoundingClientRect(); showContextMenu(r.left, r.bottom, this.positionItems(key), { run: () => {} }); return; }
+    if (cmd === 'position' && from) { const r = from.getBoundingClientRect(); showContextMenu(r.left, r.bottom, this.positionItems(key), { run: () => {} }); return; }
     if (cmd === 'reset') { void this.placeChange(() => storeOwnPlacement(p.settings, key, null)); return; }
     if (cmd === 'apply-all') {
       const pl = placementOf(p.settings, key), kind = kindOfKey(key);
@@ -964,7 +964,8 @@ export class SiMode {
   private placeChange(f: () => void): Promise<void> {
     const p = this.project;
     if (!p) return Promise.resolve();
-    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return Promise.resolve(); }
+    // (read-only: nothing changes, and the tab shows it so again)
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); this.placeState(); this.figurePlaceState(); return Promise.resolve(); }
     return this.act(async () => { f(); await p.saveSettings(); }, false).then(() => { this.placeState(); this.figurePlaceState(); });
   }
 
@@ -1020,6 +1021,7 @@ export class SiMode {
       { label: 'Wrap Text', items: this.wrapItems(key) },
       { label: 'Position', items: this.positionItems(key) },
       { label: 'Reset to Project Default', disabled: !own, run: () => void this.placeChange(() => storeOwnPlacement(p.settings, key, null)) },
+      { label: kindOfKey(key) === 'figures' ? 'Apply to All Figures' : 'Apply to All Structures', run: () => this.placeCommand('apply-all', null) },
     ], { run: () => {} });
   }
 
