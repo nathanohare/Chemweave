@@ -95,6 +95,13 @@ describe('main-only workflows are tried on their pull request without publishing
     // the release flag is set only for a push to main with the updater key
     expect(src).toContain('if [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$SIGNED" = "true" ]; then echo "release=true"');
     expect(src).toMatch(/publish:\n\s+needs: \[plan, build\]\n\s+if: needs\.plan\.outputs\.release == 'true'/);
+    // code signing and notarization only on main: a pull request builds unsigned (Nate, 2026-11-24)
+    for (const step of ['Get the Windows signing tool from the cache', 'Sign the Windows app and installers', 'Sign and notarise the Mac app']) {
+      const at = src.indexOf(`- name: ${step}`);
+      expect(at, step).toBeGreaterThan(0);
+      const body = src.slice(at, src.indexOf('\n      - ', at + 1));
+      expect(body, step).toMatch(/if: matrix\.platform == '\w+' && github\.ref == 'refs\/heads\/main'/);
+    }
   });
 
   it('the iPad app runs on a pull request that changes it, and never sends one to TestFlight', () => {
