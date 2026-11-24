@@ -14762,14 +14762,14 @@ function roleMenus(): MenuItem[] {
 editor.onRoleTag = (arrowId, item, x, y) => {
   const st = editor.roleStepsFor([item]).find((x) => x.arrow === arrowId);
   const n = st?.n ?? 0;
-  const items: ([string, () => void, boolean?, string?] | null)[] = roleChoices([item], st?.role ?? null)
-    .map(([k, label, on]) => [`${label}${on ? ' ✓' : ''}`, () => { editor.setItemsRole(arrowId, [item], k); }]);
-  if (doc.arrows.get(arrowId)?.step) items.push(null, [n ? `Reset Step ${n} to Automatic` : 'Reset to Automatic', () => editor.resetReactionRoles(arrowId)]);
-  const m = popupMenu(x, y + 6, items);
+  const items: MenuItem[] = roleChoices([item], st?.role ?? null).map(([k, label, on]): MenuItem => ({ label, checked: on, run: () => { editor.setItemsRole(arrowId, [item], k); } }));
+  if (doc.arrows.get(arrowId)?.step) items.push(null, { label: n ? `Reset Step ${n} to Automatic` : 'Reset to Automatic', run: () => editor.resetReactionRoles(arrowId) });
+  showContextMenu(x, y + 6, items, { run: (cmd) => void command(cmd), key: commandKey });
+  // headed with the step it is for
   const head = document.createElement('div');
   head.className = 'gallery-head';
   head.textContent = n ? `Role in Step ${n}` : 'Role in This Step';
-  m.prepend(head);
+  document.querySelector('.context-menu')?.prepend(head);
 };
 
 /** Chemistry ▸ Link Steps in Order: click a scheme's structures and arrows in reading order. */

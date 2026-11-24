@@ -338,8 +338,8 @@ export function reactionSteps(doc: Doc, items: Item[]): { arrow: Arrow; roles: S
  * A scheme wrapped onto more rows: an arrow that starts a row (products, but nothing before it)
  * goes on from the last product of the row above, as a chemist reads it, but only when that
  * product ends the row directly above (the next row up, not far off, its arrows above the top of
- * this row) and lies to the right of where the arrow starts. Changes the roles given (copies,
- * never an arrow's stored ones).
+ * this row) and lies to the right of where the arrow starts. Never a step set by hand. Changes
+ * the roles given (copies, never an arrow's stored ones).
  */
 export function linkRows(steps: { arrow: Arrow; roles: StepRoles }[], items: Item[], bond = 30): void {
   const boxOf = new Map(items.map((it) => [it.ref, it.box]));
@@ -348,7 +348,8 @@ export function linkRows(steps: { arrow: Arrow; roles: StepRoles }[], items: Ite
   const across = (r: Arrow) => Math.abs(r.head.x - r.tail.x) > 2 * Math.abs(r.head.y - r.tail.y);
   for (const st of steps) {
     const { arrow, roles } = st;
-    if (roles.reactants.length || !roles.products.length || !across(arrow)) continue;
+    // (roles set by hand are kept as set: a starting material taken out stays out)
+    if (roles.manual || roles.reactants.length || !roles.products.length || !across(arrow)) continue;
     // (the row above lies wholly above this row: its arrows over the top of this arrow's products)
     const top = Math.min(...roles.products.map((ref) => boxOf.get(ref)?.y1 ?? Infinity), Math.min(arrow.tail.y, arrow.head.y));
     // the row above: the nearest arrows higher up, and the rightmost product there that leads nowhere

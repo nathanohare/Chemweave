@@ -329,3 +329,91 @@ describe('Link Steps in Order', () => {
     expect(doc.arrows.get(r1)!.step).toBeUndefined();
   });
 });
+
+// ---- Found in review
+
+describe('review fixes', () => {
+  it('a wrapped row\'s first starting material, taken out by hand, stays out', () => {
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    chain(doc, 0, 0); addArrow(doc, 2 * L, 4 * L, 0); const b = chain(doc, 4.6 * L, 0);
+    const r2 = addArrow(doc, 0, 2 * L, 3 * L);
+    chain(doc, 2.6 * L, 3 * L);
+    const ed = editorFor(doc);
+    const find = itemFinder(ed.schemeItems());
+    expect(named(doc, ed.reactionRoles(r2)!).reactants).toEqual(['a' + b]);
+    ed.setItemsRole(r2, [find('a' + b)!], 'none');
+    expect(ed.reactionRoles(r2)!.reactants).toEqual([]);
+    // and saved so
+    const back = readCdxml(writeCdxml(doc)).doc;
+    const r2back = [...back.arrows.values()].sort((p, q) => p.tail.y - q.tail.y)[1];
+    expect(reactionSteps(back, items(back)).find((s) => s.arrow.id === r2back.id)?.roles.reactants ?? []).toEqual([]);
+  });
+
+  it('numbers a scheme that turns down and runs back right to left along the chemistry', () => {
+    // A → B → C, then down: C → D, then back along the row below: D → E → F
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    chain(doc, 0, 0); const r1 = addArrow(doc, 2 * L, 4 * L, 0); chain(doc, 4.6 * L, 0);
+    const r2 = addArrow(doc, 6.6 * L, 8.6 * L, 0); chain(doc, 9.2 * L, 0);
+    const r3 = doc.edit('arrow', () => doc.addArrow({ ...base, tail: { x: 9.6 * L, y: 1 * L }, head: { x: 9.6 * L, y: 3.5 * L } }).id);
+    chain(doc, 9.2 * L, 4.5 * L);
+    const r4 = addArrow(doc, 8.6 * L, 6.6 * L, 4.5 * L); chain(doc, 4.6 * L, 4.5 * L);
+    const r5 = addArrow(doc, 4 * L, 2 * L, 4.5 * L); chain(doc, 0, 4.5 * L);
+    const ed = editorFor(doc);
+    const steps = ed.allSteps();
+    const n = stepNumbers(steps, ed.schemeFinder());
+    const of = (id: number) => n[steps.findIndex((s) => s.arrow.id === id)];
+    expect([r1, r2, r3, r4, r5].map(of)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('Link Steps in Order: an edit while linking ends it, setting nothing', () => {
+    const { doc, a, b, r1 } = twoSteps();
+    const ed = editorFor(doc);
+    const find = itemFinder(ed.schemeItems());
+    const linkAt = (p: { x: number; y: number }) => (ed as unknown as { linkAt(p: { x: number; y: number }): void }).linkAt(p);
+    const mid = (it: Item) => ({ x: (it.box.x1 + it.box.x2) / 2, y: (it.box.y1 + it.box.y2) / 2 });
+    const r = doc.arrows.get(r1)!;
+    ed.startLinking();
+    linkAt(mid(find('a' + a)!));
+    linkAt({ x: (r.tail.x + r.head.x) / 2, y: r.tail.y });
+    linkAt(mid(find('a' + b)!));
+    doc.edit('delete', () => doc.removeAtom(b));
+    linkAt(mid(find('a' + a)!));
+    expect(ed.linking).toBeNull();
+    expect(ed.stopLinking(true)).toBe(0);
+    expect(doc.arrows.get(r1)!.step).toBeUndefined();
+  });
+
+  it('Link Steps in Order: a + clicked goes with the + signs; text set over an arrow by hand is kept', () => {
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    const a = chain(doc, 0, 0), plus = addText(doc, 2 * L, 0.2 * L, '+'), a2 = chain(doc, 2.8 * L, 0);
+    const r = addArrow(doc, 4.8 * L, 6.8 * L, 0), b = chain(doc, 7.4 * L, 0);
+    const high = addText(doc, 5.2 * L, -3 * L, 'hν');
+    const ed = editorFor(doc);
+    const find = itemFinder(ed.schemeItems());
+    ed.setItemsRole(r, [find('c' + high)!], 'above');
+    expect(named(doc, ed.reactionRoles(r)!).above).toEqual(['c' + high]);
+    const linkAt = (p: { x: number; y: number }) => (ed as unknown as { linkAt(p: { x: number; y: number }): void }).linkAt(p);
+    const mid = (it: Item) => ({ x: (it.box.x1 + it.box.x2) / 2, y: (it.box.y1 + it.box.y2) / 2 });
+    ed.startLinking();
+    for (const ref of ['a' + a, 'c' + plus, 'a' + a2]) linkAt(mid(find(ref)!));
+    linkAt({ x: 5.8 * L, y: 0 });
+    linkAt(mid(find('a' + b)!));
+    expect(ed.stopLinking(true)).toBe(1);
+    const st = doc.arrows.get(r)!.step!;
+    expect(named(doc, st)).toEqual({ reactants: ['a' + a, 'a' + a2].sort(), products: ['a' + b], above: ['c' + high], below: [] });
+    expect(st.plusses).toEqual(['c' + plus]);
+  });
+
+  it('a Results line set to another role is plain text again', () => {
+    const { doc, r2, pct } = twoSteps();
+    const ed = editorFor(doc);
+    const find = itemFinder(ed.schemeItems());
+    ed.setItemsRole(r2, [find('c' + pct)!], 'results');
+    expect(ed.roleStepsFor([find('c' + pct)!]).find((s) => s.arrow === r2)?.role).toBe('results');
+    ed.setItemsRole(r2, [find('c' + pct)!], 'above');
+    expect(doc.captions.get(pct)!.results).toBeFalsy();
+  });
+});
