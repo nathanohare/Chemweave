@@ -4,7 +4,7 @@
 
 *Formerly Chem Illustrator.*
 
-**Free chemical drawing for the lab, with presentations, spreadsheets and documents built in.**
+**Chemical drawing, documents, slides, spreadsheets and a live SI builder, woven into one program.**
 
 Chemweave draws structures and reaction schemes with the keyboard shortcuts ChemDraw users already know, and it opens and saves your `.cdxml` files. Around the chemistry canvas it builds in the other programs a synthetic chemist spends the day in: presentations, spreadsheets, documents and a design page for posters and figures. Your structures stay editable in all of them, and the formula, masses, stereochemistry and warnings update as you draw.
 
