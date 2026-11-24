@@ -29,6 +29,8 @@ export interface Field {
   short?: boolean;
   /** A drop-down list of its own on the same row, after the label (a checkbox's units, say); its value comes back under its own name. */
   beside?: { name: string; value: string; options: { value: string; label: string }[]; label: string };
+  /** Color boxes after a drop-down list, on its row, shown while the list's value is `when` (an orbital's two phase colors); each value comes back under its own name. */
+  colors?: { when: string; items: { name: string; value: string; label: string }[] };
   /** A text box's Insert drop-down: picking an item types its `text` at the caret (Insert Page Number and the like). */
   inserts?: { label: string; items: { text: string; label: string }[] };
 }
@@ -177,6 +179,24 @@ export function ask(title: string, fields: Field[], opts: { ok?: string; note?: 
         row.classList.add('ask-has-beside');
         row.append(sel);
         inputs.set(f.beside.name, sel);
+      }
+      if (f.colors && input instanceof HTMLSelectElement) {
+        const sel = input, when = f.colors.when;
+        const box = document.createElement('span');
+        box.className = 'ask-colors';
+        for (const c of f.colors.items) {
+          const inp = document.createElement('input');
+          inp.type = 'color';
+          inp.value = c.value;
+          inp.title = c.label;
+          inp.setAttribute('aria-label', c.label);
+          box.append(inp);
+          inputs.set(c.name, inp);
+        }
+        const shown = () => { box.hidden = sel.value !== when; };
+        shown();
+        sel.addEventListener('change', shown);
+        row.append(box);
       }
       if (f.inline) {
         const slot = document.createElement('span');

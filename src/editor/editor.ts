@@ -599,7 +599,7 @@ export class Editor {
   /** A double-click on an orbital (its parts selected): the Edit Orbital window. */
   onOrbital: () => void = () => {};
   /** The single-lobe button's phases and length (in bond lengths): those last picked in the Orbital window. */
-  lobeLook: () => { look: OrbitalLook; size: number; flip: boolean } = () => ({ look: 'shaded', size: 1.1, flip: false });
+  lobeLook: () => { look: OrbitalLook; size: number; flip: boolean; colours?: [string, string] } = () => ({ look: 'shaded', size: 1.1, flip: false });
   /** A double-click on a diagram away from its words: open its text and look (the frame's id). */
   onDiagram: (id: number) => void = () => {};
   /** A chart (on a slide or drawing) was double-clicked: open its data and settings. */
@@ -3838,7 +3838,7 @@ export class Editor {
   /** An orbital's single lobe for the lobe button, with the phases and length last picked in the Orbital window. */
   private lobeSpec(dir: Vec) {
     const k = this.lobeLook();
-    return { kind: 'lobe' as const, look: k.look, size: k.size * this.doc.style.bondLength, angle: angleOfDir(dir), ...(k.flip ? { flip: true } : {}) };
+    return { kind: 'lobe' as const, look: k.look, size: k.size * this.doc.style.bondLength, angle: angleOfDir(dir), ...(k.flip ? { flip: true } : {}), ...(k.colours ? { colours: k.colours } : {}) };
   }
 
   /**
