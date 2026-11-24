@@ -65,7 +65,7 @@ export interface Overlay {
 /** Marks over the text (character offsets; the end not included). */
 export interface TextMarks {
   /** Everything but [start, end) washed out lightly, with a bar in the margin beside it. */
-  focus?: { start: number; end: number; bar: string } | null;
+  focus?: { start: number; end: number; bar: string; /** false: the bar alone, nothing washed out */ wash?: boolean } | null;
   /** Stretches shaded. */
   tints?: { start: number; end: number; color: string }[];
   /** Stretches bracketed (or boxed, maybe dashed), the first with a tag above it. */
@@ -1050,12 +1050,15 @@ function drawMarksOn(ctx: CanvasRenderingContext2D, lay: DocLayout, p: PageBox, 
   const left = p.x + p.setup.left;
   if (m.focus) {
     const rs = rectsOn(lay, p, m.focus.start, m.focus.end);
+    const wash = m.focus.wash !== false;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    if (!rs.length) ctx.fillRect(p.x, p.top, p.w, p.h);
+    if (!rs.length) { if (wash) ctx.fillRect(p.x, p.top, p.w, p.h); }
     else {
       const y1 = Math.min(...rs.map((r) => r.y1)) - 4, y2 = Math.max(...rs.map((r) => r.y2)) + 4;
-      ctx.fillRect(p.x, p.top, p.w, Math.max(0, y1 - p.top));
-      ctx.fillRect(p.x, y2, p.w, Math.max(0, p.top + p.h - y2));
+      if (wash) {
+        ctx.fillRect(p.x, p.top, p.w, Math.max(0, y1 - p.top));
+        ctx.fillRect(p.x, y2, p.w, Math.max(0, p.top + p.h - y2));
+      }
       ctx.fillStyle = m.focus.bar;
       ctx.fillRect(left - 10, y1, 2.2, y2 - y1);
     }

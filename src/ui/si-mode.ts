@@ -17,7 +17,7 @@ import { compileSi, objectLabelSets, spectraPagesBefore, type SiPreviewTarget } 
 import type { SiPreview } from './si-preview';
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
-import { CUSTOM_TEXT_FILE, customTextJson, readCustomText } from '../si/custom-text';
+import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { defaultsJson, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
@@ -1009,21 +1009,24 @@ export class SiMode {
 
   /**
    * Save what is being typed (text boxes, plain inputs, table cells). The promise is done when
-   * every change of the project shown has been written to its folder.
+   * every change of the project shown has been written to its folder. `preview`: the Live
+   * Preview's typing too (not when only the page is drawn again: the preview's typing stays in it,
+   * and writing it early would cut a burst of typing into more than one step of Undo).
    */
-  commitAll(): Promise<void> {
+  commitAll(preview = true): Promise<void> {
     const p = this.project;
     for (const f of this.flushers) f();
-    // (what was typed in the live preview: written in the queue by itself, after what is on its way)
-    void this.preview?.flush();
+    // (what was typed in the live preview: written in the queue by itself, after what is on its way, and waited for)
+    const typed = preview ? this.preview?.flush() : undefined;
     for (const b of [...this.boxes, ...(this.xrayPage?.boxes ?? []), ...(this.front?.boxes ?? []), ...(this.schemePage?.boxes ?? [])]) b.commit();
     const others: Promise<unknown>[] = [...this.tables.map((t) => t.commit()), ...this.figures.map((f) => f.settled())];
     if (this.front) others.push(this.front.settled());
-    if (!p) return Promise.all(others).then(() => {}, () => {});
+    if (!p) return Promise.all([...others, typed]).then(() => {}, () => {});
     // (the editors' own saves join the project's queue, so they are waited for after the page has gone too)
     const k = this.kept(p);
     k.queue = Promise.all([k.queue, ...others]).then(() => {}, () => {});
-    return k.queue;
+    // (the preview's writes join the queue once they are made: then the queue as it is is waited for)
+    return typed ? typed.then(() => this.kept(p).queue, () => this.kept(p).queue) : k.queue;
   }
 
   /** Done when every change made to a project so far is in its folder (the project shown: what is being typed too). */
@@ -1493,7 +1496,7 @@ export class SiMode {
   private go(pick: Pick): void {
     // (a page whose editors save by themselves: a table's or figure's label, the cover, a scheme, an X-ray structure)
     if (this.project && (this.tables.length || this.figures.length || this.front || this.schemePage || this.xrayPage || this.attachPage || this.msPage)) this.kept(this.project).stale = true;
-    void this.commitAll();
+    void this.commitAll(false);
     this.pick = pick;
     this.refresh();
   }
@@ -1677,7 +1680,7 @@ export class SiMode {
     this.lastPick = JSON.stringify(this.pick);
     // (a contextual tab open before stays open when the page drawn again has it)
     const keep = this.ribbon.querySelector<HTMLElement>('[data-si-tab][aria-selected="true"]')?.dataset.siTab ?? '';
-    void this.commitAll();
+    void this.commitAll(false);
     this.drawn++;
     this.flushers = [];
     this.headPaint = null;
@@ -3001,6 +3004,8 @@ export class SiMode {
 
   /** The SI changed since the preview was compiled (a page chosen in the list only moves the preview). */
   private liveDirty = true;
+  /** The next update comes from a click in the preview: it isn't scrolled to the page's top. */
+  private liveStay = false;
   /** The number of the whole SI's last page, as last laid out (null: not since a change): the spectra's go on from it. */
   private wholeLast: number | null = null;
   /** The pages of each PDF spectrum, by its bytes' fingerprint (counted once). */
@@ -3041,8 +3046,10 @@ export class SiMode {
       return;
     }
     // (another page of the whole SI chosen, nothing changed: the preview only moves to it)
+    const stay = this.liveStay;
+    this.liveStay = false;
     if (target.kind === 'whole' && L.shown === key && !this.liveDirty && this.preview) {
-      this.preview.setFocus(this.liveNode(), true);
+      this.preview.setFocus(this.liveNode(), !stay);
       return;
     }
     this.liveBusy = true;
@@ -3050,6 +3057,8 @@ export class SiMode {
     L.state.textContent = 'Updating…';
     L.state.title = '';
     try {
+      // (which of the preview's typing this compile has: what was written before it reads the folder)
+      const gen = this.preview?.generation;
       // (the saves on their way land first: the preview reads the folder)
       await this.pendingOf(p);
       if (this.project !== p) return;
@@ -3073,10 +3082,10 @@ export class SiMode {
         const pv = await this.livePreview();
         const ro = p.readOnly;
         pv.show({
-          compiled: { ...got, doc }, key, owner: p, editable: !spectra && !ro,
+          compiled: { ...got, doc }, key, owner: p, editable: !spectra && !ro, gen,
           why: ro ? 'This SI project is open read-only.' : 'The spectra pages can’t be typed into: choose a page that isn’t a spectrum to type in the preview.',
         });
-        pv.setFocus(spectra ? null : this.liveNode(), L.shown !== key);
+        pv.setFocus(spectra ? null : this.liveNode(), L.shown !== key && !stay);
         if (!spectra) this.wholeLast = pv.lastPageNumber();
         L.shown = key;
         this.showZoom(!!this.tab);
@@ -3139,7 +3148,8 @@ export class SiMode {
       pick: (node) => {
         const [kind, id] = node.split(':');
         const pick: Pick | null = kind === 'compound' ? { kind: 'compound', id } : kind === 'scheme' ? { kind: 'scheme', id } : kind === 'section' ? { kind: 'section', id } : kind === 'project' ? { kind: 'project' } : null;
-        if (pick && JSON.stringify(pick) !== JSON.stringify(this.pick)) this.go(pick);
+        // (the page of text clicked in the preview: the preview stays where it is)
+        if (pick && JSON.stringify(pick) !== JSON.stringify(this.pick)) { this.liveStay = true; this.go(pick); }
       },
       hoverSource: (src) => this.lightOnPage(src),
       goToSource: (src) => this.goToSource(src),
@@ -3156,11 +3166,12 @@ export class SiMode {
       },
       writeCustom: async (f, owner) => {
         const p = asProject(owner);
-        const save = async (): Promise<void> => { await p.folder.writeText(CUSTOM_TEXT_FILE, customTextJson(f(await readCustomText(p.folder)))); };
+        const save = async (): Promise<void> => { await p.folder.writeText(CUSTOM_TEXT_FILE, customTextJson(f(await readCustomTextToChange(p.folder)))); };
         if (p !== this.project) { await this.change(p, 'Type in Live Preview', save); return; }
         await this.act(save, false);
       },
       undo: (redo) => void this.undo(redo),
+      refresh: () => this.liveSoon(0),
     });
     this.live.view = this.preview.view;
     // (Preferences ▸ SI Live Preview: drawn again in the look chosen)

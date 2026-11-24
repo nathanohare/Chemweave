@@ -46,7 +46,12 @@ export function editKind(spans: readonly SourceSpan[], start: number, end: numbe
   if (end > start) {
     const over = spans.filter((s) => s.start < end && s.end > start);
     const srcs = [...new Set(over.map((s) => s.src))];
-    if (!over.length) return { kind: 'custom', at: start };
+    if (!over.length) {
+      // (a paragraph's end between two paragraphs of one field: joins them; else words Chemweave writes, a heading or the layout)
+      const a = spans.find((x) => x.end === start), b = spans.find((x) => x.start === end);
+      if (!typed && end === start + 1 && text[start] === '\n' && a && b && a.src === b.src && manyParagraphs(a.src) && editableSrc(a.src)) return { kind: 'field', src: a.src };
+      return { kind: 'locked', src: '' };
+    }
     if (srcs.length > 1) {
       const locked = over.find((s) => !writable(s.src));
       return locked ? { kind: 'locked', src: locked.src } : { kind: 'across' };
@@ -175,7 +180,79 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
       ra = k < printed.length ? map[k] : raw.length;
     }
   }
-  const rb = pb > pa ? map[pb - 1] + 1 : ra;
+  let rb = pb > pa ? map[pb - 1] + 1 : ra;
   const put = markup ? escapeMarkup(typed) : typed;
-  return raw.slice(0, ra) + put + raw.slice(rb);
+  if (!markup || rb <= ra) return raw.slice(0, ra) + put + raw.slice(rb);
+  // (an escaped character starts with its backslash)
+  if (ra > 0 && raw[ra - 1] === '\\' && !escapedAt(raw, ra - 1)) ra--;
+  if (rb - 1 > ra && raw[rb - 1] === '\\' && !escapedAt(raw, rb - 1)) rb--;
+  // the markers in what is taken out stay (a selection from inside a subscript to after it
+  // leaves the subscript closed); the typed text goes before them, in the look of the first
+  // character taken out; formatting left empty goes
+  const kept = markersIn(raw.slice(ra, rb));
+  let out = raw.slice(0, ra) + put + kept + raw.slice(rb);
+  const lo = Math.max(0, ra - 3);
+  let hi = ra + put.length + kept.length + 3;
+  for (let again = true; again;) {
+    again = false;
+    for (const e of EMPTY) {
+      const i = out.indexOf(e, lo);
+      if (i >= 0 && i + e.length <= hi && !escapedAt(out, i)) { out = out.slice(0, i) + out.slice(i + e.length); hi -= e.length; again = true; }
+    }
+  }
+  return out;
+}
+
+/** Formatting with nothing in it, taken out after an edit. */
+const EMPTY = ['^{}', '_{}', '****', '____'];
+
+/** Is the character at `i` escaped (an odd number of backslashes before it)? */
+function escapedAt(s: string, i: number): boolean {
+  let n = 0;
+  while (i - 1 - n >= 0 && s[i - 1 - n] === '\\') n++;
+  return n % 2 === 1;
+}
+
+/** The formatting markers of a stretch of markup text, in order (its characters left out). */
+export function markersIn(s: string): string {
+  let out = '';
+  for (let i = 0; i < s.length;) {
+    if (s[i] === '\\') { i += 2; continue; }
+    const two = s.slice(i, i + 2);
+    if (two === '**' || two === '__' || two === '^{' || two === '_{') { out += two; i += 2; continue; }
+    if (s[i] === '*' || s[i] === '}') { out += s[i]; i++; continue; }
+    i++;
+  }
+  return out;
+}
+
+/**
+ * Where an edit of the text is, from the text before and after it and the selection before it:
+ * the stretch [start, end) of `before` replaced, and what by. A change can often be put in more
+ * than one place (a space typed before a space); the one at the selection is taken.
+ */
+export function locateEdit(before: string, after: string, selStart: number, selEnd: number): { start: number; end: number; typed: string } {
+  let pre = 0;
+  while (pre < before.length && pre < after.length && before[pre] === after[pre]) pre++;
+  let suf = 0;
+  while (suf < before.length - pre && suf < after.length - pre && before[before.length - 1 - suf] === after[after.length - 1 - suf]) suf++;
+  const removed = before.length - pre - suf, added = after.length - pre - suf;
+  // the leftmost place the same change could be
+  let suf2 = 0;
+  while (suf2 < before.length && suf2 < after.length && before[before.length - 1 - suf2] === after[after.length - 1 - suf2]) suf2++;
+  let pre2 = 0;
+  while (pre2 < before.length - suf2 && pre2 < after.length - suf2 && before[pre2] === after[pre2]) pre2++;
+  const fits = (s: number): boolean => before.slice(0, s) === after.slice(0, s) && before.slice(s + removed) === after.slice(s + added);
+  const at = (s: number) => ({ start: s, end: s + removed, typed: after.slice(s, s + added) });
+  const lo = Math.min(pre2, pre);
+  if (lo < pre) {
+    const collapsed = selStart === selEnd;
+    const wants: ((s: number) => boolean)[] = [
+      (s) => s === selStart && (!collapsed || removed === 0),
+      (s) => collapsed && s + removed === selStart,
+      (s) => collapsed && s === selStart,
+    ];
+    for (const w of wants) for (let s = lo; s <= pre; s++) if (w(s) && fits(s)) return at(s);
+  }
+  return at(pre);
 }

@@ -35,14 +35,27 @@ export interface PlacedCustom { id: string; start: number; end: number; anchored
 
 export async function readCustomText(folder: SiFolder): Promise<CustomText[]> {
   const raw = await folder.readText(CUSTOM_TEXT_FILE).catch(() => null);
-  if (!raw) return [];
+  return (raw && parseCustomText(raw)) || [];
+}
+
+/** The custom text to change and save: as readCustomText, but a file that can't be read is an error (saving over it would lose its text). */
+export async function readCustomTextToChange(folder: SiFolder): Promise<CustomText[]> {
+  const raw = await folder.readText(CUSTOM_TEXT_FILE).catch(() => null);
+  if (!raw || !raw.trim()) return [];
+  const got = parseCustomText(raw);
+  if (!got) throw new Error(`${CUSTOM_TEXT_FILE} in the project folder can’t be read (half synced, or changed by hand), so it wasn’t saved over. Fix or remove it, then type again`);
+  return got;
+}
+
+/** The items of the file's text (null: not the file's format). */
+export function parseCustomText(raw: string): CustomText[] | null {
   try {
     const data = JSON.parse(raw) as { items?: unknown };
-    if (!Array.isArray(data.items)) return [];
+    if (!data || !Array.isArray(data.items)) return null;
     return data.items.filter((x): x is CustomText => !!x && typeof x === 'object' && typeof (x as CustomText).id === 'string' && typeof (x as CustomText).text === 'string')
       .map((x) => ({ id: x.id, node: String(x.node ?? ''), after: String(x.after ?? ''), gap: String(x.gap ?? ''), text: x.text }));
   } catch {
-    return [];
+    return null;
   }
 }
 

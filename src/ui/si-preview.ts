@@ -16,7 +16,7 @@ import * as rt from '../richtext';
 import type { TextRun } from '../model';
 import type { CompiledSi } from '../si/compile-doc';
 import { blockAt, editableSrc, fieldOfSrc, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
-import { applyToRaw, customIdOf, customSrc, editKind, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
+import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
 
@@ -43,6 +43,8 @@ export interface SiPreviewHost {
   /** Save the person's own text (all of it). */
   writeCustom(change: (items: CustomText[]) => CustomText[], owner: unknown): Promise<void>;
   undo(redo: boolean): void;
+  /** Compile again (after a write that failed: the stored text is shown again). */
+  refresh(): void;
 }
 
 /** What is being shown: the whole SI (which can be typed into), or the Spectra section's pages. */
@@ -54,6 +56,8 @@ export interface ShownSi {
   why?: string;
   /** What it was compiled from (the project): what is typed is written there, whatever shows by then. */
   owner: unknown;
+  /** `generation` when the compile started: older than the typing since, it isn't shown (the typing would go). */
+  gen?: number;
 }
 
 /** Waiting this long after the last key before a field is written (a burst of typing is one step of Undo). */
@@ -83,6 +87,13 @@ export class SiPreview {
   private writing: Promise<void> = Promise.resolve();
   /** A newer compile that came while typing: shown once the typing is written. */
   private waiting: ShownSi | null = null;
+  /** Edits let through so far, and how many of them were written (or on their way, in the project's queue). */
+  private editGen = 0;
+  private writtenGen = 0;
+  /** Fields being written now: a compile that comes waits. */
+  private busy = false;
+  /** Custom text taken out to nothing (and so out of the file): put back where it was if typed again. */
+  private gone = new Map<string, CustomText>();
   /** The page chosen in the list. */
   private focusNode: string | null = null;
   /** The field lit up from the SI page (a source, or a field: "c:<id>|yield"). */
@@ -117,9 +128,18 @@ export class SiPreview {
   /** The person's own text in the SI shown, and whether each piece is where it was put. */
   get customText(): readonly PlacedCustom[] { return this.custom; }
 
-  /** Show a compile. Typing not yet written keeps the text it is in: the compile waits for it. */
-  show(s: ShownSi): void {
-    if (this.dirty.size || this.fresh.size) { this.waiting = s; return; }
+  /** The edits written so far (for a compile to say which typing it has). */
+  get generation(): number { return this.writtenGen; }
+
+  /**
+   * Show a compile. Typing not yet written keeps the text it is in: the compile waits for it. A
+   * compile started before the last typing was written is not shown (a newer one follows the
+   * write), unless `force` (after a write failed: the stored text again).
+   */
+  show(s: ShownSi, force = false): void {
+    if (this.dirty.size || this.fresh.size || this.busy || (this.file && this.file.ed.composing !== null)) { this.waiting = s; return; }
+    if (!force && !this.failed && s.gen !== undefined && s.gen < this.editGen && this.file) return;
+    this.failed = false;
     const same = s.key === this.key && !!this.file;
     const v = this.view;
     const top = v.scroller.scrollTop, left = v.scroller.scrollLeft;
@@ -232,6 +252,10 @@ export class SiPreview {
     if (this.focusNode && siPreviewPrefs.dim) {
       const b = this.block(this.focusNode);
       if (b) marks.focus = { start: b.start, end: b.end, bar: CRIMSON };
+    } else if (this.focusNode) {
+      // (not washed out: the bar alone marks the page)
+      const b = this.block(this.focusNode);
+      if (b) marks.focus = { start: b.start, end: b.end, bar: CRIMSON, wash: false };
     }
     // the person's own text, flagged as text no field holds
     for (const s of this.spans) if (isCustomSrc(s.src)) marks.flagged!.push({ start: s.start, end: s.end, color: CUSTOM, look: siPreviewPrefs.custom });
@@ -274,14 +298,13 @@ export class SiPreview {
       if (JSON.stringify(beforeRuns) !== JSON.stringify(afterRuns)) this.api.flash('Change formatting on the SI page: the Live Preview takes typing only.');
       return before === after && JSON.stringify(beforeRuns) === JSON.stringify(afterRuns);
     }
-    let pre = 0;
-    while (pre < before.length && pre < after.length && before[pre] === after[pre]) pre++;
-    let suf = 0;
-    while (suf < before.length - pre && suf < after.length - pre && before[before.length - 1 - suf] === after[after.length - 1 - suf]) suf++;
-    const start = pre, end = before.length - suf, typed = after.slice(pre, after.length - suf);
+    // (where: the editor's selection before the change settles a change that could be in more than one place)
+    const ed = this.file?.ed;
+    const { start, end, typed } = locateEdit(before, after, ed?.start ?? 0, ed?.end ?? 0);
     const k = editKind(this.spans, start, end, typed, before);
     if (k.kind === 'locked') {
-      const why = typed.includes('\n') && editableSrc(k.src) ? `${this.api.labelOf(k.src)} holds one paragraph.` : `This is made from ${this.api.labelOf(k.src)}: change it there (click it to go to the field).`;
+      const why = !k.src ? 'Chemweave writes this (a heading, a number, the layout): it can’t be changed here.'
+        : typed.includes('\n') && editableSrc(k.src) ? `${this.api.labelOf(k.src)} holds one paragraph.` : `This is made from ${this.api.labelOf(k.src)}: change it there (click it to go to the field).`;
       this.api.flash(why);
       return false;
     }
@@ -300,6 +323,7 @@ export class SiPreview {
       const delta = typed.length - (end - start);
       let src: string;
       if (this.allowed.kind === 'custom') {
+        if (!typed) { this.pendingEdit = null; this.allowed = null; return; }
         // new text of the person's own, typed where no field is
         const id = newCustomId();
         src = customSrc(id);
@@ -312,6 +336,7 @@ export class SiPreview {
         this.shift(start, end, delta, src);
       } else return;
       this.dirty.add(src);
+      this.editGen++;
       this.pendingEdit = null;
       this.allowed = null;
       clearTimeout(this.writeTimer);
@@ -337,6 +362,11 @@ export class SiPreview {
       else out.push({ ...s, end: Math.max(s.start, s.end + (s.end >= end ? delta : 0)) });
     }
     this.spans = out.filter((s) => s.end > s.start || isCustomSrc(s.src));
+    // (the pages' stretches and the custom text's places move along too: the wash and new custom text's places use them)
+    const put = end - start + delta;
+    const move = (x: number, edge: 'start' | 'end'): number => (x < start || (x === start && (edge === 'start' || end > start)) ? x : x >= end ? x + delta : edge === 'start' ? start : start + put);
+    this.blocks = this.blocks.map((b) => ({ ...b, start: move(b.start, 'start'), end: move(b.end, 'end') }));
+    this.custom = this.custom.map((c) => ({ ...c, start: move(c.start, 'start'), end: move(c.end, 'end') }));
   }
 
   /** Write the fields and custom text typed into. */
@@ -348,19 +378,40 @@ export class SiPreview {
 
   private async writeDirty(): Promise<void> {
     if (!this.file || (!this.dirty.size && !this.fresh.size)) return;
+    // (the text and its stretches as they are now: keys typed while this writes move the live ones)
     const text = this.file.ed.text;
+    const spans = this.spans.map((x) => ({ ...x }));
+    const gen = this.editGen;
     const owner = this.owner;
     const srcs = [...this.dirty];
     this.dirty.clear();
+    this.busy = true;
+    try { await this.writeEach(text, spans, srcs, owner); } finally { this.busy = false; }
+    this.writtenGen = Math.max(this.writtenGen, gen);
+    this.showWaiting();
+  }
+
+  /** A compile that came while typing or writing, shown now (when nothing waits to be written). */
+  private showWaiting(): void {
+    const w = this.waiting;
+    if (!w || this.dirty.size || this.fresh.size || this.busy || this.file?.ed.composing != null) return;
+    this.waiting = null;
+    this.show(w);
+  }
+
+  /** A write failed since the last compile shown: the next shows the stored text, whenever it was started. */
+  private failed = false;
+
+  private async writeEach(text: string, spans: SourceSpan[], srcs: string[], owner: unknown): Promise<void> {
     const customs: { id: string; text: string }[] = [];
     let failed = false;
     for (const src of srcs) {
       if (isCustomSrc(src)) {
-        customs.push({ id: customIdOf(src), text: this.spans.filter((s) => s.src === src).map((s) => text.slice(s.start, s.end)).join('') });
+        customs.push({ id: customIdOf(src), text: spans.filter((s) => s.src === src).map((s) => text.slice(s.start, s.end)).join('') });
         continue;
       }
       const before = this.written.get(src) ?? { printed: printedOf(this.base.text, this.base.spans, src).printed, raw: (await this.api.read(src, owner)) ?? '' };
-      const now = printedOf(text, this.spans, src).printed;
+      const now = printedOf(text, spans, src).printed;
       let pre = 0;
       while (pre < before.printed.length && pre < now.length && before.printed[pre] === now[pre]) pre++;
       let suf = 0;
@@ -380,27 +431,30 @@ export class SiPreview {
         this.api.flash(`Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
       }
     }
-    if (customs.length || this.fresh.size) {
-      const fresh = new Map(this.fresh);
-      this.fresh.clear();
+    if (customs.length) {
+      // (the places of the new pieces written now; one typed since waits for its own write)
+      const fresh = new Map([...this.fresh].filter(([id]) => customs.some((c) => c.id === id)));
+      for (const id of fresh.keys()) this.fresh.delete(id);
       await this.api.writeCustom((items) => {
         let out = [...items];
         for (const c of customs) {
           const old = out.find((x) => x.id === c.id);
-          if (old) out = c.text ? out.map((x) => (x.id === c.id ? { ...x, text: c.text } : x)) : out.filter((x) => x.id !== c.id);
+          if (old && c.text) out = out.map((x) => (x.id === c.id ? { ...x, text: c.text } : x));
+          else if (old) { this.gone.set(c.id, old); out = out.filter((x) => x.id !== c.id); }
           else {
-            const at = fresh.get(c.id);
-            if (at && c.text) out.push({ ...at, text: c.text });
+            // (new, or taken out to nothing and typed again: where it was put)
+            const at = fresh.get(c.id) ?? this.gone.get(c.id);
+            if (at && c.text) { out.push({ ...at, id: c.id, text: c.text }); this.gone.delete(c.id); }
           }
         }
         return out;
       }, owner).catch((e) => { failed = true; this.api.flash(`Could not save your text: ${e instanceof Error ? e.message : String(e)}`, 8000); });
     }
-    // a compile that came meanwhile (or, after a failure, the stored text again)
-    const w = this.waiting;
-    this.waiting = null;
-    if (w && !this.dirty.size && !this.fresh.size) this.show(w);
-    else if (failed && w) this.waiting = w;
+    // (after a failure: the stored text again, from the compile waiting or a new one)
+    if (failed) {
+      this.failed = true;
+      if (!this.waiting) this.api.refresh();
+    }
   }
 
   // ---------------------------------------------------------------- keys, pointer
@@ -411,7 +465,7 @@ export class SiPreview {
     ta.addEventListener('beforeinput', (e) => this.beforeInput(e));
     ta.addEventListener('compositionstart', () => this.file?.ed.compositionStart());
     ta.addEventListener('compositionupdate', (e) => this.file?.ed.compositionUpdate(e.data ?? ''));
-    ta.addEventListener('compositionend', (e) => { this.file?.ed.compositionEnd(e.data ?? ''); this.syncInput(); });
+    ta.addEventListener('compositionend', (e) => { this.file?.ed.compositionEnd(e.data ?? ''); this.syncInput(); this.showWaiting(); });
     ta.addEventListener('copy', (e) => this.copy(e, false));
     ta.addEventListener('cut', (e) => this.copy(e, true));
     ta.addEventListener('paste', (e) => {

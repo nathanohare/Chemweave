@@ -12331,7 +12331,7 @@ async function personalPreferences(): Promise<void> {
       help: 'Marks at the corners of the text on each page of a document, showing where the margins are.' },
     { name: 'whiteSpace', label: 'Show white space between pages in Print Layout view', type: 'checkbox', value: String(docPagePrefs.whiteSpace),
       help: 'Off, each page\'s top and bottom margins (with its header and footer) are hidden, the pages joined by a line. Double-clicking between pages does the same.' },
-    { name: 'siPreviewHeading', label: 'SI Live Preview', type: 'heading', value: '', help: 'The whole SI beside the SI Project tab\'s pages, typed into as in Word (View ▸ Live Preview there).' },
+    { name: 'siPreviewHeading', label: 'SI Live Preview', type: 'heading', value: '', help: 'The whole SI beside the SI Project tab\'s pages, typed into as in Word (Home ▸ Compile ▸ Live Preview there).' },
     { name: 'siDim', label: 'Wash out everything but the page selected', type: 'checkbox', value: String(siPreviewPrefs.dim),
       help: 'A bar in the SI color beside the selected page marks it either way.' },
     { name: 'siLink', label: 'Show a field\'s text with', value: siPreviewPrefs.link, short: true, options: [

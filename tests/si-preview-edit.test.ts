@@ -2,8 +2,9 @@
 // are refused, and the stored value a field edit makes. The strings here are written by hand (a
 // stored value and how it prints), not made by the code under test.
 import { describe, expect, it } from 'vitest';
-import { applyToRaw, customSrc, editKind, lineUp, markupSrc, printedOf } from '../src/si/preview-edit';
+import { applyToRaw, customSrc, editKind, lineUp, locateEdit, markupSrc, markersIn, printedOf } from '../src/si/preview-edit';
 import type { SourceSpan } from '../src/si/source-map';
+import { parseCustomText } from '../src/si/custom-text';
 
 describe('lining up a stored value with its printed text', () => {
   it('lines up equal text one for one', () => {
@@ -56,6 +57,45 @@ describe('a change to the printed text, made in the stored value', () => {
   });
 });
 
+describe('a selection across formatting, made in the stored value', () => {
+  // (the stored values are the markup format of src/si/markup.ts: _{} subscript, ^{} superscript, ** bold)
+  it('keeps a subscript closed when a selection runs out of it', () => {
+    // "CH2Cl2" with "H2" taken out
+    expect(applyToRaw('CH_{2}Cl_{2}', 'CH2Cl2', 1, 3, '', true)).toBe('CCl_{2}');
+  });
+  it('types over a selection from a superscript into plain text in the superscript\'s look', () => {
+    // "13C NMR" with "3C" typed over
+    expect(applyToRaw('^{13}C NMR', '13C NMR', 1, 3, 'X', true)).toBe('^{1X} NMR');
+  });
+  it('keeps the rest of a bold word bold', () => {
+    // "a bold text" with " bo" typed over
+    expect(applyToRaw('a **bold** text', 'a bold text', 1, 4, 'X', true)).toBe('aX**ld** text');
+  });
+  it('takes out formatting left empty', () => {
+    expect(applyToRaw('**bold**', 'bold', 0, 4, '', true)).toBe('');
+  });
+  it('takes out an escaped character with its backslash', () => {
+    expect(applyToRaw('a\\*b', 'a*b', 1, 2, '', true)).toBe('ab');
+  });
+  it('finds the markers of a stretch, not escaped ones', () => {
+    expect(markersIn('H_{2}\\} **x')).toBe('_{}**');
+  });
+});
+
+describe('where an edit is', () => {
+  it('puts a space typed at a field\'s end before a space there at the caret', () => {
+    // "12| mg": a second space typed after "12"
+    expect(locateEdit('12 mg', '12  mg', 2, 2)).toEqual({ start: 2, end: 2, typed: ' ' });
+  });
+  it('takes Backspace out before the caret', () => {
+    expect(locateEdit('aab', 'ab', 1, 1)).toEqual({ start: 0, end: 1, typed: '' });
+    expect(locateEdit('aab', 'ab', 2, 2)).toEqual({ start: 1, end: 2, typed: '' });
+  });
+  it('puts a change where it can only be', () => {
+    expect(locateEdit('abc', 'aXc', 1, 2)).toEqual({ start: 1, end: 2, typed: 'X' });
+  });
+});
+
 describe('what an edit of the preview is', () => {
   // "Colorless oil (69.2 mg, 91%). Rf = 0.10." as spans
   const spans: SourceSpan[] = [
@@ -101,6 +141,14 @@ describe('what an edit of the preview is', () => {
     // (but at a paragraph's start, into the field)
     expect(editKind(two, 30, 30, 'x', text.slice(0, 29) + '\n' + text.slice(30))).toEqual({ kind: 'field', src: 'c:x|references|text' });
   });
+  it('refuses taking out text no field holds (a heading, the space between sentences)', () => {
+    expect(editKind(spans, 29, 30, '')).toEqual({ kind: 'locked', src: '' });
+  });
+  it('joins two paragraphs of one text field', () => {
+    const text = 'One.\nTwo.';
+    const two: SourceSpan[] = [{ start: 0, end: 4, src: 's:a|content|@text' }, { start: 5, end: 9, src: 's:a|content|@text' }];
+    expect(editKind(two, 4, 5, '', text)).toEqual({ kind: 'field', src: 's:a|content|@text' });
+  });
   it('types into the person\'s own text', () => {
     const own = [...spans, { start: 29, end: 40, src: customSrc('k1') }].filter((s) => s.start !== 30 && s.start !== 35 && s.start !== 39);
     expect(editKind(own, 33, 33, 'x')).toEqual({ kind: 'field', src: customSrc('k1') });
@@ -119,5 +167,16 @@ describe('a field\'s printed text', () => {
     expect(markupSrc('c:x|procedure|@text')).toBe(true);
     expect(markupSrc('c:x|yield|percent')).toBe(false);
     expect(markupSrc('c:x|nmr|#0.text')).toBe(true);
+  });
+});
+
+describe('the custom text file', () => {
+  it('reads the items of the file', () => {
+    expect(parseCustomText('{"version":1,"items":[{"id":"k1","node":"compound:a","after":"c:a|hrms","gap":" ","text":"Hi."}]}')).toEqual([{ id: 'k1', node: 'compound:a', after: 'c:a|hrms', gap: ' ', text: 'Hi.' }]);
+  });
+  it('tells a file it can\'t read from an empty list', () => {
+    // (a half-synced file: saving over it would lose its text)
+    expect(parseCustomText('{"version":1,"items":[{"id"')).toBeNull();
+    expect(parseCustomText('{"version":1,"items":[]}')).toEqual([]);
   });
 });
