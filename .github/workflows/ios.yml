@@ -66,7 +66,7 @@ jobs:
         # pick the highest released one installed (betas and release candidates are refused for
         # uploads, so they are skipped); without one, the default stays.
         run: |
-          pick=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|_rc|release_candidate' | sed -E 's#.*/Xcode_([0-9.]+)\.app#\1 &#' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 | cut -d' ' -f2)
+          pick=$(for app in /Applications/Xcode_*.app; do [ -d "$app" ] && printf '%s\n' "$app"; done | grep -viE 'beta|_rc|release_candidate' | sed -E 's#.*/Xcode_([0-9.]+)\.app#\1 &#' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 | cut -d' ' -f2)
           if [ -n "$pick" ]; then sudo xcode-select -s "$pick/Contents/Developer"; fi
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
