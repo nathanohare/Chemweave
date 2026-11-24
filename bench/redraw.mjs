@@ -7,18 +7,17 @@
 export const REDRAW_STRUCTURES = 2000;
 
 /**
- * The most each redraw may take (the fastest side's middle frame, in ms), whatever the base branch
- * takes. `one`: one structure dragged (each step is an edit and a full redraw), kept under one
- * frame of a 60 Hz screen. `many`: 2,000 atoms dragged together, about 1.8 times the Checks
- * machines' time (as scripts/bench-gate.mjs BUDGETS). Raise one only with the reason in the pull
- * request.
+ * The most each redraw may take (the fastest side's middle step, in ms: an edit and the full redraw
+ * of the drawing, not counting the screen's own compositing), whatever the base branch takes. About
+ * 1.8 times the first run on the Checks machines (2026-11-24, #709: one structure 4.4 ms, 2,000
+ * atoms 64 ms), as scripts/bench-gate.mjs BUDGETS. Raise one only with the reason in the pull request.
  */
-export const REDRAW_BUDGETS = { one: 16, many: 150 };
+export const REDRAW_BUDGETS = { one: 8, many: 115 };
 
 /** Fails the redraw check: the pull request is more than 40% and REDRAW_FLOOR_MS slower than the base. */
-export const REDRAW_LIMIT = 1.4, REDRAW_FLOOR_MS = 5;
+export const REDRAW_LIMIT = 1.4, REDRAW_FLOOR_MS = 2;
 
-/** { one, many }: the middle frame, in ms, of each drag in one fresh page of the app at `url`. */
+/** { one, many }: the middle step, in ms, of each drag in one fresh page of the app at `url`. */
 export async function redrawOnce(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   try {

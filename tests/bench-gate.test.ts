@@ -34,7 +34,9 @@ describe('speed budgets', () => {
       const b = line.match(/^\s*bench\('([^']+)'/);
       if (b) measures.push(`${group} / ${b[1]}`);
     }
-    expect(measures.length).toBeGreaterThan(20);
+    // (every bench( call was read: one written another way, such as bench("…") or bench.skip(, would be missed above)
+    const calls = readFileSync('bench/core.bench.ts', 'utf8').match(/\bbench(\.\w+)?\(/g) ?? [];
+    expect(measures.length).toBe(calls.length);
     expect(measures.filter((k) => !(k in BUDGETS)), 'add these to BUDGETS in scripts/bench-gate.mjs (about 1.8 times the Checks time)').toEqual([]);
   });
 });

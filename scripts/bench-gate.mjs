@@ -14,13 +14,15 @@ const LIMIT = 1.4, FLOOR_MS = 10;
 
 /**
  * The most each measure may take (its fastest run, in ms), at the real sizes of bench/core.bench.ts.
- * How they were set (2026-11-24, standing rule R6): about 1.8 times the fastest run on the Checks
- * machines (the speed job of #708; the numbers in the comments), rounded up. Two runs of the same
- * code there differ by up to 30%, so a busy machine passes, and a slowdown of about 80% fails even
- * when it crept in over several pull requests. The first budgets (November 2026) were about 3 to 8
- * times the Checks times, loose enough to let a doubling through. Every measure has one
- * (tests/bench-gate.test.ts). Raise one only with the reason in the pull request; lower one when a
- * speed-up lands.
+ * How they were set (2026-11-24, standing rule R6): about 1.8 times the fastest run of the speed job
+ * of #708 (the numbers in the comments), rounded up. The Checks machines are not all alike: that run
+ * landed on the slower kind, and the faster kind times the same code 1.2 to 1.8 times faster. So on
+ * a slower machine a slowdown of about 80% fails even when it crept in over several pull requests,
+ * and on a faster one it takes about 2.5 to 3 times; budgets set from the faster machines would fail
+ * every pull request that lands on a slower one. (The first budgets, November 2026, were 3 to 8
+ * times.) A slowdown in one pull request is caught on any machine by the 40% step above, which
+ * times both sides on the same machine. Every measure has a budget (tests/bench-gate.test.ts).
+ * Raise one only with the reason in the pull request; lower one when a speed-up lands.
  */
 export const BUDGETS = {
   'drawing (1,000 rings, 6,000 atoms) / save CDXML': 1050, // 580
