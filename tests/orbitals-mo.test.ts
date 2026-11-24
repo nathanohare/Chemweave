@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aoDegeneracy, drawMo, electronLook, electronsFree, fillElectrons, fillProblems, fitWidth, fromAtoms, fromChoices, fromOf, fromValue, MO_CUSTOM, moCaptionRoles, moColumnAt, moEnergyAt, moLevelAt, moSides, nextElectrons, setSides, withLevel, hund, moCounts, roomBeside, mixOf, moPlain, parseMarkup, sources, toMarkup, toRelative, toRich, type MoSpec } from '../src/design/mo';
+import { MO_ATOMS, drawMo, electronLook, electronsFree, fillElectrons, fillProblems, fitWidth, fromAtoms, fromChoices, fromOf, fromValue, MO_CUSTOM, moCaptionRoles, moColumnAt, moEnergyAt, moLevelAt, moSides, nextElectrons, setSides, withLevel, hund, moCounts, roomBeside, mixOf, moPlain, parseMarkup, sources, toMarkup, toRelative, toRich, type MoSpec } from '../src/design/mo';
 import { orbitalShapes } from '../src/chem/orbitals';
 import { Doc } from '../src/model';
 import { ACS_1996 } from '../src/style';
@@ -187,8 +187,9 @@ describe('MO diagrams', () => {
     // B2 [σ(2s)² σ*(2s)² π(2p)²] bond order 1, paramagnetic; C2 bond order 2; N2 bond order 3;
     // O2 bond order 2 with two unpaired electrons; F2 bond order 1.
     const order = (a: string, b = a, e?: number) => moCounts(fromAtoms(a, b, e)!.levels);
-    expect(order('B').bondOrder).toBe(1);
-    expect(order('B').unpaired).toBeGreaterThan(0);
+    // the same page: H2 bond order 1, He2 0, Li2 1, Be2 0; B2's π(2p)² is one electron in each of the two π orbitals (paramagnetic)
+    expect([order('H').bondOrder, order('He').bondOrder, order('Li').bondOrder, order('Be').bondOrder]).toEqual([1, 0, 1, 0]);
+    expect(order('B')).toMatchObject({ bondOrder: 1, unpaired: 2 });
     expect(order('C').bondOrder).toBe(2);
     expect(order('N').bondOrder).toBe(3);
     expect(order('O')).toMatchObject({ bondOrder: 2, unpaired: 2 });
@@ -219,8 +220,37 @@ describe('MO diagrams', () => {
     expect(fromAtoms('Xx', 'F')).toBeNull();
   });
 
-  it('knows how many orbitals an atomic orbital name stands for', () => {
-    expect(['1s', '2s', '2p', '3p', '3d', 'sp^{3}', 'sp'].map(aoDegeneracy)).toEqual([1, 1, 3, 3, 5, 1, 1]);
+  it('puts bonding orbitals below and antibonding ones above the atoms\' orbitals, for every pair', () => {
+    // "Bonding molecular orbitals are more stable than the atomic orbitals" and "Antibonding
+    // molecular orbitals are less stable than the atomic orbitals" (the homonuclear page above,
+    // 4.2.02). For CO, 4.2.03 adds that mixing lowers 2σ* and raises 3σ, so those two are left out.
+    const atoms = MO_ATOMS.filter((a) => !a.orbital && a.orbitals.length === 2).map((a) => a.id);
+    for (const a of atoms) for (const b of atoms) {
+      const spec = fromAtoms(a, b)!, side = (label: string) => spec.levels.filter((l) => l.column !== 'middle' && l.label === label).map((l) => l.e);
+      const mid = spec.levels.filter((l) => l.column === 'middle').sort((x, y) => x.e - y.e);
+      const pi = mid.filter((l) => l.n === 2);
+      expect(mid[0].e, `${a}${b} lowest σ`).toBeLessThanOrEqual(Math.min(...side('2s')));
+      expect(pi[0].e, `${a}${b} π`).toBeLessThan(Math.min(...side('2p')));
+      expect(pi[1].e, `${a}${b} π*`).toBeGreaterThan(Math.max(...side('2p')));
+      expect(mid[mid.length - 1].e, `${a}${b} highest σ*`).toBeGreaterThan(pi[1].e);
+    }
+    // every pair of choices: as many molecular orbitals as atomic orbitals, and the atoms' electrons
+    for (const a of MO_ATOMS) for (const b of MO_ATOMS) {
+      const c = moCounts(fromAtoms(a.id, b.id)!.levels);
+      expect(c.moOrbitals, a.id + b.id).toBe(c.atomOrbitals);
+      expect(c.moElectrons, a.id + b.id).toBe(c.atomElectrons);
+    }
+    // CO (4.2.03): orbitals numbered by kind from the bottom; "The HOMO of CO is the 3σ MO", above 1π and 2σ*
+    const co = fromAtoms('C', 'O')!, filled = co.levels.filter((l) => l.column === 'middle' && l.electrons > 0).sort((x, y) => x.e - y.e).map((l) => moPlain(l.label));
+    expect(filled).toEqual(['1σ', '2σ*', '1π', '3σ']);
+    // helium beside a second-row atom: nothing mixes, no bond; H beside Li mixes with Li 2s (Li has no 2p electrons)
+    expect(moCounts(fromAtoms('He', 'O')!.levels).bondOrder).toBe(0);
+    const lih = fromAtoms('Li', 'H')!;
+    expect(moCounts(lih.levels)).toMatchObject({ bondOrder: 1, unpaired: 0 });
+    expect(sources(lih.levels, lih.levels.find((l) => moPlain(l.label) === '1σ')!).map((l) => l.label)).toEqual(['2s', '1s']);
+    // one orbital on its own is titled X (left) or Y (right), never an element's symbol
+    expect(fromAtoms('B', 'sp3')!.titles).toEqual(['B', 'B–Y', 'Y']);
+    expect(fromAtoms('2p', '2p')!.titles).toEqual(['X', 'X–Y', 'Y']);
   });
 
   it('adds an electron per click and says when the filling breaks the aufbau principle', () => {

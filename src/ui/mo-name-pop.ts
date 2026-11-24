@@ -26,6 +26,8 @@ export function editMoName(at: { left: number; top: number; width: number; heigh
     const now = toMarkup(field.parts()).trim();
     pop.remove();
     document.removeEventListener('pointerdown', outside, true);
+    document.removeEventListener('wheel', away, true);
+    window.removeEventListener('resize', leave);
     if (keep && now !== markup.trim()) apply(now);
   };
   const bar = document.createElement('span');
@@ -68,6 +70,11 @@ export function editMoName(at: { left: number; top: number; width: number; heigh
   field.el.style.minWidth = `${w}px`;
   const outside = (e: PointerEvent) => { if (!pop.contains(e.target as Node)) close(true); };
   document.addEventListener('pointerdown', outside, true);
+  // the page scrolled or zoomed, or the window resized: the name is no longer under the field, so it closes (keeping what was typed)
+  const away = (e: WheelEvent) => { if (!pop.contains(e.target as Node)) close(true); };
+  const leave = () => close(true);
+  document.addEventListener('wheel', away, true);
+  window.addEventListener('resize', leave);
   open = { close };
   field.focusAll();
   show();

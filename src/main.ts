@@ -1653,6 +1653,7 @@ function moMenu(): MenuItem[] {
   const l = c.level !== null ? mo.levels[c.level] : undefined;
   return [
     { label: 'Add Level', run: () => { editor.addMoLevel(); }, title: 'An empty level here, in this column' },
+    { label: 'Edit Title', run: () => renameMo(c.frame, { title: c.column === 'left' ? 0 : c.column === 'middle' ? 1 : 2 }), title: 'The title under this column (also: double-click it)' },
     ...(l ? [
       { label: 'Rename Level', run: () => renameMo(c.frame, { level: c.level! }) },
       { label: 'Delete Level', run: () => { editor.deleteMoLevel(); }, disabled: !!l.auto, title: l.auto ? 'This level comes from the atom. Choose Custom for its side in the Side Panel to delete it.' : undefined },
@@ -14760,8 +14761,15 @@ stylePanel.diagram = {
 };
 stylePanel.plate = {
   edit: (id) => void plateFigure(null, id),
-  restyle: (id, patch) => { const d = doc.shapes.get(id)?.plate; if (d) editor.putPlateAt({ ...d, ...patch }, pasteCentre(), id); },
-  moLevel: (id) => (editor.moActive?.frame === id ? editor.moActive.level : null),
+  restyle: (id, patch) => {
+    const d = doc.shapes.get(id)?.plate;
+    if (!d) return;
+    // the level shown in the Side Panel stays only while it is still that level (new atoms fill in other levels)
+    const a = editor.moActive?.frame === id ? editor.moActive.level : null, was = a !== null ? d.mo?.levels[a] : undefined, now = a !== null ? (patch.mo ?? d.mo)?.levels[a] : undefined;
+    if (a !== null && (!was || !now || was.label !== now.label || was.column !== now.column)) editor.moActive = null;
+    editor.putPlateAt({ ...d, ...patch }, pasteCentre(), id);
+  },
+  moLevel: (id) => (editor.moActive?.frame === id && doc.shapes.get(id)?.plate?.mo?.levels[editor.moActive.level] ? editor.moActive.level : null),
   moRename: (id, level) => renameMo(id, { level }),
   moDelete: (id, level) => { editor.deleteMoLevel(id, level); },
   moFit: (id) => {

@@ -375,6 +375,8 @@ interface Drag {
   last: Vec;
   /** A TLC plate's spot pressed (the plate not locked): dragging moves it up or down its lane, changing its Rf. */
   spot?: { frame: number; lane: number; index: number; at: Vec; /** An MO diagram's level instead (its place in the diagram's levels): dragging moves it up or down, a click adds an electron. */ mo?: number };
+  /** A press on a level's name in a selected MO diagram: let go without moving, it picks that level for the Side Panel. */
+  moName?: { frame: number; level: number };
   panOrigin?: { ox: number; oy: number };
   /** The arrow or shape handle being dragged. */
   handle?: Handle;
@@ -1434,6 +1436,9 @@ export class Editor {
       // a selected MO diagram's level: dragging moves it up or down, a click adds an electron
       const ml = sp ? null : this.moLevelUnder(p);
       if (ml) { this.drag.spot = ml; this.moActive = { frame: ml.frame, level: ml.mo! }; }
+      // a press on a level's name picks that level for the Side Panel and changes nothing
+      const named = sp || ml ? null : this.moLevelOfName(hit);
+      if (named && this.sel.shapes.has(named.frame)) this.drag.moName = named;
     }
     // a curved arrow tool on a selected S-shaped (or longer) arrow's line: dragging there reshapes it
     if (e.button === 0 && !handle && !rotating && !painting && !e.shiftKey && hit?.kind === 'arrow' && this.curvedTool() && this.isSelected(hit)) {
@@ -1545,7 +1550,9 @@ export class Editor {
     }
     const rect = this.r.overlay.getBoundingClientRect();
     const sp = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    if (!d.moved && Math.hypot(sp.x - d.startScreen.x, sp.y - d.startScreen.y) > 3) {
+    // (an MO diagram's level only moves up and down: a press that wobbles sideways is still a click)
+    const far = d.mode === 'none' && d.spot?.mo !== undefined ? Math.abs(sp.y - d.startScreen.y) > 3 : Math.hypot(sp.x - d.startScreen.x, sp.y - d.startScreen.y) > 3;
+    if (!d.moved && far) {
       d.moved = true;
       if (d.mode === 'none') d.mode = d.spot ? 'spot' : this.dragModeFor(d);
       if (d.mode === 'spot') {
@@ -1883,6 +1890,7 @@ export class Editor {
     if (d.mode === 'spot') { this.doc.commit(); this.changed(); return; }
     // a selected MO diagram's level pressed and let go: one more electron (none again after full)
     if (!d.moved && d.button === 0 && d.spot?.mo !== undefined && e.type !== 'pointercancel') { this.clickMoLevel(d.spot.frame, d.spot.mo); return; }
+    if (!d.moved && d.button === 0 && d.moName && e.type !== 'pointercancel') { this.selectOnly({ kind: 'shape', id: d.moName.frame }); this.moActive = d.moName; this.changed(); return; }
     if (d.mode === 'turn3d') { this.finishTurn(d); return; }
     if (d.mode === 'handle' || d.mode === 'rotate') {
       if (d.moved) { this.doc.commit(); this.changed(); }
@@ -1966,12 +1974,18 @@ export class Editor {
       const b = this.selBox();
       if (!b || p.x < b.x1 || p.x > b.x2 || p.y < b.y1 || p.y > b.y2) this.clearSelection();
     }
-    if (h && !this.isSelected(h)) this.selectOnly(h);
+    // a part of an MO diagram (a level's line, its electrons, a name): the menu is for the diagram, which stays or becomes the selection
+    const moFrame = h && (h.kind === 'caption' || h.kind === 'arrow' || h.kind === 'shape') ? plateFrameOf(this.doc, h.kind, h.id) : null;
+    const onMo = moFrame !== null && this.doc.shapes.get(moFrame)?.plate?.kind === 'mo';
+    if (onMo) { if (!this.sel.shapes.has(moFrame!)) this.selectOnly({ kind: 'shape', id: moFrame! }); }
+    else if (h && !this.isSelected(h)) this.selectOnly(h);
     // a join or a place on a curved arrow's line: what Add Bend Here and the join commands work on
     this.contextSpot = this.pathSpotAt(p);
     this.contextMo = this.moPlaceAt(p);
+    const named = this.contextMo && this.contextMo.level === null ? this.moLevelOfName(h) : null;
+    if (named && this.contextMo && named.frame === this.contextMo.frame) this.contextMo = { ...this.contextMo, level: named.level };
     if (this.contextMo?.level !== null && this.contextMo) { this.moActive = { frame: this.contextMo.frame, level: this.contextMo.level! }; this.changed(); }
-    return h;
+    return onMo ? { kind: 'shape', id: moFrame! } : h;
   }
 
   private onDoubleClick(e: MouseEvent): void {
@@ -4495,6 +4509,15 @@ export class Editor {
       if (i !== null) return { frame: f.id, lane: -1, index: i, at: f.at, mo: i };
     }
     return null;
+  }
+
+  /** The level whose name (a caption of an MO diagram) was hit. */
+  private moLevelOfName(h: Hit): { frame: number; level: number } | null {
+    if (!h || h.kind !== 'caption') return null;
+    const frame = plateFrameOf(this.doc, 'caption', h.id), f = frame !== null ? this.doc.shapes.get(frame) : undefined;
+    if (frame === null || !f?.plate?.mo || !f.frame) return null;
+    const role = moCaptionRoles(f.plate.mo)[f.frame.captions.indexOf(h.id)];
+    return role && 'level' in role ? { frame, level: role.level } : null;
   }
 
   /** Where `p` is on a selected MO diagram (inside its box), for the right-click menu. */
