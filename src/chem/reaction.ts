@@ -223,10 +223,14 @@ export const isStep = (s: StepRoles | null | undefined): boolean => !!s && s.rea
 
 /**
  * The roles an arrow has: those stored with it (from a file, Clean Up Reaction or set by hand), or
- * worked out. Text written over or under an arrow after its roles were stored (a step opened from
- * a file, then a reagent typed in) is counted too, unless the roles were chosen by hand. A stored
- * starting material or product that has since been moved out of line with a straight arrow no
- * longer counts (what is in line now is worked out instead), unless the roles were chosen by hand.
+ * worked out. Roles chosen by hand are kept as they are. Otherwise each straight arrow is its own
+ * step, read from where things sit now: a stored starting material or product that has been moved
+ * out of line with the arrow no longer counts, and when none is left (or none was stored) what is
+ * in line now is worked out instead; stored text or structures above and below count only while
+ * they are still stacked over or under the arrow's shaft, never another step's things (a file's
+ * step can name a whole group, the scheme round it included: ChemDraw keeps steps that edits
+ * have left behind). Text written over or under an arrow after its roles were stored (a step
+ * opened from a file, then a reagent typed in) is counted too.
  */
 export function rolesOf(r: Arrow, items: Item[], bond: number): StepRoles {
   const st = r.step;
@@ -239,24 +243,55 @@ export function rolesOf(r: Arrow, items: Item[], bond: number): StepRoles {
   let out = st;
   if (straight) {
     const find = itemFinder(items);
-    const keep = (refs: string[], before: boolean) => {
+    // (an arrow is never a role; a thing that can't be found, such as an empty caption, is left as it is)
+    const real = (refs: string[]) => refs.filter((ref) => ref[0] !== 'r');
+    const keep = (refs0: string[], before: boolean) => {
+      if (!refs0.length) return before ? now.reactants : now.products;
+      const refs = real(refs0);
       const kept = refs.filter((ref) => { const it = find(ref); return !it || inCorridor(r, it, refs, find, bond, before); });
-      return kept.length === refs.length ? refs : kept.length ? kept : before ? now.reactants : now.products;
+      return kept.length === refs0.length ? refs0 : kept.some((ref) => find(ref)) ? kept : before ? now.reactants : now.products;
     };
     const reactants = keep(st.reactants, true), products = keep(st.products, false);
-    if (reactants !== st.reactants || products !== st.products) {
+    // above and below: those still stacked over or under the shaft, and none that is a starting material or product
+    const ends = new Set([...reactants, ...products].map((ref) => find(ref) ?? ref));
+    const over = (refs0: string[], side: 1 | -1) => {
+      const refs = real(refs0).filter((ref) => { const it = find(ref); return !it || (!ends.has(it) && overShaft(r, it, side, bond)); });
+      return refs.length === refs0.length ? refs0 : refs;
+    };
+    const above = over(st.above, 1), below = over(st.below, -1);
+    if (reactants !== st.reactants || products !== st.products || above !== st.above || below !== st.below) {
       // + signs: those still in line, and those of a side worked out afresh
       const fresh = reactants === now.reactants || products === now.products ? now.plusses ?? [] : [];
       const plusses = (st.plusses ?? []).filter((ref) => { const it = find(ref); return !it || inLane(r, it, bond); });
       for (const ref of fresh) if (!plusses.includes(ref)) plusses.push(ref);
-      out = { ...st, reactants, products, plusses };
+      out = { ...st, reactants, products, above, below, plusses };
     }
+    // what is stacked over or under the shaft now (a reagent drawn there since), as worked out
+    const known = new Set([...out.reactants, ...out.products, ...out.above, ...out.below, ...(out.plusses ?? []), ...(out.inside ?? [])].map((ref) => find(ref) ?? ref));
+    const added = (refs: string[]) => refs.filter((ref) => !known.has(find(ref) ?? ref));
+    const up = added(now.above), down = added(now.below);
+    return up.length || down.length ? { ...out, above: [...out.above, ...up], below: [...out.below, ...down] } : out;
   }
-  if (!hasText) return out;
   const known = new Set([...out.reactants, ...out.products, ...out.above, ...out.below, ...(out.plusses ?? []), ...(out.inside ?? [])]);
   const added = (refs: string[]) => refs.filter((ref) => ref[0] === 'c' && !known.has(ref));
   const above = added(now.above), below = added(now.below);
   return above.length || below.length ? { ...out, above: [...out.above, ...above], below: [...out.below, ...below] } : out;
+}
+
+/**
+ * Is a thing stacked over (side 1) or under (-1) an arrow's shaft: centred within its length (a
+ * little past either end), on that side or across the line, and its near edge no further out
+ * than a tall stack of conditions reaches (four bond lengths, or the least Results distance)?
+ */
+function overShaft(r: Arrow, it: Item, side: 1 | -1, bond: number): boolean {
+  const f = arrowFrame(r);
+  if (f.length < 1) return true;
+  const q = inFrame(f, it.box);
+  const mid = (q.t1 + q.t2) / 2;
+  if (mid < -0.1 * f.length || mid > 1.1 * f.length) return false;
+  const near = side > 0 ? q.s1 : -q.s2, far = side > 0 ? q.s2 : -q.s1;
+  if (far < 0) return false;
+  return near <= Math.max(4 * bond, it.results ? SCHEME_LIMITS.resultsMin + bond : 0);
 }
 
 /** Does a thing lie across the line an arrow points along (within the lane either side of it)? */
@@ -302,8 +337,9 @@ export function reactionSteps(doc: Doc, items: Item[]): { arrow: Arrow; roles: S
 /**
  * A scheme wrapped onto more rows: an arrow that starts a row (products, but nothing before it)
  * goes on from the last product of the row above, as a chemist reads it, but only when that
- * product ends the row directly above (the next row up, not far off) and lies to the right of
- * where the arrow starts. Changes the roles given (copies, never an arrow's stored ones).
+ * product ends the row directly above (the next row up, not far off, its arrows above the top of
+ * this row) and lies to the right of where the arrow starts. Never a step set by hand. Changes
+ * the roles given (copies, never an arrow's stored ones).
  */
 export function linkRows(steps: { arrow: Arrow; roles: StepRoles }[], items: Item[], bond = 30): void {
   const boxOf = new Map(items.map((it) => [it.ref, it.box]));
@@ -312,13 +348,16 @@ export function linkRows(steps: { arrow: Arrow; roles: StepRoles }[], items: Ite
   const across = (r: Arrow) => Math.abs(r.head.x - r.tail.x) > 2 * Math.abs(r.head.y - r.tail.y);
   for (const st of steps) {
     const { arrow, roles } = st;
-    if (roles.reactants.length || !roles.products.length || !across(arrow)) continue;
+    // (roles set by hand are kept as set: a starting material taken out stays out)
+    if (roles.manual || roles.reactants.length || !roles.products.length || !across(arrow)) continue;
+    // (the row above lies wholly above this row: its arrows over the top of this arrow's products)
+    const top = Math.min(...roles.products.map((ref) => boxOf.get(ref)?.y1 ?? Infinity), Math.min(arrow.tail.y, arrow.head.y));
     // the row above: the nearest arrows higher up, and the rightmost product there that leads nowhere
     let best: { ref: string; dy: number; x: number; h: number } | null = null;
     for (const o of steps) {
       if (o === st || !across(o.arrow) || !o.roles.products.length) continue;
       const dy = y(arrow) - y(o.arrow);
-      if (dy <= 0) continue;
+      if (dy <= 0 || y(o.arrow) >= top) continue;
       for (const ref of o.roles.products) {
         const b = boxOf.get(ref);
         if (!b || startsOf.has(ref) || roles.products.includes(ref)) continue;

@@ -150,6 +150,7 @@ Start a sequence from a highlight a key set (as above), not from the mouse resti
 | Ctrl+E | Fixed angles on or off |
 | Ctrl+Shift+K | Smart Clean (cleans up the selected scheme, cycle, mechanism arrows or structures) |
 | Ctrl+Shift+R | Clean Up Reaction |
+| Ctrl+Shift+8 | Show Reaction Roles on or off (every step's roles at once) |
 | Alt+K | Aromatic rings: circle or Kekulé |
 | Ctrl+Shift+N | Name to Structure |
 | Ctrl+= or Ctrl+Shift+=, Ctrl+- | Zoom in, zoom out |

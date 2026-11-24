@@ -51,7 +51,7 @@ import { keymap, chordOf, parseAction, KeyContext } from './keymap';
 import { sproutGroup, fuseChair, SPROUT_KINDS, SproutKind, nextNumber } from '../chem/sprouts';
 import { joinAtoms, joinBonds, mergeAtom } from '../chem/join';
 import { extractDrawing, insertDrawing } from '../io/clipboard';
-import { arrowKind, drawnKind, isReactionArrow, isSequenceArrow, itemFinder, neighborsOf, rolesOf, ROLES, schemeItems, type Item, type Role } from '../chem/reaction';
+import { arrowKind, drawnKind, interpretArrow, isReactionArrow, isSequenceArrow, itemFinder, neighborsOf, reactionSteps, ROLE_LIMITS, rolesOf, ROLES, schemeItems, type Item, type Role } from '../chem/reaction';
 import { applySchemePlan, planCleanUp } from '../chem/scheme-layout';
 import { clearFocal, focalAtoms, focalPoint, focalTarget, setFocal, tidyFocal } from '../chem/focal';
 import { drawFocalMark, drawLayoutPreview, type FocalLook, type LayoutPreview } from './focal-marks';
@@ -255,6 +255,72 @@ export type Hit =
 const ROLE_LOOK: Record<Role, [string, string]> = {
   reactants: ['#2f6fde', 'starting material'], products: ['#16955a', 'product'], above: ['#c47a00', 'above'], below: ['#c47a00', 'below'],
 };
+/** The step number on each arrow while every role shows: Canvas mode's accent (its teal unless changed). */
+let ROLE_BADGE = '#0e7c93';
+
+/**
+ * Each step's number within its own scheme: steps that share a starting material or product are
+ * one scheme, numbered from 1 in the order given (reading order), so separate schemes on one page
+ * each start at 1.
+ */
+/**
+ * The steps a sequence clicked in reading order makes: each arrow takes the things clicked since
+ * the arrow before it (or the start) as its starting materials, and those up to the next arrow
+ * (or the end) as its products, so a structure between two arrows is the product of the first
+ * and the starting material of the second.
+ */
+export function linkedSteps(seq: ({ arrow: number } | { item: Item })[]): { arrow: number; before: Item[]; after: Item[] }[] {
+  const runs: Item[][] = [[]];
+  const arrows: number[] = [];
+  for (const t of seq) {
+    if ('arrow' in t) { arrows.push(t.arrow); runs.push([]); } else runs[runs.length - 1].push(t.item);
+  }
+  return arrows.map((arrow, i) => ({ arrow, before: runs[i], after: runs[i + 1] }));
+}
+
+/**
+ * Each step's number within its scheme (steps joined through a structure count as one scheme, so
+ * separate schemes on a page each start at 1), counting on along the chemistry.
+ */
+export function stepNumbers(steps: { roles: StepRoles }[], find: (ref: string) => Item | undefined): number[] {
+  // schemes: steps joined through a structure one makes or starts from
+  const root = steps.map((_, i) => i);
+  const top = (i: number): number => (root[i] === i ? i : (root[i] = top(root[i])));
+  const owner = new Map<Item, number>();
+  const makers = new Map<Item, number[]>();
+  steps.forEach(({ roles }, i) => {
+    for (const ref of [...roles.reactants, ...roles.products]) {
+      const it = find(ref);
+      if (!it) continue;
+      const j = owner.get(it);
+      if (j === undefined) owner.set(it, i);
+      else root[top(i)] = top(j);
+    }
+    for (const ref of roles.products) { const it = find(ref); if (it) makers.set(it, [...(makers.get(it) ?? []), i]); }
+  });
+  // within a scheme, a step comes after the steps that make its starting materials (so a scheme
+  // that snakes back right to left, or turns down a column, counts on along the chemistry), and
+  // steps at the same depth (branches) in the order given
+  const depth = steps.map(() => -1);
+  const open = new Set<number>();
+  const depthOf = (i: number): number => {
+    if (depth[i] >= 0) return depth[i];
+    if (open.has(i)) return 0; // (a cycle)
+    open.add(i);
+    let d = 0;
+    for (const ref of steps[i].roles.reactants) {
+      const it = find(ref);
+      for (const j of (it && makers.get(it)) || []) if (j !== i) d = Math.max(d, depthOf(j) + 1);
+    }
+    open.delete(i);
+    return (depth[i] = d);
+  };
+  const order = steps.map((_, i) => i).sort((a, b) => depthOf(a) - depthOf(b) || a - b);
+  const count = new Map<number, number>();
+  const out = steps.map(() => 0);
+  for (const i of order) { const r = top(i), n = (count.get(r) ?? 0) + 1; count.set(r, n); out[i] = n; }
+  return out;
+}
 
 export interface Selection {
   atoms: Set<number>;
@@ -419,6 +485,7 @@ export function setMarkTint(hex: string | null): void {
   if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) {
     MARKS = BLUE_MARKS;
     PREVIEW = '#2f6fdf';
+    ROLE_BADGE = '#0e7c93';
     return;
   }
   const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
@@ -426,6 +493,7 @@ export function setMarkTint(hex: string | null): void {
   const dark = c.map((v) => Math.round(v * 0.55)) as [number, number, number];
   MARKS = marksIn(c, dark);
   PREVIEW = hex;
+  ROLE_BADGE = hex;
 }
 
 /** A highlight setting the Chemistry menu and Highlight toolbox turn on and off. */
@@ -468,6 +536,8 @@ export class Editor {
   /** Preferences from the settings file. */
   /** With one reaction arrow selected, outline what its starting materials, products and conditions are. */
   showRoles = true;
+  /** Every reaction step's roles shown at once, each arrow numbered (Show Reaction Roles, as Word's Show/Hide ¶). */
+  showAllRoles = false;
   /**
    * Enter finishes typing and Alt+Enter starts a new line (Settings ▸ Preferences; main.ts knows
    * the mode): for text from the Text tool ('text'), or text in a shape, a table cell or a
@@ -807,6 +877,8 @@ export class Editor {
   setTool(name: string): void {
     const t = TOOLS[name] ?? (name.startsWith('geo:') ? geoTool(name.slice(4), this.geoLook) : undefined);
     if (!t) return;
+    // (choosing a tool ends Link Steps in Order, setting nothing)
+    if (this.linking) this.stopLinking(false);
     // letters still being written are read before the tool changes
     if (t.kind !== 'sketch') this.sketcher.flush();
     this.tool = t;
@@ -1220,6 +1292,15 @@ export class Editor {
     this.commitLabel();
     // picking a focal point: this click names the atom, bond or ring
     if (this.focalPicking && e.button === 0) { this.pickFocalAt(this.docPoint(e)); return; }
+    // Link Steps in Order: this click is the next structure or arrow of the sequence
+    if (this.linking && e.button === 0) { this.linkAt(this.docPoint(e)); return; }
+    // a role's name over a structure (while roles show): its menu, to set the role by hand
+    // (with the selection tool, and not where the name lies over another structure or text: a
+    // click there goes to that, as without roles showing)
+    if (e.button === 0 && this.tool.kind === 'select' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const tag = this.roleTagAt(this.docPoint(e));
+      if (tag) { e.preventDefault(); this.onRoleTag(tag.arrow, tag.item, e.clientX, e.clientY); return; }
+    }
     // Alt+click on a locked structure (Slides) edits it this once: the lock lifts for this press
     // and comes back when the button is let go
     if (this.structuresLocked && e.altKey && e.button === 0) {
@@ -1393,6 +1474,12 @@ export class Editor {
       return;
     }
     if (!d && this.focalPicking) { this.r.overlay.style.cursor = 'crosshair'; this.requestOverlay(); return; }
+    if (!d && this.linking && this.linkingCurrent()) { this.r.overlay.style.cursor = this.linkTokenAt(p) ? 'pointer' : 'crosshair'; return; }
+    if (!d && this.roleTags.length) {
+      const tag = this.tool.kind === 'select' && !!this.roleTagAt(p);
+      if (tag) { this.r.overlay.style.cursor = 'pointer'; this.roleTagHover = true; return; }
+      if (this.roleTagHover) { this.roleTagHover = false; this.r.overlay.style.cursor = ''; }
+    }
     if (!d) this.linkTitle(p);
     // (the handles and border of the text box being typed in come before its text, Slides and Design)
     const onFrame = !d && !!this.captionEd?.isOpen && this.textFirst && (this.handleAt(p)?.kind === 'caption' || (this.captionEdId !== null && this.textBorderAt(p) === this.captionEdId));
@@ -5778,7 +5865,7 @@ export class Editor {
   private drawRoles(ctx: CanvasRenderingContext2D, arrowId: number, px: number): void {
     const roles = this.reactionRoles(arrowId);
     if (!roles) { this.drawNeighbors(ctx, arrowId, px); return; }
-    const find = itemFinder(this.schemeItems());
+    const find = this.schemeFinder();
     const pad = 3 * px;
     ctx.save();
     ctx.lineWidth = 1.2 * px;
@@ -5794,9 +5881,85 @@ export class Editor {
         ctx.strokeStyle = colour;
         ctx.strokeRect(b.x1 - pad, b.y1 - pad, b.x2 - b.x1 + 2 * pad, b.y2 - b.y1 + 2 * pad);
         ctx.fillStyle = colour;
-        ctx.fillText(k === 'below' && it.caption !== undefined && this.doc.captions.get(it.caption)?.results ? 'results' : name, b.x1 - pad, b.y1 - pad - px);
+        const tag = k === 'below' && it.caption !== undefined && this.doc.captions.get(it.caption)?.results ? 'results' : name;
+        ctx.fillText(tag, b.x1 - pad, b.y1 - pad - px);
+        this.roleTags.push({ arrow: arrowId, item: it, box: { x1: b.x1 - pad, y1: b.y1 - pad - 11 * px, x2: b.x1 - pad + ctx.measureText(tag).width, y2: b.y1 - pad } });
       }
     }
+    ctx.restore();
+  }
+
+  /**
+   * Show Reaction Roles: every step's roles at once, each arrow numbered in reading order and each
+   * role named with its step's number ("1 product  2 starting material" on a structure between
+   * two arrows, its outline dashed in both colors). With an arrow selected, the other steps fade.
+   */
+  private drawAllRoles(ctx: CanvasRenderingContext2D, px: number, picked: number | null): void {
+    const steps = this.allSteps();
+    if (!steps.length) return;
+    const find = this.schemeFinder();
+    const pad = 3 * px;
+    const number = stepNumbers(steps, find);
+    const on = new Map<Item, { n: number; role: Role; picked: boolean; arrow: number }[]>();
+    steps.forEach(({ arrow, roles }, i) => {
+      for (const k of ROLES) for (const ref of roles[k]) {
+        const it = find(ref);
+        if (!it) continue;
+        const list = on.get(it) ?? [];
+        if (!list.some((x) => x.n === number[i] && x.role === k)) list.push({ n: number[i], role: k, picked: picked === null || arrow.id === picked, arrow: arrow.id });
+        on.set(it, list);
+      }
+    });
+    ctx.save();
+    ctx.lineWidth = 1.2 * px;
+    ctx.font = `${10 * px}px system-ui, sans-serif`;
+    ctx.textBaseline = 'bottom';
+    const dash = 4 * px;
+    for (const [it, list0] of on) {
+      // (the selected arrow's roles first, the rest faded behind)
+      const list = [...list0].sort((a, b) => Number(b.picked) - Number(a.picked) || a.n - b.n);
+      const b = it.box;
+      const x = b.x1 - pad, y = b.y1 - pad, w = b.x2 - b.x1 + 2 * pad, h = b.y2 - b.y1 + 2 * pad;
+      // one outline, dashed in each role's color in turn
+      list.forEach((e, j) => {
+        ctx.globalAlpha = e.picked ? 1 : 0.3;
+        ctx.strokeStyle = ROLE_LOOK[e.role][0];
+        ctx.setLineDash([dash, dash * (list.length * 2 - 1)]);
+        ctx.lineDashOffset = -j * 2 * dash;
+        ctx.strokeRect(x, y, w, h);
+      });
+      // the names over the box (under it for text below an arrow, which would cover the arrow)
+      const under = list.every((e) => e.role === 'below');
+      ctx.textBaseline = under ? 'top' : 'bottom';
+      let tx = x;
+      for (const e of list) {
+        const name = e.role === 'below' && it.caption !== undefined && this.doc.captions.get(it.caption)?.results ? 'results' : ROLE_LOOK[e.role][1];
+        const text = `${e.n} ${name}`;
+        ctx.globalAlpha = e.picked ? 1 : 0.35;
+        ctx.fillStyle = ROLE_LOOK[e.role][0];
+        ctx.fillText(text, tx, under ? y + h + px : y - px);
+        const tw = ctx.measureText(text).width;
+        this.roleTags.push({ arrow: e.arrow, item: it, box: under ? { x1: tx, y1: y + h + px, x2: tx + tw, y2: y + h + 12 * px } : { x1: tx, y1: y - 12 * px, x2: tx + tw, y2: y - px } });
+        tx += tw + 6 * px;
+      }
+    }
+    // each arrow's number, on its shaft by the tail
+    ctx.setLineDash([]);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `600 ${9 * px}px system-ui, sans-serif`;
+    steps.forEach(({ arrow }, i) => {
+      const len = Math.hypot(arrow.head.x - arrow.tail.x, arrow.head.y - arrow.tail.y) || 1;
+      const u = { x: (arrow.head.x - arrow.tail.x) / len, y: (arrow.head.y - arrow.tail.y) / len };
+      const c = { x: arrow.tail.x + u.x * 9 * px, y: arrow.tail.y + u.y * 9 * px };
+      ctx.globalAlpha = picked === null || arrow.id === picked ? 1 : 0.35;
+      ctx.fillStyle = ROLE_BADGE;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 7 * px, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(String(number[i]), c.x, c.y + 0.5 * px);
+    });
     ctx.restore();
   }
 
@@ -5804,7 +5967,7 @@ export class Editor {
   private drawNeighbors(ctx: CanvasRenderingContext2D, arrowId: number, px: number): void {
     const roles = this.sequenceRoles(arrowId);
     if (!roles) return;
-    const find = itemFinder(this.schemeItems());
+    const find = this.schemeFinder();
     const pad = 3 * px;
     ctx.save();
     // (in the selection's color, the mode's accent, lightly)
@@ -5823,10 +5986,16 @@ export class Editor {
   }
 
   /** The things in the drawing as scheme items (remembered until the drawing changes). */
-  private itemsCache: { version: number; items: Item[] } | null = null;
+  private itemsCache: { version: number; items: Item[]; find?: (ref: string) => Item | undefined } | null = null;
   schemeItems(): Item[] {
     if (this.itemsCache?.version !== this.doc.version) this.itemsCache = { version: this.doc.version, items: schemeItems(this.doc, this.fullMeasure()) };
     return this.itemsCache.items;
+  }
+
+  /** Finds a scheme item by ref (kept with the items, so it isn't built again on every pointer move). */
+  schemeFinder(): (ref: string) => Item | undefined {
+    const items = this.schemeItems();
+    return (this.itemsCache!.find ??= itemFinder(items));
   }
 
   /** Label and caption sizes for every atom (schemes need whole structures, however big the selection). */
@@ -5835,12 +6004,43 @@ export class Editor {
     return { atomBoxes: (a) => this.r.atomInfo(this.doc, a).boxes, captionBox: (c) => this.r.captionBox(c), bondSide: (b) => this.r.doubleSide(this.doc, b) };
   }
 
-  /** An arrow's reaction roles: kept with it, or worked out from where things sit. */
+  /**
+   * An arrow's reaction roles: kept with it, or worked out from where things sit (a row's first
+   * arrow going on from the last product of the row above, as in the steps saved to a file).
+   */
   reactionRoles(arrowId: number): StepRoles | null {
     const r = this.doc.arrows.get(arrowId);
     // (an energy diagram's axis is an arrow, not a reaction step)
     if (!r || !isReactionArrow(r) || energyFrameOf(this.doc, 'arrow', arrowId) !== null) return null;
-    return rolesOf(r, this.schemeItems(), this.doc.style.bondLength);
+    const roles = rolesOf(r, this.schemeItems(), this.doc.style.bondLength);
+    // (only a row's first arrow, with nothing before it, can go on from the row above: the rest
+    // need no other step, so one selected arrow doesn't work out every step in the drawing)
+    if (roles.manual || roles.reactants.length || !roles.products.length) return roles;
+    return this.allSteps().find((x) => x.arrow.id === arrowId)?.roles ?? roles;
+  }
+
+  /** Every reaction step in the drawing, in reading order (rows top to bottom, then along each row). */
+  private stepsCache: { key: string; steps: { arrow: Arrow; roles: StepRoles }[] } | null = null;
+  allSteps(): { arrow: Arrow; roles: StepRoles }[] {
+    // (worked out again when the drawing changes, or how near a structure must be to count)
+    const key = `${this.doc.version} ${ROLE_LIMITS.reach} ${ROLE_LIMITS.lane}`;
+    if (this.stepsCache?.key !== key) {
+      const bond = this.doc.style.bondLength;
+      const steps = reactionSteps(this.doc, this.schemeItems()).filter((x) => energyFrameOf(this.doc, 'arrow', x.arrow.id) === null);
+      const mid = (r: Arrow) => ({ x: (r.tail.x + r.head.x) / 2, y: (r.tail.y + r.head.y) / 2 });
+      // rows: arrows top to bottom, a new row where one is more than two bond lengths below the
+      // first of the row so far; along each row left to right
+      const row = new Map<Arrow, number>();
+      let top = -Infinity, n = -1;
+      for (const { arrow } of [...steps].sort((a, b) => mid(a.arrow).y - mid(b.arrow).y)) {
+        const y = mid(arrow).y;
+        if (y - top > 2 * bond) { n++; top = y; }
+        row.set(arrow, n);
+      }
+      steps.sort((a, b) => row.get(a.arrow)! - row.get(b.arrow)! || mid(a.arrow).x - mid(b.arrow).x);
+      this.stepsCache = { key, steps };
+    }
+    return this.stepsCache.steps;
   }
 
   /** The reaction arrows to work on: those selected, those whose steps hold something selected, or all. */
@@ -5848,7 +6048,7 @@ export class Editor {
     const s = this.sel;
     if (s.arrows.size) return [...s.arrows];
     if (!this.hasSelection()) return undefined;
-    const find = itemFinder(this.schemeItems());
+    const find = this.schemeFinder();
     const picked = new Set<Item>();
     for (const id of s.atoms) { const it = find('a' + id); if (it) picked.add(it); }
     for (const id of s.captions) { const it = find('c' + id); if (it) picked.add(it); }
@@ -6248,29 +6448,256 @@ export class Editor {
     return nextCompound(this.doc, this.fullMeasure());
   }
 
-  /**
-   * Give the selected things (other than the arrow) a role in the selected arrow's step by hand,
-   * or ('none') take them out of it. The roles are then kept as they are.
-   */
-  setReactionRole(arrowId: number, role: Role | 'none'): boolean {
-    const r = this.doc.arrows.get(arrowId);
-    const roles = this.reactionRoles(arrowId);
-    if (!r || !roles) return false;
-    const find = itemFinder(this.schemeItems());
+  /** The scheme items the selection covers (whole structures, captions and pictures). */
+  pickedItems(): Item[] {
+    const find = this.schemeFinder();
     const picked: Item[] = [];
     const add_ = (ref: string) => { const it = find(ref); if (it && !picked.includes(it)) picked.push(it); };
     for (const id of this.sel.atoms) add_('a' + id);
     for (const id of this.sel.captions) add_('c' + id);
     for (const id of this.sel.shapes) add_('s' + id);
-    if (!picked.length) return false;
-    const mine = new Set(picked);
-    const next: StepRoles = { reactants: [], products: [], above: [], below: [], plusses: [...(roles.plusses ?? [])], manual: true };
-    for (const k of ROLES) next[k] = roles[k].filter((ref) => { const it = find(ref); return !it || !mine.has(it); });
-    next.plusses = next.plusses!.filter((ref) => { const it = find(ref); return !it || !mine.has(it); });
-    if (role !== 'none') for (const it of picked) (it.plus && (role === 'reactants' || role === 'products') ? next.plusses! : next[role]).push(it.ref);
-    this.doc.edit('Reaction roles', () => this.doc.updateArrow(arrowId, { step: next }));
+    return picked;
+  }
+
+  /**
+   * Give the selected things (other than the arrow) a role in the selected arrow's step by hand,
+   * or ('none') take them out of it. The roles are then kept as they are.
+   */
+  setReactionRole(arrowId: number, role: Role | 'results' | 'none'): boolean {
+    return this.setItemsRole(arrowId, this.pickedItems(), role);
+  }
+
+  /**
+   * Give these things a role in an arrow's step by hand ('results': text below it marked as its
+   * Results line; 'none': out of the step), in one undo step. The step's other roles stay as they
+   * are now, and from then on all its roles are kept as set, saved with the file.
+   */
+  setItemsRole(arrowId: number, picked: Item[], role: Role | 'results' | 'none'): boolean {
+    const r = this.doc.arrows.get(arrowId);
+    const roles = this.reactionRoles(arrowId);
+    if (!r || !roles || !picked.length) return false;
+    const find = this.schemeFinder();
+    const mine = new Set(picked.map((it) => it.ref)); // (by ref: the things may be from before the last change)
+    const next: StepRoles = { reactants: [], products: [], above: [], below: [], plusses: [...(roles.plusses ?? [])], ...(roles.inside ? { inside: [...roles.inside] } : {}), manual: true };
+    const others = (ref: string) => { const it = find(ref); return !it || !mine.has(it.ref); };
+    for (const k of ROLES) next[k] = roles[k].filter(others);
+    next.plusses = next.plusses!.filter(others);
+    const into: Role | null = role === 'none' ? null : role === 'results' ? 'below' : role;
+    if (into) for (const it of picked) (it.plus && (into === 'reactants' || into === 'products') ? next.plusses! : next[into]).push(it.ref);
+    this.doc.edit('Reaction roles', () => {
+      this.doc.updateArrow(arrowId, { step: next });
+      // text set as the Results line is marked so; set as anything else, it is plain text again
+      for (const it of picked) {
+        const c = it.caption !== undefined ? this.doc.captions.get(it.caption) : undefined;
+        if (!c) continue;
+        if (role === 'results' && !c.results) this.doc.updateCaption(c.id, { results: true });
+        else if (role !== 'results' && c.results) this.doc.updateCaption(c.id, { results: undefined });
+      }
+    });
     this.changed();
     return true;
+  }
+
+  /** A role's name over a structure was clicked (while roles show): main.ts opens its menu there. */
+  onRoleTag: (arrowId: number, item: Item, clientX: number, clientY: number) => void = () => {};
+  /** Where the role names are drawn now (drawing coordinates), for clicking. */
+  private roleTags: { arrow: number; item: Item; box: Rect }[] = [];
+
+  /** The role name at p that a click would open, if any (none over another structure or text). */
+  private roleTagAt(p: Vec): { arrow: number; item: Item } | null {
+    const tag = this.roleTags.find((t) => p.x >= t.box.x1 && p.x <= t.box.x2 && p.y >= t.box.y1 && p.y <= t.box.y2);
+    if (!tag) return null;
+    const h = this.hitTestNow(p);
+    const ref = h?.kind === 'atom' ? 'a' + h.id : h?.kind === 'bond' ? 'a' + this.doc.bonds.get(h.id)?.a1 : h?.kind === 'caption' ? 'c' + h.id : null;
+    // (a box or frame drawn round the scheme doesn't count: only a structure or text)
+    if (ref && this.schemeFinder()(ref) !== tag.item) return null;
+    return tag;
+  }
+  private roleTagHover = false;
+
+  /**
+   * The steps a thing can be given a role in, for its right-click menu: those it is in now, the
+   * arrow last selected on its own, or else the reaction arrow nearest it (within a few bond
+   * lengths). Each with its number in its scheme.
+   */
+  roleStepsFor(picked: Item[]): { arrow: number; n: number; role: Role | 'results' | null }[] {
+    if (!picked.length) return [];
+    const steps = this.allSteps();
+    const find = this.schemeFinder();
+    const number = stepNumbers(steps, find);
+    const mine = new Set(picked.map((it) => it.ref));
+    const out: { arrow: number; n: number; role: Role | 'results' | null }[] = [];
+    const roleIn = (roles: StepRoles): Role | 'results' | null => {
+      for (const k of ROLES) {
+        const here = roles[k].map(find).filter((it): it is Item => !!it && mine.has(it.ref));
+        if (here.length) return k === 'below' && here.every((it) => it.caption !== undefined && this.doc.captions.get(it.caption)?.results) ? 'results' : k;
+      }
+      return null;
+    };
+    steps.forEach(({ arrow, roles }, i) => { const role = roleIn(roles); if (role) out.push({ arrow: arrow.id, n: number[i], role }); });
+    const add_ = (id: number) => {
+      if (out.some((x) => x.arrow === id)) return;
+      const i = steps.findIndex((x) => x.arrow.id === id);
+      const roles = i >= 0 ? steps[i].roles : this.reactionRoles(id);
+      if (!roles) return;
+      out.push({ arrow: id, n: i >= 0 ? number[i] : 0, role: roleIn(roles) });
+    };
+    // how far an arrow is from the things (box to box)
+    const box = picked.reduce((b, it) => ({ x1: Math.min(b.x1, it.box.x1), y1: Math.min(b.y1, it.box.y1), x2: Math.max(b.x2, it.box.x2), y2: Math.max(b.y2, it.box.y2) }), { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity });
+    const away = (r: Arrow) => {
+      const ab = { x1: Math.min(r.tail.x, r.head.x), y1: Math.min(r.tail.y, r.head.y), x2: Math.max(r.tail.x, r.head.x), y2: Math.max(r.tail.y, r.head.y) };
+      return Math.hypot(Math.max(0, ab.x1 - box.x2, box.x1 - ab.x2), Math.max(0, ab.y1 - box.y2, box.y1 - ab.y2));
+    };
+    const bond = this.doc.style.bondLength;
+    // the arrow last selected on its own, when it is near (not one in another scheme)
+    const last = this.lastRoleArrow !== null ? this.doc.arrows.get(this.lastRoleArrow) : undefined;
+    if (last && away(last) <= 6 * bond) add_(last.id);
+    if (!out.length) {
+      // the nearest reaction arrow, within four bond lengths of the things
+      let best: { id: number; d: number } | null = null;
+      for (const r of this.doc.arrows.values()) {
+        if (!isReactionArrow(r)) continue;
+        const d = away(r);
+        if (d <= 4 * bond && (!best || d < best.d)) best = { id: r.id, d };
+      }
+      if (best) add_(best.id);
+    }
+    return out.sort((a, b) => a.n - b.n);
+  }
+
+  /** The reaction arrow last selected on its own: right-click ▸ Set Role offers its step. */
+  lastRoleArrow: number | null = null;
+
+  // ---- Link Steps in Order: click a scheme's structures and arrows in reading order
+
+  /** The structures and arrows clicked so far, in order, while linking (null when not). */
+  linking: { seq: ({ arrow: number } | { item: Item })[]; version: number } | null = null;
+  /** Told as the sequence grows or shrinks (its length). */
+  onLinking: (count: number) => void = () => {};
+  /** Told when linking ends: how many steps were set, or null when it was canceled. */
+  onLinked: (steps: number | null) => void = () => {};
+
+  startLinking(): void {
+    this.stopFocalPick();
+    this.clearSelection();
+    this.linking = { seq: [], version: this.doc.version };
+    this.r.overlay.style.cursor = 'crosshair';
+    this.requestOverlay();
+    this.onLinking(0);
+  }
+
+  /** What a click at p would add: a reaction arrow, or a structure, caption or picture. */
+  private linkTokenAt(p: Vec): { arrow: number } | { item: Item } | null {
+    const h = this.hitTestNow(p);
+    if (h?.kind === 'arrow') { const r = this.doc.arrows.get(h.id); return r && isReactionArrow(r) ? { arrow: h.id } : null; }
+    const find = this.schemeFinder();
+    const ref = h?.kind === 'atom' ? 'a' + h.id : h?.kind === 'bond' ? 'a' + this.doc.bonds.get(h.id)?.a1 : h?.kind === 'caption' ? 'c' + h.id : h?.kind === 'shape' ? 's' + h.id : null;
+    const it = ref ? find(ref) : this.schemeItems().find((x) => x.atoms.length && p.x >= x.box.x1 && p.x <= x.box.x2 && p.y >= x.box.y1 && p.y <= x.box.y2);
+    return it ? { item: it } : null;
+  }
+
+  /**
+   * Is linking still on the drawing it began on? An edit, Undo or another tab while linking ends
+   * it, setting nothing (what was clicked may be gone or moved).
+   */
+  private linkingCurrent(): boolean {
+    if (!this.linking) return false;
+    if (this.linking.version === this.doc.version) return true;
+    this.stopLinking(false);
+    return false;
+  }
+
+  private linkAt(p: Vec): void {
+    if (!this.linkingCurrent()) return;
+    const l = this.linking!;
+    const t = this.linkTokenAt(p);
+    if (!t) return;
+    const last = l.seq[l.seq.length - 1];
+    // (the same thing twice in a row, or two arrows with nothing between, adds nothing)
+    if (last && ('arrow' in t ? 'arrow' in last && last.arrow === t.arrow : 'item' in last && last.item.ref === t.item.ref)) return;
+    if (last && 'arrow' in t && 'arrow' in last) return;
+    l.seq.push(t);
+    this.onLinking(l.seq.length);
+    this.requestOverlay();
+  }
+
+  /**
+   * End Link Steps in Order: with `apply`, each arrow clicked gets what was clicked before it (back
+   * to the arrow before) as its starting materials and what was clicked after it as its products,
+   * the text and structures over and under it as worked out from where they sit; all kept as set by
+   * hand, in one undo step. Returns how many steps were set.
+   */
+  stopLinking(apply: boolean): number {
+    const l = this.linking;
+    if (!l) return 0;
+    if (l.version !== this.doc.version) apply = false;
+    this.linking = null;
+    this.r.overlay.style.cursor = '';
+    const steps = apply ? linkedSteps(l.seq) : [];
+    const bond = this.doc.style.bondLength;
+    const items = this.schemeItems();
+    const find = itemFinder(items);
+    const set: [number, StepRoles][] = [];
+    const chain = new Set(l.seq.flatMap((x) => ('item' in x ? [x.item.ref] : [])));
+    const free = (refs: string[]) => refs.filter((ref) => { const it = find(ref); return !!it && !chain.has(it.ref); });
+    const uniq = (refs: string[]) => refs.filter((ref, i) => refs.findIndex((x) => (find(x) ?? x) === (find(ref) ?? ref)) === i);
+    for (const st of steps) {
+      const r = this.doc.arrows.get(st.arrow);
+      if (!r || (!st.before.length && !st.after.length)) continue;
+      // what is over and under the arrow: as it has it now (set by hand, or kept from a file),
+      // and what is stacked there as worked out, none of it clicked into the sequence
+      const now = interpretArrow(r, items, bond);
+      const cur = this.reactionRoles(r.id);
+      // + signs clicked go with the + signs, not the starting materials or products
+      const side = (its: Item[]) => its.filter((it) => !it.plus).map((it) => it.ref);
+      const plusses = uniq([...st.before, ...st.after].filter((it) => it.plus).map((it) => it.ref).concat(free(now.plusses ?? [])));
+      set.push([r.id, {
+        reactants: side(st.before), products: side(st.after),
+        above: uniq(free([...(cur?.above ?? []), ...now.above])), below: uniq(free([...(cur?.below ?? []), ...now.below])),
+        plusses, ...(cur?.inside?.length ? { inside: [...cur.inside] } : {}), manual: true,
+      }]);
+    }
+    if (set.length) {
+      this.doc.edit('Link Steps in Order', () => { for (const [id, step] of set) this.doc.updateArrow(id, { step }); });
+      this.changed();
+    }
+    this.requestOverlay();
+    this.onLinked(apply ? set.length : null);
+    return set.length;
+  }
+
+  /** The sequence clicked so far: a numbered dot on each thing, joined by a dashed line. */
+  private drawLinking(ctx: CanvasRenderingContext2D, px: number): void {
+    const l = this.linking;
+    if (!l || !l.seq.length) return;
+    const at = (t: { arrow: number } | { item: Item }): Vec | null => {
+      if ('arrow' in t) { const r = this.doc.arrows.get(t.arrow); return r ? { x: (r.tail.x + r.head.x) / 2, y: (r.tail.y + r.head.y) / 2 } : null; }
+      return { x: (t.item.box.x1 + t.item.box.x2) / 2, y: (t.item.box.y1 + t.item.box.y2) / 2 };
+    };
+    const pts = l.seq.map(at);
+    ctx.save();
+    ctx.strokeStyle = ROLE_BADGE;
+    ctx.lineWidth = 1.5 * px;
+    ctx.setLineDash([5 * px, 4 * px]);
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    pts.forEach((p, i) => { if (p) (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `600 ${10 * px}px system-ui, sans-serif`;
+    pts.forEach((p, i) => {
+      if (!p) return;
+      ctx.fillStyle = ROLE_BADGE;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 8 * px, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(String(i + 1), p.x, p.y + 0.5 * px);
+    });
+    ctx.restore();
   }
 
   /** Forget roles chosen by hand (or read from a file): they are worked out from where things sit again. */
@@ -6284,7 +6711,7 @@ export class Editor {
   selectRole(arrowId: number, role: Role): void {
     const roles = this.reactionRoles(arrowId);
     if (!roles) return;
-    const find = itemFinder(this.schemeItems());
+    const find = this.schemeFinder();
     this.clearSelection();
     for (const ref of roles[role]) {
       const it = find(ref);
@@ -6501,6 +6928,11 @@ export class Editor {
     const chord = chordOf(e);
     if (!chord) return;
     if (this.focalPicking && chord === 'Escape') { e.preventDefault(); this.stopFocalPick(); return; }
+    if (this.linking && this.linkingCurrent()) {
+      if (chord === 'Escape') { e.preventDefault(); this.stopLinking(false); return; }
+      if (chord === 'Enter') { e.preventDefault(); this.stopLinking(true); return; }
+      if (chord === 'Backspace' || chord === 'Delete') { e.preventDefault(); this.linking.seq.pop(); this.onLinking(this.linking.seq.length); this.requestOverlay(); return; }
+    }
     // Tab while a template is held: the next way it can go
     if ((chord === 'Tab' || chord === 'Shift+Tab') && this.cycleTemplate(chord === 'Tab' ? 1 : -1)) { e.preventDefault(); return; }
     // in the middle of a drag (its step still open), commands wait: Undo or a tab switch now
@@ -8425,7 +8857,11 @@ export class Editor {
       }
     }
     this.drawVariableAtoms(ctx, px);
-    if (this.showRoles && s.arrows.size === 1 && !this.drag) this.drawRoles(ctx, [...s.arrows][0], px);
+    this.roleTags = [];
+    if (s.arrows.size === 1 && s.atoms.size + s.captions.size + s.shapes.size === 0) this.lastRoleArrow = [...s.arrows][0];
+    if (this.linking && this.linkingCurrent()) this.drawLinking(ctx, px);
+    else if (this.showAllRoles && !this.drag) this.drawAllRoles(ctx, px, s.arrows.size === 1 ? [...s.arrows][0] : null);
+    else if (this.showRoles && s.arrows.size === 1 && !this.drag) this.drawRoles(ctx, [...s.arrows][0], px);
     // a selected Smart Scheme: a dashed box round each species, numbered, and + buttons to add one
     const smartId = this.drag?.moved ? null : this.selectedSmart();
     if (smartId !== null) this.drawSmartMarks(ctx, smartId, px);
