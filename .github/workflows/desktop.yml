@@ -154,6 +154,8 @@ jobs:
           API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
+          # API_KEY_ID comes from the step's env above; shellcheck can't see that and takes it for a typo
+          # shellcheck disable=SC2153
           if [ -z "$CERT" ] || [ -z "$IDENTITY" ]; then echo "No Developer ID certificate in the secrets: the Mac app is signed ad hoc."; exit 0; fi
           {
             echo "APPLE_CERTIFICATE<<EOF_CERT"; echo "$CERT"; echo "EOF_CERT"

@@ -125,4 +125,5 @@ jobs:
           node scripts/retry.mjs -- xcrun altool --upload-app --type ios --file "$ipa" --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER"
       - name: Say what was skipped
         if: env.SHIP != 'true'
-        run: echo "Not signed or sent to TestFlight: this is a pull request, a branch other than main, a run with \"Send to TestFlight\" unticked, or the Apple secrets or the TESTFLIGHT = on variable are not set yet (docs/apple-signing.md)."
+        run: |
+          echo "Not signed or sent to TestFlight: this is a pull request, a branch other than main, a run with \"Send to TestFlight\" unticked, or the Apple secrets or the TESTFLIGHT = on variable are not set yet (docs/apple-signing.md)."
