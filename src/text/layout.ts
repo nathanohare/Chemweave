@@ -914,8 +914,33 @@ export function offsetInLine(lay: TextLayout, li: number, x: number): number {
   return best;
 }
 
-/** Rectangles covering the text between two places (relative to the origin), one per line. */
-export function selectionRects(lay: TextLayout, a: number, b: number): Rect[] {
+/**
+ * A line's ink from top to bottom, reaching halfway into the gaps to the lines above and below it
+ * in the same paragraph (where offsetAt changes lines), so a paragraph's lines meet with no gap.
+ * A line far from its neighbour (another page or column) keeps its own edge.
+ */
+export function joinedBand(lines: readonly LaidLine[], i: number): { y1: number; y2: number } {
+  const l = lines[i], prev = lines[i - 1], next = lines[i + 1];
+  let y1 = l.y - l.ascent, y2 = l.y + l.descent;
+  // (up to triple spacing; a line on the next page or in the next column is farther, or above)
+  const near = (gap: number, h: number): boolean => gap >= 0 && gap <= 3 * h;
+  if (prev && !prev.last) {
+    const gap = y1 - (prev.y + prev.descent);
+    if (near(gap, l.ascent + l.descent)) y1 -= gap / 2;
+  }
+  if (next && !l.last) {
+    const gap = next.y - next.ascent - y2;
+    if (near(gap, l.ascent + l.descent)) y2 += gap / 2;
+  }
+  return { y1, y2 };
+}
+
+/**
+ * Rectangles covering the text between two places (relative to the origin), one per line;
+ * `joined`: each reaching into the gaps between the lines of its paragraph (joinedBand), so they
+ * meet as one stretch.
+ */
+export function selectionRects(lay: TextLayout, a: number, b: number, joined = false): Rect[] {
   if (b <= a) return [];
   const out: Rect[] = [];
   lay.lines.forEach((l, i) => {
@@ -926,7 +951,7 @@ export function selectionRects(lay: TextLayout, a: number, b: number): Rect[] {
     let x2 = e === s ? x1 : xAt(lay, i, e);
     // a selected line break shows as a little space at the end of the line
     if (crossesBreak) x2 += l.ascent * 0.35;
-    out.push({ x1, y1: l.y - l.ascent, x2, y2: l.y + l.descent });
+    out.push(joined ? { x1, x2, ...joinedBand(lay.lines, i) } : { x1, y1: l.y - l.ascent, x2, y2: l.y + l.descent });
   });
   return out;
 }
