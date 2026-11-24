@@ -53,14 +53,14 @@ jobs:
           npm ci --ignore-scripts
       - name: Get MolScribe's weights
         run: |
-          curl -sSfL -o ckpt.pth "$CHECKPOINT"
+          node scripts/retry.mjs -- curl -sSfL -o ckpt.pth "$CHECKPOINT"
           echo "$CHECKPOINT_SHA256  ckpt.pth" | sha256sum -c -
       - name: Convert
         run: |
           python scripts/recognition/export.py ckpt.pth pack
           rm -r pack/full
           cp node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm pack/
-          curl -sSfL -o pack/MolScribe-LICENSE.txt "https://raw.githubusercontent.com/thomas0809/MolScribe/$MOLSCRIBE/LICENSE"
+          node scripts/retry.mjs -- curl -sSfL -o pack/MolScribe-LICENSE.txt "https://raw.githubusercontent.com/thomas0809/MolScribe/$MOLSCRIBE/LICENSE"
           node -e "
             const fs = require('fs'), crypto = require('crypto');
             const files = fs.readdirSync('pack').filter((f) => f !== 'manifest.json').map((name) => {
@@ -78,4 +78,4 @@ jobs:
             gh release create "$PACK" --prerelease --latest=false --target "$GITHUB_SHA" --title "Structure reader model" \
               --notes "The model the structure reader downloads the first time it is used (MolScribe, MIT licence, converted to ONNX). Not an app release."
           fi
-          gh release upload "$PACK" pack/* --clobber
+          node scripts/retry.mjs -- gh release upload "$PACK" pack/* --clobber

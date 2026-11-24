@@ -1,0 +1,29 @@
+name: Workflow lint
+
+# Checks the workflow files with actionlint (https://github.com/rhysd/actionlint, MIT license)
+# on every pull request that changes one of them: wrong keys, bad ${{ }} expressions, steps that
+# read outputs which don't exist, and shellcheck's warnings on each run: script. Several
+# workflows run only on main (Desktop app, Web version, iPad app, Wiki), so a mistake in one of
+# them used to show first on a real build or deploy (#699 and #705, 2026-11-24).
+on:
+  pull_request:
+    paths: ['.github/workflows/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-lint-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      # the official image, at a fixed version, with shellcheck inside it
+      - uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color

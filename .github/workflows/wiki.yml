@@ -37,7 +37,9 @@ jobs:
         env:
           TOKEN: ${{ github.token }}
         run: |
-          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
+          # GitHub's git service is outside this job: scripts/retry.mjs tries the clone and the push
+          # again if one fails (the clone starts from an empty folder each try)
+          node scripts/retry.mjs -- bash -c 'rm -rf wiki && git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki'
           node scripts/build-wiki.mjs wiki
           cd wiki
           git add -A
@@ -47,4 +49,4 @@ jobs:
           fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -q -m "Rebuild from docs/ at ${GITHUB_SHA::7}"
-          git push
+          node scripts/retry.mjs -- git push

@@ -4,20 +4,26 @@ name: Web version
 # (https://nathanohare.github.io/Chemweave/) when something is merged into main, or on
 # request (Actions > Web version > Run workflow). Free while the repository is public.
 #
+# A pull request that changes this workflow or the script it runs builds the web version here
+# without publishing it, and so does a run started by hand on any branch but main: a workflow
+# change is tried before it reaches main, not first on a real deploy (#699, 2026-11-24).
+#
 # One-time setup: Settings > Pages > Build and deployment > Source: "GitHub Actions".
 on:
   push:
     branches: [main]
   workflow_dispatch:
+  pull_request:
+    paths: [.github/workflows/pages.yml, scripts/strip-nmr-data.mjs]
 
+# the build only reads the code; the deploy job asks for what publishing needs
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# Only the newest merge is published; an older run still going is cancelled.
+# Only the newest merge is published; an older run still going is cancelled. Try-out builds of
+# other branches and pull requests have a group each, so they never cancel a deploy.
 concurrency:
-  group: pages
+  group: ${{ github.ref == 'refs/heads/main' && 'pages' || format('pages-{0}', github.ref) }}
   cancel-in-progress: true
 
 jobs:
@@ -43,6 +49,11 @@ jobs:
 
   deploy:
     needs: build
+    # only main is published; other runs stop after the build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
