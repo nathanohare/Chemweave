@@ -125,7 +125,7 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 - **Home ▸ Compile to PDF** compiles it and saves a PDF.
 - While it compiles, a window shows how far along it is (compounds, spectra, then the pages and the PDF), with **Cancel**.
 - **Home ▸ Manage ▸ Save Word Snapshot** (or Ctrl+S) saves the whole compiled SI as *(project title) (Snapshot).docx* in the project folder, as a backup: if Chemweave or the project can't be opened, you can go on in Word. It is also saved every 5 minutes while the project changes, and when the project closes. It is never a step of Undo, and a copy you changed in Word is never replaced: rename it, and the next snapshot is saved beside it. Each flag on the SI page is a Word comment in it, on the text of its field (who flagged it and what to check); a flag on a field that prints nothing is on the compound's name.
-- **Home ▸ Manage ▸ Flags as Comments** puts the flags in as comments in Compile to Document and Compile to PDF too (it stays on or off on this computer).
+- **Compile to Document** and **Compile to PDF** ask, when the SI page has flags, whether to put them in as comments too (**Include Comments**) or leave them out.
 
 **Home ▸ Project Settings…** holds the choices for the compiled SI:
 

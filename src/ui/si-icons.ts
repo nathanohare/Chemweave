@@ -29,7 +29,6 @@ export const SI_ICONS: Record<string, string> = {
   'si:duplicate': hex(8.5, 9.25, 5.25) + hex(15.5, 14.75, 5.25, 'f a') + plus(19.5, 4.5),
   // Compile ▸ Save Word Snapshot: the compiled SI's page, kept by the clock
   // a page with a speech bubble: the flags as comments
-  'si:flag-comments': page + '<path d="M7.75 9.25h7M7.75 12.25h4"/><path class="a" d="M12.75 14.25h7.5v4.5h-4l-2 2v-2h-1.5z"/>',
   'si:save-snapshot-docx': page + '<path d="M7.75 9.25h7M7.75 12.25h4.5"/><circle class="f a" cx="16.5" cy="16.75" r="4.5"/><path class="a" d="M16.5 14.25v2.5l1.75 1.25"/>',
   'si:snapshot': '<rect class="p" x="2.75" y="6.75" width="18.5" height="13" rx="2"/><path d="M8.25 6.75l1.5-2.5h4.5l1.5 2.5"/><circle class="a" cx="12" cy="13.25" r="3.5"/>',
   'si:project-settings': page + '<circle class="a" cx="12" cy="13.5" r="2.25"/><path class="a" d="M12 8.75v1.5M12 16.75v1.5M7.25 13.5h1.5M15.25 13.5h1.5M8.65 10.15l1.05 1.05M14.3 15.8l1.05 1.05M8.65 16.85l1.05-1.05M14.3 11.2l1.05-1.05"/>',

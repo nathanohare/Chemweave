@@ -532,7 +532,6 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si="apply-fields" title="Give every compound of the section the section's fields, in the section's order">Apply Section Fields</button>
         <button data-si="reload" data-ic="refresh-all" title="Read the project folder again (after changes made in Chem SI Assistant or by a sync)">Reload Project</button>
-        <button data-si="flag-comments" aria-pressed="false" title="Flags as Comments: Compile to Document and Compile to PDF put each flag of the SI page as a comment on the text of its field (who flagged it and what to check). The Word snapshot always has them">Flags as Comments</button>
       </div>
       <div class="rb-col">
         <button data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance">Project Settings…</button>
@@ -632,7 +631,6 @@ export class SiMode {
       }
     });
     this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(this.liveOn));
-    this.ribbon.querySelector('[data-si="flag-comments"]')?.setAttribute('aria-pressed', String(this.flagComments));
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
@@ -2822,7 +2820,6 @@ export class SiMode {
   private live: { el: HTMLElement; host: HTMLElement; state: HTMLElement; empty: HTMLElement; view: DocView | null; shown: string } = null!;
   private liveOn = true;
   /** Compile puts the SI page's flags in as comments (the ribbon's Flags as Comments; remembered on this computer). */
-  private flagComments = ((): boolean => { try { return localStorage.getItem('si.flagComments') === 'on'; } catch { return false; } })();
   private liveTimer = 0;
   private liveBusy = false;
   private liveAgain = false;
@@ -4478,6 +4475,15 @@ export class SiMode {
     const p = this.project;
     if (!p) return;
     if (this.compiling) { this.host.flash('The SI is being compiled already.'); return; }
+    // (the SI page's flags go in as Word comments only when asked for, each time: they are notes for the authors)
+    const flags = p.compounds.reduce((n, c) => n + Object.keys(flagsOf(c)).length, 0);
+    let flagComments = false;
+    if (flags) {
+      const pick = await askChoice(pdf ? 'Compile to PDF' : 'Compile', `The SI page has ${flags} flag${flags === 1 ? '' : 's'} for checking. Put ${flags === 1 ? 'it' : 'them'} in as comments on the text of ${flags === 1 ? 'its field' : 'their fields'} (who flagged ${flags === 1 ? 'it' : 'them'} and what to check)?`, [{ value: 'with', label: 'Include Comments', primary: true }, { value: 'without', label: 'Leave Out' }, { value: 'cancel', label: 'Cancel' }], 'cancel');
+      if (pick === 'cancel') return;
+      flagComments = pick === 'with';
+    }
+    if (this.compiling || this.project !== p) return;
     this.compiling = true;
     // a window with how far along it is and Cancel: a large SI takes a while
     const { compileProgress, CompileCancelled } = await import('./si-progress');
@@ -4492,7 +4498,7 @@ export class SiMode {
         contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
         inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
         progress: (done, total, text) => bar.at(done, total, text),
-      }, undefined, { flagComments: this.flagComments });
+      }, undefined, { flagComments });
     } catch (e) {
       bar.close();
       this.compiling = false;
@@ -4646,7 +4652,7 @@ export class SiMode {
   }
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
-  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx', 'flag-comments']);
+  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
@@ -4730,7 +4736,7 @@ export class SiMode {
   private async command(cmd: string): Promise<void> {
     const p = this.project;
     if (!p) return;
-    if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'trash', 'flag-comments'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
+    if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'trash'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
     await this.commitAll();
     if (this.project !== p) return;
     const s = this.currentSection();
@@ -4935,12 +4941,6 @@ export class SiMode {
       }
       case 'live-preview':
         this.setLive(!this.liveOn);
-        return;
-      case 'flag-comments':
-        this.flagComments = !this.flagComments;
-        try { localStorage.setItem('si.flagComments', this.flagComments ? 'on' : 'off'); } catch { /* (not kept) */ }
-        this.ribbon.querySelector('[data-si="flag-comments"]')?.setAttribute('aria-pressed', String(this.flagComments));
-        this.host.flash(this.flagComments ? 'Compile puts the flags in as comments.' : 'Compile leaves the flags out.', 2500);
         return;
       case 'paste-spectrum':
         if (!c) { this.host.flash('Select a compound first.'); return; }
