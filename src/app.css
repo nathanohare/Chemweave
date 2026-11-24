@@ -4872,6 +4872,10 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-live-btn { width: 22px; height: 20px; font-size: 12px; }
 .si-live-host { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .si-live-host .doc-scroll { cursor: default; }
+/* a field of the SI page and its text in the live preview, lit up together (hovered or typed in on either side) */
+.si-field.si-linked, [data-src].si-linked { background: color-mix(in srgb, var(--tab-si, #b4234f) 7%, transparent); box-shadow: inset 2px 0 0 var(--tab-si, #b4234f); }
+.si-part.si-linked input, .si-part.si-linked select { outline: 1px solid var(--tab-si, #b4234f); outline-offset: -1px; }
+.si-field.si-linked-go { transition: none; background: color-mix(in srgb, var(--tab-si, #b4234f) 16%, transparent); }
 .si-live-host[hidden] { display: none; }
 .si-live-empty { padding: 16px 12px; font-size: var(--fs-sm); }
 .si-live-empty[hidden] { display: none; }

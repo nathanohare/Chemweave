@@ -66,9 +66,11 @@ export function valueRuns(t: string): Run[] {
 }
 
 /** The sentence with its placeholders filled in; one with no value prints as [name] and is said in `problems`. */
-export function fillSentence(sentence: string, typed: Json, auto: Record<string, Run[]>, problems?: string[]): Run[] {
+export function fillSentence(sentence: string, typed: Json, auto: Record<string, Run[]>, problems?: string[], srcOf?: (typedKey: string) => string): Run[] {
   const given = new Map<string, string>();
-  for (const [k, v] of Object.entries(typed)) if (text(v)) given.set(gpKey(k), partText(v));
+  // (the key as typed, for the Live Preview to write a changed value back under: source-map.ts)
+  const typedKey = new Map<string, string>();
+  for (const [k, v] of Object.entries(typed)) if (text(v)) { given.set(gpKey(k), partText(v)); typedKey.set(gpKey(k), k); }
   const out: Run[] = [];
   for (const p of parseMarkup(sentence)) {
     if (out.length && p.runs.length) out.push(R(' '));
@@ -80,13 +82,13 @@ export function fillSentence(sentence: string, typed: Json, auto: Record<string,
         const k = gpKey(m[1]);
         let value: Run[];
         if (AUTO_WINS.includes(k) && auto[k]) value = auto[k];
-        else if (given.has(k)) value = valueRuns(given.get(k)!);
+        else if (given.has(k)) value = srcOf ? valueRuns(given.get(k)!).map((v) => ({ ...v, src: srcOf(typedKey.get(k)!) })) : valueRuns(given.get(k)!);
         else if (auto[k]) value = auto[k];
         else {
           value = [R(`[${m[1].trim()}]`)];
           problems?.push(`no value for {${m[1].trim()}}`);
         }
-        for (const v of value) out.push(R(v.text, { bold: v.bold || r.bold, italic: v.italic || r.italic, valign: v.valign && v.valign !== 'normal' ? v.valign : r.valign, ref: v.ref, underline: v.underline || r.underline }));
+        for (const v of value) out.push(R(v.text, { bold: v.bold || r.bold, italic: v.italic || r.italic, valign: v.valign && v.valign !== 'normal' ? v.valign : r.valign, ref: v.ref, underline: v.underline || r.underline, src: v.src }));
         pos = m.index! + m[0].length;
       }
       if (pos < r.text.length) out.push({ ...r, text: r.text.slice(pos) });

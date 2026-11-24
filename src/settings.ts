@@ -21,6 +21,7 @@ import { parsePalettes, type Palette } from './palettes';
 import { parseFavorites, type FormatFavorite } from './favorites';
 import { defaultToolboxes, parseToolboxes, type ToolboxState } from './ui/toolboxes';
 import { parseRibbons, type RibbonsPrefs } from './ui/ribbon-custom';
+import { DEFAULT_SI_PREVIEW, parseSiPreviewLook, type SiPreviewLook } from './ui/mode-prefs';
 import { DEFAULT_DEPTH_SHADE, readDepthShade, type DepthShade } from './render/depth-shade';
 import { parseQuick } from './ui/quick-bar';
 import { parseOwnStyles, parseModeStyles, type StyleMode } from './drawing-styles';
@@ -244,6 +245,8 @@ export interface Settings {
   /** Document pages: crop marks at the text's corners (Word's Show crop marks), and the white space between pages (shown unless hidden by a double-click between pages). */
   docCropMarks: boolean;
   docWhiteSpace: boolean;
+  /** How the SI Live Preview marks its text (Preferences ▸ SI Live Preview). */
+  siPreview: SiPreviewLook;
   /** Sheet mode's formula bar shown (View > Formula Bar). */
   sheetFormulaBar: boolean;
   /** Slides' View > Ruler and Gridlines, and how the rulers measure. */
@@ -329,6 +332,7 @@ export const DEFAULT_SETTINGS: Settings = {
   docRuler: false,
   docCropMarks: false,
   docWhiteSpace: true,
+  siPreview: DEFAULT_SI_PREVIEW,
   sheetFormulaBar: true,
   updateCheck: true, updateChannel: 'latest', pubchemNames: true, convertChemDraw: false, officeStructures: { docx: 'pictures', pptx: 'pictures', xlsx: 'pictures' }, matchStructure: true, fileTypesOffered: false, wordObjectsOffered: false, reviewName: '', skipVersion: null, lastVersion: null, recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], docDesign: null,
   slideRuler: false,
@@ -352,7 +356,7 @@ const STORAGE_KEY = 'chem-illustrator.settings';
 
 /** Read settings saved as text, keeping only what makes sense. */
 export function parseSettings(text: string | null | undefined): Settings {
-  const s: Settings = { ...DEFAULT_SETTINGS, hotkeys: {}, replacements: DEFAULT_SETTINGS.replacements.map(([a, b]) => [a, b]), dictionary: [], modeColours: { ...DEFAULT_MODE_COLOURS }, nicknames: {}, templates: [], palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null, myStyles: [], modeStyles: {}, darkPalettes: [], guides: { ...DEFAULT_SETTINGS.guides }, orient: { ...DEFAULT_ORIENT }, pageLook: { ...DEFAULT_PAGE_LOOK }, docPins: [], recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], scheme: { ...DEFAULT_SCHEME_PREFS }, analysis: parseAnalysisPrefs(null), newman: parseNewmanPrefs(null), focal: { ...DEFAULT_FOCAL_PREFS }, keep: { ...DEFAULT_KEEP }, ai: { ...DEFAULT_AI }, kbColumns: {}, officeStructures: { ...DEFAULT_SETTINGS.officeStructures } };
+  const s: Settings = { ...DEFAULT_SETTINGS, hotkeys: {}, replacements: DEFAULT_SETTINGS.replacements.map(([a, b]) => [a, b]), dictionary: [], modeColours: { ...DEFAULT_MODE_COLOURS }, nicknames: {}, templates: [], palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null, myStyles: [], modeStyles: {}, darkPalettes: [], guides: { ...DEFAULT_SETTINGS.guides }, orient: { ...DEFAULT_ORIENT }, pageLook: { ...DEFAULT_PAGE_LOOK }, docPins: [], recentFiles: [], recentSymbols: [], highlightLooks: [], formatFavorites: [], quickParts: [], scheme: { ...DEFAULT_SCHEME_PREFS }, analysis: parseAnalysisPrefs(null), newman: parseNewmanPrefs(null), focal: { ...DEFAULT_FOCAL_PREFS }, siPreview: { ...DEFAULT_SI_PREVIEW }, keep: { ...DEFAULT_KEEP }, ai: { ...DEFAULT_AI }, kbColumns: {}, officeStructures: { ...DEFAULT_SETTINGS.officeStructures } };
   if (!text) return s;
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return s; }
@@ -446,6 +450,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   if (typeof r.docRuler === 'boolean') s.docRuler = r.docRuler;
   if (typeof r.docCropMarks === 'boolean') s.docCropMarks = r.docCropMarks;
   if (typeof r.docWhiteSpace === 'boolean') s.docWhiteSpace = r.docWhiteSpace;
+  if (r.siPreview !== undefined) s.siPreview = parseSiPreviewLook(r.siPreview);
   if (typeof r.sheetFormulaBar === 'boolean') s.sheetFormulaBar = r.sheetFormulaBar;
   if (typeof r.slideRuler === 'boolean') s.slideRuler = r.slideRuler;
   if (r.slidePanes && typeof r.slidePanes === 'object') { const sp = r.slidePanes as Record<string, unknown>; s.slidePanes = { warnings: sp.warnings === true, analysis: sp.analysis === true }; }

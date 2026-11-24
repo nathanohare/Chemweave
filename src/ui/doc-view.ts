@@ -58,6 +58,20 @@ export interface Overlay {
   also?: [number, number][];
   /** A header or footer being typed into (Word's header and footer editing): the rest of the page faded, each page's header and footer marked, and the selection in it. */
   hf?: HfOverlay | null;
+  /** The SI Live Preview's marks: the part being worked on, a field's text, the person's own text. */
+  marks?: TextMarks | null;
+}
+
+/** Marks over the text (character offsets; the end not included). */
+export interface TextMarks {
+  /** Everything but [start, end) washed out lightly, with a bar in the margin beside it. */
+  focus?: { start: number; end: number; bar: string; /** false: the bar alone, nothing washed out */ wash?: boolean } | null;
+  /** Stretches shaded. */
+  tints?: { start: number; end: number; color: string }[];
+  /** Stretches bracketed (or boxed, maybe dashed), the first with a tag above it. */
+  brackets?: { start: number; end: number; color: string; label?: string; boxed?: boolean; dashed?: boolean; /** Only the tag, no bracket or box (a tint marks the text). */ tagOnly?: boolean }[];
+  /** Stretches flagged: a flag in the margin, and a dotted underline or a fill with a bar in the margin. */
+  flagged?: { start: number; end: number; color: string; look: 'underline' | 'fill' }[];
 }
 
 /** Header and footer editing as the view shows it. */
@@ -585,6 +599,7 @@ export class DocView {
         ctx.lineWidth = 1.1 * px;
         for (const r of rectsOn(lay, p, s.start, s.end)) squiggle(ctx, r, px);
       }
+      if (ov.marks) drawMarksOn(ctx, lay, p, ov.marks, px);
       if (clipped) ctx.restore();
     }
     if (hiding) this.joins(ctx, visible, at);
@@ -1030,6 +1045,85 @@ export class DocView {
 }
 
 /** Rectangles covering text on one page (only that page's lines are looked at). */
+/** The SI Live Preview's marks on one page (in the page's points). */
+function drawMarksOn(ctx: CanvasRenderingContext2D, lay: DocLayout, p: PageBox, m: TextMarks, px: number): void {
+  const left = p.x + p.setup.left;
+  if (m.focus) {
+    const rs = rectsOn(lay, p, m.focus.start, m.focus.end);
+    const wash = m.focus.wash !== false;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    if (!rs.length) { if (wash) ctx.fillRect(p.x, p.top, p.w, p.h); }
+    else {
+      const y1 = Math.min(...rs.map((r) => r.y1)) - 4, y2 = Math.max(...rs.map((r) => r.y2)) + 4;
+      if (wash) {
+        ctx.fillRect(p.x, p.top, p.w, Math.max(0, y1 - p.top));
+        ctx.fillRect(p.x, y2, p.w, Math.max(0, p.top + p.h - y2));
+      }
+      ctx.fillStyle = m.focus.bar;
+      ctx.fillRect(left - 10, y1, 2.2, y2 - y1);
+    }
+  }
+  for (const t of m.tints ?? []) {
+    ctx.fillStyle = t.color;
+    for (const r of rectsOn(lay, p, t.start, t.end)) ctx.fillRect(r.x1 - 0.5, r.y1, r.x2 - r.x1 + 1, r.y2 - r.y1);
+  }
+  for (const b of m.brackets ?? []) {
+    const rs = rectsOn(lay, p, b.start, b.end);
+    if (!rs.length) continue;
+    ctx.strokeStyle = b.color;
+    ctx.lineWidth = 1.2 * px;
+    ctx.setLineDash(b.dashed ? [3 * px, 2 * px] : []);
+    if (b.tagOnly) { /* (the text is tinted: only its tag) */ } else if (b.boxed) for (const r of rs) ctx.strokeRect(r.x1 - 1, r.y1, r.x2 - r.x1 + 2, r.y2 - r.y1);
+    else {
+      // (Word's content-control look: a bracket at each end)
+      const f = rs[0], l = rs[rs.length - 1], w = 3;
+      ctx.beginPath();
+      ctx.moveTo(f.x1 - 1 + w, f.y1); ctx.lineTo(f.x1 - 1, f.y1); ctx.lineTo(f.x1 - 1, f.y2); ctx.lineTo(f.x1 - 1 + w, f.y2);
+      ctx.moveTo(l.x2 + 1 - w, l.y1); ctx.lineTo(l.x2 + 1, l.y1); ctx.lineTo(l.x2 + 1, l.y2); ctx.lineTo(l.x2 + 1 - w, l.y2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // the tag above the first line, only on the page where it starts
+    if (b.label && rectsOn(lay, p, b.start, b.start + 1).length) {
+      const f = rs[0];
+      const size = 7 * Math.max(1, px * 1.3);
+      ctx.font = `600 ${size}px system-ui, sans-serif`;
+      const w = ctx.measureText(b.label).width + 4, h = size + 2.5;
+      ctx.fillStyle = b.color;
+      ctx.fillRect(f.x1 - 1, f.y1 - h, w, h);
+      ctx.fillStyle = '#fff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(b.label, f.x1 + 1, f.y1 - h / 2 + 0.3);
+    }
+  }
+  for (const f of m.flagged ?? []) {
+    const rs = rectsOn(lay, p, f.start, f.end);
+    if (!rs.length) continue;
+    ctx.fillStyle = f.color;
+    ctx.strokeStyle = f.color;
+    if (f.look === 'fill') {
+      ctx.save();
+      ctx.globalAlpha = 0.28;
+      for (const r of rs) ctx.fillRect(r.x1 - 0.5, r.y1, r.x2 - r.x1 + 1, r.y2 - r.y1);
+      ctx.restore();
+      ctx.fillRect(left - 4, Math.min(...rs.map((r) => r.y1)), 1.6, Math.max(...rs.map((r) => r.y2)) - Math.min(...rs.map((r) => r.y1)));
+    } else {
+      ctx.lineWidth = 0.9;
+      ctx.setLineDash([1, 1.4]);
+      for (const r of rs) { ctx.beginPath(); ctx.moveTo(r.x1, r.y2 - 0.3); ctx.lineTo(r.x2, r.y2 - 0.3); ctx.stroke(); }
+      ctx.setLineDash([]);
+    }
+    // a flag in the margin where it starts
+    if (rectsOn(lay, p, f.start, f.start + 1).length) {
+      const y = rs[0].y1, x = left - 16;
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x + 9, y); ctx.lineTo(x + 6.5, y + 2.6); ctx.lineTo(x + 9, y + 5.2); ctx.lineTo(x + 1, y + 5.2); ctx.lineTo(x + 1, y + 9); ctx.lineTo(x, y + 9);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+}
+
 function rectsOn(lay: DocLayout, p: PageBox, a: number, b: number): Rect[] {
   const sub = { ...lay.text, lines: lay.text.lines.slice(p.first, p.end) };
   if (!sub.lines.length) return [];

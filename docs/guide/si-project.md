@@ -19,7 +19,12 @@ While a project is open, a lock in its folder tells Chem SI Assistant (and Chemw
 
 - **The list on the left** shows the project (its title, at the top), the **Dashboard**, every section with its compounds and scheme pages under it, and at the bottom **Manuscript Check**, **References** and **Warnings**. A check mark beside a compound means every required field is filled in. Click a row to open its page. Drag rows to reorder them, press **F2** to rename a section, and **Delete** to move a row to the project's Trash. Right-click a row for the same commands, and **Expand All** or **Collapse All**. The arrow beside a section or scheme page folds the rows under it (or double-click the row; the Left and Right keys fold and unfold the picked row). Drag the border between the list and the page to make the list wider or narrower; double-click the border to put it back.
 - **The page in the middle** is what you picked: a compound's data, a section's text, a scheme and so on.
-- **Live Preview**, on the right, shows the picked page as it will print, about a second after each change, wherever it is made (**Home ▸ Live Preview**, Ctrl+Shift+L). A section shows every page under it: a Data section its compounds and scheme pages, the Spectra section its first spectra, and a compound's spectra page all of that compound's spectra. On a page with nothing to preview (the Dashboard, Warnings, References, Manuscript Check) it folds to its strip by itself so the page gets the width, and opens again on the next page it can show. Page numbers are placeholders; compile to see the real thing.
+- **Live Preview**, on the right, shows the whole SI as it will print, about a second after each change, wherever it is made (**Home ▸ Live Preview**, Ctrl+Shift+L). The page picked in the list is brought into view and everything else is washed out, with a bar in the SI color beside it; clicking text in the preview picks its page in the list.
+  - **Type in it as in Word.** A change goes into the field the text came from (one step of Undo), and the SI page shows it. Hovering a field on the SI page, or typing in one, lights up its text in the preview, with the field's name; hovering text in the preview lights up its field.
+  - **Text Chemweave writes is locked** (the words of a sentence, "calcd for" in HRMS): hovering it shows which field makes it, and clicking it goes to that field. Formatting is changed on the SI page, not in the preview.
+  - **Custom text**: text typed where no field is stays as it was typed, after the field before it, every time the SI is compiled (it is kept in *chemweave-custom-text.json* in the project folder, which SI Assistant leaves alone). It is marked in the preview and listed on the **Warnings** page; if its page is deleted it goes to the end of the SI.
+  - **Spectra** show on their own pages when the Spectra section or a compound's spectra page is picked, numbered on from the SI's last page, and can't be typed into.
+  - On a page with nothing to preview (the Dashboard, Warnings, References, Manuscript Check) it folds to its strip by itself so the page gets the width, and opens again on the next page it can show. **Preferences ▸ SI Live Preview** sets whether the rest is washed out, and how a field's text and custom text are marked.
 - **The ribbon** has **Home** and **Insert** tabs. Further tabs appear for what you are working on: **Table Layout**, **Picture Format**, **Scheme**, **Spectrum**, **Crystal Structure**, **Attachment**, **References**, **Manuscript Check** and **Dashboard**.
 
 ## The project's page
@@ -119,6 +124,8 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 - **Home ▸ Compile to Document** makes the Supporting Information as a Chemweave document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed.
 - **Home ▸ Compile to PDF** compiles it and saves a PDF.
 - While it compiles, a window shows how far along it is (compounds, spectra, then the pages and the PDF), with **Cancel**.
+- **Home ▸ Manage ▸ Save Word Snapshot** (or Ctrl+S) saves the whole compiled SI as *(project title) (Snapshot).docx* in the project folder, as a backup: if Chemweave or the project can't be opened, you can go on in Word. It is also saved every 5 minutes while the project changes, and when the project closes. It is never a step of Undo, and a copy you changed in Word is never replaced: rename it, and the next snapshot is saved beside it. Each flag on the SI page is a Word comment in it, on the text of its field (who flagged it and what to check); a flag on a field that prints nothing is on the compound's name.
+- **Compile to Document** and **Compile to PDF** ask, when the SI page has flags, whether to put them in as comments too (**Include Comments**) or leave them out.
 
 **Home ▸ Project Settings…** holds the choices for the compiled SI:
 
@@ -153,6 +160,6 @@ In a Canvas, right-click a structure and choose **Add to SI Project** to add it 
 ## Trash and snapshots
 
 - **Home ▸ Trash…** lists what was deleted from the project, newest first, and puts items back. The Trash is a folder inside the project and is shared with Chem SI Assistant.
-- **Home ▸ Save Snapshot…** zips the whole project into its snapshots folder. Use it at milestones such as the submitted version.
+- **Home ▸ Save Snapshot…** zips the whole project into its snapshots folder. Use it at milestones such as the submitted version. The Word snapshot is left out of the zip (it is made again from the project).
 
 Next: [Getting started](getting-started.md) · [Canvas](drawing.md) · [Document](documents.md) · [Libraries](libraries.md) · [Files and sharing](files-and-sharing.md) · [Feedback](feedback.md)

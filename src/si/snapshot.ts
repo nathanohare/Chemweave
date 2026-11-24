@@ -1,12 +1,14 @@
 // Home ▸ Save Snapshot in the SI Project tab: the whole project zipped, as Chem SI Assistant saves
 // snapshots, for milestones such as "submitted version": snapshots/<date>_<time>_<label>.zip
 // inside the project, holding the project folder (by its own name) without build/, snapshots/,
-// the .lock or other hidden files. Files that are compressed already (PDFs, pictures, zips) are
+// the .lock or other hidden files, or the Word snapshot (snapshot-docx.ts: it is made again from
+// the project, and can be large). Files that are compressed already (PDFs, pictures, zips) are
 // stored as they are, which is much faster.
 
 import { zipSync, type Zippable } from 'fflate';
 import { slugify } from './ids';
 import { SiProjectError, type SiProject } from './project';
+import { isSnapshotDocx } from './snapshot-docx';
 
 export const SNAPSHOTS_DIR = 'snapshots';
 const SKIP_TOP = new Set(['build', SNAPSHOTS_DIR]);
@@ -19,7 +21,7 @@ export async function snapshotFiles(p: SiProject): Promise<string[]> {
   const out: string[] = [];
   const walk = async (rel: string): Promise<void> => {
     for (const e of await p.folder.entries(rel)) {
-      if (!rel && SKIP_TOP.has(e.name)) continue;
+      if (!rel && (SKIP_TOP.has(e.name) || (!e.folder && isSnapshotDocx(e.name)))) continue;
       if (e.name.startsWith('.tmp-') || e.name.startsWith('.')) continue;
       const path = join(rel, e.name);
       if (e.folder) await walk(path); else out.push(path);

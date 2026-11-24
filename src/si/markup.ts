@@ -24,6 +24,8 @@ export interface Run {
   ref?: string;
   /** Compiling only: where the text links to in the compiled SI ("#si_…", a bookmark), as a document's links (links.ts). Never stored. */
   link?: string;
+  /** Compiling only: where the text came from (source-map.ts), for the Live Preview. Never stored. */
+  src?: string;
 }
 
 export interface Paragraph {
@@ -123,6 +125,11 @@ function parseLine(line: string): Paragraph {
 /** Stored text as paragraphs, one per line. */
 export function parseMarkup(text: string): Paragraph[] {
   return text.replace(/\r\n/g, '\n').split('\n').map(parseLine);
+}
+
+/** Text with the characters that would be read as markers escaped (as typed into a field, to keep as it reads). */
+export function escapeMarkup(text: string): string {
+  return escape(text);
 }
 
 function escape(text: string): string {
