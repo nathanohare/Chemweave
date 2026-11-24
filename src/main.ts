@@ -1661,9 +1661,11 @@ function orbitalAngle(kind: OrbitalKind, atom: Atom | undefined): number {
 const orbitalSize = (text: string | undefined): number => Math.max(0.2, Math.min(5, Number(text) || 1.1));
 
 /** The two phase colors picked in the Orbital window, when they aren't the usual blue and red. */
+/** A color as a color box gives it (#rrggbb, lower case), or `d` when it isn't one. */
+const boxHex = (t: string | undefined, d: string): string => (/^#[0-9a-f]{6}$/i.test(t ?? '') ? t!.toLowerCase() : d);
+
 function phaseColours(v: Record<string, string>): { colours?: [string, string] } {
-  const hex = (t: string | undefined, d: string) => (/^#[0-9a-f]{6}$/i.test(t ?? '') ? t!.toLowerCase() : d);
-  const c: [string, string] = [hex(v.c0, PHASE_COLOURS[0]), hex(v.c1, PHASE_COLOURS[1])];
+  const c: [string, string] = [boxHex(v.c0, PHASE_COLOURS[0]), boxHex(v.c1, PHASE_COLOURS[1])];
   return c[0] === PHASE_COLOURS[0] && c[1] === PHASE_COLOURS[1] ? {} : { colours: c };
 }
 
@@ -1735,7 +1737,7 @@ const selectedOrbitals = (): Shape[][] => orbitalsAmong(doc, editor.sel.shapes);
  * window): each keeps the settings not changed, its own angle and size among them, and stays
  * selected.
  */
-function restyleOrbitals(list: Shape[][], patch: Partial<OrbitalSpec>, autoAngle = false): void {
+function restyleOrbitals(list: Shape[][], patch: Partial<OrbitalSpec>, autoAngle = false, colour: [string?, string?] = []): void {
   const made: number[] = [];
   doc.edit(list.length > 1 ? 'Change Orbitals' : 'Change Orbital', () => {
     for (const parts of list) {
@@ -1743,6 +1745,8 @@ function restyleOrbitals(list: Shape[][], patch: Partial<OrbitalSpec>, autoAngle
       if (!now) continue;
       const spec: OrbitalSpec = { ...now.spec, ...patch };
       if (!spec.flip) delete spec.flip;
+      // a phase color changed: only that one, each orbital keeping its other color
+      if (colour[0] || colour[1]) { const c = spec.colours ?? PHASE_COLOURS; spec.colours = [colour[0] ?? c[0], colour[1] ?? c[1]]; }
       // Auto: each points its own way on its own atom
       if (autoAngle) { const at = orbitalAtom(doc, parts); spec.angle = orbitalAngle(spec.kind, at !== undefined ? doc.atoms.get(at) : undefined); }
       made.push(...redrawOrbital(doc, parts, spec));
@@ -1761,7 +1765,7 @@ async function editOrbital(): Promise<void> {
   if (!first) return;
   const atomId = orbitalAtom(doc, list[0]);
   const atom = atomId !== undefined ? doc.atoms.get(atomId) : undefined;
-  const was: Record<string, string> = { kind: first.spec.kind, look: first.spec.look, angle: String(Math.round(first.spec.angle * 10) / 10), size: String(Math.round((first.spec.size / doc.style.bondLength) * 100) / 100), flip: String(!!first.spec.flip), c0: (first.spec.colours ?? PHASE_COLOURS)[0], c1: (first.spec.colours ?? PHASE_COLOURS)[1] };
+  const was: Record<string, string> = { kind: first.spec.kind, look: first.spec.look, angle: String(Math.round(first.spec.angle * 10) / 10), size: String(Math.round((first.spec.size / doc.style.bondLength) * 100) / 100), flip: String(!!first.spec.flip), c0: boxHex(first.spec.colours?.[0], PHASE_COLOURS[0]), c1: boxHex(first.spec.colours?.[1], PHASE_COLOURS[1]) };
   const got = await ask(list.length > 1 ? `Edit ${list.length} Orbitals` : 'Edit Orbital', orbitalFields(was), {
     ok: 'Apply',
     preview: { title: 'Preview', draw: (vals) => orbitalPreview({ ...orbitalSpec(vals, atom), ...(vals.size === was.size ? { size: first.spec.size } : {}) }, atom, first.at) },
@@ -1773,12 +1777,12 @@ async function editOrbital(): Promise<void> {
   if (got.kind !== was.kind) patch.kind = got.kind as OrbitalKind;
   if (got.look !== was.look) patch.look = got.look as OrbitalLook;
   if (got.flip !== was.flip) patch.flip = got.flip === 'true';
-  if (got.c0 !== was.c0 || got.c1 !== was.c1) patch.colours = phaseColours(got).colours ?? [...PHASE_COLOURS];
+  const colour: [string?, string?] = [got.c0 !== was.c0 ? boxHex(got.c0, was.c0) : undefined, got.c1 !== was.c1 ? boxHex(got.c1, was.c1) : undefined];
   if (got.size !== was.size) patch.size = orbitalSize(got.size) * doc.style.bondLength;
   if (got.angle !== was.angle) { const a = readAngle(got.angle); if (a !== 'auto') patch.angle = a; }
   orbitalChoice.look = got.look; orbitalChoice.flip = got.flip; orbitalChoice.size = got.size; orbitalChoice.c0 = got.c0; orbitalChoice.c1 = got.c1;
   const auto = readAngle(got.angle) === 'auto';
-  if (Object.keys(patch).length || auto) restyleOrbitals(list, patch, auto);
+  if (Object.keys(patch).length || auto || colour[0] || colour[1]) restyleOrbitals(list, patch, auto, colour);
 }
 
 /** A diagram drawn as an SVG picture, for the diagram window's preview and its layout buttons. */

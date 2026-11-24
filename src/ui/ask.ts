@@ -322,7 +322,7 @@ export function ask(title: string, fields: Field[], opts: { ok?: string; note?: 
       form.addEventListener('focusin', (e) => { focused = fieldOf(e.target); moved(); });
       form.addEventListener('focusout', (e) => { if (!fieldOf(e.relatedTarget)) { focused = undefined; moved(); } });
     }
-    const first = form.querySelector<HTMLInputElement | HTMLTextAreaElement>('input:not([type=checkbox]), textarea');
+    const first = form.querySelector<HTMLInputElement | HTMLTextAreaElement>('input:not([type=checkbox], [type=color]), textarea');
     first?.focus();
     first?.select();
   });
