@@ -14,8 +14,8 @@ import { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
 import * as rt from '../richtext';
 import type { TextRun } from '../model';
-import type { CompiledSi } from '../si/compile-doc';
-import { blockAt, editableSrc, fieldOfSrc, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
+import type { CompiledSi, SiStructureRef } from '../si/compile-doc';
+import { blockAt, editableSrc, fieldOfSrc, pageToFollow, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
@@ -25,6 +25,9 @@ const CRIMSON = '#b4234f';
 const CRIMSON_TINT = 'rgba(180, 35, 79, 0.16)';
 const LOCKED = '#5f6570';
 const CUSTOM = '#c27a00';
+
+/** Said when typing, pasting or cutting while a structure or figure is selected. */
+const PICKED_TYPING = 'Click in the text to type there: a structure or figure is selected.';
 
 export interface SiPreviewHost {
   flash(message: string, ms?: number): void;
@@ -45,11 +48,15 @@ export interface SiPreviewHost {
   undo(redo: boolean): void;
   /** Compile again (after a write that failed: the stored text is shown again). */
   refresh(): void;
+  /** A compound's structure or a figure picked in the preview, by its placement key (si/placement.ts; null: none now): its Picture Format tab shows. */
+  structureChosen(key: string | null): void;
+  /** Right-click on a compound's structure or a figure (picked first): its menu at the pointer. */
+  structureMenu(key: string, x: number, y: number): void;
 }
 
 /** What is being shown: the whole SI (which can be typed into), or the Spectra section's pages. */
 export interface ShownSi {
-  compiled: Pick<CompiledSi, 'doc' | 'sources' | 'blocks' | 'custom'>;
+  compiled: Pick<CompiledSi, 'doc' | 'sources' | 'blocks' | 'custom'> & { structures?: SiStructureRef[] };
   key: string;
   editable: boolean;
   /** Why it can't be typed into (said when someone tries). */
@@ -60,8 +67,15 @@ export interface ShownSi {
   gen?: number;
 }
 
+const ctrlKeyOf = (e: KeyboardEvent): boolean => e.ctrlKey || e.metaKey || e.altKey;
+
 /** Waiting this long after the last key before a field is written (a burst of typing is one step of Undo). */
 const WRITE_AFTER = 700;
+/** Synchronous Scrolling: waiting this long after the person stops scrolling before the page it rests on is followed. */
+const SCROLL_SETTLE = 450;
+/** Where in the window the page being read is taken to be (a third of the way down), and how far either side of it the page chosen still counts as read (hysteresis). */
+const READ_AT = 0.3;
+const READ_BAND = 0.12;
 
 export class SiPreview {
   readonly view: DocView;
@@ -105,7 +119,25 @@ export class SiPreview {
   private caretOn = true;
   private blink = 0;
   private drag: { from: number } | null = null;
+  /** The compounds' structures and the figures in the text shown, and the one picked, by its placement key (it stays picked through a compile). */
+  private structures: SiStructureRef[] = [];
+  private pickedStructure: string | null = null;
   private downAt: { x: number; y: number; src: string | null } | null = null;
+
+  /**
+   * Called a little after the person stops scrolling the preview (the wheel, the scrollbar, keys,
+   * touch), never after it scrolls by itself (a page chosen, a compile shown): Synchronous Scrolling.
+   */
+  onScrollSettled: (() => void) | null = null;
+  /** When the person last scrolled (wheel, keys, touch, or the scrolling that follows from them), and whether a button is held on the preview (dragging its scrollbar). */
+  private userScrollAt = -Infinity;
+  private pressed = false;
+  /** The page at the reading line when the person first scrolled since `fromFor` was chosen (what a follow is measured from). */
+  private from: string | null = null;
+  private fromFor: string | null | undefined = undefined;
+  /** The preview scrolled while a button was held (the scrollbar dragged, a selection dragged past the edge). */
+  private movedWhilePressed = false;
+  private settleTimer = 0;
 
   constructor(readonly host: HTMLElement, private readonly api: SiPreviewHost) {
     this.view = new DocView(host);
@@ -125,6 +157,9 @@ export class SiPreview {
 
   get focused(): boolean { return document.activeElement === this.ta; }
 
+  /** The preview's own text box (where its typing goes). */
+  get input(): HTMLElement { return this.ta; }
+
   /** The person's own text in the SI shown, and whether each piece is where it was put. */
   get customText(): readonly PlacedCustom[] { return this.custom; }
 
@@ -141,6 +176,7 @@ export class SiPreview {
     if (!force && !this.failed && s.gen !== undefined && s.gen < this.editGen && this.file) return;
     this.failed = false;
     const same = s.key === this.key && !!this.file;
+    if (!same || s.owner !== this.owner) { clearTimeout(this.settleTimer); this.fromFor = undefined; }
     const v = this.view;
     const top = v.scroller.scrollTop, left = v.scroller.scrollLeft;
     // the caret's place, as where in which field it was, to put it back there
@@ -159,6 +195,9 @@ export class SiPreview {
     this.spans = s.compiled.sources.map((x) => ({ ...x }));
     this.blocks = s.compiled.blocks;
     this.custom = s.compiled.custom;
+    this.structures = s.compiled.structures ?? [];
+    // (a structure picked stays picked while it is still there)
+    if (this.pickedStructure && !this.structures.some((x) => x.key === this.pickedStructure)) this.unpickStructure();
     this.written.clear();
     this.hovered = null;
     v.file = this.file;
@@ -182,6 +221,8 @@ export class SiPreview {
 
   /** The page chosen in the list: brought into view (`reveal`) and the rest washed out. */
   setFocus(node: string | null, reveal: boolean): void {
+    // (another page chosen: a follow on its way is dropped)
+    if (node !== this.focusNode) clearTimeout(this.settleTimer);
     this.focusNode = node;
     if (node && reveal) this.revealNode(node);
     this.view.redraw();
@@ -195,6 +236,72 @@ export class SiPreview {
       if (s) { const r = this.view.rangeRects(s.start, s.end)[0]; if (r) this.view.reveal(r, 48); }
     }
     this.view.redraw();
+  }
+
+  /** The page chosen now (as the preview last showed it). */
+  get focusedNode(): string | null { return this.focusNode; }
+
+  /** The characters at the reading line and a little above and below it (Synchronous Scrolling), or null. */
+  private readingPlaces(): { mid: number; edges: number[] } | null {
+    if (!this.file || !this.blocks.length) return null;
+    const sc = this.view.scroller;
+    const r = sc.getBoundingClientRect();
+    if (r.height <= 0) return null;
+    const k = readingLine(sc.scrollTop, sc.scrollHeight - sc.clientHeight, sc.clientHeight, READ_AT);
+    const at = (f: number): number | null => {
+      const p = this.view.toDoc(r.left + r.width / 2, r.top + r.height * Math.max(0, Math.min(1, f)));
+      return this.file!.ed.offsetAt(p.x, p.y);
+    };
+    const mid = at(k);
+    if (mid === null) return null;
+    const edges = [at(k - READ_BAND), at(k + READ_BAND)].filter((x): x is number => x !== null);
+    return { mid, edges };
+  }
+
+  /**
+   * The page of the list the preview has been scrolled to, for Synchronous Scrolling (null: stay
+   * on the page chosen). See pageToFollow: the page at the reading line, once the scrolling has
+   * clearly left the page it started on.
+   */
+  nodeToFollow(): string | null {
+    const at = this.readingPlaces();
+    if (!at) return null;
+    const from = this.fromFor === this.focusNode ? this.from : null;
+    return pageToFollow(this.blocks, at.mid, at.edges, this.focusNode, from);
+  }
+
+  /** A page followed: what the next scrolling is measured from (before the compile shows it chosen). */
+  followed(node: string): void {
+    this.focusNode = node;
+    this.from = node;
+    this.fromFor = node;
+    this.view.redraw();
+  }
+
+  /** The person is scrolling (or about to: called before the scroll happens). The first time since a page was chosen, the page at the reading line is noted. */
+  private userScrolled(): void {
+    this.userScrollAt = performance.now();
+    if (this.fromFor !== this.focusNode && this.onScrollSettled) {
+      const at = this.readingPlaces();
+      this.from = at ? blockAt(this.blocks, at.mid)?.node ?? null : null;
+      this.fromFor = this.focusNode;
+    }
+  }
+
+  /**
+   * The preview scrolled. Scrolling the person started (and what goes on from it: a fling, a
+   * smooth scroll's tail, close after one another) waits for them to stop; the preview scrolling
+   * by itself (a page chosen, a compile shown, a zoom) is left alone, and leaves a wait alone.
+   */
+  private scrolled(): void {
+    if (!this.onScrollSettled) return;
+    const now = performance.now();
+    if (!this.pressed && now - this.userScrollAt > 300) return;
+    this.userScrollAt = now;
+    clearTimeout(this.settleTimer);
+    // (held: waits for the button to be let go)
+    if (this.pressed) { this.movedWhilePressed = true; return; }
+    this.settleTimer = window.setTimeout(() => this.onScrollSettled?.(), SCROLL_SETTLE);
   }
 
   /** Write what was typed now (before Undo, before leaving the project). */
@@ -275,11 +382,13 @@ export class SiPreview {
       });
     }
     const focused = this.focused;
-    const showCaret = !!ed && focused && this.caretOn && (ed.collapsed || ed.composing !== null);
+    const picked = this.pickedObj();
+    // (a structure picked: no caret beside it, only its handles)
+    const showCaret = !!ed && focused && this.caretOn && picked === null && (ed.collapsed || ed.composing !== null);
     return {
-      selection: ed && !ed.collapsed && !ed.composing ? [ed.start, ed.end] : null,
+      selection: ed && !ed.collapsed && !ed.composing && picked === null ? [ed.start, ed.end] : null,
       caret: showCaret ? ed!.caret() : null,
-      squiggles: [], picked: null, found: [], framed: null,
+      squiggles: [], picked, found: [], framed: null,
       marks,
     };
   }
@@ -467,20 +576,51 @@ export class SiPreview {
     ta.addEventListener('compositionupdate', (e) => this.file?.ed.compositionUpdate(e.data ?? ''));
     ta.addEventListener('compositionend', (e) => { this.file?.ed.compositionEnd(e.data ?? ''); this.syncInput(); this.showWaiting(); });
     ta.addEventListener('copy', (e) => this.copy(e, false));
-    ta.addEventListener('cut', (e) => this.copy(e, true));
+    ta.addEventListener('cut', (e) => { if (this.pickedStructure) { e.preventDefault(); this.api.flash(PICKED_TYPING); return; } this.copy(e, true); });
     ta.addEventListener('paste', (e) => {
       e.preventDefault();
+      if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
+      this.offAnchor();
       const t = e.clipboardData?.getData('text/plain') ?? '';
       if (t) this.file?.ed.pastePlain(t);
     });
     ta.addEventListener('focus', () => { this.startBlink(); v.redraw(); });
     ta.addEventListener('blur', () => { clearInterval(this.blink); v.redraw(); void this.flush(); });
     const scroller = v.scroller;
+    // (Synchronous Scrolling: scrolling the person does, told from the preview scrolling itself)
+    scroller.addEventListener('wheel', (e) => {
+      // (Ctrl+wheel zooms; a button let go of where the preview didn't hear it)
+      if (e.ctrlKey || e.metaKey) return;
+      if (this.pressed && !(e.buttons & 1)) release();
+      this.userScrolled();
+    }, { passive: true });
+    scroller.addEventListener('touchstart', () => this.userScrolled(), { passive: true });
+    scroller.addEventListener('touchmove', () => this.userScrolled(), { passive: true });
+    scroller.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      this.pressed = true;
+      this.movedWhilePressed = false;
+      this.userScrolled();
+    });
+    const release = (): void => {
+      if (!this.pressed) return;
+      this.pressed = false;
+      // (let go after scrolling with it held: the wait starts from now; a plain click chooses its own page)
+      if (!this.movedWhilePressed) return;
+      this.movedWhilePressed = false;
+      this.userScrolled();
+      this.scrolled();
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    window.addEventListener('blur', release);
+    scroller.addEventListener('scroll', () => this.scrolled(), { passive: true });
     scroller.addEventListener('pointerdown', (e) => this.down(e));
     scroller.addEventListener('pointermove', (e) => this.move(e));
     scroller.addEventListener('pointerup', (e) => this.up(e));
     scroller.addEventListener('pointerleave', () => { if (this.hovered) { this.hovered = null; this.api.hoverSource(null); v.redraw(); } scroller.style.cursor = ''; });
-    scroller.addEventListener('dblclick', (e) => { const at = this.offsetAt(e); if (at !== null) this.file?.ed.selectWord(at); });
+    scroller.addEventListener('dblclick', (e) => { if (this.structureUnder(e)) return; const at = this.offsetAt(e); if (at !== null) this.file?.ed.selectWord(at); });
+    scroller.addEventListener('contextmenu', (e) => this.contextMenu(e));
   }
 
   private startBlink(): void {
@@ -496,24 +636,119 @@ export class SiPreview {
     return this.file.ed.offsetAt(p.x, p.y);
   }
 
-  /** The stretch whose characters are under a pointer (not just nearest to it). */
-  private spanUnder(e: PointerEvent): SourceSpan | null {
+  /**
+   * The stretch whose characters are under a pointer (not just nearest to it). A paragraph's lines
+   * count as meeting (the gaps between them shared out), so moving between them never loses it.
+   */
+  private spanUnder(e: PointerEvent | MouseEvent): SourceSpan | null {
     const at = this.offsetAt(e);
     if (at === null) return null;
     const p = this.view.toDoc(e.clientX, e.clientY);
     for (const o of [at, at - 1]) {
       if (o < 0) continue;
-      const r = this.view.rangeRects(o, o + 1)[0];
+      const r = this.view.rangeRects(o, o + 1, true)[0];
       if (r && p.x >= r.x1 - 1 && p.x <= r.x2 + 1 && p.y >= r.y1 && p.y <= r.y2) return spanAt(this.spans, o);
     }
     return null;
   }
 
+  // ---------------------------------------------------------------- structures
+
+  /** The object showing the picked structure or figure (null: none picked). */
+  private pickedObj(): number | null {
+    return this.pickedStructure ? this.structures.find((x) => x.key === this.pickedStructure)?.obj ?? null : null;
+  }
+
+  /** The structure or figure under a pointer (its box on the page), or null. */
+  private structureUnder(e: PointerEvent | MouseEvent): SiStructureRef | null {
+    if (!this.file || !this.structures.length) return null;
+    const p = this.view.toDoc(e.clientX, e.clientY);
+    const lay = this.file.layout();
+    // (front first: the last placed is drawn over the others)
+    for (const o of [...lay.objects].reverse()) {
+      if (p.x < o.x || p.x > o.x + o.w || p.y < o.y || p.y > o.y + o.h) continue;
+      const ref = this.structures.find((x) => x.obj === o.id);
+      // (one behind the text: a click on the text over it goes to the text)
+      if (ref && o.wrap === 'behind' && this.spanUnder(e)) continue;
+      if (ref) return ref;
+    }
+    return null;
+  }
+
+  /** Pick a compound's structure or a figure: its page chosen in the list, its handles shown, its Picture Format tab. */
+  private pickStructure(ref: SiStructureRef): void {
+    this.pickedStructure = ref.key;
+    const at = this.objectOffset(ref.obj);
+    const b = at === null ? null : blockAt(this.blocks, at);
+    if (b && b.node !== this.focusNode) this.api.pick(b.node);
+    this.api.structureChosen(ref.key);
+    this.view.redraw();
+  }
+
+  /**
+   * The caret off a floating structure's place at the start of a paragraph (that character is no
+   * field's: typing before it would be text of the preview's own), to just after it.
+   */
+  private offAnchor(): void {
+    const ed = this.file?.ed;
+    if (!ed || !ed.collapsed || !this.structures.length) return;
+    const at = ed.start;
+    if (at > 0 && ed.text[at - 1] !== '\n') return;
+    let i = 0;
+    for (const r of this.file!.t.runs) {
+      if (i === at) { if (r.obj !== undefined && this.structures.some((x) => x.obj === r.obj)) ed.setCaret(at + 1); return; }
+      i += r.text.length;
+      if (i > at) return;
+    }
+  }
+
+  /** Where the picked structure or figure is in the text (the caret goes on from there when it is let go by the arrows). */
+  private pickedAt(): number | null {
+    const id = this.pickedObj();
+    return id === null ? null : this.objectOffset(id);
+  }
+
+  /** Let go of the structure picked (another figure was picked on the SI page). */
+  letGo(): void { this.unpickStructure(); }
+
+  private unpickStructure(): void {
+    if (!this.pickedStructure) return;
+    this.pickedStructure = null;
+    this.api.structureChosen(null);
+    this.view.redraw();
+  }
+
+  /** Where an object's character is in the text. */
+  private objectOffset(id: number): number | null {
+    let at = 0;
+    for (const r of this.file?.t.runs ?? []) { if (r.obj === id) return at; at += r.text.length; }
+    return null;
+  }
+
+  /** Right-click: on a structure, it is picked and its menu shows. */
+  private contextMenu(e: MouseEvent): void {
+    const ref = this.structureUnder(e);
+    if (!ref) return;
+    e.preventDefault();
+    this.ta.focus({ preventScroll: true });
+    this.pickStructure(ref);
+    this.api.structureMenu(ref.key, e.clientX, e.clientY);
+  }
+
   private down(e: PointerEvent): void {
     if (e.button !== 0 || !this.file) return;
+    // a structure clicked: picked (no caret goes beside it)
+    const ref = this.structureUnder(e);
+    if (ref) {
+      e.preventDefault();
+      this.ta.focus({ preventScroll: true });
+      this.pickStructure(ref);
+      return;
+    }
     const at = this.offsetAt(e);
     if (at === null) return;
     e.preventDefault();
+    this.unpickStructure();
     this.ta.focus({ preventScroll: true });
     this.file.ed.setCaret(at, e.shiftKey);
     this.drag = { from: at };
@@ -531,7 +766,7 @@ export class SiPreview {
     const s = this.spanUnder(e);
     const same = (s?.src ?? null) === (this.hovered?.src ?? null);
     this.hovered = s;
-    this.view.scroller.style.cursor = s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s ? 'text' : '';
+    this.view.scroller.style.cursor = this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s ? 'text' : '';
     if (!same) { this.api.hoverSource(s && !isCustomSrc(s.src) ? s.src : null); this.view.redraw(); }
   }
 
@@ -552,6 +787,15 @@ export class SiPreview {
   private onKey(e: KeyboardEvent): void {
     const ed = this.file?.ed;
     if (!ed) return;
+    // Page Up, Page Down: the preview scrolls a window's height (the caret stays)
+    if ((e.key === 'PageUp' || e.key === 'PageDown') && !ctrlKeyOf(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.userScrolled();
+      const sc = this.view.scroller;
+      sc.scrollTop += (e.key === 'PageDown' ? 1 : -1) * sc.clientHeight * 0.9;
+      return;
+    }
     if (e.isComposing || e.keyCode === 229) { e.stopPropagation(); return; }
     // (keys the preview takes go no further; the rest go on to the SI pane's and the app's: Ctrl+Shift+L, Ctrl+S, F7)
     const run = (f: () => void): void => { e.preventDefault(); e.stopPropagation(); f(); };
@@ -559,10 +803,20 @@ export class SiPreview {
     const shift = e.shiftKey;
     const word = /mac/i.test(navigator.platform) ? e.altKey : e.ctrlKey;
     const moves: Record<string, Parameters<typeof ed.move>[0]> = { ArrowLeft: word ? 'wordLeft' : 'left', ArrowRight: word ? 'wordRight' : 'right', ArrowUp: 'up', ArrowDown: 'down', Home: e.ctrlKey ? 'textStart' : 'lineStart', End: e.ctrlKey ? 'textEnd' : 'lineEnd' };
-    if (moves[e.key] && !e.altKey) return run(() => ed.move(moves[e.key], shift));
+    // a structure or figure picked: Escape lets it go, the arrows go on from it; it can't be deleted
+    // or typed over here (its page has it), and nothing is typed, pasted or cut at the caret hidden meanwhile
+    if (this.pickedStructure && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (e.key === 'Escape' && !ctrl) return run(() => this.unpickStructure());
+      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash(this.pickedStructure?.startsWith('f:') ? 'A figure is changed or deleted on its page (click it there for Picture Format); here you can change where it goes (Picture Format).' : 'A compound’s structure is changed on its page (Home ▸ Edit Structure); here you can change where it goes (Picture Format).'));
+      if (e.key === 'Enter' || (ctrl && (k === 'v' || k === 'x'))) return run(() => this.api.flash(PICKED_TYPING));
+      if (moves[e.key]) return run(() => { const at = this.pickedAt(); this.unpickStructure(); if (at !== null) ed.setCaret(at); ed.move(moves[e.key], shift); });
+      if (ctrl && k === 'a') this.unpickStructure();
+    }
+    if (moves[e.key] && !e.altKey) return run(() => { this.unpickStructure(); ed.move(moves[e.key], shift); });
     if (!ctrl && !e.altKey) {
       switch (e.key) {
-        case 'Enter': return run(() => ed.enter(shift));
+        case 'Enter': return run(() => { this.offAnchor(); ed.enter(shift); });
         case 'Backspace': return run(() => ed.backspace(false));
         case 'Delete': return run(() => ed.deleteForward(false));
         case 'Tab': return;
@@ -587,6 +841,9 @@ export class SiPreview {
     const t = e.inputType;
     if (t === 'insertCompositionText') return;
     e.preventDefault();
+    // (nothing typed over a structure picked: click in the text to type)
+    if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
+    this.offAnchor();
     if ((t === 'insertText' || t === 'insertReplacementText') && e.data) ed.type(e.data);
     else if (t === 'insertLineBreak' || t === 'insertParagraph') ed.enter(t === 'insertLineBreak');
     else if (t === 'deleteContentBackward') ed.backspace();

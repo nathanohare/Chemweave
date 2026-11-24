@@ -377,10 +377,10 @@ export class DocView {
     return this.layout?.pageW ?? 612;
   }
 
-  /** Where a stretch of the text is, in the document's coordinates (one box per line). */
-  rangeRects(a: number, b: number): Rect[] {
+  /** Where a stretch of the text is, in the document's coordinates (one box per line; `joined`: the boxes of a paragraph's lines meeting). */
+  rangeRects(a: number, b: number, joined = false): Rect[] {
     const lay = this.layout;
-    return lay && lay.text.lines.length ? selectionRects(lay.text, a, b) : [];
+    return lay && lay.text.lines.length ? selectionRects(lay.text, a, b, joined) : [];
   }
 
   /** Zoom, keeping the point under `at` (pixels in the view) where it is. */
@@ -1065,7 +1065,8 @@ function drawMarksOn(ctx: CanvasRenderingContext2D, lay: DocLayout, p: PageBox, 
   }
   for (const t of m.tints ?? []) {
     ctx.fillStyle = t.color;
-    for (const r of rectsOn(lay, p, t.start, t.end)) ctx.fillRect(r.x1 - 0.5, r.y1, r.x2 - r.x1 + 1, r.y2 - r.y1);
+    // (a paragraph's lines meet: one stretch, no stripes between them)
+    for (const r of rectsOn(lay, p, t.start, t.end, true)) ctx.fillRect(r.x1 - 0.5, r.y1, r.x2 - r.x1 + 1, r.y2 - r.y1);
   }
   for (const b of m.brackets ?? []) {
     const rs = rectsOn(lay, p, b.start, b.end);
@@ -1124,10 +1125,10 @@ function drawMarksOn(ctx: CanvasRenderingContext2D, lay: DocLayout, p: PageBox, 
   }
 }
 
-function rectsOn(lay: DocLayout, p: PageBox, a: number, b: number): Rect[] {
+function rectsOn(lay: DocLayout, p: PageBox, a: number, b: number, joined = false): Rect[] {
   const sub = { ...lay.text, lines: lay.text.lines.slice(p.first, p.end) };
   if (!sub.lines.length) return [];
-  return selectionRects(sub, a, b);
+  return selectionRects(sub, a, b, joined);
 }
 
 function squiggle(ctx: CanvasRenderingContext2D, r: Rect, px: number): void {

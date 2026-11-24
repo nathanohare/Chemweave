@@ -161,3 +161,41 @@ export function blockAt(blocks: readonly SourceBlock[], at: number): SourceBlock
   for (const b of blocks) if (b.start <= at && at < b.end && (!best || b.end - b.start <= best.end - best.start)) best = b;
   return best;
 }
+
+/**
+ * Synchronous Scrolling: how far down the window the page being read is taken to be (0 its top, 1
+ * its bottom), the preview scrolled to `top` of `max` in a window `height` high. A third of the way
+ * down, but near either end of the SI the line slides to that end, so the first and last pages can
+ * be reached however short they are.
+ */
+export function readingLine(top: number, max: number, height: number, at = 0.3): number {
+  if (height <= 0 || max <= 0) return at;
+  const k = Math.max(Math.min(at, top / height), 1 - (max - top) / height);
+  return Math.max(0, Math.min(1, k));
+}
+
+/**
+ * Synchronous Scrolling: the page of the list to choose, the preview scrolled so that `mid` (a
+ * character) is at the reading line and `edges` are the characters a little above and below it;
+ * null to stay. `focus` is the page chosen now, `from` the page at the reading line when the
+ * person started scrolling since it was chosen. A page is followed only once the scrolling has
+ * clearly left where it started: not while the page it started on is still at the line or at
+ * either edge (so a border between two pages doesn't flick back and forth, and a little scroll
+ * after choosing a page never leaves it).
+ */
+export function pageToFollow(blocks: readonly SourceBlock[], mid: number, edges: readonly number[], focus: string | null, from: string | null): string | null {
+  const next = pageAt(blocks, mid);
+  if (!next || next === focus || next === from) return null;
+  const start = from ?? focus;
+  if (start && edges.some((o) => pageAt(blocks, o) === start)) return null;
+  return next;
+}
+
+/** The page a character is on, or (text no page of the list holds, as the references at the end) the last page before it. */
+function pageAt(blocks: readonly SourceBlock[], at: number): string | null {
+  const own = blockAt(blocks, at);
+  if (own) return own.node;
+  let best: SourceBlock | null = null;
+  for (const b of blocks) if (b.end <= at && (!best || b.end > best.end || (b.end === best.end && b.end - b.start < best.end - best.start))) best = b;
+  return best?.node ?? null;
+}

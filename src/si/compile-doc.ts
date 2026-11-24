@@ -14,7 +14,7 @@ import { DocBuilder, headingId } from '../io/doc-build';
 import { OBJECT_CHAR, paraFromStyle, styleOf, type DocObject, type DocText, type NamedStyle } from '../document/document';
 import { citeSuper, formatOf } from '../document/references';
 import type { Reference, RefType } from '../document/references';
-import type { Contents, Justify, ParaStyle, TableCell, TextRun } from '../model';
+import type { Contents, Justify, ParaFramePlace, ParaStyle, TableCell, TextRun } from '../model';
 import type { RunStyle } from '../richtext';
 import { LINK_COLOUR } from '../links';
 import { bookmarksOf } from '../document/bookmarks';
@@ -45,6 +45,7 @@ import { coverGaps, tocLists, type TocLists } from './front-layout';
 import { TITLE_SRC, frontSrc, gpSrc, sectionSrc, tag, type SourceBlock, type SourceSpan } from './source-map';
 import { placeCustomText, readCustomText, type PlacedCustom } from './custom-text';
 import { addFlagComments } from './flag-comments';
+import { figureFrame, figureKey, floatOf as placedFloat, placementOf, structureKey, type Placement } from './placement';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -79,6 +80,17 @@ export interface CompiledSi {
   notes: string[];
   /** What a manuscript can point at: each compound, table, figure and scheme, in the order printed. */
   targets: SiTarget[];
+  /** Each compound's structure in the document (its object), for the Live Preview to pick it and change where it goes. */
+  structures: SiStructureRef[];
+}
+
+/** A compound's structure in the compiled SI: the document's object showing it. */
+export interface SiStructureRef {
+  obj: number;
+  /** Its key among the own choices of placement/Wrap Text (si/placement.ts: c: a compound's structure, f: a figure). */
+  key: string;
+  /** The compound, for a compound's structure. */
+  compound?: string;
 }
 
 /**
@@ -262,6 +274,15 @@ class Compiler {
   private linkLook: RunStyle = {};
 
   private pendingSection: SectionBreak | null = null;
+  /** A compound's structure floating from the next paragraph (its first line below the title), put there with its text. */
+  private pendingFloat: { o: DocObject; compound: string } | null = null;
+  /** The next paragraph starts below the structure floating beside the text before it. */
+  private clearNext = false;
+  /** A figure floats with its caption above: the next heading, figure or table starts below it. */
+  private clearAtBlock = false;
+  /** How many pages the last PDF read for a picture has. */
+  private pdfPageCount: number | null = null;
+  readonly structures: SiStructureRef[] = [];
   /** Groups of floating figures made so far (each spectrum's structure box is one). */
   private groups = 0;
   private landscape = false;
@@ -473,13 +494,25 @@ class Compiler {
 
   /** A paragraph: its runs (mentions resolved), in style `ps`, with `look` over the style's own. */
   private para(runs: Run[], ps: ParaStyle, where: string, look: RunStyle = {}): void {
+    this.putFloat();
     this.put(this.resolve(runs, where), { ...this.b.styleLook(ps), ...look });
     this.b.endPara(this.full(ps));
   }
 
-  /** A paragraph's settings with its style's written in (as Word writes them), its own on top. */
-  private full(ps: ParaStyle): ParaStyle {
-    return { ...paraFromStyle(styleOf(this.b.doc, ps), ps), ...ps };
+  /** A paragraph's settings with its style's written in (as Word writes them), its own on top; the first after a floating structure starts below it. */
+  private full(ps: ParaStyle, block = false): ParaStyle {
+    if (this.clearAtBlock && (block || /Heading ?\d$/.test(ps.style ?? ''))) { this.clearAtBlock = false; this.clearNext = true; }
+    const clear = this.clearNext;
+    this.clearNext = false;
+    return { ...paraFromStyle(styleOf(this.b.doc, ps), ps), ...ps, ...(clear ? { clear } : {}) };
+  }
+
+  /** The structure waiting to float from the paragraph starting now, at its start. */
+  private putFloat(): void {
+    const f = this.pendingFloat;
+    if (!f) return;
+    this.pendingFloat = null;
+    this.structures.push({ obj: this.b.object(f.o), key: structureKey(f.compound), compound: f.compound });
   }
 
   /**
@@ -560,26 +593,40 @@ class Compiler {
       if (!file) { this.notes.push(`${where}: a figure's picture is no longer in the project; left out.`); return; }
     } else if (p.image && owner) file = p.image;
     if (!file || !owner) return;
-    await this.pictureBlock(joinPath(owner.folder, file), { w: TEXT_W, h: FIGURE_MAX_H }, where, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined, align);
-    this.caption(label || 'Figure', p.runs, where, { align: align ?? 'center' }, { key, kind: 'figure' });
+    // (floating with its caption, at the place chosen for it: Picture Format ▸ Position)
+    const place = key ? placementOf(this.p.settings, figureKey(key)) : null;
+    const got = await this.pictureBlock(joinPath(owner.folder, file), { w: TEXT_W, h: FIGURE_MAX_H }, where, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined, align, place && key ? { place, key } : undefined);
+    const frame = got && typeof got === 'object' ? got.frame : undefined;
+    this.caption(label || 'Figure', p.runs, where, { align: align ?? 'center', ...(frame ? { frame } : {}) }, { key, kind: 'figure' });
+    if (frame) this.clearAtBlock = true;
   }
 
-  /** A picture in a paragraph of its own; false when it couldn't be used (said in the notes). */
-  private async pictureBlock(rel: string, room: { w: number; h: number }, where: string, widthPt?: number, align?: Justify): Promise<boolean> {
+  /**
+   * A picture in a paragraph of its own; false when it couldn't be used (said in the notes). A
+   * figure placed out of the line (`figure`) floats in a frame, the frame given back for its
+   * caption to be in; a PDF of more than one page stays in the line.
+   */
+  private async pictureBlock(rel: string, room: { w: number; h: number }, where: string, widthPt?: number, align?: Justify, figure?: { place: Placement; key: string }, structure?: { key: string; compound: string }): Promise<boolean | { frame?: ParaFramePlace }> {
     const bytes = await this.p.folder.readBytes(rel);
     const name = rel.slice(rel.lastIndexOf('/') + 1);
     if (!bytes) { this.notes.push(`${where}: ${name} is no longer in the project; left out.`); return false; }
+    this.pdfPageCount = null;
     const pics = /\.pdf$/i.test(name) ? await this.pdfPictures(bytes, name, where, room, widthPt) : [pictureObject(name, bytes, room, widthPt)];
     if (!pics.length || !pics[0]) {
       if (!/\.pdf$/i.test(name)) this.notes.push(`${where}: ${name} could not be read as a picture${/\.tiff?$/i.test(name) ? ' (TIFF pictures are not placed in the document yet)' : ''}; left out.`);
       return false;
     }
+    const of = /\.pdf$/i.test(name) ? this.pdfPageCount ?? pics.length : 1;
+    const frame = figure && pics.length === 1 && of === 1 && pics[0] ? figureFrame(figure.place, pics[0].w, TEXT_W) : undefined;
+    if (figure && figure.place.position !== 'inline' && !frame) this.notes.push(`${where}: ${name} has more than one page; printed in the line.`);
     for (const pic of pics) {
       if (!pic) continue;
-      this.b.object(pic);
-      this.b.endPara(this.full({ align: align ?? 'center', keepNext: true, spaceAfter: 4 }));
+      const obj = this.b.object(pic);
+      if (figure) this.structures.push({ obj, key: figureKey(figure.key) });
+      else if (structure) this.structures.push({ obj, ...structure });
+      this.b.endPara(this.full({ align: frame ? 'center' : align ?? 'center', keepNext: true, spaceAfter: 4, ...(frame ? { frame } : {}) }, true));
     }
-    return true;
+    return figure ? { frame } : true;
   }
 
   /**
@@ -594,6 +641,7 @@ class Compiler {
     if (!pages?.length) { this.notes.push(`${where}: ${unreadablePdf(name)}`); return []; }
     if (most && pages.length > most) pages.length = most;
     const of = pages[0].of ?? pages.length;
+    this.pdfPageCount = of;
     if (this.preview && of > pages.length) this.notes.push(`${where}: the live preview shows the first page of ${name} (it has ${of}); Compile prints them all.`);
     return pages.map((pg) => {
       let w = pg.w, h = pg.h;
@@ -640,6 +688,8 @@ class Compiler {
       return cell;
     }));
     const head = Math.max(0, Math.min(rows.length, Math.round(Number(data.header_rows ?? 1)) || 0));
+    // (below a figure floating above it)
+    if (this.clearAtBlock) { this.clearAtBlock = false; this.clearNext = true; }
     // the label and caption above, kept with the table
     this.caption(label || 'Table', caption, where, { align: align ?? 'center', keepNext: true, spaceAfter: 4 }, { key: id, kind: 'table' });
     const table: Extract<DocObject, { kind: 'table' }> = {
@@ -811,9 +861,18 @@ class Compiler {
     const nuclei = this.nmrLinks ? new Set(spectrumItems(c).map(([, i]) => nmrNucleus(i, c))) : null;
     const nmrLink = nuclei ? (n: string): string | null => (nuclei.has(n) ? `#${spectrumMark(c.id, n)}` : null) : undefined;
     const block = compoundBlock(this.p, c, id, { facts, helpers: this.helpers, leave: this.leave, ...(nmrLink ? { nmrLink } : {}) });
+    // the structure: in a paragraph of its own under the title, or floating from the title or the line below it (placement.ts)
+    const got = inScheme ? null : await this.structure(c, where);
+    const st = got && 'o' in got ? got : null;
+    const placed = st && st.float ? st : null;
+    if (placed?.top === 'title') this.pendingFloat = { o: placed.o, compound: c.id };
     this.para(block.title, { style: this.compoundStyle(level, this.lists.compounds), marks: [compoundBookmark(c.id)] }, where);
     this.targets.push({ key: c.id, kind: 'compound', label: id, caption: name, mark: compoundBookmark(c.id) });
-    if (!inScheme) await this.structure(c, where);
+    if (placed?.top === 'below') this.pendingFloat = { o: placed.o, compound: c.id };
+    else if (st && !placed) {
+      this.structures.push({ obj: this.b.object(st.o), key: structureKey(c.id), compound: c.id });
+      this.b.endPara(this.full({ align: 'center', keepNext: true, spaceBefore: 2, spaceAfter: 8 }));
+    } else if (got && 'file' in got) await this.pictureBlock(got.file, STRUCTURE_MAX, where, undefined, undefined, undefined, { key: structureKey(c.id), compound: c.id });
     if (!block.customText) {
       const problems: string[] = [];
       gpSentence(this.p, c, problems);
@@ -825,6 +884,10 @@ class Compiler {
       if (x.heading) this.para(x.runs, { style: this.headingStyle(x.heading + level, false) }, where);
       else this.para(x.runs, {}, where);
     }
+    // (no text under the title: the structure floats from an empty line of its own)
+    if (this.pendingFloat) { this.putFloat(); this.b.endPara(this.full({ spaceBefore: 0, spaceAfter: 0 })); }
+    // what follows the compound's text (its figures, the next compound) starts below its structure
+    if (placed) this.clearNext = true;
     const figures = inlineFigures(c);
     for (let i = 0; i < figures.length; i++) {
       const f = figures[i];
@@ -962,19 +1025,46 @@ class Compiler {
     return drawn;
   }
 
-  private async structure(c: SiCompound, where: string): Promise<void> {
+  /**
+   * A compound's structure as a figure (not put in yet): to go centered in a paragraph of its own
+   * under the title (in the line), or, placed beside the text (placement.ts), to float from the
+   * title or the line below it (`float`). Null when it has none.
+   */
+  private async structure(c: SiCompound, where: string): Promise<{ o: DocObject; float: boolean; top: 'title' | 'below' } | { file: string } | null> {
     const mol = this.p.hasStructure(c) ? await this.p.readStructure(c) : '';
     const contents = mol ? this.host.contentsOf(mol) : null;
+    const pl = placementOf(this.p.settings, structureKey(c.id));
+    let o: DocObject | null = null, w = 0;
     if (contents) {
       const size = this.host.sizeOf(contents);
       const scale = size && size.w > 0 && size.h > 0 ? Math.min(1, STRUCTURE_MAX.w / size.w, STRUCTURE_MAX.h / size.h) : 1;
-      this.b.object({ kind: 'drawing', contents, ...(scale < 1 ? { scale: Math.round(scale * 1000) / 1000 } : {}) });
-      this.b.endPara(this.full({ align: 'center', keepNext: true, spaceBefore: 2, spaceAfter: 8 }));
-      return;
+      o = { kind: 'drawing', contents, ...(scale < 1 ? { scale: Math.round(scale * 1000) / 1000 } : {}) };
+      w = (size?.w ?? 0) * scale;
+    } else {
+      const picture = str(dict(valuesOf(c).structure).image_override);
+      // (a picture in the line prints as before, every page of a PDF; floating, its first page)
+      if (picture && pl.position === 'inline') return { file: joinPath(c.folder, picture) };
+      if (picture) {
+        const pic = await this.firstPicture(joinPath(c.folder, picture), STRUCTURE_MAX, where);
+        if (pic) { o = pic; w = pic.w; }
+      } else if (mol) this.notes.push(`${where}: its structure could not be drawn; left out.`);
     }
-    const picture = str(dict(valuesOf(c).structure).image_override);
-    if (picture) await this.pictureBlock(joinPath(c.folder, picture), STRUCTURE_MAX, where);
-    else if (mol) this.notes.push(`${where}: its structure could not be drawn; left out.`);
+    if (!o) return null;
+    const fl = placedFloat(pl, w, TEXT_W);
+    if (!fl) return { o, float: false, top: pl.top };
+    return { o: { ...o, float: { ...fl, name: `Compound structure ${displayId(this.report, c.id)}` } } as DocObject, float: true, top: pl.top };
+  }
+
+  /** A picture file's first picture (a PDF's first page) fitted to `room`; null when it can't be used (said in the notes). */
+  private async firstPicture(rel: string, room: { w: number; h: number }, where: string): Promise<Extract<DocObject, { kind: 'picture' }> | null> {
+    const bytes = await this.p.folder.readBytes(rel);
+    const name = rel.slice(rel.lastIndexOf('/') + 1);
+    if (!bytes) { this.notes.push(`${where}: ${name} is no longer in the project; left out.`); return null; }
+    this.pdfPageCount = null;
+    const pic = /\.pdf$/i.test(name) ? (await this.pdfPictures(bytes, name, where, room, undefined, 1))[0] ?? null : pictureObject(name, bytes, room);
+    if (!pic && !/\.pdf$/i.test(name)) this.notes.push(`${where}: ${name} could not be read as a picture${/\.tiff?$/i.test(name) ? ' (TIFF pictures are not placed in the document yet)' : ''}; left out.`);
+    if (pic && (this.pdfPageCount ?? 1) > 1) this.notes.push(`${where}: ${name} has ${this.pdfPageCount} pages; only the first floats beside the text (In Line with Text prints them all).`);
+    return pic;
   }
 
   // -------------------------------------------------------------- spectra (SPEC §13k.12)
@@ -1490,6 +1580,6 @@ export async function compileSi(p: SiProject, host: CompileHost, only?: SiPrevie
   const items = only?.kind === 'spectra' ? [] : (await readCustomText(p.folder)).filter((x) => whole || c.blocks.some((b) => b.node === x.node));
   const put = items.length ? placeCustomText(doc, c.sources, c.blocks, items) : { doc, sources: c.sources, blocks: c.blocks, placed: [] };
   const done = options.flagComments ? addFlagComments(put.doc, put.sources, put.blocks, p) : put.doc;
-  return { doc: done, notes: [...new Set(c.notes)], targets: c.targets, sources: put.sources, blocks: put.blocks, custom: put.placed };
+  return { doc: done, notes: [...new Set(c.notes)], targets: c.targets, sources: put.sources, blocks: put.blocks, custom: put.placed, structures: c.structures };
 }
 

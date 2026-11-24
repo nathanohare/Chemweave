@@ -448,6 +448,13 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     numLook: { v: { bold: true }, with: { list: 'number' } },
     section: { v: { kind: 'continuous' } },
   },
+  // (a frame is placed only with all four: each field set with the others)
+  ParaFramePlace: {
+    w: { v: 150, with: { align: 'right', wrap: 'square', gap: 6 } },
+    align: { v: 'center', with: { w: 150, wrap: 'square', gap: 6 } },
+    wrap: { v: 'topBottom', with: { w: 150, align: 'left', gap: 6 } },
+    gap: { v: 9, with: { w: 150, align: 'left', wrap: 'square' } },
+  },
   PicFill: { px: { v: { w: 1, h: 1 } } },
   PictureFx: { recolor: { v: { kind: 'sepia' } }, shape: { v: 'ellipse' } },
   OleMark: { id: { v: 3, label: true }, prog: { v: 'ChemDraw.Document.6.0' } },

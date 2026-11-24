@@ -148,6 +148,13 @@ const lineless = (p: ParaStyle): ParaStyle => ({ ...p, soft: undefined, cont: un
 const joins = (prev: ParaStyle | undefined, ps: ParaStyle): boolean =>
   !!ps.soft && !!prev && !ps.pageBreak && !ps.colBreak && !ps.section && samePara(lineless(prev), lineless(ps));
 /** A Word paragraph with another's runs added after a line break. */
+/**
+ * What starts the paragraph after it below the figures floating beside it (ParaStyle.clear): a
+ * paragraph exactly 1 point high holding a text wrapping break that clears them (ECMA-376 part 1
+ * §17.3.3.1, w:clear="all"), so the next one starts at the left margin below them. Read back as
+ * the next paragraph's `clear` (docx-read.ts isClearPara).
+ */
+export const CLEAR_PARA = '<w:p><w:pPr><w:keepNext/><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr><w:r><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr><w:br w:type="textWrapping" w:clear="all"/></w:r></w:p>';
 const joinTo = (para: string, body: string): string => `${para.slice(0, -'</w:p>'.length)}<w:r><w:br/></w:r>${body}</w:p>`;
 
 /** Save a document as a Word file. */
@@ -542,6 +549,9 @@ class DocxWriter {
         close();
         continue;
       }
+      // a paragraph that starts below the figures floating beside it: a 1-point paragraph before it
+      // holding Word's clearing break (docx-read.ts isClearPara; not before a table, which Word can't clear so)
+      if (ps.clear && p > 0) { out.push(CLEAR_PARA); lastWasTable = false; plain = null; }
       // numbered lists: a new Word list where our numbers start again
       if (ps.list === 'number' && lists[p].start) listNum = this.newList(`n${ps.scheme ?? ''}`, ps.startAt);
       // an item further in with its own number: the list carries on in a Word list of the same levels that starts that level again from it
@@ -753,6 +763,7 @@ class DocxWriter {
     if (!!ps.keepNext !== st.keepNext) pPr.push(ps.keepNext ? '<w:keepNext/>' : '<w:keepNext w:val="0"/>');
     if (!!ps.keepLines !== !!st.keepLines) pPr.push(ps.keepLines ? '<w:keepLines/>' : '<w:keepLines w:val="0"/>');
     if (ps.pageBreak) pPr.push('<w:pageBreakBefore/>');
+    if (ps.frame) pPr.push(framePrXml(ps.frame));
     // paragraph properties not modelled here, each in its place (docx-read.ts KEPT_PPR)
     const raw = keptPPr(ps);
     pPr.push(raw.a ?? '');
@@ -1205,7 +1216,7 @@ class DocxWriter {
     const v = fl.yFrom === 'page' ? 'page' : fl.yFrom === 'margin' ? 'margin' : 'paragraph';
     const wrap = fl.wrap === 'square' ? '<wp:wrapSquare wrapText="largest"/>' : fl.wrap === 'topBottom' ? '<wp:wrapTopAndBottom/>' : '<wp:wrapNone/>';
     return `<wp:anchor distT="${emu(gap.t)}" distB="${emu(gap.b)}" distL="${emu(gap.l)}" distR="${emu(gap.r)}" simplePos="0" relativeHeight="${251659264 + (fl.z !== undefined ? fl.z + 1 : this.docPr) * 1024}" behindDoc="${fl.wrap === 'behind' ? 1 : 0}" locked="0" layoutInCell="1" allowOverlap="1">` +
-      `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="${h}"><wp:posOffset>${x}</wp:posOffset></wp:positionH>` +
+      `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="${h}">${fl.align ? `<wp:align>${fl.align}</wp:align>` : `<wp:posOffset>${x}</wp:posOffset>`}</wp:positionH>` +
       `<wp:positionV relativeFrom="${v}"><wp:posOffset>${y}</wp:posOffset></wp:positionV>${ext}${wrap}${inner}</wp:anchor>`;
   }
 
@@ -2578,3 +2589,13 @@ export function keptFontTable(tree: KeptTree, drop: Set<string>): { tree: KeptTr
   return { tree: { ...tree, parts, rels: rels.filter((r) => reach.has(r.from)) }, xml: text, embeds };
 }
 
+
+/**
+ * A frame of paragraphs (ParaStyle.frame) as Word's text frame (w:framePr, ECMA-376 part 1,
+ * 17.3.1.11): its width, at the left, center or right of the margins, its top at the paragraph,
+ * the text round it (around) or above and below it (notBeside). Paragraphs after it with the same
+ * frame properties are in the same frame.
+ */
+export function framePrXml(f: NonNullable<ParaStyle['frame']>): string {
+  return `<w:framePr w:w="${twips(f.w)}" w:hSpace="${twips(Math.max(0, f.gap))}" w:wrap="${f.wrap === 'square' ? 'around' : 'notBeside'}" w:vAnchor="text" w:hAnchor="margin" w:xAlign="${f.align}"/>`;
+}
