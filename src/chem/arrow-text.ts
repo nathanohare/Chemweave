@@ -16,7 +16,7 @@ import { arrowFrame, inFrame, isReactionArrow, itemFinder, rolesOf, schemeItems,
 import { isNumberedList, STEP_MARK } from './step-list';
 
 export { isNumberedList };
-import { alignFor, alignOn, fittedLength, justifyFor, labelsOf, lineStart, prefsOf, schemePrefs, spacing, textGapOn } from './scheme-layout';
+import { alignFor, alignOn, fittedLength, justifyFor, labelsOf, lineStart, prefsOf, schemePrefs, resultsFloor, spacing, textGapOn } from './scheme-layout';
 
 export type ArrowSide = ArrowTextSide;
 export const ARROW_SIDES: ArrowSide[] = ['above', 'below', 'results'];
@@ -75,11 +75,16 @@ const near = (f: Frame, b: Rect, sign: 1 | -1) => { const q = inFrame(f, b); ret
 /** The arrowhead's length (the text stops short of it). */
 const headOf = (r: Arrow) => (r.headStyle !== 'none' || r.tailStyle !== 'none' ? r.headLength : 0);
 
-/** Where the Results line starts out from an arrow: past the text below it (or where that text would go). */
+/**
+ * Where the Results line starts out from an arrow: past the text below it, and never nearer the
+ * arrow than the least Results distance (one line of text, unless set), so a yield with no
+ * conditions under the arrow still sits clear of it.
+ */
 function resultsGapOf(doc: Doc, m: Measure, r: Arrow, below: Caption[]): number {
   const f = arrowFrame(r);
-  const sp = spacing(doc.style.bondLength, prefsOf(doc));
-  let gap = textGapOn(sp, 'below');
+  const p = prefsOf(doc);
+  const sp = spacing(doc.style.bondLength, p);
+  let gap = Math.max(textGapOn(sp, 'below'), resultsFloor(doc, p));
   for (const c of below) gap = Math.max(gap, -inFrame(f, m.captionBox(c)).s1 + sp.results);
   return gap;
 }
@@ -192,7 +197,7 @@ export function lineUpText(doc: Doc, m: Measure, r: Arrow): void {
   const widest = Math.max(0, ...all.map((c) => { const q = inFrame(f, m.captionBox(c)); return q.t2 - q.t1; }));
   let belowEnd = textGapOn(sp, 'below') - sp.results;
   for (const [side, sign] of [['above', 1], ['below', -1], ['results', -1]] as const) {
-    let cursor = side === 'results' ? belowEnd + sp.results : textGapOn(sp, side);
+    let cursor = side === 'results' ? Math.max(belowEnd + sp.results, resultsFloor(doc)) : textGapOn(sp, side);
     const how = sideAlign(doc, r, side, t[side]);
     for (const c of t[side]) {
       const q = inFrame(f, m.captionBox(c));

@@ -15,6 +15,7 @@ import { labelBonds, labelSpec, layoutLabel } from './labels';
 import { arialWidth } from '../text-metrics';
 import { layoutText } from '../text/layout';
 import { plainText } from '../richtext';
+import { SCHEME_LIMITS } from '../style';
 
 export type Role = 'reactants' | 'products' | 'above' | 'below';
 export const ROLES: Role[] = ['reactants', 'products', 'above', 'below'];
@@ -27,6 +28,8 @@ export interface Item {
   plus: boolean;
   atoms: number[];
   caption?: number;
+  /** A caption that is an arrow's Results line (yield, ee): it can sit further from the arrow. */
+  results?: boolean;
   shape?: number;
 }
 
@@ -40,7 +43,7 @@ export function schemeItems(doc: Doc, m: Measure): Item[] {
   for (const c of doc.captions.values()) {
     const text = plainText(c.runs).trim();
     if (!text || c.ph) continue;
-    out.push({ ref: 'c' + c.id, box: m.captionBox(c), plus: isPlus(text), atoms: [], caption: c.id });
+    out.push({ ref: 'c' + c.id, box: m.captionBox(c), plus: isPlus(text), atoms: [], caption: c.id, ...(c.results ? { results: true } : {}) });
   }
   for (const s of doc.shapes.values()) {
     if (s.kind === 'picture' || s.kind === 'table' || s.holder) {
@@ -202,7 +205,8 @@ export function interpretArrow(r: Arrow, items: Item[], bond: number): StepRoles
   const stackUp = (cands: Seen[], near: (x: Seen) => number, far: (x: Seen) => number, into: string[]) => {
     let top = 0;
     for (const x of cands.sort((a, b) => near(a) - near(b))) {
-      if (near(x) - top > stack) break;
+      // (a Results line may sit as far out as the least Results distance allows)
+      if (near(x) - top > (x.it.results ? stack + SCHEME_LIMITS.resultsMin : stack)) break;
       into.push(x.it.ref);
       used.add(x.it);
       top = Math.max(top, far(x));

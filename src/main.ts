@@ -201,6 +201,7 @@ import { ORBITAL_KINDS, ORBITAL_LOOKS, angleOfDir, openDirection, orbitalAtom, o
 import { BATCH_FORMATS, BATCH_INPUTS, readBatchFile, smilesLine, uniqueName, writeBatchItem, type BatchDeps, type BatchFormat } from './io/batch-convert';
 import { zipSync } from 'fflate';
 import { clampSchemeDistance, labelsOf, SCHEME_LIMITS, schemePrefs, setSchemePrefs, SPACING, type SchemeDistance, type SchemePrefs } from './chem/scheme-layout';
+import { SINGLE } from './text/layout';
 import { plainText, savableChar } from './richtext';
 import { buildTextToolbox, type TextToolboxHooks } from './ui/text-toolbox';
 import { buildTextBar } from './ui/text-bar';
@@ -3546,7 +3547,7 @@ function schemeFrom(got: Record<string, string>): Partial<SchemePrefs> {
   const align = (v: string | undefined) => (v === 'left' || v === 'center' || v === 'right' ? v : null);
   const bonds = (v: string | undefined) => { const n = Number(v); return !v || !v.trim() || !isFinite(n) || n <= 0 ? null : Math.min(20, Math.max(0.2, n)); };
   return {
-    structGap: len('structGap'), plusGap: len('plusGap'), textGap: len('textGap'), textGapBelow: len('textGapBelow'), resultsGap: len('resultsGap'), lead: len('lead'), headGap: len('headGap'),
+    structGap: len('structGap'), plusGap: len('plusGap'), textGap: len('textGap'), textGapBelow: len('textGapBelow'), resultsGap: len('resultsGap'), resultsMin: len('resultsMin'), lead: len('lead'), headGap: len('headGap'),
     // (its size and font are the drawing style's now: Settings > Drawing Style)
     textSize: null,
     textAlign: align(got.textAlign) ?? 'center',
@@ -3577,6 +3578,7 @@ async function schemeSettings(): Promise<void> {
     dist('textGapBelow', 'Gap between arrow and text below', 'Same as above'),
     { name: 'textAlignResults', label: 'Results alignment (yield, ee under the text below)', value: p.textAlignResults ?? '', options: [{ value: '', label: 'Same as below' }, ...aligns] },
     dist('resultsGap', 'Gap between text below and Results', auto(SPACING.results)),
+    dist('resultsMin', 'Minimum gap between arrow and Results', `1 line (${Math.round((doc.style.arrowTextSize ?? doc.style.captionSize) * SINGLE * 10) / 10} pt)`),
     { name: 'listLeft', label: 'Left-align a numbered list of steps', value: String(p.listLeft ?? true), type: 'checkbox' },
     { name: 'fit', label: 'Fit arrow length to its text (moves the products)', value: String(p.fit), type: 'checkbox' },
     { name: 'sameLength', label: 'Clean Up Reaction makes arrows the same length', value: String(p.sameLength), type: 'checkbox' },
