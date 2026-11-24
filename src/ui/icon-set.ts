@@ -277,6 +277,10 @@ export const ICON_SET: Record<string, IconDef> = {
   'set-focal-point': { hue: 'teal', d: hex(12, 12, 8.75, 'p') + '<circle class="a" cx="12" cy="12" r="3.25"/><path class="a" d="M12 6.75v2M12 15.25v2M6.75 12h2M15.25 12h2"/><circle class="s" cx="12" cy="12" r="1"/>' },
   // a ring with its target dashed: back to the middle of the box
   'reset-focal-point': { hue: 'teal', d: hex(12, 12, 8.75, 'p') + '<circle class="a" cx="12" cy="12" r="3.25" stroke-dasharray="1.6 1.4"/><path d="M3.25 20.75l17.5-17.5" stroke-opacity=".55"/>' },
+  // a reaction arrow with a dashed box over it and at each end, each with its name tag
+  'show-roles': { hue: 'teal', d: '<rect class="p" x="1.75" y="12" width="5" height="7.25" rx="1" stroke-dasharray="1.6 1.4"/><rect class="p" x="17.25" y="12" width="5" height="7.25" rx="1" stroke-dasharray="1.6 1.4"/><rect class="p" x="8.5" y="4.75" width="7" height="4.75" rx="1" stroke-dasharray="1.6 1.4"/><path class="a" d="M8 15.75h7.5M13.75 14l1.75 1.75-1.75 1.75"/><path class="a" d="M1.75 9.25h3.5M17.25 9.25h3.5M8.5 2.25h4"/>' },
+  // three dots joined by a dashed line, as clicked in order
+  'link-steps': { hue: 'teal', d: '<path d="M5.25 17L12 7l6.75 10" stroke-dasharray="2 1.6"/><circle class="f a" cx="5.25" cy="17" r="3"/><circle class="f a" cx="12" cy="7" r="3"/><circle class="f a" cx="18.75" cy="17" r="3"/>' },
   // two rings, each with its target
   'show-focal-points': { hue: 'teal', d: hex(7.25, 8.5, 5.25, 'p') + hex(16.75, 15.5, 5.25, 'p') + '<circle class="a" cx="7.25" cy="8.5" r="1.75"/><circle class="a" cx="16.75" cy="15.5" r="1.75"/><circle class="s" cx="7.25" cy="8.5" r=".6"/><circle class="s" cx="16.75" cy="15.5" r=".6"/>' },
   'match-focal-points': { hue: 'teal', d: hex(7.25, 12, 5.25, 'p') + hex(16.75, 12, 5.25, 'p') + '<path d="M2 12h20" stroke-opacity=".45" stroke-dasharray="1.5 1.5"/><circle class="a" cx="7.25" cy="12" r="1.75"/><circle class="a" cx="16.75" cy="12" r="1.75"/>' },

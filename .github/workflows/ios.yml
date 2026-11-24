@@ -2,14 +2,31 @@ name: iPad app
 
 # The iPad app: the same web page as the desktop app, in Tauri's iOS shell.
 #
-# Runs only on a merge into main, or on request (Actions > iPad app > Run workflow), so pull
+# Runs on a merge into main, or on request (Actions > iPad app > Run workflow), so pull
 # requests aren't held up waiting for a Mac. It checks the shell builds for iOS,
 # makes the Xcode project, then builds the signed app and sends it to TestFlight once the Apple
 # secrets are set (docs/apple-signing.md). Without them the signed steps are skipped.
+#
+# A pull request that changes this workflow runs it too, as a try-out: everything up to the Xcode
+# project, never signed or sent to TestFlight (2026-11-24). Only main is sent to TestFlight: a run
+# started by hand on another branch is a try-out too, and on main it can skip TestFlight by
+# unticking "Send to TestFlight".
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      ship:
+        description: Send to TestFlight (when the Apple secrets are set)
+        type: boolean
+        default: true
+  pull_request:
+    paths: [.github/workflows/ios.yml, scripts/release.mjs, scripts/retry.mjs]
+
+# a new push to a pull request stops the try-out still going for its previous commit
+concurrency:
+  group: ios-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # the token only reads the code (none of these steps writes to the repository)
 permissions:
@@ -26,8 +43,10 @@ jobs:
       # 0.1.<run> numbers the first uploads used, because App Store Connect refuses a lower one.
       VERSION: 0.2.0
       BUILD: ${{ github.run_number }}
-      # TestFlight uploads also wait for the repository variable TESTFLIGHT = on
-      SHIP: ${{ secrets.IOS_CERTIFICATE != '' && secrets.IOS_MOBILE_PROVISION != '' && secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_TEAM_ID != '' && vars.TESTFLIGHT == 'on' }}
+      # TestFlight uploads also wait for the repository variable TESTFLIGHT = on, and happen only
+      # from main: never from a pull request, another branch, or a run with "Send to TestFlight"
+      # unticked (inputs.ship is empty on a push, hence the event check before it)
+      SHIP: ${{ secrets.IOS_CERTIFICATE != '' && secrets.IOS_MOBILE_PROVISION != '' && secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_TEAM_ID != '' && vars.TESTFLIGHT == 'on' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.ship) }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -47,7 +66,7 @@ jobs:
         # pick the highest released one installed (betas and release candidates are refused for
         # uploads, so they are skipped); without one, the default stays.
         run: |
-          pick=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|_rc|release_candidate' | sed -E 's#.*/Xcode_([0-9.]+)\.app#\1 &#' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 | cut -d' ' -f2)
+          pick=$(for app in /Applications/Xcode_*.app; do [ -d "$app" ] && printf '%s\n' "$app"; done | grep -viE 'beta|_rc|release_candidate' | sed -E 's#.*/Xcode_([0-9.]+)\.app#\1 &#' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 | cut -d' ' -f2)
           if [ -n "$pick" ]; then sudo xcode-select -s "$pick/Contents/Developer"; fi
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
@@ -99,10 +118,12 @@ jobs:
           API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
-          printf '%s\n' "$API_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8
+          printf '%s\n' "$API_KEY_P8" > ~/.appstoreconnect/private_keys/"AuthKey_$API_KEY_ID.p8"
           ipa=$(find src-tauri/gen/apple/build -name '*.ipa' | head -n 1)
           echo "Uploading $ipa"
-          xcrun altool --upload-app --type ios --file "$ipa" --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER"
+          # App Store Connect is an outside service: scripts/retry.mjs tries again if it refuses
+          node scripts/retry.mjs -- xcrun altool --upload-app --type ios --file "$ipa" --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER"
       - name: Say what was skipped
         if: env.SHIP != 'true'
-        run: echo "Not signed or sent to TestFlight, because the Apple secrets or the TESTFLIGHT = on variable are not set yet (docs/apple-signing.md)."
+        run: |
+          echo "Not signed or sent to TestFlight: this is a pull request, a branch other than main, a run with \"Send to TestFlight\" unticked, or the Apple secrets or the TESTFLIGHT = on variable are not set yet (docs/apple-signing.md)."

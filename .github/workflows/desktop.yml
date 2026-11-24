@@ -2,7 +2,11 @@ name: Desktop app
 
 # Builds the installers for Windows, macOS and Linux when something is merged into main, or on
 # request (Actions > Desktop app > Run workflow, which can build any branch). Not on every pull
-# request: the Checks workflow already tests every pull request.
+# request: the Checks workflow already tests every pull request. A pull request that changes this
+# workflow or a script it runs for signing or releases does build here, so the change is tried
+# before it reaches main (2026-11-24); only main is ever published. Code signing (Windows and
+# Mac, with notarization) also happens only on main: a pull request or a run on another branch
+# builds unsigned (Nate, 2026-11-24: signing failures have been rare, so they aren't tried early).
 #
 # Each build of main is published as a release (Releases on the repository's page) with a
 # latest.json file, which is what the app's File > Check for Updates reads. The installers are
@@ -23,9 +27,21 @@ on:
         description: All platforms (Windows, macOS and Linux)
         type: boolean
         default: true
+  pull_request:
+    paths:
+      - .github/workflows/desktop.yml
+      - scripts/sign-windows.mjs
+      - scripts/release.mjs
+      - scripts/retry.mjs
 
+# a new push to a pull request stops the try-out builds still going for its previous commit
+concurrency:
+  group: desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# the builds only read the code; the publish job asks for write access to make the release
 permissions:
-  contents: write # to publish releases
+  contents: read
 
 jobs:
   plan:
@@ -83,7 +99,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Get the Windows signing tool from the cache
-        if: matrix.platform == 'windows'
+        if: matrix.platform == 'windows' && github.ref == 'refs/heads/main'
         uses: actions/cache@v6
         with:
           path: ~/signing-tool
@@ -92,8 +108,8 @@ jobs:
         # With an Azure Artifact Signing account in the repository's secrets and variables
         # (docs/windows-signing.md), Tauri signs the app, the setup .exe and the .msi as it builds
         # them, before the updater's signatures are made, so SmartScreen knows who they are from.
-        # Without them nothing is signed for Windows, as before.
-        if: matrix.platform == 'windows'
+        # Without them nothing is signed for Windows, as before. Only on main (see the top).
+        if: matrix.platform == 'windows' && github.ref == 'refs/heads/main'
         shell: bash
         env:
           CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -107,8 +123,9 @@ jobs:
             echo "No Azure Artifact Signing account in the secrets and variables: the Windows app is not signed."; exit 0
           fi
           # built from source (about 4 minutes) only when the cache doesn't have this version yet
+          # (crates.io is an outside service: scripts/retry.mjs tries again if a download fails)
           if [ ! -x "$HOME/signing-tool/bin/artifact-signing-cli.exe" ]; then
-            cargo install artifact-signing-cli --version "$SIGNING_TOOL_VERSION" --locked --root "$HOME/signing-tool"
+            node scripts/retry.mjs -- cargo install artifact-signing-cli --version "$SIGNING_TOOL_VERSION" --locked --root "$HOME/signing-tool"
           fi
           cygpath -w "$HOME/signing-tool/bin" >> "$GITHUB_PATH"
           {
@@ -117,9 +134,10 @@ jobs:
             echo "AZURE_TENANT_ID=$TENANT_ID"
           } >> "$GITHUB_ENV"
           # Tauri merges tauri.windows.conf.json into tauri.conf.json on Windows builds; %1 is
-          # the file to sign, and the description is the name Windows shows when the .msi asks
-          # for permission
-          node -e 'const [e, a, c] = process.argv.slice(1); require("fs").writeFileSync("src-tauri/tauri.windows.conf.json", JSON.stringify({ bundle: { windows: { signCommand: { cmd: "artifact-signing-cli", args: ["-e", e, "-a", a, "-c", c, "-d", "Chemweave", "%1"] } } } }, null, 2))' "$ENDPOINT" "$ACCOUNT" "$PROFILE"
+          # the file to sign. scripts/sign-windows.mjs runs artifact-signing-cli (description
+          # "Chemweave", the name Windows shows when the .msi asks for permission), tries again
+          # when Azure refuses a request, and logs the tool's own messages.
+          node -e 'const [s, e, a, c] = process.argv.slice(1); require("fs").writeFileSync("src-tauri/tauri.windows.conf.json", JSON.stringify({ bundle: { windows: { signCommand: { cmd: "node", args: [s, e, a, c, "%1"] } } } }, null, 2))' "$(cygpath -w "$PWD/scripts/sign-windows.mjs")" "$ENDPOINT" "$ACCOUNT" "$PROFILE"
           cat src-tauri/tauri.windows.conf.json
       - run: npm ci
       - name: Number this version
@@ -128,8 +146,9 @@ jobs:
       - name: Sign and notarise the Mac app (once the Apple secrets are set)
         # With a Developer ID certificate and an App Store Connect API key in the repository's
         # secrets (docs/apple-signing.md), Tauri signs the app and has Apple notarise it, so
-        # Macs open it without a warning. Without them it is signed ad hoc, as before.
-        if: matrix.platform == 'macos'
+        # Macs open it without a warning. Without them it is signed ad hoc, as before. Only on
+        # main (see the top).
+        if: matrix.platform == 'macos' && github.ref == 'refs/heads/main'
         env:
           CERT: ${{ secrets.APPLE_CERTIFICATE }}
           CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -144,6 +163,8 @@ jobs:
             echo "APPLE_CERTIFICATE_PASSWORD=$CERT_PASSWORD"
             echo "APPLE_SIGNING_IDENTITY=$IDENTITY"
           } >> "$GITHUB_ENV"
+          # API_KEY_ID comes from the step's env above; shellcheck can't see that and takes it for a typo
+          # shellcheck disable=SC2153
           if [ -n "$API_KEY_P8" ] && [ ${#API_KEY_ID} -lt 3 ]; then
             echo "::error::APPLE_API_KEY_P8 is set but APPLE_API_KEY_ID is missing or too short. Add the key's Key ID (10 characters, from App Store Connect > Users and Access > Integrations) as the secret APPLE_API_KEY_ID."
             exit 1
@@ -160,6 +181,10 @@ jobs:
           fi
       - name: Build the app and its installers
         run: npm run desktop:build -- ${{ matrix.args }}
+      - name: Show what the Windows signing tool said
+        if: failure() && matrix.platform == 'windows'
+        shell: bash
+        run: cat "$RUNNER_TEMP/signing.log" 2>/dev/null || echo "Nothing was signed."
       - name: Start the app and run its self-test
         if: matrix.platform == 'windows'
         shell: pwsh
@@ -191,6 +216,8 @@ jobs:
   publish:
     needs: [plan, build]
     if: needs.plan.outputs.release == 'true'
+    permissions:
+      contents: write # to publish releases
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # One publish at a time, so two merges close together can't both decide which release is
@@ -218,12 +245,15 @@ jobs:
           # the signatures are inside latest.json; the release lists the installers
           # not marked "latest" yet: builds can finish out of order, and an older one must not
           # take "latest" (and so the updater's latest.json) from a newer one
-          gh release create "v$VERSION" $(ls out/* | grep -v '\.sig$') --title "Chemweave $VERSION (beta)" --notes-file "$RUNNER_TEMP/notes.txt" --target "$GITHUB_SHA" --latest=false
+          # not through scripts/retry.mjs: a create that fails part way can leave the release
+          # behind, and a second create of the same tag then fails anyway (re-run the job instead)
+          files=(); for f in out/*; do [[ "$f" == *.sig ]] || files+=("$f"); done
+          gh release create "v$VERSION" "${files[@]}" --title "Chemweave $VERSION (beta)" --notes-file "$RUNNER_TEMP/notes.txt" --target "$GITHUB_SHA" --latest=false
       - name: Mark the highest version as latest
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName > "$RUNNER_TEMP/releases.json"
+          node scripts/retry.mjs -- gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName > "$RUNNER_TEMP/releases.json"
           newest=$(node scripts/release.mjs newest "$VERSION" "$RUNNER_TEMP/releases.json")
-          gh release edit "$newest" --latest
+          node scripts/retry.mjs -- gh release edit "$newest" --latest
           echo "Latest release: $newest"

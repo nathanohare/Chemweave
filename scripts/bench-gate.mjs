@@ -14,19 +14,42 @@ const LIMIT = 1.4, FLOOR_MS = 10;
 
 /**
  * The most each measure may take (its fastest run, in ms), at the real sizes of bench/core.bench.ts.
- * How they were set: about 3 times the fastest run on a shared 4-core cloud machine in November 2026
- * (the numbers in the comments), rounded up, so a slow Checks machine passes and a real slowdown
- * fails. Raise one only with the reason in the pull request; lower one when a speed-up lands.
+ * How they were set (2026-11-24, standing rule R6): about 1.8 times the fastest run of the speed job
+ * of #708 (the numbers in the comments), rounded up. The Checks machines are not all alike: that run
+ * landed on the slower kind, and the faster kind times the same code 1.2 to 1.8 times faster. So on
+ * a slower machine a slowdown of about 80% fails even when it crept in over several pull requests,
+ * and on a faster one it takes about 2.5 to 3 times; budgets set from the faster machines would fail
+ * every pull request that lands on a slower one. (The first budgets, November 2026, were 3 to 8
+ * times.) A slowdown in one pull request is caught on any machine by the 40% step above, which
+ * times both sides on the same machine. Every measure has a budget (tests/bench-gate.test.ts).
+ * Raise one only with the reason in the pull request; lower one when a speed-up lands.
  */
 export const BUDGETS = {
-  'big drawing (2,000 structures, 14,000 atoms) / save CDXML (2,000 structures)': 6000, // 1846
-  'big drawing (2,000 structures, 14,000 atoms) / open CDXML (2,000 structures)': 6000, // 2004
+  'drawing (1,000 rings, 6,000 atoms) / save CDXML': 1050, // 580
+  'drawing (1,000 rings, 6,000 atoms) / open CDXML': 550, // 291
+  'drawing (1,000 rings, 6,000 atoms) / crossing gaps for every bond, from scratch': 60, // 33
+  'sheet (20,000 formulas) / fill 20,000 formulas': 450, // 247
+  'sheet (20,000 formulas) / type one value (recalculate what reads it)': 20, // 2.2 (the floor: under 20 ms is instant)
+  'sheet (20,000 formulas) / save .xlsx': 800, // 431
+  'sheet (20,000 formulas) / open .xlsx': 2050, // 1121
+  'document (60,000 words) / lay out every page': 25, // 12
+  'document (60,000 words) / save .docx': 40, // 19.6
+  'document (60,000 words) / open .docx': 250, // 131
+  'SI project (300 compounds) / open': 30, // 15.7
+  'SI project (300 compounds) / check every compound': 140, // 75
+  'SI project (300 compounds) / compile into a document': 750, // 405
+  'chemistry engine (long chains) / formula, masses and 13C count of a 450-atom chain': 380, // 208
+  'chemistry engine (long chains) / 13C symmetry classes of a 1,000-atom chain': 550, // 294
+  'slides (100 slides) / save .pptx': 1150, // 314 to 639 (it takes about 320 or about 640 ms from run to run on the same kind of machine)
+  'slides (100 slides) / open .pptx': 3100, // 1688
+  'big drawing (2,000 structures, 14,000 atoms) / save CDXML (2,000 structures)': 1850, // 1007
+  'big drawing (2,000 structures, 14,000 atoms) / open CDXML (2,000 structures)': 1350, // 727
   'big drawing (2,000 structures, 14,000 atoms) / edit: move one atom (2,000 structures)': 20, // 0.005 (the floor: under 20 ms is instant)
-  'big drawing (2,000 structures, 14,000 atoms) / Clean Up checks every structure (2,000 structures)': 750, // 232
-  'big molecule (600 atoms) / save CDXML (600-atom molecule)': 300, // 83
-  'big molecule (600 atoms) / open CDXML (600-atom molecule)': 150, // 31
-  'big molecule (600 atoms) / Clean Up (600-atom molecule)': 150, // 23
-  'Gaussian log (43 MB) / read a 43 MB Gaussian log': 250, // 53
+  'big drawing (2,000 structures, 14,000 atoms) / Clean Up checks every structure (2,000 structures)': 320, // 176
+  'big molecule (600 atoms) / save CDXML (600-atom molecule)': 140, // 75
+  'big molecule (600 atoms) / open CDXML (600-atom molecule)': 60, // 32
+  'big molecule (600 atoms) / Clean Up (600-atom molecule)': 35, // 18
+  'Gaussian log (43 MB) / read a 43 MB Gaussian log': 80, // 43.5
 };
 const read = (list) => {
   const out = {};

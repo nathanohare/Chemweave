@@ -134,3 +134,7 @@ jobs:
           # an expected slowdown passes with the label "slower start-up expected" (read now, so a re-run sees a label added later)
           if gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.labels[].name' | grep -qx 'slower start-up expected'; then export STARTUP_SLOWER_OK=true; fi
           cd head && node scripts/startup-gate.mjs http://localhost:4174/ http://localhost:4173/
+      # redraw: dragging in a big drawing, both versions in turns (scripts/redraw-gate.mjs fails a
+      # redraw over its budget in bench/redraw.mjs, or 40% slower than the base branch)
+      - if: steps.changed.outputs.code == 'true'
+        run: cd head && node scripts/redraw-gate.mjs http://localhost:4174/ http://localhost:4173/

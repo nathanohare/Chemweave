@@ -37,11 +37,12 @@ export const SLOWER_OK_LABEL = 'slower start-up expected';
 
 /**
  * The most the fastest start may take at all, whatever the base branch takes (standing rule R6), in
- * ms. Set at about 2.8 times the 528 ms the Checks machines measured in November 2026, so a
- * busy machine passes and a start-up that has crept up over many pull requests, each under the 25%
- * step, still fails. Raise it only with the reason in the pull request.
+ * ms. Set at about 1.8 times the 660 ms a slower Checks machine measured on 2026-11-24 (#708), as
+ * scripts/bench-gate.mjs BUDGETS are (the faster machines start it in about 500 ms, so there a
+ * start-up has to creep up about 2.4 times before it fails). Raise it only with the reason in the
+ * pull request.
  */
-export const STARTUP_BUDGET_MS = 1500;
+export const STARTUP_BUDGET_MS = 1200;
 
 /** { fail, text }: the start-up check's answer; `accepted` when the pull request carries SLOWER_OK_LABEL. */
 export function startupVerdict(base, head, accepted = false) {

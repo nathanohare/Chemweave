@@ -66,7 +66,7 @@ export interface ReactionHooks {
   roles(arrowId: number): StepRoles | null;
   /** How many things other than arrows are selected. */
   others(): number;
-  setRole(arrowId: number, role: Role | 'none'): void;
+  setRole(arrowId: number, role: Role | 'results' | 'none'): void;
   reset(arrowId: number): void;
   select(arrowId: number, role: Role): void;
   cleanUp(): void;
@@ -449,8 +449,8 @@ export class StylePanel {
     this.body.appendChild(list);
     this.note(r.step?.manual ? 'Chosen by hand.' : r.step ? 'Kept with the arrow (from the file, or when it was last tidied).' : 'Determined from object positions.');
     if (hooks.others()) {
-      const opts: Opt<string>[] = [['', 'Choose…'], ['reactants', 'Starting materials'], ['products', 'Products'], ['above', 'Above the arrow'], ['below', 'Below the arrow'], ['none', 'Not part of this step']];
-      this.select('Set Selection As', opts, '', (v) => { if (v) hooks.setRole(r.id, v as Role | 'none'); },);
+      const opts: Opt<string>[] = [['', 'Choose…'], ['reactants', 'Starting materials'], ['products', 'Products'], ['above', 'Above the arrow'], ['below', 'Below the arrow'], ['results', 'Results'], ['none', 'Not part of this step']];
+      this.select('Set Selection As', opts, '', (v) => { if (v) hooks.setRole(r.id, v as Role | 'results' | 'none'); },);
     } else this.help('To change a role by hand, select the arrow and the things with Shift, then choose what they are here.');
     const buttons = document.createElement('div');
     buttons.className = 'style-buttons';
