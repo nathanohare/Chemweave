@@ -4,7 +4,9 @@ name: Desktop app
 # request (Actions > Desktop app > Run workflow, which can build any branch). Not on every pull
 # request: the Checks workflow already tests every pull request. A pull request that changes this
 # workflow or a script it runs for signing or releases does build here, so the change is tried
-# before it reaches main (2026-11-24); only main is ever published.
+# before it reaches main (2026-11-24); only main is ever published. Code signing (Windows and
+# Mac, with notarization) also happens only on main: a pull request or a run on another branch
+# builds unsigned (Nate, 2026-11-24: signing failures have been rare, so they aren't tried early).
 #
 # Each build of main is published as a release (Releases on the repository's page) with a
 # latest.json file, which is what the app's File > Check for Updates reads. The installers are
@@ -97,7 +99,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Get the Windows signing tool from the cache
-        if: matrix.platform == 'windows'
+        if: matrix.platform == 'windows' && github.ref == 'refs/heads/main'
         uses: actions/cache@v6
         with:
           path: ~/signing-tool
@@ -106,8 +108,8 @@ jobs:
         # With an Azure Artifact Signing account in the repository's secrets and variables
         # (docs/windows-signing.md), Tauri signs the app, the setup .exe and the .msi as it builds
         # them, before the updater's signatures are made, so SmartScreen knows who they are from.
-        # Without them nothing is signed for Windows, as before.
-        if: matrix.platform == 'windows'
+        # Without them nothing is signed for Windows, as before. Only on main (see the top).
+        if: matrix.platform == 'windows' && github.ref == 'refs/heads/main'
         shell: bash
         env:
           CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -144,8 +146,9 @@ jobs:
       - name: Sign and notarise the Mac app (once the Apple secrets are set)
         # With a Developer ID certificate and an App Store Connect API key in the repository's
         # secrets (docs/apple-signing.md), Tauri signs the app and has Apple notarise it, so
-        # Macs open it without a warning. Without them it is signed ad hoc, as before.
-        if: matrix.platform == 'macos'
+        # Macs open it without a warning. Without them it is signed ad hoc, as before. Only on
+        # main (see the top).
+        if: matrix.platform == 'macos' && github.ref == 'refs/heads/main'
         env:
           CERT: ${{ secrets.APPLE_CERTIFICATE }}
           CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
