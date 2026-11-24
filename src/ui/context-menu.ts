@@ -2,6 +2,7 @@
 // in groups that open to the side, so people used to finding things on the right-click menu in
 // ChemDraw find them there too.
 
+import { popupHost } from './popup-host';
 import { COMMAND_NAMES } from '../editor/keymap';
 import { commandIcon } from './command-icons';
 
@@ -248,7 +249,8 @@ function follow(b: HTMLButtonElement): void {
 function place(m: HTMLDivElement, x: number, y: number, row: DOMRect | null): void {
   m.style.left = '0px';
   m.style.top = '0px';
-  document.body.append(m);
+  // over a modal window, inside it (see popup-host)
+  popupHost(document.activeElement).append(m);
   const r = m.getBoundingClientRect();
   let left = x;
   if (left + r.width > innerWidth - 4) left = row ? row.left - r.width + 2 : innerWidth - r.width - 4;

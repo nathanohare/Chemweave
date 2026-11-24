@@ -3,6 +3,8 @@
 // empty or flickering list. These show every choice, the current one marked, and narrow to
 // what is typed only while typing.
 
+import { popupHost } from './popup-host';
+
 /** The choices to show for what is typed: all of them, or those starting with the typed text once typing starts. */
 export function comboChoices(all: string[], typed: string, filtering: boolean): string[] {
   if (!filtering || !typed.trim()) return all;
@@ -86,7 +88,8 @@ export function makeCombo(input: HTMLInputElement): void {
     const box = document.createElement('div');
     box.className = 'combo-list';
     box.setAttribute('role', 'listbox');
-    document.body.append(box);
+    // inside the box's window, or it shows under the window (see popup-host)
+    popupHost(input).append(box);
     const r = input.getBoundingClientRect();
     box.style.left = `${r.left}px`;
     box.style.top = `${r.bottom + 2}px`;
