@@ -199,11 +199,11 @@ const ICON: Record<string, string> = {
 };
 const svg = (k: string, s = 14): string => `<svg class="si-ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
 
-/** The ribbon: what each button does is its data-si command. */
 /** Synchronous Scrolling's button in the Live Preview's header: two pages, an arrow up and down between them. */
 const SYNC_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2" width="4.5" height="12" rx="0.6"/><rect x="10" y="2" width="4.5" height="12" rx="0.6"/><path d="M8 4.2v7.6M6.6 5.6L8 4.2l1.4 1.4M6.6 10.4L8 11.8l1.4-1.4"/></svg>';
 const SYNC_TIP = 'Synchronous Scrolling: scrolling the Live Preview to another compound or section opens its page here, a moment after you stop. It never changes page while a field of the page is selected or being typed in.';
 
+/** The ribbon: what each button does is its data-si command. */
 const RIBBON = `
   <div class="rb-tabs">
     <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
@@ -2919,10 +2919,39 @@ export class SiMode {
   private followPreview(): void {
     const pv = this.preview;
     if (!this.syncScroll || !pv || !this.project || !this.liveOn || this.liveTarget()?.kind !== 'whole') return;
+    // (a page chosen another way that the preview hasn't shown yet: it stays chosen)
+    if (pv.focusedNode !== this.liveNode()) return;
+    // a field being typed in or selected (the SI page's, or the ribbon's for its table or figure)
     const a = document.activeElement;
-    if (a instanceof HTMLElement && a !== document.body && this.page.contains(a)) return;
+    if (a instanceof HTMLElement && a !== pv.input && (this.pane.contains(a) || this.ribbon.contains(a))) {
+      const field = a.isContentEditable || a instanceof HTMLTextAreaElement || a instanceof HTMLSelectElement
+        || (a instanceof HTMLInputElement && !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file'].includes(a.type));
+      if (field) return;
+    }
     const node = pv.nodeToFollow();
-    if (node) this.pickFromPreview(node);
+    if (!node || !this.nodeExists(node)) return;
+    pv.followed(node);
+    this.pickFromPreview(node);
+  }
+
+  /** Whether a page of the whole SI is still in the project (the preview can be a compile behind). */
+  private nodeExists(node: string): boolean {
+    const p = this.project;
+    if (!p) return false;
+    const [kind, id] = node.split(':');
+    if (kind === 'project') return true;
+    if (kind === 'compound') return p.compounds.some((c) => c.id === id);
+    let found = false;
+    const walk = (list: SiSection[]): void => {
+      for (const s of list) {
+        if (found) return;
+        if (kind === 'section' && s.id === id) found = true;
+        if (kind === 'scheme' && s.type === 'data' && s.items.some((it) => it.kind === 'scheme' && it.id === id)) found = true;
+        walk(s.children);
+      }
+    };
+    walk(p.sections);
+    return found;
   }
 
   /** A page of the list chosen from the preview (text clicked, or scrolled to): the preview stays where it is. */
