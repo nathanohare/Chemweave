@@ -1,5 +1,7 @@
 // A small menu at a point (a sheet's or document's right-click menus, a gallery card's menu).
 
+import { popupHost } from './popup-host';
+
 /** A small menu at a point: [label, action, enabled?] items, null for a line. */
 export function popupMenu(x: number, y: number, items: ([string, () => void, boolean?, string?] | null)[]): HTMLDivElement {
   document.querySelector('.popup-menu')?.remove();
@@ -20,8 +22,7 @@ export function popupMenu(x: number, y: number, items: ([string, () => void, boo
     m.append(b);
   }
   // inside a window open over the page (the top layer), so it shows over that window
-  const modal = [...document.querySelectorAll<HTMLDialogElement>('dialog[open]')].reverse().find((d) => d.matches(':modal'));
-  (modal ?? document.body).append(m);
+  popupHost().append(m);
   // kept inside the window, now and when the window changes size (Interface Size zooms it)
   const place = () => {
     if (!m.isConnected) { removeEventListener('resize', place); return; }
