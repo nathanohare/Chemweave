@@ -167,7 +167,7 @@ const shape = {
   repeatLook: { color: '', face: 0, size: 0 }, picture: true, src: '', px: { w: 0, h: 0 }, video: media, link: '',
   zoom: { back: true, to: '', summary: true }, crop: { l: 0, t: 0, r: 0, b: 0 }, phPic: 0, look, fx, color: '', z: 0, alt: '', name: '',
   hidden: true, locked: true, table, chart: specimenOf(newChartBox('bar'), newChartBox('line'), newChartBox('pie')), math, frame,
-  editedOutside: true, madeLabels: null,
+  editedOutside: true, madeLabels: null, cdObject: { kind: '', xml: '', box: [0] },
   energy: specimenOf({ ...ENERGY_DEFAULTS, ...ENERGY_PRESETS[0].data }, ...ENERGY_PRESETS.map((p) => p.data)),
   newman: null, torsion: null, smart: null,
   plate: specimenOf(newPlate('tlc', L), newPlate('gel', L), newPlate('mo', L), newPlate('crystal', L)),

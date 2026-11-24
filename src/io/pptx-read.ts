@@ -3284,7 +3284,7 @@ const PLAIN_SHAPE_FIELDS: { [K in Exclude<keyof Shape, 'id' | 'kind' | 'x1' | 'y
   picFill: 'object', bold: 'boolean', symbol: 'string', bracket: 'string', pair: 'boolean', bracketPair: 'number', repeat: 'string', repeatLook: 'object',
   picture: 'boolean', src: 'string', px: 'object', video: 'object', link: 'string', zoom: 'object', crop: 'object', phPic: 'number', look: 'object', fx: 'object',
   color: 'string', z: 'number', alt: 'string', locked: 'boolean', table: 'object', chart: 'object', math: 'object', editedOutside: 'boolean', energy: 'object',
-  newman: 'object', torsion: 'object', plate: 'object', diagram: 'object', smart: 'object', holder: 'object', madeLabels: 'object', ole: 'object',
+  newman: 'object', torsion: 'object', plate: 'object', diagram: 'object', smart: 'object', holder: 'object', madeLabels: 'object', ole: 'object', cdObject: 'object',
 };
 
 /** The tag's fields that a box, oval or line may have, each of the right type (others are left out). */

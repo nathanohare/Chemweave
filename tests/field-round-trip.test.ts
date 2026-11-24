@@ -531,6 +531,7 @@ const NOT_WALKED: Record<string, Record<string, string>> = {
     newman: 'a Newman projection: made by the Newman tool, round trip in tests/newman.test.ts',
     torsion: 'a torsion chart: made from a conformer scan, tested in tests/torsion-chart.test.ts',
     plate: 'a TLC plate: tested in tests/plates.test.ts',
+    cdObject: "a ChemDraw TLC plate or spectrum kept as read: needs ChemDraw's own object, tested in tests/chemdraw-objects.test.ts (saved to CDXML as that object; anywhere else it is its picture)",
     diagram: 'a SmartArt-style diagram: tested in tests/diagrams.test.ts',
     smart: 'a Smart Scheme: its own round trip in tests/round-trip-review-objects.test.ts',
   },
