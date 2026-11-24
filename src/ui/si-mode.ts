@@ -66,6 +66,9 @@ import { FIXED_COLUMNS, availableColumns, buildRows, chosenColumns, columnWidths
 import { dashboardGrid, projectSummaryCard, sectionDashboard, statusColorsBody, type GridOptions } from './si-dashboard';
 import { MAX_COPIES, checkCopies, copyableFields, duplicateCompound, duplicateScheme, neverCopiedFields } from '../si/duplicate';
 import { popupMenu } from './popup-menu';
+import { showContextMenu, type MenuItem } from './context-menu';
+import { buildSelectGalleries } from './select-gallery';
+import { FIGURE_WRAPS, figureKey, POSITIONS, POSITION_NAMES, WRAPS, WRAP_NAMES, clearOwnPlacements, kindOfKey, ownPlacement, placementOf, projectPlacement, storeOwnPlacement, storeProjectPlacement, structureKey, type OwnPlacement, type SiWrap } from '../si/placement';
 import { fontGroupHtml, siFontBoxes, SI_FONT_OFF, SI_FONT_REASON } from './font-group';
 import { paintCanRun } from './can-run';
 import { formulaStyleRange } from './si-formula';
@@ -211,6 +214,7 @@ const RIBBON = `
       <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
       <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
       <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
+      <button role="tab" data-si-tab="place" aria-selected="false" class="rb-context" hidden title="Shown while a compound's structure or a figure is selected in the Live Preview">Picture Format</button>
       <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
       <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
       <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
@@ -316,6 +320,25 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Cell Picture</div></div>
   </div>
+  <div class="rb-panel" data-si-panel="place" hidden>
+    <div class="rb-group" data-si-place-for="structures"><div class="rb-row">
+      <button class="rb-big" data-si-place="edit" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
+    </div><div class="rb-label">Structure</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-place="position" data-ic="position" aria-haspopup="true" title="Position: in the line, or at the left, center or right with the text wrapping around it"><span class="rb-icon"></span>Position ▾</button>
+      <div class="rb-fly rb-selgal" data-name="Wrap Text" data-ic="wrap-text" data-pic="wrap" title="How the text wraps around it"><select data-si-place-wrap>
+          <option value="inline">In Line with Text</option>
+          <option value="square">Square</option>
+          <option value="topBottom">Top and Bottom</option>
+          <option value="behind">Behind Text</option>
+          <option value="front">In Front of Text</option>
+        </select></div>
+      <div class="rb-col">
+        <button class="rb-labelled" data-si-place="reset" data-ic="picture-reset" title="Back to the Position and Wrap Text of Project Settings ▸ Layout"><span class="rb-lead"></span>Reset to Project Default</button>
+        <button class="rb-labelled" data-si-place="apply-all" data-ic="format-painter" title="Use these Position and Wrap Text for every one of its kind (Project Settings ▸ Layout); those with their own go back to it"><span class="rb-lead"></span><span data-si-place-all>Apply to All Structures</span></button>
+      </div>
+    </div><div class="rb-label">Arrange</div></div>
+  </div>
   <div class="rb-panel" data-si-panel="figure" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-fig="picture" data-ic="picture" title="Change Picture: a picture file (PNG, JPG, SVG or PDF) in place of the figure's"><span class="rb-icon">▣</span>Change Picture</button>
@@ -330,6 +353,14 @@ const RIBBON = `
         <label class="rb-field" title="The figure's printed width (empty: its own size, never wider than the text)">Custom width <input type="number" class="rb-num" data-si-field="fig-width" min="0" step="0.1" /> cm</label>
       </div>
     </div><div class="rb-label">Size</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-figplace="position" data-ic="position" aria-haspopup="true" title="Position: in the line, or at the left, center or right with its caption, the text wrapping around them"><span class="rb-icon"></span>Position ▾</button>
+      <div class="rb-fly rb-selgal" data-name="Wrap Text" data-ic="wrap-text" data-pic="wrap" title="How the text wraps around the figure and its caption"><select data-si-figplace-wrap>
+          <option value="inline">In Line with Text</option>
+          <option value="square">Square</option>
+          <option value="topBottom">Top and Bottom</option>
+        </select></div>
+    </div><div class="rb-label">Arrange</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-fig="remove-figure" data-ic="delete" title="Take the figure and its caption out of the text (its picture stays in images/)"><span class="rb-icon">✕</span>Delete Figure</button>
     </div><div class="rb-label">Figure</div></div>
@@ -637,6 +668,8 @@ export class SiMode {
     this.ribbon.setAttribute('aria-label', 'SI Project');
     this.ribbon.hidden = true;
     this.ribbon.innerHTML = RIBBON;
+    // (Wrap Text's gallery, as Document mode's: made here, the SI ribbon coming after the others were)
+    buildSelectGalleries(this.ribbon);
     // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? SI_FONT_REASON : null));
     siFontBoxes(this.ribbon, defaultStyles().Normal);
@@ -676,10 +709,18 @@ export class SiMode {
       if (da) { void this.dashCommand(da.dataset.siDash!); return; }
       const fig = t.closest<HTMLElement>('[data-si-fig]');
       if (fig) { void this.activeFigure?.command(fig.dataset.siFig!); return; }
+      const pl = t.closest<HTMLElement>('[data-si-place]');
+      if (pl) { this.placeCommand(pl.dataset.siPlace!, pl); return; }
+      const fp = t.closest<HTMLElement>('[data-si-figplace="position"]');
+      if (fp && this.activeFigure) { const r = fp.getBoundingClientRect(); showContextMenu(r.left, r.bottom, this.positionItems(figureKey(this.activeFigure.id)), { run: () => {} }); return; }
       const b = t.closest<HTMLElement>('[data-si]');
       if (b) void this.run(b.dataset.si!);
     });
     this.ribbon.addEventListener('change', (e) => {
+      const wr = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-place-wrap]');
+      if (wr) { if (this.placedStructure) void this.setWrap(this.placedStructure, wr.value as SiWrap | 'inline'); return; }
+      const fw = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-figplace-wrap]');
+      if (fw) { const f = this.activeFigure; if (f) void this.setWrap(figureKey(f.id), fw.value as SiWrap | 'inline').then(() => this.figurePlaceState()); return; }
       const mf = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-ms]');
       if (mf) { void this.msCommand(mf.dataset.siMs!, mf.value); return; }
       const ds = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-dash]');
@@ -875,9 +916,120 @@ export class SiMode {
     if (!x && tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home');
   }
 
+  // ---------------------------------------------------------------- a structure's place (placement.ts)
+
+  /** The structure or figure picked in the Live Preview, by its placement key (its Picture Format tab acts on it). */
+  private placedStructure: string | null = null;
+
+  /** A structure or figure picked in the Live Preview (or none): its Picture Format tab shows (or goes), with its Wrap Text. */
+  private structureChosen(key: string | null): void {
+    const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="place"]')!;
+    this.placedStructure = key;
+    tab.hidden = !key;
+    if (!key) { if (tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home'); return; }
+    // (the SI page's own figure tab goes: one Picture Format at a time)
+    this.figureChosen(null);
+    this.placeState();
+    this.showRibbonTab('place');
+  }
+
+  /** The Picture Format tab showing the picked structure's or figure's Wrap Text, and the commands for its kind. */
+  private placeState(): void {
+    const p = this.project, key = this.placedStructure;
+    if (!p || !key) return;
+    const kind = kindOfKey(key);
+    const pl = placementOf(p.settings, key);
+    const sel = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-place-wrap]')!;
+    // (a figure's caption floats with it in a frame: no Behind Text or In Front of Text)
+    for (const o of sel.options) o.hidden = o.value !== 'inline' && kind === 'figures' && !FIGURE_WRAPS.includes(o.value as SiWrap);
+    // (the gallery shows it checked when it opens)
+    sel.value = pl.position === 'inline' ? 'inline' : pl.wrap;
+    for (const g of this.ribbon.querySelectorAll<HTMLElement>('[data-si-place-for]')) g.style.display = g.dataset.siPlaceFor === kind ? '' : 'none';
+    this.ribbon.querySelector<HTMLElement>('[data-si-place-all]')!.textContent = kind === 'figures' ? 'Apply to All Figures' : 'Apply to All Structures';
+  }
+
+  private placeCommand(cmd: string, from: HTMLElement | null): void {
+    const key = this.placedStructure, p = this.project;
+    if (!key || !p) return;
+    if (cmd === 'edit') { const c = p.compounds.find((x) => structureKey(x.id) === key); if (c) this.editStructure(c); return; }
+    if (cmd === 'position' && from) { const r = from.getBoundingClientRect(); showContextMenu(r.left, r.bottom, this.positionItems(key), { run: () => {} }); return; }
+    if (cmd === 'reset') { void this.placeChange(() => storeOwnPlacement(p.settings, key, null)); return; }
+    if (cmd === 'apply-all') {
+      const pl = placementOf(p.settings, key), kind = kindOfKey(key);
+      void this.placeChange(() => { storeProjectPlacement(p.settings, pl, kind); clearOwnPlacements(p.settings, kind); });
+    }
+  }
+
+  /** Change where structures and figures go (the project's settings): one step of Undo, then the Live Preview and the tab show it. */
+  private placeChange(f: () => void): Promise<void> {
+    const p = this.project;
+    if (!p) return Promise.resolve();
+    // (read-only: nothing changes, and the tab shows it so again)
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); this.placeState(); this.figurePlaceState(); return Promise.resolve(); }
+    return this.act(async () => { f(); await p.saveSettings(); }, false).then(() => { this.placeState(); this.figurePlaceState(); });
+  }
+
+  /** A structure's or figure's own Position or Wrap Text (a choice the same as the project's is not kept as its own). */
+  private setOwn(key: string, change: OwnPlacement): Promise<void> {
+    const p = this.project;
+    if (!p) return Promise.resolve();
+    // (what it shows now stays, apart from the change: the project's choice taken as its own)
+    const now = placementOf(p.settings, key);
+    return this.placeChange(() => storeOwnPlacement(p.settings, key, { position: now.position, wrap: now.wrap, top: now.top, ...change }));
+  }
+
+  /** Wrap Text: In Line with Text puts it in the line; another takes it out of the line (at the project's place, or the left). */
+  private setWrap(key: string, v: SiWrap | 'inline'): Promise<void> {
+    const p = this.project;
+    if (!p) return Promise.resolve();
+    if (v === 'inline') return this.setOwn(key, { position: 'inline' });
+    const now = placementOf(p.settings, key);
+    const base = projectPlacement(p.settings, kindOfKey(key)).position;
+    return this.setOwn(key, { wrap: v, ...(now.position === 'inline' ? { position: base === 'inline' ? 'left' : base } : {}) });
+  }
+
+  private positionItems(key: string): MenuItem[] {
+    const p = this.project!;
+    const pl = placementOf(p.settings, key);
+    const inline = pl.position === 'inline';
+    const items = POSITIONS.map((v): MenuItem => ({ label: POSITION_NAMES[v], checked: pl.position === v, ...(v === 'center' && kindOfKey(key) === 'figures' ? { title: 'In the middle the text goes above and below it' } : {}), run: () => void this.setOwn(key, { position: v }) }));
+    if (kindOfKey(key) === 'figures') return items;
+    return [
+      ...items,
+      null,
+      { label: 'Beside the Title', checked: !inline && pl.top === 'title', disabled: inline, title: 'Its top level with the compound’s title, the title beside it', run: () => void this.setOwn(key, { top: 'title' }) },
+      { label: 'Below the Title', checked: !inline && pl.top === 'below', disabled: inline, title: 'Its top level with the first line under the title', run: () => void this.setOwn(key, { top: 'below' }) },
+    ];
+  }
+
+  private wrapItems(key: string): MenuItem[] {
+    const pl = placementOf(this.project!.settings, key);
+    return [
+      { label: 'In Line with Text', checked: pl.position === 'inline', run: () => void this.setWrap(key, 'inline') },
+      ...(kindOfKey(key) === 'figures' ? FIGURE_WRAPS : WRAPS).map((v): MenuItem => ({ label: WRAP_NAMES[v], checked: pl.position !== 'inline' && pl.wrap === v, run: () => void this.setWrap(key, v) })),
+    ];
+  }
+
+  /** Right-click on a structure or figure in the Live Preview. */
+  private structureMenu(key: string, x: number, y: number): void {
+    const p = this.project;
+    if (!p) return;
+    const own = Object.keys(ownPlacement(p.settings, key)).length > 0;
+    const c = p.compounds.find((k) => structureKey(k.id) === key);
+    showContextMenu(x, y, [
+      ...(c ? [{ label: 'Edit Structure', run: () => this.editStructure(c) }, null] : []),
+      { label: 'Wrap Text', items: this.wrapItems(key) },
+      { label: 'Position', items: this.positionItems(key) },
+      { label: 'Reset to Project Default', disabled: !own, run: () => void this.placeChange(() => storeOwnPlacement(p.settings, key, null)) },
+      { label: kindOfKey(key) === 'figures' ? 'Apply to All Figures' : 'Apply to All Structures', run: () => this.placeCommand('apply-all', null) },
+    ], { run: () => {} });
+  }
+
   /** A figure picked (or none): the Picture Format tab shows (or goes), with that figure's width. */
   private figureChosen(f: SiFigureEditor | null): void {
     const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="figure"]')!;
+    // (a structure picked in the Live Preview lets go: one Picture Format at a time)
+    if (f && this.placedStructure) this.preview?.letGo();
     this.activeFigure = f;
     tab.hidden = !f;
     if (!f && tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home');
@@ -885,6 +1037,15 @@ export class SiMode {
     const w = this.ribbon.querySelector<HTMLInputElement>('[data-si-field="fig-width"]')!;
     const st = f.state;
     w.value = st.width ? String(st.width) : '';
+    this.figurePlaceState();
+  }
+
+  /** The Figure tab's Wrap Text showing the figure's. */
+  private figurePlaceState(): void {
+    const p = this.project, f = this.activeFigure;
+    if (!p || !f) return;
+    const pl = placementOf(p.settings, figureKey(f.id));
+    this.ribbon.querySelector<HTMLSelectElement>('select[data-si-figplace-wrap]')!.value = pl.position === 'inline' ? 'inline' : pl.wrap;
   }
 
   private tableState(t: SiTableEditor): void {
@@ -3254,6 +3415,8 @@ export class SiMode {
       },
       undo: (redo) => void this.undo(redo),
       refresh: () => this.liveSoon(0),
+      structureChosen: (id) => this.structureChosen(id),
+      structureMenu: (id, x, y) => this.structureMenu(id, x, y),
     });
     this.live.view = this.preview.view;
     this.preview.onScrollSettled = () => this.followPreview();

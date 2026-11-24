@@ -32,7 +32,18 @@ export function positioned(fl: Float | undefined, place: PositionPlace, size: { 
   const x = col === 'left' ? 0 : col === 'center' ? (roomW - w) / 2 : roomW - w;
   const y = row === 'top' ? 0 : row === 'middle' ? (roomH - h) / 2 : roomH - h;
   const keep = fl && fl.wrap !== 'behind' && fl.wrap !== 'front' ? fl.wrap : 'square';
-  return { ...fl, wrap: keep, x, y, xFrom: 'margin', yFrom: 'margin' };
+  return { ...fl, wrap: keep, x, y, xFrom: 'margin', yFrom: 'margin', align: undefined };
+}
+
+/**
+ * A float lined up in the margins or on the page (Float.align) at the place that puts it, as an
+ * x of its own: to be moved from there by hand (a drag, the Layout panel's position).
+ */
+export function unaligned(fl: Float, w: number, page: PageSetup): Float {
+  if (!fl.align) return fl;
+  const room = fl.xFrom === 'page' ? page.w : page.w - page.left - page.right;
+  const x = fl.align === 'center' ? (room - w) / 2 : fl.align === 'right' ? room - w : 0;
+  return { ...fl, x: Math.round(x * 100) / 100, align: undefined };
 }
 
 export type Turn = 'right' | 'left' | 'flipH' | 'flipV';
@@ -115,6 +126,8 @@ export function withFloats(t: DocText, changes: [number, Partial<Float>][]): Doc
     const fl = floatOf(o);
     if (!o || !fl) continue;
     const next: Float = { ...fl, ...patch };
+    // (moved to a place of its own: no longer lined up in the margins)
+    if (patch.x !== undefined && !('align' in patch)) delete next.align;
     for (const k of Object.keys(next) as (keyof Float)[]) if (next[k] === undefined) delete next[k];
     objects[id] = { ...o, float: next } as DocObject;
   }

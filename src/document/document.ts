@@ -305,6 +305,12 @@ export interface Float {
   y: number;
   xFrom?: 'margin' | 'page';
   yFrom?: 'para' | 'margin' | 'page';
+  /**
+   * Lined up at the left, in the middle or at the right of the margins (or of the page, with
+   * `xFrom`) instead of at `x`, whatever its width (Word's horizontal Alignment); `x` keeps where
+   * that put it.
+   */
+  align?: 'left' | 'center' | 'right';
   /** Room kept between the figure and the text round it, in points (Word's is 0.13 in). */
   gap?: number;
   /**

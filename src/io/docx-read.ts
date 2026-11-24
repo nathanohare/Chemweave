@@ -1384,9 +1384,11 @@ class DocxReader {
     const off = (el: Element | null) => { const o = kid(el, 'posOffset'); return o ? fromEmu(o.textContent ?? '0') : null; };
     const pg = this.page;
     let x = off(H);
+    let align: Float['align'];
     if (x === null) {
       // aligned rather than placed: left, centre or right of the margins (or the page)
       const a = kid(H, 'align')?.textContent ?? 'left';
+      if ((a === 'left' || a === 'center' || a === 'right') && (hFrom === 'margin' || hFrom === 'page' || hFrom === 'column')) align = a;
       const room = hFrom === 'page' ? pg.w : this.textW;
       x = a === 'center' ? (room - w) / 2 : a === 'right' || a === 'outside' ? room - w : 0;
     }
@@ -1402,6 +1404,7 @@ class DocxReader {
       : kind === 'wrapNone' ? (yes(anchor.getAttribute('behindDoc')) ? 'behind' as const : 'front' as const)
       : 'square' as const;
     const fl: Float = { wrap, x: round(x - l), y: round(y - t) };
+    if (align) fl.align = align;
     const fx = effectBeyond(anchor, look ?? undefined);
     if (fx) fl.effect = fx;
     if (xFrom) fl.xFrom = xFrom;
@@ -1473,11 +1476,13 @@ class DocxReader {
   private cellLook: CellLook | null = null;
 
   /** A paragraph's own properties not read here, as written, by their place (KEPT_PPR; undefined: none). */
-  private keptPPr(pPr: Element | null): string | undefined {
+  private keptPPr(pPr: Element | null, framed = false): string | undefined {
     const raw: Record<string, string> = {};
     for (const c of kids(pPr)) {
       if (c.namespaceURI !== this.W) continue;
       const slot = KEPT_PPR[c.localName];
+      // (a frame read as ParaStyle.frame is written from it)
+      if (framed && c.localName === 'framePr') continue;
       if (slot) raw[slot] = (raw[slot] ?? '') + elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
       // what is shown here another way, kept to write back as Word had it:
       switch (c.localName) {
@@ -1550,7 +1555,12 @@ class DocxReader {
   /** The levels of each table of contents whose look has been read. */
   private tocSeen = new Set<string>();
 
+  /** A paragraph that only clears the figures floating beside it was met: the next paragraph starts below them (ParaStyle.clear). */
+  private clearNext = false;
+
   private paragraph(el: Element): void {
+    // a paragraph holding only Word's clearing break (as this program writes ParaStyle.clear, docx-write.ts CLEAR_PARA): the next one's `clear`
+    if (!this.capture && !this.cellLook && isClearPara(el)) { this.clearNext = true; return; }
     // (a page break the paragraph before ended with)
     const carried = this.pageNext;
     const pPr = kid(el, 'pPr');
@@ -1634,6 +1644,9 @@ class DocxReader {
     let indent = Math.max(0, p.left ?? 0);
     if (list) indent = Math.max(0, indent - listIndent({ list, level: ilvl }, firstSize).left);
     const brk = this.takeBreak();
+    // a frame of paragraphs as this program writes them (ParaStyle.frame), in the body; others are kept as Word had them
+    const fr = kid(pPr, 'framePr');
+    const frame = !this.capture && !this.cellLook && inBody(el) ? frameOf(fr, (n) => this.a(fr, n)) : undefined;
     const ps: ParaStyle = {
       style: ours === 'Normal' ? undefined : ours,
       align: p.align && p.align !== 'left' ? p.align : this.displayMath && !p.align ? 'center' : undefined,
@@ -1645,8 +1658,11 @@ class DocxReader {
       pageBreak: p.pageBreak, section: brk, list, level: list ? ilvl : undefined, noLineNumbers: p.noLineNumbers, noHyphen: p.noHyphen || undefined,
       tabs: finalTabs(p), scheme, bullet,
       border: cleanBorders(p.border), shade: p.shade && p.shade !== '#ffffff' ? p.shade : undefined,
-      wpx: this.keptPPr(pPr),
+      wpx: this.keptPPr(pPr, !!frame),
+      clear: this.clearNext || undefined,
+      frame,
     };
+    this.clearNext = false;
     // the number as Word draws it: in the paragraph mark's bold and italic (its style's, unless the
     // mark sets its own), then the list level's; kept where that isn't the style's
     if (list === 'number' && level) {
@@ -3901,4 +3917,52 @@ function columnAlign(rows: TableCell[][], ci: number, unset?: Justify): Justify 
   const most = Math.max(0, ...count.values());
   if (!most || (count.get('left') ?? 0) === most) return 'left';
   return [...count.entries()].find(([, n]) => n === most)![0];
+}
+
+/**
+ * Whether a paragraph holds nothing but one text wrapping break that clears the floating figures
+ * (w:br w:type="textWrapping" w:clear="all", "left" or "right"): how a following paragraph is
+ * made to start below them (ParaStyle.clear).
+ */
+/** The attributes of a frame as docx-write.ts framePrXml writes it. */
+const FRAME_ATTRS = new Set(['w', 'hSpace', 'wrap', 'vAnchor', 'hAnchor', 'xAlign']);
+
+/** A paragraph in the document's body (or a content control there), not in a table, text box, note or header. */
+function inBody(p: Element): boolean {
+  const home = p.parentElement?.localName;
+  return home === 'body' || (home === 'sdtContent' && p.parentElement?.parentElement?.parentElement?.localName === 'body');
+}
+
+export function isClearPara(p: Element): boolean {
+  // (only the paragraph written for it, in the body, before a paragraph: any other is the file's own and stays)
+  const next = p.nextElementSibling;
+  if (!inBody(p) || next?.localName !== 'p') return false;
+  const at = (e: Element, n: string) => Array.from(e.attributes).find((x) => x.localName === n)?.value ?? null;
+  const kids = Array.from(p.children);
+  if (kids.length !== 2 || kids[0].localName !== 'pPr' || kids[1].localName !== 'r') return false;
+  for (const c of Array.from(kids[0].children)) {
+    if (!['keepNext', 'spacing', 'ind', 'jc', 'rPr'].includes(c.localName)) return false;
+    if (c.localName === 'spacing' && (at(c, 'line') !== '20' || at(c, 'lineRule') !== 'exact')) return false;
+  }
+  const rk = Array.from(kids[1].children).filter((k) => k.localName !== 'rPr');
+  return rk.length === 1 && rk[0].localName === 'br' && at(rk[0], 'type') === 'textWrapping' && at(rk[0], 'clear') === 'all';
+}
+
+/**
+ * A text frame (w:framePr) read as a frame of paragraphs (ParaStyle.frame): one of a set width at
+ * the left, center or right of the margins, its top at its paragraph, with the text round it or
+ * above and below it. Others (drop caps, frames placed on the page or at a set place, of a set
+ * height) are kept as Word had them (undefined).
+ */
+export function frameOf(fr: Element | null | undefined, a: (name: string) => string | null): ParaStyle['frame'] {
+  if (!fr) return undefined;
+  // (only the properties written for one: any other is the file's own frame)
+  if (!Array.from(fr.attributes).every((x) => x.name.startsWith('xmlns') || FRAME_ATTRS.has(x.localName))) return undefined;
+  const w = parseFloat(a('w') ?? ''), wrap = a('wrap'), align = a('xAlign'), y = a('y');
+  if (!(w > 0) || a('dropCap') || a('h') || a('yAlign') || (y && parseFloat(y) !== 0) || a('x')) return undefined;
+  if (a('vAnchor') !== 'text' || a('hAnchor') !== 'margin') return undefined;
+  if (wrap !== 'around' && wrap !== 'notBeside') return undefined;
+  if (align !== 'left' && align !== 'center' && align !== 'right') return undefined;
+  const gap = parseFloat(a('hSpace') ?? '0');
+  return { w: w / 20, align, wrap: wrap === 'around' ? 'square' : 'topBottom', gap: Number.isFinite(gap) ? gap / 20 : 0 };
 }

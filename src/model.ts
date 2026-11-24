@@ -497,6 +497,9 @@ export type Justify = 'left' | 'center' | 'right' | 'justify';
  * Formatting of one paragraph (the text between two line breaks). Everything is optional, so a
  * plain paragraph is {}.
  */
+/** Where a frame of paragraphs floats (ParaStyle.frame). */
+export interface ParaFramePlace { w: number; align: 'left' | 'center' | 'right'; wrap: 'square' | 'topBottom'; gap: number }
+
 export interface ParaStyle {
   /** A bullet or numbered list item. */
   list?: 'bullet' | 'number';
@@ -543,6 +546,18 @@ export interface ParaStyle {
   keepNext?: boolean;
   /** Documents: its lines kept together on one page (Word's Keep lines together). */
   keepLines?: boolean;
+  /**
+   * Documents: starts below any figure floating beside it, never next to one the text above
+   * wraps round (Word's text wrapping break with Clear: All, just before the paragraph).
+   */
+  clear?: boolean;
+  /**
+   * Documents: in a frame floating at the left, center or right of the margins, `w` points wide,
+   * with the text beside it (Square) or only above and below it (Top and Bottom), `gap` points
+   * clear of it at the sides. The paragraphs after it with the same frame are in it too (Word's
+   * text frame, w:framePr): a figure and its caption float together.
+   */
+  frame?: ParaFramePlace;
   /** Documents: a single first or last line may be left on a page by itself (Word's Widow/Orphan control off). */
   noWidow?: boolean;
   /** Documents: indent from the right margin, in points. */

@@ -91,7 +91,7 @@ import { DocParagraphUI } from './doc-paragraph-ui';
 import { DocArrangeUI } from './doc-arrange-ui';
 import type { DocDesign, SiLink } from '../document/document';
 import { setParaSpacing, setStyleSet, setTheme, setThemeColors, setThemeFonts, PARA_SPACINGS, STYLE_SETS, THEMES, THEME_COLORS, THEME_FONTS } from '../document/themes';
-import { groupOf, turnOf, withFloats } from '../document/arrange';
+import { groupOf, turnOf, unaligned, withFloats } from '../document/arrange';
 import { PLACE_MARGIN, type InPlace } from './in-place';
 import { FigureOffer } from './doc-figure-offer';
 import { DocProofingUI } from './doc-proofing-ui';
@@ -3140,7 +3140,9 @@ export class DocumentMode {
         // a floating figure is moved by dragging it
         const fl = floatOf(obj);
         // (a group moves together; Alt-drag moves one of it on its own, as a Canvas label is)
-        if (fl) { this.dragging = { kind: 'move', id, from: p, float: fl, moved: false, others: e.altKey ? [] : groupOf(f.t, id).filter((x) => x !== id).map((x) => [x, floatOf(f.t.objects[x])!]) }; s.setPointerCapture(e.pointerId); }
+        // (one lined up in the margins moves from where that put it)
+        const free = (x: number, g: Float): Float => unaligned(g, f.layout().sizes.get(x)?.w ?? 0, f.t.page);
+        if (fl) { this.dragging = { kind: 'move', id, from: p, float: free(id, fl), moved: false, others: e.altKey ? [] : groupOf(f.t, id).filter((x) => x !== id).map((x) => [x, free(x, floatOf(f.t.objects[x])!)]) }; s.setPointerCapture(e.pointerId); }
         // one in line with the text is dragged to another place in the text, as in Word
         else if (obj?.kind !== 'table' && !f.box) { this.dragging = { kind: 'inline', id, from: p, to: null }; s.setPointerCapture(e.pointerId); }
         return;
@@ -3684,7 +3686,10 @@ export class DocumentMode {
     if (!fl && o.kind === 'textbox') return;
     if (fl && cellHolding(f.t, id)) { this.host.flash('A structure or picture in a table cell stays in its line.'); return; }
     // already so (Wrap Text's choice it has): no step of Undo
-    if (JSON.stringify(floatOf(o) ?? null) === JSON.stringify(fl)) return;
+    const cur = floatOf(o);
+    if (JSON.stringify(cur ?? null) === JSON.stringify(fl)) return;
+    // (placed across by hand: no longer lined up in the margins)
+    if (fl?.align && cur && (fl.x !== cur.x || fl.xFrom !== cur.xFrom)) fl = { ...fl, align: undefined };
     const next = { ...o, float: fl ?? undefined } as DocObject;
     f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: next } } as DocText, kind);
   }
