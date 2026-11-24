@@ -113,3 +113,11 @@ have run signed copies; it stops on its own.
 The certificates themselves renew automatically every few days; nothing to do. The client
 secret expires after the time chosen in step 7: before then, make a new one and replace
 `AZURE_CLIENT_SECRET`. If a build ever says the secret is invalid, that is why.
+
+## If signing fails
+
+Azure's signing service now and then turns down a single request. Each file is signed by
+`scripts/sign-windows.mjs`, which tries up to four times (waiting 15, 45 and 90 seconds between
+tries) and writes everything the signing tool says to the log. If all four fail, the step "Show
+what the Windows signing tool said" in the Windows job prints those messages: an expired or
+wrong secret shows up there as an authentication error.
