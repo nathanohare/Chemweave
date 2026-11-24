@@ -46,6 +46,7 @@ import { ellipseAxes, isCircleRing, ringBonds, ringCircle, ringsThroughBond } fr
 import { newmanForFile } from '../design/newman';
 import { bondWidths, docMapLook, labelBold } from '../style';
 import { isMapNumber } from '../render/atom-marks';
+import { minOf, maxOf } from './min-max';
 
 /**
  * The drawing's map-number look as the page tag's JSON: saved when the drawing has a look of its
@@ -1383,7 +1384,7 @@ class CdxmlWriter {
       }
       for (const [f, ids] of byFrag) {
         const xs = ids.map((id) => this.doc.atoms.get(id)!.x), ys = ids.map((id) => this.doc.atoms.get(id)!.y);
-        const part = partAt(t, lay, { x: (Math.min(...xs) + Math.max(...xs)) / 2 - s.x1, y: (Math.min(...ys) + Math.max(...ys)) / 2 - s.y1 });
+        const part = partAt(t, lay, { x: (minOf(xs) + maxOf(xs)) / 2 - s.x1, y: (minOf(ys) + maxOf(ys)) / 2 - s.y1 });
         if (!part || typeof part === 'string') continue;
         const cell = cells[part.r * t.cols.length + part.c];
         if (!cell) continue;
@@ -1649,7 +1650,7 @@ class CdxmlWriter {
     const pts = bezPoints(r);
     if (pts) {
       const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y), pad = r.headWidth;
-      this.set(e, 'BoundingBox', box({ x1: Math.min(...xs) - pad, y1: Math.min(...ys) - pad, x2: Math.max(...xs) + pad, y2: Math.max(...ys) + pad }));
+      this.set(e, 'BoundingBox', box({ x1: minOf(xs) - pad, y1: minOf(ys) - pad, x2: maxOf(xs) + pad, y2: maxOf(ys) + pad }));
     }
     for (const g of this.legacyOf(e)) {
       g.setAttribute('BoundingBox', g.getAttribute('GraphicType') === 'Arc' ? `${pt(r.head)} ${pt(center)}` : `${pt(r.head)} ${pt(r.tail)}`);
@@ -1678,7 +1679,7 @@ class CdxmlWriter {
       this.set(el, 'AngularSize', f2(ell.angularSize).replace(/\.?0+$/, ''));
       const all = bezPoints(r) ?? [r.tail, r.head];
       const xs = all.map((p) => p.x), ys = all.map((p) => p.y), pad = r.headWidth;
-      this.set(el, 'BoundingBox', box({ x1: Math.min(...xs) - pad, y1: Math.min(...ys) - pad, x2: Math.max(...xs) + pad, y2: Math.max(...ys) + pad }));
+      this.set(el, 'BoundingBox', box({ x1: minOf(xs) - pad, y1: minOf(ys) - pad, x2: maxOf(xs) + pad, y2: maxOf(ys) + pad }));
       this.writeMorph(el, r);
     } else if (pts) {
       const n = (pts.length - 1) / 3;
@@ -1693,7 +1694,7 @@ class CdxmlWriter {
       const hs = Math.round((r.headLength / lw) * 100), aw = Math.round((r.headWidth / lw) * 100);
       const ht = r.headType === 'hollow' ? 'Hollow' : r.headType === 'angle' ? 'Angle' : 'Solid';
       for (const [k, v] of Object.entries({
-        BoundingBox: box({ x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) }),
+        BoundingBox: box({ x1: minOf(xs), y1: minOf(ys), x2: maxOf(xs), y2: maxOf(ys) }),
         color: this.colorAttr(r.color), LineWidth: r.lineWidth !== undefined ? f2(r.lineWidth) : null,
         CurvePoints: knots.map((p) => `${f2(p.x)} ${f2(p.y)}`).join(' '), CurveType: String(kinds),
         HeadSize: hs !== 1000 ? String(hs) : null, ArrowheadWidth: aw !== 250 ? String(aw) : null, ArrowheadType: ht !== 'Solid' ? ht : null,
@@ -1978,7 +1979,7 @@ class CdxmlWriter {
         const kinds = (closed ? 1 : 0) | (type !== 'fill' && s.dashed ? 2 : 0) | (type !== 'fill' && width > 1.75 * lw ? 4 : 0) | (type === 'fill' ? 128 : 0);
         const xs = c.points.map((p) => p.x), ys = c.points.map((p) => p.y);
         g!.appendChild(this.el('curve', {
-          id: this.id(), BoundingBox: box({ x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) }),
+          id: this.id(), BoundingBox: box({ x1: minOf(xs), y1: minOf(ys), x2: maxOf(xs), y2: maxOf(ys) }),
           color: this.colorAttr(color), CurvePoints: c.points.map((p) => `${f2(p.x)} ${f2(p.y)}`).join(' '), CurveType: String(kinds),
           // ChemDraw 25 fills a curve by its FillType; the CurveType bit alone leaves it empty
           FillType: type === 'fill' ? 'Solid' : null,
@@ -2261,7 +2262,7 @@ class CdxmlWriter {
     const ch = (h: string) => [0, 2, 4].map((k) => parseInt(h.slice(k, k + 2), 16));
     const c = ch(ink), f = ch(fill);
     // how much white is mixed in, from the channel with the most room
-    const k = c.indexOf(Math.min(...c));
+    const k = c.indexOf(minOf(c));
     if (c[k] > 250) return null;
     const a = (f[k] - c[k]) / (255 - c[k]);
     if (a <= 0.001 || a >= 0.999) return null;
@@ -3118,7 +3119,7 @@ function turnedBox(r: Rect, at: Vec, deg: number): Rect {
   const ps = [[r.x1, r.y1], [r.x2, r.y1], [r.x2, r.y2], [r.x1, r.y2]].map(([x, y]) => ({
     x: at.x + (x - at.x) * cos - (y - at.y) * sin, y: at.y + (x - at.x) * sin + (y - at.y) * cos,
   }));
-  return { x1: Math.min(...ps.map((p) => p.x)), y1: Math.min(...ps.map((p) => p.y)), x2: Math.max(...ps.map((p) => p.x)), y2: Math.max(...ps.map((p) => p.y)) };
+  return { x1: minOf(ps.map((p) => p.x)), y1: minOf(ps.map((p) => p.y)), x2: maxOf(ps.map((p) => p.x)), y2: maxOf(ps.map((p) => p.y)) };
 }
 
 /** An elbow connector's bends as a Bézier path of straight pieces (each handle on its own point), for ChemDraw. */
