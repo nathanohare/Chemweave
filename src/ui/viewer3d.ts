@@ -691,7 +691,7 @@ export class Viewer3d {
     item('Gaussian/ORCA Input…', () => void this.exportQm(), !!t && !!m);
     item('XYZ File, All Conformers…', () => void this.exportAll('xyz'), !!t && !!m);
     item('SD File, All Conformers…', () => void this.exportAll('sdf'), !!t && !!m);
-    popupHost().append(menu);
+    popupHost(this.exportBtn).append(menu);
     const r = this.exportBtn.getBoundingClientRect(), mr = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(4, Math.min(r.right - mr.width, innerWidth - mr.width - 4))}px`;
     menu.style.top = `${r.bottom + mr.height + 4 < innerHeight ? r.bottom + 2 : Math.max(4, r.top - mr.height - 2)}px`;

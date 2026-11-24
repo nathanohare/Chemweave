@@ -3,7 +3,8 @@
 // menu and an open window, in the Light and Dark Gray looks, and on every ribbon tab and a
 // right-click menu in the Light look; then a keyboard-only walk: the menu
 // bar (F10, arrows, Esc), the toolbox (reached and used with Tab and Enter) and a window (focus goes
-// in, Tab stays in, Esc closes it and gives focus back).
+// in, Tab stays in, Esc closes it and gives focus back); and that the drop-down list of a typed box in
+// the Orbital and Settings windows is on top of the window, not under it.
 //
 // Problems found before this check existed are in scripts/a11y-known.mjs: it fails only on a new
 // one, and says which known ones no longer happen. On its own, against an app being served:
@@ -183,25 +184,30 @@ export async function a11yProblems(page, log = () => {}) {
   // to the page is drawn under it and can't be clicked. For each window with typed boxes that have
   // suggestions (the Orbital window's Pointing box, Settings), the last item of the list must be what
   // is on top at its own center.
-  for (const [command, label] of [['orbital', 'Orbital'], ['preferences', 'Settings']]) {
+  // (the first typed box of each window: Orbital's Pointing box, and Settings' AI page's model box)
+  for (const [command, label, before] of [['orbital', 'Orbital', null], ['preferences', 'Settings', 'ai']]) {
     await cmd(command);
-    await page.waitForTimeout(400);
-    const boxes = await page.evaluate(() => [...document.querySelectorAll('dialog[open] input.combo')].filter((i) => i.offsetParent).length);
-    for (let i = 0; i < Math.min(boxes, 3); i++) {
-      const res = await page.evaluate(async (i) => {
-        const input = [...document.querySelectorAll('dialog[open] input.combo')].filter((x) => x.offsetParent)[i];
-        input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-        await new Promise((r) => setTimeout(r, 120));
-        const items = document.querySelectorAll('.combo-list .combo-item');
-        const last = items[items.length - 1];
-        if (!last) return 'no list';
-        const r = last.getBoundingClientRect();
-        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-        return top && last.contains(top) ? 'ok' : 'covered';
-      }, i);
-      if (res === 'covered') found.add(`keyboard: a drop-down list in the ${label} window is under the window (its last item can't be clicked)`);
-      await key('Escape', 100);
+    await page.waitForSelector('dialog[open]', { timeout: 3000 }).catch(() => {});
+    if (before) {
+      await page.evaluate((p) => document.querySelector(`dialog[open] .sw-list button[data-page="${p}"]`)?.click(), before);
+      await page.waitForTimeout(150);
     }
+    const res = await page.evaluate(async () => {
+      const input = [...document.querySelectorAll('dialog[open] input.combo')].find((x) => x.offsetParent);
+      if (!input) return 'no box';
+      document.querySelectorAll('.combo-list').forEach((l) => l.remove());
+      input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 150));
+      const items = document.querySelectorAll('.combo-list .combo-item');
+      const last = items[items.length - 1];
+      if (!last) return 'no list';
+      last.scrollIntoView({ block: 'nearest' });
+      const r = last.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return top && last.contains(top) ? 'ok' : 'covered';
+    });
+    if (res === 'covered') found.add(`window: a drop-down list in the ${label} window is under the window (its last item can't be clicked)`);
+    else if (res !== 'ok') found.add(`window: the ${label} window's drop-down list check found ${res} (the check can't run)`);
     await esc();
     if (await page.evaluate(() => !!document.querySelector('dialog[open]'))) await esc();
   }

@@ -359,7 +359,7 @@ export class SiRichBox {
     const r = sel.getRangeAt(0).getBoundingClientRect();
     menu.style.left = `${r.left}px`;
     menu.style.top = `${r.bottom + 4}px`;
-    popupHost().append(menu);
+    popupHost(this.el).append(menu);
   }
 
   private closeMenu(): void {
