@@ -41,6 +41,7 @@ import { cleanTiedLook } from '../editor/tied-look';
 import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
+import { cdObjectPicture } from './chemdraw-objects';
 import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, labelSeen, captionAt, textSeen, fragMoreIn, zPrint, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
 
 export interface ReadStats {
@@ -1418,6 +1419,20 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
             stats.shapes++;
             if (!pic) skip('picture');
           }
+          break;
+        }
+        case 'tlcplate': case 'spectrum': {
+          // shown as ChemDraw draws it, and written back as the ChemDraw object itself (chemdraw-objects.ts)
+          const made = cdObjectPicture(ch, { color, lineWidth: st.lineWidth });
+          if (!made) { skip(ch.nodeName); break; }
+          const z = num(ch, 'Z', 0);
+          const sh = doc.addShape({
+            id: idFor(ch), kind: 'picture', z, x1: made.x1, y1: made.y1, x2: made.x2, y2: made.y2,
+            src: dataUrl(new TextEncoder().encode(made.svg), 'image/svg+xml'), px: { w: Math.max(1, Math.round(made.x2 - made.x1)), h: Math.max(1, Math.round(made.y2 - made.y1)) },
+            cdObject: { kind: ch.nodeName, xml: new XMLSerializer().serializeToString(ch), box: [made.x1, made.y1, made.x2, made.y2] },
+          });
+          from('s', sh.id, ch);
+          stats.shapes++;
           break;
         }
         case 'bracketedgroup': pendingRepeats.push(ch); break;

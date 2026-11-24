@@ -12,6 +12,7 @@ import type { EnergyData } from './design/energy';
 import type { NewmanData } from './design/newman';
 import type { TorsionData } from './design/torsion';
 import type { PlateData } from './design/plates';
+import type { CdObject } from './io/chemdraw-objects';
 import type { DiagramData } from './design/diagrams';
 import type { SmartData } from './chem/smart-scheme';
 import type { ChartBox } from './sheet/chart-box';
@@ -1149,6 +1150,12 @@ export interface Shape {
   repeatLook?: { color?: string; face?: number; size?: number };
   /** Stands in for a picture in a ChemDraw file, which is kept as it was when saving. */
   picture?: boolean;
+  /**
+   * A ChemDraw TLC plate or spectrum read from a file, shown as its picture (`src`): saving as
+   * CDXML writes the ChemDraw object itself back, moved or sized with the picture, so ChemDraw can
+   * still edit it (src/io/chemdraw-objects.ts).
+   */
+  cdObject?: CdObject;
   /** A picture: its image as a data URL (PNG, JPEG, GIF or SVG); x1..y2 is where it shows. */
   src?: string;
   /** Picture size in pixels (for the crop and for saving). */
