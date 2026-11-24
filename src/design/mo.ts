@@ -2,7 +2,8 @@
 // atoms (or fragments) at the sides, the molecular orbitals they make in the middle, each level
 // drawn as one short line per orbital (two or three side by side when degenerate), filled with
 // ↑ and ↓ electrons by Hund's rule, and joined to the atomic orbitals they come from by dashed
-// lines. Energies only set the order and spacing; they are not to scale unless typed so.
+// lines. A level's energy is its relative position in the diagram, 0 (the bottom) to 1 (the top): it
+// has no units, and only sets the order and spacing.
 
 import type { Caption, Doc, Shape } from '../model';
 import type { Rect, Vec } from '../geom';
@@ -16,7 +17,11 @@ export interface MoLevel {
   column: MoColumn;
   /** The orbital's name (1s, 2p, σ, π*, HOMO…): rich text written as markup (see parseMarkup). */
   label: string;
-  /** Its energy, which only sets the order and spacing (any units). */
+  /**
+   * Its energy as a relative position in the diagram, 0 (the bottom) to 1 (the top), when the
+   * diagram is `relative`. In a diagram saved before that, any number: the lowest level was drawn
+   * at the bottom and the highest at the top (toRelative turns those into 0 to 1).
+   */
   e: number;
   /** How many orbitals at this level (1 to 5). */
   n: number;
@@ -26,6 +31,8 @@ export interface MoLevel {
   from?: string;
   /** Made from one side's orbitals only (a nonbonding orbital, as HF's F 2p). */
   fromSide?: 'left' | 'right';
+  /** Filled in from the diagram's atoms (see MoSpec.atoms): how many orbitals, their electrons and what they are made from follow from the atoms. Not set: a level added by hand. */
+  auto?: boolean;
 }
 
 export interface MoSpec {
@@ -34,6 +41,13 @@ export interface MoSpec {
   titles: [string, string, string];
   /** An energy arrow up the left side. */
   axis: boolean;
+  /** Energies are relative positions, 0 (bottom) to 1 (top). Not set in diagrams saved before that (see MoLevel.e). */
+  relative?: boolean;
+  /**
+   * The two atoms the diagram was filled from (MO_ATOMS ids), the electrons in the molecule and
+   * whether π lies below σ in the p set. Not set: a custom diagram, where everything is typed.
+   */
+  atoms?: { left: string; right: string; electrons: number; mixing: boolean };
   /**
    * Names and titles are rich text kept as markup (parseMarkup), drawn exactly as written. Not set
    * in diagrams made before rich text: theirs went through chemical interpretation (chemRuns),
@@ -129,29 +143,45 @@ export function toRich(spec: MoSpec): MoSpec {
   };
 }
 
+/** A level's place up the diagram, 0 (bottom) to 1 (top): where drawMo draws it. */
+const place = (e: number): number => Math.max(0, Math.min(1, e));
+
+/**
+ * A diagram with its energies as relative positions, 0 (bottom) to 1 (top). One saved before that
+ * had energies in any units, drawn with the lowest at the bottom and the highest at the top: the
+ * same places, so it draws as it did (all at one energy: the middle).
+ */
+export function toRelative(spec: MoSpec): MoSpec {
+  if (spec.relative) return spec;
+  const es = spec.levels.map((l) => l.e).filter((e) => Number.isFinite(e));
+  const lo = Math.min(...es), hi = Math.max(...es);
+  const at = (e: number) => (!Number.isFinite(e) ? e : hi === lo ? 0.5 : Math.round(((e - lo) / (hi - lo)) * 1000) / 1000);
+  return { ...spec, relative: true, levels: spec.levels.map((l) => ({ ...l, e: at(l.e) })) };
+}
+
 export interface MoPreset { id: string; name: string; spec: MoSpec; /** An ion's charge: the molecular orbitals hold that many fewer electrons than the atoms gave. */ charge?: number }
 
 const lv = (column: MoColumn, label: string, e: number, n: number, electrons: number, from?: string, fromSide?: 'left' | 'right'): MoLevel =>
   ({ column, label, e, n, electrons, ...(from ? { from } : {}), ...(fromSide ? { fromSide } : {}) });
 
 /** One atom's valence orbitals for Autofill, with their potential energies in eV (approximate, as tabulated in inorganic chemistry texts). */
-export interface MoAtom { id: string; name: string; symbol: string; orbitals: { label: string; e: number; n: number; electrons: number }[] }
+export interface MoAtom { id: string; /** Atomic number. */ z: number; name: string; symbol: string; orbitals: { label: string; e: number; n: number; electrons: number }[] }
 
 export const MO_ATOMS: MoAtom[] = [
-  { id: 'H', name: 'Hydrogen', symbol: 'H', orbitals: [{ label: '1s', e: -13.6, n: 1, electrons: 1 }] },
-  { id: 'He', name: 'Helium', symbol: 'He', orbitals: [{ label: '1s', e: -24.6, n: 1, electrons: 2 }] },
-  { id: 'Li', name: 'Lithium', symbol: 'Li', orbitals: [{ label: '2s', e: -5.4, n: 1, electrons: 1 }, { label: '2p', e: -3.5, n: 3, electrons: 0 }] },
-  { id: 'Be', name: 'Beryllium', symbol: 'Be', orbitals: [{ label: '2s', e: -9.3, n: 1, electrons: 2 }, { label: '2p', e: -6.0, n: 3, electrons: 0 }] },
-  { id: 'B', name: 'Boron', symbol: 'B', orbitals: [{ label: '2s', e: -14.0, n: 1, electrons: 2 }, { label: '2p', e: -8.3, n: 3, electrons: 1 }] },
-  { id: 'C', name: 'Carbon', symbol: 'C', orbitals: [{ label: '2s', e: -19.4, n: 1, electrons: 2 }, { label: '2p', e: -10.7, n: 3, electrons: 2 }] },
-  { id: 'N', name: 'Nitrogen', symbol: 'N', orbitals: [{ label: '2s', e: -25.6, n: 1, electrons: 2 }, { label: '2p', e: -13.2, n: 3, electrons: 3 }] },
-  { id: 'O', name: 'Oxygen', symbol: 'O', orbitals: [{ label: '2s', e: -32.4, n: 1, electrons: 2 }, { label: '2p', e: -15.9, n: 3, electrons: 4 }] },
-  { id: 'F', name: 'Fluorine', symbol: 'F', orbitals: [{ label: '2s', e: -40.2, n: 1, electrons: 2 }, { label: '2p', e: -18.7, n: 3, electrons: 5 }] },
-  { id: 'Ne', name: 'Neon', symbol: 'Ne', orbitals: [{ label: '2s', e: -48.5, n: 1, electrons: 2 }, { label: '2p', e: -21.6, n: 3, electrons: 6 }] },
-  { id: 'Cl', name: 'Chlorine', symbol: 'Cl', orbitals: [{ label: '3s', e: -25.3, n: 1, electrons: 2 }, { label: '3p', e: -13.7, n: 3, electrons: 5 }] },
-  { id: 'Csp3', name: 'Carbon, sp³ hybrid (one bond)', symbol: 'C', orbitals: [{ label: 'sp^{3}', e: -12.9, n: 1, electrons: 1 }] },
-  { id: 'Csp2', name: 'Carbon, sp² hybrid (one bond)', symbol: 'C', orbitals: [{ label: 'sp^{2}', e: -13.5, n: 1, electrons: 1 }] },
-  { id: 'Csp', name: 'Carbon, sp hybrid (one bond)', symbol: 'C', orbitals: [{ label: 'sp', e: -15.1, n: 1, electrons: 1 }] },
+  { id: 'H', z: 1, name: 'Hydrogen', symbol: 'H', orbitals: [{ label: '1s', e: -13.6, n: 1, electrons: 1 }] },
+  { id: 'He', z: 2, name: 'Helium', symbol: 'He', orbitals: [{ label: '1s', e: -24.6, n: 1, electrons: 2 }] },
+  { id: 'Li', z: 3, name: 'Lithium', symbol: 'Li', orbitals: [{ label: '2s', e: -5.4, n: 1, electrons: 1 }, { label: '2p', e: -3.5, n: 3, electrons: 0 }] },
+  { id: 'Be', z: 4, name: 'Beryllium', symbol: 'Be', orbitals: [{ label: '2s', e: -9.3, n: 1, electrons: 2 }, { label: '2p', e: -6.0, n: 3, electrons: 0 }] },
+  { id: 'B', z: 5, name: 'Boron', symbol: 'B', orbitals: [{ label: '2s', e: -14.0, n: 1, electrons: 2 }, { label: '2p', e: -8.3, n: 3, electrons: 1 }] },
+  { id: 'C', z: 6, name: 'Carbon', symbol: 'C', orbitals: [{ label: '2s', e: -19.4, n: 1, electrons: 2 }, { label: '2p', e: -10.7, n: 3, electrons: 2 }] },
+  { id: 'N', z: 7, name: 'Nitrogen', symbol: 'N', orbitals: [{ label: '2s', e: -25.6, n: 1, electrons: 2 }, { label: '2p', e: -13.2, n: 3, electrons: 3 }] },
+  { id: 'O', z: 8, name: 'Oxygen', symbol: 'O', orbitals: [{ label: '2s', e: -32.4, n: 1, electrons: 2 }, { label: '2p', e: -15.9, n: 3, electrons: 4 }] },
+  { id: 'F', z: 9, name: 'Fluorine', symbol: 'F', orbitals: [{ label: '2s', e: -40.2, n: 1, electrons: 2 }, { label: '2p', e: -18.7, n: 3, electrons: 5 }] },
+  { id: 'Ne', z: 10, name: 'Neon', symbol: 'Ne', orbitals: [{ label: '2s', e: -48.5, n: 1, electrons: 2 }, { label: '2p', e: -21.6, n: 3, electrons: 6 }] },
+  { id: 'Cl', z: 17, name: 'Chlorine', symbol: 'Cl', orbitals: [{ label: '3s', e: -25.3, n: 1, electrons: 2 }, { label: '3p', e: -13.7, n: 3, electrons: 5 }] },
+  { id: 'Csp3', z: 6, name: 'Carbon, sp³ hybrid (one bond)', symbol: 'C', orbitals: [{ label: 'sp^{3}', e: -12.9, n: 1, electrons: 1 }] },
+  { id: 'Csp2', z: 6, name: 'Carbon, sp² hybrid (one bond)', symbol: 'C', orbitals: [{ label: 'sp^{2}', e: -13.5, n: 1, electrons: 1 }] },
+  { id: 'Csp', z: 6, name: 'Carbon, sp hybrid (one bond)', symbol: 'C', orbitals: [{ label: 'sp', e: -15.1, n: 1, electrons: 1 }] },
 ];
 
 /** Put electrons into the molecular orbitals lowest first (two to an orbital); Hund's rule spreads them within a level. */
@@ -197,7 +227,7 @@ function sOnly(a: string): MoSpec {
 const withTitle = (spec: MoSpec, middle: string): MoSpec => ({ ...spec, titles: [spec.titles[0], middle, spec.titles[2]] });
 
 /** Starting points for teaching: qualitative orders from MO theory, energies near the atoms' orbital potential energies (eV). */
-export const MO_PRESETS: MoPreset[] = [
+const PRESETS: MoPreset[] = [
   { id: 'h2', name: 'H₂ (two 1s orbitals)', spec: sOnly('H') },
   { id: 'he2', name: 'He₂ (bond order 0)', spec: sOnly('He') },
   { id: 'li2', name: 'Li₂ (2s only)', spec: (() => {
@@ -230,10 +260,115 @@ export const MO_PRESETS: MoPreset[] = [
   { id: 'ethylene', name: 'Ethylene π bond (two p orbitals)', spec: { titles: ['C', 'C=C π', 'C'], axis: true, rich: true, levels: [
     lv('left', '2p', 0, 1, 1), lv('right', '2p', 0, 1, 1), lv('middle', 'π (HOMO)', -1, 1, 2, '2p'), lv('middle', 'π^{*} (LUMO)', 1, 1, 0, '2p'),
   ] } },
-  { id: 'blank', name: 'Blank (two orbitals making two)', spec: { titles: ['A', 'AB', 'B'], axis: true, rich: true, levels: [
+  { id: 'custom', name: 'Custom MO Diagram', spec: { titles: ['A', 'AB', 'B'], axis: true, rich: true, levels: [
     lv('left', 'φ_{A}', 0.4, 1, 1), lv('right', 'φ_{B}', -0.4, 1, 1), lv('middle', 'ψ_{1}', -1.2, 1, 2, 'φA, φB'), lv('middle', 'ψ_{2}', 1.4, 1, 0, 'φA, φB'),
   ] } },
 ];
+
+export const MO_PRESETS: MoPreset[] = PRESETS.map((p) => ({ ...p, spec: toRelative(p.spec) }));
+
+/** How many orbitals an atomic orbital's name stands for: one s (or hybrid), three p, five d, seven f. Fixed by what the orbital is. */
+export function aoDegeneracy(label: string): number {
+  const k = aoKind(label);
+  if (k !== 's' && k !== 'p') return 1;
+  const t = moPlain(label).toLowerCase().replace(/[^a-z]/g, '');
+  return t.endsWith('p') ? 3 : t.endsWith('d') ? 5 : t.endsWith('f') ? 7 : 1;
+}
+
+/**
+ * Whether π lies below σ in the p set of a diatomic of these two atoms: so for Li₂ through N₂, and
+ * σ below π from O₂ on ("Homonuclear Diatomic Molecules", LibreTexts Inorganic Chemistry, after
+ * Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed., Pearson 2014:
+ * https://chem.libretexts.org/Courses/Centre_College/CHE_332%3A_Inorganic_Chemistry/04%3A_Molecular_Orbitals/4.02%3A_Molecular_Orbital_Theory_of_Diatomic_Molecules/4.2.02%3A_Homonuclear_Diatomic_Molecules).
+ * For two different atoms there is no one rule; this takes the earlier atom's, which puts CO's 1π
+ * below its 3σ as the same book's heteronuclear section has it, and the window lets it be changed.
+ */
+export const mixingFor = (a: MoAtom, b: MoAtom): boolean => Math.min(a.z, b.z) <= 7;
+
+const sOf = (a: MoAtom) => a.orbitals.find((o) => o.n === 1 && aoKind(o.label) === 's');
+const pOf = (a: MoAtom) => a.orbitals.find((o) => o.n === 3);
+
+/** Whether a diagram can be filled in from these two atoms (hybrids and other one-orbital fragments only pair with each other or with a p orbital by hand). */
+export const canFill = (a: MoAtom, b: MoAtom): boolean => !!sOf(a) && !!sOf(b);
+
+/**
+ * The diagram for a diatomic of two atoms, with `electrons` in the molecule (not given: the
+ * atoms' own, a neutral molecule). Two s orbitals make σ and σ*; two p sets make σ, π, π* and σ*;
+ * an atom with only an s orbital beside one with s and p (HF) makes σ and σ* from its s and the
+ * other's p, and leaves the other's s and two of its p orbitals nonbonding. Energies are relative
+ * positions worked out from the atoms' orbital energies.
+ */
+export function fromAtoms(a: string, b: string, electrons?: number, mixing?: boolean): MoSpec | null {
+  const A = MO_ATOMS.find((x) => x.id === a), B = MO_ATOMS.find((x) => x.id === b);
+  if (!A || !B || !canFill(A, B)) return null;
+  const mix = mixing ?? mixingFor(A, B);
+  const sa = sOf(A)!, sb = sOf(B)!, pa = pOf(A), pb = pOf(B);
+  const same = a === b;
+  const title = same ? `${A.symbol}_{2}` : `${A.symbol}${B.symbol}`;
+  const r = (x: number) => Math.round(x * 10) / 10;
+  const mid: MoLevel[] = [];
+  const both = (x: string, y: string) => (x === y ? x : `${x}, ${y}`);
+  /** Names: σ2s, σ*2s… when both sides' orbitals have one name, else numbered by kind (1σ, 2σ*, 1π…) from the bottom. */
+  const named = sa.label === sb.label && (!pa || !pb || pa.label === pb.label);
+  if (pa && pb) {
+    const s = (sa.e + sb.e) / 2, p = (pa.e + pb.e) / 2, g = p - s, fs = both(sa.label, sb.label), fp = both(pa.label, pb.label);
+    const twoP = mix
+      ? [lv('middle', 'π', r(p - 0.32 * g), 2, 0, fp), lv('middle', 'σ', r(p - 0.15 * g), 1, 0, fp)]
+      : [lv('middle', 'σ', r(p - 0.38 * g), 1, 0, fp), lv('middle', 'π', r(p - 0.2 * g), 2, 0, fp)];
+    mid.push(lv('middle', 'σ', r(s - 0.22 * g), 1, 0, fs), lv('middle', 'σ*', r(s + 0.18 * g), 1, 0, fs), ...twoP,
+      lv('middle', 'π*', r(p + 0.22 * g), 2, 0, fp), lv('middle', 'σ*', r(p + 0.45 * g), 1, 0, fp));
+  } else if (!pa && !pb) {
+    const s = (sa.e + sb.e) / 2, d = Math.max(1.5, Math.abs(s) * 0.3), fs = both(sa.label, sb.label);
+    mid.push(lv('middle', 'σ', r(Math.min(sa.e, sb.e) - d), 1, 0, fs), lv('middle', 'σ*', r(Math.max(sa.e, sb.e) + 1.2 * d), 1, 0, fs));
+  } else {
+    // one atom has only its s orbital: it mixes with the other's p (end on); the rest of the other atom stays as it was
+    const one = pa ? sb : sa, other = pa ? A : B, side = pa ? 'left' : 'right';
+    const os = sOf(other)!, op = pOf(other)!;
+    const pair = pa ? `${op.label}, ${one.label}` : `${one.label}, ${op.label}`;
+    const d = Math.max(1.5, Math.abs(one.e - op.e) * 0.35);
+    mid.push(lv('middle', 'σ', os.e, 1, 0, os.label, side), lv('middle', 'σ', r(Math.min(one.e, op.e) - d), 1, 0, pair),
+      lv('middle', 'π', op.e, 2, 0, op.label, side), lv('middle', 'σ*', r(Math.max(one.e, op.e) + 1.6 * d), 1, 0, pair));
+  }
+  // the names, lowest first
+  const count: Record<string, number> = {};
+  for (const l of [...mid].sort((x, y) => x.e - y.e)) {
+    const star = l.label.endsWith('*'), sym = l.label[0];
+    const ao = (l.from ?? '').split(',')[0].trim();
+    if (named && !l.fromSide && pa && pb) l.label = `${sym}${star ? '^{*}' : ''}_{${ao}}`;
+    else if (named && !pa && !pb) l.label = `${sym}${star ? '^{*}' : ''}_{${ao}}`;
+    else { count[sym] = (count[sym] ?? 0) + 1; l.label = `${count[sym]}${sym}${star ? '^{*}' : ''}`; }
+  }
+  const sides = [...atomLevels(A, 'left'), ...atomLevels(B, 'right')];
+  const own = sides.reduce((t, l) => t + l.electrons, 0);
+  const room = mid.reduce((t, l) => t + 2 * l.n, 0);
+  const total = Math.max(0, Math.min(room, Math.round(electrons ?? own)));
+  const levels = aufbau([...sides, ...mid].map((l) => ({ ...l, auto: true })), total);
+  return toRelative({ titles: [A.symbol, title, B.symbol], axis: true, rich: true, levels, atoms: { left: a, right: b, electrons: total, mixing: mix } });
+}
+
+/** What a diagram adds up to: electrons and orbitals on the atoms and in the molecule, the bond order and the unpaired electrons in the molecule. */
+export interface MoCounts { atomElectrons: number; moElectrons: number; atomOrbitals: number; moOrbitals: number; bondOrder: number; unpaired: number }
+
+/**
+ * Bond order = (electrons in bonding orbitals − electrons in antibonding ones) / 2. A molecular
+ * orbital made from one side only (or joined to nothing) is nonbonding; otherwise mixOf says
+ * which it is (a * in its name: antibonding).
+ */
+export function moCounts(levels: MoLevel[]): MoCounts {
+  const out: MoCounts = { atomElectrons: 0, moElectrons: 0, atomOrbitals: 0, moOrbitals: 0, bondOrder: 0, unpaired: 0 };
+  let net = 0;
+  for (const l of levels) {
+    const fill = hund(l.n, l.electrons), e = fill.reduce((t, x) => t + x, 0);
+    if (l.column !== 'middle') { out.atomElectrons += e; out.atomOrbitals += fill.length; continue; }
+    out.moElectrons += e;
+    out.moOrbitals += fill.length;
+    out.unpaired += fill.filter((x) => x === 1).length;
+    const mix = l.fromSide ? null : mixOf(levels, l);
+    if (mix && mix.left && mix.right) net += mix.bonding ? e : -e;
+  }
+  out.bondOrder = net / 2;
+  return out;
+}
 
 /** Electrons in each of a level's n orbitals, by Hund's rule: one in each first, then pairs. */
 export function hund(n: number, electrons: number): number[] {
@@ -439,7 +574,9 @@ export function drawMo(doc: Doc, m: Measure, spec: MoSpec, at: Vec, w: number, h
   const levels = spec.levels.filter((l) => Number.isFinite(l.e));
   if (!levels.length) return out;
   const hi = Math.max(...levels.map((l) => l.e)), lo = Math.min(...levels.map((l) => l.e));
-  const y = (e: number) => (hi === lo ? at.y + h / 2 : at.y + ((hi - e) / (hi - lo)) * h);
+  // relative: 0 is the bottom of the box and 1 the top; before that, the lowest and highest levels were
+  const y = spec.relative ? (e: number) => at.y + (1 - place(e)) * h
+    : (e: number) => (hi === lo ? at.y + h / 2 : at.y + ((hi - e) / (hi - lo)) * h);
   const pics = !!spec.pictures;
   const colX: Record<MoColumn, number> = pics
     ? { left: at.x + w * 0.24, middle: at.x + w * 0.5, right: at.x + w * 0.76 }

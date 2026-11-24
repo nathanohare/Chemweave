@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { electronLook, fitWidth, hund, roomBeside, mixOf, MO_PRESETS, moPlain, parseMarkup, sources, toMarkup, toRich } from '../src/design/mo';
+import { aoDegeneracy, drawMo, electronLook, fitWidth, fromAtoms, hund, moCounts, roomBeside, mixOf, MO_PRESETS, moPlain, parseMarkup, sources, toMarkup, toRelative, toRich, type MoSpec } from '../src/design/mo';
 import { orbitalShapes } from '../src/chem/orbitals';
 import { Doc } from '../src/model';
 import { ACS_1996 } from '../src/style';
@@ -100,7 +100,7 @@ describe('MO diagrams', () => {
     const hf = MO_PRESETS.find((p) => p.id === 'hf')!.spec;
     expect(mixOf(hf.levels, hf.levels.find((l) => moPlain(l.label) === '1π')!)).toEqual({ left: null, right: 'p', sym: 'π', bonding: true });
     // no σ or π in the name: above the atomic orbitals is out of phase
-    const blank = MO_PRESETS.find((p) => p.id === 'blank')!.spec;
+    const blank = MO_PRESETS.find((p) => p.id === 'custom')!.spec;
     expect(blank.levels.filter((l) => l.column === 'middle').map((l) => mixOf(blank.levels, l)?.bonding)).toEqual([true, false]);
   });
 
@@ -159,5 +159,84 @@ describe('MO diagrams', () => {
     const w = fitWidth((x) => 10 + (x - 200) / 4, 200, 25);
     expect(w).toBeCloseTo(260, 0);
     expect(fitWidth(() => undefined, 200, 25)).toBe(200);
+  });
+
+  it('keeps energies as relative positions, 0 at the bottom and 1 at the top', () => {
+    for (const p of MO_PRESETS) {
+      const es = p.spec.levels.map((l) => l.e);
+      expect(p.spec.relative, p.id).toBe(true);
+      expect(Math.min(...es), p.id).toBe(0);
+      expect(Math.max(...es), p.id).toBe(1);
+    }
+    // a level at 0.25 is drawn a quarter of the way up the box, whatever the other levels are
+    const doc = new Doc();
+    doc.style = { ...ACS_1996 };
+    const spec: MoSpec = { titles: ['', '', ''], axis: false, rich: true, relative: true, levels: [{ column: 'left', label: '', e: 0.25, n: 1, electrons: 0 }] };
+    let ids: number[] = [];
+    doc.edit('MO', () => { ids = drawMo(doc, POINTS, spec, { x: 0, y: 100 }, 200, 80).shapes; });
+    expect(doc.shapes.get(ids[0])!.y1).toBeCloseTo(100 + 0.75 * 80);
+  });
+
+  it('opens a diagram saved with energies in other units, drawn where it was', () => {
+    const old: MoSpec = { titles: ['H', 'H_{2}', 'H'], axis: false, rich: true, levels: [
+      { column: 'left', label: '1s', e: -13.6, n: 1, electrons: 1 }, { column: 'right', label: '1s', e: -13.6, n: 1, electrons: 1 },
+      { column: 'middle', label: 'σ', e: -18.4, n: 1, electrons: 2, from: '1s' }, { column: 'middle', label: 'σ^{*}', e: -7.6, n: 1, electrons: 0, from: '1s' },
+    ] };
+    const now = toRelative(old);
+    expect(now.levels.map((l) => l.e)).toEqual([0.444, 0.444, 0, 1]);
+    expect(toRelative(now)).toBe(now);
+    const ys = (spec: MoSpec) => {
+      const doc = new Doc();
+      doc.style = { ...ACS_1996 };
+      let ids: number[] = [];
+      doc.edit('MO', () => { ids = drawMo(doc, POINTS, spec, { x: 0, y: 0 }, 200, 170).shapes; });
+      return ids.map((i) => doc.shapes.get(i)!).map((s) => [s.y1, s.y2]).flat();
+    };
+    const a = ys(old), b = ys(now);
+    expect(b.length).toBe(a.length);
+    // to within the rounding of the positions (a thousandth of the height)
+    a.forEach((y, i) => expect(Math.abs(y - b[i])).toBeLessThan(0.1));
+    // every level at one energy was drawn in the middle
+    expect(toRelative({ ...old, levels: old.levels.map((l) => ({ ...l, e: 3 })) }).levels.every((l) => l.e === 0.5)).toBe(true);
+  });
+
+  it('fills a diagram from two atoms', () => {
+    // Bond orders and unpaired electrons: "Homonuclear Diatomic Molecules", LibreTexts Inorganic
+    // Chemistry (after Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed., Pearson 2014),
+    // https://chem.libretexts.org/Courses/Centre_College/CHE_332%3A_Inorganic_Chemistry/04%3A_Molecular_Orbitals/4.02%3A_Molecular_Orbital_Theory_of_Diatomic_Molecules/4.2.02%3A_Homonuclear_Diatomic_Molecules
+    // B2 [σ(2s)² σ*(2s)² π(2p)²] bond order 1, paramagnetic; C2 bond order 2; N2 bond order 3;
+    // O2 bond order 2 with two unpaired electrons; F2 bond order 1.
+    const order = (a: string, b = a, e?: number) => moCounts(fromAtoms(a, b, e)!.levels);
+    expect(order('B').bondOrder).toBe(1);
+    expect(order('B').unpaired).toBeGreaterThan(0);
+    expect(order('C').bondOrder).toBe(2);
+    expect(order('N').bondOrder).toBe(3);
+    expect(order('O')).toMatchObject({ bondOrder: 2, unpaired: 2 });
+    expect(order('F').bondOrder).toBe(1);
+    // the same page: π(2p) below σ(2p) up to and including N2, σ(2p) below π(2p) from O2 on
+    const at = (a: string, name: string) => fromAtoms(a, a)!.levels.find((l) => moPlain(l.label) === name)!.e;
+    for (const a of ['B', 'C', 'N']) expect(at(a, 'π2p'), a).toBeLessThan(at(a, 'σ2p'));
+    for (const a of ['O', 'F']) expect(at(a, 'σ2p'), a).toBeLessThan(at(a, 'π2p'));
+    // as many molecular orbitals as atomic orbitals, and the electrons the atoms gave
+    for (const [a, b] of [['N', 'N'], ['C', 'O'], ['H', 'F'], ['F', 'H'], ['H', 'H'], ['H', 'He']]) {
+      const c = moCounts(fromAtoms(a, b)!.levels);
+      expect(c.moOrbitals, a + b).toBe(c.atomOrbitals);
+      expect(c.moElectrons, a + b).toBe(c.atomElectrons);
+    }
+    // the electrons can be set: one more or fewer than the atoms' (an ion), never more than there is room for
+    expect(order('O', 'O', 13).moElectrons).toBe(13);
+    expect(order('H', 'H', 9).moElectrons).toBe(4);
+    // "Heteronuclear Diatomic Molecules" (same book and site, 4.2.03): in HF the F 2s and two F 2p
+    // orbitals are nonbonding, and H 1s with F 2p makes σ and σ*: one bond
+    const hf = fromAtoms('H', 'F')!;
+    expect(hf.levels.filter((l) => l.column === 'middle' && l.fromSide === 'right').map((l) => l.n)).toEqual([1, 2]);
+    expect(moCounts(hf.levels).bondOrder).toBe(1);
+    expect(hf.atoms).toEqual({ left: 'H', right: 'F', electrons: 8, mixing: true });
+    // hybrids pair by hand, in a custom diagram
+    expect(fromAtoms('Csp3', 'F')).toBeNull();
+  });
+
+  it('knows how many orbitals an atomic orbital name stands for', () => {
+    expect(['1s', '2s', '2p', '3p', '3d', 'sp^{3}', 'sp'].map(aoDegeneracy)).toEqual([1, 1, 3, 3, 5, 1, 1]);
   });
 });
