@@ -137,6 +137,54 @@ describe('ChemDraw TLC plates and spectra', () => {
     expect(els(out, 'tlcplate').length).toBe(1);
   });
 
+  it('turn with their pictures (a plate), and keep their group and place in the order', () => {
+    const r = readCdxml(XML);
+    const pl = [...r.doc.shapes.values()].find((s) => s.cdObject?.kind === 'tlcplate')!;
+    const cap = [...r.doc.captions.values()][0];
+    r.doc.edit('Turn and group', () => {
+      r.doc.updateShape(pl.id, { rot: 90, grp: 7, z: 99 });
+      r.doc.updateCaption(cap.id, { grp: 7 });
+    });
+    const out = writeCdxml(r.doc, { name: 'x.cdxml' });
+    const p = els(out, 'tlcplate')[0];
+    // turned a quarter clockwise about its picture's middle: the top left corner is now at the top right
+    const mid = { x: (pl.x1 + pl.x2) / 2, y: (pl.y1 + pl.y2) / 2 };
+    const [x, y] = p.getAttribute('TopLeft')!.split(' ').map(Number);
+    expect(x).toBeCloseTo(mid.x - (60 - mid.y), 1);
+    expect(y).toBeCloseTo(mid.y + (40 - mid.x), 1);
+    expect(p.parentElement!.nodeName).toBe('group');
+    const again = readCdxml(out).doc;
+    const pl2 = [...again.shapes.values()].find((s) => s.cdObject?.kind === 'tlcplate')!;
+    expect(pl2.grp).toBeDefined();
+    expect(pl2.grp).toBe([...again.captions.values()][0].grp);
+    expect(pl2.y2 - pl2.y1).toBeLessThan(pl2.x2 - pl2.x1); // lying on its side
+  });
+
+  it('never hang, fail or make up points on odd spectra', () => {
+    const sp = (id: number, y: number, a: string, d: string) => `<spectrum id="${id}" BoundingBox="10 ${y} 105 ${y + 55}" ${a}>${d}</spectrum>`;
+    const odd = file(sp(40, 10, 'XLow="1e17" XSpacing="1"', '1 2 3 4') + sp(41, 100, 'XLow="0" XSpacing="1"', '') + sp(42, 200, 'XLow="0" XSpacing="1"', Array.from({ length: 131072 }, (_, k) => String(k % 7)).join(' ')));
+    const t = Date.now();
+    const pics = pictures(odd);
+    expect(Date.now() - t).toBeLessThan(10000);
+    expect(pics.length).toBe(3);
+    // an empty spectrum is a frame with no line and no numbers
+    const empty = parse(svgOf(pics[1]));
+    expect(empty.getElementsByTagName('polyline').length).toBe(0);
+    expect(Array.from(empty.getElementsByTagName('text')).map((x) => x.textContent)).toEqual(['Unknown']);
+  });
+
+  it('are left out, never fatal, when a copy has lost its ChemDraw object', () => {
+    const r = readCdxml(XML);
+    const pl = [...r.doc.shapes.values()].find((s) => s.cdObject?.kind === 'tlcplate')!;
+    const { id: _id, ...rest } = pl;
+    r.doc.edit('Paste', () => {
+      r.doc.addShape({ ...rest, cdObject: { kind: 'tlcplate', xml: 'not xml' } as never });
+      r.doc.addShape({ ...rest, cdObject: { kind: 'tlcplate', xml: pl.cdObject!.xml } as never });
+    });
+    const out = writeCdxml(r.doc, { name: 'x.cdxml' });
+    expect(els(out, 'tlcplate').length).toBe(1);
+  });
+
   it('go to CDX and back as ChemDraw objects', () => {
     const back = cdxToCdxml(cdxmlToCdx(writeCdxml(readCdxml(XML).doc, { name: 'x.cdxml' })));
     expect(els(back, 'tlcplate').length).toBe(1);

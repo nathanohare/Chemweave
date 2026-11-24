@@ -11,8 +11,8 @@ import { CdxmlSource, Doc, Atom, Bond, Caption, Arrow, Shape, TextRun, Entity, K
 import { interpretArrow, isReactionArrow, linkRows, isStep, plainMeasure, rolesOf, schemeItems, type Item } from '../chem/reaction';
 import { SYMBOLS } from '../chem/elements';
 import { labelBonds, labelSpec, layoutLabel, labelDir, labelGraph, tokenize, isGenericLabel, Measure, MiniGraph, kekulize, labelLook, labelPieces } from '../chem/labels';
-import { Vec, DEG, arcCenter, norm, sub, Rect, turnedCorners } from '../geom';
-import { arrowEllipse, bezPoints, boxOf, elbowRoute, shapeTurn } from '../objects';
+import { Vec, DEG, arcCenter, norm, sub, Rect, turnedCorners, turnAbout } from '../geom';
+import { arrowEllipse, bezPoints, boxOf, elbowRoute, shapeTurn, shapeMid } from '../objects';
 import { kids, descendants, wellFormed, withoutDoctype } from './xml';
 import { CD_OBJECTS, type CdObject } from './chemdraw-objects';
 import { withoutCdxOnly } from './cdx';
@@ -1874,10 +1874,19 @@ class CdxmlWriter {
   private writeCdObject(s: Shape, cd: CdObject): void {
     const e = this.source('s', s.id, CD_OBJECTS);
     const o = this.orig<Shape>('s', s.id);
+    if (!(e && o) && !(Array.isArray(cd.box) && cd.box.length === 4 && typeof cd.xml === 'string')) return;
     const [ox1, oy1, ox2, oy2] = e && o ? [o.x1, o.y1, o.x2, o.y2] : cd.box;
-    const map = boxMap({ x1: ox1, y1: oy1, x2: ox2, y2: oy2 }, s);
+    // a plate turned here is turned in the file too (its corners say how it lies); a spectrum can't be
+    const turn = cd.kind === 'tlcplate' ? (s.rot ?? 0) - (e && o ? o.rot ?? 0 : 0) : 0;
+    const stretch = boxMap({ x1: ox1, y1: oy1, x2: ox2, y2: oy2 }, s);
+    const mid = shapeMid(s);
+    const map = stretch && ((x: number, y: number): [number, number] => {
+      const [a, b] = stretch(x, y);
+      const q = turnAbout({ x: a, y: b }, mid, turn);
+      return [q.x, q.y];
+    });
     if (e && o) {
-      if (o.x1 === s.x1 && o.y1 === s.y1 && o.x2 === s.x2 && o.y2 === s.y2) return;
+      if (o.x1 === s.x1 && o.y1 === s.y1 && o.x2 === s.x2 && o.y2 === s.y2 && !turn) return;
       if (map) moveCdObject(e, map);
       this.changed = true;
       return;
@@ -2557,7 +2566,7 @@ class CdxmlWriter {
     switch (ref[0]) {
       case 'a': return this.fragOfAtom.get(id)?.getAttribute('id') ?? null;
       case 'c': return this.doc.captions.has(id) ? this.source('c', id, ['t'])?.getAttribute('id') ?? String(id) : null;
-      case 's': return this.doc.shapes.has(id) ? this.source('s', id, ['graphic', 'embeddedobject', 'table', 'group', 'curve'])?.getAttribute('id') ?? String(id) : null;
+      case 's': return this.doc.shapes.has(id) ? this.source('s', id, SHAPE_ELEMENTS)?.getAttribute('id') ?? String(id) : null;
     }
     return null;
   }
@@ -2642,7 +2651,7 @@ class CdxmlWriter {
   /** The element written for a thing: a structure's fragment for an atom. */
   private elementOf(kind: Kind, id: number, ided: (id: number, names: string[]) => Element | null): Element | null {
     if (kind === 'a') return this.fragOfAtom.get(id) ?? null;
-    const names = kind === 'c' ? ['t'] : kind === 'r' ? ['arrow', 'graphic', 'curve'] : ['graphic', 'embeddedobject', 'table', 'group', 'curve'];
+    const names = kind === 'c' ? ['t'] : kind === 'r' ? ['arrow', 'graphic', 'curve'] : SHAPE_ELEMENTS;
     return this.source(kind, id, names) ?? (kind === 'r' ? this.findArrow(id) : null) ?? ided(id, names);
   }
 
@@ -2887,7 +2896,7 @@ class CdxmlWriter {
     for (const a of doc.atoms.values()) put('a', a.id, ['n'], a.piece);
     for (const c of doc.captions.values()) put('c', c.id, ['t'], c.piece);
     for (const r of doc.arrows.values()) put('r', r.id, ['arrow', 'graphic'], r.piece);
-    for (const s of doc.shapes.values()) put('s', s.id, ['graphic', 'embeddedobject', 'table', 'group', 'curve'], s.piece);
+    for (const s of doc.shapes.values()) put('s', s.id, SHAPE_ELEMENTS, s.piece);
     // the two halves of a bracket pair drawn with the bracket tool (a click on one selects both)
     for (const s of doc.shapes.values()) if (s.kind === 'bracket') put('s', s.id, ['graphic'], s.bracketPair, BRACKET_PAIR_TAG, 'bracketPair');
   }
@@ -2904,7 +2913,7 @@ class CdxmlWriter {
     if (this.unchangedSinceRead()) return;
     const doc = this.doc;
     const ided = this.idedFinder();
-    const SHAPE_NAMES = ['graphic', 'embeddedobject', 'table', 'group', 'curve'];
+    const SHAPE_NAMES = SHAPE_ELEMENTS;
     const ARROW_NAMES = ['arrow', 'graphic', 'curve'];
     const elOf = (kind: RefKind, id: number): Element | null => {
       const names = kind === 'a' ? ['n'] : kind === 'b' ? ['b'] : kind === 'c' ? ['t'] : kind === 'r' ? ARROW_NAMES : SHAPE_NAMES;
@@ -3121,6 +3130,9 @@ function shift(e: Element, dx: number, dy: number): void {
   for (const c of kids(e)) shift(c, dx, dy);
 }
 
+/** The elements a shape may have been read from (for its group, place in the stacking order, tags and steps). */
+const SHAPE_ELEMENTS = ['graphic', 'embeddedobject', 'table', 'group', 'curve', ...CD_OBJECTS];
+
 /** The points of a ChemDraw TLC plate or spectrum, and of what it holds (an Rf label's place). */
 const CD_POSITION_ATTRS = [...POSITION_ATTRS, 'TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
 
@@ -3146,9 +3158,10 @@ function moveCdObject(e: Element, map: (x: number, y: number) => [number, number
     }
     const out: number[] = [];
     for (let i = 0; i + 1 < n.length; i += 2) out.push(...map(n[i], n[i + 1]));
-    if (name === 'BoundingBox' && out.length === 4) {
-      const [a, b, c, d] = out;
-      out.splice(0, 4, Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d));
+    if (name === 'BoundingBox' && n.length === 4) {
+      // all four corners, so a turned plate's box still holds it
+      const cs = [map(n[0], n[1]), map(n[2], n[1]), map(n[2], n[3]), map(n[0], n[3])];
+      out.splice(0, 4, Math.min(...cs.map((c) => c[0])), Math.min(...cs.map((c) => c[1])), Math.max(...cs.map((c) => c[0])), Math.max(...cs.map((c) => c[1])));
     }
     e.setAttribute(name, out.map(f2).join(' '));
   }

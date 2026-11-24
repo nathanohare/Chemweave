@@ -137,7 +137,8 @@ function tlcPlate(el: Element, look: CdLook): { body: string; box: Box } | null 
       const shown = runs?.length ? runs : [{ text: 'R', size: 7.5, sub: false, color: undefined }, { text: 'f', size: 7.5, sub: true, color: undefined }, { text: ` = ${rf.toFixed(2)}`, size: 7.5, sub: false, color: undefined }];
       texts.push(textEl(p, shown, sc));
       const width = shown.reduce((w, r) => w + arialWidth(r.text, r.sub ? r.size * 0.75 : r.size), 0);
-      box.add(p.x, p.y - 7.5 * 0.85); box.add(p.x + width, p.y + 7.5 * 0.3);
+      const size = Math.max(...shown.map((r) => r.size));
+      box.add(p.x, p.y - size * 0.85); box.add(p.x + width, p.y + size * 0.3);
     }
   });
   const body = `<g fill="none" stroke="${color}" stroke-width="${f(lw)}">${parts.join('')}</g>${texts.join('')}`;
@@ -191,6 +192,18 @@ function niceStep(raw: number): number {
   return 10 * p;
 }
 
+/**
+ * The multiples of `step` from lo to hi, as whole numbers of steps; none where they would be too
+ * many to draw or too large to count one by one (an axis from 1e17 would never end).
+ */
+function ticks(lo: number, hi: number, step: number): number[] {
+  const k0 = Math.ceil(lo / step - 1e-9), k1 = Math.floor(hi / step + 1e-9);
+  if (!Number.isSafeInteger(k0) || !Number.isSafeInteger(k1) || k1 - k0 > 200) return [];
+  const out: number[] = [];
+  for (let k = k0; k <= k1; k++) out.push(k);
+  return out;
+}
+
 const decimals = (step: number) => Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
 
 /**
@@ -205,7 +218,7 @@ function spectrum(el: Element, look: CdLook): { body: string; box: Box } | null 
   const bb = nums(el.getAttribute('BoundingBox'));
   if (bb.length !== 4 || !bb.every(Number.isFinite)) return null;
   const [bx1, by1, bx2, by2] = [Math.min(bb[0], bb[2]), Math.min(bb[1], bb[3]), Math.max(bb[0], bb[2]), Math.max(bb[1], bb[3])];
-  const ys = (el.textContent ?? '').trim().split(/\s+/).map(Number).filter(Number.isFinite);
+  const ys = (el.textContent ?? '').trim().split(/\s+/).filter(Boolean).map(Number).filter(Number.isFinite);
   const cls = spectrumClass(el.getAttribute('Class'));
   const xType = el.getAttribute('XType'), yType = el.getAttribute('YType');
   const yAxis = cls === 'Infrared' || cls === 'UVVis' || cls === 'MassSpectrum';
@@ -228,7 +241,9 @@ function spectrum(el: Element, look: CdLook): { body: string; box: Box } | null 
     const left = reversed ? Math.max(xFirst, xLast) : xFirst, right = reversed ? Math.min(xFirst, xLast) : xLast;
     const span = right - left || 1;
     const X = (x: number) => fx1 + ((x - left) / span) * (fx2 - fx1);
-    let lo = Math.min(...ys), hi = Math.max(...ys);
+    // (a loop, not Math.min(...ys): a long spectrum has more points than a call may take)
+    let lo = Infinity, hi = -Infinity;
+    for (const y of ys) { if (y < lo) lo = y; if (y > hi) hi = y; }
     if (hi - lo < 1e-12) { lo -= 0.5; hi += 0.5; }
     const top = fy1 + 2, bot = fy2 - 1.5;
     const Y = (y: number) => bot - ((y - lo) / (hi - lo)) * (bot - top);
@@ -242,7 +257,7 @@ function spectrum(el: Element, look: CdLook): { body: string; box: Box } | null 
     // X axis: ticks up from the frame's foot, numbers below them
     const lo2 = Math.min(left, right), hi2 = Math.max(left, right);
     const step = niceStep((hi2 - lo2) / Math.max(1, (fx2 - fx1) / 40));
-    for (let k = Math.ceil(lo2 / (step / 2) - 1e-9); k * (step / 2) <= hi2 + 1e-9; k++) {
+    for (const k of ticks(lo2, hi2, step / 2)) {
       const v = k * (step / 2), x = X(v), major = k % 2 === 0;
       parts.push(`<line x1="${f(x)}" y1="${f(fy2)}" x2="${f(x)}" y2="${f(fy2 - (major ? 2.5 : 1.5))}"/>`);
       if (!major) continue;
@@ -255,7 +270,7 @@ function spectrum(el: Element, look: CdLook): { body: string; box: Box } | null 
     // Y axis: ticks out to the left, numbers right-aligned beside them
     if (yAxis) {
       const ystep = niceStep((hi - lo) / Math.max(1, (bot - top) / 15));
-      for (let k = Math.ceil(lo / (ystep / 2) - 1e-9); k * (ystep / 2) <= hi + 1e-9; k++) {
+      for (const k of ticks(lo, hi, ystep / 2)) {
         const v = k * (ystep / 2), y = Y(v), major = k % 2 === 0;
         parts.push(`<line x1="${f(fx1)}" y1="${f(y)}" x2="${f(fx1 - (major ? 2.5 : 1.5))}" y2="${f(y)}"/>`);
         if (!major) continue;
