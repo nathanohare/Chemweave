@@ -286,16 +286,18 @@ pub fn si_new_working(app: tauri::AppHandle, name: String) -> Result<serde_json:
 #[tauri::command]
 pub async fn si_pack(root: String, file: String, skip: Option<Vec<String>>) -> Result<u64, String> {
     let skip = skip.unwrap_or_default();
+    let shown = file.clone();
     // (off the main thread: a large project takes a moment)
     tauri::async_runtime::spawn_blocking(move || pack(Path::new(&root), Path::new(&file), &skip))
         .await
-        .map_err(|e| format!("Could not save {file}: {e}"))?
+        .map_err(|e| format!("Could not save {shown}: {e}"))?
 }
 
 /// Unpack an SI project file into a folder the person chose (File ▸ Save As ▸ SI Project Folder,
 /// for Chem SI Assistant): `into` must not be there yet, or be an empty folder.
 #[tauri::command]
 pub async fn si_unpack_to(file: String, into: String) -> Result<String, String> {
+    let shown = file.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let to = PathBuf::from(&into);
         if to.exists() && std::fs::read_dir(&to).map(|mut d| d.next().is_some()).unwrap_or(true) {
@@ -304,7 +306,7 @@ pub async fn si_unpack_to(file: String, into: String) -> Result<String, String> 
         unpack(Path::new(&file), &to).map(|p| p.to_string_lossy().into_owned())
     })
     .await
-    .map_err(|e| format!("Could not unpack {file}: {e}"))?
+    .map_err(|e| format!("Could not unpack {shown}: {e}"))?
 }
 
 /// Delete a working folder (the project closed, or its recovered changes were saved or
