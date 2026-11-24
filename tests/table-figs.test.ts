@@ -94,3 +94,39 @@ describe('structures in table cells saved for ChemDraw', () => {
     expect(x2.indexOf('<fragment')).toBeLessThan(x2.indexOf('<table'));
   });
 });
+
+describe('a structure in a table cell in a file', () => {
+  it('is read where it is when the file placed it from the page, not from the cell, and saved once', async () => {
+    const { writeCdxml } = await import('../src/io/cdxml-write');
+    const { readCdxml } = await import('../src/io/cdxml');
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    const t = emptyTable(2, 2, 10);
+    const lay = layoutOf(t);
+    const X = 200, Y = 150;
+    doc.edit('build', () => {
+      const a = doc.addAtom(600, 600, 6).id, b = doc.addAtom(600 + L, 600, 6).id;
+      doc.addBond(a, b, 1);
+      doc.addShape({ kind: 'table', x1: X, y1: Y, x2: X + lay.width, y2: Y + lay.height, table: t });
+    });
+    change(doc, () => {
+      const cell = { x: X + (lay.xs[1] + lay.xs[2]) / 2, y: Y + (lay.ys[1] + lay.ys[2]) / 2 };
+      doc.moveAtoms(new Set([...doc.atoms.keys()]), cell.x - (600 + L / 2), cell.y - 600);
+    });
+    const was = [...doc.atoms.values()].map((a) => [a.x, a.y]);
+    const xml = writeCdxml(doc);
+    // the cell's structure written from the page's corner instead of the cell's
+    const start = xml.indexOf('<table'), end = xml.indexOf('</table>');
+    const pages = [...xml.slice(start, end).matchAll(/<page [^>]*BoundingBox="([^"]+)"[^>]*>([\s\S]*?)<\/page>/g)];
+    const cell = pages.find((m) => m[2].includes('<fragment'))!;
+    const [cx, cy] = cell[1].split(' ').map(Number);
+    const moved = cell[0].replace(/(<n [^>]*?\bp=")([^"]+)"/g, (_m, pre: string, v: string) => { const [x, y] = v.split(' ').map(Number); return `${pre}${(x + cx).toFixed(2)} ${(y + cy).toFixed(2)}"`; });
+    const abs = xml.slice(0, start) + xml.slice(start, end).replace(cell[0], moved) + xml.slice(end);
+    const back = readCdxml(abs).doc;
+    expect(back.atoms.size).toBe(2);
+    [...back.atoms.values()].forEach((a, i) => { expect(a.x).toBeCloseTo(was[i][0], 1); expect(a.y).toBeCloseTo(was[i][1], 1); });
+    const again = writeCdxml(back);
+    expect(again.match(/<fragment/g)?.length).toBe(1);
+    expect(readCdxml(again).doc.atoms.size).toBe(2);
+  });
+});

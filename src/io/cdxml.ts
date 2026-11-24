@@ -95,6 +95,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
     if (v > maxId) maxId = v;
   }
   const ord = new Map<string, number>();
+  /** A structure in a table cell is read from a copy: each copied element's original, and what each read from one became. */
+  const cellOrig = new Map<Element, Element>();
+  const cellAt = new Map<string, Element>();
   /** Which entity each element became (kind + id), for the references in reaction steps (worked out when first needed, once the file is read). */
   let refMap: Map<Element, string> | null = null;
   const refOf = () => (refMap ??= new Map([...ord].map(([key, o]) => [all[o], key])));
@@ -122,6 +125,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
     }
     const o = ordOf.get(el);
     if (o !== undefined) ord.set(kind + id, o);
+    else { const c = cellOrig.get(el); if (c) cellAt.set(kind + id, c); }
     const piece = Number(kids(el).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === PIECE_TAG)?.getAttribute('Value'));
     if (Number.isInteger(piece) && piece > 0) pieces.push([kind, id, piece]);
     if (kind === 's') {
@@ -733,7 +737,14 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
             // a structure in the cell, placed from the cell's top left corner (read as a copy moved
             // onto the page; the table is written again with it when saved)
             const copy = ch.cloneNode(true) as Element;
-            for (const e of [copy, ...descendants(copy)]) movePoints(e, x1, y1);
+            // (ChemDraw writes it from the cell's corner; one written from the page's lies in the cell as it is)
+            const at = [ch, ...descendants(ch)].filter((e) => e.nodeName === 'n').map((e) => pts(e.getAttribute('p')));
+            const inCell = (dx: number, dy: number) => at.length > 0 && at.every((q) => q.length >= 2 && q[0] + dx >= x1 - 1 && q[0] + dx <= x2 + 1 && q[1] + dy >= y1 - 1 && q[1] + dy <= y2 + 1);
+            const fromPage = !inCell(x1, y1) && inCell(0, 0);
+            if (!fromPage) for (const e of [copy, ...descendants(copy)]) movePoints(e, x1, y1);
+            // (its place in the drawing order is the cell's copy's)
+            const was = [ch, ...descendants(ch)];
+            [copy, ...descendants(copy)].forEach((e, i) => cellOrig.set(e, was[i]));
             figs.push(copy);
           }
         } else if (ch.nodeName !== 'objecttag') skip(`${ch.nodeName} in a table cell`);
@@ -1441,13 +1452,13 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
         const v = e.getAttribute('Z');
         if (v !== null && isFinite(Number(v))) { found = Number(v); if (!top) return found; }
         const p = e.parentElement;
-        // a structure's place is its outermost fragment's (atoms carry Z of their own in ChemDraw's files)
-        if (top && e.nodeName === 'fragment' && (!p || p === pg || p.nodeName === 'group')) return v !== null && isFinite(Number(v)) ? Number(v) : found;
+        // a structure's place is its outermost fragment's, not one inside a label (atoms carry Z of their own in ChemDraw's files)
+        if (top && e.nodeName === 'fragment' && (!p || p.nodeName !== 'n')) return v !== null && isFinite(Number(v)) ? Number(v) : found;
         e = p;
       }
       return top ? undefined : found;
   };
-  const at = (kind: Kind, id: number) => { const o = ord.get(kind + id); return o === undefined ? undefined : all[o]; };
+  const at = (kind: Kind, id: number) => { const o = ord.get(kind + id); return o === undefined ? cellAt.get(kind + id) : all[o]; };
   /** ChemDraw draws everything in its Z order: a filled shape over a structure behind it hides that part of it. */
   const shapeOverStructure = (): boolean => {
     for (const sh of doc.shapes.values()) {

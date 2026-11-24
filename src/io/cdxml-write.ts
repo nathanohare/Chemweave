@@ -159,6 +159,8 @@ class CdxmlWriter {
   private fragOfAtom = new Map<number, Element>();
   /** Each table as written this time (its table, or the group holding its parts). */
   private tableEls = new Map<number, Element>();
+  /** The ids a table's cell pages gave their structures before it was written again. */
+  private cellFragIds = new Map<Element, string[]>();
   /** The element written for each bond. */
   private bondEls = new Map<number, Element>();
   /** Neighbours of each atom as read from the file. */
@@ -209,8 +211,9 @@ class CdxmlWriter {
     this.writeGroups();
     this.writePieces();
     this.writeMore();
-    if (this.writeStack()) this.changed = true;
+    // (structures go into their table cells first, so the page's order is worked out without them)
     this.raiseTableFigures();
+    if (this.writeStack()) this.changed = true;
     if (src) this.cleanUp();
 
     // the file name stored inside; an untouched file is not rewritten just for a rename
@@ -1391,6 +1394,9 @@ class CdxmlWriter {
         if (!cell) continue;
         shift(f, -(s.x1 + lay.xs[part.c]), -(s.y1 + lay.ys[part.r]));
         cell.insertBefore(f, kids(cell).find((k) => k.nodeName === 'border') ?? null);
+        // (with the id it had there before, while no one else has taken it, so a second save is the same)
+        const was = this.cellFragIds.get(cell)?.shift();
+        if (was && was !== f.getAttribute('id') && !this.root.querySelector(`[id="${was}"]`)) f.setAttribute('id', was);
         this.changed = true;
       }
     }
@@ -2103,10 +2109,43 @@ class CdxmlWriter {
     // (a table holding structures is written again, so its cells hold them as they are now)
     if (e && o && sameExcept(s, o, []) && !tableContents(this.doc, s, (x) => layoutTable(x, this.doc.style.captionSize, measure)).length) return;
     const el = this.tableElement(s, t, e?.getAttribute('id') ?? String(s.id));
+    if (e) this.keepTableParts(e, el, !!o && sameExcept(s, o, []));
     this.tableEls.set(s.id, el);
     if (e?.parentNode) e.parentNode.replaceChild(el, e);
     else this.page.appendChild(el);
     this.changed = true;
+  }
+
+  /**
+   * A table written again keeps what it had where its cells are the same: each cell's page, text
+   * and border ids (so a second save is the same file), each border's line type and color, which
+   * this program has no place for, and, while the table itself is unchanged, each border's width.
+   */
+  private keepTableParts(was: Element, now: Element, same: boolean): void {
+    const tableIn = (e: Element) => (e.nodeName === 'table' ? e : descendants(e).find((k) => k.nodeName === 'table'));
+    const a = tableIn(was), b = tableIn(now);
+    if (!a || !b) return;
+    const pa = kids(a).filter((k) => k.nodeName === 'page'), pb = kids(b).filter((k) => k.nodeName === 'page');
+    if (pa.length !== pb.length) return;
+    pb.forEach((page, i) => {
+      const old = pa[i];
+      const keepId = (to: Element, from: Element | undefined) => { const id = from?.getAttribute('id'); if (id) to.setAttribute('id', id); };
+      keepId(page, old);
+      const frags = kids(old).filter((k) => k.nodeName === 'fragment').map((k) => k.getAttribute('id')).filter((x): x is string => !!x);
+      if (frags.length) this.cellFragIds.set(page, frags);
+      const ta = kids(old).filter((k) => k.nodeName === 't'), tb = kids(page).filter((k) => k.nodeName === 't');
+      tb.forEach((t, j) => keepId(t, ta[j]));
+      for (const bd of kids(page).filter((k) => k.nodeName === 'border')) {
+        const from = kids(old).find((k) => k.nodeName === 'border' && k.getAttribute('Side') === bd.getAttribute('Side'));
+        if (!from) continue;
+        keepId(bd, from);
+        for (const k of same ? ['LineType', 'color', 'LineWidth'] : ['LineType', 'color']) {
+          const v = from.getAttribute(k);
+          if (v !== null) bd.setAttribute(k, v);
+          else if (k === 'LineWidth') bd.removeAttribute(k);
+        }
+      }
+    });
   }
 
   private tableElement(s: Shape, t: NonNullable<Shape['table']>, outerId: string): Element {
@@ -2652,6 +2691,8 @@ class CdxmlWriter {
   /** The element written for a thing: a structure's fragment for an atom. */
   private elementOf(kind: Kind, id: number, ided: (id: number, names: string[]) => Element | null): Element | null {
     if (kind === 'a') return this.fragOfAtom.get(id) ?? null;
+    // (a table written again is the new element, not the one read)
+    if (kind === 's' && this.tableEls.has(id)) return this.tableEls.get(id)!;
     const names = kind === 'c' ? ['t'] : kind === 'r' ? ['arrow', 'graphic', 'curve'] : SHAPE_ELEMENTS;
     return this.source(kind, id, names) ?? (kind === 'r' ? this.findArrow(id) : null) ?? ided(id, names);
   }
@@ -2707,7 +2748,8 @@ class CdxmlWriter {
           const bonds = ks.filter((k) => k.nodeName === 'b').map((k, j) => ({ k, j, z: Number(k.getAttribute('Z')) }));
           bonds.sort((x, y) => (isFinite(x.z) && isFinite(y.z) ? x.z - y.z : 0) || x.j - y.j);
           for (const { k } of bonds) setZ(k);
-          for (const k of ks) if (k.nodeName === 'n' || k.nodeName === 'graphic') setZ(k);
+          // (a mark that has a place of its own, such as an orbital drawn on it, keeps that)
+          for (const k of ks) if ((k.nodeName === 'n' || k.nodeName === 'graphic') && !done.has(k)) setZ(k);
         }
         let top: Element | null = e;
         while (top && top.parentNode !== this.page) top = top.parentElement;

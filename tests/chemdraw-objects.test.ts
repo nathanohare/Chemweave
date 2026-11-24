@@ -186,9 +186,15 @@ describe('ChemDraw TLC plates and spectra', () => {
   });
 
   it('go to CDX and back as ChemDraw objects', () => {
-    const back = cdxToCdxml(cdxmlToCdx(writeCdxml(readCdxml(XML).doc, { name: 'x.cdxml' })));
+    const saved = writeCdxml(readCdxml(XML).doc, { name: 'x.cdxml' });
+    const back = cdxToCdxml(cdxmlToCdx(saved));
     expect(els(back, 'tlcplate').length).toBe(1);
     expect(els(back, 'spectrum').length).toBe(3);
     expect(pictures(back).length).toBe(4);
+    // attribute for attribute, with each spectrum's data (a plate copied to ChemDraw is not blank, a spectrum not empty)
+    const num = (v: string) => (v.trim() && Number.isFinite(Number(v)) ? String(Number(v)) : v);
+    const of = (x: string) => ['tlcplate', 'tlclane', 'tlcspot', 'spectrum'].flatMap((n) => els(x, n)).map((e) =>
+      `${e.nodeName} ${Array.from(e.attributes).map((a) => `${a.name}=${num(a.value)}`).sort().join(' ')} ${e.nodeName === 'spectrum' ? (e.textContent ?? '').trim().split(/\s+/).map(num).join(' ') : ''}`);
+    expect(of(back)).toEqual(of(saved));
   });
 });
