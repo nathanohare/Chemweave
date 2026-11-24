@@ -597,7 +597,18 @@ The orbital commands are under **Chemistry ▸ Orbitals**. Select atoms and choo
 
 <!-- index: Molecular orbital diagrams -->
 
-**Chemistry ▸ Orbitals ▸ MO Diagram…** draws a molecular orbital diagram from a table. Start from H₂, N₂, O₂, CO, the π orbitals of ethylene or a blank diagram, then change the table: a row for each energy level with its column (left atom, molecule, right atom), name, energy, number of orbitals and electrons, and for a molecular orbital the atomic orbitals it comes from, which are joined to it with dashed lines. Electrons are filled in by Hund's rule (one in each orbital of a level, then pairs). Energies only set the order and spacing. Names take `_` and `^` for sub- and superscripts (`σ*_{2p}`). Titles go under each column, and an energy arrow up the side is optional. Double-click the diagram to change it, or drag a corner to resize it.
+**Chemistry ▸ Orbitals ▸ MO Diagram** puts a molecular orbital diagram on the page, and you change it there. Select it and the Side Panel shows what each side is: choose an atom from hydrogen to fluorine, a single orbital (1s, 2p, or an sp³, sp² or sp hybrid), or **Custom**. With an atom or an orbital on both sides the molecule's orbitals, their names, the dashed lines joining them to the atomic orbitals and the electrons are filled in for you. **π Below σ** sets the order of the p set (on for B₂, C₂ and N₂, off for O₂ and F₂).
+
+On the diagram itself:
+
+- **Drag a level** up or down to move it. It stays in its column and inside the diagram. A level's energy has no units: it is its place up the diagram, from 0 at the bottom to 1 at the top, and the Side Panel shows it for the level you last pressed.
+- **Click a level** to add an electron. A full level goes back to empty. Electrons in a level follow Hund's rule (one in each orbital, then pairs). An atom's own electrons are fixed by the atom.
+- **Fill Electrons** in the Side Panel puts the number you type into the molecule's orbitals, lowest first, so an ion is one number away. The panel shows the charge, bond order and unpaired electrons, and warns when a higher level holds electrons while a lower one has room. The warning never stops you: an excited state is drawn the same way.
+- **Double-click a name or title** to type over it, with buttons for subscript, superscript, σ, π and *.
+- **Right-click** to add a level where you clicked, or to rename or delete one.
+- **Drag a handle** to resize the diagram.
+
+The number of orbitals in a level, and what a molecular orbital is made from, follow from the atoms and can't be changed while a side is an atom. Choose **Custom** for a side to set its levels by hand: the Side Panel then shows Degeneracy and Made From for the level you pressed, and levels can be deleted. A diagram made in an earlier version opens as Custom on both sides and looks as it did. The Side Panel also has the energy axis, orbital pictures, the electron arrows' size, the dashed lines' color and **Fit Width**.
 
 ### Crystal structures
 

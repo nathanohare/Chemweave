@@ -11,7 +11,7 @@ import { frameBox, frameMembers } from '../editor/frames';
 import { shapeBox } from '../objects';
 import { chemRuns } from '../text/chemtext';
 import { labelParts, type LabelPart } from './energy';
-import { drawMo, MO_PRESETS, type MoSpec } from './mo';
+import { drawMo, fromAtoms, type MoSpec } from './mo';
 import { crystalSvg, type CrystalSpec } from './xray';
 import { dataUrl } from '../render/images';
 import { isInkId } from './geo';
@@ -215,8 +215,8 @@ export interface PlateParts { captions: number[]; arrows: number[]; shapes: numb
 export function newPlate(kind: PlateKind, L: number): PlateData {
   if (kind === 'crystal') return { kind, look: '', w: Math.round(20 * L), h: Math.round(14 * L), rf: false, lines: false, labels: true, note: '', unit: 'bp', sizes: false, lanes: [] };
   if (kind === 'mo') {
-    const spec = MO_PRESETS[0].spec;
-    return { kind, look: '', w: Math.round(14 * L), h: Math.round(12 * L), rf: false, lines: false, labels: true, note: '', unit: 'bp', sizes: false, lanes: [], mo: { ...spec, levels: spec.levels.map((l) => ({ ...l })), labelBack: 'white' } };
+    // H₂ to start with, big enough to press its levels; the Side Panel picks the atoms
+    return { kind, look: '', w: Math.round(20 * L), h: Math.round(16 * L), rf: false, lines: false, labels: true, note: '', unit: 'bp', sizes: false, lanes: [], mo: { ...fromAtoms('H', 'H')!, labelBack: 'white' } };
   }
   if (kind === 'tlc') {
     return {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aoDegeneracy, drawMo, electronLook, fillProblems, fitWidth, fromAtoms, nextElectrons, hund, moCounts, roomBeside, mixOf, MO_PRESETS, moPlain, parseMarkup, sources, toMarkup, toRelative, toRich, type MoSpec } from '../src/design/mo';
+import { aoDegeneracy, drawMo, electronLook, electronsFree, fillElectrons, fillProblems, fitWidth, fromAtoms, fromChoices, fromOf, fromValue, MO_CUSTOM, moCaptionRoles, moColumnAt, moEnergyAt, moLevelAt, moSides, nextElectrons, setSides, withLevel, hund, moCounts, roomBeside, mixOf, moPlain, parseMarkup, sources, toMarkup, toRelative, toRich, type MoSpec } from '../src/design/mo';
 import { orbitalShapes } from '../src/chem/orbitals';
 import { Doc } from '../src/model';
 import { ACS_1996 } from '../src/style';
@@ -33,22 +33,8 @@ describe('MO diagrams', () => {
     expect(hund(2, 0)).toEqual([0, 0]);
   });
 
-  it('presets count their electrons the same on both sides', () => {
-    for (const p of MO_PRESETS) {
-      const atoms = p.spec.levels.filter((l) => l.column !== 'middle').reduce((n, l) => n + l.electrons, 0);
-      const mos = p.spec.levels.filter((l) => l.column === 'middle').reduce((n, l) => n + l.electrons, 0);
-      expect(mos, p.id).toBe(atoms - (p.charge ?? 0));
-    }
-  });
-
-  it('O2 has two unpaired electrons in π*', () => {
-    const o2 = MO_PRESETS.find((p) => p.id === 'o2')!.spec;
-    const pistar = o2.levels.find((l) => moPlain(l.label).startsWith('π*'))!;
-    expect(hund(pistar.n, pistar.electrons)).toEqual([1, 1]);
-  });
-
   it('joins a molecular orbital to the atomic orbitals it is made from', () => {
-    const n2 = MO_PRESETS.find((p) => p.id === 'n2')!.spec;
+    const n2 = fromAtoms('N', 'N')!;
     const sigma = n2.levels.find((l) => moPlain(l.label) === 'σ2s')!;
     expect(sources(n2.levels, sigma).map((l) => l.column)).toEqual(['left', 'right']);
   });
@@ -88,19 +74,22 @@ describe('MO diagrams', () => {
   });
 
   it('works out how each molecular orbital mixes', () => {
-    const n2 = MO_PRESETS.find((p) => p.id === 'n2')!.spec;
+    const n2 = fromAtoms('N', 'N')!;
     const mix = (name: string) => mixOf(n2.levels, n2.levels.find((l) => moPlain(l.label) === name)!);
     expect(mix('σ2s')).toEqual({ left: 's', right: 's', sym: 'σ', bonding: true });
     expect(mix('σ*2s')).toEqual({ left: 's', right: 's', sym: 'σ', bonding: false });
     expect(mix('π2p')).toEqual({ left: 'p', right: 'p', sym: 'π', bonding: true });
     expect(mix('σ*2p')).toEqual({ left: 'p', right: 'p', sym: 'σ', bonding: false });
     // a hybrid with a p orbital, and HF's nonbonding F orbitals (one side only)
-    const cf = MO_PRESETS.find((p) => p.id === 'cf')!.spec;
+    const cf = fromAtoms('sp3', '2p')!;
     expect(mixOf(cf.levels, cf.levels.find((l) => l.column === 'middle')!)).toEqual({ left: 'sp3', right: 'p', sym: 'σ', bonding: true });
-    const hf = MO_PRESETS.find((p) => p.id === 'hf')!.spec;
+    const hf = fromAtoms('H', 'F')!;
     expect(mixOf(hf.levels, hf.levels.find((l) => moPlain(l.label) === '1π')!)).toEqual({ left: null, right: 'p', sym: 'π', bonding: true });
     // no σ or π in the name: above the atomic orbitals is out of phase
-    const blank = MO_PRESETS.find((p) => p.id === 'custom')!.spec;
+    const blank: MoSpec = { titles: ['A', 'AB', 'B'], axis: true, rich: true, relative: true, levels: [
+      { column: 'left', label: 'φ_{A}', e: 0.62, n: 1, electrons: 1 }, { column: 'right', label: 'φ_{B}', e: 0.31, n: 1, electrons: 1 },
+      { column: 'middle', label: 'ψ_{1}', e: 0, n: 1, electrons: 2, from: 'φA, φB' }, { column: 'middle', label: 'ψ_{2}', e: 1, n: 1, electrons: 0, from: 'φA, φB' },
+    ] };
     expect(blank.levels.filter((l) => l.column === 'middle').map((l) => mixOf(blank.levels, l)?.bonding)).toEqual([true, false]);
   });
 
@@ -122,18 +111,9 @@ describe('MO diagrams', () => {
     expect(arrows.every((a) => Math.abs(Math.abs(a.tail.y - a.head.y) - 14) < 1e-6)).toBe(true);
   });
 
-  it('orders the 2p set by s-p mixing and fills by the aufbau principle', () => {
-    const at = (id: string, name: string) => { const sp = MO_PRESETS.find((p) => p.id === id)!.spec; return sp.levels.find((l) => moPlain(l.label) === name)!; };
-    expect(at('n2', 'π2p').e).toBeLessThan(at('n2', 'σ2p').e);
-    expect(at('o2', 'σ2p').e).toBeLessThan(at('o2', 'π2p').e);
-    expect(hund(2, at('b2', 'π2p').electrons)).toEqual([1, 1]);
-    expect(at('o22-', 'π*2p').electrons).toBe(4);
-    expect(at('he2', 'σ*1s').electrons).toBe(2);
-  });
-
   it('grows and shrinks the electrons with the diagram', () => {
     const style = { captionSize: 10, lineWidth: 0.6, bondLength: 14.4 };
-    const spec = MO_PRESETS[0].spec;
+    const spec = fromAtoms('H', 'H')!;
     const at = electronLook(spec, style, 14 * 14.4, 12 * 14.4);
     expect(at.tall).toBeCloseTo(10);
     expect(electronLook(spec, style, 28 * 14.4, 24 * 14.4).tall).toBeCloseTo(20);
@@ -162,11 +142,11 @@ describe('MO diagrams', () => {
   });
 
   it('keeps energies as relative positions, 0 at the bottom and 1 at the top', () => {
-    for (const p of MO_PRESETS) {
-      const es = p.spec.levels.map((l) => l.e);
-      expect(p.spec.relative, p.id).toBe(true);
-      expect(Math.min(...es), p.id).toBe(0);
-      expect(Math.max(...es), p.id).toBe(1);
+    for (const [a, b] of [['H', 'H'], ['N', 'N'], ['C', 'O'], ['H', 'F'], ['sp3', 'F'], ['2p', '2p']]) {
+      const spec = fromAtoms(a, b)!, es = spec.levels.map((l) => l.e);
+      expect(spec.relative, a + b).toBe(true);
+      expect(Math.min(...es), a + b).toBe(0);
+      expect(Math.max(...es), a + b).toBe(1);
     }
     // a level at 0.25 is drawn a quarter of the way up the box, whatever the other levels are
     const doc = new Doc();
@@ -231,9 +211,12 @@ describe('MO diagrams', () => {
     const hf = fromAtoms('H', 'F')!;
     expect(hf.levels.filter((l) => l.column === 'middle' && l.fromSide === 'right').map((l) => l.n)).toEqual([1, 2]);
     expect(moCounts(hf.levels).bondOrder).toBe(1);
-    expect(hf.atoms).toEqual({ left: 'H', right: 'F', electrons: 8, mixing: true });
-    // hybrids pair by hand, in a custom diagram
-    expect(fromAtoms('Csp3', 'F')).toBeNull();
+    expect(hf.atoms).toEqual({ left: 'H', right: 'F', mixing: true });
+    // single orbitals: two p orbitals side by side make π and π* (ethylene), a hybrid and a p orbital σ and σ*
+    expect(fromAtoms('2p', '2p')!.levels.filter((l) => l.column === 'middle').map((l) => moPlain(l.label))).toEqual(['π', 'π*']);
+    expect(fromAtoms('sp3', '2p')!.levels.filter((l) => l.column === 'middle').map((l) => moPlain(l.label))).toEqual(['σ', 'σ*']);
+    expect(moCounts(fromAtoms('2p', '2p')!.levels)).toMatchObject({ bondOrder: 1, unpaired: 0, moOrbitals: 2, atomOrbitals: 2 });
+    expect(fromAtoms('Xx', 'F')).toBeNull();
   });
 
   it('knows how many orbitals an atomic orbital name stands for', () => {
@@ -252,5 +235,84 @@ describe('MO diagrams', () => {
     expect(bad.map((b) => [moPlain(b.empty.label), moPlain(b.filled.label)])).toEqual([['σ2p', 'π*2p']]);
     // the atoms' own levels are not judged
     expect(fillProblems(n2.levels.filter((l) => l.column !== 'middle'))).toEqual([]);
+  });
+
+  it('changes a side to an atom, an orbital or custom', () => {
+    const o2 = { ...fromAtoms('O', 'O')!, labelBack: 'white' as const, pictures: true };
+    // another atom: filled in again, the look kept
+    const no = setSides(o2, { left: 'N' });
+    expect(no.atoms).toEqual({ left: 'N', right: 'O', mixing: true });
+    expect(no.labelBack).toBe('white');
+    expect(no.pictures).toBe(true);
+    expect(moCounts(no.levels).moElectrons).toBe(11);
+    // the order of the p set changed for the same atoms: the electrons in the molecule stay (here O2 with 13)
+    const superoxide = fillElectrons(o2, 13);
+    const mixed = setSides(superoxide, { mixing: true });
+    expect(moCounts(mixed.levels).moElectrons).toBe(13);
+    const at = (spec: MoSpec, name: string) => spec.levels.find((l) => moPlain(l.label) === name)!.e;
+    expect(at(mixed, 'π2p')).toBeLessThan(at(mixed, 'σ2p'));
+    // custom on one side: nothing is worked out again, and every level of that side and the molecule is set by hand
+    const custom = setSides(o2, { right: MO_CUSTOM });
+    expect(custom.atoms).toEqual({ left: 'O', right: MO_CUSTOM, mixing: false });
+    expect(custom.levels.length).toBe(o2.levels.length);
+    expect(custom.levels.filter((l) => l.auto).every((l) => l.column === 'left')).toBe(true);
+    expect(custom.levels.filter((l) => l.column === 'left').every((l) => l.auto)).toBe(true);
+    // a diagram saved before sides could be picked is custom on both
+    const { atoms: _a, ...old } = o2;
+    expect(moSides(old)).toEqual({ left: MO_CUSTOM, right: MO_CUSTOM, mixing: false });
+    // an atom put beside a custom side brings its own orbitals and keeps the rest
+    const withH = setSides(custom, { left: 'H' });
+    expect(withH.levels.filter((l) => l.column === 'left').map((l) => l.label)).toEqual(['1s']);
+    expect(withH.levels.filter((l) => l.column !== 'left').length).toBe(custom.levels.filter((l) => l.column !== 'left').length);
+  });
+
+  it('finds the level under the pointer and the energy at a height', () => {
+    const spec = fromAtoms('H', 'H')!;
+    const at = { x: 100, y: 50 }, w = 280, h = 200, L = 14.4;
+    const sigma = spec.levels.findIndex((l) => moPlain(l.label) === 'σ1s'), star = spec.levels.findIndex((l) => moPlain(l.label) === 'σ*1s');
+    // σ is at the bottom (0) and σ* at the top (1), both in the middle column
+    expect(moLevelAt(spec, at, w, h, L, { x: 240, y: 249 })).toBe(sigma);
+    expect(moLevelAt(spec, at, w, h, L, { x: 240, y: 46 })).toBe(star);
+    expect(moLevelAt(spec, at, w, h, L, { x: 240, y: 150 })).toBeNull();
+    expect(moLevelAt(spec, at, w, h, L, { x: 100 + 0.14 * 280, y: 50 + (1 - spec.levels[0].e) * 200 - 3 })).toBe(0);
+    expect(moEnergyAt(at, h, 250)).toBe(0);
+    expect(moEnergyAt(at, h, 50)).toBe(1);
+    expect(moEnergyAt(at, h, 200)).toBe(0.25);
+    // outside the diagram a dragged level stops at its edge
+    expect(moEnergyAt(at, h, 900)).toBe(0);
+    expect(moEnergyAt(at, h, -40)).toBe(1);
+    expect(moColumnAt(spec, at, w, L, { x: 110, y: 0 })).toBe('left');
+    expect(moColumnAt(spec, at, w, L, { x: 370, y: 0 })).toBe('right');
+  });
+
+  it('changes one level, and traces a name back to what it names', () => {
+    const hf = fromAtoms('H', 'F')!;
+    const p = hf.levels.findIndex((l) => l.column === 'right' && l.label === '2p');
+    // F 2p renamed: the molecular orbitals made from it follow
+    const renamed = withLevel(hf, p, { label: '2p_{z}' });
+    expect(renamed.levels.filter((l) => l.from).map((l) => l.from)).toEqual(['2s', '1s, 2pz', '2pz', '1s, 2pz']);
+    // electrons never pass two to an orbital, and a level has one to five orbitals
+    expect(withLevel(hf, p, { electrons: 99 }).levels[p].electrons).toBe(6);
+    expect(withLevel(hf, p, { n: 0 }).levels[p].n).toBe(1);
+    expect(withLevel(hf, p, null).levels.length).toBe(hf.levels.length - 1);
+    // an atom's own electrons are not for pressing; the molecule's are
+    expect(electronsFree(hf.levels[p])).toBe(false);
+    expect(electronsFree(hf.levels.find((l) => l.column === 'middle')!)).toBe(true);
+    // the captions in the order they are drawn: each named level, then the three titles, then E
+    const roles = moCaptionRoles(hf);
+    expect(roles.length).toBe(hf.levels.length + 3 + 1);
+    expect(roles[0]).toEqual({ level: 0 });
+    expect(roles[hf.levels.length]).toEqual({ title: 0 });
+    expect(roles[roles.length - 1]).toEqual({ axis: true });
+    const doc = new Doc();
+    doc.style = { ...ACS_1996 };
+    let made: number[] = [];
+    doc.edit('MO', () => { made = drawMo(doc, POINTS, hf, { x: 0, y: 0 }, 280, 200).captions; });
+    expect(made.length).toBe(roles.length);
+    const text = (i: number) => doc.captions.get(made[i])!.runs.map((r) => r.text).join('');
+    roles.forEach((r, i) => { if ('level' in r) expect(text(i)).toBe(moPlain(hf.levels[r.level].label)); if ('title' in r) expect(text(i)).toBe(moPlain(hf.titles[r.title])); });
+    // made-from choices for a level set by hand
+    expect(fromOf(fromValue(hf.levels.find((l) => l.from === '1s, 2p')!))).toEqual({ from: '1s, 2p', fromSide: undefined });
+    expect(fromChoices(hf.levels).map((c) => c.value)).toContain('right|2s');
   });
 });

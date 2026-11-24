@@ -7,8 +7,8 @@
 // ChemDraw's drawing are both kept, the frame is marked, and the note names the drawing with its
 // article. Any edit that redraws it from the settings goes ahead and clears the mark, in that
 // edit's own undo step, so one Undo brings back ChemDraw's drawing (review F1d-R01).
-// The values are the program's own presets: the one-step energy profile (SM 0, TS 22, P −8
-// kcal/mol) and the Li₂ MO diagram, whose 2s orbitals combine into σ2s and σ*2s (Atkins &
+// The values are the program's own one-step energy profile (SM 0, TS 22, P −8 kcal/mol) and a
+// Li₂ MO diagram built here, whose 2s orbitals combine into σ2s and σ*2s (Atkins &
 // de Paula, Physical Chemistry, 9th ed., §10.4, Fig. 10.30).
 
 import { describe, it, expect } from 'vitest';
@@ -20,7 +20,7 @@ import { putEnergy, refitEnergy, ENERGY_DEFAULTS, ENERGY_PRESETS, type EnergyDat
 import { onFrameRedrawn } from '../src/design/frame-redrawn';
 import type { Entity } from '../src/model';
 import { newDiagram, putDiagram } from '../src/design/diagrams';
-import { MO_PRESETS } from '../src/design/mo';
+import { fromAtoms, type MoSpec } from '../src/design/mo';
 import { POINTS } from '../src/editor/arrange';
 
 const write = (d: Doc) => writeCdxml(d, { name: 't.cdxml' });
@@ -33,10 +33,16 @@ function energy(): Doc {
   return d;
 }
 
+/** Li₂ from its 2s orbitals alone: σ2s (filled) and σ*2s. */
+const LI2: MoSpec = { titles: ['Li', 'Li_{2}', 'Li'], axis: true, rich: true, relative: true, levels: [
+  { column: 'left', label: '2s', e: 0.46, n: 1, electrons: 1 }, { column: 'right', label: '2s', e: 0.46, n: 1, electrons: 1 },
+  { column: 'middle', label: 'σ_{2s}', e: 0, n: 1, electrons: 2, from: '2s' }, { column: 'middle', label: 'σ^{*}_{2s}', e: 1, n: 1, electrons: 0, from: '2s' },
+] };
+
 function li2(): Doc {
   const d = new Doc();
   const p = newPlate('mo', d.style.bondLength);
-  p.mo = { ...structuredClone(MO_PRESETS.find((m) => m.id === 'li2')!.spec), labelBack: 'white' };
+  p.mo = { ...structuredClone(LI2), labelBack: 'white' };
   d.edit('MO', () => { putPlate(d, POINTS, p, { x: 0, y: 0 }); });
   return d;
 }
@@ -86,7 +92,7 @@ describe('an MO label with sub- and superscripts changed in ChemDraw (review F1b
   it('changes a title but never a level\'s column that reads the same (review F1b-R14)', () => {
     const d = new Doc();
     const p = newPlate('mo', d.style.bondLength);
-    const spec = structuredClone(MO_PRESETS.find((m) => m.id === 'li2')!.spec);
+    const spec = structuredClone(LI2);
     p.mo = { ...spec, titles: ['left', 'Li_{2}', 'right'], labelBack: 'white' };
     d.edit('MO', () => { putPlate(d, POINTS, p, { x: 0, y: 0 }); });
     const xml = write(d);
@@ -272,7 +278,7 @@ describe('smaller points of the third review (F1c-R09)', () => {
   it('renames the atomic orbital a molecular orbital comes from with its label (HF: F 2p)', () => {
     const d = new Doc();
     const p = newPlate('mo', d.style.bondLength);
-    const spec = structuredClone(MO_PRESETS.find((m) => m.id === 'hf')!.spec);
+    const spec = fromAtoms('H', 'F')!;
     p.mo = { ...spec, labelBack: 'white' };
     d.edit('MO', () => { putPlate(d, POINTS, p, { x: 0, y: 0 }); });
     const xml = write(d);

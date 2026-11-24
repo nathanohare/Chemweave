@@ -18,7 +18,7 @@ import { setStereoShown, setStereoText } from '../chem/stereo';
 import { arialWidth } from '../text-metrics';
 import { Selection } from '../editor/editor';
 import { freeformPoints } from '../design/geo';
-import { electronLook, setElectrons } from '../design/mo';
+import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, moCounts, moParts, moSides, setElectrons, setSides, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
 import { ORBITAL_KIND_NAMES, ORBITAL_LOOK_NAMES, orbitalsAmong, readOrbital, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from '../chem/orbitals';
 import { isSmoothPath, reshapeFreeform } from '../design/freeform';
 import { DEG, normDegrees, mul, type Vec } from '../geom';
@@ -161,7 +161,15 @@ export class StylePanel {
   reaction: ReactionHooks | null = null;
   /** Energy diagrams (set up by the app): open the window, or redraw with some settings changed. */
   energy: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<EnergyData>): void } | null = null;
-  plate: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<PlateData>): void } | null = null;
+  plate: {
+    edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<PlateData>): void;
+    /** An MO diagram's level last pressed on the page (its place in the levels), to show its settings. */
+    moLevel?(shapeId: number): number | null;
+    moRename?(shapeId: number, level: number): void;
+    moDelete?(shapeId: number, level: number): void;
+    /** Fit Width: make the MO diagram just wide enough. */
+    moFit?(shapeId: number): void;
+  } | null = null;
   /** SmartArt-style diagrams: the window with their text, a change of layout or look, and Convert to Shapes. */
   diagram: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<DiagramData>): void; ungroup(shapeId: number): void } | null = null;
   /** A Smart Scheme's layouts (those it can't take left out, the one it has marked) and how to change it. */
@@ -193,7 +201,7 @@ export class StylePanel {
     if (force) this.key = '';
     const s = this.sel();
     const tp = this.tables?.part();
-    const key = `${this.doc.version}|${this.doc.stereo?.version}|${tp ? JSON.stringify(tp) : ''}|${[...s.arrows].join(',')}|${[...s.shapes].join(',')}|${[...s.captions].join(',')}|${[...s.atoms].join(',')}|${[...s.bonds].join(',')}`;
+    const key = `${this.doc.version}|${this.doc.stereo?.version}|${tp ? JSON.stringify(tp) : ''}|${[...s.arrows].join(',')}|${[...s.shapes].join(',')}|${[...s.captions].join(',')}|${[...s.atoms].join(',')}|${[...s.bonds].join(',')}|${[...s.shapes].map((id) => this.plate?.moLevel?.(id) ?? '').join(',')}`;
     if (key === this.key) return;
     this.key = key;
     const focused = this.body.contains(document.activeElement) ? document.activeElement!.closest('.style-row')?.textContent : null;
@@ -696,32 +704,151 @@ export class StylePanel {
     this.body.append(row);
   }
 
-  /** A TLC plate or gel: its stain or dye and what is written, and the window with its lanes. */
-  private plateControls(sh: Shape): void {
-    const d = sh.plate!;
-    if (d.kind === 'mo') {
-      this.heading('MO diagram');
-      if (d.mo) {
-        const mo = d.mo;
-        this.check('Energy arrow', mo.axis, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, axis: v } }));
-        const now = electronLook(mo, this.doc.style, d.w, d.h);
-        this.number('Electron arrow height (pt)', Math.round(now.tall * 10) / 10, 0.5, 2, 48, (v) => this.plate?.restyle(sh.id, { mo: setElectrons(mo, { ...now, tall: v }, d.w, d.h) }));
-        this.check('Orbital mixing pictures', !!mo.pictures, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, pictures: v || undefined } }));
-        this.check('White background behind names', !!mo.labelBack, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, labelBack: v ? 'white' : undefined } }));
-        this.check('Move names clear of the dashed lines', !!mo.labelClear, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, labelClear: v || undefined } }));
-        if (mo.pictures) this.number('Picture size (%)', Math.round((mo.pictureSize ?? 1) * 100), 10, 20, 400, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, pictureSize: v / 100 } }));
-        if (mo.pictures) this.select('Phases', ORBITAL_LOOK_NAMES.map((k): Opt<OrbitalLook> => [k.value, k.label]), mo.pictureLook ?? 'shaded', (v) => this.plate?.restyle(sh.id, { mo: { ...mo, pictureLook: v } }));
+  /**
+   * An MO diagram: what each side is (an atom, one orbital, or custom), the molecule's electrons
+   * with Fill Electrons, a warning where the filling breaks the aufbau principle, the level last
+   * pressed, and how it is drawn. The levels themselves are dragged and pressed on the page.
+   */
+  private moControls(sh: Shape, d: PlateData, mo: MoSpec): void {
+    const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
+    const sides = moSides(mo);
+    const opts: Opt<string>[] = [...MO_ATOMS.map((a): Opt<string> => [a.id, a.name]), [MO_CUSTOM, 'Custom']];
+    this.select('Left', opts, sides.left, (v) => set(setSides(mo, { left: v })));
+    this.select('Right', opts, sides.right, (v) => set(setSides(mo, { right: v })));
+    this.help('Drag a level up or down. Click a level to add an electron (a full level empties). Double-click a name to change it; right-click to add or delete a level. Custom lets a side\'s levels be set by hand.');
+    const A = MO_ATOMS.find((a) => a.id === sides.left), B = MO_ATOMS.find((a) => a.id === sides.right);
+    if (A && B && !A.orbital && !B.orbital && A.orbitals.length > 1 && B.orbitals.length > 1) {
+      this.check('π Below σ', sides.mixing, (v) => set(setSides(mo, { mixing: v })), 'With s–p mixing the π orbitals lie below σ in the p set, as in B₂, C₂ and N₂. Without it σ is lower, as in O₂ and F₂.');
+    }
+    // the molecule's electrons: type how many and fill them in lowest first
+    const counts = moCounts(mo.levels);
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = '0';
+    inp.step = '1';
+    inp.max = String(2 * counts.moOrbitals);
+    inp.value = String(counts.moElectrons);
+    inp.className = 'mo-electrons';
+    const fill = document.createElement('button');
+    fill.type = 'button';
+    fill.className = 'primary';
+    fill.textContent = 'Fill Electrons';
+    fill.title = 'Put this many electrons into the molecule\'s orbitals, lowest first, by the aufbau principle and Hund\'s rule';
+    const apply = () => { const n = Number(inp.value); if (inp.value.trim() !== '' && Number.isFinite(n)) set(fillElectrons(toRelative(mo), n)); };
+    fill.addEventListener('click', apply);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { apply(); inp.blur(); } e.stopPropagation(); });
+    const both = document.createElement('span');
+    both.className = 'mo-fill';
+    both.append(inp, fill);
+    this.row('Electrons', both, 'Electrons in the molecule\'s orbitals');
+    const charge = counts.atomElectrons - counts.moElectrons;
+    const sign = charge === 0 ? '0' : `${Math.abs(charge)}${charge > 0 ? '+' : '−'}`;
+    const facts = [`Charge ${sign}`, `Bond Order ${counts.bondOrder}`, `${counts.unpaired} Unpaired`];
+    this.note(facts.join(' · '));
+    const name = (l: MoLevel, into: HTMLElement, first = false) => {
+      const parts = moParts(mo, l.label);
+      if (!parts.length) { into.append(first ? 'A level with no name' : 'a level with no name'); return; }
+      for (const p of parts) {
+        if (p.sub || p.sup) { const x = document.createElement(p.sub ? 'sub' : 'sup'); x.textContent = p.text; into.append(x); } else into.append(p.text);
       }
-      this.help('Change the orbitals, energies and electrons in the window; drag a corner to resize it.');
+    };
+    for (const bad of fillProblems(mo.levels).slice(0, 2)) {
+      const w = document.createElement('p');
+      w.className = 'mo-warning';
+      w.setAttribute('role', 'status');
+      const mark = document.createElement('b');
+      mark.textContent = '⚠';
+      mark.setAttribute('aria-label', 'Warning');
+      const text = document.createElement('span');
+      name(bad.empty, text, true);
+      text.append(' is not full, but ');
+      name(bad.filled, text);
+      text.append(` holds ${bad.filled.electrons === 1 ? 'an electron' : 'electrons'}`);
+      w.append(mark, text);
+      this.body.appendChild(w);
+    }
+    if (counts.atomOrbitals !== counts.moOrbitals && mo.levels.some((l) => l.column === 'middle')) {
+      const w = document.createElement('p');
+      w.className = 'mo-warning';
+      w.setAttribute('role', 'status');
+      const mark = document.createElement('b');
+      mark.textContent = '⚠';
+      mark.setAttribute('aria-label', 'Warning');
+      const text = document.createElement('span');
+      text.textContent = `${counts.atomOrbitals} atomic ${counts.atomOrbitals === 1 ? 'orbital' : 'orbitals'} but ${counts.moOrbitals} molecular ${counts.moOrbitals === 1 ? 'orbital' : 'orbitals'}`;
+      w.append(mark, text);
+      this.body.appendChild(w);
+    }
+    // the level last pressed, dragged or right-clicked
+    const at = this.plate?.moLevel?.(sh.id) ?? null;
+    const l = at !== null ? mo.levels[at] : undefined;
+    if (l && at !== null) {
+      const h = document.createElement('h3');
+      h.append('Level: ');
+      name(l, h, true);
+      this.body.appendChild(h);
+      const rel = toRelative(mo).levels[at];
+      this.number('Energy', rel.e, 0.01, 0, 1, (v) => set(withLevel(mo, at, { e: v })), 'Its place up the diagram, from 0 at the bottom to 1 at the top (no units). Dragging the level sets it too.');
+      if (!l.auto) {
+        this.number('Degeneracy', l.n, 1, 1, 5, (v) => set(withLevel(mo, at, { n: v })), 'How many orbitals share this level');
+        if (l.column === 'middle') {
+          const choices = fromChoices(mo.levels), want = fromValue(l);
+          const list: Opt<string>[] = choices.map((c): Opt<string> => [c.value, c.text]);
+          if (want && !choices.some((c) => c.value === want)) list.push([want, `${(l.from ?? '').replace(',', ' +')} (Not Found)`]);
+          this.select('Made From', list, want, (v) => set(withLevel(mo, at, fromOf(v))));
+        }
+      }
+      const row = document.createElement('div');
+      row.className = 'style-buttons';
+      const ren = document.createElement('button');
+      ren.type = 'button';
+      ren.textContent = 'Rename';
+      ren.addEventListener('click', () => this.plate?.moRename?.(sh.id, at));
+      row.append(ren);
+      if (!l.auto) {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = 'Delete';
+        del.addEventListener('click', () => this.plate?.moDelete?.(sh.id, at));
+        row.append(del);
+      }
+      this.body.appendChild(row);
+      const look = document.createElement('h3');
+      look.textContent = 'Look';
+      this.body.appendChild(look);
+    }
+    this.check('Energy Axis', mo.axis, (v) => set({ ...mo, axis: v }));
+    this.check('Orbital Pictures', !!mo.pictures, (v) => set({ ...mo, pictures: v || undefined }), 'Each atomic orbital\'s shape beside it, and each molecular orbital\'s in-phase or out-of-phase combination');
+    if (mo.pictures) this.number('Picture Size (%)', Math.round((mo.pictureSize ?? 1) * 100), 10, 20, 400, (v) => set({ ...mo, pictureSize: v / 100 }));
+    if (mo.pictures) this.select('Phases', ORBITAL_LOOK_NAMES.map((k): Opt<OrbitalLook> => [k.value, k.label]), mo.pictureLook ?? 'shaded', (v) => set({ ...mo, pictureLook: v }));
+    this.check('White Background Behind Names', !!mo.labelBack, (v) => set({ ...mo, labelBack: v ? 'white' : undefined }));
+    this.check('Names Avoid Dashed Lines', !!mo.labelClear, (v) => set({ ...mo, labelClear: v || undefined }));
+    const now = electronLook(mo, this.doc.style, d.w, d.h);
+    const r1 = (x: number) => Math.round(x * 10) / 10;
+    this.number('Arrow Height (pt)', r1(now.tall), 0.5, 2, 48, (v) => set(setElectrons(mo, { ...now, tall: v }, d.w, d.h)), 'How tall the electron arrows are');
+    this.number('Arrow Width (pt)', r1(now.thick), 0.1, 0.1, 6, (v) => set(setElectrons(mo, { ...now, thick: v }, d.w, d.h)), 'The electron arrows\' line width');
+    this.number('Arrow Gap (pt)', r1(now.lift), 0.5, 0, 24, (v) => set(setElectrons(mo, { ...now, lift: v }, d.w, d.h)), 'How far above the level line the electron arrows start');
+    this.color('Dashed Lines', mo.lineColor, (v) => set({ ...mo, lineColor: v }));
+    this.number('Line Transparency (%)', Math.round((mo.lineTransparency ?? 0) * 100), 5, 0, 90, (v) => set({ ...mo, lineTransparency: v ? v / 100 : undefined }));
+    if (this.plate?.moFit) {
       const row = document.createElement('div');
       row.className = 'style-buttons';
       const b = document.createElement('button');
       b.type = 'button';
-      b.textContent = 'Edit MO Diagram…';
-      b.title = 'Change the orbitals, their energies and electrons (or double-click it)';
-      b.addEventListener('click', () => this.plate?.edit(sh.id));
+      b.textContent = 'Fit Width';
+      b.title = 'Make the diagram just wide enough to keep the molecule\'s orbitals, names and pictures clear of each atom\'s';
+      b.addEventListener('click', () => this.plate?.moFit?.(sh.id));
       row.append(b);
-      this.body.append(row);
+      this.body.appendChild(row);
+    }
+  }
+
+  /** A TLC plate or gel: its stain or dye and what is written, and the window with its lanes. */
+  private plateControls(sh: Shape): void {
+    const d = sh.plate!;
+    if (d.kind === 'mo') {
+      this.heading('MO Diagram');
+      if (d.mo) this.moControls(sh, d, d.mo);
       return;
     }
     if (d.kind === 'crystal') {
