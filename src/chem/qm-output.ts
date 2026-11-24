@@ -80,7 +80,8 @@ const lastAt = (text: string, key: string, re: RegExp): RegExpExecArray | null =
  * MP2 step is not taken for its answer.
  */
 const E = '(-?\\d+\\.\\d+(?:[DE][+-]?\\d+)?)';
-const line = (key: string) => new RegExp(`${key.replace(/[()]/g, '\\$&')}\\s*${E}`);
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+const line = (key: string) => new RegExp(`${escapeRe(key)}\\s*${E}`);
 // (a method with options: ccsd(t,full), CCSD(T,FC), ccsd=(t,maxcyc=100), ccsd=t, qcisd(t,full),
 // mp4(sdq), mp4=sdq; the (T) is the option t among the others; with the open-shell forms UCCSD and
 // ROCCSD; review F1-R03, F1b-R09)
@@ -249,7 +250,7 @@ function readGaussianJob(text: string, name: string): QmResult {
     // the composite's own energies; its frequency job's free energy is at the lower level
     const label = comp[1].toLowerCase() === 'cbs-4m' ? 'CBS-4' : comp[1].toUpperCase();
     // (the open-shell ROCBS-QB3 prints its energies under either name)
-    const esc = /CBS-QB3$/.test(label) ? '(?:RO)?CBS-QB3' : label.replace(/[-()]/g, '\\$&');
+    const esc = /CBS-QB3$/.test(label) ? '(?:RO)?CBS-QB3' : escapeRe(label);
     const at = (key: string, re: RegExp) => { const i = text.lastIndexOf(key); return i < 0 ? null : fortran(re.exec(text.slice(Math.max(0, i - 40), i + 200))); };
     const e0 = at('(0 K)=', new RegExp(`${esc}\\s*\\(0 K\\)=\\s*(-?\\d+\\.\\d+)`));
     if (e0 !== null) {

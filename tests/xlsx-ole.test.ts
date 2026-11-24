@@ -19,6 +19,8 @@ import type { Contents } from '../src/model';
 const pictures: XlsxPictures = { box: () => ({ w: 60, h: 40 }), picture: async () => null };
 const MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+/** R with its dots escaped, for a regular expression. */
+const R_RE = R.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
 const X14 = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main';
 const XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing';
@@ -99,9 +101,9 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
       // each relationship id leads to the kept parts
       const rels = strFromU8(out['xl/worksheets/_rels/sheet1.xml.rels']);
       const rid = objs[0].getAttributeNS(R, 'id')!;
-      expect(rels).toMatch(new RegExp(`Id="${rid}" Type="${R}/oleObject" Target="../${bin.slice(3)}"`));
+      expect(rels).toMatch(new RegExp(`Id="${rid}" Type="${R_RE}/oleObject" Target="../${bin.slice(3)}"`));
       const pr = doc.getElementsByTagNameNS(MAIN, 'objectPr')[0];
-      expect(rels).toMatch(new RegExp(`Id="${pr.getAttributeNS(R, 'id')}" Type="${R}/image" Target="../media/`));
+      expect(rels).toMatch(new RegExp(`Id="${pr.getAttributeNS(R, 'id')}" Type="${R_RE}/image" Target="../media/`));
       // ECMA-376 18.3.1.99: oleObjects after legacyDrawing
       expect(sheet.indexOf('<legacyDrawing')).toBeLessThan(sheet.indexOf('<oleObjects>'));
       // the x14 choice's prefix is declared where it is used
@@ -113,7 +115,7 @@ describe('objects embedded in an Excel sheet (G2-01)', () => {
       expect(vml).toContain('id="_x0000_t75"');
       if (withNote) expect(vml).toContain('ObjectType="Note"');
       const vrel = /o:relid="([^"]+)"/.exec(vml)![1];
-      expect(strFromU8(out[`xl/drawings/_rels/${vmlName}.rels`])).toMatch(new RegExp(`Id="${vrel}" Type="${R}/image" Target="../media/`));
+      expect(strFromU8(out[`xl/drawings/_rels/${vmlName}.rels`])).toMatch(new RegExp(`Id="${vrel}" Type="${R_RE}/image" Target="../media/`));
       // the twin in the drawing names the same shape
       const drawing = strFromU8(out['xl/drawings/drawing1.xml']);
       expect(parse(drawing).getElementsByTagName('parsererror').length).toBe(0);
