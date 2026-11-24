@@ -3203,7 +3203,8 @@ function moveCdObject(e: Element, map: (x: number, y: number) => [number, number
     if (name === 'BoundingBox' && n.length === 4) {
       // all four corners, so a turned plate's box still holds it
       const cs = [map(n[0], n[1]), map(n[2], n[1]), map(n[2], n[3]), map(n[0], n[3])];
-      out.splice(0, 4, Math.min(...cs.map((c) => c[0])), Math.min(...cs.map((c) => c[1])), Math.max(...cs.map((c) => c[0])), Math.max(...cs.map((c) => c[1])));
+      const [p, q, r, t] = cs;
+      out.splice(0, 4, Math.min(p[0], q[0], r[0], t[0]), Math.min(p[1], q[1], r[1], t[1]), Math.max(p[0], q[0], r[0], t[0]), Math.max(p[1], q[1], r[1], t[1]));
     }
     e.setAttribute(name, out.map(f2).join(' '));
   }

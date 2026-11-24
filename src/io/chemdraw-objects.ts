@@ -137,7 +137,7 @@ function tlcPlate(el: Element, look: CdLook): { body: string; box: Box } | null 
       const shown = runs?.length ? runs : [{ text: 'R', size: 7.5, sub: false, color: undefined }, { text: 'f', size: 7.5, sub: true, color: undefined }, { text: ` = ${rf.toFixed(2)}`, size: 7.5, sub: false, color: undefined }];
       texts.push(textEl(p, shown, sc));
       const width = shown.reduce((w, r) => w + arialWidth(r.text, r.sub ? r.size * 0.75 : r.size), 0);
-      const size = Math.max(...shown.map((r) => r.size));
+      const size = shown.reduce((m, r) => Math.max(m, r.size), 0);
       box.add(p.x, p.y - size * 0.85); box.add(p.x + width, p.y + size * 0.3);
     }
   });
@@ -241,7 +241,7 @@ function spectrum(el: Element, look: CdLook): { body: string; box: Box } | null 
     const left = reversed ? Math.max(xFirst, xLast) : xFirst, right = reversed ? Math.min(xFirst, xLast) : xLast;
     const span = right - left || 1;
     const X = (x: number) => fx1 + ((x - left) / span) * (fx2 - fx1);
-    // (a loop, not Math.min(...ys): a long spectrum has more points than a call may take)
+    // (a loop, not one call given every point: a long spectrum has more points than a call may take)
     let lo = Infinity, hi = -Infinity;
     for (const y of ys) { if (y < lo) lo = y; if (y > hi) hi = y; }
     if (hi - lo < 1e-12) { lo -= 0.5; hi += 0.5; }
