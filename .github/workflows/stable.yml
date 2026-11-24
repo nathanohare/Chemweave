@@ -40,7 +40,7 @@ jobs:
           if [ -n "$WANTED" ]; then
             tag="v${WANTED#v}"
           else
-            gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName > "$RUNNER_TEMP/releases.json"
+            node scripts/retry.mjs -- gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName > "$RUNNER_TEMP/releases.json"
             tag=$(node scripts/release.mjs newest 0.0.0 "$RUNNER_TEMP/releases.json")
           fi
           gh release view "$tag" --json tagName > /dev/null || { echo "There is no release $tag"; exit 1; }
@@ -50,16 +50,17 @@ jobs:
         env:
           TAG: ${{ steps.pick.outputs.tag }}
         run: |
+          retry="$PWD/scripts/retry.mjs"
           mkdir -p "$RUNNER_TEMP/s" && cd "$RUNNER_TEMP/s"
-          gh release download "$TAG" --pattern latest.json
+          node "$retry" -- gh release download "$TAG" --pattern latest.json --clobber
           mv latest.json stable.json
           notes="Stable is $TAG ($(date -u +%Y-%m-%d)): a version tried on a real computer before it was offered. The app's Stable update channel installs this one; the Latest channel gets every build."
           if ! gh release view stable --json tagName > /dev/null 2>&1; then
             gh release create stable --prerelease --latest=false --target "$GITHUB_SHA" --title "Stable channel" --notes "$notes"
           fi
-          gh release upload stable stable.json --clobber
-          gh release edit stable --notes "$notes"
+          node "$retry" -- gh release upload stable stable.json --clobber
+          node "$retry" -- gh release edit stable --notes "$notes"
       - name: Note it on the version's release
         env:
           TAG: ${{ steps.pick.outputs.tag }}
-        run: gh release edit "$TAG" --title "Chemweave ${TAG#v} (beta, stable)"
+        run: node scripts/retry.mjs -- gh release edit "$TAG" --title "Chemweave ${TAG#v} (beta, stable)"

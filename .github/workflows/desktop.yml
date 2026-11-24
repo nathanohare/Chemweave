@@ -2,7 +2,9 @@ name: Desktop app
 
 # Builds the installers for Windows, macOS and Linux when something is merged into main, or on
 # request (Actions > Desktop app > Run workflow, which can build any branch). Not on every pull
-# request: the Checks workflow already tests every pull request.
+# request: the Checks workflow already tests every pull request. A pull request that changes this
+# workflow or a script it runs for signing or releases does build here, so the change is tried
+# before it reaches main (2026-11-24); only main is ever published.
 #
 # Each build of main is published as a release (Releases on the repository's page) with a
 # latest.json file, which is what the app's File > Check for Updates reads. The installers are
@@ -23,9 +25,21 @@ on:
         description: All platforms (Windows, macOS and Linux)
         type: boolean
         default: true
+  pull_request:
+    paths:
+      - .github/workflows/desktop.yml
+      - scripts/sign-windows.mjs
+      - scripts/release.mjs
+      - scripts/retry.mjs
 
+# a new push to a pull request stops the try-out builds still going for its previous commit
+concurrency:
+  group: desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# the builds only read the code; the publish job asks for write access to make the release
 permissions:
-  contents: write # to publish releases
+  contents: read
 
 jobs:
   plan:
@@ -107,8 +121,9 @@ jobs:
             echo "No Azure Artifact Signing account in the secrets and variables: the Windows app is not signed."; exit 0
           fi
           # built from source (about 4 minutes) only when the cache doesn't have this version yet
+          # (crates.io is an outside service: scripts/retry.mjs tries again if a download fails)
           if [ ! -x "$HOME/signing-tool/bin/artifact-signing-cli.exe" ]; then
-            cargo install artifact-signing-cli --version "$SIGNING_TOOL_VERSION" --locked --root "$HOME/signing-tool"
+            node scripts/retry.mjs -- cargo install artifact-signing-cli --version "$SIGNING_TOOL_VERSION" --locked --root "$HOME/signing-tool"
           fi
           cygpath -w "$HOME/signing-tool/bin" >> "$GITHUB_PATH"
           {
@@ -145,6 +160,8 @@ jobs:
             echo "APPLE_CERTIFICATE_PASSWORD=$CERT_PASSWORD"
             echo "APPLE_SIGNING_IDENTITY=$IDENTITY"
           } >> "$GITHUB_ENV"
+          # API_KEY_ID comes from the step's env above; shellcheck can't see that and takes it for a typo
+          # shellcheck disable=SC2153
           if [ -n "$API_KEY_P8" ] && [ ${#API_KEY_ID} -lt 3 ]; then
             echo "::error::APPLE_API_KEY_P8 is set but APPLE_API_KEY_ID is missing or too short. Add the key's Key ID (10 characters, from App Store Connect > Users and Access > Integrations) as the secret APPLE_API_KEY_ID."
             exit 1
@@ -196,6 +213,8 @@ jobs:
   publish:
     needs: [plan, build]
     if: needs.plan.outputs.release == 'true'
+    permissions:
+      contents: write # to publish releases
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # One publish at a time, so two merges close together can't both decide which release is
@@ -223,12 +242,15 @@ jobs:
           # the signatures are inside latest.json; the release lists the installers
           # not marked "latest" yet: builds can finish out of order, and an older one must not
           # take "latest" (and so the updater's latest.json) from a newer one
-          gh release create "v$VERSION" $(ls out/* | grep -v '\.sig$') --title "Chemweave $VERSION (beta)" --notes-file "$RUNNER_TEMP/notes.txt" --target "$GITHUB_SHA" --latest=false
+          # not through scripts/retry.mjs: a create that fails part way can leave the release
+          # behind, and a second create of the same tag then fails anyway (re-run the job instead)
+          files=(); for f in out/*; do [[ "$f" == *.sig ]] || files+=("$f"); done
+          gh release create "v$VERSION" "${files[@]}" --title "Chemweave $VERSION (beta)" --notes-file "$RUNNER_TEMP/notes.txt" --target "$GITHUB_SHA" --latest=false
       - name: Mark the highest version as latest
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName > "$RUNNER_TEMP/releases.json"
+          node scripts/retry.mjs -- gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName > "$RUNNER_TEMP/releases.json"
           newest=$(node scripts/release.mjs newest "$VERSION" "$RUNNER_TEMP/releases.json")
-          gh release edit "$newest" --latest
+          node scripts/retry.mjs -- gh release edit "$newest" --latest
           echo "Latest release: $newest"

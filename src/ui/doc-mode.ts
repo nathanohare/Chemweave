@@ -6382,7 +6382,8 @@ export class DocumentMode {
     else if (this.words.text !== text) {
       clearTimeout(this.wordTimer);
       this.wordTimer = window.setTimeout(() => {
-        if (this.file !== f) return;
+        // the page can be gone by now (a test's window closed before the count came due)
+        if (this.file !== f || typeof document === 'undefined') return;
         const now = f.ed.text;
         if (this.words?.text !== now) this.words = { f, text: now, n: count(now) };
         this.updateStatus();
