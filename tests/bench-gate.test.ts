@@ -23,4 +23,18 @@ describe('speed budgets', () => {
     });
     expect(missing, 'budgets in scripts/bench-gate.mjs BUDGETS with no measure of that name').toEqual([]);
   });
+
+  it('gives every measure of bench/core.bench.ts a budget', () => {
+    // (a measure without one could double over a few pull requests, each under the 40% step)
+    const measures: string[] = [];
+    let group = '';
+    for (const line of readFileSync('bench/core.bench.ts', 'utf8').split('\n')) {
+      const d = line.match(/^describe\('([^']+)'/);
+      if (d) group = d[1];
+      const b = line.match(/^\s*bench\('([^']+)'/);
+      if (b) measures.push(`${group} / ${b[1]}`);
+    }
+    expect(measures.length).toBeGreaterThan(20);
+    expect(measures.filter((k) => !(k in BUDGETS)), 'add these to BUDGETS in scripts/bench-gate.mjs (about 1.8 times the Checks time)').toEqual([]);
+  });
 });
