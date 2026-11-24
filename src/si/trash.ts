@@ -95,8 +95,8 @@ export async function restoreFromTrash(p: SiProject, id: string): Promise<string
   const folder = join(TRASH_DIR, entry.id);
   if (!RESTORABLE.has(entry.kind)) {
     throw new SiProjectError(entry.kind === 'incomplete'
-      ? `Chemweave can't tell where these files belong. Restore them in Chem SI Assistant, or move them by hand from the Trash folder (${folder}).`
-      : `${KIND_NAMES[entry.kind] ?? 'This kind of item'}s are restored in Chem SI Assistant. It is still in the Trash (${folder}).`);
+      ? `Chemweave can't tell where these files belong. Move them back by hand from the Trash folder (${folder}).`
+      : `${KIND_NAMES[entry.kind] ?? 'This kind of item'}s can't be put back here. It is still in the Trash folder (${folder}), to move back by hand.`);
   }
   const item = entry.info.item;
   if (!safeName(item)) throw damaged(folder);
@@ -274,7 +274,7 @@ const RESTORE: Record<string, Restore> = {
       return `Restored ${pick} to “${str(e.info.compound_name) || 'the compound'}”.`;
     }
     const def = fieldDef(fieldsOf(c).find((x) => x.key === key) ?? { key });
-    if (!def || !def.subdir) throw new SiProjectError(`Files of this field are restored in Chem SI Assistant. The file is still in the Trash folder (${folder}).`);
+    if (!def || !def.subdir) throw new SiProjectError(`Files of this field can't be put back here. The file is still in the Trash folder (${folder}), to move back by hand.`);
     const values = valuesOf(c);
     const list = Array.isArray(values[key]) ? (values[key] as Json[]) : (values[key] = []) as Json[];
     let pick = item;
@@ -342,7 +342,7 @@ const RESTORE: Record<string, Restore> = {
 /** A figure or table goes back at the end of its section's text (under its own ID when that is free). */
 async function restoreObject(p: SiProject, e: TrashEntry, folder: string, item: string, kind: 'figure' | 'table'): Promise<string> {
   const s = p.sections.find((x) => x.id === str(e.info.owner));
-  if (!s) throw new SiProjectError(`“${str(e.info.owner_name) || '?'}”, where this ${kind} was, isn't a section Chemweave can put it back in (it may have been deleted, or be the General Information page). Restore it in Chem SI Assistant; the file is still in the Trash folder (${folder}).`);
+  if (!s) throw new SiProjectError(`“${str(e.info.owner_name) || '?'}”, where this ${kind} was, isn't a section Chemweave can put it back in (it may have been deleted, or be the General Information page). The file is still in the Trash folder (${folder}), to move back by hand.`);
   if (!(await p.folder.exists(join(folder, item)))) throw new SiProjectError('This Trash item is empty: there is nothing to restore.');
   const used = new Set<string>();
   for (const x of p.sections) {

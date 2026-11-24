@@ -605,7 +605,7 @@ The orbital commands are under **Chemistry ▸ Orbitals**. Select atoms and choo
 
 Choose **Insert ▸ Lab Figures ▸ Crystal Structure (CIF)…**, or drop a .cif file on the page. Open the CIF file from your X-ray structure and it is shown as thermal ellipsoids (ORTEP, at 30, 50, 70 or 90% probability, with or without principal ellipses) or ball-and-stick. The molecule is completed by the crystal's symmetry, so one sitting on an inversion center is drawn whole.
 
-Drag to rotate it, Shift+drag (or the right button) to rotate it in the plane of the page, use the wheel to magnify, and drag a label to move it; **Best** looks along its thinnest direction, and **Along a/b/c** down a cell axis. Hydrogen atoms, color and labels can be switched off, and the **Shown** list hides a molecule or a disorder part. The **Crystal data** tab lists the formula, cell, space group, R factors and the rest, and **Copy Table** copies it for Word or Excel. **Place on Page** draws it as ovals, lines and text; double-click it to turn it again or change how it is drawn. The viewer is the one from Chem SI Assistant.
+Drag to rotate it, Shift+drag (or the right button) to rotate it in the plane of the page, use the wheel to magnify, and drag a label to move it; **Best** looks along its thinnest direction, and **Along a/b/c** down a cell axis. Hydrogen atoms, color and labels can be switched off, and the **Shown** list hides a molecule or a disorder part. The **Crystal data** tab lists the formula, cell, space group, R factors and the rest, and **Copy Table** copies it for Word or Excel. **Place on Page** draws it as ovals, lines and text; double-click it to turn it again or change how it is drawn.
 
 ### Transition state brackets and reaction roles
 

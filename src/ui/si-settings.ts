@@ -79,7 +79,7 @@ async function headings(p: SiProject, host: SiSettingsHost): Promise<void> {
   const level = (i: number): CountStyle => own.levels[Math.min(i, own.levels.length - 1)];
   const counts = Object.entries(COUNT_NAMES).map(([value, label]) => ({ value, label }));
   const fields: Field[] = [
-    { name: 'preset', label: 'Heading numbers', value: preset, options: HEADING_PRESETS.map((x) => ({ value: x.id, label: x.label })), help: 'How the compiled SI numbers its headings. As the journal style does: Wiley 1., 1.1.; RSC 1, 1.1; ACS none. Compound titles and general procedures are never numbered. SI Assistant shows the nearest of its own (outline or 1.1.1) for a format it doesn’t have.' },
+    { name: 'preset', label: 'Heading numbers', value: preset, options: HEADING_PRESETS.map((x) => ({ value: x.id, label: x.label })), help: 'How the compiled SI numbers its headings. As the journal style does: Wiley 1., 1.1.; RSC 1, 1.1; ACS none. Compound titles and general procedures are never numbered.' },
     { name: 'h1', label: 'Custom format', value: '', type: 'heading', help: 'Used when Heading numbers is “Custom…”. The last level’s count is used for any deeper level.' },
     ...[0, 1, 2, 3].map((i): Field => ({ name: `l${i}`, label: `Level ${i + 1}`, value: level(i), options: counts })),
     { name: 'chain', label: 'Show the numbers of the headings above (1.2.3)', value: String(own.chain), type: 'checkbox', help: 'On: 1.2.3 (or A.1.2). Off: only the heading’s own number, as in an outline.' },
@@ -203,7 +203,7 @@ async function labels(p: SiProject, host: SiSettingsHost): Promise<void> {
 }
 
 async function structures(p: SiProject, host: SiSettingsHost): Promise<void> {
-  const got = await host.chooseDrawingStyle(siDrawingStyle(p.settings), 'How this project’s structures and schemes are drawn, in its pages and the compiled SI. A project starts in ACS Document 1996, as SI Assistant draws it; the bond length, line width and label size are also kept for SI Assistant.');
+  const got = await host.chooseDrawingStyle(siDrawingStyle(p.settings), 'How this project’s structures and schemes are drawn, in its pages and the compiled SI. A project starts in ACS Document 1996.');
   if (!got || p.readOnly) return;
   await host.save(() => storeSiDrawingStyle(p.settings, got));
 }
@@ -354,7 +354,7 @@ async function impurities(p: SiProject, host: SiSettingsHost): Promise<void> {
   const got = await ask('NMR Impurities', [
     { name: 'tolH', label: 'Match ¹H within', value: tolH.toFixed(3), unit: 'ppm', type: 'number', min: 0, max: 1, help: `Default ${DEFAULT_TOLERANCES[0].toFixed(3)} ppm.` },
     { name: 'tolC', label: 'Match ¹³C within', value: tolC.toFixed(3), unit: 'ppm', type: 'number', min: 0, max: 1, help: `Default ${DEFAULT_TOLERANCES[1].toFixed(3)} ppm.` },
-  ], { ok: 'Save', body, note: 'A ¹H peak reported as a singlet, or any ¹³C peak, at one of these shifts (in the same solvent) gets a “check it isn’t a solvent or impurity peak” warning. The built-in values are from Fulmer et al., Organometallics 2010, 29, 2176. Uncheck a row to stop checking it; edit, add or remove rows. Changes apply to this project only, and SI Assistant uses them too.' });
+  ], { ok: 'Save', body, note: 'A ¹H peak reported as a singlet, or any ¹³C peak, at one of these shifts (in the same solvent) gets a “check it isn’t a solvent or impurity peak” warning. The built-in values are from Fulmer et al., Organometallics 2010, 29, 2176. Uncheck a row to stop checking it; edit, add or remove rows. Changes apply to this project only.' });
   if (!got || p.readOnly) return;
   const table2 = rows().map((tr) => impurityRowFrom(...cells(tr))).filter((r): r is ImpurityRow => !!r);
   await host.save(() => {
@@ -371,7 +371,7 @@ async function dictionary(p: SiProject, host: SiSettingsHost): Promise<void> {
   const text = (await p.folder.readText(DICTIONARY_FILE).catch(() => null)) ?? '';
   const got = await ask('Dictionary', [
     { name: 'words', label: 'Words, one per line', value: text, type: 'textarea', placeholder: 'e.g. CDK2' },
-  ], { ok: 'Save', note: `The project's own words (${DICTIONARY_FILE} in the project folder, shared with co-authors and Chem SI Assistant). They are never underlined, and are printed as written: “CDK2” is not subscripted. Lines starting with # are comments. Right-click an underlined word ▸ Add to This Project’s Dictionary adds one.` });
+  ], { ok: 'Save', note: `The project's own words (${DICTIONARY_FILE} in the project folder, shared with co-authors). They are never underlined, and are printed as written: “CDK2” is not subscripted. Lines starting with # are comments. Right-click an underlined word ▸ Add to This Project’s Dictionary adds one.` });
   if (!got || p.readOnly) return;
   const next = got.words.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
   if (next === text.replace(/\r\n?/g, '\n').replace(/\n+$/, '')) return;

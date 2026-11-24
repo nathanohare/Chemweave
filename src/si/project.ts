@@ -342,7 +342,7 @@ export class SiProject {
     this.savedTree = cloneJson(tree as unknown[]);
     if (this.newerFormat) {
       this.readOnly = true;
-      this.warnings.unshift(`This project was saved by a newer version of Chem SI Assistant (file format ${this.savedFormat}), so it is open read-only here: saving could lose what that version added.`);
+      this.warnings.unshift(`This project was saved by a newer version (file format ${this.savedFormat}), so it is open read-only here: saving could lose what that version added.`);
     }
   }
   private refsUnread = false;

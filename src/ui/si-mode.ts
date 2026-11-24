@@ -521,7 +521,7 @@ const RIBBON = `
       <button class="rb-big" data-si="new-section" data-ic="section" title="A new section: a Data section holds compounds; a Custom section holds text (and sub-sections); an Attachment section a PDF or picture; an X-ray structure a crystal structure from its CIF"><span class="rb-icon">▤</span>New Section</button>
       <div class="rb-col">
         <button data-si="delete" data-ic="delete" title="Move the selected compound, scheme page or section to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
-        <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it. Shared with Chem SI Assistant">Trash…</button>
+        <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it.">Trash…</button>
       </div>
       <div class="rb-col">
         <button data-si="rename" title="Rename the selected section or scheme page (F2 in the tree)">Rename</button>
@@ -562,7 +562,7 @@ const RIBBON = `
       <button class="rb-big" data-si="spelling" data-ic="spelling" title="Spelling (F7): go to the next misspelled word on this page, with its corrections. Chemistry words, abbreviations (MeOH, CDCl₃) and systematic names count as spelled right; right-click an underlined word for the same menu"><span class="rb-icon">✓</span>Spelling</button>
     </div><div class="rb-label">Checks</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data, laid out as Chem SI Assistant lays it out. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
+      <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
       <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
       <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the whole SI as it prints, beside the page, with the selected page in view; type in it to change the fields"><span class="rb-icon">◧</span>Live Preview</button>
     </div><div class="rb-label">Compile</div></div>
@@ -2100,7 +2100,7 @@ export class SiMode {
       out.append(page.el);
       this.attachShown(page);
     } else {
-      out.append(el('p', 'muted si-note', `${TYPE_LABELS[s.type] ?? s.type} sections are edited in Chem SI Assistant for now; they are kept as they are here.`));
+      out.append(el('p', 'muted si-note', `${TYPE_LABELS[s.type] ?? s.type} sections can’t be edited in Chemweave yet; they are kept as they are.`));
     }
   }
 
@@ -2147,7 +2147,7 @@ export class SiMode {
       rm.type = 'button';
       rm.title = 'Delete the general procedure (to the Trash; compounds using it keep the choice, with a warning)';
       rm.addEventListener('click', () => void (async () => {
-        const msg = users.length ? `${users.length} compound${users.length === 1 ? ' uses' : 's use'} it (${users.map((c) => this.idOf(c)).join(', ')}); they keep the choice and get a warning until you choose another.` : 'It goes to the project’s Trash, where Chem SI Assistant can restore it.';
+        const msg = users.length ? `${users.length} compound${users.length === 1 ? ' uses' : 's use'} it (${users.map((c) => this.idOf(c)).join(', ')}); they keep the choice and get a warning until you choose another.` : 'It goes to the project’s Trash; Home ▸ Trash can put it back.';
         const go = await askChoice(`Delete ${partText(gp.name) || 'General Procedure'}`, msg, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
         if (go === 'go') await this.act(() => p.deleteGeneralProcedure(id));
       })());
@@ -2328,7 +2328,7 @@ export class SiMode {
     const p = this.project!;
     await this.commitAll();
     const what = this.objLabels.get(id) ?? (kind === 'figure' ? 'the figure' : 'the table');
-    const go = await askChoice(`Delete ${kind === 'figure' ? 'Figure' : 'Table'}`, `Delete ${what} and its caption? ${kind === 'figure' ? 'Its picture goes' : 'It goes'} to the project’s Trash, where Chem SI Assistant can restore it.`, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+    const go = await askChoice(`Delete ${kind === 'figure' ? 'Figure' : 'Table'}`, `Delete ${what} and its caption? ${kind === 'figure' ? 'Its picture goes' : 'It goes'} to the project’s Trash; Home ▸ Trash can put it back.`, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
     if (go !== 'go') return;
     await this.act(() => p.deleteTextObject(s, kind, id));
   }
@@ -2548,8 +2548,8 @@ export class SiMode {
     const links = row('Links');
     tick(links, 'Peak reports to spectra', 'nmr_links', 'In the PDF, Word file and compiled document, “¹H NMR” at the start of a peak report links to the page with the compound’s ¹H NMR spectrum (Ctrl+click in Chemweave and Word).');
     tick(links, 'Spectra back to compounds', 'link_back', 'Each spectrum’s header line links back to the compound’s data.');
-    choice(links, 'Look', 'link_style', [['plain', 'Like normal text'], ['blue', 'Color'], ['blue_underline', 'Color and underline']], 'How these links look (the table of contents’ links keep its own look; Table of contents ▸ Link to sections, on the project’s page, turns them off). SI Assistant shows Color as blue.');
-    if (now.link_style !== 'plain') color(links, 'Color', 'link_color', 'The links’ color. SI Assistant prints them blue whatever is chosen here.');
+    choice(links, 'Look', 'link_style', [['plain', 'Like normal text'], ['blue', 'Color'], ['blue_underline', 'Color and underline']], 'How these links look (the table of contents’ links keep its own look; Table of contents ▸ Link to sections, on the project’s page, turns them off).');
+    if (now.link_style !== 'plain') color(links, 'Color', 'link_color', 'The links’ color.');
     const hrms = row('HRMS');
     tick(hrms, 'Print HRMS reports', 'hrms_reports', 'Each compound’s HRMS report files (PDFs, pictures and text files), after the spectra in a sub-section “HRMS reports”. A compound can say otherwise in its HRMS field.');
     // spectra with settings of their own
@@ -2710,7 +2710,7 @@ export class SiMode {
       card.append(this.fieldRow(c, def, required.has(def.key)));
     }
     const unknown = fieldsOf(c).filter((e) => !fieldDef(e)).map((e) => e.key);
-    if (unknown.length) card.append(el('p', 'muted si-note', `Kept as they are (made by a newer Chem SI Assistant): ${unknown.join(', ')}.`));
+    if (unknown.length) card.append(el('p', 'muted si-note', `Kept as they are (made by a newer version): ${unknown.join(', ')}.`));
     out.append(card);
   }
 
@@ -3955,7 +3955,7 @@ export class SiMode {
       });
     } else if (cmd === 'colors') {
       const body = statusColorsBody(statusColors(p.settings));
-      const got = await ask('Status Colors', [], { ok: 'Use Colors', note: 'The color of each kind of dashboard cell, for this project (Chem SI Assistant uses the same). Cells are tinted lightly so their text stays readable.', body: body.el });
+      const got = await ask('Status Colors', [], { ok: 'Use Colors', note: 'The color of each kind of dashboard cell, for this project. Cells are tinted lightly so their text stays readable.', body: body.el });
       if (!got) return;
       const colors = body.read();
       await this.act(async () => { storeStatusColors(p.settings, colors); await p.saveSettings(); }, false);
@@ -4003,7 +4003,7 @@ export class SiMode {
     const card = el('div', 'si-card si-warn-list');
     const head = el('div', 'si-card-head');
     const h = el('h2', 'si-title', 'Warnings');
-    addInfo(h, 'The automatic checks of every compound (HRMS, NMR, yields, spectra, IDs, general procedures), as Chem SI Assistant makes them. Warnings never block anything: dismiss those that don’t apply, with a reason. A dismissed warning comes back if the data it is about changes, and dismissals are shared with SI Assistant.');
+    addInfo(h, 'The automatic checks of every compound (HRMS, NMR, yields, spectra, IDs, general procedures). Warnings never block anything: dismiss those that don’t apply, with a reason. A dismissed warning comes back if the data it is about changes.');
     const show = el('label', 'si-check');
     const box = el('input');
     box.type = 'checkbox';
@@ -4445,7 +4445,7 @@ export class SiMode {
   private async deletePicked(): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
-    const yes = (title: string, text: string): Promise<boolean> => askChoice(title, `${text} Home ▸ Trash (or Chem SI Assistant's Trash) can put it back.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep').then((x) => x === 'delete');
+    const yes = (title: string, text: string): Promise<boolean> => askChoice(title, `${text} Home ▸ Trash can put it back.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep').then((x) => x === 'delete');
     if (pick.kind === 'compound') {
       const c = p.compound(pick.id);
       const k = c.schemeId ? p.scheme(c.schemeId) : null;

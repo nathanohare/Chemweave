@@ -9532,7 +9532,7 @@ async function convertSiFolder(dir: string): Promise<SiProjectT | null> {
     const disk = new DiskFolder(folder, siCall);
     // (read first, so a folder that isn't a project, or one saved by a newer version, is said before anything is written)
     const p = await SiProject.open(disk, { readOnly: true });
-    if (p.newerFormat) { await showError(`${name} was saved by a newer version of Chemweave or Chem SI Assistant: update Chemweave to convert it.`); return null; }
+    if (p.newerFormat) { await showError(`${name} was saved by a newer version of Chemweave: update Chemweave to convert it.`); return null; }
     // (open somewhere else now: changes made there after this would not be in the file)
     const held = await p.currentLock().catch(() => null);
     if (held) {

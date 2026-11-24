@@ -113,7 +113,7 @@ describe('the Trash', () => {
     expect(await p.readSectionFile(s, 'images/plot.png')).toEqual(new Uint8Array([1, 2, 3]));
   });
 
-  it('lists what it can’t restore and leaves it for SI Assistant', async () => {
+  it('lists what it can’t restore and leaves it to move back by hand', async () => {
     const f = exampleFolder();
     const p = await SiProject.open(f);
     f.files.set('trash/20261101-120000-aaaa/entry.json', new TextEncoder().encode('{"kind": "scheme_file", "name": "paper.png", "item": "paper.png", "deleted_at": "2026-11-01T12:00:00", "deleted_by": "Nathan"}'));
@@ -127,7 +127,7 @@ describe('the Trash', () => {
       ['scheme_file', 'paper.png'],
     ]);
     expect(list[2]).toMatchObject({ deletedAt: '2026-11-01T12:00:00', deletedBy: 'Nathan' });
-    await expect(restoreFromTrash(p, list[2].id)).rejects.toThrow(/restored in Chem SI Assistant/);
+    await expect(restoreFromTrash(p, list[2].id)).rejects.toThrow(/can't be put back here/);
     await expect(restoreFromTrash(p, list[1].id)).rejects.toThrow(/can't tell where/);
     await expect(restoreFromTrash(p, list[0].id)).rejects.toThrow(/damaged/);
     expect(f.files.has('project.json')).toBe(true);

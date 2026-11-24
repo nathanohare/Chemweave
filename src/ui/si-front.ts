@@ -149,7 +149,7 @@ export class SiFrontPage {
       gaps.append(lab);
     }
     const spLab = el('span', 'si-front-lab si-front-top', 'Spacing');
-    addInfo(spLab, 'The space on the cover page, in points: above the heading (to start it further down the page), and after the heading, the title, the author line, the last affiliation and the email line. Chem SI Assistant keeps one spacing for all of them, so it gets the nearest one.');
+    addInfo(spLab, 'The space on the cover page, in points: above the heading (to start it further down the page), and after the heading, the title, the author line, the last affiliation and the email line.');
     grid.append(spLab, gaps);
     cover.append(grid);
 
@@ -227,7 +227,7 @@ export class SiFrontPage {
       lists.append(lab);
     }
     const lLab = el('span', 'si-front-lab si-front-top', 'Lists');
-    addInfo(lLab, 'The headings the table of contents lists, each kind on its own. Headings in section text are the headings typed in Custom sections and General Information. Chem SI Assistant keeps one depth (sections, sub-sections, general procedures or compounds), so it gets the nearest one.');
+    addInfo(lLab, 'The headings the table of contents lists, each kind on its own. Headings in section text are the headings typed in Custom sections and General Information.');
     tg.append(lLab, lists);
     const linkTick = el('input');
     linkTick.type = 'checkbox';

@@ -120,16 +120,22 @@ pub fn file_types_defaults() -> Result<(), String> {
 }
 
 /// At start: point registered types at this copy of the app (it may have moved or been updated).
+/// SI project files (.chemsi) are Chemweave's own type, which no other program uses, so the first
+/// start of a version that knows them registers them and makes Chemweave open them on a
+/// double-click. Unticking them under File Types later is kept: they are registered only once.
 pub fn refresh() {
     #[cfg(windows)]
     {
         let mut now = win::registered();
-        if !now.is_empty() {
-            // (SI project files are Chemweave's own: a copy that opens files from Explorer opens these too)
+        let mut changed = false;
+        if !win::exists(win::OWN_DONE, Some("chemsi")) {
             if !now.iter().any(|t| t == "chemsi") {
                 now.push("chemsi".to_string());
             }
-            let _ = win::set(&now);
+            changed = true;
+        }
+        if !now.is_empty() && win::set(&now).is_ok() && changed {
+            let _ = win::set_string(win::OWN_DONE, Some("chemsi"), "1");
         }
     }
 }
@@ -149,6 +155,12 @@ pub(crate) mod win {
     const APP: &str = "Chem Illustrator";
     const CAPABILITIES: &str = r"Software\Chem Illustrator\Capabilities";
     const SHOWN_NAME: &str = "Chemweave";
+    /// Types that are Chemweave's own: Chemweave is their default program (no other program
+    /// opens them, so this takes nothing from the person's choices).
+    const OWN: &[&str] = &["chemsi"];
+    /// Where the own types registered once at first start are noted (outside the key that
+    /// `set` deletes when no type is chosen, so a person's unticking is kept).
+    pub(crate) const OWN_DONE: &str = r"Software\Chemweave\Registered";
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -229,7 +241,13 @@ pub(crate) mod win {
                 set_string(&format!(r"{class}\shell\open\command"), None, &format!("\"{exe}\" \"%1\""))?;
                 set_string(&format!(r"Software\Classes\.{ext}\OpenWithProgids"), Some(&id), "")?;
                 set_string(&format!(r"{CAPABILITIES}\FileAssociations"), Some(&format!(".{ext}")), &id)?;
+                if OWN.contains(ext) {
+                    set_string(&format!(r"Software\Classes\.{ext}"), None, &id)?;
+                }
             } else {
+                if OWN.contains(ext) {
+                    delete_value(&format!(r"Software\Classes\.{ext}"), "");
+                }
                 delete_value(&format!(r"Software\Classes\.{ext}\OpenWithProgids"), &id);
                 delete_value(&format!(r"{CAPABILITIES}\FileAssociations"), &format!(".{ext}"));
                 delete_tree(&class);
