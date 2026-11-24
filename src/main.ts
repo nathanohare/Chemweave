@@ -9064,7 +9064,7 @@ function loadSiMode(): Promise<SiMode> {
         return f && !f.error ? { formula: f.formula, mw: f.mw, exact: f.exact } : null;
       },
       smiles: (mol) => chem.molToSmiles(mol),
-      editStructure: (contents, title, done) => editCellStructure(contents, title, done, siStyleNow()),
+      editStructure: (contents, title, done, style) => editCellStructure(contents, title, done, style ?? siStyleNow()),
       chooseDrawingStyle: async (current, note) => {
         const got = await editDrawingStyle({
           current, own: ownStyles, kindPlural: 'SI projects', where: 'this SI project', isDefault: false, hasStructures: false, noForNew: true, note,
@@ -9075,12 +9075,12 @@ function loadSiMode(): Promise<SiMode> {
         return got.style;
       },
       // a table cell's picture: the drawing as SVG, and as CDXML beside it to draw it again
-      drawingFiles: (d) => {
-        const drawing = d instanceof Doc ? d : structureDoc(d, siStyleNow());
+      drawingFiles: (d, style) => {
+        const drawing = d instanceof Doc ? d : structureDoc(d, style ?? siStyleNow());
         const svg = drawingSvg(drawing, null);
         return svg ? { svg, cdxml: writeCdxml(drawing, { name: 'picture.cdxml', textMeasure: measureText }) } : null;
       },
-      contentsOfCdxml: (text) => { try { return readCdxml(text).doc.contents(); } catch { return null; } },
+      contentsOfCdxml: (text) => { try { const d = readCdxml(text).doc; return { contents: d.contents(), style: { ...d.style } }; } catch { return null; } },
       openSymbols: () => symbolWindow.open(),
       copyRich: (text, html) => crystalOptions().copy(text, html),
       nameStructure: async (mol) => {
