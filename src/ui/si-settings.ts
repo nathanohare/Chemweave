@@ -18,7 +18,7 @@ import { addInfo } from './info-tip';
 import { DEFAULT_TOLERANCES, SOLVENT_NAMES, defaultImpurityTable, impurityRowFrom, impurityTolerances, projectImpurityTable, storeImpurityTable, storeImpurityTolerances, type ImpurityRow } from '../si/nmr';
 import { DICTIONARY_FILE } from '../si/dictionary';
 import { SALT_LABEL_KEY, saltLabelStyle } from '../si/checks';
-import { MAX_GAP, POSITIONS, POSITION_NAMES, WRAPS, WRAP_NAMES, ownPlacementCount, projectPlacement, storeProjectPlacement, type SiPosition, type SiWrap } from '../si/placement';
+import { FIGURE_WRAPS, MAX_GAP, POSITIONS, POSITION_NAMES, WRAPS, WRAP_NAMES, ownPlacementCount, projectPlacement, storeProjectPlacement, type SiPosition, type SiWrap } from '../si/placement';
 
 export interface SiSettingsHost {
   /** Change the project's settings and save them (says so when it can't). */
@@ -41,7 +41,7 @@ export function siSettingsWindow(p: SiProject, host: SiSettingsHost, page?: stri
     { id: 'headings', title: 'Headings', words: 'heading numbers outline decimal 1.1 roman letters numbering', open: () => headings(p, host) },
     { id: 'page', title: 'Page', words: 'header footer page numbers prefix roman cover title authors date', open: () => pageSetup(p, host) },
     { id: 'labels', title: 'Labels', words: 'figure table scheme label word prefix numbering fig.', open: () => labels(p, host) },
-    { id: 'layout', title: 'Layout', words: 'structure structures position wrap text square top bottom behind front left center right in line beside below title space gap place float', open: () => layout(p, host) },
+    { id: 'layout', title: 'Layout', words: 'structure structures position wrap text square top bottom behind front left center right in line beside below title space gap place float figure figures caption', open: () => layout(p, host) },
     { id: 'structures', title: 'Structures', words: 'drawing style bond length line width font labels acs 1996 arrows', open: () => structures(p, host) },
     { id: 'schemes', title: 'Schemes', words: 'scheme layout conditions arrow yields ids gap fit wrap shrink', open: () => schemes(p, host) },
     { id: 'impurities', title: 'NMR Impurities', words: 'nmr impurity impurities solvent residual peaks shifts singlet tolerance fulmer water grease check', open: () => impurities(p, host) },
@@ -212,19 +212,28 @@ async function structures(p: SiProject, host: SiSettingsHost): Promise<void> {
 async function layout(p: SiProject, host: SiSettingsHost): Promise<void> {
   const now = projectPlacement(p.settings);
   const own = ownPlacementCount(p.settings);
+  const fig = projectPlacement(p.settings, 'figures');
+  const ownF = ownPlacementCount(p.settings, 'figures');
   const got = await ask('Layout', [
     { name: 'h', label: 'Compound structures', value: '', type: 'heading', help: `Where each compound’s structure goes under its title and how its text wraps around it, in the Live Preview and the compiled SI. In Line with Text centers it on a line of its own. A structure’s own choice (Picture Format, or right-click it in the Live Preview) wins over these${own ? `; ${own === 1 ? '1 structure has' : `${own} structures have`} one` : ''}.` },
     { name: 'position', label: 'Position', value: now.position, short: true, options: POSITIONS.map((v) => ({ value: v, label: POSITION_NAMES[v] })) },
     { name: 'wrap', label: 'Wrap Text', value: now.wrap, short: true, options: WRAPS.map((v) => ({ value: v, label: WRAP_NAMES[v] })), help: 'How the text goes around a structure that isn’t in the line.' },
     { name: 'top', label: 'Top level with', value: now.top, short: true, options: [{ value: 'below', label: 'The text below the title' }, { value: 'title', label: 'The title' }] },
     { name: 'gap', label: 'Space to text', value: String(now.gap), type: 'number', min: 0, max: MAX_GAP, unit: 'cm', help: 'The room between a structure and the text beside it (half of it below).' },
+    { name: 'hf', label: 'Figures', value: '', type: 'heading', help: `Where each figure goes with its caption, in the Live Preview and the compiled SI. In Line with Text puts it on lines of its own, as before; another position floats it with its caption, the text beside it (Square) or above and below it (Top and Bottom, and always in the middle). A figure’s own choice (Picture Format) wins over these${ownF ? `; ${ownF === 1 ? '1 figure has' : `${ownF} figures have`} one` : ''}.` },
+    { name: 'fposition', label: 'Position', value: fig.position, short: true, options: POSITIONS.map((v) => ({ value: v, label: POSITION_NAMES[v] })) },
+    { name: 'fwrap', label: 'Wrap Text', value: fig.wrap, short: true, options: FIGURE_WRAPS.map((v) => ({ value: v, label: WRAP_NAMES[v] })) },
+    { name: 'fgap', label: 'Space to text', value: String(fig.gap), type: 'number', min: 0, max: MAX_GAP, unit: 'cm', help: 'The room between a figure and the text beside it.' },
   ], { ok: 'Save' });
   if (!got || p.readOnly) return;
-  const gap = Number(got.gap);
-  await host.save(() => storeProjectPlacement(p.settings, {
-    position: got.position as SiPosition, wrap: got.wrap as SiWrap, top: got.top === 'title' ? 'title' : 'below',
-    gap: Number.isFinite(gap) ? gap : now.gap,
-  }));
+  const gap = Number(got.gap), fgap = Number(got.fgap);
+  await host.save(() => {
+    storeProjectPlacement(p.settings, {
+      position: got.position as SiPosition, wrap: got.wrap as SiWrap, top: got.top === 'title' ? 'title' : 'below',
+      gap: Number.isFinite(gap) ? gap : now.gap,
+    });
+    storeProjectPlacement(p.settings, { ...fig, position: got.fposition as SiPosition, wrap: got.fwrap as SiWrap, gap: Number.isFinite(fgap) ? fgap : fig.gap }, 'figures');
+  });
 }
 
 async function schemes(p: SiProject, host: SiSettingsHost): Promise<void> {

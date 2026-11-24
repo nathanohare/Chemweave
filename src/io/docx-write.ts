@@ -762,6 +762,7 @@ class DocxWriter {
     if (!!ps.keepNext !== st.keepNext) pPr.push(ps.keepNext ? '<w:keepNext/>' : '<w:keepNext w:val="0"/>');
     if (!!ps.keepLines !== !!st.keepLines) pPr.push(ps.keepLines ? '<w:keepLines/>' : '<w:keepLines w:val="0"/>');
     if (ps.pageBreak) pPr.push('<w:pageBreakBefore/>');
+    if (ps.frame) pPr.push(framePrXml(ps.frame));
     // paragraph properties not modelled here, each in its place (docx-read.ts KEPT_PPR)
     const raw = keptPPr(ps);
     pPr.push(raw.a ?? '');
@@ -2587,3 +2588,13 @@ export function keptFontTable(tree: KeptTree, drop: Set<string>): { tree: KeptTr
   return { tree: { ...tree, parts, rels: rels.filter((r) => reach.has(r.from)) }, xml: text, embeds };
 }
 
+
+/**
+ * A frame of paragraphs (ParaStyle.frame) as Word's text frame (w:framePr, ECMA-376 part 1,
+ * 17.3.1.11): its width, at the left, center or right of the margins, its top at the paragraph,
+ * the text round it (around) or above and below it (notBeside). Paragraphs after it with the same
+ * frame properties are in the same frame.
+ */
+export function framePrXml(f: NonNullable<ParaStyle['frame']>): string {
+  return `<w:framePr w:w="${twips(f.w)}" w:hSpace="${twips(Math.max(0, f.gap))}" w:wrap="${f.wrap === 'square' ? 'around' : 'notBeside'}" w:vAnchor="text" w:hAnchor="margin" w:xAlign="${f.align}"/>`;
+}

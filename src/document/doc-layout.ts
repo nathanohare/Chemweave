@@ -197,6 +197,11 @@ export const MIN_BESIDE = 72;
  * side of a figure ("square"), or moves down past it ("top and bottom", or when too little
  * room is left beside it).
  */
+/** Two paragraphs' frames are one frame (Word: the same frame properties). */
+export function sameFrame(a: ParaStyle['frame'], b: ParaStyle['frame']): boolean {
+  return !!a && !!b && a.w === b.w && a.align === b.align && a.wrap === b.wrap && a.gap === b.gap;
+}
+
 export function narrowLine(rects: WrapRect[], y1: number, y2: number, textW: number): Narrow | null {
   let left = 0, right = 0, hit = false, below = Infinity, block = false;
   for (const r of rects) {
@@ -469,7 +474,8 @@ export class DocLayouter {
     const secs = sectionsOf({ ...t, paras });
     const secOf = sectionOfParas(secs);
     const geoms = secs.map((x) => geometry(x.page));
-    const widthOf = (p: number) => geoms[secOf[p] ?? 0].textW;
+    // (a paragraph in a frame is set in the frame's width)
+    const widthOf = (p: number) => { const W = geoms[secOf[p] ?? 0].textW, fr = paras[p]?.frame; return fr && fr.w > 0 ? Math.min(fr.w, W) : W; };
     // pages of different sizes sit one under another, each in the middle of the widest
     const maxW = Math.max(...secs.map((x) => x.page.w));
     const maxH = Math.max(...secs.map((x) => x.page.h));
@@ -819,6 +825,8 @@ export class DocLayouter {
     // room for paragraph borders above and below the text
     const bRoom = paras.some((q) => q.border) ? borderRoom(paras) : null;
     let paraStart = 0;
+    /** The frame being set (its top, and its left edge from the column's, and width), while its paragraphs are. */
+    let frameAt: { top: number; x: number; w: number } | null = null;
     /** How far below a paragraph's top the figures floating from it (placed from the paragraph, text kept off them) reach; 0 for none, or when they can't fit on any page. */
     const floatsBelow = (p: number): number => {
       let most = 0;
@@ -864,6 +872,22 @@ export class DocLayouter {
       else if (ps.colBreak && hasContent) nextColumn();
       // a paragraph that clears the figures floating beside it starts below them
       if (ps.clear && hasContent) for (const r of rects) if ((r.wrap === 'square' || r.wrap === 'topBottom') && r.y2 > cursor) cursor = r.y2;
+      // a frame (ps.frame, with the paragraphs after it in the same one) starts whole on a page,
+      // below any figure it would run into, at the left, center or right of the column
+      const fr = ps.frame;
+      if (fr && !sameFrame(paras[p - 1]?.frame, fr)) {
+        let end = p + 1;
+        while (end < n && sameFrame(paras[end].frame, fr)) end++;
+        let need = 0;
+        for (let q = p; q < end; q++) need += (q > p || hasContent ? paras[q].spaceBefore ?? 0 : 0) + sum(laid[q].lines.map(heightOf)) + (paras[q].spaceAfter ?? 0);
+        if (hasContent && cursor + need > room() + 0.01 && need <= textH) nextColumn();
+        for (let moved = true; moved;) {
+          moved = false;
+          for (const r of rects) if ((r.wrap === 'square' || r.wrap === 'topBottom') && r.y1 < cursor + need - 0.01 && r.y2 > cursor + 0.01) { cursor = r.y2; moved = true; }
+        }
+        const w = widthOf(p);
+        frameAt = { top: -1, x: fr.align === 'right' ? textW - w : fr.align === 'center' ? (textW - w) / 2 : 0, w };
+      }
       // space above a paragraph isn't kept at the top of a page, except on the first page
       const before = () => (hasContent || pageIdx === 0 ? ps.spaceBefore ?? 0 : 0) + (bRoom?.above[p] ?? 0);
       // a heading moves to the next page when the start of the paragraph after it won't fit beside it
@@ -881,6 +905,8 @@ export class DocLayouter {
       if (hasContent && cursor + before() + firstNeed > room() + 0.01) nextColumn();
       cursor += before();
       paraTops.push({ y: pageTop(pageIdx) + page.top + cursor, page: pageIdx });
+      // (the frame's top: its first paragraph's, after the space above it)
+      if (fr && frameAt && frameAt.top < 0) frameAt.top = cursor;
 
       // figures floating from this paragraph go on its page, and text on the page wraps round them
       const own = lay.lines;
@@ -918,10 +944,12 @@ export class DocLayouter {
         hs = pl.map(heightOf);
       };
       const objectsAt = objects.length, rectsAt = rects.length;
-      placeFloats();
+      // (a frame's text is set in the frame, never round the figures beside it)
+      if (fr && frameAt) paraTops[paraTops.length - 1] = { y: pageTop(pageIdx) + page.top + cursor, page: pageIdx };
+      else placeFloats();
       // a paragraph whose first line (moved down past a figure above it) doesn't fit goes to the
       // next page whole, laid out there afresh: the figure it was moved past isn't on that page
-      if (hasContent && pl.length && rects.length && cursor + hs[0] > textH - footArea(lineFeet(pl[0])) + 0.01) {
+      if (!fr && hasContent && pl.length && rects.length && cursor + hs[0] > textH - footArea(lineFeet(pl[0])) + 0.01) {
         objects.length = objectsAt;
         rects.length = rectsAt;
         nextColumn();
@@ -946,7 +974,7 @@ export class DocLayouter {
         const l = pl[i];
         const above = l.above ?? l.ascent;
         const top = pageTop(pageIdx) + page.top + cursor;
-        const placed = shiftLine(l, ox + page.left + colX[col], top + above - l.y, paraStart, p);
+        const placed = shiftLine(l, ox + page.left + colX[col] + (fr && frameAt ? frameAt.x : 0), top + above - l.y, paraStart, p);
         if (cs.n > 1) placed.band = [ox + page.left + colX[col], ox + page.left + colX[col] + textW];
         lines.push(placed);
         for (const id of ft) feet.push({ id, line: lines.length - 1 });
@@ -960,6 +988,13 @@ export class DocLayouter {
         i++;
       }
       cursor += (ps.spaceAfter ?? 0) + (bRoom?.below[p] ?? 0);
+      // the frame's end: the text after it goes beside it (Square) or below it
+      if (fr && frameAt && !sameFrame(paras[p + 1]?.frame, fr)) {
+        const g = Math.max(0, fr.gap);
+        rects.push({ x1: colX[col] + frameAt.x - g, y1: frameAt.top, x2: colX[col] + frameAt.x + frameAt.w + g, y2: cursor, wrap: fr.wrap });
+        if (fr.wrap === 'square') cursor = frameAt.top;
+        frameAt = null;
+      }
       paraStart += (paraRuns[p] ?? []).reduce((a, r) => a + r.text.length, 0) + 1;
     }
 

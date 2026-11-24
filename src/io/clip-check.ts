@@ -95,7 +95,7 @@ const run = { text: str, bold: true, italic: true, underline: true, sub: true, s
   raise: 0, symbolFont: true, ukind: '', wrx: '', ucolor: '', dstrike: true, pfx: '' } satisfies Record<keyof TextRun, Spec>;
 const para = { list: oneOf('bullet', 'number'), level: 0, cont: true, soft: true, wpx: '', align: oneOf('left', 'center', 'right', 'justify'),
   spaceBefore: 0, spaceAfter: 0, indent: 0, style: '', ppx: '', pageBreak: true, colBreak: true, firstLine: 0, line: 0, keepNext: true,
-  keepLines: true, clear: true, noWidow: true, indentRight: 0, linePt: 0, lineRule: oneOf('exact', 'atLeast'), section: null, noLineNumbers: true,
+  keepLines: true, clear: true, frame: { w: 0, align: oneOf('left', 'center', 'right'), wrap: oneOf('square', 'topBottom'), gap: 0 }, noWidow: true, indentRight: 0, linePt: 0, lineRule: oneOf('exact', 'atLeast'), section: null, noLineNumbers: true,
   noHyphen: true, numLook: { bold: true, italic: true }, marks: [''], tabs: [null], scheme: '', bullet: '', numType: '', startAt: 0,
   border: null, shade: '', xe: [null], ta: [null], cc: '' } satisfies Record<keyof ParaStyle, Spec>;
 const pin = { on: oneOf('atom', 'bond', 'gap'), ref: ids, at: pt, hand: 0, was: pt, len: 0, dir: pt } satisfies Record<keyof Pin, Spec>;

@@ -4,7 +4,8 @@
 // Wrap Text: si/placement.ts): the project's choice and each structure's own, kept in project.json;
 // the compiled document (the structure floating from the line under the title, the next compound
 // starting below it); the layout of a figure lined up in the margins and of a paragraph that
-// clears the figures beside it; and both going to Word and back.
+// clears the figures beside it; and both going to Word and back. Figures float with their
+// captions in a frame (ParaStyle.frame, Word's text frame): the same, for them.
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
@@ -27,9 +28,10 @@ import { editParas } from '../src/text/paragraphs';
 import { withFloats } from '../src/document/arrange';
 import type { TextRun } from '../src/model';
 import {
-  DEFAULT_PLACEMENT, clearOwnPlacements, floatOf, ownPlacement, ownPlacementCount, placementOf, projectPlacement,
+  DEFAULT_PLACEMENT, DEFAULT_FIGURE_PLACEMENT, clearOwnPlacements, figureFrame, figureKey, floatOf, ownPlacement, ownPlacementCount, placementOf, projectPlacement,
   storeOwnPlacement, storeProjectPlacement, structureKey,
 } from '../src/si/placement';
+import { framePrXml } from '../src/io/docx-write';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RDKit: any;
@@ -243,3 +245,117 @@ function layouterLines(t: DocText): { second: { x: number; top: number }; left: 
   const o = lay.objects.find((x) => x.id === 1)!;
   return { second: { x: line.x, top: line.y - (line.above ?? line.ascent) }, left: t.page.left, figBottom: o.y + o.h };
 }
+
+/** The example project with a figure (a 60 × 40 pt picture, 5 cm wide) at the end of its Reaction Optimization text, then a paragraph and a heading after it. */
+async function withFigure(change?: (s: Json) => void): Promise<{ got: CompiledSi; paras: { text: string; ps: DocText['paras'][number] }[] }> {
+  const f = folder('si-example');
+  const p = await SiProject.open(f);
+  const s = p.sections.find((x) => x.type === 'text' && x.folder.includes('reaction-optimizatio'))!;
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="60pt" height="40pt" viewBox="0 0 60 40"><path d="M0 0L60 40"/></svg>';
+  const rel = await p.addSectionPicture(s, 'structure.svg', new TextEncoder().encode(svg));
+  s.data.figures = { ...((s.data.figures as Json) ?? {}), 'f-0000abcd': { file: rel, width: 5 } };
+  await p.saveSection(s);
+  await p.writeSectionText(s, `${(await p.readSectionText(s)).trimEnd()}\n!figure{f-0000abcd} Structure of the product\nText beside the figure.\n# A heading after it`);
+  const again = await SiProject.open(f);
+  change?.(again.settings);
+  const got = await compileSi(again, { contentsOf: () => null, sizeOf: () => null, facts: async (m) => m.map(() => null) });
+  return { got, paras: paragraphs(got.doc) };
+}
+
+describe('figures with their captions', () => {
+  it('keep their own choices apart from the structures, with only the wraps a frame has', () => {
+    const s: Json = {};
+    expect(projectPlacement(s, 'figures')).toEqual(DEFAULT_FIGURE_PLACEMENT);
+    storeOwnPlacement(s, figureKey('f-1'), { position: 'right', wrap: 'behind' });
+    // (Behind Text isn't kept for a figure: its caption is text in a frame)
+    expect(ownPlacement(s, figureKey('f-1'))).toEqual({ position: 'right' });
+    storeOwnPlacement(s, structureKey('c1'), { position: 'center' });
+    expect(ownPlacementCount(s, 'figures')).toBe(1);
+    expect(ownPlacementCount(s)).toBe(1);
+    clearOwnPlacements(s, 'figures');
+    expect(ownPlacementCount(s, 'figures')).toBe(0);
+    expect(ownPlacement(s, structureKey('c1'))).toEqual({ position: 'center' });
+    storeProjectPlacement(s, { ...DEFAULT_FIGURE_PLACEMENT, position: 'left' }, 'figures');
+    expect(placementOf(s, figureKey('f-2')).position).toBe('left');
+    expect(placementOf(s, structureKey('c2')).position).toBe(DEFAULT_PLACEMENT.position);
+  });
+
+  it('frames a figure: the picture\'s width (2 inches at least), Top and Bottom in the middle', () => {
+    const p = { ...DEFAULT_FIGURE_PLACEMENT, position: 'right' as const };
+    expect(figureFrame(DEFAULT_FIGURE_PLACEMENT, 200, 468)).toBeUndefined();
+    expect(figureFrame(p, 200, 468)).toEqual({ w: 200, align: 'right', wrap: 'square', gap: 8.5 });
+    expect(figureFrame(p, 60, 468)?.w).toBe(144);
+    expect(figureFrame(p, 600, 468)?.w).toBe(468);
+    expect(figureFrame({ ...p, position: 'center' }, 200, 468)?.wrap).toBe('topBottom');
+  });
+
+  it('prints in the line by default, as before', async () => {
+    const { paras } = await withFigure();
+    expect(paras.some((x) => x.ps.frame)).toBe(false);
+  });
+
+  it('floats with its caption when placed, the heading after it starting below', async () => {
+    const { got, paras } = await withFigure((s) => storeOwnPlacement(s, figureKey('f-0000abcd'), { position: 'left' }));
+    const fig = paras.findIndex((x) => x.text === OBJECT_CHAR && x.ps.frame);
+    expect(fig).toBeGreaterThan(-1);
+    const frame = paras[fig].ps.frame!;
+    // 5 cm wide picture (141.73 pt): the frame 2 inches (144 pt)
+    expect(frame).toEqual({ w: 144, align: 'left', wrap: 'square', gap: 8.5 });
+    expect(paras[fig + 1].text).toMatch(/Structure of the product/);
+    expect(paras[fig + 1].ps.frame).toEqual(frame);
+    expect(paras[fig + 2].text).toBe('Text beside the figure.');
+    expect(paras[fig + 2].ps.frame).toBeUndefined();
+    expect(paras[fig + 2].ps.clear).toBeUndefined();
+    expect(paras[fig + 3].text).toMatch(/A heading after it/);
+    expect(paras[fig + 3].ps.clear).toBe(true);
+    // picked in the Live Preview by its key
+    expect(got.structures.some((x) => x.key === figureKey('f-0000abcd') && got.doc.objects[x.obj]?.kind === 'picture')).toBe(true);
+  });
+
+  it('is laid out at the right with the caption under the picture and the text beside them', () => {
+    const d = newDocument();
+    const n = runStyleOf(d.styles.Normal);
+    const N = paraFromStyle(d.styles.Normal, {});
+    const frame = { w: 150, align: 'right' as const, wrap: 'square' as const, gap: 6 };
+    const runs = rt.normalizeRuns([objectRun(1, n), { ...n, text: '\nFigure 1. A caption long enough to need two lines in the frame\n' + WORDS.repeat(16) }]);
+    const t: DocText = { ...d, runs, paras: [{ ...N, frame }, { ...N, frame }, N], objects: { 1: { kind: 'picture', src: DOT, w: 140, h: 72, px: { w: 1, h: 1 } } } };
+    const lay = layouter().layout(t);
+    const text = plainText(t.runs);
+    const W = lay.textW, left = t.page.left;
+    const lineOf = (at: number) => lay.text.lines.filter((l) => l.start <= at && at <= l.end)[0];
+    const pic = lay.objects.find((o) => o.id === 1)!;
+    // the picture at the left of the frame (its paragraph is left-aligned), the frame at the right of the margins
+    expect(pic.x).toBeCloseTo(left + W - 150, 0);
+    // the caption in the frame, under the picture, on two lines or more
+    const capStart = text.indexOf('Figure 1.'), capEnd = text.indexOf(WORDS) - 1;
+    const capLines = lay.text.lines.filter((l) => l.start >= capStart && l.end <= capEnd);
+    expect(capLines.length).toBeGreaterThan(1);
+    for (const l of capLines) expect(l.x).toBeGreaterThanOrEqual(left + W - 150 - 0.5);
+    expect(capLines[0].y).toBeGreaterThan(pic.y + pic.h);
+    // the text after it beside the frame from the frame's top, then the whole width below it
+    const first = lineOf(text.indexOf(WORDS));
+    expect(first.y).toBeLessThan(pic.y + pic.h);
+    const frameBottom = Math.max(...capLines.map((l) => l.y));
+    const all = lay.text.lines.filter((l) => l.start >= text.indexOf(WORDS));
+    const beside = all.filter((l) => l.y < frameBottom);
+    expect(beside.length).toBeGreaterThan(2);
+    for (const l of beside) expect(l.x + l.width).toBeLessThanOrEqual(left + W - 150 - 6 + 0.5);
+    expect(all.some((l) => l.y > frameBottom + 30 && l.width > W - 150)).toBe(true);
+  });
+
+  it('goes to Word as a text frame and comes back the same', async () => {
+    const frame = { w: 150, align: 'right' as const, wrap: 'square' as const, gap: 6 };
+    expect(framePrXml(frame)).toBe('<w:framePr w:w="3000" w:hSpace="120" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:xAlign="right"/>');
+    const d = newDocument();
+    const n = runStyleOf(d.styles.Normal);
+    const N = paraFromStyle(d.styles.Normal, {});
+    const t: DocText = { ...d, runs: rt.normalizeRuns([objectRun(1, n), { ...n, text: '\nFigure 1. A caption\n' + WORDS }]), paras: [{ ...N, frame }, { ...N, frame }, N], objects: { 1: { kind: 'picture', src: DOT, w: 140, h: 72, px: { w: 1, h: 1 } } } };
+    const bytes = await writeDocx(t, deps);
+    const xml = strFromU8(unzipSync(bytes)['word/document.xml']);
+    expect(xml.split(framePrXml(frame)).length).toBe(3);
+    const back = paragraphs((await readDocx(bytes, deps)).doc);
+    expect(back.map((x) => x.ps.frame)).toEqual([frame, frame, undefined]);
+    // (no copy of Word's frame kept beside it, to be written twice)
+    expect(back[0].ps.wpx ?? '').not.toContain('framePr');
+  });
+});

@@ -633,6 +633,8 @@ class DocxReader {
       switch (c.localName) {
         case 'jc': { const j = JUSTIFY[this.a(c) ?? '']; if (j) out.align = j; break; }
         case 'framePr': {
+          // (a frame of paragraphs read as one: ParaStyle.frame)
+          if (frameOf(c, (n) => this.a(c, n))) break;
           // a text frame set at the right or in the middle of the margins (a page number in a footer, as older Words made it): its paragraph is aligned there
           if (c.getAttributeNS(this.W, 'dropCap') ?? c.getAttribute('w:dropCap')) break;
           const x = c.getAttributeNS(this.W, 'xAlign') ?? c.getAttribute('w:xAlign');
@@ -1481,6 +1483,7 @@ class DocxReader {
     for (const c of kids(pPr)) {
       if (c.namespaceURI !== this.W) continue;
       const slot = KEPT_PPR[c.localName];
+      if (slot === 'a' && c.localName === 'framePr' && frameOf(c, (n) => this.a(c, n))) continue;
       if (slot) raw[slot] = (raw[slot] ?? '') + elementXml(c).replace(/ xmlns:w="[^"]*"/g, '');
       // what is shown here another way, kept to write back as Word had it:
       switch (c.localName) {
@@ -1655,6 +1658,7 @@ class DocxReader {
       border: cleanBorders(p.border), shade: p.shade && p.shade !== '#ffffff' ? p.shade : undefined,
       wpx: this.keptPPr(pPr),
       clear: this.clearNext || undefined,
+      frame: this.capture || this.cellLook ? undefined : frameOf(kid(pPr, 'framePr'), (n) => this.a(kid(pPr, 'framePr'), n)),
     };
     this.clearNext = false;
     // the number as Word draws it: in the paragraph mark's bold and italic (its style's, unless the
@@ -3933,4 +3937,21 @@ export function isClearPara(p: Element): boolean {
     }
   }
   return brs === 1;
+}
+
+/**
+ * A text frame (w:framePr) read as a frame of paragraphs (ParaStyle.frame): one of a set width at
+ * the left, center or right of the margins, its top at its paragraph, with the text round it or
+ * above and below it. Others (drop caps, frames placed on the page or at a set place, of a set
+ * height) are kept as Word had them (undefined).
+ */
+export function frameOf(fr: Element | null | undefined, a: (name: string) => string | null): ParaStyle['frame'] {
+  if (!fr) return undefined;
+  const w = parseFloat(a('w') ?? ''), wrap = a('wrap'), align = a('xAlign'), y = a('y');
+  if (!(w > 0) || a('dropCap') || a('h') || a('yAlign') || (y && parseFloat(y) !== 0) || a('x')) return undefined;
+  if (a('vAnchor') !== 'text' || (a('hAnchor') !== 'margin' && a('hAnchor') !== 'text')) return undefined;
+  if (wrap !== 'around' && wrap !== 'notBeside') return undefined;
+  if (align !== 'left' && align !== 'center' && align !== 'right') return undefined;
+  const gap = parseFloat(a('hSpace') ?? '0');
+  return { w: w / 20, align, wrap: wrap === 'around' ? 'square' : 'topBottom', gap: Number.isFinite(gap) ? gap / 20 : 0 };
 }
