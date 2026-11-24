@@ -26,6 +26,8 @@ const names = (d: Document) => {
   for (const e of all(d)) { out.add(e.nodeName); for (const a of Array.from(e.attributes)) out.add(`${e.nodeName}@${a.name}`); }
   return out;
 };
+/** The numbers in a text. */
+const nums = (s: string) => s.trim().split(/\s+/).filter(Boolean).map(Number).join(' ');
 /** Each element and attribute name of `a` that `b` lacks. */
 const lost = (a: Set<string>, b: Set<string>) => [...a].filter((k) => !b.has(k)).sort();
 
@@ -98,5 +100,9 @@ describe('CDXML sampler', () => {
       'tlcspot@Rf', 'tlcspot@ShowRf', 'tlcspot@Tail', 'spectrum@Class', 'spectrum@XType', 'spectrum@YScale', 'geometry@GeometricFeature', 'constraint@ConstraintType',
       'objecttag@Tracking', 'objecttag@Persistent', 'page@PageDefinition', 'templategrid@NumRows', 'sequence@SequenceIdentifier', 'crossreference@CrossReferenceSequence'];
     expect(kept.filter((k) => drop.includes(k))).toEqual([]);
+    // TLC plates, lanes and spots, and spectra come back attribute for attribute, with a spectrum's data
+    const of = (x: Document) => ['tlcplate', 'tlclane', 'tlcspot', 'spectrum'].flatMap((n) => Array.from(x.getElementsByTagName(n)))
+      .map((e) => `${e.nodeName} ${Array.from(e.attributes).map((a) => `${a.name}=${Number.isFinite(Number(a.value)) && a.value.trim() ? Number(a.value) : a.value}`).sort().join(' ')} ${e.nodeName === 'spectrum' ? nums(e.textContent ?? '') : ''}`);
+    expect(of(d)).toEqual(of(doc));
   });
 });

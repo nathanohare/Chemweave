@@ -383,6 +383,14 @@ const P: Record<string, Prop> = {
 };
 /** A fragment's formula, under a number of its own (an atom's is P.Formula's). */
 const TAG_MOLE_FORMULA = 0x0503;
+/** A spectrum's Y values (its text in CDXML): FLOAT64s, one after another. */
+const TAG_SPECTRUM_DATA = 0x0a86;
+/**
+ * Properties an object of one kind keeps in its own units: a TLC spot's size and tail are CDX's
+ * integers (1/65536 pt) in CDXML too, as ChemDraw 25 writes them (Width="39321" for a 0.6 pt spot).
+ */
+const OWN_KIND: Record<string, Record<string, Kind>> = { tlcspot: { Width: 'i32', Height: 'i32', Tail: 'i32' } };
+const kindFor = (el: string, name: string, p: Prop): Prop => { const k = OWN_KIND[el]?.[name]; return k ? { ...p, kind: k } : p; };
 const BY_TAG = new Map(Object.entries(P).map(([name, p]) => [p.tag, [name, p] as const]));
 BY_TAG.set(TAG_MOLE_FORMULA, ['Formula', P.Formula]);
 
@@ -591,8 +599,9 @@ function writeAttributes(out: Bytes, e: Element, skip: Set<string> = new Set()):
       writeProp(out, parseInt(kept[1], 16), bytes);
       continue;
     }
-    const p = P[a.name];
-    if (!p) continue;
+    const p0 = P[a.name];
+    if (!p0) continue;
+    const p = kindFor(e.nodeName, a.name, p0);
     let v = a.value;
     if (a.name === 'LineStarts') continue; // written with the text, in CDX's character offsets
     if (a.name === 'Charge' && !Number.isFinite(Number(v))) continue;
@@ -647,6 +656,11 @@ function writeObject(out: Bytes, e: Element): void {
   if (['n', 'b', 't'].includes(e.nodeName) && (at('LabelFont') || at('LabelSize') || at('LabelFace'))) writeProp(out, TAG_LABELSTYLE, fontStyle(at('LabelFont'), at('LabelFace'), at('LabelSize'), null));
   if (['t', 'graphic', 'arrow'].includes(e.nodeName) && (at('CaptionFont') || at('CaptionSize') || at('CaptionFace'))) writeProp(out, TAG_CAPTIONSTYLE, fontStyle(at('CaptionFont'), at('CaptionFace'), at('CaptionSize'), null));
   if (e.nodeName === 't') writeText(out, e);
+  if (e.nodeName === 'spectrum') {
+    const ys = Array.from(e.childNodes).filter((c) => c.nodeType === 3).map((c) => c.textContent ?? '').join(' ');
+    const vals = nums(ys).filter(Number.isFinite);
+    if (vals.length) { const b = new Bytes(); for (const y of vals) b.f64(y); writeProp(out, TAG_SPECTRUM_DATA, b.done()); }
+  }
   for (const c of kids(e)) {
     if (c.nodeName === 'represent') {
       const p = P[c.getAttribute('attribute') ?? ''];
@@ -882,6 +896,11 @@ function readObject(r: Reader, name: string, id: number): Node {
       node.children.splice(node.children[0]?.name === 'colortable' ? 1 : 0, 0, table);
       continue;
     }
+    if (tag === TAG_SPECTRUM_DATA && name === 'spectrum') {
+      const v = new DataView(d.buffer, d.byteOffset, d.byteLength);
+      node.text = Array.from({ length: len >> 3 }, (_, i) => String(v.getFloat64(i * 8, true))).join(' ');
+      continue;
+    }
     const known = BY_TAG.get(tag);
     if (!known) {
       // kept as it is, to be written back to CDX (G1-08)
@@ -890,7 +909,7 @@ function readObject(r: Reader, name: string, id: number): Node {
       node.attrs.push([CDX_KEEP + tag.toString(16).toUpperCase().padStart(4, '0'), hex.toUpperCase()]);
       continue;
     }
-    let prop = known[1];
+    let prop = kindFor(name, known[0], known[1]);
     if (known[0] === 'Value' && name === 'objecttag') {
       const type = node.attrs.find(([k]) => k === 'TagType')?.[1];
       if (type === 'Double' || type === 'Long') prop = { ...prop, kind: type === 'Double' ? 'f64' : 'i32' };
@@ -935,9 +954,9 @@ const escAttr = (s: string) => esc(s).replace(/\n/g, '&#10;').replace(/\r/g, '&#
 function toXml(n: Node, out: string[]): void {
   out.push('<', n.name);
   for (const [k, v] of n.attrs) out.push(' ', k, '="', escAttr(v), '"');
-  if (!n.children.length && n.name !== 's') { out.push('/>'); return; }
+  if (!n.children.length && n.name !== 's' && n.text === undefined) { out.push('/>'); return; }
   out.push('>');
-  if (n.name === 's') out.push(esc(n.text ?? ''));
+  if (n.name === 's' || n.text !== undefined) out.push(esc(n.text ?? ''));
   for (const c of n.children) toXml(c, out);
   out.push('</', n.name, '>');
 }
