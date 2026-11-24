@@ -30,6 +30,8 @@ export class DocBuilder {
   private open = false;
   /** Something before the next paragraph (a page break read before its text). */
   pendingBreak = false;
+  /** Characters put in so far (each paragraph's end and object counts one): where the next text starts. */
+  length = 0;
 
   /** The look a style gives its text, so runs carry their own font and size as ours do. */
   styleLook(ps: ParaStyle): rt.RunStyle {
@@ -42,7 +44,7 @@ export class DocBuilder {
     const parts = text.split('\n');
     parts.forEach((p, i) => {
       if (i > 0) this.endPara({});
-      if (p) { this.runs.push({ ...look, text: p }); this.open = true; }
+      if (p) { this.runs.push({ ...look, text: p }); this.open = true; this.length += p.length; }
     });
   }
 
@@ -52,6 +54,7 @@ export class DocBuilder {
     this.objects[id] = o;
     this.runs.push({ ...look, obj: id, text: OBJECT_CHAR });
     this.open = true;
+    this.length += OBJECT_CHAR.length;
     return id;
   }
 
@@ -69,6 +72,7 @@ export class DocBuilder {
     this.paras.push(p);
     // (the line break takes the look of the text before it, not its link)
     this.runs.push({ ...(this.runs.length ? rt.styleOf(this.runs[this.runs.length - 1]) : {}), obj: undefined, link: undefined, text: '\n' });
+    this.length++;
     this.open = false;
   }
 

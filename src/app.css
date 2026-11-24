@@ -4872,6 +4872,10 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-live-btn { width: 22px; height: 20px; font-size: 12px; }
 .si-live-host { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .si-live-host .doc-scroll { cursor: default; }
+/* a field of the SI page and its text in the live preview, lit up together (hovered or typed in on either side) */
+.si-field.si-linked, [data-src].si-linked { background: color-mix(in srgb, var(--tab-si, #b4234f) 7%, transparent); box-shadow: inset 2px 0 0 var(--tab-si, #b4234f); }
+.si-part.si-linked input, .si-part.si-linked select { outline: 1px solid var(--tab-si, #b4234f); outline-offset: -1px; }
+.si-field.si-linked-go { transition: none; background: color-mix(in srgb, var(--tab-si, #b4234f) 16%, transparent); }
 .si-live-host[hidden] { display: none; }
 .si-live-empty { padding: 16px 12px; font-size: var(--fs-sm); }
 .si-live-empty[hidden] { display: none; }
@@ -5183,6 +5187,9 @@ dialog.si-import .ask-buttons { margin: 0; }
 .si-mention-menu button { display: flex; gap: 6px; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: var(--text); text-align: left; font-size: var(--fs-sm); cursor: pointer; }
 .si-mention-menu button b { color: var(--accent); }
 .si-mention-menu button.hot, .si-mention-menu button:hover { background: var(--accent-soft); }
+/* SI: a compound's structure on its ID in the text (the group tooltip's look, .label-tip) */
+.si-mention-tip-pic { background: #fff; }
+.si-mention-tip-pic svg { display: block; }
 
 /* picking from the Compound Library or My Library */
 dialog.si-pick { width: min(92vw, 480px); }

@@ -75,7 +75,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blankCycle, type CycleLook } from './chem/cycles';
 import { chargeNote } from './text/charge-digits';
 import { addChiralFlag, chiralPrefs, structureFlag, type ChiralFlag } from './chem/chiral-flag';
-import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
+import { copyDrawing, copyImage, copySvg, drawingSvg, forgetCopy, looksLikeChemistry, extractDrawing, insertDrawing, isEmpty, nativeClipboard, readClipboardText, readNativeClipboard, readPasteEvent, pasteHoldsDrawing, readWebClipboard, clipboardFormats, fitPasted, typicalBondLength, Pasted,
   nativeFirst, writeNativeFormats, looksLikeCdxml, cfHtml, fromCfHtml, CELLS_FORMAT, nativeClipboardDrawing, pasteDrawing, setWordObjects, setSmilesMaker, embeddedPicture, packFormats } from './io/clipboard';
 import { cdxToCdxml, cdxmlToCdx } from './io/cdx';
 import { writeCdxml } from './io/cdxml-write';
@@ -266,7 +266,7 @@ import { PeriodicTable } from './ui/periodic-table';
 import type { SheetMode, ClipboardCells } from './ui/sheet-mode';
 import type { DocumentMode, DocPaste } from './ui/doc-mode';
 import { askReviewName } from './ui/review-name';
-import { docBoxPrefs, docPagePrefs, docRulerPrefs, formulaBarPrefs, parseDocPins } from './ui/mode-prefs';
+import { docBoxPrefs, docPagePrefs, docRulerPrefs, formulaBarPrefs, parseDocPins, siPreviewPrefs } from './ui/mode-prefs';
 import { setScreenMeasure, figures } from './document/doc-file';
 import type { DocxDeps } from './io/docx-write';
 import type { DocxReadDeps } from './io/docx-read';
@@ -282,6 +282,7 @@ import { siDrawingStyle } from './si/drawing-style';
 import type { SiView } from './si/manuscript';
 import { JournalFolder, journalOf } from './si/journal';
 import type { SiFolder as SiFolderT } from './si/folder';
+import type { SnapshotKeeper as SnapshotKeeperT } from './si/snapshot-docx';
 import type { SiAccess } from './ui/doc-si';
 import { addMolfile, readScene, sceneToDoc } from './io/chem-formats';
 import { cellName, colOf, rowOf } from './sheet/refs';
@@ -4576,7 +4577,8 @@ const ws: Workspace = new Workspace(doc, {
     keeper.dropped(tab);
     // an SI project: Chem SI Assistant can open it for editing again
     // (once what was being typed in it has been written: the history and the lock go after the last save)
-    if (tab.si) { const si = tab.si; void (async () => { await siMode?.saved(si).catch(() => {}); siMode?.closed(si); await closeSiProject(si); })(); }
+    // (and its Word snapshot saved, if it changed since the last one, while the lock is still held)
+    if (tab.si) { const si = tab.si; void (async () => { await siMode?.saved(si).catch(() => {}); await siSnapshots?.closing(si).catch(() => {}); siMode?.closed(si); await closeSiProject(si); })(); }
     // a drawing being edited for Word: Word hears that the editing is over
     const id = embeddedTabs.get(tab);
     if (id !== undefined) { embeddedTabs.delete(tab); void invoke('ole_close', { id }).catch(() => {}); }
@@ -6013,7 +6015,7 @@ function flipped(r: boolean | 'stereo'): void {
 
 /** Undo and Redo: in Slides mode the deck's history covers every slide and the slide list; a sheet has its own. */
 function undo(): void {
-  if (ws.active.mode === 'si') { void siMode?.undo(false).then(refreshHistory, () => {}); return; }
+  if (siActive()) { void siMode?.undo(false).then(refreshHistory, () => {}); return; }
   if (sheetActive()) { sheetMode.undo(); return; }
   if (docActive()) { docMode.run('undo'); return; }
   const d = deckNow();
@@ -6026,7 +6028,7 @@ function undo(): void {
 }
 
 function redo(): void {
-  if (ws.active.mode === 'si') { void siMode?.undo(true).then(refreshHistory, () => {}); return; }
+  if (siActive()) { void siMode?.undo(true).then(refreshHistory, () => {}); return; }
   if (sheetActive()) { sheetMode.redo(); return; }
   if (docActive()) { docMode.run('redo'); return; }
   const d = deckNow();
@@ -6041,7 +6043,7 @@ function redo(): void {
 
 /** The name of the step Undo (or Redo) would take back in the tab in front: null with nothing to take back, '' when it has no name. */
 function historyStep(redo: boolean): string | null {
-  if (ws.active.mode === 'si') return siMode?.history(redo) ?? null;
+  if (siActive()) return siMode?.history(redo) ?? null;
   if (sheetActive()) return sheetMode.history(redo);
   if (docActive()) return docMode.canUndo(redo) ? '' : null;
   const h = deckNow() ?? doc;
@@ -8917,6 +8919,11 @@ const SHEET_COMMANDS: Record<string, () => unknown> = {
 const DOC_HINT = 'Type on the page. Insert ▸ Structure adds a structure; double-click it to edit.';
 
 /** True when a document is showing (and no structure is being drawn for it). */
+/** The SI tab has the keys: not while a structure is drawn in the box over it (Undo then undoes the drawing). */
+function siActive(): boolean {
+  return ws.active.mode === 'si' && !drawingOnTop();
+}
+
 function docActive(): boolean {
   return ws.active.mode === 'document' && !!docMode && !drawingOnTop();
 }
@@ -9059,7 +9066,7 @@ function loadSiMode(): Promise<SiMode> {
         return f && !f.error ? { formula: f.formula, mw: f.mw, exact: f.exact } : null;
       },
       smiles: (mol) => chem.molToSmiles(mol),
-      editStructure: (contents, title, done) => editCellStructure(contents, title, done, siStyleNow()),
+      editStructure: (contents, title, done, style) => editCellStructure(contents, title, done, style ?? siStyleNow()),
       chooseDrawingStyle: async (current, note) => {
         const got = await editDrawingStyle({
           current, own: ownStyles, kindPlural: 'SI projects', where: 'this SI project', isDefault: false, hasStructures: false, noForNew: true, note,
@@ -9070,12 +9077,12 @@ function loadSiMode(): Promise<SiMode> {
         return got.style;
       },
       // a table cell's picture: the drawing as SVG, and as CDXML beside it to draw it again
-      drawingFiles: (d) => {
-        const drawing = d instanceof Doc ? d : structureDoc(d, siStyleNow());
+      drawingFiles: (d, style) => {
+        const drawing = d instanceof Doc ? d : structureDoc(d, style ?? siStyleNow());
         const svg = drawingSvg(drawing, null);
         return svg ? { svg, cdxml: writeCdxml(drawing, { name: 'picture.cdxml', textMeasure: measureText }) } : null;
       },
-      contentsOfCdxml: (text) => { try { return readCdxml(text).doc.contents(); } catch { return null; } },
+      contentsOfCdxml: (text) => { try { const d = readCdxml(text).doc; return { contents: d.contents(), style: { ...d.style } }; } catch { return null; } },
       openSymbols: () => symbolWindow.open(),
       copyRich: (text, html) => crystalOptions().copy(text, html),
       nameStructure: async (mol) => {
@@ -9089,6 +9096,7 @@ function loadSiMode(): Promise<SiMode> {
       // (the desktop app on Windows reads the clipboard itself, even for a paste event: the event only
       // holds a bitmap of a drawing from here or ChemDraw, where the clipboard has the drawing)
       readClipboard: (e) => (nativeClipboard ? readNativeClipboard() : e ? readPasteEvent(e) : readWebClipboard()),
+      pasteHoldsDrawing: (e) => pasteHoldsDrawing(e),
       library: async () => {
         const lib = await useLibrary();
         return { now: lib.now, change: (f) => lib.change(f) };
@@ -9099,6 +9107,7 @@ function loadSiMode(): Promise<SiMode> {
       sizeOf: (c) => figures.size(c, siStyleNow()),
       siStyle: () => siStyleNow(),
       openDocuments: () => ws.tabs.filter((t) => t.mode === 'document' && t.document && !t.windowOf).map((t) => ({ name: t.name, bytes: async () => (await import('./io/docx-write')).writeDocx(t.document!.t, docFiles, t.name) })),
+      saveSnapshotDocx: async (p) => { await (await siSnapshotKeeper()).saveNow(p); },
       openCompiled: async (doc, name, pdf, watch) => {
         ws.showDocument({ ...doc, drawingStyle: { ...siStyleNow() } }, name.replace(/[\\/:*?"<>|]/g, '-'));
         renderTabs();
@@ -9119,6 +9128,35 @@ function loadSiMode(): Promise<SiMode> {
 
 /** How a Spectra section Chemweave adds starts (beyond SI Assistant's defaults): the links from the peak reports to the spectra and back on. */
 const SPECTRA_START = { nmr_links: true, link_back: true } as const;
+
+/**
+ * The Word snapshots of the open SI projects (si/snapshot-docx.ts): each project compiled as
+ * Compile to Document compiles it (in its own drawing style), saved as "<title> (Snapshot).docx"
+ * in its folder every few minutes while it changes, when it closes, and on Ctrl+S.
+ */
+let siSnapshots: SnapshotKeeperT | null = null;
+/** How long quitting waits for the SI projects' last Word snapshots (best effort: one not done by then is left). */
+const SI_QUIT_SNAPSHOT_MS = 30000;
+async function siSnapshotKeeper(): Promise<SnapshotKeeperT> {
+  if (siSnapshots) return siSnapshots;
+  const { SnapshotKeeper } = await import('./si/snapshot-docx');
+  siSnapshots ??= new SnapshotKeeper({
+    compileHost: (p) => ({
+      contentsOf: (mol) => { const scene = readScene('mol', mol); return scene ? sceneToDoc(scene, siStyleOf(p)).doc.contents() : null; },
+      sizeOf: (c) => figures.size(c, siStyleOf(p)),
+      facts: (mols) => chem.siFacts(mols),
+      pdfPages: (b, most) => import('./render/pdf-page').then((m) => m.pdfPages(b, most)),
+      contentBox: (src) => import('./render/pdf-page').then((m) => m.pictureContentBox(src)),
+    }),
+    docx: async (doc, p) => (await import('./io/docx-write')).writeDocx({ ...doc, drawingStyle: { ...siStyleOf(p) } }, docFiles, `${p.title} SI`),
+    // (a timer's snapshot leaves what is being typed alone: it is in the next one)
+    saved: (p, all) => (!siMode ? Promise.resolve() : all ? siMode.saved(p) : siMode.pendingOf(p)),
+    flash,
+    // (each spectrum PDF is drawn when nothing else is happening, so typing goes first; WebKit has no idle callback)
+    idle: () => new Promise<void>((r) => { if ('requestIdleCallback' in window) window.requestIdleCallback(() => r(), { timeout: 2000 }); else setTimeout(r, 50); }),
+  });
+  return siSnapshots;
+}
 
 /** File ▸ Open SI Project… (or File ▸ New ▸ SI Project…, `create`). */
 // ---------------------------------------------------------------- SI projects from the Canvas (layout C)
@@ -9239,7 +9277,13 @@ function siCardEl(c: SiCard): HTMLElement {
 /** An SI project's folder with the history Undo and Redo use (Edit ▸ Undo names the step). */
 function siJournal(folder: SiFolderT): JournalFolder {
   const j = new JournalFolder(folder);
-  j.onChange = () => { refreshHistory(); siMode?.folderChanged(j); };
+  j.onChange = () => {
+    refreshHistory();
+    siMode?.folderChanged(j);
+    // (its history changed: the project changed, so its Word snapshot is out of date)
+    const si = ws.tabs.find((t) => t.si?.folder === j)?.si;
+    if (si) siSnapshots?.changed(si);
+  };
   return j;
 }
 
@@ -9309,6 +9353,7 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
   project.onReadOnly = (message) => { void showError(message); siMode?.readOnlyNow(project); };
   await loadSiMode();
   ws.openSi(project);
+  void siSnapshotKeeper().then((k) => k.opened(project)).catch(() => {});
   siLinked.delete(project.folder.where);
   siChanged(project.folder.where);
   if (project.warnings.length) flash(`Opened with ${project.warnings.length} problem${project.warnings.length === 1 ? '' : 's'}: see the project's page.`, 6000);
@@ -10188,7 +10233,8 @@ const COMMANDS: Record<string, () => unknown> = {
   // (no longer in the menus: kept for buttons people put on their ribbon or quick bar)
   'new-from-template': () => { const k = sheetActive() ? 'sheet' : 'document'; finishTab(); if (k === 'sheet') ws.newSheet(); else ws.newDocument(); offerTemplates(k, true); },
   open: () => ws.open(),
-  save: () => { finishTab(); return ws.save(focusTab()); },
+  // (in an SI project, which saves every change as it is made, Save saves its Word snapshot)
+  save: () => { finishTab(); const t = focusTab(); return t.mode === 'si' && t.si ? siSnapshotKeeper().then((k) => k.saveNow(t.si!)) : ws.save(t); },
   'save-as': () => { finishTab(); return ws.saveAs(focusTab()); },
   autosave: () => { finishTab(); return keeper.toggleAutoSave(focusTab()); },
   'version-history': () => { finishTab(); return keeper.historyCommand(focusTab()); },
@@ -12285,6 +12331,15 @@ async function personalPreferences(): Promise<void> {
       help: 'Marks at the corners of the text on each page of a document, showing where the margins are.' },
     { name: 'whiteSpace', label: 'Show white space between pages in Print Layout view', type: 'checkbox', value: String(docPagePrefs.whiteSpace),
       help: 'Off, each page\'s top and bottom margins (with its header and footer) are hidden, the pages joined by a line. Double-clicking between pages does the same.' },
+    { name: 'siPreviewHeading', label: 'SI Live Preview', type: 'heading', value: '', help: 'The whole SI beside the SI Project tab\'s pages, typed into as in Word (Home ▸ Compile ▸ Live Preview there).' },
+    { name: 'siDim', label: 'Wash out everything but the page selected', type: 'checkbox', value: String(siPreviewPrefs.dim),
+      help: 'A bar in the SI color beside the selected page marks it either way.' },
+    { name: 'siLink', label: 'Show a field\'s text with', value: siPreviewPrefs.link, short: true, options: [
+      { value: 'tint', label: 'A tint and the field\'s name' }, { value: 'bracket', label: 'Brackets and the field\'s name' }],
+      help: 'When a field on the SI page is hovered or typed in, or its text in the preview is hovered.' },
+    { name: 'siCustom', label: 'Mark text no field holds with', value: siPreviewPrefs.custom, short: true, options: [
+      { value: 'underline', label: 'An amber dotted underline and a flag' }, { value: 'fill', label: 'An amber fill and a bar' }],
+      help: 'Text typed in the preview where no field is: it is kept and prints where it was typed, and is listed on the Warnings page.' },
     { name: 'iconsHeading', label: 'Icons', type: 'heading', value: '' },
     { name: 'iconSet', label: 'Icon set', value: iconSet(), short: true, options: [
       { value: 'new', label: 'New: one style in every mode' },
@@ -12304,6 +12359,10 @@ async function personalPreferences(): Promise<void> {
   docPagePrefs.cropMarks = r.cropMarks === 'true';
   docPagePrefs.whiteSpace = r.whiteSpace === 'true';
   docMode?.applyPagePrefs();
+  siPreviewPrefs.dim = r.siDim === 'true';
+  siPreviewPrefs.link = r.siLink === 'bracket' ? 'bracket' : 'tint';
+  siPreviewPrefs.custom = r.siCustom === 'fill' ? 'fill' : 'underline';
+  siPreviewPrefs.changed?.();
   Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
   editor.focalLook = focalPrefs.look;
   setFocalDefault(focalPrefs.dflt);
@@ -12495,6 +12554,7 @@ function currentSettings(): Settings {
     docRuler: docRulerPrefs.shown,
     docCropMarks: docPagePrefs.cropMarks,
     docWhiteSpace: docPagePrefs.whiteSpace,
+    siPreview: { dim: siPreviewPrefs.dim, link: siPreviewPrefs.link, custom: siPreviewPrefs.custom },
     sheetFormulaBar: formulaBarPrefs.shown,
     slideRuler: slideLook.ruler,
     slidePanes: { ...chemPanes },
@@ -12773,6 +12833,8 @@ function applySettings(s: Settings): void {
   docPagePrefs.cropMarks = !!s.docCropMarks;
   docPagePrefs.whiteSpace = s.docWhiteSpace !== false;
   docMode?.applyPagePrefs();
+  Object.assign(siPreviewPrefs, s.siPreview);
+  siPreviewPrefs.changed?.();
   formulaBarPrefs.shown = s.sheetFormulaBar !== false;
   sheetMode?.showFormulaBar();
   slideLook.ruler = !!s.slideRuler;
@@ -12882,7 +12944,13 @@ if (isTauri()) {
     await siSavedAll();
     if (!(await ws.closeAll())) e.preventDefault();
     // closing normally: the recovery copies and lock files aren't needed
-    else { await keeper.end(); await diagnostics.end(); await releaseSiProjects(); }
+    else {
+      await keeper.end();
+      await diagnostics.end();
+      // (each SI project's Word snapshot, if it changed: waited for a while, then the window goes anyway)
+      await siSnapshots?.closingAll(ws.tabs.flatMap((t) => (t.si ? [t.si] : [])), SI_QUIT_SNAPSHOT_MS).catch(() => {});
+      await releaseSiProjects();
+    }
   }).catch(() => {});
 } else {
   window.addEventListener('beforeunload', (e) => {
@@ -14851,7 +14919,7 @@ function insertSymbol(ch: string): boolean {
     flash('Select a cell to type the symbol into.');
     return false;
   }
-  if (ws.active.mode === 'si') return siMode?.insertText(ch) ?? false;
+  if (siActive()) return siMode?.insertText(ch) ?? false;
   if (docActive()) {
     if (docMode.insertText(ch)) return true;
     flash('Symbols can\'t be typed in Read Mode: go back to Print Layout (View).');
@@ -16625,7 +16693,7 @@ requestAnimationFrame(() => {
 });
 
 // Hooks for the automated speed tests.
-(window as any).__app = { openMemorySi, whyCannotRun, assistant: { items: assistantItems, apply: applyAssistantAction, markStep: markAssistantStep }, doc, editor, renderer, settingsWindow, toolboxes, chem, live, command, setRibbonLook, setPageLook, getPageLook: () => ({ ...pageLook }), addMolfile, keeper, cdxml: (name: string) => writeCdxml(doc, { name, textMeasure: measureText }), openText, picture: (dpi = 150) => { const p = recordPicture(doc, 0); if (!p) return null; const c = pictureCanvas(doc, p, dpi); return { url: c.canvas.toDataURL('image/png'), box: p.box, dpi: c.dpi }; }, stressTest, pasteChemistry, smiles: async (loose = false) => chem.molToSmiles(toMolfile(doc, doc.atoms.keys(), '', { species: allSpecies(doc, editor.measure()) }).molblock, loose), placePicture, sample: sampleMolecule, ws, slideList, get presenter() { return shows?.presenter; }, Doc, keymap, names, get sheetMode() { return sheetMode; }, sheetChem, get docMode() { return docMode; }, loadModes: () => Promise.all([loadSheetMode(), loadDocMode()]), docxBytes: async () => (await import('./io/docx-write')).writeDocx(docMode.file!.t, docFiles),
+(window as any).__app = { openMemorySi, whyCannotRun, assistant: { items: assistantItems, apply: applyAssistantAction, markStep: markAssistantStep }, doc, editor, renderer, settingsWindow, toolboxes, chem, live, command, setRibbonLook, setPageLook, getPageLook: () => ({ ...pageLook }), addMolfile, keeper, cdxml: (name: string) => writeCdxml(doc, { name, textMeasure: measureText }), openText, picture: (dpi = 150) => { const p = recordPicture(doc, 0); if (!p) return null; const c = pictureCanvas(doc, p, dpi); return { url: c.canvas.toDataURL('image/png'), box: p.box, dpi: c.dpi }; }, stressTest, pasteChemistry, smiles: async (loose = false) => chem.molToSmiles(toMolfile(doc, doc.atoms.keys(), '', { species: allSpecies(doc, editor.measure()) }).molblock, loose), placePicture, sample: sampleMolecule, ws, slideList, get presenter() { return shows?.presenter; }, Doc, keymap, names, get sheetMode() { return sheetMode; }, get siMode() { return siMode; }, sheetChem, get docMode() { return docMode; }, loadModes: () => Promise.all([loadSheetMode(), loadDocMode()]), docxBytes: async () => (await import('./io/docx-write')).writeDocx(docMode.file!.t, docFiles),
   // (the deck as File > Save writes it, every part of it: audit G2-23)
   pptxBytes: async () => { if (!deckNow()) throw new Error('no deck showing'); return (await ws.encode(ws.active, 'x.pptx')).data as Uint8Array; } };
 

@@ -201,10 +201,13 @@ export function chemdrawInCommand(label) {
   return /ChemDraw(?!-style|-like)/.test(t) ? ['ChemDraw'] : [];
 }
 
+const ENTITIES = { nbsp: ' ', amp: '&', gt: '>', lt: '<' };
+
 /** Every problem in one user-visible string. `command` true for a command's name (menu item, ribbon button). */
 export function checkText(text, { command = false, input = false } = {}) {
   const out = [];
-  const t = text.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/\s+/g, ' ');
+  // (one pass, so an escaped entity such as &amp;lt; stays the text &lt; and is not decoded twice)
+  const t = text.replace(/&(nbsp|amp|gt|lt);/g, (_, e) => ENTITIES[e]).replace(/\s+/g, ' ');
   for (const b of BANNED) {
     const m = t.match(b.re);
     if (m) out.push({ rule: b.rule, found: m[0], use: b.use });
@@ -345,7 +348,7 @@ function codeLike(t) {
 
 /** A data table (one row a line, | between fields, shown through its own renderer), class names, or hex colors. */
 function dataLike(t) {
-  return /(?:[^|\n]*\|){3,}[^|\n]*(?:\n|$)/.test(t) || /^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)+\s*)+$/.test(t) || /^(?:#?[0-9A-Fa-f]{6}\s+){2,}/.test(t);
+  return /(?:[^|\n]*\|){3,}[^|\n]*(?:\n|$)/.test(t) || /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+(?:\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)+)*\s*$/.test(t) || /^(?:#?[0-9A-Fa-f]{6}\s+){2,}/.test(t);
 }
 
 /** The user-visible strings of one TypeScript file: [{ text, line, command }]. */
