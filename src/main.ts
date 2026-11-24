@@ -9375,7 +9375,7 @@ async function noteSiSource(p: SiProjectT, st: SiFileState, unsaved: boolean): P
  * not saved yet, so Save asks where); `create` makes a new project titled so; `unsaved`: it has
  * changes not in any file yet (a converted folder, a recovered copy, a zip that isn't a project file).
  */
-async function openSiWorking(w: SiWorkingT, file: string | null, opts: { create?: string; unsaved?: boolean; readOnly?: boolean; stamp?: FileStamp | null; suggest?: string } = {}): Promise<SiProjectT | null> {
+async function openSiWorking(w: SiWorkingT, file: string | null, opts: { create?: string; unsaved?: boolean; readOnly?: boolean; stamp?: FileStamp | null; suggest?: string; recovered?: boolean } = {}): Promise<SiProjectT | null> {
   const [{ SiProject, SiProjectError }, { DiskFolder }, { ChangeCounter }, { setSnapshotFolder }] = await Promise.all([import('./si/project'), import('./si/folder'), import('./si/packed'), import('./si/snapshot-docx')]);
   const counter = new ChangeCounter(new DiskFolder(w.root, siCall));
   let project: SiProjectT;
@@ -9392,7 +9392,10 @@ async function openSiWorking(w: SiWorkingT, file: string | null, opts: { create?
       await journalOf(project.folder)?.clear().catch(() => {});
     }
   } catch (e) {
-    await showError(e instanceof SiProjectError ? e.message : `The SI project could not be opened: ${e instanceof Error ? e.message : String(e)}`);
+    const why = e instanceof SiProjectError ? e.message : `The SI project could not be opened: ${e instanceof Error ? e.message : String(e)}`;
+    // (a recovered copy may hold the only copy of the changes: it stays, and is offered again at the next start)
+    if (opts.recovered) { await showError(`${why}\n\nThe unsaved changes are kept in ${w.root}, and are offered again the next time Chemweave starts.`); return null; }
+    await showError(why);
     await (await siFiles()).discard(w).catch(() => {});
     return null;
   }
@@ -9413,7 +9416,9 @@ async function openSiWorking(w: SiWorkingT, file: string | null, opts: { create?
   tab.ref = file ? { kind: 'path', path: file } : { kind: 'none' };
   tab.name = file ? baseName(file) : opts.suggest ?? `${project.title}.chemsi`;
   ws.noteChange(tab);
-  if (file) { void keeper.lockFor(tab, file); rememberFile(file); }
+  // (open read-only: the lock beside the file is the other person's, left as it is)
+  if (file && !project.readOnly) void keeper.lockFor(tab, file);
+  if (file) rememberFile(file);
   void noteSiSource(project, st, counter.dirty);
   st.notedDirty = counter.dirty;
   void siSnapshotKeeper().then((k) => k.opened(project)).catch(() => {});
@@ -9424,6 +9429,29 @@ async function openSiWorking(w: SiWorkingT, file: string | null, opts: { create?
   updateTitle();
   if (project.warnings.length) flash(`Opened with ${project.warnings.length} problem${project.warnings.length === 1 ? '' : 's'}: see the project's page.`, 6000);
   return project;
+}
+
+/**
+ * Where an SI project is to be saved, from the name chosen in the Save dialog (given the .chemsi
+ * extension if it hasn't it); null when it can't be used: open in another tab, open by someone
+ * else, or (when the extension changed the name, so the dialog never asked) there already and
+ * the person would rather not replace it.
+ */
+async function siTarget(chosen: string, tab?: Tab): Promise<string | null> {
+  const { asSiFile } = await import('./si/packed');
+  const file = asSiFile(chosen);
+  if (ws.tabs.some((t) => t !== tab && t.si?.file && samePath(t.si.file, file))) { await showError(`${baseName(file)} is open in another tab: close it first, or choose another name.`); return null; }
+  if (tab?.si?.file && samePath(tab.si.file, file)) return file;
+  const held = await keeper.heldBy(file).catch(() => null);
+  if (held) { await showError(`${baseName(file)} is open by ${holderText(held)}: choose another name.`); return null; }
+  if (!samePath(file, chosen) && await invoke<boolean>('path_exists', { path: file }).catch(() => false)) {
+    const pick = await askChoice('Replace File', `${baseName(file)} is there already. Replace it?`, [
+      { value: 'replace', label: 'Replace' },
+      { value: 'cancel', label: 'Cancel', primary: true },
+    ], 'cancel');
+    if (pick !== 'replace') return null;
+  }
+  return file;
 }
 
 /** File ▸ Open SI Project… (`at`: a file or folder given), or File ▸ New ▸ SI Project… (`create`). */
@@ -9438,8 +9466,8 @@ async function openSiProject(create: boolean, at?: string): Promise<SiProjectT |
     const title = got.title.trim();
     const target = await saveFileDialog(`${safeFilename(title)}.${packed.SI_FILE_EXT}`, CHEMSI).catch(async (e) => { await showError(String(e)); return null; });
     if (!target || target.ref.kind !== 'path') return null;
-    const file = packed.asSiFile(target.ref.path);
-    if (ws.tabs.some((t) => t.si?.file && samePath(t.si.file, file))) { await showError(`${baseName(file)} is open already: close it first, or choose another name.`); return null; }
+    const file = await siTarget(target.ref.path);
+    if (!file) return null;
     let w: SiWorkingT;
     try { w = await files.fresh(packed.siFileStem(file)); } catch (e) { await showError(`The SI project could not be made: ${e instanceof Error ? e.message : String(e)}`); return null; }
     const p = await openSiWorking(w, file, { create: title });
@@ -9498,13 +9526,22 @@ async function convertSiFolder(dir: string): Promise<SiProjectT | null> {
   if (pick !== 'save') return null;
   const target = await saveFileDialog(`${name}.${packed.SI_FILE_EXT}`, CHEMSI).catch(async (e) => { await showError(String(e)); return null; });
   if (!target || target.ref.kind !== 'path') return null;
-  const file = packed.asSiFile(target.ref.path);
-  if (ws.tabs.some((t) => t.si?.file && samePath(t.si.file, file))) { await showError(`${baseName(file)} is open already: close it first, or choose another name.`); return null; }
+  const file = await siTarget(target.ref.path);
+  if (!file) return null;
   try {
     const disk = new DiskFolder(folder, siCall);
     // (read first, so a folder that isn't a project, or one saved by a newer version, is said before anything is written)
     const p = await SiProject.open(disk, { readOnly: true });
     if (p.newerFormat) { await showError(`${name} was saved by a newer version of Chemweave or Chem SI Assistant: update Chemweave to convert it.`); return null; }
+    // (open somewhere else now: changes made there after this would not be in the file)
+    const held = await p.currentLock().catch(() => null);
+    if (held) {
+      const go = await askChoice('SI Project Folder Open Elsewhere', `${held.user} has ${name} open on ${held.computer}${held.opened_at ? ' since ' + held.opened_at.replace('T', ' ') : ''}. Changes made there after it is saved as a file won't be in the file.`, [
+        { value: 'go', label: 'Save as File Anyway' },
+        { value: 'cancel', label: 'Cancel', primary: true },
+      ], 'cancel', 'If it was left open after a crash, or is closed there now, save it anyway.');
+      if (go !== 'go') return null;
+    }
     const skip = packed.packSkips((await disk.entries('')).map((e) => e.name));
     await files.pack(folder, file, skip);
   } catch (e) {
@@ -9535,7 +9572,7 @@ async function saveSiFile(tab: Tab, how: SaveHow, fresh = false, to?: string): P
   if (p.readOnly && !to) { if (how === 'saved') flash('This SI project is open read-only: File ▸ Save As saves a copy.', 6000); return false; }
   while (st.saving) await st.saving.catch(() => false);
   if (!to && !st.counter.dirty && how === 'autosaved') return true;
-  const run = (async (): Promise<boolean> => {
+  const run = (async (): Promise<boolean | 'save-as'> => {
     // what is being typed is written to the working copy first
     await siMode?.saved(p).catch(() => {});
     const packed = await import('./si/packed');
@@ -9554,7 +9591,7 @@ async function saveSiFile(tab: Tab, how: SaveHow, fresh = false, to?: string): P
           { value: 'cancel', label: 'Cancel' },
         ], 'cancel', 'Save As keeps both: yours in a new file, theirs where it is. Open theirs afterwards to compare.');
         if (pick === 'cancel') return false;
-        if (pick === 'copy') { st.saving = null; return saveSiFileAs(tab); }
+        if (pick === 'copy') return 'save-as' as const;
       }
     }
     const changes = st.counter.changes;
@@ -9580,8 +9617,12 @@ async function saveSiFile(tab: Tab, how: SaveHow, fresh = false, to?: string): P
     if (how === 'saved') flash(`Saved ${baseName(file)}`, 3500);
     return true;
   })();
-  st.saving = run;
-  try { return await run; } finally { if (st.saving === run) st.saving = null; }
+  const plain = run.then((r) => r === true);
+  st.saving = plain;
+  let got: boolean | 'save-as';
+  try { got = await run; } finally { if (st.saving === plain) st.saving = null; }
+  // (Save As chosen for a file changed elsewhere: asked once this save is over)
+  return got === 'save-as' ? saveSiFileAs(tab) : got;
 }
 
 /** Home ▸ Reload Project for a project file: its tab closed and the file opened again (unsaved changes dropped, once agreed). */
@@ -9598,12 +9639,17 @@ async function reloadSiFile(p: SiProjectT): Promise<void> {
     ], 'cancel');
     if (pick !== 'reload') return;
   }
+  // the file is read first: if it can't be (gone, offline, damaged), the tab stays as it is
+  const files = await siFiles();
+  let w: SiWorkingT;
+  try { w = await files.unpack(file); } catch (e) { await showError(`${baseName(file)} could not be opened again, so the project was left as it is: ${e instanceof Error ? e.message : String(e)}`); return; }
+  const stamp = await stampOf({ kind: 'path', path: file });
   st.discarded = true;
   // (closed without asking again: the changes were dropped above)
   st.counter.saved = st.counter.changes;
   ws.noteChange(tab);
-  if (!(await ws.close(tab))) return;
-  await openSiProject(false, file);
+  if (!(await ws.close(tab))) { st.discarded = false; await files.discard(w).catch(() => {}); return; }
+  await openSiWorking(w, file, { stamp });
 }
 
 /** File ▸ Save As for an SI project: another file, which the project then saves to. */
@@ -9616,10 +9662,8 @@ async function saveSiFileAs(tab: Tab): Promise<boolean> {
   const { setSnapshotFolder } = await import('./si/snapshot-docx');
   const target = await saveFileDialog(tab.name.replace(/\.[^.]*$/, '') + '.' + packed.SI_FILE_EXT, CHEMSI).catch(async (e) => { await showError(String(e)); return null; });
   if (!target || target.ref.kind !== 'path') return false;
-  const file = packed.asSiFile(target.ref.path);
-  if (ws.tabs.some((t) => t !== tab && t.si?.file && samePath(t.si.file, file))) { await showError(`${baseName(file)} is open in another tab: close it first, or choose another name.`); return false; }
-  const held = p.file && samePath(p.file, file) ? null : await keeper.heldBy(file).catch(() => null);
-  if (held) { await showError(`${baseName(file)} is open by ${holderText(held)}: choose another name.`); return false; }
+  const file = await siTarget(target.ref.path, tab);
+  if (!file) return false;
   const was = p.file;
   if (p.readOnly) {
     // (a project open read-only stays as it is: the copy is the person's own, to open and edit)
@@ -9686,13 +9730,15 @@ async function recoverSiCopies(): Promise<void> {
   if (!isTauri()) return;
   const files = await siFiles();
   const left = await files.leftOver().catch(() => []);
-  const open = new Set(ws.tabs.flatMap((t) => (t.si ? [siFileStates.get(t.si)?.working.working] : [])));
+  const { recoveryAction } = await import('./si/packed');
+  const open = new Set(ws.tabs.flatMap((t) => (t.si ? [siFileStates.get(t.si)?.working.working ?? ''] : [])));
   const offer: { w: SiWorkingT; src: SiSourceT }[] = [];
   for (const l of left) {
-    if (open.has(l.working)) continue;
     const src = await files.source(l.working);
-    if (!src || !src.unsaved || !src.root) { await files.discard({ working: l.working, root: '' }).catch(() => {}); continue; }
-    offer.push({ w: { working: l.working, root: src.root }, src });
+    const what = recoveryAction(l, src, open);
+    if (what === 'discard') await files.discard({ working: l.working, root: '' }).catch(() => {});
+    if (what !== 'offer') continue;
+    offer.push({ w: { working: l.working, root: l.root }, src: src ?? { file: null, title: baseName(l.root), opened: '', unsaved: true, stamp: null, root: l.root } });
   }
   if (!offer.length) return;
   const names = offer.map((o) => `“${o.src.title || (o.src.file ? baseName(o.src.file) : 'SI Project')}”`).join(', ');
@@ -9705,7 +9751,7 @@ async function recoverSiCopies(): Promise<void> {
   if (pick !== 'open') return;
   for (const o of offer) {
     const file = o.src.file && !ws.tabs.some((t) => t.si?.file && samePath(t.si.file, o.src.file!)) ? o.src.file : null;
-    await openSiWorking(o.w, file, { unsaved: true, stamp: o.src.stamp ?? null, suggest: o.src.file ? baseName(o.src.file) : undefined });
+    await openSiWorking(o.w, file, { unsaved: true, recovered: true, stamp: o.src.stamp ?? null, suggest: o.src.file ? baseName(o.src.file) : undefined });
   }
 }
 
@@ -9749,8 +9795,18 @@ function siChanged(path: string | null): void {
   siChangeTimer = window.setTimeout(() => { if (docModeLoading && docMode) docMode.siChanged(path); }, 1200);
 }
 
-async function siProjectAt(path: string): Promise<SiProjectT | null> {
-  const tab = ws.tabs.find((t) => t.si?.key === path);
+/** Linked projects being read now (by path), so the pictures and the compile asking at once read it once. */
+const siReading = new Map<string, Promise<SiProjectT | null>>();
+function siProjectAt(path: string): Promise<SiProjectT | null> {
+  const going = siReading.get(path);
+  if (going) return going;
+  const run = readSiProjectAt(path).finally(() => siReading.delete(path));
+  siReading.set(path, run);
+  return run;
+}
+
+async function readSiProjectAt(path: string): Promise<SiProjectT | null> {
+  const tab = ws.tabs.find((t) => !!t.si && samePath(t.si.key, path));
   if (tab?.si) return tab.si;
   const known = siLinked.get(path);
   if (known) return known;
@@ -9806,7 +9862,7 @@ function siSignature(p: SiProjectT): string {
  */
 const siRereading = new Map<string, Promise<boolean>>();
 function rereadLinkedSi(path: string, always: boolean): Promise<boolean> {
-  if (ws.tabs.some((t) => t.si?.key === path) || !siLinked.has(path)) return Promise.resolve(false);
+  if (ws.tabs.some((t) => !!t.si && samePath(t.si.key, path)) || !siLinked.has(path)) return Promise.resolve(false);
   const going = siRereading.get(path);
   if (going) return going;
   const run = (async () => {
@@ -9820,7 +9876,7 @@ function rereadLinkedSi(path: string, always: boolean): Promise<boolean> {
     try { fresh = await siProjectAt(path); } catch { fresh = null; }
     // (opened in a tab meanwhile: that one is used)
     const discard = (c: typeof copy): void => { if (c) void siFiles().then((f) => f.discard(c.w)).catch(() => {}); };
-    if (ws.tabs.some((t) => t.si?.key === path)) { siLinked.delete(path); dropLinkedCopy(path); discard(copy); return false; }
+    if (ws.tabs.some((t) => !!t.si && samePath(t.si.key, path))) { siLinked.delete(path); dropLinkedCopy(path); discard(copy); return false; }
     // (it can't be read just now, a cloud folder offline, say: what was read before is kept)
     if (!fresh) { siLinked.set(path, old); if (copy) siLinkedCopies.set(path, copy); return false; }
     // (the copy read before goes; what was read now is kept)
@@ -9878,19 +9934,19 @@ const siAccess: SiAccess = {
   },
   reread: async (link) => { await rereadLinkedSi(link.path, true); },
   openCompound: (link, key) => {
-    const tab = ws.tabs.find((t) => t.si?.key === link.path);
+    const tab = ws.tabs.find((t) => !!t.si && samePath(t.si.key, link.path));
     if (tab) { openSiCompound(tab, key); return; }
     void openSiProject(false, link.path).then(() => {
-      const t = ws.tabs.find((x) => x.si?.key === link.path);
+      const t = ws.tabs.find((x) => !!x.si && samePath(x.si.key, link.path));
       if (t) openSiCompound(t, key);
     });
   },
   openProject: (link) => {
-    const tab = ws.tabs.find((t) => t.si?.key === link.path);
+    const tab = ws.tabs.find((t) => !!t.si && samePath(t.si.key, link.path));
     if (tab) ws.activate(tab); else void openSiProject(false, link.path);
   },
   renumber: async (link, ids) => {
-    const tab = ws.tabs.find((t) => t.si?.key === link.path);
+    const tab = ws.tabs.find((t) => !!t.si && samePath(t.si.key, link.path));
     if (!tab?.si) { flash('Open the SI project to renumber it (Linked SI ▸ Open).', 6000); siAccess.openProject(link); return null; }
     const p = tab.si;
     if (p.readOnly) { flash('The SI project is open read-only, so it can’t be renumbered.', 6000); return null; }
@@ -9955,7 +10011,7 @@ async function closeSiProject(si: SiProjectT): Promise<void> {
   }
   // a project file's working copy goes, unless it holds changes the person didn't choose to drop (offered back at the next start)
   const st = siFileStates.get(si);
-  if (st && (!st.counter.dirty || st.discarded || si.readOnly)) {
+  if (st && (!st.counter.dirty || st.discarded)) {
     siFileStates.delete(si);
     await (await siFiles()).discard(st.working).catch(() => {});
   }

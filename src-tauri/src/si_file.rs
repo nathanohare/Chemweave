@@ -156,11 +156,21 @@ pub(crate) fn pack(root: &Path, file: &Path, skip: &[String]) -> Result<u64, Str
     let files = files_of(root, skip)?;
     let dir = file.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let base = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "project.chemsi".into());
+    // (a temporary file left by a save that a crash cut short goes first)
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let prefix = format!(".{base}.saving-");
+        for e in entries.flatten() {
+            if e.file_name().to_string_lossy().starts_with(&prefix) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
     let temp = dir.join(format!(".{base}.saving-{}", fresh_id()));
     let result = (|| -> Result<u64, String> {
         let out = std::fs::File::create(&temp).map_err(|e| format!("Could not write in {}: {e}", dir.display()))?;
         let mut zip = ZipWriter::new(std::io::BufWriter::with_capacity(1 << 20, out));
         let mut buf = vec![0u8; 1 << 20];
+        let mut sizes: Vec<u64> = Vec::with_capacity(files.len());
         for (rel, path) in &files {
             let meta = std::fs::metadata(path).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
             let ext = Path::new(rel).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
@@ -174,13 +184,16 @@ pub(crate) fn pack(root: &Path, file: &Path, skip: &[String]) -> Result<u64, Str
             }
             zip.start_file(rel.as_str(), opts).map_err(|e| format!("Could not pack {rel}: {e}"))?;
             let mut r = std::fs::File::open(path).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+            let mut written: u64 = 0;
             loop {
                 let n = r.read(&mut buf).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
                 if n == 0 {
                     break;
                 }
+                written += n as u64;
                 zip.write_all(&buf[..n]).map_err(|e| format!("Could not write {}: {e}", file.display()))?;
             }
+            sizes.push(written);
         }
         let w = zip.finish().map_err(|e| format!("Could not write {}: {e}", file.display()))?;
         let out = w.into_inner().map_err(|e| format!("Could not write {}: {e}", file.display()))?;
@@ -189,9 +202,16 @@ pub(crate) fn pack(root: &Path, file: &Path, skip: &[String]) -> Result<u64, Str
         drop(out);
         // (a check that what was written reads back as the project, before it replaces anything)
         let check = std::fs::File::open(&temp).map_err(|e| format!("Could not read back {}: {e}", temp.display()))?;
-        let back = ZipArchive::new(std::io::BufReader::new(check)).map_err(|e| format!("The saved file did not read back ({e}), so {} was left as it was.", file.display()))?;
+        let mut back = ZipArchive::new(std::io::BufReader::new(check)).map_err(|e| format!("The saved file did not read back ({e}), so {} was left as it was.", file.display()))?;
         if back.len() != files.len() {
             return Err(format!("The saved file did not read back whole, so {} was left as it was.", file.display()));
+        }
+        // (each file there by its name, as long as it was when it was packed)
+        for (i, (rel, _)) in files.iter().enumerate() {
+            let e = back.by_index_raw(i).map_err(|e| format!("The saved file did not read back ({e}), so {} was left as it was.", file.display()))?;
+            if e.name().ok().as_deref() != Some(rel.as_str()) || e.size() != sizes[i] {
+                return Err(format!("The saved file did not read back whole ({rel}), so {} was left as it was.", file.display()));
+            }
         }
         Ok(size)
     })();
@@ -256,19 +276,25 @@ fn is_working(root: &Path, dir: &Path) -> bool {
 /// Open an SI project file: unpack it into a new working folder. Gives the working folder (to
 /// discard when the project closes) and the project's own folder in it.
 #[tauri::command]
-pub fn si_unpack(app: tauri::AppHandle, file: String, name: Option<String>) -> Result<serde_json::Value, String> {
+pub async fn si_unpack(app: tauri::AppHandle, file: String, name: Option<String>) -> Result<serde_json::Value, String> {
     let root = working_root(&app)?;
-    let working = root.join(fresh_id());
-    // (the project's folder is named as the file is, so a project with no title is called that)
-    let stem = name.unwrap_or_else(|| Path::new(&file).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
-    let into = working.join(safe_name(&stem));
-    match unpack(Path::new(&file), &into) {
-        Ok(project) => Ok(serde_json::json!({ "working": working.to_string_lossy(), "root": project.to_string_lossy() })),
-        Err(e) => {
-            let _ = std::fs::remove_dir_all(&working);
-            Err(e)
+    let shown = file.clone();
+    // (off the main thread: a large project takes a moment)
+    tauri::async_runtime::spawn_blocking(move || {
+        let working = root.join(fresh_id());
+        // (the project's folder is named as the file is, so a project with no title is called that)
+        let stem = name.unwrap_or_else(|| Path::new(&file).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+        let into = working.join(safe_name(&stem));
+        match unpack(Path::new(&file), &into) {
+            Ok(project) => Ok(serde_json::json!({ "working": working.to_string_lossy(), "root": project.to_string_lossy() })),
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&working);
+                Err(e)
+            }
         }
-    }
+    })
+    .await
+    .map_err(|e| format!("Could not open {shown}: {e}"))?
 }
 
 /// Make a new, empty working folder for a project not saved as a file yet (File ▸ New SI
@@ -293,40 +319,33 @@ pub async fn si_pack(root: String, file: String, skip: Option<Vec<String>>) -> R
         .map_err(|e| format!("Could not save {shown}: {e}"))?
 }
 
-/// Unpack an SI project file into a folder the person chose (File ▸ Save As ▸ SI Project Folder,
-/// for Chem SI Assistant): `into` must not be there yet, or be an empty folder.
-#[tauri::command]
-pub async fn si_unpack_to(file: String, into: String) -> Result<String, String> {
-    let shown = file.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let to = PathBuf::from(&into);
-        if to.exists() && std::fs::read_dir(&to).map(|mut d| d.next().is_some()).unwrap_or(true) {
-            return Err(format!("{into} is there already and is not empty: choose a new folder."));
-        }
-        unpack(Path::new(&file), &to).map(|p| p.to_string_lossy().into_owned())
-    })
-    .await
-    .map_err(|e| format!("Could not unpack {shown}: {e}"))?
-}
-
 /// Delete a working folder (the project closed, or its recovered changes were saved or
 /// discarded). Only a folder directly inside Chemweave's own si-working folder is deleted here.
 #[tauri::command]
-pub fn si_discard_working(app: tauri::AppHandle, working: String) -> Result<(), String> {
+pub async fn si_discard_working(app: tauri::AppHandle, working: String) -> Result<(), String> {
     let root = working_root(&app)?;
     let dir = PathBuf::from(&working);
     if !is_working(&root, &dir) {
         return Err(format!("not an SI working folder: {working}"));
     }
-    match std::fs::remove_dir_all(&dir) {
+    // (off the main thread: a large project takes a moment to delete)
+    tauri::async_runtime::spawn_blocking(move || match std::fs::remove_dir_all(&dir) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(format!("Could not delete {working}: {e}")),
-    }
+    })
+    .await
+    .map_err(|e| format!("Could not delete the working copy: {e}"))?
 }
 
-/// The working folders left from earlier (a crash, or the app closed before a project was
-/// saved), for recovery: each folder's path and when it last changed (ms since 1970).
+/// Whether a working folder's name says this run of the app made it (its last part is the process id).
+fn made_by_me(name: &str) -> bool {
+    name.rsplit('-').next() == Some(std::process::id().to_string().as_str())
+}
+
+/// The working folders there are (for recovery): each folder's path, when it last changed (ms
+/// since 1970), whether this run of the app made it (never offered back: it may be opening
+/// now), and the project folder in it (the one with a project.json; "" when there is none).
 #[tauri::command]
 pub fn si_list_working(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let root = working_root(&app)?;
@@ -337,7 +356,13 @@ pub fn si_list_working(app: tauri::AppHandle) -> Result<serde_json::Value, Strin
             continue;
         }
         let modified = e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64).unwrap_or(0);
-        out.push(serde_json::json!({ "working": e.path().to_string_lossy(), "modified": modified }));
+        let project = std::fs::read_dir(e.path())
+            .ok()
+            .and_then(|d| d.flatten().map(|x| x.path()).find(|p| p.is_dir() && p.join(PROJECT_FILE).is_file()))
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let mine = made_by_me(&e.file_name().to_string_lossy());
+        out.push(serde_json::json!({ "working": e.path().to_string_lossy(), "modified": modified, "mine": mine, "root": project }));
     }
     Ok(serde_json::Value::Array(out))
 }
@@ -379,6 +404,8 @@ mod tests {
         std::fs::create_dir_all(p.join("snapshots")).unwrap();
         std::fs::write(p.join("snapshots/a.zip"), "zip").unwrap();
         let file = base.join("NaBH4 SI.chemsi");
+        // (left by a save a crash cut short)
+        std::fs::write(base.join(".NaBH4 SI.chemsi.saving-1-2-3"), "half").unwrap();
         pack(&p, &file, &["snapshots".to_string()]).unwrap();
         // nothing of the temporary file is left
         let left: Vec<_> = std::fs::read_dir(&base).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
@@ -431,6 +458,13 @@ mod tests {
         // a folder that isn't a project is not packed
         assert!(pack(&base.join("w2"), &base.join("x.chemsi"), &[]).is_err());
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn knows_its_own_working_folders() {
+        assert!(made_by_me(&fresh_id()));
+        assert!(!made_by_me("1795557452-12-1"));
+        assert!(!made_by_me("x"));
     }
 
     #[test]

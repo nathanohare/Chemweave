@@ -10,7 +10,7 @@ An SI project is **one file** (`.chemsi`), which you can save, move, email or sh
 
 - **File ▸ New ▸ SI Project (Supporting Information)…** asks for a title and then where to save the project file.
 - **File ▸ Open SI Project…** (or **File ▸ Open…**, or double-clicking the file) opens a project file. A `.zip` of a project folder opens too, as a new project that Save then asks where to put.
-- **File ▸ Convert SI Project Folder…** opens a project kept as a folder (Chem SI Assistant's, or from an earlier Chemweave): Chemweave saves it as a `.chemsi` file, beside the folder unless you choose elsewhere, and opens that. The folder is left as it was, so you can delete it once you are happy with the file. Documents open at the time that were linked to the folder are linked to the file.
+- **File ▸ Convert SI Project Folder…** opens an old project kept as a folder (from Chem SI Assistant, which Chemweave has replaced, or an earlier Chemweave): Chemweave saves it as a `.chemsi` file, beside the folder unless you choose elsewhere, and opens that. The folder is left as it was, so you can delete it once you are happy with the file. Documents open at the time that were linked to the folder are linked to the file.
 
 **Save** (Ctrl+S) saves the project file, and **AutoSave** is on for SI projects: it saves a few seconds after you stop making changes (the delay is in **File ▸ Versions and Recovery ▸ AutoSave and Recovery Options**). **File ▸ AutoSave** switches it off for one project. While a project is open, Chemweave works in a copy of it in its own data folder, so editing a large project is as quick as a small one, and nothing is lost if Chemweave or the computer stops: the next time Chemweave starts, it offers to open the changes that weren't saved. **Edit ▸ Undo** and **Redo** work as usual and take back one command at a time, until the tab is closed.
 
@@ -164,6 +164,6 @@ In a Canvas, right-click a structure and choose **Add to SI Project** to add it 
 ## Trash and snapshots
 
 - **Home ▸ Trash…** lists what was deleted from the project, newest first, and puts items back. The Trash is kept inside the project.
-- **Home ▸ Save Snapshot…** zips the whole project into its snapshots folder. Use it at milestones such as the submitted version. The Word snapshot is left out of the zip (it is made again from the project).
+- **Home ▸ Save Snapshot…** zips the whole project into a *(file name) Snapshots* folder beside the project file. Use it at milestones such as the submitted version. The Word snapshot is left out of the zip (it is made again from the project).
 
 Next: [Getting started](getting-started.md) · [Canvas](drawing.md) · [Document](documents.md) · [Libraries](libraries.md) · [Files and sharing](files-and-sharing.md) · [Feedback](feedback.md)

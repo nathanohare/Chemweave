@@ -81,6 +81,11 @@ export function snapshotFolder(p: SiProject): SiFolder {
   return besideFile.get(p) ?? journalOf(p.folder)?.inner ?? p.folder;
 }
 
+/** The folder a project file (.chemsi) is in, when the project is one (where its snapshots go); null for a project folder. */
+export function besideFolderOf(p: SiProject): SiFolder | null {
+  return besideFile.get(p) ?? null;
+}
+
 /** Where the snapshot is, as said to the person. */
 const placeOf = (p: SiProject): string => (besideFile.has(p) ? 'beside the project file' : 'in the project folder');
 

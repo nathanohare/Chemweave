@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryFolder } from '../src/si/folder';
 import { JournalFolder } from '../src/si/journal';
 import { SiProject } from '../src/si/project';
-import { ChangeCounter, SiFiles, asSiFile, counterOf, isSiFile, joinPath, packSkips, siFileStem, unsavedChange } from '../src/si/packed';
+import { ChangeCounter, SiFiles, asSiFile, recoveryAction, counterOf, isSiFile, joinPath, packSkips, siFileStem, unsavedChange } from '../src/si/packed';
 
 describe('SI project file names', () => {
   it('knows project files and zips from folders', () => {
@@ -93,5 +93,37 @@ describe('the desktop app’s side', () => {
     expect(await files.source('/data/si-working/2')).toBe(null);
     written.set('/data/si-working/3/source.json', '{"file": 4, "unsaved": "yes", "stamp": {"modified": "x"}}');
     expect(await files.source('/data/si-working/3')).toEqual({ file: null, title: '', opened: '', unsaved: false, stamp: null, root: '' });
+  });
+});
+
+describe('working copies found at start', () => {
+  const src = (unsaved: boolean) => ({ file: '/me/a.chemsi', title: 'A', opened: '', unsaved, stamp: null, root: '/w/1/A' });
+  it('never touches one this run made or has open', () => {
+    expect(recoveryAction({ working: '/w/1', modified: 0, mine: true, root: '/w/1/A' }, null, new Set())).toBe('skip');
+    expect(recoveryAction({ working: '/w/1', modified: 0, mine: false, root: '/w/1/A' }, src(true), new Set(['/w/1']))).toBe('skip');
+  });
+  it('offers changes back, even when the note is missing or unreadable', () => {
+    expect(recoveryAction({ working: '/w/1', modified: 0, mine: false, root: '/w/1/A' }, src(true), new Set())).toBe('offer');
+    expect(recoveryAction({ working: '/w/1', modified: 0, mine: false, root: '/w/1/A' }, null, new Set())).toBe('offer');
+  });
+  it('deletes copies with nothing to recover', () => {
+    expect(recoveryAction({ working: '/w/1', modified: 0, mine: false, root: '/w/1/A' }, src(false), new Set())).toBe('discard');
+    expect(recoveryAction({ working: '/w/1', modified: 0, mine: false, root: '' }, src(true), new Set())).toBe('discard');
+  });
+});
+
+describe('snapshots of a project file', () => {
+  it('go beside the file, not into it', async () => {
+    const { setSnapshotFolder } = await import('../src/si/snapshot-docx');
+    const { saveSnapshot } = await import('../src/si/snapshot');
+    const work = new MemoryFolder('/data/si-working/1/NaBH4 SI');
+    const p = await SiProject.create(work, 'NaBH4 SI');
+    p.file = '/me/SI/NaBH4 SI.chemsi';
+    const beside = new MemoryFolder('/me/SI');
+    setSnapshotFolder(p, beside);
+    const path = await saveSnapshot(p, 'submitted', new Date(2026, 10, 24, 16, 5, 9));
+    expect(path).toBe('NaBH4 SI Snapshots/2026-11-24_160509_submitted.zip');
+    expect(beside.files.has(path)).toBe(true);
+    expect([...work.files.keys()].some((k) => k.startsWith('snapshots/'))).toBe(false);
   });
 });

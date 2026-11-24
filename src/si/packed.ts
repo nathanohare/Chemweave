@@ -125,12 +125,10 @@ export class SiFiles {
   fresh(name: string): Promise<SiWorking> { return this.invoke<SiWorking>('si_new_working', { name }); }
   /** Pack a project folder into `file` (written beside it, then put in its place). Its size in bytes. */
   pack(root: string, file: string, skip: string[] = []): Promise<number> { return this.invoke<number>('si_pack', { root, file, skip }); }
-  /** Unpack a project file into a new folder (Save As ▸ SI Project Folder). The project's folder. */
-  unpackTo(file: string, into: string): Promise<string> { return this.invoke<string>('si_unpack_to', { file, into }); }
   /** Delete a working copy (only ever one inside Chemweave's own working folder). */
   discard(w: SiWorking): Promise<void> { return this.invoke<void>('si_discard_working', { working: w.working }); }
   /** Working copies left from before (a crash): for recovery. */
-  leftOver(): Promise<{ working: string; modified: number }[]> { return this.invoke('si_list_working'); }
+  leftOver(): Promise<LeftOver[]> { return this.invoke('si_list_working'); }
 
   /** Note in the working copy which file it is (for recovery after a crash). */
   async note(w: SiWorking, src: SiSource): Promise<void> {
@@ -148,6 +146,22 @@ export class SiFiles {
       return null;
     }
   }
+}
+
+/** A working copy found at start: whether this run of the app made it, and the project's folder in it ("" when none). */
+export interface LeftOver { working: string; modified: number; mine: boolean; root: string }
+
+/**
+ * What becomes of a working copy found at start: left alone (this run made it: it may be opening
+ * now, or it is open), deleted (nothing to recover: an unpack cut short, a linked document's
+ * read-only copy, or a copy with every change saved), or offered back. A copy whose note is
+ * missing or can't be read is offered rather than deleted: it may hold the only copy of changes.
+ */
+export function recoveryAction(l: LeftOver, src: SiSource | null, open: ReadonlySet<string>): 'skip' | 'discard' | 'offer' {
+  if (l.mine || open.has(l.working)) return 'skip';
+  if (!l.root) return 'discard';
+  if (src && !src.unsaved) return 'discard';
+  return 'offer';
 }
 
 /** `dir` and a name, with the separator `dir` uses. */

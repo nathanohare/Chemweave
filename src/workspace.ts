@@ -574,7 +574,8 @@ export class Workspace {
     // an SI project file opens by where it is (it is unpacked into a working copy, not read here)
     if (ext === CHEMSI.extension && this.hooks.si) {
       if (ref.kind === 'path') { await this.hooks.si.open(ref.path); return true; }
-      this.hooks.flash('SI project files open in the desktop app.', 6000);
+      // (a file dropped on the window comes without its place, so it couldn't be saved back)
+      this.hooks.flash('Open SI project files with File ▸ Open SI Project…, or by double-clicking them.', 6000);
       return false;
     }
     if (ext === WORKSPACE.extension) {

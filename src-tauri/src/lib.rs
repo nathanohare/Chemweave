@@ -521,7 +521,6 @@ pub fn run() {
             folders::si_remove_lock,
             folders::si_list_dir,
             si_file::si_unpack,
-            si_file::si_unpack_to,
             si_file::si_new_working,
             si_file::si_pack,
             si_file::si_discard_working,

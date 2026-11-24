@@ -573,7 +573,7 @@ const RIBBON = `
       </div>
       <div class="rb-col">
         <button data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance">Project Settings…</button>
-        <button data-si="snapshot" title="Save Snapshot: the whole project zipped into its snapshots folder, for milestones such as the submitted version (as Chem SI Assistant saves them)">Save Snapshot…</button>
+        <button data-si="snapshot" title="Save Snapshot: a zipped copy of the whole project, kept in a “Snapshots” folder beside the project file, for milestones such as the submitted version">Save Snapshot…</button>
         <button data-si="save-snapshot-docx" title="Save Word Snapshot: the whole SI compiled and saved now as “(project title) (Snapshot).docx” beside the project file, a backup you can open in Word if the project can't be opened. It is also saved every 5 minutes while the project changes, and when the project closes">Save Word Snapshot</button>
       </div>
 
