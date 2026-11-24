@@ -7,10 +7,12 @@
 // and only on main, where nobody is watching. So this runs the command, lets everything it prints
 // through to the log (the service's own error included), and tries again after each pause in
 // --waits (seconds; default 15, 45 and 90, so four tries in all). It stops with the command's
-// last exit code. tests/ci-workflows.test.ts checks that the workflows use it for such steps.
+// last exit code, and at once when the command can't be started or is killed by a signal (a
+// timeout or a cancelled job), since trying again can't help then. tests/ci-workflows.test.ts checks that the workflows use it for such steps.
 //
 // Only Node's own modules, so it also runs in jobs that skip `npm ci`.
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 export function parseArgs(argv) {
@@ -19,7 +21,7 @@ export function parseArgs(argv) {
   for (; i < argv.length && argv[i] !== '--'; i++) {
     if (argv[i] === '--waits' && i + 1 < argv.length) {
       const list = argv[++i].split(',').map((s) => Number(s.trim()));
-      if (list.some((n) => !Number.isFinite(n) || n < 0)) throw new Error(`--waits takes seconds, such as 15,45,90 (got "${argv[i]}")`);
+      if (!argv[i].trim() || list.some((n) => !Number.isFinite(n) || n < 0)) throw new Error(`--waits takes seconds, such as 15,45,90 (got "${argv[i]}")`);
       waits = list;
     } else {
       throw new Error(`unknown option "${argv[i]}" (put the command after --)`);
@@ -44,16 +46,25 @@ export function run(command, waits, { say = (t) => console.error(t), pause = sle
     }
     // no shell, so arguments arrive exactly as written (a .cmd file on Windows needs `cmd /c`)
     const r = spawnSync(name, command.slice(1), { stdio: 'inherit' });
-    if (r.error) say(`retry.mjs: could not start "${name}": ${r.error.message}`);
+    if (r.error) {
+      say(`retry.mjs: could not start "${name}": ${r.error.message}`);
+      return 127;
+    }
+    if (r.signal) {
+      say(`retry.mjs: "${name}" was stopped by ${r.signal}; not trying again`);
+      return 1;
+    }
     status = r.status ?? 1;
     if (status === 0) return 0;
-    say(`retry.mjs: "${name}" stopped with exit code ${r.status ?? (r.signal || 'none')}`);
+    say(`retry.mjs: "${name}" stopped with exit code ${status}`);
   }
   say(`retry.mjs: "${name}" failed ${tries} times; its own messages are above`);
   return status;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// run as a script (not imported by the test); realpath, so a path through a link still counts
+const isMain = () => { try { return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href; } catch { return false; } };
+if (process.argv[1] && isMain()) {
   let parsed;
   try {
     parsed = parseArgs(process.argv.slice(2));

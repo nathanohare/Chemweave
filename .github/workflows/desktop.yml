@@ -32,6 +32,11 @@ on:
       - scripts/release.mjs
       - scripts/retry.mjs
 
+# a new push to a pull request stops the try-out builds still going for its previous commit
+concurrency:
+  group: desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # the builds only read the code; the publish job asks for write access to make the release
 permissions:
   contents: read
@@ -237,7 +242,8 @@ jobs:
           # take "latest" (and so the updater's latest.json) from a newer one
           # not through scripts/retry.mjs: a create that fails part way can leave the release
           # behind, and a second create of the same tag then fails anyway (re-run the job instead)
-          gh release create "v$VERSION" $(ls out/* | grep -v '\.sig$') --title "Chemweave $VERSION (beta)" --notes-file "$RUNNER_TEMP/notes.txt" --target "$GITHUB_SHA" --latest=false
+          files=(); for f in out/*; do [[ "$f" == *.sig ]] || files+=("$f"); done
+          gh release create "v$VERSION" "${files[@]}" --title "Chemweave $VERSION (beta)" --notes-file "$RUNNER_TEMP/notes.txt" --target "$GITHUB_SHA" --latest=false
       - name: Mark the highest version as latest
         env:
           GH_TOKEN: ${{ github.token }}

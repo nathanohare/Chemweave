@@ -13,6 +13,9 @@ on:
       - 'scripts/build-wiki.mjs'
       - '.github/workflows/wiki.yml'
   workflow_dispatch:
+  # a try-out on a pull request that changes how the wiki is built: clone and build, no push
+  pull_request:
+    paths: [scripts/build-wiki.mjs, scripts/retry.mjs, .github/workflows/wiki.yml]
 
 # the workflow's own token pushes the wiki, which counts as writing the repository's contents
 permissions:
@@ -20,7 +23,7 @@ permissions:
 
 # two merges close together rebuild one after the other, never at the same time
 concurrency:
-  group: wiki
+  group: ${{ github.event_name == 'pull_request' && format('wiki-{0}', github.ref) || 'wiki' }}
   cancel-in-progress: false
 
 jobs:
@@ -38,8 +41,9 @@ jobs:
           TOKEN: ${{ github.token }}
         run: |
           # GitHub's git service is outside this job: scripts/retry.mjs tries the clone and the push
-          # again if one fails (the clone starts from an empty folder each try)
-          node scripts/retry.mjs -- bash -c 'rm -rf wiki && git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki'
+          # again if one fails (a failed clone removes the folder it started)
+          retry="$PWD/scripts/retry.mjs"
+          node "$retry" -- git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
           node scripts/build-wiki.mjs wiki
           cd wiki
           git add -A
@@ -49,4 +53,9 @@ jobs:
           fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -q -m "Rebuild from docs/ at ${GITHUB_SHA::7}"
-          node scripts/retry.mjs -- git push
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            echo "A pull request: the wiki builds, but nothing is pushed."
+            git diff --cached --stat | tail -1
+            exit 0
+          fi
+          node "$retry" -- git push

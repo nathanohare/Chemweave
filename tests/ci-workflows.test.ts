@@ -1,7 +1,7 @@
 // The workflows in .github/workflows: steps that call an outside service try again before they
 // give up, and nothing is published from a pull request or a try-out run.
 //
-// Why (Lessons Log, 2026-11-24): the Web version deploy (#699) and the Windows signing step (#705)
+// Why (2026-11-24): the Web version deploy (#699) and the Windows signing step (#705)
 // both failed in jobs that run only on main. Nothing tried them before the merge, and the signing
 // step gave up on Azure's first refusal. So: workflow changes are tried on their pull request
 // (each main-only workflow builds without publishing there), and every call to an outside service
@@ -56,6 +56,19 @@ describe('outside services are tried again (scripts/retry.mjs)', () => {
     expect(missing, 'wrap these in `node scripts/retry.mjs -- …`, or add them to NOT_RETRIED with the reason').toEqual([]);
   });
 
+  it('a script that changes folder reaches retry.mjs by a full path', () => {
+    const wrong: string[] = [];
+    for (const f of workflows) {
+      let moved = false;
+      for (const { line, n } of scriptLines(text(f))) {
+        if (/^(- |run:|[a-z_-]+:\s*$)/.test(line)) moved = false; // a new step or key
+        if (/(^|[;&|]\s*)cd /.test(line) && !/^\(/.test(line)) moved = true;
+        if (moved && /node scripts\/retry\.mjs/.test(line)) wrong.push(`${f}:${n}: ${line}`);
+      }
+    }
+    expect(wrong, 'after a cd, use retry="$PWD/scripts/retry.mjs" before it, then node "$retry" --').toEqual([]);
+  });
+
   it('every NOT_RETRIED entry still matches a line (so the list shrinks when a call goes)', () => {
     for (const x of NOT_RETRIED) {
       const files = x.file === '*' ? workflows : [x.file];
@@ -86,8 +99,20 @@ describe('main-only workflows are tried on their pull request without publishing
 
   it('the iPad app runs on a pull request that changes it, and never sends one to TestFlight', () => {
     const src = text('ios.yml');
-    expect(src).toMatch(/pull_request:\n\s+paths: \[\.github\/workflows\/ios\.yml\]/);
-    expect(src).toMatch(/SHIP: \$\{\{.*github\.event_name != 'pull_request'.*\}\}/);
+    expect(src).toMatch(/pull_request:\n\s+paths: \[\.github\/workflows\/ios\.yml,/);
+    const ship = src.match(/SHIP: \$\{\{(.*)\}\}/)?.[1] ?? '';
+    expect(ship).toContain("github.event_name != 'pull_request'");
+    expect(ship).toContain("github.ref == 'refs/heads/main'");
+    // inputs.ship is empty on a push, and GitHub compares empty with false as equal, so a bare
+    // `inputs.ship != false` would stop every merge from shipping
+    expect(ship).not.toMatch(/inputs\.ship != false/);
+    expect(ship).toContain("(github.event_name != 'workflow_dispatch' || inputs.ship)");
+    expect(src.match(/if: env\.SHIP == 'true'/g)?.length).toBe(2);
+  });
+
+  it('the structure reader model and the wiki publish only from main', () => {
+    expect(text('recognition-model.yml')).toMatch(/name: Publish\n(\s+#.*\n)*\s+if: github\.event_name != 'pull_request' && github\.ref == 'refs\/heads\/main'/);
+    expect(text('wiki.yml')).toMatch(/if \[ "\$GITHUB_EVENT_NAME" = "pull_request" \]; then[\s\S]*?exit 0[\s\S]*?git push/);
   });
 
   it('a pull request never gets write access for the whole Web version or Desktop app workflow', () => {
@@ -141,9 +166,11 @@ describe('scripts/retry.mjs', () => {
     expect(said.at(-1)).toMatch(/failed 3 times/);
   });
 
-  it('reports a command that cannot be started', () => {
+  it('stops at once on a command that cannot be started', () => {
     const said: string[] = [];
-    expect(run(['no-such-command-here'], [], { say: (t: string) => said.push(t), pause: () => {} })).not.toBe(0);
+    const pauses: number[] = [];
+    expect(run(['no-such-command-here'], [5, 5], { say: (t: string) => said.push(t), pause: (s: number) => pauses.push(s) })).toBe(127);
+    expect(pauses).toEqual([]);
     expect(said.join('\n')).toMatch(/could not start "no-such-command-here"/);
   });
 });

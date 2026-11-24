@@ -15,7 +15,7 @@ on:
     branches: [main]
     paths: [scripts/recognition/**, .github/workflows/recognition-model.yml]
   pull_request:
-    paths: [scripts/recognition/**, .github/workflows/recognition-model.yml]
+    paths: [scripts/recognition/**, scripts/retry.mjs, .github/workflows/recognition-model.yml]
 
 permissions:
   contents: write # to publish the pack
@@ -72,7 +72,8 @@ jobs:
           "
           cat pack/manifest.json
       - name: Publish
-        if: github.event_name != 'pull_request'
+        # only from main: a pull request or a run started by hand on another branch is a try-out
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
           if ! gh release view "$PACK" --json tagName > /dev/null 2>&1; then
             gh release create "$PACK" --prerelease --latest=false --target "$GITHUB_SHA" --title "Structure reader model" \
