@@ -77,6 +77,8 @@ CHEMWEAVE_CORPUS=~/chemweave-corpus NODE_OPTIONS=--max-old-space-size=8192 npx v
 
 A pull request that changes a writer, or drawing meant to match ChemDraw, says in its template whether this was run, and adds what to try to the laptop checks list.
 
+Real drawings rarely hold the less common objects, so `tests/cdxml-sampler.ts` builds one large CDXML file that holds every object of the CDX/CDXML specification and every value its property pages list (bond orders and displays, node types, graphic, arrow, oval, orbital, bracket and symbol types, polymer brackets, tables, TLC plates, spectra, 3D query features), with assorted fonts, faces, colors and turned, tiny, huge and overlapping objects. `tests/cdxml-sampler.test.ts` checks that it covers those lists and survives open and save, and prints what a save drops. To check ChemDraw with it, write it out (`SAMPLER_OUT=<file.cdxml> npx vitest run tests/cdxml-sampler.test.ts`), open it in ChemDraw, save it again there as CDXML and as CDX into your corpus folder, and run the suite above on those copies: ChemDraw's copies then show how ChemDraw itself writes each object.
+
 ## Checks for the standing rules
 
 The standing rules (R1 to R16, from the November 2026 audit) are built into these checks. Each one says which file and string is wrong; problems that were already there when the check was added are in a known list next to it, so a check fails only on a new problem and says when a known one has gone (take it off the list then; never add a new problem to a list to make a check pass).
