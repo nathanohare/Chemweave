@@ -154,6 +154,74 @@ describe('the Results line', () => {
   });
 });
 
+describe('the Results line with no text below the arrow', () => {
+  // Nate's report (2026-11-24): a yield with no conditions under the arrow sat on the arrow. It
+  // keeps at least one line of the text below the arrow clear of it (single spacing, 1.15 times
+  // the size), or the distance set in Settings > Schemes or the drawing style.
+  const lowered = (doc: Doc, m = plainMeasure(doc)) => {
+    const now = [...doc.arrows.values()][0];
+    const res = arrowTexts(doc, m, now).results[0];
+    return inFrame(arrowFrame(now), m.captionBox(res)).s2;
+  };
+  it('sits one line of text below the arrow when typed', () => {
+    const doc = new Doc();
+    const m = plainMeasure(doc);
+    const r = arrow(doc);
+    doc.edit('t', () => { setSideText(doc, m, r, 'above', 'Reagents'); setSideText(doc, m, doc.arrows.get(r.id)!, 'results', '58%'); });
+    const line = (doc.style.arrowTextSize ?? doc.style.captionSize) * 1.15;
+    expect(-lowered(doc, m)).toBeCloseTo(line, 3);
+    // and it is still text below the arrow in the step
+    const roles = interpretArrow(doc.arrows.get(r.id)!, schemeItems(doc, m), doc.style.bondLength);
+    expect(roles.below).toHaveLength(1);
+  });
+  it('keeps that distance through Clean Up Reaction, and its guide starts there', () => {
+    const doc = new Doc();
+    const m = plainMeasure(doc);
+    const r = arrow(doc);
+    const guide = helperBox(doc, r, 'results', m);
+    const line = (doc.style.arrowTextSize ?? doc.style.captionSize) * 1.15;
+    expect(guide.y1 - r.tail.y).toBeCloseTo(line, 3);
+    doc.edit('structures', () => {
+      const a = doc.addAtom(70, 100), b = doc.addAtom(82, 100); doc.addBond(a.id, b.id);
+      const c = doc.addAtom(190, 100), d = doc.addAtom(202, 100); doc.addBond(c.id, d.id);
+    });
+    doc.edit('t', () => setSideText(doc, m, doc.arrows.get(r.id)!, 'results', '85%'));
+    // knocked onto the arrow, then tidied
+    const res = arrowTexts(doc, m, doc.arrows.get(r.id)!).results[0];
+    doc.edit('nudge', () => doc.updateCaption(res.id, { y: res.y - 6 }));
+    const plan = planCleanUp(doc, m);
+    if (plan) applySchemePlan(doc, m, plan);
+    expect(-lowered(doc, m)).toBeCloseTo(line, 3);
+  });
+  it('follows the distance set in Settings > Schemes, and the drawing style\'s before it', () => {
+    setSchemePrefs({ resultsMin: 20 });
+    const doc = new Doc();
+    const m = plainMeasure(doc);
+    const r = arrow(doc);
+    doc.edit('t', () => setSideText(doc, m, r, 'results', '58%'));
+    expect(-lowered(doc, m)).toBeCloseTo(20, 3);
+    doc.edit('style', () => { doc.style = { ...doc.style, scheme: { resultsMin: 30 } }; });
+    doc.edit('again', () => lineUpText(doc, m, doc.arrows.get(r.id)!));
+    expect(-lowered(doc, m)).toBeCloseTo(30, 3);
+    // far out, it is still this arrow's text below
+    const roles = interpretArrow(doc.arrows.get(r.id)!, schemeItems(doc, m), doc.style.bondLength);
+    expect(roles.below).toHaveLength(1);
+    // and the drawing style's distance is saved with the drawing
+    expect(readCdxml(writeCdxml(doc)).doc.style.scheme).toMatchObject({ resultsMin: 30 });
+  });
+  it('is only a least distance: with text below, the Results gap goes under that text', () => {
+    const doc = new Doc();
+    const m = plainMeasure(doc);
+    const r = arrow(doc);
+    doc.edit('t', () => { setSideText(doc, m, r, 'below', 'THF\n−78 °C\n2 h'); setSideText(doc, m, doc.arrows.get(r.id)!, 'results', '85%'); });
+    const now = doc.arrows.get(r.id)!;
+    const t = arrowTexts(doc, m, now);
+    const f = arrowFrame(now);
+    const below = inFrame(f, m.captionBox(t.below[0])), res = inFrame(f, m.captionBox(t.results[0]));
+    expect(below.s1 - res.s2).toBeCloseTo(spacing(doc.style.bondLength).results, 3);
+  });
+});
+
 describe('text guides', () => {
   it('show only on plain reaction arrows unless turned on', () => {
     const doc = new Doc();

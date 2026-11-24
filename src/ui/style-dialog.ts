@@ -9,6 +9,7 @@ import { cleanTiedLook, fullLook, USUAL } from '../editor/tied-look';
 import { colourButton } from './colour-picker';
 import { infoIcon } from './info-tip';
 import { schemePrefs, spacing } from '../chem/scheme-layout';
+import { SINGLE } from '../text/layout';
 import { keepInRange } from './num-range';
 import { FONT_GROUPS } from '../fonts';
 import { STYLE_PRESETS, presetNamed, sameLook, scaleStyle, type RestyleHow } from '../drawing-styles';
@@ -169,6 +170,9 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     const resultsGap = schemeNum('resultsGap');
     resultsGap.dataset.span = 'resultsGap';
     row('Gap between text below and Results', resultsGap, el('span', { className: 'muted', textContent: 'pt' }));
+    const resultsMin = schemeNum('resultsMin');
+    resultsMin.title = 'Leave blank for one line of the text below the arrow. From 0 to 50 pt';
+    row('Minimum gap between arrow and Results', resultsMin, el('span', { className: 'muted', textContent: 'pt' }));
     const listLeft = el('input', { type: 'checkbox' });
     row('', listLeft, el('span', { className: 'muted', textContent: 'Left-align a numbered list of steps (1. n-BuLi; 2. PhCHO)' }));
     const fit = el('input', { type: 'checkbox' });
@@ -185,6 +189,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       const sp = spacing(parseFloat(inputs.get('bondLength')!.value) || shown.bondLength);
       const auto = (v: number) => String(Math.round(v * 10) / 10);
       textGap.placeholder = auto(sp.conditions); textGapBelow.placeholder = textGap.value || auto(sp.conditions); resultsGap.placeholder = auto(sp.results);
+      resultsMin.placeholder = auto((parseFloat(arrowSize.value) || parseFloat(arrowSize.placeholder) || shown.captionSize) * SINGLE);
       resultsSize.placeholder = arrowSize.value || arrowSize.placeholder; lead.placeholder = auto(sp.lead); headGap.placeholder = auto(sp.headGap);
       structGap.placeholder = auto(sp.gap); plusGap.placeholder = auto(sp.plus);
       beyond.style.opacity = fit.checked ? '' : '0.5';
@@ -325,6 +330,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       alignBelow.value = sc.textAlignBelow ?? schemePrefs.textAlignBelow ?? '';
       alignResults.value = sc.textAlignResults ?? schemePrefs.textAlignResults ?? '';
       resultsGap.value = pt(sc.resultsGap);
+      resultsMin.value = pt(sc.resultsMin);
       listLeft.checked = sc.listLeft ?? schemePrefs.listLeft ?? true;
       if (st.resultsTextFont) pickFont(resultsFont, st.resultsTextFont); else resultsFont.value = '';
       resultsSize.value = st.resultsTextSize !== undefined ? String(+st.resultsTextSize.toFixed(3)) : '';
@@ -364,7 +370,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       const rf = resultsFont.value.trim(), rs = parseFloat(resultsSize.value);
       if (rf && rf !== (st.arrowTextFont ?? st.captionFont)) st.resultsTextFont = rf; else delete st.resultsTextFont;
       if (Number.isFinite(rs) && rs > 0 && Math.abs(rs - (st.arrowTextSize ?? st.captionSize)) > 1e-6) st.resultsTextSize = rs; else delete st.resultsTextSize;
-      for (const [k, i] of [['textGap', textGap], ['textGapBelow', textGapBelow], ['resultsGap', resultsGap], ['lead', lead], ['headGap', headGap], ['structGap', structGap], ['plusGap', plusGap]] as const) {
+      for (const [k, i] of [['textGap', textGap], ['textGapBelow', textGapBelow], ['resultsGap', resultsGap], ['resultsMin', resultsMin], ['lead', lead], ['headGap', headGap], ['structGap', structGap], ['plusGap', plusGap]] as const) {
         const v = i.value.trim() === '' ? undefined : clampSchemeDistance(k, parseFloat(i.value));
         if (v !== undefined) sc[k] = v;
       }

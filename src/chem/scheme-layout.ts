@@ -14,6 +14,7 @@ import { plainText } from '../richtext';
 import { clampSchemeDistance, SCHEME_LIMITS, type SchemeDistance } from '../style';
 import type { ArrowTextSide, Caption } from '../model';
 import { isNumberedList } from './step-list';
+import { SINGLE } from '../text/layout';
 
 export { clampSchemeDistance, SCHEME_LIMITS, type SchemeDistance };
 
@@ -58,6 +59,11 @@ export interface SchemePrefs {
   textAlignResults?: 'left' | 'center' | 'right' | null;
   /** Between the text below an arrow and the Results line: null to follow the bond length. */
   resultsGap?: number | null;
+  /**
+   * The least distance between an arrow and its Results line, so a yield with no text above it
+   * still sits clear of the arrow: null for the height of one line of the text below the arrow.
+   */
+  resultsMin?: number | null;
   /** Text that is a numbered list of steps (1. n-BuLi; 2. PhCHO) lines up on the left, whatever the alignment. */
   listLeft?: boolean;
   /** The "+" boxes above and below new reaction arrows. */
@@ -80,7 +86,7 @@ export interface SchemePrefs {
   roleLane?: number | null;
 }
 
-export const DEFAULT_SCHEME_PREFS: SchemePrefs = { structGap: null, plusGap: null, textGap: null, textGapBelow: null, textSize: null, textAlign: 'center', textAlignBelow: null, textAlignResults: null, resultsGap: null, listLeft: true, helpers: true, fit: true, lead: null, headGap: null, sameLength: true, roleReach: null, roleLane: null };
+export const DEFAULT_SCHEME_PREFS: SchemePrefs = { structGap: null, plusGap: null, textGap: null, textGapBelow: null, textSize: null, textAlign: 'center', textAlignBelow: null, textAlignResults: null, resultsGap: null, resultsMin: null, listLeft: true, helpers: true, fit: true, lead: null, headGap: null, sameLength: true, roleReach: null, roleLane: null };
 
 export const schemePrefs: SchemePrefs = { ...DEFAULT_SCHEME_PREFS };
 
@@ -151,6 +157,15 @@ export function spacing(bond: number, p: SchemePrefs = schemePrefs) {
     lead: p.lead ?? over,
     headGap: p.headGap ?? over,
   };
+}
+
+/**
+ * The least distance between an arrow and its Results line (Settings > Schemes, or the drawing
+ * style's): as set, else one line of the text below the arrow (its size times single spacing).
+ */
+export function resultsFloor(doc: Doc, p: SchemePrefs = prefsOf(doc)): number {
+  if (p.resultsMin !== null && p.resultsMin !== undefined) return p.resultsMin;
+  return (doc.style.arrowTextSize ?? p.textSize ?? doc.style.captionSize) * SINGLE;
 }
 
 /** How long an arrow is to fit text this wide (its head this long), as the settings ask. */
@@ -428,7 +443,8 @@ function planIn(doc: Doc, m: Measure, arrowIds?: Iterable<number>): SchemePlan |
     };
     stackUp(A, 'above', textGapOn(sp, 'above'));
     const belowEnd = B.length ? stackUp(B, 'below', textGapOn(sp, 'below')) : textGapOn(sp, 'below') - sp.results;
-    stackUp(RS, 'results', belowEnd + sp.results);
+    // (never closer to the arrow than the least Results distance: a yield alone stays clear of it)
+    stackUp(RS, 'results', Math.max(belowEnd + sp.results, resultsFloor(doc, schemePrefs)));
 
     const fwd = arrow.headStyle !== 'none' || arrow.tailStyle === 'none';
     const start = f.tail, end = at(f, L, 0);

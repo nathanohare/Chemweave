@@ -81,6 +81,8 @@ export interface StyleScheme {
   /** How the Results line under the text below lines up (absent: as below), and its gap to that text. */
   textAlignResults?: 'left' | 'center' | 'right';
   resultsGap?: number;
+  /** The least distance between the arrow and the Results line (absent: one line of the text below). */
+  resultsMin?: number;
   /** Text that is a numbered list of steps (1. n-BuLi; 2. PhCHO) lines up on the left (absent: yes). */
   listLeft?: boolean;
   fit?: boolean;
@@ -89,7 +91,7 @@ export interface StyleScheme {
 }
 
 /** The scheme distances a person can set, in points, and the most each may be (none less than 0). */
-export const SCHEME_LIMITS = { structGap: 50, plusGap: 30, textGap: 30, textGapBelow: 30, resultsGap: 30, lead: 50, headGap: 50 } as const;
+export const SCHEME_LIMITS = { structGap: 50, plusGap: 30, textGap: 30, textGapBelow: 30, resultsGap: 30, resultsMin: 50, lead: 50, headGap: 50 } as const;
 export type SchemeDistance = keyof typeof SCHEME_LIMITS;
 
 /** A scheme distance kept in its range (from 0 to its limit), or undefined when it isn't a number. */
