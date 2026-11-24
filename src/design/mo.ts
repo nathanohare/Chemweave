@@ -370,6 +370,26 @@ export function moCounts(levels: MoLevel[]): MoCounts {
   return out;
 }
 
+/** One more electron in a level, as a click on it gives: back to none once it is full. */
+export const nextElectrons = (l: Pick<MoLevel, 'n' | 'electrons'>): number => (l.electrons >= 2 * hund(l.n, 0).length ? 0 : l.electrons + 1);
+
+/**
+ * Where the molecule's electrons break the aufbau principle: each pair of molecular orbitals
+ * where the higher one holds electrons while the lower one has room, lowest first. (Within a
+ * level the electrons are always drawn by Hund's rule, and no orbital can hold more than two.)
+ * Empty: the ground state for that many electrons. Levels at one energy do not count against each other.
+ */
+export function fillProblems(levels: MoLevel[]): { empty: MoLevel; filled: MoLevel }[] {
+  const mos = levels.filter((l) => l.column === 'middle' && Number.isFinite(l.e)).sort((a, b) => a.e - b.e);
+  const out: { empty: MoLevel; filled: MoLevel }[] = [];
+  for (const low of mos) {
+    if (low.electrons >= 2 * hund(low.n, 0).length) continue;
+    const high = mos.find((h) => h.e > low.e && h.electrons > 0);
+    if (high) out.push({ empty: low, filled: high });
+  }
+  return out;
+}
+
 /** Electrons in each of a level's n orbitals, by Hund's rule: one in each first, then pairs. */
 export function hund(n: number, electrons: number): number[] {
   const k = Math.max(1, Math.min(5, Math.round(n)));

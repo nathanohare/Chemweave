@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aoDegeneracy, drawMo, electronLook, fitWidth, fromAtoms, hund, moCounts, roomBeside, mixOf, MO_PRESETS, moPlain, parseMarkup, sources, toMarkup, toRelative, toRich, type MoSpec } from '../src/design/mo';
+import { aoDegeneracy, drawMo, electronLook, fillProblems, fitWidth, fromAtoms, nextElectrons, hund, moCounts, roomBeside, mixOf, MO_PRESETS, moPlain, parseMarkup, sources, toMarkup, toRelative, toRich, type MoSpec } from '../src/design/mo';
 import { orbitalShapes } from '../src/chem/orbitals';
 import { Doc } from '../src/model';
 import { ACS_1996 } from '../src/style';
@@ -238,5 +238,19 @@ describe('MO diagrams', () => {
 
   it('knows how many orbitals an atomic orbital name stands for', () => {
     expect(['1s', '2s', '2p', '3p', '3d', 'sp^{3}', 'sp'].map(aoDegeneracy)).toEqual([1, 1, 3, 3, 5, 1, 1]);
+  });
+
+  it('adds an electron per click and says when the filling breaks the aufbau principle', () => {
+    expect([0, 1, 2, 3, 4].map((electrons) => nextElectrons({ n: 2, electrons }))).toEqual([1, 2, 3, 4, 0]);
+    const n2 = fromAtoms('N', 'N')!;
+    expect(fillProblems(n2.levels)).toEqual([]);
+    // one electron lifted from σ2p to π*2p: σ2p has room below an occupied level
+    const at = (name: string) => n2.levels.find((l) => moPlain(l.label) === name)!;
+    at('σ2p').electrons = 1;
+    at('π*2p').electrons = 1;
+    const bad = fillProblems(n2.levels);
+    expect(bad.map((b) => [moPlain(b.empty.label), moPlain(b.filled.label)])).toEqual([['σ2p', 'π*2p']]);
+    // the atoms' own levels are not judged
+    expect(fillProblems(n2.levels.filter((l) => l.column !== 'middle'))).toEqual([]);
   });
 });
