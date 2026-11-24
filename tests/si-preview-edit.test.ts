@@ -90,6 +90,17 @@ describe('what an edit of the preview is', () => {
   it('refuses a paragraph break in a one-line field', () => {
     expect(editKind(spans, 25, 25, '\n')).toEqual({ kind: 'locked', src: 'c:x|yield|percent' });
   });
+  it('types at the start of a field into the field', () => {
+    expect(editKind(spans, 35, 35, '~', 'Colorless oil (69.2 mg, 91%). Rf = 0.10.')).toEqual({ kind: 'field', src: 'c:x|rf|value' });
+  });
+  it('takes a sentence typed before a field that starts a sentence as the person\'s own', () => {
+    // "… 91%). Spectral data matched." where the second sentence is a field of its own
+    const two: SourceSpan[] = [...spans.slice(0, 8), { start: 30, end: 52, src: 'c:x|references|text' }];
+    const text = 'Colorless oil (69.2 mg, 91%). Spectral data matched.';
+    expect(editKind(two, 30, 30, 'The ee was not determined. ', text)).toEqual({ kind: 'custom', at: 30 });
+    // (but at a paragraph's start, into the field)
+    expect(editKind(two, 30, 30, 'x', text.slice(0, 29) + '\n' + text.slice(30))).toEqual({ kind: 'field', src: 'c:x|references|text' });
+  });
   it('types into the person\'s own text', () => {
     const own = [...spans, { start: 29, end: 40, src: customSrc('k1') }].filter((s) => s.start !== 30 && s.start !== 35 && s.start !== 39);
     expect(editKind(own, 33, 33, 'x')).toEqual({ kind: 'field', src: customSrc('k1') });

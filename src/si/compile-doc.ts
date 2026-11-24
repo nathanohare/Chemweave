@@ -978,6 +978,35 @@ class Compiler {
 
   // -------------------------------------------------------------- spectra (SPEC §13k.12)
 
+  /**
+   * How many pages the Spectra section prints before a compound's first spectra page (for the
+   * live preview of one compound's spectra to number its pages as the SI does): its spectra put on
+   * pages as spectraSection puts them, each file's pages counted by `pagesOf` (null: left out).
+   */
+  async spectraPagesBefore(id: string, pagesOf: (file: string, bytes: Uint8Array) => Promise<number | null>): Promise<number> {
+    const s = this.p.sections.find((x) => x.type === 'spectra') ?? null;
+    const defaults = sectionDefaults(s, this.p.settings);
+    let pages = 0;
+    let last: { orientation: SpectrumLayout['orientation']; per: number; n: number } | null = null;
+    for (const c of this.includedCompounds(this.p.top)) {
+      if (c.id === id) return pages;
+      for (const [key, item] of spectrumItems(c)) {
+        const file = partText(item.file);
+        if (!file) continue;
+        const bytes = await this.p.folder.readBytes(joinPath(c.folder, attachmentDir(c, key), file));
+        if (!bytes) continue;
+        const n = /\.pdf$/i.test(file) ? await pagesOf(file, bytes).catch(() => null) : 1;
+        for (let i = 0; i < (n ?? 0); i++) {
+          const eff = effective(defaults, item, String(i + 1));
+          if (!last || last.orientation !== eff.orientation || last.per !== eff.per_page || last.n >= last.per) { last = { orientation: eff.orientation, per: eff.per_page, n: 0 }; pages++; }
+          last.n++;
+        }
+      }
+    }
+    return pages;
+  }
+
+
   /** The compounds of the Data sections in `sections` (and below) that are printed, in tree order. */
   private includedCompounds(sections: readonly SiSection[]): SiCompound[] {
     const out: SiCompound[] = [];
@@ -1442,6 +1471,11 @@ export async function objectLabelSets(p: SiProject): Promise<{ labels: Map<strin
 /** What the live preview shows: the front matter (cover and General Information), a section, a scheme page or a compound. */
 /** What the live preview shows: the front pages, a section, a scheme page, a compound, or a compound's spectra pages ('spectra', by the compound's id). */
 export type SiPreviewTarget = { kind: 'front' } | { kind: 'whole' } | { kind: 'section' | 'scheme' | 'compound' | 'spectra'; id: string };
+
+/** How many pages the Spectra section prints before compound `id`'s spectra (see Compiler.spectraPagesBefore). */
+export async function spectraPagesBefore(p: SiProject, host: CompileHost, id: string, pagesOf: (file: string, bytes: Uint8Array) => Promise<number | null>): Promise<number> {
+  return new Compiler(p, host, new Set()).spectraPagesBefore(id, pagesOf);
+}
 
 /** Compile the project (or, with `only`, one page of it for the live preview) into a document. */
 export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget): Promise<CompiledSi> {

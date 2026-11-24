@@ -8,6 +8,7 @@ import type { Json, SiProject } from '../si/project';
 import { COVER_HEADINGS } from '../si/compile-doc';
 import { COVER_GAP_KEYS, COVER_GAP_LABELS, TOC_LIST_KEYS, TOC_LIST_LABELS, coverGaps, storeCoverGaps, storeTocLists, tocLists } from '../si/front-layout';
 import { SiRichBox } from './si-rich';
+import { frontSrc } from '../si/source-map';
 import { addInfo } from './info-tip';
 
 export interface SiFrontHost {
@@ -199,6 +200,7 @@ export class SiFrontPage {
     cover.append(extraHead);
     const extra = new SiRichBox('', { label: this.host.label, mentionable: this.host.mentionable, changed: (v) => void this.track(() => p.writeFrontText('cover', v).catch((e: unknown) => this.host.flash(`Not saved: ${String(e)}`))) }, true, 'Anything else for the cover page (optional)');
     this.boxes.push(extra);
+    extra.el.dataset.src = frontSrc('cover');
     void p.readFrontText('cover').then((t) => extra.set(t));
     cover.append(extra.el);
     this.el.append(cover);
@@ -255,6 +257,7 @@ export class SiFrontPage {
     gi.append(gg);
     const text = new SiRichBox('', { label: this.host.label, mentionable: this.host.mentionable, changed: (v) => void this.track(() => p.writeFrontText('general', v).catch((e: unknown) => this.host.flash(`Not saved: ${String(e)}`))) }, true, 'Materials, instruments and general methods…');
     this.boxes.push(text);
+    text.el.dataset.src = frontSrc('general');
     void p.readFrontText('general').then((t) => text.set(t));
     gi.append(text.el);
     this.el.append(gi);

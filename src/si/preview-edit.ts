@@ -35,12 +35,12 @@ export const isCustomSrc = (src: string): boolean => src.startsWith(CUSTOM);
 export const customIdOf = (src: string): string => src.slice(CUSTOM.length);
 
 /**
- * What an edit replacing [start, end) of the preview's text with `typed` is. Typing at the edge
- * of a field goes into it (after the yield's "91" types more of the yield), unless the edge is
- * the field's end and the field ends a sentence the program made; otherwise text typed outside
- * every field is the person's own (custom text).
+ * What an edit replacing [start, end) of the preview's text (`text`) with `typed` is. Typing at
+ * the edge of a field goes into it (after the yield's "91" types more of the yield), except at a
+ * field's start just after a space no field holds (the start of a sentence: a new sentence typed
+ * there is the person's own); text typed outside every field is the person's own (custom text).
  */
-export function editKind(spans: readonly SourceSpan[], start: number, end: number, typed: string): EditKind {
+export function editKind(spans: readonly SourceSpan[], start: number, end: number, typed: string, text = ''): EditKind {
   const writable = (src: string): boolean => editableSrc(src) || isCustomSrc(src);
   const lineOk = (src: string): boolean => !typed.includes('\n') || manyParagraphs(src) || isCustomSrc(src);
   if (end > start) {
@@ -67,7 +67,8 @@ export function editKind(spans: readonly SourceSpan[], start: number, end: numbe
   const before = spans.find((s) => s.end === at);
   const after = spans.find((s) => s.start === at);
   if (before && writable(before.src) && lineOk(before.src)) return { kind: 'field', src: before.src };
-  if (after && writable(after.src) && lineOk(after.src)) return { kind: 'field', src: after.src };
+  const sentenceStart = !before && at > 0 && /\s/.test(text[at - 1] ?? '') && text[at - 1] !== '\n';
+  if (after && !sentenceStart && writable(after.src) && lineOk(after.src)) return { kind: 'field', src: after.src };
   return { kind: 'custom', at };
 }
 

@@ -264,7 +264,7 @@ import { PeriodicTable } from './ui/periodic-table';
 import type { SheetMode, ClipboardCells } from './ui/sheet-mode';
 import type { DocumentMode, DocPaste } from './ui/doc-mode';
 import { askReviewName } from './ui/review-name';
-import { docBoxPrefs, docPagePrefs, docRulerPrefs, formulaBarPrefs, parseDocPins } from './ui/mode-prefs';
+import { docBoxPrefs, docPagePrefs, docRulerPrefs, formulaBarPrefs, parseDocPins, siPreviewPrefs } from './ui/mode-prefs';
 import { setScreenMeasure, figures } from './document/doc-file';
 import type { DocxDeps } from './io/docx-write';
 import type { DocxReadDeps } from './io/docx-read';
@@ -12274,6 +12274,15 @@ async function personalPreferences(): Promise<void> {
       help: 'Marks at the corners of the text on each page of a document, showing where the margins are.' },
     { name: 'whiteSpace', label: 'Show white space between pages in Print Layout view', type: 'checkbox', value: String(docPagePrefs.whiteSpace),
       help: 'Off, each page\'s top and bottom margins (with its header and footer) are hidden, the pages joined by a line. Double-clicking between pages does the same.' },
+    { name: 'siPreviewHeading', label: 'SI Live Preview', type: 'heading', value: '', help: 'The whole SI beside the SI Project tab\'s pages, typed into as in Word (View ▸ Live Preview there).' },
+    { name: 'siDim', label: 'Wash out everything but the page selected', type: 'checkbox', value: String(siPreviewPrefs.dim),
+      help: 'A bar in the SI color beside the selected page marks it either way.' },
+    { name: 'siLink', label: 'Show a field\'s text with', value: siPreviewPrefs.link, short: true, options: [
+      { value: 'tint', label: 'A tint and the field\'s name' }, { value: 'bracket', label: 'Brackets and the field\'s name' }],
+      help: 'When a field on the SI page is hovered or typed in, or its text in the preview is hovered.' },
+    { name: 'siCustom', label: 'Mark text no field holds with', value: siPreviewPrefs.custom, short: true, options: [
+      { value: 'underline', label: 'An amber dotted underline and a flag' }, { value: 'fill', label: 'An amber fill and a bar' }],
+      help: 'Text typed in the preview where no field is: it is kept and prints where it was typed, and is listed on the Warnings page.' },
     { name: 'iconsHeading', label: 'Icons', type: 'heading', value: '' },
     { name: 'iconSet', label: 'Icon set', value: iconSet(), short: true, options: [
       { value: 'new', label: 'New: one style in every mode' },
@@ -12292,6 +12301,10 @@ async function personalPreferences(): Promise<void> {
   docPagePrefs.cropMarks = r.cropMarks === 'true';
   docPagePrefs.whiteSpace = r.whiteSpace === 'true';
   docMode?.applyPagePrefs();
+  siPreviewPrefs.dim = r.siDim === 'true';
+  siPreviewPrefs.link = r.siLink === 'bracket' ? 'bracket' : 'tint';
+  siPreviewPrefs.custom = r.siCustom === 'fill' ? 'fill' : 'underline';
+  siPreviewPrefs.changed?.();
   Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
   editor.focalLook = focalPrefs.look;
   setFocalDefault(focalPrefs.dflt);
@@ -12482,6 +12495,7 @@ function currentSettings(): Settings {
     docRuler: docRulerPrefs.shown,
     docCropMarks: docPagePrefs.cropMarks,
     docWhiteSpace: docPagePrefs.whiteSpace,
+    siPreview: { dim: siPreviewPrefs.dim, link: siPreviewPrefs.link, custom: siPreviewPrefs.custom },
     sheetFormulaBar: formulaBarPrefs.shown,
     slideRuler: slideLook.ruler,
     slidePanes: { ...chemPanes },
@@ -12759,6 +12773,8 @@ function applySettings(s: Settings): void {
   docPagePrefs.cropMarks = !!s.docCropMarks;
   docPagePrefs.whiteSpace = s.docWhiteSpace !== false;
   docMode?.applyPagePrefs();
+  Object.assign(siPreviewPrefs, s.siPreview);
+  siPreviewPrefs.changed?.();
   formulaBarPrefs.shown = s.sheetFormulaBar !== false;
   sheetMode?.showFormulaBar();
   slideLook.ruler = !!s.slideRuler;
@@ -16608,7 +16624,7 @@ requestAnimationFrame(() => {
 });
 
 // Hooks for the automated speed tests.
-(window as any).__app = { openMemorySi, whyCannotRun, assistant: { items: assistantItems, apply: applyAssistantAction, markStep: markAssistantStep }, doc, editor, renderer, settingsWindow, toolboxes, chem, live, command, setRibbonLook, setPageLook, getPageLook: () => ({ ...pageLook }), addMolfile, keeper, cdxml: (name: string) => writeCdxml(doc, { name, textMeasure: measureText }), openText, picture: (dpi = 150) => { const p = recordPicture(doc, 0); if (!p) return null; const c = pictureCanvas(doc, p, dpi); return { url: c.canvas.toDataURL('image/png'), box: p.box, dpi: c.dpi }; }, stressTest, pasteChemistry, smiles: async (loose = false) => chem.molToSmiles(toMolfile(doc, doc.atoms.keys(), '', { species: allSpecies(doc, editor.measure()) }).molblock, loose), placePicture, sample: sampleMolecule, ws, slideList, get presenter() { return shows?.presenter; }, Doc, keymap, names, get sheetMode() { return sheetMode; }, sheetChem, get docMode() { return docMode; }, loadModes: () => Promise.all([loadSheetMode(), loadDocMode()]), docxBytes: async () => (await import('./io/docx-write')).writeDocx(docMode.file!.t, docFiles),
+(window as any).__app = { openMemorySi, whyCannotRun, assistant: { items: assistantItems, apply: applyAssistantAction, markStep: markAssistantStep }, doc, editor, renderer, settingsWindow, toolboxes, chem, live, command, setRibbonLook, setPageLook, getPageLook: () => ({ ...pageLook }), addMolfile, keeper, cdxml: (name: string) => writeCdxml(doc, { name, textMeasure: measureText }), openText, picture: (dpi = 150) => { const p = recordPicture(doc, 0); if (!p) return null; const c = pictureCanvas(doc, p, dpi); return { url: c.canvas.toDataURL('image/png'), box: p.box, dpi: c.dpi }; }, stressTest, pasteChemistry, smiles: async (loose = false) => chem.molToSmiles(toMolfile(doc, doc.atoms.keys(), '', { species: allSpecies(doc, editor.measure()) }).molblock, loose), placePicture, sample: sampleMolecule, ws, slideList, get presenter() { return shows?.presenter; }, Doc, keymap, names, get sheetMode() { return sheetMode; }, get siMode() { return siMode; }, sheetChem, get docMode() { return docMode; }, loadModes: () => Promise.all([loadSheetMode(), loadDocMode()]), docxBytes: async () => (await import('./io/docx-write')).writeDocx(docMode.file!.t, docFiles),
   // (the deck as File > Save writes it, every part of it: audit G2-23)
   pptxBytes: async () => { if (!deckNow()) throw new Error('no deck showing'); return (await ws.encode(ws.active, 'x.pptx')).data as Uint8Array; } };
 

@@ -10,7 +10,7 @@ import { join, relative } from 'node:path';
 import { MemoryFolder } from '../src/si/folder';
 import { SiProject, type Json } from '../src/si/project';
 import { molFacts } from '../src/si/chem';
-import { compileSi, compoundBookmark, PREVIEW_SPECTRA, spectrumMark, type CompileHost } from '../src/si/compile-doc';
+import { compileSi, compoundBookmark, PREVIEW_SPECTRA, spectraPagesBefore, spectrumMark, type CompileHost } from '../src/si/compile-doc';
 import { readScene, sceneToDoc } from '../src/io/chem-formats';
 import { ACS_1996 } from '../src/style';
 import { autoPlace, blankSpot, boxSpot, DEFAULTS, defaultsJson, PLACE_GAP, roomBeside, type InkMap, type SpectrumLayout } from '../src/si/spectra';
@@ -229,6 +229,17 @@ describe('the live preview of spectra pages', () => {
     const { doc } = await compileSi(p, host(), { kind: 'spectra', id: 'c-26c39a99' });
     expect(spectraPics(Object.values(doc.objects))).toHaveLength(2);
     expect(doc.runs.map((r) => r.text).join('')).not.toContain('Spectra');
+  });
+
+  it('numbers one compound’s spectra pages on from the spectra before it', async () => {
+    // 2a's two PDFs of three pages each, one to a page (the example's Spectra section): six pages before 2b's
+    const p = await example();
+    expect(await spectraPagesBefore(p, host(), 'c-26c39a99', async () => 3)).toBe(0);
+    expect(await spectraPagesBefore(p, host(), 'c-cf3f4417', async () => 3)).toBe(6);
+    // two to a page: three; four to a page: two (4 + 2); a PDF that can’t be read: none
+    expect(await spectraPagesBefore(await example({ per_page: 2 }), host(), 'c-cf3f4417', async () => 3)).toBe(3);
+    expect(await spectraPagesBefore(await example({ per_page: 4 }), host(), 'c-cf3f4417', async () => 3)).toBe(2);
+    expect(await spectraPagesBefore(p, host(), 'c-cf3f4417', async () => null)).toBe(0);
   });
 
   it('shows the whole Spectra section when it is selected', async () => {

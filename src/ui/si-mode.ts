@@ -12,7 +12,11 @@ import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
 import { defaultStyles, type DocText } from '../document/document';
-import { compileSi, objectLabelSets, type SiPreviewTarget } from '../si/compile-doc';
+import { compileSi, objectLabelSets, spectraPagesBefore, type SiPreviewTarget } from '../si/compile-doc';
+import type { SiPreview } from './si-preview';
+import { siPreviewPrefs } from './mode-prefs';
+import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
+import { CUSTOM_TEXT_FILE, customTextJson, readCustomText } from '../si/custom-text';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { defaultsJson, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
@@ -517,7 +521,7 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data, laid out as Chem SI Assistant lays it out. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
       <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
-      <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the selected page as it prints, beside it, updated about a second after each change. Spectra are left out (Compile shows them), and page numbers are placeholders"><span class="rb-icon">◧</span>Live Preview</button>
+      <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the whole SI as it prints, beside the page, with the selected page in view; type in it to change the fields"><span class="rb-icon">◧</span>Live Preview</button>
     </div><div class="rb-label">Compile</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
@@ -965,6 +969,8 @@ export class SiMode {
   commitAll(): Promise<void> {
     const p = this.project;
     for (const f of this.flushers) f();
+    // (what was typed in the live preview: written in the queue by itself, after what is on its way)
+    void this.preview?.flush();
     for (const b of [...this.boxes, ...(this.xrayPage?.boxes ?? []), ...(this.front?.boxes ?? []), ...(this.schemePage?.boxes ?? [])]) b.commit();
     const others: Promise<unknown>[] = [...this.tables.map((t) => t.commit()), ...this.figures.map((f) => f.settled())];
     if (this.front) others.push(this.front.settled());
@@ -1011,7 +1017,8 @@ export class SiMode {
     this.check(only);
     this.renderTree();
     const key = JSON.stringify(this.pick);
-    if (key !== this.shownKey) { this.shownKey = key; this.renderPage(); this.liveSoon(150); } else { this.relabel(); this.liveSoon(); }
+    // (another page chosen only moves the live preview to it; a page drawn again after a change compiles it again)
+    if (key !== this.shownKey) { const changed = this.shownKey === ''; this.shownKey = key; this.renderPage(); this.liveSoon(150, changed); } else { this.relabel(); this.liveSoon(); }
     this.paintWarnings();
     this.status();
     this.projectChecksSoon(p);
@@ -1917,6 +1924,7 @@ export class SiMode {
       const textLab = el('div', 'si-gp-label', 'Procedure');
       const textBox = new SiRichBox('', { label: this.label, mentionable: this.mentionable, changed: (v) => void this.act(() => p.writeGpText(id, v), false, undefined, () => textBox) }, true, 'The procedure as it prints under its heading: To a solution of {starting material} in…');
       this.boxes.push(textBox);
+      textBox.el.dataset.src = gpSrc(s.id, id);
       void p.readGpText(s, id).then((t) => textBox.set(t)).catch(() => { /* (shown empty) */ });
       const sentLab = el('div', 'si-gp-label', 'Compound sentence');
       addInfo(sentLab, 'What each compound made by this procedure prints at the start of its procedure. {GP} is this procedure’s name; {scale}, {yield}, {product} and {purification} come from the compound’s fields; other {placeholders} are typed on the compound.');
@@ -1952,6 +1960,7 @@ export class SiMode {
         pasteObject: (e, place) => void this.pasteFigure(s, e, place),
       }, true, 'Type the section’s text');
       this.boxes.push(box);
+      box.el.dataset.src = sectionSrc(s.id);
       t.append(box.el);
       // the tables and figures under the text, in its order
       let nt = 0, nf = 0;
@@ -2805,7 +2814,7 @@ export class SiMode {
     // (its zoom is the status bar's, at the right end as in every mode: G5-34)
     head.append(title, state, el('span', 'si-live-gap'),
       btn('▸', 'Hide the live preview (Ctrl+Shift+L)', () => this.setLive(false)));
-    addInfo(head, 'The selected page, laid out as it prints in the SI, about a second after each change. Spectra are left out (Compile shows them), and page numbers are placeholders: Compile gives the real ones.');
+    addInfo(head, 'The whole SI as it prints, with the selected page in view and the rest washed out, updated about a second after each change. Type in it as in Word: a change goes into the field the text came from (one step of Undo), and hovering text lights up its field. Text the program writes is locked: click it to go to its field. Text typed where no field is stays yours, marked as text no field holds. The Spectra section shows on its own pages, numbered on from the SI. Preferences ▸ SI Live Preview sets how these look.');
     const host = el('div', 'si-live-host');
     const empty = el('div', 'si-live-empty muted');
     wrap.append(strip, grip, head, host, empty);
@@ -2903,23 +2912,32 @@ export class SiMode {
     this.showZoom(!!this.tab);
   }
 
-  /** What the live preview shows for the selected page; null for a page it doesn't show (a Data section's overview, the lists). */
+  /**
+   * What the live preview shows for the selected page: the whole SI but its spectra (the page
+   * chosen in view, the rest washed out), or, on a Spectra page, those spectra as a document of
+   * their own, its page numbers going on from the SI's; null for a page it doesn't show (the
+   * Dashboard, the lists).
+   */
   private liveTarget(): SiPreviewTarget | null {
     const p = this.project!;
     const pick = this.pick;
-    if (pick.kind === 'compound') {
-      const c = p.compounds.find((x) => x.id === pick.id);
-      // (on a scheme page the preview is the whole scheme page)
-      return c?.schemeId ? { kind: 'scheme', id: c.schemeId } : c ? { kind: 'compound', id: c.id } : null;
-    }
-    if (pick.kind === 'scheme') return { kind: 'scheme', id: pick.id };
-    if (pick.kind === 'project') return { kind: 'front' };
-    // (a section shows every page under it: a Data section its compounds and scheme pages, then its sub-sections)
+    if (pick.kind === 'compound') return p.compounds.some((x) => x.id === pick.id) ? { kind: 'whole' } : null;
+    if (pick.kind === 'scheme' || pick.kind === 'project') return { kind: 'whole' };
     if (pick.kind === 'section') {
       const s = p.sections.find((x) => x.id === pick.id);
-      return s ? { kind: 'section', id: s.id } : null;
+      return !s ? null : s.type === 'spectra' ? { kind: 'section', id: s.id } : { kind: 'whole' };
     }
     if (pick.kind === 'spectra') return p.compounds.some((c) => c.id === pick.id) ? { kind: 'spectra', id: pick.id } : null;
+    return null;
+  }
+
+  /** The page of the whole SI the selected page is (a block of the source map). */
+  private liveNode(): string | null {
+    const pick = this.pick;
+    if (pick.kind === 'compound') return `compound:${pick.id}`;
+    if (pick.kind === 'scheme') return `scheme:${pick.id}`;
+    if (pick.kind === 'section') return `section:${pick.id}`;
+    if (pick.kind === 'project') return 'project';
     return null;
   }
 
@@ -2932,11 +2950,30 @@ export class SiMode {
     if (this.project && this.project.folder === folder) this.liveSoon(300);
   }
 
-  /** Update the live preview in `ms` (edits close together make one update). */
-  private liveSoon(ms = 1000): void {
+  /** The SI changed since the preview was compiled (a page chosen in the list only moves the preview). */
+  private liveDirty = true;
+  /** The number of the whole SI's last page, as last laid out (null: not since a change): the spectra's go on from it. */
+  private wholeLast: number | null = null;
+  /** The pages of each PDF spectrum, by its bytes' fingerprint (counted once). */
+  private pdfCounts = new Map<string, Promise<number | null>>();
+
+  /** Update the live preview in `ms` (edits close together make one update); `dirty`: something changed, compile again. */
+  private liveSoon(ms = 1000, dirty = true): void {
+    if (dirty) { this.liveDirty = true; this.wholeLast = null; }
     if (!this.liveOn || !this.project) return;
     clearTimeout(this.liveTimer);
     this.liveTimer = window.setTimeout(() => void this.liveUpdate(), ms);
+  }
+
+  /** What compiling for the preview needs (`allPages`: a PDF's every page, as Compile prints it; else `most`, or the first). */
+  private liveHost(most: number): Parameters<typeof compileSi>[1] {
+    return {
+      contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (ms) => this.cachedFacts(ms),
+      // (kept for the next update: the preview compiles often)
+      pdfPages: (b, n) => import('../render/pdf-page').then((m) => m.pdfPagesKept(b, n ?? most)),
+      contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
+      inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
+    };
   }
 
   private async liveUpdate(): Promise<void> {
@@ -2954,38 +2991,83 @@ export class SiMode {
       L.state.textContent = '';
       return;
     }
+    // (another page of the whole SI chosen, nothing changed: the preview only moves to it)
+    if (target.kind === 'whole' && L.shown === key && !this.liveDirty && this.preview) {
+      this.preview.setFocus(this.liveNode(), true);
+      return;
+    }
     this.liveBusy = true;
+    this.liveDirty = false;
     L.state.textContent = 'Updating…';
     L.state.title = '';
     try {
       // (the saves on their way land first: the preview reads the folder)
       await this.pendingOf(p);
       if (this.project !== p) return;
-      // (spectra pages show every page of a spectrum's PDF; elsewhere a PDF's first page will do)
-      const spectra = target.kind === 'spectra' || (target.kind === 'section' && p.sections.find((x) => x.id === target.id)?.type === 'spectra');
-      const got = await compileSi(p, {
-        contentsOf: (m) => this.host.contentsOf(m), sizeOf: (c) => this.host.sizeOf(c), facts: (ms) => this.cachedFacts(ms),
-        // (kept for the next update: the preview compiles often)
-        pdfPages: (b, most) => import('../render/pdf-page').then((m) => m.pdfPagesKept(b, most ?? (spectra ? SPECTRA_PREVIEW_PAGES : 1))),
-        contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
-        inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
-      }, target);
+      const spectra = target.kind !== 'whole';
+      // (the whole SI shows a PDF's every page, as Compile does; the spectra their first pages, or all of one compound's)
+      const got = await compileSi(p, this.liveHost(spectra ? SPECTRA_PREVIEW_PAGES : 0), target);
       if (this.project !== p) return;
-      const blank = !got.doc.runs.some((r) => r.text.trim()) && !Object.keys(got.doc.objects).length;
+      let doc: DocText = { ...got.doc, drawingStyle: { ...this.host.siStyle() } };
+      if (spectra) {
+        // (their page numbers go on from the SI's last page, and from the spectra before them)
+        const last = await this.wholeLastPage(p);
+        const before = target.kind === 'spectra' ? await spectraPagesBefore(p, this.liveHost(1), target.id, (_f, b) => this.pdfCount(b)) : 0;
+        if (this.project !== p) return;
+        if (last !== null) doc = { ...doc, hf: { ...doc.hf, start: last + 1 + before } };
+      }
+      const blank = !doc.runs.some((r) => r.text.trim()) && !Object.keys(doc.objects).length;
       L.host.hidden = blank;
       L.empty.hidden = !blank;
       L.empty.textContent = !blank ? '' : spectra ? 'No spectra yet: add them in each compound’s Spectra field.' : 'Nothing to show yet.';
-      if (!blank) await this.liveShow({ ...got.doc, drawingStyle: { ...this.host.siStyle() } }, key);
+      if (!blank) {
+        const pv = await this.livePreview();
+        const ro = p.readOnly;
+        pv.show({
+          compiled: { ...got, doc }, key, owner: p, editable: !spectra && !ro,
+          why: ro ? 'This SI project is open read-only.' : 'The spectra pages can’t be typed into: choose a page that isn’t a spectrum to type in the preview.',
+        });
+        pv.setFocus(spectra ? null : this.liveNode(), L.shown !== key);
+        if (!spectra) this.wholeLast = pv.lastPageNumber();
+        L.shown = key;
+        this.showZoom(!!this.tab);
+      }
       const n = got.notes.length;
-      L.state.textContent = n ? `Up to date · ${n} note${n === 1 ? '' : 's'}` : 'Up to date';
-      L.state.title = got.notes.join('\n');
+      const flagged = got.custom.length;
+      const lost = got.custom.filter((x) => !x.anchored).length;
+      const bits = [n ? `${n} note${n === 1 ? '' : 's'}` : '', flagged ? `${flagged} piece${flagged === 1 ? '' : 's'} of your own text${lost ? ` (${lost} moved)` : ''}` : ''].filter(Boolean);
+      L.state.textContent = ['Up to date', ...bits].join(' · ');
+      L.state.title = [...got.notes, ...(lost ? [`${lost} piece${lost === 1 ? '' : 's'} of text you typed in the preview lost the field ${lost === 1 ? 'it' : 'they'} followed and ${lost === 1 ? 'is' : 'are'} at the end of the SI now (flagged).`] : [])].join('\n');
     } catch (e) {
       L.state.textContent = '⚠ Not updated';
       L.state.title = e instanceof Error ? e.message : String(e);
     } finally {
       this.liveBusy = false;
-      if (this.liveAgain) { this.liveAgain = false; this.liveSoon(0); }
+      if (this.liveAgain) { this.liveAgain = false; this.liveSoon(0, false); }
     }
+  }
+
+  /** The whole SI's last page number (laid out again when it changed since it was last shown). */
+  private async wholeLastPage(p: SiProject): Promise<number | null> {
+    if (this.wholeLast !== null) return this.wholeLast;
+    const got = await compileSi(p, this.liveHost(0), { kind: 'whole' });
+    const { DocFile } = await import('../document/doc-file');
+    const lay = new DocFile({ ...got.doc, drawingStyle: { ...this.host.siStyle() } }).layout();
+    this.wholeLast = lay.pages[lay.pages.length - 1]?.n ?? null;
+    return this.wholeLast;
+  }
+
+  /** A PDF's number of pages (counted once for each file's bytes). */
+  private pdfCount(bytes: Uint8Array): Promise<number | null> {
+    return import('../render/pdf-page').then((m) => {
+      const k = `${bytes.length}:${m.fingerprint(bytes)}`;
+      let got = this.pdfCounts.get(k);
+      if (!got) {
+        got = m.openPdf(bytes).then((r) => { const n = r?.count ?? null; r?.close(); return n; }, () => null);
+        this.pdfCounts.set(k, got);
+      }
+      return got;
+    });
   }
 
   /** The structures' facts, read once for each structure (the preview compiles often). */
@@ -2995,21 +3077,120 @@ export class SiMode {
     return ms.map((m) => (m ? this.facts.get(m) ?? null : null));
   }
 
-  /** Show a compiled page in the pane: the same page updated keeps its scroll and zoom; another one fits the width. */
-  private async liveShow(doc: DocText, key: string): Promise<void> {
-    const [{ DocView }, { DocFile }] = await Promise.all([import('./doc-view'), import('../document/doc-file')]);
-    const L = this.live;
-    if (!L.view) L.view = new DocView(L.host);
-    const v = L.view;
-    const same = L.shown === key;
-    const top = v.scroller.scrollTop, left = v.scroller.scrollLeft;
-    v.file = new DocFile(doc);
-    v.resize();
-    if (same) { v.sizeSpace(); v.scroller.scrollTop = top; v.scroller.scrollLeft = left; }
-    else { v.fitWidth(); v.scroller.scrollTop = 0; }
-    v.redraw();
-    L.shown = key;
-    this.showZoom(!!this.tab);
+  private preview: SiPreview | null = null;
+
+  /** The preview pane's document (made the first time it shows: doc-view loads only with it). */
+  private async livePreview(): Promise<SiPreview> {
+    if (this.preview) return this.preview;
+    const { SiPreview } = await import('./si-preview');
+    if (this.preview) return this.preview;
+    const asProject = (owner: unknown): SiProject => owner as SiProject;
+    this.preview = new SiPreview(this.live.host, {
+      flash: (m, ms) => this.host.flash(m, ms),
+      pick: (node) => {
+        const [kind, id] = node.split(':');
+        const pick: Pick | null = kind === 'compound' ? { kind: 'compound', id } : kind === 'scheme' ? { kind: 'scheme', id } : kind === 'section' ? { kind: 'section', id } : kind === 'project' ? { kind: 'project' } : null;
+        if (pick && JSON.stringify(pick) !== JSON.stringify(this.pick)) this.go(pick);
+      },
+      hoverSource: (src) => this.lightOnPage(src),
+      goToSource: (src) => this.goToSource(src),
+      labelOf: (src) => this.sourceLabel(src),
+      read: async (src, owner) => sourceAccess(asProject(owner), src)?.read() ?? null,
+      write: async (src, text, owner) => {
+        const p = asProject(owner);
+        const a = sourceAccess(p, src);
+        if (!a) throw new Error('The field is gone (deleted, or taken back by Undo).');
+        // (one step of Undo; the SI page drawn again with the field's new value)
+        const c = parseSrc(src)?.owner === 'c' ? p.compounds.find((x) => x.id === parseSrc(src)!.id) : undefined;
+        if (p !== this.project) { await this.change(p, 'Edit in Live Preview', () => a.write(text)); return; }
+        await this.act(() => a.write(text), true, c);
+      },
+      writeCustom: async (f, owner) => {
+        const p = asProject(owner);
+        const save = async (): Promise<void> => { await p.folder.writeText(CUSTOM_TEXT_FILE, customTextJson(f(await readCustomText(p.folder)))); };
+        if (p !== this.project) { await this.change(p, 'Type in Live Preview', save); return; }
+        await this.act(save, false);
+      },
+      undo: (redo) => void this.undo(redo),
+    });
+    this.live.view = this.preview.view;
+    // (Preferences ▸ SI Live Preview: drawn again in the look chosen)
+    siPreviewPrefs.changed = () => this.preview?.view.redraw();
+    this.wirePageLinks();
+    return this.preview;
+  }
+
+  /** The name of what makes a stretch of the preview, as the SI page shows it ("HRMS", "Yield"). */
+  private sourceLabel(src: string): string {
+    const s = parseSrc(src);
+    if (!s) return 'your own text';
+    if (s.owner === 'c') {
+      const def = fieldDef({ key: s.field });
+      const part = def?.parts?.find((x) => x.key === s.path);
+      return def ? (part?.label && (def.parts?.length ?? 0) > 1 ? `${def.label} (${part.label})` : def.label) : s.field;
+    }
+    if (s.owner === 's') return 'the section’s text';
+    if (s.owner === 'g') return 'the general procedure’s text';
+    if (s.field === 'settings') return 'the title (Project Settings)';
+    return s.field === 'cover' ? 'the cover page’s extra text' : 'General Information';
+  }
+
+  /** Go to the field that makes some text: its page chosen, the field brought into view and lit up. */
+  private goToSource(src: string): void {
+    const s = parseSrc(src);
+    if (!s) return;
+    if (s.owner === 'c') this.go({ kind: 'compound', id: s.id });
+    else if (s.owner === 's' || s.owner === 'g') this.go({ kind: 'section', id: s.id.split('/')[0] });
+    else if (s.field === 'settings') { void this.run('project-settings'); return; }
+    else this.go({ kind: 'project' });
+    const row = this.pageElementOf(src);
+    if (!row) return;
+    row.scrollIntoView({ block: 'nearest' });
+    row.classList.add('si-linked', 'si-linked-go');
+    window.setTimeout(() => row.classList.remove('si-linked-go'), 1200);
+    row.querySelector<HTMLElement>('input, select, [contenteditable="true"]')?.focus({ preventScroll: true });
+  }
+
+  /** The SI page's element for a source: a field's row (or its part), or a text box. */
+  private pageElementOf(src: string): HTMLElement | null {
+    const s = parseSrc(src);
+    if (!s) return null;
+    const own = this.page.querySelector<HTMLElement>(`[data-src="${CSS.escape(src)}"]`);
+    if (own) return own;
+    if (s.owner !== 'c' || this.currentCompound()?.id !== s.id) return null;
+    const row = this.page.querySelector<HTMLElement>(`.si-field[data-key="${CSS.escape(s.field)}"]`);
+    return (s.path && row?.querySelector<HTMLElement>(`[data-part="${CSS.escape(s.path)}"]`)) || row;
+  }
+
+  /** Light up the SI page's field a stretch of the preview came from (null: none). */
+  private lightOnPage(src: string | null): void {
+    for (const x of this.page.querySelectorAll('.si-linked')) x.classList.remove('si-linked');
+    if (!src) return;
+    const e = this.pageElementOf(src);
+    e?.classList.add('si-linked');
+    if (e?.classList.contains('si-part')) e.closest('.si-field')?.classList.add('si-linked');
+  }
+
+  /** The source a field of the SI page makes (hovered or typed in), to light up its text in the preview. */
+  private sourceOfElement(t: EventTarget | null): string | null {
+    const e = t instanceof Element ? t : null;
+    if (!e || !this.page.contains(e)) return null;
+    const own = e.closest<HTMLElement>('[data-src]');
+    if (own) return own.dataset.src!;
+    const c = this.currentCompound();
+    const row = e.closest<HTMLElement>('.si-field[data-key]');
+    if (!c || !row?.dataset.key) return null;
+    const part = e.closest<HTMLElement>('[data-part]')?.dataset.part;
+    return compoundSrc(c.id, row.dataset.key, part ?? '');
+  }
+
+  /** The SI page's fields, hovered or typed in, light up their text in the preview (once, when it is first made). */
+  private wirePageLinks(): void {
+    let typed: string | null = null;
+    this.page.addEventListener('pointerover', (e) => this.preview?.lightField(this.sourceOfElement(e.target) ?? typed));
+    this.page.addEventListener('pointerleave', () => this.preview?.lightField(typed));
+    this.page.addEventListener('focusin', (e) => { typed = this.sourceOfElement(e.target); this.preview?.lightField(typed, true); });
+    this.page.addEventListener('focusout', () => { typed = null; this.preview?.lightField(null); });
   }
 
   // ---------------------------------------------------------------- HRMS report files (§13n.3)
@@ -3575,6 +3756,34 @@ export class SiMode {
     if (this.kept(p).loading || p.compounds.some((c) => !this.warnings.has(c.id))) card.append(el('p', 'muted si-note', 'Still reading some structures…'));
     else if (!any) card.append(el('p', 'muted si-note', this.showDismissed ? 'No warnings.' : 'No warnings to look at.'));
     out.append(card);
+    void this.customTextWarnings(p, card);
+  }
+
+  /** The text typed in the Live Preview where no field is: listed on the Warnings page (no field holds it), each opening its page. */
+  private async customTextWarnings(p: SiProject, card: HTMLElement): Promise<void> {
+    const drawn = this.drawn;
+    const items = await readCustomText(p.folder);
+    if (!items.length || drawn !== this.drawn || this.project !== p) return;
+    const h = el('h3', 'si-sub', 'Text of Your Own');
+    addInfo(h, 'Text typed in the Live Preview where no field is. It prints where it was typed, after the field before it; no field holds it, so it is marked in the preview. Text whose page is gone prints at the end of the SI.');
+    const rows = items.map((x) => {
+      const [kind, id] = x.node.split(':');
+      const c = kind === 'compound' ? p.compounds.find((y) => y.id === id) : undefined;
+      const sec = kind === 'section' ? p.sections.find((y) => y.id === id) : undefined;
+      const k = kind === 'scheme' ? p.schemes.find((y) => y.id === id) : undefined;
+      const gone = (kind === 'compound' && !c) || (kind === 'section' && !sec) || (kind === 'scheme' && !k);
+      const where = c ? `${this.idOf(c)} ${compoundName(c) || 'unnamed compound'}` : sec ? sec.name : k ? String(k.data.name || 'Scheme') : kind === 'project' ? 'Front pages' : 'A page that is gone';
+      const line = el('button', 'si-warn si-warn-project');
+      line.type = 'button';
+      line.title = gone ? 'Its page is gone: it prints at the end of the SI. Open the SI’s first page' : 'Open its page';
+      line.innerHTML = svg('warn', 13);
+      const text = x.text.replace(/\s+/g, ' ').trim();
+      line.append(el('span', 'si-warn-text', `${where}${gone ? ' (now at the end of the SI)' : ''}: “${text.length > 80 ? text.slice(0, 79) + '…' : text}”`));
+      line.addEventListener('click', () => this.go(c ? { kind: 'compound', id: c.id } : sec ? { kind: 'section', id: sec.id } : k ? { kind: 'scheme', id: k.id } : { kind: 'project' }));
+      return line;
+    });
+    for (const n of card.querySelectorAll('.si-note')) if (n.textContent?.startsWith('No warnings')) n.remove();
+    card.append(h, ...rows);
   }
 
   /** A manuscript check result on the Warnings page: click it to open the compound at the field concerned. */
@@ -3600,6 +3809,7 @@ export class SiMode {
     const wrap = el('div', 'si-parts');
     for (const part of def.parts ?? []) {
       const cell = el('label', 'si-part');
+      cell.dataset.part = part.key;
       if (part.label && (def.parts?.length ?? 0) > 1) cell.append(el('span', 'si-plabel', part.label));
       const now = partText(value[part.key]);
       let input: HTMLInputElement | HTMLSelectElement;
@@ -4435,6 +4645,7 @@ export class SiMode {
     const j = p ? journalOf(p.folder) : null;
     if (!p || !j) return;
     if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    await this.preview?.flush();
     await this.commitAll();
     if (this.project !== p) return;
     let label: string | null = null;
