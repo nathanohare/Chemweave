@@ -3,6 +3,7 @@
 // and * beside it. Enter or a click elsewhere keeps it; Escape leaves the name as it was.
 
 import { parseMarkup, toMarkup } from '../design/mo';
+import { popupHost } from './popup-host';
 import { RichField } from './rich-field';
 
 let open: { close(keep: boolean): void } | null = null;
@@ -60,7 +61,7 @@ export function editMoName(at: { left: number; top: number; width: number; heigh
     for (const b of bar.querySelectorAll<HTMLButtonElement>('[data-fmt]')) b.setAttribute('aria-pressed', String(field.state(b.dataset.fmt as 'sub' | 'sup')));
   }
   pop.append(field.el, bar);
-  document.body.append(pop);
+  popupHost().append(pop);
   const w = Math.max(90, at.width + 30);
   pop.style.left = `${Math.max(4, Math.min(window.innerWidth - w - 190, at.left - 5))}px`;
   pop.style.top = `${Math.max(4, at.top + at.height / 2 - 14)}px`;
