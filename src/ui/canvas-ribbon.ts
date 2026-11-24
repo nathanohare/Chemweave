@@ -35,7 +35,7 @@ export const CANVAS_TABS: RibbonTab[] = [
       { name: 'Paragraph', items: [], special: 'paragraph' },
       // (filled by the shared Format Favorites gallery, as on every mode's Home tab)
       { name: 'Format Favorites', items: [], gallery: 'favorites' },
-      { name: 'Schemes', items: [c('smart-scheme', 'Smart Scheme', true), c('convert-smart-scheme', 'Convert to Smart Scheme'), c('stoichiometry-table', 'Stoichiometry Table…'), c('check-balance', 'Check Balance…'), c('map-atoms', 'Map Atoms…')] },
+      { name: 'Schemes', items: [c('smart-scheme', 'Smart Scheme', true), c('show-roles', 'Show Reaction Roles'), c('convert-smart-scheme', 'Convert to Smart Scheme'), c('stoichiometry-table', 'Stoichiometry Table…'), c('check-balance', 'Check Balance…'), c('map-atoms', 'Map Atoms…')] },
       { name: 'Diagrams', items: [c('energy-diagram', 'Energy Diagram', true), c('mo-diagram', 'MO Diagram…'), c('orbital', 'Orbital…'), c('ts-brackets', 'Transition State Brackets ‡'), c('torsion-chart', 'Torsional Energy Chart…')] },
       { name: 'Mechanism', items: [c('animate-reaction', 'Animate', true), c('check-arrows', 'Check Arrows'), c('draw-from-arrows', 'Draw Next Intermediate'), c('homolysis-arrows', 'Homolysis Arrows'), c('model-3d', '3-D Model…')] },
       { name: 'Insert', items: [c('name-to-structure', 'Name to Structure…'), c('import-picture', 'Structures from Picture…'), c('sequence-to-structure', 'Structure from Sequence…'), c('tlc-plate', 'TLC Plate…'), c('insert-table', 'Table'), c('rgroup-table', 'R-Group Table…')] },
@@ -55,7 +55,7 @@ export const CANVAS_TABS: RibbonTab[] = [
     id: 'chemistry', title: 'Chemistry', groups: [
       // (Smart Clean: a scheme, cycle, mechanism arrow or structure, whichever is selected)
       { name: 'Structure', items: [c('smart-clean', 'Smart Clean', true), c('clean-up', 'Clean Up Structure'), c('check-structure', 'Check Structure'), c('expand-label', 'Expand Label'), c('contract-label', 'Contract Label'), c('stereo-labels', 'Stereo Labels')] },
-      { name: 'Reaction', items: [c('number-compounds', 'Number Compounds', true), c('clean-up-reaction', 'Clean Up Reaction'), c('add-frame', 'Add Frame'), c('attach-descriptors', 'Attach Descriptors')] },
+      { name: 'Reaction', items: [c('number-compounds', 'Number Compounds', true), c('clean-up-reaction', 'Clean Up Reaction'), c('show-roles', 'Show Reaction Roles'), c('link-steps', 'Link Steps in Order'), c('add-frame', 'Add Frame'), c('attach-descriptors', 'Attach Descriptors')] },
       { name: 'NMR', items: [c('predict-nmr', 'Predict NMR', true), { cmd: 'nmr-1h', label: '¹H', tip: 'Show the ¹H prediction' }, { cmd: 'nmr-13c', label: '¹³C', tip: 'Show the ¹³C prediction' }, { cmd: 'nmr-solvent', label: 'Solvent…', tip: 'Solvent for the prediction' }, c('nmr-window', 'Spectrum Window'), c('nmr-marks', 'Show on Drawing'), c('nmr-check', 'Check Data…'), c('nmr-settings', 'NMR Settings…')] },
       { name: 'Rings', items: [c('aromatic-circles', 'Aromatic Circles'), c('fill-rings', 'Fill Rings'), c('hapto-bond', 'Add Hapto Bond (η)')] },
       // (once on an Arrow tab that came up with a selected arrow)
@@ -80,7 +80,7 @@ export const CANVAS_TABS: RibbonTab[] = [
   {
     id: 'view', title: 'View', groups: [
       { name: 'Zoom', items: [c('zoom-fit', 'Fit', true), c('focus-view', 'Focus View')] },
-      { name: 'Show', items: [c('navigator', 'Document Map'), c('dark-page', 'Reading Mode'), c('show-stereo', 'Stereo Labels'), c('show-focal-points', 'Focal Points')] },
+      { name: 'Show', items: [c('navigator', 'Document Map'), c('dark-page', 'Reading Mode'), c('show-stereo', 'Stereo Labels'), c('show-focal-points', 'Focal Points'), c('show-roles', 'Reaction Roles')] },
     ],
   },
 ];

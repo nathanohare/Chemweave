@@ -1706,9 +1706,14 @@ function readSteps(all: Element[], refs: () => Map<Element, string>, doc: Doc): 
     const r = arrows.map((a) => (a[0] === 'r' ? doc.arrows.get(Number(a.slice(1))) : undefined)).find(Boolean);
     if (!r || r.step) continue;
     const roles: StepRoles = { reactants: [], products: [], above: [], below: [] };
+    // (a group that holds the step's own arrow is the scheme round it, not one of its roles: ChemDraw
+    // keeps steps that later grouping and edits have left behind; and an arrow is never a role)
+    const arrowEls = new Set((st.getAttribute('ReactionStepArrows') ?? '').split(/\s+/).flatMap((id) => { const e = byId.get(id), n = e?.getAttribute('SupersededBy'); return [e, n ? byId.get(n) : undefined].filter((x): x is Element => !!x); }));
+    const holdsArrow = (el: Element | undefined): boolean => !!el && el.nodeName === 'group' && kids(el).some((k) => arrowEls.has(k) || holdsArrow(k));
     for (const [attr, key] of STEP_ROLES) {
       const list: string[] = [];
-      for (const id of (st.getAttribute(attr) ?? '').split(/\s+/).filter(Boolean)) refsOf(byId.get(id), list);
+      for (const id of (st.getAttribute(attr) ?? '').split(/\s+/).filter(Boolean)) { const el = byId.get(id); if (!holdsArrow(el)) refsOf(el, list); }
+      for (let i = list.length - 1; i >= 0; i--) if (list[i][0] === 'r') list.splice(i, 1);
       if (list.length || key !== 'plusses') (roles[key] as string[]) = list;
     }
     // a cycle's step names, written inside it (ChemDraw counts them as below the arrow)

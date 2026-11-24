@@ -168,6 +168,10 @@ export const COMMAND_ICONS: Record<string, string> = {
   'ring-chair': svg('<path d="M1.5 13L7 15.5 14 12 22.5 10 17 7.5 10 11z"/>'),
   'ring-chair-flip': svg('<path d="M1.5 13L7 15.5 14 12 22.5 10 17 7.5 10 11z"/><path d="M5 5a9 9 0 0 1 14 0M17.2 2.8l1.8 2.2-2.7.6M19 19a9 9 0 0 1-14 0M6.8 21.2L5 19l2.7-.6"/>'),
   navigator: svg('<rect x="2.5" y="4" width="19" height="16" rx="1"/><rect x="11" y="11" width="8" height="6.5"' + filled(0.2) + '/><path d="M5 7.5h5M5 10.5h4M5 13.5h3" stroke-width="1.2"/>'),
+  // a reaction arrow with a dashed box over it and at each end, each with its name tag
+  'show-roles': svg('<rect x="1.5" y="12" width="5" height="7" stroke-dasharray="1.6 1.3"/><rect x="17.5" y="12" width="5" height="7" stroke-dasharray="1.6 1.3"/><rect x="8.5" y="5" width="7" height="4.5" stroke-dasharray="1.6 1.3"/><path d="M8 15.5h7.5M13.8 13.8l1.7 1.7-1.7 1.7"/><path d="M1.5 9.5h3.5M17.5 9.5h3.5M8.5 2.5h4" stroke-width="1.2"/>'),
+  // three numbered dots joined by a dashed line, as clicked in order
+  'link-steps': svg('<path d="M5 17L12 7l7 10" stroke-dasharray="2 1.6"/><circle cx="5" cy="17" r="3"/><circle cx="12" cy="7" r="3"/><circle cx="19" cy="17" r="3"/>'),
   'show-stereo': svg(hex(9, 13, 6) + '<path d="M15 4.5h6.5" stroke-width="1.2"/><text x="18.2" y="10" font-size="7" font-style="italic" font-family="serif" text-anchor="middle" fill="currentColor" stroke="none">R</text>'),
   'dark-page': svg('<path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3.5"/>'),
 };

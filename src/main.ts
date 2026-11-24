@@ -193,7 +193,7 @@ import { selectedGroup } from './chem/group-smiles';
 import { templateIcon } from './ui/template-icons';
 import { StructureChecks } from './chem/warnings';
 import { idText, labelClashes, parseIdStart, type IdStyle } from './chem/compound-numbers';
-import { arrowKind, schemeItems, isReactionArrow, reactionSteps, plainMeasure } from './chem/reaction';
+import { arrowKind, schemeItems, isReactionArrow, reactionSteps, plainMeasure, type Item as SchemeItem, type Role } from './chem/reaction';
 import { canShowGuides, guidesOn as arrowGuidesOn, plainReactionArrow } from './chem/arrow-text';
 import { stoichiometryBook, type StoichRow, type StoichRole } from './chem/stoichiometry';
 import { cxSmiles, cxSmilesLeftOut, isReactionSmiles, isRxn, parseRxn, reactionSmiles, rxnBlock, splitReactionSmiles } from './chem/reaction-io';
@@ -1162,6 +1162,16 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   distributeMenu(b.getBoundingClientRect());
 }, true);
+
+/**
+ * Show Reaction Roles (Ctrl+Shift+8, as Word's Show/Hide ¶): every reaction step's starting
+ * materials, products and text above and below marked at once, each arrow numbered; on screen only.
+ */
+function showAllRoles(on: boolean): void {
+  editor.showAllRoles = on;
+  for (const b of document.querySelectorAll('[data-cmd="show-roles"]')) b.setAttribute(b.getAttribute('role')?.startsWith('menuitem') ? 'aria-checked' : 'aria-pressed', String(on));
+  editor.requestScene();
+}
 
 /** Arrange ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
 function showFocalPoints(on: boolean): void {
@@ -10845,7 +10855,8 @@ const COMMANDS: Record<string, () => unknown> = {
     editor.setArrowGuides(ids, on === ids.every((id) => plainReactionArrow(doc.arrows.get(id)!)) ? null : on);
   },
   'split-steps': () => { if (!editor.splitSteps()) flash('No numbered steps to split. Write them as "1. n-BuLi; 2. PhCHO".'); },
-  'show-roles': () => { editor.showRoles = !editor.showRoles; $('[data-cmd="show-roles"]')?.setAttribute('aria-checked', String(editor.showRoles)); editor.requestScene(); storeSettings(); },
+  'show-roles': () => { showAllRoles(!editor.showAllRoles); storeSettings(); },
+  'link-steps': () => linkSteps(),
   'check-structure': () => checkStructure(),
   'stereo-labels': () => toggleStereoLabels(),
   'enhanced-stereo': () => { void setStereoGroup(); },
@@ -12042,6 +12053,9 @@ async function drawingPreferences(): Promise<void> {
     { name: 'supRText', label: 'Also in plain text, as you type', type: 'checkbox', value: String(labelPrefs.plainText) },
     { name: 'haptoDeloc', label: 'Draw η³, η⁵ and η⁶ ligands as delocalized (a circle in the ring, an arc over an allyl)', type: 'checkbox', value: String(haptoLook.delocalized),
       help: 'Only the style: the bonds stay as drawn for SMILES and saving. Right-click ▸ Structure ▸ Kekulé Form for η Ligand switches one back.' },
+    { name: 'rolesHeading', label: 'Reaction Schemes', type: 'heading', value: '' },
+    { name: 'roles', label: 'Outline the roles of a selected reaction arrow', type: 'checkbox', value: String(editor.showRoles),
+      help: 'Its starting materials, products and the text above and below it, each named. Show Reaction Roles (Ctrl+Shift+8) shows every step\'s at once.' },
     { name: 'mechanism', label: 'Mechanism Arrows', type: 'heading', value: '' },
     { name: 'reroute', label: 'Route mechanism arrows around structures in their path', type: 'checkbox', value: String(editor.options.rerouteArrows),
       help: 'Arrows you bent by hand stay as they are.' },
@@ -12054,6 +12068,7 @@ async function drawingPreferences(): Promise<void> {
   if (!r) return;
   editor.options.circledCharges = r.charges === 'circled';
   editor.options.rerouteArrows = r.reroute === 'true';
+  editor.showRoles = r.roles === 'true';
   editor.options.arrowProducts = r.arrowProducts === 'true';
   showArrowProducts();
   arrowGaps.start = arrowGap(r.startGap);
@@ -12468,6 +12483,7 @@ function currentSettings(): Settings {
     fixedAngles: editor.options.fixedAngles,
     devTools,
     showRoles: editor.showRoles,
+    showAllRoles: editor.showAllRoles,
     scrollBars: scrollbars.shown,
     titleBar: titleBarPlace(),
     ribbonCollapsed: ribbonChosen,
@@ -12707,10 +12723,10 @@ function applySettings(s: Settings): void {
   editor.options.fixedLength = s.fixedLength;
   editor.options.fixedAngles = s.fixedAngles;
   editor.showRoles = s.showRoles;
+  showAllRoles(s.showAllRoles);
   setSchemePrefs(s.scheme);
   setAnalysisPrefs(s.analysis);
   newmanPrefs = structuredClone(s.newman);
-  $('[data-cmd="show-roles"]')?.setAttribute('aria-checked', String(s.showRoles));
   showDevTools(s.devTools);
   showScrollBars(s.scrollBars);
   setOrient(s.orient, false);
@@ -14456,6 +14472,7 @@ function drawingMenu(): MenuItem[] {
     ...(smartIsCycle() ? [{ cmd: 'smart-add-loop' }, { cmd: 'smart-add-branch' }, null] : []),
     // (a scheme in a line or a tree: a branch at the species that was clicked, or the clicked step turned round)
     ...(smartTakesBranch() ? [{ cmd: 'smart-add-route' }, ...(editor.smartPicked()?.step !== undefined ? [{ cmd: 'smart-reverse-step' }] : []), null] : []),
+    ...(!s.arrows.size ? roleMenus() : []),
     ...(s.arrows.size || (atoms && focus === 'structure') ? [...(editor.selectedSmart() !== null ? [{ cmd: 'ungroup-smart-scheme' }, null] : []), { label: 'Scheme', items: [{ cmd: 'clean-up-reaction' }, { cmd: 'clean-up-arrow' }, ...(smartIsCycle() ? [{ cmd: 'clean-up-cycle' }] : []), { cmd: 'arrange-scheme' }, ...(editor.selectedSmart() === null ? [{ cmd: 'convert-smart-scheme' }] : []), { cmd: 'smart-scheme' }, { cmd: 'number-compounds' }, ...(s.arrows.size ? [{ cmd: 'stoichiometry-table' }, { cmd: 'check-balance' }, { cmd: 'map-atoms' }, { cmd: 'copy-reaction-smiles' }] : []), { cmd: 'energy-diagram' }, { cmd: 'ts-brackets' }, null, { cmd: 'animate-reaction' }, ...(pickedReactionArrow() !== undefined ? [{ cmd: 'animate-step' }] : [])] }] : []),
     ...(atoms && focus !== 'bond' ? [{ label: 'Label the Structure', items: [
       { cmd: 'add-id-label' }, { cmd: 'add-caption' }, { cmd: 'attach-descriptors' }, null, { cmd: 'number-compounds' },
@@ -14718,6 +14735,56 @@ stylePanel.energy = {
 stylePanel.ringFill = () => void command('fill-rings');
 stylePanel.focalPick = () => startFocalPick();
 editor.onFocalLost = () => flash('A focal point\'s atom, bond or ring was taken away, so that structure lines up by the middle of its box again.', 5000);
+// ---------------------------------------------------------------- Reaction roles by hand
+
+const ROLE_CHOICES: [Role | 'results' | 'none', string][] = [['reactants', 'Starting Material'], ['products', 'Product'], ['above', 'Above Arrow'], ['below', 'Below Arrow'], ['results', 'Results'], ['none', 'Not in This Step']];
+
+/** The roles a thing can take in one step (Results only for text), the one it has now checked. */
+function roleChoices(items: SchemeItem[], now: Role | 'results' | null): [Role | 'results' | 'none', string, boolean][] {
+  const text = items.every((it) => it.caption !== undefined);
+  return ROLE_CHOICES.filter(([k]) => k !== 'results' || text).map(([k, label]) => [k, label, now === k || (k === 'none' && now === null)]);
+}
+
+/** Right-click ▸ Set Role in Step N: one submenu for each step the selected things are in or near. */
+function roleMenus(): MenuItem[] {
+  const picked = editor.pickedItems();
+  const steps = editor.roleStepsFor(picked);
+  return steps.map((st): MenuItem => ({
+    label: st.n ? `Set Role in Step ${st.n}` : 'Set Role',
+    items: [
+      ...roleChoices(picked, st.role).map(([k, label, on]): MenuItem => ({ label, checked: on, run: () => { editor.setItemsRole(st.arrow, picked, k); } })),
+      ...(doc.arrows.get(st.arrow)?.step ? [null, { label: st.n ? `Reset Step ${st.n} to Automatic` : 'Reset to Automatic', run: () => editor.resetReactionRoles(st.arrow) }] : []),
+    ],
+  }));
+}
+
+// a role's name clicked while roles show: the roles it can take in that step, there
+editor.onRoleTag = (arrowId, item, x, y) => {
+  const st = editor.roleStepsFor([item]).find((x) => x.arrow === arrowId);
+  const n = st?.n ?? 0;
+  const items: ([string, () => void, boolean?, string?] | null)[] = roleChoices([item], st?.role ?? null)
+    .map(([k, label, on]) => [`${label}${on ? ' ✓' : ''}`, () => { editor.setItemsRole(arrowId, [item], k); }]);
+  if (doc.arrows.get(arrowId)?.step) items.push(null, [n ? `Reset Step ${n} to Automatic` : 'Reset to Automatic', () => editor.resetReactionRoles(arrowId)]);
+  const m = popupMenu(x, y + 6, items);
+  const head = document.createElement('div');
+  head.className = 'gallery-head';
+  head.textContent = n ? `Role in Step ${n}` : 'Role in This Step';
+  m.prepend(head);
+};
+
+/** Chemistry ▸ Link Steps in Order: click a scheme's structures and arrows in reading order. */
+function linkSteps(): void {
+  finishTyping();
+  editor.startLinking();
+}
+editor.onLinked = (n) => {
+  if (n === null) flash('Link Steps in Order canceled.');
+  else flash(n ? `Linked ${n} step${n === 1 ? '' : 's'}: their roles are kept as set. Undo takes them back.` : 'Nothing linked: click a structure, then an arrow, then what it makes.', 5000);
+};
+editor.onLinking = (count) => {
+  flash(count ? `Link Steps in Order: ${count} clicked. Click the next structure or arrow. Backspace takes back the last; Enter saves; Esc cancels.` : 'Link Steps in Order: click the starting material, then each arrow and what it makes, in reading order. Enter saves; Esc cancels.', 120000);
+};
+
 editor.onFocalPicked = (kind) => {
   if (kind) flash(`Focal point set on the ${kind}.`);
   else $('#flash').classList.remove('show');
