@@ -40,7 +40,7 @@ export const BUDGETS = {
   'SI project (300 compounds) / compile into a document': 750, // 405
   'chemistry engine (long chains) / formula, masses and 13C count of a 450-atom chain': 380, // 208
   'chemistry engine (long chains) / 13C symmetry classes of a 1,000-atom chain': 550, // 294
-  'slides (100 slides) / save .pptx': 600, // 314
+  'slides (100 slides) / save .pptx': 1150, // 314 to 639 (it takes about 320 or about 640 ms from run to run on the same kind of machine)
   'slides (100 slides) / open .pptx': 3100, // 1688
   'big drawing (2,000 structures, 14,000 atoms) / save CDXML (2,000 structures)': 1850, // 1007
   'big drawing (2,000 structures, 14,000 atoms) / open CDXML (2,000 structures)': 1350, // 727
