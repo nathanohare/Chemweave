@@ -367,7 +367,7 @@ export class SiPreview {
       while (suf < before.printed.length - pre && suf < now.length - pre && before.printed[before.printed.length - 1 - suf] === now[now.length - 1 - suf]) suf++;
       const next = applyToRaw(before.raw, before.printed, pre, before.printed.length - suf, now.slice(pre, now.length - suf), markupSrc(src));
       if (next === null) {
-        this.api.flash(`That change touches words the program writes, so it wasn’t saved to ${this.api.labelOf(src)}. Change it on the SI page.`, 8000);
+        this.api.flash(`That change touches words Chemweave writes, so it wasn’t saved to ${this.api.labelOf(src)}. Change it on the SI page.`, 8000);
         failed = true;
         continue;
       }

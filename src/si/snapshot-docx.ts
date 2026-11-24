@@ -128,7 +128,8 @@ export async function writeSnapshotDocx(p: SiProject, host: Pick<SnapshotHost, '
   const folder = snapshotFolder(p);
   const name = snapshotDocxName(p.title);
   if ((await lookAt(folder, name, known)) === 'theirs') return 'theirs';
-  const got = await compileSi(p, host.compileHost(p));
+  // (the flags on the SI page as comments on their text: the snapshot is to go on working from)
+  const got = await compileSi(p, host.compileHost(p), undefined, { flagComments: true });
   const bytes = await host.docx(got.doc, p);
   // (the project may have become read-only meanwhile; the folder asks it again as it writes)
   if (p.readOnly) throw new Error('the project is open read-only');

@@ -523,17 +523,18 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data, laid out as Chem SI Assistant lays it out. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
       <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
-      <button class="rb-big" data-si="save-snapshot-docx" title="Save Word Snapshot (Ctrl+S): the whole SI compiled and saved now as “(project title) (Snapshot).docx” in the project folder, a backup you can open in Word if the project can't be opened. It is also saved every 5 minutes while the project changes, and when the project closes"><span class="rb-icon">▣</span>Save Word Snapshot</button>
       <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the whole SI as it prints, beside the page, with the selected page in view; type in it to change the fields"><span class="rb-icon">◧</span>Live Preview</button>
     </div><div class="rb-label">Compile</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="apply-fields" title="Give every compound of the section the section's fields, in the section's order">Apply Section Fields</button>
         <button data-si="reload" data-ic="refresh-all" title="Read the project folder again (after changes made in Chem SI Assistant or by a sync)">Reload Project</button>
+        <button data-si="flag-comments" aria-pressed="false" title="Flags as Comments: Compile to Document and Compile to PDF put each flag of the SI page as a comment on the text of its field (who flagged it and what to check). The Word snapshot always has them">Flags as Comments</button>
       </div>
       <div class="rb-col">
         <button data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance">Project Settings…</button>
         <button data-si="snapshot" title="Save Snapshot: the whole project zipped into its snapshots folder, for milestones such as the submitted version (as Chem SI Assistant saves them)">Save Snapshot…</button>
+        <button data-si="save-snapshot-docx" title="Save Word Snapshot (Ctrl+S): the whole SI compiled and saved now as “(project title) (Snapshot).docx” in the project folder, a backup you can open in Word if the project can't be opened. It is also saved every 5 minutes while the project changes, and when the project closes">Save Word Snapshot</button>
       </div>
 
     </div><div class="rb-label">Manage</div></div>
@@ -628,6 +629,7 @@ export class SiMode {
       }
     });
     this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(this.liveOn));
+    this.ribbon.querySelector('[data-si="flag-comments"]')?.setAttribute('aria-pressed', String(this.flagComments));
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
@@ -2774,6 +2776,8 @@ export class SiMode {
 
   private live: { el: HTMLElement; host: HTMLElement; state: HTMLElement; empty: HTMLElement; view: DocView | null; shown: string } = null!;
   private liveOn = true;
+  /** Compile puts the SI page's flags in as comments (the ribbon's Flags as Comments; remembered on this computer). */
+  private flagComments = ((): boolean => { try { return localStorage.getItem('si.flagComments') === 'on'; } catch { return false; } })();
   private liveTimer = 0;
   private liveBusy = false;
   private liveAgain = false;
@@ -2817,7 +2821,7 @@ export class SiMode {
     // (its zoom is the status bar's, at the right end as in every mode: G5-34)
     head.append(title, state, el('span', 'si-live-gap'),
       btn('▸', 'Hide the live preview (Ctrl+Shift+L)', () => this.setLive(false)));
-    addInfo(head, 'The whole SI as it prints, with the selected page in view and the rest washed out, updated about a second after each change. Type in it as in Word: a change goes into the field the text came from (one step of Undo), and hovering text lights up its field. Text the program writes is locked: click it to go to its field. Text typed where no field is stays yours, marked as text no field holds. The Spectra section shows on its own pages, numbered on from the SI. Preferences ▸ SI Live Preview sets how these look.');
+    addInfo(head, 'The whole SI as it prints, with the selected page in view and the rest washed out, updated about a second after each change. Type in it as in Word: a change goes into the field the text came from (one step of Undo), and hovering text lights up its field. Text Chemweave writes is locked: click it to go to its field. Text typed where no field is stays as custom text, marked because no field holds it. The Spectra section shows on its own pages, numbered on from the SI. Preferences ▸ SI Live Preview sets how these are marked.');
     const host = el('div', 'si-live-host');
     const empty = el('div', 'si-live-empty muted');
     wrap.append(strip, grip, head, host, empty);
@@ -3038,7 +3042,7 @@ export class SiMode {
       const n = got.notes.length;
       const flagged = got.custom.length;
       const lost = got.custom.filter((x) => !x.anchored).length;
-      const bits = [n ? `${n} note${n === 1 ? '' : 's'}` : '', flagged ? `${flagged} piece${flagged === 1 ? '' : 's'} of your own text${lost ? ` (${lost} moved)` : ''}` : ''].filter(Boolean);
+      const bits = [n ? `${n} note${n === 1 ? '' : 's'}` : '', flagged ? `${flagged} piece${flagged === 1 ? '' : 's'} of custom text${lost ? ` (${lost} moved)` : ''}` : ''].filter(Boolean);
       L.state.textContent = ['Up to date', ...bits].join(' · ');
       L.state.title = [...got.notes, ...(lost ? [`${lost} piece${lost === 1 ? '' : 's'} of text you typed in the preview lost the field ${lost === 1 ? 'it' : 'they'} followed and ${lost === 1 ? 'is' : 'are'} at the end of the SI now (flagged).`] : [])].join('\n');
     } catch (e) {
@@ -3126,7 +3130,7 @@ export class SiMode {
   /** The name of what makes a stretch of the preview, as the SI page shows it ("HRMS", "Yield"). */
   private sourceLabel(src: string): string {
     const s = parseSrc(src);
-    if (!s) return 'your own text';
+    if (!s) return 'custom text';
     if (s.owner === 'c') {
       const def = fieldDef({ key: s.field });
       const part = def?.parts?.find((x) => x.key === s.path);
@@ -3767,7 +3771,7 @@ export class SiMode {
     const drawn = this.drawn;
     const items = await readCustomText(p.folder);
     if (!items.length || drawn !== this.drawn || this.project !== p) return;
-    const h = el('h3', 'si-sub', 'Text of Your Own');
+    const h = el('h3', 'si-sub', 'Custom Text');
     addInfo(h, 'Text typed in the Live Preview where no field is. It prints where it was typed, after the field before it; no field holds it, so it is marked in the preview. Text whose page is gone prints at the end of the SI.');
     const rows = items.map((x) => {
       const [kind, id] = x.node.split(':');
@@ -4443,7 +4447,7 @@ export class SiMode {
         contentBox: (src) => import('../render/pdf-page').then((m) => m.pictureContentBox(src)),
         inkMap: (src) => import('../render/pdf-page').then((m) => m.pictureInkMap(src)),
         progress: (done, total, text) => bar.at(done, total, text),
-      });
+      }, undefined, { flagComments: this.flagComments });
     } catch (e) {
       bar.close();
       this.compiling = false;
@@ -4597,7 +4601,7 @@ export class SiMode {
   }
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
-  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx']);
+  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx', 'flag-comments']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
@@ -4681,7 +4685,7 @@ export class SiMode {
   private async command(cmd: string): Promise<void> {
     const p = this.project;
     if (!p) return;
-    if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'trash'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
+    if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'trash', 'flag-comments'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
     await this.commitAll();
     if (this.project !== p) return;
     const s = this.currentSection();
@@ -4886,6 +4890,12 @@ export class SiMode {
       }
       case 'live-preview':
         this.setLive(!this.liveOn);
+        return;
+      case 'flag-comments':
+        this.flagComments = !this.flagComments;
+        try { localStorage.setItem('si.flagComments', this.flagComments ? 'on' : 'off'); } catch { /* (not kept) */ }
+        this.ribbon.querySelector('[data-si="flag-comments"]')?.setAttribute('aria-pressed', String(this.flagComments));
+        this.host.flash(this.flagComments ? 'Compile puts the flags in as comments.' : 'Compile leaves the flags out.', 2500);
         return;
       case 'paste-spectrum':
         if (!c) { this.host.flash('Select a compound first.'); return; }

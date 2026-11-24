@@ -44,6 +44,7 @@ import { countText, headingFormat, headingNumber, type CountStyle } from './head
 import { coverGaps, tocLists, type TocLists } from './front-layout';
 import { TITLE_SRC, frontSrc, gpSrc, sectionSrc, tag, type SourceBlock, type SourceSpan } from './source-map';
 import { placeCustomText, readCustomText, type PlacedCustom } from './custom-text';
+import { addFlagComments } from './flag-comments';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
 export interface CompileHost {
@@ -1477,15 +1478,18 @@ export async function spectraPagesBefore(p: SiProject, host: CompileHost, id: st
   return new Compiler(p, host, new Set()).spectraPagesBefore(id, pagesOf);
 }
 
+/** How the SI is compiled beyond what is in it: `flagComments`, the flags on the SI page as Word comments on the text of their fields. */
+export interface CompileOptions { flagComments?: boolean }
+
 /** Compile the project (or, with `only`, one page of it for the live preview) into a document. */
-export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget): Promise<CompiledSi> {
+export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget, options: CompileOptions = {}): Promise<CompiledSi> {
   const c = new Compiler(p, host, await leaveWords(p));
   const doc = await c.build(only);
   // the text typed in the Live Preview where no field is, back in its places (custom-text.ts)
   const whole = !only || only.kind === 'whole';
   const items = only?.kind === 'spectra' ? [] : (await readCustomText(p.folder)).filter((x) => whole || c.blocks.some((b) => b.node === x.node));
-  if (!items.length) return { doc, notes: [...new Set(c.notes)], targets: c.targets, sources: c.sources, blocks: c.blocks, custom: [] };
-  const put = placeCustomText(doc, c.sources, c.blocks, items);
-  return { doc: put.doc, notes: [...new Set(c.notes)], targets: c.targets, sources: put.sources, blocks: put.blocks, custom: put.placed };
+  const put = items.length ? placeCustomText(doc, c.sources, c.blocks, items) : { doc, sources: c.sources, blocks: c.blocks, placed: [] };
+  const done = options.flagComments ? addFlagComments(put.doc, put.sources, put.blocks, p) : put.doc;
+  return { doc: done, notes: [...new Set(c.notes)], targets: c.targets, sources: put.sources, blocks: put.blocks, custom: put.placed };
 }
 
