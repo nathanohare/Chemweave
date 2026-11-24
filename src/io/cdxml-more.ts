@@ -59,13 +59,14 @@ export function labelSeen(t: Element): string {
 
 /**
  * The tag's value for an atom (null when it needs none). `seen` is the label's print as written
- * (labelSeen), `look` what the reader will work out from its runs, `stereo` the stereo label's text.
+ * (labelSeen), `look` what the reader will work out from its runs, `stereo` the stereo label's text,
+ * `packed` that its depth goes in its structure's tag instead (fragMore).
  * Marks and raised digits set on the atom are kept only where they differ from `look` (not set,
  * the reader works them out from the runs as for any file).
  */
-export function atomMore(a: Atom, seen: string | null, look: LabelLook, stereo: string | null): Record<string, unknown> | null {
+export function atomMore(a: Atom, seen: string | null, look: LabelLook, stereo: string | null, packed = false): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
-  if (a.depth !== undefined && num(a.depth)) v.depth = a.depth;
+  if (!packed && a.depth !== undefined && num(a.depth)) v.depth = a.depth;
   if (seen !== null) {
     const l: Record<string, unknown> = {};
     if (a.asTyped && a.label) { l.asTyped = true; l.label = a.label; }
@@ -107,9 +108,9 @@ export function zPrint(e: Element, bond: (id: string) => Element | null): string
  * element itself, if any, and `zAt` the print of its order among the bonds it crosses as written
  * (zPrint): a place among crossing bonds is used again only while ChemDraw's order there is unchanged.
  */
-export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefined, zAt: string | null): Record<string, unknown> | null {
+export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefined, zAt: string | null, packed = false): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
-  if (b.z !== undefined && num(b.z) && b.z !== fileZ) { v.z = b.z; v.zAt = zAt; }
+  if (!packed && b.z !== undefined && num(b.z) && b.z !== fileZ) { v.z = b.z; v.zAt = zAt; }
   if (b.stereoLabel?.manual && stereo !== null) v.stereo = { manual: true, ...(b.stereoLabel.fromFile ? { fromFile: true } : {}), seen: stereo };
   return Object.keys(v).length ? v : null;
 }
@@ -118,6 +119,110 @@ export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefin
 export function bondMoreIn(b: Bond, v: Record<string, unknown>, zAt: string | null): void {
   if (num(v.z) && (v.zAt ?? null) === zAt) b.z = v.z;
   stereoIn(b, v.stereo);
+}
+
+/** A structure's atoms (<n>) and bonds (<b>) in the order they stand in its <fragment>. */
+function fragParts(f: Element): { ns: Element[]; bs: Element[] } {
+  const ns: Element[] = [], bs: Element[] = [];
+  for (let k = f.firstElementChild; k; k = k.nextElementSibling) {
+    if (k.nodeName === 'n') ns.push(k);
+    else if (k.nodeName === 'b') bs.push(k);
+  }
+  return { ns, bs };
+}
+
+/** A short hash of a text (FNV-1a, 32 bits, as 8 hex digits). */
+function hash(t: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
+
+/**
+ * The print of a structure as written, whatever its ids: each atom's element and kind in order, and
+ * each bond's ends by their places among the atoms. While it holds, the values kept for its atoms
+ * and bonds (fragMore) go back by place, even after ChemDraw gave everything new ids.
+ */
+export function fragPrint(f: Element): string {
+  const { ns, bs } = fragParts(f);
+  const at = new Map(ns.map((n, i) => [n.getAttribute('id') ?? '', i]));
+  return hash(ns.map((n) => `${n.getAttribute('Element') ?? '6'}:${n.getAttribute('NodeType') ?? ''}`).join(';') + '|'
+    + bs.map((b) => `${at.get(b.getAttribute('B') ?? '') ?? '?'}-${at.get(b.getAttribute('E') ?? '') ?? '?'}`).join(';'));
+}
+
+/**
+ * One atom's own print: its element and the ids of the atoms bonded to it, sorted. An atom whose
+ * neighbours were renumbered, added or taken away no longer matches, so after ChemDraw both edits
+ * and renumbers a structure a value is dropped rather than put on another atom (review F8a2-R01).
+ */
+function atomPrint(n: Element, ends: Map<string, string[]>): string {
+  return `${n.getAttribute('Element') ?? '6'}:${[...(ends.get(n.getAttribute('id') ?? '') ?? [])].sort().join(',')}`;
+}
+
+/** Each atom's bonded neighbours, by id. */
+function endsOf(bs: Element[]): Map<string, string[]> {
+  const ends = new Map<string, string[]>();
+  const add = (a: string, b: string) => { const l = ends.get(a); if (l) l.push(b); else ends.set(a, [b]); };
+  for (const b of bs) { const x = b.getAttribute('B'), y = b.getAttribute('E'); if (x && y) { add(x, y); add(y, x); } }
+  return ends;
+}
+
+/** A bond's own place among crossing bonds to keep, and its print (zPrint), or null. */
+export type BondZ = { z: number; at: string | null } | null;
+
+/**
+ * One tag for a structure (its <fragment>) with the values its atoms or bonds may carry: 3-D depth
+ * for atoms, a place among crossing bonds for bonds (with each one's own print, zPrint). One tag per
+ * structure instead of one per atom and bond keeps a file of many 3-D structures small (F7b R09,
+ * Nate: fine as long as ChemDraw still draws the file the same; it passes over tags it doesn't know).
+ * `depths` and `zs` are in the order of the fragment's <n> and <b> children (null where one has
+ * none). Each value is kept with its element's id and its own print (element and neighbours' ids for an
+ * atom), and the whole with the structure's print (fragPrint), so on reading (fragMoreIn):
+ * - while the structure's print holds, the values go back by place (ids renumbered, atoms moved);
+ * - otherwise each goes back to the element with its id while that atom's own print holds, so an
+ *   atom added, deleted or changed in ChemDraw drops only its own value (review F8a-R06).
+ * Null when no atom or bond needs anything.
+ */
+export function fragMore(f: Element, depths: (number | null)[], zs: BondZ[]): Record<string, unknown> | null {
+  const { ns, bs } = fragParts(f);
+  const ends = endsOf(bs);
+  const v: Record<string, unknown> = {};
+  const ad: [number, string, string, number][] = [];
+  depths.forEach((d, i) => { if (d !== null && ns[i]) ad.push([i, ns[i].getAttribute('id') ?? '', atomPrint(ns[i], ends), d]); });
+  const bz: [number, string, number, string | null][] = [];
+  zs.forEach((z, i) => { if (z && bs[i]) bz.push([i, bs[i].getAttribute('id') ?? '', z.z, z.at]); });
+  if (ad.length) v.depth = ad;
+  if (bz.length) v.z = bz;
+  if (!Object.keys(v).length) return null;
+  v.at = fragPrint(f);
+  return v;
+}
+
+/**
+ * Puts a structure's values from its tag back (fragMore). `f` is the <fragment> in the file now,
+ * `atomOf` and `bondOf` what an <n> or <b> element became, and `zNow` each bond element's order
+ * among crossing bonds now (zPrint).
+ */
+export function fragMoreIn(v: Record<string, unknown>, f: Element, atomOf: (n: Element) => Atom | undefined, bondOf: (b: Element) => Bond | undefined, zNow: (el: Element) => string): void {
+  const { ns, bs } = fragParts(f);
+  const whole = v.at === fragPrint(f);
+  const ends = endsOf(bs);
+  const nById = new Map(ns.map((n) => [n.getAttribute('id') ?? '', n]));
+  const bById = new Map(bs.map((b) => [b.getAttribute('id') ?? '', b]));
+  if (Array.isArray(v.depth)) for (const e of v.depth) {
+    if (!Array.isArray(e) || !Number.isInteger(e[0]) || typeof e[1] !== 'string' || typeof e[2] !== 'string' || !num(e[3])) continue;
+    const n = whole ? ns[e[0]] : nById.get(e[1]);
+    if (!n || (!whole && atomPrint(n, ends) !== e[2])) continue;
+    const a = atomOf(n);
+    if (a) a.depth = e[3];
+  }
+  if (Array.isArray(v.z)) for (const e of v.z) {
+    if (!Array.isArray(e) || !Number.isInteger(e[0]) || typeof e[1] !== 'string' || !num(e[2])) continue;
+    const el = whole ? bs[e[0]] : bById.get(e[1]);
+    if (!el || (e[3] ?? null) !== zNow(el)) continue;
+    const b = bondOf(el);
+    if (b) b.z = e[2];
+  }
 }
 
 /** A stereo label typed by hand stays typed by hand while ChemDraw shows the text it was given. */
@@ -133,8 +238,11 @@ function stereoIn(o: Atom | Bond, s: unknown): void {
  * reader takes from the element itself, if any, and `at` the print of what lines the text up in
  * ChemDraw (captionAt): a width is used again only while that is unchanged.
  */
-export function captionMore(c: Caption, fileWidth: number | undefined, at: string): Record<string, unknown> | null {
+export function captionMore(c: Caption, fileWidth: number | undefined, at: string, seen = ''): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
+  const marks = runMarks(c.runs);
+  // (the print of the text they sit on: a short hash and its length, not the text again: review F8a-R14)
+  if (marks.length) { v.marks = marks; v.marksAt = textPrint(seen); }
   if (c.width !== undefined && num(c.width) && !(fileWidth !== undefined && Math.abs(c.width - fileWidth) < 0.005)) { v.width = c.width; v.widthAt = at; }
   if (c.cols !== undefined && num(c.cols)) v.cols = c.cols;
   if (c.colGap !== undefined && num(c.colGap)) v.colGap = c.colGap;
@@ -150,11 +258,100 @@ export function captionAt(t: Element): string {
 }
 
 /** Puts a caption's settings from its tag back. `at` is captionAt of the element in the file now. */
-export function captionMoreIn(c: Caption, v: Record<string, unknown>, at: string): void {
+export function captionMoreIn(c: Caption, v: Record<string, unknown>, at: string, seen = ''): void {
+  if (Array.isArray(v.marks) && v.marksAt === textPrint(seen)) c.runs = withMarks(c.runs, v.marks);
   if (num(v.width) && v.width > 0 && v.widthAt === at) c.width = v.width;
   if (num(v.cols) && v.cols >= 1) c.cols = Math.round(v.cols);
   if (num(v.colGap) && v.colGap >= 0) c.colGap = v.colGap;
   if (v.fit === 'shrink' || v.fit === 'fixed') c.fit = v.fit;
+}
+
+/**
+ * The print of a text as written: the characters of its runs (<s>) in order. A text's highlight
+ * and language (marks) are used again only while ChemDraw shows the same characters, so text
+ * edited or replaced there never gets them on the wrong letters (Nate, F8a item 8).
+ */
+/** A text's print as kept in the tag: a short hash of it and its length. */
+function textPrint(t: string): string {
+  return `${hash(t)}:${t.length}`;
+}
+
+export function textSeen(t: Element): string {
+  let s = '';
+  for (let k = t.firstElementChild; k; k = k.nextElementSibling) if (k.nodeName === 's') s += k.textContent ?? '';
+  // (as an XML reader gives it back: a line break is \n)
+  return s.replace(/\r\n?/g, '\n');
+}
+
+/**
+ * A text's highlight and language, which ChemDraw's text style has no place for (its style is a
+ * font, size, face and colour only: CDX SDK, CDXString and Style): [from, to, highlight, lang] per
+ * stretch of characters that has either, by place in the text's runs.
+ */
+export function runMarks(runs: readonly TextRun[]): [number, number, string | null, string | null][] {
+  const out: [number, number, string | null, string | null][] = [];
+  let at = 0;
+  for (const r of runs) {
+    // (places count the text as CDXML holds it: a line break is one character, \r\n or \n)
+    const n = r.text.replace(/\r\n?/g, '\n').length, hl = r.highlight ? hexColour(r.highlight) : null, lang = r.lang && LANG.test(r.lang) ? r.lang : null;
+    if (n && (hl || lang)) {
+      const last = out[out.length - 1];
+      if (last && last[1] === at && last[2] === hl && last[3] === lang) last[1] = at + n;
+      else out.push([at, at + n, hl, lang]);
+    }
+    at += n;
+  }
+  return out;
+}
+
+/** A language tag as Word and PowerPoint write them (en-US, de-DE, x-none, en_US). */
+const LANG = /^[A-Za-z]{1,8}([-_][A-Za-z0-9]{1,8})*$/;
+
+/** The colour names Word's highlighter and CSS use most, as #rrggbb. */
+const NAMED: Record<string, string> = {
+  yellow: '#ffff00', green: '#00ff00', lime: '#00ff00', cyan: '#00ffff', aqua: '#00ffff', magenta: '#ff00ff', fuchsia: '#ff00ff', blue: '#0000ff', red: '#ff0000',
+  darkblue: '#000080', navy: '#000080', darkcyan: '#008080', teal: '#008080', darkgreen: '#008000', darkmagenta: '#800080', purple: '#800080', darkred: '#800000', maroon: '#800000',
+  darkyellow: '#808000', olive: '#808000', gray: '#808080', grey: '#808080', darkgray: '#808080', lightgray: '#c0c0c0', silver: '#c0c0c0', black: '#000000', white: '#ffffff',
+};
+
+/** A colour as #rrggbb (from #rgb, #rrggbbaa, rgb(…) or a common name), or null when it isn't one. */
+function hexColour(c: string): string | null {
+  const t = c.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(t)) return t;
+  if (/^#[0-9a-f]{8}$/.test(t)) return t.slice(0, 7);
+  if (/^#[0-9a-f]{3}$/.test(t)) return '#' + [...t.slice(1)].map((x) => x + x).join('');
+  const rgb = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,[^)]*)?\)$/.exec(t);
+  if (rgb) return '#' + rgb.slice(1, 4).map((x) => Math.min(255, Number(x)).toString(16).padStart(2, '0')).join('');
+  return NAMED[t] ?? null;
+}
+
+/** The runs with the marks (runMarks) put back, split where a mark starts or ends; marks past the text's end are left out. */
+export function withMarks(runs: readonly TextRun[], marks: unknown[]): TextRun[] {
+  const total = runs.reduce((n, r) => n + r.text.length, 0);
+  const ok = marks.filter((m): m is [number, number, string | null, string | null] =>
+    Array.isArray(m) && Number.isInteger(m[0]) && Number.isInteger(m[1]) && m[0] >= 0 && m[1] > m[0] && m[1] <= total &&
+    (m[2] === null || (typeof m[2] === 'string' && /^#[0-9a-f]{6}$/i.test(m[2]))) && (m[3] === null || (typeof m[3] === 'string' && LANG.test(m[3]))));
+  if (!ok.length) return runs as TextRun[];
+  const cuts = new Set<number>();
+  for (const m of ok) { cuts.add(m[0]); cuts.add(m[1]); }
+  const out: TextRun[] = [];
+  let at = 0;
+  for (const r of runs) {
+    const end = at + r.text.length;
+    const inner = [...cuts].filter((x) => x > at && x < end).sort((a, b) => a - b);
+    let from = at;
+    for (const x of [...inner, end]) {
+      if (x > from || !r.text.length) {
+        const piece: TextRun = { ...r, text: r.text.slice(from - at, x - at) };
+        const m = ok.find((k) => k[0] <= from && k[1] >= x && x > from);
+        if (m) { if (m[2]) piece.highlight = m[2]; if (m[3]) piece.lang = m[3]; }
+        out.push(piece);
+      }
+      from = x;
+    }
+    at = end;
+  }
+  return out;
 }
 
 /** An arrow's settings: bent by hand, and the step a catalytic cycle's reagent arrow feeds (by its arrow's id in the file). */

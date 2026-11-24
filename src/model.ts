@@ -125,6 +125,12 @@ export interface Atom {
   asTyped?: boolean;
   /** A carbon with no bonds and no label, from a ChemDraw file: drawn as nothing, as ChemDraw draws it (not CH4). */
   bare?: boolean;
+  /**
+   * A label from a ChemDraw file that gives no hydrogen count (no NumHydrogens): shown as written
+   * (a bare "N"), its hydrogens worked out by the valence rule, as ChemDraw counts them (an amine
+   * NH2 on a carbon). Means something only with fileLabel; a label typed here is read as written.
+   */
+  hByRule?: boolean;
   /** The charge is drawn by a separate circled-charge symbol, so the label leaves it out. */
   hideCharge?: boolean;
   /** Numbers after R groups are superscripts (R¹ rather than R₁); false keeps them down. Not set: R1, R12… go up, as the preferences say. */

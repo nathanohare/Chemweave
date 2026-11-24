@@ -36,6 +36,7 @@ export function buildTextToolbox(body: HTMLElement, vertical: boolean, h: TextTo
     state: () => h.look(),
     back: () => h.back(),
     nothing: () => h.say('Click into some text, or select a caption or text box, first.'),
+    say: (msg) => h.say(msg),
   });
   return { refresh: bar.refresh };
 }

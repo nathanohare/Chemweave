@@ -7,6 +7,7 @@
 // Structures are drawn with the drawing tools (Edit Structure); compounds go to and come from
 // the Compound Library; references come from My Library.
 
+import { chargeDigitEdits, chargeNote } from '../text/charge-digits';
 import { fieldLabelNodes } from './field-label';
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
@@ -879,6 +880,7 @@ export class SiMode {
     if (!this.restoreTyping()) { this.host.flash('Click in a text box first (a procedure, a report, a section’s text or a table’s cell).'); return; }
     if (cmd === 'clear') { document.execCommand('removeFormat'); return; }
     if (cmd === 'formula') { this.formulaStyle(); return; }
+    if (cmd === 'charges') { this.raiseCharges(); return; }
     document.execCommand(cmd);
   }
 
@@ -899,6 +901,44 @@ export class SiMode {
     if (!formulaStyleRange(all)) { this.host.flash('Nothing to change: the selection has no numbers or charges to lower or raise.'); return; }
     // (put back as typing is, so Ctrl+Z takes it back)
     document.execCommand('insertHTML', false, copy.innerHTML);
+  }
+
+  /** Raise Charge Digits on the selected text (text/charge-digits.ts): each ion's charge digits and sign raised, as typing is (Ctrl+Z takes it back). */
+  private raiseCharges(): void {
+    const sel = getSelection();
+    if (!sel?.rangeCount || sel.isCollapsed) { this.host.flash('Select the ions first (Fe³⁺, SO₄²⁻), then Raise Charge Digits.'); return; }
+    if (sel.getRangeAt(0).cloneContents().querySelector(':not(b, i, u, sub, sup, strong, em, span:not([class]), br)')) {
+      this.host.flash('Select plain text only: Raise Charge Digits leaves compound mentions and citations as they are.');
+      return;
+    }
+    const copy = document.createElement('div');
+    copy.append(sel.getRangeAt(0).cloneContents());
+    const nodes: Text[] = [];
+    const walk = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) nodes.push(n as Text);
+    const at: [Text, number][] = [];
+    for (const n of nodes) for (let i = 0; i < n.data.length; i++) at.push([n, i]);
+    const text = nodes.map((n) => n.data).join('');
+    const up = (i: number) => !!at[i]?.[0].parentElement?.closest('sup');
+    const edits = chargeDigitEdits(text, up);
+    if (!edits.length) { this.host.flash(chargeNote.text || 'Nothing to change: the selection has no charges to raise (Fe³⁺, SO₄²⁻).', 6000); return; }
+    // each raised character in a <sup> of its own, from the end so earlier places stay put; any <sub> round it is left
+    for (const e of [...edits].sort((x, y) => y.start - x.start)) {
+      const [node, i] = at[e.start];
+      const rest = node.splitText(i);
+      rest.splitText(1);
+      const sup = document.createElement('sup');
+      const sub = rest.parentElement?.nodeName === 'SUB' ? rest.parentElement : null;
+      if (sub) {
+        // (out of a lowered run: the <sub> split round it)
+        const after = sub.cloneNode(false) as HTMLElement;
+        while (rest.nextSibling) after.append(rest.nextSibling);
+        sub.after(sup, after);
+        sup.append(rest);
+      } else { rest.replaceWith(sup); sup.append(rest); }
+    }
+    document.execCommand('insertHTML', false, copy.innerHTML);
+    if (chargeNote.text) this.host.flash(chargeNote.text, 6000);
   }
 
   /** Put the typing back where it was in the last SI text box (false when there is none). */

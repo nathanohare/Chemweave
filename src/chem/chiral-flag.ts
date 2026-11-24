@@ -15,6 +15,16 @@ import { arialWidth } from '../text-metrics';
 
 export type ChiralFlag = 'Absolute' | 'Relative' | 'Racemic';
 
+/**
+ * What wedges on a structure with no chiral flag drawn beside it mean (Settings ▸ Preferences ▸
+ * Stereochemistry). 'racemic', the default, is ChemDraw's reading and BIOVIA's (CTfile Formats
+ * 2026, Stereochemistry: wedges without the chiral flag show "a mixture of the stereoisomer as
+ * drawn and its enantiomer"): such a structure is saved with the chiral flag 0. 'absolute' takes
+ * the wedges as one enantiomer, as if an Abs flag were drawn: saved with the flag 1 (STEABS). A
+ * flag drawn beside a structure always wins.
+ */
+export const chiralPrefs: { unflagged: 'racemic' | 'absolute' } = { unflagged: 'racemic' };
+
 /** Is this shape a chiral flag? */
 export const isChiralFlag = (s: Shape): boolean => s.kind === 'symbol' && !!s.symbol && !!CHIRAL_FLAGS[s.symbol];
 

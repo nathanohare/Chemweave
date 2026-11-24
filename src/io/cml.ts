@@ -158,13 +158,10 @@ function hydrogenCount(a: Atom, atoms: Atom[], bonds: Bond[]): number | null {
   const { sum, drawn, aromatic } = bondsAt(atoms, bonds, a.id);
   const label = a.label?.trim();
   const rule = aromatic ? null : ruleHydrogens(a.z, sum, a.charge, a.radical);
-  // a label's count, where the rule gives the same or can't say (beside an aromatic bond); a bonded
-  // label that shows another number than the rule (a methyl N labelled "N") leaves the count out, as the
-  // .cml file and this program's molfile do: a reader trusts a stated count (review F1b-R12)
-  const fromLabel = label ? labelHydrogens(label, a.z) : null;
-  // (a label on its own, OH for the hydroxyl radical, is written as it reads: its count stands)
-  const alone = !bonds.some((b) => b.a1 === a.id || b.a2 === a.id);
-  const n = label ? (fromLabel !== null && (alone || rule === null || fromLabel === rule) ? fromLabel : null) : rule;
+  // a label's count, as it shows: a bonded label that shows another number than the rule (a methyl N
+  // labelled "N") means that atom with those hydrogens, as the .cml file and this program's molfile
+  // say too (Nate, 2026-11-23; it was left out before, review F1b-R12)
+  const n = label ? labelHydrogens(label, a.z) : rule;
   return n === null ? null : n + drawn;
 }
 

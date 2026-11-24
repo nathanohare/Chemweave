@@ -65,7 +65,8 @@ describe('the settings tag (R3)', () => {
 
   it('rides on the object\'s own element, hidden', () => {
     const tags = [...parse(writeCdxml(drawing(), { name: 't.cdxml' })).getElementsByTagName('objecttag')].filter((t) => t.getAttribute('Name') === MORE_TAG);
-    expect(new Set(tags.map((t) => t.parentElement?.nodeName))).toEqual(new Set(['n', 'b', 't', 'arrow', 'graphic']));
+    // (a structure's depths and bond places in one tag on its fragment, F7b R09)
+    expect(new Set(tags.map((t) => t.parentElement?.nodeName))).toEqual(new Set(['fragment', 'n', 't', 'arrow', 'graphic']));
     expect(tags.every((t) => t.getAttribute('Visible') === 'no')).toBe(true);
   });
 
@@ -96,7 +97,12 @@ describe('the settings tag (R3)', () => {
 
   it('lets ChemDraw\'s Z win over a kept place among crossing bonds once ChemDraw changed it', () => {
     expect([...edited(() => {}).bonds.values()].map((b) => b.z)).toContain(4);
-    const back = edited((doc) => { const b = tagged(doc, 'b')[0]; b.setAttribute('Z', String(Number(b.getAttribute('Z') ?? 0) + 50)); });
+    const back = edited((doc) => {
+      const f = tagged(doc, 'fragment')[0];
+      // (the tag's bond places: [place among the bonds, id, Z, print] each)
+      const v = JSON.parse([...f.children].find((k) => k.getAttribute('Name') === MORE_TAG)!.getAttribute('Value')!) as { z: [number, string, number, string][] };
+      const b = [...f.children].filter((k) => k.nodeName === 'b')[v.z[0][0]];
+      b.setAttribute('Z', String(Number(b.getAttribute('Z') ?? 0) + 50)); });
     expect([...back.bonds.values()].map((b) => b.z)).not.toContain(4);
   });
 
@@ -145,8 +151,17 @@ describe('the settings tag (R3)', () => {
     // OMe with a raised O typed here (marks ^==): Me set in formula style in ChemDraw
     const marks = edited((doc) => { label(doc, 'OMe').getElementsByTagName('s')[1].setAttribute('face', '96'); });
     expect([...marks.atoms.values()].find((a) => a.x === 300)?.labelMarks).not.toBe('^==');
-    // R1 kept on the line here (supDigits false), its 1 made bold in ChemDraw, still raised
-    const raised = edited((doc) => { label(doc, 'R1').getElementsByTagName('s')[1].setAttribute('face', '65'); });
+    // R1 kept on the line here (supDigits false) is written on the line, as ChemDraw shows it (F7b-R13):
+    // its 1 raised in ChemDraw reads raised
+    const raised = edited((doc) => {
+      const t = label(doc, 'R1'), s0 = t.getElementsByTagName('s')[0];
+      expect(t.getElementsByTagName('s').length).toBe(1);
+      s0.textContent = 'R';
+      const one = s0.cloneNode() as Element;
+      one.textContent = '1';
+      one.setAttribute('face', '64');
+      t.appendChild(one);
+    });
     expect([...raised.atoms.values()].find((a) => a.x === 340)?.supDigits).toBe(true);
   });
 

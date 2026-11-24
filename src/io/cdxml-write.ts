@@ -38,7 +38,7 @@ import { fillInk, mix, ringShadowGroups, ringShadowSize, shadowLook } from '../r
 import { shapeShadow } from '../render/highlight-fx';
 import { parseColor } from '../render/vector';
 import { layoutTable, cellAlign, isCovered, spanOf, partAt, NOTE_SCALE } from '../table';
-import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, zPrint, type RefKind, type RefOut } from './cdxml-more';
+import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, textSeen, fragMore, type BondZ, zPrint, type RefKind, type RefOut } from './cdxml-more';
 import { TABLE_TAG, TABLE_PART_TAG, tableBorders, type TableTag } from './cdxml-table';
 import { bondLayer, crossingBondsCached, listedNearMisses } from '../chem/crossing';
 import { repeatGroups, repeatCount, repeatLabelPlace } from '../chem/polymer';
@@ -1049,7 +1049,10 @@ class CdxmlWriter {
     if (heavy) {
       // e.g. "NH" typed as a label: an element with its hydrogens
       n.setAttribute('Element', String(g.atoms[0].z));
-      n.setAttribute('NumHydrogens', String(toks.filter((t) => t.text === 'H').reduce((s, t) => s + Math.max(1, t.count), 0)));
+      // (the hydrogens the label shows, so ChemDraw reads "N" as N with none, as this program does;
+      // left out for a ChemDraw label that gave none, whose hydrogens are the valence rule's)
+      if (a.fileLabel && a.hByRule) n.removeAttribute('NumHydrogens');
+      else n.setAttribute('NumHydrogens', String(toks.filter((t) => t.text === 'H').reduce((s, t) => s + Math.max(1, t.count), 0)));
       return;
     }
     n.removeAttribute('Element');
@@ -2857,8 +2860,9 @@ class CdxmlWriter {
 
   /**
    * Each object's settings that ChemDraw has no place for, in one hidden tag on its element
-   * (cdxml-more.ts): an atom's depth and hand-set label marks, a bond's place among crossing
-   * bonds, a text box's columns, a bent arrow, a shape's name, frame members and pin. A tag that
+   * (cdxml-more.ts): an atom's hand-set label marks, a text box's columns, highlight and language,
+   * a bent arrow, a shape's name, frame members and pin; a structure's 3-D depths and places among
+   * crossing bonds in one tag on its fragment (fragMore). A tag that
    * says what the element's tag says already is left as it is.
    */
   private writeMore(): void {
@@ -2913,21 +2917,40 @@ class CdxmlWriter {
       if (want !== null) e.appendChild(this.el('objecttag', { TagType: 'String', Name: MORE_TAG, Value: want, Visible: 'no' }));
       this.changed = true;
     };
+    // a structure's depths and bond places go in one tag on its <fragment> (fragMore), each atom's and bond's other settings on its own element
+    const frags = new Set<Element>();
+    const atomAt = new Map<Element, { depth?: number }>();
+    const bondAt = new Map<Element, BondZ>();
+    const fragOf = (e: Element): Element | null => { const f = e.parentNode as Element | null; return f && f.nodeName === 'fragment' ? f : null; };
     for (const a of doc.atoms.values()) {
       const e = elOf('a', a.id);
       if (!e) continue;
-      const t = this.child(e, 't'), own = tagsOf(e);
-      put(e, atomMore(a, t ? labelSeen(t) : null, t ? labelLookOfText(t, Number(e.getAttribute('Charge')) || undefined) : {}, own.stereo), own.old);
+      const t = this.child(e, 't'), own = tagsOf(e), f = fragOf(e);
+      if (f) { frags.add(f); atomAt.set(e, a); }
+      put(e, atomMore(a, t ? labelSeen(t) : null, t ? labelLookOfText(t, Number(e.getAttribute('Charge')) || undefined) : {}, own.stereo, !!f), own.old);
     }
     for (const b of doc.bonds.values()) {
       const e = elOf('b', b.id);
       if (!e) continue;
-      const own = tagsOf(e), place = b.z !== undefined;
-      put(e, bondMore(b, own.stereo, place ? fileZ(e) : undefined, place ? zAt(e) : null), own.old);
+      const own = tagsOf(e), place = b.z !== undefined, f = fragOf(e);
+      if (f) {
+        frags.add(f);
+        const z = place && Number.isFinite(b.z) && b.z !== fileZ(e) ? b.z : undefined;
+        bondAt.set(e, z !== undefined ? { z, at: zAt(e) } : null);
+      }
+      put(e, bondMore(b, own.stereo, place ? fileZ(e) : undefined, place ? zAt(e) : null, !!f), own.old);
+    }
+    for (const f of frags) {
+      const depths: (number | null)[] = [], zs: BondZ[] = [];
+      for (let k = f.firstElementChild; k; k = k.nextElementSibling) {
+        if (k.nodeName === 'n') { const d = atomAt.get(k)?.depth; depths.push(d !== undefined && Number.isFinite(d) ? d : null); }
+        else if (k.nodeName === 'b') zs.push(bondAt.get(k) ?? null);
+      }
+      put(f, fragMore(f, depths, zs));
     }
     for (const c of doc.captions.values()) {
       const e = elOf('c', c.id);
-      if (e) put(e, captionMore(c, c.width !== undefined ? fileWidth(e) : undefined, captionAt(e)));
+      if (e) put(e, captionMore(c, c.width !== undefined ? fileWidth(e) : undefined, captionAt(e), textSeen(e)));
     }
     for (const r of doc.arrows.values()) put(elOf('r', r.id), arrowMore(r, ref));
     for (const s of doc.shapes.values()) put(elOf('s', s.id), shapeMore(s, ref));
@@ -3020,7 +3043,7 @@ function orderAttr(order: number): string | null {
  * A label's text as runs: formula style (ChemDraw lowers the counts itself), with R numbers
  * raised when the label shows them so and characters raised, lowered or kept on the line by hand.
  */
-export function labelRuns(text: string, look: { supDigits: boolean; marks?: string }): TextRun[] {
+export function labelRuns(text: string, look: { supDigits?: boolean; marks?: string }): TextRun[] {
   // the digits the label shows raised: R numbers (R¹, OR¹ by the setting) and, from a file, the rest
   const raised = new Set<number>();
   for (const p of labelPieces(text, look.supDigits)) if (p.sup && p.at !== undefined && /^\d+$/.test(p.text)) for (let i = 0; i < p.text.length; i++) raised.add(p.at + i);

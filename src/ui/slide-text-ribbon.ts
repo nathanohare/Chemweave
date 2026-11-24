@@ -2,6 +2,7 @@
 // the selected text while typing, or the whole of each picked text box or shape otherwise, and
 // show how that text looks now.
 
+import { chargeNote } from '../text/charge-digits';
 import type { Justify } from '../model';
 import type * as rt from '../richtext';
 import type { TextFormat } from '../text/format';
@@ -27,6 +28,8 @@ export interface SlideTextHooks {
   refocus(): void;
   /** Nothing to change: tell the person what to pick. */
   nothing(): void;
+  /** Tell the person something in the status bar (an ion Raise Charge Digits left as typed, and why). */
+  say(msg: string): void;
   /** Text Direction, Columns or AutoFit on the picked text boxes; false when none is picked. */
   box(change: TextBoxChange): boolean;
   boxLook(): { dir: 'horz' | 'vert' | 'vert270'; cols: number; fit: 'grow' | 'shrink' | 'fixed'; ph: boolean } | null;
@@ -41,6 +44,7 @@ const FORMATS: Record<string, TextFormat> = {
   sub: { kind: 'toggle', key: 'sub' },
   sup: { kind: 'toggle', key: 'sup' },
   formula: { kind: 'toggle', key: 'formula' },
+  charges: { kind: 'charges' },
   strike: { kind: 'toggle', key: 'strike' },
   clear: { kind: 'clear' },
   bullets: { kind: 'list', list: 'bullet' },
@@ -79,7 +83,9 @@ export class SlideTextRibbon {
     this.cols = q('[data-tx="cols"]');
     this.fit = q('[data-tx="fit"]');
     const run = (f: TextFormat) => {
-      if (!hooks.format(f)) hooks.nothing();
+      chargeNote.text = '';
+      if (!hooks.format(f)) { if (chargeNote.text) hooks.say(chargeNote.text); else hooks.nothing(); }
+      else if (chargeNote.text) hooks.say(chargeNote.text);
       hooks.refocus();
       this.refresh();
     };
