@@ -4870,6 +4870,8 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-live-state { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .si-live-gap { flex: 1; }
 .si-live-btn { width: 22px; height: 20px; font-size: 12px; }
+.si-live-sync { display: inline-flex; align-items: center; justify-content: center; }
+.si-live-sync[aria-pressed="true"] { color: var(--tab-si, #b4234f); background: color-mix(in srgb, var(--tab-si, #b4234f) 12%, transparent); border-color: color-mix(in srgb, var(--tab-si, #b4234f) 35%, transparent); }
 .si-live-host { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .si-live-host .doc-scroll { cursor: default; }
 /* a field of the SI page and its text in the live preview, lit up together (hovered or typed in on either side) */

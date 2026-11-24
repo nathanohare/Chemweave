@@ -15,7 +15,7 @@ import type { DocText } from '../document/document';
 import * as rt from '../richtext';
 import type { TextRun } from '../model';
 import type { CompiledSi, SiStructureRef } from '../si/compile-doc';
-import { blockAt, editableSrc, fieldOfSrc, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
+import { blockAt, editableSrc, fieldOfSrc, pageToFollow, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
@@ -64,8 +64,15 @@ export interface ShownSi {
   gen?: number;
 }
 
+const ctrlKeyOf = (e: KeyboardEvent): boolean => e.ctrlKey || e.metaKey || e.altKey;
+
 /** Waiting this long after the last key before a field is written (a burst of typing is one step of Undo). */
 const WRITE_AFTER = 700;
+/** Synchronous Scrolling: waiting this long after the person stops scrolling before the page it rests on is followed. */
+const SCROLL_SETTLE = 450;
+/** Where in the window the page being read is taken to be (a third of the way down), and how far either side of it the page chosen still counts as read (hysteresis). */
+const READ_AT = 0.3;
+const READ_BAND = 0.12;
 
 export class SiPreview {
   readonly view: DocView;
@@ -114,6 +121,21 @@ export class SiPreview {
   private pickedStructure: string | null = null;
   private downAt: { x: number; y: number; src: string | null } | null = null;
 
+  /**
+   * Called a little after the person stops scrolling the preview (the wheel, the scrollbar, keys,
+   * touch), never after it scrolls by itself (a page chosen, a compile shown): Synchronous Scrolling.
+   */
+  onScrollSettled: (() => void) | null = null;
+  /** When the person last scrolled (wheel, keys, touch, or the scrolling that follows from them), and whether a button is held on the preview (dragging its scrollbar). */
+  private userScrollAt = -Infinity;
+  private pressed = false;
+  /** The page at the reading line when the person first scrolled since `fromFor` was chosen (what a follow is measured from). */
+  private from: string | null = null;
+  private fromFor: string | null | undefined = undefined;
+  /** The preview scrolled while a button was held (the scrollbar dragged, a selection dragged past the edge). */
+  private movedWhilePressed = false;
+  private settleTimer = 0;
+
   constructor(readonly host: HTMLElement, private readonly api: SiPreviewHost) {
     this.view = new DocView(host);
     this.view.overlay = () => this.overlay();
@@ -132,6 +154,9 @@ export class SiPreview {
 
   get focused(): boolean { return document.activeElement === this.ta; }
 
+  /** The preview's own text box (where its typing goes). */
+  get input(): HTMLElement { return this.ta; }
+
   /** The person's own text in the SI shown, and whether each piece is where it was put. */
   get customText(): readonly PlacedCustom[] { return this.custom; }
 
@@ -148,6 +173,7 @@ export class SiPreview {
     if (!force && !this.failed && s.gen !== undefined && s.gen < this.editGen && this.file) return;
     this.failed = false;
     const same = s.key === this.key && !!this.file;
+    if (!same || s.owner !== this.owner) { clearTimeout(this.settleTimer); this.fromFor = undefined; }
     const v = this.view;
     const top = v.scroller.scrollTop, left = v.scroller.scrollLeft;
     // the caret's place, as where in which field it was, to put it back there
@@ -192,6 +218,8 @@ export class SiPreview {
 
   /** The page chosen in the list: brought into view (`reveal`) and the rest washed out. */
   setFocus(node: string | null, reveal: boolean): void {
+    // (another page chosen: a follow on its way is dropped)
+    if (node !== this.focusNode) clearTimeout(this.settleTimer);
     this.focusNode = node;
     if (node && reveal) this.revealNode(node);
     this.view.redraw();
@@ -205,6 +233,72 @@ export class SiPreview {
       if (s) { const r = this.view.rangeRects(s.start, s.end)[0]; if (r) this.view.reveal(r, 48); }
     }
     this.view.redraw();
+  }
+
+  /** The page chosen now (as the preview last showed it). */
+  get focusedNode(): string | null { return this.focusNode; }
+
+  /** The characters at the reading line and a little above and below it (Synchronous Scrolling), or null. */
+  private readingPlaces(): { mid: number; edges: number[] } | null {
+    if (!this.file || !this.blocks.length) return null;
+    const sc = this.view.scroller;
+    const r = sc.getBoundingClientRect();
+    if (r.height <= 0) return null;
+    const k = readingLine(sc.scrollTop, sc.scrollHeight - sc.clientHeight, sc.clientHeight, READ_AT);
+    const at = (f: number): number | null => {
+      const p = this.view.toDoc(r.left + r.width / 2, r.top + r.height * Math.max(0, Math.min(1, f)));
+      return this.file!.ed.offsetAt(p.x, p.y);
+    };
+    const mid = at(k);
+    if (mid === null) return null;
+    const edges = [at(k - READ_BAND), at(k + READ_BAND)].filter((x): x is number => x !== null);
+    return { mid, edges };
+  }
+
+  /**
+   * The page of the list the preview has been scrolled to, for Synchronous Scrolling (null: stay
+   * on the page chosen). See pageToFollow: the page at the reading line, once the scrolling has
+   * clearly left the page it started on.
+   */
+  nodeToFollow(): string | null {
+    const at = this.readingPlaces();
+    if (!at) return null;
+    const from = this.fromFor === this.focusNode ? this.from : null;
+    return pageToFollow(this.blocks, at.mid, at.edges, this.focusNode, from);
+  }
+
+  /** A page followed: what the next scrolling is measured from (before the compile shows it chosen). */
+  followed(node: string): void {
+    this.focusNode = node;
+    this.from = node;
+    this.fromFor = node;
+    this.view.redraw();
+  }
+
+  /** The person is scrolling (or about to: called before the scroll happens). The first time since a page was chosen, the page at the reading line is noted. */
+  private userScrolled(): void {
+    this.userScrollAt = performance.now();
+    if (this.fromFor !== this.focusNode && this.onScrollSettled) {
+      const at = this.readingPlaces();
+      this.from = at ? blockAt(this.blocks, at.mid)?.node ?? null : null;
+      this.fromFor = this.focusNode;
+    }
+  }
+
+  /**
+   * The preview scrolled. Scrolling the person started (and what goes on from it: a fling, a
+   * smooth scroll's tail, close after one another) waits for them to stop; the preview scrolling
+   * by itself (a page chosen, a compile shown, a zoom) is left alone, and leaves a wait alone.
+   */
+  private scrolled(): void {
+    if (!this.onScrollSettled) return;
+    const now = performance.now();
+    if (!this.pressed && now - this.userScrollAt > 300) return;
+    this.userScrollAt = now;
+    clearTimeout(this.settleTimer);
+    // (held: waits for the button to be let go)
+    if (this.pressed) { this.movedWhilePressed = true; return; }
+    this.settleTimer = window.setTimeout(() => this.onScrollSettled?.(), SCROLL_SETTLE);
   }
 
   /** Write what was typed now (before Undo, before leaving the project). */
@@ -488,6 +582,34 @@ export class SiPreview {
     ta.addEventListener('focus', () => { this.startBlink(); v.redraw(); });
     ta.addEventListener('blur', () => { clearInterval(this.blink); v.redraw(); void this.flush(); });
     const scroller = v.scroller;
+    // (Synchronous Scrolling: scrolling the person does, told from the preview scrolling itself)
+    scroller.addEventListener('wheel', (e) => {
+      // (Ctrl+wheel zooms; a button let go of where the preview didn't hear it)
+      if (e.ctrlKey || e.metaKey) return;
+      if (this.pressed && !(e.buttons & 1)) release();
+      this.userScrolled();
+    }, { passive: true });
+    scroller.addEventListener('touchstart', () => this.userScrolled(), { passive: true });
+    scroller.addEventListener('touchmove', () => this.userScrolled(), { passive: true });
+    scroller.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      this.pressed = true;
+      this.movedWhilePressed = false;
+      this.userScrolled();
+    });
+    const release = (): void => {
+      if (!this.pressed) return;
+      this.pressed = false;
+      // (let go after scrolling with it held: the wait starts from now; a plain click chooses its own page)
+      if (!this.movedWhilePressed) return;
+      this.movedWhilePressed = false;
+      this.userScrolled();
+      this.scrolled();
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    window.addEventListener('blur', release);
+    scroller.addEventListener('scroll', () => this.scrolled(), { passive: true });
     scroller.addEventListener('pointerdown', (e) => this.down(e));
     scroller.addEventListener('pointermove', (e) => this.move(e));
     scroller.addEventListener('pointerup', (e) => this.up(e));
@@ -509,14 +631,17 @@ export class SiPreview {
     return this.file.ed.offsetAt(p.x, p.y);
   }
 
-  /** The stretch whose characters are under a pointer (not just nearest to it). */
+  /**
+   * The stretch whose characters are under a pointer (not just nearest to it). A paragraph's lines
+   * count as meeting (the gaps between them shared out), so moving between them never loses it.
+   */
   private spanUnder(e: PointerEvent): SourceSpan | null {
     const at = this.offsetAt(e);
     if (at === null) return null;
     const p = this.view.toDoc(e.clientX, e.clientY);
     for (const o of [at, at - 1]) {
       if (o < 0) continue;
-      const r = this.view.rangeRects(o, o + 1)[0];
+      const r = this.view.rangeRects(o, o + 1, true)[0];
       if (r && p.x >= r.x1 - 1 && p.x <= r.x2 + 1 && p.y >= r.y1 && p.y <= r.y2) return spanAt(this.spans, o);
     }
     return null;
@@ -632,6 +757,15 @@ export class SiPreview {
   private onKey(e: KeyboardEvent): void {
     const ed = this.file?.ed;
     if (!ed) return;
+    // Page Up, Page Down: the preview scrolls a window's height (the caret stays)
+    if ((e.key === 'PageUp' || e.key === 'PageDown') && !ctrlKeyOf(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.userScrolled();
+      const sc = this.view.scroller;
+      sc.scrollTop += (e.key === 'PageDown' ? 1 : -1) * sc.clientHeight * 0.9;
+      return;
+    }
     if (e.isComposing || e.keyCode === 229) { e.stopPropagation(); return; }
     // (keys the preview takes go no further; the rest go on to the SI pane's and the app's: Ctrl+Shift+L, Ctrl+S, F7)
     const run = (f: () => void): void => { e.preventDefault(); e.stopPropagation(); f(); };
