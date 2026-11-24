@@ -1702,7 +1702,7 @@ function orbitalFields(v: Record<string, string>): Field[] {
   return [
     { name: 'kind', label: 'Orbital', value: v.kind, options: ORBITAL_KINDS },
     { name: 'look', label: 'Phases', value: v.look, options: ORBITAL_LOOKS, colors: { when: 'colour', items: [{ name: 'c0', value: v.c0 ?? PHASE_COLOURS[0], label: 'First phase color' }, { name: 'c1', value: v.c1 ?? PHASE_COLOURS[1], label: 'Second phase color' }] } },
-    { name: 'angle', label: 'Rotation', value: v.angle, unit: '°', help: 'Degrees clockwise from straight up. Type Auto (or leave it blank) to point hybrids away from the bonds, a single lobe into the most open space, and the others straight up.' },
+    { name: 'angle', label: 'Rotation', value: v.angle, unit: '°' },
     { name: 'size', label: 'Lobe length', value: v.size, type: 'number', unit: 'bond lengths' },
     { name: 'flip', label: 'Swap the phases', value: v.flip, type: 'checkbox' },
   ];
