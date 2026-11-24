@@ -12,7 +12,8 @@ import { Workbook, Sheet, Structure, CellStyle, CellBlock, Cell, Condition, Comp
 import { Range, MAX_ROWS, MAX_COLS, colName, colIndex, cellName, parseRange, parseCellRef, keyOf, rowOf, colOf, inRange } from '../sheet/refs';
 import { showsChem } from '../sheet/cell-text';
 import { cellTextHtml } from '../sheet/cell-html';
-import { runsOf } from '../sheet/rich-text';
+import { canHoldRuns, looksOf, runsFrom, runsOf, typedText } from '../sheet/rich-text';
+import { chargeDigitEdits, chargeNote } from '../text/charge-digits';
 import { fillReagentTable } from '../sheet/reagents';
 import { unitPrefs } from '../sheet/template-units';
 import { smilesCandidate, smilesPrefs } from '../sheet/smiles-cells';
@@ -57,7 +58,7 @@ import type { IssuePlace } from '../accessibility';
 import { SheetPage } from './sheet-page-ui';
 import { TILE_NAMES } from '../sheet/dashboard';
 import type { TableDef } from '../sheet/table-styles';
-import type { Contents } from '../model';
+import type { Contents, TextRun } from '../model';
 import type { DocStyle } from '../style';
 import type { Tab } from '../workspace';
 import { paintCells, type ObjectLook, type RunLook } from '../format-painter';
@@ -723,6 +724,7 @@ export class SheetMode {
       case 'wrap': this.style('Wrap text', { wrap: !a.wrap || undefined }); break;
       // on (as text is anyway, where it has formulas) or off for these cells
       case 'format-chem': this.style('Formula style', { chem: this.chemShown() ? false : true }); break;
+      case 'cell-raise-charges': this.raiseCharges(); break;
       case 'merge-cells': this.mergeCells(); break;
       // the objects kept from Excel (not shown here), for a sheet that shouldn't take them back (review F2-R11)
       case 'remove-embedded-objects': {
@@ -962,6 +964,37 @@ export class SheetMode {
   }
 
   /** Change the look of the selected cells. */
+  /**
+   * Raise Charge Digits on the selected cells' text (text/charge-digits.ts): each ion's charge
+   * digits and sign go up as a run of their own (Fe₃⁺ → Fe³⁺, SO₄₂⁻ → SO₄²⁻); one undo step. A
+   * number, date or formula is left alone, and an ion that could be read two ways is named in the
+   * status bar.
+   */
+  private raiseCharges(): void {
+    const v = this.view, s = v.sheet;
+    if (!s) return;
+    v.commitEdit();
+    const changes: { r: number; c: number; input: string; runs: TextRun[] | undefined }[] = [];
+    const notes: string[] = [];
+    for (const a of v.areas()) {
+      const r2 = Math.min(a.r2, a.r1 + 2000), c2 = Math.min(a.c2, a.c1 + 200);
+      for (let r = a.r1; r <= r2; r++) for (let c = a.c1; c <= c2; c++) {
+        const cell = s.cell(r, c);
+        if (!cell?.input || !canHoldRuns(cell.input)) continue;
+        const text = typedText(cell.input);
+        const looks = looksOf(text, runsOf(cell));
+        const edits = chargeDigitEdits(text, (i) => looks[i]?.pos === 'sup');
+        if (chargeNote.text) notes.push(chargeNote.text);
+        if (!edits.length) continue;
+        for (const e of edits) for (let i = e.start; i < e.end; i++) looks[i] = { ...looks[i], pos: 'sup' };
+        changes.push({ r, c, input: cell.input, runs: runsFrom(text, looks) });
+      }
+    }
+    if (changes.length) this.edit('Raise Charge Digits', (sh) => { for (const ch of changes) sh.setRichInput(ch.r, ch.c, ch.input, ch.runs); });
+    if (notes.length) this.host.flash(notes[0], 6000);
+    else if (!changes.length) this.host.flash('No charges to raise: select cells with ions such as Fe³⁺ or SO₄²⁻.');
+  }
+
   private style(label: string, patch: Partial<CellStyle>): void {
     const v = this.view;
     this.edit(label, (s) => { for (const a of v.areas()) s.patchStyle(growToMerges(s, a), patch); });
@@ -1258,6 +1291,7 @@ export class SheetMode {
       ['Paste Formulas', () => void this.pasteWith({ what: 'formulas' })],
       ['Paste Formatting', () => void this.paste(null, 'formats')],
       ['Transpose', () => void this.pasteWith({ what: 'all', transpose: true })],
+      ['Paste SMILES', () => { this.host.command?.('paste-smiles'); }],
       null,
       ['Paste Special… (Ctrl+Alt+V)', () => this.run('paste-special')],
     ]);
@@ -1787,7 +1821,7 @@ export class SheetMode {
     const { r, c } = v.sel.active;
     const here = s.cell(r, c)?.structure || (typeof s.value(r, c) === 'string' && s.value(r, c) !== '') ? cellName(r, c) : '';
     const got = await ask('Isotope Pattern', [
-      { name: 'source', label: 'Compound', value: here, placeholder: 'B2, or a formula such as C10H12N2O' },
+      { name: 'source', label: 'Compound', value: here, placeholder: 'Formula, such as C10H12N2O' },
       { name: 'ion', label: 'Ion', value: '[M+H]+', suggestions: COMMON_ADDUCTS },
       { name: 'min', label: 'Minimum peak abundance', value: '0.5', type: 'number', unit: '% of the tallest' },
       { name: 'found', label: 'Columns for the peaks found, with the error in ppm', value: 'true', type: 'checkbox' },

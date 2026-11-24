@@ -207,7 +207,7 @@ Useful keys while typing:
 | Tab, Shift+Tab | Change the level of a list item |
 | Ctrl+Shift+V | Paste as plain text |
 
-Formula style writes CH3CO2H with its numbers lowered and raises a charge (NH4+, TfO-), as ChemDraw does. A hyphen in a name stays on the line (Red-Al). To raise a charge's number (Fe3+), select it and use superscript.
+Formula style writes CH3CO2H with its numbers lowered and raises a charge (NH4+, TfO-), as ChemDraw does. A hyphen in a name stays on the line (Red-Al). To raise a charge's number, select the ions and use **Raise Charge Digits** (the X²⁺ button beside Formula style in the Font group of every mode, and on the right-click menu of text): Fe₃⁺ becomes Fe³⁺ and SO₄₂⁻ becomes SO₄²⁻, while a count stays a count (NH₄⁺, BF₄⁻). Where the digit could be either (N3-: nitride or azide), it is left as typed and the status bar says so; select the digit and use Superscript.
 
 As you type, common chemistry is tidied for you: CH2Cl2 gets its subscripts, `0 oC` becomes 0 °C, `1H NMR` gets its superscript, and the letters of a stereodescriptor go italic as the name goes on ((*S*)-proline, (2*E*,4*Z*)-). Compound numbers can go bold as you type them, (**4**) or compound **4a**: check that in **Edit ▸ Typing and Spelling…** (it is off at first, so list items such as (1) stay plain). Press Ctrl+Z immediately to undo just that change. Misspelled words get a red underline and formatting slips (a hyphen in a range, a number run into its unit) a blue one; right-click for suggestions. **Edit ▸ Typing and Spelling…** turns these helpers off, adds your own replacements (`rxn` → reaction) and edits your dictionary.
 
@@ -367,7 +367,7 @@ R/S and E/Z are calculated for every structure as you draw.
 - Plain bold bonds count as wedges and plain hashed bonds as hashed wedges, as in ChemDraw. Where R or S would depend on what an R or Ar group is, no label is given.
 - **Axial chirality** (biaryls, allenes, alkylidenecycloalkanes) is labeled Ra or Sa by IUPAC rule P-93.5.1. Draw the groups on one end of the axis with a wedge and a hash (or one wedge) to show which way around it is. Without that, or when one end has two of the same group, no label is shown. **Edit ▸ Settings** writes them as P/M instead (Ra = M, Sa = P).
 - **Stereo Group (abs, &, or)…**: marks selected stereocenters as abs (known as drawn), &1 (a mixture of both forms) or or1 (one form, not known which).
-- **Chiral Flag (Abs, Rel, Rac)…**: puts the boxed flag under the selected structure, or removes it.
+- **Chiral Flag (Abs, Rel, Rac)…**: puts the boxed flag under the selected structure, or removes it. A structure with wedges and no flag is saved as racemic (chiral flag 0 in MOL, SDF and RXN files, as ChemDraw reads it); **Settings ▸ Preferences ▸ Stereochemistry** can make wedges alone mean one enantiomer instead. A flag drawn beside a structure always wins.
 
 ### Polymers and R-groups
 
@@ -539,9 +539,9 @@ The pane lists each loop under its own heading, with the text in its middle, **+
 
 In a cycle, the main arrows run along one smooth loop through every species: drag a species and the arrows on either side reshape so each one leaves it along the same line the one before came in, and the step names and small in and out arrows go with them. **Clean Up** at the bottom of a cycle's pane (also **Clean Up Cycle** on the right-click **Scheme** menu and in the Smart Schemes toolbox) moves the species onto one ellipse that fits where they are, with the arrows along it.
 
-#### The Smart Scheme pane
+#### The Smart Scheme Species Table
 
-The pane is compact: the layouts are the small pictures in its title row. Its pin button docks it as a toolbox at the right (or drag its title to any edge of the drawing, or anywhere to leave it floating as a toolbox), where it stays and lists whichever Smart Scheme is selected; the pin again restores it beside the scheme, and so does hiding its toolbox (View ▸ Toolboxes ▸ Toolbox: Smart Schemes).
+The Smart Scheme Species Table appears by itself beside a Smart Scheme when you select it, so it has no entry under View ▸ Toolboxes. It is compact: the layouts are the small pictures in its title row. Its pin button docks it as a toolbox at the right (or drag its title to any edge of the drawing, or anywhere to leave it floating as a toolbox), where it stays and lists whichever Smart Scheme is selected; the pin again puts it back beside the scheme, and so does closing its toolbox.
 
 The pane's rows show the text as it looks on the page, subscripts and superscripts included; the bar above them works on the row you are typing in: **X₂** subscript (Ctrl+=), **X²** superscript (Ctrl+Shift+=), **Chem** for chemical interpretation (numbers in formulas drop as you type; turn it off to keep the text exactly as typed), **‡ ′ ° •**, **Ω** for Greek letters, arrows and other symbols, and the gear for **Scheme Format**: this scheme's own font, the size of its species typed as text and of its conditions, its arrows (line width, head, head length, shortest arrow) and its spacing (arrow to species, arrow to text). Changes show at once and can be undone; a box left empty follows the drawing style (its value shows grayed in it), and **Use Drawing Style** clears them all. Species and conditions added later take the same look, and the style is kept in the file.
 
@@ -577,7 +577,7 @@ On a transition state the bonds being made and broken are dashed, and **Bond dis
 
 <!-- index: Gels, Rf values -->
 
-**Insert ▸ Lab Figures ▸ TLC Plate…** and **Gel…** draw a TLC plate or a gel from a table you fill in.
+**Insert ▸ Lab Figures ▸ TLC Plate…** and **Gel…** draw a TLC plate or a gel from a table you fill in. The lane names and the eluent (a gel's caption) show as they will be drawn, with formulas subscripted as you type; the bar above the table makes the text you are typing bold, italic, underlined, subscript or superscript, as in the Energy Diagram window.
 
 A TLC plate has a row for each spot under its lane's name: type its **Rf**, and pick how it looks from its **Description** menu (intensity faint, normal or strong; size small, normal or large; a spot or a streak; and the stain's color or another). **+ Spot** adds a spot to a lane. A TLC plate takes its colors from the stain you pick (a notebook sketch with circled spots, UV 254 nm, KMnO₄, p-anisaldehyde, CAM, PMA, vanillin, ninhydrin or iodine), and can show the Rf values, the start and solvent-front lines, the lane names and the eluent; **+ Co-spot lane** adds a lane with the spots of the two lanes before it. Drag a spot up or down its lane to change its Rf: it stays in its lane, between the start line (Rf 0) and the solvent front (Rf 1), and the Rf written beside it follows. Check **Lock spots** (in the window or the details panel) so spots can't be dragged; a drag on a locked plate's spot moves the whole plate.
 
@@ -804,7 +804,7 @@ A window shows each picture beside the structure read from it and its SMILES. Ch
 Two readers can read pictures:
 
 - **The structure reader on this computer** (desktop app). Nothing is sent anywhere. The first time, it downloads about 140 MB once (the MolScribe model, MIT license). It reads printed structures well (most journal and patent drawings) but few hand drawings.
-- **Your own AI model** (Claude, ChatGPT, Gemini or another), linked in **Edit ▸ Settings ▸ AI Model** with your own API key. It reads hand drawings far better. Pictures are sent to it only when it reads them, and the cost goes on your account there. When one is linked, photos and scans go to it first, and each picture has a button to read it with the other reader. In the browser version, only an AI model can read pictures.
+- **Your own AI model** (Claude, ChatGPT, Gemini or another), linked in **Edit ▸ Settings ▸ AI Model** with your API key. It reads hand drawings far better. Pictures are sent to it only when it reads them, and the cost goes on your account there. When one is linked, photos and scans go to it first, and each picture has a button to read it with the other reader. In the browser version, only an AI model can read pictures.
   - **Local only** (in the same settings): check it to make sure nothing leaves your computer. Only a model running on this computer (Ollama or LM Studio, chosen under Other with a localhost address) is asked, and a request to any other address is blocked before it is sent, in the app and in the browser alike. Use it for unpublished structures.
 
 **File ▸ Import ▸ Import Structures from PDF…** finds the structures in a paper, SI or thesis and offers them in the same window, each marked with its page. Text, arrows and pictures that turn out not to be structures are put aside (check **Show … pictures that don't look like structures** to see them), and none are checked at first: check the ones you want, then **Place**. A PDF of more than 40 pages is read a part at a time; you choose the pages. PDFs are read by the structure reader on this computer, so nothing is sent anywhere unless you choose your AI model or press a **Read with** button.

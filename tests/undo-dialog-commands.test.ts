@@ -3,7 +3,9 @@
 // References ▸ Insert Caption took three undos and Cross-reference two (G3-11, G3-12), and
 // File ▸ Page Setup on a canvas made no undo step at all (G3-10).
 import { describe, it, expect, beforeAll } from 'vitest';
-import { docMode } from './doc-mode-harness';
+import { docMode, type } from './doc-mode-harness';
+import { objectRun } from '../src/document/document';
+import * as rt from '../src/richtext';
 import { Doc, type PageSetup } from '../src/model';
 import type { DocFile } from '../src/document/doc-file';
 
@@ -69,6 +71,39 @@ describe('Document: a command through a window is one undo step', () => {
     dm.run('undo');
     expect(state(f)).toBe(before);
     expect(state(f)).not.toContain('_Cap');
+  }, 60000);
+});
+
+describe('Document: a cross-reference typed in a table cell is one undo step (F3 Needs Nate 8)', () => {
+  it('one Ctrl+Z takes out the field and its bookmark; typing after it is a step of its own; Ctrl+Y brings it back', async () => {
+    const { dm, f, ta } = await docMode({ runs: [{ text: 'A figure\nTable 1. ' }], paras: [{}, {}], objects: { 9: { kind: 'table', table: { cols: [100, 100], rows: [[{ runs: [{ text: 'Entry' }] }, { runs: [{ text: 'See ' }] }]], head: 1 } } } as never });
+    f.ed.setCaret(0);
+    dm.run('insert-caption');
+    await answer();
+    f.ed.update({ ...f.t, runs: [...f.t.runs, objectRun(9, {})] }, 'Insert table');
+    const cell = () => rt.plainText((f.t.objects[9] as { table: { rows: { runs: never }[][] } }).table.rows[0][1].runs);
+    (dm as never as { startCell(id: number, r: number, c: number): boolean }).startCell(9, 0, 1);
+    const before = state(f);
+    dm.run('cross-reference');
+    await tick();
+    const d = document.querySelector<HTMLDialogElement>('dialog[open]')!;
+    (d.querySelectorAll('select')[1] as HTMLSelectElement).value = 'page';
+    d.querySelector<HTMLButtonElement>('button.primary')!.click();
+    await tick();
+    expect(state(f)).toContain('_Cap');
+    expect(cell()).toBe('See \ufffc');
+    const withRef = state(f);
+    // typing after it goes on in the cell, after the field
+    type(ta, ' and');
+    expect(cell()).toBe('See \ufffc and');
+    dm.run('undo');
+    expect(cell()).toBe('See \ufffc');
+    // the next Ctrl+Z takes the field and its hidden bookmark out together
+    dm.run('undo');
+    expect(state(f)).toBe(before);
+    expect(state(f)).not.toContain('_Cap');
+    dm.run('redo');
+    expect(state(f)).toBe(withRef);
   }, 60000);
 });
 

@@ -6,6 +6,9 @@
 
 import { type RunLook, type TextRun, type ToggleLook, cleanLook, runsFrom, spliceLooks, toggleLooks, toggledLook } from '../sheet/rich-text';
 
+/** What a box held, for its own Undo. */
+interface BoxState { text: string; looks: RunLook[]; at: number }
+
 export class RichInput {
   readonly el: HTMLDivElement;
   private text = '';
@@ -23,10 +26,31 @@ export class RichInput {
     el.setAttribute('aria-multiline', 'true');
     this.el = el;
     el.addEventListener('compositionstart', () => { this.composing = true; });
-    el.addEventListener('compositionend', () => { this.composing = false; this.read(); });
+    el.addEventListener('compositionend', () => { this.composing = false; this.read(); this.remember(); });
     // the browser's own Bold and Italic would put its markup in; Ctrl+B is the sheet's
     el.addEventListener('beforeinput', (e) => { if (e.inputType.startsWith('format')) e.preventDefault(); });
-    el.addEventListener('input', () => this.read());
+    // Enter (or Shift+Enter) where the box's owner lets it through is a new line, put in here: the
+    // browser's own would add a <div> or <br> that the box, drawn again in its own markup, can lose
+    el.addEventListener('beforeinput', (e) => {
+      if (e.inputType !== 'insertParagraph' && e.inputType !== 'insertLineBreak') return;
+      e.preventDefault();
+      this.insert('\n');
+    });
+    el.addEventListener('input', () => { this.read(); this.remember(); });
+    // Ctrl+Z and Ctrl+Y take back and bring again what was typed or set in the box, as a
+    // textarea's own Undo does. The browser's own Undo can't: the box is drawn again in its own
+    // markup after every change, which leaves the browser's history pointing at markup that has
+    // gone (F3 Needs Nate 9). With nothing to take back here the keys go on to the page, and the
+    // browser's own Undo is never let through.
+    el.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      const redo = k === 'y' || (k === 'z' && e.shiftKey);
+      if ((k === 'z' || redo) && this.step(redo)) { e.preventDefault(); e.stopPropagation(); }
+    });
+    el.addEventListener('beforeinput', (e) => {
+      if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') { e.preventDefault(); this.step(e.inputType === 'historyRedo'); }
+    });
     // pasted or dropped text comes in plain
     el.addEventListener('paste', (e) => {
       const t = e.clipboardData?.getData('text/plain');
@@ -57,6 +81,7 @@ export class RichInput {
     const end = Math.min(this.sel.end, v.length);
     this.render();
     this.sel = { start: Math.min(this.sel.start, end), end };
+    this.remember();
   }
 
   get hidden(): boolean { return this.el.hidden; }
@@ -98,6 +123,7 @@ export class RichInput {
     if (mode === 'end') this.setSelectionRange(start + t.length, start + t.length);
     else if (mode === 'start') this.setSelectionRange(start, start);
     else if (mode === 'select') this.setSelectionRange(start, start + t.length);
+    this.remember(true);
   }
 
   // ---------------------------------------------------------------- formatting
@@ -109,6 +135,11 @@ export class RichInput {
     this.typing = null;
     this.sel = { start: text.length, end: text.length };
     this.render();
+    // (a box opened with new text starts its Undo there)
+    this.past = [];
+    this.future = [];
+    this.last = this.snap();
+    this.lastAt = 0;
   }
 
   /** The look of each character. */
@@ -133,6 +164,7 @@ export class RichInput {
     this.looks = toggleLooks(this.looks, start, end, key, base);
     this.render();
     this.place(start, end);
+    this.remember(true);
   }
 
   /** Subscript or superscript on or off: for the selected text, or for what is typed next. */
@@ -149,6 +181,7 @@ export class RichInput {
     this.looks = this.looks.map((l, i) => (i >= start && i < end ? flip(l, on) : l));
     this.render();
     this.place(start, end);
+    this.remember(true);
   }
 
   /** Whether the selected text (or what is typed next) has a look, as the ribbon shows it pressed. */
@@ -160,6 +193,54 @@ export class RichInput {
       return look[key] ?? base;
     }
     return this.looks.slice(start, end).every((l) => l[key] ?? base);
+  }
+
+  // ---------------------------------------------------------------- the box's own Undo
+
+  private past: BoxState[] = [];
+  private future: BoxState[] = [];
+  private last: BoxState = { text: '', looks: [], at: 0 };
+  private lastAt = 0;
+
+  /** Whether the box's own Undo (or Redo) has something to take back (or bring again). */
+  get canUndo(): boolean { return this.past.length > 0; }
+  get canRedo(): boolean { return this.future.length > 0; }
+
+  private snap(): BoxState { return { text: this.text, looks: this.looks.map((l) => ({ ...l })), at: this.sel.end }; }
+
+  /**
+   * After a change: what was there before it is a step to take back. Typing in quick succession
+   * is one step; `alone` (a look set, text put in by a command) is a step of its own.
+   */
+  private remember(alone = false): void {
+    if (this.composing) return;
+    const now = this.snap();
+    if (now.text === this.last.text && JSON.stringify(now.looks) === JSON.stringify(this.last.looks)) { this.last = now; return; }
+    const t = Date.now();
+    if (alone || !this.past.length || t - this.lastAt > 800) this.past.push(this.last);
+    if (this.past.length > 200) this.past.shift();
+    this.lastAt = alone ? 0 : t;
+    this.future = [];
+    this.last = now;
+  }
+
+  /** Undo (or Redo) in the box: false when there is nothing to take back (or bring again). */
+  step(redo: boolean): boolean {
+    const from = redo ? this.future : this.past, to = redo ? this.past : this.future;
+    const s = from.pop();
+    if (!s) return false;
+    to.push(this.snap());
+    this.text = s.text;
+    this.looks = s.looks.map((l) => ({ ...l }));
+    this.typing = null;
+    this.render();
+    this.sel = { start: s.at, end: s.at };
+    if (this.el.isConnected && document.activeElement === this.el) this.place(s.at, s.at);
+    this.last = this.snap();
+    this.lastAt = 0;
+    // (whoever follows the box's text takes it as after any change)
+    this.el.dispatchEvent(new Event('input'));
+    return true;
   }
 
   // ---------------------------------------------------------------- inside

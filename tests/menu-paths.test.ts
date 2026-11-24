@@ -87,7 +87,15 @@ function paths(text: string): string[] {
   return out;
 }
 /** The program's text without its comments (a comment's path is a note to the reader, not a message). */
-const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1').replace(/<!--[\s\S]*?-->/g, '');
+const code = (text: string) => {
+  let s = text;
+  // (repeated until nothing changes, so a comment that only shows once another is gone goes too)
+  for (let prev = ''; prev !== s;) {
+    prev = s;
+    s = s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1').replace(/<!--[\s\S]*?-->/g, '');
+  }
+  return s;
+};
 
 function files(dir: string, ext: RegExp): string[] {
   return readdirSync(join(ROOT, dir)).flatMap((f) => {

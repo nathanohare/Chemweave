@@ -3011,7 +3011,8 @@ dialog.diagram-dialog { width: min(96vw, 1060px); max-height: 94vh; }
 .dg-layout.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .dg-thumb { display: block; width: 64px; height: 44px; }
 .dg-thumb svg, .dg-preview svg { width: 100%; height: 100%; display: block; }
-.dg-text textarea { width: 100%; box-sizing: border-box; font: 0.95em var(--mono-font); padding: 6px; tab-size: 3; resize: vertical; margin-top: 4px; }
+.dg-rows { display: flex; flex-direction: column; gap: 2px; max-height: 16em; overflow-y: auto; margin-top: 2px; }
+.dg-rows .dg-row.mo-rich { width: auto; min-width: 6em; flex: none; }
 .dg-preview { height: 320px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-control); background: #ffffff; box-sizing: border-box; }
 .dg-look { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); column-gap: 16px; }
 .dg-look .ask-row { margin: 4px 0; }
@@ -3023,6 +3024,8 @@ dialog.diagram-dialog { width: min(96vw, 1060px); max-height: 94vh; }
 .sh-note-shown { position: absolute; max-height: 140px; overflow: hidden; cursor: text; }
 .sh-note-who { font-weight: 700; }
 .sh-note-input { display: block; width: 100%; box-sizing: border-box; margin-top: 2px; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; resize: vertical; outline: none; }
+.sh-note-rich { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 5.6em; max-height: 14em; overflow-y: auto; cursor: text; }
+.sh-note-rich.empty::before { content: attr(data-placeholder); color: var(--muted); position: absolute; pointer-events: none; }
 .sh-note-card { position: fixed; z-index: 60; }
 .cmt-card.sh-note-card { width: 270px; max-height: min(420px, 70vh); overflow-y: auto; box-sizing: border-box; }
 .sh-prompt { position: absolute; z-index: 3; max-width: 240px; padding: 5px 8px; background: #ffffe1; color: #1a1a1a; border: 1px solid #8a8a6a; box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2); font: var(--fs-sm)/1.35 Tahoma, 'Segoe UI', Arial, sans-serif; white-space: pre-wrap; pointer-events: none; }
@@ -3619,8 +3622,10 @@ dialog.show-setup { width: min(94vw, 600px); }
 .ol-num::after { content: ' ▭'; font-weight: 400; }
 .ol-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ol-title, .ol-body { width: 100%; box-sizing: border-box; border: 1px solid transparent; background: transparent; color: var(--text); border-radius: var(--r-control); padding: 2px 4px; font: var(--fs-md) var(--ui-font, system-ui), sans-serif; }
-/* (a title stands out by its size: its characters show their own bold, as Ctrl+B sets it) */
-.ol-title { font-size: var(--fs-lg); }
+/* (a title is shown in bold, as PowerPoint's Outline View shows titles: "The first text you type will
+   be a title, indicated by boldface type", Microsoft Support, "Create and print a presentation in
+   Outline view"; Ctrl+B still sets the characters' own bold on the slide) */
+.ol-title { font-size: var(--fs-lg); font-weight: 700; }
 .ol-body { resize: none; overflow: hidden; tab-size: 2.2em; line-height: 1.35; min-height: 1.6em; }
 .ol-title, .ol-body { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.6em; cursor: text; }
 .ol-title:focus, .ol-body:focus { border-color: var(--line); background: var(--panel); outline: none; }
@@ -3878,6 +3883,10 @@ dialog.plate-dialog { width: min(96vw, 560px); max-height: 92vh; }
 .plate-spots tbody tr:first-child > td { border-top: 0; }
 .plate-lane-box { display: flex; gap: 2px; }
 .plate-spots td input.plate-name { width: 100%; min-width: 0; }
+/* (lane names and the eluent are rich text boxes, as the Energy Diagram window's names) */
+.plate-spots td .plate-name.mo-rich { flex: 1; width: auto; min-width: 4em; }
+.plate-dialog .plate-note.mo-rich { flex: 1; min-width: 10em; }
+.plate-dialog .energy-bar { margin: 4px 0; }
 .plate-spots th.plate-rf { width: 4.4em; }
 .plate-spots td input.plate-rf-in { width: 4.2em; text-align: right; font-variant-numeric: tabular-nums; }
 .plate-desc { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 6px; padding: 2px 6px; font: inherit; text-align: left; white-space: nowrap; overflow: hidden; }

@@ -7,6 +7,7 @@
 // Structures are drawn with the drawing tools (Edit Structure); compounds go to and come from
 // the Compound Library; references come from My Library.
 
+import { chargeDigitEdits, chargeNote } from '../text/charge-digits';
 import { fieldLabelNodes } from './field-label';
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
@@ -87,14 +88,16 @@ export interface SiModeHost {
   /** Formula and masses. */
   analyze(molfile: string): Promise<{ formula: string; mw: number; exact: number } | null>;
   smiles(molfile: string): Promise<string | null>;
-  /** Draw a structure with the drawing tools; `done` gets it (null: cancelled). */
-  editStructure(contents: Contents | null, title: string, done: (c: Contents | null) => void): void;
-  /** A drawing as an SVG picture and as CDXML (to draw it again); null when empty. */
-  drawingFiles(d: Contents | Doc): { svg: string; cdxml: string } | null;
-  /** A CDXML drawing as a drawing (null when it can't be read). */
-  contentsOfCdxml(text: string): Contents | null;
+  /** Draw a structure with the drawing tools, in `style` (else the project's); `done` gets it (null: cancelled). */
+  editStructure(contents: Contents | null, title: string, done: (c: Contents | null) => void, style?: DocStyle): void;
+  /** A drawing as an SVG picture and as CDXML (to draw it again), in `style` (else the project's); null when empty. */
+  drawingFiles(d: Contents | Doc, style?: DocStyle): { svg: string; cdxml: string } | null;
+  /** A CDXML drawing as a drawing, with the file's own style (null when it can't be read). */
+  contentsOfCdxml(text: string): { contents: Contents; style: DocStyle } | null;
   /** What is on the clipboard: from a paste event, or read (a Paste button). */
   readClipboard(e?: ClipboardEvent): Promise<Pasted>;
+  /** Whether a paste event's text is only the SMILES of a drawing on the clipboard (a copy from here or ChemDraw). */
+  pasteHoldsDrawing?(e: ClipboardEvent): boolean;
   /** The library (loaded): what it holds now, and a change to it. */
   library(): Promise<{ now: LibraryData; change(f: (lib: LibraryData) => LibraryData): void }>;
   /** Files chosen to add (spectra, other files). */
@@ -304,7 +307,7 @@ const RIBBON = `
         <button data-si-tbl="remove-picture" title="Take the picture out of the selected cell (its file stays in images/)">Remove Picture</button>
       </div>
       <div class="rb-col">
-        <label class="rb-field" title="The picture's printed width (empty: its own size, never wider than the text)">Width <input type="number" class="rb-num" data-si-field="width" min="0" step="0.1" placeholder="own" /> cm</label>
+        <label class="rb-field" title="The picture's printed width (empty: its own size, never wider than the text)">Custom width <input type="number" class="rb-num" data-si-field="width" min="0" step="0.1" /> cm</label>
       </div>
     </div><div class="rb-label">Cell Picture</div></div>
   </div>
@@ -319,7 +322,7 @@ const RIBBON = `
     </div><div class="rb-label">Picture</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <label class="rb-field" title="The figure's printed width (empty: its own size, never wider than the text)">Width <input type="number" class="rb-num" data-si-field="fig-width" min="0" step="0.1" placeholder="own" /> cm</label>
+        <label class="rb-field" title="The figure's printed width (empty: its own size, never wider than the text)">Custom width <input type="number" class="rb-num" data-si-field="fig-width" min="0" step="0.1" /> cm</label>
       </div>
     </div><div class="rb-label">Size</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -886,6 +889,7 @@ export class SiMode {
     if (!this.restoreTyping()) { this.host.flash('Click in a text box first (a procedure, a report, a section’s text or a table’s cell).'); return; }
     if (cmd === 'clear') { document.execCommand('removeFormat'); return; }
     if (cmd === 'formula') { this.formulaStyle(); return; }
+    if (cmd === 'charges') { this.raiseCharges(); return; }
     document.execCommand(cmd);
   }
 
@@ -906,6 +910,44 @@ export class SiMode {
     if (!formulaStyleRange(all)) { this.host.flash('Nothing to change: the selection has no numbers or charges to lower or raise.'); return; }
     // (put back as typing is, so Ctrl+Z takes it back)
     document.execCommand('insertHTML', false, copy.innerHTML);
+  }
+
+  /** Raise Charge Digits on the selected text (text/charge-digits.ts): each ion's charge digits and sign raised, as typing is (Ctrl+Z takes it back). */
+  private raiseCharges(): void {
+    const sel = getSelection();
+    if (!sel?.rangeCount || sel.isCollapsed) { this.host.flash('Select the ions first (Fe³⁺, SO₄²⁻), then Raise Charge Digits.'); return; }
+    if (sel.getRangeAt(0).cloneContents().querySelector(':not(b, i, u, sub, sup, strong, em, span:not([class]), br)')) {
+      this.host.flash('Select plain text only: Raise Charge Digits leaves compound mentions and citations as they are.');
+      return;
+    }
+    const copy = document.createElement('div');
+    copy.append(sel.getRangeAt(0).cloneContents());
+    const nodes: Text[] = [];
+    const walk = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) nodes.push(n as Text);
+    const at: [Text, number][] = [];
+    for (const n of nodes) for (let i = 0; i < n.data.length; i++) at.push([n, i]);
+    const text = nodes.map((n) => n.data).join('');
+    const up = (i: number) => !!at[i]?.[0].parentElement?.closest('sup');
+    const edits = chargeDigitEdits(text, up);
+    if (!edits.length) { this.host.flash(chargeNote.text || 'Nothing to change: the selection has no charges to raise (Fe³⁺, SO₄²⁻).', 6000); return; }
+    // each raised character in a <sup> of its own, from the end so earlier places stay put; any <sub> round it is left
+    for (const e of [...edits].sort((x, y) => y.start - x.start)) {
+      const [node, i] = at[e.start];
+      const rest = node.splitText(i);
+      rest.splitText(1);
+      const sup = document.createElement('sup');
+      const sub = rest.parentElement?.nodeName === 'SUB' ? rest.parentElement : null;
+      if (sub) {
+        // (out of a lowered run: the <sub> split round it)
+        const after = sub.cloneNode(false) as HTMLElement;
+        while (rest.nextSibling) after.append(rest.nextSibling);
+        sub.after(sup, after);
+        sup.append(rest);
+      } else { rest.replaceWith(sup); sup.append(rest); }
+    }
+    document.execCommand('insertHTML', false, copy.innerHTML);
+    if (chargeNote.text) this.host.flash(chargeNote.text, 6000);
   }
 
   /** Put the typing back where it was in the last SI text box (false when there is none). */
@@ -1963,6 +2005,7 @@ export class SiMode {
         label: this.label, mentionable: this.mentionable,
         changed: (v) => void this.act(() => p.writeSectionText(s, v), false, undefined, () => box),
         pasteObject: (e, place) => void this.pasteFigure(s, e, place),
+        holdsObject: (e) => this.host.pasteHoldsDrawing?.(e) === true,
       }, true, 'Type the section’s text');
       this.boxes.push(box);
       box.el.dataset.src = sectionSrc(s.id);
@@ -2010,8 +2053,8 @@ export class SiMode {
       label: this.label,
       mentionable: this.mentionable,
       pickFiles: (l, x) => this.host.pickFiles(l, x),
-      editStructure: (c, title, done) => this.host.editStructure(c, title, done),
-      drawingFiles: (d) => this.host.drawingFiles(d),
+      editStructure: (c, title, done, style) => this.host.editStructure(c, title, done, style),
+      drawingFiles: (d, style) => this.host.drawingFiles(d, style),
       contentsOfCdxml: (x) => this.host.contentsOfCdxml(x),
       readClipboard: (e) => this.host.readClipboard(e),
       contentsOf: (m) => this.host.contentsOf(m),
@@ -2077,6 +2120,8 @@ export class SiMode {
     try {
       const got = await reading;
       if (!got) return;
+      // (text after all, such as a SMILES with no drawing to be found: typed in as text, as a paste of text is)
+      if (got.kind === 'text') { document.execCommand('insertText', false, got.text); return; }
       rel = await pics.fromPasted(got);
       if (!rel && got.kind !== 'picture') this.host.flash('The clipboard has no picture or drawing. Copy a structure in ChemDraw or Chemweave, or a picture, first.');
     } catch (err) { this.host.flash(`The picture could not be added: ${err instanceof Error ? err.message : String(err)}`); return; }

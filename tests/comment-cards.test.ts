@@ -36,6 +36,37 @@ describe('comment cards', () => {
   });
 });
 
+describe('rich comment box (Word and PowerPoint comments)', () => {
+  // review R01: Shift+Enter is a new line in the shared rich text box; Enter saves
+  it('Shift+Enter starts a new line, and Enter saves the comment on two lines', () => {
+    const a = actions();
+    const card = threadCard({ id: 1, author: 'Nate', date: '', text: 'ab' }, { active: true, editing: true, actions: a, rich: true });
+    document.body.append(card);
+    const box = card.querySelector<HTMLElement>('.cmt-rich')!;
+    box.tabIndex = 0;
+    box.focus();
+    const put = () => {
+      const t = [...box.querySelectorAll('span')].at(-1)!.firstChild as Text;
+      const r = document.createRange();
+      r.setStart(t, t.data.length);
+      document.getSelection()!.removeAllRanges();
+      document.getSelection()!.addRange(r);
+      return t;
+    };
+    put();
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+    const e = new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true });
+    box.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    const t = put();
+    t.data += 'cd';
+    box.dispatchEvent(new Event('input'));
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(a.edit).toHaveBeenCalledWith('ab\ncd', undefined, null);
+    card.remove();
+  });
+});
+
 describe('slide comment markers', () => {
   const size = { w: 960, h: 540 };
   it('puts a new marker where asked when the place is free', () => {

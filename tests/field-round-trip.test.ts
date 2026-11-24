@@ -177,6 +177,8 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     showCarbon: { v: true },
     asTyped: { v: true, with: { label: 'NH2' }, alone: true },
     bare: { v: true, alone: true },
+    // (a ChemDraw label that gave no hydrogen count: its N is an amine's, as ChemDraw reads it)
+    hByRule: { v: true, with: { label: 'N', z: 7, fileLabel: true } },
     hideCharge: { v: true, with: { charge: 1, label: 'NMe3' } },
     supDigits: { v: false, with: { label: 'R1' } },
     labelMarks: { v: '^==', with: { label: 'OMe' } },
@@ -605,8 +607,6 @@ const CANT_CARRY: Partial<Record<Column, Record<string, string>>> = {
     'TextRun.cstyle': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.field': "a PowerPoint field (slide number, date): slides are saved as PowerPoint",
     'TextRun.fmt': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
-    'TextRun.highlight': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
-    'TextRun.lang': "ChemDraw text has no language; kept from Word and PowerPoint for spelling",
     'TextRun.noProof': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.raise': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.rev': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",

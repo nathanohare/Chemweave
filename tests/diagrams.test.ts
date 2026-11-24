@@ -48,6 +48,9 @@ describe('the text', () => {
   it('cleans what a file says, keeping what it can', () => {
     expect(cleanDiagram({ layout: 'cycle', text: 'a', colours: 'nope', accent: 'red', w: -1 })).toMatchObject({ layout: 'cycle', colours: 'accent', accent: '#4472c4', w: 400 });
     expect(cleanDiagram({ text: 1 })).toBeNull();
+    // looks: numbered lines of pieces with text; anything else is left out
+    expect(cleanDiagram({ layout: 'process', text: 'a', rich: { 0: [{ text: 'a', bold: true, sub: 'yes' }], x: [{ text: 'b' }], 2: [{ bold: true }], 3: 'c' } })!.rich).toEqual({ 0: [{ text: 'a', bold: true }] });
+    expect(cleanDiagram({ layout: 'process', text: 'a', rich: [] })!.rich).toBeUndefined();
     expect(inkOn('#4472c4')).toBe('#ffffff');
     expect(inkOn('#dae3f3')).toBe('#000000');
   });
@@ -193,6 +196,15 @@ describe('PowerPoint', () => {
     // the connectors stay stuck to the boxes
     for (const id of f.frame!.arrows) expect(f.frame!.shapes).toContain(d.arrows.get(id)!.to!.shape);
     expect(textFromShapes(d, f)).toBe(f.diagram!.text);
+  });
+
+  // review R03: the looks typed in the Diagram window come back from a .pptx
+  it('keeps the looks typed in the Diagram window through a .pptx', async () => {
+    const rich = { 1: [{ text: 'CH' }, { text: '2', sub: true }, { text: 'Cl' }, { text: '2', sub: true }, { text: ' wash', bold: true }] };
+    const { doc } = put({ ...newDiagram('process', 'Mix\nCH2Cl2 wash'), rich });
+    const back = readPptx(await writeDeck(doc));
+    const f = back.slides[0].contents.shapes.find((x) => x.diagram)!;
+    expect(f.diagram!.rich).toEqual(rich);
   });
 
   it('takes words changed in PowerPoint into the text', async () => {

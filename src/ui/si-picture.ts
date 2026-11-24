@@ -6,6 +6,7 @@
 
 import type { Contents, Doc } from '../model';
 import type { Pasted } from '../io/clipboard';
+import type { DocStyle } from '../style';
 import type { SiProject, SiSection } from '../si/project';
 
 export interface SiPictureHost {
@@ -13,11 +14,12 @@ export interface SiPictureHost {
   section: SiSection;
   flash(msg: string): void;
   pickFiles(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array }[]>;
-  editStructure(contents: Contents | null, title: string, done: (c: Contents | null) => void): void;
-  /** A drawing as an SVG picture and as CDXML (to draw it again), or null when it is empty. */
-  drawingFiles(d: Contents | Doc): { svg: string; cdxml: string } | null;
-  /** A CDXML drawing (a picture's original) as a drawing. */
-  contentsOfCdxml(text: string): Contents | null;
+  /** Draw with the drawing tools, in `style` (else the project's). */
+  editStructure(contents: Contents | null, title: string, done: (c: Contents | null) => void, style?: DocStyle): void;
+  /** A drawing as an SVG picture and as CDXML (to draw it again), in `style` (else the project's), or null when it is empty. */
+  drawingFiles(d: Contents | Doc, style?: DocStyle): { svg: string; cdxml: string } | null;
+  /** A CDXML drawing (a picture's original) as a drawing, with the file's own style (bond length, label size). */
+  contentsOfCdxml(text: string): { contents: Contents; style: DocStyle } | null;
   /** What is on the clipboard: from a paste event, or read (a Paste button). */
   readClipboard(e?: ClipboardEvent): Promise<Pasted>;
   /** One of the project's compounds with a structure, picked; null when cancelled. */
@@ -43,8 +45,8 @@ export class SiPictures {
   }
 
   /** A drawing kept as SVG, with its CDXML beside it; null when it is empty. */
-  async fromDrawing(d: Contents | Doc, name = 'structure.svg'): Promise<string | null> {
-    const files = this.host.drawingFiles(d);
+  async fromDrawing(d: Contents | Doc, name = 'structure.svg', style?: DocStyle): Promise<string | null> {
+    const files = this.host.drawingFiles(d, style);
     if (!files) { this.host.flash('Nothing was drawn, so nothing was changed.'); return null; }
     return this.add(name, enc(files.svg), { cdxml: enc(files.cdxml) });
   }
@@ -75,16 +77,21 @@ export class SiPictures {
     return got;
   }
 
-  /** Draw with the drawing tools: the picture `current` again when it was drawn here, else a new drawing. */
+  /**
+   * Draw with the drawing tools: the picture `current` again when it was drawn here, else a new
+   * drawing. A picture drawn again keeps its own style (a ChemDraw drawing pasted at 70% has
+   * smaller labels than the project's style): drawn in the project's, its labels would grow
+   * against its bonds, in the drawing window and in the picture saved after.
+   */
   draw(current: string, title: string): Promise<string | null> {
     const again = current ? current.replace(/\.[^./]+$/, '.cdxml') : '';
     return (again && again !== current ? this.host.project.readSectionFile(this.host.section, again) : Promise.resolve(null)).then((bytes) => new Promise((done) => {
-      const contents = bytes ? this.host.contentsOfCdxml(new TextDecoder().decode(bytes)) : null;
-      if (current && !contents) this.host.flash('This picture wasn’t drawn here, so you start a new drawing; it replaces the picture when you finish.');
-      this.host.editStructure(contents, title, (got) => {
+      const read = bytes ? this.host.contentsOfCdxml(new TextDecoder().decode(bytes)) : null;
+      if (current && !read) this.host.flash('This picture wasn’t drawn here, so you start a new drawing; it replaces the picture when you finish.');
+      this.host.editStructure(read?.contents ?? null, title, (got) => {
         if (!got || (!got.atoms.length && !got.arrows.length && !got.captions.length && !got.shapes.length)) { done(null); return; }
-        void this.fromDrawing(got).then(done);
-      });
+        void this.fromDrawing(got, undefined, read?.style).then(done);
+      }, read?.style);
     }));
   }
 

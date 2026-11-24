@@ -128,7 +128,7 @@ const common = { piece: 0, ole: { id: 0, prog: '' }, id: 0, grp: 0, grpPath: ids
 
 const atom = {
   ...common, x: 0, y: 0, z: (v: unknown) => num(v) && (v as number) >= 0 && (v as number) < 200, label: orNull(str), charge: 0, isotope: 0,
-  just: oneOf('auto', 'left', 'right'), fileLabel: true, color: '', s: 0, face: 0, font: '', marginWidth: 0, xyz: [0], depth: 0, group: '',
+  just: oneOf('auto', 'left', 'right'), fileLabel: true, hByRule: true, color: '', s: 0, face: 0, font: '', marginWidth: 0, xyz: [0], depth: 0, group: '',
   cdxInner: { label: '', type: '', nick: '', xml: '', x: 0, y: 0 }, alt: '', showCarbon: true, asTyped: true, bare: true, hideCharge: true,
   supDigits: true, labelMarks: '', centred: true, stacked: oneOf('up', 'down'), hDot: oneOf('dot', 'dash'), stackedLoose: true, fixedDir: true,
   showStereo: true, stereoLabel, ignoreWarnings: true, highlight: '', hl: highlight, radical: oneOf('singlet', 'doublet', 'triplet'), attach: '',
@@ -194,6 +194,8 @@ function inner(o: Obj): boolean {
   if (obj(o.stereoLabel) && !needs(o.stereoLabel, ['text', 'dx', 'dy', 'size'])) return false;
   if (obj(o.numberLabel) && !needs(o.numberLabel, ['dx', 'dy', 'size'])) return false;
   if (obj(o.table) && !needs(o.table, ['cols', 'rows', 'head', 'lines'])) return false;
+  // (each cell its runs: a cell without them can't be drawn or saved)
+  if (obj(o.table) && Array.isArray(o.table.rows) && !o.table.rows.every((row) => !Array.isArray(row) || row.every((c) => !obj(c) || Array.isArray(c.runs)))) return false;
   if (obj(o.step) && !needs(o.step, ['reactants', 'products', 'above', 'below'])) return false;
   if (obj(o.attach) && !needs(o.attach, ['atoms'])) return false;
   return true;

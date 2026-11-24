@@ -75,8 +75,10 @@ const INDEX_PAGE = { name: 'All-Topics', label: 'All topics, A to Z' };
 
 /** The text a heading shows, without Markdown marks, links or HTML tags. */
 export function headingText(md) {
-  return md
-    .replace(/<[^>]+>/g, '')
+  // (tags are taken out until none are left, so a tag split by another, <sc<b>ript>, goes too)
+  let s = md;
+  for (let prev = ''; prev !== s;) { prev = s; s = s.replace(/<[^>]+>/g, ''); }
+  return s
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/(\*\*|__)(.+?)\1/g, '$2')

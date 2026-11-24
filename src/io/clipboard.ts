@@ -36,7 +36,9 @@ import { emfToSvg } from '../render/emf-read';
 import type { Item } from '../render/vector';
 import { itemsToEmf, withDrawing, drawingInEmf, type EmfBox } from '../render/emf';
 import { imageSize, fromDataUrl } from '../render/images';
-import { cxSmiles, isReactionSmiles } from '../chem/reaction-io';
+import { cxSmiles, isReactionSmiles, reactionSmiles } from '../chem/reaction-io';
+import { plainMeasure, reactionSteps, schemeItems } from '../chem/reaction';
+import { stepMembers } from '../chem/species';
 import { toMolfile } from '../chem/molfile';
 import { writeMolFile } from './chem-formats';
 
@@ -436,10 +438,42 @@ export function setSmilesMaker(f: ((molblock: string) => Promise<string | null>)
 /** The SMILES put on the clipboard with the last drawing copied, to know it again when it is pasted back. */
 let lastText: string | null = null;
 
-/** The structures' SMILES in a drawing, or null (no structures, generic labels, no engine yet). */
+/**
+ * A copied reaction scheme's reaction SMILES (reactants>agents>products, as Edit ▸ Copy As ▸
+ * Reaction SMILES writes it; Daylight's reaction SMILES): one line for each step, or null when the
+ * copy has no step or a species can't be written (then the plain structures' SMILES go instead).
+ * Reagents written over or under the arrow (DMSO, Me₂SO) are read as the compounds they name;
+ * other conditions text is left out.
+ */
+export async function reactionSmilesOf(part: Doc): Promise<string | null> {
+  if (!smilesMaker) return null;
+  const m = plainMeasure(part);
+  const items = schemeItems(part, m);
+  const steps = reactionSteps(part, items);
+  if (!steps.length) return null;
+  const lines: string[] = [];
+  for (const step of steps) {
+    const parts: Record<'reactants' | 'agents' | 'products', string[]> = { reactants: [], agents: [], products: [] };
+    for (const w of stepMembers(part, step.roles, items, m)) {
+      if (w.role === 'Conditions') continue;
+      const ex = toMolfile(part, new Set(w.atoms), '', { species: w.species });
+      if (ex.generic.length) return null;
+      const sm = (await smilesMaker!(ex.molblock).catch(() => null))?.trim();
+      if (!sm) return null;
+      parts[w.role === 'Starting material' ? 'reactants' : w.role === 'Reagent' ? 'agents' : 'products'].push(sm);
+    }
+    if (!parts.reactants.length && !parts.products.length) return null;
+    lines.push(reactionSmiles(parts));
+  }
+  return lines.join('\n');
+}
+
+/** The structures' SMILES in a drawing, or null (no structures, generic labels, no engine yet); a reaction scheme's reaction SMILES. */
 async function structureSmiles(part: Doc): Promise<string | null> {
   if (!smilesMaker || !part.atoms.size) return null;
   try {
+    const rxn = await reactionSmilesOf(part).catch(() => null);
+    if (rxn) return rxn;
     const ex = toMolfile(part, part.atoms.keys(), '');
     return ex.generic.length ? null : (await smilesMaker(ex.molblock))?.trim() || null;
   } catch {
@@ -851,6 +885,21 @@ export async function readNativeClipboard(): Promise<Pasted> {
     return { kind: 'picture', mime: 'image/bmp', bytes: dibToBmp(data) };
   }
   return text.trim() ? fromText(text, html ? fromCfHtml(html[1]) : null) : { kind: 'nothing' };
+}
+
+/**
+ * Whether a paste event's text is only a drawing's structure as SMILES, put on the clipboard
+ * beside the drawing itself: the SMILES of the last drawing copied here, or a one-word SMILES
+ * (or molfile) with a picture and no formatted text, as ChemDraw copies (a text box then takes
+ * the drawing, not the text).
+ */
+export function pasteHoldsDrawing(e: ClipboardEvent): boolean {
+  const text = e.clipboardData?.getData('text/plain') ?? '';
+  if (!text.trim()) return false;
+  if (ownSmiles(text)) return true;
+  const html = e.clipboardData?.getData('text/html') ?? '';
+  const picture = [...(e.clipboardData?.files ?? [])].some((f) => f.type.startsWith('image/')) || [...(e.clipboardData?.types ?? [])].includes('Files');
+  return !html.trim() && picture && looksLikeChemistry(text);
 }
 
 /**

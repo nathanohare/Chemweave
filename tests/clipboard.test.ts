@@ -347,8 +347,10 @@ describe('the structures as text on the clipboard (G1-20)', () => {
       const text = written.at(-1)?.['text/plain'] as Promise<Blob> | undefined;
       expect(text).toBeDefined();
       const blob = await text!;
-      expect(await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsText(blob); })).toBe('COc1ccccc1.CC[O-]');
-      const paste = { clipboardData: { getData: (t: string) => (t === 'text/plain' ? 'COc1ccccc1.CC[O-]' : ''), files: [] } } as unknown as ClipboardEvent;
+      // (the sample is a reaction scheme, so its text is a reaction SMILES: F8a, F1 Needs Nate 8)
+      const copied = await new Promise<string>((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result)); fr.readAsText(blob); });
+      expect(copied).toBe('COc1ccccc1.CC[O-]>>COc1ccccc1.CC[O-]');
+      const paste = { clipboardData: { getData: (t: string) => (t === 'text/plain' ? copied : ''), files: [] } } as unknown as ClipboardEvent;
       const got = await readPasteEvent(paste);
       expect(got.kind).toBe('drawing');
       expect((got as { doc: Doc }).doc.captions.size).toBe(doc.captions.size);

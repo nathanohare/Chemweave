@@ -11,10 +11,10 @@ import { stereoAnchor, stereoSense } from './stereo';
 import { aromaticAsSingle, kekuleDoubles } from './aromatic';
 import { flatStandIn } from './ring-views';
 import { readSpecies } from './species';
-import { flagsByAtom, type ChiralFlag } from './chiral-flag';
+import { chiralPrefs, flagsByAtom, type ChiralFlag } from './chiral-flag';
 import { cleanUp } from './cleanup';
 import { molProgramLine } from './molfile-header';
-import { labelHydrogens } from './hydrogen-count';
+import { labelHydrogens, ruleHydrogens } from './hydrogen-count';
 
 export { molProgramLine };
 
@@ -268,6 +268,29 @@ function asGroup(g: MiniGraph, label: string, z: number | undefined): boolean {
   return g.atoms.length > 1 || (g.atoms.length === 1 && (z === undefined || labelHydrogens(label, z) === null || g.atoms[0].z !== z));
 }
 
+/**
+ * The valence to write for a bonded atom labelled with its element and the hydrogens it shows (N,
+ * NH, CH on a structure) when the valence rule would give it another number of hydrogens: its
+ * bonds and those hydrogens. Undefined for any other label, for a count the rule already gives
+ * or one above it, and beside a 1½ or partial bond, where the count depends on the ring.
+ */
+export function shownValence(doc: Doc, id: number, label: string, z: number, charge: number, dative: Set<number> = new Set()): number | undefined {
+  const shown = labelHydrogens(label, z);
+  if (shown === null || !hasImplicitH(z) || z === 1) return undefined;
+  // (a ChemDraw file's label with no hydrogen count of its own: its hydrogens are the rule's, as ChemDraw reads it)
+  const self = doc.atoms.get(id);
+  if (self?.fileLabel && self.hByRule) return undefined;
+  const orders = (doc.adj.get(id) ?? []).map((bid) => doc.bonds.get(bid)!).filter((b) => !outsideValence(b) && !dative.has(b.id)).map((b) => b.order);
+  if (!orders.length || orders.some((o) => o !== 1 && o !== 2 && o !== 3)) return undefined;
+  const own = orders.reduce((t, o) => t + o, 0);
+  const a = doc.atoms.get(id);
+  // (only fewer hydrogens than the rule: more, as on a neutral NH3 bonded to carbon, is a label
+  // that can't be right, which the chemistry engine would turn down whole; it is left to the rule,
+  // and Check Structure says so: review F8a-R05)
+  if (shown >= ruleHydrogens(z, own, charge, a?.radical)) return undefined;
+  return own + shown;
+}
+
 /** Group 13 elements (B, Al, Ga, In, Tl), which the chemistry engine gives no fourth bond as a dative one. */
 const ATE = new Set([5, 13, 31, 49, 81]);
 
@@ -513,13 +536,18 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
         if (k > 0) qAt = k;
       }
     }
+    // A bonded label that is its element with the hydrogens it shows (N, NH on a methyl) means that
+    // atom with those hydrogens, whatever the valence rule gives (Nate, 2026-11-23): its valence is
+    // written (V2000 vvv, V3000 VAL=; BIOVIA CTfile Formats), so the engine and every reader take
+    // the count as shown ([N] in SMILES). Check Structure warns when that valence is unusual.
+    const val = g.atoms.length === 1 ? shownValence(doc, id, a.label!, a.z, a.charge + (charged.get(id) ?? 0), dative) : undefined;
     g.atoms.forEach((ga, k) => {
       // (for the engine, spread expanded atoms a little so no two share a position)
       const ang = (k * 2.4);
       const r = k === 0 ? 0 : 0.35 + 0.05 * k;
       const sym = ga.dummy ? generic : SYMBOLS[ga.z] || generic;
       if (sym === generic) genericAt.push([atoms.length, `${a.label}/${k}`]);
-      atoms.push({ sym, x: laid ? laid[k].x : x + r * Math.cos(ang), y: laid ? laid[k].y : y + r * Math.sin(ang), charge: ga.charge + (k === qAt ? q : 0), iso: ga.iso ?? 0, ...(k === 0 && opts.maps && a.mapNo ? { map: a.mapNo } : {}) });
+      atoms.push({ sym, x: laid ? laid[k].x : x + r * Math.cos(ang), y: laid ? laid[k].y : y + r * Math.sin(ang), charge: ga.charge + (k === qAt ? q : 0), iso: ga.iso ?? 0, ...(k === 0 && opts.maps && a.mapNo ? { map: a.mapNo } : {}), ...(k === 0 && val !== undefined ? { val } : {}) });
       map.push(k === 0 ? id : -1);
       if (g!.atoms.length > 1) inLabel.push(base + k);
     });
@@ -567,7 +595,17 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
   // structure (Chemistry > Chiral Flag; one read from a file comes back as that flag) or a centre
   // marked abs. Wedges alone, a Rac flag or a Rel flag give 0. In V3000 a Rac or Rel structure's
   // wedged centres also go in an and (Rac) or or (Rel) group of their own, which says which it is.
+  // Wedges alone give 1 instead when Settings ▸ Preferences says they mean one enantiomer
+  // (chiralPrefs): such a structure is written as if it had an Abs flag.
   const flagOf = files ? flagsByAtom(doc, ids, opts.flagOwners) : new Map<number, { flag: ChiralFlag; frag: number }>();
+  if (files && chiralPrefs.unflagged === 'absolute') {
+    for (const b of bonds) {
+      if ((b.stereo !== 1 && b.stereo !== 6) || map[b.a] < 0 || atoms[b.a].enh || flagOf.has(map[b.a])) continue;
+      const frag = doc.fragmentOf(map[b.a]);
+      const first = Math.min(...frag);
+      for (const k of frag) flagOf.set(k, { flag: 'Absolute', frag: first });
+    }
+  }
   const flags = new Set([...flagOf.values()].map((f) => f.flag));
   const hasAbs = files && (flags.has('Absolute') || atoms.some((t) => t.enh?.type === 'abs'));
   const racRel = flags.has('Racemic') || flags.has('Relative');
@@ -580,15 +618,30 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
   // (Abs structures beside wedged ones with no flag in one file: V2000's one flag would make them
   // all absolute. V3000 says it without touching the others: the file's flag 0, and the Abs
   // structures' wedged centres in the absolute collection (STEABS), which the reader turns back
-  // into their Abs flags; the others are written as they are drawn; review F1c-R03, F1d-R04)
+  // into their Abs flags; review F1c-R03, F1d-R04. Each unflagged structure's wedged centres go in
+  // an and group of their own (STERACn), so every reader agrees they are racemic rather than
+  // reading the file's flag 0 its own way: BIOVIA CTfile Formats 2026, Stereochemistry, gives
+  // wedges without the chiral flag as "a mixture of the stereoisomer as drawn and its enantiomer",
+  // which is what an and group says, and Ketcher, for one, reads such centres otherwise (Ketcher
+  // issue #56). Nate's decision, 2026-11-23. This program's reader turns the group back into an
+  // unflagged structure.)
   const unflagged = (k: number) => map[k] >= 0 && !flagOf.has(map[k]) && !atoms[k].enh;
   const mixedAbs = files && hasAbs && bonds.some((b) => (b.stereo === 1 || b.stereo === 6) && unflagged(b.a)) ? 'structures with and without an Abs chiral flag' : null;
   const because = opts.v3000 ? null : (files ? needsV3000(atoms, bonds) ?? flagGroups ?? mixedAbs : null) ?? big;
   const v3 = !!(opts.v3000 || because);
   if (files && v3 && mixedAbs) {
+    let nextAnd = 0;
+    for (const t of atoms) if (t.enh?.type === 'and') nextAnd = Math.max(nextAnd, t.enh.group ?? 1);
+    const andOf = new Map<number, EnhancedStereo>();
     for (const b of bonds) {
-      if ((b.stereo !== 1 && b.stereo !== 6) || map[b.a] < 0 || atoms[b.a].enh || flagOf.get(map[b.a])?.flag !== 'Absolute') continue;
-      atoms[b.a] = { ...atoms[b.a], enh: { type: 'abs' } };
+      if ((b.stereo !== 1 && b.stereo !== 6) || map[b.a] < 0 || atoms[b.a].enh) continue;
+      const f = flagOf.get(map[b.a]);
+      if (f?.flag === 'Absolute') atoms[b.a] = { ...atoms[b.a], enh: { type: 'abs' } };
+      else if (!f) {
+        const frag = Math.min(...doc.fragmentOf(map[b.a]));
+        if (!andOf.has(frag)) andOf.set(frag, { type: 'and', group: ++nextAnd });
+        atoms[b.a] = { ...atoms[b.a], enh: andOf.get(frag)! };
+      }
     }
   }
   if (files && v3 && racRel) {

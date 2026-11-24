@@ -1,7 +1,7 @@
 // Toolboxes (View > Toolboxes): where each one goes when dropped, and reading their settings.
 
 import { describe, expect, it } from 'vitest';
-import { defaultToolboxes, dropTarget, parseToolboxes, boxLocked, withAllLocked, withBoxLocked, sideFolded, withSideFolded, freeSpot, boxItems, withItems, withItemsReset, withNewBox, withTitle, withBoxMoved, withoutBox, withBoxesRestored, boxIds, boxTitle, moved, inserted, withFlyout, slotAt, withLayoutReset } from '../src/ui/toolboxes';
+import { defaultToolboxes, dropTarget, parseToolboxes, boxLocked, withAllLocked, withBoxLocked, sideFolded, withSideFolded, freeSpot, boxItems, withItems, withItemsReset, withNewBox, withTitle, withBoxMoved, withoutBox, withBoxesRestored, boxIds, boxTitle, moved, inserted, withFlyout, slotAt, withLayoutReset, NOT_IN_TOOLBOX_MENU } from '../src/ui/toolboxes';
 
 describe('toolboxes', () => {
   const work = { left: 100, top: 100, right: 900, bottom: 700 };
@@ -187,5 +187,15 @@ describe('Reset Toolboxes', () => {
     expect(st.sideByMode).toBeUndefined();
     expect(st.custom).toEqual(['cmd:clean-up']);
     expect(st.own).toEqual([{ id: 'own-a', title: 'Mine' }]);
+  });
+});
+
+describe('View ▸ Toolboxes', () => {
+  it('leaves out the contextual Smart Scheme Species Table and the Side Panel', () => {
+    // The species table shows by itself when a Smart Scheme is selected (Nate, F8b); the Side Panel has its own command
+    expect([...NOT_IN_TOOLBOX_MENU].sort()).toEqual(['details', 'smart']);
+    const listed = boxIds(defaultToolboxes()).filter((id) => !NOT_IN_TOOLBOX_MENU.includes(id));
+    expect(listed).not.toContain('smart');
+    expect(listed).toContain('schemes');
   });
 });

@@ -16,13 +16,13 @@ export const SI_FONT_REASON = 'SI text takes its font, size and color from the j
 /** The SI Font group controls SI text cannot hold. */
 export const SI_FONT_OFF: readonly string[] = ['font', 'size', 'grow', 'shrink', 'strike', 'color'];
 
-export type FontControl = 'font' | 'size' | 'grow' | 'shrink' | 'clear' | 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'formula' | 'color';
+export type FontControl = 'font' | 'size' | 'grow' | 'shrink' | 'clear' | 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'formula' | 'charges' | 'color';
 export type FontMode = 'document' | 'slides' | 'sheet' | 'si';
 
 /** The controls of the Font group, row by row, in order. */
 export const FONT_ROWS: readonly (readonly FontControl[])[] = [
   ['font', 'size', 'grow', 'shrink', 'clear'],
-  ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'formula', 'color'],
+  ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'formula', 'charges', 'color'],
 ];
 
 /**
@@ -40,8 +40,12 @@ export const FONT_LOOK: Record<Exclude<FontControl, 'font' | 'size'>, { html: st
   sub: { html: '<span aria-hidden="true">x<sub>2</sub></span>', title: 'Subscript' },
   sup: { html: '<span aria-hidden="true">x<sup>2</sup></span>', title: 'Superscript' },
   formula: { html: '<span aria-hidden="true">C₉H₈</span>', title: 'Formula style: numbers lowered (CH₂Cl₂), charges raised' },
+  charges: { html: '<span aria-hidden="true">X<sup>2+</sup></span>', title: 'Raise Charge Digits: in the selected ions, the charge\'s digits go up with the sign (Fe₃⁺ → Fe³⁺, SO₄₂⁻ → SO₄²⁻; NH₄⁺ stays)' },
   color: { html: '<span>A</span>', title: 'Text Color' },
 };
+
+/** Raise Charge Digits, beside Formula style in every mode: its picture and tip. */
+export const CHARGES_LOOK = FONT_LOOK.charges;
 
 /** The sizes offered in every mode's size box (any size can be typed). */
 export const FONT_SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 72, 96];
@@ -82,6 +86,7 @@ const MODES: Record<FontMode, ModeFont> = {
       sub: { attr: 'data-doc', value: 'doc-sub', tip: 'Subscript (Ctrl+=)' },
       sup: { attr: 'data-doc', value: 'doc-sup', tip: 'Superscript (Ctrl+Shift+=)' },
       formula: { attr: 'data-doc', value: 'doc-formula' },
+      charges: { attr: 'data-doc', value: 'doc-raise-charges' },
       color: { attr: 'id', value: 'doc-colour' },
     },
     extra: [
@@ -107,6 +112,7 @@ const MODES: Record<FontMode, ModeFont> = {
       sub: { attr: 'data-sl-fmt', value: 'sub', tip: 'Subscript (Ctrl+=)' },
       sup: { attr: 'data-sl-fmt', value: 'sup', tip: 'Superscript (Ctrl+Shift+=)' },
       formula: { attr: 'data-sl-fmt', value: 'formula' },
+      charges: { attr: 'data-sl-fmt', value: 'charges' },
       color: { attr: 'data-tx', value: 'colour' },
     },
     extra: [
@@ -129,6 +135,7 @@ const MODES: Record<FontMode, ModeFont> = {
       sub: { attr: 'data-sh', value: 'cell-sub', tip: 'Subscript: the text of the selected cells lowered' },
       sup: { attr: 'data-sh', value: 'cell-sup', tip: 'Superscript: the text of the selected cells raised' },
       formula: { attr: 'data-sh', value: 'format-chem' },
+      charges: { attr: 'data-sh', value: 'cell-raise-charges', tip: 'Raise Charge Digits: in the selected cells\' ions (or the selected text while typing), the charge\'s digits go up with the sign (Fe₃⁺ → Fe³⁺, SO₄₂⁻ → SO₄²⁻; NH₄⁺ stays)' },
       color: { attr: 'data-sh', value: 'text-colour' },
     },
     extra: [
@@ -151,6 +158,7 @@ const MODES: Record<FontMode, ModeFont> = {
       sub: { attr: 'data-si-fmt', value: 'subscript', tip: 'Subscript (Ctrl+=)' },
       sup: { attr: 'data-si-fmt', value: 'superscript', tip: 'Superscript (Ctrl+Shift+=)' },
       formula: { attr: 'data-si-fmt', value: 'formula', tip: 'Formula style: numbers in the selected text lowered (CH₂Cl₂), charges raised' },
+      charges: { attr: 'data-si-fmt', value: 'charges' },
       color: { attr: 'data-si-fmt', value: 'color' },
     },
     extra: [
@@ -190,7 +198,7 @@ function control(mode: FontMode, c: FontControl): string {
       ? `<button class="rb-sq rb-colour" ${at(b)} title="${tip}" aria-label="Text Color">${look.html}<span class="sw"></span></button>`
       : `<label class="rb-sq rb-colour" title="${tip}">${look.html}<input ${at(b)} type="color" aria-label="Text Color" /></label>`;
   }
-  const pressable = c !== 'grow' && c !== 'shrink' && c !== 'clear';
+  const pressable = c !== 'grow' && c !== 'shrink' && c !== 'clear' && c !== 'charges';
   return `<button class="rb-sq" ${at(b)}${pressable ? ' aria-pressed="false"' : ''} title="${tip}" aria-label="${esc(look.title.replace(/ \(.*$/, '').replace(/:.*$/, ''))}">${look.html}</button>`;
 }
 

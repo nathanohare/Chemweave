@@ -26,6 +26,8 @@ export interface SiRichHost {
    * box's text with it, for the host to save. Without this, such a paste does nothing.
    */
   pasteObject?(e: ClipboardEvent, place: (p: Paragraph) => string): void;
+  /** Whether a paste with text is a drawing all the same (the text only its SMILES); it then goes to pasteObject too. */
+  holdsObject?(e: ClipboardEvent): boolean;
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -193,7 +195,7 @@ export class SiRichBox {
       const plain = e.clipboardData?.getData('text/plain') ?? '';
       const html = e.clipboardData?.getData('text/html') ?? '';
       // a drawing or picture: a figure where the caret is (when the box's text can hold one)
-      if (multiline && this.host.pasteObject && ((!plain.trim() && !html.trim()) || /^\s*(<\?xml[^>]*>\s*)?(<!DOCTYPE[^>]*>\s*)?<CDXML[\s>]/i.test(plain))) {
+      if (multiline && this.host.pasteObject && ((!plain.trim() && !html.trim()) || /^\s*(<\?xml[^>]*>\s*)?(<!DOCTYPE[^>]*>\s*)?<CDXML[\s>]/i.test(plain) || this.host.holdsObject?.(e) === true)) {
         const sel = getSelection();
         const at = sel && sel.rangeCount && el.contains(sel.getRangeAt(0).startContainer) ? sel.getRangeAt(0).cloneRange() : null;
         this.host.pasteObject(e, (p) => this.place(at, p));
