@@ -35,6 +35,7 @@ import { labelGraph, type MiniGraph } from '../chem/labels';
 import { plainText } from '../richtext';
 import { arialWidth } from '../text-metrics';
 import { addChiralFlag, chiralPrefs, flagOwners, type ChiralFlag } from '../chem/chiral-flag';
+import { minOf, maxOf } from './min-max';
 
 // ---------------------------------------------------------------- the plain scene
 
@@ -969,10 +970,10 @@ function arrowBetween(scene: FScene, unit: number): boolean {
   const r = boxes('reactant'), p = boxes('product'), a = boxes('agent');
   if (!r.length || !p.length) return false;
   const gap = unit * 1.2;
-  const tail = Math.max(...r.map((b) => b.x2)) + gap, head = Math.min(...p.map((b) => b.x1)) - gap;
+  const tail = maxOf(r.map((b) => b.x2)) + gap, head = minOf(p.map((b) => b.x1)) - gap;
   if (head - tail < unit || a.some((b) => b.x1 < tail || b.x2 > head)) return false;
   const all = [...r, ...p];
-  const y = (Math.min(...all.map((b) => b.y1)) + Math.max(...all.map((b) => b.y2))) / 2;
+  const y = (minOf(all.map((b) => b.y1)) + maxOf(all.map((b) => b.y2))) / 2;
   // (in a row: the arrow's line passes by each of them, or its step would lose them; else arrowAcross)
   if (all.some((b) => y < b.y1 - unit || y > b.y2 + unit)) return false;
   scene.arrows.push({ x1: tail, y1: y, x2: head, y2: y, kind: 'synthesis' });
@@ -1010,7 +1011,7 @@ function usablePlaces(scene: FScene): boolean {
 function arrowAcross(scene: FScene, unit: number): boolean {
   const union = (role: FRole) => {
     const bs = scene.mols.filter((m) => m.role === role && m.atoms.length).map(molBox);
-    return bs.length ? { x1: Math.min(...bs.map((b) => b.x1)), y1: Math.min(...bs.map((b) => b.y1)), x2: Math.max(...bs.map((b) => b.x2)), y2: Math.max(...bs.map((b) => b.y2)) } : null;
+    return bs.length ? { x1: minOf(bs.map((b) => b.x1)), y1: minOf(bs.map((b) => b.y1)), x2: maxOf(bs.map((b) => b.x2)), y2: maxOf(bs.map((b) => b.y2)) } : null;
   };
   const r = union('reactant'), p = union('product');
   if (!r || !p) return false;
@@ -1074,7 +1075,7 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
       // each structure it applies to (review F1-R02, F1c-R03)
       addAbsFlags(doc, m, ids);
       stats.atoms += ids.length;
-      firstAtom.push(ids.length ? Math.min(...ids) : -1);
+      firstAtom.push(ids.length ? minOf(ids) : -1);
     }
     const arrowIds: number[] = [];
     for (const r of scene.arrows) {
@@ -1090,7 +1091,7 @@ export function sceneToDoc(scene: FScene, style: DocStyle, page: Doc['page'] = n
     const size = style.captionSize || 10;
     const caption = (cx: number, cy: number, text: string) => {
       const lines = text.split('\n');
-      const w = Math.max(...lines.map((l) => arialWidth(l, size)));
+      const w = maxOf(lines.map((l) => arialWidth(l, size)));
       const top = cy - (lines.length * size * 1.15) / 2;
       return doc.addCaption({ x: cx - w / 2, y: top + size * 0.85, runs: [{ text }], justify: 'left' });
     };
@@ -1527,7 +1528,7 @@ export function writeMrvFile(doc: Doc): WrittenChem {
   for (const p of scene.pluses) out.push(`  <MReactionSign id="o${oid++}" toptions="NOROT" fontScale="14.0" halign="CENTER" valign="CENTER" autoSize="true"><Field name="text">+</Field><MPoint x="${fx(p.x - 0.3)}" y="${fx(p.y + 0.3)}"/><MPoint x="${fx(p.x + 0.3)}" y="${fx(p.y + 0.3)}"/><MPoint x="${fx(p.x + 0.3)}" y="${fx(p.y - 0.3)}"/><MPoint x="${fx(p.x - 0.3)}" y="${fx(p.y - 0.3)}"/></MReactionSign>`);
   for (const t of scene.texts) {
     const lines = t.text.split('\n');
-    const w = Math.max(...lines.map((l) => l.length)) * 0.3 + 0.2, h = lines.length * 0.5 + 0.1;
+    const w = maxOf(lines.map((l) => l.length)) * 0.3 + 0.2, h = lines.length * 0.5 + 0.1;
     out.push(`  <MTextBox id="o${oid++}" fontScale="10.0" halign="CENTER" valign="TOP" autoSize="true"><Field name="text"><![CDATA[${t.text.replace(/]]>/g, ']] >')}]]></Field><MPoint x="${fx(t.x - w / 2)}" y="${fx(t.y + h / 2)}"/><MPoint x="${fx(t.x + w / 2)}" y="${fx(t.y + h / 2)}"/><MPoint x="${fx(t.x + w / 2)}" y="${fx(t.y - h / 2)}"/><MPoint x="${fx(t.x - w / 2)}" y="${fx(t.y - h / 2)}"/></MTextBox>`);
   }
   out.push('</MDocument>', '</cml>');
@@ -1614,7 +1615,7 @@ export function writeKetFile(doc: Doc): WrittenChem {
   for (const t of scene.texts) {
     const content = JSON.stringify({ blocks: t.text.split('\n').map((line, i) => ({ key: `b${i}`, text: line, type: 'unstyled', depth: 0, inlineStyleRanges: [], entityRanges: [], data: {} })), entityMap: {} });
     const lines = t.text.split('\n');
-    const w = Math.max(...lines.map((l) => l.length)) * 0.25, h = lines.length * 0.4;
+    const w = maxOf(lines.map((l) => l.length)) * 0.25, h = lines.length * 0.4;
     const x1 = +fx(t.x - w / 2), y1 = +fx(t.y + h / 2), x2 = +fx(t.x + w / 2), y2 = +fx(t.y - h / 2);
     nodes.push({ type: 'text', data: { content, position: { x: x1, y: y1, z: 0 }, pos: [{ x: x1, y: y1, z: 0 }, { x: x1, y: y2, z: 0 }, { x: x2, y: y2, z: 0 }, { x: x2, y: y1, z: 0 }] } });
   }

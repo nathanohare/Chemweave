@@ -69,6 +69,7 @@ import { slidePrint, type CanvasKeep } from '../deck/canvas-export';
 import { textPrint, spPrPrint, slideTablePrint } from './native-print';
 import { applyStyle, sliceRuns } from '../richtext';
 import { cleanDeckRefs, cleanSlideRefs, type DeckRefs, type SlideRefs } from '../deck/slide-refs';
+import { minOf } from './min-max';
 
 /** PowerPoint's shapes that are shapes in the library, by PowerPoint's name. */
 const GEO_BY_PRST = new Map(GEOS.filter((g) => g.prst).map((g) => [g.prst!, g.id]));
@@ -1803,7 +1804,7 @@ class Reader {
       }
       return best;
     };
-    const rank = (it: StackItem) => Math.min(...it.ids.map(seqOf));
+    const rank = (it: StackItem) => minOf(it.ids.map(seqOf));
     const boxes = new Map<StackItem, Rect | null>();
     const box = (it: StackItem) => {
       if (!boxes.has(it)) boxes.set(it, roughBox(doc, it));

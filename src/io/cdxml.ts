@@ -42,6 +42,7 @@ import { freshBox, type ChartBox } from '../sheet/chart-box';
 import { relinkNewman } from '../design/newman';
 import { crystalSrc, type PlateData } from '../design/plates';
 import { MORE_TAG, atomMoreIn, bondMoreIn, captionMoreIn, labelSeen, captionAt, textSeen, fragMoreIn, zPrint, arrowMoreIn, shapeMoreIn, type RefKind, type RefIn } from './cdxml-more';
+import { minOf, maxOf } from './min-max';
 
 export interface ReadStats {
   atoms: number;
@@ -912,7 +913,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       const path = [P(0)];
       for (let i = 0; i < m; i++) path.push(knots[3 * i + 2], knots[3 * ((i + 1) % m)], P(i + 1));
       const xs = path.map((p) => p.x), ys = path.map((p) => p.y);
-      const box = { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+      const box = { x1: minOf(xs), y1: minOf(ys), x2: maxOf(xs), y2: maxOf(ys) };
       if (box.x2 - box.x1 < 1e-3 && box.y2 - box.y1 < 1e-3) { skip('closed curve'); return; }
       const lw = num(c, 'LineWidth', st.lineWidth);
       const filled = c.getAttribute('FillType') === 'Solid' || !!(type & 128);
@@ -929,7 +930,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
     // an open curve with no heads (and not a curved arrow of ours with its heads off): a Freeform curve
     if (!own && !(type & (8 | 16 | 32 | 64))) {
       const xs = path.map((p) => p.x), ys = path.map((p) => p.y);
-      const box = { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+      const box = { x1: minOf(xs), y1: minOf(ys), x2: maxOf(xs), y2: maxOf(ys) };
       const lw = num(c, 'LineWidth', st.lineWidth);
       const sh = doc.addShape({ id: idFor(c), kind: 'geo', geo: freeformId(path, box, false), ...box, color: color(c), z: num(c, 'Z', 0), filled: false, ...(type & 2 ? { dashed: true } : {}), ...(type & 4 ? { bold: true } : {}), ...(lw !== st.lineWidth ? { lineWidth: lw } : {}) });
       from('s', sh.id, c);
@@ -1756,7 +1757,7 @@ export function applyLineEnds(runs: TextRun[], ends: number[]): void {
   const breaks: number[] = [];
   const size = (ch: string) => { const cp = ch.codePointAt(0)!; return cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4; };
   // ChemDraw counts LineStarts in bytes of UTF-8; some older files (ChemDraw 21) count characters
-  const byteLen = chars.reduce((n, c) => n + size(c.ch), 0), last = Math.max(...ends);
+  const byteLen = chars.reduce((n, c) => n + size(c.ch), 0), last = maxOf(ends);
   const inChars = last === chars.length && last !== byteLen;
   if (!inChars && last > byteLen) return;
   const hasNewlines = chars.some((c) => c.ch === '\n');

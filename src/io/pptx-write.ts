@@ -66,6 +66,7 @@ import { shapeMathPicture, shapeMathScale } from '../deck/equation';
 import { canvasTag, type CanvasData } from '../deck/canvas';
 import { splitCanvas, slidePrintXml, type CanvasPart } from '../deck/canvas-export';
 import { fragment, textPrint, spPrPrint, slideTablePrint } from './native-print';
+import { minOf, maxOf } from './min-max';
 
 /** Tag names (PowerPoint keeps tags when it saves). */
 export const TAG = {
@@ -1479,7 +1480,7 @@ class Writer {
         tags: this.addTags(from, { [TAG.zoom]: JSON.stringify({ v: 1, zoom: z.p.zoom, link: z.p.link }) }), back: !!z.p.zoom?.back, section: z.section, k,
       });
     }
-    const all = { x1: Math.min(...items.map((x) => x.box.x1)), y1: Math.min(...items.map((x) => x.box.y1)), x2: Math.max(...items.map((x) => x.box.x2)), y2: Math.max(...items.map((x) => x.box.y2)) };
+    const all = { x1: minOf(items.map((x) => x.box.x1)), y1: minOf(items.map((x) => x.box.y1)), x2: maxOf(items.map((x) => x.box.x2)), y2: maxOf(items.map((x) => x.box.y2)) };
     const name = `Summary Zoom ${id - 1}`;
     const zmId = (k: number) => `{${(0x5b00 + id).toString(16).padStart(8, '0').toUpperCase()}-0000-4000-8000-${(2000000 + k).toString(16).padStart(12, '0').toUpperCase()}}`;
     const objs = items.map((x) =>
@@ -2031,7 +2032,7 @@ function decorXml(sh: DecorShape, id: number): string {
   const solid = (c: string) => `<a:solidFill><a:srgbClr val="${hex6(c)}"/></a:solidFill>`;
   if (sh.kind === 'tri' || sh.kind === 'poly') {
     const xs = sh.pts.map((q) => q[0]), ys = sh.pts.map((q) => q[1]);
-    const box = { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+    const box = { x1: minOf(xs), y1: minOf(ys), x2: maxOf(xs), y2: maxOf(ys) };
     const W = box.x2 - box.x1, H = box.y2 - box.y1;
     const pt = ([x, y]: [number, number]) => `<a:pt x="${emu(x - box.x1)}" y="${emu(y - box.y1)}"/>`;
     const path = `<a:moveTo>${pt(sh.pts[0])}</a:moveTo>${sh.pts.slice(1).map((q) => `<a:lnTo>${pt(q)}</a:lnTo>`).join('')}<a:close/>`;
