@@ -132,8 +132,6 @@ const P: Record<string, Prop> = {
   Radical: { tag: 0x0422, kind: 'enum8', values: { None: 0, Singlet: 1, Doublet: 2, Triplet: 3 } }, // Singlet seen in ChemDraw's files
   FreeSites: { tag: 0x0423, kind: 'u8' },
   ImplicitHydrogens: { tag: 0x0424, kind: 'implied' },
-  RingBondCount: { tag: 0x0425, kind: 'i8' },
-  UnsaturatedBonds: { tag: 0x0426, kind: 'i8' },
   RxnChange: { tag: 0x0427, kind: 'implied' },
   AbnormalValence: { tag: 0x0429, kind: 'implied' },
   NumHydrogens: { tag: 0x042b, kind: 'u16' },
@@ -324,8 +322,69 @@ const P: Record<string, Prop> = {
   ChemicalPropertyType: { tag: 0x0bb0, kind: 'u32', values: list('Unspecified', 'ChemicalName') },
   ChemicalPropertyDisplayID: { tag: 0x0bb1, kind: 'id' },
   ChemicalPropertyIsActive: { tag: 0x0bb2, kind: 'bool' },
+  // query and reaction settings of atoms and bonds, with their numbers, from the CDX specification
+  RingBondCount: { tag: 0x0425, kind: 'i8', values: { Unspecified: -1, NoRingBonds: 0, AsDrawn: 1, SimpleRing: 2, Fusion: 3, SpiroOrHigher: 4 } },
+  UnsaturatedBonds: { tag: 0x0426, kind: 'i8', values: list('Unspecified', 'MustBeAbsent', 'MustBePresent') },
+  RxnStereo: { tag: 0x0428, kind: 'i8', values: list('Unspecified', 'Inversion', 'Retention') },
+  Translation: { tag: 0x0438, kind: 'i8', values: list('Equal', 'Broad', 'Narrow', 'Any') },
+  IsotopicAbundance: { tag: 0x043f, kind: 'i8', values: list('Unspecified', 'Any', 'Natural', 'Enriched', 'Deficient', 'Nonnatural') },
+  Topology: { tag: 0x0606, kind: 'i8', values: list('Unspecified', 'Ring', 'Chain', 'RingOrChain') },
+  RxnParticipation: { tag: 0x0607, kind: 'i8', values: list('Unspecified', 'ReactionCenter', 'MakeOrBreak', 'ChangeType', 'MakeAndChange', 'NotReactionCenter', 'NoChange', 'Unmapped') },
+  // a node's or a fragment's formula (a fragment's has its own number; see writeAttributes)
+  Formula: { tag: 0x0404, kind: 'str' },
+  // spectra
+  XSpacing: { tag: 0x0a80, kind: 'f64' },
+  XLow: { tag: 0x0a81, kind: 'f64' },
+  XType: { tag: 0x0a82, kind: 'i16', values: list('Unknown', 'Wavenumbers', 'Microns', 'Hertz', 'MassUnits', 'PartsPerMillion', 'Other') },
+  YType: { tag: 0x0a83, kind: 'i16', values: list('Unknown', 'Absorbance', 'Transmittance', 'PercentTransmittance', 'Other', 'ArbitraryUnits') },
+  XAxisLabel: { tag: 0x0a84, kind: 'str' },
+  YAxisLabel: { tag: 0x0a85, kind: 'str' },
+  Class: { tag: 0x0a87, kind: 'i16', values: list('Unknown', 'Chromatogram', 'Infrared', 'UVVis', 'XRayDiffraction', 'MassSpectrum', 'NMR', 'Raman', 'Fluorescence', 'Atomic') },
+  YLow: { tag: 0x0a88, kind: 'f64' },
+  YScale: { tag: 0x0a89, kind: 'f64' },
+  // TLC plates and spots
+  OriginFraction: { tag: 0x0aa0, kind: 'f64' },
+  SolventFrontFraction: { tag: 0x0aa1, kind: 'f64' },
+  ShowOrigin: { tag: 0x0aa2, kind: 'bool' },
+  ShowSolventFront: { tag: 0x0aa3, kind: 'bool' },
+  ShowBorders: { tag: 0x0aa4, kind: 'bool' },
+  ShowSideTicks: { tag: 0x0aa5, kind: 'bool' },
+  Rf: { tag: 0x0ab0, kind: 'f64' },
+  Tail: { tag: 0x0ab1, kind: 'coord' },
+  ShowRf: { tag: 0x0ab2, kind: 'bool' },
+  // named alternative groups
+  TextFrame: { tag: 0x0b00, kind: 'rect' },
+  GroupFrame: { tag: 0x0b01, kind: 'rect' },
+  Valence: { tag: 0x0b02, kind: 'i16' },
+  // 3D query geometry and constraints
+  GeometricFeature: { tag: 0x0b80, kind: 'i8', values: list('Undefined', 'PointFromPointPointDistance', 'PointFromPointPointPercentage', 'PointFromPointNormalDistance', 'LineFromPoints', 'PlaneFromPoints', 'PlaneFromPointLine', 'CentroidFromPoints', 'NormalFromPointPlane') },
+  RelationValue: { tag: 0x0b81, kind: 'i8' },
+  ConstraintType: { tag: 0x0b83, kind: 'i8', values: list('Undefined', 'Distance', 'Angle', 'ExclusionSphere') },
+  ConstraintMin: { tag: 0x0b84, kind: 'f64' },
+  ConstraintMax: { tag: 0x0b85, kind: 'f64' },
+  IgnoreUnconnectedAtoms: { tag: 0x0b86, kind: 'implied' },
+  DihedralIsChiral: { tag: 0x0b87, kind: 'implied' },
+  PointIsDirected: { tag: 0x0b88, kind: 'implied' },
+  // object tags
+  Tracking: { tag: 0x0d03, kind: 'bool' },
+  Persistent: { tag: 0x0d04, kind: 'bool' },
+  // sequences and cross-references
+  SequenceIdentifier: { tag: 0x0e00, kind: 'str' },
+  CrossReferenceContainer: { tag: 0x0f00, kind: 'str' },
+  CrossReferenceDocument: { tag: 0x0f01, kind: 'str' },
+  CrossReferenceIdentifier: { tag: 0x0f02, kind: 'str' },
+  CrossReferenceSequence: { tag: 0x0f03, kind: 'str' },
+  // template grids, groups and page layouts
+  PaneHeight: { tag: 0x1000, kind: 'coord' },
+  NumRows: { tag: 0x1001, kind: 'i16' },
+  NumColumns: { tag: 0x1002, kind: 'i16' },
+  Integral: { tag: 0x1100, kind: 'bool' },
+  PageDefinition: { tag: 0x1ff1, kind: 'enum8', values: list('Undefined', 'Center', 'TL4', 'IDTerm', 'FlushLeft', 'FlushRight', 'Reaction1', 'Reaction2', 'MulticolumnTL4', 'MulticolumnNonTL4', 'UserDefined') },
 };
+/** A fragment's formula, under a number of its own (an atom's is P.Formula's). */
+const TAG_MOLE_FORMULA = 0x0503;
 const BY_TAG = new Map(Object.entries(P).map(([name, p]) => [p.tag, [name, p] as const]));
+BY_TAG.set(TAG_MOLE_FORMULA, ['Formula', P.Formula]);
 
 const TAG_TEXT = 0x0700;
 // The same text in UTF-8, which ChemDraw 25 writes after the single-byte text (not in the
@@ -426,7 +485,7 @@ function encodeValue(p: Prop, v: string): Uint8Array | null {
   const int = (x: number) => Math.round(x);
   const named = p.values?.[v];
   switch (p.kind) {
-    case 'i8': case 'u8': if (!Number.isFinite(n[0])) return null; b.u8(int(n[0])); break;
+    case 'i8': case 'u8': if (named !== undefined) b.u8(named); else if (Number.isFinite(n[0])) b.u8(int(n[0])); else return null; break;
     case 'i16': case 'u16':
       if (named !== undefined) b.u16(named);
       else if (Number.isFinite(n[0])) b.u16(int(n[0]));
@@ -541,7 +600,7 @@ function writeAttributes(out: Bytes, e: Element, skip: Set<string> = new Set()):
     const tagType = e.nodeName === 'objecttag' && a.name === 'Value' ? e.getAttribute('TagType') : null;
     const data = tagType === 'Double' || tagType === 'Long' ? encodeValue({ ...p, kind: tagType === 'Double' ? 'f64' : 'i32' }, v)
       : p.kind === 'str' && e.nodeName === 'objecttag' && a.name !== 'Value' ? encode1252(v) : encodeValue(p, v);
-    if (data) writeProp(out, p.tag, data);
+    if (data) writeProp(out, a.name === 'Formula' && e.nodeName === 'fragment' ? TAG_MOLE_FORMULA : p.tag, data);
   }
 }
 

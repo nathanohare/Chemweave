@@ -76,11 +76,11 @@ describe('CDXML sampler', () => {
     console.log(`CDXML sampler: ${first.stats.atoms} atoms, ${first.stats.bonds} bonds, ${first.stats.captions} captions, ${first.stats.arrows} arrows, ${first.stats.shapes} shapes`);
     console.log(`  not shown on opening: ${JSON.stringify(skipped)}`);
     console.log(`  element and attribute names a CDXML save drops (${drop.length}): ${drop.join(', ')}`);
-    // whether a second save of what was saved is the same (printed, not failed: a table is written
-    // again with new ids and filled shapes move in the stacking order, being fixed on its own;
-    // tests/corpus.test.ts fails on it for real files)
+    // a table's borders keep their line types (Dashed, Bold), which this program doesn't draw
+    expect(drop).not.toContain('border@LineType');
+    // saved again as it was read, the same file: table cells keep their ids, and every object its place in the drawing order
     const second = writeCdxml(again.doc, { name: 'cdxml-sampler.cdxml' });
-    console.log(`  a second save is ${second === writeCdxml(readCdxml(second).doc, { name: 'cdxml-sampler.cdxml' }) ? 'the same' : 'NOT the same'} as the first`);
+    expect(second).toBe(out);
   });
 
   it('goes to CDX and back', () => {
@@ -91,5 +91,12 @@ describe('CDXML sampler', () => {
     expect([b.atoms, b.bonds, b.captions, b.arrows]).toEqual([a.atoms, a.bonds, a.captions, a.arrows]);
     const drop = lost(names(doc), names(d));
     console.log(`  element and attribute names CDX drops (${drop.length}): ${drop.join(', ')}`);
+    // the properties the CDX specification gives numbers for go through CDX (query and reaction
+    // settings, spectra, TLC plates, alternative groups, 3D geometry, tags, template grids, page layouts)
+    const kept = ['b@RxnParticipation', 'b@Topology', 'n@IsotopicAbundance', 'n@RingBondCount', 'n@RxnStereo', 'n@Translation', 'n@UnsaturatedBonds',
+      'altgroup@TextFrame', 'altgroup@GroupFrame', 'altgroup@Valence', 'group@Integral', 'fragment@Formula', 'tlcplate@OriginFraction', 'tlcplate@ShowBorders',
+      'tlcspot@Rf', 'tlcspot@ShowRf', 'tlcspot@Tail', 'spectrum@Class', 'spectrum@XType', 'spectrum@YScale', 'geometry@GeometricFeature', 'constraint@ConstraintType',
+      'objecttag@Tracking', 'objecttag@Persistent', 'page@PageDefinition', 'templategrid@NumRows', 'sequence@SequenceIdentifier', 'crossreference@CrossReferenceSequence'];
+    expect(kept.filter((k) => drop.includes(k))).toEqual([]);
   });
 });
