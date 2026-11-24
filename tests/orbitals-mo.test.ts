@@ -224,7 +224,7 @@ describe('MO diagrams', () => {
     // "Bonding molecular orbitals are more stable than the atomic orbitals" and "Antibonding
     // molecular orbitals are less stable than the atomic orbitals" (the homonuclear page above,
     // 4.2.02). For CO, 4.2.03 adds that mixing lowers 2σ* and raises 3σ, so those two are left out.
-    const atoms = MO_ATOMS.filter((a) => !a.orbital && a.orbitals.length === 2).map((a) => a.id);
+    const atoms = MO_ATOMS.filter((a) => !a.orbital && a.orbitals.some((o) => o.n === 3 && o.electrons > 0)).map((a) => a.id);
     for (const a of atoms) for (const b of atoms) {
       const spec = fromAtoms(a, b)!, side = (label: string) => spec.levels.filter((l) => l.column !== 'middle' && l.label === label).map((l) => l.e);
       const mid = spec.levels.filter((l) => l.column === 'middle').sort((x, y) => x.e - y.e);
@@ -240,14 +240,25 @@ describe('MO diagrams', () => {
       expect(c.moOrbitals, a.id + b.id).toBe(c.atomOrbitals);
       expect(c.moElectrons, a.id + b.id).toBe(c.atomElectrons);
     }
-    // CO (4.2.03): orbitals numbered by kind from the bottom; "The HOMO of CO is the 3σ MO", above 1π and 2σ*
-    const co = fromAtoms('C', 'O')!, filled = co.levels.filter((l) => l.column === 'middle' && l.electrons > 0).sort((x, y) => x.e - y.e).map((l) => moPlain(l.label));
-    expect(filled).toEqual(['1σ', '2σ*', '1π', '3σ']);
+    // CO: Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed. (Pearson, 2014), section 5.3.1
+    // and Figure 5.13: 2σ, 2σ*, 1π, then the 3σ HOMO ("the 3σ is higher than the 1π levels"); the
+    // LUMOs are 1π*; "four bonding pairs and one antibonding pair for a net bond order of 3"
+    const co = fromAtoms('C', 'O')!, mos = co.levels.filter((l) => l.column === 'middle').sort((x, y) => x.e - y.e);
+    expect(mos.filter((l) => l.electrons > 0).map((l) => moPlain(l.label))).toEqual(['2σ', '2σ*', '1π', '3σ']);
+    expect(moPlain(mos.find((l) => l.electrons === 0)!.label)).toBe('1π*');
+    expect(moCounts(co.levels).bondOrder).toBe(3);
+    // LiF (the same book, section 5.3.2 and Figure 5.14): Li 2s and F 2pz make the bonding
+    // orbital, which takes Li's electron; everything else on F stays as it was: one bond
+    const lif = fromAtoms('Li', 'F')!, bond = lif.levels.find((l) => moPlain(l.label) === '3σ')!;
+    expect(sources(lif.levels, bond).map((l) => `${l.column} ${l.label}`)).toEqual(['left 2s', 'right 2p']);
+    expect(lif.levels.filter((l) => l.column === 'middle' && l.fromSide === 'right').map((l) => [l.n, l.electrons])).toEqual([[1, 2], [2, 4]]);
+    expect(moCounts(lif.levels)).toMatchObject({ bondOrder: 1, unpaired: 0 });
+    expect(bond.e).toBeLessThan(lif.levels.find((l) => l.column === 'right' && l.label === '2p')!.e);
     // helium beside a second-row atom: nothing mixes, no bond; H beside Li mixes with Li 2s (Li has no 2p electrons)
     expect(moCounts(fromAtoms('He', 'O')!.levels).bondOrder).toBe(0);
     const lih = fromAtoms('Li', 'H')!;
     expect(moCounts(lih.levels)).toMatchObject({ bondOrder: 1, unpaired: 0 });
-    expect(sources(lih.levels, lih.levels.find((l) => moPlain(l.label) === '1σ')!).map((l) => l.label)).toEqual(['2s', '1s']);
+    expect(sources(lih.levels, lih.levels.find((l) => moPlain(l.label) === '2σ')!).map((l) => l.label)).toEqual(['2s', '1s']);
     // one orbital on its own is titled X (left) or Y (right), never an element's symbol
     expect(fromAtoms('B', 'sp3')!.titles).toEqual(['B', 'B–Y', 'Y']);
     expect(fromAtoms('2p', '2p')!.titles).toEqual(['X', 'X–Y', 'Y']);
@@ -342,7 +353,7 @@ describe('MO diagrams', () => {
     const text = (i: number) => doc.captions.get(made[i])!.runs.map((r) => r.text).join('');
     roles.forEach((r, i) => { if ('level' in r) expect(text(i)).toBe(moPlain(hf.levels[r.level].label)); if ('title' in r) expect(text(i)).toBe(moPlain(hf.titles[r.title])); });
     // made-from choices for a level set by hand
-    expect(fromOf(fromValue(hf.levels.find((l) => l.from === '1s, 2p')!))).toEqual({ from: '1s, 2p', fromSide: undefined });
+    expect(fromOf(fromValue(hf.levels.find((l) => l.from === '1s, 2p')!))).toEqual({ from: '1s, 2p', fromSide: 'each' });
     expect(fromChoices(hf.levels).map((c) => c.value)).toContain('right|2s');
   });
 });
