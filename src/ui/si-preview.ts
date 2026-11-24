@@ -496,14 +496,17 @@ export class SiPreview {
     return this.file.ed.offsetAt(p.x, p.y);
   }
 
-  /** The stretch whose characters are under a pointer (not just nearest to it). */
+  /**
+   * The stretch whose characters are under a pointer (not just nearest to it). A paragraph's lines
+   * count as meeting (the gaps between them shared out), so moving between them never loses it.
+   */
   private spanUnder(e: PointerEvent): SourceSpan | null {
     const at = this.offsetAt(e);
     if (at === null) return null;
     const p = this.view.toDoc(e.clientX, e.clientY);
     for (const o of [at, at - 1]) {
       if (o < 0) continue;
-      const r = this.view.rangeRects(o, o + 1)[0];
+      const r = this.view.rangeRects(o, o + 1, true)[0];
       if (r && p.x >= r.x1 - 1 && p.x <= r.x2 + 1 && p.y >= r.y1 && p.y <= r.y2) return spanAt(this.spans, o);
     }
     return null;
