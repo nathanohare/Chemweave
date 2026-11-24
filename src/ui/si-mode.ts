@@ -199,6 +199,10 @@ const ICON: Record<string, string> = {
 };
 const svg = (k: string, s = 14): string => `<svg class="si-ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
 
+/** Synchronous Scrolling's button in the Live Preview's header: two pages, an arrow up and down between them. */
+const SYNC_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2" width="4.5" height="12" rx="0.6"/><rect x="10" y="2" width="4.5" height="12" rx="0.6"/><path d="M8 4.2v7.6M6.6 5.6L8 4.2l1.4 1.4M6.6 10.4L8 11.8l1.4-1.4"/></svg>';
+const SYNC_TIP = 'Synchronous Scrolling: scrolling the Live Preview to another compound or section opens its page here, a moment after you stop. It never changes page while a field of the page is selected or being typed in.';
+
 /** The ribbon: what each button does is its data-si command. */
 const RIBBON = `
   <div class="rb-tabs">
@@ -2879,8 +2883,15 @@ export class SiMode {
       b.addEventListener('click', f);
       return b;
     };
+    // Synchronous Scrolling (Word's name, View ▸ Window): the page follows the preview as it is scrolled
+    try { this.syncScroll = localStorage.getItem('si.syncScrolling') === 'on'; } catch { /* (off) */ }
+    const sync = btn('', SYNC_TIP, () => this.setSyncScroll(!this.syncScroll));
+    sync.classList.add('si-live-sync');
+    sync.innerHTML = SYNC_ICON;
+    sync.setAttribute('aria-label', 'Synchronous Scrolling');
+    sync.setAttribute('aria-pressed', String(this.syncScroll));
     // (its zoom is the status bar's, at the right end as in every mode: G5-34)
-    head.append(title, state, el('span', 'si-live-gap'),
+    head.append(title, state, el('span', 'si-live-gap'), sync,
       btn('▸', 'Hide the live preview (Ctrl+Shift+L)', () => this.setLive(false)));
     addInfo(head, 'The whole SI as it prints, with the selected page in view and the rest washed out, updated about a second after each change. Type in it as in Word: a change goes into the field the text came from (one step of Undo), and hovering text lights up its field. Text Chemweave writes is locked: click it to go to its field. Text typed where no field is stays as custom text, marked because no field holds it. The Spectra section shows on its own pages, numbered on from the SI. Preferences ▸ SI Live Preview sets how these are marked.');
     const host = el('div', 'si-live-host');
@@ -2889,6 +2900,65 @@ export class SiMode {
     wrap.classList.toggle('off', !this.liveOn);
     this.pane.classList.toggle('si-live-off', !this.liveOn);
     return { el: wrap, host, state, empty, view: null, shown: '' };
+  }
+
+  /** Synchronous Scrolling: scrolling the Live Preview to another page of the list chooses that page (remembered on this computer). */
+  private syncScroll = false;
+
+  private setSyncScroll(on: boolean): void {
+    this.syncScroll = on;
+    try { localStorage.setItem('si.syncScrolling', on ? 'on' : 'off'); } catch { /* (not kept) */ }
+    this.live.el.querySelector('.si-live-sync')?.setAttribute('aria-pressed', String(on));
+  }
+
+  /**
+   * The person stopped scrolling the Live Preview: with Synchronous Scrolling on, the page it rests
+   * on is chosen in the list (the preview stays where it was scrolled). Never while a field of the
+   * SI page is being typed in or is selected: the page stays with what is being edited.
+   */
+  private followPreview(): void {
+    const pv = this.preview;
+    if (!this.syncScroll || !pv || !this.project || !this.liveOn || this.liveTarget()?.kind !== 'whole') return;
+    // (a page chosen another way that the preview hasn't shown yet: it stays chosen)
+    if (pv.focusedNode !== this.liveNode()) return;
+    // a field being typed in or selected (the SI page's, or the ribbon's for its table or figure)
+    const a = document.activeElement;
+    if (a instanceof HTMLElement && a !== pv.input && (this.pane.contains(a) || this.ribbon.contains(a))) {
+      const field = a.isContentEditable || a instanceof HTMLTextAreaElement || a instanceof HTMLSelectElement
+        || (a instanceof HTMLInputElement && !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file'].includes(a.type));
+      if (field) return;
+    }
+    const node = pv.nodeToFollow();
+    if (!node || !this.nodeExists(node)) return;
+    pv.followed(node);
+    this.pickFromPreview(node);
+  }
+
+  /** Whether a page of the whole SI is still in the project (the preview can be a compile behind). */
+  private nodeExists(node: string): boolean {
+    const p = this.project;
+    if (!p) return false;
+    const [kind, id] = node.split(':');
+    if (kind === 'project') return true;
+    if (kind === 'compound') return p.compounds.some((c) => c.id === id);
+    let found = false;
+    const walk = (list: SiSection[]): void => {
+      for (const s of list) {
+        if (found) return;
+        if (kind === 'section' && s.id === id) found = true;
+        if (kind === 'scheme' && s.type === 'data' && s.items.some((it) => it.kind === 'scheme' && it.id === id)) found = true;
+        walk(s.children);
+      }
+    };
+    walk(p.sections);
+    return found;
+  }
+
+  /** A page of the list chosen from the preview (text clicked, or scrolled to): the preview stays where it is. */
+  private pickFromPreview(node: string): void {
+    const [kind, id] = node.split(':');
+    const pick: Pick | null = kind === 'compound' ? { kind: 'compound', id } : kind === 'scheme' ? { kind: 'scheme', id } : kind === 'section' ? { kind: 'section', id } : kind === 'project' ? { kind: 'project' } : null;
+    if (pick && JSON.stringify(pick) !== JSON.stringify(this.pick)) { this.liveStay = true; this.go(pick); }
   }
 
   /** The border between the tree and the page: dragged to make the tree wider or narrower (remembered on this computer). */
@@ -3161,12 +3231,8 @@ export class SiMode {
     const asProject = (owner: unknown): SiProject => owner as SiProject;
     this.preview = new SiPreview(this.live.host, {
       flash: (m, ms) => this.host.flash(m, ms),
-      pick: (node) => {
-        const [kind, id] = node.split(':');
-        const pick: Pick | null = kind === 'compound' ? { kind: 'compound', id } : kind === 'scheme' ? { kind: 'scheme', id } : kind === 'section' ? { kind: 'section', id } : kind === 'project' ? { kind: 'project' } : null;
-        // (the page of text clicked in the preview: the preview stays where it is)
-        if (pick && JSON.stringify(pick) !== JSON.stringify(this.pick)) { this.liveStay = true; this.go(pick); }
-      },
+      // (the page of text clicked in the preview: the preview stays where it is)
+      pick: (node) => this.pickFromPreview(node),
       hoverSource: (src) => this.lightOnPage(src),
       goToSource: (src) => this.goToSource(src),
       labelOf: (src) => this.sourceLabel(src),
@@ -3190,6 +3256,7 @@ export class SiMode {
       refresh: () => this.liveSoon(0),
     });
     this.live.view = this.preview.view;
+    this.preview.onScrollSettled = () => this.followPreview();
     // (Preferences ▸ SI Live Preview: drawn again in the look chosen)
     siPreviewPrefs.changed = () => this.preview?.view.redraw();
     this.wirePageLinks();
