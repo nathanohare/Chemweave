@@ -360,11 +360,11 @@ export class DocPanel {
       this.change('Style', (t) => setParaStyle(t, a, b, id));
     }), 'Normal, the headings and Caption (Home ▸ Styles); change how a style looks below');
     this.row(s, 'Alignment', this.select('p-align', ALIGNS, (v) => paras({ align: v === 'left' ? undefined : (v as Justify) }, 'align')));
-    this.row(s, 'Indent (in)', this.input('p-indent', (v) => { const n = parseLength(v, 'in'); if (n !== null) paras({ indent: Math.max(0, n) || undefined }, 'indent'); }), 'From the left margin');
+    this.row(s, 'Indent (in)', this.input('p-indent', (v) => { const n = parseLength(v, 'in'); if (n !== null) paras({ indent: n || undefined }, 'indent'); }), 'From the left margin; less than 0 goes into it');
     this.row(s, 'First line (in)', this.input('p-first', (v) => { const n = parseLength(v, 'in'); if (n !== null) paras({ firstLine: n || undefined }, 'indent'); }), 'The first line\'s indent from the rest; less than 0 hangs it out to the left');
     this.row(s, 'Space before (pt)', this.input('p-before', (v) => { const n = parseLength(v, 'pt'); if (n !== null) paras({ spaceBefore: Math.max(0, n) }, 'spacing'); }));
     this.row(s, 'Space after (pt)', this.input('p-after', (v) => { const n = parseLength(v, 'pt'); if (n !== null) paras({ spaceAfter: Math.max(0, n) }, 'spacing'); }));
-    this.row(s, 'Right indent (in)', this.input('p-right', (v) => { const n = parseLength(v, 'in'); if (n !== null) paras({ indentRight: Math.max(0, n) || undefined }, 'indent'); }), 'From the right margin');
+    this.row(s, 'Right indent (in)', this.input('p-right', (v) => { const n = parseLength(v, 'in'); if (n !== null) paras({ indentRight: n || undefined }, 'indent'); }), 'From the right margin; less than 0 goes into it');
     this.row(s, 'Line spacing', this.select('p-rule', [['multiple', 'Multiple'], ['atLeast', 'At least'], ['exact', 'Exactly']], (v) => {
       const p = this.host.file()?.ed.currentPara();
       if (v === 'multiple') paras({ linePt: undefined, lineRule: undefined }, 'spacing');
@@ -410,7 +410,7 @@ export class DocPanel {
     this.row(s, 'Space before (pt)', this.input('s-before', (v) => { const n = parseLength(v, 'pt'); if (n !== null) set({ spaceBefore: Math.max(0, n) }); }));
     this.row(s, 'Space after (pt)', this.input('s-after', (v) => { const n = parseLength(v, 'pt'); if (n !== null) set({ spaceAfter: Math.max(0, n) }); }));
     this.row(s, 'Line spacing', this.input('s-line', (v) => { const n = Number(v); if (n > 0 && n <= 10) set({ line: n }); }, { list: 'dp-lines' }));
-    this.row(s, 'Indent (in)', this.input('s-indent', (v) => { const n = parseLength(v, 'in'); if (n !== null) set({ indent: Math.max(0, n) }); }));
+    this.row(s, 'Indent (in)', this.input('s-indent', (v) => { const n = parseLength(v, 'in'); if (n !== null) set({ indent: n }); }));
     this.row(s, 'First line (in)', this.input('s-first', (v) => { const n = parseLength(v, 'in'); if (n !== null) set({ firstLine: n }); }));
     this.check(s, 's-keep', 'Keep with next', (v) => set({ keepNext: v }));
     this.buttons(s, [

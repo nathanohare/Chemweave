@@ -116,6 +116,12 @@ export function defaultWatermark(text = 'DRAFT'): Watermark {
   return { text, font: 'Calibri', color: '#c0c0c0', layout: 'diagonal', faded: true };
 }
 
+/** Two page borders (or none) are the same. */
+export function samePageBorder(a: PageBorder | null | undefined, b: PageBorder | null | undefined): boolean {
+  if (!a || !b) return !a === !b;
+  return a.style === b.style && a.width === b.width && a.color.toLowerCase() === b.color.toLowerCase() && a.from === b.from && a.space === b.space;
+}
+
 export function defaultPageBorder(): PageBorder {
   return { style: 'single', width: 0.5, color: '#000000', from: 'page', space: 24 };
 }
@@ -234,6 +240,14 @@ export interface SectionBreak {
   page?: PageSetup;
   /** Its own header and footer; left out, the section before's (Word's Link to Previous). */
   hf?: HeaderFooter;
+  /**
+   * Different First Page (Word's titlePg, which each section has for itself) of a section whose
+   * header and footer are the section before's; left out (made before this was kept), as the
+   * section before has it.
+   */
+  titlePg?: boolean;
+  /** Its own page border (Word's pgBorders, which each section has for itself), or null for none; left out, the document's. */
+  pageBorder?: PageBorder | null;
   /** Page numbers start again here, from this; left out, they carry on from the section before. */
   restart?: number;
   /** How its page numbers are written (1, 2, 3 when left out). */

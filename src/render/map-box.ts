@@ -31,6 +31,8 @@ export function paintMapBox(ctx: CanvasRenderingContext2D, b: Rect, n: number, l
   if (s.fill) { ctx.fillStyle = s.fill; ctx.fill(); }
   if (s.pattern !== 'none') {
     ctx.save();
+    // (a vector picture cuts only to a rectangle: there the pattern fills the rounded box's corners too)
+    if ('picture' in ctx && r) { ctx.beginPath(); ctx.rect(b.x1, b.y1, w, h); }
     ctx.clip();
     ctx.strokeStyle = ctx.fillStyle = s.patternColor;
     const gap = Math.max(1, 0.22 * h), thin = Math.max(0.2, 0.06 * h);

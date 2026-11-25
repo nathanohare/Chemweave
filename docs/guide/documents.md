@@ -75,7 +75,7 @@ The **Design** tab's **Page Background** group sets what is behind the text on e
 
 - **Watermark** writes words such as DRAFT or CONFIDENTIAL across every page behind the text, or words of your own. It is saved as Word's watermark.
 - **Page Color** colors the paper, on screen and in print (Word prints a page color only when it is set to). **No Color** goes back to white.
-- **Page Borders** draws a line around every page, measured from the edge of the paper or from the text.
+- **Page Borders** draws a line around every page, measured from the edge of the paper or from the text. A Word file whose sections have borders of their own keeps them, each on its own section's pages, until you choose a border for every page here.
 
 ## Structures and pictures in the text
 

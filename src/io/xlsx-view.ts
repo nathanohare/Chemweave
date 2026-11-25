@@ -278,6 +278,8 @@ export interface ExcelSheetKept {
   panes?: { key: string; topLeft?: string; selection: string };
   /** The sort Excel remembers for the sheet (18.3.1.92), and the error checks turned off for cells (18.3.1.51), as the elements. */
   sortState?: string;
+  /** The differential formats (18.8.17) a sort by color in sortState names, as elements, by the dxfId it gives them (see keptWithDxfs). */
+  sortDxfs?: string[];
   ignoredErrors?: string;
   /**
    * Row heights in points as the file gave them, by their size in pixels here, written back as
@@ -316,8 +318,51 @@ export function mainXml(el: Element): string {
   return body ? `<${el.localName}${attrs}>${body}</${el.localName}>` : `<${el.localName}${attrs}/>`;
 }
 
-/** A worksheet's settings that only Excel uses (undefined when it has none). */
-export function readSheetKept(ws: Element): ExcelSheetKept | undefined {
+/**
+ * An element kept as XML whose dxfId attributes (a sort by cell or font color, 18.3.1.91) name
+ * differential formats of the file's styles part (`fileDxfs`, its dxf elements): the element with
+ * those numbered from 0 in order of first use, and the formats they name, as elements. The writer
+ * makes its own list of formats, so a number kept as the file had it would name another format or
+ * none (and Excel then refuses the whole workbook). Undefined when it names a format the file
+ * doesn't have.
+ */
+export function keptWithDxfs(el: Element, fileDxfs: Element[]): { xml: string; dxfs?: string[] } | undefined {
+  const dxfs: string[] = [];
+  const byFile = new Map<string, number>();
+  let missing = false;
+  const out = mainXml(el).replace(/ dxfId="([^"]*)"/g, (_, id: string) => {
+    let i = byFile.get(id);
+    if (i === undefined) {
+      const d = /^\d+$/.test(id) ? fileDxfs[Number(id)] : undefined;
+      if (!d) { missing = true; return ''; }
+      dxfs.push(mainXml(d));
+      i = dxfs.length - 1;
+      byFile.set(id, i);
+    }
+    return ` dxfId="${i}"`;
+  });
+  if (missing) return undefined;
+  return dxfs.length ? { xml: out, dxfs } : { xml: out };
+}
+
+/**
+ * A kept element (see keptWithDxfs) with its dxfIds numbered as the styles part being written has
+ * them: `add` puts a format in that part and gives its number. Empty when it names a format it
+ * doesn't carry.
+ */
+export function withDxfs(kept: string | undefined, dxfs: string[] | undefined, add: (dxf: string) => number): string {
+  if (!kept) return '';
+  let missing = false;
+  const out = kept.replace(/ dxfId="([^"]*)"/g, (_, id: string) => {
+    const d = /^\d+$/.test(id) ? dxfs?.[Number(id)] : undefined;
+    if (d === undefined) { missing = true; return ''; }
+    return ` dxfId="${add(d)}"`;
+  });
+  return missing ? '' : out;
+}
+
+/** A worksheet's settings that only Excel uses (undefined when it has none). `dxfs` are the styles part's dxf elements. */
+export function readSheetKept(ws: Element, dxfs: Element[] = []): ExcelSheetKept | undefined {
   const out: ExcelSheetKept = {};
   const prot = kid(ws, 'sheetProtection');
   if (prot) {
@@ -343,7 +388,11 @@ export function readSheetKept(ws: Element): ExcelSheetKept | undefined {
     if (selection || topLeft) out.panes = { key, ...(topLeft ? { topLeft } : {}), selection };
   }
   const sort = kid(ws, 'sortState');
-  if (sort) out.sortState = mainXml(sort);
+  const sortKept = sort ? keptWithDxfs(sort, dxfs) : undefined;
+  if (sortKept) {
+    out.sortState = sortKept.xml;
+    if (sortKept.dxfs) out.sortDxfs = sortKept.dxfs;
+  }
   const ignored = kid(ws, 'ignoredErrors');
   if (ignored && kids(ignored, 'ignoredError').length) out.ignoredErrors = mainXml(ignored);
   return Object.keys(out).length ? out : undefined;

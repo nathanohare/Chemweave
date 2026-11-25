@@ -6,7 +6,7 @@
 import type { SheetView } from './sheet-view';
 import { popupMenu } from './sheet-view';
 import type { Sheet } from '../sheet/workbook';
-import { colName, cellName, keyOf, rowOf, colOf } from '../sheet/refs';
+import { colName, cellName, keyOf, rowOf, colOf, sameRange } from '../sheet/refs';
 import { isError } from '../sheet/values';
 import { type CompoundCard, COMPOUND_FIELDS, cardFields } from '../sheet/compound';
 import { pubchemCard, PubChemError } from '../chem/pubchem';
@@ -173,7 +173,7 @@ export class SheetCompounds {
       if (t && t.range.c2 === col - 1) {
         const R = { ...t.range, c2: col };
         sh.setTables(sh.tables.map((x) => (x.id === t.id ? { ...x, range: R } : x)));
-        if (sh.filter && JSON.stringify(sh.filter.range) === JSON.stringify(t.range)) sh.setFilter({ ...sh.filter, range: R });
+        if (sh.filter && sameRange(sh.filter.range, t.range)) sh.setFilter({ ...sh.filter, range: R });
       }
     });
     this.host.flash(`Added ${field} in column ${colName(col)}.`, 3000);

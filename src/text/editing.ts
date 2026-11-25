@@ -324,7 +324,7 @@ export class TextEditing {
     if (!this.collapsed) { this.replace(this.start, this.end, [], undefined, 'delete'); return; }
     const at = this.focus;
     const p0 = this.t.paras[0];
-    if (at === 0 && !p0?.list && !p0?.indent && !p0?.firstLine && !p0?.pageBreak && !p0?.colBreak) return;
+    if (at === 0 && !p0?.list && !((p0?.indent ?? 0) > 0) && !p0?.firstLine && !p0?.pageBreak && !p0?.colBreak) return;
     const text = this.text;
     const p = paraAt(text, at);
     if (paraRange(text, p).start === at) {
@@ -334,7 +334,7 @@ export class TextEditing {
       if (ps.pageBreak || ps.colBreak) { this.setParas(p, p, { pageBreak: undefined, colBreak: undefined }, 'break'); return; }
       if (ps.list) { this.setParas(p, p, { list: undefined, level: undefined, cont: undefined }, 'list'); return; }
       if (ps.firstLine && ps.firstLine > 0) { this.setParas(p, p, { firstLine: undefined }, 'indent'); return; }
-      if (ps.indent) { this.setParas(p, p, { indent: undefined }, 'indent'); return; }
+      if (ps.indent && ps.indent > 0) { this.setParas(p, p, { indent: undefined }, 'indent'); return; }
     }
     const from = Math.max(0, word ? wordStart(text, at) : at - (isLow(text[at - 1]) ? 2 : 1));
     this.keptLast = 0;
@@ -598,7 +598,8 @@ export class TextEditing {
     const paras = fitParas(this.t.paras, paraCount(this.text)).map((p, i) => {
       if (i < a || i > b) return p;
       if (p.list) return cleanPara({ ...p, level: Math.max(0, Math.min(MAX_LEVEL, (p.level ?? 0) + delta)) });
-      return cleanPara({ ...p, indent: Math.max(0, (p.indent ?? 0) + delta * this.indentStep) });
+      const cur = p.indent ?? 0;
+      return cleanPara({ ...p, indent: Math.max(Math.min(0, cur), cur + delta * this.indentStep) });
     });
     this.commit('indent', { ...this.t, paras }, this.anchor, this.focus);
   }
