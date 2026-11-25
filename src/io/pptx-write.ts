@@ -1618,7 +1618,12 @@ class Writer {
     // an elbow as PowerPoint's bent connector (bentConnector2 to 5) when its route is one
     const bent = r.elbow ? bentConnector(elbowRoute(r)) : null;
     if (bent) { frame = bent.frame; geom = bent.geom; curved = false; name = `Elbow Connector ${id - 1}`; }
-    const { id: _, ...keep } = r;
+    // (its own name, where it was given one)
+    if (typeof r.name === 'string' && r.name.trim()) name = r.name.trim();
+    // (its name in the tag only where it is one like PowerPoint's own, which isn't read from cNvPr;
+    // else cNvPr has it, so a name changed in PowerPoint isn't put back from the tag)
+    const { id: _, name: own, ...rest } = r;
+    const keep = typeof own === 'string' && own.trim() && PPT_NAME.test(own.trim()) ? { ...rest, name: own.trim() } : rest;
     // with a print of its line as written, to tell whether PowerPoint changed it (native-print.ts)
     const lineXml = fragment(`<p:spPr>${geom}${ln}</p:spPr>`);
     const pr = lineXml ? spPrPrint(lineXml, 'look') : '';
@@ -1627,10 +1632,10 @@ class Writer {
     // a curved arrow is a shape drawn along the curve (programs route a connector afresh, square),
     // and so is an elbow PowerPoint has no bent connector for: PowerPoint repairs a connector
     // drawn as a path by deleting the slide's contents
-    if (curved) return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${name}"/><p:cNvSpPr/>${nvPr}</p:nvSpPr><p:spPr>${frame}${geom}${ln}</p:spPr></p:sp>`;
+    if (curved) return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${xml(name)}"/><p:cNvSpPr/>${nvPr}</p:nvSpPr><p:spPr>${frame}${geom}${ln}</p:spPr></p:sp>`;
     const st = site(r.from), end = site(r.to);
     const ends = `${st ? `<a:stCxn id="${st.id}" idx="${st.idx}"/>` : ''}${end ? `<a:endCxn id="${end.id}" idx="${end.idx}"/>` : ''}`;
-    return `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${name}"/>${ends ? `<p:cNvCxnSpPr>${ends}</p:cNvCxnSpPr>` : '<p:cNvCxnSpPr/>'}${nvPr}</p:nvCxnSpPr>` +
+    return `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${xml(name)}"/>${ends ? `<p:cNvCxnSpPr>${ends}</p:cNvCxnSpPr>` : '<p:cNvCxnSpPr/>'}${nvPr}</p:nvCxnSpPr>` +
       `<p:spPr>${frame}${geom}${ln}</p:spPr></p:cxnSp>`;
   }
 

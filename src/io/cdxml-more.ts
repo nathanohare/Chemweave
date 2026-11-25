@@ -354,17 +354,19 @@ export function withMarks(runs: readonly TextRun[], marks: unknown[]): TextRun[]
   return out;
 }
 
-/** An arrow's settings: bent by hand, and the step a catalytic cycle's reagent arrow feeds (by its arrow's id in the file). */
+/** An arrow's settings: bent by hand, the step a catalytic cycle's reagent arrow feeds (by its arrow's id in the file), and its name (Slides). */
 export function arrowMore(r: Arrow, ref: RefOut): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
   if (r.bent) v.bent = true;
   const feeds = r.reagentFor !== undefined ? ref('r', r.reagentFor) : null;
   if (feeds !== null) v.reagentFor = feeds;
+  if (typeof r.name === 'string' && r.name) v.name = r.name;
   return Object.keys(v).length ? v : null;
 }
 
 export function arrowMoreIn(r: Arrow, v: Record<string, unknown>, ref: RefIn): void {
   if (v.bent === true) r.bent = true;
+  if (typeof v.name === 'string' && v.name) r.name = v.name;
   if (v.reagentFor !== undefined) {
     const to = ref(String(v.reagentFor));
     if (to?.kind === 'r') r.reagentFor = to.id;

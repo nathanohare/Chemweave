@@ -156,7 +156,7 @@ const arrow = {
   line: oneOf('solid', 'dashed', 'bold', 'wavy'), noGo: true, noGoKind: oneOf('hash'), dipole: true, equilibrium: true, boldWidth: 0,
   hashSpacing: length, shaftSpacing: length, sweep: 0, headLength: 0, headWidth: 0, headCenter: 0, color: '', lineWidth: 0, step, reagentFor: 0,
   from: { shape: 0, port: 0 }, to: { shape: 0, port: 0 }, elbow: true, morph, bez: [pt], ellipse: { center: pt, major: pt, minor: pt, angular: 0 },
-  pin: { tail: pin, head: pin }, bent: true, textLook, kind: oneOf('reaction', 'mechanism', 'plain'),
+  pin: { tail: pin, head: pin }, bent: true, textLook, kind: oneOf('reaction', 'mechanism', 'plain'), name: '',
 } satisfies Record<keyof Arrow, Spec>;
 const L = 14.4;
 const shape = {
