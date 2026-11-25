@@ -39,7 +39,7 @@ export interface ImageItem {
 
 export type Item =
   | { kind: 'path'; segs: Seg[]; fill?: string; stroke?: StrokeStyle; clip?: ClipBox }
-  | { kind: 'text'; clip?: ClipBox; /** Drawn right to left (the canvas's direction): a PDF puts its letters in the order they are seen. */ rtl?: boolean; text: string; x: number; y: number; size: number; family: string; bold: boolean; italic: boolean; color: string; widths: number[]; /** Turned anticlockwise, in degrees (90: reads upwards). */ angle?: number }
+  | { kind: 'text'; clip?: ClipBox; /** Drawn right to left (the canvas's direction): a PDF puts its letters in the order they are seen. */ rtl?: boolean; /** Outlined letters, not filled (strokeText): the outline's width; `color` its colour. */ stroke?: number; text: string; x: number; y: number; size: number; family: string; bold: boolean; italic: boolean; color: string; widths: number[]; /** Turned anticlockwise, in degrees (90: reads upwards). */ angle?: number }
   | ImageItem;
 
 /** A path that remembers its segments (stands in for the browser's Path2D). */
@@ -301,6 +301,16 @@ export class VectorContext {
   }
 
   /** Text turned about its starting point (degrees anticlockwise), which a canvas does with rotate(). */
+  /** Letters outlined (Word's outline and hollow text): as fillText, with the outline's colour and width. */
+  strokeText(text: string, x: number, y: number): void {
+    const n = this.items.length;
+    const fill = this.st.fillStyle;
+    this.st.fillStyle = this.st.strokeStyle;
+    try { this.fillText(text, x, y); } finally { this.st.fillStyle = fill; }
+    const it = this.items[n];
+    if (it?.kind === 'text') it.stroke = this.st.lineWidth;
+  }
+
   fillTextTurned(text: string, x: number, y: number, angle: number): void {
     this.fillText(text, x, y);
     const it = this.items[this.items.length - 1];

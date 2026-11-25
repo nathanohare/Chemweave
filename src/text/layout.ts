@@ -14,6 +14,7 @@ import { formulaRunParts } from '../richtext';
 import { fitParas, laidParas, listMarkers, paraCount } from './paragraphs';
 import { fallbackFonts, lineFactor } from './font-standins';
 import { dirChunks, hasRtl, visualOrder, type Dir } from './bidi';
+import { wordLook, type WordLook } from './word-look';
 
 export const FONT_STACK = "Arial, 'Liberation Sans', Helvetica, sans-serif";
 
@@ -124,6 +125,8 @@ export interface Glyphs {
   rtl?: boolean;
   /** Its text's own direction, in a line with right-to-left text: right to left, left to right or digits (unset: spaces and punctuation). */
   dir?: Exclude<Dir, 'N'>;
+  /** Word's character effects it shows (word-look.ts). */
+  look?: WordLook;
   /** Where its first character is in the whole text (line breaks count one). */
   start: number;
   /** Left end of the piece and its width, in points from the origin. */
@@ -280,6 +283,8 @@ interface Seg {
   text: string; start: number; size: number; base: number; dy: number; family: string; style: string; color?: string; underline?: boolean; strike?: boolean; highlight?: string;
   /** Character spacing: points added after each character. */
   spacing?: number;
+  /** Word's character effects it shows (word-look.ts). */
+  look?: WordLook;
   /** Text effects (kerning, fill, outline, shadow). */
   fx?: TextFx;
   /** Raised or lowered by some points (Word's position): a document's line makes room for it. */
@@ -386,6 +391,9 @@ function segments(runs: TextRun[], defaultSize: number, n: number, sc = SCRIPTS,
     // and so do its text effects
     const fx = textFx(r);
     if (fx) for (let q = from.p; q <= Math.min(p, n - 1); q++) for (const sg of segs[q].slice(q === from.p ? from.k : 0)) sg.fx = fx;
+    // and Word's character effects kept from the file
+    const look = r.wrx || r.wfx ? wordLook(r) : undefined;
+    if (look) for (let q = from.p; q <= Math.min(p, n - 1); q++) for (const sg of segs[q].slice(q === from.p ? from.k : 0)) sg.look = look;
     if (r.raise) for (let q = from.p; q <= Math.min(p, n - 1); q++) for (const sg of segs[q].slice(q === from.p ? from.k : 0)) sg.raised = true;
   }
 }
@@ -755,6 +763,7 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
         if (s.strike) g.strike = true;
         if (s.spacing) g.spacing = s.spacing;
         if (s.fx) g.fx = s.fx;
+        if (s.look) g.look = s.look;
         if (s.tab) { g.tab = true; if (s.leader) g.leader = s.leader; }
         if (s.hide) { g.hidden = true; pieces.push(g); continue; }
         if (s.obj !== undefined) {

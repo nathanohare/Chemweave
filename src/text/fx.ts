@@ -36,7 +36,15 @@ export function withFx(ctx: CanvasRenderingContext2D, fx: TextFx, size: number):
     ctx.lineWidth = fx.outlineW ?? OUTLINE_W;
     ctx.lineJoin = 'round';
   }
+  // (where shadows can't be drawn, as in a picture for a PDF: a see-through copy below and to the right)
+  const copy = !!fx.shadow && !('shadowColor' in (ctx as object));
   return (text, x, y) => {
+    if (copy) {
+      const was = ctx.fillStyle;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillText(text, x + size * 0.06, y + size * 0.06);
+      ctx.fillStyle = was;
+    }
     if (!fx.noFill) ctx.fillText(text, x, y);
     if (stroke) {
       // the fill's shadow is enough: the outline doesn't cast another
