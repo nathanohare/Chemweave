@@ -1641,7 +1641,8 @@ class DocxReader {
       cont = true;
     }
     const firstSize = ctx.pieces[0].runs.find((r) => r.obj === undefined)?.size ?? size;
-    let indent = Math.max(0, p.left ?? 0);
+    // (a negative indent, into the margin, as Word has it: Layout ▸ Indent Left below 0)
+    let indent = p.left ?? 0;
     if (list) indent = Math.max(0, indent - listIndent({ list, level: ilvl }, firstSize).left);
     const brk = this.takeBreak();
     // a frame of paragraphs as this program writes them (ParaStyle.frame), in the body; others are kept as Word had them
@@ -1653,7 +1654,7 @@ class DocxReader {
       spaceBefore: round(p.before ?? 0), spaceAfter: round(p.after ?? 0),
       // spacing in points stays in points for the paragraph (its style takes the nearest multiple)
       ...(p.line && p.line.rule !== 'auto' ? { linePt: round(p.line.v / 20), lineRule: p.line.rule === 'exact' ? 'exact' as const : 'atLeast' as const } : { line: this.lineOf(p, size) }),
-      indent: round(indent), indentRight: p.right ? round(Math.max(0, p.right)) : undefined, firstLine: list ? undefined : round(p.first ?? 0), keepNext: p.keepNext,
+      indent: round(indent), indentRight: p.right ? round(p.right) : undefined, firstLine: list ? undefined : round(p.first ?? 0), keepNext: p.keepNext,
       keepLines: p.keepLines || undefined, noWidow: p.widow === false || undefined,
       pageBreak: p.pageBreak, section: brk, list, level: list ? ilvl : undefined, noLineNumbers: p.noLineNumbers, noHyphen: p.noHyphen || undefined,
       tabs: finalTabs(p), scheme, bullet,
@@ -3553,7 +3554,7 @@ class DocxReader {
       name: dflt?.name ?? ws?.name ?? ours,
       font: r.font ?? WORD_FONT, size, bold: !!r.bold, italic: !!r.italic, color: r.color ?? undefined,
       align: p.align ?? 'left', spaceBefore: round(p.before ?? 0), spaceAfter: round(p.after ?? 0), line: this.lineOf(p, size) ?? 1,
-      indent: round(Math.max(0, p.left ?? 0)), firstLine: round(p.first ?? 0), keepNext: !!p.keepNext,
+      indent: round(p.left ?? 0), firstLine: round(p.first ?? 0), keepNext: !!p.keepNext,
       ...(p.keepLines ? { keepLines: true } : {}), ...(p.widow === false ? { noWidow: true } : {}),
       next: next && next !== ours ? next : ours === 'Normal' ? undefined : dflt?.next,
       outline: OUTLINE[ours] ?? (p.outline && p.outline <= 9 && ours !== 'Normal' ? p.outline : undefined),
