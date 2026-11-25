@@ -39,7 +39,7 @@ import {
   COL_GAP, FLOAT_GAP, columnsOf, contentsPrint, lookExtent, usedObjects,
   type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type TocLook, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
   samePageBorder,
-  type WordPane,
+  type WordPane, withFloat,
 } from '../document/document';
 import { linkedHf } from '../document/sections';
 import { parseFieldInstr, type DocProps } from '../document/fields';
@@ -1451,7 +1451,8 @@ class DocxReader {
     const shown = pr?.getAttribute('name');
     if (kept?.was !== undefined && shown && shown !== kept.was) out.name = shown;
     else if (kept?.name) out.name = kept.name;
-    else if (!kept && shown && (ownName(pr, box) || !this.model)) out.name = shown;
+    // (in a file saved here, a name that isn't one this program gives: given or changed in Word)
+    else if (!kept && shown && (ownName(pr, box) || !this.model || !GIVEN_NAME.test(shown))) out.name = shown;
     return out;
   }
 
@@ -2602,7 +2603,7 @@ class DocxReader {
       const chosen = sizedBox(kept && sameBoxData(kept, got.box) && (typeof print !== 'string' || print === got.print) ? freshBox(kept) : got.box, shown.w, shown.h);
       if (chosen === got.box && got.partial) this.warn('chartParts');
       const float = box.localName === 'anchor' ? this.floatOf(box, null, shown.w) : null;
-      this.emitObject(ctx, { kind: 'picture', src: chartBoxPng(chosen, shown.w, shown.h), w: round(shown.w), h: round(shown.h), px: { w: chosen.chart.w, h: chosen.chart.h }, chart: chosen, ...(float ? { float } : {}), ...alt }, r);
+      this.emitObject(ctx, { kind: 'picture', src: chartBoxPng(chosen, shown.w, shown.h), w: round(shown.w), h: round(shown.h), px: { w: chosen.chart.w, h: chosen.chart.h }, chart: chosen, ...(float ? { float } : {}), ...wordPr, ...alt }, r);
       return;
     }
     const group = kid(data, 'wgp');
@@ -3248,7 +3249,7 @@ class DocxReader {
       const o = r.obj !== undefined ? this.objects[r.obj] : undefined;
       if (!o) return true;
       if (o.kind === 'textbox' || o.kind === 'bib') { this.warn('cellBoxes'); return false; }
-      if ((o.kind === 'drawing' || o.kind === 'picture') && o.float) { const { float: _, ...rest } = o; this.objects[r.obj!] = rest as DocObject; }
+      if ((o.kind === 'drawing' || o.kind === 'picture') && o.float) this.objects[r.obj!] = withFloat(o, undefined);
       return true;
     });
     let clean = rt.normalizeRuns(kept.length ? kept : runs.filter((r) => r.obj === undefined)).filter((r) => r.text);
@@ -4014,3 +4015,6 @@ function gradOf(el: Element | null): { xml: string; fill?: string } | null {
   const fill = gradFirst(xml);
   return { xml, ...(fill ? { fill } : {}) };
 }
+
+/** The names this program gives drawings in Word (wp:docPr name): its structures', charts', pictures', shapes', text boxes' and groups'. */
+const GIVEN_NAME = new RegExp(`^(?:${DRAWING_NAME}|${CHART_NAME}|Picture|Shape|Text Box|TextBox|Group) \\d+$`);

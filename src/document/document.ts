@@ -395,6 +395,22 @@ export function lookOf(o: DocObject | undefined): FigureLook | undefined {
 }
 
 /** Where a figure, picture or text box floats on the page (none when it sits in its line). */
+/**
+ * A picture or drawing put in the line or made to float (Position, In Line with Text): its name
+ * and hidden mark in Word's Selection Pane go with it, from its float to its wordPr or back.
+ */
+export function withFloat(o: DocObject, float: Float | undefined): DocObject {
+  if (o.kind !== 'picture' && o.kind !== 'drawing') return { ...o, float } as DocObject;
+  const was: WordPane = o.float ? { name: o.float.name, hidden: o.float.hidden } : { ...o.wordPr };
+  const pane: WordPane = { ...(was.name ? { name: was.name } : {}), ...(was.hidden ? { hidden: true } : {}) };
+  const { wordPr: _w, float: _f, ...rest } = o;
+  if (float) {
+    const { name: _n, hidden: _h, ...fl } = float;
+    return { ...rest, float: { ...fl, ...pane } } as DocObject;
+  }
+  return { ...rest, ...(Object.keys(pane).length ? { wordPr: pane } : {}) } as DocObject;
+}
+
 export function floatOf(o: DocObject | undefined): Float | undefined {
   return o && (o.kind === 'drawing' || o.kind === 'picture' || o.kind === 'textbox') ? o.float : undefined;
 }

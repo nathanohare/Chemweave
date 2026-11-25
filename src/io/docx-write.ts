@@ -1308,7 +1308,8 @@ class DocxWriter {
       const o = this.t.objects[id];
       const fl = floatOf(o);
       if (!o || !fl) return null;
-      const one = await this.picture(main, id, { ...o, float: undefined } as DocObject, '');
+      // (each picture in the group without a name or hidden mark of its own: the group has them)
+      const one = await this.picture(main, id, { ...o, float: undefined, wordPr: undefined } as DocObject, '');
       const ext = /<wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(one);
       const docPr = /<wp:docPr id="(\d+)"[^>]*?(?: descr="([^"]*)")?\/>/.exec(one);
       const blip = /<a:blip r:embed="([^"]+)"/.exec(one);

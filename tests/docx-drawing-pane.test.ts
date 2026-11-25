@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
+import { floatOf, withFloat, type DocObject } from '../src/document/document';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
 const DML = 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
@@ -53,5 +54,42 @@ describe('a drawing\'s name and hidden mark (F-W-019, F-W-020)', () => {
     const savedBytes = await writeDocx((await readDocx(file)).doc, deps);
     const twice = await docPrs(savedBytes);
     expect(twice.list.map((d) => d.replace(/ id="\d+"/, ''))).toEqual(once.list.map((d) => d.replace(/ id="\d+"/, '')));
+  });
+});
+
+describe('a drawing\'s name and hidden mark: the review\'s cases', () => {
+  it('go with a picture made to float and put back in the line', () => {
+    const inLine: DocObject = { kind: 'picture', src: 'data:,', w: 10, h: 10, wordPr: { name: 'Logo', hidden: true } };
+    const floating = withFloat(inLine, { wrap: 'square', x: 0, y: 0 });
+    expect(floatOf(floating)).toMatchObject({ name: 'Logo', hidden: true });
+    expect((floating as { wordPr?: unknown }).wordPr).toBeUndefined();
+    const back = withFloat(floating, undefined);
+    expect(floatOf(back)).toBeUndefined();
+    expect((back as { wordPr?: unknown }).wordPr).toEqual({ name: 'Logo', hidden: true });
+  });
+
+  it('keeps a name given in Word to a picture in a file saved here, and the name it had', async () => {
+    const saved = await writeDocx((await readDocx(wordFile(inline('<wp:docPr id="1" name="Picture 7"/>')))).doc, deps);
+    // in Word: the picture renamed, and hidden="0" (not hidden)
+    const files = unzipSync(saved);
+    files['word/document.xml'] = strToU8(strFromU8(files['word/document.xml']).replace(/(<wp:docPr id="\d+" name=")[^"]*"/, '$1Renamed in Word" hidden="0"'));
+    const { list } = await docPrs(zipSync(files));
+    expect(list[0]).toMatch(/name="Renamed in Word"/);
+    expect(list[0]).not.toMatch(/hidden/);
+    // and the name it had from Word stays with it in the file saved here
+    const { doc } = await readDocx(saved);
+    const pic = Object.values(doc.objects).find((o) => o.kind === 'picture') as { wordPr?: { name?: string } };
+    expect(pic.wordPr?.name).toBe('Picture 7');
+  });
+});
+
+describe('the names this program gives', () => {
+  it('are not taken for names given in Word when its own file is opened again', async () => {
+    // a picture with no name of its own, saved here as "Picture N"
+    const { doc } = await readDocx(wordFile(inline('<wp:docPr id="1" name=""/>')));
+    const saved = await writeDocx(doc, deps);
+    const again = (await readDocx(saved)).doc;
+    const pic = Object.values(again.objects).find((o) => o.kind === 'picture') as { wordPr?: unknown };
+    expect(pic.wordPr).toBeUndefined();
   });
 });
