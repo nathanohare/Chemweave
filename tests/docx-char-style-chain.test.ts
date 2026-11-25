@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
-import { applyCharStyle, type DocText } from '../src/document/document';
+import { applyCharStyle, modifyCharStyle, type DocText } from '../src/document/document';
 import * as rt from '../src/richtext';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
@@ -54,6 +54,28 @@ describe("a character style's chain", () => {
     expect(derivedRun(back).highlight).toBeUndefined();
     expect(derivedRun(back).sup).toBeFalsy();
     expect(strFromU8(unzipSync(await writeDocx(back, deps))['word/styles.xml'])).toBe(x);
+  });
+
+  it("leaves a coloured paragraph's colour on text in a chain that sets none, and a parent changed here doesn't change it", async () => {
+    // Heading 1 in blue; CB bold, CD italic based on CB: neither sets a colour
+    const styles = `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
+      `<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:rPr><w:color w:val="2F5496"/></w:rPr></w:style>` +
+      `<w:style w:type="character" w:customStyle="1" w:styleId="CB"><w:name w:val="CB"/><w:rPr><w:b/></w:rPr></w:style>` +
+      `<w:style w:type="character" w:customStyle="1" w:styleId="CD"><w:name w:val="CD"/><w:basedOn w:val="CB"/><w:rPr><w:i/><w:u w:val="dotted"/></w:rPr></w:style>`;
+    const files = unzipSync(docx());
+    files['word/styles.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:styles ${W}>${styles}</w:styles>`));
+    files['word/document.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:document ${W}><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:rPr><w:rStyle w:val="CD"/></w:rPr><w:t>styled</w:t></w:r></w:p><w:p/><w:sectPr/></w:body></w:document>`));
+    const t = (await readDocx(zipSync(files))).doc as DocText;
+    const run = (d: DocText) => d.runs.find((r) => r.text.includes('styled'))!;
+    expect(run(t)).toMatchObject({ color: '#2f5496', bold: true, italic: true });
+    const once = await writeDocx(t, deps);
+    expect(strFromU8(unzipSync(once)['word/styles.xml'])).toContain('<w:basedOn w:val="CB"/>');
+    expect(run((await readDocx(once)).doc as DocText)).toMatchObject({ color: '#2f5496', bold: true, italic: true, ukind: 'dotted' });
+    // the parent made bigger, in Arial (Modify Style): the text in the child, as it shows here, stays as it was
+    const changed = modifyCharStyle(t, { ...t.charStyles!.CB, size: 20, font: 'Arial' });
+    const before = run(changed);
+    const after = run((await readDocx(await writeDocx(changed, deps))).doc as DocText);
+    expect([after.size, after.font, after.bold]).toEqual([before.size, before.font, before.bold]);
   });
 
   it('gives its underline kind to text put in it here', async () => {

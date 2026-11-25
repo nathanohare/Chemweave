@@ -2551,9 +2551,21 @@ function keptStyleXml(k: { xml: string }, numIds: ReadonlyMap<string, string>): 
 
 /** A character style: only what it sets. */
 function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = wordBuiltInName, themes = true, ours: Record<string, CharStyle> = {}): string {
-  // (based on another style here, not on itself through others: what it leaves off would come from that one, so it says)
-  let chained = !!s.basedOn && s.basedOn !== s.id && !!ours[s.basedOn];
-  for (let b = s.basedOn, seen = new Set([s.id]); chained && b && ours[b]; b = ours[b].basedOn) { if (seen.has(b)) chained = false; seen.add(b); }
+  // based on another style here (not on itself through others): what the ones it is based on set comes
+  // from them where it leaves it unset, so it says "off" where it has a property off that they have on,
+  // and isn't based on them where it leaves unset a font, size, bold, italic or colour they set
+  const has = (id: string | undefined): id is string => !!id && Object.hasOwn(ours, id);
+  let chained = has(s.basedOn) && s.basedOn !== s.id;
+  const up: Partial<Record<'font' | 'size' | 'bold' | 'italic' | 'color' | 'allCaps' | 'smallCaps' | 'strike' | 'underline', boolean>> = {};
+  for (let b = s.basedOn, seen = new Set([s.id]); chained && has(b); b = ours[b].basedOn) {
+    if (seen.has(b)) { chained = false; break; }
+    seen.add(b);
+    const a = ours[b];
+    for (const k of ['font', 'size', 'bold', 'italic', 'color'] as const) if (a[k] !== undefined) up[k] = true;
+    for (const k of ['allCaps', 'smallCaps', 'strike', 'underline'] as const) if (a[k]) up[k] = true;
+  }
+  if (chained && (['font', 'size', 'bold', 'italic', 'color'] as const).some((k) => up[k] && s[k] === undefined)) chained = false;
+  const off = (k: 'allCaps' | 'smallCaps' | 'strike' | 'underline') => chained && !!up[k];
   const own = WORD_CHAR[s.id];
   // (Word's own by its name too: Book Title, Subtle Reference...)
   const word = own ? null : builtIn(s.name);
@@ -2562,13 +2574,13 @@ function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = w
   if (s.font) rPr.push(fontsXml(s.font, th));
   if (s.bold !== undefined) rPr.push(s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>');
   if (s.italic !== undefined) rPr.push(s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>');
-  if (s.allCaps) rPr.push('<w:caps/>'); else if (chained) rPr.push('<w:caps w:val="0"/>');
-  if (s.smallCaps) rPr.push('<w:smallCaps/>'); else if (chained) rPr.push('<w:smallCaps w:val="0"/>');
-  if (s.strike) rPr.push('<w:strike/>'); else if (chained) rPr.push('<w:strike w:val="0"/>');
-  if (s.color || chained) rPr.push(colorXml(s.color, th));
+  if (s.allCaps) rPr.push('<w:caps/>'); else if (off('allCaps')) rPr.push('<w:caps w:val="0"/>');
+  if (s.smallCaps) rPr.push('<w:smallCaps/>'); else if (off('smallCaps')) rPr.push('<w:smallCaps w:val="0"/>');
+  if (s.strike) rPr.push('<w:strike/>'); else if (off('strike')) rPr.push('<w:strike w:val="0"/>');
+  if (s.color) rPr.push(colorXml(s.color, th));
   if (s.size) rPr.push(`<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`);
   // (its underline's kind, as a run's)
-  if (s.underline) rPr.push(underlineXml({ text: '', underline: true, ukind: s.ukind })); else if (chained) rPr.push('<w:u w:val="none"/>');
+  if (s.underline) rPr.push(underlineXml({ text: '', underline: true, ukind: s.ukind })); else if (off('underline')) rPr.push('<w:u w:val="none"/>');
   return `<w:style w:type="character"${own || word ? '' : ' w:customStyle="1"'} w:styleId="${xml(s.id)}"><w:name w:val="${xml(own?.[0] ?? word ?? s.name)}"/><w:basedOn w:val="${chained ? xml(s.basedOn!) : 'DefaultParagraphFont'}"/>` +
     `<w:uiPriority w:val="${own?.[1] ?? 29}"/><w:qFormat/>${rPr.length ? `<w:rPr>${rPr.join('')}</w:rPr>` : ''}</w:style>`;
 }
