@@ -2,6 +2,12 @@
 
 <!-- A few lines in plain words: what people will see or what now works. -->
 
+## Changelog
+
+<!-- Added a change file in changes/ (how: changes/README.md)? It becomes this change's line in the release notes, Help ▸ What's New and CHANGELOG.md, so write it for the people who use the app, and name the issue it fixes ("Fixes #123"). Only for a change nobody will notice: the "no changelog" label instead. -->
+
+- **Change file:** `changes/…md` / "no changelog" label (why):
+
 ## Checklist
 
 <!-- Delete what doesn't apply, but say "not needed" rather than leaving a line out. -->

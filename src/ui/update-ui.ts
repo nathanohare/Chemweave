@@ -2,7 +2,7 @@
 // starts, which shows a small notice in the corner if there is one, and File > Check for Updates…,
 // which always says what it found. Installing asks first when some tabs aren't saved.
 
-import { appVersion, findRelease, notesSince, newestNotes, publishedReleases, shortNotes, worthOffering, RELEASES_PAGE, type Release, type UpdateChannel } from '../updates';
+import { appVersion, findRelease, notesSince, newestNotes, noteLine, publishedReleases, shortNotes, worthOffering, RELEASES_PAGE, type Release, type UpdateChannel } from '../updates';
 import { ask } from './ask';
 
 export interface UpdateHost {
@@ -130,12 +130,29 @@ export class UpdateUI {
     h.textContent = `What’s new in Chemweave ${now}`;
     const list = document.createElement('div');
     list.className = 'whats-new-list';
+    // every change of each version, under its kind (Added, Fixed…), so whoever reported a problem
+    // can find its fix; the list scrolls when it is long
     for (const r of found.slice(0, 5)) {
-      const p = document.createElement('p');
+      const sec = document.createElement('section');
       const v = document.createElement('b');
-      v.textContent = r.version + ' ';
-      p.append(v, shortNotes(r.notes, 3));
-      list.append(p);
+      v.textContent = r.version;
+      sec.append(v);
+      let ul: HTMLUListElement | null = null;
+      for (const line of r.notes.split('\n').map(noteLine)) {
+        if (line.heading) {
+          const h = document.createElement('div');
+          h.className = 'whats-new-kind';
+          h.textContent = line.heading;
+          sec.append(h);
+          ul = null;
+        } else if (line.text) {
+          if (!ul) { ul = document.createElement('ul'); sec.append(ul); }
+          const li = document.createElement('li');
+          li.textContent = line.text;
+          ul.append(li);
+        }
+      }
+      list.append(sec);
     }
     const row = document.createElement('div');
     row.className = 'update-buttons';

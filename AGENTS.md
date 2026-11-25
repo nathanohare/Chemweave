@@ -23,5 +23,8 @@ In short:
 - A check's known-problems list is for problems that were there before; never add a new problem to
   one to make a check pass, and never weaken a check.
 - Every automatic value can be changed by hand; every command is undone in one step.
+- Every pull request that changes the app adds a change file to `changes/` saying in plain words what
+  it changed (`changes/README.md`); it becomes the release notes, Help ▸ What's New and CHANGELOG.md.
+  Never edit CHANGELOG.md by hand.
 - Run the tests for what you changed (`npx vitest run tests/<file>`) and `npm run typecheck:strict`
   before committing.
