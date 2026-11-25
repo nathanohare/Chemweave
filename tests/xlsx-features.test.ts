@@ -429,6 +429,9 @@ describe('a sort by color (F-X-010)', () => {
     const table = Object.keys(unzipSync(saved)).find((n) => /^xl\/tables\/table\d+\.xml$/.test(n))!;
     expect(part(saved, table)).toContain('<autoFilter');
     expect(part(saved, table)).not.toContain('<sortState');
+  });
+});
+
 describe('each table\'s filter buttons (F-X-007)', () => {
   // ECMA-376 Part 1, §18.5.1.2 table: a table's autoFilter (§18.3.1.2) is its header row's filter
   // buttons; a table part without one has none (Table Design ▸ Filter Button off)
