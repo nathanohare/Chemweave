@@ -1548,6 +1548,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       else if (kind === 'c') { const c = doc.captions.get(id); if (c) captionMoreIn(c, v, captionAt(el), textSeen(el)); }
       else if (kind === 'r') { const r = doc.arrows.get(id); if (r) arrowMoreIn(r, v, refIn); }
       else if (kind === 's') { const sh = doc.shapes.get(id); if (sh) shapeMoreIn(sh, v, refIn); }
+      // its group's name
+      if (typeof v.gn === 'string' && v.gn) { const x = (kind === 'a' ? doc.atoms : kind === 'c' ? doc.captions : kind === 'r' ? doc.arrows : kind === 's' ? doc.shapes : null)?.get(id) as { grpName?: string } | undefined; if (x) x.grpName = v.gn; }
     }
     // a structure's depths and bond places, in one tag on its <fragment> (cdxml-more.ts fragMore)
     for (const f of all) {

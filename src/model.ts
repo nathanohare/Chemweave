@@ -67,6 +67,8 @@ export interface Atom {
   grp?: number;
   /** Groups inside groups as ChemDraw keeps them (outermost first; grp is the first), for writing the nesting back. Set only when nested. */
   grpPath?: number[];
+  /** Its group's name (Slides: PowerPoint's Selection Pane), the same on every member, where it was given one. */
+  grpName?: string;
   /** Place in the drawing order set by Format > Order (higher is in front); not set keeps the usual layers (issue #406, editor/stacking.ts). */
   stack?: number;
   x: number;
@@ -682,6 +684,8 @@ export interface Caption {
   grp?: number;
   /** Groups inside groups as ChemDraw keeps them (outermost first; grp is the first), for writing the nesting back. Set only when nested. */
   grpPath?: number[];
+  /** Its group's name (Slides: PowerPoint's Selection Pane), the same on every member, where it was given one. */
+  grpName?: string;
   /** Place in the drawing order set by Format > Order (higher is in front); not set keeps the usual layers (issue #406, editor/stacking.ts). */
   stack?: number;
   /** Left end of the first line's baseline (for centred/right text, of the line box). */
@@ -870,6 +874,8 @@ export interface Arrow {
   grp?: number;
   /** Groups inside groups as ChemDraw keeps them (outermost first; grp is the first), for writing the nesting back. Set only when nested. */
   grpPath?: number[];
+  /** Its group's name (Slides: PowerPoint's Selection Pane), the same on every member, where it was given one. */
+  grpName?: string;
   /** Place in the drawing order set by Format > Order (higher is in front); not set keeps the usual layers (issue #406, editor/stacking.ts). */
   stack?: number;
   tail: Vec;
@@ -1060,6 +1066,8 @@ export interface Shape {
   grp?: number;
   /** Groups inside groups as ChemDraw keeps them (outermost first; grp is the first), for writing the nesting back. Set only when nested. */
   grpPath?: number[];
+  /** Its group's name (Slides: PowerPoint's Selection Pane), the same on every member, where it was given one. */
+  grpName?: string;
   /** Place in the drawing order set by Format > Order (higher is in front); not set keeps the usual layers (issue #406, editor/stacking.ts). */
   stack?: number;
   kind: 'line' | 'rect' | 'oval' | 'symbol' | 'bracket' | 'picture' | 'table' | 'geo' | 'ring';

@@ -1163,8 +1163,16 @@ class Reader {
         const hadShapes = new Set(doc.shapes.keys()), hadArrows = new Set(doc.arrows.keys());
         this.tree(s, layout, el, inner, doc);
         if (diagramTag && off && ext) this.diagramFrame(diagramTag, off, ext, t, doc, hadShapes, hadArrows);
-        // a group stays a group (one level deep, as ours are: groups in it join it)
-        else groupNew(doc, before);
+        // a group stays a group (one level deep, as ours are: groups in it join it), with its name
+        else {
+          groupNew(doc, before);
+          const gName = kid(el, 'nvGrpSpPr', 'cNvPr')?.getAttribute('name')?.trim() ?? '';
+          // (one PowerPoint names itself, or none: no name, not one saved here before PowerPoint changed the group)
+          const own = gName && !PPT_NAME.test(gName) ? gName : undefined;
+          for (const m of [doc.atoms, doc.captions, doc.arrows, doc.shapes] as Map<number, { id: number; grp?: number; grpName?: string }>[]) {
+            for (const x of m.values()) if (x.id >= before && x.grp !== undefined) { if (own) x.grpName = own; else delete x.grpName; }
+          }
+        }
         // a flipped or turned group: everything in it flipped, then turned, together about the group's middle
         if (gb) poseNew(doc, before, gb);
         break;
@@ -2968,7 +2976,7 @@ const GONE = Symbol('gone');
 /** A design shape's look: taken from PowerPoint when its fill, outline or effects were changed there. */
 const GEO_LOOK_KEYS = ['color', 'filled', 'fill', 'fillColor', 'fill2', 'gradAngle', 'gradRadial', 'pattern', 'patternColor', 'patternSize', 'patternTransparency', 'patternClear', 'fade', 'transparency', 'lineWidth', 'bold', 'dashed', 'dotted', 'hashSpacing', 'shadow', 'shadowBetween', 'shadowSize', 'shadowBlur', 'shadowAngle', 'shadowColor', 'shadowOpacity', 'glow', 'softEdge', 'reflection', 'bevel', 'picFill'] as const;
 /** A text box's settings PowerPoint has no place for, kept from our tag when PowerPoint's text is read. */
-const OWN_CAPTION_KEYS = ['piece', 'ole', 'grp', 'grpPath', 'stack', 'attach', 'ignoreWarnings', 'chem', 'results'] as const;
+const OWN_CAPTION_KEYS = ['piece', 'ole', 'grp', 'grpPath', 'grpName', 'stack', 'attach', 'ignoreWarnings', 'chem', 'results'] as const;
 
 const dropUndefined = (r: TextRun): Partial<TextRun> => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined));
 
@@ -3310,7 +3318,7 @@ function roundRadius(spPr: Element | null, box: Pick<Shape, 'x1' | 'y1' | 'x2' |
  */
 // (every field of Shape but those is listed, so a field added to Shape must be added here too)
 const PLAIN_SHAPE_FIELDS: { [K in Exclude<keyof Shape, 'id' | 'kind' | 'x1' | 'y1' | 'x2' | 'y2' | 'name' | 'hidden' | 'ring' | 'pin' | 'frame'>]-?: 'number' | 'string' | 'boolean' | 'object' } = {
-  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', stack: 'number', poly: 'object', geo: 'string', adjust: 'object', orbital: 'string', orb: 'object',
+  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', grpName: 'string', stack: 'number', poly: 'object', geo: 'string', adjust: 'object', orbital: 'string', orb: 'object',
   text: 'object', textAlign: 'string', textValign: 'string', lineWidth: 'number', transparency: 'number', rot: 'number', dashed: 'boolean',
   hashSpacing: 'number', dotted: 'boolean', filled: 'boolean', fill: 'string', fill2: 'string', gradAngle: 'number', gradRadial: 'boolean',
   pattern: 'string', patternColor: 'string', patternSize: 'number', patternTransparency: 'number', patternClear: 'boolean', fillColor: 'string',

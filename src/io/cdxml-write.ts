@@ -2072,7 +2072,8 @@ class CdxmlWriter {
       this.fillCaption(t, { id: 0, x: area.x1, y: top - lay.box.y1, runs: s.text.runs, paras: s.text.paras, justify, wrap: w });
       g.appendChild(t);
     }
-    const { id: _, ...look } = s;
+    // (not its group's name: that goes with its other settings, cdxml-more, so a group changed here isn't named from this tag)
+    const { id: _, grpName: _gn, ...look } = s;
     // a frame takes what lies inside it again on opening (ids change between files)
     if (look.frame) look.frame = { ...look.frame, atoms: [], captions: [], arrows: [], shapes: [] };
     if (look.newman) look.newman = newmanForFile(this.doc, look.newman);
@@ -3004,6 +3005,8 @@ class CdxmlWriter {
       if (want !== null) e.appendChild(this.el('objecttag', { TagType: 'String', Name: MORE_TAG, Value: want, Visible: 'no' }));
       this.changed = true;
     };
+    // (with its group's name, where it has one)
+    const named = (v: Record<string, unknown> | null, x: { grp?: number; grpName?: string }) => (x.grp !== undefined && typeof x.grpName === 'string' && x.grpName ? { ...(v ?? {}), gn: x.grpName } : v);
     // a structure's depths and bond places go in one tag on its <fragment> (fragMore), each atom's and bond's other settings on its own element
     const frags = new Set<Element>();
     const atomAt = new Map<Element, { depth?: number }>();
@@ -3014,7 +3017,7 @@ class CdxmlWriter {
       if (!e) continue;
       const t = this.child(e, 't'), own = tagsOf(e), f = fragOf(e);
       if (f) { frags.add(f); atomAt.set(e, a); }
-      put(e, atomMore(a, t ? labelSeen(t) : null, t ? labelLookOfText(t, Number(e.getAttribute('Charge')) || undefined) : {}, own.stereo, !!f), own.old);
+      put(e, named(atomMore(a, t ? labelSeen(t) : null, t ? labelLookOfText(t, Number(e.getAttribute('Charge')) || undefined) : {}, own.stereo, !!f), a), own.old);
     }
     for (const b of doc.bonds.values()) {
       const e = elOf('b', b.id);
@@ -3037,10 +3040,10 @@ class CdxmlWriter {
     }
     for (const c of doc.captions.values()) {
       const e = elOf('c', c.id);
-      if (e) put(e, captionMore(c, c.width !== undefined ? fileWidth(e) : undefined, captionAt(e), textSeen(e)));
+      if (e) put(e, named(captionMore(c, c.width !== undefined ? fileWidth(e) : undefined, captionAt(e), textSeen(e)), c));
     }
-    for (const r of doc.arrows.values()) put(elOf('r', r.id), arrowMore(r, ref));
-    for (const s of doc.shapes.values()) put(elOf('s', s.id), shapeMore(s, ref));
+    for (const r of doc.arrows.values()) put(elOf('r', r.id), named(arrowMore(r, ref), r));
+    for (const s of doc.shapes.values()) put(elOf('s', s.id), named(shapeMore(s, ref), s));
   }
 
   private cleanUp(): void {
@@ -3218,12 +3221,13 @@ function moveCdObject(e: Element, map: (x: number, y: number) => [number, number
 export const REF_ATTR = /(ID|IDs|Objects)$/;
 
 /** What a closed curve can hold: a path shape with any other setting is written as a design shape. */
-const PATH_CURVE_KEYS = new Set(['id', 'grp', 'grpPath', 'stack', 'piece', 'kind', 'geo', 'x1', 'y1', 'x2', 'y2', 'color', 'z', 'filled', 'dashed', 'bold', 'lineWidth']);
+const PATH_CURVE_KEYS = new Set(['id', 'grp', 'grpPath', 'grpName', 'stack', 'piece', 'kind', 'geo', 'x1', 'y1', 'x2', 'y2', 'color', 'z', 'filled', 'dashed', 'bold', 'lineWidth']);
 
 function sameExcept(a: object, b: object, skip: string[]): boolean {
   // (which group a thing is in is written by writeGroups, as the file's group elements)
-  const ka = Object.keys(a).filter((k) => k !== 'grp' && !skip.includes(k) && (a as any)[k] !== undefined);
-  const kb = Object.keys(b).filter((k) => k !== 'grp' && !skip.includes(k) && (b as any)[k] !== undefined);
+  // (and its name with the object's other settings: cdxml-more's tag)
+  const ka = Object.keys(a).filter((k) => k !== 'grp' && k !== 'grpName' && !skip.includes(k) && (a as any)[k] !== undefined);
+  const kb = Object.keys(b).filter((k) => k !== 'grp' && k !== 'grpName' && !skip.includes(k) && (b as any)[k] !== undefined);
   if (ka.length !== kb.length) return false;
   for (const k of ka) if (!deepEqual((a as any)[k], (b as any)[k])) return false;
   return true;

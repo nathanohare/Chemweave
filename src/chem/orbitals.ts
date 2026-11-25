@@ -201,6 +201,8 @@ export function redrawOrbital(doc: Doc, parts: Shape[], spec: OrbitalSpec): numb
   const grp = keep.grp;
   for (const s of parts) doc.removeShape(s.id);
   const ids = putOrbital(doc, spec, { x: at.x, y: at.y }, atom, grp);
+  // (in its group's name too)
+  if (grp !== undefined && keep.grpName) for (const id of ids) doc.updateShape(id, { grpName: keep.grpName });
   // in front of or behind other things as it was
   if (keep.stack !== undefined || keep.z !== undefined) for (const id of ids) doc.updateShape(id, { ...(keep.stack !== undefined ? { stack: keep.stack } : {}), ...(keep.z !== undefined ? { z: keep.z } : {}) });
   return ids;
