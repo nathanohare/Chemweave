@@ -19,6 +19,7 @@ import type { Measure } from '../text/layout';
 import { ACS_1996, type DocStyle } from '../style';
 import * as rt from '../richtext';
 import { cleanPara, fitParas, paraCount, paraRange } from '../text/paragraphs';
+import { cleanBorders } from './para-borders';
 import { citationTexts, type CiteStyle, type Reference } from './references';
 import type { CiteFormat } from './cite-styles';
 import type { BibLive, CiteLive, CiteManager } from './live-cites';
@@ -638,7 +639,7 @@ export function noteStyle(t: Pick<DocText, 'styles'>): NamedStyle {
   const own = t.styles.FootnoteText;
   if (own) return own;
   const N = styleOf(t, undefined);
-  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined };
+  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined, border: undefined, shade: undefined };
 }
 
 // ---------------------------------------------------------------- defaults
@@ -719,10 +720,13 @@ export function runStyleOf(s: NamedStyle): rt.RunStyle {
 }
 
 /** A paragraph in a style: the style's spacing, indents and alignment, keeping its list, level and page break. */
-export function paraFromStyle(s: NamedStyle, keep: ParaStyle): ParaStyle {
+export function paraFromStyle(s: NamedStyle, keep: ParaStyle, was?: NamedStyle): ParaStyle {
+  // (lines and shading the paragraph had from its old style give way to the new style's; its own stay)
+  const ownBorder = keep.border && !(was && JSON.stringify(cleanBorders(keep.border) ?? null) === JSON.stringify(cleanBorders(was.border) ?? null)) ? keep.border : undefined;
+  const ownShade = keep.shade && !(was && keep.shade.toLowerCase() === (was.shade ?? '').toLowerCase()) ? keep.shade : undefined;
   return cleanPara({
     list: keep.list, level: keep.level, cont: keep.cont, pageBreak: keep.pageBreak, colBreak: keep.colBreak, section: keep.section, noLineNumbers: keep.noLineNumbers,
-    marks: keep.marks, tabs: keep.tabs, scheme: keep.scheme, bullet: keep.bullet, border: s.border ?? keep.border, shade: s.shade ?? keep.shade,
+    marks: keep.marks, tabs: keep.tabs, scheme: keep.scheme, bullet: keep.bullet, border: was ? ownBorder ?? s.border : s.border ?? keep.border, shade: was ? ownShade ?? s.shade : s.shade ?? keep.shade,
     style: s.id === 'Normal' ? undefined : s.id,
     align: s.align === 'left' ? undefined : s.align,
     spaceBefore: s.spaceBefore, spaceAfter: s.spaceAfter,
@@ -745,8 +749,9 @@ const PARA_KEYS = ['align', 'spaceBefore', 'spaceAfter', 'line', 'indent', 'firs
 
 /** A paragraph after its style changed from `from` to `to`: what looked like `from` now looks like `to`. */
 export function restylePara(p: ParaStyle, from: NamedStyle, to: NamedStyle): ParaStyle {
-  const want = paraFromStyle(to, p);
-  const out: ParaStyle = { ...p, style: want.style };
+  const want = paraFromStyle(to, p, from);
+  // (lines and shading: the old style's give way to the new one's, the paragraph's own stay)
+  const out: ParaStyle = { ...p, style: want.style, border: want.border, shade: want.shade };
   for (const k of PARA_KEYS) {
     const fromV = k === 'keepLines' || k === 'noWidow' ? !!from[k] : from[k];
     if (paraValue(p, k) === fromV) (out as Record<string, unknown>)[k] = (want as Record<string, unknown>)[k];
@@ -787,7 +792,7 @@ export function setParaStyle(t: DocText, first: number, last: number, id: string
   const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
   const from = paras.map((p) => styleOf(t, p));
   const runs = mapParagraphRuns(t.runs, (r, p) => (p < first || p > last ? r : restyleRun(r, from[p], to)));
-  return { ...t, runs, paras: paras.map((p, i) => (i < first || i > last ? p : paraFromStyle(to, p))) };
+  return { ...t, runs, paras: paras.map((p, i) => (i < first || i > last ? p : paraFromStyle(to, p, from[i]))) };
 }
 
 /** Change a named style: every paragraph in it changes too (except what was formatted by hand). */
@@ -833,6 +838,8 @@ export function newParaStyle(t: DocText, name: string, para: number, look: rt.Ru
     font: look.font ?? from.font, size: look.size ?? from.size, bold: !!look.bold, italic: !!look.italic, color: look.color,
     align: p.align ?? 'left', spaceBefore: p.spaceBefore ?? 0, spaceAfter: p.spaceAfter ?? 0, line: p.line ?? 1,
     indent: p.indent ?? 0, firstLine: p.firstLine ?? 0, keepNext: !!p.keepNext, next: undefined,
+    // (the paragraph's lines and shading, as it shows)
+    border: cleanBorders(p.border), shade: p.shade,
   };
   const withIt = { ...t, styles: { ...t.styles, [id]: s } };
   return { t: setParaStyle(withIt, para, para, id), id };

@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
-import { paraFromStyle, type DocText } from '../src/document/document';
+import { newParaStyle, paraFromStyle, setParaStyle, type DocText } from '../src/document/document';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
@@ -60,6 +60,40 @@ describe("a paragraph style's lines and shading", () => {
     const back = (await readDocx(once)).doc as DocText;
     expect(back.paras.slice(0, 3).map((p) => [!!p.border, p.shade])).toEqual([[true, '#eef2e6'], [false, undefined], [true, '#ffff00']]);
     expect(strFromU8(unzipSync(await writeDocx(back, deps))['word/document.xml'])).toBe(x);
+  });
+
+  it("are taken away in Word too by a style that hasn't Normal's; the same on a second save", async () => {
+    const styles = `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr>${BOX}</w:pPr></w:style>` +
+      `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Plain"><w:name w:val="Plain"/><w:basedOn w:val="Normal"/><w:pPr><w:pBdr><w:top w:val="nil"/><w:bottom w:val="nil"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="auto"/></w:pPr></w:style>`;
+    const files = unzipSync(docx(`<w:p><w:pPr><w:pStyle w:val="Plain"/></w:pPr><w:r><w:t>plain</w:t></w:r></w:p><w:p><w:r><w:t>boxed</w:t></w:r></w:p>`));
+    files['word/styles.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:styles ${W}>${styles}</w:styles>`));
+    const t = (await readDocx(zipSync(files))).doc as DocText;
+    expect(t.paras[0].border).toBeUndefined();
+    const once = await writeDocx(t, deps);
+    const back = (await readDocx(once)).doc as DocText;
+    expect(back.paras[0].border).toBeUndefined();
+    expect(back.paras[0].shade).toBeUndefined();
+    expect(back.paras[1].border?.top).toBeTruthy();
+    const again = unzipSync(await writeDocx(back, deps));
+    for (const part of ['word/document.xml', 'word/styles.xml']) expect(strFromU8(again[part])).toBe(strFromU8(unzipSync(once)[part]));
+  });
+
+  it("give way to another style's when a paragraph changes style; New Style takes the paragraph's", async () => {
+    const t = (await readDocx(docx('<w:p><w:pPr><w:pStyle w:val="Boxed"/></w:pPr><w:r><w:t>boxed</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Boxed"/><w:pBdr><w:top w:val="nil"/><w:bottom w:val="nil"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="auto"/></w:pPr><w:r><w:t>unboxed</w:t></w:r></w:p>'))).doc as DocText;
+    const plain = setParaStyle(t, 0, 0, 'Normal');
+    expect(plain.paras[0].border).toBeUndefined();
+    expect(plain.paras[0].shade).toBeUndefined();
+    const made = newParaStyle(t, 'Bare', 1, {});
+    expect(made.t.styles[made.id].border).toBeUndefined();
+    expect(made.t.styles[made.id].shade).toBeUndefined();
+    expect(made.t.paras[1].border).toBeUndefined();
+  });
+
+  it("are written on a paragraph with the style's lines at its own distance from the text", async () => {
+    const own = `<w:pBdr><w:top w:val="single" w:sz="4" w:space="12" w:color="C8553D"/><w:bottom w:val="single" w:sz="4" w:space="12" w:color="C8553D"/></w:pBdr>`;
+    const t = (await readDocx(docx(`<w:p><w:pPr><w:pStyle w:val="Boxed"/>${own}</w:pPr><w:r><w:t>far</w:t></w:r></w:p><w:p/>`))).doc as DocText;
+    const x = strFromU8(unzipSync(await writeDocx(t, deps))['word/document.xml']);
+    expect(pPrs(x)[0]).toContain('w:space="12"');
   });
 
   it('are given to a paragraph put in the style here', async () => {

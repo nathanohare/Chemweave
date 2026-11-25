@@ -1855,6 +1855,11 @@ class DocxWriter {
     // Word's built-in style names: ours, and those the file read lists in its latent styles
     const latent = new Map([...(t.kept?.latentStyles ?? '').matchAll(/<w:lsdException\b[^>]*\bw:name="([^"]+)"/g)].map((m) => { const n = unxml(m[1]); return [n.toLowerCase(), n]; }));
     const builtIn = (name: string) => wordBuiltInName(name, latent);
+    // (a style based on Normal that hasn't Normal's lines or shading: nil sides and no fill, as Word writes it)
+    const reset = paraBorderXml({}, normal);
+    const unNormal = (x: string) => !reset ? x
+      : x.includes('<w:pPr>') ? x.replace(/<w:pPr>(<w:keepNext\/>)?/, (m) => m + reset)
+      : x.replace(/(<w:rPr>|<\/w:style>)/, (m) => `<w:pPr>${reset}</w:pPr>${m}`);
     out.push(`<w:docDefaults><w:rPrDefault><w:rPr>${fontsXml(normal.font)}<w:kern w:val="2"/><w:sz w:val="${half(normal.size)}"/><w:szCs w:val="${half(normal.size)}"/><w:lang w:val="${xml(t.lang ?? 'en-US')}" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>` +
       `<w:pPrDefault><w:pPr><w:widowControl/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>`);
     // (ECMA-376 part 1, 17.7.4.18: latent styles come after the defaults, before the styles)
@@ -1862,31 +1867,31 @@ class DocxWriter {
     const ids = Object.keys(t.styles);
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {
       const s = t.styles[id];
-      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept));
+      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal));
     }
     // the contents' lines (Word's own "toc 1" to "toc 3", which Update Field uses)
     if (Object.values(t.objects).some((o) => o.kind === 'toc')) {
-      for (let n = 1; n <= 3; n++) if (!t.styles[`TOC${n}`]) out.push(`<w:style w:type="paragraph" w:styleId="TOC${n}"><w:name w:val="toc ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips((n - 1) * TOC_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`);
+      for (let n = 1; n <= 3; n++) if (!t.styles[`TOC${n}`]) out.push(unNormal(`<w:style w:type="paragraph" w:styleId="TOC${n}"><w:name w:val="toc ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips((n - 1) * TOC_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`));
     }
     // the table of figures' lines (Word's own "table of figures")
     if (Object.values(t.objects).some((o) => o.kind === 'tof')) {
-      out.push(`<w:style w:type="paragraph" w:styleId="TableofFigures"><w:name w:val="table of figures"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:jc w:val="left"/></w:pPr></w:style>`);
+      out.push(unNormal(`<w:style w:type="paragraph" w:styleId="TableofFigures"><w:name w:val="table of figures"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:jc w:val="left"/></w:pPr></w:style>`));
     }
     // the index's and table of authorities' lines (Word's own "index 1", "index 2", "index heading", "table of authorities", "toa heading")
     if (Object.values(t.objects).some((o) => o.kind === 'index')) {
-      for (const n of [1, 2]) out.push(`<w:style w:type="paragraph" w:styleId="Index${n}"><w:name w:val="index ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:autoRedefine/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(n * INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`);
-      out.push(`<w:style w:type="paragraph" w:styleId="IndexHeading"><w:name w:val="index heading"/><w:basedOn w:val="Normal"/><w:next w:val="Index1"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normal.size)}" w:after="${twips(normal.size / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`);
+      for (const n of [1, 2]) out.push(unNormal(`<w:style w:type="paragraph" w:styleId="Index${n}"><w:name w:val="index ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:autoRedefine/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(n * INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`));
+      out.push(unNormal(`<w:style w:type="paragraph" w:styleId="IndexHeading"><w:name w:val="index heading"/><w:basedOn w:val="Normal"/><w:next w:val="Index1"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normal.size)}" w:after="${twips(normal.size / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`));
     }
     if (Object.values(t.objects).some((o) => o.kind === 'toa')) {
-      out.push(`<w:style w:type="paragraph" w:styleId="TableofAuthorities"><w:name w:val="table of authorities"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`);
-      out.push(`<w:style w:type="paragraph" w:styleId="TOAHeading"><w:name w:val="toa heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normal.size)}" w:after="${twips(normal.size / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`);
+      out.push(unNormal(`<w:style w:type="paragraph" w:styleId="TableofAuthorities"><w:name w:val="table of authorities"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`));
+      out.push(unNormal(`<w:style w:type="paragraph" w:styleId="TOAHeading"><w:name w:val="toa heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normal.size)}" w:after="${twips(normal.size / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`));
     }
     // footnotes and endnotes: Word's own styles for their text and their numbers
     if (Object.values(t.objects).some((o) => o.kind === 'note')) {
       const ns = noteStyle(t);
       for (const [sid, nm] of [['FootnoteText', 'footnote text'], ['EndnoteText', 'endnote text']]) {
         if (t.styles[sid]) continue;
-        out.push(styleXml({ ...ns, id: sid, name: nm }, ids, wordBuiltInName, this.themeKept).replace(' w:customStyle="1"', ''));
+        out.push(styleXml({ ...ns, id: sid, name: nm }, ids, wordBuiltInName, this.themeKept, normal).replace(' w:customStyle="1"', ''));
       }
       for (const [sid, nm] of [['FootnoteReference', 'footnote reference'], ['EndnoteReference', 'endnote reference']]) {
         out.push(`<w:style w:type="character" w:styleId="${sid}"><w:name w:val="${nm}"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>`);
@@ -1895,7 +1900,7 @@ class DocxWriter {
     // comments: Word's own styles for their text and marks, and for the links in comments kept as Word wrote them
     if (this.cmts.size) {
       const has = (id: string) => !!t.styles[id] || !!this.charStyles[id];
-      if (!has('CommentText')) out.push(`<w:style w:type="paragraph" w:styleId="CommentText"><w:name w:val="annotation text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>`);
+      if (!has('CommentText')) out.push(unNormal(`<w:style w:type="paragraph" w:styleId="CommentText"><w:name w:val="annotation text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>`));
       if (!has('CommentReference')) out.push(`<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>`);
       const linked = [...this.cmts.values()].some(({ c }) => [c, ...(c.replies ?? [])].some((n) => n.word?.paras?.some((x) => x.includes('<w:rStyle w:val="Hyperlink"/>'))));
       if (linked && !has('Hyperlink')) out.push(`<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr></w:style>`);
@@ -2249,7 +2254,7 @@ export function paraBorderXml(ps: ParaStyle, st?: Pick<NamedStyle, 'border' | 's
   const b = cleanBorders(ps.border);
   // (the paragraph's style's: nothing where the paragraph has the same, a side or shading taken away where it hasn't)
   const sb = cleanBorders(st?.border);
-  const sameLines = !!st && JSON.stringify(b ?? null) === JSON.stringify(sb ?? null);
+  const sameLines = !!st && JSON.stringify(b ?? null) === JSON.stringify(sb ?? null) && !keptPPr(ps).bsp;
   const sameShade = !!st && (ps.shade ?? '').toLowerCase() === (st.shade ?? '').toLowerCase();
   const off = (name: 'top' | 'left' | 'bottom' | 'right' | 'between') => (sb?.[name] && !b?.[name] ? `<w:${name} w:val="nil"/>` : '');
   let keptSpace: Record<string, string> = {};
@@ -2462,7 +2467,7 @@ function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = w
 }
 
 /** A named style, with all its settings written out. */
-function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true): string {
+function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true, normal?: NamedStyle): string {
   const id = s.id;
   // a style with one of Word's built-in names (header, No Spacing, toc 1...) is Word's own: not marked custom
   const word = WORD_NAMES[id] ?? builtIn(s.name);
@@ -2480,7 +2485,8 @@ function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => strin
   pPr.push(`<w:ind w:left="${twips(s.indent)}" ${s.firstLine < 0 ? `w:hanging="${twips(-s.firstLine)}"` : `w:firstLine="${twips(s.firstLine)}"`}/>`);
   pPr.push(`<w:jc w:val="${JC[s.align]}"/>`);
   if (s.outline) pPr.push(`<w:outlineLvl w:val="${s.outline - 1}"/>`);
-  pPr.push(paraBorderXml({ border: s.border, shade: s.shade }));
+  // (its lines and shading; a style based on Normal says where it hasn't Normal's)
+  pPr.push(paraBorderXml({ border: s.border, shade: s.shade }, id === 'Normal' ? undefined : normal));
   const th = themes ? themeOf(s.wth) : undefined;
   const rPr = `${fontsXml(s.font, th)}${s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>'}${s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>'}` +
     `${colorXml(s.color, th)}<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`;
