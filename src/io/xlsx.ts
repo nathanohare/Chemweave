@@ -2006,7 +2006,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
           // the file's own chart part, kept to write back while the chart isn't changed here (not a PivotChart's, which follows its PivotTable)
           const tree = cref?.namespaceURI === C_NS && !kid(cdoc.documentElement, 'pivotSource') ? readTree(pkg, target!) : null;
           const withFile = (c: Chart): Chart => (tree ? { ...c, file: { print: keptChartPrint(c), path: target!, ...tree } } : c);
-          if (mine && sameChartData(mine, got.chart)) { seenChartId(mine.id); const { alt: _was, placement: _had, ...kept } = mine; charts.push(withFile({ ...kept, at, ...alt, ...placement })); continue; }
+          if (mine && sameChartData(mine, got.chart)) { seenChartId(mine.id); const { alt: _was, placement: _had, ...kept } = mine; charts.push(withFile({ ...kept, at, ...placement, ...alt })); continue; }
           if (got.partial) notKept.add('parts of combined charts');
           charts.push(withFile({ ...got.chart, ...alt, ...placement }));
         }
