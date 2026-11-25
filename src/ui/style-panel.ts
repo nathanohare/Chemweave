@@ -18,7 +18,7 @@ import { setStereoShown, setStereoText } from '../chem/stereo';
 import { arialWidth } from '../text-metrics';
 import { Selection } from '../editor/editor';
 import { freeformPoints } from '../design/geo';
-import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, moCounts, moParts, moSides, setElectrons, setSides, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
+import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, moCounts, moParts, moPeriod, moSides, setElectrons, setSides, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
 import { ORBITAL_KIND_NAMES, ORBITAL_LOOK_NAMES, orbitalsAmong, readOrbital, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from '../chem/orbitals';
 import { isSmoothPath, reshapeFreeform } from '../design/freeform';
 import { DEG, normDegrees, mul, type Vec } from '../geom';
@@ -713,8 +713,11 @@ export class StylePanel {
     const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
     const sides = moSides(mo);
     const opts: Opt<string>[] = [...MO_ATOMS.map((a): Opt<string> => [a.id, a.name]), [MO_CUSTOM, 'Custom']];
-    this.select('Left', opts, sides.left, (v) => set(setSides(mo, { left: v })));
-    this.select('Right', opts, sides.right, (v) => set(setSides(mo, { right: v })));
+    // the list in groups: the atoms by period, then the single orbitals (Custom on its own)
+    const groups: Record<number, string> = { 1: 'Hydrogen to Neon', 2: 'Hydrogen to Neon', 3: 'Sodium to Argon', 0: 'Single Orbitals' };
+    const group = (v: string) => { const a = MO_ATOMS.find((x) => x.id === v); return a ? groups[moPeriod(a)] : undefined; };
+    this.select('Left', opts, sides.left, (v) => set(setSides(mo, { left: v })), group);
+    this.select('Right', opts, sides.right, (v) => set(setSides(mo, { right: v })), group);
     this.help('Drag a level up or down. Click a level to add an electron (a full level empties). Double-click a name to change it; right-click to add or delete a level. Custom lets a side\'s levels be set by hand.');
     const A = MO_ATOMS.find((a) => a.id === sides.left), B = MO_ATOMS.find((a) => a.id === sides.right);
     if (A && B && !A.orbital && !B.orbital && A.orbitals.length > 1 && B.orbitals.length > 1) {
@@ -1831,13 +1834,18 @@ export class StylePanel {
     this.body.append(row);
   }
 
-  private select<T extends string>(label: string, opts: Opt<T>[], value: T, on: (v: T) => void): void {
+  /** A dropdown; with `group`, options next to each other in one group go under its heading. */
+  private select<T extends string>(label: string, opts: Opt<T>[], value: T, on: (v: T) => void, group?: (v: T) => string | undefined): void {
     const sel = document.createElement('select');
+    let og: HTMLOptGroupElement | null = null;
     for (const [v, text] of opts) {
       const o = document.createElement('option');
       o.value = v;
       o.textContent = text;
-      sel.appendChild(o);
+      const g = group?.(v);
+      if (!g) { og = null; sel.appendChild(o); continue; }
+      if (og?.label !== g) { og = document.createElement('optgroup'); og.label = g; sel.appendChild(og); }
+      og.appendChild(o);
     }
     sel.value = value;
     sel.addEventListener('change', () => on(sel.value as T));

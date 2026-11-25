@@ -169,8 +169,9 @@ const lv = (column: MoColumn, label: string, e: number, n: number, electrons: nu
  * positions. The atoms' are the orbital potential energies of Miessler, Fischer and Tarr,
  * Inorganic Chemistry, 5th ed. (Pearson, 2014), Table 5.2, which takes them from J. B. Mann,
  * T. L. Meek and L. C. Allen, J. Am. Chem. Soc. 2000, 122, 2780. The table has no 2p for Li and
- * Be (the orbital is empty): those two are estimates that put the empty 2p a little above 2s.
- * The hybrids' are the weighted mean of carbon's 2s and 2p.
+ * Be, nor 3p for Na and Mg (the orbital is empty): those four are estimates that put the empty p
+ * set a little above the s orbital (Na 3p about 2.1 eV above 3s, Mg 3p about 3 eV, as for Li and
+ * Be). The hybrids' are the weighted mean of carbon's 2s and 2p.
  */
 export interface MoAtom { id: string; /** Atomic number. */ z: number; name: string; symbol: string; orbital?: boolean; orbitals: { label: string; e: number; n: number; electrons: number }[] }
 
@@ -184,6 +185,15 @@ export const MO_ATOMS: MoAtom[] = [
   { id: 'N', z: 7, name: 'Nitrogen', symbol: 'N', orbitals: [{ label: '2s', e: -25.56, n: 1, electrons: 2 }, { label: '2p', e: -13.18, n: 3, electrons: 3 }] },
   { id: 'O', z: 8, name: 'Oxygen', symbol: 'O', orbitals: [{ label: '2s', e: -32.38, n: 1, electrons: 2 }, { label: '2p', e: -15.85, n: 3, electrons: 4 }] },
   { id: 'F', z: 9, name: 'Fluorine', symbol: 'F', orbitals: [{ label: '2s', e: -40.17, n: 1, electrons: 2 }, { label: '2p', e: -18.65, n: 3, electrons: 5 }] },
+  { id: 'Ne', z: 10, name: 'Neon', symbol: 'Ne', orbitals: [{ label: '2s', e: -48.47, n: 1, electrons: 2 }, { label: '2p', e: -21.59, n: 3, electrons: 6 }] },
+  { id: 'Na', z: 11, name: 'Sodium', symbol: 'Na', orbitals: [{ label: '3s', e: -5.14, n: 1, electrons: 1 }, { label: '3p', e: -3.0, n: 3, electrons: 0 }] },
+  { id: 'Mg', z: 12, name: 'Magnesium', symbol: 'Mg', orbitals: [{ label: '3s', e: -7.65, n: 1, electrons: 2 }, { label: '3p', e: -4.6, n: 3, electrons: 0 }] },
+  { id: 'Al', z: 13, name: 'Aluminum', symbol: 'Al', orbitals: [{ label: '3s', e: -11.32, n: 1, electrons: 2 }, { label: '3p', e: -5.98, n: 3, electrons: 1 }] },
+  { id: 'Si', z: 14, name: 'Silicon', symbol: 'Si', orbitals: [{ label: '3s', e: -15.89, n: 1, electrons: 2 }, { label: '3p', e: -7.78, n: 3, electrons: 2 }] },
+  { id: 'P', z: 15, name: 'Phosphorus', symbol: 'P', orbitals: [{ label: '3s', e: -18.84, n: 1, electrons: 2 }, { label: '3p', e: -9.65, n: 3, electrons: 3 }] },
+  { id: 'S', z: 16, name: 'Sulfur', symbol: 'S', orbitals: [{ label: '3s', e: -22.71, n: 1, electrons: 2 }, { label: '3p', e: -11.62, n: 3, electrons: 4 }] },
+  { id: 'Cl', z: 17, name: 'Chlorine', symbol: 'Cl', orbitals: [{ label: '3s', e: -25.23, n: 1, electrons: 2 }, { label: '3p', e: -13.67, n: 3, electrons: 5 }] },
+  { id: 'Ar', z: 18, name: 'Argon', symbol: 'Ar', orbitals: [{ label: '3s', e: -29.24, n: 1, electrons: 2 }, { label: '3p', e: -15.82, n: 3, electrons: 6 }] },
   { id: '1s', z: 1, name: '1s Orbital', symbol: 'X', orbital: true, orbitals: [{ label: '1s', e: -13.61, n: 1, electrons: 1 }] },
   { id: '2p', z: 6, name: '2p Orbital', symbol: 'X', orbital: true, orbitals: [{ label: '2p', e: -10.66, n: 1, electrons: 1 }] },
   { id: 'sp3', z: 6, name: 'sp³ Hybrid', symbol: 'X', orbital: true, orbitals: [{ label: 'sp^{3}', e: -12.9, n: 1, electrons: 1 }] },
@@ -206,15 +216,27 @@ export function aufbau(levels: MoLevel[], total: number): MoLevel[] {
 /** The atomic orbitals on one side from an atom. */
 export const atomLevels = (atom: MoAtom, column: 'left' | 'right'): MoLevel[] => atom.orbitals.map((o) => lv(column, o.label, o.e, o.n, o.electrons));
 
+/** An atom's valence electrons (its orbitals' electrons): 1 for H and Li and Na, up to 8 for Ne and Ar. */
+const valence = (a: MoAtom): number => a.orbitals.reduce((t, o) => t + o.electrons, 0);
+
+/** The period an atom is in: 3 from sodium on (whose valence orbitals are 3s and 3p). */
+export const moPeriod = (a: MoAtom): number => (a.orbital ? 0 : a.z > 10 ? 3 : a.z > 2 ? 2 : 1);
+
 /**
  * Whether π lies below σ in the p set of a diatomic of these two atoms: so for Li₂ through N₂, and
  * σ below π from O₂ on ("Homonuclear Diatomic Molecules", LibreTexts Inorganic Chemistry, after
  * Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed., Pearson 2014:
- * https://chem.libretexts.org/Courses/Centre_College/CHE_332%3A_Inorganic_Chemistry/04%3A_Molecular_Orbitals/4.02%3A_Molecular_Orbital_Theory_of_Diatomic_Molecules/4.2.02%3A_Homonuclear_Diatomic_Molecules).
- * For two different atoms there is no one rule; this takes the earlier atom's, which puts CO's 1π
- * below its 3σ as the same book's heteronuclear section has it, and the Side Panel lets it be changed.
+ * https://chem.libretexts.org/Courses/Centre_College/CHE_332%3A_Inorganic_Chemistry/04%3A_Molecular_Orbitals/4.02%3A_Molecular_Orbital_Theory_of_Diatomic_Molecules/4.2.02%3A_Homonuclear_Diatomic_Molecules;
+ * OpenStax Chemistry 2e, section 8.4, adds Ne₂ to O₂ and F₂ as having "negligible s-p mixing").
+ * For two different atoms there is no one rule; this takes the rule of the atom with fewer valence
+ * electrons, which puts CO's 1π below its 3σ as the same book's heteronuclear section has it.
+ * Third-row atoms (Na to Ar) are given the rule of the second-row atom above them (Na₂ to P₂ π
+ * below σ, S₂ to Ar₂ σ below π). That is UNSOURCED: no source was found for the order in each
+ * third-row diatomic, only textbooks' working assumption that they are "analogous to those from
+ * the second row" (Brown et al., Chemistry: The Central Science, 15th ed., exercise 9.83). It is
+ * a default only: the Side Panel's π Below σ check box changes it.
  */
-export const mixingFor = (a: MoAtom, b: MoAtom): boolean => Math.min(a.z, b.z) <= 7;
+export const mixingFor = (a: MoAtom, b: MoAtom): boolean => Math.min(valence(a), valence(b)) <= 5;
 
 const pOf = (a: MoAtom) => (a.orbital ? undefined : a.orbitals.find((o) => o.n === 3));
 const sOf = (a: MoAtom) => a.orbitals.find((o) => o !== pOf(a))!;
@@ -253,7 +275,17 @@ export function fromAtoms(a: string, b: string, electrons?: number, mixing?: boo
   /** An atom's level drawn at another height than its energy, to keep it clear of its neighbor. */
   let lifted: { side: 'left' | 'right'; label: string; e: number } | null = null;
   const sGap = Math.abs(sa.e - sb.e);
-  if (pa && pb && a !== b && Math.min(pa.electrons, pb.electrons) === 0 && Math.max(pa.electrons, pb.electrons) > 0 && sGap > 14) {
+  /**
+   * The number of the first σ drawn. With atoms from hydrogen to neon, 2: the book's numbering
+   * (see below), where 1σ is the 1s core, not drawn. With a third-row atom (Na to Ar) the core is
+   * 1s, 2s and 2p, and counting it in would mean numbering core orbitals that have no partner on
+   * the other atom; such a diagram numbers only the orbitals it draws, from 1σ and 1π (an
+   * antibonding orbital still has its bonding partner's number).
+   */
+  const s1 = moPeriod(A) === 3 || moPeriod(B) === 3 ? 1 : 2;
+  const sg = (k: number, star = false) => `${s1 + k}σ${star ? '^{*}' : ''}`;
+  // (an atom whose p set is full, as neon and argon, takes no electron from the other: not the ionic pattern)
+  if (pa && pb && a !== b && Math.min(pa.electrons, pb.electrons) === 0 && Math.max(pa.electrons, pb.electrons) > 0 && Math.max(pa.electrons, pb.electrons) < 6 && sGap > 14) {
     // An atom with no p electrons (Li, Be) beside one whose orbitals lie far below it, as in LiF
     // (Miessler, Fischer and Tarr, section 5.3.2 and Figure 5.14): the metal's 2s meets one of
     // the other atom's 2p orbitals end on, making a bonding orbital that is mostly that 2p; the
@@ -266,8 +298,8 @@ export function fromAtoms(a: string, b: string, electrons?: number, mixing?: boo
     // (the metal's empty 2p is drawn far enough above its 2s for the 2s electron to show: such a diagram spans some 40 eV)
     const mpE = r(Math.max(mp.e, ms.e + 0.1 * (ms.e + 6 - xs.e)));
     lifted = { side: mSide, label: mp.label, e: mpE };
-    mid.push(named('2σ', xs.e, 1, xs.label, xSide), named('3σ', r(xp.e - 1.5), 1, pair, 'each'), named('1π', xp.e, 2, xp.label, xSide),
-      named(mp.label, mpE, 3, mp.label, mSide), named('3σ^{*}', r(mpE + 4), 1, pair, 'each'));
+    mid.push(named(sg(0), xs.e, 1, xs.label, xSide), named(sg(1), r(xp.e - 1.5), 1, pair, 'each'), named('1π', xp.e, 2, xp.label, xSide),
+      named(mp.label, mpE, 3, mp.label, mSide), named(sg(1, true), r(mpE + 4), 1, pair, 'each'));
     names = 'numbered';
   } else if (pa && pb) {
     // A bonding orbital lies below the lower of the two atomic orbitals it is made from and an
@@ -283,13 +315,14 @@ export function fromAtoms(a: string, b: string, electrons?: number, mixing?: boo
       : [lv('middle', 'σ', r(pLo - 0.38 * g), 1, 0, fp), lv('middle', 'π', r(pLo - 0.2 * g), 2, 0, fp)];
     mid.push(lv('middle', 'σ', r(sLo - 0.22 * g), 1, 0, fs), lv('middle', 'σ*', r(Math.min(sHi + 0.18 * g, twoP[0].e - 0.1 * g)), 1, 0, fs), ...twoP,
       lv('middle', 'π*', r(pHi + 0.22 * g), 2, 0, fp), lv('middle', 'σ*', r(pHi + 0.45 * g), 1, 0, fp));
-    // Two like atoms: named after the atomic orbitals (σ2s). Two different ones: numbered within
-    // each kind as the book numbers CO's (2σ, 2σ*, 1π, 3σ, 1π*, 3σ*: an antibonding orbital has
-    // its bonding partner's number, and 1σ and 1σ* are the 1s orbitals, not drawn).
+    // Two like atoms: named after the atomic orbitals (σ2s, σ3s). Two different ones: numbered
+    // within each kind as the book numbers CO's (2σ, 2σ*, 1π, 3σ, 1π*, 3σ*: an antibonding orbital
+    // has its bonding partner's number, and 1σ and 1σ* are the 1s orbitals, not drawn); with a
+    // third-row atom, from 1σ (see s1).
     names = a === b ? 'ao' : 'numbered';
     if (a !== b) {
-      const [s1, s2, ...rest] = mid, pi = rest.find((l) => l.label === 'π')!, sg = rest.find((l) => l.label === 'σ')!, piS = rest.find((l) => l.label === 'π*')!, sgS = rest.find((l) => l.label === 'σ*')!;
-      s1.label = '2σ'; s2.label = '2σ^{*}'; pi.label = '1π'; sg.label = '3σ'; piS.label = '1π^{*}'; sgS.label = '3σ^{*}';
+      const [sS, sS2, ...rest] = mid, pi = rest.find((l) => l.label === 'π')!, pS = rest.find((l) => l.label === 'σ')!, piS = rest.find((l) => l.label === 'π*')!, sgS = rest.find((l) => l.label === 'σ*')!;
+      sS.label = sg(0); sS2.label = sg(0, true); pi.label = '1π'; pS.label = sg(1); piS.label = '1π^{*}'; sgS.label = sg(1, true);
       for (const l of mid) kept.add(l);
     }
   } else if (!pa && !pb) {
@@ -314,12 +347,12 @@ export function fromAtoms(a: string, b: string, electrons?: number, mixing?: boo
       const withS = op.electrons === 0, partner = withS ? os : op;
       const pair = pa ? `${partner.label}, ${one.label}` : `${one.label}, ${partner.label}`;
       const d = Math.max(1.5, Math.abs(one.e - partner.e) * 0.35);
-      // (numbered as for two atoms: 1σ is the atom's 1s, not drawn, and σ* has its bonding partner's number)
-      const k = withS ? 2 : 3;
-      const bond = nb(`${k}σ`, r(Math.min(one.e, partner.e) - d), 1, pair, side), anti = nb(`${k}σ^{*}`, r(Math.max(one.e, partner.e) + 1.6 * d), 1, pair, side);
+      // (numbered as for two atoms, see s1: σ* has its bonding partner's number)
+      const k = withS ? 0 : 1;
+      const bond = nb(sg(k), r(Math.min(one.e, partner.e) - d), 1, pair, side), anti = nb(sg(k, true), r(Math.max(one.e, partner.e) + 1.6 * d), 1, pair, side);
       delete bond.fromSide; delete anti.fromSide;
       if (withS) mid.push(bond, anti, nb(op.label, op.e, 3, op.label, side));
-      else mid.push(nb('2σ', os.e, 1, os.label, side), bond, nb('1π', op.e, 2, op.label, side), anti);
+      else mid.push(nb(sg(0), os.e, 1, os.label, side), bond, nb('1π', op.e, 2, op.label, side), anti);
     }
     names = 'numbered';
   }

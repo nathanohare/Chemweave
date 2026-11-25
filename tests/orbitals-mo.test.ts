@@ -226,12 +226,15 @@ describe('MO diagrams', () => {
     // 4.2.02). For CO, 4.2.03 adds that mixing lowers 2σ* and raises 3σ, so those two are left out.
     const atoms = MO_ATOMS.filter((a) => !a.orbital && a.orbitals.some((o) => o.n === 3 && o.electrons > 0)).map((a) => a.id);
     for (const a of atoms) for (const b of atoms) {
-      const spec = fromAtoms(a, b)!, side = (label: string) => spec.levels.filter((l) => l.column !== 'middle' && l.label === label).map((l) => l.e);
+      // each side's s orbital (one) and p set (three): 2s and 2p, or 3s and 3p from sodium on
+      const spec = fromAtoms(a, b)!, side = (n: number) => spec.levels.filter((l) => l.column !== 'middle' && l.n === n).map((l) => l.e);
+      expect(side(1).length, a + b).toBe(2);
+      expect(side(3).length, a + b).toBe(2);
       const mid = spec.levels.filter((l) => l.column === 'middle').sort((x, y) => x.e - y.e);
       const pi = mid.filter((l) => l.n === 2);
-      expect(mid[0].e, `${a}${b} lowest σ`).toBeLessThanOrEqual(Math.min(...side('2s')));
-      expect(pi[0].e, `${a}${b} π`).toBeLessThan(Math.min(...side('2p')));
-      expect(pi[1].e, `${a}${b} π*`).toBeGreaterThan(Math.max(...side('2p')));
+      expect(mid[0].e, `${a}${b} lowest σ`).toBeLessThanOrEqual(Math.min(...side(1)));
+      expect(pi[0].e, `${a}${b} π`).toBeLessThan(Math.min(...side(3)));
+      expect(pi[1].e, `${a}${b} π*`).toBeGreaterThan(Math.max(...side(3)));
       expect(mid[mid.length - 1].e, `${a}${b} highest σ*`).toBeGreaterThan(pi[1].e);
     }
     // every pair of choices: as many molecular orbitals as atomic orbitals, and the atoms' electrons
@@ -262,6 +265,41 @@ describe('MO diagrams', () => {
     // one orbital on its own is titled X (left) or Y (right), never an element's symbol
     expect(fromAtoms('B', 'sp3')!.titles).toEqual(['B', 'B–Y', 'Y']);
     expect(fromAtoms('2p', '2p')!.titles).toEqual(['X', 'X–Y', 'Y']);
+  });
+
+  it('fills a diagram from neon and the third-row atoms', () => {
+    // Orbital potential energies (eV): J. B. Mann, T. L. Meek and L. C. Allen, J. Am. Chem. Soc.
+    // 2000, 122, 2780, as tabulated in Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed.
+    // (Pearson, 2014), Table 5.2: Ne 2s −48.47, 2p −21.59; Na 3s −5.14; Cl 3s −25.23, 3p −13.67.
+    const orb = (id: string) => MO_ATOMS.find((a) => a.id === id)!.orbitals.map((o) => [o.label, o.e]);
+    expect(orb('Ne')).toEqual([['2s', -48.47], ['2p', -21.59]]);
+    expect(orb('Cl')).toEqual([['3s', -25.23], ['3p', -13.67]]);
+    expect(orb('Na')[0]).toEqual(['3s', -5.14]);
+    // "the valence atomic orbitals involved in bonding are the 3s and 3p orbitals" for P2, whose
+    // MOs are "analogous to those from the second row": Brown et al., Chemistry: The Central
+    // Science, 15th ed. (Pearson), exercise 9.83(a) and its worked guidance
+    const p2 = fromAtoms('P', 'P')!;
+    expect(p2.levels.filter((l) => l.column === 'left').map((l) => l.label)).toEqual(['3s', '3p']);
+    expect(p2.levels.filter((l) => l.column === 'middle').map((l) => moPlain(l.label)).sort()).toEqual(['π*3p', 'π3p', 'σ*3p', 'σ*3s', 'σ3p', 'σ3s'].sort());
+    // OpenStax Chemistry 2e, section 8.4: "Be2 and Ne2 molecules would have a bond order of 0"
+    expect(moCounts(fromAtoms('Ne', 'Ne')!.levels).bondOrder).toBe(0);
+    // every pair with a third-row atom: as many molecular orbitals as atomic orbitals, and the atoms' electrons
+    for (const a of ['Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar']) for (const b of MO_ATOMS) {
+      const c = moCounts(fromAtoms(a, b.id)!.levels);
+      expect(c.moOrbitals, a + b.id).toBe(c.atomOrbitals);
+      expect(c.moElectrons, a + b.id).toBe(c.atomElectrons);
+    }
+    // numbering (a convention, not a measured value): with a third-row atom only the drawn
+    // orbitals are counted, from 1σ; atoms up to neon keep the book's 2σ start (CO above)
+    expect(fromAtoms('Cl', 'F')!.levels.filter((l) => l.column === 'middle').sort((x, y) => x.e - y.e).map((l) => moPlain(l.label))[0]).toBe('1σ');
+    expect(fromAtoms('H', 'Cl')!.levels.filter((l) => l.column === 'middle').map((l) => moPlain(l.label)).sort()).toEqual(['1π', '1σ', '2σ', '2σ*'].sort());
+    // the π-below-σ default for a third-row molecule is unsourced: the check box changes it
+    const cl2 = fromAtoms('Cl', 'Cl')!;
+    const flipped = setSides(cl2, { mixing: !cl2.atoms!.mixing });
+    const at = (spec: MoSpec, name: string) => spec.levels.find((l) => moPlain(l.label) === name)!.e;
+    expect(at(flipped, 'π3p') < at(flipped, 'σ3p')).toBe(!(at(cl2, 'π3p') < at(cl2, 'σ3p')));
+    // a full p set (Ne, Ar) beside sodium is not drawn as the ionic pattern
+    expect(fromAtoms('Na', 'Ar')!.levels.some((l) => l.fromSide === 'each')).toBe(false);
   });
 
   it('adds an electron per click and says when the filling breaks the aufbau principle', () => {
