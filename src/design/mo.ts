@@ -50,6 +50,12 @@ export interface MoSpec {
    */
   atoms?: { left: string; right: string; mixing: boolean };
   /**
+   * A ready-made molecule of more than two atoms (an MO_MOLECULES id): the central atom's valence
+   * orbitals on the left, the outer atoms' group orbitals on the right, and the whole diagram
+   * filled in from it (`atoms` is then not set). Not set: two atoms (every diagram saved before this).
+   */
+  molecule?: string;
+  /**
    * Names and titles are rich text kept as markup (parseMarkup), drawn exactly as written. Not set
    * in diagrams made before rich text: theirs went through chemical interpretation (chemRuns),
    * and the window turns them into markup when it opens them.
@@ -347,12 +353,13 @@ export function fromAtoms(a: string, b: string, electrons?: number, mixing?: boo
       const withS = op.electrons === 0, partner = withS ? os : op;
       const pair = pa ? `${partner.label}, ${one.label}` : `${one.label}, ${partner.label}`;
       const d = Math.max(1.5, Math.abs(one.e - partner.e) * 0.35);
-      // (numbered as for two atoms, see s1: σ* has its bonding partner's number)
-      const k = withS ? 0 : 1;
-      const bond = nb(sg(k), r(Math.min(one.e, partner.e) - d), 1, pair, side), anti = nb(sg(k, true), r(Math.max(one.e, partner.e) + 1.6 * d), 1, pair, side);
+      // LiH-type: numbered as for two atoms (see s1: σ* has its bonding partner's number). HF-type:
+      // named plainly σ, σ, π, σ* with no numbers, as Miessler, Fischer and Tarr, 5th ed., label
+      // HF's orbitals (Example 5.3 and its figure, section 5.3)
+      const bond = nb(withS ? sg(0) : 'σ', r(Math.min(one.e, partner.e) - d), 1, pair, side), anti = nb(withS ? sg(0, true) : 'σ^{*}', r(Math.max(one.e, partner.e) + 1.6 * d), 1, pair, side);
       delete bond.fromSide; delete anti.fromSide;
       if (withS) mid.push(bond, anti, nb(op.label, op.e, 3, op.label, side));
-      else mid.push(nb(sg(0), os.e, 1, os.label, side), bond, nb('1π', op.e, 2, op.label, side), anti);
+      else mid.push(nb('σ', os.e, 1, os.label, side), bond, nb('π', op.e, 2, op.label, side), anti);
     }
     names = 'numbered';
   }
@@ -398,16 +405,144 @@ export function setSides(spec0: MoSpec, to: { left?: string; right?: string; mix
   if (A && B) {
     const same = left === was.left && right === was.right;
     const filled = fromAtoms(left, right, same ? moCounts(spec.levels).moElectrons : undefined, to.mixing ?? (same ? was.mixing : undefined))!;
-    const { levels: _l, titles: _t, atoms: _a, ...look } = spec;
+    const { levels: _l, titles: _t, atoms: _a, molecule: _m, ...look } = spec;
     return { ...look, levels: filled.levels, titles: filled.titles, atoms: filled.atoms };
   }
-  const levels = spec.levels.filter((l) => !(l.column === 'left' && A && left !== was.left) && !(l.column === 'right' && B && right !== was.right))
+  const { molecule: _m, ...rest } = spec;
+  const levels = rest.levels.filter((l) => !(l.column === 'left' && A && left !== was.left) && !(l.column === 'right' && B && right !== was.right))
     .map((l) => ((l.column === 'left' && A) || (l.column === 'right' && B) ? l : (({ auto: _x, ...rest }) => rest)(l)));
   if (A && left !== was.left) levels.push(...sideLevels(A, 'left'));
   if (B && right !== was.right) levels.push(...sideLevels(B, 'right'));
   const titles: [string, string, string] = [A && left !== was.left ? A.symbol : spec.titles[0], spec.titles[1], B && right !== was.right ? B.symbol : spec.titles[2]];
-  return { ...spec, levels, titles, atoms: { left: A ? left : MO_CUSTOM, right: B ? right : MO_CUSTOM, mixing: to.mixing ?? was.mixing } };
+  return { ...rest, levels, titles, atoms: { left: A ? left : MO_CUSTOM, right: B ? right : MO_CUSTOM, mixing: to.mixing ?? was.mixing } };
 }
+
+/** A ready-made molecule of more than two atoms (MoSpec.molecule). */
+export interface MoMolecule {
+  id: string;
+  /** Its name in the Side Panel, with real subscripts. */
+  name: string;
+  /** The central atom and the outer one (MO_ATOMS ids): what Two Atoms goes back to. */
+  center: string; outer: string;
+  titles: [string, string, string];
+  /** Valence electrons in the neutral molecule. */
+  electrons: number;
+  /** [name, relative energy, orbitals] on each side; the molecule's orbitals also say what they are made from (and, when one side's alone, which). */
+  left: [string, number, number][];
+  right: [string, number, number][];
+  middle: [string, number, number, string, ('left' | 'right')?][];
+}
+
+/**
+ * The ready-made molecules, from Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed.
+ * (Pearson, 2014), section 5.4: which orbitals there are, their symmetry labels, order,
+ * degeneracy and filling, and the dashed lines (what each molecular orbital is made from) as the
+ * book's figures draw them. The heights are relative places (0 to 1) read from the same figures,
+ * spread a little where the book draws several levels at one height side by side, since a column
+ * here draws one level per height. The right column holds the outer atoms' group orbitals, named
+ * by their symmetry as in the book's group-orbital figures (with the atomic orbital they come from
+ * in brackets where two would otherwise share a name); the book draws those at the outer atoms'
+ * orbital energy, here split a little to keep each one's name readable. As in the book's figures,
+ * no electrons are drawn on the atoms' or group orbitals; the molecule's are filled lowest first.
+ * A degenerate pair the book names by two D2h labels at one height (CO₂'s 1b2u and 1b3u) is one
+ * level of two orbitals with both names.
+ */
+export const MO_MOLECULES: MoMolecule[] = [
+  {
+    // Figure 5.28 and Table 5.4: the A1 group orbital mixes with O 2s and 2pz into 2a1, 3a1 and
+    // 4a1; B1 with 2px into 1b1 and 2b1; 2py stays nonbonding as 1b2 (the HOMO); 8 electrons
+    id: 'H2O', name: 'Water (H₂O)', center: 'O', outer: 'H', titles: ['O', 'H_{2}O', '2 H'], electrons: 8,
+    left: [['2s', 0.02, 1], ['2p', 0.52, 3]],
+    right: [['A_{1}', 0.59, 1], ['B_{1}', 0.66, 1]],
+    middle: [
+      ['2a_{1}', 0, 1, '2s, 2p, A_{1}'], ['1b_{1}', 0.155, 1, '2p, B_{1}'], ['3a_{1}', 0.355, 1, '2s, 2p, A_{1}'],
+      ['1b_{2}', 0.52, 1, '2p', 'left'], ['4a_{1}', 0.86, 1, '2s, 2p, A_{1}'], ['2b_{1}', 1, 1, '2p, B_{1}'],
+    ],
+  },
+  {
+    // Figure 5.30 (and the text of section 5.4.4): N 2s with the A1 group orbital gives 2a1 and
+    // 4a1, N 2pz with it the 3a1 HOMO (the lone pair), N 2px and 2py with the E pair 1e and 2e;
+    // 4a1 is the LUMO; 8 electrons
+    id: 'NH3', name: 'Ammonia (NH₃)', center: 'N', outer: 'H', titles: ['N', 'NH_{3}', '3 H'], electrons: 8,
+    left: [['2s', 0.1, 1], ['2p', 0.63, 3]],
+    right: [['A_{1}', 0.6, 1], ['E', 0.66, 2]],
+    middle: [
+      ['2a_{1}', 0, 1, '2s, A_{1}'], ['1e', 0.33, 2, '2p, E'], ['3a_{1}', 0.58, 1, '2p, A_{1}'],
+      ['4a_{1}', 0.87, 1, '2s, A_{1}'], ['2e', 1, 2, '2p, E'],
+    ],
+  },
+  {
+    // Figures 5.18 to 5.25 (D2h labels): the O 2s group orbitals (Ag, B1u) stay nearly as they
+    // were (2ag, 2b1u); C 2s with the O 2pz Ag group gives 3ag and 4ag, C 2pz with B1u 3b1u and
+    // 4b1u, C 2px and 2py with B3u and B2u the π pairs 1b2u/1b3u and 2b2u/2b3u; the B2g and B3g
+    // groups are nonbonding (1b2g/1b3g, the HOMO); 16 electrons
+    id: 'CO2', name: 'Carbon Dioxide (CO₂)', center: 'C', outer: 'O', titles: ['C', 'CO_{2}', '2 O'], electrons: 16,
+    left: [['2s', 0.33, 1], ['2p', 0.68, 3]],
+    right: [['A_{g} (2s)', 0.03, 1], ['B_{1u} (2s)', 0.11, 1], ['A_{g} (2p)', 0.363, 1], ['B_{1u} (2p)', 0.413, 1], ['B_{2u}, B_{3u}', 0.463, 2], ['B_{2g}, B_{3g}', 0.513, 2]],
+    middle: [
+      ['2a_{g}', 0, 1, 'A_{g} (2s)', 'right'], ['2b_{1u}', 0.085, 1, 'B_{1u} (2s)', 'right'], ['3a_{g}', 0.194, 1, '2s, A_{g} (2p)'],
+      ['3b_{1u}', 0.298, 1, '2p, B_{1u} (2p)'], ['1b_{2u}, 1b_{3u}', 0.394, 2, '2p, B_{2u}, B_{3u}'], ['1b_{2g}, 1b_{3g}', 0.513, 2, 'B_{2g}, B_{3g}', 'right'],
+      ['2b_{2u}, 2b_{3u}', 0.802, 2, '2p, B_{2u}, B_{3u}'], ['4a_{g}', 0.901, 1, '2s, A_{g} (2p)'], ['4b_{1u}', 1, 1, '2p, B_{1u} (2p)'],
+    ],
+  },
+  {
+    // Figures 5.31 and 5.32 (D3h labels): the F 2s groups (A1′, E′) stay nearly as they were (3a1′,
+    // 2e′); B 2s with the F 2py A1′ group gives 4a1′ and 5a1′; B 2px and 2py with the E′ groups give
+    // 3e′, 4e′ and 5e′; B 2pz with the A2″ group the π pair 1a2″ and 2a2″ (the LUMO); the E″ and
+    // A2′ groups have no partner on boron (1e″, and 1a2′, the HOMO); 24 electrons. The figure
+    // joins 3e′, 4e′ and 5e′ to the F 2p set as a whole: here 3e′ and 5e′ go to the E′ group of the
+    // 2py orbitals (pointing at boron) and 4e′ to that of the in-plane 2px orbitals.
+    id: 'BF3', name: 'Boron Trifluoride (BF₃)', center: 'B', outer: 'F', titles: ['B', 'BF_{3}', '3 F'], electrons: 24,
+    left: [['2s', 0.45, 1], ['2p', 0.7, 3]],
+    right: [['A_{1}′ (2s)', 0.02, 1], ['E′ (2s)', 0.1, 2], ['A_{1}′ (2p_{y})', 0.3, 1], ['E′ (2p_{y})', 0.36, 2], ['A_{2}″ (2p_{z})', 0.42, 1], ['E′ (2p_{x})', 0.48, 2], ['E″ (2p_{z})', 0.54, 2], ['A_{2}′ (2p_{x})', 0.62, 1]],
+    middle: [
+      ['3a_{1}′', 0, 1, 'A_{1}′ (2s)', 'right'], ['2e′', 0.08, 2, 'E′ (2s)', 'right'], ['4a_{1}′', 0.2, 1, '2s, A_{1}′ (2p_{y})'],
+      ['3e′', 0.27, 2, '2p, E′ (2p_{y})'], ['1a_{2}″', 0.34, 1, '2p, A_{2}″ (2p_{z})'], ['4e′', 0.42, 2, '2p, E′ (2p_{x})'],
+      ['1e″', 0.54, 2, 'E″ (2p_{z})', 'right'], ['1a_{2}′', 0.62, 1, 'A_{2}′ (2p_{x})', 'right'], ['2a_{2}″', 0.81, 1, '2p, A_{2}″ (2p_{z})'],
+      ['5a_{1}′', 0.9, 1, '2s, A_{1}′ (2p_{y})'], ['5e′', 1, 2, '2p, E′ (2p_{y})'],
+    ],
+  },
+];
+
+/** The Side Panel's Molecule choice for a diagram of two atoms (no MoSpec.molecule). */
+export const MO_TWO_ATOMS = 'two';
+
+/** A ready-made molecule by its id (undefined: two atoms, or not one of them). */
+export const moMolecule = (id: string | undefined): MoMolecule | undefined => (id ? MO_MOLECULES.find((m) => m.id === id) : undefined);
+
+/** The diagram of a ready-made molecule, with `electrons` in it (not given: the neutral molecule's). Null: not one of MO_MOLECULES. */
+export function fromMolecule(id: string, electrons?: number): MoSpec | null {
+  const m = moMolecule(id);
+  if (!m) return null;
+  const sides = [...m.left.map(([label, e, n]) => lv('left', label, e, n, 0)), ...m.right.map(([label, e, n]) => lv('right', label, e, n, 0))];
+  const mid = m.middle.map(([label, e, n, from, side]) => lv('middle', label, e, n, 0, from, side));
+  const room = mid.reduce((t, l) => t + 2 * l.n, 0);
+  const total = Math.max(0, Math.min(room, Math.round(electrons ?? m.electrons)));
+  const levels = aufbau([...sides, ...mid].map((l) => ({ ...l, auto: true })), total);
+  return { titles: [...m.titles], axis: true, rich: true, relative: true, levels, molecule: id };
+}
+
+/**
+ * The diagram changed to a ready-made molecule (an MO_MOLECULES id), back to two atoms
+ * (MO_TWO_ATOMS: the molecule's central and outer atoms, or two hydrogens), or to Custom (its
+ * levels kept, now all set by hand). Its look is kept.
+ */
+export function setMolecule(spec0: MoSpec, id: string): MoSpec {
+  const spec = toRelative(spec0);
+  const { levels: _l, titles: _t, atoms: _a, molecule: _m, ...look } = spec;
+  if (id === MO_CUSTOM) return setSides({ ...spec, atoms: undefined }, { left: MO_CUSTOM, right: MO_CUSTOM, mixing: false });
+  const m = moMolecule(id);
+  if (m) {
+    const filled = fromMolecule(id, spec.molecule === id ? moCounts(spec.levels).moElectrons : undefined)!;
+    return { ...look, levels: filled.levels, titles: filled.titles, molecule: id };
+  }
+  const was = moMolecule(spec.molecule);
+  const filled = fromAtoms(was?.center ?? 'H', was?.outer ?? 'H')!;
+  return { ...look, levels: filled.levels, titles: filled.titles, atoms: filled.atoms };
+}
+
+/** Whether the orbital pictures are drawn: asked for, and two atoms (a two-atom picture would mislead for a larger molecule). */
+export const moPictures = (spec: Pick<MoSpec, 'pictures' | 'molecule'>): boolean => !!spec.pictures && !spec.molecule;
 
 /** The molecule's electrons put in again lowest first, `total` of them (as many as there is room for). */
 export function fillElectrons(spec: MoSpec, total: number): MoSpec {
@@ -470,10 +605,12 @@ export function hund(n: number, electrons: number): number[] {
 export function sources(levels: MoLevel[], mo: MoLevel): MoLevel[] {
   const names = (mo.from ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   const plain = new Set(names.map(moPlain));
-  const is = (l: MoLevel, name: string) => l.label.trim() === name || moPlain(l.label) === moPlain(name);
+  // a level named for several orbitals at once ("B_{2u}, B_{3u}", a degenerate pair) is also found by any one of those names
+  const part = (l: MoLevel, name: string) => l.label.includes(',') && l.label.split(',').some((p) => moPlain(p) === moPlain(name));
+  const is = (l: MoLevel, name: string) => l.label.trim() === name || moPlain(l.label) === moPlain(name) || part(l, name);
   // 'each': the first name is the left side's orbital and the second the right side's (both sides may have orbitals of both names)
   if (mo.fromSide === 'each' && names.length === 2) return levels.filter((l) => (l.column === 'left' && is(l, names[0])) || (l.column === 'right' && is(l, names[1])));
-  return levels.filter((l) => l.column !== 'middle' && (!mo.fromSide || mo.fromSide === 'each' || l.column === mo.fromSide) && (names.includes(l.label.trim()) || plain.has(moPlain(l.label))));
+  return levels.filter((l) => l.column !== 'middle' && (!mo.fromSide || mo.fromSide === 'each' || l.column === mo.fromSide) && (names.includes(l.label.trim()) || plain.has(moPlain(l.label)) || names.some((n) => part(l, n))));
 }
 
 /** The shapes an atomic orbital can be drawn as. */
@@ -654,8 +791,8 @@ export function setElectrons(spec: MoSpec, now: ElectronLook, w: number, h: numb
 }
 
 /** Where the three columns are in a diagram w wide with its left edge at `at.x`, and each level's ends (from its first orbital's left to its last one's right). */
-export function moColumns(spec: Pick<MoSpec, 'pictures'>, at: Vec, w: number, L: number): { colX: Record<MoColumn, number>; one: number; gapX: number; span(l: MoLevel): [number, number] } {
-  const colX: Record<MoColumn, number> = spec.pictures
+export function moColumns(spec: Pick<MoSpec, 'pictures' | 'molecule'>, at: Vec, w: number, L: number): { colX: Record<MoColumn, number>; one: number; gapX: number; span(l: MoLevel): [number, number] } {
+  const colX: Record<MoColumn, number> = moPictures(spec)
     ? { left: at.x + w * 0.24, middle: at.x + w * 0.5, right: at.x + w * 0.76 }
     : { left: at.x + w * 0.14, middle: at.x + w * 0.5, right: at.x + w * 0.86 };
   const one = Math.min(w * 0.09, 1.3 * L), gapX = one * 0.3;
@@ -779,7 +916,7 @@ export function drawMo(doc: Doc, m: Measure, spec: MoSpec, at: Vec, w: number, h
   const levels = spec.levels.filter((l) => Number.isFinite(l.e));
   if (!levels.length) return out;
   const y = moY(spec, at, h);
-  const pics = !!spec.pictures;
+  const pics = moPictures(spec);
   const { colX, one, gapX, span } = moColumns(spec, at, w, L);
   const gap = 0.25 * L;
   const caption = (text: string, target: Vec, anchor: 'above' | 'below' | 'left' | 'right', extra: Partial<Caption> = {}): Rect => {

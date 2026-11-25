@@ -18,7 +18,7 @@ import { setStereoShown, setStereoText } from '../chem/stereo';
 import { arialWidth } from '../text-metrics';
 import { Selection } from '../editor/editor';
 import { freeformPoints } from '../design/geo';
-import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, moCounts, moParts, moPeriod, moSides, setElectrons, setSides, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
+import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, MO_MOLECULES, MO_TWO_ATOMS, moCounts, moMolecule, moParts, moPeriod, moSides, setElectrons, setMolecule, setSides, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
 import { ORBITAL_KIND_NAMES, ORBITAL_LOOK_NAMES, orbitalsAmong, readOrbital, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from '../chem/orbitals';
 import { isSmoothPath, reshapeFreeform } from '../design/freeform';
 import { DEG, normDegrees, mul, type Vec } from '../geom';
@@ -712,15 +712,24 @@ export class StylePanel {
   private moControls(sh: Shape, d: PlateData, mo: MoSpec): void {
     const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
     const sides = moSides(mo);
+    const molecule = moMolecule(mo.molecule);
+    // first what the diagram is of: two atoms (each side picked below), a ready-made molecule, or custom
+    const kinds: Opt<string>[] = [[MO_TWO_ATOMS, 'Two Atoms'], ...MO_MOLECULES.map((m): Opt<string> => [m.id, m.name]), [MO_CUSTOM, 'Custom']];
+    const kind = molecule ? molecule.id : sides.left === MO_CUSTOM && sides.right === MO_CUSTOM ? MO_CUSTOM : MO_TWO_ATOMS;
+    // a ready-made molecule has twice the levels of most two-atom diagrams: one shorter than 22 bond lengths grows to that, so its names stay apart
+    const tall = Math.round(22 * this.doc.style.bondLength);
+    this.select('Molecule', kinds, kind, (v) => this.plate?.restyle(sh.id, { mo: setMolecule(mo, v), ...(moMolecule(v) && d.h < tall ? { h: tall } : {}) }));
     const opts: Opt<string>[] = [...MO_ATOMS.map((a): Opt<string> => [a.id, a.name]), [MO_CUSTOM, 'Custom']];
     // the list in groups: the atoms by period, then the single orbitals (Custom on its own)
     const groups: Record<number, string> = { 1: 'Hydrogen to Neon', 2: 'Hydrogen to Neon', 3: 'Sodium to Argon', 0: 'Single Orbitals' };
     const group = (v: string) => { const a = MO_ATOMS.find((x) => x.id === v); return a ? groups[moPeriod(a)] : undefined; };
-    this.select('Left', opts, sides.left, (v) => set(setSides(mo, { left: v })), group);
-    this.select('Right', opts, sides.right, (v) => set(setSides(mo, { right: v })), group);
-    this.help('Drag a level up or down. Click a level to add an electron (a full level empties). Double-click a name to change it; right-click to add or delete a level. Custom lets a side\'s levels be set by hand.');
+    if (!molecule) {
+      this.select('Left', opts, sides.left, (v) => set(setSides(mo, { left: v })), group);
+      this.select('Right', opts, sides.right, (v) => set(setSides(mo, { right: v })), group);
+    }
+    this.help(`${molecule ? 'The central atom\'s valence orbitals are on the left and the outer atoms\' group orbitals, named by their symmetry, on the right. ' : ''}Drag a level up or down. Click a level to add an electron (a full level empties). Double-click a name to change it; right-click to add or delete a level. Custom lets ${molecule ? 'the' : 'a side\'s'} levels be set by hand.`);
     const A = MO_ATOMS.find((a) => a.id === sides.left), B = MO_ATOMS.find((a) => a.id === sides.right);
-    if (A && B && !A.orbital && !B.orbital && A.orbitals.length > 1 && B.orbitals.length > 1) {
+    if (!molecule && A && B && !A.orbital && !B.orbital && A.orbitals.length > 1 && B.orbitals.length > 1) {
       this.check('π Below σ', sides.mixing, (v) => set(setSides(mo, { mixing: v })), 'With s–p mixing the π orbitals lie below σ in the p set, as in B₂, C₂ and N₂. Without it σ is lower, as in O₂ and F₂.');
     }
     // the molecule's electrons: type how many and fill them in lowest first
@@ -744,9 +753,11 @@ export class StylePanel {
     both.className = 'mo-fill';
     both.append(inp, fill);
     this.row('Electrons', both, 'Electrons in the molecule\'s orbitals');
-    const charge = counts.atomElectrons - counts.moElectrons;
+    // a ready-made molecule draws no electrons on its atoms' orbitals: its charge is from the neutral molecule's count, and
+    // a bond order between two atoms means nothing for it
+    const charge = (molecule ? molecule.electrons : counts.atomElectrons) - counts.moElectrons;
     const sign = charge === 0 ? '0' : `${Math.abs(charge)}${charge > 0 ? '+' : '−'}`;
-    const facts = [`Charge ${sign}`, `Bond Order ${counts.bondOrder}`, `${counts.unpaired} Unpaired`];
+    const facts = molecule ? [`Charge ${sign}`, `${counts.unpaired} Unpaired`] : [`Charge ${sign}`, `Bond Order ${counts.bondOrder}`, `${counts.unpaired} Unpaired`];
     this.note(facts.join(' · '));
     const name = (l: MoLevel, into: HTMLElement, first = false) => {
       const parts = moParts(mo, l.label);
@@ -821,9 +832,10 @@ export class StylePanel {
       this.body.appendChild(look);
     }
     this.check('Energy Axis', mo.axis, (v) => set({ ...mo, axis: v }));
-    this.check('Orbital Pictures', !!mo.pictures, (v) => set({ ...mo, pictures: v || undefined }), 'Each atomic orbital\'s shape beside it, and each molecular orbital\'s in-phase or out-of-phase combination');
-    if (mo.pictures) this.number('Picture Size (%)', Math.round((mo.pictureSize ?? 1) * 100), 10, 20, 400, (v) => set({ ...mo, pictureSize: v / 100 }));
-    if (mo.pictures) this.select('Phases', ORBITAL_LOOK_NAMES.map((k): Opt<OrbitalLook> => [k.value, k.label]), mo.pictureLook ?? 'shaded', (v) => set({ ...mo, pictureLook: v }));
+    // (the pictures show two atoms' orbitals mixing, so they are for two atoms only)
+    if (!molecule) this.check('Orbital Pictures', !!mo.pictures, (v) => set({ ...mo, pictures: v || undefined }), 'Each atomic orbital\'s shape beside it, and each molecular orbital\'s in-phase or out-of-phase combination');
+    if (mo.pictures && !molecule) this.number('Picture Size (%)', Math.round((mo.pictureSize ?? 1) * 100), 10, 20, 400, (v) => set({ ...mo, pictureSize: v / 100 }));
+    if (mo.pictures && !molecule) this.select('Phases', ORBITAL_LOOK_NAMES.map((k): Opt<OrbitalLook> => [k.value, k.label]), mo.pictureLook ?? 'shaded', (v) => set({ ...mo, pictureLook: v }));
     this.check('White Background Behind Names', !!mo.labelBack, (v) => set({ ...mo, labelBack: v ? 'white' : undefined }));
     this.check('Names Avoid Dashed Lines', !!mo.labelClear, (v) => set({ ...mo, labelClear: v || undefined }));
     const now = electronLook(mo, this.doc.style, d.w, d.h);

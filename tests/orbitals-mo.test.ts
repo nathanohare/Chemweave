@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MO_ATOMS, drawMo, electronLook, electronsFree, fillElectrons, fillProblems, fitWidth, fromAtoms, fromChoices, fromOf, fromValue, MO_CUSTOM, moCaptionRoles, moColumnAt, moEnergyAt, moLevelAt, moSides, nextElectrons, setSides, withLevel, hund, moCounts, roomBeside, mixOf, moPlain, parseMarkup, sources, toMarkup, toRelative, toRich, type MoSpec } from '../src/design/mo';
+import { MO_ATOMS, MO_MOLECULES, MO_TWO_ATOMS, fromMolecule, moMolecule, setMolecule, drawMo, electronLook, electronsFree, fillElectrons, fillProblems, fitWidth, fromAtoms, fromChoices, fromOf, fromValue, MO_CUSTOM, moCaptionRoles, moColumnAt, moEnergyAt, moLevelAt, moSides, nextElectrons, setSides, withLevel, hund, moCounts, roomBeside, mixOf, moPlain, parseMarkup, sources, toMarkup, toRelative, toRich, type MoSpec } from '../src/design/mo';
 import { orbitalShapes } from '../src/chem/orbitals';
 import { Doc } from '../src/model';
 import { ACS_1996 } from '../src/style';
@@ -84,7 +84,7 @@ describe('MO diagrams', () => {
     const cf = fromAtoms('sp3', '2p')!;
     expect(mixOf(cf.levels, cf.levels.find((l) => l.column === 'middle')!)).toEqual({ left: 'sp3', right: 'p', sym: 'σ', bonding: true });
     const hf = fromAtoms('H', 'F')!;
-    expect(mixOf(hf.levels, hf.levels.find((l) => moPlain(l.label) === '1π')!)).toEqual({ left: null, right: 'p', sym: 'π', bonding: true });
+    expect(mixOf(hf.levels, hf.levels.find((l) => moPlain(l.label) === 'π')!)).toEqual({ left: null, right: 'p', sym: 'π', bonding: true });
     // no σ or π in the name: above the atomic orbitals is out of phase
     const blank: MoSpec = { titles: ['A', 'AB', 'B'], axis: true, rich: true, relative: true, levels: [
       { column: 'left', label: 'φ_{A}', e: 0.62, n: 1, electrons: 1 }, { column: 'right', label: 'φ_{B}', e: 0.31, n: 1, electrons: 1 },
@@ -292,7 +292,10 @@ describe('MO diagrams', () => {
     // numbering (a convention, not a measured value): with a third-row atom only the drawn
     // orbitals are counted, from 1σ; atoms up to neon keep the book's 2σ start (CO above)
     expect(fromAtoms('Cl', 'F')!.levels.filter((l) => l.column === 'middle').sort((x, y) => x.e - y.e).map((l) => moPlain(l.label))[0]).toBe('1σ');
-    expect(fromAtoms('H', 'Cl')!.levels.filter((l) => l.column === 'middle').map((l) => moPlain(l.label)).sort()).toEqual(['1π', '1σ', '2σ', '2σ*'].sort());
+    // H beside an atom with p electrons is named plainly, as Miessler, Fischer and Tarr, 5th ed.,
+    // label HF's orbitals (Example 5.3 and its figure: σ for F 2s, then σ, π and σ*, no numbers)
+    expect(fromAtoms('H', 'Cl')!.levels.filter((l) => l.column === 'middle').map((l) => moPlain(l.label)).sort()).toEqual(['π', 'σ', 'σ', 'σ*'].sort());
+    expect(fromAtoms('H', 'F')!.levels.filter((l) => l.column === 'middle').sort((x, y) => x.e - y.e).map((l) => moPlain(l.label))).toEqual(['σ', 'σ', 'π', 'σ*']);
     // the π-below-σ default for a third-row molecule is unsourced: the check box changes it
     const cl2 = fromAtoms('Cl', 'Cl')!;
     const flipped = setSides(cl2, { mixing: !cl2.atoms!.mixing });
@@ -343,6 +346,111 @@ describe('MO diagrams', () => {
     const withH = setSides(custom, { left: 'H' });
     expect(withH.levels.filter((l) => l.column === 'left').map((l) => l.label)).toEqual(['1s']);
     expect(withH.levels.filter((l) => l.column !== 'left').length).toBe(custom.levels.filter((l) => l.column !== 'left').length);
+  });
+
+  it('fills a diagram from a ready-made molecule', () => {
+    // Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed. (Pearson, 2014), section 5.4:
+    // H2O Figure 5.28 and Table 5.4, NH3 Figure 5.30 (section 5.4.4), CO2 Figures 5.18 and 5.25,
+    // BF3 Figures 5.31 and 5.32. Valence electrons: H2O and NH3 8 ("eight valence electrons" /
+    // "When eight electrons are put into the lowest energy levels"), CO2 16 ("The 16 valence
+    // electrons"), BF3 24 (B 3 + 3 × F 7). The occupied orbitals from the bottom, the HOMO and the
+    // LUMO as the figures fill and label them (BF3's LUMO 2a2″ is so marked in Figure 5.32; NH3's
+    // HOMO 3a1 and LUMO 4a1 in Figure 5.30; H2O's HOMO is "designated b2").
+    const book: Record<string, { electrons: number; occupied: string[]; lumo: string; orbitals: number }> = {
+      H2O: { electrons: 8, occupied: ['2a1', '1b1', '3a1', '1b2'], lumo: '4a1', orbitals: 6 },
+      NH3: { electrons: 8, occupied: ['2a1', '1e', '3a1'], lumo: '4a1', orbitals: 7 },
+      CO2: { electrons: 16, occupied: ['2ag', '2b1u', '3ag', '3b1u', '1b2u, 1b3u', '1b2g, 1b3g'], lumo: '2b2u, 2b3u', orbitals: 12 },
+      BF3: { electrons: 24, occupied: ['3a1′', '2e′', '4a1′', '3e′', '1a2″', '4e′', '1e″', '1a2′'], lumo: '2a2″', orbitals: 16 },
+    };
+    expect(MO_MOLECULES.map((m) => m.id)).toEqual(Object.keys(book));
+    for (const [id, want] of Object.entries(book)) {
+      const spec = fromMolecule(id)!, c = moCounts(spec.levels);
+      const mos = spec.levels.filter((l) => l.column === 'middle').sort((x, y) => x.e - y.e);
+      // as many molecular orbitals as the central atom's and the group orbitals together (section 5.4.2, step 6)
+      expect(c.moOrbitals, id).toBe(c.atomOrbitals);
+      expect(c.moOrbitals, id).toBe(want.orbitals);
+      expect(c.moElectrons, id).toBe(want.electrons);
+      expect(c.unpaired, id).toBe(0);
+      expect(mos.filter((l) => l.electrons > 0).map((l) => moPlain(l.label)), id).toEqual(want.occupied);
+      expect(mos.filter((l) => l.electrons > 0).every((l) => l.electrons === 2 * l.n), id).toBe(true);
+      expect(moPlain(mos.find((l) => l.electrons === 0)!.label), id).toBe(want.lumo);
+      expect(spec.levels.every((l) => l.auto && l.e >= 0 && l.e <= 1), id).toBe(true);
+      // every molecular orbital is joined to the orbitals it is made from, each name found
+      for (const l of mos) for (const name of (l.from ?? '').split(',')) expect(sources(spec.levels, { ...l, from: name }).length, `${id} ${l.label}: ${name}`).toBe(1);
+      expect(fillProblems(spec.levels), id).toEqual([]);
+    }
+    // what the book joins: H2O's 1b2 is O 2py alone (nonbonding, Table 5.4); CO2's π pair 1b2u/1b3u
+    // is C 2p with the B2u and B3u group orbitals (one level of two); BF3's 1a2′ has no boron partner
+    const at = (id: string, name: string) => { const s = fromMolecule(id)!; return sources(s.levels, s.levels.find((l) => l.column === 'middle' && moPlain(l.label) === name)!).map((l) => `${l.column} ${moPlain(l.label)}`); };
+    expect(at('H2O', '1b2')).toEqual(['left 2p']);
+    expect(at('H2O', '1b1')).toEqual(['left 2p', 'right B1']);
+    expect(at('CO2', '1b2u, 1b3u')).toEqual(['left 2p', 'right B2u, B3u']);
+    expect(at('BF3', '1a2′')).toEqual(['right A2′ (2px)']);
+    expect(at('NH3', '2a1')).toEqual(['left 2s', 'right A1']);
+    // titles as the book's figures name the columns (Figure 5.25 "2 O", Figure 5.32 "3F")
+    expect(fromMolecule('CO2')!.titles).toEqual(['C', 'CO_{2}', '2 O']);
+    expect(fromMolecule('BF3')!.titles).toEqual(['B', 'BF_{3}', '3 F']);
+    expect(fromMolecule('XX')).toBeNull();
+    // drawn: one name per level, no dashed line to nowhere
+    const doc = new Doc();
+    doc.style = { ...ACS_1996 };
+    const bf3 = fromMolecule('BF3')!;
+    let made: number[] = [];
+    doc.edit('MO', () => { made = drawMo(doc, POINTS, { ...bf3, pictures: true }, { x: 0, y: 0 }, 300, 320).captions; });
+    expect(made.length).toBe(moCaptionRoles(bf3).length);
+  });
+
+  it('switches between two atoms, a molecule and custom, and keeps the choice when saved', () => {
+    const h2 = { ...fromAtoms('H', 'H')!, labelBack: 'white' as const };
+    const water = setMolecule(h2, 'H2O');
+    expect(water.molecule).toBe('H2O');
+    expect(water.atoms).toBeUndefined();
+    expect(water.labelBack).toBe('white');
+    expect(moCounts(water.levels).moElectrons).toBe(8);
+    // an ion: electrons changed by hand stay when the same molecule is chosen again, and Fill Electrons works
+    const ion = fillElectrons(water, 7);
+    expect(moCounts(ion.levels)).toMatchObject({ moElectrons: 7, unpaired: 1 });
+    expect(moCounts(setMolecule(ion, 'H2O').levels).moElectrons).toBe(7);
+    expect(moCounts(setMolecule(ion, 'NH3').levels).moElectrons).toBe(8);
+    // back to two atoms: the central atom and the outer one, the molecule choice gone
+    const back = setMolecule(setMolecule(h2, 'CO2'), MO_TWO_ATOMS);
+    expect(back.molecule).toBeUndefined();
+    expect(back.atoms).toEqual(fromAtoms('C', 'O')!.atoms);
+    expect(back.levels).toEqual(fromAtoms('C', 'O')!.levels);
+    expect(back.labelBack).toBe('white');
+    expect(setMolecule(fromMolecule('BF3')!, MO_TWO_ATOMS).titles).toEqual(['B', 'BF', 'F']);
+    // custom: the levels kept, all set by hand
+    const custom = setMolecule(water, MO_CUSTOM);
+    expect(custom.molecule).toBeUndefined();
+    expect(custom.atoms).toEqual({ left: MO_CUSTOM, right: MO_CUSTOM, mixing: false });
+    expect(custom.levels.map((l) => l.label)).toEqual(water.levels.map((l) => l.label));
+    expect(custom.levels.some((l) => l.auto)).toBe(false);
+    // a side changed on a molecule's diagram makes it two atoms again
+    expect(setSides(water, { left: 'N' }).molecule).toBeUndefined();
+    // the choice survives the plate's JSON round trip; a diagram saved before it has none (two atoms) and is unchanged
+    expect(JSON.parse(JSON.stringify(water))).toEqual(water);
+    expect(moMolecule(JSON.parse(JSON.stringify(water)).molecule)?.id).toBe('H2O');
+    const old = JSON.parse(JSON.stringify(h2)) as MoSpec;
+    expect(old.molecule).toBeUndefined();
+    expect(moMolecule(old.molecule)).toBeUndefined();
+    expect(toRelative(old)).toBe(old);
+    // dragging a level and renaming keep the molecule
+    const i = water.levels.findIndex((l) => moPlain(l.label) === '1b2');
+    expect(withLevel(water, i, { e: 0.6, label: 'n' }).molecule).toBe('H2O');
+    // a renamed group orbital: the molecular orbitals made from it follow
+    const g = water.levels.findIndex((l) => l.column === 'right' && moPlain(l.label) === 'B1');
+    const renamed = withLevel(water, g, { label: 'φ_{B}' });
+    expect(sources(renamed.levels, renamed.levels.find((l) => moPlain(l.label) === '2b1')!).map((l) => moPlain(l.label))).toEqual(['2p', 'φB']);
+    // the pictures (two atoms' orbitals mixing) are not drawn for a molecule
+    const draw = (spec: MoSpec) => { const d = new Doc(); d.style = { ...ACS_1996 }; let n = 0; d.edit('MO', () => { n = drawMo(d, POINTS, spec, { x: 0, y: 0 }, 300, 300).shapes.length; }); return n; };
+    expect(draw({ ...water, pictures: true })).toBe(draw(water));
+    // a plate with a molecule draws
+    const doc = new Doc();
+    doc.style = { ...ACS_1996 };
+    const plate = newPlate('mo', doc.style.bondLength);
+    let id = 0;
+    doc.edit('MO', () => { id = putPlate(doc, POINTS, { ...plate, mo: water }, { x: 0, y: 0 }); });
+    expect(doc.shapes.get(id)!.plate!.mo!.molecule).toBe('H2O');
   });
 
   it('finds the level under the pointer and the energy at a height', () => {
