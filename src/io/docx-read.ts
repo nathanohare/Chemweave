@@ -206,6 +206,10 @@ function mergeP(...ps: (PProps | undefined)[]): PProps {
   const out = merge<PProps>(...ps);
   const tabs = ps.flatMap((p) => p?.tabs ?? []);
   if (tabs.length) out.tabs = tabs; else delete out.tabs;
+  // (borders side by side, as Word takes them: a style's or paragraph's own side over the one it is
+  // based on, the others its; a side turned off is "none" until the end, where cleanBorders drops it)
+  const borders = ps.flatMap((p) => (p?.border ? [p.border] : []));
+  if (borders.length) out.border = Object.assign({}, ...borders);
   return out;
 }
 
@@ -679,7 +683,8 @@ class DocxReader {
             const name = side.localName === 'start' ? 'left' : side.localName === 'end' ? 'right' : side.localName;
             if (!['top', 'bottom', 'left', 'right', 'between'].includes(name)) continue;
             const line = readBorder(side, (e, n) => this.a(e, n));
-            if (line) b[name as keyof ParaBorders] = line;
+            // (one turned off, nil or none, is kept as such: it takes away the side of the style it is based on)
+            b[name as keyof ParaBorders] = line ?? { style: 'none', w: 0, color: '#000000' };
           }
           out.border = b;
           break;
@@ -776,6 +781,12 @@ class DocxReader {
       const lk = ws.type === 'character' ? this.a(kid(ws.el, 'link')) : null;
       const ours = lk ? this.idMap.get(lk) : undefined;
       if (lk && ours && ours !== lk && styles[ours]) xml = xml.replace(/(<w:link w:val=")[^"]*(")/, (_m, a: string, b: string) => `${a}${ours.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}${b}`);
+      if (ws.type === 'paragraph') {
+        xml = xml.replace(/(<w:(?:basedOn|next) w:val=")([^"]*)(")/g, (m, a: string, v: string, b: string) => {
+          const ours = this.idMap.get(v);
+          return ours && ours !== v && styles[ours] ? `${a}${ours.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}${b}` : m;
+        });
+      }
       out.push({ type: ws.type, id: ws.id, xml });
     }
     return out.length ? out : undefined;
@@ -3585,6 +3596,8 @@ class DocxReader {
     const size = r.size ?? WORD_SIZE;
     const dflt = defaultStyles()[ours];
     const next = ws?.next ? this.idMap.get(ws.next) : undefined;
+    // the style it is based on (read as a style too: see where the styles are made)
+    const parent = ws?.basedOn && this.wstyles.has(`paragraph:${ws.basedOn}`) ? this.idMap.get(ws.basedOn) : undefined;
     return {
       id: ours,
       name: dflt?.name ?? ws?.name ?? ours,
@@ -3595,6 +3608,7 @@ class DocxReader {
       // its lines and shading
       ...(cleanBorders(p.border) ? { border: cleanBorders(p.border) } : {}), ...(p.shade && p.shade !== '#ffffff' ? { shade: p.shade } : {}),
       next: next && next !== ours ? next : ours === 'Normal' ? undefined : dflt?.next,
+      ...(parent && parent !== 'Normal' && parent !== ours && ours !== 'Normal' ? { basedOn: parent } : {}),
       outline: OUTLINE[ours] ?? (p.outline && p.outline <= 9 && ours !== 'Normal' ? p.outline : undefined),
       // its theme colour and font, written back while it has the colour and font they gave
       ...(r.thc || r.thf ? { wth: JSON.stringify({ ...(r.thc ? { c: r.thc, cv: r.thcv ?? '' } : {}), ...(r.thf ? { f: r.thf, fv: r.thfv ?? '' } : {}) }) } : {}),
@@ -3668,7 +3682,13 @@ class DocxReader {
     if (this.keptNumbering.nums.length) this.kept = { ...this.kept, numbering: this.keptNumbering };
     // the standard styles (the file's, or ours where it has none) and the others the text uses
     const styles = defaultStyles();
-    for (const [wordId, ours] of this.idMap) if (BUILT_IN_IDS[ours] || this.used.has(wordId)) styles[ours] = this.named(wordId, ours);
+    // (with the styles those are based on, all the way up: a chain is of styles written here, each with all its settings)
+    const read = new Set<string>();
+    for (const [wordId, ours] of this.idMap) {
+      if (!BUILT_IN_IDS[ours] && !this.used.has(wordId)) continue;
+      for (let w: string | undefined = wordId; w && !read.has(w) && this.wstyles.has(`paragraph:${w}`); w = this.wstyles.get(`paragraph:${w}`)?.basedOn) read.add(w);
+    }
+    for (const [wordId, ours] of this.idMap) if (read.has(wordId)) styles[ours] = this.named(wordId, ours);
     if (!out.length) out.push({ ps: {}, runs: [], mark: this.runStyle(merge<RProps>(this.docDefaults.r, this.chain('paragraph', this.defaultPara).r)), style: 'Normal', contextual: false });
     const runs: TextRun[] = [];
     out.forEach((p, i) => {

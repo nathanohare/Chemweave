@@ -1922,9 +1922,14 @@ class DocxWriter {
     const ids = Object.keys(t.styles);
     // (the character styles the file will have, for the paragraph styles linked to one)
     const chars = new Set((t.kept?.styles ?? []).filter((k) => k.type === 'character' && !this.charStyles[k.id]).map((k) => k.id));
+    // (the paragraph styles a style can be based on)
+    // (only ours: one kept as the file had it would give the style its settings that aren't written here)
+    const paras = new Set(ids);
+    // (none based, through others, on itself)
+    for (const id of ids) { const seen = new Set([id]); for (let b = t.styles[id]?.basedOn; b && t.styles[b]; b = t.styles[b].basedOn) { if (seen.has(b)) { paras.delete(b); break; } seen.add(b); } }
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {
       const s = t.styles[id];
-      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal, chars));
+      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal, chars, paras, t.styles));
     }
     // the contents' lines (Word's own "toc 1" to "toc 3", which Update Field uses)
     if (Object.values(t.objects).some((o) => o.kind === 'toc')) {
@@ -2565,26 +2570,29 @@ function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = w
 }
 
 /** A named style, with all its settings written out. */
-function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true, normal?: NamedStyle, chars?: ReadonlySet<string>): string {
+function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true, normal?: NamedStyle, chars?: ReadonlySet<string>, paras?: ReadonlySet<string>, styles?: Readonly<Record<string, NamedStyle>>): string {
   const id = s.id;
   // a style with one of Word's built-in names (header, No Spacing, toc 1...) is Word's own: not marked custom
   const word = WORD_NAMES[id] ?? builtIn(s.name);
   const name = word ?? s.name;
+  // (based on a style other than Normal: what it leaves unset would come from that one, so it says)
+  const chained = !!s.basedOn && s.basedOn !== id && s.basedOn !== 'Normal' && !!paras?.has(s.basedOn);
   const head = id === 'Normal'
     ? `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>${s.link && chars?.has(s.link) ? `<w:link w:val="${xml(s.link)}"/>` : ''}<w:qFormat/>`
-    : `<w:style w:type="paragraph"${word ? '' : ' w:customStyle="1"'} w:styleId="${xml(id)}"><w:name w:val="${xml(name)}"/><w:basedOn w:val="Normal"/>` +
+    : `<w:style w:type="paragraph"${word ? '' : ' w:customStyle="1"'} w:styleId="${xml(id)}"><w:name w:val="${xml(name)}"/><w:basedOn w:val="${xml(chained ? s.basedOn! : 'Normal')}"/>` +
       `${s.next && ids.includes(s.next) ? `<w:next w:val="${xml(s.next)}"/>` : ''}${s.link && chars?.has(s.link) ? `<w:link w:val="${xml(s.link)}"/>` : ''}<w:uiPriority w:val="${PRIORITY[id] ?? 29}"/><w:qFormat/>`;
   const pPr: string[] = [];
   pPr.push(s.keepNext ? '<w:keepNext/>' : '<w:keepNext w:val="0"/>');
   // (widow and orphan control is on for every style, from the document's defaults, unless a style turns it off)
-  if (s.keepLines) pPr.push('<w:keepLines/>');
-  if (s.noWidow) pPr.push('<w:widowControl w:val="0"/>');
-  // (its lines and shading, in their place before the spacing; a style based on Normal says where it hasn't Normal's)
-  pPr.push(paraBorderXml({ border: s.border, shade: s.shade }, id === 'Normal' ? undefined : normal));
+  if (s.keepLines) pPr.push('<w:keepLines/>'); else if (chained) pPr.push('<w:keepLines w:val="0"/>');
+  if (s.noWidow) pPr.push('<w:widowControl w:val="0"/>'); else if (chained) pPr.push('<w:widowControl/>');
+  // (its lines and shading, in their place before the spacing; a style says where it hasn't those of the
+  // style it is based on: Normal, or the one in Word it stays based on)
+  pPr.push(paraBorderXml({ border: s.border, shade: s.shade }, id === 'Normal' ? undefined : chained ? styles?.[s.basedOn!] : normal));
   pPr.push(`<w:spacing w:before="${twips(s.spaceBefore)}" w:after="${twips(s.spaceAfter)}" w:line="${Math.round(240 * s.line)}" w:lineRule="auto"/>`);
   pPr.push(`<w:ind w:left="${twips(s.indent)}" ${s.firstLine < 0 ? `w:hanging="${twips(-s.firstLine)}"` : `w:firstLine="${twips(s.firstLine)}"`}/>`);
   pPr.push(`<w:jc w:val="${JC[s.align]}"/>`);
-  if (s.outline) pPr.push(`<w:outlineLvl w:val="${s.outline - 1}"/>`);
+  if (s.outline) pPr.push(`<w:outlineLvl w:val="${s.outline - 1}"/>`); else if (chained) pPr.push('<w:outlineLvl w:val="9"/>');
   const th = themes ? themeOf(s.wth) : undefined;
   const rPr = `${fontsXml(s.font, th)}${s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>'}${s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>'}` +
     `${colorXml(s.color, th)}<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`;
