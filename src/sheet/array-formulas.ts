@@ -118,9 +118,9 @@ export function fileFormula(text: string, dynamic: boolean, outer?: Set<string>)
   if (!toks || !t) {
     // a formula this program can't take apart (a union in brackets, say): written as it is, with
     // @( … ) as Excel spells it (SINGLE in a dynamic array formula, left out in an old-style one),
-    // outside text in quotes (a table's [@Column] has no bracket after its @)
+    // outside text in quotes and quoted sheet names (a table's [@Column] has no bracket after its @)
     const raw = text.startsWith('=') ? text.slice(1) : text;
-    return raw.split(/("(?:[^"]|"")*")/).map((p, i) => (i % 2 ? p : p.replace(/@\s*\(/g, dynamic ? '_xlfn.SINGLE(' : '('))).join('');
+    return raw.split(/("(?:[^"]|"")*"|'(?:[^']|'')*')/).map((p, i) => (i % 2 ? p : p.replace(/@\s*\(/g, dynamic ? '_xlfn.SINGLE(' : '('))).join('');
   }
   // (the names LET and LAMBDA bind, from the whole formula when this is a piece of it)
   const bound = outer ?? new Set<string>();

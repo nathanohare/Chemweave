@@ -469,3 +469,9 @@ describe('@ in an old-style formula this program can\'t take apart', () => {
     expect(fileFormula('=Table1[@Col]+(', false)).toBe('Table1[@Col]+(');
   });
 });
+
+describe('@ in a formula this program can\'t take apart, beside a quoted sheet name', () => {
+  it('leaves the sheet name alone', () => {
+    expect(fileFormula("='a@(b)'!A1+@((A1,B1))", true)).toBe("'a@(b)'!A1+_xlfn.SINGLE((A1,B1))");
+  });
+});
