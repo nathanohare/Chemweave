@@ -431,3 +431,80 @@ describe('a sort by color (F-X-010)', () => {
     expect(part(saved, table)).not.toContain('<sortState');
   });
 });
+
+describe('each table\'s filter buttons (F-X-007)', () => {
+  // ECMA-376 Part 1, §18.5.1.2 table: a table's autoFilter (§18.3.1.2) is its header row's filter
+  // buttons; a table part without one has none (Table Design ▸ Filter Button off)
+  const head = (r: number) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t>No</t></is></c><c r="B${r}" t="inlineStr"><is><t>Value</t></is></c></row>`;
+  const row = (r: number) => `<row r="${r}"><c r="A${r}"><v>${r}</v></c><c r="B${r}"><v>${r * 2}</v></c></row>`;
+  const table = (n: number, ref: string, af: string) => ({
+    path: `xl/tables/table${n}.xml`, from: 'xl/worksheets/sheet1.xml', rel: `${R}/table`, target: `../tables/table${n}.xml`, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+    xml: `<table xmlns="${MAIN}" id="${n}" name="Table${n}" displayName="Table${n}" ref="${ref}" totalsRowShown="0">${af}` +
+      '<tableColumns count="2"><tableColumn id="1" name="No"/><tableColumn id="2" name="Value"/></tableColumns><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>',
+  });
+  const file = () => excelBook([['Tables', `<sheetData>${head(1)}${row(2)}${row(3)}${head(5)}${row(6)}${row(7)}${head(9)}${row(10)}${row(11)}</sheetData>`]], {
+    parts: [table(1, 'A1:B3', '<autoFilter ref="A1:B3"/>'), table(2, 'A5:B7', '<autoFilter ref="A5:B7"/>'), table(3, 'A9:B11', '')],
+  });
+
+  it('keeps every table\'s filter buttons, and a table without them without', async () => {
+    const saved = await writeXlsx((await readXlsx(file())).book, pictures);
+    const tables = Object.keys(unzipSync(saved)).filter((n) => /^xl\/tables\/table\d+\.xml$/.test(n)).map((n) => part(saved, n));
+    const af = (ref: string) => tables.find((t) => t.includes(`ref="${ref}"`))!;
+    expect(af('A1:B3')).toContain('<autoFilter ref="A1:B3"');
+    expect(af('A5:B7')).toContain('<autoFilter ref="A5:B7"/>');
+    expect(af('A9:B11')).not.toContain('<autoFilter');
+  });
+});
+
+describe('each table\'s filter buttons, saved and opened again (F-X-007 review)', () => {
+  const head = (r: number) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t>No</t></is></c><c r="B${r}" t="inlineStr"><is><t>Value</t></is></c></row>`;
+  const row = (r: number) => `<row r="${r}"><c r="A${r}"><v>${r}</v></c><c r="B${r}"><v>${r * 2}</v></c></row>`;
+  const table = (n: number, ref: string, af: string) => ({
+    path: `xl/tables/table${n}.xml`, from: 'xl/worksheets/sheet1.xml', rel: `${R}/table`, target: `../tables/table${n}.xml`, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+    xml: `<table xmlns="${MAIN}" id="${n}" name="Table${n}" displayName="Table${n}" ref="${ref}" totalsRowShown="0">${af}` +
+      '<tableColumns count="2"><tableColumn id="1" name="No"/><tableColumn id="2" name="Value"/></tableColumns><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>',
+  });
+  // the second table filters column B to the value 12 (ECMA-376 §18.3.2.6 filters)
+  const file = () => excelBook([['Tables', `<sheetData>${head(1)}${row(2)}${row(3)}${head(5)}${row(6)}${row(7)}</sheetData>`]], {
+    parts: [table(1, 'A1:B3', '<autoFilter ref="A1:B3"/>'), table(2, 'A5:B7', '<autoFilter ref="A5:B7"><filterColumn colId="1"><filters><filter val="12"/></filters></filterColumn></autoFilter>')],
+  });
+
+  it('keeps the filter on the second table through a save and a reopen', async () => {
+    const once = (await readXlsx(file())).book;
+    expect(once.sheet.filter?.range).toMatchObject({ r1: 4, r2: 6 });
+    const again = (await readXlsx(await writeXlsx(once, pictures))).book;
+    expect(again.sheet.filter?.range).toMatchObject({ r1: 4, r2: 6 });
+    expect(Object.keys(again.sheet.filter?.conditions ?? {})).toEqual(['1']);
+  });
+
+  const tablesOf = (saved: Uint8Array) => Object.keys(unzipSync(saved)).filter((n) => /^xl\/tables\/table\d+\.xml$/.test(n)).map((n) => part(saved, n));
+  const tableAt = (saved: Uint8Array, ref: string) => tablesOf(saved).find((t) => t.includes(`ref="${ref}"`))!;
+
+  it('keeps Data ▸ Filter off through a save and a reopen, every table keeping its buttons', async () => {
+    const book = (await readXlsx(file())).book;
+    book.edit('off', () => book.sheet.setFilter(null));
+    const saved = await writeXlsx(book, pictures);
+    expect((await readXlsx(saved)).book.sheet.filter).toBeNull();
+    expect(tableAt(saved, 'A1:B3')).toContain('<autoFilter');
+    expect(tableAt(saved, 'A5:B7')).toContain('<autoFilter ref="A5:B7"/>');
+  });
+
+  it('moves the filter from one table to another without taking the first table\'s buttons off', async () => {
+    const book = (await readXlsx(file())).book;
+    book.edit('off', () => book.sheet.setFilter(null));
+    book.edit('on', () => { book.sheet.setFilter({ range: { r1: 0, c1: 0, r2: 2, c2: 1 }, conditions: {} }); book.sheet.setTableButtons({ r1: 0, c1: 0, r2: 2, c2: 1 }, true); });
+    const saved = await writeXlsx(book, pictures);
+    expect(tableAt(saved, 'A1:B3')).toContain('<autoFilter');
+    expect(tableAt(saved, 'A5:B7')).toContain('<autoFilter');
+    expect((await readXlsx(saved)).book.sheet.filter?.range).toMatchObject({ r1: 0, r2: 2 });
+  });
+
+  it('stops a filter on cells above a table at the row above it, on the page and in the file', async () => {
+    const bytes = excelBook([['Tables', `<sheetData>${head(1)}${row(2)}${row(3)}${head(5)}${row(6)}${row(7)}</sheetData>`]], { parts: [table(2, 'A5:B7', '<autoFilter ref="A5:B7"/>')] });
+    const book = (await readXlsx(bytes)).book;
+    book.edit('on', () => book.sheet.setFilter({ range: { r1: 0, c1: 0, r2: 2, c2: 1 }, conditions: {} }));
+    expect(book.sheet.filterRows()).toEqual({ r1: 1, r2: 3 });
+    const sheet = part(await writeXlsx(book, pictures), 'xl/worksheets/sheet1.xml');
+    expect(sheet).toContain('<autoFilter ref="A1:B4"');
+  });
+});
