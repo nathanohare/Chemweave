@@ -13,7 +13,6 @@ export const DOCX_SAMPLERS: Sampler[] = [docxText, docxParagraphs, docxStylesLis
 export const DOCX_FINDINGS: Record<string, Finding> = {
   'W-CHR-79': { finding: 'F-W-002', note: 'the Hyperlink character style is flattened into direct formatting (color and underline); w:rStyle is gone' },
   'W-CHR-88': { finding: 'F-W-003', note: 'w:noBreakHyphen is saved as the character U+2011 instead' },
-  ...Object.fromEntries(['39', '40', '41', '42', '43', '44', '45', '46'].map((n) => [`W-PAR-${n}`, { finding: 'F-W-005', note: 'paragraph border styles other than single, dashed, dotted and double are saved as one of those (thick, wave, threeDEmboss, outset → single; dotDash → dashed; triple, thinThickSmallGap, doubleWave → double)' }])),
   'W-PAR-75': { finding: 'F-W-006', note: 'the paragraph mark\'s run properties (w:pPr/w:rPr) are dropped' },
   'W-STY-06': { finding: 'F-W-007', note: 'a basedOn chain is flattened: Sampler Leaf is saved based on Normal, with its ancestors\' properties copied into it' },
   'W-STY-08': { finding: 'F-W-008', note: 'the paragraph half of a linked style pair loses its w:link (the character half keeps its link back)' },
