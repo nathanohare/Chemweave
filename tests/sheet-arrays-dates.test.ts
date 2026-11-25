@@ -442,3 +442,30 @@ describe('a formula whose value is empty text (F-X-006)', () => {
     expect(strFromU8(unzipSync(await writeXlsx(book, pictures))['xl/workbook.xml'])).not.toContain('fullCalcOnLoad');
   });
 });
+
+describe('implicit intersection: the review\'s cases', () => {
+  const thrice = (f: string) => { for (let i = 0; i < 3; i++) f = fileFormula(readFileFormula(f), true); return f; };
+  it('stays the same through saves however @ is written', () => {
+    for (const f of ['_xlfn.SINGLE((A1:A3))', '_xlfn.SINGLE(_xlfn.SINGLE(A1:A3))', '-_xlfn.SINGLE(A1:A3)^2', 'SUM(_xlfn.SINGLE(A1:A3),2)']) expect(thrice(f), f).toBe(f);
+    expect(fileFormula('=@ (A1:A3)', true)).toBe('_xlfn.SINGLE(A1:A3)');
+  });
+  it('keeps LET\'s names inside @ as Excel spells them', () => {
+    expect(fileFormula('=LET(x,A1:A3,@(x))', true)).toBe('LET(_xlpm.x,A1:A3,_xlfn.SINGLE(_xlpm.x))');
+  });
+  it('writes @ as SINGLE in a formula this program can\'t take apart (a union in brackets)', () => {
+    expect(thrice('_xlfn.SINGLE((A1:A3,B1:B3))')).toBe('_xlfn.SINGLE((A1:A3,B1:B3))');
+    // (text in quotes left alone)
+    expect(fileFormula('=@((A1,B1))&"@("', true)).toBe('_xlfn.SINGLE((A1,B1))&"@("');
+  });
+  it('reads SINGLE itself only, not a name that ends in it', () => {
+    expect(readFileFormula('A.SINGLE(1)')).toBe('=A.SINGLE(1)');
+    expect(readFileFormula('_xlfn.SINGLE(A1:A3)')).toBe('=@(A1:A3)');
+  });
+});
+
+describe('@ in an old-style formula this program can\'t take apart', () => {
+  it('is left out, as Excel works it out that way anyway, and a table\'s [@Column] is kept', () => {
+    expect(fileFormula('=@((A1:A3,B1:B3))', false)).toBe('((A1:A3,B1:B3))');
+    expect(fileFormula('=Table1[@Col]+(', false)).toBe('Table1[@Col]+(');
+  });
+});

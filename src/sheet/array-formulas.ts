@@ -112,12 +112,19 @@ function boundNames(n: Node, out: Set<string>): void {
  * is how Excel works it out anyway, so it is left out). Newer functions' _xlfn. prefixes are
  * added by the caller.
  */
-export function fileFormula(text: string, dynamic: boolean): string {
+export function fileFormula(text: string, dynamic: boolean, outer?: Set<string>): string {
   const toks = tokens(text);
   const t = tree(text);
-  if (!toks || !t) return text.startsWith('=') ? text.slice(1) : text;
-  const bound = new Set<string>();
-  boundNames(t, bound);
+  if (!toks || !t) {
+    // a formula this program can't take apart (a union in brackets, say): written as it is, with
+    // @( … ) as Excel spells it (SINGLE in a dynamic array formula, left out in an old-style one),
+    // outside text in quotes (a table's [@Column] has no bracket after its @)
+    const raw = text.startsWith('=') ? text.slice(1) : text;
+    return raw.split(/("(?:[^"]|"")*")/).map((p, i) => (i % 2 ? p : p.replace(/@\s*\(/g, dynamic ? '_xlfn.SINGLE(' : '('))).join('');
+  }
+  // (the names LET and LAMBDA bind, from the whole formula when this is a piece of it)
+  const bound = outer ?? new Set<string>();
+  if (!outer) boundNames(t, bound);
   const all = toks.all;
   const out: string[] = [];
   for (let i = 0; i < all.length; i++) {
@@ -142,7 +149,7 @@ export function fileFormula(text: string, dynamic: boolean): string {
       const group = nx.t === '(' && end > j ? all.slice(j + 1, end) : null;
       const union = !!group && topLevelComma(group);
       const inner = group && !union ? group : all.slice(j, end + 1);
-      out.push('_xlfn.SINGLE(' + fileFormula('=' + untokenize(inner), dynamic) + ')');
+      out.push('_xlfn.SINGLE(' + fileFormula('=' + untokenize(inner), dynamic, bound) + ')');
       i = end;
       continue;
     }
@@ -173,6 +180,7 @@ export function readFileFormula(text: string): string {
     if (i % 2) return part;
     let f = part.replace(/_xlfn\.|_xlws\.|_xlpm\./g, '');
     f = f.replace(/\bANCHORARRAY\(\s*((?:'(?:[^']|'')+'|[A-Za-z0-9_.]+)?!?\$?[A-Za-z]{1,3}\$?\d+)\s*\)/gi, '$1#');
-    return f.replace(/\bSINGLE\(/gi, '@(');
+    // (SINGLE itself, not a name ending in it: A.SINGLE(1) stays)
+    return f.replace(/(?<![\w.])SINGLE\(/gi, '@(');
   }).join('');
 }
