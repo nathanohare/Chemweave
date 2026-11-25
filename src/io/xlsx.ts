@@ -795,7 +795,12 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
         const vm = book.excel?.richValues ? pointerOf(cell) : undefined;
         const sAttr = (arrayRef ? `${sAttr0} cm="1"` : sAttr0) + (vm !== undefined ? ` vm="${vm}"` : '');
         let body = '';
-        if (v === null || v === '') {
+        if (v === '' && f) {
+          // a formula whose value is empty text: its value is said, so Excel (and opening it here
+          // again) doesn't take the formula for one never worked out (ECMA-376 Part 1, §18.3.1.4 c@t "str")
+          wrote = '';
+          body = `<c r="${ref}"${sAttr} t="str">${f}<v></v></c>`;
+        } else if (v === null || v === '') {
           body = f ? `<c r="${ref}"${sAttr}>${f}</c>` : sAttr ? `<c r="${ref}"${sAttr}/>` : '';
         } else if (typeof v === 'number') {
           // a workbook counting from 1904 holds its dates 1462 lower than they are held here

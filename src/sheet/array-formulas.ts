@@ -137,7 +137,10 @@ export function fileFormula(text: string, dynamic: boolean): string {
           else if (all[k].t === ')' && --depth === 0) { end = k; break; }
         }
       }
-      out.push('_xlfn.SINGLE(' + fileFormula('=' + untokenize(all.slice(j, end + 1)), dynamic) + ')');
+      // (@ on brackets, as SINGLE(x) is read back as @(x): SINGLE's own brackets are enough, so a
+      // save doesn't add a pair each time)
+      const inner = nx.t === '(' && end > j ? all.slice(j + 1, end) : all.slice(j, end + 1);
+      out.push('_xlfn.SINGLE(' + fileFormula('=' + untokenize(inner), dynamic) + ')');
       i = end;
       continue;
     }
