@@ -11,8 +11,8 @@
 // All drawings here are built in the tests (none is from another program or anyone's own file).
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { Doc, type Arrow } from '../src/model';
-import { interpretArrow, itemFinder, linkRows, plainMeasure, reactionSteps, rolesOf, schemeItems, setRoleLimits, type Item, type StepRoles } from '../src/chem/reaction';
+import { Doc, type Arrow, type StepRoles } from '../src/model';
+import { interpretArrow, itemFinder, linkRows, plainMeasure, reactionSteps, rolesOf, schemeItems, setRoleLimits, type Item } from '../src/chem/reaction';
 import { DEFAULT_SCHEME_PREFS, setSchemePrefs } from '../src/chem/scheme-layout';
 import { readCdxml } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
