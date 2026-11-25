@@ -446,7 +446,7 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     style: { v: 'Heading1' },
     // (Word's own paragraph properties, kept as the file had them: by their place in w:pPr)
     wpx: { v: '{"e":"<w:outlineLvl w:val=\\"1\\"/>"}' },
-    border: { v: { bottom: { style: 'single', w: 1, color: '#000000' } } },
+    border: { v: { bottom: { style: 'single', w: 1, color: '#000000', word: 'thick' } } },
     numLook: { v: { bold: true }, with: { list: 'number' } },
     section: { v: { kind: 'continuous' } },
   },

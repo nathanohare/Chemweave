@@ -51,7 +51,54 @@ describe("Word's border kinds", () => {
     expect(borderXml('top', thick)).toContain('w:val="thick"');
     // (Word's own kinds of those drawn here carry nothing extra)
     for (const v of ['single', 'double', 'dotted', 'dashed']) expect(readBorder(el(v), a)!.word).toBeUndefined();
-    // (and a kind that isn't a plain name is not written)
+    // (and a kind that isn't one of Word's is not written, nor one that isn't text)
     expect(borderXml('top', { style: 'single', w: 1, color: '#000000', word: 'x"/><w:evil' })).toContain('w:val="single"');
+    expect(borderXml('top', { style: 'single', w: 1, color: '#000000', word: 'bogus9' })).toContain('w:val="single"');
+    expect(borderXml('top', { style: 'single', w: 1, color: '#000000', word: 5 as unknown as string })).toContain('w:val="single"');
+    expect(readBorder(el('THICK'), a)!.word).toBeUndefined();
+  });
+
+  /** The file with styles.xml holding these styles. */
+  const withStyles = (body: string, styles: string) => {
+    const files = unzipSync(docx(body));
+    files['word/styles.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:styles ${W}><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>${styles}</w:styles>`));
+    files['word/_rels/document.xml.rels'] = new Uint8Array(strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdS" Type="${R}styles" Target="styles.xml"/></Relationships>`));
+    return zipSync(files);
+  };
+  const black = (name: string, val: string, sz = 4) => `<w:${name} w:val="${val}" w:sz="${sz}" w:space="0" w:color="000000"/>`;
+  const cellTable = (tblPr: string, tcBorders: string) => `<w:tbl><w:tblPr>${tblPr}<w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>` +
+    `<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>${tcBorders ? `<w:tcBorders>${tcBorders}</w:tcBorders>` : ''}</w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>` +
+    `<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>`;
+  /** Every line kind written in the saved file (document and styles), by side. */
+  const kinds = async (bytes: Uint8Array) => {
+    const files = unzipSync(await writeDocx((await readDocx(bytes)).doc, deps));
+    return strFromU8(files['word/document.xml']) + strFromU8(files['word/styles.xml'] ?? new Uint8Array());
+  };
+
+  it("are kept on a table's own lines and its cells' over a table style of another kind", async () => {
+    // the table's own lines, at Word's usual weight and colour
+    const own = await kinds(docx(cellTable(`<w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((s) => black(s, 'thick')).join('')}</w:tblBorders>`, '')));
+    // (kept on the cells, whose lines Word draws over the table's)
+    const cellLines = [...own.matchAll(/<w:tcBorders>(.*?)<\/w:tcBorders>/g)].map((m) => m[1]).join('');
+    expect(cellLines.match(/w:val="thick"/g)?.length).toBe(8);
+    expect(cellLines).not.toContain('w:val="single"');
+    // a cell's double and thin-thick lines over a style of triple ones: kept, not taken for the style's
+    const style = `<w:style w:type="table" w:customStyle="1" w:styleId="Trip"><w:name w:val="Trip"/><w:tblPr><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((s) => black(s, 'triple', 8)).join('')}</w:tblBorders></w:tblPr></w:style>`;
+    const over = await kinds(withStyles(cellTable('<w:tblStyle w:val="Trip"/>', black('top', 'double', 8) + black('left', 'thinThickSmallGap', 8)), style));
+    const tc = /<w:tcBorders>.*?<\/w:tcBorders>/.exec(over)?.[0] ?? '';
+    expect(tc).toContain('<w:top w:val="double"');
+    expect(tc).toContain('<w:left w:val="thinThickSmallGap"');
+    expect(over).toContain('w:val="triple"');
+    // a wave line on a cell over Table Grid's single ones
+    const grid = `<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((s) => black(s, 'single')).join('')}</w:tblBorders></w:tblPr></w:style>`;
+    expect(await kinds(withStyles(cellTable('<w:tblStyle w:val="TableGrid"/>', black('top', 'wave')), grid))).toMatch(/<w:tcBorders><w:top w:val="wave"/);
+  });
+
+  it("are kept in a redefined Table Grid, and between paragraphs", async () => {
+    const thickGrid = `<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((s) => black(s, 'thick')).join('')}</w:tblBorders></w:tblPr></w:style>`;
+    expect(await kinds(withStyles(cellTable('<w:tblStyle w:val="TableGrid"/>', ''), thickGrid))).toContain('w:val="thick"');
+    const between = `<w:pBdr>${black('between', 'dotDash')}</w:pBdr>`;
+    const x = await kinds(docx(`<w:p><w:pPr>${between}</w:pPr><w:r><w:t>one</w:t></w:r></w:p><w:p><w:pPr>${between}</w:pPr><w:r><w:t>two</w:t></w:r></w:p>`));
+    expect(x).toContain('<w:between w:val="dotDash"');
   });
 });
