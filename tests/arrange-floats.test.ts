@@ -176,6 +176,18 @@ describe('the stack in a Word file (office sampler F-W-026)', () => {
     expect(heights(await writeDocx(back, deps))).toEqual(h);
   });
 
+  it('keeps the order of a group\'s members that Word gets one by one (in two paragraphs), each in its own place', async () => {
+    const three = threeDoc();
+    let t: DocText = { ...three, runs: [...three.runs, { ...look, text: '\n' }, { ...look, obj: 4, text: '￼' }], paras: [...three.paras, paraFromStyle(three.styles.Normal, {})], objects: { ...three.objects, 4: picture({ wrap: 'square', x: 150, y: 0 }) } };
+    t = restacked(grouped(t, [2, 4]), 4, 'back');
+    const before = byX(t);
+    const once = await writeDocx(t, deps);
+    expect(new Set(heights(once)).size).toBe(4);
+    const back = (await readDocx(once)).doc;
+    expect(byX(back)).toEqual(before);
+    expect(heights(await writeDocx(back, deps))).toEqual(heights(once));
+  });
+
   it('reads a stack in the order of the text back with no place of its own, so nothing is restacked by saving', async () => {
     const once = await writeDocx(threeDoc(), deps);
     const back = (await readDocx(once)).doc;

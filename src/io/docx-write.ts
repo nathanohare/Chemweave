@@ -1230,18 +1230,29 @@ class DocxWriter {
     if (!this.stackAt) {
       const order = stackOrder(this.t), inText = new Set(order);
       const outside = Object.entries(this.t.objects).filter(([id, o]) => floatOf(o) && !inText.has(Number(id))).length;
-      // (a group is one drawing in Word, at the place of its member furthest back)
+      // (a group written as one Word group is one drawing there, at the place of its member furthest back;
+      // the paragraphs' runs, to tell which groups are, as each paragraph is written)
+      const oneAnchor = new Set<number>();
+      let para: TextRun[] = [];
+      const flush = () => { for (const id of this.groupsIn(para).keys()) oneAnchor.add(id); para = []; };
+      for (const r of this.t.runs) {
+        if (r.obj !== undefined) para.push(r);
+        if (r.text.includes('\n')) flush();
+      }
+      flush();
       this.stackAt = new Map();
       const groups = new Map<number, number>();
       let at = outside;
       for (const id of order) {
         const fl = floatOf(this.t.objects[id])!;
-        if (fl.group === undefined) { this.stackAt.set(fl, at++); continue; }
+        if (fl.group === undefined || !oneAnchor.has(id)) { this.stackAt.set(fl, at++); continue; }
         if (!groups.has(fl.group)) groups.set(fl.group, at++);
         this.stackAt.set(fl, groups.get(fl.group)!);
       }
     }
-    const at = this.stackAt.get(fl) ?? this.others++;
+    // (one outside the text's stack written twice, as a chart and its picture, at one place)
+    let at = this.stackAt.get(fl);
+    if (at === undefined) this.stackAt.set(fl, (at = this.others++));
     const h = fl.xFrom === 'page' ? 'page' : 'margin';
     const v = fl.yFrom === 'page' ? 'page' : fl.yFrom === 'margin' ? 'margin' : 'paragraph';
     const wrap = fl.wrap === 'square' ? '<wp:wrapSquare wrapText="largest"/>' : fl.wrap === 'topBottom' ? '<wp:wrapTopAndBottom/>' : '<wp:wrapNone/>';
@@ -1257,6 +1268,12 @@ class DocxWriter {
    */
   private wordGroups = new Map<number, number[]>();
   private noteWordGroups(runs: TextRun[]): void {
+    for (const [id, ids] of this.groupsIn(runs)) this.wordGroups.set(id, ids);
+  }
+
+  /** The groups written as one Word group from a paragraph with these runs (see wordGroups): each picture's id to the group's. */
+  private groupsIn(runs: TextRun[]): Map<number, number[]> {
+    const out = new Map<number, number[]>();
     const by = new Map<number, number[]>();
     for (const r of runs) {
       if (r.obj === undefined || r.rev) continue;
@@ -1271,8 +1288,9 @@ class DocxWriter {
       const all = Object.values(this.t.objects).filter((o) => floatOf(o)?.group === g);
       const fls = ids.map((id) => floatOf(this.t.objects[id])!);
       const same = fls.every((f) => !f.hidden && f.wrap === fls[0].wrap && (f.xFrom ?? 'margin') === (fls[0].xFrom ?? 'margin') && (f.yFrom ?? 'para') === (fls[0].yFrom ?? 'para'));
-      if (all.length === ids.length && same) for (const id of ids) this.wordGroups.set(id, ids);
+      if (all.length === ids.length && same) for (const id of ids) out.set(id, ids);
     }
+    return out;
   }
 
   /**
