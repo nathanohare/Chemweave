@@ -2038,6 +2038,11 @@ class Reader {
       if (!geo) return null;
       const look = this.look(sp, spPr);
       const sh: Omit<Shape, 'id'> = { kind: 'geo', geo, ...where, color: look.line ?? look.fill ?? '#000000' };
+      // its adjust values (corner size, head length...), kept to write back while it is the same preset
+      const gds = kids(kid(spPr, 'prstGeom', 'avLst'), 'gd').filter((g) => /^[A-Za-z0-9]+$/.test(g.getAttribute('name') ?? '') && /^val -?\d+$/.test(g.getAttribute('fmla') ?? ''));
+      const named = new Map<string, string>();
+      for (const g of gds) if (!named.has(g.getAttribute('name')!)) named.set(g.getAttribute('name')!, g.getAttribute('fmla')!);
+      if (named.size) sh.adjust = { prst, gd: [...named].map(([n, f]) => `<a:gd name="${n}" fmla="${f}"/>`).join('') };
       // an action button, or any shape with an action on a click
       const click = this.hlinkOf(kid(sp, 'nvSpPr', 'cNvPr', 'hlinkClick'));
       if (click) sh.link = click;
@@ -2079,10 +2084,14 @@ class Reader {
       // changed to another shape in PowerPoint (Change Shape): PowerPoint's shape (a shape not in
       // the library: read as PowerPoint's shapes are, with a warning)
       const reshaped = typeof pr?.g === 'string' && pr.g !== spPrPrint(spPr, 'geom');
-      let sh: Omit<Shape, 'id'> | null = reshaped ? native() : null;
-      if (reshaped && !sh) return false;
+      const theirGeom = reshaped ? native() : null;
+      if (reshaped && !theirGeom) return false;
+      // (the same shape with a handle dragged there: the saved shape, with PowerPoint's adjust values)
+      const dragged = !!theirGeom && theirGeom.geo === saved.s.geo;
+      let sh: Omit<Shape, 'id'> | null = dragged ? null : theirGeom;
       if (!sh) {
         sh = { ...saved.s, ...where, kind: 'geo' } as Omit<Shape, 'id'>;
+        if (dragged) { if (theirGeom!.adjust) sh.adjust = theirGeom!.adjust; else delete sh.adjust; }
         // its fill, outline or effects changed in PowerPoint: PowerPoint's look, the rest as saved
         const theirs = typeof pr?.l === 'string' && pr.l !== spPrPrint(spPr, 'look', kid(sp, 'style')) ? native(saved.s.geo) : null;
         if (theirs) {
@@ -3301,7 +3310,7 @@ function roundRadius(spPr: Element | null, box: Pick<Shape, 'x1' | 'y1' | 'x2' |
  */
 // (every field of Shape but those is listed, so a field added to Shape must be added here too)
 const PLAIN_SHAPE_FIELDS: { [K in Exclude<keyof Shape, 'id' | 'kind' | 'x1' | 'y1' | 'x2' | 'y2' | 'name' | 'hidden' | 'ring' | 'pin' | 'frame'>]-?: 'number' | 'string' | 'boolean' | 'object' } = {
-  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', stack: 'number', poly: 'object', geo: 'string', orbital: 'string', orb: 'object',
+  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', stack: 'number', poly: 'object', geo: 'string', adjust: 'object', orbital: 'string', orb: 'object',
   text: 'object', textAlign: 'string', textValign: 'string', lineWidth: 'number', transparency: 'number', rot: 'number', dashed: 'boolean',
   hashSpacing: 'number', dotted: 'boolean', filled: 'boolean', fill: 'string', fill2: 'string', gradAngle: 'number', gradRadial: 'boolean',
   pattern: 'string', patternColor: 'string', patternSize: 'number', patternTransparency: 'number', patternClear: 'boolean', fillColor: 'string',

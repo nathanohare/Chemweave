@@ -2018,10 +2018,14 @@ export function connectorSpPr(r: Arrow, lw: number, clr: ColourXml = srgbXml): {
   return { frame, geom, ln, curved: curved || !!r.elbow };
 }
 
+/** Adjust values as the reader writes them (Shape.adjust.gd): name and a plain value only. */
+const ADJUST_GD = /^(<a:gd name="[A-Za-z0-9]+" fmla="val -?\d+"\/>)+$/;
+
 /** A library shape's outline `w` × `h` points big: PowerPoint's preset when it has one, else a custom shape with these outlines (as PowerPoint and Word both write them). */
-export function geoGeomXml(geo: string | undefined, w: number, h: number): string {
+export function geoGeomXml(geo: string | undefined, w: number, h: number, adjust?: Shape['adjust']): string {
   const def = geoDef(geo);
-  if (def.prst) return `<a:prstGeom prst="${def.prst}"><a:avLst/></a:prstGeom>`;
+  // (with the adjust values the file gave this preset, while it is still that preset)
+  if (def.prst) return `<a:prstGeom prst="${def.prst}"><a:avLst>${adjust && adjust.prst === def.prst && typeof adjust.gd === 'string' && ADJUST_GD.test(adjust.gd) ? adjust.gd : ''}</a:avLst></a:prstGeom>`;
   const o = def.draw(w, h);
   const ta = textArea(def, 0, 0, w, h);
   // the text's box through guides (LibreOffice ignores a text box given as plain numbers)
@@ -2036,7 +2040,7 @@ export function geoSpPr(s: Shape, lw: number, clr: ColourXml = srgbXml): { box: 
   const box = { x1: Math.min(s.x1, s.x2), y1: Math.min(s.y1, s.y2), x2: Math.max(s.x1, s.x2), y2: Math.max(s.y1, s.y2) };
   const w = box.x2 - box.x1, h = box.y2 - box.y1;
   const width = s.lineWidth ?? (s.bold ? lw * 2.5 : lw);
-  const geom = geoGeomXml(s.geo, w, h);
+  const geom = geoGeomXml(s.geo, w, h, s.adjust);
   const fc = hex6(s.fillColor ?? s.color ?? '#000000');
   const clear = Math.max(0, Math.min(1, s.transparency ?? 0));
   const alpha = clear ? `<a:alpha val="${Math.round((1 - clear) * 100000)}"/>` : '';

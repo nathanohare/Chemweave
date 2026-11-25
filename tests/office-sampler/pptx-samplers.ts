@@ -20,7 +20,6 @@ export const PPTX_FINDINGS: Record<string, Finding> = {
   'pptx-text.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-001', note: TAGS },
   // shapes
   'pptx-shapes.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-005', note: TAGS },
-  'P-GEO-68': { finding: 'F-P-007', note: 'a roundRect with <a:gd name="adj" fmla="val 30000"/> is saved with an empty <a:avLst/>: the corner size goes back to the default 16667' },
   'P-GRP-02': { finding: 'F-P-009', note: 'a group\'s own name ("P-GRP-02 named group") is saved as "Group N"; every grpSp is renamed' },
   // fills, lines, effects
   'pptx-format.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-010', note: TAGS },
