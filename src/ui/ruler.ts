@@ -43,7 +43,7 @@ export class Ruler {
   private canvas: HTMLCanvasElement;
   private kindBtn: HTMLButtonElement;
   private tabKind: TabStop['kind'] = 'left';
-  private drag: { grip: Grip; x: number; off: boolean; free: boolean } | null = null;
+  private drag: { grip: Grip; x: number; x0: number; moved: boolean; off: boolean; free: boolean } | null = null;
   private geo: RulerGeometry | null = null;
 
   constructor(readonly el: HTMLElement, private host: RulerHost) {
@@ -100,10 +100,11 @@ export class Ruler {
     const pt = this.ptAt(d.x, d.free);
     const width = (g.colRight - g.colLeft) / g.zoom;
     switch (d.grip.kind) {
-      case 'first': out.first = Math.max(0, Math.min(width - out.right - 9, pt)); break;
-      case 'hang': out.left = Math.max(0, Math.min(width - out.right - 9, pt)); break;
-      case 'left': { const dd = Math.max(-Math.min(out.left, out.first), Math.min(width - out.right - 9, pt) - left); out.left += dd; out.first += dd; break; }
-      case 'right': out.right = Math.max(0, Math.min(width - Math.max(out.left, out.first) - 9, width - pt)); break;
+      // (an indent into the margin, from a Word file, can stay there: no further out than it is, never pushed back to 0)
+      case 'first': out.first = Math.max(Math.min(0, out.first), Math.min(width - out.right - 9, pt)); break;
+      case 'hang': out.left = Math.max(Math.min(0, out.left), Math.min(width - out.right - 9, pt)); break;
+      case 'left': { const dd = Math.max(Math.min(0, -Math.min(out.left, out.first)), Math.min(width - out.right - 9, pt) - left); out.left += dd; out.first += dd; break; }
+      case 'right': out.right = Math.max(Math.min(0, out.right), Math.min(width - Math.max(out.left, out.first) - 9, width - pt)); break;
       case 'tab': if (d.off) out.tabs.splice(d.grip.i, 1); else out.tabs[d.grip.i] = { ...out.tabs[d.grip.i], pos: Math.max(1, Math.min(width, pt)) }; break;
     }
     return out;
@@ -163,7 +164,7 @@ export class Ruler {
       this.geo = { ...this.geo, para: { ...this.geo.para, tabs } };
       grip = { kind: 'tab', i: tabs.length - 1 };
     }
-    this.drag = { grip, x: e.offsetX, off: false, free: e.altKey };
+    this.drag = { grip, x: e.offsetX, x0: e.offsetX, moved: false, off: false, free: e.altKey };
     this.canvas.setPointerCapture(e.pointerId);
     this.paint();
   }
@@ -173,6 +174,7 @@ export class Ruler {
     if (!d) return;
     d.x = e.offsetX;
     d.free = e.altKey;
+    if (e.offsetX !== d.x0) d.moved = true;
     d.off = d.grip.kind === 'tab' && e.offsetY > H + 14;
     this.paint();
   }
@@ -180,6 +182,9 @@ export class Ruler {
   private up(e: PointerEvent): void {
     const d = this.drag;
     if (!d || !this.geo) return;
+    // (an indent grip clicked without moving: left as it is, not snapped to the ruler's steps; a click
+    // on the ruler itself still puts a tab stop there)
+    if (!d.moved && e.offsetX === d.x0 && d.grip.kind !== 'tab') { this.drag = null; this.paint(); return; }
     d.x = e.offsetX;
     const m = this.marks();
     this.drag = null;

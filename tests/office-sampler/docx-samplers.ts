@@ -14,7 +14,6 @@ export const DOCX_FINDINGS: Record<string, Finding> = {
   'W-CHR-46': { finding: 'F-W-001', note: 'kerning (w:kern 28) is lost: every run is saved with <w:kern w:val="0"/>' },
   'W-CHR-79': { finding: 'F-W-002', note: 'the Hyperlink character style is flattened into direct formatting (color and underline); w:rStyle is gone' },
   'W-CHR-88': { finding: 'F-W-003', note: 'w:noBreakHyphen is saved as the character U+2011 instead' },
-  'W-PAR-12': { finding: 'F-W-004', note: 'a negative left indent (w:ind w:left="-360") is dropped: the saved paragraph has an empty w:pPr' },
   ...Object.fromEntries(['39', '40', '41', '42', '43', '44', '45', '46'].map((n) => [`W-PAR-${n}`, { finding: 'F-W-005', note: 'paragraph border styles other than single, dashed, dotted and double are saved as one of those (thick, wave, threeDEmboss, outset → single; dotDash → dashed; triple, thinThickSmallGap, doubleWave → double)' }])),
   'W-PAR-75': { finding: 'F-W-006', note: 'the paragraph mark\'s run properties (w:pPr/w:rPr) are dropped' },
   'W-STY-06': { finding: 'F-W-007', note: 'a basedOn chain is flattened: Sampler Leaf is saved based on Normal, with its ancestors\' properties copied into it' },
