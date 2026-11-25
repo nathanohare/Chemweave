@@ -749,6 +749,20 @@
     <button role="menuitem" data-cmd="periodic-table">Periodic Table…</button>
     </div>
     </div>
+    <div class="submenu" id="nmr-submenu" data-modes="drawing">
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">NMR</button>
+    <div class="menu sub" role="menu" hidden>
+    <button role="menuitem" data-cmd="predict-nmr" title="Predict the NMR spectrum of the selected structure, in the Analysis panel">Predict NMR</button>
+    <button role="menuitem" data-cmd="nmr-1h" title="Predict the ¹H NMR spectrum of the selected structure">Predict ¹H NMR</button>
+    <button role="menuitem" data-cmd="nmr-13c" title="Predict the ¹³C NMR spectrum of the selected structure">Predict ¹³C NMR</button>
+    <button role="menuitem" data-cmd="nmr-marks" title="Show the predicted shifts on the drawing, by each atom">Show on Drawing</button>
+    <button role="menuitem" data-cmd="nmr-window" title="Open the predicted spectrum in a window you can move, resize and zoom">Spectrum Window</button>
+    <hr />
+    <button role="menuitem" data-cmd="nmr-solvent" title="The solvent the shifts are predicted in">Solvent…</button>
+    <button role="menuitem" data-cmd="nmr-check" title="Check measured NMR data against the prediction for the selected structure">Check Data…</button>
+    <button role="menuitem" data-cmd="nmr-settings" title="Quality, solvent, spectrometer frequency and the ppm ranges spectra are drawn over">NMR Settings…</button>
+    </div>
+    </div>
     <div class="submenu">
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Compound Library</button>
     <div class="menu sub" role="menu" hidden>

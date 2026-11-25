@@ -84,6 +84,12 @@ try {
   }
 
   step('every ribbon, on every tab, is the Spreadsheet\'s height');
+  // (the web version starts with the one-row Simplified Canvas ribbon; the heights are held for the
+  // Classic two-row look, and the Simplified one must be lower than that)
+  const simplified = () => page.evaluate(() => !!document.querySelector('.canvas-ribbon:not(.cr-classic)'));
+  const startedSimplified = await simplified();
+  if (startedSimplified) await page.evaluate(() => window.__app.command('ribbon-simplified'));
+  if (await simplified()) fail('View ▸ Ribbon ▸ Simplified Ribbon did not switch the Canvas ribbon to Classic');
   await page.evaluate(() => window.__app.ws.newDesign({ w: 720, h: 540 }));
   // the SI tab too (retrospective audit G5-06), with a project kept in memory
   await page.evaluate(() => window.__app.openMemorySi({ 'project.json': JSON.stringify({ title: 'Smoke test' }) }));
@@ -114,6 +120,18 @@ try {
   console.log(`  ${heights.length} tabs in ${new Set(heights.map((x) => x.mode)).size} modes, ${sheetH} px`);
   if (new Set(heights.map((x) => x.mode)).size < 6) fail('not every mode\'s ribbon (and the SI tab\'s) was checked');
   for (const x of heights) if (x.h !== sheetH) fail(`the ${x.mode} ribbon's ${x.tab} tab is ${x.h} px tall, not the Spreadsheet's ${sheetH} px`);
+  if (startedSimplified) {
+    const low = await page.evaluate(async () => {
+      const ws = window.__app.ws;
+      ws.activate(ws.tabs.find((t) => t.mode === 'drawing') ?? ws.tabs[0]);
+      window.__app.command('ribbon-simplified');
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const r = document.querySelector('.canvas-ribbon');
+      return { simple: !r?.classList.contains('cr-classic'), h: r?.offsetHeight ?? 0 };
+    });
+    if (!low.simple) fail('the Canvas ribbon did not go back to Simplified');
+    else if (!(low.h > 0 && low.h < sheetH)) fail(`the Simplified Canvas ribbon is ${low.h} px tall, not lower than the Classic ${sheetH} px`);
+  }
   step('going to a canvas slide, the Keyframes group fits in the Home ribbon: nothing runs off its right end');
   const over = await page.evaluate(async () => {
     const ws = window.__app.ws;

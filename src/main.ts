@@ -54,7 +54,7 @@ import { whyNot, WHY, NEEDS, type Picked } from './editor/can-run';
 import { StepCache } from './chem/step-cache';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
 import { compareMode, nmrQuality, nmrSpectrumMhz, sampleSpectrumData, setCompareMode, setNmrQuality, setNmrSpectrumMhz, spectrumSvg, type CompareMode } from './ui/nmr-spectrum';
-import { nmrAutoPredict, nmrRange, peakLabels, setNmrAutoPredict, setNmrRange, setPeakLabels, type PeakLabels } from './ui/nmr-settings';
+import { nmrAutoPredict, nmrRange, nmrTraceColor, peakLabels, setNmrAutoPredict, setNmrRange, setNmrTraceColor, setPeakLabels, type PeakLabels } from './ui/nmr-settings';
 import { analysisPrefs, setAnalysisPrefs, onAnalysisPrefs, parseAnalysisPrefs, calcOf, nextCalcId, type AnalysisPrefs } from './chem/analysis-prefs';
 import { newCalc } from './chem/bench';
 import { dragRow } from './ui/row-drag';
@@ -165,7 +165,7 @@ import { fillTemplate, templateSize } from './design/templates';
 import { putDiagram, type DiagramData } from './design/diagrams';
 import type { EnergyData } from './design/energy';
 import { newDSplitPlate, newPlate, type PlateData, type PlateKind } from './design/plates';
-import { fitWidth, toRich, withLevel } from './design/mo';
+import { fitWidth, fromMolecule, toRich, withLevel } from './design/mo';
 import { editMoName } from './ui/mo-name-pop';
 import { refreshZooms, summaryParts, zoomGrid, zoomShape } from './deck/zoom';
 import { AUDIO_TYPES, VIDEO_TYPES, mediaMime, probeAudio, probeVideo, speakerPng, filmPng } from './deck/media';
@@ -180,6 +180,7 @@ import { SHEETS } from './io/cdxml-print';
 import { dataUrl, fromDataUrl, imageSize, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
 import { freeRing, matchStructure, straightenLinear, fusedRing, placeRing, sprout, ringOnAtom, ringDir, straightenAt } from './chem/chemgeom';
 import { Toolbar, ToolbarItem, PaletteDef, type ToolDef } from './ui/toolbar';
+import { BOX_DEFAULTS } from './ui/toolbox-defaults';
 import { StylePanel, tidyStyle } from './ui/style-panel';
 import { installCombos } from './ui/combo';
 import { installFontList, registerBundledFonts, registerEmbeddedFont, bundledFaces, pdfFonts } from './fonts';
@@ -193,7 +194,7 @@ import { TEMPLATES, Template, templateById, ownTemplates, setOwnTemplates, templ
 import { freeLigandFor, loadFullLigands, placeFreeLigand } from './chem/expand';
 import { centreEnd, haptoLook } from './chem/hapto';
 import { viewNow, viewRingOf, type RingView } from './chem/ring-views';
-import { countElectrons } from './chem/electrons';
+import { countElectrons, electronPrefs, ELECTRON_METHODS, type ElectronMethod } from './chem/electrons';
 import { addNicknames, removeNickname, isBuiltInNickname, builtInNicknames, labelPrefs, alkylPrefs, ALKYL_LOOKS, type AlkylLook, tokenize as tokenizeLabel } from './chem/labels';
 import { restyleAlkyl } from './text/alkyl-restyle';
 import { selectedGroup } from './chem/group-smiles';
@@ -220,7 +221,7 @@ import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
 import { fieldKeyHandler, isTypingField } from './editor/field-keys';
-import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions } from './settings';
+import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
 import { TypingDialog } from './ui/typing-dialog';
@@ -833,7 +834,7 @@ const toolbar = new Toolbar($<HTMLDivElement>('#tools'), TOOL_GROUPS, (name) => 
 let canvasTextRows: { font: HTMLElement; paragraph: HTMLElement } | null = null;
 let canvasFont: { refresh(): void } | null = null;
 // (NMR prediction is desktop only: its ribbon groups are left out elsewhere)
-if (!nmrHere) for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.name !== 'NMR');
+if (!nmrHere) { for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.name !== 'NMR'); document.getElementById('nmr-submenu')?.remove(); }
 /** Focal point settings (Preferences, the Distribute menu's choice). */
 const focalPrefs: FocalPrefs = { ...DEFAULT_FOCAL_PREFS };
 
@@ -853,8 +854,29 @@ async function pasteTextOnly(): Promise<void> {
 for (const b of document.querySelectorAll<HTMLButtonElement>('#ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect(), 'slides'));
 for (const b of document.querySelectorAll<HTMLButtonElement>('#design-ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect(), 'design'));
 
+/** A template pane's ready-made MO diagram (`molecule`: an MO_MOLECULES id; none: two atoms), or a d-orbital splitting diagram. */
+function moTemplate(cmd: string, molecule?: string): PlateData {
+  const L = doc.style.bondLength;
+  if (cmd === 'd-orbital-splitting') return newDSplitPlate(L);
+  const plate = newPlate('mo', L);
+  const spec = molecule ? fromMolecule(molecule) : null;
+  return spec ? { ...plate, mo: { ...spec, labelBack: 'white' } } : plate;
+}
+
 const canvasRibbon = new CanvasRibbon({
-  command: (cmd) => { command(cmd); },
+  // (a template pane's ready-made MO diagram is put on the page as MO Diagram puts its own, in one step)
+  command: (cmd, arg) => {
+    if (cmd === 'mo-diagram' && arg) { finishTyping(); editor.putPlateAt(moTemplate(cmd, arg), pasteCentre(), undefined, deckNow()?.size); return; }
+    command(cmd);
+  },
+  // (the on-or-off commands in the flyouts' lists)
+  checked: (cmd) => (cmd === 'show-roles' ? editor.showAllRoles : cmd === 'show-focal-points' ? editor.showFocal
+    : cmd === 'nmr-marks' ? document.querySelector('#analysis-section .nmr-marks')?.getAttribute('aria-pressed') === 'true' : false),
+  // the Diagrams pane's MO and d-orbital pictures, drawn by the drawing code at small size
+  thumb: (it) => {
+    if (it.cmd !== 'mo-diagram' && it.cmd !== 'd-orbital-splitting') return undefined;
+    try { return drawingSvg(editor.platePreview(moTemplate(it.cmd, it.arg)).doc, null) ?? undefined; } catch { return undefined; }
+  },
   pickTool: (name) => pickTool(name),
   hasTool: (name) => name in TOOLS,
   icon: (it) => ('cmd' in it ? commandIcon(it.cmd) ?? RIBBON_ONLY_ICONS[it.cmd] ?? ICONS[it.cmd] : ICONS[it.tool]),
@@ -868,6 +890,8 @@ const warningsBox = new WarningsBox($('#warnings-section'));
 canvasRibbon.bodyEnd.append(analysisBox.el);
 canvasRibbon.tabEnd.append(warningsBox.button);
 canvasRibbon.el.addEventListener('cr-tab', () => { fitRibbons(); refreshCanRun(); });
+// a flyout's commands are greyed as the ribbon's are, once it opens (its list was hidden till now)
+canvasRibbon.el.addEventListener('rb-fly-open', () => requestAnimationFrame(refreshCanRun), true);
 
 // (the Canvas ribbon's tabs stay put; what is selected brings out its context toolbox)
 const showRibbonContext = () => { contextBoxes.follow(); };
@@ -1180,7 +1204,7 @@ function showAllRoles(on: boolean): void {
   editor.requestScene();
 }
 
-/** Arrange ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
+/** Home ▸ Focal Point ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
 function showFocalPoints(on: boolean): void {
   editor.showFocal = on;
   for (const b of document.querySelectorAll('[data-cmd="show-focal-points"]')) b.setAttribute(b.getAttribute('role')?.startsWith('menuitem') ? 'aria-checked' : 'aria-pressed', String(on));
@@ -1535,7 +1559,8 @@ const NEW_CYCLE_LOOK: CycleLook = { names: 'short', reagentArrows: true };
  */
 async function smartGallery(): Promise<void> {
   finishTyping();
-  const anchor = [...document.querySelectorAll<HTMLElement>('.ribbon button[data-cmd="smart-scheme"], .toolbox button[data-cmd="smart-scheme"]')].find((b) => b.getBoundingClientRect().width > 0) ?? null;
+  // (from the Schemes flyout, under its button: the list has closed)
+  const anchor = [...document.querySelectorAll<HTMLElement>('.ribbon button[data-cmd="smart-scheme"], .toolbox button[data-cmd="smart-scheme"], .ribbon .rb-fly:has(.rb-fly-menu [data-cmd="smart-scheme"]) > .rb-fly-btn')].find((b) => b.getBoundingClientRect().width > 0) ?? null;
   const work = $('#work').getBoundingClientRect();
   const { showSmartGallery } = await import('./ui/smart-gallery');
   const pick = await showSmartGallery({
@@ -2877,6 +2902,8 @@ const nmrPanel = new NmrPanel({
     const c = compoundBySmiles((await useLibrary()).now, w.smiles);
     return (c?.spectra ?? []).filter((x) => x.kind === 'measured').sort((a, b) => b.saved - a.saved).map((x) => x.text);
   },
+  openSettings: () => command('nmr-settings'),
+  showPanel: () => showAnalysisList(),
 });
 
 /** NMR ▸ Save to Library: adds the structure to the Compound Library if needed and keeps the peak reports with it. */
@@ -4443,7 +4470,7 @@ function align(how: Align): void {
   if (tip) {
     focalPrefs.tipShown = true;
     storeSettings();
-    flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Arrange ▸ Match Focal Points.', 9000);
+    flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Home ▸ Focal Point ▸ Match Focal Points.', 9000);
   }
 }
 
@@ -6075,7 +6102,7 @@ async function orientLikeFirst(scheme = false): Promise<number | null> {
 }
 
 /**
- * Arrange ▸ Match Focal Points: the selected structures (or all of them, with nothing selected)
+ * Home ▸ Focal Point ▸ Match Focal Points: the selected structures (or all of them, with nothing selected)
  * take the focal point of the one that has its own (the first in reading order if several do), on
  * the same atom, bond or ring of the part they share with it (largest common substructure).
  */
@@ -11279,7 +11306,6 @@ const COMMANDS: Record<string, () => unknown> = {
   'diagram-to-shapes': () => editor.ungroupSelectedDiagram() || flash('Select a diagram first.'),
   'edit-energy': () => { const id = editor.selectedEnergy(); if (id === null) flash('Select an energy diagram first.'); else void energyDiagram(id); },
   'animate-reaction': () => animateDialog.open(),
-  'nmr-menu': () => nmrMenu(),
   'predict-nmr': () => nmrRibbon('predict'),
   'nmr-1h': () => nmrRibbon('1H'),
   'nmr-13c': () => nmrRibbon('13C'),
@@ -12719,6 +12745,14 @@ function setToolCells(v: Settings['toolCells']): void {
   window.dispatchEvent(new Event('resize'));
 }
 
+/** Settings ▸ Toolboxes and Ribbon ▸ Toolbox Button Size: the toolboxes' buttons alone, in percent (100: the size of the ribbon's small buttons). */
+let toolboxScale = 100;
+function setToolboxScale(v: number): void {
+  toolboxScale = toolboxScaleOf(v);
+  document.documentElement.style.setProperty('--tb-scale', String(toolboxScale / 100));
+  window.dispatchEvent(new Event('resize'));
+}
+
 /** Settings ▸ Toolboxes: how the toolboxes' buttons look and what their tips say. */
 let ribbonLook: Settings['canvasRibbon'] = 'classic';
 function setRibbonLook(look: Settings['canvasRibbon']): void {
@@ -12735,6 +12769,8 @@ async function toolboxPreferences(): Promise<void> {
       help: 'Both keep the tabs. View ▸ Ribbon ▸ Simplified Ribbon also switches between them; the ▴ at the right end of the tabs (or Ctrl+F1) collapses the ribbon to its tabs.' },
     { name: 'cells', label: 'Button cells', value: toolCells, options: [{ value: 'off', label: 'None' }, { value: 'grid', label: 'Grid lines' }, { value: 'raised', label: 'Raised buttons' }, { value: 'both', label: 'Grid lines and raised buttons' }],
       help: 'Gives each toolbox button a cell of its own, so the buttons are easier to tell apart and to hit.' },
+    { name: 'scale', label: 'Toolbox Button Size', type: 'number', unit: '%', value: String(toolboxScale),
+      help: `The size of the toolboxes' buttons alone, from ${TOOLBOX_SCALE_MIN} to ${TOOLBOX_SCALE_MAX}%. At 100% they match the ribbon's small buttons. View ▸ Window and Colors ▸ Interface Size changes everything together.` },
     { name: 'tips', label: 'Detailed tooltips', type: 'checkbox', value: String(toolTip.enabled) },
   ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => toolboxPreview(v.look === 'simple' ? 'simple' : 'classic', (['grid', 'raised', 'both'].includes(v.cells) ? v.cells : 'off') as ToolCells, {
     ribbon: [...document.querySelectorAll('.canvas-ribbon > .rb-panel svg.ci-ic')].slice(0, 12),
@@ -12742,6 +12778,7 @@ async function toolboxPreferences(): Promise<void> {
   }) } });
   if (!r) return;
   setToolCells((['grid', 'raised', 'both'].includes(r.cells) ? r.cells : 'off') as Settings['toolCells']);
+  setToolboxScale(toolboxScaleOf(r.scale));
   setRibbonLook(r.look === 'simple' ? 'simple' : 'classic');
   showToolTips(r.tips === 'true');
   storeSettings();
@@ -12766,12 +12803,13 @@ function nmrSettingsPreview(v: Record<string, string>, was: PeakLabels): HTMLEle
     size: size >= 6 && size <= 24 ? size : was.size, place: v.plPlace === 'top' || v.plPlace === 'upright' ? v.plPlace : 'above' };
   const sf = Number(v.mhz) > 0 ? Number(v.mhz) : 400;
   const compare: CompareMode = v.compare === 'stacked' || v.compare === 'overlay' ? v.compare : 'inverted';
+  const trace = v.trace === 'blue' ? 'blue' : 'maroon';
   const box = document.createElement('div');
   box.className = 'nmr-set-preview';
   const pic = (title: string, svg: string) => { const f = document.createElement('figure'); const c = document.createElement('figcaption'); c.textContent = title; f.innerHTML = svg; f.append(c); f.setAttribute('aria-label', title); return f; };
   box.append(
-    pic('Peak labels (ethyl acetate)', spectrumSvg(sampleSpectrumData(sf, false), { w: 240, h: 170, hi: 4.6, lo: 0.8, labels: true, hotRow: null, peakLabels: pl })),
-    pic('A pasted report against the prediction', spectrumSvg(sampleSpectrumData(sf, true), { w: 240, h: 150, hi: 4.6, lo: 0.8, labels: false, hotRow: null, overlay: true, compare })),
+    pic('Peak labels (ethyl acetate)', spectrumSvg(sampleSpectrumData(sf, false), { w: 240, h: 170, hi: 4.6, lo: 0.8, labels: true, hotRow: null, peakLabels: pl, trace })),
+    pic('A pasted report against the prediction', spectrumSvg(sampleSpectrumData(sf, true), { w: 240, h: 150, hi: 4.6, lo: 0.8, labels: false, hotRow: null, overlay: true, compare, trace })),
   );
   return box;
 }
@@ -12792,6 +12830,8 @@ async function nmrSettings(): Promise<void> {
     { name: 'c13lo', label: '¹³C spectrum from', type: 'number', value: String(r13.lo), unit: 'ppm',
       help: 'The spectrum is drawn over this range (−5 to 200 ppm unless you change it) and widens automatically when a peak falls outside it.' },
     { name: 'c13hi', label: '¹³C spectrum to', type: 'number', value: String(r13.hi), unit: 'ppm' },
+    { name: 'trace', label: 'Spectrum color', value: nmrTraceColor(), options: [{ value: 'maroon', label: 'Maroon' }, { value: 'blue', label: 'Blue' }],
+      help: 'The color of the spectrum in the Analysis panel and the Spectrum window (lighter in the Dark theme), and in its pictures.' },
     { name: 'compare', label: 'Show a pasted report against the prediction', value: compareMode(), options: [
       { value: 'inverted', label: 'Inverted' }, { value: 'stacked', label: 'Stacked' }, { value: 'overlay', label: 'Overlay' }],
       help: 'How Check Data in the Spectrum window compares them. Inverted: measured above, predicted mirrored below. Stacked: one above the other, both upright. Overlay: both on one baseline. Its Inverted, Stacked and Overlay buttons change the same setting.' },
@@ -12809,6 +12849,7 @@ async function nmrSettings(): Promise<void> {
   ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => nmrSettingsPreview(v, pk) } });
   if (!r) return;
   setNmrAutoPredict(r.auto === 'true');
+  setNmrTraceColor(r.trace === 'blue' ? 'blue' : 'maroon');
   if (r.compare === 'inverted' || r.compare === 'stacked' || r.compare === 'overlay') setCompareMode(r.compare);
   if (r.quality === 'fast' || r.quality === 'balanced' || r.quality === 'accurate') setNmrQuality(r.quality);
   if ((NMR_SOLVENTS as readonly string[]).includes(r.solvent)) nmrPanel.solvent = r.solvent;
@@ -12834,6 +12875,8 @@ async function personalPreferences(): Promise<void> {
       help: 'Everywhere you draw: Canvas, structures in documents and spreadsheets, and text boxes on slides. Ctrl+Enter always finishes, and Shift+Enter always breaks the line.' },
     { name: 'alkylLook', label: 'AutoFormat alkyl isomer prefixes', value: alkylPrefs.look, options: ALKYL_LOOK_CHOICES, short: true, inline: (v) => alkylSwatch(parseAlkylLook(v)),
       help: 'How n-, i-, s- and t- are written on Pr and Bu in labels and text (OtBu, N(iPr)₂, nBu, P(t-Bu)₂). New labels follow it when you finish typing; you\'ll be asked about existing ones. A dash is never added or removed where it would read as an element (PtBu₃).' },
+    { name: 'electronMethod', label: 'Electron Counting Method', value: electronPrefs.method, short: true, options: [{ value: 'both', label: 'Both' }, { value: 'neutral', label: 'Neutral Ligand' }, { value: 'ionic', label: 'Donor Pair (Ionic)' }],
+      help: 'How the electron count of a metal complex is shown in the Side Panel, the Analysis panel and Insert as Table. Both shows the two columns side by side, which give the same total. Neutral Ligand starts from the metal atom\'s own electrons and adds what each ligand shares. Donor Pair (Ionic) starts from the metal ion\'s d electrons and adds the pair each ligand donates.' },
     { name: 'warnLook', label: 'Mark problems on the drawing with', value: renderer.warnLook, short: true, inline: (v) => problemSwatch((WARN_LOOKS as readonly string[]).includes(v) ? v as WarnLook : 'box', doc.style), options: [
       { value: 'box', label: 'A thin red box' }, { value: 'soft', label: 'A soft red disc' }, { value: 'circle', label: 'A red circle' },
       { value: 'dashed', label: 'A dashed red circle' }, { value: 'corners', label: 'Red corner marks' }],
@@ -12913,6 +12956,9 @@ async function personalPreferences(): Promise<void> {
   setFocalDefault(focalPrefs.dflt);
   editor.requestOverlay();
   editor.aids = { ...editor.aids, angle: r.aidAngle === 'true', length: r.aidLength === 'true', hints: r.aidHints === 'true', look: r.aidLook === 'box' || r.aidLook === 'solid' ? r.aidLook : 'plain', units: r.aidUnits === 'px' || r.aidUnits === 'mm' ? r.aidUnits : 'in' };
+  electronPrefs.method = ELECTRON_METHODS.includes(r.electronMethod as ElectronMethod) ? r.electronMethod as ElectronMethod : 'both';
+  stylePanel.refresh(true);
+  scheduleAnalysis(true);
   const look = parseAlkylLook(r.alkylLook);
   const changed = look !== alkylPrefs.look;
   alkylPrefs.look = look;
@@ -13071,6 +13117,9 @@ function currentSettings(): Settings {
     arrowEndGap: arrowGaps.end,
     cursorAids: { ...editor.aids },
     haptoDelocalized: haptoLook.delocalized,
+    electronMethod: electronPrefs.method,
+    webLook: 1,
+    toolboxScale,
     superscriptR: labelPrefs.superscriptR,
     superscriptRText: labelPrefs.plainText,
     alkylLook: alkylPrefs.look,
@@ -13279,6 +13328,7 @@ function applySettings(s: Settings): void {
   setShapesInk(s.shapeInk);
   setOneColumnTools(s.oneColumnTools);
   setToolCells(s.toolCells);
+  setToolboxScale(s.toolboxScale);
   setRibbonLook(s.canvasRibbon);
   startView = s.startView;
   templatesOnNew = { ...s.templatesOnNew };
@@ -13320,6 +13370,7 @@ function applySettings(s: Settings): void {
   arrowGaps.end = s.arrowEndGap;
   editor.aids = { ...s.cursorAids };
   haptoLook.delocalized = s.haptoDelocalized;
+  electronPrefs.method = s.electronMethod;
   labelPrefs.superscriptR = s.superscriptR;
   labelPrefs.plainText = s.superscriptRText;
   alkylPrefs.look = s.alkylLook;
@@ -13774,16 +13825,12 @@ function nmrRibbon(act: Parameters<NmrPanel['ribbon']>[0]): void {
   go();
 }
 
-/** Home > NMR: its commands in a menu under the button. */
-function nmrMenu(): void {
-  const b = document.querySelector<HTMLElement>('#canvas-ribbon [data-cmd="nmr-menu"]');
-  const r = b?.getBoundingClientRect() ?? new DOMRect(200, 120, 0, 0);
-  popupMenu(r.left, r.bottom + 2, [['Predict NMR', () => nmrRibbon('predict')], ['Spectrum Window', () => nmrRibbon('window')], ['Show on Drawing', () => nmrRibbon('marks')], ['Check Data…', () => nmrRibbon('check')], null, ['NMR Settings…', () => command('nmr-settings')]]);
-}
+/** Where an NMR menu drops from: under the ribbon's Predict NMR button (or at the top left of the drawing). */
+const nmrAnchor = () => [...document.querySelectorAll<HTMLElement>('#canvas-ribbon [data-cr-fly="nmr"] > .rb-fly-btn')].find((b) => b.getBoundingClientRect().width > 0);
 
-/** Chemistry > NMR > Solvent…: the solvents in a menu under the button. */
+/** Chemistry ▸ NMR ▸ Solvent…: the solvents in a menu, under the ribbon's Predict NMR button. */
 function nmrSolventMenu(): void {
-  const b = document.querySelector<HTMLElement>('#canvas-ribbon [data-cmd="nmr-solvent"]');
+  const b = nmrAnchor();
   const r = b?.getBoundingClientRect() ?? new DOMRect(200, 120, 0, 0);
   popupMenu(r.left, r.bottom + 2, NMR_SOLVENTS.map((x) => [`${x === nmrPanel.solvent ? '✓ ' : ''}${solventLabel(x)}`, () => nmrRibbon({ solvent: x })] as [string, () => void]));
 }
@@ -15337,7 +15384,7 @@ editor.onFocalPicked = (kind) => {
   else $('#flash').classList.remove('show');
 };
 
-/** Arrange ▸ Set as Focal Point with nothing to set it on: the next click on the drawing names the spot. */
+/** Home ▸ Focal Point ▸ Set as Focal Point with nothing to set it on: the next click on the drawing names the spot. */
 function startFocalPick(): void {
   editor.startFocalPick();
   flash('Click an atom, a bond or inside a ring to make it its structure\'s focal point. Esc cancels.', 60000);
@@ -15748,23 +15795,16 @@ const BOX_TITLES: Record<string, string> = {
   main: 'Drawing Tools', structure: 'Structure', arrange: 'Object', templates: 'Templates', colours: 'Colors', highlight: 'Highlight', text: 'Text Formatting', guides: 'Guides', custom: 'My Toolbox', smart: 'Smart Scheme Species Table', details: 'Side Panel',
   schemes: 'Smart Schemes', diagrams: 'Diagrams', tables: 'Tables and Charts', biopolymers: 'Biopolymers', perspective: 'Perspective and 3-D',
 };
-/** What the toolboxes of buttons come with ("cmd:", "tool:", "pal:", "w:looks", "sep"). */
-const cmds = (list: (string | null)[]) => list.map((c) => (c ? `cmd:${c}` : 'sep'));
+/** What the toolboxes of buttons come with ("cmd:", "tool:", "pal:", "w:looks", "sep"): see toolbox-defaults.ts. */
 const BOX_ITEMS: Record<string, readonly string[]> = {
+  ...BOX_DEFAULTS,
   main: MAIN_ITEMS,
-  structure: cmds(['clean-up', 'clean-up-options', 'add-frame', 'fill-rings', 'highlight', 'remove-highlight', null, 'aromatic-circles', 'stereo-labels', null, 'add-id-label', 'add-caption', 'attach-descriptors', 'number-compounds', null, 'contract-label', 'expand-label', 'expand-label-full', 'hapto-bond', 'name-to-structure']),
-  arrange: [...cmds(['align-left', 'align-hcenter', 'align-right', 'align-top', 'align-vcenter', 'align-bottom', null, 'distribute-h', 'distribute-v', 'arrange-row', 'arrange-column', 'arrange-grid', null, 'flip-h', 'flip-v', 'rotate-cw', 'rotate-ccw']), 'pal:perspective', 'cmd:turn-3d', ...cmds([null, 'shape-front', 'shape-back'])],
-  highlight: [...cmds(['highlight', 'remove-highlight', null, 'smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight', null, 'save-highlight-look']), 'w:looks'],
+  templates: TOOL_GROUPS.flat().filter((i): i is PaletteDef => 'palette' in i && i.palette.startsWith('tpl-')).map((i) => `pal:${i.palette}`),
   custom: defaultToolboxes().custom,
-  schemes: cmds(['smart-scheme', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
-  diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'd-orbital-splitting', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
-  tables: cmds(['insert-table', 'rgroup-table', 'stoichiometry-table', null, 'insert-chart', 'edit-chart', null, 'tlc-plate', 'gel', 'edit-plate']),
-  biopolymers: ['cmd:sequence-to-structure', 'sep', 'pal:tpl-amino', 'pal:tpl-sugars', 'pal:tpl-nucleic'],
-  perspective: ['tool:perspective', 'tool:perspective-3d', 'sep', ...cmds(['turn-3d', 'flatten-3d', 'model-3d', null, 'depth-shading', 'depth-shading-settings', null, 'ring-chair', 'ring-chair-flip', 'newman-projection', 'crystal-structure']), 'sep', 'pal:tpl-perspective', 'pal:tpl-conformers', 'pal:tpl-projections'],
 };
-/** Short names on toolbox buttons for commands with no icon. */
+/** Short names on the Highlight toolbox's buttons. */
 const SHORT_LABEL: Record<string, string> = {
-  'smooth-highlight': 'Smooth', 'centre-highlight': 'Center', 'soft-highlight': 'Soft', 'outline-highlight': 'Outline only',
+  'smooth-highlight': 'Smooth', 'centre-highlight': 'Center', 'soft-highlight': 'Soft', 'outline-highlight': 'Outline',
   'shadow-highlight': 'Shadow', 'glow-highlight': 'Glow', 'save-highlight-look': 'Save Style…',
 };
 
@@ -15805,7 +15845,7 @@ function buildBox(body: HTMLElement, id: string, vertical: boolean): void {
   const s = shownGrid(g, dock);
   const cells = document.createElement('div');
   cells.className = 'tb-cells';
-  cells.style.gridTemplateColumns = `repeat(${s.cols}, minmax(34px, auto))`;
+  cells.style.gridTemplateColumns = `repeat(${s.cols}, minmax(var(--tbw), var(--tb-track, auto)))`;
   const make = (k: string): HTMLElement | null => {
     const name = k.slice(k.indexOf(':') + 1);
     // the drawing tools' buttons are the tool bar's own (it shows the one in use, and each palette's last pick)
@@ -15844,19 +15884,21 @@ function sideFold(): HTMLButtonElement {
 }
 /** The toolboxes laid out by the app itself (the rest show buttons chosen in Customize Toolboxes). */
 const SPECIAL_BOXES: Record<string, (body: HTMLElement, vertical: boolean) => void> = {
-  templates: (body, vertical) => {
-    // (many templates: the box scrolls rather than run off the window)
-    body.classList.add('tb-grid', 'tb-scroll');
-    body.style.setProperty('--cols', vertical ? '2' : '12');
-    for (const group of TOOL_GROUPS) for (const item of group) {
-      if (!('palette' in item) || !item.palette.startsWith('tpl-') || item.palette === 'tpl-own') continue;
-      // a heading over each palette's buttons, so the families are easy to find
-      const head = document.createElement('div');
-      head.className = 'tb-heading';
-      head.textContent = head.title = item.title;
-      body.append(head);
-      for (const t of item.items) { const b = toolButton(t.name); if (b) body.append(b); }
-    }
+  // Highlight: the two commands, what a highlight is made of as switches, then the saved styles
+  highlight: (body, vertical) => {
+    body.classList.add('tb-hl');
+    const row = (cls: string, names: string[]) => {
+      const r = document.createElement('div');
+      r.className = cls;
+      for (const n of names) {
+        const b = commandButton(n, runFromToolbox, SHORT_LABEL[n]);
+        if (!b.classList.contains('tb-icon')) b.classList.add('tb-chip');
+        r.append(b);
+      }
+      return r;
+    };
+    body.append(row('tb-hl-row', ['highlight', 'remove-highlight', 'save-highlight-look']),
+      row('tb-hl-chips', ['smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight']), looksList(vertical));
   },
   colours: (body, vertical) => {
     const modes = document.createElement('div');
@@ -16018,8 +16060,8 @@ function layCells(cells: HTMLElement, fit?: number): void {
   const blocks = starts.length;
   // the longest block sets how many rows (columns, along the top or bottom) there are
   const len = Math.max(...starts.map((st, b) => (starts[b + 1] ?? full) - st));
-  cells.style.gridTemplateColumns = `repeat(${across ? len : s.cols * blocks}, minmax(34px, auto))`;
-  cells.style.gridTemplateRows = `repeat(${across ? s.rows * blocks : len}, minmax(32px, auto))`;
+  cells.style.gridTemplateColumns = `repeat(${across ? len : s.cols * blocks}, minmax(var(--tbw), var(--tb-track, auto)))`;
+  cells.style.gridTemplateRows = `repeat(${across ? s.rows * blocks : len}, minmax(var(--tbh), auto))`;
   cells.querySelectorAll('.tb-line').forEach((l) => l.remove());
   // a line where a block starts is not needed: the blocks stand apart
   const lineRows = new Set(across ? s.lineRows : s.lineRows.filter((r) => !starts.includes(r)));
@@ -16382,7 +16424,7 @@ const onScreen = (el: Element) => el.getClientRects().length > 0;
 /** A ribbon button's name: its own words, or its tool tip's first phrase when it only shows a sign. */
 function ribbonLabel(b: HTMLElement): string {
   const t = b.cloneNode(true) as HTMLElement;
-  t.querySelectorAll('.rb-icon, .sw, svg, kbd').forEach((x) => x.remove());
+  t.querySelectorAll('.rb-icon, .sw, svg, kbd, .cr-caret, .cr-drop').forEach((x) => x.remove());
   const own = t.textContent!.replace(/\s+/g, ' ').trim();
   const tip = (b.dataset.tip ?? b.title ?? b.getAttribute('aria-label') ?? '').replace(/\s*\(.*?\)/g, '').split(/[.:;,] /)[0].trim();
   return own.length > 2 ? own : tip || own;
@@ -16427,14 +16469,16 @@ function commandItems(): CommandItem[] {
   for (const rib of document.querySelectorAll<HTMLElement>('.ribbon')) {
     if (rib.hidden || !onScreen(rib)) continue;
     for (const b of rib.querySelectorAll<HTMLButtonElement>('button')) {
-      if (b.getAttribute('role') === 'tab' || b.hidden || b.disabled || b.closest('[hidden]:not(.rb-panel)')) continue;
+      // (a flyout's commands are found too, though its list is closed)
+      if (b.getAttribute('role') === 'tab' || b.hidden || b.disabled || b.closest('[hidden]:not(.rb-panel, .rb-fly-menu)')) continue;
       const panel = b.closest<HTMLElement>('.rb-panel');
       const tabAttr = panel && [...panel.attributes].find((a) => /^data-.*-panel$/.test(a.name));
       const tab = tabAttr ? rib.querySelector<HTMLButtonElement>(`[${tabAttr.name.replace(/-panel$/, '-tab')}="${tabAttr.value}"]`) : null;
       if (tab?.hidden) continue; // a tab shown only now and then (Table Design, Chart)
       const label = ribbonLabel(b);
       if (!label) continue;
-      const name = b.dataset.cmd ? `cmd:${b.dataset.cmd}` : b.dataset.sh ? `sh:${b.dataset.sh}` : b.dataset.doc ? `doc:${b.dataset.doc}` : b.id ? `id:${b.id}` : `rb:${rib.id}:${label}`;
+      // (a ready-made form of a command, a template pane's MO Diagram: H₂O, is found on its own)
+      const name = b.dataset.cmd ? `cmd:${b.dataset.cmd}${b.dataset.arg ? `:${b.dataset.arg}` : ''}` : b.dataset.sh ? `sh:${b.dataset.sh}` : b.dataset.doc ? `doc:${b.dataset.doc}` : b.id ? `id:${b.id}` : `rb:${rib.id}:${label}`;
       const code = b.dataset.cmd ?? b.dataset.sh ?? b.dataset.doc;
       out.push({
         id: name, label, place: tab ? `${tab.textContent!.trim()} tab` : `${rib.getAttribute('aria-label')} ribbon`, more: b.dataset.tip ?? b.title,
@@ -16498,7 +16542,7 @@ const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'schemes', group: 'Drawing', title: 'Schemes', words: 'scheme arrow gap plus text reagents conditions boxes', open: schemeSettings },
   { id: 'newman', group: 'Drawing', title: 'Newman Projections', words: 'newman sawhorse projection conformation torsion dihedral gauche anti eclipsed color largest middle smallest group strain a-value energy chart rotation barrier kcal kj', open: () => newmanSettingsPage() },
   { id: 'analysis', group: 'Drawing', title: 'Analysis', words: 'analysis panel rows reorder hide show bench properties density boiling melting point vapor pressure flash refractive index lab calculation calculations mmol mass volume solution molarity ribbon box attached descriptors decimal places units celsius fahrenheit kelvin pubchem name hrms elemental', open: () => analysisSettingsPage(analysisHost) },
-  ...nmrHere ? [{ id: 'nmr', group: 'Drawing', title: 'NMR Prediction', words: 'nmr prediction predict spectrum spectra proton carbon 1h 13c ppm range width solvent cdcl3 spectrometer frequency mhz quality fast balanced accurate automatic selection', open: nmrSettings }] : [],
+  ...nmrHere ? [{ id: 'nmr', group: 'Drawing', title: 'NMR Prediction', words: 'nmr prediction predict spectrum spectra proton carbon 1h 13c ppm range width solvent cdcl3 spectrometer frequency mhz quality fast balanced accurate automatic selection color trace blue maroon', open: nmrSettings }] : [],
   { id: 'toolboxes', group: 'Appearance', title: 'Toolboxes and Ribbon', words: 'toolbox ribbon classic simplified one row two rows buttons cells grid lines raised bevel borders tooltips hints keys modifiers shortcuts', open: toolboxPreferences },
   { id: 'navigation', group: 'Appearance', title: 'Navigation', words: 'document map navigator minimap map overview edge arrows off screen lost find dot grid dots tint outside fit go to selection orientation zoom', open: navigationSettings },
   { id: 'page-grid', group: 'Appearance', title: 'Page Grid', words: 'pages page grid boundaries dashed dotted lines paper fixed edges hatched wall empty gray print chemdraw paste wrap', open: pageGridSettings },

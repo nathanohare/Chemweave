@@ -3,6 +3,7 @@
 // and commands. Unlocked, a toolbox is dragged by its title to float anywhere, or to an edge of
 // the drawing to dock there. Where each one is, and what is in your own, is kept with the settings.
 
+import { BOX_COLS, fullCols } from './toolbox-defaults';
 import { showContextMenu, topMenuEntry, type MenuItem } from './context-menu';
 import { commandIcon } from './command-icons';
 import { COMMAND_NAMES } from '../editor/keymap';
@@ -87,8 +88,8 @@ const OWN_ID = /^own-[a-z0-9]{1,16}$/;
 /** A fly-out of your own: its palette name. */
 const OWN_FLY = /^fly-[a-z0-9]{1,16}$/;
 export const isOwnFlyout = (name: string): boolean => OWN_FLY.test(name);
-/** The toolboxes whose buttons can be chosen (the rest are laid out by the app: templates, colours, the side panel). */
-export const EDITABLE: readonly string[] = ['main', 'structure', 'arrange', 'highlight', 'custom'];
+/** The toolboxes whose buttons can be chosen (the rest are laid out by the app: highlight, colours, the side panel). */
+export const EDITABLE: readonly string[] = ['main', 'structure', 'arrange', 'templates', 'custom'];
 /** Toolboxes that can't be deleted (they can still be hidden, except the side panel). */
 export const KEEP: readonly string[] = ['main', 'details'];
 
@@ -943,7 +944,11 @@ export function boxGrid(st: ToolboxState, id: string, given: readonly string[] =
   const list = boxItems(st, id, given);
   // a new toolbox of your own starts as an empty 4 × 3
   if (!list.length) return { cols: 4, rows: 3, cells: Array(12).fill(null) };
-  return listToGrid(list, LIST_COLS[id]);
+  // (as wide as the toolbox comes, or the nearest width that leaves no cell empty when buttons were added or taken away)
+  // a list you chose yourself before toolboxes had grids keeps the width it had: as wide as its longest group
+  const own = id === 'custom' ? st.custom.join() !== defaultToolboxes().custom.join() : !!st.items?.[id];
+  const cols = own ? LIST_COLS[id] : BOX_COLS[id] && !list.includes('sep') ? fullCols(list.length, BOX_COLS[id]) : LIST_COLS[id];
+  return listToGrid(list, cols);
 }
 
 /** A toolbox's grid changed. */

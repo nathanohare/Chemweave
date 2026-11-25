@@ -50,7 +50,10 @@ describe('settings Nate asked for', () => {
   it('Dark Gray is the theme a new install starts with, and a saved choice is kept', () => {
     expect(DEFAULT_SETTINGS.appTheme).toBe('darkgray');
     expect(parseSettings('{}').appTheme).toBe('darkgray');
-    expect(parseSettings(JSON.stringify({ appTheme: 'system' })).appTheme).toBe('system');
+    expect(parseSettings(JSON.stringify({ appTheme: 'light' })).appTheme).toBe('light');
+    // (System was what the app started with before Dark Gray: the web version moves settings saved
+    // then to Dark Gray once, tests/web-defaults.test.ts; chosen after that, it is kept)
+    expect(parseSettings(JSON.stringify({ appTheme: 'system', webLook: 1 })).appTheme).toBe('system');
   });
 
   it('the group names setting is gone, and an old saved value is ignored', () => {

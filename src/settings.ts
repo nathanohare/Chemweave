@@ -27,6 +27,7 @@ import { parseQuick } from './ui/quick-bar';
 import { parseOwnStyles, parseModeStyles, type StyleMode } from './drawing-styles';
 import { DEFAULT_BOND_ENDS, DEFAULT_MAP_BOX, MAP_LOOKS, mapBoxStyle, type DocStyle, type MapBoxStyle, type MapLook } from './style';
 import { ALKYL_LOOKS, type AlkylLook } from './chem/labels';
+import { ELECTRON_METHODS, type ElectronMethod } from './chem/electrons';
 import { parseDarkPalettes, type DarkPalette } from './dark-page';
 import { DEFAULT_SCHEME_PREFS, parseSchemePrefs, type SchemePrefs } from './chem/scheme-layout';
 import { DEFAULT_ANALYSIS, parseAnalysisPrefs, type AnalysisPrefs } from './chem/analysis-prefs';
@@ -280,6 +281,12 @@ export interface Settings {
   cursorAids: CursorAidPrefs;
   /** η³ and larger ligands on a metal drawn delocalized (a circle in the ring, an arc over an allyl). */
   haptoDelocalized: boolean;
+  /** Settings ▸ Preferences ▸ Electron Counting Method: which column of the metal complex's electron count to show. */
+  electronMethod: ElectronMethod;
+  /** The web version has been moved to its newer starting look (Dark Gray, Simplified ribbon), once. */
+  webLook: 0 | 1;
+  /** Settings ▸ Toolboxes and Ribbon ▸ Toolbox Button Size, in percent of the ribbon's small buttons (the rest of the interface keeps its size). */
+  toolboxScale: number;
   /** The Windows app has offered to open the chemistry file types (once, at its first start). */
   fileTypesOffered: boolean;
   /** The Windows app has registered its drawings as objects Word can send back to edit (once, at its first start). */
@@ -321,10 +328,15 @@ export interface Settings {
 /** Limits for dragging the slide list's edge and the speaker notes' top edge, in pixels. */
 export const SLIDE_PANE_MIN = 120, SLIDE_PANE_MAX = 480, NOTES_MIN = 30, NOTES_MAX = 600;
 
+/** The web version starts with the one-row (Simplified) Canvas ribbon; the desktop app starts with Classic. A saved choice always wins. */
+function webDefaults(): boolean {
+  try { return !isTauri(); } catch { return true; }
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   hotkeys: {}, keepHotspotOnBond: true, stickyHotspot: false, fixedLength: true, fixedAngles: true, devTools: false, showRoles: true, showAllRoles: false,
   chemTyping: true, stereoItalic: true, boldNumbers: false, autoLinks: true, linkCtrlClick: true, spellCheck: true, replacements: DEFAULT_TYPING.replacements, dictionary: [],
-  modeColours: DEFAULT_MODE_COLOURS, nicknames: {}, templates: [], splitWidth: 0.38, slidePaneWidth: 160, notesHeight: 32, slideNotes: true, scrollBars: true, ribbonCollapsed: false, ribbonAutoFold: false, tabsInMenu: true, uiScale: 1, titleBar: typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent) ? 'system' : 'app', page: { name: 'letter', w: 540, h: 720, grow: true }, welcomed: false, textBar: 'docked', appTheme: 'darkgray', density: 'cozy', shadows: 'light', iconLook: 'mode', iconSet: 'new', shapeInk: 'neutral', oneColumnTools: false, toolCells: 'off', canvasRibbon: 'classic', startView: true, enterFinishesText: false, offerFigures: true, templatesOnNew: { document: true, sheet: true, slides: true }, sheetTemplateUnits: 'both', sheetSmilesStructures: true, groupTips: true, toolTips: true, touchMode: 'auto', penSketch: false,
+  modeColours: DEFAULT_MODE_COLOURS, nicknames: {}, templates: [], splitWidth: 0.38, slidePaneWidth: 160, notesHeight: 32, slideNotes: true, scrollBars: true, ribbonCollapsed: false, ribbonAutoFold: false, tabsInMenu: true, uiScale: 1, titleBar: typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent) ? 'system' : 'app', page: { name: 'letter', w: 540, h: 720, grow: true }, welcomed: false, textBar: 'docked', appTheme: 'darkgray', density: 'cozy', shadows: 'light', iconLook: 'mode', iconSet: 'new', shapeInk: 'neutral', oneColumnTools: false, toolCells: 'off', canvasRibbon: webDefaults() ? 'simple' : 'classic', startView: true, enterFinishesText: false, offerFigures: true, templatesOnNew: { document: true, sheet: true, slides: true }, sheetTemplateUnits: 'both', sheetSmilesStructures: true, groupTips: true, toolTips: true, touchMode: 'auto', penSketch: false,
   citeStyle: DEFAULT_STYLE, citeOptions: {}, methylStyle: 'Me', axialStyle: 'RaSa', circledCharges: false, ionCharges: false, unflaggedWedges: 'racemic', saltGroups: false, groupClick: 'group', groupOutline: true, rerouteArrows: true, arrowProducts: true, arrowStartGap: null, arrowEndGap: null, superscriptR: true, superscriptRText: false, alkylLook: 'typed', warnLook: 'box', bondEnds: DEFAULT_BOND_ENDS, mapLook: 'grey', mapBox: { ...DEFAULT_MAP_BOX }, depthShade: { ...DEFAULT_DEPTH_SHADE }, linkLook: 'style', slideTemplate: null, slideThemes: [], askWholeDrawing: true, palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null,
   myStyles: [], modeStyles: {}, darkPage: false, darkPalette: 'Graphite', darkPalettes: [],
   guides: { slides: true, design: true },
@@ -352,7 +364,18 @@ export const DEFAULT_SETTINGS: Settings = {
   straightenLinear: true,
   cursorAids: { ...DEFAULT_CURSOR_AIDS },
   haptoDelocalized: true,
+  electronMethod: 'both',
+  webLook: 1,
+  toolboxScale: 100,
 };
+
+/** The smallest and largest Toolbox Button Size, in percent. */
+export const TOOLBOX_SCALE_MIN = 75, TOOLBOX_SCALE_MAX = 250;
+/** A Toolbox Button Size as typed or stored: a whole percent within the limits (100 when it is no number). */
+export function toolboxScaleOf(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  return Number.isFinite(n) ? Math.max(TOOLBOX_SCALE_MIN, Math.min(TOOLBOX_SCALE_MAX, Math.round(n))) : 100;
+}
 
 const STORAGE_KEY = 'chem-illustrator.settings';
 
@@ -484,7 +507,17 @@ export function parseSettings(text: string | null | undefined): Settings {
   if (Array.isArray(r.dictionary)) s.dictionary = r.dictionary.filter((w): w is string => typeof w === 'string' && w.trim() !== '').map((w) => w.trim());
   if (typeof r.straightenLinear === 'boolean') s.straightenLinear = r.straightenLinear;
   if (r.cursorAids) s.cursorAids = parseCursorAids(r.cursorAids);
+  if (ELECTRON_METHODS.includes(r.electronMethod as ElectronMethod)) s.electronMethod = r.electronMethod as ElectronMethod;
   if (typeof r.haptoDelocalized === 'boolean') s.haptoDelocalized = r.haptoDelocalized;
+  if (r.toolboxScale != null) s.toolboxScale = toolboxScaleOf(r.toolboxScale);
+  // settings the web version saved before it started in Dark Gray with the Simplified ribbon move to
+  // that look once, where they still hold what the app used to start with (the System theme, the
+  // Classic ribbon: a default that was saved can't be told from a choice). A Light or Dark theme was
+  // chosen, so it stays; after the move, whatever is chosen stays.
+  if (webDefaults() && r.webLook !== 1 && Object.keys(r).length) {
+    if (s.appTheme === 'system') s.appTheme = 'darkgray';
+    s.canvasRibbon = 'simple';
+  }
   return s;
 }
 

@@ -28,7 +28,7 @@ interface ItemDrag { key: string; from: string | null }
 
 const ITEM_TYPE = 'application/x-ribbon-item';
 
-const GEAR = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="5.4" stroke-width="2.6" stroke-dasharray="2.1 2.14"/><circle cx="8" cy="8" r="4" stroke-width="1.3"/><circle cx="8" cy="8" r="1.5" stroke-width="1.3"/></svg>';
+export const GEAR = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="5.4" stroke-width="2.6" stroke-dasharray="2.1 2.14"/><circle cx="8" cy="8" r="4" stroke-width="1.3"/><circle cx="8" cy="8" r="1.5" stroke-width="1.3"/></svg>';
 
 export class RibbonLive {
   private editing: RibbonInfo | null = null;
