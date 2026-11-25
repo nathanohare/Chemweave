@@ -2,7 +2,7 @@
 // and PowerPoint).
 
 import type { Glyphs, LaidLine, TextLayout } from './layout';
-import { pieceX } from './layout';
+import { placeX, pieceX } from './layout';
 import { withFx } from './fx';
 
 export const fontOf = (g: Glyphs): string => `${g.style}${g.size}px ${g.family}`;
@@ -29,6 +29,10 @@ function drawGlyphs(ctx: CanvasRenderingContext2D, lay: TextLayout, l: LaidLine,
   if ((g.obj !== undefined && g.shown === undefined) || g.hidden) return;
   ctx.font = fontOf(g);
   ctx.fillStyle = g.color ?? '#000';
+  // (a right-to-left piece drawn so, placed by its left end as every piece is)
+  const c = ctx as { direction?: string };
+  const dir = c.direction, align = ctx.textAlign;
+  if (g.rtl) { c.direction = 'rtl'; ctx.textAlign = 'left'; }
   const y = oy + l.y + g.dy;
   // text effects: drawn in a state of their own
   const fx = g.fx && !g.tab ? g.fx : undefined;
@@ -63,6 +67,7 @@ function drawGlyphs(ctx: CanvasRenderingContext2D, lay: TextLayout, l: LaidLine,
     ctx.font = fontOf(g);
     ctx.fillStyle = g.color ?? '#000';
   }
+  if (g.rtl) { c.direction = dir; ctx.textAlign = align; }
   if (g.underline) {
     // from the text's own size (the line's height also takes in pictures set in the line)
     const base = g.size;
@@ -102,7 +107,7 @@ export function drawMarks(ctx: CanvasRenderingContext2D, lay: TextLayout, ox: nu
       }
       // a space's dot sits at its middle, as high as the middle of the small letters
       for (let k = g.text.indexOf(' '); k >= 0; k = g.text.indexOf(' ', k + 1)) {
-        const a = pieceX(lay, g, k), b = pieceX(lay, g, k + 1);
+        const a = placeX(lay, g, k), b = placeX(lay, g, k + 1);
         const r = Math.max(0.45, g.size * 0.055);
         ctx.beginPath();
         ctx.arc(ox + g.x + (a + b) / 2, y - g.size * 0.27, r, 0, Math.PI * 2);
@@ -112,8 +117,11 @@ export function drawMarks(ctx: CanvasRenderingContext2D, lay: TextLayout, ox: nu
     if (!l.last) continue;
     const size = last?.size ?? l.size ?? 12;
     ctx.font = `${size}px ${last?.family ?? 'serif'}`;
-    ctx.textAlign = 'left';
-    ctx.fillText(cell && i === lay.lines.length - 1 ? '¤' : '¶', ox + end + size * 0.08, oy + l.y);
+    // (at the paragraph's end: its left, where it runs right to left)
+    const leftEnd = !!last?.rtl;
+    ctx.textAlign = leftEnd ? 'right' : 'left';
+    const start = Math.min(l.x, ...l.pieces.filter((g) => !g.hidden && !g.decor).map((g) => g.x));
+    ctx.fillText(cell && i === lay.lines.length - 1 ? '¤' : '¶', leftEnd ? ox + start - size * 0.08 : ox + end + size * 0.08, oy + l.y);
     ctx.textAlign = 'center';
   }
   ctx.restore();

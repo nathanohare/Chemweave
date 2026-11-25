@@ -4,7 +4,6 @@
 // so every output format can draw the result with only lines, curves and text.
 
 import { arialWidth } from '../text-metrics';
-import { visualText } from '../text/bidi';
 import { turnedCorners } from '../geom';
 
 export type Seg =
@@ -40,7 +39,7 @@ export interface ImageItem {
 
 export type Item =
   | { kind: 'path'; segs: Seg[]; fill?: string; stroke?: StrokeStyle; clip?: ClipBox }
-  | { kind: 'text'; clip?: ClipBox; text: string; x: number; y: number; size: number; family: string; bold: boolean; italic: boolean; color: string; widths: number[]; /** Turned anticlockwise, in degrees (90: reads upwards). */ angle?: number }
+  | { kind: 'text'; clip?: ClipBox; /** Drawn right to left (the canvas's direction): a PDF puts its letters in the order they are seen. */ rtl?: boolean; text: string; x: number; y: number; size: number; family: string; bold: boolean; italic: boolean; color: string; widths: number[]; /** Turned anticlockwise, in degrees (90: reads upwards). */ angle?: number }
   | ImageItem;
 
 /** A path that remembers its segments (stands in for the browser's Path2D). */
@@ -178,6 +177,8 @@ export type CharWidth = (ch: string, size: number, family: string, bold: boolean
 
 export class VectorContext {
   items: Item[] = [];
+  /** The direction text is drawn in, as a canvas's ('rtl': a right-to-left piece of a document's line). */
+  direction: 'ltr' | 'rtl' | 'inherit' = 'inherit';
   /**
    * Text is placed with these widths (a document's fonts), else Arial's; `advances`, when it
    * knows the font, gives each letter's share of a whole text with kerning (null when it doesn't).
@@ -291,16 +292,12 @@ export class VectorContext {
   fillText(text: string, x: number, y: number): void {
     const f = parseFont(this.st.font);
     const cw = this.charWidth;
-    const logical = (this.st.kerning !== 'none' ? this.advances?.(text, f.size, f.family, f.bold, f.italic) : null) ?? [...text].map((ch) => (cw ? cw(ch, f.size, f.family, f.bold, f.italic) : arialWidth(ch, f.size, f.bold)));
-    // (right-to-left letters as a canvas shows them: in the order they are seen, Arabic's joined)
-    const seen = visualText(text, logical);
-    text = seen.text;
-    const widths = seen.widths;
+    const widths = (this.st.kerning !== 'none' ? this.advances?.(text, f.size, f.family, f.bold, f.italic) : null) ?? [...text].map((ch) => (cw ? cw(ch, f.size, f.family, f.bold, f.italic) : arialWidth(ch, f.size, f.bold)));
     const m = this.st.m;
     const at = this.pt(x, y);
     // (a turn clockwise on the page is an angle anticlockwise taken away)
     const turned = m ? -Math.atan2(m[1], m[0]) / (Math.PI / 180) : 0;
-    this.put({ kind: 'text', text, x: at.x, y: at.y, size: f.size, family: f.family, bold: f.bold, italic: f.italic, color: this.st.fillStyle, widths, ...(Math.abs(turned) > 1e-9 ? { angle: turned } : {}) });
+    this.put({ kind: 'text', text, x: at.x, y: at.y, size: f.size, family: f.family, bold: f.bold, italic: f.italic, color: this.st.fillStyle, widths, ...(Math.abs(turned) > 1e-9 ? { angle: turned } : {}), ...(this.direction === 'rtl' ? { rtl: true } : {}) });
   }
 
   /** Text turned about its starting point (degrees anticlockwise), which a canvas does with rotate(). */
