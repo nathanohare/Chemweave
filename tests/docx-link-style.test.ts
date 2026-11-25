@@ -8,6 +8,9 @@ import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import type { DocText } from '../src/document/document';
+import type { TextRun } from '../src/model';
+import * as rt from '../src/richtext';
+import { removeLink } from '../src/links';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
@@ -53,8 +56,43 @@ describe("Word's link styles", () => {
       expect(style(id)).not.toContain('customStyle');
       expect(style(id)).not.toContain('<w:qFormat/>');
     }
+    // the run has the style's look from the style (no colour or underline of its own); the style keeps its theme colour
+    const own = /<w:rStyle w:val="Hyperlink"\/>((?:(?!<\/w:rPr>).)*)<\/w:rPr><w:t[^>]*>the site/.exec(doc);
+    expect(own).not.toBeNull();
+    expect(own![1]).not.toMatch(/<w:color|<w:u /);
+    expect(style('Hyperlink')).toContain('w:themeColor="hyperlink"');
+    // Word's own: not one to delete in the Styles pane
+    expect(t.charStyles?.Hyperlink?.custom).toBeFalsy();
     // and read again: the same
     const again = (await readDocx(zipSync(files))).doc as DocText;
     expect(again.runs.find((r) => r.text === 'the site')).toMatchObject({ cstyle: 'Hyperlink', link: 'https://example.org/' });
+    expect(again.runs.find((r) => r.text === 'the page seen')).toMatchObject({ cstyle: 'FollowedHyperlink' });
+  });
+
+  /** The document saved and opened again, and the run with this text in it. */
+  const reread = async (t: DocText, text: string) => (await readDocx(await writeDocx(t, deps))).doc.runs.find((r: TextRun) => r.text.includes(text))!;
+
+  it('are left by text typed just after a link, after a save too', async () => {
+    const t = (await readDocx(docx())).doc as DocText;
+    const at = rt.plainText(t.runs).indexOf('the site') + 'the site'.length;
+    const runs = rt.replaceRange(t.runs, at, at, [{ ...rt.typingStyle(t.runs, at, at, {}), text: ' typed' }]);
+    const typed = runs.find((r) => r.text.includes('typed'))!;
+    expect(typed.cstyle).toBeUndefined();
+    const back = await reread({ ...t, runs }, 'typed');
+    expect(back.cstyle).toBeUndefined();
+    expect(back.link).toBeUndefined();
+    expect(back.color).toBeUndefined();
+    expect(back.underline).toBeFalsy();
+  });
+
+  it('are taken off with the link (Remove Link), after a save too', async () => {
+    const t = (await readDocx(docx())).doc as DocText;
+    const from = rt.plainText(t.runs).indexOf('the site');
+    const runs = removeLink(t.runs, from, from + 'the site'.length);
+    const back = await reread({ ...t, runs }, 'the site');
+    expect(back.cstyle).toBeUndefined();
+    expect(back.link).toBeUndefined();
+    expect(back.color).toBeUndefined();
+    expect(back.underline).toBeFalsy();
   });
 });

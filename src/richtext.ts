@@ -7,6 +7,8 @@ import { rNumberDigits, rNumberPrefs } from './chem/r-numbers';
 
 /** The colour Office gives links (kept here too, as links.ts builds on these functions). */
 const LINK_COLOUR = '#0563c1';
+/** Word's character styles for links (their look is the link's blue and underline). */
+export const LINK_STYLES: ReadonlySet<string> = new Set(['Hyperlink', 'FollowedHyperlink']);
 
 export type RunStyle = Omit<TextRun, 'text'>;
 export type Toggle = 'bold' | 'italic' | 'underline' | 'sub' | 'sup' | 'formula' | 'strike' | 'smallCaps' | 'allCaps';
@@ -135,7 +137,9 @@ export function typingStyle(runs: TextRun[], start: number, end: number, fallbac
   // typing just after a link isn't part of it (inside it, it is), as in Word
   if (s.link !== undefined && end === start && (start >= text.length || charStyle(runs, start)?.link !== s.link)) {
     const { link: _l, ...rest } = s;
-    s = rest.color?.toLowerCase() === LINK_COLOUR ? { ...rest, color: undefined, underline: undefined } : rest;
+    // (in Word's link style: out of it, and its look)
+    s = rest.cstyle && LINK_STYLES.has(rest.cstyle) ? { ...rest, cstyle: undefined, color: undefined, underline: undefined }
+      : rest.color?.toLowerCase() === LINK_COLOUR ? { ...rest, color: undefined, underline: undefined } : rest;
   }
   // typing next to a citation (slides) is ordinary text, not more of its number
   if (s.cite !== undefined) {

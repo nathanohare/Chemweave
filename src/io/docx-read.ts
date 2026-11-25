@@ -821,20 +821,22 @@ class DocxReader {
   }
 
   /** The character styles met, as styles here: what each sets. */
-  private charStylesRead(): Record<string, CharStyle> | undefined {
+  private charStylesRead(kept: string): Record<string, CharStyle> | undefined {
     if (!this.usedChar.size) return undefined;
     const own = defaultCharStyles();
     const out: Record<string, CharStyle> = {};
     // (with the styles they are based on, all the way up, where those are kept as styles: a chain is of styles written here)
     const ids = new Set<string>();
     for (const id of this.usedChar) {
+      // (Word's link styles only where some text kept is in them: not a contents list's, made again here)
+      if (rt.LINK_STYLES.has(id) && !kept.includes(`"cstyle":"${id}"`)) continue;
       for (let w: string | undefined = id; w && !ids.has(w) && this.keptCharStyle(w); w = this.wstyles.get(`character:${w}`)?.basedOn) ids.add(w);
     }
     for (const id of ids) {
       const ws = this.wstyles.get(`character:${id}`);
       const r = this.chain('character', id).r;
       const cs: CharStyle = { id, name: own[id]?.name ?? ws?.name ?? id };
-      if (!own[id]) cs.custom = true;
+      if (!own[id] && !rt.LINK_STYLES.has(id)) cs.custom = true;
       if (r.font) cs.font = r.font;
       if (r.size) cs.size = r.size;
       if (r.bold !== undefined) cs.bold = r.bold;
@@ -849,7 +851,7 @@ class DocxReader {
       if (ws?.basedOn && ws.basedOn !== id && ids.has(ws.basedOn)) cs.basedOn = ws.basedOn;
       out[id] = cs;
     }
-    return out;
+    return Object.keys(out).length ? out : undefined;
   }
 
   private charCache = new Map<string, RProps>();
@@ -3762,6 +3764,7 @@ class DocxReader {
     // Word's styles that aren't styles here (a journal template's unused ones...), kept as they were
     const wordStyles = this.keptStyles(styles);
     if (wordStyles || this.latentXml) this.kept = { ...this.kept, ...(wordStyles ? { styles: wordStyles } : {}), ...(this.latentXml ? { latentStyles: this.latentXml } : {}) };
+    const charStyles = this.charStylesRead(JSON.stringify({ runs, comments, hf, objects }));
     return {
       runs: rt.normalizeRuns(runs),
       ...(comments ? { comments } : {}),
@@ -3776,7 +3779,7 @@ class DocxReader {
       ...(this.trackOn() ? { track: true } : {}),
       ...(this.hyphenRead() ? { hyphen: this.hyphenRead()! } : {}),
       ...(this.protection() ? { protect: this.protection()! } : {}),
-      ...(this.charStylesRead() ? { charStyles: this.charStylesRead() } : {}),
+      ...(charStyles ? { charStyles } : {}),
       ...(this.numFormatOf(sect) !== 'decimal' ? { numFormat: this.numFormatOf(sect) } : {}),
       ...(this.lineNumbersOf(sect) ? { lineNumbers: this.lineNumbersOf(sect) } : {}),
       ...(Object.keys(this.noteFormats).length ? { notes: this.noteFormats } : {}),
