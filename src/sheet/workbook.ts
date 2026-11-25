@@ -1240,6 +1240,20 @@ export class Sheet {
     this.applyFilter();
   }
 
+  /**
+   * Data ▸ Filter turned on or off over a table: the table's filter buttons go with it (Excel's
+   * Table Design ▸ Filter Button), so its file says the same when the filter is elsewhere or gone.
+   */
+  setTableButtons(range: Range, on: boolean): void {
+    const t = this.tables.find((x) => x.header && rangesOverlap(x.range, range));
+    if (!t || on === !t.noFilter) return;
+    this.setTables(this.tables.map((x) => {
+      if (x !== t) return x;
+      const { noFilter: _n, ...rest } = x;
+      return on ? rest : { ...rest, noFilter: true as const };
+    }));
+  }
+
   /** Put back a filter as a file saved it: the rows it hid are hidden already, so nothing is filtered again. */
   restoreFilter(f: Filter | null): void {
     this.assign('filter', f);

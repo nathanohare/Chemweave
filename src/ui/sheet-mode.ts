@@ -1455,14 +1455,19 @@ export class SheetMode {
   private toggleFilter(): void {
     const v = this.view;
     const s = v.sheet!;
-    if (s.filter) { this.edit('Filter off', (sh) => sh.setFilter(null)); this.host.flash('Filter off: every row shows.'); return; }
+    if (s.filter) {
+      const was = s.filter.range;
+      this.edit('Filter off', (sh) => { sh.setFilter(null); sh.setTableButtons(was, false); });
+      this.host.flash('Filter off: every row shows.');
+      return;
+    }
     const { r, c } = v.sel.active;
     const R = v.sel.range;
     let region = R.r1 !== R.r2 || R.c1 !== R.c2 ? (s.clip(R) ?? R) : s.currentRegion(r, c);
     if (region.r1 === region.r2 && !s.values.has(keyOf(r, c))) { this.host.flash('Click in a table to filter it.'); return; }
     // a table without a header row gets its filter buttons on the first row anyway (as in Excel)
     region = { ...region };
-    this.edit('Filter', (sh) => sh.setFilter({ range: region, conditions: {} }));
+    this.edit('Filter', (sh) => { sh.setFilter({ range: region, conditions: {} }); sh.setTableButtons(region, true); });
     this.host.flash('Filter on: use the buttons in the header row to choose which rows show.');
   }
 
@@ -1473,7 +1478,7 @@ export class SheetMode {
     if (s.filter && col >= s.filter.range.c1 && col <= s.filter.range.c2) return true;
     const region = s.currentRegion(v.sel.active.r, col);
     if (region.r1 === region.r2 && !s.values.has(keyOf(v.sel.active.r, col))) { this.host.flash('Click in a table to filter it.'); return false; }
-    this.edit('Filter', (sh) => sh.setFilter({ range: region, conditions: {} }));
+    this.edit('Filter', (sh) => { sh.setFilter({ range: region, conditions: {} }); sh.setTableButtons(region, true); });
     return true;
   }
 

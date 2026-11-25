@@ -452,3 +452,34 @@ describe('each table\'s filter buttons (F-X-007)', () => {
     expect(af('A9:B11')).not.toContain('<autoFilter');
   });
 });
+
+describe('each table\'s filter buttons, saved and opened again (F-X-007 review)', () => {
+  const head = (r: number) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t>No</t></is></c><c r="B${r}" t="inlineStr"><is><t>Value</t></is></c></row>`;
+  const row = (r: number) => `<row r="${r}"><c r="A${r}"><v>${r}</v></c><c r="B${r}"><v>${r * 2}</v></c></row>`;
+  const table = (n: number, ref: string, af: string) => ({
+    path: `xl/tables/table${n}.xml`, from: 'xl/worksheets/sheet1.xml', rel: `${R}/table`, target: `../tables/table${n}.xml`, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+    xml: `<table xmlns="${MAIN}" id="${n}" name="Table${n}" displayName="Table${n}" ref="${ref}" totalsRowShown="0">${af}` +
+      '<tableColumns count="2"><tableColumn id="1" name="No"/><tableColumn id="2" name="Value"/></tableColumns><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>',
+  });
+  // the second table filters column B to the value 12 (ECMA-376 §18.3.2.6 filters)
+  const file = () => excelBook([['Tables', `<sheetData>${head(1)}${row(2)}${row(3)}${head(5)}${row(6)}${row(7)}</sheetData>`]], {
+    parts: [table(1, 'A1:B3', '<autoFilter ref="A1:B3"/>'), table(2, 'A5:B7', '<autoFilter ref="A5:B7"><filterColumn colId="1"><filters><filter val="12"/></filters></filterColumn></autoFilter>')],
+  });
+
+  it('keeps the filter on the second table through a save and a reopen', async () => {
+    const once = (await readXlsx(file())).book;
+    expect(once.sheet.filter?.range).toMatchObject({ r1: 4, r2: 6 });
+    const again = (await readXlsx(await writeXlsx(once, pictures))).book;
+    expect(again.sheet.filter?.range).toMatchObject({ r1: 4, r2: 6 });
+    expect(Object.keys(again.sheet.filter?.conditions ?? {})).toEqual(['1']);
+  });
+
+  it('keeps Data ▸ Filter off through a save and a reopen', async () => {
+    const book = (await readXlsx(file())).book;
+    book.edit('off', () => { const was = book.sheet.filter!.range; book.sheet.setFilter(null); book.sheet.setTableButtons(was, false); });
+    const saved = await writeXlsx(book, pictures);
+    expect((await readXlsx(saved)).book.sheet.filter).toBeNull();
+    const t2 = Object.keys(unzipSync(saved)).filter((n) => /^xl\/tables\/table\d+\.xml$/.test(n)).map((n) => part(saved, n)).find((t) => t.includes('ref="A5:B7"'))!;
+    expect(t2).not.toContain('<autoFilter');
+  });
+});

@@ -928,7 +928,10 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     // a filter on a table goes in the table's part (Excel allows no sheet filter over a table)
     const filterTable = s.filter ? s.tables.find((t) => rangesOverlap(t.range, s.filter!.range)) : undefined;
     if (s.filter && !filterTable) {
-      const R = { ...s.filter.range, r2: Math.max(s.filter.range.r2, s.lastDataRow) };
+      // to the last row with data, stopping above a table below it (a sheet filter can't take in a table)
+      const F = s.filter.range;
+      const below = s.tables.filter((t) => t.range.r1 > F.r2 && t.range.c1 <= F.c2 && t.range.c2 >= F.c1).map((t) => t.range.r1 - 1);
+      const R = { ...F, r2: Math.max(F.r2, Math.min(s.lastDataRow, ...below)) };
       const ref = `${cellName(R.r1, R.c1)}:${cellName(R.r2, R.c2)}`;
       const colsXml = Object.entries(s.filter.conditions).map(([col, cond]) => filterColumnXml(Number(col) - R.c1, cond)).filter(Boolean).join('');
       filterXml = `<autoFilter ref="${ref}">${colsXml}</autoFilter>`;
@@ -1924,6 +1927,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       if (cf.skipped) notKept.add('some conditional formatting rules');
       // tables
       const tables: TableDef[] = [];
+      const tableFilters: { range: Range; conditions: Record<number, Condition>; set: boolean }[] = [];
       for (const r of pkg.rels(path!).values()) {
         if (r.type !== RELS.table) continue;
         const td = pkg.xml(r.target);
@@ -1942,15 +1946,21 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
         if (mine) seenTableId(mine.id);
         tables.push(mine ? { ...got.table, id: mine.id, ...(mine.custom ? { custom: mine.custom } : {}), ...(got.table.style === 'none' && mine.style !== 'none' ? { style: mine.style } : {}) } : got.table);
         const afr = got.autoFilter ? parseRange(got.autoFilter.getAttribute('ref') ?? '') : null;
-        if (got.autoFilter && afr && !filters.some((f) => f.s === s)) {
+        if (got.autoFilter && afr) {
           const conditions: Record<number, Condition> = {};
           for (const fc of kids(got.autoFilter, 'filterColumn')) {
             const cond = readFilterColumn(fc);
             if (cond) conditions[afr.c1 + Number(fc.getAttribute('colId') ?? 0)] = cond;
           }
-          const keep = ms?.filter && sameRange(ms.filter.range, afr) ? ms.filter : { range: afr, conditions };
-          filters.push({ s, f: keep });
+          tableFilters.push({ range: afr, conditions, set: kids(got.autoFilter, 'filterColumn').length > 0 });
         }
+      }
+      // the sheet's one filter, from its tables' (each table has its buttons): ours where we saved it,
+      // else one that filters something, else (a file not saved here) the first table's
+      if (!filters.some((f) => f.s === s)) {
+        const ours = ms?.filter ? tableFilters.find((x) => sameRange(ms.filter!.range, x.range)) : undefined;
+        const pick = ours ?? tableFilters.find((x) => x.set) ?? (ms ? undefined : tableFilters[0]);
+        if (pick) filters.push({ s, f: ours && ms?.filter ? ms.filter : { range: pick.range, conditions: pick.conditions } });
       }
       if (tables.length) s.setTables(tables);
       // data tables and PivotTables: our own copy where it says the same as Excel's
