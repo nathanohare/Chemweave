@@ -99,6 +99,7 @@ export function drawingFor(pic: Picture, e: Editable, choice: StyleChoice, parts
     ...(pic.float ? { float: structuredClone(pic.float) } : {}),
     ...(pic.look ? { look: structuredClone(pic.look) } : {}),
     ...(pic.alt ? { alt: pic.alt } : {}),
+    ...(pic.wordPr ? { wordPr: { ...pic.wordPr } } : {}),
     fromPicture: { picture: pic, at: e.at, style: choice, look: e.look, parts, px, ...(texts ? { texts } : {}) },
   };
 }

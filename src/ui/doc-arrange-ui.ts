@@ -3,7 +3,7 @@
 // lists the figures floating on the pages to pick, rename, hide or group.
 
 import type { DocFile } from '../document/doc-file';
-import { floatOf, lookExtent, lookOf, type DocObject, type DocText, type Float } from '../document/document';
+import { floatOf, lookExtent, lookOf, withFloat, type DocObject, type DocText, type Float } from '../document/document';
 import {
   floatingIds, groupOf, grouped, objectName, placeName, positioned, restacked, stackOrder, turned, ungrouped, withFloats,
   POSITION_PLACES, type PositionPlace, type Restack, type Turn,
@@ -63,7 +63,7 @@ export class DocArrangeUI {
     const f = this.host.file();
     const o = f?.t.objects[id];
     if (!f || !o || o.kind === 'textbox' || !floatOf(o)) return;
-    this.update({ ...f.t, objects: { ...f.t.objects, [id]: { ...o, float: undefined } as DocObject } }, 'Position');
+    this.update({ ...f.t, objects: { ...f.t.objects, [id]: withFloat(o, undefined) } }, 'Position');
   }
 
   private place(id: number, p: PositionPlace): void {
@@ -76,7 +76,10 @@ export class DocArrangeUI {
     // the section the figure is in decides the margins (Word's Position is inside them)
     const page = (placed ? f.layout().pages[placed.page]?.setup : undefined) ?? f.t.page;
     const fl = positioned(floatOf(o), p, size, page, lookExtent(lookOf(o)));
-    this.update({ ...f.t, objects: { ...f.t.objects, [id]: { ...o, float: fl } as DocObject } }, 'Position');
+    const moved = withFloat(o, fl);
+    this.update({ ...f.t, objects: { ...f.t.objects, [id]: moved } }, 'Position');
+    // (a picture hidden in Word, shown here while in the line: hidden once it floats, as in Word)
+    if (floatOf(moved)?.hidden && !floatOf(o)) this.host.flash('This figure is hidden in Word. Show it in the Selection Pane.');
   }
 
   /** Rotate: a quarter right or left, flipped, or by any angle (a picture, or a drawing as a whole: an icon, a shape, a structure). */

@@ -39,6 +39,7 @@ import {
   COL_GAP, FLOAT_GAP, columnsOf, contentsPrint, lookExtent, usedObjects,
   type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type TocLook, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
   samePageBorder,
+  type WordPane, withFloat,
 } from '../document/document';
 import { linkedHf } from '../document/sections';
 import { parseFieldInstr, type DocProps } from '../document/fields';
@@ -1435,18 +1436,29 @@ class DocxReader {
     if (Math.abs(R - g) > 0.05) fl.gapRight = round(R);
     // hidden in the Selection Pane; its group and name, kept with our data
     const pr = kid(anchor, 'docPr');
-    if (yes(pr?.getAttribute('hidden') ?? null)) fl.hidden = true;
+    Object.assign(fl, this.paneOf(pr, anchor));
     const kept = this.model?.floats?.[Number(pr?.getAttribute('id'))];
     if (kept?.group !== undefined) fl.group = kept.group;
-    // its name: as Word's Selection Pane has it (renamed there too), else as kept
-    const shown = pr?.getAttribute('name');
-    if (kept?.was !== undefined && shown && shown !== kept.was) fl.name = shown;
-    else if (kept?.name) fl.name = kept.name;
-    else if (!kept && shown && ownName(pr, anchor)) fl.name = shown;
     // which is drawn over which: worked out once every figure is read
     const rh = Number(anchor.getAttribute('relativeHeight'));
     if (Number.isFinite(rh)) this.stack.push({ fl, rh });
     return fl;
+  }
+
+  /**
+   * A figure's name and hidden mark in Word's Selection Pane: its name as Word has it (renamed there
+   * too), else as kept with our data; in a file not saved here, Word's own name, whatever it is.
+   */
+  private paneOf(pr: Element | null, box: Element): WordPane {
+    const out: WordPane = {};
+    if (yes(pr?.getAttribute('hidden') ?? null)) out.hidden = true;
+    const kept = this.model?.floats?.[Number(pr?.getAttribute('id'))];
+    const shown = pr?.getAttribute('name');
+    if (kept?.was !== undefined && shown && shown !== kept.was) out.name = shown;
+    else if (kept?.name) out.name = kept.name;
+    // (in a file saved here, a name that isn't one this program gives: given or changed in Word)
+    else if ((!kept || kept.was === undefined) && shown && (ownName(pr, box) || !this.model || !GIVEN_NAME.test(shown))) out.name = shown;
+    return out;
   }
 
   /** The floating figures read, with their place in Word's stack (wp:anchor's relativeHeight). */
@@ -2550,6 +2562,9 @@ class DocxReader {
     // alt text: a structure's own, not the description by SMILES written when it has none
     const descr = kid(box, 'docPr')?.getAttribute('descr')?.trim() ?? '';
     const alt = descr && !/^Chemical structure( \(SMILES\): | or scheme$)/.test(descr) ? { alt: descr } : {};
+    // in the line: its own name and hidden mark (a floating figure keeps them on its float)
+    const pane = box.localName === 'inline' ? this.paneOf(pr, box) : {};
+    const wordPr = Object.keys(pane).length ? { wordPr: pane } : {};
     const data = kid(box, 'graphic', 'graphicData');
     const pic = kid(data, 'pic');
     const wsp = kid(data, 'wsp');
@@ -2593,7 +2608,7 @@ class DocxReader {
       const chosen = sizedBox(kept && sameBoxData(kept, got.box) && (typeof print !== 'string' || print === got.print) ? freshBox(kept) : got.box, shown.w, shown.h);
       if (chosen === got.box && got.partial) this.warn('chartParts');
       const float = box.localName === 'anchor' ? this.floatOf(box, null, shown.w) : null;
-      this.emitObject(ctx, { kind: 'picture', src: chartBoxPng(chosen, shown.w, shown.h), w: round(shown.w), h: round(shown.h), px: { w: chosen.chart.w, h: chosen.chart.h }, chart: chosen, ...(float ? { float } : {}), ...alt }, r);
+      this.emitObject(ctx, { kind: 'picture', src: chartBoxPng(chosen, shown.w, shown.h), w: round(shown.w), h: round(shown.h), px: { w: chosen.chart.w, h: chosen.chart.h }, chart: chosen, ...(float ? { float } : {}), ...wordPr, ...alt }, r);
       return;
     }
     const group = kid(data, 'wgp');
@@ -2621,13 +2636,13 @@ class DocxReader {
       const xf = kid(pic ? kid(pic, 'spPr') : kid(group!, 'grpSpPr'), 'xfrm');
       const rot = (((Number(xf?.getAttribute('rot') ?? 0) / 60000 || 0) % 360) + 360) % 360;
       const turn = { ...(rot ? { rot: round(rot) } : {}), ...(yes(xf?.getAttribute('flipH') ?? null) ? { flipH: true } : {}), ...(yes(xf?.getAttribute('flipV') ?? null) ? { flipV: true } : {}) };
-      this.emitObject(ctx, { kind: 'drawing', contents, scale, ...(m.frame ? { frame: structuredClone(m.frame) } : {}), ...(look ? { look } : {}), ...(float ? { float } : {}), ...(contentsAlt(contents) ? {} : alt), ...turn, ...(m.ole ? { ole: m.ole } : {}), ...(m.fromPicture ? { fromPicture: structuredClone(m.fromPicture) } : {}), ...(wordLook ? { wordLook: { ...wordLook, print: contentsPrint(contents) } } : {}) }, r);
+      this.emitObject(ctx, { kind: 'drawing', contents, scale, ...(m.frame ? { frame: structuredClone(m.frame) } : {}), ...(look ? { look } : {}), ...(float ? { float } : {}), ...wordPr, ...(contentsAlt(contents) ? {} : alt), ...turn, ...(m.ole ? { ole: m.ole } : {}), ...(m.fromPicture ? { fromPicture: structuredClone(m.fromPicture) } : {}), ...(wordLook ? { wordLook: { ...wordLook, print: contentsPrint(contents) } } : {}) }, r);
       return;
     }
     // Word's own group of pictures (pictures kept together, such as a trace over its table): each picture where the group puts it
     if (!pic && group) { this.wordGroup(group, box, shown, r, ctx); return; }
     if (!pic) { this.warn('shapes'); return; }
-    this.wordPicture(pic, name, alt, shown, r, ctx, look, float);
+    this.wordPicture(pic, name, { ...alt, ...wordPr }, shown, r, ctx, look, float);
   }
 
   /**
@@ -2675,7 +2690,7 @@ class DocxReader {
   private groups: number | null = null;
 
   /** A picture (pic:pic) of Word's: its file, cropping, effects and turn. */
-  private wordPicture(pic: Element, name: string, alt: { alt?: string }, shown: { w: number; h: number }, r: RProps, ctx: Ctx, look: FigureLook | null, float: Float | null): void {
+  private wordPicture(pic: Element, name: string, alt: { alt?: string; wordPr?: WordPane }, shown: { w: number; h: number }, r: RProps, ctx: Ctx, look: FigureLook | null, float: Float | null): void {
     const blip = kid(pic, 'blipFill', 'blip');
     const svg = blip ? Array.from(blip.getElementsByTagNameNS('*', 'svgBlip'))[0] : undefined;
     let target = this.relTarget(rAttr(svg, 'embed')) ?? this.relTarget(rAttr(blip, 'embed'));
@@ -2744,7 +2759,7 @@ class DocxReader {
     return rel && !rel.external ? rel.target : null;
   }
 
-  private picture(path: string | null, shown: { w: number; h: number }, r: RProps, ctx: Ctx, look?: FigureLook | null, float?: Float | null, more: { crop?: { l: number; t: number; r: number; b: number }; fx?: PictureFx; embed?: Embedded; alt?: string; rot?: number; flipH?: boolean; flipV?: boolean } = {}): void {
+  private picture(path: string | null, shown: { w: number; h: number }, r: RProps, ctx: Ctx, look?: FigureLook | null, float?: Float | null, more: { wordPr?: WordPane; crop?: { l: number; t: number; r: number; b: number }; fx?: PictureFx; embed?: Embedded; alt?: string; rot?: number; flipH?: boolean; flipV?: boolean } = {}): void {
     const bytes = path ? this.pkg.bytes(path) : null;
     if (!bytes || shown.w <= 0 || shown.h <= 0) return;
     const ext = (path ?? '').split('.').pop()?.toLowerCase() ?? '';
@@ -3239,7 +3254,7 @@ class DocxReader {
       const o = r.obj !== undefined ? this.objects[r.obj] : undefined;
       if (!o) return true;
       if (o.kind === 'textbox' || o.kind === 'bib') { this.warn('cellBoxes'); return false; }
-      if ((o.kind === 'drawing' || o.kind === 'picture') && o.float) { const { float: _, ...rest } = o; this.objects[r.obj!] = rest as DocObject; }
+      if ((o.kind === 'drawing' || o.kind === 'picture') && o.float) this.objects[r.obj!] = withFloat(o, undefined);
       return true;
     });
     let clean = rt.normalizeRuns(kept.length ? kept : runs.filter((r) => r.obj === undefined)).filter((r) => r.text);
@@ -4009,3 +4024,6 @@ function gradOf(el: Element | null): { xml: string; fill?: string } | null {
   const fill = gradFirst(xml);
   return { xml, ...(fill ? { fill } : {}) };
 }
+
+/** The names this program gives drawings in Word (wp:docPr name): its structures', charts', pictures', shapes', text boxes' and groups'. */
+const GIVEN_NAME = new RegExp(`^(?:${DRAWING_NAME}|${CHART_NAME}|Picture|Shape|Text Box|TextBox|Group) \\d+$`);

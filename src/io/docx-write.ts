@@ -32,7 +32,7 @@ import { facesToEmbed, newGuid, obfuscate, type FontSource } from './font-embed'
 import { fromDataUrl } from '../render/images';
 import { chemdrawProg, chemdrawObject, embeddedPart, OLE_REL, OLE_TYPE } from './ole-object';
 import { BULLETS, fitParas, listInfo, paraCount, samePara, schemeOf, splitParagraphs, type ListInfo } from '../text/paragraphs';
-import { BOX_PAD, COL_GAP, COMPOUND, compoundSeqs, END_FORMAT, FOOT_FORMAT, columnsOf, contentsPrint, OBJECT_CHAR, SHADOWS, charStylesOf, watermarkPlace, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, pruneObjects, EMPTY_FORM, styleOf, runStyleOf, type CharStyle, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type HeaderFooter, type HfBody, type HfKey, type NamedStyle, type PageBorder, type PageSetup, type TocLook, type Watermark } from '../document/document';
+import { BOX_PAD, COL_GAP, COMPOUND, compoundSeqs, END_FORMAT, FOOT_FORMAT, columnsOf, contentsPrint, OBJECT_CHAR, SHADOWS, charStylesOf, watermarkPlace, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, pruneObjects, EMPTY_FORM, styleOf, runStyleOf, type CharStyle, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type HeaderFooter, type HfBody, type HfKey, type NamedStyle, type PageBorder, type PageSetup, type TocLook, type Watermark, type WordPane } from '../document/document';
 import { ACS_LINE, GRID_LINE, bibHang, docCellAlign, shownSize } from '../document/doc-layout';
 import { hasTitlePg, sectionsOf, type Section } from '../document/sections';
 import { bibliography, piecesText, type Reference } from '../document/references';
@@ -1211,15 +1211,18 @@ class DocxWriter {
     // (one in line with text in Word, still where it was put: in line again)
     const asRead = !!fl?.inline && fl.wrap === 'topBottom' && !fl.x && !fl.y && !fl.hidden && !fl.name && fl.group === undefined && !fl.align && !fl.xFrom && !fl.yFrom &&
       fl.gap === undefined && fl.gapTop === undefined && fl.gapBottom === undefined && fl.gapRight === undefined;
-    if (!fl || asRead) return `<wp:inline distT="0" distB="0" distL="0" distR="0">${ext}${inner}</wp:inline>`;
     // hidden in the Selection Pane (Word's own mark); its group and name kept with our data, by its id
+    // (a figure in the line: its own, on the object)
+    const pane: (WordPane & { group?: number }) | undefined = fl ?? (o.kind === 'picture' || o.kind === 'drawing' ? o.wordPr : undefined);
     const pr = /<wp:docPr id="(\d+)"/.exec(inner);
-    if (fl.hidden) inner = inner.replace(/<wp:docPr ([^>]*?)(\/?)>/, '<wp:docPr $1 hidden="1"$2>');
+    if (pane?.hidden) inner = inner.replace(/<wp:docPr ([^>]*?)(\/?)>/, '<wp:docPr $1 hidden="1"$2>');
     // a name from the Selection Pane goes on wp:docPr, where Word's Selection Pane reads it (laptop bench)
     // (our own names, "Picture 4" and the like, have nothing to escape)
-    const was = fl.name ? /<wp:docPr [^>]*?name="([^"]*)"/.exec(inner)?.[1] : undefined;
-    if (fl.name && was !== undefined) inner = inner.replace(/(<wp:docPr [^>]*?name=")[^"]*"/, (_, a: string) => `${a}${xmlAttr(fl.name!)}"`);
-    if (pr && (fl.group !== undefined || fl.name)) (this.model.floats ??= {})[Number(pr[1])] = { ...(fl.group !== undefined ? { group: fl.group } : {}), ...(fl.name ? { name: fl.name } : {}), ...(was !== undefined ? { was } : {}) };
+    const name = pane?.name;
+    const was = name ? /<wp:docPr [^>]*?name="([^"]*)"/.exec(inner)?.[1] : undefined;
+    if (name && was !== undefined) inner = inner.replace(/(<wp:docPr [^>]*?name=")[^"]*"/, (_, a: string) => `${a}${xmlAttr(name)}"`);
+    if (pr && pane && (pane.group !== undefined || name)) (this.model.floats ??= {})[Number(pr[1])] = { ...(pane.group !== undefined ? { group: pane.group } : {}), ...(name ? { name } : {}), ...(was !== undefined ? { was } : {}) };
+    if (!fl || asRead) return `<wp:inline distT="0" distB="0" distL="0" distR="0">${ext}${inner}</wp:inline>`;
     const [l, t] = lookExtent(lookOf(o));
     return this.anchor(fl, emu(fl.x + l), emu(fl.y + t), ext, inner);
   }
@@ -1305,7 +1308,8 @@ class DocxWriter {
       const o = this.t.objects[id];
       const fl = floatOf(o);
       if (!o || !fl) return null;
-      const one = await this.picture(main, id, { ...o, float: undefined } as DocObject, '');
+      // (each picture in the group without a name or hidden mark of its own: the group has them)
+      const one = await this.picture(main, id, { ...o, float: undefined, wordPr: undefined } as DocObject, '');
       const ext = /<wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(one);
       const docPr = /<wp:docPr id="(\d+)"[^>]*?(?: descr="([^"]*)")?\/>/.exec(one);
       const blip = /<a:blip r:embed="([^"]+)"/.exec(one);

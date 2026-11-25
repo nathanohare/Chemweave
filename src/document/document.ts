@@ -319,6 +319,9 @@ export type WrapKind = 'square' | 'topBottom' | 'behind' | 'front';
  * anchored (its paragraph). `x` is from the left margin (or the page's edge), `y` from the top of
  * the anchor paragraph (or of the margin, or the page), in points.
  */
+/** A figure's name and hidden mark in Word's Selection Pane (wp:docPr name and hidden, ECMA-376 Part 1 §20.4.2.5). */
+export interface WordPane { name?: string; hidden?: boolean }
+
 export interface Float {
   wrap: WrapKind;
   x: number;
@@ -394,6 +397,22 @@ export function lookOf(o: DocObject | undefined): FigureLook | undefined {
 }
 
 /** Where a figure, picture or text box floats on the page (none when it sits in its line). */
+/**
+ * A picture or drawing put in the line or made to float (Position, In Line with Text): its name
+ * and hidden mark in Word's Selection Pane go with it, from its float to its wordPr or back.
+ */
+export function withFloat(o: DocObject, float: Float | undefined): DocObject {
+  if (o.kind !== 'picture' && o.kind !== 'drawing') return { ...o, float } as DocObject;
+  const was: WordPane = o.float ? { name: o.float.name, hidden: o.float.hidden } : { ...o.wordPr };
+  const pane: WordPane = { ...(was.name ? { name: was.name } : {}), ...(was.hidden ? { hidden: true } : {}) };
+  const { wordPr: _w, float: _f, ...rest } = o;
+  if (float) {
+    const { name: _n, hidden: _h, ...fl } = float;
+    return { ...rest, float: { ...fl, ...pane } } as DocObject;
+  }
+  return { ...rest, ...(Object.keys(pane).length ? { wordPr: pane } : {}) } as DocObject;
+}
+
 export function floatOf(o: DocObject | undefined): Float | undefined {
   return o && (o.kind === 'drawing' || o.kind === 'picture' || o.kind === 'textbox') ? o.float : undefined;
 }
@@ -465,7 +484,7 @@ export interface TocLook { font?: string; size?: number; bold?: boolean; italic?
 
 export type DocObject =
   /** A structure, scheme or table: a drawing, edited with the drawing tools. `scale` 1 is the drawing's own size. */
-  | { kind: 'drawing'; contents: Contents; scale?: number; look?: FigureLook; float?: Float; alt?: string; /** A figure: a set area of the page (in the drawing's points) its structures are drawn in, sized by it rather than by them, so drawing inside it never moves the text round it. Never drawn when printed. */ frame?: FigureFrame; /** Turned and flipped, as a picture (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean; /** A Chem4Word structure: its id in the file's CML part, and a fingerprint of the drawing as read (changed = the CML is written afresh). */ c4w?: { guid: string; sig: string }; /** Saved as a ChemDraw object, by this program name (ChemDraw.Document.6.0): one that came from a ChemDraw object stays one, to open in ChemDraw from Word. */ ole?: string; /** Cropping and color changes Word made to its picture: not shown here, saved back to Word while the structure is as read. */ wordLook?: WordLook; /** Made from a picture (Make Editable): the picture, kept to compare with and to go back to. */ fromPicture?: FromPicture }
+  | { kind: 'drawing'; contents: Contents; scale?: number; look?: FigureLook; float?: Float; /** In line with text: its name and hidden mark in Word's Selection Pane (a floating one keeps them on its float), saved back to Word; it is shown here. */ wordPr?: WordPane; alt?: string; /** A figure: a set area of the page (in the drawing's points) its structures are drawn in, sized by it rather than by them, so drawing inside it never moves the text round it. Never drawn when printed. */ frame?: FigureFrame; /** Turned and flipped, as a picture (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean; /** A Chem4Word structure: its id in the file's CML part, and a fingerprint of the drawing as read (changed = the CML is written afresh). */ c4w?: { guid: string; sig: string }; /** Saved as a ChemDraw object, by this program name (ChemDraw.Document.6.0): one that came from a ChemDraw object stays one, to open in ChemDraw from Word. */ ole?: string; /** Cropping and color changes Word made to its picture: not shown here, saved back to Word while the structure is as read. */ wordLook?: WordLook; /** Made from a picture (Make Editable): the picture, kept to compare with and to go back to. */ fromPicture?: FromPicture }
   /**
    * A picture: its own size is w × h points (`px` its pixels); `scale` 1 is that size. A chart
    * (Insert > Chart) is a picture with its chart and data: drawn from them, saved as Word's chart.
@@ -474,7 +493,7 @@ export type DocObject =
    * embedded object (Insert > Document > Object) is a picture with another program's file in `embed`. `alt` is
    * its alt text (a structure without it is described by its SMILES).
    */
-  | { kind: 'picture'; src: string; w: number; h: number; px?: { w: number; h: number }; scale?: number; look?: FigureLook; float?: Float; chart?: ChartBox; crop?: { l: number; t: number; r: number; b: number }; fx?: PictureFx; embed?: Embedded; alt?: string; /** Turned clockwise about its middle, in degrees, and flipped (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean }
+  | { kind: 'picture'; src: string; w: number; h: number; px?: { w: number; h: number }; scale?: number; look?: FigureLook; float?: Float; /** In line with text: its name and hidden mark in Word's Selection Pane (a floating one keeps them on its float), saved back to Word; it is shown here. */ wordPr?: WordPane; chart?: ChartBox; crop?: { l: number; t: number; r: number; b: number }; fx?: PictureFx; embed?: Embedded; alt?: string; /** Turned clockwise about its middle, in degrees, and flipped (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean }
   /**
    * A text box: text of its own (typed into in place), `w` wide; it grows to fit its text, and is
    * at least `h` tall when that is set. Always placed on the page. `fill` is its background.
