@@ -1,1 +1,1 @@
-Fixed: Sheets: fraction formats (# ?/?, # ??/16) and minutes and seconds with tenths (mm:ss.0) show and print as Excel shows them.
+Fixed: Sheets: fraction formats (# ?/?, # ??/16, with units, currency or a negative section) and minutes and seconds with tenths (mm:ss.0, Excel's built-in 47) show and print as Excel shows them; and [h]:mm shows minutes, not the month.

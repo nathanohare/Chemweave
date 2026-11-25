@@ -207,9 +207,10 @@ function formatFraction(v: number, sec: Section, f: Fraction, signed: boolean): 
     const fill = code.includes('0') ? '0' : code.includes('?') ? ' ' : '';
     return end === 'start' ? t.padStart(code.length, fill) : t.padEnd(code.length, fill);
   };
-  const wholeText = hasWhole ? (zero ? '0' : formatNumber(whole, { parts: [{ k: 'code', s: (sec.parts[f.whole] as { s: string }).s }] })) : '';
+  const wholeNumber = hasWhole ? formatNumber(whole, { parts: [{ k: 'code', s: (sec.parts[f.whole] as { s: string }).s }] }) : '';
+  const wholeText = hasWhole ? (zero ? wholeNumber || '0' : wholeNumber) : '';
   const fracText = hasWhole && n === 0
-    ? (f.num.includes('0') ? `${pad('0', f.num, 'start')}/${fixed ? f.den : pad('1', f.den, 'end')}` : f.num.includes('?') ? ' '.repeat(f.num.length + 1 + f.den.length) : '')
+    ? (f.num.includes('0') ? `${pad('0', f.num, 'start')}/${fixed ? f.den : pad('1', f.den, f.den.includes('0') ? 'start' : 'end')}` : f.num.includes('?') ? ' '.repeat(f.num.length + 1 + f.den.length) : '')
     // (a denominator's 0s pad it in front, its ?s with spaces after)
     : `${pad(String(n), f.num, 'start')}/${fixed ? f.den : pad(String(d), f.den, f.den.includes('0') ? 'start' : 'end')}`;
   const out = sec.parts.map((p, i) => (p.k === 'lit' ? p.s : i === f.at ? fracText : i === f.whole ? wholeText : p.s.replace(/[0#?,]/g, ''))).join('');
@@ -377,8 +378,9 @@ function formatDate(v: number, sec: Section): string {
     const toks = p.s.match(/AM\/PM|A\/P|\[[hms]+\]|y+|m+|d+|h+|s+|\.0+|[^ymdhs]/gi) ?? [];
     toks.forEach((t, i) => {
       const low = t.toLowerCase();
-      const prev = toks.slice(0, i).reverse().find((x) => /^[a-z]/i.test(x))?.toLowerCase() ?? '';
-      const next = toks.slice(i + 1).find((x) => /^[a-z]/i.test(x))?.toLowerCase() ?? '';
+      // (an elapsed [h] or [s] beside m makes it minutes too: [h]:mm)
+      const prev = toks.slice(0, i).reverse().find((x) => /^\[?[a-z]/i.test(x))?.toLowerCase().replace('[', '') ?? '';
+      const next = toks.slice(i + 1).find((x) => /^\[?[a-z]/i.test(x))?.toLowerCase().replace('[', '') ?? '';
       if (/^y+$/.test(low)) out += low.length <= 2 ? String(Y % 100).padStart(2, '0') : String(Y);
       else if (/^m+$/.test(low)) {
         const minutes = prev.startsWith('h') || next.startsWith('s');

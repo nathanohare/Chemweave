@@ -142,6 +142,8 @@ describe('fractions and times with tenths', () => {
     expect(show(59.96 * S, 'mm:ss.0')).toBe('01:00.0');
     expect(show(3599.96 * S, '[mm]:ss.0')).toBe('60:00.0');
     expect(show(106.999 * S, '[ss].00')).toBe('107.00');
+    // (minutes after elapsed hours)
+    expect(show(1.5, '[h]:mm')).toBe('36:00');
     // (Excel's built-in 47, as read from a file)
     expect(show(0.0005, BUILTIN_FORMATS[47])).toBe('00:43.2');
     // (a number with tenths and a unit is still a number)
@@ -162,6 +164,8 @@ describe('fractions and times with tenths', () => {
     expect(show(5, '# 0/8')).toBe('5 0/8');
     expect(show(1234.5, '#,##0 ?/?')).toBe('1,234 1/2');
     expect(show(5.5, '000 ?/?')).toBe('005 1/2');
+    expect(show(0, '000 ?/?')).toBe('000    ');
+    expect(show(5, '# 00/00')).toBe('5 00/01');
     // (a date's digits after its / stay the date's)
     expect(show(45000, 'm/d/1900')).toBe('3/15/1900');
   });
