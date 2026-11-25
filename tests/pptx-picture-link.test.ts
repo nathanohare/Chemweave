@@ -47,8 +47,7 @@ describe("a picture's link", () => {
   });
 
   it('to a slide, on the master, goes to the slide part itself (no part that isn\'t there)', async () => {
-    const { parts, third } = await deckWith([], [`#slide=${third0}`]);
-    void third;
+    const { parts } = await deckWith([], [`#slide=${third0}`]);
     const rels = Object.keys(parts).filter((k) => /slideMasters\/_rels\//.test(k)).map((k) => strFromU8(parts[k])).join('');
     const target = /Type="[^"]*\/slide" Target="([^"]+)"/.exec(rels)?.[1];
     expect(target).toBe('../slides/slide3.xml');

@@ -1417,7 +1417,7 @@ class Writer {
     const ext = MIME_EXT[still.mime];
     if (!ext || ext === 'svg') return '';
     const blip = this.addMedia(from, still.bytes, ext);
-    const rel = this.pkg.relate(from, REL.slide, `slide${i + 1}.xml`);
+    const rel = this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${i + 1}.xml`));
     const tags = this.addTags(from, { [TAG.zoom]: JSON.stringify({ v: 1, zoom: p.zoom, link: p.link }) });
     const w = box.x2 - box.x1, h = box.y2 - box.y1;
     const name = `Slide Zoom ${id - 1}`;
@@ -1477,7 +1477,7 @@ class Writer {
       const ext = MIME_EXT[still.mime];
       if (!ext || ext === 'svg') return '';
       items.push({
-        box: boxOf(z.p), blip: this.addMedia(from, still.bytes, ext), rel: this.pkg.relate(from, REL.slide, `slide${z.i + 1}.xml`),
+        box: boxOf(z.p), blip: this.addMedia(from, still.bytes, ext), rel: this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${z.i + 1}.xml`)),
         tags: this.addTags(from, { [TAG.zoom]: JSON.stringify({ v: 1, zoom: z.p.zoom, link: z.p.link }) }), back: !!z.p.zoom?.back, section: z.section, k,
       });
     }
