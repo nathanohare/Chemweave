@@ -36,7 +36,7 @@ import { Package, NS, REL, emu, fromEmu, xml, xmlAttr, hex6, MediaFiles, structu
 import { SLIDE_SIZE_TYPES, hasItems } from '../deck/deck';
 import { masterBoxes } from '../deck/master-view';
 import { notesParagraphs, type NotesLook } from '../deck/notes-look';
-import { appPropsXml, corePropsXml, writeKeptParts, type KeptParts } from './kept-parts';
+import { appPropsXml, corePropsXml, relativeTarget, writeKeptParts, type KeptParts } from './kept-parts';
 import { olePrint, picturePrint, svgWithDrawing, type KeptOle, type KeptPicture } from './ole-kept';
 import { facesToEmbed, toEot, type FontSource } from './font-embed';
 import { dataUrl, fromDataUrl } from '../render/images';
@@ -750,7 +750,8 @@ class Writer {
     const id = slideOfLink(link);
     if (id !== null) {
       const i = this.deck.slides.findIndex((s) => s.id === id);
-      return i < 0 ? '' : `<a:hlinkClick r:id="${this.pkg.relate(from, REL.slide, `slide${i + 1}.xml`)}" action="ppaction://hlinksldjump"/>`;
+      // (from the part it is in: a slide, or a layout or master)
+      return i < 0 ? '' : `<a:hlinkClick r:id="${this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${i + 1}.xml`))}" action="ppaction://hlinksldjump"/>`;
     }
     if (link.startsWith('#')) return '';
     return `<a:hlinkClick r:id="${this.pkg.relate(from, REL.hyperlink, officeTarget(link), true)}"/>`;
@@ -1416,7 +1417,7 @@ class Writer {
     const ext = MIME_EXT[still.mime];
     if (!ext || ext === 'svg') return '';
     const blip = this.addMedia(from, still.bytes, ext);
-    const rel = this.pkg.relate(from, REL.slide, `slide${i + 1}.xml`);
+    const rel = this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${i + 1}.xml`));
     const tags = this.addTags(from, { [TAG.zoom]: JSON.stringify({ v: 1, zoom: p.zoom, link: p.link }) });
     const w = box.x2 - box.x1, h = box.y2 - box.y1;
     const name = `Slide Zoom ${id - 1}`;
@@ -1476,7 +1477,7 @@ class Writer {
       const ext = MIME_EXT[still.mime];
       if (!ext || ext === 'svg') return '';
       items.push({
-        box: boxOf(z.p), blip: this.addMedia(from, still.bytes, ext), rel: this.pkg.relate(from, REL.slide, `slide${z.i + 1}.xml`),
+        box: boxOf(z.p), blip: this.addMedia(from, still.bytes, ext), rel: this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${z.i + 1}.xml`)),
         tags: this.addTags(from, { [TAG.zoom]: JSON.stringify({ v: 1, zoom: z.p.zoom, link: z.p.link }) }), back: !!z.p.zoom?.back, section: z.section, k,
       });
     }
@@ -1650,7 +1651,10 @@ class Writer {
     const ext = MIME_EXT[mime];
     if (!ext) return '';
     const fx = tidyFx(pic?.fx);
-    const more: PicMore = { rot: pic?.rot, hidden: pic?.hidden, ph: this.picPlaceholder(pic) };
+    // (and its link, as a shape's: a web page, a file, a slide or a show jump)
+    // (a zoom whose own picture couldn't be written keeps its click to its slide)
+    const click = pic?.link ? this.hlink(pic.link) : '';
+    const more: PicMore = { rot: pic?.rot, hidden: pic?.hidden, ph: this.picPlaceholder(pic), ...(click ? { click } : {}) };
     const descr = alt?.trim() || undefined;
     // what Office can't show live goes in worked in. PowerPoint keeps the original as the blip's
     // layer only as an HD Photo (.wdp) and refuses a PNG there, so the original goes in a tag with
@@ -2057,7 +2061,7 @@ function decorXml(sh: DecorShape, id: number): string {
 }
 
 /** A picture's turn and whether it is hidden (Selection Pane). */
-interface PicMore { rot?: number; hidden?: boolean; /** The picture placeholder it is in (its p:ph). */ ph?: string }
+interface PicMore { rot?: number; hidden?: boolean; /** The picture placeholder it is in (its p:ph). */ ph?: string; /** What a click on it does (its a:hlinkClick). */ click?: string }
 
 /**
  * A picture element: PNG (or another bitmap), optionally with an SVG PowerPoint shows instead,
@@ -2070,7 +2074,8 @@ function picXml(id: number, name: string, blipId: string, svgId: string | null, 
     ? `<a:srcRect l="${Math.round(crop.l * 100000)}" t="${Math.round(crop.t * 100000)}" r="${Math.round(crop.r * 100000)}" b="${Math.round(crop.b * 100000)}"/>` : '';
   const ph = more.ph ?? '';
   const nvPr = tagsId ? `<p:nvPr>${ph}<p:custDataLst><p:tags r:id="${tagsId}"/></p:custDataLst></p:nvPr>` : ph ? `<p:nvPr>${ph}</p:nvPr>` : '<p:nvPr/>';
-  return `<p:pic><p:nvPicPr><p:cNvPr id="${id}"${nameAttrs(name, more.hidden)}${descr ? ` descr="${xmlAttr(descr)}"` : ''}/><p:cNvPicPr><a:picLocks${ph ? ' noGrp="1"' : ''} noChangeAspect="1"/></p:cNvPicPr>${nvPr}</p:nvPicPr>` +
+  const cNv = `<p:cNvPr id="${id}"${nameAttrs(name, more.hidden)}${descr ? ` descr="${xmlAttr(descr)}"` : ''}`;
+  return `<p:pic><p:nvPicPr>${more.click ? `${cNv}>${more.click}</p:cNvPr>` : `${cNv}/>`}<p:cNvPicPr><a:picLocks${ph ? ' noGrp="1"' : ''} noChangeAspect="1"/></p:cNvPicPr>${nvPr}</p:nvPicPr>` +
     `<p:blipFill><a:blip r:embed="${blipId}">${blipEffectsXml(fx)}${ext}</a:blip>${src}<a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
     `<p:spPr>${xfrm(box, rotAttr(more.rot))}${pictureLookXml(look, fx)}</p:spPr></p:pic>`;
 }
