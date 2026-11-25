@@ -1424,7 +1424,7 @@ export class SheetMode {
     const s = v.sheet!;
     const { r, c } = v.sel.active;
     const R = v.sel.range;
-    if (s.filter && inRange({ ...s.filter.range, r2: Math.max(s.filter.range.r2, s.lastDataRow) }, r, c)) {
+    if (s.filter && inRange({ ...s.filter.range, r2: s.filterRows()!.r2 }, r, c)) {
       const rows = s.filterRows()!;
       return { data: { r1: rows.r1, c1: s.filter.range.c1, r2: rows.r2, c2: s.filter.range.c2 }, header: s.filter.range.r1 };
     }
