@@ -770,7 +770,12 @@ class DocxReader {
     for (const ws of this.wstyles.values()) {
       if (ws.isDefault || !ws.id) continue;
       if (ws.type === 'paragraph' && (ws.id === this.defaultPara || styles[this.idMap.get(ws.id) ?? ''])) continue;
-      out.push({ type: ws.type, id: ws.id, xml: elementXml(ws.el).replaceAll(` xmlns:w="${W_NS}"`, '') });
+      let xml = elementXml(ws.el).replaceAll(` xmlns:w="${W_NS}"`, '');
+      // (a character style linked to a paragraph style read here under another id: linked to that id)
+      const lk = ws.type === 'character' ? this.a(kid(ws.el, 'link')) : null;
+      const ours = lk ? this.idMap.get(lk) : undefined;
+      if (lk && ours && ours !== lk && styles[ours]) xml = xml.replace(/(<w:link w:val=")[^"]*(")/, (_m, a: string, b: string) => `${a}${ours.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}${b}`);
+      out.push({ type: ws.type, id: ws.id, xml });
     }
     return out.length ? out : undefined;
   }
@@ -3557,6 +3562,8 @@ class DocxReader {
 
   private named(wordId: string, ours: string): NamedStyle {
     const ws = this.wstyles.get(`paragraph:${wordId}`);
+    const lk = ws ? this.a(kid(ws.el, 'link')) : null;
+    const linked = lk && this.wstyles.has(`character:${lk}`) ? lk : undefined;
     const ch = this.chain('paragraph', wordId);
     const p = mergeP(this.docDefaults.p, ch.p);
     const r = merge<RProps>(this.docDefaults.r, ch.r);
@@ -3576,6 +3583,8 @@ class DocxReader {
       outline: OUTLINE[ours] ?? (p.outline && p.outline <= 9 && ours !== 'Normal' ? p.outline : undefined),
       // its theme colour and font, written back while it has the colour and font they gave
       ...(r.thc || r.thf ? { wth: JSON.stringify({ ...(r.thc ? { c: r.thc, cv: r.thcv ?? '' } : {}), ...(r.thf ? { f: r.thf, fv: r.thfv ?? '' } : {}) }) } : {}),
+      // the character style linked to it, where the file has it
+      ...(linked ? { link: linked } : {}),
     };
   }
 

@@ -68,6 +68,8 @@ export interface NamedStyle {
   shade?: string;
   /** Made by the person (Styles pane > New Style), so it can be deleted. */
   custom?: boolean;
+  /** Word's character style linked to it (w:link: the same look for words, Quote Char for Quote), by its Word id, written back while that style is in the file. */
+  link?: string;
 }
 
 /**
@@ -644,7 +646,7 @@ export function noteStyle(t: Pick<DocText, 'styles'>): NamedStyle {
   const own = t.styles.FootnoteText;
   if (own) return own;
   const N = styleOf(t, undefined);
-  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined, border: undefined, shade: undefined };
+  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined, border: undefined, shade: undefined, link: undefined };
 }
 
 // ---------------------------------------------------------------- defaults
@@ -839,9 +841,9 @@ export function newParaStyle(t: DocText, name: string, para: number, look: rt.Ru
   const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
   const p = paras[para] ?? {};
   const from = styleOf(t, p);
-  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x]);
+  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x] || !!t.kept?.styles?.some((k) => k.id === x));
   const s: NamedStyle = {
-    ...from, id, name: name.trim() || id, custom: true, outline: undefined,
+    ...from, id, name: name.trim() || id, custom: true, outline: undefined, link: undefined,
     font: look.font ?? from.font, size: look.size ?? from.size, bold: !!look.bold, italic: !!look.italic, color: look.color,
     align: p.align ?? 'left', spaceBefore: p.spaceBefore ?? 0, spaceAfter: p.spaceAfter ?? 0, line: p.line ?? 1,
     indent: p.indent ?? 0, firstLine: p.firstLine ?? 0, keepNext: !!p.keepNext, next: undefined,
@@ -953,7 +955,7 @@ export function modifyCharStyle(t: DocText, s: CharStyle): DocText {
 /** Styles pane > New Style (character): a character style with the look of the selected text, given to it. */
 export function newCharStyle(t: DocText, name: string, start: number, end: number, look: rt.RunStyle, para: ParaStyle): { t: DocText; id: string } {
   const N = styleOf(t, para);
-  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x]);
+  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x] || !!t.kept?.styles?.some((k) => k.id === x));
   const s: CharStyle = { id, name: name.trim() || id, custom: true };
   if (look.font && look.font !== N.font) s.font = look.font;
   if (look.size && look.size !== N.size) s.size = look.size;

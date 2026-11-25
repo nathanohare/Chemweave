@@ -1916,9 +1916,11 @@ class DocxWriter {
     // (ECMA-376 part 1, 17.7.4.18: latent styles come after the defaults, before the styles)
     if (t.kept?.latentStyles) out.push(t.kept.latentStyles);
     const ids = Object.keys(t.styles);
+    // (the character styles the file will have, for the paragraph styles linked to one)
+    const chars = new Set((t.kept?.styles ?? []).filter((k) => k.type === 'character' && !this.charStyles[k.id]).map((k) => k.id));
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {
       const s = t.styles[id];
-      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal));
+      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal, chars));
     }
     // the contents' lines (Word's own "toc 1" to "toc 3", which Update Field uses)
     if (Object.values(t.objects).some((o) => o.kind === 'toc')) {
@@ -1974,7 +1976,14 @@ class DocxWriter {
     // the file's styles that aren't styles here (a journal template's unused ones, character and
     // table styles nothing uses), as Word had them, unless one of the same kind and id is written above
     const written = new Set([...out.join('').matchAll(/<w:style\b[^>]*?\bw:type="([^"]+)"[^>]*?\bw:styleId="([^"]+)"/g)].map((m) => `${m[1]}:${unxml(m[2])}`));
-    for (const k of t.kept?.styles ?? []) if (!written.has(`${k.type}:${k.id}`)) out.push(keptStyleXml(k, this.keptNumIds));
+    const paraIds = new Set([...written].filter((k) => k.startsWith('paragraph:')).map((k) => k.slice(10)));
+    for (const k of t.kept?.styles ?? []) if (k.type === 'paragraph' && !written.has(`paragraph:${k.id}`)) paraIds.add(k.id);
+    for (const k of t.kept?.styles ?? []) {
+      if (written.has(`${k.type}:${k.id}`)) continue;
+      const lk = k.type === 'character' ? /<w:link w:val="([^"]*)"\/>/.exec(k.xml) : null;
+      const x = lk && !paraIds.has(unxml(lk[1])) ? { ...k, xml: k.xml.replace(lk[0], '') } : k;
+      out.push(keptStyleXml(x, this.keptNumIds));
+    }
     out.push('</w:styles>');
     return out.join('');
   }
@@ -2552,15 +2561,15 @@ function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = w
 }
 
 /** A named style, with all its settings written out. */
-function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true, normal?: NamedStyle): string {
+function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true, normal?: NamedStyle, chars?: ReadonlySet<string>): string {
   const id = s.id;
   // a style with one of Word's built-in names (header, No Spacing, toc 1...) is Word's own: not marked custom
   const word = WORD_NAMES[id] ?? builtIn(s.name);
   const name = word ?? s.name;
   const head = id === 'Normal'
-    ? `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/>`
+    ? `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>${s.link && chars?.has(s.link) ? `<w:link w:val="${xml(s.link)}"/>` : ''}<w:qFormat/>`
     : `<w:style w:type="paragraph"${word ? '' : ' w:customStyle="1"'} w:styleId="${xml(id)}"><w:name w:val="${xml(name)}"/><w:basedOn w:val="Normal"/>` +
-      `${s.next && ids.includes(s.next) ? `<w:next w:val="${xml(s.next)}"/>` : ''}<w:uiPriority w:val="${PRIORITY[id] ?? 29}"/><w:qFormat/>`;
+      `${s.next && ids.includes(s.next) ? `<w:next w:val="${xml(s.next)}"/>` : ''}${s.link && chars?.has(s.link) ? `<w:link w:val="${xml(s.link)}"/>` : ''}<w:uiPriority w:val="${PRIORITY[id] ?? 29}"/><w:qFormat/>`;
   const pPr: string[] = [];
   pPr.push(s.keepNext ? '<w:keepNext/>' : '<w:keepNext w:val="0"/>');
   // (widow and orphan control is on for every style, from the document's defaults, unless a style turns it off)
