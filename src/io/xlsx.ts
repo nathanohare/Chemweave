@@ -706,15 +706,21 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     // set (customHeight): Excel fits rows without it again when it opens our save, and a row it
     // showed at 40 pt came back at the default height (laptop check 51)
     const keptFit = new Set<number>();
-    // (the grid's measurer gives a fitted row back at Excel's height where it measures nothing taller: still Excel's)
-    for (const [r, px] of s.fittedRows) if (!auto.has(r) || auto.get(r) === px) { auto.set(r, px); keptFit.add(r); }
+    // (a row is Excel's fit while it is unchanged here, since a change takes its fit off: at Excel's
+    // height, whatever the grid measures for it, as fonts here differ slightly from Excel's)
+    for (const [r, px] of s.fittedRows) { auto.set(r, px); keptFit.add(r); }
     // rows grown for a structure's picture keep their height in Excel (its text can't show how tall the picture is)
     const pictureRows = new Set<number>();
     for (const [k, c] of s.cells) {
       if (!c.structure) continue;
       const r = rowOf(k);
       const h = Math.min(MAX_AUTO_ROW, Math.ceil(structureHeight(deps.box(c.structure, book.drawingStyle), s.colWidths.get(colOf(k)) ?? DEFAULT_COL_W)));
-      if (h > DEFAULT_ROW_H) { auto.set(r, Math.max(auto.get(r) ?? 0, h)); pictureRows.add(r); }
+      if (h > DEFAULT_ROW_H) {
+        auto.set(r, Math.max(auto.get(r) ?? 0, h));
+        pictureRows.add(r);
+        // (a structure taller than Excel's fit: the row is grown for it here, not Excel's fit)
+        if (h > (s.fittedRows.get(r) ?? Infinity)) keptFit.delete(r);
+      }
     }
     const rowH = (r: number) => (s.hiddenRows.has(r) ? 0 : s.rowHeights.get(r) ?? auto.get(r) ?? DEFAULT_ROW_H);
     ms.autoRows = [...auto].filter(([r]) => !s.rowHeights.has(r) && !keptFit.has(r));
