@@ -22,6 +22,7 @@ import { readPictureFx } from './picture-xml';
 import { DEFAULT_MARGINS, builtInStyle, type TableStyleDef } from '../document/table-styles';
 import { keepDirectBorders, readBorder, readBorders, readLook as readTableLook, readMargins, readRowHeight, readTableFloat, readTableStyle, readTableWidth, sameStyle, styleIsRich } from './docx-table-styles';
 import { cleanBorders } from '../document/para-borders';
+import { gradFirst, gradientOk } from './docx-write';
 import { ACS_1996, type DocStyle } from '../style';
 import * as rt from '../richtext';
 import { NS, PackageReader, REL, bytesHash, kid, kids, rAttr, fromEmu } from './ooxml';
@@ -2553,11 +2554,12 @@ class DocxReader {
       const spPr = kid(wsp, 'spPr');
       const look = readLook(spPr);
       const fillClr = kid(spPr, 'solidFill', 'srgbClr')?.getAttribute('val');
-      const fill = fillClr && /^[0-9a-f]{6}$/i.test(fillClr) ? `#${fillClr.toLowerCase()}` : kid(spPr, 'noFill') ? undefined : kid(spPr, 'solidFill') ? '#ffffff' : undefined;
-      const float = (box.localName === 'anchor' ? this.floatOf(box, look, shown.w) : null) ?? { wrap: 'topBottom' as const, x: 0, y: 0 };
+      const grad = gradOf(kid(spPr, 'gradFill'));
+      const fill = fillClr && /^[0-9a-f]{6}$/i.test(fillClr) ? `#${fillClr.toLowerCase()}` : kid(spPr, 'noFill') ? undefined : kid(spPr, 'solidFill') ? '#ffffff' : grad?.fill;
+      const float = (box.localName === 'anchor' ? this.floatOf(box, look, shown.w) : null) ?? { wrap: 'topBottom' as const, x: 0, y: 0, ...(box.localName === 'inline' ? { inline: true } : {}) };
       const { runs, paras } = this.boxText(content, true);
       const geo = this.shapeGeo(spPr, name);
-      const o: DocObject = { kind: 'textbox', runs, w: round(shown.w), float, ...(geo ? { geo, h: round(shown.h) } : {}), ...(paras.some((q) => Object.keys(q).length) ? { paras } : {}), ...(fill ? { fill } : {}), ...(look ? { look } : {}) };
+      const o: DocObject = { kind: 'textbox', runs, w: round(shown.w), float, ...(geo ? { geo, h: round(shown.h) } : {}), ...(paras.some((q) => Object.keys(q).length) ? { paras } : {}), ...(grad ? { wfill: grad.xml } : {}), ...(fill ? { fill } : {}), ...(look ? { look } : {}) };
       this.emitObject(ctx, o, r);
       return;
     }
@@ -2567,9 +2569,10 @@ class DocxReader {
     if (wsp && bareGeo) {
       const look = readLook(bare);
       const fillClr = kid(bare, 'solidFill', 'srgbClr')?.getAttribute('val');
-      const fill = fillClr && /^[0-9a-f]{6}$/i.test(fillClr) ? `#${fillClr.toLowerCase()}` : kid(bare, 'noFill') ? undefined : kid(bare, 'solidFill') ? '#ffffff' : undefined;
-      const float = (box.localName === 'anchor' ? this.floatOf(box, look, shown.w) : null) ?? { wrap: 'topBottom' as const, x: 0, y: 0 };
-      this.emitObject(ctx, { kind: 'textbox', geo: bareGeo, runs: [], w: round(shown.w), h: round(shown.h), float, ...(fill ? { fill } : {}), ...(look ? { look } : {}) }, r);
+      const grad = gradOf(kid(bare, 'gradFill'));
+      const fill = fillClr && /^[0-9a-f]{6}$/i.test(fillClr) ? `#${fillClr.toLowerCase()}` : kid(bare, 'noFill') ? undefined : kid(bare, 'solidFill') ? '#ffffff' : grad?.fill;
+      const float = (box.localName === 'anchor' ? this.floatOf(box, look, shown.w) : null) ?? { wrap: 'topBottom' as const, x: 0, y: 0, ...(box.localName === 'inline' ? { inline: true } : {}) };
+      this.emitObject(ctx, { kind: 'textbox', geo: bareGeo, runs: [], w: round(shown.w), h: round(shown.h), float, ...(grad ? { wfill: grad.xml } : {}), ...(fill ? { fill } : {}), ...(look ? { look } : {}) }, r);
       return;
     }
     const chartEl = kid(data, 'chart');
@@ -3987,4 +3990,13 @@ export function frameOf(fr: Element | null | undefined, a: (name: string) => str
   if (align !== 'left' && align !== 'center' && align !== 'right') return undefined;
   const gap = parseFloat(a('hSpace') ?? '0');
   return { w: w / 20, align, wrap: wrap === 'around' ? 'square' : 'topBottom', gap: Number.isFinite(gap) ? gap / 20 : 0 };
+}
+
+/** A shape's gradient fill as written (kept to write back) and its first colour (shown here), where it is one a shape here can keep. */
+function gradOf(el: Element | null): { xml: string; fill?: string } | null {
+  if (!el) return null;
+  const xml = elementXml(el).replace(/ xmlns:a="[^"]*"/g, '');
+  if (!gradientOk(xml)) return null;
+  const fill = gradFirst(xml);
+  return { xml, ...(fill ? { fill } : {}) };
 }

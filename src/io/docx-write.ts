@@ -1197,7 +1197,10 @@ class DocxWriter {
     const fx = fl?.effect;
     const [el, et, er, eb] = lookExtent(lookOf(o)).map((v, i) => emu(v + (fx ? [fx.l, fx.t, fx.r, fx.b][i] : 0)));
     const ext = `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="${el}" t="${et}" r="${er}" b="${eb}"/>`;
-    if (!fl) return `<wp:inline distT="0" distB="0" distL="0" distR="0">${ext}${inner}</wp:inline>`;
+    // (one in line with text in Word, still where it was put: in line again)
+    const asRead = !!fl?.inline && fl.wrap === 'topBottom' && !fl.x && !fl.y && !fl.hidden && !fl.name && fl.group === undefined && !fl.align && !fl.xFrom && !fl.yFrom &&
+      fl.gap === undefined && fl.gapTop === undefined && fl.gapBottom === undefined && fl.gapRight === undefined;
+    if (!fl || asRead) return `<wp:inline distT="0" distB="0" distL="0" distR="0">${ext}${inner}</wp:inline>`;
     // hidden in the Selection Pane (Word's own mark); its group and name kept with our data, by its id
     const pr = /<wp:docPr id="(\d+)"/.exec(inner);
     if (fl.hidden) inner = inner.replace(/<wp:docPr ([^>]*?)(\/?)>/, '<wp:docPr $1 hidden="1"$2>');
@@ -1313,7 +1316,9 @@ class DocxWriter {
     const cx = emu(o.w), cy = emu(h);
     const k = this.docPr++;
     const look = lookOf(o);
-    const fill = o.fill ? `<a:solidFill><a:srgbClr val="${hex6(o.fill)}"/></a:solidFill>` : '<a:noFill/>';
+    // (Word's gradient as the file had it, while its first colour is still the fill here)
+    const grad = o.wfill && gradientOk(o.wfill) && (gradFirst(o.wfill) ?? null) === (o.fill ? `#${hex6(o.fill).toLowerCase()}` : null) ? o.wfill : null;
+    const fill = grad ?? (o.fill ? `<a:solidFill><a:srgbClr val="${hex6(o.fill)}"/></a:solidFill>` : '<a:noFill/>');
     // the look's own white fill (under a shadow) gives way to the box's fill
     const lookRest = lookXml(look).replace(/^<a:solidFill>.*?<\/a:solidFill>/, '');
     const line = look?.frame ? '' : '<a:ln><a:noFill/></a:ln>';
@@ -2249,6 +2254,37 @@ function fieldStart(rPr: string, instr: string, data?: string): string {
   const pieces = instr.match(/(?:&[a-z#0-9]+;|[^&]){1,255}/gi) ?? [instr];
   const text = pieces.map((p) => `<w:r>${pr}<w:instrText xml:space="preserve">${p}</w:instrText></w:r>`).join('');
   return `<w:r>${pr}${begin}</w:r>${text}${inner}<w:r>${pr}<w:fldChar w:fldCharType="separate"/></w:r>`;
+}
+
+/** A gradient fill (a:gradFill) made only of DrawingML's gradient and colour elements, well formed, with no text: one to write back as it is. */
+const GRAD_TAG = /^<(\/?)a:(gradFill|gsLst|gs|srgbClr|schemeClr|prstClr|sysClr|lin|path|fillToRect|tileRect|lumMod|lumOff|alpha|alphaMod|alphaOff|tint|shade|satMod|satOff|hueMod|hueOff|gamma|invGamma)((?:\s+[A-Za-z]+="[^"<>&]*")*)\s*(\/?)>$/;
+export function gradientOk(xml: unknown): xml is string {
+  if (typeof xml !== 'string' || !/^<a:gradFill[\s>]/.test(xml) || !xml.endsWith('</a:gradFill>') || xml.length > 20000) return false;
+  const open: string[] = [];
+  let ended = false;
+  for (const p of xml.split(/(<[^<>]*>)/)) {
+    if (p === '') continue;
+    if (!p.startsWith('<')) { if (p.trim()) return false; continue; }
+    const m = GRAD_TAG.exec(p);
+    // (one gradFill, with none inside it)
+    if (!m || ended || (m[2] === 'gradFill' && !m[1] && open.length)) return false;
+    const [, close, name, attrs, self] = m;
+    if (close && open.length === 1) ended = true;
+    if (close) { if (attrs.trim() || self || open.pop() !== name) return false; continue; }
+    // (each attribute once)
+    const names = [...attrs.matchAll(/([A-Za-z]+)=/g)].map((x) => x[1]);
+    if (new Set(names).size !== names.length) return false;
+    if (!self) open.push(name);
+  }
+  return open.length === 0;
+}
+
+/** The colour a gradient is shown in here: its first stop's, unless that stop shows through (or isn't a plain colour). */
+export function gradFirst(xml: string): string | undefined {
+  const gs = /<a:gs\b[^>]*>([\s\S]*?)<\/a:gs>/.exec(xml)?.[1] ?? '';
+  const c = /^\s*<a:srgbClr val="([0-9A-Fa-f]{6})"\s*(\/>|>([\s\S]*?)<\/a:srgbClr>)/.exec(gs);
+  if (!c || /<a:alpha(Mod|Off)?\b/.test(c[3] ?? '')) return undefined;
+  return `#${c[1].toLowerCase()}`;
 }
 
 /** A paragraph's borders (w:pBdr, Word's spacing from the text) and shading (w:shd). */
