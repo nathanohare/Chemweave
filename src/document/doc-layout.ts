@@ -194,17 +194,17 @@ export interface WrapRect { x1: number; y1: number; x2: number; y2: number; wrap
 /** Less room than this beside a figure (an inch) and text goes below it instead (as Word does). */
 export const MIN_BESIDE = 72;
 
-/**
- * The room a document line gives up to floating figures beside it. `y1`–`y2` is the line's
- * box (from the top of the margins), `textW` the width between them. Text wraps on the wider
- * side of a figure ("square"), or moves down past it ("top and bottom", or when too little
- * room is left beside it).
- */
 /** Two paragraphs' frames are one frame (Word: the same frame properties). */
 export function sameFrame(a: ParaStyle['frame'], b: ParaStyle['frame']): boolean {
   return !!a && !!b && a.w === b.w && a.align === b.align && a.wrap === b.wrap && a.gap === b.gap;
 }
 
+/**
+ * The room a document line gives up to floating figures beside it. `y1`–`y2` is the line's
+ * box (from the top of the margins), `textW` the width between them. Text wraps on the wider
+ * side of a figure ("square"), or on the side it says (Float.side: left or right only), or moves
+ * down past it ("top and bottom", or when too little room is left on that side).
+ */
 export function narrowLine(rects: WrapRect[], y1: number, y2: number, textW: number): Narrow | null {
   let left = 0, right = 0, hit = false, below = Infinity, block = false;
   for (const r of rects) {
@@ -674,7 +674,7 @@ export class DocLayouter {
       // the figures' places from the column's left edge
       const near = all.filter((r) => r.y2 > y && (r.wrap === 'square' || r.wrap === 'topBottom')).map((r) => ({ ...r, x1: r.x1 - dx, x2: r.x2 - dx }));
       if (!a || !near.length) return laid[p];
-      const rel = near.map((r) => [r.x1, r.y1 - y, r.x2, r.y2 - y, r.wrap].map((v) => (typeof v === 'number' ? +v.toFixed(2) : v)));
+      const rel = near.map((r) => [r.x1, r.y1 - y, r.x2, r.y2 - y, r.wrap, r.side ?? ''].map((v) => (typeof v === 'number' ? +v.toFixed(2) : v)));
       const key = `${a.key}|${JSON.stringify(rel)}|${textH}`;
       let lay = this.cache.get(key);
       if (!lay) {

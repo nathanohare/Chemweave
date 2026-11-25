@@ -1290,7 +1290,7 @@ class DocxWriter {
       if (ids.length < 2) continue;
       const all = Object.values(this.t.objects).filter((o) => floatOf(o)?.group === g);
       const fls = ids.map((id) => floatOf(this.t.objects[id])!);
-      const same = fls.every((f) => !f.hidden && f.wrap === fls[0].wrap && (f.xFrom ?? 'margin') === (fls[0].xFrom ?? 'margin') && (f.yFrom ?? 'para') === (fls[0].yFrom ?? 'para'));
+      const same = fls.every((f) => !f.hidden && f.wrap === fls[0].wrap && f.side === fls[0].side && (f.xFrom ?? 'margin') === (fls[0].xFrom ?? 'margin') && (f.yFrom ?? 'para') === (fls[0].yFrom ?? 'para'));
       if (all.length === ids.length && same) for (const id of ids) out.set(id, ids);
     }
     return out;
@@ -1336,7 +1336,7 @@ class DocxWriter {
     // VML for older Words: the group in its own units (EMU here), each picture a shape in it
     const pt = (v: number) => Math.round((v / 12700) * 100) / 100;
     const hRel = fl.xFrom === 'page' ? 'page' : 'margin', vRel = fl.yFrom === 'page' ? 'page' : fl.yFrom === 'margin' ? 'margin' : 'text';
-    const wrap = fl.wrap === 'square' ? '<w10:wrap type="square"/>' : fl.wrap === 'topBottom' ? '<w10:wrap type="topAndBottom"/>' : '';
+    const wrap = fl.wrap === 'square' ? `<w10:wrap type="square"${fl.side ? ` side="${fl.side === 'bothSides' ? 'both' : fl.side}"` : ''}/>` : fl.wrap === 'topBottom' ? '<w10:wrap type="topAndBottom"/>' : '';
     const z = fl.wrap === 'behind' ? -251658240 + n : 251659264 + n;
     // (shape ids from one count, clear of the watermark's 2049 on; the picture shape type once in each part, as Word writes it)
     const type = this.oleTypes.has(main) ? '' : T75;
