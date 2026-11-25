@@ -609,6 +609,14 @@ class DocxWriter {
     return out.join('');
   }
 
+  /** A style's numbering as written (w:numPr), where its list is in the file. */
+  private styleNum(s: NamedStyle): string {
+    const id = s.wnum && typeof s.wnum.num === 'string' ? this.keptNumIds.get(s.wnum.num) : undefined;
+    if (!id) return '';
+    const lv = s.wnum!.ilvl;
+    return `<w:numPr>${typeof lv === 'number' && lv >= 0 && lv <= 8 ? `<w:ilvl w:val="${Math.round(lv)}"/>` : ''}<w:numId w:val="${id}"/></w:numPr>`;
+  }
+
   /** Each paragraph mark's tracked change, if any. */
   private markRev: (string | undefined)[] = [];
   // tracked changes count apart from the bookmarks (Word wants each id used once)
@@ -799,6 +807,9 @@ class DocxWriter {
       // indented to its text, with a hidden bookmark saying so beside that indent (CONT_MARK, read back by docx-read.ts)
       pPr.push(`<w:numPr><w:ilvl w:val="${Math.max(0, Math.min(8, ps.level ?? 0))}"/><w:numId w:val="0"/></w:numPr>`);
       if (!bodyOnly) { const id = this.bookmarkId++; contMark = `<w:bookmarkStart w:id="${id}" w:name="${CONT_MARK}${twips(listIndent(ps, em).left)}_${id}"/><w:bookmarkEnd w:id="${id}"/>`; }
+    } else if (this.styleNum(st)) {
+      // (in a style with numbering, not a list here: Word's "no numbering")
+      pPr.push('<w:numPr><w:numId w:val="0"/></w:numPr>');
     }
     if (ps.noLineNumbers) pPr.push('<w:suppressLineNumbers/>');
     pPr.push(paraBorderXml(ps, st));
@@ -1096,6 +1107,8 @@ class DocxWriter {
         const paras = fitParas(o.paras, paraCount(rt.plainText(o.runs)));
         const ps = paras.map((p, i) => {
           const pPr: string[] = [`<w:pStyle w:val="${style}"/>`];
+          // (a note style with numbering: not on the notes, as here)
+          if (this.styleNum(t.styles[style] ?? st)) pPr.push('<w:numPr><w:numId w:val="0"/></w:numPr>');
           const align = p.align ?? 'left';
           if (align !== st.align) pPr.push(`<w:jc w:val="${JC[align]}"/>`);
           // the note's number, and the space after it (or what the note had there in Word)
@@ -1929,7 +1942,7 @@ class DocxWriter {
     for (const id of ids) { const seen = new Set([id]); for (let b = t.styles[id]?.basedOn; b && t.styles[b]; b = t.styles[b].basedOn) { if (seen.has(b)) { paras.delete(b); break; } seen.add(b); } }
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {
       const s = t.styles[id];
-      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal, chars, paras, t.styles));
+      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal, chars, paras, t.styles, this.styleNum(s)));
     }
     // the contents' lines (Word's own "toc 1" to "toc 3", which Update Field uses)
     if (Object.values(t.objects).some((o) => o.kind === 'toc')) {
@@ -2547,9 +2560,14 @@ const unxml = (s: string) => s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").r
 function keptStyleXml(k: { xml: string }, numIds: ReadonlyMap<string, string>): string {
   return k.xml.replace(/<w:numPr\b[^>]*?(?:\/>|>[\s\S]*?<\/w:numPr>)/g, (m) => {
     const id = /<w:numId w:val="([^"]+)"/.exec(m)?.[1];
-    const to = id === undefined ? undefined : numIds.get(id);
+    // (Word's "no numbering", which a style says over the one it is based on, and a level alone, on
+    // the list of the one it is based on: as they are)
+    if (id === '0' || id === undefined) return m;
+    const to = numIds.get(id);
     return to ? m.replace(/(<w:numId w:val=")[^"]+"/, `$1${to}"`) : '';
-  });
+  // (and paragraph settings left empty by that written as the file's own empty ones read back: the
+  // same on a second save; kept, as a tracked change's old settings need one)
+  }).replace(/<w:pPr><\/w:pPr>/g, '<w:pPr/>');
 }
 
 /** A character style: only what it sets. */
@@ -2589,7 +2607,7 @@ function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = w
 }
 
 /** A named style, with all its settings written out. */
-function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true, normal?: NamedStyle, chars?: ReadonlySet<string>, paras?: ReadonlySet<string>, styles?: Readonly<Record<string, NamedStyle>>): string {
+function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true, normal?: NamedStyle, chars?: ReadonlySet<string>, paras?: ReadonlySet<string>, styles?: Readonly<Record<string, NamedStyle>>, numPr = ''): string {
   const id = s.id;
   // a style with one of Word's built-in names (header, No Spacing, toc 1...) is Word's own: not marked custom
   const word = WORD_NAMES[id] ?? builtIn(s.name);
@@ -2605,6 +2623,8 @@ function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => strin
   // (widow and orphan control is on for every style, from the document's defaults, unless a style turns it off)
   if (s.keepLines) pPr.push('<w:keepLines/>'); else if (chained) pPr.push('<w:keepLines w:val="0"/>');
   if (s.noWidow) pPr.push('<w:widowControl w:val="0"/>'); else if (chained) pPr.push('<w:widowControl/>');
+  // (its numbering, in its place after widow control)
+  if (numPr) pPr.push(numPr);
   // (its lines and shading, in their place before the spacing; a style says where it hasn't those of the
   // style it is based on: Normal, or the one in Word it stays based on)
   pPr.push(paraBorderXml({ border: s.border, shade: s.shade }, id === 'Normal' ? undefined : chained ? styles?.[s.basedOn!] : normal));

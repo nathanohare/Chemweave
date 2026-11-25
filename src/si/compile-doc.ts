@@ -402,6 +402,7 @@ class Compiler {
       const s: NamedStyle = { ...this.styles[headingId(lv)], id, name: `SI Heading ${lv}`, custom: true };
       delete s.outline;
       delete s.basedOn;
+      delete s.wnum;
       this.styles[id] = s;
     }
     return id;

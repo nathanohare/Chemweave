@@ -3610,6 +3610,9 @@ class DocxReader {
     const next = ws?.next ? this.idMap.get(ws.next) : undefined;
     // the style it is based on (read as a style too: see where the styles are made)
     const parent = ws?.basedOn && this.wstyles.has(`paragraph:${ws.basedOn}`) ? this.idMap.get(ws.basedOn) : undefined;
+    // its numbering (its own, or from the styles it is based on)
+    const numId = ch.p.numId;
+    const ilvl = ch.p.ilvl ?? NaN;
     return {
       id: ours,
       name: dflt?.name ?? ws?.name ?? ours,
@@ -3621,6 +3624,7 @@ class DocxReader {
       ...(cleanBorders(p.border) ? { border: cleanBorders(p.border) } : {}), ...(p.shade && p.shade !== '#ffffff' ? { shade: p.shade } : {}),
       next: next && next !== ours ? next : ours === 'Normal' ? undefined : dflt?.next,
       ...(parent && parent !== 'Normal' && parent !== ours && ours !== 'Normal' ? { basedOn: parent } : {}),
+      ...(numId && /^\d+$/.test(numId) && numId !== '0' && ours !== 'Normal' ? { wnum: { num: numId, ...(ilvl >= 0 && ilvl <= 8 ? { ilvl } : {}) } } : {}),
       outline: OUTLINE[ours] ?? (p.outline && p.outline <= 9 && ours !== 'Normal' ? p.outline : undefined),
       // its theme colour and font, written back while it has the colour and font they gave
       ...(r.thc || r.thf ? { wth: JSON.stringify({ ...(r.thc ? { c: r.thc, cv: r.thcv ?? '' } : {}), ...(r.thf ? { f: r.thf, fv: r.thfv ?? '' } : {}) }) } : {}),
