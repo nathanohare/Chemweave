@@ -194,3 +194,10 @@ describe('the stack in a Word file (office sampler F-W-026)', () => {
     expect(Object.values(back.objects).map((o) => (o as { float?: Float }).float?.z)).toEqual([undefined, undefined, undefined]);
   });
 });
+
+describe('Position and the side a figure\'s text wraps on (F-W-021)', () => {
+  it('puts the text on the wider side again, as Position says', () => {
+    const page = newDocument().page;
+    expect(positioned({ wrap: 'square', side: 'left', x: 0, y: 0 }, 'top-left', { w: 100, h: 50 }, page).side).toBeUndefined();
+  });
+});
