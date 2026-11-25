@@ -127,6 +127,8 @@ export class SettingsWindow {
     this.applyBtn.addEventListener('click', () => void this.commit('apply'));
     this.defaultBtn.addEventListener('click', () => void this.commit('default'));
     d.addEventListener('cancel', (e) => { e.preventDefault(); void this.close(); });
+    // (a click outside closes it as Esc does: close() asks about changes not yet applied itself)
+    d.dataset.outsideClick = 'cancel';
     // Esc closes the whole window, wherever the focus is: a page would otherwise take it as its
     // own Cancel and simply be shown again
     d.addEventListener('keydown', (e) => {

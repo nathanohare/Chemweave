@@ -714,6 +714,8 @@ export interface ImportProgress {
 
 export function importProgress(title: string): ImportProgress {
   const d = el('dialog', 'ask si-import-busy');
+  // (work in progress: a click outside the window doesn't mean Cancel)
+  d.dataset.outsideClick = 'keep';
   d.setAttribute('aria-label', title);
   const text = el('p', '', title);
   text.setAttribute('role', 'status');

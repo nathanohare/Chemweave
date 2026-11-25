@@ -380,6 +380,8 @@ export class FeedbackDialog {
     for (const el of [title, details, steps, email]) el.addEventListener('input', () => say(''));
     cancel.addEventListener('click', close);
     d.addEventListener('cancel', () => read());
+    // (closing keeps the draft: a click outside closes it without asking)
+    d.dataset.outsideClick = 'cancel';
     d.addEventListener('close', () => d.remove());
     document.body.append(d);
     d.showModal();

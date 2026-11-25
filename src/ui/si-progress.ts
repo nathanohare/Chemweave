@@ -37,6 +37,8 @@ const painted = (): Promise<void> => new Promise((r) => { requestAnimationFrame(
 
 export function compileProgress(title: string, steps: string[]): CompileProgress {
   const d = el('dialog', 'ask si-progress');
+  // (work in progress: a click outside the window doesn't mean Cancel)
+  d.dataset.outsideClick = 'keep';
   d.setAttribute('aria-label', title);
   const text = el('p', 'si-progress-text', steps[0] ?? '');
   text.setAttribute('role', 'status');

@@ -10,7 +10,12 @@
 //   - a modal window is placed below the title strip and inside the part of the program that is on
 //     the screen, so its heading and its buttons can always be reached.
 //
+//   - clicking outside a modal window closes it, asking first if something in it was changed
+//     (src/ui/outside-click.ts).
+//
 // It works by wrapping HTMLDialogElement.showModal once, at start-up, so no window can miss it.
+
+import { watchOutsideClick } from './outside-click';
 
 /** Makes a title strip for a modal window (the desktop app with its own title bar sets it). */
 type StripMaker = () => HTMLElement;
@@ -166,6 +171,9 @@ export function installModalGuard(): void {
   if (typeof own !== 'function') return;
   installed = true;
   proto.showModal = function (this: HTMLDialogElement): void {
+    // (watched before it opens, so the field it puts the cursor in is noted; opened again while
+    // still open, it keeps its changes)
+    watchOutsideClick(this, !this.open);
     own.call(this);
     const d = this;
     if (!listened.has(d)) {
