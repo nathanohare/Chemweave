@@ -59,6 +59,8 @@ export interface NamedStyle {
   /** Its paragraphs' lines kept together on one page, and widow and orphan lines allowed (Word's settings, kept from its files). */
   keepLines?: boolean;
   noWidow?: boolean;
+  /** Its paragraphs run right to left (Word's w:bidi in the style). */
+  rtl?: boolean;
   /** The style a new paragraph gets after Enter at the end of one of these (Normal after a heading). */
   next?: string;
   /** A heading's level (1 to 9). */

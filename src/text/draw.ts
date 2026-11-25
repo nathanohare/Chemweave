@@ -48,12 +48,13 @@ function drawGlyphs(ctx: CanvasRenderingContext2D, lay: TextLayout, l: LaidLine,
   } else if (g.shown !== undefined) put(g.shown, ox + g.x, y);
   else if (g.spacing) {
     // spaced out (or condensed): each character where the spacing puts it
-    for (let k = 0; k < g.text.length; k++) if (g.text[k] !== ' ') put(g.text[k], ox + g.x + pieceX(lay, g, k), y);
+    for (let k = 0; k < g.text.length; k++) if (g.text[k] !== ' ') put(g.text[k], ox + g.x + (g.rtl ? g.w - pieceX(lay, g, k + 1) : pieceX(lay, g, k)), y);
   } else if (g.spread) {
     // justified: each word goes where the stretched spaces put it
     let k = 0;
     for (const word of g.text.split(' ')) {
-      if (word) put(word, ox + g.x + pieceX(lay, g, k), y);
+      // (a right-to-left piece's words from its right end)
+      if (word) put(word, ox + g.x + (g.rtl ? g.w - pieceX(lay, g, k + word.length) : pieceX(lay, g, k)), y);
       k += word.length + 1;
     }
   } else put(g.text, ox + g.x, y);

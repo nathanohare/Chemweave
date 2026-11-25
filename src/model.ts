@@ -589,6 +589,11 @@ export interface ParaStyle {
   frame?: ParaFramePlace;
   /** Documents: a single first or last line may be left on a page by itself (Word's Widow/Orphan control off). */
   noWidow?: boolean;
+  /**
+   * Documents: a right-to-left paragraph (Hebrew, Arabic: Word's w:bidi). Its lines start at the
+   * right; its alignment and indents are by start and end (left is the start: on the right).
+   */
+  rtl?: boolean;
   /** Documents: indent from the right margin, in points. */
   indentRight?: number;
   /** Documents: line spacing in points instead of a multiple: exactly this, or at least this. */

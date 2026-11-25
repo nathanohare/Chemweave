@@ -827,7 +827,7 @@ class DocxWriter {
     // (with the bar tabs Word had, which aren't tab stops here)
     if (ps.tabs?.length || raw.bar) pPr.push(`<w:tabs>${raw.bar ?? ''}${(ps.tabs ?? []).map((x) => `<w:tab w:val="${x.kind}"${x.leader ? ` w:leader="${x.leader}"` : ''} w:pos="${twips(x.pos)}"/>`).join('')}</w:tabs>`);
     if (ps.noHyphen) pPr.push('<w:suppressAutoHyphens/>');
-    pPr.push(raw.c ?? '');
+    pPr.push(bidiXml(raw.c ?? '', !!ps.rtl, !!st.rtl));
     const sp: string[] = [];
     // (the spacing Word had where "don't add space between paragraphs of the same style" shows
     // it as none; automatic spacing, shown as 14 pt, as automatic)
@@ -2372,6 +2372,22 @@ export function gradFirst(xml: string): string | undefined {
 }
 
 /** A paragraph's borders (w:pBdr, Word's spacing from the text) and shading (w:shd). */
+/**
+ * A paragraph's kept settings of the group w:bidi is in (kinsoku to snapToGrid: `kept`, as the file
+ * had them) with its direction as it is now (`rtl`): left as they are where they already say so, or
+ * where they say nothing and the paragraph's style (`styleRtl`) does; else w:bidi put in, in its
+ * place before adjustRightInd and snapToGrid, or turned off.
+ */
+export function bidiXml(kept: string, rtl: boolean, styleRtl: boolean): string {
+  const m = /<w:bidi(?:\s+w:val="([^"]*)")?\s*\/>/.exec(kept);
+  const says = m ? !/^(0|false|off)$/.test(m[1] ?? '') : styleRtl;
+  if (says === rtl) return kept;
+  const rest = kept.replace(/<w:bidi(?:\s+w:val="[^"]*")?\s*\/>/, '');
+  const el = rtl === styleRtl ? '' : rtl ? '<w:bidi/>' : '<w:bidi w:val="0"/>';
+  const at = rest.search(/<w:(adjustRightInd|snapToGrid)\b/);
+  return at < 0 ? rest + el : rest.slice(0, at) + el + rest.slice(at);
+}
+
 export function paraBorderXml(ps: ParaStyle, st?: Pick<NamedStyle, 'border' | 'shade'>): string {
   let out = '';
   const b = cleanBorders(ps.border);
@@ -2675,6 +2691,9 @@ function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => strin
   // (its lines and shading, in their place before the spacing; a style says where it hasn't those of the
   // style it is based on: Normal, or the one in Word it stays based on)
   pPr.push(paraBorderXml({ border: s.border, shade: s.shade }, id === 'Normal' ? undefined : chained ? styles?.[s.basedOn!] : normal));
+  // (right to left: its own, or where the style it is based on is and it isn't)
+  const baseRtl = id === 'Normal' ? false : chained ? !!styles?.[s.basedOn!]?.rtl : !!normal?.rtl;
+  if (!!s.rtl !== baseRtl) pPr.push(s.rtl ? '<w:bidi/>' : '<w:bidi w:val="0"/>');
   pPr.push(`<w:spacing w:before="${twips(s.spaceBefore)}" w:after="${twips(s.spaceAfter)}" w:line="${Math.round(240 * s.line)}" w:lineRule="auto"/>`);
   pPr.push(`<w:ind w:left="${twips(s.indent)}" ${s.firstLine < 0 ? `w:hanging="${twips(-s.firstLine)}"` : `w:firstLine="${twips(s.firstLine)}"`}/>`);
   pPr.push(`<w:jc w:val="${JC[s.align]}"/>`);

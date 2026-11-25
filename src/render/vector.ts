@@ -4,6 +4,7 @@
 // so every output format can draw the result with only lines, curves and text.
 
 import { arialWidth } from '../text-metrics';
+import { visualText } from '../text/bidi';
 import { turnedCorners } from '../geom';
 
 export type Seg =
@@ -290,7 +291,11 @@ export class VectorContext {
   fillText(text: string, x: number, y: number): void {
     const f = parseFont(this.st.font);
     const cw = this.charWidth;
-    const widths = (this.st.kerning !== 'none' ? this.advances?.(text, f.size, f.family, f.bold, f.italic) : null) ?? [...text].map((ch) => (cw ? cw(ch, f.size, f.family, f.bold, f.italic) : arialWidth(ch, f.size, f.bold)));
+    const logical = (this.st.kerning !== 'none' ? this.advances?.(text, f.size, f.family, f.bold, f.italic) : null) ?? [...text].map((ch) => (cw ? cw(ch, f.size, f.family, f.bold, f.italic) : arialWidth(ch, f.size, f.bold)));
+    // (right-to-left letters as a canvas shows them: in the order they are seen, Arabic's joined)
+    const seen = visualText(text, logical);
+    text = seen.text;
+    const widths = seen.widths;
     const m = this.st.m;
     const at = this.pt(x, y);
     // (a turn clockwise on the page is an angle anticlockwise taken away)
