@@ -89,6 +89,8 @@ export interface CharStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  /** Its underline's kind in Word (dotted, wave...; TextRun.ukind), where it isn't single. */
+  ukind?: string;
   color?: string;
   smallCaps?: boolean;
   allCaps?: boolean;
@@ -96,6 +98,8 @@ export interface CharStyle {
   custom?: boolean;
   /** Word's theme colour and font for the style (see NamedStyle.wth). */
   wth?: string;
+  /** The character style it is based on in Word (w:basedOn), by id: written back while that one is a style here. */
+  basedOn?: string;
 }
 
 /** A watermark (Design > Watermark): words across every page, behind the text, as Word's text watermarks. */
@@ -916,7 +920,7 @@ export function charStylesOf(t: Pick<DocText, 'charStyles'>): Record<string, Cha
   return { ...defaultCharStyles(), ...(t.charStyles ?? {}) };
 }
 
-const CHAR_KEYS = ['font', 'size', 'bold', 'italic', 'underline', 'color', 'smallCaps', 'allCaps', 'strike'] as const;
+const CHAR_KEYS = ['font', 'size', 'bold', 'italic', 'underline', 'ukind', 'color', 'smallCaps', 'allCaps', 'strike'] as const;
 
 /** The text formatting a character style gives (only what it sets; off-switches included, so Strong on bold text stays bold). */
 export function charStyleLook(s: CharStyle): Partial<rt.RunStyle> {

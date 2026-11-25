@@ -14,7 +14,6 @@ export const DOCX_FINDINGS: Record<string, Finding> = {
   'W-CHR-79': { finding: 'F-W-002', note: 'the Hyperlink character style is flattened into direct formatting (color and underline); w:rStyle is gone' },
   'W-CHR-88': { finding: 'F-W-003', note: 'w:noBreakHyphen is saved as the character U+2011 instead' },
   'W-PAR-75': { finding: 'F-W-006', note: 'the paragraph mark\'s run properties (w:pPr/w:rPr) are dropped' },
-  'W-STY-11': { finding: 'F-W-010', note: 'a character style based on another is flattened onto Default Paragraph Font, and its dotted underline is saved as single' },
   'W-STY-12': { finding: 'F-W-011', note: 'a paragraph style\'s numbering (w:numPr in the style) is moved onto each paragraph as direct numbering and removed from the style' },
   'W-BRK-01': { finding: 'F-W-015', note: 'a page break inside a paragraph is saved as two paragraphs, the second with pageBreakBefore (looks the same; the w:br is gone)' },
   'W-FLD-22': { finding: 'F-W-016', note: 'a table of figures field (TOC \\c "Figure") in the middle of a paragraph is moved into a paragraph of its own, styled Table of Figures, and marked dirty' },
