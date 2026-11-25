@@ -1,6 +1,6 @@
 # Change files
 
-Every pull request that changes the app adds one small file here saying what it changed, in plain words. When a version is published, these files become its release notes, the app's **Help ▸ What's New**, and its section of [CHANGELOG.md](../CHANGELOG.md) (made by `scripts/changelog.mjs`; never edit CHANGELOG.md by hand).
+Every pull request that changes the app adds one small file here saying what it changed, in plain words. When a version is published, these files become its release notes, the app's **Help ▸ What's New**, and its section of [CHANGELOG.md](../CHANGELOG.md) (made on `main` by `scripts/changelog.mjs` each time a version is published; a pull request never changes CHANGELOG.md).
 
 ## How to write one
 
@@ -33,6 +33,6 @@ Fixed: Canvas: undoing a pasted ChemDraw object removes it in one step. Fixes #1
 - American spelling, menu paths with ▸, no names of people.
 - The pull request's number is added by itself.
 
-A pull request that only changes tests, checks, workflows or documentation doesn't need one (an `Under the hood` line is still welcome). One that changes `src/`, `src-tauri/`, `index.html` or `public/` but that nobody will notice can carry the `no changelog` label instead. The **Changelog** check on each pull request checks all of this.
+A pull request that only changes tests, checks, workflows or documentation doesn't need one (an `Under the hood` line is still welcome). One that changes `src/`, `src-tauri/`, `index.html`, `public/` or `opsin-js/` but that nobody will notice can carry the `no changelog` label instead. The **Changelog** check on each pull request checks all of this.
 
 Change files are never deleted once merged: CHANGELOG.md is made from them. `history/` holds the changelog from before change files (written from every earlier pull request) and the milestones list at the top of CHANGELOG.md; both can be edited by hand.

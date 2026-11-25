@@ -19,7 +19,7 @@ concurrency:
 jobs:
   changelog:
     # staging into main carries change files already checked on their own pull requests
-    if: github.event.pull_request.base.ref != 'main'
+    if: github.head_ref != 'staging'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -32,12 +32,14 @@ jobs:
       # the script uses only Node's own modules, so no npm ci
       - name: A change file for a change people will notice
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-        run: node scripts/changelog.mjs check "$BASE" "$LABELS"
+        # HEAD is the pull request merged into its base, so its first parent is the base as merged
+        run: node scripts/changelog.mjs check HEAD^1 "$LABELS"
+      # the release job's two steps, tried here: the notes, and CHANGELOG.md made on main and
+      # committed, without the push
       - name: Try the release notes and CHANGELOG.md
         run: |
-          node scripts/changelog.mjs notes "$RUNNER_TEMP/notes.md"
+          node scripts/changelog.mjs notes "$RUNNER_TEMP/notes.md" 0.0.0
           cat "$RUNNER_TEMP/notes.md"
-          node scripts/changelog.mjs write 0.0.0
-          git diff --stat -- CHANGELOG.md
+          node scripts/changelog.mjs push 0.0.0 --dry-run
+          git show --stat HEAD | head -5

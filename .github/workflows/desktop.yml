@@ -33,7 +33,6 @@ on:
       - scripts/sign-windows.mjs
       - scripts/release.mjs
       - scripts/retry.mjs
-      - scripts/changelog.mjs
 
 # a new push to a pull request stops the try-out builds still going for its previous commit
 concurrency:
@@ -245,7 +244,7 @@ jobs:
         run: |
           # what changed: the change files (changes/) added since the last release, never the merge
           # commit's message, which for staging into main is often an empty pull request template
-          node scripts/changelog.mjs notes "$RUNNER_TEMP/notes.txt"
+          node scripts/changelog.mjs notes "$RUNNER_TEMP/notes.txt" "$VERSION"
           node scripts/release.mjs manifest "$VERSION" "$RUNNER_TEMP/notes.txt" out
           # the signatures are inside latest.json; the release lists the installers
           # not marked "latest" yet: builds can finish out of order, and an older one must not

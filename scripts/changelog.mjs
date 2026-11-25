@@ -3,9 +3,9 @@
 //
 //   node scripts/changelog.mjs check <base ref> [labels]
 //     On a pull request (.github/workflows/changelog.yml): fails when the pull request changes what
-//     people use (src/, src-tauri/, index.html, public/) without adding a change file, unless it has
+//     people use (src/, src-tauri/, index.html, public/, opsin-js/) without adding a change file, unless it has
 //     the "no changelog" label; and checks every change file it adds or edits is written right.
-//   node scripts/changelog.mjs notes <out file>
+//   node scripts/changelog.mjs notes <out file> [<version>]
 //     For the release of a build of main (.github/workflows/desktop.yml): the change files added
 //     since the last published version, as the release's notes (Markdown). The app's Help ▸ What's
 //     New and update notice show these notes. A version with no change files lists the titles of
@@ -14,7 +14,7 @@
 //     Makes CHANGELOG.md again: every change file under the version it was first published in
 //     (one not published yet goes under <version>, the version being published now, or under
 //     "Unreleased" when no version is given), then the history from before change files (changes/history/), with the milestones at the top.
-//   node scripts/changelog.mjs push <version>
+//   node scripts/changelog.mjs push <version> [--dry-run]
 //     After a release: makes CHANGELOG.md on the newest main, with the new version's tag fetched,
 //     and commits and pushes it to main if it changed (run through scripts/retry.mjs).
 //
@@ -31,7 +31,7 @@ export const TYPES = ['Added', 'Changed', 'Fixed', 'Removed', 'Under the hood'];
 /** Change files are every .md file in changes/ but its README; changes/history/ holds the rest. */
 const NOT_ENTRIES = new Set(['README.md']);
 /** What people use: a pull request that changes any of these adds a change file. */
-const USER_FACING = /^(src\/|src-tauri\/(src|icons|capabilities)\/|src-tauri\/tauri\.conf\.json$|index\.html$|public\/|opsin-js\/)/;
+const USER_FACING = /^(src\/|src-tauri\/|index\.html$|public\/|opsin-js\/)/;
 export const SKIP_LABEL = 'no changelog';
 const MAX_TEXT = 400;
 
@@ -119,7 +119,9 @@ export function renderChangelog({ versions, history = '', milestones = '' }) {
   const prs = new Set();
   for (const v of versions) for (const e of v.entries) if (e.pr) prs.add(e.pr);
   for (const m of history.matchAll(/\/pull\/(\d+)\)/g)) prs.add(+m[1]);
-  const releases = versions.length + (history.match(/^## \d/gm) ?? []).length;
+  const strip = (t) => t.replace(/<!--[\s\S]*?-->\s*/g, '').trim();
+  history = strip(history); milestones = strip(milestones);
+  const releases = versions.filter((v) => v.version !== 'Unreleased').length + (history.match(/^## \d/gm) ?? []).length;
   const out = [
     '# Changelog',
     '',
@@ -150,7 +152,7 @@ export const isRollUp = (subject) => /^(Staging|Checkpoint|Final checkpoint|Merg
  * When a roll-up was squashed into main, the pull request that wrote the file is looked up in the
  * roll-up's own commits (GitHub keeps refs/pull/<n>/head after the branch is deleted).
  */
-function addedMap(rev = 'HEAD') {
+function addedMap(rev = 'HEAD', wanted = null) {
   const map = new Map();
   const out = git('log', rev, '--no-renames', '--diff-filter=A', '--name-only', '--format=%x00%H%x09%s', '--', DIR);
   for (const block of out.split('\0').filter((b) => b.trim())) {
@@ -160,13 +162,20 @@ function addedMap(rev = 'HEAD') {
   }
   const rollUps = new Map();
   for (const [p, a] of map) {
-    if (!isRollUp(a.subject) || !a.pr) continue;
+    if (!isRollUp(a.subject) || !a.pr || (wanted && !wanted.has(p))) continue;
     if (!rollUps.has(a.pr)) {
       let inner = new Map();
-      try {
-        git('fetch', '-q', 'origin', `+refs/pull/${a.pr}/head:refs/changelog/pr-${a.pr}`);
-        inner = addedMap(`refs/changelog/pr-${a.pr}`);
-      } catch { /* offline or no such ref: the file just has no pull request number */ }
+      // tried three times; if GitHub still can't be reached the entry just has no pull request
+      // number (said in the log), rather than holding up a release
+      for (let i = 0; i < 3 && !inner.size; i++) {
+        try {
+          git('fetch', '-q', 'origin', `+refs/pull/${a.pr}/head:refs/changelog/pr-${a.pr}`);
+          inner = addedMap(`refs/changelog/pr-${a.pr}`);
+        } catch (e) {
+          if (i === 2) console.warn(`Could not read pull request #${a.pr}'s commits, so its change files have no pull request number: ${e.message}`);
+          else execFileSync('sleep', [String(5 * (i + 1))]);
+        }
+      }
       rollUps.set(a.pr, inner);
     }
     const inner = rollUps.get(a.pr).get(p);
@@ -182,15 +191,17 @@ function readEntries(path) {
 }
 
 /** The newest release tag that is part of HEAD's history: the version before this one. */
-function previousTag() {
-  return sortTags(lines(git('tag', '--merged', 'HEAD', '--list', 'v*'))).pop();
+function previousTag(version) {
+  const here = new Set(lines(git('tag', '--points-at', 'HEAD', '--list', 'v*')));
+  // a re-run after a release was made and removed leaves this version's tag on HEAD: skip it
+  return sortTags(lines(git('tag', '--merged', 'HEAD', '--list', 'v*'))).filter((t) => t !== `v${version}` && !here.has(t)).pop();
 }
 
-function notes() {
-  const prev = previousTag();
+function notes(version) {
+  const prev = previousTag(version);
   const range = prev ? `${prev}..HEAD` : 'HEAD';
   const added = prev ? changeFiles(lines(git('diff', '--no-renames', '--name-only', '--diff-filter=A', prev, 'HEAD', '--', DIR))) : changeFiles(lines(git('ls-files', DIR)));
-  const by = added.length ? addedMap() : new Map();
+  const by = added.length ? addedMap('HEAD', new Set(added)) : new Map();
   const entries = [];
   for (const f of added.sort()) {
     if (!existsSync(f)) continue;
@@ -202,12 +213,17 @@ function notes() {
   return titles.length ? titles.map((t) => `- ${t}`).join('\n') : 'Small changes; see the commits for this version.';
 }
 
-/** Commit -> the first release tag that holds it, walking the tags oldest first (one rev-list each). */
+/**
+ * Change file -> the first release tag whose files hold it, walking the tags oldest first (one
+ * tree comparison each). By the files, not the commits, so a checkpoint squashed into main and
+ * one merged into it both put a file under the version that first shipped it.
+ */
 function firstTags(tags) {
   const first = new Map();
   let prev;
   for (const t of tags) {
-    for (const sha of lines(git('rev-list', t, ...(prev ? ['--not', prev] : [])))) if (!first.has(sha)) first.set(sha, t);
+    const found = prev ? lines(git('diff', '--no-renames', '--name-only', '--diff-filter=A', prev, t, '--', DIR)) : lines(git('ls-tree', '-r', '--name-only', t, '--', DIR));
+    for (const f of changeFiles(found)) if (!first.has(f)) first.set(f, t);
     prev = t;
   }
   return first;
@@ -220,7 +236,7 @@ function versions(headVersion) {
   const byVersion = new Map();
   for (const f of changeFiles(readdirSync(DIR).map((n) => `${DIR}/${n}`)).sort()) {
     const a = by.get(f);
-    const tag = a && first.get(a.sha);
+    const tag = first.get(f);
     const version = tag ? tag.slice(1) : headVersion;
     if (!byVersion.has(version)) byVersion.set(version, []);
     for (const e of readEntries(f)) byVersion.get(version).push({ pr: a?.pr, ...e });
@@ -252,6 +268,7 @@ function check(base, labels = '') {
   const touched = changeFiles(diff('AM'));
   const errors = [];
   for (const f of touched) errors.push(...parseChangeFile(readFileSync(f, 'utf8'), f).errors);
+  if (files.includes('CHANGELOG.md')) errors.push('CHANGELOG.md is made on main each time a version is published; change the files in changes/ instead.');
   const removed = changeFiles(diff('D'));
   if (removed.length) errors.push(`Change files are kept once merged (they make CHANGELOG.md); put these back: ${removed.join(', ')}`);
   const skip = labels.split(',').map((l) => l.trim().toLowerCase()).includes(SKIP_LABEL);
@@ -274,15 +291,14 @@ const BOT = ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+g
  * its change files under it), writes the file, commits it if it changed, and pushes. A push that
  * still fails exits non-zero, and scripts/retry.mjs runs it again.
  */
-function push(version) {
+function push(version, dry = false) {
   git('fetch', '-q', '--tags', '--force', 'origin', 'main');
   git('checkout', '-q', '-f', '--detach', 'FETCH_HEAD');
   write('Unreleased');
-  let changed = true;
-  try { execFileSync('git', ['diff', '--quiet', '--', 'CHANGELOG.md']); changed = false; } catch { /* exit 1: it changed */ }
-  if (!changed) { console.log('CHANGELOG.md is already up to date'); return; }
+  if (!git('status', '--porcelain', '--', 'CHANGELOG.md')) { console.log('CHANGELOG.md is already up to date'); return; }
   git('add', 'CHANGELOG.md');
   git(...BOT, 'commit', '-q', '-m', `Changelog for ${version}`);
+  if (dry) { console.log(`Would push CHANGELOG.md for ${version} (a try-out: nothing pushed)`); return; }
   git('push', 'origin', 'HEAD:main');
   console.log(`Pushed CHANGELOG.md for ${version}`);
 }
@@ -291,8 +307,8 @@ const run = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]
 if (run) {
   const [cmd, ...rest] = process.argv.slice(2);
   if (cmd === 'check') check(rest[0], rest[1]);
-  else if (cmd === 'notes') writeFileSync(rest[0], notes() + '\n');
+  else if (cmd === 'notes') writeFileSync(rest[0], notes(rest[1]) + '\n');
   else if (cmd === 'write') write(rest[0] || 'Unreleased');
-  else if (cmd === 'push') push(rest[0]);
-  else { console.error('usage: node scripts/changelog.mjs check <base> [labels] | notes <out> | write [<version>] | push <version>'); process.exit(2); }
+  else if (cmd === 'push') push(rest[0], rest[1] === '--dry-run');
+  else { console.error('usage: node scripts/changelog.mjs check <base> [labels] | notes <out> [<version>] | write [<version>] | push <version> [--dry-run]'); process.exit(2); }
 }
