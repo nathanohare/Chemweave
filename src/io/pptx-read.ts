@@ -42,7 +42,7 @@ import { layoutText, caretPos, ASCENT, PPT_SINGLE } from '../text/layout';
 import { Master, SlideSize, LayoutId, type TemplateArt, type ArtLayer, type KeptRel, type KeptXmlPart, type NotesKept, defaultMaster, textStyles, slideDrawingStyle, slideBackground, slideColours, hasLayout, newLayoutId, deckLayouts, type LayoutDef, type PlaceholderBox, type PicturePlaceholder, type ThemeColor, type SectionCount, type DeckSettings, type SlideHF, type DateFormat, showsNumber, showsFooter, showsDate } from '../deck/deck';
 import { backgroundColour, isPlain, sameBackground, type Background } from '../deck/background';
 import { readFill, readOneFill, type FillContext } from './pptx-background';
-import { TAG, PPT_NAME, PPT_ASCENT, MIME_EXT, arialMeasure, NS_A14, NS_M, swapBox, tableLookKey, savedTableLook, joinTagPieces, tagLooksCut } from './pptx-write';
+import { TAG, PPT_NAME, PPT_ASCENT, MIME_EXT, slideEmuOk, arialMeasure, NS_A14, NS_M, swapBox, tableLookKey, savedTableLook, joinTagPieces, tagLooksCut } from './pptx-write';
 import { ommlToTex, toOmml } from '../document/math';
 import { shapeMathPicture, shapeMathSize } from '../deck/equation';
 import { GEOS } from '../design/geo';
@@ -377,8 +377,9 @@ class Reader {
     if (sz) {
       this.size = { w: Math.round(fromEmu(sz.getAttribute('cx'))), h: Math.round(fromEmu(sz.getAttribute('cy'))) };
       // (and exactly, where that isn't a whole number of points: A4, B5...)
-      const cx = Number(sz.getAttribute('cx')), cy = Number(sz.getAttribute('cy'));
-      if (Number.isInteger(cx) && Number.isInteger(cy) && cx > 0 && cy > 0 && (cx !== this.size.w * 12700 || cy !== this.size.h * 12700)) this.size.emu = { cx, cy };
+      const whole = (v: string | null) => (v !== null && /^\d+$/.test(v) ? Number(v) : NaN);
+      const cx = whole(sz.getAttribute('cx')), cy = whole(sz.getAttribute('cy'));
+      if (slideEmuOk(cx) && slideEmuOk(cy) && (cx !== this.size.w * 12700 || cy !== this.size.h * 12700)) this.size.emu = { cx, cy };
       // the size's name in Page Setup (Letter, A4...), unless it is the one 10 × 7.5 in is written with anyway
       const type = sz.getAttribute('type');
       if (type && SLIDE_SIZE_TYPES.includes(type) && !(type === 'screen4x3' && this.size.w === 720 && this.size.h === 540)) this.size.type = type;

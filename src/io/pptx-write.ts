@@ -622,16 +622,25 @@ const nameAttrs = (name: string, hidden?: boolean): string => ` name="${xml(name
 export const xfrm = (r: Rect, extra = '') => `<a:xfrm${extra}><a:off x="${emu(r.x1)}" y="${emu(r.y1)}"/><a:ext cx="${Math.max(0, emu(r.x2 - r.x1))}" cy="${Math.max(0, emu(r.y2 - r.y1))}"/></a:xfrm>`;
 const GROUP = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>';
 
-/** The slide size in EMU: exactly as the file had it while it is still that size to the nearest point. */
-function sizeEmu(s: SlideSize, w: number, h: number): string {
+/** A slide size in EMU as PowerPoint has them (ECMA-376 Part 1 §19.2.1.39 ST_SlideSizeCoordinate: 1 to 56 in). */
+export const slideEmuOk = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 914400 && v <= 51206400;
+
+/**
+ * The slide size in EMU: exactly as the file had it while it is still that size to the nearest point.
+ * (What is on the slides is laid out on the size in points: for A4 the right edge is 0.1 pt off.)
+ */
+function keptEmu(s: SlideSize, w: number, h: number): { cx: number; cy: number } | null {
   const e = s.emu;
-  const kept = e && Number.isInteger(e.cx) && Number.isInteger(e.cy) && e.cx > 0 && e.cy > 0 && Math.round(e.cx / 12700) === w && Math.round(e.cy / 12700) === h;
-  return kept ? `cx="${e.cx}" cy="${e.cy}"` : `cx="${emu(w)}" cy="${emu(h)}"`;
+  return e && slideEmuOk(e.cx) && slideEmuOk(e.cy) && Math.round(e.cx / 12700) === w && Math.round(e.cy / 12700) === h ? e : null;
+}
+function sizeEmu(s: SlideSize, w: number, h: number): string {
+  const e = keptEmu(s, w, h);
+  return e ? `cx="${e.cx}" cy="${e.cy}"` : `cx="${emu(w)}" cy="${emu(h)}"`;
 }
 
-/** The slide size's type attribute (ECMA-376 Part 1 §19.7.18): the file's own (Letter, A4...), else 4:3's for 10 × 7.5 in. */
+/** The slide size's type attribute (ECMA-376 Part 1 §19.7.18): the file's own (Letter, A4...), else 4:3's for exactly 10 × 7.5 in. */
 function sizeType(s: SlideSize): string {
-  const type = s.type && SLIDE_SIZE_TYPES.includes(s.type) ? s.type : s.w === 720 && s.h === 540 ? 'screen4x3' : '';
+  const type = s.type && SLIDE_SIZE_TYPES.includes(s.type) ? s.type : s.w === 720 && s.h === 540 && !keptEmu(s, s.w, s.h) ? 'screen4x3' : '';
   return type ? ` type="${type}"` : '';
 }
 

@@ -37,4 +37,25 @@ describe('the slide size', () => {
     const whole = readPptx(zipSync(await saved({ w: 960, h: 540 })));
     expect(whole.size.emu).toBeUndefined();
   });
+
+  const readSize = async (sz: string) => {
+    const p = await saved();
+    return readPptx(zipSync({ ...p, [P]: new Uint8Array(strToU8(strFromU8(p[P]).replace(/<p:sldSz [^>]*\/>/, sz))) })).size;
+  };
+
+  it('keeps one side exact, without taking it for 4:3', async () => {
+    const s = await readSize('<p:sldSz cx="9144100" cy="6858000"/>');
+    expect(s).toMatchObject({ w: 720, h: 540, emu: { cx: 9144100, cy: 6858000 } });
+    expect(sldSz(strFromU8((await saved(s))[P]))).toBe('<p:sldSz cx="9144100" cy="6858000"/>');
+    // (a stale one, with one side changed here: written from points)
+    expect(sldSz(strFromU8((await saved({ ...s, h: 600 }))[P]))).toContain(`cx="${720 * 12700}" cy="${600 * 12700}"`);
+  });
+
+  it("isn't kept when it isn't a plain size PowerPoint has", async () => {
+    for (const bad of ['<p:sldSz cx="0x9144100" cy="6858000"/>', '<p:sldSz cx="10692000.5" cy="7560000"/>', '<p:sldSz cx="99999999999" cy="7560000"/>', '<p:sldSz cx="10692000"/>']) {
+      expect((await readSize(bad)).emu).toBeUndefined();
+    }
+    // (nor written, when what it has isn't one)
+    expect(sldSz(strFromU8((await saved({ w: 842, h: 595, emu: { cx: 10692000.5, cy: 7560000 } } as never))[P]))).toContain(`cx="${842 * 12700}"`);
+  });
 });
