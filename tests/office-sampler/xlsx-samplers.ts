@@ -15,7 +15,6 @@ export const XLSX_SAMPLERS: Sampler[] = [xlsxNumbers, xlsxDates1904, xlsxCells, 
 const CR = 'a carriage return in a cell\'s text is written as a raw CR ("line one\\r\\nline two") instead of _x000D_, so XML line-end handling reads it back as "line one\\nline two": the CR is gone';
 
 export const XLSX_FINDINGS: Record<string, Finding> = {
-  'xlsx-data.xlsx:integrity': { scope: /sortCondition@dxfId=/, finding: 'F-X-010', note: 'the saved workbook keeps a sort by cell color (sortState sortCondition dxfId="4", sheet "X-FLT-16 Sort color") but writes no dxfs (<dxfs count="0">), so the sort points at a format that isn\'t there and Excel refuses to open the whole file' },
   'X-RTX-15': { finding: 'F-X-002', note: CR },
   'xlsx-cells.xlsx:second-save': { scope: /^xl\/sharedStrings\.xml:/, finding: 'F-X-002', note: `xl/sharedStrings.xml: ${CR}; the second save writes "line one\\nline two"` },
   'X-LAY-18': { finding: 'F-X-003', note: 'the collapsed summary column N has no <col> in the save (L:M are written hidden with outlineLevel="1", N not at all), so its collapsed="1" is gone' },
