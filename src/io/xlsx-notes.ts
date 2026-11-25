@@ -11,7 +11,7 @@
 // Data validation rules go in the sheet's dataValidations; Excel's newer copy in an extension
 // (x14, used for lists on other sheets by Excel 2010) is read too.
 
-import { kid, kids, xml } from './ooxml';
+import { kid, kids, xml, xmlAttr } from './ooxml';
 import type { Sheet } from '../sheet/workbook';
 import type { CellNote } from '../sheet/notes';
 import { noteText } from '../sheet/notes';
@@ -291,10 +291,10 @@ export function validationsXml(list: Validation[], fn: (f: string) => string, lo
       v.kind === 'list' && v.noDropDown ? 'showDropDown="1"' : '',
       v.hidePrompt ? '' : 'showInputMessage="1"',
       v.noAlert ? '' : 'showErrorMessage="1"',
-      v.alertTitle ? `errorTitle="${xml(v.alertTitle)}"` : '',
-      v.alert ? `error="${xml(v.alert)}"` : '',
-      v.promptTitle ? `promptTitle="${xml(v.promptTitle)}"` : '',
-      v.prompt ? `prompt="${xml(v.prompt)}"` : '',
+      v.alertTitle ? `errorTitle="${xmlAttr(v.alertTitle)}"` : '',
+      v.alert ? `error="${xmlAttr(v.alert)}"` : '',
+      v.promptTitle ? `promptTitle="${xmlAttr(v.promptTitle)}"` : '',
+      v.prompt ? `prompt="${xmlAttr(v.prompt)}"` : '',
       `sqref="${v.ranges.map(rangeName).join(' ')}"`,
     ].filter(Boolean).join(' ');
     rules.push(`<dataValidation ${attrs}>${f1 !== null ? `<formula1>${xml(f1)}</formula1>` : ''}${f2 !== null ? `<formula2>${xml(f2)}</formula2>` : ''}</dataValidation>`);

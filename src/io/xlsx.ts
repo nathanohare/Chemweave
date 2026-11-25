@@ -821,7 +821,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
         } else {
           wrote = excelCellText(v as string);
           body = f
-            ? `<c r="${ref}"${sAttr} t="str">${f}<v>${xml(wrote)}</v></c>`
+            ? `<c r="${ref}"${sAttr} t="str">${f}<v>${xml(excelEscape(wrote))}</v></c>`
             : `<c r="${ref}"${sAttr} t="s"><v>${strings.index(wrote, chem, wrote === v ? runsOf(cell) : undefined, style)}</v></c>`;
         }
         if (entry) entry.wrote = wrote;
@@ -1783,7 +1783,8 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
             value = item.text;
             chem = item.chem;
             fileRuns = item.runs;
-          } else if (t === 'str' || t === 'e') value = v ?? '';
+          } else if (t === 'str') value = excelUnescape(v ?? '');
+          else if (t === 'e') value = v ?? '';
           else if (t === 'b') value = isOn(v);
           else if (t === 'd' && v) value = Date.parse(v) / 86400000 + 25569;
           else if (v !== null && v !== '') value = Number(v);

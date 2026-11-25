@@ -548,3 +548,25 @@ describe('a carriage return in a cell\'s text (F-X-002)', () => {
     }
   });
 });
+
+describe('a carriage return in a cell\'s text: the review\'s cases', () => {
+  const twice = async (bytes: Uint8Array) => {
+    let { book } = await readXlsx(bytes);
+    for (let i = 0; i < 2; i++) ({ book } = await readXlsx(await writeXlsx(book, pictures)));
+    return book;
+  };
+  it('keeps a lone carriage return, one at the start or end, and a typed "_x000D_" as typed', async () => {
+    const cell = (r: number, t: string) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t xml:space="preserve">${t}</t></is></c></row>`;
+    const book = await twice(excelBook([['Text', `<sheetData>${cell(1, 'a_x000D_b')}${cell(2, '_x000D_start')}${cell(3, 'end_x000D_')}${cell(4, 'typed _x005F_x000D_')}</sheetData>`]]));
+    expect([0, 1, 2, 3].map((r) => book.sheet.effectiveInput(r, 0))).toEqual(['a\rb', '\rstart', 'end\r', 'typed _x000D_']);
+  });
+  it('keeps one in a formula\'s text result', async () => {
+    // a formula's cached text value (t="str") is ST_Xstring too: B1 takes A1's text
+    const bytes = excelBook([['Text', '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a_x000D_b</t></is></c><c r="B1" t="str"><f>A1</f><v>a_x000D_b</v></c></row></sheetData>']]);
+    const { book } = await readXlsx(bytes);
+    expect(book.sheet.shownText(0, 1)).toBe('a\rb');
+    const saved = await writeXlsx(book, pictures);
+    expect(part(saved, 'xl/worksheets/sheet1.xml')).toContain('<f>A1</f><v>a_x000D_b</v>');
+    expect((await readXlsx(saved)).book.sheet.shownText(0, 1)).toBe('a\rb');
+  });
+});

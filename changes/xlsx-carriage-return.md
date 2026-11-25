@@ -1,1 +1,1 @@
-Fixed: Spreadsheet: a carriage return in an Excel cell's text (as Windows line breaks are written) is kept when the file is saved, instead of being lost.
+Fixed: Spreadsheet: a carriage return in an Excel cell's text or a formula's text result (as Windows line breaks are written) stays a carriage return when the file is saved, and a line break in a data validation message is kept.
