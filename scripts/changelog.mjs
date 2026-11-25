@@ -268,9 +268,12 @@ function check(base, labels = '') {
   const touched = changeFiles(diff('AM'));
   const errors = [];
   for (const f of touched) errors.push(...parseChangeFile(readFileSync(f, 'utf8'), f).errors);
-  if (files.includes('CHANGELOG.md')) errors.push('CHANGELOG.md is made on main each time a version is published; change the files in changes/ instead.');
-  const removed = changeFiles(diff('D'));
-  if (removed.length) errors.push(`Change files are kept once merged (they make CHANGELOG.md); put these back: ${removed.join(', ')}`);
+  if (diff('AM').includes('CHANGELOG.md')) errors.push('CHANGELOG.md is made on main each time a version is published; change the files in changes/ instead.');
+  // a change file that a release already holds stays (CHANGELOG.md is made from it); one not
+  // released yet can still be taken out
+  const released = (f) => lines(git('tag', '--list', 'v*')).some((t) => { try { git('cat-file', '-e', `${t}:${f}`); return true; } catch { return false; } });
+  const removed = changeFiles(diff('D')).filter(released);
+  if (removed.length) errors.push(`Change files are kept once released (they make CHANGELOG.md); put these back: ${removed.join(', ')}`);
   const skip = labels.split(',').map((l) => l.trim().toLowerCase()).includes(SKIP_LABEL);
   if (needsEntry(files) && !added.length && !skip) {
     errors.push(
