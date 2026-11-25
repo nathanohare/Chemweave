@@ -21,12 +21,6 @@ export const PPTX_FINDINGS: Record<string, Finding> = {
   // shapes
   'pptx-shapes.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-005', note: TAGS },
   'P-GEO-68': { finding: 'F-P-007', note: 'a roundRect with <a:gd name="adj" fmla="val 30000"/> is saved with an empty <a:avLst/>: the corner size goes back to the default 16667' },
-  'P-CXN-04': { finding: 'F-P-008', note: 'every line or connector with an arrowhead is saved as an arrow named "Straight Arrow Connector N": its cNvPr name (with the item id) is lost, so the item cannot be found again (its tailEnd triangle is written)' },
-  'P-CXN-05': { finding: 'F-P-008', note: 'arrow connector saved as "Straight Arrow Connector N" (name lost; see F-P-008)' },
-  'P-CXN-06': { finding: 'F-P-008', note: 'arrow connector saved as "Straight Arrow Connector N" (name lost); the head-end-only arrowhead is written as a tailEnd with the ends swapped' },
-  'P-CXN-07': { finding: 'F-P-008', note: 'arrow connector saved as "Straight Arrow Connector N" (name lost; see F-P-008)' },
-  'P-CXN-08': { finding: 'F-P-008', note: 'arrow connector saved as "Straight Arrow Connector N" (name lost); tailEnd type="arrow" is written' },
-  'P-CXN-17': { finding: 'F-P-008', note: 'a flipped arrow connector is saved as "Straight Arrow Connector N" (name lost; see F-P-008)' },
   'P-GRP-02': { finding: 'F-P-009', note: 'a group\'s own name ("P-GRP-02 named group") is saved as "Group N"; every grpSp is renamed' },
   // fills, lines, effects
   'pptx-format.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-010', note: TAGS },

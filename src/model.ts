@@ -849,6 +849,8 @@ export interface Attachment {
 export type ArrowHead = 'none' | 'full' | 'halfLeft' | 'halfRight';
 
 export interface Arrow {
+  /** Slides: its name in PowerPoint's Selection Pane, where it was given one (not PowerPoint's own "Straight Arrow Connector 3"). */
+  name?: string;
   /** Auto-Animate Steps: things with the same piece number move as one piece in the slide show (and are one picture in PowerPoint). */
   piece?: number;
   /** Part of a ChemDraw object from PowerPoint: saved back to PowerPoint as that object, which opens in ChemDraw (OleMark). */

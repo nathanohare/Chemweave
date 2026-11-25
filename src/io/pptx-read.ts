@@ -1205,6 +1205,7 @@ class Reader {
     const hidden = c.getAttribute('hidden') === '1' || c.getAttribute('hidden') === 'true';
     const shapes = [...doc.shapes.values()].filter((x) => x.id >= mark);
     const caps = [...doc.captions.values()].filter((x) => x.id >= mark);
+    const arrows = [...doc.arrows.values()].filter((x) => x.id >= mark);
     if (hidden) {
       for (const x of shapes) doc.updateShape(x.id, { hidden: true });
       for (const x of caps) doc.updateCaption(x.id, { hidden: true });
@@ -1212,6 +1213,8 @@ class Reader {
     if (!name || el.localName === 'grpSp' || PPT_NAME.test(name)) return;
     if (shapes.length === 1) doc.updateShape(shapes[0].id, { name });
     else if (!shapes.length && caps.length === 1) doc.updateCaption(caps[0].id, { name });
+    // (a line or connector: an arrow here)
+    else if (!shapes.length && !caps.length && arrows.length === 1) doc.updateArrow(arrows[0].id, { name });
   }
 
   /**

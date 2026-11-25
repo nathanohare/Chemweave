@@ -262,6 +262,7 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     dir: { v: 'vert', with: { rot: 90 } },
   },
   Arrow: {
+    name: { v: 'Reaction arrow' },
     piece: { v: 2 },
     ole: { v: { id: 1, prog: 'ChemDraw.Document.6.0' }, label: true },
     ppt: { v: true },
