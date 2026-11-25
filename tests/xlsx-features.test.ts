@@ -429,5 +429,26 @@ describe('a sort by color (F-X-010)', () => {
     const table = Object.keys(unzipSync(saved)).find((n) => /^xl\/tables\/table\d+\.xml$/.test(n))!;
     expect(part(saved, table)).toContain('<autoFilter');
     expect(part(saved, table)).not.toContain('<sortState');
+describe('each table\'s filter buttons (F-X-007)', () => {
+  // ECMA-376 Part 1, §18.5.1.2 table: a table's autoFilter (§18.3.1.2) is its header row's filter
+  // buttons; a table part without one has none (Table Design ▸ Filter Button off)
+  const head = (r: number) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t>No</t></is></c><c r="B${r}" t="inlineStr"><is><t>Value</t></is></c></row>`;
+  const row = (r: number) => `<row r="${r}"><c r="A${r}"><v>${r}</v></c><c r="B${r}"><v>${r * 2}</v></c></row>`;
+  const table = (n: number, ref: string, af: string) => ({
+    path: `xl/tables/table${n}.xml`, from: 'xl/worksheets/sheet1.xml', rel: `${R}/table`, target: `../tables/table${n}.xml`, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+    xml: `<table xmlns="${MAIN}" id="${n}" name="Table${n}" displayName="Table${n}" ref="${ref}" totalsRowShown="0">${af}` +
+      '<tableColumns count="2"><tableColumn id="1" name="No"/><tableColumn id="2" name="Value"/></tableColumns><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>',
+  });
+  const file = () => excelBook([['Tables', `<sheetData>${head(1)}${row(2)}${row(3)}${head(5)}${row(6)}${row(7)}${head(9)}${row(10)}${row(11)}</sheetData>`]], {
+    parts: [table(1, 'A1:B3', '<autoFilter ref="A1:B3"/>'), table(2, 'A5:B7', '<autoFilter ref="A5:B7"/>'), table(3, 'A9:B11', '')],
+  });
+
+  it('keeps every table\'s filter buttons, and a table without them without', async () => {
+    const saved = await writeXlsx((await readXlsx(file())).book, pictures);
+    const tables = Object.keys(unzipSync(saved)).filter((n) => /^xl\/tables\/table\d+\.xml$/.test(n)).map((n) => part(saved, n));
+    const af = (ref: string) => tables.find((t) => t.includes(`ref="${ref}"`))!;
+    expect(af('A1:B3')).toContain('<autoFilter ref="A1:B3"');
+    expect(af('A5:B7')).toContain('<autoFilter ref="A5:B7"/>');
+    expect(af('A9:B11')).not.toContain('<autoFilter');
   });
 });

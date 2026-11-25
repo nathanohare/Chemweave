@@ -945,6 +945,9 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
         const colsXml = Object.entries(s.filter!.conditions).filter(([col]) => Number(col) >= R.c1 && Number(col) <= R.c2)
           .map(([col, cond]) => filterColumnXml(Number(col) - R.c1, cond)).filter(Boolean).join('');
         af = `<autoFilter ref="${cellName(R.r1, R.c1)}:${cellName(dataEnd, R.c2)}">${colsXml}</autoFilter>`;
+      } else if (t.header && !t.noFilter) {
+        // every other table's filter buttons, filtering nothing (only one filter on a sheet is kept here)
+        af = `<autoFilter ref="${cellName(R.r1, R.c1)}:${cellName(dataEnd, R.c2)}"/>`;
       }
       const totals = t.totals
         ? Array.from({ length: R.c2 - R.c1 + 1 }, (_, i) => {
