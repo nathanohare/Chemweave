@@ -34,7 +34,7 @@ import { chemdrawProg, chemdrawObject, embeddedPart, OLE_REL, OLE_TYPE } from '.
 import { BULLETS, fitParas, listInfo, paraCount, samePara, schemeOf, splitParagraphs, type ListInfo } from '../text/paragraphs';
 import { BOX_PAD, COL_GAP, COMPOUND, compoundSeqs, END_FORMAT, FOOT_FORMAT, columnsOf, contentsPrint, OBJECT_CHAR, SHADOWS, charStylesOf, watermarkPlace, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, pruneObjects, EMPTY_FORM, styleOf, runStyleOf, type CharStyle, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type HeaderFooter, type HfBody, type HfKey, type NamedStyle, type PageBorder, type PageSetup, type TocLook, type Watermark } from '../document/document';
 import { ACS_LINE, GRID_LINE, bibHang, docCellAlign, shownSize } from '../document/doc-layout';
-import { sectionsOf, type Section } from '../document/sections';
+import { hasTitlePg, sectionsOf, type Section } from '../document/sections';
 import { bibliography, piecesText, type Reference } from '../document/references';
 import { preferredStyle } from '../document/cite-styles';
 import { bibInstr, newZoteroPrefs, splitPrefs, writeCite } from '../document/live-cites';
@@ -1748,7 +1748,7 @@ class DocxWriter {
     await add('header', 'default', true);
     await add('footer', 'default', true);
     // a first page of its own (Different First Page), or one without its number (the header and footer text stay)
-    const titlePg = !!hf.firstPage || (hf.numbers !== 'none' && !hf.onFirst);
+    const titlePg = hasTitlePg(hf);
     if (titlePg) { await add('header', 'first', !!hf.firstPage && hf.onFirst); await add('footer', 'first', !!hf.firstPage && hf.onFirst); }
     if (hf.oddEven) { await add('header', 'even', true); await add('footer', 'even', true); }
     // header references come before footer references
@@ -1767,7 +1767,7 @@ class DocxWriter {
     const start = sec.restart !== undefined && !(sec.index === 0 && Math.round(sec.restart) === 1) ? ` w:start="${Math.round(sec.restart)}"` : '';
     return `<w:sectPr>${refs.join('')}<w:pgSz w:w="${twips(pg.w)}" w:h="${twips(pg.h)}"${land ? ' w:orient="landscape"' : ''}/>` +
       `<w:pgMar w:top="${twips(pg.top)}" w:right="${twips(pg.right)}" w:bottom="${twips(pg.bottom)}" w:left="${twips(pg.left)}" w:header="${twips(pg.header)}" w:footer="${twips(pg.footer)}" w:gutter="0"/>` +
-      `${t.pageBorder ? pageBordersXml(t.pageBorder) : ''}${lines}${numFmt || start ? `<w:pgNumType${numFmt}${start}/>` : ''}${colsXml(pg)}${titlePg ? '<w:titlePg/>' : ''}<w:docGrid w:linePitch="360"/></w:sectPr>`;
+      `${sec.border ? pageBordersXml(sec.border) : ''}${lines}${numFmt || start ? `<w:pgNumType${numFmt}${start}/>` : ''}${colsXml(pg)}${titlePg ? '<w:titlePg/>' : ''}<w:docGrid w:linePitch="360"/></w:sectPr>`;
   }
 
   /** A header or footer part: its left, centre and right text on one line (with tab stops), and the page number. Null when empty. */

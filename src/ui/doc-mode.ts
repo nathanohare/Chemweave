@@ -5846,6 +5846,14 @@ export class DocumentMode {
     if (!f) return;
     const t = { ...f.t, ...patch };
     for (const k of ['watermark', 'pageColor', 'pageBorder'] as const) if (t[k] === undefined) delete t[k];
+    // a border round every page: the sections' own borders (from a Word file) give way to it
+    if ('pageBorder' in patch && t.paras.some((p) => p?.section?.pageBorder !== undefined)) {
+      t.paras = t.paras.map((p) => {
+        if (p?.section?.pageBorder === undefined) return p;
+        const { pageBorder: _b, ...section } = p.section;
+        return { ...p, section };
+      });
+    }
     f.ed.update(t, label);
   }
 

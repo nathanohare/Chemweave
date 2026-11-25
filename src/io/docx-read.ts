@@ -37,7 +37,9 @@ import {
   OBJECT_CHAR, COMPOUND, compoundSeqs, defaultCharStyles, defaultHeaderFooter, defaultPage, defaultStyles,
   COL_GAP, FLOAT_GAP, columnsOf, contentsPrint, lookExtent, usedObjects,
   type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type TocLook, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
+  samePageBorder,
 } from '../document/document';
+import { hasTitlePg, linkedHf } from '../document/sections';
 import { parseFieldInstr, type DocProps } from '../document/fields';
 import { shownSize } from '../document/doc-layout';
 import { coveringCell, layoutTable } from '../table';
@@ -384,6 +386,7 @@ class DocxReader {
     this.sects = [...sects.filter((e) => e !== last), ...(last ? [last] : [])];
     const first = this.sects[0] ?? null;
     this.readPage(first);
+    this.docBorder = this.pageBorderOf(first);
     const hf = this.readHeaderFooter(first).hf;
     this.lastHf = hf;
     this.blocks(kids(body));
@@ -1157,8 +1160,13 @@ class DocxReader {
     const next = at >= 0 ? this.sects[at + 1] : undefined;
     if (!next) return null;
     const out: SectionBreak = { kind: this.kindOf(next), page: this.pageOf(next) };
-    const { hf, linked } = this.readHeaderFooter(next, this.lastHf);
+    const prevHf = this.lastHf;
+    const { hf, linked, titlePg } = this.readHeaderFooter(next, prevHf);
     if (!linked) out.hf = hf;
+    else if (prevHf && titlePg !== undefined && titlePg !== hasTitlePg(prevHf)) out.titlePg = titlePg;
+    // each section has its own page border: kept where it isn't the document's (the first section's)
+    const border = this.pageBorderOf(next);
+    if (!samePageBorder(border, this.docBorder)) out.pageBorder = border;
     this.lastHf = hf;
     const start = Number(this.a(kid(next, 'pgNumType'), 'start'));
     if (this.a(kid(next, 'pgNumType'), 'start') !== null && Number.isFinite(start)) out.restart = Math.round(start);
@@ -3328,7 +3336,7 @@ class DocxReader {
    * footer of its own takes the one before's (Word's Link to Previous: `linked`); one with only
    * a header of its own takes the footer before, and the other way round.
    */
-  private readHeaderFooter(sect: Element | null, prev?: HeaderFooter): { hf: HeaderFooter; linked: boolean } {
+  private readHeaderFooter(sect: Element | null, prev?: HeaderFooter): { hf: HeaderFooter; linked: boolean; titlePg?: boolean } {
     const hf = defaultHeaderFooter();
     hf.numbers = 'none';
     const start = Number(this.a(kid(sect, 'pgNumType'), 'start'));
@@ -3337,7 +3345,7 @@ class DocxReader {
     const refEl = (kind: 'header' | 'footer', type: string) => kids(sect, `${kind}Reference`).find((e) => (this.a(e, 'type') ?? 'default') === type);
     const refOf = (kind: 'header' | 'footer', type: string) => this.relTarget(rAttr(refEl(kind, type), 'id'));
     const own = (kind: 'header' | 'footer') => !!refEl(kind, 'default');
-    if (prev && !own('header') && !own('footer')) return { hf: { ...prev, onFirst: prev.onFirst || !titlePg }, linked: true };
+    if (prev && !own('header') && !own('footer')) return { hf: linkedHf(prev, titlePg), linked: true, titlePg };
     let numberedFirst = false;
     const oddEven = this.evenAndOdd();
     const bodies: NonNullable<HeaderFooter['bodies']> = {};
@@ -3562,23 +3570,31 @@ class DocxReader {
     };
   }
 
+  /** The document's page border: the first section's (each later section's own is kept where it differs). */
+  private docBorder: PageBorder | null = null;
+
+  /** A section's page border (Design ▸ Page Borders), or null for none. */
+  private pageBorderOf(sect: Element | null): PageBorder | null {
+    const pb = kid(sect, 'pgBorders');
+    const side = pb && (kid(pb, 'top') ?? kid(pb, 'left') ?? kid(pb, 'bottom') ?? kid(pb, 'right'));
+    const val = this.a(side);
+    if (!side || !val || val === 'none' || val === 'nil') return null;
+    const style: PageBorder['style'] = /^thi(ck|n)Thi/.test(val) || val === 'thick' ? 'thick' : val === 'double' || val === 'triple' ? 'double' : /dot/i.test(val) && !/dash/i.test(val) ? 'dotted' : /dash/i.test(val) ? 'dashed' : 'single';
+    return {
+      style,
+      width: Math.max(0.25, Number(this.a(side, 'sz') ?? 4) / 8),
+      color: colourOf(this.a(side, 'color')) ?? '#000000',
+      from: this.a(pb, 'offsetFrom') === 'page' ? 'page' : 'text',
+      space: Math.max(0, Number(this.a(side, 'space') ?? 0) || 0),
+    };
+  }
+
   /** Design > Page Background: the page colour, the first section's page border and its header's text watermark. */
   private readPageLook(t: DocText, root: Element, sect: Element | null): void {
     const bg = colourOf(this.a(kid(root, 'background'), 'color'));
     if (bg && bg !== '#ffffff') t.pageColor = bg;
-    const pb = kid(sect, 'pgBorders');
-    const side = pb && (kid(pb, 'top') ?? kid(pb, 'left') ?? kid(pb, 'bottom') ?? kid(pb, 'right'));
-    const val = this.a(side);
-    if (side && val && val !== 'none' && val !== 'nil') {
-      const style: PageBorder['style'] = /^thi(ck|n)Thi/.test(val) || val === 'thick' ? 'thick' : val === 'double' || val === 'triple' ? 'double' : /dot/i.test(val) && !/dash/i.test(val) ? 'dotted' : /dash/i.test(val) ? 'dashed' : 'single';
-      t.pageBorder = {
-        style,
-        width: Math.max(0.25, Number(this.a(side, 'sz') ?? 4) / 8),
-        color: colourOf(this.a(side, 'color')) ?? '#000000',
-        from: this.a(pb, 'offsetFrom') === 'page' ? 'page' : 'text',
-        space: Math.max(0, Number(this.a(side, 'space') ?? 0) || 0),
-      };
-    }
+    const border = this.pageBorderOf(sect);
+    if (border) t.pageBorder = border;
     const head = this.relTarget(rAttr(kids(sect, 'headerReference').find((e) => (this.a(e, 'type') ?? 'default') === 'default'), 'id'));
     const hroot = head ? this.pkg.xml(head)?.documentElement : null;
     const shape = hroot ? Array.from(hroot.getElementsByTagNameNS('*', 'shape')).find((e) => /^PowerPlusWaterMarkObject/.test(e.getAttribute('id') ?? '')) : undefined;

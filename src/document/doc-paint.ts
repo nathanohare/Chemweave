@@ -105,7 +105,7 @@ export function drawPageLook(ctx: CanvasRenderingContext2D, t: DocText, p: PageB
     ctx.fillRect(p.x, p.top, p.w, p.h);
   }
   if (t.watermark?.text) drawWatermark(ctx, t.watermark, p, t.pageColor ?? '#ffffff');
-  if (t.pageBorder) drawPageBorder(ctx, t.pageBorder, p);
+  if (p.border) drawPageBorder(ctx, p.border, p);
 }
 
 function drawWatermark(ctx: CanvasRenderingContext2D, w: Watermark, p: PageBox, paper: string): void {
