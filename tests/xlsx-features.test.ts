@@ -570,3 +570,15 @@ describe('a carriage return in a cell\'s text: the review\'s cases', () => {
     expect((await readXlsx(saved)).book.sheet.shownText(0, 1)).toBe('a\rb');
   });
 });
+
+describe('a line break in a data validation message', () => {
+  it('is kept through a save, not read back as a space', async () => {
+    // ECMA-376 Part 1, §18.3.1.32 dataValidation@prompt: attribute text, a line feed written &#10;
+    const bytes = excelBook([['Checked', '<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><dataValidations count="1"><dataValidation type="whole" allowBlank="1" showInputMessage="1" promptTitle="Yield" prompt="Whole numbers&#10;from 0 to 100" sqref="A1"><formula1>0</formula1><formula2>100</formula2></dataValidation></dataValidations>']]);
+    const { book } = await readXlsx(bytes);
+    expect(book.sheet.validations[0]?.prompt).toBe('Whole numbers\nfrom 0 to 100');
+    const saved = await writeXlsx(book, pictures);
+    expect(part(saved, 'xl/worksheets/sheet1.xml')).toContain('prompt="Whole numbers&#10;from 0 to 100"');
+    expect((await readXlsx(saved)).book.sheet.validations[0]?.prompt).toBe('Whole numbers\nfrom 0 to 100');
+  });
+});
