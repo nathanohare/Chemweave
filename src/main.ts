@@ -159,7 +159,9 @@ import { CommandSearch, uniqueCommands, type CommandItem } from './ui/command-se
 import { fillTemplate, templateSize } from './design/templates';
 import { putDiagram, type DiagramData } from './design/diagrams';
 import type { EnergyData } from './design/energy';
-import type { PlateData, PlateKind } from './design/plates';
+import { newDSplitPlate, newPlate, type PlateData, type PlateKind } from './design/plates';
+import { fitWidth, toRich, withLevel } from './design/mo';
+import { editMoName } from './ui/mo-name-pop';
 import { refreshZooms, summaryParts, zoomGrid, zoomShape } from './deck/zoom';
 import { AUDIO_TYPES, VIDEO_TYPES, mediaMime, probeAudio, probeVideo, speakerPng, filmPng } from './deck/media';
 import { newChartBox, sizedBox } from './sheet/chart-box';
@@ -367,7 +369,6 @@ infoTipsOnOpen();
 const askNewman = later(() => import('./ui/newman-dialog'), 'askNewman');
 const newmanSettings = later(() => import('./ui/newman-settings'), 'newmanSettings');
 const askPlate = later(() => import('./ui/plate-dialog'), 'askPlate');
-const askMo = later(() => import('./ui/mo-dialog'), 'askMo');
 const askCrystal = later(() => import('./ui/crystal-dialog'), 'askCrystal');
 const askDiagram = later(() => import('./ui/diagram-dialog'), 'askDiagram');
 const editChart = later(() => import('./ui/chart-editor'), 'editChart');
@@ -1359,6 +1360,37 @@ function placeTable(t: TableData, label: string, top?: Vec): number {
   return id;
 }
 
+/** Text with subscript and superscript characters (PPh₃, d⁸, ML₃X) as runs with real subscripts and superscripts. */
+function scriptRuns(text: string): TextRun[] {
+  const SUBS = '₀₁₂₃₄₅₆₇₈₉', SUPS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+  const runs: TextRun[] = [];
+  for (const ch of text) {
+    const sb = SUBS.indexOf(ch), sp = SUPS.indexOf(ch) >= 0 ? SUPS.indexOf(ch) : '⁺⁻'.indexOf(ch) >= 0 ? -2 : -1;
+    const run: TextRun = sb >= 0 ? { text: String(sb), sub: true } : sp >= 0 ? { text: String(sp), sup: true } : sp === -2 ? { text: ch === '⁺' ? '+' : '−', sup: true } : { text: ch };
+    const last = runs[runs.length - 1];
+    if (last && !!last.sub === !!run.sub && !!last.sup === !!run.sup) last.text += run.text;
+    else runs.push(run);
+  }
+  return runs;
+}
+
+/**
+ * Electron Count's Insert as Table: the count's rows as an ordinary table beside the metal's
+ * structure (right of it, else below, clear of other objects: Editor.spotBesideStructure), its
+ * short rows (a note, the summary) across every column. A copy, not linked; one undo step.
+ */
+function electronCountTable(metal: number, rows: string[][]): void {
+  if (!doc.atoms.has(metal)) return;
+  const n = Math.max(...rows.map((r) => r.length));
+  const t = tableFromCells(rows.map((r) => r.length < n ? [{ runs: scriptRuns(r[0]), span: n }] : r.map((x) => ({ runs: scriptRuns(x) }))), textMeasure, doc.style.captionSize);
+  renderer.useStyle(doc);
+  const lay = renderer.tableLayout(t);
+  // beside the complex's drawn box (labels and all), where nothing else is, on the slide when there is one
+  const at = editor.spotBesideStructure(metal, lay.width, lay.height, placingPage());
+  if (!at) return;
+  placeTable(t, 'Insert Electron Count Table', { x: at.x + lay.width / 2, y: at.y });
+}
+
 /** The table style last picked for a slide table (PowerPoint's default, Medium Style 2 – Accent 1, at first). */
 let lastTableStyle = DEFAULT_SLIDE_TABLE_STYLE;
 
@@ -1617,12 +1649,49 @@ async function plateFigure(kind: PlateKind | null, id: number | null, file?: { n
   finishTyping();
   const now = id !== null ? doc.shapes.get(id)?.plate ?? null : null;
   const k = now?.kind ?? kind ?? 'tlc';
-  const got = k === 'mo' ? await askMo(now, doc.style, paintPlatePreview, (d, w) => editor.moRoom(d, w))
-    : k === 'crystal' ? await askCrystal(now, doc.style.bondLength, crystalOptions(file))
+  // an MO diagram goes straight onto the page and is changed there (its levels dragged and pressed) and in the Side Panel
+  if (k === 'mo') {
+    if (!now) editor.putPlateAt(newPlate('mo', doc.style.bondLength), pasteCentre(), undefined, deckNow()?.size);
+    return;
+  }
+  const got = k === 'crystal' ? await askCrystal(now, doc.style.bondLength, crystalOptions(file))
     : await askPlate(k, now, doc.style.bondLength, paintPlatePreview);
   if (got) editor.putPlateAt(got, pasteCentre(), now ? id! : undefined, deckNow()?.size);
 }
 editor.onPlate = (id) => void plateFigure(null, id);
+
+/** Type over a level's name or a column's title of MO diagram `frame`, where it stands. */
+function renameMo(frame: number, role: { level: number } | { title: number }): void {
+  const mo = doc.shapes.get(frame)?.plate?.mo, at = editor.moTextRect(frame, role);
+  if (!mo || !at) return;
+  const rich = toRich(mo);
+  const was = 'level' in role ? rich.levels[role.level]?.label : rich.titles[role.title];
+  if (was === undefined) return;
+  editMoName(at, was, 'level' in role ? 'Level name' : 'Title', (text) => {
+    const now = doc.shapes.get(frame)?.plate?.mo;
+    if (!now) return;
+    const r = toRich(now);
+    if ('level' in role) editor.setMo(frame, withLevel(r, role.level, { label: text }), 'Rename Level');
+    else editor.setMo(frame, { ...r, titles: r.titles.map((t, i) => (i === role.title ? text : t)) as [string, string, string] }, 'Edit Title');
+  });
+}
+editor.onMoText = (frame, role) => renameMo(frame, role);
+
+/** The right-click menu's rows for the place on a selected MO diagram it was opened at. */
+function moMenu(): MenuItem[] {
+  const c = editor.contextMo, mo = c && doc.shapes.get(c.frame)?.plate?.mo;
+  if (!c || !mo) return [];
+  const l = c.level !== null ? mo.levels[c.level] : undefined;
+  return [
+    { label: 'Add Level', run: () => { editor.addMoLevel(); }, title: 'An empty level here, in this column' },
+    { label: 'Edit Title', run: () => renameMo(c.frame, { title: c.column === 'left' ? 0 : c.column === 'middle' ? 1 : 2 }), title: 'The title under this column (also: double-click it)' },
+    ...(l ? [
+      { label: 'Rename Level', run: () => renameMo(c.frame, { level: c.level! }) },
+      { label: 'Delete Level', run: () => { editor.deleteMoLevel(); }, disabled: !!l.auto, title: l.auto ? (mo.dsplit ? 'This level comes from the geometry. Choose another Geometry in the Side Panel, or drag the level.' : mo.molecule ? 'This level comes from the molecule. Choose Custom for Molecule in the Side Panel to delete it.' : 'This level comes from the atom. Choose Custom for its side in the Side Panel to delete it.') : undefined },
+    ] : []),
+    null,
+  ];
+}
 editor.onOrbital = () => void editOrbital();
 
 /** What the crystal structure window needs from here: a CIF file to open, and the clipboard. */
@@ -10758,12 +10827,14 @@ const COMMANDS: Record<string, () => unknown> = {
   'energy-diagram': () => void energyDiagram(null),
   'tlc-plate': () => void plateFigure('tlc', null),
   'mo-diagram': () => void plateFigure('mo', null),
+  // (an MO diagram with MoSpec.dsplit: changed on the page and in the Side Panel, as an MO diagram is)
+  'd-orbital-splitting': () => editor.putPlateAt(newDSplitPlate(doc.style.bondLength), pasteCentre(), undefined, deckNow()?.size),
   'p-orbitals': () => void insertOrbital(true),
   orbital: () => void insertOrbital(false),
   gel: () => void plateFigure('gel', null),
   'crystal-structure': () => void plateFigure('crystal', null),
   'edit-orbital': () => void editOrbital(),
-  'edit-plate': () => { const id = editor.selectedPlate(); if (id === null) flash('Select a lab figure (TLC plate, gel, MO diagram or crystal structure) first.'); else void plateFigure(null, id); },
+  'edit-plate': () => { const id = editor.selectedPlate(); if (id === null) flash('Select a lab figure (TLC plate, gel, MO diagram or crystal structure) first.'); else if (doc.shapes.get(id)?.plate?.kind === 'mo') flash('An MO diagram is changed on the page: drag a level, click it to add an electron, and choose the atoms in the Side Panel.', 6000); else void plateFigure(null, id); },
   'insert-diagram': () => void smartDiagram(null),
   'edit-diagram': () => { const id = editor.selectedDiagram(); if (id === null) flash('Select a diagram first.'); else void smartDiagram(id); },
   'diagram-to-shapes': () => editor.ungroupSelectedDiagram() || flash('Select a diagram first.'),
@@ -14438,7 +14509,8 @@ function drawingMenu(): MenuItem[] {
     ...(editor.selectedEnergy() !== null ? [{ cmd: 'edit-energy' }, null] : []),
     ...(editor.selectedTorsion() !== null ? [{ cmd: 'edit-torsion' }, { cmd: 'copy-torsion-data' }, null] : []),
     ...(editor.selectedNewman() !== null ? [{ cmd: 'edit-newman' }, ...(doc.shapes.get(editor.selectedNewman()!)?.newman?.link ? [{ cmd: 'unlink-newman' }] : []), null] : []),
-    ...(editor.selectedPlate() !== null ? [{ cmd: 'edit-plate' }, null] : []),
+    ...moMenu(),
+    ...(editor.selectedPlate() !== null && doc.shapes.get(editor.selectedPlate()!)?.plate?.kind !== 'mo' ? [{ cmd: 'edit-plate' }, null] : []),
     ...(selectedOrbitals().length ? [{ cmd: 'edit-orbital' }, null] : []),
     ...(editor.selectedDiagram() !== null ? [{ cmd: 'edit-diagram' }, { cmd: 'diagram-to-shapes' }, null] : []),
     ...(s.captions.size ? [readAsMenu(), ...(texts && !atoms ? [{ cmd: 'expand-label', label: 'Expand Label' }, { cmd: 'expand-label-full', label: 'Expand Label Fully' }] : [])] : []),
@@ -14734,7 +14806,24 @@ stylePanel.diagram = {
 };
 stylePanel.plate = {
   edit: (id) => void plateFigure(null, id),
-  restyle: (id, patch) => { const d = doc.shapes.get(id)?.plate; if (d) editor.putPlateAt({ ...d, ...patch }, pasteCentre(), id); },
+  restyle: (id, patch) => {
+    const d = doc.shapes.get(id)?.plate;
+    if (!d) return;
+    // the level shown in the Side Panel stays only while it is still that level (new atoms fill in other levels)
+    const a = editor.moActive?.frame === id ? editor.moActive.level : null, was = a !== null ? d.mo?.levels[a] : undefined, now = a !== null ? (patch.mo ?? d.mo)?.levels[a] : undefined;
+    if (a !== null && (!was || !now || was.label !== now.label || was.column !== now.column)) editor.moActive = null;
+    editor.putPlateAt({ ...d, ...patch }, pasteCentre(), id);
+  },
+  moLevel: (id) => (editor.moActive?.frame === id && doc.shapes.get(id)?.plate?.mo?.levels[editor.moActive.level] ? editor.moActive.level : null),
+  moRename: (id, level) => renameMo(id, { level }),
+  moDelete: (id, level) => { editor.deleteMoLevel(id, level); },
+  moFit: (id) => {
+    const d = doc.shapes.get(id)?.plate;
+    if (!d?.mo) return;
+    // the gap the C–F example has at its usual size, about 1.7 bond lengths, between the molecule's column and each atom's levels
+    const w = fitWidth((x) => editor.moRoom(d, x), d.w, 1.7 * doc.style.bondLength);
+    if (w !== Math.round(d.w)) editor.putPlateAt({ ...d, w }, pasteCentre(), id);
+  },
 };
 stylePanel.orbital = {
   edit: () => void editOrbital(),
@@ -14746,6 +14835,7 @@ stylePanel.energy = {
 };
 stylePanel.ringFill = () => void command('fill-rings');
 stylePanel.focalPick = () => startFocalPick();
+stylePanel.electronTable = (metal, rows) => electronCountTable(metal, rows);
 editor.onFocalLost = () => flash('A focal point\'s atom, bond or ring was taken away, so that structure lines up by the middle of its box again.', 5000);
 // ---------------------------------------------------------------- Reaction roles by hand
 
@@ -15222,7 +15312,7 @@ const BOX_ITEMS: Record<string, readonly string[]> = {
   highlight: [...cmds(['highlight', 'remove-highlight', null, 'smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight', null, 'save-highlight-look']), 'w:looks'],
   custom: defaultToolboxes().custom,
   schemes: cmds(['smart-scheme', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
-  diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
+  diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'd-orbital-splitting', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
   tables: cmds(['insert-table', 'rgroup-table', 'stoichiometry-table', null, 'insert-chart', 'edit-chart', null, 'tlc-plate', 'gel', 'edit-plate']),
   biopolymers: ['cmd:sequence-to-structure', 'sep', 'pal:tpl-amino', 'pal:tpl-sugars', 'pal:tpl-nucleic'],
   perspective: ['tool:perspective', 'tool:perspective-3d', 'sep', ...cmds(['turn-3d', 'flatten-3d', 'model-3d', null, 'depth-shading', 'depth-shading-settings', null, 'ring-chair', 'ring-chair-flip', 'newman-projection', 'crystal-structure']), 'sep', 'pal:tpl-perspective', 'pal:tpl-conformers', 'pal:tpl-projections'],

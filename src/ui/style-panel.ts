@@ -3,7 +3,7 @@
 // bond (label, charge, atom number; order and style).
 // Anything the drawing tools set automatically can be changed here by hand.
 
-import { addInfo, setInfo } from './info-tip';
+import { addInfo, infoIcon, setInfo } from './info-tip';
 import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, isDataFrame, type PictureLook, type StepRoles, type ArrowTextSide, type ArrowKind, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
 import { fullStyle, tidyStyle } from '../render/highlight';
 import type { HighlightLookPreset } from './highlight-looks';
@@ -18,7 +18,8 @@ import { setStereoShown, setStereoText } from '../chem/stereo';
 import { arialWidth } from '../text-metrics';
 import { Selection } from '../editor/editor';
 import { freeformPoints } from '../design/geo';
-import { electronLook, setElectrons } from '../design/mo';
+import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, MO_MOLECULES, MO_TWO_ATOMS, moCounts, moMolecule, moParts, moPeriod, moPlain, parseMarkup, moSides, setElectrons, setMolecule, setSides, sources, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
+import { D_GEOMETRIES, deltaMarkup, dGeometry, dReadout, ionD, lfseMarkup, resetDSplitLevels, setDSplit, spinMatters, splitLevels, type DGeometry, type DSplit } from '../design/dsplit';
 import { ORBITAL_KIND_NAMES, ORBITAL_LOOK_NAMES, orbitalsAmong, readOrbital, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from '../chem/orbitals';
 import { isSmoothPath, reshapeFreeform } from '../design/freeform';
 import { DEG, normDegrees, mul, type Vec } from '../geom';
@@ -48,6 +49,9 @@ import { straightenAt } from '../chem/chemgeom';
 import type { EnergyData } from '../design/energy';
 import { TLC_LOOKS, GEL_LOOKS, LOCK_SPOTS_INFO, type PlateData } from '../design/plates';
 import { DIAGRAM_COLOURS, DIAGRAM_LAYOUTS, type DiagramData } from '../design/diagrams';
+import { LIGAND_TYPES, countRows, countSummary, countsDiffer, ligandText, roman, selectedComplex, signed, sup, typeKey, typeText, type MetalCount } from '../chem/electrons';
+import { ECOUNT_RANGE } from '../chem/ecount-settings';
+import type { ElectronCountSettings } from '../model';
 
 /** What the table controls need from the editor. */
 export interface TableHooks {
@@ -161,7 +165,15 @@ export class StylePanel {
   reaction: ReactionHooks | null = null;
   /** Energy diagrams (set up by the app): open the window, or redraw with some settings changed. */
   energy: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<EnergyData>): void } | null = null;
-  plate: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<PlateData>): void } | null = null;
+  plate: {
+    edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<PlateData>): void;
+    /** An MO diagram's level last pressed on the page (its place in the levels), to show its settings. */
+    moLevel?(shapeId: number): number | null;
+    moRename?(shapeId: number, level: number): void;
+    moDelete?(shapeId: number, level: number): void;
+    /** Fit Width: make the MO diagram just wide enough. */
+    moFit?(shapeId: number): void;
+  } | null = null;
   /** SmartArt-style diagrams: the window with their text, a change of layout or look, and Convert to Shapes. */
   diagram: { edit(shapeId: number): void; restyle(shapeId: number, patch: Partial<DiagramData>): void; ungroup(shapeId: number): void } | null = null;
   /** A Smart Scheme's layouts (those it can't take left out, the one it has marked) and how to change it. */
@@ -170,6 +182,8 @@ export class StylePanel {
   orbital: { edit(): void; restyle(shapeIds: number[], patch: Partial<OrbitalSpec>): void } | null = null;
   /** Tie captions to the structure nearest each (Tie to Structure). */
   tie: ((captionIds: number[]) => void) | null = null;
+  /** Electron Count's Insert as Table (set up by the app): the count's rows as a table beside the metal's structure. */
+  electronTable: ((metal: number, rows: string[][]) => void) | null = null;
   /** Brackets drawn as a pair: whether the other halves can be selected or deselected now, and doing it. */
   bracketPartner: { state(): 'select' | 'deselect' | null; toggle(): void } | null = null;
 
@@ -193,7 +207,7 @@ export class StylePanel {
     if (force) this.key = '';
     const s = this.sel();
     const tp = this.tables?.part();
-    const key = `${this.doc.version}|${this.doc.stereo?.version}|${tp ? JSON.stringify(tp) : ''}|${[...s.arrows].join(',')}|${[...s.shapes].join(',')}|${[...s.captions].join(',')}|${[...s.atoms].join(',')}|${[...s.bonds].join(',')}`;
+    const key = `${this.doc.version}|${this.doc.stereo?.version}|${tp ? JSON.stringify(tp) : ''}|${[...s.arrows].join(',')}|${[...s.shapes].join(',')}|${[...s.captions].join(',')}|${[...s.atoms].join(',')}|${[...s.bonds].join(',')}|${[...s.shapes].map((id) => this.plate?.moLevel?.(id) ?? '').join(',')}`;
     if (key === this.key) return;
     this.key = key;
     const focused = this.body.contains(document.activeElement) ? document.activeElement!.closest('.style-row')?.textContent : null;
@@ -266,6 +280,10 @@ export class StylePanel {
     if (tables.length) this.tableControls(tables[0]);
     if (caps.length) this.captionControls(caps);
     if (centres.length || dbls.length) this.stereoControls(centres, dbls);
+    if (atom || several) {
+      const c = selectedComplex(this.doc, s.atoms);
+      if (c) this.electronControls(c);
+    }
     const boxes = shapes.filter((x) => x.kind === 'rect' || x.kind === 'oval' || x.kind === 'geo');
     if (diagram) { /* the diagram keeps its own frame fitted */ }
     else if (boxes.length === 1 && all.length === 1 && !caps.length && !arrows.length && !s.atoms.size) this.frameControls(boxes[0]);
@@ -696,32 +714,271 @@ export class StylePanel {
     this.body.append(row);
   }
 
-  /** A TLC plate or gel: its stain or dye and what is written, and the window with its lanes. */
-  private plateControls(sh: Shape): void {
-    const d = sh.plate!;
-    if (d.kind === 'mo') {
-      this.heading('MO diagram');
-      if (d.mo) {
-        const mo = d.mo;
-        this.check('Energy arrow', mo.axis, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, axis: v } }));
-        const now = electronLook(mo, this.doc.style, d.w, d.h);
-        this.number('Electron arrow height (pt)', Math.round(now.tall * 10) / 10, 0.5, 2, 48, (v) => this.plate?.restyle(sh.id, { mo: setElectrons(mo, { ...now, tall: v }, d.w, d.h) }));
-        this.check('Orbital mixing pictures', !!mo.pictures, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, pictures: v || undefined } }));
-        this.check('White background behind names', !!mo.labelBack, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, labelBack: v ? 'white' : undefined } }));
-        this.check('Move names clear of the dashed lines', !!mo.labelClear, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, labelClear: v || undefined } }));
-        if (mo.pictures) this.number('Picture size (%)', Math.round((mo.pictureSize ?? 1) * 100), 10, 20, 400, (v) => this.plate?.restyle(sh.id, { mo: { ...mo, pictureSize: v / 100 } }));
-        if (mo.pictures) this.select('Phases', ORBITAL_LOOK_NAMES.map((k): Opt<OrbitalLook> => [k.value, k.label]), mo.pictureLook ?? 'shaded', (v) => this.plate?.restyle(sh.id, { mo: { ...mo, pictureLook: v } }));
-      }
-      this.help('Change the orbitals, energies and electrons in the window; drag a corner to resize it.');
+  /**
+   * An MO diagram: what each side is (an atom, one orbital, or custom), the molecule's electrons
+   * with Fill Electrons, a warning where the filling breaks the aufbau principle, the level last
+   * pressed, and how it is drawn. The levels themselves are dragged and pressed on the page.
+   */
+  private moControls(sh: Shape, d: PlateData, mo: MoSpec): void {
+    const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
+    const sides = moSides(mo);
+    const molecule = moMolecule(mo.molecule);
+    // first what the diagram is of: two atoms (each side picked below), a ready-made molecule, or custom
+    const kinds: Opt<string>[] = [[MO_TWO_ATOMS, 'Two Atoms'], ...MO_MOLECULES.map((m): Opt<string> => [m.id, m.name]), [MO_CUSTOM, 'Custom']];
+    // a molecule this version does not know (a file from a later one): shown as such, so Custom can still be picked
+    if (mo.molecule && !molecule) kinds.splice(kinds.length - 1, 0, [mo.molecule, 'Other Molecule']);
+    const kind = mo.molecule ? mo.molecule : sides.left === MO_CUSTOM && sides.right === MO_CUSTOM ? MO_CUSTOM : MO_TWO_ATOMS;
+    // a ready-made molecule has twice the levels of most two-atom diagrams: one shorter than 22 bond lengths grows to that, so its names stay apart
+    const tall = Math.round(22 * this.doc.style.bondLength);
+    this.select('Molecule', kinds, kind, (v) => this.plate?.restyle(sh.id, { mo: setMolecule(mo, v), ...(moMolecule(v) && d.h < tall ? { h: tall } : {}) }));
+    const opts: Opt<string>[] = [...MO_ATOMS.map((a): Opt<string> => [a.id, a.name]), [MO_CUSTOM, 'Custom']];
+    // the list in groups: the atoms by period, then the single orbitals (Custom on its own)
+    const groups: Record<number, string> = { 1: 'Hydrogen to Neon', 2: 'Hydrogen to Neon', 3: 'Sodium to Argon', 0: 'Single Orbitals' };
+    const group = (v: string) => { const a = MO_ATOMS.find((x) => x.id === v); return a ? groups[moPeriod(a)] : undefined; };
+    if (!molecule) {
+      this.select('Left', opts, sides.left, (v) => set(setSides(mo, { left: v })), group);
+      this.select('Right', opts, sides.right, (v) => set(setSides(mo, { right: v })), group);
+    }
+    this.help(`${molecule ? 'The central atom\'s valence orbitals are on the left and the outer atoms\' group orbitals, named by their symmetry, on the right. ' : ''}Drag a level up or down. Click a level to add an electron (a full level empties). Double-click a name to change it; right-click to add or delete a level. Custom lets ${molecule ? 'the' : 'a side\'s'} levels be set by hand.`);
+    const A = MO_ATOMS.find((a) => a.id === sides.left), B = MO_ATOMS.find((a) => a.id === sides.right);
+    if (!molecule && A && B && !A.orbital && !B.orbital && A.orbitals.length > 1 && B.orbitals.length > 1) {
+      this.check('π Below σ', sides.mixing, (v) => set(setSides(mo, { mixing: v })), 'With s–p mixing the π orbitals lie below σ in the p set, as in B₂, C₂ and N₂. Without it σ is lower, as in O₂ and F₂.');
+    }
+    // the molecule's electrons: type how many and fill them in lowest first
+    const counts = moCounts(mo.levels);
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = '0';
+    inp.step = '1';
+    inp.max = String(2 * counts.moOrbitals);
+    inp.value = String(counts.moElectrons);
+    inp.className = 'mo-electrons';
+    const fill = document.createElement('button');
+    fill.type = 'button';
+    fill.className = 'primary';
+    fill.textContent = 'Fill Electrons';
+    fill.title = 'Put this many electrons into the molecule\'s orbitals, lowest first, by the aufbau principle and Hund\'s rule';
+    const apply = () => { const n = Number(inp.value); if (inp.value.trim() !== '' && Number.isFinite(n)) set(fillElectrons(toRelative(mo), n)); };
+    fill.addEventListener('click', apply);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { apply(); inp.blur(); } e.stopPropagation(); });
+    const both = document.createElement('span');
+    both.className = 'mo-fill';
+    both.append(inp, fill);
+    this.row('Electrons', both, 'Electrons in the molecule\'s orbitals');
+    // a ready-made molecule draws no electrons on its atoms' orbitals: its charge is from the neutral molecule's count, and
+    // a bond order between two atoms means nothing for it
+    const whole = molecule?.electrons ?? (mo.molecule || (sides.left === MO_CUSTOM && sides.right === MO_CUSTOM) ? mo.neutral : undefined);
+    const charge = (whole ?? counts.atomElectrons) - counts.moElectrons;
+    const sign = charge === 0 ? '0' : `${Math.abs(charge)}${charge > 0 ? '+' : '−'}`;
+    const facts = whole !== undefined || mo.molecule ? [`Charge ${sign}`, `${counts.unpaired} Unpaired`] : [`Charge ${sign}`, `Bond Order ${counts.bondOrder}`, `${counts.unpaired} Unpaired`];
+    this.note(facts.join(' · '));
+    const name = (l: MoLevel, into: HTMLElement, first = false) => {
+      if (!l.label.trim()) { into.append(first ? 'A level with no name' : 'a level with no name'); return; }
+      richInto(mo, l.label, into);
+    };
+    for (const bad of fillProblems(mo.levels).slice(0, 2)) {
+      const w = document.createElement('p');
+      w.className = 'mo-warning';
+      w.setAttribute('role', 'status');
+      const mark = document.createElement('b');
+      mark.textContent = '⚠';
+      mark.setAttribute('aria-label', 'Warning');
+      const text = document.createElement('span');
+      name(bad.empty, text, true);
+      text.append(' is not full, but ');
+      name(bad.filled, text);
+      text.append(` holds ${bad.filled.electrons === 1 ? 'an electron' : 'electrons'}`);
+      w.append(mark, text);
+      this.body.appendChild(w);
+    }
+    if (counts.atomOrbitals !== counts.moOrbitals && mo.levels.some((l) => l.column === 'middle')) {
+      const w = document.createElement('p');
+      w.className = 'mo-warning';
+      w.setAttribute('role', 'status');
+      const mark = document.createElement('b');
+      mark.textContent = '⚠';
+      mark.setAttribute('aria-label', 'Warning');
+      const text = document.createElement('span');
+      text.textContent = `${counts.atomOrbitals} atomic ${counts.atomOrbitals === 1 ? 'orbital' : 'orbitals'} but ${counts.moOrbitals} molecular ${counts.moOrbitals === 1 ? 'orbital' : 'orbitals'}`;
+      w.append(mark, text);
+      this.body.appendChild(w);
+    }
+    this.moLevelRows(sh, mo, name);
+    this.check('Energy Axis', mo.axis, (v) => set({ ...mo, axis: v }));
+    // (the pictures show two atoms' orbitals mixing, so they are for two atoms only)
+    if (!molecule) this.check('Orbital Pictures', !!mo.pictures, (v) => set({ ...mo, pictures: v || undefined }), 'Each atomic orbital\'s shape beside it, and each molecular orbital\'s in-phase or out-of-phase combination');
+    if (mo.pictures && !molecule) this.number('Picture Size (%)', Math.round((mo.pictureSize ?? 1) * 100), 10, 20, 400, (v) => set({ ...mo, pictureSize: v / 100 }));
+    if (mo.pictures && !molecule) this.select('Phases', ORBITAL_LOOK_NAMES.map((k): Opt<OrbitalLook> => [k.value, k.label]), mo.pictureLook ?? 'shaded', (v) => set({ ...mo, pictureLook: v }));
+    this.check('White Background Behind Names', !!mo.labelBack, (v) => set({ ...mo, labelBack: v ? 'white' : undefined }));
+    this.check('Names Avoid Dashed Lines', !!mo.labelClear, (v) => set({ ...mo, labelClear: v || undefined }));
+    this.moLineRows(sh, d, mo);
+    if (this.plate?.moFit) {
       const row = document.createElement('div');
       row.className = 'style-buttons';
       const b = document.createElement('button');
       b.type = 'button';
-      b.textContent = 'Edit MO Diagram…';
-      b.title = 'Change the orbitals, their energies and electrons (or double-click it)';
-      b.addEventListener('click', () => this.plate?.edit(sh.id));
+      b.textContent = 'Fit Width';
+      b.title = 'Make the diagram just wide enough to keep the molecule\'s orbitals, names and pictures clear of each atom\'s';
+      b.addEventListener('click', () => this.plate?.moFit?.(sh.id));
       row.append(b);
-      this.body.append(row);
+      this.body.appendChild(row);
+    }
+  }
+
+  /** The level of an MO diagram (or d-orbital splitting diagram) last pressed, dragged or right-clicked: its energy, degeneracy, what it is made from, Rename and Delete; then the Look heading. */
+  private moLevelRows(sh: Shape, mo: MoSpec, name: (l: MoLevel, into: HTMLElement, first?: boolean) => void): void {
+    const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
+    const at = this.plate?.moLevel?.(sh.id) ?? null;
+    const l = at !== null ? mo.levels[at] : undefined;
+    if (l && at !== null) {
+      const h = document.createElement('h3');
+      h.append('Level: ');
+      name(l, h, true);
+      this.body.appendChild(h);
+      const rel = toRelative(mo).levels[at];
+      this.number('Energy', rel.e, 0.01, 0, 1, (v) => set(withLevel(mo, at, { e: v })), 'Its place up the diagram, from 0 at the bottom to 1 at the top (no units). Dragging the level sets it too.');
+      if (!l.auto) {
+        this.number('Degeneracy', l.n, 1, 1, 5, (v) => set(withLevel(mo, at, { n: v })), 'How many orbitals share this level');
+        if (l.column === 'middle') {
+          const choices = fromChoices(mo.levels), want = fromValue(l);
+          const list: Opt<string>[] = choices.map((c): Opt<string> => [c.value, c.text]);
+          if (want && !choices.some((c) => c.value === want)) list.push([want, `${(l.from ?? '').split(',').map((x) => moPlain(x)).filter(Boolean).join(' + ')}${sources(mo.levels, l).length ? '' : ' (Not Found)'}`]);
+          this.select('Made From', list, want, (v) => set(withLevel(mo, at, fromOf(v))));
+        }
+      }
+      const row = document.createElement('div');
+      row.className = 'style-buttons';
+      const ren = document.createElement('button');
+      ren.type = 'button';
+      ren.textContent = 'Rename';
+      ren.addEventListener('click', () => this.plate?.moRename?.(sh.id, at));
+      row.append(ren);
+      if (!l.auto) {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = 'Delete';
+        del.addEventListener('click', () => this.plate?.moDelete?.(sh.id, at));
+        row.append(del);
+      }
+      this.body.appendChild(row);
+      const look = document.createElement('h3');
+      look.textContent = 'Look';
+      this.body.appendChild(look);
+    }
+  }
+
+  /** The electron arrows' size and the dashed lines' color, as an MO diagram and a d-orbital splitting diagram both have them. */
+  private moLineRows(sh: Shape, d: PlateData, mo: MoSpec): void {
+    const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
+    const now = electronLook(mo, this.doc.style, d.w, d.h);
+    const r1 = (x: number) => Math.round(x * 10) / 10;
+    this.number('Arrow Height (pt)', r1(now.tall), 0.5, 2, 48, (v) => set(setElectrons(mo, { ...now, tall: v }, d.w, d.h)), 'How tall the electron arrows are');
+    this.number('Arrow Width (pt)', r1(now.thick), 0.1, 0.1, 6, (v) => set(setElectrons(mo, { ...now, thick: v }, d.w, d.h)), 'The electron arrows\' line width');
+    this.number('Arrow Gap (pt)', r1(now.lift), 0.5, 0, 24, (v) => set(setElectrons(mo, { ...now, lift: v }, d.w, d.h)), 'How far above the level line the electron arrows start');
+    this.color('Dashed Lines', mo.lineColor, (v) => set({ ...mo, lineColor: v }));
+    this.number('Line Transparency (%)', Math.round((mo.lineTransparency ?? 0) * 100), 5, 0, 90, (v) => set({ ...mo, lineTransparency: v ? v / 100 : undefined }));
+  }
+
+  /**
+   * A d-orbital splitting diagram (dsplit.ts): the geometry, the metal ion, its d electrons and
+   * spin, the splitting's name, what the drawn electrons add up to, and how it is drawn. Every
+   * value filled in can be changed: the d count by hand here, the levels dragged, clicked and
+   * renamed on the page.
+   */
+  private dsplitControls(sh: Shape, d: PlateData, mo: MoSpec, ds: DSplit): void {
+    const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
+    const change = (patch: Partial<DSplit>) => set(setDSplit(mo, patch));
+    this.help('Drag a level up or down. Click a split level to add an electron (a full level empties). Double-click a name or title to change it; right-click to add a level.');
+    const geos: Opt<DGeometry>[] = D_GEOMETRIES.map((g): Opt<DGeometry> => [g.id, g.name]);
+    this.select('Geometry', geos, ds.geometry, (v) => change({ geometry: v }));
+    if (ds.geometry === 'sq') this.tipOnLast('The order of the lower levels depends on the ligands. This is a common order: dx²−y² far above dz², then dxz and dyz, then dxy lowest. Drag the levels to change it. No LFSE is shown for square planar.');
+    this.text('Metal Ion', supText(ds.ion), 'Co³⁺', (v) => change({ ion: v }));
+    this.tipOnLast('Type the ion with its charge, such as Co³⁺, Fe²⁺ or Ni(II); a charge typed on the line, or one sign for each charge, is read too. Its group and charge set d Electrons, and its row the d shell (3d, 4d or 5d).');
+    // text that gives no d count (not a d-block ion, or one with fewer than 0 or more than 10 d electrons): a quiet mark on the field
+    if (ionD(ds.ion) === null) {
+      const inp = this.body.lastElementChild?.querySelector('input');
+      if (inp) {
+        inp.classList.add('unread');
+        inp.setAttribute('aria-invalid', 'true');
+        inp.title = 'Not read as a d-block ion with 0 to 10 d electrons, so d Electrons was left as it was';
+      }
+    }
+    const counts: Opt<string>[] = Array.from({ length: 11 }, (_, k): Opt<string> => [String(k), `d${supText(`^{${k}}`)}`]);
+    this.select('d Electrons', counts, String(ds.d), (v) => change({ d: Number(v) }));
+    this.tipOnLast('Set automatically from the metal ion; choose another count to change it by hand.');
+    // high or low spin: two buttons, disabled with the reason where both fill the levels alike
+    const split = splitLevels(mo);
+    const matters = spinMatters(split, ds.d);
+    // (the button lit is the way the electrons drawn are put in: neither when they are put in neither way)
+    const drawnSpin = dReadout(mo).spin;
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', 'Spin');
+    for (const [v, text] of [['high', 'High Spin'], ['low', 'Low Spin']] as const) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = text;
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(matters && drawnSpin === v));
+      b.disabled = !matters;
+      // (a press always fills the levels again, the spin already chosen too)
+      b.addEventListener('click', () => change({ spin: v }));
+      seg.append(b);
+    }
+    if (!matters) seg.title = `High and low spin fill these levels the same way for d${supText(`^{${ds.d}}`)}`;
+    this.row('Spin', seg);
+    this.tipOnLast('Low spin fills the lower levels before the upper ones; high spin puts one electron in each orbital before pairing any. Which one a complex takes depends on the splitting against the pairing energy.');
+    this.text('Splitting Label', supText(ds.label), dGeometry(ds.geometry).delta.replace(/_\{(.*)\}/, '$1'), (v) => change({ label: deltaMarkup(v) }));
+    // what the electrons drawn add up to
+    const r = dReadout(mo);
+    const value = (label: string, markup: string, tip?: string) => {
+      const v = document.createElement('span');
+      v.className = 'ds-value';
+      richInto(mo, markup, v);
+      this.row(label, v);
+      this.body.lastElementChild?.classList.add('ds-read');
+      if (tip) this.tipOnLast(tip);
+    };
+    value('Configuration', r.config || '–');
+    value('Unpaired Electrons', String(r.unpaired));
+    if (r.lfse !== null) value('LFSE', lfseMarkup(r.lfse, ds.label || 'Δ'), 'Ligand field stabilization energy: the d electrons\' energy compared with the same electrons in five orbitals at their average energy, from the electrons drawn. Pairing energy is not included.');
+    value('Spin-Only Moment', `${r.moment.toFixed(2)} μ_{B}`, 'μ = √(n(n + 2)) μB for n unpaired electrons, leaving out any orbital contribution.');
+    this.moLevelRows(sh, mo, (l, into, first) => { if (!l.label.trim()) into.append(first ? 'A level with no name' : 'a level with no name'); else richInto(mo, l.label, into); });
+    this.check('Energy Axis', mo.axis, (v) => set({ ...mo, axis: v }));
+    this.check('Splitting Arrow', ds.arrow, (v) => change({ arrow: v }));
+    this.check('Readouts on Diagram', ds.readouts, (v) => change({ readouts: v }));
+    this.check('Barycenter Line', !!ds.barycenter, (v) => change({ barycenter: v || undefined }), 'A dotted line across the split levels at their average energy, weighted by the number of orbitals');
+    this.check('White Background Behind Names', !!mo.labelBack, (v) => set({ ...mo, labelBack: v ? 'white' : undefined }));
+    this.moLineRows(sh, d, mo);
+    const buttons = document.createElement('div');
+    buttons.className = 'style-buttons';
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.textContent = 'Reset Levels';
+    reset.title = 'Put the split levels back at the geometry\'s heights, names and number, filled again; the ion, d Electrons and spin stay';
+    reset.addEventListener('click', () => set(resetDSplitLevels(mo)));
+    buttons.append(reset);
+    this.body.append(buttons);
+  }
+
+  /** An "i" with `tip` beside the label of the row just added. */
+  private tipOnLast(tip: string): void {
+    const span = this.body.lastElementChild?.querySelector<HTMLElement>(':scope > span');
+    if (span) span.append(' ', infoIcon(tip));
+  }
+
+  /** A TLC plate or gel: its stain or dye and what is written, and the window with its lanes. */
+  private plateControls(sh: Shape): void {
+    const d = sh.plate!;
+    if (d.kind === 'mo' && d.mo?.dsplit) {
+      this.heading('d-Orbital Splitting');
+      this.dsplitControls(sh, d, d.mo, d.mo.dsplit);
+      return;
+    }
+    if (d.kind === 'mo') {
+      this.heading('MO Diagram');
+      if (d.mo) this.moControls(sh, d, d.mo);
       return;
     }
     if (d.kind === 'crystal') {
@@ -1524,6 +1781,200 @@ export class StylePanel {
     });
   }
 
+  // ------------------------------------------------------------------ electron count
+
+  /**
+   * A metal complex's electron count (chem/electrons.ts): the summary, how it compares with the
+   * count expected, the ligands with their types (each can be changed), and the oxidation state,
+   * charge and expected count, each automatic or set by hand (kept on the metal, Atom.ecount).
+   */
+  private electronControls(c: MetalCount): void {
+    const metal = c.metal;
+    const set = (label: string, patch: (now: ElectronCountSettings) => ElectronCountSettings) => this.edit(label, () => {
+      const now = this.doc.atoms.get(metal)?.ecount ?? {};
+      const next: ElectronCountSettings = { ...patch({ ...now }) };
+      if (next.types && !Object.keys(next.types).length) delete next.types;
+      for (const k of Object.keys(next) as (keyof ElectronCountSettings)[]) if (next[k] === undefined) delete next[k];
+      this.doc.updateAtom(metal, { ecount: Object.keys(next).length ? next : undefined });
+    });
+    this.heading('Electron Count');
+    this.help('Two ways of counting that give the same total. Neutral: the metal atom\'s own electrons, two from each L ligand and one from each X, then the charge taken away (or added for an anion). Ionic: the metal ion\'s d electrons (after its oxidation state), two from each L and two from each X counted as an anion. L gives a lone pair, X shares one electron, Z takes two (Green\'s classes). Change a ligand\'s type below when the automatic one is wrong.');
+    const box = document.createElement('div');
+    box.className = 'ec-panel';
+    const head = document.createElement('p');
+    head.className = 'ec-sum';
+    const [lead, cls] = countSummary(c).split(' · ');
+    const strong = document.createElement('b');
+    strong.textContent = lead;
+    head.append(strong, ` · ${cls}`);
+    // how it compares with the count expected: a quiet note, here only (never in the drawing)
+    const status = document.createElement('p');
+    status.className = 'ec-status' + (c.electrons === c.expected.value ? '' : ' off');
+    status.textContent = `${c.electrons} of ${c.expected.value} expected: ${c.expected.reason}`;
+    box.append(head, status);
+
+    const table = document.createElement('table');
+    table.className = 'ec-panel-table';
+    const tr = (cells: (string | HTMLElement)[], cls = '') => {
+      const row = document.createElement('tr');
+      if (cls) row.className = cls;
+      for (const x of cells) {
+        const td = document.createElement('td');
+        td.append(typeof x === 'string' ? scripted(x) : x);
+        row.append(td);
+      }
+      table.append(row);
+      return row;
+    };
+    const th = document.createElement('tr');
+    for (const [t, tip] of [['Ligand', ''], ['Type', ''], ['Neutral', 'Neutral counting: the metal atom\'s electrons, one from each X, two from each L'], ['Ionic', 'Ionic counting: the metal ion\'s d electrons, two from each X and each L']]) {
+      const h = document.createElement('th');
+      h.textContent = t;
+      if (tip) h.title = tip;
+      th.append(h);
+    }
+    table.append(th);
+    tr([c.symbol, 'metal', String(c.group), `d${sup(c.dn)}: ${c.dn}`]).cells[1].className = 'muted';
+    const own = c.settings.types ?? {};
+    for (const r of c.ligands) {
+      let type: string | HTMLElement = typeText(r.type);
+      // (set by hand by its name and the type worked out for it: a bridging Cl's X and L rows are apart)
+      const key = typeKey(r.name, r.auto);
+      if (!r.mm) {
+        const sel = document.createElement('select');
+        sel.setAttribute('aria-label', `Type of ${r.name}`);
+        const codes = [...new Set([r.type, r.auto, ...LIGAND_TYPES])];
+        for (const code of codes) {
+          const o = document.createElement('option');
+          o.value = code;
+          o.textContent = code === r.auto && own[key] ? `${typeText(code)} (auto)` : typeText(code);
+          sel.append(o);
+        }
+        sel.value = r.type;
+        if (own[key]) sel.classList.add('own');
+        sel.title = own[key] ? `Set by hand (automatic: ${typeText(r.auto)})` : 'Calculated from the drawing; choose another type to change it';
+        sel.addEventListener('change', () => set('Ligand Type', (now) => {
+          const types = { ...now.types };
+          // choosing the automatic type again forgets the one set by hand
+          if (sel.value === r.auto) delete types[key];
+          else types[key] = sel.value;
+          return { ...now, types };
+        }));
+        type = sel;
+      }
+      tr([ligandText(r), type, String(r.neutral * r.count), String(r.ionic * r.count)]);
+    }
+    if (c.charge) tr([`Charge ${signed(c.charge)}`, '', signed(-c.charge), `in d${sup(c.dn)}`]);
+    tr(['Total', '', String(c.electrons), String(c.ionicTotal)], 'ec-total');
+    box.append(table);
+    // an oxidation state set by hand that the ligand types don't give: the two totals differ, and say why
+    const differ = countsDiffer(c);
+    if (differ) {
+      const why = document.createElement('p');
+      why.className = 'ec-status off ec-differ';
+      why.textContent = differ;
+      box.append(why);
+    }
+    this.body.append(box);
+
+    // the oxidation state: automatic (from the X ligands and the charge) or chosen
+    const ox = document.createElement('select');
+    const oxOpt = (v: string, text: string) => { const o = document.createElement('option'); o.value = v; o.textContent = text; ox.append(o); };
+    oxOpt('auto', `Auto (${signed(c.autoOxidation)})`);
+    // (−4 up to the group number, at most +9: no fewer than no d electrons)
+    const lo = ECOUNT_RANGE.ox[0], hi = Math.min(ECOUNT_RANGE.ox[1], c.group);
+    for (let v = lo; v <= hi; v++) oxOpt(String(v), `${signed(v)} (${roman(v)})`);
+    ox.value = c.settings.ox === undefined ? 'auto' : String(c.settings.ox);
+    ox.addEventListener('change', () => set('Oxidation State', (now) => ({ ...now, ox: ox.value === 'auto' ? undefined : Number(ox.value) })));
+    this.infoRow('Oxidation State', ox, 'Automatic: the number of X ligands plus the complex\'s charge (a Z ligand takes none of the metal\'s electrons). Choose a value to use another; the neutral count does not depend on it, the ionic one does.');
+
+    // the complex's charge: the charges drawn on it, or typed here (empty goes back to the drawing's)
+    const q = document.createElement('input');
+    q.type = 'number';
+    q.step = '1';
+    q.min = '-8';
+    q.max = '8';
+    q.value = String(c.charge);
+    q.placeholder = String(c.autoCharge);
+    if (c.settings.charge !== undefined) q.classList.add('own');
+    q.title = c.settings.charge !== undefined ? `Set by hand (the drawing has ${signed(c.autoCharge)}); clear the box to use the drawing's charge` : 'The charges drawn on the complex, added up; type another to use it here';
+    const setQ = () => {
+      const v = q.value.trim() === '' ? undefined : Math.round(Number(q.value));
+      if (v !== undefined && (!Number.isFinite(v) || Math.abs(v) > 8)) return;
+      const keep = v === undefined || v === c.autoCharge ? undefined : v;
+      if (keep !== c.settings.charge) set('Complex Charge', (now) => ({ ...now, charge: keep }));
+    };
+    q.addEventListener('change', setQ);
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') q.blur(); e.stopPropagation(); });
+    this.row('Charge', q);
+
+    // the count expected: automatic, a usual one, or any other typed in
+    const exp = document.createElement('select');
+    const expOpt = (v: string, text: string) => { const o = document.createElement('option'); o.value = v; o.textContent = text; exp.append(o); };
+    expOpt('auto', `Auto (${c.expected.auto})`);
+    const usual = ['18', '16', '14'];
+    for (const v of usual) expOpt(v, v);
+    const mine = c.settings.expect;
+    if (mine !== undefined && !usual.includes(String(mine))) expOpt(String(mine), String(mine));
+    expOpt('other', 'Other…');
+    exp.value = mine === undefined ? 'auto' : String(mine);
+    const holder = document.createElement('span');
+    holder.className = 'ec-expect';
+    holder.append(exp);
+    exp.addEventListener('change', () => {
+      if (exp.value !== 'other') { set('Expected Count', (now) => ({ ...now, expect: exp.value === 'auto' ? undefined : Number(exp.value) })); return; }
+      // any other number, typed in place of the list
+      const n = document.createElement('input');
+      n.type = 'number';
+      n.min = '2';
+      n.max = '30';
+      n.step = '1';
+      n.value = String(c.expected.value);
+      n.setAttribute('aria-label', 'Expected Count');
+      const done = () => {
+        const v = Math.round(Number(n.value));
+        if (n.value.trim() && Number.isFinite(v) && v >= 2 && v <= 30) set('Expected Count', (now) => ({ ...now, expect: v }));
+        else { this.key = ''; this.refresh(); }
+      };
+      n.addEventListener('change', done);
+      n.addEventListener('keydown', (e) => { if (e.key === 'Enter') n.blur(); if (e.key === 'Escape') { this.key = ''; this.refresh(); } e.stopPropagation(); });
+      holder.replaceChildren(n);
+      n.focus();
+      n.select();
+    });
+    this.infoRow('Expected Count', holder, 'Automatic: 18 (the 18-electron rule), or 16 for a d⁸ metal of groups 9 to 11 with four ligands, which is usually square planar (Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed., sections 13.3 and 10.6). Many complexes have other counts; choose or type the one you expect.');
+
+    const buttons = document.createElement('div');
+    buttons.className = 'style-buttons';
+    const ins = document.createElement('button');
+    ins.type = 'button';
+    ins.textContent = 'Insert as Table';
+    ins.title = 'Put this count beside the structure as an ordinary table (a copy: it does not change with the structure)';
+    ins.disabled = !this.electronTable;
+    ins.addEventListener('click', () => this.electronTable?.(metal, countRows(c)));
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.textContent = 'Reset Types';
+    // (only types that still match a ligand count: one kept for a ligand since deleted does nothing)
+    const anyOwn = c.ligands.some((r) => !r.mm && own[typeKey(r.name, r.auto)] !== undefined);
+    reset.disabled = !anyOwn;
+    reset.title = anyOwn ? 'Use the ligand types calculated from the drawing again' : 'Every ligand type is already the automatic one';
+    reset.addEventListener('click', () => set('Reset Types', (now) => ({ ...now, types: undefined })));
+    buttons.append(ins, reset);
+    this.body.append(buttons);
+  }
+
+  /** A row whose label has an "i" tip beside it. */
+  private infoRow(label: string, control: HTMLElement, tip: string): void {
+    const row = document.createElement('label');
+    row.className = 'style-row';
+    const name = document.createElement('span');
+    name.textContent = label;
+    addInfo(name, tip);
+    row.append(name, control);
+    this.body.appendChild(row);
+  }
+
   // ------------------------------------------------------------------ stereo labels
 
   private stereoControls(centres: Atom[], dbls: Bond[]): void {
@@ -1704,13 +2155,18 @@ export class StylePanel {
     this.body.append(row);
   }
 
-  private select<T extends string>(label: string, opts: Opt<T>[], value: T, on: (v: T) => void): void {
+  /** A dropdown; with `group`, options next to each other in one group go under its heading. */
+  private select<T extends string>(label: string, opts: Opt<T>[], value: T, on: (v: T) => void, group?: (v: T) => string | undefined): void {
     const sel = document.createElement('select');
+    let og: HTMLOptGroupElement | null = null;
     for (const [v, text] of opts) {
       const o = document.createElement('option');
       o.value = v;
       o.textContent = text;
-      sel.appendChild(o);
+      const g = group?.(v);
+      if (!g) { og = null; sel.appendChild(o); continue; }
+      if (og?.label !== g) { og = document.createElement('optgroup'); og.label = g; sel.appendChild(og); }
+      og.appendChild(o);
     }
     sel.value = value;
     sel.addEventListener('change', () => on(sel.value as T));
@@ -1751,6 +2207,35 @@ export class StylePanel {
   private color(label: string, value: string | undefined, on: (v: string | undefined) => void, auto?: string, autoSwatch?: string): void {
     this.row(label, colourButton(this.doc, value, (v) => on(v && v.toLowerCase() === '#000000' && !auto ? undefined : v), auto ? { autoLabel: auto, autoSwatch } : { autoSwatch: '#000000' }));
   }
+}
+
+/** Text with subscript and superscript characters (PPh₃, d⁸) shown with real sub and sup elements. */
+function scripted(text: string): DocumentFragment {
+  const f = document.createDocumentFragment();
+  for (const m of text.matchAll(/([₀-₉]+)|([⁰¹²³⁴-⁹⁺⁻]+)|([^₀-₉⁰¹²³⁴-⁹⁺⁻]+)/g)) {
+    if (m[3]) { f.append(m[3]); continue; }
+    const el = document.createElement(m[1] ? 'sub' : 'sup');
+    el.textContent = [...(m[1] ?? m[2])].map((ch) => {
+      const k = '₀₁₂₃₄₅₆₇₈₉'.indexOf(ch), j = '⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(ch);
+      return k >= 0 ? String(k) : j >= 0 ? String(j) : ch === '⁺' ? '+' : '−';
+    }).join('');
+    f.append(el);
+  }
+  return f;
+}
+
+/** Rich text (markup, or an older diagram's text) put into an element with real subscripts and superscripts. */
+function richInto(mo: MoSpec, text: string, into: HTMLElement): void {
+  for (const p of moParts(mo, text)) {
+    if (p.sub || p.sup) { const x = document.createElement(p.sub ? 'sub' : 'sup'); x.textContent = p.text; into.append(x); } else into.append(p.text);
+  }
+}
+
+const SUP_DIGITS: Record<string, string> = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '−': '⁻', '-': '⁻' };
+
+/** Markup as plain text for a box or a list: superscript digits and signs as Unicode superscripts (Co³⁺), the rest as plain letters. */
+function supText(markup: string): string {
+  return parseMarkup(markup).map((p) => (p.sup && [...p.text].every((c) => c in SUP_DIGITS) ? [...p.text].map((c) => SUP_DIGITS[c]).join('') : p.text)).join('');
 }
 
 /** A picture's kind, from its data, as people know it. */

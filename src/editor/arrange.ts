@@ -369,3 +369,30 @@ export function clearOffset(b: Rect, others: readonly Rect[], gap: number, page?
   for (const t of tries) if (onPage(t) && !near.some((o) => hits(t, o)) && !others.some((o) => hits(t, o))) return t;
   return zero;
 }
+
+/**
+ * Where something w × h goes beside box `b` (a structure's drawn box, labels and all): its
+ * top-left corner. To the right of the box, else below it, where it is clear of `others` (by half
+ * a gap, as clearOffset) and on the page; failing both, the nearest clear spot to either
+ * (clearOffset, with `b` among what to keep clear of); failing that too, to the right, kept on the
+ * page as far as the page allows.
+ */
+export function spotBeside(b: Rect, w: number, h: number, others: readonly Rect[], gap: number, page?: { w: number; h: number }): Vec {
+  const box = (p: Vec): Rect => ({ x1: p.x, y1: p.y, x2: p.x + w, y2: p.y + h });
+  const all = [b, ...others];
+  const clear = (p: Vec) => !all.some((o) => p.x < o.x2 + gap / 2 && o.x1 < p.x + w + gap / 2 && p.y < o.y2 + gap / 2 && o.y1 < p.y + h + gap / 2);
+  const onPage = (p: Vec) => !page || (p.x >= 0 && p.y >= 0 && p.x + w <= page.w && p.y + h <= page.h);
+  const tries: Vec[] = [{ x: b.x2 + gap, y: b.y1 }, { x: b.x1, y: b.y2 + gap }];
+  for (const p of tries) if (onPage(p) && clear(p)) return p;
+  for (const p of tries) {
+    const t = clearOffset(box(p), all, gap, page);
+    const q = { x: p.x + t.x, y: p.y + t.y };
+    if (onPage(q) && clear(q)) return q;
+  }
+  const p = { ...tries[0] };
+  if (page) {
+    p.x = Math.max(0, Math.min(p.x, page.w - w));
+    p.y = Math.max(0, Math.min(p.y, page.h - h));
+  }
+  return p;
+}

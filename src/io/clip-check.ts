@@ -15,6 +15,8 @@ import type { Atom, Bond, Caption, Arrow, Shape, Contents, TextRun, Pin, Frame, 
 import { emptyTable } from '../table';
 import { ENERGY_DEFAULTS, ENERGY_PRESETS } from '../design/energy';
 import { newPlate } from '../design/plates';
+import { soundPlateDSplit } from '../design/dsplit';
+import { sanitizeEcount } from '../chem/ecount-settings';
 import { newDiagram } from '../design/diagrams';
 import { newChartBox } from '../sheet/chart-box';
 
@@ -133,6 +135,8 @@ const atom = {
   supDigits: true, labelMarks: '', centred: true, stacked: oneOf('up', 'down'), hDot: oneOf('dot', 'dash'), stackedLoose: true, fixedDir: true,
   showStereo: true, stereoLabel, ignoreWarnings: true, highlight: '', hl: highlight, radical: oneOf('singlet', 'doublet', 'triplet'), attach: '',
   attachNum: 0, atomNumber: '', showNumber: true, numberLabel, mapNo: 0, focal: true, enhStereo: enh, multi: ids, kekule: true, variable: true, ringOf: ids,
+  // (made sound, or dropped, by sanitizeEcount when pasted: soundContents)
+  ecount: null,
 } satisfies Record<keyof Atom, Spec>;
 const bond = {
   id: 0, a1: 0, a2: 0, order: 0,
@@ -234,6 +238,15 @@ export function soundContents(c: unknown): Contents | null {
     got[k] = v as Obj[];
   }
   if (!got.atoms.length && !got.captions.length && !got.arrows.length && !got.shapes.length) return null;
+  // a metal's electron count set by hand: only what is sound kept (whole numbers in range, type codes that read)
+  got.atoms = got.atoms.map((a) => {
+    if (a.ecount === undefined) return a;
+    const { ecount, ...rest } = a;
+    const sound = sanitizeEcount(ecount);
+    return sound ? { ...rest, ecount: sound } : rest;
+  });
+  // a d-orbital splitting diagram's choices made sound (a label that isn't text would stop it drawing)
+  got.shapes = got.shapes.map((s) => (obj(s.plate) ? { ...s, plate: soundPlateDSplit(s.plate) } : s));
   const have = new Set(got.atoms.map((a) => a.id));
   // (a bond to an atom that isn't there is left out)
   got.bonds = got.bonds.filter((b) => have.has(b.a1) && have.has(b.a2) && b.a1 !== b.a2);

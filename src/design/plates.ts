@@ -11,7 +11,8 @@ import { frameBox, frameMembers } from '../editor/frames';
 import { shapeBox } from '../objects';
 import { chemRuns } from '../text/chemtext';
 import { labelParts, type LabelPart } from './energy';
-import { drawMo, MO_PRESETS, type MoSpec } from './mo';
+import { drawMo, fromAtoms, type MoSpec } from './mo';
+import { newDSplit } from './dsplit';
 import { crystalSvg, type CrystalSpec } from './xray';
 import { dataUrl } from '../render/images';
 import { isInkId } from './geo';
@@ -215,8 +216,8 @@ export interface PlateParts { captions: number[]; arrows: number[]; shapes: numb
 export function newPlate(kind: PlateKind, L: number): PlateData {
   if (kind === 'crystal') return { kind, look: '', w: Math.round(20 * L), h: Math.round(14 * L), rf: false, lines: false, labels: true, note: '', unit: 'bp', sizes: false, lanes: [] };
   if (kind === 'mo') {
-    const spec = MO_PRESETS[0].spec;
-    return { kind, look: '', w: Math.round(14 * L), h: Math.round(12 * L), rf: false, lines: false, labels: true, note: '', unit: 'bp', sizes: false, lanes: [], mo: { ...spec, levels: spec.levels.map((l) => ({ ...l })), labelBack: 'white' } };
+    // H₂ to start with, big enough to press its levels; the Side Panel picks the atoms
+    return { kind, look: '', w: Math.round(20 * L), h: Math.round(16 * L), rf: false, lines: false, labels: true, note: '', unit: 'bp', sizes: false, lanes: [], mo: { ...fromAtoms('H', 'H')!, labelBack: 'white' } };
   }
   if (kind === 'tlc') {
     return {
@@ -229,6 +230,11 @@ export function newPlate(kind: PlateKind, L: number): PlateData {
     kind, look: 'etbr', w: Math.round(12 * L), h: Math.round(11 * L), rf: false, lines: false, labels: true, note: '', unit: ladder.unit, sizes: true,
     lanes: [{ label: 'M', marks: ladder.sizes.join(', '), ladder: true }, { label: '1', marks: '3' }, { label: '2', marks: '3, 1.2 faint' }],
   };
+}
+
+/** A new d-orbital splitting diagram (an MO diagram with MoSpec.dsplit): Co³⁺, octahedral and low spin to start with; the Side Panel changes it. */
+export function newDSplitPlate(L: number): PlateData {
+  return { kind: 'mo', look: '', w: Math.round(20 * L), h: Math.round(14 * L), rf: false, lines: false, labels: true, note: '', unit: 'bp', sizes: false, lanes: [], mo: newDSplit() };
 }
 
 /**
@@ -421,7 +427,7 @@ export function putPlate(doc: Doc, m: Measure, d: PlateData, at: Vec, id?: numbe
   const b = frameBox(doc, frame, m) ?? { x1: at.x, y1: at.y, x2: at.x + d.w, y2: at.y + d.h };
   const r = (v: number) => Math.round(v * 100) / 100;
   const plate: PlateData = { ...d, margins: { l: r(at.x - b.x1), t: r(at.y - b.y1), r: r(b.x2 - at.x - d.w), b: r(b.y2 - at.y - d.h) } };
-  const name = d.kind === 'tlc' ? 'TLC plate' : d.kind === 'gel' ? 'Gel' : 'MO diagram';
+  const name = d.kind === 'tlc' ? 'TLC plate' : d.kind === 'gel' ? 'Gel' : d.mo?.dsplit ? 'd-Orbital splitting diagram' : 'MO diagram';
   // (looks set on its labels by hand stay)
   const madeLabels = keepLabels(doc, was, frame);
   if (old) { doc.updateShape(old.id, { ...b, frame, plate, madeLabels, editedOutside: undefined }); return old.id; }

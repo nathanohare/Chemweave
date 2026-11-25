@@ -218,6 +218,27 @@ export interface Atom {
   variable?: boolean;
   /** A variable attachment's ring: the atoms whose middle it sits at (all of `multi` when not set). */
   ringOf?: number[];
+  /**
+   * On a metal: its electron count's values set by hand in the Side Panel (Electron Count), each
+   * in place of the automatic one (chem/electrons.ts). Not set: everything automatic.
+   */
+  ecount?: ElectronCountSettings;
+}
+
+/** A metal's electron count as set by hand (Atom.ecount); each value left out is automatic. */
+export interface ElectronCountSettings {
+  /**
+   * A ligand's type (L, X, LX, L2X, Z…, as letters and digits), by the ligand's name in the count
+   * and the type worked out for it, joined by "|" (PPh3|L, Cl|X, η⁵-C₅ ring|L2X): chem/ecount-settings.ts
+   * typeKey. Keys that match no ligand are not used.
+   */
+  types?: Record<string, string>;
+  /** The metal's oxidation state (a whole number, −4 to +9, no more than the metal's group number). */
+  ox?: number;
+  /** The complex's overall charge (otherwise the sum of the charges drawn on it; a whole number, −8 to +8). */
+  charge?: number;
+  /** The electron count expected for it (otherwise 18, or 16 for a square-planar d⁸ metal; 2 to 30). */
+  expect?: number;
 }
 
 /** A metal atom: a metal element, or a label written for one (Pd, PdCl2, LnPd, [M]). */

@@ -27,7 +27,7 @@ import { atomStereoText, bondStereoText, StereoPlacer, PlacedLabel } from '../ch
 import { dataUrl, fromDataUrl, rasterPng } from '../render/images';
 import { itemsToEmf } from '../render/emf';
 import { crystalItems } from '../design/xray';
-import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, FRAME_DATA, frameTexts, BRACKET_PAIR_TAG, PIN_TAG, GLUE_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags, labelLookOfText } from './cdxml';
+import { BOND_LOOK_TAG, RING_TAG, PAGE_TAG, GUIDES_TAG, ARROW_TEXT_TAG, MAP_LOOK_TAG, KEKULE_TAG, ALT_TAG, FOCAL_TAG, ECOUNT_TAG, CHART_TAG, MATH_TAG, PLATE_TAG, PICTURE_FX_TAG, PICTURE_TAG, PICTURE_TAG_FIELDS, pictureSeen, OWN_PICTURE, OWN_CROP, CIRCLE_TAG, FILL_TAG, FRAME_TAG, ORBITAL_TAG, INSIDE_TAG, STEP_TAG, GROUP_TAG, GEO_TAG, MORPH_TAG, MAP_TAG, PIECE_TAG, FRAME_DATA, frameTexts, BRACKET_PAIR_TAG, PIN_TAG, GLUE_TAG, CURVE_ARROW_TAG, ARROW_LOOK_TAG, TURN_TAG, GEO_BOX_ATTR, DOTTED_ATTR, DOTTED_TAG, HIGHLIGHT_TAG, HIGHLIGHT_LOOK_TAG, SPOKES_TAG, STACK_TAG, decodeTags, encodeTags, hoistOwnTags, lowerOwnTags, labelLookOfText } from './cdxml';
 import { stackItems, usesStacking } from '../editor/stacking';
 import { frameTag } from '../editor/frames';
 import { tableContents } from '../editor/table-figs';
@@ -829,12 +829,13 @@ class CdxmlWriter {
 
   /** A contracted label keeps the SMILES of its group in a hidden tag (ChemDraw sees the inner fragment). */
   private atomGroup(n: Element, a: Atom): void {
-    for (const c of kids(n)) if (c.nodeName === 'objecttag' && [GROUP_TAG, ALT_TAG, MAP_TAG, FOCAL_TAG].includes(c.getAttribute('Name') ?? '')) n.removeChild(c);
+    for (const c of kids(n)) if (c.nodeName === 'objecttag' && [GROUP_TAG, ALT_TAG, MAP_TAG, FOCAL_TAG, ECOUNT_TAG].includes(c.getAttribute('Name') ?? '')) n.removeChild(c);
     // (with the label it belongs to: a label retyped in ChemDraw no longer takes this group)
     if (a.group && a.label) n.appendChild(this.el('objecttag', { TagType: 'String', Name: GROUP_TAG, Value: JSON.stringify({ label: a.label, smiles: a.group }), Visible: 'no' }));
     if (a.alt) n.appendChild(this.el('objecttag', { TagType: 'String', Name: ALT_TAG, Value: a.alt, Visible: 'no' }));
     if (a.mapNo) n.appendChild(this.el('objecttag', { TagType: 'String', Name: MAP_TAG, Value: String(a.mapNo), Visible: 'no' }));
     if (a.focal) n.appendChild(this.el('objecttag', { TagType: 'String', Name: FOCAL_TAG, Value: 'yes', Visible: 'no' }));
+    if (a.ecount && Object.keys(a.ecount).length) n.appendChild(this.el('objecttag', { TagType: 'String', Name: ECOUNT_TAG, Value: JSON.stringify(a.ecount), Visible: 'no' }));
     this.highlightTag(n, a.highlight, a.hl);
   }
 

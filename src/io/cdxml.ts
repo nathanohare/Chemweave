@@ -8,6 +8,8 @@ import { tint } from '../colours';
 import { pathId, freeformId } from '../design/geo';
 import { parseGuides } from '../editor/guides';
 import { fillFrameMembers, frameFromTag } from '../editor/frames';
+import { sanitizeEcount } from '../chem/ecount-settings';
+import { soundPlateDSplit } from '../design/dsplit';
 import { ATTACH_TAG, CHEM_TAG, IGNORE_TAG, RESULTS_TAG, attachFromTag, attachedNode, fillAttachments } from '../editor/attached';
 import { readSpecies } from '../chem/species';
 import { highlightStyleFromTag } from '../render/highlight';
@@ -416,6 +418,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       const mapTag = Number(kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MAP_TAG)?.getAttribute('Value'));
       if (Number.isInteger(mapTag) && mapTag > 0) extra.mapNo = mapTag;
       if (kids(n).some((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === FOCAL_TAG)) extra.focal = true;
+      const ecount = readEcount(kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === ECOUNT_TAG)?.getAttribute('Value'));
+      if (ecount) extra.ecount = ecount;
       const hlA = kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === HIGHLIGHT_TAG)?.getAttribute('Value');
       if (hlA && /^#[0-9a-f]{6}$/i.test(hlA)) extra.highlight = hlA.toLowerCase();
       // ChemDraw's own atom highlight
@@ -2064,12 +2068,24 @@ function geoFromTag(saved: Partial<Shape> & Record<string, unknown>): (Partial<S
     if (k === 'poly' && !(Array.isArray(v) && v.every((p) => p && typeof p.x === 'number' && typeof p.y === 'number'))) continue;
     out[k] = v;
   }
+  // a d-orbital splitting diagram's choices made sound (a label that isn't text would stop it drawing)
+  if (out.plate) out.plate = soundPlateDSplit(out.plate);
   return out as Partial<Shape> & Record<string, unknown>;
 }
 /** A reaction arrow's animation settings (MorphStep as JSON, atoms by the file's node ids). */
 export const MORPH_TAG = 'Chem Illustrator animation';
 /** An atom that is part of its structure's focal point (Atom.focal), value "yes". */
 export const FOCAL_TAG = 'Chem Illustrator focal point';
+/** A metal's electron count as set by hand (Atom.ecount, as JSON). */
+export const ECOUNT_TAG = 'Chem Illustrator electron count';
+
+/** Atom.ecount read back from its tag: only what is sound (sanitizeEcount: whole numbers in range, type codes that read); null when nothing is. */
+export function readEcount(text: string | null | undefined): import('../model').ElectronCountSettings | null {
+  if (!text) return null;
+  let v: unknown;
+  try { v = JSON.parse(text); } catch { return null; }
+  return sanitizeEcount(v);
+}
 /** An atom's atom-atom map number across a reaction (Atom.mapNo). */
 export const MAP_TAG = 'Chem Illustrator map';
 /** Auto-Animate Steps: the piece a thing moves with in the slide show (Atom.piece, Caption.piece and so on). */

@@ -18,6 +18,7 @@ import { templateIcon } from '../src/ui/template-icons';
 import { toMolfile } from '../src/chem/molfile';
 import { FAMILIES as SOURCE } from '../scripts/ligands/ligand-data.mjs';
 import { LigandLibraryWindow } from '../src/ui/ligand-library';
+import { LIGAND_STERICS, MFT_2014, TOLMAN_1977, stericsOf } from '../src/chem/ligand-sterics';
 
 /** How each label read before the library's abbreviations were added: first atom : the rest : bonds. */
 const BEFORE: Record<string, string | null> = {
@@ -384,6 +385,26 @@ describe('the Ligand Library window', () => {
     w.close();
   });
 
+  it('shows the cone angle and buried volume with their sources behind an "i"', () => {
+    const w = new LigandLibraryWindow({ useTemplate: () => {}, openUrl: () => {}, copyText: () => {} });
+    w.open('PPh3');
+    const d = document.querySelector('dialog.ligand-library')!;
+    const dts = [...d.querySelectorAll('.lig-details dt')];
+    const cone = dts.find((x) => x.textContent?.startsWith('Cone angle'))!;
+    // Tolman, Chem. Rev. 1977, 77, 313, Table I: PPh3 145°
+    expect(cone.nextElementSibling!.textContent).toBe('145°');
+    expect(cone.querySelector<HTMLElement>('.info-icon')!.dataset.tip).toContain('Chem. Rev. 1977');
+    const vbur = dts.find((x) => x.textContent?.startsWith('Buried volume'))!;
+    // Miessler, Fischer and Tarr 2014, Table 14.1: PPh3 29.6
+    expect(vbur.nextElementSibling!.textContent).toBe('29.6%');
+    expect(vbur.querySelector<HTMLElement>('.info-icon')!.dataset.tip).toContain('Table 14.1');
+    w.close();
+    // a ligand without them shows neither row
+    w.open('dppf');
+    expect([...document.querySelectorAll('dialog.ligand-library .lig-details dt')].some((x) => x.textContent?.startsWith('Cone angle'))).toBe(false);
+    w.close();
+  });
+
   it('lists the families with their counts', () => {
     const w = new LigandLibraryWindow({ useTemplate: () => {}, openUrl: () => {}, copyText: () => {} });
     w.open();
@@ -393,6 +414,57 @@ describe('the Ligand Library window', () => {
     const fam = LIGAND_FAMILIES[0].id;
     expect([...document.querySelectorAll<HTMLElement>('dialog.ligand-library .lig-card')].every((c) => LIGANDS.find((l) => l.id === c.dataset.id)!.family === fam)).toBe(true);
     w.close();
+  });
+});
+
+describe('cone angles and buried volumes', () => {
+  // [library id, the ligand's name in the library, Tolman cone angle (°), %Vbur]
+  // Cone angles: C. A. Tolman, Chem. Rev. 1977, 77, 313, Table I (as also listed in the "θ" column
+  // of J. Jover and J. Cirera, Dalton Trans. 2019, 48, 15036, Table 1; PMes3 not there).
+  // %Vbur, and the alternative phosphite cone angles: G. L. Miessler, P. J. Fischer and
+  // D. A. Tarr, Inorganic Chemistry, 5th ed., Pearson 2014, Table 14.1 (free-ligand crystal
+  // structures, M–P 2.28 Å; P(OMe)3 from its AuCl complex).
+  const TABLE: [string, string, number, number | null][] = [
+    ['pf3', 'Phosphorus trifluoride', 104, null],
+    ['pome3', 'Trimethyl phosphite', 107, 26.4],
+    ['poet3', 'Triethyl phosphite', 109, null],
+    ['pme3', 'Trimethylphosphine', 118, 22.2],
+    ['poph3', 'Triphenyl phosphite', 128, 30.7],
+    ['pet3', 'Triethylphosphine', 132, 27.8],
+    ['pmeph2', 'Methyldiphenylphosphine', 136, null],
+    ['pph3', 'Triphenylphosphine', 145, 29.6],
+    ['pcy3', 'Tricyclohexylphosphine', 170, 31.8],
+    ['ptbu3', 'Tri-tert-butylphosphine', 182, 36.7],
+    ['pc6f53', 'Tris(pentafluorophenyl)phosphine', 184, 37.3],
+    ['potol3', 'Tri(o-tolyl)phosphine', 194, 41.4],
+    ['pmes3', 'Trimesitylphosphine', 212, 47.6],
+  ];
+  // Miessler, Fischer and Tarr 2014, Table 14.1, footnote a: cone angles suggested by %Vbur
+  const ALT: Record<string, number> = { pome3: 128, poph3: 155 };
+
+  it('match the cited tables, on the right ligands', () => {
+    for (const [id, name, cone, vbur] of TABLE) {
+      const l = LIGANDS.find((x) => x.id === id)!;
+      expect(l?.name, id).toBe(name);
+      const s = stericsOf(id)!;
+      expect(s.cone?.value, id).toBe(cone);
+      expect(s.cone?.source, id).toBe(TOLMAN_1977);
+      expect(s.vbur?.value ?? null, id).toBe(vbur);
+      if (s.vbur) expect(s.vbur.source, id).toBe(MFT_2014);
+      expect(s.coneAlt?.value, id).toBe(ALT[id]);
+    }
+    expect(Object.keys(LIGAND_STERICS).sort()).toEqual(TABLE.map((t) => t[0]).sort());
+  });
+
+  it('every value carries its reference, and every ligand is in the library', () => {
+    for (const [id, s] of Object.entries(LIGAND_STERICS)) {
+      expect(LIGANDS.some((l) => l.id === id), id).toBe(true);
+      for (const v of [s.cone, s.coneAlt, s.vbur]) {
+        if (!v) continue;
+        expect(v.source.full.length, id).toBeGreaterThan(20);
+        expect(v.source.full, id).toMatch(/\b(19|20)\d\d\b/);
+      }
+    }
   });
 });
 

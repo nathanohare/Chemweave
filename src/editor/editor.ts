@@ -77,7 +77,8 @@ import { energyFrameOf, plotFromBox, putEnergy, refitEnergy, type EnergyData } f
 import { SMART_LAYOUTS, layoutFits, addBranch, addLoop, arrangeSmart, branchSpots, fanSteps, removeBranch, reverseStep, readSmart, smartIsFree, smartLayoutOf, cleanUpCycle, formatSmart, removeLoop, setLoopMiddle, setStepNames, type LoopJoin, stepToHolder, stepHolderToText, fillHolder, fillHoldersDrawn, holderFrameOf, holderToSlotText, insertSlot, makeSmart, moveSlot, refitSmart, removeSlot, setSlotRuns, setSlotText, setStepRuns, setStepText, smartFrameOf, smartMarks, slotToHolder, ungroupSmart, type SmartData, type StepPart, type TextPart } from '../chem/smart-scheme';
 import type { SmartFormat } from '../chem/smart-format';
 import { plateFrameOf, plateFromBox, putPlate, refitPlates, rfAtY, setMarkAt, tlcSpotAt, type PlateData } from '../design/plates';
-import { drawMo } from '../design/mo';
+import { drawMo, electronsFree, hund, moCaptionRoles, moColumnAt, moColumns, moY, moEnergyAt, moLevelAt, newLevel, nextElectrons, toRelative, withLevel, type MoColumn, type MoSpec } from '../design/mo';
+import { followDrawn } from '../design/dsplit';
 import { drawEyeMark, newmanCentre, newmanFrameOf, putMark, putNewman, refitNewman, type NewmanData } from '../design/newman';
 import { putTorsion, refitTorsion, torsionFrameOf, type TorsionData } from '../design/torsion';
 import {
@@ -86,7 +87,7 @@ import {
 import { attachWhereItIs, placeAttached, refitAttached } from './attached';
 import { fullLook, lookCaption, USUAL } from './tied-look';
 import { frameAround, frameBox, frameMembers, refitFrames, defaultPad, thingsInside } from './frames';
-import { atomsBox, Align, Measure, POINTS, Snapshot, type TurnText, units, joinGroups, focusOf as focusOfUnit, clearOffset, alignOffsets, distributeOffsets, moveUnit, selectionBox, snapshot, transform, withFrameContents, rotation, mirrorX, mirrorY } from './arrange';
+import { atomsBox, Align, Measure, POINTS, Snapshot, type TurnText, units, joinGroups, focusOf as focusOfUnit, clearOffset, spotBeside, alignOffsets, distributeOffsets, moveUnit, selectionBox, snapshot, transform, withFrameContents, rotation, mirrorX, mirrorY } from './arrange';
 import { elementNumber, hasImplicitH, implicitHydrogens, SYMBOLS } from '../chem/elements';
 import { anyMarks, isMarkToggle, readMark, styleOfMark, toggleMarks, toggledMark, writeMark, type Mark, type MarkToggle } from '../chem/label-marks';
 import { tokenize, addNicknames, isBuiltInNickname, labelGraph, labelOverValent, labelPieces, labelLook, styleLabel, CAP, SUB_SCALE } from '../chem/labels';
@@ -374,7 +375,9 @@ interface Drag {
   mode: 'none' | 'pan' | 'move' | 'marquee' | 'draw' | 'handle' | 'rotate' | 'text' | 'sketch' | 'route' | 'pen' | 'reshape' | 'turn3d' | 'guide' | 'spot';
   last: Vec;
   /** A TLC plate's spot pressed (the plate not locked): dragging moves it up or down its lane, changing its Rf. */
-  spot?: { frame: number; lane: number; index: number; at: Vec };
+  spot?: { frame: number; lane: number; index: number; at: Vec; /** An MO diagram's level instead (its place in the diagram's levels): dragging moves it up or down, a click adds an electron. */ mo?: number };
+  /** A press on a level's name in a selected MO diagram: let go without moving, it picks that level for the Side Panel. */
+  moName?: { frame: number; level: number };
   panOrigin?: { ox: number; oy: number };
   /** The arrow or shape handle being dragged. */
   handle?: Handle;
@@ -1431,6 +1434,12 @@ export class Editor {
     if (e.button === 0 && !handle && !rotating && !painting && !e.shiftKey && !e.ctrlKey && !e.metaKey && this.tool.kind !== 'eraser') {
       const sp = this.tlcSpotUnder(p, hit);
       if (sp && (this.tool.kind === 'select' || this.sel.shapes.has(sp.frame))) this.drag.spot = sp;
+      // a selected MO diagram's level: dragging moves it up or down, a click adds an electron
+      const ml = sp ? null : this.moLevelUnder(p);
+      if (ml) { this.drag.spot = ml; this.moActive = { frame: ml.frame, level: ml.mo! }; }
+      // a press on a level's name picks that level for the Side Panel and changes nothing
+      const named = sp || ml ? null : this.moLevelOfName(hit);
+      if (named && this.sel.shapes.has(named.frame)) this.drag.moName = named;
     }
     // a curved arrow tool on a selected S-shaped (or longer) arrow's line: dragging there reshapes it
     if (e.button === 0 && !handle && !rotating && !painting && !e.shiftKey && hit?.kind === 'arrow' && this.curvedTool() && this.isSelected(hit)) {
@@ -1520,6 +1529,7 @@ export class Editor {
       if (!handle && !onRotate && !slot && this.tool.kind !== 'eraser' && !this.painter) {
         const sp = this.tlcSpotUnder(p, h);
         if (sp && (this.tool.kind === 'select' || this.sel.shapes.has(sp.frame))) this.r.overlay.style.cursor = 'ns-resize';
+        else if (!sp && this.moLevelUnder(p)) this.r.overlay.style.cursor = 'ns-resize';
       }
       this.requestOverlay(e.timeStamp);
       return;
@@ -1541,12 +1551,14 @@ export class Editor {
     }
     const rect = this.r.overlay.getBoundingClientRect();
     const sp = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    if (!d.moved && Math.hypot(sp.x - d.startScreen.x, sp.y - d.startScreen.y) > 3) {
+    // (an MO diagram's level only moves up and down: a press that wobbles sideways is still a click)
+    const far = d.mode === 'none' && d.spot?.mo !== undefined ? Math.abs(sp.y - d.startScreen.y) > 3 : Math.hypot(sp.x - d.startScreen.x, sp.y - d.startScreen.y) > 3;
+    if (!d.moved && far) {
       d.moved = true;
       if (d.mode === 'none') d.mode = d.spot ? 'spot' : this.dragModeFor(d);
       if (d.mode === 'spot') {
         this.r.overlay.style.cursor = 'ns-resize';
-        this.doc.begin('Move Spot');
+        this.doc.begin(d.spot!.mo !== undefined ? 'Move Level' : 'Move Spot');
         this.selectOnly({ kind: 'shape', id: d.spot!.frame });
       }
       if (d.mode === 'reshape') this.doc.begin('Bend arrow');
@@ -1877,6 +1889,9 @@ export class Editor {
     }
     if (d.mode === 'reshape' && d.moved) { this.doc.commit(); this.changed(); return; }
     if (d.mode === 'spot') { this.doc.commit(); this.changed(); return; }
+    // a selected MO diagram's level pressed and let go: one more electron (none again after full)
+    if (!d.moved && d.button === 0 && d.spot?.mo !== undefined && e.type !== 'pointercancel') { this.clickMoLevel(d.spot.frame, d.spot.mo); return; }
+    if (!d.moved && d.button === 0 && d.moName && e.type !== 'pointercancel') { this.selectOnly({ kind: 'shape', id: d.moName.frame }); this.moActive = d.moName; this.changed(); return; }
     if (d.mode === 'turn3d') { this.finishTurn(d); return; }
     if (d.mode === 'handle' || d.mode === 'rotate') {
       if (d.moved) { this.doc.commit(); this.changed(); }
@@ -1960,10 +1975,18 @@ export class Editor {
       const b = this.selBox();
       if (!b || p.x < b.x1 || p.x > b.x2 || p.y < b.y1 || p.y > b.y2) this.clearSelection();
     }
-    if (h && !this.isSelected(h)) this.selectOnly(h);
+    // a part of an MO diagram (a level's line, its electrons, a name): the menu is for the diagram, which stays or becomes the selection
+    const moFrame = h && (h.kind === 'caption' || h.kind === 'arrow' || h.kind === 'shape') ? plateFrameOf(this.doc, h.kind, h.id) : null;
+    const onMo = moFrame !== null && this.doc.shapes.get(moFrame)?.plate?.kind === 'mo';
+    if (onMo) { if (!this.sel.shapes.has(moFrame!)) this.selectOnly({ kind: 'shape', id: moFrame! }); }
+    else if (h && !this.isSelected(h)) this.selectOnly(h);
     // a join or a place on a curved arrow's line: what Add Bend Here and the join commands work on
     this.contextSpot = this.pathSpotAt(p);
-    return h;
+    this.contextMo = this.moPlaceAt(p);
+    const named = this.contextMo && this.contextMo.level === null ? this.moLevelOfName(h) : null;
+    if (named && this.contextMo && named.frame === this.contextMo.frame) this.contextMo = { ...this.contextMo, level: named.level };
+    if (this.contextMo?.level !== null && this.contextMo) { this.moActive = { frame: this.contextMo.frame, level: this.contextMo.level! }; this.changed(); }
+    return onMo ? { kind: 'shape', id: moFrame! } : h;
   }
 
   private onDoubleClick(e: MouseEvent): void {
@@ -1987,6 +2010,14 @@ export class Editor {
     const chart = h && (h.kind === 'caption' || h.kind === 'arrow' || h.kind === 'shape') ? torsionFrameOf(this.doc, h.kind, h.id) : null;
     if (chart !== null) { this.selectOnly({ kind: 'shape', id: chart }); this.onTorsionEdit(chart); return; }
     const plate = h && h.kind !== 'atom' && h.kind !== 'bond' && (h.kind === 'caption' || h.kind === 'arrow' || h.kind === 'shape') ? plateFrameOf(this.doc, h.kind, h.id) : null;
+    if (plate !== null && this.doc.shapes.get(plate)?.plate?.kind === 'mo') {
+      // an MO diagram is changed on the page: a name or title pressed twice is typed over; its levels take the presses themselves
+      const f = this.doc.shapes.get(plate)!;
+      if (!this.sel.shapes.has(plate)) this.selectOnly({ kind: 'shape', id: plate });
+      const role = h!.kind === 'caption' ? moCaptionRoles(f.plate!.mo!)[f.frame!.captions.indexOf(h!.id)] : undefined;
+      if (role && !('axis' in role)) this.onMoText(plate, role, h!.id);
+      return;
+    }
     if (plate !== null) { this.selectOnly({ kind: 'shape', id: plate }); this.onPlate(plate); return; }
     // a SmartArt-style diagram: its words are typed into in place, as in PowerPoint; anywhere else opens its text and look
     const smart = h && (h.kind === 'arrow' || h.kind === 'shape') ? diagramFrameOf(this.doc, h.kind, h.id) : null;
@@ -4454,6 +4485,114 @@ export class Editor {
     return room;
   }
 
+  /** The level of a selected MO diagram last pressed, dragged or right-clicked: the Side Panel shows its settings. */
+  moActive: { frame: number; level: number } | null = null;
+  /** Where on a selected MO diagram the right-click menu was opened: the level there (or none), and the column and energy for a level added there. */
+  contextMo: { frame: number; level: number | null; column: MoColumn; e: number } | null = null;
+  /** A name or title of an MO diagram pressed twice: type it over in place (`caption` is the one drawn there). */
+  onMoText: (frame: number, role: { level: number } | { title: number }, caption: number | null) => void = () => {};
+
+  /** A selected MO diagram's frame, spec and where it is drawn. */
+  private moFrames(): { id: number; d: PlateData; mo: MoSpec; at: Vec }[] {
+    const L = this.doc.style.bondLength, out: { id: number; d: PlateData; mo: MoSpec; at: Vec }[] = [];
+    for (const id of this.sel.shapes) {
+      const s = this.doc.shapes.get(id);
+      if (s?.plate?.kind === 'mo' && s.plate.mo) out.push({ id, d: s.plate, mo: s.plate.mo, at: plateFromBox(shapeBox(s), s.plate, L).at });
+    }
+    return out;
+  }
+
+  /** The level of a selected MO diagram under `p` (the diagram is selected first, like any object; then its levels take presses). */
+  private moLevelUnder(p: Vec): Drag['spot'] | null {
+    if (this.tool.kind !== 'select') return null;
+    for (const f of this.moFrames()) {
+      const i = moLevelAt(f.mo, f.at, f.d.w, f.d.h, this.doc.style.bondLength, p);
+      if (i !== null) return { frame: f.id, lane: -1, index: i, at: f.at, mo: i };
+    }
+    return null;
+  }
+
+  /** The level whose name (a caption of an MO diagram) was hit. */
+  private moLevelOfName(h: Hit): { frame: number; level: number } | null {
+    if (!h || h.kind !== 'caption') return null;
+    const frame = plateFrameOf(this.doc, 'caption', h.id), f = frame !== null ? this.doc.shapes.get(frame) : undefined;
+    if (frame === null || !f?.plate?.mo || !f.frame) return null;
+    const role = moCaptionRoles(f.plate.mo)[f.frame.captions.indexOf(h.id)];
+    return role && 'level' in role ? { frame, level: role.level } : null;
+  }
+
+  /** Where `p` is on a selected MO diagram (inside its box), for the right-click menu. */
+  private moPlaceAt(p: Vec): Editor['contextMo'] {
+    for (const f of this.moFrames()) {
+      if (p.x < f.at.x || p.x > f.at.x + f.d.w || p.y < f.at.y - 0.5 * this.doc.style.bondLength || p.y > f.at.y + f.d.h + 0.5 * this.doc.style.bondLength) continue;
+      const L = this.doc.style.bondLength;
+      return { frame: f.id, level: moLevelAt(f.mo, f.at, f.d.w, f.d.h, L, p), column: moColumnAt(f.mo, f.at, f.d.w, L, p), e: moEnergyAt(f.at, f.d.h, p.y) };
+    }
+    return null;
+  }
+
+  /** Where a level's name or a column's title of MO diagram `frame` is in the window (where the level's name would go, when it has none yet). */
+  moTextRect(frame: number, role: { level: number } | { title: number }): { left: number; top: number; width: number; height: number } | null {
+    const s = this.doc.shapes.get(frame), mo = s?.plate?.mo;
+    if (!s?.plate || !mo || !s.frame) return null;
+    const L = this.doc.style.bondLength, at = plateFromBox(shapeBox(s), s.plate, L).at;
+    const i = moCaptionRoles(mo).findIndex((r) => ('level' in role ? 'level' in r && r.level === role.level : 'title' in r && r.title === role.title));
+    const c = i >= 0 ? this.doc.captions.get(s.frame.captions[i]) : undefined;
+    let b: Rect;
+    if (c) b = this.r.captionBox(c);
+    else if ('level' in role) {
+      const l = mo.levels[role.level];
+      if (!l) return null;
+      const [x0, x1] = moColumns(mo, at, s.plate.w, L).span(l), y = moY(mo, at, s.plate.h)(l.e);
+      b = l.column === 'left' ? { x1: x0 - 2.5 * L, y1: y - 0.5 * L, x2: x0 - 0.25 * L, y2: y + 0.5 * L } : { x1: x1 + 0.25 * L, y1: y - 0.5 * L, x2: x1 + 2.5 * L, y2: y + 0.5 * L };
+    } else {
+      const x = moColumns(mo, at, s.plate.w, L).colX[(['left', 'middle', 'right'] as const)[role.title]];
+      b = { x1: x - L, y1: at.y + s.plate.h + 1.2 * L, x2: x + L, y2: at.y + s.plate.h + 2.2 * L };
+    }
+    const p = this.clientPoint({ x: b.x1, y: b.y1 }), q = this.clientPoint({ x: b.x2, y: b.y2 });
+    return { left: p.x, top: p.y, width: q.x - p.x, height: q.y - p.y };
+  }
+
+  /** Draw MO diagram `frame` again with its levels and settings changed, as one step to undo. */
+  setMo(frame: number, mo: MoSpec, what: string): void {
+    const s = this.doc.shapes.get(frame);
+    if (!s?.plate || s.plate.kind !== 'mo') return;
+    const d = s.plate, at = plateFromBox(shapeBox(s), d, this.doc.style.bondLength).at;
+    this.doc.edit(what, () => { putPlate(this.doc, this.fullMeasure(), { ...d, mo }, at, frame); });
+    if (this.moActive?.frame === frame && !mo.levels[this.moActive.level]) this.moActive = null;
+    this.changed();
+  }
+
+  /** A press on a level: one more electron, none again once it is full. An atom's own electrons stay as its ground state has them. */
+  private clickMoLevel(frame: number, level: number): void {
+    const mo = this.doc.shapes.get(frame)?.plate?.mo, l = mo?.levels[level];
+    if (!mo || !l) return;
+    if (!electronsFree(l)) { this.onNotice(mo.dsplit ? 'The free ion\'s electrons follow d Electrons in the Side Panel.' : mo.molecule ? 'These electrons are set by the molecule. Choose Custom for Molecule in the Side Panel to change them.' : 'An atom\'s electrons are set by the atom. Choose Custom for this side in the Side Panel to change them.'); this.changed(); return; }
+    const next = withLevel(mo, level, { electrons: nextElectrons(l) });
+    // (a d-orbital splitting diagram's d Electrons and free ion follow what is drawn in the split levels, in the same step)
+    this.setMo(frame, mo.dsplit && l.column === 'middle' ? followDrawn(next) : next, l.electrons >= 2 * hund(l.n, 0).length ? 'Remove Electrons' : 'Add Electron');
+  }
+
+  /** Right-click ▸ Add Level: an empty level in the column and at the height the menu was opened. */
+  addMoLevel(): boolean {
+    const c = this.contextMo, mo = c && this.doc.shapes.get(c.frame)?.plate?.mo;
+    if (!c || !mo) return false;
+    const spec = toRelative(mo);
+    this.moActive = { frame: c.frame, level: spec.levels.length };
+    this.setMo(c.frame, { ...spec, levels: [...spec.levels, newLevel(c.column, c.e)] }, 'Add Level');
+    return true;
+  }
+
+  /** Right-click ▸ Delete Level (or the Side Panel's): the level goes. One filled in from an atom stays (choose Custom for its side first). */
+  deleteMoLevel(frame?: number, level?: number): boolean {
+    const f = frame ?? this.contextMo?.frame, i = level ?? this.contextMo?.level ?? undefined;
+    const mo = f !== undefined ? this.doc.shapes.get(f)?.plate?.mo : undefined;
+    if (f === undefined || i === undefined || !mo?.levels[i] || mo.levels[i].auto) return false;
+    this.moActive = null;
+    this.setMo(f, withLevel(mo, i, null), 'Delete Level');
+    return true;
+  }
+
   /**
    * The spot of an unlocked TLC plate under `p` (with what the press hit, which is the plate's or
    * nothing: a notebook-sketch spot is only an outline), and where its plate is drawn.
@@ -4481,6 +4620,16 @@ export class Editor {
     const s = this.doc.shapes.get(sp.frame);
     const d = s?.plate;
     if (!d) return;
+    if (sp.mo !== undefined) {
+      // an MO diagram's level: to the height of the pointer, kept inside the diagram (0 at its bottom, 1 at its top)
+      if (!d.mo) return;
+      const e = moEnergyAt(sp.at, d.h, p.y);
+      const mo = withLevel(d.mo, sp.mo, { e });
+      if (d.mo.relative && d.mo.levels[sp.mo]?.e === e) return;
+      putPlate(this.doc, this.fullMeasure(), { ...d, mo }, sp.at, sp.frame);
+      this.onHint(`Energy ${e.toFixed(2)} (0 is the bottom of the diagram, 1 the top)`);
+      return;
+    }
     const rf = rfAtY(d, sp.at, this.doc.style.bondLength, p.y);
     const lane = d.lanes[sp.lane];
     if (!lane) return;
@@ -4493,7 +4642,7 @@ export class Editor {
   putPlateAt(d: PlateData, at: Vec, id?: number, page?: { w: number; h: number }): void {
     const m = this.fullMeasure();
     let frame = id;
-    const what = d.kind === 'tlc' ? 'TLC Plate' : d.kind === 'gel' ? 'Gel' : d.kind === 'crystal' ? 'Crystal Structure' : 'MO Diagram';
+    const what = d.kind === 'tlc' ? 'TLC Plate' : d.kind === 'gel' ? 'Gel' : d.kind === 'crystal' ? 'Crystal Structure' : d.mo?.dsplit ? 'd-Orbital Splitting' : 'MO Diagram';
     this.doc.edit(id === undefined ? what : `Edit ${what}`, () => {
       const s = id !== undefined ? this.doc.shapes.get(id) : undefined;
       const corner = s?.plate ? plateFromBox(shapeBox(s), s.plate, this.doc.style.bondLength).at : { x: at.x - d.w / 2, y: at.y - d.h / 2 };
@@ -6217,6 +6366,26 @@ export class Editor {
     const boxes = units(doc, others, m).map((u) => u.box);
     const t = clearOffset(b, boxes, doc.style.bondLength, page);
     if (t.x || t.y) this.moveSelection(t.x, t.y);
+  }
+
+  /**
+   * Where a new object w × h goes beside the structure holding atom `atom` (Electron Count's
+   * Insert as Table): right of the structure's drawn box, labels included, else below it, clear
+   * of everything else and on the page when there is one (spotBeside). Its top-left corner.
+   */
+  spotBesideStructure(atom: number, w: number, h: number, page?: { w: number; h: number }): Vec | null {
+    const doc = this.doc, m = this.measure();
+    if (!doc.atoms.has(atom)) return null;
+    const mine = emptySel();
+    for (const id of doc.fragmentOf(atom)) { mine.atoms.add(id); for (const b of doc.adj.get(id) ?? []) mine.bonds.add(b); }
+    const b = selectionBox(doc, mine, m);
+    if (!b) return null;
+    const others = emptySel();
+    for (const id of doc.atoms.keys()) if (!mine.atoms.has(id)) others.atoms.add(id);
+    for (const id of doc.captions.keys()) others.captions.add(id);
+    for (const id of doc.arrows.keys()) others.arrows.add(id);
+    for (const id of doc.shapes.keys()) others.shapes.add(id);
+    return spotBeside(b, w, h, units(doc, others, m).map((u) => u.box), doc.style.bondLength, page);
   }
 
   /**

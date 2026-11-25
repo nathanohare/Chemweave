@@ -1,7 +1,7 @@
 // The Knowledge Base's built-in tables. Only facts the program may carry: hazard numbers and
 // physical constants from public-domain records (safety-tables.ts), solvent properties (Murov's
 // Table 1, solvents.ts), which solvents mix and acid strengths (lab-tables.ts), pKa values, Hammett
-// constants and the glossary. Larger published tables (trace impurities in each solvent) are
+// constants, inorganic tables (inorganic.ts) and the glossary. Larger published tables (trace impurities in each solvent) are
 // imported by the user from their own copy and kept on their computer; see tables.ts parseUserTable.
 
 import { GLOSSARY } from './glossary';
@@ -11,6 +11,7 @@ import { PKA_TABLE } from './property-tables';
 import { SOLVENTS_TABLE } from './solvents';
 import { ACIDS_TABLE, MISCIBILITY_TABLE } from './lab-tables';
 import { HAMMETT_TABLE } from './hammett-table';
+import { CO_STRETCH_TABLE, ELECTRONEGATIVITY_TABLE, HSAB_TABLE } from './inorganic';
 
 /** The glossary as a table. */
 export const GLOSSARY_TABLE: KbTable = {
@@ -28,7 +29,7 @@ export const GLOSSARY_TABLE: KbTable = {
 };
 
 /** The tables built in, in the order the window lists them. */
-export const BUILT_IN_TABLES: KbTable[] = [REAGENT_SAFETY, SOLVENTS_TABLE, MISCIBILITY_TABLE, ACIDS_TABLE, PHYSICAL_CONSTANTS, PKA_TABLE, HAMMETT_TABLE, GLOSSARY_TABLE];
+export const BUILT_IN_TABLES: KbTable[] = [REAGENT_SAFETY, SOLVENTS_TABLE, MISCIBILITY_TABLE, ACIDS_TABLE, PHYSICAL_CONSTANTS, PKA_TABLE, HAMMETT_TABLE, HSAB_TABLE, ELECTRONEGATIVITY_TABLE, CO_STRETCH_TABLE, GLOSSARY_TABLE];
 
 /** Big tables loaded when the window first opens, kept out of the program's start-up. */
 export const LATER_TABLES: (() => Promise<KbTable>)[] = [
