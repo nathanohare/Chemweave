@@ -25,7 +25,7 @@ export const PPTX_FINDINGS: Record<string, Finding> = {
   // fills, lines, effects
   'pptx-format.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-010', note: TAGS },
   // objects
-  'pptx-objects.pptx:second-save': { scope: /^ppt\/(tags\/tag\d+\.xml|slides\/slide\d+\.xml|embeddings\/Microsoft_Excel_Worksheet\d+\.xlsx):/, finding: 'F-P-012', note: 'the second save moves the linked picture (P-LNK-20) to the back of the links slide (first in spTree), so the slide\'s relationships are numbered differently; the embedded chart workbooks (ppt/embeddings/Microsoft_Excel_Worksheet*.xlsx) carry a new docProps/core.xml time each save; and the tag parts differ as in F-P-001' },
+  'pptx-objects.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-001', note: TAGS },
   'P-TBL-12': { finding: 'F-P-013', note: 'table cell borders of 2 pt (lnL/lnR/lnT/lnB w="25400") are saved as w="15240" (1.2 pt)' },
   // slide show
   'pptx-show.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-015', note: TAGS },

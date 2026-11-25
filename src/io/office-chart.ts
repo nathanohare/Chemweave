@@ -36,7 +36,8 @@ export async function addChart(pkg: Package, from: string, dir: string, n: numbe
   const ex = isChartEx(box.chart.kind);
   const path = `${dir}/charts/${ex ? 'chartEx' : 'chart'}${n}.xml`;
   const book = `${dir}/embeddings/Microsoft_Excel_Worksheet${n}.xlsx`;
-  pkg.add(book, await writeXlsx(boxBook(box).wb, NO_PICTURES));
+  // (made afresh from the chart's data on every save: undated, so the same chart saves the same bytes)
+  pkg.add(book, await writeXlsx(boxBook(box).wb, NO_PICTURES, { undated: true }));
   pkg.defaultType('xlsx', CT_XLSX);
   const rid = pkg.relate(path, REL_PACKAGE, relative(path, book));
   const sized = { ...box.chart, w: Math.round(w * PX_PER_PT), h: Math.round(h * PX_PER_PT) };
