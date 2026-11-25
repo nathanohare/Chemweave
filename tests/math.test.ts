@@ -201,3 +201,37 @@ describe("Word's arrow over or under its text (group character)", () => {
     expect(roundTrip(tex)).toBe(tex);
   });
 });
+describe('matrices', () => {
+  const r = (t: string) => `<m:r><m:t>${t}</m:t></m:r>`;
+  it('reads \\begin{matrix} and the bracketed ones', () => {
+    expect(parseMath(String.raw`\begin{matrix} a & b \\ c & d \end{matrix}`)).toMatchObject({ t: 'matrix', rows: [[{}, {}], [{}, {}]] });
+    const p = parseMath(String.raw`\begin{pmatrix} 1 & 0 \\ 0 & 1 \\ \end{pmatrix}`);
+    expect(p).toMatchObject({ t: 'delim', open: '(', close: ')', body: { t: 'matrix' } });
+    expect((p as { body: { rows: unknown[] } }).body.rows).toHaveLength(2);
+  });
+  it('lays out its entries in columns and rows', () => {
+    const t = texts(lay(String.raw`\begin{matrix} a & b \\ c & d \end{matrix}`));
+    const at = (s: string) => t.find((x) => x.s === s)!;
+    expect(at('a').y).toBe(at('b').y);
+    expect(at('c').y).toBeGreaterThan(at('a').y);
+    expect(at('b').x).toBeGreaterThan(at('a').x);
+    expect(at('c').x).toBeCloseTo(at('a').x, 5);
+  });
+  it("is Word's matrix, and read back the same; Word's bracketed one too", () => {
+    const tex = String.raw`\begin{matrix}a & b \\ c & d\end{matrix}`;
+    const x = toOmml(tex);
+    expect(x).toContain('<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val="2"/>');
+    expect(x.match(/<m:mr>/g)).toHaveLength(2);
+    expect(roundTrip(tex)).toBe(tex);
+    const word = ommlEl(`<m:d><m:dPr><m:begChr m:val="["/><m:endChr m:val="]"/></m:dPr><m:e><m:m><m:mr><m:e>${r('1')}</m:e><m:e>${r('2')}</m:e></m:mr><m:mr><m:e>${r('3')}</m:e><m:e>${r('4')}</m:e></m:mr></m:m></m:e></m:d>`);
+    const read = ommlToTex(word);
+    expect(read).toBe(String.raw`\left[\begin{matrix}1 & 2 \\ 3 & 4\end{matrix}\right]`);
+    expect(roundTrip(read)).toBe(read);
+    // (a short row is filled out to the widest)
+    expect(toOmml(String.raw`\begin{matrix} a & b \\ c \end{matrix}`).match(/<m:e>/g)).toHaveLength(4);
+  });
+  it('says its entries in plain text', () => {
+    expect(mathText(String.raw`\begin{pmatrix} a & b \\ c & d \end{pmatrix}`)).toContain('[a, b; c, d]');
+  });
+});
+
