@@ -535,6 +535,15 @@ export class Toolboxes {
       top: document.getElementById('dock-top')!, bottom: document.getElementById('dock-bottom')!,
     };
     window.addEventListener('resize', () => this.keepOnScreen());
+    // (and when the drawing's area changes without the window doing so: another kind of tab, whose
+    // ribbon is taller, the menu bar or the file tabs' row turned on, so a toolbox kept at a corner
+    // never sits over the ribbon)
+    if (typeof ResizeObserver !== 'undefined') {
+      queueMicrotask(() => {
+        const w = this.hooks.work();
+        if (w) new ResizeObserver(() => this.keepOnScreen()).observe(w);
+      });
+    }
   }
 
   /** Show every toolbox where the settings say (building them again, so their contents are up to date). */

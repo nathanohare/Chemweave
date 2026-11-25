@@ -64,6 +64,16 @@ describe('the web version\'s Drawing Tools', () => {
     // (one put somewhere else, such as the top, was a choice: it stays)
     expect(parseSettings(JSON.stringify({ toolboxes: { places: { main: { shown: true, dock: 'top', x: 0, y: 0 } } } })).toolboxes.places.main.dock).toBe('top');
   });
+  it('stays docked by hand after a reload: the app saves the mark it reads (review of #781: it saved 1, so the move ran on every start)', async () => {
+    const { parseSettings, WEB_LOOK } = await import('../src/settings');
+    const docked = { toolboxes: { places: { main: { shown: true, dock: 'left', x: 0, y: 0 } } } };
+    expect(parseSettings(JSON.stringify({ ...docked, webLook: WEB_LOOK })).toolboxes.places.main.dock).toBe('left');
+    // main.ts writes the settings file itself (currentSettings): it must save WEB_LOOK, never a number of its own
+    const { readFileSync } = await import('node:fs');
+    const main = readFileSync('src/main.ts', 'utf8');
+    expect(main).toMatch(/webLook: WEB_LOOK,/);
+    expect(main).not.toMatch(/webLook: \d/);
+  });
 });
 
 describe('the desktop app\'s defaults', () => {

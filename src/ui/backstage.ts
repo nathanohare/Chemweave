@@ -12,6 +12,11 @@ export interface BackstageHooks {
   show(i: number, focus: boolean): void;
   /** The page has closed (put the menus back as they were). */
   closed(): void;
+  /**
+   * The desktop app's window buttons and the strip that moves the window, for the top of the page
+   * while there is no title row to show them (title-bar.ts), or null.
+   */
+  titleStrip?(): HTMLElement | null;
 }
 
 const BACK = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13 8H3.5M7.5 4 3.5 8l4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -35,6 +40,7 @@ export class Backstage {
     this.el.hidden = true;
     this.el.setAttribute('role', 'dialog');
     this.el.setAttribute('aria-label', 'File');
+    this.el.setAttribute('aria-modal', 'true');
     this.nav = document.createElement('nav');
     this.nav.className = 'bs-nav';
     this.nav.setAttribute('aria-label', 'File');
@@ -86,6 +92,10 @@ export class Backstage {
       const a = document.activeElement as HTMLElement | null;
       this.before = a && a !== document.body && !this.el.contains(a) ? a : null;
       this.place();
+      // (no title row showing: the desktop app's window buttons come with the page, as with a modal window)
+      const strip = this.hooks.titleStrip?.() ?? null;
+      if (strip) { strip.classList.add('modal-title-strip', 'bs-strip'); this.el.prepend(strip); }
+      this.el.classList.toggle('has-strip', !!strip);
       this.el.hidden = false;
       // what is under the page is out of the keys' reach (Tab stays in the page and the title row)
       this.inerted = [...document.body.children].filter((c): c is HTMLElement =>
@@ -101,7 +111,7 @@ export class Backstage {
     if (!focusPage && !keepNav) this.nav.querySelector<HTMLButtonElement>(`button[data-i="${this.current}"]`)?.focus();
   }
 
-  /** The page starts under the title row, over the ribbon and the work, as Office's does. */
+  /** The page starts under the title row, over the ribbon and the work, as Office's does (at the top of the window when there is no title row). */
   private place(): void {
     const top = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
     document.documentElement.style.setProperty('--bs-top', `${Math.round(top)}px`);
@@ -115,6 +125,8 @@ export class Backstage {
   close(restore = true): void {
     if (!this.isOpen) return;
     this.el.hidden = true;
+    this.el.querySelector(':scope > .bs-strip')?.remove();
+    this.el.classList.remove('has-strip');
     for (const c of this.inerted) c.removeAttribute('inert');
     this.inerted = [];
     document.body.classList.remove('backstage-open');

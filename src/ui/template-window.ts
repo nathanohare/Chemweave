@@ -144,7 +144,7 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
   // Esc closes the window wherever the keyboard is (the new file's page or grid may have taken it)
   const escAnywhere = (e: KeyboardEvent) => {
     if (e.key !== 'Escape' || !isOpen || root.contains(e.target as Node | null)) return;
-    if ((e.target as Element | null)?.closest?.('dialog, .info-pop, .menu')) return;
+    if ((e.target as Element | null)?.closest?.('dialog, .info-pop, .menu, #backstage')) return;
     e.preventDefault();
     e.stopPropagation();
     finish(false);

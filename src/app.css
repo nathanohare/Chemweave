@@ -5889,3 +5889,23 @@ body.one-row .rb-tabs > button.cr-warnings, body.one-row .rb-tabs > .cr-tab-end 
    (the whole title bar drags it, so the grip dots make way for ×) */
 html:not(.touch-ui) .toolbox.floating.upright:not(.collapsed) > .tb-head > .tb-grip { display: none; }
 html:not(.touch-ui) .toolbox.floating.upright:not(.collapsed) > .tb-head > .tb-lock { margin-left: auto; }
+
+/* the desktop app's one row: the window's buttons at the end of the ribbon's row of tabs, which moves the window */
+body.own-title-bar.one-row .rb-tabs { user-select: none; }
+body.own-title-bar .rb-tabs > .win-controls { position: static; height: auto; align-self: stretch; margin: -1px -8px 0 6px; }
+/* the desktop app's File page with no title row: its own window buttons along the top (title-bar.ts pageTitleStrip) */
+#backstage.has-strip { padding-top: var(--title-h, 32px); }
+#backstage > .bs-strip { background: var(--chrome); }
+/* the one row in a narrow window: the open files' tabs wrap onto a line of their own under the
+   ribbon's tabs, Quick Access and Search, and the rest wraps as needed, so nothing runs off the window */
+@media (max-width: 1000px) {
+  body.one-row .ribbon > .rb-tabs { flex-wrap: wrap; row-gap: 0; }
+  body.one-row .rb-tabs > #tabs { order: 99; flex: 1 0 100%; height: 28px; margin: 0 0 2px; }
+}
+/* touch: the row's buttons as big as the title row's (36 px) */
+html.touch-ui .rb-tabs > #quick-bar > button, html.touch-ui .rb-tabs > #btn-search { height: 36px; min-width: 36px; }
+html.touch-ui .rb-tabs .tab { height: 36px; }
+html.touch-ui .rb-tabs .tab .tab-close, html.touch-ui .rb-tabs .tab-ctl { width: 36px; height: 32px; }
+html.touch-ui body.one-row .rb-tabs > #tabs { height: auto; }
+/* Mode Colors set to color the window: the row is the mode's color, so its items are white on it */
+body.mode-window .rb-tabs > :is(#quick-bar, #tabs, #btn-search) { --text: #fff; }

@@ -222,7 +222,7 @@ import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
 import { fieldKeyHandler, isTypingField } from './editor/field-keys';
-import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX } from './settings';
+import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX, WEB_LOOK } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
 import { TypingDialog } from './ui/typing-dialog';
@@ -244,7 +244,7 @@ import { fileTypesPage, FILE_TYPES, APPS_PAGE_TITLE } from './ui/file-types-page
 import { watchRibbons, fitRibbons, setRibbonCollapsed, ribbonCollapsed, repaintArrows } from './ui/ribbon-fit';
 import { CANVAS_TABS, CanvasRibbon } from './ui/canvas-ribbon';
 import { AnalysisBox, WarningsBox } from './ui/canvas-ribbon-boxes';
-import { placeTitleBar, titleBarPlace } from './ui/title-bar';
+import { pageTitleStrip, placeTitleBar, placeWindowButtons, titleBarPlace } from './ui/title-bar';
 import { canScaleUi, setUiScale, stepUiScale, uiScale, UI_SCALES } from './ui/ui-scale';
 import { installTouchUi, keypadShowing, markSketch, setTouchMode, showKeypad, touchMode, touchOn } from './ui/touch-ui';
 import { FeedbackDialog } from './ui/feedback-dialog';
@@ -4865,6 +4865,8 @@ function enterTab(tab: Tab, opened: boolean): void {
   docMode?.show(words ? tab : null);
   if (siTab && !siMode) void loadSiMode().catch(modeFailed);
   siMode?.show(siTab ? tab : null);
+  // (each kind's ribbon shows only now: the one row goes into the one showing)
+  if (menusInFile) placeOneRow();
   renderer.screen = !!deck;
   renderer.page = deck ? slidePage : drawingBackdrop;
   editor.slideKeys = slides;
@@ -8976,7 +8978,7 @@ host.addEventListener('pointerdown', (e) => {
 // last drawn, text being typed); then Cancel, asking first when something was drawn (ui/in-place.ts)
 let askingDiscard = false;
 window.addEventListener('keydown', (e) => {
-  if (!cellEdit || e.key !== 'Escape' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu')) return;
+  if (!cellEdit || e.key !== 'Escape' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu, #backstage')) return;
   const act = escapeAction({ toolsBusy: editor.escapeHasWork(), changed: doc.canUndo() });
   if (act === 'tools') return;
   e.preventDefault();
@@ -10322,7 +10324,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 /** Menu commands that work the same whatever shows. */
-const ANY_TAB = new Set(['references', 'compound-library', 'knowledge-base', 'ligand-library', 'toolbox-text', 'toolbox-guides', 'insert-compound', 'add-to-compound-library', 'library-location', 'find-structure-files', 'new-from-template', 'check-accessibility', 'format-painter', 'insert-symbol', 'edit-palettes', 'preferences', 'export-settings', 'import-settings', 'customize-ribbon', 'toolbox-main', 'toolbox-structure', 'toolbox-arrange', 'toolbox-templates', 'toolbox-colours', 'toolbox-highlight', 'toolbox-custom', 'toolbox-schemes', 'toolbox-diagrams', 'toolbox-tables', 'toolbox-biopolymers', 'toolbox-perspective', 'fold-side', 'customize-toolbox', 'customize-quick-bar', 'lock-toolboxes', 'reset-toolboxes', 'new', 'new-slides', 'new-design', 'new-sheet', 'new-document', 'open', 'save', 'save-as', 'autosave', 'version-history', 'recover-work', 'keep-options', 'close-tab', 'next-tab', 'prev-tab', 'undo', 'redo',
+const ANY_TAB = new Set(['menu-bar', 'tabs-in-menu', 'references', 'compound-library', 'knowledge-base', 'ligand-library', 'toolbox-text', 'toolbox-guides', 'insert-compound', 'add-to-compound-library', 'library-location', 'find-structure-files', 'new-from-template', 'check-accessibility', 'format-painter', 'insert-symbol', 'edit-palettes', 'preferences', 'export-settings', 'import-settings', 'customize-ribbon', 'toolbox-main', 'toolbox-structure', 'toolbox-arrange', 'toolbox-templates', 'toolbox-colours', 'toolbox-highlight', 'toolbox-custom', 'toolbox-schemes', 'toolbox-diagrams', 'toolbox-tables', 'toolbox-biopolymers', 'toolbox-perspective', 'fold-side', 'customize-toolbox', 'customize-quick-bar', 'lock-toolboxes', 'reset-toolboxes', 'new', 'new-slides', 'new-design', 'new-sheet', 'new-document', 'open', 'save', 'save-as', 'autosave', 'version-history', 'recover-work', 'keep-options', 'close-tab', 'next-tab', 'prev-tab', 'undo', 'redo',
   'drawing-style', 'navigation-settings', 'dark-page', 'dark-colours', 'hotkeys', 'typing-spelling', 'mode-colours', 'dev-tools', ...STRESS_SIZES.map((n) => `stress-${n}`), 'scroll-bars', 'title-bar-in-menu', 'collapse-ribbon', 'ui-scale-in', 'ui-scale-out', 'ui-scale-reset', ...UI_SCALES.map((v) => `ui-scale-${Math.round(v * 100)}`), 'text-bar-docked', 'text-bar-floating', 'text-bar-hidden', 'theme-system', 'theme-light', 'theme-dark', 'theme-darkgray', 'density-snug', 'density-cozy', 'density-normal', 'density-standard', 'density-large', 'shadows-light', 'shadows-strong', 'shadows-off', 'icons-mode', 'icons-kind', 'shape-ink-accent', 'focus-view', 'one-column-tools', 'group-tips', 'tool-tips', 'touch-mode-auto', 'touch-mode-on', 'touch-mode-off', 'atom-keypad', 'pen-sketch', 'show-stereo', 'clipboard-formats', 'split-view', 'command-search', 'next-region', 'prev-region', 'print',
   'assistant', 'help', 'about', 'user-guide', 'help-here', 'send-feedback', 'report-problem', 'support-project', 'copy-diagnostics', 'open-log-folder', 'open-inspector', 'check-updates', 'whats-new']);
 
@@ -11599,6 +11601,7 @@ function putBack(m: Menu): void {
 }
 function openBackstage(m: Menu = menus[0], focusPage = false): void {
   backstage ??= new Backstage({
+    titleStrip: pageTitleStrip,
     menus: () => shownMenus().map((x) => ({ name: x.btn.textContent!.trim() })),
     show: (i, focus) => {
       const x = shownMenus()[i];
@@ -11639,21 +11642,24 @@ function setMenusInFile(on: boolean): void {
   fitRibbons();
 }
 
-// The web app with the menus in the File tab has no title row (Nate, 2026-11-25): Quick Access goes
-// before File in the ribbon's row of tabs, the file tabs and Search after the ribbon's tabs. The
-// desktop app keeps its title row (it moves the window and holds the window's buttons).
+// With the menus in the File tab there is no title row (Nate, 2026-11-25; the web app as it comes,
+// the desktop app when Menu Bar is cleared): Quick Access, the file tabs and Search go after the
+// ribbon's tabs in the ribbon's row, and in the desktop app the window's buttons go at its end, the
+// row's empty parts moving the window (title-bar.ts). In Focus View, with no ribbon, the title row is back.
 const qaHome = document.createComment('quick bar');
 const searchHome = document.createComment('search');
 $('#quick-bar').before(qaHome);
 $('#btn-search').before(searchHome);
 function placeOneRow(): void {
-  const on = menusInFile && !isTauri();
+  const on = menusInFile;
   document.body.classList.toggle('one-row', on);
   const row = on ? [...document.querySelectorAll<HTMLElement>('.ribbon > .rb-tabs')].find((r) => !(r.parentElement as HTMLElement).hidden && r.offsetParent) : null;
+  placeWindowButtons(row && !focusView ? row : null);
   const qa = $('#quick-bar'), search = $('#btn-search');
-  if (!row) {
-    // (the title row, as it was; while no ribbon shows, such as in Focus View, they stay where they last were)
-    if (on) return;
+  if (!row || focusView) {
+    // (the title row, as it was, and in Focus View, which shows it in place of the ribbon; while no
+    // ribbon shows for another reason, such as a tab's ribbon still loading, they stay where they were)
+    if (on && !focusView) return;
     qaHome.after(qa);
     searchHome.after(search);
   } else {
@@ -11776,7 +11782,7 @@ window.addEventListener('keydown', (e) => {
 }, true);
 // Undo and Redo in the SI Project tab, on the keys set for them (a text box keeps its own undo while typing)
 window.addEventListener('keydown', (e) => {
-  if (ws.active.mode !== 'si' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu')) return;
+  if (ws.active.mode !== 'si' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu, #backstage')) return;
   const chord = chordOf(e);
   const action = chord ? keymap.lookup('command', chord) : null;
   const verb = action ? parseAction(action).arg : '';
@@ -11791,7 +11797,7 @@ window.addEventListener('keyup', (e) => {
   if (!alone || pointerHeld) { if (!inMenuBar()) document.body.classList.remove('show-mnemonics'); return; }
   if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) { document.body.classList.remove('show-mnemonics'); return; }
   e.preventDefault();
-  if (backstage?.isOpen) backstage.close();
+  if (backstage?.isOpen) { backstage.close(); document.body.classList.remove('show-mnemonics'); }
   else if (inMenuBar() || openMenu) leaveMenuBar();
   else enterMenuBar();
 });
@@ -13247,7 +13253,7 @@ function currentSettings(): Settings {
     cursorAids: { ...editor.aids },
     haptoDelocalized: haptoLook.delocalized,
     electronMethod: electronPrefs.method,
-    webLook: 1,
+    webLook: WEB_LOOK,
     toolboxScale,
     superscriptR: labelPrefs.superscriptR,
     superscriptRText: labelPrefs.plainText,
@@ -17251,6 +17257,8 @@ function setFocusView(on: boolean): void {
   focusView = on;
   document.body.classList.toggle('focus-view', on);
   $('[data-cmd="focus-view"]')?.setAttribute('aria-checked', String(on));
+  // (the desktop app's window buttons go back to the title row, which Focus View shows, and out again)
+  if (menusInFile) placeOneRow();
   dispatchEvent(new Event('resize'));
   if (on) flash(`Focus view: toolboxes, side panel and ribbon hidden. ${commandKey('focus-view') || 'View > Focus View'} brings them back.`, 6000);
 }

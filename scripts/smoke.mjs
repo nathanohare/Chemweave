@@ -237,6 +237,45 @@ try {
   else if (typing.bar !== true) fail('the bar above the text shows while the Canvas Home tab has the same buttons');
   if (typing.buttons < 18) fail(`the Canvas Home tab's Font and Paragraph groups have ${typing.buttons} buttons, not all of the typing bar's`);
 
+  step("the web app's one row: File, the ribbon's tabs, Quick Access, the open files and Search, in every kind of tab, in Focus View and at 800 px wide");
+  const ROW = ['.rb-file', '.rb-tablist', '#quick-bar', '#tabs', '#btn-search'];
+  const rowCheck = (sizeNote) => page.evaluate(async ({ ROW }) => {
+    const ws = window.__app.ws, out = [];
+    const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+    const seen = (el) => !!el && el.getClientRects().length > 0 && el.getBoundingClientRect().width > 0;
+    for (const tab of [...ws.tabs]) {
+      ws.activate(tab);
+      await frame();
+      const row = [...document.querySelectorAll('.ribbon > .rb-tabs')].find((r) => r.offsetParent);
+      const kids = row ? [...row.children] : [];
+      const right = Math.max(...['#quick-bar', '#tabs', '#btn-search'].map((q) => document.querySelector(q)?.getBoundingClientRect().right ?? 0));
+      out.push({ mode: tab.mode, order: ROW.map((q) => kids.findIndex((k) => k.matches(q))), hidden: ['#quick-bar', '#tabs', '#btn-search'].filter((q) => !seen(document.querySelector(q))), right, w: innerWidth, page: document.documentElement.scrollWidth });
+    }
+    ws.activate(ws.tabs.find((t) => t.mode === 'drawing'));
+    await frame();
+    return out;
+  }, { ROW });
+  const checkRow = (rows, size) => {
+    if (new Set(rows.map((x) => x.mode)).size < 6) fail(`the one-row check at ${size} did not visit every kind of tab and the SI tab`);
+    for (const x of rows) {
+      if (x.order.some((i) => i < 0) || x.order.some((i, k) => k && i <= x.order[k - 1])) fail(`at ${size}, the ${x.mode} ribbon's row is not File, its tabs, Quick Access, the open files and Search (places ${x.order.join(', ')})`);
+      if (x.hidden.length) fail(`at ${size}, in a ${x.mode} tab, ${x.hidden.join(', ')} cannot be seen`);
+      if (x.right > x.w + 1 || x.page > x.w + 1) fail(`at ${size}, in a ${x.mode} tab, the row runs off the window (to ${Math.round(Math.max(x.right, x.page))} px of ${x.w})`);
+    }
+  };
+  checkRow(await rowCheck(), '1280 × 720');
+  await page.evaluate(() => window.__app.command('focus-view'));
+  await page.waitForTimeout(200);
+  const focusRow = await page.evaluate(() => ['#quick-bar', '#tabs', '#btn-search'].filter((q) => { const el = document.querySelector(q); return !el?.closest('header') || !(el.getBoundingClientRect().width > 0); }));
+  if (focusRow.length) fail(`in Focus View, ${focusRow.join(', ')} are not in the title row it shows`);
+  await page.evaluate(() => window.__app.command('focus-view'));
+  await page.waitForTimeout(200);
+  await page.setViewportSize({ width: 800, height: 720 });
+  await page.waitForTimeout(300);
+  checkRow(await rowCheck(), '800 × 720');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(300);
+
   step('the File tab opens every menu as a page, and Esc closes it');
   if (!(await page.evaluate(() => document.body.classList.contains('menus-in-file')))) fail('the web app starts with the menu bar showing, not the menus in the File tab');
   if (await page.locator('header > .menu-wrap > button').first().isVisible()) fail('the menu bar shows while the menus are in the File tab');

@@ -7093,7 +7093,7 @@ export class Editor {
     if (this.paused) return;
     const target = e.target as HTMLElement;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-    if (e.defaultPrevented || target?.closest?.('dialog, .menu, .flyout')) return;
+    if (e.defaultPrevented || target?.closest?.('dialog, .menu, .flyout, #backstage')) return;
     const chord = chordOf(e);
     if (!chord) return;
     if (this.focalPicking && chord === 'Escape') { e.preventDefault(); this.stopFocalPick(); return; }

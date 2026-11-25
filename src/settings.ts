@@ -331,6 +331,9 @@ export interface Settings {
 export const SLIDE_PANE_MIN = 120, SLIDE_PANE_MAX = 480, NOTES_MIN = 30, NOTES_MAX = 600;
 
 /** The web version starts with the one-row (Simplified) Canvas ribbon; the desktop app starts with Classic. A saved choice always wins. */
+/** The web look the settings are up to: main.ts saves this, so each step's migration runs once. */
+export const WEB_LOOK = 2 as const;
+
 function webDefaults(): boolean {
   try { return !isTauri(); } catch { return true; }
 }
@@ -367,7 +370,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cursorAids: { ...DEFAULT_CURSOR_AIDS },
   haptoDelocalized: true,
   electronMethod: 'both',
-  webLook: 2,
+  webLook: WEB_LOOK,
   toolboxScale: 100,
 };
 
