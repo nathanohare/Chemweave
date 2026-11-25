@@ -125,9 +125,10 @@ export function notesParts(s: Sheet, sheetNo: number, persons: Persons, usedIds 
     const plain = '<rPr><sz val="9"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr>';
     if (n.kind === 'comment') {
       // the ids the file gave the comment and its replies, where no other comment in the workbook has taken them (a copy keeps none)
-      // (one made here: an id from its cell, author and date, the same on every save; a clash, a new one)
+      // (one made here: an id from its cell, author and date, the same on every save; a clash, the next one made from it)
       const idOf = (kept: string | undefined, seed: string) => {
         let id = isGuid(kept) && !usedIds.has(kept) ? kept : stableGuid(seed);
+        for (let k = 1; usedIds.has(id) && k < 100; k++) id = stableGuid(seed + ':' + k);
         if (usedIds.has(id)) id = newGuid();
         usedIds.add(id);
         return id;
