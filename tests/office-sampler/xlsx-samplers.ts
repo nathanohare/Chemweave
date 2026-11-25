@@ -14,5 +14,4 @@ export const XLSX_SAMPLERS: Sampler[] = [xlsxNumbers, xlsxDates1904, xlsxCells, 
 
 export const XLSX_FINDINGS: Record<string, Finding> = {
   'xlsx-layout.xlsx:second-save': { scope: /^(xl\/worksheets\/sheet\d+\.xml|customXml\/item1\.xml):/, finding: 'F-X-004', note: 'row 7, which Excel fitted to its wrapped text (ht="45" without customHeight): the first save writes <row r="7" ht="45" customHeight="1"> and lists it in autoRows of customXml/item1.xml; reopening clears that height and the second save writes <row r="7"> with no height (the harness measures no row heights: deps.rowHeights)' },
-  'xlsx-notes.xlsx:second-save': { scope: /^xl\/(comments\d+|persons\/person|threadedComments\/threadedComment\d+)\.xml:/, finding: 'F-X-009', note: 'every save makes new GUIDs for the threaded comments (id, parentId), the people (xl/persons/person.xml id, personId) and the legacy copies\' tc= author names in xl/comments1.xml, so no two saves are the same' },
 };

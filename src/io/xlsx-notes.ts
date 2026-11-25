@@ -69,21 +69,26 @@ const tText = (s: string) => `<t${/^\s|\s$|\n/.test(s) ? ' xml:space="preserve"'
 /** The workbook's people (for threaded comments), shared by every sheet. */
 export class Persons {
   private byName = new Map<string, string>();
+  /** `kept`: the people the file listed, with their ids (and sign-in names) as it had them. */
+  constructor(private kept: { name: string; id: string; userId?: string; providerId?: string }[] = []) {}
   id(name: string): string {
     const key = name || 'Author';
     let id = this.byName.get(key);
-    if (!id) this.byName.set(key, (id = newGuid()));
+    if (!id) this.byName.set(key, (id = this.kept.find((p) => p.name === key)?.id ?? newGuid()));
     return id;
   }
   get size(): number { return this.byName.size; }
   toXml(): string {
-    const people = [...this.byName].map(([name, id]) => `<person displayName="${xml(name)}" id="${id}" userId="${xml(name)}" providerId="None"/>`).join('');
+    const people = [...this.byName].map(([name, id]) => {
+      const k = this.kept.find((p) => p.name === name && p.id === id);
+      return `<person displayName="${xml(name)}" id="${id}" userId="${xml(k?.userId ?? name)}" providerId="${xml(k?.providerId ?? 'None')}"/>`;
+    }).join('');
     return `<personList xmlns="${TC_NS}" xmlns:x="${MAIN}">${people}</personList>`;
   }
 }
 
 /** The parts for a sheet's notes and comments (null when it has none). */
-export function notesParts(s: Sheet, sheetNo: number, persons: Persons): { comments: string; vml: string; threaded: string | null } | null {
+export function notesParts(s: Sheet, sheetNo: number, persons: Persons, usedIds = new Set<string>()): { comments: string; vml: string; threaded: string | null } | null {
   if (!s.notes.size) return null;
   const list = [...s.notes].sort((a, b) => rowOf(a[0]) - rowOf(b[0]) || colOf(a[0]) - colOf(b[0]));
   const authors: string[] = [];
@@ -101,11 +106,17 @@ export function notesParts(s: Sheet, sheetNo: number, persons: Persons): { comme
     const bold = '<rPr><b/><sz val="9"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr>';
     const plain = '<rPr><sz val="9"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr>';
     if (n.kind === 'comment') {
-      const id = newGuid();
-      const one = (note: CommentNote, extra: string) =>
-        `<threadedComment ref="${ref}" dT="${tcDate(note.date)}" personId="${persons.id(note.author)}" id="${extra === '' ? id : newGuid()}"${extra}><text>${xml(note.text)}</text></threadedComment>`;
-      threads.push(one(n, '').replace('><text>', `${n.done ? ' done="1"' : ''}><text>`));
-      for (const rep of n.replies ?? []) threads.push(one(rep, ` parentId="${id}"`));
+      // the ids the file gave the comment and its replies, where no other comment in the workbook has taken them (a copy keeps none)
+      const idOf = (kept: string | undefined) => {
+        const id = kept && !usedIds.has(kept) ? kept : newGuid();
+        usedIds.add(id);
+        return id;
+      };
+      const id = idOf(n.tcIds?.id);
+      const one = (note: CommentNote, extra: string, noteId: string) =>
+        `<threadedComment ref="${ref}" dT="${tcDate(note.date)}" personId="${persons.id(note.author)}" id="${noteId}"${extra}><text>${xml(note.text)}</text></threadedComment>`;
+      threads.push(one(n, '', id).replace('><text>', `${n.done ? ' done="1"' : ''}><text>`));
+      (n.replies ?? []).forEach((rep, j) => threads.push(one(rep, ` parentId="${id}"`, idOf(n.tcIds?.replies[j]))));
       const body = ['[Threaded comment]', '', 'Your version of Excel shows this comment as a note: changes made to it here are lost in newer versions.', '',
         'Comment:', `    ${n.text}`, ...(n.replies ?? []).flatMap((rep) => ['Reply:', `    ${rep.author ? rep.author + ': ' : ''}${rep.text}`])].join('\n');
       comments.push(`<comment ref="${ref}" authorId="${authorNo(`tc=${id}`)}"><text><r>${plain}${tText(body)}</r></text></comment>`);
@@ -205,11 +216,14 @@ export function readNotes(comments: Document | null, shown: Set<number>, threade
         kind: 'comment', author: people.get(t.getAttribute('personId') ?? '') ?? '', date: readTcDate(t.getAttribute('dT')),
         text: kid(t, 'text')?.textContent ?? '', ...(t.getAttribute('done') === '1' || t.getAttribute('done') === 'true' ? { done: true } : {}),
       };
-      tops.set(t.getAttribute('id') ?? '', { key: keyOf(R.r1, R.c1), note });
+      const id = t.getAttribute('id') ?? '';
+      if (id) note.tcIds = { id, replies: [] };
+      tops.set(id, { key: keyOf(R.r1, R.c1), note });
     }
     for (const t of all) {
       const top = tops.get(t.getAttribute('parentId') ?? '');
       if (!top) continue;
+      top.note.tcIds?.replies.push(t.getAttribute('id') ?? '');
       (top.note.replies ??= []).push({ author: people.get(t.getAttribute('personId') ?? '') ?? '', date: readTcDate(t.getAttribute('dT')), text: kid(t, 'text')?.textContent ?? '' });
     }
     for (const { key, note } of tops.values()) if (!out.has(key)) out.set(key, note);

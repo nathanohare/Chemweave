@@ -647,7 +647,9 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
   // calls to defined names (LAMBDA ones) are dynamic array formulas in Excel
   const lambdaNames = new Set(book.names.map((n) => n.name.toUpperCase()));
   const nameCase = book.nameCase();
-  const persons = new Persons();
+  const persons = new Persons(book.excel?.persons);
+  // (threaded comments' ids, each used once in the workbook)
+  const usedIds = new Set<string>();
   // Excel's own values for formulas this program can't work out, while they still hold
   const saved = fileValues(book);
   pkg.defaultType('png', 'image/png');
@@ -1021,7 +1023,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     }
     // notes and comments (a dashboard's stand-in has none), and objects embedded in the sheet kept
     // from the file read, which share the notes' VML drawing (their shapes numbered after the notes')
-    const notes = standIn ? null : notesParts(s, si + 1, persons);
+    const notes = standIn ? null : notesParts(s, si + 1, persons, usedIds);
     const vmlPath = `xl/drawings/vmlDrawing${vmlNo + 1}.vml`;
     const objects = [...(own.ole ?? []), ...made];
     const ole = !standIn && objects.length ? writeSheetOle(pkg, objects, path, vmlPath, (si + 1) * 1024 + 1 + (notes ? s.notes.size : 0), oleState) : null;
@@ -2140,6 +2142,12 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   if (filters.length) book.build(() => { for (const { s, f } of filters) s.restoreFilter(f); });
   book.active = Math.min(Math.max(0, activeTab), book.sheets.length - 1);
   book.excel = richValues ? { ...bookKept, richValues } : bookKept;
+  // the people of threaded comments, with the ids the file gave them (and their sign-in names), to write back the same
+  const people = personsDoc ? Array.from(personsDoc.getElementsByTagNameNS('*', 'person')).flatMap((p) => {
+    const id = p.getAttribute('id'), userId = p.getAttribute('userId'), providerId = p.getAttribute('providerId');
+    return id ? [{ name: p.getAttribute('displayName') ?? '', id, ...(userId ? { userId } : {}), ...(providerId ? { providerId } : {}) }] : [];
+  }) : [];
+  if (people.length) book.excel = { ...book.excel, persons: people };
   keepFileValues(book, formulaValues);
   if (!unvalued && !date1904 && !isOn(kid(root, 'calcPr')?.getAttribute('fullCalcOnLoad')) && book.sheets.every((s) => !s.dataTables.length) && asSaved(book, formulaValues)) {
     book.excel = { ...book.excel, calculated: true };

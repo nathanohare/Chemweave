@@ -256,3 +256,31 @@ Dried over Na</t></r><r><rPr><vertAlign val="subscript"/><sz val="9"/><rFont val
     expect(xml).toContain('Dried over MgSO4');
   });
 });
+
+describe('threaded comments\' ids through saves (F-X-009)', () => {
+  const parts = (bytes: Uint8Array) => {
+    const f = unzipSync(bytes);
+    return ['xl/threadedComments/threadedComment1.xml', 'xl/persons/person.xml', 'xl/comments1.xml'].map((p) => strFromU8(f[p]));
+  };
+  it('keeps the ids a saved file gave its comments, replies and people, so the next save is the same', async () => {
+    const wb = new Workbook();
+    wb.edit('fill', () => {
+      wb.sheet.setNote(0, 0, { ...thread('Is this yield right?'), replies: [{ author: 'Lab', date: '2026-01-02T00:00:00.000Z', text: 'Yes' }] });
+      wb.sheet.setNote(2, 1, thread('Check the melting point'));
+    });
+    const first = await writeXlsx(wb, pictures);
+    const second = await writeXlsx((await readXlsx(first)).book, pictures);
+    expect(parts(second)).toEqual(parts(first));
+  });
+  it('gives a copied comment ids of its own', async () => {
+    const wb = new Workbook();
+    wb.edit('fill', () => wb.sheet.setNote(0, 0, thread('One')));
+    const back = (await readXlsx(await writeXlsx(wb, pictures))).book;
+    // the same comment, ids and all, in a second cell
+    back.edit('copy', () => back.sheet.setNote(1, 0, structuredClone(back.sheet.notes.get(0)!)));
+    const ids = [...parts(await writeXlsx(back, pictures))[0].matchAll(/<threadedComment [^>]*? id="([^"]+)"/g)].map((m) => m[1]);
+    // (each comment and each reply its own id)
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
