@@ -231,7 +231,7 @@ export const ORBITAL_LOOK_NAMES: { value: OrbitalLook; label: string }[] = [
   { value: 'shaded', label: 'One phase shaded' }, { value: 'colour', label: 'Two colors' }, { value: 'outline', label: 'Outlines only' },
 ];
 
-/** An angle typed in a Pointing box: degrees clockwise from up, or 'auto' (blank or "Auto"). */
+/** An angle typed in a Rotation box: degrees clockwise from up, or 'auto' (blank or "Auto"). */
 export function readAngle(text: string | undefined): number | 'auto' {
   const t = (text ?? '').trim().replace(/°$/, '').trim();
   if (!t || /^auto/i.test(t)) return 'auto';

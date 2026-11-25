@@ -12,6 +12,7 @@ mod open_dialog;
 mod portable;
 mod print;
 mod recognise;
+mod si_file;
 mod web;
 mod xtb;
 mod zotero;
@@ -519,6 +520,11 @@ pub fn run() {
             folders::si_move,
             folders::si_remove_lock,
             folders::si_list_dir,
+            si_file::si_unpack,
+            si_file::si_new_working,
+            si_file::si_pack,
+            si_file::si_discard_working,
+            si_file::si_list_working,
             folders::si_remove_trash,
             file_types::launch_files,
             file_types::file_types_get,

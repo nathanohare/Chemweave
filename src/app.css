@@ -842,6 +842,12 @@ dialog {
 /* native checkboxes, radio buttons, sliders and progress bars follow the mode's accent (Canvas teal) */
 input, progress, meter { accent-color: var(--accent); }
 dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+/* a modal window sits below the title strip and inside the part of the program on the screen, so
+   its heading and buttons can be reached; each has its own copy of the title strip (src/ui/modal-guard.ts,
+   which marks modal windows .is-modal: older Safari engines don't know :modal) */
+dialog.is-modal { inset: var(--dlg-top, 0px) var(--dlg-right, 0px) var(--dlg-bottom, 0px) var(--dlg-left, 0px); }
+.modal-title-strip { position: fixed; top: 0; left: 0; right: 0; height: var(--title-h, 32px); margin: 0; padding: 0; z-index: 1; }
+.modal-title-strip .win-controls { position: absolute; top: 0; right: 0; height: 100%; margin: 0; }
 dialog h2 { margin: 0 0 6px; font-size: var(--fs-lg); }
 dialog h3 { font-size: var(--fs-md); margin: 10px 0 3px; }
 dialog .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
@@ -909,6 +915,9 @@ dialog.si-progress { width: min(92vw, 400px); }
 .ask-row.ask-check input { padding: 0; }
 .ask-row.ask-check.ask-has-beside { grid-template-columns: auto auto auto 1fr; }
 .ask-row .ask-beside { padding: 1px 4px; }
+.ask-row > .ask-colors { grid-column: 3; display: inline-flex; gap: 4px; }
+.ask-row > .ask-colors[hidden] { display: none; }
+.ask-colors > input[type='color'] { width: 28px; height: 24px; padding: 1px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); cursor: pointer; }
 .ask-form > .ask-row:not(.ask-check, .ask-wide) > select.ask-beside { grid-column: 3 / -1; }
 /* a subheading over a group of settings on a page; a short list with its picture beside it; a checkbox with its picture after its words */
 .ask-form > .ask-subhead { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid var(--line); font-size: var(--fs-sm, 0.85em); font-weight: 600; }
@@ -2070,7 +2079,7 @@ dialog.arrange-dialog .muted { margin: 2px 0 10px; max-width: 62ch; }
 .colour-more input { width: 32px; height: 22px; padding: 0; border: none; background: none; }
 
 /* periodic table window: stays open beside the drawing */
-dialog.periodic-table { position: fixed; inset: 64px 16px auto auto; max-height: calc(100vh - 80px); overflow: auto; margin: 0; z-index: 40; width: min(94vw, 640px); padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--panel); color: var(--text); box-shadow: 0 8px 28px rgb(0 0 0 / 0.2); }
+dialog.periodic-table { position: fixed; inset: max(64px, var(--dlg-top, 0px)) 16px auto auto; max-height: calc(100vh - 80px); overflow: auto; margin: 0; z-index: 40; width: min(94vw, 640px); padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--panel); color: var(--text); box-shadow: 0 8px 28px rgb(0 0 0 / 0.2); }
 .pt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .pt-head h2 { margin: 0; font-size: 1rem; flex: 1; }
 .pt-head input { width: 9em; }
@@ -2135,6 +2144,19 @@ dialog.periodic-table { position: fixed; inset: 64px 16px auto auto; max-height:
 .ec-table th { font-weight: 600; color: var(--muted); text-align: left; padding: 1px 10px 1px 0; }
 .ec-table td { padding: 1px 10px 1px 0; }
 .ec-table tr.ec-total td { border-top: 1px solid var(--line); font-weight: 600; }
+/* the Side Panel's Electron Count: summary, a quiet note on the count expected, the ligands with their types */
+.ec-panel { margin: 2px 0 4px; }
+.ec-panel .ec-sum { margin: 0 0 4px; }
+.ec-panel .ec-status { margin: 0 0 4px; padding: 2px 8px; border-left: 3px solid var(--accent); background: var(--accent-soft); font-size: var(--fs-sm); }
+.ec-panel .ec-status.off { border-left-color: var(--muted); background: none; color: var(--muted); }
+.ec-panel-table { width: 100%; font-size: var(--fs-sm); border-collapse: collapse; }
+.ec-panel-table th { font-weight: 400; color: var(--muted); text-align: left; padding: 1px 4px 1px 0; }
+.ec-panel-table td, #side-content .ec-panel-table td { padding: 1px 4px 1px 0; font-family: inherit; font-variant-numeric: tabular-nums; }
+.ec-panel-table th:nth-child(n+3), .ec-panel-table td:nth-child(n+3) { text-align: right; }
+.ec-panel-table select { width: 60px; padding: 0 2px; font-size: var(--fs-sm); }
+.ec-panel-table select.own, .style-row input.own { font-weight: 600; }
+.ec-panel-table tr.ec-total td { border-top: 1px solid var(--line); font-weight: 600; }
+.ec-expect { display: contents; }
 .an-buttons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .an-buttons button { padding: 2px 8px; font-size: var(--fs-sm); }
 .an-cas button { padding: 0 8px; font-size: var(--fs-sm); }
@@ -2176,7 +2198,7 @@ dialog.refs-dialog > p { margin: 4px 0; max-width: 80ch; }
 .refs-table tr.refs-group.current th { color: var(--accent); }
 
 /* Chemistry > Look Up > Knowledge Base: tables listed on the left, the one picked on the right */
-dialog.kb-window { position: fixed; inset: 56px 0 auto 0; margin: 0 auto; z-index: 45; width: min(96vw, 1500px); max-width: min(96vw, 1500px); height: calc(100vh - 72px); max-height: calc(100vh - 72px); box-shadow: 0 8px 28px rgb(0 0 0 / 0.2); }
+dialog.kb-window { position: fixed; inset: max(56px, var(--dlg-top, 0px)) 0 auto 0; margin: 0 auto; z-index: 45; width: min(96vw, 1500px); max-width: min(96vw, 1500px); height: calc(100vh - 72px); max-height: calc(100vh - 72px); box-shadow: 0 8px 28px rgb(0 0 0 / 0.2); }
 .kb-body { display: flex; gap: 8px; min-height: 0; flex: 1 1 auto; }
 .kb-list { display: flex; flex-direction: column; gap: 1px; width: 160px; flex: none; overflow: auto; }
 .kb-tab { display: flex; justify-content: space-between; gap: 6px; text-align: left; padding: 4px 6px; border: 0; border-radius: var(--r-control); background: none; color: var(--text); font-size: var(--fs-sm); cursor: pointer; }
@@ -3241,7 +3263,7 @@ dialog.theme-editor form { margin: 0; }
 .sd-radios[disabled], .sd-sub[disabled], .sd-delims[disabled] { opacity: 0.5; }
 .sd-sub, .sd-delims { border: 1px solid var(--line); border-radius: var(--r-tab); padding: 2px 10px 6px; margin: 8px 0; }
 .sd-sub .ask-row, .sd-delims .ask-row { margin: 3px 0; }
-dialog.sd-find { position: fixed; inset: 64px 18px auto auto; max-height: calc(100vh - 80px); overflow: auto; margin: 0; width: min(92vw, 470px); z-index: 50; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22); }
+dialog.sd-find { position: fixed; inset: max(64px, var(--dlg-top, 0px)) 18px auto auto; max-height: calc(100vh - 80px); overflow: auto; margin: 0; width: min(92vw, 470px); z-index: 50; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22); }
 .sd-find-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
 .sd-find-head .dv-tabs { flex: 1; margin: 0 0 4px; }
 .sd-close { border: 0; background: transparent; font-size: var(--fs-xl); line-height: 1; padding: 2px 6px; }
@@ -3329,7 +3351,7 @@ dialog.sd-find { position: fixed; inset: 64px 18px auto auto; max-height: calc(1
 .show-ink { z-index: 2; }
 
 /* Data tools' windows (ToolPak, Goal Seek, Data Table, Solver, PivotTable): non-modal, beside the sheet, so cells can be picked */
-dialog.tool-window { position: fixed; inset: 96px 16px auto auto; max-height: calc(100vh - 112px); margin: 0; z-index: 40; width: min(92vw, 430px); overflow: auto; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22); }
+dialog.tool-window { position: fixed; inset: max(96px, var(--dlg-top, 0px)) 16px auto auto; max-height: calc(100vh - 112px); margin: 0; z-index: 40; width: min(92vw, 430px); overflow: auto; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22); }
 dialog.tool-window h2 { cursor: move; user-select: none; }
 dialog.tool-window .ask-row { grid-template-columns: 10em minmax(0, 1fr) auto; margin: 5px 0; }
 dialog.tool-window .ask-row.ask-check { grid-template-columns: auto 1fr; }
@@ -3351,7 +3373,7 @@ dialog.pivot-fields { width: min(92vw, 380px); max-height: calc(100vh - 120px); 
 .pivot-empty { font-size: var(--fs-sm); margin: 6px 0; }
 
 /* Data > Get Data: the Query Editor, Navigator and Queries & Connections */
-dialog.query-editor { inset: 72px 16px auto 16px; width: auto; max-width: 1180px; margin: 0 auto; max-height: calc(100vh - 96px); display: flex; flex-direction: column; }
+dialog.query-editor { inset: max(72px, var(--dlg-top, 0px)) 16px auto 16px; width: auto; max-width: 1180px; margin: 0 auto; max-height: calc(100vh - 96px); display: flex; flex-direction: column; }
 dialog.query-editor form { display: flex; flex-direction: column; min-height: 0; }
 dialog.query-editor .tool-body { display: flex; flex-direction: column; min-height: 0; }
 .qe-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 6px; }
@@ -3912,45 +3934,23 @@ dialog.plate-dialog { width: min(96vw, 560px); max-height: 92vh; }
 .plate-table td:last-child, .plate-table th:last-child { width: 2em; }
 .plate-rows { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
 .plate-ladder { display: flex; align-items: center; gap: 6px; }
-dialog.mo-dialog { width: min(96vw, 1080px); max-width: none; }
-.mo-dialog .plate-preview { height: 240px; }
-.mo-groups { display: grid; gap: 8px; margin: 2px 0 4px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr) minmax(0, 1fr); align-items: start; }
-.mo-group { min-width: 0; border: 1px solid var(--line); border-radius: var(--r-tab); padding: 3px 4px 4px; }
-.mo-group-head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-.mo-group-name { font-weight: 600; font-size: 0.85em; white-space: nowrap; }
-.mo-group[data-col=middle] .mo-group-name { color: var(--accent); }
-.mo-title { flex: 1; min-width: 0; display: flex; }
-.mo-title .mo-rich { flex: 1; min-width: 3em; }
-.mo-atom { font: inherit; max-width: 8.5em; }
-.mo-table-wrap { max-height: 26vh; overflow-y: auto; }
-.mo-table th { font-size: 0.8em; padding: 1px 2px; }
-.mo-table td { padding: 1px 1px; }
-.mo-table td input.mo-num { width: 3.6em; text-align: right; }
-.mo-table td select { font: inherit; width: 100%; min-width: 5em; }
-.mo-table td .mo-rich { width: 100%; min-width: 3.5em; }
-.mo-table td:first-child { width: 34%; }
-.mo-del { padding: 0 5px; }
-.mo-add { margin-top: 3px; padding: 1px 8px; }
 .mo-rich { min-height: 22px; box-sizing: border-box; padding: 2px 4px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); font-family: Arial, Arimo, sans-serif; white-space: pre; overflow: hidden; outline: none; line-height: 1.35; cursor: text; }
 .mo-rich:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .mo-rich.empty::before { content: attr(data-placeholder); color: var(--muted); }
 .mo-rich sub, .mo-rich sup { font-size: 0.72em; line-height: 0; }
-.mo-bar { display: flex; align-items: center; gap: 2px; margin: 4px 0 2px; }
-.mo-bar-gap { width: 1px; height: 16px; background: var(--line); margin: 0 3px; }
 .mo-fmt { min-width: 24px; height: 22px; padding: 0 5px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); cursor: pointer; line-height: 1; font-family: Arial, Arimo, sans-serif; }
 .mo-fmt sub, .mo-fmt sup { font-size: 9px; }
 .mo-fmt:disabled { opacity: 0.45; cursor: default; }
 .mo-fmt[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.mo-more-wrap { position: relative; display: inline-flex; }
-.mo-symbols { position: absolute; top: calc(100% + 3px); left: 0; z-index: 5; display: grid; grid-template-columns: repeat(10, 24px); gap: 2px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); }
-.mo-symbols[hidden] { display: none; }
-.mo-symbols .mo-fmt { min-width: 0; padding: 0; }
-.mo-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; }
-.mo-inline label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.mo-inline input.mo-num { width: 4.6em; text-align: right; }
-.mo-inline input[type=color] { width: 28px; height: 22px; padding: 0 1px; }
-.mo-inline select { font: inherit; }
-.mo-dialog .ask-row { margin: 3px 0; }
+.mo-bar { display: flex; align-items: center; gap: 2px; margin: 4px 0 2px; }
+.mo-bar-gap { width: 1px; height: 16px; background: var(--line); margin: 0 3px; }
+.mo-name-pop { position: fixed; z-index: 60; display: flex; align-items: center; gap: 4px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); }
+.mo-name-bar { display: inline-flex; gap: 2px; }
+.mo-fill { display: flex; gap: 4px; min-width: 0; }
+.mo-fill input.mo-electrons { width: 3.6em; min-width: 0; text-align: right; }
+.mo-fill button { padding: 1px 8px; white-space: nowrap; }
+.mo-warning { display: flex; gap: 5px; margin: 3px 0; padding: 2px 6px; font-size: var(--fs-sm); border: 1px solid var(--warn-line, #d9a400); border-radius: var(--r-control); background: var(--warn-bg, #fff8e1); color: var(--warn-text, #5b4300); }
+.mo-warning sub, .mo-warning sup { font-size: 0.72em; line-height: 0; }
 
 /* Insert ▸ Lab Figures ▸ Crystal Structure (CIF)… */
 dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); max-height: 94vh; }
@@ -4077,6 +4077,12 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .style-row .seg button { flex: 1 1 auto; min-width: 0; border: 0; border-radius: 0; padding: 2px 5px; background: transparent; font-size: var(--fs-xs); }
 .style-row .seg button + button { border-left: 1px solid var(--line); }
 .style-row .seg button[aria-checked='true'] { background: var(--accent-soft); color: var(--accent); }
+.style-row .seg button:disabled { color: var(--muted); cursor: default; }
+/* a d-orbital splitting diagram's readout: what the drawn electrons add up to, the value at the right */
+.style-row.ds-read { margin: 1px 0; }
+.style-row .ds-value { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a d-Orbital Splitting Metal Ion that was not read as a d-block ion: a quiet dashed outline (the tooltip says why) */
+.style-row input.unread { border-style: dashed; border-color: var(--muted); }
 .shape-pick { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 4px; }
 .shape-pick canvas { width: 20px; height: 20px; }
 
@@ -5216,7 +5222,7 @@ dialog:not(.embedded) .ask-form > .ask-buttons { margin-bottom: -12px; }
 :root[data-gray] dialog :is(input:not([type='checkbox'], [type='radio'], [type='color'], [type='range']), select, textarea) { background: #fff; color: #1d2128; }
 /* U11: every New window opens in the middle (New Design sat in the top-left corner), and the few
    cards of a document or spreadsheet category are drawn larger so the window isn't mostly empty */
-dialog.template-window.tw-modal { inset: 0; margin: auto; }
+dialog.template-window.tw-modal { inset: var(--dlg-top, 0px) var(--dlg-right, 0px) var(--dlg-bottom, 0px) var(--dlg-left, 0px); margin: auto; }
 :is(.tw-document, .tw-sheet) .tw-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
 .tw-sheet .tw-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 :is(.tw-document, .tw-sheet) .tw-thumb { height: 150px; }

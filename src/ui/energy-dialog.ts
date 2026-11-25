@@ -4,6 +4,7 @@
 // typed, and the bar (or Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+= and Ctrl+Shift+=) makes words bold, italic,
 // underlined, sub- or superscript (a compound's bold number, 3a); _ and ^ still work when pasted.
 
+import { dialogChanged, markDialogChanged } from './outside-click';
 import { FONT_GROUPS } from '../fonts';
 import { bracketText, labelFromParts, labelParts, largestBarrier, ENERGY_DEFAULTS, ENERGY_PRESETS, PATH_COLOURS, type EnergyBracket, type EnergyDash, type EnergyData, type EnergyLook, type EnergyPath, type EnergyPoint, type LabelPart, type GeomLook, type GeomView } from '../design/energy';
 import { askGeomView } from './geom-view-dialog';
@@ -220,9 +221,12 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
       const note = (text: string) => { const n = $<HTMLParagraphElement>('.energy-import-note'); n.hidden = false; n.textContent = text; };
       const editIt = async () => {
         read();
+        const was = dialogChanged(d);
         d.close();
         const got = await structure!.edit(rows[i]?.[j]?.drawn ?? null, `Structure for ${who} (Energy Diagram)`);
         d.showModal();
+        // (closed for a moment to draw the structure: what was changed before still counts)
+        if (was || got) markDialogChanged(d);
         if (got) set(got);
       };
       // how the file's geometry is drawn: its look, the angle, parts hidden or faded; or none
@@ -233,9 +237,11 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
         const sv = $<HTMLSelectElement>('select[name=structures]').value;
         // the look the diagram gives it now, so the one marked in the window is the one shown
         const look = (sv === '2d' ? '2d' : sv.startsWith('3d-') ? sv.slice(3) : 'ball') as GeomLook | '2d';
+        const was = dialogChanged(d);
         d.close();
         const got = await askGeomView(who, cell.geom, qmBonds(cell.geom, /‡/.test(cell.label)), cell.view ?? {}, look);
         d.showModal();
+        if (was || got) markDialogChanged(d);
         if (!got) return;
         if (got === 'remove') { delete cell.geom; delete cell.flat; delete cell.view; }
         else {

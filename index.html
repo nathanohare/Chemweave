@@ -19,11 +19,12 @@
         <button role="menuitem" data-cmd="new-slides" data-new-item title="Slide show, as in PowerPoint">Blank presentation</button>
         <button role="menuitem" data-cmd="new-sheet" data-new-item title="Tables, charts and dashboards">Blank spreadsheet</button>
         <button role="menuitem" data-cmd="new-design" data-new-item title="Posters, graphical abstracts and figures">Blank design</button>
-        <button role="menuitem" class="desktop-only" data-cmd="new-si-project" title="A new Supporting Information project: a folder Chem SI Assistant can open too" hidden>SI Project (Supporting Information)…</button>
+        <button role="menuitem" class="desktop-only" data-cmd="new-si-project" title="A new Supporting Information project, saved as one .chemsi file" hidden>SI Project (Supporting Information)…</button>
     </div>
     </div>
         <button role="menuitem" data-cmd="open">Open…</button>
-        <button role="menuitem" class="desktop-only" data-cmd="open-si-project" title="Open a Chem SI Assistant project folder in a tab of its own" hidden>Open SI Project…</button>
+        <button role="menuitem" class="desktop-only" data-cmd="open-si-project" title="Open an SI project file (.chemsi), or a zip of a project folder, in a tab of its own" hidden>Open SI Project…</button>
+        <button role="menuitem" class="desktop-only" data-cmd="open-si-folder" title="Save an old SI project folder as one .chemsi file, and open it. The folder is left as it was" hidden>Convert SI Project Folder…</button>
     <div class="submenu" id="recent-sub" hidden>
     <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">Open Recent</button>
     <div class="menu sub" role="menu" hidden>
@@ -783,7 +784,8 @@
     <button role="menuitem" data-cmd="orbital" title="Add an s, p, d or sp/sp²/sp³ orbital, or a single lobe, to each selected atom (or the view center), with direction, size and phase style">Orbital…</button>
     <button role="menuitem" data-cmd="edit-orbital" title="Change the selected orbitals' type, phases, angle or size (or double-click one)">Edit Orbital…</button>
     <hr />
-    <button role="menuitem" data-cmd="mo-diagram" title="Draw an MO diagram from a table of levels, filled by Hund's rule. Starts from H₂, N₂, O₂, CO or ethylene. Double-click to edit">MO Diagram…</button>
+    <button role="menuitem" data-cmd="mo-diagram" title="Put a molecular orbital diagram on the page. Choose each side's atom in the Side Panel; drag a level to move it and click it to add an electron">MO Diagram</button>
+    <button role="menuitem" data-cmd="d-orbital-splitting" title="Put a crystal field splitting diagram on the page: a metal ion's five d orbitals and the levels they split into. Choose the geometry, ion and spin in the Side Panel">d-Orbital Splitting</button>
     </div>
     </div>
     <div class="submenu">

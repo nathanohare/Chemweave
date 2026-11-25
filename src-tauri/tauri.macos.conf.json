@@ -108,6 +108,15 @@
         "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "role": "Editor",
         "rank": "Alternate"
+      },
+      {
+        "ext": [
+          "chemsi"
+        ],
+        "name": "Chemweave SI project",
+        "mimeType": "application/x-chemweave-si",
+        "role": "Editor",
+        "rank": "Owner"
       }
     ]
   }

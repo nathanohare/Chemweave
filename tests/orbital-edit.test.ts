@@ -149,7 +149,7 @@ describe('an orbital on an atom', () => {
   });
 });
 
-describe('the Pointing box', () => {
+describe('the Rotation box', () => {
   it('reads Auto, a blank or a number of degrees', () => {
     expect(readAngle('Auto')).toBe('auto');
     expect(readAngle('')).toBe('auto');

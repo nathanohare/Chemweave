@@ -16,7 +16,7 @@ Chemweave is a free program for drawing chemical structures and putting them to 
 | <img src="images/sheet.png" width="220" alt=""> | **[Spreadsheet](guide/sheets.md)** (Tables, Charts, and Dashboards) | Tables of compounds: structures in cells, formula and mass columns, charts, isotope patterns, dashboards | `.xlsx` (Excel) |
 | <img src="images/document.png" width="220" alt=""> | **[Document](guide/documents.md)** (Text document) | Reports, theses and experimentals: styles, structures in the text, captions, references, tracked changes, equations | `.docx` (Word) |
 | <img src="images/design.png" width="220" alt=""> | **[Design](guide/design.md)** (Posters, Graphical abstracts, Figures) | TOC graphics, graphical abstracts, posters and flowcharts, with a shape library that includes lab glassware, and about 7,000 icons with lab and hazard signs | `.pptx` (one page) |
-| <img src="images/si-project.png" width="220" alt=""> | **[SI Project](guide/si-project.md)** (Supporting Information) | The Supporting Information of a paper: compounds with their procedures, NMR, HRMS and spectra, checked as you enter them and compiled as a document or PDF. Desktop app only | a project folder (shared with Chem SI Assistant) |
+| <img src="images/si-project.png" width="220" alt=""> | **[SI Project](guide/si-project.md)** (Supporting Information) | The Supporting Information of a paper: compounds with their procedures, NMR, HRMS and spectra, checked as you enter them and compiled as a document or PDF. Desktop app only | a `.chemsi` project file |
 
 Structures stay editable in every kind of file: double-click one on a slide, in a cell or in a document to change it with the drawing tools.
 

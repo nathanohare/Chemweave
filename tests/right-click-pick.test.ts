@@ -78,3 +78,35 @@ describe('the colour menu', () => {
     expect(document.querySelector('.colour-pop')).toBeNull();
   });
 });
+
+describe('right-click on an MO diagram', () => {
+  it('keeps the diagram selected and finds the level, on the level\'s own line and with nothing selected', async () => {
+    const { newPlate, plateFromBox, putPlate } = await import('../src/design/plates');
+    const { POINTS } = await import('../src/editor/arrange');
+    const { moColumns, moY } = await import('../src/design/mo');
+    const { shapeBox } = await import('../src/objects');
+    // (jsdom has no canvas: hit-testing the diagram's names only needs text widths)
+    const ctx = new Proxy({}, { get: (_t, k) => (k === 'measureText' ? (t: string) => ({ width: 6 * t.length }) : () => undefined), set: () => true });
+    const real = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = (() => ctx) as unknown as typeof real;
+    const { doc, ed, at } = setup();
+    const L = doc.style.bondLength;
+    let id = -1;
+    doc.edit('MO Diagram', () => { id = putPlate(doc, POINTS, newPlate('mo', L), { x: 300, y: 300 }); });
+    ed.selectOnly({ kind: 'shape', id });
+    const frame = [...doc.shapes.values()].find((s) => s.plate?.kind === 'mo')!;
+    const d = frame.plate!, mo = d.mo!, corner = plateFromBox(shapeBox(frame), d, L).at;
+    const star = mo.levels.findIndex((l) => l.column === 'middle' && l.label.includes('*'));
+    const [x0, x1] = moColumns(mo, corner, d.w, L).span(mo.levels[star]);
+    const on = { x: (x0 + x1) / 2, y: moY(mo, corner, d.h)(mo.levels[star].e) };
+    for (const selected of [true, false]) {
+      if (!selected) ed.clearSelection();
+      const h = ed.contextPick(at(on));
+      expect(h, String(selected)).toEqual({ kind: 'shape', id: frame.id });
+      expect([...ed.sel.shapes], String(selected)).toEqual([frame.id]);
+      expect(ed.contextMo, String(selected)).toMatchObject({ frame: frame.id, level: star, column: 'middle' });
+      expect(ed.moActive, String(selected)).toEqual({ frame: frame.id, level: star });
+    }
+    HTMLCanvasElement.prototype.getContext = real;
+  });
+});

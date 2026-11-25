@@ -40,7 +40,17 @@ jobs:
           cache: npm
       # also makes the icon data and copies RDKit (package.json's postinstall)
       - run: npm ci
+      # the ECMA-376 schemas the Office samplers' files are checked against (tests/ooxml-schema.ts),
+      # downloaded from Ecma rather than kept in the repository (scripts/fetch-ooxml-schemas.mjs)
+      - uses: actions/cache@v6
+        with:
+          path: .cache/ooxml-schemas
+          key: ooxml-schemas-${{ hashFiles('scripts/fetch-ooxml-schemas.mjs') }}
+      - run: node scripts/retry.mjs -- node scripts/fetch-ooxml-schemas.mjs
+      # with the schemas required, a missing download fails here instead of skipping the check
       - run: npx vitest run --shard=${{ matrix.shard }}/2
+        env:
+          OOXML_SCHEMAS_REQUIRED: '1'
 
   # type checks, the web build, then the built app in a real browser: start, draw, paste, save and
   # reopen, every kind of tab, menus that fit a laptop's window (scripts/smoke.mjs), and axe with a
@@ -59,6 +69,7 @@ jobs:
       # tsconfig.strict.json is tsconfig.json plus extra checks, so this covers the type check
       # `npm run build` does as well; the build step below is then only Vite's
       - run: npm run typecheck:strict
+      - run: npm run typecheck:tests
       - run: npx vite build
       # Playwright's headless Chromium is all the smoke test needs (not the full browser)
       - run: npx playwright install --with-deps --only-shell chromium

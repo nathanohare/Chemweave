@@ -28,6 +28,8 @@ export const COMMAND_ICONS: Record<string, string> = {
   'stoichiometry-table': svg('<rect x="3" y="4" width="18" height="16"/><path d="M3 9h18M3 14.5h18M9 4v16M15 4v16" stroke-width="1.1"/>'),
   'check-balance': svg('<path d="M12 4v16M6 20h12M4 8h16"/><path d="M4 8l-2 6h4zM20 8l-2 6h4z"/>'),
   'mo-diagram': svg('<path d="M3 7h5M3 17h5M16 5h5M16 12h5M16 19h5" stroke-width="2"/><path d="M8 7l8-2M8 7l8 5M8 17l8 2M8 17l8-5" stroke-width="1" stroke-dasharray="1.5 1.5"/>'),
+  // five degenerate lines on the left, two split sets on the right (three below, two above)
+  'd-orbital-splitting': svg('<path d="M2 12h1.6M4.4 12h1.6M6.8 12h1.6M14 17h2M17 17h2M20 17h2M15.5 6h2M18.5 6h2" stroke-width="2"/><path d="M8.4 12l5.6 5M8.4 12l7-6" stroke-width="1" stroke-dasharray="1.5 1.5"/>'),
   'orbital': svg('<ellipse cx="12" cy="7" rx="3.5" ry="5"/><ellipse cx="12" cy="17" rx="3.5" ry="5" fill="currentColor" fill-opacity=".3"/>'),
   'ts-brackets': svg('<path d="M7 5H4v15h3M14 5h3v15h-3"/><path d="M20.5 1.5v8M18.3 3.6h4.4M18.3 6.8h4.4" stroke-width="1.3"/>'),
   'check-arrows': svg('<path d="M3 15A7 7 0 0 1 16 11"/><path d="M16 14l.4-3.6-3.4.6"/><path d="M14 18l2.5 2.5 5-5"/>'),

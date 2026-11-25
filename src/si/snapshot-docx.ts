@@ -4,9 +4,11 @@
 // worked on in Word. It is saved
 //   - every SNAPSHOT_EVERY_MS (5 minutes) while the project has changed since the last one,
 //   - when the project closes (its tab closed, or the app quitting: best effort), and
-//   - when asked (Ctrl+S in the SI Project tab, or Compile ▸ Save Word Snapshot).
+//   - when asked (Compile ▸ Save Word Snapshot).
 //
-// Where: the project folder's top, beside project.json, where the person looks first. Not in
+// Where: beside a project file (.chemsi), in the folder it is in (packing a large Word file into
+// the project file on every save would slow saving and double the file to share); else the
+// project folder's top, beside project.json, where the person looks first. Not in
 // build/ (SI Assistant says build/ is safe to delete, so a backup kept there could be lost with
 // it) and not in snapshots/ (SI Assistant's zip snapshots, by date). Chem SI Assistant reads
 // only the files it knows (project.json, references.json, sections/…), so the file is left
@@ -67,10 +69,25 @@ export function isSnapshotDocx(rel: string): boolean {
   return !r.includes('/') && (r.endsWith(SNAPSHOT_TAIL) || r === SNAPSHOT_FALLBACK);
 }
 
-/** The folder a snapshot is written to: the project's own, under its Undo history. */
-export function snapshotFolder(p: SiProject): SiFolder {
-  return journalOf(p.folder)?.inner ?? p.folder;
+/** Where the snapshots of project files (.chemsi) go: the folder the file is in (set when it is opened or saved as). */
+const besideFile = new WeakMap<SiProject, SiFolder>();
+/** A project file's snapshot goes beside it, in `folder` (the file's own folder), not into the file. */
+export function setSnapshotFolder(p: SiProject, folder: SiFolder | null): void {
+  if (folder) besideFile.set(p, folder); else besideFile.delete(p);
 }
+
+/** The folder a snapshot is written to: beside the project file, or the project's own folder (under its Undo history). */
+export function snapshotFolder(p: SiProject): SiFolder {
+  return besideFile.get(p) ?? journalOf(p.folder)?.inner ?? p.folder;
+}
+
+/** The folder a project file (.chemsi) is in, when the project is one (where its snapshots go); null for a project folder. */
+export function besideFolderOf(p: SiProject): SiFolder | null {
+  return besideFile.get(p) ?? null;
+}
+
+/** Where the snapshot is, as said to the person. */
+const placeOf = (p: SiProject): string => (besideFile.has(p) ? 'beside the project file' : 'in the project folder');
 
 /** Whether a Word file was saved by Chemweave (Word, LibreOffice and others name themselves in docProps/app.xml instead). */
 export function savedHere(bytes: Uint8Array): boolean {
@@ -252,7 +269,7 @@ export class SnapshotKeeper {
     if (p.readOnly) return 'read-only';
     if (s.gen === s.done) {
       if (why !== 'manual') return 'up-to-date';
-      // (Ctrl+S pressed out of habit: the snapshot written last, still there as it was written, is the answer)
+      // (asked again with nothing changed: the snapshot written last, still there as it was written, is the answer)
       const name = snapshotDocxName(p.title);
       if (s.known?.name === name && (await lookAt(snapshotFolder(p), name, s.known).catch(() => 'absent')) === 'ours') return 'up-to-date';
     }
@@ -269,7 +286,7 @@ export class SnapshotKeeper {
       const got = await writeSnapshotDocx(p, { compileHost: (q) => this.keeping(this.host.compileHost(q)), docx: (d, q) => this.host.docx(d, q) }, s.known);
       if (got === 'theirs') {
         out = 'theirs';
-        if (!s.said || why === 'manual') this.host.flash(`“${snapshotDocxName(p.title)}” in the project folder was saved in another program since, so it was not replaced. Rename or move it to keep those changes; the Word snapshot is then saved again.`, 10000);
+        if (!s.said || why === 'manual') this.host.flash(`“${snapshotDocxName(p.title)}” ${placeOf(p)} was saved in another program since, so it was not replaced. Rename or move it to keep those changes; the Word snapshot is then saved again.`, 10000);
         s.said = true;
       } else {
         out = 'written';
@@ -292,12 +309,12 @@ export class SnapshotKeeper {
     return out;
   }
 
-  /** Ctrl+S, or Save Word Snapshot: made now (after any being made), and the person told how it went. */
+  /** Save Word Snapshot: made now (after any being made), and the person told how it went. */
   async saveNow(p: SiProject): Promise<SnapshotOutcome> {
     if (p.readOnly) { this.host.flash('This SI project is open read-only, so its Word snapshot is not saved.'); return 'read-only'; }
     this.host.flash('Saving the Word snapshot…', 60000);
     const out = await this.snapshot(p, 'manual');
-    if (out === 'written' || out === 'up-to-date') this.host.flash(`Saved “${snapshotDocxName(p.title)}” in the project folder. An SI project saves every change as you make it; this Word copy is a backup.`, 6000);
+    if (out === 'written' || out === 'up-to-date') this.host.flash(`Saved “${snapshotDocxName(p.title)}” ${placeOf(p)}. This Word copy is a backup.`, 6000);
     else if (out === 'read-only') this.host.flash('This SI project is open read-only, so its Word snapshot is not saved.');
     return out;
   }

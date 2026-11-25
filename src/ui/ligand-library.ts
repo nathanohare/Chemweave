@@ -1,12 +1,13 @@
 // The Ligand Library window (Chemistry > Metals > Ligand Library, and the first button on the
 // Ligands palette): several hundred ligands by family, searched by abbreviation, name, PubChem
-// number or bonding type (LX, L2X…). Each one's drawing on a metal M, its names, how it bonds
-// and its PubChem record; Use Template picks its drawing as the tool, to click on a metal (or
-// anywhere) in the drawing. The window stays open beside the drawing while you work.
+// number or bonding type (LX, L2X…). Each one's drawing on a metal M, its names, how it bonds,
+// its PubChem record and, for common phosphines and phosphites, its cone angle and %Vbur. Use
+// Template picks its drawing as the tool, to click on a metal (or anywhere) in the drawing. The window stays open beside the drawing while you work.
 
 import { withInfo } from './info-tip';
 import { addCloseX } from './window-x';
 import { LIGAND_FAMILIES, bondingType, denticity, familyOf, searchLigands, type Ligand } from '../chem/ligands';
+import { coneInfo, stericsOf, vburInfo } from '../chem/ligand-sterics';
 import { templateById } from '../chem/templates';
 import { templateIcon } from './template-icons';
 import { svgNode } from './svg-node';
@@ -195,7 +196,9 @@ export class LigandLibraryWindow {
     const t = templateById(l.tpl);
     const pic = el('div', { className: 'lig-big' });
     { const icon = t ? svgNode(templateIcon(t, BIG)) : null; if (icon) pic.append(icon); }
-    const row = (k: string, v: Node | string) => [el('dt', { textContent: k }), el('dd', {}, v)];
+    const row = (k: string, v: Node | string, info = '') => [withInfo(el('dt', { textContent: k }), info), el('dd', {}, v)];
+    // cone angle and %Vbur, for the phosphines and phosphites that have them (src/chem/ligand-sterics.ts)
+    const st = stericsOf(l.id);
     const smiles = el('code', { className: 'lig-smiles', textContent: l.smiles, title: 'What the abbreviation stands for when typed as a label, starting at the atom that bonds. Click to copy' });
     smiles.addEventListener('click', () => this.host.copyText(l.smiles, `Copied the SMILES for ${l.abbr[0]}.`));
     const cid = l.cid
@@ -210,6 +213,8 @@ export class LigandLibraryWindow {
         ...row('Family', familyOf(l)?.name ?? ''),
         ...row('Bonds as', `${bondingType(l)}, ${denticity(l)}`),
         ...(l.drawn ? row('Drawn as', el('span', { textContent: `the ${l.drawn} enantiomer`, title: 'A chiral ligand is drawn as one enantiomer; its mirror image is the other. Flip the drawing to get it' })) : []),
+        ...(st?.cone ? row('Cone angle', `${st.cone.value}°`, coneInfo(st)) : []),
+        ...(st?.vbur ? row('Buried volume', `${st.vbur.value}%`, vburInfo(st)) : []),
         ...row('PubChem', cid),
         ...row('SMILES', smiles),
       ),

@@ -21,6 +21,7 @@ export const FILE_TYPES: { ext: string; label: string; chemistry: boolean }[] = 
   { ext: 'docx', label: 'Word documents (.docx)', chemistry: false },
   { ext: 'pptx', label: 'PowerPoint presentations (.pptx)', chemistry: false },
   { ext: 'xlsx', label: 'Excel workbooks (.xlsx)', chemistry: false },
+  { ext: 'chemsi', label: 'SI projects (.chemsi)', chemistry: true },
 ];
 
 export interface FileTypesHost {
