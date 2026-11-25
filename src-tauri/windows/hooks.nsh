@@ -29,6 +29,8 @@
     ${If} $R7 == "ChemIllustrator.chemsi"
       DeleteRegValue HKCU "Software\Classes\.chemsi" ""
     ${EndIf}
+    ; the .chemsi icon the app writes out (file_types.rs, icon_folder)
+    Delete "$LOCALAPPDATA\io.github.nathanohare.chemillustrator\chemsi.ico"
     DeleteRegKey HKCU "Software\Classes\CLSID\{171931C4-E8B6-4D52-A649-5D43133B5231}"
     DeleteRegKey HKCU "Software\Classes\ChemIllustrator.Drawing"
     DeleteRegKey HKCU "Software\Classes\ChemIllustrator.Drawing.1"

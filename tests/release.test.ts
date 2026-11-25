@@ -30,12 +30,9 @@ describe('releases', () => {
     expect(m.platforms['windows-x86_64'].signature).toBe('WIN');
   });
 
-  it('zips the portable app with the SI project file icon and the folder that keeps its settings', async () => {
-    const files = unzipSync(await portableZip(new Uint8Array([77, 90, 1, 2]), new Uint8Array([0, 0, 1, 0])));
-    expect(Object.keys(files).sort()).toEqual(['Chemweave/Chemweave Data/About this folder.txt', 'Chemweave/Chemweave.exe', 'Chemweave/chemsi.ico']);
-    expect([...files['Chemweave/chemsi.ico']]).toEqual([0, 0, 1, 0]);
-    // the installers put the icon beside the app under the same name, where the app looks for it
-    expect(installers('0.1.92').windows.portable.siIcon).toBe('src-tauri/icons/chemsi.ico');
+  it('zips the portable app with the folder that keeps its settings', async () => {
+    const files = unzipSync(await portableZip(new Uint8Array([77, 90, 1, 2])));
+    expect(Object.keys(files).sort()).toEqual(['Chemweave/Chemweave Data/About this folder.txt', 'Chemweave/Chemweave.exe']);
     expect([...files['Chemweave/Chemweave.exe']]).toEqual([77, 90, 1, 2]);
     expect(strFromU8(files['Chemweave/Chemweave Data/About this folder.txt'])).toContain('\r\nChemweave.exe');
   });

@@ -29,19 +29,42 @@ pub const TYPES: &[(&str, &str)] = &[
     ("chemsi", "Chemweave SI project"),
 ];
 
-/// Types with their own icon file, installed next to the app on Windows (tauri.windows.conf.json
-/// and the portable zip in scripts/release.mjs; made by scripts/make-file-icons.mjs). The others
-/// show the app's icon.
-pub const OWN_ICONS: &[(&str, &str)] = &[("chemsi", "chemsi.ico")];
+/// Types with their own icon (made by scripts/make-file-icons.mjs): the file name it is written
+/// under and its bytes. The others show the app's icon. The icon is carried inside the app and
+/// written out by the app itself, so every copy has it: the installers, the portable zip, and a
+/// portable copy that updated only its .exe.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const OWN_ICONS: &[(&str, &str, &[u8])] = &[("chemsi", "chemsi.ico", include_bytes!("../icons/chemsi.ico"))];
 
-/// What Windows shows for a type (its DefaultIcon): the type's own icon next to the app when it
-/// is there, otherwise the app's icon. A copy run from where it was built has no icon file beside
-/// it, so it falls back to the app's icon.
-pub fn default_icon(ext: &str, exe: &std::path::Path) -> String {
-    let own = OWN_ICONS.iter().find(|(e, _)| *e == ext).and_then(|(_, file)| exe.parent().map(|d| d.join(file)));
-    match own {
-        Some(icon) if icon.is_file() => format!("\"{}\",0", icon.to_string_lossy()),
-        _ => format!("\"{}\",0", exe.to_string_lossy()),
+/// The app's id (tauri.conf.json `identifier`), which names its folder in %LOCALAPPDATA%.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const IDENTIFIER: &str = "io.github.nathanohare.chemillustrator";
+
+/// Where the types' icons are written: the "Chemweave Data" folder of a portable copy, otherwise
+/// the app's folder in %LOCALAPPDATA% (the same folder Tauri's app_local_data_dir names).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn icon_folder() -> Option<std::path::PathBuf> {
+    if let Some(dir) = crate::portable::settings_folder() {
+        return Some(dir.to_path_buf());
+    }
+    std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join(IDENTIFIER))
+}
+
+/// What Windows shows for a type (its DefaultIcon): the type's own icon, written into `folder`
+/// when it isn't there already (or is out of date), otherwise the app's icon. If the icon can't
+/// be written, the app's icon is used.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn default_icon(ext: &str, exe: &std::path::Path, folder: Option<&std::path::Path>) -> String {
+    let app = format!("\"{}\",0", exe.to_string_lossy());
+    let (Some((_, file, bytes)), Some(folder)) = (OWN_ICONS.iter().find(|(e, _, _)| *e == ext), folder) else {
+        return app;
+    };
+    let icon = folder.join(file);
+    let current = std::fs::read(&icon).map(|b| b == *bytes).unwrap_or(false);
+    if current || (std::fs::create_dir_all(folder).is_ok() && std::fs::write(&icon, bytes).is_ok()) {
+        format!("\"{}\",0", icon.to_string_lossy())
+    } else {
+        app
     }
 }
 
@@ -246,6 +269,7 @@ pub(crate) mod win {
     pub fn set(types: &[String]) -> Result<(), String> {
         let exe_path = std::env::current_exe().map_err(|e| format!("Could not find the app: {e}"))?;
         let exe = exe_path.to_string_lossy();
+        let icons = super::icon_folder();
         let mut any = false;
         for (ext, what) in TYPES {
             let id = prog_id(ext);
@@ -253,7 +277,7 @@ pub(crate) mod win {
             if types.iter().any(|t| t == ext) {
                 any = true;
                 set_string(&class, None, what)?;
-                set_string(&format!(r"{class}\DefaultIcon"), None, &super::default_icon(ext, &exe_path))?;
+                set_string(&format!(r"{class}\DefaultIcon"), None, &super::default_icon(ext, &exe_path, icons.as_deref()))?;
                 set_string(&format!(r"{class}\shell\open\command"), None, &format!("\"{exe}\" \"%1\""))?;
                 set_string(&format!(r"Software\Classes\.{ext}\OpenWithProgids"), Some(&id), "")?;
                 set_string(&format!(r"{CAPABILITIES}\FileAssociations"), Some(&format!(".{ext}")), &id)?;
@@ -293,23 +317,26 @@ pub(crate) mod win {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_icon, files_in};
+    use super::{default_icon, files_in, OWN_ICONS};
 
     #[test]
-    fn a_type_with_its_own_icon_uses_it_when_it_is_beside_the_app() {
-        let dir = std::env::temp_dir().join("ci-file-types-icon-test");
-        std::fs::create_dir_all(&dir).unwrap();
+    fn a_type_with_its_own_icon_gets_it_written_out() {
+        let dir = std::env::temp_dir().join(format!("ci-file-types-icon-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         let exe = dir.join("Chemweave.exe");
-        let ico = dir.join("chemsi.ico");
-        let _ = std::fs::remove_file(&ico);
+        let folder = dir.join("data");
+        let ico = folder.join("chemsi.ico");
         let app = format!("\"{}\",0", exe.to_string_lossy());
-        // not there yet (a copy run from where it was built): the app's icon
-        assert_eq!(default_icon("chemsi", &exe), app);
-        std::fs::write(&ico, [0u8, 0, 1, 0]).unwrap();
-        assert_eq!(default_icon("chemsi", &exe), format!("\"{}\",0", ico.to_string_lossy()));
-        // other types keep the app's icon
-        assert_eq!(default_icon("cdxml", &exe), app);
-        std::fs::remove_file(&ico).unwrap();
+        assert_eq!(default_icon("chemsi", &exe, Some(&folder)), format!("\"{}\",0", ico.to_string_lossy()));
+        assert_eq!(std::fs::read(&ico).unwrap(), OWN_ICONS[0].2);
+        // a stale copy (an older icon) is replaced
+        std::fs::write(&ico, [1u8, 2, 3]).unwrap();
+        default_icon("chemsi", &exe, Some(&folder));
+        assert_eq!(std::fs::read(&ico).unwrap(), OWN_ICONS[0].2);
+        // other types, or nowhere to write it: the app's icon
+        assert_eq!(default_icon("cdxml", &exe, Some(&folder)), app);
+        assert_eq!(default_icon("chemsi", &exe, None), app);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

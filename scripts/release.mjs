@@ -36,14 +36,12 @@ export function installers(version) {
         { dir: 'nsis', end: '-setup.exe', as: `Chemweave_${version}_x64-setup.exe`, signed: true },
         { dir: 'msi', end: '.msi', as: `Chemweave_${version}_x64.msi` },
       ],
-      // the app on its own, for portable copies: the zip to download (the app, the SI project
-      // file icon and its "Chemweave Data" folder), and the bare app that portable copies update from
+      // the app on its own, for portable copies: the zip to download (the app and its
+      // "Chemweave Data" folder), and the bare app that portable copies update from
       portable: {
         exe: 'src-tauri/target/release/chem-illustrator.exe',
         zip: `Chemweave_${version}_x64-portable.zip`,
         update: `Chemweave_${version}_x64-portable.exe`,
-        // the icon SI project files (.chemsi) show, beside the app as the installers put it
-        siIcon: 'src-tauri/icons/chemsi.ico',
       },
     },
     macos: {
@@ -66,15 +64,12 @@ export function installers(version) {
   };
 }
 
-/** What the portable zip holds: the app, the icon SI project files show (src-tauri/src/file_types.rs
- *  looks for it beside the app, as the installers put it), and the folder that makes it keep its
- *  settings beside it. */
-export async function portableZip(exe, siIcon) {
+/** What the portable zip holds: the app, and the folder that makes it keep its settings beside it. */
+export async function portableZip(exe) {
   // loaded here, not at the top: the publish job runs this script without installing packages
   const { zipSync, strToU8 } = await import('fflate');
   return zipSync({
     'Chemweave/Chemweave.exe': [exe, { level: 6 }],
-    'Chemweave/chemsi.ico': siIcon,
     'Chemweave/Chemweave Data/About this folder.txt': strToU8(PORTABLE_NOTE.replace(/\n/g, '\r\n')),
   });
 }
@@ -149,7 +144,7 @@ if (!run) {
   }
   if (p.portable) {
     const exe = readFileSync(p.portable.exe);
-    writeFileSync(join(out, p.portable.zip), await portableZip(exe, readFileSync(p.portable.siIcon)));
+    writeFileSync(join(out, p.portable.zip), await portableZip(exe));
     copyFileSync(p.portable.exe, join(out, p.portable.update));
     if (existsSync(p.portable.exe + '.sig')) copyFileSync(p.portable.exe + '.sig', join(out, p.portable.update + '.sig'));
     console.log(`${p.portable.exe} → ${p.portable.zip}, ${p.portable.update}`);

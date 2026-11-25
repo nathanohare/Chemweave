@@ -7,8 +7,6 @@ import { readFileSync, existsSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 // @ts-expect-error a plain JavaScript script
 import { LINUX_SIZES, ICO_SIZES } from '../scripts/make-file-icons.mjs';
-// @ts-expect-error a plain JavaScript script
-import { installers } from '../scripts/release.mjs';
 
 const TAURI = 'src-tauri/';
 const json = (f: string) => JSON.parse(readFileSync(TAURI + f, 'utf8'));
@@ -61,13 +59,13 @@ function icnsTypes(buf: Buffer): string[] {
 const pngSize = (buf: Buffer) => [buf.readUInt32BE(16), buf.readUInt32BE(20)];
 
 describe('SI project file icon', () => {
-  it('Windows: the icon file is installed beside the app, under the name the app looks for', () => {
-    const resources = json('tauri.windows.conf.json').bundle.resources;
-    expect(resources).toEqual({ 'icons/chemsi.ico': 'chemsi.ico' });
+  it('Windows: the app carries the icon and writes it to its own folder', () => {
     const src = readFileSync(TAURI + 'src/file_types.rs', 'utf8');
-    expect(src).toContain('pub const OWN_ICONS: &[(&str, &str)] = &[("chemsi", "chemsi.ico")];');
-    // the portable zip carries the same file under the same name
-    expect(installers('0.1.1').windows.portable.siIcon).toBe(TAURI + 'icons/chemsi.ico');
+    expect(src).toContain('pub const OWN_ICONS: &[(&str, &str, &[u8])] = &[("chemsi", "chemsi.ico", include_bytes!("../icons/chemsi.ico"))];');
+    // the folder in %LOCALAPPDATA% is the app's own (its id), which the uninstaller tidies
+    const id = json('tauri.conf.json').identifier;
+    expect(src).toContain(`pub const IDENTIFIER: &str = "${id}";`);
+    expect(readFileSync(TAURI + 'windows/hooks.nsh', 'utf8')).toContain(`Delete "$LOCALAPPDATA\\${id}\\chemsi.ico"`);
     expect(icoSizes(readFileSync(TAURI + 'icons/chemsi.ico')).sort((a, b) => a - b)).toEqual(ICO_SIZES);
     expect(ICO_SIZES).toEqual(expect.arrayContaining([16, 24, 32, 48, 256]));
   });
@@ -98,8 +96,9 @@ describe('SI project file icon', () => {
       'public.filename-extension': ['chemsi'],
       'public.mime-type': assoc.find((a) => a.ext[0] === 'chemsi')!.mimeType,
     });
-    // 16 and 32 pixels, and every double-density size Finder asks for
-    expect(icnsTypes(readFileSync(TAURI + 'icons/chemsi.icns')).sort()).toEqual(['ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14', 'icp4', 'icp5']);
+    // the same parts as the app's own icon, which Finder already shows well
+    const types = (f: string) => icnsTypes(readFileSync(TAURI + 'icons/' + f)).sort();
+    expect(types('chemsi.icns')).toEqual(types('icon.icns'));
   });
 
   it('Linux: the .deb and .rpm install the file type and its icon in every size', () => {

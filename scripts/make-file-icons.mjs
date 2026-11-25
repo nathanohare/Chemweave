@@ -89,8 +89,9 @@ async function main() {
   const write = (name, data) => fs.writeFileSync(path.join(out, name), data);
   for (const px of LINUX_SIZES) write(`chemsi-${px}.png`, await png(px));
   write('chemsi.ico', ico(await Promise.all(ICO_SIZES.map(async (px) => [px, await png(px)]))));
-  // icp4 and icp5 are 16 and 32 pixels; ic11 to ic14 the double-density sizes (32 to 512)
-  write('chemsi.icns', icns(await Promise.all([['icp4', 16], ['icp5', 32], ['ic11', 32], ['ic12', 64], ['ic07', 128], ['ic13', 256], ['ic08', 256], ['ic14', 512], ['ic09', 512], ['ic10', 1024]]
+  // the same parts as the app's icon.icns (ic11 is 16 points on a Retina screen: the 32-pixel
+  // drawing); Finder makes 16 and 32 pixels for other screens from these
+  write('chemsi.icns', icns(await Promise.all([['ic11', 32], ['ic12', 64], ['ic07', 128], ['ic13', 256], ['ic08', 256], ['ic14', 512], ['ic09', 512], ['ic10', 1024]]
     .map(async ([type, px]) => [type, await png(px)]))));
   await browser.close();
   console.log('make-file-icons: wrote src-tauri/icons/chemsi.ico, chemsi.icns and chemsi-<size>.png');
