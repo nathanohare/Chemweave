@@ -396,11 +396,15 @@ const lang = 'lang="en-US"';
 /** A link as PowerPoint's own (a:hlinkClick), or '' when it can't be kept. */
 export type LinkXml = (link: string) => string;
 
-/** One run as PowerPoint runs (formula style turns into subscripts and superscripts). */
+/**
+ * The fields numbered so far in the file being written: each save's own (Writer.paras puts it in
+ * place for the paragraphs it writes, which are written without a pause), so a file saved again has
+ * the same ids, whatever other save is under way.
+ */
+let fields = { n: 0 };
 /** A new field id (a GUID, as PowerPoint gives each field). */
-let fields = 0;
 function fieldId(): string {
-  const n = (++fields).toString(16).padStart(12, '0');
+  const n = (++fields.n).toString(16).padStart(12, '0');
   return `{5C0E1D2A-7F3B-4C59-9A61-${n.toUpperCase()}}`;
 }
 
@@ -411,6 +415,7 @@ function fieldId(): string {
 export type ColourXml = (color: string | undefined, inner?: string) => string;
 export const srgbXml: ColourXml = (color, inner = '') => `<a:srgbClr val="${hex6(color)}"${inner ? `>${inner}</a:srgbClr>` : '/>'}`;
 
+/** One run as PowerPoint runs (formula style turns into subscripts and superscripts). */
 function runXml(r: TextRun, explicit: { size: number; font: string } | null, hlink?: LinkXml, clr: ColourXml = srgbXml, para?: readonly TextRun[]): string {
   const click = r.link && hlink ? hlink(r.link) : '';
   const parts = r.formula && !r.sub && !r.sup ? formulaPartsIn(para, r) : [{ text: r.text, pos: r.sub ? 'sub' : r.sup ? 'sup' : 'base' }];
@@ -624,6 +629,13 @@ function sizeType(s: SlideSize): string {
 }
 
 class Writer {
+  /** This save's fields, numbered from the first (see fieldId). */
+  private fieldCount = { n: 0 };
+  /** paragraphsXml with this save's field numbers. */
+  private paras(...args: Parameters<typeof paragraphsXml>): string {
+    fields = this.fieldCount;
+    return paragraphsXml(...args);
+  }
   pkg = new Package();
   private media = 0;
   private mediaFiles = new MediaFiles();
@@ -1558,7 +1570,7 @@ class Writer {
     const algn = justify === 'center' ? 'ctr' : justify === 'right' ? 'r' : justify === 'justify' ? 'just' : 'l';
     const hasText = !!s.text?.runs.some((r) => r.text);
     const body = hasText
-      ? paragraphsXml({ id: 0, x: 0, y: 0, runs: s.text!.runs, paras: s.text!.paras, justify }, { size: textSize, font: doc.style.captionFont || 'Arial' }, textSize, this.measure, this.hlink, this.clr)
+      ? this.paras({ id: 0, x: 0, y: 0, runs: s.text!.runs, paras: s.text!.paras, justify }, { size: textSize, font: doc.style.captionFont || 'Arial' }, textSize, this.measure, this.hlink, this.clr)
       : `<a:p><a:pPr algn="${algn}"/><a:endParaRPr ${lang} sz="${Math.round(textSize * 100)}" dirty="0"/></a:p>`;
     const anchor = s.textValign === 'top' ? 't' : s.textValign === 'bottom' ? 'b' : 'ctr';
     const ins = def.prst ? 3.6 : 0;
@@ -1722,18 +1734,28 @@ class Writer {
     });
     if (frame) {
       const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(frame.xfrm);
-      if (off) { const [x, y, w, h] = off.slice(1).map((v) => fromEmu(v)); box = { x1: x, y1: y, x2: x + w, y2: y + h }; }
+      if (off) {
+        const [x, y, w, h] = off.slice(1).map((v) => fromEmu(v));
+        box = { x1: x, y1: y, x2: x + w, y2: y + h };
+        // (text running down or up: the file's box is the other way round, so the text's is it turned back,
+        // as the reader takes it)
+        if (c.dir === 'vert' || c.dir === 'vert270') box = swapBox(box);
+      }
     }
     // where the text starts in its box; turned text: the box moved so that PowerPoint, turning it
     // about its middle, puts the text where it is here (turned about where it starts)
-    const o = [+(c.x - box.x1).toFixed(3), +(c.y - box.y1).toFixed(3)];
+    // (a kept frame stays where it is, turned: the text's start in it is where it is here turned back about
+    // the frame's middle, as the reader turns it again)
+    const mid0 = { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
+    const start = frame && c.rot ? turnAbout(c, mid0, -c.rot) : c;
+    const o = [+(start.x - box.x1).toFixed(3), +(start.y - box.y1).toFixed(3)];
     if (c.rot && !frame) {
       const mid = { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
       const to = turnAbout(mid, c, c.rot);
       box = { x1: box.x1 + to.x - mid.x, y1: box.y1 + to.y - mid.y, x2: box.x2 + to.x - mid.x, y2: box.y2 + to.y - mid.y };
     }
     const explicit = c.ph ? null : { size: doc.style.captionSize, font: doc.style.captionFont || 'Arial' };
-    const body = isEmptyText(c) && c.ph ? `<a:p><a:endParaRPr ${lang} dirty="0"/></a:p>` : paragraphsXml(c, explicit, base?.size ?? doc.style.captionSize, this.measure, this.hlink, this.clr);
+    const body = isEmptyText(c) && c.ph ? `<a:p><a:endParaRPr ${lang} dirty="0"/></a:p>` : this.paras(c, explicit, base?.size ?? doc.style.captionSize, this.measure, this.hlink, this.clr);
     const wrap = c.wrap !== undefined || c.ph ? 'square' : 'none';
     // AutoFit: shrink text on overflow (at the size it is shrunk to here), a box that keeps its
     // size, or one that grows with its text
@@ -1832,7 +1854,7 @@ class Writer {
         // runs only under "No Style, No Grid"
         const runs = known ? cell.runs : styledRuns(cell.runs, look);
         const body = runs.some((x) => x.text)
-          ? paragraphsXml({ id: 0, x: 0, y: 0, runs, paras: cell.paras, justify: align }, { size, font }, size, this.measure, this.hlink)
+          ? this.paras({ id: 0, x: 0, y: 0, runs, paras: cell.paras, justify: align }, { size, font }, size, this.measure, this.hlink)
           : empty(algnOf(align));
         tcs.push(`<a:tc${down > 1 ? ` rowSpan="${down}"` : ''}${span > 1 ? ` gridSpan="${span}"` : ''}><a:txBody><a:bodyPr/><a:lstStyle/>${body}</a:txBody>${tcPr}</a:tc>`);
       }

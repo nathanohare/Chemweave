@@ -256,7 +256,9 @@ export function frameNow(c: Caption, emu: (pt: number) => number, fit?: TextFit)
   // (a placeholder's frame only for the same placeholder: pasted as a text box, or the other way, it is placed afresh)
   if ((c.ph ?? null) !== (k.ph ?? null)) return null;
   if ((c.fit ?? null) !== k.fit || (c.dir ?? null) !== k.dir || !near(c.rot, k.rot)) return null;
-  const dx = c.x - k.x, dy = c.y - k.y;
+  // (a move under a hundredth of a point is the rounding of where the text was saved, read back: none)
+  const still = (d: number) => (Math.abs(d) < 0.01 ? 0 : d);
+  const dx = still(c.x - k.x), dy = still(c.y - k.y);
   let xfrm = k.xf.replace(/<a:off x="(-?\d+)" y="(-?\d+)"/, (_, x: string, y: string) => `<a:off x="${Number(x) + emu(dx)}" y="${Number(y) + emu(dy)}"`);
   const resized = !near(c.wrap, k.wrap) || !near(c.boxH, k.boxH);
   // (a box that didn't wrap, or now doesn't: made afresh)

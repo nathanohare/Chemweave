@@ -17,7 +17,7 @@ export const PPTX_FINDINGS: Record<string, Finding> = {
   'pptx-masters.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-001', note: TAGS },
   'P-MST-48': { finding: 'F-P-003', note: 'slide size A4 (sldSz cx 10692000, cy 7560000) is saved as cx 10693400, cy 7556500 (rounded to whole points, 842 × 595 pt); type="A4" is kept' },
   // text
-  'pptx-text.pptx:second-save': { scope: /^ppt\/(tags\/tag\d+|slides\/slide\d+)\.xml:/, finding: 'F-P-004', note: 'the second save moves the text box with vert="vert" (P-TXT-17) from off 304800,292100 ext 2819400×1003300 to off 305562,2836418 ext 2910840×1186180 (200 pt down, larger); another box moves 6 EMU (y 2451100 → 2451094); slide number fields get new ids ({…000000000001} → {…000000000003}); and the tag parts differ as in F-P-001' },
+  'pptx-text.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-001', note: TAGS },
   // shapes
   'pptx-shapes.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-005', note: TAGS },
   'P-GEO-68': { finding: 'F-P-007', note: 'a roundRect with <a:gd name="adj" fmla="val 30000"/> is saved with an empty <a:avLst/>: the corner size goes back to the default 16667' },
