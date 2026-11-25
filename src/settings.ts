@@ -116,6 +116,8 @@ export interface Settings {
   ribbonAutoFold: boolean;
   /** The file tabs sit in the menu bar (true) or on a row of their own. View > Window and Colours. */
   tabsInMenu: boolean;
+  /** The menus are in the File tab at the start of the ribbon (true; the web app's start) or on a menu bar (the desktop app's). View > Window and Colors > Menu Bar. */
+  menusInFile: boolean;
   /** The size of the whole interface, 1 for normal (View > Window and Colours > Interface Size, Ctrl+Alt+= / Ctrl+Alt+-). */
   uiScale: number;
   /** The page new drawings start on (File > Page Setup's default); null for no page. */
@@ -284,7 +286,7 @@ export interface Settings {
   /** Settings ▸ Preferences ▸ Electron Counting Method: which column of the metal complex's electron count to show. */
   electronMethod: ElectronMethod;
   /** The web version has been moved to its newer starting look (Dark Gray, Simplified ribbon), once. */
-  webLook: 0 | 1;
+  webLook: 0 | 1 | 2;
   /** Settings ▸ Toolboxes and Ribbon ▸ Toolbox Button Size, in percent of the ribbon's small buttons (the rest of the interface keeps its size). */
   toolboxScale: number;
   /** The Windows app has offered to open the chemistry file types (once, at its first start). */
@@ -329,6 +331,9 @@ export interface Settings {
 export const SLIDE_PANE_MIN = 120, SLIDE_PANE_MAX = 480, NOTES_MIN = 30, NOTES_MAX = 600;
 
 /** The web version starts with the one-row (Simplified) Canvas ribbon; the desktop app starts with Classic. A saved choice always wins. */
+/** The web look the settings are up to: main.ts saves this, so each step's migration runs once. */
+export const WEB_LOOK = 2 as const;
+
 function webDefaults(): boolean {
   try { return !isTauri(); } catch { return true; }
 }
@@ -336,7 +341,7 @@ function webDefaults(): boolean {
 export const DEFAULT_SETTINGS: Settings = {
   hotkeys: {}, keepHotspotOnBond: true, stickyHotspot: false, fixedLength: true, fixedAngles: true, devTools: false, showRoles: true, showAllRoles: false,
   chemTyping: true, stereoItalic: true, boldNumbers: false, autoLinks: true, linkCtrlClick: true, spellCheck: true, replacements: DEFAULT_TYPING.replacements, dictionary: [],
-  modeColours: DEFAULT_MODE_COLOURS, nicknames: {}, templates: [], splitWidth: 0.38, slidePaneWidth: 160, notesHeight: 32, slideNotes: true, scrollBars: true, ribbonCollapsed: false, ribbonAutoFold: false, tabsInMenu: true, uiScale: 1, titleBar: typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent) ? 'system' : 'app', page: { name: 'letter', w: 540, h: 720, grow: true }, welcomed: false, textBar: 'docked', appTheme: 'darkgray', density: 'cozy', shadows: 'light', iconLook: 'mode', iconSet: 'new', shapeInk: 'neutral', oneColumnTools: false, toolCells: 'off', canvasRibbon: webDefaults() ? 'simple' : 'classic', startView: true, enterFinishesText: false, offerFigures: true, templatesOnNew: { document: true, sheet: true, slides: true }, sheetTemplateUnits: 'both', sheetSmilesStructures: true, groupTips: true, toolTips: true, touchMode: 'auto', penSketch: false,
+  modeColours: DEFAULT_MODE_COLOURS, nicknames: {}, templates: [], splitWidth: 0.38, slidePaneWidth: 160, notesHeight: 32, slideNotes: true, scrollBars: true, ribbonCollapsed: false, ribbonAutoFold: false, tabsInMenu: true, menusInFile: webDefaults(), uiScale: 1, titleBar: typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent) ? 'system' : 'app', page: { name: 'letter', w: 540, h: 720, grow: true }, welcomed: false, textBar: 'docked', appTheme: 'darkgray', density: 'cozy', shadows: 'light', iconLook: 'mode', iconSet: 'new', shapeInk: 'neutral', oneColumnTools: false, toolCells: 'off', canvasRibbon: webDefaults() ? 'simple' : 'classic', startView: true, enterFinishesText: false, offerFigures: true, templatesOnNew: { document: true, sheet: true, slides: true }, sheetTemplateUnits: 'both', sheetSmilesStructures: true, groupTips: true, toolTips: true, touchMode: 'auto', penSketch: false,
   citeStyle: DEFAULT_STYLE, citeOptions: {}, methylStyle: 'Me', axialStyle: 'RaSa', circledCharges: false, ionCharges: false, unflaggedWedges: 'racemic', saltGroups: false, groupClick: 'group', groupOutline: true, rerouteArrows: true, arrowProducts: true, arrowStartGap: null, arrowEndGap: null, superscriptR: true, superscriptRText: false, alkylLook: 'typed', warnLook: 'box', bondEnds: DEFAULT_BOND_ENDS, mapLook: 'grey', mapBox: { ...DEFAULT_MAP_BOX }, depthShade: { ...DEFAULT_DEPTH_SHADE }, linkLook: 'style', slideTemplate: null, slideThemes: [], askWholeDrawing: true, palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null,
   myStyles: [], modeStyles: {}, darkPage: false, darkPalette: 'Graphite', darkPalettes: [],
   guides: { slides: true, design: true },
@@ -365,7 +370,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cursorAids: { ...DEFAULT_CURSOR_AIDS },
   haptoDelocalized: true,
   electronMethod: 'both',
-  webLook: 1,
+  webLook: WEB_LOOK,
   toolboxScale: 100,
 };
 
@@ -388,7 +393,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   if (!raw || typeof raw !== 'object') return s;
   const r = raw as Record<string, unknown>;
   if (r.hotkeys && typeof r.hotkeys === 'object' && !Array.isArray(r.hotkeys)) s.hotkeys = r.hotkeys as KeyOverrides;
-  for (const k of ['keepHotspotOnBond', 'stickyHotspot', 'fixedLength', 'fixedAngles', 'devTools', 'showRoles', 'showAllRoles', 'chemTyping', 'stereoItalic', 'boldNumbers', 'autoLinks', 'linkCtrlClick', 'spellCheck', 'scrollBars', 'ribbonCollapsed', 'ribbonAutoFold', 'tabsInMenu', 'welcomed', 'groupTips', 'toolTips', 'penSketch', 'askWholeDrawing', 'darkPage', 'circledCharges', 'ionCharges', 'saltGroups', 'groupOutline', 'rerouteArrows', 'arrowProducts', 'superscriptR', 'superscriptRText', 'updateCheck', 'pubchemNames', 'convertChemDraw', 'matchStructure', 'fileTypesOffered', 'wordObjectsOffered'] as const) if (typeof r[k] === 'boolean') s[k] = r[k] as boolean;
+  for (const k of ['keepHotspotOnBond', 'stickyHotspot', 'fixedLength', 'fixedAngles', 'devTools', 'showRoles', 'showAllRoles', 'chemTyping', 'stereoItalic', 'boldNumbers', 'autoLinks', 'linkCtrlClick', 'spellCheck', 'scrollBars', 'ribbonCollapsed', 'ribbonAutoFold', 'tabsInMenu', 'menusInFile', 'welcomed', 'groupTips', 'toolTips', 'penSketch', 'askWholeDrawing', 'darkPage', 'circledCharges', 'ionCharges', 'saltGroups', 'groupOutline', 'rerouteArrows', 'arrowProducts', 'superscriptR', 'superscriptRText', 'updateCheck', 'pubchemNames', 'convertChemDraw', 'matchStructure', 'fileTypesOffered', 'wordObjectsOffered'] as const) if (typeof r[k] === 'boolean') s[k] = r[k] as boolean;
   for (const k of ['arrowStartGap', 'arrowEndGap'] as const) if (typeof r[k] === 'number' && isFinite(r[k] as number) && (r[k] as number) >= 0) s[k] = Math.min(50, r[k] as number);
   if (typeof r.bondEnds === 'number' && isFinite(r.bondEnds)) s.bondEnds = Math.max(0, Math.min(1, r.bondEnds));
   if (MAP_LOOKS.some((l) => l.value === r.mapLook)) s.mapLook = r.mapLook as MapLook;
@@ -514,9 +519,15 @@ export function parseSettings(text: string | null | undefined): Settings {
   // that look once, where they still hold what the app used to start with (the System theme, the
   // Classic ribbon: a default that was saved can't be told from a choice). A Light or Dark theme was
   // chosen, so it stays; after the move, whatever is chosen stays.
-  if (webDefaults() && r.webLook !== 1 && Object.keys(r).length) {
+  const look = r.webLook === 1 || r.webLook === 2 ? r.webLook : 0;
+  if (webDefaults() && look < 1 && Object.keys(r).length) {
     if (s.appTheme === 'system') s.appTheme = 'darkgray';
     s.canvasRibbon = 'simple';
+  }
+  // and once more (2026-11-25): the Drawing Tools docked at the left, as they used to start, float at
+  // the top left of the drawing instead, with no dock beside them; moved or docked after that, they stay
+  if (webDefaults() && look < 2 && Object.keys(r).length && s.toolboxes.places.main?.dock === 'left') {
+    s.toolboxes.places.main = { ...s.toolboxes.places.main, dock: 'float', x: 70, y: 90, corner: 'left' };
   }
   return s;
 }

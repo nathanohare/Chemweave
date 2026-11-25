@@ -150,7 +150,8 @@ import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from './deck/templ
 import { showContextMenu, setMenuKeys, topMenuEntry, type MenuItem } from './ui/context-menu';
 import { MasterPanel } from './ui/master-panel';
 import { PAGE_PROMPTS, refsCaption } from './deck/master-view';
-import { QuickBar } from './ui/quick-bar';
+import { QuickBar, QUICK_WEB } from './ui/quick-bar';
+import { Backstage, addFileTabs } from './ui/backstage';
 import { SmartPane } from './ui/smart-pane';
 import { commandDef } from './commands/registry';
 import { defaultHandout, handoutLayout, handoutPageSvg, notesPageSize, notesPageSvg, type HandoutSetup } from './deck/notes-pages';
@@ -221,7 +222,7 @@ import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
 import { fieldKeyHandler, isTypingField } from './editor/field-keys';
-import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX } from './settings';
+import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX, WEB_LOOK } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
 import { TypingDialog } from './ui/typing-dialog';
@@ -243,7 +244,7 @@ import { fileTypesPage, FILE_TYPES, APPS_PAGE_TITLE } from './ui/file-types-page
 import { watchRibbons, fitRibbons, setRibbonCollapsed, ribbonCollapsed, repaintArrows } from './ui/ribbon-fit';
 import { CANVAS_TABS, CanvasRibbon } from './ui/canvas-ribbon';
 import { AnalysisBox, WarningsBox } from './ui/canvas-ribbon-boxes';
-import { placeTitleBar, titleBarPlace } from './ui/title-bar';
+import { pageTitleStrip, placeTitleBar, placeWindowButtons, titleBarPlace } from './ui/title-bar';
 import { canScaleUi, setUiScale, stepUiScale, uiScale, UI_SCALES } from './ui/ui-scale';
 import { installTouchUi, keypadShowing, markSketch, setTouchMode, showKeypad, touchMode, touchOn } from './ui/touch-ui';
 import { FeedbackDialog } from './ui/feedback-dialog';
@@ -335,7 +336,7 @@ import { SymbolWindow } from './ui/symbol-window';
 import { Navigator, EdgeArrows, paintGrid, paintTint, type Target } from './ui/orientation';
 import { type OrientPrefs, DEFAULT_ORIENT } from './orientation-prefs';
 import { type PageLook, type Side, DEFAULT_PAGE_LOOK, SIDES, SIDE_NAMES, pageExtent, extentRect, pageCount, pageKey, scrollBox, wallRect, wallsOf, setWall, usedPages, pagesToPrint, fixedCount, crossesWalls, clampMove, insetWalls, wrapPieces } from './page-grid';
-import { paintPages } from './ui/page-grid-view';
+import { paintPages, GRAY_ROOM_EXTRA } from './ui/page-grid-view';
 import { addRecent as addRecentSymbol } from './text/symbols';
 import type { CellBlock } from './sheet/workbook';
 import { DEFAULT_AI, type AiPrefs } from './ai/link';
@@ -387,6 +388,9 @@ const showLabCalculator = later(() => import('./ui/lab-calc-dialog'), 'showLabCa
 // Crash handling (src/diagnostics.ts): errors nothing else caught go to a log kept on this computer,
 // with a notice offering to report them through Send Feedback. The desktop app (not the iPad, whose
 // apps the system ends whenever it likes) also notices when it stopped without closing last time.
+/** The menus are in the File tab (the menu bar off), and its page once made (see "the File tab" below). */
+let menusInFile = false;
+let backstage: Backstage | null = null;
 const iPadApp = isTauri() && /Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1;
 // NMR prediction is a desktop feature: its data (about 48 MB) is past what the browser version may
 // download, and the iPad app leaves it out (the builds for both drop public/nmr).
@@ -4461,6 +4465,8 @@ function showDevTools(on: boolean): void {
   for (const el of document.querySelectorAll<HTMLElement>('.dev-only')) el.hidden = !on;
   $('[data-cmd="dev-tools"]')?.setAttribute('aria-checked', String(on));
   if (on) { updatePanels(); renderErrorLog(); }
+  // the File tab's list gains or loses Developer
+  if (backstage?.isOpen) backstage.openAt(Math.min(backstage.current, shownMenus().length - 1), false, true);
 }
 
 function align(how: Align): void {
@@ -4859,6 +4865,8 @@ function enterTab(tab: Tab, opened: boolean): void {
   docMode?.show(words ? tab : null);
   if (siTab && !siMode) void loadSiMode().catch(modeFailed);
   siMode?.show(siTab ? tab : null);
+  // (each kind's ribbon shows only now: the one row goes into the one showing)
+  if (menusInFile) placeOneRow();
   renderer.screen = !!deck;
   renderer.page = deck ? slidePage : drawingBackdrop;
   editor.slideKeys = slides;
@@ -6220,7 +6228,7 @@ function refreshHistory(): void {
     for (const [cmd, verb] of [['undo', 'Undo'], ['redo', 'Redo']] as const) {
       const step = historyStep(cmd === 'redo');
       const name = step ? `${verb} ${step}` : verb;
-      for (const item of document.querySelectorAll<HTMLButtonElement>(`header .menu [data-cmd="${cmd}"]`)) {
+      for (const item of document.querySelectorAll<HTMLButtonElement>(`:is(header, #backstage) .menu [data-cmd="${cmd}"]`)) {
         item.disabled = step === null;
         const label = item.firstChild;
         if (label?.nodeType === Node.TEXT_NODE) label.textContent = name;
@@ -6357,7 +6365,8 @@ new ResizeObserver(() => fitTabs()).observe(tabsEl);
 let tabsInMenu = true;
 function placeTabs(inMenu: boolean): void {
   tabsInMenu = inMenu;
-  if (inMenu) $('header').insertBefore(tabsEl, $('#btn-search'));
+  // (beside Search, wherever it is: the title row, or the ribbon's row of tabs in the web app)
+  if (inMenu) $('#btn-search').before(tabsEl);
   else $('header').after(tabsEl);
   document.body.classList.toggle('tabs-in-menu', inMenu);
   $('[data-cmd="tabs-in-menu"]')?.setAttribute('aria-checked', String(inMenu));
@@ -8616,6 +8625,9 @@ function showSheetParts(): void {
     el.hidden = (c.contains('sheet-only') && !sheet) || (c.contains('no-sheet') && sheet) || (c.contains('doc-only') && !words)
       || (c.contains('no-doc') && words);
   }
+  // another file's tab: the File tab's page closes (its menus were for the last one), and a ribbon made since (an SI project's) gets its File tab
+  if (backstage?.isOpen) backstage.close(false);
+  if (menusInFile) { addFileTabs(() => openBackstage()); placeOneRow(); }
   tickMenuModes();
 }
 
@@ -8966,7 +8978,7 @@ host.addEventListener('pointerdown', (e) => {
 // last drawn, text being typed); then Cancel, asking first when something was drawn (ui/in-place.ts)
 let askingDiscard = false;
 window.addEventListener('keydown', (e) => {
-  if (!cellEdit || e.key !== 'Escape' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu')) return;
+  if (!cellEdit || e.key !== 'Escape' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu, #backstage')) return;
   const act = escapeAction({ toolsBusy: editor.escapeHasWork(), changed: doc.canUndo() });
   if (act === 'tools') return;
   e.preventDefault();
@@ -8994,7 +9006,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keydown', (e) => {
   if (!sheetActive() || e.defaultPrevented) return;
   const t = e.target as HTMLElement | null;
-  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, #sheet-pane, select')) return;
+  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, #backstage, #sheet-pane, select')) return;
   if (sheetKey(e)) { e.preventDefault(); return; }
   if (!t || t === document.body) sheetMode.focus();
 });
@@ -9252,7 +9264,10 @@ function loadSiMode(): Promise<SiMode> {
       },
     });
     applyIconSet(document.querySelector('#si-ribbon') ?? document);
+    // the SI Project ribbon, made only now, leads with the File tab too
+    if (menusInFile) addFileTabs(() => openBackstage());
     if (ws.active.mode === 'si') siMode.show(ws.active);
+    if (menusInFile) placeOneRow();
     return siMode;
   }, (err: unknown) => {
     siModeLoading = null;
@@ -10303,13 +10318,13 @@ const DOC_ANY = new Set(['export-pdf', 'print']);
 window.addEventListener('keydown', (e) => {
   if (!docActive() || e.defaultPrevented) return;
   const t = e.target as HTMLElement | null;
-  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, select, aside, .ribbon')) return;
+  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, #backstage, select, aside, .ribbon')) return;
   if (docKey(e)) { e.preventDefault(); return; }
   if (!t || t === document.body) docMode.focus();
 });
 
 /** Menu commands that work the same whatever shows. */
-const ANY_TAB = new Set(['references', 'compound-library', 'knowledge-base', 'ligand-library', 'toolbox-text', 'toolbox-guides', 'insert-compound', 'add-to-compound-library', 'library-location', 'find-structure-files', 'new-from-template', 'check-accessibility', 'format-painter', 'insert-symbol', 'edit-palettes', 'preferences', 'export-settings', 'import-settings', 'customize-ribbon', 'toolbox-main', 'toolbox-structure', 'toolbox-arrange', 'toolbox-templates', 'toolbox-colours', 'toolbox-highlight', 'toolbox-custom', 'toolbox-schemes', 'toolbox-diagrams', 'toolbox-tables', 'toolbox-biopolymers', 'toolbox-perspective', 'fold-side', 'customize-toolbox', 'customize-quick-bar', 'lock-toolboxes', 'reset-toolboxes', 'new', 'new-slides', 'new-design', 'new-sheet', 'new-document', 'open', 'save', 'save-as', 'autosave', 'version-history', 'recover-work', 'keep-options', 'close-tab', 'next-tab', 'prev-tab', 'undo', 'redo',
+const ANY_TAB = new Set(['menu-bar', 'tabs-in-menu', 'references', 'compound-library', 'knowledge-base', 'ligand-library', 'toolbox-text', 'toolbox-guides', 'insert-compound', 'add-to-compound-library', 'library-location', 'find-structure-files', 'new-from-template', 'check-accessibility', 'format-painter', 'insert-symbol', 'edit-palettes', 'preferences', 'export-settings', 'import-settings', 'customize-ribbon', 'toolbox-main', 'toolbox-structure', 'toolbox-arrange', 'toolbox-templates', 'toolbox-colours', 'toolbox-highlight', 'toolbox-custom', 'toolbox-schemes', 'toolbox-diagrams', 'toolbox-tables', 'toolbox-biopolymers', 'toolbox-perspective', 'fold-side', 'customize-toolbox', 'customize-quick-bar', 'lock-toolboxes', 'reset-toolboxes', 'new', 'new-slides', 'new-design', 'new-sheet', 'new-document', 'open', 'save', 'save-as', 'autosave', 'version-history', 'recover-work', 'keep-options', 'close-tab', 'next-tab', 'prev-tab', 'undo', 'redo',
   'drawing-style', 'navigation-settings', 'dark-page', 'dark-colours', 'hotkeys', 'typing-spelling', 'mode-colours', 'dev-tools', ...STRESS_SIZES.map((n) => `stress-${n}`), 'scroll-bars', 'title-bar-in-menu', 'collapse-ribbon', 'ui-scale-in', 'ui-scale-out', 'ui-scale-reset', ...UI_SCALES.map((v) => `ui-scale-${Math.round(v * 100)}`), 'text-bar-docked', 'text-bar-floating', 'text-bar-hidden', 'theme-system', 'theme-light', 'theme-dark', 'theme-darkgray', 'density-snug', 'density-cozy', 'density-normal', 'density-standard', 'density-large', 'shadows-light', 'shadows-strong', 'shadows-off', 'icons-mode', 'icons-kind', 'shape-ink-accent', 'focus-view', 'one-column-tools', 'group-tips', 'tool-tips', 'touch-mode-auto', 'touch-mode-on', 'touch-mode-off', 'atom-keypad', 'pen-sketch', 'show-stereo', 'clipboard-formats', 'split-view', 'command-search', 'next-region', 'prev-region', 'print',
   'assistant', 'help', 'about', 'user-guide', 'help-here', 'send-feedback', 'report-problem', 'support-project', 'copy-diagnostics', 'open-log-folder', 'open-inspector', 'check-updates', 'whats-new']);
 
@@ -10566,6 +10581,8 @@ async function compareSlides(): Promise<void> {
 
 /** Run a menu command in the way that suits the tab showing. False when it doesn't apply there. */
 function command(name: string): boolean {
+  // a command run while the File tab's page shows (a shortcut, Search, a file tab) closes the page first
+  if (backstage?.isOpen) { backstage.close(false); if (!document.activeElement || document.activeElement === document.body) focusWork(); }
   // View > Toolboxes: one of your own
   if (name.startsWith('toolbox-own-')) { toolboxes.toggle(name.slice('toolbox-'.length)); return true; }
   if (sheetActive()) {
@@ -11069,6 +11086,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'ribbon-auto-fold': () => { ribbonAutoFold = !ribbonAutoFold; autoFoldRibbon(true); storeSettings(); },
   'ribbon-simplified': () => { setRibbonLook(ribbonLook === 'simple' ? 'classic' : 'simple'); storeSettings(); },
   'tabs-in-menu': () => { placeTabs(!tabsInMenu); storeSettings(); },
+  'menu-bar': () => { setMenusInFile(!menusInFile); storeSettings(); },
   'ui-scale-in': () => sizeInterface(stepUiScale(uiScale(), 1)),
   'ui-scale-out': () => sizeInterface(stepUiScale(uiScale(), -1)),
   'ui-scale-reset': () => sizeInterface(1),
@@ -11475,6 +11493,7 @@ function fitMenu(list: HTMLElement): void {
   if (r.right > innerWidth - 4 || r.left < 4) list.style.translate = `${Math.max(4, innerWidth - 4 - r.width) - r.left}px 0`;
 }
 function showMenu(m: Menu | null, focus = true): void {
+  if (!m && backstage?.isOpen) { backstage.close(false); return; }
   openMenu = m;
   for (const x of menus) {
     if (x !== m) closeSubs(x.list);
@@ -11495,8 +11514,9 @@ for (const m of menus) {
   // sliding along the menu bar opens each menu in turn (a mouse only: a tap's pointerenter would
   // open the menu and its click shut it again)
   m.btn.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse' && openMenu && openMenu !== m) showMenu(m, false); });
-  m.list.addEventListener('scroll', () => closeSubs(m.list));
+  m.list.addEventListener('scroll', () => { if (!backstage?.isOpen) closeSubs(m.list); });
   m.list.addEventListener('pointerover', (e) => {
+    if (backstage?.isOpen) return;
     const item = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!item || item.disabled) return;
     if (item.classList.contains('has-sub')) { if (item.getAttribute('aria-expanded') !== 'true') openSub(item, false); }
@@ -11505,7 +11525,7 @@ for (const m of menus) {
   m.list.addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!b || b.disabled) return;
-    if (b.classList.contains('has-sub')) { openSub(b, false); return; }
+    if (b.classList.contains('has-sub')) { if (!backstage?.isOpen) openSub(b, false); return; }
     const recent = b.dataset.recent;
     if (recent !== undefined) { showMenu(null); void openRecent(recent); return; }
     const cmd = b.dataset.cmd;
@@ -11513,10 +11533,14 @@ for (const m of menus) {
     // a greyed command says why and the menu stays open on it, for the keys to go on from (F5b-R09)
     const why = cantRun(b) ? whyCannotRun(cmd) : null;
     if (why) { flash(why); b.focus(); return; }
+    const fromPage = !!backstage?.isOpen;
     showMenu(null);
     command(cmd);
+    // the keys go back to the work, unless the command opened a window or put them somewhere
+    if (fromPage && (!document.activeElement || document.activeElement === document.body)) focusWork();
   });
   m.list.addEventListener('keydown', (e) => {
+    if (backstage?.isOpen) { backstageKeys(e, m); return; }
     const here = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.menu') ?? m.list;
     const items = menuItems(here);
     const now = document.activeElement as HTMLButtonElement;
@@ -11543,7 +11567,110 @@ for (const m of menus) {
     }
   });
 }
-addEventListener('resize', () => { if (openMenu) showMenu(null); });
+addEventListener('resize', () => { if (openMenu && !backstage?.isOpen) showMenu(null); });
+
+// ---------------------------------------------------------------- the File tab (menu bar off)
+
+// With the menu bar off (the web app's start), a File tab leads each ribbon's tabs and opens the
+// menus as a page over the window, as Office's File tab does (src/ui/backstage.ts). The page is the
+// menu itself (.bs-page), so it greys, ticks and runs its commands just as the menu bar's does.
+/** Every command in the page, top to bottom, for the arrow keys (the submenus' headings are not commands). */
+const pageItems = (list: HTMLElement) =>
+  [...list.querySelectorAll<HTMLButtonElement>('button')].filter((b) => !b.classList.contains('has-sub') && !b.hidden && !b.disabled && b.getClientRects().length > 0);
+function backstageKeys(e: KeyboardEvent, m: Menu): void {
+  // a shortcut (Ctrl+N, Alt+Q…) runs as it would anywhere else; command() closes the page
+  if (e.ctrlKey || e.metaKey || e.altKey) {
+    const chord = chordOf(e);
+    const action = chord ? keymap.lookup('command', chord) : null;
+    const a = action ? parseAction(action) : null;
+    if (a?.verb === 'command') { e.preventDefault(); e.stopPropagation(); command(a.arg); }
+    return;
+  }
+  const items = pageItems(m.list);
+  const i = items.indexOf(document.activeElement as HTMLButtonElement);
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); backstage!.close(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); backstage!.focusNav(); }
+}
+/** A menu shown as the File tab's page goes back to its place on the menu bar. */
+function putBack(m: Menu): void {
+  m.list.classList.remove('bs-page');
+  for (const head of m.list.querySelectorAll<HTMLButtonElement>('button.has-sub')) head.removeAttribute('tabindex');
+  if (m.list.parentElement !== m.btn.parentElement) m.btn.after(m.list);
+}
+function openBackstage(m: Menu = menus[0], focusPage = false): void {
+  backstage ??= new Backstage({
+    titleStrip: pageTitleStrip,
+    menus: () => shownMenus().map((x) => ({ name: x.btn.textContent!.trim() })),
+    show: (i, focus) => {
+      const x = shownMenus()[i];
+      for (const y of menus) if (y !== x) putBack(y);
+      x.list.classList.add('bs-page');
+      backstage!.pane.append(x.list);
+      showMenu(x, false);
+      // the submenus open in the page, each under its name
+      for (const sub of x.list.querySelectorAll<HTMLElement>('.menu.sub')) {
+        sub.hidden = false;
+        sub.style.removeProperty('left');
+        sub.style.removeProperty('top');
+        const head = sub.parentElement!.querySelector<HTMLButtonElement>(':scope > button')!;
+        head.setAttribute('aria-expanded', 'true');
+        // (a submenu's name is its heading here, not a command: out of the Tab order)
+        head.tabIndex = -1;
+        paintCanRun(sub.querySelectorAll<HTMLButtonElement>(':scope > button[data-cmd]'), 'cmd', (c) => whyCannotRun(c));
+      }
+      backstage!.pane.scrollTop = 0;
+      if (focus) pageItems(x.list)[0]?.focus();
+    },
+    closed: () => {
+      for (const y of menus) putBack(y);
+      showMenu(null);
+    },
+  });
+  if (backstage.isOpen && backstage.current === shownMenus().indexOf(m) && !focusPage) { backstage.close(); return; }
+  backstage.openAt(Math.max(0, shownMenus().indexOf(m)), focusPage);
+}
+/** The menu bar on (the menus as in other desktop programs) or off (the menus in the File tab). View ▸ Window and Colors. */
+function setMenusInFile(on: boolean): void {
+  menusInFile = on;
+  document.body.classList.toggle('menus-in-file', on);
+  if (on) addFileTabs(() => openBackstage());
+  else backstage?.close(false);
+  $('[data-cmd="menu-bar"]')?.setAttribute('aria-checked', String(!on));
+  placeOneRow();
+  fitRibbons();
+}
+
+// With the menus in the File tab there is no title row (Nate, 2026-11-25; the web app as it comes,
+// the desktop app when Menu Bar is cleared): Quick Access, the file tabs and Search go after the
+// ribbon's tabs in the ribbon's row, and in the desktop app the window's buttons go at its end, the
+// row's empty parts moving the window (title-bar.ts). In Focus View, with no ribbon, the title row is back.
+const qaHome = document.createComment('quick bar');
+const searchHome = document.createComment('search');
+$('#quick-bar').before(qaHome);
+$('#btn-search').before(searchHome);
+function placeOneRow(): void {
+  const on = menusInFile;
+  document.body.classList.toggle('one-row', on);
+  const row = on ? [...document.querySelectorAll<HTMLElement>('.ribbon > .rb-tabs')].find((r) => !(r.parentElement as HTMLElement).hidden && r.offsetParent) : null;
+  placeWindowButtons(row && !focusView ? row : null);
+  const qa = $('#quick-bar'), search = $('#btn-search');
+  if (!row || focusView) {
+    // (the title row, as it was, and in Focus View, which shows it in place of the ribbon; while no
+    // ribbon shows for another reason, such as a tab's ribbon still loading, they stay where they were)
+    if (on && !focusView) return;
+    qaHome.after(qa);
+    searchHome.after(search);
+  } else {
+    // File, the ribbon's tabs, then Save, Undo and Redo just after them (Nate, 2026-11-25), the open files and Search
+    const tablist = row.querySelector(':scope > .rb-tablist')!;
+    if (qa.previousElementSibling !== tablist) tablist.after(qa);
+    if (search.previousElementSibling !== (tabsInMenu ? tabsEl : qa) || search.parentElement !== row) qa.after(search);
+  }
+  if (tabsInMenu) search.before(tabsEl);
+  fitTabs();
+}
 
 // ---------------------------------------------------------------- the keyboard round the window
 
@@ -11571,6 +11698,7 @@ let beforeMenus: HTMLElement | null = null;
 function enterMenuBar(): void {
   const a = document.activeElement as HTMLElement | null;
   if (!a?.closest('header')) beforeMenus = a;
+  if (menusInFile) { document.body.classList.remove('show-mnemonics'); openBackstage(menus[0]); return; }
   menus[0].btn.focus();
 }
 function leaveMenuBar(): void {
@@ -11594,7 +11722,7 @@ function focusWork(): void {
  * it (null when that part isn't showing).
  */
 const REGIONS: { inside: string; first: () => HTMLElement | null }[] = [
-  { inside: 'header', first: () => menus[0].btn },
+  { inside: 'header', first: () => (menusInFile ? $('#quick-bar').querySelector<HTMLElement>('button') : menus[0].btn) },
   { inside: '#tabs', first: () => $('#tabs').querySelector<HTMLElement>('[aria-selected="true"]') ?? $('#tabs').querySelector<HTMLElement>('[role="tab"], button') },
   { inside: '.ribbon', first: () => [...document.querySelectorAll<HTMLElement>('.ribbon')].find(onScreenEl)?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"], button:not([disabled])') ?? null },
   { inside: '#tools', first: () => onScreenEl($('#tools')) ? $('#tools').querySelector<HTMLElement>('button.tool.active') ?? $('#tools').querySelector<HTMLElement>('button.tool') : null },
@@ -11632,25 +11760,29 @@ window.addEventListener('keydown', (e) => {
   // Escape shuts an open menu wherever the keys are (one with every item greyed out never takes them)
   if (e.key === 'Escape' && openMenu && !openMenu.list.contains(e.target as Node | null)) {
     e.preventDefault(); e.stopImmediatePropagation();
-    showMenu(null);
+    // the File tab's page closes with the keys going back where they were
+    if (backstage?.isOpen) backstage.close();
+    else showMenu(null);
     return;
   }
   if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) return;
   if (e.key === 'F10' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
     e.preventDefault();
-    if (inMenuBar() || openMenu) leaveMenuBar();
+    if (backstage?.isOpen) backstage.close();
+    else if (inMenuBar() || openMenu) leaveMenuBar();
     else { document.body.classList.add('show-mnemonics'); enterMenuBar(); }
     return;
   }
   // Alt and a menu's letter (by the key's place, so it works whatever the keyboard writes)
   if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && /^Key[A-Z]$/.test(e.code)) {
     const m = MNEMONICS.get(e.code.slice(3));
-    if (m) { e.preventDefault(); e.stopImmediatePropagation(); if (!inMenuBar()) beforeMenus = document.activeElement as HTMLElement | null; showMenu(m); }
+    if (m && menusInFile) { e.preventDefault(); e.stopImmediatePropagation(); openBackstage(m, true); }
+    else if (m) { e.preventDefault(); e.stopImmediatePropagation(); if (!inMenuBar()) beforeMenus = document.activeElement as HTMLElement | null; showMenu(m); }
   }
 }, true);
 // Undo and Redo in the SI Project tab, on the keys set for them (a text box keeps its own undo while typing)
 window.addEventListener('keydown', (e) => {
-  if (ws.active.mode !== 'si' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu')) return;
+  if (ws.active.mode !== 'si' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu, #backstage')) return;
   const chord = chordOf(e);
   const action = chord ? keymap.lookup('command', chord) : null;
   const verb = action ? parseAction(action).arg : '';
@@ -11665,7 +11797,8 @@ window.addEventListener('keyup', (e) => {
   if (!alone || pointerHeld) { if (!inMenuBar()) document.body.classList.remove('show-mnemonics'); return; }
   if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) { document.body.classList.remove('show-mnemonics'); return; }
   e.preventDefault();
-  if (inMenuBar() || openMenu) leaveMenuBar();
+  if (backstage?.isOpen) { backstage.close(); document.body.classList.remove('show-mnemonics'); }
+  else if (inMenuBar() || openMenu) leaveMenuBar();
   else enterMenuBar();
 });
 window.addEventListener('pointerdown', () => { altAlone = false; pointerHeld = true; }, true);
@@ -11684,8 +11817,9 @@ function tickMenuModes(): void {
   const mode = menuMode();
   // (a command greyed for the last mode is given back; showMenu greys it again if it still cannot run)
   clearCanRun(document.querySelector('header')!);
+  if (backstage?.isOpen) clearCanRun(backstage.pane);
   // what belongs to another mode is left out of the menus (marked, so what is hidden for other reasons stays hidden)
-  for (const el of document.querySelectorAll<HTMLElement>('header .menu > button, header .menu > .submenu, header .menu.sub > button')) {
+  for (const el of document.querySelectorAll<HTMLElement>(':is(header, #backstage) .menu > button, :is(header, #backstage) .menu > .submenu, :is(header, #backstage) .menu.sub > button')) {
     const modes = el.dataset.modes ?? el.closest<HTMLElement>('[data-item-modes]')?.dataset.itemModes;
     if (!modes) continue;
     const on = modes.split(' ').includes(mode);
@@ -11694,7 +11828,7 @@ function tickMenuModes(): void {
     if (on && el.dataset.modeHid) { el.hidden = false; delete el.dataset.modeHid; }
     else if (!on && !el.hidden) { el.hidden = true; el.dataset.modeHid = '1'; }
   }
-  for (const menu of document.querySelectorAll<HTMLElement>('header .menu')) {
+  for (const menu of document.querySelectorAll<HTMLElement>(':is(header, #backstage) .menu')) {
     const items = [...menu.children].filter((c): c is HTMLElement => c instanceof HTMLElement && c.tagName !== 'HR');
     // a menu with nothing for this mode (Chemistry beside a sheet) shows its commands greyed out, so it is never empty
     if (items.length && items.every((c) => c.hidden)) {
@@ -11723,7 +11857,7 @@ function tickMenuModes(): void {
 tickMenuModes();
 // (in the capture phase: the drawing takes a finger's press for itself, so it never bubbles up)
 document.addEventListener('pointerdown', (e) => {
-  if (openMenu && !(e.target as HTMLElement).closest('.menu-wrap')) showMenu(null);
+  if (openMenu && !(e.target as HTMLElement).closest('.menu-wrap, #backstage, .rb-file')) showMenu(null);
 }, true);
 // listing the clipboard's formats needs the Windows app
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-cmd="clipboard-formats"]')) b.hidden = !nativeClipboard;
@@ -13063,6 +13197,7 @@ function currentSettings(): Settings {
     ribbonCollapsed: ribbonChosen,
     ribbonAutoFold,
     tabsInMenu,
+    menusInFile,
     uiScale: uiScale(),
     textBar: CaptionEditor.barPlace,
     appTheme,
@@ -13118,7 +13253,7 @@ function currentSettings(): Settings {
     cursorAids: { ...editor.aids },
     haptoDelocalized: haptoLook.delocalized,
     electronMethod: electronPrefs.method,
-    webLook: 1,
+    webLook: WEB_LOOK,
     toolboxScale,
     superscriptR: labelPrefs.superscriptR,
     superscriptRText: labelPrefs.plainText,
@@ -13314,6 +13449,7 @@ function applySettings(s: Settings): void {
   ribbonAutoFold = s.ribbonAutoFold;
   autoFoldRibbon(true);
   placeTabs(s.tabsInMenu);
+  setMenusInFile(s.menusInFile);
   void setUiScale(s.uiScale);
   defaultPage = s.page;
   welcomed = s.welcomed;
@@ -16251,7 +16387,7 @@ let toolboxMenuTop: Element | null = null;
 
 /** View > Toolboxes: a ticked entry for each toolbox there is now, named and in the order Customize Toolboxes has them. */
 function fillToolboxMenu(): void {
-  const first = document.querySelector<HTMLElement>('header .menu [data-cmd^="toolbox-"]');
+  const first = document.querySelector<HTMLElement>(':is(header, #backstage) .menu [data-cmd^="toolbox-"]');
   if (!first) return;
   toolboxMenuTop ??= first.previousElementSibling;
   const menu = first.parentElement!;
@@ -16396,13 +16532,15 @@ let quickPrefs: string[] | null = null;
 const menuLabel = (cmd: string) => topMenuEntry(cmd)?.label ?? commandDef(cmd)?.label ?? COMMAND_NAMES[cmd] ?? cmd;
 quickBar = new QuickBar($('#quick-bar'), {
   get: () => quickPrefs,
+  // the web app starts with only Save, Undo and Redo (Nate, 2026-11-25); the desktop app with the fuller set
+  defaults: isTauri() ? undefined : QUICK_WEB,
   set: (list) => { quickPrefs = list; storeSettings(); },
   run: (cmd) => { finishTyping(); if (!command(cmd)) flash(`${menuLabel(cmd)} isn't available here.`); },
   label: menuLabel,
   key: (cmd) => commandKey(cmd),
   icon: (cmd) => (cmd === 'lock-toolboxes' ? lockIcon(toolboxState.locked) : commandIcon(cmd)),
   state: (cmd) => {
-    const item = document.querySelector<HTMLButtonElement>(`header .menu-wrap [data-cmd="${cmd}"]`);
+    const item = document.querySelector<HTMLButtonElement>(`header .menu-wrap [data-cmd="${cmd}"], #backstage .menu [data-cmd="${cmd}"]`);
     const e = topMenuEntry(cmd);
     return { enabled: !item || (!item.disabled && !item.closest('[data-mode-hid]')), on: e?.checked ?? null };
   },
@@ -16410,7 +16548,7 @@ quickBar = new QuickBar($('#quick-bar'), {
 });
 // right-click a menu item, or a ribbon button that runs a menu command, to put it on the quick bar (or take it off)
 document.addEventListener('contextmenu', (e) => {
-  const b = (e.target as Element).closest<HTMLButtonElement>('header .menu [data-cmd], .ribbon button[data-cmd]');
+  const b = (e.target as Element).closest<HTMLButtonElement>('header .menu [data-cmd], #backstage .menu [data-cmd], .ribbon button[data-cmd]');
   if (!b || !quickBar) return;
   e.preventDefault();
   const qb = quickBar;
@@ -16448,9 +16586,10 @@ function commandItems(): CommandItem[] {
     finishTyping();
     if (!command(cmd)) flash(`${label} isn't available here.`);
   };
-  for (const wrap of document.querySelectorAll<HTMLElement>('header .menu-wrap')) {
-    const menu = wrap.querySelector<HTMLElement>(':scope > button')?.textContent?.trim() ?? '';
-    for (const b of wrap.querySelectorAll<HTMLButtonElement>('[data-cmd]')) {
+  // (by the menus themselves: one may be in the File tab's page just now)
+  for (const { btn, list } of menus) {
+    const menu = btn.textContent?.trim() ?? '';
+    for (const b of list.querySelectorAll<HTMLButtonElement>('[data-cmd]')) {
       if (b.hidden || b.disabled || getComputedStyle(b).display === 'none') continue;
       // the submenus it is in, outermost first (File ▸ Export)
       const subs: HTMLButtonElement[] = [];
@@ -16671,7 +16810,7 @@ editor.underlay = (ctx) => {
   if (!drawingShown() || cellEdit) return;
   const p = gridPage();
   // with the page grid, whole pages show what is in use, so the tint round the drawing is left off
-  if (p && pageLook.grid) paintPages(ctx, pageLook, renderer, p, pageExtent(p, doc.bounds()), pagesInUse(p), dark.on, dark.on ? null : darkSurround);
+  if (p && pageLook.grid) paintPages(ctx, pageLook, renderer, p, pageExtent(p, doc.bounds()), pagesInUse(p), dark.on, dark.on ? null : darkSurround, graySurround ? GRAY_ROOM_EXTRA : undefined);
   else paintTint(ctx, orientPrefs, renderer, doc.bounds(), doc.style.labelSize * 1.5 + doc.style.bondLength);
 };
 editor.overlayTop = (ctx) => nmrPanel.drawMarks(ctx, renderer.view.scale, (id) => doc.atoms.get(id), (id) => doc.neighbors(id), getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#0e7c86');
@@ -17095,13 +17234,16 @@ function setShapesInk(ink: Settings['shapeInk']): void {
   $('[data-cmd="shape-ink-accent"]')?.setAttribute('aria-checked', String(ink === 'accent'));
 }
 
-/** The space round the drawing's pages in the dark theme (app.css --surround), or null in the light theme, where the page grid's light shading shows. */
+/** The space round the drawing's pages in the dark and Dark Gray themes (app.css --surround), or null in the light theme, where the page grid's light shading shows. */
 let darkSurround: string | null = null;
+/** Dark Gray: the room to add pages is a light grey against its dark surround (Nate's pick, 2026-11-25). */
+let graySurround = false;
 const darkScheme = matchMedia('(prefers-color-scheme: dark)');
 function themeChanged(): void {
   const t = document.documentElement.dataset.theme;
   const isDark = t === 'dark' || (t !== 'light' && darkScheme.matches);
-  darkSurround = isDark ? getComputedStyle(document.documentElement).getPropertyValue('--surround').trim() || null : null;
+  graySurround = !isDark && 'gray' in document.documentElement.dataset;
+  darkSurround = isDark || graySurround ? getComputedStyle(document.documentElement).getPropertyValue('--surround').trim() || null : null;
   // the slide's and the document's canvases paint the space round the page themselves
   dispatchEvent(new CustomEvent('surround-changed', { detail: darkSurround }));
   renderer.repaintAll();
@@ -17115,6 +17257,8 @@ function setFocusView(on: boolean): void {
   focusView = on;
   document.body.classList.toggle('focus-view', on);
   $('[data-cmd="focus-view"]')?.setAttribute('aria-checked', String(on));
+  // (the desktop app's window buttons go back to the title row, which Focus View shows, and out again)
+  if (menusInFile) placeOneRow();
   dispatchEvent(new Event('resize'));
   if (on) flash(`Focus view: toolboxes, side panel and ribbon hidden. ${commandKey('focus-view') || 'View > Focus View'} brings them back.`, 6000);
 }

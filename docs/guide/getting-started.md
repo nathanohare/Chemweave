@@ -91,9 +91,11 @@ Chemweave is in **beta**: it is still being built, new features arrive often, an
 
 Along the top are the menus: **File**, **Edit**, **View**, **Insert**, **Format**, **Chemistry** and **Help**. Each menu shows the commands for the tab type you are in; a command for another kind of tab is left out (Insert ▸ Chart shows in a spreadsheet, not in a canvas). Under the menu bar every kind of tab has a ribbon of buttons, like Word, Excel and PowerPoint (see [The ribbon](#the-ribbon)).
 
+In the web version the menus are in the **File** tab at the start of the ribbon, as in Office, and there is no menu bar: the quick bar, the open files' tabs and Search sit in the ribbon's own row of tabs, so the ribbon starts at the top of the window. **File** opens a page over the window with the menus down the left; pick one to see all its commands, its submenus each under their name. **Alt** and a menu's underlined letter open its page (**Alt+F** File, **Alt+E** Edit…), the arrow keys move through it, and **Esc** or the ← button goes back to your work. **View ▸ Window and Colors ▸ Menu Bar** brings the menu bar back (and in the desktop app, clearing it moves the menus into the File tab and gives it the same single row, with the window's buttons at the right end of the ribbon's row of tabs; drag an empty part of that row to move the window).
+
 **Help** has this **User Guide** built in (it works without an internet connection), the keyboard shortcuts, and short notes on each part of Chemweave. **F1** (**Help ▸ Help on This Tool or Mode**) opens the guide at the part about the tool or kind of tab in use: with the ring tool, for example, it opens at Rings.
 
-To the right of the menus is the **quick bar** (like Office's Quick Access Toolbar), with buttons for **Save**, **Undo**, **Redo**, **Fit** (fit the whole drawing in the window), the **padlock** (locks or unlocks all the toolboxes at once so they can be moved; see [Canvas](drawing.md#toolboxes)) and the **eye** (Reading Mode). Undo and Redo are grayed out when there is nothing to take back, and resting the mouse on one names the step it would undo (**Undo Add Ring**). To choose its buttons:
+To the right of the menus is the **quick bar** (like Office's Quick Access Toolbar), with buttons for **Save**, **Undo**, **Redo**, **Fit** (fit the whole drawing in the window), the **padlock** (locks or unlocks all the toolboxes at once so they can be moved; see [Canvas](drawing.md#toolboxes)) and the **eye** (Reading Mode). In the web version it sits just after the ribbon's tabs (after **View**) and starts with only **Save**, **Undo** and **Redo**. Undo and Redo are grayed out when there is nothing to take back, and resting the mouse on one names the step it would undo (**Undo Add Ring**). To choose its buttons:
 
 - click the **▾** at its end and check the ones you want (Print, Copy, Paste, Focus View and more);
 - right-click any menu command, or a ribbon button that runs one, and pick **Add to Quick Access Toolbar**; right-click a quick button to remove it;
@@ -105,7 +107,7 @@ The menus show each command's key beside it, so they are a good way to learn the
 
 ### Tabs
 
-Each open file has a tab in the menu bar, between the quick bar and Search, with its own icon and color for its kind (teal for canvases, orange for presentations, green for spreadsheets, dark blue for documents, purple for designs). The open file's tab and the chosen ribbon tab are underlined in that color. Ctrl+Tab and Ctrl+Shift+Tab move between tabs, and Ctrl+W closes one. When many files are open the tabs get narrower, then show only their icons; rest the mouse on one for its name. **View ▸ Window and Colors ▸ File Tabs in Menu Bar** (clear it) puts the tabs back on a row of their own under the menu bar.
+Each open file has a tab in the top row (the menu bar, or in the web version the ribbon's row of tabs), between the quick bar and Search, with its own icon and color for its kind (teal for canvases, orange for presentations, green for spreadsheets, dark blue for documents, purple for designs). The open file's tab and the chosen ribbon tab are underlined in that color. Ctrl+Tab and Ctrl+Shift+Tab move between tabs, and Ctrl+W closes one. When many files are open the tabs get narrower, then show only their icons; rest the mouse on one for its name. **View ▸ Window and Colors ▸ File Tabs in Menu Bar** (clear it) puts the tabs back on a row of their own under the menu bar.
 
 New files are called **Canvas 1**, **Presentation 1**, **Spreadsheet 1** and so on, until they are saved with a name of their own. When there are more tabs than fit, **‹** and **›** scroll them (as does the mouse wheel over the tabs), and **▾** lists every open file to pick one. **+** at the end starts something new:
 
@@ -163,6 +165,7 @@ The **×** at the top of the panel closes it all the way to give the drawing mor
 - **Shadows** under the menus and toolboxes: **Light**, **Strong** or **Off**.
 - **Icon Colors**: **Mode Color** draws icons gray with one part in the mode's color; **Color by Type** gives each kind of command its own color, as Office does. **Shapes in the Mode Color** colors the shapes in the Shapes menu too.
 - **Title Bar in Menu Bar** (desktop app) merges the title bar into the menu bar to save a row; drag an empty part of the menu bar to move the window.
+- **Menu Bar** shows the menus along the top; clear it to have them in the ribbon's **File** tab instead (the web version starts that way).
 - **File Tabs in Menu Bar**, **Mode Colors…** and **Reading Mode Colors…** are described under [Tabs](#tabs) and [Reading Mode](drawing.md#reading-mode).
 
 Two more switches are in the **View** menu itself. **Detailed Tooltips** shows what a tool does and what Alt, Shift and Ctrl change when you rest the mouse on it; turn it off for a one-line tip. **Scroll Bars** shows or hides the bars along the bottom and right of the drawing.
